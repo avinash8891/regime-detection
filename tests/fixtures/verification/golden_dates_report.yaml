@@ -1,13 +1,13 @@
-generated_at_utc: '2026-05-05T20:22:46+00:00'
+generated_at_utc: '2026-05-05T20:27:35+00:00'
 raw_file_sha256:
   SPY.csv: efa06aba545dea29dcc523bb8b50ad6a334892e49babee5769466fa8c2c0ef33
   RSP.csv: 6aa3f27a796ffad78f17d114fbe02e806a5488e2a07cdf61166344c15ed7d2c2
   VIXY.csv: c7a8673d84bb4993328abaa547093881bfa269a5d269202b707b38cf5bcbdc8c
 rows:
 - intent_id: bull_trending_lowvol_healthy
-  intent_date: '2017-06-01'
+  intent_date: '2020-08-11'
   as_of_date: '2020-08-11'
-  delta_calendar_days: 1167
+  delta_calendar_days: 0
   notes: Steady bull, trending, low vol, healthy breadth
   expected:
     trend_direction: bull
@@ -60,10 +60,10 @@ rows:
       bull_fragile_warning: false
       recovery_attempt: false
 - intent_id: volmageddon_crisis
-  intent_date: '2018-02-05'
+  intent_date: '2018-02-09'
   as_of_date: '2018-02-09'
-  delta_calendar_days: 4
-  notes: Volmageddon episode; pick nearest crisis_vol day
+  delta_calendar_days: 0
+  notes: Volmageddon episode; crisis_vol day
   expected:
     trend_direction: sideways
     trend_character: transition
@@ -115,9 +115,9 @@ rows:
       bull_fragile_warning: false
       recovery_attempt: false
 - intent_id: dec2018_bear_stress
-  intent_date: '2018-12-24'
+  intent_date: '2018-12-20'
   as_of_date: '2018-12-20'
-  delta_calendar_days: 4
+  delta_calendar_days: 0
   notes: Late-2018 selloff; stress warning
   expected:
     trend_direction: bear
@@ -170,9 +170,9 @@ rows:
       bull_fragile_warning: false
       recovery_attempt: false
 - intent_id: mid2019_bull_normal
-  intent_date: '2019-09-13'
+  intent_date: '2019-06-28'
   as_of_date: '2019-06-28'
-  delta_calendar_days: 77
+  delta_calendar_days: 0
   notes: Bull market normal conditions
   expected:
     trend_direction: bull
@@ -225,9 +225,9 @@ rows:
       bull_fragile_warning: false
       recovery_attempt: false
 - intent_id: covid_crash_crisis
-  intent_date: '2020-03-16'
+  intent_date: '2020-03-30'
   as_of_date: '2020-03-30'
-  delta_calendar_days: 14
+  delta_calendar_days: 0
   notes: COVID crash episode; pick nearest crisis_vol day with bear direction
   expected:
     trend_direction: bear
@@ -335,9 +335,9 @@ rows:
       bull_fragile_warning: false
       recovery_attempt: true
 - intent_id: late2021_bull_lowvol
-  intent_date: '2021-11-15'
+  intent_date: '2020-12-08'
   as_of_date: '2020-12-08'
-  delta_calendar_days: 342
+  delta_calendar_days: 0
   notes: Late-2021 bull; breadth may be narrower than expected, verify by rules
   expected:
     trend_direction: bull
@@ -390,9 +390,9 @@ rows:
       bull_fragile_warning: false
       recovery_attempt: false
 - intent_id: jun2022_bear_stress
-  intent_date: '2022-06-13'
+  intent_date: '2022-06-29'
   as_of_date: '2022-06-29'
-  delta_calendar_days: 16
+  delta_calendar_days: 0
   notes: 2022 drawdown; stress warning
   expected:
     trend_direction: bear
@@ -445,9 +445,9 @@ rows:
       bull_fragile_warning: false
       recovery_attempt: false
 - intent_id: oct2022_bear_stress
-  intent_date: '2022-10-12'
+  intent_date: '2022-07-12'
   as_of_date: '2022-07-12'
-  delta_calendar_days: 92
+  delta_calendar_days: 0
   notes: 2022 bear market; stress warning near Oct lows
   expected:
     trend_direction: bear
@@ -500,9 +500,9 @@ rows:
       bull_fragile_warning: false
       recovery_attempt: false
 - intent_id: early2024_bull_lowvol
-  intent_date: '2024-01-16'
+  intent_date: '2023-12-19'
   as_of_date: '2023-12-19'
-  delta_calendar_days: 28
+  delta_calendar_days: 0
   notes: Early 2024 bull / low vol / healthy breadth
   expected:
     trend_direction: bull

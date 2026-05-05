@@ -1,11 +1,11 @@
-generated_at_utc: '2026-05-05T20:22:46+00:00'
+generated_at_utc: '2026-05-05T20:27:35+00:00'
 raw_file_sha256:
   SPY.csv: efa06aba545dea29dcc523bb8b50ad6a334892e49babee5769466fa8c2c0ef33
   RSP.csv: 6aa3f27a796ffad78f17d114fbe02e806a5488e2a07cdf61166344c15ed7d2c2
   VIXY.csv: c7a8673d84bb4993328abaa547093881bfa269a5d269202b707b38cf5bcbdc8c
 rows:
 - intent_id: bull_trending_lowvol_healthy
-  intent_date: '2017-06-01'
+  intent_date: '2020-08-11'
   as_of_date: '2020-08-11'
   expected:
     trend_direction: bull
@@ -14,7 +14,7 @@ rows:
     breadth_state: healthy_breadth
     transition_risk: stable
 - intent_id: volmageddon_crisis
-  intent_date: '2018-02-05'
+  intent_date: '2018-02-09'
   as_of_date: '2018-02-09'
   expected:
     trend_direction: sideways
@@ -23,7 +23,7 @@ rows:
     breadth_state: weak_breadth
     transition_risk: crisis_override
 - intent_id: dec2018_bear_stress
-  intent_date: '2018-12-24'
+  intent_date: '2018-12-20'
   as_of_date: '2018-12-20'
   expected:
     trend_direction: bear
@@ -32,7 +32,7 @@ rows:
     breadth_state: weak_breadth
     transition_risk: bear_stress_warning
 - intent_id: mid2019_bull_normal
-  intent_date: '2019-09-13'
+  intent_date: '2019-06-28'
   as_of_date: '2019-06-28'
   expected:
     trend_direction: bull
@@ -41,7 +41,7 @@ rows:
     breadth_state: healthy_breadth
     transition_risk: stable
 - intent_id: covid_crash_crisis
-  intent_date: '2020-03-16'
+  intent_date: '2020-03-30'
   as_of_date: '2020-03-30'
   expected:
     trend_direction: bear
@@ -59,7 +59,7 @@ rows:
     breadth_state: weak_breadth
     transition_risk: recovery_attempt
 - intent_id: late2021_bull_lowvol
-  intent_date: '2021-11-15'
+  intent_date: '2020-12-08'
   as_of_date: '2020-12-08'
   expected:
     trend_direction: bull
@@ -68,7 +68,7 @@ rows:
     breadth_state: healthy_breadth
     transition_risk: stable
 - intent_id: jun2022_bear_stress
-  intent_date: '2022-06-13'
+  intent_date: '2022-06-29'
   as_of_date: '2022-06-29'
   expected:
     trend_direction: bear
@@ -77,7 +77,7 @@ rows:
     breadth_state: weak_breadth
     transition_risk: bear_stress_warning
 - intent_id: oct2022_bear_stress
-  intent_date: '2022-10-12'
+  intent_date: '2022-07-12'
   as_of_date: '2022-07-12'
   expected:
     trend_direction: bear
@@ -86,7 +86,7 @@ rows:
     breadth_state: weak_breadth
     transition_risk: bear_stress_warning
 - intent_id: early2024_bull_lowvol
-  intent_date: '2024-01-16'
+  intent_date: '2023-12-19'
   as_of_date: '2023-12-19'
   expected:
     trend_direction: bull

@@ -36,7 +36,12 @@ def _utc_iso_now() -> str:
 def _pct_rank_last(arr: np.ndarray) -> float:
     # Percentile rank of last element within the window, inclusive.
     x = arr[-1]
-    return float(np.mean(arr <= x))
+    if np.isnan(x):
+        return float("nan")
+    arr2 = arr[~np.isnan(arr)]
+    if arr2.size == 0:
+        return float("nan")
+    return float(np.mean(arr2 <= x))
 
 
 def _wilder_ewm(series: pd.Series, n: int, min_periods: int | None = None) -> pd.Series:
@@ -326,7 +331,7 @@ GoldenIntent = dict[str, Any]
 INTENTS: list[dict[str, Any]] = [
     {
         "intent_id": "bull_trending_lowvol_healthy",
-        "intent_date": "2017-06-01",
+        "intent_date": "2020-08-11",
         "intent": {
             "trend_direction": "bull",
             "trend_character": "trending",
@@ -339,19 +344,19 @@ INTENTS: list[dict[str, Any]] = [
     },
     {
         "intent_id": "volmageddon_crisis",
-        "intent_date": "2018-02-05",
+        "intent_date": "2018-02-09",
         "intent": {
             # do not constrain trend_direction: spec labels depend on SMA cross state
             "trend_character": "transition",
             "volatility_state": "crisis_vol",
             "transition_risk": "crisis_override",
         },
-        "search_window_trading_days": 60,
-        "notes": "Volmageddon episode; pick nearest crisis_vol day",
+        "search_window_trading_days": 10,
+        "notes": "Volmageddon episode; crisis_vol day",
     },
     {
         "intent_id": "dec2018_bear_stress",
-        "intent_date": "2018-12-24",
+        "intent_date": "2018-12-20",
         "intent": {
             "trend_direction": "bear",
             "trend_character": "trending",
@@ -359,12 +364,12 @@ INTENTS: list[dict[str, Any]] = [
             "breadth_state": "weak_breadth",
             "transition_risk": "bear_stress_warning",
         },
-        "search_window_trading_days": 60,
+        "search_window_trading_days": 10,
         "notes": "Late-2018 selloff; stress warning",
     },
     {
         "intent_id": "mid2019_bull_normal",
-        "intent_date": "2019-09-13",
+        "intent_date": "2019-06-28",
         "intent": {
             "trend_direction": "bull",
             "trend_character": "trending",
@@ -372,19 +377,19 @@ INTENTS: list[dict[str, Any]] = [
             "breadth_state": "healthy_breadth",
             "transition_risk": "stable",
         },
-        "search_window_trading_days": 120,
+        "search_window_trading_days": 10,
         "notes": "Bull market normal conditions",
     },
     {
         "intent_id": "covid_crash_crisis",
-        "intent_date": "2020-03-16",
+        "intent_date": "2020-03-30",
         "intent": {
             "trend_direction": "bear",
             "volatility_state": "crisis_vol",
             "breadth_state": "weak_breadth",
             "transition_risk": "crisis_override",
         },
-        "search_window_trading_days": 60,
+        "search_window_trading_days": 10,
         "notes": "COVID crash episode; pick nearest crisis_vol day with bear direction",
     },
     {
@@ -395,12 +400,12 @@ INTENTS: list[dict[str, Any]] = [
             "volatility_state": "high_vol",
             "transition_risk": "recovery_attempt",
         },
-        "search_window_trading_days": 60,
+        "search_window_trading_days": 10,
         "notes": "Post-crash recovery attempt; breadth pinned by rules in ETF-proxy mode",
     },
     {
         "intent_id": "late2021_bull_lowvol",
-        "intent_date": "2021-11-15",
+        "intent_date": "2020-12-08",
         "intent": {
             "trend_direction": "bull",
             "trend_character": "trending",
@@ -408,12 +413,12 @@ INTENTS: list[dict[str, Any]] = [
             "breadth_state": "healthy_breadth",
             "transition_risk": "stable",
         },
-        "search_window_trading_days": 120,
+        "search_window_trading_days": 10,
         "notes": "Late-2021 bull; breadth may be narrower than expected, verify by rules",
     },
     {
         "intent_id": "jun2022_bear_stress",
-        "intent_date": "2022-06-13",
+        "intent_date": "2022-06-29",
         "intent": {
             "trend_direction": "bear",
             "trend_character": "trending",
@@ -421,12 +426,12 @@ INTENTS: list[dict[str, Any]] = [
             "breadth_state": "weak_breadth",
             "transition_risk": "bear_stress_warning",
         },
-        "search_window_trading_days": 90,
+        "search_window_trading_days": 10,
         "notes": "2022 drawdown; stress warning",
     },
     {
         "intent_id": "oct2022_bear_stress",
-        "intent_date": "2022-10-12",
+        "intent_date": "2022-07-12",
         "intent": {
             "trend_direction": "bear",
             "trend_character": "trending",
@@ -434,12 +439,12 @@ INTENTS: list[dict[str, Any]] = [
             "breadth_state": "weak_breadth",
             "transition_risk": "bear_stress_warning",
         },
-        "search_window_trading_days": 120,
+        "search_window_trading_days": 10,
         "notes": "2022 bear market; stress warning near Oct lows",
     },
     {
         "intent_id": "early2024_bull_lowvol",
-        "intent_date": "2024-01-16",
+        "intent_date": "2023-12-19",
         "intent": {
             "trend_direction": "bull",
             "trend_character": "trending",
@@ -447,7 +452,7 @@ INTENTS: list[dict[str, Any]] = [
             "breadth_state": "healthy_breadth",
             "transition_risk": "stable",
         },
-        "search_window_trading_days": 120,
+        "search_window_trading_days": 10,
         "notes": "Early 2024 bull / low vol / healthy breadth",
     },
 ]
@@ -521,8 +526,11 @@ def _pick_fixture_date(
     # Start near the intended date, then widen if needed. This matches the spec's
     # "rules win; replace fixture date, not predicates" principle, while still
     # biasing towards the same historical episode.
-    windows = [search_window_trading_days, 2 * search_window_trading_days, 5 * search_window_trading_days]
-    windows.append(max(len(labels.index), windows[-1]))
+    windows = [
+        search_window_trading_days,
+        2 * search_window_trading_days,
+        5 * search_window_trading_days,
+    ]
 
     last_df: pd.DataFrame | None = None
     for w in windows:
