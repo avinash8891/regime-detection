@@ -1,0 +1,9 @@
+config_version: core3-v1.0.0
+trading_calendar: NYSE
+hysteresis:
+  trend_direction_deescalation_days: 3
+  trend_character_deescalation_days: 3
+  volatility_deescalation_days: 2
+  breadth_deescalation_days: 2
+  composite_deescalation_days: 3
+  event_calendar_days: 1

@@ -75,7 +75,6 @@ PROMPT
   if [[ -n "${CODEX_REVIEW_MODEL:-}" ]]; then
     cmd+=(--model "$CODEX_REVIEW_MODEL")
   fi
-  cmd+=(-)
 
   echo "=== ${agent} ==="
   if perl -e 'alarm shift @ARGV; exec @ARGV' "$timeout_seconds" "${cmd[@]}" \
