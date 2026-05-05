@@ -18,7 +18,21 @@ jobs:
           python-version: "3.11"
 
       - name: Git whitespace check
-        run: git diff --check origin/${{ github.base_ref || 'main' }}...HEAD
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "${{ github.event_name }}" == "pull_request" ]]; then
+            git diff --check "origin/${{ github.base_ref }}...HEAD"
+          else
+            # For push events, compare against the previous SHA (more reliable than origin/main).
+            before="${{ github.event.before }}"
+            if [[ -n "$before" && "$before" != "0000000000000000000000000000000000000000" ]]; then
+              git diff --check "$before...${{ github.sha }}"
+            else
+              # Fallback: first commit on branch, or unknown before-sha.
+              git diff --check
+            fi
+          fi
 
       - name: Shell syntax checks
         run: |

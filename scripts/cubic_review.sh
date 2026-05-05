@@ -15,6 +15,12 @@ if [[ ! "$timeout_seconds" =~ ^[1-9][0-9]*$ ]]; then
   exit 2
 fi
 
+fetch_timeout_seconds="${CUBIC_REVIEW_FETCH_TIMEOUT_SECONDS:-30}"
+if [[ ! "$fetch_timeout_seconds" =~ ^[1-9][0-9]*$ ]]; then
+  echo "CUBIC_REVIEW_FETCH_TIMEOUT_SECONDS must be a positive integer: $fetch_timeout_seconds" >&2
+  exit 2
+fi
+
 repo_root="$(git rev-parse --show-toplevel)"
 
 # cubic stores local session state on disk under:
@@ -53,11 +59,14 @@ elif git show-ref --verify --quiet "refs/remotes/origin/${base_branch}"; then
   base_ref="origin/${base_branch}"
 else
   # Common on fresh clones: the base branch exists on the remote but hasn't been fetched yet.
-  if git fetch -q origin "${base_branch}:refs/remotes/origin/${base_branch}"; then
+  if perl -e 'alarm shift @ARGV; exec @ARGV' \
+    "$fetch_timeout_seconds" \
+    git fetch -q origin "${base_branch}:refs/remotes/origin/${base_branch}"
+  then
     base_ref="origin/${base_branch}"
   else
-    echo "Base branch not found locally: ${base_branch} (neither local nor origin/*), and fetch failed." >&2
-    exit 2
+    echo "Base branch not found locally: ${base_branch} (neither local nor origin/*), and fetch failed or timed out; skipping cubic review (non-blocking)." >&2
+    exit 0
   fi
 fi
 
@@ -77,7 +86,7 @@ fi
 
 # If cubic can't run locally (auth/provider/network/sandbox), don't block the push.
 # The repo still gets cloud PR review, which is the primary enforcement mechanism.
-if echo "$review_output" | grep -Eq \
+if printf '%s' "$review_output" | grep -Eq \
   'No AI provider is configured|No CLI auth found|Token refresh network error|Unable to connect|EPERM: operation not permitted'
 then
   echo "$review_output" >&2
