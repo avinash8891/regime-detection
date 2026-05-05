@@ -179,6 +179,56 @@ def _eval_trend_direction(feat: dict[str, pd.Series], dt: pd.Timestamp) -> tuple
     }
 
 
+_TD_RISK_RANK = {"bull": 0, "sideways": 1, "transition": 2, "bear": 3, "unknown": 2}
+
+
+def _apply_hysteresis_active(
+    *, raw_labels: list[str], deescalation_days: int
+) -> tuple[list[str], list[str]]:
+    # Matches docs/regime_engine_v1_final_spec.md §2.10 semantics.
+    stable: list[str] = []
+    active: list[str] = []
+
+    stable_label = raw_labels[0]
+    pending_label: str | None = None
+    pending_count = 0
+
+    for raw in raw_labels:
+        raw_rank = _TD_RISK_RANK[raw]
+        stable_rank = _TD_RISK_RANK[stable_label]
+
+        if raw_rank > stable_rank:
+            stable_label = raw
+            pending_label = None
+            pending_count = 0
+        elif raw_rank < stable_rank or raw != stable_label:
+            if deescalation_days == 0:
+                stable_label = raw
+                pending_label = None
+                pending_count = 0
+            else:
+                if pending_label != raw:
+                    pending_label = raw
+                    pending_count = 1
+                else:
+                    pending_count += 1
+                if pending_count >= deescalation_days:
+                    stable_label = raw
+                    pending_label = None
+                    pending_count = 0
+        else:
+            pending_label = None
+            pending_count = 0
+
+        stable.append(stable_label)
+        if _TD_RISK_RANK[raw] > _TD_RISK_RANK[stable_label]:
+            active.append(raw)
+        else:
+            active.append(stable_label)
+
+    return stable, active
+
+
 def _eval_trend_character(feat: dict[str, pd.Series], dt: pd.Timestamp) -> tuple[str, dict[str, bool]]:
     adx = feat["ADX_14"].loc[dt]
     ret10 = feat["return_10d"].loc[dt]
@@ -592,6 +642,13 @@ def generate_docs(*, generated_at_utc: str | None = None) -> tuple[dict[str, Any
     inp = _load_raw()
     feat = _compute_features(inp)
     labels = _evaluate_all(feat)
+    # Apply hysteresis for trend_direction to align pinned fixtures with engine outputs.
+    td_stable, td_active = _apply_hysteresis_active(
+        raw_labels=labels["trend_direction"].tolist(),
+        deescalation_days=3,
+    )
+    labels["trend_direction_stable"] = td_stable
+    labels["trend_direction_active"] = td_active
 
     generated_at = generated_at_utc or _utc_iso_now()
 
@@ -617,7 +674,7 @@ def generate_docs(*, generated_at_utc: str | None = None) -> tuple[dict[str, Any
         as_of = str(pick.date())
 
         expected = {
-            "trend_direction": row["trend_direction"],
+            "trend_direction": row["trend_direction_active"],
             "trend_character": row["trend_character"],
             "volatility_state": row["volatility_state"],
             "breadth_state": row["breadth_state"],
