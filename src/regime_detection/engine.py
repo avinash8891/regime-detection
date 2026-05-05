@@ -162,7 +162,7 @@ def _spy_ohlcv_frame(df: pd.DataFrame, *, as_of_date: date) -> pd.DataFrame:
 def _symbol_close_series(df: pd.DataFrame, *, symbol: str, as_of_date: date) -> pd.Series:
     s = df[df["symbol"] == symbol].copy()
     if s.empty:
-        raise ValueError(f"market_data must contain {symbol} rows for V1 volatility")
+        raise ValueError(f"market_data must contain {symbol} rows")
     s["date"] = pd.to_datetime(s["date"])
     s = s.sort_values("date")
     s = s[s["date"].dt.date <= as_of_date]

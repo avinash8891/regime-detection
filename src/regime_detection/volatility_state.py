@@ -148,7 +148,13 @@ def classify_series(
     stable = stable_labels[-1]
     active = active_labels[-1]
 
-    dq = _data_quality_for_asof(close=close, as_of_date=as_of_date, required_trading_days=252, raw_label=raw)
+    dq = _data_quality_for_asof(
+        close=close,
+        vix_proxy_close=vix_proxy_close.reindex(close.index),
+        as_of_date=as_of_date,
+        required_trading_days=252,
+        raw_label=raw,
+    )
 
     return AxisOutput(
         raw_label=raw,
@@ -167,13 +173,17 @@ def classify_series(
 def _data_quality_for_asof(
     *,
     close: pd.Series,
+    vix_proxy_close: pd.Series,
     as_of_date: date,
     required_trading_days: int,
     raw_label: VolatilityLabel,
 ) -> DataQuality:
     dt = pd.Timestamp(as_of_date)
-    window = close.loc[:dt].tail(required_trading_days)
-    completeness = float(window.notna().mean()) if len(window) else 0.0
+    w_close = close.loc[:dt].tail(required_trading_days)
+    w_vix = vix_proxy_close.loc[:dt].tail(required_trading_days)
+    c_close = float(w_close.notna().mean()) if len(w_close) else 0.0
+    c_vix = float(w_vix.notna().mean()) if len(w_vix) else 0.0
+    completeness = min(c_close, c_vix)
 
     if raw_label == "unknown":
         return DataQuality(status="insufficient_history", freshness_days=0, completeness=completeness, reason="insufficient_history")

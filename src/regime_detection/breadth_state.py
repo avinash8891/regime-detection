@@ -123,7 +123,13 @@ def classify_series(
     stable = stable_labels[-1]
     active = active_labels[-1]
 
-    dq = _data_quality_for_asof(close=spy_close, as_of_date=as_of_date, required_trading_days=63, raw_label=raw)
+    dq = _data_quality_for_asof(
+        spy_close=spy_close,
+        rsp_close=rsp_close.reindex(spy_close.index),
+        as_of_date=as_of_date,
+        required_trading_days=63,
+        raw_label=raw,
+    )
 
     return BreadthStateOutput(
         mode="etf_proxy",
@@ -142,14 +148,18 @@ def classify_series(
 
 def _data_quality_for_asof(
     *,
-    close: pd.Series,
+    spy_close: pd.Series,
+    rsp_close: pd.Series,
     as_of_date: date,
     required_trading_days: int,
     raw_label: BreadthLabel,
 ) -> DataQuality:
     dt = pd.Timestamp(as_of_date)
-    window = close.loc[:dt].tail(required_trading_days)
-    completeness = float(window.notna().mean()) if len(window) else 0.0
+    w_spy = spy_close.loc[:dt].tail(required_trading_days)
+    w_rsp = rsp_close.loc[:dt].tail(required_trading_days)
+    c_spy = float(w_spy.notna().mean()) if len(w_spy) else 0.0
+    c_rsp = float(w_rsp.notna().mean()) if len(w_rsp) else 0.0
+    completeness = min(c_spy, c_rsp)
 
     if raw_label == "unknown":
         return DataQuality(status="insufficient_history", freshness_days=0, completeness=completeness, reason="insufficient_history")
