@@ -84,6 +84,14 @@ class StrategyResponse(BaseModel):
     require_confirmation_for_new_longs: bool
     require_confirmation_for_shorts: bool
     log_for_review: bool
+    # Modifier fields (V1 exhaustive set). These are emitted only when the scenario fires.
+    hard_max_loss_required: bool | None = None
+    block_weak_signals: bool | None = None
+    prefer_cash_or_hedges: bool | None = None
+    take_profit_faster: bool | None = None
+    allow_leverage_expansion: bool | None = None
+    require_breadth_confirmation: bool | None = None
+    reason: str | None = None
     modifiers_applied: list[str]
 
 
