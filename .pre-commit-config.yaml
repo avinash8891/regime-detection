@@ -1,0 +1,25 @@
+default_stages: [pre-commit]
+
+repos:
+  - repo: local
+    hooks:
+      - id: cubic-review
+        name: cubic review
+        entry: scripts/cubic_review.sh origin/main
+        language: system
+        pass_filenames: false
+        stages: [pre-push]
+
+      - id: claude-code-simplifier
+        name: claude code simplifier
+        entry: scripts/claude_code_simplifier.sh origin/main
+        language: system
+        pass_filenames: false
+        stages: [pre-push]
+
+      - id: claude-pr-review-toolkit
+        name: claude pr review toolkit
+        entry: scripts/claude_pr_review_toolkit.sh origin/main
+        language: system
+        pass_filenames: false
+        stages: [pre-push]
