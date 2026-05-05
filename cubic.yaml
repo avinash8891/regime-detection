@@ -1,0 +1,39 @@
+# yaml-language-server: $schema=https://cubic.dev/schema/cubic-repository-config.schema.json
+version: 1
+
+reviews:
+  enabled: true
+  sensitivity: medium
+  incremental_commits: true
+  check_drafts: false
+  architecture_diagrams: false
+  external_contributors_require_manual_review: false
+  resolve_threads_when_addressed: true
+  auto_approve_behavior: disabled
+  auto_approve: disabled
+  custom_instructions: |
+    Review this repository against AGENTS.md and the regime engine specs in docs/.
+    Prioritize correctness, deterministic replay, no future-data leakage, strict NYSE calendar handling,
+    fixture provenance, and scope discipline between V1 and V2.
+  ignore:
+    files:
+      - tests/fixtures/raw/**
+  custom_rules:
+    - name: V1 no future data
+      description: Flag any V1 implementation or fixture logic that uses market data, constituent membership, or event data after as_of_date.
+    - name: V1 no silent calendar coercion
+      description: Flag non-trading as_of_date rollback/fallback behavior. V1 must raise on non-NYSE trading days.
+    - name: V1/V2 scope boundary
+      description: Flag V1 source code that implements or scaffolds PIT breadth, monetary pressure, HMM/GMM, eigenvalues, correlation network fragility, ORCA/SRR, Hurst, efficiency ratio, weighted transition score, or sideways_stress_warning.
+    - name: Fixture provenance
+      description: Flag real-data fixtures without provenance, checksums, or reproducible verification reports.
+
+pr_descriptions:
+  generate: true
+  instructions: |
+    Summarize changes in terms of V1/V2 regime-engine behavior, data requirements, fixture/testing impact, and review-hook/CI changes.
+
+issues:
+  fix_with_cubic_buttons: true
+  pr_comment_fixes: false
+  fix_commits_to_pr: false
