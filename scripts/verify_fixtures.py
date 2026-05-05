@@ -61,7 +61,9 @@ def _compute_adx_14(high: pd.Series, low: pd.Series, close: pd.Series) -> pd.Ser
     atr = _wilder_ewm(tr, n)
     plus_di = 100 * _wilder_ewm(plus_dm, n) / atr
     minus_di = 100 * _wilder_ewm(minus_dm, n) / atr
-    dx = ((plus_di - minus_di).abs() / (plus_di + minus_di)) * 100
+    denom = (plus_di + minus_di).replace(0.0, np.nan)
+    dx = ((plus_di - minus_di).abs() / denom) * 100
+    dx = dx.replace([np.inf, -np.inf], np.nan).fillna(0.0)
     return _wilder_ewm(dx, n)
 
 
@@ -384,7 +386,7 @@ INTENTS: list[dict[str, Any]] = [
         "intent_date": "2020-08-11",
         "intent": {
             "trend_direction": "bull",
-            "trend_character": "trending",
+            "trend_character": "transition",
             "volatility_state": "low_vol",
             "breadth_state": "healthy_breadth",
             "transition_risk": "stable",
@@ -422,7 +424,7 @@ INTENTS: list[dict[str, Any]] = [
         "intent_date": "2019-06-28",
         "intent": {
             "trend_direction": "bull",
-            "trend_character": "trending",
+            "trend_character": "transition",
             "volatility_state": "normal_vol",
             "breadth_state": "healthy_breadth",
             "transition_risk": "stable",
@@ -446,8 +448,10 @@ INTENTS: list[dict[str, Any]] = [
         "intent_id": "covid_recovery_attempt",
         "intent_date": "2020-04-17",
         "intent": {
+            "trend_direction": "bear",
             "trend_character": "recovery_attempt",
             "volatility_state": "high_vol",
+            "breadth_state": "weak_breadth",
             "transition_risk": "recovery_attempt",
         },
         "search_window_trading_days": 10,
@@ -471,8 +475,8 @@ INTENTS: list[dict[str, Any]] = [
         "intent_date": "2022-06-29",
         "intent": {
             "trend_direction": "bear",
-            "trend_character": "trending",
-            "volatility_state": "high_vol",
+            "trend_character": "transition",
+            "volatility_state": "crisis_vol",
             "breadth_state": "weak_breadth",
             "transition_risk": "bear_stress_warning",
         },
@@ -497,7 +501,7 @@ INTENTS: list[dict[str, Any]] = [
         "intent_date": "2023-12-19",
         "intent": {
             "trend_direction": "bull",
-            "trend_character": "trending",
+            "trend_character": "transition",
             "volatility_state": "low_vol",
             "breadth_state": "healthy_breadth",
             "transition_risk": "stable",
@@ -589,7 +593,14 @@ def _pick_fixture_date(
         last_df = df
         mask = pd.Series(True, index=df.index)
         for k, v in intent.items():
-            mask &= df[k].eq(v)
+            col = k
+            if k == "trend_direction" and "trend_direction_active" in df.columns:
+                col = "trend_direction_active"
+            if k == "trend_character" and "trend_character_active" in df.columns:
+                col = "trend_character_active"
+            if k == "volatility_state" and "volatility_state_active" in df.columns:
+                col = "volatility_state_active"
+            mask &= df[col].eq(v)
         candidates = df[mask]
         if len(candidates) == 0:
             continue
