@@ -141,6 +141,10 @@ def _require_market_data_contract(df: pd.DataFrame, *, as_of_date: date) -> None
         raise ValueError(f"market_data missing required columns: {missing}")
     if df.empty:
         raise ValueError("market_data must not be empty")
+    if df["symbol"].isna().any():
+        raise ValueError("market_data contains nulls in symbol")
+    if (df["symbol"].astype(str).str.strip() == "").any():
+        raise ValueError("market_data contains empty symbol values")
     if (df["symbol"] == "SPY").sum() == 0:
         raise ValueError("market_data must contain SPY rows for V1")
     dates = pd.to_datetime(df["date"], errors="coerce").dt.date
