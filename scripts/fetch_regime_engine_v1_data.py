@@ -63,6 +63,16 @@ def main() -> int:
         default=None,
         help="Optional path to a JSON list[str] of symbols to fetch (use this for the 762-symbol final universe).",
     )
+    ap.add_argument(
+        "--vix-symbol",
+        default="VIX",
+        help="VIX symbol to fetch from Alpaca. Alpaca stock bars do not support true VIX on many accounts; use a proxy like VIXY if needed.",
+    )
+    ap.add_argument(
+        "--allow-vix-proxy",
+        action="store_true",
+        help="Allow proceeding when true VIX is unavailable, using --vix-symbol (e.g. VIXY).",
+    )
     args = ap.parse_args()
 
     out_dir = Path(args.out_dir)
@@ -92,7 +102,7 @@ def main() -> int:
         uni_cache_path = str(uni.cache_path)
 
     anchors = ["SPY", "RSP"]
-    vix_candidates = ["VIX", "^VIX"]
+    vix_candidates = [args.vix_symbol]
 
     all_symbols = stocks + anchors + vix_candidates
 
@@ -131,16 +141,14 @@ def main() -> int:
     df = res.df
 
     # ---- VIX requirement: Alpaca only ----
-    have_vix = any((df["symbol"] == s).any() for s in vix_candidates)
-    if not have_vix:
+    have_vix = (df["symbol"] == args.vix_symbol).any()
+    if not have_vix and not args.allow_vix_proxy:
         raise SystemExit(
-            "VIX not returned by Alpaca for symbols {VIX,^VIX}. "
-            "If Alpaca does not support the index on your feed/account, "
-            "we need a substitute decision (e.g. VIXY or alternate source)."
+            f"{args.vix_symbol} not returned by Alpaca. "
+            "If you want to proceed with an Alpaca-tradable proxy, rerun with "
+            "`--vix-symbol VIXY --allow-vix-proxy` (or choose another proxy)."
         )
-
-    # Prefer VIX over ^VIX if both exist; otherwise use whichever exists.
-    vix_symbol = "VIX" if (df["symbol"] == "VIX").any() else "^VIX"
+    vix_symbol = args.vix_symbol
 
     # ---- Verify earliest date vs requirement ----
     checks = {}
