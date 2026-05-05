@@ -23,16 +23,6 @@ cleanup() {
 }
 trap cleanup EXIT
 
-find_plugin_file() {
-  for candidate in "$@"; do
-    if [[ -f "$candidate" ]]; then
-      printf '%s\n' "$candidate"
-      return 0
-    fi
-  done
-  return 1
-}
-
 strip_frontmatter() {
   local file="$1"
   awk '
@@ -51,15 +41,11 @@ if ! command -v codex >/dev/null 2>&1; then
   exit 0
 fi
 
-plugin_file="$(
-  find_plugin_file \
-    "$HOME/.codex/plugins/cache/home-local/code-simplifier/1.0.0/agents/code-simplifier.md" \
-    "$HOME/.codex/plugins/cache/claude-plugins-official/code-simplifier/1.0.0/agents/code-simplifier.md" \
-    "$HOME/.codex/plugins/cache/claude-plugins-official/pr-review-toolkit/local/agents/code-simplifier.md"
-)" || {
-  echo "code-simplifier plugin prompt not found; skipping code simplifier" >&2
+plugin_file="$HOME/.codex/plugins/cache/claude-plugins-official/code-simplifier/1.0.0/agents/code-simplifier.md"
+if [[ ! -f "$plugin_file" ]]; then
+  echo "official code-simplifier plugin prompt not found: $plugin_file" >&2
   exit 0
-}
+fi
 
 {
   cat <<PROMPT
