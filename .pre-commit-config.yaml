@@ -10,16 +10,16 @@ repos:
         pass_filenames: false
         stages: [pre-push]
 
-      - id: claude-code-simplifier
-        name: claude code simplifier
-        entry: scripts/claude_code_simplifier.sh origin/main
+      - id: codex-code-simplifier
+        name: codex code simplifier
+        entry: scripts/codex_code_simplifier.sh origin/main
         language: system
         pass_filenames: false
         stages: [pre-push]
 
-      - id: claude-pr-review-toolkit
-        name: claude pr review toolkit
-        entry: scripts/claude_pr_review_toolkit.sh origin/main
+      - id: codex-pr-review-toolkit
+        name: codex pr review toolkit
+        entry: scripts/codex_pr_review_toolkit.sh origin/main
         language: system
         pass_filenames: false
         stages: [pre-push]
