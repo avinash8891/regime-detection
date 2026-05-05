@@ -49,6 +49,7 @@ def build_or_load_us_universe_10b_cache(
     out_dir_p.mkdir(parents=True, exist_ok=True)
 
     # IMPORTANT: market-data-hub's us_universe.py reads LOG_DIR at import time.
+    old_log_dir = os.environ.get("LOG_DIR")
     os.environ["LOG_DIR"] = str(out_dir_p)
 
     import sys
@@ -57,7 +58,14 @@ def build_or_load_us_universe_10b_cache(
     if hub_root not in sys.path:
         sys.path.insert(0, hub_root)
 
-    from universes import us_universe  # type: ignore
+    try:
+        from universes import us_universe  # type: ignore
+    finally:
+        # Avoid leaking env mutations outside this helper.
+        if old_log_dir is None:
+            os.environ.pop("LOG_DIR", None)
+        else:
+            os.environ["LOG_DIR"] = old_log_dir
 
     cache_path = Path(os.environ["LOG_DIR"]) / "us_universe_cache.json"
     if not cache_path.exists():
