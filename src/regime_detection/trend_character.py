@@ -67,7 +67,7 @@ def compute_features(*, close: pd.Series, high: pd.Series, low: pd.Series) -> Tr
     return_10d = close / close.shift(10) - 1
     return_21d = close / close.shift(21) - 1
     prior_63d_drawdown = close / close.rolling(63).max() - 1
-    adx_14 = _compute_adx_14(high=high, low=low, close=close)
+    adx_14 = _compute_adx_14(high=high, low=low, close=close).reindex(close.index)
     return TrendCharacterFeatures(
         close=close,
         high=high,
@@ -131,6 +131,9 @@ def classify_series(
     close.index = pd.to_datetime(close.index)
     high.index = pd.to_datetime(high.index)
     low.index = pd.to_datetime(low.index)
+    close = close.sort_index()
+    high = high.sort_index()
+    low = low.sort_index()
 
     if dt not in close.index:
         raise ValueError(f"as_of_date missing from close series: {as_of_date.isoformat()}")

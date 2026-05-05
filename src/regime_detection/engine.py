@@ -124,6 +124,8 @@ def _require_market_data_contract(df: pd.DataFrame, *, as_of_date: date) -> None
     if (df["symbol"] == "SPY").sum() == 0:
         raise ValueError("market_data must contain SPY rows for V1")
     dates = pd.to_datetime(df["date"], errors="coerce").dt.date
+    if dates.isna().any():
+        raise ValueError("market_data contains unparseable date values")
     has_spy_asof = ((df["symbol"] == "SPY") & (dates == as_of_date)).any()
     if not bool(has_spy_asof):
         raise ValueError(f"market_data must include SPY row for as_of_date={as_of_date.isoformat()}")

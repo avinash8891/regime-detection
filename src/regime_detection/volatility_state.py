@@ -120,6 +120,8 @@ def classify_series(
     vix_proxy_close = vix_proxy_close.copy()
     close.index = pd.to_datetime(close.index)
     vix_proxy_close.index = pd.to_datetime(vix_proxy_close.index)
+    close = close.sort_index()
+    vix_proxy_close = vix_proxy_close.sort_index()
 
     if dt not in close.index:
         raise ValueError(f"as_of_date missing from close series: {as_of_date.isoformat()}")
