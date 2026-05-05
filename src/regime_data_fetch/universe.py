@@ -58,16 +58,9 @@ def build_or_load_us_universe_10b_cache(
     if hub_root not in sys.path:
         sys.path.insert(0, hub_root)
 
-    try:
-        from universes import us_universe  # type: ignore
-    finally:
-        # Avoid leaking env mutations outside this helper.
-        if old_log_dir is None:
-            os.environ.pop("LOG_DIR", None)
-        else:
-            os.environ["LOG_DIR"] = old_log_dir
+    from universes import us_universe  # type: ignore
 
-    cache_path = Path(os.environ["LOG_DIR"]) / "us_universe_cache.json"
+    cache_path = out_dir_p / "us_universe_cache.json"
     if not cache_path.exists():
         if allow_update:
             _refresh_us_universe_cache_from_yfinance_seeds(
@@ -81,6 +74,11 @@ def build_or_load_us_universe_10b_cache(
             return UniverseBuildResult(cache_path=cache_path, symbols=list(us_universe.US_LIST))
 
     symbols = load_symbols_from_us_universe_cache(cache_path)
+    # Avoid leaking env mutations outside this helper.
+    if old_log_dir is None:
+        os.environ.pop("LOG_DIR", None)
+    else:
+        os.environ["LOG_DIR"] = old_log_dir
     return UniverseBuildResult(cache_path=cache_path, symbols=symbols)
 
 
@@ -89,7 +87,7 @@ def _refresh_us_universe_cache_from_yfinance_seeds(
     cache_path: Path,
     seeds: list[str],
     min_cap_b: float,
-    max_workers: int = 16,
+    max_workers: int = 4,
 ) -> None:
     """Build a minimal us_universe cache JSON by fetching market caps via yfinance.
 
@@ -125,6 +123,13 @@ def _refresh_us_universe_cache_from_yfinance_seeds(
             sym, cap = fut.result()
             if cap is not None and cap >= min_cap:
                 qualified[sym] = round(cap / 1e9, 1)
+
+    # Fail loud rather than writing a misleading empty/partial cache.
+    if len(qualified) < 600:
+        raise RuntimeError(
+            f"Universe refresh failed or was throttled (qualified={len(qualified)}). "
+            "Re-run later or reduce parallelism."
+        )
 
     stocks: dict[str, list] = {}
     for sym, cap_b in qualified.items():

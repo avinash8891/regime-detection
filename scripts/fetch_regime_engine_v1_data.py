@@ -24,6 +24,28 @@ from regime_data_fetch.alpaca_daily import fetch_daily_bars_alpaca, verify_min_s
 def _parse_date(s: str) -> dt.date:
     return dt.date.fromisoformat(s)
 
+def _load_env_file(path: Path) -> None:
+    """Minimal dotenv loader: KEY=VALUE lines, supports optional quotes.
+
+    Does not overwrite existing env vars.
+    """
+    if not path.exists():
+        raise SystemExit(f"env file not found: {path}")
+    for raw_line in path.read_text().splitlines():
+        line = raw_line.strip()
+        if not line or line.startswith("#"):
+            continue
+        if "=" not in line:
+            continue
+        k, v = line.split("=", 1)
+        k = k.strip()
+        v = v.strip().strip('"').strip("'")
+        if not k:
+            continue
+        if os.environ.get(k, "").strip():
+            continue
+        os.environ[k] = v
+
 
 def main() -> int:
     ap = argparse.ArgumentParser(description="Fetch regime-engine-v1 raw market data (daily bars).")
@@ -35,6 +57,12 @@ def main() -> int:
     ap.add_argument("--adjustment", default="raw", help="Alpaca adjustment: raw|split|dividend|all.")
     ap.add_argument("--list-symbols", action="store_true", help="Only print symbol counts and exit.")
     ap.add_argument("--build-universe", action="store_true", help="Force-refresh the 10B+ universe cache (network: yfinance).")
+    ap.add_argument("--env-file", default=None, help="Optional .env file to load (for Alpaca creds).")
+    ap.add_argument(
+        "--universe-json",
+        default=None,
+        help="Optional path to a JSON list[str] of symbols to fetch (use this for the 762-symbol final universe).",
+    )
     args = ap.parse_args()
 
     out_dir = Path(args.out_dir)
@@ -47,14 +75,22 @@ def main() -> int:
 
     # ---- Universe (stocks only) ----
     uni_dir = out_dir / "universe"
-    uni = build_or_load_us_universe_10b_cache(
-        market_data_hub_root=args.market_data_hub_root,
-        out_dir=uni_dir,
-        min_cap_b=args.min_cap_b,
-        allow_update=args.build_universe or (not args.list_symbols),
-    )
+    if args.universe_json:
+        universe_path = Path(args.universe_json)
+        stocks = json.loads(universe_path.read_text())
+        if not isinstance(stocks, list) or not all(isinstance(s, str) for s in stocks):
+            raise SystemExit("--universe-json must be a JSON list[str]")
+        uni_cache_path = str(universe_path)
+    else:
+        uni = build_or_load_us_universe_10b_cache(
+            market_data_hub_root=args.market_data_hub_root,
+            out_dir=uni_dir,
+            min_cap_b=args.min_cap_b,
+            allow_update=args.build_universe or (not args.list_symbols),
+        )
+        stocks = uni.symbols
+        uni_cache_path = str(uni.cache_path)
 
-    stocks = uni.symbols
     anchors = ["SPY", "RSP"]
     vix_candidates = ["VIX", "^VIX"]
 
@@ -66,11 +102,11 @@ def main() -> int:
                 "stocks_count": len(stocks),
                 "note": (
                     "If this is not 762, run again with --build-universe to refresh the cache "
-                    "(uses yfinance once) and then rerun."
+                    "(uses yfinance once, may rate-limit) OR pass --universe-json pointing to your 762 list."
                 ),
                 "anchors": anchors,
                 "vix_candidates": vix_candidates,
-                "cache_path": str(uni.cache_path),
+                "universe_source": uni_cache_path,
             },
             indent=2,
             default=str,
@@ -79,6 +115,9 @@ def main() -> int:
 
     # ---- Fetch daily bars from Alpaca ----
     # NOTE: This requires env vars to be set. We do not log secrets.
+    if args.env_file:
+        _load_env_file(Path(args.env_file))
+
     for k in ("ALPACA_API_KEY_ID", "ALPACA_API_SECRET_KEY"):
         if not os.environ.get(k, "").strip():
             raise SystemExit(f"Missing required env var: {k}")
@@ -133,7 +172,7 @@ def main() -> int:
         "min_date_checks": checks,
         "missing_symbols_sample": res.missing_symbols[:50],
         "paths": {
-            "universe_cache": str(uni.cache_path),
+            "universe_source": uni_cache_path,
             "parquet_dir": str(parquet_dir),
         },
     }
