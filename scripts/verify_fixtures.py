@@ -650,6 +650,53 @@ def generate_docs(*, generated_at_utc: str | None = None) -> tuple[dict[str, Any
     labels["trend_direction_stable"] = td_stable
     labels["trend_direction_active"] = td_active
 
+    # Trend character hysteresis uses the same asymmetric mechanics with its own ranks.
+    tc_risk_rank = {
+        "trending": 0,
+        "chop": 1,
+        "recovery_attempt": 1,
+        "transition": 2,
+        "unknown": 2,
+    }
+
+    def apply_generic(raw_labels: list[str], risk_rank: dict[str, int], deescalation_days: int) -> tuple[list[str], list[str]]:
+        stable: list[str] = []
+        active: list[str] = []
+        stable_label = raw_labels[0]
+        pending: str | None = None
+        cnt = 0
+        for raw in raw_labels:
+            rr = risk_rank[raw]
+            sr = risk_rank[stable_label]
+            if rr > sr:
+                stable_label = raw
+                pending = None
+                cnt = 0
+            elif rr < sr or raw != stable_label:
+                if deescalation_days == 0:
+                    stable_label = raw
+                    pending = None
+                    cnt = 0
+                else:
+                    if pending != raw:
+                        pending = raw
+                        cnt = 1
+                    else:
+                        cnt += 1
+                    if cnt >= deescalation_days:
+                        stable_label = raw
+                        pending = None
+                        cnt = 0
+            else:
+                pending = None
+                cnt = 0
+            stable.append(stable_label)
+            active.append(raw if risk_rank[raw] > risk_rank[stable_label] else stable_label)
+        return stable, active
+
+    _, tc_active = apply_generic(labels["trend_character"].tolist(), tc_risk_rank, 3)
+    labels["trend_character_active"] = tc_active
+
     generated_at = generated_at_utc or _utc_iso_now()
 
     raw_hashes = {
@@ -675,7 +722,7 @@ def generate_docs(*, generated_at_utc: str | None = None) -> tuple[dict[str, Any
 
         expected = {
             "trend_direction": row["trend_direction_active"],
-            "trend_character": row["trend_character"],
+            "trend_character": row["trend_character_active"],
             "volatility_state": row["volatility_state"],
             "breadth_state": row["breadth_state"],
             "transition_risk": row["transition_risk"],
