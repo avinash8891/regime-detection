@@ -39,6 +39,14 @@ git clone --shared --no-checkout "$repo_root" "$review_dir" >/dev/null
 git -C "$review_dir" checkout --detach -q HEAD
 cd "$review_dir"
 
+# Ensure the base ref exists in this review clone (worktrees sometimes lack remote refs in shared clones).
+if [[ "$base_ref" == origin/* ]]; then
+  base_branch="${base_ref#origin/}"
+  if ! git show-ref --verify --quiet "refs/remotes/origin/${base_branch}"; then
+    git fetch -q origin "$base_branch":"refs/remotes/origin/${base_branch}" || git fetch -q origin "$base_branch" || true
+  fi
+fi
+
 if perl -e 'alarm shift @ARGV; exec @ARGV' \
   "$timeout_seconds" \
   env PATH="$HOME/.superset/bin:$HOME/.cubic/bin:$PATH" cubic review --print-logs --base "$base_ref" "$@"

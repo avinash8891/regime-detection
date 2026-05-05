@@ -72,10 +72,10 @@ cmd=(codex exec review --base "$base_ref" --ephemeral)
 if [[ -n "${CODEX_REVIEW_MODEL:-}" ]]; then
   cmd+=(--model "$CODEX_REVIEW_MODEL")
 fi
-cmd+=(-)
-
+# NOTE: codex CLI currently does not allow `--base` together with a custom prompt.
+# For the pre-push gate we fall back to the default review prompt (still base-diff aware).
 if perl -e 'alarm shift @ARGV; exec @ARGV' "$timeout_seconds" "${cmd[@]}" \
-  <"$prompt_file" >"$output_file"
+  >"$output_file"
 then
   cat "$output_file"
 else
