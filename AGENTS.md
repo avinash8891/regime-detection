@@ -35,6 +35,14 @@ Operating discipline for coding agents in this repository. Project-specific cont
 - Status integrity: a run or step is "ok" only if every required sub-step succeeded. Partial success with a silent skip = failed run, reported as failed.
 - **Terminal-state bookkeeping precedes deterministic-error validation.** If a handler decides work reached a terminal state (`halted`, `manual_review`, `finished`), the state mutation and operator notification must run *before* any code that can raise. A validation error propagating before terminal fields are written leaves state inconsistent and is indistinguishable from a crash. Pattern: write terminal fields first, then validate or compile best-effort enrichment with its own error handling that logs and continues.
 
+## Review guidelines
+
+- Flag any regime classifier change that can use future data, non-NYSE calendars, or non-trading-date rollback as P1.
+- Flag any V1 implementation that adds V2 scaffolding, macro fetchers, HMM/correlation/eigenvalue regime logic, ORCA/SRR, Hurst, efficiency ratio, weighted transition score, or crash-condition logic as P1.
+- Flag fixture or golden-date changes that relax deterministic rule predicates to make a hand-labeled fixture pass as P1.
+- Flag missing cold-start/NaN handling, missing version-coupling checks, or missing config validation for unknown keys as P1.
+- Treat silent skips in tests, review hooks, data loading, or classifier output generation as P1.
+
 ## Hygiene
 
 - `get_logger` must NOT set `propagate = False` — pytest caplog captures via the root logger; blocking propagation makes all `caplog` assertions return empty strings. No duplicate output risk in production (no root handler attached outside tests).
