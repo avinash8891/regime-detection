@@ -24,7 +24,6 @@ repo_root="$(git rev-parse --show-toplevel)"
 # repo-local or /tmp dir so pre-push review still works.
 xdg_data_home_candidates=(
   "${XDG_DATA_HOME:-$HOME/.local/share}"
-  "$repo_root/.xdg_data"
   "/tmp/xdg_data"
 )
 

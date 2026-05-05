@@ -47,4 +47,5 @@ def default_config_path() -> Path:
     except Exception:
         pass
 
-    return Path(__file__).resolve().parents[2] / "configs" / "core3-v1.0.0.yaml"
+    # Source-tree fallback: configs live next to the package code.
+    return Path(__file__).resolve().parent / "configs" / "core3-v1.0.0.yaml"
