@@ -40,13 +40,19 @@ def _wilder_ewm(series: pd.Series, n: int) -> pd.Series:
 
 
 def _compute_adx_14(*, high: pd.Series, low: pd.Series, close: pd.Series) -> pd.Series:
+    # Align to a common index so np.where arrays match index lengths.
+    common = close.index.intersection(high.index).intersection(low.index)
+    close = close.reindex(common)
+    high = high.reindex(common)
+    low = low.reindex(common)
+
     prev_close = close.shift(1)
     tr = pd.concat([(high - low), (high - prev_close).abs(), (low - prev_close).abs()], axis=1).max(axis=1)
 
     up = high.diff()
     down = -low.diff()
-    plus_dm = pd.Series(np.where((up > down) & (up > 0), up, 0.0), index=close.index)
-    minus_dm = pd.Series(np.where((down > up) & (down > 0), down, 0.0), index=close.index)
+    plus_dm = pd.Series(np.where((up > down) & (up > 0), up, 0.0), index=common)
+    minus_dm = pd.Series(np.where((down > up) & (down > 0), down, 0.0), index=common)
 
     n = 14
     atr = _wilder_ewm(tr, n)
@@ -167,4 +173,3 @@ def classify_series(
         },
         data_quality=dq,
     )
-

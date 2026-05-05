@@ -47,6 +47,8 @@ class VolatilityFeatures:
 def compute_features(*, close: pd.Series, vix_proxy_close: pd.Series) -> VolatilityFeatures:
     close = close.astype(float)
     vix_proxy_close = vix_proxy_close.astype(float)
+    # Align VIX proxy series to the SPY trading-day index; missing dates become NaN.
+    vix_proxy_close = vix_proxy_close.reindex(close.index)
 
     return_1d = close / close.shift(1) - 1
     return_5d = close / close.shift(5) - 1
@@ -121,8 +123,7 @@ def classify_series(
 
     if dt not in close.index:
         raise ValueError(f"as_of_date missing from close series: {as_of_date.isoformat()}")
-    if dt not in vix_proxy_close.index:
-        raise ValueError(f"as_of_date missing from vix proxy series: {as_of_date.isoformat()}")
+    # If VIX proxy is missing the as-of date, we still proceed; the label will become unknown.
 
     close = close.loc[:dt]
     vix_proxy_close = vix_proxy_close.loc[:dt]
@@ -162,4 +163,3 @@ def classify_series(
         },
         data_quality=dq,
     )
-

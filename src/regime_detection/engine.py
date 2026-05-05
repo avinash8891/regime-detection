@@ -128,13 +128,18 @@ def _require_market_data_contract(df: pd.DataFrame, *, as_of_date: date) -> None
     if not bool(has_spy_asof):
         raise ValueError(f"market_data must include SPY row for as_of_date={as_of_date.isoformat()}")
 
+    # Contract: at most one row per (date, symbol). Duplicates can break rule evaluation.
+    key = pd.to_datetime(df["date"], errors="coerce").dt.strftime("%Y-%m-%d") + "|" + df["symbol"].astype(str)
+    if key.duplicated().any():
+        raise ValueError("market_data contains duplicate (date, symbol) rows")
+
 
 def _spy_ohlcv_frame(df: pd.DataFrame, *, as_of_date: date) -> pd.DataFrame:
     s = df[df["symbol"] == "SPY"].copy()
     s["date"] = pd.to_datetime(s["date"])
     s = s.sort_values("date")
     s = s[s["date"].dt.date <= as_of_date]
-    s = s.set_index("date")
+    s = s.drop_duplicates(subset=["date"], keep="last").set_index("date").sort_index()
     return s[["open", "high", "low", "close", "volume"]]
 
 
@@ -145,7 +150,9 @@ def _symbol_close_series(df: pd.DataFrame, *, symbol: str, as_of_date: date) -> 
     s["date"] = pd.to_datetime(s["date"])
     s = s.sort_values("date")
     s = s[s["date"].dt.date <= as_of_date]
+    s = s.drop_duplicates(subset=["date"], keep="last")
     out = pd.Series(s["close"].to_numpy(), index=pd.to_datetime(s["date"]))
+    out = out.sort_index()
     out.name = "close"
     return out
 
