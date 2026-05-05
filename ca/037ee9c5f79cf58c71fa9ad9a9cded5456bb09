@@ -1,0 +1,38 @@
+docs/regime_engine_v2_spec.md
+  6284b163c8208cf2 31-38,180-188,284-286,662-674,1103
+docs/regime_engine_v1_final_spec.md
+  6284b163c8208cf2 41,46,70-71,74-80,92-106,131,146-160,171-172,539,542-544,546,577-579,699,724-725,740-757,781-791,889-907,921-922,926-927,934-938,942-943,1109-1112,1134-1139,1156-1161,1167-1169,1173-1190,1194,1196,1201-1202,1204,1220-1255,1281-1283,1286-1289,1302,1308-1309,1340-1346
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.3.4",
+  "base_commit_sha": "ca037ee9c5f79cf58c71fa9ad9a9cded5456bb09",
+  "prompts": {
+    "3cd4cbda98ffcbfe": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019df86f-e5a1-7731-83a8-d49719b5f996",
+        "model": "gpt-5.2"
+      },
+      "human_author": "Avinash Vankadaru",
+      "messages": [],
+      "total_additions": 297,
+      "total_deletions": 15,
+      "accepted_lines": 282,
+      "overriden_lines": 0
+    },
+    "6284b163c8208cf2": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019df886-7a0b-7b10-a22d-6f6c96d80945",
+        "model": "gpt-5.5"
+      },
+      "human_author": "Avinash Vankadaru",
+      "messages": [],
+      "total_additions": 243,
+      "total_deletions": 35,
+      "accepted_lines": 243,
+      "overriden_lines": 0
+    }
+  }
+}
