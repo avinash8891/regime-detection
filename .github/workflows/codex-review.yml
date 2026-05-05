@@ -1,0 +1,50 @@
+name: Codex PR Review
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  codex-review:
+    runs-on: ubuntu-latest
+    if: github.event.pull_request.draft == false
+    env:
+      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+      CODEX_REVIEW_MODEL: ${{ vars.CODEX_REVIEW_MODEL || 'gpt-5.4' }}
+      CODEX_PR_REVIEW_TIMEOUT_SECONDS: "3600"
+      CODEX_CODE_SIMPLIFIER_TIMEOUT_SECONDS: "3600"
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Skip when OPENAI_API_KEY is unavailable
+        if: env.OPENAI_API_KEY == ''
+        run: |
+          echo "OPENAI_API_KEY secret is not configured or not available for this PR; skipping Codex review."
+
+      - name: Install Codex CLI and plugin prompts
+        if: env.OPENAI_API_KEY != ''
+        run: |
+          npm install -g @openai/codex@0.128.0
+          git clone --depth 1 https://github.com/anthropics/claude-plugins-official.git /tmp/claude-plugins-official
+
+      - name: Run Codex code simplifier
+        if: env.OPENAI_API_KEY != ''
+        env:
+          CODEX_CODE_SIMPLIFIER_PROMPT_FILE: /tmp/claude-plugins-official/code-simplifier/1.0.0/agents/code-simplifier.md
+        run: scripts/codex_code_simplifier.sh origin/${{ github.base_ref }}
+
+      - name: Run Codex PR review toolkit
+        if: env.OPENAI_API_KEY != ''
+        env:
+          PR_REVIEW_TOOLKIT_AGENT_DIR: /tmp/claude-plugins-official/pr-review-toolkit/local/agents
+        run: scripts/codex_pr_review_toolkit.sh origin/${{ github.base_ref }}

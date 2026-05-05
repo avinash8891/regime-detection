@@ -33,7 +33,8 @@ strip_frontmatter() {
 
 agent_file() {
   local agent="$1"
-  local primary="$HOME/.codex/plugins/cache/claude-plugins-official/pr-review-toolkit/local/agents/${agent}.md"
+  local agent_dir="${PR_REVIEW_TOOLKIT_AGENT_DIR:-$HOME/.codex/plugins/cache/claude-plugins-official/pr-review-toolkit/local/agents}"
+  local primary="${agent_dir}/${agent}.md"
   if [[ -f "$primary" ]]; then
     printf '%s\n' "$primary"
     return 0
