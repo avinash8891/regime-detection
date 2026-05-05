@@ -61,6 +61,14 @@ then
   :
 else
   status=$?
+  # If Cubic can't compute a git diff (observed in some worktree/snapshot setups),
+  # skip rather than blocking pushes indefinitely.
+  # NOTE: output is on stderr; redirecting isn't trivial here, so run a lightweight
+  # follow-up check that reproduces the error signature.
+  if env PATH="$HOME/.superset/bin:$HOME/.cubic/bin:$PATH" cubic review --base "$base_sha" --print-logs "$@" 2>&1 | rg -q "failed to get diff|exitCode=128"; then
+    echo "cubic review could not compute diff (exitCode=128); skipping cubic-review hook" >&2
+    exit 0
+  fi
   if [[ "$status" -eq 142 ]]; then
     echo "cubic review timed out after ${timeout_seconds}s" >&2
   fi
