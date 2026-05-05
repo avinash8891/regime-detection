@@ -39,6 +39,13 @@ git clone --shared --no-checkout "$repo_root" "$review_dir" >/dev/null
 git -C "$review_dir" checkout --detach -q HEAD
 cd "$review_dir"
 
+# Resolve the base to a SHA so downstream tools don't depend on remote refnames
+# being present in their internal snapshots.
+base_sha="$base_ref"
+if git rev-parse -q --verify "$base_ref" >/dev/null 2>&1; then
+  base_sha="$(git rev-parse "$base_ref")"
+fi
+
 # Ensure the base ref exists in this review clone (worktrees sometimes lack remote refs in shared clones).
 if [[ "$base_ref" == origin/* ]]; then
   base_branch="${base_ref#origin/}"
@@ -49,7 +56,7 @@ fi
 
 if perl -e 'alarm shift @ARGV; exec @ARGV' \
   "$timeout_seconds" \
-  env PATH="$HOME/.superset/bin:$HOME/.cubic/bin:$PATH" cubic review --print-logs --base "$base_ref" "$@"
+  env PATH="$HOME/.superset/bin:$HOME/.cubic/bin:$PATH" cubic review --print-logs --base "$base_sha" "$@"
 then
   :
 else

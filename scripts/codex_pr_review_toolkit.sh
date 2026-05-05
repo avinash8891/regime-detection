@@ -71,7 +71,7 @@ PROMPT
     strip_frontmatter "$plugin_file"
   } >"$prompt_file"
 
-  local cmd=(codex exec review --base "$base_ref" --ephemeral)
+  local cmd=(codex exec review --base "$base_sha" --ephemeral)
   if [[ -n "${CODEX_REVIEW_MODEL:-}" ]]; then
     cmd+=(--model "$CODEX_REVIEW_MODEL")
   fi
@@ -100,6 +100,11 @@ PROMPT
 git clone --shared --no-checkout "$repo_root" "$review_dir" >/dev/null
 git -C "$review_dir" checkout --detach -q HEAD
 cd "$review_dir"
+
+base_sha="$base_ref"
+if git rev-parse -q --verify "$base_ref" >/dev/null 2>&1; then
+  base_sha="$(git rev-parse "$base_ref")"
+fi
 
 if ! command -v codex >/dev/null 2>&1; then
   echo "codex CLI not found on PATH; skipping pr-review-toolkit" >&2
