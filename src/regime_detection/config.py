@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import importlib.resources
 from pathlib import Path
 from typing import Any
 
@@ -35,17 +34,5 @@ def load_regime_config(path: str | Path) -> RegimeConfig:
 
 
 def default_config_path() -> Path:
-    # Prefer an embedded package resource when installed; fall back to repo layout.
-    try:
-        pkg_file = importlib.resources.files("regime_detection").joinpath(
-            "configs/core3-v1.0.0.yaml"
-        )
-        # as_file() materializes to a real filesystem Path if needed.
-        with importlib.resources.as_file(pkg_file) as p:
-            if p.exists():
-                return p
-    except Exception:
-        pass
-
-    # Source-tree fallback: configs live next to the package code.
+    # Source-tree default: configs live next to the package code.
     return Path(__file__).resolve().parent / "configs" / "core3-v1.0.0.yaml"

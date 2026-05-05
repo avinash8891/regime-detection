@@ -22,6 +22,8 @@ jobs:
         run: |
           set -euo pipefail
           if [[ "${{ github.event_name }}" == "pull_request" ]]; then
+            # Ensure the base ref exists locally for the diff.
+            git fetch -q origin "${{ github.base_ref }}":"refs/remotes/origin/${{ github.base_ref }}"
             git diff --check "origin/${{ github.base_ref }}...HEAD"
           else
             # For push events, compare against the previous SHA (more reliable than origin/main).
