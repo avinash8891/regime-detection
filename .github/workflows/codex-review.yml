@@ -14,7 +14,7 @@ jobs:
     if: github.event.pull_request.draft == false
     env:
       OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-      CODEX_REVIEW_MODEL: ${{ vars.CODEX_REVIEW_MODEL || 'gpt-5.4' }}
+      CODEX_REVIEW_MODEL: ${{ vars.CODEX_REVIEW_MODEL || 'gpt-5.2' }}
       CODEX_PR_REVIEW_TIMEOUT_SECONDS: "3600"
       CODEX_CODE_SIMPLIFIER_TIMEOUT_SECONDS: "3600"
     steps:
