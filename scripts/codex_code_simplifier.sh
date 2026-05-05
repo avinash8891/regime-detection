@@ -41,7 +41,7 @@ if ! command -v codex >/dev/null 2>&1; then
   exit 0
 fi
 
-plugin_file="$HOME/.codex/plugins/cache/claude-plugins-official/code-simplifier/1.0.0/agents/code-simplifier.md"
+plugin_file="${CODEX_CODE_SIMPLIFIER_PROMPT_FILE:-$HOME/.codex/plugins/cache/claude-plugins-official/code-simplifier/1.0.0/agents/code-simplifier.md}"
 if [[ ! -f "$plugin_file" ]]; then
   echo "official code-simplifier plugin prompt not found: $plugin_file" >&2
   exit 0
