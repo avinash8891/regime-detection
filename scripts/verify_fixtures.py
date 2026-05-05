@@ -672,7 +672,9 @@ def generate_docs(*, generated_at_utc: str | None = None) -> tuple[dict[str, Any
         "unknown": 2,
     }
 
-    def apply_generic(raw_labels: list[str], risk_rank: dict[str, int], deescalation_days: int) -> tuple[list[str], list[str]]:
+    def apply_generic(
+        raw_labels: list[str], risk_rank: dict[str, int], deescalation_days: int
+    ) -> tuple[list[str], list[str]]:
         stable: list[str] = []
         active: list[str] = []
         stable_label = raw_labels[0]
@@ -685,7 +687,12 @@ def generate_docs(*, generated_at_utc: str | None = None) -> tuple[dict[str, Any
                 stable_label = raw
                 pending = None
                 cnt = 0
-            elif rr < sr or raw != stable_label:
+            elif rr == sr and raw != stable_label:
+                # Same-rank label changes are immediate (no debounce) to match engine hysteresis.
+                stable_label = raw
+                pending = None
+                cnt = 0
+            elif rr < sr:
                 if deescalation_days == 0:
                     stable_label = raw
                     pending = None
