@@ -1,26 +1,11 @@
 # Review and CI Setup
 
-This repository uses three review/check layers:
+This repository uses two PR review layers:
 
-1. GitHub CI for deterministic checks.
-2. Cubic GitHub PR review configured by `cubic.yaml`.
-3. Codex PR review through the official Codex GitHub integration.
+1. Cubic GitHub PR review configured by `cubic.yaml`.
+2. Codex PR review through the official Codex GitHub integration.
 
-## CI
-
-Workflow:
-
-```text
-.github/workflows/ci.yml
-```
-
-Runs on pushes to `main`/`v1-of-regime-detection` and on pull requests.
-
-Checks:
-
-- git whitespace validation against the PR/base diff;
-- shell syntax for review scripts;
-- pytest when a `tests/` directory exists.
+There are no repository-owned GitHub Actions workflows. Codex review triggers are configured in Codex settings, and Cubic review triggers are configured by the Cubic GitHub App.
 
 ## Cubic PR Review
 
