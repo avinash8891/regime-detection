@@ -24,6 +24,7 @@ from regime_detection.versioning import engine_version
 from regime_detection.trend_direction import classify_series as classify_trend_direction
 from regime_detection.trend_character import classify_series as classify_trend_character
 from regime_detection.volatility_state import classify_series as classify_volatility_state
+from regime_detection.breadth_state import classify_series as classify_breadth_state
 
 
 class RegimeEngine:
@@ -62,6 +63,7 @@ class RegimeEngine:
         spy_high = spy_ohlcv["high"]
         spy_low = spy_ohlcv["low"]
         vixy_close = _symbol_close_series(market_data, symbol="VIXY", as_of_date=as_of_date)
+        rsp_close = _symbol_close_series(market_data, symbol="RSP", as_of_date=as_of_date)
         trend_direction = classify_trend_direction(
             close=spy_close,
             as_of_date=as_of_date,
@@ -79,6 +81,12 @@ class RegimeEngine:
             vix_proxy_close=vixy_close,
             as_of_date=as_of_date,
             deescalation_days=cfg.hysteresis.volatility_deescalation_days,
+        )
+        breadth_state = classify_breadth_state(
+            spy_close=spy_close,
+            rsp_close=rsp_close,
+            as_of_date=as_of_date,
+            deescalation_days=cfg.hysteresis.breadth_deescalation_days,
         )
 
         unknown_axis = _unknown_axis_output()
@@ -100,7 +108,7 @@ class RegimeEngine:
             trend_direction=trend_direction,
             trend_character=trend_character,
             volatility_state=volatility_state,
-            breadth_state=unknown_breadth,
+            breadth_state=breadth_state,
             structural_causal_state=structural,
             network_fragility=NetworkFragilityOutput(
                 label="not_implemented_v1",

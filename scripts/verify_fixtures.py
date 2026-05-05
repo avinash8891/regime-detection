@@ -388,7 +388,7 @@ INTENTS: list[dict[str, Any]] = [
             "trend_direction": "bull",
             "trend_character": "transition",
             "volatility_state": "low_vol",
-            "breadth_state": "healthy_breadth",
+            "breadth_state": "neutral_breadth",
             "transition_risk": "stable",
         },
         "search_window_trading_days": 120,
@@ -426,7 +426,7 @@ INTENTS: list[dict[str, Any]] = [
             "trend_direction": "bull",
             "trend_character": "transition",
             "volatility_state": "normal_vol",
-            "breadth_state": "healthy_breadth",
+            "breadth_state": "weak_breadth",
             "transition_risk": "stable",
         },
         "search_window_trading_days": 10,
@@ -600,6 +600,8 @@ def _pick_fixture_date(
                 col = "trend_character_active"
             if k == "volatility_state" and "volatility_state_active" in df.columns:
                 col = "volatility_state_active"
+            if k == "breadth_state" and "breadth_state_active" in df.columns:
+                col = "breadth_state_active"
             mask &= df[col].eq(v)
         candidates = df[mask]
         if len(candidates) == 0:
@@ -719,6 +721,17 @@ def generate_docs(*, generated_at_utc: str | None = None) -> tuple[dict[str, Any
     _, vol_active = apply_generic(labels["volatility_state"].tolist(), vol_risk_rank, 2)
     labels["volatility_state_active"] = vol_active
 
+    # Breadth hysteresis (de-escalation 2 days).
+    breadth_risk_rank = {
+        "healthy_breadth": 0,
+        "neutral_breadth": 1,
+        "weak_breadth": 2,
+        "divergent_fragile": 3,
+        "unknown": 2,
+    }
+    _, breadth_active = apply_generic(labels["breadth_state"].tolist(), breadth_risk_rank, 2)
+    labels["breadth_state_active"] = breadth_active
+
     generated_at = generated_at_utc or _utc_iso_now()
 
     raw_hashes = {
@@ -746,7 +759,7 @@ def generate_docs(*, generated_at_utc: str | None = None) -> tuple[dict[str, Any
             "trend_direction": row["trend_direction_active"],
             "trend_character": row["trend_character_active"],
             "volatility_state": row["volatility_state_active"],
-            "breadth_state": row["breadth_state"],
+            "breadth_state": row["breadth_state_active"],
             "transition_risk": row["transition_risk"],
         }
 
