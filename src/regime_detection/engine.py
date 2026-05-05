@@ -25,6 +25,7 @@ from regime_detection.trend_direction import classify_series as classify_trend_d
 from regime_detection.trend_character import classify_series as classify_trend_character
 from regime_detection.volatility_state import classify_series as classify_volatility_state
 from regime_detection.breadth_state import classify_series as classify_breadth_state
+from regime_detection.event_calendar import classify_event_calendar
 
 
 class RegimeEngine:
@@ -56,9 +57,8 @@ class RegimeEngine:
         require_nyse_trading_day(as_of_date)
 
         _require_market_data_contract(market_data, as_of_date=as_of_date)
-        if event_calendar is not None:
-            # Slice 7 implements event calendar; until then, fail loudly rather than ignore.
-            raise ValueError("event_calendar is not implemented yet (Slice 7). Pass event_calendar=None for V1.")
+        if event_calendar is None:
+            raise ValueError("event_calendar is required in V1 (Slice 7). Pass an events DataFrame.")
 
         # Slice 3: Trend Direction implemented; remaining axes stay unknown until their slices land.
         spy_ohlcv = _spy_ohlcv_frame(market_data, as_of_date=as_of_date)
@@ -104,11 +104,8 @@ class RegimeEngine:
             deescalation_days=cfg.hysteresis.breadth_deescalation_days,
         )
 
-        unknown_axis = _unknown_axis_output()
-        unknown_breadth = _unknown_breadth_output()
-
         structural = StructuralCausalState(
-            event_calendar=_unknown_event_calendar_output(),
+            event_calendar=classify_event_calendar(as_of_date=as_of_date, event_calendar=event_calendar),
             monetary_pressure=MonetaryPressureOutput(
                 label="unknown",
                 reason="not_implemented_v1",
