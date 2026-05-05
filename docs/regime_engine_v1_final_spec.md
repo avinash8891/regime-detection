@@ -38,12 +38,12 @@ V1 ships only:
 - Trend Direction
 - Trend Character
 - Volatility
-- Breadth
+- Breadth in ETF proxy mode (`RSP/SPY`) only
 - Event Calendar
 - Simple Transition Warnings
 - Strategy Response Modifiers
 
-V1 does **not** ship: macro inference, credit/inflation models, HMM, GMM, eigenvalues, correlation network fragility, ORCA/SRR, weighted transition score, Hurst, efficiency ratio.
+V1 does **not** ship: PIT constituent breadth, monetary pressure, macro inference, credit/inflation models, HMM, GMM, eigenvalues, correlation network fragility, ORCA/SRR, weighted transition score, Hurst, efficiency ratio, sideways stress warnings.
 
 ---
 
@@ -67,7 +67,16 @@ Rules:
 - Use only data with date `<= as_of_date`.
 - Never use future constituent membership.
 - Never use future event data.
+- `as_of_date` must be an NYSE trading day. If it is not, raise `ValueError` with the nearest prior and next NYSE trading days in the message.
+- Do not roll non-trading `as_of_date` values backward or forward.
 - Live mode = `classify(as_of_date=today)`.
+
+V1 input contract:
+
+- `market_data` is a long/wide-enough OHLCV DataFrame with at least `date`, `symbol`, `open`, `high`, `low`, `close`, `volume`.
+- US V1 requires `SPY` rows for the market index.
+- ETF proxy breadth requires `RSP` rows in the same contract.
+- VIX support may be provided either as `vix_data` or as a `VIX`/`^VIX` symbol in market data, but tests must use deterministic repo fixtures.
 
 V1 helper:
 
@@ -79,6 +88,21 @@ RegimeEngine.classify_window(
     ...
 ) -> RegimeTimeline
 ```
+
+`RegimeTimeline` is a Pydantic model:
+
+```python
+class RegimeTimeline(BaseModel):
+    engine_version: str
+    config_version: str
+    market: str
+    start_date: date
+    end_date: date
+    trading_calendar: str
+    outputs: list[RegimeOutput]
+```
+
+`outputs` is sorted ascending by `as_of_date` and contains exactly one `RegimeOutput` per NYSE trading day in the inclusive window. Unknown outputs are emitted, not skipped.
 
 V1.1 helper (deferred):
 
@@ -104,7 +128,7 @@ No hidden state. No state files. Replay is deterministic.
 
 ### 2.3 Type Contract
 
-`RegimeOutput` is a Pydantic model. All sub-objects are Pydantic models. The JSON in Section 11 is the canonical schema; the Pydantic model must match it exactly. Coding agent must not invent dataclasses, TypedDicts, or dicts as substitutes.
+`RegimeOutput` is a Pydantic model. All sub-objects are Pydantic models. The JSON in Section 11 is the canonical output shape; Section 10 defines the exhaustive conditional strategy-response fields. Coding agent must not invent dataclasses, TypedDicts, or dicts as substitutes.
 
 ### 2.4 Output Versioning
 
@@ -119,6 +143,21 @@ Every top-level output includes:
 }
 ```
 
+The package version in `pyproject.toml` and emitted `engine_version` must be coupled by test. A mismatch fails CI.
+
+### 2.4.1 Config Loading
+
+V1 ships with `configs/core3-v1.0.0.yaml`.
+
+Rules:
+
+- `RegimeEngine` loads config once at construction time.
+- Default config path is `configs/core3-v1.0.0.yaml`.
+- `classify(..., config=...)` may override the engine default only with a validated `RegimeConfig` object.
+- `RegimeConfig` is a Pydantic model with `extra="forbid"`; unknown config keys raise.
+- `config_version` in output reflects the loaded config.
+- Precedence orderings and risk-rank tables are hardcoded in code, not config.
+
 ### 2.5 Trading Calendar
 
 V1 uses the **NYSE** trading calendar for all trading-day arithmetic (event windows, lookback counts, hysteresis day counts).
@@ -128,6 +167,8 @@ trading_calendar: "NYSE"
 ```
 
 Coding agent must use `pandas_market_calendars` (or equivalent) — not `bdate_range`, which ignores holidays. When the engine is extended to NSE/MCX in later releases, this becomes per-market config.
+
+Non-trading `as_of_date` values are deterministic errors, not data-quality degradation. This prevents calendar-day backtests from silently producing duplicate Friday classifications for weekends or holidays.
 
 ### 2.6 Minimum History Requirement
 
@@ -495,13 +536,14 @@ Escalation to `high_vol` or `crisis_vol`: immediate (per global asymmetric rule)
 ### 6.1 Modes
 
 ```text
-pit_constituents  (preferred)
-etf_proxy         (fallback)
+etf_proxy
 ```
 
-Selected at config time. Engine output declares which mode is active.
+US V1 ships `etf_proxy` mode only. Engine output declares `"mode": "etf_proxy"`.
 
-### 6.2 PIT Constituents Mode
+PIT constituent breadth is deferred to v1.1/V2 because it requires a point-in-time historical membership pipeline, delisted symbols, and separate data-quality validation. V1 source code must not implement a PIT breadth path or biased-survivorship fallback.
+
+### 6.2 PIT Constituents Mode (Deferred)
 
 Required input contract:
 
@@ -532,7 +574,9 @@ If `true`, output must include:
 "bias_warning": "survivorship_biased_constituent_universe"
 ```
 
-### 6.3 ETF Proxy Mode (US V1 default if PIT unavailable)
+This section is retained only to document the future PIT contract. It is out of scope for V1 implementation.
+
+### 6.3 ETF Proxy Mode (US V1)
 
 ```yaml
 etf_proxy:
@@ -652,7 +696,7 @@ breadth_risk_rank:
 ### 7.1 V1 Scope
 
 - Event calendar: required.
-- Monetary pressure: optional (only if 2y, 10y, DXY are available and clean).
+- Monetary pressure: not implemented in V1.
 - Inflation/growth, credit/funding: **not implemented in V1**. Output `"label": "unknown", "reason": "not_implemented_v1"`.
 
 ### 7.2 Event Calendar
@@ -673,12 +717,12 @@ events:
 
 Labels:
 ```text
-normal_calendar
 fed_week
 cpi_week
 nfp_week
-earnings_season
 expiry_week
+earnings_season
+normal_calendar
 unknown
 ```
 
@@ -693,7 +737,24 @@ expiry_week: as_of_date inside configured monthly options expiry window
 earnings_season: configured per market
 ```
 
-### 7.3 Optional Monetary Pressure
+Precedence:
+
+```text
+fed_week > cpi_week > nfp_week > expiry_week > earnings_season > normal_calendar > unknown
+```
+
+If multiple event windows match, `raw_label`, `stable_label`, and `active_label` use this precedence. Evidence must preserve all matches:
+
+```json
+{
+  "all_matching_events": ["fed_week", "earnings_season"],
+  "selected_via_precedence": "fed_week"
+}
+```
+
+Additional event-specific evidence such as `days_to_fomc` may be included when computable from the event calendar. Importance does not override the hardcoded precedence in V1.
+
+### 7.3 Monetary Pressure (Deferred)
 
 Inputs: 2y yield, 10y yield, DXY.
 
@@ -716,6 +777,17 @@ neutral: otherwise
 If any required input unavailable: `label="unknown", reason="feature_not_available"`.
 
 > Note: absolute bps thresholds will need rate-era recalibration. 50bps means different things at 0.5% policy rate vs 5% policy rate. Recalibration approach is in V2 spec §2A.
+
+V1 implementation must not compute monetary pressure. It always emits:
+
+```json
+{
+  "label": "unknown",
+  "reason": "not_implemented_v1"
+}
+```
+
+The rules above are retained as historical context for the V2 monetary/liquidity design and must not be wired into V1 transition risk.
 
 ---
 
@@ -814,6 +886,25 @@ no warning condition active AND no post_switch_cooldown
 
 ## 10. Layer 5 — Strategy Response
 
+Strategy response fields fall into two categories:
+
+- **Base fields** are always present. These are the fields in Section 10.1 plus mandatory `modifiers_applied`.
+- **Modifier fields** are conditionally present. They are emitted only when their scenario fires and omitted otherwise.
+
+V1 modifier fields are exhaustive:
+
+```text
+hard_max_loss_required
+block_weak_signals
+prefer_cash_or_hedges
+take_profit_faster
+allow_leverage_expansion
+require_breadth_confirmation
+reason
+```
+
+No other strategy response fields are permitted in V1. Pydantic uses `extra="forbid"` and `model_dump(exclude_none=True)`.
+
 ### 10.1 Base Response (default neutral)
 
 ```json
@@ -827,9 +918,12 @@ no warning condition active AND no post_switch_cooldown
   "allow_shorts": true,
   "require_confirmation_for_new_longs": false,
   "require_confirmation_for_shorts": false,
-  "log_for_review": false
+  "log_for_review": false,
+  "modifiers_applied": []
 }
 ```
+
+`modifiers_applied` contains the scenario names that fired in increasing priority order. If multiple scenarios fire, the highest-priority scenario is last and wins conflicts. For `default_neutral`, it is `[]`.
 
 ### 10.2 Unknown Fallback
 
@@ -837,10 +931,16 @@ no warning condition active AND no post_switch_cooldown
 {
   "position_size_multiplier": 0.75,
   "leverage_allowed": false,
+  "allow_trend_following": true,
+  "allow_buy_dip": true,
+  "allow_mean_reversion": true,
+  "allow_breakout": true,
+  "allow_shorts": true,
   "require_confirmation_for_new_longs": true,
   "require_confirmation_for_shorts": true,
   "log_for_review": true,
-  "reason": "unknown_or_unmapped_regime"
+  "reason": "unknown_or_unmapped_regime",
+  "modifiers_applied": []
 }
 ```
 
@@ -1006,7 +1106,10 @@ Modifier:
       "raw_label": "normal_calendar",
       "stable_label": "normal_calendar",
       "active_label": "normal_calendar",
-      "evidence": {}
+      "evidence": {
+        "all_matching_events": [],
+        "selected_via_precedence": "normal_calendar"
+      }
     },
     "monetary_pressure": {
       "label": "unknown",
@@ -1028,6 +1131,12 @@ Modifier:
     "allow_trend_following": false,
     "allow_mean_reversion": true,
     "leverage_allowed": true,
+    "allow_buy_dip": true,
+    "allow_breakout": true,
+    "allow_shorts": true,
+    "require_confirmation_for_new_longs": false,
+    "require_confirmation_for_shorts": false,
+    "log_for_review": false,
     "modifiers_applied": ["sideways_chop"]
   }
 }
@@ -1044,35 +1153,55 @@ Build in vertical slices, not horizontal layers. Each slice ships end-to-end (fe
 Slice order:
 
 1. **Foundation** — data ingestion, NYSE trading calendar, NaN cold-start logic, `RegimeOutput` Pydantic model, `classify(as_of_date)` skeleton, data quality contract.
-2. **Trend Direction** — feature + classifier + hysteresis + replay + tests.
-3. **Trend Character** — same pattern.
-4. **Volatility State** — same pattern.
-5. **Breadth State** — start with ETF proxy mode (RSP/SPY); PIT mode in v1.1.
-6. **Event Calendar** — YAML parser + window rules.
-7. **Optional Monetary Pressure** — only if data available.
+2. **Fixture Verification** — raw SPY/RSP/VIX fixtures, derived golden labels, and a verification report with computed features and predicate evaluations.
+3. **Trend Direction** — feature + classifier + hysteresis + replay + tests.
+4. **Trend Character** — same pattern.
+5. **Volatility State** — same pattern.
+6. **Breadth State** — ETF proxy mode only (RSP/SPY). PIT breadth is out of scope for V1.
+7. **Event Calendar** — YAML/CSV parser + NYSE trading-day window rules + overlap evidence.
 8. **Transition Risk** — composes prior slices, no own features.
 9. **Strategy Response** — composes prior slices, no own features.
 
 Each slice must pass its assigned golden date before the next slice begins.
 
-### 12.2 Golden Test Set (build before slice 2)
+Fixture verification is a hard gate before classifier implementation. If fixture verification produces a label that contradicts the hand-labeled table, the table is wrong by definition because V1 rules are deterministic. Replace the fixture with a date that mechanically produces the intended regime before any classifier slice begins. Do not relax rule predicates to make a fixture pass.
+
+### 12.2 Golden Test Set (build and verify before slice 3)
 
 Build the test fixtures first. Each test passes a DataFrame with **at least 320 trading days** of history ending on the test's `as_of_date`. Single-row DataFrames are forbidden — they will return `unknown` and the test will be meaningless.
+
+Golden fixture artifacts:
+
+```text
+tests/fixtures/raw/               # vendor OHLCV/VIX CSVs, committed read-only
+tests/fixtures/raw/PROVENANCE.md  # source URL/vendor/fetch date/license
+tests/fixtures/derived/golden_dates.yaml
+tests/fixtures/verification/golden_dates_report.yaml
+```
+
+`scripts/verify_fixtures.py` reads only repo-local raw files and performs no network calls. The verification report records raw values, computed features, predicate evaluations, selected labels, generator commit, and timestamp for every fixture.
+
+Raw fixture CSVs should be marked generated and excluded from normal diffs with `.gitattributes`:
+
+```gitattributes
+tests/fixtures/raw/*.csv linguist-generated=true
+tests/fixtures/raw/*.csv -diff
+```
 
 | as_of_date | Expected trend_direction | Expected character | Expected volatility | Expected breadth | Expected transition_risk |
 |---|---|---|---|---|---|
 | 2017-06-01 | bull | trending | low_vol | healthy_breadth | stable |
-| 2018-02-05 (Volmageddon) | bull | transition | crisis_vol | (any) | crisis_override |
+| 2018-02-05 (Volmageddon) | bull | transition | crisis_vol | **pin during fixture verification** | crisis_override |
 | 2018-12-24 | bear | trending | high_vol | weak_breadth | bear_stress_warning |
-| 2019-09-15 | bull | trending | normal_vol | healthy_breadth | stable |
+| 2019-09-13 | bull | trending | normal_vol | healthy_breadth | stable |
 | 2020-03-16 (COVID crash) | bear | transition | crisis_vol | weak_breadth | crisis_override |
 | 2020-04-10 | bear | recovery_attempt | high_vol | recovery_breadth | recovery_attempt |
 | 2021-11-15 | bull | trending | low_vol | healthy_breadth | stable |
 | 2022-06-13 | bear | trending | high_vol | weak_breadth | bear_stress_warning |
-| 2023-03-13 (SVB) | sideways | transition | high_vol | weak_breadth | bear_stress_warning |
-| 2024-01-15 | bull | trending | low_vol | healthy_breadth | stable |
+| 2022-10-12 | bear | trending | high_vol | weak_breadth | bear_stress_warning |
+| 2024-01-16 | bull | trending | low_vol | healthy_breadth | stable |
 
-These are hand-labeled expectations. If a slice can't pass its assigned date, the bug is either the spec or the implementation — investigate before moving on. Do not relax expectations to make tests pass.
+These are hand-labeled expectations pending Slice 2 verification. The deterministic rule predicates win over intuition. If a slice can't pass its assigned date after verification, the bug is either the spec or the implementation — investigate before moving on. Do not relax expectations to make tests pass.
 
 After all slices ship, all 10 dates run as a regression suite on every commit.
 
@@ -1087,6 +1216,42 @@ A regime label is useful only if it changes downstream strategy behavior. Track 
 - strategy PnL improvement from regime gating
 
 Do not tune thresholds on the holdout period.
+
+### 12.4 Package and Dependency Contract
+
+V1 uses a Python `src/` package layout:
+
+```text
+pyproject.toml
+src/regime_detection/
+tests/
+configs/core3-v1.0.0.yaml
+scripts/verify_fixtures.py
+```
+
+Runtime dependencies:
+
+```text
+pandas
+numpy
+pydantic>=2,<3
+pandas_market_calendars
+pyyaml
+```
+
+Development dependencies:
+
+```text
+pytest
+pytest-cov
+hypothesis
+ruff
+pyright
+```
+
+The package version and emitted `engine_version` are the same versioning concept and must be checked by unit test.
+
+V1 must include a CI or pre-commit check that fails on V2 scaffolding/imports, including HMM libraries, macro fetchers, correlation/eigenvalue modules beyond schema needs, ORCA/SRR, Hurst, efficiency ratio, weighted transition score, and `crash_condition`.
 
 ---
 
@@ -1113,12 +1278,15 @@ Observable Market State + Structural-Causal State + Network Fragility
 
 V1 implementation contract:
 
-1. Build vertical slices in this order: Foundation, Trend Direction,
-   Trend Character, Volatility, Breadth (ETF proxy), Event Calendar,
-   optional Monetary Pressure, Transition Risk, Strategy Response.
+1. Build vertical slices in this order: Foundation, Fixture Verification,
+   Trend Direction, Trend Character, Volatility, Breadth (ETF proxy),
+   Event Calendar, Transition Risk, Strategy Response.
    Each slice ships end-to-end before the next begins.
 
-2. Each slice must pass its assigned golden test date before commit.
+2. Fixture Verification is a hard gate. If verified rule predicates
+   contradict a hand-labeled fixture, the fixture table is wrong. Replace
+   the fixture with a date that mechanically produces the intended regime.
+   Do not relax rule predicates to make fixtures pass.
 
 3. Integration tests must pass DataFrames with at least 320 trading days
    of history ending on the as_of_date. Single-row DataFrames are
@@ -1131,12 +1299,14 @@ V1 implementation contract:
 
 5. Use the NYSE trading calendar for all trading-day arithmetic. Use
    pandas_market_calendars or equivalent. Never use bdate_range.
+   classify(as_of_date) must raise ValueError for non-NYSE trading days.
 
 6. classify(as_of_date) is stateless replay-safe. Recompute history
    internally from as_of_date - max_lookback - max_hysteresis_days.
 
 7. Use Pydantic models for RegimeOutput and all sub-objects. Match the
-   canonical JSON schema exactly.
+   Section 11 output shape and the Section 10 conditional strategy-response
+   field whitelist exactly.
 
 8. Hysteresis is asymmetric: escalation immediate, de-escalation debounced.
 
@@ -1167,7 +1337,13 @@ V1 implementation contract:
 
 17. Do NOT implement: HMM, GMM, eigenvalues, graph models, macro
     inference, credit/inflation models, weighted transition score,
-    Hurst, efficiency ratio, ORCA/SRR, severity fields, crash_condition.
+    Hurst, efficiency ratio, ORCA/SRR, severity fields, crash_condition,
+    PIT breadth, monetary_pressure, or sideways_stress_warning.
+
+18. V1 source code must not scaffold V2. Add a CI/pre-commit grep check
+    blocking HMM libraries, macro fetchers, correlation/eigenvalue modules
+    beyond schema needs, ORCA/SRR, Hurst, efficiency ratio, weighted
+    transition score, and crash_condition.
 ```
 
 ---

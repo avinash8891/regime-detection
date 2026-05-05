@@ -28,6 +28,14 @@ V2 inherits every V1 contract:
 
 V2 does not modify V1 outputs. V2 adds new fields and new classifiers.
 
+V2 also owns the items intentionally descoped from V1:
+
+- PIT constituent breadth.
+- Monetary pressure / liquidity pressure.
+- Sideways stress warnings.
+
+These were excluded from V1 to avoid shipping unverified data contracts or silently biased classifications.
+
 ---
 
 ## 1. Layer 1 V2 — Observable State Extensions
@@ -169,6 +177,15 @@ crisis_vol > vol_crush > high_vol > rising_vol > low_vol > normal_vol > unknown
 
 ### 1D. Breadth V2
 
+PIT constituent breadth begins here, not in V1. V2 must define and validate the historical constituent-membership data pipeline before enabling PIT breadth. Required properties:
+
+- point-in-time SPX membership with effective dates;
+- delisted and removed symbols included when they were members on `as_of_date`;
+- row-level validation of `date`, `index`, `symbol`, `is_member_as_of_date`, `close`, and moving-average fields;
+- explicit rejection of survivorship-biased universes unless a separate biased research mode is approved.
+
+ETF proxy breadth from V1 remains available as fallback evidence, but V2 PIT breadth must not silently fall back to biased current constituents.
+
 #### Stocks Above 200DMA
 ```python
 pct_above_200dma = mean(member.close > member.sma_200)
@@ -264,7 +281,9 @@ volume_liquidity_risk_rank:
 
 ### 2A. Monetary / Liquidity V2
 
-V1 used absolute bps thresholds. V2 must adapt to rate era.
+Monetary pressure was explicitly not implemented in V1. V2 is the first release allowed to implement it, and must lock a clean data contract for 2y yield, 10y yield, and DXY before coding begins.
+
+V1's draft absolute bps thresholds were deferred because they are rate-era dependent. V2 must adapt to rate era.
 
 #### Rate-Era Recalibration
 
@@ -639,6 +658,19 @@ network_fragility_deescalation_days:
 ---
 
 ## 4. Layer 4 V2 — Transition Score
+
+### 4.0 Named Warning Extensions
+
+V2 adds named warnings only when they capture a failure mode V1 cannot represent with its deterministic V1 labels.
+
+`sideways_stress_warning`:
+```text
+trend_direction.active_label = sideways
+AND volatility_state.active_label = high_vol
+AND breadth_state.active_label in [weak_breadth, divergent_fragile]
+```
+
+This captures banking-crisis, election-uncertainty, and macro-shock environments that are stressed but have not committed to V1 `bear`. V1 intentionally emits `stable` for this pattern unless another V1 warning fires; do not backport this warning to V1.
 
 ### 4.1 Composition
 
@@ -1068,7 +1100,7 @@ Add dates that exercise V2-specific behavior:
 | 2020-08-15 | tests stock_picker_dispersion (post-COVID rally narrowing) |
 | 2021-01-27 (GameStop) | tests dispersion + volume anomalies |
 | 2022-09-26 (UK gilt crisis) | tests cross-asset deleveraging |
-| 2023-03-13 (SVB) | already in V1; verify Layer 2C credit_stress fires |
+| 2023-03-13 (SVB) | tests V1 false-negative gap: sideways + high_vol + weak_breadth should fire V2 sideways_stress_warning and Layer 2C credit_stress |
 | 2024-08-05 (Yen carry unwind) | tests correlation_to_one + funding_squeeze |
 
 These build on the V1 golden test set; do not replace it.
