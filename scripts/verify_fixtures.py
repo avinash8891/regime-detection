@@ -697,6 +697,17 @@ def generate_docs(*, generated_at_utc: str | None = None) -> tuple[dict[str, Any
     _, tc_active = apply_generic(labels["trend_character"].tolist(), tc_risk_rank, 3)
     labels["trend_character_active"] = tc_active
 
+    # Volatility hysteresis (de-escalation 2 days).
+    vol_risk_rank = {
+        "low_vol": 0,
+        "normal_vol": 1,
+        "high_vol": 2,
+        "crisis_vol": 3,
+        "unknown": 2,
+    }
+    _, vol_active = apply_generic(labels["volatility_state"].tolist(), vol_risk_rank, 2)
+    labels["volatility_state_active"] = vol_active
+
     generated_at = generated_at_utc or _utc_iso_now()
 
     raw_hashes = {
@@ -723,7 +734,7 @@ def generate_docs(*, generated_at_utc: str | None = None) -> tuple[dict[str, Any
         expected = {
             "trend_direction": row["trend_direction_active"],
             "trend_character": row["trend_character_active"],
-            "volatility_state": row["volatility_state"],
+            "volatility_state": row["volatility_state_active"],
             "breadth_state": row["breadth_state"],
             "transition_risk": row["transition_risk"],
         }
