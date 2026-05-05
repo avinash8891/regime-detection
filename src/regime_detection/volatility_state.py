@@ -148,10 +148,7 @@ def classify_series(
     stable = stable_labels[-1]
     active = active_labels[-1]
 
-    if raw == "unknown":
-        dq = DataQuality(status="insufficient_history", freshness_days=0, completeness=1.0, reason="insufficient_history")
-    else:
-        dq = DataQuality(status="ok", freshness_days=0, completeness=1.0, reason=None)
+    dq = _data_quality_for_asof(close=close, as_of_date=as_of_date, required_trading_days=252, raw_label=raw)
 
     return AxisOutput(
         raw_label=raw,
@@ -165,3 +162,23 @@ def classify_series(
         },
         data_quality=dq,
     )
+
+
+def _data_quality_for_asof(
+    *,
+    close: pd.Series,
+    as_of_date: date,
+    required_trading_days: int,
+    raw_label: VolatilityLabel,
+) -> DataQuality:
+    dt = pd.Timestamp(as_of_date)
+    window = close.loc[:dt].tail(required_trading_days)
+    completeness = float(window.notna().mean()) if len(window) else 0.0
+
+    if raw_label == "unknown":
+        return DataQuality(status="insufficient_history", freshness_days=0, completeness=completeness, reason="insufficient_history")
+    if completeness < 0.70:
+        return DataQuality(status="insufficient_data", freshness_days=0, completeness=completeness, reason="insufficient_data")
+    if completeness < 0.90:
+        return DataQuality(status="degraded", freshness_days=0, completeness=completeness, reason="incomplete_data")
+    return DataQuality(status="ok", freshness_days=0, completeness=completeness, reason=None)

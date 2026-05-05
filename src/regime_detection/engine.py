@@ -143,6 +143,12 @@ def _require_market_data_contract(df: pd.DataFrame, *, as_of_date: date) -> None
     if key.duplicated().any():
         raise ValueError("market_data contains duplicate (date, symbol) rows")
 
+    for col in ["open", "high", "low", "close", "volume"]:
+        if df[col].isna().any():
+            raise ValueError(f"market_data contains nulls in {col}")
+        if not pd.api.types.is_numeric_dtype(df[col]):
+            raise ValueError(f"market_data column {col} must be numeric")
+
 
 def _spy_ohlcv_frame(df: pd.DataFrame, *, as_of_date: date) -> pd.DataFrame:
     s = df[df["symbol"] == "SPY"].copy()
