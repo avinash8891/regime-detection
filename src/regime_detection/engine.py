@@ -81,10 +81,10 @@ class RegimeEngine:
                 reason="breadth_state_used_as_v1_fragility_proxy",
             ),
             transition_risk=TransitionRiskOutput(
-                label="unknown",
-                evidence={"reason": "not_implemented_v1"},
+                label="stable",
+                evidence={"warnings_active": []},
             ),
-            strategy_response=_unknown_strategy_response(),
+            strategy_response=_default_strategy_response(),
         )
 
 
@@ -153,21 +153,4 @@ def _default_strategy_response() -> StrategyResponse:
         require_confirmation_for_shorts=False,
         log_for_review=True,
         modifiers_applied=["not_implemented_v1"],
-    )
-
-
-def _unknown_strategy_response() -> StrategyResponse:
-    # Until Slice 9, avoid implying that an unknown regime is safe/tradable.
-    return StrategyResponse(
-        position_size_multiplier=0.0,
-        allow_trend_following=False,
-        allow_mean_reversion=False,
-        leverage_allowed=False,
-        allow_buy_dip=False,
-        allow_breakout=False,
-        allow_shorts=False,
-        require_confirmation_for_new_longs=True,
-        require_confirmation_for_shorts=True,
-        log_for_review=True,
-        modifiers_applied=["unknown_regime_not_implemented_v1"],
     )

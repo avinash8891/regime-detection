@@ -868,8 +868,6 @@ OR (
 )
 ```
 
-Note: In US V1 `etf_proxy` breadth mode, `recovery_breadth` is unreachable (it is PIT-only). This branch will therefore only fire via `healthy_breadth` until PIT breadth ships.
-
 `post_switch_cooldown`:
 ```text
 any axis stable_label changed today
@@ -1192,18 +1190,18 @@ tests/fixtures/raw/*.csv -diff
 
 | as_of_date | Expected trend_direction | Expected character | Expected volatility | Expected breadth | Expected transition_risk |
 |---|---|---|---|---|---|
-| 2020-08-11 | bull | trending | low_vol | healthy_breadth | stable |
-| 2018-02-09 (Volmageddon) | sideways | transition | crisis_vol | weak_breadth | crisis_override |
-| 2018-12-20 | bear | trending | high_vol | weak_breadth | bear_stress_warning |
-| 2019-06-28 | bull | trending | normal_vol | healthy_breadth | stable |
-| 2020-03-30 (COVID crash) | bear | trending | crisis_vol | weak_breadth | crisis_override |
-| 2020-04-17 | transition | recovery_attempt | high_vol | weak_breadth | recovery_attempt |
-| 2020-12-08 | bull | trending | low_vol | healthy_breadth | stable |
-| 2022-06-29 | bear | trending | high_vol | weak_breadth | bear_stress_warning |
-| 2022-07-12 | bear | trending | high_vol | weak_breadth | bear_stress_warning |
-| 2023-12-19 | bull | trending | low_vol | healthy_breadth | stable |
+| 2017-06-01 | bull | trending | low_vol | healthy_breadth | stable |
+| 2018-02-05 (Volmageddon) | bull | transition | crisis_vol | **pin during fixture verification** | crisis_override |
+| 2018-12-24 | bear | trending | high_vol | weak_breadth | bear_stress_warning |
+| 2019-09-13 | bull | trending | normal_vol | healthy_breadth | stable |
+| 2020-03-16 (COVID crash) | bear | transition | crisis_vol | weak_breadth | crisis_override |
+| 2020-04-10 | bear | recovery_attempt | high_vol | recovery_breadth | recovery_attempt |
+| 2021-11-15 | bull | trending | low_vol | healthy_breadth | stable |
+| 2022-06-13 | bear | trending | high_vol | weak_breadth | bear_stress_warning |
+| 2022-10-12 | bear | trending | high_vol | weak_breadth | bear_stress_warning |
+| 2024-01-16 | bull | trending | low_vol | healthy_breadth | stable |
 
-These fixtures are pinned deterministically by Slice 2 and must match `tests/fixtures/derived/golden_dates.yaml`. The deterministic rule predicates win over intuition. Do not relax expectations to make tests pass.
+These are hand-labeled expectations pending Slice 2 verification. The deterministic rule predicates win over intuition. If a slice can't pass its assigned date after verification, the bug is either the spec or the implementation — investigate before moving on. Do not relax expectations to make tests pass.
 
 After all slices ship, all 10 dates run as a regression suite on every commit.
 
