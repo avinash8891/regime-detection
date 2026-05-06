@@ -112,6 +112,43 @@ def raw_label_for_day(
     }
 
 
+def build_raw_outputs(f: TrendCharacterFeatures) -> tuple[list[TrendCharacterLabel], list[dict[str, Any]]]:
+    close = f.close
+    sma50 = f.sma_50
+    ret10 = f.return_10d
+    ret21 = f.return_21d
+    prior_dd = f.prior_63d_drawdown
+    adx = f.adx_14
+
+    valid = ~(close.isna() | sma50.isna() | ret10.isna() | ret21.isna() | prior_dd.isna() | adx.isna())
+    recovery_attempt = valid & prior_dd.le(-0.10) & close.gt(sma50) & ret10.ge(0.05)
+    trending = valid & adx.ge(20) & ret21.abs().ge(0.05)
+    chop = valid & adx.lt(20) & ret10.abs().lt(0.03) & ret21.abs().lt(0.05)
+    transition = valid & ~(recovery_attempt | trending | chop)
+
+    labels = np.full(len(close), "unknown", dtype=object)
+    labels[transition.to_numpy()] = "transition"
+    labels[chop.to_numpy()] = "chop"
+    labels[trending.to_numpy()] = "trending"
+    labels[recovery_attempt.to_numpy()] = "recovery_attempt"
+
+    evidence: list[dict[str, Any]] = []
+    for idx, label in enumerate(labels):
+        if label == "unknown":
+            evidence.append({"reason": "insufficient_history"})
+            continue
+        evidence.append(
+            {
+                "recovery_attempt": bool(recovery_attempt.iat[idx]),
+                "trending": bool(trending.iat[idx]),
+                "chop": bool(chop.iat[idx]),
+                "transition": bool(transition.iat[idx]),
+            }
+        )
+
+    return list(labels), evidence
+
+
 def classify_series(
     *,
     close: pd.Series,

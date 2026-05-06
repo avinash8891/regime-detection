@@ -26,6 +26,9 @@ def build_transition_risk_series(
     axis_bundle: AxisSeriesBundle,
 ) -> dict[date, TransitionRiskOutput]:
     sessions = list(context.sessions)
+    session_index = pd.to_datetime(sessions)
+    close_series = context.spy_ohlcv["close"].reindex(session_index)
+    sma_50_series = feature_store.sma_50.reindex(session_index)
     history = build_transition_risk_history(
         sessions=sessions,
         trend_direction_stable_by_date=axis_bundle.trend_direction.stable_labels_by_date,
@@ -39,10 +42,10 @@ def build_transition_risk_series(
         trend_character_active_by_date=axis_bundle.trend_character.active_labels_by_date,
         volatility_state_active_by_date=axis_bundle.volatility_state.active_labels_by_date,
         breadth_state_active_by_date=axis_bundle.breadth_state.active_labels_by_date,
-        close_by_date={day: float(context.spy_ohlcv["close"].loc[pd.Timestamp(day)]) for day in sessions},
+        close_by_date={day: float(value) for day, value in zip(sessions, close_series.to_numpy(), strict=True)},
         sma_50_by_date={
-            day: None if pd.isna(feature_store.sma_50.loc[pd.Timestamp(day)]) else float(feature_store.sma_50.loc[pd.Timestamp(day)])
-            for day in sessions
+            day: None if pd.isna(value) else float(value)
+            for day, value in zip(sessions, sma_50_series.to_numpy(), strict=True)
         },
         history=history,
     )
@@ -118,33 +121,45 @@ def build_transition_risk_history(
     volatility_stable_by_date: dict[date, str],
     breadth_stable_by_date: dict[date, str],
 ) -> TransitionRiskHistory:
-    stable_changed_by_date: dict[date, bool] = {}
-    days_since_axis_switch_by_date: dict[date, int | None] = {}
-    prior_bear_by_date: dict[date, bool] = {}
-    last_switch_index: int | None = None
-    stable_keys = (
-        trend_direction_stable_by_date,
-        trend_character_stable_by_date,
-        volatility_stable_by_date,
-        breadth_stable_by_date,
+    index = pd.Index(sessions)
+    stable_frame = pd.DataFrame(
+        {
+            "trend_direction": [trend_direction_stable_by_date[day] for day in sessions],
+            "trend_character": [trend_character_stable_by_date[day] for day in sessions],
+            "volatility": [volatility_stable_by_date[day] for day in sessions],
+            "breadth": [breadth_stable_by_date[day] for day in sessions],
+        },
+        index=index,
     )
-    for idx, day in enumerate(sessions):
-        stable_changed_today = False
-        if idx > 0:
-            prev_day = sessions[idx - 1]
-            stable_changed_today = any(key[day] != key[prev_day] for key in stable_keys)
-            if stable_changed_today:
-                last_switch_index = idx
-        days_since_axis_switch = None
-        if last_switch_index is not None and last_switch_index >= max(0, idx - 59):
-            days_since_axis_switch = idx - last_switch_index
-        stable_changed_by_date[day] = stable_changed_today
-        days_since_axis_switch_by_date[day] = days_since_axis_switch
-        history_start = max(0, idx - 59)
-        prior_bear_by_date[day] = any(
-            trend_direction_stable_by_date[sessions[hidx]] == "bear"
-            for hidx in range(history_start, idx + 1)
-        )
+
+    stable_changed = stable_frame.ne(stable_frame.shift(1)).any(axis=1)
+    if not stable_changed.empty:
+        stable_changed.iloc[0] = False
+
+    position = pd.Series(range(len(sessions)), index=index, dtype="int64")
+    last_switch_position = pd.Series(
+        position.where(stable_changed, -1).cummax().to_numpy(),
+        index=index,
+        dtype="int64",
+    )
+    delta = position - last_switch_position
+    within_60_sessions = last_switch_position.ge(0) & last_switch_position.ge(position - 59)
+    days_since_axis_switch = delta.where(within_60_sessions)
+
+    prior_bear = (
+        stable_frame["trend_direction"]
+        .eq("bear")
+        .rolling(window=60, min_periods=1)
+        .max()
+        .astype(bool)
+    )
+
+    stable_changed_by_date = {day: bool(value) for day, value in stable_changed.items()}
+    days_since_axis_switch_by_date = {
+        day: None if pd.isna(value) else int(value)
+        for day, value in days_since_axis_switch.items()
+    }
+    prior_bear_by_date = {day: bool(value) for day, value in prior_bear.items()}
     return TransitionRiskHistory(
         stable_changed_by_date=stable_changed_by_date,
         days_since_axis_switch_by_date=days_since_axis_switch_by_date,

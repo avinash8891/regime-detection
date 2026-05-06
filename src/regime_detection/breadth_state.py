@@ -43,7 +43,7 @@ def compute_features(*, spy_close: pd.Series, rsp_close: pd.Series) -> BreadthFe
     ratio = rsp_close / spy_close
     ratio_sma50 = ratio.rolling(50).mean()
     ratio_ret20 = ratio / ratio.shift(20) - 1
-    idx_dist = spy_close / spy_close.rolling(63).max() - 1
+    idx_dist = spy_close / spy_close.rolling(63, min_periods=50).max() - 1
     return BreadthFeatures(
         spy_close=spy_close,
         rsp_close=rsp_close,
@@ -83,6 +83,41 @@ def raw_label_for_day(f: BreadthFeatures, dt: pd.Timestamp) -> tuple[BreadthLabe
         "healthy_breadth": healthy_breadth,
         "neutral_breadth": neutral_breadth,
     }
+
+
+def build_raw_outputs(f: BreadthFeatures) -> tuple[list[BreadthLabel], list[dict[str, Any]]]:
+    ratio = f.relative_breadth_ratio
+    ratio_sma = f.relative_breadth_sma50
+    ratio_ret20 = f.relative_breadth_return_20d
+    idx_dist = f.index_distance_from_63d_high
+
+    valid = ~(ratio.isna() | ratio_sma.isna() | ratio_ret20.isna() | idx_dist.isna())
+    divergent_fragile = valid & idx_dist.ge(-0.05) & ratio.lt(ratio_sma) & ratio_ret20.le(-0.03)
+    weak_breadth = valid & ratio.lt(ratio_sma) & ratio_ret20.lt(0)
+    healthy_breadth = valid & ratio.gt(ratio_sma) & ratio_ret20.ge(0)
+    neutral_breadth = valid & ~(divergent_fragile | weak_breadth | healthy_breadth)
+
+    labels = pd.Series("unknown", index=ratio.index, dtype="object")
+    labels.loc[neutral_breadth] = "neutral_breadth"
+    labels.loc[healthy_breadth] = "healthy_breadth"
+    labels.loc[weak_breadth] = "weak_breadth"
+    labels.loc[divergent_fragile] = "divergent_fragile"
+
+    evidence: list[dict[str, Any]] = []
+    for idx, label in enumerate(labels):
+        if label == "unknown":
+            evidence.append({"reason": "insufficient_history"})
+            continue
+        evidence.append(
+            {
+                "divergent_fragile": bool(divergent_fragile.iat[idx]),
+                "weak_breadth": bool(weak_breadth.iat[idx]),
+                "healthy_breadth": bool(healthy_breadth.iat[idx]),
+                "neutral_breadth": bool(neutral_breadth.iat[idx]),
+            }
+        )
+
+    return list(labels), evidence
 
 
 def classify_series(
@@ -143,8 +178,10 @@ def classify_series(
         spy_close=spy_close,
         rsp_close=rsp_close.reindex(spy_close.index),
         as_of_date=as_of_date,
-        required_trading_days=63,
+        required_trading_days=50,
         raw_label=raw,
+        max_freshness_days=3,
+        min_completeness=0.90,
     )
 
     return BreadthStateOutput(

@@ -95,3 +95,16 @@ def test_classify_accepts_timestamp_as_of_date(market_df_for_asof) -> None:
     # Common caller input: pandas Timestamp. Must be accepted and normalized.
     out = engine.classify(as_of_date=pd.Timestamp("2026-05-05", tz="America/New_York"), market_data=df)
     assert out.as_of_date == date(2026, 5, 5)
+
+
+def test_engine_rejects_path_based_event_calendar_input(market_df_for_asof) -> None:
+    engine = RegimeEngine()
+    df = market_df_for_asof(date(2023, 12, 14))
+    event_path = Path(__file__).resolve().parent / "fixtures" / "events" / "us_events.yaml"
+
+    with pytest.raises(TypeError, match="event_calendar must be a pandas DataFrame"):
+        engine.classify(
+            as_of_date=date(2023, 12, 14),
+            market_data=df,
+            event_calendar=event_path,
+        )

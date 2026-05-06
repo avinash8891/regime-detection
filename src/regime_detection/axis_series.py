@@ -7,7 +7,7 @@ from typing import Protocol
 from regime_detection.breadth_state import (
     _RISK_RANK as BREADTH_RISK_RANK,
     _data_quality_for_asof as breadth_data_quality_for_asof,
-    raw_label_for_day as breadth_raw_label_for_day,
+    build_raw_outputs as build_breadth_raw_outputs,
 )
 from regime_detection.data_quality import assess_series_input_quality, quality_forces_unknown
 from regime_detection.event_calendar import (
@@ -24,16 +24,16 @@ from regime_detection.market_context import MarketContext
 from regime_detection.models import AxisOutput, BreadthStateOutput, DataQuality, EventCalendarOutput
 from regime_detection.trend_character import (
     _RISK_RANK as TREND_CHARACTER_RISK_RANK,
-    raw_label_for_day as trend_character_raw_label_for_day,
+    build_raw_outputs as build_trend_character_raw_outputs,
 )
 from regime_detection.trend_direction import (
     _RISK_RANK as TREND_DIRECTION_RISK_RANK,
     apply_hysteresis as apply_trend_direction_hysteresis,
-    raw_label_for_day as trend_direction_raw_label_for_day,
+    build_raw_outputs as build_trend_direction_raw_outputs,
 )
 from regime_detection.volatility_state import (
     _RISK_RANK as VOLATILITY_RISK_RANK,
-    raw_label_for_day as volatility_raw_label_for_day,
+    build_raw_outputs as build_volatility_raw_outputs,
 )
 
 
@@ -61,12 +61,7 @@ class TrendDirectionSeriesClassifier:
     def build(self, context: MarketContext, feature_store: FeatureStore) -> AxisSeriesResult:
         close = context.spy_ohlcv["close"]
         features = feature_store.trend_direction
-        raw_labels: list[str] = []
-        raw_evidence: list[dict[str, object]] = []
-        for day in close.index:
-            label, evidence = trend_direction_raw_label_for_day(features, day)
-            raw_labels.append(label)
-            raw_evidence.append(evidence)
+        raw_labels, raw_evidence = build_trend_direction_raw_outputs(features)
         stable_labels, active_labels = apply_trend_direction_hysteresis(
             dates=close.index,
             raw_labels=raw_labels,
@@ -92,12 +87,7 @@ class TrendCharacterSeriesClassifier:
     def build(self, context: MarketContext, feature_store: FeatureStore) -> AxisSeriesResult:
         close = context.spy_ohlcv["close"]
         features = feature_store.trend_character
-        raw_labels: list[str] = []
-        raw_evidence: list[dict[str, object]] = []
-        for day in close.index:
-            label, evidence = trend_character_raw_label_for_day(features, day)
-            raw_labels.append(label)
-            raw_evidence.append(evidence)
+        raw_labels, raw_evidence = build_trend_character_raw_outputs(features)
         stable_labels, active_labels = apply_asymmetric_hysteresis(
             raw_labels=raw_labels,
             risk_rank=TREND_CHARACTER_RISK_RANK,
@@ -123,12 +113,7 @@ class VolatilitySeriesClassifier:
     def build(self, context: MarketContext, feature_store: FeatureStore) -> AxisSeriesResult:
         close = context.spy_ohlcv["close"]
         features = feature_store.volatility
-        raw_labels: list[str] = []
-        raw_evidence: list[dict[str, object]] = []
-        for day in close.index:
-            label, evidence = volatility_raw_label_for_day(features, day)
-            raw_labels.append(label)
-            raw_evidence.append(evidence)
+        raw_labels, raw_evidence = build_volatility_raw_outputs(features)
         stable_labels, active_labels = apply_asymmetric_hysteresis(
             raw_labels=raw_labels,
             risk_rank=VOLATILITY_RISK_RANK,
@@ -155,12 +140,7 @@ class BreadthSeriesClassifier:
         spy_close = context.spy_ohlcv["close"]
         rsp_close = context.rsp_close.reindex(context.spy_ohlcv.index)
         features = feature_store.breadth
-        raw_labels: list[str] = []
-        raw_evidence: list[dict[str, object]] = []
-        for day in spy_close.index:
-            label, evidence = breadth_raw_label_for_day(features, day)
-            raw_labels.append(label)
-            raw_evidence.append(evidence)
+        raw_labels, raw_evidence = build_breadth_raw_outputs(features)
         stable_labels, active_labels = apply_asymmetric_hysteresis(
             raw_labels=raw_labels,
             risk_rank=BREADTH_RISK_RANK,
@@ -202,7 +182,7 @@ class BreadthSeriesClassifier:
                         spy_close=spy_close,
                         rsp_close=rsp_close,
                         as_of_date=day,
-                        required_trading_days=63,
+                        required_trading_days=50,
                         raw_label=raw,
                         max_freshness_days=context.config.data_quality.max_freshness_days,
                         min_completeness=context.config.data_quality.min_completeness,

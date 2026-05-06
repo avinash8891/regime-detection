@@ -39,20 +39,20 @@ def test_trend_character_adx_cold_start_stays_nan(raw_market_frames) -> None:
     assert pd.isna(features.adx_14.iloc[13])
 
 
-def test_breadth_data_quality_degraded_when_rsp_window_is_incomplete(market_df_for_asof) -> None:
+def test_breadth_data_quality_returns_unknown_when_rsp_gaps_break_required_features(market_df_for_asof) -> None:
     as_of = date(2023, 12, 14)
     market_df = market_df_for_asof(as_of)
     rsp_mask = market_df["symbol"] == "RSP"
-    recent_rsp_idx = market_df[rsp_mask].tail(63).index[:7]
+    recent_rsp_idx = market_df[rsp_mask].tail(50).index[:7]
     market_df.loc[recent_rsp_idx, "close"] = pd.NA
 
     from regime_detection.engine import RegimeEngine
 
     out = RegimeEngine().classify(as_of_date=as_of, market_data=market_df)
 
-    assert out.breadth_state.active_label != "unknown"
-    assert out.breadth_state.data_quality.status == "degraded"
-    assert out.breadth_state.data_quality.reason == "incomplete_data"
+    assert out.breadth_state.active_label == "unknown"
+    assert out.breadth_state.data_quality.status == "insufficient_history"
+    assert out.breadth_state.data_quality.reason == "required_feature_is_nan"
 
 
 def test_trend_direction_data_quality_insufficient_data_can_override_non_unknown_label(market_df_for_asof) -> None:

@@ -37,42 +37,51 @@ def build_regime_timeline(
     )
 
     selected_days = list(working_context.sessions[-lookback_days:])
+    trend_direction_outputs = axis_bundle.trend_direction.outputs_by_date
+    trend_character_outputs = axis_bundle.trend_character.outputs_by_date
+    volatility_outputs = axis_bundle.volatility_state.outputs_by_date
+    breadth_outputs = axis_bundle.breadth_state.outputs_by_date
+    event_outputs = axis_bundle.event_calendar
+    network_fragility = LabelReasonOutput(
+        label="not_implemented_v1",
+        reason="breadth_state_used_as_v1_fragility_proxy",
+    )
+
     outputs: list[RegimeOutput] = []
     for day in selected_days:
-        event_output = axis_bundle.event_calendar[day]
+        trend_direction_output = trend_direction_outputs[day]
+        trend_character_output = trend_character_outputs[day]
+        volatility_output = volatility_outputs[day]
+        breadth_output = breadth_outputs[day]
+        event_output = event_outputs[day]
         transition_output = transition_risk[day]
-        strategy_response = build_strategy_response(
-            trend_direction_active=axis_bundle.trend_direction.outputs_by_date[day].active_label,
-            trend_character_active=axis_bundle.trend_character.outputs_by_date[day].active_label,
-            volatility_state_active=axis_bundle.volatility_state.outputs_by_date[day].active_label,
-            breadth_state_active=axis_bundle.breadth_state.outputs_by_date[day].active_label,
-            transition_risk_label=transition_output.label,
-            event_calendar_active=event_output.active_label,
-        )
-        structural = StructuralCausalState(
-            event_calendar=event_output,
-            monetary_pressure=LabelReasonOutput(
-                label="unknown",
-                reason="not_implemented_v1",
-            ),
-        )
         outputs.append(
             RegimeOutput(
                 engine_version=engine_version(),
                 config_version=working_context.config.config_version,
                 as_of_date=day,
                 market="SPY",
-                trend_direction=axis_bundle.trend_direction.outputs_by_date[day],
-                trend_character=axis_bundle.trend_character.outputs_by_date[day],
-                volatility_state=axis_bundle.volatility_state.outputs_by_date[day],
-                breadth_state=axis_bundle.breadth_state.outputs_by_date[day],
-                structural_causal_state=structural,
-                network_fragility=LabelReasonOutput(
-                    label="not_implemented_v1",
-                    reason="breadth_state_used_as_v1_fragility_proxy",
+                trend_direction=trend_direction_output,
+                trend_character=trend_character_output,
+                volatility_state=volatility_output,
+                breadth_state=breadth_output,
+                structural_causal_state=StructuralCausalState(
+                    event_calendar=event_output,
+                    monetary_pressure=LabelReasonOutput(
+                        label="unknown",
+                        reason="not_implemented_v1",
+                    ),
                 ),
+                network_fragility=network_fragility,
                 transition_risk=transition_output,
-                strategy_response=strategy_response,
+                strategy_response=build_strategy_response(
+                    trend_direction_active=trend_direction_output.active_label,
+                    trend_character_active=trend_character_output.active_label,
+                    volatility_state_active=volatility_output.active_label,
+                    breadth_state_active=breadth_output.active_label,
+                    transition_risk_label=transition_output.label,
+                    event_calendar_active=event_output.active_label,
+                ),
             )
         )
 
