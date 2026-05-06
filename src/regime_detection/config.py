@@ -34,5 +34,15 @@ def load_regime_config(path: str | Path) -> RegimeConfig:
 
 
 def default_config_path() -> Path:
-    # Source-tree default: configs live next to the package code.
-    return Path(__file__).resolve().parent / "configs" / "core3-v1.0.0.yaml"
+    """
+    Default config resolution:
+    1. If running from a repo checkout with a top-level `configs/core3-v1.0.0.yaml`, prefer it.
+       This is the human-edited config in this repository.
+    2. Otherwise fall back to the packaged config shipped with the library.
+    """
+    here = Path(__file__).resolve()
+    repo_root = here.parents[2]
+    repo_cfg = repo_root / "configs" / "core3-v1.0.0.yaml"
+    if repo_cfg.exists():
+        return repo_cfg
+    return here.parent / "configs" / "core3-v1.0.0.yaml"
