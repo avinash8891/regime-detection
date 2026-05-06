@@ -57,8 +57,6 @@ class RegimeEngine:
         require_nyse_trading_day(as_of_date)
 
         _require_market_data_contract(market_data, as_of_date=as_of_date)
-        if event_calendar is None:
-            raise ValueError("event_calendar is required in V1 (Slice 7). Pass an events DataFrame.")
 
         # Slice 3: Trend Direction implemented; remaining axes stay unknown until their slices land.
         spy_ohlcv = _spy_ohlcv_frame(market_data, as_of_date=as_of_date)
