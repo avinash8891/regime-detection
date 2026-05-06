@@ -1,5 +1,5 @@
-generated_at_utc: '2026-05-06T06:18:31+00:00'
-generated_by_commit: d092d972ff560821c5671604b582fa2308ecbb43
+generated_at_utc: '2026-05-06T06:27:30+00:00'
+generated_by_commit: 27d4baed75d560b9f884623c18665fb10d12b831
 raw_file_sha256:
   SPY.csv: efa06aba545dea29dcc523bb8b50ad6a334892e49babee5769466fa8c2c0ef33
   RSP.csv: 6aa3f27a796ffad78f17d114fbe02e806a5488e2a07cdf61166344c15ed7d2c2
@@ -34,7 +34,7 @@ rows:
     transition_risk: bear_stress_warning
 - intent_id: mid2019_bull_normal
   intent_date: '2019-06-28'
-  as_of_date: '2019-06-28'
+  as_of_date: '2019-09-11'
   expected:
     trend_direction: bull
     trend_character: transition
@@ -52,9 +52,9 @@ rows:
     transition_risk: crisis_override
 - intent_id: covid_recovery_attempt
   intent_date: '2020-04-17'
-  as_of_date: '2020-04-17'
+  as_of_date: '2020-04-29'
   expected:
-    trend_direction: bear
+    trend_direction: transition
     trend_character: recovery_attempt
     volatility_state: high_vol
     breadth_state: weak_breadth

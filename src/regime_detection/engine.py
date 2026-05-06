@@ -21,6 +21,7 @@ from regime_detection.models import (
 from regime_detection.trend_direction import classify_series as classify_trend_direction
 from regime_detection.trend_character import classify_series as classify_trend_character
 from regime_detection.volatility_state import classify_series as classify_volatility_state
+from regime_detection.breadth_state import classify_series as classify_breadth_state
 from regime_detection.versioning import engine_version
 
 
@@ -79,6 +80,14 @@ class RegimeEngine:
             as_of_date=as_of_date,
             deescalation_days=cfg.hysteresis.volatility_deescalation_days,
         )
+        # Slice 6: breadth_state (ETF proxy) implemented.
+        rsp_close = _symbol_close_series(market_data, symbol="RSP", as_of_date=as_of_date)
+        breadth_state = classify_breadth_state(
+            spy_close=spy_close,
+            rsp_close=rsp_close,
+            as_of_date=as_of_date,
+            deescalation_days=cfg.hysteresis.breadth_deescalation_days,
+        )
 
         unknown_axis = _unknown_axis_output()
         unknown_breadth = _unknown_breadth_output()
@@ -95,7 +104,7 @@ class RegimeEngine:
             trend_direction=trend_direction,
             trend_character=trend_character,
             volatility_state=volatility_state,
-            breadth_state=unknown_breadth,
+            breadth_state=breadth_state,
             structural_causal_state=structural,
             transition_risk=TransitionRiskOutput(
                 label="unknown",
@@ -145,6 +154,18 @@ def _spy_ohlcv_frame(df: pd.DataFrame, *, as_of_date: date) -> pd.DataFrame:
     s = s[s["date"].dt.date <= as_of_date]
     s = s.set_index("date")
     return s[["open", "high", "low", "close", "volume"]]
+
+
+def _symbol_close_series(df: pd.DataFrame, *, symbol: str, as_of_date: date) -> pd.Series:
+    s = df[df["symbol"] == symbol].copy()
+    if s.empty:
+        raise ValueError(f"market_data missing required symbol for V1: {symbol}")
+    s["date"] = pd.to_datetime(s["date"])
+    s = s.sort_values("date")
+    s = s[s["date"].dt.date <= as_of_date]
+    out = pd.Series(s["close"].to_numpy(), index=pd.to_datetime(s["date"]))
+    out.name = "close"
+    return out
 
 
 def _unknown_data_quality(*, reason: str, status: str) -> DataQuality:
