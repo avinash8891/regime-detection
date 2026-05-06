@@ -1,0 +1,29 @@
+tests/fixtures/verification/golden_dates_report.yaml
+  6284b163c8208cf2 1-557
+scripts/verify_fixtures.py
+  6284b163c8208cf2 1-720
+tests/fixtures/derived/golden_dates.yaml
+  6284b163c8208cf2 1-97
+tests/test_fixture_verification.py
+  6284b163c8208cf2 1-37
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.3.4",
+  "base_commit_sha": "954ba0ba432a4bd19faca3ce49ff39b39ceb5096",
+  "prompts": {
+    "6284b163c8208cf2": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019df886-7a0b-7b10-a22d-6f6c96d80945",
+        "model": "gpt-5.2"
+      },
+      "human_author": "Avinash Vankadaru",
+      "messages": [],
+      "total_additions": 1418,
+      "total_deletions": 7,
+      "accepted_lines": 1411,
+      "overriden_lines": 0
+    }
+  }
+}
