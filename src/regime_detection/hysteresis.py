@@ -22,9 +22,6 @@ def apply_asymmetric_hysteresis(
         raise ValueError("deescalation_days must be >= 0")
     if not raw_labels:
         raise ValueError("raw_labels must be non-empty")
-    unknown = [lbl for lbl in set(raw_labels) if lbl not in risk_rank]
-    if unknown:
-        raise ValueError(f"risk_rank missing labels: {sorted(unknown)}")
 
     stable: list[TLabel] = []
     active: list[TLabel] = []
@@ -67,3 +64,4 @@ def apply_asymmetric_hysteresis(
             active.append(stable_label)
 
     return stable, active
+

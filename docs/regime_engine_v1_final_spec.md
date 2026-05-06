@@ -1199,7 +1199,7 @@ tests/fixtures/raw/*.csv -diff
 | 2020-03-30 (COVID crash) | bear | trending | crisis_vol | weak_breadth | crisis_override |
 | 2020-04-17 | bear | recovery_attempt | high_vol | weak_breadth | recovery_attempt |
 | 2020-12-08 | bull | trending | low_vol | healthy_breadth | stable |
-| 2022-06-29 | bear | transition | crisis_vol | weak_breadth | bear_stress_warning |
+| 2022-06-29 | bear | transition | high_vol | weak_breadth | bear_stress_warning |
 | 2022-07-12 | bear | trending | high_vol | weak_breadth | bear_stress_warning |
 | 2023-12-19 | bull | transition | low_vol | healthy_breadth | stable |
 

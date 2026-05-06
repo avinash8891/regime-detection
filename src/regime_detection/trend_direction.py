@@ -110,7 +110,6 @@ def classify_series(
     """
     s = close.copy()
     s.index = pd.to_datetime(s.index)
-    s = s.sort_index()
     dt = pd.Timestamp(as_of_date)
     if dt not in s.index:
         raise ValueError(f"as_of_date missing from close series: {as_of_date.isoformat()}")
