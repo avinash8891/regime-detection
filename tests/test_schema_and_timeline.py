@@ -55,3 +55,16 @@ def test_classify_window_returns_one_output_per_nyse_trading_day() -> None:
     assert timeline.start_date == expected_days[0]
     assert timeline.end_date == end_date
 
+
+def test_classify_window_uses_lookback_days_not_fixed_calendar_span() -> None:
+    engine = RegimeEngine()
+    end_date = date(2023, 12, 14)
+    market_data = _market_df_until(end_date)
+
+    timeline = engine.classify_window(
+        end_date=end_date,
+        market_data=market_data,
+        lookback_days=30,
+    )
+
+    assert len(timeline.outputs) == 30

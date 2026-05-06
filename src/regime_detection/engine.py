@@ -196,11 +196,20 @@ class RegimeEngine:
         require_nyse_trading_day(end_date)
         from regime_detection.calendar import nyse_calendar
 
+        if lookback_days <= 0:
+            raise ValueError(f"lookback_days must be > 0. Got: {lookback_days}")
+        candidate_start = end_date - pd.Timedelta(days=max(30, lookback_days * 3))
         sessions = list(
             nyse_calendar()
-            .schedule(start_date=end_date - pd.Timedelta(days=30), end_date=end_date)
+            .schedule(start_date=candidate_start, end_date=end_date)
             .index.date
         )
+        if len(sessions) < lookback_days:
+            raise ValueError(
+                "Insufficient NYSE trading-day coverage for requested lookback_days. "
+                f"Requested={lookback_days}, available={len(sessions)}, "
+                f"candidate_start={candidate_start.date().isoformat()}, end_date={end_date.isoformat()}."
+            )
         selected = sessions[-lookback_days:]
         outputs = [
             self.classify(

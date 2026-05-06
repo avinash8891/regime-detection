@@ -4,6 +4,7 @@ from datetime import date
 from pathlib import Path
 
 import pandas as pd
+import pytest
 
 from regime_detection.config import load_default_regime_config
 from regime_detection.event_calendar import classify_event_calendar
@@ -25,6 +26,23 @@ def test_load_event_calendar_csv_defaults_publication_date() -> None:
 
     nfp_row = df[df["type"] == "NFP"].iloc[0]
     assert nfp_row["publication_date"] == date(2023, 10, 22)
+
+
+def test_load_event_calendar_rejects_malformed_publication_date() -> None:
+    df = pd.DataFrame(
+        [
+            {
+                "date": "2024-01-19",
+                "market": "US",
+                "type": "FOMC",
+                "importance": "high",
+                "publication_date": "not-a-date",
+            }
+        ]
+    )
+
+    with pytest.raises(ValueError):
+        load_event_calendar(df)
 
 
 def test_event_calendar_uses_publication_date_and_precedence() -> None:
@@ -93,4 +111,3 @@ def test_event_calendar_uses_holiday_adjusted_monthly_expiry_rule() -> None:
     )
 
     assert out.active_label == "expiry_week"
-

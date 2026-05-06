@@ -50,7 +50,13 @@ def _validate_event_df(df: pd.DataFrame, *, market: str) -> pd.DataFrame:
 
     out["date"] = pd.to_datetime(out["date"], errors="raise").dt.date
     if "publication_date" in out.columns:
-        out["publication_date"] = pd.to_datetime(out["publication_date"], errors="coerce").dt.date.astype("object")
+        provided_mask = out["publication_date"].notna()
+        parsed_publication = pd.to_datetime(out["publication_date"], errors="coerce")
+        bad_mask = provided_mask & parsed_publication.isna()
+        if bad_mask.any():
+            bad_values = sorted({str(value) for value in out.loc[bad_mask, "publication_date"].tolist()})
+            raise ValueError(f"event_calendar contains malformed publication_date values: {bad_values}")
+        out["publication_date"] = parsed_publication.dt.date.astype("object")
     else:
         out["publication_date"] = None
 
