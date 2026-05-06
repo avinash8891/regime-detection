@@ -56,7 +56,7 @@ def compute_features(*, close: pd.Series, vix_proxy_close: pd.Series | None) -> 
     return_5d = close / close.shift(5) - 1
     return_21d = close / close.shift(21) - 1
 
-    daily_returns = close.pct_change()
+    daily_returns = close.pct_change(fill_method=None)
     realized_vol_21d = daily_returns.rolling(21).std() * np.sqrt(252)
     realized_vol_percentile_252d = realized_vol_21d.rolling(252, min_periods=252).apply(_pct_rank_last, raw=True)
 

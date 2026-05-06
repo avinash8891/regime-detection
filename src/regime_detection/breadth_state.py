@@ -6,6 +6,7 @@ from typing import Any, Literal
 
 import pandas as pd
 
+from regime_detection.data_quality import assess_series_input_quality
 from regime_detection.hysteresis import apply_asymmetric_hysteresis
 from regime_detection.models import BreadthStateOutput, DataQuality
 
@@ -168,33 +169,15 @@ def _data_quality_for_asof(
     as_of_date: date,
     required_trading_days: int,
     raw_label: BreadthLabel,
+    max_freshness_days: int,
+    min_completeness: float,
 ) -> DataQuality:
-    dt = pd.Timestamp(as_of_date)
-    w_spy = spy_close.loc[:dt].tail(required_trading_days)
-    w_rsp = rsp_close.loc[:dt].tail(required_trading_days)
-    c_spy = float(w_spy.notna().mean()) if len(w_spy) else 0.0
-    c_rsp = float(w_rsp.notna().mean()) if len(w_rsp) else 0.0
-    completeness = min(c_spy, c_rsp)
-
-    if raw_label == "unknown":
-        return DataQuality(
-            status="insufficient_history",
-            freshness_days=None,
-            completeness=None,
-            reason="required_feature_is_nan",
-        )
-    if completeness < 0.70:
-        return DataQuality(
-            status="insufficient_data",
-            freshness_days=0,
-            completeness=completeness,
-            reason="insufficient_data",
-        )
-    if completeness < 0.90:
-        return DataQuality(
-            status="degraded",
-            freshness_days=0,
-            completeness=completeness,
-            reason="incomplete_data",
-        )
-    return DataQuality(status="ok", freshness_days=0, completeness=completeness, reason=None)
+    return assess_series_input_quality(
+        as_of_date=as_of_date,
+        required_inputs=[spy_close, rsp_close],
+        required_trading_days=required_trading_days,
+        raw_label=raw_label,
+        unknown_reason="required_feature_is_nan",
+        max_freshness_days=max_freshness_days,
+        min_completeness=min_completeness,
+    )

@@ -54,11 +54,12 @@ V1 does **not** ship: PIT constituent breadth, monetary pressure, macro inferenc
 ```python
 RegimeEngine.classify(
     as_of_date: date,
-    market_data: pd.DataFrame,
+    market_data: pd.DataFrame | None = None,
     breadth_data: pd.DataFrame | None = None,
     vix_data: pd.DataFrame | None = None,
     event_calendar: pd.DataFrame | None = None,
     config: RegimeConfig | None = None,
+    context: MarketContext | None = None,
 ) -> RegimeOutput
 ```
 
@@ -73,6 +74,8 @@ Rules:
 - Do not roll non-trading `as_of_date` values backward or forward.
 - Live mode = `classify(as_of_date=today)`.
 - `classify(as_of_date)` is a convenience wrapper over the timeline pipeline, not a separate execution path.
+- Provide either raw inputs (`market_data`, optional `vix_data`, optional `event_calendar`) or a precomputed `context`, not both.
+- When `context` is supplied, `end_date` / `as_of_date` must be an NYSE session already present in that context and must not be later than `context.end_date`.
 
 V1 input contract:
 
@@ -87,9 +90,10 @@ V1 helper:
 ```python
 RegimeEngine.classify_window(
     end_date: date,
-    market_data: pd.DataFrame,
+    market_data: pd.DataFrame | None = None,
     lookback_days: int,
     ...
+    context: MarketContext | None = None,
 ) -> RegimeTimeline
 ```
 
@@ -120,6 +124,21 @@ RegimeEngine.classify_window(
 ```
 
 The two entry points share one execution pipeline. There is no separate per-call classification path.
+
+`MarketContext` is the reusable prevalidated execution object for the shared replay pipeline:
+
+```python
+class MarketContext(BaseModel):
+    end_date: date
+    config: RegimeConfig
+    sessions: tuple[date, ...]
+    spy_ohlcv: pd.DataFrame
+    rsp_close: pd.Series
+    vix_proxy_close: pd.Series | None
+    normalized_event_calendar: pd.DataFrame | None = None
+```
+
+It may be built once and reused across point-in-time and timeline calls, but outputs remain a pure function of the provided context slice and config.
 
 V1.1 helper (deferred):
 
@@ -720,7 +739,7 @@ breadth_risk_rank:
 
 ### 7.2 Event Calendar
 
-Source: manually maintained YAML/CSV loaded and normalized by a helper outside the engine. `RegimeEngine.classify(...)` accepts a normalized DataFrame only; it does not perform file I/O.
+Source: manually maintained YAML/CSV loaded and normalized by a helper outside the engine. `RegimeEngine.classify(...)` and `classify_window(...)` remain DataFrame-only for `event_calendar`; they do not accept filesystem paths or perform file I/O. The engine may internally normalize and validate a supplied DataFrame into the canonical event-calendar contract before replay.
 
 ```yaml
 events:
@@ -796,6 +815,7 @@ V1 event-calendar decisions:
 - Scheduled event dates may be used even when `event_date > as_of_date`, but only when `publication_date <= as_of_date`. Outcomes/results are never available early.
 - `expiry_week` and `earnings_season` are config-defined rules in `core3-v1.0.0.yaml`, not event-calendar rows.
 - `RegimeEngine.classify(...)` stays DataFrame-only for `event_calendar`; file loading belongs outside the engine through a separate loader such as `load_event_calendar()`.
+- The engine may accept either an already normalized DataFrame or a raw event-calendar DataFrame with the required V1 columns and normalize it internally through the same canonical loader/validator.
 
 ### 7.3 Monetary Pressure (Deferred)
 

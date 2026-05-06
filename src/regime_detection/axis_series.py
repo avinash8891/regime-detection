@@ -9,6 +9,7 @@ from regime_detection.breadth_state import (
     _data_quality_for_asof as breadth_data_quality_for_asof,
     raw_label_for_day as breadth_raw_label_for_day,
 )
+from regime_detection.data_quality import assess_series_input_quality, quality_forces_unknown
 from regime_detection.event_calendar import (
     _PRECEDENCE,
     _TYPE_TO_LABEL,
@@ -79,12 +80,11 @@ class TrendDirectionSeriesClassifier:
             raw_evidence=raw_evidence,
             risk_rank=TREND_DIRECTION_RISK_RANK,
             deescalation_days=context.config.hysteresis.trend_direction_deescalation_days,
-            unknown_quality=DataQuality(
-                status="insufficient_history",
-                freshness_days=None,
-                completeness=None,
-                reason="required_feature_is_nan",
-            ),
+            required_inputs=[close],
+            required_trading_days=200,
+            max_freshness_days=context.config.data_quality.max_freshness_days,
+            min_completeness=context.config.data_quality.min_completeness,
+            unknown_reason="required_feature_is_nan",
         )
 
 
@@ -111,12 +111,11 @@ class TrendCharacterSeriesClassifier:
             raw_evidence=raw_evidence,
             risk_rank=TREND_CHARACTER_RISK_RANK,
             deescalation_days=context.config.hysteresis.trend_character_deescalation_days,
-            unknown_quality=DataQuality(
-                status="insufficient_history",
-                freshness_days=0,
-                completeness=1.0,
-                reason="insufficient_history",
-            ),
+            required_inputs=[close, context.spy_ohlcv["high"], context.spy_ohlcv["low"]],
+            required_trading_days=63,
+            max_freshness_days=context.config.data_quality.max_freshness_days,
+            min_completeness=context.config.data_quality.min_completeness,
+            unknown_reason="insufficient_history",
         )
 
 
@@ -143,12 +142,11 @@ class VolatilitySeriesClassifier:
             raw_evidence=raw_evidence,
             risk_rank=VOLATILITY_RISK_RANK,
             deescalation_days=context.config.hysteresis.volatility_deescalation_days,
-            unknown_quality=DataQuality(
-                status="insufficient_history",
-                freshness_days=None,
-                completeness=None,
-                reason="required_feature_is_nan",
-            ),
+            required_inputs=[close],
+            required_trading_days=252,
+            max_freshness_days=context.config.data_quality.max_freshness_days,
+            min_completeness=context.config.data_quality.min_completeness,
+            unknown_reason="required_feature_is_nan",
         )
 
 
@@ -206,6 +204,8 @@ class BreadthSeriesClassifier:
                         as_of_date=day,
                         required_trading_days=63,
                         raw_label=raw,
+                        max_freshness_days=context.config.data_quality.max_freshness_days,
+                        min_completeness=context.config.data_quality.min_completeness,
                     ),
                 )
             outputs_by_date[day] = output
@@ -316,21 +316,35 @@ def _build_axis_outputs(
     raw_evidence: list[dict[str, object]],
     risk_rank: dict[str, int],
     deescalation_days: int,
-    unknown_quality: DataQuality,
+    required_inputs: list,
+    required_trading_days: int,
+    max_freshness_days: int,
+    min_completeness: float,
+    unknown_reason: str,
 ) -> AxisSeriesResult:
     outputs_by_date: dict[date, AxisOutput] = {}
     stable_by_date: dict[date, str] = {}
     active_by_date: dict[date, str] = {}
+    input_by_date = [series for series in required_inputs]
     for day, raw, stable, active, evidence in zip(
         dates, raw_labels, stable_labels, active_labels, raw_evidence, strict=True
     ):
-        if raw == "unknown":
+        dq = assess_series_input_quality(
+            as_of_date=day,
+            required_inputs=input_by_date,
+            required_trading_days=required_trading_days,
+            raw_label=raw,
+            unknown_reason=unknown_reason,
+            max_freshness_days=max_freshness_days,
+            min_completeness=min_completeness,
+        )
+        if quality_forces_unknown(dq):
             output = AxisOutput(
                 raw_label="unknown",
                 stable_label="unknown",
                 active_label="unknown",
-                evidence={"reason": "insufficient_history"},
-                data_quality=unknown_quality,
+                evidence={"reason": dq.reason},
+                data_quality=dq,
             )
         else:
             output = AxisOutput(
@@ -342,7 +356,7 @@ def _build_axis_outputs(
                     "risk_rank": risk_rank,
                     "deescalation_days": deescalation_days,
                 },
-                data_quality=DataQuality(status="ok", freshness_days=0, completeness=1.0, reason=None),
+                data_quality=dq,
             )
         outputs_by_date[day] = output
         stable_by_date[day] = output.stable_label
