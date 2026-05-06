@@ -42,10 +42,19 @@ class EventCalendarOutput(BaseModel):
     active_label: str
     evidence: dict[str, Any]
 
+
+class LabelReasonOutput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    label: str
+    reason: str
+
+
 class StructuralCausalState(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     event_calendar: EventCalendarOutput
+    monetary_pressure: LabelReasonOutput
 
 
 class TransitionRiskOutput(BaseModel):
@@ -103,6 +112,7 @@ class RegimeOutput(BaseModel):
     volatility_state: AxisOutput
     breadth_state: BreadthStateOutput
     structural_causal_state: StructuralCausalState
+    network_fragility: LabelReasonOutput
     transition_risk: TransitionRiskOutput
     strategy_response: StrategyResponse
 
@@ -115,3 +125,15 @@ class RegimeOutput(BaseModel):
     def model_dump_json(self, *args: Any, **kwargs: Any) -> str:
         kwargs.setdefault("exclude_none", True)
         return super().model_dump_json(*args, **kwargs)
+
+
+class RegimeTimeline(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    engine_version: str
+    config_version: str
+    market: str
+    start_date: date
+    end_date: date
+    trading_calendar: str
+    outputs: list[RegimeOutput]

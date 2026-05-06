@@ -66,7 +66,9 @@ Rules:
 
 - Use only data with date `<= as_of_date`.
 - Never use future constituent membership.
-- Never use future event data.
+- Never use future event outcomes or realized values.
+- For scheduled event-calendar rows, lookahead is bounded by `publication_date`, not `event_date`. A future scheduled event may be used only when `publication_date <= as_of_date`.
+- For V1 hand-maintained event YAML/CSV, including a scheduled event in the file is treated as the publication act. Coding agents may still populate `publication_date` explicitly when desired.
 - `as_of_date` must be an NYSE trading day. If it is not, raise `ValueError` with the nearest prior and next NYSE trading days in the message.
 - Do not roll non-trading `as_of_date` values backward or forward.
 - Live mode = `classify(as_of_date=today)`.
@@ -702,7 +704,7 @@ breadth_risk_rank:
 
 ### 7.2 Event Calendar
 
-Source: manually maintained YAML/CSV. Coding agent must accept either format.
+Source: manually maintained YAML/CSV loaded and normalized by a helper outside the engine. `RegimeEngine.classify(...)` accepts a normalized DataFrame only; it does not perform file I/O.
 
 ```yaml
 events:
@@ -715,6 +717,18 @@ events:
     type: "CPI"
     importance: "high"
 ```
+
+Normalized DataFrame contract:
+
+```text
+market
+type
+importance
+date              # required for FOMC, CPI, NFP
+publication_date  # required by the normalized contract; loader may default it
+```
+
+Rows may leave non-applicable columns null only when a field is not relevant to that event type. Validation is event-type specific.
 
 Labels:
 ```text
@@ -731,11 +745,11 @@ unknown
 
 Rules:
 ```text
-fed_week:    as_of_date within [-2, +2] NYSE trading days of FOMC
-cpi_week:    as_of_date within [-1, +1] NYSE trading days of CPI release
-nfp_week:    as_of_date within [-1, +1] NYSE trading days of NFP release
-expiry_week: as_of_date inside configured monthly options expiry window
-earnings_season: configured per market
+fed_week:    as_of_date within [-2, +2] NYSE trading days of FOMC, provided publication_date <= as_of_date
+cpi_week:    as_of_date within [-1, +1] NYSE trading days of CPI release, provided publication_date <= as_of_date
+nfp_week:    as_of_date within [-1, +1] NYSE trading days of NFP release, provided publication_date <= as_of_date
+expiry_week: as_of_date within config expiry_rules.monthly_options.window_trading_days around the monthly expiry date derived by rule=third_friday_of_month; V1 default is [-2, 0]
+earnings_season: derived from config earnings_seasons, not from event rows
 ```
 
 Precedence:
@@ -754,6 +768,18 @@ If multiple event windows match, `raw_label`, `stable_label`, and `active_label`
 ```
 
 Additional event-specific evidence such as `days_to_fomc` may be included when computable from the event calendar. Importance does not override the hardcoded precedence in V1.
+
+Publication-date defaults for the loader:
+
+- For FOMC, CPI, and NFP rows, if `publication_date` is absent, default it to `event.date - 90 calendar days`.
+- For ad-hoc events, if `publication_date` is absent, default it to `event.date`.
+- If the normalized event calendar contains an event dated more than 90 calendar days after `as_of_date`, the engine or loader may emit a warning for operator review. This does not fail classification.
+
+V1 event-calendar decisions:
+
+- Scheduled event dates may be used even when `event_date > as_of_date`, but only when `publication_date <= as_of_date`. Outcomes/results are never available early.
+- `expiry_week` and `earnings_season` are config-defined rules in `core3-v1.0.0.yaml`, not event-calendar rows.
+- `RegimeEngine.classify(...)` stays DataFrame-only for `event_calendar`; file loading belongs outside the engine through a separate loader such as `load_event_calendar()`.
 
 ### 7.3 Monetary Pressure (Deferred)
 

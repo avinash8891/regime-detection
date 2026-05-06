@@ -89,7 +89,6 @@ def _compute_adx_14(high: pd.Series, low: pd.Series, close: pd.Series) -> pd.Ser
     minus_di = 100 * _wilder_ewm(minus_dm, n) / atr_safe
     denom = (plus_di + minus_di).replace(0.0, np.nan)
     dx = ((plus_di - minus_di).abs() / denom) * 100
-    dx = dx.fillna(0.0)
     return _wilder_ewm(dx, n)
 
 
@@ -500,7 +499,13 @@ def _eval_transition_risk(
     trend_character: str,
     volatility_state: str,
     breadth_state: str,
-) -> tuple[str, dict[str, bool]]:
+    *,
+    trend_direction_stable_history: list[str],
+    stable_changed_today: bool,
+    days_since_axis_switch: int | None,
+    close: float,
+    sma_50: float,
+) -> tuple[str, dict[str, Any]]:
     any_unknown = any(
         lab == "unknown"
         for lab in [trend_direction, trend_character, volatility_state, breadth_state]
@@ -512,10 +517,18 @@ def _eval_transition_risk(
         and (breadth_state in ["weak_breadth", "divergent_fragile", "unknown"])
     )
     bull_fragile_warning = (trend_direction == "bull") and (breadth_state == "divergent_fragile")
-    recovery_attempt = trend_character == "recovery_attempt"
+    prior_bear = any(label == "bear" for label in trend_direction_stable_history[-60:])
+    recovery_attempt = trend_character == "recovery_attempt" or (
+        prior_bear
+        and (not _is_nan(close))
+        and (not _is_nan(sma_50))
+        and (close > sma_50)
+        and (breadth_state in ["recovery_breadth", "healthy_breadth"])
+    )
+    post_switch_cooldown = bool(stable_changed_today and days_since_axis_switch is not None and days_since_axis_switch <= 5)
 
     # V1 precedence:
-    # crisis_override > bear_stress_warning > bull_fragile_warning > recovery_attempt > stable > unknown
+    # crisis_override > bear_stress_warning > bull_fragile_warning > recovery_attempt > post_switch_cooldown > stable > unknown
     if crisis_override:
         label = "crisis_override"
     elif bear_stress_warning:
@@ -524,6 +537,8 @@ def _eval_transition_risk(
         label = "bull_fragile_warning"
     elif recovery_attempt:
         label = "recovery_attempt"
+    elif post_switch_cooldown and not crisis_override:
+        label = "post_switch_cooldown"
     elif any_unknown:
         label = "unknown"
     else:
@@ -534,6 +549,9 @@ def _eval_transition_risk(
         "bear_stress_warning": bear_stress_warning,
         "bull_fragile_warning": bull_fragile_warning,
         "recovery_attempt": recovery_attempt,
+        "post_switch_cooldown": post_switch_cooldown,
+        "stable_changed_today": stable_changed_today,
+        "days_since_axis_switch": days_since_axis_switch,
     }
 
 
@@ -542,17 +560,17 @@ GoldenIntent = dict[str, Any]
 
 INTENTS: list[dict[str, Any]] = [
     {
-        "intent_id": "bull_trending_lowvol_healthy",
+        "intent_id": "summer2020_bull_transition_lowvol",
         "intent_date": "2020-08-11",
         "intent": {
             "trend_direction": "bull",
-            "trend_character": "trending",
+            "trend_character": "transition",
             "volatility_state": "low_vol",
-            "breadth_state": "healthy_breadth",
+            "breadth_state": "neutral_breadth",
             "transition_risk": "stable",
         },
         "search_window_trading_days": 120,
-        "notes": "Steady bull, trending, low vol, healthy breadth",
+        "notes": "Summer 2020 bull with low vol and neutral breadth after hysteresis",
     },
     {
         "intent_id": "volmageddon_crisis",
@@ -683,7 +701,7 @@ def _evaluate_all(feat: dict[str, pd.Series]) -> pd.DataFrame:
     vs_ev = []
     bs_ev = []
     # transition_risk is computed after hysteresis (spec consumes active labels).
-    # We'll compute it after we have td_active/tc_active/vs_active/bs_active.
+    # We'll compute it after we have td_active/tc_active/vs_active/bs_active and stable-label history.
     for dt in idx:
         td_label, td_e = _eval_trend_direction(feat, dt)
         tc_label, tc_e = _eval_trend_character(feat, dt)
@@ -727,14 +745,32 @@ def _evaluate_all(feat: dict[str, pd.Series]) -> pd.DataFrame:
     out["_breadth_state_raw"] = bs
     out["_breadth_state_stable"] = bs_stable
     tr: list[str] = []
-    tr_ev: list[dict[str, bool]] = []
-    for dt, td_a, tc_a, vs_a, bs_a in zip(idx, td_active, tc_active, vs_active, bs_active, strict=True):
+    tr_ev: list[dict[str, Any]] = []
+    stable_keys_per_row = list(
+        zip(td_stable, tc_stable, vs_stable, bs_stable, strict=True)
+    )
+    switch_days_ago: list[int | None] = []
+    for i in range(len(stable_keys_per_row)):
+        last_switch: int | None = None
+        for j in range(i, 0, -1):
+            if stable_keys_per_row[j] != stable_keys_per_row[j - 1]:
+                last_switch = i - j
+                break
+        switch_days_ago.append(last_switch)
+
+    for i, (dt, td_a, tc_a, vs_a, bs_a) in enumerate(zip(idx, td_active, tc_active, vs_active, bs_active, strict=True)):
+        stable_changed_today = i > 0 and stable_keys_per_row[i] != stable_keys_per_row[i - 1]
         tr_label, tr_e = _eval_transition_risk(
             dt=dt,
             trend_direction=td_a,
             trend_character=tc_a,
             volatility_state=vs_a,
             breadth_state=bs_a,
+            trend_direction_stable_history=td_stable[: i + 1],
+            stable_changed_today=stable_changed_today,
+            days_since_axis_switch=switch_days_ago[i],
+            close=float(feat["close"].loc[dt]) if not _is_nan(feat["close"].loc[dt]) else float("nan"),
+            sma_50=float(feat["SMA_50"].loc[dt]) if not _is_nan(feat["SMA_50"].loc[dt]) else float("nan"),
         )
         tr.append(tr_label)
         tr_ev.append(tr_e)

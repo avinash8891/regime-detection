@@ -6,6 +6,24 @@ cap_weight_index: SPY
 equal_weight_proxy: RSP
 event_calendar:
   market: US
+expiry_rules:
+  monthly_options:
+    rule: third_friday_of_month
+    window_trading_days: [-2, 0]
+    label: expiry_week
+earnings_seasons:
+  - quarter: Q1
+    start_rule: second_monday_of_january
+    end_offset_days: 35
+  - quarter: Q2
+    start_rule: second_monday_of_april
+    end_offset_days: 35
+  - quarter: Q3
+    start_rule: second_monday_of_july
+    end_offset_days: 35
+  - quarter: Q4
+    start_rule: second_monday_of_october
+    end_offset_days: 35
 data_quality:
   max_freshness_days: 3
   min_completeness: 0.90

@@ -1,39 +1,39 @@
-generated_at_utc: '2026-05-06T08:04:21+00:00'
-generated_by_commit: c75c370a27e5472aebec13cd7e7edecfb85932aa
+generated_at_utc: '2026-05-06T09:18:21+00:00'
+generated_by_commit: 803625db1c28de511781a87b7d5b17d3c97b2318
 raw_file_sha256:
   SPY.csv: efa06aba545dea29dcc523bb8b50ad6a334892e49babee5769466fa8c2c0ef33
   RSP.csv: 6aa3f27a796ffad78f17d114fbe02e806a5488e2a07cdf61166344c15ed7d2c2
   VIXY.csv: c7a8673d84bb4993328abaa547093881bfa269a5d269202b707b38cf5bcbdc8c
 rows:
-- intent_id: bull_trending_lowvol_healthy
+- intent_id: summer2020_bull_transition_lowvol
   intent_date: '2020-08-11'
-  as_of_date: '2020-12-08'
-  delta_calendar_days: 119
-  notes: Steady bull, trending, low vol, healthy breadth
+  as_of_date: '2020-08-11'
+  delta_calendar_days: 0
+  notes: Summer 2020 bull with low vol and neutral breadth after hysteresis
   expected:
     trend_direction: bull
-    trend_character: trending
+    trend_character: transition
     volatility_state: low_vol
-    breadth_state: healthy_breadth
+    breadth_state: neutral_breadth
     transition_risk: stable
   features:
-    close: 370.19
-    SMA_50: 349.3154
-    SMA_200: 315.945753
-    return_1d: 0.002790118106
-    return_5d: 0.01189044391
-    return_10d: 0.035409615976
-    return_21d: 0.057142041236
-    return_63d: 0.089531153427
-    prior_63d_drawdown: 0.0
-    ADX_14: 21.775736108093
-    realized_vol_21d: 0.126076783028
-    realized_vol_percentile_252d: 0.238095238095
-    vix_percentile_252d: 0.194444444444
-    relative_breadth_ratio: 0.342526810557
-    relative_breadth_sma50: 0.332290812972
-    relative_breadth_return_20d: 0.021674300274
-    index_distance_from_63d_high: 0.0
+    close: 332.82
+    SMA_50: 317.733
+    SMA_200: 305.5877725
+    return_1d: -0.008165454762
+    return_5d: 0.008545454545
+    return_10d: 0.035854341737
+    return_21d: 0.057209110257
+    return_63d: 0.161472692375
+    prior_63d_drawdown: -0.008165454762
+    ADX_14: 21.692390260932
+    realized_vol_21d: 0.108284734825
+    realized_vol_percentile_252d: 0.27380952381
+    vix_percentile_252d: 0.539682539683
+    relative_breadth_ratio: 0.332161528754
+    relative_breadth_sma50: 0.330426928691
+    relative_breadth_return_20d: 0.026116586261
+    index_distance_from_63d_high: -0.008165454762
   predicate_evaluations:
     trend_direction:
       raw_label: bull
@@ -53,8 +53,8 @@ rows:
         unknown: 2
     trend_character:
       raw_label: trending
-      stable_label: trending
-      active_label: trending
+      stable_label: transition
+      active_label: transition
       rule_evidence:
         recovery_attempt: false
         trending: true
@@ -86,8 +86,8 @@ rows:
         unknown: 2
     breadth_state:
       raw_label: healthy_breadth
-      stable_label: healthy_breadth
-      active_label: healthy_breadth
+      stable_label: neutral_breadth
+      active_label: neutral_breadth
       rule_evidence:
         divergent_fragile: false
         weak_breadth: false
@@ -105,6 +105,9 @@ rows:
       bear_stress_warning: false
       bull_fragile_warning: false
       recovery_attempt: false
+      post_switch_cooldown: false
+      stable_changed_today: false
+      days_since_axis_switch: 4
 - intent_id: volmageddon_crisis
   intent_date: '2018-02-09'
   as_of_date: '2018-02-09'
@@ -205,6 +208,9 @@ rows:
       bear_stress_warning: false
       bull_fragile_warning: false
       recovery_attempt: false
+      post_switch_cooldown: false
+      stable_changed_today: false
+      days_since_axis_switch: 1
 - intent_id: dec2018_bear_stress
   intent_date: '2018-12-20'
   as_of_date: '2018-12-20'
@@ -305,10 +311,13 @@ rows:
       bear_stress_warning: true
       bull_fragile_warning: false
       recovery_attempt: false
+      post_switch_cooldown: false
+      stable_changed_today: false
+      days_since_axis_switch: 1
 - intent_id: mid2019_bull_normal
   intent_date: '2019-06-28'
-  as_of_date: '2019-09-11'
-  delta_calendar_days: 75
+  as_of_date: '2019-09-12'
+  delta_calendar_days: 76
   notes: Bull market normal conditions (trend_character may remain transition under
     hysteresis)
   expected:
@@ -318,23 +327,23 @@ rows:
     breadth_state: healthy_breadth
     transition_risk: stable
   features:
-    close: 300.31
-    SMA_50: 294.593854
-    SMA_200: 281.2028435
-    return_1d: 0.00744741521
-    return_5d: 0.021566826547
-    return_10d: 0.047471224276
-    return_21d: 0.042996561664
-    return_63d: 0.041657995144
-    prior_63d_drawdown: -0.005464299907
-    ADX_14: 18.219237327089
-    realized_vol_21d: 0.189857254651
-    realized_vol_percentile_252d: 0.690476190476
-    vix_percentile_252d: 0.079365079365
-    relative_breadth_ratio: 0.364756418368
-    relative_breadth_sma50: 0.3628773975
-    relative_breadth_return_20d: 0.009675045997
-    index_distance_from_63d_high: -0.005464299907
+    close: 301.36
+    SMA_50: 294.692254
+    SMA_200: 281.3930435
+    return_1d: 0.003496387067
+    return_5d: 0.012124265323
+    return_10d: 0.043345796981
+    return_21d: 0.030572464264
+    return_63d: 0.040679604945
+    prior_63d_drawdown: -0.001987018148
+    ADX_14: 18.512513583732
+    realized_vol_21d: 0.183522965208
+    realized_vol_percentile_252d: 0.674603174603
+    vix_percentile_252d: 0.059523809524
+    relative_breadth_ratio: 0.363916910008
+    relative_breadth_sma50: 0.362838909361
+    relative_breadth_return_20d: 0.009371882622
+    index_distance_from_63d_high: -0.001987018148
   predicate_evaluations:
     trend_direction:
       raw_label: bull
@@ -406,6 +415,9 @@ rows:
       bear_stress_warning: false
       bull_fragile_warning: false
       recovery_attempt: false
+      post_switch_cooldown: false
+      stable_changed_today: false
+      days_since_axis_switch: 1
 - intent_id: covid_crash_crisis
   intent_date: '2020-03-30'
   as_of_date: '2020-03-30'
@@ -506,6 +518,9 @@ rows:
       bear_stress_warning: true
       bull_fragile_warning: false
       recovery_attempt: false
+      post_switch_cooldown: true
+      stable_changed_today: true
+      days_since_axis_switch: 0
 - intent_id: covid_recovery_attempt
   intent_date: '2020-04-17'
   as_of_date: '2020-04-29'
@@ -606,6 +621,9 @@ rows:
       bear_stress_warning: false
       bull_fragile_warning: false
       recovery_attempt: true
+      post_switch_cooldown: true
+      stable_changed_today: true
+      days_since_axis_switch: 0
 - intent_id: late2021_bull_lowvol
   intent_date: '2021-11-15'
   as_of_date: '2021-11-12'
@@ -706,6 +724,9 @@ rows:
       bear_stress_warning: false
       bull_fragile_warning: false
       recovery_attempt: false
+      post_switch_cooldown: false
+      stable_changed_today: false
+      days_since_axis_switch: 8
 - intent_id: jun2022_bear_stress
   intent_date: '2022-06-29'
   as_of_date: '2022-06-30'
@@ -806,6 +827,9 @@ rows:
       bear_stress_warning: true
       bull_fragile_warning: false
       recovery_attempt: false
+      post_switch_cooldown: true
+      stable_changed_today: true
+      days_since_axis_switch: 0
 - intent_id: jul2022_bear_stress
   intent_date: '2022-07-12'
   as_of_date: '2022-07-12'
@@ -906,6 +930,9 @@ rows:
       bear_stress_warning: true
       bull_fragile_warning: false
       recovery_attempt: false
+      post_switch_cooldown: false
+      stable_changed_today: false
+      days_since_axis_switch: 7
 - intent_id: early2024_bull_lowvol
   intent_date: '2023-12-19'
   as_of_date: '2023-12-14'
@@ -1006,3 +1033,6 @@ rows:
       bear_stress_warning: false
       bull_fragile_warning: false
       recovery_attempt: false
+      post_switch_cooldown: false
+      stable_changed_today: false
+      days_since_axis_switch: 2

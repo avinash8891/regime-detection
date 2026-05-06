@@ -35,6 +35,33 @@ class EventCalendarConfig(BaseModel):
     market: str
 
 
+class MonthlyOptionsExpiryRuleConfig(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    rule: Literal["third_friday_of_month"]
+    window_trading_days: tuple[int, int]
+    label: Literal["expiry_week"] = "expiry_week"
+
+
+class ExpiryRulesConfig(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    monthly_options: MonthlyOptionsExpiryRuleConfig
+
+
+class EarningsSeasonConfig(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    quarter: Literal["Q1", "Q2", "Q3", "Q4"]
+    start_rule: Literal[
+        "second_monday_of_january",
+        "second_monday_of_april",
+        "second_monday_of_july",
+        "second_monday_of_october",
+    ]
+    end_offset_days: int = Field(ge=0)
+
+
 class RegimeConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -45,6 +72,8 @@ class RegimeConfig(BaseModel):
     cap_weight_index: Literal["SPY"]
     equal_weight_proxy: Literal["RSP"]
     event_calendar: EventCalendarConfig
+    expiry_rules: ExpiryRulesConfig
+    earnings_seasons: list[EarningsSeasonConfig]
     data_quality: DataQualityConfig
     hysteresis: HysteresisConfig
 
