@@ -40,19 +40,27 @@ def _wilder_ewm(series: pd.Series, n: int) -> pd.Series:
 
 
 def _compute_adx_14(*, high: pd.Series, low: pd.Series, close: pd.Series) -> pd.Series:
+    # Align to a common index so np.where arrays match index lengths.
+    common = close.index.intersection(high.index).intersection(low.index)
+    close = close.reindex(common)
+    high = high.reindex(common)
+    low = low.reindex(common)
+
     prev_close = close.shift(1)
     tr = pd.concat([(high - low), (high - prev_close).abs(), (low - prev_close).abs()], axis=1).max(axis=1)
 
     up = high.diff()
     down = -low.diff()
-    plus_dm = pd.Series(np.where((up > down) & (up > 0), up, 0.0), index=close.index)
-    minus_dm = pd.Series(np.where((down > up) & (down > 0), down, 0.0), index=close.index)
+    plus_dm = pd.Series(np.where((up > down) & (up > 0), up, 0.0), index=common)
+    minus_dm = pd.Series(np.where((down > up) & (down > 0), down, 0.0), index=common)
 
     n = 14
     atr = _wilder_ewm(tr, n)
     plus_di = 100 * _wilder_ewm(plus_dm, n) / atr
     minus_di = 100 * _wilder_ewm(minus_dm, n) / atr
-    dx = ((plus_di - minus_di).abs() / (plus_di + minus_di)) * 100
+    denom = (plus_di + minus_di).replace(0.0, np.nan)
+    dx = ((plus_di - minus_di).abs() / denom) * 100
+    dx = dx.replace([np.inf, -np.inf], np.nan).fillna(0.0)
     return _wilder_ewm(dx, n)
 
 
@@ -61,7 +69,7 @@ def compute_features(*, close: pd.Series, high: pd.Series, low: pd.Series) -> Tr
     return_10d = close / close.shift(10) - 1
     return_21d = close / close.shift(21) - 1
     prior_63d_drawdown = close / close.rolling(63).max() - 1
-    adx_14 = _compute_adx_14(high=high, low=low, close=close)
+    adx_14 = _compute_adx_14(high=high, low=low, close=close).reindex(close.index)
     return TrendCharacterFeatures(
         close=close,
         high=high,
@@ -125,6 +133,9 @@ def classify_series(
     close.index = pd.to_datetime(close.index)
     high.index = pd.to_datetime(high.index)
     low.index = pd.to_datetime(low.index)
+    close = close.sort_index()
+    high = high.sort_index()
+    low = low.sort_index()
 
     if dt not in close.index:
         raise ValueError(f"as_of_date missing from close series: {as_of_date.isoformat()}")
@@ -167,4 +178,3 @@ def classify_series(
         },
         data_quality=dq,
     )
-
