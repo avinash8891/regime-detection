@@ -18,11 +18,33 @@ class HysteresisConfig(BaseModel):
     event_calendar_days: int = Field(ge=0)
 
 
+class DataQualityConfig(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    # Maximum allowed age (calendar days) of the newest row in each required series.
+    max_freshness_days: int = Field(ge=0)
+
+    # Minimum fraction of non-null values required in the lookback window for an axis to be "ok".
+    min_completeness: float = Field(ge=0.0, le=1.0)
+
+
+class EventCalendarConfig(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    market: str
+
+
 class RegimeConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     config_version: str
+    market: str
     trading_calendar: str
+    breadth_mode: str
+    cap_weight_index: str
+    equal_weight_proxy: str
+    event_calendar: EventCalendarConfig
+    data_quality: DataQualityConfig
     hysteresis: HysteresisConfig
 
 
@@ -36,9 +58,7 @@ def load_regime_config(path: str | Path) -> RegimeConfig:
 def default_config_path() -> Path:
     """
     Default config resolution:
-    1. If running from a repo checkout with a top-level `configs/core3-v1.0.0.yaml`, prefer it.
-       This is the human-edited config in this repository.
-    2. Otherwise fall back to the packaged config shipped with the library.
+    V1 requires a repo-local config at `configs/core3-v1.0.0.yaml`.
     """
     here = Path(__file__).resolve()
 
@@ -54,4 +74,7 @@ def default_config_path() -> Path:
         if repo_cfg.exists():
             return repo_cfg
 
-    return here.parent / "configs" / "core3-v1.0.0.yaml"
+    raise FileNotFoundError(
+        "Default config not found. Expected repo-local configs/core3-v1.0.0.yaml. "
+        "Pass config_path explicitly if running outside the repository."
+    )

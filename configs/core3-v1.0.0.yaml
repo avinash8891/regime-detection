@@ -1,5 +1,14 @@
 config_version: core3-v1.0.0
+market: US
 trading_calendar: NYSE
+breadth_mode: etf_proxy
+cap_weight_index: SPY
+equal_weight_proxy: RSP
+event_calendar:
+  market: US
+data_quality:
+  max_freshness_days: 5
+  min_completeness: 0.98
 hysteresis:
   trend_direction_deescalation_days: 3
   trend_character_deescalation_days: 3
