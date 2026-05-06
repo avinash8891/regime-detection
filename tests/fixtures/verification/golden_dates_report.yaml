@@ -1,5 +1,5 @@
-generated_at_utc: '2026-05-06T06:18:31+00:00'
-generated_by_commit: d092d972ff560821c5671604b582fa2308ecbb43
+generated_at_utc: '2026-05-06T06:27:30+00:00'
+generated_by_commit: 27d4baed75d560b9f884623c18665fb10d12b831
 raw_file_sha256:
   SPY.csv: efa06aba545dea29dcc523bb8b50ad6a334892e49babee5769466fa8c2c0ef33
   RSP.csv: 6aa3f27a796ffad78f17d114fbe02e806a5488e2a07cdf61166344c15ed7d2c2
@@ -85,10 +85,21 @@ rows:
         crisis_vol: 3
         unknown: 2
     breadth_state:
-      divergent_fragile: false
-      weak_breadth: false
-      healthy_breadth: true
-      neutral_breadth: false
+      raw_label: healthy_breadth
+      stable_label: healthy_breadth
+      active_label: healthy_breadth
+      rule_evidence:
+        divergent_fragile: false
+        weak_breadth: false
+        healthy_breadth: true
+        neutral_breadth: false
+      deescalation_days: 2
+      risk_rank:
+        healthy_breadth: 0
+        neutral_breadth: 1
+        weak_breadth: 2
+        divergent_fragile: 3
+        unknown: 2
     transition_risk:
       crisis_override: false
       bear_stress_warning: false
@@ -174,10 +185,21 @@ rows:
         crisis_vol: 3
         unknown: 2
     breadth_state:
-      divergent_fragile: false
-      weak_breadth: true
-      healthy_breadth: false
-      neutral_breadth: false
+      raw_label: weak_breadth
+      stable_label: weak_breadth
+      active_label: weak_breadth
+      rule_evidence:
+        divergent_fragile: false
+        weak_breadth: true
+        healthy_breadth: false
+        neutral_breadth: false
+      deescalation_days: 2
+      risk_rank:
+        healthy_breadth: 0
+        neutral_breadth: 1
+        weak_breadth: 2
+        divergent_fragile: 3
+        unknown: 2
     transition_risk:
       crisis_override: true
       bear_stress_warning: false
@@ -263,10 +285,21 @@ rows:
         crisis_vol: 3
         unknown: 2
     breadth_state:
-      divergent_fragile: false
-      weak_breadth: true
-      healthy_breadth: false
-      neutral_breadth: false
+      raw_label: weak_breadth
+      stable_label: weak_breadth
+      active_label: weak_breadth
+      rule_evidence:
+        divergent_fragile: false
+        weak_breadth: true
+        healthy_breadth: false
+        neutral_breadth: false
+      deescalation_days: 2
+      risk_rank:
+        healthy_breadth: 0
+        neutral_breadth: 1
+        weak_breadth: 2
+        divergent_fragile: 3
+        unknown: 2
     transition_risk:
       crisis_override: false
       bear_stress_warning: true
@@ -274,8 +307,8 @@ rows:
       recovery_attempt: false
 - intent_id: mid2019_bull_normal
   intent_date: '2019-06-28'
-  as_of_date: '2019-06-28'
-  delta_calendar_days: 0
+  as_of_date: '2019-09-11'
+  delta_calendar_days: 75
   notes: Bull market normal conditions (trend_character may remain transition under
     hysteresis)
   expected:
@@ -285,23 +318,23 @@ rows:
     breadth_state: healthy_breadth
     transition_risk: stable
   features:
-    close: 293.1
-    SMA_50: 287.91222
-    SMA_200: 277.412051
-    return_1d: 0.005419868276619333
-    return_5d: -0.003061224489795844
-    return_10d: 0.013380354734986
-    return_21d: 0.05061294716467124
-    return_63d: 0.037705788635156834
-    prior_63d_drawdown: -0.00939570095984854
-    ADX_14: 20.65628459455096
-    realized_vol_21d: 0.12067550797570709
-    realized_vol_percentile_252d: 0.5555555555555556
-    vix_percentile_252d: 0.05555555555555555
-    relative_breadth_ratio: 0.3677925622654384
-    relative_breadth_sma50: 0.36696577540004344
-    relative_breadth_return_20d: 0.005850013616384597
-    index_distance_from_63d_high: -0.00939570095984854
+    close: 300.31
+    SMA_50: 294.59385399999996
+    SMA_200: 281.20284350000003
+    return_1d: 0.00744741521017156
+    return_5d: 0.021566826546926432
+    return_10d: 0.04747122427624695
+    return_21d: 0.04299656166429333
+    return_63d: 0.0416579951439473
+    prior_63d_drawdown: -0.005464299907272374
+    ADX_14: 18.219237327089054
+    realized_vol_21d: 0.18985725465082542
+    realized_vol_percentile_252d: 0.6904761904761905
+    vix_percentile_252d: 0.07936507936507936
+    relative_breadth_ratio: 0.36475641836768674
+    relative_breadth_sma50: 0.3628773974999877
+    relative_breadth_return_20d: 0.009675045996582421
+    index_distance_from_63d_high: -0.005464299907272374
   predicate_evaluations:
     trend_direction:
       raw_label: bull
@@ -320,14 +353,14 @@ rows:
         bear: 3
         unknown: 2
     trend_character:
-      raw_label: trending
+      raw_label: transition
       stable_label: transition
       active_label: transition
       rule_evidence:
         recovery_attempt: false
-        trending: true
+        trending: false
         chop: false
-        transition: false
+        transition: true
       deescalation_days: 3
       risk_rank:
         trending: 0
@@ -353,10 +386,21 @@ rows:
         crisis_vol: 3
         unknown: 2
     breadth_state:
-      divergent_fragile: false
-      weak_breadth: false
-      healthy_breadth: true
-      neutral_breadth: false
+      raw_label: healthy_breadth
+      stable_label: healthy_breadth
+      active_label: healthy_breadth
+      rule_evidence:
+        divergent_fragile: false
+        weak_breadth: false
+        healthy_breadth: true
+        neutral_breadth: false
+      deescalation_days: 2
+      risk_rank:
+        healthy_breadth: 0
+        neutral_breadth: 1
+        weak_breadth: 2
+        divergent_fragile: 3
+        unknown: 2
     transition_risk:
       crisis_override: false
       bear_stress_warning: false
@@ -442,10 +486,21 @@ rows:
         crisis_vol: 3
         unknown: 2
     breadth_state:
-      divergent_fragile: false
-      weak_breadth: true
-      healthy_breadth: false
-      neutral_breadth: false
+      raw_label: weak_breadth
+      stable_label: weak_breadth
+      active_label: weak_breadth
+      rule_evidence:
+        divergent_fragile: false
+        weak_breadth: true
+        healthy_breadth: false
+        neutral_breadth: false
+      deescalation_days: 2
+      risk_rank:
+        healthy_breadth: 0
+        neutral_breadth: 1
+        weak_breadth: 2
+        divergent_fragile: 3
+        unknown: 2
     transition_risk:
       crisis_override: true
       bear_stress_warning: true
@@ -453,38 +508,38 @@ rows:
       recovery_attempt: false
 - intent_id: covid_recovery_attempt
   intent_date: '2020-04-17'
-  as_of_date: '2020-04-17'
-  delta_calendar_days: 0
+  as_of_date: '2020-04-29'
+  delta_calendar_days: 12
   notes: Post-crash recovery attempt; breadth pinned by rules in ETF-proxy mode
   expected:
-    trend_direction: bear
+    trend_direction: transition
     trend_character: recovery_attempt
     volatility_state: high_vol
     breadth_state: weak_breadth
     transition_risk: recovery_attempt
   features:
-    close: 286.54
-    SMA_50: 285.9607
-    SMA_200: 300.8786885
-    return_1d: 0.0271723544594209
-    return_5d: 0.029904392207605435
-    return_10d: 0.1373794307942684
-    return_21d: 0.21574950146378735
-    return_63d: -0.13395393822160429
-    prior_63d_drawdown: -0.15305036651690695
-    ADX_14: 24.80901857126455
-    realized_vol_21d: 0.564323706677457
-    realized_vol_percentile_252d: 0.9047619047619048
-    vix_percentile_252d: 0.9047619047619048
-    relative_breadth_ratio: 0.3244922174914497
-    relative_breadth_sma50: 0.33781717377270787
-    relative_breadth_return_20d: -0.010187637362817248
-    index_distance_from_63d_high: -0.15305036651690695
+    close: 293.15
+    SMA_50: 277.4943
+    SMA_200: 300.2348385
+    return_1d: 0.02611221953866072
+    return_5d: 0.05056622706421998
+    return_10d: 0.05544554455445527
+    return_21d: 0.12077534791252464
+    return_63d: -0.10247382279101103
+    prior_63d_drawdown: -0.13351265074485696
+    ADX_14: 21.543490656062257
+    realized_vol_21d: 0.40810601870322477
+    realized_vol_percentile_252d: 0.8571428571428571
+    vix_percentile_252d: 0.8611111111111112
+    relative_breadth_ratio: 0.3366194780828928
+    relative_breadth_sma50: 0.3338711233757691
+    relative_breadth_return_20d: 0.031092464644290496
+    index_distance_from_63d_high: -0.13351265074485696
   predicate_evaluations:
     trend_direction:
       raw_label: transition
-      stable_label: bear
-      active_label: bear
+      stable_label: transition
+      active_label: transition
       rule_evidence:
         bull: false
         bear: false
@@ -531,10 +586,21 @@ rows:
         crisis_vol: 3
         unknown: 2
     breadth_state:
-      divergent_fragile: false
-      weak_breadth: true
-      healthy_breadth: false
-      neutral_breadth: false
+      raw_label: healthy_breadth
+      stable_label: weak_breadth
+      active_label: weak_breadth
+      rule_evidence:
+        divergent_fragile: false
+        weak_breadth: false
+        healthy_breadth: true
+        neutral_breadth: false
+      deescalation_days: 2
+      risk_rank:
+        healthy_breadth: 0
+        neutral_breadth: 1
+        weak_breadth: 2
+        divergent_fragile: 3
+        unknown: 2
     transition_risk:
       crisis_override: false
       bear_stress_warning: false
@@ -620,10 +686,21 @@ rows:
         crisis_vol: 3
         unknown: 2
     breadth_state:
-      divergent_fragile: false
-      weak_breadth: false
-      healthy_breadth: true
-      neutral_breadth: false
+      raw_label: healthy_breadth
+      stable_label: healthy_breadth
+      active_label: healthy_breadth
+      rule_evidence:
+        divergent_fragile: false
+        weak_breadth: false
+        healthy_breadth: true
+        neutral_breadth: false
+      deescalation_days: 2
+      risk_rank:
+        healthy_breadth: 0
+        neutral_breadth: 1
+        weak_breadth: 2
+        divergent_fragile: 3
+        unknown: 2
     transition_risk:
       crisis_override: false
       bear_stress_warning: false
@@ -709,10 +786,21 @@ rows:
         crisis_vol: 3
         unknown: 2
     breadth_state:
-      divergent_fragile: false
-      weak_breadth: true
-      healthy_breadth: false
-      neutral_breadth: false
+      raw_label: weak_breadth
+      stable_label: weak_breadth
+      active_label: weak_breadth
+      rule_evidence:
+        divergent_fragile: false
+        weak_breadth: true
+        healthy_breadth: false
+        neutral_breadth: false
+      deescalation_days: 2
+      risk_rank:
+        healthy_breadth: 0
+        neutral_breadth: 1
+        weak_breadth: 2
+        divergent_fragile: 3
+        unknown: 2
     transition_risk:
       crisis_override: false
       bear_stress_warning: true
@@ -798,10 +886,21 @@ rows:
         crisis_vol: 3
         unknown: 2
     breadth_state:
-      divergent_fragile: false
-      weak_breadth: true
-      healthy_breadth: false
-      neutral_breadth: false
+      raw_label: weak_breadth
+      stable_label: weak_breadth
+      active_label: weak_breadth
+      rule_evidence:
+        divergent_fragile: false
+        weak_breadth: true
+        healthy_breadth: false
+        neutral_breadth: false
+      deescalation_days: 2
+      risk_rank:
+        healthy_breadth: 0
+        neutral_breadth: 1
+        weak_breadth: 2
+        divergent_fragile: 3
+        unknown: 2
     transition_risk:
       crisis_override: false
       bear_stress_warning: true
@@ -887,10 +986,21 @@ rows:
         crisis_vol: 3
         unknown: 2
     breadth_state:
-      divergent_fragile: false
-      weak_breadth: false
-      healthy_breadth: true
-      neutral_breadth: false
+      raw_label: healthy_breadth
+      stable_label: healthy_breadth
+      active_label: healthy_breadth
+      rule_evidence:
+        divergent_fragile: false
+        weak_breadth: false
+        healthy_breadth: true
+        neutral_breadth: false
+      deescalation_days: 2
+      risk_rank:
+        healthy_breadth: 0
+        neutral_breadth: 1
+        weak_breadth: 2
+        divergent_fragile: 3
+        unknown: 2
     transition_risk:
       crisis_override: false
       bear_stress_warning: false

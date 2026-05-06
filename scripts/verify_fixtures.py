@@ -485,6 +485,15 @@ def _eval_breadth_state_etf_proxy(
     }
 
 
+_BS_RISK_RANK: dict[str, int] = {
+    "healthy_breadth": 0,
+    "neutral_breadth": 1,
+    "weak_breadth": 2,
+    "divergent_fragile": 3,
+    "unknown": 2,
+}
+
+
 def _eval_transition_risk(
     dt: pd.Timestamp,
     trend_direction: str,
@@ -580,7 +589,7 @@ INTENTS: list[dict[str, Any]] = [
             "breadth_state": "healthy_breadth",
             "transition_risk": "stable",
         },
-        "search_window_trading_days": 10,
+        "search_window_trading_days": 60,
         "notes": "Bull market normal conditions (trend_character may remain transition under hysteresis)",
     },
     {
@@ -669,34 +678,25 @@ def _evaluate_all(feat: dict[str, pd.Series]) -> pd.DataFrame:
     tc = []
     vs = []
     bs = []
-    tr = []
     td_ev = []
     tc_ev = []
     vs_ev = []
     bs_ev = []
-    tr_ev = []
+    # transition_risk is computed after hysteresis (spec consumes active labels).
+    # We'll compute it after we have td_active/tc_active/vs_active/bs_active.
     for dt in idx:
         td_label, td_e = _eval_trend_direction(feat, dt)
         tc_label, tc_e = _eval_trend_character(feat, dt)
         vs_label, vs_e = _eval_volatility_state(feat, dt)
         bs_label, bs_e = _eval_breadth_state_etf_proxy(feat, dt)
-        tr_label, tr_e = _eval_transition_risk(
-            dt=dt,
-            trend_direction=td_label,
-            trend_character=tc_label,
-            volatility_state=vs_label,
-            breadth_state=bs_label,
-        )
         td.append(td_label)
         tc.append(tc_label)
         vs.append(vs_label)
         bs.append(bs_label)
-        tr.append(tr_label)
         td_ev.append(td_e)
         tc_ev.append(tc_e)
         vs_ev.append(vs_e)
         bs_ev.append(bs_e)
-        tr_ev.append(tr_e)
 
     hyst = _load_hysteresis_days()
 
@@ -720,7 +720,25 @@ def _evaluate_all(feat: dict[str, pd.Series]) -> pd.DataFrame:
     out["volatility_state"] = vs_active
     out["_volatility_state_raw"] = vs
     out["_volatility_state_stable"] = vs_stable
-    out["breadth_state"] = bs
+    bs_stable, bs_active = _apply_asymmetric_hysteresis(
+        raw_labels=bs, risk_rank=_BS_RISK_RANK, deescalation_days=hyst["breadth_state"]
+    )
+    out["breadth_state"] = bs_active
+    out["_breadth_state_raw"] = bs
+    out["_breadth_state_stable"] = bs_stable
+    tr: list[str] = []
+    tr_ev: list[dict[str, bool]] = []
+    for dt, td_a, tc_a, vs_a, bs_a in zip(idx, td_active, tc_active, vs_active, bs_active, strict=True):
+        tr_label, tr_e = _eval_transition_risk(
+            dt=dt,
+            trend_direction=td_a,
+            trend_character=tc_a,
+            volatility_state=vs_a,
+            breadth_state=bs_a,
+        )
+        tr.append(tr_label)
+        tr_ev.append(tr_e)
+
     out["transition_risk"] = tr
     out["_td_evidence"] = [
         {
@@ -755,7 +773,17 @@ def _evaluate_all(feat: dict[str, pd.Series]) -> pd.DataFrame:
         }
         for raw, st, act, ev in zip(vs, vs_stable, vs_active, vs_ev, strict=True)
     ]
-    out["_bs_evidence"] = bs_ev
+    out["_bs_evidence"] = [
+        {
+            "raw_label": raw,
+            "stable_label": st,
+            "active_label": act,
+            "rule_evidence": ev,
+            "deescalation_days": hyst["breadth_state"],
+            "risk_rank": _BS_RISK_RANK,
+        }
+        for raw, st, act, ev in zip(bs, bs_stable, bs_active, bs_ev, strict=True)
+    ]
     out["_tr_evidence"] = tr_ev
     return out
 
