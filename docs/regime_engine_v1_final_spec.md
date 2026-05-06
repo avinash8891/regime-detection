@@ -76,7 +76,7 @@ V1 input contract:
 - `market_data` is a long/wide-enough OHLCV DataFrame with at least `date`, `symbol`, `open`, `high`, `low`, `close`, `volume`.
 - US V1 requires `SPY` rows for the market index.
 - ETF proxy breadth requires `RSP` rows in the same contract.
-- VIX support may be provided either as `vix_data` or as a `VIX`/`^VIX` symbol in market data, but tests must use deterministic repo fixtures.
+- VIX support may be provided either as `vix_data` or as a `VIX` symbol in market data; when Alpaca does not provide true VIX, `VIXY` is the documented operational proxy. Tests must use deterministic repo fixtures.
 
 V1 helper:
 

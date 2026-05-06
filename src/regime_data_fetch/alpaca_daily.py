@@ -33,7 +33,9 @@ def fetch_daily_bars_alpaca(
     start_date: _dt.date,
     end_date: _dt.date,
     adjustment: str = "raw",
+    feed: str | None = None,
     batch_size: int = 100,
+    verbose: bool = False,
 ) -> DailyBarsFetchResult:
     """Fetch daily OHLCV bars from Alpaca for symbols in [start_date, end_date].
 
@@ -46,9 +48,12 @@ def fetch_daily_bars_alpaca(
     from alpaca.data.requests import StockBarsRequest
     from alpaca.data.timeframe import TimeFrame
     from alpaca.data.enums import Adjustment
+    from alpaca.data.enums import DataFeed
 
     if adjustment not in {"raw", "split", "dividend", "all"}:
         raise ValueError(f"Unknown adjustment: {adjustment!r}")
+    if feed is not None and feed not in {"sip", "iex", "otc"}:
+        raise ValueError(f"Unknown Alpaca feed: {feed!r} (expected sip|iex|otc)")
 
     start_dt = _dt.datetime.combine(start_date, _dt.time.min, tzinfo=_dt.timezone.utc)
     # inclusive end date: request through end-of-day UTC
@@ -65,12 +70,15 @@ def fetch_daily_bars_alpaca(
 
     for i in range(0, len(req_syms), batch_size):
         batch = req_syms[i : i + batch_size]
+        if verbose:
+            print(f"[alpaca] daily batch {i//batch_size + 1}/{(len(req_syms)+batch_size-1)//batch_size}: requesting {len(batch)} symbols", flush=True)
         req = StockBarsRequest(
             symbol_or_symbols=batch,
             timeframe=TimeFrame.Day,
             start=start_dt,
             end=end_dt,
             adjustment=Adjustment(adjustment),
+            feed=(DataFeed(feed) if feed else None),
         )
         resp = client.get_stock_bars(req)
         bar_data = resp.data if hasattr(resp, "data") else {}
@@ -105,6 +113,9 @@ def fetch_daily_bars_alpaca(
                 continue
             df["adjusted_close"] = df["close"]
             out_frames.append(df)
+        if verbose:
+            got = sum(1 for s in batch if s in bar_data and bar_data.get(s))
+            print(f"[alpaca] batch done: got_bars_for={got}/{len(batch)} (cumulative_frames={len(out_frames)})", flush=True)
 
     if out_frames:
         out = pd.concat(out_frames, ignore_index=True)

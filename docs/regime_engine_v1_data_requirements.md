@@ -91,7 +91,8 @@ Allowed symbols:
 
 ```text
 VIX
-^VIX
+VIX
+VIXY (documented proxy when Alpaca does not provide true VIX)
 ```
 
 OHLCV columns may be included if the vendor provides them, but V1 only requires `close`.
