@@ -604,7 +604,9 @@ def _serialize_scalar(x: Any) -> Any:
     if isinstance(x, (np.floating, float)):
         if np.isnan(x):
             return None
-        return float(x)
+        # Normalize float noise so fixture generation is stable across
+        # minor numpy/pandas/BLAS differences.
+        return float(round(float(x), 12))
     if isinstance(x, (np.integer, int)):
         return int(x)
     if isinstance(x, (pd.Timestamp, datetime)):
