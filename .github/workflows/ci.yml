@@ -21,18 +21,19 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          run_diff_check() {
-            # Enforce whitespace errors in the patch, but ignore Git's "new blank line at EOF"
-            # message to avoid CI failures for an otherwise harmless trailing blank line.
-            local range="$1"
-            local out
-            out="$(git diff --check "$range" || true)"
-            out="$(printf '%s\n' "$out" | sed '/new blank line at EOF\.$/d')"
-            if [[ -n "$out" ]]; then
-              printf '%s\n' "$out"
-              return 2
-            fi
-          }
+	          run_diff_check() {
+	            # Enforce whitespace errors in the patch, but ignore Git's "new blank line at EOF"
+	            # message to avoid CI failures for an otherwise harmless trailing blank line.
+	            local range="$1"
+	            local out
+	            out="$(git diff --check "$range" || true)"
+	            out="$(printf '%s\n' "$out" | sed '/new blank line at EOF\.$/d')"
+	            if [[ -n "$out" ]]; then
+	              printf '%s\n' "$out"
+	              return 2
+	            fi
+	            return 0
+	          }
           if [[ "${{ github.event_name }}" == "pull_request" ]]; then
             # Ensure the base ref exists locally for the diff.
             git fetch -q origin "${{ github.base_ref }}":"refs/remotes/origin/${{ github.base_ref }}"
