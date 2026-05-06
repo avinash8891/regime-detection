@@ -64,4 +64,3 @@ def apply_asymmetric_hysteresis(
             active.append(stable_label)
 
     return stable, active
-
