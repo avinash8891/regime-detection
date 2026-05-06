@@ -7,8 +7,8 @@ equal_weight_proxy: RSP
 event_calendar:
   market: US
 data_quality:
-  max_freshness_days: 5
-  min_completeness: 0.98
+  max_freshness_days: 3
+  min_completeness: 0.90
 hysteresis:
   trend_direction_deescalation_days: 3
   trend_character_deescalation_days: 3

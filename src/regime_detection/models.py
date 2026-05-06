@@ -79,6 +79,16 @@ class StrategyResponse(BaseModel):
     require_breadth_confirmation: bool | None = None
     reason: str | None = None
 
+    # V1 wire contract: modifier fields are omitted when not applicable.
+    # Default `exclude_none=True` prevents emitting `"field": null` unless a caller opts in.
+    def model_dump(self, *args: Any, **kwargs: Any) -> dict[str, Any]:
+        kwargs.setdefault("exclude_none", True)
+        return super().model_dump(*args, **kwargs)
+
+    def model_dump_json(self, *args: Any, **kwargs: Any) -> str:
+        kwargs.setdefault("exclude_none", True)
+        return super().model_dump_json(*args, **kwargs)
+
 
 class RegimeOutput(BaseModel):
     model_config = ConfigDict(extra="forbid")

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import importlib.resources
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 import yaml
 from pydantic import BaseModel, ConfigDict, Field
@@ -39,11 +39,11 @@ class RegimeConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     config_version: str
-    market: str
+    market: Literal["US"]
     trading_calendar: str
-    breadth_mode: str
-    cap_weight_index: str
-    equal_weight_proxy: str
+    breadth_mode: Literal["etf_proxy"]
+    cap_weight_index: Literal["SPY"]
+    equal_weight_proxy: Literal["RSP"]
     event_calendar: EventCalendarConfig
     data_quality: DataQualityConfig
     hysteresis: HysteresisConfig

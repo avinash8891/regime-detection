@@ -76,8 +76,8 @@ V1 input contract:
 - `market_data` is a long/wide-enough OHLCV DataFrame with at least `date`, `symbol`, `open`, `high`, `low`, `close`, `volume`.
 - US V1 requires `SPY` rows for the market index.
 - ETF proxy breadth requires `RSP` rows in the same contract.
-- VIX support may be provided either as `vix_data` or as a `VIX`/`^VIX` symbol in market data.
-- This repository's deterministic test fixtures use `VIXY` as the VIX proxy series (see `tests/fixtures/raw/PROVENANCE.md`), since `VIX` itself is not an OHLCV-tradable series in the same contract.
+- VIX support may be provided either as `vix_data` (preferred) or as a symbol in `market_data`.
+- In this repository's deterministic test fixtures, `VIXY` is used as the VIX proxy series (see `tests/fixtures/raw/PROVENANCE.md`). If you provide `VIX`/`^VIX` externally, you must normalize it into the `vix_data` input contract (close series aligned to NYSE sessions) before classification.
 
 V1 helper:
 
