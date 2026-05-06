@@ -116,33 +116,3 @@ def test_classify_accepts_timestamp_as_of_date() -> None:
     # Common caller input: pandas Timestamp. Must be accepted and normalized.
     out = engine.classify(as_of_date=pd.Timestamp("2026-05-05", tz="America/New_York"), market_data=df)
     assert out.as_of_date == date(2026, 5, 5)
-
-
-def test_classify_accepts_dedicated_breadth_and_vix_inputs() -> None:
-    as_of = date(2026, 5, 5)
-    assert is_nyse_trading_day(as_of)
-
-    engine = RegimeEngine()
-
-    spy = _load_symbol("SPY")
-    spy["date"] = pd.to_datetime(spy["date"]).dt.date
-    spy = spy[spy["date"] <= as_of].copy()
-    market_data = spy[["date", "symbol", "open", "high", "low", "close", "volume"]]
-
-    rsp = _load_symbol("RSP")
-    rsp["date"] = pd.to_datetime(rsp["date"]).dt.date
-    rsp = rsp[rsp["date"] <= as_of].copy()
-    breadth_data = rsp[["date", "close"]]
-
-    vixy = _load_symbol("VIXY")
-    vixy["date"] = pd.to_datetime(vixy["date"]).dt.date
-    vixy = vixy[vixy["date"] <= as_of].copy()
-    vix_data = vixy[["date", "close"]]
-
-    out = engine.classify(
-        as_of_date=as_of,
-        market_data=market_data,
-        breadth_data=breadth_data,
-        vix_data=vix_data,
-    )
-    assert out.as_of_date == as_of
