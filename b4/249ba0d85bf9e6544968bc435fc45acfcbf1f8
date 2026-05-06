@@ -1,0 +1,43 @@
+tests/test_reconciliation_contracts.py
+  c46f0b10e27ac97f 42,46,53-55
+src/regime_detection/transition_risk_series.py
+  c46f0b10e27ac97f 29-31,45,47-48,124-132,134-162
+src/regime_detection/volatility_state.py
+  c46f0b10e27ac97f 118-167
+tests/test_foundation.py
+  c46f0b10e27ac97f 98-110
+src/regime_detection/engine.py
+  c46f0b10e27ac97f 84-85
+src/regime_detection/breadth_state.py
+  c46f0b10e27ac97f 46,88-122,181,183-184
+src/regime_detection/axis_series.py
+  c46f0b10e27ac97f 10,27,32,36,64,90,116,143,185
+src/regime_detection/timeline.py
+  c46f0b10e27ac97f 40-49,52-56,64-73,75,77-84
+src/regime_detection/trend_direction.py
+  c46f0b10e27ac97f 7,75-109
+src/regime_detection/trend_character.py
+  c46f0b10e27ac97f 115-151
+tests/test_breadth_state.py
+  c46f0b10e27ac97f 17-38
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.3.4",
+  "base_commit_sha": "b4249ba0d85bf9e6544968bc435fc45acfcbf1f8",
+  "prompts": {
+    "c46f0b10e27ac97f": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019dfd55-21d1-7263-8b26-f5868a3aada8",
+        "model": "gpt-5.4"
+      },
+      "human_author": "Avinash Vankadaru",
+      "messages": [],
+      "total_additions": 294,
+      "total_deletions": 91,
+      "accepted_lines": 294,
+      "overriden_lines": 0
+    }
+  }
+}
