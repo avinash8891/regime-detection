@@ -60,9 +60,14 @@ def _compute_adx_14(high: pd.Series, low: pd.Series, close: pd.Series) -> pd.Ser
 
     n = 14
     atr = _wilder_ewm(tr, n)
-    plus_di = 100 * _wilder_ewm(plus_dm, n) / atr
-    minus_di = 100 * _wilder_ewm(minus_dm, n) / atr
-    dx = ((plus_di - minus_di).abs() / (plus_di + minus_di)) * 100
+    # Guard against zero ATR and zero denominator in DX; flat/missing windows should not
+    # create inf/NaN that leaks into label selection.
+    atr_safe = atr.replace(0.0, np.nan)
+    plus_di = 100 * _wilder_ewm(plus_dm, n) / atr_safe
+    minus_di = 100 * _wilder_ewm(minus_dm, n) / atr_safe
+    denom = (plus_di + minus_di).replace(0.0, np.nan)
+    dx = ((plus_di - minus_di).abs() / denom) * 100
+    dx = dx.fillna(0.0)
     return _wilder_ewm(dx, n)
 
 
@@ -78,9 +83,31 @@ def _load_raw() -> Inputs:
         path = RAW_DIR / f"{sym}.csv"
         df = pd.read_csv(path, parse_dates=["date"])
         df = df.sort_values("date").set_index("date")
+        required_cols = {"open", "high", "low", "close", "volume"}
+        missing = sorted(required_cols - set(df.columns))
+        if missing:
+            raise SystemExit(f"{path} missing required columns: {missing}")
+        if df.index.has_duplicates:
+            raise SystemExit(f"{path} has duplicate dates in index")
         return df
 
-    return Inputs(spy=load("SPY"), rsp=load("RSP"), vixy=load("VIXY"))
+    spy = load("SPY")
+    rsp = load("RSP")
+    vixy = load("VIXY")
+
+    # Ensure the expected time alignment for deterministic feature computation.
+    common = spy.index.intersection(rsp.index).intersection(vixy.index)
+    if len(common) == 0:
+        raise SystemExit("Raw fixtures have no overlapping dates across SPY/RSP/VIXY")
+    if not spy.index.equals(common) or not rsp.index.equals(common) or not vixy.index.equals(common):
+        # Do not silently align via pandas index union; that's a common source of NaN-induced
+        # 'unknown' outputs and unintentional fixture drift.
+        raise SystemExit(
+            "Raw fixtures must have identical trading-day indices across SPY/RSP/VIXY. "
+            f"Counts: SPY={len(spy.index)} RSP={len(rsp.index)} VIXY={len(vixy.index)} common={len(common)}"
+        )
+
+    return Inputs(spy=spy, rsp=rsp, vixy=vixy)
 
 
 def _compute_features(inp: Inputs) -> dict[str, pd.Series]:

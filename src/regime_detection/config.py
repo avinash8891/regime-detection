@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import importlib.resources
 from pathlib import Path
 from typing import Any
 
@@ -58,23 +59,26 @@ def load_regime_config(path: str | Path) -> RegimeConfig:
 def default_config_path() -> Path:
     """
     Default config resolution:
-    V1 requires a repo-local config at `configs/core3-v1.0.0.yaml`.
+    - Prefer the packaged config shipped with the library.
+    - If the repo-level `configs/core3-v1.0.0.yaml` exists (development override), prefer it.
     """
     here = Path(__file__).resolve()
 
-    # Best-effort repo-root detection (works in a source checkout; gracefully falls back when installed).
+    # Development override: use repo-level config when present.
     repo_root: Path | None = None
     for p in here.parents:
         if (p / "pyproject.toml").exists():
             repo_root = p
             break
-
     if repo_root is not None:
         repo_cfg = repo_root / "configs" / "core3-v1.0.0.yaml"
         if repo_cfg.exists():
             return repo_cfg
 
-    raise FileNotFoundError(
-        "Default config not found. Expected repo-local configs/core3-v1.0.0.yaml. "
-        "Pass config_path explicitly if running outside the repository."
-    )
+    # Installed/default: packaged config.
+    pkg_file = importlib.resources.files("regime_detection").joinpath("configs/core3-v1.0.0.yaml")
+    with importlib.resources.as_file(pkg_file) as p:
+        if p.exists():
+            return p
+
+    raise FileNotFoundError("Packaged default config not found: regime_detection/configs/core3-v1.0.0.yaml")
