@@ -303,6 +303,56 @@ def _apply_trend_direction_hysteresis(
     return stable, active
 
 
+def _apply_asymmetric_hysteresis(
+    *, raw_labels: list[str], risk_rank: dict[str, int], deescalation_days: int
+) -> tuple[list[str], list[str]]:
+    """
+    Generic asymmetric hysteresis used by multiple axes.
+    - Escalation updates stable immediately.
+    - De-escalation requires N consecutive days on the candidate label.
+    - Equal-rank label changes are treated as de-escalation candidates.
+    - active fast-path: if raw riskier than stable => active=raw else active=stable.
+    """
+    stable: list[str] = []
+    active: list[str] = []
+
+    stable_label = raw_labels[0]
+    pending: str | None = None
+    cnt = 0
+
+    for raw in raw_labels:
+        rr = risk_rank[raw]
+        sr = risk_rank[stable_label]
+
+        if rr > sr:
+            stable_label = raw
+            pending = None
+            cnt = 0
+        elif rr < sr or raw != stable_label:
+            if deescalation_days == 0:
+                stable_label = raw
+                pending = None
+                cnt = 0
+            else:
+                if pending != raw:
+                    pending = raw
+                    cnt = 1
+                else:
+                    cnt += 1
+                if cnt >= deescalation_days:
+                    stable_label = raw
+                    pending = None
+                    cnt = 0
+        else:
+            pending = None
+            cnt = 0
+
+        stable.append(stable_label)
+        active.append(raw if rr > risk_rank[stable_label] else stable_label)
+
+    return stable, active
+
+
 def _eval_trend_character(feat: dict[str, pd.Series], dt: pd.Timestamp) -> tuple[str, dict[str, bool]]:
     adx = feat["ADX_14"].loc[dt]
     ret10 = feat["return_10d"].loc[dt]
@@ -336,6 +386,15 @@ def _eval_trend_character(feat: dict[str, pd.Series], dt: pd.Timestamp) -> tuple
         "chop": chop,
         "transition": transition,
     }
+
+
+_TC_RISK_RANK: dict[str, int] = {
+    "trending": 0,
+    "chop": 1,
+    "recovery_attempt": 1,
+    "transition": 2,
+    "unknown": 2,
+}
 
 
 def _eval_volatility_state(feat: dict[str, pd.Series], dt: pd.Timestamp) -> tuple[str, dict[str, bool]]:
@@ -502,13 +561,13 @@ INTENTS: list[dict[str, Any]] = [
         "intent_date": "2019-06-28",
         "intent": {
             "trend_direction": "bull",
-            "trend_character": "trending",
+            "trend_character": "transition",
             "volatility_state": "normal_vol",
             "breadth_state": "healthy_breadth",
             "transition_risk": "stable",
         },
         "search_window_trading_days": 10,
-        "notes": "Bull market normal conditions",
+        "notes": "Bull market normal conditions (trend_character may remain transition under hysteresis)",
     },
     {
         "intent_id": "covid_crash_crisis",
@@ -634,7 +693,13 @@ def _evaluate_all(feat: dict[str, pd.Series]) -> pd.DataFrame:
     out["trend_direction"] = td_active
     out["_trend_direction_raw"] = td
     out["_trend_direction_stable"] = td_stable
-    out["trend_character"] = tc
+    # Apply V1 trend_character hysteresis so fixtures match engine outputs (active_label).
+    tc_stable, tc_active = _apply_asymmetric_hysteresis(
+        raw_labels=tc, risk_rank=_TC_RISK_RANK, deescalation_days=hyst["trend_character"]
+    )
+    out["trend_character"] = tc_active
+    out["_trend_character_raw"] = tc
+    out["_trend_character_stable"] = tc_stable
     out["volatility_state"] = vs
     out["breadth_state"] = bs
     out["transition_risk"] = tr
@@ -649,7 +714,17 @@ def _evaluate_all(feat: dict[str, pd.Series]) -> pd.DataFrame:
         }
         for raw, st, act, ev in zip(td, td_stable, td_active, td_ev, strict=True)
     ]
-    out["_tc_evidence"] = tc_ev
+    out["_tc_evidence"] = [
+        {
+            "raw_label": raw,
+            "stable_label": st,
+            "active_label": act,
+            "rule_evidence": ev,
+            "deescalation_days": hyst["trend_character"],
+            "risk_rank": _TC_RISK_RANK,
+        }
+        for raw, st, act, ev in zip(tc, tc_stable, tc_active, tc_ev, strict=True)
+    ]
     out["_vs_evidence"] = vs_ev
     out["_bs_evidence"] = bs_ev
     out["_tr_evidence"] = tr_ev
