@@ -15,4 +15,3 @@ Files:
 - SPY.csv: SPY daily OHLCV
 - RSP.csv: RSP daily OHLCV
 - VIXY.csv: VIX proxy daily OHLCV
-
