@@ -203,12 +203,7 @@ def _apply_hysteresis_active(
             stable_label = raw
             pending_label = None
             pending_count = 0
-        elif raw_rank == stable_rank and raw != stable_label:
-            # Same-rank label changes are immediate (no debounce) to match engine hysteresis.
-            stable_label = raw
-            pending_label = None
-            pending_count = 0
-        elif raw_rank < stable_rank:
+        elif raw_rank < stable_rank or raw != stable_label:
             if deescalation_days == 0:
                 stable_label = raw
                 pending_label = None

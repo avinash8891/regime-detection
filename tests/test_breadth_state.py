@@ -9,10 +9,6 @@ import yaml
 from regime_detection.engine import RegimeEngine
 
 
-def _empty_event_calendar() -> pd.DataFrame:
-    return pd.DataFrame(columns=["date", "market", "type", "importance"])
-
-
 def _market_df_for_asof(as_of: date) -> pd.DataFrame:
     fixtures = Path(__file__).resolve().parent / "fixtures" / "raw"
     spy = pd.read_csv(fixtures / "SPY.csv")
@@ -35,5 +31,6 @@ def test_breadth_state_matches_pinned_fixtures() -> None:
     for row in golden["rows"]:
         as_of = date.fromisoformat(row["as_of_date"])
         df = _market_df_for_asof(as_of)
-        out = engine.classify(as_of_date=as_of, market_data=df, event_calendar=_empty_event_calendar())
+        out = engine.classify(as_of_date=as_of, market_data=df)
         assert out.breadth_state.active_label == row["expected"]["breadth_state"]
+

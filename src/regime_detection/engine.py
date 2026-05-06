@@ -25,7 +25,6 @@ from regime_detection.trend_direction import classify_series as classify_trend_d
 from regime_detection.trend_character import classify_series as classify_trend_character
 from regime_detection.volatility_state import classify_series as classify_volatility_state
 from regime_detection.breadth_state import classify_series as classify_breadth_state
-from regime_detection.event_calendar import classify_event_calendar
 
 
 class RegimeEngine:
@@ -57,6 +56,9 @@ class RegimeEngine:
         require_nyse_trading_day(as_of_date)
 
         _require_market_data_contract(market_data, as_of_date=as_of_date)
+        if event_calendar is not None:
+            # Slice 7 implements event calendar; until then, fail loudly rather than ignore.
+            raise ValueError("event_calendar is not implemented yet (Slice 7). Pass event_calendar=None for V1.")
 
         # Slice 3: Trend Direction implemented; remaining axes stay unknown until their slices land.
         spy_ohlcv = _spy_ohlcv_frame(market_data, as_of_date=as_of_date)
@@ -102,8 +104,11 @@ class RegimeEngine:
             deescalation_days=cfg.hysteresis.breadth_deescalation_days,
         )
 
+        unknown_axis = _unknown_axis_output()
+        unknown_breadth = _unknown_breadth_output()
+
         structural = StructuralCausalState(
-            event_calendar=classify_event_calendar(as_of_date=as_of_date, event_calendar=event_calendar),
+            event_calendar=_unknown_event_calendar_output(),
             monetary_pressure=MonetaryPressureOutput(
                 label="unknown",
                 reason="not_implemented_v1",
@@ -139,10 +144,6 @@ def _require_market_data_contract(df: pd.DataFrame, *, as_of_date: date) -> None
         raise ValueError(f"market_data missing required columns: {missing}")
     if df.empty:
         raise ValueError("market_data must not be empty")
-    if df["symbol"].isna().any():
-        raise ValueError("market_data contains nulls in symbol")
-    if (df["symbol"].astype(str).str.strip() == "").any():
-        raise ValueError("market_data contains empty symbol values")
     if (df["symbol"] == "SPY").sum() == 0:
         raise ValueError("market_data must contain SPY rows for V1")
     dates = pd.to_datetime(df["date"], errors="coerce").dt.date

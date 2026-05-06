@@ -33,10 +33,6 @@ def _market_df_for_asof(as_of: date) -> pd.DataFrame:
     return df[keep]
 
 
-def _empty_event_calendar() -> pd.DataFrame:
-    return pd.DataFrame(columns=["date", "market", "type", "importance"])
-
-
 def test_engine_version_matches_spec_prefix() -> None:
     assert engine_version().startswith("regime-engine-v")
 
@@ -57,7 +53,7 @@ def test_classify_requires_nyse_trading_day() -> None:
     engine = RegimeEngine()
     df = _market_df_for_asof(date(2017, 1, 3))
     with pytest.raises(ValueError) as excinfo:
-        engine.classify(as_of_date=as_of, market_data=df, event_calendar=_empty_event_calendar())
+        engine.classify(as_of_date=as_of, market_data=df)
     msg = str(excinfo.value)
     assert "Nearest prior trading day" in msg
     assert "Nearest next trading day" in msg
@@ -70,7 +66,7 @@ def test_market_data_contract_requires_spy() -> None:
     df = _market_df_for_asof(as_of)
     df = df[df["symbol"] != "SPY"].copy()
     with pytest.raises(ValueError) as excinfo:
-        engine.classify(as_of_date=as_of, market_data=df, event_calendar=_empty_event_calendar())
+        engine.classify(as_of_date=as_of, market_data=df)
     assert "must contain SPY" in str(excinfo.value)
 
 
@@ -107,7 +103,7 @@ def test_classify_emits_regime_output_shape() -> None:
     assert is_nyse_trading_day(as_of)
     engine = RegimeEngine()
     df = _market_df_for_asof(as_of)
-    out = engine.classify(as_of_date=as_of, market_data=df, event_calendar=_empty_event_calendar())
+    out = engine.classify(as_of_date=as_of, market_data=df)
     assert out.engine_version == engine_version()
     assert out.config_version == engine.config.config_version
     assert out.as_of_date == as_of
@@ -148,6 +144,5 @@ def test_classify_accepts_dedicated_breadth_and_vix_inputs() -> None:
         market_data=market_data,
         breadth_data=breadth_data,
         vix_data=vix_data,
-        event_calendar=_empty_event_calendar(),
     )
     assert out.as_of_date == as_of
