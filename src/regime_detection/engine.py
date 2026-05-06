@@ -21,7 +21,6 @@ from regime_detection.models import (
     TransitionRiskOutput,
 )
 from regime_detection.versioning import engine_version
-from regime_detection.trend_direction import classify_series as classify_trend_direction
 
 
 class RegimeEngine:
@@ -54,14 +53,8 @@ class RegimeEngine:
 
         _require_market_data_contract(market_data, as_of_date=as_of_date)
 
-        # Slice 3: Trend Direction implemented; remaining axes stay unknown until their slices land.
-        spy_close = _spy_close_series(market_data, as_of_date=as_of_date)
-        trend_direction = classify_trend_direction(
-            close=spy_close,
-            as_of_date=as_of_date,
-            deescalation_days=cfg.hysteresis.trend_direction_deescalation_days,
-        )
-
+        # Slice 1 (Foundation) only: emit unknown/not_implemented labels for
+        # classifier axes until subsequent slices implement them.
         unknown_axis = _unknown_axis_output()
         unknown_breadth = _unknown_breadth_output()
 
@@ -78,7 +71,7 @@ class RegimeEngine:
             config_version=cfg.config_version,
             as_of_date=as_of_date,
             market="SPY",
-            trend_direction=trend_direction,
+            trend_direction=unknown_axis,
             trend_character=unknown_axis,
             volatility_state=unknown_axis,
             breadth_state=unknown_breadth,
@@ -108,16 +101,6 @@ def _require_market_data_contract(df: pd.DataFrame, *, as_of_date: date) -> None
     has_spy_asof = ((df["symbol"] == "SPY") & (dates == as_of_date)).any()
     if not bool(has_spy_asof):
         raise ValueError(f"market_data must include SPY row for as_of_date={as_of_date.isoformat()}")
-
-
-def _spy_close_series(df: pd.DataFrame, *, as_of_date: date) -> pd.Series:
-    s = df[df["symbol"] == "SPY"].copy()
-    s["date"] = pd.to_datetime(s["date"])
-    s = s.sort_values("date")
-    s = s[s["date"].dt.date <= as_of_date]
-    out = pd.Series(s["close"].to_numpy(), index=pd.to_datetime(s["date"]))
-    out.name = "close"
-    return out
 
 
 def _unknown_data_quality(*, reason: str, status: str) -> DataQuality:

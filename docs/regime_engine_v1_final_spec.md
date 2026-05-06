@@ -1193,11 +1193,11 @@ tests/fixtures/raw/*.csv -diff
 | as_of_date | Expected trend_direction | Expected character | Expected volatility | Expected breadth | Expected transition_risk |
 |---|---|---|---|---|---|
 | 2020-08-11 | bull | trending | low_vol | healthy_breadth | stable |
-| 2018-02-09 (Volmageddon) | transition | transition | crisis_vol | weak_breadth | crisis_override |
+| 2018-02-09 (Volmageddon) | sideways | transition | crisis_vol | weak_breadth | crisis_override |
 | 2018-12-20 | bear | trending | high_vol | weak_breadth | bear_stress_warning |
 | 2019-06-28 | bull | trending | normal_vol | healthy_breadth | stable |
 | 2020-03-30 (COVID crash) | bear | trending | crisis_vol | weak_breadth | crisis_override |
-| 2020-04-17 | bear | recovery_attempt | high_vol | weak_breadth | recovery_attempt |
+| 2020-04-17 | transition | recovery_attempt | high_vol | weak_breadth | recovery_attempt |
 | 2020-12-08 | bull | trending | low_vol | healthy_breadth | stable |
 | 2022-06-29 | bear | trending | high_vol | weak_breadth | bear_stress_warning |
 | 2022-07-12 | bear | trending | high_vol | weak_breadth | bear_stress_warning |
