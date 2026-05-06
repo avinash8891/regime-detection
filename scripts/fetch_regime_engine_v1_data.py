@@ -16,6 +16,7 @@ if str(SRC_DIR) not in sys.path:
 
 from regime_data_fetch.cli_common import load_env_file, parse_date
 from regime_data_fetch.fetch_workflow import run_macro_fetch, run_market_fetch
+from regime_data_fetch.pmi import run_pmi_fetch
 from regime_data_fetch.universe import build_or_load_us_universe_10b_cache
 
 
@@ -26,7 +27,7 @@ def main() -> int:
     ap.add_argument("--start", default="2015-01-01", help="Start date (YYYY-MM-DD).")
     ap.add_argument("--end", default=dt.date.today().isoformat(), help="End date (YYYY-MM-DD).")
     ap.add_argument("--scope", default="v1", help="Data scope: v1|v2|all.")
-    ap.add_argument("--fetch", default="market", help="What to fetch: market|macro|all.")
+    ap.add_argument("--fetch", default="market", help="What to fetch: market|macro|pmi|all.")
     ap.add_argument("--min-cap-b", type=float, default=10.0, help="Universe filter threshold in $B.")
     ap.add_argument("--adjustment", default="raw", help="Alpaca adjustment: raw|split|dividend|all.")
     ap.add_argument("--alpaca-feed", default=None, help="Alpaca data feed: sip|iex|otc. Omit to use SDK default.")
@@ -63,8 +64,8 @@ def main() -> int:
 
     if args.scope not in {"v1", "v2", "all"}:
         raise SystemExit("--scope must be v1|v2|all")
-    if args.fetch not in {"market", "macro", "all"}:
-        raise SystemExit("--fetch must be market|macro|all")
+    if args.fetch not in {"market", "macro", "pmi", "all"}:
+        raise SystemExit("--fetch must be market|macro|pmi|all")
 
     if args.env_file:
         load_env_file(Path(args.env_file))
@@ -112,6 +113,13 @@ def main() -> int:
             include_cpi_vintages=args.include_cpi_vintages,
         )
         print(str(macro_report))
+
+    if args.fetch in {"pmi", "all"}:
+        pmi_report = run_pmi_fetch(
+            out_dir=out_dir,
+            as_of_date=end,
+        )
+        print(str(pmi_report))
     return 0
 
 

@@ -8,6 +8,21 @@ This document lists all data needed to build V1 with real fixtures and real test
 
 ---
 
+## 0. Source, Cadence, and Availability Summary
+
+| Data | Source | Cadence | Availability / Comment |
+|---|---|---|---|
+| `SPY` daily OHLCV | Alpaca REST | daily | fetch after NYSE close; use NYSE trading dates only |
+| `RSP` daily OHLCV | Alpaca REST | daily | fetch after NYSE close; align exactly to `SPY` trading dates |
+| `VIX` daily close or `VIXY` proxy close | Alpaca REST | daily | fetch after market close; use `VIXY` only when true `VIX` is unavailable |
+| V1 event calendar rows | repo-local manual YAML/CSV | manual | calendar availability is user-maintained; do not assume a live source exists |
+| NYSE trading calendar | `pandas_market_calendars` or equivalent | exchange calendar | session/holiday schedule must be available for the full fixture range |
+| Golden fixture expectations | repo-local fixture files | static fixture set | updated only when fixture verification proves the labeled expectation is wrong |
+
+This document defines the **required V1 data artifacts and semantics**. It does not imply that every source already has a production-ready live fetcher.
+
+---
+
 ## 1. Raw Market Data
 
 V1 requires daily price data for the market anchor, ETF breadth proxy, and volatility proxy.
@@ -91,11 +106,16 @@ Allowed symbols:
 
 ```text
 VIX
-VIX
 VIXY (documented proxy when Alpaca does not provide true VIX)
 ```
 
 OHLCV columns may be included if the vendor provides them, but V1 only requires `close`.
+
+Availability note:
+
+- fetch after market close;
+- prefer true `VIX`;
+- if using `VIXY`, treat it as an explicit operational proxy rather than silently labeling it as true `VIX`.
 
 ### 1.4 Required Date Range
 
@@ -116,6 +136,11 @@ Reason:
 ## 2. Event Calendar Data
 
 V1 requires a manually maintained US event calendar in YAML or CSV.
+
+Availability note:
+
+- this is manual data, not a live feed;
+- the current repo fetch plan only has a template/scaffolding file for event rows, not a completed historical calendar dataset.
 
 Required event fields:
 
@@ -182,6 +207,11 @@ If represented as config instead, the rule must be deterministic and documented 
 ## 3. Trading Calendar Data
 
 V1 uses the NYSE trading calendar through `pandas_market_calendars` or equivalent.
+
+Availability note:
+
+- this is derived from the installed exchange-calendar library, not from a repo-local raw download;
+- the required availability is deterministic access to all NYSE sessions and holidays across the full test range.
 
 No repo-local CSV is required if the calendar library is installed, but all tests and fixture verification depend on:
 

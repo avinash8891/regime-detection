@@ -38,6 +38,10 @@ These source choices are already approved and should be treated as explicit spec
 
 - `DXY` is **not** fetched in V2 build mode. The spec-level field is `broad_usd_index`, sourced from FRED `DTWEXBGS`.
 - PMI stays PMI. Do **not** substitute CFNAI or another macro proxy.
+- PMI retrieval uses alternate redistribution sources, not direct ISM scraping in this repo path:
+  - primary: DBnomics
+  - backup: TradingEconomics
+  - stale primary data must fail loudly and fall through explicitly
 - `earnings_revision_breadth` is replaced by `aggregate_forward_eps_revision_direction`, sourced from S&P Global aggregate forward EPS data.
 
 ### 2.0A Data Inventory
@@ -50,37 +54,37 @@ Status meanings used below:
 - `planned`: source/path identified, loader not implemented yet
 - `hard-fail`: intentionally unsupported unless the spec/source decision changes
 
-| Data | Source | Output / Path | Status | Notes |
-|---|---|---|---|---|
-| US universe cache JSON | `market-data-hub` seed list + yfinance market-cap refresh | `data/raw/universe/us_universe_cache.json` | implemented-not-live-verified | built by `build_or_load_us_universe_10b_cache()` |
-| 10B+ US stock universe symbol list | universe cache JSON above | loaded in-memory from `data/raw/universe/us_universe_cache.json` or `--universe-json` | implemented-not-live-verified | used for V1/all stock-universe fetches |
-| 762-stock daily OHLCV backfill | Alpaca REST | `data/raw/daily_ohlcv/` | implemented-not-live-verified | blocked on missing local Alpaca creds during this session |
-| `SPY` daily OHLCV | Alpaca REST | `data/raw/daily_ohlcv/` | implemented-not-live-verified | V1 market anchor |
-| `RSP` daily OHLCV | Alpaca REST | `data/raw/daily_ohlcv/` | implemented-not-live-verified | V1 breadth proxy |
-| `VIX` daily proxy bars | Alpaca REST | `data/raw/daily_ohlcv/` | implemented-not-live-verified | only if Alpaca account returns true `VIX` |
-| `VIXY` daily proxy bars | Alpaca REST | `data/raw/daily_ohlcv/` | implemented-not-live-verified | documented operational proxy when true `VIX` is unavailable |
-| `KRE` daily OHLCV | Alpaca REST | `data/raw/daily_ohlcv/` | implemented-not-live-verified | V2 bank-stress proxy |
-| Sector ETF daily OHLCV: `XLB,XLC,XLE,XLF,XLI,XLK,XLP,XLRE,XLU,XLV,XLY` | Alpaca REST | `data/raw/daily_ohlcv/` | implemented-not-live-verified | V2 fragility / sector breadth universe |
-| Cross-asset ETF daily OHLCV: `QQQ,IWM,EFA,EEM,TLT,HYG,LQD,GLD,USO,UUP` | Alpaca REST | `data/raw/daily_ohlcv/` | implemented-not-live-verified | V2 cross-asset fragility universe |
-| Event calendar template (V1 + V2 sample rows) | repo-local generated YAML | `data/raw/event_calendar/events.template.yaml` | template-only | not real historical event data |
-| `2y_yield` / `DGS2` | FRED API | `data/raw/macro/fred_macro_series.parquet` | done-live-verified | live fetch succeeded |
-| `10y_yield` / `DGS10` | FRED API | `data/raw/macro/fred_macro_series.parquet` | done-live-verified | live fetch succeeded |
-| `broad_usd_index` / `DTWEXBGS` | FRED API | `data/raw/macro/fred_macro_series.parquet` | done-live-verified | explicit approved replacement for DXY |
-| `sofr` / `SOFR` | FRED API | `data/raw/macro/fred_macro_series.parquet` | done-live-verified | live fetch succeeded |
-| `nfci` / `NFCI` | FRED API | `data/raw/macro/fred_macro_series.parquet` | done-live-verified | weekly series; live fetch succeeded |
-| `cpi_all_items` / `CPIAUCSL` | FRED API | `data/raw/macro/fred_macro_series.parquet` | done-live-verified | monthly series; live fetch succeeded |
-| `cpi_all_items_vintages` / `CPIAUCSL` realtime observations | FRED API with realtime params | `data/raw/macro_vintages/cpi_all_items_vintages.parquet` | done-live-verified | live fetch succeeded |
-| `iorb` | Federal Reserve Board H.15 / IORB release | dedicated raw dataset not yet created | planned | source chosen, loader not implemented |
-| PMI manufacturing headline values | ISM pages / PDFs | dedicated PMI dataset not yet created | planned | keep PMI as PMI; no CFNAI substitution |
-| PMI services headline values | ISM pages / PDFs | dedicated PMI dataset not yet created | planned | release timestamp must follow ISM calendar |
-| PMI release timestamps | ISM calendar convention | derived in code, dedicated dataset not yet created | planned | manufacturing = first business day 10:00 ET; services = third business day 10:00 ET |
-| PIT S&P 500 constituents | `fja05680/sp500` initial source | dedicated PIT dataset not yet created | planned | output must carry bias warning |
-| FOMC minutes raw text | Federal Reserve site | dedicated raw text dataset not yet created | planned | release timestamps required |
-| Powell speeches raw text | Federal Reserve site | dedicated raw text dataset not yet created | planned | release timestamps required |
-| `aggregate_forward_eps_revision_direction` | S&P Global aggregate forward EPS sheet | dedicated weekly dataset not yet created | planned | renamed replacement for earnings revision breadth |
-| Bloomberg / Refinitiv consensus surveys | paid vendor feeds | no output path | hard-fail | unsupported unless spec explicitly adopts a paid source |
-| I/B/E/S per-stock analyst revisions | paid vendor feeds | no output path | hard-fail | unsupported in current V2 plan |
-| ICE DXY history | licensed ICE feed | no output path while spec stays on `broad_usd_index` | hard-fail | only relevant if spec changes back from `broad_usd_index` |
+| Data | Source | Cadence | Output / Path | Status | Comment |
+|---|---|---|---|---|---|
+| US universe cache JSON | `market-data-hub` seed list + yfinance market-cap refresh | ad hoc refresh | `data/raw/universe/us_universe_cache.json` | implemented-not-live-verified | built by `build_or_load_us_universe_10b_cache()`; refresh when the stock universe is rebuilt |
+| 10B+ US stock universe symbol list | universe cache JSON above | ad hoc refresh | loaded in-memory from `data/raw/universe/us_universe_cache.json` or `--universe-json` | implemented-not-live-verified | available immediately after universe-cache build; used for V1/all stock-universe fetches |
+| 762-stock daily OHLCV backfill | Alpaca REST | daily | `data/raw/daily_ohlcv/` | implemented-not-live-verified | available after market close for each trading session; blocked on missing local Alpaca creds during this session |
+| `SPY` daily OHLCV | Alpaca REST | daily | `data/raw/daily_ohlcv/` | implemented-not-live-verified | V1 market anchor; fetch after NYSE close |
+| `RSP` daily OHLCV | Alpaca REST | daily | `data/raw/daily_ohlcv/` | implemented-not-live-verified | V1 breadth proxy; fetch after NYSE close |
+| `VIX` daily proxy bars | Alpaca REST | daily | `data/raw/daily_ohlcv/` | implemented-not-live-verified | only if Alpaca account returns true `VIX`; fetch after market close |
+| `VIXY` daily proxy bars | Alpaca REST | daily | `data/raw/daily_ohlcv/` | implemented-not-live-verified | documented operational proxy when true `VIX` is unavailable; fetch after market close |
+| `KRE` daily OHLCV | Alpaca REST | daily | `data/raw/daily_ohlcv/` | implemented-not-live-verified | V2 bank-stress proxy; fetch after market close |
+| Sector ETF daily OHLCV: `XLB,XLC,XLE,XLF,XLI,XLK,XLP,XLRE,XLU,XLV,XLY` | Alpaca REST | daily | `data/raw/daily_ohlcv/` | implemented-not-live-verified | V2 fragility / sector breadth universe; fetch after market close |
+| Cross-asset ETF daily OHLCV: `QQQ,IWM,EFA,EEM,TLT,HYG,LQD,GLD,USO,UUP` | Alpaca REST | daily | `data/raw/daily_ohlcv/` | implemented-not-live-verified | V2 cross-asset fragility universe; fetch after market close |
+| Event calendar template (V1 + V2 sample rows) | repo-local generated YAML | manual | `data/raw/event_calendar/events.template.yaml` | template-only | not real historical event data; current file is schema scaffolding only |
+| `2y_yield` / `DGS2` | FRED API | daily | `data/raw/macro/fred_macro_series.parquet` | done-live-verified | Treasury daily constant-maturity yield; typically published on business days after market hours |
+| `10y_yield` / `DGS10` | FRED API | daily | `data/raw/macro/fred_macro_series.parquet` | done-live-verified | Treasury daily constant-maturity yield; typically published on business days after market hours |
+| `broad_usd_index` / `DTWEXBGS` | FRED API | daily | `data/raw/macro/fred_macro_series.parquet` | done-live-verified | explicit approved replacement for DXY; business-day macro release cadence |
+| `sofr` / `SOFR` | FRED API | daily | `data/raw/macro/fred_macro_series.parquet` | done-live-verified | overnight rate; next-business-day publication pattern |
+| `nfci` / `NFCI` | FRED API | weekly | `data/raw/macro/fred_macro_series.parquet` | done-live-verified | Chicago Fed weekly update; do not assume fresh daily values |
+| `cpi_all_items` / `CPIAUCSL` | FRED API | monthly | `data/raw/macro/fred_macro_series.parquet` | done-live-verified | monthly CPI level; available after BLS CPI release each month |
+| `cpi_all_items_vintages` / `CPIAUCSL` realtime observations | FRED API with realtime params | monthly vintages | `data/raw/macro_vintages/cpi_all_items_vintages.parquet` | done-live-verified | PIT/vintage view; new vintage appears on CPI release cycle |
+| `iorb` / `IORB` | FRED API | business day | `data/raw/macro/fred_macro_series.parquet` | done-live-verified | interest on reserve balances; use the published effective date from FRED |
+| PMI manufacturing headline values | DBnomics primary, TradingEconomics backup | monthly | `data/raw/pmi/us_ism_pmi.parquet` | done-live-verified | available first business day of the following month at 10:00 ET; live run rejected stale DBnomics data and selected TradingEconomics for `2026-04` |
+| PMI services headline values | DBnomics primary, TradingEconomics backup | monthly | `data/raw/pmi/us_ism_pmi.parquet` | done-live-verified | available third business day of the following month at 10:00 ET; live run selected TradingEconomics `2026-04` after stale-primary rejection |
+| PMI release timestamps | code-derived ISM release calendar convention | monthly metadata | `data/raw/pmi/us_ism_pmi.parquet` | done-live-verified | manufacturing = first business day 10:00 ET; services = third business day 10:00 ET |
+| PIT S&P 500 constituents | `fja05680/sp500` initial source | event-driven membership changes | dedicated PIT dataset not yet created | planned | availability follows constituent adds/removals; output must carry bias warning |
+| FOMC minutes raw text | Federal Reserve site | about 8 times per year | dedicated raw text dataset not yet created | planned | minutes are typically released three weeks after each FOMC meeting at 14:00 ET |
+| Powell speeches raw text | Federal Reserve site | irregular / event-driven | dedicated raw text dataset not yet created | planned | availability depends on actual speech publication timestamps |
+| `aggregate_forward_eps_revision_direction` | S&P Global aggregate forward EPS sheet | weekly | dedicated weekly dataset not yet created | planned | use the vendor’s weekly aggregate EPS refresh, not a daily proxy |
+| Bloomberg / Refinitiv consensus surveys | paid vendor feeds | event-driven macro release cycle | no output path | hard-fail | unsupported unless spec explicitly adopts a paid source |
+| I/B/E/S per-stock analyst revisions | paid vendor feeds | daily to weekly | no output path | hard-fail | unsupported in current V2 plan |
+| ICE DXY history | licensed ICE feed | daily | no output path while spec stays on `broad_usd_index` | hard-fail | only relevant if spec changes back from `broad_usd_index` |
 
 ### 2.1 V1 Build Scope
 
@@ -123,7 +127,7 @@ built from the `market-data-hub` seed list.
 | `nfci` | `NFCI` | FRED | `data/raw/macro/fred_macro_series.parquet` |
 | `cpi_all_items` | `CPIAUCSL` | FRED | `data/raw/macro/fred_macro_series.parquet` |
 | `cpi_all_items_vintages` | `CPIAUCSL` with realtime params | FRED / ALFRED-style observations | `data/raw/macro_vintages/cpi_all_items_vintages.parquet` |
-| `iorb` | Fed Board H.15 / IORB release | Federal Reserve Board | dedicated IORB raw dataset when loader lands |
+| `iorb` | `IORB` | FRED | `data/raw/macro/fred_macro_series.parquet` |
 
 #### Higher-Maintenance Inputs
 
@@ -131,7 +135,7 @@ These are part of the V2 data plan but are not all implemented yet:
 
 | Dataset | Intended source | Notes |
 |---|---|---|
-| PMI manufacturing/services | ISM pages / PDFs | use real PMI, not CFNAI substitution; release timestamps locked to ISM calendar; scraper failures must be loud, not silent |
+| PMI manufacturing/services | DBnomics primary, TradingEconomics backup | use real PMI, not CFNAI substitution; reject stale primary data loudly; release timestamps locked to ISM calendar convention |
 | PIT S&P 500 constituents | `fja05680/sp500` initial source | bias must be documented explicitly in output/report |
 | FOMC minutes / Powell speeches | Federal Reserve site | release timestamps required |
 | Aggregate forward EPS revision direction | S&P Global aggregate forward EPS sheet | renamed replacement for earnings revision breadth |
@@ -211,11 +215,9 @@ The current repo fetch script is a development/backfill tool. It is **not** the 
 Still unresolved or not fully implemented:
 
 - real historical event-calendar ingestion
-- real PMI backfill loader
 - real PIT constituent loader
 - real Fed text loader
 - real aggregate forward EPS loader
-- real IORB loader
 - dedicated shadow runner with SQLite ledger and archived daily input snapshots
 
 ## 5. Explicit Hard Failures

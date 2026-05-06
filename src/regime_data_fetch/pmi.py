@@ -1,0 +1,266 @@
+from __future__ import annotations
+
+import datetime as dt
+import json
+import re
+import urllib.request
+from dataclasses import dataclass
+from pathlib import Path
+
+import pandas as pd
+
+from regime_data_fetch.ism import release_timestamp_for
+
+
+DBNOMICS_URLS = {
+    "manufacturing": "https://db.nomics.world/ISM/pmi/pm?tab=table",
+    "services": "https://db.nomics.world/ISM/nm-pmi/pm?tab=table",
+}
+TRADINGECONOMICS_URLS = {
+    "manufacturing": "https://tradingeconomics.com/united-states/business-confidence",
+    "services": "https://tradingeconomics.com/united-states/non-manufacturing-pmi",
+}
+
+_DBNOMICS_ROW_RE = re.compile(r"(?P<period>\d{4}-\d{2})\s+(?P<value>-?\d+(?:\.\d+)?)", re.IGNORECASE)
+_TE_TITLE_RE = re.compile(r"<title>\s*United States ISM (?P<series>Manufacturing|Services) PMI\s*</title>", re.IGNORECASE)
+_TE_MFG_DESC_RE = re.compile(r"remained [^ ]+ at (?P<value>\d+(?:\.\d+)?) points in (?P<month>[A-Za-z]+)", re.IGNORECASE)
+_TE_SVC_DESC_RE = re.compile(
+    r"Non Manufacturing PMI in the United States [^ ]+ to (?P<value>\d+(?:\.\d+)?) points in (?P<month>[A-Za-z]+)",
+    re.IGNORECASE,
+)
+_MONTHS = {
+    "jan": 1,
+    "feb": 2,
+    "mar": 3,
+    "apr": 4,
+    "may": 5,
+    "jun": 6,
+    "jul": 7,
+    "aug": 8,
+    "sep": 9,
+    "oct": 10,
+    "nov": 11,
+    "dec": 12,
+}
+
+
+class PMIFetchError(RuntimeError):
+    pass
+
+
+@dataclass(frozen=True)
+class PMIObservation:
+    series_name: str
+    period: str
+    value: float
+    release_timestamp: dt.datetime
+    source: str
+    source_url: str
+
+
+def release_timestamp_for_period(*, series_name: str, period: str) -> dt.datetime:
+    year, month = map(int, period.split("-"))
+    if month == 12:
+        release_year = year + 1
+        release_month = 1
+    else:
+        release_year = year
+        release_month = month + 1
+
+    business_day_index = 1 if series_name == "manufacturing" else 3
+    return release_timestamp_for(year=release_year, month=release_month, business_day_index=business_day_index)
+
+
+def parse_dbnomics_html(html: str, *, series_name: str, source_url: str) -> list[PMIObservation]:
+    cleaned = re.sub(r"<![^>]*>", " ", html)
+    cleaned = re.sub(r"<[^>]+>", " ", cleaned)
+    cleaned = re.sub(r"\s+", " ", cleaned)
+    observations: list[PMIObservation] = []
+    for match in _DBNOMICS_ROW_RE.finditer(cleaned):
+        period = match.group("period")
+        value = float(match.group("value"))
+        observations.append(
+            PMIObservation(
+                series_name=series_name,
+                period=period,
+                value=value,
+                release_timestamp=release_timestamp_for_period(series_name=series_name, period=period),
+                source="dbnomics",
+                source_url=source_url,
+            )
+        )
+    if not observations:
+        raise PMIFetchError(f"DBnomics page did not contain parseable PMI rows for {series_name}")
+    return observations
+
+
+def parse_tradingeconomics_html(html: str, *, series_name: str, source_url: str) -> PMIObservation:
+    _ensure_series_title(html, expected=series_name)
+    pattern = _TE_MFG_DESC_RE if series_name == "manufacturing" else _TE_SVC_DESC_RE
+    match = pattern.search(html)
+    if not match:
+        raise PMIFetchError(f"TradingEconomics page did not contain parseable PMI description for {series_name}")
+
+    month_name = match.group("month")
+    month = _MONTHS[month_name[:3].lower()]
+    year = _extract_reference_year(html)
+    period = f"{year:04d}-{month:02d}"
+    return PMIObservation(
+        series_name=series_name,
+        period=period,
+        value=float(match.group("value")),
+        release_timestamp=release_timestamp_for_period(series_name=series_name, period=period),
+        source="tradingeconomics",
+        source_url=source_url,
+    )
+
+
+def choose_latest_available(*, observations: list[PMIObservation], as_of_timestamp: dt.datetime) -> PMIObservation:
+    eligible = [obs for obs in observations if obs.release_timestamp <= as_of_timestamp]
+    if not eligible:
+        raise PMIFetchError("No PMI observation available as of the requested timestamp")
+    return max(eligible, key=lambda obs: (obs.release_timestamp, obs.period))
+
+
+def expected_latest_period(*, series_name: str, as_of_timestamp: dt.datetime) -> str:
+    candidate = dt.date(as_of_timestamp.year, as_of_timestamp.month, 1)
+    while True:
+        period = candidate.strftime("%Y-%m")
+        if release_timestamp_for_period(series_name=series_name, period=period) <= as_of_timestamp:
+            return period
+
+        if candidate.month == 1:
+            candidate = dt.date(candidate.year - 1, 12, 1)
+        else:
+            candidate = dt.date(candidate.year, candidate.month - 1, 1)
+
+
+def validate_latest_observations(*, latest_rows: list[PMIObservation], as_of_timestamp: dt.datetime, source_name: str) -> None:
+    stale: list[str] = []
+    for row in latest_rows:
+        expected = expected_latest_period(series_name=row.series_name, as_of_timestamp=as_of_timestamp)
+        if row.period != expected:
+            stale.append(f"{row.series_name} expected {expected} got {row.period}")
+
+    if stale:
+        details = "; ".join(stale)
+        raise PMIFetchError(f"{source_name} returned stale PMI data: {details}")
+
+
+def fetch_pmi_dbnomics(*, as_of_date: dt.date) -> list[PMIObservation]:
+    del as_of_date
+    rows: list[PMIObservation] = []
+    for series_name, url in DBNOMICS_URLS.items():
+        html = _http_get_text(url)
+        rows.extend(parse_dbnomics_html(html, series_name=series_name, source_url=url))
+    return rows
+
+
+def fetch_pmi_tradingeconomics(*, as_of_date: dt.date) -> list[PMIObservation]:
+    del as_of_date
+    rows: list[PMIObservation] = []
+    for series_name, url in TRADINGECONOMICS_URLS.items():
+        html = _http_get_text(url)
+        rows.append(parse_tradingeconomics_html(html, series_name=series_name, source_url=url))
+    return rows
+
+
+def run_pmi_fetch(
+    *,
+    out_dir: Path,
+    as_of_date: dt.date,
+    primary_fetcher=fetch_pmi_dbnomics,
+    backup_fetcher=fetch_pmi_tradingeconomics,
+) -> Path:
+    out_dir.mkdir(parents=True, exist_ok=True)
+    as_of_timestamp = dt.datetime.combine(as_of_date, dt.time(23, 59, 59), tzinfo=dt.timezone.utc).astimezone(
+        release_timestamp_for(year=2026, month=4, business_day_index=1).tzinfo
+    )
+    attempts: list[dict[str, str]] = []
+
+    chosen_rows: list[PMIObservation] | None = None
+    selected_source: str | None = None
+    for source_name, fetcher in [("dbnomics", primary_fetcher), ("tradingeconomics", backup_fetcher)]:
+        try:
+            observations = fetcher(as_of_date=as_of_date)
+            latest = [
+                choose_latest_available(
+                    observations=[obs for obs in observations if obs.series_name == series_name],
+                    as_of_timestamp=as_of_timestamp,
+                )
+                for series_name in ("manufacturing", "services")
+            ]
+            validate_latest_observations(
+                latest_rows=latest,
+                as_of_timestamp=as_of_timestamp,
+                source_name=source_name,
+            )
+            chosen_rows = latest
+            selected_source = source_name
+            attempts.append({"source": source_name, "status": "success"})
+            break
+        except Exception as exc:  # noqa: BLE001
+            attempts.append({"source": source_name, "status": "failure", "error": str(exc)})
+
+    if chosen_rows is None or selected_source is None:
+        raise PMIFetchError(f"All PMI sources failed: {attempts}")
+
+    df = pd.DataFrame(
+        [
+            {
+                "series_name": row.series_name,
+                "period": row.period,
+                "value": row.value,
+                "release_timestamp": row.release_timestamp.isoformat(),
+                "source": row.source,
+                "source_url": row.source_url,
+            }
+            for row in chosen_rows
+        ]
+    )
+    pmi_dir = out_dir / "pmi"
+    pmi_dir.mkdir(parents=True, exist_ok=True)
+    parquet_path = pmi_dir / "us_ism_pmi.parquet"
+    df.to_parquet(parquet_path, index=False)
+
+    report = {
+        "as_of_date": as_of_date.isoformat(),
+        "selected_source": selected_source,
+        "attempts": attempts,
+        "counts": {"rows": int(len(df))},
+        "paths": {"pmi_parquet": str(parquet_path)},
+    }
+    report_path = out_dir / "pmi_fetch_report.json"
+    report_path.write_text(json.dumps(report, indent=2))
+    return report_path
+
+
+def _ensure_series_title(html: str, *, expected: str) -> None:
+    match = _TE_TITLE_RE.search(html)
+    if not match:
+        raise PMIFetchError("TradingEconomics page missing expected title")
+    got = match.group("series").lower()
+    if expected not in got:
+        raise PMIFetchError(f"TradingEconomics title mismatch: expected {expected}, got {got}")
+
+
+def _extract_reference_year(html: str) -> int:
+    match = re.search(r"Reference\s+[A-Za-z]{3,9}\s+(?P<year>\d{4})", html, flags=re.IGNORECASE)
+    if match:
+        return int(match.group("year"))
+
+    match = re.search(r'content="[^"]*?\bof\s+(?P<year>\d{4})\b[^"]*"', html, flags=re.IGNORECASE)
+    if match:
+        return int(match.group("year"))
+
+    temporal = re.search(r'temporalCoverage"\s*:\s*"(?P<start>\d{4}-\d{2}-\d{2})/(?P<end>\d{4})-(?P<month>\d{2})-\d{2}"', html, flags=re.IGNORECASE)
+    if temporal:
+        return int(temporal.group("end"))
+
+    raise PMIFetchError("TradingEconomics page missing reference year")
+
+
+def _http_get_text(url: str) -> str:
+    req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+    with urllib.request.urlopen(req, timeout=30) as response:
+        return response.read().decode("utf-8", errors="replace")
