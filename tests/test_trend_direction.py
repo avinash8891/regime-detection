@@ -35,4 +35,3 @@ def test_trend_direction_matches_pinned_fixtures() -> None:
         df = _market_df_for_asof(as_of)
         out = engine.classify(as_of_date=as_of, market_data=df)
         assert out.trend_direction.active_label == row["expected"]["trend_direction"]
-
