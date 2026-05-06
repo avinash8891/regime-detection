@@ -81,6 +81,8 @@ class RegimeEngine:
         context: MarketContext | None,
     ) -> MarketContext:
         end_date = as_date(end_date)
+        if event_calendar is not None and not isinstance(event_calendar, pd.DataFrame):
+            raise TypeError("event_calendar must be a pandas DataFrame when passed to RegimeEngine.")
         if context is not None:
             if market_data is not None or vix_data is not None or event_calendar is not None:
                 raise ValueError("Provide either precomputed context or raw inputs, not both.")

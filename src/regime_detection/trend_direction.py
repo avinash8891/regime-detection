@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from datetime import date
 from typing import Any, Literal
 
+import numpy as np
 import pandas as pd
 
 from regime_detection.hysteresis import apply_asymmetric_hysteresis
@@ -69,6 +70,43 @@ def raw_label_for_day(f: TrendDirectionFeatures, dt: pd.Timestamp) -> tuple[Tren
         "transition": transition,
         "within_5pct_sma200": within_5pct_sma200,
     }
+
+
+def build_raw_outputs(f: TrendDirectionFeatures) -> tuple[list[TrendDirectionLabel], list[dict[str, Any]]]:
+    close = f.close
+    sma50 = f.sma_50
+    sma200 = f.sma_200
+    ret63 = f.return_63d
+
+    valid = ~(close.isna() | sma50.isna() | sma200.isna() | ret63.isna())
+    within_5pct_sma200 = valid & close.between(sma200 * 0.95, sma200 * 1.05)
+    bull = valid & close.gt(sma50) & close.gt(sma200) & sma50.gt(sma200)
+    bear = valid & close.lt(sma50) & close.lt(sma200) & sma50.lt(sma200)
+    sideways = valid & ret63.abs().lt(0.05) & within_5pct_sma200
+    transition = valid & ~(bull | bear | sideways)
+
+    labels = np.full(len(close), "unknown", dtype=object)
+    labels[transition.to_numpy()] = "transition"
+    labels[sideways.to_numpy()] = "sideways"
+    labels[bear.to_numpy()] = "bear"
+    labels[bull.to_numpy()] = "bull"
+
+    evidence: list[dict[str, Any]] = []
+    for idx, label in enumerate(labels):
+        if label == "unknown":
+            evidence.append({"reason": "insufficient_history"})
+            continue
+        evidence.append(
+            {
+                "bull": bool(bull.iat[idx]),
+                "bear": bool(bear.iat[idx]),
+                "sideways": bool(sideways.iat[idx]),
+                "transition": bool(transition.iat[idx]),
+                "within_5pct_sma200": bool(within_5pct_sma200.iat[idx]),
+            }
+        )
+
+    return list(labels), evidence
 
 
 def apply_hysteresis(

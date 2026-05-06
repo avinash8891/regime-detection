@@ -115,6 +115,56 @@ def raw_label_for_day(f: VolatilityFeatures, dt: pd.Timestamp) -> tuple[Volatili
     }
 
 
+def build_raw_outputs(f: VolatilityFeatures) -> tuple[list[VolatilityLabel], list[dict[str, Any]]]:
+    ret1 = f.return_1d
+    ret5 = f.return_5d
+    ret21 = f.return_21d
+    vol_pct = f.realized_vol_percentile_252d
+    valid = ~(ret1.isna() | ret5.isna() | ret21.isna() | vol_pct.isna())
+
+    vix_present = pd.Series(False, index=ret1.index, dtype="bool")
+    vix_crisis = pd.Series(False, index=ret1.index, dtype="bool")
+    vix_high = pd.Series(False, index=ret1.index, dtype="bool")
+    if f.vix_percentile_252d is not None:
+        vix_pct = f.vix_percentile_252d.reindex(ret1.index)
+        vix_present = vix_pct.notna()
+        vix_crisis = vix_present & vix_pct.ge(0.95)
+        vix_high = vix_present & vix_pct.ge(0.80)
+
+    crisis = valid & (
+        ret1.le(-0.05)
+        | ret5.le(-0.08)
+        | (vol_pct.ge(0.90) & ret21.le(-0.05))
+        | vix_crisis
+    )
+    high_vol = valid & (vol_pct.ge(0.80) | vix_high)
+    low_vol = valid & vol_pct.le(0.30)
+    normal_vol = valid & ~(crisis | high_vol | low_vol)
+
+    labels = np.full(len(ret1), "unknown", dtype=object)
+    labels[normal_vol.to_numpy()] = "normal_vol"
+    labels[low_vol.to_numpy()] = "low_vol"
+    labels[high_vol.to_numpy()] = "high_vol"
+    labels[crisis.to_numpy()] = "crisis_vol"
+
+    evidence: list[dict[str, Any]] = []
+    for idx, label in enumerate(labels):
+        if label == "unknown":
+            evidence.append({"reason": "insufficient_history"})
+            continue
+        evidence.append(
+            {
+                "crisis_vol": bool(crisis.iat[idx]),
+                "high_vol": bool(high_vol.iat[idx]),
+                "low_vol": bool(low_vol.iat[idx]),
+                "normal_vol": bool(normal_vol.iat[idx]),
+                "vix_percentile_present": bool(vix_present.iat[idx]),
+            }
+        )
+
+    return list(labels), evidence
+
+
 def classify_series(
     *,
     close: pd.Series,

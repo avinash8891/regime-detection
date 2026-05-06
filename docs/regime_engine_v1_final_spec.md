@@ -1415,6 +1415,13 @@ V1 implementation contract:
 
 V2 is specified in a separate document: `regime_engine_v2_spec.md`.
 
-V2 work begins only after V1 ships all 9 vertical slices, all 10 V1 golden test dates pass, V1 has run in shadow mode for at least one year of out-of-sample data, and V1 demonstrates measurable strategy improvement vs no-regime baseline.
+V2 work begins only after V1 ships all 9 vertical slices, all 10 V1 golden test dates pass, V1 passes historical walk-forward validation over at least one full out-of-sample year, V1 completes 252 consecutive NYSE trading sessions of forward shadow mode with frozen classification logic, and V1 demonstrates measurable strategy improvement vs no-regime baseline.
+
+Historical walk-forward and forward shadow serve different purposes and both are required:
+
+- Historical walk-forward validates the engine logic on unseen historical data using only as-of inputs.
+- Forward shadow validates operational stability, data-feed handling, calendar discipline, reproducibility, and incident response under real daily execution.
+
+Operational qualification rules for shadow mode are specified separately in `docs/shadow_runner_spec.md`.
 
 The coding agent building V1 must not reference, prepare for, or scaffold V2 components. V1 is its own deliverable.
