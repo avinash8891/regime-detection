@@ -1,6 +1,6 @@
 # Regime Detection Engine — V2 Spec
 
-**Status:** roadmap. Do not implement until V1 passes walk-forward validation.
+**Status:** roadmap. Do not implement until V1 passes historical walk-forward validation and forward shadow qualification.
 **Builds on:** `regime_engine_v1_final_spec.md`
 **Engine version:** `regime-engine-v2.0.0` (when shipped)
 
@@ -12,8 +12,22 @@ V2 work begins **only after** all of the following hold:
 
 - V1 ships all 9 vertical slices.
 - All 10 V1 golden test dates pass.
-- V1 has been live in shadow/paper mode for at least one year of out-of-sample data.
+- V1 passes historical walk-forward validation over at least one full out-of-sample year using frozen V1 code/config and as-of historical inputs only.
+- V1 has been live in forward shadow/paper mode for at least 252 consecutive NYSE trading sessions with frozen classification logic and immutable archived outputs.
 - V1 demonstrates measurable strategy improvement vs no-regime baseline (lower drawdown, fewer wrong-environment trades, or improved Sharpe).
+
+Historical walk-forward and forward shadow are **not interchangeable**.
+
+- Historical walk-forward validates engine logic on unseen historical data.
+- Forward shadow validates operational stability: data ingestion, calendar handling, daily execution discipline, reproducibility, and incident response.
+
+V2 activation requires **both**, in sequence:
+
+1. Historical walk-forward passes first.
+2. Forward shadow starts on the next NYSE trading day after the freeze tag.
+3. V2 work begins only after the forward shadow window completes without a qualification-breaking classification change.
+
+Qualification details for the forward shadow runner, storage, freeze policy, and replay verification live in `docs/shadow_runner_spec.md`.
 
 V2 inherits every V1 contract:
 
