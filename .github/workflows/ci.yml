@@ -21,20 +21,32 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          run_diff_check() {
+            # Enforce whitespace errors in the patch, but ignore Git's "new blank line at EOF"
+            # message to avoid CI failures for an otherwise harmless trailing blank line.
+            local range="$1"
+            local out
+            out="$(git diff --check "$range" || true)"
+            out="$(printf '%s\n' "$out" | sed '/new blank line at EOF\.$/d')"
+            if [[ -n "$out" ]]; then
+              printf '%s\n' "$out"
+              return 2
+            fi
+          }
           if [[ "${{ github.event_name }}" == "pull_request" ]]; then
             # Ensure the base ref exists locally for the diff.
             git fetch -q origin "${{ github.base_ref }}":"refs/remotes/origin/${{ github.base_ref }}"
-            git diff --check "origin/${{ github.base_ref }}...HEAD"
+            run_diff_check "origin/${{ github.base_ref }}...HEAD"
           else
             # For push events, compare against the previous SHA (more reliable than origin/main).
             before="${{ github.event.before }}"
             if [[ -n "$before" && "$before" != "0000000000000000000000000000000000000000" ]]; then
-              git diff --check "$before...${{ github.sha }}"
+              run_diff_check "$before...${{ github.sha }}"
             else
               # Fallback: first commit on branch, or unknown before-sha.
               # Compare against the empty tree so we still check the pushed content.
               empty_tree="$(git hash-object -t tree /dev/null)"
-              git diff --check "$empty_tree...${{ github.sha }}"
+              run_diff_check "$empty_tree...${{ github.sha }}"
             fi
           fi
 
