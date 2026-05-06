@@ -439,7 +439,7 @@ INTENTS: list[dict[str, Any]] = [
     },
     {
         "intent_id": "late2021_bull_lowvol",
-        "intent_date": "2020-12-08",
+        "intent_date": "2021-11-15",
         "intent": {
             "trend_direction": "bull",
             "trend_character": "trending",
@@ -447,8 +447,8 @@ INTENTS: list[dict[str, Any]] = [
             "breadth_state": "healthy_breadth",
             "transition_risk": "stable",
         },
-        "search_window_trading_days": 10,
-        "notes": "Late-2021 bull; breadth may be narrower than expected, verify by rules",
+        "search_window_trading_days": 120,
+        "notes": "Late-2021 bull / low vol / healthy breadth (pinned mechanically by rules)",
     },
     {
         "intent_id": "jun2022_bear_stress",
@@ -464,7 +464,7 @@ INTENTS: list[dict[str, Any]] = [
         "notes": "2022 drawdown; stress warning",
     },
     {
-        "intent_id": "oct2022_bear_stress",
+        "intent_id": "jul2022_bear_stress",
         "intent_date": "2022-07-12",
         "intent": {
             "trend_direction": "bear",
@@ -474,7 +474,7 @@ INTENTS: list[dict[str, Any]] = [
             "transition_risk": "bear_stress_warning",
         },
         "search_window_trading_days": 10,
-        "notes": "2022 bear market; stress warning near Oct lows",
+        "notes": "2022 bear market; stress warning (mid-2022 episode)",
     },
     {
         "intent_id": "early2024_bull_lowvol",
