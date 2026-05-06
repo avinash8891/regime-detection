@@ -156,8 +156,9 @@ fi
 
 # If cubic can't run locally (auth/provider/network/sandbox), don't block the push.
 # The repo still gets cloud PR review, which is the primary enforcement mechanism.
-if printf '%s' "$review_output" | grep -Eq \
-  'No AI provider is configured|No CLI auth found|Token refresh network error|Unable to connect|EPERM: operation not permitted|failed to get diff'
+if grep -Eq \
+  'No AI provider is configured|No CLI auth found|Token refresh network error|Unable to connect|EPERM: operation not permitted|failed to get diff' \
+  <<<"$review_output"
 then
   echo "$review_output" >&2
   echo "cubic review could not run locally; skipping (non-blocking)" >&2
