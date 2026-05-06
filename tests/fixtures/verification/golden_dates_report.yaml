@@ -1,4 +1,4 @@
-generated_at_utc: '2026-05-05T22:01:09+00:00'
+generated_at_utc: '2026-05-05T21:21:10+00:00'
 raw_file_sha256:
   SPY.csv: efa06aba545dea29dcc523bb8b50ad6a334892e49babee5769466fa8c2c0ef33
   RSP.csv: 6aa3f27a796ffad78f17d114fbe02e806a5488e2a07cdf61166344c15ed7d2c2
@@ -14,7 +14,7 @@ rows:
     trend_character: transition
     volatility_state: low_vol
     breadth_state: neutral_breadth
-    transition_risk: post_switch_cooldown
+    transition_risk: stable
   features:
     close: 332.82
     SMA_50: 317.733
@@ -55,12 +55,10 @@ rows:
       healthy_breadth: true
       neutral_breadth: false
     transition_risk:
-      matched:
-      - post_switch_cooldown
-      selected_via_precedence: post_switch_cooldown
-      recovery_attempt_branch_a: false
-      recovery_attempt_branch_b: false
-      cooldown_days_since_last_switch: 4
+      crisis_override: false
+      bear_stress_warning: false
+      bull_fragile_warning: false
+      recovery_attempt: false
 - intent_id: volmageddon_crisis
   intent_date: '2018-02-09'
   as_of_date: '2018-02-09'
@@ -112,12 +110,10 @@ rows:
       healthy_breadth: false
       neutral_breadth: false
     transition_risk:
-      matched:
-      - crisis_override
-      selected_via_precedence: crisis_override
-      recovery_attempt_branch_a: false
-      recovery_attempt_branch_b: false
-      cooldown_days_since_last_switch: 1
+      crisis_override: true
+      bear_stress_warning: false
+      bull_fragile_warning: false
+      recovery_attempt: false
 - intent_id: dec2018_bear_stress
   intent_date: '2018-12-20'
   as_of_date: '2018-12-20'
@@ -169,13 +165,10 @@ rows:
       healthy_breadth: false
       neutral_breadth: false
     transition_risk:
-      matched:
-      - bear_stress_warning
-      - post_switch_cooldown
-      selected_via_precedence: bear_stress_warning
-      recovery_attempt_branch_a: false
-      recovery_attempt_branch_b: false
-      cooldown_days_since_last_switch: 1
+      crisis_override: false
+      bear_stress_warning: true
+      bull_fragile_warning: false
+      recovery_attempt: false
 - intent_id: mid2019_bull_normal
   intent_date: '2019-06-28'
   as_of_date: '2019-06-28'
@@ -227,12 +220,10 @@ rows:
       healthy_breadth: true
       neutral_breadth: false
     transition_risk:
-      matched:
-      - stable
-      selected_via_precedence: stable
-      recovery_attempt_branch_a: false
-      recovery_attempt_branch_b: false
-      cooldown_days_since_last_switch: 13
+      crisis_override: false
+      bear_stress_warning: false
+      bull_fragile_warning: false
+      recovery_attempt: false
 - intent_id: covid_crash_crisis
   intent_date: '2020-03-30'
   as_of_date: '2020-03-30'
@@ -284,43 +275,39 @@ rows:
       healthy_breadth: false
       neutral_breadth: false
     transition_risk:
-      matched:
-      - crisis_override
-      - bear_stress_warning
-      selected_via_precedence: crisis_override
-      recovery_attempt_branch_a: false
-      recovery_attempt_branch_b: false
-      cooldown_days_since_last_switch: 0
+      crisis_override: true
+      bear_stress_warning: true
+      bull_fragile_warning: false
+      recovery_attempt: false
 - intent_id: covid_recovery_attempt
   intent_date: '2020-04-17'
-  as_of_date: '2020-04-29'
-  delta_calendar_days: 12
-  notes: Recovery attempt transition risk; allow date to move within the post-crash
-    episode to satisfy precedence
+  as_of_date: '2020-04-17'
+  delta_calendar_days: 0
+  notes: Post-crash recovery attempt; breadth pinned by rules in ETF-proxy mode
   expected:
-    trend_direction: transition
+    trend_direction: bear
     trend_character: recovery_attempt
     volatility_state: high_vol
     breadth_state: weak_breadth
     transition_risk: recovery_attempt
   features:
-    close: 293.15
-    SMA_50: 277.4943
-    SMA_200: 300.2348385
-    return_1d: 0.02611221953866072
-    return_5d: 0.05056622706421998
-    return_10d: 0.05544554455445527
-    return_21d: 0.12077534791252464
-    return_63d: -0.10247382279101103
-    prior_63d_drawdown: -0.13351265074485696
-    ADX_14: 21.543490656062257
-    realized_vol_21d: 0.40810601870322477
-    realized_vol_percentile_252d: 0.8571428571428571
-    vix_percentile_252d: 0.8611111111111112
-    relative_breadth_ratio: 0.3366194780828928
-    relative_breadth_sma50: 0.3338711233757691
-    relative_breadth_return_20d: 0.031092464644290496
-    index_distance_from_63d_high: -0.13351265074485696
+    close: 286.54
+    SMA_50: 285.9607
+    SMA_200: 300.8786885
+    return_1d: 0.0271723544594209
+    return_5d: 0.029904392207605435
+    return_10d: 0.1373794307942684
+    return_21d: 0.21574950146378735
+    return_63d: -0.13395393822160429
+    prior_63d_drawdown: -0.15305036651690695
+    ADX_14: 24.80901857126455
+    realized_vol_21d: 0.564323706677457
+    realized_vol_percentile_252d: 0.9047619047619048
+    vix_percentile_252d: 0.9047619047619048
+    relative_breadth_ratio: 0.3244922174914497
+    relative_breadth_sma50: 0.33781717377270787
+    relative_breadth_return_20d: -0.010187637362817248
+    index_distance_from_63d_high: -0.15305036651690695
   predicate_evaluations:
     trend_direction:
       bull: false
@@ -339,46 +326,42 @@ rows:
       normal_vol: false
     breadth_state:
       divergent_fragile: false
-      weak_breadth: false
-      healthy_breadth: true
+      weak_breadth: true
+      healthy_breadth: false
       neutral_breadth: false
     transition_risk:
-      matched:
-      - recovery_attempt
-      - post_switch_cooldown
-      selected_via_precedence: recovery_attempt
-      recovery_attempt_branch_a: true
-      recovery_attempt_branch_b: false
-      cooldown_days_since_last_switch: 0
+      crisis_override: false
+      bear_stress_warning: false
+      bull_fragile_warning: false
+      recovery_attempt: true
 - intent_id: late2021_bull_lowvol
   intent_date: '2020-12-08'
-  as_of_date: '2020-12-17'
-  delta_calendar_days: 9
-  notes: Bull / low vol / healthy breadth with stable transition risk (no recent axis
-    switches)
+  as_of_date: '2020-12-08'
+  delta_calendar_days: 0
+  notes: Late-2021 bull; breadth may be narrower than expected, verify by rules
   expected:
     trend_direction: bull
-    trend_character: transition
+    trend_character: trending
     volatility_state: low_vol
     breadth_state: healthy_breadth
     transition_risk: stable
   features:
-    close: 372.19
-    SMA_50: 353.7848
-    SMA_200: 318.176553
-    return_1d: 0.005755823379992364
-    return_5d: 0.014501049418049972
-    return_10d: 0.015054408596285374
-    return_21d: 0.03151155700903496
-    return_63d: 0.12522296459775673
+    close: 370.19
+    SMA_50: 349.31539999999995
+    SMA_200: 315.945753
+    return_1d: 0.002790118105970185
+    return_5d: 0.011890443909906123
+    return_10d: 0.03540961597628178
+    return_21d: 0.0571420412359358
+    return_63d: 0.08953115342731843
     prior_63d_drawdown: 0.0
-    ADX_14: 21.990064114566444
-    realized_vol_21d: 0.11190335119321901
-    realized_vol_percentile_252d: 0.1865079365079365
-    vix_percentile_252d: 0.17857142857142858
-    relative_breadth_ratio: 0.3421370805233886
-    relative_breadth_sma50: 0.3347931064242925
-    relative_breadth_return_20d: 0.00882581473644417
+    ADX_14: 21.775736108092776
+    realized_vol_21d: 0.12607678302822875
+    realized_vol_percentile_252d: 0.23809523809523808
+    vix_percentile_252d: 0.19444444444444445
+    relative_breadth_ratio: 0.3425268105567411
+    relative_breadth_sma50: 0.33229081297249385
+    relative_breadth_return_20d: 0.02167430027446815
     index_distance_from_63d_high: 0.0
   predicate_evaluations:
     trend_direction:
@@ -388,9 +371,9 @@ rows:
       transition: false
     trend_character:
       recovery_attempt: false
-      trending: false
+      trending: true
       chop: false
-      transition: true
+      transition: false
     volatility_state:
       crisis_vol: false
       high_vol: false
@@ -402,41 +385,39 @@ rows:
       healthy_breadth: true
       neutral_breadth: false
     transition_risk:
-      matched:
-      - stable
-      selected_via_precedence: stable
-      recovery_attempt_branch_a: false
-      recovery_attempt_branch_b: false
-      cooldown_days_since_last_switch: 6
+      crisis_override: false
+      bear_stress_warning: false
+      bull_fragile_warning: false
+      recovery_attempt: false
 - intent_id: jun2022_bear_stress
   intent_date: '2022-06-29'
-  as_of_date: '2022-06-27'
-  delta_calendar_days: 2
+  as_of_date: '2022-06-29'
+  delta_calendar_days: 0
   notes: 2022 drawdown; stress warning
   expected:
     trend_direction: bear
     trend_character: transition
-    volatility_state: high_vol
+    volatility_state: crisis_vol
     breadth_state: weak_breadth
     transition_risk: bear_stress_warning
   features:
-    close: 388.59
-    SMA_50: 404.7142
-    SMA_200: 439.24845
-    return_1d: -0.003819729286300255
-    return_5d: 0.06212758978844346
-    return_10d: -0.0031041559774244165
-    return_21d: -0.022095276442610223
-    return_63d: -0.14159800304844383
-    prior_63d_drawdown: -0.15803956405867436
-    ADX_14: 25.59347699855309
-    realized_vol_21d: 0.31438924222897696
-    realized_vol_percentile_252d: 0.9444444444444444
-    vix_percentile_252d: 0.3373015873015873
-    relative_breadth_ratio: 0.3551300856944338
-    relative_breadth_sma50: 0.3585821817737896
-    relative_breadth_return_20d: -0.0206315912580054
-    index_distance_from_63d_high: -0.15803956405867436
+    close: 380.34
+    SMA_50: 402.4188
+    SMA_200: 438.59329999999994
+    return_1d: -0.0008143964271640769
+    return_5d: 0.01589251849675466
+    return_10d: 0.017305480514617333
+    return_21d: -0.08409189423493724
+    return_63d: -0.1759148917730159
+    prior_63d_drawdown: -0.1709932648924345
+    ADX_14: 24.44294519042695
+    realized_vol_21d: 0.29569826772391555
+    realized_vol_percentile_252d: 0.8888888888888888
+    vix_percentile_252d: 0.4166666666666667
+    relative_breadth_ratio: 0.35512962086554134
+    relative_breadth_sma50: 0.35863271537652686
+    relative_breadth_return_20d: -0.015351679688390574
+    index_distance_from_63d_high: -0.1709932648924345
   predicate_evaluations:
     trend_direction:
       bull: false
@@ -445,9 +426,9 @@ rows:
       transition: false
     trend_character:
       recovery_attempt: false
-      trending: false
+      trending: true
       chop: false
-      transition: true
+      transition: false
     volatility_state:
       crisis_vol: false
       high_vol: true
@@ -459,13 +440,10 @@ rows:
       healthy_breadth: false
       neutral_breadth: false
     transition_risk:
-      matched:
-      - bear_stress_warning
-      - post_switch_cooldown
-      selected_via_precedence: bear_stress_warning
-      recovery_attempt_branch_a: false
-      recovery_attempt_branch_b: false
-      cooldown_days_since_last_switch: 4
+      crisis_override: false
+      bear_stress_warning: true
+      bull_fragile_warning: false
+      recovery_attempt: false
 - intent_id: oct2022_bear_stress
   intent_date: '2022-07-12'
   as_of_date: '2022-07-12'
@@ -517,16 +495,14 @@ rows:
       healthy_breadth: false
       neutral_breadth: false
     transition_risk:
-      matched:
-      - bear_stress_warning
-      selected_via_precedence: bear_stress_warning
-      recovery_attempt_branch_a: false
-      recovery_attempt_branch_b: false
-      cooldown_days_since_last_switch: 7
+      crisis_override: false
+      bear_stress_warning: true
+      bull_fragile_warning: false
+      recovery_attempt: false
 - intent_id: early2024_bull_lowvol
   intent_date: '2023-12-19'
-  as_of_date: '2023-12-26'
-  delta_calendar_days: 7
+  as_of_date: '2023-12-19'
+  delta_calendar_days: 0
   notes: Early 2024 bull / low vol / healthy breadth
   expected:
     trend_direction: bull
@@ -535,22 +511,22 @@ rows:
     breadth_state: healthy_breadth
     transition_risk: stable
   features:
-    close: 475.65
-    SMA_50: 446.789
-    SMA_200: 433.0456
-    return_1d: 0.004222527182518698
-    return_5d: 0.007797105748246658
-    return_10d: 0.029567739561462192
-    return_21d: 0.04469580496376002
-    return_63d: 0.11686390532544366
+    close: 474.84
+    SMA_50: 443.70419999999996
+    SMA_200: 431.4676
+    return_1d: 0.00608089497213804
+    return_5d: 0.023141564318034824
+    return_10d: 0.03994743758212871
+    return_21d: 0.053350784178885835
+    return_63d: 0.0825278132409264
     prior_63d_drawdown: 0.0
-    ADX_14: 48.589529502558364
-    realized_vol_21d: 0.09551923594076492
-    realized_vol_percentile_252d: 0.10714285714285714
-    vix_percentile_252d: 0.5079365079365079
-    relative_breadth_ratio: 0.33198780615999157
-    relative_breadth_sma50: 0.325581577471951
-    relative_breadth_return_20d: 0.029137290386692438
+    ADX_14: 49.74320099161227
+    realized_vol_21d: 0.07631752358448436
+    realized_vol_percentile_252d: 0.015873015873015872
+    vix_percentile_252d: 0.5317460317460317
+    relative_breadth_ratio: 0.33101676354140347
+    relative_breadth_sma50: 0.32514153434137116
+    relative_breadth_return_20d: 0.029422023730526048
     index_distance_from_63d_high: 0.0
   predicate_evaluations:
     trend_direction:
@@ -560,9 +536,9 @@ rows:
       transition: false
     trend_character:
       recovery_attempt: false
-      trending: false
+      trending: true
       chop: false
-      transition: true
+      transition: false
     volatility_state:
       crisis_vol: false
       high_vol: false
@@ -574,9 +550,7 @@ rows:
       healthy_breadth: true
       neutral_breadth: false
     transition_risk:
-      matched:
-      - stable
-      selected_via_precedence: stable
-      recovery_attempt_branch_a: false
-      recovery_attempt_branch_b: false
-      cooldown_days_since_last_switch: 6
+      crisis_override: false
+      bear_stress_warning: false
+      bull_fragile_warning: false
+      recovery_attempt: false

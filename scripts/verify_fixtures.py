@@ -394,7 +394,7 @@ INTENTS: list[dict[str, Any]] = [
             "trend_character": "transition",
             "volatility_state": "low_vol",
             "breadth_state": "neutral_breadth",
-            "transition_risk": "post_switch_cooldown",
+            "transition_risk": "stable",
         },
         "search_window_trading_days": 120,
         "notes": "Steady bull, trending, low vol, healthy breadth",
@@ -453,24 +453,27 @@ INTENTS: list[dict[str, Any]] = [
         "intent_id": "covid_recovery_attempt",
         "intent_date": "2020-04-17",
         "intent": {
+            "trend_direction": "bear",
             "trend_character": "recovery_attempt",
+            "volatility_state": "high_vol",
+            "breadth_state": "weak_breadth",
             "transition_risk": "recovery_attempt",
         },
-        "search_window_trading_days": 120,
-        "notes": "Recovery attempt transition risk; allow date to move within the post-crash episode to satisfy precedence",
+        "search_window_trading_days": 10,
+        "notes": "Post-crash recovery attempt; breadth pinned by rules in ETF-proxy mode",
     },
     {
         "intent_id": "late2021_bull_lowvol",
         "intent_date": "2020-12-08",
         "intent": {
             "trend_direction": "bull",
-            "trend_character": "transition",
+            "trend_character": "trending",
             "volatility_state": "low_vol",
             "breadth_state": "healthy_breadth",
             "transition_risk": "stable",
         },
-        "search_window_trading_days": 120,
-        "notes": "Bull / low vol / healthy breadth with stable transition risk (no recent axis switches)",
+        "search_window_trading_days": 10,
+        "notes": "Late-2021 bull; breadth may be narrower than expected, verify by rules",
     },
     {
         "intent_id": "jun2022_bear_stress",
@@ -478,7 +481,7 @@ INTENTS: list[dict[str, Any]] = [
         "intent": {
             "trend_direction": "bear",
             "trend_character": "transition",
-            "volatility_state": "high_vol",
+            "volatility_state": "crisis_vol",
             "breadth_state": "weak_breadth",
             "transition_risk": "bear_stress_warning",
         },
@@ -522,32 +525,45 @@ def _evaluate_all(feat: dict[str, pd.Series]) -> pd.DataFrame:
     tc = []
     vs = []
     bs = []
+    tr = []
     td_ev = []
     tc_ev = []
     vs_ev = []
     bs_ev = []
+    tr_ev = []
     for dt in idx:
         td_label, td_e = _eval_trend_direction(feat, dt)
         tc_label, tc_e = _eval_trend_character(feat, dt)
         vs_label, vs_e = _eval_volatility_state(feat, dt)
         bs_label, bs_e = _eval_breadth_state_etf_proxy(feat, dt)
+        tr_label, tr_e = _eval_transition_risk(
+            dt=dt,
+            trend_direction=td_label,
+            trend_character=tc_label,
+            volatility_state=vs_label,
+            breadth_state=bs_label,
+        )
         td.append(td_label)
         tc.append(tc_label)
         vs.append(vs_label)
         bs.append(bs_label)
+        tr.append(tr_label)
         td_ev.append(td_e)
         tc_ev.append(tc_e)
         vs_ev.append(vs_e)
         bs_ev.append(bs_e)
+        tr_ev.append(tr_e)
 
     out["trend_direction"] = td
     out["trend_character"] = tc
     out["volatility_state"] = vs
     out["breadth_state"] = bs
+    out["transition_risk"] = tr
     out["_td_evidence"] = td_ev
     out["_tc_evidence"] = tc_ev
     out["_vs_evidence"] = vs_ev
     out["_bs_evidence"] = bs_ev
+    out["_tr_evidence"] = tr_ev
     return out
 
 
@@ -703,8 +719,7 @@ def generate_docs(*, generated_at_utc: str | None = None) -> tuple[dict[str, Any
             active.append(raw if risk_rank[raw] > risk_rank[stable_label] else stable_label)
         return stable, active
 
-    tc_stable, tc_active = apply_generic(labels["trend_character"].tolist(), tc_risk_rank, 3)
-    labels["trend_character_stable"] = tc_stable
+    _, tc_active = apply_generic(labels["trend_character"].tolist(), tc_risk_rank, 3)
     labels["trend_character_active"] = tc_active
 
     # Volatility hysteresis (de-escalation 2 days).
@@ -715,8 +730,7 @@ def generate_docs(*, generated_at_utc: str | None = None) -> tuple[dict[str, Any
         "crisis_vol": 3,
         "unknown": 2,
     }
-    vol_stable, vol_active = apply_generic(labels["volatility_state"].tolist(), vol_risk_rank, 2)
-    labels["volatility_state_stable"] = vol_stable
+    _, vol_active = apply_generic(labels["volatility_state"].tolist(), vol_risk_rank, 2)
     labels["volatility_state_active"] = vol_active
 
     # Breadth hysteresis (de-escalation 2 days).
@@ -727,107 +741,8 @@ def generate_docs(*, generated_at_utc: str | None = None) -> tuple[dict[str, Any
         "divergent_fragile": 3,
         "unknown": 2,
     }
-    breadth_stable, breadth_active = apply_generic(labels["breadth_state"].tolist(), breadth_risk_rank, 2)
-    labels["breadth_state_stable"] = breadth_stable
+    _, breadth_active = apply_generic(labels["breadth_state"].tolist(), breadth_risk_rank, 2)
     labels["breadth_state_active"] = breadth_active
-
-    # Transition risk uses ACTIVE labels for warning predicates and stable-label history for cooldown and recovery attempt.
-    def _days_since_last_switch_series(stable_labels: list[str]) -> list[int | None]:
-        out: list[int | None] = []
-        last_switch_idx: int | None = None
-        prev: str | None = None
-        for i, lbl in enumerate(stable_labels):
-            if prev is not None and lbl != prev:
-                last_switch_idx = i
-            if last_switch_idx is None:
-                out.append(None)
-            else:
-                out.append(i - last_switch_idx)
-            prev = lbl
-        return out
-
-    td_days_since = _days_since_last_switch_series(td_stable)
-    tc_days_since = _days_since_last_switch_series(tc_stable)
-    vol_days_since = _days_since_last_switch_series(vol_stable)
-    br_days_since = _days_since_last_switch_series(breadth_stable)
-
-    tr_labels: list[str] = []
-    tr_ev: list[dict[str, Any]] = []
-    precedence = [
-        "crisis_override",
-        "bear_stress_warning",
-        "bull_fragile_warning",
-        "recovery_attempt",
-        "post_switch_cooldown",
-        "stable",
-        "unknown",
-    ]
-
-    for i, dt in enumerate(labels.index):
-        td_a = labels.at[dt, "trend_direction_active"]
-        tc_a = labels.at[dt, "trend_character_active"]
-        vol_a = labels.at[dt, "volatility_state_active"]
-        br_a = labels.at[dt, "breadth_state_active"]
-
-        crisis_override = vol_a == "crisis_vol"
-        bear_stress_warning = (
-            (td_a == "bear")
-            and (vol_a in ["high_vol", "crisis_vol"])
-            and (br_a in ["weak_breadth", "divergent_fragile", "unknown"])
-        )
-        bull_fragile_warning = (td_a == "bull") and (br_a == "divergent_fragile")
-
-        recovery_attempt_a = tc_a == "recovery_attempt"
-        recovery_attempt_b = False
-        if br_a in ["recovery_breadth", "healthy_breadth"]:
-            sma50 = feat["SMA_50"].loc[dt]
-            close = feat["close"].loc[dt]
-            if (not _is_nan(sma50)) and (not _is_nan(close)) and bool(close > sma50):
-                lo = max(0, i - 59)
-                window = td_stable[lo : i + 1]
-                recovery_attempt_b = any(x == "bear" for x in window)
-        recovery_attempt = recovery_attempt_a or recovery_attempt_b
-
-        cooldown_candidates = [td_days_since[i], tc_days_since[i], vol_days_since[i], br_days_since[i]]
-        cooldown_non_null = [x for x in cooldown_candidates if x is not None]
-        cooldown_days = min(cooldown_non_null) if cooldown_non_null else None
-        post_switch_cooldown = (cooldown_days is not None) and (cooldown_days <= 5)
-        if crisis_override:
-            post_switch_cooldown = False
-
-        matched: list[str] = []
-        if crisis_override:
-            matched.append("crisis_override")
-        if bear_stress_warning:
-            matched.append("bear_stress_warning")
-        if bull_fragile_warning:
-            matched.append("bull_fragile_warning")
-        if recovery_attempt:
-            matched.append("recovery_attempt")
-        if post_switch_cooldown:
-            matched.append("post_switch_cooldown")
-        if not matched:
-            matched.append("stable")
-
-        selected = "unknown"
-        for lab in precedence:
-            if lab in set(matched):
-                selected = lab
-                break
-
-        tr_labels.append(selected)
-        tr_ev.append(
-            {
-                "matched": [lab for lab in precedence if lab in set(matched)],
-                "selected_via_precedence": selected,
-                "recovery_attempt_branch_a": recovery_attempt_a,
-                "recovery_attempt_branch_b": recovery_attempt_b,
-                "cooldown_days_since_last_switch": cooldown_days,
-            }
-        )
-
-    labels["transition_risk"] = tr_labels
-    labels["_tr_evidence"] = tr_ev
 
     generated_at = generated_at_utc or _utc_iso_now()
 
