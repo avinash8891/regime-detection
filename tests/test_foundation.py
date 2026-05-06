@@ -114,5 +114,5 @@ def test_classify_accepts_timestamp_as_of_date() -> None:
     engine = RegimeEngine()
     df = _market_df_for_asof(date(2026, 5, 5))
     # Common caller input: pandas Timestamp. Must be accepted and normalized.
-    out = engine.classify(as_of_date=pd.Timestamp("2026-05-05"), market_data=df)
+    out = engine.classify(as_of_date=pd.Timestamp("2026-05-05", tz="America/New_York"), market_data=df)
     assert out.as_of_date == date(2026, 5, 5)
