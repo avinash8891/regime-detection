@@ -5,7 +5,7 @@ repos:
     hooks:
       - id: cubic-review
         name: cubic review
-        entry: scripts/cubic_review.sh v1-of-regime-detection
+        entry: scripts/cubic_review.sh --merge-base origin/v1-of-regime-detection
         language: system
         pass_filenames: false
         stages: [pre-push]
