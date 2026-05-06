@@ -22,6 +22,12 @@ if [[ ! "$fetch_timeout_seconds" =~ ^[1-9][0-9]*$ ]]; then
 fi
 
 repo_root="$(git rev-parse --show-toplevel)"
+review_dir="$(mktemp -d "${TMPDIR:-/tmp}/regime-cubic-review.XXXXXX")"
+
+cleanup() {
+  rm -rf "$review_dir"
+}
+trap cleanup EXIT
 
 # cubic stores local session state on disk under:
 #   $XDG_DATA_HOME/cubic/storage/...
@@ -30,7 +36,7 @@ repo_root="$(git rev-parse --show-toplevel)"
 # repo-local or /tmp dir so pre-push review still works.
 xdg_data_home_candidates=(
   "${XDG_DATA_HOME:-$HOME/.local/share}"
-  "/tmp/xdg_data"
+  "$(mktemp -d "${TMPDIR:-/tmp}/cubic-xdg-data.XXXXXX")"
 )
 
 selected_xdg_data_home=""
@@ -50,7 +56,9 @@ if [[ -z "$selected_xdg_data_home" ]]; then
   exit 0
 fi
 
-cd "$repo_root"
+git clone --shared --no-checkout "$repo_root" "$review_dir" >/dev/null
+git -C "$review_dir" checkout --detach -q HEAD
+cd "$review_dir"
 
 base_ref="$base_branch"
 if git show-ref --verify --quiet "refs/heads/${base_branch}"; then
