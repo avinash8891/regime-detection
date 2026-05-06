@@ -41,7 +41,8 @@ def test_version_coupling_pyproject_matches_engine_version() -> None:
     # Spec lock: package version and emitted engine_version must stay aligned.
     import tomllib
 
-    pyproject = Path("pyproject.toml").read_bytes()
+    repo_root = Path(__file__).resolve().parents[1]
+    pyproject = (repo_root / "pyproject.toml").read_bytes()
     version = tomllib.loads(pyproject.decode("utf-8"))["project"]["version"]
     assert engine_version() == f"regime-engine-v{version}"
 

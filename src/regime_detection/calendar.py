@@ -5,6 +5,7 @@ from datetime import date, datetime
 
 import pandas as pd
 import pandas_market_calendars as mcal
+from zoneinfo import ZoneInfo
 
 
 @dataclass(frozen=True)
@@ -19,10 +20,15 @@ def nyse_calendar() -> mcal.MarketCalendar:
 
 def _as_date(value: object) -> date:
     if isinstance(value, datetime):
+        if value.tzinfo is not None:
+            # Interpret date-like inputs in US/Eastern for NYSE calendar alignment.
+            return value.astimezone(ZoneInfo("America/New_York")).date()
         return value.date()
     if isinstance(value, date) and not isinstance(value, pd.Timestamp):
         return value
     if isinstance(value, pd.Timestamp):
+        if value.tzinfo is not None:
+            return value.tz_convert("America/New_York").date()
         return value.date()
     raise TypeError(f"Expected date-like value, got {type(value).__name__}")
 
