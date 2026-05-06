@@ -210,3 +210,8 @@ def test_run_macro_fetch_uses_env_fred_api_key(monkeypatch, tmp_path: Path) -> N
 
     assert captured["api_keys"]
     assert set(captured["api_keys"]) == {"env-key"}
+
+
+def test_fetch_help_surface_mentions_pmi_and_pit() -> None:
+    help_text = Path("scripts/fetch_regime_engine_v1_data.py").read_text()
+    assert "market|macro|pmi|pit|fomc|powell|all" in help_text

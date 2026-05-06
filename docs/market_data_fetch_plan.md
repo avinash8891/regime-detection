@@ -78,9 +78,9 @@ Status meanings used below:
 | PMI manufacturing headline values | DBnomics primary, TradingEconomics backup | monthly | `data/raw/pmi/us_ism_pmi.parquet` | done-live-verified | available first business day of the following month at 10:00 ET; live run rejected stale DBnomics data and selected TradingEconomics for `2026-04` |
 | PMI services headline values | DBnomics primary, TradingEconomics backup | monthly | `data/raw/pmi/us_ism_pmi.parquet` | done-live-verified | available third business day of the following month at 10:00 ET; live run selected TradingEconomics `2026-04` after stale-primary rejection |
 | PMI release timestamps | code-derived ISM release calendar convention | monthly metadata | `data/raw/pmi/us_ism_pmi.parquet` | done-live-verified | manufacturing = first business day 10:00 ET; services = third business day 10:00 ET |
-| PIT S&P 500 constituents | `fja05680/sp500` initial source | event-driven membership changes | dedicated PIT dataset not yet created | planned | availability follows constituent adds/removals; output must carry bias warning |
-| FOMC minutes raw text | Federal Reserve site | about 8 times per year | dedicated raw text dataset not yet created | planned | minutes are typically released three weeks after each FOMC meeting at 14:00 ET |
-| Powell speeches raw text | Federal Reserve site | irregular / event-driven | dedicated raw text dataset not yet created | planned | availability depends on actual speech publication timestamps |
+| PIT S&P 500 constituents | `fja05680/sp500` `sp500_ticker_start_end.csv` | event-driven membership changes | `data/raw/pit_constituents/sp500_ticker_intervals.parquet` | done-live-verified | live fetch succeeded; rows carry `survivorship_biased_constituent_universe` warning and interval dates |
+| FOMC minutes raw text | Federal Reserve official pages: `https://www.federalreserve.gov/monetarypolicy/fomccalendars.htm` + `https://www.federalreserve.gov/monetarypolicy/fomc_historical_year.htm` + yearly `fomchistoricalYYYY.htm` pages + per-meeting `fomcminutesYYYYMMDD.htm` pages | about 8 times per year | `data/raw/fomc_minutes/fomc_minutes.parquet` | done-live-verified | fetched by walking the current calendar page for 2021+ meetings, walking the official historical year index for pre-2021 pages, then fetching each meeting HTML page and extracting title, meeting date text, body text, source URL, and PDF URL; current verified coverage reaches `2011-01-26` through `2026-03-18`; release timestamps encoded at `14:00 ET` on the Fed released date; pre-2011 not implemented yet |
+| Powell speeches raw text | Federal Reserve official pages: `https://www.federalreserve.gov/newsevents/speeches.htm?speaker=Jerome+H.+Powell` + yearly `YYYY-speeches.htm` archives + per-speech `powellYYYYMMDDx.htm` pages | irregular / event-driven | `data/raw/powell_speeches/powell_speeches.parquet` | done-live-verified | live fetch succeeded; current verified coverage reaches `2013-02-22` through `2026-03-21`; yearly archive pages are filtered to Powell-only entries and each speech page is fetched for title, speaker, location, and body text; Fed pages expose a date but no reliable publication time, so `publication_timestamp_precision=date_only` and timestamps are normalized to midnight Eastern |
 | `aggregate_forward_eps_revision_direction` | S&P Global aggregate forward EPS sheet | weekly | dedicated weekly dataset not yet created | planned | use the vendor’s weekly aggregate EPS refresh, not a daily proxy |
 | Bloomberg / Refinitiv consensus surveys | paid vendor feeds | event-driven macro release cycle | no output path | hard-fail | unsupported unless spec explicitly adopts a paid source |
 | I/B/E/S per-stock analyst revisions | paid vendor feeds | daily to weekly | no output path | hard-fail | unsupported in current V2 plan |
@@ -136,8 +136,9 @@ These are part of the V2 data plan but are not all implemented yet:
 | Dataset | Intended source | Notes |
 |---|---|---|
 | PMI manufacturing/services | DBnomics primary, TradingEconomics backup | use real PMI, not CFNAI substitution; reject stale primary data loudly; release timestamps locked to ISM calendar convention |
-| PIT S&P 500 constituents | `fja05680/sp500` initial source | bias must be documented explicitly in output/report |
-| FOMC minutes / Powell speeches | Federal Reserve site | release timestamps required |
+| PIT S&P 500 constituents | `fja05680/sp500` `sp500_ticker_start_end.csv` | bias warning must be carried in output/report; current ingest stores ticker start/end intervals |
+| FOMC minutes | Federal Reserve `fomccalendars.htm` + `fomc_historical_year.htm` + `fomchistoricalYYYY.htm` + minutes HTML pages | release timestamps required; current fetcher gets 2021+ meetings from the live calendar page, gets pre-2021 year pages from the official historical index, dedupes by `meeting_end_date`, and stores title, meeting date text, release timestamp, body text, source URL, and PDF URL; current verified lower bound is `2011-01-26` |
+| Powell speeches | Federal Reserve `speeches.htm?speaker=Jerome+H.+Powell` + yearly `YYYY-speeches.htm` archives + per-speech `powellYYYYMMDDx.htm` pages | current fetcher walks the Fed speeches index to yearly archives, filters archive rows to Powell-only entries, then fetches each Powell speech page and stores speech date, normalized publication timestamp, timestamp precision, title, speaker, location, body text, and source URL |
 | Aggregate forward EPS revision direction | S&P Global aggregate forward EPS sheet | renamed replacement for earnings revision breadth |
 | Event calendar extension | repo-local manual YAML | V2 event types and windows |
 
@@ -215,7 +216,6 @@ The current repo fetch script is a development/backfill tool. It is **not** the 
 Still unresolved or not fully implemented:
 
 - real historical event-calendar ingestion
-- real PIT constituent loader
 - real Fed text loader
 - real aggregate forward EPS loader
 - dedicated shadow runner with SQLite ledger and archived daily input snapshots
