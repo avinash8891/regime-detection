@@ -23,6 +23,7 @@ fi
 
 repo_root="$(git rev-parse --show-toplevel)"
 review_dir="$(mktemp -d "${TMPDIR:-/tmp}/regime-cubic-review.XXXXXX")"
+head_sha="$(git -C "$repo_root" rev-parse HEAD)"
 
 cleanup() {
   rm -rf "$review_dir"
@@ -57,7 +58,7 @@ if [[ -z "$selected_xdg_data_home" ]]; then
 fi
 
 git clone --shared --no-checkout "$repo_root" "$review_dir" >/dev/null
-git -C "$review_dir" checkout --detach -q HEAD
+git -C "$review_dir" checkout --detach -q "$head_sha"
 cd "$review_dir"
 
 base_ref="$base_branch"
@@ -78,11 +79,14 @@ else
   fi
 fi
 
+# Use an immutable base SHA so `cubic review` works consistently in the detached review clone.
+base_sha="$(git rev-parse "$base_ref")"
+
 set +e
 review_output="$(
   perl -e 'alarm shift @ARGV; exec @ARGV' \
     "$timeout_seconds" \
-    env XDG_DATA_HOME="$selected_xdg_data_home" PATH="$HOME/.superset/bin:$HOME/.cubic/bin:$PATH" cubic review --print-logs --base "$base_ref" "$@" \
+    env XDG_DATA_HOME="$selected_xdg_data_home" PATH="$HOME/.superset/bin:$HOME/.cubic/bin:$PATH" cubic review --print-logs --base "$base_sha" "$@" \
     2>&1
 )"
 status=$?
