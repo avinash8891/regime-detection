@@ -24,12 +24,35 @@ fi
 repo_root="$(git rev-parse --show-toplevel)"
 review_dir="$(mktemp -d "${TMPDIR:-/tmp}/regime-cubic-review.XXXXXX")"
 head_sha="$(git -C "$repo_root" rev-parse HEAD)"
-upstream_url="$(git -C "$repo_root" remote get-url origin 2>/dev/null || true)"
+tmp_xdg_data_home=""
 
 cleanup() {
   rm -rf "$review_dir"
+  if [[ -n "${tmp_xdg_data_home}" ]]; then
+    rm -rf "${tmp_xdg_data_home}" || true
+  fi
 }
 trap cleanup EXIT
+
+# Resolve base SHA in the original working tree (so any fetch uses the real upstream remote).
+base_ref="$base_branch"
+if git -C "$repo_root" show-ref --verify --quiet "refs/heads/${base_branch}"; then
+  base_ref="$base_branch"
+elif git -C "$repo_root" show-ref --verify --quiet "refs/remotes/origin/${base_branch}"; then
+  base_ref="origin/${base_branch}"
+else
+  # Common on fresh clones: the base branch exists on the remote but hasn't been fetched yet.
+  if perl -e 'alarm shift @ARGV; exec @ARGV' \
+    "$fetch_timeout_seconds" \
+    git -C "$repo_root" fetch -q origin "${base_branch}:refs/remotes/origin/${base_branch}"
+  then
+    base_ref="origin/${base_branch}"
+  else
+    echo "Base branch not found locally: ${base_branch} (neither local nor origin/*), and fetch failed or timed out; skipping cubic review (non-blocking)." >&2
+    exit 0
+  fi
+fi
+base_sha="$(git -C "$repo_root" rev-parse "$base_ref")"
 
 # cubic stores local session state on disk under:
 #   $XDG_DATA_HOME/cubic/storage/...
@@ -38,11 +61,15 @@ trap cleanup EXIT
 # repo-local or /tmp dir so pre-push review still works.
 xdg_data_home_candidates=(
   "${XDG_DATA_HOME:-$HOME/.local/share}"
-  "$(mktemp -d "${TMPDIR:-/tmp}/cubic-xdg-data.XXXXXX")"
+  "__TMP__"
 )
 
 selected_xdg_data_home=""
 for candidate in "${xdg_data_home_candidates[@]}"; do
+  if [[ "$candidate" == "__TMP__" ]]; then
+    tmp_xdg_data_home="$(mktemp -d "${TMPDIR:-/tmp}/cubic-xdg-data.XXXXXX")"
+    candidate="$tmp_xdg_data_home"
+  fi
   candidate_storage_project_dir="$candidate/cubic/storage/project"
   if mkdir -p "$candidate_storage_project_dir" >/dev/null 2>&1; then
     if (umask 077 && : >"$candidate_storage_project_dir/.prepush_write_test") 2>/dev/null; then
@@ -61,27 +88,6 @@ fi
 git clone --shared --no-checkout "$repo_root" "$review_dir" >/dev/null
 git -C "$review_dir" checkout --detach -q "$head_sha"
 cd "$review_dir"
-
-base_ref="$base_branch"
-if git show-ref --verify --quiet "refs/heads/${base_branch}"; then
-  base_ref="$base_branch"
-elif git show-ref --verify --quiet "refs/remotes/origin/${base_branch}"; then
-  base_ref="origin/${base_branch}"
-else
-  if [[ -n "$upstream_url" ]] && perl -e 'alarm shift @ARGV; exec @ARGV' \
-    "$fetch_timeout_seconds" \
-    git fetch -q "$upstream_url" "${base_branch}:refs/remotes/origin/${base_branch}"
-  then
-    base_ref="origin/${base_branch}"
-  else
-    echo "Base branch not found locally: ${base_branch} (neither local nor origin/*), and fetch failed or timed out; skipping cubic review (non-blocking)." >&2
-    exit 0
-  fi
-fi
-
-# Use an immutable base SHA so `cubic review` works consistently in the detached review clone.
-base_sha="$(git rev-parse "$base_ref")"
-
 set +e
 review_output="$(
   perl -e 'alarm shift @ARGV; exec @ARGV' \
@@ -99,7 +105,7 @@ fi
 # If cubic can't run locally (auth/provider/network/sandbox), don't block the push.
 # The repo still gets cloud PR review, which is the primary enforcement mechanism.
 if printf '%s' "$review_output" | grep -Eq \
-  'No AI provider is configured|No CLI auth found|Token refresh network error|Unable to connect|EPERM: operation not permitted'
+  'No AI provider is configured|No CLI auth found|Token refresh network error|Unable to connect|EPERM: operation not permitted|failed to get diff'
 then
   echo "$review_output" >&2
   echo "cubic review could not run locally; skipping (non-blocking)" >&2
