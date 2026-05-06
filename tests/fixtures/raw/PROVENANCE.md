@@ -15,3 +15,4 @@ Files:
 - SPY.csv: SPY daily OHLCV
 - RSP.csv: RSP daily OHLCV
 - VIXY.csv: VIX proxy daily OHLCV
+- market_data.parquet: combined long-form SPY/RSP/VIXY daily OHLCV fixture used by the test suite
