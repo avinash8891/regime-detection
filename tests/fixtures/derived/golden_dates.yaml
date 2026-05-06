@@ -1,5 +1,5 @@
-generated_at_utc: '2026-05-06T06:27:30+00:00'
-generated_by_commit: 27d4baed75d560b9f884623c18665fb10d12b831
+generated_at_utc: '2026-05-06T08:04:21+00:00'
+generated_by_commit: c75c370a27e5472aebec13cd7e7edecfb85932aa
 raw_file_sha256:
   SPY.csv: efa06aba545dea29dcc523bb8b50ad6a334892e49babee5769466fa8c2c0ef33
   RSP.csv: 6aa3f27a796ffad78f17d114fbe02e806a5488e2a07cdf61166344c15ed7d2c2
@@ -60,13 +60,13 @@ rows:
     breadth_state: weak_breadth
     transition_risk: recovery_attempt
 - intent_id: late2021_bull_lowvol
-  intent_date: '2020-12-08'
-  as_of_date: '2020-12-08'
+  intent_date: '2021-11-15'
+  as_of_date: '2021-11-12'
   expected:
     trend_direction: bull
     trend_character: trending
     volatility_state: low_vol
-    breadth_state: healthy_breadth
+    breadth_state: weak_breadth
     transition_risk: stable
 - intent_id: jun2022_bear_stress
   intent_date: '2022-06-29'
@@ -77,7 +77,7 @@ rows:
     volatility_state: high_vol
     breadth_state: weak_breadth
     transition_risk: bear_stress_warning
-- intent_id: oct2022_bear_stress
+- intent_id: jul2022_bear_stress
   intent_date: '2022-07-12'
   as_of_date: '2022-07-12'
   expected:
