@@ -16,6 +16,7 @@ if str(SRC_DIR) not in sys.path:
 
 from regime_data_fetch.cli_common import load_env_file, parse_date
 from regime_data_fetch.fetch_workflow import run_macro_fetch, run_market_fetch
+from regime_data_fetch.aggregate_eps import run_aggregate_eps_fetch
 from regime_data_fetch.fomc_minutes import run_fomc_minutes_fetch
 from regime_data_fetch.pmi import run_pmi_fetch
 from regime_data_fetch.pit_constituents import run_pit_constituents_fetch
@@ -30,7 +31,7 @@ def main() -> int:
     ap.add_argument("--start", default="2015-01-01", help="Start date (YYYY-MM-DD).")
     ap.add_argument("--end", default=dt.date.today().isoformat(), help="End date (YYYY-MM-DD).")
     ap.add_argument("--scope", default="v1", help="Data scope: v1|v2|all.")
-    ap.add_argument("--fetch", default="market", help="What to fetch: market|macro|pmi|pit|fomc|powell|all.")
+    ap.add_argument("--fetch", default="market", help="What to fetch: market|macro|pmi|pit|fomc|powell|eps|all.")
     ap.add_argument("--min-cap-b", type=float, default=10.0, help="Universe filter threshold in $B.")
     ap.add_argument("--adjustment", default="raw", help="Alpaca adjustment: raw|split|dividend|all.")
     ap.add_argument("--alpaca-feed", default=None, help="Alpaca data feed: sip|iex|otc. Omit to use SDK default.")
@@ -54,6 +55,11 @@ def main() -> int:
         action="store_true",
         help="Allow proceeding when true VIX is unavailable, using --vix-symbol (e.g. VIXY).",
     )
+    ap.add_argument(
+        "--eps-workbook",
+        default=None,
+        help="Path to a manually downloaded S&P aggregate EPS workbook (.xlsx). Required for --fetch eps.",
+    )
     ap.add_argument("--verbose", action="store_true", help="Print progress while fetching.")
     args = ap.parse_args()
 
@@ -67,8 +73,8 @@ def main() -> int:
 
     if args.scope not in {"v1", "v2", "all"}:
         raise SystemExit("--scope must be v1|v2|all")
-    if args.fetch not in {"market", "macro", "pmi", "pit", "fomc", "powell", "all"}:
-        raise SystemExit("--fetch must be market|macro|pmi|pit|fomc|powell|all")
+    if args.fetch not in {"market", "macro", "pmi", "pit", "fomc", "powell", "eps", "all"}:
+        raise SystemExit("--fetch must be market|macro|pmi|pit|fomc|powell|eps|all")
 
     if args.env_file:
         load_env_file(Path(args.env_file))
@@ -141,6 +147,15 @@ def main() -> int:
             out_dir=out_dir,
         )
         print(str(powell_report))
+
+    if args.fetch in {"eps", "all"}:
+        if not args.eps_workbook:
+            raise SystemExit("--eps-workbook is required for eps fetches")
+        eps_report = run_aggregate_eps_fetch(
+            out_dir=out_dir,
+            workbook_path=Path(args.eps_workbook),
+        )
+        print(str(eps_report))
     return 0
 
 
