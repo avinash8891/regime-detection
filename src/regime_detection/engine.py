@@ -27,7 +27,6 @@ from regime_detection.volatility_state import classify_series as classify_volati
 from regime_detection.breadth_state import classify_series as classify_breadth_state
 from regime_detection.event_calendar import classify_event_calendar
 from regime_detection.transition_risk import TransitionRiskInputs, classify_transition_risk
-from regime_detection.strategy_response import StrategyInputs, build_strategy_response
 
 
 class RegimeEngine:
@@ -121,15 +120,6 @@ class RegimeEngine:
             volatility_active=volatility_state.active_label,
             breadth_active=breadth_state.active_label,
         )
-        strategy_response = build_strategy_response(
-            inp=StrategyInputs(
-                trend_direction_active=trend_direction.active_label,
-                trend_character_active=trend_character.active_label,
-                volatility_active=volatility_state.active_label,
-                breadth_active=breadth_state.active_label,
-                transition_risk_label=transition_risk.label,
-            )
-        )
 
         structural = StructuralCausalState(
             event_calendar=classify_event_calendar(as_of_date=as_of_date, event_calendar=event_calendar),
@@ -154,7 +144,7 @@ class RegimeEngine:
                 reason="breadth_state_used_as_v1_fragility_proxy",
             ),
             transition_risk=transition_risk,
-            strategy_response=strategy_response,
+            strategy_response=_unknown_strategy_response(),
         )
 
 
