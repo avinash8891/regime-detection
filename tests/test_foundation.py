@@ -98,3 +98,11 @@ def test_classify_emits_regime_output_shape() -> None:
     assert out.config_version == engine.config.config_version
     assert out.as_of_date == as_of
     assert out.market == "SPY"
+
+
+def test_classify_accepts_timestamp_as_of_date() -> None:
+    engine = RegimeEngine()
+    df = _market_df_for_asof(date(2026, 5, 5))
+    # Common caller input: pandas Timestamp. Must be accepted and normalized.
+    out = engine.classify(as_of_date=pd.Timestamp("2026-05-05"), market_data=df)
+    assert out.as_of_date == date(2026, 5, 5)

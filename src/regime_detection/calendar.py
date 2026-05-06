@@ -27,6 +27,14 @@ def _as_date(value: object) -> date:
     raise TypeError(f"Expected date-like value, got {type(value).__name__}")
 
 
+def as_date(value: object) -> date:
+    """
+    Public coercion helper: accept common date-like inputs (date, datetime, pandas Timestamp)
+    and normalize to a plain `datetime.date`.
+    """
+    return _as_date(value)
+
+
 def is_nyse_trading_day(d: date) -> bool:
     d = _as_date(d)
     cal = nyse_calendar()

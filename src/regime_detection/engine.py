@@ -6,7 +6,7 @@ from typing import Any
 
 import pandas as pd
 
-from regime_detection.calendar import require_nyse_trading_day
+from regime_detection.calendar import as_date, require_nyse_trading_day
 from regime_detection.config import RegimeConfig, default_config_path, load_regime_config
 from regime_detection.models import (
     AxisOutput,
@@ -42,6 +42,9 @@ class RegimeEngine:
         event_calendar: pd.DataFrame | None = None,
         config: RegimeConfig | None = None,
     ) -> RegimeOutput:
+        # Normalize as_of_date early. Callers often pass datetime/pandas Timestamp.
+        # We need `date` for both calendar enforcement and market_data contract checks.
+        as_of_date = as_date(as_of_date)
         cfg = config if config is not None else self._config
         if cfg.trading_calendar != "NYSE":
             raise ValueError(f"V1 supports only NYSE trading calendar. Got: {cfg.trading_calendar}")
