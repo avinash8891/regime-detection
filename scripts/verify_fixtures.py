@@ -404,17 +404,21 @@ def _eval_volatility_state(feat: dict[str, pd.Series], dt: pd.Timestamp) -> tupl
     vol_pct = feat["realized_vol_percentile_252d"].loc[dt]
     vix_pct = feat["vix_percentile_252d"].loc[dt]
 
-    required_nan = any(_is_nan(x) for x in [ret1, ret5, ret21, vol_pct, vix_pct])
+    # VIX percentile is optional in V1. Required features exclude it.
+    required_nan = any(_is_nan(x) for x in [ret1, ret5, ret21, vol_pct])
     if required_nan:
         return "unknown", {"unknown_required_nan": True}
+
+    vix_crisis = (not _is_nan(vix_pct)) and (vix_pct >= 0.95)
+    vix_high = (not _is_nan(vix_pct)) and (vix_pct >= 0.80)
 
     crisis = (
         (ret1 <= -0.05)
         or (ret5 <= -0.08)
         or ((vol_pct >= 0.90) and (ret21 <= -0.05))
-        or (vix_pct >= 0.95)
+        or vix_crisis
     )
-    high_vol = (vol_pct >= 0.80) or (vix_pct >= 0.80)
+    high_vol = (vol_pct >= 0.80) or vix_high
     low_vol = vol_pct <= 0.30
     normal_vol = not (crisis or high_vol or low_vol)
 
@@ -433,7 +437,17 @@ def _eval_volatility_state(feat: dict[str, pd.Series], dt: pd.Timestamp) -> tupl
         "high_vol": high_vol,
         "low_vol": low_vol,
         "normal_vol": normal_vol,
+        "vix_percentile_present": not _is_nan(vix_pct),
     }
+
+
+_VS_RISK_RANK: dict[str, int] = {
+    "low_vol": 0,
+    "normal_vol": 1,
+    "high_vol": 2,
+    "crisis_vol": 3,
+    "unknown": 2,
+}
 
 
 def _eval_breadth_state_etf_proxy(
@@ -700,7 +714,12 @@ def _evaluate_all(feat: dict[str, pd.Series]) -> pd.DataFrame:
     out["trend_character"] = tc_active
     out["_trend_character_raw"] = tc
     out["_trend_character_stable"] = tc_stable
-    out["volatility_state"] = vs
+    vs_stable, vs_active = _apply_asymmetric_hysteresis(
+        raw_labels=vs, risk_rank=_VS_RISK_RANK, deescalation_days=hyst["volatility_state"]
+    )
+    out["volatility_state"] = vs_active
+    out["_volatility_state_raw"] = vs
+    out["_volatility_state_stable"] = vs_stable
     out["breadth_state"] = bs
     out["transition_risk"] = tr
     out["_td_evidence"] = [
@@ -725,7 +744,17 @@ def _evaluate_all(feat: dict[str, pd.Series]) -> pd.DataFrame:
         }
         for raw, st, act, ev in zip(tc, tc_stable, tc_active, tc_ev, strict=True)
     ]
-    out["_vs_evidence"] = vs_ev
+    out["_vs_evidence"] = [
+        {
+            "raw_label": raw,
+            "stable_label": st,
+            "active_label": act,
+            "rule_evidence": ev,
+            "deescalation_days": hyst["volatility_state"],
+            "risk_rank": _VS_RISK_RANK,
+        }
+        for raw, st, act, ev in zip(vs, vs_stable, vs_active, vs_ev, strict=True)
+    ]
     out["_bs_evidence"] = bs_ev
     out["_tr_evidence"] = tr_ev
     return out
