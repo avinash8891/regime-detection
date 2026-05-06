@@ -8,6 +8,7 @@ import numpy as np
 import pandas as pd
 
 from regime_detection.models import AxisOutput, DataQuality
+from regime_detection.hysteresis import apply_asymmetric_hysteresis
 
 
 TrendDirectionLabel = Literal["bull", "bear", "sideways", "transition", "unknown"]
@@ -89,66 +90,11 @@ def apply_hysteresis(
     if deescalation_days < 0:
         raise ValueError("deescalation_days must be >= 0")
 
-    stable: list[TrendDirectionLabel] = []
-    active: list[TrendDirectionLabel] = []
-
-    stable_label: TrendDirectionLabel = raw_labels[0]
-    pending_label: TrendDirectionLabel | None = None
-    pending_count = 0
-
-    for raw in raw_labels:
-        raw_rank = _RISK_RANK[raw]
-        stable_rank = _RISK_RANK[stable_label]
-
-        if raw_rank > stable_rank:
-            # Escalate immediately.
-            stable_label = raw
-            pending_label = None
-            pending_count = 0
-        elif raw_rank < stable_rank:
-            # Candidate de-escalation.
-            if deescalation_days == 0:
-                stable_label = raw
-                pending_label = None
-                pending_count = 0
-            else:
-                if pending_label != raw:
-                    pending_label = raw
-                    pending_count = 1
-                else:
-                    pending_count += 1
-                if pending_count >= deescalation_days:
-                    stable_label = raw
-                    pending_label = None
-                    pending_count = 0
-        else:
-            # Equal rank: treat as de-escalation candidate only if label differs.
-            if raw != stable_label:
-                if deescalation_days == 0:
-                    stable_label = raw
-                    pending_label = None
-                    pending_count = 0
-                else:
-                    if pending_label != raw:
-                        pending_label = raw
-                        pending_count = 1
-                    else:
-                        pending_count += 1
-                    if pending_count >= deescalation_days:
-                        stable_label = raw
-                        pending_label = None
-                        pending_count = 0
-            else:
-                pending_label = None
-                pending_count = 0
-
-        stable.append(stable_label)
-        # active_label per spec fast-path
-        if _RISK_RANK[raw] > _RISK_RANK[stable_label]:
-            active.append(raw)
-        else:
-            active.append(stable_label)
-
+    stable, active = apply_asymmetric_hysteresis(
+        raw_labels=raw_labels,
+        risk_rank=_RISK_RANK,
+        deescalation_days=deescalation_days,
+    )
     return stable, active
 
 
@@ -203,4 +149,3 @@ def classify_series(
         },
         data_quality=dq,
     )
-
