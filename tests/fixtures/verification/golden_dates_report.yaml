@@ -1,5 +1,5 @@
-generated_at_utc: '2026-05-06T04:46:53+00:00'
-generated_by_commit: 954ba0ba432a4bd19faca3ce49ff39b39ceb5096
+generated_at_utc: '2026-05-06T07:12:31+00:00'
+generated_by_commit: 7d88312041762f4198565085ef6e6d6a7be382d9
 raw_file_sha256:
   SPY.csv: efa06aba545dea29dcc523bb8b50ad6a334892e49babee5769466fa8c2c0ef33
   RSP.csv: 6aa3f27a796ffad78f17d114fbe02e806a5488e2a07cdf61166344c15ed7d2c2
@@ -19,21 +19,21 @@ rows:
   features:
     close: 332.82
     SMA_50: 317.733
-    SMA_200: 305.58777249999997
-    return_1d: -0.008165454762188662
-    return_5d: 0.008545454545454634
-    return_10d: 0.03585434173669455
-    return_21d: 0.05720911025698028
-    return_63d: 0.16147269237480355
-    prior_63d_drawdown: -0.008165454762188662
-    ADX_14: 21.692390260931603
-    realized_vol_21d: 0.10828473482499043
-    realized_vol_percentile_252d: 0.27380952380952384
-    vix_percentile_252d: 0.5396825396825397
-    relative_breadth_ratio: 0.33216152875428157
-    relative_breadth_sma50: 0.3304269286914194
-    relative_breadth_return_20d: 0.026116586261168306
-    index_distance_from_63d_high: -0.008165454762188662
+    SMA_200: 305.5877725
+    return_1d: -0.008165454762
+    return_5d: 0.008545454545
+    return_10d: 0.035854341737
+    return_21d: 0.057209110257
+    return_63d: 0.161472692375
+    prior_63d_drawdown: -0.008165454762
+    ADX_14: 21.692390260932
+    realized_vol_21d: 0.108284734825
+    realized_vol_percentile_252d: 0.27380952381
+    vix_percentile_252d: 0.539682539683
+    relative_breadth_ratio: 0.332161528754
+    relative_breadth_sma50: 0.330426928691
+    relative_breadth_return_20d: 0.026116586261
+    index_distance_from_63d_high: -0.008165454762
   predicate_evaluations:
     trend_direction:
       bull: true
@@ -75,20 +75,20 @@ rows:
     close: 261.74
     SMA_50: 271.4548
     SMA_200: 253.6693215
-    return_1d: 0.01540132676416972
-    return_5d: -0.049980037022249624
-    return_10d: -0.08661362367392511
-    return_21d: -0.045023350846468135
-    return_63d: 0.010150129288719167
-    prior_63d_drawdown: -0.08661362367392511
-    ADX_14: 47.65412617095869
-    realized_vol_21d: 0.24232482368872846
+    return_1d: 0.015401326764
+    return_5d: -0.049980037022
+    return_10d: -0.086613623674
+    return_21d: -0.045023350846
+    return_63d: 0.010150129289
+    prior_63d_drawdown: -0.086613623674
+    ADX_14: 47.654126170959
+    realized_vol_21d: 0.242324823689
     realized_vol_percentile_252d: 1.0
-    vix_percentile_252d: 0.9761904761904762
-    relative_breadth_ratio: 0.3748758309773057
-    relative_breadth_sma50: 0.376776276311574
-    relative_breadth_return_20d: -0.0068182691246105875
-    index_distance_from_63d_high: -0.08661362367392511
+    vix_percentile_252d: 0.97619047619
+    relative_breadth_ratio: 0.374875830977
+    relative_breadth_sma50: 0.376776276312
+    relative_breadth_return_20d: -0.006818269125
+    index_distance_from_63d_high: -0.086613623674
   predicate_evaluations:
     trend_direction:
       bull: false
@@ -129,21 +129,21 @@ rows:
   features:
     close: 247.11
     SMA_50: 269.855084
-    SMA_200: 275.28866999999997
-    return_1d: -0.01565487571701707
-    return_5d: -0.06884467555957485
-    return_10d: -0.08399747933424762
-    return_21d: -0.08178507728894169
-    return_63d: -0.1581439716553673
-    prior_63d_drawdown: -0.15384878783728262
-    ADX_14: 30.992372762846212
-    realized_vol_21d: 0.22044453291102817
-    realized_vol_percentile_252d: 0.8412698412698413
-    vix_percentile_252d: 0.9126984126984127
-    relative_breadth_ratio: 0.36671927481688316
-    relative_breadth_sma50: 0.367813269408865
-    relative_breadth_return_20d: -0.011844369653374653
-    index_distance_from_63d_high: -0.15384878783728262
+    SMA_200: 275.28867
+    return_1d: -0.015654875717
+    return_5d: -0.06884467556
+    return_10d: -0.083997479334
+    return_21d: -0.081785077289
+    return_63d: -0.158143971655
+    prior_63d_drawdown: -0.153848787837
+    ADX_14: 30.992372762846
+    realized_vol_21d: 0.220444532911
+    realized_vol_percentile_252d: 0.84126984127
+    vix_percentile_252d: 0.912698412698
+    relative_breadth_ratio: 0.366719274817
+    relative_breadth_sma50: 0.367813269409
+    relative_breadth_return_20d: -0.011844369653
+    index_distance_from_63d_high: -0.153848787837
   predicate_evaluations:
     trend_direction:
       bull: false
@@ -185,20 +185,20 @@ rows:
     close: 293.1
     SMA_50: 287.91222
     SMA_200: 277.412051
-    return_1d: 0.005419868276619333
-    return_5d: -0.003061224489795844
-    return_10d: 0.013380354734986
-    return_21d: 0.05061294716467124
-    return_63d: 0.037705788635156834
-    prior_63d_drawdown: -0.00939570095984854
-    ADX_14: 20.65628459455096
-    realized_vol_21d: 0.12067550797570709
-    realized_vol_percentile_252d: 0.5555555555555556
-    vix_percentile_252d: 0.05555555555555555
-    relative_breadth_ratio: 0.3677925622654384
-    relative_breadth_sma50: 0.36696577540004344
-    relative_breadth_return_20d: 0.005850013616384597
-    index_distance_from_63d_high: -0.00939570095984854
+    return_1d: 0.005419868277
+    return_5d: -0.00306122449
+    return_10d: 0.013380354735
+    return_21d: 0.050612947165
+    return_63d: 0.037705788635
+    prior_63d_drawdown: -0.00939570096
+    ADX_14: 20.656284594551
+    realized_vol_21d: 0.120675507976
+    realized_vol_percentile_252d: 0.555555555556
+    vix_percentile_252d: 0.055555555556
+    relative_breadth_ratio: 0.367792562265
+    relative_breadth_sma50: 0.3669657754
+    relative_breadth_return_20d: 0.005850013616
+    index_distance_from_63d_high: -0.00939570096
   predicate_evaluations:
     trend_direction:
       bull: true
@@ -240,20 +240,20 @@ rows:
     close: 261.56
     SMA_50: 301.5509
     SMA_200: 302.4656885
-    return_1d: 0.029763779527559153
-    return_5d: 0.17460032333393216
-    return_10d: 0.08501856345798853
-    return_21d: -0.11706724277612746
-    return_63d: -0.1898404831965309
-    prior_63d_drawdown: -0.22688578860250652
-    ADX_14: 41.399183476825634
-    realized_vol_21d: 0.8629559830636259
+    return_1d: 0.029763779528
+    return_5d: 0.174600323334
+    return_10d: 0.085018563458
+    return_21d: -0.117067242776
+    return_63d: -0.189840483197
+    prior_63d_drawdown: -0.226885788603
+    ADX_14: 41.399183476826
+    realized_vol_21d: 0.862955983064
     realized_vol_percentile_252d: 1.0
-    vix_percentile_252d: 0.9682539682539683
-    relative_breadth_ratio: 0.327305398378957
-    relative_breadth_sma50: 0.3454051688426885
-    relative_breadth_return_20d: -0.05879130926028853
-    index_distance_from_63d_high: -0.22688578860250652
+    vix_percentile_252d: 0.968253968254
+    relative_breadth_ratio: 0.327305398379
+    relative_breadth_sma50: 0.345405168843
+    relative_breadth_return_20d: -0.05879130926
+    index_distance_from_63d_high: -0.226885788603
   predicate_evaluations:
     trend_direction:
       bull: false
@@ -295,20 +295,20 @@ rows:
     close: 286.54
     SMA_50: 285.9607
     SMA_200: 300.8786885
-    return_1d: 0.0271723544594209
-    return_5d: 0.029904392207605435
-    return_10d: 0.1373794307942684
-    return_21d: 0.21574950146378735
-    return_63d: -0.13395393822160429
-    prior_63d_drawdown: -0.15305036651690695
-    ADX_14: 24.80901857126455
-    realized_vol_21d: 0.564323706677457
-    realized_vol_percentile_252d: 0.9047619047619048
-    vix_percentile_252d: 0.9047619047619048
-    relative_breadth_ratio: 0.3244922174914497
-    relative_breadth_sma50: 0.33781717377270787
-    relative_breadth_return_20d: -0.010187637362817248
-    index_distance_from_63d_high: -0.15305036651690695
+    return_1d: 0.027172354459
+    return_5d: 0.029904392208
+    return_10d: 0.137379430794
+    return_21d: 0.215749501464
+    return_63d: -0.133953938222
+    prior_63d_drawdown: -0.153050366517
+    ADX_14: 24.809018571265
+    realized_vol_21d: 0.564323706677
+    realized_vol_percentile_252d: 0.904761904762
+    vix_percentile_252d: 0.904761904762
+    relative_breadth_ratio: 0.324492217491
+    relative_breadth_sma50: 0.337817173773
+    relative_breadth_return_20d: -0.010187637363
+    index_distance_from_63d_high: -0.153050366517
   predicate_evaluations:
     trend_direction:
       bull: false
@@ -348,21 +348,21 @@ rows:
     transition_risk: stable
   features:
     close: 370.19
-    SMA_50: 349.31539999999995
+    SMA_50: 349.3154
     SMA_200: 315.945753
-    return_1d: 0.002790118105970185
-    return_5d: 0.011890443909906123
-    return_10d: 0.03540961597628178
-    return_21d: 0.0571420412359358
-    return_63d: 0.08953115342731843
+    return_1d: 0.002790118106
+    return_5d: 0.01189044391
+    return_10d: 0.035409615976
+    return_21d: 0.057142041236
+    return_63d: 0.089531153427
     prior_63d_drawdown: 0.0
-    ADX_14: 21.775736108092776
-    realized_vol_21d: 0.12607678302822875
-    realized_vol_percentile_252d: 0.23809523809523808
-    vix_percentile_252d: 0.19444444444444445
-    relative_breadth_ratio: 0.3425268105567411
-    relative_breadth_sma50: 0.33229081297249385
-    relative_breadth_return_20d: 0.02167430027446815
+    ADX_14: 21.775736108093
+    realized_vol_21d: 0.126076783028
+    realized_vol_percentile_252d: 0.238095238095
+    vix_percentile_252d: 0.194444444444
+    relative_breadth_ratio: 0.342526810557
+    relative_breadth_sma50: 0.332290812972
+    relative_breadth_return_20d: 0.021674300274
     index_distance_from_63d_high: 0.0
   predicate_evaluations:
     trend_direction:
@@ -404,21 +404,21 @@ rows:
   features:
     close: 380.34
     SMA_50: 402.4188
-    SMA_200: 438.59329999999994
-    return_1d: -0.0008143964271640769
-    return_5d: 0.01589251849675466
-    return_10d: 0.017305480514617333
-    return_21d: -0.08409189423493724
-    return_63d: -0.1759148917730159
-    prior_63d_drawdown: -0.1709932648924345
-    ADX_14: 24.44294519042695
-    realized_vol_21d: 0.29569826772391555
-    realized_vol_percentile_252d: 0.8888888888888888
-    vix_percentile_252d: 0.4166666666666667
-    relative_breadth_ratio: 0.35512962086554134
-    relative_breadth_sma50: 0.35863271537652686
-    relative_breadth_return_20d: -0.015351679688390574
-    index_distance_from_63d_high: -0.1709932648924345
+    SMA_200: 438.5933
+    return_1d: -0.000814396427
+    return_5d: 0.015892518497
+    return_10d: 0.017305480515
+    return_21d: -0.084091894235
+    return_63d: -0.175914891773
+    prior_63d_drawdown: -0.170993264892
+    ADX_14: 24.442945190427
+    realized_vol_21d: 0.295698267724
+    realized_vol_percentile_252d: 0.888888888889
+    vix_percentile_252d: 0.416666666667
+    relative_breadth_ratio: 0.355129620866
+    relative_breadth_sma50: 0.358632715377
+    relative_breadth_return_20d: -0.015351679688
+    index_distance_from_63d_high: -0.170993264892
   predicate_evaluations:
     trend_direction:
       bull: false
@@ -460,20 +460,20 @@ rows:
     close: 380.83
     SMA_50: 394.8764
     SMA_200: 436.27875
-    return_1d: -0.008848866564297508
-    return_5d: -0.0029584249659649897
-    return_10d: -0.01996963380426664
-    return_21d: -0.05134017536867286
-    return_63d: -0.14911633934356638
-    prior_63d_drawdown: -0.14427916591767043
-    ADX_14: 20.756932916831353
-    realized_vol_21d: 0.28132778724515084
-    realized_vol_percentile_252d: 0.8373015873015873
-    vix_percentile_252d: 0.36507936507936506
-    relative_breadth_ratio: 0.3548302392143476
-    relative_breadth_sma50: 0.3582060601937938
-    relative_breadth_return_20d: -0.01703626433265093
-    index_distance_from_63d_high: -0.14427916591767043
+    return_1d: -0.008848866564
+    return_5d: -0.002958424966
+    return_10d: -0.019969633804
+    return_21d: -0.051340175369
+    return_63d: -0.149116339344
+    prior_63d_drawdown: -0.144279165918
+    ADX_14: 20.756932916831
+    realized_vol_21d: 0.281327787245
+    realized_vol_percentile_252d: 0.837301587302
+    vix_percentile_252d: 0.365079365079
+    relative_breadth_ratio: 0.354830239214
+    relative_breadth_sma50: 0.358206060194
+    relative_breadth_return_20d: -0.017036264333
+    index_distance_from_63d_high: -0.144279165918
   predicate_evaluations:
     trend_direction:
       bull: false
@@ -513,21 +513,21 @@ rows:
     transition_risk: stable
   features:
     close: 474.84
-    SMA_50: 443.70419999999996
+    SMA_50: 443.7042
     SMA_200: 431.4676
-    return_1d: 0.00608089497213804
-    return_5d: 0.023141564318034824
-    return_10d: 0.03994743758212871
-    return_21d: 0.053350784178885835
-    return_63d: 0.0825278132409264
+    return_1d: 0.006080894972
+    return_5d: 0.023141564318
+    return_10d: 0.039947437582
+    return_21d: 0.053350784179
+    return_63d: 0.082527813241
     prior_63d_drawdown: 0.0
-    ADX_14: 49.74320099161227
-    realized_vol_21d: 0.07631752358448436
-    realized_vol_percentile_252d: 0.015873015873015872
-    vix_percentile_252d: 0.5317460317460317
-    relative_breadth_ratio: 0.33101676354140347
-    relative_breadth_sma50: 0.32514153434137116
-    relative_breadth_return_20d: 0.029422023730526048
+    ADX_14: 49.743200991612
+    realized_vol_21d: 0.076317523584
+    realized_vol_percentile_252d: 0.015873015873
+    vix_percentile_252d: 0.531746031746
+    relative_breadth_ratio: 0.331016763541
+    relative_breadth_sma50: 0.325141534341
+    relative_breadth_return_20d: 0.029422023731
     index_distance_from_63d_high: 0.0
   predicate_evaluations:
     trend_direction:
