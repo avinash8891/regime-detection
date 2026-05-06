@@ -130,6 +130,7 @@ def main() -> int:
             end=end,
             fred_api_key=args.fred_api_key,
             include_cpi_vintages=args.include_cpi_vintages,
+            acquisition_db_path=Path(args.acquisition_db) if args.acquisition_db else None,
         )
         print(str(macro_report))
 

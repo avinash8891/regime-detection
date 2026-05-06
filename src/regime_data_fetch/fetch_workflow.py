@@ -7,8 +7,9 @@ from pathlib import Path
 
 import pandas as pd
 
+from regime_data_fetch.acquisition_store import AcquisitionStore
 from regime_data_fetch.alpaca_daily import fetch_daily_bars_alpaca, verify_min_start_date
-from regime_data_fetch.fred import fetch_fred_series
+from regime_data_fetch.fred import fetch_fred_series, fetch_fred_series_json, parse_fred_series_json
 
 V2_V1_SHARED_ANCHORS = ["SPY", "RSP"]
 V2_SECTOR_SYMBOLS = [
@@ -211,70 +212,151 @@ def run_macro_fetch(
     end: dt.date,
     fred_api_key: str | None,
     include_cpi_vintages: bool,
+    acquisition_db_path: Path | None = None,
 ) -> Path:
     out_dir.mkdir(parents=True, exist_ok=True)
     effective_fred_api_key = fred_api_key or os.environ.get("FRED_API_KEY", "").strip() or None
     if not effective_fred_api_key:
         raise SystemExit("Missing required FRED API key: pass --fred-api-key or set FRED_API_KEY")
 
-    macro_frames: list[pd.DataFrame] = []
-    series_meta: dict[str, dict[str, object]] = {}
-    for logical_name, series_id in V2_FRED_SERIES.items():
-        df = fetch_fred_series(
-            series_id=series_id,
-            start_date=start,
-            end_date=end,
-            api_key=effective_fred_api_key,
+    store = AcquisitionStore(acquisition_db_path) if acquisition_db_path else None
+    fetch_run = (
+        store.start_fetch_run(
+            fetch_type="macro",
+            params={
+                "start": start.isoformat(),
+                "end": end.isoformat(),
+                "include_cpi_vintages": include_cpi_vintages,
+            },
         )
-        df["logical_name"] = logical_name
-        macro_frames.append(df)
-        series_meta[logical_name] = {
-            "series_id": series_id,
-            "rows": int(len(df)),
-            "min_date": str(df["date"].min()) if not df.empty else None,
-            "max_date": str(df["date"].max()) if not df.empty else None,
+        if store
+        else None
+    )
+
+    try:
+        macro_frames: list[pd.DataFrame] = []
+        series_meta: dict[str, dict[str, object]] = {}
+        for logical_name, series_id in V2_FRED_SERIES.items():
+            raw_json = fetch_fred_series_json(
+                series_id=series_id,
+                start_date=start,
+                end_date=end,
+                api_key=effective_fred_api_key,
+            )
+            if store and fetch_run:
+                store.record_text_artifact(
+                    run_id=fetch_run.run_id,
+                    source_name=f"fred:{series_id}",
+                    artifact_kind="json",
+                    source_identifier=f"series_observations:{series_id}:{start.isoformat()}:{end.isoformat()}",
+                    content_text=raw_json,
+                    start_date=start.isoformat(),
+                    end_date=end.isoformat(),
+                    timezone="UTC",
+                    license_note="FRED public API response",
+                    notes=f"Raw FRED observations for logical_name={logical_name}",
+                )
+            df = parse_fred_series_json(raw_json, series_id=series_id)
+            df["logical_name"] = logical_name
+            macro_frames.append(df)
+            series_meta[logical_name] = {
+                "series_id": series_id,
+                "rows": int(len(df)),
+                "min_date": str(df["date"].min()) if not df.empty else None,
+                "max_date": str(df["date"].max()) if not df.empty else None,
+            }
+
+        vintages_path: Path | None = None
+        if include_cpi_vintages:
+            raw_vintages_json = fetch_fred_series_json(
+                series_id=V2_FRED_SERIES["cpi_all_items"],
+                start_date=start,
+                end_date=end,
+                api_key=effective_fred_api_key,
+                realtime_start="1776-07-04",
+                realtime_end="9999-12-31",
+            )
+            if store and fetch_run:
+                store.record_text_artifact(
+                    run_id=fetch_run.run_id,
+                    source_name=f"fred:{V2_FRED_SERIES['cpi_all_items']}",
+                    artifact_kind="json",
+                    source_identifier=f"series_observations_realtime:{V2_FRED_SERIES['cpi_all_items']}:{start.isoformat()}:{end.isoformat()}:1776-07-04:9999-12-31",
+                    content_text=raw_vintages_json,
+                    start_date=start.isoformat(),
+                    end_date=end.isoformat(),
+                    timezone="UTC",
+                    license_note="FRED public API realtime observations response",
+                    notes="Raw FRED realtime observations for CPI vintages",
+                )
+            vintages = parse_fred_series_json(raw_vintages_json, series_id=V2_FRED_SERIES["cpi_all_items"])
+            vintages["logical_name"] = "cpi_all_items_vintages"
+            vintages_dir = out_dir / "macro_vintages"
+            vintages_dir.mkdir(parents=True, exist_ok=True)
+            vintages_path = vintages_dir / "cpi_all_items_vintages.parquet"
+            vintages.to_parquet(vintages_path, index=False)
+            series_meta["cpi_all_items_vintages"] = {
+                "series_id": V2_FRED_SERIES["cpi_all_items"],
+                "rows": int(len(vintages)),
+                "min_date": str(vintages["date"].min()) if not vintages.empty else None,
+                "max_date": str(vintages["date"].max()) if not vintages.empty else None,
+            }
+
+        macro_dir = out_dir / "macro"
+        macro_dir.mkdir(parents=True, exist_ok=True)
+        macro_path = macro_dir / "fred_macro_series.parquet"
+        macro_df = pd.concat(macro_frames, ignore_index=True)
+        macro_df.to_parquet(macro_path, index=False)
+
+        report = {
+            "as_of_utc": dt.datetime.now(dt.timezone.utc).isoformat(),
+            "requested": {
+                "start": str(start),
+                "end": str(end),
+                "include_cpi_vintages": include_cpi_vintages,
+            },
+            "series": series_meta,
+            "paths": {
+                "macro_parquet": str(macro_path),
+                "cpi_vintages_parquet": str(vintages_path) if vintages_path else None,
+                "acquisition_db": str(acquisition_db_path) if acquisition_db_path else None,
+            },
         }
+        report_path = out_dir / "macro_fetch_report.json"
+        report_path.write_text(json.dumps(report, indent=2))
 
-    vintages_path: Path | None = None
-    if include_cpi_vintages:
-        vintages = fetch_fred_series(
-            series_id=V2_FRED_SERIES["cpi_all_items"],
-            start_date=start,
-            end_date=end,
-            api_key=effective_fred_api_key,
-            realtime_start="1776-07-04",
-            realtime_end="9999-12-31",
-        )
-        vintages["logical_name"] = "cpi_all_items_vintages"
-        vintages_dir = out_dir / "macro_vintages"
-        vintages_dir.mkdir(parents=True, exist_ok=True)
-        vintages_path = vintages_dir / "cpi_all_items_vintages.parquet"
-        vintages.to_parquet(vintages_path, index=False)
-        series_meta["cpi_all_items_vintages"] = {
-            "series_id": V2_FRED_SERIES["cpi_all_items"],
-            "rows": int(len(vintages)),
-            "min_date": str(vintages["date"].min()) if not vintages.empty else None,
-            "max_date": str(vintages["date"].max()) if not vintages.empty else None,
-        }
-
-    macro_dir = out_dir / "macro"
-    macro_dir.mkdir(parents=True, exist_ok=True)
-    macro_path = macro_dir / "fred_macro_series.parquet"
-    pd.concat(macro_frames, ignore_index=True).to_parquet(macro_path, index=False)
-
-    report = {
-        "as_of_utc": dt.datetime.now(dt.timezone.utc).isoformat(),
-        "requested": {
-            "start": str(start),
-            "end": str(end),
-            "include_cpi_vintages": include_cpi_vintages,
-        },
-        "series": series_meta,
-        "paths": {
-            "macro_parquet": str(macro_path),
-            "cpi_vintages_parquet": str(vintages_path) if vintages_path else None,
-        },
-    }
-    report_path = out_dir / "macro_fetch_report.json"
-    report_path.write_text(json.dumps(report, indent=2))
-    return report_path
+        if store and fetch_run:
+            store.record_output(
+                run_id=fetch_run.run_id,
+                output_kind="fred_macro_parquet",
+                path=macro_path,
+                row_count=len(macro_df),
+                min_date=min(macro_df["date"]).isoformat() if not macro_df.empty else None,
+                max_date=max(macro_df["date"]).isoformat() if not macro_df.empty else None,
+                notes="Unified FRED macro parquet",
+            )
+            if vintages_path is not None:
+                store.record_output(
+                    run_id=fetch_run.run_id,
+                    output_kind="fred_cpi_vintages_parquet",
+                    path=vintages_path,
+                    row_count=series_meta["cpi_all_items_vintages"]["rows"],
+                    min_date=series_meta["cpi_all_items_vintages"]["min_date"],
+                    max_date=series_meta["cpi_all_items_vintages"]["max_date"],
+                    notes="FRED CPI vintages parquet",
+                )
+            store.record_output(
+                run_id=fetch_run.run_id,
+                output_kind="fred_macro_report",
+                path=report_path,
+                row_count=len(macro_df),
+                min_date=min(macro_df["date"]).isoformat() if not macro_df.empty else None,
+                max_date=max(macro_df["date"]).isoformat() if not macro_df.empty else None,
+                notes="Macro fetch report",
+            )
+            store.finish_fetch_run(run_id=fetch_run.run_id, status="ok")
+        return report_path
+    except Exception as exc:
+        if store and fetch_run:
+            store.finish_fetch_run(run_id=fetch_run.run_id, status="failed", notes=str(exc))
+        raise

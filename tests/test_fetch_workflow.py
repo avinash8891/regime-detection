@@ -3,6 +3,7 @@ from __future__ import annotations
 import datetime as dt
 import json
 from pathlib import Path
+import sqlite3
 
 import pandas as pd
 
@@ -118,7 +119,7 @@ def test_extract_ism_pmi_value_and_release_timestamp() -> None:
 
 
 def test_run_macro_fetch_writes_macro_and_vintage_reports(monkeypatch, tmp_path: Path) -> None:
-    def fake_fetch_fred_series(
+    def fake_fetch_fred_series_json(
         *,
         series_id: str,
         start_date: dt.date,
@@ -126,20 +127,23 @@ def test_run_macro_fetch_writes_macro_and_vintage_reports(monkeypatch, tmp_path:
         api_key: str | None = None,
         realtime_start: str | None = None,
         realtime_end: str | None = None,
-    ) -> pd.DataFrame:
-        return pd.DataFrame(
-            [
-                {
-                    "date": dt.date(2015, 1, 1),
-                    "series_id": series_id,
-                    "value": 1.23,
-                    "realtime_start": realtime_start,
-                    "realtime_end": realtime_end,
-                }
-            ]
+        max_retries: int = 4,
+        base_sleep_sec: float = 2.0,
+    ) -> str:
+        return json.dumps(
+            {
+                "observations": [
+                    {
+                        "date": "2015-01-01",
+                        "value": "1.23",
+                        "realtime_start": realtime_start or "2015-01-01",
+                        "realtime_end": realtime_end or "2015-01-01",
+                    }
+                ]
+            }
         )
 
-    monkeypatch.setattr("regime_data_fetch.fetch_workflow.fetch_fred_series", fake_fetch_fred_series)
+    monkeypatch.setattr("regime_data_fetch.fetch_workflow.fetch_fred_series_json", fake_fetch_fred_series_json)
     monkeypatch.setenv("FRED_API_KEY", "env-key")
 
     report_path = run_macro_fetch(
@@ -156,6 +160,62 @@ def test_run_macro_fetch_writes_macro_and_vintage_reports(monkeypatch, tmp_path:
     assert report["series"]["iorb"]["series_id"] == "IORB"
     assert (tmp_path / "macro" / "fred_macro_series.parquet").exists()
     assert (tmp_path / "macro_vintages" / "cpi_all_items_vintages.parquet").exists()
+
+
+def test_run_macro_fetch_records_raw_fred_json_in_sqlite(monkeypatch, tmp_path: Path) -> None:
+    acquisition_db = tmp_path / "acquisition.db"
+
+    def fake_fetch_fred_series_json(
+        *,
+        series_id: str,
+        start_date: dt.date,
+        end_date: dt.date,
+        api_key: str | None = None,
+        realtime_start: str | None = None,
+        realtime_end: str | None = None,
+        max_retries: int = 4,
+        base_sleep_sec: float = 2.0,
+    ) -> str:
+        return json.dumps(
+            {
+                "observations": [
+                    {
+                        "date": "2015-01-01",
+                        "value": "1.23",
+                        "realtime_start": realtime_start or "2015-01-01",
+                        "realtime_end": realtime_end or "2015-01-01",
+                    }
+                ]
+            }
+        )
+
+    monkeypatch.setattr("regime_data_fetch.fetch_workflow.fetch_fred_series_json", fake_fetch_fred_series_json)
+    monkeypatch.setenv("FRED_API_KEY", "env-key")
+
+    report_path = run_macro_fetch(
+        out_dir=tmp_path,
+        start=dt.date(2015, 1, 1),
+        end=dt.date(2015, 1, 31),
+        fred_api_key=None,
+        include_cpi_vintages=True,
+        acquisition_db_path=acquisition_db,
+    )
+
+    report = json.loads(report_path.read_text())
+    assert report["paths"]["acquisition_db"] == str(acquisition_db)
+
+    with sqlite3.connect(acquisition_db) as conn:
+        fetch_runs = conn.execute("SELECT fetch_type, status FROM fetch_runs").fetchall()
+        artifact_count = conn.execute("SELECT count(*) FROM artifacts").fetchone()[0]
+        derived_outputs = conn.execute("SELECT output_kind FROM derived_outputs ORDER BY output_id").fetchall()
+
+    assert fetch_runs == [("macro", "ok")]
+    assert artifact_count == len(V2_FRED_SERIES) + 1
+    assert derived_outputs == [
+        ("fred_macro_parquet",),
+        ("fred_cpi_vintages_parquet",),
+        ("fred_macro_report",),
+    ]
 
 
 def test_run_macro_fetch_requires_fred_api_key(tmp_path: Path) -> None:
@@ -176,7 +236,7 @@ def test_run_macro_fetch_requires_fred_api_key(tmp_path: Path) -> None:
 def test_run_macro_fetch_uses_env_fred_api_key(monkeypatch, tmp_path: Path) -> None:
     captured: dict[str, object] = {}
 
-    def fake_fetch_fred_series(
+    def fake_fetch_fred_series_json(
         *,
         series_id: str,
         start_date: dt.date,
@@ -184,21 +244,24 @@ def test_run_macro_fetch_uses_env_fred_api_key(monkeypatch, tmp_path: Path) -> N
         api_key: str | None = None,
         realtime_start: str | None = None,
         realtime_end: str | None = None,
-    ) -> pd.DataFrame:
+        max_retries: int = 4,
+        base_sleep_sec: float = 2.0,
+    ) -> str:
         captured.setdefault("api_keys", []).append(api_key)
-        return pd.DataFrame(
-            [
-                {
-                    "date": dt.date(2015, 1, 1),
-                    "series_id": series_id,
-                    "value": 1.23,
-                    "realtime_start": realtime_start,
-                    "realtime_end": realtime_end,
-                }
-            ]
+        return json.dumps(
+            {
+                "observations": [
+                    {
+                        "date": "2015-01-01",
+                        "value": "1.23",
+                        "realtime_start": realtime_start or "2015-01-01",
+                        "realtime_end": realtime_end or "2015-01-01",
+                    }
+                ]
+            }
         )
 
-    monkeypatch.setattr("regime_data_fetch.fetch_workflow.fetch_fred_series", fake_fetch_fred_series)
+    monkeypatch.setattr("regime_data_fetch.fetch_workflow.fetch_fred_series_json", fake_fetch_fred_series_json)
     monkeypatch.setenv("FRED_API_KEY", "env-key")
 
     run_macro_fetch(
