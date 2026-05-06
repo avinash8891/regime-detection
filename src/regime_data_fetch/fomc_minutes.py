@@ -18,7 +18,7 @@ SOURCE_NAME = "federalreserve.gov"
 BASE_URL = "https://www.federalreserve.gov"
 
 _LISTING_ENTRY_RE = re.compile(
-    r'<div class="[^"]*fomc-meeting__month[^"]*"><strong>(?P<month>[A-Za-z]+)</strong></div>\s*'
+    r'<div class="[^"]*fomc-meeting__month[^"]*"><strong>(?P<month>[A-Za-z/]+)</strong></div>\s*'
     r'<div class="[^"]*fomc-meeting__date[^"]*">(?P<meeting_days>[^<]+)</div>\s*'
     r'.*?<a href="(?P<pdf_path>/monetarypolicy/files/fomcminutes(?P<meeting_end>\d{8})\.pdf)">PDF</a>\s*\|\s*'
     r'<a href="(?P<html_path>/monetarypolicy/fomcminutes\d{8}\.htm)">HTML</a>\s*'
@@ -28,9 +28,9 @@ _LISTING_ENTRY_RE = re.compile(
 _HISTORICAL_YEAR_RE = re.compile(r'href="(?P<path>/monetarypolicy/fomchistorical(?P<year>\d{4})\.htm)"', flags=re.IGNORECASE)
 _HISTORICAL_ENTRY_RE = re.compile(
     r'<h5[^>]*>(?P<heading>[^<]+)</h5>.*?'
-    r'Minutes \(Released (?P<release_date>[A-Za-z]+ \d{1,2}, \d{4})\):<br>\s*'
+    r'Minutes \(Released (?P<release_date>[A-Za-z]+ \d{1,2}, \d{4})\):\s*<br\s*/?>\s*'
     r'<a href="(?P<html_path>/monetarypolicy/fomcminutes(?P<meeting_end>\d{8})\.htm)">HTML</a>\s*\|\s*'
-    r'<a href="(?P<pdf_path>/monetarypolicy/files/fomcminutes\d{8}\.pdf)">PDF</a>',
+    r'<a href="(?P<pdf_path>/monetarypolicy/files/fomcminutes\d{8}\.pdf)">[^<]*PDF</a>',
     flags=re.DOTALL | re.IGNORECASE,
 )
 _TITLE_RE = re.compile(
@@ -70,7 +70,7 @@ def parse_fomc_minutes_listing(html: str) -> list[FOMCMinutesListingEntry]:
     entries: list[FOMCMinutesListingEntry] = []
     for match in _LISTING_ENTRY_RE.finditer(html):
         meeting_end_date = dt.datetime.strptime(match.group("meeting_end"), "%Y%m%d").date()
-        release_date = dt.datetime.strptime(match.group("release_date"), "%B %d, %Y").date()
+        release_date = _parse_release_date_text(match.group("release_date"))
         entries.append(
             FOMCMinutesListingEntry(
                 meeting_end_date=meeting_end_date,
@@ -106,7 +106,7 @@ def parse_fomc_minutes_historical_listing(html: str) -> list[FOMCMinutesListingE
     entries: list[FOMCMinutesListingEntry] = []
     for match in _HISTORICAL_ENTRY_RE.finditer(html):
         meeting_end_date = dt.datetime.strptime(match.group("meeting_end"), "%Y%m%d").date()
-        release_date = dt.datetime.strptime(match.group("release_date"), "%B %d, %Y").date()
+        release_date = _parse_release_date_text(match.group("release_date"))
         entries.append(
             FOMCMinutesListingEntry(
                 meeting_end_date=meeting_end_date,
@@ -271,3 +271,12 @@ def _meeting_end_date_from_url(url: str) -> dt.date:
     if not match:
         raise FOMCMinutesFetchError(f"Could not determine meeting date from URL: {url}")
     return dt.datetime.strptime(match.group("stamp"), "%Y%m%d").date()
+
+
+def _parse_release_date_text(value: str) -> dt.date:
+    for fmt in ("%B %d, %Y", "%b %d, %Y"):
+        try:
+            return dt.datetime.strptime(value, fmt).date()
+        except ValueError:
+            continue
+    raise FOMCMinutesFetchError(f"Unparseable FOMC release date: {value!r}")

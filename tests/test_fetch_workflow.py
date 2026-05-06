@@ -7,6 +7,7 @@ from pathlib import Path
 import pandas as pd
 
 from regime_data_fetch.alpaca_daily import DailyBarsFetchResult
+from regime_data_fetch.bls_schedule import build_bls_local_archive_page_fetcher
 from regime_data_fetch.fetch_workflow import (
     V2_CROSS_ASSET_SYMBOLS,
     V2_FRED_SERIES,
@@ -214,5 +215,46 @@ def test_run_macro_fetch_uses_env_fred_api_key(monkeypatch, tmp_path: Path) -> N
 
 def test_fetch_help_surface_mentions_pmi_and_pit() -> None:
     help_text = Path("scripts/fetch_regime_engine_v1_data.py").read_text()
-    assert "market|macro|pmi|pit|fomc|powell|eps|all" in help_text
+    assert "market|macro|events|pmi|pit|fomc|powell|eps|eps-wayback|all" in help_text
     assert "--eps-workbook" in help_text
+    assert "--eps-wayback-max-snapshots" in help_text
+    assert "--eps-wayback-from" in help_text
+    assert "--eps-wayback-to" in help_text
+    assert "--eps-wayback-stop-after-first-success" in help_text
+
+
+def test_event_calendar_fetch_symbol_is_wired() -> None:
+    script = Path("scripts/fetch_regime_engine_v1_data.py").read_text()
+    assert "run_us_event_calendar_fetch" in script
+    assert 'if args.fetch in {"events", "all"}:' in script
+
+
+def test_build_bls_local_archive_page_fetcher_prefers_local_file(tmp_path: Path) -> None:
+    schedule_dir = tmp_path / "bls"
+    schedule_dir.mkdir()
+    local_file = schedule_dir / "bls_schedule_2024.html"
+    local_file.write_text("Consumer Price Index for March 2024")
+
+    calls: list[str] = []
+
+    def fake_fallback(url: str) -> str:
+        calls.append(url)
+        return "fallback"
+
+    fetcher = build_bls_local_archive_page_fetcher(
+        schedule_dir=schedule_dir,
+        fallback_page_fetcher=fake_fallback,
+    )
+
+    html = fetcher("https://www.bls.gov/schedule/2024/")
+
+    assert html == "Consumer Price Index for March 2024"
+    assert calls == []
+
+
+def test_fetch_help_surface_mentions_acquisition_db_and_bls_schedule_dir() -> None:
+    help_text = Path("scripts/fetch_regime_engine_v1_data.py").read_text()
+    assert "--acquisition-db" in help_text
+    assert "--bls-schedule-dir" in help_text
+    assert "--bls-start-year" in help_text
+    assert "--bls-end-year" in help_text

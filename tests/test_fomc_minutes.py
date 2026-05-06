@@ -32,6 +32,26 @@ def test_parse_fomc_minutes_listing_extracts_entries() -> None:
     assert entries[1].meeting_end_date == dt.date(2026, 3, 18)
 
 
+def test_parse_fomc_minutes_listing_accepts_cross_month_labels() -> None:
+    html = """
+    <div class="row fomc-meeting" ">
+        <div class="fomc-meeting__month col-xs-5 col-sm-3 col-md-2"><strong>Jan/Feb</strong></div>
+        <div class="fomc-meeting__date col-xs-4 col-sm-9 col-md-10 col-lg-1">31-1</div>
+        <div class="col-xs-12 col-md-4 col-lg-4 fomc-meeting__minutes">
+            <strong>Minutes:</strong><br>
+            <a href="/monetarypolicy/files/fomcminutes20230201.pdf">PDF</a> | <a href="/monetarypolicy/fomcminutes20230201.htm">HTML</a>
+            <br> (Released February 22, 2023)
+        </div>
+    </div>
+    """
+
+    entries = parse_fomc_minutes_listing(html)
+
+    assert len(entries) == 1
+    assert entries[0].meeting_end_date == dt.date(2023, 2, 1)
+    assert entries[0].release_date == dt.date(2023, 2, 22)
+
+
 def test_parse_fomc_historical_year_index_filters_pre_2021_years() -> None:
     html = (FIXTURES / "fomc_historical_year_snippet.html").read_text()
 
@@ -55,6 +75,29 @@ def test_parse_fomc_minutes_historical_listing_extracts_entries() -> None:
     assert entries[0].release_date == dt.date(2019, 2, 20)
     assert entries[1].meeting_end_date == dt.date(2019, 12, 11)
     assert entries[1].release_date == dt.date(2020, 1, 3)
+
+
+def test_parse_fomc_minutes_historical_listing_accepts_2010_legacy_shape() -> None:
+    html = """
+    <h5>January 26-27 Meeting - 2010</h5>
+    <p>Minutes (Released Feb 17, 2010):
+        <br /><a href="/monetarypolicy/fomcminutes20100127.htm">HTML</a> |
+        <a href="/monetarypolicy/files/fomcminutes20100127.pdf">253 KB PDF</a>
+    </p>
+    <h5>March 16 Meeting - 2010</h5>
+    <p>Minutes (Released Apr 6, 2010):
+        <br /><a href="/monetarypolicy/fomcminutes20100316.htm">HTML</a> |
+        <a href="/monetarypolicy/files/fomcminutes20100316.pdf">254 KB PDF</a>
+    </p>
+    """
+
+    entries = parse_fomc_minutes_historical_listing(html)
+
+    assert len(entries) == 2
+    assert entries[0].meeting_end_date == dt.date(2010, 1, 27)
+    assert entries[0].release_date == dt.date(2010, 2, 17)
+    assert entries[1].meeting_end_date == dt.date(2010, 3, 16)
+    assert entries[1].release_date == dt.date(2010, 4, 6)
 
 
 def test_fetch_release_timestamp_uses_2pm_et() -> None:
