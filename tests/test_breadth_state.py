@@ -33,4 +33,3 @@ def test_breadth_state_matches_pinned_fixtures() -> None:
         df = _market_df_for_asof(as_of)
         out = engine.classify(as_of_date=as_of, market_data=df)
         assert out.breadth_state.active_label == row["expected"]["breadth_state"]
-
