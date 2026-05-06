@@ -122,6 +122,84 @@ class AcquisitionStore:
             )
             return RecordedArtifact(artifact_id=int(cursor.lastrowid), content_sha256=sha256)
 
+    def record_file_artifact(
+        self,
+        *,
+        run_id: int,
+        source_name: str,
+        artifact_kind: str,
+        source_identifier: str,
+        file_path: Path,
+        effective_date: str | None = None,
+        start_date: str | None = None,
+        end_date: str | None = None,
+        timezone: str | None = None,
+        calendar_assumption: str | None = None,
+        adjustment_policy: str | None = None,
+        license_note: str | None = None,
+        notes: str | None = None,
+        store_bytes: bool = True,
+    ) -> RecordedArtifact:
+        payload = file_path.read_bytes()
+        sha256 = hashlib.sha256(payload).hexdigest()
+        with self._connect() as conn:
+            cursor = conn.execute(
+                """
+                INSERT INTO artifacts (
+                    run_id,
+                    source_name,
+                    artifact_kind,
+                    source_identifier,
+                    content_text,
+                    content_sha256,
+                    downloaded_at_utc,
+                    effective_date,
+                    start_date,
+                    end_date,
+                    timezone,
+                    calendar_assumption,
+                    adjustment_policy,
+                    license_note,
+                    notes,
+                    local_path,
+                    content_size_bytes,
+                    content_encoding
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    run_id,
+                    source_name,
+                    artifact_kind,
+                    source_identifier,
+                    "",
+                    sha256,
+                    utc_now_iso(),
+                    effective_date,
+                    start_date,
+                    end_date,
+                    timezone,
+                    calendar_assumption,
+                    adjustment_policy,
+                    license_note,
+                    notes,
+                    str(file_path),
+                    len(payload),
+                    "binary",
+                ),
+            )
+            artifact_id = int(cursor.lastrowid)
+            if store_bytes:
+                conn.execute(
+                    """
+                    INSERT INTO artifact_blobs (
+                        artifact_id,
+                        content_bytes
+                    ) VALUES (?, ?)
+                    """,
+                    (artifact_id, payload),
+                )
+            return RecordedArtifact(artifact_id=artifact_id, content_sha256=sha256)
+
     def record_output(
         self,
         *,
@@ -197,7 +275,15 @@ class AcquisitionStore:
                     calendar_assumption TEXT,
                     adjustment_policy TEXT,
                     license_note TEXT,
-                    notes TEXT
+                    notes TEXT,
+                    local_path TEXT,
+                    content_size_bytes INTEGER,
+                    content_encoding TEXT
+                );
+
+                CREATE TABLE IF NOT EXISTS artifact_blobs (
+                    artifact_id INTEGER PRIMARY KEY REFERENCES artifacts(artifact_id) ON DELETE CASCADE,
+                    content_bytes BLOB NOT NULL
                 );
 
                 CREATE TABLE IF NOT EXISTS derived_outputs (
@@ -214,3 +300,18 @@ class AcquisitionStore:
                 );
                 """
             )
+            self._ensure_artifact_columns(conn)
+
+    def _ensure_artifact_columns(self, conn: sqlite3.Connection) -> None:
+        existing = {
+            row[1]
+            for row in conn.execute("PRAGMA table_info(artifacts)")
+        }
+        required_columns = {
+            "local_path": "ALTER TABLE artifacts ADD COLUMN local_path TEXT",
+            "content_size_bytes": "ALTER TABLE artifacts ADD COLUMN content_size_bytes INTEGER",
+            "content_encoding": "ALTER TABLE artifacts ADD COLUMN content_encoding TEXT",
+        }
+        for column_name, ddl in required_columns.items():
+            if column_name not in existing:
+                conn.execute(ddl)

@@ -180,6 +180,7 @@ def main() -> int:
         eps_report = run_aggregate_eps_fetch(
             out_dir=out_dir,
             workbook_path=Path(args.eps_workbook),
+            acquisition_db_path=Path(args.acquisition_db) if args.acquisition_db else None,
         )
         print(str(eps_report))
 
