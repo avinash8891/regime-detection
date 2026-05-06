@@ -11,7 +11,7 @@ def classify_transition_risk(
     *,
     as_of_date: date,
     trend_direction_active: str,
-    trend_direction_stable_history: list[str],
+    prior_bear_in_last_60_sessions: bool,
     trend_character_active: str,
     volatility_state_active: str,
     breadth_state_active: str,
@@ -27,9 +27,8 @@ def classify_transition_risk(
         and breadth_state_active in {"weak_breadth", "divergent_fragile", "unknown"}
     )
     bull_fragile_warning = trend_direction_active == "bull" and breadth_state_active == "divergent_fragile"
-    prior_bear = any(label == "bear" for label in trend_direction_stable_history[-60:])
     recovery_attempt = trend_character_active == "recovery_attempt" or (
-        prior_bear
+        prior_bear_in_last_60_sessions
         and close is not None
         and sma_50 is not None
         and not pd.isna(close)
@@ -47,7 +46,29 @@ def classify_transition_risk(
             breadth_state_active,
         ]
     )
+    return build_transition_risk_output_from_flags(
+        crisis_override=crisis_override,
+        bear_stress_warning=bear_stress_warning,
+        bull_fragile_warning=bull_fragile_warning,
+        recovery_attempt=recovery_attempt,
+        post_switch_cooldown=post_switch_cooldown,
+        any_unknown=any_unknown,
+        stable_changed_today=stable_changed_today,
+        days_since_axis_switch=days_since_axis_switch,
+    )
 
+
+def build_transition_risk_output_from_flags(
+    *,
+    crisis_override: bool,
+    bear_stress_warning: bool,
+    bull_fragile_warning: bool,
+    recovery_attempt: bool,
+    post_switch_cooldown: bool,
+    any_unknown: bool,
+    stable_changed_today: bool,
+    days_since_axis_switch: int | None,
+) -> TransitionRiskOutput:
     warnings_active: list[str] = []
     if crisis_override:
         warnings_active.append("crisis_override")

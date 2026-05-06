@@ -72,6 +72,7 @@ Rules:
 - `as_of_date` must be an NYSE trading day. If it is not, raise `ValueError` with the nearest prior and next NYSE trading days in the message.
 - Do not roll non-trading `as_of_date` values backward or forward.
 - Live mode = `classify(as_of_date=today)`.
+- `classify(as_of_date)` is a convenience wrapper over the timeline pipeline, not a separate execution path.
 
 V1 input contract:
 
@@ -107,6 +108,19 @@ class RegimeTimeline(BaseModel):
 
 `outputs` is sorted ascending by `as_of_date` and contains exactly one `RegimeOutput` per NYSE trading day in the inclusive window. Unknown outputs are emitted, not skipped.
 
+`classify(as_of_date)` is implemented as:
+
+```python
+RegimeEngine.classify_window(
+    end_date=as_of_date,
+    market_data=...,
+    lookback_days=320,  # V1 engine-wide minimum history
+    ...
+).outputs[-1]
+```
+
+The two entry points share one execution pipeline. There is no separate per-call classification path.
+
 V1.1 helper (deferred):
 
 ```python
@@ -120,7 +134,7 @@ RegimeEngine.classify_series(
 
 ### 2.2 Stateless Replay Rule
 
-`classify(as_of_date)` must internally recompute raw labels from:
+Both entry points (`classify_window(...)` and the `classify(as_of_date)` convenience wrapper) must internally recompute raw labels from:
 
 ```text
 as_of_date - max_required_lookback - max_hysteresis_days
@@ -128,6 +142,8 @@ through as_of_date
 ```
 
 No hidden state. No state files. Replay is deterministic.
+
+Stateless replay does **not** mean recomputing from scratch once per output row. A timeline pipeline may build a validated market context and precomputed feature store once per invocation, so long as the outputs remain a pure function of the provided inputs.
 
 ### 2.3 Type Contract
 
