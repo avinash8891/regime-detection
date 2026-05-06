@@ -41,7 +41,13 @@ def apply_asymmetric_hysteresis(
             stable_label = raw
             pending_label = None
             pending_count = 0
-        elif raw_rank < stable_rank or raw != stable_label:
+        elif raw_rank == stable_rank and raw != stable_label:
+            # Lateral move (same risk): switch immediately. V1 hysteresis only debounces
+            # true de-escalations (lower risk_rank), not same-rank label changes.
+            stable_label = raw
+            pending_label = None
+            pending_count = 0
+        elif raw_rank < stable_rank:
             if deescalation_days == 0:
                 stable_label = raw
                 pending_label = None
