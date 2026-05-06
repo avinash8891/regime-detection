@@ -1,0 +1,29 @@
+src/regime_detection/trend_character.py
+  6284b163c8208cf2 1-60,62-69,71-133,137-178
+src/regime_detection/volatility_state.py
+  6284b163c8208cf2 1-49,52-122,125-127,129-167
+src/regime_detection/engine.py
+  6284b163c8208cf2 1-8,10-47,51-126,129-132,138-143,145-154,156,158-159,162-201
+src/regime_detection/hysteresis.py
+  6284b163c8208cf2 1-69
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.3.4",
+  "base_commit_sha": "c683987fc194640b79fb1c68d5fcd0b6f9d65c1d",
+  "prompts": {
+    "6284b163c8208cf2": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019df886-7a0b-7b10-a22d-6f6c96d80945",
+        "model": "gpt-5.2"
+      },
+      "human_author": "Avinash Vankadaru",
+      "messages": [],
+      "total_additions": 11,
+      "total_deletions": 2,
+      "accepted_lines": 11,
+      "overriden_lines": 0
+    }
+  }
+}
