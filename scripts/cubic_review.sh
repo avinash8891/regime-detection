@@ -6,6 +6,11 @@ if [[ $# -gt 0 ]]; then
   shift
 fi
 
+# Accept both `main` and `origin/main`-style inputs (common in hooks / CI).
+if [[ "$base_branch" == origin/* ]]; then
+  base_branch="${base_branch#origin/}"
+fi
+
 # Prevent indefinite pre-push hangs if cubic blocks on network/service calls.
 # Default to 60 minutes so large diffs have enough time to complete review
 # without requiring a manual override.

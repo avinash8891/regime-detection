@@ -42,26 +42,10 @@ class EventCalendarOutput(BaseModel):
     active_label: str
     evidence: dict[str, Any]
 
-
-class MonetaryPressureOutput(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    label: str
-    reason: str
-
-
 class StructuralCausalState(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     event_calendar: EventCalendarOutput
-    monetary_pressure: MonetaryPressureOutput
-
-
-class NetworkFragilityOutput(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    label: str
-    reason: str
 
 
 class TransitionRiskOutput(BaseModel):
@@ -86,6 +70,15 @@ class StrategyResponse(BaseModel):
     log_for_review: bool
     modifiers_applied: list[str]
 
+    # V1 modifier fields (conditionally emitted; omit when not applicable).
+    hard_max_loss_required: bool | None = None
+    block_weak_signals: bool | None = None
+    prefer_cash_or_hedges: bool | None = None
+    take_profit_faster: bool | None = None
+    allow_leverage_expansion: bool | None = None
+    require_breadth_confirmation: bool | None = None
+    reason: str | None = None
+
 
 class RegimeOutput(BaseModel):
     model_config = ConfigDict(extra="forbid")
@@ -100,6 +93,5 @@ class RegimeOutput(BaseModel):
     volatility_state: AxisOutput
     breadth_state: BreadthStateOutput
     structural_causal_state: StructuralCausalState
-    network_fragility: NetworkFragilityOutput
     transition_risk: TransitionRiskOutput
     strategy_response: StrategyResponse
