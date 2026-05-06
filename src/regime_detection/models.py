@@ -13,7 +13,7 @@ class DataQuality(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     status: DataQualityStatus
-    freshness_days: int | None
+    freshness_days: int | None = Field(default=None, ge=0)
     completeness: float | None = Field(default=None, ge=0.0, le=1.0)
     reason: str | None
 

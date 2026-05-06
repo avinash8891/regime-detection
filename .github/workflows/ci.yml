@@ -32,7 +32,9 @@ jobs:
               git diff --check "$before...${{ github.sha }}"
             else
               # Fallback: first commit on branch, or unknown before-sha.
-              git diff --check
+              # Compare against the empty tree so we still check the pushed content.
+              empty_tree="$(git hash-object -t tree /dev/null)"
+              git diff --check "$empty_tree...${{ github.sha }}"
             fi
           fi
 
