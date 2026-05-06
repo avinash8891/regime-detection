@@ -26,6 +26,7 @@ from regime_detection.trend_character import classify_series as classify_trend_c
 from regime_detection.volatility_state import classify_series as classify_volatility_state
 from regime_detection.breadth_state import classify_series as classify_breadth_state
 from regime_detection.event_calendar import classify_event_calendar
+from regime_detection.transition_risk import TransitionRiskInputs, classify_transition_risk
 
 
 class RegimeEngine:
@@ -101,6 +102,24 @@ class RegimeEngine:
             as_of_date=as_of_date,
             deescalation_days=cfg.hysteresis.breadth_deescalation_days,
         )
+        transition_risk = classify_transition_risk(
+            inp=TransitionRiskInputs(
+                close=spy_close,
+                high=spy_high,
+                low=spy_low,
+                vix_proxy_close=vixy_close,
+                rsp_close=rsp_close,
+                as_of_date=as_of_date,
+                trend_direction_deescalation_days=cfg.hysteresis.trend_direction_deescalation_days,
+                trend_character_deescalation_days=cfg.hysteresis.trend_character_deescalation_days,
+                volatility_deescalation_days=cfg.hysteresis.volatility_deescalation_days,
+                breadth_deescalation_days=cfg.hysteresis.breadth_deescalation_days,
+            ),
+            trend_direction_active=trend_direction.active_label,
+            trend_character_active=trend_character.active_label,
+            volatility_active=volatility_state.active_label,
+            breadth_active=breadth_state.active_label,
+        )
 
         structural = StructuralCausalState(
             event_calendar=classify_event_calendar(as_of_date=as_of_date, event_calendar=event_calendar),
@@ -124,10 +143,7 @@ class RegimeEngine:
                 label="not_implemented_v1",
                 reason="breadth_state_used_as_v1_fragility_proxy",
             ),
-            transition_risk=TransitionRiskOutput(
-                label="unknown",
-                evidence={"reason": "not_implemented_v1"},
-            ),
+            transition_risk=transition_risk,
             strategy_response=_unknown_strategy_response(),
         )
 
