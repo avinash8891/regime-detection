@@ -68,12 +68,13 @@ PROMPT
   strip_frontmatter "$plugin_file"
 } >"$prompt_file"
 
-cmd=(codex exec review --base "$base_ref" --ephemeral)
+cmd=(codex exec review --base "$base_ref" --ephemeral -)
 if [[ -n "${CODEX_REVIEW_MODEL:-}" ]]; then
   cmd+=(--model "$CODEX_REVIEW_MODEL")
 fi
-cmd+=(-)
 
+# IMPORTANT: codex exec review cannot accept a custom [PROMPT] when --base is used.
+# We pass instructions via stdin (Codex treats piped stdin as additional context).
 if perl -e 'alarm shift @ARGV; exec @ARGV' "$timeout_seconds" "${cmd[@]}" \
   <"$prompt_file" >"$output_file"
 then

@@ -9,9 +9,10 @@ Operating discipline for coding agents in this repository. Project-specific cont
 3. **Search before writing.** Grep the codebase for the concept before any new function >15 lines. Report findings.
 4. **Stop at each task boundary.** Commit with clear tag, push, wait for "continue." No auto-chaining.
 5. **Validate at every layer boundary**, including raw external inputs — one source-specific model per source before normalization.
-6. **Tests run and pass.** Paste actual test-runner output into the completion message.
-7. **No scope creep.** The spec is authoritative. "While I was here" additions banned. "In blast radius" is not a license.
-8. **Single source of truth for persistent state.** No shadow copies, no cross-task intermediate stores. Raw inputs and final outputs OK.
+6. **TDD for all V1 work.** For every vertical slice in the V1 spec: write the failing tests first (golden date(s), cold-start/NaN behavior, NYSE calendar enforcement, hysteresis edge cases), then implement until they pass. No untested implementation.
+7. **Tests run and pass.** Paste actual test-runner output into the completion message.
+8. **No scope creep.** The spec is authoritative. "While I was here" additions banned. "In blast radius" is not a license.
+9. **Single source of truth for persistent state.** No shadow copies, no cross-task intermediate stores. Raw inputs and final outputs OK.
 
 ## Failure modes + counter-mechanisms
 

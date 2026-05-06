@@ -71,11 +71,10 @@ PROMPT
     strip_frontmatter "$plugin_file"
   } >"$prompt_file"
 
-  local cmd=(codex exec review --base "$base_ref" --ephemeral)
+  local cmd=(codex exec review --base "$base_ref" --ephemeral -)
   if [[ -n "${CODEX_REVIEW_MODEL:-}" ]]; then
     cmd+=(--model "$CODEX_REVIEW_MODEL")
   fi
-  cmd+=(-)
 
   echo "=== ${agent} ==="
   if perl -e 'alarm shift @ARGV; exec @ARGV' "$timeout_seconds" "${cmd[@]}" \

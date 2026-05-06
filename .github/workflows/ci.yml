@@ -18,7 +18,25 @@ jobs:
           python-version: "3.11"
 
       - name: Git whitespace check
-        run: git diff --check origin/${{ github.base_ref || 'main' }}...HEAD
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "${{ github.event_name }}" == "pull_request" ]]; then
+            # Ensure the base ref exists locally for the diff.
+            git fetch -q origin "${{ github.base_ref }}":"refs/remotes/origin/${{ github.base_ref }}"
+            git diff --check "origin/${{ github.base_ref }}...HEAD"
+          else
+            # For push events, compare against the previous SHA (more reliable than origin/main).
+            before="${{ github.event.before }}"
+            if [[ -n "$before" && "$before" != "0000000000000000000000000000000000000000" ]]; then
+              git diff --check "$before...${{ github.sha }}"
+            else
+              # Fallback: first commit on branch, or unknown before-sha.
+              # Compare against the empty tree so we still check the pushed content.
+              empty_tree="$(git hash-object -t tree /dev/null)"
+              git diff --check "$empty_tree...${{ github.sha }}"
+            fi
+          fi
 
       - name: Shell syntax checks
         run: |
@@ -29,7 +47,7 @@ jobs:
       - name: Python test discovery
         run: |
           python -m pip install --upgrade pip
-          pip install pytest
+          pip install -e ".[dev]"
           if [ -d tests ]; then
             pytest -q
           else
