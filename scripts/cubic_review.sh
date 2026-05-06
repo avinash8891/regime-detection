@@ -1,9 +1,28 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-base_branch="${1:-main}"
+base_mode="ref"
+base_ref_or_branch="main"
 if [[ $# -gt 0 ]]; then
-  shift
+  if [[ "${1:-}" == "--merge-base" ]]; then
+    base_mode="merge-base"
+    base_ref_or_branch="${2:-}"
+    if [[ -z "$base_ref_or_branch" ]]; then
+      echo "usage: $0 --merge-base <base-ref> [cubic args...]" >&2
+      exit 2
+    fi
+    shift 2
+  else
+    base_ref_or_branch="$1"
+    shift
+  fi
+fi
+
+base_branch="$base_ref_or_branch"
+
+# Accept both `main` and `origin/main`-style inputs (common in hooks / CI).
+if [[ "$base_branch" == origin/* ]]; then
+  base_branch="${base_branch#origin/}"
 fi
 
 # Prevent indefinite pre-push hangs if cubic blocks on network/service calls.
@@ -22,6 +41,10 @@ if [[ ! "$fetch_timeout_seconds" =~ ^[1-9][0-9]*$ ]]; then
 fi
 
 repo_root="$(git rev-parse --show-toplevel)"
+origin_url=""
+if git -C "$repo_root" remote get-url origin >/dev/null 2>&1; then
+  origin_url="$(git -C "$repo_root" remote get-url origin)"
+fi
 review_dir="$(mktemp -d "${TMPDIR:-/tmp}/regime-cubic-review.XXXXXX")"
 head_sha="$(git -C "$repo_root" rev-parse HEAD)"
 tmp_xdg_data_home=""
@@ -35,24 +58,48 @@ cleanup() {
 trap cleanup EXIT
 
 # Resolve base SHA in the original working tree (so any fetch uses the real upstream remote).
-base_ref="$base_branch"
-if git -C "$repo_root" show-ref --verify --quiet "refs/heads/${base_branch}"; then
-  base_ref="$base_branch"
-elif git -C "$repo_root" show-ref --verify --quiet "refs/remotes/origin/${base_branch}"; then
-  base_ref="origin/${base_branch}"
-else
-  # Common on fresh clones: the base branch exists on the remote but hasn't been fetched yet.
-  if perl -e 'alarm shift @ARGV; exec @ARGV' \
-    "$fetch_timeout_seconds" \
-    git -C "$repo_root" fetch -q origin "${base_branch}:refs/remotes/origin/${base_branch}"
-  then
-    base_ref="origin/${base_branch}"
-  else
-    echo "Base branch not found locally: ${base_branch} (neither local nor origin/*), and fetch failed or timed out; skipping cubic review (non-blocking)." >&2
+if [[ "$base_mode" == "merge-base" ]]; then
+  base_ref="$base_ref_or_branch"
+  # Ensure we can resolve the base ref. If it isn't present locally, try fetching it.
+  if ! git -C "$repo_root" rev-parse -q --verify "$base_ref^{commit}" >/dev/null 2>&1; then
+    if [[ "$base_ref" == origin/* ]]; then
+      ref="${base_ref#origin/}"
+      perl -e 'alarm shift @ARGV; exec @ARGV' \
+        "$fetch_timeout_seconds" \
+        git -C "$repo_root" fetch -q origin "${ref}:refs/remotes/origin/${ref}" \
+        || true
+    else
+      perl -e 'alarm shift @ARGV; exec @ARGV' \
+        "$fetch_timeout_seconds" \
+        git -C "$repo_root" fetch -q origin "${base_ref}:refs/remotes/origin/${base_ref}" \
+        || true
+    fi
+  fi
+  if ! git -C "$repo_root" rev-parse -q --verify "$base_ref^{commit}" >/dev/null 2>&1; then
+    echo "Base ref not found: ${base_ref}; skipping cubic review (non-blocking)." >&2
     exit 0
   fi
+  base_sha="$(git -C "$repo_root" merge-base "$base_ref" "$head_sha")"
+else
+  base_ref="$base_branch"
+  if git -C "$repo_root" show-ref --verify --quiet "refs/heads/${base_branch}"; then
+    base_ref="$base_branch"
+  elif git -C "$repo_root" show-ref --verify --quiet "refs/remotes/origin/${base_branch}"; then
+    base_ref="origin/${base_branch}"
+  else
+    # Common on fresh clones: the base branch exists on the remote but hasn't been fetched yet.
+    if perl -e 'alarm shift @ARGV; exec @ARGV' \
+      "$fetch_timeout_seconds" \
+      git -C "$repo_root" fetch -q origin "${base_branch}:refs/remotes/origin/${base_branch}"
+    then
+      base_ref="origin/${base_branch}"
+    else
+      echo "Base branch not found locally: ${base_branch} (neither local nor origin/*), and fetch failed or timed out; skipping cubic review (non-blocking)." >&2
+      exit 0
+    fi
+  fi
+  base_sha="$(git -C "$repo_root" rev-parse "$base_ref")"
 fi
-base_sha="$(git -C "$repo_root" rev-parse "$base_ref")"
 
 # cubic stores local session state on disk under:
 #   $XDG_DATA_HOME/cubic/storage/...
@@ -86,6 +133,11 @@ if [[ -z "$selected_xdg_data_home" ]]; then
 fi
 
 git clone --shared --no-checkout "$repo_root" "$review_dir" >/dev/null
+# The local-path clone sets `origin` to the worktree path. Repoint `origin` to the
+# real upstream so any fetches (now or later) work as expected.
+if [[ -n "$origin_url" ]]; then
+  git -C "$review_dir" remote set-url origin "$origin_url" >/dev/null
+fi
 git -C "$review_dir" checkout --detach -q "$head_sha"
 cd "$review_dir"
 set +e

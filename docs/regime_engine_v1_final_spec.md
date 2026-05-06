@@ -76,7 +76,8 @@ V1 input contract:
 - `market_data` is a long/wide-enough OHLCV DataFrame with at least `date`, `symbol`, `open`, `high`, `low`, `close`, `volume`.
 - US V1 requires `SPY` rows for the market index.
 - ETF proxy breadth requires `RSP` rows in the same contract.
-- VIX support may be provided either as `vix_data` or as a `VIX`/`^VIX` symbol in market data, but tests must use deterministic repo fixtures.
+- VIX support may be provided either as `vix_data` (preferred) or as a symbol in `market_data`.
+- In this repository's deterministic test fixtures, `VIXY` is used as the VIX proxy series (see `tests/fixtures/raw/PROVENANCE.md`). If you provide `VIX`/`^VIX` externally, you must normalize it into the `vix_data` input contract (close series aligned to NYSE sessions) before classification.
 
 V1 helper:
 
@@ -147,12 +148,12 @@ The package version in `pyproject.toml` and emitted `engine_version` must be cou
 
 ### 2.4.1 Config Loading
 
-V1 ships with `configs/core3-v1.0.0.yaml`.
+V1 ships with the packaged config resource `regime_detection/configs/core3-v1.0.0.yaml`.
 
 Rules:
 
 - `RegimeEngine` loads config once at construction time.
-- Default config path is `configs/core3-v1.0.0.yaml`.
+- Default config is loaded from `regime_detection/configs/core3-v1.0.0.yaml`.
 - `classify(..., config=...)` may override the engine default only with a validated `RegimeConfig` object.
 - `RegimeConfig` is a Pydantic model with `extra="forbid"`; unknown config keys raise.
 - `config_version` in output reflects the loaded config.
@@ -1225,7 +1226,7 @@ V1 uses a Python `src/` package layout:
 pyproject.toml
 src/regime_detection/
 tests/
-configs/core3-v1.0.0.yaml
+src/regime_detection/configs/core3-v1.0.0.yaml
 scripts/verify_fixtures.py
 ```
 

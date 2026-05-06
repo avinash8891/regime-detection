@@ -7,14 +7,12 @@ from typing import Any
 import pandas as pd
 
 from regime_detection.calendar import as_date, require_nyse_trading_day
-from regime_detection.config import RegimeConfig, default_config_path, load_regime_config
+from regime_detection.config import RegimeConfig, load_default_regime_config, load_regime_config
 from regime_detection.models import (
     AxisOutput,
     BreadthStateOutput,
     DataQuality,
     EventCalendarOutput,
-    MonetaryPressureOutput,
-    NetworkFragilityOutput,
     RegimeOutput,
     StrategyResponse,
     StructuralCausalState,
@@ -25,8 +23,10 @@ from regime_detection.versioning import engine_version
 
 class RegimeEngine:
     def __init__(self, *, config_path: str | Path | None = None) -> None:
-        path = Path(config_path) if config_path is not None else default_config_path()
-        self._config = load_regime_config(path)
+        if config_path is None:
+            self._config = load_default_regime_config()
+        else:
+            self._config = load_regime_config(Path(config_path))
 
     @property
     def config(self) -> RegimeConfig:
@@ -60,10 +60,6 @@ class RegimeEngine:
 
         structural = StructuralCausalState(
             event_calendar=_unknown_event_calendar_output(),
-            monetary_pressure=MonetaryPressureOutput(
-                label="unknown",
-                reason="not_implemented_v1",
-            ),
         )
 
         return RegimeOutput(
@@ -76,13 +72,9 @@ class RegimeEngine:
             volatility_state=unknown_axis,
             breadth_state=unknown_breadth,
             structural_causal_state=structural,
-            network_fragility=NetworkFragilityOutput(
-                label="not_implemented_v1",
-                reason="breadth_state_used_as_v1_fragility_proxy",
-            ),
             transition_risk=TransitionRiskOutput(
-                label="stable",
-                evidence={"warnings_active": []},
+                label="unknown",
+                evidence={"reason": "not_implemented_v1"},
             ),
             strategy_response=_default_strategy_response(),
         )
@@ -142,15 +134,16 @@ def _unknown_event_calendar_output() -> EventCalendarOutput:
 def _default_strategy_response() -> StrategyResponse:
     # Slice 1 placeholder: strategy_response is fully defined in Slice 9.
     return StrategyResponse(
-        position_size_multiplier=1.0,
+        position_size_multiplier=0.75,
         allow_trend_following=True,
         allow_mean_reversion=True,
-        leverage_allowed=True,
+        leverage_allowed=False,
         allow_buy_dip=True,
         allow_breakout=True,
         allow_shorts=True,
-        require_confirmation_for_new_longs=False,
-        require_confirmation_for_shorts=False,
+        require_confirmation_for_new_longs=True,
+        require_confirmation_for_shorts=True,
         log_for_review=True,
-        modifiers_applied=["not_implemented_v1"],
+        reason="unknown_or_unmapped_regime",
+        modifiers_applied=[],
     )
