@@ -41,7 +41,10 @@ if [[ ! "$fetch_timeout_seconds" =~ ^[1-9][0-9]*$ ]]; then
 fi
 
 repo_root="$(git rev-parse --show-toplevel)"
-origin_url="$(git -C "$repo_root" remote get-url origin)"
+origin_url=""
+if git -C "$repo_root" remote get-url origin >/dev/null 2>&1; then
+  origin_url="$(git -C "$repo_root" remote get-url origin)"
+fi
 review_dir="$(mktemp -d "${TMPDIR:-/tmp}/regime-cubic-review.XXXXXX")"
 head_sha="$(git -C "$repo_root" rev-parse HEAD)"
 tmp_xdg_data_home=""
@@ -132,7 +135,9 @@ fi
 git clone --shared --no-checkout "$repo_root" "$review_dir" >/dev/null
 # The local-path clone sets `origin` to the worktree path. Repoint `origin` to the
 # real upstream so any fetches (now or later) work as expected.
-git -C "$review_dir" remote set-url origin "$origin_url" >/dev/null
+if [[ -n "$origin_url" ]]; then
+  git -C "$review_dir" remote set-url origin "$origin_url" >/dev/null
+fi
 git -C "$review_dir" checkout --detach -q "$head_sha"
 cd "$review_dir"
 set +e

@@ -105,3 +105,13 @@ class RegimeOutput(BaseModel):
     structural_causal_state: StructuralCausalState
     transition_risk: TransitionRiskOutput
     strategy_response: StrategyResponse
+
+    # V1 wire contract: omit any None-valued conditional fields in nested models.
+    # This must be applied at the top-level dump to propagate into nested models.
+    def model_dump(self, *args: Any, **kwargs: Any) -> dict[str, Any]:
+        kwargs.setdefault("exclude_none", True)
+        return super().model_dump(*args, **kwargs)
+
+    def model_dump_json(self, *args: Any, **kwargs: Any) -> str:
+        kwargs.setdefault("exclude_none", True)
+        return super().model_dump_json(*args, **kwargs)

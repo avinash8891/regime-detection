@@ -89,13 +89,12 @@ def test_regime_config_forbids_unknown_keys() -> None:
         )
 
 
-def test_default_config_path_prefers_repo_configs_dir() -> None:
-    # Guard against config drift: repo-level configs/ should be the default when present.
-    from regime_detection.config import default_config_path
+def test_default_config_is_packaged_and_loadable() -> None:
+    # Guard against config drift: default config must be loadable from packaged resources.
+    from regime_detection.config import load_default_regime_config
 
-    p = default_config_path()
-    assert p.name == "core3-v1.0.0.yaml"
-    assert p.parent.name == "configs"
+    cfg = load_default_regime_config()
+    assert cfg.config_version == "core3-v1.0.0"
 
 
 def test_classify_emits_regime_output_shape() -> None:

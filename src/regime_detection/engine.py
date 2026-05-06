@@ -7,7 +7,7 @@ from typing import Any
 import pandas as pd
 
 from regime_detection.calendar import as_date, require_nyse_trading_day
-from regime_detection.config import RegimeConfig, default_config_path, load_regime_config
+from regime_detection.config import RegimeConfig, load_default_regime_config, load_regime_config
 from regime_detection.models import (
     AxisOutput,
     BreadthStateOutput,
@@ -23,8 +23,10 @@ from regime_detection.versioning import engine_version
 
 class RegimeEngine:
     def __init__(self, *, config_path: str | Path | None = None) -> None:
-        path = Path(config_path) if config_path is not None else default_config_path()
-        self._config = load_regime_config(path)
+        if config_path is None:
+            self._config = load_default_regime_config()
+        else:
+            self._config = load_regime_config(Path(config_path))
 
     @property
     def config(self) -> RegimeConfig:

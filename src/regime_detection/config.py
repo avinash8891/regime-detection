@@ -56,29 +56,16 @@ def load_regime_config(path: str | Path) -> RegimeConfig:
     return RegimeConfig.model_validate(data)
 
 
-def default_config_path() -> Path:
+def load_default_regime_config() -> RegimeConfig:
     """
-    Default config resolution:
-    - Prefer the packaged config shipped with the library.
-    - If the repo-level `configs/core3-v1.0.0.yaml` exists (development override), prefer it.
+    Load the packaged default config shipped with the library.
+
+    NOTE: We load the resource content directly (instead of returning a filesystem Path)
+    so this works even when the package is distributed as a zip/egg.
     """
-    here = Path(__file__).resolve()
-
-    # Development override: use repo-level config when present.
-    repo_root: Path | None = None
-    for p in here.parents:
-        if (p / "pyproject.toml").exists():
-            repo_root = p
-            break
-    if repo_root is not None:
-        repo_cfg = repo_root / "configs" / "core3-v1.0.0.yaml"
-        if repo_cfg.exists():
-            return repo_cfg
-
-    # Installed/default: packaged config.
     pkg_file = importlib.resources.files("regime_detection").joinpath("configs/core3-v1.0.0.yaml")
-    with importlib.resources.as_file(pkg_file) as p:
-        if p.exists():
-            return p
-
-    raise FileNotFoundError("Packaged default config not found: regime_detection/configs/core3-v1.0.0.yaml")
+    text = pkg_file.read_text(encoding="utf-8")
+    data = yaml.safe_load(text)
+    if not isinstance(data, dict):
+        raise ValueError("Default config must contain a YAML mapping at the top level")
+    return RegimeConfig.model_validate(data)

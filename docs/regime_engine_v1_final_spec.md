@@ -148,12 +148,12 @@ The package version in `pyproject.toml` and emitted `engine_version` must be cou
 
 ### 2.4.1 Config Loading
 
-V1 ships with `configs/core3-v1.0.0.yaml`.
+V1 ships with the packaged config resource `regime_detection/configs/core3-v1.0.0.yaml`.
 
 Rules:
 
 - `RegimeEngine` loads config once at construction time.
-- Default config path is `configs/core3-v1.0.0.yaml`.
+- Default config is loaded from `regime_detection/configs/core3-v1.0.0.yaml`.
 - `classify(..., config=...)` may override the engine default only with a validated `RegimeConfig` object.
 - `RegimeConfig` is a Pydantic model with `extra="forbid"`; unknown config keys raise.
 - `config_version` in output reflects the loaded config.
@@ -1226,7 +1226,7 @@ V1 uses a Python `src/` package layout:
 pyproject.toml
 src/regime_detection/
 tests/
-configs/core3-v1.0.0.yaml
+src/regime_detection/configs/core3-v1.0.0.yaml
 scripts/verify_fixtures.py
 ```
 
