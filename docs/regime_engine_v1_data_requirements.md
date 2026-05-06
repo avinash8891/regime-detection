@@ -114,7 +114,7 @@ Reason:
 
 ## 2. Event Calendar Data
 
-V1 requires a manually maintained US event calendar in YAML or CSV.
+V1 requires a manually maintained US event calendar in YAML or CSV for scheduled macro events and ad-hoc event windows.
 
 Required event fields:
 
@@ -123,6 +123,7 @@ date
 market
 type
 importance
+publication_date
 ```
 
 Required event types:
@@ -131,13 +132,13 @@ Required event types:
 FOMC
 CPI
 NFP
-monthly_options_expiry
-earnings_season
+ad_hoc
 ```
 
 Rules:
 
-- use only event rows with date `<= as_of_date`;
+- scheduled event dates may be in the future relative to `as_of_date` only when `publication_date <= as_of_date`;
+- event outcomes/results must never be available before the event happens;
 - event windows use NYSE trading days, not calendar days;
 - if multiple event windows match, active label follows V1 precedence:
 
@@ -147,34 +148,58 @@ fed_week > cpi_week > nfp_week > expiry_week > earnings_season > normal_calendar
 
 Evidence must preserve all matching event labels.
 
-### 2.1 Earnings Season Representation
+Loader defaults:
 
-If represented as rows, use:
+- FOMC/CPI/NFP rows without `publication_date` default to `date - 90 calendar days`.
+- ad-hoc rows without `publication_date` default to `date`.
+- If a scheduled event row is dated more than 90 calendar days after the historical `as_of_date` being replayed, emit a warning for operator review.
 
-```text
-start_date
-end_date
-market
-type=earnings_season
-importance
-```
+### 2.1 Expiry Week Representation
 
-If represented as config, define the market-specific windows in `configs/core3-v1.0.0.yaml`.
+Use config-defined rules in `configs/core3-v1.0.0.yaml`, not event rows.
 
-### 2.2 Monthly Options Expiry Representation
-
-Preferred for tests: explicit rows for each monthly expiry window.
-
-Required fields:
+Required config contents:
 
 ```text
-date
-market
-type=monthly_options_expiry
-importance
+expiry_rules:
+  monthly_options:
+    rule: third_friday_of_month
+    window: [-2, 0]
 ```
 
-If represented as config instead, the rule must be deterministic and documented in `configs/core3-v1.0.0.yaml`.
+Rule:
+
+```text
+expiry_week is active when as_of_date falls within the configured NYSE trading-day window around the monthly expiry date
+```
+
+### 2.2 Earnings Season Representation
+
+Use config-defined rules in `configs/core3-v1.0.0.yaml`, not event rows.
+
+Required config contents:
+
+```text
+earnings_seasons:
+  - quarter: Q1
+    start_rule: second_monday_of_january
+    end_offset_days: 35
+  - quarter: Q2
+    start_rule: second_monday_of_april
+    end_offset_days: 35
+  - quarter: Q3
+    start_rule: second_monday_of_july
+    end_offset_days: 35
+  - quarter: Q4
+    start_rule: second_monday_of_october
+    end_offset_days: 35
+```
+
+Rule:
+
+```text
+earnings_season is active when as_of_date falls inside the configured seasonal window for the quarter
+```
 
 ---
 

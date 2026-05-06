@@ -55,7 +55,6 @@ def _compute_adx_14(*, high: pd.Series, low: pd.Series, close: pd.Series) -> pd.
     minus_di = 100 * _wilder_ewm(minus_dm, n) / atr_safe
     denom = (plus_di + minus_di).replace(0.0, np.nan)
     dx = ((plus_di - minus_di).abs() / denom) * 100
-    dx = dx.fillna(0.0)
     return _wilder_ewm(dx, n)
 
 
