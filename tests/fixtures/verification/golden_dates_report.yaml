@@ -1,5 +1,5 @@
-generated_at_utc: '2026-05-06T05:08:16+00:00'
-generated_by_commit: 7d88312041762f4198565085ef6e6d6a7be382d9
+generated_at_utc: '2026-05-06T05:14:15+00:00'
+generated_by_commit: f7043f9c4510c2f5cac4409392e84500beee666a
 raw_file_sha256:
   SPY.csv: efa06aba545dea29dcc523bb8b50ad6a334892e49babee5769466fa8c2c0ef33
   RSP.csv: 6aa3f27a796ffad78f17d114fbe02e806a5488e2a07cdf61166344c15ed7d2c2
@@ -7,8 +7,8 @@ raw_file_sha256:
 rows:
 - intent_id: bull_trending_lowvol_healthy
   intent_date: '2020-08-11'
-  as_of_date: '2020-08-11'
-  delta_calendar_days: 0
+  as_of_date: '2020-12-07'
+  delta_calendar_days: 118
   notes: Steady bull, trending, low vol, healthy breadth
   expected:
     trend_direction: bull
@@ -17,23 +17,23 @@ rows:
     breadth_state: healthy_breadth
     transition_risk: stable
   features:
-    close: 332.82
-    SMA_50: 317.733
-    SMA_200: 305.58777249999997
-    return_1d: -0.008165454762188662
-    return_5d: 0.008545454545454634
-    return_10d: 0.03585434173669455
-    return_21d: 0.05720911025698028
-    return_63d: 0.16147269237480355
-    prior_63d_drawdown: -0.008165454762188662
-    ADX_14: 21.692390260931603
-    realized_vol_21d: 0.10828473482499043
-    realized_vol_percentile_252d: 0.27380952380952384
-    vix_percentile_252d: 0.5396825396825397
-    relative_breadth_ratio: 0.33216152875428157
-    relative_breadth_sma50: 0.3304269286914194
-    relative_breadth_return_20d: 0.026116586261168306
-    index_distance_from_63d_high: -0.008165454762188662
+    close: 369.16
+    SMA_50: 348.59659999999997
+    SMA_200: 315.657753
+    return_1d: -0.00167667261615001
+    return_5d: 0.019187764004306995
+    return_10d: 0.03886309272548183
+    return_21d: 0.05417059310659944
+    return_63d: 0.10769046118762571
+    prior_63d_drawdown: -0.00167667261615001
+    ADX_14: 21.10939721049934
+    realized_vol_21d: 0.12642328167115038
+    realized_vol_percentile_252d: 0.24206349206349206
+    vix_percentile_252d: 0.20238095238095238
+    relative_breadth_ratio: 0.34253440242713185
+    relative_breadth_sma50: 0.33192883323106737
+    relative_breadth_return_20d: 0.05218155299941252
+    index_distance_from_63d_high: -0.00167667261615001
   predicate_evaluations:
     trend_direction:
       raw_label: bull
@@ -52,10 +52,21 @@ rows:
         bear: 3
         unknown: 2
     trend_character:
-      recovery_attempt: false
-      trending: true
-      chop: false
-      transition: false
+      raw_label: trending
+      stable_label: trending
+      active_label: trending
+      rule_evidence:
+        recovery_attempt: false
+        trending: true
+        chop: false
+        transition: false
+      deescalation_days: 3
+      risk_rank:
+        trending: 0
+        chop: 1
+        recovery_attempt: 1
+        transition: 2
+        unknown: 2
     volatility_state:
       crisis_vol: false
       high_vol: false
@@ -118,10 +129,21 @@ rows:
         bear: 3
         unknown: 2
     trend_character:
-      recovery_attempt: false
-      trending: false
-      chop: false
-      transition: true
+      raw_label: transition
+      stable_label: transition
+      active_label: transition
+      rule_evidence:
+        recovery_attempt: false
+        trending: false
+        chop: false
+        transition: true
+      deescalation_days: 3
+      risk_rank:
+        trending: 0
+        chop: 1
+        recovery_attempt: 1
+        transition: 2
+        unknown: 2
     volatility_state:
       crisis_vol: true
       high_vol: true
@@ -184,10 +206,21 @@ rows:
         bear: 3
         unknown: 2
     trend_character:
-      recovery_attempt: false
-      trending: true
-      chop: false
-      transition: false
+      raw_label: trending
+      stable_label: trending
+      active_label: trending
+      rule_evidence:
+        recovery_attempt: false
+        trending: true
+        chop: false
+        transition: false
+      deescalation_days: 3
+      risk_rank:
+        trending: 0
+        chop: 1
+        recovery_attempt: 1
+        transition: 2
+        unknown: 2
     volatility_state:
       crisis_vol: false
       high_vol: true
@@ -207,10 +240,11 @@ rows:
   intent_date: '2019-06-28'
   as_of_date: '2019-06-28'
   delta_calendar_days: 0
-  notes: Bull market normal conditions
+  notes: Bull market normal conditions (trend_character may remain transition under
+    hysteresis)
   expected:
     trend_direction: bull
-    trend_character: trending
+    trend_character: transition
     volatility_state: normal_vol
     breadth_state: healthy_breadth
     transition_risk: stable
@@ -250,10 +284,21 @@ rows:
         bear: 3
         unknown: 2
     trend_character:
-      recovery_attempt: false
-      trending: true
-      chop: false
-      transition: false
+      raw_label: trending
+      stable_label: transition
+      active_label: transition
+      rule_evidence:
+        recovery_attempt: false
+        trending: true
+        chop: false
+        transition: false
+      deescalation_days: 3
+      risk_rank:
+        trending: 0
+        chop: 1
+        recovery_attempt: 1
+        transition: 2
+        unknown: 2
     volatility_state:
       crisis_vol: false
       high_vol: false
@@ -316,10 +361,21 @@ rows:
         bear: 3
         unknown: 2
     trend_character:
-      recovery_attempt: false
-      trending: true
-      chop: false
-      transition: false
+      raw_label: trending
+      stable_label: trending
+      active_label: trending
+      rule_evidence:
+        recovery_attempt: false
+        trending: true
+        chop: false
+        transition: false
+      deescalation_days: 3
+      risk_rank:
+        trending: 0
+        chop: 1
+        recovery_attempt: 1
+        transition: 2
+        unknown: 2
     volatility_state:
       crisis_vol: true
       high_vol: true
@@ -382,10 +438,21 @@ rows:
         bear: 3
         unknown: 2
     trend_character:
-      recovery_attempt: true
-      trending: true
-      chop: false
-      transition: false
+      raw_label: recovery_attempt
+      stable_label: recovery_attempt
+      active_label: recovery_attempt
+      rule_evidence:
+        recovery_attempt: true
+        trending: true
+        chop: false
+        transition: false
+      deescalation_days: 3
+      risk_rank:
+        trending: 0
+        chop: 1
+        recovery_attempt: 1
+        transition: 2
+        unknown: 2
     volatility_state:
       crisis_vol: false
       high_vol: true
@@ -448,10 +515,21 @@ rows:
         bear: 3
         unknown: 2
     trend_character:
-      recovery_attempt: false
-      trending: true
-      chop: false
-      transition: false
+      raw_label: trending
+      stable_label: trending
+      active_label: trending
+      rule_evidence:
+        recovery_attempt: false
+        trending: true
+        chop: false
+        transition: false
+      deescalation_days: 3
+      risk_rank:
+        trending: 0
+        chop: 1
+        recovery_attempt: 1
+        transition: 2
+        unknown: 2
     volatility_state:
       crisis_vol: false
       high_vol: false
@@ -469,8 +547,8 @@ rows:
       recovery_attempt: false
 - intent_id: jun2022_bear_stress
   intent_date: '2022-06-29'
-  as_of_date: '2022-06-29'
-  delta_calendar_days: 0
+  as_of_date: '2022-06-30'
+  delta_calendar_days: 1
   notes: 2022 drawdown; stress warning
   expected:
     trend_direction: bear
@@ -479,23 +557,23 @@ rows:
     breadth_state: weak_breadth
     transition_risk: bear_stress_warning
   features:
-    close: 380.34
-    SMA_50: 402.4188
-    SMA_200: 438.59329999999994
-    return_1d: -0.0008143964271640769
-    return_5d: 0.01589251849675466
-    return_10d: 0.017305480514617333
-    return_21d: -0.08409189423493724
-    return_63d: -0.1759148917730159
-    prior_63d_drawdown: -0.1709932648924345
-    ADX_14: 24.44294519042695
-    realized_vol_21d: 0.29569826772391555
+    close: 377.25
+    SMA_50: 401.06299999999993
+    SMA_200: 438.2587
+    return_1d: -0.00812430982804857
+    return_5d: -0.002142517060784055
+    return_10d: -0.005142405063291111
+    return_21d: -0.08640689705276927
+    return_63d: -0.17772837245798734
+    prior_63d_drawdown: -0.17414623467600698
+    ADX_14: 24.50862882432355
+    realized_vol_21d: 0.29599794832197207
     realized_vol_percentile_252d: 0.8888888888888888
-    vix_percentile_252d: 0.4166666666666667
-    relative_breadth_ratio: 0.35512962086554134
-    relative_breadth_sma50: 0.35863271537652686
-    relative_breadth_return_20d: -0.015351679688390574
-    index_distance_from_63d_high: -0.1709932648924345
+    vix_percentile_252d: 0.43253968253968256
+    relative_breadth_ratio: 0.3558117958913187
+    relative_breadth_sma50: 0.3586507129337565
+    relative_breadth_return_20d: -0.01094704120037171
+    index_distance_from_63d_high: -0.17414623467600698
   predicate_evaluations:
     trend_direction:
       raw_label: bear
@@ -514,10 +592,21 @@ rows:
         bear: 3
         unknown: 2
     trend_character:
-      recovery_attempt: false
-      trending: true
-      chop: false
-      transition: false
+      raw_label: trending
+      stable_label: trending
+      active_label: trending
+      rule_evidence:
+        recovery_attempt: false
+        trending: true
+        chop: false
+        transition: false
+      deescalation_days: 3
+      risk_rank:
+        trending: 0
+        chop: 1
+        recovery_attempt: 1
+        transition: 2
+        unknown: 2
     volatility_state:
       crisis_vol: false
       high_vol: true
@@ -580,10 +669,21 @@ rows:
         bear: 3
         unknown: 2
     trend_character:
-      recovery_attempt: false
-      trending: true
-      chop: false
-      transition: false
+      raw_label: trending
+      stable_label: trending
+      active_label: trending
+      rule_evidence:
+        recovery_attempt: false
+        trending: true
+        chop: false
+        transition: false
+      deescalation_days: 3
+      risk_rank:
+        trending: 0
+        chop: 1
+        recovery_attempt: 1
+        transition: 2
+        unknown: 2
     volatility_state:
       crisis_vol: false
       high_vol: true
@@ -601,8 +701,8 @@ rows:
       recovery_attempt: false
 - intent_id: early2024_bull_lowvol
   intent_date: '2023-12-19'
-  as_of_date: '2023-12-19'
-  delta_calendar_days: 0
+  as_of_date: '2023-12-14'
+  delta_calendar_days: 5
   notes: Early 2024 bull / low vol / healthy breadth
   expected:
     trend_direction: bull
@@ -611,22 +711,22 @@ rows:
     breadth_state: healthy_breadth
     transition_risk: stable
   features:
-    close: 474.84
-    SMA_50: 443.70419999999996
-    SMA_200: 431.4676
-    return_1d: 0.00608089497213804
-    return_5d: 0.023141564318034824
-    return_10d: 0.03994743758212871
-    return_21d: 0.053350784178885835
-    return_63d: 0.0825278132409264
+    close: 472.01
+    SMA_50: 441.108
+    SMA_200: 430.41925
+    return_1d: 0.0032093517534537153
+    return_5d: 0.030072234467407144
+    return_10d: 0.03420245398773014
+    return_21d: 0.05187974951529872
+    return_63d: 0.06459616121974876
     prior_63d_drawdown: 0.0
-    ADX_14: 49.74320099161227
-    realized_vol_21d: 0.07631752358448436
-    realized_vol_percentile_252d: 0.015873015873015872
-    vix_percentile_252d: 0.5317460317460317
-    relative_breadth_ratio: 0.33101676354140347
-    relative_breadth_sma50: 0.32514153434137116
-    relative_breadth_return_20d: 0.029422023730526048
+    ADX_14: 46.15143221812382
+    realized_vol_21d: 0.06883110896579941
+    realized_vol_percentile_252d: 0.003968253968253968
+    vix_percentile_252d: 0.5198412698412699
+    relative_breadth_ratio: 0.33374292917522935
+    relative_breadth_sma50: 0.32483233016203933
+    relative_breadth_return_20d: 0.033093690311262636
     index_distance_from_63d_high: 0.0
   predicate_evaluations:
     trend_direction:
@@ -646,10 +746,21 @@ rows:
         bear: 3
         unknown: 2
     trend_character:
-      recovery_attempt: false
-      trending: true
-      chop: false
-      transition: false
+      raw_label: trending
+      stable_label: trending
+      active_label: trending
+      rule_evidence:
+        recovery_attempt: false
+        trending: true
+        chop: false
+        transition: false
+      deescalation_days: 3
+      risk_rank:
+        trending: 0
+        chop: 1
+        recovery_attempt: 1
+        transition: 2
+        unknown: 2
     volatility_state:
       crisis_vol: false
       high_vol: false
