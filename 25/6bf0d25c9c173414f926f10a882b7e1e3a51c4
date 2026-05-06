@@ -1,0 +1,23 @@
+docs/market_data_fetch_plan.md
+  9a14adc3ce6f8fa7 41-44,57-87,130,138
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.3.4",
+  "base_commit_sha": "256bf0d25c9c173414f926f10a882b7e1e3a51c4",
+  "prompts": {
+    "9a14adc3ce6f8fa7": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019dfd6e-1679-7780-a181-45455ba346ca",
+        "model": "gpt-5.4"
+      },
+      "human_author": "Avinash Vankadaru",
+      "messages": [],
+      "total_additions": 41,
+      "total_deletions": 39,
+      "accepted_lines": 37,
+      "overriden_lines": 0
+    }
+  }
+}
