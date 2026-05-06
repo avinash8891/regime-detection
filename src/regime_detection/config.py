@@ -41,8 +41,17 @@ def default_config_path() -> Path:
     2. Otherwise fall back to the packaged config shipped with the library.
     """
     here = Path(__file__).resolve()
-    repo_root = here.parents[2]
-    repo_cfg = repo_root / "configs" / "core3-v1.0.0.yaml"
-    if repo_cfg.exists():
-        return repo_cfg
+
+    # Best-effort repo-root detection (works in a source checkout; gracefully falls back when installed).
+    repo_root: Path | None = None
+    for p in here.parents:
+        if (p / "pyproject.toml").exists():
+            repo_root = p
+            break
+
+    if repo_root is not None:
+        repo_cfg = repo_root / "configs" / "core3-v1.0.0.yaml"
+        if repo_cfg.exists():
+            return repo_cfg
+
     return here.parent / "configs" / "core3-v1.0.0.yaml"
