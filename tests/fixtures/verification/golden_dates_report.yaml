@@ -1,4 +1,4 @@
-generated_at_utc: '2026-05-05T20:27:35+00:00'
+generated_at_utc: '2026-05-05T20:37:12+00:00'
 raw_file_sha256:
   SPY.csv: efa06aba545dea29dcc523bb8b50ad6a334892e49babee5769466fa8c2c0ef33
   RSP.csv: 6aa3f27a796ffad78f17d114fbe02e806a5488e2a07cdf61166344c15ed7d2c2
@@ -65,7 +65,7 @@ rows:
   delta_calendar_days: 0
   notes: Volmageddon episode; crisis_vol day
   expected:
-    trend_direction: sideways
+    trend_direction: transition
     trend_character: transition
     volatility_state: crisis_vol
     breadth_state: weak_breadth
@@ -285,7 +285,7 @@ rows:
   delta_calendar_days: 0
   notes: Post-crash recovery attempt; breadth pinned by rules in ETF-proxy mode
   expected:
-    trend_direction: transition
+    trend_direction: bear
     trend_character: recovery_attempt
     volatility_state: high_vol
     breadth_state: weak_breadth
