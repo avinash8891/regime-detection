@@ -20,6 +20,7 @@ from regime_detection.models import (
 )
 from regime_detection.trend_direction import classify_series as classify_trend_direction
 from regime_detection.trend_character import classify_series as classify_trend_character
+from regime_detection.volatility_state import classify_series as classify_volatility_state
 from regime_detection.versioning import engine_version
 
 
@@ -72,6 +73,12 @@ class RegimeEngine:
             as_of_date=as_of_date,
             deescalation_days=cfg.hysteresis.trend_character_deescalation_days,
         )
+        volatility_state = classify_volatility_state(
+            close=spy_close,
+            vix_proxy_close=None,
+            as_of_date=as_of_date,
+            deescalation_days=cfg.hysteresis.volatility_deescalation_days,
+        )
 
         unknown_axis = _unknown_axis_output()
         unknown_breadth = _unknown_breadth_output()
@@ -87,7 +94,7 @@ class RegimeEngine:
             market="SPY",
             trend_direction=trend_direction,
             trend_character=trend_character,
-            volatility_state=unknown_axis,
+            volatility_state=volatility_state,
             breadth_state=unknown_breadth,
             structural_causal_state=structural,
             transition_risk=TransitionRiskOutput(
@@ -111,6 +118,24 @@ def _require_market_data_contract(df: pd.DataFrame, *, as_of_date: date) -> None
     has_spy_asof = ((df["symbol"] == "SPY") & (dates == as_of_date)).any()
     if not bool(has_spy_asof):
         raise ValueError(f"market_data must include SPY row for as_of_date={as_of_date.isoformat()}")
+
+    # V1 requires NYSE-session aligned dates only. Reject non-trading-day rows to prevent
+    # distortion of trading-day lookbacks.
+    # IMPORTANT: do this in one calendar query for the full range; checking day-by-day is too slow.
+    uniq_dates = sorted({d for d in dates.dropna().unique()})
+    if uniq_dates:
+        from regime_detection.calendar import nyse_calendar
+
+        start = min(uniq_dates)
+        end = max(uniq_dates)
+        sessions = nyse_calendar().schedule(start_date=start, end_date=end).index.date
+        session_set = set(sessions)
+        bad_dates = [d for d in uniq_dates if d not in session_set]
+        if bad_dates:
+            raise ValueError(
+                "market_data contains non-NYSE session dates (forbidden in V1). "
+                f"Examples: {bad_dates[:5]}"
+            )
 
 
 def _spy_ohlcv_frame(df: pd.DataFrame, *, as_of_date: date) -> pd.DataFrame:

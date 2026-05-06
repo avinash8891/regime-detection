@@ -185,10 +185,19 @@ def classify_series(
     stable = stable_labels[-1]
     active = active_labels[-1]
 
-    # Data quality: this slice uses only SPY close from market_data; completeness/freshness are enforced
-    # by the engine contract. Here we only surface insufficient_history.
     if raw == "unknown":
-        dq = DataQuality(status="insufficient_history", freshness_days=0, completeness=1.0, reason="insufficient_history")
+        return AxisOutput(
+            raw_label="unknown",
+            stable_label="unknown",
+            active_label="unknown",
+            evidence={"reason": "insufficient_history"},
+            data_quality=DataQuality(
+                status="insufficient_history",
+                freshness_days=None,
+                completeness=None,
+                reason="required_feature_is_nan",
+            ),
+        )
     else:
         dq = DataQuality(status="ok", freshness_days=0, completeness=1.0, reason=None)
 
