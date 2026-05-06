@@ -20,6 +20,10 @@ DERIVED_PATH = REPO_ROOT / "tests" / "fixtures" / "derived" / "golden_dates.yaml
 REPORT_PATH = (
     REPO_ROOT / "tests" / "fixtures" / "verification" / "golden_dates_report.yaml"
 )
+CONFIG_PATHS = [
+    REPO_ROOT / "src" / "regime_detection" / "configs" / "core3-v1.0.0.yaml",
+    REPO_ROOT / "configs" / "core3-v1.0.0.yaml",
+]
 
 
 def _sha256_file(path: Path) -> str:
@@ -32,6 +36,24 @@ def _sha256_file(path: Path) -> str:
 
 def _utc_iso_now() -> str:
     return datetime.now(timezone.utc).replace(microsecond=0).isoformat()
+
+
+def _load_hysteresis_days() -> dict[str, int]:
+    cfg_path = next((p for p in CONFIG_PATHS if p.exists()), None)
+    if cfg_path is None:
+        raise SystemExit("Could not find core config yaml (core3-v1.0.0.yaml) for fixture verification.")
+    data = yaml.safe_load(cfg_path.read_text())
+    if not isinstance(data, dict) or not isinstance(data.get("hysteresis"), dict):
+        raise SystemExit(f"Invalid config structure in {cfg_path}")
+    h = data["hysteresis"]
+    return {
+        "trend_direction": int(h["trend_direction_deescalation_days"]),
+        "trend_character": int(h["trend_character_deescalation_days"]),
+        "volatility_state": int(h["volatility_deescalation_days"]),
+        "breadth_state": int(h["breadth_deescalation_days"]),
+        "composite": int(h["composite_deescalation_days"]),
+        "event_calendar": int(h["event_calendar_days"]),
+    }
 
 
 def _pct_rank_last(arr: np.ndarray) -> float:
@@ -205,6 +227,80 @@ def _eval_trend_direction(feat: dict[str, pd.Series], dt: pd.Timestamp) -> tuple
         "sideways": sideways,
         "transition": transition,
     }
+
+
+_TD_RISK_RANK: dict[str, int] = {
+    "bull": 0,
+    "sideways": 1,
+    "transition": 2,
+    "bear": 3,
+    "unknown": 2,
+}
+
+
+def _apply_trend_direction_hysteresis(
+    *, raw_labels: list[str], deescalation_days: int
+) -> tuple[list[str], list[str]]:
+    """
+    Match the engine's deterministic asymmetric hysteresis for trend_direction:
+    - Escalation (higher risk_rank) updates stable immediately.
+    - De-escalation requires N consecutive days.
+    - active_label fast-path: if raw riskier than stable => active=raw else active=stable.
+    """
+    stable: list[str] = []
+    active: list[str] = []
+
+    stable_label = raw_labels[0]
+    pending: str | None = None
+    cnt = 0
+
+    for raw in raw_labels:
+        rr = _TD_RISK_RANK[raw]
+        sr = _TD_RISK_RANK[stable_label]
+
+        if rr > sr:
+            stable_label = raw
+            pending = None
+            cnt = 0
+        elif rr < sr:
+            if deescalation_days == 0:
+                stable_label = raw
+                pending = None
+                cnt = 0
+            else:
+                if pending != raw:
+                    pending = raw
+                    cnt = 1
+                else:
+                    cnt += 1
+                if cnt >= deescalation_days:
+                    stable_label = raw
+                    pending = None
+                    cnt = 0
+        else:
+            if raw != stable_label:
+                if deescalation_days == 0:
+                    stable_label = raw
+                    pending = None
+                    cnt = 0
+                else:
+                    if pending != raw:
+                        pending = raw
+                        cnt = 1
+                    else:
+                        cnt += 1
+                    if cnt >= deescalation_days:
+                        stable_label = raw
+                        pending = None
+                        cnt = 0
+            else:
+                pending = None
+                cnt = 0
+
+        stable.append(stable_label)
+        active.append(raw if rr > _TD_RISK_RANK[stable_label] else stable_label)
+
+    return stable, active
 
 
 def _eval_trend_character(feat: dict[str, pd.Series], dt: pd.Timestamp) -> tuple[str, dict[str, bool]]:
@@ -529,12 +625,30 @@ def _evaluate_all(feat: dict[str, pd.Series]) -> pd.DataFrame:
         bs_ev.append(bs_e)
         tr_ev.append(tr_e)
 
-    out["trend_direction"] = td
+    hyst = _load_hysteresis_days()
+
+    # Apply V1 trend_direction hysteresis so fixtures match engine outputs (active_label).
+    td_stable, td_active = _apply_trend_direction_hysteresis(
+        raw_labels=td, deescalation_days=hyst["trend_direction"]
+    )
+    out["trend_direction"] = td_active
+    out["_trend_direction_raw"] = td
+    out["_trend_direction_stable"] = td_stable
     out["trend_character"] = tc
     out["volatility_state"] = vs
     out["breadth_state"] = bs
     out["transition_risk"] = tr
-    out["_td_evidence"] = td_ev
+    out["_td_evidence"] = [
+        {
+            "raw_label": raw,
+            "stable_label": st,
+            "active_label": act,
+            "rule_evidence": ev,
+            "deescalation_days": hyst["trend_direction"],
+            "risk_rank": _TD_RISK_RANK,
+        }
+        for raw, st, act, ev in zip(td, td_stable, td_active, td_ev, strict=True)
+    ]
     out["_tc_evidence"] = tc_ev
     out["_vs_evidence"] = vs_ev
     out["_bs_evidence"] = bs_ev
