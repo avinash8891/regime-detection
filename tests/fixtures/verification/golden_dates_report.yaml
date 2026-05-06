@@ -1,5 +1,5 @@
-generated_at_utc: '2026-05-06T07:32:45+00:00'
-generated_by_commit: 99355f0e4671feae5ec089f1685566aa72c6b9d8
+generated_at_utc: '2026-05-06T07:42:20+00:00'
+generated_by_commit: d815696149af9657cf7e742aadc7a254800a997b
 raw_file_sha256:
   SPY.csv: efa06aba545dea29dcc523bb8b50ad6a334892e49babee5769466fa8c2c0ef33
   RSP.csv: 6aa3f27a796ffad78f17d114fbe02e806a5488e2a07cdf61166344c15ed7d2c2
@@ -337,33 +337,33 @@ rows:
       recovery_attempt: true
 - intent_id: late2021_bull_lowvol
   intent_date: '2021-11-15'
-  as_of_date: '2020-12-08'
-  delta_calendar_days: 342
-  notes: Late-2021 bull / low vol / healthy breadth (pinned mechanically by rules)
+  as_of_date: '2021-11-12'
+  delta_calendar_days: 3
+  notes: Late-2021 bull / low vol with weak breadth (ETF-proxy rules)
   expected:
     trend_direction: bull
     trend_character: trending
     volatility_state: low_vol
-    breadth_state: healthy_breadth
+    breadth_state: weak_breadth
     transition_risk: stable
   features:
-    close: 370.19
-    SMA_50: 349.3154
-    SMA_200: 315.945753
-    return_1d: 0.002790118106
-    return_5d: 0.01189044391
-    return_10d: 0.035409615976
-    return_21d: 0.057142041236
-    return_63d: 0.089531153427
-    prior_63d_drawdown: 0.0
-    ADX_14: 21.775736108093
-    realized_vol_21d: 0.126076783028
-    realized_vol_percentile_252d: 0.238095238095
-    vix_percentile_252d: 0.194444444444
-    relative_breadth_ratio: 0.342526810557
-    relative_breadth_sma50: 0.332290812972
-    relative_breadth_return_20d: 0.021674300274
-    index_distance_from_63d_high: 0.0
+    close: 467.27
+    SMA_50: 448.0388
+    SMA_200: 424.2885495
+    return_1d: 0.007546844341
+    return_5d: -0.00268926216
+    return_10d: 0.017463255308
+    return_21d: 0.05597740113
+    return_63d: 0.045416918361
+    prior_63d_drawdown: -0.003539973983
+    ADX_14: 30.690170876431
+    realized_vol_21d: 0.068980614102
+    realized_vol_percentile_252d: 0.007936507937
+    vix_percentile_252d: 0.531746031746
+    relative_breadth_ratio: 0.345945598904
+    relative_breadth_sma50: 0.347244359544
+    relative_breadth_return_20d: -0.009333563369
+    index_distance_from_63d_high: -0.003539973983
   predicate_evaluations:
     trend_direction:
       bull: true
@@ -382,8 +382,8 @@ rows:
       normal_vol: false
     breadth_state:
       divergent_fragile: false
-      weak_breadth: false
-      healthy_breadth: true
+      weak_breadth: true
+      healthy_breadth: false
       neutral_breadth: false
     transition_risk:
       crisis_override: false

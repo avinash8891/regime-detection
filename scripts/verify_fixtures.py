@@ -444,11 +444,11 @@ INTENTS: list[dict[str, Any]] = [
             "trend_direction": "bull",
             "trend_character": "trending",
             "volatility_state": "low_vol",
-            "breadth_state": "healthy_breadth",
+            "breadth_state": "weak_breadth",
             "transition_risk": "stable",
         },
-        "search_window_trading_days": 120,
-        "notes": "Late-2021 bull / low vol / healthy breadth (pinned mechanically by rules)",
+        "search_window_trading_days": 20,
+        "notes": "Late-2021 bull / low vol with weak breadth (ETF-proxy rules)",
     },
     {
         "intent_id": "jun2022_bear_stress",
@@ -562,27 +562,17 @@ def _pick_fixture_date(
             f"intent_date must be an NYSE trading day present in labels index. "
             f"Got intent_date={intent_date}."
         )
-    # Start near the intended date, then widen if needed. This matches the spec's
-    # "rules win; replace fixture date, not predicates" principle, while still
-    # biasing towards the same historical episode.
-    windows = [
-        search_window_trading_days,
-        2 * search_window_trading_days,
-        5 * search_window_trading_days,
-    ]
-
-    last_df: pd.DataFrame | None = None
-    for w in windows:
-        window = _nearest_trading_days(labels.index, base, int(w))
-        df = labels.loc[labels.index.intersection(window)]
-        last_df = df
-        mask = pd.Series(True, index=df.index)
-        for k, v in intent.items():
-            mask &= df[k].eq(v)
-        candidates = df[mask]
-        if len(candidates) == 0:
-            continue
-
+    # Only search within the explicitly provided trading-day window.
+    # If the intent can't be satisfied within this episode window, the intent
+    # must be rewritten (date and/or expected labels) rather than widening
+    # the search and accidentally pinning a different episode.
+    window = _nearest_trading_days(labels.index, base, int(search_window_trading_days))
+    df = labels.loc[labels.index.intersection(window)]
+    mask = pd.Series(True, index=df.index)
+    for k, v in intent.items():
+        mask &= df[k].eq(v)
+    candidates = df[mask]
+    if len(candidates) > 0:
         if base in candidates.index:
             return base
 
