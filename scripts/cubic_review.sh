@@ -24,6 +24,7 @@ fi
 repo_root="$(git rev-parse --show-toplevel)"
 review_dir="$(mktemp -d "${TMPDIR:-/tmp}/regime-cubic-review.XXXXXX")"
 head_sha="$(git -C "$repo_root" rev-parse HEAD)"
+upstream_url="$(git -C "$repo_root" remote get-url origin 2>/dev/null || true)"
 
 cleanup() {
   rm -rf "$review_dir"
@@ -67,10 +68,9 @@ if git show-ref --verify --quiet "refs/heads/${base_branch}"; then
 elif git show-ref --verify --quiet "refs/remotes/origin/${base_branch}"; then
   base_ref="origin/${base_branch}"
 else
-  # Common on fresh clones: the base branch exists on the remote but hasn't been fetched yet.
-  if perl -e 'alarm shift @ARGV; exec @ARGV' \
+  if [[ -n "$upstream_url" ]] && perl -e 'alarm shift @ARGV; exec @ARGV' \
     "$fetch_timeout_seconds" \
-    git fetch -q origin "${base_branch}:refs/remotes/origin/${base_branch}"
+    git fetch -q "$upstream_url" "${base_branch}:refs/remotes/origin/${base_branch}"
   then
     base_ref="origin/${base_branch}"
   else
