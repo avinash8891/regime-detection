@@ -20,6 +20,7 @@ from regime_data_fetch.event_calendar import run_us_event_calendar_fetch
 from regime_data_fetch.fetch_workflow import run_macro_fetch, run_market_fetch
 from regime_data_fetch.aggregate_eps import run_aggregate_eps_fetch, run_wayback_aggregate_eps_fetch
 from regime_data_fetch.fomc_minutes import run_fomc_minutes_fetch
+from regime_data_fetch.local_usd_index import run_local_usd_index_import
 from regime_data_fetch.pmi import run_pmi_fetch
 from regime_data_fetch.pit_constituents import run_pit_constituents_fetch
 from regime_data_fetch.powell_speeches import run_powell_speeches_fetch
@@ -33,7 +34,7 @@ def main() -> int:
     ap.add_argument("--start", default="2015-01-01", help="Start date (YYYY-MM-DD).")
     ap.add_argument("--end", default=dt.date.today().isoformat(), help="End date (YYYY-MM-DD).")
     ap.add_argument("--scope", default="v1", help="Data scope: v1|v2|all.")
-    ap.add_argument("--fetch", default="market", help="What to fetch: market|macro|events|pmi|pit|fomc|powell|eps|eps-wayback|all.")
+    ap.add_argument("--fetch", default="market", help="What to fetch: market|macro|events|pmi|pit|fomc|powell|eps|eps-wayback|usd-index-local|all.")
     ap.add_argument("--min-cap-b", type=float, default=10.0, help="Universe filter threshold in $B.")
     ap.add_argument("--adjustment", default="raw", help="Alpaca adjustment: raw|split|dividend|all.")
     ap.add_argument("--alpaca-feed", default=None, help="Alpaca data feed: sip|iex|otc. Omit to use SDK default.")
@@ -66,6 +67,7 @@ def main() -> int:
     ap.add_argument("--eps-wayback-from", default=None, help="Optional lower bound date (YYYY-MM-DD) for Wayback EPS snapshot dates.")
     ap.add_argument("--eps-wayback-to", default=None, help="Optional upper bound date (YYYY-MM-DD) for Wayback EPS snapshot dates.")
     ap.add_argument("--eps-wayback-stop-after-first-success", action="store_true", help="Stop Wayback EPS processing after the first successfully parsed snapshot.")
+    ap.add_argument("--usd-index-csv", default=None, help="Path to a local Yahoo Finance ^NYICDX historical CSV export. Required for --fetch usd-index-local.")
     ap.add_argument("--acquisition-db", default=None, help="Optional SQLite path for raw acquisition/provenance recording.")
     ap.add_argument("--bls-schedule-dir", default=None, help="Optional local directory containing bls_schedule_YYYY.html files for BLS historical release schedules.")
     ap.add_argument("--bls-start-year", type=int, default=2000, help="Start year for BLS CPI/NFP schedule generation.")
@@ -83,8 +85,8 @@ def main() -> int:
 
     if args.scope not in {"v1", "v2", "all"}:
         raise SystemExit("--scope must be v1|v2|all")
-    if args.fetch not in {"market", "macro", "events", "pmi", "pit", "fomc", "powell", "eps", "eps-wayback", "all"}:
-        raise SystemExit("--fetch must be market|macro|events|pmi|pit|fomc|powell|eps|eps-wayback|all")
+    if args.fetch not in {"market", "macro", "events", "pmi", "pit", "fomc", "powell", "eps", "eps-wayback", "usd-index-local", "all"}:
+        raise SystemExit("--fetch must be market|macro|events|pmi|pit|fomc|powell|eps|eps-wayback|usd-index-local|all")
 
     if args.env_file:
         load_env_file(Path(args.env_file))
@@ -195,6 +197,16 @@ def main() -> int:
             stop_after_first_success=args.eps_wayback_stop_after_first_success,
         )
         print(str(eps_wayback_report))
+
+    if args.fetch == "usd-index-local":
+        if not args.usd_index_csv:
+            raise SystemExit("--usd-index-csv is required for usd-index-local fetches")
+        usd_index_report = run_local_usd_index_import(
+            out_dir=out_dir,
+            csv_path=Path(args.usd_index_csv),
+            acquisition_db_path=Path(args.acquisition_db) if args.acquisition_db else None,
+        )
+        print(str(usd_index_report))
     return 0
 
 
