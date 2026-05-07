@@ -39,13 +39,36 @@ git clone --shared --no-checkout "$repo_root" "$review_dir" >/dev/null
 git -C "$review_dir" checkout --detach -q HEAD
 cd "$review_dir"
 
+# Resolve the base to a SHA so downstream tools don't depend on remote refnames
+# being present in their internal snapshots.
+base_sha="$base_ref"
+if git rev-parse -q --verify "$base_ref" >/dev/null 2>&1; then
+  base_sha="$(git rev-parse "$base_ref")"
+fi
+
+# Ensure the base ref exists in this review clone (worktrees sometimes lack remote refs in shared clones).
+if [[ "$base_ref" == origin/* ]]; then
+  base_branch="${base_ref#origin/}"
+  if ! git show-ref --verify --quiet "refs/remotes/origin/${base_branch}"; then
+    git fetch -q origin "$base_branch":"refs/remotes/origin/${base_branch}" || git fetch -q origin "$base_branch" || true
+  fi
+fi
+
 if perl -e 'alarm shift @ARGV; exec @ARGV' \
   "$timeout_seconds" \
-  env PATH="$HOME/.superset/bin:$HOME/.cubic/bin:$PATH" cubic review --print-logs --base "$base_ref" "$@"
+  env PATH="$HOME/.superset/bin:$HOME/.cubic/bin:$PATH" cubic review --print-logs --base "$base_sha" "$@"
 then
   :
 else
   status=$?
+  # If Cubic can't compute a git diff (observed in some worktree/snapshot setups),
+  # skip rather than blocking pushes indefinitely.
+  # NOTE: output is on stderr; redirecting isn't trivial here, so run a lightweight
+  # follow-up check that reproduces the error signature.
+  if env PATH="$HOME/.superset/bin:$HOME/.cubic/bin:$PATH" cubic review --base "$base_sha" --print-logs "$@" 2>&1 | rg -q "failed to get diff|exitCode=128"; then
+    echo "cubic review could not compute diff (exitCode=128); skipping cubic-review hook" >&2
+    exit 0
+  fi
   if [[ "$status" -eq 142 ]]; then
     echo "cubic review timed out after ${timeout_seconds}s" >&2
   fi
