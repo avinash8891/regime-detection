@@ -171,6 +171,7 @@ def main() -> int:
     if args.fetch in {"fomc", "all"}:
         fomc_report = run_fomc_minutes_fetch(
             out_dir=out_dir,
+            acquisition_db_path=Path(args.acquisition_db) if args.acquisition_db else None,
         )
         print(str(fomc_report))
 

@@ -3,6 +3,7 @@ from __future__ import annotations
 import datetime as dt
 import json
 from pathlib import Path
+import sqlite3
 
 import pandas as pd
 
@@ -210,3 +211,53 @@ def test_run_fomc_minutes_fetch_raises_on_missing_article(tmp_path: Path) -> Non
         assert "article body" in str(exc).lower()
     else:
         raise AssertionError("Expected FOMCMinutesFetchError")
+
+
+def test_run_fomc_minutes_fetch_records_raw_html_and_outputs_in_sqlite(tmp_path: Path) -> None:
+    listing_html = (FIXTURES / "fomc_calendars_snippet.html").read_text()
+    historical_2019_html = (FIXTURES / "fomchistorical2019_snippet.html").read_text()
+    article_html = (FIXTURES / "fomcminutes20250319_snippet.html").read_text()
+    acquisition_db = tmp_path / "acquisition.db"
+
+    def fake_historical_index_fetcher() -> str:
+        return '<a href="/monetarypolicy/fomchistorical2019.htm">2019</a>'
+
+    def fake_historical_page_fetcher(url: str) -> str:
+        if url.endswith("fomchistorical2019.htm"):
+            return historical_2019_html
+        raise AssertionError(f"Unexpected historical URL: {url}")
+
+    def fake_article_fetcher(url: str) -> str:
+        assert url.startswith("https://www.federalreserve.gov/monetarypolicy/fomcminutes")
+        return article_html
+
+    report_path = run_fomc_minutes_fetch(
+        out_dir=tmp_path,
+        listing_fetcher=lambda: listing_html,
+        historical_index_fetcher=fake_historical_index_fetcher,
+        historical_page_fetcher=fake_historical_page_fetcher,
+        article_fetcher=fake_article_fetcher,
+        acquisition_db_path=acquisition_db,
+    )
+
+    report = json.loads(report_path.read_text())
+    assert report["paths"]["acquisition_db"] == str(acquisition_db)
+
+    with sqlite3.connect(acquisition_db) as conn:
+        fetch_runs = conn.execute("SELECT fetch_type, status FROM fetch_runs").fetchall()
+        artifacts = conn.execute(
+            "SELECT source_name, artifact_kind, count(*) FROM artifacts GROUP BY source_name, artifact_kind ORDER BY source_name, artifact_kind"
+        ).fetchall()
+        outputs = conn.execute("SELECT output_kind FROM derived_outputs ORDER BY output_id").fetchall()
+
+    assert fetch_runs == [("fomc_minutes", "ok")]
+    assert artifacts == [
+        ("federalreserve:fomc_historical_index", "html", 1),
+        ("federalreserve:fomc_historical_year", "html", 1),
+        ("federalreserve:fomc_listing", "html", 1),
+        ("federalreserve:fomc_minutes_article", "html", 4),
+    ]
+    assert outputs == [
+        ("fomc_minutes_parquet",),
+        ("fomc_minutes_report",),
+    ]

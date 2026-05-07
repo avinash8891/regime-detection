@@ -11,6 +11,8 @@ from zoneinfo import ZoneInfo
 
 import pandas as pd
 
+from regime_data_fetch.acquisition_store import AcquisitionStore
+
 
 LISTING_URL = "https://www.federalreserve.gov/monetarypolicy/fomccalendars.htm"
 HISTORICAL_YEAR_INDEX_URL = "https://www.federalreserve.gov/monetarypolicy/fomc_historical_year.htm"
@@ -176,76 +178,161 @@ def run_fomc_minutes_fetch(
     historical_index_fetcher=fetch_fomc_historical_year_index,
     historical_page_fetcher=fetch_fomc_historical_year_page,
     article_fetcher=fetch_fomc_minutes_article,
+    acquisition_db_path: Path | None = None,
 ) -> Path:
     out_dir.mkdir(parents=True, exist_ok=True)
-
-    listing_html = listing_fetcher()
-    entries = parse_fomc_minutes_listing(listing_html)
-
-    historical_index_html = historical_index_fetcher()
-    historical_urls = parse_fomc_historical_year_index(historical_index_html)
-    for historical_url in historical_urls:
-        historical_html = historical_page_fetcher(historical_url)
-        entries.extend(parse_fomc_minutes_historical_listing(historical_html))
-
-    deduped_entries: dict[dt.date, FOMCMinutesListingEntry] = {}
-    for entry in entries:
-        deduped_entries[entry.meeting_end_date] = entry
-    entries = sorted(deduped_entries.values(), key=lambda item: item.meeting_end_date, reverse=True)
-
-    rows: list[FOMCMinutesArticle] = []
-    for entry in entries:
-        article_html = article_fetcher(entry.html_url)
-        rows.append(
-            parse_fomc_minutes_article(
-                article_html,
-                source_url=entry.html_url,
-                release_timestamp=fetch_release_timestamp(entry.release_date),
-            )
+    store = AcquisitionStore(acquisition_db_path) if acquisition_db_path else None
+    fetch_run = (
+        store.start_fetch_run(
+            fetch_type="fomc_minutes",
+            params={
+                "listing_url": LISTING_URL,
+                "historical_index_url": HISTORICAL_YEAR_INDEX_URL,
+            },
         )
-
-    df = pd.DataFrame(
-        [
-            {
-                "meeting_end_date": row.meeting_end_date.isoformat(),
-                "release_timestamp": row.release_timestamp.isoformat(),
-                "title": row.title,
-                "meeting_date_text": row.meeting_date_text,
-                "body_text": row.body_text,
-                "source": row.source,
-                "source_url": row.source_url,
-                "pdf_url": row.pdf_url,
-            }
-            for row in rows
-        ]
+        if store
+        else None
     )
 
-    out_path_dir = out_dir / "fomc_minutes"
-    out_path_dir.mkdir(parents=True, exist_ok=True)
-    parquet_path = out_path_dir / "fomc_minutes.parquet"
-    df.to_parquet(parquet_path, index=False)
+    try:
+        listing_html = listing_fetcher()
+        if store and fetch_run:
+            store.record_text_artifact(
+                run_id=fetch_run.run_id,
+                source_name="federalreserve:fomc_listing",
+                artifact_kind="html",
+                source_identifier=LISTING_URL,
+                content_text=listing_html,
+                timezone="America/New_York",
+                license_note="Raw Federal Reserve FOMC listing page",
+                notes="Current FOMC listing HTML persisted before parsing",
+            )
+        entries = parse_fomc_minutes_listing(listing_html)
 
-    report = {
-        "as_of_utc": dt.datetime.now(dt.timezone.utc).isoformat(),
-        "source": SOURCE_NAME,
-        "listing_url": LISTING_URL,
-        "counts": {
-            "rows": int(len(df)),
-            "meeting_dates": int(df["meeting_end_date"].nunique()),
-        },
-        "date_range": {
-            "min_meeting_end_date": str(df["meeting_end_date"].min()) if not df.empty else None,
-            "max_meeting_end_date": str(df["meeting_end_date"].max()) if not df.empty else None,
-            "min_release_timestamp": str(df["release_timestamp"].min()) if not df.empty else None,
-            "max_release_timestamp": str(df["release_timestamp"].max()) if not df.empty else None,
-        },
-        "paths": {
-            "fomc_minutes_parquet": str(parquet_path),
-        },
-    }
-    report_path = out_dir / "fomc_minutes_fetch_report.json"
-    report_path.write_text(json.dumps(report, indent=2))
-    return report_path
+        historical_index_html = historical_index_fetcher()
+        if store and fetch_run:
+            store.record_text_artifact(
+                run_id=fetch_run.run_id,
+                source_name="federalreserve:fomc_historical_index",
+                artifact_kind="html",
+                source_identifier=HISTORICAL_YEAR_INDEX_URL,
+                content_text=historical_index_html,
+                timezone="America/New_York",
+                license_note="Raw Federal Reserve FOMC historical year index page",
+                notes="FOMC historical year index HTML persisted before parsing",
+            )
+        historical_urls = parse_fomc_historical_year_index(historical_index_html)
+        for historical_url in historical_urls:
+            historical_html = historical_page_fetcher(historical_url)
+            if store and fetch_run:
+                store.record_text_artifact(
+                    run_id=fetch_run.run_id,
+                    source_name="federalreserve:fomc_historical_year",
+                    artifact_kind="html",
+                    source_identifier=historical_url,
+                    content_text=historical_html,
+                    timezone="America/New_York",
+                    license_note="Raw Federal Reserve FOMC historical year page",
+                    notes="FOMC historical year HTML persisted before parsing",
+                )
+            entries.extend(parse_fomc_minutes_historical_listing(historical_html))
+
+        deduped_entries: dict[dt.date, FOMCMinutesListingEntry] = {}
+        for entry in entries:
+            deduped_entries[entry.meeting_end_date] = entry
+        entries = sorted(deduped_entries.values(), key=lambda item: item.meeting_end_date, reverse=True)
+
+        rows: list[FOMCMinutesArticle] = []
+        for entry in entries:
+            article_html = article_fetcher(entry.html_url)
+            if store and fetch_run:
+                store.record_text_artifact(
+                    run_id=fetch_run.run_id,
+                    source_name="federalreserve:fomc_minutes_article",
+                    artifact_kind="html",
+                    source_identifier=entry.html_url,
+                    content_text=article_html,
+                    effective_date=entry.meeting_end_date.isoformat(),
+                    timezone="America/New_York",
+                    license_note="Raw Federal Reserve FOMC minutes article page",
+                    notes="FOMC minutes article HTML persisted before normalization",
+                )
+            rows.append(
+                parse_fomc_minutes_article(
+                    article_html,
+                    source_url=entry.html_url,
+                    release_timestamp=fetch_release_timestamp(entry.release_date),
+                )
+            )
+
+        df = pd.DataFrame(
+            [
+                {
+                    "meeting_end_date": row.meeting_end_date.isoformat(),
+                    "release_timestamp": row.release_timestamp.isoformat(),
+                    "title": row.title,
+                    "meeting_date_text": row.meeting_date_text,
+                    "body_text": row.body_text,
+                    "source": row.source,
+                    "source_url": row.source_url,
+                    "pdf_url": row.pdf_url,
+                }
+                for row in rows
+            ]
+        )
+
+        out_path_dir = out_dir / "fomc_minutes"
+        out_path_dir.mkdir(parents=True, exist_ok=True)
+        parquet_path = out_path_dir / "fomc_minutes.parquet"
+        df.to_parquet(parquet_path, index=False)
+
+        report = {
+            "as_of_utc": dt.datetime.now(dt.timezone.utc).isoformat(),
+            "source": SOURCE_NAME,
+            "listing_url": LISTING_URL,
+            "counts": {
+                "rows": int(len(df)),
+                "meeting_dates": int(df["meeting_end_date"].nunique()),
+            },
+            "date_range": {
+                "min_meeting_end_date": str(df["meeting_end_date"].min()) if not df.empty else None,
+                "max_meeting_end_date": str(df["meeting_end_date"].max()) if not df.empty else None,
+                "min_release_timestamp": str(df["release_timestamp"].min()) if not df.empty else None,
+                "max_release_timestamp": str(df["release_timestamp"].max()) if not df.empty else None,
+            },
+            "paths": {
+                "fomc_minutes_parquet": str(parquet_path),
+                "acquisition_db": str(acquisition_db_path) if acquisition_db_path else None,
+            },
+        }
+        report_path = out_dir / "fomc_minutes_fetch_report.json"
+        report_path.write_text(json.dumps(report, indent=2))
+
+        if store and fetch_run:
+            store.record_output(
+                run_id=fetch_run.run_id,
+                output_kind="fomc_minutes_parquet",
+                path=parquet_path,
+                row_count=len(df),
+                min_date=str(df["meeting_end_date"].min()) if not df.empty else None,
+                max_date=str(df["meeting_end_date"].max()) if not df.empty else None,
+                notes="FOMC minutes parquet output",
+            )
+            store.record_output(
+                run_id=fetch_run.run_id,
+                output_kind="fomc_minutes_report",
+                path=report_path,
+                row_count=len(df),
+                min_date=str(df["meeting_end_date"].min()) if not df.empty else None,
+                max_date=str(df["meeting_end_date"].max()) if not df.empty else None,
+                notes="FOMC minutes fetch report",
+            )
+            store.finish_fetch_run(run_id=fetch_run.run_id, status="ok")
+        return report_path
+    except Exception as exc:
+        if store and fetch_run:
+            store.finish_fetch_run(run_id=fetch_run.run_id, status="failed", notes=str(exc))
+        raise
 
 
 def _http_get_text(url: str) -> str:
