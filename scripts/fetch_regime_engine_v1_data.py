@@ -24,12 +24,10 @@ from regime_data_fetch.local_usd_index import run_local_usd_index_import
 from regime_data_fetch.pmi import run_pmi_fetch
 from regime_data_fetch.pit_constituents import run_pit_constituents_fetch
 from regime_data_fetch.powell_speeches import run_powell_speeches_fetch
-from regime_data_fetch.universe import build_or_load_us_universe_10b_cache
 
 
 def main() -> int:
     ap = argparse.ArgumentParser(description="Fetch regime-engine raw market and macro data for V1/V2 scopes.")
-    ap.add_argument("--market-data-hub-root", default=None, help="Path to the market-data-hub repo (required when stock-universe fetch is enabled).")
     ap.add_argument("--out-dir", default="data/raw", help="Output directory for Parquet + reports.")
     ap.add_argument("--start", default="2015-01-01", help="Start date (YYYY-MM-DD).")
     ap.add_argument("--end", default=dt.date.today().isoformat(), help="End date (YYYY-MM-DD).")
@@ -41,12 +39,11 @@ def main() -> int:
     ap.add_argument("--fred-api-key", default=None, help="Optional FRED API key for macro fetches.")
     ap.add_argument("--include-cpi-vintages", action="store_true", help="Also fetch CPI vintages via ALFRED-style realtime observations.")
     ap.add_argument("--list-symbols", action="store_true", help="Only print symbol counts and exit.")
-    ap.add_argument("--build-universe", action="store_true", help="Force-refresh the 10B+ universe cache (network: yfinance).")
     ap.add_argument("--env-file", default=None, help="Optional .env file to load (for Alpaca creds).")
     ap.add_argument(
         "--universe-json",
         default=None,
-        help="Optional path to a JSON list[str] of symbols to fetch (use this for the 762-symbol final universe).",
+        help="Path to a JSON list[str] of symbols to fetch. Required for V1/all stock-universe market fetches.",
     )
     ap.add_argument(
         "--vix-symbol",
@@ -99,7 +96,7 @@ def main() -> int:
                     "scope": args.scope,
                     "stocks_count": len(stocks),
                     "note": (
-                        "V1/all stock-universe fetches use the market-data-hub-derived cache. "
+                        "V1/all stock-universe fetches require an explicit --universe-json symbol list. "
                         "V2 scope adds the fixed ETF/cross-asset universe in code."
                     ),
                 },
@@ -216,23 +213,13 @@ def main() -> int:
 
 
 def _resolve_stock_universe(args: argparse.Namespace) -> list[str]:
-    if args.universe_json:
-        universe_path = Path(args.universe_json)
-        stocks = json.loads(universe_path.read_text())
-        if not isinstance(stocks, list) or not all(isinstance(symbol, str) for symbol in stocks):
-            raise SystemExit("--universe-json must be a JSON list[str]")
-        return stocks
-
-    if not args.market_data_hub_root:
-        raise SystemExit("--market-data-hub-root is required for V1/all stock-universe fetches unless --universe-json is provided")
-
-    uni = build_or_load_us_universe_10b_cache(
-        market_data_hub_root=args.market_data_hub_root,
-        out_dir=Path(args.out_dir) / "universe",
-        min_cap_b=args.min_cap_b,
-        allow_update=args.build_universe or (not args.list_symbols),
-    )
-    return uni.symbols
+    if not args.universe_json:
+        raise SystemExit("--universe-json is required for V1/all stock-universe fetches")
+    universe_path = Path(args.universe_json)
+    stocks = json.loads(universe_path.read_text())
+    if not isinstance(stocks, list) or not all(isinstance(symbol, str) for symbol in stocks):
+        raise SystemExit("--universe-json must be a JSON list[str]")
+    return stocks
 
 
 if __name__ == "__main__":

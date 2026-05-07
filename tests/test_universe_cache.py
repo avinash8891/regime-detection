@@ -21,4 +21,3 @@ def test_load_symbols_from_us_universe_cache(tmp_path: Path) -> None:
     cache.write_text(json.dumps(payload))
     syms = load_symbols_from_us_universe_cache(cache)
     assert syms == ["AAPL", "BRK.B", "MSFT"]
-

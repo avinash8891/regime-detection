@@ -56,8 +56,8 @@ Status meanings used below:
 
 | Data | Source | Cadence | Output / Path | Status | Comment |
 |---|---|---|---|---|---|
-| US universe cache JSON | `market-data-hub` seed list + yfinance market-cap refresh | ad hoc refresh | `data/raw/universe/us_universe_cache.json` | implemented-not-live-verified | built by `build_or_load_us_universe_10b_cache()`; refresh when the stock universe is rebuilt |
-| 10B+ US stock universe symbol list | universe cache JSON above | ad hoc refresh | loaded in-memory from `data/raw/universe/us_universe_cache.json` or `--universe-json` | implemented-not-live-verified | available immediately after universe-cache build; used for V1/all stock-universe fetches |
+| US universe cache JSON | manually supplied external artifact | ad hoc refresh | `data/raw/universe/us_universe_cache.json` if you choose to keep a local copy | template-only | this repo no longer builds or refreshes the universe cache from yfinance; if you want to preserve a cache artifact, manage it outside this repo and treat it as an external input |
+| 10B+ US stock universe symbol list | explicit `--universe-json` symbol file | ad hoc refresh | loaded in-memory from `--universe-json` | done-live-verified | V1/all stock-universe fetches now require an explicit JSON list of symbols; this repo does not attempt to derive or refresh the universe membership itself |
 | 762-stock daily OHLCV backfill | Alpaca REST | daily | `data/raw/daily_ohlcv/` | implemented-not-live-verified | available after market close for each trading session; when `--acquisition-db` is supplied, the normalized Alpaca fetch-boundary payload is recorded in SQLite before parquet/report output |
 | `SPY` daily OHLCV | Alpaca REST | daily | `data/raw/daily_ohlcv/` | implemented-not-live-verified | V1 market anchor; fetch after NYSE close; when `--acquisition-db` is supplied, the normalized Alpaca fetch-boundary payload is recorded in SQLite before parquet/report output |
 | `RSP` daily OHLCV | Alpaca REST | daily | `data/raw/daily_ohlcv/` | implemented-not-live-verified | V1 breadth proxy; fetch after NYSE close; when `--acquisition-db` is supplied, the normalized Alpaca fetch-boundary payload is recorded in SQLite before parquet/report output |
@@ -107,10 +107,10 @@ Status meanings used below:
 Universe source:
 
 ```text
-data/raw/universe/us_universe_cache.json
+--universe-json /path/to/symbols.json
 ```
 
-built from the `market-data-hub` seed list.
+provided explicitly by the operator.
 
 ### 2.2 V2 Build Scope
 
