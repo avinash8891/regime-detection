@@ -1,0 +1,2 @@
+tests/fixtures/raw/*.csv linguist-generated=true
+tests/fixtures/raw/*.csv -diff

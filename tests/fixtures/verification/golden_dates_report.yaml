@@ -1,0 +1,1038 @@
+generated_at_utc: '2026-05-06T09:18:21+00:00'
+generated_by_commit: 803625db1c28de511781a87b7d5b17d3c97b2318
+raw_file_sha256:
+  SPY.csv: efa06aba545dea29dcc523bb8b50ad6a334892e49babee5769466fa8c2c0ef33
+  RSP.csv: 6aa3f27a796ffad78f17d114fbe02e806a5488e2a07cdf61166344c15ed7d2c2
+  VIXY.csv: c7a8673d84bb4993328abaa547093881bfa269a5d269202b707b38cf5bcbdc8c
+rows:
+- intent_id: summer2020_bull_transition_lowvol
+  intent_date: '2020-08-11'
+  as_of_date: '2020-08-11'
+  delta_calendar_days: 0
+  notes: Summer 2020 bull with low vol and neutral breadth after hysteresis
+  expected:
+    trend_direction: bull
+    trend_character: transition
+    volatility_state: low_vol
+    breadth_state: neutral_breadth
+    transition_risk: stable
+  features:
+    close: 332.82
+    SMA_50: 317.733
+    SMA_200: 305.5877725
+    return_1d: -0.008165454762
+    return_5d: 0.008545454545
+    return_10d: 0.035854341737
+    return_21d: 0.057209110257
+    return_63d: 0.161472692375
+    prior_63d_drawdown: -0.008165454762
+    ADX_14: 21.692390260932
+    realized_vol_21d: 0.108284734825
+    realized_vol_percentile_252d: 0.27380952381
+    vix_percentile_252d: 0.539682539683
+    relative_breadth_ratio: 0.332161528754
+    relative_breadth_sma50: 0.330426928691
+    relative_breadth_return_20d: 0.026116586261
+    index_distance_from_63d_high: -0.008165454762
+  predicate_evaluations:
+    trend_direction:
+      raw_label: bull
+      stable_label: bull
+      active_label: bull
+      rule_evidence:
+        bull: true
+        bear: false
+        sideways: false
+        transition: false
+      deescalation_days: 3
+      risk_rank:
+        bull: 0
+        sideways: 1
+        transition: 2
+        bear: 3
+        unknown: 2
+    trend_character:
+      raw_label: trending
+      stable_label: transition
+      active_label: transition
+      rule_evidence:
+        recovery_attempt: false
+        trending: true
+        chop: false
+        transition: false
+      deescalation_days: 3
+      risk_rank:
+        trending: 0
+        chop: 1
+        recovery_attempt: 1
+        transition: 2
+        unknown: 2
+    volatility_state:
+      raw_label: low_vol
+      stable_label: low_vol
+      active_label: low_vol
+      rule_evidence:
+        crisis_vol: false
+        high_vol: false
+        low_vol: true
+        normal_vol: false
+        vix_percentile_present: true
+      deescalation_days: 2
+      risk_rank:
+        low_vol: 0
+        normal_vol: 1
+        high_vol: 2
+        crisis_vol: 3
+        unknown: 2
+    breadth_state:
+      raw_label: healthy_breadth
+      stable_label: neutral_breadth
+      active_label: neutral_breadth
+      rule_evidence:
+        divergent_fragile: false
+        weak_breadth: false
+        healthy_breadth: true
+        neutral_breadth: false
+      deescalation_days: 2
+      risk_rank:
+        healthy_breadth: 0
+        neutral_breadth: 1
+        weak_breadth: 2
+        divergent_fragile: 3
+        unknown: 2
+    transition_risk:
+      crisis_override: false
+      bear_stress_warning: false
+      bull_fragile_warning: false
+      recovery_attempt: false
+      post_switch_cooldown: false
+      stable_changed_today: false
+      days_since_axis_switch: 4
+- intent_id: volmageddon_crisis
+  intent_date: '2018-02-09'
+  as_of_date: '2018-02-09'
+  delta_calendar_days: 0
+  notes: Volmageddon episode; crisis_vol day
+  expected:
+    trend_direction: transition
+    trend_character: transition
+    volatility_state: crisis_vol
+    breadth_state: weak_breadth
+    transition_risk: crisis_override
+  features:
+    close: 261.74
+    SMA_50: 271.4548
+    SMA_200: 253.6693215
+    return_1d: 0.015401326764
+    return_5d: -0.049980037022
+    return_10d: -0.086613623674
+    return_21d: -0.045023350846
+    return_63d: 0.010150129289
+    prior_63d_drawdown: -0.086613623674
+    ADX_14: 47.654126170959
+    realized_vol_21d: 0.242324823689
+    realized_vol_percentile_252d: 1.0
+    vix_percentile_252d: 0.97619047619
+    relative_breadth_ratio: 0.374875830977
+    relative_breadth_sma50: 0.376776276312
+    relative_breadth_return_20d: -0.006818269125
+    index_distance_from_63d_high: -0.086613623674
+  predicate_evaluations:
+    trend_direction:
+      raw_label: sideways
+      stable_label: transition
+      active_label: transition
+      rule_evidence:
+        bull: false
+        bear: false
+        sideways: true
+        transition: false
+      deescalation_days: 3
+      risk_rank:
+        bull: 0
+        sideways: 1
+        transition: 2
+        bear: 3
+        unknown: 2
+    trend_character:
+      raw_label: transition
+      stable_label: transition
+      active_label: transition
+      rule_evidence:
+        recovery_attempt: false
+        trending: false
+        chop: false
+        transition: true
+      deescalation_days: 3
+      risk_rank:
+        trending: 0
+        chop: 1
+        recovery_attempt: 1
+        transition: 2
+        unknown: 2
+    volatility_state:
+      raw_label: crisis_vol
+      stable_label: crisis_vol
+      active_label: crisis_vol
+      rule_evidence:
+        crisis_vol: true
+        high_vol: true
+        low_vol: false
+        normal_vol: false
+        vix_percentile_present: true
+      deescalation_days: 2
+      risk_rank:
+        low_vol: 0
+        normal_vol: 1
+        high_vol: 2
+        crisis_vol: 3
+        unknown: 2
+    breadth_state:
+      raw_label: weak_breadth
+      stable_label: weak_breadth
+      active_label: weak_breadth
+      rule_evidence:
+        divergent_fragile: false
+        weak_breadth: true
+        healthy_breadth: false
+        neutral_breadth: false
+      deescalation_days: 2
+      risk_rank:
+        healthy_breadth: 0
+        neutral_breadth: 1
+        weak_breadth: 2
+        divergent_fragile: 3
+        unknown: 2
+    transition_risk:
+      crisis_override: true
+      bear_stress_warning: false
+      bull_fragile_warning: false
+      recovery_attempt: false
+      post_switch_cooldown: false
+      stable_changed_today: false
+      days_since_axis_switch: 1
+- intent_id: dec2018_bear_stress
+  intent_date: '2018-12-20'
+  as_of_date: '2018-12-20'
+  delta_calendar_days: 0
+  notes: Late-2018 selloff; stress warning
+  expected:
+    trend_direction: bear
+    trend_character: trending
+    volatility_state: high_vol
+    breadth_state: weak_breadth
+    transition_risk: bear_stress_warning
+  features:
+    close: 247.11
+    SMA_50: 269.855084
+    SMA_200: 275.28867
+    return_1d: -0.015654875717
+    return_5d: -0.06884467556
+    return_10d: -0.083997479334
+    return_21d: -0.081785077289
+    return_63d: -0.158143971655
+    prior_63d_drawdown: -0.153848787837
+    ADX_14: 30.992372762846
+    realized_vol_21d: 0.220444532911
+    realized_vol_percentile_252d: 0.84126984127
+    vix_percentile_252d: 0.912698412698
+    relative_breadth_ratio: 0.366719274817
+    relative_breadth_sma50: 0.367813269409
+    relative_breadth_return_20d: -0.011844369653
+    index_distance_from_63d_high: -0.153848787837
+  predicate_evaluations:
+    trend_direction:
+      raw_label: bear
+      stable_label: bear
+      active_label: bear
+      rule_evidence:
+        bull: false
+        bear: true
+        sideways: false
+        transition: false
+      deescalation_days: 3
+      risk_rank:
+        bull: 0
+        sideways: 1
+        transition: 2
+        bear: 3
+        unknown: 2
+    trend_character:
+      raw_label: trending
+      stable_label: trending
+      active_label: trending
+      rule_evidence:
+        recovery_attempt: false
+        trending: true
+        chop: false
+        transition: false
+      deescalation_days: 3
+      risk_rank:
+        trending: 0
+        chop: 1
+        recovery_attempt: 1
+        transition: 2
+        unknown: 2
+    volatility_state:
+      raw_label: high_vol
+      stable_label: high_vol
+      active_label: high_vol
+      rule_evidence:
+        crisis_vol: false
+        high_vol: true
+        low_vol: false
+        normal_vol: false
+        vix_percentile_present: true
+      deescalation_days: 2
+      risk_rank:
+        low_vol: 0
+        normal_vol: 1
+        high_vol: 2
+        crisis_vol: 3
+        unknown: 2
+    breadth_state:
+      raw_label: weak_breadth
+      stable_label: weak_breadth
+      active_label: weak_breadth
+      rule_evidence:
+        divergent_fragile: false
+        weak_breadth: true
+        healthy_breadth: false
+        neutral_breadth: false
+      deescalation_days: 2
+      risk_rank:
+        healthy_breadth: 0
+        neutral_breadth: 1
+        weak_breadth: 2
+        divergent_fragile: 3
+        unknown: 2
+    transition_risk:
+      crisis_override: false
+      bear_stress_warning: true
+      bull_fragile_warning: false
+      recovery_attempt: false
+      post_switch_cooldown: false
+      stable_changed_today: false
+      days_since_axis_switch: 1
+- intent_id: mid2019_bull_normal
+  intent_date: '2019-06-28'
+  as_of_date: '2019-09-12'
+  delta_calendar_days: 76
+  notes: Bull market normal conditions (trend_character may remain transition under
+    hysteresis)
+  expected:
+    trend_direction: bull
+    trend_character: transition
+    volatility_state: normal_vol
+    breadth_state: healthy_breadth
+    transition_risk: stable
+  features:
+    close: 301.36
+    SMA_50: 294.692254
+    SMA_200: 281.3930435
+    return_1d: 0.003496387067
+    return_5d: 0.012124265323
+    return_10d: 0.043345796981
+    return_21d: 0.030572464264
+    return_63d: 0.040679604945
+    prior_63d_drawdown: -0.001987018148
+    ADX_14: 18.512513583732
+    realized_vol_21d: 0.183522965208
+    realized_vol_percentile_252d: 0.674603174603
+    vix_percentile_252d: 0.059523809524
+    relative_breadth_ratio: 0.363916910008
+    relative_breadth_sma50: 0.362838909361
+    relative_breadth_return_20d: 0.009371882622
+    index_distance_from_63d_high: -0.001987018148
+  predicate_evaluations:
+    trend_direction:
+      raw_label: bull
+      stable_label: bull
+      active_label: bull
+      rule_evidence:
+        bull: true
+        bear: false
+        sideways: false
+        transition: false
+      deescalation_days: 3
+      risk_rank:
+        bull: 0
+        sideways: 1
+        transition: 2
+        bear: 3
+        unknown: 2
+    trend_character:
+      raw_label: transition
+      stable_label: transition
+      active_label: transition
+      rule_evidence:
+        recovery_attempt: false
+        trending: false
+        chop: false
+        transition: true
+      deescalation_days: 3
+      risk_rank:
+        trending: 0
+        chop: 1
+        recovery_attempt: 1
+        transition: 2
+        unknown: 2
+    volatility_state:
+      raw_label: normal_vol
+      stable_label: normal_vol
+      active_label: normal_vol
+      rule_evidence:
+        crisis_vol: false
+        high_vol: false
+        low_vol: false
+        normal_vol: true
+        vix_percentile_present: true
+      deescalation_days: 2
+      risk_rank:
+        low_vol: 0
+        normal_vol: 1
+        high_vol: 2
+        crisis_vol: 3
+        unknown: 2
+    breadth_state:
+      raw_label: healthy_breadth
+      stable_label: healthy_breadth
+      active_label: healthy_breadth
+      rule_evidence:
+        divergent_fragile: false
+        weak_breadth: false
+        healthy_breadth: true
+        neutral_breadth: false
+      deescalation_days: 2
+      risk_rank:
+        healthy_breadth: 0
+        neutral_breadth: 1
+        weak_breadth: 2
+        divergent_fragile: 3
+        unknown: 2
+    transition_risk:
+      crisis_override: false
+      bear_stress_warning: false
+      bull_fragile_warning: false
+      recovery_attempt: false
+      post_switch_cooldown: false
+      stable_changed_today: false
+      days_since_axis_switch: 1
+- intent_id: covid_crash_crisis
+  intent_date: '2020-03-30'
+  as_of_date: '2020-03-30'
+  delta_calendar_days: 0
+  notes: COVID crash episode; pick nearest crisis_vol day with bear direction
+  expected:
+    trend_direction: bear
+    trend_character: trending
+    volatility_state: crisis_vol
+    breadth_state: weak_breadth
+    transition_risk: crisis_override
+  features:
+    close: 261.56
+    SMA_50: 301.5509
+    SMA_200: 302.4656885
+    return_1d: 0.029763779528
+    return_5d: 0.174600323334
+    return_10d: 0.085018563458
+    return_21d: -0.117067242776
+    return_63d: -0.189840483197
+    prior_63d_drawdown: -0.226885788603
+    ADX_14: 41.399183476826
+    realized_vol_21d: 0.862955983064
+    realized_vol_percentile_252d: 1.0
+    vix_percentile_252d: 0.968253968254
+    relative_breadth_ratio: 0.327305398379
+    relative_breadth_sma50: 0.345405168843
+    relative_breadth_return_20d: -0.05879130926
+    index_distance_from_63d_high: -0.226885788603
+  predicate_evaluations:
+    trend_direction:
+      raw_label: bear
+      stable_label: bear
+      active_label: bear
+      rule_evidence:
+        bull: false
+        bear: true
+        sideways: false
+        transition: false
+      deescalation_days: 3
+      risk_rank:
+        bull: 0
+        sideways: 1
+        transition: 2
+        bear: 3
+        unknown: 2
+    trend_character:
+      raw_label: trending
+      stable_label: trending
+      active_label: trending
+      rule_evidence:
+        recovery_attempt: false
+        trending: true
+        chop: false
+        transition: false
+      deescalation_days: 3
+      risk_rank:
+        trending: 0
+        chop: 1
+        recovery_attempt: 1
+        transition: 2
+        unknown: 2
+    volatility_state:
+      raw_label: crisis_vol
+      stable_label: crisis_vol
+      active_label: crisis_vol
+      rule_evidence:
+        crisis_vol: true
+        high_vol: true
+        low_vol: false
+        normal_vol: false
+        vix_percentile_present: true
+      deescalation_days: 2
+      risk_rank:
+        low_vol: 0
+        normal_vol: 1
+        high_vol: 2
+        crisis_vol: 3
+        unknown: 2
+    breadth_state:
+      raw_label: weak_breadth
+      stable_label: weak_breadth
+      active_label: weak_breadth
+      rule_evidence:
+        divergent_fragile: false
+        weak_breadth: true
+        healthy_breadth: false
+        neutral_breadth: false
+      deescalation_days: 2
+      risk_rank:
+        healthy_breadth: 0
+        neutral_breadth: 1
+        weak_breadth: 2
+        divergent_fragile: 3
+        unknown: 2
+    transition_risk:
+      crisis_override: true
+      bear_stress_warning: true
+      bull_fragile_warning: false
+      recovery_attempt: false
+      post_switch_cooldown: true
+      stable_changed_today: true
+      days_since_axis_switch: 0
+- intent_id: covid_recovery_attempt
+  intent_date: '2020-04-17'
+  as_of_date: '2020-04-29'
+  delta_calendar_days: 12
+  notes: Post-crash recovery attempt; breadth pinned by rules in ETF-proxy mode
+  expected:
+    trend_direction: transition
+    trend_character: recovery_attempt
+    volatility_state: high_vol
+    breadth_state: weak_breadth
+    transition_risk: recovery_attempt
+  features:
+    close: 293.15
+    SMA_50: 277.4943
+    SMA_200: 300.2348385
+    return_1d: 0.026112219539
+    return_5d: 0.050566227064
+    return_10d: 0.055445544554
+    return_21d: 0.120775347913
+    return_63d: -0.102473822791
+    prior_63d_drawdown: -0.133512650745
+    ADX_14: 21.543490656062
+    realized_vol_21d: 0.408106018703
+    realized_vol_percentile_252d: 0.857142857143
+    vix_percentile_252d: 0.861111111111
+    relative_breadth_ratio: 0.336619478083
+    relative_breadth_sma50: 0.333871123376
+    relative_breadth_return_20d: 0.031092464644
+    index_distance_from_63d_high: -0.133512650745
+  predicate_evaluations:
+    trend_direction:
+      raw_label: transition
+      stable_label: transition
+      active_label: transition
+      rule_evidence:
+        bull: false
+        bear: false
+        sideways: false
+        transition: true
+      deescalation_days: 3
+      risk_rank:
+        bull: 0
+        sideways: 1
+        transition: 2
+        bear: 3
+        unknown: 2
+    trend_character:
+      raw_label: recovery_attempt
+      stable_label: recovery_attempt
+      active_label: recovery_attempt
+      rule_evidence:
+        recovery_attempt: true
+        trending: true
+        chop: false
+        transition: false
+      deescalation_days: 3
+      risk_rank:
+        trending: 0
+        chop: 1
+        recovery_attempt: 1
+        transition: 2
+        unknown: 2
+    volatility_state:
+      raw_label: high_vol
+      stable_label: high_vol
+      active_label: high_vol
+      rule_evidence:
+        crisis_vol: false
+        high_vol: true
+        low_vol: false
+        normal_vol: false
+        vix_percentile_present: true
+      deescalation_days: 2
+      risk_rank:
+        low_vol: 0
+        normal_vol: 1
+        high_vol: 2
+        crisis_vol: 3
+        unknown: 2
+    breadth_state:
+      raw_label: healthy_breadth
+      stable_label: weak_breadth
+      active_label: weak_breadth
+      rule_evidence:
+        divergent_fragile: false
+        weak_breadth: false
+        healthy_breadth: true
+        neutral_breadth: false
+      deescalation_days: 2
+      risk_rank:
+        healthy_breadth: 0
+        neutral_breadth: 1
+        weak_breadth: 2
+        divergent_fragile: 3
+        unknown: 2
+    transition_risk:
+      crisis_override: false
+      bear_stress_warning: false
+      bull_fragile_warning: false
+      recovery_attempt: true
+      post_switch_cooldown: true
+      stable_changed_today: true
+      days_since_axis_switch: 0
+- intent_id: late2021_bull_lowvol
+  intent_date: '2021-11-15'
+  as_of_date: '2021-11-12'
+  delta_calendar_days: 3
+  notes: Late-2021 bull / low vol with weak breadth (ETF-proxy rules)
+  expected:
+    trend_direction: bull
+    trend_character: trending
+    volatility_state: low_vol
+    breadth_state: weak_breadth
+    transition_risk: stable
+  features:
+    close: 467.27
+    SMA_50: 448.0388
+    SMA_200: 424.2885495
+    return_1d: 0.007546844341
+    return_5d: -0.00268926216
+    return_10d: 0.017463255308
+    return_21d: 0.05597740113
+    return_63d: 0.045416918361
+    prior_63d_drawdown: -0.003539973983
+    ADX_14: 30.690170876431
+    realized_vol_21d: 0.068980614102
+    realized_vol_percentile_252d: 0.007936507937
+    vix_percentile_252d: 0.531746031746
+    relative_breadth_ratio: 0.345945598904
+    relative_breadth_sma50: 0.347244359544
+    relative_breadth_return_20d: -0.009333563369
+    index_distance_from_63d_high: -0.003539973983
+  predicate_evaluations:
+    trend_direction:
+      raw_label: bull
+      stable_label: bull
+      active_label: bull
+      rule_evidence:
+        bull: true
+        bear: false
+        sideways: false
+        transition: false
+      deescalation_days: 3
+      risk_rank:
+        bull: 0
+        sideways: 1
+        transition: 2
+        bear: 3
+        unknown: 2
+    trend_character:
+      raw_label: trending
+      stable_label: trending
+      active_label: trending
+      rule_evidence:
+        recovery_attempt: false
+        trending: true
+        chop: false
+        transition: false
+      deescalation_days: 3
+      risk_rank:
+        trending: 0
+        chop: 1
+        recovery_attempt: 1
+        transition: 2
+        unknown: 2
+    volatility_state:
+      raw_label: low_vol
+      stable_label: low_vol
+      active_label: low_vol
+      rule_evidence:
+        crisis_vol: false
+        high_vol: false
+        low_vol: true
+        normal_vol: false
+        vix_percentile_present: true
+      deescalation_days: 2
+      risk_rank:
+        low_vol: 0
+        normal_vol: 1
+        high_vol: 2
+        crisis_vol: 3
+        unknown: 2
+    breadth_state:
+      raw_label: weak_breadth
+      stable_label: weak_breadth
+      active_label: weak_breadth
+      rule_evidence:
+        divergent_fragile: false
+        weak_breadth: true
+        healthy_breadth: false
+        neutral_breadth: false
+      deescalation_days: 2
+      risk_rank:
+        healthy_breadth: 0
+        neutral_breadth: 1
+        weak_breadth: 2
+        divergent_fragile: 3
+        unknown: 2
+    transition_risk:
+      crisis_override: false
+      bear_stress_warning: false
+      bull_fragile_warning: false
+      recovery_attempt: false
+      post_switch_cooldown: false
+      stable_changed_today: false
+      days_since_axis_switch: 8
+- intent_id: jun2022_bear_stress
+  intent_date: '2022-06-29'
+  as_of_date: '2022-06-30'
+  delta_calendar_days: 1
+  notes: 2022 drawdown; stress warning
+  expected:
+    trend_direction: bear
+    trend_character: trending
+    volatility_state: high_vol
+    breadth_state: weak_breadth
+    transition_risk: bear_stress_warning
+  features:
+    close: 377.25
+    SMA_50: 401.063
+    SMA_200: 438.2587
+    return_1d: -0.008124309828
+    return_5d: -0.002142517061
+    return_10d: -0.005142405063
+    return_21d: -0.086406897053
+    return_63d: -0.177728372458
+    prior_63d_drawdown: -0.174146234676
+    ADX_14: 24.508628824324
+    realized_vol_21d: 0.295997948322
+    realized_vol_percentile_252d: 0.888888888889
+    vix_percentile_252d: 0.43253968254
+    relative_breadth_ratio: 0.355811795891
+    relative_breadth_sma50: 0.358650712934
+    relative_breadth_return_20d: -0.0109470412
+    index_distance_from_63d_high: -0.174146234676
+  predicate_evaluations:
+    trend_direction:
+      raw_label: bear
+      stable_label: bear
+      active_label: bear
+      rule_evidence:
+        bull: false
+        bear: true
+        sideways: false
+        transition: false
+      deescalation_days: 3
+      risk_rank:
+        bull: 0
+        sideways: 1
+        transition: 2
+        bear: 3
+        unknown: 2
+    trend_character:
+      raw_label: trending
+      stable_label: trending
+      active_label: trending
+      rule_evidence:
+        recovery_attempt: false
+        trending: true
+        chop: false
+        transition: false
+      deescalation_days: 3
+      risk_rank:
+        trending: 0
+        chop: 1
+        recovery_attempt: 1
+        transition: 2
+        unknown: 2
+    volatility_state:
+      raw_label: high_vol
+      stable_label: high_vol
+      active_label: high_vol
+      rule_evidence:
+        crisis_vol: false
+        high_vol: true
+        low_vol: false
+        normal_vol: false
+        vix_percentile_present: true
+      deescalation_days: 2
+      risk_rank:
+        low_vol: 0
+        normal_vol: 1
+        high_vol: 2
+        crisis_vol: 3
+        unknown: 2
+    breadth_state:
+      raw_label: weak_breadth
+      stable_label: weak_breadth
+      active_label: weak_breadth
+      rule_evidence:
+        divergent_fragile: false
+        weak_breadth: true
+        healthy_breadth: false
+        neutral_breadth: false
+      deescalation_days: 2
+      risk_rank:
+        healthy_breadth: 0
+        neutral_breadth: 1
+        weak_breadth: 2
+        divergent_fragile: 3
+        unknown: 2
+    transition_risk:
+      crisis_override: false
+      bear_stress_warning: true
+      bull_fragile_warning: false
+      recovery_attempt: false
+      post_switch_cooldown: true
+      stable_changed_today: true
+      days_since_axis_switch: 0
+- intent_id: jul2022_bear_stress
+  intent_date: '2022-07-12'
+  as_of_date: '2022-07-12'
+  delta_calendar_days: 0
+  notes: 2022 bear market; stress warning (mid-2022 episode)
+  expected:
+    trend_direction: bear
+    trend_character: trending
+    volatility_state: high_vol
+    breadth_state: weak_breadth
+    transition_risk: bear_stress_warning
+  features:
+    close: 380.83
+    SMA_50: 394.8764
+    SMA_200: 436.27875
+    return_1d: -0.008848866564
+    return_5d: -0.002958424966
+    return_10d: -0.019969633804
+    return_21d: -0.051340175369
+    return_63d: -0.149116339344
+    prior_63d_drawdown: -0.144279165918
+    ADX_14: 20.756932916831
+    realized_vol_21d: 0.281327787245
+    realized_vol_percentile_252d: 0.837301587302
+    vix_percentile_252d: 0.365079365079
+    relative_breadth_ratio: 0.354830239214
+    relative_breadth_sma50: 0.358206060194
+    relative_breadth_return_20d: -0.017036264333
+    index_distance_from_63d_high: -0.144279165918
+  predicate_evaluations:
+    trend_direction:
+      raw_label: bear
+      stable_label: bear
+      active_label: bear
+      rule_evidence:
+        bull: false
+        bear: true
+        sideways: false
+        transition: false
+      deescalation_days: 3
+      risk_rank:
+        bull: 0
+        sideways: 1
+        transition: 2
+        bear: 3
+        unknown: 2
+    trend_character:
+      raw_label: trending
+      stable_label: trending
+      active_label: trending
+      rule_evidence:
+        recovery_attempt: false
+        trending: true
+        chop: false
+        transition: false
+      deescalation_days: 3
+      risk_rank:
+        trending: 0
+        chop: 1
+        recovery_attempt: 1
+        transition: 2
+        unknown: 2
+    volatility_state:
+      raw_label: high_vol
+      stable_label: high_vol
+      active_label: high_vol
+      rule_evidence:
+        crisis_vol: false
+        high_vol: true
+        low_vol: false
+        normal_vol: false
+        vix_percentile_present: true
+      deescalation_days: 2
+      risk_rank:
+        low_vol: 0
+        normal_vol: 1
+        high_vol: 2
+        crisis_vol: 3
+        unknown: 2
+    breadth_state:
+      raw_label: weak_breadth
+      stable_label: weak_breadth
+      active_label: weak_breadth
+      rule_evidence:
+        divergent_fragile: false
+        weak_breadth: true
+        healthy_breadth: false
+        neutral_breadth: false
+      deescalation_days: 2
+      risk_rank:
+        healthy_breadth: 0
+        neutral_breadth: 1
+        weak_breadth: 2
+        divergent_fragile: 3
+        unknown: 2
+    transition_risk:
+      crisis_override: false
+      bear_stress_warning: true
+      bull_fragile_warning: false
+      recovery_attempt: false
+      post_switch_cooldown: false
+      stable_changed_today: false
+      days_since_axis_switch: 7
+- intent_id: early2024_bull_lowvol
+  intent_date: '2023-12-19'
+  as_of_date: '2023-12-14'
+  delta_calendar_days: 5
+  notes: Early 2024 bull / low vol / healthy breadth
+  expected:
+    trend_direction: bull
+    trend_character: trending
+    volatility_state: low_vol
+    breadth_state: healthy_breadth
+    transition_risk: stable
+  features:
+    close: 472.01
+    SMA_50: 441.108
+    SMA_200: 430.41925
+    return_1d: 0.003209351753
+    return_5d: 0.030072234467
+    return_10d: 0.034202453988
+    return_21d: 0.051879749515
+    return_63d: 0.06459616122
+    prior_63d_drawdown: 0.0
+    ADX_14: 46.151432218124
+    realized_vol_21d: 0.068831108966
+    realized_vol_percentile_252d: 0.003968253968
+    vix_percentile_252d: 0.519841269841
+    relative_breadth_ratio: 0.333742929175
+    relative_breadth_sma50: 0.324832330162
+    relative_breadth_return_20d: 0.033093690311
+    index_distance_from_63d_high: 0.0
+  predicate_evaluations:
+    trend_direction:
+      raw_label: bull
+      stable_label: bull
+      active_label: bull
+      rule_evidence:
+        bull: true
+        bear: false
+        sideways: false
+        transition: false
+      deescalation_days: 3
+      risk_rank:
+        bull: 0
+        sideways: 1
+        transition: 2
+        bear: 3
+        unknown: 2
+    trend_character:
+      raw_label: trending
+      stable_label: trending
+      active_label: trending
+      rule_evidence:
+        recovery_attempt: false
+        trending: true
+        chop: false
+        transition: false
+      deescalation_days: 3
+      risk_rank:
+        trending: 0
+        chop: 1
+        recovery_attempt: 1
+        transition: 2
+        unknown: 2
+    volatility_state:
+      raw_label: low_vol
+      stable_label: low_vol
+      active_label: low_vol
+      rule_evidence:
+        crisis_vol: false
+        high_vol: false
+        low_vol: true
+        normal_vol: false
+        vix_percentile_present: true
+      deescalation_days: 2
+      risk_rank:
+        low_vol: 0
+        normal_vol: 1
+        high_vol: 2
+        crisis_vol: 3
+        unknown: 2
+    breadth_state:
+      raw_label: healthy_breadth
+      stable_label: healthy_breadth
+      active_label: healthy_breadth
+      rule_evidence:
+        divergent_fragile: false
+        weak_breadth: false
+        healthy_breadth: true
+        neutral_breadth: false
+      deescalation_days: 2
+      risk_rank:
+        healthy_breadth: 0
+        neutral_breadth: 1
+        weak_breadth: 2
+        divergent_fragile: 3
+        unknown: 2
+    transition_risk:
+      crisis_override: false
+      bear_stress_warning: false
+      bull_fragile_warning: false
+      recovery_attempt: false
+      post_switch_cooldown: false
+      stable_changed_today: false
+      days_since_axis_switch: 2

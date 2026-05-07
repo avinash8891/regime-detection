@@ -1,0 +1,36 @@
+config_version: core3-v1.0.0
+market: US
+trading_calendar: NYSE
+breadth_mode: etf_proxy
+cap_weight_index: SPY
+equal_weight_proxy: RSP
+event_calendar:
+  market: US
+expiry_rules:
+  monthly_options:
+    rule: third_friday_of_month
+    window_trading_days: [-2, 0]
+    label: expiry_week
+earnings_seasons:
+  - quarter: Q1
+    start_rule: second_monday_of_january
+    end_offset_days: 35
+  - quarter: Q2
+    start_rule: second_monday_of_april
+    end_offset_days: 35
+  - quarter: Q3
+    start_rule: second_monday_of_july
+    end_offset_days: 35
+  - quarter: Q4
+    start_rule: second_monday_of_october
+    end_offset_days: 35
+data_quality:
+  max_freshness_days: 3
+  min_completeness: 0.90
+hysteresis:
+  trend_direction_deescalation_days: 3
+  trend_character_deescalation_days: 3
+  volatility_deescalation_days: 2
+  breadth_deescalation_days: 2
+  composite_deescalation_days: 3
+  event_calendar_days: 1
