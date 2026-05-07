@@ -164,6 +164,7 @@ def main() -> int:
     if args.fetch in {"pit", "all"}:
         pit_report = run_pit_constituents_fetch(
             out_dir=out_dir,
+            acquisition_db_path=Path(args.acquisition_db) if args.acquisition_db else None,
         )
         print(str(pit_report))
 

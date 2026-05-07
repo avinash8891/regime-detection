@@ -3,6 +3,7 @@ from __future__ import annotations
 import datetime as dt
 import json
 from pathlib import Path
+import sqlite3
 
 import pandas as pd
 
@@ -77,3 +78,37 @@ def test_run_pit_constituents_fetch_raises_on_invalid_csv(tmp_path: Path) -> Non
         assert "invalid start_date" in str(exc).lower()
     else:
         raise AssertionError("Expected PITConstituentFetchError")
+
+
+def test_run_pit_constituents_fetch_records_raw_csv_and_outputs_in_sqlite(tmp_path: Path) -> None:
+    acquisition_db = tmp_path / "acquisition.db"
+    csv_text = "\n".join(
+        [
+            "ticker,start_date,end_date",
+            "MMM,1976-08-09,",
+            "AAPL,1982-11-30,",
+        ]
+    )
+
+    report_path = run_pit_constituents_fetch(
+        out_dir=tmp_path,
+        csv_fetcher=lambda: csv_text,
+        acquisition_db_path=acquisition_db,
+    )
+
+    report = json.loads(report_path.read_text())
+    assert report["paths"]["acquisition_db"] == str(acquisition_db)
+
+    with sqlite3.connect(acquisition_db) as conn:
+        fetch_runs = conn.execute("SELECT fetch_type, status FROM fetch_runs").fetchall()
+        artifacts = conn.execute(
+            "SELECT source_name, artifact_kind, count(*) FROM artifacts GROUP BY source_name, artifact_kind"
+        ).fetchall()
+        outputs = conn.execute("SELECT output_kind FROM derived_outputs ORDER BY output_id").fetchall()
+
+    assert fetch_runs == [("pit_constituents", "ok")]
+    assert artifacts == [("github_raw:sp500_ticker_start_end", "csv", 1)]
+    assert outputs == [
+        ("pit_constituents_parquet",),
+        ("pit_constituents_report",),
+    ]
