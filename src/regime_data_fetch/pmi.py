@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+import csv
 import datetime as dt
 import json
 import re
 import urllib.request
 from dataclasses import dataclass
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 import pandas as pd
 
@@ -21,6 +23,11 @@ TRADINGECONOMICS_URLS = {
     "manufacturing": "https://tradingeconomics.com/united-states/business-confidence",
     "services": "https://tradingeconomics.com/united-states/non-manufacturing-pmi",
 }
+MANUAL_PMI_SOURCE_URLS = {
+    "manufacturing": "https://in.investing.com/economic-calendar/ism-manufacturing-pmi-173",
+    "services": "https://in.investing.com/economic-calendar/ism-non-manufacturing-pmi-176",
+}
+DEFAULT_MANUAL_PMI_HISTORY_DIR = Path(__file__).resolve().parents[2] / "data" / "manual_inputs" / "pmi"
 
 _DBNOMICS_ROW_RE = re.compile(r"(?P<period>\d{4}-\d{2})\s+(?P<value>-?\d+(?:\.\d+)?)", re.IGNORECASE)
 _TE_TITLE_RE = re.compile(r"<title>\s*United States ISM (?P<series>Manufacturing|Services) PMI\s*</title>", re.IGNORECASE)
@@ -64,6 +71,19 @@ class PMIFetchBundle:
     source_name: str
     raw_pages: dict[str, str]
     observations: list[PMIObservation]
+
+
+@dataclass(frozen=True)
+class ManualPMIHistoryRow:
+    series_name: str
+    period: str
+    release_date_local: str
+    time_local: str
+    actual: float
+    forecast: float | None
+    previous: float | None
+    source: str
+    source_url: str
 
 
 def release_timestamp_for_period(*, series_name: str, period: str) -> dt.datetime:
@@ -184,7 +204,16 @@ def run_pmi_fetch(
     primary_fetcher=fetch_pmi_dbnomics,
     backup_fetcher=fetch_pmi_tradingeconomics,
     acquisition_db_path: Path | None = None,
+    manual_history_dir: Path | None = None,
 ) -> Path:
+    if manual_history_dir is not None:
+        return run_manual_pmi_history_import(
+            out_dir=out_dir,
+            as_of_date=as_of_date,
+            history_dir=manual_history_dir,
+            acquisition_db_path=acquisition_db_path,
+        )
+
     out_dir.mkdir(parents=True, exist_ok=True)
     store = AcquisitionStore(acquisition_db_path) if acquisition_db_path else None
     fetch_run = (
@@ -340,6 +369,145 @@ def run_pmi_fetch(
         raise
 
 
+def run_manual_pmi_history_import(
+    *,
+    out_dir: Path,
+    as_of_date: dt.date,
+    history_dir: Path,
+    acquisition_db_path: Path | None = None,
+) -> Path:
+    out_dir.mkdir(parents=True, exist_ok=True)
+    store = AcquisitionStore(acquisition_db_path) if acquisition_db_path else None
+    fetch_run = (
+        store.start_fetch_run(
+            fetch_type="pmi",
+            params={
+                "as_of_date": as_of_date.isoformat(),
+                "history_dir": str(history_dir),
+                "source_mode": "manual_investing_history",
+            },
+        )
+        if store
+        else None
+    )
+    try:
+        rows = load_manual_pmi_history(history_dir=history_dir)
+        cutoff = dt.datetime.combine(as_of_date, dt.time(23, 59, 59), tzinfo=dt.timezone.utc).astimezone(
+            ZoneInfo("America/New_York")
+        )
+        history_rows = [row for row in rows if row.release_timestamp <= cutoff]
+        latest_rows = [
+            choose_latest_available(
+                observations=[row for row in history_rows if row.series_name == series_name],
+                as_of_timestamp=cutoff,
+            )
+            for series_name in ("manufacturing", "services")
+        ]
+
+        if store and fetch_run:
+            for file_path, series_name in _manual_pmi_history_files(history_dir).items():
+                store.record_text_artifact(
+                    run_id=fetch_run.run_id,
+                    source_name="investing:pmi",
+                    artifact_kind="tsv",
+                    source_identifier=f"investing:{series_name}:{as_of_date.isoformat()}",
+                    content_text=file_path.read_text(),
+                    effective_date=as_of_date.isoformat(),
+                    start_date=min(row.period for row in history_rows if row.series_name == series_name),
+                    end_date=max(row.period for row in history_rows if row.series_name == series_name),
+                    timezone="America/New_York",
+                    license_note="Manual Investing PMI release-history table supplied for backtest-aligned periods",
+                    notes=f"Manual Investing PMI history table for {series_name}",
+                )
+
+        latest_df = pd.DataFrame(
+            [
+                {
+                    "series_name": row.series_name,
+                    "period": row.period,
+                    "value": row.value,
+                    "release_timestamp": row.release_timestamp.isoformat(),
+                    "source": row.source,
+                    "source_url": row.source_url,
+                }
+                for row in latest_rows
+            ]
+        )
+        history_df = pd.DataFrame(
+            [
+                {
+                    "series_name": row.series_name,
+                    "period": row.period,
+                    "value": row.value,
+                    "release_timestamp": row.release_timestamp.isoformat(),
+                    "source": row.source,
+                    "source_url": row.source_url,
+                }
+                for row in history_rows
+            ]
+        )
+
+        pmi_dir = out_dir / "pmi"
+        pmi_dir.mkdir(parents=True, exist_ok=True)
+        parquet_path = pmi_dir / "us_ism_pmi.parquet"
+        latest_df.to_parquet(parquet_path, index=False)
+        history_path = pmi_dir / "us_ism_pmi_history.parquet"
+        history_df.to_parquet(history_path, index=False)
+
+        report = {
+            "as_of_date": as_of_date.isoformat(),
+            "selected_source": "manual_investing_history",
+            "history_source": "manual_investing_history",
+            "attempts": [{"source": "manual_investing_history", "status": "success"}],
+            "counts": {
+                "rows": int(len(latest_df)),
+                "history_rows": int(len(history_df)),
+            },
+            "paths": {
+                "pmi_parquet": str(parquet_path),
+                "pmi_history_parquet": str(history_path),
+                "acquisition_db": str(acquisition_db_path) if acquisition_db_path else None,
+            },
+        }
+        report_path = out_dir / "pmi_fetch_report.json"
+        report_path.write_text(json.dumps(report, indent=2))
+
+        if store and fetch_run:
+            store.record_output(
+                run_id=fetch_run.run_id,
+                output_kind="pmi_parquet",
+                path=parquet_path,
+                row_count=len(latest_df),
+                min_date=min(latest_df["period"]) if not latest_df.empty else None,
+                max_date=max(latest_df["period"]) if not latest_df.empty else None,
+                notes="Normalized PMI parquet output",
+            )
+            store.record_output(
+                run_id=fetch_run.run_id,
+                output_kind="pmi_history_parquet",
+                path=history_path,
+                row_count=len(history_df),
+                min_date=min(history_df["period"]) if not history_df.empty else None,
+                max_date=max(history_df["period"]) if not history_df.empty else None,
+                notes="Normalized PMI history parquet output",
+            )
+            store.record_output(
+                run_id=fetch_run.run_id,
+                output_kind="pmi_report",
+                path=report_path,
+                row_count=len(latest_df),
+                min_date=min(latest_df["period"]) if not latest_df.empty else None,
+                max_date=max(latest_df["period"]) if not latest_df.empty else None,
+                notes="PMI fetch report",
+            )
+            store.finish_fetch_run(run_id=fetch_run.run_id, status="ok")
+        return report_path
+    except Exception as exc:
+        if store and fetch_run:
+            store.finish_fetch_run(run_id=fetch_run.run_id, status="failed", notes=str(exc))
+        raise
+
+
 def _normalize_fetch_result(fetch_result: object, *, source_name: str) -> PMIFetchBundle:
     if isinstance(fetch_result, PMIFetchBundle):
         return fetch_result
@@ -412,3 +580,57 @@ def _http_get_text(url: str) -> str:
     req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
     with urllib.request.urlopen(req, timeout=30) as response:
         return response.read().decode("utf-8", errors="replace")
+
+
+def load_manual_pmi_history(*, history_dir: Path) -> list[PMIObservation]:
+    rows: list[PMIObservation] = []
+    for file_path, series_name in _manual_pmi_history_files(history_dir).items():
+        with file_path.open(newline="") as handle:
+            reader = csv.DictReader(handle, delimiter="\t")
+            for record in reader:
+                manual_row = ManualPMIHistoryRow(
+                    series_name=series_name,
+                    period=record["period"].strip(),
+                    release_date_local=record["release_date_local"].strip(),
+                    time_local=record["time_local"].strip(),
+                    actual=float(record["actual"]),
+                    forecast=_parse_optional_float(record.get("forecast")),
+                    previous=_parse_optional_float(record.get("previous")),
+                    source="investing_manual",
+                    source_url=MANUAL_PMI_SOURCE_URLS[series_name],
+                )
+                rows.append(_manual_history_row_to_observation(manual_row))
+    return sorted(rows, key=lambda item: (item.period, item.series_name))
+
+
+def _manual_pmi_history_files(history_dir: Path) -> dict[Path, str]:
+    mapping = {
+        history_dir / "ism_manufacturing_pmi.tsv": "manufacturing",
+        history_dir / "ism_services_pmi.tsv": "services",
+    }
+    missing = [str(path) for path in mapping if not path.exists()]
+    if missing:
+        raise PMIFetchError(f"Missing manual PMI history files: {missing}")
+    return mapping
+
+
+def _manual_history_row_to_observation(row: ManualPMIHistoryRow) -> PMIObservation:
+    release_date = dt.datetime.strptime(row.release_date_local, "%d-%m-%Y").date()
+    release_timestamp = dt.datetime.combine(release_date, dt.time(10, 0), tzinfo=ZoneInfo("America/New_York"))
+    return PMIObservation(
+        series_name=row.series_name,
+        period=row.period,
+        value=row.actual,
+        release_timestamp=release_timestamp,
+        source=row.source,
+        source_url=row.source_url,
+    )
+
+
+def _parse_optional_float(value: str | None) -> float | None:
+    if value is None:
+        return None
+    text = value.strip()
+    if not text:
+        return None
+    return float(text)

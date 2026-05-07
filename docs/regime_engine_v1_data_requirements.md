@@ -123,7 +123,7 @@ Availability note:
 Preferred raw range:
 
 ```text
-2015-01-01 through 2024-12-31
+2016-01-04 through 2024-12-31
 ```
 
 Reason:
@@ -286,7 +286,7 @@ NYSE trading-day offsets
 Required coverage:
 
 ```text
-2015-01-01 through 2024-12-31
+2016-01-04 through 2024-12-31
 ```
 
 Uses:

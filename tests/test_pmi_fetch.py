@@ -8,10 +8,12 @@ import sqlite3
 import pandas as pd
 
 from regime_data_fetch.pmi import (
+    DEFAULT_MANUAL_PMI_HISTORY_DIR,
     PMIFetchError,
     PMIFetchBundle,
     PMIObservation,
     choose_latest_available,
+    load_manual_pmi_history,
     parse_dbnomics_html,
     parse_tradingeconomics_html,
     release_timestamp_for_period,
@@ -269,6 +271,57 @@ def test_run_pmi_fetch_records_raw_pages_and_outputs_in_sqlite(tmp_path: Path) -
 
     assert fetch_runs == [("pmi", "ok")]
     assert artifacts == [("dbnomics:pmi", "html", 2)]
+    assert outputs == [
+        ("pmi_parquet",),
+        ("pmi_history_parquet",),
+        ("pmi_report",),
+    ]
+
+
+def test_load_manual_pmi_history_covers_backtest_aligned_window() -> None:
+    rows = load_manual_pmi_history(history_dir=DEFAULT_MANUAL_PMI_HISTORY_DIR)
+
+    assert rows[0].period == "2016-01"
+    assert rows[-1].period == "2026-04"
+    assert len(rows) == 248
+    assert {row.series_name for row in rows} == {"manufacturing", "services"}
+
+
+def test_run_pmi_fetch_uses_manual_history_dir_and_records_sqlite(tmp_path: Path) -> None:
+    acquisition_db = tmp_path / "acquisition.db"
+
+    report_path = run_pmi_fetch(
+        out_dir=tmp_path,
+        as_of_date=dt.date(2026, 5, 7),
+        acquisition_db_path=acquisition_db,
+        manual_history_dir=DEFAULT_MANUAL_PMI_HISTORY_DIR,
+    )
+
+    report = json.loads(report_path.read_text())
+    assert report["selected_source"] == "manual_investing_history"
+    assert report["history_source"] == "manual_investing_history"
+    assert report["counts"]["rows"] == 2
+    assert report["counts"]["history_rows"] == 248
+
+    latest_df = pd.read_parquet(tmp_path / "pmi" / "us_ism_pmi.parquet")
+    assert latest_df["period"].tolist() == ["2026-04", "2026-04"]
+    assert latest_df["value"].tolist() == [52.7, 53.6]
+    assert latest_df["source"].tolist() == ["investing_manual", "investing_manual"]
+
+    history_df = pd.read_parquet(tmp_path / "pmi" / "us_ism_pmi_history.parquet")
+    assert history_df["period"].min() == "2016-01"
+    assert history_df["period"].max() == "2026-04"
+    assert len(history_df) == 248
+
+    with sqlite3.connect(acquisition_db) as conn:
+        fetch_runs = conn.execute("SELECT fetch_type, status FROM fetch_runs").fetchall()
+        artifacts = conn.execute(
+            "SELECT source_name, artifact_kind, count(*) FROM artifacts GROUP BY source_name, artifact_kind ORDER BY source_name, artifact_kind"
+        ).fetchall()
+        outputs = conn.execute("SELECT output_kind FROM derived_outputs ORDER BY output_id").fetchall()
+
+    assert fetch_runs == [("pmi", "ok")]
+    assert artifacts == [("investing:pmi", "tsv", 2)]
     assert outputs == [
         ("pmi_parquet",),
         ("pmi_history_parquet",),

@@ -22,7 +22,7 @@ from regime_data_fetch.aggregate_eps import run_aggregate_eps_fetch, run_wayback
 from regime_data_fetch.fomc_minutes import run_fomc_minutes_fetch
 from regime_data_fetch.local_daily_ohlcv_sqlite import run_local_daily_ohlcv_sqlite_import
 from regime_data_fetch.local_usd_index import run_local_usd_index_import
-from regime_data_fetch.pmi import run_pmi_fetch
+from regime_data_fetch.pmi import DEFAULT_MANUAL_PMI_HISTORY_DIR, run_pmi_fetch
 from regime_data_fetch.pit_constituents import run_pit_constituents_fetch
 from regime_data_fetch.powell_speeches import run_powell_speeches_fetch
 
@@ -157,6 +157,7 @@ def main() -> int:
             out_dir=out_dir,
             as_of_date=end,
             acquisition_db_path=Path(args.acquisition_db) if args.acquisition_db else None,
+            manual_history_dir=DEFAULT_MANUAL_PMI_HISTORY_DIR,
         )
         print(str(pmi_report))
 
