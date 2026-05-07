@@ -5,7 +5,21 @@ repos:
     hooks:
       - id: cubic-review
         name: cubic review
-        entry: scripts/cubic_review.sh --merge-base origin/v1-of-regime-detection
+        entry: scripts/cubic_review.sh origin/main
+        language: system
+        pass_filenames: false
+        stages: [pre-push]
+
+      - id: codex-code-simplifier
+        name: codex code simplifier
+        entry: scripts/codex_code_simplifier.sh origin/main
+        language: system
+        pass_filenames: false
+        stages: [pre-push]
+
+      - id: codex-pr-review-toolkit
+        name: codex pr review toolkit
+        entry: scripts/codex_pr_review_toolkit.sh origin/main
         language: system
         pass_filenames: false
         stages: [pre-push]

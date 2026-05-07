@@ -299,7 +299,12 @@ volume_liquidity_risk_rank:
 
 ### 2A. Monetary / Liquidity V2
 
-Monetary pressure was explicitly not implemented in V1. V2 is the first release allowed to implement it, and must lock a clean data contract for 2y yield, 10y yield, and DXY before coding begins.
+Monetary pressure was explicitly not implemented in V1. V2 is the first release allowed to implement it, and must lock a clean data contract for 2y yield, 10y yield, and `broad_usd_index` before coding begins.
+
+US V2 source contract:
+- `2y yield` = FRED `DGS2`
+- `10y yield` = FRED `DGS10`
+- `broad_usd_index` = FRED `DTWEXBGS`
 
 V1's draft absolute bps thresholds were deferred because they are rate-era dependent. V2 must adapt to rate era.
 
@@ -314,7 +319,7 @@ Updated rules:
 tightening_pressure:
   yield_change_zscore_2y > +1.5
   OR yield_change_zscore_10y > +1.5
-  OR DXY_zscore_63d > +1.5
+  OR broad_usd_index_zscore_63d > +1.5
 
 easing_pressure:
   yield_change_zscore_2y < -1.5
@@ -366,7 +371,7 @@ inflation_shock > recession_scare > disinflation > goldilocks > recovery_growth 
 - CPI trend (3m and 6m rate of change)
 - Inflation surprise (actual vs consensus, from BLS calendar)
 - PMI trend (ISM Manufacturing + Services)
-- Earnings revision breadth (% of S&P 500 with positive analyst revisions, last 90 days)
+- Aggregate forward EPS revision direction (4w change in 12m forward EPS estimate)
 - Commodity returns (Bloomberg Commodity Index 63d return)
 - Bond yield trend (10y yield 63d direction)
 - Cyclical vs defensive relative strength: `(XLY + XLI) / (XLP + XLU)` ratio, 63d slope
@@ -413,12 +418,12 @@ AND credit spreads narrowing
 
 `earnings_expansion`:
 ```text
-earnings_revision_breadth > 0.55
+aggregate_forward_eps_revision_direction_4w > +0.02
 ```
 
 `earnings_contraction`:
 ```text
-earnings_revision_breadth < 0.40
+aggregate_forward_eps_revision_direction_4w < -0.02
 ```
 
 ---
@@ -445,7 +450,7 @@ deleveraging > funding_squeeze > credit_stress > spread_widening > credit_calm >
 - High yield credit spread (HYG vs Treasury proxy if no direct OAS feed)
 - Bank index relative strength: `KRE / SPY` 63d slope
 - Financial Conditions Index (Chicago Fed NFCI weekly release)
-- Dollar index (DXY)
+- Broad dollar index (`broad_usd_index`, FRED `DTWEXBGS`)
 - Short-rate funding stress: SOFR-IORB spread
 
 #### Rules
@@ -470,7 +475,7 @@ AND equities falling
 
 `funding_squeeze`:
 ```text
-DXY_zscore_21d > +1.5
+broad_usd_index_zscore_21d > +1.5
 AND SOFR-IORB spread widening
 AND risk assets falling
 ```
@@ -479,7 +484,7 @@ AND risk assets falling
 ```text
 equities down
 AND bonds weak or unstable
-AND DXY rising
+AND broad_usd_index rising
 AND volatility up
 AND avg_pairwise_corr rising (Layer 3 V2)
 ```

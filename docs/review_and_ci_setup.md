@@ -1,26 +1,11 @@
 # Review and CI Setup
 
-This repository uses three review/check layers:
+This repository uses two PR review layers:
 
-1. GitHub CI for deterministic checks.
-2. Cubic GitHub PR review configured by `cubic.yaml`.
-3. Codex PR review through GitHub Actions using the installed plugin prompts.
+1. Cubic GitHub PR review configured by `cubic.yaml`.
+2. Codex PR review through the official Codex GitHub integration.
 
-## CI
-
-Workflow:
-
-```text
-.github/workflows/ci.yml
-```
-
-Runs on pushes to `main`/`v1-of-regime-detection` and on pull requests.
-
-Checks:
-
-- git whitespace validation against the PR/base diff;
-- shell syntax for review scripts;
-- pytest when a `tests/` directory exists.
+There are no repository-owned GitHub Actions workflows. Codex review triggers are configured in Codex settings, and Cubic review triggers are configured by the Cubic GitHub App.
 
 ## Cubic PR Review
 
@@ -47,42 +32,32 @@ scripts/cubic_review.sh
 
 ## Codex PR Review
 
-Workflow:
+Codex GitHub review is not run by a repository GitHub Actions workflow and does not use an `OPENAI_API_KEY` secret. It is enabled outside the repo through Codex cloud and Codex code review settings.
+
+Required setup:
+
+1. Connect this repository in Codex cloud.
+2. Open Codex code review settings.
+3. Turn on Code review for `avinash8891/regime-detection`.
+4. Optionally turn on Automatic reviews if every PR should be reviewed without a manual trigger.
+
+Manual trigger in a pull request comment:
 
 ```text
-.github/workflows/codex-review.yml
+@codex review
 ```
 
-Required GitHub secret:
+Codex reads repository guidance from `AGENTS.md`. This repo keeps Codex-specific review focus under the `Review guidelines` section there.
 
-```text
-OPENAI_API_KEY
-```
-
-Optional GitHub variable:
-
-```text
-CODEX_REVIEW_MODEL
-```
-
-Default model:
-
-```text
-gpt-5.4
-```
-
-The workflow installs `@openai/codex`, checks out `anthropics/claude-plugins-official`, then runs:
+Local Codex review scripts remain available for pre-push or manual local use:
 
 ```text
 scripts/codex_code_simplifier.sh
 scripts/codex_pr_review_toolkit.sh
 ```
 
-The scripts load the plugin prompt files from the checked-out plugin repository:
+Those scripts use the local Codex CLI login from `~/.codex/auth.json`. They may be pinned to a model with:
 
 ```text
-code-simplifier/1.0.0/agents/code-simplifier.md
-pr-review-toolkit/local/agents/*.md
+CODEX_REVIEW_MODEL=gpt-5.2
 ```
-
-If `OPENAI_API_KEY` is unavailable, the workflow logs a skip message instead of failing infrastructure-only.

@@ -54,12 +54,11 @@ V1 does **not** ship: PIT constituent breadth, monetary pressure, macro inferenc
 ```python
 RegimeEngine.classify(
     as_of_date: date,
-    market_data: pd.DataFrame | None = None,
+    market_data: pd.DataFrame,
     breadth_data: pd.DataFrame | None = None,
     vix_data: pd.DataFrame | None = None,
     event_calendar: pd.DataFrame | None = None,
     config: RegimeConfig | None = None,
-    context: MarketContext | None = None,
 ) -> RegimeOutput
 ```
 
@@ -67,33 +66,26 @@ Rules:
 
 - Use only data with date `<= as_of_date`.
 - Never use future constituent membership.
-- Never use future event outcomes or realized values.
-- For scheduled event-calendar rows, lookahead is bounded by `publication_date`, not `event_date`. A future scheduled event may be used only when `publication_date <= as_of_date`.
-- For V1 hand-maintained event YAML/CSV, including a scheduled event in the file is treated as the publication act. Coding agents may still populate `publication_date` explicitly when desired.
+- Never use future event data.
 - `as_of_date` must be an NYSE trading day. If it is not, raise `ValueError` with the nearest prior and next NYSE trading days in the message.
 - Do not roll non-trading `as_of_date` values backward or forward.
 - Live mode = `classify(as_of_date=today)`.
-- `classify(as_of_date)` is a convenience wrapper over the timeline pipeline, not a separate execution path.
-- Provide either raw inputs (`market_data`, optional `vix_data`, optional `event_calendar`) or a precomputed `context`, not both.
-- When `context` is supplied, `end_date` / `as_of_date` must be an NYSE session already present in that context and must not be later than `context.end_date`.
 
 V1 input contract:
 
 - `market_data` is a long/wide-enough OHLCV DataFrame with at least `date`, `symbol`, `open`, `high`, `low`, `close`, `volume`.
 - US V1 requires `SPY` rows for the market index.
 - ETF proxy breadth requires `RSP` rows in the same contract.
-- VIX support may be provided either as `vix_data` (preferred) or as a symbol in `market_data`.
-- In this repository's deterministic test fixtures, `VIXY` is used as the VIX proxy series (see `tests/fixtures/raw/PROVENANCE.md`). If you provide `VIX`/`^VIX` externally, you must normalize it into the `vix_data` input contract (close series aligned to NYSE sessions) before classification.
+- VIX support may be provided either as `vix_data` or as a `VIX` symbol in market data; when Alpaca does not provide true VIX, `VIXY` is the documented operational proxy. Tests must use deterministic repo fixtures.
 
 V1 helper:
 
 ```python
 RegimeEngine.classify_window(
     end_date: date,
-    market_data: pd.DataFrame | None = None,
+    market_data: pd.DataFrame,
     lookback_days: int,
     ...
-    context: MarketContext | None = None,
 ) -> RegimeTimeline
 ```
 
@@ -112,34 +104,6 @@ class RegimeTimeline(BaseModel):
 
 `outputs` is sorted ascending by `as_of_date` and contains exactly one `RegimeOutput` per NYSE trading day in the inclusive window. Unknown outputs are emitted, not skipped.
 
-`classify(as_of_date)` is implemented as:
-
-```python
-RegimeEngine.classify_window(
-    end_date=as_of_date,
-    market_data=...,
-    lookback_days=320,  # V1 engine-wide minimum history
-    ...
-).outputs[-1]
-```
-
-The two entry points share one execution pipeline. There is no separate per-call classification path.
-
-`MarketContext` is the reusable prevalidated execution object for the shared replay pipeline:
-
-```python
-class MarketContext(BaseModel):
-    end_date: date
-    config: RegimeConfig
-    sessions: tuple[date, ...]
-    spy_ohlcv: pd.DataFrame
-    rsp_close: pd.Series
-    vix_proxy_close: pd.Series | None
-    normalized_event_calendar: pd.DataFrame | None = None
-```
-
-It may be built once and reused across point-in-time and timeline calls, but outputs remain a pure function of the provided context slice and config.
-
 V1.1 helper (deferred):
 
 ```python
@@ -153,7 +117,7 @@ RegimeEngine.classify_series(
 
 ### 2.2 Stateless Replay Rule
 
-Both entry points (`classify_window(...)` and the `classify(as_of_date)` convenience wrapper) must internally recompute raw labels from:
+`classify(as_of_date)` must internally recompute raw labels from:
 
 ```text
 as_of_date - max_required_lookback - max_hysteresis_days
@@ -161,8 +125,6 @@ through as_of_date
 ```
 
 No hidden state. No state files. Replay is deterministic.
-
-Stateless replay does **not** mean recomputing from scratch once per output row. A timeline pipeline may build a validated market context and precomputed feature store once per invocation, so long as the outputs remain a pure function of the provided inputs.
 
 ### 2.3 Type Contract
 
@@ -185,12 +147,12 @@ The package version in `pyproject.toml` and emitted `engine_version` must be cou
 
 ### 2.4.1 Config Loading
 
-V1 ships with the packaged config resource `regime_detection/configs/core3-v1.0.0.yaml`.
+V1 ships with `configs/core3-v1.0.0.yaml`.
 
 Rules:
 
 - `RegimeEngine` loads config once at construction time.
-- Default config is loaded from `regime_detection/configs/core3-v1.0.0.yaml`.
+- Default config path is `configs/core3-v1.0.0.yaml`.
 - `classify(..., config=...)` may override the engine default only with a validated `RegimeConfig` object.
 - `RegimeConfig` is a Pydantic model with `extra="forbid"`; unknown config keys raise.
 - `config_version` in output reflects the loaded config.
@@ -739,7 +701,7 @@ breadth_risk_rank:
 
 ### 7.2 Event Calendar
 
-Source: manually maintained YAML/CSV loaded and normalized by a helper outside the engine. `RegimeEngine.classify(...)` and `classify_window(...)` remain DataFrame-only for `event_calendar`; they do not accept filesystem paths or perform file I/O. The engine may internally normalize and validate a supplied DataFrame into the canonical event-calendar contract before replay.
+Source: manually maintained YAML/CSV. Coding agent must accept either format.
 
 ```yaml
 events:
@@ -752,18 +714,6 @@ events:
     type: "CPI"
     importance: "high"
 ```
-
-Normalized DataFrame contract:
-
-```text
-market
-type
-importance
-date              # required for FOMC, CPI, NFP
-publication_date  # required by the normalized contract; loader may default it
-```
-
-Rows may leave non-applicable columns null only when a field is not relevant to that event type. Validation is event-type specific.
 
 Labels:
 ```text
@@ -780,11 +730,11 @@ unknown
 
 Rules:
 ```text
-fed_week:    as_of_date within [-2, +2] NYSE trading days of FOMC, provided publication_date <= as_of_date
-cpi_week:    as_of_date within [-1, +1] NYSE trading days of CPI release, provided publication_date <= as_of_date
-nfp_week:    as_of_date within [-1, +1] NYSE trading days of NFP release, provided publication_date <= as_of_date
-expiry_week: as_of_date within config expiry_rules.monthly_options.window_trading_days around the monthly expiry date derived by rule=third_friday_of_month; V1 default is [-2, 0]
-earnings_season: derived from config earnings_seasons, not from event rows
+fed_week:    as_of_date within [-2, +2] NYSE trading days of FOMC
+cpi_week:    as_of_date within [-1, +1] NYSE trading days of CPI release
+nfp_week:    as_of_date within [-1, +1] NYSE trading days of NFP release
+expiry_week: as_of_date inside configured monthly options expiry window
+earnings_season: configured per market
 ```
 
 Precedence:
@@ -803,19 +753,6 @@ If multiple event windows match, `raw_label`, `stable_label`, and `active_label`
 ```
 
 Additional event-specific evidence such as `days_to_fomc` may be included when computable from the event calendar. Importance does not override the hardcoded precedence in V1.
-
-Publication-date defaults for the loader:
-
-- For FOMC, CPI, and NFP rows, if `publication_date` is absent, default it to `event.date - 90 calendar days`.
-- For ad-hoc events, if `publication_date` is absent, default it to `event.date`.
-- If the normalized event calendar contains an event dated more than 90 calendar days after `as_of_date`, the engine or loader may emit a warning for operator review. This does not fail classification.
-
-V1 event-calendar decisions:
-
-- Scheduled event dates may be used even when `event_date > as_of_date`, but only when `publication_date <= as_of_date`. Outcomes/results are never available early.
-- `expiry_week` and `earnings_season` are config-defined rules in `core3-v1.0.0.yaml`, not event-calendar rows.
-- `RegimeEngine.classify(...)` stays DataFrame-only for `event_calendar`; file loading belongs outside the engine through a separate loader such as `load_event_calendar()`.
-- The engine may accept either an already normalized DataFrame or a raw event-calendar DataFrame with the required V1 columns and normalize it internally through the same canonical loader/validator.
 
 ### 7.3 Monetary Pressure (Deferred)
 
@@ -1288,7 +1225,7 @@ V1 uses a Python `src/` package layout:
 pyproject.toml
 src/regime_detection/
 tests/
-src/regime_detection/configs/core3-v1.0.0.yaml
+configs/core3-v1.0.0.yaml
 scripts/verify_fixtures.py
 ```
 

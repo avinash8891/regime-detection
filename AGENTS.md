@@ -9,10 +9,9 @@ Operating discipline for coding agents in this repository. Project-specific cont
 3. **Search before writing.** Grep the codebase for the concept before any new function >15 lines. Report findings.
 4. **Stop at each task boundary.** Commit with clear tag, push, wait for "continue." No auto-chaining.
 5. **Validate at every layer boundary**, including raw external inputs — one source-specific model per source before normalization.
-6. **TDD for all V1 work.** For every vertical slice in the V1 spec: write the failing tests first (golden date(s), cold-start/NaN behavior, NYSE calendar enforcement, hysteresis edge cases), then implement until they pass. No untested implementation.
-7. **Tests run and pass.** Paste actual test-runner output into the completion message.
-8. **No scope creep.** The spec is authoritative. "While I was here" additions banned. "In blast radius" is not a license.
-9. **Single source of truth for persistent state.** No shadow copies, no cross-task intermediate stores. Raw inputs and final outputs OK.
+6. **Tests run and pass.** Paste actual test-runner output into the completion message.
+7. **No scope creep.** The spec is authoritative. "While I was here" additions banned. "In blast radius" is not a license.
+8. **Single source of truth for persistent state.** No shadow copies, no cross-task intermediate stores. Raw inputs and final outputs OK.
 
 ## Failure modes + counter-mechanisms
 
@@ -35,6 +34,14 @@ Operating discipline for coding agents in this repository. Project-specific cont
 - External flakiness (5xx, rate-limit, timeout): catch, log, degrade. Never kill the whole run.
 - Status integrity: a run or step is "ok" only if every required sub-step succeeded. Partial success with a silent skip = failed run, reported as failed.
 - **Terminal-state bookkeeping precedes deterministic-error validation.** If a handler decides work reached a terminal state (`halted`, `manual_review`, `finished`), the state mutation and operator notification must run *before* any code that can raise. A validation error propagating before terminal fields are written leaves state inconsistent and is indistinguishable from a crash. Pattern: write terminal fields first, then validate or compile best-effort enrichment with its own error handling that logs and continues.
+
+## Review guidelines
+
+- Flag any regime classifier change that can use future data, non-NYSE calendars, or non-trading-date rollback as P1.
+- Flag any V1 implementation that adds V2 scaffolding, macro fetchers, HMM/correlation/eigenvalue regime logic, ORCA/SRR, Hurst, efficiency ratio, weighted transition score, or crash-condition logic as P1.
+- Flag fixture or golden-date changes that relax deterministic rule predicates to make a hand-labeled fixture pass as P1.
+- Flag missing cold-start/NaN handling, missing version-coupling checks, or missing config validation for unknown keys as P1.
+- Treat silent skips in tests, review hooks, data loading, or classifier output generation as P1.
 
 ## Hygiene
 

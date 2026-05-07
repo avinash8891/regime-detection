@@ -8,6 +8,22 @@ This document lists all data needed to build V1 with real fixtures and real test
 
 ---
 
+## 0. Source, Cadence, and Availability Summary
+
+| Data | Source | Cadence | Availability / Comment |
+|---|---|---|---|
+| `SPY` daily OHLCV | Alpaca REST | daily | fetch after NYSE close; use NYSE trading dates only |
+| `RSP` daily OHLCV | Alpaca REST | daily | fetch after NYSE close; align exactly to `SPY` trading dates |
+| `VIX` daily close or `VIXY` proxy close | Alpaca REST | daily | fetch after market close; use `VIXY` only when true `VIX` is unavailable |
+| V1 scheduled event rows (`FOMC`, `CPI`, `NFP`) | generated repo-local YAML from Fed calendars + BLS release schedules | scheduled monthly / about 8 times per year | generate from official source schedules and release histories; store release timestamps with each row and consume through the event-label resolver |
+| V1 rule-derived event windows (`expiry_week`, `earnings_season`) | deterministic config/runtime rules | monthly / quarterly windows | compute at runtime from NYSE calendar rules and fixed quarter-season rules; resolver applies the same precedence as the V1 spec and does not maintain hand-entered historical rows |
+| NYSE trading calendar | `pandas_market_calendars` or equivalent | exchange calendar | session/holiday schedule must be available for the full fixture range |
+| Golden fixture expectations | repo-local fixture files | static fixture set | updated only when fixture verification proves the labeled expectation is wrong |
+
+This document defines the **required V1 data artifacts and semantics**. It does not imply that every source already has a production-ready live fetcher.
+
+---
+
 ## 1. Raw Market Data
 
 V1 requires daily price data for the market anchor, ETF breadth proxy, and volatility proxy.
@@ -91,17 +107,23 @@ Allowed symbols:
 
 ```text
 VIX
-^VIX
+VIXY (documented proxy when Alpaca does not provide true VIX)
 ```
 
 OHLCV columns may be included if the vendor provides them, but V1 only requires `close`.
+
+Availability note:
+
+- fetch after market close;
+- prefer true `VIX`;
+- if using `VIXY`, treat it as an explicit operational proxy rather than silently labeling it as true `VIX`.
 
 ### 1.4 Required Date Range
 
 Preferred raw range:
 
 ```text
-2015-01-01 through 2024-12-31
+2016-01-04 through 2024-12-31
 ```
 
 Reason:
@@ -114,7 +136,18 @@ Reason:
 
 ## 2. Event Calendar Data
 
-V1 requires a manually maintained US event calendar in YAML or CSV for scheduled macro events and ad-hoc event windows.
+V1 requires a generated US scheduled-event calendar plus deterministic runtime rules for rule-derived windows.
+
+Availability note:
+
+- scheduled rows should be generated from official source histories, not typed by hand;
+- `FOMC` dates come from Federal Reserve meeting-calendar pages;
+- `CPI` and `NFP` release dates come from BLS yearly release-schedule pages;
+- `expiry_week` and `earnings_season` should be computed from deterministic rules rather than stored as historical rows;
+- ad-hoc events are out of scope for V1.
+- current FOMC coverage has been live-verified from `2007-10-31` through `2026-03-18`;
+- current CPI/NFP parser logic plus event-label wiring are implemented against BLS yearly schedule pages, but full historical live fetches from this environment are not yet verified because the BLS site is returning `HTTP 403` to CLI/browser automation requests here.
+- current `expiry_week` and `earnings_season` runtime rules are implemented and wired through the repo event-label resolver.
 
 Required event fields:
 
@@ -123,22 +156,26 @@ date
 market
 type
 importance
-publication_date
 ```
 
-Required event types:
+Required scheduled event types:
 
 ```text
 FOMC
 CPI
 NFP
-ad_hoc
+```
+
+Required rule-derived event windows:
+
+```text
+monthly_options_expiry
+earnings_season
 ```
 
 Rules:
 
-- scheduled event dates may be in the future relative to `as_of_date` only when `publication_date <= as_of_date`;
-- event outcomes/results must never be available before the event happens;
+- use only event rows with date `<= as_of_date`;
 - event windows use NYSE trading days, not calendar days;
 - if multiple event windows match, active label follows V1 precedence:
 
@@ -148,64 +185,95 @@ fed_week > cpi_week > nfp_week > expiry_week > earnings_season > normal_calendar
 
 Evidence must preserve all matching event labels.
 
-Loader defaults:
+### 2.1 Scheduled Event Representation
 
-- FOMC/CPI/NFP rows without `publication_date` default to `date - 90 calendar days`.
-- ad-hoc rows without `publication_date` default to `date`.
-- If a scheduled event row is dated more than 90 calendar days after the historical `as_of_date` being replayed, emit a warning for operator review.
-
-### 2.1 Expiry Week Representation
-
-Use config-defined rules in `configs/core3-v1.0.0.yaml`, not event rows.
-
-Required config contents:
+Preferred generated row fields:
 
 ```text
-expiry_rules:
-  monthly_options:
-    rule: third_friday_of_month
-    window: [-2, 0]
+date
+release_timestamp_et
+market
+type
+importance
+source
 ```
 
-Rule:
+Rules:
 
-```text
-expiry_week is active when as_of_date falls within the configured NYSE trading-day window around the monthly expiry date
-```
+- generated rows must include only releases with date `<= as_of_date`;
+- `release_timestamp_et` must preserve the real release time when available;
+- `FOMC` rows should carry the Fed minutes release timestamp convention at `14:00 ET`;
+- `CPI` and `NFP` release rows should carry the BLS scheduled release time at `08:30 ET`.
+- implementation logic is:
+  - fetch current Fed FOMC calendar page
+  - fetch the Fed historical year index and yearly archive pages for pre-2021 meetings
+  - dedupe FOMC rows by `meeting_end_date`
+  - for `CPI` and `NFP`, fetch BLS yearly release-schedule pages under `/schedule/YYYY/` or `/schedule/YYYY/home.htm`
+  - parse only `Consumer Price Index` / `Consumer Price Indexes` rows into `CPI`
+  - parse only `The Employment Situation` / `Employment Situation` rows into `NFP`
+  - stamp `CPI` and `NFP` releases at `08:30 ET`
+  - sort all rows by `release_timestamp_et`
+  - write generated YAML to `configs/events/us_events.yaml`
+  - load scheduled YAML through `load_scheduled_events_yaml()`
+  - resolve active event labels through `resolve_event_label()`
+  - if BLS historical pages return access-control errors from the execution environment, treat that as a transport blocker, not as a reason to fall back silently to a different source
 
 ### 2.2 Earnings Season Representation
 
-Use config-defined rules in `configs/core3-v1.0.0.yaml`, not event rows.
-
-Required config contents:
+If represented as rows, use:
 
 ```text
-earnings_seasons:
-  - quarter: Q1
-    start_rule: second_monday_of_january
-    end_offset_days: 35
-  - quarter: Q2
-    start_rule: second_monday_of_april
-    end_offset_days: 35
-  - quarter: Q3
-    start_rule: second_monday_of_july
-    end_offset_days: 35
-  - quarter: Q4
-    start_rule: second_monday_of_october
-    end_offset_days: 35
+start_date
+end_date
+market
+type=earnings_season
+importance
 ```
 
-Rule:
+If represented as config, define the market-specific windows in `configs/core3-v1.0.0.yaml`.
+
+Preferred V1 representation: config/runtime rule, not stored historical rows.
+
+Current agreed rule:
+
+- anchor months: `January`, `April`, `July`, `October`
+- season start: **second Monday** of the anchor month
+- season end: **35 calendar days after** the start date
+- `as_of_date` is inside `earnings_season` when it falls within that inclusive window
+- when multiple windows match, `earnings_season` loses to any higher-precedence scheduled event
+
+### 2.3 Monthly Options Expiry Representation
+
+Required fields:
 
 ```text
-earnings_season is active when as_of_date falls inside the configured seasonal window for the quarter
+date
+market
+type=monthly_options_expiry
+importance
 ```
+
+Preferred V1 representation: config/runtime rule, not stored historical rows. If explicit rows are ever used in tests, they must match the deterministic config rule exactly.
+
+If represented as config, the rule must be deterministic and documented in `configs/core3-v1.0.0.yaml`.
+
+Current agreed rule:
+
+- anchor date is the **third Friday** of the month
+- if that Friday is not an NYSE trading day, roll back to the **previous NYSE trading day**
+- the runtime `expiry_week` window is the inclusive NYSE trading-day range `[-2, 0]` around that anchor
+- when multiple windows match, `expiry_week` loses to `FOMC`, `CPI`, and `NFP` according to the shared precedence rules
 
 ---
 
 ## 3. Trading Calendar Data
 
 V1 uses the NYSE trading calendar through `pandas_market_calendars` or equivalent.
+
+Availability note:
+
+- this is derived from the installed exchange-calendar library, not from a repo-local raw download;
+- the required availability is deterministic access to all NYSE sessions and holidays across the full test range.
 
 No repo-local CSV is required if the calendar library is installed, but all tests and fixture verification depend on:
 
@@ -218,7 +286,7 @@ NYSE trading-day offsets
 Required coverage:
 
 ```text
-2015-01-01 through 2024-12-31
+2016-01-04 through 2024-12-31
 ```
 
 Uses:
@@ -378,6 +446,7 @@ breadth_mode=etf_proxy
 cap_weight_index=SPY
 equal_weight_proxy=RSP
 event calendar settings
+scheduled event generator settings
 earnings season windows if config-based
 monthly expiry windows if config-based
 data-quality thresholds
@@ -400,7 +469,7 @@ tests/fixtures/raw/
   spy_2015_2024.csv
   rsp_2015_2024.csv
   vix_2015_2024.csv
-  us_events_2015_2024.csv
+  us_events_2015_2024.yaml
   PROVENANCE.md
 ```
 
