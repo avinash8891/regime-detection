@@ -201,6 +201,7 @@ def run_pmi_fetch(
         release_timestamp_for(year=2026, month=4, business_day_index=1).tzinfo
     )
     attempts: list[dict[str, str]] = []
+    bundles_by_source: dict[str, PMIFetchBundle] = {}
 
     chosen_rows: list[PMIObservation] | None = None
     chosen_bundle: PMIFetchBundle | None = None
@@ -209,6 +210,7 @@ def run_pmi_fetch(
         for source_name, fetcher in [("dbnomics", primary_fetcher), ("tradingeconomics", backup_fetcher)]:
             try:
                 fetch_result = _normalize_fetch_result(fetcher(as_of_date=as_of_date), source_name=source_name)
+                bundles_by_source[source_name] = fetch_result
                 if store and fetch_run and fetch_result.raw_pages:
                     for series_name, html in fetch_result.raw_pages.items():
                         store.record_text_artifact(
@@ -246,7 +248,7 @@ def run_pmi_fetch(
         if chosen_rows is None or selected_source is None or chosen_bundle is None:
             raise PMIFetchError(f"All PMI sources failed: {attempts}")
 
-        df = pd.DataFrame(
+        latest_df = pd.DataFrame(
             [
                 {
                     "series_name": row.series_name,
@@ -259,18 +261,43 @@ def run_pmi_fetch(
                 for row in chosen_rows
             ]
         )
+        history_rows = _select_history_rows(
+            bundles_by_source=bundles_by_source,
+            chosen_bundle=chosen_bundle,
+            as_of_timestamp=as_of_timestamp,
+        )
+        history_df = pd.DataFrame(
+            [
+                {
+                    "series_name": row.series_name,
+                    "period": row.period,
+                    "value": row.value,
+                    "release_timestamp": row.release_timestamp.isoformat(),
+                    "source": row.source,
+                    "source_url": row.source_url,
+                }
+                for row in history_rows
+            ]
+        )
         pmi_dir = out_dir / "pmi"
         pmi_dir.mkdir(parents=True, exist_ok=True)
         parquet_path = pmi_dir / "us_ism_pmi.parquet"
-        df.to_parquet(parquet_path, index=False)
+        latest_df.to_parquet(parquet_path, index=False)
+        history_path = pmi_dir / "us_ism_pmi_history.parquet"
+        history_df.to_parquet(history_path, index=False)
 
         report = {
             "as_of_date": as_of_date.isoformat(),
             "selected_source": selected_source,
+            "history_source": history_rows[0].source if history_rows else None,
             "attempts": attempts,
-            "counts": {"rows": int(len(df))},
+            "counts": {
+                "rows": int(len(latest_df)),
+                "history_rows": int(len(history_df)),
+            },
             "paths": {
                 "pmi_parquet": str(parquet_path),
+                "pmi_history_parquet": str(history_path),
                 "acquisition_db": str(acquisition_db_path) if acquisition_db_path else None,
             },
         }
@@ -282,18 +309,27 @@ def run_pmi_fetch(
                 run_id=fetch_run.run_id,
                 output_kind="pmi_parquet",
                 path=parquet_path,
-                row_count=len(df),
-                min_date=min(df["period"]) if not df.empty else None,
-                max_date=max(df["period"]) if not df.empty else None,
+                row_count=len(latest_df),
+                min_date=min(latest_df["period"]) if not latest_df.empty else None,
+                max_date=max(latest_df["period"]) if not latest_df.empty else None,
                 notes="Normalized PMI parquet output",
+            )
+            store.record_output(
+                run_id=fetch_run.run_id,
+                output_kind="pmi_history_parquet",
+                path=history_path,
+                row_count=len(history_df),
+                min_date=min(history_df["period"]) if not history_df.empty else None,
+                max_date=max(history_df["period"]) if not history_df.empty else None,
+                notes="Normalized PMI history parquet output",
             )
             store.record_output(
                 run_id=fetch_run.run_id,
                 output_kind="pmi_report",
                 path=report_path,
-                row_count=len(df),
-                min_date=min(df["period"]) if not df.empty else None,
-                max_date=max(df["period"]) if not df.empty else None,
+                row_count=len(latest_df),
+                min_date=min(latest_df["period"]) if not latest_df.empty else None,
+                max_date=max(latest_df["period"]) if not latest_df.empty else None,
                 notes="PMI fetch report",
             )
             store.finish_fetch_run(run_id=fetch_run.run_id, status="ok")
@@ -310,6 +346,41 @@ def _normalize_fetch_result(fetch_result: object, *, source_name: str) -> PMIFet
     if isinstance(fetch_result, list):
         return PMIFetchBundle(source_name=source_name, raw_pages={}, observations=fetch_result)
     raise TypeError(f"Unexpected PMI fetch result for {source_name}: {type(fetch_result).__name__}")
+
+
+def _select_history_rows(
+    *,
+    bundles_by_source: dict[str, PMIFetchBundle],
+    chosen_bundle: PMIFetchBundle,
+    as_of_timestamp: dt.datetime,
+) -> list[PMIObservation]:
+    candidate_bundles: list[PMIFetchBundle] = []
+    if "dbnomics" in bundles_by_source:
+        candidate_bundles.append(bundles_by_source["dbnomics"])
+    if chosen_bundle not in candidate_bundles:
+        candidate_bundles.append(chosen_bundle)
+
+    best_rows: list[PMIObservation] = []
+    best_key: tuple[int, int] = (-1, -1)
+    for bundle in candidate_bundles:
+        rows = [
+            row
+            for row in bundle.observations
+            if row.release_timestamp <= as_of_timestamp
+        ]
+        rows = _dedupe_history_rows(rows)
+        key = (len(rows), len({row.period for row in rows}))
+        if key > best_key:
+            best_rows = rows
+            best_key = key
+    return best_rows
+
+
+def _dedupe_history_rows(rows: list[PMIObservation]) -> list[PMIObservation]:
+    by_key: dict[tuple[str, str], PMIObservation] = {}
+    for row in sorted(rows, key=lambda item: (item.series_name, item.period, item.release_timestamp, item.source)):
+        by_key[(row.series_name, row.period)] = row
+    return sorted(by_key.values(), key=lambda item: (item.period, item.series_name))
 
 
 def _ensure_series_title(html: str, *, expected: str) -> None:

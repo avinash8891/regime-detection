@@ -137,6 +137,41 @@ def test_parse_sp500_eps_workbook_raises_when_expected_sheet_is_missing(tmp_path
         raise AssertionError("Expected AggregateEPSFetchError")
 
 
+def test_parse_sp500_eps_workbook_supports_legacy_xls_layout(monkeypatch, tmp_path: Path) -> None:
+    legacy_path = tmp_path / "SP500eps.xls"
+    legacy_path.write_text("placeholder")
+
+    frame = pd.DataFrame(
+        [
+            ["S&P 500 EARNINGS AND ESTIMATE REPORT"],
+            [None],
+            [dt.datetime(2013, 12, 12)],
+            [None],
+            [None],
+            [None],
+            [None],
+            [None],
+            ["OBSERVATION", "Q4,'13 EST", "2013 EST", "2014 EST", "IDX PRICE"],
+            [dt.datetime(2013, 3, 28), 29.76, 111.14, 124.73, 1569.18],
+            [dt.datetime(2013, 6, 28), 29.32, 109.06, 123.01, 1606.27],
+            [dt.datetime(2013, 9, 30), 28.89, 107.83, 121.83, 1681.54],
+            ["current", 28.41, 107.46, 122.29, 1798.00],
+        ]
+    )
+
+    monkeypatch.setattr("regime_data_fetch.aggregate_eps.pd.read_excel", lambda *args, **kwargs: frame)
+
+    parsed = parse_sp500_eps_workbook(legacy_path)
+
+    assert parsed.workbook_as_of_date == dt.date(2013, 12, 12)
+    assert parsed.public_files_discontinued is False
+    assert len(parsed.historical_snapshots) == 3
+    assert parsed.current_snapshot.forward_estimate_label == "2014 EST"
+    assert parsed.current_snapshot.forward_estimate_value == 122.29
+    assert parsed.current_snapshot.price == 1798.0
+    assert parsed.current_snapshot.estimate_q4_2025e == 28.41
+
+
 def test_parse_wayback_cdx_json_extracts_successful_workbook_snapshots() -> None:
     cdx_json = """
     [

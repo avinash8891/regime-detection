@@ -131,8 +131,11 @@ def test_run_pmi_fetch_falls_back_to_backup(monkeypatch, tmp_path: Path) -> None
 
     report = json.loads(report_path.read_text())
     assert report["selected_source"] == "tradingeconomics"
+    assert report["history_source"] == "tradingeconomics"
     assert report["counts"]["rows"] == 2
+    assert report["counts"]["history_rows"] == 2
     assert (tmp_path / "pmi" / "us_ism_pmi.parquet").exists()
+    assert (tmp_path / "pmi" / "us_ism_pmi_history.parquet").exists()
 
 
 def test_run_pmi_fetch_falls_back_when_primary_data_is_stale(tmp_path: Path) -> None:
@@ -187,9 +190,15 @@ def test_run_pmi_fetch_falls_back_when_primary_data_is_stale(tmp_path: Path) -> 
 
     report = json.loads(report_path.read_text())
     assert report["selected_source"] == "tradingeconomics"
+    assert report["history_source"] == "dbnomics"
     assert report["attempts"][0]["source"] == "dbnomics"
     assert report["attempts"][0]["status"] == "failure"
     assert "stale" in report["attempts"][0]["error"].lower()
+    assert report["counts"]["history_rows"] == 2
+
+    history_df = pd.read_parquet(tmp_path / "pmi" / "us_ism_pmi_history.parquet")
+    assert history_df["period"].tolist() == ["2025-08", "2025-12"]
+    assert history_df["source"].tolist() == ["dbnomics", "dbnomics"]
 
 
 def test_run_pmi_fetch_raises_when_all_sources_fail(tmp_path: Path) -> None:
@@ -262,5 +271,6 @@ def test_run_pmi_fetch_records_raw_pages_and_outputs_in_sqlite(tmp_path: Path) -
     assert artifacts == [("dbnomics:pmi", "html", 2)]
     assert outputs == [
         ("pmi_parquet",),
+        ("pmi_history_parquet",),
         ("pmi_report",),
     ]

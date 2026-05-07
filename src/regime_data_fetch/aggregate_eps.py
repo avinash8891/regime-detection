@@ -58,6 +58,9 @@ class EPSWaybackSnapshot:
 
 
 def parse_sp500_eps_workbook(workbook_path: Path) -> ParsedAggregateEPSWorkbook:
+    if workbook_path.suffix.lower() == ".xls":
+        return _parse_legacy_sp500_eps_workbook(workbook_path)
+
     wb = load_workbook(workbook_path, read_only=True, data_only=True)
     if SHEET_NAME not in wb.sheetnames:
         raise AggregateEPSFetchError(f"Workbook missing expected sheet {SHEET_NAME!r}")
@@ -159,7 +162,7 @@ def run_aggregate_eps_fetch(
             store.record_file_artifact(
                 run_id=fetch_run.run_id,
                 source_name=SOURCE_NAME,
-                artifact_kind="xlsx_manual",
+                artifact_kind=f"{workbook_path.suffix.lower().lstrip('.')}_manual",
                 source_identifier=str(workbook_path),
                 file_path=workbook_path,
                 timezone="America/New_York",
@@ -549,6 +552,78 @@ def _extract_workbook_as_of_date(ws) -> dt.date:
     raise AggregateEPSFetchError("Could not find workbook as-of date in ESTIMATES&PEs sheet")
 
 
+def _parse_legacy_sp500_eps_workbook(workbook_path: Path) -> ParsedAggregateEPSWorkbook:
+    df = pd.read_excel(workbook_path, sheet_name=SHEET_NAME, header=None)
+    workbook_as_of_date = _extract_legacy_workbook_as_of_date(df)
+    table_start_row, header_labels = _find_legacy_observation_header_row(df)
+
+    historical: list[AggregateEPSSnapshot] = []
+    current_snapshot: AggregateEPSSnapshot | None = None
+    for row_idx in range(table_start_row + 1, len(df)):
+        row = df.iloc[row_idx].tolist()
+        first = row[0] if row else None
+        if isinstance(first, dt.datetime):
+            label_map = _build_legacy_observation_value_map(header_labels, row)
+            historical.append(
+                AggregateEPSSnapshot(
+                    observation_date=first.date(),
+                    observation_label="historical_quarter_end",
+                    forward_estimate_label=_select_legacy_forward_estimate_label(header_labels),
+                    forward_estimate_value=_select_legacy_forward_estimate_value(label_map, header_labels),
+                    estimate_2025e=None,
+                    estimate_q4_2025e=_value_for_legacy_exact_label(label_map, "Q4,'13 EST"),
+                    estimate_2026e=None,
+                    price=_value_for_legacy_exact_label(label_map, "IDX PRICE"),
+                    pe_2025e=None,
+                    pe_2026e=None,
+                    change_vs_prior_observation_2025e=None,
+                    change_vs_prior_observation_q4_2025e=None,
+                    change_vs_prior_observation_2026e=None,
+                    change_vs_prior_observation_price=None,
+                    change_vs_prior_observation_pe_2025e=None,
+                    change_vs_prior_observation_pe_2026e=None,
+                )
+            )
+            continue
+
+        if isinstance(first, str) and first.strip().lower() == "current":
+            label_map = _build_legacy_observation_value_map(header_labels, row)
+            current_snapshot = AggregateEPSSnapshot(
+                observation_date=workbook_as_of_date,
+                observation_label="current",
+                forward_estimate_label=_select_legacy_forward_estimate_label(header_labels),
+                forward_estimate_value=_select_legacy_forward_estimate_value(label_map, header_labels),
+                estimate_2025e=None,
+                estimate_q4_2025e=_value_for_legacy_exact_label(label_map, "Q4,'13 EST"),
+                estimate_2026e=None,
+                price=_value_for_legacy_exact_label(label_map, "IDX PRICE"),
+                pe_2025e=None,
+                pe_2026e=None,
+                change_vs_prior_observation_2025e=None,
+                change_vs_prior_observation_q4_2025e=None,
+                change_vs_prior_observation_2026e=None,
+                change_vs_prior_observation_price=None,
+                change_vs_prior_observation_pe_2025e=None,
+                change_vs_prior_observation_pe_2026e=None,
+            )
+            continue
+
+        if current_snapshot is not None:
+            break
+
+    if not historical:
+        raise AggregateEPSFetchError("Legacy workbook contained no historical aggregate EPS snapshots")
+    if current_snapshot is None:
+        raise AggregateEPSFetchError("Legacy workbook missing current aggregate EPS snapshot row")
+
+    return ParsedAggregateEPSWorkbook(
+        workbook_as_of_date=workbook_as_of_date,
+        public_files_discontinued=False,
+        historical_snapshots=historical,
+        current_snapshot=current_snapshot,
+    )
+
+
 def _extract_discontinued_flag(ws) -> bool:
     for row_idx in range(1, min(15, ws.max_row) + 1):
         row = next(ws.iter_rows(min_row=row_idx, max_row=row_idx, values_only=True))
@@ -571,6 +646,56 @@ def _find_observation_header_row(ws) -> tuple[int, list[str]]:
             if any(label.endswith("E") for label in labels):
                 return row_idx, labels
     raise AggregateEPSFetchError("Could not find aggregate EPS observation header row")
+
+
+def _extract_legacy_workbook_as_of_date(df: pd.DataFrame) -> dt.date:
+    for row_idx in range(min(10, len(df))):
+        value = df.iat[row_idx, 0]
+        if isinstance(value, dt.datetime):
+            return value.date()
+    raise AggregateEPSFetchError("Could not find legacy workbook as-of date in ESTIMATES&PEs sheet")
+
+
+def _find_legacy_observation_header_row(df: pd.DataFrame) -> tuple[int, list[str]]:
+    for row_idx in range(len(df)):
+        first = df.iat[row_idx, 0]
+        if isinstance(first, str) and first.strip() == "OBSERVATION":
+            labels: list[str] = []
+            for col_idx in range(1, df.shape[1]):
+                value = df.iat[row_idx, col_idx]
+                label = str(value).strip() if value is not None else ""
+                if not label or label.lower() == "nan":
+                    break
+                labels.append(label)
+            if "2014 EST" in labels or "2013 EST" in labels:
+                return row_idx, labels
+    raise AggregateEPSFetchError("Could not find legacy aggregate EPS observation header row")
+
+
+def _build_legacy_observation_value_map(labels: list[str], row: list[object]) -> dict[str, float | None]:
+    values: dict[str, float | None] = {}
+    for idx, label in enumerate(labels, start=1):
+        raw = row[idx] if idx < len(row) else None
+        values[label] = _as_float(raw) if raw is not None and not pd.isna(raw) else None
+    return values
+
+
+def _value_for_legacy_exact_label(values: dict[str, float | None], label: str) -> float | None:
+    return values.get(label)
+
+
+def _select_legacy_forward_estimate_label(labels: list[str]) -> str | None:
+    for label in reversed(labels):
+        if "EST" in label and label != "Q4,'13 EST":
+            return label
+    return None
+
+
+def _select_legacy_forward_estimate_value(values: dict[str, float | None], labels: list[str]) -> float | None:
+    label = _select_legacy_forward_estimate_label(labels)
+    if label is None:
+        return None
+    return values.get(label)
 
 
 def _find_current_change_row(ws, header_row: int) -> tuple[float | None, float | None, float | None, float | None, float | None, float | None]:
