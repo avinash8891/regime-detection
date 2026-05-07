@@ -27,8 +27,16 @@ def build_transition_risk_series(
 ) -> dict[date, TransitionRiskOutput]:
     sessions = list(context.sessions)
     session_index = pd.to_datetime(sessions)
-    close_series = context.spy_ohlcv["close"].reindex(session_index)
-    sma_50_series = feature_store.sma_50.reindex(session_index)
+    close_series = _strict_lookup_by_sessions(
+        series=context.spy_ohlcv["close"],
+        session_index=session_index,
+        series_name="transition-risk close series",
+    )
+    sma_50_series = _strict_lookup_by_sessions(
+        series=feature_store.sma_50,
+        session_index=session_index,
+        series_name="transition-risk sma_50 series",
+    )
     history = build_transition_risk_history(
         sessions=sessions,
         trend_direction_stable_by_date=axis_bundle.trend_direction.stable_labels_by_date,
@@ -165,3 +173,26 @@ def build_transition_risk_history(
         days_since_axis_switch_by_date=days_since_axis_switch_by_date,
         prior_bear_by_date=prior_bear_by_date,
     )
+
+
+def _strict_lookup_by_sessions(
+    *,
+    series: pd.Series,
+    session_index: pd.DatetimeIndex,
+    series_name: str,
+) -> pd.Series:
+    source = series.copy()
+    source.index = pd.to_datetime(source.index)
+    try:
+        positions = source.index.get_indexer(session_index)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(
+            f"{series_name} index is not exactly aligned to NYSE sessions used by transition-risk computation."
+        ) from exc
+    if (positions < 0).any():
+        missing_sessions = [session_index[idx].date().isoformat() for idx, pos in enumerate(positions) if pos < 0][:5]
+        raise ValueError(
+            f"{series_name} index is not exactly aligned to NYSE sessions used by transition-risk computation. "
+            f"Missing exact matches for sessions: {missing_sessions}"
+        )
+    return pd.Series(source.to_numpy()[positions], index=session_index, name=source.name)

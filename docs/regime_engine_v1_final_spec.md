@@ -1415,12 +1415,14 @@ V1 implementation contract:
 
 V2 is specified in a separate document: `regime_engine_v2_spec.md`.
 
-V2 work begins only after V1 ships all 9 vertical slices, all 10 V1 golden test dates pass, V1 passes historical walk-forward validation over at least one full out-of-sample year, V1 completes 252 consecutive NYSE trading sessions of forward shadow mode with frozen classification logic, and V1 demonstrates measurable strategy improvement vs no-regime baseline.
+V2 work begins only after V1 ships all 9 vertical slices, all 10 V1 golden test dates pass, V1 passes historical walk-forward validation over at least one full out-of-sample year, V1 completes 252 consecutive successful NYSE trading sessions of forward shadow mode with frozen classification logic and immutable archived inputs/outputs, and V1 demonstrates measurable strategy improvement vs no-regime baseline.
 
 Historical walk-forward and forward shadow serve different purposes and both are required:
 
 - Historical walk-forward validates the engine logic on unseen historical data using only as-of inputs.
 - Forward shadow validates operational stability, data-feed handling, calendar discipline, reproducibility, and incident response under real daily execution.
+
+The forward-shadow counter starts on the next NYSE trading day after the historical walk-forward gate passes. Only successful sessions with archived inputs/outputs count toward the 252-session requirement. Missed sessions extend the window, and any qualification-breaking classification change during shadow restarts the count from session 1 under the new frozen version.
 
 Operational qualification rules for shadow mode are specified separately in `docs/shadow_runner_spec.md`.
 

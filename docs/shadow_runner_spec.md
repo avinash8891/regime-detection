@@ -18,6 +18,8 @@ V2 activation requires both:
 
 These modes are not interchangeable.
 
+Historical walk-forward qualification details live in `docs/historical_walkforward_spec.md`.
+
 ## 1. Qualification Standard
 
 The forward shadow run qualifies only if all of the following hold:

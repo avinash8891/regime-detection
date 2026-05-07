@@ -2,7 +2,12 @@ from __future__ import annotations
 
 from datetime import date
 
+import pandas as pd
+
 from regime_detection.engine import RegimeEngine
+from regime_detection.feature_store import build_feature_store
+from regime_detection.market_context import build_market_context
+from regime_detection.axis_series import build_axis_series_bundle
 from regime_detection.transition_risk_series import TransitionRiskHistory, build_transition_risk_outputs_by_date
 
 
@@ -150,3 +155,43 @@ def test_transition_risk_series_classifier_applies_precedence_from_prepared_inpu
     assert outputs[sessions[5]].label == "unknown"
     assert outputs[sessions[0]].evidence["warnings_active"] == ["crisis_override"]
     assert outputs[sessions[4]].evidence["warnings_active"] == ["recovery_attempt", "post_switch_cooldown"]
+
+
+def test_transition_risk_series_fails_fast_on_price_index_misalignment(market_df_for_asof) -> None:
+    as_of = date(2023, 12, 14)
+    engine = RegimeEngine()
+    context = build_market_context(
+        end_date=as_of,
+        market_data=market_df_for_asof(as_of),
+        config=engine.config,
+    )
+    feature_store = build_feature_store(context)
+    axis_bundle = build_axis_series_bundle(context=context, feature_store=feature_store)
+
+    misaligned_context = context.model_copy(
+        update={
+            "spy_ohlcv": context.spy_ohlcv.rename(
+                index=lambda ts: pd.Timestamp(ts).tz_localize("America/New_York") + pd.Timedelta(hours=12)
+            )
+        }
+    )
+    misaligned_feature_store = feature_store.model_copy(
+        update={
+            "sma_50": feature_store.sma_50.rename(
+                index=lambda ts: pd.Timestamp(ts).tz_localize("America/New_York") + pd.Timedelta(hours=12)
+            )
+        }
+    )
+
+    from regime_detection.transition_risk_series import build_transition_risk_series
+
+    try:
+        build_transition_risk_series(
+            context=misaligned_context,
+            feature_store=misaligned_feature_store,
+            axis_bundle=axis_bundle,
+        )
+    except ValueError as exc:
+        assert "transition-risk" in str(exc)
+    else:
+        raise AssertionError("Expected transition-risk strict series lookup to fail on misaligned indexes")
