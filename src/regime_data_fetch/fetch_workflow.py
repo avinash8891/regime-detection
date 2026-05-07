@@ -128,6 +128,7 @@ def run_market_fetch(
     vix_symbol: str,
     allow_vix_proxy: bool,
     verbose: bool,
+    acquisition_db_path: Path | None = None,
 ) -> Path:
     if end < start:
         raise SystemExit("--end must be >= --start")
@@ -144,65 +145,152 @@ def run_market_fetch(
         vix_symbol=vix_symbol,
     )
 
-    bars = fetch_daily_bars_alpaca(
-        symbols=all_symbols,
-        start_date=start,
-        end_date=end,
-        adjustment=adjustment,
-        feed=alpaca_feed,
-        verbose=verbose,
-    )
-    df = bars.df
-
-    have_vix = bool(not df.empty and (df["symbol"] == vix_symbol).any())
-    if not have_vix and not allow_vix_proxy:
-        raise SystemExit(
-            f"{vix_symbol} not returned by Alpaca. "
-            "If you want to proceed with an Alpaca-tradable proxy, rerun with "
-            "`--vix-symbol VIXY --allow-vix-proxy`."
+    store = AcquisitionStore(acquisition_db_path) if acquisition_db_path else None
+    fetch_run = (
+        store.start_fetch_run(
+            fetch_type="market",
+            params={
+                "scope": scope,
+                "start": start.isoformat(),
+                "end": end.isoformat(),
+                "adjustment": adjustment,
+                "alpaca_feed": alpaca_feed,
+                "vix_symbol": vix_symbol,
+                "allow_vix_proxy": allow_vix_proxy,
+                "symbols_requested": len(all_symbols),
+            },
         )
+        if store
+        else None
+    )
 
-    parquet_dir = out_dir / "daily_ohlcv"
-    parquet_dir.mkdir(parents=True, exist_ok=True)
-    df.to_parquet(parquet_dir, index=False, partition_cols=["symbol"])
+    try:
+        bars = fetch_daily_bars_alpaca(
+            symbols=all_symbols,
+            start_date=start,
+            end_date=end,
+            adjustment=adjustment,
+            feed=alpaca_feed,
+            verbose=verbose,
+        )
+        df = bars.df
 
-    event_template = write_event_calendar_template(out_dir)
+        if store and fetch_run:
+            payload = {
+                "requested": {
+                    "scope": scope,
+                    "start": start.isoformat(),
+                    "end": end.isoformat(),
+                    "adjustment": adjustment,
+                    "alpaca_feed": alpaca_feed,
+                    "vix_symbol": vix_symbol,
+                    "allow_vix_proxy": allow_vix_proxy,
+                },
+                "symbols_requested": all_symbols,
+                "missing_symbols": bars.missing_symbols,
+                "rows": [
+                    {
+                        "date": row["date"].isoformat() if hasattr(row["date"], "isoformat") else str(row["date"]),
+                        "symbol": row["symbol"],
+                        "open": row["open"],
+                        "high": row["high"],
+                        "low": row["low"],
+                        "close": row["close"],
+                        "volume": row["volume"],
+                        "adjusted_close": row["adjusted_close"],
+                    }
+                    for row in df.to_dict(orient="records")
+                ],
+            }
+            store.record_text_artifact(
+                run_id=fetch_run.run_id,
+                source_name="alpaca:daily_bars",
+                artifact_kind="json",
+                source_identifier=f"daily_bars:{scope}:{start.isoformat()}:{end.isoformat()}:{adjustment}:{alpaca_feed or 'default'}",
+                content_text=json.dumps(payload, separators=(",", ":")),
+                start_date=start.isoformat(),
+                end_date=end.isoformat(),
+                timezone="UTC",
+                adjustment_policy=adjustment,
+                license_note="Alpaca market data response normalized at fetch boundary",
+                notes="Daily bars fetch result persisted from the Alpaca fetch boundary",
+            )
 
-    checks: dict[str, dict[str, object]] = {}
-    for symbol in V2_V1_SHARED_ANCHORS:
-        min_date, ok = verify_min_start_date(df, symbol=symbol, required_start=start)
-        checks[symbol] = {"min_date": str(min_date) if min_date else None, "ok": ok}
+        have_vix = bool(not df.empty and (df["symbol"] == vix_symbol).any())
+        if not have_vix and not allow_vix_proxy:
+            raise SystemExit(
+                f"{vix_symbol} not returned by Alpaca. "
+                "If you want to proceed with an Alpaca-tradable proxy, rerun with "
+                "`--vix-symbol VIXY --allow-vix-proxy`."
+            )
 
-    report = {
-        "as_of_utc": dt.datetime.now(dt.timezone.utc).isoformat(),
-        "scope": scope,
-        "requested": {
-            "start": str(start),
-            "end": str(end),
-            "adjustment": adjustment,
-            "alpaca_feed": alpaca_feed,
-        },
-        "counts": {
-            "rows": int(len(df)),
-            "symbols_requested_for_alpaca": len(all_symbols),
-            "symbols_returned": int(df["symbol"].nunique()) if not df.empty else 0,
-            "missing_symbols": len(bars.missing_symbols),
-        },
-        "min_date_checks": checks,
-        "vix": {
-            "source": "alpaca",
-            "symbol": vix_symbol,
-            "rows": int((df["symbol"] == vix_symbol).sum()),
-        },
-        "missing_symbols_sample": bars.missing_symbols[:50],
-        "paths": {
-            "daily_ohlcv_parquet": str(parquet_dir),
-            "event_calendar_template": str(event_template),
-        },
-    }
-    report_path = out_dir / "fetch_report.json"
-    report_path.write_text(json.dumps(report, indent=2))
-    return report_path
+        parquet_dir = out_dir / "daily_ohlcv"
+        parquet_dir.mkdir(parents=True, exist_ok=True)
+        df.to_parquet(parquet_dir, index=False, partition_cols=["symbol"])
+
+        event_template = write_event_calendar_template(out_dir)
+
+        checks: dict[str, dict[str, object]] = {}
+        for symbol in V2_V1_SHARED_ANCHORS:
+            min_date, ok = verify_min_start_date(df, symbol=symbol, required_start=start)
+            checks[symbol] = {"min_date": str(min_date) if min_date else None, "ok": ok}
+
+        report = {
+            "as_of_utc": dt.datetime.now(dt.timezone.utc).isoformat(),
+            "scope": scope,
+            "requested": {
+                "start": str(start),
+                "end": str(end),
+                "adjustment": adjustment,
+                "alpaca_feed": alpaca_feed,
+            },
+            "counts": {
+                "rows": int(len(df)),
+                "symbols_requested_for_alpaca": len(all_symbols),
+                "symbols_returned": int(df["symbol"].nunique()) if not df.empty else 0,
+                "missing_symbols": len(bars.missing_symbols),
+            },
+            "min_date_checks": checks,
+            "vix": {
+                "source": "alpaca",
+                "symbol": vix_symbol,
+                "rows": int((df["symbol"] == vix_symbol).sum()),
+            },
+            "missing_symbols_sample": bars.missing_symbols[:50],
+            "paths": {
+                "daily_ohlcv_parquet": str(parquet_dir),
+                "event_calendar_template": str(event_template),
+                "acquisition_db": str(acquisition_db_path) if acquisition_db_path else None,
+            },
+        }
+        report_path = out_dir / "fetch_report.json"
+        report_path.write_text(json.dumps(report, indent=2))
+
+        if store and fetch_run:
+            store.record_output(
+                run_id=fetch_run.run_id,
+                output_kind="alpaca_daily_ohlcv_parquet",
+                path=parquet_dir / "_metadata" if (parquet_dir / "_metadata").exists() else next(parquet_dir.rglob("*.parquet")),
+                row_count=len(df),
+                min_date=min(df["date"]).isoformat() if not df.empty else None,
+                max_date=max(df["date"]).isoformat() if not df.empty else None,
+                notes="Partitioned Alpaca daily OHLCV parquet output",
+            )
+            store.record_output(
+                run_id=fetch_run.run_id,
+                output_kind="alpaca_market_fetch_report",
+                path=report_path,
+                row_count=len(df),
+                min_date=min(df["date"]).isoformat() if not df.empty else None,
+                max_date=max(df["date"]).isoformat() if not df.empty else None,
+                notes="Market fetch report",
+            )
+            store.finish_fetch_run(run_id=fetch_run.run_id, status="ok")
+        return report_path
+    except Exception as exc:
+        if store and fetch_run:
+            store.finish_fetch_run(run_id=fetch_run.run_id, status="failed", notes=str(exc))
+        raise
 
 
 def run_macro_fetch(

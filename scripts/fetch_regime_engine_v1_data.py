@@ -120,6 +120,7 @@ def main() -> int:
             vix_symbol=args.vix_symbol,
             allow_vix_proxy=args.allow_vix_proxy,
             verbose=args.verbose,
+            acquisition_db_path=Path(args.acquisition_db) if args.acquisition_db else None,
         )
         print(str(market_report))
 

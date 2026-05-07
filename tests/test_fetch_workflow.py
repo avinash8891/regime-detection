@@ -104,6 +104,70 @@ def test_run_market_fetch_writes_unified_report(monkeypatch, tmp_path: Path) -> 
     assert report["paths"]["event_calendar_template"] == str(tmp_path / "event_calendar" / "events.template.yaml")
 
 
+def test_run_market_fetch_records_alpaca_payload_in_sqlite(monkeypatch, tmp_path: Path) -> None:
+    acquisition_db = tmp_path / "acquisition.db"
+
+    def fake_fetch_daily_bars_alpaca(
+        *,
+        symbols: list[str],
+        start_date: dt.date,
+        end_date: dt.date,
+        adjustment: str = "raw",
+        feed: str | None = None,
+        batch_size: int = 100,
+        verbose: bool = False,
+    ) -> DailyBarsFetchResult:
+        rows = [
+            {
+                "date": dt.date(2015, 1, 2),
+                "symbol": symbol,
+                "open": 10.0,
+                "high": 11.0,
+                "low": 9.0,
+                "close": 10.5,
+                "volume": 1000,
+                "adjusted_close": 10.5,
+            }
+            for symbol in symbols
+        ]
+        return DailyBarsFetchResult(df=pd.DataFrame(rows), missing_symbols=["ZZZZ"])
+
+    monkeypatch.setattr("regime_data_fetch.fetch_workflow.fetch_daily_bars_alpaca", fake_fetch_daily_bars_alpaca)
+    monkeypatch.setenv("ALPACA_API_KEY_ID", "key")
+    monkeypatch.setenv("ALPACA_API_SECRET_KEY", "secret")
+
+    report_path = run_market_fetch(
+        out_dir=tmp_path,
+        scope="v2",
+        stock_symbols=[],
+        start=dt.date(2015, 1, 1),
+        end=dt.date(2015, 1, 5),
+        adjustment="raw",
+        alpaca_feed="iex",
+        vix_symbol="VIXY",
+        allow_vix_proxy=True,
+        verbose=False,
+        acquisition_db_path=acquisition_db,
+    )
+
+    report = json.loads(report_path.read_text())
+    assert report["paths"]["acquisition_db"] == str(acquisition_db)
+
+    with sqlite3.connect(acquisition_db) as conn:
+        fetch_runs = conn.execute("SELECT fetch_type, status FROM fetch_runs").fetchall()
+        artifact_count = conn.execute("SELECT count(*) FROM artifacts").fetchone()[0]
+        artifact_source = conn.execute("SELECT source_name, artifact_kind FROM artifacts").fetchall()
+        outputs = conn.execute("SELECT output_kind FROM derived_outputs ORDER BY output_id").fetchall()
+
+    assert fetch_runs == [("market", "ok")]
+    assert artifact_count == 1
+    assert artifact_source == [("alpaca:daily_bars", "json")]
+    assert outputs == [
+        ("alpaca_daily_ohlcv_parquet",),
+        ("alpaca_market_fetch_report",),
+    ]
+
+
 def test_extract_ism_pmi_value_and_release_timestamp() -> None:
     html = """
     <html><body>
