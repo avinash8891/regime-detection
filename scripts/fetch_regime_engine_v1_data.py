@@ -178,6 +178,7 @@ def main() -> int:
     if args.fetch in {"powell", "all"}:
         powell_report = run_powell_speeches_fetch(
             out_dir=out_dir,
+            acquisition_db_path=Path(args.acquisition_db) if args.acquisition_db else None,
         )
         print(str(powell_report))
 

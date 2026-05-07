@@ -11,6 +11,8 @@ from zoneinfo import ZoneInfo
 
 import pandas as pd
 
+from regime_data_fetch.acquisition_store import AcquisitionStore
+
 
 INDEX_URL = "https://www.federalreserve.gov/newsevents/speeches.htm?speaker=Jerome+H.+Powell"
 BASE_URL = "https://www.federalreserve.gov"
@@ -146,71 +148,147 @@ def run_powell_speeches_fetch(
     index_fetcher=fetch_powell_speeches_index,
     year_page_fetcher=fetch_powell_speeches_year_page,
     article_fetcher=fetch_powell_speech_article,
+    acquisition_db_path: Path | None = None,
 ) -> Path:
     out_dir.mkdir(parents=True, exist_ok=True)
-
-    year_urls = parse_powell_speeches_year_index(index_fetcher())
-    listings: dict[dt.date, PowellSpeechListing] = {}
-    for year_url in year_urls:
-        for row in parse_powell_speech_year_page(year_page_fetcher(year_url)):
-            listings[row.speech_date] = row
-
-    if not listings:
-        raise PowellSpeechFetchError("No Powell speeches found in the yearly Federal Reserve archives")
-
-    articles: list[PowellSpeechArticle] = []
-    for row in sorted(listings.values(), key=lambda item: item.speech_date, reverse=True):
-        ts, precision = publication_timestamp_for_date(row.speech_date)
-        articles.append(
-            parse_powell_speech_article(
-                article_fetcher(row.speech_url),
-                source_url=row.speech_url,
-                publication_timestamp=ts,
-                publication_timestamp_precision=precision,
-            )
+    store = AcquisitionStore(acquisition_db_path) if acquisition_db_path else None
+    fetch_run = (
+        store.start_fetch_run(
+            fetch_type="powell_speeches",
+            params={
+                "index_url": INDEX_URL,
+            },
         )
-
-    df = pd.DataFrame(
-        [
-            {
-                "speech_date": article.speech_date.isoformat(),
-                "publication_timestamp": article.publication_timestamp.isoformat(),
-                "publication_timestamp_precision": article.publication_timestamp_precision,
-                "title": article.title,
-                "speaker": article.speaker,
-                "location": article.location,
-                "body_text": article.body_text,
-                "source": article.source,
-                "source_url": article.source_url,
-            }
-            for article in articles
-        ]
+        if store
+        else None
     )
 
-    out_path_dir = out_dir / "powell_speeches"
-    out_path_dir.mkdir(parents=True, exist_ok=True)
-    parquet_path = out_path_dir / "powell_speeches.parquet"
-    df.to_parquet(parquet_path, index=False)
+    try:
+        index_html = index_fetcher()
+        if store and fetch_run:
+            store.record_text_artifact(
+                run_id=fetch_run.run_id,
+                source_name="federalreserve:powell_index",
+                artifact_kind="html",
+                source_identifier=INDEX_URL,
+                content_text=index_html,
+                timezone="America/New_York",
+                license_note="Raw Federal Reserve Powell speeches index page",
+                notes="Powell speeches index HTML persisted before parsing",
+            )
+        year_urls = parse_powell_speeches_year_index(index_html)
+        listings: dict[dt.date, PowellSpeechListing] = {}
+        for year_url in year_urls:
+            year_html = year_page_fetcher(year_url)
+            if store and fetch_run:
+                store.record_text_artifact(
+                    run_id=fetch_run.run_id,
+                    source_name="federalreserve:powell_year_page",
+                    artifact_kind="html",
+                    source_identifier=year_url,
+                    content_text=year_html,
+                    timezone="America/New_York",
+                    license_note="Raw Federal Reserve Powell yearly speeches page",
+                    notes="Powell yearly archive HTML persisted before parsing",
+                )
+            for row in parse_powell_speech_year_page(year_html):
+                listings[row.speech_date] = row
 
-    report = {
-        "as_of_utc": dt.datetime.now(dt.timezone.utc).isoformat(),
-        "source": SOURCE_NAME,
-        "index_url": INDEX_URL,
-        "counts": {
-            "rows": int(len(df)),
-            "speech_dates": int(df["speech_date"].nunique()),
-        },
-        "date_range": {
-            "min_speech_date": str(df["speech_date"].min()) if not df.empty else None,
-            "max_speech_date": str(df["speech_date"].max()) if not df.empty else None,
-        },
-        "paths": {
-            "powell_speeches_parquet": str(parquet_path),
-        },
-    }
-    report_path = out_dir / "powell_speeches_fetch_report.json"
-    report_path.write_text(json.dumps(report, indent=2))
-    return report_path
+        if not listings:
+            raise PowellSpeechFetchError("No Powell speeches found in the yearly Federal Reserve archives")
+
+        articles: list[PowellSpeechArticle] = []
+        for row in sorted(listings.values(), key=lambda item: item.speech_date, reverse=True):
+            ts, precision = publication_timestamp_for_date(row.speech_date)
+            article_html = article_fetcher(row.speech_url)
+            if store and fetch_run:
+                store.record_text_artifact(
+                    run_id=fetch_run.run_id,
+                    source_name="federalreserve:powell_article",
+                    artifact_kind="html",
+                    source_identifier=row.speech_url,
+                    content_text=article_html,
+                    effective_date=row.speech_date.isoformat(),
+                    timezone="America/New_York",
+                    license_note="Raw Federal Reserve Powell speech article page",
+                    notes="Powell speech article HTML persisted before normalization",
+                )
+            articles.append(
+                parse_powell_speech_article(
+                    article_html,
+                    source_url=row.speech_url,
+                    publication_timestamp=ts,
+                    publication_timestamp_precision=precision,
+                )
+            )
+
+        df = pd.DataFrame(
+            [
+                {
+                    "speech_date": article.speech_date.isoformat(),
+                    "publication_timestamp": article.publication_timestamp.isoformat(),
+                    "publication_timestamp_precision": article.publication_timestamp_precision,
+                    "title": article.title,
+                    "speaker": article.speaker,
+                    "location": article.location,
+                    "body_text": article.body_text,
+                    "source": article.source,
+                    "source_url": article.source_url,
+                }
+                for article in articles
+            ]
+        )
+
+        out_path_dir = out_dir / "powell_speeches"
+        out_path_dir.mkdir(parents=True, exist_ok=True)
+        parquet_path = out_path_dir / "powell_speeches.parquet"
+        df.to_parquet(parquet_path, index=False)
+
+        report = {
+            "as_of_utc": dt.datetime.now(dt.timezone.utc).isoformat(),
+            "source": SOURCE_NAME,
+            "index_url": INDEX_URL,
+            "counts": {
+                "rows": int(len(df)),
+                "speech_dates": int(df["speech_date"].nunique()),
+            },
+            "date_range": {
+                "min_speech_date": str(df["speech_date"].min()) if not df.empty else None,
+                "max_speech_date": str(df["speech_date"].max()) if not df.empty else None,
+            },
+            "paths": {
+                "powell_speeches_parquet": str(parquet_path),
+                "acquisition_db": str(acquisition_db_path) if acquisition_db_path else None,
+            },
+        }
+        report_path = out_dir / "powell_speeches_fetch_report.json"
+        report_path.write_text(json.dumps(report, indent=2))
+
+        if store and fetch_run:
+            store.record_output(
+                run_id=fetch_run.run_id,
+                output_kind="powell_speeches_parquet",
+                path=parquet_path,
+                row_count=len(df),
+                min_date=str(df["speech_date"].min()) if not df.empty else None,
+                max_date=str(df["speech_date"].max()) if not df.empty else None,
+                notes="Powell speeches parquet output",
+            )
+            store.record_output(
+                run_id=fetch_run.run_id,
+                output_kind="powell_speeches_report",
+                path=report_path,
+                row_count=len(df),
+                min_date=str(df["speech_date"].min()) if not df.empty else None,
+                max_date=str(df["speech_date"].max()) if not df.empty else None,
+                notes="Powell speeches fetch report",
+            )
+            store.finish_fetch_run(run_id=fetch_run.run_id, status="ok")
+        return report_path
+    except Exception as exc:
+        if store and fetch_run:
+            store.finish_fetch_run(run_id=fetch_run.run_id, status="failed", notes=str(exc))
+        raise
 
 
 def _http_get_text(url: str) -> str:
