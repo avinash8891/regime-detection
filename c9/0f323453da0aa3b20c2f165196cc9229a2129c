@@ -1,0 +1,67 @@
+docs/regime_engine_v1_data_requirements.md
+  s_52de661ea8374d::t_9d7f9a0cfe4a64 17,110,119
+tests/fixtures/verification/golden_dates_report.yaml
+  s_52de661ea8374d::t_b6e2c3c3e5996c 1-2,6,17,22,49,152,230,235,239,241,255,294-296,298,327,359,462,565,668,771,874,977
+scripts/verify_fixtures.py
+  s_52de661ea8374d::t_21ba16e3384f87 654,656,659
+  s_52de661ea8374d::t_a7b92db2b5a336 107,123-134,137,139,141-148,150-151,162-163,169,191,198,222,978
+src/regime_detection/pit_builder.py
+  s_52de661ea8374d::t_06dbfe6a0d7fb7 24,65,91,124,144,160,168,212,365-396,442,455-457,471
+tests/test_historical_walkforward.py
+  s_52de661ea8374d::t_a0f4daae38aeab 60
+tests/fixtures/raw/PROVENANCE.md
+  s_52de661ea8374d::t_9d7f9a0cfe4a64 11,17-19
+tests/conftest.py
+  s_52de661ea8374d::t_a7b92db2b5a336 43-50,72-76,84-88,93-97
+scripts/run_shadow_regime.py
+  s_52de661ea8374d::t_a7b92db2b5a336 12-13
+  s_52de661ea8374d::t_2b81897eb93a6b 49,84,96,168,183,195-200,204-207
+  s_52de661ea8374d::t_8d08daf5366003 208-209
+  s_52de661ea8374d::t_21ba16e3384f87 201-203
+scripts/run_historical_walkforward.py
+  s_52de661ea8374d::t_21ba16e3384f87 385-387
+  s_52de661ea8374d::t_2b81897eb93a6b 206,219,247,351,366,379-384,388-391
+  s_52de661ea8374d::t_8d08daf5366003 392-393
+tests/test_reconciliation_contracts.py
+  s_52de661ea8374d::t_a7b92db2b5a336 10,17
+tests/test_fixture_verification.py
+  s_52de661ea8374d::t_a0f4daae38aeab 72
+tests/test_shadow_runner.py
+  s_52de661ea8374d::t_ff34f4075e4045 313,325,498-511
+  s_52de661ea8374d::t_80add14ccb2aee 340-341,365-374,436-454
+  s_52de661ea8374d::t_a0f4daae38aeab 85,121,219-220,226,286,328,339,483
+tests/fixtures/derived/golden_dates.yaml
+  s_52de661ea8374d::t_b6e2c3c3e5996c 1-2,6,17,22,49,51
+src/regime_detection/input_spec.py
+  s_52de661ea8374d::t_d7ccfdbe9f59e1 12,44
+src/regime_detection/engine.py
+  s_52de661ea8374d::t_d7ccfdbe9f59e1 68,114
+src/regime_detection/market_context.py
+  s_52de661ea8374d::t_d7ccfdbe9f59e1 16,246
+tests/test_schema_and_timeline.py
+  s_52de661ea8374d::t_a0f4daae38aeab 167-168,171-172,508,538-558,566
+src/regime_data_fetch/fetch_workflow.py
+  s_52de661ea8374d::t_a7b92db2b5a336 42
+src/regime_detection/loaders.py
+  s_52de661ea8374d::t_d7ccfdbe9f59e1 64-75,171-183
+src/regime_detection/package_io.py
+  s_52de661ea8374d::t_d7ccfdbe9f59e1 15,49,60-65,96,135-136,152
+docs/regime_engine_v1_final_spec.md
+  s_52de661ea8374d::t_9d7f9a0cfe4a64 79-82
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.1",
+  "base_commit_sha": "c90f323453da0aa3b20c2f165196cc9229a2129c",
+  "prompts": {},
+  "sessions": {
+    "s_52de661ea8374d": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019e0292-d7a2-7871-afc0-c6e426b885e7",
+        "model": "gpt-5.4"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}
