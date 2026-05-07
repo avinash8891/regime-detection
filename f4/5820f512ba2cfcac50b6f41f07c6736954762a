@@ -1,0 +1,29 @@
+src/regime_detection/transition_risk.py
+  s_52de661ea8374d::t_af6b7735173f97 30-34,58,72,86-87,99-100
+src/regime_detection/transition_risk_series.py
+  s_52de661ea8374d::t_af6b7735173f97 95-99,120
+tests/test_transition_and_strategy.py
+  s_52de661ea8374d::t_af6b7735173f97 63-83,92,103,112,121,130,139,148,158,167,176,187,190
+docs/regime_engine_v2_spec.md
+  s_52de661ea8374d::t_af6b7735173f97 1256-1297
+src/regime_detection/strategy_response.py
+  s_52de661ea8374d::t_af6b7735173f97 98-110
+docs/regime_engine_v2_implementation_plan.md
+  s_52de661ea8374d::t_af6b7735173f97 366-374,381-386
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.1",
+  "base_commit_sha": "f45820f512ba2cfcac50b6f41f07c6736954762a",
+  "prompts": {},
+  "sessions": {
+    "s_52de661ea8374d": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019e0292-d7a2-7871-afc0-c6e426b885e7",
+        "model": "gpt-5.4"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}
