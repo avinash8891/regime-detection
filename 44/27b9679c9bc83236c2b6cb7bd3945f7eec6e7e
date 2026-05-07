@@ -1,0 +1,35 @@
+src/regime_detection/transition_risk.py
+  s_52de661ea8374d::t_9620d9a526c1fb 9-32,46-49,92-95,110-113,146-156,159-161
+docs/regime_engine_v2_implementation_plan.md
+  s_52de661ea8374d::t_e2b350395a6ecb 381-382
+tests/test_transition_and_strategy.py
+  s_52de661ea8374d::t_a2f4479fdabfa1 17
+  s_52de661ea8374d::t_4074d4bed4f12f 58-64,195-196,202-231
+tests/test_schema_and_timeline.py
+  s_52de661ea8374d::t_4e22c98a8dc39b 96-116
+src/regime_detection/models.py
+  s_52de661ea8374d::t_9620d9a526c1fb 75-76
+src/regime_detection/transition_risk_series.py
+  s_52de661ea8374d::t_006cbf3e3df134 6,13-17,110,141,143-149,151,162-165,245-253,255-327,329-339,341-384
+  s_52de661ea8374d::t_89bdfdc5f68978 72-74,98-109
+  s_52de661ea8374d::t_872a8cc5a2eb11 53-55,254,328,340
+  s_52de661ea8374d::t_6444ae96961eed 139,142,150
+docs/regime_engine_v2_spec.md
+  s_52de661ea8374d::t_e2b350395a6ecb 1298,1301-1366
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.1",
+  "base_commit_sha": "4427b9679c9bc83236c2b6cb7bd3945f7eec6e7e",
+  "prompts": {},
+  "sessions": {
+    "s_52de661ea8374d": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019e0292-d7a2-7871-afc0-c6e426b885e7",
+        "model": "gpt-5.4"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}
