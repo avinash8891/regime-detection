@@ -195,6 +195,7 @@ def main() -> int:
             from_date=parse_date(args.eps_wayback_from) if args.eps_wayback_from else None,
             to_date=parse_date(args.eps_wayback_to) if args.eps_wayback_to else None,
             stop_after_first_success=args.eps_wayback_stop_after_first_success,
+            acquisition_db_path=Path(args.acquisition_db) if args.acquisition_db else None,
         )
         print(str(eps_wayback_report))
 

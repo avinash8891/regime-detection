@@ -274,3 +274,51 @@ def test_run_wayback_aggregate_eps_fetch_respects_bounds_and_writes_status_artif
     assert len(statuses) == 1
     assert statuses[0]["status"] == "parsed_ok"
     assert statuses[0]["snapshot_date"] == "2020-02-14"
+
+
+def test_run_wayback_aggregate_eps_fetch_records_sqlite_artifacts_and_outputs(tmp_path: Path) -> None:
+    workbook_bytes = (FIXTURES / "sp500_eps_est_fixture.xlsx").read_bytes()
+    acquisition_db = tmp_path / "acquisition.db"
+
+    def fake_cdx_fetcher() -> str:
+        return """
+        [
+          ["timestamp","original","statuscode","mimetype"],
+          ["20200110123456","https://www.spglobal.com/spdji/en/documents/additional-material/sp-500-eps-est.xlsx","200","application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"],
+          ["20200214101010","https://www.spglobal.com/spdji/en/documents/additional-material/sp-500-eps-est.xlsx","200","application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"]
+        ]
+        """
+
+    def fake_snapshot_fetcher(snapshot: EPSWaybackSnapshot) -> bytes:
+        return workbook_bytes
+
+    report_path = run_wayback_aggregate_eps_fetch(
+        out_dir=tmp_path,
+        acquisition_db_path=acquisition_db,
+        cdx_fetcher=fake_cdx_fetcher,
+        snapshot_fetcher=fake_snapshot_fetcher,
+    )
+
+    report = json.loads(report_path.read_text())
+    assert report["paths"]["acquisition_db"] == str(acquisition_db)
+
+    with sqlite3.connect(acquisition_db) as conn:
+        fetch_runs = conn.execute("SELECT fetch_type, status FROM fetch_runs").fetchall()
+        artifacts = conn.execute(
+            "SELECT source_name, artifact_kind, count(*) FROM artifacts GROUP BY source_name, artifact_kind ORDER BY source_name, artifact_kind"
+        ).fetchall()
+        outputs = conn.execute(
+            "SELECT output_kind FROM derived_outputs ORDER BY output_id"
+        ).fetchall()
+
+    assert fetch_runs == [("aggregate_eps_wayback", "ok")]
+    assert artifacts == [
+        ("wayback:cdx", "json", 1),
+        ("wayback:eps_workbook", "xlsx_wayback", 2),
+    ]
+    assert outputs == [
+        ("aggregate_eps_wayback_snapshot_index",),
+        ("aggregate_eps_wayback_status",),
+        ("aggregate_eps_wayback_timeline",),
+        ("aggregate_eps_wayback_report",),
+    ]
