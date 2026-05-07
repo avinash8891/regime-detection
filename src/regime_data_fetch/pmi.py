@@ -9,6 +9,7 @@ from pathlib import Path
 
 import pandas as pd
 
+from regime_data_fetch.acquisition_store import AcquisitionStore
 from regime_data_fetch.ism import release_timestamp_for
 
 
@@ -56,6 +57,13 @@ class PMIObservation:
     release_timestamp: dt.datetime
     source: str
     source_url: str
+
+
+@dataclass(frozen=True)
+class PMIFetchBundle:
+    source_name: str
+    raw_pages: dict[str, str]
+    observations: list[PMIObservation]
 
 
 def release_timestamp_for_period(*, series_name: str, period: str) -> dt.datetime:
@@ -147,22 +155,26 @@ def validate_latest_observations(*, latest_rows: list[PMIObservation], as_of_tim
         raise PMIFetchError(f"{source_name} returned stale PMI data: {details}")
 
 
-def fetch_pmi_dbnomics(*, as_of_date: dt.date) -> list[PMIObservation]:
+def fetch_pmi_dbnomics(*, as_of_date: dt.date) -> PMIFetchBundle:
     del as_of_date
     rows: list[PMIObservation] = []
+    raw_pages: dict[str, str] = {}
     for series_name, url in DBNOMICS_URLS.items():
         html = _http_get_text(url)
+        raw_pages[series_name] = html
         rows.extend(parse_dbnomics_html(html, series_name=series_name, source_url=url))
-    return rows
+    return PMIFetchBundle(source_name="dbnomics", raw_pages=raw_pages, observations=rows)
 
 
-def fetch_pmi_tradingeconomics(*, as_of_date: dt.date) -> list[PMIObservation]:
+def fetch_pmi_tradingeconomics(*, as_of_date: dt.date) -> PMIFetchBundle:
     del as_of_date
     rows: list[PMIObservation] = []
+    raw_pages: dict[str, str] = {}
     for series_name, url in TRADINGECONOMICS_URLS.items():
         html = _http_get_text(url)
+        raw_pages[series_name] = html
         rows.append(parse_tradingeconomics_html(html, series_name=series_name, source_url=url))
-    return rows
+    return PMIFetchBundle(source_name="tradingeconomics", raw_pages=raw_pages, observations=rows)
 
 
 def run_pmi_fetch(
@@ -171,68 +183,133 @@ def run_pmi_fetch(
     as_of_date: dt.date,
     primary_fetcher=fetch_pmi_dbnomics,
     backup_fetcher=fetch_pmi_tradingeconomics,
+    acquisition_db_path: Path | None = None,
 ) -> Path:
     out_dir.mkdir(parents=True, exist_ok=True)
+    store = AcquisitionStore(acquisition_db_path) if acquisition_db_path else None
+    fetch_run = (
+        store.start_fetch_run(
+            fetch_type="pmi",
+            params={
+                "as_of_date": as_of_date.isoformat(),
+            },
+        )
+        if store
+        else None
+    )
     as_of_timestamp = dt.datetime.combine(as_of_date, dt.time(23, 59, 59), tzinfo=dt.timezone.utc).astimezone(
         release_timestamp_for(year=2026, month=4, business_day_index=1).tzinfo
     )
     attempts: list[dict[str, str]] = []
 
     chosen_rows: list[PMIObservation] | None = None
+    chosen_bundle: PMIFetchBundle | None = None
     selected_source: str | None = None
-    for source_name, fetcher in [("dbnomics", primary_fetcher), ("tradingeconomics", backup_fetcher)]:
-        try:
-            observations = fetcher(as_of_date=as_of_date)
-            latest = [
-                choose_latest_available(
-                    observations=[obs for obs in observations if obs.series_name == series_name],
+    try:
+        for source_name, fetcher in [("dbnomics", primary_fetcher), ("tradingeconomics", backup_fetcher)]:
+            try:
+                fetch_result = _normalize_fetch_result(fetcher(as_of_date=as_of_date), source_name=source_name)
+                if store and fetch_run and fetch_result.raw_pages:
+                    for series_name, html in fetch_result.raw_pages.items():
+                        store.record_text_artifact(
+                            run_id=fetch_run.run_id,
+                            source_name=f"{source_name}:pmi",
+                            artifact_kind="html",
+                            source_identifier=f"{source_name}:{series_name}:{as_of_date.isoformat()}",
+                            content_text=html,
+                            effective_date=as_of_date.isoformat(),
+                            timezone="America/New_York",
+                            license_note=f"Raw {source_name} PMI page fetched before normalization",
+                            notes=f"Raw {source_name} PMI page for {series_name}",
+                        )
+
+                latest = [
+                    choose_latest_available(
+                        observations=[obs for obs in fetch_result.observations if obs.series_name == series_name],
+                        as_of_timestamp=as_of_timestamp,
+                    )
+                    for series_name in ("manufacturing", "services")
+                ]
+                validate_latest_observations(
+                    latest_rows=latest,
                     as_of_timestamp=as_of_timestamp,
+                    source_name=source_name,
                 )
-                for series_name in ("manufacturing", "services")
+                chosen_rows = latest
+                chosen_bundle = fetch_result
+                selected_source = source_name
+                attempts.append({"source": source_name, "status": "success"})
+                break
+            except Exception as exc:  # noqa: BLE001
+                attempts.append({"source": source_name, "status": "failure", "error": str(exc)})
+
+        if chosen_rows is None or selected_source is None or chosen_bundle is None:
+            raise PMIFetchError(f"All PMI sources failed: {attempts}")
+
+        df = pd.DataFrame(
+            [
+                {
+                    "series_name": row.series_name,
+                    "period": row.period,
+                    "value": row.value,
+                    "release_timestamp": row.release_timestamp.isoformat(),
+                    "source": row.source,
+                    "source_url": row.source_url,
+                }
+                for row in chosen_rows
             ]
-            validate_latest_observations(
-                latest_rows=latest,
-                as_of_timestamp=as_of_timestamp,
-                source_name=source_name,
+        )
+        pmi_dir = out_dir / "pmi"
+        pmi_dir.mkdir(parents=True, exist_ok=True)
+        parquet_path = pmi_dir / "us_ism_pmi.parquet"
+        df.to_parquet(parquet_path, index=False)
+
+        report = {
+            "as_of_date": as_of_date.isoformat(),
+            "selected_source": selected_source,
+            "attempts": attempts,
+            "counts": {"rows": int(len(df))},
+            "paths": {
+                "pmi_parquet": str(parquet_path),
+                "acquisition_db": str(acquisition_db_path) if acquisition_db_path else None,
+            },
+        }
+        report_path = out_dir / "pmi_fetch_report.json"
+        report_path.write_text(json.dumps(report, indent=2))
+
+        if store and fetch_run:
+            store.record_output(
+                run_id=fetch_run.run_id,
+                output_kind="pmi_parquet",
+                path=parquet_path,
+                row_count=len(df),
+                min_date=min(df["period"]) if not df.empty else None,
+                max_date=max(df["period"]) if not df.empty else None,
+                notes="Normalized PMI parquet output",
             )
-            chosen_rows = latest
-            selected_source = source_name
-            attempts.append({"source": source_name, "status": "success"})
-            break
-        except Exception as exc:  # noqa: BLE001
-            attempts.append({"source": source_name, "status": "failure", "error": str(exc)})
+            store.record_output(
+                run_id=fetch_run.run_id,
+                output_kind="pmi_report",
+                path=report_path,
+                row_count=len(df),
+                min_date=min(df["period"]) if not df.empty else None,
+                max_date=max(df["period"]) if not df.empty else None,
+                notes="PMI fetch report",
+            )
+            store.finish_fetch_run(run_id=fetch_run.run_id, status="ok")
+        return report_path
+    except Exception as exc:
+        if store and fetch_run:
+            store.finish_fetch_run(run_id=fetch_run.run_id, status="failed", notes=str(exc))
+        raise
 
-    if chosen_rows is None or selected_source is None:
-        raise PMIFetchError(f"All PMI sources failed: {attempts}")
 
-    df = pd.DataFrame(
-        [
-            {
-                "series_name": row.series_name,
-                "period": row.period,
-                "value": row.value,
-                "release_timestamp": row.release_timestamp.isoformat(),
-                "source": row.source,
-                "source_url": row.source_url,
-            }
-            for row in chosen_rows
-        ]
-    )
-    pmi_dir = out_dir / "pmi"
-    pmi_dir.mkdir(parents=True, exist_ok=True)
-    parquet_path = pmi_dir / "us_ism_pmi.parquet"
-    df.to_parquet(parquet_path, index=False)
-
-    report = {
-        "as_of_date": as_of_date.isoformat(),
-        "selected_source": selected_source,
-        "attempts": attempts,
-        "counts": {"rows": int(len(df))},
-        "paths": {"pmi_parquet": str(parquet_path)},
-    }
-    report_path = out_dir / "pmi_fetch_report.json"
-    report_path.write_text(json.dumps(report, indent=2))
-    return report_path
+def _normalize_fetch_result(fetch_result: object, *, source_name: str) -> PMIFetchBundle:
+    if isinstance(fetch_result, PMIFetchBundle):
+        return fetch_result
+    if isinstance(fetch_result, list):
+        return PMIFetchBundle(source_name=source_name, raw_pages={}, observations=fetch_result)
+    raise TypeError(f"Unexpected PMI fetch result for {source_name}: {type(fetch_result).__name__}")
 
 
 def _ensure_series_title(html: str, *, expected: str) -> None:

@@ -3,11 +3,13 @@ from __future__ import annotations
 import datetime as dt
 import json
 from pathlib import Path
+import sqlite3
 
 import pandas as pd
 
 from regime_data_fetch.pmi import (
     PMIFetchError,
+    PMIFetchBundle,
     PMIObservation,
     choose_latest_available,
     parse_dbnomics_html,
@@ -205,3 +207,60 @@ def test_run_pmi_fetch_raises_when_all_sources_fail(tmp_path: Path) -> None:
         assert "All PMI sources failed" in str(exc)
     else:
         raise AssertionError("Expected PMIFetchError")
+
+
+def test_run_pmi_fetch_records_raw_pages_and_outputs_in_sqlite(tmp_path: Path) -> None:
+    acquisition_db = tmp_path / "acquisition.db"
+
+    def primary_fetcher(*, as_of_date: dt.date) -> PMIFetchBundle:
+        del as_of_date
+        return PMIFetchBundle(
+            source_name="dbnomics",
+            raw_pages={
+                "manufacturing": "<html>mfg</html>",
+                "services": "<html>svc</html>",
+            },
+            observations=[
+                PMIObservation(
+                    series_name="manufacturing",
+                    period="2026-04",
+                    value=52.7,
+                    release_timestamp=release_timestamp_for_period(series_name="manufacturing", period="2026-04"),
+                    source="dbnomics",
+                    source_url="https://db.nomics.world/ISM/pmi/pm?tab=table",
+                ),
+                PMIObservation(
+                    series_name="services",
+                    period="2026-04",
+                    value=53.6,
+                    release_timestamp=release_timestamp_for_period(series_name="services", period="2026-04"),
+                    source="dbnomics",
+                    source_url="https://db.nomics.world/ISM/nm-pmi/pm?tab=table",
+                ),
+            ],
+        )
+
+    report_path = run_pmi_fetch(
+        out_dir=tmp_path,
+        as_of_date=dt.date(2026, 5, 15),
+        primary_fetcher=primary_fetcher,
+        backup_fetcher=primary_fetcher,
+        acquisition_db_path=acquisition_db,
+    )
+
+    report = json.loads(report_path.read_text())
+    assert report["paths"]["acquisition_db"] == str(acquisition_db)
+
+    with sqlite3.connect(acquisition_db) as conn:
+        fetch_runs = conn.execute("SELECT fetch_type, status FROM fetch_runs").fetchall()
+        artifacts = conn.execute(
+            "SELECT source_name, artifact_kind, count(*) FROM artifacts GROUP BY source_name, artifact_kind ORDER BY source_name, artifact_kind"
+        ).fetchall()
+        outputs = conn.execute("SELECT output_kind FROM derived_outputs ORDER BY output_id").fetchall()
+
+    assert fetch_runs == [("pmi", "ok")]
+    assert artifacts == [("dbnomics:pmi", "html", 2)]
+    assert outputs == [
+        ("pmi_parquet",),
+        ("pmi_report",),
+    ]

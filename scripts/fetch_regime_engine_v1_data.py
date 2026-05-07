@@ -157,6 +157,7 @@ def main() -> int:
         pmi_report = run_pmi_fetch(
             out_dir=out_dir,
             as_of_date=end,
+            acquisition_db_path=Path(args.acquisition_db) if args.acquisition_db else None,
         )
         print(str(pmi_report))
 
