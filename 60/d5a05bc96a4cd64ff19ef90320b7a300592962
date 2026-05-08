@@ -1,0 +1,31 @@
+src/regime_detection/timeline.py
+  s_52de661ea8374d::t_14b52469347270 150
+tests/test_schema_and_timeline.py
+  s_52de661ea8374d::t_9487c6dfde6520 119
+docs/regime_engine_v2_spec.md
+  s_52de661ea8374d::t_79fb9cba2575e8 1850-1851,1854-1855
+docs/regime_engine_v2_implementation_plan.md
+  s_52de661ea8374d::t_93375680ac8a39 551,555-556
+tests/test_transition_and_strategy.py
+  s_52de661ea8374d::t_e719e62045159b 39,66,76,93,101,116,124,138,146,160,168,182,186-201
+src/regime_detection/strategy_response.py
+  s_52de661ea8374d::t_88b38a1813e430 8,23,39,171,182-183
+src/regime_detection/models.py
+  s_52de661ea8374d::t_7c6c2cad42da5f 84
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.1",
+  "base_commit_sha": "60d5a05bc96a4cd64ff19ef90320b7a300592962",
+  "prompts": {},
+  "sessions": {
+    "s_52de661ea8374d": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019e0292-d7a2-7871-afc0-c6e426b885e7",
+        "model": "gpt-5.4"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}
