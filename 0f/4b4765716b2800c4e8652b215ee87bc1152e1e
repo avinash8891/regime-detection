@@ -1,0 +1,48 @@
+src/regime_data_fetch/inflation_growth_features.py
+  s_d4af0cda04b268::t_520243f4649d30 36,41,88-89,92-93,96-97,161,166,256,259,262,264-268,270-271,331-335,341-344,350-351,353-354,447,450,457,459,467-468,470,480-508
+  s_31a5a0668d8a2c::t_cc348ffc374a3a 460
+tests/test_inflation_growth_features.py
+  s_d4af0cda04b268::t_d68555c250080b 111
+  s_d4af0cda04b268::t_01cd0c1b1bf37c 68,73,77-78,193,197-202,205-210,213-218,285-294,352-354,359-363
+  s_d4af0cda04b268::t_cf1ecfca9bfebe 252,255
+docs/regime_engine_v2_spec.md
+  s_d4af0cda04b268::t_f4474773c7b473 323,331-339
+scripts/fetchers/inflation/import_cleveland_nowcast_monthly_yoy.py
+  s_d4af0cda04b268::t_d69644a7114475 1-34
+tests/test_acquisition_consolidation.py
+  s_d4af0cda04b268::t_bd308bb4dbd820 48
+  s_d4af0cda04b268::t_e42d9bf2a0be4c 40-41,67-68,85,137,141-146,152
+tests/test_inflation_nowcast_monthly_yoy.py
+  s_d4af0cda04b268::t_9efa815464bb5c 1-85
+src/regime_data_fetch/inflation_nowcast_monthly_yoy.py
+  s_d4af0cda04b268::t_4075829aa65c9c 1-198
+src/regime_data_fetch/acquisition_consolidation.py
+  s_d4af0cda04b268::t_1bef46a4a67031 79,115
+  s_d4af0cda04b268::t_b7739139753987 355-365
+  s_d4af0cda04b268::t_657522788642ab 580
+  s_d4af0cda04b268::t_d3221e4f7ac518 755-781
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.1",
+  "base_commit_sha": "0f4b4765716b2800c4e8652b215ee87bc1152e1e",
+  "prompts": {},
+  "sessions": {
+    "s_31a5a0668d8a2c": {
+      "agent_id": {
+        "tool": "opencode",
+        "id": "ses_1f8aecb26ffelGm7f9Re3CYaKL",
+        "model": "big-pickle"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    },
+    "s_d4af0cda04b268": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019e069e-aedd-76c1-b63c-150dd70baaa8",
+        "model": "gpt-5.4"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}
