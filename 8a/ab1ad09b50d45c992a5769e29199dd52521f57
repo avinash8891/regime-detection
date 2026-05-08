@@ -1,0 +1,25 @@
+src/regime_data_fetch/inflation_growth_features.py
+  s_52de661ea8374d::t_275fa261644d95 26-27,56,71-72,123-130,250,372-386,435
+tests/test_inflation_growth_features.py
+  s_52de661ea8374d::t_275fa261644d95 36-37,42-60,229-232
+docs/regime_engine_v2_spec.md
+  s_52de661ea8374d::t_275fa261644d95 341,348-360,362-365
+docs/regime_engine_v2_implementation_plan.md
+  s_52de661ea8374d::t_275fa261644d95 505,507-514
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.1",
+  "base_commit_sha": "8aab1ad09b50d45c992a5769e29199dd52521f57",
+  "prompts": {},
+  "sessions": {
+    "s_52de661ea8374d": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019e0292-d7a2-7871-afc0-c6e426b885e7",
+        "model": "gpt-5.4"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}
