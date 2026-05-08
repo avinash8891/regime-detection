@@ -1,0 +1,76 @@
+scripts/run_shadow_regime.py
+  s_52de661ea8374d::t_5940ecd50e0bb8 80
+  s_52de661ea8374d::t_baaf09379a2d00 68
+src/regime_data_fetch/runtime_feature_materialization.py
+  s_52de661ea8374d::t_61132764414c91 1-64
+src/regime_data_fetch/credit_funding_features.py
+  s_52de661ea8374d::t_20ddca198583f8 246-251,255
+tests/test_inflation_growth_features.py
+  s_52de661ea8374d::t_65fdac63b6e1b6 119
+src/regime_detection/hysteresis.py
+  s_52de661ea8374d::t_8407255fb634e6 67-150
+scripts/consolidate_regime_acquisition.py
+  s_52de661ea8374d::t_824439a00d1bff 20-23,25
+  s_52de661ea8374d::t_4e2db2a2627eea 13-14
+tests/test_schema_and_timeline.py
+  s_52de661ea8374d::t_cdcd1b107d692e 620-685
+  s_52de661ea8374d::t_ba775dc4662034 617
+  s_52de661ea8374d::t_ca83d30ba4c44d 911-916
+tests/test_network_fragility.py
+  s_52de661ea8374d::t_f741a1310b927f 60-109,123-140
+tests/test_fetch_workflow.py
+  s_52de661ea8374d::t_844e9915fca06d 339-342
+scripts/fetch_regime_engine_v1_data.py
+  s_52de661ea8374d::t_1ff68e059b36f1 28,37,78-79,216,218-224
+  s_52de661ea8374d::t_31e6cf492004b7 217
+tests/test_credit_funding.py
+  s_52de661ea8374d::t_bc47ec82cecdf5 97-139
+tests/test_credit_funding_features.py
+  s_52de661ea8374d::t_cafd57c91a5367 67
+src/regime_detection/engine.py
+  s_52de661ea8374d::t_0e4b116ba22ac8 10,32-34
+tests/test_shadow_runner.py
+  s_52de661ea8374d::t_5bbf2e15f47caa 227,366,589-591,593-601,603-629,631,633-743
+  s_52de661ea8374d::t_f7a4624a44dea9 377-383,385-390
+  s_52de661ea8374d::t_ccd3c9f0aabbdb 481
+  s_52de661ea8374d::t_ac4bdcc0885d88 445
+  s_52de661ea8374d::t_29b57a946cb0ce 602
+  s_52de661ea8374d::t_231602c04ce8f9 15,333-365,367-376,391-404
+  s_52de661ea8374d::t_2d111a8e285855 283,302,323,384
+  s_52de661ea8374d::t_a8238a8127682b 592
+  s_52de661ea8374d::t_014866a8514cd5 473-480,482-492
+  s_52de661ea8374d::t_025c7473f74334 220-221
+  s_52de661ea8374d::t_a27d5658673717 630
+  s_52de661ea8374d::t_01d35cf270547b 632
+tests/test_monetary_features.py
+  s_52de661ea8374d::t_f88e7940597ff2 65
+src/regime_detection/credit_funding.py
+  s_52de661ea8374d::t_7e0f287e42ffd1 10,184,191-192,222-229,316-324
+src/regime_detection/network_fragility.py
+  s_52de661ea8374d::t_542bba396c6f32 10,128,136-137,166-173
+src/regime_detection/inflation_growth.py
+  s_52de661ea8374d::t_d5457e919063cc 10,157,164-165,195-202,276-284
+src/regime_data_fetch/inflation_growth_features.py
+  s_52de661ea8374d::t_77eee219996b9a 389,391,394-396
+  s_52de661ea8374d::t_3b274a026e5c4d 234
+scripts/run_historical_walkforward.py
+  s_52de661ea8374d::t_8c5925db292699 231
+src/regime_data_fetch/monetary_features.py
+  s_52de661ea8374d::t_1ee90d707e7852 177-182,186
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.1",
+  "base_commit_sha": "195ba2c78b5745a8a138f084590880f51b86dcc5",
+  "prompts": {},
+  "sessions": {
+    "s_52de661ea8374d": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019e0292-d7a2-7871-afc0-c6e426b885e7",
+        "model": "gpt-5.4"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}
