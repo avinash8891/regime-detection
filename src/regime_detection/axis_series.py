@@ -4,6 +4,8 @@ from dataclasses import dataclass
 from datetime import date, timedelta
 from typing import Protocol
 
+import pandas as pd
+
 from regime_detection.breadth_state import (
     _RISK_RANK as BREADTH_RISK_RANK,
     _data_quality_for_asof as breadth_data_quality_for_asof,
@@ -19,7 +21,10 @@ from regime_detection.event_calendar import (
     _sessions_between,
 )
 from regime_detection.feature_store import FeatureStore
-from regime_detection.hysteresis import apply_asymmetric_hysteresis
+from regime_detection.hysteresis import (
+    apply_asymmetric_hysteresis,
+    apply_per_label_asymmetric_hysteresis,
+)
 from regime_detection.market_context import MarketContext
 from regime_detection.models import (
     AxisOutput,
@@ -27,6 +32,12 @@ from regime_detection.models import (
     DataQuality,
     EventCalendarOutput,
     NetworkFragilityOutput,
+)
+from regime_detection.network_fragility_rules import (
+    NETWORK_FRAGILITY_RISK_RANK,
+    NetworkFragilityLabel,
+    build_rule_inputs_for_date,
+    evaluate_rules,
 )
 from regime_detection.trend_character import (
     _RISK_RANK as TREND_CHARACTER_RISK_RANK,
@@ -206,38 +217,171 @@ class BreadthSeriesClassifier:
 
 
 class NetworkFragilitySeriesClassifier:
-    """V2 §3 network fragility classifier — stub form.
+    """V2 §3 network fragility classifier — full pipeline (Slice 1.4).
 
-    Today returns either None (no sector ETF data → no axis output) or a
-    per-day dict of `unknown` NetworkFragilityOutputs (sector data present
-    but slice 1 hasn't shipped the real §3.4 rules yet). Slice 1 will
-    replace the body with feature reads from `feature_store.network_fragility`
-    plus the v2 §3.4 rule engine + per-label hysteresis.
+    Pipeline per v2 spec §3.2–§3.7:
+
+      1. Read pre-computed features from ``feature_store.network_fragility``
+         (compute_features → v2 §3.2). If the seam is None (no sector ETF
+         data) return None so the timeline falls back to the v2 "unknown"
+         placeholder shape.
+      2. For each session date, materialize the per-day scalar rule inputs
+         (build_rule_inputs_for_date) and assess data quality
+         (assess_series_input_quality + quality_forces_unknown). Quality
+         failures override the rule output with "unknown".
+      3. Cross-reference V1 axes (breadth_state.active_label,
+         volatility_state.active_label) for that date.
+      4. Evaluate rules (evaluate_rules) → raw label per v2 §3.4 precedence.
+         credit_funding_label is hard-coded to None until Slice 4 ships the
+         v2 §2C axis; per network_fragility_rules.evaluate_systemic_stress
+         this short-circuits the systemic_stress rule and precedence falls
+         through to correlation_to_one.
+      5. Apply per-label asymmetric hysteresis (v2 §3.7) over the raw label
+         series.
+      6. Emit one NetworkFragilityOutput per session.
     """
 
     def build(
         self,
         context: MarketContext,
         feature_store: FeatureStore,
+        breadth_active_labels_by_date: dict[date, str] | None = None,
+        volatility_active_labels_by_date: dict[date, str] | None = None,
     ) -> dict[date, NetworkFragilityOutput] | None:
-        if feature_store.network_fragility is None:
+        features = feature_store.network_fragility
+        if features is None:
             return None
-        unknown_dq = DataQuality(
-            status="insufficient_history",
-            freshness_days=None,
-            completeness=None,
-            reason="required_feature_is_nan",
+
+        network_fragility_config = context.config.network_fragility
+        if network_fragility_config is None:
+            # Defensive: the feature seam is populated but config is missing.
+            # Treat as no v2 axis available rather than crashing the engine.
+            return None
+
+        spy_close = context.spy_ohlcv["close"]
+        volatility_features = feature_store.volatility
+        realized_vol_pct = volatility_features.realized_vol_percentile_252d
+        vix_pct = (
+            volatility_features.vix_percentile_252d
+            if volatility_features.vix_percentile_252d is not None
+            else pd.Series(float("nan"), index=spy_close.index)
         )
-        return {
-            day: NetworkFragilityOutput(
-                raw_label="unknown",
-                stable_label="unknown",
-                active_label="unknown",
-                evidence={"reason": "v2_classifier_not_yet_implemented"},
-                data_quality=unknown_dq,
+
+        # Required-input check (v2 §2.8 data quality).
+        # The percentile features are derived and are structurally NaN until
+        # the 504d / 252d windows fill — the rules themselves return False on
+        # NaN inputs (falling through to "unknown" per v2 §3.3), so we gate
+        # on the underlying primary inputs only and let day-level NaN
+        # propagate through the rule engine.
+        required_inputs: list[pd.Series] = [
+            features.avg_pairwise_corr_63d,
+            features.largest_eigenvalue_share,
+            features.effective_rank,
+            features.dispersion_ratio,
+            spy_close,
+        ]
+        # The 63d correlation window is the longest mandatory raw-input
+        # lookback (v2 §3.2 line 554-558). The 504d percentile / 21d slope
+        # NaN-ness is handled inside the rule predicates per spec.
+        required_trading_days = network_fragility_config.correlation_lookback_days
+        max_freshness_days = context.config.data_quality.max_freshness_days
+        min_completeness = context.config.data_quality.min_completeness
+
+        raw_labels: list[NetworkFragilityLabel] = []
+        per_day_data_quality: list[DataQuality] = []
+        per_day_evidence: list[dict[str, object]] = []
+
+        for day in context.sessions:
+            dt = pd.Timestamp(day)
+
+            # Defensive: the volatility series may not include early sessions
+            # if cold-start clipping diverges. Reindex on the fly.
+            day_quality = assess_series_input_quality(
+                as_of_date=day,
+                required_inputs=required_inputs,
+                required_trading_days=required_trading_days,
+                # Pre-quality: pass a placeholder so the helper's
+                # "raw_label == 'unknown'" branch doesn't fire here — we
+                # compute the real raw label below and re-check via
+                # quality_forces_unknown.
+                raw_label="placeholder",
+                max_freshness_days=max_freshness_days,
+                min_completeness=min_completeness,
             )
-            for day in context.sessions
-        }
+
+            if quality_forces_unknown(day_quality):
+                raw_labels.append("unknown")
+                per_day_data_quality.append(day_quality)
+                per_day_evidence.append({"reason": day_quality.reason or "insufficient_data"})
+                continue
+
+            rule_inputs = build_rule_inputs_for_date(
+                features=features,
+                dt=dt,
+                spy_close=spy_close,
+                realized_vol_percentile_252d=realized_vol_pct,
+                vix_percentile_252d=vix_pct,
+            )
+
+            breadth_label = "unknown"
+            if breadth_active_labels_by_date is not None:
+                breadth_label = breadth_active_labels_by_date.get(day, "unknown")
+            volatility_label = "unknown"
+            if volatility_active_labels_by_date is not None:
+                volatility_label = volatility_active_labels_by_date.get(day, "unknown")
+
+            label = evaluate_rules(
+                inputs=rule_inputs,
+                config=network_fragility_config.rules,
+                breadth_label=breadth_label,  # type: ignore[arg-type]
+                volatility_label=volatility_label,  # type: ignore[arg-type]
+                # Slice 4 (v2 §2C credit/funding) is not yet implemented.
+                # network_fragility_rules.evaluate_systemic_stress short-
+                # circuits to False on None and precedence falls through
+                # to correlation_to_one per v2 §3.4.
+                credit_funding_label=None,
+            )
+            raw_labels.append(label)
+            per_day_data_quality.append(day_quality)
+            per_day_evidence.append({
+                "rule_evidence": {
+                    "avg_pairwise_corr_percentile_504d": rule_inputs.avg_pairwise_corr_percentile_504d,
+                    "largest_eigenvalue_share_percentile_504d": rule_inputs.largest_eigenvalue_share_percentile_504d,
+                    "effective_rank_percentile_504d": rule_inputs.effective_rank_percentile_504d,
+                    "dispersion_ratio_percentile_252d": rule_inputs.dispersion_ratio_percentile_252d,
+                    "realized_vol_percentile_252d": rule_inputs.realized_vol_percentile_252d,
+                    "drawdown_21d": rule_inputs.drawdown_21d,
+                    "vix_percentile_252d": rule_inputs.vix_percentile_252d,
+                },
+                "breadth_active_label": breadth_label,
+                "volatility_active_label": volatility_label,
+                "credit_funding_active_label": None,
+            })
+
+        stable_labels, active_labels = apply_per_label_asymmetric_hysteresis(
+            raw_labels=raw_labels,
+            risk_rank=NETWORK_FRAGILITY_RISK_RANK,
+            deescalation_days_by_label=network_fragility_config.deescalation_days_by_label,
+        )
+
+        outputs: dict[date, NetworkFragilityOutput] = {}
+        for day, raw, stable, active, dq, evidence in zip(
+            context.sessions,
+            raw_labels,
+            stable_labels,
+            active_labels,
+            per_day_data_quality,
+            per_day_evidence,
+            strict=True,
+        ):
+            outputs[day] = NetworkFragilityOutput(
+                raw_label=raw,
+                stable_label=stable,
+                active_label=active,
+                evidence=evidence,
+                data_quality=dq,
+            )
+        return outputs
 
 
 def build_axis_series_bundle(*, context: MarketContext, feature_store: FeatureStore) -> AxisSeriesBundle:
@@ -246,7 +390,12 @@ def build_axis_series_bundle(*, context: MarketContext, feature_store: FeatureSt
     volatility_state = VolatilitySeriesClassifier().build(context, feature_store)
     breadth_state = BreadthSeriesClassifier().build(context, feature_store)
     event_calendar = build_event_calendar_series(context)
-    network_fragility = NetworkFragilitySeriesClassifier().build(context, feature_store)
+    network_fragility = NetworkFragilitySeriesClassifier().build(
+        context,
+        feature_store,
+        breadth_active_labels_by_date=breadth_state.active_labels_by_date,
+        volatility_active_labels_by_date=volatility_state.active_labels_by_date,
+    )
     return AxisSeriesBundle(
         trend_direction=trend_direction,
         trend_character=trend_character,

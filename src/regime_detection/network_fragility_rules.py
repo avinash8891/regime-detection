@@ -68,6 +68,23 @@ RULE_PRECEDENCE: tuple[NetworkFragilityLabel, ...] = (
 )
 
 
+# v2 §3.6 lines 661–668: risk rank for asymmetric hysteresis. Verbatim from
+# the spec (NOT a tunable). `systemic_stress` shares rank 3 with
+# `correlation_to_one`, and `rising_fragility` shares rank 2 with
+# `correlation_concentration`. `unknown` is mid-rank (2) so it neither
+# fast-tracks escalation past correlation_to_one nor strands the engine
+# in a low-risk label across NaN gaps.
+NETWORK_FRAGILITY_RISK_RANK: dict[NetworkFragilityLabel, int] = {
+    "diversified_normal": 0,
+    "stock_picker_dispersion": 1,
+    "rising_fragility": 2,
+    "correlation_concentration": 2,
+    "correlation_to_one": 3,
+    "systemic_stress": 3,
+    "unknown": 2,
+}
+
+
 # v2 §2C credit/funding labels used by systemic_stress. Slice 4 introduces
 # the formal CreditFundingLabel; we use the spec strings as a Literal here
 # to avoid a forward dependency on a not-yet-shipped enum.

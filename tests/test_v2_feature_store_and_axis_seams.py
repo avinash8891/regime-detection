@@ -88,22 +88,33 @@ def test_network_fragility_classifier_returns_none_without_sector_data(market_df
     assert result is None
 
 
-def test_network_fragility_classifier_returns_per_day_unknowns_with_sector_data(market_df_for_asof) -> None:
+def test_network_fragility_classifier_returns_per_day_outputs_with_sector_data(market_df_for_asof) -> None:
+    """Slice 1.4: with sector data the classifier emits real per-day outputs
+    (one per session). Mode pin stays at sector_cross_asset_22; labels are
+    drawn from the v2 §3.3 label set."""
     as_of = date(2023, 12, 14)
     context = _build_context_with_sector_data(market_df_for_asof, as_of)
-    store = build_feature_store(context)
+    store = build_feature_store(
+        context, network_fragility_config=context.config.network_fragility
+    )
 
     result = NetworkFragilitySeriesClassifier().build(context, store)
 
     assert result is not None
     assert set(result.keys()) == set(context.sessions)
-    for day, output in result.items():
-        assert output.raw_label == "unknown"
-        assert output.stable_label == "unknown"
-        assert output.active_label == "unknown"
-        assert output.evidence == {"reason": "v2_classifier_not_yet_implemented"}
-        assert output.data_quality.status == "insufficient_history"
-        assert output.data_quality.reason == "required_feature_is_nan"
+    allowed_labels = {
+        "diversified_normal",
+        "stock_picker_dispersion",
+        "rising_fragility",
+        "correlation_concentration",
+        "correlation_to_one",
+        "systemic_stress",
+        "unknown",
+    }
+    for output in result.values():
+        assert output.raw_label in allowed_labels
+        assert output.stable_label in allowed_labels
+        assert output.active_label in allowed_labels
         assert output.mode == "sector_cross_asset_22"
 
 
@@ -169,8 +180,11 @@ def test_timeline_pulls_network_fragility_from_axis_bundle_when_sector_data_pres
         sector_etf_closes=sector_closes,
     )
 
-    # Stub classifier still emits unknown, but the data path went through
-    # the bundle (verified by the per-day evidence string being identical
-    # to NetworkFragilitySeriesClassifier's output).
-    assert out.network_fragility.evidence == {"reason": "v2_classifier_not_yet_implemented"}
-    assert out.network_fragility.data_quality.status == "insufficient_history"
+    # Slice 1.4: the timeline pulls from the AxisSeriesBundle entry (no
+    # longer the v2_classifier_not_yet_implemented placeholder). With a
+    # synthetic uniform-ramp sector universe and short history (18mo) every
+    # session is still inside the 504d percentile cold-start, so the
+    # data-quality gate keeps the label at "unknown" — but the evidence
+    # shape is the real classifier's (not the placeholder).
+    assert "v2_classifier_not_yet_implemented" not in out.network_fragility.evidence.get("reason", "")
+    assert out.network_fragility.mode == "sector_cross_asset_22"
