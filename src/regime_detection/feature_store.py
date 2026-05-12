@@ -1,12 +1,14 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
-
 import pandas as pd
 from pydantic import BaseModel, ConfigDict
 
 from regime_detection.breadth_state import BreadthFeatures, compute_features as compute_breadth_features
 from regime_detection.market_context import MarketContext
+from regime_detection.network_fragility import (
+    NetworkFragilityFeatures,
+    compute_features as compute_network_fragility_features,
+)
 from regime_detection.trend_character import (
     TrendCharacterFeatures,
     compute_features as compute_trend_character_features,
@@ -17,17 +19,7 @@ from regime_detection.trend_direction import (
 )
 from regime_detection.volatility_state import VolatilityFeatures, compute_features as compute_volatility_features
 
-
-@dataclass(frozen=True)
-class NetworkFragilityFeatures:
-    """Placeholder for v2 §3 network fragility features.
-
-    Slice 1 will populate this with the v2 §3.2 feature set
-    (avg_pairwise_corr_63d, avg_pairwise_corr_pct_504d,
-    largest_eigenvalue_share, effective_rank, absorption_ratio_top3,
-    dispersion_ratio, etc.). Today the dataclass carries no fields
-    so feature_store.network_fragility can exist as an Optional seam.
-    """
+__all__ = ["FeatureStore", "NetworkFragilityFeatures", "build_feature_store"]
 
 
 class FeatureStore(BaseModel):
@@ -63,11 +55,17 @@ def build_feature_store(context: MarketContext) -> FeatureStore:
         rsp_close=context.rsp_close.reindex(spy_ohlcv.index),
     )
     sma_50 = spy_close.rolling(50).mean()
-    network_fragility = (
-        NetworkFragilityFeatures()
-        if context.sector_etf_closes is not None
-        else None
-    )
+    # V2 §3.2 feature compute (slice 1.2). The classifier wiring (slice 1.3+)
+    # consumes these series; for now they populate the seam so build_feature_store
+    # returns a typed NetworkFragilityFeatures whenever sector data is present.
+    if context.sector_etf_closes is not None:
+        network_fragility = compute_network_fragility_features(
+            sector_etf_closes=context.sector_etf_closes,
+            cross_asset_closes=context.cross_asset_closes or {},
+            spy_close=spy_close,
+        )
+    else:
+        network_fragility = None
     return FeatureStore(
         spy_index=spy_ohlcv.index,
         trend_direction=trend_direction,
