@@ -148,6 +148,44 @@ class NetworkFragilityConfig(BaseModel):
     rules: NetworkFragilityRulesConfig
 
 
+class TrendDirectionV2Config(BaseModel):
+    """v2 §1A — Layer 1 V2 trend direction feature lookbacks.
+
+    Slice 2.1 ships these as evidence-only features (per v2 §8 line 1181:
+    "Adds to existing classifiers without changing V1 contracts"). The new
+    trend labels (euphoria, recovery, breakout_expansion, range_bound) and
+    the precedence update at v2 §1A line 133 are deferred to a later slice
+    once the `sentiment_score` (line 126) and `followthrough_rate` (line 90)
+    ambiguities are resolved.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    # v2 §1A line 66 — Efficiency Ratio over 20 trading days.
+    efficiency_ratio_lookback_days: int = Field(gt=0)
+
+    # v2 §1A line 79 — Hurst exponent lookback ("250d minimum").
+    hurst_lookback_days: int = Field(gt=0)
+
+    # v2 §1A line 106 — slope_sma window: (sma[t] - sma[t-20]) / sma[t-20].
+    slope_lookback_days: int = Field(gt=0)
+
+    # v2 §1A line 107 — SMA_50 short window.
+    sma_short_period: int = Field(gt=0)
+
+    # v2 §1A line 108 — SMA_200 long window.
+    sma_long_period: int = Field(gt=0)
+
+    # v2 §1A line 117 — return_63d (recovery rule input).
+    return_short_period: int = Field(gt=0)
+
+    # v2 §1A line 124 — return_126d (euphoria rule input).
+    return_long_period: int = Field(gt=0)
+
+    # v2 §1A line 116 — prior 252d drawdown (recovery rule input).
+    drawdown_lookback_days: int = Field(gt=0)
+
+
 class TransitionScoreConfig(BaseModel):
     """Composite transition risk score configuration (v2 spec §4.3 / §4.4)."""
 
@@ -265,6 +303,7 @@ class RegimeConfig(BaseModel):
 
     # V2 optional sub-configs (default None so V2 slices can land independently).
     network_fragility: NetworkFragilityConfig | None = None
+    trend_direction_v2: TrendDirectionV2Config | None = None
     transition_score: TransitionScoreConfig | None = None
     monetary_pressure_v2: MonetaryPressureV2Config | None = None
     inflation_growth: InflationGrowthConfig | None = None

@@ -111,6 +111,20 @@ network_fragility:
     corr_to_one_drawdown_max: 0.0                     # §3.5 line 648 ("drawdown_21d < 0")
     systemic_stress_vix_percentile_min: 0.80          # §3.5 line 655
 
+# v2 §1A — Layer 1 V2 Trend Direction features (Slice 2.1, evidence-only).
+# Classifier wiring (euphoria/recovery/breakout/range labels + precedence
+# update at v2 §1A line 133) is deferred until sentiment_score (line 126)
+# and followthrough_rate (line 90) ambiguities are resolved.
+trend_direction_v2:
+  efficiency_ratio_lookback_days: 20    # v2 §1A line 66
+  hurst_lookback_days: 250              # v2 §1A line 79
+  slope_lookback_days: 20               # v2 §1A line 106
+  sma_short_period: 50                  # v2 §1A line 107
+  sma_long_period: 200                  # v2 §1A line 108
+  return_short_period: 63               # v2 §1A line 117
+  return_long_period: 126               # v2 §1A line 124
+  drawdown_lookback_days: 252           # v2 §1A line 116
+
 transition_score:
   weights_with_hmm:
     volatility_acceleration: 0.20

@@ -80,8 +80,13 @@ def build_regime_timeline(
     network_fragility_config = (
         config.network_fragility if config is not None else None
     )
+    trend_direction_v2_config = (
+        config.trend_direction_v2 if config is not None else None
+    )
     feature_store = build_feature_store(
-        working_context, network_fragility_config=network_fragility_config
+        working_context,
+        network_fragility_config=network_fragility_config,
+        trend_direction_v2_config=trend_direction_v2_config,
     )
     axis_bundle = build_axis_series_bundle(context=working_context, feature_store=feature_store)
     transition_risk = build_transition_risk_series(

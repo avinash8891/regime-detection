@@ -398,6 +398,40 @@ the slice/commit that resolved it. Entries are append-only.
     helper. V1 callers keep default semantics; V2 callers opt in.
     Resolved by Slice 1.4 cleanup.
 
+11. **§1A line 79 — Hurst exponent estimator.**
+    Spec lists "Hurst Exponent (250d)" with the H>0.55 / H<0.45 bands but
+    does not specify the estimator (R/S, DFA, DMA, periodogram, ...).
+    Resolution: classical Mandelbrot–Wallis Rescaled-Range (R/S) over a
+    single 250-session window (no chunk-averaging). H = log(R/S) /
+    log(N) where N = lookback - 1 log-returns. Pinned in
+    `regime_detection.trend_direction_v2._rs_hurst_window`.
+    Resolved by Slice 2.1.
+
+12. **§1A line 79 — Hurst input series (price vs log-returns).**
+    Spec is silent on whether the 250d Hurst window operates on price
+    levels or on returns. Resolution: log-returns (literature standard
+    for R/S on financial time series; Lo 1991, Mandelbrot–Wallis 1969).
+    Pinned in `regime_detection.trend_direction_v2._rs_hurst_window`.
+    Resolved by Slice 2.1.
+
+13. **§1A line 116 — `drawdown_252d` peak-window inclusivity.**
+    Spec writes "prior 252d drawdown <= -0.15" without naming whether
+    the trailing-peak window includes session `t`. Resolution: window is
+    `close[t-251..t]` (inclusive of `t`), so the drawdown equals 0
+    exactly at a fresh 252d high and is strictly negative otherwise.
+    Matches the slice-1.3 convention in
+    `regime_detection.network_fragility_rules._trailing_drawdown`.
+    Resolved by Slice 2.1.
+
+14. **§1A lines 105–108 — SMA / slope NaN handling at cold-start.**
+    Spec is silent on cold-start. Resolution: pandas
+    `.rolling(N, min_periods=N).mean()` for SMA; slope is NaN until
+    `t >= sma_period - 1 + slope_lookback_days` (so slope_sma_50 first
+    non-NaN at t=69, slope_sma_200 at t=219). Standard V1 cold-start
+    contract (no warm-up). Pinned in
+    `regime_detection.trend_direction_v2._slope_of_sma`.
+    Resolved by Slice 2.1.
+
 ---
 
 ## 2. Layer 2 V2 — Full Structural-Causal State

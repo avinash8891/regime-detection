@@ -4,7 +4,7 @@ import pandas as pd
 from pydantic import BaseModel, ConfigDict
 
 from regime_detection.breadth_state import BreadthFeatures, compute_features as compute_breadth_features
-from regime_detection.config import NetworkFragilityConfig
+from regime_detection.config import NetworkFragilityConfig, TrendDirectionV2Config
 from regime_detection.market_context import MarketContext
 from regime_detection.network_fragility import (
     NetworkFragilityFeatures,
@@ -18,9 +18,18 @@ from regime_detection.trend_direction import (
     TrendDirectionFeatures,
     compute_features as compute_trend_direction_features,
 )
+from regime_detection.trend_direction_v2 import (
+    TrendDirectionV2Features,
+    compute_trend_v2_features,
+)
 from regime_detection.volatility_state import VolatilityFeatures, compute_features as compute_volatility_features
 
-__all__ = ["FeatureStore", "NetworkFragilityFeatures", "build_feature_store"]
+__all__ = [
+    "FeatureStore",
+    "NetworkFragilityFeatures",
+    "TrendDirectionV2Features",
+    "build_feature_store",
+]
 
 
 class FeatureStore(BaseModel):
@@ -37,11 +46,17 @@ class FeatureStore(BaseModel):
     # Slice 1 swaps the placeholder for the real feature compute.
     network_fragility: NetworkFragilityFeatures | None = None
 
+    # V2 §1A seam — populated when a TrendDirectionV2Config is threaded
+    # through. SPY close is always present on the V1+V2 path so this is
+    # only None when the config is absent (v1-only callers).
+    trend_direction_v2: TrendDirectionV2Features | None = None
+
 
 def build_feature_store(
     context: MarketContext,
     *,
     network_fragility_config: NetworkFragilityConfig | None = None,
+    trend_direction_v2_config: TrendDirectionV2Config | None = None,
 ) -> FeatureStore:
     spy_ohlcv = context.spy_ohlcv
     spy_close = spy_ohlcv["close"]
@@ -84,6 +99,15 @@ def build_feature_store(
         )
     else:
         network_fragility = None
+
+    # V2 §1A trend-direction features (slice 2.1) — evidence-only compute.
+    if trend_direction_v2_config is not None:
+        trend_direction_v2 = compute_trend_v2_features(
+            spy_close, config=trend_direction_v2_config
+        )
+    else:
+        trend_direction_v2 = None
+
     return FeatureStore(
         spy_index=spy_ohlcv.index,
         trend_direction=trend_direction,
@@ -92,4 +116,5 @@ def build_feature_store(
         breadth=breadth,
         sma_50=sma_50,
         network_fragility=network_fragility,
+        trend_direction_v2=trend_direction_v2,
     )
