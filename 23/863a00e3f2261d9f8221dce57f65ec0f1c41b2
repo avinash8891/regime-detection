@@ -1,0 +1,39 @@
+src/regime_detection/models.py
+  s_db04d04d95877a::t_865be5067c9843 53-124,129-134,138-144,150-153
+  s_db04d04d95877a::t_dd3f05cfd0f6c8 204,208-213
+  s_db04d04d95877a::t_99bfcf722281a8 18
+tests/fixtures/v1_frozen_outputs/2024-02-15.json
+  s_db04d04d95877a::t_5991e0db391d64 1-156
+tests/fixtures/v1_frozen_outputs/2023-12-14.json
+  s_db04d04d95877a::t_5991e0db391d64 1-159
+tests/fixtures/v1_frozen_outputs/2024-04-15.json
+  s_db04d04d95877a::t_5991e0db391d64 1-158
+tests/_v1_frozen_models.py
+  s_db04d04d95877a::t_2b3a3b1f773665 26
+  s_db04d04d95877a::t_accdb79d776b27 1-25,27-142
+tests/test_v1_frozen_replay.py
+  s_db04d04d95877a::t_a8f2b314156952 1-7,9-10,14-36
+  s_db04d04d95877a::t_6874eaa3b542eb 8,11-13
+src/regime_detection/timeline.py
+  s_db04d04d95877a::t_6467ccb0e5202b 99
+  s_db04d04d95877a::t_e2caf9e064d82b 6-13,22-33
+  s_db04d04d95877a::t_167b2474330b1b 66-76
+tests/test_schema_and_timeline.py
+  s_db04d04d95877a::t_c563ff7029e251 16-20,27-31,34-42,44,46-51
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.4",
+  "base_commit_sha": "23863a00e3f2261d9f8221dce57f65ec0f1c41b2",
+  "prompts": {},
+  "sessions": {
+    "s_db04d04d95877a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "514917cc-8426-49e3-bf28-e8825bfc89ea",
+        "model": "claude-opus-4-7"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}
