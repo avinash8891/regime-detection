@@ -1,0 +1,27 @@
+src/regime_detection/comparison.py
+  s_db04d04d95877a::t_29e54004bd9d83 1-224
+tests/test_v2_comparison.py
+  s_db04d04d95877a::t_28228e571a7d57 1-198
+AGENTS.md
+  s_db04d04d95877a::t_c0645d96cbb0ec 44-54
+pytest.ini
+  s_db04d04d95877a::t_91192de15349ab 5-10
+docs/v2_slice_gate_checklist.md
+  s_db04d04d95877a::t_64bbd96fd6a2c4 1-80
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.4",
+  "base_commit_sha": "7ef2e37a305b4b906faa41eba904e20d1f3c93b8",
+  "prompts": {},
+  "sessions": {
+    "s_db04d04d95877a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "514917cc-8426-49e3-bf28-e8825bfc89ea",
+        "model": "claude-opus-4-7"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}
