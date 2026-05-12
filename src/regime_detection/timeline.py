@@ -3,13 +3,34 @@ from __future__ import annotations
 from regime_detection.axis_series import build_axis_series_bundle
 from regime_detection.feature_store import build_feature_store
 from regime_detection.market_context import MarketContext, slice_context_to_recent_sessions
-from regime_detection.models import LabelReasonOutput, RegimeOutput, RegimeTimeline, StructuralCausalState
+from regime_detection.models import (
+    DataQuality,
+    MonetaryPressureOutput,
+    NetworkFragilityOutput,
+    RegimeOutput,
+    RegimeTimeline,
+    StructuralCausalState,
+)
 from regime_detection.strategy_response import build_strategy_response
 from regime_detection.transition_risk_series import build_transition_risk_series
 from regime_detection.versioning import engine_version
 
 
 ENGINE_MINIMUM_HISTORY = 320
+
+
+def _v2_classifier_not_yet_implemented_data_quality() -> DataQuality:
+    """DataQuality for V2 axes whose classifier hasn't shipped yet.
+
+    Mirrors V1 §2.7 NaN cold-start contract (status=insufficient_history,
+    reason=required_feature_is_nan, freshness/completeness null).
+    """
+    return DataQuality(
+        status="insufficient_history",
+        freshness_days=None,
+        completeness=None,
+        reason="required_feature_is_nan",
+    )
 
 
 def build_regime_timeline(
@@ -42,9 +63,17 @@ def build_regime_timeline(
     volatility_outputs = axis_bundle.volatility_state.outputs_by_date
     breadth_outputs = axis_bundle.breadth_state.outputs_by_date
     event_outputs = axis_bundle.event_calendar
-    network_fragility = LabelReasonOutput(
-        label="not_implemented_v1",
-        reason="breadth_state_used_as_v1_fragility_proxy",
+    network_fragility = NetworkFragilityOutput(
+        raw_label="unknown",
+        stable_label="unknown",
+        active_label="unknown",
+        evidence={"reason": "v2_classifier_not_yet_implemented"},
+        data_quality=_v2_classifier_not_yet_implemented_data_quality(),
+    )
+    monetary_pressure = MonetaryPressureOutput(
+        label="unknown",
+        evidence={"reason": "v2_classifier_not_yet_implemented"},
+        data_quality=_v2_classifier_not_yet_implemented_data_quality(),
     )
 
     outputs: list[RegimeOutput] = []
@@ -67,10 +96,7 @@ def build_regime_timeline(
                 breadth_state=breadth_output,
                 structural_causal_state=StructuralCausalState(
                     event_calendar=event_output,
-                    monetary_pressure=LabelReasonOutput(
-                        label="unknown",
-                        reason="not_implemented_v1",
-                    ),
+                    monetary_pressure=monetary_pressure,
                 ),
                 network_fragility=network_fragility,
                 transition_risk=transition_output,

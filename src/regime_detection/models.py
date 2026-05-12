@@ -15,7 +15,7 @@ class DataQuality(BaseModel):
     status: DataQualityStatus
     freshness_days: int | None = Field(default=None, ge=0)
     completeness: float | None = Field(default=None, ge=0.0, le=1.0)
-    reason: str | None
+    reason: str | None = None
 
 
 class AxisOutput(BaseModel):
@@ -50,18 +50,107 @@ class LabelReasonOutput(BaseModel):
     reason: str
 
 
-class StructuralCausalState(BaseModel):
+class NetworkFragilityOutput(BaseModel):
+    """Layer 3 network fragility classifier output (v2 spec §3).
+
+    Until slice 1 ships the v2 fragility classifier, emit `unknown` labels
+    with `data_quality.status="insufficient_history"` per v1 §2.7 NaN
+    handling pattern.
+    """
+
     model_config = ConfigDict(extra="forbid")
 
-    event_calendar: EventCalendarOutput
-    monetary_pressure: LabelReasonOutput
+    raw_label: str
+    stable_label: str
+    active_label: str
+    evidence: dict[str, Any]
+    data_quality: DataQuality
+    mode: Literal["sector_cross_asset_22"] = "sector_cross_asset_22"
 
 
-class TransitionRiskOutput(BaseModel):
+class MonetaryPressureOutput(BaseModel):
+    """Monetary pressure classifier output (v2 spec §2A).
+
+    Until slice 4 ships the v2 monetary-pressure classifier, emit
+    `label="unknown"` with `data_quality.status="insufficient_history"`.
+    """
+
     model_config = ConfigDict(extra="forbid")
 
     label: str
     evidence: dict[str, Any]
+    data_quality: DataQuality
+
+
+class InflationGrowthOutput(BaseModel):
+    """Inflation/growth state output (v2 spec §2B). Minimal until slice 5."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    label: str
+    evidence: dict[str, Any]
+    data_quality: DataQuality
+
+
+class CreditFundingOutput(BaseModel):
+    """Credit/funding state output (v2 spec §2C). Minimal until slice 4."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    label: str
+    evidence: dict[str, Any]
+    data_quality: DataQuality
+
+
+class VolumeLiquidityOutput(BaseModel):
+    """Volume / liquidity internals output (v2 spec §1E). Minimal until slice 2."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    label: str
+    evidence: dict[str, Any]
+    data_quality: DataQuality
+
+
+class ChangePointOutput(BaseModel):
+    """Change-point detection output (v2 spec §4.6 — V2.1 ship)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    score: float = Field(ge=0.0, le=1.0)
+    days_since_last_break: int = Field(ge=0)
+    evidence: dict[str, Any]
+
+
+class StructuralCausalState(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    event_calendar: EventCalendarOutput
+    monetary_pressure: MonetaryPressureOutput
+
+
+TransitionScoreInterpretation = Literal[
+    "stable", "weakening", "transition_warning", "high"
+]
+
+
+class TransitionRiskOutput(BaseModel):
+    """Layer 4 transition risk output.
+
+    V1 emits `label` + `evidence` (named warnings per v1 §9). V2 §4 adds a
+    continuous composite `score` and its components; these are optional
+    until slice 3 ships the v2 transition-score composer.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    label: str
+    evidence: dict[str, Any]
+
+    # V2 §4.5 transition score augments (does not replace) V1 named warnings.
+    score: float | None = Field(default=None, ge=0.0, le=1.0)
+    score_interpretation: TransitionScoreInterpretation | None = None
+    score_components: dict[str, float] | None = None
 
 
 class StrategyResponse(BaseModel):
@@ -112,9 +201,16 @@ class RegimeOutput(BaseModel):
     volatility_state: AxisOutput
     breadth_state: BreadthStateOutput
     structural_causal_state: StructuralCausalState
-    network_fragility: LabelReasonOutput
+    network_fragility: NetworkFragilityOutput
     transition_risk: TransitionRiskOutput
     strategy_response: StrategyResponse
+
+    # V2 optional top-level fields (default None → omitted from wire via
+    # exclude_none=True). Each lands when its v2 slice ships.
+    inflation_growth_state: InflationGrowthOutput | None = None  # v2 §2B (slice 5)
+    credit_funding_state: CreditFundingOutput | None = None  # v2 §2C (slice 4)
+    volume_liquidity_state: VolumeLiquidityOutput | None = None  # v2 §1E (slice 2)
+    change_point: ChangePointOutput | None = None  # v2 §4.6 (V2.1)
 
     # V1 wire contract: omit any None-valued conditional fields in nested models.
     # This must be applied at the top-level dump to propagate into nested models.

@@ -13,20 +13,42 @@ from regime_detection.transition_risk_series import build_transition_risk_histor
 from regime_detection.versioning import engine_version
 
 
-def test_regime_output_contains_v1_placeholders_and_omits_none_fields(market_df_for_asof) -> None:
+def test_regime_output_emits_v2_unknown_placeholders_until_classifiers_ship(market_df_for_asof) -> None:
+    """Until V2 slice 1 (network_fragility) and slice 4 (monetary_pressure) ship,
+    those wire fields emit the V2 shape with `unknown` labels per V1 §2.7
+    NaN-cold-start pattern. Optional V2 top-level fields stay omitted.
+    """
     as_of = date(2023, 12, 14)
     out = RegimeEngine().classify(as_of_date=as_of, market_data=market_df_for_asof(as_of))
     dumped = out.model_dump()
 
     assert dumped["structural_causal_state"]["monetary_pressure"] == {
         "label": "unknown",
-        "reason": "not_implemented_v1",
+        "evidence": {"reason": "v2_classifier_not_yet_implemented"},
+        "data_quality": {
+            "status": "insufficient_history",
+            "reason": "required_feature_is_nan",
+        },
     }
     assert dumped["network_fragility"] == {
-        "label": "not_implemented_v1",
-        "reason": "breadth_state_used_as_v1_fragility_proxy",
+        "raw_label": "unknown",
+        "stable_label": "unknown",
+        "active_label": "unknown",
+        "evidence": {"reason": "v2_classifier_not_yet_implemented"},
+        "data_quality": {
+            "status": "insufficient_history",
+            "reason": "required_feature_is_nan",
+        },
+        "mode": "sector_cross_asset_22",
     }
+    # Strategy-response conditional modifiers still omitted when not applicable.
     assert "hard_max_loss_required" not in dumped["strategy_response"]
+    # New V2 top-level fields default to None → omitted via exclude_none=True.
+    for v2_field in ("inflation_growth_state", "credit_funding_state", "volume_liquidity_state", "change_point"):
+        assert v2_field not in dumped, f"V2 optional field {v2_field!r} should be omitted until its slice ships"
+    # TransitionRisk V2 optional fields stay omitted too (no score until slice 3).
+    for v2_field in ("score", "score_interpretation", "score_components"):
+        assert v2_field not in dumped["transition_risk"], f"transition_risk.{v2_field} should be omitted until v2 slice 3"
 
 
 def test_classify_window_returns_one_output_per_nyse_trading_day(market_df_for_asof) -> None:

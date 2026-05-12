@@ -1,0 +1,159 @@
+{
+  "engine_version": "regime-engine-v2.0.0",
+  "config_version": "core3-v2.0.0",
+  "as_of_date": "2023-12-14",
+  "market": "SPY",
+  "trend_direction": {
+    "raw_label": "bull",
+    "stable_label": "bull",
+    "active_label": "bull",
+    "evidence": {
+      "rule_evidence": {
+        "bull": true,
+        "bear": false,
+        "sideways": false,
+        "transition": false,
+        "within_5pct_sma200": false
+      },
+      "risk_rank": {
+        "bull": 0,
+        "sideways": 1,
+        "transition": 2,
+        "bear": 3,
+        "unknown": 2
+      },
+      "deescalation_days": 3
+    },
+    "data_quality": {
+      "status": "ok",
+      "freshness_days": 0,
+      "completeness": 1.0
+    }
+  },
+  "trend_character": {
+    "raw_label": "trending",
+    "stable_label": "trending",
+    "active_label": "trending",
+    "evidence": {
+      "rule_evidence": {
+        "recovery_attempt": false,
+        "trending": true,
+        "chop": false,
+        "transition": false
+      },
+      "risk_rank": {
+        "trending": 0,
+        "chop": 1,
+        "recovery_attempt": 1,
+        "transition": 2,
+        "unknown": 2
+      },
+      "deescalation_days": 3
+    },
+    "data_quality": {
+      "status": "ok",
+      "freshness_days": 0,
+      "completeness": 1.0
+    }
+  },
+  "volatility_state": {
+    "raw_label": "low_vol",
+    "stable_label": "low_vol",
+    "active_label": "low_vol",
+    "evidence": {
+      "rule_evidence": {
+        "crisis_vol": false,
+        "high_vol": false,
+        "low_vol": true,
+        "normal_vol": false,
+        "vix_percentile_present": true
+      },
+      "risk_rank": {
+        "low_vol": 0,
+        "normal_vol": 1,
+        "high_vol": 2,
+        "crisis_vol": 3,
+        "unknown": 2
+      },
+      "deescalation_days": 2
+    },
+    "data_quality": {
+      "status": "ok",
+      "freshness_days": 0,
+      "completeness": 1.0
+    }
+  },
+  "breadth_state": {
+    "raw_label": "healthy_breadth",
+    "stable_label": "healthy_breadth",
+    "active_label": "healthy_breadth",
+    "evidence": {
+      "proxy": "RSP/SPY",
+      "rule_evidence": {
+        "divergent_fragile": false,
+        "weak_breadth": false,
+        "healthy_breadth": true,
+        "neutral_breadth": false
+      },
+      "risk_rank": {
+        "healthy_breadth": 0,
+        "neutral_breadth": 1,
+        "weak_breadth": 2,
+        "divergent_fragile": 3,
+        "unknown": 2
+      },
+      "deescalation_days": 2
+    },
+    "data_quality": {
+      "status": "ok",
+      "freshness_days": 0,
+      "completeness": 1.0
+    },
+    "mode": "etf_proxy"
+  },
+  "structural_causal_state": {
+    "event_calendar": {
+      "raw_label": "expiry_week",
+      "stable_label": "expiry_week",
+      "active_label": "expiry_week",
+      "evidence": {
+        "all_matching_events": [
+          "expiry_week"
+        ],
+        "selected_via_precedence": "expiry_week"
+      }
+    },
+    "monetary_pressure": {
+      "label": "unknown",
+      "reason": "not_implemented_v1"
+    }
+  },
+  "network_fragility": {
+    "label": "not_implemented_v1",
+    "reason": "breadth_state_used_as_v1_fragility_proxy"
+  },
+  "transition_risk": {
+    "label": "stable",
+    "evidence": {
+      "warnings_active": [],
+      "stable_changed_today": false,
+      "days_since_axis_switch": 2
+    }
+  },
+  "strategy_response": {
+    "position_size_multiplier": 1.0,
+    "allow_trend_following": true,
+    "allow_mean_reversion": true,
+    "leverage_allowed": true,
+    "allow_buy_dip": true,
+    "allow_breakout": true,
+    "allow_shorts": true,
+    "require_confirmation_for_new_longs": false,
+    "require_confirmation_for_shorts": false,
+    "log_for_review": false,
+    "modifiers_applied": [
+      "bull_healthy_low_vol"
+    ],
+    "allow_leverage_expansion": true
+  }
+}
