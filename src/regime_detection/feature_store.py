@@ -13,6 +13,7 @@ from regime_detection.config import (
     NetworkFragilityConfig,
     TrendDirectionV2Config,
     VolatilityV2Config,
+    VolumeLiquidityV2Config,
 )
 from regime_detection.fragility_universe import SECTOR_ETFS
 from regime_detection.market_context import MarketContext
@@ -37,6 +38,10 @@ from regime_detection.volatility_state_v2 import (
     VolatilityV2Features,
     compute_volatility_v2_features,
 )
+from regime_detection.volume_liquidity_v2 import (
+    VolumeLiquidityV2Features,
+    compute_volume_liquidity_v2_features,
+)
 
 __all__ = [
     "BreadthV2Features",
@@ -44,6 +49,7 @@ __all__ = [
     "NetworkFragilityFeatures",
     "TrendDirectionV2Features",
     "VolatilityV2Features",
+    "VolumeLiquidityV2Features",
     "build_feature_store",
 ]
 
@@ -78,6 +84,15 @@ class FeatureStore(BaseModel):
     # not yet ingested for related features; sector ETF feed is optional).
     breadth_state_v2: BreadthV2Features | None = None
 
+    # V2 §1E seam — populated when a VolumeLiquidityV2Config is threaded
+    # through AND a SPY volume series is available on the context. SPY
+    # volume rides on MarketContext.spy_ohlcv["volume"] on the V1+V2 path
+    # so this is only None when the config is absent (v1-only callers) or
+    # when the volume column is missing. Exposes ONLY volume_zscore_20d;
+    # gap_frequency_20d and intraday_range_percentile_252d (also §1E
+    # features per spec lines 257–258) live on volatility_state_v2.
+    volume_liquidity_v2: VolumeLiquidityV2Features | None = None
+
 
 def build_feature_store(
     context: MarketContext,
@@ -86,6 +101,7 @@ def build_feature_store(
     trend_direction_v2_config: TrendDirectionV2Config | None = None,
     volatility_state_v2_config: VolatilityV2Config | None = None,
     breadth_state_v2_config: BreadthV2Config | None = None,
+    volume_liquidity_v2_config: VolumeLiquidityV2Config | None = None,
 ) -> FeatureStore:
     spy_ohlcv = context.spy_ohlcv
     spy_close = spy_ohlcv["close"]
@@ -166,6 +182,23 @@ def build_feature_store(
     else:
         breadth_state_v2 = None
 
+    # V2 §1E volume/liquidity feature (slice 2.4) — evidence-only compute.
+    # Reads SPY volume from the existing MarketContext.spy_ohlcv frame (the
+    # V1 contract already requires the volume column — see
+    # market_context._require_market_data_contract). Falls back to None when
+    # the config is absent OR when the volume column is empty/missing.
+    if (
+        volume_liquidity_v2_config is not None
+        and "volume" in spy_ohlcv.columns
+        and not spy_ohlcv["volume"].isna().all()
+    ):
+        volume_liquidity_v2 = compute_volume_liquidity_v2_features(
+            volume=spy_ohlcv["volume"],
+            config=volume_liquidity_v2_config,
+        )
+    else:
+        volume_liquidity_v2 = None
+
     return FeatureStore(
         spy_index=spy_ohlcv.index,
         trend_direction=trend_direction,
@@ -177,4 +210,5 @@ def build_feature_store(
         trend_direction_v2=trend_direction_v2,
         volatility_state_v2=volatility_state_v2,
         breadth_state_v2=breadth_state_v2,
+        volume_liquidity_v2=volume_liquidity_v2,
     )

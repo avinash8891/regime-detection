@@ -89,12 +89,16 @@ def build_regime_timeline(
     breadth_state_v2_config = (
         config.breadth_state_v2 if config is not None else None
     )
+    volume_liquidity_v2_config = (
+        config.volume_liquidity_v2 if config is not None else None
+    )
     feature_store = build_feature_store(
         working_context,
         network_fragility_config=network_fragility_config,
         trend_direction_v2_config=trend_direction_v2_config,
         volatility_state_v2_config=volatility_state_v2_config,
         breadth_state_v2_config=breadth_state_v2_config,
+        volume_liquidity_v2_config=volume_liquidity_v2_config,
     )
     axis_bundle = build_axis_series_bundle(context=working_context, feature_store=feature_store)
     transition_risk = build_transition_risk_series(

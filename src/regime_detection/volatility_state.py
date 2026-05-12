@@ -28,6 +28,17 @@ def wilders_atr(
     estimator referenced by v2 §1C line 142 (Implementation Ambiguity
     Log entry for "ATR estimator choice").
 
+    NOTE: a separate ``_wilder_ewm`` helper lives in
+    ``regime_detection.trend_character`` for the v1 ADX cold-start
+    path. ``_wilder_ewm`` uses pandas-EWM seeding (first value of the
+    TR series), whereas ``wilders_atr`` here uses the textbook
+    Wilder-1978 mean-seeded form (seed = simple-mean(TR[0..period-1])).
+    Both converge for large ``t`` but differ at cold-start. The two
+    implementations intentionally coexist (v1 ADX cold-start values are
+    frozen; V2 §1C ATR ratio uses the more faithful textbook form). A
+    future cleanup may unify them after V2 walk-forward validation per
+    v2 §9.1. See Implementation Ambiguity Log entry #15.
+
     Algorithm:
         TR[t] = max(
             high[t] - low[t],

@@ -216,6 +216,31 @@ class VolatilityV2Config(BaseModel):
     intraday_range_lookback_days: int = Field(gt=0)
 
 
+class VolumeLiquidityV2Config(BaseModel):
+    """v2 §1E — Layer 1 V2 Volume / Liquidity features (Slice 2.4, evidence-only).
+
+    Ships ONLY ``volume_zscore_20d`` (v2 §1E line 256). The other two §1E
+    features (``gap_frequency_20d``, ``intraday_range_percentile_252d``)
+    already live on ``VolatilityV2Config`` / ``volatility_state_v2.py``
+    (Slice 2.2) and are read from the ``FeatureStore.volatility_state_v2``
+    seam by the future §1E axis classifier — no recompute. The §1E labels
+    (``normal_volume``, ``panic_volume``, ``liquidity_gap_behavior``),
+    rule engine, risk-rank table, and hysteresis are all deferred to a
+    follow-up volume-axis-classifier slice. See Implementation Ambiguity
+    Log entries.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    # v2 §1E line 256 — z-score lookback (20 sessions).
+    volume_zscore_lookback_days: int = Field(gt=0, default=20)
+
+    # v2 §1E is silent on population vs sample std. Pinned to pandas /
+    # numpy default `ddof=1` (sample std) per the standard z-score
+    # convention for financial time series. See Ambiguity Log.
+    volume_zscore_ddof: int = Field(ge=0, default=1)
+
+
 class BreadthV2Config(BaseModel):
     """v2 §1D — Layer 1 V2 Breadth features (Slice 2.3, evidence-only).
 
@@ -354,6 +379,7 @@ class RegimeConfig(BaseModel):
     trend_direction_v2: TrendDirectionV2Config | None = None
     volatility_state_v2: VolatilityV2Config | None = None
     breadth_state_v2: BreadthV2Config | None = None
+    volume_liquidity_v2: VolumeLiquidityV2Config | None = None
     transition_score: TransitionScoreConfig | None = None
     monetary_pressure_v2: MonetaryPressureV2Config | None = None
     inflation_growth: InflationGrowthConfig | None = None

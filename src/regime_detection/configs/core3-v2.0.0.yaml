@@ -156,6 +156,23 @@ volatility_state_v2:
 breadth_state_v2:
   sector_breadth_lookback_days: 21      # v2 §1D line 229
 
+# v2 §1E — Layer 1 V2 Volume / Liquidity features (Slice 2.4, evidence-only).
+# Ships ONLY:
+#   volume_zscore_20d — (volume - rolling_mean_20) / rolling_std_20 (§1E line 256).
+#
+# The other two §1E features (gap_frequency_20d, intraday_range_percentile_252d)
+# already live in volatility_state_v2 (Slice 2.2); the future §1E axis classifier
+# reads them from FeatureStore.volatility_state_v2 — no recompute.
+#
+# DEFERRED to a follow-up volume-axis-classifier slice (per v2 §8 "Adds to
+# existing classifiers without changing V1 contracts"):
+#   - Labels: normal_volume, panic_volume, liquidity_gap_behavior (§1E lines 260–286).
+#   - Rules + risk-rank table (§1E lines 268–294).
+#   - Hysteresis config (per-label deescalation days).
+volume_liquidity_v2:
+  volume_zscore_lookback_days: 20       # v2 §1E line 256
+  volume_zscore_ddof: 1                 # pandas/numpy default; pinned in Ambiguity Log
+
 transition_score:
   weights_with_hmm:
     volatility_acceleration: 0.20

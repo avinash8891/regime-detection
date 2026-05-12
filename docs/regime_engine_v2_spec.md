@@ -444,17 +444,35 @@ the slice/commit that resolved it. Entries are append-only.
     implementation.
     Resolved by Slice 2.2.
 
+    **Amendment (Slice 2.4):** v1's `regime_detection.trend_character`
+    already contains a `_wilder_ewm(series, n)` helper that uses
+    pandas-EWM-style seeding (first-value of the TR series), which is
+    NOT byte-equivalent to the textbook mean-seeded `wilders_atr` here at
+    cold-start. The two implementations intentionally coexist (option
+    (b) from slice 2.2 review): v1 ADX cold-start values are frozen, and
+    V2 §1C ATR ratio uses the more faithful textbook form. Both
+    converge for large `t` but differ at cold-start. A future cleanup
+    may unify them after V2 walk-forward validation per §9.1. A
+    cross-reference docstring line on `wilders_atr` in
+    `volatility_state.py` calls out the v1 EWM smoother in
+    `trend_character.py` so future authors find both via grep.
+
 16. **§1C lines 176–181 — `gap_frequency_20d` window inclusion.**
     Spec writes `count(gap > 0.005) / 20` without naming whether the
     20-session window includes session `t` itself.
-    Resolution: window is `[t-19..t]` inclusive of `t`, matching slice
-    2.1's `efficiency_ratio_20d` "20 day-over-day moves ending at t"
-    convention (so `gap_frequency_20d` first non-NaN at t = 20: `gap[0]`
-    is NaN because there is no prior close, then 20 valid gap
-    observations fill the window). Strictly `> threshold` per spec text —
-    a gap exactly equal to the threshold is NOT counted. Pinned in
+    Resolution: window is `[t-19..t]` inclusive of `t`. First valid
+    index is **t = 20 (NOT t = 19)**, because `gap[0]` is NaN by
+    construction (no `close[-1]` available) and `min_periods=20`
+    requires 20 non-NaN observations in the window. This differs from
+    `efficiency_ratio_20d` (first valid at t = 19) by exactly one
+    session due to the gap-input NaN propagation — the earlier slice
+    2.2 note that said the convention "matches slice 2.1's
+    efficiency_ratio_20d 'ending at t' convention" was off by one and
+    is corrected here. Strictly `> threshold` per spec text — a gap
+    exactly equal to the threshold is NOT counted. Pinned in
     `regime_detection.volatility_state_v2._gap_frequency`.
-    Resolved by Slice 2.2.
+    Resolved by Slice 2.2; first-valid-index documentation amended by
+    Slice 2.4.
 
 17. **§1C lines 183–187 — `intraday_range_percentile_252d` rank direction.**
     Spec writes `percentile_rank(intraday_range, lookback=252)` without
@@ -571,6 +589,55 @@ the slice/commit that resolved it. Entries are append-only.
     value). Implemented in
     `regime_detection.breadth_state_v2.compute_breadth_v2_features`.
     Resolved by Slice 2.3.
+
+28. **§1E line 256 — `volume_zscore_20d` standard-deviation `ddof` choice.**
+    Spec writes `z = (volume - rolling_mean) / rolling_std` over a 20-day
+    window without naming population vs sample standard deviation.
+    Resolution: sample standard deviation (`ddof=1`), pandas /
+    `Series.rolling(20).std()` default. This is the standard convention
+    for z-scores on financial time series. Constant-volume windows
+    yield `std == 0` ⇒ output masked to NaN (`0 / 0`), matching the V1
+    cold-start contract (no synthesized values). Pinned in
+    `regime_detection.volume_liquidity_v2._volume_zscore` and exposed
+    as `VolumeLiquidityV2Config.volume_zscore_ddof` so §9.1 calibration
+    can retune without code changes.
+    Resolved by Slice 2.4.
+
+29. **§1E — Volume / Liquidity axis classifier deferral.**
+    v2 §1E defines three labels (`normal_volume`, `panic_volume`,
+    `liquidity_gap_behavior`; lines 260–286), a rule engine (lines
+    268–286), a risk-rank table (lines 288–294), and per-label
+    hysteresis. The features required by those rules already exist
+    (`volume_zscore_20d` from this slice; `gap_frequency_20d` and
+    `intraday_range_percentile_252d` from slice 2.2; `return_1d` from
+    the V1 volatility feature path), but per the slice-by-slice
+    rhythm established for §1A/§1C/§1D the feature compute lands
+    BEFORE the classifier wiring. Resolution: ship `volume_zscore_20d`
+    as evidence-only in slice 2.4; defer the labels, rule engine,
+    risk-rank table, hysteresis, and `axis_series.py`
+    `VolumeLiquidityV2SeriesClassifier` to a follow-up
+    volume-axis-classifier slice. That slice will consume
+    `volume_zscore_20d` from `FeatureStore.volume_liquidity_v2` AND
+    `gap_frequency_20d` + `intraday_range_percentile_252d` from
+    `FeatureStore.volatility_state_v2` (the two §1E features that
+    already live on slice 2.2's seam — they are NOT recomputed in
+    `volume_liquidity_v2.py`).
+    Deferred by Slice 2.4.
+
+30. **§1E feature placement — `gap_frequency_20d` / `intraday_range_percentile_252d`.**
+    Spec §1E lines 257–258 list `gap_frequency_20d` and
+    `intraday_range_percentile_252d` as part of the Volume / Liquidity
+    feature set, but slice 2.2 had already implemented them under the
+    §1C Volatility feature compute (`volatility_state_v2.py`) because
+    §1C lines 176–187 also reference them. Resolution: keep the
+    one-home-per-concept rule (AGENTS rule B) — those two features
+    continue to live in `volatility_state_v2.py` and surface through
+    `FeatureStore.volatility_state_v2`. The new slice 2.4 module
+    `volume_liquidity_v2.py` ships ONLY `volume_zscore_20d` and exposes
+    a separate `FeatureStore.volume_liquidity_v2` seam. The future §1E
+    axis classifier reads its three feature inputs from BOTH seams. No
+    feature is computed twice.
+    Resolved by Slice 2.4.
 
 ---
 
