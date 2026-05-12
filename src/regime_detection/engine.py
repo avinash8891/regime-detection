@@ -80,4 +80,6 @@ class RegimeEngine:
             cross_asset_closes=cross_asset_closes,
             macro_series=macro_series,
         )
-        return build_regime_timeline(context=context, lookback_days=lookback_days)
+        return build_regime_timeline(
+            context=context, lookback_days=lookback_days, config=cfg
+        )

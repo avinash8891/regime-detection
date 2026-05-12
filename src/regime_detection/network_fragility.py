@@ -40,8 +40,6 @@ from regime_detection.fragility_universe import (
 
 
 _TRADING_DAYS_PER_YEAR = 252
-_REALIZED_VOL_LOOKBACK_DAYS = 21
-_DISPERSION_PERCENTILE_LOOKBACK_DAYS = 252
 
 
 @dataclass(frozen=True)
@@ -77,10 +75,12 @@ def _assemble_returns_matrix(
             series = spy_close
         elif symbol in SECTOR_ETFS:
             series = sector_etf_closes.get(symbol)
-        elif symbol in CROSS_ASSET_SYMBOLS:
+        else:
+            assert symbol in CROSS_ASSET_SYMBOLS, (
+                f"Unreachable: symbol {symbol!r} is outside the closed "
+                f"network fragility universe (INDEX_SYMBOL | SECTOR_ETFS | CROSS_ASSET_SYMBOLS)."
+            )
             series = cross_asset_closes.get(symbol)
-        else:  # pragma: no cover — universe is closed
-            series = None
 
         if series is None:
             # Symbol absent — fill with NaN so completeness gate drops it.
@@ -128,7 +128,6 @@ def _per_session_corr_features(
     absorption = np.full(n, np.nan)
 
     arr = returns.to_numpy()
-    cols = returns.columns
 
     for t in range(correlation_lookback_days, n):
         # last `correlation_lookback_days` rows ending at session t inclusive
@@ -164,9 +163,6 @@ def _per_session_corr_features(
             absorption[t] = eigs[: min(3, eigs.size)].sum() / total
         eff_rank[t] = _shannon_effective_rank(eigs)
 
-        # silence unused name lint
-        _ = cols
-
     return (
         pd.Series(avg_corr, index=index, name="avg_pairwise_corr_63d"),
         pd.Series(largest_share, index=index, name="largest_eigenvalue_share"),
@@ -176,10 +172,13 @@ def _per_session_corr_features(
 
 
 def _dispersion_ratio_series(
-    returns: pd.DataFrame, *, spy_column: str = INDEX_SYMBOL
+    returns: pd.DataFrame,
+    *,
+    realized_vol_lookback_days: int,
+    spy_column: str = INDEX_SYMBOL,
 ) -> pd.Series:
-    """mean(per-symbol 21d annualised vol) / SPY 21d annualised vol."""
-    realised_vol = returns.rolling(_REALIZED_VOL_LOOKBACK_DAYS).std(ddof=1) * np.sqrt(
+    """mean(per-symbol annualised realised vol) / SPY annualised realised vol."""
+    realised_vol = returns.rolling(realized_vol_lookback_days).std(ddof=1) * np.sqrt(
         _TRADING_DAYS_PER_YEAR
     )
     mean_vol = realised_vol.mean(axis=1, skipna=True)
@@ -195,10 +194,17 @@ def compute_features(
     spy_close: pd.Series,
     correlation_lookback_days: int = 63,
     percentile_lookback_days: int = 504,
+    realized_vol_lookback_days: int = 21,
+    dispersion_percentile_lookback_days: int = 252,
     min_universe_size: int = 20,
     min_window_completeness: float = 0.9,
 ) -> NetworkFragilityFeatures:
-    """Compute v2 §3.2 features. See module docstring for contract."""
+    """Compute v2 §3.2 features. See module docstring for contract.
+
+    All lookback / completeness parameters are sourced from
+    ``RegimeConfig.network_fragility`` in production; the kwargs here keep
+    unit-test control inline. effective_rank uses natural log per v2 §3.2.
+    """
     returns = _assemble_returns_matrix(
         sector_etf_closes=sector_etf_closes,
         cross_asset_closes=cross_asset_closes,
@@ -216,8 +222,10 @@ def compute_features(
     largest_share_pct = largest_share.rolling(percentile_lookback_days).rank(pct=True)
     eff_rank_pct = eff_rank.rolling(percentile_lookback_days).rank(pct=True)
 
-    dispersion = _dispersion_ratio_series(returns)
-    dispersion_pct = dispersion.rolling(_DISPERSION_PERCENTILE_LOOKBACK_DAYS).rank(
+    dispersion = _dispersion_ratio_series(
+        returns, realized_vol_lookback_days=realized_vol_lookback_days
+    )
+    dispersion_pct = dispersion.rolling(dispersion_percentile_lookback_days).rank(
         pct=True
     )
 

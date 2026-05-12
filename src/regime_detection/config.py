@@ -93,6 +93,12 @@ class NetworkFragilityConfig(BaseModel):
     # V2 §3.2: percentile rank vs 504-day history.
     percentile_lookback_days: int = Field(ge=100)
 
+    # V2 §3.2 dispersion_ratio uses 21d realised vol.
+    realized_vol_lookback_days: int = Field(gt=0)
+
+    # V2 §3.2 dispersion_ratio_percentile_252d lookback.
+    dispersion_percentile_lookback_days: int = Field(gt=0)
+
     min_universe_size: int = Field(ge=20)
 
     # Aligns with V1 data_quality min_completeness (0.90 default).

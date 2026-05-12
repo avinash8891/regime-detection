@@ -73,10 +73,12 @@ network_fragility:
     - LQD
     - USO
     - UUP
-  correlation_lookback_days: 63
-  percentile_lookback_days: 504
-  min_universe_size: 20
-  min_window_completeness: 0.90
+  correlation_lookback_days: 63                   # v2 §3.2 line 554-558 ("63d corr")
+  percentile_lookback_days: 504                   # v2 §3.2 line 563-566 (504d percentile)
+  realized_vol_lookback_days: 21                  # v2 §3.2 line 588-593 (21d realised vol)
+  dispersion_percentile_lookback_days: 252        # v2 §3.2 dispersion percentile lookback (~1y)
+  min_universe_size: 20                           # implementation default — calibration target (v2 §9.1)
+  min_window_completeness: 0.90                   # implementation default — calibration target (v2 §9.1)
   deescalation_days_by_label:
     rising_fragility: 3
     correlation_concentration: 3

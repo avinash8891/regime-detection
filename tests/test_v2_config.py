@@ -58,6 +58,15 @@ V2_NETWORK_FRAGILITY_DEESCALATION_DAYS = {
     "systemic_stress": 5,
 }
 
+# v2 spec §3.2 — implementation lookback windows hoisted to config so they
+# remain calibration-tunable per slice-gate checklist §2.
+V2_NETWORK_FRAGILITY_CORRELATION_LOOKBACK_DAYS = 63
+V2_NETWORK_FRAGILITY_PERCENTILE_LOOKBACK_DAYS = 504
+V2_NETWORK_FRAGILITY_REALIZED_VOL_LOOKBACK_DAYS = 21
+V2_NETWORK_FRAGILITY_DISPERSION_PERCENTILE_LOOKBACK_DAYS = 252
+V2_NETWORK_FRAGILITY_MIN_UNIVERSE_SIZE = 20
+V2_NETWORK_FRAGILITY_MIN_WINDOW_COMPLETENESS = 0.90
+
 
 def _v1_yaml_path() -> Path:
     pkg_file = importlib.resources.files("regime_detection").joinpath(
@@ -86,6 +95,77 @@ def test_v2_default_config_has_v2_section_3_7_deescalation_days() -> None:
         cfg.network_fragility.deescalation_days_by_label
         == V2_NETWORK_FRAGILITY_DEESCALATION_DAYS
     )
+
+
+def test_v2_default_config_has_v2_section_3_2_lookback_windows() -> None:
+    """v2 §3.2 — all six implementation lookback / completeness defaults
+    must live in the config block so calibration (v2 §9.1) can tune them."""
+    cfg = load_default_regime_config()
+    assert cfg.network_fragility is not None
+    nf = cfg.network_fragility
+    assert nf.correlation_lookback_days == V2_NETWORK_FRAGILITY_CORRELATION_LOOKBACK_DAYS
+    assert nf.percentile_lookback_days == V2_NETWORK_FRAGILITY_PERCENTILE_LOOKBACK_DAYS
+    assert nf.realized_vol_lookback_days == V2_NETWORK_FRAGILITY_REALIZED_VOL_LOOKBACK_DAYS
+    assert (
+        nf.dispersion_percentile_lookback_days
+        == V2_NETWORK_FRAGILITY_DISPERSION_PERCENTILE_LOOKBACK_DAYS
+    )
+    assert nf.min_universe_size == V2_NETWORK_FRAGILITY_MIN_UNIVERSE_SIZE
+    assert nf.min_window_completeness == V2_NETWORK_FRAGILITY_MIN_WINDOW_COMPLETENESS
+
+
+def test_network_fragility_config_forbids_extra_fields() -> None:
+    """Slice-gate checklist §2 — NetworkFragilityConfig must enforce
+    extra='forbid' so unknown keys raise on load."""
+    from regime_detection.config import NetworkFragilityConfig
+
+    valid_kwargs = dict(
+        universe=V2_NETWORK_FRAGILITY_UNIVERSE,
+        correlation_lookback_days=V2_NETWORK_FRAGILITY_CORRELATION_LOOKBACK_DAYS,
+        percentile_lookback_days=V2_NETWORK_FRAGILITY_PERCENTILE_LOOKBACK_DAYS,
+        realized_vol_lookback_days=V2_NETWORK_FRAGILITY_REALIZED_VOL_LOOKBACK_DAYS,
+        dispersion_percentile_lookback_days=V2_NETWORK_FRAGILITY_DISPERSION_PERCENTILE_LOOKBACK_DAYS,
+        min_universe_size=V2_NETWORK_FRAGILITY_MIN_UNIVERSE_SIZE,
+        min_window_completeness=V2_NETWORK_FRAGILITY_MIN_WINDOW_COMPLETENESS,
+        deescalation_days_by_label=V2_NETWORK_FRAGILITY_DEESCALATION_DAYS,
+    )
+    # Sanity: valid kwargs construct cleanly.
+    NetworkFragilityConfig(**valid_kwargs)
+
+    # Extra field must raise.
+    with pytest.raises(ValidationError):
+        NetworkFragilityConfig(**valid_kwargs, unknown_calibration_knob=42)
+
+
+def test_network_fragility_config_rejects_invalid_lookback_bounds() -> None:
+    """v2 §3.2 lookback windows must be positive ints; completeness in [0,1]."""
+    from regime_detection.config import NetworkFragilityConfig
+
+    base = dict(
+        universe=V2_NETWORK_FRAGILITY_UNIVERSE,
+        correlation_lookback_days=V2_NETWORK_FRAGILITY_CORRELATION_LOOKBACK_DAYS,
+        percentile_lookback_days=V2_NETWORK_FRAGILITY_PERCENTILE_LOOKBACK_DAYS,
+        realized_vol_lookback_days=V2_NETWORK_FRAGILITY_REALIZED_VOL_LOOKBACK_DAYS,
+        dispersion_percentile_lookback_days=V2_NETWORK_FRAGILITY_DISPERSION_PERCENTILE_LOOKBACK_DAYS,
+        min_universe_size=V2_NETWORK_FRAGILITY_MIN_UNIVERSE_SIZE,
+        min_window_completeness=V2_NETWORK_FRAGILITY_MIN_WINDOW_COMPLETENESS,
+        deescalation_days_by_label=V2_NETWORK_FRAGILITY_DEESCALATION_DAYS,
+    )
+
+    # realized_vol_lookback_days must be > 0
+    bad = {**base, "realized_vol_lookback_days": 0}
+    with pytest.raises(ValidationError):
+        NetworkFragilityConfig(**bad)
+
+    # dispersion_percentile_lookback_days must be > 0
+    bad = {**base, "dispersion_percentile_lookback_days": -1}
+    with pytest.raises(ValidationError):
+        NetworkFragilityConfig(**bad)
+
+    # min_window_completeness must be in [0,1]
+    bad = {**base, "min_window_completeness": 1.5}
+    with pytest.raises(ValidationError):
+        NetworkFragilityConfig(**bad)
 
 
 def test_v2_transition_score_weights_with_hmm_sum_to_1_0() -> None:

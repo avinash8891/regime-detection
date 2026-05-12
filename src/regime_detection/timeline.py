@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from regime_detection.axis_series import build_axis_series_bundle
+from regime_detection.config import RegimeConfig
 from regime_detection.feature_store import build_feature_store
 from regime_detection.market_context import MarketContext, slice_context_to_recent_sessions
 from regime_detection.models import (
@@ -63,6 +64,7 @@ def build_regime_timeline(
     *,
     context: MarketContext,
     lookback_days: int,
+    config: RegimeConfig | None = None,
 ) -> RegimeTimeline:
     if lookback_days <= 0:
         raise ValueError(f"lookback_days must be > 0. Got: {lookback_days}")
@@ -75,7 +77,12 @@ def build_regime_timeline(
 
     required_sessions = min(len(context.sessions), ENGINE_MINIMUM_HISTORY + lookback_days - 1)
     working_context = slice_context_to_recent_sessions(context=context, required_sessions=required_sessions)
-    feature_store = build_feature_store(working_context)
+    network_fragility_config = (
+        config.network_fragility if config is not None else None
+    )
+    feature_store = build_feature_store(
+        working_context, network_fragility_config=network_fragility_config
+    )
     axis_bundle = build_axis_series_bundle(context=working_context, feature_store=feature_store)
     transition_risk = build_transition_risk_series(
         context=working_context,

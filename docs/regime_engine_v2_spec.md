@@ -574,10 +574,11 @@ largest_eigenvalue_share = eigenvalues[0] / sum(eigenvalues)
 #### Effective Rank
 ```python
 p = eigenvalues / sum(eigenvalues)
-shannon_entropy = -sum(p_i * log(p_i) for p_i in p if p_i > 0)
+shannon_entropy = -sum(p_i * ln(p_i) for p_i in p if p_i > 0)   # natural log (base e)
 effective_rank = exp(shannon_entropy)
 ```
 
+`log` here is the natural log (base e); identity correlation matrix → `effective_rank = N`.
 Low effective rank = diversification collapsing.
 
 #### Absorption Ratio (Top-3 Eigenvalues)

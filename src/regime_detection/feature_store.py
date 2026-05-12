@@ -4,6 +4,7 @@ import pandas as pd
 from pydantic import BaseModel, ConfigDict
 
 from regime_detection.breadth_state import BreadthFeatures, compute_features as compute_breadth_features
+from regime_detection.config import NetworkFragilityConfig
 from regime_detection.market_context import MarketContext
 from regime_detection.network_fragility import (
     NetworkFragilityFeatures,
@@ -37,7 +38,11 @@ class FeatureStore(BaseModel):
     network_fragility: NetworkFragilityFeatures | None = None
 
 
-def build_feature_store(context: MarketContext) -> FeatureStore:
+def build_feature_store(
+    context: MarketContext,
+    *,
+    network_fragility_config: NetworkFragilityConfig | None = None,
+) -> FeatureStore:
     spy_ohlcv = context.spy_ohlcv
     spy_close = spy_ohlcv["close"]
     trend_direction = compute_trend_direction_features(spy_close)
@@ -59,10 +64,23 @@ def build_feature_store(context: MarketContext) -> FeatureStore:
     # consumes these series; for now they populate the seam so build_feature_store
     # returns a typed NetworkFragilityFeatures whenever sector data is present.
     if context.sector_etf_closes is not None:
+        nf_kwargs: dict[str, int | float] = {}
+        if network_fragility_config is not None:
+            nf_kwargs = {
+                "correlation_lookback_days": network_fragility_config.correlation_lookback_days,
+                "percentile_lookback_days": network_fragility_config.percentile_lookback_days,
+                "realized_vol_lookback_days": network_fragility_config.realized_vol_lookback_days,
+                "dispersion_percentile_lookback_days": (
+                    network_fragility_config.dispersion_percentile_lookback_days
+                ),
+                "min_universe_size": network_fragility_config.min_universe_size,
+                "min_window_completeness": network_fragility_config.min_window_completeness,
+            }
         network_fragility = compute_network_fragility_features(
             sector_etf_closes=context.sector_etf_closes,
             cross_asset_closes=context.cross_asset_closes or {},
             spy_close=spy_close,
+            **nf_kwargs,
         )
     else:
         network_fragility = None
