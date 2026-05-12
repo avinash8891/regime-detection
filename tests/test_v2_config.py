@@ -22,7 +22,9 @@ from regime_detection.config import (
 )
 
 
-# V2 spec §3.1 — canonical 22-ETF network fragility universe.
+# V2 spec §3.1 — canonical 22-asset network fragility universe (11 sector
+# ETFs + SPY broad-market index + 10 cross-asset proxies). KRE belongs to
+# v2 §2C credit/funding, not §3.1.
 V2_NETWORK_FRAGILITY_UNIVERSE = [
     "XLB",
     "XLC",
@@ -35,17 +37,17 @@ V2_NETWORK_FRAGILITY_UNIVERSE = [
     "XLU",
     "XLV",
     "XLY",
+    "SPY",
     "QQQ",
     "IWM",
     "EFA",
     "EEM",
     "TLT",
+    "GLD",
     "HYG",
     "LQD",
-    "GLD",
     "USO",
     "UUP",
-    "KRE",
 ]
 
 # V2 spec §3.7 — per-label asymmetric hysteresis deescalation days.

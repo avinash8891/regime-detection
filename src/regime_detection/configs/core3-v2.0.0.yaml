@@ -45,6 +45,11 @@ hysteresis:
 # ---------------------------------------------------------------------------
 
 network_fragility:
+  # v2 spec §3.1 — 22 assets: 11 sector ETFs + SPY (broad-market index) +
+  # 10 cross-asset proxies. SPY's close flows through MarketContext.spy_ohlcv
+  # on the V1 path; the engine still treats it as part of the universe when
+  # building the correlation matrix. KRE is v2 §2C credit/funding territory,
+  # not §3.1 — moved out of this universe.
   universe:
     - XLB
     - XLC
@@ -57,17 +62,17 @@ network_fragility:
     - XLU
     - XLV
     - XLY
+    - SPY
     - QQQ
     - IWM
     - EFA
     - EEM
     - TLT
+    - GLD
     - HYG
     - LQD
-    - GLD
     - USO
     - UUP
-    - KRE
   correlation_lookback_days: 63
   percentile_lookback_days: 504
   min_universe_size: 20
