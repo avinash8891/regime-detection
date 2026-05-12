@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import date
-from typing import Any, Literal
+from typing import TYPE_CHECKING, Any, Literal
 
 import numpy as np
 import pandas as pd
@@ -10,13 +10,24 @@ import pandas as pd
 from regime_detection.hysteresis import apply_asymmetric_hysteresis
 from regime_detection.models import AxisOutput, DataQuality
 
+if TYPE_CHECKING:  # avoid runtime cycle: trend_direction_v2 → config → ...
+    from regime_detection.config import TrendDirectionV2RulesConfig
+    from regime_detection.trend_direction_v2 import TrendDirectionV2Features
 
-TrendDirectionLabel = Literal["bull", "bear", "sideways", "transition", "unknown"]
+
+# v2 §1A line 132-134 precedence: euphoria > bull > recovery > bear > sideways > transition > unknown.
+# `recovery` lands in slice 2.5 (v2 §1A line 114-119); `euphoria` deferred (Ambiguity Log #31).
+TrendDirectionLabel = Literal["bull", "bear", "sideways", "transition", "unknown", "recovery"]
 
 
+# v2 §1A line 132 places `recovery` between `bull` (0) and `bear` (3): bull > recovery > bear.
+# Risk-rank intuition: recovery is mid-rally off a deep drawdown — riskier than steady bull
+# but less risky than a bear. Slot at 1 (matching sideways) so existing v1 hysteresis
+# behavior for non-recovery labels is unchanged.
 _RISK_RANK: dict[TrendDirectionLabel, int] = {
     "bull": 0,
     "sideways": 1,
+    "recovery": 1,
     "transition": 2,
     "bear": 3,
     "unknown": 2,
@@ -38,7 +49,22 @@ def compute_features(close: pd.Series) -> TrendDirectionFeatures:
     return TrendDirectionFeatures(close=close, sma_50=sma_50, sma_200=sma_200, return_63d=return_63d)
 
 
-def raw_label_for_day(f: TrendDirectionFeatures, dt: pd.Timestamp) -> tuple[TrendDirectionLabel, dict[str, Any]]:
+def raw_label_for_day(
+    f: TrendDirectionFeatures,
+    dt: pd.Timestamp,
+    *,
+    trend_direction_v2_features: "TrendDirectionV2Features | None" = None,
+    trend_direction_v2_rules: "TrendDirectionV2RulesConfig | None" = None,
+) -> tuple[TrendDirectionLabel, dict[str, Any]]:
+    """Per-day raw trend_direction label.
+
+    When ``trend_direction_v2_features`` and ``trend_direction_v2_rules`` are
+    both supplied, the v2 §1A precedence (line 132-134:
+    ``bull > recovery > bear > sideways > transition > unknown``) is layered
+    ON TOP of the v1 label. When either is ``None`` the function returns
+    the v1 label and evidence unchanged — byte-identical to the
+    pre-slice-2.5 implementation.
+    """
     close = f.close.loc[dt]
     sma50 = f.sma_50.loc[dt]
     sma200 = f.sma_200.loc[dt]
@@ -63,7 +89,7 @@ def raw_label_for_day(f: TrendDirectionFeatures, dt: pd.Timestamp) -> tuple[Tren
     else:
         label = "transition"
 
-    return label, {
+    evidence: dict[str, Any] = {
         "bull": bull,
         "bear": bear,
         "sideways": sideways,
@@ -71,8 +97,46 @@ def raw_label_for_day(f: TrendDirectionFeatures, dt: pd.Timestamp) -> tuple[Tren
         "within_5pct_sma200": within_5pct_sma200,
     }
 
+    if trend_direction_v2_features is not None and trend_direction_v2_rules is not None:
+        # Local import keeps the v1 path free of v2 module load on cold
+        # callers (e.g., the frozen v1 replay shim) and avoids a circular
+        # import (trend_direction_v2 imports TrendDirectionV2RulesConfig
+        # from config; we only need its functions here).
+        from regime_detection.trend_direction_v2 import evaluate_v2_trend_label
 
-def build_raw_outputs(f: TrendDirectionFeatures) -> tuple[list[TrendDirectionLabel], list[dict[str, Any]]]:
+        v2_label = evaluate_v2_trend_label(
+            v1_label=label,
+            features=trend_direction_v2_features,
+            close=f.close,
+            dt=dt,
+            rules_config=trend_direction_v2_rules,
+        )
+        if v2_label is not None:
+            evidence["v2_override"] = {
+                "from": label,
+                "to": v2_label,
+                "rule": "recovery",  # v2 §1A line 114-119
+            }
+            label = v2_label  # type: ignore[assignment]
+
+    return label, evidence
+
+
+def build_raw_outputs(
+    f: TrendDirectionFeatures,
+    *,
+    trend_direction_v2_features: "TrendDirectionV2Features | None" = None,
+    trend_direction_v2_rules: "TrendDirectionV2RulesConfig | None" = None,
+) -> tuple[list[TrendDirectionLabel], list[dict[str, Any]]]:
+    """Vectorized v1 raw labels + optional v2 §1A `recovery` override.
+
+    The v1 pass is unchanged from pre-slice-2.5. When both
+    ``trend_direction_v2_features`` and ``trend_direction_v2_rules`` are
+    supplied, the v2 §1A precedence at line 132-134 is applied per-day
+    AFTER the v1 pass — `recovery` overrides v1 `bear` / `sideways` /
+    `transition` / `unknown` (NOT `bull`, which outranks `recovery`).
+    When either argument is None, output is byte-identical to v1.
+    """
     close = f.close
     sma50 = f.sma_50
     sma200 = f.sma_200
@@ -105,6 +169,29 @@ def build_raw_outputs(f: TrendDirectionFeatures) -> tuple[list[TrendDirectionLab
                 "within_5pct_sma200": bool(within_5pct_sma200.iat[idx]),
             }
         )
+
+    if trend_direction_v2_features is not None and trend_direction_v2_rules is not None:
+        # v2 §1A line 132-134 precedence — applied per-day on top of v1.
+        # Localize import to avoid a runtime cycle with trend_direction_v2.
+        from regime_detection.trend_direction_v2 import evaluate_v2_trend_label
+
+        for idx, dt in enumerate(close.index):
+            v1_label = str(labels[idx])
+            v2_label = evaluate_v2_trend_label(
+                v1_label=v1_label,
+                features=trend_direction_v2_features,
+                close=close,
+                dt=dt,
+                rules_config=trend_direction_v2_rules,
+            )
+            if v2_label is None:
+                continue
+            evidence[idx]["v2_override"] = {
+                "from": v1_label,
+                "to": v2_label,
+                "rule": "recovery",  # v2 §1A line 114-119
+            }
+            labels[idx] = v2_label
 
     return list(labels), evidence
 

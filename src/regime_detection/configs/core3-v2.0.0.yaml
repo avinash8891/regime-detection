@@ -111,10 +111,11 @@ network_fragility:
     corr_to_one_drawdown_max: 0.0                     # §3.5 line 648 ("drawdown_21d < 0")
     systemic_stress_vix_percentile_min: 0.80          # §3.5 line 655
 
-# v2 §1A — Layer 1 V2 Trend Direction features (Slice 2.1, evidence-only).
-# Classifier wiring (euphoria/recovery/breakout/range labels + precedence
-# update at v2 §1A line 133) is deferred until sentiment_score (line 126)
-# and followthrough_rate (line 90) ambiguities are resolved.
+# v2 §1A — Layer 1 V2 Trend Direction (Slice 2.1 features + Slice 2.5
+# `recovery` label). Remaining new labels (`euphoria`, `breakout_expansion`,
+# `range_bound`) are deferred — see Implementation Ambiguity Log entries
+# #32–#34 (sentiment_score / followthrough_rate / oscillation-range
+# ambiguities).
 trend_direction_v2:
   efficiency_ratio_lookback_days: 20    # v2 §1A line 66
   hurst_lookback_days: 250              # v2 §1A line 79
@@ -124,6 +125,9 @@ trend_direction_v2:
   return_short_period: 63               # v2 §1A line 117
   return_long_period: 126               # v2 §1A line 124
   drawdown_lookback_days: 252           # v2 §1A line 116
+  rules:
+    recovery_drawdown_threshold: -0.15  # v2 §1A line 116
+    recovery_return_threshold: 0.10     # v2 §1A line 117
 
 # v2 §1C — Layer 1 V2 Volatility features (Slice 2.2, evidence-only).
 # Ships only features that don't depend on options data:

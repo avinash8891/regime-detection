@@ -13,10 +13,11 @@ Features (all per-session series aligned to the input close index):
 - ``return_63d``             v2 §1A line 117 (recovery evidence)
 - ``return_126d``            v2 §1A line 124 (euphoria evidence)
 - ``drawdown_252d``          v2 §1A line 116 (recovery evidence)
+- ``sma_50``                 v2 §1A line 118 (recovery evidence: close > SMA_50)
 
-The downstream classifier wiring (new trend labels, updated precedence
-at v2 §1A line 133) is deferred to a later slice until ``sentiment_score``
-(§1A line 126) and ``followthrough_rate`` (§1A line 90) are resolved.
+Slice 2.5 lands the ``recovery`` label on top of these features. The
+``euphoria`` / ``breakout_expansion`` / ``range_bound`` labels remain
+deferred (see Ambiguity Log entries #32–#34).
 
 Implementation choices that resolve ambiguities are documented in
 ``docs/regime_engine_v2_spec.md`` Implementation Ambiguity Log:
@@ -39,7 +40,7 @@ from dataclasses import dataclass
 import numpy as np
 import pandas as pd
 
-from regime_detection.config import TrendDirectionV2Config
+from regime_detection.config import TrendDirectionV2Config, TrendDirectionV2RulesConfig
 
 
 # Spec-fixed constants (not configurable — v2 §1A line 67 defines the
@@ -59,6 +60,10 @@ class TrendDirectionV2Features:
     return_63d: pd.Series
     return_126d: pd.Series
     drawdown_252d: pd.Series
+    # v2 §1A line 118 — `recovery` rule input: close > SMA_50.
+    # Exposed as a level (not a slope) so the slice-2.5 recovery predicate
+    # has direct access without recomputing the 50d SMA.
+    sma_50: pd.Series
 
     @property
     def feature_names(self) -> tuple[str, ...]:
@@ -70,6 +75,7 @@ class TrendDirectionV2Features:
             "return_63d",
             "return_126d",
             "drawdown_252d",
+            "sma_50",
         )
 
     def to_frame(self) -> pd.DataFrame:
@@ -143,13 +149,22 @@ def _hurst_series(close: pd.Series, lookback: int) -> pd.Series:
     return pd.Series(out, index=close.index, name="hurst_250d")
 
 
-def _slope_of_sma(close: pd.Series, sma_period: int, slope_lookback: int) -> pd.Series:
+def _sma(close: pd.Series, sma_period: int) -> pd.Series:
+    """Rolling simple moving average with strict cold-start (NaN until
+    `sma_period` observations are available)."""
+    return close.rolling(window=sma_period, min_periods=sma_period).mean()
+
+
+def _slope_of_sma(sma: pd.Series, slope_lookback: int) -> pd.Series:
     """v2 §1A line 106: (sma[t] - sma[t-N]) / sma[t-N].
+
+    Accepts a pre-computed SMA series so callers can both expose the SMA
+    level (slice 2.5 `recovery` predicate consumes ``sma_50``) and its
+    slope in one pass.
 
     NaN propagates from the SMA (until t >= sma_period-1) and from the
     `slope_lookback` shift (until t >= sma_period-1+slope_lookback).
     """
-    sma = close.rolling(window=sma_period, min_periods=sma_period).mean()
     prior = sma.shift(slope_lookback)
     return (sma - prior) / prior.where(prior != 0)
 
@@ -189,14 +204,14 @@ def compute_trend_v2_features(
         "efficiency_ratio_20d"
     )
     hurst = _hurst_series(close, config.hurst_lookback_days).rename("hurst_250d")
+    sma_short = _sma(close, config.sma_short_period).rename("sma_50")
+    sma_long = _sma(close, config.sma_long_period)
     slope_short = _slope_of_sma(
-        close,
-        sma_period=config.sma_short_period,
+        sma_short,
         slope_lookback=config.slope_lookback_days,
     ).rename("slope_sma_50")
     slope_long = _slope_of_sma(
-        close,
-        sma_period=config.sma_long_period,
+        sma_long,
         slope_lookback=config.slope_lookback_days,
     ).rename("slope_sma_200")
     ret_short = (close / close.shift(config.return_short_period) - 1.0).rename(
@@ -217,4 +232,111 @@ def compute_trend_v2_features(
         return_63d=ret_short,
         return_126d=ret_long,
         drawdown_252d=dd,
+        sma_50=sma_short,
     )
+
+
+# ---------------------------------------------------------------------------
+# Slice 2.5 — v2 §1A `recovery` rule + precedence wrapper.
+#
+# Rule (v2 §1A lines 114-119, verbatim):
+#     prior 252d drawdown <= -0.15
+#     AND return_63d > 0.10
+#     AND close > SMA_50
+#
+# Precedence (v2 §1A lines 132-134):
+#     euphoria > bull > recovery > bear > sideways > transition > unknown
+#
+# `euphoria` is deferred (sentiment_score data source not ingested — see
+# Implementation Ambiguity Log entry #32). The precedence slot stays
+# defined so future authors can drop euphoria in without re-ordering;
+# the rule predicate never fires today.
+# ---------------------------------------------------------------------------
+
+
+def evaluate_recovery(
+    features: TrendDirectionV2Features,
+    close: pd.Series,
+    *,
+    dt: pd.Timestamp,
+    rules_config: TrendDirectionV2RulesConfig,
+) -> bool:
+    """v2 §1A line 114-119 `recovery` predicate at a single session.
+
+    Returns False when any of the three inputs is NaN (cold-start
+    contract — no silent "unknown → True" substitution). Spec citations:
+
+    * line 116 — ``drawdown_252d <= recovery_drawdown_threshold`` (-0.15)
+    * line 117 — ``return_63d   >  recovery_return_threshold``    ( 0.10)
+    * line 118 — ``close        >  SMA_50``
+    """
+    if dt not in features.drawdown_252d.index:
+        return False
+    drawdown = features.drawdown_252d.loc[dt]
+    return_63d = features.return_63d.loc[dt]
+    sma_50 = features.sma_50.loc[dt]
+    if dt not in close.index:
+        return False
+    close_t = close.loc[dt]
+
+    # Cold-start / NaN propagation: any missing input falsifies the rule.
+    if any(pd.isna(x) for x in (drawdown, return_63d, sma_50, close_t)):
+        return False
+
+    drawdown_ok = bool(drawdown <= rules_config.recovery_drawdown_threshold)  # line 116
+    return_ok = bool(return_63d > rules_config.recovery_return_threshold)     # line 117
+    above_sma = bool(close_t > sma_50)                                         # line 118
+    return drawdown_ok and return_ok and above_sma
+
+
+# v2 §1A line 132-134 ranking (lower index = higher precedence).
+# Index 0 is reserved for `euphoria` (deferred — Ambiguity Log #32) so
+# future authors can slot it in without re-ordering the table.
+_V2_TREND_PRECEDENCE: tuple[str, ...] = (
+    "euphoria",   # deferred (Ambiguity Log #32) — never produced today
+    "bull",
+    "recovery",
+    "bear",
+    "sideways",
+    "transition",
+    "unknown",
+)
+
+
+def evaluate_v2_trend_label(
+    *,
+    v1_label: str,
+    features: TrendDirectionV2Features,
+    close: pd.Series,
+    dt: pd.Timestamp,
+    rules_config: TrendDirectionV2RulesConfig,
+) -> str | None:
+    """Apply v2 §1A trend precedence on top of a v1 raw label.
+
+    Returns the winning v2 label per the §1A line 132-134 ordering, or
+    ``None`` when no v2 rule fires and the caller should keep ``v1_label``.
+
+    Precedence (line 132-134): ``euphoria > bull > recovery > bear >
+    sideways > transition > unknown``. `bull` outranks `recovery`, so a
+    v1 `bull` day with the recovery predicate true keeps `bull` (v2 spec
+    intent: a confirmed bull trend dominates a rebound-off-drawdown
+    label). Returns ``"recovery"`` only when the predicate fires AND the
+    v1 label is ranked strictly LOWER than `recovery` in the table —
+    i.e. v1 emitted ``bear`` / ``sideways`` / ``transition`` / ``unknown``.
+    """
+    recovery_fires = evaluate_recovery(
+        features, close, dt=dt, rules_config=rules_config
+    )
+    if not recovery_fires:
+        return None
+
+    try:
+        v1_rank = _V2_TREND_PRECEDENCE.index(v1_label)
+    except ValueError:
+        # Unknown v1 label — treat as lowest precedence and let recovery win.
+        v1_rank = len(_V2_TREND_PRECEDENCE)
+    recovery_rank = _V2_TREND_PRECEDENCE.index("recovery")
+    if v1_rank < recovery_rank:
+        # v1 label outranks recovery (only possible value: bull).
+        return None
+    return "recovery"

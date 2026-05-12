@@ -82,7 +82,18 @@ class TrendDirectionSeriesClassifier:
     def build(self, context: MarketContext, feature_store: FeatureStore) -> AxisSeriesResult:
         close = context.spy_ohlcv["close"]
         features = feature_store.trend_direction
-        raw_labels, raw_evidence = build_trend_direction_raw_outputs(features)
+        # Slice 2.5 — thread v2 §1A features + rules through when the v2 seam
+        # is populated. When the v2 config is absent (v1-only callers), the
+        # arguments stay None and v1 byte-identity is preserved by
+        # build_raw_outputs (see test_trend_direction_v2_recovery_rule).
+        trend_v2_features = feature_store.trend_direction_v2
+        trend_v2_config = context.config.trend_direction_v2
+        trend_v2_rules = trend_v2_config.rules if trend_v2_config is not None else None
+        raw_labels, raw_evidence = build_trend_direction_raw_outputs(
+            features,
+            trend_direction_v2_features=trend_v2_features,
+            trend_direction_v2_rules=trend_v2_rules,
+        )
         stable_labels, active_labels = apply_trend_direction_hysteresis(
             dates=close.index,
             raw_labels=raw_labels,

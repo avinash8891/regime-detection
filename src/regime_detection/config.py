@@ -148,15 +148,36 @@ class NetworkFragilityConfig(BaseModel):
     rules: NetworkFragilityRulesConfig
 
 
+class TrendDirectionV2RulesConfig(BaseModel):
+    """v2 §1A `recovery` rule thresholds (Slice 2.5).
+
+    Each value cites its line in docs/regime_engine_v2_spec.md §1A. The
+    `euphoria` / `breakout_expansion` / `range_bound` thresholds are
+    deferred (see Implementation Ambiguity Log entries #32–#34) until
+    their data inputs / spec ambiguities land.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    # v2 §1A line 116 — "prior 252d drawdown <= -0.15". Must be < 0
+    # because a drawdown is, by construction, in (-1.0, 0.0]; a non-negative
+    # threshold would make the rule trivially true at any 252d-high.
+    recovery_drawdown_threshold: float = Field(lt=0.0)
+
+    # v2 §1A line 117 — "return_63d > 0.10". Must be > 0 because the rule
+    # gates on a strictly-positive 63d return (a non-positive threshold would
+    # admit drawdown days, defeating the rule's "rebound" intent).
+    recovery_return_threshold: float = Field(gt=0.0)
+
+
 class TrendDirectionV2Config(BaseModel):
     """v2 §1A — Layer 1 V2 trend direction feature lookbacks.
 
-    Slice 2.1 ships these as evidence-only features (per v2 §8 line 1181:
-    "Adds to existing classifiers without changing V1 contracts"). The new
-    trend labels (euphoria, recovery, breakout_expansion, range_bound) and
-    the precedence update at v2 §1A line 133 are deferred to a later slice
-    once the `sentiment_score` (line 126) and `followthrough_rate` (line 90)
-    ambiguities are resolved.
+    Slice 2.1 ships the §1A continuous features as evidence-only.
+    Slice 2.5 lands the ``recovery`` label + updated §1A precedence on
+    top of those features (see ``rules`` sub-block). The other new V2
+    trend labels (``euphoria`` / ``breakout_expansion`` / ``range_bound``)
+    remain deferred — see Implementation Ambiguity Log entries #32–#34.
     """
 
     model_config = ConfigDict(extra="forbid")
@@ -184,6 +205,16 @@ class TrendDirectionV2Config(BaseModel):
 
     # v2 §1A line 116 — prior 252d drawdown (recovery rule input).
     drawdown_lookback_days: int = Field(gt=0)
+
+    # v2 §1A line 114-119 `recovery` rule thresholds (Slice 2.5). Defaults
+    # to spec values (drawdown <= -0.15, return > 0.10) when the yaml
+    # omits the sub-block; v2 §9.1 calibration may retune via yaml.
+    rules: TrendDirectionV2RulesConfig = Field(
+        default_factory=lambda: TrendDirectionV2RulesConfig(
+            recovery_drawdown_threshold=-0.15,  # v2 §1A line 116
+            recovery_return_threshold=0.10,     # v2 §1A line 117
+        )
+    )
 
 
 class VolatilityV2Config(BaseModel):

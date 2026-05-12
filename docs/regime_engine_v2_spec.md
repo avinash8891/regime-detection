@@ -639,6 +639,64 @@ the slice/commit that resolved it. Entries are append-only.
     feature is computed twice.
     Resolved by Slice 2.4.
 
+31. **§1A line 116-118 — `recovery` rule inequality strictness.**
+    Spec writes three inequalities with intentionally mixed forms:
+    line 116 `prior 252d drawdown <= -0.15` (non-strict), line 117
+    `return_63d > 0.10` (strict), line 118 `close > SMA_50` (strict).
+    Resolution: pin verbatim — `drawdown_252d` exactly at `-0.15`
+    satisfies the rule; `return_63d` exactly at `0.10` does NOT;
+    `close == SMA_50` does NOT. Each boundary has a dedicated unit test
+    in `tests/test_trend_direction_v2_recovery_rule.py`. Pinned in
+    `regime_detection.trend_direction_v2.evaluate_recovery`.
+    Resolved by Slice 2.5.
+
+32. **§1A lines 121-127 — `euphoria` label deferral.**
+    Spec rule requires `sentiment_score >= configured_threshold`
+    (line 126) where `sentiment_score` is sourced from AAII bull-bear,
+    put-call ratio percentile, or Investors Intelligence sentiment
+    (line 129). The V2 repo does not yet ingest any of those feeds.
+    Per v2 §10 absolute rule we do NOT synthesize a sentiment proxy.
+    Resolution: defer the `euphoria` label until a sentiment ingestion
+    slice lands. The §1A line 132 precedence reserves the `euphoria`
+    slot above `bull` so the slice that lands sentiment can drop the
+    rule in without re-ordering. The precedence-evaluation table in
+    `regime_detection.trend_direction_v2._V2_TREND_PRECEDENCE` includes
+    `"euphoria"` at index 0 but the rule predicate never fires today.
+    Deferred by Slice 2.5.
+
+33. **§1A line 90 — `breakout_expansion` label deferral.**
+    Spec rule references a `followthrough_rate` metric configurable
+    threshold, but the spec text never defines the metric numerically
+    (count over what window? what does "follow-through" mean
+    operationally?). Per v2 §10 absolute rule we do NOT invent a
+    formula. Resolution: defer the `breakout_expansion` label until
+    the spec pins `followthrough_rate` or until the user supplies a
+    concrete definition.
+    Deferred by Slice 2.5.
+
+34. **§1A line 98 — `range_bound` label deferral.**
+    Spec rule writes "price oscillates inside the 20d range" without
+    defining "oscillates" operationally (e.g., # of touches against
+    the range walls? % of sessions inside the range? Bollinger-style
+    band?). Per v2 §10 we do NOT invent a definition. Resolution:
+    defer the `range_bound` label until the spec pins the
+    oscillation metric.
+    Deferred by Slice 2.5.
+
+35. **§1A line 132-134 — precedence-ordering enforcement.**
+    Spec lists the V2 trend precedence as
+    `euphoria > bull > recovery > bear > sideways > transition > unknown`
+    but does not explicitly address what happens when multiple rules
+    fire on the same session. Resolution: pin precedence-by-rank — the
+    HIGHEST-ranked label whose rule fires wins, and a fired rule cannot
+    OVERRIDE a higher-ranked v1 label. Concretely: if v1 emits `bull`
+    AND the v2 `recovery` predicate is true, the day stays `bull`
+    (bull outranks recovery). If v1 emits `bear`/`sideways`/`transition`/
+    `unknown` AND the v2 `recovery` predicate fires, the day becomes
+    `recovery`. Implemented in
+    `regime_detection.trend_direction_v2.evaluate_v2_trend_label`.
+    Resolved by Slice 2.5.
+
 ---
 
 ## 2. Layer 2 V2 — Full Structural-Causal State
