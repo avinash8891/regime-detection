@@ -84,6 +84,21 @@ network_fragility:
     correlation_concentration: 3
     correlation_to_one: 5
     systemic_stress: 5
+  # v2 §3.4–§3.5 rule-engine thresholds (Slice 1.3). Every value cites its
+  # spec line in docs/regime_engine_v2_spec.md.
+  rules:
+    diversified_normal_percentile_lo: 0.25            # §3.5 line 619
+    diversified_normal_percentile_hi: 0.75            # §3.5 line 619
+    effective_rank_stability_threshold: 0.05          # §3.5 line 620 ("21d std < 5% of mean")
+    stock_picker_percentile_max: 0.30                 # §3.5 line 625
+    stock_picker_dispersion_percentile_min: 0.70      # §3.5 line 626
+    concentration_corr_percentile_min: 0.75           # §3.5 line 639
+    concentration_largest_eig_percentile_min: 0.75    # §3.5 line 640
+    concentration_effective_rank_percentile_max: 0.25 # §3.5 line 641
+    corr_to_one_corr_percentile_min: 0.90             # §3.5 line 646
+    corr_to_one_realized_vol_percentile_min: 0.80     # §3.5 line 647
+    corr_to_one_drawdown_max: 0.0                     # §3.5 line 648 ("drawdown_21d < 0")
+    systemic_stress_vix_percentile_min: 0.80          # §3.5 line 655
 
 transition_score:
   weights_with_hmm:

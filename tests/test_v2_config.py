@@ -58,6 +58,24 @@ V2_NETWORK_FRAGILITY_DEESCALATION_DAYS = {
     "systemic_stress": 5,
 }
 
+# V2 spec §3.5 — rule-engine thresholds (Slice 1.3). Each value cites a
+# spec line verbatim. Used as a valid fixture for NetworkFragilityConfig
+# construction in unit tests.
+V2_NETWORK_FRAGILITY_RULES_KWARGS = dict(
+    diversified_normal_percentile_lo=0.25,
+    diversified_normal_percentile_hi=0.75,
+    effective_rank_stability_threshold=0.05,
+    stock_picker_percentile_max=0.30,
+    stock_picker_dispersion_percentile_min=0.70,
+    concentration_corr_percentile_min=0.75,
+    concentration_largest_eig_percentile_min=0.75,
+    concentration_effective_rank_percentile_max=0.25,
+    corr_to_one_corr_percentile_min=0.90,
+    corr_to_one_realized_vol_percentile_min=0.80,
+    corr_to_one_drawdown_max=0.0,
+    systemic_stress_vix_percentile_min=0.80,
+)
+
 # v2 spec §3.2 — implementation lookback windows hoisted to config so they
 # remain calibration-tunable per slice-gate checklist §2.
 V2_NETWORK_FRAGILITY_CORRELATION_LOOKBACK_DAYS = 63
@@ -128,6 +146,7 @@ def test_network_fragility_config_forbids_extra_fields() -> None:
         min_universe_size=V2_NETWORK_FRAGILITY_MIN_UNIVERSE_SIZE,
         min_window_completeness=V2_NETWORK_FRAGILITY_MIN_WINDOW_COMPLETENESS,
         deescalation_days_by_label=V2_NETWORK_FRAGILITY_DEESCALATION_DAYS,
+        rules=V2_NETWORK_FRAGILITY_RULES_KWARGS,
     )
     # Sanity: valid kwargs construct cleanly.
     NetworkFragilityConfig(**valid_kwargs)
@@ -150,6 +169,7 @@ def test_network_fragility_config_rejects_invalid_lookback_bounds() -> None:
         min_universe_size=V2_NETWORK_FRAGILITY_MIN_UNIVERSE_SIZE,
         min_window_completeness=V2_NETWORK_FRAGILITY_MIN_WINDOW_COMPLETENESS,
         deescalation_days_by_label=V2_NETWORK_FRAGILITY_DEESCALATION_DAYS,
+        rules=V2_NETWORK_FRAGILITY_RULES_KWARGS,
     )
 
     # realized_vol_lookback_days must be > 0
