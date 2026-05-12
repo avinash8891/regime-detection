@@ -21,7 +21,13 @@ from regime_detection.event_calendar import (
 from regime_detection.feature_store import FeatureStore
 from regime_detection.hysteresis import apply_asymmetric_hysteresis
 from regime_detection.market_context import MarketContext
-from regime_detection.models import AxisOutput, BreadthStateOutput, DataQuality, EventCalendarOutput
+from regime_detection.models import (
+    AxisOutput,
+    BreadthStateOutput,
+    DataQuality,
+    EventCalendarOutput,
+    NetworkFragilityOutput,
+)
 from regime_detection.trend_character import (
     _RISK_RANK as TREND_CHARACTER_RISK_RANK,
     build_raw_outputs as build_trend_character_raw_outputs,
@@ -51,6 +57,10 @@ class AxisSeriesBundle:
     volatility_state: AxisSeriesResult
     breadth_state: AxisSeriesResult
     event_calendar: dict[date, EventCalendarOutput]
+    # V2 §3 network fragility — None in pure-v1 mode (no sector ETF data),
+    # populated by NetworkFragilitySeriesClassifier when feature_store has
+    # the v2 fragility seam. Slice 1 fills in the real classifier rules.
+    network_fragility: dict[date, NetworkFragilityOutput] | None = None
 
 
 class AxisSeriesClassifier(Protocol):
@@ -195,18 +205,55 @@ class BreadthSeriesClassifier:
         )
 
 
+class NetworkFragilitySeriesClassifier:
+    """V2 §3 network fragility classifier — stub form.
+
+    Today returns either None (no sector ETF data → no axis output) or a
+    per-day dict of `unknown` NetworkFragilityOutputs (sector data present
+    but slice 1 hasn't shipped the real §3.4 rules yet). Slice 1 will
+    replace the body with feature reads from `feature_store.network_fragility`
+    plus the v2 §3.4 rule engine + per-label hysteresis.
+    """
+
+    def build(
+        self,
+        context: MarketContext,
+        feature_store: FeatureStore,
+    ) -> dict[date, NetworkFragilityOutput] | None:
+        if feature_store.network_fragility is None:
+            return None
+        unknown_dq = DataQuality(
+            status="insufficient_history",
+            freshness_days=None,
+            completeness=None,
+            reason="required_feature_is_nan",
+        )
+        return {
+            day: NetworkFragilityOutput(
+                raw_label="unknown",
+                stable_label="unknown",
+                active_label="unknown",
+                evidence={"reason": "v2_classifier_not_yet_implemented"},
+                data_quality=unknown_dq,
+            )
+            for day in context.sessions
+        }
+
+
 def build_axis_series_bundle(*, context: MarketContext, feature_store: FeatureStore) -> AxisSeriesBundle:
     trend_direction = TrendDirectionSeriesClassifier().build(context, feature_store)
     trend_character = TrendCharacterSeriesClassifier().build(context, feature_store)
     volatility_state = VolatilitySeriesClassifier().build(context, feature_store)
     breadth_state = BreadthSeriesClassifier().build(context, feature_store)
     event_calendar = build_event_calendar_series(context)
+    network_fragility = NetworkFragilitySeriesClassifier().build(context, feature_store)
     return AxisSeriesBundle(
         trend_direction=trend_direction,
         trend_character=trend_character,
         volatility_state=volatility_state,
         breadth_state=breadth_state,
         event_calendar=event_calendar,
+        network_fragility=network_fragility,
     )
 
 

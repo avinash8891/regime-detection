@@ -33,6 +33,32 @@ def _v2_classifier_not_yet_implemented_data_quality() -> DataQuality:
     )
 
 
+def _resolve_network_fragility_by_date(
+    *,
+    bundle_entry: dict[date, NetworkFragilityOutput] | None,
+    sessions,
+) -> dict[date, NetworkFragilityOutput]:
+    """Per-day fragility outputs.
+
+    Prefer the AxisSeriesBundle entry when present (slice 1+ supplies real
+    classifications). Fall back to a v2 'unknown' placeholder per session
+    when sector ETF data wasn't passed and the bundle entry is None.
+    """
+    if bundle_entry is not None:
+        return bundle_entry
+    placeholder_dq = _v2_classifier_not_yet_implemented_data_quality()
+    return {
+        day: NetworkFragilityOutput(
+            raw_label="unknown",
+            stable_label="unknown",
+            active_label="unknown",
+            evidence={"reason": "v2_classifier_not_yet_implemented"},
+            data_quality=placeholder_dq,
+        )
+        for day in sessions
+    }
+
+
 def build_regime_timeline(
     *,
     context: MarketContext,
@@ -63,12 +89,9 @@ def build_regime_timeline(
     volatility_outputs = axis_bundle.volatility_state.outputs_by_date
     breadth_outputs = axis_bundle.breadth_state.outputs_by_date
     event_outputs = axis_bundle.event_calendar
-    network_fragility = NetworkFragilityOutput(
-        raw_label="unknown",
-        stable_label="unknown",
-        active_label="unknown",
-        evidence={"reason": "v2_classifier_not_yet_implemented"},
-        data_quality=_v2_classifier_not_yet_implemented_data_quality(),
+    network_fragility_by_date = _resolve_network_fragility_by_date(
+        bundle_entry=axis_bundle.network_fragility,
+        sessions=working_context.sessions,
     )
     monetary_pressure = MonetaryPressureOutput(
         label="unknown",
@@ -84,6 +107,7 @@ def build_regime_timeline(
         breadth_output = breadth_outputs[day]
         event_output = event_outputs[day]
         transition_output = transition_risk[day]
+        network_fragility_output = network_fragility_by_date[day]
         outputs.append(
             RegimeOutput(
                 engine_version=engine_version(),
@@ -98,7 +122,7 @@ def build_regime_timeline(
                     event_calendar=event_output,
                     monetary_pressure=monetary_pressure,
                 ),
-                network_fragility=network_fragility,
+                network_fragility=network_fragility_output,
                 transition_risk=transition_output,
                 strategy_response=build_strategy_response(
                     trend_direction_active=trend_direction_output.active_label,
