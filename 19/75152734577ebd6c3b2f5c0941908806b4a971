@@ -1,0 +1,19 @@
+src/regime_detection/market_context.py
+  s_2ec9059b57bc2d::t_1481e6997a0c78 118-121,123
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.4",
+  "base_commit_sha": "1975152734577ebd6c3b2f5c0941908806b4a971",
+  "prompts": {},
+  "sessions": {
+    "s_2ec9059b57bc2d": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "8a548770-6631-45ae-9b72-101b7887ca2e",
+        "model": "claude-opus-4-7"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}
