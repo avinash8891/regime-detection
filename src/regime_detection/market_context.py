@@ -20,6 +20,9 @@ class MarketContext(BaseModel):
     rsp_close: pd.Series
     vix_proxy_close: pd.Series | None
     normalized_event_calendar: pd.DataFrame | None = None
+    sector_etf_closes: dict[str, pd.Series] | None = None  # v2 §3.1
+    cross_asset_closes: dict[str, pd.Series] | None = None  # v2 §3.1
+    macro_series: dict[str, pd.Series] | None = None  # v2 §2A/§2B/§2C FRED series
 
 
 def build_market_context(
@@ -29,6 +32,9 @@ def build_market_context(
     config: RegimeConfig,
     vix_data: pd.DataFrame | None = None,
     event_calendar: pd.DataFrame | None = None,
+    sector_etf_closes: dict[str, pd.Series] | None = None,
+    cross_asset_closes: dict[str, pd.Series] | None = None,
+    macro_series: dict[str, pd.Series] | None = None,
 ) -> MarketContext:
     end_date = as_date(end_date)
     require_nyse_trading_day(end_date)
@@ -47,6 +53,9 @@ def build_market_context(
         if event_calendar is None
         else load_event_calendar(event_calendar, market=config.event_calendar.market)
     )
+    reindexed_sector_etf_closes = _reindex_optional_close_dict(sector_etf_closes, spy_ohlcv.index)
+    reindexed_cross_asset_closes = _reindex_optional_close_dict(cross_asset_closes, spy_ohlcv.index)
+    reindexed_macro_series = _reindex_optional_close_dict(macro_series, spy_ohlcv.index)
     return MarketContext(
         end_date=end_date,
         config=config,
@@ -55,7 +64,22 @@ def build_market_context(
         rsp_close=rsp_close,
         vix_proxy_close=vix_proxy_close,
         normalized_event_calendar=normalized_event_calendar,
+        sector_etf_closes=reindexed_sector_etf_closes,
+        cross_asset_closes=reindexed_cross_asset_closes,
+        macro_series=reindexed_macro_series,
     )
+
+
+def _reindex_optional_close_dict(
+    series_dict: dict[str, pd.Series] | None,
+    target_index: pd.Index,
+) -> dict[str, pd.Series] | None:
+    if series_dict is None:
+        return None
+    out: dict[str, pd.Series] = {}
+    for key, series in series_dict.items():
+        out[key] = series.reindex(target_index)
+    return out
 
 
 def slice_context_to_recent_sessions(*, context: MarketContext, required_sessions: int) -> MarketContext:
@@ -76,6 +100,9 @@ def slice_context_to_recent_sessions(*, context: MarketContext, required_session
         rsp_close=rsp_close,
         vix_proxy_close=vix_proxy_close,
         normalized_event_calendar=context.normalized_event_calendar,
+        sector_etf_closes=_reindex_optional_close_dict(context.sector_etf_closes, spy_ohlcv.index),
+        cross_asset_closes=_reindex_optional_close_dict(context.cross_asset_closes, spy_ohlcv.index),
+        macro_series=_reindex_optional_close_dict(context.macro_series, spy_ohlcv.index),
     )
 
 
@@ -109,6 +136,9 @@ def slice_context_to_end_date(*, context: MarketContext, end_date: date) -> Mark
         rsp_close=rsp_close,
         vix_proxy_close=vix_proxy_close,
         normalized_event_calendar=context.normalized_event_calendar,
+        sector_etf_closes=_reindex_optional_close_dict(context.sector_etf_closes, spy_ohlcv.index),
+        cross_asset_closes=_reindex_optional_close_dict(context.cross_asset_closes, spy_ohlcv.index),
+        macro_series=_reindex_optional_close_dict(context.macro_series, spy_ohlcv.index),
     )
 
 

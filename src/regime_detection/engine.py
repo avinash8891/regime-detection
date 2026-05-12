@@ -31,6 +31,9 @@ class RegimeEngine:
         vix_data: pd.DataFrame | None = None,
         event_calendar: pd.DataFrame | None = None,
         config: RegimeConfig | None = None,
+        sector_etf_closes: dict[str, pd.Series] | None = None,
+        cross_asset_closes: dict[str, pd.Series] | None = None,
+        macro_series: dict[str, pd.Series] | None = None,
     ) -> RegimeOutput:
         del breadth_data  # V1 breadth uses ETF-proxy RSP rows in market_data per spec §6.
         as_of_date = as_date(as_of_date)
@@ -42,6 +45,9 @@ class RegimeEngine:
             vix_data=vix_data,
             event_calendar=event_calendar,
             config=config,
+            sector_etf_closes=sector_etf_closes,
+            cross_asset_closes=cross_asset_closes,
+            macro_series=macro_series,
         )
         return timeline.outputs[-1]
 
@@ -54,6 +60,9 @@ class RegimeEngine:
         vix_data: pd.DataFrame | None = None,
         event_calendar: pd.DataFrame | None = None,
         config: RegimeConfig | None = None,
+        sector_etf_closes: dict[str, pd.Series] | None = None,
+        cross_asset_closes: dict[str, pd.Series] | None = None,
+        macro_series: dict[str, pd.Series] | None = None,
     ) -> RegimeTimeline:
         del breadth_data  # V1 breadth uses ETF-proxy RSP rows in market_data per spec §6.
         end_date = as_date(end_date)
@@ -67,5 +76,8 @@ class RegimeEngine:
             config=cfg,
             vix_data=vix_data,
             event_calendar=event_calendar,
+            sector_etf_closes=sector_etf_closes,
+            cross_asset_closes=cross_asset_closes,
+            macro_series=macro_series,
         )
         return build_regime_timeline(context=context, lookback_days=lookback_days)
