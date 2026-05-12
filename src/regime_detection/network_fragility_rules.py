@@ -29,9 +29,16 @@ Slope detection for ``rising_fragility``:
 Effective-rank stability for ``diversified_normal``:
     std(effective_rank over trailing 21d) / mean(...) < 0.05. The 0.05
     threshold is configurable via ``NetworkFragilityRulesConfig``.
+
+Module invariant:
+    All numeric thresholds are config-driven via ``NetworkFragilityRulesConfig``;
+    spec-fixed window lengths (21d slope window, 21d stability window, 21d
+    drawdown window) and the strict-positive slope comparator are module
+    constants per v2 §3.5.
 """
 from __future__ import annotations
 
+import warnings
 from dataclasses import dataclass
 from typing import Literal
 
@@ -142,8 +149,12 @@ def _trailing_slope(series: pd.Series, dt: pd.Timestamp, window: int) -> float:
     if np.isnan(y).any():
         return float("nan")
     x = np.arange(window, dtype=float)
-    # polyfit deg=1 returns [slope, intercept].
-    slope, _ = np.polyfit(x, y, 1)
+    # polyfit deg=1 returns [slope, intercept]. Suppress RankWarning emitted
+    # on flat / near-constant inputs — it is CI noise; the returned slope is
+    # still numerically correct (effectively zero) for our predicate.
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", np.exceptions.RankWarning)
+        slope, _ = np.polyfit(x, y, 1)
     return float(slope)
 
 
@@ -299,7 +310,7 @@ def evaluate_rising_fragility(
         inputs.largest_eigenvalue_share_slope_21d,
     ):
         return False
-    accepted_breadth: set[BreadthLabel] = {"weak_breadth", "divergent_fragile"}
+    accepted_breadth: set[BreadthLabel] = {"weak_breadth", "divergent_fragile"}  # TODO(v2.1-breadth-enum): remove this mapping when `BreadthLabel` is extended to include `narrowing_breadth`; see spec §3.5 ambiguity #3 in the Implementation Ambiguity Log.
     return bool(
         inputs.avg_pairwise_corr_slope_21d > 0.0
         and inputs.largest_eigenvalue_share_slope_21d > 0.0
@@ -379,14 +390,21 @@ def evaluate_systemic_stress(
     """
     if credit_funding_label is None:
         return False
+    # Explicit NaN guard over ALL fields this rule relies on — mirrors the
+    # pattern in the other §3.5 rules and decouples correctness from
+    # `evaluate_correlation_to_one`'s transitive NaN handling. `vix_percentile_252d`
+    # is additionally guarded here because it is unique to systemic_stress.
+    if _any_nan(
+        inputs.avg_pairwise_corr_percentile_504d,
+        inputs.realized_vol_percentile_252d,
+        inputs.drawdown_21d,
+        inputs.vix_percentile_252d,
+    ):
+        return False
     if not evaluate_correlation_to_one(inputs, config):
         return False
-    if np.isnan(inputs.vix_percentile_252d):
-        return False
     accepted_credit: set[CreditFundingLabel] = {"credit_stress", "deleveraging"}
-    accepted_breadth: set[BreadthLabel] = {"weak_breadth"}
-    # v2 §3.5 line 656 also names "narrowing_breadth"; same V1 enum gap as
-    # rising_fragility — restrict to {weak_breadth} until V2.1 adds the label.
+    accepted_breadth: set[BreadthLabel] = {"weak_breadth"}  # TODO(v2.1-breadth-enum): remove this mapping when `BreadthLabel` is extended to include `narrowing_breadth`; see spec §3.5 ambiguity #3 in the Implementation Ambiguity Log.
     return bool(
         credit_funding_label in accepted_credit
         and inputs.vix_percentile_252d > config.systemic_stress_vix_percentile_min

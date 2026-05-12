@@ -296,17 +296,18 @@ class NetworkFragilitySeriesClassifier:
 
             # Defensive: the volatility series may not include early sessions
             # if cold-start clipping diverges. Reindex on the fly.
+            # Pure-quality assessment: we compute the raw label AFTER quality
+            # (rule engine, below) and re-check with quality_forces_unknown.
+            # `skip_raw_label_short_circuit=True` keeps the helper from
+            # collapsing to "insufficient_history" before we have a label.
             day_quality = assess_series_input_quality(
                 as_of_date=day,
                 required_inputs=required_inputs,
                 required_trading_days=required_trading_days,
-                # Pre-quality: pass a placeholder so the helper's
-                # "raw_label == 'unknown'" branch doesn't fire here — we
-                # compute the real raw label below and re-check via
-                # quality_forces_unknown.
-                raw_label="placeholder",
+                raw_label="",
                 max_freshness_days=max_freshness_days,
                 min_completeness=min_completeness,
+                skip_raw_label_short_circuit=True,
             )
 
             if quality_forces_unknown(day_quality):
@@ -323,19 +324,36 @@ class NetworkFragilitySeriesClassifier:
                 vix_percentile_252d=vix_pct,
             )
 
-            breadth_label = "unknown"
-            if breadth_active_labels_by_date is not None:
-                breadth_label = breadth_active_labels_by_date.get(day, "unknown")
-            volatility_label = "unknown"
-            if volatility_active_labels_by_date is not None:
-                volatility_label = volatility_active_labels_by_date.get(day, "unknown")
+            # I1: strict V1 axis alignment. When the caller supplied a v1
+            # dict, missing-day → KeyError (loud) rather than silent
+            # "unknown" substitution which would defang systemic_stress on
+            # any drifted session. The "unknown" fallback applies ONLY when
+            # the caller explicitly omitted the v1 dict (unit-test path).
+            if breadth_active_labels_by_date is None:
+                breadth_label = "unknown"
+            else:
+                if day not in breadth_active_labels_by_date:
+                    raise KeyError(
+                        f"breadth_active_labels_by_date missing session {day!r} "
+                        "(v1/v2 calendar drift would silently downgrade rules to 'unknown')"
+                    )
+                breadth_label = breadth_active_labels_by_date[day]
+            if volatility_active_labels_by_date is None:
+                volatility_label = "unknown"
+            else:
+                if day not in volatility_active_labels_by_date:
+                    raise KeyError(
+                        f"volatility_active_labels_by_date missing session {day!r} "
+                        "(v1/v2 calendar drift would silently downgrade rules to 'unknown')"
+                    )
+                volatility_label = volatility_active_labels_by_date[day]
 
             label = evaluate_rules(
                 inputs=rule_inputs,
                 config=network_fragility_config.rules,
                 breadth_label=breadth_label,  # type: ignore[arg-type]
                 volatility_label=volatility_label,  # type: ignore[arg-type]
-                # Slice 4 (v2 §2C credit/funding) is not yet implemented.
+                # TODO(slice-4): wire credit_funding.active_label per v2 §2C.
                 # network_fragility_rules.evaluate_systemic_stress short-
                 # circuits to False on None and precedence falls through
                 # to correlation_to_one per v2 §3.4.
@@ -362,6 +380,7 @@ class NetworkFragilitySeriesClassifier:
             raw_labels=raw_labels,
             risk_rank=NETWORK_FRAGILITY_RISK_RANK,
             deescalation_days_by_label=network_fragility_config.deescalation_days_by_label,
+            default_deescalation_days=network_fragility_config.default_deescalation_days,
         )
 
         outputs: dict[date, NetworkFragilityOutput] = {}

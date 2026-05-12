@@ -138,6 +138,12 @@ class NetworkFragilityConfig(BaseModel):
     # V2 §3.7 per-label deescalation days.
     deescalation_days_by_label: dict[str, int]
 
+    # V2 §3.7 ambiguity log entry #6: default for labels NOT in
+    # deescalation_days_by_label (diversified_normal, stock_picker_dispersion,
+    # unknown). 0 = immediate de-escalation, consistent with their low §3.6
+    # risk rank. Exposed as config so it can be retuned in v2 §9.1 calibration.
+    default_deescalation_days: int = Field(default=0, ge=0)
+
     # V2 §3.4–§3.5 rule engine thresholds (Slice 1.3).
     rules: NetworkFragilityRulesConfig
 

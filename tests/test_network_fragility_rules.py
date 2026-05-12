@@ -283,6 +283,64 @@ def test_systemic_stress_blocked_by_neutral_credit_funding():
     )
 
 
+# ---------- Boundary / NaN tests (strict-inequality thresholds) --------------
+
+
+def test_stock_picker_excludes_corr_pct_exactly_at_threshold():
+    """v2 §3.5 line 625: `avg_pairwise_corr_percentile_504d < 0.30` is
+    strict; equality must NOT fire stock_picker."""
+    cfg = _default_rules_config()
+    inputs = _inputs(avg_corr_pct=0.30, dispersion_pct=0.85)
+    assert (
+        evaluate_stock_picker_dispersion(inputs, cfg, volatility_label="normal_vol")
+        is False
+    )
+
+
+def test_correlation_concentration_excludes_corr_pct_exactly_at_threshold():
+    """v2 §3.5 line 639: `> 0.75` is strict; equality at 0.75 must NOT fire."""
+    cfg = _default_rules_config()
+    inputs = _inputs(avg_corr_pct=0.75, largest_eig_pct=0.50, eff_rank_pct=0.50)
+    assert evaluate_correlation_concentration(inputs, cfg) is False
+
+
+def test_correlation_to_one_excludes_corr_pct_exactly_at_threshold():
+    """v2 §3.5 line 646: `> 0.90` is strict; equality at 0.90 must NOT fire."""
+    cfg = _default_rules_config()
+    inputs = _inputs(avg_corr_pct=0.90, realized_vol_pct=0.85, drawdown_21d=-0.04)
+    assert evaluate_correlation_to_one(inputs, cfg) is False
+
+
+def test_correlation_to_one_excludes_realized_vol_pct_exactly_at_threshold():
+    """v2 §3.5 line 647: `> 0.80` is strict; equality at 0.80 must NOT fire."""
+    cfg = _default_rules_config()
+    inputs = _inputs(avg_corr_pct=0.95, realized_vol_pct=0.80, drawdown_21d=-0.04)
+    assert evaluate_correlation_to_one(inputs, cfg) is False
+
+
+def test_systemic_stress_blocked_by_nan_vix_percentile():
+    """N-2 / I-2: explicit NaN guard on `vix_percentile_252d`. With ALL other
+    fields valid AND credit_funding='credit_stress' (so the credit short-circuit
+    does not fire), a NaN VIX percentile must produce False rather than
+    silently relying on `evaluate_correlation_to_one`'s NaN handling."""
+    cfg = _default_rules_config()
+    inputs = _inputs(
+        avg_corr_pct=0.95,
+        realized_vol_pct=0.85,
+        drawdown_21d=-0.04,
+        vix_pct=float("nan"),
+    )
+    assert (
+        evaluate_systemic_stress(
+            inputs,
+            cfg,
+            breadth_label="weak_breadth",
+            credit_funding_label="credit_stress",
+        )
+        is False
+    )
+
+
 # ---------- Precedence orchestrator ------------------------------------------
 
 
@@ -389,17 +447,42 @@ def test_rising_fragility_beats_stock_picker_dispersion():
     assert label == "rising_fragility"
 
 
-def test_stock_picker_dispersion_beats_diversified_normal():
+def test_stock_picker_dispersion_when_only_it_matches():
     cfg = _default_rules_config()
     # corr_pct = 0.20 is BELOW the diversified_normal band [0.25, 0.75], so
-    # diversified_normal would not fire here; pick mid-stable inputs that
-    # could match diversified_normal at 0.26 but stock_picker wins at 0.20.
-    # Use corr_pct=0.20 → diversified_normal fails (outside band), but
-    # we still want to assert stock_picker fires; precedence is implicit.
+    # diversified_normal does NOT fire here; only stock_picker matches.
+    # This test exercises the single-rule match path (not precedence).
     inputs = _inputs(
         avg_corr_pct=0.20,
         dispersion_pct=0.85,
         eff_rank_stability=0.01,
+    )
+    label = evaluate_rules(
+        inputs=inputs,
+        config=cfg,
+        breadth_label="healthy_breadth",
+        volatility_label="normal_vol",
+    )
+    assert label == "stock_picker_dispersion"
+
+
+def test_stock_picker_precedence_when_both_match():
+    """Genuine precedence collision: avg_corr_pct=0.26 sits INSIDE the
+    diversified_normal band [0.25, 0.75] AND below the stock_picker threshold
+    (< 0.30); dispersion_pct=0.85 satisfies stock_picker's high-dispersion
+    leg; eff_rank_stability is tight enough that diversified_normal would
+    also fire on its own. Per §3.4 precedence, stock_picker_dispersion wins."""
+    cfg = _default_rules_config()
+    inputs = _inputs(
+        avg_corr_pct=0.26,
+        dispersion_pct=0.85,
+        eff_rank_stability=0.01,
+    )
+    # Sanity: both individual predicates fire on these inputs.
+    assert evaluate_diversified_normal(inputs, cfg) is True
+    assert (
+        evaluate_stock_picker_dispersion(inputs, cfg, volatility_label="normal_vol")
+        is True
     )
     label = evaluate_rules(
         inputs=inputs,
@@ -515,6 +598,45 @@ def test_build_rule_inputs_for_date_drawdown_is_negative_when_below_peak():
     )
     # Last price 399 < peak 420 within trailing 21d → drawdown < 0.
     assert inputs.drawdown_21d < 0
+
+
+def test_rising_fragility_blocked_when_nan_in_trailing_21d_corr_window():
+    """N-5: a NaN anywhere in the trailing 21d window of
+    `avg_pairwise_corr_63d` must propagate to `avg_pairwise_corr_slope_21d`
+    as NaN, which the rule guards against → rising_fragility = False even
+    when breadth is weak and the other slope is positive."""
+    cfg = _default_rules_config()
+    index = pd.bdate_range(end="2024-12-31", periods=50)
+    avg_corr = pd.Series(np.linspace(0.30, 0.60, 50), index=index)
+    # Inject NaN inside the trailing 21d window (10 sessions before the end).
+    avg_corr.iloc[-10] = float("nan")
+    rising_eig = pd.Series(np.linspace(0.30, 0.55, 50), index=index)
+    flat_pct = pd.Series(0.50, index=index)
+    spy_close = pd.Series(np.linspace(400.0, 420.0, 50), index=index)
+    eff_rank = pd.Series(4.0, index=index)
+
+    features = NetworkFragilityFeatures(
+        avg_pairwise_corr_63d=avg_corr,
+        avg_pairwise_corr_percentile_504d=flat_pct,
+        largest_eigenvalue_share=rising_eig,
+        largest_eigenvalue_share_percentile_504d=flat_pct,
+        effective_rank=eff_rank,
+        effective_rank_percentile_504d=flat_pct,
+        absorption_ratio_top3=flat_pct,
+        dispersion_ratio=flat_pct,
+        dispersion_ratio_percentile_252d=flat_pct,
+    )
+    inputs = build_rule_inputs_for_date(
+        features=features,
+        dt=index[-1],
+        spy_close=spy_close,
+        realized_vol_percentile_252d=flat_pct,
+        vix_percentile_252d=flat_pct,
+    )
+    assert math.isnan(inputs.avg_pairwise_corr_slope_21d)
+    assert (
+        evaluate_rising_fragility(inputs, cfg, breadth_label="weak_breadth") is False
+    )
 
 
 # ---------- Integration over a multi-day features series ---------------------

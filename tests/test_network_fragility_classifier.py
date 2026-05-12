@@ -161,13 +161,19 @@ def test_default_yaml_loads_deescalation_days_by_label_per_v2_spec_3_7():
     cfg = load_default_regime_config()
     assert cfg.network_fragility is not None
     deesc = cfg.network_fragility.deescalation_days_by_label
-    # v2 spec §3.7 lines 675–679 verbatim.
+    # v2 spec §3.7 lines 675–679 verbatim PLUS Implementation Ambiguity Log
+    # entry #8: `unknown` is treated as a high-risk hold (5d) so a single-day
+    # quality flicker does NOT fast-track de-escalation through unknown.
     assert deesc == {
         "rising_fragility": 3,
         "correlation_concentration": 3,
         "correlation_to_one": 5,
         "systemic_stress": 5,
+        "unknown": 5,
     }
+    # Default for labels NOT listed (diversified_normal, stock_picker_dispersion)
+    # is exposed explicitly per Implementation Ambiguity Log entry #6.
+    assert cfg.network_fragility.default_deescalation_days == 0
 
 
 def test_network_fragility_config_rejects_unknown_keys():
@@ -364,3 +370,74 @@ def test_engine_classify_window_forces_unknown_when_universe_data_missing():
     for out in timeline.outputs:
         assert out.network_fragility.active_label == "unknown"
         assert out.network_fragility.raw_label == "unknown"
+
+
+# ---------- Slice-1 cleanup: I1 + I2 regression tests ------------------------
+
+
+def test_classifier_raises_on_v1_axis_calendar_drift_breadth():
+    """I1: when caller supplies a v1 breadth_active_labels_by_date dict that
+    is missing a session in ``context.sessions``, the classifier MUST raise
+    rather than silently substituting 'unknown' (which would defang
+    systemic_stress on any drifted session)."""
+    context, _ = _build_context_with_full_universe()
+    store = build_feature_store(
+        context, network_fragility_config=context.config.network_fragility
+    )
+    # Build a complete breadth dict, then drop one session.
+    breadth = {day: "healthy_breadth" for day in context.sessions}
+    volatility = {day: "normal_vol" for day in context.sessions}
+    dropped = list(context.sessions)[-50]
+    del breadth[dropped]
+
+    with pytest.raises(KeyError, match="breadth_active_labels_by_date missing session"):
+        NetworkFragilitySeriesClassifier().build(
+            context,
+            store,
+            breadth_active_labels_by_date=breadth,
+            volatility_active_labels_by_date=volatility,
+        )
+
+
+def test_classifier_raises_on_v1_axis_calendar_drift_volatility():
+    """I1: same contract for volatility."""
+    context, _ = _build_context_with_full_universe()
+    store = build_feature_store(
+        context, network_fragility_config=context.config.network_fragility
+    )
+    breadth = {day: "healthy_breadth" for day in context.sessions}
+    volatility = {day: "normal_vol" for day in context.sessions}
+    dropped = list(context.sessions)[-50]
+    del volatility[dropped]
+
+    with pytest.raises(KeyError, match="volatility_active_labels_by_date missing session"):
+        NetworkFragilitySeriesClassifier().build(
+            context,
+            store,
+            breadth_active_labels_by_date=breadth,
+            volatility_active_labels_by_date=volatility,
+        )
+
+
+def test_unknown_flicker_does_not_fast_track_deescalation_through_correlation_to_one():
+    """I2(b): a single-day `unknown` flicker in the middle of a stable
+    `correlation_to_one` run must NOT cause fast de-escalation. With
+    `unknown: 5` in deescalation_days_by_label, the stable label holds at
+    `correlation_to_one` on the day after the flicker."""
+    from regime_detection.hysteresis import apply_per_label_asymmetric_hysteresis
+
+    cfg = load_default_regime_config().network_fragility
+    raws: list[NetworkFragilityLabel] = (
+        ["correlation_to_one"] * 10
+        + ["unknown"]  # one-day quality flicker
+        + ["correlation_to_one"] * 5
+    )
+    stable, _active = apply_per_label_asymmetric_hysteresis(
+        raw_labels=raws,
+        risk_rank=NETWORK_FRAGILITY_RISK_RANK,
+        deescalation_days_by_label=cfg.deescalation_days_by_label,
+        default_deescalation_days=cfg.default_deescalation_days,
+    )
+    # The single-day unknown must not flip stable away from correlation_to_one.
+    assert stable[10] == "correlation_to_one"
+    assert stable[11] == "correlation_to_one"

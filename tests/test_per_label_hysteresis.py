@@ -3,17 +3,14 @@ from __future__ import annotations
 import pytest
 
 from regime_detection.hysteresis import apply_per_label_asymmetric_hysteresis
+from regime_detection.network_fragility_rules import NETWORK_FRAGILITY_RISK_RANK
 
 
-NETWORK_FRAGILITY_RANK: dict[str, int] = {
-    "diversified_normal": 0,
-    "stock_picker_dispersion": 1,
-    "rising_fragility": 2,
-    "correlation_concentration": 2,
-    "correlation_to_one": 3,
-    "systemic_stress": 4,
-    "unknown": 2,
-}
+# Use the canonical risk-rank constant (v2 §3.6) — never re-state it locally.
+# A prior local fixture used `systemic_stress: 4` which silently diverged from
+# the spec (systemic_stress: 3, tied with correlation_to_one); see
+# Implementation Ambiguity Log entry #7.
+NETWORK_FRAGILITY_RANK = NETWORK_FRAGILITY_RISK_RANK
 
 NETWORK_FRAGILITY_DEESCALATION_DAYS: dict[str, int] = {
     "rising_fragility": 3,

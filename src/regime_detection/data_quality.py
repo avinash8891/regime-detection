@@ -20,7 +20,18 @@ def assess_series_input_quality(
     raw_label: str,
     max_freshness_days: int,
     min_completeness: float,
+    skip_raw_label_short_circuit: bool = False,
 ) -> DataQuality:
+    """Assess quality of required input series at ``as_of_date``.
+
+    When ``skip_raw_label_short_circuit=True``, the ``raw_label == "unknown"``
+    branch is bypassed — callers who compute the raw label AFTER quality (e.g.
+    V2 NetworkFragilitySeriesClassifier) want a pure-quality assessment of the
+    inputs themselves; they then re-check with ``quality_forces_unknown`` and
+    map back to ``unknown`` if rules don't fire. Default keeps the V1 semantics
+    where a ``raw_label=='unknown'`` upstream signal forces an insufficient-
+    history status.
+    """
     dt = pd.Timestamp(as_of_date)
     windows = [_window_to_asof(series=series, as_of_date=dt, required_trading_days=required_trading_days) for series in required_inputs]
     if any(len(window) < required_trading_days for window in windows):
@@ -48,7 +59,7 @@ def assess_series_input_quality(
             completeness=completeness,
             reason="insufficient_data",
         )
-    if raw_label == "unknown":
+    if raw_label == "unknown" and not skip_raw_label_short_circuit:
         return DataQuality(
             status="insufficient_history",
             freshness_days=None,

@@ -295,6 +295,111 @@ volume_liquidity_risk_rank:
 
 ---
 
+## Implementation Ambiguity Log
+
+Per `docs/v2_slice_gate_checklist.md` §8 (framework), every ambiguity discovered
+during slice implementation that is resolved in code (rather than re-spec'd) is
+recorded here with: spec citation, the ambiguity, the pinned resolution, and
+the slice/commit that resolved it. Entries are append-only.
+
+1. **§3.2 line 577 — `effective_rank` log base.**
+   Spec pseudocode wrote `log` without naming the base.
+   Resolution: natural log (`ln`, base e); identity correlation matrix yields
+   `effective_rank = N`. Pinned in spec line 581 and in
+   `regime_detection.network_fragility.compute_features`.
+   Resolved by Slice 1.2 cleanup (commit `ef08eb0`).
+
+2. **§3.2 — `min_universe_size` and `min_window_completeness`.**
+   Spec did not specify minimum universe size or per-window completeness floor
+   for the 63d correlation window.
+   Resolution: pinned at `min_universe_size = 20` and
+   `min_window_completeness = 0.9`, exposed in v2 config under
+   `network_fragility` for §9.1 calibration. See
+   `NetworkFragilityConfig` in `regime_detection.config`.
+   Resolved by Slice 1.2 cleanup (commit `ef08eb0`).
+
+3. **§3.5 line 634 / line 656 — `narrowing_breadth` enum gap.**
+   v2 §3.5 names `narrowing_breadth` in the accepted breadth sets for
+   `rising_fragility` and `systemic_stress`, but V1's `BreadthLabel` enum
+   (`regime_detection.breadth_state`) does not yet contain that literal.
+   Resolution: pin the accepted sets to what V1 can express today —
+   `rising_fragility` accepts `{weak_breadth, divergent_fragile}` and
+   `systemic_stress` accepts `{weak_breadth}`. Both call sites carry
+   `# TODO(v2.1-breadth-enum)` markers in
+   `regime_detection.network_fragility_rules` so they can be relinked when the
+   enum is extended.
+   Resolved by Slice 1.3 (commit `c3badfc`).
+
+4. **§3.5 line 620 — `effective_rank_stability_threshold`.**
+   Spec wrote "21d std < 5% of mean" inline.
+   Resolution: 0.05 pinned as a configurable threshold under
+   `network_fragility.rules.effective_rank_stability_threshold` (v2
+   calibration §9.1 may retune).
+   Resolved by Slice 1.3 (commit `c3badfc`).
+
+5. **§3.5 line 632 — `rising_fragility` "positive slope" definition.**
+   Spec wrote "rising over 21d (positive slope)" without naming the
+   regression form or strictness.
+   Resolution: strictly-positive OLS slope (`numpy.polyfit(x, y, deg=1)`) over
+   the trailing 21 sessions with a unit trading-day x-index. The 21d window is
+   spec-fixed (`_SPEC_SLOPE_WINDOW_DAYS` constant, not configurable); only the
+   threshold (`> 0.0`) is part of the rule.
+   Resolved by Slice 1.3 (commit `c3badfc`).
+
+6. **§3.7 lines 675–680 — partial hysteresis spec.**
+   Spec lists de-escalation-day defaults for only 4 of the 7 §3.3 labels
+   (`rising_fragility=3`, `correlation_concentration=3`,
+   `correlation_to_one=5`, `systemic_stress=5`).
+   Resolution: the other three labels (`diversified_normal`,
+   `stock_picker_dispersion`, `unknown`) default to `0` (immediate
+   de-escalation), consistent with their low §3.6 risk-rank. Pinned in the v2
+   config under `network_fragility.hysteresis.deescalation_days`.
+   Resolved by Slice 1.4 (commit `f82eeb0`).
+
+7. **§3.6 line 667 — `systemic_stress` risk_rank.**
+   Spec pins `systemic_stress: 3`. A legacy local fixture in
+   `tests/test_per_label_hysteresis.py` had used `4`, which silently bypassed
+   the now-canonical config value.
+   Resolution: import `NETWORK_FRAGILITY_RISK_RANK` from
+   `regime_detection.network_fragility_rules` (the spec-aligned constant) in
+   tests rather than re-declaring locally.
+   Resolved by Slice 1.4 cleanup.
+
+8. **§3.7 line 675 — `unknown` flicker risk.**
+   `unknown` carries `risk_rank=2` (§3.6 line 668), lower than
+   `correlation_to_one=3` and `systemic_stress=3`. With `unknown` defaulting
+   to `default_deescalation_days=0` (entry #6), a single-day data-quality
+   flicker through `unknown` while stable is `correlation_to_one` would
+   immediately fast-track de-escalation to `unknown`.
+   Resolution: pin `deescalation_days_by_label.unknown = 5` (equal to
+   `correlation_to_one`) in the v2 yaml so single-day flickers cannot relax
+   the axis. Exposed `NetworkFragilityConfig.default_deescalation_days` so
+   the §9.1 calibration can re-tune both the listed and default cohorts
+   without code changes.
+   Resolved by Slice 1.4 cleanup.
+
+9. **V1↔V2 axis date alignment (`axis_series.py` v2 classifier).**
+   The classifier consumes V1 breadth/volatility `active_labels_by_date`
+   dicts. The pre-cleanup code used `dict.get(day, "unknown")`, which
+   silently downgraded any drifted session to `"unknown"` — defanging
+   `systemic_stress`/`rising_fragility` (both gated on breadth).
+   Resolution: when the v1 dict is supplied (non-None), a missing session
+   raises `KeyError` (loud failure). The `"unknown"` fallback is reachable
+   only when the caller explicitly passes `None` for the v1 dict
+   (unit-test path).
+   Resolved by Slice 1.4 cleanup.
+
+10. **§2.8 data-quality helper — pure-quality vs label-aware paths.**
+    `assess_series_input_quality` historically short-circuited on
+    `raw_label == "unknown"` to mark an `insufficient_history` status. V2
+    classifiers (NetworkFragility) compute the raw label AFTER quality, so
+    the V1 short-circuit forced a magic-string workaround at the call site.
+    Resolution: add `skip_raw_label_short_circuit: bool = False` to the
+    helper. V1 callers keep default semantics; V2 callers opt in.
+    Resolved by Slice 1.4 cleanup.
+
+---
+
 ## 2. Layer 2 V2 — Full Structural-Causal State
 
 ### 2A. Monetary / Liquidity V2

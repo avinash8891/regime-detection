@@ -51,11 +51,15 @@ V2_NETWORK_FRAGILITY_UNIVERSE = [
 ]
 
 # V2 spec §3.7 — per-label asymmetric hysteresis deescalation days.
+# `unknown: 5` added per Implementation Ambiguity Log entry #8: treat
+# `unknown` as a high-risk hold so single-day quality flickers cannot
+# fast-track de-escalation through the lower-risk band.
 V2_NETWORK_FRAGILITY_DEESCALATION_DAYS = {
     "rising_fragility": 3,
     "correlation_concentration": 3,
     "correlation_to_one": 5,
     "systemic_stress": 5,
+    "unknown": 5,
 }
 
 # V2 spec §3.5 — rule-engine thresholds (Slice 1.3). Each value cites a
