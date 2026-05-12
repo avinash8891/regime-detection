@@ -1,0 +1,156 @@
+diff --git a/src/regime_detection/axis_series.py b/src/regime_detection/axis_series.py
+index e5a37b2..9bc7949 100644
+--- a/src/regime_detection/axis_series.py
++++ b/src/regime_detection/axis_series.py
+@@ -382,16 +382,32 @@ def build_event_calendar_series(context: MarketContext) -> dict[date, EventCalen
+                 matches_by_day[sessions[idx]].add(label)
+ 
+     expiry_start, expiry_end = context.config.expiry_rules.monthly_options.window_trading_days
+-    for year, month in sorted({(day.year, day.month) for day in sessions}):
++    sessions_by_month: dict[tuple[int, int], list[date]] = {}
++    for day in sessions:
++        sessions_by_month.setdefault((day.year, day.month), []).append(day)
++    for (year, month), month_sessions in sorted(sessions_by_month.items()):
++        first = date(year, month, 1)
++        offset = (4 - first.weekday()) % 7  # Friday
++        first_friday = first + timedelta(days=offset)
++        candidate = first_friday + timedelta(days=14)
++        in_context_candidates = [session for session in month_sessions if session <= candidate]
++        if month_sessions[-1] >= candidate and in_context_candidates:
++            expiry_idx = session_positions[in_context_candidates[-1]]
++            start_idx = max(0, expiry_idx + expiry_start)
++            end_idx = min(len(sessions) - 1, expiry_idx + expiry_end)
++            for idx in range(start_idx, end_idx + 1):
++                matches_by_day[sessions[idx]].add("expiry_week")
++            continue
++
+         expiry_date = _month_expiry_date(year, month)
+         session_window = list(_sessions_between(expiry_date - timedelta(days=10), expiry_date + timedelta(days=10)))
+         if expiry_date not in session_window:
+             continue
+-        expiry_idx = session_window.index(expiry_date)
++        expiry_window_idx = session_window.index(expiry_date)
+         for idx, day in enumerate(session_window):
+             if day not in matches_by_day:
+                 continue
+-            delta = idx - expiry_idx
++            delta = idx - expiry_window_idx
+             if expiry_start <= delta <= expiry_end:
+                 matches_by_day[day].add("expiry_week")
+ 
+diff --git a/tests/test_schema_and_timeline.py b/tests/test_schema_and_timeline.py
+index 6e7b149..9be0017 100644
+--- a/tests/test_schema_and_timeline.py
++++ b/tests/test_schema_and_timeline.py
+@@ -758,6 +758,111 @@ def test_classify_with_inflation_growth_features_defaults_to_goldilocks_when_no_
+     assert inflation_output.evidence["cross_axis_reads"]["credit_funding"] == "credit_calm"
+ 
+ 
++def test_classify_surfaces_db_null_series_for_credit_funding_and_inflation_unknowns() -> None:
++    engine = RegimeEngine()
++    sessions = nyse_calendar().schedule(start_date="2022-01-03", end_date="2024-12-31").index[:420]
++    end_date = sessions[-1].date()
++    market_rows: list[dict[str, object]] = []
++    for idx, ts in enumerate(sessions):
++        for symbol, close in {
++            "SPY": 100.0 + idx * 0.20,
++            "RSP": 99.0 + idx * 0.19,
++            "VIXCLS": 20.0 + idx * 0.01,
++            "TLT": 110.0 - idx * 0.02,
++        }.items():
++            market_rows.append(
++                {
++                    "date": ts.date(),
++                    "symbol": symbol,
++                    "open": close,
++                    "high": close * 1.01,
++                    "low": close * 0.99,
++                    "close": close,
++                    "volume": 1_000_000,
++                }
++            )
++    market_data = pd.DataFrame(market_rows)
++    inflation_feature_rows: list[dict[str, object]] = []
++    credit_feature_rows: list[dict[str, object]] = []
++    monetary_feature_rows: list[dict[str, object]] = []
++    for ts in sessions:
++        inflation_feature_rows.extend(
++            [
++                {"date": ts.date(), "series_id": "cpi_all_items_yoy_latest_known", "value": 0.028, "source_inputs": '{"test": true}'},
++                {"date": ts.date(), "series_id": "cpi_all_items_yoy_change_3m_latest_known", "value": -0.002, "source_inputs": '{"test": true}'},
++                {"date": ts.date(), "series_id": "pmi_manufacturing_latest_known", "value": 50.5, "source_inputs": '{"test": true}'},
++                {"date": ts.date(), "series_id": "commodity_basket_component_count_63d", "value": 4.0, "source_inputs": '{"test": true}'},
++                {"date": ts.date(), "series_id": "commodity_basket_return_63d", "value": -0.03, "source_inputs": '{"test": true}'},
++                {"date": ts.date(), "series_id": "cyclical_defensive_rs_return_63d", "value": 0.01, "source_inputs": '{"test": true}'},
++            ]
++        )
++        monetary_feature_rows.append(
++            {"date": ts.date(), "series_id": "10y_yield_change_63d_bps", "value": -5.0, "source_inputs": '{"test": true}'}
++        )
++        credit_feature_rows.extend(
++            [
++                {"date": ts.date(), "series_id": "hy_ig_spread_proxy_percentile_504d", "value": 0.60, "source_inputs": '{"test": true}'},
++                {"date": ts.date(), "series_id": "hy_ig_spread_proxy_change_21d", "value": -0.01, "source_inputs": '{"test": true}'},
++                {"date": ts.date(), "series_id": "hy_ig_spread_proxy_change_63d", "value": -0.02, "source_inputs": '{"test": true}'},
++                {"date": ts.date(), "series_id": "nfci_percentile_504d", "value": 0.30, "source_inputs": '{"test": true}'},
++                {"date": ts.date(), "series_id": "broad_usd_return_21d", "value": None if ts.date() == end_date else 0.00, "source_inputs": '{"test": true}'},
++                {"date": ts.date(), "series_id": "broad_usd_return_63d", "value": 0.00, "source_inputs": '{"test": true}'},
++                {
++                    "date": ts.date(),
++                    "series_id": "sofr_admin_rate_spread_percentile_252d",
++                    "value": None if ts.date() == end_date else 0.10,
++                    "source_inputs": '{"test": true}',
++                },
++                {"date": ts.date(), "series_id": "admin_rate", "value": 5.4, "source_inputs": '{"test": true}'},
++                {
++                    "date": ts.date(),
++                    "series_id": "sofr_admin_rate_spread",
++                    "value": None if ts.date() == end_date else 0.0,
++                    "source_inputs": '{"test": true}',
++                },
++                {
++                    "date": ts.date(),
++                    "series_id": "ted_spread_percentile_252d",
++                    "value": None if ts.date() == end_date else 0.10,
++                    "source_inputs": '{"test": true}',
++                },
++                {
++                    "date": ts.date(),
++                    "series_id": "ted_spread",
++                    "value": None if ts.date() == end_date else 0.0,
++                    "source_inputs": '{"test": true}',
++                },
++                {"date": ts.date(), "series_id": "kre_rs_vs_spy_63d", "value": 0.0, "source_inputs": '{"test": true}'},
++            ]
++        )
++    inflation_growth_features = pd.DataFrame(inflation_feature_rows)
++    monetary_features = pd.DataFrame(monetary_feature_rows)
++    credit_funding_features = pd.DataFrame(credit_feature_rows)
++
++    output = engine.classify(
++        as_of_date=end_date,
++        market_data=market_data,
++        credit_funding_features=credit_funding_features,
++        monetary_features=monetary_features,
++        inflation_growth_features=inflation_growth_features,
++    )
++
++    credit_output = output.structural_causal_state.credit_funding
++    assert credit_output.active_label == "unknown"
++    assert credit_output.evidence["db_null_feature_series_on_date"] == [
++        "broad_usd_return_21d",
++        "sofr_admin_rate_spread",
++        "sofr_admin_rate_spread_percentile_252d",
++        "ted_spread",
++        "ted_spread_percentile_252d",
++    ]
++
++    inflation_output = output.structural_causal_state.inflation_growth
++    assert inflation_output.active_label == "unknown"
++    assert inflation_output.evidence["upstream_unknown_inputs"] == ["credit_funding"]
++    assert inflation_output.evidence["cross_axis_reads"]["credit_funding"] == "unknown"
++
++
+ def test_classify_with_credit_funding_features_enables_systemic_stress_second_pass() -> None:
+     engine = RegimeEngine()
+     sessions = nyse_calendar().schedule(start_date="2020-01-02", end_date="2022-12-30").index[:700]
