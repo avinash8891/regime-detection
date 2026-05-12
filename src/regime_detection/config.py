@@ -317,6 +317,70 @@ class VolumeLiquidityV2Config(BaseModel):
     volume_zscore_ddof: int = Field(ge=0, default=1)
 
 
+class VolumeLiquidityRulesConfig(BaseModel):
+    """v2 §1E rule-engine thresholds (Slice 2.7).
+
+    Each threshold is cited to its line in
+    ``docs/regime_engine_v2_spec.md`` §1E. The
+    ``liquidity_gap_*`` thresholds are carried for forward-compat — the
+    rule itself is DEFERRED (Implementation Ambiguity Log entry #40)
+    because the 252d-percentile of ``gap_frequency_20d`` is not yet
+    computed. The thresholds load and validate today; only the rule
+    predicate short-circuits to ``False`` until that feature lands.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    # panic_volume — v2 §1E line 272. Must be > 0 because volume z-score
+    # under any sane lookback has zero mean; a non-positive threshold
+    # would fire on >50% of sessions, defanging the "abnormal volume" intent.
+    panic_volume_zscore_threshold: float = Field(gt=0.0, default=2.0)
+
+    # panic_volume — v2 §1E line 273. Must be < 0 because the rule gates
+    # on a strictly NEGATIVE single-day return (a non-negative threshold
+    # would admit up days, defeating the "selling pressure" intent).
+    panic_volume_return_threshold: float = Field(lt=0.0, default=-0.02)
+
+    # liquidity_gap_behavior (DEFERRED, Ambiguity Log #40) — v2 §1E line 278.
+    liquidity_gap_frequency_percentile_threshold: float = Field(
+        ge=0.0, le=1.0, default=0.75
+    )
+
+    # liquidity_gap_behavior (DEFERRED) — v2 §1E line 279.
+    liquidity_gap_intraday_range_percentile_threshold: float = Field(
+        ge=0.0, le=1.0, default=0.75
+    )
+
+
+class VolumeLiquidityConfig(BaseModel):
+    """v2 §1E volume/liquidity axis classifier configuration (Slice 2.7).
+
+    Holds the rule thresholds and per-label hysteresis days for the
+    new ``volume_liquidity_state`` axis. The §1E spec is silent on
+    hysteresis (Implementation Ambiguity Log entry #41 pins defaults
+    by risk_rank analogy with §3.7 — panic_volume = 3 like
+    correlation_to_one's hold pattern; normal_volume = 0; unknown = 2).
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    # v2 §1E rule-engine thresholds (Slice 2.7).
+    rules: VolumeLiquidityRulesConfig
+
+    # v2 §1E is silent on per-label hysteresis days. Ambiguity Log entry
+    # #41 pins panic_volume=3 (high-risk hold, analogous to §3.7
+    # correlation_to_one=3-5), normal_volume=0 (immediate de-escalation),
+    # unknown=2 (modest hold to absorb single-day NaN flickers without
+    # stranding the axis), liquidity_gap_behavior=2 (reserved at same
+    # rank as unknown — pinned even though the rule never fires today
+    # so the future flip needs no config edits).
+    deescalation_days_by_label: dict[str, int]
+
+    # Default for labels NOT in `deescalation_days_by_label`. Matches the
+    # §3.7 ambiguity #6 pattern.
+    default_deescalation_days: int = Field(ge=0, default=0)
+
+
 class BreadthV2Config(BaseModel):
     """v2 §1D — Layer 1 V2 Breadth features (Slice 2.3, evidence-only).
 
@@ -456,6 +520,8 @@ class RegimeConfig(BaseModel):
     volatility_state_v2: VolatilityV2Config | None = None
     breadth_state_v2: BreadthV2Config | None = None
     volume_liquidity_v2: VolumeLiquidityV2Config | None = None
+    # v2 §1E axis classifier configuration (Slice 2.7).
+    volume_liquidity_state: VolumeLiquidityConfig | None = None
     transition_score: TransitionScoreConfig | None = None
     monetary_pressure_v2: MonetaryPressureV2Config | None = None
     inflation_growth: InflationGrowthConfig | None = None

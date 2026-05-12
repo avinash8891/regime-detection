@@ -184,6 +184,33 @@ volume_liquidity_v2:
   volume_zscore_lookback_days: 20       # v2 §1E line 256
   volume_zscore_ddof: 1                 # pandas/numpy default; pinned in Ambiguity Log
 
+# v2 §1E — Volume / Liquidity axis classifier (Slice 2.7).
+# Rule layer on top of the slice-2.4 volume_zscore_20d feature.
+# Ships `panic_volume` and `normal_volume` live; `liquidity_gap_behavior`
+# is deferred (needs 252d-percentile of gap_frequency_20d, not yet
+# computed — see Implementation Ambiguity Log entry #40).
+volume_liquidity_state:
+  rules:
+    panic_volume_zscore_threshold: 2.0                    # v2 §1E line 272
+    panic_volume_return_threshold: -0.02                  # v2 §1E line 273
+    # Deferred (Ambiguity Log #40); thresholds loaded for forward-compat.
+    liquidity_gap_frequency_percentile_threshold: 0.75    # v2 §1E line 278
+    liquidity_gap_intraday_range_percentile_threshold: 0.75  # v2 §1E line 279
+  # §1E is silent on hysteresis days. Pinned per Ambiguity Log entry #41:
+  #   panic_volume = 3 (high-risk hold, analogous to §3.7 correlation_to_one).
+  #   normal_volume = 0 (immediate de-escalation; lowest risk_rank).
+  #   unknown = 2 (modest hold so a single-day NaN flicker doesn't strand
+  #     the axis at the data-quality fallback).
+  #   liquidity_gap_behavior = 2 (reserved at same rank as `unknown`;
+  #     pinned even though the rule never fires today so the future flip
+  #     needs no config edits).
+  deescalation_days_by_label:
+    panic_volume: 3
+    normal_volume: 0
+    unknown: 2
+    liquidity_gap_behavior: 2
+  default_deescalation_days: 0
+
 transition_score:
   weights_with_hmm:
     volatility_acceleration: 0.20

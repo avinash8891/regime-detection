@@ -112,6 +112,36 @@ class VolumeLiquidityOutput(BaseModel):
     data_quality: DataQuality
 
 
+VolumeLiquidityLabel = Literal[
+    "normal_volume",
+    "panic_volume",
+    "liquidity_gap_behavior",
+    "unknown",
+]
+
+
+class VolumeLiquidityStateOutput(BaseModel):
+    """v2 §1E volume/liquidity state output (Slice 2.7).
+
+    Carries the three-tier label triple (raw/stable/active) the v2
+    axes use, plus per-day evidence and a data-quality record. The
+    ``mode`` literal pins the only compute path shipped today: a
+    z-score over SPY's daily share volume (`volume_zscore_v1`). When
+    the feature seam is None (no volume column) the timeline emits a
+    placeholder via the engine wiring rather than instantiating this
+    output class.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    raw_label: VolumeLiquidityLabel
+    stable_label: VolumeLiquidityLabel
+    active_label: VolumeLiquidityLabel
+    evidence: dict[str, Any]
+    data_quality: DataQuality
+    mode: Literal["volume_zscore_v1"] = "volume_zscore_v1"
+
+
 class ChangePointOutput(BaseModel):
     """Change-point detection output (v2 spec §4.6 — V2.1 ship)."""
 
@@ -209,7 +239,7 @@ class RegimeOutput(BaseModel):
     # exclude_none=True). Each lands when its v2 slice ships.
     inflation_growth_state: InflationGrowthOutput | None = None  # v2 §2B (slice 5)
     credit_funding_state: CreditFundingOutput | None = None  # v2 §2C (slice 4)
-    volume_liquidity_state: VolumeLiquidityOutput | None = None  # v2 §1E (slice 2)
+    volume_liquidity_state: VolumeLiquidityStateOutput | None = None  # v2 §1E (slice 2.7)
     change_point: ChangePointOutput | None = None  # v2 §4.6 (V2.1)
 
     # V1 wire contract: omit any None-valued conditional fields in nested models.

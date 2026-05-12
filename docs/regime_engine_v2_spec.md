@@ -755,6 +755,62 @@ the slice/commit that resolved it. Entries are append-only.
     `regime_detection.volatility_state_v2.evaluate_v2_volatility_label`.
     Resolved by Slice 2.6.
 
+40. **§1E lines 276-280 — `liquidity_gap_behavior` deferral.**
+    Spec rule requires `gap_frequency_20d percentile_252d > 0.75 AND
+    intraday_range_percentile_252d > 0.75`. The intraday-range
+    percentile already lives on `volatility_state_v2` (slice 2.2), but
+    the 252d percentile of `gap_frequency_20d` is NOT yet computed by
+    any feature module — the slice-2.2 compute exposes only the raw
+    `gap_frequency_20d` series, not its 252d percentile rank. Per
+    v2 §10 absolute rule we do NOT invent the missing input.
+    Resolution: defer the `liquidity_gap_behavior` rule until a
+    follow-up slice adds the 252d percentile of `gap_frequency_20d`
+    to `volatility_state_v2`. The `evaluate_liquidity_gap_behavior`
+    predicate in `regime_detection.volume_liquidity_rules`
+    short-circuits to `False` today; the function signature already
+    accepts the two percentile inputs (carrying NaN today) so a future
+    slice can flip the implementation without changing any call site.
+    The `VolumeLiquidityLabel` Literal still defines
+    `liquidity_gap_behavior` so the spec's full label set is honored at
+    the type level. Risk-rank slot 2 from §1E line 291 is reserved for
+    the future flip. Deferred by Slice 2.7.
+
+41. **§1E — per-label hysteresis days NOT in spec.**
+    The §1E text (lines 251-294) lists labels, rules, and risk_rank but
+    is SILENT on per-label de-escalation days. The §3.7 spec for
+    network_fragility provides the only worked analogue
+    (`correlation_to_one=5`, `correlation_concentration=3`,
+    `systemic_stress=5`, `rising_fragility=3` — high-risk labels hold
+    multi-day; low-risk labels release immediately). Resolution: pin
+    defaults by §1E-risk-rank analogy:
+      - `panic_volume = 3` (risk_rank 3, analogous to §3.7
+        `correlation_to_one`/`rising_fragility` holds — a single-day
+        normal_volume flicker after a panic must not fast-track
+        de-escalation).
+      - `normal_volume = 0` (risk_rank 0, lowest — immediate
+        de-escalation matches §3.7 `diversified_normal` pattern).
+      - `unknown = 2` (risk_rank 1, modest hold so a single-day NaN
+        flicker through `unknown` does not strand the axis at the
+        data-quality fallback — same intent as Implementation
+        Ambiguity Log entry #8 for network_fragility, scaled down to
+        match `unknown`'s lower §1E risk_rank).
+      - `liquidity_gap_behavior = 2` (risk_rank 2, deferred — pinned
+        so the future slice that flips the rule needs no config edit).
+    All four defaults live on `VolumeLiquidityConfig` in
+    `regime_detection.config` and in `configs/core3-v2.0.0.yaml`. The
+    v2 §9.1 calibration may retune via yaml.
+    Resolved by Slice 2.7.
+
+42. **§1E line 273 — `return_1d` source.**
+    Spec text references `return_1d` without naming its source. The V1
+    `regime_detection.volatility_state.compute_features` already
+    computes `return_1d = close / close.shift(1) - 1` and exposes it
+    on `VolatilityFeatures.return_1d`. Resolution: the v2 §1E volume/
+    liquidity classifier consumes that V1 series rather than
+    recomputing — one source of truth per AGENTS rule B. Wired in
+    `regime_detection.axis_series.VolumeLiquidityStateSeriesClassifier`.
+    Resolved by Slice 2.7.
+
 ---
 
 ## 2. Layer 2 V2 — Full Structural-Causal State

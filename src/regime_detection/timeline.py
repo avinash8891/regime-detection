@@ -117,6 +117,10 @@ def build_regime_timeline(
         bundle_entry=axis_bundle.network_fragility,
         sessions=working_context.sessions,
     )
+    # v2 §1E volume/liquidity axis (Slice 2.7). Stays None when the v2
+    # config / volume seam is absent — preserves V1 byte-identity since
+    # RegimeOutput.volume_liquidity_state already defaults to None.
+    volume_liquidity_by_date = axis_bundle.volume_liquidity_state
     monetary_pressure = MonetaryPressureOutput(
         label="unknown",
         evidence={"reason": "v2_classifier_not_yet_implemented"},
@@ -132,6 +136,11 @@ def build_regime_timeline(
         event_output = event_outputs[day]
         transition_output = transition_risk[day]
         network_fragility_output = network_fragility_by_date[day]
+        volume_liquidity_output = (
+            volume_liquidity_by_date.get(day)
+            if volume_liquidity_by_date is not None
+            else None
+        )
         outputs.append(
             RegimeOutput(
                 engine_version=engine_version(),
@@ -156,6 +165,7 @@ def build_regime_timeline(
                     transition_risk_label=transition_output.label,
                     event_calendar_active=event_output.active_label,
                 ),
+                volume_liquidity_state=volume_liquidity_output,
             )
         )
 

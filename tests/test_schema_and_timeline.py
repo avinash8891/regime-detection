@@ -44,8 +44,16 @@ def test_regime_output_emits_v2_unknown_placeholders_until_classifiers_ship(mark
     # Strategy-response conditional modifiers still omitted when not applicable.
     assert "hard_max_loss_required" not in dumped["strategy_response"]
     # New V2 top-level fields default to None → omitted via exclude_none=True.
-    for v2_field in ("inflation_growth_state", "credit_funding_state", "volume_liquidity_state", "change_point"):
+    # `volume_liquidity_state` ships in Slice 2.7 and IS populated when the v2
+    # config carries the axis block (default core3-v2.0.0.yaml does).
+    for v2_field in ("inflation_growth_state", "credit_funding_state", "change_point"):
         assert v2_field not in dumped, f"V2 optional field {v2_field!r} should be omitted until its slice ships"
+    # Slice 2.7: volume_liquidity_state is now populated end-to-end.
+    assert "volume_liquidity_state" in dumped
+    assert dumped["volume_liquidity_state"]["mode"] == "volume_zscore_v1"
+    assert dumped["volume_liquidity_state"]["raw_label"] in {
+        "normal_volume", "panic_volume", "liquidity_gap_behavior", "unknown",
+    }
     # TransitionRisk V2 optional fields stay omitted too (no score until slice 3).
     for v2_field in ("score", "score_interpretation", "score_components"):
         assert v2_field not in dumped["transition_risk"], f"transition_risk.{v2_field} should be omitted until v2 slice 3"
@@ -149,6 +157,7 @@ def test_classify_matches_last_output_of_shared_timeline_pipeline(market_df_for_
     timeline = build_regime_timeline(
         context=context,
         lookback_days=ENGINE_MINIMUM_HISTORY,
+        config=engine.config,
     )
     point_output = engine.classify(as_of_date=end_date, market_data=market_data)
 
