@@ -7,13 +7,17 @@ import pandas as pd
 from regime_detection.models import DataQuality
 
 
+# spec §2.8: completeness < 0.70 → label=unknown, reason=insufficient_data.
+# The 0.70 floor is a spec constant, not a function of min_completeness.
+INSUFFICIENT_COMPLETENESS_FLOOR = 0.70
+
+
 def assess_series_input_quality(
     *,
     as_of_date: date,
     required_inputs: list[pd.Series],
     required_trading_days: int,
     raw_label: str,
-    unknown_reason: str,
     max_freshness_days: int,
     min_completeness: float,
 ) -> DataQuality:
@@ -24,12 +28,11 @@ def assess_series_input_quality(
             status="insufficient_history",
             freshness_days=None,
             completeness=None,
-            reason=unknown_reason,
+            reason="required_feature_is_nan",
         )
 
     completeness = min(float(window.notna().mean()) for window in windows)
     freshness_days = max(_freshness_days(window=window, as_of_date=dt) for window in windows)
-    insufficient_threshold = max(0.0, min_completeness - 0.20)
 
     if freshness_days > max_freshness_days:
         return DataQuality(
@@ -38,7 +41,7 @@ def assess_series_input_quality(
             completeness=completeness,
             reason="stale_data",
         )
-    if completeness < insufficient_threshold:
+    if completeness < INSUFFICIENT_COMPLETENESS_FLOOR:
         return DataQuality(
             status="insufficient_data",
             freshness_days=freshness_days,
@@ -50,7 +53,7 @@ def assess_series_input_quality(
             status="insufficient_history",
             freshness_days=None,
             completeness=None,
-            reason=unknown_reason,
+            reason="required_feature_is_nan",
         )
     if completeness < min_completeness:
         return DataQuality(

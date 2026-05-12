@@ -79,7 +79,6 @@ class TrendDirectionSeriesClassifier:
             required_trading_days=200,
             max_freshness_days=context.config.data_quality.max_freshness_days,
             min_completeness=context.config.data_quality.min_completeness,
-            unknown_reason="required_feature_is_nan",
         )
 
 
@@ -105,7 +104,6 @@ class TrendCharacterSeriesClassifier:
             required_trading_days=63,
             max_freshness_days=context.config.data_quality.max_freshness_days,
             min_completeness=context.config.data_quality.min_completeness,
-            unknown_reason="insufficient_history",
         )
 
 
@@ -131,7 +129,6 @@ class VolatilitySeriesClassifier:
             required_trading_days=252,
             max_freshness_days=context.config.data_quality.max_freshness_days,
             min_completeness=context.config.data_quality.min_completeness,
-            unknown_reason="required_feature_is_nan",
         )
 
 
@@ -300,7 +297,6 @@ def _build_axis_outputs(
     required_trading_days: int,
     max_freshness_days: int,
     min_completeness: float,
-    unknown_reason: str,
 ) -> AxisSeriesResult:
     outputs_by_date: dict[date, AxisOutput] = {}
     stable_by_date: dict[date, str] = {}
@@ -314,7 +310,6 @@ def _build_axis_outputs(
             required_inputs=input_by_date,
             required_trading_days=required_trading_days,
             raw_label=raw,
-            unknown_reason=unknown_reason,
             max_freshness_days=max_freshness_days,
             min_completeness=min_completeness,
         )

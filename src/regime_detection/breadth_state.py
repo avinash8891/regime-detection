@@ -214,7 +214,6 @@ def _data_quality_for_asof(
         required_inputs=[spy_close, rsp_close],
         required_trading_days=required_trading_days,
         raw_label=raw_label,
-        unknown_reason="required_feature_is_nan",
         max_freshness_days=max_freshness_days,
         min_completeness=min_completeness,
     )
