@@ -1,0 +1,7 @@
+⚠ `[features].codex_hooks` is deprecated. Use `[features].hooks` instead.
+Enable it with `--enable hooks` or `[features].hooks` in config.toml. See
+https://developers.openai.com/codex/config-basic#feature-flags for details. what needs to be changed
+
+---
+
+make the changes

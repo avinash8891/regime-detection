@@ -1,0 +1,93 @@
+whitch branch and worktree i am in
+
+---
+
+why are current branch and head detatched?
+
+---
+
+wha tis canonical acquisition sqlite is it different branch?
+
+---
+
+before switching to main what was the rbanch and worktree
+
+---
+
+a lot of these changes i didnt know that they happened and why they happened. what should i know?
+
+---
+
+market-data-retrieval-request has how many branches now
+
+---
+
+what is diff between worktress and branches? i thought repo has multiple worktrees and each worktree has multiple branches. the repo is regime detection right?
+
+---
+
+explain in simple and short terms
+
+---
+
+what is a named timeline of comimts? wha tis a seprate folder where you open and edit the repo. eli5
+
+---
+
+i want to clean up this regime detection repo. i want every thing in local main and cleanup branches, worktrees. what do i do
+
+---
+
+what do you mean by remove latest main
+
+---
+
+what about code in extra worktree folder?
+
+---
+
+so you are saying latest main code is same has regime detection? i can safely remove the worktree?
+
+---
+
+but the code is inr repo history as earlier commit
+
+---
+
+delete the worktree. will you do it both locally and on github?
+
+---
+
+what do we do with other worktrees
+
+---
+
+Two different cases.
+
+  For [market-data-retrieval-request](/Users/avinashvankadaru/.superset/worktrees/
+  regime-detection/market-data-retrieval-request):
+
+  - it is mostly disposable
+  - it is detached at a561371
+  - the only live local thing there was untracked .entire/
+
+  So decide:
+
+  - if .entire/ is junk, remove this worktree
+  - if .entire/ matters, move it elsewhere first, then remove the worktree what is inside entire?
+
+---
+
+is it commited?
+
+---
+
+what do i want to commit it first
+
+---
+
+i want that data in other branch hence i want to commit and merge wth local main
+
+---
+
+merge into main. i will delete it later
