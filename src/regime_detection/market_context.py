@@ -115,8 +115,12 @@ def slice_context_to_end_date(*, context: MarketContext, end_date: date) -> Mark
 
 
 def _normalize_market_data_for_runtime(df: pd.DataFrame) -> pd.DataFrame:
+    if "date" not in df.columns:
+        return df
+    if pd.api.types.is_datetime64_any_dtype(df["date"]):
+        return df
     out = df.copy()
-    out["date"] = pd.to_datetime(out["date"], errors="coerce")
+    out["date"] = pd.to_datetime(out["date"])
     return out
 
 
