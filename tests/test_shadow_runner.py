@@ -61,7 +61,9 @@ def test_shadow_runner_writes_expected_artifacts_and_ledger(tmp_path: Path) -> N
     payload = json.loads(output_path.read_text())
     assert payload["as_of_date"] == "2023-12-14"
     assert payload["engine_version"].startswith("regime-engine-v")
-    assert payload["config_version"] == "core3-v1.0.0"
+    from regime_detection.config import load_default_regime_config
+
+    assert payload["config_version"] == load_default_regime_config().config_version
 
     archive_market = out_root / "input_archives" / "2023-12-14" / "market_data.parquet"
     archived_df = pd.read_parquet(archive_market)

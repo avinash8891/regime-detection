@@ -1,0 +1,122 @@
+config_version: core3-v2.0.0
+market: US
+trading_calendar: NYSE
+breadth_mode: etf_proxy
+etf_proxy:
+  cap_weight_index: SPY
+  equal_weight_proxy: RSP
+event_calendar:
+  market: US
+expiry_rules:
+  monthly_options:
+    rule: third_friday_of_month
+    window_trading_days: [-2, 0]
+    label: expiry_week
+earnings_seasons:
+  - quarter: Q1
+    start_rule: second_monday_of_january
+    end_offset_days: 35
+  - quarter: Q2
+    start_rule: second_monday_of_april
+    end_offset_days: 35
+  - quarter: Q3
+    start_rule: second_monday_of_july
+    end_offset_days: 35
+  - quarter: Q4
+    start_rule: second_monday_of_october
+    end_offset_days: 35
+data_quality:
+  max_freshness_days: 3
+  min_completeness: 0.90
+hysteresis:
+  trend_direction_deescalation_days: 3
+  trend_character_deescalation_days: 3
+  volatility_deescalation_days: 2
+  breadth_deescalation_days: 2
+  composite_deescalation_days: 3
+  event_calendar_days: 1
+
+# ---------------------------------------------------------------------------
+# V2 sub-configs (per docs/regime_engine_v2_spec.md).
+#
+# Slices not yet implemented (inflation_growth, credit_funding,
+# event_calendar_v2, strategy_cohort, strategy_family_constraints) are
+# intentionally omitted so they remain None on load.
+# ---------------------------------------------------------------------------
+
+network_fragility:
+  universe:
+    - XLB
+    - XLC
+    - XLE
+    - XLF
+    - XLI
+    - XLK
+    - XLP
+    - XLRE
+    - XLU
+    - XLV
+    - XLY
+    - QQQ
+    - IWM
+    - EFA
+    - EEM
+    - TLT
+    - HYG
+    - LQD
+    - GLD
+    - USO
+    - UUP
+    - KRE
+  correlation_lookback_days: 63
+  percentile_lookback_days: 504
+  min_universe_size: 20
+  min_window_completeness: 0.90
+  deescalation_days_by_label:
+    rising_fragility: 3
+    correlation_concentration: 3
+    correlation_to_one: 5
+    systemic_stress: 5
+
+transition_score:
+  weights_with_hmm:
+    volatility_acceleration: 0.20
+    breadth_deterioration: 0.20
+    correlation_concentration: 0.20
+    trend_break: 0.20
+    macro_event: 0.10
+    hmm_probability_shift: 0.10
+  weights_without_hmm:
+    volatility_acceleration: 0.225
+    breadth_deterioration: 0.225
+    correlation_concentration: 0.225
+    trend_break: 0.225
+    macro_event: 0.10
+  bands:
+    stable: [0.00, 0.35]
+    weakening: [0.35, 0.55]
+    transition_warning: [0.55, 0.75]
+    high: [0.75, 1.00]
+
+monetary_pressure_v2:
+  series_ids:
+    2y_yield: DGS2
+    10y_yield: DGS10
+    broad_usd_index: DTWEXBGS
+  yield_change_lookback_days: 63
+  tightening_threshold_bps: 50
+  easing_threshold_bps: -50
+  dxy_threshold_pct: 0.05
+
+vol_crush:
+  event_window_trading_days: 3
+  implied_vol_5d_change_threshold: -0.20
+  realized_vol_ratio_threshold: 0.75
+
+hmm:
+  n_states: 4
+  training_window_days: 504
+  retrain_cadence_days: 21
+
+no_flip_flop:
+  window_trading_days: 5
