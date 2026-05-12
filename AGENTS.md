@@ -38,10 +38,20 @@ Operating discipline for coding agents in this repository. Project-specific cont
 ## Review guidelines
 
 - Flag any regime classifier change that can use future data, non-NYSE calendars, or non-trading-date rollback as P1.
-- Flag any V1 implementation that adds V2 scaffolding, macro fetchers, HMM/correlation/eigenvalue regime logic, ORCA/SRR, Hurst, efficiency ratio, weighted transition score, or crash-condition logic as P1.
 - Flag fixture or golden-date changes that relax deterministic rule predicates to make a hand-labeled fixture pass as P1.
 - Flag missing cold-start/NaN handling, missing version-coupling checks, or missing config validation for unknown keys as P1.
 - Treat silent skips in tests, review hooks, data loading, or classifier output generation as P1.
+- Flag any V1 wire field that is renamed, removed, or has its type narrowed without an updated `tests/test_v1_frozen_replay.py` fixture and matching `tests/_v1_frozen_models.py` shim as P1. V1 archive replay must stay byte-identical.
+
+### V2 slice review guidelines (v2 spec §10)
+
+- Flag any V2 slice PR that ships without the `docs/v2_slice_gate_checklist.md` items completed as P1.
+- Flag any v2 component score formula, weight, threshold, or precedence ordering that deviates from the v2 spec section it cites as P1. Use v2 §4.2 formulas verbatim; v2 §4.3 weights verbatim; v2 §3.5 / §2A/§2B/§2C rules verbatim.
+- Flag any v2 slice that auto-labels HMM / GMM clusters as P1. v2 spec §10 requires manual cluster→label review.
+- Flag any v2 slice where HMM, GMM, or change-point output is used as the final regime label (rather than as `transition_score.score_components` evidence) as P1.
+- Flag any v2 macro threshold that ignores rate-era recalibration (v2 spec §2A) as P1.
+- Flag any v2 component that fails the v2 §9.1 gate (`evaluate_v2_gate` returns `passed=False`) yet ships to main as P1. Log the failure per §9.1 and revert.
+- Flag any v2 slice that introduces V3 features (ORCA, SRR, autoencoder, transformer per v2 §7) as P1.
 
 ## Hygiene
 
