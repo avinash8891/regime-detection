@@ -1,0 +1,43 @@
+src/regime_detection/volatility_state_v2.py
+  s_69e10dfae52a94::t_81c64de99a0fd0 202-223,228-229,231-257,261-263,270-276,281,284-334
+  s_69e10dfae52a94::t_88211e49ec109d 258-260,264-269,277-280,282-283
+  s_69e10dfae52a94::t_b7913fa59e4647 47-48,53-60,65-67,75-76
+  s_69e10dfae52a94::t_37baecaad904c0 163
+src/regime_detection/volatility_state.py
+  s_69e10dfae52a94::t_2dc3a96e270c78 266,274-300,302-315
+  s_69e10dfae52a94::t_63add24a2050b2 199-202
+  s_69e10dfae52a94::t_1d42eaa714cb47 5,13-15,17-63
+  s_69e10dfae52a94::t_1bcaef419a6160 215-230
+  s_69e10dfae52a94::t_fa0dbaa0518028 362-388
+  s_69e10dfae52a94::t_a0238c31e037bd 148-155,162
+src/regime_detection/config.py
+  s_69e10dfae52a94::t_9fc9a9cd81aaef 220-251
+  s_69e10dfae52a94::t_5006c99112b5f5 281-293
+tests/test_volatility_state_v2_rising_vol_rule.py
+  s_69e10dfae52a94::t_6ca54332eff226 1-233,236,246,251-253,266-512
+  s_69e10dfae52a94::t_1398229887a298 234-235,237-245,247-250,254-265
+src/regime_detection/configs/core3-v2.0.0.yaml
+  s_69e10dfae52a94::t_ebaf85db5076d1 143-149
+src/regime_detection/feature_store.py
+  s_69e10dfae52a94::t_d69d761635bfb0 156,158-161,168
+docs/regime_engine_v2_spec.md
+  s_69e10dfae52a94::t_d5a0bfeef75eb1 702,706,713-757
+src/regime_detection/axis_series.py
+  s_69e10dfae52a94::t_419699e98a3417 146-157
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.4",
+  "base_commit_sha": "ae7daf3c6598944ddcd9b57b27155ee26c51f926",
+  "prompts": {},
+  "sessions": {
+    "s_69e10dfae52a94": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "ef8c0903-9f31-4c26-be1c-64323350aa48",
+        "model": "claude-opus-4-7"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}
