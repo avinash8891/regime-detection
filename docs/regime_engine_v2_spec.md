@@ -875,6 +875,109 @@ the slice/commit that resolved it. Entries are append-only.
 
     No code committed for this slice — doc-only Ambiguity Log entry.
 
+44. **§2A lines 882–913 — Layer 2A Monetary/Liquidity V2 axis is blocked:
+    spec defines rule predicates but omits the structural scaffolding
+    (label set, precedence, risk-rank, hysteresis) and several feature
+    formulas.**
+
+    §2A provides:
+      - Source contract (lines 887–889): `2y yield = FRED DGS2`,
+        `10y yield = FRED DGS10`, `broad_usd_index = FRED DTWEXBGS`.
+      - One feature formula (line 896): `yield_change_zscore =
+        (yield_change_63d - mean_5y) / std_5y`.
+      - Three rule predicates (lines 901–913) referencing five distinct
+        z-score inputs (`yield_change_zscore_2y`,
+        `yield_change_zscore_10y`, `broad_usd_index_zscore_63d`,
+        `yield_change_zscore_21d_2y`, `yield_change_zscore_21d_10y`).
+
+    §2A is SILENT on every other scaffolding element that the §3
+    network-fragility template (which the slice prompt directs us to
+    mirror) provides explicitly:
+
+    - **Label set (analogous to §3.3).** The three rule predicates name
+      `tightening_pressure`, `easing_pressure`, `rate_shock`, but no
+      `Literal[...]` set is declared and no `neutral_*` / `unknown`
+      fallback label is named. Two of the three rules use OR-logic, so
+      both `tightening_pressure` AND `rate_shock` can fire on the same
+      session — the spec does not name a tie-breaker label or a
+      precedence ordering.
+    - **Precedence ordering (analogous to §3.4 / §1A line 132).** Not
+      stated. Slice 2.5 / 2.6 precedence-by-rank pattern (Ambiguity
+      Log entries #35 and #39) requires a spec-given ordering to
+      pin to. None exists for §2A.
+    - **Risk-rank table (analogous to §3.6 / §1E line 291).** Not
+      stated. Slice 1.4 / 2.7 hysteresis design requires a risk-rank
+      input.
+    - **Per-label de-escalation days (analogous to §3.7).** Not
+      stated. Ambiguity Log entry #41 pinned §1E hysteresis defaults
+      by §3.7 analogy, but only after §1E itself defined a complete
+      risk-rank table — which §2A lacks.
+    - **Missing feature formulas.** §2A gives the yield-z-score formula
+      for the 63d window only. The USD-index z-score
+      (`broad_usd_index_zscore_63d`) and the two 21d yield z-scores
+      consumed by `rate_shock` have NO formula in §2A — neither the
+      mean/std window length nor the change-window definition for the
+      21d variant is stated. Generalizing the 63d formula
+      (5y mean/std on the 63d-change series) to either the USD index
+      or the 21d window would be a spec invention.
+
+    Per V2 §10 ABSOLUTE RULE (line 1721 in v2 spec, "When the spec is
+    ambiguous or silent, stop and ask; do not invent") and the V2 Slice
+    Promotion Checklist §1 ("no formulas, thresholds, or precedence
+    invented — same rule for §3.5, §2A/§2B/§2C, etc."), Slice 4 cannot
+    ship a Monetary/Liquidity V2 axis classifier. Inventing the label
+    set, precedence, risk-rank, hysteresis days, and three of the five
+    feature formulas would be six interleaved spec inventions.
+
+    The two §2A features that ARE spec-given as formula
+    (`yield_change_zscore_2y` over 63d, `yield_change_zscore_10y` over
+    63d, both using the line-896 formula) cannot ship as
+    "evidence-only" either, because the only consumers named by the
+    spec are the three rule predicates — and the slice-2.4 precedent
+    (entry #29) for shipping features-before-classifier requires that
+    the feature has a determinate downstream consumer. Without label
+    set / precedence / risk-rank / hysteresis, there is no
+    `MonetaryPressureSeriesClassifier` to land in a follow-up.
+
+    Resolution: defer Slice 4 (Monetary/Liquidity V2 axis) until §2A
+    is amended with:
+      (a) an explicit label set (e.g.,
+          `Literal[tightening_pressure, easing_pressure, rate_shock,
+          neutral_monetary, unknown]` or whatever the author of §2A
+          intends);
+      (b) a precedence ordering analogous to §3.4;
+      (c) a risk-rank table analogous to §3.6;
+      (d) per-label de-escalation days analogous to §3.7;
+      (e) feature formulas for `broad_usd_index_zscore_63d`,
+          `yield_change_zscore_21d_2y`, and `yield_change_zscore_21d_10y`
+          — specifically: window length for the change, and window
+          length / placement for the mean/std normalizer.
+
+    Until §2A is amended, the v1 `MonetaryPressureOutput` placeholder
+    (`label="unknown"`, `evidence={"reason":
+    "v2_classifier_not_yet_implemented"}`,
+    `data_quality.status="insufficient_history"`) remains on
+    `RegimeOutput.structural_causal_state.monetary_pressure`, identical
+    to the slice-1-foundation shim. The V1 frozen-replay fixtures
+    (which use the separate `RegimeOutputV1Frozen` shim with
+    `LabelReasonOutputV1Frozen` for `monetary_pressure`) are
+    unaffected.
+
+    Note: the existing `MonetaryPressureV2Config` in
+    `regime_detection.config` (lines 417–432) was sketched before this
+    audit and references "draft absolute bps thresholds" per the §2A
+    line 891 deferral language. Those fields are unused at runtime
+    today and are out of scope for this entry — a future
+    spec-amendment slice will rewrite the config alongside the new
+    §2A scaffolding.
+
+    No code committed for this slice — doc-only Ambiguity Log entry.
+    The next data slice (slice 5 = §2B inflation/growth) is blocked
+    on GDPNow/Citi Surprise fetcher per the V2 Slice Promotion
+    Checklist `docs/v2_slice_gate_checklist.md` row 5; the next
+    non-data slice (slice 6 = HMM) is orthogonal to §2A and can
+    proceed when chosen.
+
 ---
 
 ## 2. Layer 2 V2 — Full Structural-Causal State
