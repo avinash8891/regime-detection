@@ -49,14 +49,13 @@ Manual trigger in a pull request comment:
 
 Codex reads repository guidance from `AGENTS.md`. This repo keeps Codex-specific review focus under the `Review guidelines` section there.
 
-Local Codex review scripts remain available for pre-push or manual local use:
+Local Codex review script remains available for pre-push or manual local use:
 
 ```text
-scripts/codex_code_simplifier.sh
 scripts/codex_pr_review_toolkit.sh
 ```
 
-Those scripts use the local Codex CLI login from `~/.codex/auth.json`. They may be pinned to a model with:
+That script uses the local Codex CLI login from `~/.codex/auth.json`. It may be pinned to a model with:
 
 ```text
 CODEX_REVIEW_MODEL=gpt-5.2
