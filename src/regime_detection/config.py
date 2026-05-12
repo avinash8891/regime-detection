@@ -216,6 +216,24 @@ class VolatilityV2Config(BaseModel):
     intraday_range_lookback_days: int = Field(gt=0)
 
 
+class BreadthV2Config(BaseModel):
+    """v2 §1D — Layer 1 V2 Breadth features (Slice 2.3, evidence-only).
+
+    Slice 2.3 ships ONLY the §1D feature that does not require a point-in-time
+    (PIT) constituent-membership data pipeline: ``sector_breadth``. All other
+    §1D features (`pct_above_200dma`, `ad_line` / `ad_line_slope_20d`,
+    `nh_nl_ratio`, `upvol_downvol_ratio`, `breadth_thrust`) and the new V2
+    breadth labels (`breadth_thrust`, `broadening_breadth`, `narrowing_breadth`)
+    are deferred until the PIT membership pipeline lands (§1D lines 198–205).
+    See Implementation Ambiguity Log entries #21–#27.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    # v2 §1D line 229 — % of 11 GICS sector ETFs with positive 21d return.
+    sector_breadth_lookback_days: int = Field(gt=0, default=21)
+
+
 class TransitionScoreConfig(BaseModel):
     """Composite transition risk score configuration (v2 spec §4.3 / §4.4)."""
 
@@ -335,6 +353,7 @@ class RegimeConfig(BaseModel):
     network_fragility: NetworkFragilityConfig | None = None
     trend_direction_v2: TrendDirectionV2Config | None = None
     volatility_state_v2: VolatilityV2Config | None = None
+    breadth_state_v2: BreadthV2Config | None = None
     transition_score: TransitionScoreConfig | None = None
     monetary_pressure_v2: MonetaryPressureV2Config | None = None
     inflation_growth: InflationGrowthConfig | None = None

@@ -4,11 +4,17 @@ import pandas as pd
 from pydantic import BaseModel, ConfigDict
 
 from regime_detection.breadth_state import BreadthFeatures, compute_features as compute_breadth_features
+from regime_detection.breadth_state_v2 import (
+    BreadthV2Features,
+    compute_breadth_v2_features,
+)
 from regime_detection.config import (
+    BreadthV2Config,
     NetworkFragilityConfig,
     TrendDirectionV2Config,
     VolatilityV2Config,
 )
+from regime_detection.fragility_universe import SECTOR_ETFS
 from regime_detection.market_context import MarketContext
 from regime_detection.network_fragility import (
     NetworkFragilityFeatures,
@@ -33,6 +39,7 @@ from regime_detection.volatility_state_v2 import (
 )
 
 __all__ = [
+    "BreadthV2Features",
     "FeatureStore",
     "NetworkFragilityFeatures",
     "TrendDirectionV2Features",
@@ -65,6 +72,12 @@ class FeatureStore(BaseModel):
     # the config is absent (v1-only callers).
     volatility_state_v2: VolatilityV2Features | None = None
 
+    # V2 §1D seam — populated when a BreadthV2Config is threaded through AND
+    # context.sector_etf_closes is non-None with all 11 sector symbols
+    # present. Otherwise None (graceful degradation — V2 §1D PIT pipeline is
+    # not yet ingested for related features; sector ETF feed is optional).
+    breadth_state_v2: BreadthV2Features | None = None
+
 
 def build_feature_store(
     context: MarketContext,
@@ -72,6 +85,7 @@ def build_feature_store(
     network_fragility_config: NetworkFragilityConfig | None = None,
     trend_direction_v2_config: TrendDirectionV2Config | None = None,
     volatility_state_v2_config: VolatilityV2Config | None = None,
+    breadth_state_v2_config: BreadthV2Config | None = None,
 ) -> FeatureStore:
     spy_ohlcv = context.spy_ohlcv
     spy_close = spy_ohlcv["close"]
@@ -135,6 +149,23 @@ def build_feature_store(
     else:
         volatility_state_v2 = None
 
+    # V2 §1D breadth features (slice 2.3) — evidence-only compute. Requires
+    # all 11 sector ETFs in MarketContext.sector_etf_closes (Ambiguity Log
+    # entry #27 pins the missing-sector policy as fail-NaN). When the config
+    # is supplied but the data is missing or partial, fall back to None
+    # (matches the slice 1.2 NetworkFragility seam pattern).
+    if breadth_state_v2_config is not None and context.sector_etf_closes is not None:
+        sector_closes = context.sector_etf_closes
+        if all(symbol in sector_closes for symbol in SECTOR_ETFS):
+            breadth_state_v2 = compute_breadth_v2_features(
+                sector_etf_closes=sector_closes,
+                config=breadth_state_v2_config,
+            )
+        else:
+            breadth_state_v2 = None
+    else:
+        breadth_state_v2 = None
+
     return FeatureStore(
         spy_index=spy_ohlcv.index,
         trend_direction=trend_direction,
@@ -145,4 +176,5 @@ def build_feature_store(
         network_fragility=network_fragility,
         trend_direction_v2=trend_direction_v2,
         volatility_state_v2=volatility_state_v2,
+        breadth_state_v2=breadth_state_v2,
     )

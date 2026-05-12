@@ -137,6 +137,25 @@ volatility_state_v2:
   gap_threshold_pct: 0.005              # v2 §1C line 181, US default
   intraday_range_lookback_days: 252     # v2 §1C line 186
 
+# v2 §1D — Layer 1 V2 Breadth features (Slice 2.3, evidence-only,
+# scope-restricted to non-PIT-dependent features).
+#
+# Ships ONLY:
+#   sector_breadth — % of 11 GICS sector ETFs with return_21d > 0
+#                    (v2 §1D lines 228–229).
+#
+# DEFERRED (require a point-in-time SPX constituent-membership pipeline
+# that does not yet exist; per v2 §10 absolute rule we do not invent
+# proxies):
+#   pct_above_200dma            — §1D lines 207–210; Ambiguity Log #21
+#   ad_line / ad_line_slope_20d — §1D lines 213–216; Ambiguity Log #22
+#   nh_nl_ratio                 — §1D lines 218–221; Ambiguity Log #23
+#   upvol_downvol_ratio         — §1D lines 223–226; Ambiguity Log #24
+#   breadth_thrust              — §1D lines 231–237; Ambiguity Log #25
+#   New V2 breadth labels       — §1D lines 239–246; Ambiguity Log #26
+breadth_state_v2:
+  sector_breadth_lookback_days: 21      # v2 §1D line 229
+
 transition_score:
   weights_with_hmm:
     volatility_acceleration: 0.20

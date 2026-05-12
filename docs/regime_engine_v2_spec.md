@@ -507,6 +507,71 @@ the slice/commit that resolved it. Entries are append-only.
     the prerequisite slices land.
     Deferred by Slice 2.2.
 
+21. **§1D lines 207–210 — `pct_above_200dma` deferral.**
+    Spec formula `mean(member.close > member.sma_200)` requires a
+    point-in-time (PIT) constituent-membership universe with
+    delisted-symbol handling. §1D lines 198–205 explicitly require
+    "delisted and removed symbols included when they were members on
+    `as_of_date`" and "explicit rejection of survivorship-biased
+    universes". The V2 repo does not yet ingest a PIT membership table.
+    Per v2 §10 absolute rule we do NOT silently substitute the current
+    SPX universe (which would be survivorship-biased). Resolution: defer
+    `pct_above_200dma` until the PIT membership ingestion slice lands.
+    Deferred by Slice 2.3.
+
+22. **§1D lines 213–216 — `ad_line` / `ad_line_slope_20d` deferral.**
+    Cumulative advance/decline line and its 20d slope both require
+    per-stock daily advance/decline counts over the PIT universe (entry
+    #21). Resolution: defer the feature and its `broadening_breadth`
+    label dependency.
+    Deferred by Slice 2.3.
+
+23. **§1D lines 218–221 — `nh_nl_ratio` deferral.**
+    52-week new highs / new lows ratio requires per-stock 52w
+    high/low tracking across the PIT universe (entry #21). Resolution:
+    defer the feature and its `broadening_breadth` / `narrowing_breadth`
+    label dependencies.
+    Deferred by Slice 2.3.
+
+24. **§1D lines 223–226 — `upvol_downvol_ratio` deferral.**
+    Up/Down-volume ratio requires per-stock daily volume × advance/decline
+    over the PIT universe (entry #21). Resolution: defer.
+    Deferred by Slice 2.3.
+
+25. **§1D lines 231–237 — `breadth_thrust` feature deferral.**
+    Zweig-style breadth thrust requires `pct_advancing`, a per-stock
+    advance count over the PIT universe (entry #21). Resolution: defer
+    the feature; the related `breadth_thrust` LABEL is also deferred
+    (entry #26).
+    Deferred by Slice 2.3.
+
+26. **§1D lines 239–246 — New V2 breadth labels deferral.**
+    V2 §1D adds three breadth labels (`breadth_thrust`,
+    `broadening_breadth`, `narrowing_breadth`) plus an updated
+    precedence ordering at lines 244–246. Every rule input requires
+    PIT-dependent features (entries #21–#25). Per v2 §10 we will NOT
+    define rules over only the subset we can compute today (sector_breadth
+    alone is insufficient to fire any of the three new labels per the
+    spec rule text). Resolution: defer the new labels, leave V1's
+    `BreadthLabel` enum unchanged, and ship `sector_breadth` as
+    evidence-only. Models / classifier remain untouched.
+    Deferred by Slice 2.3.
+
+27. **§1D line 229 — `sector_breadth` denominator policy when a sector
+    ETF is absent from `MarketContext.sector_etf_closes`.**
+    Spec writes "divided by 11" (explicit denominator). Real-world
+    feeds occasionally drop a single sector (e.g., XLRE before its 2015
+    inception). Two policies are available: (A) NaN the entire output
+    series when ANY of the 11 are missing; (B) rebase the denominator
+    to the number of sectors present. Resolution: policy (A) — fail
+    NaN. Rebasing to a partial denominator silently changes the feature's
+    semantics (e.g., 5/10 = 0.5 vs 5/11 ≈ 0.45) and would mask the
+    upstream data-quality gap. The fail-NaN policy is also consistent
+    with V1 cold-start contract (missing input → NaN, not a synthesized
+    value). Implemented in
+    `regime_detection.breadth_state_v2.compute_breadth_v2_features`.
+    Resolved by Slice 2.3.
+
 ---
 
 ## 2. Layer 2 V2 — Full Structural-Causal State

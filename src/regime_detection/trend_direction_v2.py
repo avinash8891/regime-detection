@@ -28,6 +28,10 @@ Implementation choices that resolve ambiguities are documented in
   ``_trailing_drawdown`` convention in ``network_fragility_rules.py``.
   See Ambiguity Log entry #13.
 """
+# TODO(slice-2.x): v1 `trend_direction.compute_features` and `feature_store.build_feature_store`
+# also compute sma_50, sma_200, and return_63d from the SPY close. Consolidate into a shared
+# rolling-stats utility when the v2 trend labels slice lands (euphoria/recovery/breakout).
+# Until then, the three computations are independent (acceptable per evidence-only slice scope).
 from __future__ import annotations
 
 from dataclasses import dataclass

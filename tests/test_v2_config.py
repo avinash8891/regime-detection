@@ -226,6 +226,7 @@ def test_v1_yaml_still_loads_with_v1_config_version() -> None:
     assert cfg.config_version == "core3-v1.0.0"
     # All V2 sub-configs must remain None for the V1 yaml.
     assert cfg.network_fragility is None
+    assert cfg.breadth_state_v2 is None
     assert cfg.transition_score is None
     assert cfg.monetary_pressure_v2 is None
     assert cfg.inflation_growth is None
