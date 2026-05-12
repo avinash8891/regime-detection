@@ -1,0 +1,44 @@
+tests/test_trend_direction_v2_recovery_rule.py
+  s_69e10dfae52a94::t_e51c829f76c8e3 240
+  s_69e10dfae52a94::t_21d4e595e01d3a 356-358
+  s_69e10dfae52a94::t_0037bfcecceded 22
+  s_69e10dfae52a94::t_4607bee73da465 243
+  s_69e10dfae52a94::t_8cc0f342f61216 380-384
+src/regime_detection/config.py
+  s_69e10dfae52a94::t_6433581719364a 151-172,176-180
+  s_69e10dfae52a94::t_94d67bc957374a 209-217
+  s_69e10dfae52a94::t_4280e1fc9d6af4 218
+src/regime_detection/trend_direction.py
+  s_69e10dfae52a94::t_bb7e8b8f1cca44 125,130
+  s_69e10dfae52a94::t_3d1cfb9e38947f 18-20,22-26,30
+  s_69e10dfae52a94::t_26bf1b35e6c1a0 5,13-15
+  s_69e10dfae52a94::t_d466ae8c6592fc 52-67,92,100-122
+src/regime_detection/trend_direction_v2.py
+  s_69e10dfae52a94::t_f819eddfa864bc 152-158,161-163
+  s_69e10dfae52a94::t_6b1e400bbf3ba7 43
+  s_69e10dfae52a94::t_f7527cae7afc2c 16,18-20
+  s_69e10dfae52a94::t_f97e5d2f50c9b8 63-66,78
+  s_69e10dfae52a94::t_5ffd94e8d75d02 207-208,210,214
+src/regime_detection/axis_series.py
+  s_69e10dfae52a94::t_5585c21abde8a1 92,96
+src/regime_detection/configs/core3-v2.0.0.yaml
+  s_69e10dfae52a94::t_5b449398b00754 114-118,128-130
+docs/regime_engine_v2_spec.md
+  s_69e10dfae52a94::t_ad180f88f0322a 642-699
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.4",
+  "base_commit_sha": "d71e3af1667928d99a67d6f5e56c43b8f8463f5c",
+  "prompts": {},
+  "sessions": {
+    "s_69e10dfae52a94": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "ef8c0903-9f31-4c26-be1c-64323350aa48",
+        "model": "claude-opus-4-7"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}
