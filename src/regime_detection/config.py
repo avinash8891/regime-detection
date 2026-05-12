@@ -217,6 +217,38 @@ class TrendDirectionV2Config(BaseModel):
     )
 
 
+class VolatilityV2RulesConfig(BaseModel):
+    """v2 §1C `rising_vol` rule thresholds + RV windows (Slice 2.6).
+
+    Each value cites its line in docs/regime_engine_v2_spec.md §1C. The
+    `vol_crush` rule (§1C lines 157-174) is deferred (Implementation
+    Ambiguity Log entry #20) — needs options-data ingestion + the §2D
+    event-window calendar — so this config only carries the `rising_vol`
+    knobs today.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    # v2 §1C line 147 — "ATR_ratio > 1.15". Must be > 0 because ATR_ratio
+    # is a non-negative ratio (ATR_short / ATR_long, both >= 0); a non-
+    # positive threshold would make the rule trivially true at any
+    # non-trivial ratio.
+    atr_ratio_threshold: float = Field(gt=0.0, default=1.15)
+
+    # v2 §1C line 148 — "realized_vol_10d > realized_vol_63d * 1.25". Must
+    # be > 0 because realised vols are non-negative; a non-positive
+    # threshold would defang the "expansion" intent.
+    realized_vol_ratio_threshold: float = Field(gt=0.0, default=1.25)
+
+    # v2 §1C line 148 — short realised-vol window (10 sessions). Pinned at
+    # 10 by spec text "realized_vol_10d"; exposed for v2 §9.1 calibration.
+    realized_vol_short_period: int = Field(gt=0, default=10)
+
+    # v2 §1C line 148 — long realised-vol window (63 sessions). Pinned at
+    # 63 by spec text "realized_vol_63d"; exposed for v2 §9.1 calibration.
+    realized_vol_long_period: int = Field(gt=0, default=63)
+
+
 class VolatilityV2Config(BaseModel):
     """v2 §1C — Layer 1 V2 Volatility features (Slice 2.2, evidence-only).
 
@@ -245,6 +277,19 @@ class VolatilityV2Config(BaseModel):
 
     # v2 §1C line 186 — intraday-range percentile lookback (252 sessions).
     intraday_range_lookback_days: int = Field(gt=0)
+
+    # v2 §1C line 146-148 `rising_vol` rule thresholds + RV windows
+    # (Slice 2.6). Defaults to spec values (atr_ratio > 1.15, rv_10d >
+    # rv_63d * 1.25) when the yaml omits the sub-block; v2 §9.1
+    # calibration may retune via yaml.
+    rules: VolatilityV2RulesConfig = Field(
+        default_factory=lambda: VolatilityV2RulesConfig(
+            atr_ratio_threshold=1.15,                # v2 §1C line 147
+            realized_vol_ratio_threshold=1.25,       # v2 §1C line 148
+            realized_vol_short_period=10,            # v2 §1C line 148
+            realized_vol_long_period=63,             # v2 §1C line 148
+        )
+    )
 
 
 class VolumeLiquidityV2Config(BaseModel):

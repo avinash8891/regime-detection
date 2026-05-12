@@ -143,7 +143,18 @@ class VolatilitySeriesClassifier:
     def build(self, context: MarketContext, feature_store: FeatureStore) -> AxisSeriesResult:
         close = context.spy_ohlcv["close"]
         features = feature_store.volatility
-        raw_labels, raw_evidence = build_volatility_raw_outputs(features)
+        # Slice 2.6 — thread v2 §1C features + rules through when the v2
+        # seam is populated. When the v2 config is absent (v1-only callers),
+        # the arguments stay None and v1 byte-identity is preserved by
+        # build_raw_outputs (see test_volatility_state_v2_rising_vol_rule).
+        vol_v2_features = feature_store.volatility_state_v2
+        vol_v2_config = context.config.volatility_state_v2
+        vol_v2_rules = vol_v2_config.rules if vol_v2_config is not None else None
+        raw_labels, raw_evidence = build_volatility_raw_outputs(
+            features,
+            volatility_state_v2_features=vol_v2_features,
+            volatility_state_v2_rules=vol_v2_rules,
+        )
         stable_labels, active_labels = apply_asymmetric_hysteresis(
             raw_labels=raw_labels,
             risk_rank=VOLATILITY_RISK_RANK,

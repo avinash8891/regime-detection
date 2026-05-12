@@ -44,17 +44,27 @@ from dataclasses import dataclass
 
 import pandas as pd
 
-from regime_detection.config import VolatilityV2Config
-from regime_detection.volatility_state import wilders_atr
+from regime_detection.config import VolatilityV2Config, VolatilityV2RulesConfig
+from regime_detection.volatility_state import realized_vol, wilders_atr
 
 
 @dataclass(frozen=True)
 class VolatilityV2Features:
-    """v2 §1C — per-session continuous volatility features (slice 2.2)."""
+    """v2 §1C — per-session continuous volatility features.
+
+    Slice 2.2 fields: atr_ratio, gap_frequency_20d, intraday_range_percentile_252d.
+    Slice 2.6 adds the two realized-vol windows used by the `rising_vol` rule
+    (v2 §1C line 148): a short-window realised vol (default 10d) and a
+    long-window realised vol (default 63d), both annualised via the shared
+    ``regime_detection.volatility_state.realized_vol`` helper.
+    """
 
     atr_ratio: pd.Series
     gap_frequency_20d: pd.Series
     intraday_range_percentile_252d: pd.Series
+    # v2 §1C line 148 — `rising_vol` rule inputs (slice 2.6).
+    realized_vol_short: pd.Series
+    realized_vol_long: pd.Series
 
     @property
     def feature_names(self) -> tuple[str, ...]:
@@ -62,6 +72,8 @@ class VolatilityV2Features:
             "atr_ratio",
             "gap_frequency_20d",
             "intraday_range_percentile_252d",
+            "realized_vol_short",
+            "realized_vol_long",
         )
 
     def to_frame(self) -> pd.DataFrame:
@@ -148,6 +160,7 @@ def compute_volatility_v2_features(
     low: pd.Series,
     close: pd.Series,
     config: VolatilityV2Config,
+    rules_config: VolatilityV2RulesConfig | None = None,
 ) -> VolatilityV2Features:
     """Compute the three v2 §1C volatility features from a SPY-like OHLC.
 
@@ -186,8 +199,136 @@ def compute_volatility_v2_features(
         lookback=config.intraday_range_lookback_days,
     )
 
+    # v2 §1C line 148 — `rising_vol` rule inputs (slice 2.6). Computed via
+    # the shared ``regime_detection.volatility_state.realized_vol`` helper
+    # so v1 (slice 1, realized_vol_21d) and v2 (slice 2.6, rv_10d/rv_63d)
+    # consume one annualisation path. When no rules_config is supplied,
+    # default to spec windows so callers that read the feature seam without
+    # explicit rule configuration still get a complete struct.
+    if rules_config is not None:
+        rv_short_window = rules_config.realized_vol_short_period
+        rv_long_window = rules_config.realized_vol_long_period
+    else:
+        # Spec defaults — v2 §1C line 148 (realized_vol_10d / realized_vol_63d).
+        # Hardcoded fallback values intentionally match VolatilityV2RulesConfig
+        # defaults; both citations point at v2 §1C line 148.
+        rv_short_window = 10
+        rv_long_window = 63
+    rv_short = realized_vol(close, window=rv_short_window).rename(
+        "realized_vol_short"
+    )
+    rv_long = realized_vol(close, window=rv_long_window).rename(
+        "realized_vol_long"
+    )
+
     return VolatilityV2Features(
         atr_ratio=atr_ratio,
         gap_frequency_20d=gap_freq,
         intraday_range_percentile_252d=intraday_pct,
+        realized_vol_short=rv_short,
+        realized_vol_long=rv_long,
     )
+
+
+# ---------------------------------------------------------------------------
+# Slice 2.6 — v2 §1C `rising_vol` rule + precedence wrapper.
+#
+# Rule (v2 §1C lines 146-148, verbatim):
+#     ATR_ratio > 1.15
+#     OR realized_vol_10d > realized_vol_63d * 1.25
+#
+# Precedence (v2 §1C line 191):
+#     crisis_vol > vol_crush > high_vol > rising_vol > low_vol > normal_vol > unknown
+#
+# `vol_crush` is deferred (options data not yet ingested — see
+# Implementation Ambiguity Log entry #20). The precedence slot stays
+# defined so future authors can drop vol_crush in without re-ordering;
+# the rule predicate never fires today.
+# ---------------------------------------------------------------------------
+
+
+def evaluate_rising_vol(
+    features: VolatilityV2Features,
+    *,
+    dt: pd.Timestamp,
+    rules_config: VolatilityV2RulesConfig,
+) -> bool:
+    """v2 §1C lines 146-148 `rising_vol` predicate at a single session.
+
+    Returns False when ANY of the three inputs is NaN — strict cold-start
+    contract (no silent "partial-input → True" substitution). Both limbs
+    use strict ``>`` per spec text:
+
+    * line 147 — ``atr_ratio > atr_ratio_threshold`` (1.15)
+    * line 148 — ``realized_vol_short > realized_vol_long * realized_vol_ratio_threshold`` (1.25)
+    * Combined: ATR limb OR realised-vol limb.
+
+    The all-inputs-must-be-present contract is recorded in the
+    Implementation Ambiguity Log entry #36 — spec §1C is silent on
+    partial-NaN behavior so the conservative choice is "any NaN
+    falsifies the rule" (matches slice 2.5 recovery cold-start).
+    """
+    if dt not in features.atr_ratio.index:
+        return False
+    atr = features.atr_ratio.loc[dt]
+    rv_short = features.realized_vol_short.loc[dt]
+    rv_long = features.realized_vol_long.loc[dt]
+
+    # Strict cold-start: any missing input falsifies the rule
+    # (Ambiguity Log #36 — partial-NaN handling).
+    if any(pd.isna(x) for x in (atr, rv_short, rv_long)):
+        return False
+
+    atr_limb = bool(atr > rules_config.atr_ratio_threshold)            # line 147
+    rv_limb = bool(rv_short > rv_long * rules_config.realized_vol_ratio_threshold)  # line 148
+    return atr_limb or rv_limb
+
+
+# v2 §1C line 191 ranking (lower index = higher precedence).
+# Index 1 is reserved for `vol_crush` (deferred — Ambiguity Log #20) so
+# future authors can slot it in without re-ordering the table.
+_V2_VOLATILITY_PRECEDENCE: tuple[str, ...] = (
+    "crisis_vol",
+    "vol_crush",   # deferred (Ambiguity Log #20) — never produced today
+    "high_vol",
+    "rising_vol",
+    "low_vol",
+    "normal_vol",
+    "unknown",
+)
+
+
+def evaluate_v2_volatility_label(
+    *,
+    v1_label: str,
+    features: VolatilityV2Features,
+    dt: pd.Timestamp,
+    rules_config: VolatilityV2RulesConfig,
+) -> str | None:
+    """Apply v2 §1C volatility precedence on top of a v1 raw label.
+
+    Returns the winning v2 label per the §1C line 191 ordering, or
+    ``None`` when no v2 rule fires and the caller should keep ``v1_label``.
+
+    Precedence (line 191): ``crisis_vol > vol_crush(deferred) > high_vol >
+    rising_vol > low_vol > normal_vol > unknown``. `crisis_vol` and
+    `high_vol` outrank `rising_vol`, so a v1 day labelled crisis/high keeps
+    its label even when the rising_vol predicate fires. Returns
+    ``"rising_vol"`` only when the predicate fires AND the v1 label is
+    ranked strictly LOWER than `rising_vol` in the table — i.e. v1
+    emitted ``low_vol`` / ``normal_vol`` / ``unknown``.
+    """
+    rising_vol_fires = evaluate_rising_vol(features, dt=dt, rules_config=rules_config)
+    if not rising_vol_fires:
+        return None
+
+    try:
+        v1_rank = _V2_VOLATILITY_PRECEDENCE.index(v1_label)
+    except ValueError:
+        # Unknown v1 label — treat as lowest precedence; rising_vol wins.
+        v1_rank = len(_V2_VOLATILITY_PRECEDENCE)
+    rising_vol_rank = _V2_VOLATILITY_PRECEDENCE.index("rising_vol")
+    if v1_rank < rising_vol_rank:
+        # v1 label outranks rising_vol (crisis_vol / vol_crush / high_vol).
+        return None
+    return "rising_vol"

@@ -697,6 +697,64 @@ the slice/commit that resolved it. Entries are append-only.
     `regime_detection.trend_direction_v2.evaluate_v2_trend_label`.
     Resolved by Slice 2.5.
 
+36. **§1C line 147-148 — `rising_vol` rule inequality strictness +
+    partial-NaN handling.**
+    Spec writes "ATR_ratio > 1.15" and "realized_vol_10d > realized_vol_63d
+    * 1.25" — both clauses use strict `>` verbatim, and the combined rule
+    uses `OR`. Spec is silent on partial-NaN behavior. Resolution:
+    (a) pin both limbs to strict `>` — an `atr_ratio == 1.15` session is
+    NOT rising_vol; a `realized_vol_10d == realized_vol_63d * 1.25`
+    session is NOT rising_vol;
+    (b) pin the cold-start contract: if ANY of the three rule inputs is
+    NaN, the rule is False (no silent "partial-input OR → True"
+    substitution). This mirrors slice 2.5's recovery cold-start and is
+    conservative — a partially-warmed-up session cannot trigger a
+    risk-up override. Implemented in
+    `regime_detection.volatility_state_v2.evaluate_rising_vol`.
+    Resolved by Slice 2.6.
+
+37. **§1C line 148 — `realized_vol` shared helper exposure.**
+    Slice 2.2 left `realized_vol` as inline pandas calls in two
+    independent sites (`volatility_state.py` v1 compute_features and
+    `network_fragility.py` _dispersion_ratio_series). Slice 2.6 needed
+    a third site (rising_vol rule inputs) and CLAUDE.md Code-Reuse rule
+    has ZERO TOLERANCE for a second system. Resolution: expose the
+    shared helper `regime_detection.volatility_state.realized_vol(close,
+    window, *, ddof=1)` — annualises via `* sqrt(252)`. The v1
+    compute_features path was refactored to consume the helper (byte-
+    identical output: same window, same default `ddof`, same
+    annualisation constant). The network_fragility dispersion ratio path
+    retains its DataFrame-based call (different shape contract — a
+    per-symbol matrix) and a future cleanup may unify after v2 §9.1.
+    The slice 2.6 RV inputs (`realized_vol_short` window=10,
+    `realized_vol_long` window=63) consume the helper. `ddof=1` (sample
+    std) is recorded explicitly here because §1C is silent — pandas /
+    numpy financial-time-series convention. Resolved by Slice 2.6.
+
+38. **§1C line 157-174 — `vol_crush` deferral re-confirmation.**
+    Ambiguity Log entry #20 (slice 2.2) already records `vol_crush` as
+    deferred (requires `implied_vol_5d_change` + the §2D event-window
+    calendar, neither of which is ingested). Slice 2.6 re-confirms this
+    deferral when landing the §1C precedence: the §1C line 191 ranking
+    `crisis_vol > vol_crush > high_vol > rising_vol > low_vol > normal_vol >
+    unknown` carries a reserved `vol_crush` slot in
+    `_V2_VOLATILITY_PRECEDENCE` so future authors can land it without
+    re-ordering, but the predicate never fires today. Resolved by
+    Slice 2.6 (re-confirmation; original deferral by Slice 2.2).
+
+39. **§1C line 191 — precedence-ordering enforcement (volatility).**
+    Spec lists `crisis_vol > vol_crush > high_vol > rising_vol > low_vol >
+    normal_vol > unknown` but does not explicitly address multi-rule
+    fire. Resolution: mirror Slice 2.5's trend-precedence pattern — the
+    HIGHEST-ranked label whose rule fires wins, and a fired v2 rule
+    cannot OVERRIDE a higher-ranked v1 label. Concretely: if v1 emits
+    `crisis_vol` or `high_vol` AND the v2 `rising_vol` predicate fires,
+    the day keeps the v1 label (both outrank rising_vol). If v1 emits
+    `low_vol` / `normal_vol` / `unknown` AND the predicate fires, the
+    day becomes `rising_vol`. Implemented in
+    `regime_detection.volatility_state_v2.evaluate_v2_volatility_label`.
+    Resolved by Slice 2.6.
+
 ---
 
 ## 2. Layer 2 V2 — Full Structural-Causal State

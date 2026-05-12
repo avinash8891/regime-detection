@@ -140,6 +140,13 @@ volatility_state_v2:
   gap_frequency_lookback_days: 20       # v2 §1C line 179
   gap_threshold_pct: 0.005              # v2 §1C line 181, US default
   intraday_range_lookback_days: 252     # v2 §1C line 186
+  # v2 §1C line 146-148 `rising_vol` rule (Slice 2.6). `vol_crush` deferred
+  # (Implementation Ambiguity Log #20 — needs options data).
+  rules:
+    atr_ratio_threshold: 1.15           # v2 §1C line 147
+    realized_vol_ratio_threshold: 1.25  # v2 §1C line 148
+    realized_vol_short_period: 10       # v2 §1C line 148 (realized_vol_10d)
+    realized_vol_long_period: 63        # v2 §1C line 148 (realized_vol_63d)
 
 # v2 §1D — Layer 1 V2 Breadth features (Slice 2.3, evidence-only,
 # scope-restricted to non-PIT-dependent features).

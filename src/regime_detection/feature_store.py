@@ -153,14 +153,19 @@ def build_feature_store(
     else:
         trend_direction_v2 = None
 
-    # V2 §1C volatility features (slice 2.2) — evidence-only compute.
+    # V2 §1C volatility features (slice 2.2 + slice 2.6 rising_vol RV).
     if volatility_state_v2_config is not None:
+        # Pass the rules sub-block so the slice-2.6 `rising_vol` rule's
+        # realized_vol_short / realized_vol_long windows are populated from
+        # config (rather than the hardcoded 10/63 fallback). The two paths
+        # produce identical series when yaml carries the spec defaults.
         volatility_state_v2 = compute_volatility_v2_features(
             open_=spy_ohlcv["open"],
             high=spy_ohlcv["high"],
             low=spy_ohlcv["low"],
             close=spy_close,
             config=volatility_state_v2_config,
+            rules_config=volatility_state_v2_config.rules,
         )
     else:
         volatility_state_v2 = None
