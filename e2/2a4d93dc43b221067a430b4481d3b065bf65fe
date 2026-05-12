@@ -1,0 +1,30 @@
+src/regime_detection/loaders.py
+  s_db04d04d95877a::t_473fb599bdf03c 38-134
+src/regime_detection/fragility_universe.py
+  s_db04d04d95877a::t_4e3f7ac95f6f0e 1-32
+src/regime_detection/market_context.py
+  s_db04d04d95877a::t_33c6caa4684e2b 56-58,67-69,73-82
+  s_db04d04d95877a::t_2fadcaa6936187 139-141
+  s_db04d04d95877a::t_d7667e4fb2488b 103-105
+  s_db04d04d95877a::t_76dbf2b11d4003 23-25,35-37
+src/regime_detection/engine.py
+  s_db04d04d95877a::t_011c1c905d3e7a 34-36,48-50,63-65,79-81
+tests/test_v2_data_ingestion.py
+  s_db04d04d95877a::t_ac7dae8f2e44f9 1-251
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.4",
+  "base_commit_sha": "e22a4d93dc43b221067a430b4481d3b065bf65fe",
+  "prompts": {},
+  "sessions": {
+    "s_db04d04d95877a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "514917cc-8426-49e3-bf28-e8825bfc89ea",
+        "model": "claude-opus-4-7"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}
