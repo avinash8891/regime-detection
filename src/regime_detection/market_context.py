@@ -31,8 +31,6 @@ def build_market_context(
     event_calendar: pd.DataFrame | None = None,
 ) -> MarketContext:
     end_date = as_date(end_date)
-    if config.trading_calendar != "NYSE":
-        raise ValueError(f"V1 supports only NYSE trading calendar. Got: {config.trading_calendar}")
     require_nyse_trading_day(end_date)
     normalized_market_data = _normalize_market_data_for_runtime(market_data)
     _require_market_data_contract(normalized_market_data, as_of_date=end_date)

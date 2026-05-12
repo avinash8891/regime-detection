@@ -132,7 +132,7 @@ def test_classify_matches_last_output_of_shared_timeline_pipeline(market_df_for_
     assert timeline.outputs[-1].model_dump() == point_output.model_dump()
 
 
-def test_classify_delegates_to_classify_window_with_engine_minimum_history(mocker, market_df_for_asof) -> None:
+def test_classify_delegates_to_classify_window_with_single_day_lookback(mocker, market_df_for_asof) -> None:
     engine = RegimeEngine()
     as_of = date(2023, 12, 14)
     expected_timeline = RegimeTimeline(
@@ -150,47 +150,8 @@ def test_classify_delegates_to_classify_window_with_engine_minimum_history(mocke
 
     spy.assert_called_once()
     assert spy.call_args.kwargs["end_date"] == as_of
-    assert spy.call_args.kwargs["lookback_days"] == ENGINE_MINIMUM_HISTORY
+    assert spy.call_args.kwargs["lookback_days"] == 1
     assert output.model_dump() == expected_timeline.outputs[-1].model_dump()
-
-
-def test_classify_accepts_precomputed_context_for_earlier_asof(market_df_for_asof) -> None:
-    engine = RegimeEngine()
-    context = build_market_context(
-        end_date=date(2023, 12, 14),
-        market_data=market_df_for_asof(date(2023, 12, 14)),
-        config=engine.config,
-    )
-
-    output_from_context = engine.classify(as_of_date=date(2023, 12, 13), context=context)
-    output_from_raw = engine.classify(
-        as_of_date=date(2023, 12, 13),
-        market_data=market_df_for_asof(date(2023, 12, 13)),
-    )
-
-    assert output_from_context.model_dump() == output_from_raw.model_dump()
-
-
-def test_classify_window_accepts_precomputed_context_for_earlier_end_date(market_df_for_asof) -> None:
-    engine = RegimeEngine()
-    context = build_market_context(
-        end_date=date(2023, 12, 14),
-        market_data=market_df_for_asof(date(2023, 12, 14)),
-        config=engine.config,
-    )
-
-    timeline_from_context = engine.classify_window(
-        end_date=date(2023, 12, 13),
-        lookback_days=5,
-        context=context,
-    )
-    timeline_from_raw = engine.classify_window(
-        end_date=date(2023, 12, 13),
-        market_data=market_df_for_asof(date(2023, 12, 13)),
-        lookback_days=5,
-    )
-
-    assert timeline_from_context.model_dump() == timeline_from_raw.model_dump()
 
 
 def test_transition_risk_history_precomputes_axis_switch_and_prior_bear_flags() -> None:

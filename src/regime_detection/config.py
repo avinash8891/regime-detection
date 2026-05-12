@@ -35,6 +35,13 @@ class EventCalendarConfig(BaseModel):
     market: str
 
 
+class ETFProxyConfig(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    cap_weight_index: Literal["SPY"]
+    equal_weight_proxy: Literal["RSP"]
+
+
 class MonthlyOptionsExpiryRuleConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -67,10 +74,9 @@ class RegimeConfig(BaseModel):
 
     config_version: str
     market: Literal["US"]
-    trading_calendar: str
+    trading_calendar: Literal["NYSE"]
     breadth_mode: Literal["etf_proxy"]
-    cap_weight_index: Literal["SPY"]
-    equal_weight_proxy: Literal["RSP"]
+    etf_proxy: ETFProxyConfig
     event_calendar: EventCalendarConfig
     expiry_rules: ExpiryRulesConfig
     earnings_seasons: list[EarningsSeasonConfig]

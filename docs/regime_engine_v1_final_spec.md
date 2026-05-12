@@ -228,14 +228,20 @@ Every classifier output includes:
 }
 ```
 
-Thresholds:
+Thresholds (config-driven; values shown are V1 defaults):
+
+```yaml
+data_quality:
+  max_freshness_days: 3
+  min_completeness: 0.90
+```
 
 ```text
-completeness >= 0.90 AND all required features non-NaN  → status=ok, label emitted
-0.70 <= completeness < 0.90                             → status=degraded, label emitted with warning
-completeness < 0.70                                     → label=unknown, reason=insufficient_data
-any required feature is NaN                             → label=unknown, reason=insufficient_history
-freshness_days > 3                                      → label=unknown, reason=stale_data
+completeness >= min_completeness AND all required features non-NaN  → status=ok, label emitted
+0.70 <= completeness < min_completeness                             → status=degraded, label emitted with warning
+completeness < 0.70                                                 → label=unknown, reason=insufficient_data
+any required feature is NaN                                         → label=unknown, reason=insufficient_history
+freshness_days > max_freshness_days                                 → label=unknown, reason=stale_data
 ```
 
 ### 2.9 Label Contract
@@ -715,6 +721,13 @@ events:
     importance: "high"
 ```
 
+Config-side filter (selects which market's events the engine consumes):
+
+```yaml
+event_calendar:
+  market: "US"
+```
+
 Labels:
 ```text
 fed_week
@@ -733,9 +746,41 @@ Rules:
 fed_week:    as_of_date within [-2, +2] NYSE trading days of FOMC
 cpi_week:    as_of_date within [-1, +1] NYSE trading days of CPI release
 nfp_week:    as_of_date within [-1, +1] NYSE trading days of NFP release
-expiry_week: as_of_date inside configured monthly options expiry window
-earnings_season: configured per market
+expiry_week: as_of_date inside the configured monthly options expiry window (see expiry_rules below)
+earnings_season: as_of_date inside one of the configured earnings_seasons windows (see earnings_seasons below)
 ```
+
+Monthly options expiry config (US V1 default shown):
+
+```yaml
+expiry_rules:
+  monthly_options:
+    rule: third_friday_of_month
+    window_trading_days: [-2, 0]
+    label: expiry_week
+```
+
+`rule` is a `Literal["third_friday_of_month"]`. `window_trading_days: [start, end]` is the inclusive offset (in NYSE trading days) around the third Friday during which the `expiry_week` label fires.
+
+Earnings season config (US V1 defaults shown):
+
+```yaml
+earnings_seasons:
+  - quarter: Q1
+    start_rule: second_monday_of_january
+    end_offset_days: 35
+  - quarter: Q2
+    start_rule: second_monday_of_april
+    end_offset_days: 35
+  - quarter: Q3
+    start_rule: second_monday_of_july
+    end_offset_days: 35
+  - quarter: Q4
+    start_rule: second_monday_of_october
+    end_offset_days: 35
+```
+
+`quarter` is `Literal["Q1","Q2","Q3","Q4"]`. `start_rule` is one of `Literal["second_monday_of_january","second_monday_of_april","second_monday_of_july","second_monday_of_october"]`. `end_offset_days` is the inclusive calendar-day length of the window beginning at `start_rule`.
 
 Precedence:
 
