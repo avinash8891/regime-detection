@@ -4,7 +4,11 @@ import pandas as pd
 from pydantic import BaseModel, ConfigDict
 
 from regime_detection.breadth_state import BreadthFeatures, compute_features as compute_breadth_features
-from regime_detection.config import NetworkFragilityConfig, TrendDirectionV2Config
+from regime_detection.config import (
+    NetworkFragilityConfig,
+    TrendDirectionV2Config,
+    VolatilityV2Config,
+)
 from regime_detection.market_context import MarketContext
 from regime_detection.network_fragility import (
     NetworkFragilityFeatures,
@@ -23,11 +27,16 @@ from regime_detection.trend_direction_v2 import (
     compute_trend_v2_features,
 )
 from regime_detection.volatility_state import VolatilityFeatures, compute_features as compute_volatility_features
+from regime_detection.volatility_state_v2 import (
+    VolatilityV2Features,
+    compute_volatility_v2_features,
+)
 
 __all__ = [
     "FeatureStore",
     "NetworkFragilityFeatures",
     "TrendDirectionV2Features",
+    "VolatilityV2Features",
     "build_feature_store",
 ]
 
@@ -51,12 +60,18 @@ class FeatureStore(BaseModel):
     # only None when the config is absent (v1-only callers).
     trend_direction_v2: TrendDirectionV2Features | None = None
 
+    # V2 §1C seam — populated when a VolatilityV2Config is threaded through.
+    # SPY OHLC is always present on the V1+V2 path so this is only None when
+    # the config is absent (v1-only callers).
+    volatility_state_v2: VolatilityV2Features | None = None
+
 
 def build_feature_store(
     context: MarketContext,
     *,
     network_fragility_config: NetworkFragilityConfig | None = None,
     trend_direction_v2_config: TrendDirectionV2Config | None = None,
+    volatility_state_v2_config: VolatilityV2Config | None = None,
 ) -> FeatureStore:
     spy_ohlcv = context.spy_ohlcv
     spy_close = spy_ohlcv["close"]
@@ -108,6 +123,18 @@ def build_feature_store(
     else:
         trend_direction_v2 = None
 
+    # V2 §1C volatility features (slice 2.2) — evidence-only compute.
+    if volatility_state_v2_config is not None:
+        volatility_state_v2 = compute_volatility_v2_features(
+            open_=spy_ohlcv["open"],
+            high=spy_ohlcv["high"],
+            low=spy_ohlcv["low"],
+            close=spy_close,
+            config=volatility_state_v2_config,
+        )
+    else:
+        volatility_state_v2 = None
+
     return FeatureStore(
         spy_index=spy_ohlcv.index,
         trend_direction=trend_direction,
@@ -117,4 +144,5 @@ def build_feature_store(
         sma_50=sma_50,
         network_fragility=network_fragility,
         trend_direction_v2=trend_direction_v2,
+        volatility_state_v2=volatility_state_v2,
     )

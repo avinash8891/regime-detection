@@ -432,6 +432,81 @@ the slice/commit that resolved it. Entries are append-only.
     `regime_detection.trend_direction_v2._slope_of_sma`.
     Resolved by Slice 2.1.
 
+15. **§1C line 142 — ATR estimator (Wilder vs simple-mean true range).**
+    Spec names "ATR_14 / ATR_50" without naming the estimator.
+    Resolution: classical Wilder recursive smoothing (the textbook /
+    industry default since Wilder 1978 — seed = simple-mean(TR) over the
+    first `period` observations, then
+    `ATR[t] = (ATR[t-1] * (period - 1) + TR[t]) / period`). Implemented
+    once in the shared helper `regime_detection.volatility_state.wilders_atr`
+    so the V2 §1C `atr_ratio` feature (slice 2.2) and the future
+    `rising_vol` / volatility-rules labels slice both consume one
+    implementation.
+    Resolved by Slice 2.2.
+
+16. **§1C lines 176–181 — `gap_frequency_20d` window inclusion.**
+    Spec writes `count(gap > 0.005) / 20` without naming whether the
+    20-session window includes session `t` itself.
+    Resolution: window is `[t-19..t]` inclusive of `t`, matching slice
+    2.1's `efficiency_ratio_20d` "20 day-over-day moves ending at t"
+    convention (so `gap_frequency_20d` first non-NaN at t = 20: `gap[0]`
+    is NaN because there is no prior close, then 20 valid gap
+    observations fill the window). Strictly `> threshold` per spec text —
+    a gap exactly equal to the threshold is NOT counted. Pinned in
+    `regime_detection.volatility_state_v2._gap_frequency`.
+    Resolved by Slice 2.2.
+
+17. **§1C lines 183–187 — `intraday_range_percentile_252d` rank direction.**
+    Spec writes `percentile_rank(intraday_range, lookback=252)` without
+    naming `ascending` vs `descending`. Resolution: ascending rank (1.0 =
+    current value is the maximum within the trailing 252-session window),
+    so a rising intraday-range maps to a rising percentile. Mirrors slice
+    1.2's `pd.Series.rolling(N).rank(pct=True)` pattern in
+    `regime_detection.network_fragility`. Pinned in
+    `regime_detection.volatility_state_v2._intraday_range_percentile`.
+    Resolved by Slice 2.2.
+
+18. **§1C line 181 — `gap_threshold_pct` "configurable per market" with
+    V2's US-only universe.** Spec text notes the 0.5% threshold is
+    "configurable per market", but V2 markets at this point are US-only.
+    Resolution: expose a single `VolatilityV2Config.gap_threshold_pct`
+    knob (default `0.005`) rather than per-market branching. When
+    additional markets land, the knob promotes to a per-market dict
+    without changing the compute path.
+    Resolved by Slice 2.2.
+
+19. **§1C lines 151–155 — IV/RV-spread feature deferral.**
+    Spec defines `iv_rv_spread = implied_vol_30d - realized_vol_21d` and
+    notes "Requires options data feed". The V2 repo does not yet ingest
+    an options/implied-vol series. Per v2 §10 absolute rule
+    ("do not invent component score formulas — use the exact formulas in
+    §4.2"; same rule for §3.5, §2A/§2B/§2C, …) we will NOT synthesize an
+    implied-vol proxy. Resolution: defer the `iv_rv_spread` feature, the
+    `euphoria`/`vol_crush`/`event_window` evidence wiring it feeds, and
+    the updated §1C volatility precedence at line 191 until an options /
+    implied-vol ingestion slice lands alongside §2D event-calendar work.
+    Slice 2.2 explicitly ships only the three §1C features that depend
+    on OHLC alone (`atr_ratio`, `gap_frequency_20d`,
+    `intraday_range_percentile_252d`).
+    Deferred by Slice 2.2.
+
+20. **§1C lines 157–174 — `vol_crush` rule deferral.**
+    Spec rule:
+    ```
+    vol_crush:
+      realized_vol_10d < realized_vol_21d * 0.75
+      AND implied_vol_falling_sharply
+      AND event_window_just_passed
+    ```
+    Two of the three inputs (`implied_vol_falling_sharply`,
+    `event_window_just_passed`) require data the V2 repo does not yet
+    ingest: an implied-vol time series (entry #19) and the §2D event
+    calendar. Per v2 §10 we do NOT invent either. Resolution: defer the
+    `vol_crush` LABEL and its rule wiring; the placeholder
+    `VolCrushConfig` in `regime_detection.config` remains a stub until
+    the prerequisite slices land.
+    Deferred by Slice 2.2.
+
 ---
 
 ## 2. Layer 2 V2 — Full Structural-Causal State

@@ -186,6 +186,36 @@ class TrendDirectionV2Config(BaseModel):
     drawdown_lookback_days: int = Field(gt=0)
 
 
+class VolatilityV2Config(BaseModel):
+    """v2 §1C — Layer 1 V2 Volatility features (Slice 2.2, evidence-only).
+
+    Ships only the volatility V2 features that DO NOT require options data:
+    ``atr_ratio``, ``gap_frequency_20d``, ``intraday_range_percentile_252d``.
+    The IV/RV-spread and vol_crush features at v2 §1C lines 151–174 are
+    deferred until an options-data ingestion + event-calendar slice lands
+    (per v2 §10 absolute rule: do not invent missing inputs). See
+    Implementation Ambiguity Log entries for the deferrals.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    # v2 §1C line 142 — short ATR window (ATR_14, Wilder smoothing).
+    atr_short_period: int = Field(gt=0)
+
+    # v2 §1C line 142 — long ATR window (ATR_50, Wilder smoothing).
+    atr_long_period: int = Field(gt=0)
+
+    # v2 §1C line 179 — gap_frequency lookback (20 sessions).
+    gap_frequency_lookback_days: int = Field(gt=0)
+
+    # v2 §1C line 181 — gap threshold (0.005 = 0.5%); US default, "configurable
+    # per market". V2 universe is US-only so we pin a single 0.005 default.
+    gap_threshold_pct: float = Field(gt=0.0, lt=1.0)
+
+    # v2 §1C line 186 — intraday-range percentile lookback (252 sessions).
+    intraday_range_lookback_days: int = Field(gt=0)
+
+
 class TransitionScoreConfig(BaseModel):
     """Composite transition risk score configuration (v2 spec §4.3 / §4.4)."""
 
@@ -304,6 +334,7 @@ class RegimeConfig(BaseModel):
     # V2 optional sub-configs (default None so V2 slices can land independently).
     network_fragility: NetworkFragilityConfig | None = None
     trend_direction_v2: TrendDirectionV2Config | None = None
+    volatility_state_v2: VolatilityV2Config | None = None
     transition_score: TransitionScoreConfig | None = None
     monetary_pressure_v2: MonetaryPressureV2Config | None = None
     inflation_growth: InflationGrowthConfig | None = None

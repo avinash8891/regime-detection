@@ -125,6 +125,18 @@ trend_direction_v2:
   return_long_period: 126               # v2 §1A line 124
   drawdown_lookback_days: 252           # v2 §1A line 116
 
+# v2 §1C — Layer 1 V2 Volatility features (Slice 2.2, evidence-only).
+# Ships only features that don't depend on options data:
+#   atr_ratio, gap_frequency_20d, intraday_range_percentile_252d.
+# IV/RV-spread and vol_crush features (§1C lines 151–174) are deferred
+# until options-data ingestion + event calendar slices (see Ambiguity Log).
+volatility_state_v2:
+  atr_short_period: 14                  # v2 §1C line 142 (ATR_14, Wilder)
+  atr_long_period: 50                   # v2 §1C line 142 (ATR_50, Wilder)
+  gap_frequency_lookback_days: 20       # v2 §1C line 179
+  gap_threshold_pct: 0.005              # v2 §1C line 181, US default
+  intraday_range_lookback_days: 252     # v2 §1C line 186
+
 transition_score:
   weights_with_hmm:
     volatility_acceleration: 0.20

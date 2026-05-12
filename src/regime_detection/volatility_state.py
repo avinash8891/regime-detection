@@ -14,6 +14,77 @@ from regime_detection.models import AxisOutput, DataQuality
 VolatilityLabel = Literal["low_vol", "normal_vol", "high_vol", "crisis_vol", "unknown"]
 
 
+def wilders_atr(
+    *,
+    high: pd.Series,
+    low: pd.Series,
+    close: pd.Series,
+    period: int,
+) -> pd.Series:
+    """Wilder's Average True Range over `period` sessions.
+
+    Shared helper for v1 volatility classifiers and v2 §1C features
+    (atr_ratio = ATR_14 / ATR_50). Wilder's smoothing is the standard
+    estimator referenced by v2 §1C line 142 (Implementation Ambiguity
+    Log entry for "ATR estimator choice").
+
+    Algorithm:
+        TR[t] = max(
+            high[t] - low[t],
+            abs(high[t] - close[t-1]),
+            abs(low[t]  - close[t-1]),
+        )
+        ATR[0..period-2] = NaN
+        ATR[period-1]    = mean(TR[0..period-1])              # seed
+        ATR[t]           = (ATR[t-1] * (period-1) + TR[t]) / period   # t >= period
+
+    Returns a date-indexed pd.Series aligned to ``close.index``.
+    """
+    if period <= 0:
+        raise ValueError(f"period must be > 0: got {period}")
+    if not (len(high) == len(low) == len(close)):
+        raise ValueError("high, low, close must have identical length")
+
+    high = high.astype(float)
+    low = low.astype(float)
+    close = close.astype(float)
+
+    prev_close = close.shift(1)
+    tr = pd.concat(
+        [
+            high - low,
+            (high - prev_close).abs(),
+            (low - prev_close).abs(),
+        ],
+        axis=1,
+    ).max(axis=1)
+
+    n = len(tr)
+    out = np.full(n, np.nan, dtype=float)
+    tr_arr = tr.to_numpy(dtype=float)
+    if n < period:
+        return pd.Series(out, index=close.index, name=f"atr_{period}")
+
+    # Seed: simple mean of the first `period` true-range values. If any of
+    # those is NaN the seed is NaN and Wilder's recursion stays NaN forever.
+    seed_window = tr_arr[:period]
+    if np.isnan(seed_window).any():
+        seed = float("nan")
+    else:
+        seed = float(seed_window.mean())
+    out[period - 1] = seed
+
+    for t in range(period, n):
+        prev = out[t - 1]
+        cur = tr_arr[t]
+        if np.isnan(prev) or np.isnan(cur):
+            out[t] = float("nan")
+            continue
+        out[t] = (prev * (period - 1) + cur) / period
+
+    return pd.Series(out, index=close.index, name=f"atr_{period}")
+
+
 _RISK_RANK: dict[VolatilityLabel, int] = {
     "low_vol": 0,
     "normal_vol": 1,
