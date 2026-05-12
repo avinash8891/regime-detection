@@ -1,0 +1,31 @@
+tests/test_network_fragility_rules.py
+  s_69e10dfae52a94::t_0a1dd8afb11987 1-606,608-645
+  s_69e10dfae52a94::t_d3f1fd3fe249cc 607
+src/regime_detection/config.py
+  s_69e10dfae52a94::t_c558a1e9a6d43b 141-143
+  s_69e10dfae52a94::t_5961338e9bfb00 82-112
+src/regime_detection/configs/core3-v2.0.0.yaml
+  s_69e10dfae52a94::t_e3b8bcce8fc3b2 87-101
+src/regime_detection/network_fragility_rules.py
+  s_69e10dfae52a94::t_547ed8ddd9f99e 42
+  s_69e10dfae52a94::t_59cbd00b6ca62a 1-41,43-413
+tests/test_v2_config.py
+  s_69e10dfae52a94::t_a9b55dc0040365 61-78
+  s_69e10dfae52a94::t_848a2729a4f3f7 149,172
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.4",
+  "base_commit_sha": "c3badfcca41d6c2e7642f91d8bc9510b1854057a",
+  "prompts": {},
+  "sessions": {
+    "s_69e10dfae52a94": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "ef8c0903-9f31-4c26-be1c-64323350aa48",
+        "model": "claude-opus-4-7"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}
