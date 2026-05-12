@@ -10,6 +10,7 @@ from regime_detection.market_context import build_market_context
 from regime_detection.models import RegimeTimeline
 from regime_detection.timeline import ENGINE_MINIMUM_HISTORY, build_regime_timeline
 from regime_detection.transition_risk_series import build_transition_risk_history
+from regime_detection.versioning import engine_version
 
 
 def test_regime_output_contains_v1_placeholders_and_omits_none_fields(market_df_for_asof) -> None:
@@ -136,7 +137,7 @@ def test_classify_delegates_to_classify_window_with_single_day_lookback(mocker, 
     engine = RegimeEngine()
     as_of = date(2023, 12, 14)
     expected_timeline = RegimeTimeline(
-        engine_version="regime-engine-v1.0.0",
+        engine_version=engine_version(),
         config_version=engine.config.config_version,
         market="SPY",
         start_date=as_of,
