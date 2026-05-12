@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import date, datetime
+from functools import lru_cache
 
 import pandas as pd
 import pandas_market_calendars as mcal
@@ -16,6 +17,11 @@ class TradingDayNeighbors:
 
 def nyse_calendar() -> mcal.MarketCalendar:
     return mcal.get_calendar("NYSE")
+
+
+@lru_cache(maxsize=None)
+def nyse_sessions_between(start_date: date, end_date: date) -> tuple[date, ...]:
+    return tuple(nyse_calendar().schedule(start_date=start_date, end_date=end_date).index.date)
 
 
 def _as_date(value: object) -> date:
@@ -46,24 +52,19 @@ def as_date(value: object) -> date:
 
 def is_nyse_trading_day(d: date) -> bool:
     d = _as_date(d)
-    cal = nyse_calendar()
-    schedule = cal.schedule(start_date=d, end_date=d)
-    return not schedule.empty
+    return len(nyse_sessions_between(d, d)) > 0
 
 
 def nyse_neighbors(d: date) -> TradingDayNeighbors:
     d = _as_date(d)
-    cal = nyse_calendar()
 
     # Get a small window around the target date and pick nearest trading days.
     as_ts = pd.Timestamp(d)
     start = (as_ts - pd.Timedelta(days=10)).date()
     end = (as_ts + pd.Timedelta(days=10)).date()
-    schedule = cal.schedule(start_date=start, end_date=end)
-    if schedule.empty:
+    sessions = pd.DatetimeIndex(nyse_sessions_between(start, end))
+    if sessions.empty:
         raise RuntimeError("NYSE calendar returned empty schedule window")
-
-    sessions = schedule.index
 
     prev_sessions = sessions[sessions < as_ts]
     next_sessions = sessions[sessions > as_ts]

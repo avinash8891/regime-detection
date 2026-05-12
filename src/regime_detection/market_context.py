@@ -5,7 +5,7 @@ from datetime import date
 import pandas as pd
 from pydantic import BaseModel, ConfigDict
 
-from regime_detection.calendar import as_date, require_nyse_trading_day
+from regime_detection.calendar import as_date, nyse_sessions_between, require_nyse_trading_day
 from regime_detection.config import RegimeConfig
 from regime_detection.loaders import load_event_calendar
 
@@ -34,12 +34,13 @@ def build_market_context(
     if config.trading_calendar != "NYSE":
         raise ValueError(f"V1 supports only NYSE trading calendar. Got: {config.trading_calendar}")
     require_nyse_trading_day(end_date)
-    _require_market_data_contract(market_data, as_of_date=end_date)
+    normalized_market_data = _normalize_market_data_for_runtime(market_data)
+    _require_market_data_contract(normalized_market_data, as_of_date=end_date)
 
-    spy_ohlcv = _spy_ohlcv_frame(market_data, as_of_date=end_date)
-    rsp_close = _symbol_close_series(market_data, symbol="RSP", as_of_date=end_date)
+    spy_ohlcv = _spy_ohlcv_frame(normalized_market_data, as_of_date=end_date)
+    rsp_close = _symbol_close_series(normalized_market_data, symbol="RSP", as_of_date=end_date)
     vix_proxy_close = _resolve_vix_proxy_close(
-        market_data=market_data,
+        market_data=normalized_market_data,
         vix_data=vix_data,
         as_of_date=end_date,
     )
@@ -113,6 +114,12 @@ def slice_context_to_end_date(*, context: MarketContext, end_date: date) -> Mark
     )
 
 
+def _normalize_market_data_for_runtime(df: pd.DataFrame) -> pd.DataFrame:
+    out = df.copy()
+    out["date"] = pd.to_datetime(out["date"], errors="coerce")
+    return out
+
+
 def _require_market_data_contract(df: pd.DataFrame, *, as_of_date: date) -> None:
     required_cols = {"date", "symbol", "open", "high", "low", "close", "volume"}
     missing = sorted(required_cols - set(df.columns))
@@ -122,17 +129,15 @@ def _require_market_data_contract(df: pd.DataFrame, *, as_of_date: date) -> None
         raise ValueError("market_data must not be empty")
     if (df["symbol"] == "SPY").sum() == 0:
         raise ValueError("market_data must contain SPY rows for V1")
-    dates = pd.to_datetime(df["date"], errors="coerce").dt.date
+    dates = df["date"].dt.date
     has_spy_asof = ((df["symbol"] == "SPY") & (dates == as_of_date)).any()
     if not bool(has_spy_asof):
         raise ValueError(f"market_data must include SPY row for as_of_date={as_of_date.isoformat()}")
     uniq_dates = sorted({d for d in dates.dropna().unique()})
     if uniq_dates:
-        from regime_detection.calendar import nyse_calendar
-
         start = min(uniq_dates)
         end = max(uniq_dates)
-        sessions = nyse_calendar().schedule(start_date=start, end_date=end).index.date
+        sessions = nyse_sessions_between(start, end)
         session_set = set(sessions)
         bad_dates = [d for d in uniq_dates if d not in session_set]
         if bad_dates:
@@ -144,7 +149,6 @@ def _require_market_data_contract(df: pd.DataFrame, *, as_of_date: date) -> None
 
 def _spy_ohlcv_frame(df: pd.DataFrame, *, as_of_date: date) -> pd.DataFrame:
     s = df[df["symbol"] == "SPY"].copy()
-    s["date"] = pd.to_datetime(s["date"])
     s = s.sort_values("date")
     s = s[s["date"].dt.date <= as_of_date]
     s = s.set_index("date")
@@ -155,7 +159,6 @@ def _symbol_close_series(df: pd.DataFrame, *, symbol: str, as_of_date: date) -> 
     s = df[df["symbol"] == symbol].copy()
     if s.empty:
         raise ValueError(f"market_data missing required symbol for V1: {symbol}")
-    s["date"] = pd.to_datetime(s["date"])
     s = s.sort_values("date")
     s = s[s["date"].dt.date <= as_of_date]
     out = pd.Series(s["close"].to_numpy(), index=pd.to_datetime(s["date"]))
@@ -173,7 +176,8 @@ def _resolve_vix_proxy_close(
         if "date" not in vix_data.columns or "close" not in vix_data.columns:
             raise ValueError("vix_data must contain date and close columns")
         s = vix_data.copy()
-        s["date"] = pd.to_datetime(s["date"])
+        if not pd.api.types.is_datetime64_any_dtype(s["date"]):
+            s["date"] = pd.to_datetime(s["date"])
         s = s.sort_values("date")
         s = s[s["date"].dt.date <= as_of_date]
         out = pd.Series(s["close"].to_numpy(), index=pd.to_datetime(s["date"]))

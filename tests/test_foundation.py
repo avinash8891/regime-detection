@@ -97,6 +97,16 @@ def test_classify_accepts_timestamp_as_of_date(market_df_for_asof) -> None:
     assert out.as_of_date == date(2026, 5, 5)
 
 
+def test_classify_accepts_market_data_with_string_dates(market_df_for_asof) -> None:
+    engine = RegimeEngine()
+    df = market_df_for_asof(date(2026, 5, 5)).copy()
+    df["date"] = pd.to_datetime(df["date"]).dt.strftime("%Y-%m-%d")
+
+    out = engine.classify(as_of_date=date(2026, 5, 5), market_data=df)
+
+    assert out.as_of_date == date(2026, 5, 5)
+
+
 def test_engine_rejects_path_based_event_calendar_input(market_df_for_asof) -> None:
     engine = RegimeEngine()
     df = market_df_for_asof(date(2023, 12, 14))
