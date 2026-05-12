@@ -811,6 +811,70 @@ the slice/commit that resolved it. Entries are append-only.
     `regime_detection.axis_series.VolumeLiquidityStateSeriesClassifier`.
     Resolved by Slice 2.7.
 
+43. **§4.1–§4.3 — Layer 4 V2 transition score is blocked: no
+    spec-defined weighting exists for the subset of components currently
+    available.**
+    v2 §4.1 composes the continuous `transition_score` from six
+    components and §4.3 publishes weights for exactly two cases:
+    "With HMM" (all six, weights sum to 1.0) and "Without HMM"
+    (the five non-HMM components, weights sum to 1.0). §8 line 1595
+    permits shipping Layer 4 "without HMM using the renormalized
+    weights", which refers to the §4.3 "Without HMM" row verbatim —
+    not to ad-hoc renormalization over an arbitrary subset.
+
+    Component availability audit performed at the start of Slice 3
+    (HEAD `f53760c`):
+
+    - `volatility_acceleration_score` (§4.2 line 1238): AVAILABLE.
+      `realized_vol(close, window)` exposed by
+      `regime_detection.volatility_state` since Slice 2.6 (entry #37).
+    - `breadth_deterioration_score` (§4.2 line 1244): BLOCKED.
+      Requires `pct_above_50dma`, a point-in-time (PIT) constituent
+      feature. v1 `regime_detection.breadth_state` uses an
+      RSP/SPY ETF-proxy and does not expose `pct_above_50dma`; v2
+      `regime_detection.breadth_state_v2` (Slice 2.3) explicitly
+      defers all PIT pct_above_*dma features per entry #21 and v2
+      §1D lines 198–205 ("V2 PIT breadth must not silently fall back
+      to biased current constituents").
+    - `correlation_concentration_score` (§4.2 line 1249): AVAILABLE.
+      `avg_pairwise_corr_percentile_504d` exposed on
+      `FeatureStore.network_fragility` since Slice 1.2.
+    - `trend_break_score` (§4.2 line 1255): AVAILABLE.
+      `drawdown_252d` exposed by
+      `regime_detection.trend_direction_v2` since Slice 2.1.
+    - `macro_event_score` (§4.2 line 1260): AVAILABLE.
+      `regime_detection.event_calendar.classify_event_calendar`
+      already emits the spec-named labels `fed_week`, `cpi_week`,
+      and `nfp_week`.
+    - `hmm_probability_shift_score` (§4.2 line 1265): BLOCKED.
+      HMM module per v2 §6.1 is unscoped; v2 §8 places HMM at
+      slice 6, after Layer 4.
+
+    Two components are BLOCKED (`breadth_deterioration` and
+    `hmm_probability_shift`). The §4.3 weight tables do not enumerate
+    a "Without HMM AND Without breadth_deterioration" row. Per v2 §10
+    ABSOLUTE RULE (line 1244, "when the spec is ambiguous or silent,
+    stop and ask; do not invent"), and per the V2 Slice Promotion
+    Checklist §1 ("no formulas, thresholds, or precedence invented —
+    v2 spec §10: 'do not invent component score formulas — use the
+    exact formulas in §4.2'; same rule for §3.5, §2A/§2B/§2C, etc."),
+    Slice 3 is blocked: renormalizing the four available weights
+    (`volatility_acceleration`, `correlation_concentration`,
+    `trend_break`, `macro_event`) to sum to 1.0 would be a spec
+    invention.
+
+    Resolution: defer Layer 4 V2 transition score until either
+    (a) PIT constituent membership ingestion lands (unblocks
+    `pct_above_50dma`, then ship the §4.3 "Without HMM" row
+    verbatim over the five non-HMM components), or (b) HMM ships
+    (entry deferred to v2 §8 slice 6, after which the §4.3 "With
+    HMM" row applies if PIT membership has also landed). Until
+    then, the v1 `transition_risk` named-warning path remains
+    authoritative (per §4.5 "V1 warning labels remain
+    authoritative; the score adds gradation").
+
+    No code committed for this slice — doc-only Ambiguity Log entry.
+
 ---
 
 ## 2. Layer 2 V2 — Full Structural-Causal State
