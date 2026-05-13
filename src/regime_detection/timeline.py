@@ -83,18 +83,35 @@ def build_regime_timeline(
             f"end_date={context.end_date.isoformat()}."
         )
 
-    # Slice 8: the BOCPD change-point seam needs the trailing
-    # ``training_window_days`` (5y / 1260 sessions) of realized_vol_21d
-    # to fit. Extend the engine's minimum slicing window to satisfy any
-    # active v2 evidence-layer training window — keeps V1 byte-identity
-    # for callers that omit those configs (max() collapses to
-    # ENGINE_MINIMUM_HISTORY when no v2 trainable seams are configured).
+    # Slice 6/7/8 trainable v2 evidence layers (HMM, GMM clustering, BOCPD
+    # change-point) each need the trailing ``training_window_days`` rows of
+    # their inputs to fit. Extend the engine's minimum slicing window to
+    # the LARGEST configured training window. Without this, disabling one
+    # seam (e.g. change_point) but keeping another (e.g. HMM) would slice
+    # the context down below HMM's training_window_days and the HMM seam
+    # would silently return None for insufficient history.
+    # Keeps V1 byte-identity for callers that omit all three configs
+    # (max() collapses to ENGINE_MINIMUM_HISTORY).
     v2_min_history = ENGINE_MINIMUM_HISTORY
     if config is not None and config.change_point is not None:
         # +21 absorbs the realized_vol_21d warmup so BOCPD sees a full
         # non-NaN training window on the trailing slice.
         v2_min_history = max(
             v2_min_history, config.change_point.training_window_days + 21
+        )
+    if config is not None and config.hmm is not None:
+        # +63 absorbs the deepest HMM input warmup (drawdown_63d /
+        # avg_pairwise_corr_63d) so the trailing slice gives the GaussianHMM
+        # fit a full non-NaN training window.
+        v2_min_history = max(
+            v2_min_history, config.hmm.training_window_days + 63
+        )
+    if config is not None and config.clustering is not None:
+        # +63 absorbs the deepest GMM input warmup (return_63d /
+        # drawdown_63d / avg_pairwise_corr_63d) so the trailing slice gives
+        # the GaussianMixture fit a full non-NaN training window.
+        v2_min_history = max(
+            v2_min_history, config.clustering.training_window_days + 63
         )
     required_sessions = min(len(context.sessions), v2_min_history + lookback_days - 1)
     working_context = slice_context_to_recent_sessions(context=context, required_sessions=required_sessions)

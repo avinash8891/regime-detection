@@ -169,6 +169,21 @@ def compute_clustering_features(
         dtype="float64",
     ).reindex(canonical_index)
 
+    # V1 §2.2 stateless-replay: GMM is fit ONCE on frame.tail(n_train) ending
+    # at frame.index[-1]. Cluster assignments + Mahalanobis distances for
+    # sessions earlier than that fit-end were derived from parameters
+    # trained on (from that earlier session's perspective) future data. Mask
+    # them to NaN/NA so classify_window(lookback_days > 1) preserves PIT
+    # semantics. The clustering seam is diagnostic-only (not consumed by
+    # transition_score), so masking only affects the wire surface for the
+    # earlier emitted sessions; the trailing session keeps its real values.
+    fit_end = frame.index[-1]
+    leak_mask = canonical_index < fit_end
+    if leak_mask.any():
+        proba_frame.loc[leak_mask, :] = float("nan")
+        cluster_id_series.loc[leak_mask] = pd.NA
+        distance_series.loc[leak_mask] = float("nan")
+
     return ClusteringFeatures(
         cluster_id=cluster_id_series.rename("cluster_id"),
         distance_to_centroid=distance_series.rename("distance_to_centroid"),

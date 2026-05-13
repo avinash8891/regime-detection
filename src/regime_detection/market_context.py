@@ -161,7 +161,16 @@ def slice_context_to_end_date(*, context: MarketContext, end_date: date) -> Mark
 
 def _normalize_market_data_for_runtime(df: pd.DataFrame) -> pd.DataFrame:
     out = df.copy()
-    out["date"] = pd.to_datetime(out["date"], errors="coerce")
+    # errors="raise" — bad/malformed date strings must fail loud at the
+    # ingestion boundary. Previous errors="coerce" silently produced NaT,
+    # which the downstream dropna() in _require_market_data_contract then
+    # dropped, allowing bad-date rows to bypass NYSE-session validation.
+    try:
+        out["date"] = pd.to_datetime(out["date"], errors="raise")
+    except (ValueError, TypeError) as exc:
+        raise ValueError(
+            f"market_data contains malformed date values: {exc}"
+        ) from exc
     return out
 
 
@@ -174,6 +183,11 @@ def _require_market_data_contract(df: pd.DataFrame, *, as_of_date: date) -> None
         raise ValueError("market_data must not be empty")
     if (df["symbol"] == "SPY").sum() == 0:
         raise ValueError("market_data must contain SPY rows for V1")
+    if df["date"].isna().any():
+        # Belt-and-braces: even though _normalize_market_data_for_runtime raises
+        # on coercion errors, defend against callers that bypass the normalizer
+        # and pass NaT-containing frames in directly.
+        raise ValueError("market_data contains null date values; reject at the ingestion boundary")
     dates = df["date"].dt.date
     has_spy_asof = ((df["symbol"] == "SPY") & (dates == as_of_date)).any()
     if not bool(has_spy_asof):

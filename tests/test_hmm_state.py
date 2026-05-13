@@ -131,8 +131,12 @@ def test_compute_hmm_features_succeeds_on_synthetic_inputs_with_full_history() -
     non_null = result.top_state_prob.dropna()
     assert (non_null >= 0.0).all()
     assert (non_null <= 1.0).all()
-    # The non-null window should be substantial after the dropna mask.
-    assert len(non_null) > 1000
+    # V1 §2.2 PIT semantics: HMM is fit ONCE per classify_window call on
+    # frame.tail(n_train) ending at frame.index[-1]. Earlier sessions are
+    # masked to NaN to prevent future-leak. Exactly the trailing aligned
+    # session (intersected non-NaN tail) carries a real posterior.
+    assert len(non_null) == 1
+    assert non_null.index[0] == inputs["return_1d"].dropna().index[-1]
 
 
 def test_top_state_prob_permutation_invariant_under_fixed_seed() -> None:

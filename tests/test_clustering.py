@@ -138,7 +138,12 @@ def test_compute_clustering_features_succeeds_on_synthetic_inputs() -> None:
     assert result.model_version == "gmm_8cluster_v1.0"
     assert len(result.cluster_id) == 1500
     non_null = result.cluster_id.dropna()
-    assert len(non_null) > 1000
+    # V1 §2.2 PIT semantics: GMM is fit ONCE per classify_window call on
+    # frame.tail(n_train) ending at frame.index[-1]. Earlier sessions are
+    # masked to NA to prevent future-leak. Exactly the trailing aligned
+    # session carries a real cluster assignment.
+    assert len(non_null) == 1
+    assert non_null.index[0] == inputs["return_21d"].dropna().index[-1]
     for val in non_null.unique():
         assert int(val) in range(8)
 

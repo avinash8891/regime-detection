@@ -354,6 +354,29 @@ def test_engine_classify_threads_pit_constituent_inputs_into_context(
     assert out.breadth_state.active_label is not None
 
 
+def test_build_market_context_rejects_malformed_date_values(market_df_for_asof) -> None:
+    """Regression: _normalize_market_data_for_runtime used pd.to_datetime
+    with errors='coerce', silently turning malformed date strings into NaT
+    which the validator's dropna() then swept under the rug. Bad-date rows
+    must fail loud at the ingestion boundary."""
+    as_of = date(2023, 12, 14)
+    good_df = market_df_for_asof(as_of)
+
+    # Inject one row with a malformed date string. pd.to_datetime(errors='raise')
+    # will reject the whole frame at normalization time.
+    bad_row = good_df.iloc[0].copy()
+    bad_row["date"] = "not-a-date-at-all"
+    corrupted = pd.concat(
+        [good_df, pd.DataFrame([bad_row])], ignore_index=True
+    )
+
+    with pytest.raises(ValueError, match=r"malformed date"):
+        RegimeEngine().classify(
+            as_of_date=as_of,
+            market_data=corrupted,
+        )
+
+
 # ---------- Engine threading -------------------------------------------------
 
 

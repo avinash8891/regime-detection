@@ -16,11 +16,16 @@
       --start-date 2026-02-12 --end-date 2026-05-08 \
       --out docs/verification/v2_shadow_ab_60session.md
   ```
-- Input data SHA-256 (truncated to 16 hex chars):
-  - `data/raw/pit_constituents/sp500_ticker_intervals.parquet` → `a56e14fffc9a690b`
-  - `data/raw/macro/fred_macro_series.parquet` → `3004cc6b9e751309`
-  - `data/raw/daily_ohlcv_762/` (per-symbol manifest deferred to follow-up;
-    regenerate from the parquet tree at the generator commit to validate).
+- Input data SHA-256 (full):
+  - `data/raw/pit_constituents/sp500_ticker_intervals.parquet`
+    → `a56e14fffc9a690b9335e21f9d5ec0a986871ee74f6adb2faf1b209e67c6a494`
+  - `data/raw/macro/fred_macro_series.parquet`
+    → `3004cc6b9e7513095670dd0edd7e34445d7ecdba6a95ad6753cd7a54b80e674f`
+  - `data/raw/daily_ohlcv_762/` aggregate (sha256 of `<symbol>|<sha256>\n`
+    concatenation sorted by symbol, n_symbols=762)
+    → `06a0f82ffeed48db952886ad63d0c951a1e58114e07d4d949f3688094a014115`
+  - Per-symbol manifest: `data/raw/daily_ohlcv_762/MANIFEST.sha256.json`
+    (gitignored along with `data/raw/`; regenerate locally to validate).
 
 ## Gate intent (docs/v2_slice_gate_checklist.md item 7)
 

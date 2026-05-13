@@ -13,6 +13,8 @@ The `*.json` files in this directory are byte-frozen snapshots of `RegimeOutput.
 | File | as_of_date | Originating commit (capture) |
 |---|---|---|
 | `2023-12-14.json` | 2023-12-14 | `482e44b` (Phase B snapshot baseline — see `_v1_frozen_models.py` header) |
+| `2024-02-15.json` | 2024-02-15 | `482e44b` (Phase B snapshot baseline — captured in the same wire-shape pass as `2023-12-14.json`) |
+| `2024-04-15.json` | 2024-04-15 | `482e44b` (Phase B snapshot baseline — captured in the same wire-shape pass as `2023-12-14.json`) |
 
 ## Regeneration command (only when authorized)
 

@@ -124,6 +124,20 @@ def compute_hmm_features(
         index=frame.index,
         columns=list(range(config.n_states)),
     ).reindex(canonical_index)
+
+    # V1 §2.2 stateless-replay: the HMM is fit ONCE on frame.tail(n_train)
+    # ending at frame.index[-1]. Posterior values for sessions earlier than
+    # that fit-end were computed using parameters trained on data that, from
+    # the earlier session's perspective, is the FUTURE. To preserve PIT
+    # semantics in classify_window(lookback_days > 1), mask every session
+    # before the trailing training row to NaN. The transition_score consumer
+    # treats NaN as "HMM seam absent at this session" and falls back to the
+    # 5-component weights_without_hmm path (V1 byte-identity preserved).
+    fit_end = frame.index[-1]
+    leak_mask = state_prob_frame.index < fit_end
+    if leak_mask.any():
+        state_prob_frame.loc[leak_mask, :] = float("nan")
+
     top_state_prob = state_prob_frame.max(axis=1).rename("top_state_prob")
     # state_probabilities.max on an all-NaN row returns NaN — desired
     # cold-start/missing-data propagation. No further masking needed.

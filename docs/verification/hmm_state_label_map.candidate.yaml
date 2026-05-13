@@ -19,11 +19,11 @@ hmm_state_label_map:
       daily_ohlcv_762_root: data/raw/daily_ohlcv_762/
       fred_macro_series_parquet: data/raw/macro/fred_macro_series.parquet
     input_data_sha256:
-      pit_constituents_parquet: a56e14fffc9a690b0c9b13f2a9d10a4f93f3c7c8c0e6f1a2b3c4d5e6f7a8b9c0
-      fred_macro_series_parquet: 3004cc6b9e7513094a8e2b5c1f3d6a7e8b9c0d1e2f3a4b5c6d7e8f9a0b1c2d3
-    notes: >-
-      See cluster_label_map.candidate.yaml provenance block for the
-      daily_ohlcv_762/ tree-level hashing follow-up (v0.2-candidate).
+      pit_constituents_parquet: a56e14fffc9a690b9335e21f9d5ec0a986871ee74f6adb2faf1b209e67c6a494
+      fred_macro_series_parquet: 3004cc6b9e7513095670dd0edd7e34445d7ecdba6a95ad6753cd7a54b80e674f
+      daily_ohlcv_762_aggregate: 06a0f82ffeed48db952886ad63d0c951a1e58114e07d4d949f3688094a014115
+      daily_ohlcv_762_manifest_path: data/raw/daily_ohlcv_762/MANIFEST.sha256.json
+      daily_ohlcv_762_n_symbols: 762
   summary:
     n_states: 4
     n_predicted_sessions: 2036

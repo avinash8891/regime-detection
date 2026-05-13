@@ -21,14 +21,16 @@ cluster_label_map:
       daily_ohlcv_762_root: data/raw/daily_ohlcv_762/
       fred_macro_series_parquet: data/raw/macro/fred_macro_series.parquet
     input_data_sha256:
-      pit_constituents_parquet: a56e14fffc9a690b0c9b13f2a9d10a4f93f3c7c8c0e6f1a2b3c4d5e6f7a8b9c0
-      fred_macro_series_parquet: 3004cc6b9e7513094a8e2b5c1f3d6a7e8b9c0d1e2f3a4b5c6d7e8f9a0b1c2d3
-    notes: >-
-      input_data_sha256 entries truncated to 16 hex chars in v0.1-candidate;
-      regenerate with the regenerate_command above to confirm a byte-identical
-      candidate yaml. PIT 762-stock daily_ohlcv_762/ is a directory tree —
-      tree-level hashing is deferred to v0.2-candidate (capture per-symbol
-      parquet SHA-256s in a manifest file).
+      pit_constituents_parquet: a56e14fffc9a690b9335e21f9d5ec0a986871ee74f6adb2faf1b209e67c6a494
+      fred_macro_series_parquet: 3004cc6b9e7513095670dd0edd7e34445d7ecdba6a95ad6753cd7a54b80e674f
+      # Aggregate SHA-256 over the per-symbol OHLCV parquet tree
+      # (data/raw/daily_ohlcv_762/symbol=*/ohlcv.parquet, n_symbols=762).
+      # Computed as sha256 of the "<symbol>|<sha256>\n" concatenation, sorted
+      # by symbol. The per-symbol breakdown lives in the operator-local
+      # MANIFEST.sha256.json sibling file (gitignored along with data/raw/).
+      daily_ohlcv_762_aggregate: 06a0f82ffeed48db952886ad63d0c951a1e58114e07d4d949f3688094a014115
+      daily_ohlcv_762_manifest_path: data/raw/daily_ohlcv_762/MANIFEST.sha256.json
+      daily_ohlcv_762_n_symbols: 762
   summary:
     model_version: gmm_8cluster_v1.0
     n_clusters: 8

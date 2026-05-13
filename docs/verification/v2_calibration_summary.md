@@ -24,3 +24,27 @@
 
 - docs/verification/hmm_state_label_map.candidate.yaml
 - docs/verification/cluster_label_map.candidate.yaml
+
+## Reproducibility
+
+- Generator script: `scripts/run_v2_calibration.py`
+- Generator commit: `22cd943`
+- Regenerate:
+  ```
+  python3 scripts/run_v2_calibration.py \
+      --training-end-date 2026-05-08 \
+      --training-window-days 1260 \
+      --random-state 42 \
+      --emit-summary docs/verification/v2_calibration_summary.md \
+      --emit-hmm-candidate docs/verification/hmm_state_label_map.candidate.yaml \
+      --emit-cluster-candidate docs/verification/cluster_label_map.candidate.yaml
+  ```
+- Input data SHA-256 (full):
+  - `data/raw/pit_constituents/sp500_ticker_intervals.parquet`
+    → `a56e14fffc9a690b9335e21f9d5ec0a986871ee74f6adb2faf1b209e67c6a494`
+  - `data/raw/macro/fred_macro_series.parquet`
+    → `3004cc6b9e7513095670dd0edd7e34445d7ecdba6a95ad6753cd7a54b80e674f`
+  - `data/raw/daily_ohlcv_762/` aggregate
+    → `06a0f82ffeed48db952886ad63d0c951a1e58114e07d4d949f3688094a014115`
+  - Per-symbol manifest: `data/raw/daily_ohlcv_762/MANIFEST.sha256.json`
+    (gitignored along with `data/raw/`).
