@@ -1,0 +1,43 @@
+tests/fixtures/v1_frozen_outputs/PROVENANCE.md
+  s_7f3c352a4f9447::t_8e5886d4d556ee 16-17
+docs/verification/v2_shadow_ab_60session.md
+  s_7f3c352a4f9447::t_a54fa6de42e18b 19-28
+tests/test_clustering.py
+  s_7f3c352a4f9447::t_7766e65b1fc86b 141-146
+tests/test_hmm_state.py
+  s_7f3c352a4f9447::t_ddac37b0db8905 134-139
+src/regime_detection/timeline.py
+  s_7f3c352a4f9447::t_ecd07387b12ccd 86-94,102-114
+docs/verification/v2_walkforward_perf_gate.md
+  s_7f3c352a4f9447::t_f9adf2f1768a9e 19-27
+docs/verification/v2_calibration_summary.md
+  s_7f3c352a4f9447::t_f9bdfc19cadc6c 27-50
+docs/verification/cluster_label_map.candidate.yaml
+  s_7f3c352a4f9447::t_078893e6b1230b 24-33
+tests/test_v2_data_ingestion.py
+  s_7f3c352a4f9447::t_4c0bd04cb343db 357-379
+src/regime_detection/clustering.py
+  s_7f3c352a4f9447::t_e624fef1a4890c 172-186
+src/regime_detection/hmm_state.py
+  s_7f3c352a4f9447::t_2f40c7fc779aae 127-140
+src/regime_detection/market_context.py
+  s_7f3c352a4f9447::t_d22e19c678fb79 164-173,186-190
+docs/verification/hmm_state_label_map.candidate.yaml
+  s_7f3c352a4f9447::t_e74e1c0ec52f79 22-26
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.8",
+  "base_commit_sha": "19e395dfa44939db8a2c7abb0845d947962c01da",
+  "prompts": {},
+  "sessions": {
+    "s_7f3c352a4f9447": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "3d45e374-f98d-411d-b6a1-0697dd832539",
+        "model": "claude-opus-4-7"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}
