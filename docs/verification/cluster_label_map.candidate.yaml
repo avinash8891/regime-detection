@@ -1,0 +1,167 @@
+cluster_label_map:
+  version: 0.1-candidate
+  fitted_at_utc: '2026-05-13T12:21:59.382115+00:00'
+  fitted_end_date: '2026-05-08'
+  training_window_days: 1260
+  random_state: 42
+  # Provenance — required per PR #27 review (P2 fixture-provenance gap).
+  # Reproduce by running the regenerate_command at generator_commit against
+  # input parquet files whose SHA-256 must match input_data_sha256.
+  provenance:
+    generator_script: scripts/run_v2_calibration.py
+    generator_commit: 22cd943
+    regenerate_command: >-
+      python3 scripts/run_v2_calibration.py
+      --training-end-date 2026-05-08
+      --training-window-days 1260
+      --random-state 42
+      --emit-cluster-candidate docs/verification/cluster_label_map.candidate.yaml
+    input_data:
+      pit_constituents_parquet: data/raw/pit_constituents/sp500_ticker_intervals.parquet
+      daily_ohlcv_762_root: data/raw/daily_ohlcv_762/
+      fred_macro_series_parquet: data/raw/macro/fred_macro_series.parquet
+    input_data_sha256:
+      pit_constituents_parquet: a56e14fffc9a690b9335e21f9d5ec0a986871ee74f6adb2faf1b209e67c6a494
+      fred_macro_series_parquet: 3004cc6b9e7513095670dd0edd7e34445d7ecdba6a95ad6753cd7a54b80e674f
+      # Aggregate SHA-256 over the per-symbol OHLCV parquet tree
+      # (data/raw/daily_ohlcv_762/symbol=*/ohlcv.parquet, n_symbols=762).
+      # Computed as sha256 of the "<symbol>|<sha256>\n" concatenation, sorted
+      # by symbol. The per-symbol breakdown lives in the operator-local
+      # MANIFEST.sha256.json sibling file (gitignored along with data/raw/).
+      daily_ohlcv_762_aggregate: 06a0f82ffeed48db952886ad63d0c951a1e58114e07d4d949f3688094a014115
+      daily_ohlcv_762_manifest_path: data/raw/daily_ohlcv_762/MANIFEST.sha256.json
+      daily_ohlcv_762_n_symbols: 762
+  summary:
+    model_version: gmm_8cluster_v1.0
+    n_clusters: 8
+    n_predicted_sessions: 2003
+    sessions_per_cluster:
+      0: 171
+      1: 54
+      2: 23
+      3: 318
+      4: 323
+      5: 671
+      6: 270
+      7: 173
+    mean_distance_to_centroid_per_cluster:
+      0: 3.017977
+      1: 3.08483
+      2: 2.512733
+      3: 2.73307
+      4: 3.16735
+      5: 2.754819
+      6: 2.680609
+      7: 4.646544
+    recent_dates_per_cluster:
+      0:
+      - '2025-06-26'
+      - '2025-06-27'
+      - '2025-06-30'
+      - '2025-07-01'
+      - '2025-11-20'
+      1:
+      - '2025-04-29'
+      - '2025-04-30'
+      - '2025-05-01'
+      - '2025-05-02'
+      - '2025-05-05'
+      2:
+      - '2026-03-17'
+      - '2026-03-18'
+      - '2026-03-19'
+      - '2026-03-20'
+      - '2026-03-23'
+      3:
+      - '2025-10-22'
+      - '2025-10-29'
+      - '2025-11-18'
+      - '2025-11-19'
+      - '2025-11-21'
+      4:
+      - '2025-07-03'
+      - '2025-07-07'
+      - '2025-07-08'
+      - '2025-07-09'
+      - '2025-07-10'
+      5:
+      - '2026-02-11'
+      - '2026-02-12'
+      - '2026-02-13'
+      - '2026-02-17'
+      - '2026-02-18'
+      6:
+      - '2026-01-27'
+      - '2026-01-28'
+      - '2026-01-29'
+      - '2026-01-30'
+      - '2026-02-02'
+      7:
+      - '2025-05-19'
+      - '2025-05-20'
+      - '2025-05-21'
+      - '2025-05-22'
+      - '2025-05-23'
+    most_extreme_distance_dates_per_cluster:
+      0:
+      - '2020-06-18'
+      - '2020-06-23'
+      - '2020-06-24'
+      - '2020-06-26'
+      - '2020-06-25'
+      1:
+      - '2020-03-12'
+      - '2020-03-13'
+      - '2020-03-11'
+      - '2020-03-10'
+      - '2020-03-04'
+      2:
+      - '2026-02-19'
+      - '2026-03-23'
+      - '2026-03-09'
+      - '2026-02-25'
+      - '2026-02-24'
+      3:
+      - '2018-11-07'
+      - '2018-10-30'
+      - '2018-11-05'
+      - '2018-10-31'
+      - '2018-11-01'
+      4:
+      - '2020-03-23'
+      - '2020-06-22'
+      - '2020-06-19'
+      - '2020-06-17'
+      - '2020-06-15'
+      5:
+      - '2026-02-18'
+      - '2026-02-17'
+      - '2026-02-13'
+      - '2026-02-12'
+      - '2020-07-15'
+      6:
+      - '2020-07-20'
+      - '2020-07-17'
+      - '2019-09-11'
+      - '2018-09-14'
+      - '2018-08-29'
+      7:
+      - '2020-03-20'
+      - '2020-03-24'
+      - '2020-03-19'
+      - '2020-03-18'
+      - '2020-03-25'
+    candidate_mappings:
+      0: '<operator review: assign economic label for cluster 0>'
+      1: '<operator review: assign economic label for cluster 1>'
+      2: '<operator review: assign economic label for cluster 2>'
+      3: '<operator review: assign economic label for cluster 3>'
+      4: '<operator review: assign economic label for cluster 4>'
+      5: '<operator review: assign economic label for cluster 5>'
+      6: '<operator review: assign economic label for cluster 6>'
+      7: '<operator review: assign economic label for cluster 7>'
+  review_instructions: "Per V2 \xA76.2 line 2842 + \xA710: inspect the per-cluster\
+    \ size and mean distance to centroid above. Manually assign an economic label\
+    \ (e.g. calm_low_vol_bull / trending_bull / high_vol_chop / ...) to each integer\
+    \ cluster by replacing the placeholder strings in summary.candidate_mappings.\
+    \ Rename this file to cluster_label_map.yaml (drop .candidate suffix) when done."

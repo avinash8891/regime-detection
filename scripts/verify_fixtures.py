@@ -356,24 +356,53 @@ def _eval_trend_character(feat: dict[str, pd.Series], dt: pd.Timestamp) -> tuple
     adx = feat["ADX_14"].loc[dt]
     ret10 = feat["return_10d"].loc[dt]
     ret21 = feat["return_21d"].loc[dt]
+    ret63 = feat["return_63d"].loc[dt]
     prior_dd = feat["prior_63d_drawdown"].loc[dt]
     close = feat["close"].loc[dt]
     sma50 = feat["SMA_50"].loc[dt]
 
-    required_nan = any(_is_nan(x) for x in [adx, ret10, ret21, prior_dd, close, sma50])
+    required_nan = any(_is_nan(x) for x in [adx, ret10, ret21, ret63, prior_dd, close, sma50])
     if required_nan:
         return "unknown", {"unknown_required_nan": True}
 
+    # V2 §1B `range_bound` (Ambiguity Log #34/#46/#67): 3-AND conjunction
+    # over abs(return_63d), max_midpoint_excursion_20d, ADX_14. Midpoint
+    # excursion computed locally from the 20-session close window ending at
+    # `dt` (avoids re-engineering the feat dict). Per Log #46 spec lines
+    # 132-138: midpoint = (max + min) / 2 over window; excursion = max(
+    # abs(close[i] - midpoint) / midpoint for i in t-19..t).
+    close_window = feat["close"].loc[:dt].tail(20)
+    if len(close_window) == 20 and not close_window.isna().any():
+        cw_max = float(close_window.max())
+        cw_min = float(close_window.min())
+        midpoint = (cw_max + cw_min) / 2.0
+        midpoint_excursion = float(((close_window - midpoint).abs() / midpoint).max()) if midpoint > 0 else float("nan")
+    else:
+        midpoint_excursion = float("nan")
+
     recovery_attempt = (prior_dd <= -0.10) and (close > sma50) and (ret10 >= 0.05)
     trending = (adx >= 20) and (abs(ret21) >= 0.05)
+    range_bound = (
+        (not _is_nan(midpoint_excursion))
+        and (abs(ret63) < 0.05)
+        and (midpoint_excursion <= 0.05)
+        and (adx < 20)
+    )
     chop = (adx < 20) and (abs(ret10) < 0.03) and (abs(ret21) < 0.05)
-    transition = not (recovery_attempt or trending or chop)
+    transition = not (recovery_attempt or trending or range_bound or chop)
 
-    # precedence: recovery_attempt > trending > chop > transition
+    # V2 §1B precedence per Log #67: breakout_expansion > recovery_attempt >
+    # trending > range_bound > chop > transition > unknown. The script does
+    # NOT implement breakout_expansion (no golden date depends on it; the
+    # followthrough_rate stateful counter is the production classifier's
+    # job — this script's role is the V1 + V2-§1B-deterministic-subset
+    # reference impl).
     if recovery_attempt:
         label = "recovery_attempt"
     elif trending:
         label = "trending"
+    elif range_bound:
+        label = "range_bound"
     elif chop:
         label = "chop"
     else:
@@ -382,6 +411,7 @@ def _eval_trend_character(feat: dict[str, pd.Series], dt: pd.Timestamp) -> tuple
     return label, {
         "recovery_attempt": recovery_attempt,
         "trending": trending,
+        "range_bound": range_bound,
         "chop": chop,
         "transition": transition,
     }
@@ -389,8 +419,10 @@ def _eval_trend_character(feat: dict[str, pd.Series], dt: pd.Timestamp) -> tuple
 
 _TC_RISK_RANK: dict[str, int] = {
     "trending": 0,
-    "chop": 1,
+    "breakout_expansion": 0,
     "recovery_attempt": 1,
+    "range_bound": 1,
+    "chop": 1,
     "transition": 2,
     "unknown": 2,
 }
@@ -602,13 +634,16 @@ INTENTS: list[dict[str, Any]] = [
         "intent_date": "2019-06-28",
         "intent": {
             "trend_direction": "bull",
-            "trend_character": "transition",
+            # V2 §1B `range_bound` label (Ambiguity Log #34/#46/#67)
+            # supersedes the V1 catch-all `transition` on this tight-
+            # oscillation bull session.
+            "trend_character": "range_bound",
             "volatility_state": "normal_vol",
             "breadth_state": "healthy_breadth",
             "transition_risk": "stable",
         },
         "search_window_trading_days": 60,
-        "notes": "Bull market normal conditions (trend_character may remain transition under hysteresis)",
+        "notes": "Bull market normal conditions; V2 §1B range_bound catches the tight oscillation that V1 fell through to transition",
     },
     {
         "intent_id": "covid_crash_crisis",

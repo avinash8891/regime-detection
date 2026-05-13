@@ -1,0 +1,489 @@
+config_version: core3-v2.0.0
+market: US
+trading_calendar: NYSE
+breadth_mode: etf_proxy
+etf_proxy:
+  cap_weight_index: SPY
+  equal_weight_proxy: RSP
+event_calendar:
+  market: US
+expiry_rules:
+  monthly_options:
+    rule: third_friday_of_month
+    window_trading_days: [-2, 0]
+    label: expiry_week
+earnings_seasons:
+  - quarter: Q1
+    start_rule: second_monday_of_january
+    end_offset_days: 35
+  - quarter: Q2
+    start_rule: second_monday_of_april
+    end_offset_days: 35
+  - quarter: Q3
+    start_rule: second_monday_of_july
+    end_offset_days: 35
+  - quarter: Q4
+    start_rule: second_monday_of_october
+    end_offset_days: 35
+data_quality:
+  max_freshness_days: 3
+  min_completeness: 0.90
+hysteresis:
+  trend_direction_deescalation_days: 3
+  trend_character_deescalation_days: 3
+  volatility_deescalation_days: 2
+  breadth_deescalation_days: 2
+  composite_deescalation_days: 3
+  event_calendar_days: 1
+
+# ---------------------------------------------------------------------------
+# V2 sub-configs (per docs/regime_engine_v2_spec.md).
+#
+# Slices not yet implemented (event_calendar_v2) are intentionally omitted
+# so they remain None on load.
+# ---------------------------------------------------------------------------
+
+network_fragility:
+  # v2 spec §3.1 — 22 assets: 11 sector ETFs + SPY (broad-market index) +
+  # 10 cross-asset proxies. SPY's close flows through MarketContext.spy_ohlcv
+  # on the V1 path; the engine still treats it as part of the universe when
+  # building the correlation matrix. KRE is v2 §2C credit/funding territory,
+  # not §3.1 — moved out of this universe.
+  universe:
+    - XLB
+    - XLC
+    - XLE
+    - XLF
+    - XLI
+    - XLK
+    - XLP
+    - XLRE
+    - XLU
+    - XLV
+    - XLY
+    - SPY
+    - QQQ
+    - IWM
+    - EFA
+    - EEM
+    - TLT
+    - GLD
+    - HYG
+    - LQD
+    - USO
+    - UUP
+  correlation_lookback_days: 63                   # v2 §3.2 line 554-558 ("63d corr")
+  percentile_lookback_days: 504                   # v2 §3.2 line 563-566 (504d percentile)
+  realized_vol_lookback_days: 21                  # v2 §3.2 line 588-593 (21d realised vol)
+  dispersion_percentile_lookback_days: 252        # v2 §3.2 dispersion percentile lookback (~1y)
+  min_universe_size: 20                           # implementation default — calibration target (v2 §9.1)
+  min_window_completeness: 0.90                   # implementation default — calibration target (v2 §9.1)
+  deescalation_days_by_label:
+    rising_fragility: 3
+    correlation_concentration: 3
+    correlation_to_one: 5
+    systemic_stress: 5
+    # v2 Implementation Ambiguity Log entry #8 (slice-1 cleanup): an `unknown`
+    # raw label has risk_rank=2, lower than correlation_to_one (3). Without an
+    # explicit hold, a single-day flicker through `unknown` (e.g. a quality
+    # gap on day N) would fast-track de-escalation through the lower-risk
+    # band. Treat `unknown` as a high-risk hold equal to `correlation_to_one`
+    # (5d) so flicker doesn't silently relax the axis.
+    unknown: 5
+  # v2 §3.7 default for labels NOT listed above (diversified_normal,
+  # stock_picker_dispersion). 0 = immediate de-escalation; calibration §9.1
+  # may retune. See Implementation Ambiguity Log entry #6.
+  default_deescalation_days: 0
+  # v2 §3.4–§3.5 rule-engine thresholds (Slice 1.3). Every value cites its
+  # spec line in docs/regime_engine_v2_spec.md.
+  rules:
+    diversified_normal_percentile_lo: 0.25            # §3.5 line 619
+    diversified_normal_percentile_hi: 0.75            # §3.5 line 619
+    effective_rank_stability_threshold: 0.05          # §3.5 line 620 ("21d std < 5% of mean")
+    stock_picker_percentile_max: 0.30                 # §3.5 line 625
+    stock_picker_dispersion_percentile_min: 0.70      # §3.5 line 626
+    concentration_corr_percentile_min: 0.75           # §3.5 line 639
+    concentration_largest_eig_percentile_min: 0.75    # §3.5 line 640
+    concentration_effective_rank_percentile_max: 0.25 # §3.5 line 641
+    corr_to_one_corr_percentile_min: 0.90             # §3.5 line 646
+    corr_to_one_realized_vol_percentile_min: 0.80     # §3.5 line 647
+    corr_to_one_drawdown_max: 0.0                     # §3.5 line 648 ("drawdown_21d < 0")
+    systemic_stress_vix_percentile_min: 0.80          # §3.5 line 655
+
+# v2 §1A — Layer 1 V2 Trend Direction (Slice 2.1 features + Slice 2.5
+# `recovery` label). Remaining new labels (`euphoria`, `breakout_expansion`,
+# `range_bound`) are deferred — see Implementation Ambiguity Log entries
+# #32–#34 (sentiment_score / followthrough_rate / oscillation-range
+# ambiguities).
+trend_direction_v2:
+  efficiency_ratio_lookback_days: 20    # v2 §1A line 66
+  hurst_lookback_days: 250              # v2 §1A line 79
+  slope_lookback_days: 20               # v2 §1A line 106
+  sma_short_period: 50                  # v2 §1A line 107
+  sma_long_period: 200                  # v2 §1A line 108
+  return_short_period: 63               # v2 §1A line 117
+  return_long_period: 126               # v2 §1A line 124
+  drawdown_lookback_days: 252           # v2 §1A line 116
+  rules:
+    recovery_drawdown_threshold: -0.15  # v2 §1A line 116
+    recovery_return_threshold: 0.10     # v2 §1A line 117
+
+# v2 §1C — Layer 1 V2 Volatility features (Slice 2.2, evidence-only).
+# Ships only features that don't depend on options data:
+#   atr_ratio, gap_frequency_20d, intraday_range_percentile_252d.
+# IV/RV-spread and vol_crush features (§1C lines 151–174) are deferred
+# until options-data ingestion + event calendar slices (see Ambiguity Log).
+volatility_state_v2:
+  atr_short_period: 14                  # v2 §1C line 142 (ATR_14, Wilder)
+  atr_long_period: 50                   # v2 §1C line 142 (ATR_50, Wilder)
+  gap_frequency_lookback_days: 20       # v2 §1C line 179
+  gap_threshold_pct: 0.005              # v2 §1C line 181, US default
+  intraday_range_lookback_days: 252     # v2 §1C line 186
+  # v2 §1C line 146-148 `rising_vol` rule (Slice 2.6). `vol_crush` deferred
+  # (Implementation Ambiguity Log #20 — needs options data).
+  rules:
+    atr_ratio_threshold: 1.15           # v2 §1C line 147
+    realized_vol_ratio_threshold: 1.25  # v2 §1C line 148
+    realized_vol_short_period: 10       # v2 §1C line 148 (realized_vol_10d)
+    realized_vol_long_period: 63        # v2 §1C line 148 (realized_vol_63d)
+
+# v2 §1D — Layer 1 V2 Breadth features (Slice 2.3, evidence-only,
+# scope-restricted to non-PIT-dependent features).
+#
+# Ships ONLY:
+#   sector_breadth — % of 11 GICS sector ETFs with return_21d > 0
+#                    (v2 §1D lines 228–229).
+#
+# DEFERRED (require a point-in-time SPX constituent-membership pipeline
+# that does not yet exist; per v2 §10 absolute rule we do not invent
+# proxies):
+#   pct_above_200dma            — §1D lines 207–210; Ambiguity Log #21
+#   ad_line / ad_line_slope_20d — §1D lines 213–216; Ambiguity Log #22
+#   nh_nl_ratio                 — §1D lines 218–221; Ambiguity Log #23
+#   upvol_downvol_ratio         — §1D lines 223–226; Ambiguity Log #24
+#   breadth_thrust              — §1D lines 231–237; Ambiguity Log #25
+#   New V2 breadth labels       — §1D lines 239–246; Ambiguity Log #26
+breadth_state_v2:
+  sector_breadth_lookback_days: 21      # v2 §1D line 229
+  label_rate_of_change_lookback_sessions: 5   # v2 §1D Ambiguity Log #68
+  nh_nl_ratio_narrowing_threshold: 0.4         # v2 §1D line 280
+
+# v2 §1E — Layer 1 V2 Volume / Liquidity features (Slice 2.4, evidence-only).
+# Ships ONLY:
+#   volume_zscore_20d — (volume - rolling_mean_20) / rolling_std_20 (§1E line 256).
+#
+# The other two §1E features (gap_frequency_20d, intraday_range_percentile_252d)
+# already live in volatility_state_v2 (Slice 2.2); the future §1E axis classifier
+# reads them from FeatureStore.volatility_state_v2 — no recompute.
+#
+# DEFERRED to a follow-up volume-axis-classifier slice (per v2 §8 "Adds to
+# existing classifiers without changing V1 contracts"):
+#   - Labels: normal_volume, panic_volume, liquidity_gap_behavior (§1E lines 260–286).
+#   - Rules + risk-rank table (§1E lines 268–294).
+#   - Hysteresis config (per-label deescalation days).
+volume_liquidity_v2:
+  volume_zscore_lookback_days: 20       # v2 §1E line 256
+  volume_zscore_ddof: 1                 # pandas/numpy default; pinned in Ambiguity Log
+
+# v2 §1E — Volume / Liquidity axis classifier (Slice 2.7).
+# Rule layer on top of the slice-2.4 volume_zscore_20d feature.
+# Ships `panic_volume` and `normal_volume` live; `liquidity_gap_behavior`
+# is deferred (needs 252d-percentile of gap_frequency_20d, not yet
+# computed — see Implementation Ambiguity Log entry #40).
+volume_liquidity_state:
+  rules:
+    panic_volume_zscore_threshold: 2.0                    # v2 §1E line 272
+    panic_volume_return_threshold: -0.02                  # v2 §1E line 273
+    # Deferred (Ambiguity Log #40); thresholds loaded for forward-compat.
+    liquidity_gap_frequency_percentile_threshold: 0.75    # v2 §1E line 278
+    liquidity_gap_intraday_range_percentile_threshold: 0.75  # v2 §1E line 279
+  # §1E is silent on hysteresis days. Pinned per Ambiguity Log entry #41:
+  #   panic_volume = 3 (high-risk hold, analogous to §3.7 correlation_to_one).
+  #   normal_volume = 0 (immediate de-escalation; lowest risk_rank).
+  #   unknown = 2 (modest hold so a single-day NaN flicker doesn't strand
+  #     the axis at the data-quality fallback).
+  #   liquidity_gap_behavior = 2 (reserved at same rank as `unknown`;
+  #     pinned even though the rule never fires today so the future flip
+  #     needs no config edits).
+  deescalation_days_by_label:
+    panic_volume: 3
+    normal_volume: 0
+    unknown: 2
+    liquidity_gap_behavior: 2
+  default_deescalation_days: 0
+
+transition_score:
+  weights_with_hmm:
+    volatility_acceleration: 0.20
+    breadth_deterioration: 0.20
+    correlation_concentration: 0.20
+    trend_break: 0.20
+    macro_event: 0.10
+    hmm_probability_shift: 0.10
+  weights_without_hmm:
+    volatility_acceleration: 0.225
+    breadth_deterioration: 0.225
+    correlation_concentration: 0.225
+    trend_break: 0.225
+    macro_event: 0.10
+  # Ambiguity Log #66 — change_point evidence wired into transition_score.
+  weights_with_change_point:
+    volatility_acceleration: 0.20
+    breadth_deterioration: 0.20
+    correlation_concentration: 0.20
+    trend_break: 0.20
+    macro_event: 0.10
+    change_point: 0.10
+  weights_with_hmm_with_change_point:
+    volatility_acceleration: 0.175
+    breadth_deterioration: 0.175
+    correlation_concentration: 0.175
+    trend_break: 0.175
+    macro_event: 0.10
+    hmm_probability_shift: 0.10
+    change_point: 0.10
+  bands:
+    stable: [0.00, 0.35]
+    weakening: [0.35, 0.55]
+    transition_warning: [0.55, 0.75]
+    high: [0.75, 1.00]
+
+# v2 §2A — Layer 2A Monetary/Liquidity V2 (Slice 4.1, evidence-only).
+# Ships ONLY the ONE spec-pinned feature formula (§2A line 896):
+#   yield_change_zscore = (yield_change_63d - mean_5y) / std_5y
+# applied to FRED DGS2 and DGS10 (source contract: §2A lines 887–889).
+#
+# DEFERRED per V2 §10 ABSOLUTE RULE (Ambiguity Log #44, #45):
+#   - broad_usd_index_zscore_63d (formula unspecified)
+#   - yield_change_zscore_21d_{2y,10y} (formula unspecified)
+#   - §2A label set, precedence, risk-rank, per-label hysteresis
+#   - MonetaryPressureSeriesClassifier (no labels to emit yet)
+monetary_pressure_v2:
+  yield_change_lookback_days: 63      # v2 §2A line 896
+  zscore_normalizer_window_days: 1260 # v2 §2A line 896 (5y trading days)
+  rate_shock_lookback_days: 21        # v2 §2A 21d-variant (Ambiguity Log #46 a)
+  broad_usd_lookback_days: 63         # v2 §2A USD index 63d-change (Ambiguity Log #46 a)
+
+# v2 §2A — Monetary Pressure axis classifier (Ambiguity Log #46 b–e).
+monetary_pressure_state:
+  rules:
+    tightening_pressure_zscore_threshold: 1.5   # §2A line 1093
+    easing_pressure_zscore_threshold: -1.5      # §2A line 1098
+    rate_shock_zscore_threshold: 2.0            # §2A line 1102
+  # Per Ambiguity Log #46 (e).
+  deescalation_days_by_label:
+    rate_shock: 5
+    tightening_pressure: 3
+    easing_pressure: 2
+    neutral_monetary: 0
+    unknown: 2
+  default_deescalation_days: 0
+
+# v2 §2C — Credit/Funding axis (Slice 4). Per Ambiguity Log #49 the HY/IG
+# spread proxies use TLT-vs-HYG/LQD total-return differentials (HYG/LQD
+# OAS feeds not ingested); the classifier emits a bias-warning row with
+# code `credit_spread_proxy_total_return_differential` flagging this
+# provenance. The 8-symbol universe (HYG/LQD/TLT/KRE + SOFR/IORB/NFCI +
+# broad_usd_index) is hard-pinned in code (spec §2C lines 2024-2030).
+credit_funding:
+  rules:
+    # All defaults match spec verbatim (§2C lines 2064-2088). v2 §9.1
+    # calibration may retune.
+    hy_percentile_calm_max: 0.50              # §2C line 2066
+    hy_percentile_stress_min: 0.80            # §2C line 2074
+    spy_drop_threshold: -0.05                 # §2C lines 2075/2083
+    broad_usd_zscore_funding_threshold: 1.5   # §2C line 2078
+    broad_usd_zscore_deleveraging_threshold: 0.0  # §2C line 2085
+    realized_vol_percentile_threshold: 0.75   # §2C line 2086
+    correlation_percentile_threshold: 0.75    # §2C line 2087
+    hy_percentile_504d_lookback: 504          # §2C line 2038
+    slope_21d_lookback: 21                    # §2C lines 2041, 2059
+    slope_63d_lookback: 63                    # §2C line 2046
+    total_return_lookback_days: 63            # §2C line 2032
+    spy_return_lookback_days: 21              # §2C line 2075
+    tlt_return_lookback_days: 21              # §2C line 2084
+    broad_usd_change_window_days: 21          # §2C lines 2052-2055 (21d variant)
+    broad_usd_normalizer_window_days: 1260    # §2C line 2055 (~5y, same as §2A)
+  # §2C lines 2110-2117 — per-label asymmetric hysteresis days.
+  deescalation_days_by_label:
+    deleveraging: 5
+    funding_squeeze: 5
+    credit_stress: 3
+    spread_widening: 3
+    credit_calm: 0
+    unknown: 2
+  default_deescalation_days: 0
+  # §2C lines 2123-2124 — unknown-gate staleness thresholds.
+  nfci_stale_days: 14
+  etf_stale_sessions: 5
+
+# v2 §2B — Inflation / Growth axis (Slice 5). Per Ambiguity Log #48, DBC ETF
+# substitutes for the Bloomberg Commodity Index (paid feed unavailable); the
+# classifier emits a bias-warning row with code
+# `commodity_proxy_dbc_substitute`. Two labels remain deferred:
+#   - earnings_expansion / earnings_contraction: need weekly aggregate forward
+#     EPS revision series (S&P Global, paid). Predicates short-circuit to False.
+#   - inflation_shock single-signal limb (inflation_surprise_zscore > +1.5):
+#     needs BLS consensus-vs-actual feed. Composite-shock limb remains active.
+inflation_growth:
+  rules:
+    cpi_drift_threshold: 0.005                     # §2B line 2234 (50bps)
+    pmi_goldilocks_threshold: 50.0                 # §2B line 2236
+    pmi_recovery_threshold: 50.0                   # §2B line 2259
+    pmi_disinflation_threshold: 45.0               # §2B line 2250
+    commodity_return_threshold: 0.15               # §2B line 2242
+    spy_recession_threshold: -0.05                 # §2B line 2256
+    cpi_lookback_3m_sessions: 63                   # §2B line 2197 (~3 months)
+    cpi_lookback_6m_sessions: 126                  # §2B line 2198 (~6 months)
+    cpi_slope_lookback_sessions: 21                # §2B line 2235
+    pmi_slope_lookback_sessions: 21                # §2B line 2209
+    commodity_return_lookback_sessions: 63         # §2B line 2220
+    treasury_slope_lookback_sessions: 21           # §2B line 2223
+    cyclical_defensive_slope_lookback_sessions: 21 # §2B line 2227
+    spy_return_lookback_sessions: 21               # §2B line 2237
+    tlt_return_lookback_sessions: 21               # §2B line 2245
+  # §2B lines 2292-2303 — per-label asymmetric hysteresis days.
+  deescalation_days_by_label:
+    inflation_shock: 5
+    recession_scare: 5
+    earnings_contraction: 3
+    disinflation: 3
+    goldilocks: 0
+    recovery_growth: 0
+    earnings_expansion: 0
+    unknown: 2
+  default_deescalation_days: 0
+  # §2B lines 2309-2311 — unknown-gate staleness thresholds.
+  cpi_stale_calendar_days: 60
+  pmi_stale_calendar_days: 45
+  dgs10_stale_sessions: 5
+
+vol_crush:
+  event_window_trading_days: 3
+  implied_vol_5d_change_threshold: -0.20
+  realized_vol_ratio_threshold: 0.75
+
+hmm:
+  n_states: 4
+  # Spec §6.1 line 2786: "Fit on at least 5 years of data" (≈1260 NYSE
+  # sessions). Prior value (504, 2y) was a placeholder — bumped by Slice 6
+  # to satisfy the spec minimum. See Implementation Ambiguity Log #62.
+  training_window_days: 1260
+  # Ops/dev concern: engine is stateless and refits per classify_window.
+  # The quarterly cadence is documented for operator-side scheduling. See
+  # Implementation Ambiguity Log #63.
+  retrain_cadence_days: 21
+  # Slice 6: reproducibility seed for hmmlearn.GaussianHMM.
+  random_state: 42
+
+# v2 §6.2 K-Means/GMM Clustering — diagnostic evidence layer (Slice 7).
+clustering:
+  n_clusters: 8
+  training_window_days: 1260       # 5y, matches HMM training window
+  random_state: 42
+  covariance_type: full
+  model_version: "gmm_8cluster_v1.0"
+
+# v2 §6.3 + §4.6 Change-Point Detection (Slice 8, evidence-only).
+# Algorithm: BOCPD (Adams & MacKay 2007). Library:
+# bayesian-changepoint-detection (Ambiguity Log #62 corrects #53's
+# ruptures reference). Observation series: realized_vol_21d (#63).
+# Score = 5-session rolling max of posterior (#64). Break = posterior
+# >= 0.5 (#65). Hazard lambda = 250 (one expected break per trading
+# year, calibration placeholder per spec line 2872).
+change_point:
+  hazard_lambda: 250.0
+  score_window_days: 5
+  break_threshold: 0.5
+  training_window_days: 1260
+  student_t_alpha: 0.1
+  student_t_beta: 0.01
+  student_t_kappa: 1.0
+  student_t_mu: 0.0
+  method: "BOCPD"
+
+no_flip_flop:
+  window_trading_days: 5
+
+# v2 §5.1 Agent Cohort Routing (Slice 5.1, Ambiguity Log #53 calibration placeholder).
+cohort_routing:
+  routing_rules:
+    crisis_specialist:
+      any_of:
+        - {axis: "network_fragility", values: ["correlation_to_one", "systemic_stress"]}
+        - {axis: "volatility_state", values: ["crisis_vol"]}
+    euphoria_specialist:
+      all_of:
+        - {axis: "trend_direction", values: ["euphoria"]}
+    bear_stress_specialist:
+      all_of:
+        - {axis: "trend_direction", values: ["bear"]}
+        - {axis: "breadth_state", values: ["weak_breadth", "divergent_fragile", "narrowing_breadth"]}
+    tightening_specialist:
+      all_of:
+        - {axis: "monetary_pressure", values: ["tightening_pressure", "rate_shock"]}
+    easing_specialist:
+      all_of:
+        - {axis: "monetary_pressure", values: ["easing_pressure"]}
+    recovery_specialist:
+      all_of:
+        - {axis: "trend_direction", values: ["recovery"]}
+    chop_mean_reversion_specialist:
+      all_of:
+        - {axis: "trend_character", values: ["range_bound"]}
+        - {axis: "volatility_state", values: ["normal_vol", "low_vol"]}
+    bull_low_vol_specialist:
+      all_of:
+        - {axis: "trend_direction", values: ["bull"]}
+        - {axis: "volatility_state", values: ["low_vol", "normal_vol"]}
+  blocked_cohorts:
+    crisis_specialist:       ["short_vol", "leveraged_long", "breakout"]
+    euphoria_specialist:     ["mean_reversion"]
+    bear_stress_specialist:  ["short_vol", "breakout", "leveraged_long"]
+    tightening_specialist:   []
+    easing_specialist:       []
+    recovery_specialist:     ["short_vol"]
+    chop_mean_reversion_specialist: ["trend_following", "breakout"]
+    bull_low_vol_specialist: []
+    default_neutral:         []
+
+# v2 §5.2 Strategy Family Constraints (Slice 5.2, Ambiguity Log #53 calibration placeholder).
+# Override-on-default inheritance: each specialist cohort declares ONLY overrides;
+# unspecified families inherit default_neutral. Spec lines 2574-2650.
+strategy_family_constraints:
+  default_neutral:
+    trend_following: {allowed: true,  max_lookback_days: 50, require_breadth_confirmation: false, min_adx: 20}
+    mean_reversion:  {allowed: true,  max_holding_days: 5,   require_volume_confirmation: true}
+    breakout:        {allowed: false, reason: "false_breakout_rate_high_in_chop"}
+    short_vol:       {allowed: false, reason: "rising_fragility_or_crisis"}
+    long_vol:        {allowed: true,  event_window_only: true}
+  overrides:
+    crisis_specialist:
+      trend_following: {allowed: false, reason: "false_signals_in_chop"}
+      mean_reversion:  {allowed: false, reason: "knife_catching"}
+      breakout:        {allowed: false, reason: "false_breakout_rate_high"}
+      short_vol:       {allowed: false, reason: "vol_can_keep_expanding"}
+      long_vol:        {allowed: true,  event_window_only: false}
+    euphoria_specialist:
+      mean_reversion:  {allowed: false, reason: "do_not_fade_strength"}
+    bear_stress_specialist:
+      trend_following: {allowed: false, reason: "directional_in_stressed_chop"}
+      breakout:        {allowed: false, reason: "false_breakout_rate_high"}
+      short_vol:       {allowed: false, reason: "stress_can_persist"}
+      long_vol:        {allowed: true,  event_window_only: false}
+    tightening_specialist:
+      trend_following: {allowed: true,  max_lookback_days: 50, require_breadth_confirmation: true}
+      breakout:        {allowed: true,  require_volume_confirmation: true}
+      long_vol:        {allowed: true,  event_window_only: true}
+    easing_specialist: {}
+    recovery_specialist:
+      short_vol:       {allowed: false, reason: "recovery_can_relapse"}
+    chop_mean_reversion_specialist:
+      trend_following: {allowed: false, reason: "chop_kills_trend"}
+      breakout:        {allowed: false, reason: "false_breakouts_dominant"}
+      mean_reversion:  {allowed: true,  max_holding_days: 10, require_volume_confirmation: false}
+    bull_low_vol_specialist:
+      trend_following: {allowed: true,  max_lookback_days: 200, min_adx: 15}
+      mean_reversion:  {allowed: true,  max_holding_days: 10}
+      breakout:        {allowed: true}
+      short_vol:       {allowed: true,  max_position_pct: 0.25}

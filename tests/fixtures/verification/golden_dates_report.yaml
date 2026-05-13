@@ -1,5 +1,5 @@
-generated_at_utc: '2026-05-06T09:18:21+00:00'
-generated_by_commit: 803625db1c28de511781a87b7d5b17d3c97b2318
+generated_at_utc: '2026-05-13T10:57:16+00:00'
+generated_by_commit: 7cee00a34b0dc5f72c986b12e3336b94661d1b27
 raw_file_sha256:
   SPY.csv: efa06aba545dea29dcc523bb8b50ad6a334892e49babee5769466fa8c2c0ef33
   RSP.csv: 6aa3f27a796ffad78f17d114fbe02e806a5488e2a07cdf61166344c15ed7d2c2
@@ -58,13 +58,16 @@ rows:
       rule_evidence:
         recovery_attempt: false
         trending: true
+        range_bound: false
         chop: false
         transition: false
       deescalation_days: 3
       risk_rank:
         trending: 0
-        chop: 1
+        breakout_expansion: 0
         recovery_attempt: 1
+        range_bound: 1
+        chop: 1
         transition: 2
         unknown: 2
     volatility_state:
@@ -161,13 +164,16 @@ rows:
       rule_evidence:
         recovery_attempt: false
         trending: false
+        range_bound: false
         chop: false
         transition: true
       deescalation_days: 3
       risk_rank:
         trending: 0
-        chop: 1
+        breakout_expansion: 0
         recovery_attempt: 1
+        range_bound: 1
+        chop: 1
         transition: 2
         unknown: 2
     volatility_state:
@@ -264,13 +270,16 @@ rows:
       rule_evidence:
         recovery_attempt: false
         trending: true
+        range_bound: false
         chop: false
         transition: false
       deescalation_days: 3
       risk_rank:
         trending: 0
-        chop: 1
+        breakout_expansion: 0
         recovery_attempt: 1
+        range_bound: 1
+        chop: 1
         transition: 2
         unknown: 2
     volatility_state:
@@ -318,11 +327,11 @@ rows:
   intent_date: '2019-06-28'
   as_of_date: '2019-09-12'
   delta_calendar_days: 76
-  notes: Bull market normal conditions (trend_character may remain transition under
-    hysteresis)
+  notes: "Bull market normal conditions; V2 \xA71B range_bound catches the tight oscillation\
+    \ that V1 fell through to transition"
   expected:
     trend_direction: bull
-    trend_character: transition
+    trend_character: range_bound
     volatility_state: normal_vol
     breadth_state: healthy_breadth
     transition_risk: stable
@@ -362,19 +371,22 @@ rows:
         bear: 3
         unknown: 2
     trend_character:
-      raw_label: transition
-      stable_label: transition
-      active_label: transition
+      raw_label: range_bound
+      stable_label: range_bound
+      active_label: range_bound
       rule_evidence:
         recovery_attempt: false
         trending: false
+        range_bound: true
         chop: false
-        transition: true
+        transition: false
       deescalation_days: 3
       risk_rank:
         trending: 0
-        chop: 1
+        breakout_expansion: 0
         recovery_attempt: 1
+        range_bound: 1
+        chop: 1
         transition: 2
         unknown: 2
     volatility_state:
@@ -471,13 +483,16 @@ rows:
       rule_evidence:
         recovery_attempt: false
         trending: true
+        range_bound: false
         chop: false
         transition: false
       deescalation_days: 3
       risk_rank:
         trending: 0
-        chop: 1
+        breakout_expansion: 0
         recovery_attempt: 1
+        range_bound: 1
+        chop: 1
         transition: 2
         unknown: 2
     volatility_state:
@@ -574,13 +589,16 @@ rows:
       rule_evidence:
         recovery_attempt: true
         trending: true
+        range_bound: false
         chop: false
         transition: false
       deescalation_days: 3
       risk_rank:
         trending: 0
-        chop: 1
+        breakout_expansion: 0
         recovery_attempt: 1
+        range_bound: 1
+        chop: 1
         transition: 2
         unknown: 2
     volatility_state:
@@ -677,13 +695,16 @@ rows:
       rule_evidence:
         recovery_attempt: false
         trending: true
+        range_bound: false
         chop: false
         transition: false
       deescalation_days: 3
       risk_rank:
         trending: 0
-        chop: 1
+        breakout_expansion: 0
         recovery_attempt: 1
+        range_bound: 1
+        chop: 1
         transition: 2
         unknown: 2
     volatility_state:
@@ -780,13 +801,16 @@ rows:
       rule_evidence:
         recovery_attempt: false
         trending: true
+        range_bound: false
         chop: false
         transition: false
       deescalation_days: 3
       risk_rank:
         trending: 0
-        chop: 1
+        breakout_expansion: 0
         recovery_attempt: 1
+        range_bound: 1
+        chop: 1
         transition: 2
         unknown: 2
     volatility_state:
@@ -883,13 +907,16 @@ rows:
       rule_evidence:
         recovery_attempt: false
         trending: true
+        range_bound: false
         chop: false
         transition: false
       deescalation_days: 3
       risk_rank:
         trending: 0
-        chop: 1
+        breakout_expansion: 0
         recovery_attempt: 1
+        range_bound: 1
+        chop: 1
         transition: 2
         unknown: 2
     volatility_state:
@@ -986,13 +1013,16 @@ rows:
       rule_evidence:
         recovery_attempt: false
         trending: true
+        range_bound: false
         chop: false
         transition: false
       deescalation_days: 3
       risk_rank:
         trending: 0
-        chop: 1
+        breakout_expansion: 0
         recovery_attempt: 1
+        range_bound: 1
+        chop: 1
         transition: 2
         unknown: 2
     volatility_state:

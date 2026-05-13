@@ -11,19 +11,40 @@ from regime_detection.hysteresis import apply_asymmetric_hysteresis
 from regime_detection.models import BreadthStateOutput, DataQuality
 
 
+# V2 §1D (Ambiguity Log #21-#26, #68, #69, #70) extends the V1 5-label set
+# with four new labels. Two ship today (narrowing_breadth, broadening_breadth);
+# two reserve precedence slots only (breadth_thrust per Log #69, recovery_breadth
+# per Log #70 — both DEFERRED). Members ordered by precedence (spec line 284):
+#   breadth_thrust > divergent_fragile > narrowing_breadth > recovery_breadth >
+#   broadening_breadth > weak_breadth > healthy_breadth > neutral_breadth >
+#   unknown.
 BreadthLabel = Literal[
+    "breadth_thrust",        # DEFERRED — Ambiguity Log #69 (slot reserved)
+    "divergent_fragile",
+    "narrowing_breadth",     # V2 §1D — ships in this slice (Log #21-#26, #68)
+    "recovery_breadth",      # DEFERRED — Ambiguity Log #70 (slot reserved)
+    "broadening_breadth",    # V2 §1D — ships in this slice (Log #21-#26, #68)
+    "weak_breadth",
     "healthy_breadth",
     "neutral_breadth",
-    "weak_breadth",
-    "divergent_fragile",
     "unknown",
 ]
 
 
+# Deteriorating labels get higher risk-rank. breadth_thrust is a bullish
+# initiation signal so it co-ranks with healthy_breadth (rank 0); recovery_breadth
+# is mid-recovery so it co-ranks with neutral_breadth (rank 1); broadening_breadth
+# is a benign recovery confirmation (rank 0). narrowing_breadth is deterioration
+# at mid-severity (rank 2, same as weak_breadth). divergent_fragile remains the
+# highest-risk V1 label at rank 3.
 _RISK_RANK: dict[BreadthLabel, int] = {
+    "breadth_thrust": 0,        # DEFERRED slot — bullish initiation (Log #69)
     "healthy_breadth": 0,
+    "broadening_breadth": 0,    # V2 recovery confirmation (Log #21-#26)
     "neutral_breadth": 1,
+    "recovery_breadth": 1,      # DEFERRED slot — mid-recovery (Log #70)
     "weak_breadth": 2,
+    "narrowing_breadth": 2,     # V2 deterioration — mid-severity
     "divergent_fragile": 3,
     "unknown": 2,
 }
@@ -199,6 +220,107 @@ def classify_series(
     )
 
 
+# ---------------------------------------------------------------------------
+# V2 §1D rule predicates (Ambiguity Log #21-#26, #68). The two predicates that
+# ship today read the PIT-aware features from FeatureStore.breadth_state_v2
+# and gate on strict 5-session rate-of-change (Log #68 pin: "rising"/"falling"
+# = strict change over `label_rate_of_change_lookback_sessions` sessions).
+#
+# Inputs at `t` AND at `t - lookback_sessions` must both be non-NaN; any NaN
+# endpoint short-circuits the predicate to False (no V2 label fires on the
+# cold-start window).
+# ---------------------------------------------------------------------------
+
+
+def _lookback_endpoint_values(
+    series: pd.Series, *, dt: pd.Timestamp, lookback_sessions: int
+) -> tuple[float, float] | None:
+    """Return (value_at_t_minus_lookback, value_at_t) iff both are non-NaN AND
+    the lookback position is reachable; otherwise None.
+    """
+    if dt not in series.index:
+        return None
+    pos_now = series.index.get_loc(dt)
+    if isinstance(pos_now, slice) or pos_now < lookback_sessions:
+        return None
+    val_now = series.iloc[pos_now]
+    val_then = series.iloc[pos_now - lookback_sessions]
+    if pd.isna(val_now) or pd.isna(val_then):
+        return None
+    return float(val_then), float(val_now)
+
+
+def _evaluate_narrowing_breadth(
+    pct_above_50dma: pd.Series,
+    pct_above_200dma: pd.Series,
+    nh_nl_ratio: pd.Series,
+    *,
+    dt: pd.Timestamp,
+    lookback_sessions: int,
+    nh_nl_threshold: float,
+) -> bool:
+    """v2 §1D line 280 — narrowing_breadth predicate.
+
+    Fires iff:
+      pct_above_50dma is FALLING over `lookback_sessions` (strict decrease)
+      AND pct_above_200dma is FALLING over `lookback_sessions`
+      AND nh_nl_ratio at `dt` < nh_nl_threshold (default 0.4).
+
+    "Falling" = strict 5-session decrease per Ambiguity Log #68.
+    """
+    pct50_pts = _lookback_endpoint_values(
+        pct_above_50dma, dt=dt, lookback_sessions=lookback_sessions
+    )
+    pct200_pts = _lookback_endpoint_values(
+        pct_above_200dma, dt=dt, lookback_sessions=lookback_sessions
+    )
+    if pct50_pts is None or pct200_pts is None:
+        return False
+    if dt not in nh_nl_ratio.index:
+        return False
+    nh_nl_now = nh_nl_ratio.loc[dt]
+    if pd.isna(nh_nl_now):
+        return False
+
+    pct50_then, pct50_now = pct50_pts
+    pct200_then, pct200_now = pct200_pts
+    return bool(
+        pct50_now < pct50_then
+        and pct200_now < pct200_then
+        and float(nh_nl_now) < nh_nl_threshold
+    )
+
+
+def _evaluate_broadening_breadth(
+    nh_nl_ratio: pd.Series,
+    ad_line_slope_20d: pd.Series,
+    *,
+    dt: pd.Timestamp,
+    lookback_sessions: int,
+) -> bool:
+    """v2 §1D line 279 — broadening_breadth predicate.
+
+    Fires iff:
+      nh_nl_ratio is RISING over `lookback_sessions` (strict increase)
+      AND ad_line_slope_20d at `dt` > 0 (strictly positive).
+
+    "Rising" = strict 5-session increase per Ambiguity Log #68.
+    """
+    nh_nl_pts = _lookback_endpoint_values(
+        nh_nl_ratio, dt=dt, lookback_sessions=lookback_sessions
+    )
+    if nh_nl_pts is None:
+        return False
+    if dt not in ad_line_slope_20d.index:
+        return False
+    slope_now = ad_line_slope_20d.loc[dt]
+    if pd.isna(slope_now):
+        return False
+
+    nh_nl_then, nh_nl_now = nh_nl_pts
+    return bool(nh_nl_now > nh_nl_then and float(slope_now) > 0.0)
+
+
 def _data_quality_for_asof(
     *,
     spy_close: pd.Series,
@@ -214,7 +336,6 @@ def _data_quality_for_asof(
         required_inputs=[spy_close, rsp_close],
         required_trading_days=required_trading_days,
         raw_label=raw_label,
-        unknown_reason="required_feature_is_nan",
         max_freshness_days=max_freshness_days,
         min_completeness=min_completeness,
     )

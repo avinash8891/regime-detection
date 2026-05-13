@@ -17,8 +17,12 @@ if str(SRC_DIR) not in sys.path:
 from regime_data_fetch.cli_common import load_env_file, parse_date
 from regime_data_fetch.bls_schedule import build_bls_local_archive_page_fetcher
 from regime_data_fetch.event_calendar import run_us_event_calendar_fetch
-from regime_data_fetch.fetch_workflow import run_macro_fetch, run_market_fetch
-from regime_data_fetch.aggregate_eps import run_aggregate_eps_fetch, run_wayback_aggregate_eps_fetch
+from regime_data_fetch.fetch_workflow import run_macro_fetch, run_market_fetch, run_sentiment_fetch
+from regime_data_fetch.aggregate_eps import (
+    run_aggregate_eps_fetch,
+    run_aggregate_eps_auto_fetch,
+    run_wayback_aggregate_eps_fetch,
+)
 from regime_data_fetch.fomc_minutes import run_fomc_minutes_fetch
 from regime_data_fetch.local_daily_ohlcv_sqlite import run_local_daily_ohlcv_sqlite_import
 from regime_data_fetch.local_usd_index import run_local_usd_index_import
@@ -33,7 +37,7 @@ def main() -> int:
     ap.add_argument("--start", default="2015-01-01", help="Start date (YYYY-MM-DD).")
     ap.add_argument("--end", default=dt.date.today().isoformat(), help="End date (YYYY-MM-DD).")
     ap.add_argument("--scope", default="v1", help="Data scope: v1|v2|all.")
-    ap.add_argument("--fetch", default="market", help="What to fetch: market|macro|events|pmi|pit|fomc|powell|eps|eps-wayback|usd-index-local|daily-ohlcv-local-sqlite|all.")
+    ap.add_argument("--fetch", default="market", help="What to fetch: market|macro|events|pmi|pit|fomc|powell|eps|eps-spglobal-auto|eps-wayback|usd-index-local|daily-ohlcv-local-sqlite|sentiment|all.")
     ap.add_argument("--min-cap-b", type=float, default=10.0, help="Universe filter threshold in $B.")
     ap.add_argument("--adjustment", default="raw", help="Alpaca adjustment: raw|split|dividend|all.")
     ap.add_argument("--alpaca-feed", default=None, help="Alpaca data feed: sip|iex|otc. Omit to use SDK default.")
@@ -84,8 +88,8 @@ def main() -> int:
 
     if args.scope not in {"v1", "v2", "all"}:
         raise SystemExit("--scope must be v1|v2|all")
-    if args.fetch not in {"market", "macro", "events", "pmi", "pit", "fomc", "powell", "eps", "eps-wayback", "usd-index-local", "daily-ohlcv-local-sqlite", "all"}:
-        raise SystemExit("--fetch must be market|macro|events|pmi|pit|fomc|powell|eps|eps-wayback|usd-index-local|daily-ohlcv-local-sqlite|all")
+    if args.fetch not in {"market", "macro", "events", "pmi", "pit", "fomc", "powell", "eps", "eps-spglobal-auto", "eps-wayback", "usd-index-local", "daily-ohlcv-local-sqlite", "sentiment", "all"}:
+        raise SystemExit("--fetch must be market|macro|events|pmi|pit|fomc|powell|eps|eps-spglobal-auto|eps-wayback|usd-index-local|daily-ohlcv-local-sqlite|sentiment|all")
 
     if args.env_file:
         load_env_file(Path(args.env_file))
@@ -135,6 +139,10 @@ def main() -> int:
             acquisition_db_path=Path(args.acquisition_db) if args.acquisition_db else None,
         )
         print(str(macro_report))
+
+    if args.fetch in {"sentiment", "all"}:
+        sentiment_report = run_sentiment_fetch(out_dir=out_dir)
+        print(str(sentiment_report))
 
     if args.fetch in {"events", "all"}:
         bls_page_fetcher = None
@@ -191,6 +199,20 @@ def main() -> int:
             acquisition_db_path=Path(args.acquisition_db) if args.acquisition_db else None,
         )
         print(str(eps_report))
+
+    if args.fetch == "eps-spglobal-auto":
+        # Opt-in only; intentionally excluded from --fetch all because the
+        # spdji URL is Akamai-protected and returns HTTP 403 to programmatic
+        # clients. Including it in `all` would abort the full fetch midway in
+        # any environment without a pre-staged manual-drop file. Cadence is
+        # WEEKLY (S&P publishes weekly); see
+        # regime_data_fetch.aggregate_eps.download_spglobal_eps_workbook
+        # docstring for the 4-week revision-direction rationale.
+        eps_auto_report = run_aggregate_eps_auto_fetch(
+            out_dir=out_dir,
+            acquisition_db_path=Path(args.acquisition_db) if args.acquisition_db else None,
+        )
+        print(str(eps_auto_report))
 
     if args.fetch in {"eps-wayback", "all"}:
         eps_wayback_report = run_wayback_aggregate_eps_fetch(

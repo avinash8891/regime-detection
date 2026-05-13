@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import date
-from typing import Any, Literal
+from typing import TYPE_CHECKING, Any, Literal
 
 import numpy as np
 import pandas as pd
@@ -10,16 +10,156 @@ import pandas as pd
 from regime_detection.hysteresis import apply_asymmetric_hysteresis
 from regime_detection.models import AxisOutput, DataQuality
 
+if TYPE_CHECKING:  # avoid runtime cycle: volatility_state_v2 → config → ...
+    from regime_detection.config import VolatilityV2RulesConfig
+    from regime_detection.volatility_state_v2 import VolatilityV2Features
 
-VolatilityLabel = Literal["low_vol", "normal_vol", "high_vol", "crisis_vol", "unknown"]
+
+# v2 §1C line 191 precedence:
+#   crisis_vol > vol_crush > high_vol > rising_vol > low_vol > normal_vol > unknown
+# `rising_vol` lands in slice 2.6 (v2 §1C lines 146-148);
+# `vol_crush` deferred (Ambiguity Log #20 — needs options data).
+VolatilityLabel = Literal[
+    "low_vol", "normal_vol", "high_vol", "crisis_vol", "unknown", "rising_vol"
+]
 
 
+# v2 §1C — annualization constant. Pinned here as the single source of truth
+# for the shared ``realized_vol`` helper so v1 (existing slice-1 path) and v2
+# (slice 2.6 `rising_vol` rule) consume one annualization convention.
+_TRADING_DAYS_PER_YEAR = 252
+
+
+def realized_vol(
+    close: pd.Series, window: int, *, ddof: int = 1
+) -> pd.Series:
+    """Rolling annualised realised volatility of ``close`` log/pct returns.
+
+    Shared helper for v1 volatility classifiers (slice 1) and the v2 §1C
+    ``rising_vol`` rule (slice 2.6). One implementation prevents the
+    "second-system" pattern flagged in slice 2.2 review.
+
+    Algorithm:
+        daily_returns = close.pct_change(fill_method=None)
+        realized_vol[t] = rolling(window).std(ddof=ddof) * sqrt(252)
+
+    Args:
+        close: per-session close prices (date-indexed).
+        window: rolling-window length in trading days.
+        ddof: delta degrees-of-freedom for ``Series.std``. Pinned default
+            ``1`` (sample std) matches pandas/numpy convention for
+            financial time series; v2 §1C is silent so the convention is
+            recorded in the Implementation Ambiguity Log.
+
+    Returns a date-indexed ``pd.Series`` aligned to ``close.index``; NaN
+    until ``t >= window`` (cold-start: pandas ``rolling.std`` requires
+    ``window`` observations before emitting).
+    """
+    if window <= 0:
+        raise ValueError(f"window must be > 0: got {window}")
+    daily_returns = close.pct_change(fill_method=None)
+    return daily_returns.rolling(window).std(ddof=ddof) * np.sqrt(
+        _TRADING_DAYS_PER_YEAR
+    )
+
+
+def wilders_atr(
+    *,
+    high: pd.Series,
+    low: pd.Series,
+    close: pd.Series,
+    period: int,
+) -> pd.Series:
+    """Wilder's Average True Range over `period` sessions.
+
+    Shared helper for v1 volatility classifiers and v2 §1C features
+    (atr_ratio = ATR_14 / ATR_50). Wilder's smoothing is the standard
+    estimator referenced by v2 §1C line 142 (Implementation Ambiguity
+    Log entry for "ATR estimator choice").
+
+    NOTE: a separate ``_wilder_ewm`` helper lives in
+    ``regime_detection.trend_character`` for the v1 ADX cold-start
+    path. ``_wilder_ewm`` uses pandas-EWM seeding (first value of the
+    TR series), whereas ``wilders_atr`` here uses the textbook
+    Wilder-1978 mean-seeded form (seed = simple-mean(TR[0..period-1])).
+    Both converge for large ``t`` but differ at cold-start. The two
+    implementations intentionally coexist (v1 ADX cold-start values are
+    frozen; V2 §1C ATR ratio uses the more faithful textbook form). A
+    future cleanup may unify them after V2 walk-forward validation per
+    v2 §9.1. See Implementation Ambiguity Log entry #15.
+
+    Algorithm:
+        TR[t] = max(
+            high[t] - low[t],
+            abs(high[t] - close[t-1]),
+            abs(low[t]  - close[t-1]),
+        )
+        ATR[0..period-2] = NaN
+        ATR[period-1]    = mean(TR[0..period-1])              # seed
+        ATR[t]           = (ATR[t-1] * (period-1) + TR[t]) / period   # t >= period
+
+    Returns a date-indexed pd.Series aligned to ``close.index``.
+    """
+    if period <= 0:
+        raise ValueError(f"period must be > 0: got {period}")
+    if not (len(high) == len(low) == len(close)):
+        raise ValueError("high, low, close must have identical length")
+
+    high = high.astype(float)
+    low = low.astype(float)
+    close = close.astype(float)
+
+    prev_close = close.shift(1)
+    tr = pd.concat(
+        [
+            high - low,
+            (high - prev_close).abs(),
+            (low - prev_close).abs(),
+        ],
+        axis=1,
+    ).max(axis=1)
+
+    n = len(tr)
+    out = np.full(n, np.nan, dtype=float)
+    tr_arr = tr.to_numpy(dtype=float)
+    if n < period:
+        return pd.Series(out, index=close.index, name=f"atr_{period}")
+
+    # Seed: simple mean of the first `period` true-range values. If any of
+    # those is NaN the seed is NaN and Wilder's recursion stays NaN forever.
+    seed_window = tr_arr[:period]
+    if np.isnan(seed_window).any():
+        seed = float("nan")
+    else:
+        seed = float(seed_window.mean())
+    out[period - 1] = seed
+
+    for t in range(period, n):
+        prev = out[t - 1]
+        cur = tr_arr[t]
+        if np.isnan(prev) or np.isnan(cur):
+            out[t] = float("nan")
+            continue
+        out[t] = (prev * (period - 1) + cur) / period
+
+    return pd.Series(out, index=close.index, name=f"atr_{period}")
+
+
+# v2 §1C line 191 precedence:
+#   crisis_vol > vol_crush(deferred) > high_vol > rising_vol > low_vol >
+#   normal_vol > unknown.
+# Risk-rank intuition: rising_vol is a vol-expansion event — riskier than
+# normal_vol but less risky than high_vol. Slot at 2 (matching unknown,
+# below high_vol's risk_rank intent but distinct via precedence). The v1
+# label ranks are unchanged so v1 hysteresis behavior is preserved when
+# v2 labels are absent.
 _RISK_RANK: dict[VolatilityLabel, int] = {
     "low_vol": 0,
     "normal_vol": 1,
     "high_vol": 2,
     "crisis_vol": 3,
     "unknown": 2,
+    "rising_vol": 2,
 }
 
 
@@ -56,8 +196,10 @@ def compute_features(*, close: pd.Series, vix_proxy_close: pd.Series | None) -> 
     return_5d = close / close.shift(5) - 1
     return_21d = close / close.shift(21) - 1
 
-    daily_returns = close.pct_change(fill_method=None)
-    realized_vol_21d = daily_returns.rolling(21).std() * np.sqrt(252)
+    # v1 RV percentile feeds the v1 high_vol/low_vol thresholds. Uses the
+    # shared ``realized_vol`` helper (slice 2.6) — preserves the v1 byte-
+    # identical output (window=21, ddof default — pandas .std() is ddof=1).
+    realized_vol_21d = realized_vol(close, window=21)
     realized_vol_percentile_252d = realized_vol_21d.rolling(252, min_periods=252).apply(_pct_rank_last, raw=True)
 
     return VolatilityFeatures(
@@ -70,7 +212,22 @@ def compute_features(*, close: pd.Series, vix_proxy_close: pd.Series | None) -> 
     )
 
 
-def raw_label_for_day(f: VolatilityFeatures, dt: pd.Timestamp) -> tuple[VolatilityLabel, dict[str, Any]]:
+def raw_label_for_day(
+    f: VolatilityFeatures,
+    dt: pd.Timestamp,
+    *,
+    volatility_state_v2_features: "VolatilityV2Features | None" = None,
+    volatility_state_v2_rules: "VolatilityV2RulesConfig | None" = None,
+) -> tuple[VolatilityLabel, dict[str, Any]]:
+    """Per-day raw volatility_state label.
+
+    When ``volatility_state_v2_features`` AND ``volatility_state_v2_rules``
+    are both supplied, the v2 §1C precedence (line 191:
+    ``crisis_vol > vol_crush(deferred) > high_vol > rising_vol > low_vol >
+    normal_vol > unknown``) is layered ON TOP of the v1 label. When either
+    is ``None`` the function returns the v1 label and evidence unchanged
+    — byte-identical to the pre-slice-2.6 implementation.
+    """
     ret1 = f.return_1d.loc[dt]
     ret5 = f.return_5d.loc[dt]
     ret21 = f.return_21d.loc[dt]
@@ -106,7 +263,7 @@ def raw_label_for_day(f: VolatilityFeatures, dt: pd.Timestamp) -> tuple[Volatili
     else:
         label = "normal_vol"
 
-    return label, {
+    evidence: dict[str, Any] = {
         "crisis_vol": crisis,
         "high_vol": high_vol,
         "low_vol": low_vol,
@@ -114,8 +271,48 @@ def raw_label_for_day(f: VolatilityFeatures, dt: pd.Timestamp) -> tuple[Volatili
         "vix_percentile_present": vix_pct is not None and not pd.isna(vix_pct),
     }
 
+    if (
+        volatility_state_v2_features is not None
+        and volatility_state_v2_rules is not None
+    ):
+        # Local import keeps the v1 path free of v2 module load on cold
+        # callers and avoids a circular import (volatility_state_v2 imports
+        # VolatilityV2RulesConfig from config).
+        from regime_detection.volatility_state_v2 import (
+            evaluate_v2_volatility_label,
+        )
 
-def build_raw_outputs(f: VolatilityFeatures) -> tuple[list[VolatilityLabel], list[dict[str, Any]]]:
+        v2_label = evaluate_v2_volatility_label(
+            v1_label=label,
+            features=volatility_state_v2_features,
+            dt=dt,
+            rules_config=volatility_state_v2_rules,
+        )
+        if v2_label is not None:
+            evidence["v2_override"] = {
+                "from": label,
+                "to": v2_label,
+                "rule": "rising_vol",  # v2 §1C lines 146-148
+            }
+            label = v2_label  # type: ignore[assignment]
+
+    return label, evidence
+
+
+def build_raw_outputs(
+    f: VolatilityFeatures,
+    *,
+    volatility_state_v2_features: "VolatilityV2Features | None" = None,
+    volatility_state_v2_rules: "VolatilityV2RulesConfig | None" = None,
+) -> tuple[list[VolatilityLabel], list[dict[str, Any]]]:
+    """Vectorized v1 raw labels + optional v2 §1C `rising_vol` override.
+
+    The v1 pass is unchanged from pre-slice-2.6. When both v2 args are
+    supplied, the v2 §1C precedence at line 191 is applied per-day AFTER
+    the v1 pass — `rising_vol` overrides v1 `low_vol` / `normal_vol` /
+    `unknown` (NOT `crisis_vol` / `high_vol`, which outrank `rising_vol`).
+    When either argument is None, output is byte-identical to v1.
+    """
     ret1 = f.return_1d
     ret5 = f.return_5d
     ret21 = f.return_21d
@@ -161,6 +358,33 @@ def build_raw_outputs(f: VolatilityFeatures) -> tuple[list[VolatilityLabel], lis
                 "vix_percentile_present": bool(vix_present.iat[idx]),
             }
         )
+
+    if (
+        volatility_state_v2_features is not None
+        and volatility_state_v2_rules is not None
+    ):
+        # v2 §1C line 191 precedence — applied per-day on top of v1.
+        # Localize import to avoid a runtime cycle with volatility_state_v2.
+        from regime_detection.volatility_state_v2 import (
+            evaluate_v2_volatility_label,
+        )
+
+        for idx, dt in enumerate(ret1.index):
+            v1_label = str(labels[idx])
+            v2_label = evaluate_v2_volatility_label(
+                v1_label=v1_label,
+                features=volatility_state_v2_features,
+                dt=dt,
+                rules_config=volatility_state_v2_rules,
+            )
+            if v2_label is None:
+                continue
+            evidence[idx]["v2_override"] = {
+                "from": v1_label,
+                "to": v2_label,
+                "rule": "rising_vol",  # v2 §1C lines 146-148
+            }
+            labels[idx] = v2_label
 
     return list(labels), evidence
 

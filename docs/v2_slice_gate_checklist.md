@@ -1,0 +1,80 @@
+# V2 Slice Promotion Checklist
+
+Operating contract for promoting any v2 vertical slice (per v2 spec §8 order) from feature branch to main. Each slice merges only when every item below is checked, in order.
+
+A slice = one of the ten units listed in v2 spec §8 (Network Fragility, Layer 1 V2 incremental features, Transition Score, Credit/Funding, Inflation/Growth, HMM, K-Means/GMM, Change-Point, Cohort/Family Routing, PRISM).
+
+## Pre-merge checklist
+
+### 1. Slice scope
+
+- [ ] Slice maps to exactly one v2 spec §8 row.
+- [ ] No changes to v1 production code outside what the slice's v2 spec section explicitly authorizes.
+- [ ] No formulas, thresholds, or precedence invented (v2 spec §10: "do not invent component score formulas — use the exact formulas in §4.2"; same rule for §3.5, §2A/§2B/§2C, etc.).
+
+### 2. Config
+
+- [ ] The slice's v2 sub-config block exists in `configs/core3-v2.0.0.yaml` with reviewed defaults (each value cited to its v2 spec line).
+- [ ] The corresponding Pydantic class in `src/regime_detection/config.py` has `extra="forbid"` and `Field(...)` constraints on every numeric range.
+
+### 3. Models
+
+- [ ] Wire-level type evolution (if any) preserves v1 byte-identity: `tests/test_v1_frozen_replay.py::test_v1_frozen_outputs_parse_through_v1_frozen_models` still passes.
+- [ ] Optional `RegimeOutput` fields default `None` so consumers that don't enable the slice see no diff.
+
+### 4. Feature store + axis_series
+
+- [ ] New feature dataclass lives in the axis module (e.g., `network_fragility.py`), not in `feature_store.py`.
+- [ ] `feature_store.py` is extended with `Optional[X] = None` and only computes when the corresponding `MarketContext` data input is present.
+- [ ] New `XYZSeriesClassifier` follows the existing protocol: `build(context, feature_store) -> AxisSeriesResult | dict[date, OutputType]`.
+- [ ] Hysteresis routed through the appropriate helper: `apply_asymmetric_hysteresis` (single-int de-escalation, v1 axes) or `apply_per_label_asymmetric_hysteresis` (per-label de-escalation, v2 §3.7).
+
+### 5. Tests
+
+- [ ] Unit tests for the new feature compute (synthetic inputs, hand-computed expected values; no toy names per AGENTS rule).
+- [ ] Unit tests for the rule engine (one test per rule precedence position).
+- [ ] Unit tests for the hysteresis wrapper (escalation immediate; de-escalation honors per-label thresholds).
+- [ ] Integration test invoking `engine.classify` end-to-end with the slice's data input.
+- [ ] At least one v2 golden date passes (`tests/fixtures/derived/golden_dates_v2.yaml` row's `expected.<slice_field>`).
+
+### 6. v2 §9.1 performance gate
+
+- [ ] `scripts/run_historical_walkforward.py --engine-profile both` run completed over ≥1 year of out-of-sample NYSE sessions.
+- [ ] `scripts/run_v2_performance_gate.py` (or equivalent gate evaluator) reports `passed=True` on `evaluate_v2_gate(v1_metrics=..., v2_metrics=...)` with at least one of:
+  - `LOWER_DRAWDOWN`
+  - `HIGHER_SHARPE`
+  - `EARLIER_CRISIS_DETECTION`
+  - `LOWER_FALSE_SWITCH_RATE`
+- [ ] Gate output committed to `docs/verification/v2_slice_<n>_perf_gate.md` with v1 vs v2 metric tables.
+
+### 7. v2 §9.3 shadow A/B (post-walkforward, pre-routing)
+
+- [ ] `scripts/run_shadow_regime.py --engine-profile both` has run on 60 consecutive NYSE sessions.
+- [ ] `scripts/run_v1_v2_diff_report.py` output reviewed: zero unexpected wire diffs in v1 fields; v2 enrichments match expectations.
+- [ ] Any disagreement day has a documented rationale in `docs/verification/v2_slice_<n>_disagreements.md`.
+
+### 8. Documentation
+
+- [ ] If a v2 spec ambiguity surfaced during implementation, it is recorded in the slice PR description and (if material) added to the spec via the rewrite-existing-lines rule from File 3.
+- [ ] No new top-level docs sections added; spec edits are inline.
+
+### 9. Commit + CI
+
+- [ ] Single commit per slice (or single commit per sub-step if the slice has ≥3 sub-steps).
+- [ ] Commit message identifies the slice (v2 §8 row) and the v2 spec sections implemented.
+- [ ] CI green: `pytest -m "not v2_shadow"` (unit + integration + v2_gate; v2_shadow is long-running and runs separately).
+
+## After merge
+
+- [ ] Slice tagged in repo: `v2-slice-<n>-<short-name>`.
+- [ ] Next slice's branch can be cut from the new main.
+
+## Slices that are blocked
+
+| Slice | v2 §8 row | Currently blocked on |
+|---|---|---|
+| Layer 1 V2 incremental features (§1A/§1C/§1D) | 2 | Some §1A features (`sentiment_score`) require AAII/put-call/IIA fetcher — defer those features to V2.1 inside the slice. |
+| Layer 2B Inflation/Growth (§2B) — 2 deferred labels | 5 | LABEL-level deferral, not row-level. The 6 spec-deterministic labels (`goldilocks`, `inflation_shock` composite limb, `disinflation`, `recession_scare`, `recovery_growth`, `unknown`) can ship today against existing free inputs (CPI/PCE/ISM/DBC/DGS10/sector-ETFs/credit_funding). The 2 deferred labels are `earnings_expansion` / `earnings_contraction` (need S&P Global weekly EPS revision feed — paid) and the single-signal `inflation_shock` limb that references `inflation_surprise_zscore` (needs BLS consensus survey aggregates — proprietary). Note: `GDPNow` and `Citi Surprise` are NOT in any §2B rule predicate (earlier checklist text was misleading); `GDPNow` IS free on FRED (series `GDPNOW`) and was added to `V2_FRED_SERIES` in the GDPNow-aware fix. |
+| Layer 5 V2 PRISM (§5.5) | 10 | PRISM framework not in repo. |
+
+Slices not in the above table can proceed from foundation as-is.

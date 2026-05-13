@@ -8,6 +8,7 @@ from pathlib import Path
 import pandas as pd
 
 from regime_data_fetch.acquisition_store import AcquisitionStore
+from regime_data_fetch.aaii_sentiment import run_sentiment_fetch
 from regime_data_fetch.alpaca_daily import fetch_daily_bars_alpaca, verify_min_start_date
 from regime_data_fetch.fred import fetch_fred_series, fetch_fred_series_json, parse_fred_series_json
 
@@ -36,6 +37,9 @@ V2_CROSS_ASSET_SYMBOLS = [
     "GLD",
     "USO",
     "UUP",
+    # Bloomberg Commodity Index substitute per Ambiguity Log #48; consumed
+    # by v2 §2B `commodity_return_63d` feature in slice 5.
+    "DBC",
 ]
 V2_EXTRA_SYMBOLS = ["KRE"] + V2_SECTOR_SYMBOLS + V2_CROSS_ASSET_SYMBOLS
 V2_FRED_SERIES = {
@@ -46,6 +50,12 @@ V2_FRED_SERIES = {
     "nfci": "NFCI",
     "cpi_all_items": "CPIAUCSL",
     "iorb": "IORB",
+    # GDPNow nowcast (Atlanta Fed). Free on FRED at series_id GDPNOW.
+    # Not consumed by any v2 §2B rule predicate as of slice 5 ship; ingested
+    # here for the future-amendment slice that would use it as additional
+    # recession_scare / recovery_growth evidence. Listed early in the slice
+    # cadence so it lands in archived inputs before any spec amendment.
+    "gdp_nowcast": "GDPNOW",
 }
 
 

@@ -12,6 +12,19 @@ import pandas as pd
 from regime_data_fetch.acquisition_store import AcquisitionStore
 
 
+# Community-maintained S&P 500 ticker-membership CSV on GitHub. This is an
+# APPROXIMATION of point-in-time S&P 500 membership and is the best free source
+# we have today: it may miss short-lived additions/removals, delisted tickers
+# whose symbols got reused, and ticker/name changes around mergers. The
+# `BIAS_WARNING` row tag is propagated downstream so consumers can decide
+# whether to trust it.
+#
+# TODO: replace with a true point-in-time vendor feed (CRSP / Compustat /
+# FactSet / Norgate) when sourcing is approved. The expected vendor format
+# matches the same ticker / start_date / end_date interval shape, so the
+# parquet schema does not need to change — only `SOURCE_URL`, `SOURCE_NAME`,
+# and the `BIAS_WARNING` value (which should become e.g. `"none"` or be
+# removed entirely).
 SOURCE_URL = "https://raw.githubusercontent.com/fja05680/sp500/master/sp500_ticker_start_end.csv"
 SOURCE_NAME = "fja05680/sp500"
 BIAS_WARNING = "survivorship_biased_constituent_universe"
@@ -172,6 +185,49 @@ def run_pit_constituents_fetch(
         if store and fetch_run:
             store.finish_fetch_run(run_id=fetch_run.run_id, status="failed", notes=str(exc))
         raise
+
+
+def read_pit_intervals(parquet_path: Path) -> pd.DataFrame:
+    """Read PIT membership parquet back into a DataFrame.
+
+    Inverse of the writer in ``run_pit_constituents_fetch``. Converts the
+    persisted ISO yyyy-mm-dd date strings back to ``datetime.date`` objects
+    (``None`` for the null open-interval tail in ``end_date``).
+    """
+    df = pd.read_parquet(parquet_path)
+
+    def _to_date(value: object) -> dt.date | None:
+        if pd.isna(value):
+            return None
+        if value is None:
+            return None
+        return dt.date.fromisoformat(str(value))
+
+    df["start_date"] = df["start_date"].map(_to_date)
+    df["end_date"] = df["end_date"].map(_to_date)
+    # Normalize remaining string columns to object dtype. Newer pandas+pyarrow
+    # round-trips parquet strings as StringDtype by default; the reader contract
+    # (and downstream consumers comparing dtype == object) requires plain object.
+    for column in ("ticker", "source", "source_url", "bias_warning"):
+        if column in df.columns:
+            df[column] = df[column].astype(object)
+    return df
+
+
+def members_on(intervals_df: pd.DataFrame, as_of_date: dt.date) -> frozenset[str]:
+    """Return tickers whose interval contains ``as_of_date`` (inclusive both bounds).
+
+    A null ``end_date`` is treated as an open-ended interval. Empty input
+    yields ``frozenset()``.
+    """
+    if intervals_df.empty:
+        return frozenset()
+
+    start_ok = intervals_df["start_date"] <= as_of_date
+    end_series = intervals_df["end_date"]
+    end_ok = end_series.isna() | (end_series >= as_of_date)
+    mask = start_ok & end_ok
+    return frozenset(intervals_df.loc[mask, "ticker"].tolist())
 
 
 def _parse_date(value: str | None, *, field: str, row_number: int) -> dt.date:

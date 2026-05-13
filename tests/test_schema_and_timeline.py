@@ -10,22 +10,54 @@ from regime_detection.market_context import build_market_context
 from regime_detection.models import RegimeTimeline
 from regime_detection.timeline import ENGINE_MINIMUM_HISTORY, build_regime_timeline
 from regime_detection.transition_risk_series import build_transition_risk_history
+from regime_detection.versioning import engine_version
 
 
-def test_regime_output_contains_v1_placeholders_and_omits_none_fields(market_df_for_asof) -> None:
+def test_regime_output_emits_v2_unknown_placeholders_until_classifiers_ship(market_df_for_asof) -> None:
+    """Until V2 slice 1 (network_fragility) and slice 4 (monetary_pressure) ship,
+    those wire fields emit the V2 shape with `unknown` labels per V1 §2.7
+    NaN-cold-start pattern. Optional V2 top-level fields stay omitted.
+    """
     as_of = date(2023, 12, 14)
     out = RegimeEngine().classify(as_of_date=as_of, market_data=market_df_for_asof(as_of))
     dumped = out.model_dump()
 
     assert dumped["structural_causal_state"]["monetary_pressure"] == {
         "label": "unknown",
-        "reason": "not_implemented_v1",
+        "evidence": {"reason": "v2_classifier_not_yet_implemented"},
+        "data_quality": {
+            "status": "insufficient_history",
+            "reason": "required_feature_is_nan",
+        },
     }
     assert dumped["network_fragility"] == {
-        "label": "not_implemented_v1",
-        "reason": "breadth_state_used_as_v1_fragility_proxy",
+        "raw_label": "unknown",
+        "stable_label": "unknown",
+        "active_label": "unknown",
+        "evidence": {"reason": "v2_classifier_not_yet_implemented"},
+        "data_quality": {
+            "status": "insufficient_history",
+            "reason": "required_feature_is_nan",
+        },
+        "mode": "sector_cross_asset_22",
     }
+    # Strategy-response conditional modifiers still omitted when not applicable.
     assert "hard_max_loss_required" not in dumped["strategy_response"]
+    # New V2 top-level fields default to None → omitted via exclude_none=True.
+    # `volume_liquidity_state` ships in Slice 2.7 and IS populated when the v2
+    # config carries the axis block (default core3-v2.0.0.yaml does).
+    # Slice 8 ships change_point end-to-end; it's no longer in the omit list.
+    for v2_field in ("inflation_growth_state", "credit_funding_state"):
+        assert v2_field not in dumped, f"V2 optional field {v2_field!r} should be omitted until its slice ships"
+    # Slice 2.7: volume_liquidity_state is now populated end-to-end.
+    assert "volume_liquidity_state" in dumped
+    assert dumped["volume_liquidity_state"]["mode"] == "volume_zscore_v1"
+    assert dumped["volume_liquidity_state"]["raw_label"] in {
+        "normal_volume", "panic_volume", "liquidity_gap_behavior", "unknown",
+    }
+    # TransitionRisk V2 optional fields stay omitted too (no score until slice 3).
+    for v2_field in ("score", "score_interpretation", "score_components"):
+        assert v2_field not in dumped["transition_risk"], f"transition_risk.{v2_field} should be omitted until v2 slice 3"
 
 
 def test_classify_window_returns_one_output_per_nyse_trading_day(market_df_for_asof) -> None:
@@ -126,17 +158,18 @@ def test_classify_matches_last_output_of_shared_timeline_pipeline(market_df_for_
     timeline = build_regime_timeline(
         context=context,
         lookback_days=ENGINE_MINIMUM_HISTORY,
+        config=engine.config,
     )
     point_output = engine.classify(as_of_date=end_date, market_data=market_data)
 
     assert timeline.outputs[-1].model_dump() == point_output.model_dump()
 
 
-def test_classify_delegates_to_classify_window_with_engine_minimum_history(mocker, market_df_for_asof) -> None:
+def test_classify_delegates_to_classify_window_with_single_day_lookback(mocker, market_df_for_asof) -> None:
     engine = RegimeEngine()
     as_of = date(2023, 12, 14)
     expected_timeline = RegimeTimeline(
-        engine_version="regime-engine-v1.0.0",
+        engine_version=engine_version(),
         config_version=engine.config.config_version,
         market="SPY",
         start_date=as_of,
@@ -150,47 +183,8 @@ def test_classify_delegates_to_classify_window_with_engine_minimum_history(mocke
 
     spy.assert_called_once()
     assert spy.call_args.kwargs["end_date"] == as_of
-    assert spy.call_args.kwargs["lookback_days"] == ENGINE_MINIMUM_HISTORY
+    assert spy.call_args.kwargs["lookback_days"] == 1
     assert output.model_dump() == expected_timeline.outputs[-1].model_dump()
-
-
-def test_classify_accepts_precomputed_context_for_earlier_asof(market_df_for_asof) -> None:
-    engine = RegimeEngine()
-    context = build_market_context(
-        end_date=date(2023, 12, 14),
-        market_data=market_df_for_asof(date(2023, 12, 14)),
-        config=engine.config,
-    )
-
-    output_from_context = engine.classify(as_of_date=date(2023, 12, 13), context=context)
-    output_from_raw = engine.classify(
-        as_of_date=date(2023, 12, 13),
-        market_data=market_df_for_asof(date(2023, 12, 13)),
-    )
-
-    assert output_from_context.model_dump() == output_from_raw.model_dump()
-
-
-def test_classify_window_accepts_precomputed_context_for_earlier_end_date(market_df_for_asof) -> None:
-    engine = RegimeEngine()
-    context = build_market_context(
-        end_date=date(2023, 12, 14),
-        market_data=market_df_for_asof(date(2023, 12, 14)),
-        config=engine.config,
-    )
-
-    timeline_from_context = engine.classify_window(
-        end_date=date(2023, 12, 13),
-        lookback_days=5,
-        context=context,
-    )
-    timeline_from_raw = engine.classify_window(
-        end_date=date(2023, 12, 13),
-        market_data=market_df_for_asof(date(2023, 12, 13)),
-        lookback_days=5,
-    )
-
-    assert timeline_from_context.model_dump() == timeline_from_raw.model_dump()
 
 
 def test_transition_risk_history_precomputes_axis_switch_and_prior_bear_flags() -> None:

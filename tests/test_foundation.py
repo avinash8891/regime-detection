@@ -74,7 +74,8 @@ def test_default_config_is_packaged_and_loadable() -> None:
     from regime_detection.config import load_default_regime_config
 
     cfg = load_default_regime_config()
-    assert cfg.config_version == "core3-v1.0.0"
+    # Default dispatch is keyed on package __version__; package is 2.x → v2 yaml.
+    assert cfg.config_version == "core3-v2.0.0"
 
 
 def test_classify_emits_regime_output_shape(market_df_for_asof) -> None:

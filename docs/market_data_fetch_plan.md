@@ -9,6 +9,14 @@ Those are not interchangeable. Historical backfills test engine logic. Forward s
 
 ## 1. Validation Sequence
 
+### 1.0 Current Status (mirrors `regime_engine_v1_final_spec.md` §14.1)
+
+**V1 qualification: complete (operator-asserted per implementation plan).** V2 implementation is in progress under the unified V1+V2 design described in `regime_engine_v2_spec.md` §8. V2 slices 1.x, 2.x, and 4.1 (features-only) have shipped on top of V1; V1 byte-identity is enforced under `tests/test_v1_frozen_replay.py` and the `test_v1_contract_byte_identity_when_v2_features_absent` family of tests across each v2 slice. V2 spec ambiguities resolved during implementation are recorded in the V2 Implementation Ambiguity Log (entries #1 through #53 at time of writing).
+
+The qualification gate prose below is retained as the canonical definition any future V1 revision branch must satisfy before authorizing parallel V2 work on that branch.
+
+### 1.1 Qualification Gate (Retained)
+
 V2 activation should rely on **both**:
 
 1. **Historical walk-forward**
@@ -40,6 +48,13 @@ These source choices are already approved and should be treated as explicit spec
 - PMI stays PMI. Do **not** substitute CFNAI or another macro proxy.
 - PMI retrieval for backtesting now uses repo-local manually supplied Investing release-history tables for manufacturing and services, aligned to the live OHLCV lower bound. The older DBnomics / TradingEconomics fetch path is no longer the canonical backtest source in this repo.
 - `earnings_revision_breadth` is replaced by `aggregate_forward_eps_revision_direction`, sourced from S&P Global aggregate forward EPS data.
+- **V2 §2B commodity returns**: `DBC` ETF (Invesco DB Commodity Index Tracking Fund) is the approved substitute for the Bloomberg Commodity Index (paid feed unavailable). Pinned in V2 §2B Ambiguity Log entry #48. Rows must carry a documented bias-warning analogous to the §1D PIT-source pattern; a future spec-amendment slice may replace DBC with a direct Bloomberg / Refinitiv commodity-index feed when vendor sourcing is approved.
+- **V2 §2C HY/IG spread direction**: `hy_spread_proxy = tlt_total_return_63d − hyg_total_return_63d` (and the IG equivalent on LQD) is the approved V2 §2C proxy (Ambiguity Log #49). Direct OAS feeds (ICE BofA `H0A0` / `C0A0`) are **not** ingested; the proxy preserves direction (rising proxy = spread widening) but is not a bps-level absolute. Rows must carry a documented bias-warning. Direct vendor OAS feed is the future vendor-upgrade path; the V2 §2C rule schema (percentile-and-slope predicates) survives the swap unchanged. **Do not silently add `IEF` or `BIL` to the universe** to compute a different proxy without a spec amendment — the V2 §2C design uses TLT for both HY and IG comparison legs by construction.
+- **V2 §2D event rows** (`budget_week`, `election_window`, `geopolitical_event`, `global_rate_decision`) are now **supported as manual operator-curated YAML** at the spec level (V2 §2D + §4.2 + Ambiguity Log #50). They were previously documented as `hard-fail` in this plan; the spec-amendment cycle this session promoted them to manual-YAML-supported (no auto-fetcher; rows are manually authored by the operator following the §2D YAML schema). `election_window` default window is `[-5, +10]` trading days. `global_rate_decision` covers BOE / ECB / BOJ scheduled meetings (analogous to V1 FOMC pre-2021 manual path). `geopolitical_event` stays a manual flag for war / sanctions / terrorism. `macro_event_score` in §4.2 now scores 1.0 on these labels in addition to `fed_week` / `cpi_week` / `nfp_week`.
+- **V2 §1A `euphoria` label deferred**: sentiment_score data (AAII bull-bear / put-call ratio / Investors Intelligence) is not yet ingested; the `euphoria` label cannot fire until this source is sourced. Pinned in V2 §1A Ambiguity Log entry #32. Do not substitute a different sentiment proxy without an explicit spec amendment.
+- **V2 §1C `vol_crush` / `IV/RV spread` deferred**: options-implied-vol feed is not yet ingested. Pinned in V2 §1C Ambiguity Log entries #19 / #20. Do not substitute a synthetic IV proxy without a spec amendment.
+- **V2 §2B `inflation_surprise_zscore` deferred**: BLS consensus-vs-actual surprise feed is not yet ingested. Pinned in V2 §2B Ambiguity Log entry #48. The composite-shock limb of the `inflation_shock` rule remains active without this input; the single-signal limb short-circuits to False until the feed lands.
+- **V2 §1D PIT constituent universe**: continues to use the GitHub `fja05680/sp500` `sp500_ticker_start_end.csv` as the V2 ship default (rows already carry `survivorship_biased_constituent_universe` warning). A `TODO` note is now in `src/regime_data_fetch/pit_constituents.py` recommending replacement with a true point-in-time vendor feed (CRSP / Compustat / FactSet / Norgate) when sourcing is approved. The expected vendor format matches the same ticker / start_date / end_date interval shape, so the parquet schema does not change on swap.
 
 ### 2.0A Data Inventory
 
@@ -63,12 +78,18 @@ Status meanings used below:
 | `KRE` daily OHLCV | local imported parquet dataset; Alpaca REST remains an optional refresh path | daily | SQLite `daily_ohlcv_rows` plus source parquet artifacts in the acquisition DB | done-live-verified | V2 bank-stress proxy is present in the live-verified local OHLCV import covering `2016-01-04` through `2026-05-05` |
 | Sector ETF daily OHLCV: `XLB,XLC,XLE,XLF,XLI,XLK,XLP,XLRE,XLU,XLV,XLY` | local imported parquet dataset; Alpaca REST remains an optional refresh path | daily | SQLite `daily_ohlcv_rows` plus source parquet artifacts in the acquisition DB | done-live-verified | all listed sector ETFs are present in the live-verified local OHLCV import covering `2016-01-04` through `2026-05-05` |
 | Cross-asset ETF daily OHLCV: `QQQ,IWM,EFA,EEM,TLT,HYG,LQD,GLD,USO,UUP` | local imported parquet dataset; Alpaca REST remains an optional refresh path | daily | SQLite `daily_ohlcv_rows` plus source parquet artifacts in the acquisition DB | done-live-verified | all listed cross-asset ETFs are present in the live-verified local OHLCV import covering `2016-01-04` through `2026-05-05` |
+| `DBC` daily OHLCV (V2 §2B commodity proxy) | local imported parquet dataset; Alpaca REST as refresh path | daily | SQLite `daily_ohlcv_rows` (extension row) | planned | approved substitute for Bloomberg Commodity Index per V2 §2B Ambiguity Log #48; DBC is NOT in the §3.1 fragility universe — it is a V2 §2B-only feature input; rows must carry a documented bias-warning; vendor upgrade (Bloomberg / Refinitiv commodity index) noted as future spec-amendment path |
 | Scheduled event rows: `FOMC` | generated repo-local YAML from Federal Reserve FOMC calendar pages | about 8 times per year | `configs/events/us_events.yaml` | done-live-verified | generated by `--fetch events`; parse current `fomccalendars.htm`, add older meetings from `fomc_historical_year.htm` and yearly `fomchistoricalYYYY.htm` pages, dedupe by `meeting_end_date`, and store minutes release timestamps at `14:00 ET`; current live-verified coverage is `2007-10-31` through `2026-03-18` |
 | Scheduled event rows: `CPI` | generated repo-local YAML from BLS yearly release-schedule pages, using the local yearly HTML archive when direct access is blocked | monthly | `configs/events/us_events.yaml` | done-live-verified | generated by `--fetch events`; parse BLS yearly schedule pages under `/schedule/YYYY/` or `/schedule/YYYY/home.htm`, keep only `Consumer Price Index` / `Consumer Price Indexes` rows, and store release timestamps at `08:30 ET`; the checked generated YAML currently contains `311` CPI rows spanning `2000-01-14` through `2025-12-18` |
 | Scheduled event rows: `NFP` | generated repo-local YAML from BLS yearly release-schedule pages, using the local yearly HTML archive when direct access is blocked | monthly | `configs/events/us_events.yaml` | done-live-verified | generated by `--fetch events`; parse BLS yearly schedule pages under `/schedule/YYYY/` or `/schedule/YYYY/home.htm`, keep only `The Employment Situation` / `Employment Situation` rows, and store release timestamps at `08:30 ET`; the checked generated YAML currently contains `311` NFP rows spanning `2000-01-07` through `2025-12-16` |
 | Rule-derived event window: `expiry_week` | computed from deterministic rules in config/runtime | monthly | no stored raw file | done-live-verified | compute the third Friday of each month, roll back to the previous NYSE trading day if that Friday is closed, then expand the configured NYSE trading-day window around the anchor; the runtime rule is now wired through `resolve_event_label()` and live-verified with NYSE holiday-sensitive months like `2019-04`, `2022-04`, and `2026-06` |
 | Rule-derived event window: `earnings_season` | computed from deterministic rules in config/runtime | quarterly window | no stored raw file | done-live-verified | compute quarter windows starting on the second Monday of `Jan/Apr/Jul/Oct` and ending `+35` calendar days later; the runtime rule is now wired through `resolve_event_label()` and live-verified across `2015-01-01` through `2026-05-07` |
-| Ad-hoc V2 event rows (`election_window`, `geopolitical_event`, `budget_week`) | manual curated YAML if ever adopted | irregular | no output path in V1 | hard-fail | explicitly skipped in V1; no fetcher or generated dataset should pretend these exist |
+| V2 §2D event rows (`election_window`, `geopolitical_event`, `budget_week`, `global_rate_decision`) | manual operator-curated YAML following the V2 §2D schema | irregular | extends `configs/events/us_events.yaml` (or a sibling `configs/events/us_events_v2.yaml`) | manual-YAML-supported | promoted from `hard-fail` to supported in this V2 spec-amendment cycle (Ambiguity Log #50). `election_window` default window is `[-5, +10]` trading days. `global_rate_decision` covers BOE / ECB / BOJ scheduled meetings; operator maintains the YAML by hand (no auto-fetcher). `geopolitical_event` stays manual flag for war/sanctions/terrorism. `macro_event_score` in §4.2 now includes these labels. V1 path remains unaffected (V1 only emits `fed_week` / `cpi_week` / `nfp_week` / `expiry_week` / `earnings_season`). |
+| V2 §2B `inflation_surprise` consensus-vs-actual feed | BLS consensus surveys (not yet sourced) | event-driven macro release cycle | no output path | planned | needed for `inflation_surprise_zscore` (V2 §2B); pinned-but-deferred per Ambiguity Log #48; composite-shock limb of `inflation_shock` rule fires without it, the single-signal limb short-circuits to False; vendor options include Bloomberg / Refinitiv (paid) or a documented nowcast methodology |
+| V2 §1A sentiment_score | AAII bull-bear weekly survey / put-call ratio / Investors Intelligence sentiment (not yet sourced) | weekly | no output path | planned | needed for V2 §1A `euphoria` label; pinned-but-deferred per Ambiguity Log #32; label cannot fire until this lands |
+| V2 §1C options-implied-vol feed | options chain IV data (not yet sourced) | daily | no output path | planned | needed for V2 §1C `vol_crush` rule and IV/RV spread feature; pinned-but-deferred per Ambiguity Log #19 + #20; both features short-circuit until this lands |
+| V2 §2C HY/IG direct OAS feeds (`H0A0` / `C0A0`) | ICE BofA option-adjusted spread series (paid, not yet sourced) | daily | no output path | planned | V2 §2C currently uses the TLT-vs-HYG/LQD return-differential proxy as the ship default; ICE BofA OAS is the future vendor-upgrade path; the V2 §2C rule schema (percentile + slope predicates) is scale-invariant and survives the swap unchanged. Do not add `IEF` or `BIL` to the universe to compute a different proxy without a spec amendment. |
+| V2 §1D true PIT vendor data | CRSP / Compustat / FactSet / Norgate point-in-time S&P 500 membership (paid, not yet sourced) | event-driven membership changes | no output path | planned | V2 §1D currently uses `fja05680/sp500` GitHub CSV with documented `survivorship_biased_constituent_universe` warning (live-verified). True vendor PIT is the future upgrade path; TODO note added inline at `src/regime_data_fetch/pit_constituents.py`; the parquet schema (ticker / start_date / end_date intervals) is unchanged on swap. |
 | `2y_yield` / `DGS2` | FRED API | daily | `data/raw/macro/fred_macro_series.parquet` | done-live-verified | Treasury daily constant-maturity yield; typically published on business days after market hours; when `--acquisition-db` is supplied, the raw FRED JSON response is recorded before parquet/report output |
 | `10y_yield` / `DGS10` | FRED API | daily | `data/raw/macro/fred_macro_series.parquet` | done-live-verified | Treasury daily constant-maturity yield; typically published on business days after market hours; when `--acquisition-db` is supplied, the raw FRED JSON response is recorded before parquet/report output |
 | `broad_usd_index` / `DTWEXBGS` | FRED API | daily | `data/raw/macro/fred_macro_series.parquet` | done-live-verified | explicit approved replacement for DXY; business-day macro release cadence; when `--acquisition-db` is supplied, the raw FRED JSON response is recorded before parquet/report output |
@@ -119,6 +140,7 @@ provided explicitly by the operator.
 | Bank stress proxy | `KRE` | Alpaca REST | `data/raw/daily_ohlcv/` |
 | Sector fragility universe | `XLB,XLC,XLE,XLF,XLI,XLK,XLP,XLRE,XLU,XLV,XLY` | Alpaca REST | `data/raw/daily_ohlcv/` |
 | Cross-asset fragility universe | `QQQ,IWM,EFA,EEM,TLT,HYG,LQD,GLD,USO,UUP` | Alpaca REST | `data/raw/daily_ohlcv/` |
+| V2 §2B commodity-index proxy | `DBC` (Invesco DB Commodity Index Tracking Fund) | Alpaca REST | `data/raw/daily_ohlcv/` |
 | Volatility proxy | `VIX` when available, otherwise `VIXY` | Alpaca REST | `data/raw/daily_ohlcv/` |
 
 #### Macro
@@ -144,8 +166,10 @@ These are part of the V2 data plan but are not all implemented yet:
 | PIT S&P 500 constituents | `fja05680/sp500` `sp500_ticker_start_end.csv` | bias warning must be carried in output/report; current ingest stores ticker start/end intervals |
 | FOMC minutes | Federal Reserve `fomccalendars.htm` + `fomc_historical_year.htm` + `fomchistoricalYYYY.htm` + minutes HTML pages | release timestamps required; current fetcher gets 2021+ meetings from the live calendar page, gets pre-2021 year pages from the official historical index, dedupes by `meeting_end_date`, and stores title, meeting date text, release timestamp, body text, source URL, and PDF URL; current verified lower bound is `2011-01-26` |
 | Powell speeches | Federal Reserve `speeches.htm?speaker=Jerome+H.+Powell` + yearly `YYYY-speeches.htm` archives + per-speech `powellYYYYMMDDx.htm` pages | current fetcher walks the Fed speeches index to yearly archives, filters archive rows to Powell-only entries, then fetches each Powell speech page and stores speech date, normalized publication timestamp, timestamp precision, title, speaker, location, body text, and source URL |
-| Aggregate forward EPS revision direction | manually downloaded S&P Global workbook `sp-500-eps-est.xlsx` parsed from `ESTIMATES&PEs` | current implemented loader is a real snapshot ingest: it stores workbook-date observations and the current forward estimate row from the saved local workbook. It does not yet produce `aggregate_forward_eps_revision_direction_4w` because the captured public workbook does not expose weekly revision history |
-| Event calendar extension | generated `FOMC` / `CPI` / `NFP` YAML plus runtime `expiry_week` / `earnings_season` rules | V1 should auto-generate scheduled events and compute rule-derived windows at runtime; ad-hoc V2 events stay out of scope |
+| Aggregate forward EPS revision direction | manually downloaded S&P Global workbook `sp-500-eps-est.xlsx` parsed from `ESTIMATES&PEs` | current implemented loader is a real snapshot ingest: it stores workbook-date observations and the current forward estimate row from the saved local workbook. It does not yet produce `aggregate_forward_eps_revision_direction_4w` because the captured public workbook does not expose weekly revision history. V2 §2B `earnings_expansion` / `earnings_contraction` rules short-circuit to False until the weekly revision time series ships (Ambiguity Log #48) |
+| Event calendar extension | generated `FOMC` / `CPI` / `NFP` YAML plus runtime `expiry_week` / `earnings_season` rules; V2 §2D adds manual-YAML `budget_week` / `election_window` / `geopolitical_event` / `global_rate_decision` | V1 auto-generates the V1 scheduled events and computes rule-derived windows at runtime; V2 §2D adds operator-curated YAML rows for the 4 new event labels (no auto-fetcher, no auto-derivation from external news APIs). `macro_event_score` in §4.2 now includes the V2 §2D labels in addition to `fed_week` / `cpi_week` / `nfp_week`. |
+| V2 §2B commodity-index proxy (DBC) | Alpaca REST daily OHLCV | substitute for Bloomberg Commodity Index per Ambiguity Log #48; bias-warning row must be carried in feature-store output; not a §3.1 fragility universe member — V2 §2B-only feature input |
+| V2 §2C HY/IG spread proxy (TLT vs HYG/LQD) | derived from cross-asset OHLCV (TLT, HYG, LQD already in universe) | per Ambiguity Log #49: `hy_spread_proxy = tlt_total_return_63d - hyg_total_return_63d`; `ig_spread_proxy = tlt_total_return_63d - lqd_total_return_63d`; direction-only (not bps-level); bias-warning row required in feature-store output; rule schema is scale-invariant (percentile + slope predicates) so future swap to ICE BofA OAS feeds does not change the rule. **Do not add IEF or BIL to the universe** to compute a different proxy without a spec amendment. |
 
 Implemented scheduled-event logic:
 
@@ -229,30 +253,58 @@ The current repo fetch script is a development/backfill tool. It is **not** the 
 
 ## 4. Current Gaps
 
-Still unresolved or not fully implemented:
+Still unresolved or not fully implemented. Each item maps to one or more V2 features that ship in degraded mode (short-circuit / proxy / deferral) until the gap closes:
 
-- weekly `aggregate_forward_eps_revision_direction_4w` derivation from a true weekly revision history
-- dedicated shadow runner with SQLite ledger and archived daily input snapshots
+- **`DBC` daily OHLCV** — approved V2 §2B substitute for Bloomberg Commodity Index but not yet pulled into the local SQLite import (planned row in §2.0A inventory)
+- **Weekly `aggregate_forward_eps_revision_direction_4w`** — captured S&P Global workbook snapshots are not a weekly time series; V2 §2B `earnings_expansion` / `earnings_contraction` rules short-circuit to False until weekly revision history lands
+- **V2 §2B `inflation_surprise` consensus-vs-actual feed** — BLS consensus surveys not yet sourced; V2 §2B `inflation_shock` single-signal limb short-circuits, composite limb stays active
+- **V2 §1A `sentiment_score`** — AAII / put-call / Investors Intelligence not yet sourced; V2 §1A `euphoria` label cannot fire
+- **V2 §1C options-implied-vol feed** — V2 §1C `vol_crush` and IV/RV spread features both deferred (Ambiguity Log #19 + #20)
+- **V2 §2C direct OAS feeds** (ICE BofA `H0A0` / `C0A0`) — V2 §2C currently ships on the TLT-vs-HYG/LQD return-differential proxy with bias warning; direct OAS feed is the future vendor upgrade and slots in without rule-schema changes
+- **V2 §1D true PIT vendor data** — V2 §1D currently ships on `fja05680/sp500` GitHub approximation with documented `survivorship_biased_constituent_universe` warning; CRSP / Compustat / FactSet / Norgate is the future vendor upgrade
+- **Dedicated shadow runner** with SQLite ledger and archived daily input snapshots — operational gap, not a data-source gap
 
 ## 5. Explicit Hard Failures
 
 The fetch layer should fail loudly, not substitute silently, for these unsupported inputs:
 
-- Bloomberg / Refinitiv consensus-survey feeds
+- Bloomberg / Refinitiv consensus-survey feeds (unless V2 spec explicitly adopts the paid source)
 - I/B/E/S per-stock analyst revision feeds
-- licensed ICE DXY, if the spec remains on `broad_usd_index`
+- Licensed ICE DXY (the spec remains on `broad_usd_index` from FRED `DTWEXBGS`)
+- ICE BofA OAS feeds (`H0A0` / `C0A0`) — currently absent; **do not silently substitute a different bps-level credit-spread proxy**. V2 §2C uses the TLT-vs-HYG/LQD return-differential proxy (Ambiguity Log #49) which is direction-only and explicitly documented as a proxy.
+- `IEF`, `BIL` — these ETFs are **not** in the V2 cross-asset fragility universe by design. V2 §2C uses TLT (already in universe) for both HY and IG spread comparison legs. **Do not silently extend the universe** to add IEF or BIL to compute a different OAS-style proxy — a spec amendment is required.
+- Options-implied-vol feed — currently absent; do not silently synthesise IV from realized-vol time series for V2 §1C `vol_crush` or IV/RV spread.
+- AAII / put-call / Investors Intelligence — currently absent; V2 §1A `euphoria` label is deferred; do not silently substitute a different sentiment proxy.
 
-Documented substitute policies:
+Documented substitute policies (each pinned in the V2 Implementation Ambiguity Log):
 
-- CPI surprise work may use a documented nowcast/expectation substitute only when the spec names that methodology explicitly.
-- `broad_usd_index` is the approved field name for the free FRED route; do not back-door ICE DXY semantics into it.
+- **CPI surprise**: may use a documented nowcast/expectation substitute only when the V2 spec names that methodology explicitly (currently deferred per Ambiguity Log #48).
+- **`broad_usd_index`**: approved field name for the free FRED route (FRED `DTWEXBGS`); do not back-door ICE DXY semantics into it.
+- **Bloomberg Commodity Index**: substituted by `DBC` ETF per V2 §2B / Ambiguity Log #48; bias-warning row required in feature-store output.
+- **HY/IG OAS**: substituted by TLT-vs-HYG/LQD total-return differential per V2 §2C / Ambiguity Log #49; bias-warning row required; direction-only.
+- **PIT S&P 500 membership**: currently using `fja05680/sp500` GitHub CSV with documented `survivorship_biased_constituent_universe` warning; vendor upgrade noted in `pit_constituents.py` TODO.
 
 ## 6. Source Rules
 
+General discipline:
+
 - Do not silently substitute a different economic concept because it is cheaper.
-- If the spec says PMI, fetch PMI.
-- If the spec says `broad_usd_index`, fetch `DTWEXBGS`.
-- If the spec says `aggregate_forward_eps_revision_direction`, fetch the aggregate S&P Global series, not a per-stock breadth proxy.
-- For development/backfill, prefer Alpaca `VIX`; when unavailable, use `VIXY` as the documented operational proxy.
+- Every approved substitute is recorded in the V2 Implementation Ambiguity Log with a bias-warning requirement on the feature-store output; introducing a new substitute requires a spec amendment, not a fetch-layer choice.
 - For forward shadow, archive exact inputs used each day before classification.
-- For V1 event calendar work, generate scheduled `FOMC` rows from official Fed meeting pages, generate scheduled `CPI` / `NFP` rows from official BLS release schedules, compute `expiry_week` / `earnings_season` from deterministic rules, and skip ad-hoc events.
+
+V1 / V2 source pins (each enforces a spec field):
+
+- If the spec says **PMI**, fetch PMI (ISM Manufacturing / Services). Do not substitute CFNAI or another macro proxy.
+- If the spec says **`broad_usd_index`**, fetch FRED `DTWEXBGS`. Do not back-door ICE DXY semantics into this field.
+- If the spec says **`aggregate_forward_eps_revision_direction`**, fetch the aggregate S&P Global series; do not substitute a per-stock breadth proxy.
+- For development/backfill, prefer Alpaca `VIX`; when unavailable, use `VIXY` as the documented operational proxy.
+- For V1 event calendar work, generate scheduled `FOMC` rows from official Fed meeting pages, generate scheduled `CPI` / `NFP` rows from official BLS release schedules, compute `expiry_week` / `earnings_season` from deterministic rules.
+
+V2 spec-amendment pins (this session, Ambiguity Log #46–#53):
+
+- If V2 §2B says **commodity returns**, fetch `DBC` ETF as the approved Bloomberg Commodity Index substitute (Ambiguity Log #48). Emit a bias-warning row in the V2 §2B feature-store output.
+- If V2 §2C says **HY/IG credit spread**, compute the TLT-vs-HYG/LQD return-differential proxy (Ambiguity Log #49). Do not silently swap to IEF/BIL or to a different ETF pair; the spec design uses TLT for both legs.
+- If V2 §2D says **`budget_week` / `election_window` / `geopolitical_event` / `global_rate_decision`**, expect operator-curated YAML rows following the §2D schema (Ambiguity Log #50). Do not silently auto-derive these from external news APIs or LLM extraction.
+- If V2 §1A says **`euphoria`**, expect sentiment_score data (AAII / put-call / II) and short-circuit the label until that source is sourced (Ambiguity Log #32). Do not substitute a different sentiment proxy.
+- If V2 §1C says **`vol_crush`** or **IV/RV spread**, expect options-implied-vol data and short-circuit until that source is sourced (Ambiguity Log #19, #20). Do not synthesise IV from realized-vol.
+- If V2 §1D says **`pct_above_50dma`** or other PIT-constituent breadth features, use the `fja05680/sp500` PIT intervals (current default) combined with the 762-stock daily OHLCV (already in SQLite). Emit a `survivorship_biased_constituent_universe` warning row and keep the TODO note in `pit_constituents.py` pointing to the future vendor PIT upgrade.

@@ -4,8 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "regime-detection"
-version = "1.0.0"
-description = "Regime detection engine (V1)"
+version = "2.0.0"
+description = "Regime detection engine (V1+V2 unified)"
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
@@ -14,16 +14,22 @@ dependencies = [
   "pydantic>=2,<3",
   "pandas_market_calendars",
   "pyyaml",
+  "hmmlearn>=0.3,<0.4",
+  "bayesian-changepoint-detection>=0.2.dev1",
 ]
 
 [project.optional-dependencies]
 dev = [
   "pytest",
   "pytest-cov",
+  "pytest-mock",
+  "pytest-xdist",
   "hypothesis",
   "ruff",
   "pyright",
   "pyarrow",
+  "xlrd",
+  "openpyxl",
 ]
 
 [tool.setuptools]

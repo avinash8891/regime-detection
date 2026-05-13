@@ -2,8 +2,9 @@ config_version: core3-v1.0.0
 market: US
 trading_calendar: NYSE
 breadth_mode: etf_proxy
-cap_weight_index: SPY
-equal_weight_proxy: RSP
+etf_proxy:
+  cap_weight_index: SPY
+  equal_weight_proxy: RSP
 event_calendar:
   market: US
 expiry_rules:
