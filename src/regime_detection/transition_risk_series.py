@@ -6,10 +6,12 @@ from datetime import date
 import pandas as pd
 
 from regime_detection.axis_series import AxisSeriesBundle
+from regime_detection.config import TransitionScoreConfig
 from regime_detection.feature_store import FeatureStore
 from regime_detection.market_context import MarketContext
-from regime_detection.models import TransitionRiskOutput
+from regime_detection.models import EventCalendarOutput, TransitionRiskOutput
 from regime_detection.transition_risk import build_transition_risk_output_from_flags
+from regime_detection.transition_score import compose_transition_score_for_session
 
 
 @dataclass(frozen=True)
@@ -44,6 +46,37 @@ def build_transition_risk_series(
         volatility_stable_by_date=axis_bundle.volatility_state.stable_labels_by_date,
         breadth_stable_by_date=axis_bundle.breadth_state.stable_labels_by_date,
     )
+
+    # V2 §4 transition-score inputs — only assembled when ALL five upstream
+    # feature seams are lit AND the yaml carries the transition_score block.
+    # Otherwise we fall back to V1-only TransitionRiskOutput (score=None).
+    volatility_v2 = feature_store.volatility_state_v2
+    breadth_v2 = feature_store.breadth_state_v2
+    network_fragility = feature_store.network_fragility
+    trend_v2 = feature_store.trend_direction_v2
+    transition_score_config = context.config.transition_score
+
+    transition_score_inputs_by_date: dict[date, dict[str, float | str]] | None = None
+    if (
+        volatility_v2 is not None
+        and breadth_v2 is not None
+        and breadth_v2.pct_above_50dma is not None
+        and network_fragility is not None
+        and trend_v2 is not None
+        and transition_score_config is not None
+    ):
+        transition_score_inputs_by_date = _build_transition_score_inputs_by_date(
+            sessions=sessions,
+            realized_vol_short=volatility_v2.realized_vol_short,
+            realized_vol_long=volatility_v2.realized_vol_long,
+            pct_above_50dma=breadth_v2.pct_above_50dma,
+            avg_pairwise_corr_percentile_504d=(
+                network_fragility.avg_pairwise_corr_percentile_504d
+            ),
+            drawdown_252d=trend_v2.drawdown_252d,
+            event_calendar=axis_bundle.event_calendar,
+        )
+
     return build_transition_risk_outputs_by_date(
         sessions=sessions,
         trend_direction_active_by_date=axis_bundle.trend_direction.active_labels_by_date,
@@ -56,7 +89,51 @@ def build_transition_risk_series(
             for day, value in zip(sessions, sma_50_series.to_numpy(), strict=True)
         },
         history=history,
+        transition_score_inputs_by_date=transition_score_inputs_by_date,
+        transition_score_config=transition_score_config,
     )
+
+
+def _build_transition_score_inputs_by_date(
+    *,
+    sessions: list[date],
+    realized_vol_short: pd.Series,
+    realized_vol_long: pd.Series,
+    pct_above_50dma: pd.Series,
+    avg_pairwise_corr_percentile_504d: pd.Series,
+    drawdown_252d: pd.Series,
+    event_calendar: dict[date, EventCalendarOutput],
+) -> dict[date, dict[str, float | str]]:
+    """Materialise the per-session v2 §4.2 input dict for every NYSE session.
+
+    Missing index entries propagate as ``float('nan')`` so the
+    ``compose_transition_score_for_session`` cold-start guard returns the
+    all-None ``ComposedTransitionScore`` (V1 §2.7 NaN propagation).
+    """
+    out: dict[date, dict[str, float | str]] = {}
+    for day in sessions:
+        ts = pd.Timestamp(day)
+        out[day] = {
+            "realized_vol_short": _safe_lookup(realized_vol_short, ts),
+            "realized_vol_long": _safe_lookup(realized_vol_long, ts),
+            "pct_above_50dma": _safe_lookup(pct_above_50dma, ts),
+            "avg_pairwise_corr_percentile_504d": _safe_lookup(
+                avg_pairwise_corr_percentile_504d, ts
+            ),
+            "drawdown_252d": _safe_lookup(drawdown_252d, ts),
+            "event_calendar_label": event_calendar[day].active_label,
+        }
+    return out
+
+
+def _safe_lookup(series: pd.Series, ts: pd.Timestamp) -> float:
+    """Look up ``series`` at ``ts``; missing/NaN entries return ``float('nan')``."""
+    if ts not in series.index:
+        return float("nan")
+    value = series.loc[ts]
+    if pd.isna(value):
+        return float("nan")
+    return float(value)
 
 
 def build_transition_risk_outputs_by_date(
@@ -69,6 +146,8 @@ def build_transition_risk_outputs_by_date(
     close_by_date: dict[date, float | None],
     sma_50_by_date: dict[date, float | None],
     history: TransitionRiskHistory,
+    transition_score_inputs_by_date: dict[date, dict[str, float | str]] | None = None,
+    transition_score_config: TransitionScoreConfig | None = None,
 ) -> dict[date, TransitionRiskOutput]:
     index = pd.Index(sessions)
     trend_direction_active = pd.Series([trend_direction_active_by_date[day] for day in sessions], index=index)
@@ -106,9 +185,13 @@ def build_transition_risk_outputs_by_date(
     )
 
     outputs: dict[date, TransitionRiskOutput] = {}
+    compose_score = (
+        transition_score_inputs_by_date is not None
+        and transition_score_config is not None
+    )
     for day in sessions:
         switch_days = history.days_since_axis_switch_by_date[day]
-        outputs[day] = build_transition_risk_output_from_flags(
+        output = build_transition_risk_output_from_flags(
             crisis_override=bool(crisis_override.loc[day]),
             bear_stress_warning=bool(bear_stress_warning.loc[day]),
             bull_fragile_warning=bool(bull_fragile_warning.loc[day]),
@@ -118,6 +201,28 @@ def build_transition_risk_outputs_by_date(
             stable_changed_today=history.stable_changed_by_date[day],
             days_since_axis_switch=switch_days,
         )
+        if compose_score:
+            inputs = transition_score_inputs_by_date[day]  # type: ignore[index]
+            composed = compose_transition_score_for_session(
+                realized_vol_short=inputs["realized_vol_short"],  # type: ignore[arg-type]
+                realized_vol_long=inputs["realized_vol_long"],  # type: ignore[arg-type]
+                pct_above_50dma=inputs["pct_above_50dma"],  # type: ignore[arg-type]
+                avg_pairwise_corr_percentile_504d=inputs[
+                    "avg_pairwise_corr_percentile_504d"
+                ],  # type: ignore[arg-type]
+                drawdown_252d=inputs["drawdown_252d"],  # type: ignore[arg-type]
+                event_calendar_label=inputs["event_calendar_label"],  # type: ignore[arg-type]
+                config=transition_score_config,  # type: ignore[arg-type]
+            )
+            if composed.score is not None:
+                output = output.model_copy(
+                    update={
+                        "score": composed.score,
+                        "score_interpretation": composed.interpretation,
+                        "score_components": composed.components,
+                    }
+                )
+        outputs[day] = output
     return outputs
 
 
