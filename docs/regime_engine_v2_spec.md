@@ -1955,6 +1955,100 @@ the slice/commit that resolved it. Entries are append-only.
     and the yaml `trend_character` config block. Resolved by the
     §1B V2 character labels slice.
 
+68. **§1D V2 breadth labels — "rising" / "falling" operational
+    definitions for `narrowing_breadth` + `broadening_breadth`.**
+
+    Spec lines 279-280 define `narrowing_breadth` and
+    `broadening_breadth` predicates in terms of "rising" / "falling"
+    rate-of-change qualifiers without naming a window length. The
+    `nh_nl_ratio < 0.4` term in the narrowing predicate is strict; the
+    "rising"/"falling" terms need pinning.
+
+    Resolution: pin "rising" / "falling" as STRICT 5-session change
+    on the underlying feature:
+
+    ```python
+    pct_above_50dma_falling  = pct_above_50dma[t]  <  pct_above_50dma[t-5]
+    pct_above_200dma_falling = pct_above_200dma[t] <  pct_above_200dma[t-5]
+    nh_nl_ratio_rising       = nh_nl_ratio[t]      >  nh_nl_ratio[t-5]
+    ```
+
+    `ad_line_slope_20d > 0` (the other conjunct in `broadening_breadth`)
+    is already strict by spec.
+
+    Rationale for N=5: matches the §1B Bollinger band-width expanding
+    lookback (Log #47) and the §4.2 `hmm_probability_shift_score`
+    5-NYSE-session memory horizon. A coherent 5-session memory window
+    across all "change over time" V2 predicates keeps the cross-axis
+    timeframes aligned and simplifies operator interpretation. NaN
+    in either endpoint (`t` or `t-5`) falsifies the rule — V1 §2.7
+    cold-start contract.
+
+    Exposed as `BreadthV2Config.label_rate_of_change_lookback_sessions = 5`
+    so V2 §9.1 walk-forward calibration can retune. Pinned in
+    `regime_detection.breadth_state` V2 rule predicates and the yaml
+    `breadth_state.label_rate_of_change_lookback_sessions` config.
+    Resolved by the §1D V2 breadth classifier slice.
+
+69. **§1D `breadth_thrust` LABEL deferral — multi-session stateful
+    event detection is undefined.**
+
+    Spec lines 273-275 define `breadth_thrust` as the "10d MA of
+    pct_advancing moves from < 0.40 to > 0.615 within 10 trading
+    days". This is a multi-session STATEFUL event detector (was-low,
+    then-now-high, within-window) — not a per-day predicate like the
+    other axis rules. Three operational interpretations:
+
+    (X) at session t, fire if exists b in (t-10..t-1) where
+        breadth_thrust_feature[b] < 0.40 AND breadth_thrust_feature[t]
+        > 0.615;
+    (Y) fire if the MAX in (t-10..t) > 0.615 AND the MIN in (t-10..t)
+        < 0.40 (window contains both regimes);
+    (Z) fire if min(t-10..t-N) < 0.40 AND breadth_thrust_feature[t] >
+        0.615 for some N pinning the "low-then-high" ORDERING.
+
+    Each interpretation produces different fire patterns. Per V2 §10
+    we do NOT invent. Resolution: defer the LABEL until the spec
+    pins which interpretation applies. The FEATURE
+    (`breadth_thrust` = 10-session MA of pct_advancing) ships from
+    slice 2.8c and remains available; only the label predicate
+    waits.
+
+    Precedence slot preserved at the top of §1D ordering (line 284)
+    so the future label-pin slice can drop the predicate in without
+    re-ordering. Pinned in `regime_detection.breadth_state` V2 rule
+    predicate table (`breadth_thrust` key documents the deferral).
+    Resolved when spec amends `breadth_thrust` to one of (X/Y/Z).
+
+70. **§1D `recovery_breadth` LABEL — no operational definition in
+    spec.**
+
+    Spec line 284 places `recovery_breadth` in the V2 §1D breadth
+    precedence (between `narrowing_breadth` and `broadening_breadth`)
+    but never defines its predicate. The label is named only in the
+    precedence list; no §1D rule block references it.
+
+    Per V2 §10 we do NOT invent a definition. Two plausible
+    interpretations from the surrounding label semantics:
+
+    (X) "Initial recovery" — NH/NL ratio rising (per Log #68 pin)
+        AND ad_line_slope_20d not yet strictly positive
+        (i.e. breadth strength improving but cumulative AD not yet
+        confirming). Sits between narrowing (deterioration) and
+        broadening (full recovery confirmation).
+    (Y) "Recovery confirmation precursor" — pct_above_50dma rising
+        (per Log #68 pin) AND pct_above_200dma not yet rising
+        (short-term breadth picking up, long-term still lagging).
+
+    Each interpretation is internally consistent but the spec does
+    not pin which (or any third interpretation). Resolution: defer
+    the label until the spec adds an operational definition.
+    Precedence slot preserved so the future definition can land
+    without re-ordering. Pinned in `regime_detection.breadth_state`
+    V2 rule predicate table (`recovery_breadth` key documents the
+    deferral). Resolved when spec amends `recovery_breadth` with an
+    operational predicate.
+
 ---
 
 ## 2. Layer 2 V2 — Full Structural-Causal State
