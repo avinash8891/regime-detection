@@ -1,0 +1,23 @@
+docs/regime_engine_v2_spec.md
+  s_69e10dfae52a94::t_6d34d3d0639cc6 1077-1162
+  s_69e10dfae52a94::t_1c8c3a230ec098 1180-1181,1183-1198,1201-1202,1206-1207,1211-1212,1219-1264
+  s_69e10dfae52a94::t_7b397f465dd093 90,93,98,102-107
+src/regime_data_fetch/pit_constituents.py
+  s_69e10dfae52a94::t_cf35ce7ca8d7e9 15-27
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.4",
+  "base_commit_sha": "721569eb130d7f483f7d7c0f8d2ad22bb67b383b",
+  "prompts": {},
+  "sessions": {
+    "s_69e10dfae52a94": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "ef8c0903-9f31-4c26-be1c-64323350aa48",
+        "model": "claude-opus-4-7"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}
