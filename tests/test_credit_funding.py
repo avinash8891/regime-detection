@@ -30,6 +30,8 @@ from regime_detection.credit_funding import (
     CREDIT_SPREAD_PROXY_BIAS_WARNING_CODE,
     CreditFundingFeatures,
     CreditFundingRuleInputs,
+    build_rule_inputs_by_date,
+    build_rule_inputs_for_date,
     compute_credit_funding_features,
     evaluate_credit_calm,
     evaluate_credit_stress,
@@ -239,6 +241,52 @@ def test_bias_warnings_frame_present_with_expected_code_and_5_rows() -> None:
         "ig_spread_proxy_slope_21d",
     }
     assert set(bw["feature_name"]) == expected_features
+
+
+def test_build_rule_inputs_by_date_matches_single_day_builder() -> None:
+    idx = _bdate_index(periods=650)
+    n = len(idx)
+    hyg = pd.Series(np.linspace(80.0, 88.0, n), index=idx, dtype=float)
+    lqd = pd.Series(np.linspace(100.0, 104.0, n), index=idx, dtype=float)
+    tlt = pd.Series(np.linspace(95.0, 109.0, n), index=idx, dtype=float)
+    kre = pd.Series(np.linspace(40.0, 43.0, n), index=idx, dtype=float)
+    spy = pd.Series(np.linspace(400.0, 430.0, n), index=idx, dtype=float)
+    sofr = pd.Series(np.linspace(5.0, 5.4, n), index=idx, dtype=float)
+    iorb = pd.Series(np.linspace(4.9, 5.0, n), index=idx, dtype=float)
+    nfci = pd.Series(np.linspace(0.1, 0.5, n), index=idx, dtype=float)
+    usd = pd.Series(np.linspace(100.0, 106.0, n), index=idx, dtype=float)
+    realized_vol = pd.Series(np.linspace(0.2, 0.95, n), index=idx, dtype=float)
+    avg_corr = pd.Series(np.linspace(0.1, 0.9, n), index=idx, dtype=float)
+
+    feats = compute_credit_funding_features(
+        hyg_close=hyg,
+        lqd_close=lqd,
+        tlt_close=tlt,
+        kre_close=kre,
+        spy_close=spy,
+        sofr=sofr,
+        iorb=iorb,
+        nfci_weekly=nfci,
+        broad_usd_index=usd,
+        config=_default_rules(),
+    )
+    precomputed = build_rule_inputs_by_date(
+        features=feats,
+        realized_vol_21d_percentile_252d=realized_vol,
+        avg_pairwise_corr_percentile_504d=avg_corr,
+    )
+    for dt in idx[504::37]:
+        expected = build_rule_inputs_for_date(
+            features=feats,
+            dt=dt,
+            realized_vol_21d_percentile_252d=realized_vol,
+            avg_pairwise_corr_percentile_504d=avg_corr,
+        )
+        actual = precomputed[dt]
+        for field in expected.__dataclass_fields__:
+            assert getattr(actual, field) == pytest.approx(
+                getattr(expected, field), nan_ok=True
+            )
 
 
 # --- Group B — Rule precedence (6 tests) -------------------------------------

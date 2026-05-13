@@ -27,7 +27,7 @@ from regime_detection.credit_funding import (
     CREDIT_FUNDING_RISK_RANK,
     CreditFundingLabel,
     RULE_PRECEDENCE as CREDIT_FUNDING_RULE_PRECEDENCE,
-    build_rule_inputs_for_date as build_credit_funding_rule_inputs_for_date,
+    build_rule_inputs_by_date as build_credit_funding_rule_inputs_by_date,
     evaluate_rules as evaluate_credit_funding_rules,
 )
 from regime_detection.models import (
@@ -738,6 +738,28 @@ class CreditFundingSeriesClassifier:
         per_day_evidence: list[dict[str, object]] = []
 
         nfci_carried = features.nfci_daily_carried
+        session_index = spy_close.index
+        hyg_staleness_by_date = _trading_staleness_series(hyg_close, session_index)
+        lqd_staleness_by_date = _trading_staleness_series(lqd_close, session_index)
+        tlt_staleness_by_date = _trading_staleness_series(tlt_close, session_index)
+        nfci_staleness_by_date = _calendar_staleness_days_series(
+            nfci_series, session_index
+        )
+        sofr_missing_by_date = (
+            pd.Series(True, index=session_index)
+            if sofr_series is None
+            else sofr_series.reindex(session_index).isna()
+        )
+        iorb_missing_by_date = (
+            pd.Series(True, index=session_index)
+            if iorb_series is None
+            else iorb_series.reindex(session_index).isna()
+        )
+        rule_inputs_by_date = build_credit_funding_rule_inputs_by_date(
+            features=features,
+            realized_vol_21d_percentile_252d=realized_vol_pct,
+            avg_pairwise_corr_percentile_504d=avg_corr_pct_series,
+        )
 
         for day in context.sessions:
             dt = pd.Timestamp(day)
@@ -747,32 +769,22 @@ class CreditFundingSeriesClassifier:
             # messages reach evidence.
             etf_staleness_breach = False
             etf_stale_label: str | None = None
-            for etf_label, etf_series in (
-                ("HYG", hyg_close),
-                ("LQD", lqd_close),
-                ("TLT", tlt_close),
-            ):
-                if etf_series is None:
-                    etf_staleness_breach = True
-                    etf_stale_label = etf_label
-                    break
-                staleness = _trailing_staleness_sessions(etf_series, dt)
-                if staleness > cf_config.etf_stale_sessions:
-                    etf_staleness_breach = True
-                    etf_stale_label = etf_label
-                    break
+            hyg_staleness = int(hyg_staleness_by_date.loc[dt])
+            lqd_staleness = int(lqd_staleness_by_date.loc[dt])
+            tlt_staleness = int(tlt_staleness_by_date.loc[dt])
+            if hyg_staleness > cf_config.etf_stale_sessions:
+                etf_staleness_breach = True
+                etf_stale_label = "HYG"
+            elif lqd_staleness > cf_config.etf_stale_sessions:
+                etf_staleness_breach = True
+                etf_stale_label = "LQD"
+            elif tlt_staleness > cf_config.etf_stale_sessions:
+                etf_staleness_breach = True
+                etf_stale_label = "TLT"
 
-            sofr_missing = (
-                sofr_series is None
-                or dt not in sofr_series.index
-                or pd.isna(sofr_series.loc[dt])
-            )
-            iorb_missing = (
-                iorb_series is None
-                or dt not in iorb_series.index
-                or pd.isna(iorb_series.loc[dt])
-            )
-            nfci_staleness_days = _nfci_calendar_staleness_days(nfci_series, dt)
+            sofr_missing = bool(sofr_missing_by_date.loc[dt])
+            iorb_missing = bool(iorb_missing_by_date.loc[dt])
+            nfci_staleness_days = int(nfci_staleness_by_date.loc[dt])
             nfci_stale = nfci_staleness_days > cf_config.nfci_stale_days
 
             if etf_staleness_breach or sofr_missing or iorb_missing or nfci_stale:
@@ -813,12 +825,7 @@ class CreditFundingSeriesClassifier:
                 per_day_evidence.append({"reason": day_quality.reason or "insufficient_data"})
                 continue
 
-            rule_inputs = build_credit_funding_rule_inputs_for_date(
-                features=features,
-                dt=dt,
-                realized_vol_21d_percentile_252d=realized_vol_pct,
-                avg_pairwise_corr_percentile_504d=avg_corr_pct_series,
-            )
+            rule_inputs = rule_inputs_by_date[dt]
             label = evaluate_credit_funding_rules(
                 inputs=rule_inputs,
                 config=cf_config.rules,
@@ -1223,29 +1230,6 @@ class MonetaryPressureV2SeriesClassifier:
             )
         return outputs
 
-
-def _trailing_staleness_sessions(series: pd.Series, dt: pd.Timestamp) -> int:
-    """Trading-day distance from ``dt`` to the last non-NaN observation
-    at or before ``dt`` in ``series``. Returns a huge value if no such
-    observation exists (forces unknown gate trip)."""
-    if dt not in series.index:
-        # Find the last index value <= dt.
-        sub = series.loc[:dt]
-    else:
-        sub = series.loc[:dt]
-    last_valid = sub.last_valid_index()
-    if last_valid is None:
-        return 10**9
-    # Trading-day distance: count of session-index positions between them.
-    idx = series.index
-    try:
-        pos_now = idx.get_loc(dt)
-        pos_last = idx.get_loc(last_valid)
-    except KeyError:
-        return 10**9
-    return int(pos_now - pos_last)
-
-
 def _trading_staleness_series(
     series: pd.Series | None, session_index: pd.Index
 ) -> pd.Series:
@@ -1256,24 +1240,6 @@ def _trading_staleness_series(
     valid = aligned.notna()
     last_valid_pos = session_pos.where(valid).ffill().fillna(-10**9).astype("int64")
     return (session_pos - last_valid_pos).astype("int64")
-
-
-def _nfci_calendar_staleness_days(
-    nfci_series: pd.Series | None, dt: pd.Timestamp
-) -> int:
-    """Calendar-day distance from ``dt`` to the last non-NaN NFCI release.
-
-    NFCI is weekly; staleness is measured in calendar days (spec line 2124).
-    Returns a huge value if the series is None or has no non-NaN history.
-    """
-    if nfci_series is None:
-        return 10**9
-    sub = nfci_series.loc[:dt]
-    last_valid = sub.last_valid_index()
-    if last_valid is None:
-        return 10**9
-    return int((dt.normalize() - pd.Timestamp(last_valid).normalize()).days)
-
 
 def _safe_float(series: pd.Series, dt: pd.Timestamp) -> float:
     if dt not in series.index:

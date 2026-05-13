@@ -403,6 +403,41 @@ def build_rule_inputs_for_date(
     )
 
 
+def build_rule_inputs_by_date(
+    *,
+    features: CreditFundingFeatures,
+    realized_vol_21d_percentile_252d: pd.Series,
+    avg_pairwise_corr_percentile_504d: pd.Series,
+) -> dict[pd.Timestamp, CreditFundingRuleInputs]:
+    index = features.hy_spread_proxy_percentile_504d.index
+    outputs: dict[pd.Timestamp, CreditFundingRuleInputs] = {}
+    for dt in index:
+        outputs[dt] = CreditFundingRuleInputs(
+            hy_spread_proxy_percentile_504d=_scalar_at(
+                features.hy_spread_proxy_percentile_504d, dt
+            ),
+            hy_spread_proxy_slope_21d=_scalar_at(
+                features.hy_spread_proxy_slope_21d, dt
+            ),
+            ig_spread_proxy_slope_21d=_scalar_at(
+                features.ig_spread_proxy_slope_21d, dt
+            ),
+            broad_usd_index_zscore_21d=_scalar_at(
+                features.broad_usd_index_zscore_21d, dt
+            ),
+            sofr_iorb_slope_21d=_scalar_at(features.sofr_iorb_slope_21d, dt),
+            spy_21d_return=_scalar_at(features.spy_21d_return, dt),
+            tlt_21d_return=_scalar_at(features.tlt_21d_return, dt),
+            realized_vol_21d_percentile_252d=_scalar_at(
+                realized_vol_21d_percentile_252d, dt
+            ),
+            avg_pairwise_corr_percentile_504d=_scalar_at(
+                avg_pairwise_corr_percentile_504d, dt
+            ),
+        )
+    return outputs
+
+
 # ---------------------------------------------------------------------------
 # Rule predicates (§2C lines 2064-2088).
 # ---------------------------------------------------------------------------
