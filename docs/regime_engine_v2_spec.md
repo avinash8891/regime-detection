@@ -1681,6 +1681,55 @@ the slice/commit that resolved it. Entries are append-only.
     asserted by the integration test in slice 2.8d.
     Resolved by Slice 2.8c.
 
+60. **§1D — `pct_above_50dma` 50-session SMA window source.**
+    Spec §1D explicitly writes the `pct_above_200dma` formula at lines
+    207–210 with a 200-session SMA. The §1D new-breadth-labels
+    precedence at lines 239–246 also references `pct_above_50dma`
+    (the rule for `narrowing_breadth`: "pct_above_50dma falling AND
+    pct_above_200dma falling AND nh_nl_ratio < 0.4"), but the spec
+    never restates the `mean(member.close > member.sma_50)` formula
+    for the 50-session sibling. Two interpretations: (X) the 50dma
+    feature is implicit / parallel to pct_above_200dma with the only
+    change being the SMA window; (Y) the 50dma feature is a label
+    input only and not itself a feature-store series. Resolution:
+    option (X). Rationale: the V1 spec consistently defines pairs of
+    SMA-window features (e.g. SMA_50 / SMA_200 both used by trend
+    rules) and §1D treats both `pct_above_50dma` and `pct_above_200dma`
+    interchangeably in label predicates. Implementing one but not the
+    other would force `narrowing_breadth` to short-circuit, which would
+    contradict the §1D label-set ship target. Pinned: same formula
+    `mean(member.close > member.sma_50)` with 50-session SMA,
+    `adjusted_close` price field (Ambiguity Log #54), and the same
+    NaN-SMA exclusion (#58) and full-history convention (#59).
+    Exposed as `BreadthV2Config.sma_lookback_50 = 50` for §9.1
+    calibration retunes.
+    Resolved by Slice 2.8c.
+
+61. **§1D lines 218–221 — `nh_nl_ratio` flat-series at trailing
+    extremum.**
+    Spec writes "52-week new highs / new lows" with the equality
+    predicates `adj[D] == max(window)` / `adj[D] == min(window)`
+    (Ambiguity Log #55). A ticker whose `adjusted_close` is constant
+    across the full 252-session window satisfies BOTH conditions
+    simultaneously (the value equals its own max AND its own min).
+    Three options: (X) ticker counts toward BOTH `new_highs` AND
+    `new_lows`; (Y) ticker counts toward neither (treat flat as a
+    non-event); (Z) ticker counts toward `new_highs` only (preference
+    rule). Resolution: option (X), implicit in the equality predicate.
+    Rationale: option (X) is the only choice that keeps `new_highs`
+    and `new_lows` as INDEPENDENT counts of the equality predicate,
+    not a coupled either/or category. The downstream
+    `ratio = new_highs / max(new_highs + new_lows, 1)` then returns
+    0.5 for an all-flat universe, which is the correct neutral
+    interpretation. Options (Y) and (Z) would require special-casing
+    the flat-series detection (an extra `adj[D] == min == max` check)
+    that adds a hidden invariant to the predicate. Pinned in
+    `regime_detection.breadth_state_v2._compute_nh_nl_ratio` and
+    asserted by `test_nh_nl_ratio_zero_when_no_new_high_or_low` (the
+    truly-no-extremum case) plus the structural-counting design of
+    the helper.
+    Resolved by Slice 2.8c.
+
 ---
 
 ## 2. Layer 2 V2 — Full Structural-Causal State
