@@ -252,8 +252,16 @@ vol_crush:
 
 hmm:
   n_states: 4
-  training_window_days: 504
+  # Spec §6.1 line 2786: "Fit on at least 5 years of data" (≈1260 NYSE
+  # sessions). Prior value (504, 2y) was a placeholder — bumped by Slice 6
+  # to satisfy the spec minimum. See Implementation Ambiguity Log #62.
+  training_window_days: 1260
+  # Ops/dev concern: engine is stateless and refits per classify_window.
+  # The quarterly cadence is documented for operator-side scheduling. See
+  # Implementation Ambiguity Log #63.
   retrain_cadence_days: 21
+  # Slice 6: reproducibility seed for hmmlearn.GaussianHMM.
+  random_state: 42
 
 no_flip_flop:
   window_trading_days: 5

@@ -399,3 +399,111 @@ def test_compose_transition_score_components_dict_has_canonical_keys(
     # Defensive: sanity-check no NaN sneaks into components dict on success path.
     for value in out.components.values():
         assert not math.isnan(value)
+
+
+# ---------------------------------------------------------------------------
+# Group D — Slice 6 HMM 6th-component wiring (§4.2 line 2396 + §6.1)
+# ---------------------------------------------------------------------------
+
+
+def test_compose_transition_score_uses_with_hmm_weights_when_hmm_present(
+    transition_score_config: TransitionScoreConfig,
+) -> None:
+    """When both hmm probabilities are supplied, the composer must use the
+    ``weights_with_hmm`` 6-key table and emit the ``hmm_probability_shift``
+    component. Hand-computed expectation matches.
+    """
+    out = compose_transition_score_for_session(
+        realized_vol_short=10.0,
+        realized_vol_long=10.0,        # vol_acc → 0.0
+        pct_above_50dma=0.50,           # breadth_det → 0.0
+        avg_pairwise_corr_percentile_504d=0.0,  # corr_conc → 0.0
+        drawdown_252d=0.0,              # trend_break → 0.0
+        event_calendar_label="normal",  # macro_event → 0.0
+        hmm_top_state_prob_now=0.7,
+        hmm_top_state_prob_5d_ago=0.3,
+        config=transition_score_config,
+    )
+    assert out.components is not None
+    assert "hmm_probability_shift" in out.components
+    # |0.7 - 0.3| = 0.4 → clipped to [0,1] → 0.4
+    assert out.components["hmm_probability_shift"] == pytest.approx(0.4)
+    # Score = sum of weighted zeros + weights_with_hmm.hmm_probability_shift * 0.4
+    expected = (
+        transition_score_config.weights_with_hmm["hmm_probability_shift"] * 0.4
+    )
+    assert out.score == pytest.approx(expected)
+    # All 6 keys present.
+    assert set(out.components.keys()) == {
+        "volatility_acceleration",
+        "breadth_deterioration",
+        "correlation_concentration",
+        "trend_break",
+        "macro_event",
+        "hmm_probability_shift",
+    }
+
+
+def test_compose_transition_score_falls_back_to_without_hmm_weights_when_hmm_none(
+    transition_score_config: TransitionScoreConfig,
+) -> None:
+    """Passing ``hmm_top_state_prob_now=None`` must reproduce V1+V2 5-component
+    behavior byte-identical to the no-arg (default-None) call path.
+    """
+    out_explicit_none = compose_transition_score_for_session(
+        realized_vol_short=12.0,
+        realized_vol_long=10.0,
+        pct_above_50dma=0.45,
+        avg_pairwise_corr_percentile_504d=0.60,
+        drawdown_252d=-0.10,
+        event_calendar_label="cpi_week",
+        hmm_top_state_prob_now=None,
+        hmm_top_state_prob_5d_ago=None,
+        config=transition_score_config,
+    )
+    out_default = compose_transition_score_for_session(
+        realized_vol_short=12.0,
+        realized_vol_long=10.0,
+        pct_above_50dma=0.45,
+        avg_pairwise_corr_percentile_504d=0.60,
+        drawdown_252d=-0.10,
+        event_calendar_label="cpi_week",
+        config=transition_score_config,
+    )
+    assert out_explicit_none.score == out_default.score
+    assert out_explicit_none.components == out_default.components
+    assert out_explicit_none.components is not None
+    assert "hmm_probability_shift" not in out_explicit_none.components
+
+
+def test_hmm_probability_shift_score_formula_at_boundaries(
+    transition_score_config: TransitionScoreConfig,
+) -> None:
+    """Slice 6 §4.2 formula: hmm_probability_shift_score = clip(|p_now - p_5d|, 0, 1)."""
+    out_max = compose_transition_score_for_session(
+        realized_vol_short=10.0,
+        realized_vol_long=10.0,
+        pct_above_50dma=0.50,
+        avg_pairwise_corr_percentile_504d=0.0,
+        drawdown_252d=0.0,
+        event_calendar_label="normal",
+        hmm_top_state_prob_now=1.0,
+        hmm_top_state_prob_5d_ago=0.0,
+        config=transition_score_config,
+    )
+    assert out_max.components is not None
+    assert out_max.components["hmm_probability_shift"] == pytest.approx(1.0)
+
+    out_zero = compose_transition_score_for_session(
+        realized_vol_short=10.0,
+        realized_vol_long=10.0,
+        pct_above_50dma=0.50,
+        avg_pairwise_corr_percentile_504d=0.0,
+        drawdown_252d=0.0,
+        event_calendar_label="normal",
+        hmm_top_state_prob_now=0.5,
+        hmm_top_state_prob_5d_ago=0.5,
+        config=transition_score_config,
+    )
+    assert out_zero.components is not None
+    assert out_zero.components["hmm_probability_shift"] == pytest.approx(0.0)

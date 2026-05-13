@@ -53,12 +53,28 @@ def compute_transition_score(
     trend_break_score: float,
     macro_event_score: float,
     weights: dict[str, float],
+    hmm_probability_shift_score: float | None = None,
 ) -> float:
-    """v2 §4.3 weighted composite over the 5 Without-HMM components."""
-    if weights.get("hmm_probability_shift", 0.0) != 0.0:
-        raise ValueError(
-            "Slice 3 Without-HMM composer received weights_with_hmm — "
-            "pass weights_without_hmm only."
+    """v2 §4.3 weighted composite.
+
+    When ``hmm_probability_shift_score`` is ``None`` (Slice 3 / V1 path),
+    the 5 ``Without-HMM`` weights are used and the weight table must NOT
+    carry a non-zero ``hmm_probability_shift`` entry. When the score is
+    provided (Slice 6 / V2 §6.1 path), the 6 ``weights_with_hmm`` table is
+    used and the 6th component is appended.
+    """
+    if hmm_probability_shift_score is None:
+        if weights.get("hmm_probability_shift", 0.0) != 0.0:
+            raise ValueError(
+                "Without-HMM composer received weights_with_hmm — "
+                "pass weights_without_hmm only."
+            )
+        return (
+            weights["volatility_acceleration"] * volatility_acceleration_score
+            + weights["breadth_deterioration"] * breadth_deterioration_score
+            + weights["correlation_concentration"] * correlation_concentration_score
+            + weights["trend_break"] * trend_break_score
+            + weights["macro_event"] * macro_event_score
         )
     return (
         weights["volatility_acceleration"] * volatility_acceleration_score
@@ -66,6 +82,7 @@ def compute_transition_score(
         + weights["correlation_concentration"] * correlation_concentration_score
         + weights["trend_break"] * trend_break_score
         + weights["macro_event"] * macro_event_score
+        + weights["hmm_probability_shift"] * hmm_probability_shift_score
     )
 
 
@@ -95,6 +112,8 @@ def compose_transition_score_for_session(
     drawdown_252d: float,
     event_calendar_label: str,
     config: TransitionScoreConfig,
+    hmm_top_state_prob_now: float | None = None,
+    hmm_top_state_prob_5d_ago: float | None = None,
 ) -> ComposedTransitionScore:
     """Compose a single session's transition score from v2 §4.2 inputs.
 
@@ -136,13 +155,36 @@ def compose_transition_score_for_session(
         "macro_event": macro_event,
     }
 
+    # v2 §4.2 line 2396 + §6.1 (Slice 6) — 6th component when both HMM
+    # probabilities are present and non-NaN. Permutation-invariant
+    # |top_state_prob[t] - top_state_prob[t-5]|, defensively clipped to
+    # [0, 1] (the formula is already in-range by construction since
+    # probabilities ∈ [0, 1]).
+    hmm_shift: float | None = None
+    if (
+        hmm_top_state_prob_now is not None
+        and hmm_top_state_prob_5d_ago is not None
+        and not math.isnan(float(hmm_top_state_prob_now))
+        and not math.isnan(float(hmm_top_state_prob_5d_ago))
+    ):
+        hmm_shift = _clip(
+            abs(float(hmm_top_state_prob_now) - float(hmm_top_state_prob_5d_ago)),
+            0.0,
+            1.0,
+        )
+        components["hmm_probability_shift"] = hmm_shift
+
+    weights = (
+        config.weights_with_hmm if hmm_shift is not None else config.weights_without_hmm
+    )
     score = compute_transition_score(
         volatility_acceleration_score=vol_acc,
         breadth_deterioration_score=breadth_det,
         correlation_concentration_score=corr_conc,
         trend_break_score=trend_break,
         macro_event_score=macro_event,
-        weights=config.weights_without_hmm,
+        weights=weights,
+        hmm_probability_shift_score=hmm_shift,
     )
     # Composite is a weighted average of [0,1] values with non-negative
     # weights summing to 1.0; defensive clip to absorb FP noise so the

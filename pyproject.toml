@@ -14,6 +14,7 @@ dependencies = [
   "pydantic>=2,<3",
   "pandas_market_calendars",
   "pyyaml",
+  "hmmlearn>=0.3,<0.4",
 ]
 
 [project.optional-dependencies]

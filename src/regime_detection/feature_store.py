@@ -32,8 +32,11 @@ from regime_detection.trend_direction import (
 )
 from regime_detection.trend_direction_v2 import (
     TrendDirectionV2Features,
+    compute_trailing_drawdown,
     compute_trend_v2_features,
 )
+from regime_detection.hmm_state import HMMFeatures, compute_hmm_features
+from regime_detection.volatility_state import realized_vol
 from regime_detection.volatility_state import VolatilityFeatures, compute_features as compute_volatility_features
 from regime_detection.volatility_state_v2 import (
     VolatilityV2Features,
@@ -51,6 +54,7 @@ from regime_detection.monetary_pressure import (
 __all__ = [
     "BreadthV2Features",
     "FeatureStore",
+    "HMMFeatures",
     "MonetaryPressureV2Features",
     "NetworkFragilityFeatures",
     "TrendDirectionV2Features",
@@ -113,6 +117,14 @@ class FeatureStore(BaseModel):
     # spec-pinned yield z-scores; broad_usd_index and 21d-variant
     # features are deferred per Ambiguity Log #44 / #45.
     monetary: MonetaryPressureV2Features | None = None
+
+    # V2 §6.1 HMM evidence seam (Slice 6) — populated when ``context.config.hmm``
+    # is non-None AND all five upstream feature seams are lit (volatility
+    # return_1d, volume_liquidity_v2.volume_zscore_20d,
+    # network_fragility.avg_pairwise_corr_63d, plus the SPY-derived
+    # realized_vol_21d and drawdown_63d). Otherwise None — V1 byte-identity
+    # preserved on the 5-component transition_score path.
+    hmm: HMMFeatures | None = None
 
 
 def build_feature_store(
@@ -246,6 +258,29 @@ def build_feature_store(
     else:
         monetary = None
 
+    # v2 §6.1 HMM evidence layer (Slice 6) — reuses the existing FeatureStore
+    # seams as inputs. Requires the volume_liquidity_v2 and network_fragility
+    # seams to be lit (their fields supply 2 of the 5 HMM inputs). The
+    # SPY-derived inputs (return_1d, realized_vol_21d, drawdown_63d) are
+    # always available on the V1 path. When any predicate fails, the HMM
+    # seam is None and the transition_score falls back to its 5-component
+    # weights_without_hmm path (V1 byte-identity preserved).
+    if (
+        context.config.hmm is not None
+        and volume_liquidity_v2 is not None
+        and network_fragility is not None
+    ):
+        hmm = compute_hmm_features(
+            return_1d=volatility.return_1d,
+            realized_vol_21d=realized_vol(spy_close, 21),
+            drawdown_63d=compute_trailing_drawdown(spy_close, 63),
+            volume_zscore_20d=volume_liquidity_v2.volume_zscore_20d,
+            avg_pairwise_corr_63d=network_fragility.avg_pairwise_corr_63d,
+            config=context.config.hmm,
+        )
+    else:
+        hmm = None
+
     return FeatureStore(
         spy_index=spy_ohlcv.index,
         trend_direction=trend_direction,
@@ -259,4 +294,5 @@ def build_feature_store(
         breadth_state_v2=breadth_state_v2,
         volume_liquidity_v2=volume_liquidity_v2,
         monetary=monetary,
+        hmm=hmm,
     )

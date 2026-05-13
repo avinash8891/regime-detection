@@ -75,6 +75,11 @@ def build_transition_risk_series(
             ),
             drawdown_252d=trend_v2.drawdown_252d,
             event_calendar=axis_bundle.event_calendar,
+            hmm_top_state_prob=(
+                feature_store.hmm.top_state_prob
+                if feature_store.hmm is not None
+                else None
+            ),
         )
 
     return build_transition_risk_outputs_by_date(
@@ -103,6 +108,7 @@ def _build_transition_score_inputs_by_date(
     avg_pairwise_corr_percentile_504d: pd.Series,
     drawdown_252d: pd.Series,
     event_calendar: dict[date, EventCalendarOutput],
+    hmm_top_state_prob: pd.Series | None = None,
 ) -> dict[date, dict[str, float | str]]:
     """Materialise the per-session v2 §4.2 input dict for every NYSE session.
 
@@ -122,6 +128,21 @@ def _build_transition_score_inputs_by_date(
     )
     dd252 = drawdown_252d.reindex(session_index).to_numpy(dtype=float, na_value=float("nan"))
 
+    # v2 §6.1 (Slice 6) — bulk-reindex both `top_state_prob[t]` and
+    # `top_state_prob[t-5]`. The 5-NYSE-session offset is materialized by
+    # shifting the SOURCE series before reindexing so each session t maps
+    # to the value at session t-5 (or NaN if absent).
+    if hmm_top_state_prob is not None:
+        hmm_now = hmm_top_state_prob.reindex(session_index).to_numpy(
+            dtype=float, na_value=float("nan")
+        )
+        hmm_5d_ago = hmm_top_state_prob.shift(5).reindex(session_index).to_numpy(
+            dtype=float, na_value=float("nan")
+        )
+    else:
+        hmm_now = [float("nan")] * len(sessions)
+        hmm_5d_ago = [float("nan")] * len(sessions)
+
     out: dict[date, dict[str, float | str]] = {}
     for i, day in enumerate(sessions):
         out[day] = {
@@ -131,6 +152,8 @@ def _build_transition_score_inputs_by_date(
             "avg_pairwise_corr_percentile_504d": float(corr[i]),
             "drawdown_252d": float(dd252[i]),
             "event_calendar_label": event_calendar[day].active_label,
+            "hmm_top_state_prob_now": float(hmm_now[i]),
+            "hmm_top_state_prob_5d_ago": float(hmm_5d_ago[i]),
         }
     return out
 
@@ -202,6 +225,23 @@ def build_transition_risk_outputs_by_date(
         )
         if compose_score:
             inputs = transition_score_inputs_by_date[day]  # type: ignore[index]
+            # v2 §6.1 (Slice 6) — pass HMM probabilities as None when NaN
+            # so the composer fall-through to the 5-component
+            # weights_without_hmm path matches V1 byte-identity.
+            hmm_now_val = inputs.get("hmm_top_state_prob_now")  # type: ignore[union-attr]
+            hmm_5d_val = inputs.get("hmm_top_state_prob_5d_ago")  # type: ignore[union-attr]
+            hmm_now_arg = (
+                None
+                if hmm_now_val is None
+                or (isinstance(hmm_now_val, float) and pd.isna(hmm_now_val))
+                else float(hmm_now_val)  # type: ignore[arg-type]
+            )
+            hmm_5d_arg = (
+                None
+                if hmm_5d_val is None
+                or (isinstance(hmm_5d_val, float) and pd.isna(hmm_5d_val))
+                else float(hmm_5d_val)  # type: ignore[arg-type]
+            )
             composed = compose_transition_score_for_session(
                 realized_vol_short=inputs["realized_vol_short"],  # type: ignore[arg-type]
                 realized_vol_long=inputs["realized_vol_long"],  # type: ignore[arg-type]
@@ -211,6 +251,8 @@ def build_transition_risk_outputs_by_date(
                 ],  # type: ignore[arg-type]
                 drawdown_252d=inputs["drawdown_252d"],  # type: ignore[arg-type]
                 event_calendar_label=inputs["event_calendar_label"],  # type: ignore[arg-type]
+                hmm_top_state_prob_now=hmm_now_arg,
+                hmm_top_state_prob_5d_ago=hmm_5d_arg,
                 config=transition_score_config,  # type: ignore[arg-type]
             )
             if composed.score is not None:

@@ -169,7 +169,7 @@ def _slope_of_sma(sma: pd.Series, slope_lookback: int) -> pd.Series:
     return (sma - prior) / prior.where(prior != 0)
 
 
-def _trailing_drawdown(close: pd.Series, lookback: int) -> pd.Series:
+def compute_trailing_drawdown(close: pd.Series, lookback: int) -> pd.Series:
     """v2 §1A line 116: (close[t] / max(close[t-N+1..t])) - 1.
 
     Peak window is inclusive of t (matching
@@ -177,9 +177,16 @@ def _trailing_drawdown(close: pd.Series, lookback: int) -> pd.Series:
     Drawdown == 0 when t is a fresh `lookback`-day high. Negative below.
     NaN if any of the window's `lookback` sessions is NaN or if t lacks
     `lookback` prior history.
+
+    Public name added in Slice 6: the HMM evidence layer (§6.1) reuses
+    this formula for its `drawdown_63d` input — one home (AGENTS rule B).
     """
     peak = close.rolling(window=lookback, min_periods=lookback).max()
     return (close / peak.where(peak > 0)) - 1.0
+
+
+# Internal alias preserved for in-module callers (slice 2.1 + 2.5 code paths).
+_trailing_drawdown = compute_trailing_drawdown
 
 
 def compute_trend_v2_features(

@@ -500,6 +500,9 @@ class HMMConfig(BaseModel):
     n_states: int = Field(ge=2)
     training_window_days: int = Field(ge=100)
     retrain_cadence_days: int = Field(ge=1)
+    # Slice 6: deterministic seed for hmmlearn.GaussianHMM. Reproducibility
+    # gate — same inputs + same seed → byte-identical posterior.
+    random_state: int = Field(default=42, ge=0)
 
 
 class VolCrushConfig(BaseModel):
