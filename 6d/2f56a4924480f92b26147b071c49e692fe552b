@@ -1,0 +1,42 @@
+tests/test_clustering.py
+  s_1c47c85d071288::t_4ca07e5b7c1eb6 1-326
+src/regime_detection/feature_store.py
+  s_1c47c85d071288::t_a234e156ceb3d5 60
+  s_1c47c85d071288::t_4e8fcbc9efd968 134-143
+  s_1c47c85d071288::t_3d4bdd598fadba 299-322
+  s_1c47c85d071288::t_b52d2c5902574b 38-41
+  s_1c47c85d071288::t_7a149a5e007948 337
+src/regime_detection/timeline.py
+  s_1c47c85d071288::t_0e7672f4d634a9 234
+  s_1c47c85d071288::t_ff5d753fe97d4b 175-188
+  s_1c47c85d071288::t_78806fca164172 3-4,11
+  s_1c47c85d071288::t_ab15563095d1b1 122-140
+  s_1c47c85d071288::t_d0eeebff8da5c3 162
+src/regime_detection/models.py
+  s_1c47c85d071288::t_bb2c56a6836209 145-166
+  s_1c47c85d071288::t_24db62cda5a894 307
+src/regime_detection/configs/core3-v2.0.0.yaml
+  s_1c47c85d071288::t_4399aa52098578 266-273
+src/regime_detection/config.py
+  s_1c47c85d071288::t_bce48c779c649e 508-524
+  s_1c47c85d071288::t_2d2dfc70780b79 656-657
+src/regime_detection/clustering.py
+  s_1c47c85d071288::t_8d2dec96b96914 108-115
+  s_1c47c85d071288::t_99ecad09da9650 1-107,116-178
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.8",
+  "base_commit_sha": "6d2f56a4924480f92b26147b071c49e692fe552b",
+  "prompts": {},
+  "sessions": {
+    "s_1c47c85d071288": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "9a7f5f4a-bdfa-4e7a-982d-255fc02a66d5",
+        "model": "claude-opus-4-7"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}
