@@ -22,12 +22,14 @@ dependencies = [
 dev = [
   "pytest",
   "pytest-cov",
+  "pytest-mock",
   "pytest-xdist",
   "hypothesis",
   "ruff",
   "pyright",
   "pyarrow",
   "xlrd",
+  "openpyxl",
 ]
 
 [tool.setuptools]

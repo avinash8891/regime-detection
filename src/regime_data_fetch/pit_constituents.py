@@ -205,6 +205,12 @@ def read_pit_intervals(parquet_path: Path) -> pd.DataFrame:
 
     df["start_date"] = df["start_date"].map(_to_date)
     df["end_date"] = df["end_date"].map(_to_date)
+    # Normalize remaining string columns to object dtype. Newer pandas+pyarrow
+    # round-trips parquet strings as StringDtype by default; the reader contract
+    # (and downstream consumers comparing dtype == object) requires plain object.
+    for column in ("ticker", "source", "source_url", "bias_warning"):
+        if column in df.columns:
+            df[column] = df[column].astype(object)
     return df
 
 
