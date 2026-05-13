@@ -36,6 +36,9 @@ V2_CROSS_ASSET_SYMBOLS = [
     "GLD",
     "USO",
     "UUP",
+    # Bloomberg Commodity Index substitute per Ambiguity Log #48; consumed
+    # by v2 §2B `commodity_return_63d` feature in slice 5.
+    "DBC",
 ]
 V2_EXTRA_SYMBOLS = ["KRE"] + V2_SECTOR_SYMBOLS + V2_CROSS_ASSET_SYMBOLS
 V2_FRED_SERIES = {

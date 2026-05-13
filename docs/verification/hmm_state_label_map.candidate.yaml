@@ -1,0 +1,29 @@
+hmm_state_label_map:
+  version: 0.1-candidate
+  fitted_at_utc: '2026-05-13T11:55:43.373956+00:00'
+  fitted_end_date: '2026-05-08'
+  training_window_days: 1260
+  random_state: 42
+  summary:
+    n_states: 4
+    n_predicted_sessions: 2036
+    sessions_per_dominant_state:
+      0: 786
+      1: 444
+      2: 803
+      3: 3
+    persistence_probability_per_state:
+      0: 0.8995
+      1: 0.964
+      2: 0.9052
+      3: 0.0
+    candidate_mappings:
+      0: '<operator review: assign economic label for state 0>'
+      1: '<operator review: assign economic label for state 1>'
+      2: '<operator review: assign economic label for state 2>'
+      3: '<operator review: assign economic label for state 3>'
+  review_instructions: "Per V2 \xA76.1 line 2748 + \xA710: inspect the per-state mean\
+    \ posterior, sessions-per-state, and persistence diagonal above. Manually assign\
+    \ an economic label (e.g. calm_bull / choppy_normal / stress_crash) to each integer\
+    \ state by replacing the placeholder strings in summary.candidate_mappings. Rename\
+    \ this file to hmm_state_label_map.yaml (drop .candidate suffix) when done."

@@ -1,0 +1,14 @@
+cluster_label_map:
+  version: 0.1-candidate
+  fitted_at_utc: '2026-05-13T11:55:43.373995+00:00'
+  fitted_end_date: '2026-05-08'
+  training_window_days: 1260
+  random_state: 42
+  summary:
+    status: unfit
+    reason: "feature_store.clustering is None \u2014 input gate not lit"
+  review_instructions: "Per V2 \xA76.2 line 2842 + \xA710: inspect the per-cluster\
+    \ size and mean distance to centroid above. Manually assign an economic label\
+    \ (e.g. calm_low_vol_bull / trending_bull / high_vol_chop / ...) to each integer\
+    \ cluster by replacing the placeholder strings in summary.candidate_mappings.\
+    \ Rename this file to cluster_label_map.yaml (drop .candidate suffix) when done."
