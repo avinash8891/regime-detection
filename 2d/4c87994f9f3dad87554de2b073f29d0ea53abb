@@ -1,0 +1,36 @@
+src/regime_detection/config.py
+  s_1c47c85d071288::t_6a7411e2d593d0 412-469
+  s_1c47c85d071288::t_16e819358c73fe 838-839
+tests/fixtures/derived/golden_dates.yaml
+  s_1c47c85d071288::t_4edd46a0895a27 1-2
+  s_1c47c85d071288::t_fbd71eaf54a816 40
+src/regime_detection/feature_store.py
+  s_1c47c85d071288::t_da963f249c6d10 201
+scripts/verify_fixtures.py
+  s_1c47c85d071288::t_bf7de30a61038d 637-640,646
+  s_1c47c85d071288::t_cdd8b638b4afbc 359,364,368-382,385-390,392-399,404-405,414,422,424-425
+src/regime_detection/trend_character.py
+  s_1c47c85d071288::t_aa855afbbc6113 14-32,35,37-38,44-58,69-75,101-230,234,237-248,258-263,274,278,282,287-315,318-319,326,329,331-333,342,345-349,352,356-376,381,384,393,396,412,421-423,431-432,434
+tests/fixtures/verification/golden_dates_report.yaml
+  s_1c47c85d071288::t_f115a1ce154c5c 334
+  s_1c47c85d071288::t_4edd46a0895a27 1-2,61,67,69-70,167,173,175-176,273,279,281-282,330-331,374-376,380,382,386,388-389,486,492,494-495,592,598,600-601,698,704,706-707,804,810,812-813,910,916,918-919,1016,1022,1024-1025
+tests/test_trend_character_v2_labels.py
+  s_1c47c85d071288::t_b9d86ff0e9fcaf 1-491,497,504-509
+  s_1c47c85d071288::t_28d8e62478f0d3 492-496,498-503,510-513
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.8",
+  "base_commit_sha": "2d4c87994f9f3dad87554de2b073f29d0ea53abb",
+  "prompts": {},
+  "sessions": {
+    "s_1c47c85d071288": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "9a7f5f4a-bdfa-4e7a-982d-255fc02a66d5",
+        "model": "claude-opus-4-7"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}
