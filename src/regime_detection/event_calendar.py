@@ -113,10 +113,14 @@ def compute_event_calendar_outputs(
     )
     first_session = sessions_tuple[0]
     last_session = sessions_tuple[-1]
-    global_start = first_session.replace(day=1) - timedelta(days=31)
-    global_end = last_session.replace(
-        day=calendar.monthrange(last_session.year, last_session.month)[1]
-    ) + timedelta(days=31)
+    # Align to year boundaries so the lru_cached `_sessions_between` hits
+    # whenever a tight-loop caller (e.g. the bulk-matches-point test) walks
+    # sessions one at a time. Month-boundary alignment cycled the cache key
+    # every month, causing N×O(global_days) per-call rebuilds. The year-
+    # boundary range is a slight superset; bitmask painting only writes to
+    # in-range sessions, so the wider window doesn't affect output.
+    global_start = date(first_session.year, 1, 1)
+    global_end = date(last_session.year, 12, 31)
     if event_rows:
         min_event_day = min(
             min(row.publication_date, row.date) for row in event_rows
@@ -124,8 +128,8 @@ def compute_event_calendar_outputs(
         max_event_day = max(
             max(row.publication_date, row.date) for row in event_rows
         )
-        global_start = min(global_start, min_event_day) - timedelta(days=20)
-        global_end = max(global_end, max_event_day) + timedelta(days=20)
+        global_start = min(global_start, date(min_event_day.year, 1, 1))
+        global_end = max(global_end, date(max_event_day.year, 12, 31))
     global_sessions = _sessions_between(global_start, global_end)
     global_session_list = list(global_sessions)
     global_pos = {day: idx for idx, day in enumerate(global_session_list)}

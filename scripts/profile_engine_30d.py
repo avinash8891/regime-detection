@@ -193,6 +193,44 @@ def _timed_method_wrapper(
     return wrapped
 
 
+def _timed_inflation_growth_builder(
+    timer: StageTimer,
+    method: Callable[..., Any],
+) -> Callable[..., Any]:
+    def wrapped(self, context: Any, feature_store: Any, credit_funding_active_labels_by_date: Any = None) -> Any:
+        import regime_detection.axis_series as axis_series_module
+
+        original_assess = axis_series_module.assess_series_input_quality
+        original_build_inputs = axis_series_module.build_inflation_growth_rule_inputs_by_date
+        original_eval = axis_series_module.evaluate_inflation_growth_rules
+
+        def timed_assess(*args: Any, **kwargs: Any) -> Any:
+            with timer.measure("axis_series.inflation_growth.assess_series_input_quality"):
+                return original_assess(*args, **kwargs)
+
+        def timed_build_inputs(*args: Any, **kwargs: Any) -> Any:
+            with timer.measure("axis_series.inflation_growth.build_rule_inputs_by_date"):
+                return original_build_inputs(*args, **kwargs)
+
+        def timed_eval(*args: Any, **kwargs: Any) -> Any:
+            with timer.measure("axis_series.inflation_growth.evaluate_rules"):
+                return original_eval(*args, **kwargs)
+
+        with timer.measure("axis_series.inflation_growth"):
+            with contextlib.ExitStack() as stack:
+                stack.enter_context(_patched_attr(axis_series_module, "assess_series_input_quality", timed_assess))
+                stack.enter_context(_patched_attr(axis_series_module, "build_inflation_growth_rule_inputs_by_date", timed_build_inputs))
+                stack.enter_context(_patched_attr(axis_series_module, "evaluate_inflation_growth_rules", timed_eval))
+                return method(
+                    self,
+                    context,
+                    feature_store,
+                    credit_funding_active_labels_by_date=credit_funding_active_labels_by_date,
+                )
+
+    return wrapped
+
+
 @contextlib.contextmanager
 def _patched_attr(module: Any, attr_name: str, replacement: Any):
     original = getattr(module, attr_name)
@@ -271,7 +309,7 @@ def _install_timers(timer: StageTimer):
         (
             axis_series_module.InflationGrowthSeriesClassifier,
             "build",
-            _timed_method_wrapper(timer, "axis_series.inflation_growth", axis_series_module.InflationGrowthSeriesClassifier.build),
+            _timed_inflation_growth_builder(timer, axis_series_module.InflationGrowthSeriesClassifier.build),
         ),
         (
             axis_series_module,
@@ -622,6 +660,19 @@ def main() -> int:
         ],
         timer,
         timer.totals.get("build_axis_series_bundle", 0.0),
+    ):
+        print(row)
+    print()
+
+    print("axis_series.inflation_growth sub-breakdown")
+    for row in _format_stage_rows(
+        [
+            "axis_series.inflation_growth.build_rule_inputs_by_date",
+            "axis_series.inflation_growth.assess_series_input_quality",
+            "axis_series.inflation_growth.evaluate_rules",
+        ],
+        timer,
+        timer.totals.get("axis_series.inflation_growth", 0.0),
     ):
         print(row)
     print()

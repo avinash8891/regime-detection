@@ -19,22 +19,10 @@ def _load_runner_module():
     return mod
 
 
-def test_historical_walkforward_runner_writes_expected_artifacts(tmp_path: Path) -> None:
-    repo_root = Path(__file__).resolve().parents[1]
-    market_data_path = repo_root / "tests" / "fixtures" / "raw" / "market_data.parquet"
-    out_root = tmp_path / "walkforward"
-
-    mod = _load_runner_module()
-    result = mod.run_walkforward(
-        market_data_path=market_data_path,
-        output_root=out_root,
-        start_date=date(2023, 12, 12),
-        end_date=date(2023, 12, 14),
-    )
-
-    assert result["session_count"] == 3
-    assert result["success_count"] == 3
-    assert result["failure_count"] == 0
+def test_historical_walkforward_runner_writes_expected_artifacts(
+    walkforward_2023_dec_template: Path,
+) -> None:
+    out_root = walkforward_2023_dec_template
 
     db_path = out_root / "regime_walkforward.db"
     assert db_path.exists()
