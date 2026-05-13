@@ -342,7 +342,7 @@ def test_run_macro_fetch_uses_env_fred_api_key(monkeypatch, tmp_path: Path) -> N
 
 def test_fetch_help_surface_mentions_pmi_and_pit() -> None:
     help_text = Path("scripts/fetch_regime_engine_v1_data.py").read_text()
-    assert "market|macro|events|pmi|pit|fomc|powell|eps|eps-wayback|usd-index-local|daily-ohlcv-local-sqlite|all" in help_text
+    assert "market|macro|events|pmi|pit|fomc|powell|eps|eps-wayback|usd-index-local|daily-ohlcv-local-sqlite|sentiment|all" in help_text
     assert "--eps-workbook" in help_text
     assert "--eps-wayback-max-snapshots" in help_text
     assert "--eps-wayback-from" in help_text
