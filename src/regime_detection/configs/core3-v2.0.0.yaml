@@ -40,7 +40,7 @@ hysteresis:
 # V2 sub-configs (per docs/regime_engine_v2_spec.md).
 #
 # Slices not yet implemented (inflation_growth, credit_funding,
-# event_calendar_v2, strategy_cohort, strategy_family_constraints) are
+# event_calendar_v2, strategy_family_constraints) are
 # intentionally omitted so they remain None on load.
 # ---------------------------------------------------------------------------
 
@@ -257,3 +257,45 @@ hmm:
 
 no_flip_flop:
   window_trading_days: 5
+
+# v2 §5.1 Agent Cohort Routing (Slice 5.1, Ambiguity Log #53 calibration placeholder).
+cohort_routing:
+  routing_rules:
+    crisis_specialist:
+      any_of:
+        - {axis: "network_fragility", values: ["correlation_to_one", "systemic_stress"]}
+        - {axis: "volatility_state", values: ["crisis_vol"]}
+    euphoria_specialist:
+      all_of:
+        - {axis: "trend_direction", values: ["euphoria"]}
+    bear_stress_specialist:
+      all_of:
+        - {axis: "trend_direction", values: ["bear"]}
+        - {axis: "breadth_state", values: ["weak_breadth", "divergent_fragile", "narrowing_breadth"]}
+    tightening_specialist:
+      all_of:
+        - {axis: "monetary_pressure", values: ["tightening_pressure", "rate_shock"]}
+    easing_specialist:
+      all_of:
+        - {axis: "monetary_pressure", values: ["easing_pressure"]}
+    recovery_specialist:
+      all_of:
+        - {axis: "trend_direction", values: ["recovery"]}
+    chop_mean_reversion_specialist:
+      all_of:
+        - {axis: "trend_character", values: ["range_bound"]}
+        - {axis: "volatility_state", values: ["normal_vol", "low_vol"]}
+    bull_low_vol_specialist:
+      all_of:
+        - {axis: "trend_direction", values: ["bull"]}
+        - {axis: "volatility_state", values: ["low_vol", "normal_vol"]}
+  blocked_cohorts:
+    crisis_specialist:       ["short_vol", "leveraged_long", "breakout"]
+    euphoria_specialist:     ["mean_reversion"]
+    bear_stress_specialist:  ["short_vol", "breakout", "leveraged_long"]
+    tightening_specialist:   []
+    easing_specialist:       []
+    recovery_specialist:     ["short_vol"]
+    chop_mean_reversion_specialist: ["trend_following", "breakout"]
+    bull_low_vol_specialist: []
+    default_neutral:         []

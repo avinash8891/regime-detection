@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from regime_detection.axis_series import build_axis_series_bundle
+from regime_detection.cohort_routing import evaluate_cohort_routing
 from regime_detection.config import RegimeConfig
 from regime_detection.feature_store import build_feature_store
 from regime_detection.market_context import MarketContext, slice_context_to_recent_sessions
@@ -125,6 +126,7 @@ def build_regime_timeline(
     # config / volume seam is absent — preserves V1 byte-identity since
     # RegimeOutput.volume_liquidity_state already defaults to None.
     volume_liquidity_by_date = axis_bundle.volume_liquidity_state
+    cohort_routing_config = working_context.config.cohort_routing
     monetary_pressure = MonetaryPressureOutput(
         label="unknown",
         evidence={"reason": "v2_classifier_not_yet_implemented"},
@@ -145,6 +147,19 @@ def build_regime_timeline(
             if volume_liquidity_by_date is not None
             else None
         )
+        agent_routing = None
+        if cohort_routing_config is not None:
+            # v2 §2A monetary_pressure classifier not yet shipped (Ambiguity Log #43).
+            monetary_label: str | None = None
+            agent_routing = evaluate_cohort_routing(
+                trend_direction_active=trend_direction_output.active_label,
+                trend_character_active=trend_character_output.active_label,
+                volatility_state_active=volatility_output.active_label,
+                breadth_state_active=breadth_output.active_label,
+                network_fragility_active=network_fragility_output.active_label,
+                monetary_pressure_active=monetary_label,
+                config=cohort_routing_config,
+            )
         outputs.append(
             RegimeOutput(
                 engine_version=engine_version(),
@@ -170,6 +185,7 @@ def build_regime_timeline(
                     event_calendar_active=event_output.active_label,
                 ),
                 volume_liquidity_state=volume_liquidity_output,
+                agent_routing=agent_routing,
             )
         )
 

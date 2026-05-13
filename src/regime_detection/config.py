@@ -523,10 +523,44 @@ class NoFlipFlopConfig(BaseModel):
     window_trading_days: int = Field(ge=0)
 
 
-class StrategyCohortConfig(BaseModel):
-    """Strategy cohort configuration (v2 spec §5.1). Stub."""
+class CohortRoutingRulePredicate(BaseModel):
+    """v2 §5.1 single-axis predicate (member-match against active label)."""
 
     model_config = ConfigDict(extra="forbid")
+
+    axis: Literal[
+        "network_fragility",
+        "volatility_state",
+        "trend_direction",
+        "breadth_state",
+        "monetary_pressure",
+        "trend_character",
+    ]
+    values: list[str]
+
+
+class CohortRoutingRule(BaseModel):
+    """v2 §5.1 cohort routing rule.
+
+    `any_of` predicates form an OR-match group; `all_of` predicates form an
+    AND-match group. A rule fires when each non-empty group matches per its
+    own quantifier. An empty rule (both lists empty) never fires —
+    default_neutral is handled by the walker as the universal fallback.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    any_of: list[CohortRoutingRulePredicate] = Field(default_factory=list)
+    all_of: list[CohortRoutingRulePredicate] = Field(default_factory=list)
+
+
+class CohortRoutingConfig(BaseModel):
+    """v2 §5.1 Agent Cohort Routing configuration (Slice 5.1)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    routing_rules: dict[str, CohortRoutingRule]
+    blocked_cohorts: dict[str, list[str]]
 
 
 class StrategyFamilyConstraintsConfig(BaseModel):
@@ -565,7 +599,7 @@ class RegimeConfig(BaseModel):
     hmm: HMMConfig | None = None
     vol_crush: VolCrushConfig | None = None
     no_flip_flop: NoFlipFlopConfig | None = None
-    strategy_cohort: StrategyCohortConfig | None = None
+    cohort_routing: CohortRoutingConfig | None = None  # v2 §5.1 (slice 5.1)
     strategy_family_constraints: StrategyFamilyConstraintsConfig | None = None
 
 

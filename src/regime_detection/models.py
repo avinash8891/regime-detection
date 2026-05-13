@@ -218,6 +218,16 @@ class StrategyResponse(BaseModel):
         return super().model_dump_json(*args, **kwargs)
 
 
+class AgentRouting(BaseModel):
+    """v2 §5.1 Agent Cohort Routing output (Slice 5.1)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    active_cohort: str
+    fallback_cohort: str
+    blocked_cohorts: list[str]
+
+
 class RegimeOutput(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -241,6 +251,7 @@ class RegimeOutput(BaseModel):
     credit_funding_state: CreditFundingOutput | None = None  # v2 §2C (slice 4)
     volume_liquidity_state: VolumeLiquidityStateOutput | None = None  # v2 §1E (slice 2.7)
     change_point: ChangePointOutput | None = None  # v2 §4.6 (V2.1)
+    agent_routing: "AgentRouting | None" = None  # v2 §5.1 (slice 5.1)
 
     # V1 wire contract: omit any None-valued conditional fields in nested models.
     # This must be applied at the top-level dump to propagate into nested models.

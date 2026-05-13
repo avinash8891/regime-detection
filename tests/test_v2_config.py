@@ -235,7 +235,7 @@ def test_v1_yaml_still_loads_with_v1_config_version() -> None:
     assert cfg.hmm is None
     assert cfg.vol_crush is None
     assert cfg.no_flip_flop is None
-    assert cfg.strategy_cohort is None
+    assert cfg.cohort_routing is None
     assert cfg.strategy_family_constraints is None
 
 
