@@ -1266,6 +1266,141 @@ the slice/commit that resolved it. Entries are append-only.
 
     Resolved by spec-amendment commit (this doc-only change).
 
+48. **§2B Inflation/Growth — scaffolding + operational pins.**
+
+    Applies the §2A template to §2B. The original §2B spec listed an
+    8-label set with precedence and a 7-feature / 7-rule schema, but
+    every rule had prose-level predicates (e.g., "yields rising",
+    "equities weak", "CPI 6m trend stable or falling") and the spec
+    was missing every scaffolding element below the rule block.
+
+    Pinned in §2B:
+    - **Risk rank** `{goldilocks: 0, recovery_growth: 0,
+      earnings_expansion: 0, unknown: 1, disinflation: 1,
+      earnings_contraction: 2, recession_scare: 3, inflation_shock: 3}`.
+      Pattern matches §3.6 / §1E / §2A.
+    - **Hysteresis** per-label asymmetric days
+      `{inflation_shock: 5, recession_scare: 5, earnings_contraction: 3,
+      disinflation: 3, goldilocks/recovery_growth/earnings_expansion: 0,
+      unknown: 2}`, `default_deescalation_days: 0`. Pattern matches §3.7
+      / §2A.
+    - **Unknown gate** — staleness-based (`cpi > 60d`, `pmi > 45d`,
+      `dgs10 > 5 sessions`) plus `assess_series_input_quality`.
+    - **Feature formulas** — operational definitions for
+      `cpi_3m_change_pct`, `cpi_6m_change_pct`, `pmi_manufacturing` +
+      `pmi_manufacturing_slope_21d`, `commodity_return_63d` (with DBC
+      ETF substitute for Bloomberg Commodity Index — bias-warning per
+      §1D PIT-source precedent), `treasury_10y_yield_slope_21d`,
+      `cyclical_defensive_ratio` + `cyclical_defensive_slope_21d`.
+    - **Rule predicate operational forms** — "stable" pinned to
+      `|cpi_6m_change_pct[t] - cpi_6m_change_pct[t-21]| <= 0.005`
+      (< 50bps drift over 21d); "PMI > 50" disambiguated as
+      manufacturing-PMI > 50; "equities rising/weak/falling" pinned
+      to `spy_21d_return` thresholds (`>0` / `<-0.05` / `<0`);
+      "yields rising/falling" pinned to `dgs10` 21d OLS slope sign;
+      `inflation_shock`'s AND/OR grouping resolved as
+      `(surprise > +1.5σ) OR (composite shock signature)`.
+    - **Deferred features** with documented short-circuit behavior:
+      `inflation_surprise_zscore` (BLS consensus-vs-actual feed not
+      ingested) and `aggregate_forward_eps_revision_direction_4w`
+      (workbook snapshots only, no weekly time series per
+      market_data_fetch_plan.md line 88). Both short-circuit to `False`
+      until the data feeds land. The `inflation_shock` composite-shock
+      limb remains active without the surprise input.
+    - **Cross-axis short-circuit** — rules referencing
+      `credit_funding.active_label` (§2C) short-circuit their cross-axis
+      predicate to `False` until §2C ships, mirroring slice-1.3's
+      systemic_stress / credit_funding=None pattern.
+
+    Resolved by spec-amendment commit (this doc-only change). The §2B
+    axis classifier can be dispatched as a TDD slice with the cross-axis
+    short-circuit in place ahead of §2C.
+
+49. **§2C Credit/Funding — scaffolding + operational pins.**
+
+    Applies the §2A template to §2C. Same pattern as #48: §2C had
+    6-label set + precedence + 5-rule schema but missing every
+    scaffolding element and every operational form for "rising /
+    widening / weak / falling" predicates.
+
+    Pinned in §2C:
+    - **Risk rank** `{credit_calm: 0, unknown: 1, spread_widening: 1,
+      credit_stress: 2, funding_squeeze: 3, deleveraging: 4}`. The
+      `deleveraging: 4` slot is the only V2 axis label with risk-rank
+      above 3, reflecting that the rule fires only when five
+      cross-axis stress signals coincide (§1C / §2A / §2C / §3) —
+      strictly more selective than any single-axis high-risk label.
+    - **Hysteresis** `{deleveraging: 5, funding_squeeze: 5,
+      credit_stress: 3, spread_widening: 3, credit_calm: 0,
+      unknown: 2}`, `default_deescalation_days: 0`. Pattern matches
+      §3.7 / §2A / §2B.
+    - **Unknown gate** — staleness-based on HYG/LQD/TLT (> 5
+      sessions), NFCI (> 14 days = 2× weekly cycle), SOFR/IORB
+      missing, or `assess_series_input_quality` failure.
+    - **Treasury-spread proxy** — true OAS feeds (ICE BofA H0A0 /
+      C0A0) not ingested; §2C uses
+      `hy_spread_proxy = tlt_total_return_63d - hyg_total_return_63d`
+      and `ig_spread_proxy = tlt_total_return_63d - lqd_total_return_63d`
+      with sign convention "rising proxy = spread widening."
+      Total-return differentials are direction-only (not absolute bps),
+      but every §2C rule consumes either `percentile_504d` or
+      `slope_21d` of the proxy — both scale-invariant — so the proxy
+      survives every rule predicate. Bias-warning row must be emitted
+      by the §2C classifier output (analogous to §1D PIT-constituent
+      bias warning). Vendor upgrade (ICE BofA OAS feed) noted as
+      TODO; replacement will swap the proxy formula in
+      `compute_credit_funding_features` without changing the rule
+      schema.
+    - **Rule predicate operational forms** — "non-rising" =
+      `slope_21d <= 0`; "rising over 21d" = `slope_21d > 0`;
+      "equities falling" = `spy_21d_return < -0.05`; "risk assets
+      falling" = `spy_21d_return < 0`; "SOFR-IORB widening" =
+      `sofr_iorb_slope_21d > 0`; "bonds weak or unstable" =
+      `tlt_21d_return < 0`; "USD rising" = `broad_usd_index_zscore_21d > 0`;
+      "volatility up" = `realized_vol_21d_percentile_252d > 0.75`;
+      "avg_pairwise_corr rising (Layer 3)" =
+      `avg_pairwise_corr_percentile_504d > 0.75`.
+    - **§2A formula reuse** — `broad_usd_index_zscore_21d` is the same
+      template as §2A line 1088, with change-window = 21 days instead
+      of 63. Both z-scores share the 5y normalizer-on-changes contract.
+
+    Resolved by spec-amendment commit (this doc-only change). The §2C
+    axis classifier can be dispatched as a TDD slice with the proxy
+    bias warning surfaced through `data_quality.evidence`.
+
+50. **§2D Event Calendar V2 — operational pins + §4.2 score expansion.**
+
+    Pinned in §2D and §4.2:
+    - `election_window` default = `[-5, +10]` trading days (matches
+      the §2D YAML example at the section's end; overridable per-event
+      via `window_days` in the event row).
+    - `global_rate_decision` source = operator-maintained YAML for
+      BOE / ECB / BOJ scheduled meetings (analogous to V1 FOMC
+      pre-2021 pre-fetch path).
+    - `budget_week` = manual YAML flag (US has no fixed federal
+      budget date; tied to operator-defined fiscal events).
+    - `geopolitical_event` = manual YAML flag (war, sanctions,
+      terrorism) — already pinned in §2D source text.
+    - **§4.2 `macro_event_score` expansion** — set extended from
+      `{fed_week, cpi_week, nfp_week}` to also include
+      `{budget_week, election_window, global_rate_decision}`.
+      Geopolitical events are explicitly excluded from the routine
+      score because their impact manifests through cross-axis labels
+      (`correlation_to_one`, `deleveraging`, `crisis_vol`) rather
+      than scheduled-event scoring; including them would double-count.
+
+    The §4.2 set expansion is the only score-impacting change in this
+    amendment — `macro_event_score` will fire more often under V2
+    (e.g., on ECB / BOE rate decision weeks that previously scored
+    0.0). This raises the transition_score's sensitivity to
+    international monetary events correctly; the §4.4 score
+    interpretation bands (0.35 / 0.55 / 0.75 thresholds) absorb this
+    change without modification.
+
+    Resolved by spec-amendment commit (this doc-only change). §2D
+    additions wire into the existing v1 event_calendar infrastructure
+    without classifier work.
+
 ---
 
 ## 2. Layer 2 V2 — Full Structural-Causal State
@@ -1407,64 +1542,134 @@ unknown
 inflation_shock > recession_scare > disinflation > goldilocks > recovery_growth > earnings_contraction > earnings_expansion > unknown
 ```
 
-#### Features
-- CPI trend (3m and 6m rate of change)
-- Inflation surprise (actual vs consensus, from BLS calendar)
-- PMI trend (ISM Manufacturing + Services)
-- Aggregate forward EPS revision direction (4w change in 12m forward EPS estimate)
-- Commodity returns (Bloomberg Commodity Index 63d return)
-- Bond yield trend (10y yield 63d direction)
-- Cyclical vs defensive relative strength: `(XLY + XLI) / (XLP + XLU)` ratio, 63d slope
+#### Features (operational definitions)
 
-#### Rules
+```python
+# CPI trend — trailing-3m / trailing-6m inflation rates (not annualized; matches BLS convention)
+cpi_3m_change_pct = (cpi[t] - cpi[t - 3_months]) / cpi[t - 3_months]
+cpi_6m_change_pct = (cpi[t] - cpi[t - 6_months]) / cpi[t - 6_months]
 
-`goldilocks`:
-```text
-CPI 6m trend stable or falling
-AND PMI > 50
-AND equities rising
-AND credit calm (links Layer 2C)
+# Inflation surprise — z-score of actual-vs-consensus on BLS release dates.
+#   inflation_surprise_zscore = (actual_release - consensus_estimate) / std_of_surprise_history_5y
+# DEFERRED: requires consensus-vs-actual feed (not yet ingested). See Ambiguity Log #48
+# for the short-circuit behavior used by `inflation_shock` until the feed lands.
+
+# PMI — ISM Manufacturing PMI is the primary signal. ISM Services is a separate
+# input only when both are available. "PMI > 50" in rule predicates refers to the
+# manufacturing index.
+pmi_manufacturing = ism_manufacturing_pmi[t]
+pmi_manufacturing_slope_21d = ols_slope(pmi_manufacturing, window=21)
+
+# Aggregate forward EPS revision direction
+#   revision_4w = (forward_eps[t] - forward_eps[t - 4_weeks]) / forward_eps[t - 4_weeks]
+# DEFERRED: workbook snapshot path does not expose weekly time series (data plan
+# line 88). Until weekly EPS data lands, `earnings_expansion` / `earnings_contraction`
+# short-circuit to False — see Ambiguity Log #48.
+
+# Commodity returns — DBC ETF substitute for Bloomberg Commodity Index (paid feed
+# unavailable). Documented as proxy with bias-warning (same precedent as §1D PIT
+# constituent CSV).
+commodity_return_63d = (dbc_close[t] / dbc_close[t - 63]) - 1
+
+# Bond yield trend — DGS10 from FRED (slice 4.1 already loads this)
+treasury_10y_yield_slope_21d = ols_slope(dgs10, window=21)
+
+# Cyclical vs defensive relative strength — close-price ratio + 21d OLS slope
+cyclical_defensive_ratio = (xly_close + xli_close) / (xlp_close + xlu_close)
+cyclical_defensive_slope_21d = ols_slope(cyclical_defensive_ratio, window=21)
 ```
 
-`inflation_shock`:
+#### Rules (operational definitions)
+
 ```text
-inflation_surprise positive AND large
-OR commodity_return_63d > 0.15
-AND yields rising
-AND equities AND bonds both weak
+goldilocks:
+  (abs(cpi_6m_change_pct[t] - cpi_6m_change_pct[t-21]) <= 0.005      # "stable" = <50bps drift over 21d
+   OR cpi_6m_change_pct 21d slope <= 0)                              # OR "falling"
+  AND pmi_manufacturing > 50
+  AND spy_21d_return > 0                                             # "equities rising"
+  AND credit_funding.active_label == "credit_calm"                   # cross-ref §2C
+
+inflation_shock:
+  (inflation_surprise_zscore > +1.5)                                  # "positive AND large"
+  OR (commodity_return_63d > 0.15
+      AND treasury_10y_yield_slope_21d > 0
+      AND spy_21d_return < 0
+      AND tlt_21d_return < 0)                                         # "equities AND bonds both weak"
+
+disinflation:
+  cpi_6m_change_pct 21d slope < 0
+  AND treasury_10y_yield_slope_21d < 0
+  AND pmi_manufacturing > 45
+
+recession_scare:
+  treasury_10y_yield_slope_21d < 0
+  AND cyclical_defensive_slope_21d < 0
+  AND credit_funding.active_label in {spread_widening, credit_stress}
+  AND spy_21d_return < -0.05                                          # "equities weak"
+
+recovery_growth:
+  pmi_manufacturing_slope_21d > 0 AND pmi_manufacturing > 50
+  AND cyclical_defensive_slope_21d > 0
+  AND credit_funding.active_label == "credit_calm"
+
+earnings_expansion:
+  aggregate_forward_eps_revision_direction_4w > +0.02
+  # short-circuit to False until weekly EPS revision time series ships
+
+earnings_contraction:
+  aggregate_forward_eps_revision_direction_4w < -0.02
+  # short-circuit to False until weekly EPS revision time series ships
 ```
 
-`disinflation`:
-```text
-CPI 6m trend falling
-AND yields falling
-AND PMI > 45
+#### Risk Rank
+
+```yaml
+inflation_growth_risk_rank:
+  goldilocks: 0
+  recovery_growth: 0
+  earnings_expansion: 0
+  unknown: 1
+  disinflation: 1
+  earnings_contraction: 2
+  recession_scare: 3
+  inflation_shock: 3
 ```
 
-`recession_scare`:
-```text
-yields falling
-AND cyclical_vs_defensive_slope < 0
-AND credit spreads widening (Layer 2C)
-AND equities weak
+Pattern matches §3.6 / §1E / §2A: benign states at 0, mild/unknown at 1, medium severity at 2, high-risk states at 3.
+
+#### Hysteresis
+
+Per-label asymmetric de-escalation, analogous to §3.7 / §2A:
+
+```yaml
+inflation_growth:
+  deescalation_days_by_label:
+    inflation_shock: 5             # high-risk hold
+    recession_scare: 5
+    earnings_contraction: 3
+    disinflation: 3
+    goldilocks: 0
+    recovery_growth: 0
+    earnings_expansion: 0
+    unknown: 2                     # match slice 2.7 / §2A unknown hold
+  default_deescalation_days: 0
 ```
 
-`recovery_growth`:
-```text
-PMI rising AND > 50
-AND cyclical_vs_defensive_slope > 0
-AND credit spreads narrowing
-```
+#### Unknown Gate
 
-`earnings_expansion`:
-```text
-aggregate_forward_eps_revision_direction_4w > +0.02
-```
+`unknown` is forced when:
+- CPI series stale > 60 days (2× monthly release cycle)
+- PMI series stale > 45 days (1.5× monthly release cycle)
+- DGS10 stale > 5 sessions
+- `assess_series_input_quality` fails on any required series
 
-`earnings_contraction`:
-```text
-aggregate_forward_eps_revision_direction_4w < -0.02
-```
+#### Cross-Axis Short-Circuit
+
+Rules referencing `credit_funding.active_label` (`goldilocks`, `recession_scare`, `recovery_growth`) short-circuit the cross-axis predicate to `False` when the §2C axis is unbuilt (slice-4 deferral). Precedence walker then falls through to the next-rank rule. Mirrors slice 1.3's systemic_stress / credit_funding=None pattern (Ambiguity Log #1.3 inline TODO).
+
+`earnings_expansion` / `earnings_contraction` short-circuit to `False` until the weekly aggregate forward EPS revision direction time series ships (currently snapshot-only per market_data_fetch_plan.md line 88).
+
+`inflation_shock`'s single-signal limb (`inflation_surprise_zscore > +1.5`) short-circuits to `False` until the BLS consensus-vs-actual feed is ingested. The composite-shock limb remains active.
 
 ---
 
@@ -1485,59 +1690,125 @@ unknown
 deleveraging > funding_squeeze > credit_stress > spread_widening > credit_calm > unknown
 ```
 
-#### Features
-- Investment grade credit spread (LQD vs Treasury proxy if no direct ICE BAML feed)
-- High yield credit spread (HYG vs Treasury proxy if no direct OAS feed)
-- Bank index relative strength: `KRE / SPY` 63d slope
-- Financial Conditions Index (Chicago Fed NFCI weekly release)
-- Broad dollar index (`broad_usd_index`, FRED `DTWEXBGS`)
-- Short-rate funding stress: SOFR-IORB spread
+#### Features (operational definitions)
 
-#### Rules
+True OAS feeds (ICE BofA H0A0 / C0A0) are not ingested. §2C uses
+total-return-differential proxies on the available ETFs (HYG, LQD, TLT)
+and the FRED short-rate series (SOFR, IORB, NFCI). Documented as proxy,
+not as absolute spread level — the §2C rules only consume percentile and
+slope of these series, both of which are scale-invariant, so the proxy
+survives every rule predicate. Vendor upgrade noted as a TODO in code.
 
-`credit_calm`:
-```text
-HY_spread_percentile_504d < 0.50
-AND HY_spread 21d trend non-rising
+```python
+# Total-return series for HY, IG, Treasury proxies (close-to-close cumulative)
+#   sign convention: rising proxy = spread widening (Treasury outperforming HY/IG)
+hy_spread_proxy_63d = tlt_total_return_63d - hyg_total_return_63d
+ig_spread_proxy_63d = tlt_total_return_63d - lqd_total_return_63d
+
+# Percentile rank (504d window, mirrors §3.2 / §1E percentile convention)
+hy_spread_proxy_percentile_504d = rolling(hy_spread_proxy_63d, window=504).rank(pct=True)
+
+# Slope (21d OLS, mirrors §2A / §2B slope convention)
+hy_spread_proxy_slope_21d = ols_slope(hy_spread_proxy_63d, window=21)
+ig_spread_proxy_slope_21d = ols_slope(ig_spread_proxy_63d, window=21)
+
+# Bank index relative strength
+kre_spy_ratio       = kre_close / spy_close
+kre_spy_slope_63d   = ols_slope(kre_spy_ratio, window=63)
+
+# Chicago Fed NFCI — weekly release; carry forward to daily via last-known-value
+nfci_weekly_carried = forward_fill(nfci_weekly, to_daily=True)
+
+# Broad dollar index — reuses §2A z-score; explicit 21d-change variant
+broad_usd_index_zscore_21d = (
+    broad_usd_index_change_21d - mean_5y_of_level_changes_21d
+) / std_5y_of_level_changes_21d
+# (Same template as §2A line 1088, change-window = 21 days instead of 63.)
+
+# Short-rate funding stress
+sofr_iorb_spread       = sofr - iorb              # both FRED series, done-live-verified
+sofr_iorb_slope_21d    = ols_slope(sofr_iorb_spread, window=21)
 ```
 
-`spread_widening`:
+#### Rules (operational definitions)
+
 ```text
-HY_spread rising over 21d
-AND IG_spread rising over 21d
+credit_calm:
+  hy_spread_proxy_percentile_504d < 0.50
+  AND hy_spread_proxy_slope_21d <= 0                # "non-rising" = non-positive slope
+
+spread_widening:
+  hy_spread_proxy_slope_21d > 0
+  AND ig_spread_proxy_slope_21d > 0                 # strict rising on BOTH HY and IG
+
+credit_stress:
+  hy_spread_proxy_percentile_504d > 0.80
+  AND spy_21d_return < -0.05                        # "equities falling" = >5% drop over 21d
+
+funding_squeeze:
+  broad_usd_index_zscore_21d > +1.5                 # reuses §2A formula
+  AND sofr_iorb_slope_21d > 0                       # "SOFR-IORB widening" = strictly positive
+  AND spy_21d_return < 0                            # "risk assets falling"
+
+deleveraging:                                       # 5-condition composite
+  spy_21d_return < -0.05                            # equities down
+  AND tlt_21d_return < 0                            # bonds weak or unstable
+  AND broad_usd_index_zscore_21d > 0                # USD rising
+  AND realized_vol_21d_percentile_252d > 0.75       # volatility up
+  AND avg_pairwise_corr_percentile_504d > 0.75      # Layer 3 cross-ref
 ```
 
-`credit_stress`:
-```text
-HY_spread_percentile_504d > 0.80
-AND equities falling
+#### Risk Rank
+
+```yaml
+credit_funding_risk_rank:
+  credit_calm: 0
+  unknown: 1
+  spread_widening: 1
+  credit_stress: 2
+  funding_squeeze: 3
+  deleveraging: 4         # most severe — multi-system composite collapse signal
 ```
 
-`funding_squeeze`:
-```text
-broad_usd_index_zscore_21d > +1.5
-AND SOFR-IORB spread widening
-AND risk assets falling
+The `deleveraging: 4` slot is the only V2 axis label with risk-rank above 3 — reflects that the rule fires only when five distinct stress signals coincide across §1C / §2A / §2C / §3, making it strictly more selective than any single-axis high-risk label.
+
+#### Hysteresis
+
+Per-label asymmetric de-escalation, analogous to §3.7 / §2A / §2B:
+
+```yaml
+credit_funding:
+  deescalation_days_by_label:
+    deleveraging: 5            # most severe — long hold
+    funding_squeeze: 5
+    credit_stress: 3
+    spread_widening: 3
+    credit_calm: 0
+    unknown: 2
+  default_deescalation_days: 0
 ```
 
-`deleveraging`:
-```text
-equities down
-AND bonds weak or unstable
-AND broad_usd_index rising
-AND volatility up
-AND avg_pairwise_corr rising (Layer 3 V2)
-```
+#### Unknown Gate
+
+`unknown` is forced when:
+- HYG / LQD / TLT stale > 5 sessions
+- NFCI stale > 14 days (2× weekly release cycle)
+- SOFR or IORB missing
+- `assess_series_input_quality` fails on any required series
+
+#### Proxy Bias Warning
+
+The `hy_spread_proxy_63d` / `ig_spread_proxy_63d` are total-return differentials, not yield-curve spreads. They preserve *direction* of spread changes (rising = widening) but **cannot be read as bps-level absolutes**. Slice that consumes them MUST stick to percentile / slope predicates and MUST emit a bias-warning row in any feature-store output (same pattern as §1D PIT-constituent bias warning). A future spec-amendment slice will replace these with direct OAS feeds (ICE BofA H0A0 / C0A0) when vendor sourcing is approved.
 
 ---
 
 ### 2D. Event Calendar V2
 
 Add labels to V1's calendar:
-- `budget_week` (relevant for India when extended)
-- `election_window` (configurable window around major election/budget result)
-- `geopolitical_event` (manual flag in YAML for war, sanctions, terrorism)
-- `global_rate_decision` (BOE, ECB, BOJ — relevant for US cross-asset moves)
+- `budget_week` — manual YAML flag (relevant for India when extended; US has no fixed federal budget date, so tied to operator-defined fiscal events)
+- `election_window` — default trading-day window `[-5, +10]` around the result date (matches the §2D YAML example below); configurable via `window_days` in the event row
+- `geopolitical_event` — manual YAML flag (war, sanctions, terrorism)
+- `global_rate_decision` — manual YAML for BOE / ECB / BOJ scheduled meetings; operator maintains the calendar (analogous to V1 FOMC pre-2021 pre-fetch path)
 
 YAML schema extension:
 ```yaml
@@ -1779,8 +2050,14 @@ score = clip(-distance_from_high / 0.15, 0, 1)  # 0 at top, 1 at -15%
 
 `macro_event_score`:
 ```python
-score = 1.0 if event_calendar.label in ["fed_week", "cpi_week", "nfp_week"] else 0.0
+score = 1.0 if event_calendar.label in [
+    "fed_week", "cpi_week", "nfp_week",
+    # V2 §2D additions:
+    "budget_week", "election_window", "global_rate_decision",
+] else 0.0
 ```
+
+`geopolitical_event` is treated separately (high-impact ad-hoc — not part of the routine `macro_event_score`; expected to manifest through `correlation_to_one` / `deleveraging` / `crisis_vol` labels rather than through scheduled-event scoring).
 
 `hmm_probability_shift_score`:
 ```python
