@@ -12,6 +12,19 @@ import pandas as pd
 from regime_data_fetch.acquisition_store import AcquisitionStore
 
 
+# Community-maintained S&P 500 ticker-membership CSV on GitHub. This is an
+# APPROXIMATION of point-in-time S&P 500 membership and is the best free source
+# we have today: it may miss short-lived additions/removals, delisted tickers
+# whose symbols got reused, and ticker/name changes around mergers. The
+# `BIAS_WARNING` row tag is propagated downstream so consumers can decide
+# whether to trust it.
+#
+# TODO: replace with a true point-in-time vendor feed (CRSP / Compustat /
+# FactSet / Norgate) when sourcing is approved. The expected vendor format
+# matches the same ticker / start_date / end_date interval shape, so the
+# parquet schema does not need to change — only `SOURCE_URL`, `SOURCE_NAME`,
+# and the `BIAS_WARNING` value (which should become e.g. `"none"` or be
+# removed entirely).
 SOURCE_URL = "https://raw.githubusercontent.com/fja05680/sp500/master/sp500_ticker_start_end.csv"
 SOURCE_NAME = "fja05680/sp500"
 BIAS_WARNING = "survivorship_biased_constituent_universe"

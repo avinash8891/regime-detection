@@ -87,17 +87,24 @@ Two new V2 character labels: `breakout_expansion`, `range_bound`.
 close breaks 20d or 50d range
 AND Bollinger band width expanding
 AND volume > 20d average
-AND followthrough_rate >= configured threshold
+AND followthrough_rate >= 0.60
 ```
 
-`followthrough_rate` definition (must be specified before implementation): of the last N=20 breakouts, the fraction where close held above breakout level for 5+ trading days.
+`followthrough_rate` definition: of the last N=20 breakouts in the trailing window, the fraction where close held above the breakout level for 5+ trading days post-break. The 0.60 threshold pins the rule per breakout-quality literature (Zweig-style breadth-thrust convention) and is symmetric with §1D `nh_nl_ratio < 0.4`.
 
 `range_bound`:
 ```text
 abs(return_63d) < 0.05
-AND price oscillates inside 20d range
+AND range_ratio_20d < 0.05
 AND ADX_14 < 20
 ```
+
+`range_ratio_20d` definition:
+```python
+range_ratio_20d = (max(close[t-19..t]) - min(close[t-19..t])) / mean(close[t-19..t])
+```
+
+The 5% peak-to-trough span over the 20d window is symmetric with the existing `abs(return_63d) < 0.05` clause in the same rule and is fully derivable from close prices.
 
 #### Trend Slope Strength
 
@@ -1067,6 +1074,92 @@ the slice/commit that resolved it. Entries are append-only.
 
     Resolved by Slice 4.1.
 
+46. **Spec amendment cycle — §1A line 90, §1A line 98, and §2A
+    scaffolding (slice-1 of the spec-amendment work).**
+
+    Three previously-deferred ambiguities were amended directly in the
+    spec via the rewrite-existing-lines rule (Path A from the
+    spec-amendment audit):
+
+    - **§1A line 90 `followthrough_rate` threshold** (was entry #33,
+      `breakout_expansion` deferral). Threshold pinned to `0.60`
+      directly in the rule and the definition rewritten to be
+      self-contained. Rationale: symmetric with §1D
+      `nh_nl_ratio < 0.4` (i.e., `1 - 0.6`); conventional in
+      breakout-quality literature (Zweig-style; O'Neil-style screens
+      use the same neighborhood). Entry #33 is now resolvable: the
+      `breakout_expansion` label is no longer blocked on this
+      ambiguity. The remaining blocker for `breakout_expansion` is
+      that the rule references an `bollinger_band_width_expanding`
+      predicate whose operational definition is still implicit — to
+      be pinned in the upcoming `breakout_expansion` label slice.
+
+    - **§1A line 98 `range_bound` "oscillates inside 20d range"** (was
+      entry #34). Replaced with `range_ratio_20d < 0.05` where
+      `range_ratio_20d = (max(close[t-19..t]) - min(close[t-19..t])) /
+      mean(close[t-19..t])`. Rationale: symmetric with the existing
+      `abs(return_63d) < 0.05` clause in the same rule; close-prices
+      only; fully derivable from existing inputs. Entry #34 is now
+      resolved: the `range_bound` label is unblocked.
+
+    - **§2A monetary scaffolding** (was entry #44 and addressed for
+      one formula by entry #45). All five missing scaffolding
+      elements pinned in §2A:
+      (a) **Three missing feature formulas** — `broad_usd_index_zscore_63d`,
+          `yield_change_zscore_21d_2y`, `yield_change_zscore_21d_10y`
+          — added as mechanical generalizations of the line-896
+          template `(change - mean_5y_of_changes) / std_5y_of_changes`.
+          The 5y normalizer's window length (1260 trading days) is
+          held constant; only the change-window length (63d vs 21d)
+          and the input series (DGS2 / DGS10 / DTWEXBGS) vary. The
+          line-1088 formula is also rewritten to be explicit that
+          mean/std are computed over the change series, NOT the
+          level series (slice 4.1 already implemented it this way;
+          the rewrite removes ambiguity for future implementers).
+      (b) **Label set** `{tightening_pressure, easing_pressure,
+          rate_shock, neutral_monetary, unknown}`. The three rule
+          names from §2A lines 1093–1104 are kept verbatim
+          (`_pressure` suffix preserved per current spec text); a
+          `neutral_monetary` fallback is added (no rule fired) and
+          `unknown` for the data-quality gate. Pattern matches §1E
+          (3 rules + normal fallback + unknown) and §3.3
+          (named labels + unknown gate).
+      (c) **Precedence**
+          `rate_shock > tightening_pressure > easing_pressure >
+          neutral_monetary > unknown`. Pattern matches §3.4. Reasoning
+          documented inline: `rate_shock` (21d ±2σ) is a stronger
+          signal than `tightening_pressure` (63d ±1.5σ) and must
+          outrank when both fire; `tightening_pressure` and
+          `easing_pressure` are opposite-sign predicates on the same
+          metric and cannot co-fire (their order is for log
+          readability).
+      (d) **Risk rank**
+          `{neutral_monetary: 0, easing_pressure: 1, unknown: 1,
+          tightening_pressure: 2, rate_shock: 3}`. Pattern matches
+          §3.6 and §1E lines 288–294. The
+          `easing_pressure < tightening_pressure` asymmetry follows
+          §3.6's "severity-of-defensive-action-required" convention,
+          not strict directional symmetry (network-fragility risk-rank
+          uses the same asymmetric convention).
+      (e) **Per-label asymmetric hysteresis**
+          `{rate_shock: 5, tightening_pressure: 3, easing_pressure: 2,
+          neutral_monetary: 0, unknown: 2}` with
+          `default_deescalation_days: 0`. Pattern matches §3.7
+          (5-day hold for high-risk labels, 3-day for medium) and
+          §1E (Ambiguity Log entry #41 for the volume axis).
+
+    Spec amendments are confined to existing-line rewrites within §1A
+    and §2A (no new sections added). Entries #33, #34, and #44 are
+    now structurally resolved at the spec level; the corresponding
+    code slices (label implementations for `breakout_expansion` and
+    `range_bound`; full §2A axis classifier on top of slice 4.1
+    features) can be dispatched as TDD slices without further spec
+    blockage.
+
+    Resolved by spec-amendment commit (this doc-only change). The
+    downstream code slices that consume these pins ship in
+    subsequent commits.
+
 ---
 
 ## 2. Layer 2 V2 — Full Structural-Causal State
@@ -1084,24 +1177,91 @@ V1's draft absolute bps thresholds were deferred because they are rate-era depen
 
 #### Rate-Era Recalibration
 
+Each z-score normalizer's *window length* is 5 trading years (1260 days). The *series being normalized* must match the metric's own change-window — the mean and std are computed over a rolling history of that metric's change series, NOT over the level series.
+
 ```python
-yield_change_zscore = (yield_change_63d - mean_5y) / std_5y
+# 63d-change z-scores (used by tightening_pressure / easing_pressure)
+yield_change_63d                = yield[t] - yield[t-63]
+yield_change_zscore             = (yield_change_63d - mean_5y_of_yield_changes_63d) / std_5y_of_yield_changes_63d
+
+# Applied to DGS2 → yield_change_zscore_2y_63d
+# Applied to DGS10 → yield_change_zscore_10y_63d
+
+broad_usd_index_change_63d      = level[t] - level[t-63]
+broad_usd_index_zscore_63d      = (broad_usd_index_change_63d - mean_5y_of_level_changes_63d) / std_5y_of_level_changes_63d
+
+# 21d-change z-scores (used by rate_shock)
+yield_change_21d                = yield[t] - yield[t-21]
+yield_change_zscore_21d         = (yield_change_21d - mean_5y_of_yield_changes_21d) / std_5y_of_yield_changes_21d
+
+# Applied to DGS2 → yield_change_zscore_21d_2y
+# Applied to DGS10 → yield_change_zscore_21d_10y
 ```
+
+Each formula reuses the same template (`(change - mean_5y_of_changes) / std_5y_of_changes`); only the change-window length (63d vs 21d) and the input series (DGS2 / DGS10 / DTWEXBGS) vary.
 
 Updated rules:
 ```text
 tightening_pressure:
-  yield_change_zscore_2y > +1.5
-  OR yield_change_zscore_10y > +1.5
+  yield_change_zscore_2y_63d > +1.5
+  OR yield_change_zscore_10y_63d > +1.5
   OR broad_usd_index_zscore_63d > +1.5
 
 easing_pressure:
-  yield_change_zscore_2y < -1.5
-  OR yield_change_zscore_10y < -1.5
+  yield_change_zscore_2y_63d < -1.5
+  OR yield_change_zscore_10y_63d < -1.5
 
 rate_shock:
   yield_change_zscore_21d_2y > +2.0
   OR yield_change_zscore_21d_10y > +2.0
+```
+
+#### Labels
+
+```text
+tightening_pressure
+easing_pressure
+rate_shock
+neutral_monetary
+unknown
+```
+
+`neutral_monetary` is the fallback when no rule fires. `unknown` is forced by the data-quality gate (cold-start or NaN inputs).
+
+#### Precedence
+
+```text
+rate_shock > tightening_pressure > easing_pressure > neutral_monetary > unknown
+```
+
+Reasoning: `rate_shock` (21d, ±2.0σ) is a stronger move than `tightening_pressure` (63d, ±1.5σ) and must outrank when both fire. `tightening_pressure` and `easing_pressure` are opposite-sign predicates on the same yield-change z-score and cannot co-fire; their relative order is for log readability only.
+
+#### Risk Rank
+
+```yaml
+monetary_pressure_risk_rank:
+  neutral_monetary: 0
+  easing_pressure: 1
+  unknown: 1
+  tightening_pressure: 2
+  rate_shock: 3
+```
+
+Matches the §3.6 / §1E convention: states that do not require defensive treatment are 0; severity rises with rank. The `easing_pressure / tightening_pressure` asymmetry reflects that — for downstream strategy responses — tightening is more constraining than easing.
+
+#### Hysteresis
+
+Per-label asymmetric de-escalation, analogous to §3.7 and §1E:
+
+```yaml
+monetary_pressure:
+  deescalation_days_by_label:
+    rate_shock: 5             # matches §3.7 systemic_stress / correlation_to_one
+    tightening_pressure: 3    # matches §3.7 rising_fragility / correlation_concentration
+    easing_pressure: 2
+    neutral_monetary: 0       # immediate de-escalation
+    unknown: 2                # matches slice 2.7 volume-axis unknown hold
+  default_deescalation_days: 0
 ```
 
 #### Central Bank Text / Sentiment
