@@ -119,6 +119,9 @@ def build_regime_timeline(
     credit_funding_config = (
         config.credit_funding if config is not None else None
     )
+    inflation_growth_config = (
+        config.inflation_growth if config is not None else None
+    )
     feature_store = build_feature_store(
         working_context,
         network_fragility_config=network_fragility_config,
@@ -128,6 +131,7 @@ def build_regime_timeline(
         volume_liquidity_v2_config=volume_liquidity_v2_config,
         monetary_pressure_v2_config=monetary_pressure_v2_config,
         credit_funding_config=credit_funding_config,
+        inflation_growth_config=inflation_growth_config,
     )
     axis_bundle = build_axis_series_bundle(context=working_context, feature_store=feature_store)
     transition_risk = build_transition_risk_series(
@@ -195,6 +199,10 @@ def build_regime_timeline(
     # v2 config / macro_series seam is absent — preserves V1 byte-identity
     # since RegimeOutput.monetary_pressure_state defaults to None.
     monetary_pressure_state_by_date = axis_bundle.monetary_pressure_state
+    # v2 §2B inflation/growth axis (Slice 5). Stays None when the v2 config /
+    # macro_series / cross_asset seams are absent — preserves V1 byte-identity
+    # since RegimeOutput.inflation_growth_state defaults to None.
+    inflation_growth_by_date = axis_bundle.inflation_growth
     cohort_routing_config = working_context.config.cohort_routing
     monetary_pressure = MonetaryPressureOutput(
         label="unknown",
@@ -224,6 +232,11 @@ def build_regime_timeline(
         monetary_pressure_output = (
             monetary_pressure_state_by_date.get(day)
             if monetary_pressure_state_by_date is not None
+            else None
+        )
+        inflation_growth_output = (
+            inflation_growth_by_date.get(day)
+            if inflation_growth_by_date is not None
             else None
         )
         change_point_output: ChangePointOutput | None = None
@@ -309,6 +322,7 @@ def build_regime_timeline(
                 ),
                 volume_liquidity_state=volume_liquidity_output,
                 credit_funding_state=credit_funding_output,
+                inflation_growth_state=inflation_growth_output,
                 monetary_pressure_state=monetary_pressure_output,
                 cluster=cluster_output,
                 change_point=change_point_output,

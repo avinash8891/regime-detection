@@ -15,6 +15,7 @@ from regime_detection.change_point import (
 from regime_detection.config import (
     BreadthV2Config,
     CreditFundingConfig,
+    InflationGrowthConfig,
     MonetaryPressureV2FeaturesConfig,
     NetworkFragilityConfig,
     TrendDirectionV2Config,
@@ -73,6 +74,21 @@ from regime_detection.monetary_pressure import (
     MonetaryPressureV2Features,
     compute_monetary_pressure_features,
 )
+from regime_detection.inflation_growth import (
+    CPI_KEY as _IG_CPI_KEY,
+    DBC_KEY as _IG_DBC_KEY,
+    DGS10_KEY as _IG_DGS10_KEY,
+    InflationGrowthFeatures,
+    PMI_KEY as _IG_PMI_KEY,
+    REQUIRED_CROSS_ASSET_KEYS as _IG_CROSS_ASSET_KEYS,
+    REQUIRED_MACRO_KEYS as _IG_MACRO_KEYS,
+    TLT_KEY as _IG_TLT_KEY,
+    XLI_KEY as _IG_XLI_KEY,
+    XLP_KEY as _IG_XLP_KEY,
+    XLU_KEY as _IG_XLU_KEY,
+    XLY_KEY as _IG_XLY_KEY,
+    compute_inflation_growth_features,
+)
 
 __all__ = [
     "BreadthV2Features",
@@ -81,6 +97,7 @@ __all__ = [
     "CreditFundingFeatures",
     "FeatureStore",
     "HMMFeatures",
+    "InflationGrowthFeatures",
     "MonetaryPressureV2Features",
     "NetworkFragilityFeatures",
     "TrendDirectionV2Features",
@@ -179,6 +196,13 @@ class FeatureStore(BaseModel):
     # to None and is omitted on the JSON wire via exclude_none=True).
     credit_funding: CreditFundingFeatures | None = None
 
+    # V2 §2B inflation/growth seam (Slice 5) — populated when an
+    # InflationGrowthConfig is threaded through AND cross_asset_closes carries
+    # DBC/TLT/XLY/XLI/XLP/XLU AND macro_series carries cpi_all_items /
+    # pmi_manufacturing / dgs10. Otherwise None — V1 byte-identity preserved
+    # because RegimeOutput.inflation_growth_state defaults to None.
+    inflation_growth: InflationGrowthFeatures | None = None
+
 
 def build_feature_store(
     context: MarketContext,
@@ -190,6 +214,7 @@ def build_feature_store(
     volume_liquidity_v2_config: VolumeLiquidityV2Config | None = None,
     monetary_pressure_v2_config: MonetaryPressureV2FeaturesConfig | None = None,
     credit_funding_config: CreditFundingConfig | None = None,
+    inflation_growth_config: InflationGrowthConfig | None = None,
 ) -> FeatureStore:
     spy_ohlcv = context.spy_ohlcv
     spy_close = spy_ohlcv["close"]
@@ -393,6 +418,33 @@ def build_feature_store(
             config=credit_funding_config.rules,
         )
 
+    # v2 §2B inflation/growth feature compute (Slice 5). Requires all 9
+    # spec-pinned input series: CPI/PMI/DGS10 on macro_series + DBC/TLT plus
+    # XLY/XLI/XLP/XLU on cross_asset_closes. When any input is absent OR the
+    # config is None, fall back to None — V1 byte-identity preserved on the
+    # inflation_growth_state wire field.
+    inflation_growth: InflationGrowthFeatures | None = None
+    if (
+        inflation_growth_config is not None
+        and context.cross_asset_closes is not None
+        and context.macro_series is not None
+        and all(k in context.cross_asset_closes for k in _IG_CROSS_ASSET_KEYS)
+        and all(k in context.macro_series for k in _IG_MACRO_KEYS)
+    ):
+        inflation_growth = compute_inflation_growth_features(
+            cpi_all_items=context.macro_series[_IG_CPI_KEY],
+            pmi_manufacturing=context.macro_series[_IG_PMI_KEY],
+            dgs10=context.macro_series[_IG_DGS10_KEY],
+            dbc_close=context.cross_asset_closes[_IG_DBC_KEY],
+            spy_close=spy_close,
+            tlt_close=context.cross_asset_closes[_IG_TLT_KEY],
+            xly_close=context.cross_asset_closes[_IG_XLY_KEY],
+            xli_close=context.cross_asset_closes[_IG_XLI_KEY],
+            xlp_close=context.cross_asset_closes[_IG_XLP_KEY],
+            xlu_close=context.cross_asset_closes[_IG_XLU_KEY],
+            config=inflation_growth_config.rules,
+        )
+
     # v2 §6.3 BOCPD change-point evidence layer (Slice 8). Observation
     # series is realized_vol_21d (Ambiguity Log #63) — derived from
     # SPY close on the V1 path, so the seam is only None when the config
@@ -423,4 +475,5 @@ def build_feature_store(
         clustering=clustering,
         change_point=change_point,
         credit_funding=credit_funding,
+        inflation_growth=inflation_growth,
     )

@@ -82,12 +82,34 @@ class MonetaryPressureOutput(BaseModel):
     data_quality: DataQuality
 
 
+InflationGrowthLabel = Literal[
+    "goldilocks",
+    "inflation_shock",
+    "disinflation",
+    "recession_scare",
+    "recovery_growth",
+    "earnings_expansion",
+    "earnings_contraction",
+    "unknown",
+]
+
+
 class InflationGrowthOutput(BaseModel):
-    """Inflation/growth state output (v2 spec §2B). Minimal until slice 5."""
+    """v2 §2B inflation/growth axis output (Slice 5).
+
+    Three-tier label triple (raw/stable/active) per the v2 axis pattern.
+    ``evidence`` carries the per-day rule inputs and the bias-warning code
+    (``commodity_proxy_dbc_substitute``) when applicable. The
+    ``earnings_expansion``/``earnings_contraction`` labels are reserved in
+    precedence but short-circuit to False until the weekly aggregate
+    forward-EPS revision feed lands (spec line 2316-2317 + Ambiguity Log #48).
+    """
 
     model_config = ConfigDict(extra="forbid")
 
-    label: str
+    raw_label: InflationGrowthLabel
+    stable_label: InflationGrowthLabel
+    active_label: InflationGrowthLabel
     evidence: dict[str, Any]
     data_quality: DataQuality
 

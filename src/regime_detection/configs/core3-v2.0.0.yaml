@@ -39,9 +39,8 @@ hysteresis:
 # ---------------------------------------------------------------------------
 # V2 sub-configs (per docs/regime_engine_v2_spec.md).
 #
-# Slices not yet implemented (inflation_growth, credit_funding,
-# event_calendar_v2, strategy_family_constraints) are
-# intentionally omitted so they remain None on load.
+# Slices not yet implemented (event_calendar_v2) are intentionally omitted
+# so they remain None on load.
 # ---------------------------------------------------------------------------
 
 network_fragility:
@@ -317,6 +316,47 @@ credit_funding:
   # §2C lines 2123-2124 — unknown-gate staleness thresholds.
   nfci_stale_days: 14
   etf_stale_sessions: 5
+
+# v2 §2B — Inflation / Growth axis (Slice 5). Per Ambiguity Log #48, DBC ETF
+# substitutes for the Bloomberg Commodity Index (paid feed unavailable); the
+# classifier emits a bias-warning row with code
+# `commodity_proxy_dbc_substitute`. Two labels remain deferred:
+#   - earnings_expansion / earnings_contraction: need weekly aggregate forward
+#     EPS revision series (S&P Global, paid). Predicates short-circuit to False.
+#   - inflation_shock single-signal limb (inflation_surprise_zscore > +1.5):
+#     needs BLS consensus-vs-actual feed. Composite-shock limb remains active.
+inflation_growth:
+  rules:
+    cpi_drift_threshold: 0.005                     # §2B line 2234 (50bps)
+    pmi_goldilocks_threshold: 50.0                 # §2B line 2236
+    pmi_recovery_threshold: 50.0                   # §2B line 2259
+    pmi_disinflation_threshold: 45.0               # §2B line 2250
+    commodity_return_threshold: 0.15               # §2B line 2242
+    spy_recession_threshold: -0.05                 # §2B line 2256
+    cpi_lookback_3m_sessions: 63                   # §2B line 2197 (~3 months)
+    cpi_lookback_6m_sessions: 126                  # §2B line 2198 (~6 months)
+    cpi_slope_lookback_sessions: 21                # §2B line 2235
+    pmi_slope_lookback_sessions: 21                # §2B line 2209
+    commodity_return_lookback_sessions: 63         # §2B line 2220
+    treasury_slope_lookback_sessions: 21           # §2B line 2223
+    cyclical_defensive_slope_lookback_sessions: 21 # §2B line 2227
+    spy_return_lookback_sessions: 21               # §2B line 2237
+    tlt_return_lookback_sessions: 21               # §2B line 2245
+  # §2B lines 2292-2303 — per-label asymmetric hysteresis days.
+  deescalation_days_by_label:
+    inflation_shock: 5
+    recession_scare: 5
+    earnings_contraction: 3
+    disinflation: 3
+    goldilocks: 0
+    recovery_growth: 0
+    earnings_expansion: 0
+    unknown: 2
+  default_deescalation_days: 0
+  # §2B lines 2309-2311 — unknown-gate staleness thresholds.
+  cpi_stale_calendar_days: 60
+  pmi_stale_calendar_days: 45
+  dgs10_stale_sessions: 5
 
 vol_crush:
   event_window_trading_days: 3

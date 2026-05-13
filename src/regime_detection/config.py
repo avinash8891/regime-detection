@@ -586,12 +586,65 @@ class MonetaryPressureV2Config(BaseModel):
     default_deescalation_days: int = Field(default=0, ge=0)
 
 
-class InflationGrowthConfig(BaseModel):
-    """Inflation/growth axis configuration (v2 spec §2B). Stub for slice 5."""
+class InflationGrowthRulesConfig(BaseModel):
+    """v2 §2B inflation/growth rule thresholds (Slice 5).
+
+    Defaults match the spec verbatim (§2B lines 2232-2270). v2 §9.1 walk-
+    forward calibration may retune via yaml.
+    """
 
     model_config = ConfigDict(extra="forbid")
 
-    series_ids: dict[str, str]
+    # §2B line 2234 — goldilocks "abs drift over 21d <= 0.005" (50bps).
+    cpi_drift_threshold: float = Field(default=0.005, gt=0.0)
+    # §2B line 2236 / 2259 — pmi > 50.
+    pmi_goldilocks_threshold: float = Field(default=50.0, gt=0.0)
+    pmi_recovery_threshold: float = Field(default=50.0, gt=0.0)
+    # §2B line 2250 — disinflation "pmi > 45".
+    pmi_disinflation_threshold: float = Field(default=45.0, gt=0.0)
+    # §2B line 2242 — inflation_shock "commodity_return_63d > 0.15".
+    commodity_return_threshold: float = Field(default=0.15, gt=0.0)
+    # §2B line 2256 — recession_scare "spy_21d_return < -0.05".
+    spy_recession_threshold: float = Field(default=-0.05, lt=0.0)
+    # §2B lines 2197-2198 — CPI 3m / 6m percent-change lookbacks.
+    cpi_lookback_3m_sessions: int = Field(default=63, ge=20)
+    cpi_lookback_6m_sessions: int = Field(default=126, ge=20)
+    # §2B line 2235 — 21d slope window on cpi_6m_change_pct.
+    cpi_slope_lookback_sessions: int = Field(default=21, ge=5)
+    # §2B line 2209 — 21d OLS slope on pmi_manufacturing.
+    pmi_slope_lookback_sessions: int = Field(default=21, ge=5)
+    # §2B line 2220 — DBC 63d return.
+    commodity_return_lookback_sessions: int = Field(default=63, ge=5)
+    # §2B line 2223 — DGS10 21d slope.
+    treasury_slope_lookback_sessions: int = Field(default=21, ge=5)
+    # §2B line 2227 — cyclical/defensive 21d slope.
+    cyclical_defensive_slope_lookback_sessions: int = Field(default=21, ge=5)
+    # §2B line 2237 — SPY 21d return.
+    spy_return_lookback_sessions: int = Field(default=21, ge=5)
+    # §2B line 2245 — TLT 21d return.
+    tlt_return_lookback_sessions: int = Field(default=21, ge=5)
+
+
+class InflationGrowthConfig(BaseModel):
+    """v2 §2B Inflation/Growth axis configuration (Slice 5).
+
+    Wires the rule thresholds, per-label hysteresis days, and the
+    unknown-gate staleness thresholds (§2B lines 2308-2312).
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    series_ids: dict[str, str] = Field(default_factory=dict)
+    rules: InflationGrowthRulesConfig = Field(default_factory=InflationGrowthRulesConfig)
+    # §2B lines 2293-2303 — per-label asymmetric hysteresis days.
+    deescalation_days_by_label: dict[str, int]
+    default_deescalation_days: int = Field(default=0, ge=0)
+    # §2B line 2309 — "CPI stale > 60 calendar days" (2× monthly cycle).
+    cpi_stale_calendar_days: int = Field(default=60, ge=1)
+    # §2B line 2310 — "PMI stale > 45 calendar days" (1.5× monthly cycle).
+    pmi_stale_calendar_days: int = Field(default=45, ge=1)
+    # §2B line 2311 — "DGS10 stale > 5 sessions".
+    dgs10_stale_sessions: int = Field(default=5, ge=1)
 
 
 class CreditFundingRulesConfig(BaseModel):
