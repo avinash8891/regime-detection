@@ -26,9 +26,17 @@ from regime_detection.hysteresis import (
     apply_per_label_asymmetric_hysteresis,
 )
 from regime_detection.market_context import MarketContext
+from regime_detection.credit_funding import (
+    CREDIT_FUNDING_RISK_RANK,
+    CreditFundingLabel,
+    RULE_PRECEDENCE as CREDIT_FUNDING_RULE_PRECEDENCE,
+    build_rule_inputs_for_date as build_credit_funding_rule_inputs_for_date,
+    evaluate_rules as evaluate_credit_funding_rules,
+)
 from regime_detection.models import (
     AxisOutput,
     BreadthStateOutput,
+    CreditFundingOutput,
     DataQuality,
     EventCalendarOutput,
     NetworkFragilityOutput,
@@ -83,6 +91,10 @@ class AxisSeriesBundle:
     # populated by VolumeLiquidityStateSeriesClassifier when feature_store
     # has the v2 volume_liquidity_v2 seam (Slice 2.7).
     volume_liquidity_state: dict[date, VolumeLiquidityStateOutput] | None = None
+    # V2 §2C credit/funding — None in pure-v1 mode (no v2 config),
+    # populated by CreditFundingSeriesClassifier when feature_store has
+    # the credit_funding seam lit (Slice 4).
+    credit_funding: dict[date, CreditFundingOutput] | None = None
 
 
 class AxisSeriesClassifier(Protocol):
@@ -576,12 +588,265 @@ class VolumeLiquidityStateSeriesClassifier:
         return outputs
 
 
+class CreditFundingSeriesClassifier:
+    """V2 §2C credit/funding axis classifier (Slice 4).
+
+    Pipeline:
+
+      1. Read pre-computed features from ``feature_store.credit_funding``
+         (compute_credit_funding_features). If the seam is None (no v2
+         config / required inputs absent) return None — the timeline then
+         leaves ``RegimeOutput.credit_funding_state`` as ``None``.
+      2. Per session, run the §2C unknown gate (spec lines 2122-2126):
+         - HYG/LQD/TLT stale > 5 sessions → unknown
+         - NFCI stale > 14 days → unknown
+         - SOFR or IORB missing on session → unknown
+         - assess_series_input_quality fails on any required series → unknown
+      3. Materialize per-day scalar rule inputs (build_rule_inputs_for_date),
+         then evaluate §2C precedence (deleveraging > funding_squeeze >
+         credit_stress > spread_widening > credit_calm > unknown).
+      4. Apply per-label asymmetric hysteresis (§2C lines 2105-2118).
+      5. Emit one CreditFundingOutput per session.
+    """
+
+    def build(
+        self,
+        context: MarketContext,
+        feature_store: FeatureStore,
+    ) -> dict[date, CreditFundingOutput] | None:
+        features = feature_store.credit_funding
+        if features is None:
+            return None
+        cf_config = context.config.credit_funding
+        if cf_config is None:
+            return None
+
+        spy_close = context.spy_ohlcv["close"]
+        volatility_features = feature_store.volatility
+        realized_vol_pct = volatility_features.realized_vol_percentile_252d
+        nf_features = feature_store.network_fragility
+        if nf_features is None:
+            avg_corr_pct_series = pd.Series(float("nan"), index=spy_close.index)
+        else:
+            avg_corr_pct_series = nf_features.avg_pairwise_corr_percentile_504d
+
+        # The credit_funding seam guarantees these series exist on the
+        # SPY index when feature_store.credit_funding is non-None.
+        cross_asset_closes = context.cross_asset_closes or {}
+        macro_series = context.macro_series or {}
+        hyg_close = cross_asset_closes.get("HYG")
+        lqd_close = cross_asset_closes.get("LQD")
+        tlt_close = cross_asset_closes.get("TLT")
+        sofr_series = macro_series.get("SOFR")
+        iorb_series = macro_series.get("IORB")
+        nfci_series = macro_series.get("NFCI")
+
+        # Quality-gate primary inputs. Lookback gates on the 504d percentile
+        # window — the longest binding cold-start for any rule predicate.
+        required_inputs: list[pd.Series] = [
+            features.hy_spread_proxy_63d,
+            features.ig_spread_proxy_63d,
+            features.kre_spy_ratio,
+            features.sofr_iorb_spread,
+            spy_close,
+        ]
+        required_trading_days = cf_config.rules.hy_percentile_504d_lookback
+        max_freshness_days = context.config.data_quality.max_freshness_days
+        min_completeness = context.config.data_quality.min_completeness
+
+        raw_labels: list[CreditFundingLabel] = []
+        per_day_data_quality: list[DataQuality] = []
+        per_day_evidence: list[dict[str, object]] = []
+
+        nfci_carried = features.nfci_daily_carried
+
+        for day in context.sessions:
+            dt = pd.Timestamp(day)
+
+            # §2C unknown gate (spec lines 2122-2126). Run BEFORE the generic
+            # assess_series_input_quality so the §2C-specific staleness
+            # messages reach evidence.
+            etf_staleness_breach = False
+            etf_stale_label: str | None = None
+            for etf_label, etf_series in (
+                ("HYG", hyg_close),
+                ("LQD", lqd_close),
+                ("TLT", tlt_close),
+            ):
+                if etf_series is None:
+                    etf_staleness_breach = True
+                    etf_stale_label = etf_label
+                    break
+                staleness = _trailing_staleness_sessions(etf_series, dt)
+                if staleness > cf_config.etf_stale_sessions:
+                    etf_staleness_breach = True
+                    etf_stale_label = etf_label
+                    break
+
+            sofr_missing = (
+                sofr_series is None
+                or dt not in sofr_series.index
+                or pd.isna(sofr_series.loc[dt])
+            )
+            iorb_missing = (
+                iorb_series is None
+                or dt not in iorb_series.index
+                or pd.isna(iorb_series.loc[dt])
+            )
+            nfci_staleness_days = _nfci_calendar_staleness_days(nfci_series, dt)
+            nfci_stale = nfci_staleness_days > cf_config.nfci_stale_days
+
+            if etf_staleness_breach or sofr_missing or iorb_missing or nfci_stale:
+                reason_parts: list[str] = []
+                if etf_staleness_breach:
+                    reason_parts.append(f"etf_stale:{etf_stale_label}")
+                if sofr_missing:
+                    reason_parts.append("sofr_missing")
+                if iorb_missing:
+                    reason_parts.append("iorb_missing")
+                if nfci_stale:
+                    reason_parts.append(f"nfci_stale_{nfci_staleness_days}d")
+                gate_reason = ",".join(reason_parts)
+                raw_labels.append("unknown")
+                per_day_data_quality.append(
+                    DataQuality(
+                        status="stale_data" if (etf_staleness_breach or nfci_stale) else "insufficient_data",
+                        freshness_days=None,
+                        completeness=None,
+                        reason=gate_reason,
+                    )
+                )
+                per_day_evidence.append({"reason": gate_reason})
+                continue
+
+            day_quality = assess_series_input_quality(
+                as_of_date=day,
+                required_inputs=required_inputs,
+                required_trading_days=required_trading_days,
+                raw_label="",
+                max_freshness_days=max_freshness_days,
+                min_completeness=min_completeness,
+                skip_raw_label_short_circuit=True,
+            )
+            if quality_forces_unknown(day_quality):
+                raw_labels.append("unknown")
+                per_day_data_quality.append(day_quality)
+                per_day_evidence.append({"reason": day_quality.reason or "insufficient_data"})
+                continue
+
+            rule_inputs = build_credit_funding_rule_inputs_for_date(
+                features=features,
+                dt=dt,
+                realized_vol_21d_percentile_252d=realized_vol_pct,
+                avg_pairwise_corr_percentile_504d=avg_corr_pct_series,
+            )
+            label = evaluate_credit_funding_rules(
+                inputs=rule_inputs,
+                config=cf_config.rules,
+            )
+            raw_labels.append(label)
+            per_day_data_quality.append(day_quality)
+            per_day_evidence.append(
+                {
+                    "rule_evidence": {
+                        "hy_spread_proxy_percentile_504d": rule_inputs.hy_spread_proxy_percentile_504d,
+                        "hy_spread_proxy_slope_21d": rule_inputs.hy_spread_proxy_slope_21d,
+                        "ig_spread_proxy_slope_21d": rule_inputs.ig_spread_proxy_slope_21d,
+                        "broad_usd_index_zscore_21d": rule_inputs.broad_usd_index_zscore_21d,
+                        "sofr_iorb_slope_21d": rule_inputs.sofr_iorb_slope_21d,
+                        "spy_21d_return": rule_inputs.spy_21d_return,
+                        "tlt_21d_return": rule_inputs.tlt_21d_return,
+                        "realized_vol_21d_percentile_252d": rule_inputs.realized_vol_21d_percentile_252d,
+                        "avg_pairwise_corr_percentile_504d": rule_inputs.avg_pairwise_corr_percentile_504d,
+                    },
+                    "nfci_daily_carried": _safe_float(nfci_carried, dt),
+                    "kre_spy_slope_63d": _safe_float(features.kre_spy_slope_63d, dt),
+                    "bias_warning_code": "credit_spread_proxy_total_return_differential",
+                }
+            )
+
+        stable_labels, active_labels = apply_per_label_asymmetric_hysteresis(
+            raw_labels=raw_labels,
+            risk_rank=CREDIT_FUNDING_RISK_RANK,
+            deescalation_days_by_label=cf_config.deescalation_days_by_label,
+            default_deescalation_days=cf_config.default_deescalation_days,
+        )
+
+        outputs: dict[date, CreditFundingOutput] = {}
+        for day, raw, stable, active, dq, evidence in zip(
+            context.sessions,
+            raw_labels,
+            stable_labels,
+            active_labels,
+            per_day_data_quality,
+            per_day_evidence,
+            strict=True,
+        ):
+            outputs[day] = CreditFundingOutput(
+                raw_label=raw,
+                stable_label=stable,
+                active_label=active,
+                evidence=evidence,
+                data_quality=dq,
+            )
+        return outputs
+
+
+def _trailing_staleness_sessions(series: pd.Series, dt: pd.Timestamp) -> int:
+    """Trading-day distance from ``dt`` to the last non-NaN observation
+    at or before ``dt`` in ``series``. Returns a huge value if no such
+    observation exists (forces unknown gate trip)."""
+    if dt not in series.index:
+        # Find the last index value <= dt.
+        sub = series.loc[:dt]
+    else:
+        sub = series.loc[:dt]
+    last_valid = sub.last_valid_index()
+    if last_valid is None:
+        return 10**9
+    # Trading-day distance: count of session-index positions between them.
+    idx = series.index
+    try:
+        pos_now = idx.get_loc(dt)
+        pos_last = idx.get_loc(last_valid)
+    except KeyError:
+        return 10**9
+    return int(pos_now - pos_last)
+
+
+def _nfci_calendar_staleness_days(
+    nfci_series: pd.Series | None, dt: pd.Timestamp
+) -> int:
+    """Calendar-day distance from ``dt`` to the last non-NaN NFCI release.
+
+    NFCI is weekly; staleness is measured in calendar days (spec line 2124).
+    Returns a huge value if the series is None or has no non-NaN history.
+    """
+    if nfci_series is None:
+        return 10**9
+    sub = nfci_series.loc[:dt]
+    last_valid = sub.last_valid_index()
+    if last_valid is None:
+        return 10**9
+    return int((dt.normalize() - pd.Timestamp(last_valid).normalize()).days)
+
+
+def _safe_float(series: pd.Series, dt: pd.Timestamp) -> float:
+    if dt not in series.index:
+        return float("nan")
+    val = series.loc[dt]
+    if pd.isna(val):
+        return float("nan")
+    return float(val)
+
+
 def build_axis_series_bundle(*, context: MarketContext, feature_store: FeatureStore) -> AxisSeriesBundle:
     trend_direction = TrendDirectionSeriesClassifier().build(context, feature_store)
     trend_character = TrendCharacterSeriesClassifier().build(context, feature_store)
     volatility_state = VolatilitySeriesClassifier().build(context, feature_store)
     breadth_state = BreadthSeriesClassifier().build(context, feature_store)
     event_calendar = build_event_calendar_series(context)
+    credit_funding = CreditFundingSeriesClassifier().build(context, feature_store)
     network_fragility = NetworkFragilitySeriesClassifier().build(
         context,
         feature_store,
@@ -599,6 +864,7 @@ def build_axis_series_bundle(*, context: MarketContext, feature_store: FeatureSt
         event_calendar=event_calendar,
         network_fragility=network_fragility,
         volume_liquidity_state=volume_liquidity_state,
+        credit_funding=credit_funding,
     )
 
 

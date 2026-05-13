@@ -102,6 +102,9 @@ def build_regime_timeline(
     monetary_pressure_v2_config = (
         config.monetary_pressure_v2 if config is not None else None
     )
+    credit_funding_config = (
+        config.credit_funding if config is not None else None
+    )
     feature_store = build_feature_store(
         working_context,
         network_fragility_config=network_fragility_config,
@@ -110,6 +113,7 @@ def build_regime_timeline(
         breadth_state_v2_config=breadth_state_v2_config,
         volume_liquidity_v2_config=volume_liquidity_v2_config,
         monetary_pressure_v2_config=monetary_pressure_v2_config,
+        credit_funding_config=credit_funding_config,
     )
     axis_bundle = build_axis_series_bundle(context=working_context, feature_store=feature_store)
     transition_risk = build_transition_risk_series(
@@ -151,6 +155,10 @@ def build_regime_timeline(
     # config / volume seam is absent — preserves V1 byte-identity since
     # RegimeOutput.volume_liquidity_state already defaults to None.
     volume_liquidity_by_date = axis_bundle.volume_liquidity_state
+    # v2 §2C credit/funding axis (Slice 4). Stays None when the v2 config /
+    # cross_asset / macro seams are absent — preserves V1 byte-identity
+    # since RegimeOutput.credit_funding_state already defaults to None.
+    credit_funding_by_date = axis_bundle.credit_funding
     cohort_routing_config = working_context.config.cohort_routing
     monetary_pressure = MonetaryPressureOutput(
         label="unknown",
@@ -170,6 +178,11 @@ def build_regime_timeline(
         volume_liquidity_output = (
             volume_liquidity_by_date.get(day)
             if volume_liquidity_by_date is not None
+            else None
+        )
+        credit_funding_output = (
+            credit_funding_by_date.get(day)
+            if credit_funding_by_date is not None
             else None
         )
         cluster_output: ClusterOutput | None = None
@@ -231,6 +244,7 @@ def build_regime_timeline(
                     event_calendar_active=event_output.active_label,
                 ),
                 volume_liquidity_state=volume_liquidity_output,
+                credit_funding_state=credit_funding_output,
                 cluster=cluster_output,
                 agent_routing=agent_routing,
                 strategy_family_constraints=strategy_family_constraints,

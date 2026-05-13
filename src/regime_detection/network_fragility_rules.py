@@ -92,12 +92,14 @@ NETWORK_FRAGILITY_RISK_RANK: dict[NetworkFragilityLabel, int] = {
 }
 
 
-# v2 §2C credit/funding labels used by systemic_stress. Slice 4 introduces
-# the formal CreditFundingLabel; we use the spec strings as a Literal here
-# to avoid a forward dependency on a not-yet-shipped enum.
+# v2 §2C credit/funding labels (Slice 4 — formal enum lives in credit_funding.py).
+# Re-declared here as a local Literal alias to avoid a circular import (the
+# §2C classifier consumes nothing from this module).
 CreditFundingLabel = Literal[
-    "neutral_funding",
+    "credit_calm",
+    "spread_widening",
     "credit_stress",
+    "funding_squeeze",
     "deleveraging",
     "unknown",
 ]

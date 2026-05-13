@@ -92,12 +92,29 @@ class InflationGrowthOutput(BaseModel):
     data_quality: DataQuality
 
 
+CreditFundingLabel = Literal[
+    "credit_calm",
+    "spread_widening",
+    "credit_stress",
+    "funding_squeeze",
+    "deleveraging",
+    "unknown",
+]
+
+
 class CreditFundingOutput(BaseModel):
-    """Credit/funding state output (v2 spec §2C). Minimal until slice 4."""
+    """v2 §2C credit/funding state output (Slice 4).
+
+    Three-tier label triple (raw/stable/active) per the v2 axis pattern.
+    ``evidence`` carries the per-day scalar rule inputs and the bias-warning
+    code (``credit_spread_proxy_total_return_differential``).
+    """
 
     model_config = ConfigDict(extra="forbid")
 
-    label: str
+    raw_label: CreditFundingLabel
+    stable_label: CreditFundingLabel
+    active_label: CreditFundingLabel
     evidence: dict[str, Any]
     data_quality: DataQuality
 

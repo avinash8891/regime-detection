@@ -475,13 +475,67 @@ class InflationGrowthConfig(BaseModel):
     series_ids: dict[str, str]
 
 
-class CreditFundingConfig(BaseModel):
-    """Credit/funding axis configuration (v2 spec §2C). Stub."""
+class CreditFundingRulesConfig(BaseModel):
+    """v2 §2C rule thresholds (Slice 4).
+
+    Defaults match the spec verbatim (§2C lines 2064-2088). Calibration
+    placeholders per spec line 2128 (v2 §9.1 may retune via yaml).
+    """
 
     model_config = ConfigDict(extra="forbid")
 
-    series_ids: dict[str, str]
-    etf_universe: list[str]
+    # §2C line 2066 — credit_calm "<0.50"
+    hy_percentile_calm_max: float = Field(default=0.50, ge=0.0, le=1.0)
+    # §2C line 2074 — credit_stress ">0.80"
+    hy_percentile_stress_min: float = Field(default=0.80, ge=0.0, le=1.0)
+    # §2C lines 2075/2083 — equities-falling threshold "< -0.05".
+    spy_drop_threshold: float = Field(default=-0.05, le=0.0)
+    # §2C line 2078 — funding_squeeze "> +1.5" (USD z-score 21d-change variant).
+    broad_usd_zscore_funding_threshold: float = Field(default=1.5, gt=0.0)
+    # §2C line 2085 — deleveraging "> 0" (USD z-score 21d-change variant).
+    broad_usd_zscore_deleveraging_threshold: float = Field(default=0.0)
+    # §2C line 2086 — deleveraging "realized_vol_21d_percentile_252d > 0.75".
+    realized_vol_percentile_threshold: float = Field(default=0.75, ge=0.0, le=1.0)
+    # §2C line 2087 — deleveraging "avg_pairwise_corr_percentile_504d > 0.75".
+    correlation_percentile_threshold: float = Field(default=0.75, ge=0.0, le=1.0)
+    # §2C line 2038 — 504d percentile lookback ("scale-invariant predicate").
+    hy_percentile_504d_lookback: int = Field(default=504, ge=20)
+    # §2C line 2041/2059 — 21d OLS slope window.
+    slope_21d_lookback: int = Field(default=21, ge=5)
+    # §2C line 2046 — KRE/SPY ratio 63d OLS slope window.
+    slope_63d_lookback: int = Field(default=63, ge=5)
+    # §2C line 2032 — 63d total-return lookback.
+    total_return_lookback_days: int = Field(default=63, ge=5)
+    # §2C line 2075 — spy_21d_return lookback.
+    spy_return_lookback_days: int = Field(default=21, ge=5)
+    # §2C line 2084 — tlt_21d_return lookback.
+    tlt_return_lookback_days: int = Field(default=21, ge=5)
+    # §2C lines 2052-2055 — 21d-change variant (vs §2A 63d-change variant).
+    broad_usd_change_window_days: int = Field(default=21, ge=5)
+    # §2C line 2055 normalizer window (~5y trading days, same as §2A).
+    broad_usd_normalizer_window_days: int = Field(default=1260, ge=100)
+
+
+class CreditFundingConfig(BaseModel):
+    """v2 §2C Credit/Funding axis configuration (Slice 4).
+
+    Wires the rule thresholds, per-label hysteresis days, and the
+    unknown-gate staleness thresholds. The 8-symbol universe
+    (HYG/LQD/TLT/KRE/SOFR/IORB/NFCI/broad_usd_index) is hard-pinned in
+    code per spec §2C lines 2024-2030 — no yaml override.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    rules: CreditFundingRulesConfig = Field(default_factory=CreditFundingRulesConfig)
+    # §2C lines 2110-2117 — per-label asymmetric hysteresis days.
+    deescalation_days_by_label: dict[str, int]
+    # Labels not listed take this default (matches §3.7 Ambiguity Log #6 pattern).
+    default_deescalation_days: int = Field(default=0, ge=0)
+    # §2C line 2124 — NFCI weekly: "stale > 14 days (2× weekly release cycle)".
+    nfci_stale_days: int = Field(default=14, ge=1)
+    # §2C line 2123 — HYG/LQD/TLT stale > 5 sessions.
+    etf_stale_sessions: int = Field(default=5, ge=1)
 
 
 class EventCalendarV2Config(BaseModel):

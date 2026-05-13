@@ -10,11 +10,26 @@ from regime_detection.breadth_state_v2 import (
 )
 from regime_detection.config import (
     BreadthV2Config,
+    CreditFundingConfig,
     MonetaryPressureV2FeaturesConfig,
     NetworkFragilityConfig,
     TrendDirectionV2Config,
     VolatilityV2Config,
     VolumeLiquidityV2Config,
+)
+from regime_detection.credit_funding import (
+    CreditFundingFeatures,
+    REQUIRED_CROSS_ASSET_KEYS as _CF_CROSS_ASSET_KEYS,
+    REQUIRED_MACRO_KEYS as _CF_MACRO_KEYS,
+    HYG_KEY as _CF_HYG_KEY,
+    LQD_KEY as _CF_LQD_KEY,
+    TLT_KEY as _CF_TLT_KEY,
+    KRE_KEY as _CF_KRE_KEY,
+    SOFR_KEY as _CF_SOFR_KEY,
+    IORB_KEY as _CF_IORB_KEY,
+    NFCI_KEY as _CF_NFCI_KEY,
+    BROAD_USD_INDEX_KEY as _CF_BROAD_USD_KEY,
+    compute_credit_funding_features,
 )
 from regime_detection.fragility_universe import SECTOR_ETFS
 from regime_detection.market_context import MarketContext
@@ -58,6 +73,7 @@ from regime_detection.monetary_pressure import (
 __all__ = [
     "BreadthV2Features",
     "ClusteringFeatures",
+    "CreditFundingFeatures",
     "FeatureStore",
     "HMMFeatures",
     "MonetaryPressureV2Features",
@@ -141,6 +157,13 @@ class FeatureStore(BaseModel):
     # wire) and V1 byte-identity is preserved.
     clustering: ClusteringFeatures | None = None
 
+    # V2 §2C credit/funding seam (Slice 4) — populated when a CreditFundingConfig
+    # is threaded through AND cross_asset_closes carries HYG/LQD/TLT/KRE AND
+    # macro_series carries SOFR/IORB/NFCI/broad_usd_index. Otherwise None
+    # (V1 byte-identity preserved: RegimeOutput.credit_funding_state defaults
+    # to None and is omitted on the JSON wire via exclude_none=True).
+    credit_funding: CreditFundingFeatures | None = None
+
 
 def build_feature_store(
     context: MarketContext,
@@ -151,6 +174,7 @@ def build_feature_store(
     breadth_state_v2_config: BreadthV2Config | None = None,
     volume_liquidity_v2_config: VolumeLiquidityV2Config | None = None,
     monetary_pressure_v2_config: MonetaryPressureV2FeaturesConfig | None = None,
+    credit_funding_config: CreditFundingConfig | None = None,
 ) -> FeatureStore:
     spy_ohlcv = context.spy_ohlcv
     spy_close = spy_ohlcv["close"]
@@ -320,6 +344,32 @@ def build_feature_store(
     else:
         clustering = None
 
+    # v2 §2C credit/funding feature compute (Slice 4). Requires the eight
+    # spec-pinned input series: HYG/LQD/TLT/KRE on cross_asset_closes plus
+    # SOFR/IORB/NFCI/broad_usd_index on macro_series. When any input is
+    # absent OR the config is None, fall back to None — V1 byte-identity
+    # preserved on the credit_funding_state wire field.
+    credit_funding: CreditFundingFeatures | None = None
+    if (
+        credit_funding_config is not None
+        and context.cross_asset_closes is not None
+        and context.macro_series is not None
+        and all(k in context.cross_asset_closes for k in _CF_CROSS_ASSET_KEYS)
+        and all(k in context.macro_series for k in _CF_MACRO_KEYS)
+    ):
+        credit_funding = compute_credit_funding_features(
+            hyg_close=context.cross_asset_closes[_CF_HYG_KEY],
+            lqd_close=context.cross_asset_closes[_CF_LQD_KEY],
+            tlt_close=context.cross_asset_closes[_CF_TLT_KEY],
+            kre_close=context.cross_asset_closes[_CF_KRE_KEY],
+            spy_close=spy_close,
+            sofr=context.macro_series[_CF_SOFR_KEY],
+            iorb=context.macro_series[_CF_IORB_KEY],
+            nfci_weekly=context.macro_series[_CF_NFCI_KEY],
+            broad_usd_index=context.macro_series[_CF_BROAD_USD_KEY],
+            config=credit_funding_config.rules,
+        )
+
     return FeatureStore(
         spy_index=spy_ohlcv.index,
         trend_direction=trend_direction,
@@ -335,4 +385,5 @@ def build_feature_store(
         monetary=monetary,
         hmm=hmm,
         clustering=clustering,
+        credit_funding=credit_funding,
     )

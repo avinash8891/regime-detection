@@ -245,6 +245,44 @@ monetary_pressure_v2:
   yield_change_lookback_days: 63      # v2 §2A line 896
   zscore_normalizer_window_days: 1260 # v2 §2A line 896 (5y trading days)
 
+# v2 §2C — Credit/Funding axis (Slice 4). Per Ambiguity Log #49 the HY/IG
+# spread proxies use TLT-vs-HYG/LQD total-return differentials (HYG/LQD
+# OAS feeds not ingested); the classifier emits a bias-warning row with
+# code `credit_spread_proxy_total_return_differential` flagging this
+# provenance. The 8-symbol universe (HYG/LQD/TLT/KRE + SOFR/IORB/NFCI +
+# broad_usd_index) is hard-pinned in code (spec §2C lines 2024-2030).
+credit_funding:
+  rules:
+    # All defaults match spec verbatim (§2C lines 2064-2088). v2 §9.1
+    # calibration may retune.
+    hy_percentile_calm_max: 0.50              # §2C line 2066
+    hy_percentile_stress_min: 0.80            # §2C line 2074
+    spy_drop_threshold: -0.05                 # §2C lines 2075/2083
+    broad_usd_zscore_funding_threshold: 1.5   # §2C line 2078
+    broad_usd_zscore_deleveraging_threshold: 0.0  # §2C line 2085
+    realized_vol_percentile_threshold: 0.75   # §2C line 2086
+    correlation_percentile_threshold: 0.75    # §2C line 2087
+    hy_percentile_504d_lookback: 504          # §2C line 2038
+    slope_21d_lookback: 21                    # §2C lines 2041, 2059
+    slope_63d_lookback: 63                    # §2C line 2046
+    total_return_lookback_days: 63            # §2C line 2032
+    spy_return_lookback_days: 21              # §2C line 2075
+    tlt_return_lookback_days: 21              # §2C line 2084
+    broad_usd_change_window_days: 21          # §2C lines 2052-2055 (21d variant)
+    broad_usd_normalizer_window_days: 1260    # §2C line 2055 (~5y, same as §2A)
+  # §2C lines 2110-2117 — per-label asymmetric hysteresis days.
+  deescalation_days_by_label:
+    deleveraging: 5
+    funding_squeeze: 5
+    credit_stress: 3
+    spread_widening: 3
+    credit_calm: 0
+    unknown: 2
+  default_deescalation_days: 0
+  # §2C lines 2123-2124 — unknown-gate staleness thresholds.
+  nfci_stale_days: 14
+  etf_stale_sessions: 5
+
 vol_crush:
   event_window_trading_days: 3
   implied_vol_5d_change_threshold: -0.20
