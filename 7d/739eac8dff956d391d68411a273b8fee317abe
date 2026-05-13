@@ -1,0 +1,24 @@
+docs/regime_engine_v2_spec.md
+  s_69e10dfae52a94::t_abc054d35b5c03 2437-2441
+  s_69e10dfae52a94::t_7a389b341f36e8 2113-2116
+  s_69e10dfae52a94::t_f0dfe68b8a392f 2391-2407
+  s_69e10dfae52a94::t_4ecda8e084dea6 1404-1469
+  s_69e10dfae52a94::t_b319a94335eebc 2159-2160,2162-2165,2168
+  s_69e10dfae52a94::t_02c522d170578c 2335-2340,2347-2364
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.4",
+  "base_commit_sha": "7d739eac8dff956d391d68411a273b8fee317abe",
+  "prompts": {},
+  "sessions": {
+    "s_69e10dfae52a94": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "ef8c0903-9f31-4c26-be1c-64323350aa48",
+        "model": "claude-opus-4-7"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}
