@@ -420,6 +420,14 @@ class TransitionScoreConfig(BaseModel):
     # V2 §4.3 weights when HMM is unavailable (5-component renormalization).
     weights_without_hmm: dict[str, float]
 
+    # V2 §4.3 + Ambiguity Log #66 — weights when change_point evidence is
+    # available but HMM is not (6 components).
+    weights_with_change_point: dict[str, float]
+
+    # V2 §4.3 + Ambiguity Log #66 — weights when both HMM and change_point
+    # evidence are available (7 components, full V2 evidence stack).
+    weights_with_hmm_with_change_point: dict[str, float]
+
     # V2 §4.4 interpretation bands: stable / weakening / transition_warning / high.
     bands: dict[str, tuple[float, float]]
 

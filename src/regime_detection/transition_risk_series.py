@@ -80,6 +80,11 @@ def build_transition_risk_series(
                 if feature_store.hmm is not None
                 else None
             ),
+            change_point_score=(
+                feature_store.change_point.score
+                if feature_store.change_point is not None
+                else None
+            ),
         )
 
     return build_transition_risk_outputs_by_date(
@@ -109,6 +114,7 @@ def _build_transition_score_inputs_by_date(
     drawdown_252d: pd.Series,
     event_calendar: dict[date, EventCalendarOutput],
     hmm_top_state_prob: pd.Series | None = None,
+    change_point_score: pd.Series | None = None,
 ) -> dict[date, dict[str, float | str]]:
     """Materialise the per-session v2 §4.2 input dict for every NYSE session.
 
@@ -143,6 +149,15 @@ def _build_transition_score_inputs_by_date(
         hmm_now = [float("nan")] * len(sessions)
         hmm_5d_ago = [float("nan")] * len(sessions)
 
+    # Ambiguity Log #66 — change_point.score (5-session rolling max of
+    # BOCPD posterior P(run_length=0); already ∈ [0,1] by construction).
+    if change_point_score is not None:
+        cp = change_point_score.reindex(session_index).to_numpy(
+            dtype=float, na_value=float("nan")
+        )
+    else:
+        cp = [float("nan")] * len(sessions)
+
     out: dict[date, dict[str, float | str]] = {}
     for i, day in enumerate(sessions):
         out[day] = {
@@ -154,6 +169,7 @@ def _build_transition_score_inputs_by_date(
             "event_calendar_label": event_calendar[day].active_label,
             "hmm_top_state_prob_now": float(hmm_now[i]),
             "hmm_top_state_prob_5d_ago": float(hmm_5d_ago[i]),
+            "change_point_score": float(cp[i]),
         }
     return out
 
@@ -242,6 +258,14 @@ def build_transition_risk_outputs_by_date(
                 or (isinstance(hmm_5d_val, float) and pd.isna(hmm_5d_val))
                 else float(hmm_5d_val)  # type: ignore[arg-type]
             )
+            # Ambiguity Log #66 — change_point.score → optional CP arg.
+            cp_val = inputs.get("change_point_score")  # type: ignore[union-attr]
+            cp_arg = (
+                None
+                if cp_val is None
+                or (isinstance(cp_val, float) and pd.isna(cp_val))
+                else float(cp_val)  # type: ignore[arg-type]
+            )
             composed = compose_transition_score_for_session(
                 realized_vol_short=inputs["realized_vol_short"],  # type: ignore[arg-type]
                 realized_vol_long=inputs["realized_vol_long"],  # type: ignore[arg-type]
@@ -253,6 +277,7 @@ def build_transition_risk_outputs_by_date(
                 event_calendar_label=inputs["event_calendar_label"],  # type: ignore[arg-type]
                 hmm_top_state_prob_now=hmm_now_arg,
                 hmm_top_state_prob_5d_ago=hmm_5d_arg,
+                change_point_score=cp_arg,
                 config=transition_score_config,  # type: ignore[arg-type]
             )
             if composed.score is not None:

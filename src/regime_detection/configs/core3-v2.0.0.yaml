@@ -225,6 +225,22 @@ transition_score:
     correlation_concentration: 0.225
     trend_break: 0.225
     macro_event: 0.10
+  # Ambiguity Log #66 — change_point evidence wired into transition_score.
+  weights_with_change_point:
+    volatility_acceleration: 0.20
+    breadth_deterioration: 0.20
+    correlation_concentration: 0.20
+    trend_break: 0.20
+    macro_event: 0.10
+    change_point: 0.10
+  weights_with_hmm_with_change_point:
+    volatility_acceleration: 0.175
+    breadth_deterioration: 0.175
+    correlation_concentration: 0.175
+    trend_break: 0.175
+    macro_event: 0.10
+    hmm_probability_shift: 0.10
+    change_point: 0.10
   bands:
     stable: [0.00, 0.35]
     weakening: [0.35, 0.55]

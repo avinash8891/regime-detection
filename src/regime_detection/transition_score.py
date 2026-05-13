@@ -54,36 +54,38 @@ def compute_transition_score(
     macro_event_score: float,
     weights: dict[str, float],
     hmm_probability_shift_score: float | None = None,
+    change_point_score: float | None = None,
 ) -> float:
-    """v2 §4.3 weighted composite.
+    """v2 §4.3 weighted composite (Ambiguity Log #66 4-table system).
 
-    When ``hmm_probability_shift_score`` is ``None`` (Slice 3 / V1 path),
-    the 5 ``Without-HMM`` weights are used and the weight table must NOT
-    carry a non-zero ``hmm_probability_shift`` entry. When the score is
-    provided (Slice 6 / V2 §6.1 path), the 6 ``weights_with_hmm`` table is
-    used and the 6th component is appended.
+    The ``weights`` dict drives both the keys composed and the per-key
+    weights. Valid keys are the canonical 7 components:
+    ``volatility_acceleration``, ``breadth_deterioration``,
+    ``correlation_concentration``, ``trend_break``, ``macro_event``,
+    ``hmm_probability_shift``, ``change_point``. Unknown keys raise
+    ``ValueError``. Any optional component referenced by ``weights`` must
+    have a non-None value supplied.
     """
-    if hmm_probability_shift_score is None:
-        if weights.get("hmm_probability_shift", 0.0) != 0.0:
+    values: dict[str, float | None] = {
+        "volatility_acceleration": volatility_acceleration_score,
+        "breadth_deterioration": breadth_deterioration_score,
+        "correlation_concentration": correlation_concentration_score,
+        "trend_break": trend_break_score,
+        "macro_event": macro_event_score,
+        "hmm_probability_shift": hmm_probability_shift_score,
+        "change_point": change_point_score,
+    }
+    for key in weights:
+        if key not in values:
             raise ValueError(
-                "Without-HMM composer received weights_with_hmm — "
-                "pass weights_without_hmm only."
+                f"Unknown component in weights: {key!r}. "
+                f"Valid components: {sorted(values.keys())}"
             )
-        return (
-            weights["volatility_acceleration"] * volatility_acceleration_score
-            + weights["breadth_deterioration"] * breadth_deterioration_score
-            + weights["correlation_concentration"] * correlation_concentration_score
-            + weights["trend_break"] * trend_break_score
-            + weights["macro_event"] * macro_event_score
-        )
-    return (
-        weights["volatility_acceleration"] * volatility_acceleration_score
-        + weights["breadth_deterioration"] * breadth_deterioration_score
-        + weights["correlation_concentration"] * correlation_concentration_score
-        + weights["trend_break"] * trend_break_score
-        + weights["macro_event"] * macro_event_score
-        + weights["hmm_probability_shift"] * hmm_probability_shift_score
-    )
+        if values[key] is None:
+            raise ValueError(
+                f"Weight references {key!r} but no value was provided"
+            )
+    return sum(weight * float(values[key]) for key, weight in weights.items())
 
 
 def interpret_transition_score(
@@ -114,6 +116,7 @@ def compose_transition_score_for_session(
     config: TransitionScoreConfig,
     hmm_top_state_prob_now: float | None = None,
     hmm_top_state_prob_5d_ago: float | None = None,
+    change_point_score: float | None = None,
 ) -> ComposedTransitionScore:
     """Compose a single session's transition score from v2 §4.2 inputs.
 
@@ -172,11 +175,32 @@ def compose_transition_score_for_session(
             0.0,
             1.0,
         )
-        components["hmm_probability_shift"] = hmm_shift
 
-    weights = (
-        config.weights_with_hmm if hmm_shift is not None else config.weights_without_hmm
-    )
+    # Ambiguity Log #66 — 7th component change_point_score wired in.
+    # `change_point.score` is already a posterior probability ∈ [0, 1] by
+    # construction (5-session rolling max per Log #64); no clip needed but
+    # we defensively clip to absorb any FP edge case at the seam.
+    cp_score: float | None = None
+    if change_point_score is not None and not math.isnan(float(change_point_score)):
+        cp_score = _clip(float(change_point_score), 0.0, 1.0)
+
+    # Log #66 — 4-table weight selection gated on (hmm_present, cp_present).
+    if hmm_shift is not None and cp_score is not None:
+        weights = config.weights_with_hmm_with_change_point
+    elif hmm_shift is not None:
+        weights = config.weights_with_hmm
+    elif cp_score is not None:
+        weights = config.weights_with_change_point
+    else:
+        weights = config.weights_without_hmm
+
+    # Build components dict to mirror the selected weight table (no
+    # spurious keys whose weight wasn't selected).
+    if "hmm_probability_shift" in weights:
+        components["hmm_probability_shift"] = hmm_shift  # type: ignore[assignment]
+    if "change_point" in weights:
+        components["change_point"] = cp_score  # type: ignore[assignment]
+
     score = compute_transition_score(
         volatility_acceleration_score=vol_acc,
         breadth_deterioration_score=breadth_det,
@@ -185,6 +209,7 @@ def compose_transition_score_for_session(
         macro_event_score=macro_event,
         weights=weights,
         hmm_probability_shift_score=hmm_shift,
+        change_point_score=cp_score,
     )
     # Composite is a weighted average of [0,1] values with non-negative
     # weights summing to 1.0; defensive clip to absorb FP noise so the
