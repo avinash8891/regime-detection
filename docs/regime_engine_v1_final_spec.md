@@ -1397,6 +1397,20 @@ V1 implementation contract:
 
 V2 is specified in a separate document: `regime_engine_v2_spec.md`.
 
+### 14.1 Current Status
+
+**V1 qualification: complete (operator-asserted per implementation plan).**
+**V2 implementation: in progress.** V2 work has commenced under the unified V1+V2 design described in the implementation plan; V2 slices 1.x, 2.x, and 4.1 (features-only) have shipped on top of V1, with strict V1 byte-identity preservation under the V1 frozen-replay test (`tests/test_v1_frozen_replay.py`).
+
+V2 progress is tracked in:
+- `docs/regime_engine_v2_spec.md` §8 (slice priority order)
+- The repo's commit log under the `feat(slice-*)` and `docs(spec)` prefixes
+- The V2 Implementation Ambiguity Log within `regime_engine_v2_spec.md` (entries #1 through #53 at time of writing) which records every spec ambiguity surfaced during implementation and its resolution
+
+### 14.2 V1 Qualification Gate Definition (Retained for Future V1 Branches)
+
+The qualification criteria below were authored as the gate that any future V1-only revision branch must clear before authorizing parallel V2 work. They are retained here for historical context and as the definition any V1 successor must satisfy:
+
 V2 work begins only after V1 ships all 9 vertical slices, all 10 V1 golden test dates pass, V1 passes historical walk-forward validation over at least one full out-of-sample year, V1 completes 252 consecutive successful NYSE trading sessions of forward shadow mode with frozen classification logic and immutable archived inputs/outputs, and V1 demonstrates measurable strategy improvement vs no-regime baseline.
 
 Historical walk-forward and forward shadow serve different purposes and both are required:
@@ -1408,4 +1422,10 @@ The forward-shadow counter starts on the next NYSE trading day after the histori
 
 Operational qualification rules for shadow mode are specified separately in `docs/shadow_runner_spec.md`.
 
-The coding agent building V1 must not reference, prepare for, or scaffold V2 components. V1 is its own deliverable.
+### 14.3 V1 Authoring Discipline (Still In Force on V1 Code Paths)
+
+The coding agent working on V1 code paths must not reference, prepare for, or scaffold V2 components. V1 source files remain V1-only deliverables.
+
+This rule applies to V1 code paths and the V1 spec **even now that V2 is in progress**: V2 work occurs in V2 modules (e.g., `trend_direction_v2.py`, `volatility_state_v2.py`, `network_fragility.py`, `monetary_pressure.py`, `volume_liquidity_rules.py`, the v2 sub-blocks of `axis_series.py` and `config.py`), with V1 modules either untouched or extended additively (new optional kwargs defaulting to `None`, new shared helpers like `volatility_state.realized_vol` / `volatility_state.wilders_atr` that v1 was refactored to consume without changing output). V1 byte-identity is enforced by `tests/test_v1_frozen_replay.py` and the `test_v1_contract_byte_identity_when_v2_features_absent` family of tests across each v2 slice.
+
+Concretely: if you are reading this spec to maintain V1 itself (e.g., to fix a V1-only bug, ship a v1-frozen-replay regression, or revise V1 §1–§13), the V1-only discipline above applies in full. If you are reading this spec to understand V1 surfaces that V2 builds on, see the V2 spec §1A / §1C / §1D / §2A / §3 for how V2 extends the shared Literal types (e.g., `TrendDirectionLabel`, `VolatilityLabel`) without altering V1 emission semantics.
