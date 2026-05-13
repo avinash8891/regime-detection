@@ -290,36 +290,22 @@ def _compute_pit_features(
     session_days = list(reference_index.date)
     ticker_to_col = {ticker: idx for idx, ticker in enumerate(all_member_tickers)}
 
-    # Build the (sessions × members) adjusted_close DataFrame. Tickers absent
-    # from constituent_ohlcv contribute an all-NaN column so the per-feature
-    # vectorised masks still work without per-ticker branching. NO forward
-    # fill (Ambiguity Log #58/#59).
-    adj_close_frame = pd.DataFrame(
-        {
-            ticker: (
-                constituent_ohlcv[ticker]["adjusted_close"].astype(float)
-                if ticker in constituent_ohlcv
-                else pd.Series(np.nan, index=reference_index, dtype=float)
-            )
-            for ticker in all_member_tickers
-        },
-        index=None,
-    ).reindex(reference_index)
-
-    # Build the parallel (sessions × members) volume frame for the
-    # upvol/downvol feature. Volume is RAW shares (Ambiguity Log #56) — do
-    # not adjust. Missing tickers contribute NaN, which is filtered downstream.
-    volume_frame = pd.DataFrame(
-        {
-            ticker: (
-                constituent_ohlcv[ticker]["volume"].astype(float)
-                if ticker in constituent_ohlcv
-                else pd.Series(np.nan, index=reference_index, dtype=float)
-            )
-            for ticker in all_member_tickers
-        },
-        index=None,
-    ).reindex(reference_index)
+    # Build the (sessions × members) adjusted_close and volume frames by
+    # filling a preallocated dense matrix. This preserves the exact
+    # ticker-missing => all-NaN semantics without paying DataFrame-of-Series
+    # alignment costs for every member on every run.
+    adj_close_frame = _build_member_frame(
+        reference_index=reference_index,
+        all_member_tickers=all_member_tickers,
+        constituent_ohlcv=constituent_ohlcv,
+        column_name="adjusted_close",
+    )
+    volume_frame = _build_member_frame(
+        reference_index=reference_index,
+        all_member_tickers=all_member_tickers,
+        constituent_ohlcv=constituent_ohlcv,
+        column_name="volume",
+    )
 
     # PIT membership mask: derive directly from the interval rows. This keeps
     # the exact members_on semantics but avoids per-session set construction.
@@ -401,6 +387,32 @@ def _compute_pit_features(
         "upvol_downvol_ratio": upvol_downvol_ratio,
         "breadth_thrust": breadth_thrust,
     }
+
+
+def _build_member_frame(
+    *,
+    reference_index: pd.DatetimeIndex,
+    all_member_tickers: list[str],
+    constituent_ohlcv: dict[str, pd.DataFrame],
+    column_name: str,
+) -> pd.DataFrame:
+    data = np.full(
+        (len(reference_index), len(all_member_tickers)),
+        np.nan,
+        dtype=float,
+    )
+    for col_idx, ticker in enumerate(all_member_tickers):
+        frame = constituent_ohlcv.get(ticker)
+        if frame is None:
+            continue
+        aligned = frame[column_name].reindex(reference_index)
+        data[:, col_idx] = aligned.to_numpy(dtype=float, na_value=np.nan)
+    return pd.DataFrame(
+        data,
+        index=reference_index,
+        columns=all_member_tickers,
+        dtype=float,
+    )
 
 
 def _compute_pct_above_sma(
