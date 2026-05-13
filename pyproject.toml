@@ -15,6 +15,7 @@ dependencies = [
   "pandas_market_calendars",
   "pyyaml",
   "hmmlearn>=0.3,<0.4",
+  "bayesian-changepoint-detection>=0.2.dev1",
 ]
 
 [project.optional-dependencies]

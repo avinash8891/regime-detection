@@ -182,13 +182,29 @@ class ClusterOutput(BaseModel):
 
 
 class ChangePointOutput(BaseModel):
-    """Change-point detection output (v2 spec §4.6 — V2.1 ship)."""
+    """v2 §4.6 + §6.3 BOCPD change-point detection output (Slice 8, evidence-only).
+
+    score: 5-session rolling max of BOCPD posterior P(run_length=0)
+        (Ambiguity Log #64).
+    days_since_last_break: int sessions since last posterior >= break_threshold
+        (Ambiguity Log #65). None when no break has occurred in the trailing
+        BOCPD window (cold-start) — omitted from the JSON wire via exclude_none.
+    method: pinned to ``"BOCPD"`` for Slice 8 (Adams-MacKay 2007).
+    """
 
     model_config = ConfigDict(extra="forbid")
 
-    score: float = Field(ge=0.0, le=1.0)
-    days_since_last_break: int = Field(ge=0)
-    evidence: dict[str, Any]
+    score: float
+    days_since_last_break: int | None = None
+    method: str
+
+    def model_dump(self, *args: Any, **kwargs: Any) -> dict[str, Any]:
+        kwargs.setdefault("exclude_none", True)
+        return super().model_dump(*args, **kwargs)
+
+    def model_dump_json(self, *args: Any, **kwargs: Any) -> str:
+        kwargs.setdefault("exclude_none", True)
+        return super().model_dump_json(*args, **kwargs)
 
 
 class StructuralCausalState(BaseModel):

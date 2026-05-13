@@ -46,7 +46,8 @@ def test_regime_output_emits_v2_unknown_placeholders_until_classifiers_ship(mark
     # New V2 top-level fields default to None → omitted via exclude_none=True.
     # `volume_liquidity_state` ships in Slice 2.7 and IS populated when the v2
     # config carries the axis block (default core3-v2.0.0.yaml does).
-    for v2_field in ("inflation_growth_state", "credit_funding_state", "change_point"):
+    # Slice 8 ships change_point end-to-end; it's no longer in the omit list.
+    for v2_field in ("inflation_growth_state", "credit_funding_state"):
         assert v2_field not in dumped, f"V2 optional field {v2_field!r} should be omitted until its slice ships"
     # Slice 2.7: volume_liquidity_state is now populated end-to-end.
     assert "volume_liquidity_state" in dumped

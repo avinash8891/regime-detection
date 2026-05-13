@@ -576,6 +576,29 @@ class ClusteringConfig(BaseModel):
     model_version: str = Field(default="gmm_8cluster_v1.0")
 
 
+class ChangePointConfig(BaseModel):
+    """v2 §6.3 BOCPD change-point detection (Slice 8, evidence-only).
+
+    Implementation library: bayesian-changepoint-detection (Ambiguity Log #62).
+    Observation series: realized_vol_21d (#63).
+    Score = 5-session rolling max of posterior P(run_length=0) (#64).
+    Break = posterior >= 0.5 threshold (#65).
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    hazard_lambda: float = Field(default=250.0, gt=0.0)  # spec line 2872: 1/250 → lambda=250
+    score_window_days: int = Field(default=5, ge=1)  # Ambiguity Log #64
+    break_threshold: float = Field(default=0.5, gt=0.0, lt=1.0)  # Ambiguity Log #65
+    training_window_days: int = Field(default=1260, ge=100)  # 5y, matches HMM/GMM
+    # StudentT prior hyperparameters (Adams-MacKay defaults — conservative).
+    student_t_alpha: float = Field(default=0.1, gt=0.0)
+    student_t_beta: float = Field(default=0.01, gt=0.0)
+    student_t_kappa: float = Field(default=1.0, gt=0.0)
+    student_t_mu: float = Field(default=0.0)
+    method: str = Field(default="BOCPD")
+
+
 class VolCrushConfig(BaseModel):
     """Volatility crush detection configuration (v2 spec §5.3)."""
 
@@ -709,6 +732,8 @@ class RegimeConfig(BaseModel):
     hmm: HMMConfig | None = None
     # v2 §6.2 GMM clustering evidence layer (Slice 7).
     clustering: ClusteringConfig | None = None
+    # v2 §6.3 BOCPD change-point evidence layer (Slice 8).
+    change_point: ChangePointConfig | None = None
     vol_crush: VolCrushConfig | None = None
     no_flip_flop: NoFlipFlopConfig | None = None
     cohort_routing: CohortRoutingConfig | None = None  # v2 §5.1 (slice 5.1)

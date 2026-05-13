@@ -8,6 +8,10 @@ from regime_detection.breadth_state_v2 import (
     BreadthV2Features,
     compute_breadth_v2_features,
 )
+from regime_detection.change_point import (
+    ChangePointFeatures,
+    compute_change_point_features,
+)
 from regime_detection.config import (
     BreadthV2Config,
     CreditFundingConfig,
@@ -72,6 +76,7 @@ from regime_detection.monetary_pressure import (
 
 __all__ = [
     "BreadthV2Features",
+    "ChangePointFeatures",
     "ClusteringFeatures",
     "CreditFundingFeatures",
     "FeatureStore",
@@ -156,6 +161,16 @@ class FeatureStore(BaseModel):
     # the seam is None, ``RegimeOutput.cluster`` is None (omitted on JSON
     # wire) and V1 byte-identity is preserved.
     clustering: ClusteringFeatures | None = None
+
+    # v2 §6.3 BOCPD change-point evidence seam (Slice 8) — populated when
+    # ``context.config.change_point`` is non-None AND the trailing
+    # ``training_window_days`` of realized_vol_21d (SPY-derived) is
+    # available. The observation series rides the SPY-close V1 path, so
+    # this seam only goes None when the config is absent (v1-only callers)
+    # or when SPY history is too short for the spec-pinned 5y window. The
+    # transition_score consumer is V2.1 spec-amendment work — Slice 8 is
+    # evidence-only and does NOT change the V1 5-component score path.
+    change_point: ChangePointFeatures | None = None
 
     # V2 §2C credit/funding seam (Slice 4) — populated when a CreditFundingConfig
     # is threaded through AND cross_asset_closes carries HYG/LQD/TLT/KRE AND
@@ -370,6 +385,19 @@ def build_feature_store(
             config=credit_funding_config.rules,
         )
 
+    # v2 §6.3 BOCPD change-point evidence layer (Slice 8). Observation
+    # series is realized_vol_21d (Ambiguity Log #63) — derived from
+    # SPY close on the V1 path, so the seam is only None when the config
+    # is absent or when SPY history is too short.
+    if context.config.change_point is not None:
+        realized_vol_21d_series = realized_vol(spy_close, 21)
+        change_point = compute_change_point_features(
+            realized_vol_21d=realized_vol_21d_series,
+            config=context.config.change_point,
+        )
+    else:
+        change_point = None
+
     return FeatureStore(
         spy_index=spy_ohlcv.index,
         trend_direction=trend_direction,
@@ -385,5 +413,6 @@ def build_feature_store(
         monetary=monetary,
         hmm=hmm,
         clustering=clustering,
+        change_point=change_point,
         credit_funding=credit_funding,
     )

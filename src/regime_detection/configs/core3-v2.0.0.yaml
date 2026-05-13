@@ -309,6 +309,24 @@ clustering:
   covariance_type: full
   model_version: "gmm_8cluster_v1.0"
 
+# v2 §6.3 + §4.6 Change-Point Detection (Slice 8, evidence-only).
+# Algorithm: BOCPD (Adams & MacKay 2007). Library:
+# bayesian-changepoint-detection (Ambiguity Log #62 corrects #53's
+# ruptures reference). Observation series: realized_vol_21d (#63).
+# Score = 5-session rolling max of posterior (#64). Break = posterior
+# >= 0.5 (#65). Hazard lambda = 250 (one expected break per trading
+# year, calibration placeholder per spec line 2872).
+change_point:
+  hazard_lambda: 250.0
+  score_window_days: 5
+  break_threshold: 0.5
+  training_window_days: 1260
+  student_t_alpha: 0.1
+  student_t_beta: 0.01
+  student_t_kappa: 1.0
+  student_t_mu: 0.0
+  method: "BOCPD"
+
 no_flip_flop:
   window_trading_days: 5
 

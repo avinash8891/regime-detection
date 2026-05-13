@@ -8,6 +8,7 @@ from regime_detection.config import RegimeConfig
 from regime_detection.feature_store import build_feature_store
 from regime_detection.market_context import MarketContext, slice_context_to_recent_sessions
 from regime_detection.models import (
+    ChangePointOutput,
     ClusterOutput,
     DataQuality,
     MonetaryPressureOutput,
@@ -82,7 +83,20 @@ def build_regime_timeline(
             f"end_date={context.end_date.isoformat()}."
         )
 
-    required_sessions = min(len(context.sessions), ENGINE_MINIMUM_HISTORY + lookback_days - 1)
+    # Slice 8: the BOCPD change-point seam needs the trailing
+    # ``training_window_days`` (5y / 1260 sessions) of realized_vol_21d
+    # to fit. Extend the engine's minimum slicing window to satisfy any
+    # active v2 evidence-layer training window — keeps V1 byte-identity
+    # for callers that omit those configs (max() collapses to
+    # ENGINE_MINIMUM_HISTORY when no v2 trainable seams are configured).
+    v2_min_history = ENGINE_MINIMUM_HISTORY
+    if config is not None and config.change_point is not None:
+        # +21 absorbs the realized_vol_21d warmup so BOCPD sees a full
+        # non-NaN training window on the trailing slice.
+        v2_min_history = max(
+            v2_min_history, config.change_point.training_window_days + 21
+        )
+    required_sessions = min(len(context.sessions), v2_min_history + lookback_days - 1)
     working_context = slice_context_to_recent_sessions(context=context, required_sessions=required_sessions)
     network_fragility_config = (
         config.network_fragility if config is not None else None
@@ -128,6 +142,24 @@ def build_regime_timeline(
     # per-day loop (matches the `_build_transition_score_inputs_by_date`
     # pattern). Per-day `.get(pd.Timestamp(day))` would re-scan the index
     # n_sessions times; one reindex + positional access keeps the loop O(N).
+    # v2 §6.3 BOCPD change-point evidence (Slice 8) — bulk-reindex BEFORE the
+    # per-day loop, same pattern as clustering. Stays None when the seam is
+    # absent (config off, or SPY history shorter than training_window_days).
+    change_point_features = feature_store.change_point
+    if change_point_features is not None:
+        cp_session_index = pd.DatetimeIndex(
+            [pd.Timestamp(d) for d in selected_days]
+        )
+        cp_score_aligned = change_point_features.score.reindex(cp_session_index)
+        cp_days_since_aligned = change_point_features.days_since_last_break.reindex(
+            cp_session_index
+        )
+        cp_method = change_point_features.method
+    else:
+        cp_score_aligned = None
+        cp_days_since_aligned = None
+        cp_method = None
+
     clustering_features = feature_store.clustering
     if clustering_features is not None:
         session_index = pd.DatetimeIndex(
@@ -185,6 +217,26 @@ def build_regime_timeline(
             if credit_funding_by_date is not None
             else None
         )
+        change_point_output: ChangePointOutput | None = None
+        if (
+            cp_score_aligned is not None
+            and cp_days_since_aligned is not None
+            and cp_method is not None
+        ):
+            score_val = cp_score_aligned.iloc[idx]
+            if score_val is not None and not pd.isna(score_val):
+                days_val = cp_days_since_aligned.iloc[idx]
+                days_since_int: int | None
+                if days_val is None or pd.isna(days_val):
+                    days_since_int = None
+                else:
+                    days_since_int = int(days_val)
+                change_point_output = ChangePointOutput(
+                    score=float(score_val),
+                    days_since_last_break=days_since_int,
+                    method=cp_method,
+                )
+
         cluster_output: ClusterOutput | None = None
         if (
             cluster_id_aligned is not None
@@ -246,6 +298,7 @@ def build_regime_timeline(
                 volume_liquidity_state=volume_liquidity_output,
                 credit_funding_state=credit_funding_output,
                 cluster=cluster_output,
+                change_point=change_point_output,
                 agent_routing=agent_routing,
                 strategy_family_constraints=strategy_family_constraints,
             )
