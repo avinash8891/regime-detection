@@ -95,16 +95,17 @@ AND followthrough_rate >= 0.60
 `range_bound`:
 ```text
 abs(return_63d) < 0.05
-AND range_ratio_20d < 0.05
+AND max_midpoint_excursion_20d <= 0.05
 AND ADX_14 < 20
 ```
 
-`range_ratio_20d` definition:
+`max_midpoint_excursion_20d` definition:
 ```python
-range_ratio_20d = (max(close[t-19..t]) - min(close[t-19..t])) / mean(close[t-19..t])
+midpoint_20d = (max(close[t-19..t]) + min(close[t-19..t])) / 2
+max_midpoint_excursion_20d = max(abs(close[i] - midpoint_20d) / midpoint_20d for i in range(t-19, t+1))
 ```
 
-The 5% peak-to-trough span over the 20d window is symmetric with the existing `abs(return_63d) < 0.05` clause in the same rule and is fully derivable from close prices.
+Semantics: every close in the 20d window must sit within ±5% of the rolling midpoint (the average of the window's high and low close). This pins the literal "oscillates inside" meaning of the rule — closes that orbit a center, rather than total-span containment. The other two conjunctions (`abs(return_63d) < 0.05`, `ADX_14 < 20`) already filter for low directional intensity, so this third clause encodes the structural around-a-center property that the first two do not.
 
 #### Trend Slope Strength
 
@@ -1095,12 +1096,24 @@ the slice/commit that resolved it. Entries are append-only.
       be pinned in the upcoming `breakout_expansion` label slice.
 
     - **§1A line 98 `range_bound` "oscillates inside 20d range"** (was
-      entry #34). Replaced with `range_ratio_20d < 0.05` where
-      `range_ratio_20d = (max(close[t-19..t]) - min(close[t-19..t])) /
-      mean(close[t-19..t])`. Rationale: symmetric with the existing
-      `abs(return_63d) < 0.05` clause in the same rule; close-prices
-      only; fully derivable from existing inputs. Entry #34 is now
-      resolved: the `range_bound` label is unblocked.
+      entry #34). Initial amendment pinned `range_ratio_20d < 0.05`
+      (total span of the 20d window). **Revised in the same
+      amendment cycle** to `max_midpoint_excursion_20d <= 0.05`
+      where the 20d midpoint is `(max + min) / 2` over the window
+      and the excursion is `max(|close[i] - midpoint| / midpoint)
+      for i in t-19..t`. Rationale for the revision: the literal
+      reading of "oscillates inside" is "closes orbit a center,"
+      which the midpoint-bound form captures directly; the
+      range-ratio form is strictly a total-span condition and is
+      ~2× tighter for symmetric oscillations (a symmetric ±5% chop
+      around 100 yields range_ratio=0.10 but midpoint_excursion=0.05).
+      The other two conjunctions
+      (`abs(return_63d) < 0.05`, `ADX_14 < 20`) already filter for
+      low directional intensity, so the third clause should encode
+      the structural around-a-center property rather than double
+      up on strictness. Close-prices only; fully derivable from
+      existing inputs. Entry #34 is now resolved: the `range_bound`
+      label is unblocked.
 
     - **§2A monetary scaffolding** (was entry #44 and addressed for
       one formula by entry #45). All five missing scaffolding
