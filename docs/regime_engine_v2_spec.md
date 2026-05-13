@@ -1401,6 +1401,72 @@ the slice/commit that resolved it. Entries are append-only.
     additions wire into the existing v1 event_calendar infrastructure
     without classifier work.
 
+51. **§4 + §6 small pins — transition-score cleanups + HMM/GMM
+    operational forms.**
+
+    Five small but blocking pins resolved in §4 and §6:
+
+    - **§4.2 `drawdown_from_252d_high` naming.** The spec text used
+      `drawdown_from_252d_high` while slice 2.1 ships `drawdown_252d`
+      in `FeatureStore.trend_direction_v2`. Pinned as the same series
+      (an alias). The `trend_break_score` formula stays unchanged
+      mathematically; the §4.2 code block now reads `drawdown_252d`
+      with an inline comment noting the alias. Resolves the
+      naming inconsistency that would have surfaced at code time.
+    - **§4.4 score-interpretation boundary strictness.** Original
+      text used `0.00 - 0.35` etc. without specifying which band
+      owns the boundary. Pinned as half-open intervals — upper
+      boundary belongs to the next band: `[0.00, 0.35)` →
+      `stable`, `[0.35, 0.55)` → `weakening`, `[0.55, 0.75)` →
+      `transition_warning`, `[0.75, 1.00]` → `high transition risk`.
+      Also pinned the `score_interpretation` Literal short-name set
+      `{"stable", "weakening", "transition_warning", "high"}` to
+      match the §4.5 JSON example (which uses `"high"` not
+      `"high_transition_risk"`).
+    - **§6.1 HMM inputs.** Each input now cites the FeatureStore seam
+      it MUST reuse (no recomputation): `realized_vol_21d` from
+      slice 2.6 shared helper; `drawdown_63d` operationalised as
+      slice-2.1 style with 63-day trailing-peak window;
+      `volume_zscore_20d` from slice 2.4;
+      `avg_pairwise_corr` from slice 1.2. Removes the risk of a fifth
+      duplicate computation path emerging when the HMM module ships.
+    - **§6.1 state-to-label mapping discipline.** Pinned as manual
+      and config-versioned, mirroring §6.2 K-Means/GMM. Mapping
+      artifact pattern (`hmm_state_label_map.yaml`) with `version`,
+      `fitted_on`, `fitted_window`, `n_states`, and `mappings: {int_index:
+      economic_label}`. The state ↔ label assignment is decided by
+      the operator after inspecting fitted state means (typically
+      `stress_crash` = lowest mean return + highest mean vol + highest
+      mean correlation). Closes the V2 §10 "never auto-label" gap
+      that previously applied to §6.2 only but logically applies to
+      §6.1 as well.
+    - **§6.1 "20% parameter drift" operational form.** Pinned as the
+      maximum-across-(state × feature) relative absolute change in
+      state-mean parameters, after Hungarian-algorithm permutation
+      of new state indices to best match old. Transition probabilities
+      and covariances are excluded from the alert metric (they drift
+      naturally with refit-window shift); a separate review-flag
+      fires on > 30% transition-probability shift but does not block
+      deployment. Resolves the previously vague "alert on >20%
+      parameter drift" line.
+    - **§6.2 cluster count.** Pinned at 8 (matches the
+      `gmm_8cluster_v1.0` example in the §6.2 output JSON). GMM
+      preferred over K-Means because it provides membership
+      probabilities; K-Means is an acceptable fallback for
+      convergence-unstable cases.
+
+    Out of scope for this amendment (still requires user decision):
+    - §4.6 / §6.3 change-point algorithm choice (BOCPD / PELT /
+      CUSUM) — governance question, no implementation rationale
+      strong enough to pick without product preference.
+    - §5 Strategy Response state→cohort / state→constraint mappings —
+      governance.
+
+    Resolved by spec-amendment commit (this doc-only change). HMM
+    (slice 6) and GMM (slice 7) can now be dispatched as TDD slices;
+    only their manual-mapping artifacts remain a per-fit operator
+    deliverable.
+
 ---
 
 ## 2. Layer 2 V2 — Full Structural-Causal State
@@ -2044,7 +2110,10 @@ score = avg_pairwise_corr_percentile_504d  # already 0-1
 
 `trend_break_score`:
 ```python
-distance_from_high = drawdown_from_252d_high  # negative
+# `drawdown_from_252d_high` is the same series as slice-2.1's `drawdown_252d`
+# in `FeatureStore.trend_direction_v2.drawdown_252d` (per Ambiguity Log #13).
+# Values are <= 0; 0 at fresh 252d high, negative below.
+distance_from_high = drawdown_252d            # negative (alias retained for spec readability)
 score = clip(-distance_from_high / 0.15, 0, 1)  # 0 at top, 1 at -15%
 ```
 
@@ -2087,12 +2156,16 @@ macro_event: 0.10
 
 ### 4.4 Score Interpretation
 
+Boundaries are half-open: the upper boundary belongs to the next band. Exactly `0.35` is `weakening` (not `stable`); exactly `0.55` is `transition_warning`; exactly `0.75` is `high transition risk`.
+
 ```text
-0.00 - 0.35  →  stable
-0.35 - 0.55  →  weakening
-0.55 - 0.75  →  transition_warning
-0.75 - 1.00  →  high transition risk
+[0.00, 0.35)  →  stable
+[0.35, 0.55)  →  weakening
+[0.55, 0.75)  →  transition_warning
+[0.75, 1.00]  →  high transition risk
 ```
+
+`score_interpretation` Literal: `{"stable", "weakening", "transition_warning", "high"}` (the JSON example at §4.5 uses `"high"` as the short name for the top band; pin that name to keep the JSON contract consistent).
 
 ### 4.5 Integration with V1 Warnings
 
@@ -2259,15 +2332,36 @@ Infer latent market states from returns and volatility.
 
 #### Inputs
 - `return_1d`
-- `realized_vol_21d`
-- `drawdown_63d`
-- `volume_zscore`
-- `avg_pairwise_corr` (Layer 3 V2)
+- `realized_vol_21d` — same series as `volatility_state.realized_vol(close, window=21)` (slice 2.6 shared helper)
+- `drawdown_63d` — analogous to `drawdown_252d` (slice 2.1) but with a 63d trailing-peak window: `close[t] / max(close[t-62..t]) - 1`
+- `volume_zscore_20d` — same series as `FeatureStore.volume_liquidity_v2.volume_zscore_20d` (slice 2.4)
+- `avg_pairwise_corr` (Layer 3 V2) — `FeatureStore.network_fragility.avg_pairwise_corr` (slice 1.2)
+
+All HMM inputs reuse existing FeatureStore seams. The HMM module MUST NOT recompute any of them.
 
 #### Model
 - Gaussian HMM
 - 3 states (recommended): `calm_bull`, `choppy_normal`, `stress_crash`
 - Optionally 4 states (split bull into trending vs euphoric) once 3-state version validates
+
+#### State-to-Label Mapping (Manual, Config-Versioned)
+
+Same discipline as §6.2 K-Means/GMM: the HMM emits states `0`, `1`, `2` (raw integer indices from `hmmlearn`); these are then manually mapped to economic labels via a versioned config artifact. **Never auto-map.**
+
+Mapping artifact (`hmm_state_label_map.yaml`):
+```yaml
+hmm_state_label_map:
+  version: "1.0"
+  fitted_on: "2026-01-15"
+  fitted_window: "2020-01-01..2025-12-31"
+  n_states: 3
+  mappings:
+    0: "calm_bull"
+    1: "choppy_normal"
+    2: "stress_crash"
+```
+
+Mapping is decided by the operator after inspecting fitted state means and persistence patterns — typically `stress_crash` is the state with the lowest mean `return_1d` + highest mean `realized_vol_21d` + highest mean `avg_pairwise_corr`. The mapping is reviewed and re-versioned each time the HMM is refit (per quarterly cadence below).
 
 #### Output
 ```json
@@ -2294,7 +2388,23 @@ HMM state is **never** the final regime label. Evidence flows into:
 #### Training
 - Fit on at least 5 years of data
 - Refit quarterly on rolling 5-year window
-- Compare new model parameters to prior version; alert on >20% parameter drift
+- Compare new model parameters to prior version; alert when **state-mean parameter drift** exceeds 20%.
+
+Drift operational definition:
+
+```python
+# After aligning new states to old states by closest-mean matching (so
+# state index permutations across refits are not counted as drift):
+relative_drift_per_state = max(
+    abs(new_state_mean[s][i] - old_state_mean[s][i])
+    / max(abs(old_state_mean[s][i]), 1e-9)
+    for i in range(n_features)
+)
+parameter_drift = max(relative_drift_per_state for s in range(n_states))
+alert_threshold = 0.20
+```
+
+The drift metric is the **maximum across (state × feature)** of the relative absolute change in state-mean parameters, after Hungarian-algorithm permutation of new state indices to best match old. State-transition probabilities and covariance parameters are not included in the drift alert (they're typically noisier than means and drift naturally with refit-window shift); a separate review-flag fires when transition-probability shifts exceed 30% but does not block deployment.
 
 ---
 
@@ -2323,6 +2433,11 @@ Discover empirical clusters of market days for diagnostic purposes.
   }
 }
 ```
+
+#### Model
+- Algorithm: GMM (Gaussian Mixture Model) preferred over hard K-Means because it provides per-day cluster membership probabilities (useful as evidence). K-Means is an acceptable fallback when GMM convergence is unstable.
+- **Number of clusters: 8** (matches the `gmm_8cluster_v1.0` example in the output JSON below; pinned as the V2 ship default).
+- Like the HMM (§6.1), cluster index → economic label mapping is **manual and config-versioned**. Never auto-map.
 
 #### Constraint
 Clusters must be **manually mapped** to economic labels after inspection. Never auto-label. Mapping is config-versioned.
