@@ -1,6 +1,6 @@
 # V2 Calibration Summary
 
-- Fitted at: 2026-05-13T12:18:12.567659+00:00
+- Fitted at: 2026-05-13T12:21:59.388460+00:00
 - Data end date: 2026-05-08
 - SPY sessions: 2099
 - Sector ETFs: ['XLB', 'XLC', 'XLE', 'XLF', 'XLI', 'XLK', 'XLP', 'XLRE', 'XLU', 'XLV', 'XLY']

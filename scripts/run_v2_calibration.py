@@ -110,17 +110,29 @@ def _fit_summary_hmm(feature_store: Any, training_window_days: int) -> dict[str,
     }
     # Per-state stats: mean posterior, max-state count, transition diagonal.
     state_counts = {}
+    argmax_series = state_probs.idxmax(axis=1)
     for k in range(n_states):
-        mask = state_probs.idxmax(axis=1) == k
+        mask = argmax_series == k
         state_counts[int(k)] = int(mask.sum())
     summary["sessions_per_dominant_state"] = state_counts
     # Persistence (probability that argmax stays same on consecutive sessions).
-    argmax = state_probs.idxmax(axis=1).to_numpy()
+    argmax = argmax_series.to_numpy()
     persistence = {
         int(k): int(((argmax[:-1] == k) & (argmax[1:] == k)).sum()) / max(1, int((argmax[:-1] == k).sum()))
         for k in range(n_states)
     }
     summary["persistence_probability_per_state"] = {k: round(v, 4) for k, v in persistence.items()}
+    # Top-5 most-recent dominant sessions per state — gives the operator a
+    # concrete anchor for the manual label mapping (V2 §6.1 line 2748 + §10).
+    representative_dates: dict[int, list[str]] = {}
+    for k in range(n_states):
+        mask = argmax_series == k
+        if not mask.any():
+            representative_dates[int(k)] = []
+            continue
+        dates = state_probs.index[mask][-5:].tolist()
+        representative_dates[int(k)] = [pd.Timestamp(d).date().isoformat() for d in dates]
+    summary["recent_dominant_dates_per_state"] = representative_dates
     summary["candidate_mappings"] = {
         int(k): f"<operator review: assign economic label for state {k}>"
         for k in range(n_states)
@@ -152,6 +164,24 @@ def _fit_summary_clustering(feature_store: Any) -> dict[str, Any]:
         else:
             per_cluster_distance[int(k)] = None
     summary["mean_distance_to_centroid_per_cluster"] = per_cluster_distance
+    # Top-5 most-recent + top-5 most-extreme-distance sessions per cluster.
+    # Gives the operator concrete date anchors to inspect the historical
+    # regime context when assigning the economic label (V2 §6.2 line 2842 + §10).
+    recent_dates: dict[int, list[str]] = {}
+    extreme_dates: dict[int, list[str]] = {}
+    for k in range(n_clusters):
+        mask = cluster_id == k
+        if not mask.any():
+            recent_dates[int(k)] = []
+            extreme_dates[int(k)] = []
+            continue
+        cluster_dates = cluster_id.index[mask]
+        recent_dates[int(k)] = [pd.Timestamp(d).date().isoformat() for d in cluster_dates[-5:]]
+        cluster_distances = distances.loc[cluster_dates]
+        top_extreme = cluster_distances.nlargest(5).index
+        extreme_dates[int(k)] = [pd.Timestamp(d).date().isoformat() for d in top_extreme]
+    summary["recent_dates_per_cluster"] = recent_dates
+    summary["most_extreme_distance_dates_per_cluster"] = extreme_dates
     summary["candidate_mappings"] = {
         int(k): f"<operator review: assign economic label for cluster {k}>"
         for k in range(n_clusters)
