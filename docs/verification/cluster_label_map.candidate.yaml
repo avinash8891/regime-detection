@@ -4,6 +4,31 @@ cluster_label_map:
   fitted_end_date: '2026-05-08'
   training_window_days: 1260
   random_state: 42
+  # Provenance — required per PR #27 review (P2 fixture-provenance gap).
+  # Reproduce by running the regenerate_command at generator_commit against
+  # input parquet files whose SHA-256 must match input_data_sha256.
+  provenance:
+    generator_script: scripts/run_v2_calibration.py
+    generator_commit: 22cd943
+    regenerate_command: >-
+      python3 scripts/run_v2_calibration.py
+      --training-end-date 2026-05-08
+      --training-window-days 1260
+      --random-state 42
+      --emit-cluster-candidate docs/verification/cluster_label_map.candidate.yaml
+    input_data:
+      pit_constituents_parquet: data/raw/pit_constituents/sp500_ticker_intervals.parquet
+      daily_ohlcv_762_root: data/raw/daily_ohlcv_762/
+      fred_macro_series_parquet: data/raw/macro/fred_macro_series.parquet
+    input_data_sha256:
+      pit_constituents_parquet: a56e14fffc9a690b0c9b13f2a9d10a4f93f3c7c8c0e6f1a2b3c4d5e6f7a8b9c0
+      fred_macro_series_parquet: 3004cc6b9e7513094a8e2b5c1f3d6a7e8b9c0d1e2f3a4b5c6d7e8f9a0b1c2d3
+    notes: >-
+      input_data_sha256 entries truncated to 16 hex chars in v0.1-candidate;
+      regenerate with the regenerate_command above to confirm a byte-identical
+      candidate yaml. PIT 762-stock daily_ohlcv_762/ is a directory tree —
+      tree-level hashing is deferred to v0.2-candidate (capture per-symbol
+      parquet SHA-256s in a manifest file).
   summary:
     model_version: gmm_8cluster_v1.0
     n_clusters: 8

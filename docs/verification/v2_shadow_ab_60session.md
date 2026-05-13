@@ -6,6 +6,22 @@
 - v2-mode errors (sessions): 0
 - Generated: 2026-05-13T12:53:44.830044+00:00
 
+## Reproducibility
+
+- Generator script: `scripts/run_v2_shadow_ab_gate.py`
+- Generator commit: `22cd943`
+- Regenerate:
+  ```
+  python3 scripts/run_v2_shadow_ab_gate.py \
+      --start-date 2026-02-12 --end-date 2026-05-08 \
+      --out docs/verification/v2_shadow_ab_60session.md
+  ```
+- Input data SHA-256 (truncated to 16 hex chars):
+  - `data/raw/pit_constituents/sp500_ticker_intervals.parquet` → `a56e14fffc9a690b`
+  - `data/raw/macro/fred_macro_series.parquet` → `3004cc6b9e751309`
+  - `data/raw/daily_ohlcv_762/` (per-symbol manifest deferred to follow-up;
+    regenerate from the parquet tree at the generator commit to validate).
+
 ## Gate intent (docs/v2_slice_gate_checklist.md item 7)
 
 Zero unexpected wire diffs in v1 fields; v2 enrichments match

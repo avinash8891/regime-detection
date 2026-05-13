@@ -232,6 +232,128 @@ def test_slice_context_to_end_date_propagates_v2_data(market_df_for_asof) -> Non
         assert series.index.equals(spy_index)
 
 
+def test_slice_context_to_recent_sessions_preserves_pit_breadth_seams(
+    market_df_for_asof,
+) -> None:
+    """Regression: slice_context_to_recent_sessions used to drop
+    pit_constituent_intervals + constituent_ohlcv on the rebuilt
+    MarketContext, silently disabling §1D PIT breadth downstream."""
+    as_of = date(2023, 12, 14)
+    ctx, _, _, _ = _build_v2_context(market_df_for_asof, as_of)
+
+    pit_intervals = pd.DataFrame(
+        [
+            {
+                "ticker": "AAPL",
+                "start_date": date(1980, 12, 12),
+                "end_date": None,
+                "source": "test",
+                "source_url": "test://",
+                "bias_warning": "test_only",
+            }
+        ]
+    )
+    constituent_ohlcv = {
+        "AAPL": pd.DataFrame(
+            {"date": [as_of], "close": [195.0]},
+        )
+    }
+    ctx_with_pit = ctx.model_copy(
+        update={
+            "pit_constituent_intervals": pit_intervals,
+            "constituent_ohlcv": constituent_ohlcv,
+        }
+    )
+
+    sliced = slice_context_to_recent_sessions(
+        context=ctx_with_pit, required_sessions=30
+    )
+
+    assert sliced.pit_constituent_intervals is not None
+    assert sliced.constituent_ohlcv is not None
+    assert list(sliced.pit_constituent_intervals["ticker"]) == ["AAPL"]
+    assert set(sliced.constituent_ohlcv.keys()) == {"AAPL"}
+
+
+def test_slice_context_to_end_date_preserves_pit_breadth_seams(
+    market_df_for_asof,
+) -> None:
+    """Regression: slice_context_to_end_date used to drop
+    pit_constituent_intervals + constituent_ohlcv on the rebuilt
+    MarketContext, silently disabling §1D PIT breadth downstream."""
+    as_of = date(2023, 12, 14)
+    ctx, _, _, _ = _build_v2_context(market_df_for_asof, as_of)
+
+    pit_intervals = pd.DataFrame(
+        [
+            {
+                "ticker": "MSFT",
+                "start_date": date(1986, 3, 13),
+                "end_date": None,
+                "source": "test",
+                "source_url": "test://",
+                "bias_warning": "test_only",
+            }
+        ]
+    )
+    constituent_ohlcv = {
+        "MSFT": pd.DataFrame(
+            {"date": [as_of], "close": [370.0]},
+        )
+    }
+    ctx_with_pit = ctx.model_copy(
+        update={
+            "pit_constituent_intervals": pit_intervals,
+            "constituent_ohlcv": constituent_ohlcv,
+        }
+    )
+
+    earlier = date(2023, 12, 1)
+    sliced = slice_context_to_end_date(context=ctx_with_pit, end_date=earlier)
+
+    assert sliced.pit_constituent_intervals is not None
+    assert sliced.constituent_ohlcv is not None
+    assert list(sliced.pit_constituent_intervals["ticker"]) == ["MSFT"]
+    assert set(sliced.constituent_ohlcv.keys()) == {"MSFT"}
+
+
+def test_engine_classify_threads_pit_constituent_inputs_into_context(
+    market_df_for_asof,
+) -> None:
+    """Regression: RegimeEngine.classify must accept pit_constituent_intervals
+    + constituent_ohlcv kwargs so PIT §1D breadth seams are reachable from
+    the public engine entrypoint, not only via direct build_market_context."""
+    as_of = date(2023, 12, 14)
+
+    pit_intervals = pd.DataFrame(
+        [
+            {
+                "ticker": "AAPL",
+                "start_date": date(1980, 12, 12),
+                "end_date": None,
+                "source": "test",
+                "source_url": "test://",
+                "bias_warning": "test_only",
+            }
+        ]
+    )
+    constituent_ohlcv = {
+        "AAPL": pd.DataFrame({"date": [as_of], "close": [195.0]}),
+    }
+
+    out = RegimeEngine().classify(
+        as_of_date=as_of,
+        market_data=market_df_for_asof(as_of),
+        pit_constituent_intervals=pit_intervals,
+        constituent_ohlcv=constituent_ohlcv,
+    )
+
+    # V1 wire fields remain stable when V2 PIT kwargs are passed (the §1D
+    # PIT-aware breadth output is opt-in and does not change V1 ETF-proxy
+    # breadth_state).
+    assert out.breadth_state.active_label is not None
+
+
 # ---------- Engine threading -------------------------------------------------
 
 

@@ -6,6 +6,21 @@
 - v2-mode errors (sessions): 0
 - Generated: 2026-05-13T13:34:02.585211+00:00
 
+## Reproducibility
+
+- Generator script: `scripts/run_v2_walkforward_gate.py`
+- Generator commit: `22cd943`
+- Regenerate:
+  ```
+  python3 scripts/run_v2_walkforward_gate.py \
+      --start-date 2025-02-07 --end-date 2026-05-08 \
+      --out docs/verification/v2_walkforward_perf_gate.md
+  ```
+- Input data SHA-256 (truncated to 16 hex chars):
+  - `data/raw/pit_constituents/sp500_ticker_intervals.parquet` → `a56e14fffc9a690b`
+  - `data/raw/macro/fred_macro_series.parquet` → `3004cc6b9e751309`
+  - `data/raw/daily_ohlcv_762/` (per-symbol manifest deferred to follow-up).
+
 ## Wire-level metrics
 
 | metric | v1 | v2 | delta |

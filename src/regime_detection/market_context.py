@@ -110,6 +110,12 @@ def slice_context_to_recent_sessions(*, context: MarketContext, required_session
         sector_etf_closes=_reindex_optional_close_dict(context.sector_etf_closes, spy_ohlcv.index),
         cross_asset_closes=_reindex_optional_close_dict(context.cross_asset_closes, spy_ohlcv.index),
         macro_series=_reindex_optional_close_dict(context.macro_series, spy_ohlcv.index),
+        # PIT seams: pass through as-is. Intervals carry their own start/end
+        # dates and constituent_ohlcv frames carry per-ticker date columns;
+        # downstream readers handle date-bounded queries themselves. Dropping
+        # them here would silently disable §1D PIT breadth feature compute.
+        pit_constituent_intervals=context.pit_constituent_intervals,
+        constituent_ohlcv=context.constituent_ohlcv,
     )
 
 
@@ -146,6 +152,10 @@ def slice_context_to_end_date(*, context: MarketContext, end_date: date) -> Mark
         sector_etf_closes=_reindex_optional_close_dict(context.sector_etf_closes, spy_ohlcv.index),
         cross_asset_closes=_reindex_optional_close_dict(context.cross_asset_closes, spy_ohlcv.index),
         macro_series=_reindex_optional_close_dict(context.macro_series, spy_ohlcv.index),
+        # PIT seams: pass through as-is. See slice_context_to_recent_sessions
+        # for rationale — dropping them here silently disables §1D PIT breadth.
+        pit_constituent_intervals=context.pit_constituent_intervals,
+        constituent_ohlcv=context.constituent_ohlcv,
     )
 
 
