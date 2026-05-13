@@ -1,0 +1,27 @@
+src/regime_detection/credit_funding.py
+  s_1c47c85d071288::t_14be125336c53a 115-118
+  s_1c47c85d071288::t_63d88e458a7283 184-188,191
+src/regime_detection/monetary_pressure.py
+  s_1c47c85d071288::t_51681fc2f16b29 85-91,103-106,108-112
+src/regime_detection/_rolling_stats.py
+  s_1c47c85d071288::t_f4d4cf7fbbb6e6 1-62
+src/regime_detection/change_point.py
+  s_1c47c85d071288::t_d8e2aeb770d75c 74-89
+  s_1c47c85d071288::t_09bb7292dd5231 115-116,119-129
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.8",
+  "base_commit_sha": "f627162eb354167960315e4fceee5f25baa16359",
+  "prompts": {},
+  "sessions": {
+    "s_1c47c85d071288": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "9a7f5f4a-bdfa-4e7a-982d-255fc02a66d5",
+        "model": "claude-opus-4-7"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}
