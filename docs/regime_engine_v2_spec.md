@@ -82,15 +82,45 @@ Lookback: 250d minimum. Shorter windows are too noisy. Use as evidence only.
 
 Two new V2 character labels: `breakout_expansion`, `range_bound`.
 
-`breakout_expansion`:
+`breakout_expansion` (upside only — see direction note below):
 ```text
-close breaks 20d or 50d range
-AND Bollinger band width expanding
-AND volume > 20d average
+close_breaks_20d_or_50d_range
+AND bollinger_band_width_expanding
+AND volume_above_20d_average
 AND followthrough_rate >= 0.60
 ```
 
-`followthrough_rate` definition: of the last N=20 breakouts in the trailing window, the fraction where close held above the breakout level for 5+ trading days post-break. The 0.60 threshold pins the rule per breakout-quality literature (Zweig-style breadth-thrust convention) and is symmetric with §1D `nh_nl_ratio < 0.4`.
+Operational definitions:
+
+```python
+# close_breaks_20d_or_50d_range — strict upside break of the prior-window close-high
+breakout_20d  = close[t] > max(close[t-20..t-1])
+breakout_50d  = close[t] > max(close[t-50..t-1])
+close_breaks_20d_or_50d_range = breakout_20d OR breakout_50d
+
+# bollinger_band_width_expanding — textbook BB (period=20, multiplier=2)
+#   bb_width = upper - lower = 4 * std(close[t-19..t], ddof=0)
+# "Expanding" compared to 5 sessions ago, matching the 5-day post-break hold
+# in followthrough_rate (single coherent timeframe).
+bollinger_band_width_expanding = bb_width_20[t] > bb_width_20[t-5]
+
+# volume_above_20d_average — strict, t excluded from the baseline
+volume_above_20d_average = volume[t] > mean(volume[t-20..t-1])
+
+# followthrough_rate — fraction of recent upside breakouts that held
+#   Walk backwards through history (cap lookback at 504 sessions) and
+#   collect the 20 most-recent past sessions where breakout_20d OR
+#   breakout_50d fired. For each such session b, "held" iff
+#   close[b+i] > breakout_level for every i in 1..5 (continuous 5-day hold).
+#   `breakout_level` = the max-of-prior-window that close[b] crossed at b.
+followthrough_rate = held_count / 20
+```
+
+Direction: `breakout_expansion` fires on **upside** breakouts only — `followthrough_rate`'s definition explicitly requires close to stay **above** the breakout level. Downside breakouts are out of scope for this label.
+
+Cold-start: the rule cannot fire reliably until at least 20 prior upside breakouts have occurred within the trailing 504-session window. This is the strictest warm-up in any V2 label; new universes / early backtest dates will see this label silent.
+
+`0.60` threshold rationale: matches the historical bull-market followthrough baseline (~55-65% per breakout-quality literature; Zweig / O'Neil neighborhood), is symmetric with §1D `nh_nl_ratio < 0.4` (1 − 0.6), and skews the rule modestly toward false-negative bias — the deliberately conservative side, since false positives route through `breakout_specialist` cohort (§5.1) and produce active PnL damage in chop, whereas false negatives only cost opportunity. The value is a **V2 walk-forward calibration placeholder** per §9.1: post-walk-forward evidence may tighten it to 0.65 (if false-positive rate exceeds target) or loosen it to 0.55 (if false-negative rate dominates).
 
 `range_bound`:
 ```text
@@ -1172,6 +1202,69 @@ the slice/commit that resolved it. Entries are append-only.
     Resolved by spec-amendment commit (this doc-only change). The
     downstream code slices that consume these pins ship in
     subsequent commits.
+
+47. **§1A `breakout_expansion` — operational forms for the remaining
+    three clauses (clauses 1–3) and `followthrough_rate` windowing
+    metadata.**
+
+    Entry #46 resolved clause 4 (the `followthrough_rate >= 0.60`
+    threshold pin). Three additional clauses in the `breakout_expansion`
+    rule and several pieces of `followthrough_rate` windowing metadata
+    were left implicit and are now pinned in §1A:
+
+    - **Clause 1 — `close breaks 20d or 50d range`.** Pinned as
+      `breakout_20d OR breakout_50d` where
+      `breakout_Nd = close[t] > max(close[t-N..t-1])`. Strict `>`
+      (a true break, not a touch); compares against the prior-window
+      maximum of *closes* (consistent with the rest of §1A's
+      close-only inputs); the spec's word "or" reads as logical OR
+      (either window suffices).
+
+    - **Clause 2 — `Bollinger band width expanding`.** Pinned as
+      textbook Bollinger Bands (period=20, multiplier=2;
+      `bb_width = 4 * std(close[t-19..t], ddof=0)`) with "expanding"
+      operationalised as `bb_width_20[t] > bb_width_20[t-5]`. The
+      5-session comparison window matches the 5-day post-break hold
+      in clause 4, keeping a single coherent timeframe through the
+      rule rather than introducing another constant.
+
+    - **Clause 3 — `volume > 20d average`.** Pinned as
+      `volume[t] > mean(volume[t-20..t-1])`. Strict `>`; baseline
+      excludes `t` so today's volume is genuinely above its prior
+      20-session average rather than being self-included.
+
+    - **Clause 4 metadata — `followthrough_rate` windowing.** The
+      "trailing window" wording in entry #46 is operationalised as
+      a 504-session capped lookback over which the 20 most-recent
+      past upside breakouts are collected. "Held above breakout
+      level for 5+ trading days" is operationalised as continuous
+      hold — every close in `b+1..b+5` strictly above the
+      `breakout_level` (= `max(close[b-N..b-1])` for whichever window
+      fired at session `b`).
+
+    Direction pin: `breakout_expansion` is upside-only, since
+    `followthrough_rate` explicitly references "held above breakout
+    level." Downside breakouts would require a separate label (not in
+    §1A).
+
+    Cold-start: the strictest warm-up in any V2 label — the rule
+    cannot fire until at least 20 prior upside breakouts have occurred
+    within the trailing 504-session window. New universes / early
+    backtest dates will see this label silent. Recorded inline at §1A.
+
+    Asymmetric-cost framing on the 0.60 threshold (added in this
+    amendment): false positives route through the `breakout_specialist`
+    cohort (§5.1) and cause active PnL damage in chop; false negatives
+    cost only missed opportunity. 0.60 deliberately skews toward
+    false-negative bias. The value is a V2 §9.1 walk-forward
+    calibration placeholder: tighten to 0.65 if false-positive rate
+    exceeds target, loosen to 0.55 if false-negative rate dominates.
+
+    Entry #33 (the original `breakout_expansion` deferral) is now
+    fully resolved. The label slice can be dispatched as straight
+    TDD without further spec ambiguity.
+
+    Resolved by spec-amendment commit (this doc-only change).
 
 ---
 
