@@ -41,6 +41,7 @@ Implementation choices that resolve ambiguities:
 """
 from __future__ import annotations
 
+from bisect import bisect_left, bisect_right
 import datetime as dt
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
@@ -48,7 +49,6 @@ from dataclasses import dataclass
 import numpy as np
 import pandas as pd
 
-from regime_data_fetch.pit_constituents import members_on
 from regime_detection.config import BreadthV2Config
 from regime_detection.fragility_universe import SECTOR_ETFS
 
@@ -287,11 +287,8 @@ def _compute_pit_features(
 ) -> dict[str, pd.Series]:
     intervals = _normalize_interval_dates(pit_constituent_intervals)
     all_member_tickers = sorted(set(intervals["ticker"].tolist()))
-
-    # Pre-compute members-on-D once for the full reference index.
-    members_by_session: dict[pd.Timestamp, frozenset[str]] = {
-        ts: members_on(intervals, ts.date()) for ts in reference_index
-    }
+    session_days = list(reference_index.date)
+    ticker_to_col = {ticker: idx for idx, ticker in enumerate(all_member_tickers)}
 
     # Build the (sessions × members) adjusted_close DataFrame. Tickers absent
     # from constituent_ohlcv contribute an all-NaN column so the per-feature
@@ -324,17 +321,32 @@ def _compute_pit_features(
         index=None,
     ).reindex(reference_index)
 
-    # PIT membership mask: True where ticker is a member on that session.
+    # PIT membership mask: derive directly from the interval rows. This keeps
+    # the exact members_on semantics but avoids per-session set construction.
+    membership_array = np.zeros(
+        (len(reference_index), len(all_member_tickers)),
+        dtype=bool,
+    )
+    for row in intervals.itertuples(index=False):
+        ticker = str(row.ticker)
+        col_idx = ticker_to_col.get(ticker)
+        if col_idx is None:
+            continue
+        start_pos = bisect_left(session_days, row.start_date)
+        if start_pos >= len(session_days):
+            continue
+        if row.end_date is None:
+            end_pos_exclusive = len(session_days)
+        else:
+            end_pos_exclusive = bisect_right(session_days, row.end_date)
+        if start_pos >= end_pos_exclusive:
+            continue
+        membership_array[start_pos:end_pos_exclusive, col_idx] = True
     membership_mask = pd.DataFrame(
-        {
-            ticker: pd.Series(
-                [ticker in members_by_session[ts] for ts in reference_index],
-                index=reference_index,
-                dtype=bool,
-            )
-            for ticker in all_member_tickers
-        },
+        membership_array,
         index=reference_index,
+        columns=all_member_tickers,
+        dtype=bool,
     )
 
     # Per-ticker daily direction sign on adjusted_close (Ambiguity Log #56):

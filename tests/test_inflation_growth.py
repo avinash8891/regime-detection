@@ -33,6 +33,8 @@ from regime_detection.inflation_growth import (
     INFLATION_GROWTH_RISK_RANK,
     InflationGrowthFeatures,
     InflationGrowthRuleInputs,
+    build_rule_inputs_by_date,
+    build_rule_inputs_for_date,
     compute_inflation_growth_features,
     evaluate_disinflation,
     evaluate_earnings_contraction,
@@ -210,6 +212,61 @@ def test_cyclical_defensive_ratio_hand_pinned() -> None:
         config=_default_rules(),
     )
     assert feats.cyclical_defensive_ratio.iloc[50] == pytest.approx(250.0 / 130.0)
+
+
+def test_build_rule_inputs_by_date_matches_single_day_builder() -> None:
+    idx = _bdate_index(periods=200)
+    n = len(idx)
+    cpi = pd.Series(np.nan, index=idx, dtype=float)
+    cpi.iloc[::21] = np.linspace(300.0, 308.0, num=len(cpi.iloc[::21]))
+    pmi = pd.Series(np.nan, index=idx, dtype=float)
+    pmi.iloc[::21] = np.linspace(49.0, 53.0, num=len(pmi.iloc[::21]))
+    dgs10 = pd.Series(np.linspace(4.0, 4.5, n), index=idx, dtype=float)
+    dbc = pd.Series(np.linspace(20.0, 25.0, n), index=idx, dtype=float)
+    spy = pd.Series(np.linspace(400.0, 420.0, n), index=idx, dtype=float)
+    tlt = pd.Series(np.linspace(100.0, 95.0, n), index=idx, dtype=float)
+    xly = pd.Series(np.linspace(150.0, 170.0, n), index=idx, dtype=float)
+    xli = pd.Series(np.linspace(100.0, 115.0, n), index=idx, dtype=float)
+    xlp = pd.Series(np.linspace(70.0, 72.0, n), index=idx, dtype=float)
+    xlu = pd.Series(np.linspace(60.0, 62.0, n), index=idx, dtype=float)
+
+    feats = compute_inflation_growth_features(
+        cpi_all_items=cpi,
+        pmi_manufacturing=pmi,
+        dgs10=dgs10,
+        dbc_close=dbc,
+        spy_close=spy,
+        tlt_close=tlt,
+        xly_close=xly,
+        xli_close=xli,
+        xlp_close=xlp,
+        xlu_close=xlu,
+        config=_default_rules(),
+    )
+    cf_labels = {
+        ts: ("credit_calm" if i % 2 == 0 else "spread_widening")
+        for i, ts in enumerate(idx)
+    }
+    precomputed = build_rule_inputs_by_date(
+        features=feats,
+        config=_default_rules(),
+        credit_funding_active_labels_by_date=cf_labels,
+    )
+    for dt in idx[126::23]:
+        expected = build_rule_inputs_for_date(
+            features=feats,
+            dt=dt,
+            config=_default_rules(),
+            credit_funding_active_label=cf_labels[dt],
+        )
+        actual = precomputed[dt]
+        for field in expected.__dataclass_fields__:
+            if field == "credit_funding_active_label":
+                assert getattr(actual, field) == getattr(expected, field)
+            else:
+                assert getattr(actual, field) == pytest.approx(
+                    getattr(expected, field), nan_ok=True
+                )
 
 
 # --- Group B — Rule predicates (10 tests) ------------------------------------

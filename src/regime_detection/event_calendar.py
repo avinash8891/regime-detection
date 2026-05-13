@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import calendar
+from bisect import bisect_left, bisect_right
 from functools import lru_cache
 import logging
 from datetime import date, timedelta
@@ -53,18 +55,152 @@ def classify_event_calendar(
     event_calendar: pd.DataFrame | None,
     config: RegimeConfig,
 ) -> EventCalendarOutput:
-    event_df = _normalized_events(event_calendar, market=config.event_calendar.market)
-    raw_label, evidence = _raw_event_calendar_label(
-        as_of_date=as_of_date,
-        event_calendar=event_df,
+    """Point-classifier wrapper around :func:`compute_event_calendar_outputs`.
+
+    Kept as a public symbol for callers that want a single-session label
+    without constructing a ``MarketContext``. Delegates to the unified
+    bulk algorithm so the two surfaces cannot drift.
+    """
+    normalized = _normalized_events(event_calendar, market=config.event_calendar.market)
+    if not normalized.empty:
+        if (normalized["date"] - as_of_date > timedelta(days=90)).any():
+            LOG.warning(
+                "Event calendar contains row more than 90 calendar days after as_of_date=%s",
+                as_of_date,
+            )
+    outputs = compute_event_calendar_outputs(
+        sessions=(as_of_date,),
+        normalized_event_calendar=normalized,
         config=config,
     )
-    return EventCalendarOutput(
-        raw_label=raw_label,
-        stable_label=raw_label,
-        active_label=raw_label,
-        evidence=evidence,
+    return outputs[as_of_date]
+
+
+def compute_event_calendar_outputs(
+    *,
+    sessions: tuple[date, ...] | list[date],
+    normalized_event_calendar: pd.DataFrame | None,
+    config: RegimeConfig,
+) -> dict[date, EventCalendarOutput]:
+    """Compute event-calendar labels for every session in ``sessions``.
+
+    Pure compute, shared by:
+      - :func:`classify_event_calendar` (point API)
+      - :func:`regime_detection.axis_series.build_event_calendar_series`
+        (bulk wrapper that pulls ``sessions`` + ``normalized_event_calendar``
+        off a :class:`MarketContext`).
+
+    Algorithm: build a global NYSE session list spanning the union of
+    requested ``sessions`` and any event-date / publication-date in the
+    calendar, then for each event/expiry/earnings rule paint a bit-mask
+    across the relevant trading window. Resolve each session's mask via
+    the :data:`_PRECEDENCE` order. O(events + |sessions|) instead of the
+    O(|sessions| × events) iterrows-per-session pattern the old point
+    classifier used.
+    """
+    sessions_tuple = tuple(sessions)
+    if not sessions_tuple:
+        return {}
+    session_list = list(sessions_tuple)
+    session_pos = {day: idx for idx, day in enumerate(sessions_tuple)}
+    label_bits = {label: 1 << idx for idx, label in enumerate(_PRECEDENCE)}
+    match_masks = [0] * len(sessions_tuple)
+
+    event_rows = (
+        []
+        if normalized_event_calendar is None or normalized_event_calendar.empty
+        else list(normalized_event_calendar.itertuples(index=False))
     )
+    first_session = sessions_tuple[0]
+    last_session = sessions_tuple[-1]
+    global_start = first_session.replace(day=1) - timedelta(days=31)
+    global_end = last_session.replace(
+        day=calendar.monthrange(last_session.year, last_session.month)[1]
+    ) + timedelta(days=31)
+    if event_rows:
+        min_event_day = min(
+            min(row.publication_date, row.date) for row in event_rows
+        )
+        max_event_day = max(
+            max(row.publication_date, row.date) for row in event_rows
+        )
+        global_start = min(global_start, min_event_day) - timedelta(days=20)
+        global_end = max(global_end, max_event_day) + timedelta(days=20)
+    global_sessions = _sessions_between(global_start, global_end)
+    global_session_list = list(global_sessions)
+    global_pos = {day: idx for idx, day in enumerate(global_session_list)}
+
+    for row in event_rows:
+        label = _TYPE_TO_LABEL.get(str(row.type))
+        if label is None:
+            continue
+        event_date = row.date
+        event_idx = global_pos.get(event_date)
+        if event_idx is None:
+            continue
+        publication_date = row.publication_date
+        start_offset, end_offset = _WINDOWS[label]
+        start_idx = max(0, event_idx + start_offset)
+        end_idx = min(len(global_sessions) - 1, event_idx + end_offset)
+        bit = label_bits[label]
+        for day in global_session_list[start_idx : end_idx + 1]:
+            if day < publication_date:
+                continue
+            context_idx = session_pos.get(day)
+            if context_idx is not None:
+                match_masks[context_idx] |= bit
+
+    expiry_start, expiry_end = config.expiry_rules.monthly_options.window_trading_days
+    expiry_bit = label_bits["expiry_week"]
+    for year, month in sorted({(day.year, day.month) for day in session_list}):
+        third_friday = _third_friday_of_month(year=year, month=month)
+        expiry_idx = bisect_right(global_session_list, third_friday) - 1
+        if expiry_idx < 0:
+            continue
+        if global_session_list[expiry_idx].month != month:
+            continue
+        start_idx = max(0, expiry_idx + expiry_start)
+        end_idx = min(len(global_session_list) - 1, expiry_idx + expiry_end)
+        for day in global_session_list[start_idx : end_idx + 1]:
+            context_idx = session_pos.get(day)
+            if context_idx is not None:
+                match_masks[context_idx] |= expiry_bit
+
+    month_lookup = {
+        "second_monday_of_january": 1,
+        "second_monday_of_april": 4,
+        "second_monday_of_july": 7,
+        "second_monday_of_october": 10,
+    }
+    earnings_bit = label_bits["earnings_season"]
+    for year in sorted({day.year for day in sessions_tuple}):
+        for season in config.earnings_seasons:
+            start = _second_weekday_of_month(
+                year=year,
+                month=month_lookup[season.start_rule],
+                weekday=0,
+            )
+            end = start + timedelta(days=season.end_offset_days)
+            start_idx = bisect_left(session_list, start)
+            end_idx = bisect_right(session_list, end)
+            for idx in range(start_idx, end_idx):
+                match_masks[idx] |= earnings_bit
+
+    outputs: dict[date, EventCalendarOutput] = {}
+    for idx, day in enumerate(sessions_tuple):
+        mask = match_masks[idx]
+        ordered = [label for label in _PRECEDENCE if mask & label_bits[label]]
+        selected = ordered[0] if ordered else "normal_calendar"
+        outputs[day] = EventCalendarOutput(
+            raw_label=selected,
+            stable_label=selected,
+            active_label=selected,
+            evidence={
+                "all_matching_events": ordered,
+                "selected_via_precedence": selected,
+            },
+        )
+    return outputs
 
 
 def _normalized_events(event_calendar: pd.DataFrame | None, *, market: str) -> pd.DataFrame:
@@ -73,59 +209,10 @@ def _normalized_events(event_calendar: pd.DataFrame | None, *, market: str) -> p
     return load_event_calendar(event_calendar, market=market)
 
 
-def _raw_event_calendar_label(
-    *,
-    as_of_date: date,
-    event_calendar: pd.DataFrame,
-    config: RegimeConfig,
-) -> tuple[EventCalendarLabel, dict[str, object]]:
-    matches: list[EventCalendarLabel] = []
-
-    if not event_calendar.empty:
-        if any((row["date"] - as_of_date).days > 90 for _, row in event_calendar.iterrows()):
-            LOG.warning("Event calendar contains row more than 90 calendar days after as_of_date=%s", as_of_date)
-
-    for _, row in event_calendar.iterrows():
-        event_type = str(row["type"])
-        label = _TYPE_TO_LABEL.get(event_type)
-        if label is None:
-            continue
-        publication_date = row["publication_date"]
-        if publication_date > as_of_date:
-            continue
-        if _is_within_trading_window(
-            as_of_date=as_of_date,
-            event_date=row["date"],
-            start=_WINDOWS[label][0],
-            end=_WINDOWS[label][1],
-        ):
-            matches.append(label)
-
-    if _is_expiry_week(as_of_date=as_of_date, config=config):
-        matches.append("expiry_week")
-    if _is_earnings_season(as_of_date=as_of_date, config=config):
-        matches.append("earnings_season")
-
-    ordered = [label for label in _PRECEDENCE if label in set(matches)]
-    if ordered:
-        selected = ordered[0]
-    else:
-        selected = "normal_calendar"
-
-    return selected, {
-        "all_matching_events": ordered,
-        "selected_via_precedence": selected,
-    }
-
-
-def _is_within_trading_window(*, as_of_date: date, event_date: date, start: int, end: int) -> bool:
-    start_date = min(as_of_date, event_date) - timedelta(days=20)
-    end_date = max(as_of_date, event_date) + timedelta(days=20)
-    sessions = list(_sessions_between(start_date, end_date))
-    if as_of_date not in sessions or event_date not in sessions:
-        return False
-    delta = sessions.index(as_of_date) - sessions.index(event_date)
-    return start <= delta <= end
+def _third_friday_of_month(*, year: int, month: int) -> date:
+    month_weeks = calendar.monthcalendar(year, month)
+    friday_days = [week[calendar.FRIDAY] for week in month_weeks if week[calendar.FRIDAY] != 0]
+    return date(year, month, friday_days[2])
 
 
 @lru_cache(maxsize=None)
@@ -133,49 +220,8 @@ def _sessions_between(start_date: date, end_date: date) -> tuple[date, ...]:
     return tuple(nyse_calendar().schedule(start_date=start_date, end_date=end_date).index.date)
 
 
-@lru_cache(maxsize=None)
-def _month_expiry_date(year: int, month: int) -> date:
-    first = date(year, month, 1)
-    offset = (4 - first.weekday()) % 7  # Friday
-    first_friday = first + timedelta(days=offset)
-    candidate = first_friday + timedelta(days=14)
-    sessions = list(_sessions_between(candidate - timedelta(days=7), candidate))
-    sessions_before = [session for session in sessions if session <= candidate]
-    if not sessions_before:
-        raise RuntimeError(f"No NYSE sessions available on or before candidate expiry {candidate}")
-    return sessions_before[-1]
-
-
-def _is_expiry_week(*, as_of_date: date, config: RegimeConfig) -> bool:
-    monthly = config.expiry_rules.monthly_options
-    expiry_date = _month_expiry_date(as_of_date.year, as_of_date.month)
-    start, end = monthly.window_trading_days
-    return _is_within_trading_window(
-        as_of_date=as_of_date,
-        event_date=expiry_date,
-        start=start,
-        end=end,
-    )
-
-
 def _second_weekday_of_month(*, year: int, month: int, weekday: int) -> date:
     first = date(year, month, 1)
     offset = (weekday - first.weekday()) % 7
     first_match = first + timedelta(days=offset)
     return first_match + timedelta(days=7)
-
-
-def _is_earnings_season(*, as_of_date: date, config: RegimeConfig) -> bool:
-    month_lookup = {
-        "second_monday_of_january": 1,
-        "second_monday_of_april": 4,
-        "second_monday_of_july": 7,
-        "second_monday_of_october": 10,
-    }
-    for season in config.earnings_seasons:
-        start_month = month_lookup[season.start_rule]
-        start = _second_weekday_of_month(year=as_of_date.year, month=start_month, weekday=0)
-        end = start + timedelta(days=season.end_offset_days)
-        if start <= as_of_date <= end:
-            return True
-    return False

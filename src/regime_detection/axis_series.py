@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import date, timedelta
+from datetime import date
 from typing import Protocol
 
 import pandas as pd
@@ -15,12 +15,7 @@ from regime_detection.breadth_state import (
 )
 from regime_detection.data_quality import assess_series_input_quality, quality_forces_unknown
 from regime_detection.event_calendar import (
-    _PRECEDENCE,
-    _TYPE_TO_LABEL,
-    _WINDOWS,
-    _month_expiry_date,
-    _second_weekday_of_month,
-    _sessions_between,
+    compute_event_calendar_outputs,
 )
 from regime_detection.feature_store import FeatureStore
 from regime_detection.hysteresis import (
@@ -49,7 +44,7 @@ from regime_detection.models import (
 from regime_detection.inflation_growth import (
     INFLATION_GROWTH_RISK_RANK,
     InflationGrowthLabel,
-    build_rule_inputs_for_date as build_inflation_growth_rule_inputs_for_date,
+    build_rule_inputs_by_date as build_inflation_growth_rule_inputs_by_date,
     evaluate_rules as evaluate_inflation_growth_rules,
 )
 from regime_detection.monetary_pressure import (
@@ -61,7 +56,7 @@ from regime_detection.monetary_pressure import (
 from regime_detection.network_fragility_rules import (
     NETWORK_FRAGILITY_RISK_RANK,
     NetworkFragilityLabel,
-    build_rule_inputs_for_date,
+    build_rule_inputs_by_date,
     evaluate_rules,
 )
 from regime_detection.volume_liquidity_rules import (
@@ -419,6 +414,12 @@ class NetworkFragilitySeriesClassifier:
         raw_labels: list[NetworkFragilityLabel] = []
         per_day_data_quality: list[DataQuality] = []
         per_day_evidence: list[dict[str, object]] = []
+        rule_inputs_by_date = build_rule_inputs_by_date(
+            features=features,
+            spy_close=spy_close,
+            realized_vol_percentile_252d=realized_vol_pct,
+            vix_percentile_252d=vix_pct,
+        )
 
         for day in context.sessions:
             dt = pd.Timestamp(day)
@@ -445,13 +446,7 @@ class NetworkFragilitySeriesClassifier:
                 per_day_evidence.append({"reason": day_quality.reason or "insufficient_data"})
                 continue
 
-            rule_inputs = build_rule_inputs_for_date(
-                features=features,
-                dt=dt,
-                spy_close=spy_close,
-                realized_vol_percentile_252d=realized_vol_pct,
-                vix_percentile_252d=vix_pct,
-            )
+            rule_inputs = rule_inputs_by_date[dt]
 
             # I1: strict V1 axis alignment. When the caller supplied a v1
             # dict, missing-day → KeyError (loud) rather than silent
@@ -937,6 +932,27 @@ class InflationGrowthSeriesClassifier:
         raw_labels: list[InflationGrowthLabel] = []
         per_day_data_quality: list[DataQuality] = []
         per_day_evidence: list[dict[str, object]] = []
+        session_index = spy_close.index
+        cpi_staleness_by_date = _calendar_staleness_days_series(
+            cpi_series, session_index
+        )
+        pmi_staleness_by_date = _calendar_staleness_days_series(
+            pmi_series, session_index
+        )
+        dgs10_staleness_by_date = _trading_staleness_series(
+            dgs10_series, session_index
+        )
+        credit_funding_labels_by_ts: dict[pd.Timestamp, str | None] | None = None
+        if credit_funding_active_labels_by_date is not None:
+            credit_funding_labels_by_ts = {
+                pd.Timestamp(day): label
+                for day, label in credit_funding_active_labels_by_date.items()
+            }
+        rule_inputs_by_date = build_inflation_growth_rule_inputs_by_date(
+            features=features,
+            config=ig_config.rules,
+            credit_funding_active_labels_by_date=credit_funding_labels_by_ts,
+        )
 
         for day in context.sessions:
             dt = pd.Timestamp(day)
@@ -944,13 +960,9 @@ class InflationGrowthSeriesClassifier:
             # §2B unknown gate (spec lines 2308-2311). Run BEFORE the generic
             # quality assessment so the §2B-specific staleness messages reach
             # evidence.
-            cpi_staleness_days = _calendar_staleness_days(cpi_series, dt)
-            pmi_staleness_days = _calendar_staleness_days(pmi_series, dt)
-            dgs10_staleness_sessions = (
-                _trailing_staleness_sessions(dgs10_series, dt)
-                if dgs10_series is not None
-                else 10**9
-            )
+            cpi_staleness_days = int(cpi_staleness_by_date.loc[dt])
+            pmi_staleness_days = int(pmi_staleness_by_date.loc[dt])
+            dgs10_staleness_sessions = int(dgs10_staleness_by_date.loc[dt])
             cpi_stale = cpi_staleness_days > ig_config.cpi_stale_calendar_days
             pmi_stale = pmi_staleness_days > ig_config.pmi_stale_calendar_days
             dgs10_stale = dgs10_staleness_sessions > ig_config.dgs10_stale_sessions
@@ -1004,15 +1016,10 @@ class InflationGrowthSeriesClassifier:
                     raise KeyError(
                         f"credit_funding_active_labels_by_date missing session {day!r} "
                         "(v1/v2 calendar drift would silently downgrade §2B cross-axis rules)"
-                    )
+                )
                 credit_funding_active_label = credit_funding_active_labels_by_date[day]
 
-            rule_inputs = build_inflation_growth_rule_inputs_for_date(
-                features=features,
-                dt=dt,
-                config=ig_config.rules,
-                credit_funding_active_label=credit_funding_active_label,
-            )
+            rule_inputs = rule_inputs_by_date[dt]
             label = evaluate_inflation_growth_rules(
                 inputs=rule_inputs, config=ig_config.rules
             )
@@ -1080,6 +1087,20 @@ def _calendar_staleness_days(
     if last_valid is None:
         return 10**9
     return int((dt.normalize() - pd.Timestamp(last_valid).normalize()).days)
+
+
+def _calendar_staleness_days_series(
+    series: pd.Series | None, session_index: pd.Index
+) -> pd.Series:
+    if series is None:
+        return pd.Series(10**9, index=session_index, dtype="int64")
+    aligned = series.reindex(session_index)
+    last_valid_date = pd.Series(pd.NaT, index=session_index, dtype="datetime64[ns]")
+    valid = aligned.notna()
+    last_valid_date.loc[valid] = session_index[valid]
+    last_valid_date = last_valid_date.ffill()
+    delta_days = (pd.Series(session_index, index=session_index) - last_valid_date).dt.days
+    return delta_days.fillna(10**9).astype("int64")
 
 
 class MonetaryPressureV2SeriesClassifier:
@@ -1225,6 +1246,18 @@ def _trailing_staleness_sessions(series: pd.Series, dt: pd.Timestamp) -> int:
     return int(pos_now - pos_last)
 
 
+def _trading_staleness_series(
+    series: pd.Series | None, session_index: pd.Index
+) -> pd.Series:
+    if series is None:
+        return pd.Series(10**9, index=session_index, dtype="int64")
+    aligned = series.reindex(session_index)
+    session_pos = pd.Series(range(len(session_index)), index=session_index, dtype="int64")
+    valid = aligned.notna()
+    last_valid_pos = session_pos.where(valid).ffill().fillna(-10**9).astype("int64")
+    return (session_pos - last_valid_pos).astype("int64")
+
+
 def _nfci_calendar_staleness_days(
     nfci_series: pd.Series | None, dt: pd.Timestamp
 ) -> int:
@@ -1294,77 +1327,13 @@ def build_axis_series_bundle(*, context: MarketContext, feature_store: FeatureSt
 
 
 def build_event_calendar_series(context: MarketContext) -> dict[date, EventCalendarOutput]:
-    matches_by_day: dict[date, set[str]] = {day: set() for day in context.sessions}
-    if context.normalized_event_calendar is not None and not context.normalized_event_calendar.empty:
-        for row in context.normalized_event_calendar.itertuples(index=False):
-            label = _TYPE_TO_LABEL.get(str(row.type))
-            if label is None:
-                continue
-            publication_date = row.publication_date
-            event_date = row.date
-            session_window = list(
-                _sessions_between(
-                    min(publication_date, event_date) - timedelta(days=20),
-                    max(publication_date, event_date) + timedelta(days=20),
-                )
-            )
-            if event_date not in session_window:
-                continue
-            event_idx = session_window.index(event_date)
-            start_offset, end_offset = _WINDOWS[label]
-            for idx, day in enumerate(session_window):
-                if day not in matches_by_day or day < publication_date:
-                    continue
-                delta = idx - event_idx
-                if start_offset <= delta <= end_offset:
-                    matches_by_day[day].add(label)
-
-    expiry_start, expiry_end = context.config.expiry_rules.monthly_options.window_trading_days
-    for year, month in sorted({(day.year, day.month) for day in context.sessions}):
-        expiry_date = _month_expiry_date(year, month)
-        session_window = list(_sessions_between(expiry_date - timedelta(days=10), expiry_date + timedelta(days=10)))
-        if expiry_date not in session_window:
-            continue
-        expiry_idx = session_window.index(expiry_date)
-        for idx, day in enumerate(session_window):
-            if day not in matches_by_day:
-                continue
-            delta = idx - expiry_idx
-            if expiry_start <= delta <= expiry_end:
-                matches_by_day[day].add("expiry_week")
-
-    month_lookup = {
-        "second_monday_of_january": 1,
-        "second_monday_of_april": 4,
-        "second_monday_of_july": 7,
-        "second_monday_of_october": 10,
-    }
-    for year in sorted({day.year for day in context.sessions}):
-        for season in context.config.earnings_seasons:
-            start = _second_weekday_of_month(
-                year=year,
-                month=month_lookup[season.start_rule],
-                weekday=0,
-            )
-            end = start + timedelta(days=season.end_offset_days)
-            for day in context.sessions:
-                if start <= day <= end:
-                    matches_by_day[day].add("earnings_season")
-
-    outputs: dict[date, EventCalendarOutput] = {}
-    for day in context.sessions:
-        ordered = [label for label in _PRECEDENCE if label in matches_by_day[day]]
-        selected = ordered[0] if ordered else "normal_calendar"
-        outputs[day] = EventCalendarOutput(
-            raw_label=selected,
-            stable_label=selected,
-            active_label=selected,
-            evidence={
-                "all_matching_events": ordered,
-                "selected_via_precedence": selected,
-            },
-        )
-    return outputs
+    """Bulk wrapper around :func:`compute_event_calendar_outputs` — pulls
+    ``sessions`` and the pre-normalized event calendar off the context."""
+    return compute_event_calendar_outputs(
+        sessions=context.sessions,
+        normalized_event_calendar=context.normalized_event_calendar,
+        config=context.config,
+    )
 
 
 def _build_axis_outputs(

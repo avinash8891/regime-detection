@@ -23,6 +23,7 @@ from regime_detection.network_fragility import (
 from regime_detection.network_fragility_rules import (
     RULE_PRECEDENCE,
     NetworkFragilityRuleInputs,
+    build_rule_inputs_by_date,
     build_rule_inputs_for_date,
     evaluate_correlation_concentration,
     evaluate_correlation_to_one,
@@ -598,6 +599,50 @@ def test_build_rule_inputs_for_date_drawdown_is_negative_when_below_peak():
     )
     # Last price 399 < peak 420 within trailing 21d → drawdown < 0.
     assert inputs.drawdown_21d < 0
+
+
+def test_build_rule_inputs_by_date_matches_single_day_builder():
+    index = pd.bdate_range(end="2024-12-31", periods=80)
+    avg_corr = pd.Series(np.linspace(0.30, 0.60, 80), index=index)
+    eig = pd.Series(np.linspace(0.40, 0.55, 80), index=index)
+    eff_rank = pd.Series(np.linspace(4.0, 5.0, 80), index=index)
+    pct = pd.Series(np.linspace(0.20, 0.90, 80), index=index)
+    spy_close = pd.Series(np.linspace(400.0, 430.0, 80), index=index)
+    realized_vol_pct = pd.Series(np.linspace(0.10, 0.80, 80), index=index)
+    vix_pct = pd.Series(np.linspace(0.15, 0.85, 80), index=index)
+
+    features = NetworkFragilityFeatures(
+        avg_pairwise_corr_63d=avg_corr,
+        avg_pairwise_corr_percentile_504d=pct,
+        largest_eigenvalue_share=eig,
+        largest_eigenvalue_share_percentile_504d=pct,
+        effective_rank=eff_rank,
+        effective_rank_percentile_504d=pct,
+        absorption_ratio_top3=pct,
+        dispersion_ratio=pct,
+        dispersion_ratio_percentile_252d=pct,
+    )
+
+    precomputed = build_rule_inputs_by_date(
+        features=features,
+        spy_close=spy_close,
+        realized_vol_percentile_252d=realized_vol_pct,
+        vix_percentile_252d=vix_pct,
+    )
+
+    for dt in index[20::15]:
+        expected = build_rule_inputs_for_date(
+            features=features,
+            dt=dt,
+            spy_close=spy_close,
+            realized_vol_percentile_252d=realized_vol_pct,
+            vix_percentile_252d=vix_pct,
+        )
+        actual = precomputed[dt]
+        for field in expected.__dataclass_fields__:
+            assert getattr(actual, field) == pytest.approx(
+                getattr(expected, field), nan_ok=True
+            )
 
 
 def test_rising_fragility_blocked_when_nan_in_trailing_21d_corr_window():

@@ -339,6 +339,48 @@ def test_pct_above_50dma_newly_listed_ticker_excluded_from_both(
     assert np.isnan(out.pct_above_50dma.iloc[5])
 
 
+def test_pct_above_50dma_honors_non_session_interval_boundaries(
+    v2_breadth_config,
+):
+    """Interval boundaries are calendar dates, not guaranteed NYSE sessions.
+
+    Weekend start/end dates should include the first NYSE session after the
+    start boundary and exclude sessions after the last NYSE session on or
+    before the end boundary.
+    """
+    n = 60
+    closes = _make_sector_closes(n=n)
+    rising = [100.0 + i for i in range(n)]
+    falling = [200.0 - i for i in range(n)]
+    ohlcv = {
+        AAPL: _make_ohlcv_frame(rising, [1000] * n),
+        MSFT: _make_ohlcv_frame(falling, [1000] * n),
+    }
+    idx = _bdate_index(n)
+    # AAPL active from Saturday before idx[49] through Sunday after idx[54].
+    # MSFT active across the full window. At idx[54], both contribute -> 0.5.
+    intervals = _make_pit_intervals(
+        [
+            (
+                AAPL,
+                (idx[49] - pd.Timedelta(days=2)).strftime("%Y-%m-%d"),
+                (idx[54] + pd.Timedelta(days=2)).strftime("%Y-%m-%d"),
+            ),
+            (MSFT, "2023-01-02", None),
+        ]
+    )
+    out = compute_breadth_v2_features(
+        sector_etf_closes=closes,
+        config=v2_breadth_config,
+        pit_constituent_intervals=intervals,
+        constituent_ohlcv=ohlcv,
+    )
+    assert out.pct_above_50dma.iloc[54] == pytest.approx(0.5)
+    # After the weekend-capped end boundary, AAPL drops out, leaving only MSFT
+    # below its SMA -> 0/1 = 0.0.
+    assert out.pct_above_50dma.iloc[55] == pytest.approx(0.0)
+
+
 # =============================================================================
 # Group C — pct_above_200dma (1 test)
 # =============================================================================

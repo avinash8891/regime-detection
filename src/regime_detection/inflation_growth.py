@@ -399,6 +399,43 @@ def build_rule_inputs_for_date(
     )
 
 
+def build_rule_inputs_by_date(
+    *,
+    features: InflationGrowthFeatures,
+    config: InflationGrowthRulesConfig,
+    credit_funding_active_labels_by_date: dict[pd.Timestamp, str | None] | None,
+) -> dict[pd.Timestamp, InflationGrowthRuleInputs]:
+    index = features.cpi_6m_change_pct.index
+    cpi_lag_21 = features.cpi_6m_change_pct.shift(config.cpi_slope_lookback_sessions)
+    outputs: dict[pd.Timestamp, InflationGrowthRuleInputs] = {}
+    for dt in index:
+        credit_funding_active_label = None
+        if credit_funding_active_labels_by_date is not None:
+            credit_funding_active_label = credit_funding_active_labels_by_date.get(dt)
+        outputs[dt] = InflationGrowthRuleInputs(
+            cpi_6m_change_pct=_scalar_at(features.cpi_6m_change_pct, dt),
+            cpi_6m_change_pct_lag_21=_scalar_at(cpi_lag_21, dt),
+            cpi_6m_change_pct_slope_21d=_scalar_at(
+                features.cpi_6m_change_pct_slope_21d, dt
+            ),
+            pmi_manufacturing=_scalar_at(features.pmi_manufacturing, dt),
+            pmi_manufacturing_slope_21d=_scalar_at(
+                features.pmi_manufacturing_slope_21d, dt
+            ),
+            commodity_return_63d=_scalar_at(features.commodity_return_63d, dt),
+            treasury_10y_yield_slope_21d=_scalar_at(
+                features.treasury_10y_yield_slope_21d, dt
+            ),
+            cyclical_defensive_slope_21d=_scalar_at(
+                features.cyclical_defensive_slope_21d, dt
+            ),
+            spy_21d_return=_scalar_at(features.spy_21d_return, dt),
+            tlt_21d_return=_scalar_at(features.tlt_21d_return, dt),
+            credit_funding_active_label=credit_funding_active_label,
+        )
+    return outputs
+
+
 # ---------------------------------------------------------------------------
 # Rule predicates (§2B lines 2232-2270).
 # ---------------------------------------------------------------------------
