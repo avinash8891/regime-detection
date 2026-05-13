@@ -27,6 +27,7 @@ dev = [
   "ruff",
   "pyright",
   "pyarrow",
+  "xlrd",
 ]
 
 [tool.setuptools]
