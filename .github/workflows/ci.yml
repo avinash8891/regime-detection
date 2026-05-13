@@ -54,7 +54,6 @@ jobs:
       - name: Shell syntax checks
         run: |
           bash -n scripts/cubic_review.sh
-          bash -n scripts/codex_code_simplifier.sh
           bash -n scripts/codex_pr_review_toolkit.sh
 
       - name: Python test discovery

@@ -160,13 +160,19 @@ def slice_context_to_end_date(*, context: MarketContext, end_date: date) -> Mark
 
 
 def _normalize_market_data_for_runtime(df: pd.DataFrame) -> pd.DataFrame:
+    if "date" not in df.columns:
+        return df
+    if pd.api.types.is_datetime64_any_dtype(df["date"]):
+        return df
     out = df.copy()
-    # errors="raise" — bad/malformed date strings must fail loud at the
-    # ingestion boundary. Previous errors="coerce" silently produced NaT,
-    # which the downstream dropna() in _require_market_data_contract then
-    # dropped, allowing bad-date rows to bypass NYSE-session validation.
+    # errors="raise" (default) — bad/malformed date strings must fail loud
+    # at the ingestion boundary. The previous errors="coerce" silently
+    # produced NaT, which the downstream dropna() in
+    # _require_market_data_contract then dropped, allowing bad-date rows
+    # to bypass NYSE-session validation. Wrap to surface a project-scoped
+    # error message instead of the raw pandas exception.
     try:
-        out["date"] = pd.to_datetime(out["date"], errors="raise")
+        out["date"] = pd.to_datetime(out["date"])
     except (ValueError, TypeError) as exc:
         raise ValueError(
             f"market_data contains malformed date values: {exc}"
