@@ -13,6 +13,9 @@ from regime_detection.models import (
     RegimeTimeline,
     StructuralCausalState,
 )
+from regime_detection.strategy_family_constraints import (
+    resolve_strategy_family_constraints,
+)
 from regime_detection.strategy_response import build_strategy_response
 from regime_detection.transition_risk_series import build_transition_risk_series
 from regime_detection.versioning import engine_version
@@ -148,6 +151,7 @@ def build_regime_timeline(
             else None
         )
         agent_routing = None
+        strategy_family_constraints = None
         if cohort_routing_config is not None:
             # v2 §2A monetary_pressure classifier not yet shipped (Ambiguity Log #43).
             monetary_label: str | None = None
@@ -160,6 +164,12 @@ def build_regime_timeline(
                 monetary_pressure_active=monetary_label,
                 config=cohort_routing_config,
             )
+            sfc_config = working_context.config.strategy_family_constraints
+            if sfc_config is not None and agent_routing is not None:
+                strategy_family_constraints = resolve_strategy_family_constraints(
+                    active_cohort=agent_routing.active_cohort,
+                    config=sfc_config,
+                )
         outputs.append(
             RegimeOutput(
                 engine_version=engine_version(),
@@ -186,6 +196,7 @@ def build_regime_timeline(
                 ),
                 volume_liquidity_state=volume_liquidity_output,
                 agent_routing=agent_routing,
+                strategy_family_constraints=strategy_family_constraints,
             )
         )
 

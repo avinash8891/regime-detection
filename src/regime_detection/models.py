@@ -218,6 +218,37 @@ class StrategyResponse(BaseModel):
         return super().model_dump_json(*args, **kwargs)
 
 
+class StrategyFamilyConstraint(BaseModel):
+    """v2 §5.2 — resolved per-family constraint shape (Slice 5.2).
+
+    Carries the post-inheritance constraint values for one strategy family
+    under one active cohort. ``allowed`` is the only required dimension;
+    every other field is Optional with ``None`` meaning "not specified for
+    this family under this cohort" (omitted from the JSON wire via the
+    overridden ``model_dump``).
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    allowed: bool
+    max_lookback_days: int | None = None
+    max_holding_days: int | None = None
+    max_position_pct: float | None = None
+    min_adx: int | None = None
+    require_breadth_confirmation: bool | None = None
+    require_volume_confirmation: bool | None = None
+    event_window_only: bool | None = None
+    reason: str | None = None
+
+    def model_dump(self, *args: Any, **kwargs: Any) -> dict[str, Any]:
+        kwargs.setdefault("exclude_none", True)
+        return super().model_dump(*args, **kwargs)
+
+    def model_dump_json(self, *args: Any, **kwargs: Any) -> str:
+        kwargs.setdefault("exclude_none", True)
+        return super().model_dump_json(*args, **kwargs)
+
+
 class AgentRouting(BaseModel):
     """v2 §5.1 Agent Cohort Routing output (Slice 5.1)."""
 
@@ -252,6 +283,7 @@ class RegimeOutput(BaseModel):
     volume_liquidity_state: VolumeLiquidityStateOutput | None = None  # v2 §1E (slice 2.7)
     change_point: ChangePointOutput | None = None  # v2 §4.6 (V2.1)
     agent_routing: "AgentRouting | None" = None  # v2 §5.1 (slice 5.1)
+    strategy_family_constraints: dict[str, StrategyFamilyConstraint] | None = None  # v2 §5.2 (slice 5.2)
 
     # V1 wire contract: omit any None-valued conditional fields in nested models.
     # This must be applied at the top-level dump to propagate into nested models.

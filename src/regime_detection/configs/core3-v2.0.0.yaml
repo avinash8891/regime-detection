@@ -299,3 +299,44 @@ cohort_routing:
     chop_mean_reversion_specialist: ["trend_following", "breakout"]
     bull_low_vol_specialist: []
     default_neutral:         []
+
+# v2 §5.2 Strategy Family Constraints (Slice 5.2, Ambiguity Log #53 calibration placeholder).
+# Override-on-default inheritance: each specialist cohort declares ONLY overrides;
+# unspecified families inherit default_neutral. Spec lines 2574-2650.
+strategy_family_constraints:
+  default_neutral:
+    trend_following: {allowed: true,  max_lookback_days: 50, require_breadth_confirmation: false, min_adx: 20}
+    mean_reversion:  {allowed: true,  max_holding_days: 5,   require_volume_confirmation: true}
+    breakout:        {allowed: false, reason: "false_breakout_rate_high_in_chop"}
+    short_vol:       {allowed: false, reason: "rising_fragility_or_crisis"}
+    long_vol:        {allowed: true,  event_window_only: true}
+  overrides:
+    crisis_specialist:
+      trend_following: {allowed: false, reason: "false_signals_in_chop"}
+      mean_reversion:  {allowed: false, reason: "knife_catching"}
+      breakout:        {allowed: false, reason: "false_breakout_rate_high"}
+      short_vol:       {allowed: false, reason: "vol_can_keep_expanding"}
+      long_vol:        {allowed: true,  event_window_only: false}
+    euphoria_specialist:
+      mean_reversion:  {allowed: false, reason: "do_not_fade_strength"}
+    bear_stress_specialist:
+      trend_following: {allowed: false, reason: "directional_in_stressed_chop"}
+      breakout:        {allowed: false, reason: "false_breakout_rate_high"}
+      short_vol:       {allowed: false, reason: "stress_can_persist"}
+      long_vol:        {allowed: true,  event_window_only: false}
+    tightening_specialist:
+      trend_following: {allowed: true,  max_lookback_days: 50, require_breadth_confirmation: true}
+      breakout:        {allowed: true,  require_volume_confirmation: true}
+      long_vol:        {allowed: true,  event_window_only: true}
+    easing_specialist: {}
+    recovery_specialist:
+      short_vol:       {allowed: false, reason: "recovery_can_relapse"}
+    chop_mean_reversion_specialist:
+      trend_following: {allowed: false, reason: "chop_kills_trend"}
+      breakout:        {allowed: false, reason: "false_breakouts_dominant"}
+      mean_reversion:  {allowed: true,  max_holding_days: 10, require_volume_confirmation: false}
+    bull_low_vol_specialist:
+      trend_following: {allowed: true,  max_lookback_days: 200, min_adx: 15}
+      mean_reversion:  {allowed: true,  max_holding_days: 10}
+      breakout:        {allowed: true}
+      short_vol:       {allowed: true,  max_position_pct: 0.25}

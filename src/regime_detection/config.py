@@ -563,10 +563,46 @@ class CohortRoutingConfig(BaseModel):
     blocked_cohorts: dict[str, list[str]]
 
 
-class StrategyFamilyConstraintsConfig(BaseModel):
-    """Strategy family constraints configuration (v2 spec §5.2). Stub."""
+class FamilyOverride(BaseModel):
+    """v2 §5.2 — one family's constraint values under one specialist cohort.
+
+    All fields Optional so a specialist cohort can override just one
+    dimension (e.g. just ``allowed``) and inherit the rest from
+    ``default_neutral``. ``allowed`` is REQUIRED on the ``default_neutral``
+    entry per the spec baseline contract (enforced in
+    ``resolve_strategy_family_constraints``); on cohort overrides it stays
+    Optional so a cohort can re-tune just a non-``allowed`` knob.
+    """
 
     model_config = ConfigDict(extra="forbid")
+
+    allowed: bool | None = None
+    max_lookback_days: int | None = None
+    max_holding_days: int | None = None
+    max_position_pct: float | None = None
+    min_adx: int | None = None
+    require_breadth_confirmation: bool | None = None
+    require_volume_confirmation: bool | None = None
+    event_window_only: bool | None = None
+    reason: str | None = None
+
+
+class StrategyFamilyConstraintsConfig(BaseModel):
+    """v2 §5.2 family constraints — override-on-default inheritance.
+
+    ``default_neutral`` carries the baseline for every strategy family the
+    engine constrains. Specialist cohorts declare ONLY the field-level
+    overrides that diverge from the baseline; unspecified families inherit
+    the ``default_neutral`` values verbatim.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    # Keyed by family name (e.g. ``trend_following``). ``allowed`` is
+    # REQUIRED on every default_neutral entry; the resolver enforces this.
+    default_neutral: dict[str, FamilyOverride]
+    # First key = cohort name, second key = family name.
+    overrides: dict[str, dict[str, FamilyOverride]]
 
 
 class RegimeConfig(BaseModel):
