@@ -10,6 +10,7 @@ from regime_detection.breadth_state_v2 import (
 )
 from regime_detection.config import (
     BreadthV2Config,
+    MonetaryPressureV2FeaturesConfig,
     NetworkFragilityConfig,
     TrendDirectionV2Config,
     VolatilityV2Config,
@@ -42,16 +43,28 @@ from regime_detection.volume_liquidity_v2 import (
     VolumeLiquidityV2Features,
     compute_volume_liquidity_v2_features,
 )
+from regime_detection.monetary_pressure import (
+    MonetaryPressureV2Features,
+    compute_monetary_pressure_features,
+)
 
 __all__ = [
     "BreadthV2Features",
     "FeatureStore",
+    "MonetaryPressureV2Features",
     "NetworkFragilityFeatures",
     "TrendDirectionV2Features",
     "VolatilityV2Features",
     "VolumeLiquidityV2Features",
     "build_feature_store",
 ]
+
+
+# v2 §2A source contract (lines 887–889). Pinned here so the feature
+# store can detect whether MarketContext.macro_series carries the two
+# required FRED series without scattering string literals.
+_FRED_DGS2_KEY = "DGS2"
+_FRED_DGS10_KEY = "DGS10"
 
 
 class FeatureStore(BaseModel):
@@ -93,6 +106,14 @@ class FeatureStore(BaseModel):
     # features per spec lines 257–258) live on volatility_state_v2.
     volume_liquidity_v2: VolumeLiquidityV2Features | None = None
 
+    # V2 §2A seam (Slice 4.1, evidence-only) — populated when a
+    # MonetaryPressureV2FeaturesConfig is threaded through AND
+    # MarketContext.macro_series carries both DGS2 and DGS10 (spec
+    # source contract §2A lines 887–889). Exposes ONLY the two
+    # spec-pinned yield z-scores; broad_usd_index and 21d-variant
+    # features are deferred per Ambiguity Log #44 / #45.
+    monetary: MonetaryPressureV2Features | None = None
+
 
 def build_feature_store(
     context: MarketContext,
@@ -102,6 +123,7 @@ def build_feature_store(
     volatility_state_v2_config: VolatilityV2Config | None = None,
     breadth_state_v2_config: BreadthV2Config | None = None,
     volume_liquidity_v2_config: VolumeLiquidityV2Config | None = None,
+    monetary_pressure_v2_config: MonetaryPressureV2FeaturesConfig | None = None,
 ) -> FeatureStore:
     spy_ohlcv = context.spy_ohlcv
     spy_close = spy_ohlcv["close"]
@@ -204,6 +226,24 @@ def build_feature_store(
     else:
         volume_liquidity_v2 = None
 
+    # V2 §2A monetary-pressure features (slice 4.1) — evidence-only compute.
+    # Requires BOTH DGS2 and DGS10 on context.macro_series (spec source
+    # contract §2A lines 887–889). When either FRED key is absent OR the
+    # config is None, fall back to None so v1-only callers see no diff.
+    if (
+        monetary_pressure_v2_config is not None
+        and context.macro_series is not None
+        and _FRED_DGS2_KEY in context.macro_series
+        and _FRED_DGS10_KEY in context.macro_series
+    ):
+        monetary = compute_monetary_pressure_features(
+            dgs2=context.macro_series[_FRED_DGS2_KEY],
+            dgs10=context.macro_series[_FRED_DGS10_KEY],
+            config=monetary_pressure_v2_config,
+        )
+    else:
+        monetary = None
+
     return FeatureStore(
         spy_index=spy_ohlcv.index,
         trend_direction=trend_direction,
@@ -216,4 +256,5 @@ def build_feature_store(
         volatility_state_v2=volatility_state_v2,
         breadth_state_v2=breadth_state_v2,
         volume_liquidity_v2=volume_liquidity_v2,
+        monetary=monetary,
     )

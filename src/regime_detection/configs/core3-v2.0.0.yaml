@@ -231,15 +231,19 @@ transition_score:
     transition_warning: [0.55, 0.75]
     high: [0.75, 1.00]
 
+# v2 §2A — Layer 2A Monetary/Liquidity V2 (Slice 4.1, evidence-only).
+# Ships ONLY the ONE spec-pinned feature formula (§2A line 896):
+#   yield_change_zscore = (yield_change_63d - mean_5y) / std_5y
+# applied to FRED DGS2 and DGS10 (source contract: §2A lines 887–889).
+#
+# DEFERRED per V2 §10 ABSOLUTE RULE (Ambiguity Log #44, #45):
+#   - broad_usd_index_zscore_63d (formula unspecified)
+#   - yield_change_zscore_21d_{2y,10y} (formula unspecified)
+#   - §2A label set, precedence, risk-rank, per-label hysteresis
+#   - MonetaryPressureSeriesClassifier (no labels to emit yet)
 monetary_pressure_v2:
-  series_ids:
-    2y_yield: DGS2
-    10y_yield: DGS10
-    broad_usd_index: DTWEXBGS
-  yield_change_lookback_days: 63
-  tightening_threshold_bps: 50
-  easing_threshold_bps: -50
-  dxy_threshold_pct: 0.05
+  yield_change_lookback_days: 63      # v2 §2A line 896
+  zscore_normalizer_window_days: 1260 # v2 §2A line 896 (5y trading days)
 
 vol_crush:
   event_window_trading_days: 3

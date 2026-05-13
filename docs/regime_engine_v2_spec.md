@@ -978,6 +978,95 @@ the slice/commit that resolved it. Entries are append-only.
     non-data slice (slice 6 = HMM) is orthogonal to §2A and can
     proceed when chosen.
 
+45. **§2A line 896 — features-only sub-slice (slice 4.1) ships the
+    ONE spec-pinned z-score formula.**
+
+    Scope decision following the entry #44 audit: although the full
+    §2A axis classifier is blocked (label set, precedence, risk-rank,
+    hysteresis days, and three of five feature formulas are missing),
+    the ONE feature formula §2A pins verbatim at line 896
+
+    ```python
+    yield_change_zscore = (yield_change_63d - mean_5y) / std_5y
+    ```
+
+    CAN ship as evidence-only because (a) the source contract for its
+    two inputs is also explicit (lines 887–889: `2y yield = FRED DGS2`,
+    `10y yield = FRED DGS10`), and (b) the slice-2.4 precedent
+    (Ambiguity Log entry #29) establishes that features may ship
+    before their downstream axis classifier when the formula and
+    inputs are unambiguous — `volume_zscore_20d` (§1E line 256)
+    shipped in slice 2.4 and waited for the §1E axis classifier in
+    slice 2.7.
+
+    Entry #44's argument against an evidence-only ship rested on the
+    claim that "the only consumers named by the spec are the three
+    rule predicates — and the slice-2.4 precedent requires that the
+    feature has a determinate downstream consumer." On re-read of
+    entry #29 the precedent is weaker: it requires that the formula
+    and inputs be spec-pinned, NOT that the downstream consumer
+    already exist. Slice 2.4 shipped `volume_zscore_20d` four slices
+    before its classifier; the same pattern applies here.
+
+    Scope IN (slice 4.1):
+      - `yield_change_zscore_2y_63d`  (FRED DGS2; v2 §2A line 896).
+      - `yield_change_zscore_10y_63d` (FRED DGS10; v2 §2A line 896).
+
+    Scope OUT (stays deferred per entry #44 and V2 §10 absolute rule):
+      - `broad_usd_index_zscore_63d` (formula unspecified).
+      - `yield_change_zscore_21d_2y` / `yield_change_zscore_21d_10y`
+        (21d-variant formula unspecified — neither change-window nor
+        mean/std window length pinned).
+      - The §2A label set (`tightening_pressure`, `easing_pressure`,
+        `rate_shock`, neutral, unknown).
+      - Precedence ordering, risk-rank table, per-label hysteresis days.
+      - `MonetaryPressureSeriesClassifier`.
+      - Retype of `RegimeOutput.structural_causal_state.monetary_pressure`
+        — stays as the V1 `LabelReasonOutput` placeholder.
+
+    Sub-ambiguity resolved by slice 4.1:
+
+    - **Sample vs population std for `std_5y`.** §2A is silent. Pinned
+      to `ddof=1` (sample std) — matches the slice-2.4
+      `volume_zscore_20d` convention (Ambiguity Log entry #28) and the
+      pandas / numpy default. A constant-change window produces
+      `std == 0` which is masked to NaN via `std.where(std > 0)`
+      (avoids RuntimeWarning-laden `0/0` propagation).
+    - **First valid index.** With defaults
+      `yield_change_lookback_days=63` and
+      `zscore_normalizer_window_days=1260`:
+      `yield_change_63d` is NaN for `t < 63` (shift introduces 63 NaN
+      at the head), and the 5y rolling normalizer requires
+      `min_periods=1260` non-NaN observations on the change series,
+      so the first non-NaN z-score lands at
+      `t = 63 + 1260 - 1 = 1322`. Pinned by
+      `tests/test_monetary_pressure_features.py`.
+    - **DGS2 / DGS10 independence.** The two inputs are processed in
+      separate compute pipelines (one `_yield_change_zscore` call per
+      series) so a NaN in DGS2 cannot leak into the DGS10 z-score and
+      vice versa. Pinned by a dedicated unit test.
+
+    File / function location:
+    `src/regime_detection/monetary_pressure.py` —
+    `compute_monetary_pressure_features(*, dgs2, dgs10, config) -> MonetaryPressureV2Features`.
+    Mirrors slice 2.1/2.2/2.3/2.4 shape (typed frozen dataclass +
+    pure function). Wired through `FeatureStore.monetary` and
+    `build_regime_timeline`.
+
+    The previous draft `MonetaryPressureV2Config` in
+    `regime_detection.config` (the unused-at-runtime sketch flagged by
+    entry #44 as "out of scope") is DELETED in this slice and
+    replaced by `MonetaryPressureV2FeaturesConfig` carrying ONLY the
+    two spec-pinned lookback knobs (`yield_change_lookback_days`,
+    `zscore_normalizer_window_days`), each with `Field(gt=0)` and
+    `extra='forbid'`. The deferred `series_ids` /
+    `tightening_threshold_bps` / `easing_threshold_bps` /
+    `dxy_threshold_pct` fields are reintroduced (with proper spec
+    citations) by the future spec-amendment slice that completes the
+    §2A axis.
+
+    Resolved by Slice 4.1.
+
 ---
 
 ## 2. Layer 2 V2 — Full Structural-Causal State

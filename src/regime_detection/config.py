@@ -414,22 +414,47 @@ class TransitionScoreConfig(BaseModel):
     bands: dict[str, tuple[float, float]]
 
 
-class MonetaryPressureV2Config(BaseModel):
-    """Monetary pressure axis configuration (v2 spec §2A)."""
+class MonetaryPressureV2FeaturesConfig(BaseModel):
+    """v2 §2A — Layer 2A Monetary/Liquidity V2 features (Slice 4.1, evidence-only).
+
+    Ships ONLY the ONE feature formula spec-pinned at v2 §2A line 896::
+
+        yield_change_zscore = (yield_change_63d - mean_5y) / std_5y
+
+    applied to the two FRED yield series with explicit spec-given source
+    contract (lines 887–889): ``DGS2`` (2y) and ``DGS10`` (10y).
+
+    Per V2 §10 ABSOLUTE RULE the following are DEFERRED because the spec
+    does not pin them (see Implementation Ambiguity Log entries #44 and
+    #45):
+
+    - ``broad_usd_index_zscore_63d`` (formula unspecified).
+    - ``yield_change_zscore_21d_2y`` / ``yield_change_zscore_21d_10y``
+      (21d variant: neither the change-window nor the mean/std window
+      length is given).
+    - The §2A label set (``tightening_pressure``, ``easing_pressure``,
+      ``rate_shock``, neutral, unknown) — no Literal[...] declared in spec.
+    - Precedence ordering, risk-rank table, per-label hysteresis days.
+    - The ``MonetaryPressureSeriesClassifier`` axis classifier.
+
+    The slice-2.4 precedent (Ambiguity Log #29) — shipping
+    ``volume_zscore_20d`` as evidence-only before its §1E axis
+    classifier landed in slice 2.7 — applies here: the two yield
+    z-scores ship as evidence-only and become inputs to the future
+    §2A axis classifier once the spec is amended.
+    """
 
     model_config = ConfigDict(extra="forbid")
 
-    # V2 §2A FRED series ids: 2y_yield=DGS2, 10y_yield=DGS10, broad_usd_index=DTWEXBGS.
-    series_ids: dict[str, str]
+    # v2 §2A line 896 — `yield_change_63d[t] = yield[t] - yield[t-63]`.
+    # Must be > 0 because the change is computed by `yield - yield.shift(N)`
+    # with N >= 1; N == 0 would produce an identically-zero change series.
+    yield_change_lookback_days: int = Field(gt=0, default=63)
 
-    # Yield change lookback (V1 §7.3 _change_63d formula).
-    yield_change_lookback_days: int = Field(ge=1)
-
-    tightening_threshold_bps: int = Field(ge=0)
-
-    easing_threshold_bps: int
-
-    dxy_threshold_pct: float = Field(ge=0.0)
+    # v2 §2A line 896 — mean/std normalizer window ("5y"). 5y ≈ 1260
+    # trading days under NYSE calendar conventions used throughout V2.
+    # Must be > 0 (rolling mean/std requires at least one observation).
+    zscore_normalizer_window_days: int = Field(gt=0, default=1260)
 
 
 class InflationGrowthConfig(BaseModel):
@@ -523,7 +548,7 @@ class RegimeConfig(BaseModel):
     # v2 §1E axis classifier configuration (Slice 2.7).
     volume_liquidity_state: VolumeLiquidityConfig | None = None
     transition_score: TransitionScoreConfig | None = None
-    monetary_pressure_v2: MonetaryPressureV2Config | None = None
+    monetary_pressure_v2: MonetaryPressureV2FeaturesConfig | None = None
     inflation_growth: InflationGrowthConfig | None = None
     credit_funding: CreditFundingConfig | None = None
     event_calendar_v2: EventCalendarV2Config | None = None
