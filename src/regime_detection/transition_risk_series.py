@@ -106,34 +106,33 @@ def _build_transition_score_inputs_by_date(
 ) -> dict[date, dict[str, float | str]]:
     """Materialise the per-session v2 §4.2 input dict for every NYSE session.
 
-    Missing index entries propagate as ``float('nan')`` so the
-    ``compose_transition_score_for_session`` cold-start guard returns the
-    all-None ``ComposedTransitionScore`` (V1 §2.7 NaN propagation).
+    Reindexes each input series ONCE against the session DatetimeIndex
+    then iterates over numpy arrays — avoids the per-session ``.loc[ts]``
+    lookup pattern that was the bottleneck eliminated in commit 75ebb63
+    (data_quality perf refactor). Missing index entries surface as NaN
+    through ``.reindex`` and propagate to the
+    ``compose_transition_score_for_session`` cold-start guard.
     """
+    session_index = pd.DatetimeIndex([pd.Timestamp(d) for d in sessions])
+    rvs = realized_vol_short.reindex(session_index).to_numpy(dtype=float, na_value=float("nan"))
+    rvl = realized_vol_long.reindex(session_index).to_numpy(dtype=float, na_value=float("nan"))
+    pct50 = pct_above_50dma.reindex(session_index).to_numpy(dtype=float, na_value=float("nan"))
+    corr = avg_pairwise_corr_percentile_504d.reindex(session_index).to_numpy(
+        dtype=float, na_value=float("nan")
+    )
+    dd252 = drawdown_252d.reindex(session_index).to_numpy(dtype=float, na_value=float("nan"))
+
     out: dict[date, dict[str, float | str]] = {}
-    for day in sessions:
-        ts = pd.Timestamp(day)
+    for i, day in enumerate(sessions):
         out[day] = {
-            "realized_vol_short": _safe_lookup(realized_vol_short, ts),
-            "realized_vol_long": _safe_lookup(realized_vol_long, ts),
-            "pct_above_50dma": _safe_lookup(pct_above_50dma, ts),
-            "avg_pairwise_corr_percentile_504d": _safe_lookup(
-                avg_pairwise_corr_percentile_504d, ts
-            ),
-            "drawdown_252d": _safe_lookup(drawdown_252d, ts),
+            "realized_vol_short": float(rvs[i]),
+            "realized_vol_long": float(rvl[i]),
+            "pct_above_50dma": float(pct50[i]),
+            "avg_pairwise_corr_percentile_504d": float(corr[i]),
+            "drawdown_252d": float(dd252[i]),
             "event_calendar_label": event_calendar[day].active_label,
         }
     return out
-
-
-def _safe_lookup(series: pd.Series, ts: pd.Timestamp) -> float:
-    """Look up ``series`` at ``ts``; missing/NaN entries return ``float('nan')``."""
-    if ts not in series.index:
-        return float("nan")
-    value = series.loc[ts]
-    if pd.isna(value):
-        return float("nan")
-    return float(value)
 
 
 def build_transition_risk_outputs_by_date(
