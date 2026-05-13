@@ -263,6 +263,14 @@ hmm:
   # Slice 6: reproducibility seed for hmmlearn.GaussianHMM.
   random_state: 42
 
+# v2 §6.2 K-Means/GMM Clustering — diagnostic evidence layer (Slice 7).
+clustering:
+  n_clusters: 8
+  training_window_days: 1260       # 5y, matches HMM training window
+  random_state: 42
+  covariance_type: full
+  model_version: "gmm_8cluster_v1.0"
+
 no_flip_flop:
   window_trading_days: 5
 

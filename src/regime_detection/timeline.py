@@ -1,11 +1,14 @@
 from __future__ import annotations
 
+import pandas as pd
+
 from regime_detection.axis_series import build_axis_series_bundle
 from regime_detection.cohort_routing import evaluate_cohort_routing
 from regime_detection.config import RegimeConfig
 from regime_detection.feature_store import build_feature_store
 from regime_detection.market_context import MarketContext, slice_context_to_recent_sessions
 from regime_detection.models import (
+    ClusterOutput,
     DataQuality,
     MonetaryPressureOutput,
     NetworkFragilityOutput,
@@ -116,6 +119,25 @@ def build_regime_timeline(
     )
 
     selected_days = list(working_context.sessions[-lookback_days:])
+
+    # v2 §6.2 GMM clustering evidence (Slice 7) — bulk-reindex BEFORE the
+    # per-day loop (matches the `_build_transition_score_inputs_by_date`
+    # pattern). Per-day `.get(pd.Timestamp(day))` would re-scan the index
+    # n_sessions times; one reindex + positional access keeps the loop O(N).
+    clustering_features = feature_store.clustering
+    if clustering_features is not None:
+        session_index = pd.DatetimeIndex(
+            [pd.Timestamp(d) for d in selected_days]
+        )
+        cluster_id_aligned = clustering_features.cluster_id.reindex(session_index)
+        cluster_distance_aligned = clustering_features.distance_to_centroid.reindex(
+            session_index
+        )
+        cluster_model_version = clustering_features.model_version
+    else:
+        cluster_id_aligned = None
+        cluster_distance_aligned = None
+        cluster_model_version = None
     trend_direction_outputs = axis_bundle.trend_direction.outputs_by_date
     trend_character_outputs = axis_bundle.trend_character.outputs_by_date
     volatility_outputs = axis_bundle.volatility_state.outputs_by_date
@@ -137,7 +159,7 @@ def build_regime_timeline(
     )
 
     outputs: list[RegimeOutput] = []
-    for day in selected_days:
+    for idx, day in enumerate(selected_days):
         trend_direction_output = trend_direction_outputs[day]
         trend_character_output = trend_character_outputs[day]
         volatility_output = volatility_outputs[day]
@@ -150,6 +172,20 @@ def build_regime_timeline(
             if volume_liquidity_by_date is not None
             else None
         )
+        cluster_output: ClusterOutput | None = None
+        if (
+            cluster_id_aligned is not None
+            and cluster_distance_aligned is not None
+            and cluster_model_version is not None
+        ):
+            cid_val = cluster_id_aligned.iloc[idx]
+            dist_val = cluster_distance_aligned.iloc[idx]
+            if cid_val is not None and not pd.isna(cid_val) and not pd.isna(dist_val):
+                cluster_output = ClusterOutput(
+                    cluster_id=int(cid_val),
+                    distance_to_centroid=float(dist_val),
+                    model_version=cluster_model_version,
+                )
         agent_routing = None
         strategy_family_constraints = None
         if cohort_routing_config is not None:
@@ -195,6 +231,7 @@ def build_regime_timeline(
                     event_calendar_active=event_output.active_label,
                 ),
                 volume_liquidity_state=volume_liquidity_output,
+                cluster=cluster_output,
                 agent_routing=agent_routing,
                 strategy_family_constraints=strategy_family_constraints,
             )

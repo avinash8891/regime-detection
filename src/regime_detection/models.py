@@ -142,6 +142,28 @@ class VolumeLiquidityStateOutput(BaseModel):
     mode: Literal["volume_zscore_v1"] = "volume_zscore_v1"
 
 
+class ClusterOutput(BaseModel):
+    """v2 §6.2 clustering output (Slice 7). Diagnostic evidence; per-day
+    cluster assignment + Mahalanobis distance to the assigned-cluster
+    centroid. ``mapped_label`` is omitted until the operator-curated
+    ``cluster_label_map.yaml`` ships (spec line 2842 + V2 §10).
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    cluster_id: int  # raw 0..n_clusters-1; NOT an economic label
+    distance_to_centroid: float
+    model_version: str
+
+    def model_dump(self, *args: Any, **kwargs: Any) -> dict[str, Any]:
+        kwargs.setdefault("exclude_none", True)
+        return super().model_dump(*args, **kwargs)
+
+    def model_dump_json(self, *args: Any, **kwargs: Any) -> str:
+        kwargs.setdefault("exclude_none", True)
+        return super().model_dump_json(*args, **kwargs)
+
+
 class ChangePointOutput(BaseModel):
     """Change-point detection output (v2 spec §4.6 — V2.1 ship)."""
 
@@ -282,6 +304,7 @@ class RegimeOutput(BaseModel):
     credit_funding_state: CreditFundingOutput | None = None  # v2 §2C (slice 4)
     volume_liquidity_state: VolumeLiquidityStateOutput | None = None  # v2 §1E (slice 2.7)
     change_point: ChangePointOutput | None = None  # v2 §4.6 (V2.1)
+    cluster: ClusterOutput | None = None  # v2 §6.2 (Slice 7) — diagnostic evidence
     agent_routing: "AgentRouting | None" = None  # v2 §5.1 (slice 5.1)
     strategy_family_constraints: dict[str, StrategyFamilyConstraint] | None = None  # v2 §5.2 (slice 5.2)
 

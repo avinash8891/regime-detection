@@ -35,6 +35,10 @@ from regime_detection.trend_direction_v2 import (
     compute_trailing_drawdown,
     compute_trend_v2_features,
 )
+from regime_detection.clustering import (
+    ClusteringFeatures,
+    compute_clustering_features,
+)
 from regime_detection.hmm_state import HMMFeatures, compute_hmm_features
 from regime_detection.volatility_state import realized_vol
 from regime_detection.volatility_state import VolatilityFeatures, compute_features as compute_volatility_features
@@ -53,6 +57,7 @@ from regime_detection.monetary_pressure import (
 
 __all__ = [
     "BreadthV2Features",
+    "ClusteringFeatures",
     "FeatureStore",
     "HMMFeatures",
     "MonetaryPressureV2Features",
@@ -125,6 +130,16 @@ class FeatureStore(BaseModel):
     # realized_vol_21d and drawdown_63d). Otherwise None — V1 byte-identity
     # preserved on the 5-component transition_score path.
     hmm: HMMFeatures | None = None
+
+    # v2 §6.2 GMM clustering evidence seam (Slice 7) — populated when
+    # ``context.config.clustering`` is non-None AND the seven §6.2 inputs
+    # are all available. Predicate gates on ``breadth_state_v2.pct_above_50dma``
+    # (PIT path lit), ``network_fragility``, and ``trend_direction_v2``;
+    # ``trend_character`` + SPY-derived ``realized_vol_21d`` /
+    # ``drawdown_63d`` ride the V1 path so they're always available. When
+    # the seam is None, ``RegimeOutput.cluster`` is None (omitted on JSON
+    # wire) and V1 byte-identity is preserved.
+    clustering: ClusteringFeatures | None = None
 
 
 def build_feature_store(
@@ -281,6 +296,30 @@ def build_feature_store(
     else:
         hmm = None
 
+    # v2 §6.2 GMM clustering evidence layer (Slice 7) — diagnostic only;
+    # NOT consumed by transition_score. Predicate gates on the PIT-aware
+    # pct_above_50dma being lit AND network_fragility / trend_direction_v2
+    # seams being populated.
+    if (
+        context.config.clustering is not None
+        and breadth_state_v2 is not None
+        and breadth_state_v2.pct_above_50dma is not None
+        and network_fragility is not None
+        and trend_direction_v2 is not None
+    ):
+        clustering = compute_clustering_features(
+            return_21d=trend_character.return_21d,
+            return_63d=trend_direction_v2.return_63d,
+            realized_vol_21d=realized_vol(spy_close, 21),
+            drawdown_63d=compute_trailing_drawdown(spy_close, 63),
+            adx_14=trend_character.adx_14,
+            avg_pairwise_corr_63d=network_fragility.avg_pairwise_corr_63d,
+            pct_above_50dma=breadth_state_v2.pct_above_50dma,
+            config=context.config.clustering,
+        )
+    else:
+        clustering = None
+
     return FeatureStore(
         spy_index=spy_ohlcv.index,
         trend_direction=trend_direction,
@@ -295,4 +334,5 @@ def build_feature_store(
         volume_liquidity_v2=volume_liquidity_v2,
         monetary=monetary,
         hmm=hmm,
+        clustering=clustering,
     )

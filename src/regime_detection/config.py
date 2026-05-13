@@ -505,6 +505,23 @@ class HMMConfig(BaseModel):
     random_state: int = Field(default=42, ge=0)
 
 
+class ClusteringConfig(BaseModel):
+    """v2 §6.2 K-Means/GMM clustering configuration (Slice 7).
+
+    GMM is the V2 ship default; K-Means support deferred per spec line
+    2835. Mapping cluster_id → economic_label is operator-side
+    (cluster_label_map.yaml per spec line 2842); not part of this slice.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    n_clusters: int = Field(default=8, ge=2)
+    training_window_days: int = Field(default=1260, ge=100)
+    random_state: int = Field(default=42, ge=0)
+    covariance_type: Literal["full", "tied", "diag", "spherical"] = "full"
+    model_version: str = Field(default="gmm_8cluster_v1.0")
+
+
 class VolCrushConfig(BaseModel):
     """Volatility crush detection configuration (v2 spec §5.3)."""
 
@@ -636,6 +653,8 @@ class RegimeConfig(BaseModel):
     credit_funding: CreditFundingConfig | None = None
     event_calendar_v2: EventCalendarV2Config | None = None
     hmm: HMMConfig | None = None
+    # v2 §6.2 GMM clustering evidence layer (Slice 7).
+    clustering: ClusteringConfig | None = None
     vol_crush: VolCrushConfig | None = None
     no_flip_flop: NoFlipFlopConfig | None = None
     cohort_routing: CohortRoutingConfig | None = None  # v2 §5.1 (slice 5.1)
