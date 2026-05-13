@@ -1467,6 +1467,30 @@ the slice/commit that resolved it. Entries are append-only.
     only their manual-mapping artifacts remain a per-fit operator
     deliverable.
 
+52. **§5.5 PRISM — explicit V2.1 deferral.**
+
+    PRISM (the user's signal-engine rule-discovery framework) is not
+    yet producing walk-forward-validated rules. §5.5 is preserved in
+    the spec for forward-reference (output schema + rule contract)
+    but explicitly excluded from the initial V2 ship. V2 §8 slice 10
+    is now formally V2.1 work, not V2.
+
+    Operational implication: any classifier output, configuration
+    block, or test that touches `prism_overrides_applied` MUST default
+    it to the empty list `[]` and emit no warning when PRISM is
+    absent. This keeps the V2 output schema stable across the
+    PRISM-absent → PRISM-present transition; the future amendment
+    will only need to populate the list, not introduce a new field.
+
+    When PRISM is producing validated rules, a follow-on
+    spec-amendment slice will re-activate §5.5 with explicit
+    integration into §5.1 cohort routing and §5.2 family-constraints
+    layers (the integration points are unambiguous because both §5.1
+    and §5.2 already define the routing/constraint surface that
+    PRISM overrides would modify).
+
+    Resolved by spec-amendment commit (this doc-only change).
+
 ---
 
 ## 2. Layer 2 V2 — Full Structural-Causal State
@@ -2294,18 +2318,22 @@ Beyond V1's `post_switch_cooldown`:
 }
 ```
 
-### 5.5 Learned PRISM Rules
+### 5.5 Learned PRISM Rules — DEFERRED TO V2.1
 
-V2 may incorporate PRISM-derived rules (the user's signal-engine rule-discovery framework) as configurable overrides on top of base V2 modifiers.
+**Status: deferred to V2.1; out of scope for the initial V2 ship.**
 
-PRISM rule contract:
+PRISM (the user's signal-engine rule-discovery framework) is not yet producing validated rules. §5.5 is preserved in this spec for forward-reference but is explicitly excluded from V2 §8 slice 10 in the initial implementation order.
+
+When PRISM produces walk-forward-validated rules, a future spec-amendment slice will re-activate §5.5 with the contract below, the `prism_overrides_applied` output schema, and explicit integration with the §5.1 cohort routing and §5.2 family-constraint layers.
+
+PRISM rule contract (for the future amendment):
 - Walk-forward validated on at least 3 years of data
 - Versioned (`prism_rule_id`, `prism_rule_version`)
 - Logged for review
 - Reversible via single config flag
 - Each rule includes: condition, modifier, expected effect, validation metrics
 
-Output:
+Forward-reference output schema:
 ```json
 {
   "prism_overrides_applied": [
@@ -2318,6 +2346,8 @@ Output:
   ]
 }
 ```
+
+V2 §8 slice 10 (PRISM rule integration) does not ship in the initial V2 release. Any classifier output, configuration block, or test that references `prism_overrides_applied` must therefore default it to the empty list `[]` and emit no warning when PRISM is absent.
 
 ---
 
