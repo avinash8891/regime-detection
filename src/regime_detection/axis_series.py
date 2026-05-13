@@ -39,8 +39,15 @@ from regime_detection.models import (
     CreditFundingOutput,
     DataQuality,
     EventCalendarOutput,
+    MonetaryPressureV2Output,
     NetworkFragilityOutput,
     VolumeLiquidityStateOutput,
+)
+from regime_detection.monetary_pressure import (
+    MONETARY_PRESSURE_V2_RISK_RANK,
+    MonetaryPressureV2Label,
+    build_rule_inputs_for_date as build_monetary_pressure_rule_inputs_for_date,
+    evaluate_rules as evaluate_monetary_pressure_rules,
 )
 from regime_detection.network_fragility_rules import (
     NETWORK_FRAGILITY_RISK_RANK,
@@ -95,6 +102,10 @@ class AxisSeriesBundle:
     # populated by CreditFundingSeriesClassifier when feature_store has
     # the credit_funding seam lit (Slice 4).
     credit_funding: dict[date, CreditFundingOutput] | None = None
+    # V2 §2A monetary pressure — None in pure-v1 mode (no v2 config), populated
+    # by MonetaryPressureV2SeriesClassifier when feature_store.monetary is lit
+    # AND context.config.monetary_pressure_state is non-None (Ambiguity Log #46).
+    monetary_pressure_state: dict[date, MonetaryPressureV2Output] | None = None
 
 
 class AxisSeriesClassifier(Protocol):
@@ -792,6 +803,127 @@ class CreditFundingSeriesClassifier:
         return outputs
 
 
+class MonetaryPressureV2SeriesClassifier:
+    """V2 §2A monetary pressure axis classifier (Ambiguity Log #46).
+
+    Pipeline mirrors VolumeLiquidityStateSeriesClassifier:
+
+      1. Read pre-computed features from ``feature_store.monetary``. If the
+         seam is None (no v2 config / no DGS2+DGS10) return None so the
+         timeline leaves ``RegimeOutput.monetary_pressure_state`` as None.
+      2. Per session, assess data quality (``assess_series_input_quality`` +
+         ``quality_forces_unknown``). Quality failures force ``unknown``.
+      3. Materialize per-day scalar inputs and evaluate the §2A rule
+         precedence (rate_shock > tightening_pressure > easing_pressure >
+         neutral_monetary).
+      4. Apply per-label asymmetric hysteresis per Log #46 (e).
+      5. Emit one ``MonetaryPressureV2Output`` per session.
+    """
+
+    def build(
+        self,
+        context: MarketContext,
+        feature_store: FeatureStore,
+    ) -> dict[date, MonetaryPressureV2Output] | None:
+        features = feature_store.monetary
+        if features is None:
+            return None
+        mp_config = context.config.monetary_pressure_state
+        if mp_config is None:
+            return None
+
+        # The 63d-change + 1260d-normalizer window is the binding cold-start
+        # for the §2A rules. The 21d-change variant warms up sooner so the
+        # 63d-derived series gate the data-quality assessment.
+        v2_features_config = context.config.monetary_pressure_v2
+        if v2_features_config is None:
+            # Defensive: features seam lit but feature config missing.
+            return None
+        required_trading_days = (
+            v2_features_config.yield_change_lookback_days
+            + v2_features_config.zscore_normalizer_window_days
+        )
+
+        required_inputs: list[pd.Series] = [
+            features.yield_change_zscore_2y_63d,
+            features.yield_change_zscore_10y_63d,
+            features.yield_change_zscore_21d_2y,
+            features.yield_change_zscore_21d_10y,
+        ]
+        max_freshness_days = context.config.data_quality.max_freshness_days
+        min_completeness = context.config.data_quality.min_completeness
+
+        raw_labels: list[MonetaryPressureV2Label] = []
+        per_day_data_quality: list[DataQuality] = []
+        per_day_evidence: list[dict[str, object]] = []
+
+        for day in context.sessions:
+            dt = pd.Timestamp(day)
+
+            day_quality = assess_series_input_quality(
+                as_of_date=day,
+                required_inputs=required_inputs,
+                required_trading_days=required_trading_days,
+                raw_label="",
+                max_freshness_days=max_freshness_days,
+                min_completeness=min_completeness,
+                skip_raw_label_short_circuit=True,
+            )
+            if quality_forces_unknown(day_quality):
+                raw_labels.append("unknown")
+                per_day_data_quality.append(day_quality)
+                per_day_evidence.append(
+                    {"reason": day_quality.reason or "insufficient_data"}
+                )
+                continue
+
+            inputs = build_monetary_pressure_rule_inputs_for_date(
+                features=features, dt=dt
+            )
+            label = evaluate_monetary_pressure_rules(
+                inputs=inputs, config=mp_config.rules
+            )
+            raw_labels.append(label)
+            per_day_data_quality.append(day_quality)
+            per_day_evidence.append(
+                {
+                    "rule_evidence": {
+                        "yield_change_zscore_2y_63d": inputs.zscore_2y_63d,
+                        "yield_change_zscore_10y_63d": inputs.zscore_10y_63d,
+                        "broad_usd_index_zscore_63d": inputs.broad_usd_zscore_63d,
+                        "yield_change_zscore_21d_2y": inputs.zscore_21d_2y,
+                        "yield_change_zscore_21d_10y": inputs.zscore_21d_10y,
+                    },
+                }
+            )
+
+        stable_labels, active_labels = apply_per_label_asymmetric_hysteresis(
+            raw_labels=raw_labels,
+            risk_rank=MONETARY_PRESSURE_V2_RISK_RANK,
+            deescalation_days_by_label=mp_config.deescalation_days_by_label,
+            default_deescalation_days=mp_config.default_deescalation_days,
+        )
+
+        outputs: dict[date, MonetaryPressureV2Output] = {}
+        for day, raw, stable, active, dq, evidence in zip(
+            context.sessions,
+            raw_labels,
+            stable_labels,
+            active_labels,
+            per_day_data_quality,
+            per_day_evidence,
+            strict=True,
+        ):
+            outputs[day] = MonetaryPressureV2Output(
+                raw_label=raw,
+                stable_label=stable,
+                active_label=active,
+                evidence=evidence,
+                data_quality=dq,
+            )
+        return outputs
+
+
 def _trailing_staleness_sessions(series: pd.Series, dt: pd.Timestamp) -> int:
     """Trading-day distance from ``dt`` to the last non-NaN observation
     at or before ``dt`` in ``series``. Returns a huge value if no such
@@ -856,6 +988,9 @@ def build_axis_series_bundle(*, context: MarketContext, feature_store: FeatureSt
     volume_liquidity_state = VolumeLiquidityStateSeriesClassifier().build(
         context, feature_store
     )
+    monetary_pressure_state = MonetaryPressureV2SeriesClassifier().build(
+        context, feature_store
+    )
     return AxisSeriesBundle(
         trend_direction=trend_direction,
         trend_character=trend_character,
@@ -865,6 +1000,7 @@ def build_axis_series_bundle(*, context: MarketContext, feature_store: FeatureSt
         network_fragility=network_fragility,
         volume_liquidity_state=volume_liquidity_state,
         credit_funding=credit_funding,
+        monetary_pressure_state=monetary_pressure_state,
     )
 
 

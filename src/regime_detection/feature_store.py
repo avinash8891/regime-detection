@@ -304,9 +304,16 @@ def build_feature_store(
         and _FRED_DGS2_KEY in context.macro_series
         and _FRED_DGS10_KEY in context.macro_series
     ):
+        # Ambiguity Log #46 (a): broad_usd_index is OPTIONAL — when absent the
+        # broad_usd_index_zscore_63d output is an all-NaN series and the §2A
+        # rule predicate naturally falsifies on NaN.
+        broad_usd_series = None
+        if context.macro_series is not None:
+            broad_usd_series = context.macro_series.get("broad_usd_index")
         monetary = compute_monetary_pressure_features(
             dgs2=context.macro_series[_FRED_DGS2_KEY],
             dgs10=context.macro_series[_FRED_DGS10_KEY],
+            broad_usd_index=broad_usd_series,
             config=monetary_pressure_v2_config,
         )
     else:

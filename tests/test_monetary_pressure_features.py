@@ -236,7 +236,7 @@ def test_features_align_to_input_index(v2_monetary_config):
     assert isinstance(out, MonetaryPressureV2Features)
     frame = out.to_frame()
     assert list(frame.columns) == list(out.feature_names)
-    assert frame.shape == (n, 2)
+    assert frame.shape == (n, len(out.feature_names))
     assert (frame.index == dgs2.index).all()
 
 

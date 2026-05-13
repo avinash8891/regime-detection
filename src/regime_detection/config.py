@@ -474,6 +474,50 @@ class MonetaryPressureV2FeaturesConfig(BaseModel):
     # Must be > 0 (rolling mean/std requires at least one observation).
     zscore_normalizer_window_days: int = Field(gt=0, default=1260)
 
+    # v2 §2A 21d-variant rate_shock predicate lookback per Ambiguity Log #46 (a).
+    # Mechanical generalization of the line-896 template using a 21d change window.
+    rate_shock_lookback_days: int = Field(gt=0, default=21)
+
+    # v2 §2A broad_usd_index z-score lookback per Ambiguity Log #46 (a). Mechanical
+    # generalization of the line-896 template applied to a USD-index level series.
+    broad_usd_lookback_days: int = Field(gt=0, default=63)
+
+
+class MonetaryPressureV2RulesConfig(BaseModel):
+    """v2 §2A monetary-pressure rule thresholds (Ambiguity Log #46 b/c).
+
+    Each value pins the verbatim §2A rule predicate threshold. Precedence
+    is enforced in ``monetary_pressure.evaluate_rules`` per Log #46 (c).
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    # §2A tightening_pressure: yield_change_zscore_*_63d > +1.5 OR broad_usd > +1.5.
+    tightening_pressure_zscore_threshold: float = Field(default=1.5, gt=0.0)
+    # §2A easing_pressure: yield_change_zscore_*_63d < -1.5 (both legs).
+    easing_pressure_zscore_threshold: float = Field(default=-1.5, lt=0.0)
+    # §2A rate_shock: abs(yield_change_zscore_21d_*) > 2.0.
+    rate_shock_zscore_threshold: float = Field(default=2.0, gt=0.0)
+
+
+class MonetaryPressureV2Config(BaseModel):
+    """v2 §2A monetary-pressure axis classifier config (Ambiguity Log #46).
+
+    Separate from ``MonetaryPressureV2FeaturesConfig`` (features vs
+    classifier), mirroring the ``volume_liquidity_v2`` vs
+    ``volume_liquidity_state`` split.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    rules: MonetaryPressureV2RulesConfig = Field(
+        default_factory=MonetaryPressureV2RulesConfig
+    )
+    # §2A per-label hysteresis days per Ambiguity Log #46 (e).
+    deescalation_days_by_label: dict[str, int]
+    # Default for labels NOT listed (matches §3.7 Ambiguity Log #6 pattern).
+    default_deescalation_days: int = Field(default=0, ge=0)
+
 
 class InflationGrowthConfig(BaseModel):
     """Inflation/growth axis configuration (v2 spec §2B). Stub for slice 5."""
@@ -734,6 +778,8 @@ class RegimeConfig(BaseModel):
     volume_liquidity_state: VolumeLiquidityConfig | None = None
     transition_score: TransitionScoreConfig | None = None
     monetary_pressure_v2: MonetaryPressureV2FeaturesConfig | None = None
+    # v2 §2A axis classifier configuration (Ambiguity Log #46 pins).
+    monetary_pressure_state: MonetaryPressureV2Config | None = None
     inflation_growth: InflationGrowthConfig | None = None
     credit_funding: CreditFundingConfig | None = None
     event_calendar_v2: EventCalendarV2Config | None = None

@@ -260,6 +260,23 @@ transition_score:
 monetary_pressure_v2:
   yield_change_lookback_days: 63      # v2 §2A line 896
   zscore_normalizer_window_days: 1260 # v2 §2A line 896 (5y trading days)
+  rate_shock_lookback_days: 21        # v2 §2A 21d-variant (Ambiguity Log #46 a)
+  broad_usd_lookback_days: 63         # v2 §2A USD index 63d-change (Ambiguity Log #46 a)
+
+# v2 §2A — Monetary Pressure axis classifier (Ambiguity Log #46 b–e).
+monetary_pressure_state:
+  rules:
+    tightening_pressure_zscore_threshold: 1.5   # §2A line 1093
+    easing_pressure_zscore_threshold: -1.5      # §2A line 1098
+    rate_shock_zscore_threshold: 2.0            # §2A line 1102
+  # Per Ambiguity Log #46 (e).
+  deescalation_days_by_label:
+    rate_shock: 5
+    tightening_pressure: 3
+    easing_pressure: 2
+    neutral_monetary: 0
+    unknown: 2
+  default_deescalation_days: 0
 
 # v2 §2C — Credit/Funding axis (Slice 4). Per Ambiguity Log #49 the HY/IG
 # spread proxies use TLT-vs-HYG/LQD total-return differentials (HYG/LQD

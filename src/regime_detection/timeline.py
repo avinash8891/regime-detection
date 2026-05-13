@@ -191,6 +191,10 @@ def build_regime_timeline(
     # cross_asset / macro seams are absent — preserves V1 byte-identity
     # since RegimeOutput.credit_funding_state already defaults to None.
     credit_funding_by_date = axis_bundle.credit_funding
+    # v2 §2A monetary pressure axis (Ambiguity Log #46). Stays None when the
+    # v2 config / macro_series seam is absent — preserves V1 byte-identity
+    # since RegimeOutput.monetary_pressure_state defaults to None.
+    monetary_pressure_state_by_date = axis_bundle.monetary_pressure_state
     cohort_routing_config = working_context.config.cohort_routing
     monetary_pressure = MonetaryPressureOutput(
         label="unknown",
@@ -215,6 +219,11 @@ def build_regime_timeline(
         credit_funding_output = (
             credit_funding_by_date.get(day)
             if credit_funding_by_date is not None
+            else None
+        )
+        monetary_pressure_output = (
+            monetary_pressure_state_by_date.get(day)
+            if monetary_pressure_state_by_date is not None
             else None
         )
         change_point_output: ChangePointOutput | None = None
@@ -254,8 +263,11 @@ def build_regime_timeline(
         agent_routing = None
         strategy_family_constraints = None
         if cohort_routing_config is not None:
-            # v2 §2A monetary_pressure classifier not yet shipped (Ambiguity Log #43).
+            # v2 §2A monetary pressure axis (Ambiguity Log #46) — wire the
+            # active label through to cohort routing when the axis is lit.
             monetary_label: str | None = None
+            if monetary_pressure_output is not None:
+                monetary_label = monetary_pressure_output.active_label
             agent_routing = evaluate_cohort_routing(
                 trend_direction_active=trend_direction_output.active_label,
                 trend_character_active=trend_character_output.active_label,
@@ -297,6 +309,7 @@ def build_regime_timeline(
                 ),
                 volume_liquidity_state=volume_liquidity_output,
                 credit_funding_state=credit_funding_output,
+                monetary_pressure_state=monetary_pressure_output,
                 cluster=cluster_output,
                 change_point=change_point_output,
                 agent_routing=agent_routing,

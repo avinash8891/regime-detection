@@ -1,94 +1,130 @@
-"""v2 §2A Layer 2A Monetary / Liquidity V2 features — evidence-only compute (Slice 4.1).
+"""v2 §2A Layer 2A Monetary / Liquidity V2 features + axis classifier rules.
 
-Scope-restricted slice: ships ONLY the ONE feature formula that v2 §2A
-pins verbatim at line 896::
+Feature slice (4.1) ships the line-896 yield z-score template; the
+classifier slice (this file) extends it with the three additional
+features pinned in Ambiguity Log #46 (a) and the §2A rule engine:
 
-    yield_change_zscore = (yield_change_63d - mean_5y) / std_5y
+  Features (Log #46 a — mechanical generalizations of the line-896 template):
+    - yield_change_zscore_2y_63d      (existing)
+    - yield_change_zscore_10y_63d     (existing)
+    - broad_usd_index_zscore_63d      (NEW, 63d-change z-score on USD index)
+    - yield_change_zscore_21d_2y      (NEW, 21d-change z-score on DGS2)
+    - yield_change_zscore_21d_10y     (NEW, 21d-change z-score on DGS10)
 
-where ``yield_change_63d[t] = yield[t] - yield[t-63]`` and ``mean_5y`` /
-``std_5y`` are the rolling mean / std (sample, ``ddof=1``) of the
-change series over the prior 5y (≈ 1260 NYSE trading days).
+  Labels (Log #46 b):
+    {tightening_pressure, easing_pressure, rate_shock, neutral_monetary, unknown}
 
-Applied to TWO FRED series whose source contract IS spec-pinned at
-§2A lines 887–889:
+  Precedence (Log #46 c):
+    rate_shock > tightening_pressure > easing_pressure > neutral_monetary > unknown
 
-- ``DGS2``  → ``yield_change_zscore_2y_63d``
-- ``DGS10`` → ``yield_change_zscore_10y_63d``
+  Risk rank (Log #46 d):
+    {neutral_monetary: 0, easing_pressure: 1, unknown: 1,
+     tightening_pressure: 2, rate_shock: 3}
 
-DEFERRED (per V2 §10 ABSOLUTE RULE; documented in Ambiguity Log #44
-and #45):
+  Per-label hysteresis (Log #46 e; carried on the yaml):
+    {rate_shock: 5, tightening_pressure: 3, easing_pressure: 2,
+     neutral_monetary: 0, unknown: 2}
 
-- ``broad_usd_index_zscore_63d`` — §2A names the predicate but no
-  formula. The 63d-change generalization to a USD index level (vs a
-  yield level) is a spec invention.
-- ``yield_change_zscore_21d_2y`` / ``yield_change_zscore_21d_10y`` —
-  §2A names the 21d-variant rule predicates but specifies neither the
-  change-window nor the mean/std normalizer window for the 21d form.
-- The §2A label set (``tightening_pressure``, ``easing_pressure``,
-  ``rate_shock``, neutral, unknown), precedence ordering, risk-rank,
-  per-label hysteresis days.
-- The ``MonetaryPressureSeriesClassifier`` axis classifier.
+Rules (verbatim §2A lines 1093-1104):
 
-Mirrors the slice-2.4 precedent (``volume_zscore_20d`` shipped as
-evidence-only before the §1E axis classifier landed in slice 2.7;
-Ambiguity Log entry #29).
+  tightening_pressure:
+    yield_change_zscore_2y_63d > +1.5
+    OR yield_change_zscore_10y_63d > +1.5
+    OR broad_usd_index_zscore_63d > +1.5
 
-Implementation choices that resolve sub-ambiguities:
+  easing_pressure:
+    yield_change_zscore_2y_63d < -1.5
+    AND yield_change_zscore_10y_63d < -1.5
 
-- **Sample std (``ddof=1``)**: §2A is silent on population vs sample
-  std for ``std_5y``. Pinned to pandas / numpy default (``ddof=1``),
-  matching the slice-2.4 ``volume_zscore_20d`` convention (Ambiguity
-  Log entry #28). Constant-change windows produce ``std == 0`` which
-  is masked to NaN (explicit ``.where(std > 0)``).
-- **First valid index**: ``yield_change_63d`` is NaN for the first
-  ``yield_change_lookback_days`` sessions (``shift(63)`` introduces
-  63 NaN at the head). The 5y rolling normalizer then needs
-  ``min_periods=zscore_normalizer_window_days`` non-NaN observations,
-  so the first non-NaN z-score lands at
-  ``t = yield_change_lookback_days + zscore_normalizer_window_days - 1``.
-  With defaults (63 + 1260 - 1) the first valid index is ``t = 1322``.
-- **DGS2 / DGS10 independence**: the two series are processed in
-  separate compute pipelines; a NaN in DGS2 must NOT propagate to the
-  DGS10 z-score.
+  rate_shock:
+    abs(yield_change_zscore_21d_2y) > +2.0
+    OR abs(yield_change_zscore_21d_10y) > +2.0
+
+NaN-safe: ``<`` / ``>`` on NaN evaluates False in Python, so a NaN
+input naturally falsifies the predicate and the precedence falls
+through to ``neutral_monetary``. The data-quality gate above
+``evaluate_rules`` catches the cold-start case and maps to ``unknown``.
 """
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Literal
 
+import numpy as np
 import pandas as pd
 
-from regime_detection.config import MonetaryPressureV2FeaturesConfig
+from regime_detection._rolling_stats import (
+    _ZSCORE_DDOF as _ZSCORE_DDOF,
+    rolling_change_zscore as _rolling_change_zscore,
+)
+from regime_detection.config import (
+    MonetaryPressureV2FeaturesConfig,
+    MonetaryPressureV2RulesConfig,
+)
+
+
+# ---------------------------------------------------------------------------
+# Label set + risk rank (Ambiguity Log #46 b/d).
+# ---------------------------------------------------------------------------
+
+
+MonetaryPressureV2Label = Literal[
+    "tightening_pressure",
+    "easing_pressure",
+    "rate_shock",
+    "neutral_monetary",
+    "unknown",
+]
+
+
+# v2 §2A risk rank per Ambiguity Log #46 (d). Pinned constant (NOT a tunable).
+MONETARY_PRESSURE_V2_RISK_RANK: dict[MonetaryPressureV2Label, int] = {
+    "neutral_monetary": 0,
+    "easing_pressure": 1,
+    "unknown": 1,
+    "tightening_pressure": 2,
+    "rate_shock": 3,
+}
+
+
+# v2 §2A precedence (highest-severity-first walk) per Ambiguity Log #46 (c).
+RULE_PRECEDENCE: tuple[MonetaryPressureV2Label, ...] = (
+    "rate_shock",
+    "tightening_pressure",
+    "easing_pressure",
+    "neutral_monetary",
+)
 
 
 @dataclass(frozen=True)
 class MonetaryPressureV2Features:
-    """v2 §2A — per-session continuous monetary-pressure features (slice 4.1).
+    """v2 §2A — per-session continuous monetary-pressure features.
 
-    Only the two spec-pinned yield z-scores ship today. The USD-index
-    z-score and the 21d-variant yield z-scores referenced by the §2A
-    rule predicates are deferred (Ambiguity Log #44, #45).
+    Five z-score series aligned to the input DatetimeIndex. NaN cold-start
+    at the head of each series until the corresponding (lookback +
+    normalizer) window fills.
     """
 
     yield_change_zscore_2y_63d: pd.Series
     yield_change_zscore_10y_63d: pd.Series
+    broad_usd_index_zscore_63d: pd.Series
+    yield_change_zscore_21d_2y: pd.Series
+    yield_change_zscore_21d_10y: pd.Series
 
     @property
     def feature_names(self) -> tuple[str, ...]:
-        return ("yield_change_zscore_2y_63d", "yield_change_zscore_10y_63d")
+        return (
+            "yield_change_zscore_2y_63d",
+            "yield_change_zscore_10y_63d",
+            "broad_usd_index_zscore_63d",
+            "yield_change_zscore_21d_2y",
+            "yield_change_zscore_21d_10y",
+        )
 
     def to_frame(self) -> pd.DataFrame:
         return pd.DataFrame(
             {name: getattr(self, name) for name in self.feature_names}
         )
-
-
-# v2 §2A pins std at the standard sample / pandas default. The constant is
-# re-exported as the legacy name `_ZSCORE_DDOF` for any internal callers
-# that imported it before the helper moved to _rolling_stats.
-from regime_detection._rolling_stats import (  # noqa: E402
-    _ZSCORE_DDOF as _ZSCORE_DDOF,
-    rolling_change_zscore as _rolling_change_zscore,
-)
 
 
 def _yield_change_zscore(
@@ -98,12 +134,10 @@ def _yield_change_zscore(
     normalizer_window: int,
     output_name: str,
 ) -> pd.Series:
-    """v2 §2A line 896: ``(yield_change_63d - mean_5y) / std_5y``.
+    """Thin §2A wrapper over the shared `rolling_change_zscore` helper.
 
-    Thin wrapper over the shared `rolling_change_zscore` helper that
-    pins the §2A spec citation at this call site (one home per concept
-    lives in `_rolling_stats.py`; §2A and §2C only differ in their
-    change_window / normalizer_window defaults).
+    One home per concept lives in `_rolling_stats.py`; §2A and §2C only
+    differ in their change_window / normalizer_window defaults.
     """
     return _rolling_change_zscore(
         yield_series,
@@ -117,31 +151,25 @@ def compute_monetary_pressure_features(
     *,
     dgs2: pd.Series,
     dgs10: pd.Series,
+    broad_usd_index: pd.Series | None = None,
     config: MonetaryPressureV2FeaturesConfig,
 ) -> MonetaryPressureV2Features:
-    """Compute the v2 §2A yield-change z-score features from DGS2 and DGS10.
+    """Compute the v2 §2A yield + USD z-score features.
 
     Parameters
     ----------
     dgs2
-        FRED ``DGS2`` (2y constant-maturity Treasury yield) series,
-        indexed by trading-day ``DatetimeIndex`` aligned to the SPY
-        calendar.
+        FRED ``DGS2`` (2y constant-maturity Treasury yield) series.
     dgs10
-        FRED ``DGS10`` (10y constant-maturity Treasury yield) series,
-        indexed by trading-day ``DatetimeIndex`` aligned to the SPY
-        calendar.
+        FRED ``DGS10`` (10y constant-maturity Treasury yield) series.
+    broad_usd_index
+        FRED broad USD index level (e.g. ``DTWEXBGS``). When ``None``,
+        the ``broad_usd_index_zscore_63d`` output is an all-NaN series
+        aligned to the dgs2 index (Ambiguity Log #46 a graceful fallback
+        when the USD seam is absent).
     config
-        ``MonetaryPressureV2FeaturesConfig`` — supplies
-        ``yield_change_lookback_days`` and
-        ``zscore_normalizer_window_days`` (no magic numbers in the
-        function body).
-
-    Returns
-    -------
-    MonetaryPressureV2Features
-        Frozen dataclass with two ``pd.Series`` aligned to each input's
-        index.
+        ``MonetaryPressureV2FeaturesConfig`` — supplies all four window
+        lengths (yield 63d, normalizer 1260d, rate-shock 21d, broad-USD 63d).
     """
     z_2y = _yield_change_zscore(
         yield_series=dgs2,
@@ -155,7 +183,115 @@ def compute_monetary_pressure_features(
         normalizer_window=config.zscore_normalizer_window_days,
         output_name="yield_change_zscore_10y_63d",
     )
+    z_21d_2y = _yield_change_zscore(
+        yield_series=dgs2,
+        lookback=config.rate_shock_lookback_days,
+        normalizer_window=config.zscore_normalizer_window_days,
+        output_name="yield_change_zscore_21d_2y",
+    )
+    z_21d_10y = _yield_change_zscore(
+        yield_series=dgs10,
+        lookback=config.rate_shock_lookback_days,
+        normalizer_window=config.zscore_normalizer_window_days,
+        output_name="yield_change_zscore_21d_10y",
+    )
+    if broad_usd_index is None:
+        usd_z = pd.Series(
+            float("nan"),
+            index=dgs2.index,
+            name="broad_usd_index_zscore_63d",
+        )
+    else:
+        usd_z = _rolling_change_zscore(
+            broad_usd_index,
+            change_window=config.broad_usd_lookback_days,
+            normalizer_window=config.zscore_normalizer_window_days,
+            output_name="broad_usd_index_zscore_63d",
+        )
     return MonetaryPressureV2Features(
         yield_change_zscore_2y_63d=z_2y,
         yield_change_zscore_10y_63d=z_10y,
+        broad_usd_index_zscore_63d=usd_z,
+        yield_change_zscore_21d_2y=z_21d_2y,
+        yield_change_zscore_21d_10y=z_21d_10y,
     )
+
+
+# ---------------------------------------------------------------------------
+# Rule predicates (§2A lines 1093-1104, Ambiguity Log #46 b/c).
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class MonetaryPressureRuleInputs:
+    """Per-day scalar inputs the §2A rule engine consumes.
+
+    Materialized by ``build_rule_inputs_for_date`` from
+    ``MonetaryPressureV2Features`` at one as-of date.
+    """
+
+    zscore_2y_63d: float
+    zscore_10y_63d: float
+    broad_usd_zscore_63d: float
+    zscore_21d_2y: float
+    zscore_21d_10y: float
+
+
+def _scalar_at(series: pd.Series, dt: pd.Timestamp) -> float:
+    if dt not in series.index:
+        return float("nan")
+    val = series.loc[dt]
+    if pd.isna(val):
+        return float("nan")
+    return float(val)
+
+
+def build_rule_inputs_for_date(
+    *,
+    features: MonetaryPressureV2Features,
+    dt: pd.Timestamp,
+) -> MonetaryPressureRuleInputs:
+    return MonetaryPressureRuleInputs(
+        zscore_2y_63d=_scalar_at(features.yield_change_zscore_2y_63d, dt),
+        zscore_10y_63d=_scalar_at(features.yield_change_zscore_10y_63d, dt),
+        broad_usd_zscore_63d=_scalar_at(features.broad_usd_index_zscore_63d, dt),
+        zscore_21d_2y=_scalar_at(features.yield_change_zscore_21d_2y, dt),
+        zscore_21d_10y=_scalar_at(features.yield_change_zscore_21d_10y, dt),
+    )
+
+
+def evaluate_rules(
+    *,
+    inputs: MonetaryPressureRuleInputs,
+    config: MonetaryPressureV2RulesConfig,
+) -> MonetaryPressureV2Label:
+    """Walk §2A precedence and return the first matching label.
+
+    Precedence (Log #46 c):
+      rate_shock > tightening_pressure > easing_pressure > neutral_monetary
+
+    NaN inputs naturally falsify each ``<`` / ``>`` comparison; the walker
+    then falls through to ``neutral_monetary``. The data-quality gate in
+    the classifier maps that to ``unknown`` when required inputs are
+    insufficient.
+    """
+    # rate_shock — abs(21d-change z) > +2.0 on either tenor (highest precedence).
+    if (
+        abs(inputs.zscore_21d_2y) > config.rate_shock_zscore_threshold
+        or abs(inputs.zscore_21d_10y) > config.rate_shock_zscore_threshold
+    ):
+        return "rate_shock"
+    # tightening_pressure — OR across the three 63d-change signals.
+    if (
+        inputs.zscore_2y_63d > config.tightening_pressure_zscore_threshold
+        or inputs.zscore_10y_63d > config.tightening_pressure_zscore_threshold
+        or inputs.broad_usd_zscore_63d > config.tightening_pressure_zscore_threshold
+    ):
+        return "tightening_pressure"
+    # easing_pressure — AND on the two 63d-change yield signals.
+    if (
+        inputs.zscore_2y_63d < config.easing_pressure_zscore_threshold
+        and inputs.zscore_10y_63d < config.easing_pressure_zscore_threshold
+    ):
+        return "easing_pressure"
+    return "neutral_monetary"

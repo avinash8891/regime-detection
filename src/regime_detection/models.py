@@ -119,6 +119,32 @@ class CreditFundingOutput(BaseModel):
     data_quality: DataQuality
 
 
+MonetaryPressureV2Label = Literal[
+    "tightening_pressure",
+    "easing_pressure",
+    "rate_shock",
+    "neutral_monetary",
+    "unknown",
+]
+
+
+class MonetaryPressureV2Output(BaseModel):
+    """v2 §2A monetary-pressure axis output (Ambiguity Log #46).
+
+    Three-tier label triple per the v2 axis pattern (raw/stable/active);
+    ``evidence`` carries the per-day scalar rule inputs; ``data_quality``
+    follows the §2.8 NaN cold-start contract.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    raw_label: MonetaryPressureV2Label
+    stable_label: MonetaryPressureV2Label
+    active_label: MonetaryPressureV2Label
+    evidence: dict[str, Any]
+    data_quality: DataQuality
+
+
 class VolumeLiquidityOutput(BaseModel):
     """Volume / liquidity internals output (v2 spec §1E). Minimal until slice 2."""
 
@@ -336,6 +362,7 @@ class RegimeOutput(BaseModel):
     inflation_growth_state: InflationGrowthOutput | None = None  # v2 §2B (slice 5)
     credit_funding_state: CreditFundingOutput | None = None  # v2 §2C (slice 4)
     volume_liquidity_state: VolumeLiquidityStateOutput | None = None  # v2 §1E (slice 2.7)
+    monetary_pressure_state: MonetaryPressureV2Output | None = None  # v2 §2A (Log #46)
     change_point: ChangePointOutput | None = None  # v2 §4.6 (V2.1)
     cluster: ClusterOutput | None = None  # v2 §6.2 (Slice 7) — diagnostic evidence
     agent_routing: "AgentRouting | None" = None  # v2 §5.1 (slice 5.1)
