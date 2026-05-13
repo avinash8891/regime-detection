@@ -1890,6 +1890,71 @@ the slice/commit that resolved it. Entries are append-only.
     + the yaml weights tables in `core3-v2.0.0.yaml`. Resolved by the
     transition_score change-point wire-in slice.
 
+67. **§1B Trend Character — precedence with the 2 new V2 labels
+    (`breakout_expansion`, `range_bound`).**
+    §1B introduces two new V2 labels (`breakout_expansion` per Log
+    #33/#46/#47, `range_bound` per Log #34/#46) but never restates the
+    full §1B precedence ordering with all seven labels. The existing
+    V1 precedence is
+    `recovery_attempt > trending > chop > transition > unknown` (5
+    labels); adding the 2 V2 labels requires a precedence pin.
+
+    Resolution: pin the full V2 §1B precedence as
+    `breakout_expansion > recovery_attempt > trending > range_bound >
+    chop > transition > unknown`. Rationale:
+
+    - **`breakout_expansion` outranks everything** including
+      `recovery_attempt`: a 4-condition strict breakout (close above
+      prior 20d/50d high AND BB-width expanding AND volume above 20d
+      avg AND followthrough_rate >= 0.60 per Log #47) is a more
+      specific signal than any single-axis recovery / trend predicate.
+      Per §1B asymmetric-cost framing (Log #47), false positives route
+      through `breakout_specialist` cohort (§5.1) and produce active
+      PnL damage; outranking ensures the cohort routing is reached.
+
+    - **`recovery_attempt` outranks `trending`** preserves the V1
+      ordering (V1 §1B picks recovery_attempt first when both fire;
+      keep V1-compat unless a spec amendment says otherwise).
+
+    - **`trending` outranks `range_bound`**: a high-ADX directional
+      move that ALSO satisfies range_bound's `abs(return_63d) < 0.05`
+      AND `max_midpoint_excursion_20d <= 0.05` would be a degenerate
+      input — the predicates are nearly mutually exclusive (ADX >= 20
+      VS ADX < 20), but in the corner case where both bands fire (an
+      ADX-just-crossing-20 day with a tight close cluster), trending
+      wins because the directional intensity signal is stronger
+      evidence.
+
+    - **`range_bound` outranks `chop`**: range_bound is a STRICTER
+      conjunction than chop (the midpoint-excursion clause adds a
+      structural around-a-center constraint that chop's `abs(ret10)`
+      and `abs(ret21)` predicates don't capture). When both fire,
+      prefer the more specific label.
+
+    - Tail order (`chop > transition > unknown`) is preserved from V1.
+
+    Risk-rank extension:
+    `{trending: 0, breakout_expansion: 0, recovery_attempt: 1,
+    range_bound: 1, chop: 1, transition: 2, unknown: 2}`.
+    Rationale: `breakout_expansion` is a benign / opportunity signal
+    (risk-rank 0 alongside trending — both indicate directional flow).
+    `range_bound` is risk-rank 1 alongside chop (low-directional-
+    intensity states that prefer mean-reversion over trend-following).
+
+    Per-label asymmetric hysteresis defaults (V2 §9.1 calibration
+    placeholders, matching the §1B / §3.7 5-day / 3-day / 0-day
+    pattern):
+    `{breakout_expansion: 3, recovery_attempt: 3, trending: 0,
+    range_bound: 3, chop: 0, transition: 2, unknown: 2}`.
+    `breakout_expansion` holds 3 days post-event (matches the 5-day
+    followthrough_rate definition's coherence window from Log #47).
+    `range_bound` holds 3 days to avoid flickering on single-day
+    midpoint-excursion spikes within an otherwise-bound regime.
+
+    Pinned in `regime_detection.trend_character` precedence walker
+    and the yaml `trend_character` config block. Resolved by the
+    §1B V2 character labels slice.
+
 ---
 
 ## 2. Layer 2 V2 — Full Structural-Causal State
