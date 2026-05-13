@@ -3,7 +3,8 @@ from __future__ import annotations
 from datetime import date
 
 import pandas as pd
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, SkipValidation
+from typing import Annotated
 
 from regime_detection.calendar import as_date, nyse_sessions_between, require_nyse_trading_day
 from regime_detection.config import RegimeConfig
@@ -23,6 +24,8 @@ class MarketContext(BaseModel):
     sector_etf_closes: dict[str, pd.Series] | None = None  # v2 §3.1
     cross_asset_closes: dict[str, pd.Series] | None = None  # v2 §3.1
     macro_series: dict[str, pd.Series] | None = None  # v2 §2A/§2B/§2C FRED series
+    pit_constituent_intervals: pd.DataFrame | None = None  # v2 §1D PIT breadth seam
+    constituent_ohlcv: Annotated[dict[str, pd.DataFrame] | None, SkipValidation] = None  # v2 §1D PIT breadth seam
 
 
 def build_market_context(
@@ -35,6 +38,8 @@ def build_market_context(
     sector_etf_closes: dict[str, pd.Series] | None = None,
     cross_asset_closes: dict[str, pd.Series] | None = None,
     macro_series: dict[str, pd.Series] | None = None,
+    pit_constituent_intervals: pd.DataFrame | None = None,
+    constituent_ohlcv: dict[str, pd.DataFrame] | None = None,
 ) -> MarketContext:
     end_date = as_date(end_date)
     require_nyse_trading_day(end_date)
@@ -67,6 +72,8 @@ def build_market_context(
         sector_etf_closes=reindexed_sector_etf_closes,
         cross_asset_closes=reindexed_cross_asset_closes,
         macro_series=reindexed_macro_series,
+        pit_constituent_intervals=pit_constituent_intervals,
+        constituent_ohlcv=constituent_ohlcv,
     )
 
 

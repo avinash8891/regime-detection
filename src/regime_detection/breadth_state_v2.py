@@ -41,6 +41,7 @@ Implementation choices that resolve ambiguities:
 """
 from __future__ import annotations
 
+from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 
 import numpy as np
@@ -55,6 +56,7 @@ class BreadthV2Features:
     """v2 §1D — per-session continuous breadth features (slice 2.3)."""
 
     sector_breadth: pd.Series
+    bias_warnings: pd.DataFrame | None = None
 
     @property
     def feature_names(self) -> tuple[str, ...]:
@@ -64,6 +66,32 @@ class BreadthV2Features:
         return pd.DataFrame(
             {name: getattr(self, name) for name in self.feature_names}
         )
+
+
+_BIAS_WARNING_COLUMNS = ("warning_code", "feature_name", "source", "source_url")
+
+
+def make_bias_warnings_frame(rows: Iterable[Mapping[str, str]]) -> pd.DataFrame:
+    """Build the canonical 4-column bias-warnings frame.
+
+    Each row must have exactly the keys: warning_code, feature_name,
+    source, source_url. Raises ValueError on key mismatch (missing or extra).
+    Empty input returns a 4-column DataFrame with 0 rows.
+    """
+    expected = set(_BIAS_WARNING_COLUMNS)
+    materialized = []
+    for idx, row in enumerate(rows):
+        got = set(row)
+        if got != expected:
+            missing = expected - got
+            extra = got - expected
+            raise ValueError(
+                f"bias_warnings row {idx} key mismatch: missing={sorted(missing)}, extra={sorted(extra)}"
+            )
+        materialized.append({k: row[k] for k in _BIAS_WARNING_COLUMNS})
+    if not materialized:
+        return pd.DataFrame({col: pd.Series(dtype=object) for col in _BIAS_WARNING_COLUMNS})
+    return pd.DataFrame(materialized, columns=list(_BIAS_WARNING_COLUMNS))
 
 
 def compute_breadth_v2_features(
