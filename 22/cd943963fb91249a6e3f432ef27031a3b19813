@@ -1,0 +1,22 @@
+scripts/normalize_s3_daily_to_sqlite_layout.py
+  s_1c47c85d071288::t_5b925811d39e52 1-76
+scripts/run_v2_calibration.py
+  s_1c47c85d071288::t_0dc0520fced16f 233,241-242
+  s_1c47c85d071288::t_e0cb2161052c33 167-168,180-205
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.8",
+  "base_commit_sha": "22cd943963fb91249a6e3f432ef27031a3b19813",
+  "prompts": {},
+  "sessions": {
+    "s_1c47c85d071288": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "9a7f5f4a-bdfa-4e7a-982d-255fc02a66d5",
+        "model": "claude-opus-4-7"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}
