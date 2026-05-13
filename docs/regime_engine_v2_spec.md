@@ -574,6 +574,9 @@ the slice/commit that resolved it. Entries are append-only.
     SPX universe (which would be survivorship-biased). Resolution: defer
     `pct_above_200dma` until the PIT membership ingestion slice lands.
     Deferred by Slice 2.3.
+    Resolved by Slice 2.8c — PIT inputs (`fja05680/sp500` intervals +
+    762-stock SQLite OHLCV) ingested; price-field, NaN-SMA, and
+    full-history pins recorded in Ambiguity Log #54, #58, #59.
 
 22. **§1D lines 213–216 — `ad_line` / `ad_line_slope_20d` deferral.**
     Cumulative advance/decline line and its 20d slope both require
@@ -581,6 +584,8 @@ the slice/commit that resolved it. Entries are append-only.
     #21). Resolution: defer the feature and its `broadening_breadth`
     label dependency.
     Deferred by Slice 2.3.
+    Resolved by Slice 2.8c — feature ships; the `broadening_breadth`
+    label remains deferred per Ambiguity Log #26.
 
 23. **§1D lines 218–221 — `nh_nl_ratio` deferral.**
     52-week new highs / new lows ratio requires per-stock 52w
@@ -588,11 +593,18 @@ the slice/commit that resolved it. Entries are append-only.
     defer the feature and its `broadening_breadth` / `narrowing_breadth`
     label dependencies.
     Deferred by Slice 2.3.
+    Resolved by Slice 2.8c — feature ships with the 252-session
+    lookback pinned in Ambiguity Log #55 and the NaN-history exclusion
+    pinned in #58; the dependent labels remain deferred per #26.
 
 24. **§1D lines 223–226 — `upvol_downvol_ratio` deferral.**
     Up/Down-volume ratio requires per-stock daily volume × advance/decline
     over the PIT universe (entry #21). Resolution: defer.
     Deferred by Slice 2.3.
+    Resolved by Slice 2.8c — feature ships with the strict-inequality
+    direction pin (Ambiguity Log #56) and `adjusted_close` price-field
+    pin (#54). Volume reads the SQLite `volume` column (raw integer
+    shares, unadjusted).
 
 25. **§1D lines 231–237 — `breadth_thrust` feature deferral.**
     Zweig-style breadth thrust requires `pct_advancing`, a per-stock
@@ -600,6 +612,11 @@ the slice/commit that resolved it. Entries are append-only.
     the feature; the related `breadth_thrust` LABEL is also deferred
     (entry #26).
     Deferred by Slice 2.3.
+    Resolved by Slice 2.8c — the FEATURE ships as the 10-session moving
+    average of `pct_advancing` (per Ambiguity Log #56 strict-inequality
+    direction). The LABEL ("moves from < 0.40 to > 0.615 within 10
+    sessions") remains deferred per entry #26 — label wiring belongs in
+    a future breadth-axis-classifier slice.
 
 26. **§1D lines 239–246 — New V2 breadth labels deferral.**
     V2 §1D adds three breadth labels (`breadth_thrust`,
@@ -1549,6 +1566,120 @@ the slice/commit that resolved it. Entries are append-only.
     options IV, weekly EPS revisions, true PIT vendor data, IEF/BIL).
 
     Resolved by spec-amendment commit (this doc-only change).
+
+54. **§1D line 211 — price field for SMA-based PIT breadth features.**
+    Spec writes `pct_above_200dma = mean(member.close > member.sma_200)`
+    using the literal field `close`. For the 762-stock PIT universe,
+    splits are frequent and raw `close` against an SMA of raw `close`
+    false-crosses on the split day even when the economic trend has
+    not changed. V1 used raw `close` for SPY safely because SPY rarely
+    splits; that condition does not hold here. Per v2 §10 we do NOT
+    silently swap fields, so this is a pin, not an invention.
+    Resolution: PIT breadth features (`pct_above_50dma`,
+    `pct_above_200dma`, the per-stock advance/decline used by
+    `ad_line`, `nh_nl_ratio`, `upvol_downvol_ratio`, and `breadth_thrust`)
+    read `adjusted_close` from the 762-stock SQLite store
+    (`local_daily_ohlcv_sqlite.py` column `adjusted_close`).
+    The §1D `close` field name is the *concept* (a price observation per
+    stock per day); `adjusted_close` is the operational realization that
+    preserves the concept across corporate actions. The `sma_50` /
+    `sma_200` reductions are computed off the same `adjusted_close`
+    series. The §1D `52-week new highs / new lows` predicate (Ambiguity
+    Log #55) also uses `adjusted_close` for the same reason. Pinned in
+    `regime_detection.breadth_state_v2` PIT-feature compute.
+    Resolved by Slice 2.8c.
+
+55. **§1D lines 218–221 — `nh_nl_ratio` lookback window.**
+    Spec writes "52-week new highs / new lows" without naming a
+    trading-day count. Calendar 52 weeks ≈ 252 NYSE sessions; using
+    a calendar-week window would force calendar-day rolls that V1
+    rejected by design (V1 §14 NYSE-only convention). Resolution:
+    trailing 252 NYSE sessions inclusive of `as_of_date`, computed
+    against `adjusted_close` (Ambiguity Log #54). "New high at D"
+    means `adjusted_close[D] == max(adjusted_close[D-251..D])`;
+    "new low at D" means `adjusted_close[D] == min(adjusted_close[D-251..D])`.
+    Ties resolved by the equality (a ticker at its trailing-max can
+    be both a member of the high count and unchanged from a prior
+    high). Exposed as `BreadthV2Config.nh_nl_lookback_sessions = 252`
+    so §9.1 calibration can retune without code changes. Pinned in
+    `regime_detection.breadth_state_v2` PIT-feature compute.
+    Resolved by Slice 2.8c.
+
+56. **§1D lines 213–214 + §1D `pct_advancing` — `advances` / `declines`
+    on equal-close days.**
+    Spec writes `ad_line[t] = ad_line[t-1] + (advances[t] - declines[t])`
+    and the breadth-thrust rule references `pct_advancing` but neither
+    defines the per-stock predicate operationally. Three options exist:
+    (A) strict — advance = `adjusted_close[t] > adjusted_close[t-1]`,
+    decline = strict `<`, equality is neither; (B) tie-breaks to
+    advance; (C) tie-breaks to decline. Resolution: option (A),
+    strict inequality on `adjusted_close` (Ambiguity Log #54).
+    Rationale: equality on `adjusted_close` after split/dividend
+    adjustment is rare but non-zero (low-priced stocks with
+    sub-penny moves rounded by the data vendor); biasing either way
+    introduces a small directional drift that compounds in the
+    cumulative `ad_line`. Treating equality as a no-event preserves
+    `advances + declines + unchanged = N` exactly. Pinned in the
+    PIT-feature compute helper `_per_stock_daily_direction`.
+    Resolved by Slice 2.8c.
+
+57. **§1D line 213 — `ad_line` t=0 anchor.**
+    Spec defines the recurrence `ad_line[t] = ad_line[t-1] +
+    (advances[t] - declines[t])` but leaves the t=0 value unspecified.
+    `ad_line` is a cumulative integer-valued series; only its slope
+    has economic meaning (the level is anchor-relative). Resolution:
+    `ad_line[0] = 0` at the first session of the computation window
+    (standard convention). Downstream consumers must read
+    `ad_line_slope_20d`, not the level. The level is exposed for
+    diagnostic inspection only; no rule predicate references it.
+    Pinned in `regime_detection.breadth_state_v2._compute_ad_line`.
+    Resolved by Slice 2.8c.
+
+58. **§1D line 211 + line 230 — newly-listed members lacking SMA
+    history at `as_of_date`.**
+    A ticker that joined the PIT universe N < 50 (or N < 200) trading
+    days before `as_of_date` has no `sma_50` (or `sma_200`) value at
+    `as_of_date`. The pandas expression `close > sma` returns `False`
+    when `sma` is NaN — silently biasing `pct_above_50dma` /
+    `pct_above_200dma` downward. Per v2 §10 we do NOT silently treat
+    NaN as `False`. Resolution: tickers with NaN SMA at `as_of_date`
+    are excluded from BOTH the numerator AND the denominator. The
+    denominator is `count(member with valid SMA at as_of_date)`, not
+    `count(member at as_of_date)`. This mirrors the §1D sector-breadth
+    fail-NaN policy (Ambiguity Log #27) at the per-ticker level
+    rather than the per-axis level. When the denominator collapses to
+    zero (no member has 50 days of history, e.g. first session of
+    SQLite coverage), the feature output is NaN — consistent with V1
+    cold-start. Same rule applies to per-stock new-52w-high /
+    new-52w-low predicates (Ambiguity Log #55): a ticker with fewer
+    than 252 sessions of history is excluded from both numerator and
+    denominator at `as_of_date`. Pinned in
+    `regime_detection.breadth_state_v2` PIT-feature compute.
+    Resolved by Slice 2.8c.
+
+59. **§1D — PIT membership semantics for backward-looking
+    technical-state computations.**
+    Resolving Ambiguity Log #21–#25 requires a pin on the interaction
+    between two windows: (a) the PIT universe at `as_of_date` D and
+    (b) the per-ticker historical window (50d, 200d, 252d, 20d, 10d)
+    each technical indicator pulls. Two interpretations exist:
+    (X) restrict each ticker's historical window to only sessions
+    during which it was a member; (Y) use each ticker's full continuous
+    `adjusted_close` history regardless of past membership status.
+    Resolution: option (Y). The PIT universe at D answers the question
+    "which 762 stocks count today?"; the technical state at D answers
+    "where is this stock today vs its own history?". The latter is a
+    property of the stock itself, not of its index-membership timeline.
+    Option (X) would force-NaN the SMA of a stock the day after it was
+    added to the S&P 500 (no in-membership history), even though the
+    stock has a full price history in `daily_ohlcv_rows`. This is the
+    standard backtest convention and matches CRSP/Compustat consumer
+    practice. The combination of #58 (NaN-SMA exclusion) and #59
+    (full-history SMA computation) is what unblocks the §1D PIT
+    features without inventing a definition. Pinned in
+    `regime_detection.breadth_state_v2` PIT-feature compute and
+    asserted by the integration test in slice 2.8d.
+    Resolved by Slice 2.8c.
 
 ---
 
