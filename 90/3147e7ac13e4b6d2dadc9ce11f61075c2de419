@@ -1,0 +1,23 @@
+src/regime_data_fetch/pit_constituents.py
+  s_7f3c352a4f9447::t_9577586023e907 208-213
+tests/test_fetch_workflow.py
+  s_7f3c352a4f9447::t_3a79a4e73c6ae3 345
+pyproject.toml
+  s_7f3c352a4f9447::t_c9ca4fc457e0ea 25,32
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.8",
+  "base_commit_sha": "903147e7ac13e4b6d2dadc9ce11f61075c2de419",
+  "prompts": {},
+  "sessions": {
+    "s_7f3c352a4f9447": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "3d45e374-f98d-411d-b6a1-0697dd832539",
+        "model": "claude-opus-4-7"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}
