@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import date
 
+import numpy as np
 import pandas as pd
 
 from regime_detection.axis_series import (
@@ -16,21 +17,21 @@ from regime_detection.market_context import build_market_context
 
 
 def _make_long_ohlcv(symbols, dates) -> pd.DataFrame:
-    rows = []
-    for sym in symbols:
-        for i, d in enumerate(dates):
-            rows.append(
-                {
-                    "date": pd.Timestamp(d),
-                    "symbol": sym,
-                    "open": 100.0 + i,
-                    "high": 101.0 + i,
-                    "low": 99.0 + i,
-                    "close": 100.5 + i,
-                    "volume": 1_000_000,
-                }
-            )
-    return pd.DataFrame(rows)
+    symbols_list = list(symbols)
+    n_dates = len(dates)
+    n_syms = len(symbols_list)
+    i = np.tile(np.arange(n_dates, dtype=float), n_syms)
+    return pd.DataFrame(
+        {
+            "date": np.tile(pd.to_datetime(list(dates)).values, n_syms),
+            "symbol": np.repeat(symbols_list, n_dates),
+            "open": 100.0 + i,
+            "high": 101.0 + i,
+            "low": 99.0 + i,
+            "close": 100.5 + i,
+            "volume": np.full(n_dates * n_syms, 1_000_000, dtype=np.int64),
+        }
+    )
 
 
 def _build_context_with_sector_data(market_df_for_asof, as_of: date):

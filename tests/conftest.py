@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+import os
+import pickle
 import sys
+import time
 from datetime import date
 from functools import lru_cache
 from pathlib import Path
@@ -67,11 +70,59 @@ def golden_rows() -> list[dict[str, object]]:
     return list(golden["rows"])
 
 
-@pytest.fixture(scope="session")
-def classified_golden_outputs(golden_rows: list[dict[str, object]], market_df_for_asof) -> dict[date, object]:
+def _classify_all_golden_rows(
+    golden_rows: list[dict[str, object]],
+    market_df_for_asof,
+) -> dict[date, object]:
     engine = RegimeEngine()
     outputs: dict[date, object] = {}
     for row in golden_rows:
         as_of = date.fromisoformat(str(row["as_of_date"]))
         outputs[as_of] = engine.classify(as_of_date=as_of, market_data=market_df_for_asof(as_of))
     return outputs
+
+
+@pytest.fixture(scope="session")
+def classified_golden_outputs(
+    tmp_path_factory: pytest.TempPathFactory,
+    golden_rows: list[dict[str, object]],
+    market_df_for_asof,
+    worker_id: str,
+) -> dict[date, object]:
+    """Session-scoped fixture, shared across pytest-xdist workers via a disk
+    pickle cache. The single-process path computes inline; the multi-worker
+    path elects one worker to build via an exclusive-create lockfile, while
+    other workers poll for the pickle to land. This eliminates the per-worker
+    rebuild cost (~81s × N workers) that previously dominated wall-clock."""
+    if worker_id == "master":
+        return _classify_all_golden_rows(golden_rows, market_df_for_asof)
+
+    shared_dir = tmp_path_factory.getbasetemp().parent
+    cache_path = shared_dir / "classified_golden_outputs.pkl"
+    lock_path = shared_dir / "classified_golden_outputs.lock"
+
+    if cache_path.exists():
+        return pickle.loads(cache_path.read_bytes())
+
+    try:
+        # O_CREAT | O_EXCL: atomic single-winner election across workers.
+        fd = os.open(lock_path, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+        os.close(fd)
+        outputs = _classify_all_golden_rows(golden_rows, market_df_for_asof)
+        tmp_path = cache_path.with_suffix(".pkl.tmp")
+        tmp_path.write_bytes(pickle.dumps(outputs))
+        tmp_path.replace(cache_path)
+        return outputs
+    except FileExistsError:
+        pass
+
+    # Lost the election: another worker is building. Poll for the result.
+    deadline = time.monotonic() + 300.0
+    while time.monotonic() < deadline:
+        if cache_path.exists():
+            return pickle.loads(cache_path.read_bytes())
+        time.sleep(0.2)
+    raise RuntimeError(
+        f"classified_golden_outputs build timed out waiting on peer worker; "
+        f"cache_path={cache_path}"
+    )
