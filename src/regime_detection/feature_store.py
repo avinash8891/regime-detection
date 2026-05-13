@@ -203,6 +203,8 @@ def build_feature_store(
             breadth_state_v2 = compute_breadth_v2_features(
                 sector_etf_closes=sector_closes,
                 config=breadth_state_v2_config,
+                pit_constituent_intervals=context.pit_constituent_intervals,
+                constituent_ohlcv=context.constituent_ohlcv,
             )
         else:
             breadth_state_v2 = None

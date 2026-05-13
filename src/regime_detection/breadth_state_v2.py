@@ -41,26 +41,71 @@ Implementation choices that resolve ambiguities:
 """
 from __future__ import annotations
 
+import datetime as dt
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 
 import numpy as np
 import pandas as pd
 
+from regime_data_fetch.pit_constituents import members_on
 from regime_detection.config import BreadthV2Config
 from regime_detection.fragility_universe import SECTOR_ETFS
 
 
+# PIT feature names in spec order (v2 §1D lines 207-237).
+_PIT_FEATURE_NAMES: tuple[str, ...] = (
+    "pct_above_50dma",
+    "pct_above_200dma",
+    "ad_line",
+    "ad_line_slope_20d",
+    "nh_nl_ratio",
+    "upvol_downvol_ratio",
+    "breadth_thrust",
+)
+
+# Bias-warning provenance for the survivorship-biased PIT universe.
+# Matches the fja05680/sp500 source contract pinned in
+# regime_data_fetch.pit_constituents.
+_PIT_BIAS_WARNING_CODE = "survivorship_biased_constituent_universe"
+_PIT_BIAS_SOURCE = "fja05680/sp500"
+_PIT_BIAS_SOURCE_URL = "https://github.com/fja05680/sp500"
+
+# breadth_thrust 10-session rolling mean window (v2 §1D line 231-237).
+_BREADTH_THRUST_WINDOW = 10
+
+# ad_line_slope_20d lookback (v2 §1D line 216).
+_AD_LINE_SLOPE_LOOKBACK = 20
+
+
 @dataclass(frozen=True)
 class BreadthV2Features:
-    """v2 §1D — per-session continuous breadth features (slice 2.3)."""
+    """v2 §1D — per-session continuous breadth features.
+
+    Slice 2.3 ships only ``sector_breadth``; Slice 2.8c adds the seven
+    PIT-aware features (``pct_above_50dma`` through ``breadth_thrust``).
+    Optional fields are ``None`` on the v1+v2-sector-only callsite and
+    materialised when both ``pit_constituent_intervals`` and
+    ``constituent_ohlcv`` are threaded through ``compute_breadth_v2_features``.
+    """
 
     sector_breadth: pd.Series
     bias_warnings: pd.DataFrame | None = None
+    pct_above_50dma: pd.Series | None = None
+    pct_above_200dma: pd.Series | None = None
+    ad_line: pd.Series | None = None
+    ad_line_slope_20d: pd.Series | None = None
+    nh_nl_ratio: pd.Series | None = None
+    upvol_downvol_ratio: pd.Series | None = None
+    breadth_thrust: pd.Series | None = None
 
     @property
     def feature_names(self) -> tuple[str, ...]:
-        return ("sector_breadth",)
+        names: list[str] = ["sector_breadth"]
+        for pit_name in _PIT_FEATURE_NAMES:
+            if getattr(self, pit_name) is not None:
+                names.append(pit_name)
+        return tuple(names)
 
     def to_frame(self) -> pd.DataFrame:
         return pd.DataFrame(
@@ -98,6 +143,8 @@ def compute_breadth_v2_features(
     *,
     sector_etf_closes: dict[str, pd.Series],
     config: BreadthV2Config,
+    pit_constituent_intervals: pd.DataFrame | None = None,
+    constituent_ohlcv: dict[str, pd.DataFrame] | None = None,
 ) -> BreadthV2Features:
     """Compute the v2 §1D sector_breadth feature from sector ETF closes.
 
@@ -166,4 +213,309 @@ def compute_breadth_v2_features(
     sector_breadth = sector_breadth.where(~has_any_nan)
     sector_breadth.name = "sector_breadth"
 
-    return BreadthV2Features(sector_breadth=sector_breadth)
+    # PIT-aware §1D features (Slice 2.8c). Both new kwargs must be supplied
+    # for the seven survivorship-biased features to materialise; otherwise
+    # the v1+v2-sector-only callsite is preserved (all-None PIT fields).
+    if pit_constituent_intervals is None or constituent_ohlcv is None:
+        return BreadthV2Features(sector_breadth=sector_breadth)
+
+    pit_features = _compute_pit_features(
+        reference_index=reference_index,
+        pit_constituent_intervals=pit_constituent_intervals,
+        constituent_ohlcv=constituent_ohlcv,
+        config=config,
+    )
+    bias_warnings = make_bias_warnings_frame(
+        [
+            {
+                "warning_code": _PIT_BIAS_WARNING_CODE,
+                "feature_name": feat,
+                "source": _PIT_BIAS_SOURCE,
+                "source_url": _PIT_BIAS_SOURCE_URL,
+            }
+            for feat in _PIT_FEATURE_NAMES
+        ]
+    )
+    return BreadthV2Features(
+        sector_breadth=sector_breadth,
+        bias_warnings=bias_warnings,
+        **pit_features,
+    )
+
+
+# ---------------------------------------------------------------------------
+# PIT feature helpers (Slice 2.8c). Each takes a (sessions × members)
+# adjusted_close DataFrame plus the precomputed members_by_session mapping
+# and returns a per-session pd.Series aligned to ``reference_index``.
+# ---------------------------------------------------------------------------
+
+
+def _normalize_interval_dates(intervals: pd.DataFrame) -> pd.DataFrame:
+    """Coerce ``start_date``/``end_date`` columns to ``datetime.date`` objects.
+
+    The on-disk PIT parquet stores ISO date strings; ``read_pit_intervals``
+    converts them to ``dt.date``. Test fixtures construct the frame directly
+    with ISO strings, so we normalize defensively before calling
+    ``members_on`` (which compares to ``dt.date``).
+    """
+    def _to_date(value: object) -> dt.date | None:
+        if value is None:
+            return None
+        try:
+            if pd.isna(value):  # type: ignore[arg-type]
+                return None
+        except (TypeError, ValueError):
+            pass
+        if isinstance(value, dt.date):
+            return value
+        return dt.date.fromisoformat(str(value))
+
+    out = intervals.copy()
+    out["start_date"] = out["start_date"].map(_to_date)
+    out["end_date"] = out["end_date"].map(_to_date)
+    return out
+
+
+def _compute_pit_features(
+    *,
+    reference_index: pd.DatetimeIndex,
+    pit_constituent_intervals: pd.DataFrame,
+    constituent_ohlcv: dict[str, pd.DataFrame],
+    config: BreadthV2Config,
+) -> dict[str, pd.Series]:
+    intervals = _normalize_interval_dates(pit_constituent_intervals)
+    all_member_tickers = sorted(set(intervals["ticker"].tolist()))
+
+    # Pre-compute members-on-D once for the full reference index.
+    members_by_session: dict[pd.Timestamp, frozenset[str]] = {
+        ts: members_on(intervals, ts.date()) for ts in reference_index
+    }
+
+    # Build the (sessions × members) adjusted_close DataFrame. Tickers absent
+    # from constituent_ohlcv contribute an all-NaN column so the per-feature
+    # vectorised masks still work without per-ticker branching. NO forward
+    # fill (Ambiguity Log #58/#59).
+    adj_close_frame = pd.DataFrame(
+        {
+            ticker: (
+                constituent_ohlcv[ticker]["adjusted_close"].astype(float)
+                if ticker in constituent_ohlcv
+                else pd.Series(np.nan, index=reference_index, dtype=float)
+            )
+            for ticker in all_member_tickers
+        },
+        index=None,
+    ).reindex(reference_index)
+
+    # Build the parallel (sessions × members) volume frame for the
+    # upvol/downvol feature. Volume is RAW shares (Ambiguity Log #56) — do
+    # not adjust. Missing tickers contribute NaN, which is filtered downstream.
+    volume_frame = pd.DataFrame(
+        {
+            ticker: (
+                constituent_ohlcv[ticker]["volume"].astype(float)
+                if ticker in constituent_ohlcv
+                else pd.Series(np.nan, index=reference_index, dtype=float)
+            )
+            for ticker in all_member_tickers
+        },
+        index=None,
+    ).reindex(reference_index)
+
+    # PIT membership mask: True where ticker is a member on that session.
+    membership_mask = pd.DataFrame(
+        {
+            ticker: pd.Series(
+                [ticker in members_by_session[ts] for ts in reference_index],
+                index=reference_index,
+                dtype=bool,
+            )
+            for ticker in all_member_tickers
+        },
+        index=reference_index,
+    )
+
+    # Per-ticker daily direction sign on adjusted_close (Ambiguity Log #56):
+    # +1 advance, -1 decline, 0 unchanged. Diff produces NaN at t=0 → mapped
+    # to NaN (no prior close → excluded from advance / decline counts).
+    diff_frame = adj_close_frame.diff()
+    advance_mask = diff_frame > 0.0
+    decline_mask = diff_frame < 0.0
+    unchanged_mask = diff_frame == 0.0
+    # Note: NaN values yield False on all three comparisons — exactly the
+    # "no prior close → excluded" behavior required.
+
+    pct_above_50dma = _compute_pct_above_sma(
+        adj_close_frame=adj_close_frame,
+        membership_mask=membership_mask,
+        sma_window=config.sma_lookback_50,
+    )
+    pct_above_200dma = _compute_pct_above_sma(
+        adj_close_frame=adj_close_frame,
+        membership_mask=membership_mask,
+        sma_window=config.sma_lookback_200,
+    )
+    ad_line, ad_line_slope_20d = _compute_ad_line(
+        advance_mask=advance_mask,
+        decline_mask=decline_mask,
+        membership_mask=membership_mask,
+    )
+    nh_nl_ratio = _compute_nh_nl_ratio(
+        adj_close_frame=adj_close_frame,
+        membership_mask=membership_mask,
+        window=config.nh_nl_lookback_sessions,
+    )
+    upvol_downvol_ratio = _compute_upvol_downvol_ratio(
+        advance_mask=advance_mask,
+        decline_mask=decline_mask,
+        membership_mask=membership_mask,
+        volume_frame=volume_frame,
+    )
+    breadth_thrust = _compute_breadth_thrust(
+        advance_mask=advance_mask,
+        decline_mask=decline_mask,
+        unchanged_mask=unchanged_mask,
+        membership_mask=membership_mask,
+    )
+
+    return {
+        "pct_above_50dma": pct_above_50dma,
+        "pct_above_200dma": pct_above_200dma,
+        "ad_line": ad_line,
+        "ad_line_slope_20d": ad_line_slope_20d,
+        "nh_nl_ratio": nh_nl_ratio,
+        "upvol_downvol_ratio": upvol_downvol_ratio,
+        "breadth_thrust": breadth_thrust,
+    }
+
+
+def _compute_pct_above_sma(
+    *,
+    adj_close_frame: pd.DataFrame,
+    membership_mask: pd.DataFrame,
+    sma_window: int,
+) -> pd.Series:
+    """v2 §1D pct_above_{N}dma — strict ``>`` against the per-ticker SMA.
+
+    NaN-SMA tickers are excluded from BOTH numerator AND denominator
+    (Ambiguity Log #58); zero-denominator → NaN.
+    """
+    sma_frame = adj_close_frame.rolling(sma_window, min_periods=sma_window).mean()
+    # A ticker is "valid" at session D if it's a member AND has a defined SMA
+    # AND has a defined close. (Defined close is implied by defined SMA but
+    # we guard explicitly.)
+    valid_mask = (
+        membership_mask
+        & sma_frame.notna()
+        & adj_close_frame.notna()
+    )
+    above_mask = valid_mask & (adj_close_frame > sma_frame)
+    above_count = above_mask.sum(axis=1).astype(float)
+    valid_count = valid_mask.sum(axis=1).astype(float)
+    ratio = above_count / valid_count.where(valid_count > 0)
+    ratio.name = f"pct_above_{sma_window}dma"
+    return ratio
+
+
+def _compute_ad_line(
+    *,
+    advance_mask: pd.DataFrame,
+    decline_mask: pd.DataFrame,
+    membership_mask: pd.DataFrame,
+) -> tuple[pd.Series, pd.Series]:
+    """v2 §1D ad_line / ad_line_slope_20d (Ambiguity Log #56, #57).
+
+    ad_line[0] = 0 anchor; ad_line[t] = ad_line[t-1] + (advances - declines)
+    where advances/declines count PIT members with strict direction.
+    """
+    advances = (advance_mask & membership_mask).sum(axis=1).astype(float)
+    declines = (decline_mask & membership_mask).sum(axis=1).astype(float)
+    delta = advances - declines
+    # Anchor at 0 on the first session (Ambiguity Log #57).
+    delta.iloc[0] = 0.0
+    ad_line = delta.cumsum()
+    ad_line.name = "ad_line"
+
+    slope = (ad_line - ad_line.shift(_AD_LINE_SLOPE_LOOKBACK)) / float(
+        _AD_LINE_SLOPE_LOOKBACK
+    )
+    slope.name = "ad_line_slope_20d"
+    return ad_line, slope
+
+
+def _compute_nh_nl_ratio(
+    *,
+    adj_close_frame: pd.DataFrame,
+    membership_mask: pd.DataFrame,
+    window: int,
+) -> pd.Series:
+    """v2 §1D nh_nl_ratio over a 252-session inclusive window.
+
+    A ticker contributes only when it has at least ``window`` non-NaN
+    sessions in the trailing inclusive window. ``ratio = nh / max(nh+nl, 1)``;
+    when no member has sufficient history, the value is NaN.
+    """
+    rolling_max = adj_close_frame.rolling(window, min_periods=window).max()
+    rolling_min = adj_close_frame.rolling(window, min_periods=window).min()
+
+    sufficient = rolling_max.notna() & rolling_min.notna()
+    valid_mask = membership_mask & sufficient
+    new_high_mask = valid_mask & (adj_close_frame == rolling_max)
+    new_low_mask = valid_mask & (adj_close_frame == rolling_min)
+
+    new_highs = new_high_mask.sum(axis=1).astype(float)
+    new_lows = new_low_mask.sum(axis=1).astype(float)
+    valid_count = valid_mask.sum(axis=1).astype(float)
+
+    denom = (new_highs + new_lows).where(lambda s: s > 0, other=1.0)
+    ratio = new_highs / denom
+    # Where no member has sufficient history, surface NaN (not 0/1).
+    ratio = ratio.where(valid_count > 0)
+    ratio.name = "nh_nl_ratio"
+    return ratio
+
+
+def _compute_upvol_downvol_ratio(
+    *,
+    advance_mask: pd.DataFrame,
+    decline_mask: pd.DataFrame,
+    membership_mask: pd.DataFrame,
+    volume_frame: pd.DataFrame,
+) -> pd.Series:
+    """v2 §1D upvol_downvol_ratio (Ambiguity Log #56).
+
+    Direction uses adjusted_close (strict ``>`` / ``<``); volume is RAW
+    shares from constituent_ohlcv[ticker]['volume'].
+    """
+    advance_vol_mask = advance_mask & membership_mask
+    decline_vol_mask = decline_mask & membership_mask
+    upvol = volume_frame.where(advance_vol_mask, other=0.0).sum(axis=1)
+    downvol = volume_frame.where(decline_vol_mask, other=0.0).sum(axis=1)
+    ratio = upvol / downvol.where(downvol > 0, other=1.0)
+    ratio.name = "upvol_downvol_ratio"
+    return ratio
+
+
+def _compute_breadth_thrust(
+    *,
+    advance_mask: pd.DataFrame,
+    decline_mask: pd.DataFrame,
+    unchanged_mask: pd.DataFrame,
+    membership_mask: pd.DataFrame,
+) -> pd.Series:
+    """v2 §1D breadth_thrust — 10-session MA of pct_advancing.
+
+    ``pct_advancing = advances / max(advances + declines + unchanged, 1)``
+    where the denominator counts PIT members with a valid prior close
+    (Ambiguity Log #56).
+    """
+    advances = (advance_mask & membership_mask).sum(axis=1).astype(float)
+    declines = (decline_mask & membership_mask).sum(axis=1).astype(float)
+    unchanged = (unchanged_mask & membership_mask).sum(axis=1).astype(float)
+    valid = advances + declines + unchanged
+    pct_advancing = advances / valid.where(valid > 0, other=1.0)
+    thrust = pct_advancing.rolling(
+        _BREADTH_THRUST_WINDOW, min_periods=_BREADTH_THRUST_WINDOW
+    ).mean()
+    thrust.name = "breadth_thrust"
+    return thrust

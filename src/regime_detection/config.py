@@ -398,6 +398,16 @@ class BreadthV2Config(BaseModel):
     # v2 §1D line 229 — % of 11 GICS sector ETFs with positive 21d return.
     sector_breadth_lookback_days: int = Field(gt=0, default=21)
 
+    # v2 §1D line 207 — pct_above_50dma SMA window (Slice 2.8c).
+    sma_lookback_50: int = Field(default=50, ge=5)
+
+    # v2 §1D line 209 — pct_above_200dma SMA window (Slice 2.8c).
+    sma_lookback_200: int = Field(default=200, ge=20)
+
+    # v2 §1D line 218 — nh_nl_ratio 252-session lookback (Slice 2.8c,
+    # Ambiguity Log #55).
+    nh_nl_lookback_sessions: int = Field(default=252, ge=20)
+
 
 class TransitionScoreConfig(BaseModel):
     """Composite transition risk score configuration (v2 spec §4.3 / §4.4)."""
