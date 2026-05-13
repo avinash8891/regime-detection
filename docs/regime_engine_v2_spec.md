@@ -1800,6 +1800,96 @@ the slice/commit that resolved it. Entries are append-only.
     `regime_detection.change_point._days_since_last_break`.
     Resolved by Slice 8.
 
+66. **§4.2 transition_score — `change_point_score` 7th component
+    formula + 4-table weight system.**
+    Spec §4.6 line 2472 says change-point evidence "Feeds
+    transition_score" but §4.2 has no `change_point_score` component
+    formula and §4.3 has no weight table for it. Slice 8 shipped the
+    evidence layer (`ChangePointOutput.score` per Log #64) without
+    the transition_score consumer because the weight table was
+    unpinned. Resolution: pin the formula and 4-table weight system.
+
+    Formula:
+    ```python
+    change_point_score = float(change_point.score)
+    # No clip — score is already in [0, 1] by construction
+    # (5-session rolling max of a posterior probability per Log #64).
+    ```
+
+    Weight tables — 4-table system gated on (HMM seam lit, CP seam lit):
+
+    Without HMM, without change_point (5 components — current):
+    ```yaml
+    weights_without_hmm:
+      volatility_acceleration: 0.225
+      breadth_deterioration:   0.225
+      correlation_concentration: 0.225
+      trend_break:             0.225
+      macro_event:             0.10
+    ```
+
+    With HMM, without change_point (6 components — current):
+    ```yaml
+    weights_with_hmm:
+      volatility_acceleration: 0.20
+      breadth_deterioration:   0.20
+      correlation_concentration: 0.20
+      trend_break:             0.20
+      macro_event:             0.10
+      hmm_probability_shift:   0.10
+    ```
+
+    Without HMM, with change_point (6 components — NEW):
+    ```yaml
+    weights_with_change_point:
+      volatility_acceleration: 0.20
+      breadth_deterioration:   0.20
+      correlation_concentration: 0.20
+      trend_break:             0.20
+      macro_event:             0.10
+      change_point:            0.10
+    ```
+
+    With HMM, with change_point (7 components — NEW, full V2 evidence):
+    ```yaml
+    weights_with_hmm_with_change_point:
+      volatility_acceleration: 0.175
+      breadth_deterioration:   0.175
+      correlation_concentration: 0.175
+      trend_break:             0.175
+      macro_event:             0.10
+      hmm_probability_shift:   0.10
+      change_point:            0.10
+    ```
+
+    Rationale: keep the secondary-evidence components (macro_event,
+    hmm_probability_shift, change_point) at the same 0.10 weight to
+    reflect parity between calendar-time evidence, latent-state
+    evidence, and structural-break evidence. Renormalize the four
+    primary deterministic components downward proportionally as
+    additional evidence layers come online (4 × 0.225 = 0.90 → 4 ×
+    0.20 = 0.80 → 4 × 0.175 = 0.70). All weights are V2 §9.1
+    walk-forward calibration placeholders.
+
+    Composer behavior (`compose_transition_score_for_session`):
+    select the weight table by inspecting which evidence-component
+    inputs were passed:
+    - hmm_top_state_prob_now/_5d_ago present + change_point_score
+      present → `weights_with_hmm_with_change_point` (7 components)
+    - hmm_* present only → `weights_with_hmm` (6 components, current)
+    - change_point_score present only → `weights_with_change_point`
+      (6 components, NEW)
+    - neither → `weights_without_hmm` (5 components, current)
+
+    All four cases compute a normalized score in [0, 1]; the bands
+    interpretation (§4.4) applies identically. V1 byte-identity
+    preserved by the "neither present → current weights_without_hmm
+    path" branch — the same code path that has shipped since slice 3.
+
+    Pinned in `regime_detection.transition_score.compute_transition_score`
+    + the yaml weights tables in `core3-v2.0.0.yaml`. Resolved by the
+    transition_score change-point wire-in slice.
+
 ---
 
 ## 2. Layer 2 V2 — Full Structural-Causal State
