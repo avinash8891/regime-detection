@@ -200,10 +200,12 @@ def main() -> int:
         )
         print(str(eps_report))
 
-    if args.fetch in {"eps-spglobal-auto", "all"}:
-        # Auto-downloads the canonical S&P aggregate forward-EPS workbook
-        # from the spdji public URL. Intended cadence: WEEKLY (S&P
-        # publishes weekly per their schedule). See
+    if args.fetch == "eps-spglobal-auto":
+        # Opt-in only; intentionally excluded from --fetch all because the
+        # spdji URL is Akamai-protected and returns HTTP 403 to programmatic
+        # clients. Including it in `all` would abort the full fetch midway in
+        # any environment without a pre-staged manual-drop file. Cadence is
+        # WEEKLY (S&P publishes weekly); see
         # regime_data_fetch.aggregate_eps.download_spglobal_eps_workbook
         # docstring for the 4-week revision-direction rationale.
         eps_auto_report = run_aggregate_eps_auto_fetch(
