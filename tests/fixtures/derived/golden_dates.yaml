@@ -1,5 +1,5 @@
-generated_at_utc: '2026-05-06T09:18:21+00:00'
-generated_by_commit: 803625db1c28de511781a87b7d5b17d3c97b2318
+generated_at_utc: '2026-05-13T10:57:16+00:00'
+generated_by_commit: 7cee00a34b0dc5f72c986b12e3336b94661d1b27
 raw_file_sha256:
   SPY.csv: efa06aba545dea29dcc523bb8b50ad6a334892e49babee5769466fa8c2c0ef33
   RSP.csv: 6aa3f27a796ffad78f17d114fbe02e806a5488e2a07cdf61166344c15ed7d2c2
@@ -37,7 +37,7 @@ rows:
   as_of_date: '2019-09-12'
   expected:
     trend_direction: bull
-    trend_character: transition
+    trend_character: range_bound
     volatility_state: normal_vol
     breadth_state: healthy_breadth
     transition_risk: stable

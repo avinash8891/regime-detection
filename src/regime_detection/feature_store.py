@@ -198,6 +198,7 @@ def build_feature_store(
         close=spy_close,
         high=spy_ohlcv["high"],
         low=spy_ohlcv["low"],
+        volume=spy_ohlcv["volume"] if "volume" in spy_ohlcv.columns else None,
     )
     volatility = compute_volatility_features(
         close=spy_close,

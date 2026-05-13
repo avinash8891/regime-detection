@@ -409,6 +409,64 @@ class BreadthV2Config(BaseModel):
     nh_nl_lookback_sessions: int = Field(default=252, ge=20)
 
 
+class TrendCharacterV2Config(BaseModel):
+    """v2 §1B trend-character V2 axis configuration (Ambiguity Log #46/#47/#67).
+
+    Extends the existing V1 trend_character classifier with two new labels —
+    ``breakout_expansion`` and ``range_bound`` — plus the per-label
+    asymmetric hysteresis days pinned in Log #67. All threshold defaults
+    track the spec lines cited inline; v2 §9.1 walk-forward may retune.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    # v2 §1B Ambiguity Log #67 per-label de-escalation days.
+    deescalation_days_by_label: dict[str, int] = Field(
+        default_factory=lambda: {
+            "breakout_expansion": 3,
+            "recovery_attempt": 3,
+            "trending": 0,
+            "range_bound": 3,
+            "chop": 0,
+            "transition": 2,
+            "unknown": 2,
+        }
+    )
+    # Default for labels not in `deescalation_days_by_label` (matches §3.7
+    # Ambiguity Log #6 pattern).
+    default_deescalation_days: int = Field(default=0, ge=0)
+
+    # v2 §1B line 90 + Ambiguity Log #46. Must be in (0, 1] (a fraction).
+    followthrough_rate_threshold: float = Field(default=0.60, gt=0.0, le=1.0)
+
+    # v2 §1B line 111 — trailing-window cap on the followthrough walk.
+    followthrough_lookback_sessions: int = Field(default=504, ge=20)
+
+    # v2 §1B line 112 — collect up to N most-recent past breakouts.
+    followthrough_window_count: int = Field(default=20, ge=1)
+
+    # v2 §1B line 113 — sessions over which "held" is asserted.
+    followthrough_hold_sessions: int = Field(default=5, ge=1)
+
+    # v2 §1B line 105 — BB-width expansion lookback.
+    bb_width_expanding_lookback: int = Field(default=5, ge=1)
+
+    # v2 §1B line 102 — Bollinger Band period.
+    bb_width_period: int = Field(default=20, ge=2)
+
+    # v2 §1B line 102 — Bollinger Band multiplier.
+    bb_width_multiplier: float = Field(default=2.0, gt=0.0)
+
+    # v2 §1B line 127 — range_bound abs(return_63d) threshold.
+    range_bound_return_63d_threshold: float = Field(default=0.05, gt=0.0)
+
+    # v2 §1B line 128 — range_bound midpoint excursion threshold.
+    range_bound_midpoint_excursion_threshold: float = Field(default=0.05, gt=0.0)
+
+    # v2 §1B line 129 — range_bound ADX(14) threshold.
+    range_bound_adx_threshold: float = Field(default=20.0, gt=0.0)
+
+
 class TransitionScoreConfig(BaseModel):
     """Composite transition risk score configuration (v2 spec §4.3 / §4.4)."""
 
@@ -777,6 +835,8 @@ class RegimeConfig(BaseModel):
     # v2 §1E axis classifier configuration (Slice 2.7).
     volume_liquidity_state: VolumeLiquidityConfig | None = None
     transition_score: TransitionScoreConfig | None = None
+    # v2 §1B trend-character V2 axis configuration (Ambiguity Log #46/#47/#67).
+    trend_character_v2: TrendCharacterV2Config | None = None
     monetary_pressure_v2: MonetaryPressureV2FeaturesConfig | None = None
     # v2 §2A axis classifier configuration (Ambiguity Log #46 pins).
     monetary_pressure_state: MonetaryPressureV2Config | None = None
