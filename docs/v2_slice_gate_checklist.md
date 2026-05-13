@@ -74,7 +74,7 @@ A slice = one of the ten units listed in v2 spec §8 (Network Fragility, Layer 1
 | Slice | v2 §8 row | Currently blocked on |
 |---|---|---|
 | Layer 1 V2 incremental features (§1A/§1C/§1D) | 2 | Some §1A features (`sentiment_score`) require AAII/put-call/IIA fetcher — defer those features to V2.1 inside the slice. |
-| Layer 2B Inflation/Growth (§2B) | 5 | GDPNow + Citi Surprise fetcher not in `regime_data_fetch/`. CPI/PCE/ISM are available. |
+| Layer 2B Inflation/Growth (§2B) — 2 deferred labels | 5 | LABEL-level deferral, not row-level. The 6 spec-deterministic labels (`goldilocks`, `inflation_shock` composite limb, `disinflation`, `recession_scare`, `recovery_growth`, `unknown`) can ship today against existing free inputs (CPI/PCE/ISM/DBC/DGS10/sector-ETFs/credit_funding). The 2 deferred labels are `earnings_expansion` / `earnings_contraction` (need S&P Global weekly EPS revision feed — paid) and the single-signal `inflation_shock` limb that references `inflation_surprise_zscore` (needs BLS consensus survey aggregates — proprietary). Note: `GDPNow` and `Citi Surprise` are NOT in any §2B rule predicate (earlier checklist text was misleading); `GDPNow` IS free on FRED (series `GDPNOW`) and was added to `V2_FRED_SERIES` in the GDPNow-aware fix. |
 | Layer 5 V2 PRISM (§5.5) | 10 | PRISM framework not in repo. |
 
 Slices not in the above table can proceed from foundation as-is.

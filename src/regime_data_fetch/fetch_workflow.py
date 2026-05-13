@@ -46,6 +46,12 @@ V2_FRED_SERIES = {
     "nfci": "NFCI",
     "cpi_all_items": "CPIAUCSL",
     "iorb": "IORB",
+    # GDPNow nowcast (Atlanta Fed). Free on FRED at series_id GDPNOW.
+    # Not consumed by any v2 §2B rule predicate as of slice 5 ship; ingested
+    # here for the future-amendment slice that would use it as additional
+    # recession_scare / recovery_growth evidence. Listed early in the slice
+    # cadence so it lands in archived inputs before any spec amendment.
+    "gdp_nowcast": "GDPNOW",
 }
 
 
