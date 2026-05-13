@@ -1,0 +1,19 @@
+docs/regime_engine_v1_final_spec.md
+  s_69e10dfae52a94::t_9aebc5d2622f63 1400-1413,1425-1431
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.4",
+  "base_commit_sha": "04868f4d0e784d41a9bf997558179ea7e9ba60e6",
+  "prompts": {},
+  "sessions": {
+    "s_69e10dfae52a94": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "ef8c0903-9f31-4c26-be1c-64323350aa48",
+        "model": "claude-opus-4-7"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}
