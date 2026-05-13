@@ -1,0 +1,44 @@
+src/regime_detection/feature_store.py
+  s_1c47c85d071288::t_1f63ea6748ec14 307-312,316
+tests/test_monetary_pressure_classifier.py
+  s_1c47c85d071288::t_2c1a5b7bdc8cf2 1-447
+src/regime_detection/axis_series.py
+  s_1c47c85d071288::t_ad54126bdcf5c8 1003
+  s_1c47c85d071288::t_fafd12773f0feb 105-108
+  s_1c47c85d071288::t_8552621fa4ccad 806-926
+  s_1c47c85d071288::t_665fe01c853210 991-993
+  s_1c47c85d071288::t_9470be5e12025d 42,46-50
+src/regime_detection/timeline.py
+  s_1c47c85d071288::t_8e9a527da69a42 224-228
+  s_1c47c85d071288::t_ba13a7de44d0ad 266-267,269-270
+  s_1c47c85d071288::t_5228323c5cde05 312
+  s_1c47c85d071288::t_52983e00051ae8 194-197
+src/regime_detection/config.py
+  s_1c47c85d071288::t_de71585e9fd9bf 781-782
+  s_1c47c85d071288::t_2538a9584ec9c3 477-520
+src/regime_detection/configs/core3-v2.0.0.yaml
+  s_1c47c85d071288::t_6869b96f9e8c1c 263-279
+src/regime_detection/monetary_pressure.py
+  s_1c47c85d071288::t_a10739c6f3f473 1-46,51,53,56-96,101,103-105,110-112,116-122,137,139-140,154,157,162,164-169,171-172,186-210,214-216,218-297
+src/regime_detection/models.py
+  s_1c47c85d071288::t_4707ca85e49dce 122-147
+  s_1c47c85d071288::t_53ae3317628479 365
+tests/test_monetary_pressure_features.py
+  s_1c47c85d071288::t_3605bebcf50d6c 239
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.8",
+  "base_commit_sha": "6abdabd304d8a019626c31760a7d1c24c17a25a1",
+  "prompts": {},
+  "sessions": {
+    "s_1c47c85d071288": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "9a7f5f4a-bdfa-4e7a-982d-255fc02a66d5",
+        "model": "claude-opus-4-7"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}
