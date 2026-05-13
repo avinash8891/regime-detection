@@ -408,6 +408,15 @@ class BreadthV2Config(BaseModel):
     # Ambiguity Log #55).
     nh_nl_lookback_sessions: int = Field(default=252, ge=20)
 
+    # v2 §1D Ambiguity Log #68 — "rising"/"falling" = strict change over
+    # this many sessions. Used by the narrowing_breadth + broadening_breadth
+    # rule predicates (Slice 1D code).
+    label_rate_of_change_lookback_sessions: int = Field(default=5, ge=1)
+
+    # v2 §1D line 280 — narrowing_breadth nh_nl_ratio threshold (< 0.4 fires).
+    # Exposed as config for v2 §9.1 calibration.
+    nh_nl_ratio_narrowing_threshold: float = Field(default=0.4, gt=0.0, lt=1.0)
+
 
 class TrendCharacterV2Config(BaseModel):
     """v2 §1B trend-character V2 axis configuration (Ambiguity Log #46/#47/#67).

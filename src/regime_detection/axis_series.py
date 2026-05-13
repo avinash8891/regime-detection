@@ -9,6 +9,8 @@ import pandas as pd
 from regime_detection.breadth_state import (
     _RISK_RANK as BREADTH_RISK_RANK,
     _data_quality_for_asof as breadth_data_quality_for_asof,
+    _evaluate_broadening_breadth,
+    _evaluate_narrowing_breadth,
     build_raw_outputs as build_breadth_raw_outputs,
 )
 from regime_detection.data_quality import assess_series_input_quality, quality_forces_unknown
@@ -215,6 +217,66 @@ class BreadthSeriesClassifier:
         rsp_close = context.rsp_close.reindex(context.spy_ohlcv.index)
         features = feature_store.breadth
         raw_labels, raw_evidence = build_breadth_raw_outputs(features)
+
+        # V2 §1D extension (Ambiguity Log #21-#26, #68): when the PIT seam is
+        # lit AND ALL four required PIT features are non-None, evaluate the
+        # narrowing_breadth and broadening_breadth predicates per session and
+        # apply the spec §1D line 284 precedence walk. When the PIT seam is
+        # unlit (default-config callers, no PIT inputs), V2 rules silently do
+        # NOT fire — V1 byte-identity is preserved (see Hard Constraint #1).
+        v2_features = feature_store.breadth_state_v2
+        v2_config = context.config.breadth_state_v2
+        v2_active = (
+            v2_features is not None
+            and v2_config is not None
+            and v2_features.pct_above_50dma is not None
+            and v2_features.pct_above_200dma is not None
+            and v2_features.nh_nl_ratio is not None
+            and v2_features.ad_line_slope_20d is not None
+        )
+        if v2_active:
+            assert v2_features is not None  # narrowing for type-checker
+            assert v2_config is not None
+            lookback = v2_config.label_rate_of_change_lookback_sessions
+            nh_nl_threshold = v2_config.nh_nl_ratio_narrowing_threshold
+            updated_labels: list[str] = []
+            for idx_pos, day in enumerate(spy_close.index):
+                v1_raw = raw_labels[idx_pos]
+                narrowing_fires = _evaluate_narrowing_breadth(
+                    pct_above_50dma=v2_features.pct_above_50dma,
+                    pct_above_200dma=v2_features.pct_above_200dma,
+                    nh_nl_ratio=v2_features.nh_nl_ratio,
+                    dt=day,
+                    lookback_sessions=lookback,
+                    nh_nl_threshold=nh_nl_threshold,
+                )
+                broadening_fires = _evaluate_broadening_breadth(
+                    nh_nl_ratio=v2_features.nh_nl_ratio,
+                    ad_line_slope_20d=v2_features.ad_line_slope_20d,
+                    dt=day,
+                    lookback_sessions=lookback,
+                )
+                # Precedence walker (spec §1D line 284). breadth_thrust and
+                # recovery_breadth slots are reserved but never fire today
+                # (Ambiguity Log #69 / #70 — labels DEFERRED).
+                if v1_raw == "divergent_fragile":
+                    resolved = "divergent_fragile"
+                elif narrowing_fires:
+                    resolved = "narrowing_breadth"
+                elif v1_raw in {"weak_breadth", "healthy_breadth", "neutral_breadth", "unknown"} and broadening_fires:
+                    resolved = "broadening_breadth"
+                else:
+                    resolved = v1_raw
+                if resolved != v1_raw:
+                    raw_evidence[idx_pos] = {
+                        **raw_evidence[idx_pos],
+                        "v2_narrowing_breadth": narrowing_fires,
+                        "v2_broadening_breadth": broadening_fires,
+                        "v1_raw_label": v1_raw,
+                    }
+                updated_labels.append(resolved)
+            raw_labels = updated_labels  # type: ignore[assignment]
+
         stable_labels, active_labels = apply_asymmetric_hysteresis(
             raw_labels=raw_labels,
             risk_rank=BREADTH_RISK_RANK,
