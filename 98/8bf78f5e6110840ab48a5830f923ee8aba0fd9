@@ -1,0 +1,21 @@
+docs/review_and_ci_setup.md
+  s_7f3c352a4f9447::t_fdb1170b276920 52,58
+src/regime_detection/market_context.py
+  ai_agent 163-166,168-173,175
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.8",
+  "base_commit_sha": "988bf78f5e6110840ab48a5830f923ee8aba0fd9",
+  "prompts": {},
+  "sessions": {
+    "s_7f3c352a4f9447": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "3d45e374-f98d-411d-b6a1-0697dd832539",
+        "model": "claude-opus-4-7"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}
