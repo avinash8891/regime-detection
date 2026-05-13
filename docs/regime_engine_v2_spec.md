@@ -267,16 +267,29 @@ upvol_downvol_ratio = sum(volume[advances]) / max(sum(volume[declines]), 1)
 % of GICS sectors with positive 21d returns. For US: count of XLB, XLC, XLE, XLF, XLI, XLK, XLP, XLRE, XLU, XLV, XLY with `return_21d > 0` divided by 11.
 
 #### Breadth Thrust (Zweig-style)
+
+Feature:
 ```text
-breadth_thrust:
-  10d moving average of pct_advancing
-  moves from < 0.40 to > 0.615
-  within 10 trading days
+breadth_thrust_feature = 10-session moving average of pct_advancing
 ```
 
+Label predicate at session t (low-to-high transition within the trailing
+10-session window):
+```text
+breadth_thrust fires at session t when:
+  EXISTS b in [t-10, t-1] with breadth_thrust_feature[b] < 0.40
+  AND breadth_thrust_feature[t] > 0.615
+```
+
+Both inequalities are strict per Zweig's canonical formulation. NaN at
+`breadth_thrust_feature[t]` or at every `b` in `[t-10, t-1]` falsifies
+the rule (V1 §2.7 cold-start contract). The two threshold constants
+(0.40, 0.615) are spec-fixed.
+
 V2 adds new breadth labels:
-- `breadth_thrust` (bullish initiation)
-- `broadening_breadth` (recovery confirmation: NH/NL ratio rising AND ad_line_slope > 0)
+- `breadth_thrust` (bullish initiation — predicate above)
+- `broadening_breadth` (recovery confirmation: NH/NL ratio rising AND ad_line_slope_20d > 0)
+- `recovery_breadth` (improvement starting, not yet confirmed: NH/NL ratio rising AND ad_line_slope_20d <= 0)
 - `narrowing_breadth` (deterioration: pct_above_50dma falling AND pct_above_200dma falling AND nh_nl_ratio < 0.4)
 
 V2 breadth precedence:
@@ -1990,46 +2003,58 @@ the slice/commit that resolved it. Entries are append-only.
     `breadth_state.label_rate_of_change_lookback_sessions` config.
     Resolved by the §1D V2 breadth classifier slice.
 
-69. **§1D `breadth_thrust` LABEL deferral — multi-session stateful
-    event detection is undefined.**
+69. **§1D `breadth_thrust` LABEL — operational predicate pinned.**
 
-    Spec lines 273-275 define `breadth_thrust` as the "10d MA of
+    Spec lines 273-275 defined `breadth_thrust` as the "10d MA of
     pct_advancing moves from < 0.40 to > 0.615 within 10 trading
-    days". This is a multi-session STATEFUL event detector (was-low,
-    then-now-high, within-window) — not a per-day predicate like the
-    other axis rules. Three operational interpretations:
+    days". This is a multi-session STATEFUL event detector
+    (was-low, then-now-high, within-window). Three candidate
+    interpretations were considered:
 
-    (X) at session t, fire if exists b in (t-10..t-1) where
-        breadth_thrust_feature[b] < 0.40 AND breadth_thrust_feature[t]
-        > 0.615;
-    (Y) fire if the MAX in (t-10..t) > 0.615 AND the MIN in (t-10..t)
+    (X) at session t, fire if EXISTS b in [t-10, t-1] with
+        breadth_thrust_feature[b] < 0.40 AND
+        breadth_thrust_feature[t] > 0.615;
+    (Y) fire if MAX in [t-10, t] > 0.615 AND MIN in [t-10, t]
         < 0.40 (window contains both regimes);
-    (Z) fire if min(t-10..t-N) < 0.40 AND breadth_thrust_feature[t] >
-        0.615 for some N pinning the "low-then-high" ORDERING.
+    (Z) fire if MIN in [t-10, t-N] < 0.40 AND
+        breadth_thrust_feature[t] > 0.615 for some N pinning the
+        "low-then-high" ORDERING.
 
-    Each interpretation produces different fire patterns. Per V2 §10
-    we do NOT invent. Resolution: defer the LABEL until the spec
-    pins which interpretation applies. The FEATURE
-    (`breadth_thrust` = 10-session MA of pct_advancing) ships from
-    slice 2.8c and remains available; only the label predicate
-    waits.
+    Resolution: pin (X). Rationale:
 
-    Precedence slot preserved at the top of §1D ordering (line 284)
-    so the future label-pin slice can drop the predicate in without
-    re-ordering. Pinned in `regime_detection.breadth_state` V2 rule
-    predicate table (`breadth_thrust` key documents the deferral).
-    Resolved when spec amends `breadth_thrust` to one of (X/Y/Z).
+    - "moves **from** < 0.40 **to** > 0.615" is directional.
+      Interpretation (Y) fails the directional reading — it allows
+      max-first, min-after which is not a low-to-high move.
+    - "within 10 trading days" pins the window precisely.
+      Interpretation (Z) requires an extra parameter N that the
+      spec does not provide — that is a V2 §10 "do not invent"
+      violation.
+    - (X) introduces no new parameters and exactly maps the literal
+      spec text: "the low occurs somewhere in the trailing
+      10-session window, the high occurs at session t". It matches
+      Zweig's canonical "Breadth Thrust" indicator that the spec
+      cites at line 269 ("Breadth Thrust (Zweig-style)").
+    - (X) is stateless-per-day computable: the per-day classifier
+      reads only `breadth_thrust_feature[t-10..t]` to evaluate.
+      Preserves V1 §2.2 stateless replay.
 
-70. **§1D `recovery_breadth` LABEL — no operational definition in
-    spec.**
+    Boundary semantics: both inequalities are strict (`< 0.40` and
+    `> 0.615`) per spec text. The thresholds 0.40 and 0.615 are
+    spec-fixed (not configurable). NaN at `breadth_thrust_feature[t]`
+    or at every `b` in `[t-10, t-1]` falsifies the rule (V1 §2.7
+    cold-start). The pinned spec form lives in §1D "Breadth Thrust
+    (Zweig-style)" predicate block.
 
-    Spec line 284 places `recovery_breadth` in the V2 §1D breadth
+    Resolved by spec-amendment commit (this doc-only change). The
+    code-wiring slice in `regime_detection.breadth_state` ships in
+    a subsequent TDD commit.
+
+70. **§1D `recovery_breadth` LABEL — operational predicate pinned.**
+
+    Spec line 284 placed `recovery_breadth` in the V2 §1D breadth
     precedence (between `narrowing_breadth` and `broadening_breadth`)
-    but never defines its predicate. The label is named only in the
-    precedence list; no §1D rule block references it.
-
-    Per V2 §10 we do NOT invent a definition. Two plausible
-    interpretations from the surrounding label semantics:
+    but never defined its predicate. Two candidate interpretations
+    were considered:
 
     (X) "Initial recovery" — NH/NL ratio rising (per Log #68 pin)
         AND ad_line_slope_20d not yet strictly positive
@@ -2037,17 +2062,62 @@ the slice/commit that resolved it. Entries are append-only.
         confirming). Sits between narrowing (deterioration) and
         broadening (full recovery confirmation).
     (Y) "Recovery confirmation precursor" — pct_above_50dma rising
-        (per Log #68 pin) AND pct_above_200dma not yet rising
-        (short-term breadth picking up, long-term still lagging).
+        AND pct_above_200dma not yet rising (short-term breadth
+        picking up, long-term still lagging).
 
-    Each interpretation is internally consistent but the spec does
-    not pin which (or any third interpretation). Resolution: defer
-    the label until the spec adds an operational definition.
-    Precedence slot preserved so the future definition can land
-    without re-ordering. Pinned in `regime_detection.breadth_state`
-    V2 rule predicate table (`recovery_breadth` key documents the
-    deferral). Resolved when spec amends `recovery_breadth` with an
-    operational predicate.
+    Resolution: pin (X). Rationale:
+
+    - **Reuses already-pinned features.** (X) operates on
+      `nh_nl_ratio` (rising-of, Log #68 5-session strict pin) and
+      `ad_line_slope_20d` — the exact two inputs of
+      `broadening_breadth` (per spec §1D line 279). (Y) introduces
+      a `pct_above_50dma` + `pct_above_200dma` pair that is not
+      used by either bracketing label's predicate. Per Log #46's
+      spec-amendment pattern, prefer the form that reuses analogues
+      from already-pinned semantics over the form that introduces
+      new dependencies.
+    - **Clean "halfway" semantics.** (X) is exactly
+      `broadening_breadth` with one conjunct relaxed: same
+      "nh_nl_ratio rising" first clause, plus
+      "ad_line_slope_20d <= 0" instead of `> 0`. This encodes
+      "improvement starting, not yet confirmed by the cumulative
+      advance-decline line".
+    - **Disjoint from `broadening_breadth` by construction.**
+      `recovery_breadth` fires when `ad_line_slope_20d <= 0`;
+      `broadening_breadth` fires when `ad_line_slope_20d > 0`.
+      They cannot co-fire — no precedence collision. The
+      §1D precedence chain (line 284) becomes monotone in slope:
+      `narrowing_breadth` (slope falling) → `recovery_breadth`
+      (slope ≤ 0 with NH/NL rising) → `broadening_breadth`
+      (slope > 0 with NH/NL rising).
+    - **Operator-useful early-turn signal.** Recovery sits
+      ABOVE broadening in the §1D precedence (line 284) so it
+      surfaces the earliest improvement signal rather than waiting
+      for the lagging cumulative-AD confirmation.
+
+    Pinned predicate at session t:
+
+    ```text
+    recovery_breadth fires at session t when:
+      nh_nl_ratio[t] > nh_nl_ratio[t-5]      (rising NH/NL, Log #68)
+      AND ad_line_slope_20d[t] <= 0          (not yet broadening)
+    ```
+
+    NaN in any of `nh_nl_ratio[t]`, `nh_nl_ratio[t-5]`, or
+    `ad_line_slope_20d[t]` falsifies the rule (V1 §2.7 cold-start).
+    The 5-session lookback for NH/NL rising-of inherits the
+    `BreadthV2Config.label_rate_of_change_lookback_sessions = 5`
+    config pinned in Log #68 (operator-tunable via v2 §9.1
+    calibration).
+
+    The pinned spec form lives in §1D "V2 adds new breadth labels"
+    block (line 280 area), alongside the matching `narrowing_breadth`
+    and `broadening_breadth` predicate summaries.
+
+    Resolved by spec-amendment commit (this doc-only change). The
+    code-wiring slice in `regime_detection.breadth_state` ships in
+    a subsequent TDD commit (jointly with the §69 `breadth_thrust`
+    predicate).
 
 ---
 
