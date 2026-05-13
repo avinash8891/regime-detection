@@ -1,0 +1,23 @@
+tests/test_breadth_state_v2_pit_features.py
+  s_1c47c85d071288::t_5e8efed80812e1 678-680
+  s_1c47c85d071288::t_06e00aac0a69cf 38-41,44-48
+  s_1c47c85d071288::t_7415c5847ba233 536-572
+src/regime_detection/breadth_state_v2.py
+  s_1c47c85d071288::t_28b0891c9b1f98 67-74
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.8",
+  "base_commit_sha": "a79a9ab03469acf98bf9fee2015869720b27c9fb",
+  "prompts": {},
+  "sessions": {
+    "s_1c47c85d071288": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "9a7f5f4a-bdfa-4e7a-982d-255fc02a66d5",
+        "model": "claude-opus-4-7"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}
