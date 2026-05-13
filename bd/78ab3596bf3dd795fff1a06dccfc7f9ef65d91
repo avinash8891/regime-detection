@@ -1,0 +1,19 @@
+src/regime_detection/breadth_state_v2.py
+  s_34ff7e1ca723db::t_b8a61016f43767 293-308,392-415
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.8",
+  "base_commit_sha": "bd78ab3596bf3dd795fff1a06dccfc7f9ef65d91",
+  "prompts": {},
+  "sessions": {
+    "s_34ff7e1ca723db": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019e222e-e557-7c10-b20d-3cfa14724850",
+        "model": "gpt-5.4"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}
