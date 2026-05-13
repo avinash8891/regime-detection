@@ -187,6 +187,43 @@ def run_pit_constituents_fetch(
         raise
 
 
+def read_pit_intervals(parquet_path: Path) -> pd.DataFrame:
+    """Read PIT membership parquet back into a DataFrame.
+
+    Inverse of the writer in ``run_pit_constituents_fetch``. Converts the
+    persisted ISO yyyy-mm-dd date strings back to ``datetime.date`` objects
+    (``None`` for the null open-interval tail in ``end_date``).
+    """
+    df = pd.read_parquet(parquet_path)
+
+    def _to_date(value: object) -> dt.date | None:
+        if pd.isna(value):
+            return None
+        if value is None:
+            return None
+        return dt.date.fromisoformat(str(value))
+
+    df["start_date"] = df["start_date"].map(_to_date)
+    df["end_date"] = df["end_date"].map(_to_date)
+    return df
+
+
+def members_on(intervals_df: pd.DataFrame, as_of_date: dt.date) -> frozenset[str]:
+    """Return tickers whose interval contains ``as_of_date`` (inclusive both bounds).
+
+    A null ``end_date`` is treated as an open-ended interval. Empty input
+    yields ``frozenset()``.
+    """
+    if intervals_df.empty:
+        return frozenset()
+
+    start_ok = intervals_df["start_date"] <= as_of_date
+    end_series = intervals_df["end_date"]
+    end_ok = end_series.isna() | (end_series >= as_of_date)
+    mask = start_ok & end_ok
+    return frozenset(intervals_df.loc[mask, "ticker"].tolist())
+
+
 def _parse_date(value: str | None, *, field: str, row_number: int) -> dt.date:
     raw = (value or "").strip()
     try:
