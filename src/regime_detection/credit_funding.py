@@ -112,7 +112,10 @@ REQUIRED_MACRO_KEYS: tuple[str, ...] = (
 
 CREDIT_SPREAD_PROXY_BIAS_WARNING_CODE = "credit_spread_proxy_total_return_differential"
 CREDIT_SPREAD_PROXY_BIAS_SOURCE = "tlt_minus_hyg_lqd_total_return_differential"
-CREDIT_SPREAD_PROXY_BIAS_SOURCE_URL = ""  # internal proxy; no canonical URL
+# Internal proxy with no canonical external URL. Use an `internal:` URN-style
+# string rather than `""` so downstream consumers can distinguish an explicit
+# "computed proxy" provenance from a misconfigured/missing value.
+CREDIT_SPREAD_PROXY_BIAS_SOURCE_URL = "internal:tlt_minus_hyg_lqd_total_return_differential"
 
 # Feature names carrying the proxy bias warning (one row per emitted §2C feature
 # derived from the TLT-vs-HYG/LQD differential).
@@ -178,17 +181,14 @@ class CreditFundingFeatures:
 
 
 # ---------------------------------------------------------------------------
-# Rolling helpers — `_rolling_ols_slope` and `_change_zscore` extracted here
-# (AGENTS rule B). `_yield_change_zscore` in monetary_pressure.py uses the
-# same template but on a yield series with a DIFFERENT change-window /
-# normalizer-window pair; we keep it in place there and re-implement here
-# with the §2C window pair (21d change vs 1260d normalizer). Both are thin
-# wrappers around the same pandas operations; centralising them across two
-# very different default windows would only obscure the spec-line-citation.
+# Rolling helpers — `_rolling_ols_slope` lives here because the per-§2C
+# slope helper differs from `network_fragility_rules._trailing_slope`
+# (vectorised rolling form vs per-day scalar). The z-score helper is
+# shared with §2A — imported from `_rolling_stats` (one home, AGENTS
+# rule B).
 # ---------------------------------------------------------------------------
 
-# Pandas/numpy convention (sample std). Matches §2A `_ZSCORE_DDOF` constant.
-_ZSCORE_DDOF = 1
+from regime_detection._rolling_stats import rolling_change_zscore as _change_zscore  # noqa: E402
 
 
 def _rolling_ols_slope(series: pd.Series, *, window: int) -> pd.Series:
@@ -218,30 +218,6 @@ def _rolling_ols_slope(series: pd.Series, *, window: int) -> pd.Series:
         return float(((x_centered) * (window_arr - y_mean)).sum() / x_var)
 
     return series.rolling(window=window, min_periods=window).apply(_slope, raw=True)
-
-
-def _change_zscore(
-    series: pd.Series,
-    *,
-    change_window: int,
-    normalizer_window: int,
-) -> pd.Series:
-    """Z-score of ``change_N`` against rolling mean/std of ``change_N``.
-
-    ``change_N[t] = series[t] - series[t-change_window]``, then z-score normalises
-    by the rolling mean / std over ``normalizer_window``. Constant-change windows
-    produce ``std == 0`` which is masked to NaN.
-
-    Used by §2C ``broad_usd_index_zscore_21d`` (change_window=21,
-    normalizer_window=1260). Same template as §2A line 1088 / monetary_pressure
-    line 96 (which pins change_window=63, normalizer_window=1260).
-    """
-    series = series.astype(float)
-    change = series - series.shift(change_window)
-    rolling = change.rolling(window=normalizer_window, min_periods=normalizer_window)
-    mean = rolling.mean()
-    std = rolling.std(ddof=_ZSCORE_DDOF)
-    return (change - mean) / std.where(std > 0)
 
 
 # ---------------------------------------------------------------------------

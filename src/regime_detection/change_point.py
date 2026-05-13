@@ -71,9 +71,22 @@ def compute_change_point_features(
         BOCPD's Student-T predictive would be singular),
       - ``bayesian_changepoint_detection`` raises (numerical instability).
 
-    Sessions outside the trailing-window prediction horizon (i.e., those
-    that precede the training-window start) have NaN posterior and NaN
-    score; ``days_since_last_break`` is ``pd.NA`` for those rows.
+    Two distinct NaN regimes in the output series:
+
+    1. **Pre-training-window rows** (sessions that precede the trailing
+       ``training_window_days`` start). All three series (posterior,
+       score, days_since_last_break) are NaN / ``pd.NA``. The timeline
+       consumer filters these out before emitting ``RegimeOutput.
+       change_point`` so the wire is None there.
+
+    2. **In-window rows where no break has yet occurred in trailing
+       history** (cold-start within the BOCPD window). ``posterior`` and
+       ``score`` are real numbers; ``days_since_last_break`` is ``pd.NA``
+       per Ambiguity Log #65 / V1 §2.7 cold-start contract. The timeline
+       consumer maps ``pd.NA`` → ``None`` for the wire field while
+       preserving the real ``score`` value. This is the load-bearing
+       path — quiet markets with no detected breaks still emit a valid
+       low-score evidence row.
 
     Determinism note: callers that pass extra trailing history beyond
     ``training_window_days`` can introduce 1-ULP differences in the input
@@ -99,13 +112,21 @@ def compute_change_point_features(
     # below the realised-vol signal floor (~1e-3) and far above
     # machine epsilon (~1e-16), preserving evidence fidelity while
     # eliminating ULP-level non-determinism.
-    data = np.round(train_series.to_numpy(dtype=float), decimals=12)
+    _ROUND_DECIMALS = 12
+    data = np.round(train_series.to_numpy(dtype=float), decimals=_ROUND_DECIMALS)
 
     # Fail-open guard on degenerate (zero-variance) input — Student-T
-    # posterior is singular when the data has no spread. Use a small
-    # absolute floor to clamp FP-noise std on a constant series
-    # (a true zero-variance series can have ``std() ≈ 1e-17``).
-    if not (data.std() > 1e-12):
+    # posterior is singular when the data has no spread. The std floor
+    # is intentionally aligned with the rounding precision above:
+    # a series with true std below ~1 * 10^-_ROUND_DECIMALS collapses
+    # to a single rounded value (std == 0 exactly) and trips the guard.
+    # A series with std in (10^-_ROUND_DECIMALS, ~10 * 10^-_ROUND_DECIMALS)
+    # survives this guard but typically has only 1-2 distinct rounded
+    # values, which drives the Student-T predictive near-singular and
+    # triggers the bare-except branch below (also returning None). Both
+    # paths preserve fail-open semantics.
+    _STD_FLOOR = 10 ** -_ROUND_DECIMALS
+    if not (data.std() > _STD_FLOOR):
         return None
 
     try:

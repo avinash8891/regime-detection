@@ -82,10 +82,13 @@ class MonetaryPressureV2Features:
         )
 
 
-# v2 §2A pins std at the standard sample / pandas default. Centralised here
-# so both yield series consume the same normalizer convention (and the
-# Ambiguity Log can cite a single source line).
-_ZSCORE_DDOF = 1
+# v2 §2A pins std at the standard sample / pandas default. The constant is
+# re-exported as the legacy name `_ZSCORE_DDOF` for any internal callers
+# that imported it before the helper moved to _rolling_stats.
+from regime_detection._rolling_stats import (  # noqa: E402
+    _ZSCORE_DDOF as _ZSCORE_DDOF,
+    rolling_change_zscore as _rolling_change_zscore,
+)
 
 
 def _yield_change_zscore(
@@ -97,24 +100,17 @@ def _yield_change_zscore(
 ) -> pd.Series:
     """v2 §2A line 896: ``(yield_change_63d - mean_5y) / std_5y``.
 
-    Computed independently per yield series — DGS2 NaNs cannot leak into
-    the DGS10 output and vice versa because each invocation closes over
-    its own input series.
+    Thin wrapper over the shared `rolling_change_zscore` helper that
+    pins the §2A spec citation at this call site (one home per concept
+    lives in `_rolling_stats.py`; §2A and §2C only differ in their
+    change_window / normalizer_window defaults).
     """
-    yield_series = yield_series.astype(float)
-
-    # yield_change_63d[t] = yield[t] - yield[t-63]
-    yield_change = yield_series - yield_series.shift(lookback)
-
-    # mean_5y / std_5y on the CHANGE series (per spec text — the
-    # normalizer is over yield_change, not over yield level).
-    rolling = yield_change.rolling(
-        window=normalizer_window, min_periods=normalizer_window
+    return _rolling_change_zscore(
+        yield_series,
+        change_window=lookback,
+        normalizer_window=normalizer_window,
+        output_name=output_name,
     )
-    mean = rolling.mean()
-    std = rolling.std(ddof=_ZSCORE_DDOF)
-    zscore = (yield_change - mean) / std.where(std > 0)
-    return zscore.rename(output_name)
 
 
 def compute_monetary_pressure_features(
