@@ -2577,6 +2577,37 @@ trend_break: 0.225
 macro_event: 0.10
 ```
 
+**With change_point evidence (Ambiguity Log #66):** when the §4.6 / §6.3
+change_point evidence layer is lit alongside the 5 deterministic
+components, the composer selects from two additional weight tables:
+
+```yaml
+# 6 components — change_point lit, HMM unlit
+weights_with_change_point:
+  volatility_acceleration: 0.20
+  breadth_deterioration:   0.20
+  correlation_concentration: 0.20
+  trend_break:             0.20
+  macro_event:             0.10
+  change_point:            0.10
+
+# 7 components — both HMM and change_point lit (full V2 evidence)
+weights_with_hmm_with_change_point:
+  volatility_acceleration: 0.175
+  breadth_deterioration:   0.175
+  correlation_concentration: 0.175
+  trend_break:             0.175
+  macro_event:             0.10
+  hmm_probability_shift:   0.10
+  change_point:            0.10
+```
+
+The composer (`compose_transition_score_for_session`) selects one of
+the four weight tables per session by inspecting which evidence
+components are non-None and non-NaN. See Ambiguity Log #66 for the
+full 4-table gating rationale and the parity-at-0.10 design for
+secondary-evidence components.
+
 ### 4.4 Score Interpretation
 
 Boundaries are half-open: the upper boundary belongs to the next band. Exactly `0.35` is `weakening` (not `stable`); exactly `0.55` is `transition_warning`; exactly `0.75` is `high transition risk`.
@@ -3028,7 +3059,7 @@ Detect statistical break points in returns or volatility series.
 **BOCPD (Bayesian Online Change Point Detection, Adams & MacKay 2007).** Pinned alongside §4.6. Rationale:
 - Online streaming evaluation matches V2's `classify_window` pattern (no batch re-run on every classify call required, unlike PELT)
 - Native probability output ("posterior probability that a change-point occurred at session t") satisfies V2 §10's evidence-not-label discipline
-- Standard implementation available via the `ruptures` library (`ruptures.Binseg` for the offline pilot; `ruptures.online` for streaming)
+- Standard implementation available via the `bayesian_changepoint_detection` PyPI library (corrects an earlier reference to `ruptures` in Ambiguity Log #53; `ruptures` ships only offline algorithms — Binseg, PELT, Dynp, Window, BottomUp — and has no `online` module. See Ambiguity Log #62 for the library substitution. The algorithm choice (BOCPD), hazard rate default, and output schema are unchanged.)
 - Hazard-rate hyperparameter is the only tuning knob; V2 ship default = `1/250` (one expected change-point per trading year, calibration placeholder for V2 §9.1)
 
 PELT and CUSUM are rejected for V2 ship: PELT is batch-only (would require re-running on every classify call, defeating streaming); CUSUM lacks the probabilistic output and only detects mean-shift step changes (not variance regime changes).
