@@ -164,6 +164,8 @@ def main() -> int:
     daily_dir = data_root / "daily_ohlcv"
     macro_parquet = data_root / "macro" / "fred_macro_series.parquet"
     pmi_path = REPO_ROOT / "data" / "manual_inputs" / "pmi" / "ism_manufacturing_pmi.tsv"
+    pit_intervals_parquet = data_root / "pit_constituents" / "sp500_ticker_intervals.parquet"
+    constituent_db_path = data_root / "constituent_ohlcv.db"
     verification_dir = REPO_ROOT / "docs" / "verification"
     verification_dir.mkdir(parents=True, exist_ok=True)
 
@@ -174,6 +176,33 @@ def main() -> int:
 
     market_data = _load_market_data(daily_dir)
     end_date = market_data["date"].max()
+
+    # Load PIT inputs for clustering / pct_above_50dma path. Both are optional
+    # — when missing, the breadth_state_v2 PIT seam stays unlit and clustering
+    # falls back to None (calibration emits a "deferred" candidate).
+    pit_intervals = None
+    constituent_ohlcv = None
+    if pit_intervals_parquet.exists():
+        from regime_data_fetch.pit_constituents import read_pit_intervals, members_on
+        pit_intervals = read_pit_intervals(pit_intervals_parquet)
+        print(f"PIT intervals: {len(pit_intervals)} rows")
+    if constituent_db_path.exists() and pit_intervals is not None:
+        from regime_data_fetch.local_daily_ohlcv_sqlite_reader import read_constituent_ohlcv
+        # Members on the end_date define the universe whose OHLCV we load.
+        # Reader is keyed by ticker; we pass the full distinct-ticker list
+        # across the trailing window so newly-listed members have data.
+        from regime_data_fetch.pit_constituents import members_on as _members_on
+        all_member_tickers = sorted({t for t in pit_intervals["ticker"].unique()})
+        # Optimization: only read tickers that DBC-style classifier expects.
+        # In practice the universe is ~1200 tickers; read_constituent_ohlcv
+        # auto-omits absent ones, so passing the full list is safe.
+        constituent_ohlcv = read_constituent_ohlcv(
+            constituent_db_path,
+            tickers=all_member_tickers,
+            start_date=dt.date(2016, 1, 1),
+            end_date=end_date,
+        )
+        print(f"constituent_ohlcv: {len(constituent_ohlcv)} tickers loaded from SQLite")
 
     # First pass: build a v1-only context to discover the SPY session index.
     config = load_default_regime_config()
@@ -201,7 +230,7 @@ def main() -> int:
     print(f"cross_asset symbols: {sorted(cross_asset_closes.keys())}")
     print(f"macro series: {sorted(macro_series.keys())}")
 
-    # Rebuild context with full V2 inputs.
+    # Rebuild context with full V2 inputs + PIT seams.
     context = build_market_context(
         end_date=end_date,
         market_data=market_data,
@@ -209,6 +238,8 @@ def main() -> int:
         sector_etf_closes=sector_etf_closes,
         cross_asset_closes=cross_asset_closes,
         macro_series=macro_series,
+        pit_constituent_intervals=pit_intervals,
+        constituent_ohlcv=constituent_ohlcv,
     )
 
     feature_store = build_feature_store(

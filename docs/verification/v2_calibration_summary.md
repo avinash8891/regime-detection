@@ -1,6 +1,6 @@
 # V2 Calibration Summary
 
-- Fitted at: 2026-05-13T11:55:43.377320+00:00
+- Fitted at: 2026-05-13T12:18:12.567659+00:00
 - Data end date: 2026-05-08
 - SPY sessions: 2099
 - Sector ETFs: ['XLB', 'XLC', 'XLE', 'XLF', 'XLI', 'XLK', 'XLP', 'XLRE', 'XLU', 'XLV', 'XLY']
@@ -15,7 +15,7 @@
 - `feature_store.volume_liquidity_v2` lit: **True**
 - `feature_store.monetary` lit: **True**
 - `feature_store.hmm` lit: **True**
-- `feature_store.clustering` lit: **False**
+- `feature_store.clustering` lit: **True**
 - `feature_store.change_point` lit: **True**
 - `feature_store.credit_funding` lit: **True**
 - `feature_store.inflation_growth` lit: **True**

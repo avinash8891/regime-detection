@@ -1,6 +1,6 @@
 hmm_state_label_map:
   version: 0.1-candidate
-  fitted_at_utc: '2026-05-13T11:55:43.373956+00:00'
+  fitted_at_utc: '2026-05-13T12:18:12.563536+00:00'
   fitted_end_date: '2026-05-08'
   training_window_days: 1260
   random_state: 42

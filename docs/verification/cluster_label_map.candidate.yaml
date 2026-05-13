@@ -1,12 +1,40 @@
 cluster_label_map:
   version: 0.1-candidate
-  fitted_at_utc: '2026-05-13T11:55:43.373995+00:00'
+  fitted_at_utc: '2026-05-13T12:18:12.563570+00:00'
   fitted_end_date: '2026-05-08'
   training_window_days: 1260
   random_state: 42
   summary:
-    status: unfit
-    reason: "feature_store.clustering is None \u2014 input gate not lit"
+    model_version: gmm_8cluster_v1.0
+    n_clusters: 8
+    n_predicted_sessions: 2003
+    sessions_per_cluster:
+      0: 171
+      1: 54
+      2: 23
+      3: 318
+      4: 323
+      5: 671
+      6: 270
+      7: 173
+    mean_distance_to_centroid_per_cluster:
+      0: 3.017977
+      1: 3.08483
+      2: 2.512733
+      3: 2.73307
+      4: 3.16735
+      5: 2.754819
+      6: 2.680609
+      7: 4.646544
+    candidate_mappings:
+      0: '<operator review: assign economic label for cluster 0>'
+      1: '<operator review: assign economic label for cluster 1>'
+      2: '<operator review: assign economic label for cluster 2>'
+      3: '<operator review: assign economic label for cluster 3>'
+      4: '<operator review: assign economic label for cluster 4>'
+      5: '<operator review: assign economic label for cluster 5>'
+      6: '<operator review: assign economic label for cluster 6>'
+      7: '<operator review: assign economic label for cluster 7>'
   review_instructions: "Per V2 \xA76.2 line 2842 + \xA710: inspect the per-cluster\
     \ size and mean distance to centroid above. Manually assign an economic label\
     \ (e.g. calm_low_vol_bull / trending_bull / high_vol_chop / ...) to each integer\
