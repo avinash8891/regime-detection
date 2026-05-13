@@ -1491,6 +1491,65 @@ the slice/commit that resolved it. Entries are append-only.
 
     Resolved by spec-amendment commit (this doc-only change).
 
+53. **§4.6 / §6.3 change-point algorithm + §5.1 cohort routing +
+    §5.2 family constraints + §5.3 vol-crush exposure — V2 governance
+    pinning.**
+
+    Four product-strategy decisions resolved as V2 ship starters,
+    each annotated as a V2 §9.1 walk-forward calibration placeholder.
+
+    - **§4.6 + §6.3 algorithm pinned: BOCPD** (Bayesian Online Change
+      Point Detection, Adams & MacKay 2007). Rejected PELT (batch-only,
+      defeats streaming) and CUSUM (mean-shift step only, no
+      probability output). Hazard-rate hyperparameter default = `1/250`
+      (one expected break per trading year; calibration target).
+      `ruptures` library implementation pinned for both online streaming
+      (V2.1 ship) and the offline pilot. The change-point feature stays
+      V2.1 — only the algorithm choice is pinned now.
+
+    - **§5.1 cohort routing pinned: 9 cohorts** (8 specialist +
+      `default_neutral` fallback). Precedence (fail-defensive default):
+      `crisis > euphoria > bear_stress > tightening > easing > recovery
+      > chop_mean_reversion > bull_low_vol > default_neutral`. Each
+      cohort's routing rule defined in terms of V2-axis label
+      membership (`network_fragility`, `volatility_state`,
+      `trend_direction`, `monetary_pressure`, `trend_character`,
+      `breadth_state`). Per-cohort `blocked_cohorts` table also pinned.
+      All rules and blocks are walk-forward calibration placeholders;
+      `euphoria_specialist` is silent until §1A sentiment_score data
+      ships (Ambiguity Log #32).
+
+    - **§5.2 family constraints pinned via override-on-default
+      inheritance.** The §5.2 example JSON becomes the `default_neutral`
+      baseline; each specialist cohort declares only the families it
+      overrides. Inheritance pattern keeps the ship surface small
+      (one base + per-cohort deltas) and matches the Pydantic
+      config-inheritance idiom used throughout V2. All numeric
+      thresholds (`max_lookback_days`, `max_holding_days`,
+      `max_position_pct`, `min_adx`) are calibration placeholders.
+      `easing_specialist` inherits `default_neutral` unchanged at
+      V2 ship (no opinionated overrides without empirical evidence).
+
+    - **§5.3 vol-crush exposure pinned: 50% reduction over 5-day
+      cooldown.** Soft de-risk rather than hard 100% exit. Rationale:
+      `vol_crush` can fire on a single-day vol drop that reverses
+      within 1-2 sessions; a 100% exit would whipsaw and lock in
+      execution cost; 50% provides meaningful de-risk while preserving
+      optionality for label-flip. The 5-day cooldown completes
+      normalization if the label persists. Asymmetric-cost framing:
+      false-positive (exit when vol re-expands) = active execution +
+      opportunity cost; false-negative (stay long when vol stays
+      crushed) = passive opportunity cost only; 50% deliberately skews
+      toward false-negative bias. `event_vol_longs: "exit_immediately"`
+      stays hard exit (no partial reduction) per spec line 2301.
+
+    With this amendment all §1, §2, §4, §5, §6 spec-blocked items are
+    formally resolved at the spec level. The remaining open V2 work is
+    code (the unblocked code slices) plus data sourcing (sentiment_score,
+    options IV, weekly EPS revisions, true PIT vendor data, IEF/BIL).
+
+    Resolved by spec-amendment commit (this doc-only change).
+
 ---
 
 ## 2. Layer 2 V2 — Full Structural-Causal State
@@ -2217,19 +2276,20 @@ V1 warning labels (`bull_fragile_warning`, `bear_stress_warning`, `crisis_overri
 
 ### 4.6 Change-Point Detection
 
-Implements one of: BOCPD, PELT, or CUSUM. Pick one for V2 ship; document choice.
+Implementation: **BOCPD (Bayesian Online Change Point Detection, Adams & MacKay 2007)**. Online streaming algorithm matches V2's `classify_window` evaluation pattern; native probability output feeds `transition_score` as evidence rather than as a hard label (per V2 §10 evidence-not-label discipline). See §6.3 for the full method contract.
 
 Output:
 ```json
 {
   "change_point": {
     "score": 0.78,
-    "days_since_last_break": 4
+    "days_since_last_break": 4,
+    "method": "BOCPD"
   }
 }
 ```
 
-Feeds `transition_score` as additional evidence (V2.1 — not in initial V2 ship).
+Feeds `transition_score` as additional evidence (V2.1 — not in initial V2 ship; change-point detection ships in V2.1 alongside §6.3 implementation).
 
 ---
 
@@ -2258,8 +2318,74 @@ Specialist cohorts:
 - `chop_mean_reversion_specialist`
 - `bull_low_vol_specialist`
 - `bear_stress_specialist`
+- `default_neutral` (fallback when no specialist rule matches)
 
-Routing rules use the V1 scenario precedence extended with V2 macro/fragility states.
+#### Cohort Precedence (V2 ship starter, V2 §9.1 walk-forward calibration placeholder)
+
+```text
+crisis_specialist > euphoria_specialist > bear_stress_specialist
+> tightening_specialist > easing_specialist > recovery_specialist
+> chop_mean_reversion_specialist > bull_low_vol_specialist > default_neutral
+```
+
+Reasoning: defensive cohorts (`crisis_specialist`, `bear_stress_specialist`) outrank optimistic ones (`bull_low_vol_specialist`, `chop_mean_reversion_specialist`) so a bullish trend with a single crisis signal routes to crisis — fail-defensive default. Monetary cohorts outrank generic bull/chop to ensure rate regime drives strategy choice when it's the dominant signal.
+
+#### Routing Rules (V2 ship starter, walk-forward calibration placeholder)
+
+```yaml
+cohort_routing:
+  crisis_specialist:
+    network_fragility.active_label in [correlation_to_one, systemic_stress]
+    OR volatility_state.active_label == "crisis_vol"
+
+  euphoria_specialist:
+    trend_direction.active_label == "euphoria"
+    # Note: euphoria label is deferred until sentiment_score data ships
+    # (Ambiguity Log #32). Until then this rule is silent.
+
+  bear_stress_specialist:
+    trend_direction.active_label == "bear"
+    AND breadth_state.active_label in [weak_breadth, divergent_fragile, narrowing_breadth]
+
+  tightening_specialist:
+    monetary_pressure.active_label in [tightening_pressure, rate_shock]
+
+  easing_specialist:
+    monetary_pressure.active_label == "easing_pressure"
+
+  recovery_specialist:
+    trend_direction.active_label == "recovery"
+
+  chop_mean_reversion_specialist:
+    trend_character.active_label == "range_bound"
+    AND volatility_state.active_label in [normal_vol, low_vol]
+
+  bull_low_vol_specialist:
+    trend_direction.active_label == "bull"
+    AND volatility_state.active_label in [low_vol, normal_vol]
+
+  default_neutral:
+    # falls through when no rule above matches
+```
+
+#### Blocked Cohorts (per active cohort)
+
+The `blocked_cohorts` JSON field at the top of §5.1 is populated by the active cohort's blocklist:
+
+```yaml
+blocked_cohorts:
+  crisis_specialist:        [short_vol, leveraged_long, breakout]
+  euphoria_specialist:      [mean_reversion]    # don't fade strength
+  bear_stress_specialist:   [short_vol, breakout, leveraged_long]
+  tightening_specialist:    []                  # constraints applied via §5.2 instead
+  easing_specialist:        []
+  recovery_specialist:      [short_vol]
+  chop_mean_reversion_specialist: [trend_following, breakout]
+  bull_low_vol_specialist:  []
+  default_neutral:          []
+```
+
+The starter routing rules + blocked-cohorts table are V2 §9.1 walk-forward calibration placeholders (same pattern as §1A `0.60` threshold). Operator refines after walk-forward evidence reveals false-positive / false-negative rates per cohort.
 
 ### 5.2 Strategy-Family Constraints
 
@@ -2295,12 +2421,73 @@ V1 has flat allow/block. V2 adds per-family granular constraints.
 }
 ```
 
+#### Per-Cohort Override Pattern (V2 ship starter, V2 §9.1 calibration placeholder)
+
+The JSON above is the **`default_neutral` cohort's** base constraint set. Each specialist cohort declares only `overrides`; unspecified families inherit the `default_neutral` values. This avoids the combinatorial `N_cohorts × N_families` table and lets walk-forward calibration tune per-cohort deviations without rewriting full constraint sets.
+
+```yaml
+strategy_family_constraints:
+  default_neutral:                                # baseline, inherited unless overridden
+    # uses the §5.2 example JSON above as-is
+
+  crisis_specialist:
+    trend_following: {allowed: false, reason: "false_signals_in_chop"}
+    mean_reversion:  {allowed: false, reason: "knife_catching"}
+    breakout:        {allowed: false, reason: "false_breakout_rate_high"}
+    short_vol:       {allowed: false, reason: "vol_can_keep_expanding"}
+    long_vol:        {allowed: true,  event_window_only: false}    # always-on long vol
+
+  euphoria_specialist:
+    mean_reversion:  {allowed: false, reason: "do_not_fade_strength"}
+
+  bear_stress_specialist:
+    trend_following: {allowed: false, reason: "directional_in_stressed_chop"}
+    breakout:        {allowed: false, reason: "false_breakout_rate_high"}
+    short_vol:       {allowed: false, reason: "stress_can_persist"}
+    long_vol:        {allowed: true,  event_window_only: false}
+
+  tightening_specialist:
+    trend_following: {allowed: true,  max_lookback_days: 50, require_breadth_confirmation: true}
+    breakout:        {allowed: true,  require_volume_confirmation: true}
+    long_vol:        {allowed: true,  event_window_only: true}
+
+  easing_specialist:
+    # inherits default_neutral (no overrides at V2 ship)
+
+  recovery_specialist:
+    short_vol:       {allowed: false, reason: "recovery_can_relapse"}
+
+  chop_mean_reversion_specialist:
+    trend_following: {allowed: false, reason: "chop_kills_trend"}
+    breakout:        {allowed: false, reason: "false_breakouts_dominant"}
+    mean_reversion:  {allowed: true,  max_holding_days: 10, require_volume_confirmation: false}
+
+  bull_low_vol_specialist:
+    trend_following: {allowed: true,  max_lookback_days: 200, min_adx: 15}
+    mean_reversion:  {allowed: true,  max_holding_days: 10}
+    breakout:        {allowed: true}
+    short_vol:       {allowed: true,  max_position_pct: 0.25}     # cautious enable
+```
+
+The override-on-default inheritance pattern keeps the ship surface small (one base constraint set + per-cohort deltas) and matches Pydantic's config-inheritance idiom that the rest of V2 uses. All thresholds (`max_lookback_days`, `max_holding_days`, `max_position_pct`, `min_adx`) are V2 §9.1 walk-forward calibration placeholders.
+
 ### 5.3 Vol-Crush Exit Rules
 
 When `volatility_state.active_label = vol_crush`:
 - Exit all event-vol longs immediately
-- Reduce long-vol exposure
+- Reduce long-vol exposure by `long_vol_position_reduction_pct = 0.50` (V2 ship default; V2 §9.1 walk-forward calibration placeholder)
 - Normalize risk after `cooldown_days = 5`
+
+```yaml
+vol_crush_exit_rules:
+  event_vol_longs: "exit_immediately"          # hard exit; no partial reduction
+  long_vol_position_reduction_pct: 0.50        # soft 50% de-risk; calibration target
+  cooldown_days: 5                             # full normalization horizon
+```
+
+Rationale for the soft 50% reduction (not hard 100% exit): `vol_crush` can fire on a single-day vol drop that reverses within 1-2 sessions. A 100% exit would whipsaw exposure and lock in execution cost; 50% provides meaningful de-risk while preserving optionality for label-flip. The 5-day cooldown then completes the normalization if `vol_crush` persists.
+
+Asymmetric-cost framing (same pattern as §1A 0.60 threshold): false-positive (exit when vol re-expands) has active execution cost + opportunity cost; false-negative (stay long when vol stays crushed) has only passive opportunity cost. 0.50 deliberately skews toward false-negative bias.
 
 ### 5.4 No-Flip-Flop Windows
 
@@ -2496,10 +2683,15 @@ cluster_label_map:
 #### Purpose
 Detect statistical break points in returns or volatility series.
 
-#### Method Options (pick one for V2 ship)
-- Bayesian online change point detection (BOCPD)
-- PELT algorithm
-- CUSUM
+#### Method (V2 ship choice)
+
+**BOCPD (Bayesian Online Change Point Detection, Adams & MacKay 2007).** Pinned alongside §4.6. Rationale:
+- Online streaming evaluation matches V2's `classify_window` pattern (no batch re-run on every classify call required, unlike PELT)
+- Native probability output ("posterior probability that a change-point occurred at session t") satisfies V2 §10's evidence-not-label discipline
+- Standard implementation available via the `ruptures` library (`ruptures.Binseg` for the offline pilot; `ruptures.online` for streaming)
+- Hazard-rate hyperparameter is the only tuning knob; V2 ship default = `1/250` (one expected change-point per trading year, calibration placeholder for V2 §9.1)
+
+PELT and CUSUM are rejected for V2 ship: PELT is batch-only (would require re-running on every classify call, defeating streaming); CUSUM lacks the probabilistic output and only detects mean-shift step changes (not variance regime changes).
 
 #### Output
 ```json
