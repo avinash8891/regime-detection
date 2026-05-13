@@ -1,0 +1,28 @@
+src/regime_detection/transition_score.py
+  s_1c47c85d071288::t_41b236fb7b6b91 1-154
+tests/test_transition_score_v2.py
+  s_1c47c85d071288::t_1ab94cf4f29b84 1-401
+src/regime_detection/transition_risk_series.py
+  s_1c47c85d071288::t_7069176dd014a1 105
+  s_1c47c85d071288::t_5b9f66b6fcd3b9 149-150
+  s_1c47c85d071288::t_105e1512b5f656 188-191,194,204-225
+  s_1c47c85d071288::t_255c915f8aac7d 9,14
+  s_1c47c85d071288::t_19163b70900483 12
+  s_1c47c85d071288::t_bd7b6061c2b197 49-79,92-93,97-104,106-136
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.8",
+  "base_commit_sha": "028f98859e74f469d2a09afc6e6c45ccdc55d77f",
+  "prompts": {},
+  "sessions": {
+    "s_1c47c85d071288": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "9a7f5f4a-bdfa-4e7a-982d-255fc02a66d5",
+        "model": "claude-opus-4-7"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}
