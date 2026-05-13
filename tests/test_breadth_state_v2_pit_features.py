@@ -35,12 +35,17 @@ from regime_detection.fragility_universe import SECTOR_ETFS
 
 
 # ---------------------------------------------------------------------------
-# Constants (no magic strings) — match pit_constituents.py
+# Constants — imported directly from pit_constituents to enforce that the
+# breadth-state PIT bias warnings carry the same provenance as the parquet
+# rows written by run_pit_constituents_fetch. Hardcoding string literals here
+# would let the two homes drift silently (AGENTS rule B).
 # ---------------------------------------------------------------------------
 
-_PIT_SOURCE = "fja05680/sp500"
-_PIT_SOURCE_URL = "https://github.com/fja05680/sp500"
-_PIT_BIAS_WARNING = "survivorship_biased_constituent_universe"
+from regime_data_fetch.pit_constituents import (  # noqa: E402
+    BIAS_WARNING as _PIT_BIAS_WARNING,
+    SOURCE_NAME as _PIT_SOURCE,
+    SOURCE_URL as _PIT_SOURCE_URL,
+)
 
 _PIT_FEATURE_NAMES = (
     "pct_above_50dma",
@@ -528,6 +533,43 @@ def test_nh_nl_ratio_zero_when_no_new_high_or_low(v2_breadth_config):
     assert out.nh_nl_ratio.iloc[251] == pytest.approx(0.0)
 
 
+def test_nh_nl_ratio_flat_series_counts_toward_both_new_highs_and_new_lows(
+    v2_breadth_config,
+):
+    """Ambiguity Log #61: a ticker whose adjusted_close is constant across
+    the full 252-session window satisfies BOTH equality predicates
+    (adj_close[D] == rolling_max AND adj_close[D] == rolling_min). It must
+    contribute to BOTH new_highs AND new_lows.
+
+    Setup: two tickers, both perfectly flat at different price levels for the
+    full 260-session window. At t=251 (first session with 252 sessions of
+    history), both tickers fire as new_high AND as new_low. So
+    new_highs = 2, new_lows = 2, ratio = 2 / max(2 + 2, 1) = 0.5.
+
+    The 0.5 value is the load-bearing observation: if either ticker were
+    counted toward only one side (the spec-rejected interpretations
+    Option Y / Option Z in Log #61), the ratio would be either 0.0 (both
+    suppressed) or 1.0 (both biased to high). Only Option X — count toward
+    both — yields 0.5.
+    """
+    n = 260
+    closes = _make_sector_closes(n=n)
+    ohlcv = {
+        AAPL: _make_ohlcv_frame([100.0] * n, [1000] * n),
+        MSFT: _make_ohlcv_frame([200.0] * n, [1000] * n),
+    }
+    intervals = _make_pit_intervals(
+        [(AAPL, "2023-01-02", None), (MSFT, "2023-01-02", None)]
+    )
+    out = compute_breadth_v2_features(
+        sector_etf_closes=closes,
+        config=v2_breadth_config,
+        pit_constituent_intervals=intervals,
+        constituent_ohlcv=ohlcv,
+    )
+    assert out.nh_nl_ratio.iloc[251] == pytest.approx(0.5)
+
+
 # =============================================================================
 # Group F — upvol_downvol_ratio (1 test)
 # =============================================================================
@@ -633,13 +675,9 @@ def test_bias_warnings_all_use_survivorship_biased_constituent_universe_code(
         pit_constituent_intervals=intervals,
         constituent_ohlcv=ohlcv,
     )
-    assert set(out.bias_warnings["warning_code"]) == {
-        "survivorship_biased_constituent_universe"
-    }
-    assert set(out.bias_warnings["source"]) == {"fja05680/sp500"}
-    assert set(out.bias_warnings["source_url"]) == {
-        "https://github.com/fja05680/sp500"
-    }
+    assert set(out.bias_warnings["warning_code"]) == {_PIT_BIAS_WARNING}
+    assert set(out.bias_warnings["source"]) == {_PIT_SOURCE}
+    assert set(out.bias_warnings["source_url"]) == {_PIT_SOURCE_URL}
 
 
 def test_bias_warnings_feature_names_cover_all_seven_pit_features(

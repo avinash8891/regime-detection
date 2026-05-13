@@ -64,12 +64,14 @@ _PIT_FEATURE_NAMES: tuple[str, ...] = (
     "breadth_thrust",
 )
 
-# Bias-warning provenance for the survivorship-biased PIT universe.
-# Matches the fja05680/sp500 source contract pinned in
-# regime_data_fetch.pit_constituents.
-_PIT_BIAS_WARNING_CODE = "survivorship_biased_constituent_universe"
-_PIT_BIAS_SOURCE = "fja05680/sp500"
-_PIT_BIAS_SOURCE_URL = "https://github.com/fja05680/sp500"
+# Bias-warning provenance — reuse the canonical constants from
+# regime_data_fetch.pit_constituents (one home per concept, AGENTS rule B).
+# Local aliases keep the names that internal callers (and tests) refer to.
+from regime_data_fetch.pit_constituents import (  # noqa: E402
+    BIAS_WARNING as _PIT_BIAS_WARNING_CODE,
+    SOURCE_NAME as _PIT_BIAS_SOURCE,
+    SOURCE_URL as _PIT_BIAS_SOURCE_URL,
+)
 
 # breadth_thrust 10-session rolling mean window (v2 §1D line 231-237).
 _BREADTH_THRUST_WINDOW = 10
