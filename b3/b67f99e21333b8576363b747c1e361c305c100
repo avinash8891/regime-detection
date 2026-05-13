@@ -1,0 +1,59 @@
+tests/conftest.py
+  6284b163c8208cf2 1-10
+scripts/cubic_review.sh
+  6284b163c8208cf2 21-25,49
+src/regime_detection/config.py
+  6284b163c8208cf2 1-38
+tests/fixtures/raw/PROVENANCE.md
+  6284b163c8208cf2 1-18
+README.md
+  6284b163c8208cf2 1-6
+src/regime_detection/calendar.py
+  6284b163c8208cf2 1-70
+src/regime_detection/engine.py
+  6284b163c8208cf2 1-147
+src/regime_detection/models.py
+  6284b163c8208cf2 1-105
+pyproject.toml
+  6284b163c8208cf2 1-32
+AGENTS.md
+  6284b163c8208cf2 12-15
+src/regime_detection/__init__.py
+  6284b163c8208cf2 1-5
+.pre-commit-config.yaml
+  6284b163c8208cf2 8
+configs/core3-v1.0.0.yaml
+  6284b163c8208cf2 1-9
+.github/workflows/ci.yml
+  6284b163c8208cf2 32
+src/regime_detection/versioning.py
+  6284b163c8208cf2 1-10
+.gitattributes
+  6284b163c8208cf2 1-2
+tests/test_foundation.py
+  6284b163c8208cf2 1-100
+.gitignore
+  6284b163c8208cf2 206-208
+scripts/codex_code_simplifier.sh
+  6284b163c8208cf2 76-77
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.3.4",
+  "base_commit_sha": "b3b67f99e21333b8576363b747c1e361c305c100",
+  "prompts": {
+    "6284b163c8208cf2": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019df886-7a0b-7b10-a22d-6f6c96d80945",
+        "model": "gpt-5.2"
+      },
+      "human_author": null,
+      "messages": [],
+      "total_additions": 8434,
+      "total_deletions": 69,
+      "accepted_lines": 8652,
+      "overriden_lines": 0
+    }
+  }
+}

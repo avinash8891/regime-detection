@@ -1,0 +1,19 @@
+docs/review_and_ci_setup.md
+  s_2ec9059b57bc2d::t_88cc1bd63bec4e 52,58
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.4",
+  "base_commit_sha": "93cf480ebc9d73b2d8694d524b13b2240ae9e189",
+  "prompts": {},
+  "sessions": {
+    "s_2ec9059b57bc2d": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "8a548770-6631-45ae-9b72-101b7887ca2e",
+        "model": "claude-opus-4-7"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}

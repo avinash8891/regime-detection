@@ -1,0 +1,50 @@
+tests/test_inflation_growth_features.py
+  s_52de661ea8374d::t_087433f4b3bbf1 1-128,130-135,137-291
+  s_52de661ea8374d::t_b39f997df17f78 129,136
+src/regime_detection/pit_builder.py
+  s_52de661ea8374d::t_762792654fa374 22,74,103,140,162,522-555,573,618-621
+src/regime_detection/engine.py
+  s_52de661ea8374d::t_1eccb97f29a48b 41,57,80,96,110,135,150,167-168,177,196
+src/regime_data_fetch/inflation_growth_features.py
+  s_52de661ea8374d::t_63602f6224c194 1-258,260-362
+  s_52de661ea8374d::t_d2fcd0238c0ca5 259
+tests/test_foundation.py
+  s_52de661ea8374d::t_e1c9e3e795d46a 150-162
+docs/regime_engine_v2_spec.md
+  s_52de661ea8374d::t_dd971bf77fa30a 274-303
+scripts/fetchers/inflation_growth/build_inflation_growth_features.py
+  s_52de661ea8374d::t_c61c4d4309bb83 1-22
+src/regime_detection/package_io.py
+  s_52de661ea8374d::t_26354121e807e9 13,59,104-109,134-138,188-191,202
+src/regime_data_fetch/acquisition_consolidation.py
+  s_52de661ea8374d::t_11414ec0d55ba9 81,115,376-386,558-560,762-778
+tests/test_acquisition_consolidation.py
+  s_52de661ea8374d::t_638ad70c04936d 43
+docs/regime_engine_v2_implementation_plan.md
+  s_52de661ea8374d::t_961081c23293e9 466-476
+src/regime_detection/market_context.py
+  s_52de661ea8374d::t_b59d5caaad24bf 14,40,53,94-97,113,155-160,176,230-235,251,398-407
+src/regime_detection/input_spec.py
+  s_52de661ea8374d::t_fbb8595c3542fc 50
+src/regime_detection/loaders.py
+  s_52de661ea8374d::t_03085b9ad540f5 112-123,223,227,229-231,278-298
+tests/test_schema_and_timeline.py
+  s_52de661ea8374d::t_bb3213595b5174 432-433,455-482
+  s_52de661ea8374d::t_65d2d745e0c4c1 434-454
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.1",
+  "base_commit_sha": "c8d789ec395078732e397f314546457f0da44e2f",
+  "prompts": {},
+  "sessions": {
+    "s_52de661ea8374d": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019e0292-d7a2-7871-afc0-c6e426b885e7",
+        "model": "gpt-5.4"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}

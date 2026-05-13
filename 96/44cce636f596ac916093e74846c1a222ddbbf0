@@ -1,0 +1,25 @@
+scripts/codex_code_simplifier.sh
+  c765acb160aa0079 75-76,78
+scripts/cubic_review.sh
+  c765acb160aa0079 42-49
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.3.4",
+  "base_commit_sha": "9644cce636f596ac916093e74846c1a222ddbbf0",
+  "prompts": {
+    "c765acb160aa0079": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019df8d2-7141-7c90-9103-378b0463f526",
+        "model": "gpt-5.2"
+      },
+      "human_author": "Avinash Vankadaru",
+      "messages": [],
+      "total_additions": 11,
+      "total_deletions": 3,
+      "accepted_lines": 11,
+      "overriden_lines": 0
+    }
+  }
+}

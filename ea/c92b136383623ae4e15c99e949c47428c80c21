@@ -1,0 +1,27 @@
+docs/regime_engine_v2_implementation_plan.md
+  s_52de661ea8374d::t_2edd9401852ea0 507
+docs/regime_engine_v2_spec.md
+  s_52de661ea8374d::t_2edd9401852ea0 351-352
+tests/test_fetch_workflow.py
+  s_52de661ea8374d::t_2edd9401852ea0 31
+docs/market_data_fetch_plan.md
+  s_52de661ea8374d::t_2edd9401852ea0 121
+src/regime_data_fetch/fetch_workflow.py
+  s_52de661ea8374d::t_2edd9401852ea0 38-39
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.1",
+  "base_commit_sha": "eac92b136383623ae4e15c99e949c47428c80c21",
+  "prompts": {},
+  "sessions": {
+    "s_52de661ea8374d": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019e0292-d7a2-7871-afc0-c6e426b885e7",
+        "model": "gpt-5.4"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}

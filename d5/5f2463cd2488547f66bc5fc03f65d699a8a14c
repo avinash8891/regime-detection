@@ -1,0 +1,28 @@
+src/regime_detection/network_fragility.py
+  s_52de661ea8374d::t_6cca4fa80b577a 14,25,34,51,64,88-90,103,108-119,125,208-242,346,370
+tests/test_schema_and_timeline.py
+  s_52de661ea8374d::t_6cca4fa80b577a 76,335
+  s_52de661ea8374d::t_cd46156ce32f6c 177-190
+tests/test_network_fragility.py
+  s_52de661ea8374d::t_cd46156ce32f6c 10,12,36,38
+  s_52de661ea8374d::t_005f7c302f618d 61-62,64-65,69,73
+  s_52de661ea8374d::t_6cca4fa80b577a 1-9,11,13-35,37,39-60,63,66-68,70-72,74-86
+src/regime_detection/timeline.py
+  s_52de661ea8374d::t_6cca4fa80b577a 57-66
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.1",
+  "base_commit_sha": "d55f2463cd2488547f66bc5fc03f65d699a8a14c",
+  "prompts": {},
+  "sessions": {
+    "s_52de661ea8374d": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019e0292-d7a2-7871-afc0-c6e426b885e7",
+        "model": "gpt-5.4"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}

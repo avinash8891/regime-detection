@@ -1,0 +1,25 @@
+docs/shadow_runner_spec.md
+  s_c46f0b10e27ac9::t_2abdb6130e8719 48,57,102,110,121,128-133
+  s_c46f0b10e27ac9::t_785714103c389e 144-149
+docs/historical_walkforward_spec.md
+  s_c46f0b10e27ac9::t_d1f8c6f8f4f411 114-116
+  s_c46f0b10e27ac9::t_aec29f9615cd39 63,70
+tests/test_shadow_runner.py
+  s_c46f0b10e27ac9::t_3bbab695e7b6be 139,142
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.1",
+  "base_commit_sha": "b59ce8323da0d396e669ac8b5e8ea8fdc8420233",
+  "prompts": {},
+  "sessions": {
+    "s_c46f0b10e27ac9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019dfd55-21d1-7263-8b26-f5868a3aada8",
+        "model": "gpt-5.4"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}

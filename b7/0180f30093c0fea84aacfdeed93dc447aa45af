@@ -1,0 +1,21 @@
+tmp/walkforward_gate_inputs/golden_results.json
+  s_c46f0b10e27ac9::t_4c716e77b56567 3-193
+scripts/build_walkforward_report.py
+  s_c46f0b10e27ac9::t_7c8dd766421e17 7,15-16,18
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.1",
+  "base_commit_sha": "b70180f30093c0fea84aacfdeed93dc447aa45af",
+  "prompts": {},
+  "sessions": {
+    "s_c46f0b10e27ac9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019dfd55-21d1-7263-8b26-f5868a3aada8",
+        "model": "gpt-5.4"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}

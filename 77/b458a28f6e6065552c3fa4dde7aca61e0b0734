@@ -1,0 +1,21 @@
+docs/market_data_fetch_plan.md
+  s_9a14adc3ce6f8f::t_4d470ac23e4d63 59-60,110,113
+scripts/fetch_regime_engine_v1_data.py
+  s_9a14adc3ce6f8f::t_1a26c63b4c04a1 46,99,216-222
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.1",
+  "base_commit_sha": "77b458a28f6e6065552c3fa4dde7aca61e0b0734",
+  "prompts": {},
+  "sessions": {
+    "s_9a14adc3ce6f8f": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019dfd6e-1679-7780-a181-45455ba346ca",
+        "model": "gpt-5.4"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}

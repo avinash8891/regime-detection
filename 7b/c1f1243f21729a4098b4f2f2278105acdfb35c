@@ -1,0 +1,126 @@
+tests/fixtures/raw/fomc/fomcminutes20110126_snippet.html
+  s_c46f0b10e27ac9::t_4e266b8f6b0eb1 1-30
+src/regime_data_fetch/pit_constituents.py
+  s_c46f0b10e27ac9::t_4e266b8f6b0eb1 1-189
+src/regime_data_fetch/local_usd_index.py
+  s_c46f0b10e27ac9::t_4e266b8f6b0eb1 1-229
+configs/events/us_events.yaml
+  s_c46f0b10e27ac9::t_4e266b8f6b0eb1 1-4615
+tests/fixtures/raw/fomc/fomcminutes20250319_snippet.html
+  s_c46f0b10e27ac9::t_4e266b8f6b0eb1 1-9
+tests/test_pmi_fetch.py
+  s_c46f0b10e27ac9::t_4e266b8f6b0eb1 1-329
+tests/fixtures/raw/pmi/dbnomics_services.html
+  s_c46f0b10e27ac9::t_4e266b8f6b0eb1 1-14
+tests/fixtures/raw/pmi/tradingeconomics_services.html
+  s_c46f0b10e27ac9::t_4e266b8f6b0eb1 1-14
+tests/test_powell_speeches.py
+  s_c46f0b10e27ac9::t_4e266b8f6b0eb1 1-242
+src/regime_data_fetch/alpaca_daily.py
+  s_c46f0b10e27ac9::t_4e266b8f6b0eb1 1-157
+tests/fixtures/raw/fomc/fomc_historical_year_snippet.html
+  s_c46f0b10e27ac9::t_4e266b8f6b0eb1 1-8
+tests/test_fetch_workflow.py
+  s_c46f0b10e27ac9::t_4e266b8f6b0eb1 1-389
+scripts/consolidate_regime_acquisition.py
+  s_c46f0b10e27ac9::t_4e266b8f6b0eb1 1-24
+src/regime_data_fetch/acquisition_store.py
+  s_c46f0b10e27ac9::t_4e266b8f6b0eb1 1-317
+pytest.ini
+  s_c46f0b10e27ac9::t_4e266b8f6b0eb1 1-5
+tests/test_fomc_minutes.py
+  s_c46f0b10e27ac9::t_4e266b8f6b0eb1 1-263
+tests/test_acquisition_consolidation.py
+  s_c46f0b10e27ac9::t_4e266b8f6b0eb1 1-137
+docs/market_data_fetch_plan.md
+  s_c46f0b10e27ac9::t_4e266b8f6b0eb1 1-258
+src/regime_data_fetch/pmi.py
+  s_c46f0b10e27ac9::t_4e266b8f6b0eb1 1-636
+src/regime_data_fetch/__init__.py
+  s_c46f0b10e27ac9::t_4e266b8f6b0eb1 1-6
+src/regime_data_fetch/acquisition_consolidation.py
+  s_c46f0b10e27ac9::t_4e266b8f6b0eb1 1-871
+src/regime_data_fetch/bls_schedule.py
+  s_c46f0b10e27ac9::t_4e266b8f6b0eb1 1-246
+src/regime_data_fetch/event_calendar.py
+  s_c46f0b10e27ac9::t_4e266b8f6b0eb1 1-513
+src/regime_data_fetch/fred.py
+  s_c46f0b10e27ac9::t_4e266b8f6b0eb1 1-157
+src/regime_data_fetch/universe.py
+  s_c46f0b10e27ac9::t_4e266b8f6b0eb1 1-22
+tests/test_earnings_season_calendar.py
+  s_c46f0b10e27ac9::t_4e266b8f6b0eb1 1-38
+scripts/fetch_regime_engine_v1_data.py
+  s_c46f0b10e27ac9::t_4e266b8f6b0eb1 1-241
+event_calendar_fetch_report.json
+  s_c46f0b10e27ac9::t_4e266b8f6b0eb1 1-20
+tests/fixtures/raw/fomc/fomchistorical2019_snippet.html
+  s_c46f0b10e27ac9::t_4e266b8f6b0eb1 1-30
+src/regime_data_fetch/cli_common.py
+  s_c46f0b10e27ac9::t_4e266b8f6b0eb1 1-26
+src/regime_data_fetch/fetch_workflow.py
+  s_c46f0b10e27ac9::t_4e266b8f6b0eb1 1-450
+tests/test_pit_constituents.py
+  s_c46f0b10e27ac9::t_4e266b8f6b0eb1 1-114
+tests/fixtures/raw/fomc/fomc_calendars_snippet.html
+  s_c46f0b10e27ac9::t_4e266b8f6b0eb1 1-20
+tests/test_event_calendar.py
+  s_c46f0b10e27ac9::t_401e63ce019138 113
+  s_c46f0b10e27ac9::t_dbd938e610c0b8 112
+src/regime_data_fetch/aggregate_eps.py
+  s_c46f0b10e27ac9::t_4e266b8f6b0eb1 1-800
+tests/fixtures/raw/powell/powell_speech_detail_snippet.html
+  s_c46f0b10e27ac9::t_4e266b8f6b0eb1 1-14
+tests/fixtures/raw/powell/powell_speeches_index_snippet.html
+  s_c46f0b10e27ac9::t_4e266b8f6b0eb1 1-15
+tests/fixtures/raw/pmi/dbnomics_manufacturing.html
+  s_c46f0b10e27ac9::t_4e266b8f6b0eb1 1-14
+tests/test_bls_schedule.py
+  s_c46f0b10e27ac9::t_4e266b8f6b0eb1 1-207
+tests/test_alpaca_normalization.py
+  s_c46f0b10e27ac9::t_4e266b8f6b0eb1 1-28
+tests/fixtures/raw/powell/powell_2026_speeches_snippet.html
+  s_c46f0b10e27ac9::t_4e266b8f6b0eb1 1-30
+tests/test_local_usd_index.py
+  s_c46f0b10e27ac9::t_4e266b8f6b0eb1 1-78
+src/regime_data_fetch/expiry_calendar.py
+  s_c46f0b10e27ac9::t_4e266b8f6b0eb1 1-76
+src/regime_data_fetch/fomc_minutes.py
+  s_c46f0b10e27ac9::t_4e266b8f6b0eb1 1-369
+src/regime_data_fetch/ism.py
+  s_c46f0b10e27ac9::t_4e266b8f6b0eb1 1-35
+tests/fixtures/raw/pmi/tradingeconomics_manufacturing.html
+  s_c46f0b10e27ac9::t_4e266b8f6b0eb1 1-14
+tests/test_universe_cache.py
+  s_c46f0b10e27ac9::t_4e266b8f6b0eb1 1-23
+src/regime_data_fetch/powell_speeches.py
+  s_c46f0b10e27ac9::t_4e266b8f6b0eb1 1-309
+tests/test_expiry_calendar.py
+  s_c46f0b10e27ac9::t_4e266b8f6b0eb1 1-48
+tests/test_local_daily_ohlcv_sqlite.py
+  s_c46f0b10e27ac9::t_4e266b8f6b0eb1 1-68
+src/regime_data_fetch/local_daily_ohlcv_sqlite.py
+  s_c46f0b10e27ac9::t_4e266b8f6b0eb1 1-180
+tests/test_aggregate_eps.py
+  s_c46f0b10e27ac9::t_4e266b8f6b0eb1 1-359
+tests/test_event_label_resolution.py
+  s_c46f0b10e27ac9::t_4e266b8f6b0eb1 1-109
+src/regime_data_fetch/earnings_season_calendar.py
+  s_c46f0b10e27ac9::t_4e266b8f6b0eb1 1-75
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.1",
+  "base_commit_sha": "7bc1f1243f21729a4098b4f2f2278105acdfb35c",
+  "prompts": {},
+  "sessions": {
+    "s_c46f0b10e27ac9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019dfd55-21d1-7263-8b26-f5868a3aada8",
+        "model": "gpt-5.4"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}

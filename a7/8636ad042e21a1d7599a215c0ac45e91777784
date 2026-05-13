@@ -1,0 +1,27 @@
+src/regime_detection/calendar.py
+  6284b163c8208cf2 30-37
+tests/test_foundation.py
+  6284b163c8208cf2 101-108
+src/regime_detection/engine.py
+  6284b163c8208cf2 9,45-47
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.3.4",
+  "base_commit_sha": "a78636ad042e21a1d7599a215c0ac45e91777784",
+  "prompts": {
+    "6284b163c8208cf2": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019df886-7a0b-7b10-a22d-6f6c96d80945",
+        "model": "gpt-5.2"
+      },
+      "human_author": "Avinash Vankadaru",
+      "messages": [],
+      "total_additions": 20,
+      "total_deletions": 1,
+      "accepted_lines": 7894,
+      "overriden_lines": 0
+    }
+  }
+}

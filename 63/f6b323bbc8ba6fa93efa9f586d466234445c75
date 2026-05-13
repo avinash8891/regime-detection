@@ -1,0 +1,37 @@
+pytest.ini
+  c765acb160aa0079 1-5
+src/regime_data_fetch/__init__.py
+  c765acb160aa0079 1-6
+scripts/fetch_regime_engine_v1_data.py
+  c765acb160aa0079 1-150
+docs/market_data_fetch_plan.md
+  c765acb160aa0079 1-15
+src/regime_data_fetch/alpaca_daily.py
+  c765acb160aa0079 1-146
+tests/test_universe_cache.py
+  c765acb160aa0079 1-24
+src/regime_data_fetch/universe.py
+  c765acb160aa0079 1-136
+tests/test_alpaca_normalization.py
+  c765acb160aa0079 1-28
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.3.4",
+  "base_commit_sha": "63f6b323bbc8ba6fa93efa9f586d466234445c75",
+  "prompts": {
+    "c765acb160aa0079": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019df8d2-7141-7c90-9103-378b0463f526",
+        "model": "gpt-5.2"
+      },
+      "human_author": "Avinash Vankadaru",
+      "messages": [],
+      "total_additions": 739,
+      "total_deletions": 229,
+      "accepted_lines": 510,
+      "overriden_lines": 0
+    }
+  }
+}

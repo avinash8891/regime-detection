@@ -1,0 +1,29 @@
+src/regime_data_fetch/fred.py
+  s_9a14adc3ce6f8f::t_fa695bee53ea3e 15,107-123,131,140-156
+  s_9a14adc3ce6f8f::t_3147ae13da0a22 42-52,55-77,79-89,124-130,132-139,157
+docs/market_data_fetch_plan.md
+  s_9a14adc3ce6f8f::t_6d9f5114162910 75-82
+src/regime_data_fetch/fetch_workflow.py
+  s_9a14adc3ce6f8f::t_fcca7cfc7086e0 10,12,215,222-230,232-234,236-267,269-303,305-362
+scripts/fetch_regime_engine_v1_data.py
+  s_9a14adc3ce6f8f::t_109e0a90e0c778 133
+tests/test_fetch_workflow.py
+  s_9a14adc3ce6f8f::t_c441b038fab249 6,165-218
+  s_9a14adc3ce6f8f::t_55d5d262ab52a0 122,130-143,146,239,247-249,251-261,264
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.1",
+  "base_commit_sha": "d61273c5595b27ecbcb284ec1dc25f68c5b71832",
+  "prompts": {},
+  "sessions": {
+    "s_9a14adc3ce6f8f": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019dfd6e-1679-7780-a181-45455ba346ca",
+        "model": "gpt-5.4"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}

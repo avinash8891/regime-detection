@@ -1,0 +1,49 @@
+tests/test_acquisition_consolidation.py
+  s_52de661ea8374d::t_890d15df7de129 40,59-61,73,124-140
+  s_52de661ea8374d::t_a4587b180523a2 35,68
+src/regime_detection/loaders.py
+  s_52de661ea8374d::t_eddbe6ab21e094 64-75,157-177
+src/regime_data_fetch/credit_funding_features.py
+  s_52de661ea8374d::t_2cafadbf45271f 1-314
+src/regime_detection/input_spec.py
+  s_52de661ea8374d::t_4b05107efa10b8 47
+tests/test_credit_funding_features.py
+  s_52de661ea8374d::t_5a10ee87d187cc 1-16,18-73,80-89,92-182
+  s_52de661ea8374d::t_4e49f2a139b121 17,74-79
+  s_52de661ea8374d::t_2e4179f4085b18 90-91
+tests/test_fetch_workflow.py
+  s_52de661ea8374d::t_a02bc10f46ef29 225-226
+src/regime_data_fetch/acquisition_consolidation.py
+  s_52de661ea8374d::t_2bbdea783dc3ad 78,109,334-344,507-509,642-657
+docs/regime_engine_v2_implementation_plan.md
+  s_52de661ea8374d::t_e0d36c9c7c00b1 316,320-330,332-356,364,366,375,383,394
+  s_52de661ea8374d::t_2fca5539073dc2 442-447,449
+src/regime_data_fetch/fetch_workflow.py
+  s_52de661ea8374d::t_59580bfe621c73 49-50
+  s_52de661ea8374d::t_71ba42cd95a117 12
+src/regime_detection/package_io.py
+  s_52de661ea8374d::t_a2dc4425842089 10-15,51,72-77,90-94,134-137,144
+scripts/fetchers/credit_funding/build_credit_funding_features.py
+  s_52de661ea8374d::t_50ce32fac7349f 1-32
+src/regime_detection/pit_builder.py
+  s_52de661ea8374d::t_19fdc3d15c75f5 20-25,67,92,125,143,384-417,431,457-461
+docs/regime_engine_v2_spec.md
+  s_52de661ea8374d::t_8375592e734aef 332-551
+  s_52de661ea8374d::t_f06386a9a6ca72 734-736,741
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.1",
+  "base_commit_sha": "f021bd87f3598e77f006987bcdc2db826635381d",
+  "prompts": {},
+  "sessions": {
+    "s_52de661ea8374d": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019e0292-d7a2-7871-afc0-c6e426b885e7",
+        "model": "gpt-5.4"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}

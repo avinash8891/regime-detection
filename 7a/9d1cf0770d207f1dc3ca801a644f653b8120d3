@@ -1,0 +1,28 @@
+scripts/verify_fixtures.py
+  6284b163c8208cf2 1-576,583-588,590-612,621-625,627-674,678-689,696-719,731-741,745,757,769
+  eee9e08132c887ca 577-582,589,613-620,626
+src/regime_detection/engine.py
+  6284b163c8208cf2 1-8,10-48,52-58,62-67,82-160,167-176,194-196,228-230,233-250
+tests/test_foundation.py
+  6284b163c8208cf2 1-91,101-109,119-148
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.3.4",
+  "base_commit_sha": "7a9d1cf0770d207f1dc3ca801a644f653b8120d3",
+  "prompts": {
+    "6284b163c8208cf2": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019df886-7a0b-7b10-a22d-6f6c96d80945",
+        "model": "gpt-5.2"
+      },
+      "human_author": "Avinash Vankadaru",
+      "messages": [],
+      "total_additions": 106,
+      "total_deletions": 5,
+      "accepted_lines": 106,
+      "overriden_lines": 0
+    }
+  }
+}
