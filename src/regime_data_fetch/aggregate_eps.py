@@ -4,6 +4,7 @@ import datetime as dt
 import json
 from dataclasses import asdict, dataclass
 from pathlib import Path
+import urllib.error
 import urllib.request
 
 import pandas as pd
@@ -135,6 +136,123 @@ def parse_sp500_eps_workbook(workbook_path: Path) -> ParsedAggregateEPSWorkbook:
         public_files_discontinued=public_files_discontinued,
         historical_snapshots=historical,
         current_snapshot=current_snapshot,
+    )
+
+
+_SPGLOBAL_EPS_MANUAL_REL_PATH = Path("spglobal_eps") / "sp-500-eps-est.xlsx"
+
+
+def download_spglobal_eps_workbook(
+    *,
+    out_path: Path,
+    source_url: str = SOURCE_URL,
+    timeout_seconds: int = 60,
+) -> Path:
+    """Attempt to download the S&P Global aggregate forward-EPS workbook
+    from the canonical public URL into ``out_path``.
+
+    Cadence intent: the spdji workbook is published WEEKLY (typically Wed/Thu
+    around the earnings revision cycle). Slice 5 §2B's deferred
+    ``aggregate_forward_eps_revision_direction_4w`` predicate needs at least
+    4 consecutive weekly observations to compute the rolling 4-week
+    direction, so this fetcher is intended to run on a weekly schedule.
+
+    Known issue: ``www.spglobal.com`` is served behind Akamai (AkamaiGHost)
+    bot mitigation that returns HTTP 403 to direct HTTP requests including
+    browser-User-Agent spoofs. The URL serves the file to real browsers but
+    not to ``urllib`` / ``curl`` / ``requests`` clients. When this happens
+    we raise ``AggregateEPSFetchError`` with a clear operator message
+    routing them to the manual workflow:
+
+    1. Open the spdji URL in a browser, download the .xlsx.
+    2. Copy to ``data/raw/spglobal_eps/sp-500-eps-est.xlsx`` (the
+       MANUAL-DROP PATH ``run_aggregate_eps_auto_fetch`` checks first).
+    3. Re-run the same fetch command — it will parse the manually-dropped
+       file via the fallback.
+
+    Same pattern as the existing PMI workflow
+    (``data/manual_inputs/pmi/*.tsv`` — Investing.com also blocks
+    programmatic access).
+    """
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    request = urllib.request.Request(
+        source_url,
+        headers={
+            "User-Agent": (
+                "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+                "AppleWebKit/537.36 (KHTML, like Gecko) "
+                "Chrome/126.0.0.0 Safari/537.36"
+            ),
+            "Accept": (
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,"
+                "application/octet-stream,*/*"
+            ),
+        },
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=timeout_seconds) as response:
+            payload = response.read()
+    except urllib.error.HTTPError as exc:
+        if exc.code == 403:
+            raise AggregateEPSFetchError(
+                f"S&P spdji returned HTTP 403 (Akamai bot mitigation) for "
+                f"{source_url}. The URL is browser-only; programmatic clients "
+                f"are blocked. To complete the fetch: (1) open the URL in a "
+                f"browser and download sp-500-eps-est.xlsx; (2) copy it to "
+                f"data/raw/spglobal_eps/sp-500-eps-est.xlsx in this repo; "
+                f"(3) re-run --fetch eps-spglobal-auto — the auto path "
+                f"detects the manually-dropped file and parses it."
+            ) from exc
+        raise AggregateEPSFetchError(
+            f"Failed to download S&P EPS workbook from {source_url}: {exc}"
+        ) from exc
+    except urllib.error.URLError as exc:
+        raise AggregateEPSFetchError(
+            f"Failed to download S&P EPS workbook from {source_url}: {exc}"
+        ) from exc
+    if not payload:
+        raise AggregateEPSFetchError(
+            f"S&P EPS workbook download from {source_url} returned empty payload"
+        )
+    out_path.write_bytes(payload)
+    return out_path
+
+
+def run_aggregate_eps_auto_fetch(
+    *,
+    out_dir: Path,
+    source_url: str = SOURCE_URL,
+    acquisition_db_path: Path | None = None,
+) -> Path:
+    """Fetch + parse the latest S&P aggregate-EPS workbook.
+
+    Two-step resolution:
+    1. If ``out_dir / spglobal_eps / sp-500-eps-est.xlsx`` already exists
+       (operator manually downloaded — see
+       ``download_spglobal_eps_workbook`` docstring for why), parse it
+       directly. This is the canonical weekly cadence path:
+         a. Each week, operator opens the spdji URL in a browser, downloads
+            the .xlsx, copies it to data/raw/spglobal_eps/sp-500-eps-est.xlsx.
+         b. Operator (or a scheduler) runs ``--fetch eps-spglobal-auto``,
+            which detects the file and emits the same parquet + report
+            artifacts as the manual ``--eps-workbook`` path.
+    2. If the file is absent, try downloading from ``source_url``. Expected
+       to fail with 403 on Akamai-protected sources; on failure, the error
+       message points the operator to step (1a).
+
+    Cadence: invoke weekly. Polling daily is wasteful — the workbook URL
+    serves the same file between weekly publications.
+    """
+    out_dir.mkdir(parents=True, exist_ok=True)
+    workbook_path = out_dir / _SPGLOBAL_EPS_MANUAL_REL_PATH
+    if not workbook_path.exists():
+        # Best-effort auto-download. On Akamai 403 we surface a clear error
+        # routing the operator to the manual-drop workflow.
+        download_spglobal_eps_workbook(out_path=workbook_path, source_url=source_url)
+    return run_aggregate_eps_fetch(
+        out_dir=out_dir,
+        workbook_path=workbook_path,
+        acquisition_db_path=acquisition_db_path,
     )
 
 
