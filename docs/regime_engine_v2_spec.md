@@ -1730,6 +1730,76 @@ the slice/commit that resolved it. Entries are append-only.
     the helper.
     Resolved by Slice 2.8c.
 
+62. **§4.6 + §6.3 library correction — `ruptures` does NOT ship online
+    BOCPD; substitute `bayesian_changepoint_detection`.**
+    Ambiguity Log #53 pinned `ruptures` for both offline pilot and
+    online streaming BOCPD per §6.3 line 2871. Audit shows `ruptures`
+    ships only OFFLINE batch algorithms (Binseg, PELT, Dynp, Window,
+    BottomUp). There is no `ruptures.online` module. The Adams-MacKay
+    2007 online BOCPD algorithm is implemented in
+    `bayesian_changepoint_detection` (PyPI package, last release
+    2023, pure-Python, MIT-licensed) — same algorithm spec cites,
+    actual implementation available. Resolution: substitute the
+    library. The algorithm choice (BOCPD), the hazard hyperparameter
+    default (`1/250`), and the §6.3 output schema (`score`,
+    `days_since_last_break`, `method`) remain as pinned in #53; only
+    the library binding changes. The `method` string in the output
+    schema stays `"BOCPD"` — it identifies the algorithm, not the
+    library. Pinned in `regime_detection.change_point` and declared
+    as `bayesian-changepoint-detection` in pyproject.toml.
+    Resolved by Slice 8.
+
+63. **§6.3 — input observation series for BOCPD.**
+    Spec §6.3 line 2864 says "Detect statistical break points in
+    returns or volatility series" without naming one. Two options:
+    (X) `return_1d` — high-frequency single-day returns, noisier,
+    captures sentiment-driven event-day breaks; (Y) `realized_vol_21d`
+    — smoother, captures regime-level volatility shifts.
+    Resolution: option (Y), `realized_vol_21d`. Rationale: BOCPD's
+    StudentT observation likelihood (the canonical Adams-MacKay
+    conjugate prior for Gaussian-with-unknown-mean-and-variance)
+    handles smoother series with more numerical stability — daily
+    returns have heavy tails that violate the Gaussian-emission
+    assumption and yield spurious change-points on single-day spikes.
+    `realized_vol_21d` is already in the FeatureStore via the slice
+    1.x volatility seam — no new compute. The slice-6 HMM uses the
+    same series as one of its five inputs, so this is consistent
+    with the V2 "evidence-layer regime classifiers share input
+    primitives" pattern. Pinned in
+    `regime_detection.change_point.compute_change_point_features`.
+    Resolved by Slice 8.
+
+64. **§6.3 line 2880 — `score` field formula.**
+    Spec output JSON shows `score: 0.78` but no formula. BOCPD emits
+    a per-session posterior P(run_length=0 at t) = P(change-point at
+    t given data up to t). Three operational choices: (A) raw
+    per-session probability; (B) max over a trailing N-day window;
+    (C) sum/integral over a trailing window. Resolution: option (B)
+    with N=5: `score[t] = max(posterior_changepoint_prob[t-4..t])`.
+    Rationale: matches the §4.2 line 2396 `hmm_probability_shift_score`
+    5-day-lag convention — both transition-evidence components share
+    a 5-NYSE-session memory horizon so they're comparable as
+    weighted-sum inputs (even though change_point doesn't yet enter
+    the §4.1 composition — that's V2.1 spec-amendment work).
+    Pinned in `regime_detection.change_point._rolling_max_changepoint_prob`.
+    Window length exposed as `ChangePointConfig.score_window_days = 5`
+    so calibration can retune without code changes.
+    Resolved by Slice 8.
+
+65. **§6.3 line 2881 — `days_since_last_break` operational definition.**
+    Spec leaves "break" undefined. BOCPD's natural threshold question
+    is "at what posterior probability do we call a session a break".
+    Resolution: a break occurs at session t when
+    `posterior_changepoint_prob[t] >= break_threshold` (default 0.5;
+    `ChangePointConfig.break_threshold` for calibration tuning).
+    `days_since_last_break[t]` = number of NYSE sessions since the
+    most recent session that crossed the threshold. When no such
+    session exists in the available history (cold-start or genuinely
+    quiet period), the value is `None` per V1 §2.7 cold-start NaN
+    contract — not zero, not `inf`. Pinned in
+    `regime_detection.change_point._days_since_last_break`.
+    Resolved by Slice 8.
+
 ---
 
 ## 2. Layer 2 V2 — Full Structural-Causal State
