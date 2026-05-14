@@ -217,17 +217,31 @@ rising_vol (V2 label):
 ```python
 iv_rv_spread = implied_vol_30d - realized_vol_21d
 ```
-Requires options data feed. Used as evidence for euphoria, vol_crush, and event_window classifiers.
+`implied_vol_30d` source = FRED `VIXCLS` (CBOE VIX — the model-free 30-day
+implied vol on SPX), divided by 100 to land in the same decimal-annualized
+units as `realized_vol_21d` (ADR 0005). Free at the FRED endpoint; no paid
+options feed needed. Used as evidence for euphoria, vol_crush, and
+event_window classifiers.
 
 #### Vol Crush
 
-Required prerequisites with definitions locked:
+Required prerequisites with definitions locked (ADR 0005 / Log #20 closure):
 ```text
 event_window_just_passed:
-  as_of_date within 3 NYSE trading days AFTER configured event end
+  EXISTS a calendar event whose window-end E satisfies
+  1 <= trading_days_between(E, as_of_date) <= 3
+  (i.e. as_of_date is one of the 3 NYSE sessions strictly AFTER an event
+  window closed; as_of_date == E does not fire — still inside the window).
+  Window-end E = event_date + end_offset(event_type), using the §1D
+  per-type windows (fed_week +2, cpi_week +1, nfp_week +1). When no event
+  calendar is supplied, event_window_just_passed is False everywhere.
+
+implied_vol_5d_change:
+  (implied_vol_30d[t] - implied_vol_30d[t-5]) / implied_vol_30d[t-5]
+  — a RELATIVE 5-NYSE-session change (unit-agnostic; ADR 0005 Q1).
 
 implied_vol_falling_sharply:
-  implied_vol_5d_change <= -0.20
+  implied_vol_5d_change <= -0.20   (a 20% relative drop over 5 sessions)
 ```
 
 Rule:
@@ -600,6 +614,17 @@ the slice/commit that resolved it. Entries are append-only.
     `intraday_range_percentile_252d`).
     Deferred by Slice 2.2.
 
+    Status update — implied-vol data blocker closed by the
+    user-prompted FRED-availability audit. The "requires options data
+    feed" assumption was wrong: the CBOE VIX IS the canonical
+    model-free 30-day implied vol on SPX, and FRED publishes it free as
+    `VIXCLS`. `implied_vol_30d = VIXCLS / 100` (decimal-annualized, to
+    match `realized_vol_21d`'s units for the `iv_rv_spread`
+    subtraction). Wired into `V2_FRED_SERIES` + `MarketContext`; the
+    `iv_rv_spread`, `implied_vol_30d`, and `implied_vol_5d_change`
+    features ship on `VolatilityV2Features`. Operational forms pinned
+    in ADR 0005 and amended into §1C.
+
 20. **§1C lines 157–174 — `vol_crush` rule deferral.**
     Spec rule:
     ```
@@ -609,13 +634,28 @@ the slice/commit that resolved it. Entries are append-only.
       AND event_window_just_passed
     ```
     Two of the three inputs (`implied_vol_falling_sharply`,
-    `event_window_just_passed`) require data the V2 repo does not yet
-    ingest: an implied-vol time series (entry #19) and the §2D event
-    calendar. Per v2 §10 we do NOT invent either. Resolution: defer the
-    `vol_crush` LABEL and its rule wiring; the placeholder
-    `VolCrushConfig` in `regime_detection.config` remains a stub until
-    the prerequisite slices land.
+    `event_window_just_passed`) require data the V2 repo did not ingest
+    at Slice 2.2: an implied-vol time series (entry #19) and the §2D
+    event calendar. Per v2 §10 we did NOT invent either. Resolution at
+    Slice 2.2: defer the `vol_crush` LABEL and its rule wiring.
     Deferred by Slice 2.2.
+
+    Status update — fully resolved (ADR 0005). Both inputs are now
+    available with no paid feed: (1) `implied_vol_30d` from FRED
+    `VIXCLS` (entry #19 status update); (2) `event_window_just_passed`
+    computed from the §1D event calendar, which is already ingested —
+    "configured event end" = `event_date + end_offset(event_type)`
+    using the existing per-type windows. ADR 0005 pinned the three
+    open operational questions: `implied_vol_5d_change` is a RELATIVE
+    5-session change (`<= -0.20` = a 20% drop, unit-agnostic),
+    `event_window_just_passed` fires on the 3 NYSE sessions strictly
+    after a window-end, and `realized_vol_21d` is a new
+    `VolatilityV2Features` field via the shared realized-vol helper.
+    The `vol_crush` rule predicate + precedence
+    (`crisis_vol > vol_crush > high_vol > rising_vol > low_vol >
+    normal_vol > unknown`) ship in the code-wiring commit. Item #25
+    (`event_window_just_passed`) ships in the same slice — it has no
+    other consumer.
 
 21. **§1D lines 207–210 — `pct_above_200dma` deferral.**
     Spec formula `mean(member.close > member.sma_200)` requires a
