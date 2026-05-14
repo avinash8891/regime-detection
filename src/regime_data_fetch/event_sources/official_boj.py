@@ -77,6 +77,8 @@ def parse_boj_mpm_dates(html: str, *, as_of_date: dt.date) -> list[EventCandidat
                     requires_manual_review=False,
                 )
             )
+    if not candidates:
+        candidates.extend(_parse_legacy_inline_dates(html, as_of_date=as_of_date))
     return sorted(candidates, key=lambda candidate: candidate.date)
 
 
@@ -93,6 +95,38 @@ def _parse_mpm_date(text: str, year: int) -> dt.date | None:
     month_name = (match.group("month2") or match.group("month1")).lower()
     day = int(match.group("day2") or match.group("day1"))
     return dt.date(year, MONTHS[month_name], day)
+
+
+def _parse_legacy_inline_dates(html: str, *, as_of_date: dt.date) -> list[EventCandidate]:
+    text = strip_tags(html)
+    pattern = re.compile(
+        r"(?P<month>Jan\.?|January|Feb\.?|February|Mar\.?|March|Apr\.?|April|May|June|July|Aug\.?|August|Sep\.?|Sept\.?|September|Oct\.?|October|Nov\.?|November|Dec\.?|December)\s+"
+        r"(?P<start>\d{1,2})(?:\s*(?:-|and)\s*(?P<end>\d{1,2}))?,\s*(?P<year>20\d{2})",
+        flags=re.IGNORECASE,
+    )
+    candidates: list[EventCandidate] = []
+    for match in pattern.finditer(text):
+        event_date = dt.date(
+            int(match.group("year")),
+            MONTHS[match.group("month").lower()],
+            int(match.group("end") or match.group("start")),
+        )
+        candidates.append(
+            EventCandidate(
+                date=event_date,
+                event_type="BOJ_decision",
+                market="GLOBAL",
+                importance="high",
+                source_id=SOURCE_ID,
+                source_url=CURRENT_URL,
+                raw_title="Bank of Japan Monetary Policy Meeting",
+                raw_snippet=match.group(0),
+                is_future_scheduled=event_date > as_of_date,
+                confidence="medium" if event_date > as_of_date else "high",
+                requires_manual_review=False,
+            )
+        )
+    return candidates
 
 
 def _dedupe(candidates: list[EventCandidate], *, start_year: int, end_year: int) -> list[EventCandidate]:

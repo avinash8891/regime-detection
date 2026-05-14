@@ -10,6 +10,7 @@ import re
 from urllib.request import Request, urlopen
 
 import pandas_market_calendars as mcal
+import pandas as pd
 import yaml
 
 from regime_data_fetch.acquisition_store import AcquisitionStore
@@ -132,6 +133,15 @@ class ScheduledEvent:
 class EventLabelResolution:
     all_matching_events: list[str]
     selected_via_precedence: str
+
+
+@dataclass(frozen=True)
+class GroupABuildResult:
+    scheduled_events: list[ScheduledEvent]
+    candidates: list[object]
+    validations: list[object]
+    decisions: list[object]
+    output_paths: dict[str, Path]
 
 
 def fetch_bls_release_timestamp(release_date: dt.date) -> dt.datetime:
@@ -275,6 +285,9 @@ def run_us_event_calendar_fetch(
     bls_end_year: int | None = None,
     include_v2_curated_candidates: bool = False,
     global_rate_calendar_text_fetchers: Mapping[str, Callable[[], str]] | None = None,
+    group_a_text_fetcher: Callable[[str], str] | None = None,
+    group_a_boe_news_fetcher: Callable[[int], str] | None = None,
+    group_a_hf_parquet_fetcher: Callable[[], bytes] | None = None,
 ) -> Path:
     del fred_api_key
 
@@ -308,16 +321,20 @@ def run_us_event_calendar_fetch(
                 run_id=fetch_run.run_id if fetch_run else None,
             )
         )
+        group_a_result: GroupABuildResult | None = None
         if include_v2_curated_candidates:
-            events.extend(
-                _build_v2_curated_candidate_events(
-                    start_year=bls_start_year,
-                    end_year=bls_end_year or dt.date.today().year,
-                    global_rate_calendar_text_fetchers=global_rate_calendar_text_fetchers,
-                    store=store,
-                    run_id=fetch_run.run_id if fetch_run else None,
-                )
+            group_a_result = _build_v2_curated_candidate_events(
+                repo_root=repo_root,
+                start_year=bls_start_year,
+                end_year=bls_end_year or dt.date.today().year,
+                global_rate_calendar_text_fetchers=global_rate_calendar_text_fetchers,
+                group_a_text_fetcher=group_a_text_fetcher,
+                group_a_boe_news_fetcher=group_a_boe_news_fetcher,
+                group_a_hf_parquet_fetcher=group_a_hf_parquet_fetcher,
+                store=store,
+                run_id=fetch_run.run_id if fetch_run else None,
             )
+            events.extend(group_a_result.scheduled_events)
 
         events.sort(key=lambda event: (event.release_timestamp_et, event.type))
 
@@ -348,6 +365,8 @@ def run_us_event_calendar_fetch(
                 "acquisition_db": str(acquisition_db_path) if acquisition_db_path else None,
             },
         }
+        if group_a_result is not None:
+            report["group_a"] = _build_group_a_report(group_a_result)
         report_path = repo_root / "event_calendar_fetch_report.json"
         report_path.write_text(json.dumps(report, indent=2))
 
@@ -606,26 +625,56 @@ def _validate_bls_events(*, events: list[ScheduledEvent], start_year: int, end_y
 
 def _build_v2_curated_candidate_events(
     *,
+    repo_root: Path,
     start_year: int,
     end_year: int,
     global_rate_calendar_text_fetchers: Mapping[str, Callable[[], str]] | None,
+    group_a_text_fetcher: Callable[[str], str] | None,
+    group_a_boe_news_fetcher: Callable[[int], str] | None,
+    group_a_hf_parquet_fetcher: Callable[[], bytes] | None,
     store: AcquisitionStore | None,
     run_id: int | None,
-) -> list[ScheduledEvent]:
+) -> GroupABuildResult:
+    from regime_data_fetch.event_sources.deterministic_election import ElectionAdapter
+    from regime_data_fetch.event_sources.official_boe import OfficialBOEAdapter
+    from regime_data_fetch.event_sources.official_boj import OfficialBOJAdapter
+    from regime_data_fetch.event_sources.official_ecb import OfficialECBAdapter
+    from regime_data_fetch.event_sources.orchestrator import EventSourceOrchestrator
+    from regime_data_fetch.event_sources.validators_hf_central_bank import HFCentralBankValidator
+
     events: list[ScheduledEvent] = []
+    text_fetcher = group_a_text_fetcher or _group_a_text_fetcher_from_legacy_map(global_rate_calendar_text_fetchers)
+    as_of_date = dt.date.today()
+    hf_parquet_fetcher = group_a_hf_parquet_fetcher
+    if hf_parquet_fetcher is None and global_rate_calendar_text_fetchers is not None:
+        hf_parquet_fetcher = lambda: b""
+    boe_news_fetcher = group_a_boe_news_fetcher
+    if boe_news_fetcher is None and global_rate_calendar_text_fetchers is not None:
+        boe_news_fetcher = lambda page: '{"Results": ""}'
+
+    orchestrator = EventSourceOrchestrator(
+        primary_adapters=[
+            OfficialECBAdapter(as_of_date=as_of_date, text_fetcher=text_fetcher or _build_url_text_fetcher_with_arg()),
+            OfficialBOEAdapter(
+                as_of_date=as_of_date,
+                text_fetcher=text_fetcher or _build_url_text_fetcher_with_arg(),
+                news_api_fetcher=boe_news_fetcher,
+            ),
+            OfficialBOJAdapter(as_of_date=as_of_date, text_fetcher=text_fetcher or _build_url_text_fetcher_with_arg()),
+            ElectionAdapter(as_of_date=as_of_date),
+        ],
+        validators=[HFCentralBankValidator(parquet_fetcher=hf_parquet_fetcher)],
+    )
+    candidates, validations, decisions, promoted_events = orchestrator.run(
+        start_year=start_year,
+        end_year=end_year,
+        store=store,
+        run_id=run_id,
+    )
+    events.extend(promoted_events)
+
+    # Existing deterministic budget rows stay inline until Spec 2 migrates them.
     for year in range(start_year, end_year + 1):
-        if year % 2 == 0:
-            events.append(
-                ScheduledEvent(
-                    date=_us_general_election_date(year),
-                    release_timestamp_et=_midnight_et(_us_general_election_date(year)),
-                    market="US",
-                    type="election",
-                    importance="high",
-                    source=SOURCE_FEC,
-                    window_days=(-5, 10),
-                )
-            )
         budget_date = dt.date(year, 9, 30)
         events.append(
             ScheduledEvent(
@@ -638,32 +687,180 @@ def _build_v2_curated_candidate_events(
             )
         )
 
-    text_fetchers = global_rate_calendar_text_fetchers or {
-        key: _build_url_text_fetcher(url) for key, url in _GLOBAL_RATE_URLS.items()
-    }
-    for source_key, fetcher in text_fetchers.items():
-        text = fetcher()
-        source_name = _global_rate_source_name(source_key)
-        if store and run_id is not None:
-            store.record_text_artifact(
-                run_id=run_id,
-                source_name=source_name,
-                artifact_kind="html",
-                source_identifier=_GLOBAL_RATE_URLS.get(source_key, source_key),
-                content_text=text,
-                calendar_assumption="NYSE trading calendar",
-                timezone="America/New_York",
-                license_note="Official central-bank public calendar page",
-                notes=f"{source_key.upper()} monetary-policy calendar candidate source",
-            )
-        events.extend(
-            event
-            for event in _parse_global_rate_decision_events(source_key=source_key, text=text)
-            if start_year <= event.date.year <= end_year
-        )
-
     deduped = {(event.date, event.type, event.source): event for event in events}
-    return list(deduped.values())
+    output_paths = _write_group_a_artifacts(
+        repo_root=repo_root,
+        candidates=candidates,
+        validations=validations,
+        decisions=decisions,
+        store=store,
+        run_id=run_id,
+    )
+    return GroupABuildResult(
+        scheduled_events=list(deduped.values()),
+        candidates=candidates,
+        validations=validations,
+        decisions=decisions,
+        output_paths=output_paths,
+    )
+
+
+def _build_url_text_fetcher_with_arg() -> Callable[[str], str]:
+    def fetch(url: str) -> str:
+        return _build_url_text_fetcher(url)()
+
+    return fetch
+
+
+def _group_a_text_fetcher_from_legacy_map(
+    global_rate_calendar_text_fetchers: Mapping[str, Callable[[], str]] | None,
+) -> Callable[[str], str] | None:
+    if global_rate_calendar_text_fetchers is None:
+        return None
+
+    def fetch(url: str) -> str:
+        if "ecb.europa.eu/press/govcdec/mopo/html/index.en.html" in url:
+            return ""
+        if "ecb.europa.eu/press/govcdec/mopo/" in url:
+            return ""
+        if "ecb.europa.eu/press/calendars/mgcgc/html/index.en.html" in url and "ecb" in global_rate_calendar_text_fetchers:
+            return global_rate_calendar_text_fetchers["ecb"]()
+        if "bankofengland.co.uk/monetary-policy/upcoming-mpc-dates" in url and "boe" in global_rate_calendar_text_fetchers:
+            return global_rate_calendar_text_fetchers["boe"]()
+        if "boj.or.jp/en/mopo/mpmsche_minu/index.htm" in url and "boj" in global_rate_calendar_text_fetchers:
+            return global_rate_calendar_text_fetchers["boj"]()
+        if "boj.or.jp/en/mopo/mpmsche_minu/past.htm" in url:
+            return ""
+        return _build_url_text_fetcher(url)()
+
+    return fetch
+
+
+def _write_group_a_artifacts(
+    *,
+    repo_root: Path,
+    candidates: list[object],
+    validations: list[object],
+    decisions: list[object],
+    store: AcquisitionStore | None,
+    run_id: int | None,
+) -> dict[str, Path]:
+    output_dir = repo_root / "data" / "raw" / "event_calendar" / "candidates"
+    output_dir.mkdir(parents=True, exist_ok=True)
+    candidate_path = output_dir / "event_candidates.parquet"
+    validation_path = output_dir / "event_validations.parquet"
+    quarantine_path = output_dir / "quarantine.parquet"
+
+    candidate_records = [_candidate_record(candidate, decisions) for candidate in candidates]
+    validation_records = [_validation_record(validation) for validation in validations]
+    quarantined_keys = {
+        getattr(decision, "candidate_key")
+        for decision in decisions
+        if getattr(decision, "outcome") == "quarantine"
+    }
+    quarantine_records = [
+        record
+        for record in candidate_records
+        if (record["event_type"], dt.date.fromisoformat(record["date"])) in quarantined_keys
+    ]
+
+    pd.DataFrame(candidate_records).to_parquet(candidate_path, index=False)
+    pd.DataFrame(validation_records).to_parquet(validation_path, index=False)
+    pd.DataFrame(quarantine_records).to_parquet(quarantine_path, index=False)
+
+    if store and run_id is not None:
+        _record_group_a_output(store, run_id, "event_group_a_candidates", candidate_path, candidate_records)
+        _record_group_a_output(store, run_id, "event_group_a_validations", validation_path, validation_records)
+        _record_group_a_output(store, run_id, "event_group_a_quarantine", quarantine_path, quarantine_records)
+
+    return {
+        "candidates": candidate_path,
+        "validations": validation_path,
+        "quarantine": quarantine_path,
+    }
+
+
+def _candidate_record(candidate: object, decisions: list[object]) -> dict[str, object | None]:
+    decision = next(
+        (
+            item
+            for item in decisions
+            if getattr(item, "candidate_key") == (getattr(candidate, "event_type"), getattr(candidate, "date"))
+        ),
+        None,
+    )
+    release_timestamp = getattr(candidate, "release_timestamp_et")
+    return {
+        "date": getattr(candidate, "date").isoformat(),
+        "event_type": getattr(candidate, "event_type"),
+        "market": getattr(candidate, "market"),
+        "importance": getattr(candidate, "importance"),
+        "source_id": getattr(candidate, "source_id"),
+        "source_url": getattr(candidate, "source_url"),
+        "raw_title": getattr(candidate, "raw_title"),
+        "raw_snippet": getattr(candidate, "raw_snippet"),
+        "is_future_scheduled": getattr(candidate, "is_future_scheduled"),
+        "confidence": getattr(decision, "final_confidence") if decision is not None else getattr(candidate, "confidence"),
+        "source_count": getattr(decision, "source_count") if decision is not None else 1,
+        "requires_manual_review": getattr(decision, "requires_manual_review") if decision is not None else getattr(candidate, "requires_manual_review"),
+        "promotion_outcome": getattr(decision, "outcome") if decision is not None else None,
+        "promotion_reason": getattr(decision, "reason") if decision is not None else None,
+        "release_timestamp_et": release_timestamp.isoformat() if release_timestamp is not None else None,
+        "window_days": list(getattr(candidate, "window_days")) if getattr(candidate, "window_days") is not None else None,
+    }
+
+
+def _validation_record(validation: object) -> dict[str, object | None]:
+    event_type, event_date = getattr(validation, "candidate_key")
+    return {
+        "event_type": event_type,
+        "date": event_date.isoformat(),
+        "validator_id": getattr(validation, "validator_id"),
+        "verdict": getattr(validation, "verdict"),
+        "evidence_url": getattr(validation, "evidence_url"),
+        "evidence_snippet": getattr(validation, "evidence_snippet"),
+    }
+
+
+def _record_group_a_output(
+    store: AcquisitionStore,
+    run_id: int,
+    output_kind: str,
+    path: Path,
+    records: list[dict[str, object | None]],
+) -> None:
+    dates = [str(record["date"]) for record in records if record.get("date")]
+    store.record_output(
+        run_id=run_id,
+        output_kind=output_kind,
+        path=path,
+        row_count=len(records),
+        min_date=min(dates) if dates else None,
+        max_date=max(dates) if dates else None,
+        notes="Group A event-source derived artifact",
+    )
+
+
+def _build_group_a_report(result: GroupABuildResult) -> dict[str, object]:
+    candidate_counts = Counter(getattr(candidate, "event_type") for candidate in result.candidates)
+    promoted_counts = Counter(
+        getattr(decision, "candidate_key")[0]
+        for decision in result.decisions
+        if getattr(decision, "outcome") == "promote"
+    )
+    quarantined_counts = Counter(
+        getattr(decision, "candidate_key")[0]
+        for decision in result.decisions
+        if getattr(decision, "outcome") == "quarantine"
+    )
+    source_ids = sorted({getattr(candidate, "source_id") for candidate in result.candidates})
+    return {
+        "candidates": {key: candidate_counts[key] for key in sorted(candidate_counts)},
+        "promoted": {key: promoted_counts[key] for key in sorted(promoted_counts)},
+        "quarantined": {key: quarantined_counts[key] for key in sorted(quarantined_counts)},
+        "source_ids": source_ids,
+        "paths": {key: str(value) for key, value in result.output_paths.items()},
+    }
 
 
 def _build_url_text_fetcher(url: str) -> Callable[[], str]:

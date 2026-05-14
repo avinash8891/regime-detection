@@ -563,6 +563,105 @@ def test_run_us_event_calendar_fetch_records_raw_artifacts_in_sqlite(tmp_path: P
     assert outputs == [("event_calendar_yaml",), ("event_calendar_report",)]
 
 
+def test_run_us_event_calendar_fetch_wires_group_a_candidate_artifacts(tmp_path: Path) -> None:
+    acquisition_db = tmp_path / "acquisition.db"
+
+    def fake_fomc_listing_fetcher() -> str:
+        return (FOMC_FIXTURES / "fomc_calendars_snippet.html").read_text()
+
+    def fake_fomc_historical_index_fetcher() -> str:
+        return ""
+
+    def fake_fomc_historical_page_fetcher(url: str) -> str:
+        raise AssertionError(f"Unexpected historical URL: {url}")
+
+    def fake_bls_page_fetcher(url: str) -> str:
+        if url.endswith("/2026/"):
+            return """
+            Friday, January 09, 2026
+            08:30 AM
+            Employment Situation for December 2025
+            Wednesday, January 14, 2026
+            08:30 AM
+            Consumer Price Index for December 2025
+            """
+        raise AssertionError(f"Unexpected BLS schedule URL: {url}")
+
+    def group_a_text_fetcher(url: str) -> str:
+        if url.endswith("/press/govcdec/mopo/html/index.en.html"):
+            return "data-snippets='../2026/html/index_include.en.html'"
+        if url.endswith("/press/govcdec/mopo/2026/html/index_include.en.html"):
+            return """
+            <dt isoDate="2026-04-30"><div class="date">30 April 2026</div></dt>
+            <dd><div class="title"><a href="/press/pr/date/2026/html/ecb.mp260430~81b7179e6f.en.html">Monetary policy decisions</a></div></dd>
+            """
+        if url.endswith("/press/calendars/mgcgc/html/index.en.html"):
+            return """
+            <dt>11/06/2026</dt>
+            <dd>Governing Council of the ECB: monetary policy meeting in Frankfurt (Day 2), followed by press conference</dd>
+            """
+        if url.endswith("/monetary-policy/upcoming-mpc-dates"):
+            return """
+            <h2>2026 confirmed dates</h2>
+            <table><tbody>
+            <tr><td>Thursday 5 February</td><td><a href="/monetary-policy-summary-and-minutes/2026/february-2026">February MPC Summary and minutes</a></td></tr>
+            </tbody></table>
+            """
+        if url.endswith("/en/mopo/mpmsche_minu/index.htm"):
+            return """
+            <h2 id="p2026">2026</h2><table><tbody>
+            <tr><td>June 15 (Mon.), 16 (Tues.)</td></tr>
+            </tbody></table>
+            """
+        if url.endswith("/en/mopo/mpmsche_minu/past.htm"):
+            return ""
+        raise AssertionError(f"Unexpected Group A URL: {url}")
+
+    def boe_news_fetcher(page: int) -> str:
+        assert page == 1
+        return '{"Results": ""}'
+
+    report_path = run_us_event_calendar_fetch(
+        repo_root=tmp_path,
+        fred_api_key=None,
+        fomc_listing_fetcher=fake_fomc_listing_fetcher,
+        fomc_historical_index_fetcher=fake_fomc_historical_index_fetcher,
+        fomc_historical_page_fetcher=fake_fomc_historical_page_fetcher,
+        bls_page_fetcher=fake_bls_page_fetcher,
+        acquisition_db_path=acquisition_db,
+        bls_start_year=2026,
+        bls_end_year=2026,
+        include_v2_curated_candidates=True,
+        group_a_text_fetcher=group_a_text_fetcher,
+        group_a_boe_news_fetcher=boe_news_fetcher,
+        group_a_hf_parquet_fetcher=lambda: b"",
+    )
+
+    report = json.loads(report_path.read_text())
+    assert report["group_a"]["candidates"]["ECB_decision"] == 2
+    assert report["group_a"]["promoted"]["election"] == 1
+
+    candidate_path = tmp_path / "data" / "raw" / "event_calendar" / "candidates" / "event_candidates.parquet"
+    validation_path = tmp_path / "data" / "raw" / "event_calendar" / "candidates" / "event_validations.parquet"
+    quarantine_path = tmp_path / "data" / "raw" / "event_calendar" / "candidates" / "quarantine.parquet"
+    assert candidate_path.exists()
+    assert validation_path.exists()
+    assert quarantine_path.exists()
+
+    import sqlite3
+
+    with sqlite3.connect(acquisition_db) as conn:
+        outputs = conn.execute("SELECT output_kind FROM derived_outputs ORDER BY output_id").fetchall()
+
+    assert ("event_group_a_candidates",) in outputs
+    assert ("event_group_a_validations",) in outputs
+    assert ("event_group_a_quarantine",) in outputs
+    contents = (tmp_path / "configs" / "events" / "us_events.yaml").read_text()
+    assert 'type: "budget"' in contents
+    assert 'type: "ECB_decision"' in contents
+    assert 'source: "ecb.europa.eu:monetary-policy-decisions"' in contents
+
+
 def test_validate_bls_events_allows_official_2025_lapse_cancellations() -> None:
     events = []
     for month in range(1, 12):

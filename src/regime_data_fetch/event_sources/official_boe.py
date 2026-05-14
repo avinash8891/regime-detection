@@ -49,7 +49,7 @@ class OfficialBOEAdapter:
             candidates.extend(page_candidates)
             if page_candidates and min(candidate.date.year for candidate in page_candidates) < start_year:
                 break
-            if not page_candidates and page > 3:
+            if not page_candidates:
                 break
         return _dedupe(candidates, start_year=start_year, end_year=end_year)
 
@@ -102,7 +102,38 @@ def parse_boe_upcoming_mpc_dates(html: str, *, as_of_date: dt.date) -> list[Even
             href_match = href_pattern.search(cells[1])
             title = strip_tags(cells[1])
             candidates.append(_candidate(event_date, as_of_date, absolute_url(BOE_BASE_URL, href_match.group("href") if href_match else None), title, date_text))
+    if not candidates:
+        candidates.extend(_parse_legacy_text_dates(html, as_of_date=as_of_date))
     return sorted(candidates, key=lambda candidate: candidate.date)
+
+
+def _parse_legacy_text_dates(html: str, *, as_of_date: dt.date) -> list[EventCandidate]:
+    text = strip_tags(html)
+    candidates: list[EventCandidate] = []
+    current_year: int | None = None
+    tokens = re.split(
+        r"(?=(?:20\d{2})\s+(?:confirmed|provisional)\s+dates)|(?=(?:Monday|Tuesday|Wednesday|Thursday|Friday)\s+\d{1,2}\s+[A-Za-z]+)",
+        text,
+    )
+    date_pattern = re.compile(
+        r"(?:(?:Monday|Tuesday|Wednesday|Thursday|Friday)\s+)?(?P<day>\d{1,2})\s+(?P<month>[A-Za-z]+).*?(?:MPC|Monetary Policy)",
+        flags=re.IGNORECASE,
+    )
+    for token in tokens:
+        year_match = re.search(r"\b(?P<year>20\d{2})\s+(?:confirmed|provisional)\s+dates\b", token, flags=re.IGNORECASE)
+        if year_match:
+            current_year = int(year_match.group("year"))
+        if current_year is None:
+            continue
+        date_match = date_pattern.search(token)
+        if date_match is None:
+            continue
+        month = MONTHS.get(date_match.group("month").lower())
+        if month is None:
+            continue
+        event_date = dt.date(current_year, month, int(date_match.group("day")))
+        candidates.append(_candidate(event_date, as_of_date, UPCOMING_MPC_URL, "MPC Summary and minutes", token.strip()))
+    return candidates
 
 
 def parse_boe_news_api_results(results_html: str, *, as_of_date: dt.date) -> list[EventCandidate]:
