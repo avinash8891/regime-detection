@@ -12,18 +12,16 @@ from regime_detection.models import BreadthStateOutput, DataQuality
 
 
 # V2 §1D (Ambiguity Log #21-#26, #68, #69, #70) extends the V1 5-label set
-# with four new labels. Two ship today (narrowing_breadth, broadening_breadth);
-# two reserve precedence slots only (breadth_thrust per Log #69, recovery_breadth
-# per Log #70 — both DEFERRED). Members ordered by precedence (spec line 284):
+# with four PIT-derived labels. Members ordered by precedence (spec line 284):
 #   breadth_thrust > divergent_fragile > narrowing_breadth > recovery_breadth >
 #   broadening_breadth > weak_breadth > healthy_breadth > neutral_breadth >
 #   unknown.
 BreadthLabel = Literal[
-    "breadth_thrust",        # DEFERRED — Ambiguity Log #69 (slot reserved)
+    "breadth_thrust",
     "divergent_fragile",
-    "narrowing_breadth",     # V2 §1D — ships in this slice (Log #21-#26, #68)
-    "recovery_breadth",      # DEFERRED — Ambiguity Log #70 (slot reserved)
-    "broadening_breadth",    # V2 §1D — ships in this slice (Log #21-#26, #68)
+    "narrowing_breadth",
+    "recovery_breadth",
+    "broadening_breadth",
     "weak_breadth",
     "healthy_breadth",
     "neutral_breadth",
@@ -38,11 +36,11 @@ BreadthLabel = Literal[
 # at mid-severity (rank 2, same as weak_breadth). divergent_fragile remains the
 # highest-risk V1 label at rank 3.
 _RISK_RANK: dict[BreadthLabel, int] = {
-    "breadth_thrust": 0,        # DEFERRED slot — bullish initiation (Log #69)
+    "breadth_thrust": 0,        # bullish initiation (Log #69)
     "healthy_breadth": 0,
     "broadening_breadth": 0,    # V2 recovery confirmation (Log #21-#26)
     "neutral_breadth": 1,
-    "recovery_breadth": 1,      # DEFERRED slot — mid-recovery (Log #70)
+    "recovery_breadth": 1,      # mid-recovery (Log #70)
     "weak_breadth": 2,
     "narrowing_breadth": 2,     # V2 deterioration — mid-severity
     "divergent_fragile": 3,

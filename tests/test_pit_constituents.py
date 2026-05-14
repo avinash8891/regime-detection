@@ -35,6 +35,26 @@ def test_parse_sp500_ticker_start_end_csv_extracts_intervals() -> None:
     assert rows[-1].source == "fja05680/sp500"
 
 
+def test_parse_sp500_ticker_start_end_csv_applies_known_open_interval_corrections() -> None:
+    csv_text = "\n".join(
+        [
+            "ticker,start_date,end_date",
+            "DAY,2024-02-01,",
+            "HOLX,2016-03-30,",
+            "CTRA,2021-10-04,",
+            "AAPL,1982-11-30,",
+        ]
+    )
+
+    rows = parse_sp500_ticker_start_end_csv(csv_text, source_url="source")
+    by_ticker = {row.ticker: row for row in rows}
+
+    assert by_ticker["DAY"].end_date == dt.date(2026, 2, 3)
+    assert by_ticker["HOLX"].end_date == dt.date(2026, 4, 6)
+    assert by_ticker["CTRA"].end_date == dt.date(2026, 5, 6)
+    assert by_ticker["AAPL"].end_date is None
+
+
 def test_run_pit_constituents_fetch_writes_parquet_and_report(tmp_path: Path) -> None:
     csv_text = (FIXTURES / "sp500_ticker_start_end.csv").read_text()
 

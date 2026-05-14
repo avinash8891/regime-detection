@@ -1,19 +1,17 @@
-"""v2 §1E Layer 1 V2 Volume / Liquidity features — evidence-only compute (Slice 2.4).
+"""v2 §1E Layer 1 V2 Volume / Liquidity features (Slice 2.4).
 
-Scope-restricted slice: ships only the volume z-score feature. The
+Scope-restricted feature module: ships only the volume z-score feature. The
 ``gap_frequency_20d`` and ``intraday_range_percentile_252d`` features
 that §1E references already live in
 ``regime_detection.volatility_state_v2`` (Slice 2.2) and are consumed
-from that seam by the future §1E axis classifier — they are NOT
+from that seam by the §1E axis classifier — they are NOT
 recomputed here. See Implementation Ambiguity Log entry for the
 feature-store layout decision.
 
 The §1E labels (``normal_volume``, ``panic_volume``,
-``liquidity_gap_behavior``), the rule engine, the risk-rank table, and
-the per-label hysteresis are all DEFERRED to a follow-up
-volume-axis-classifier slice (per v2 §8: "Adds to existing
-classifiers without changing V1 contracts"). See Ambiguity Log entry
-for the deferral.
+``liquidity_gap_behavior``), rule engine, risk-rank table, and per-label
+hysteresis live in ``regime_detection.volume_liquidity_rules`` and
+``VolumeLiquidityStateSeriesClassifier``.
 
 Feature shipped here:
 
@@ -53,7 +51,7 @@ class VolumeLiquidityV2Features:
     ``intraday_range_percentile_252d`` in its feature list (lines
     257–258), but those are already computed in
     ``regime_detection.volatility_state_v2.VolatilityV2Features``
-    (slice 2.2). The future §1E axis classifier reads them from the
+    (slice 2.2). The §1E axis classifier reads them from the
     ``FeatureStore.volatility_state_v2`` seam rather than recomputing
     them here. See Implementation Ambiguity Log.
     """

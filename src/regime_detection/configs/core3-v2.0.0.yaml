@@ -153,22 +153,15 @@ volatility_state_v2:
     vol_crush_implied_vol_change_lookback_sessions: 5  # ADR 0005 Q1
     vol_crush_event_window_trailing_sessions: 3        # ADR 0005 Q3 — spec "3 NYSE days"
 
-# v2 §1D — Layer 1 V2 Breadth features (Slice 2.3, evidence-only,
-# scope-restricted to non-PIT-dependent features).
+# v2 §1D — Layer 1 V2 Breadth features.
 #
-# Ships ONLY:
-#   sector_breadth — % of 11 GICS sector ETFs with return_21d > 0
-#                    (v2 §1D lines 228–229).
-#
-# DEFERRED (require a point-in-time SPX constituent-membership pipeline
-# that does not yet exist; per v2 §10 absolute rule we do not invent
-# proxies):
-#   pct_above_200dma            — §1D lines 207–210; Ambiguity Log #21
-#   ad_line / ad_line_slope_20d — §1D lines 213–216; Ambiguity Log #22
-#   nh_nl_ratio                 — §1D lines 218–221; Ambiguity Log #23
-#   upvol_downvol_ratio         — §1D lines 223–226; Ambiguity Log #24
-#   breadth_thrust              — §1D lines 231–237; Ambiguity Log #25
-#   New V2 breadth labels       — §1D lines 239–246; Ambiguity Log #26
+# Ships:
+#   sector_breadth — % of 11 GICS sector ETFs with return_21d > 0.
+#   PIT breadth    — pct_above_*dma, AD line, NH/NL, up/down volume, breadth
+#                    thrust, and V2 breadth labels when PIT constituent inputs
+#                    are supplied. The current free PIT source is bias-warning
+#                    tagged and emitted under pit_constituent_biased_research
+#                    mode until replaced by a true vendor PIT feed.
 breadth_state_v2:
   sector_breadth_lookback_days: 21      # v2 §1D line 229
   label_rate_of_change_lookback_sessions: 5   # v2 §1D Ambiguity Log #68
@@ -179,28 +172,21 @@ breadth_state_v2:
 #   volume_zscore_20d — (volume - rolling_mean_20) / rolling_std_20 (§1E line 256).
 #
 # The other two §1E features (gap_frequency_20d, intraday_range_percentile_252d)
-# already live in volatility_state_v2 (Slice 2.2); the future §1E axis classifier
+# already live in volatility_state_v2 (Slice 2.2); the §1E axis classifier
 # reads them from FeatureStore.volatility_state_v2 — no recompute.
-#
-# DEFERRED to a follow-up volume-axis-classifier slice (per v2 §8 "Adds to
-# existing classifiers without changing V1 contracts"):
-#   - Labels: normal_volume, panic_volume, liquidity_gap_behavior (§1E lines 260–286).
-#   - Rules + risk-rank table (§1E lines 268–294).
-#   - Hysteresis config (per-label deescalation days).
 volume_liquidity_v2:
   volume_zscore_lookback_days: 20       # v2 §1E line 256
   volume_zscore_ddof: 1                 # pandas/numpy default; pinned in Ambiguity Log
 
 # v2 §1E — Volume / Liquidity axis classifier (Slice 2.7).
 # Rule layer on top of the slice-2.4 volume_zscore_20d feature.
-# Ships `panic_volume` and `normal_volume` live; `liquidity_gap_behavior`
-# is deferred (needs 252d-percentile of gap_frequency_20d, not yet
-# computed — see Implementation Ambiguity Log entry #40).
+# Ships `panic_volume`, `liquidity_gap_behavior`, and `normal_volume` live.
+# `liquidity_gap_behavior` consumes the two percentile inputs from
+# volatility_state_v2 (Implementation Ambiguity Log entry #40 closure).
 volume_liquidity_state:
   rules:
     panic_volume_zscore_threshold: 2.0                    # v2 §1E line 272
     panic_volume_return_threshold: -0.02                  # v2 §1E line 273
-    # Deferred (Ambiguity Log #40); thresholds loaded for forward-compat.
     liquidity_gap_frequency_percentile_threshold: 0.75    # v2 §1E line 278
     liquidity_gap_intraday_range_percentile_threshold: 0.75  # v2 §1E line 279
   # §1E is silent on hysteresis days. Pinned per Ambiguity Log entry #41:
@@ -208,9 +194,7 @@ volume_liquidity_state:
   #   normal_volume = 0 (immediate de-escalation; lowest risk_rank).
   #   unknown = 2 (modest hold so a single-day NaN flicker doesn't strand
   #     the axis at the data-quality fallback).
-  #   liquidity_gap_behavior = 2 (reserved at same rank as `unknown`;
-  #     pinned even though the rule never fires today so the future flip
-  #     needs no config edits).
+  #   liquidity_gap_behavior = 2 (same rank as `unknown`).
   deescalation_days_by_label:
     panic_volume: 3
     normal_volume: 0

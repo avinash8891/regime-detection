@@ -3,7 +3,7 @@
 Spec references (docs/regime_engine_v2_spec.md):
     §1E lines 268-274 — `panic_volume`:
         volume_zscore_20d > 2.0 AND return_1d < -0.02
-    §1E lines 276-280 — `liquidity_gap_behavior` (DEFERRED — see Ambiguity Log #40):
+    §1E lines 276-280 — `liquidity_gap_behavior`:
         gap_frequency_20d percentile_252d > 0.75
         AND intraday_range_percentile_252d > 0.75
     §1E line 282 — `normal_volume`: otherwise
@@ -202,7 +202,7 @@ def test_normal_volume_false_when_required_input_is_nan(volume_liquidity_rules):
     assert evaluate_normal_volume(inputs, volume_liquidity_rules) is False
 
 
-# ---------- Precedence walker (panic > liquidity_gap(deferred) > normal > unknown)
+# ---------- Precedence walker (panic > liquidity_gap > normal > unknown)
 
 
 def test_evaluate_rules_returns_panic_volume_when_panic_fires(volume_liquidity_rules):

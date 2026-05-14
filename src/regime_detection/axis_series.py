@@ -82,6 +82,13 @@ from regime_detection.volatility_state import (
     build_raw_outputs as build_volatility_raw_outputs,
 )
 
+_PIT_BREADTH_LABELS = {
+    "breadth_thrust",
+    "narrowing_breadth",
+    "recovery_breadth",
+    "broadening_breadth",
+}
+
 
 @dataclass(frozen=True)
 class AxisSeriesResult:
@@ -322,9 +329,14 @@ class BreadthSeriesClassifier:
         for day, raw, stable, active, evidence in zip(
             spy_close.index.date, raw_labels, stable_labels, active_labels, raw_evidence, strict=True
         ):
+            mode = (
+                "pit_constituent_biased_research"
+                if {raw, stable, active} & _PIT_BREADTH_LABELS
+                else "etf_proxy"
+            )
             if raw == "unknown":
                 output = BreadthStateOutput(
-                    mode="etf_proxy",
+                    mode=mode,
                     raw_label="unknown",
                     stable_label="unknown",
                     active_label="unknown",
@@ -338,7 +350,7 @@ class BreadthSeriesClassifier:
                 )
             else:
                 output = BreadthStateOutput(
-                    mode="etf_proxy",
+                    mode=mode,
                     raw_label=raw,
                     stable_label=stable,
                     active_label=active,
@@ -571,7 +583,7 @@ class VolumeLiquidityStateSeriesClassifier:
          + ``quality_forces_unknown``). Quality failures force ``unknown``.
       4. Evaluate ``volume_liquidity_rules.evaluate_rules`` to produce
          the raw label per §1E precedence
-         (``panic_volume > liquidity_gap_behavior(deferred) > normal_volume > unknown``).
+         (``panic_volume > liquidity_gap_behavior > normal_volume > unknown``).
       5. Apply per-label asymmetric hysteresis (Ambiguity Log #41).
       6. Emit one ``VolumeLiquidityStateOutput`` per session.
     """
@@ -684,10 +696,8 @@ class VolumeLiquidityStateSeriesClassifier:
                 "rule_evidence": {
                     "volume_zscore_20d": float(f"{volume_zscore_20d:.8g}"),
                     "return_1d": float(f"{return_1d:.8g}"),
-                },
-                "deferred_inputs": {
-                    "gap_frequency_percentile_252d": "deferred (Ambiguity Log #40)",
-                    "intraday_range_percentile_252d": "deferred (Ambiguity Log #40)",
+                    "gap_frequency_percentile_252d": float(f"{gap_freq_pct:.8g}"),
+                    "intraday_range_percentile_252d": float(f"{intraday_pct:.8g}"),
                 },
             })
 

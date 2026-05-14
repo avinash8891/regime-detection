@@ -6,11 +6,9 @@ NO toy a/b/c names. Math is verified against hand-computed values.
 
 Spec references:
     docs/regime_engine_v2_spec.md §1E (lines 251–294).
-    Slice scope: ``volume_zscore_20d`` only. Labels
-    (``normal_volume``, ``panic_volume``, ``liquidity_gap_behavior``),
-    rule engine, risk-rank table, and hysteresis are deferred to a
-    follow-up volume-axis-classifier slice. See Implementation
-    Ambiguity Log entries #28–#30.
+    This feature module owns ``volume_zscore_20d`` only. The §1E labels,
+    rule engine, risk-rank table, and hysteresis are covered by the
+    volume-liquidity classifier/rule tests.
 """
 from __future__ import annotations
 

@@ -1385,12 +1385,12 @@ the slice/commit that resolved it. Entries are append-only.
       (c) **Precedence**
           `rate_shock > tightening_pressure > easing_pressure >
           neutral_monetary > unknown`. Pattern matches §3.4. Reasoning
-          documented inline: `rate_shock` (21d ±2σ) is a stronger
+          documented inline: `rate_shock` (absolute 21d ±2σ) is a stronger
           signal than `tightening_pressure` (63d ±1.5σ) and must
           outrank when both fire; `tightening_pressure` and
-          `easing_pressure` are opposite-sign predicates on the same
-          metric and cannot co-fire (their order is for log
-          readability).
+          `easing_pressure` can both be partially indicated across
+          different tenors or USD, so their order is deterministic
+          label resolution.
       (d) **Risk rank**
           `{neutral_monetary: 0, easing_pressure: 1, unknown: 1,
           tightening_pressure: 2, rate_shock: 3}`. Pattern matches
@@ -2520,8 +2520,8 @@ easing_pressure:
   OR yield_change_zscore_10y_63d < -1.5
 
 rate_shock:
-  yield_change_zscore_21d_2y > +2.0
-  OR yield_change_zscore_21d_10y > +2.0
+  abs(yield_change_zscore_21d_2y) > 2.0
+  OR abs(yield_change_zscore_21d_10y) > 2.0
 ```
 
 #### Labels
@@ -2542,7 +2542,7 @@ unknown
 rate_shock > tightening_pressure > easing_pressure > neutral_monetary > unknown
 ```
 
-Reasoning: `rate_shock` (21d, ±2.0σ) is a stronger move than `tightening_pressure` (63d, ±1.5σ) and must outrank when both fire. `tightening_pressure` and `easing_pressure` are opposite-sign predicates on the same yield-change z-score and cannot co-fire; their relative order is for log readability only.
+Reasoning: `rate_shock` uses absolute 21d moves (±2.0σ), a stronger short-horizon signal than the 63d ±1.5σ pressure predicates, and must outrank when both fire. `tightening_pressure` and `easing_pressure` can both be partially indicated across different tenors or USD; precedence keeps tightening ahead of easing for deterministic label resolution.
 
 #### Risk Rank
 

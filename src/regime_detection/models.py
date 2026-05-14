@@ -31,7 +31,7 @@ class AxisOutput(BaseModel):
 class BreadthStateOutput(AxisOutput):
     model_config = ConfigDict(extra="forbid")
 
-    mode: Literal["etf_proxy"]
+    mode: Literal["etf_proxy", "pit_constituent_biased_research"]
 
 
 class EventCalendarOutput(BaseModel):

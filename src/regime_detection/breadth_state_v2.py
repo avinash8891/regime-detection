@@ -1,11 +1,10 @@
-"""v2 §1D Layer 1 V2 Breadth features — evidence-only compute (Slice 2.3).
+"""v2 §1D Layer 1 V2 Breadth features.
 
-Scope-restricted slice: ships only the §1D feature that does NOT require a
-point-in-time (PIT) constituent-membership data pipeline. Per v2 §10 absolute
-rule ("when the spec is ambiguous or silent, stop and ask. Do not invent.")
-and §1D lines 198–205 ("V2 PIT breadth must not silently fall back to biased
-current constituents"), the PIT-dependent features are deferred until the
-PIT membership ingestion slice lands.
+Computes sector breadth and, when PIT constituent intervals plus constituent
+OHLCV are supplied, PIT-derived breadth features. The current free PIT source
+is explicitly marked with a survivorship-bias warning; callers surface this as
+``pit_constituent_biased_research`` rather than pretending it is a true vendor
+PIT feed.
 
 Features shipped here:
 
@@ -13,9 +12,6 @@ Features shipped here:
   ``% of {XLB, XLC, XLE, XLF, XLI, XLK, XLP, XLRE, XLU, XLV, XLY} with
   return_21d > 0``. Denominator is the spec-fixed 11 (count of US GICS
   sector ETFs).
-
-Deferred features (require PIT constituent universe — Implementation
-Ambiguity Log entries #21–#26):
 
 - ``pct_above_200dma`` (§1D lines 207–210) — `mean(member.close > member.sma_200)`.
 - ``ad_line`` / ``ad_line_slope_20d`` (§1D lines 213–216).
@@ -84,9 +80,8 @@ _AD_LINE_SLOPE_LOOKBACK = 20
 class BreadthV2Features:
     """v2 §1D — per-session continuous breadth features.
 
-    Slice 2.3 ships only ``sector_breadth``; Slice 2.8c adds the seven
-    PIT-aware features (``pct_above_50dma`` through ``breadth_thrust``).
-    Optional fields are ``None`` on the v1+v2-sector-only callsite and
+    ``sector_breadth`` is always present. Optional PIT fields are ``None`` on
+    the v1+v2-sector-only callsite and
     materialised when both ``pit_constituent_intervals`` and
     ``constituent_ohlcv`` are threaded through ``compute_breadth_v2_features``.
     """
