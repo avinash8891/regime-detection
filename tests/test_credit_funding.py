@@ -243,6 +243,101 @@ def test_bias_warnings_frame_present_with_expected_code_and_5_rows() -> None:
     assert set(bw["feature_name"]) == expected_features
 
 
+def test_real_ice_bofa_oas_replaces_proxy_when_both_series_supplied() -> None:
+    """Log #49 vendor-upgrade closure: when FRED-redistributed ICE BofA OAS
+    series (BAMLH0A0HYM2 + BAMLC0A4CBBB) are passed as hy_oas / ig_oas
+    kwargs, `compute_credit_funding_features` uses them directly on the
+    `hy_spread_proxy_63d` / `ig_spread_proxy_63d` columns, bypasses the
+    TLT-vs-HY/LQD total-return-differential proxy, and flips the
+    bias-warning row to the real-feed provenance code."""
+    from regime_detection.credit_funding import (
+        CREDIT_SPREAD_REAL_FEED_PROVENANCE_CODE,
+        CREDIT_SPREAD_REAL_FEED_SOURCE,
+        CREDIT_SPREAD_REAL_FEED_SOURCE_URL,
+    )
+
+    idx = _bdate_index(periods=200)
+    n = len(idx)
+    hyg = pd.Series(80.0, index=idx, dtype=float)
+    lqd = pd.Series(110.0, index=idx, dtype=float)
+    tlt = pd.Series(100.0, index=idx, dtype=float)
+    kre = pd.Series(50.0, index=idx, dtype=float)
+    spy = pd.Series(400.0, index=idx, dtype=float)
+    sofr = pd.Series(5.0, index=idx, dtype=float)
+    iorb = pd.Series(4.9, index=idx, dtype=float)
+    nfci_w = pd.Series(np.nan, index=idx, dtype=float)
+    nfci_w.iloc[::5] = -0.3
+    usd = pd.Series(100.0, index=idx, dtype=float)
+
+    # Real OAS series in basis-point units (rising = wider spread). Make
+    # the value at session t exactly the row position so the assertion is
+    # unambiguous.
+    real_hy_oas = pd.Series(np.linspace(300.0, 500.0, n), index=idx, dtype=float)
+    real_ig_oas = pd.Series(np.linspace(100.0, 200.0, n), index=idx, dtype=float)
+
+    features = compute_credit_funding_features(
+        hyg_close=hyg, lqd_close=lqd, tlt_close=tlt, kre_close=kre,
+        spy_close=spy, sofr=sofr, iorb=iorb, nfci_weekly=nfci_w,
+        broad_usd_index=usd,
+        hy_oas=real_hy_oas,
+        ig_oas=real_ig_oas,
+        config=_default_rules(),
+    )
+
+    # hy_spread_proxy_63d now carries the real OAS series directly.
+    pd.testing.assert_series_equal(
+        features.hy_spread_proxy_63d,
+        real_hy_oas.rename("hy_spread_proxy_63d"),
+        check_names=True,
+    )
+    pd.testing.assert_series_equal(
+        features.ig_spread_proxy_63d,
+        real_ig_oas.rename("ig_spread_proxy_63d"),
+        check_names=True,
+    )
+
+    # Bias-warning row provenance flips to the real-feed constants.
+    bw = features.bias_warnings
+    assert len(bw) == 5
+    assert (bw["warning_code"] == CREDIT_SPREAD_REAL_FEED_PROVENANCE_CODE).all()
+    assert (bw["source"] == CREDIT_SPREAD_REAL_FEED_SOURCE).all()
+    assert (bw["source_url"] == CREDIT_SPREAD_REAL_FEED_SOURCE_URL).all()
+
+
+def test_partial_oas_inputs_fall_back_to_proxy() -> None:
+    """Both hy_oas AND ig_oas must be supplied to trigger the real-feed
+    path; passing only one (or neither) falls back to the TLT-vs-HY/LQD
+    proxy. Prevents silent half-real / half-proxy outputs."""
+    idx = _bdate_index(periods=200)
+    n = len(idx)
+    hyg = pd.Series(np.linspace(100.0, 80.0, n), index=idx, dtype=float)
+    lqd = pd.Series(100.0, index=idx, dtype=float)
+    tlt = pd.Series(np.linspace(100.0, 130.0, n), index=idx, dtype=float)
+    kre = pd.Series(50.0, index=idx, dtype=float)
+    spy = pd.Series(400.0, index=idx, dtype=float)
+    sofr = pd.Series(5.0, index=idx, dtype=float)
+    iorb = pd.Series(4.9, index=idx, dtype=float)
+    nfci_w = pd.Series(np.nan, index=idx, dtype=float)
+    nfci_w.iloc[::5] = -0.3
+    usd = pd.Series(100.0, index=idx, dtype=float)
+    real_hy_oas = pd.Series(np.linspace(300.0, 500.0, n), index=idx, dtype=float)
+
+    features = compute_credit_funding_features(
+        hyg_close=hyg, lqd_close=lqd, tlt_close=tlt, kre_close=kre,
+        spy_close=spy, sofr=sofr, iorb=iorb, nfci_weekly=nfci_w,
+        broad_usd_index=usd,
+        hy_oas=real_hy_oas,   # only one side — falls back to proxy
+        ig_oas=None,
+        config=_default_rules(),
+    )
+
+    # Proxy path: hy_spread_proxy_63d is the TLT-vs-HYG differential, NOT
+    # the supplied real OAS. Assert the values are NOT the real OAS values.
+    assert not features.hy_spread_proxy_63d.equals(real_hy_oas)
+    bw = features.bias_warnings
+    assert (bw["warning_code"] == CREDIT_SPREAD_PROXY_BIAS_WARNING_CODE).all()
+
+
 def test_build_rule_inputs_by_date_matches_single_day_builder() -> None:
     idx = _bdate_index(periods=650)
     n = len(idx)

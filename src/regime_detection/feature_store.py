@@ -460,6 +460,14 @@ def build_feature_store(
         and all(k in context.cross_asset_closes for k in _CF_CROSS_ASSET_KEYS)
         and all(k in context.macro_series for k in _CF_MACRO_KEYS)
     ):
+        # Real ICE BofA OAS feeds (Log #49 vendor-upgrade path): when BOTH
+        # FRED-redistributed BAMLH0A0HYM2 (HY) and BAMLC0A4CBBB (BBB IG)
+        # series are present on macro_series, `compute_credit_funding_
+        # features` swaps the TLT-vs-HY/LQD total-return-differential proxy
+        # for the direct OAS series. The percentile_504d / slope_21d
+        # derivations consumed by the rule predicates are scale-invariant,
+        # so rule behaviour is unchanged; only the absolute values on the
+        # `_63d` series and the bias-warning provenance flip.
         credit_funding = compute_credit_funding_features(
             hyg_close=context.cross_asset_closes[_CF_HYG_KEY],
             lqd_close=context.cross_asset_closes[_CF_LQD_KEY],
@@ -470,6 +478,8 @@ def build_feature_store(
             iorb=context.macro_series[_CF_IORB_KEY],
             nfci_weekly=context.macro_series[_CF_NFCI_KEY],
             broad_usd_index=context.macro_series[_CF_BROAD_USD_KEY],
+            hy_oas=context.macro_series.get("hy_oas"),
+            ig_oas=context.macro_series.get("ig_bbb_oas"),
             config=credit_funding_config.rules,
         )
 

@@ -56,6 +56,15 @@ V2_FRED_SERIES = {
     # recession_scare / recovery_growth evidence. Listed early in the slice
     # cadence so it lands in archived inputs before any spec amendment.
     "gdp_nowcast": "GDPNOW",
+    # ICE BofA Option-Adjusted Spread series — FRED redistributes under
+    # license from ICE Indices, free at the FRED endpoint. Used as the
+    # real-feed input for the v2 §2C `hy_spread_proxy_63d` / `ig_spread_
+    # proxy_63d` metrics; when both are supplied, `compute_credit_funding_
+    # features` uses the direct OAS series and the bias-warning row flips
+    # from `credit_spread_proxy_total_return_differential` to
+    # `credit_spread_ice_bofa_oas_fred` (Log #49 closure, ADR/audit pass).
+    "hy_oas": "BAMLH0A0HYM2",       # ICE BofA US High Yield Index OAS
+    "ig_bbb_oas": "BAMLC0A4CBBB",   # ICE BofA BBB US Corporate Index OAS
 }
 
 
