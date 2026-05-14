@@ -6,11 +6,17 @@ from pathlib import Path
 import sqlite3
 
 import pandas as pd
+import pytest
 from openpyxl import Workbook
 
 from regime_data_fetch.aggregate_eps import (
+    EPS_REVISION_LOOKBACK_WEEKS,
+    WEEKLY_HISTORY_FILENAME,
     AggregateEPSFetchError,
+    AggregateEPSSnapshot,
     EPSWaybackSnapshot,
+    append_weekly_eps_snapshot,
+    compute_eps_revision_direction_4w,
     parse_wayback_cdx_json,
     parse_sp500_eps_workbook,
     run_wayback_aggregate_eps_fetch,
@@ -19,6 +25,31 @@ from regime_data_fetch.aggregate_eps import (
 
 
 FIXTURES = Path("tests/fixtures/raw/eps")
+
+
+def _eps_snapshot(observation_date: dt.date, forward_eps: float) -> AggregateEPSSnapshot:
+    """Build a realistic AggregateEPSSnapshot with the two fields the
+    weekly accumulator consumes populated; the rest left at None (the
+    accumulator only reads observation_date / observation_label /
+    forward_estimate_value)."""
+    return AggregateEPSSnapshot(
+        observation_date=observation_date,
+        observation_label="current",
+        forward_estimate_label="2026E",
+        forward_estimate_value=forward_eps,
+        estimate_2025e=None,
+        estimate_q4_2025e=None,
+        estimate_2026e=forward_eps,
+        price=None,
+        pe_2025e=None,
+        pe_2026e=None,
+        change_vs_prior_observation_2025e=None,
+        change_vs_prior_observation_q4_2025e=None,
+        change_vs_prior_observation_2026e=None,
+        change_vs_prior_observation_price=None,
+        change_vs_prior_observation_pe_2025e=None,
+        change_vs_prior_observation_pe_2026e=None,
+    )
 
 
 def test_parse_sp500_eps_workbook_extracts_current_and_historical_snapshots() -> None:
@@ -357,3 +388,147 @@ def test_run_wayback_aggregate_eps_fetch_records_sqlite_artifacts_and_outputs(tm
         ("aggregate_eps_wayback_timeline",),
         ("aggregate_eps_wayback_report",),
     ]
+
+
+# ---------------------------------------------------------------------------
+# Weekly-snapshot accumulator + 4-week revision direction (Log #48 closure).
+# ---------------------------------------------------------------------------
+
+
+def test_append_weekly_eps_snapshot_creates_and_appends(tmp_path: Path) -> None:
+    """Each call appends one weekly current-snapshot row; the parquet
+    accumulates across calls, sorted ascending by observation_date."""
+    eps_dir = tmp_path / "aggregate_forward_eps"
+    eps_dir.mkdir(parents=True)
+
+    first = append_weekly_eps_snapshot(
+        eps_dir=eps_dir,
+        current_snapshot=_eps_snapshot(dt.date(2026, 1, 9), 305.10),
+    )
+    assert list(first["observation_date"]) == [dt.date(2026, 1, 9)]
+
+    second = append_weekly_eps_snapshot(
+        eps_dir=eps_dir,
+        current_snapshot=_eps_snapshot(dt.date(2026, 1, 16), 306.40),
+    )
+    assert list(second["observation_date"]) == [
+        dt.date(2026, 1, 9),
+        dt.date(2026, 1, 16),
+    ]
+    assert list(second["forward_estimate_value"]) == [305.10, 306.40]
+
+    # The parquet on disk matches the returned frame.
+    on_disk = pd.read_parquet(eps_dir / WEEKLY_HISTORY_FILENAME)
+    assert len(on_disk) == 2
+
+
+def test_append_weekly_eps_snapshot_is_idempotent_by_observation_date(
+    tmp_path: Path,
+) -> None:
+    """Re-running a fetch for the same week overwrites that date's row
+    rather than double-counting it."""
+    eps_dir = tmp_path / "aggregate_forward_eps"
+    eps_dir.mkdir(parents=True)
+
+    append_weekly_eps_snapshot(
+        eps_dir=eps_dir,
+        current_snapshot=_eps_snapshot(dt.date(2026, 1, 9), 305.10),
+    )
+    # Re-run the SAME observation_date with a corrected estimate value.
+    deduped = append_weekly_eps_snapshot(
+        eps_dir=eps_dir,
+        current_snapshot=_eps_snapshot(dt.date(2026, 1, 9), 305.55),
+    )
+    assert list(deduped["observation_date"]) == [dt.date(2026, 1, 9)]
+    # The row carries the most recent value, not a duplicate.
+    assert list(deduped["forward_estimate_value"]) == [305.55]
+
+
+def test_compute_eps_revision_direction_4w_all_nan_below_lookback() -> None:
+    """With <= EPS_REVISION_LOOKBACK_WEEKS weekly rows, the revision series
+    is entirely NaN — the §2B earnings labels stay silent (cold-start)."""
+    history = pd.DataFrame(
+        {
+            "observation_date": [
+                dt.date(2026, 1, 2),
+                dt.date(2026, 1, 9),
+                dt.date(2026, 1, 16),
+                dt.date(2026, 1, 23),
+            ],
+            "forward_estimate_value": [300.0, 301.0, 302.0, 303.0],
+        }
+    )
+    revision = compute_eps_revision_direction_4w(history)
+    assert len(revision) == 4
+    assert revision.isna().all()
+
+
+def test_compute_eps_revision_direction_4w_hand_computed() -> None:
+    """5 weekly rows → the 5th row has a non-NaN 4-week revision equal to
+    the hand-computed (fwd[t] - fwd[t-4]) / fwd[t-4]."""
+    history = pd.DataFrame(
+        {
+            "observation_date": [
+                dt.date(2026, 1, 2),
+                dt.date(2026, 1, 9),
+                dt.date(2026, 1, 16),
+                dt.date(2026, 1, 23),
+                dt.date(2026, 1, 30),
+            ],
+            "forward_estimate_value": [300.0, 301.0, 302.0, 303.0, 309.0],
+        }
+    )
+    revision = compute_eps_revision_direction_4w(history)
+    # Rows 0-3: NaN (cold-start, no 4-weeks-prior row).
+    assert revision.iloc[:EPS_REVISION_LOOKBACK_WEEKS].isna().all()
+    # Row 4: (309.0 - 300.0) / 300.0 == 0.03
+    assert revision.iloc[4] == pytest.approx(0.03)
+    # Series is indexed by observation_date.
+    assert revision.index[4] == pd.Timestamp("2026-01-30")
+
+
+def test_compute_eps_revision_direction_4w_handles_zero_prior() -> None:
+    """A zero 4-weeks-prior estimate yields NaN, not a divide-by-zero."""
+    history = pd.DataFrame(
+        {
+            "observation_date": [
+                dt.date(2026, 1, 2),
+                dt.date(2026, 1, 9),
+                dt.date(2026, 1, 16),
+                dt.date(2026, 1, 23),
+                dt.date(2026, 1, 30),
+            ],
+            "forward_estimate_value": [0.0, 301.0, 302.0, 303.0, 309.0],
+        }
+    )
+    revision = compute_eps_revision_direction_4w(history)
+    assert pd.isna(revision.iloc[4])
+
+
+def test_run_aggregate_eps_fetch_accumulates_weekly_history(tmp_path: Path) -> None:
+    """Integration: run_aggregate_eps_fetch appends to the weekly-history
+    parquet on each run. Re-running with the same fixture workbook is
+    idempotent (same observation_date) — the report's weekly_history_rows
+    count stays 1 and the 4-week revision stays unavailable."""
+    report_path = run_aggregate_eps_fetch(
+        out_dir=tmp_path,
+        workbook_path=FIXTURES / "sp500_eps_est_fixture.xlsx",
+    )
+    report = json.loads(report_path.read_text())
+    assert report["counts"]["weekly_history_rows"] == 1
+    assert (
+        report["limitations"][
+            "aggregate_forward_eps_revision_direction_4w_available"
+        ]
+        is False
+    )
+    weekly_path = tmp_path / "aggregate_forward_eps" / WEEKLY_HISTORY_FILENAME
+    assert weekly_path.exists()
+    assert report["paths"]["aggregate_eps_weekly_history_parquet"] == str(weekly_path)
+
+    # Re-run with the same workbook: dedup keeps the accumulator at 1 row.
+    run_aggregate_eps_fetch(
+        out_dir=tmp_path,
+        workbook_path=FIXTURES / "sp500_eps_est_fixture.xlsx",
+    )
+    assert len(pd.read_parquet(weekly_path)) == 1

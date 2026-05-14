@@ -1491,6 +1491,21 @@ the slice/commit that resolved it. Entries are append-only.
     axis classifier can be dispatched as a TDD slice with the cross-axis
     short-circuit in place ahead of §2C.
 
+    Status update — `aggregate_forward_eps_revision_direction_4w` data
+    blocker closed by the weekly-snapshot accumulator (user-prompted
+    FRED-availability audit pass). The original blocker — "the workbook
+    snapshot path does not expose a weekly time series" — was real but
+    needed no paid feed. `regime_data_fetch.aggregate_eps` now
+    ACCUMULATES the workbook's current snapshot into a persistent
+    `sp500_eps_weekly_history.parquet` on each weekly fetch (deduped by
+    observation_date), and `compute_eps_revision_direction_4w` reads that
+    accumulator to produce the 4-week revision series. The series is
+    all-NaN until > 4 weekly fetches accumulate, so the two earnings
+    labels stay silent during cold-start and unlock organically once the
+    accumulator fills. The `inflation_surprise_zscore` single-signal
+    limb of `inflation_shock` remains genuinely blocked (analyst-consensus
+    survey data — separate audit item).
+
 49. **§2C Credit/Funding — scaffolding + operational pins.**
 
     Applies the §2A template to §2C. Same pattern as #48: §2C had
@@ -2459,9 +2474,15 @@ pmi_manufacturing_slope_21d = ols_slope(pmi_manufacturing, window=21)
 
 # Aggregate forward EPS revision direction
 #   revision_4w = (forward_eps[t] - forward_eps[t - 4_weeks]) / forward_eps[t - 4_weeks]
-# DEFERRED: workbook snapshot path does not expose weekly time series (data plan
-# line 88). Until weekly EPS data lands, `earnings_expansion` / `earnings_contraction`
-# short-circuit to False — see Ambiguity Log #48.
+# The single S&P workbook exposes quarterly history + one current snapshot,
+# not a weekly time series. `regime_data_fetch.aggregate_eps` closes this by
+# ACCUMULATING the current snapshot into a persistent weekly-history parquet
+# (sp500_eps_weekly_history.parquet) on each weekly fetch, deduped by
+# observation_date. `compute_eps_revision_direction_4w` reads that accumulator
+# and computes the 4-week revision (4 rows back in the weekly-sorted history).
+# The series is all-NaN until > 4 weekly fetches have accumulated, so
+# `earnings_expansion` / `earnings_contraction` stay silent during cold-start
+# and unlock organically once the accumulator fills — see Ambiguity Log #48.
 
 # Commodity returns — DBC ETF substitute for Bloomberg Commodity Index (paid feed
 # unavailable). Documented as proxy with bias-warning (same precedent as §1D PIT
@@ -2564,7 +2585,7 @@ inflation_growth:
 
 Rules referencing `credit_funding.active_label` (`goldilocks`, `recession_scare`, `recovery_growth`) short-circuit the cross-axis predicate to `False` when the §2C axis is unbuilt (slice-4 deferral). Precedence walker then falls through to the next-rank rule. Mirrors slice 1.3's systemic_stress / credit_funding=None pattern (Ambiguity Log #1.3 inline TODO).
 
-`earnings_expansion` / `earnings_contraction` short-circuit to `False` until the weekly aggregate forward EPS revision direction time series ships (currently snapshot-only per market_data_fetch_plan.md line 88).
+`earnings_expansion` / `earnings_contraction` consume `aggregate_forward_eps_revision_direction_4w`, which is built by the `regime_data_fetch.aggregate_eps` weekly-snapshot accumulator (`sp500_eps_weekly_history.parquet`). The series is all-NaN until > 4 weekly fetches have accumulated; the two labels stay silent during that cold-start and unlock organically once the accumulator fills. No external feed dependency — the accumulator builds the weekly series from the existing free S&P workbook fetch.
 
 `inflation_shock`'s single-signal limb (`inflation_surprise_zscore > +1.5`) short-circuits to `False` until the BLS consensus-vs-actual feed is ingested. The composite-shock limb remains active.
 

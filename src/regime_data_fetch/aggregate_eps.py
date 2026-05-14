@@ -18,6 +18,19 @@ SOURCE_URL = "https://www.spglobal.com/spdji/en/documents/additional-material/sp
 SHEET_NAME = "ESTIMATES&PEs"
 WAYBACK_CDX_URL = "https://web.archive.org/cdx/search/cdx"
 
+# Weekly-snapshot accumulator (Log #48 closure path). Each weekly run of
+# `run_aggregate_eps_fetch` appends the workbook's current snapshot to this
+# parquet, deduped by observation_date. Once >= 4 distinct weekly rows have
+# accumulated, `compute_eps_revision_direction_4w` produces a non-NaN
+# revision series and the §2B `earnings_expansion` / `earnings_contraction`
+# labels unlock. The single S&P workbook only exposes quarterly history +
+# one current point, so weekly granularity can only be built by
+# accumulating one current-snapshot row per weekly fetch.
+WEEKLY_HISTORY_FILENAME = "sp500_eps_weekly_history.parquet"
+# Spec §2B: revision direction over 4 weeks. 4 rows back in the weekly-sorted
+# accumulator history (one row per weekly fetch).
+EPS_REVISION_LOOKBACK_WEEKS = 4
+
 
 class AggregateEPSFetchError(RuntimeError):
     pass
@@ -256,6 +269,80 @@ def run_aggregate_eps_auto_fetch(
     )
 
 
+def append_weekly_eps_snapshot(
+    *,
+    eps_dir: Path,
+    current_snapshot: AggregateEPSSnapshot,
+) -> pd.DataFrame:
+    """Append one weekly current-snapshot row to the accumulator parquet.
+
+    Idempotent by ``observation_date``: re-running the same weekly workbook
+    overwrites that date's row rather than double-counting it (the operator
+    may re-run a fetch for the same week). Returns the full accumulated
+    weekly-history DataFrame (sorted ascending by observation_date).
+
+    Closes Log #48's "workbook snapshot path does not expose weekly time
+    series" blocker — the weekly series is built by accumulating one row
+    per weekly fetch rather than read from a single workbook.
+    """
+    history_path = eps_dir / WEEKLY_HISTORY_FILENAME
+    new_row = pd.DataFrame(
+        [
+            {
+                "observation_date": current_snapshot.observation_date,
+                "observation_label": current_snapshot.observation_label,
+                "forward_estimate_value": current_snapshot.forward_estimate_value,
+                "source": SOURCE_NAME,
+            }
+        ]
+    )
+    if history_path.exists():
+        existing = pd.read_parquet(history_path)
+        # Drop any prior row for the same observation_date (idempotent
+        # re-run), then append the fresh row.
+        existing = existing[
+            existing["observation_date"] != current_snapshot.observation_date
+        ]
+        combined = pd.concat([existing, new_row], ignore_index=True)
+    else:
+        combined = new_row
+    combined = combined.sort_values("observation_date").reset_index(drop=True)
+    combined.to_parquet(history_path, index=False)
+    return combined
+
+
+def compute_eps_revision_direction_4w(weekly_history: pd.DataFrame) -> pd.Series:
+    """v2 §2B `aggregate_forward_eps_revision_direction_4w` from the
+    accumulated weekly history.
+
+    ``revision_4w = (forward_eps[t] - forward_eps[t-4]) / forward_eps[t-4]``
+    where ``t-4`` is 4 rows back in the weekly-sorted accumulator (one row
+    per weekly fetch). The returned Series is indexed by
+    ``observation_date``; values are NaN for the first
+    ``EPS_REVISION_LOOKBACK_WEEKS`` rows (cold-start) and wherever the
+    4-weeks-prior estimate is NaN or zero.
+
+    Until the accumulator holds more than ``EPS_REVISION_LOOKBACK_WEEKS``
+    weekly rows the entire series is NaN — the §2B earnings labels stay
+    silent, which is the correct cold-start behaviour (V1 §2.7).
+    """
+    if weekly_history.empty:
+        return pd.Series(
+            dtype=float, name="aggregate_forward_eps_revision_direction_4w"
+        )
+    sorted_history = weekly_history.sort_values("observation_date").reset_index(
+        drop=True
+    )
+    forward_eps = sorted_history["forward_estimate_value"].astype(float)
+    prior = forward_eps.shift(EPS_REVISION_LOOKBACK_WEEKS)
+    revision = (forward_eps - prior) / prior.where(prior != 0)
+    revision.index = pd.DatetimeIndex(
+        pd.to_datetime(sorted_history["observation_date"])
+    )
+    revision.name = "aggregate_forward_eps_revision_direction_4w"
+    return revision
+
+
 def run_aggregate_eps_fetch(
     *,
     out_dir: Path,
@@ -324,6 +411,18 @@ def run_aggregate_eps_fetch(
         parquet_path = eps_dir / "sp500_eps_snapshots.parquet"
         df.to_parquet(parquet_path, index=False)
 
+        # Weekly-snapshot accumulator (Log #48 closure). Append this run's
+        # current snapshot to the persistent weekly-history parquet, then
+        # compute the 4-week revision direction. The revision series is
+        # all-NaN until > EPS_REVISION_LOOKBACK_WEEKS weekly rows have
+        # accumulated — the report's availability flag reflects that.
+        weekly_history = append_weekly_eps_snapshot(
+            eps_dir=eps_dir, current_snapshot=parsed.current_snapshot
+        )
+        weekly_history_path = eps_dir / WEEKLY_HISTORY_FILENAME
+        revision_series = compute_eps_revision_direction_4w(weekly_history)
+        revision_available = bool(revision_series.notna().any())
+
         current_dict = asdict(parsed.current_snapshot)
         current_dict["observation_date"] = parsed.current_snapshot.observation_date.isoformat()
         report = {
@@ -336,17 +435,28 @@ def run_aggregate_eps_fetch(
             "counts": {
                 "historical_snapshots": len(parsed.historical_snapshots),
                 "current_snapshots": 1,
+                "weekly_history_rows": len(weekly_history),
             },
             "current_snapshot": current_dict,
             "limitations": {
-                "aggregate_forward_eps_revision_direction_4w_available": False,
+                "aggregate_forward_eps_revision_direction_4w_available": revision_available,
                 "reason": (
-                    "The captured public workbook exposes quarterly historical observations plus one current snapshot, "
-                    "not a weekly revision history."
+                    "Revision direction available — the weekly-snapshot accumulator "
+                    f"holds {len(weekly_history)} rows (> {EPS_REVISION_LOOKBACK_WEEKS} "
+                    "required for the 4-week lookback)."
+                    if revision_available
+                    else (
+                        "The single S&P workbook exposes quarterly history plus one "
+                        f"current snapshot. The weekly accumulator holds "
+                        f"{len(weekly_history)} row(s); "
+                        f"> {EPS_REVISION_LOOKBACK_WEEKS} weekly fetches are required "
+                        "before the 4-week revision direction is non-NaN."
+                    )
                 ),
             },
             "paths": {
                 "aggregate_eps_parquet": str(parquet_path),
+                "aggregate_eps_weekly_history_parquet": str(weekly_history_path),
                 "acquisition_db": str(acquisition_db_path) if acquisition_db_path else None,
             },
         }
