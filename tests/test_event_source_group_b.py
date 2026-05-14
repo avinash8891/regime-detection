@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from regime_data_fetch.event_sources.approvals import load_approval_overlay
+from regime_data_fetch.event_sources.approvals import append_approval_record, load_approval_overlay
 from regime_data_fetch.event_sources.budget_official_discovery import BudgetOfficialDiscoveryGenerator
 from regime_data_fetch.event_sources.deterministic_budget import DeterministicBudgetAdapter
 from regime_data_fetch.event_sources.orchestrator import EventSourceOrchestrator
@@ -167,3 +167,26 @@ def test_tinyfish_unavailable_returns_unknown_for_review_candidates() -> None:
     assert [(validation.candidate_key, validation.validator_id, validation.verdict) for validation in validations] == [
         (("budget", dt.date(2026, 9, 30)), "tinyfish:search-extract", "unknown")
     ]
+
+
+def test_append_approval_record_validates_and_round_trips(tmp_path: Path) -> None:
+    overlay_path = tmp_path / "group_b_approvals.yaml"
+    overlay_path.write_text("approvals: []\n")
+
+    append_approval_record(
+        overlay_path,
+        event_type="geopolitical_event",
+        event_date=dt.date(2022, 2, 24),
+        candidate_id="abc123",
+        source_count=2,
+        approver="avinash",
+        approved_at=dt.date(2026, 5, 14),
+        notes="Russia invasion of Ukraine.",
+    )
+
+    approvals = load_approval_overlay(overlay_path)
+    assert len(approvals) == 1
+    assert approvals[0].event_type == "geopolitical_event"
+    assert approvals[0].evidence_candidate_id == "abc123"
+    assert approvals[0].evidence_source_count == 2
+    assert approvals[0].notes == "Russia invasion of Ukraine."

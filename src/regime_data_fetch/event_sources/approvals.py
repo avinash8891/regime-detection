@@ -37,6 +37,38 @@ def load_approval_overlay(path: Path) -> list[ApprovalRecord]:
     return approvals
 
 
+def append_approval_record(
+    path: Path,
+    *,
+    event_type: str,
+    event_date: dt.date,
+    candidate_id: str,
+    source_count: int,
+    approver: str,
+    approved_at: dt.date,
+    notes: str | None = None,
+    importance: str | None = None,
+    window_days: tuple[int, int] | None = None,
+) -> None:
+    approvals = load_approval_overlay(path)
+    approvals.append(
+        ApprovalRecord(
+            event_type=event_type,
+            date=event_date,
+            approved_label=event_type,
+            approver=approver,
+            approved_at=approved_at,
+            evidence_candidate_id=candidate_id,
+            evidence_source_count=source_count,
+            importance=importance,
+            window_days=window_days,
+            notes=notes,
+        )
+    )
+    _write_approval_overlay(path, approvals)
+    load_approval_overlay(path)
+
+
 def _parse_approval(raw: dict[str, Any], idx: int) -> ApprovalRecord:
     missing = [
         field
@@ -94,3 +126,28 @@ def _parse_window_days(value: object, idx: int) -> tuple[int, int] | None:
     if not isinstance(value, list) or len(value) != 2:
         raise ValueError(f"approval overlay entry {idx} window_days must be a two-item list")
     return (int(value[0]), int(value[1]))
+
+
+def _write_approval_overlay(path: Path, approvals: list[ApprovalRecord]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    payload = {"approvals": [_approval_to_dict(approval) for approval in approvals]}
+    path.write_text(yaml.safe_dump(payload, sort_keys=False))
+
+
+def _approval_to_dict(approval: ApprovalRecord) -> dict[str, object]:
+    record: dict[str, object] = {
+        "event_type": approval.event_type,
+        "date": approval.date.isoformat(),
+        "approved_label": approval.approved_label,
+        "approver": approval.approver,
+        "approved_at": approval.approved_at.isoformat(),
+        "evidence_candidate_id": approval.evidence_candidate_id,
+        "evidence_source_count": approval.evidence_source_count,
+    }
+    if approval.importance is not None:
+        record["importance"] = approval.importance
+    if approval.window_days is not None:
+        record["window_days"] = list(approval.window_days)
+    if approval.notes is not None:
+        record["notes"] = approval.notes
+    return record
