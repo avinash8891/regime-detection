@@ -10,7 +10,6 @@ Spec authority: docs/regime_engine_v2_spec.md §2C lines 2005-2130.
 """
 from __future__ import annotations
 
-from datetime import date, timedelta
 
 import numpy as np
 import pandas as pd
@@ -19,12 +18,12 @@ import pytest
 from regime_detection.axis_series import CreditFundingSeriesClassifier
 from regime_detection.calendar import nyse_sessions_between
 from regime_detection.config import (
-    CreditFundingConfig,
     CreditFundingRulesConfig,
     load_default_regime_config,
 )
 from regime_detection.credit_funding import (
     CREDIT_FUNDING_RISK_RANK,
+    CREDIT_SPREAD_PROXY_BIAS_WARNING_CODE,
     CREDIT_SPREAD_SOURCE,
     CREDIT_SPREAD_SOURCE_CODE,
     CREDIT_SPREAD_SOURCE_URL,
@@ -86,9 +85,11 @@ def _default_rules() -> CreditFundingRulesConfig:
 
 
 def test_compute_credit_funding_features_returns_all_series() -> None:
-    """All 13 §2C feature series materialise on a 650-session synthetic input."""
+    """All 18 §2C feature series materialise on a 650-session synthetic input."""
     idx = _bdate_index()
     n = len(idx)
+    hyg = _make_random_walk(idx, seed=_SEED + 1, start=80.0, sigma=0.008)
+    lqd = _make_random_walk(idx, seed=_SEED + 2, start=110.0, sigma=0.006)
     tlt = _make_random_walk(idx, seed=_SEED + 3, start=100.0, sigma=0.006)
     kre = _make_random_walk(idx, seed=_SEED + 4, start=50.0, sigma=0.012)
     spy = _make_random_walk(idx, seed=_SEED + 5, start=400.0, sigma=0.008)
@@ -105,6 +106,8 @@ def test_compute_credit_funding_features_returns_all_series() -> None:
     ig_oas = _make_random_walk(idx, seed=_SEED + 9, start=150.0, sigma=0.01)
 
     features = compute_credit_funding_features(
+        hyg_close=hyg,
+        lqd_close=lqd,
         tlt_close=tlt,
         kre_close=kre,
         spy_close=spy,
@@ -132,6 +135,8 @@ def test_hy_oas_63d_carries_hy_oas_input_verbatim() -> None:
     # Widening HY OAS: 350bps → 600bps over the window.
     hy_oas = pd.Series(np.linspace(350.0, 600.0, n), index=idx, dtype=float)
     ig_oas = pd.Series(np.linspace(120.0, 180.0, n), index=idx, dtype=float)
+    hyg = pd.Series(80.0, index=idx, dtype=float)
+    lqd = pd.Series(110.0, index=idx, dtype=float)
     tlt = pd.Series(100.0, index=idx, dtype=float)
     kre = pd.Series(50.0, index=idx, dtype=float)
     spy = pd.Series(400.0, index=idx, dtype=float)
@@ -142,7 +147,7 @@ def test_hy_oas_63d_carries_hy_oas_input_verbatim() -> None:
     usd = pd.Series(100.0, index=idx, dtype=float)
 
     features = compute_credit_funding_features(
-        tlt_close=tlt, kre_close=kre,
+        hyg_close=hyg, lqd_close=lqd, tlt_close=tlt, kre_close=kre,
         spy_close=spy, sofr=sofr, iorb=iorb, nfci_weekly=nfci_w,
         broad_usd_index=usd, hy_oas=hy_oas, ig_oas=ig_oas,
         config=_default_rules(),
@@ -160,7 +165,8 @@ def test_hy_oas_63d_carries_hy_oas_input_verbatim() -> None:
 def test_nfci_carries_forward_weekly_to_daily() -> None:
     """§2C line 2049: NFCI weekly→daily forward-fill (last-known-value)."""
     idx = _bdate_index(periods=80)
-    n = len(idx)
+    hyg = pd.Series(80.0, index=idx, dtype=float)
+    lqd = pd.Series(110.0, index=idx, dtype=float)
     tlt = pd.Series(100.0, index=idx, dtype=float)
     kre = pd.Series(50.0, index=idx, dtype=float)
     spy = pd.Series(400.0, index=idx, dtype=float)
@@ -177,7 +183,7 @@ def test_nfci_carries_forward_weekly_to_daily() -> None:
         nfci_w.iloc[pos] = val
 
     features = compute_credit_funding_features(
-        tlt_close=tlt, kre_close=kre,
+        hyg_close=hyg, lqd_close=lqd, tlt_close=tlt, kre_close=kre,
         spy_close=spy, sofr=sofr, iorb=iorb, nfci_weekly=nfci_w,
         broad_usd_index=usd, hy_oas=hy_oas, ig_oas=ig_oas,
         config=_default_rules(),
@@ -196,10 +202,11 @@ def test_nfci_carries_forward_weekly_to_daily() -> None:
 def test_kre_spy_ratio_at_specific_date() -> None:
     """Hand-pinned: KRE=50, SPY=400 → ratio = 50/400 = 0.125."""
     idx = _bdate_index(periods=100)
-    n = len(idx)
     kre = pd.Series(50.0, index=idx, dtype=float)
     spy = pd.Series(400.0, index=idx, dtype=float)
     # Filler.
+    hyg = pd.Series(80.0, index=idx, dtype=float)
+    lqd = pd.Series(110.0, index=idx, dtype=float)
     tlt = pd.Series(100.0, index=idx, dtype=float)
     sofr = pd.Series(5.0, index=idx, dtype=float)
     iorb = pd.Series(4.9, index=idx, dtype=float)
@@ -210,7 +217,7 @@ def test_kre_spy_ratio_at_specific_date() -> None:
     ig_oas = pd.Series(150.0, index=idx, dtype=float)
 
     features = compute_credit_funding_features(
-        tlt_close=tlt, kre_close=kre,
+        hyg_close=hyg, lqd_close=lqd, tlt_close=tlt, kre_close=kre,
         spy_close=spy, sofr=sofr, iorb=iorb, nfci_weekly=nfci_w,
         broad_usd_index=usd, hy_oas=hy_oas, ig_oas=ig_oas,
         config=_default_rules(),
@@ -219,9 +226,11 @@ def test_kre_spy_ratio_at_specific_date() -> None:
 
 
 def test_credit_spread_provenance_row_present_with_single_source_code() -> None:
-    """§2C credit-spread provenance: one row per spread feature, all
-    carrying the single-source ICE-BofA-OAS-via-FRED provenance code."""
+    """§2C credit-spread provenance: 5 OAS rows (ICE BofA via FRED) + 5
+    proxy rows (TLT-vs-HYG/LQD total-return-differential) in bias_warnings."""
     idx = _bdate_index(periods=200)
+    hyg = pd.Series(80.0, index=idx, dtype=float)
+    lqd = pd.Series(110.0, index=idx, dtype=float)
     tlt = pd.Series(100.0, index=idx, dtype=float)
     kre = pd.Series(50.0, index=idx, dtype=float)
     spy = pd.Series(400.0, index=idx, dtype=float)
@@ -234,24 +243,36 @@ def test_credit_spread_provenance_row_present_with_single_source_code() -> None:
     ig_oas = pd.Series(150.0, index=idx, dtype=float)
 
     features = compute_credit_funding_features(
-        tlt_close=tlt, kre_close=kre,
+        hyg_close=hyg, lqd_close=lqd, tlt_close=tlt, kre_close=kre,
         spy_close=spy, sofr=sofr, iorb=iorb, nfci_weekly=nfci_w,
         broad_usd_index=usd, hy_oas=hy_oas, ig_oas=ig_oas,
         config=_default_rules(),
     )
     bw = features.bias_warnings
-    assert len(bw) == 5
-    assert (bw["warning_code"] == CREDIT_SPREAD_SOURCE_CODE).all()
-    assert (bw["source"] == CREDIT_SPREAD_SOURCE).all()
-    assert (bw["source_url"] == CREDIT_SPREAD_SOURCE_URL).all()
-    expected_features = {
+    # 5 OAS provenance rows + 5 proxy provenance rows.
+    assert len(bw) == 10
+    oas_rows = bw[bw["warning_code"] == CREDIT_SPREAD_SOURCE_CODE]
+    assert len(oas_rows) == 5
+    assert (oas_rows["source"] == CREDIT_SPREAD_SOURCE).all()
+    assert (oas_rows["source_url"] == CREDIT_SPREAD_SOURCE_URL).all()
+    expected_oas_features = {
         "hy_oas_63d",
         "ig_oas_63d",
         "hy_oas_percentile_504d",
         "hy_oas_slope_21d",
         "ig_oas_slope_21d",
     }
-    assert set(bw["feature_name"]) == expected_features
+    assert set(oas_rows["feature_name"]) == expected_oas_features
+    proxy_rows = bw[bw["warning_code"] == CREDIT_SPREAD_PROXY_BIAS_WARNING_CODE]
+    assert len(proxy_rows) == 5
+    expected_proxy_features = {
+        "hy_tr_differential_63d",
+        "ig_tr_differential_63d",
+        "hy_tr_differential_percentile_504d",
+        "hy_tr_differential_slope_21d",
+        "ig_tr_differential_slope_21d",
+    }
+    assert set(proxy_rows["feature_name"]) == expected_proxy_features
 
 
 def test_ice_bofa_oas_is_the_single_credit_spread_source() -> None:
@@ -261,6 +282,8 @@ def test_ice_bofa_oas_is_the_single_credit_spread_source() -> None:
     is no proxy fallback — both inputs are required positional kwargs."""
     idx = _bdate_index(periods=200)
     n = len(idx)
+    hyg = pd.Series(80.0, index=idx, dtype=float)
+    lqd = pd.Series(110.0, index=idx, dtype=float)
     tlt = pd.Series(100.0, index=idx, dtype=float)
     kre = pd.Series(50.0, index=idx, dtype=float)
     spy = pd.Series(400.0, index=idx, dtype=float)
@@ -275,7 +298,7 @@ def test_ice_bofa_oas_is_the_single_credit_spread_source() -> None:
     ig_oas = pd.Series(np.linspace(100.0, 200.0, n), index=idx, dtype=float)
 
     features = compute_credit_funding_features(
-        tlt_close=tlt, kre_close=kre,
+        hyg_close=hyg, lqd_close=lqd, tlt_close=tlt, kre_close=kre,
         spy_close=spy, sofr=sofr, iorb=iorb, nfci_weekly=nfci_w,
         broad_usd_index=usd, hy_oas=hy_oas, ig_oas=ig_oas,
         config=_default_rules(),
@@ -293,9 +316,10 @@ def test_ice_bofa_oas_is_the_single_credit_spread_source() -> None:
         check_names=True,
     )
 
-    # Provenance row carries the single-source ICE-BofA-OAS-via-FRED code.
+    # OAS features carry the single-source ICE-BofA-OAS-via-FRED code.
     bw = features.bias_warnings
-    assert (bw["warning_code"] == CREDIT_SPREAD_SOURCE_CODE).all()
+    oas_rows = bw[bw["warning_code"] == CREDIT_SPREAD_SOURCE_CODE]
+    assert len(oas_rows) == 5
 
 
 def test_compute_credit_funding_features_requires_both_oas_series() -> None:
@@ -303,6 +327,8 @@ def test_compute_credit_funding_features_requires_both_oas_series() -> None:
     Omitting either raises TypeError at the call boundary — there is no
     silent half-real / half-proxy path."""
     idx = _bdate_index(periods=50)
+    hyg = pd.Series(80.0, index=idx, dtype=float)
+    lqd = pd.Series(110.0, index=idx, dtype=float)
     tlt = pd.Series(100.0, index=idx, dtype=float)
     kre = pd.Series(50.0, index=idx, dtype=float)
     spy = pd.Series(400.0, index=idx, dtype=float)
@@ -314,16 +340,82 @@ def test_compute_credit_funding_features_requires_both_oas_series() -> None:
 
     with pytest.raises(TypeError):
         compute_credit_funding_features(
-            tlt_close=tlt, kre_close=kre, spy_close=spy, sofr=sofr,
-            iorb=iorb, nfci_weekly=nfci_w, broad_usd_index=usd,
+            hyg_close=hyg, lqd_close=lqd, tlt_close=tlt, kre_close=kre,
+            spy_close=spy, sofr=sofr, iorb=iorb, nfci_weekly=nfci_w,
+            broad_usd_index=usd,
             hy_oas=hy_oas,  # ig_oas omitted — required kwarg
             config=_default_rules(),
         )
 
 
+def test_tlt_proxy_differential_hand_computed() -> None:
+    """hy_tr_differential_63d = tlt_total_return_63d - hyg_total_return_63d,
+    with total_return_lookback_days = 63 (config default)."""
+    idx = _bdate_index(periods=300)
+    hyg = _make_random_walk(idx, seed=11, start=80.0, sigma=0.4)
+    lqd = _make_random_walk(idx, seed=12, start=110.0, sigma=0.3)
+    tlt = _make_random_walk(idx, seed=13, start=95.0, sigma=0.5)
+    kre = _make_random_walk(idx, seed=14, start=55.0, sigma=0.6)
+    spy = _make_random_walk(idx, seed=15, start=420.0, sigma=1.0)
+    hy_oas = _make_constant_series(idx, 3.5, "hy_oas")
+    ig_oas = _make_constant_series(idx, 1.2, "ig_oas")
+    sofr = _make_constant_series(idx, 5.3, "sofr")
+    iorb = _make_constant_series(idx, 5.4, "iorb")
+    nfci = _make_constant_series(idx, -0.2, "nfci")
+    usd = _make_random_walk(idx, seed=16, start=120.0, sigma=0.2)
+
+    features = compute_credit_funding_features(
+        hyg_close=hyg, lqd_close=lqd, tlt_close=tlt, kre_close=kre,
+        spy_close=spy, sofr=sofr, iorb=iorb, nfci_weekly=nfci,
+        broad_usd_index=usd, hy_oas=hy_oas, ig_oas=ig_oas,
+        config=_default_rules(),
+    )
+
+    w = _default_rules().total_return_lookback_days  # 63
+    t = 200
+    tlt_tr = tlt.iloc[t] / tlt.iloc[t - w] - 1.0
+    hyg_tr = hyg.iloc[t] / hyg.iloc[t - w] - 1.0
+    assert features.hy_tr_differential_63d.iloc[t] == pytest.approx(tlt_tr - hyg_tr)
+    assert features.hy_tr_differential_percentile_504d.name == "hy_tr_differential_percentile_504d"
+    assert features.hy_tr_differential_slope_21d.name == "hy_tr_differential_slope_21d"
+    assert features.ig_tr_differential_slope_21d.name == "ig_tr_differential_slope_21d"
+
+
+def test_tlt_proxy_features_carry_proxy_bias_warning() -> None:
+    """The five hy_tr_differential_* / ig_tr_differential_* features each
+    carry a credit_spread_proxy_total_return_differential bias-warning row;
+    the hy_oas_* features keep the credit_spread_ice_bofa_oas_fred row."""
+    idx = _bdate_index(periods=300)
+    common = dict(
+        hyg_close=_make_constant_series(idx, 80.0, "HYG"),
+        lqd_close=_make_constant_series(idx, 110.0, "LQD"),
+        tlt_close=_make_constant_series(idx, 95.0, "TLT"),
+        kre_close=_make_constant_series(idx, 55.0, "KRE"),
+        spy_close=_make_constant_series(idx, 420.0, "SPY"),
+        sofr=_make_constant_series(idx, 5.3, "sofr"),
+        iorb=_make_constant_series(idx, 5.4, "iorb"),
+        nfci_weekly=_make_constant_series(idx, -0.2, "nfci"),
+        broad_usd_index=_make_constant_series(idx, 120.0, "usd"),
+        hy_oas=_make_constant_series(idx, 3.5, "hy_oas"),
+        ig_oas=_make_constant_series(idx, 1.2, "ig_oas"),
+        config=_default_rules(),
+    )
+    features = compute_credit_funding_features(**common)
+    codes = set(
+        zip(
+            features.bias_warnings["feature_name"],
+            features.bias_warnings["warning_code"],
+        )
+    )
+    assert ("hy_tr_differential_63d", "credit_spread_proxy_total_return_differential") in codes
+    assert ("hy_oas_63d", "credit_spread_ice_bofa_oas_fred") in codes
+
+
 def test_build_rule_inputs_by_date_matches_single_day_builder() -> None:
     idx = _bdate_index(periods=650)
     n = len(idx)
+    hyg = pd.Series(np.linspace(75.0, 85.0, n), index=idx, dtype=float)
+    lqd = pd.Series(np.linspace(105.0, 115.0, n), index=idx, dtype=float)
     tlt = pd.Series(np.linspace(95.0, 109.0, n), index=idx, dtype=float)
     kre = pd.Series(np.linspace(40.0, 43.0, n), index=idx, dtype=float)
     spy = pd.Series(np.linspace(400.0, 430.0, n), index=idx, dtype=float)
@@ -337,6 +429,8 @@ def test_build_rule_inputs_by_date_matches_single_day_builder() -> None:
     avg_corr = pd.Series(np.linspace(0.1, 0.9, n), index=idx, dtype=float)
 
     feats = compute_credit_funding_features(
+        hyg_close=hyg,
+        lqd_close=lqd,
         tlt_close=tlt,
         kre_close=kre,
         spy_close=spy,
@@ -631,6 +725,11 @@ def test_unknown_when_assess_series_input_quality_fails() -> None:
         hy_oas_percentile_504d=nan_series,
         hy_oas_slope_21d=nan_series,
         ig_oas_slope_21d=nan_series,
+        hy_tr_differential_63d=nan_series,
+        ig_tr_differential_63d=nan_series,
+        hy_tr_differential_percentile_504d=nan_series,
+        hy_tr_differential_slope_21d=nan_series,
+        ig_tr_differential_slope_21d=nan_series,
         kre_spy_ratio=nan_series,
         kre_spy_slope_63d=nan_series,
         nfci_daily_carried=nan_series,

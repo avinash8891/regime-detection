@@ -24,6 +24,8 @@ from regime_detection.config import (
 )
 from regime_detection.credit_funding import (
     CreditFundingFeatures,
+    HYG_KEY as _CF_HYG_KEY,
+    LQD_KEY as _CF_LQD_KEY,
     REQUIRED_CROSS_ASSET_KEYS as _CF_CROSS_ASSET_KEYS,
     REQUIRED_MACRO_KEYS as _CF_MACRO_KEYS,
     TLT_KEY as _CF_TLT_KEY,
@@ -486,6 +488,8 @@ def build_feature_store(
         # macro_series keys are in `_CF_MACRO_KEYS`, so the gate above
         # already guarantees they are present — no `.get()` needed.
         credit_funding = compute_credit_funding_features(
+            hyg_close=context.cross_asset_closes[_CF_HYG_KEY],
+            lqd_close=context.cross_asset_closes[_CF_LQD_KEY],
             tlt_close=context.cross_asset_closes[_CF_TLT_KEY],
             kre_close=context.cross_asset_closes[_CF_KRE_KEY],
             spy_close=spy_close,

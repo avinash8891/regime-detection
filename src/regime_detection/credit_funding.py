@@ -55,7 +55,6 @@ import pandas as pd
 
 from regime_detection.breadth_state_v2 import make_bias_warnings_frame
 from regime_detection.config import (
-    CreditFundingConfig,
     CreditFundingRulesConfig,
 )
 
@@ -143,14 +142,30 @@ CREDIT_SPREAD_SOURCE_CODE = "credit_spread_ice_bofa_oas_fred"
 CREDIT_SPREAD_SOURCE = "fred:BAMLH0A0HYM2+BAMLC0A4CBBB"
 CREDIT_SPREAD_SOURCE_URL = "https://fred.stlouisfed.org/series/BAMLH0A0HYM2"
 
-# Feature names carrying the proxy bias warning (one row per emitted §2C feature
-# derived from the TLT-vs-HYG/LQD differential).
+# Feature names carrying the OAS provenance row (one row per emitted §2C feature
+# derived from the ICE BofA OAS series).
 _BIAS_FEATURE_NAMES: tuple[str, ...] = (
     "hy_oas_63d",
     "ig_oas_63d",
     "hy_oas_percentile_504d",
     "hy_oas_slope_21d",
     "ig_oas_slope_21d",
+)
+
+# Proxy provenance — the TLT-vs-HYG/LQD total-return-differential metric
+# (Ambiguity Log #71). Distinct from the real-OAS source code above; the
+# proxy is a similar measure that exists because FRED's ICE BofA OAS
+# series lack pre-2023 history.
+CREDIT_SPREAD_PROXY_BIAS_WARNING_CODE = "credit_spread_proxy_total_return_differential"
+CREDIT_SPREAD_PROXY_BIAS_SOURCE = "tlt_minus_hyg_lqd_total_return_differential"
+CREDIT_SPREAD_PROXY_BIAS_SOURCE_URL = "internal:tlt_minus_hyg_lqd_total_return_differential"
+
+_PROXY_BIAS_FEATURE_NAMES: tuple[str, ...] = (
+    "hy_tr_differential_63d",
+    "ig_tr_differential_63d",
+    "hy_tr_differential_percentile_504d",
+    "hy_tr_differential_slope_21d",
+    "ig_tr_differential_slope_21d",
 )
 
 
@@ -172,6 +187,11 @@ class CreditFundingFeatures:
     hy_oas_percentile_504d: pd.Series
     hy_oas_slope_21d: pd.Series
     ig_oas_slope_21d: pd.Series
+    hy_tr_differential_63d: pd.Series
+    ig_tr_differential_63d: pd.Series
+    hy_tr_differential_percentile_504d: pd.Series
+    hy_tr_differential_slope_21d: pd.Series
+    ig_tr_differential_slope_21d: pd.Series
     kre_spy_ratio: pd.Series
     kre_spy_slope_63d: pd.Series
     nfci_daily_carried: pd.Series
@@ -190,6 +210,11 @@ class CreditFundingFeatures:
             "hy_oas_percentile_504d",
             "hy_oas_slope_21d",
             "ig_oas_slope_21d",
+            "hy_tr_differential_63d",
+            "ig_tr_differential_63d",
+            "hy_tr_differential_percentile_504d",
+            "hy_tr_differential_slope_21d",
+            "ig_tr_differential_slope_21d",
             "kre_spy_ratio",
             "kre_spy_slope_63d",
             "nfci_daily_carried",
@@ -253,6 +278,8 @@ def _rolling_ols_slope(series: pd.Series, *, window: int) -> pd.Series:
 
 def compute_credit_funding_features(
     *,
+    hyg_close: pd.Series,
+    lqd_close: pd.Series,
     tlt_close: pd.Series,
     kre_close: pd.Series,
     spy_close: pd.Series,
@@ -287,6 +314,8 @@ def compute_credit_funding_features(
 
     # Reindex every input to the SPY calendar so all returned series share
     # the same DatetimeIndex (single-source-of-truth for the rule engine).
+    hyg = hyg_close.reindex(spy_index).astype(float)
+    lqd = lqd_close.reindex(spy_index).astype(float)
     tlt = tlt_close.reindex(spy_index).astype(float)
     kre = kre_close.reindex(spy_index).astype(float)
     spy = spy_close.reindex(spy_index).astype(float)
@@ -326,6 +355,27 @@ def compute_credit_funding_features(
     ig_oas_slope_21d = _rolling_ols_slope(
         ig_oas_63d, window=slope_21d
     ).rename("ig_oas_slope_21d")
+
+    # §2C proxy metric (Ambiguity Log #71) — TLT-vs-HYG/LQD total-return
+    # differential. Rising = Treasury outperforming credit = widening
+    # spreads (matches the §2C line 2033 sign convention). A SEPARATE
+    # parallel metric — never blended with the real-OAS series above.
+    total_return_window = config.total_return_lookback_days
+    hyg_tr = (hyg / hyg.shift(total_return_window)) - 1.0
+    lqd_tr = (lqd / lqd.shift(total_return_window)) - 1.0
+    tlt_tr = (tlt / tlt.shift(total_return_window)) - 1.0
+    hy_tr_differential_63d = (tlt_tr - hyg_tr).rename("hy_tr_differential_63d")
+    ig_tr_differential_63d = (tlt_tr - lqd_tr).rename("ig_tr_differential_63d")
+    hy_tr_differential_percentile_504d = (
+        hy_tr_differential_63d.rolling(pct_window).rank(pct=True)
+        .rename("hy_tr_differential_percentile_504d")
+    )
+    hy_tr_differential_slope_21d = _rolling_ols_slope(
+        hy_tr_differential_63d, window=slope_21d
+    ).rename("hy_tr_differential_slope_21d")
+    ig_tr_differential_slope_21d = _rolling_ols_slope(
+        ig_tr_differential_63d, window=slope_21d
+    ).rename("ig_tr_differential_slope_21d")
 
     # §2C lines 2045-2046: bank-index relative strength.
     kre_spy_ratio = (kre / spy.where(spy > 0)).rename("kre_spy_ratio")
@@ -368,6 +418,15 @@ def compute_credit_funding_features(
             }
             for feat in _BIAS_FEATURE_NAMES
         ]
+        + [
+            {
+                "warning_code": CREDIT_SPREAD_PROXY_BIAS_WARNING_CODE,
+                "feature_name": feat,
+                "source": CREDIT_SPREAD_PROXY_BIAS_SOURCE,
+                "source_url": CREDIT_SPREAD_PROXY_BIAS_SOURCE_URL,
+            }
+            for feat in _PROXY_BIAS_FEATURE_NAMES
+        ]
     )
 
     return CreditFundingFeatures(
@@ -376,6 +435,11 @@ def compute_credit_funding_features(
         hy_oas_percentile_504d=hy_oas_percentile_504d,
         hy_oas_slope_21d=hy_oas_slope_21d,
         ig_oas_slope_21d=ig_oas_slope_21d,
+        hy_tr_differential_63d=hy_tr_differential_63d,
+        ig_tr_differential_63d=ig_tr_differential_63d,
+        hy_tr_differential_percentile_504d=hy_tr_differential_percentile_504d,
+        hy_tr_differential_slope_21d=hy_tr_differential_slope_21d,
+        ig_tr_differential_slope_21d=ig_tr_differential_slope_21d,
         kre_spy_ratio=kre_spy_ratio,
         kre_spy_slope_63d=kre_spy_slope_63d,
         nfci_daily_carried=nfci_daily_carried,
