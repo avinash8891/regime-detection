@@ -444,6 +444,9 @@ def test_build_rule_inputs_by_date_matches_single_day_builder() -> None:
     )
     precomputed = build_rule_inputs_by_date(
         features=feats,
+        hy_spread_percentile_504d=feats.hy_oas_percentile_504d,
+        hy_spread_slope_21d=feats.hy_oas_slope_21d,
+        ig_spread_slope_21d=feats.ig_oas_slope_21d,
         realized_vol_21d_percentile_252d=realized_vol,
         avg_pairwise_corr_percentile_504d=avg_corr,
     )
@@ -451,6 +454,9 @@ def test_build_rule_inputs_by_date_matches_single_day_builder() -> None:
         expected = build_rule_inputs_for_date(
             features=feats,
             dt=dt,
+            hy_spread_percentile_504d=feats.hy_oas_percentile_504d,
+            hy_spread_slope_21d=feats.hy_oas_slope_21d,
+            ig_spread_slope_21d=feats.ig_oas_slope_21d,
             realized_vol_21d_percentile_252d=realized_vol,
             avg_pairwise_corr_percentile_504d=avg_corr,
         )
@@ -459,6 +465,53 @@ def test_build_rule_inputs_by_date_matches_single_day_builder() -> None:
             assert getattr(actual, field) == pytest.approx(
                 getattr(expected, field), nan_ok=True
             )
+
+
+def test_build_rule_inputs_accepts_either_spread_source() -> None:
+    """The same builder, pointed at the OAS triple vs the proxy triple,
+    yields rule inputs whose source-neutral spread fields differ while the
+    shared macro/vol fields match (Ambiguity Log #71)."""
+    idx = _bdate_index(periods=600)
+    common = dict(
+        hyg_close=_make_random_walk(idx, seed=21, start=80.0, sigma=0.004),
+        lqd_close=_make_random_walk(idx, seed=22, start=110.0, sigma=0.003),
+        tlt_close=_make_random_walk(idx, seed=23, start=95.0, sigma=0.005),
+        kre_close=_make_random_walk(idx, seed=24, start=55.0, sigma=0.006),
+        spy_close=_make_random_walk(idx, seed=25, start=420.0, sigma=0.008),
+        sofr=_make_constant_series(idx, 5.3, "sofr"),
+        iorb=_make_constant_series(idx, 5.4, "iorb"),
+        nfci_weekly=_make_constant_series(idx, -0.2, "nfci"),
+        broad_usd_index=_make_random_walk(idx, seed=26, start=120.0, sigma=0.003),
+        hy_oas=_make_random_walk(idx, seed=27, start=3.5, sigma=0.05),
+        ig_oas=_make_random_walk(idx, seed=28, start=1.2, sigma=0.03),
+        config=_default_rules(),
+    )
+    f = compute_credit_funding_features(**common)
+    rvp = _make_constant_series(idx, 0.5, "rvp")
+    acp = _make_constant_series(idx, 0.5, "acp")
+    dt = idx[550]
+
+    oas_inputs = build_rule_inputs_for_date(
+        features=f, dt=dt,
+        hy_spread_percentile_504d=f.hy_oas_percentile_504d,
+        hy_spread_slope_21d=f.hy_oas_slope_21d,
+        ig_spread_slope_21d=f.ig_oas_slope_21d,
+        realized_vol_21d_percentile_252d=rvp,
+        avg_pairwise_corr_percentile_504d=acp,
+    )
+    proxy_inputs = build_rule_inputs_for_date(
+        features=f, dt=dt,
+        hy_spread_percentile_504d=f.hy_tr_differential_percentile_504d,
+        hy_spread_slope_21d=f.hy_tr_differential_slope_21d,
+        ig_spread_slope_21d=f.ig_tr_differential_slope_21d,
+        realized_vol_21d_percentile_252d=rvp,
+        avg_pairwise_corr_percentile_504d=acp,
+    )
+    # Source-neutral spread fields differ between the two metrics...
+    assert oas_inputs.hy_spread_percentile_504d != proxy_inputs.hy_spread_percentile_504d
+    # ...while the shared macro/vol fields are identical.
+    assert oas_inputs.spy_21d_return == proxy_inputs.spy_21d_return
+    assert oas_inputs.sofr_iorb_slope_21d == proxy_inputs.sofr_iorb_slope_21d
 
 
 # --- Group B — Rule precedence (6 tests) -------------------------------------

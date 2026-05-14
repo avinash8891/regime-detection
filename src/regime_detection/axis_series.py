@@ -28,7 +28,6 @@ from regime_detection.market_context import MarketContext
 from regime_detection.credit_funding import (
     CREDIT_FUNDING_RISK_RANK,
     CreditFundingLabel,
-    RULE_PRECEDENCE as CREDIT_FUNDING_RULE_PRECEDENCE,
     build_rule_inputs_by_date as build_credit_funding_rule_inputs_by_date,
     evaluate_rules as evaluate_credit_funding_rules,
 )
@@ -803,6 +802,9 @@ class CreditFundingSeriesClassifier:
         )
         rule_inputs_by_date = build_credit_funding_rule_inputs_by_date(
             features=features,
+            hy_spread_percentile_504d=features.hy_oas_percentile_504d,
+            hy_spread_slope_21d=features.hy_oas_slope_21d,
+            ig_spread_slope_21d=features.ig_oas_slope_21d,
             realized_vol_21d_percentile_252d=realized_vol_pct,
             avg_pairwise_corr_percentile_504d=avg_corr_pct_series,
         )

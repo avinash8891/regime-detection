@@ -485,16 +485,22 @@ def build_rule_inputs_for_date(
     *,
     features: CreditFundingFeatures,
     dt: pd.Timestamp,
+    hy_spread_percentile_504d: pd.Series,
+    hy_spread_slope_21d: pd.Series,
+    ig_spread_slope_21d: pd.Series,
     realized_vol_21d_percentile_252d: pd.Series,
     avg_pairwise_corr_percentile_504d: pd.Series,
 ) -> CreditFundingRuleInputs:
-    """Materialize the per-day scalar rule inputs at session ``dt``."""
+    """Materialize the per-day scalar rule inputs at session ``dt``.
+
+    The spread triple is passed explicitly (source-neutral) so the same
+    builder serves both the real-OAS run (pass ``features.hy_oas_*``) and
+    the proxy run (pass ``features.hy_tr_differential_*``) — Ambiguity Log #71.
+    """
     return CreditFundingRuleInputs(
-        hy_spread_percentile_504d=_scalar_at(
-            features.hy_oas_percentile_504d, dt
-        ),
-        hy_spread_slope_21d=_scalar_at(features.hy_oas_slope_21d, dt),
-        ig_spread_slope_21d=_scalar_at(features.ig_oas_slope_21d, dt),
+        hy_spread_percentile_504d=_scalar_at(hy_spread_percentile_504d, dt),
+        hy_spread_slope_21d=_scalar_at(hy_spread_slope_21d, dt),
+        ig_spread_slope_21d=_scalar_at(ig_spread_slope_21d, dt),
         broad_usd_index_zscore_21d=_scalar_at(features.broad_usd_index_zscore_21d, dt),
         sofr_iorb_slope_21d=_scalar_at(features.sofr_iorb_slope_21d, dt),
         spy_21d_return=_scalar_at(features.spy_21d_return, dt),
@@ -511,22 +517,22 @@ def build_rule_inputs_for_date(
 def build_rule_inputs_by_date(
     *,
     features: CreditFundingFeatures,
+    hy_spread_percentile_504d: pd.Series,
+    hy_spread_slope_21d: pd.Series,
+    ig_spread_slope_21d: pd.Series,
     realized_vol_21d_percentile_252d: pd.Series,
     avg_pairwise_corr_percentile_504d: pd.Series,
 ) -> dict[pd.Timestamp, CreditFundingRuleInputs]:
-    index = features.hy_oas_percentile_504d.index
+    """Per-date rule inputs. The spread triple is source-neutral — pass
+    ``features.hy_oas_*`` for the real-OAS run or ``features.hy_tr_differential_*``
+    for the proxy run (Ambiguity Log #71)."""
+    index = hy_spread_percentile_504d.index
     outputs: dict[pd.Timestamp, CreditFundingRuleInputs] = {}
     for dt in index:
         outputs[dt] = CreditFundingRuleInputs(
-            hy_spread_percentile_504d=_scalar_at(
-                features.hy_oas_percentile_504d, dt
-            ),
-            hy_spread_slope_21d=_scalar_at(
-                features.hy_oas_slope_21d, dt
-            ),
-            ig_spread_slope_21d=_scalar_at(
-                features.ig_oas_slope_21d, dt
-            ),
+            hy_spread_percentile_504d=_scalar_at(hy_spread_percentile_504d, dt),
+            hy_spread_slope_21d=_scalar_at(hy_spread_slope_21d, dt),
+            ig_spread_slope_21d=_scalar_at(ig_spread_slope_21d, dt),
             broad_usd_index_zscore_21d=_scalar_at(
                 features.broad_usd_index_zscore_21d, dt
             ),
