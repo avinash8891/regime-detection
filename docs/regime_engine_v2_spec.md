@@ -742,6 +742,17 @@ the slice/commit that resolved it. Entries are append-only.
     concrete definition.
     Deferred by Slice 2.5.
 
+    Status update — fully resolved.
+    Entry #46 pinned the `followthrough_rate >= 0.60` threshold and
+    entry #47 pinned the remaining three rule clauses plus the
+    `followthrough_rate` windowing metadata (504-session trailing
+    lookback, 20 most-recent past upside breakouts, 5-day continuous
+    hold). The label is implemented in
+    `regime_detection.trend_character` and covered by
+    `tests/test_trend_character_v2_labels.py`
+    (`test_breakout_expansion_fires_on_4_conditions` +
+    four negative-case tests).
+
 34. **§1A line 98 — `range_bound` label deferral.**
     Spec rule writes "price oscillates inside the 20d range" without
     defining "oscillates" operationally (e.g., # of touches against
@@ -750,6 +761,16 @@ the slice/commit that resolved it. Entries are append-only.
     defer the `range_bound` label until the spec pins the
     oscillation metric.
     Deferred by Slice 2.5.
+
+    Status update — fully resolved.
+    Entry #46 pinned the operational form
+    `max_midpoint_excursion_20d <= 0.05` (where the 20d midpoint is
+    `(max + min) / 2` and the excursion is
+    `max(|close[i] - midpoint| / midpoint)` for `i in t-19..t`).
+    The label is implemented in `regime_detection.trend_character`
+    and covered by `tests/test_trend_character_v2_labels.py`
+    (`test_range_bound_fires_on_tight_oscillation` + three
+    negative-case tests).
 
 35. **§1A line 132-134 — precedence-ordering enforcement.**
     Spec lists the V2 trend precedence as
