@@ -122,8 +122,8 @@ def test_compute_credit_funding_features_returns_all_series() -> None:
         assert len(s) == n, f"{name} length mismatch: {len(s)} != {n}"
 
 
-def test_hy_spread_proxy_63d_carries_hy_oas_input_verbatim() -> None:
-    """Single-source contract: `hy_spread_proxy_63d` IS the `hy_oas` input
+def test_hy_oas_63d_carries_hy_oas_input_verbatim() -> None:
+    """Single-source contract: `hy_oas_63d` IS the `hy_oas` input
     (ICE BofA OAS), reindexed to the SPY calendar. The §2C line 2033 sign
     convention — rising series = widening spread — holds trivially because
     a rising OAS literally IS a widening spread."""
@@ -147,14 +147,14 @@ def test_hy_spread_proxy_63d_carries_hy_oas_input_verbatim() -> None:
         broad_usd_index=usd, hy_oas=hy_oas, ig_oas=ig_oas,
         config=_default_rules(),
     )
-    # hy_spread_proxy_63d carries the OAS series verbatim (reindexed only).
+    # hy_oas_63d carries the OAS series verbatim (reindexed only).
     pd.testing.assert_series_equal(
-        features.hy_spread_proxy_63d,
-        hy_oas.rename("hy_spread_proxy_63d"),
+        features.hy_oas_63d,
+        hy_oas.rename("hy_oas_63d"),
         check_names=True,
     )
     # Sign convention holds: a later (wider-OAS) session has a higher value.
-    assert features.hy_spread_proxy_63d.iloc[150] > features.hy_spread_proxy_63d.iloc[50]
+    assert features.hy_oas_63d.iloc[150] > features.hy_oas_63d.iloc[50]
 
 
 def test_nfci_carries_forward_weekly_to_daily() -> None:
@@ -245,11 +245,11 @@ def test_credit_spread_provenance_row_present_with_single_source_code() -> None:
     assert (bw["source"] == CREDIT_SPREAD_SOURCE).all()
     assert (bw["source_url"] == CREDIT_SPREAD_SOURCE_URL).all()
     expected_features = {
-        "hy_spread_proxy_63d",
-        "ig_spread_proxy_63d",
-        "hy_spread_proxy_percentile_504d",
-        "hy_spread_proxy_slope_21d",
-        "ig_spread_proxy_slope_21d",
+        "hy_oas_63d",
+        "ig_oas_63d",
+        "hy_oas_percentile_504d",
+        "hy_oas_slope_21d",
+        "ig_oas_slope_21d",
     }
     assert set(bw["feature_name"]) == expected_features
 
@@ -257,7 +257,7 @@ def test_credit_spread_provenance_row_present_with_single_source_code() -> None:
 def test_ice_bofa_oas_is_the_single_credit_spread_source() -> None:
     """Single-source contract (Log #49 closure): `hy_oas` / `ig_oas` (the
     FRED-redistributed ICE BofA OAS series) populate the
-    `hy_spread_proxy_63d` / `ig_spread_proxy_63d` columns verbatim. There
+    `hy_oas_63d` / `ig_oas_63d` columns verbatim. There
     is no proxy fallback — both inputs are required positional kwargs."""
     idx = _bdate_index(periods=200)
     n = len(idx)
@@ -283,13 +283,13 @@ def test_ice_bofa_oas_is_the_single_credit_spread_source() -> None:
 
     # The spread columns carry the OAS inputs verbatim (reindexed only).
     pd.testing.assert_series_equal(
-        features.hy_spread_proxy_63d,
-        hy_oas.rename("hy_spread_proxy_63d"),
+        features.hy_oas_63d,
+        hy_oas.rename("hy_oas_63d"),
         check_names=True,
     )
     pd.testing.assert_series_equal(
-        features.ig_spread_proxy_63d,
-        ig_oas.rename("ig_spread_proxy_63d"),
+        features.ig_oas_63d,
+        ig_oas.rename("ig_oas_63d"),
         check_names=True,
     )
 
@@ -373,9 +373,9 @@ def test_build_rule_inputs_by_date_matches_single_day_builder() -> None:
 def _rule_inputs(**overrides: float) -> CreditFundingRuleInputs:
     """Build a CreditFundingRuleInputs with neutral defaults; override per-test."""
     defaults: dict[str, float] = dict(
-        hy_spread_proxy_percentile_504d=0.50,
-        hy_spread_proxy_slope_21d=0.0,
-        ig_spread_proxy_slope_21d=0.0,
+        hy_spread_percentile_504d=0.50,
+        hy_spread_slope_21d=0.0,
+        ig_spread_slope_21d=0.0,
         broad_usd_index_zscore_21d=0.0,
         sofr_iorb_slope_21d=0.0,
         spy_21d_return=0.0,
@@ -391,8 +391,8 @@ def test_credit_calm_fires_on_low_percentile_and_non_rising_slope() -> None:
     """§2C lines 2065-2067: pct=0.30 (<0.50) AND slope=-0.001 (≤0)."""
     rules = _default_rules()
     inputs = _rule_inputs(
-        hy_spread_proxy_percentile_504d=0.30,
-        hy_spread_proxy_slope_21d=-0.001,
+        hy_spread_percentile_504d=0.30,
+        hy_spread_slope_21d=-0.001,
     )
     assert evaluate_credit_calm(inputs, rules) is True
     assert evaluate_rules(inputs=inputs, config=rules) == "credit_calm"
@@ -402,9 +402,9 @@ def test_spread_widening_fires_on_strict_positive_slopes_both_legs() -> None:
     """§2C lines 2069-2071: both HY and IG slopes strictly > 0."""
     rules = _default_rules()
     inputs = _rule_inputs(
-        hy_spread_proxy_percentile_504d=0.50,
-        hy_spread_proxy_slope_21d=0.002,
-        ig_spread_proxy_slope_21d=0.001,
+        hy_spread_percentile_504d=0.50,
+        hy_spread_slope_21d=0.002,
+        ig_spread_slope_21d=0.001,
     )
     assert evaluate_spread_widening(inputs, rules) is True
     assert evaluate_rules(inputs=inputs, config=rules) == "spread_widening"
@@ -414,7 +414,7 @@ def test_credit_stress_fires_on_high_percentile_and_falling_spy() -> None:
     """§2C lines 2073-2075: pct=0.85 AND spy_21d=-0.06."""
     rules = _default_rules()
     inputs = _rule_inputs(
-        hy_spread_proxy_percentile_504d=0.85,
+        hy_spread_percentile_504d=0.85,
         spy_21d_return=-0.06,
     )
     assert evaluate_credit_stress(inputs, rules) is True
@@ -454,7 +454,7 @@ def test_deleveraging_outranks_credit_stress_when_both_match() -> None:
     # Both deleveraging AND credit_stress predicates fire:
     inputs = _rule_inputs(
         # credit_stress: pct > 0.80 AND spy_21d < -0.05
-        hy_spread_proxy_percentile_504d=0.85,
+        hy_spread_percentile_504d=0.85,
         # deleveraging composite (also fires)
         spy_21d_return=-0.07,
         tlt_21d_return=-0.01,
@@ -624,13 +624,13 @@ def test_unknown_when_assess_series_input_quality_fails() -> None:
     )
     cf = store.credit_funding
     assert cf is not None
-    nan_series = pd.Series(np.nan, index=cf.hy_spread_proxy_63d.index)
+    nan_series = pd.Series(np.nan, index=cf.hy_oas_63d.index)
     broken = CreditFundingFeatures(
-        hy_spread_proxy_63d=nan_series,
-        ig_spread_proxy_63d=nan_series,
-        hy_spread_proxy_percentile_504d=nan_series,
-        hy_spread_proxy_slope_21d=nan_series,
-        ig_spread_proxy_slope_21d=nan_series,
+        hy_oas_63d=nan_series,
+        ig_oas_63d=nan_series,
+        hy_oas_percentile_504d=nan_series,
+        hy_oas_slope_21d=nan_series,
+        ig_oas_slope_21d=nan_series,
         kre_spy_ratio=nan_series,
         kre_spy_slope_63d=nan_series,
         nfci_daily_carried=nan_series,

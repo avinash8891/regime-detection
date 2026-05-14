@@ -769,8 +769,8 @@ class CreditFundingSeriesClassifier:
         # Quality-gate primary inputs. Lookback gates on the 504d percentile
         # window — the longest binding cold-start for any rule predicate.
         required_inputs: list[pd.Series] = [
-            features.hy_spread_proxy_63d,
-            features.ig_spread_proxy_63d,
+            features.hy_oas_63d,
+            features.ig_oas_63d,
             features.kre_spy_ratio,
             features.sofr_iorb_spread,
             spy_close,
@@ -881,9 +881,9 @@ class CreditFundingSeriesClassifier:
             per_day_evidence.append(
                 {
                     "rule_evidence": {
-                        "hy_spread_proxy_percentile_504d": rule_inputs.hy_spread_proxy_percentile_504d,
-                        "hy_spread_proxy_slope_21d": rule_inputs.hy_spread_proxy_slope_21d,
-                        "ig_spread_proxy_slope_21d": rule_inputs.ig_spread_proxy_slope_21d,
+                        "hy_spread_percentile_504d": rule_inputs.hy_spread_percentile_504d,
+                        "hy_spread_slope_21d": rule_inputs.hy_spread_slope_21d,
+                        "ig_spread_slope_21d": rule_inputs.ig_spread_slope_21d,
                         "broad_usd_index_zscore_21d": rule_inputs.broad_usd_index_zscore_21d,
                         "sofr_iorb_slope_21d": rule_inputs.sofr_iorb_slope_21d,
                         "spy_21d_return": rule_inputs.spy_21d_return,

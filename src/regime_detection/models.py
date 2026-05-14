@@ -129,7 +129,7 @@ class CreditFundingOutput(BaseModel):
 
     Three-tier label triple (raw/stable/active) per the v2 axis pattern.
     ``evidence`` carries the per-day scalar rule inputs and the bias-warning
-    code (``credit_spread_proxy_total_return_differential``).
+    code (``credit_spread_ice_bofa_oas_fred``).
     """
 
     model_config = ConfigDict(extra="forbid")

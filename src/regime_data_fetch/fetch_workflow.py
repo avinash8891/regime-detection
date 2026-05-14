@@ -58,7 +58,7 @@ V2_FRED_SERIES = {
     "gdp_nowcast": "GDPNOW",
     # ICE BofA Option-Adjusted Spread series — FRED redistributes under
     # license from ICE Indices, free at the FRED endpoint. SINGLE SOURCE
-    # for the v2 §2C `hy_spread_proxy_63d` / `ig_spread_proxy_63d` metrics
+    # for the v2 §2C `hy_oas_63d` / `ig_oas_63d` metrics
     # (Log #49 closure). `credit_funding` lists these in REQUIRED_MACRO_KEYS,
     # so the §2C seam does not build without them — there is no proxy
     # fallback path.

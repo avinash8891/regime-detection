@@ -146,11 +146,11 @@ CREDIT_SPREAD_SOURCE_URL = "https://fred.stlouisfed.org/series/BAMLH0A0HYM2"
 # Feature names carrying the proxy bias warning (one row per emitted §2C feature
 # derived from the TLT-vs-HYG/LQD differential).
 _BIAS_FEATURE_NAMES: tuple[str, ...] = (
-    "hy_spread_proxy_63d",
-    "ig_spread_proxy_63d",
-    "hy_spread_proxy_percentile_504d",
-    "hy_spread_proxy_slope_21d",
-    "ig_spread_proxy_slope_21d",
+    "hy_oas_63d",
+    "ig_oas_63d",
+    "hy_oas_percentile_504d",
+    "hy_oas_slope_21d",
+    "ig_oas_slope_21d",
 )
 
 
@@ -167,11 +167,11 @@ class CreditFundingFeatures:
     head of each series until the corresponding lookback fills.
     """
 
-    hy_spread_proxy_63d: pd.Series
-    ig_spread_proxy_63d: pd.Series
-    hy_spread_proxy_percentile_504d: pd.Series
-    hy_spread_proxy_slope_21d: pd.Series
-    ig_spread_proxy_slope_21d: pd.Series
+    hy_oas_63d: pd.Series
+    ig_oas_63d: pd.Series
+    hy_oas_percentile_504d: pd.Series
+    hy_oas_slope_21d: pd.Series
+    ig_oas_slope_21d: pd.Series
     kre_spy_ratio: pd.Series
     kre_spy_slope_63d: pd.Series
     nfci_daily_carried: pd.Series
@@ -185,11 +185,11 @@ class CreditFundingFeatures:
     @property
     def feature_names(self) -> tuple[str, ...]:
         return (
-            "hy_spread_proxy_63d",
-            "ig_spread_proxy_63d",
-            "hy_spread_proxy_percentile_504d",
-            "hy_spread_proxy_slope_21d",
-            "ig_spread_proxy_slope_21d",
+            "hy_oas_63d",
+            "ig_oas_63d",
+            "hy_oas_percentile_504d",
+            "hy_oas_slope_21d",
+            "ig_oas_slope_21d",
             "kre_spy_ratio",
             "kre_spy_slope_63d",
             "nfci_daily_carried",
@@ -272,14 +272,13 @@ def compute_credit_funding_features(
     Credit-spread metric — single source. ``hy_oas`` / ``ig_oas`` are the
     FRED-redistributed ICE BofA Option-Adjusted Spread series (BAMLH0A0HYM2
     for HY, BAMLC0A4CBBB for BBB IG). They populate the
-    ``hy_spread_proxy_63d`` / ``ig_spread_proxy_63d`` columns directly (the
-    ``_proxy`` suffix in the column name is historical — there is no proxy
-    path anymore). The §2C line 2033 sign convention holds by construction:
-    a rising OAS series IS a widening spread. There is no total-return-
-    differential fallback — ``credit_funding`` already requires SOFR / IORB
-    / NFCI / broad_usd_index from FRED's ``macro_series``, so the OAS series
-    carry zero marginal data-access cost. When the OAS series are absent
-    from ``macro_series``, the §2C seam simply is not built (handled by the
+    ``hy_oas_63d`` / ``ig_oas_63d`` columns directly. The §2C line 2033 sign
+    convention holds by construction: a rising OAS series IS a widening
+    spread. There is no total-return-differential fallback —
+    ``credit_funding`` already requires SOFR / IORB / NFCI /
+    broad_usd_index from FRED's ``macro_series``, so the OAS series carry
+    zero marginal data-access cost. When the OAS series are absent from
+    ``macro_series``, the §2C seam simply is not built (handled by the
     ``REQUIRED_MACRO_KEYS`` gate in ``feature_store``) and
     ``credit_funding_state`` stays ``None`` — V1 byte-identity preserved,
     same as every other unbuilt V2 seam.
@@ -307,26 +306,26 @@ def compute_credit_funding_features(
     # §2C lines 2032-2035 — ICE BofA OAS, single source. Rising OAS =
     # wider spread (matches the §2C line 2033 sign convention by
     # construction; no proxy translation needed).
-    hy_spread_proxy_63d = (
-        hy_oas.reindex(spy_index).astype(float).rename("hy_spread_proxy_63d")
+    hy_oas_63d = (
+        hy_oas.reindex(spy_index).astype(float).rename("hy_oas_63d")
     )
-    ig_spread_proxy_63d = (
-        ig_oas.reindex(spy_index).astype(float).rename("ig_spread_proxy_63d")
+    ig_oas_63d = (
+        ig_oas.reindex(spy_index).astype(float).rename("ig_oas_63d")
     )
 
     # §2C line 2038: 504d percentile (pct=True).
-    hy_spread_proxy_percentile_504d = (
-        hy_spread_proxy_63d.rolling(pct_window).rank(pct=True)
-        .rename("hy_spread_proxy_percentile_504d")
+    hy_oas_percentile_504d = (
+        hy_oas_63d.rolling(pct_window).rank(pct=True)
+        .rename("hy_oas_percentile_504d")
     )
 
     # §2C lines 2041-2042: 21d OLS slope.
-    hy_spread_proxy_slope_21d = _rolling_ols_slope(
-        hy_spread_proxy_63d, window=slope_21d
-    ).rename("hy_spread_proxy_slope_21d")
-    ig_spread_proxy_slope_21d = _rolling_ols_slope(
-        ig_spread_proxy_63d, window=slope_21d
-    ).rename("ig_spread_proxy_slope_21d")
+    hy_oas_slope_21d = _rolling_ols_slope(
+        hy_oas_63d, window=slope_21d
+    ).rename("hy_oas_slope_21d")
+    ig_oas_slope_21d = _rolling_ols_slope(
+        ig_oas_63d, window=slope_21d
+    ).rename("ig_oas_slope_21d")
 
     # §2C lines 2045-2046: bank-index relative strength.
     kre_spy_ratio = (kre / spy.where(spy > 0)).rename("kre_spy_ratio")
@@ -372,11 +371,11 @@ def compute_credit_funding_features(
     )
 
     return CreditFundingFeatures(
-        hy_spread_proxy_63d=hy_spread_proxy_63d,
-        ig_spread_proxy_63d=ig_spread_proxy_63d,
-        hy_spread_proxy_percentile_504d=hy_spread_proxy_percentile_504d,
-        hy_spread_proxy_slope_21d=hy_spread_proxy_slope_21d,
-        ig_spread_proxy_slope_21d=ig_spread_proxy_slope_21d,
+        hy_oas_63d=hy_oas_63d,
+        ig_oas_63d=ig_oas_63d,
+        hy_oas_percentile_504d=hy_oas_percentile_504d,
+        hy_oas_slope_21d=hy_oas_slope_21d,
+        ig_oas_slope_21d=ig_oas_slope_21d,
         kre_spy_ratio=kre_spy_ratio,
         kre_spy_slope_63d=kre_spy_slope_63d,
         nfci_daily_carried=nfci_daily_carried,
@@ -398,9 +397,9 @@ def compute_credit_funding_features(
 class CreditFundingRuleInputs:
     """Per-day scalars consumed by the §2C rule predicates."""
 
-    hy_spread_proxy_percentile_504d: float
-    hy_spread_proxy_slope_21d: float
-    ig_spread_proxy_slope_21d: float
+    hy_spread_percentile_504d: float
+    hy_spread_slope_21d: float
+    ig_spread_slope_21d: float
     broad_usd_index_zscore_21d: float
     sofr_iorb_slope_21d: float
     spy_21d_return: float
@@ -427,11 +426,11 @@ def build_rule_inputs_for_date(
 ) -> CreditFundingRuleInputs:
     """Materialize the per-day scalar rule inputs at session ``dt``."""
     return CreditFundingRuleInputs(
-        hy_spread_proxy_percentile_504d=_scalar_at(
-            features.hy_spread_proxy_percentile_504d, dt
+        hy_spread_percentile_504d=_scalar_at(
+            features.hy_oas_percentile_504d, dt
         ),
-        hy_spread_proxy_slope_21d=_scalar_at(features.hy_spread_proxy_slope_21d, dt),
-        ig_spread_proxy_slope_21d=_scalar_at(features.ig_spread_proxy_slope_21d, dt),
+        hy_spread_slope_21d=_scalar_at(features.hy_oas_slope_21d, dt),
+        ig_spread_slope_21d=_scalar_at(features.ig_oas_slope_21d, dt),
         broad_usd_index_zscore_21d=_scalar_at(features.broad_usd_index_zscore_21d, dt),
         sofr_iorb_slope_21d=_scalar_at(features.sofr_iorb_slope_21d, dt),
         spy_21d_return=_scalar_at(features.spy_21d_return, dt),
@@ -451,18 +450,18 @@ def build_rule_inputs_by_date(
     realized_vol_21d_percentile_252d: pd.Series,
     avg_pairwise_corr_percentile_504d: pd.Series,
 ) -> dict[pd.Timestamp, CreditFundingRuleInputs]:
-    index = features.hy_spread_proxy_percentile_504d.index
+    index = features.hy_oas_percentile_504d.index
     outputs: dict[pd.Timestamp, CreditFundingRuleInputs] = {}
     for dt in index:
         outputs[dt] = CreditFundingRuleInputs(
-            hy_spread_proxy_percentile_504d=_scalar_at(
-                features.hy_spread_proxy_percentile_504d, dt
+            hy_spread_percentile_504d=_scalar_at(
+                features.hy_oas_percentile_504d, dt
             ),
-            hy_spread_proxy_slope_21d=_scalar_at(
-                features.hy_spread_proxy_slope_21d, dt
+            hy_spread_slope_21d=_scalar_at(
+                features.hy_oas_slope_21d, dt
             ),
-            ig_spread_proxy_slope_21d=_scalar_at(
-                features.ig_spread_proxy_slope_21d, dt
+            ig_spread_slope_21d=_scalar_at(
+                features.ig_oas_slope_21d, dt
             ),
             broad_usd_index_zscore_21d=_scalar_at(
                 features.broad_usd_index_zscore_21d, dt
@@ -495,17 +494,17 @@ def evaluate_credit_calm(
 ) -> bool:
     """v2 §2C lines 2065-2067.
 
-    ``hy_spread_proxy_percentile_504d < 0.50
-       AND hy_spread_proxy_slope_21d <= 0`` (non-rising slope).
+    ``hy_spread_percentile_504d < 0.50
+       AND hy_spread_slope_21d <= 0`` (non-rising slope).
     """
     if _any_nan(
-        inputs.hy_spread_proxy_percentile_504d,
-        inputs.hy_spread_proxy_slope_21d,
+        inputs.hy_spread_percentile_504d,
+        inputs.hy_spread_slope_21d,
     ):
         return False
     return bool(
-        inputs.hy_spread_proxy_percentile_504d < config.hy_percentile_calm_max
-        and inputs.hy_spread_proxy_slope_21d <= 0.0
+        inputs.hy_spread_percentile_504d < config.hy_percentile_calm_max
+        and inputs.hy_spread_slope_21d <= 0.0
     )
 
 
@@ -515,17 +514,17 @@ def evaluate_spread_widening(
 ) -> bool:
     """v2 §2C lines 2069-2071.
 
-    ``hy_spread_proxy_slope_21d > 0 AND ig_spread_proxy_slope_21d > 0``
+    ``hy_spread_slope_21d > 0 AND ig_spread_slope_21d > 0``
     (strict positive slope on BOTH HY and IG legs).
     """
     if _any_nan(
-        inputs.hy_spread_proxy_slope_21d,
-        inputs.ig_spread_proxy_slope_21d,
+        inputs.hy_spread_slope_21d,
+        inputs.ig_spread_slope_21d,
     ):
         return False
     return bool(
-        inputs.hy_spread_proxy_slope_21d > 0.0
-        and inputs.ig_spread_proxy_slope_21d > 0.0
+        inputs.hy_spread_slope_21d > 0.0
+        and inputs.ig_spread_slope_21d > 0.0
     )
 
 
@@ -535,15 +534,15 @@ def evaluate_credit_stress(
 ) -> bool:
     """v2 §2C lines 2073-2075.
 
-    ``hy_spread_proxy_percentile_504d > 0.80 AND spy_21d_return < -0.05``.
+    ``hy_spread_percentile_504d > 0.80 AND spy_21d_return < -0.05``.
     """
     if _any_nan(
-        inputs.hy_spread_proxy_percentile_504d,
+        inputs.hy_spread_percentile_504d,
         inputs.spy_21d_return,
     ):
         return False
     return bool(
-        inputs.hy_spread_proxy_percentile_504d > config.hy_percentile_stress_min
+        inputs.hy_spread_percentile_504d > config.hy_percentile_stress_min
         and inputs.spy_21d_return < config.spy_drop_threshold
     )
 
