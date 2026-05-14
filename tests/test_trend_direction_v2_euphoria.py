@@ -351,3 +351,80 @@ def test_realized_vol_21d_and_sma_200_and_sentiment_score_exposed_on_features() 
     assert "realized_vol_21d" in fields
     assert "sma_200" in fields
     assert "sentiment_score" in fields
+
+
+def test_build_sentiment_score_series_forward_fills_from_publication_date() -> None:
+    """v2 §1A line 164 alignment (ADR 0004 Q4): each NYSE session inherits
+    the latest AAII publication-date row on or before it. V1 §2.2
+    stateless-replay — never consult a future-dated reading."""
+    from regime_detection.feature_store import _build_sentiment_score_series
+
+    aaii = pd.DataFrame(
+        [
+            {
+                "date": pd.Timestamp("2024-03-07"),
+                "publication_date": pd.Timestamp("2024-03-07"),
+                "bull_bear_spread_8w_ma": 15.0,
+            },
+            {
+                "date": pd.Timestamp("2024-03-14"),
+                "publication_date": pd.Timestamp("2024-03-14"),
+                "bull_bear_spread_8w_ma": 22.0,
+            },
+        ]
+    )
+    sessions = pd.bdate_range(start="2024-03-08", end="2024-03-15", freq="B")
+
+    score = _build_sentiment_score_series(
+        aaii_sentiment=aaii, session_index=sessions
+    )
+
+    assert score is not None
+    # Sessions 03-08, 03-11, 03-12, 03-13: pre-03-14 publication →
+    # inherit the 03-07 row's value (15.0).
+    assert score.loc[pd.Timestamp("2024-03-08")] == 15.0
+    assert score.loc[pd.Timestamp("2024-03-13")] == 15.0
+    # Sessions 03-14, 03-15: at or after the 03-14 publication →
+    # inherit the new value (22.0).
+    assert score.loc[pd.Timestamp("2024-03-14")] == 22.0
+    assert score.loc[pd.Timestamp("2024-03-15")] == 22.0
+
+
+def test_build_sentiment_score_series_cold_start_returns_nan_before_first_row() -> None:
+    """Sessions before the first AAII publication date receive NaN; the
+    euphoria predicate then falsifies (V1 §2.7 cold-start)."""
+    from regime_detection.feature_store import _build_sentiment_score_series
+
+    aaii = pd.DataFrame(
+        [
+            {
+                "date": pd.Timestamp("2024-03-14"),
+                "publication_date": pd.Timestamp("2024-03-14"),
+                "bull_bear_spread_8w_ma": 22.0,
+            },
+        ]
+    )
+    sessions = pd.bdate_range(start="2024-03-01", end="2024-03-15", freq="B")
+
+    score = _build_sentiment_score_series(
+        aaii_sentiment=aaii, session_index=sessions
+    )
+
+    assert score is not None
+    # Sessions before 03-14 have no preceding AAII row → NaN.
+    assert pd.isna(score.loc[pd.Timestamp("2024-03-01")])
+    assert pd.isna(score.loc[pd.Timestamp("2024-03-13")])
+    # 03-14 onward inherits the row.
+    assert score.loc[pd.Timestamp("2024-03-14")] == 22.0
+
+
+def test_build_sentiment_score_series_returns_none_when_no_aaii() -> None:
+    """Optional input contract: when AAII is None, helper returns None and
+    the euphoria predicate falsifies via the sentiment_score=None branch."""
+    from regime_detection.feature_store import _build_sentiment_score_series
+
+    sessions = pd.bdate_range(start="2024-03-01", end="2024-03-15", freq="B")
+    assert (
+        _build_sentiment_score_series(aaii_sentiment=None, session_index=sessions)
+        is None
+    )

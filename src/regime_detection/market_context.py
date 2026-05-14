@@ -26,6 +26,7 @@ class MarketContext(BaseModel):
     macro_series: dict[str, pd.Series] | None = None  # v2 §2A/§2B/§2C FRED series
     pit_constituent_intervals: pd.DataFrame | None = None  # v2 §1D PIT breadth seam
     constituent_ohlcv: Annotated[dict[str, pd.DataFrame] | None, SkipValidation] = None  # v2 §1D PIT breadth seam
+    aaii_sentiment: pd.DataFrame | None = None  # v2 §1A euphoria sentiment seam (Log #32)
 
 
 def build_market_context(
@@ -40,6 +41,7 @@ def build_market_context(
     macro_series: dict[str, pd.Series] | None = None,
     pit_constituent_intervals: pd.DataFrame | None = None,
     constituent_ohlcv: dict[str, pd.DataFrame] | None = None,
+    aaii_sentiment: pd.DataFrame | None = None,
 ) -> MarketContext:
     end_date = as_date(end_date)
     require_nyse_trading_day(end_date)
@@ -74,6 +76,7 @@ def build_market_context(
         macro_series=reindexed_macro_series,
         pit_constituent_intervals=pit_constituent_intervals,
         constituent_ohlcv=constituent_ohlcv,
+        aaii_sentiment=aaii_sentiment,
     )
 
 
@@ -116,6 +119,11 @@ def slice_context_to_recent_sessions(*, context: MarketContext, required_session
         # them here would silently disable §1D PIT breadth feature compute.
         pit_constituent_intervals=context.pit_constituent_intervals,
         constituent_ohlcv=context.constituent_ohlcv,
+        # §1A euphoria sentiment seam: pass through as-is. AAII rows carry
+        # their own `date` / `publication_date` columns; the feature_store
+        # forward-fills onto the spy session index downstream. Dropping
+        # here would silently disable the euphoria predicate.
+        aaii_sentiment=context.aaii_sentiment,
     )
 
 
@@ -156,6 +164,9 @@ def slice_context_to_end_date(*, context: MarketContext, end_date: date) -> Mark
         # for rationale — dropping them here silently disables §1D PIT breadth.
         pit_constituent_intervals=context.pit_constituent_intervals,
         constituent_ohlcv=context.constituent_ohlcv,
+        # §1A euphoria sentiment seam: pass through as-is (see
+        # slice_context_to_recent_sessions for rationale).
+        aaii_sentiment=context.aaii_sentiment,
     )
 
 

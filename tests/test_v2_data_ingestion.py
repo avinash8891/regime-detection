@@ -354,6 +354,54 @@ def test_engine_classify_threads_pit_constituent_inputs_into_context(
     assert out.breadth_state.active_label is not None
 
 
+def test_engine_classify_threads_aaii_sentiment_into_context(
+    market_df_for_asof,
+) -> None:
+    """Regression: RegimeEngine.classify must accept aaii_sentiment kwarg so
+    the v2 §1A `euphoria` predicate (ADR 0004 / Log #32 closure) is reachable
+    from the public engine entrypoint. AAII rows carry publication_date so
+    the per-session forward-fill respects V1 §2.2 stateless-replay."""
+    as_of = date(2023, 12, 14)
+
+    # Two weekly AAII rows, both with publication_date <= as_of, so the
+    # session at as_of inherits the most recent one's bull_bear_spread_8w_ma.
+    aaii_sentiment = pd.DataFrame(
+        [
+            {
+                "date": pd.Timestamp("2023-12-07"),
+                "publication_date": pd.Timestamp("2023-12-07"),
+                "bullish": 0.45,
+                "neutral": 0.30,
+                "bearish": 0.25,
+                "bull_bear_spread": 20.0,
+                "bull_bear_spread_8w_ma": 18.0,
+            },
+            {
+                "date": pd.Timestamp("2023-12-14"),
+                "publication_date": pd.Timestamp("2023-12-14"),
+                "bullish": 0.50,
+                "neutral": 0.25,
+                "bearish": 0.25,
+                "bull_bear_spread": 25.0,
+                "bull_bear_spread_8w_ma": 22.0,
+            },
+        ]
+    )
+
+    out = RegimeEngine().classify(
+        as_of_date=as_of,
+        market_data=market_df_for_asof(as_of),
+        aaii_sentiment=aaii_sentiment,
+    )
+
+    # V1 wire fields remain stable when the new V2 aaii_sentiment kwarg is
+    # passed — euphoria firing depends on three additional non-sentiment
+    # conjuncts (close > SMA_200, return_126d > 0.20, vol-rising). We
+    # assert only that the engine accepts the kwarg end-to-end and emits
+    # a valid trend_direction output.
+    assert out.trend_direction.active_label is not None
+
+
 def test_build_market_context_rejects_malformed_date_values(market_df_for_asof) -> None:
     """Regression: _normalize_market_data_for_runtime used pd.to_datetime
     with errors='coerce', silently turning malformed date strings into NaT

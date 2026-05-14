@@ -204,6 +204,51 @@ class FeatureStore(BaseModel):
     inflation_growth: InflationGrowthFeatures | None = None
 
 
+def _build_sentiment_score_series(
+    *,
+    aaii_sentiment: pd.DataFrame | None,
+    session_index: pd.DatetimeIndex,
+) -> pd.Series | None:
+    """Align AAII bull-bear-spread 8w-MA onto the SPY session index for
+    consumption by the v2 §1A `euphoria` predicate (ADR 0004 Q1+Q4).
+
+    Forward-fill semantics: use the latest AAII row whose
+    ``publication_date`` (or ``date`` if no separate publication column) is
+    on or before each session — V1 §2.2 stateless-replay rule, never
+    consult a future-dated reading. Returns ``None`` when no AAII frame
+    is supplied (lets the euphoria predicate falsify per V2 §10 "do not
+    invent a sentiment proxy" / Log #32 lineage).
+
+    Cold-start (ADR 0004 Q5): a session with no AAII row at or before it
+    receives NaN; the euphoria predicate then falsifies on that session
+    per V1 §2.7. With the AAII fetcher's `min_periods=1` 8-week MA, the
+    output column is populated from week 1 of the data, so the practical
+    cold-start window is just "no AAII history yet."
+    """
+    if aaii_sentiment is None:
+        return None
+    if aaii_sentiment.empty:
+        return None
+    if "bull_bear_spread_8w_ma" not in aaii_sentiment.columns:
+        return None
+    publication_column = (
+        "publication_date" if "publication_date" in aaii_sentiment.columns else "date"
+    )
+    if publication_column not in aaii_sentiment.columns:
+        return None
+    sorted_aaii = aaii_sentiment.sort_values(publication_column).reset_index(drop=True)
+    publication = pd.to_datetime(sorted_aaii[publication_column])
+    score_values = sorted_aaii["bull_bear_spread_8w_ma"].astype(float).to_numpy()
+    aligned = pd.Series(
+        score_values,
+        index=pd.DatetimeIndex(publication),
+        name="sentiment_score",
+    )
+    # Reindex forward-fill onto the SPY session calendar (each session gets
+    # the value of the latest AAII publication on or before it).
+    return aligned.reindex(session_index, method="ffill")
+
+
 def build_feature_store(
     context: MarketContext,
     *,
@@ -261,8 +306,18 @@ def build_feature_store(
 
     # V2 §1A trend-direction features (slice 2.1) — evidence-only compute.
     if trend_direction_v2_config is not None:
+        # §1A euphoria seam (Log #32 closure / ADR 0004): when context
+        # carries AAII sentiment rows, derive the forward-filled
+        # bull_bear_spread_8w_ma onto the SPY session index per V1 §2.2
+        # stateless-replay (use the latest publication-date <= as_of_date).
+        sentiment_series = _build_sentiment_score_series(
+            aaii_sentiment=context.aaii_sentiment,
+            session_index=spy_close.index,
+        )
         trend_direction_v2 = compute_trend_v2_features(
-            spy_close, config=trend_direction_v2_config
+            spy_close,
+            config=trend_direction_v2_config,
+            sentiment_score=sentiment_series,
         )
     else:
         trend_direction_v2 = None
