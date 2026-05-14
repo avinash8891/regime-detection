@@ -1,0 +1,23 @@
+docs/regime_engine_v2_spec.md
+  s_7f3c352a4f9447::t_54fca75686ab49 2135,2137,2139-2147,2149-2179
+  s_7f3c352a4f9447::t_84c680d9403b88 2181,2183-2188,2193,2195-2246
+  s_7f3c352a4f9447::t_47e305d5508dc5 297-304,306-308,311-316,318-320
+docs/decisions/0003-breadth-thrust-and-recovery-breadth-predicates.md
+  s_7f3c352a4f9447::t_8a017d3eb92560 3-5
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.8",
+  "base_commit_sha": "53fe33e71a65c3d9133214e36326f25a9cb8deb0",
+  "prompts": {},
+  "sessions": {
+    "s_7f3c352a4f9447": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "3d45e374-f98d-411d-b6a1-0697dd832539",
+        "model": "claude-opus-4-7"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}
