@@ -364,23 +364,22 @@ the slice/commit that resolved it. Entries are append-only.
    Resolution (Slice 1.3): pin the accepted sets to what V1 could express
    then — `rising_fragility` accepts `{weak_breadth, divergent_fragile}` and
    `systemic_stress` accepts `{weak_breadth}`. Both call sites in
-   `regime_detection.network_fragility_rules` carry
-   `# TODO(v2.1-breadth-enum)` markers so they can be relinked when the
-   enum is extended.
+   `regime_detection.network_fragility_rules` carried breadth-enum
+   follow-up marker comments so they could be relinked when the enum
+   was extended.
    Resolved by Slice 1.3 (commit `c3badfc`).
 
-   Status update (post Slice 2.8c + Log #3 follow-up):
-   `BreadthLabel` was widened in Slice 2.8c, and the two
-   `# TODO(v2.1-breadth-enum)` markers in
+   Status update (post Slice 2.8c + Log #3 follow-up): fully closed.
+   `BreadthLabel` was widened in Slice 2.8c, and the breadth-enum
+   follow-up marker comments in
    `regime_detection.network_fragility_rules` (`rising_fragility` and
-   `systemic_stress` accepted_breadth sets) have since been actioned.
-   `rising_fragility` now accepts `{weak_breadth, narrowing_breadth,
-   divergent_fragile}` (matches §3.5 line 634 verbatim) and
-   `systemic_stress` now accepts `{weak_breadth, narrowing_breadth}`
-   (matches §3.5 line 656 verbatim). The TODO markers are removed.
-   The §3.5 rule semantics are unchanged; only the code-side mapping
-   widened to match the now-canonical spec set. Ambiguity Log #3
-   is fully closed.
+   `systemic_stress` accepted_breadth sets) have since been actioned
+   and removed. `rising_fragility` now accepts
+   `{weak_breadth, narrowing_breadth, divergent_fragile}` (matches
+   §3.5 line 634 verbatim) and `systemic_stress` now accepts
+   `{weak_breadth, narrowing_breadth}` (matches §3.5 line 656
+   verbatim). The §3.5 rule semantics are unchanged; only the
+   code-side mapping widened to match the now-canonical spec set.
 
 4. **§3.5 line 620 — `effective_rank_stability_threshold`.**
    Spec wrote "21d std < 5% of mean" inline.
