@@ -367,6 +367,7 @@ def run_us_event_calendar_fetch(
         }
         if group_a_result is not None:
             report["group_a"] = _build_group_a_report(group_a_result)
+            report["group_b"] = _build_group_b_report(group_a_result)
         report_path = repo_root / "event_calendar_fetch_report.json"
         report_path.write_text(json.dumps(report, indent=2))
 
@@ -636,6 +637,8 @@ def _build_v2_curated_candidate_events(
     run_id: int | None,
 ) -> GroupABuildResult:
     from regime_data_fetch.event_sources.deterministic_election import ElectionAdapter
+    from regime_data_fetch.event_sources.approvals import load_approval_overlay
+    from regime_data_fetch.event_sources.deterministic_budget import DeterministicBudgetAdapter
     from regime_data_fetch.event_sources.official_boe import OfficialBOEAdapter
     from regime_data_fetch.event_sources.official_boj import OfficialBOJAdapter
     from regime_data_fetch.event_sources.official_ecb import OfficialECBAdapter
@@ -662,8 +665,10 @@ def _build_v2_curated_candidate_events(
             ),
             OfficialBOJAdapter(as_of_date=as_of_date, text_fetcher=text_fetcher or _build_url_text_fetcher_with_arg()),
             ElectionAdapter(as_of_date=as_of_date),
+            DeterministicBudgetAdapter(as_of_date=as_of_date),
         ],
         validators=[HFCentralBankValidator(parquet_fetcher=hf_parquet_fetcher)],
+        approval_overlay=load_approval_overlay(repo_root / "configs" / "events" / "group_b_approvals.yaml"),
     )
     candidates, validations, decisions, promoted_events = orchestrator.run(
         start_year=start_year,
@@ -672,20 +677,6 @@ def _build_v2_curated_candidate_events(
         run_id=run_id,
     )
     events.extend(promoted_events)
-
-    # Existing deterministic budget rows stay inline until Spec 2 migrates them.
-    for year in range(start_year, end_year + 1):
-        budget_date = dt.date(year, 9, 30)
-        events.append(
-            ScheduledEvent(
-                date=budget_date,
-                release_timestamp_et=_midnight_et(budget_date),
-                market="US",
-                type="budget",
-                importance="medium",
-                source=SOURCE_US_BUDGET,
-            )
-        )
 
     deduped = {(event.date, event.type, event.source): event for event in events}
     output_paths = _write_group_a_artifacts(
@@ -799,6 +790,8 @@ def _candidate_record(candidate: object, decisions: list[object]) -> dict[str, o
         "market": getattr(candidate, "market"),
         "importance": getattr(candidate, "importance"),
         "source_id": getattr(candidate, "source_id"),
+        "candidate_id": getattr(candidate, "candidate_id", ""),
+        "event_subtype": getattr(candidate, "event_subtype", None),
         "source_url": getattr(candidate, "source_url"),
         "raw_title": getattr(candidate, "raw_title"),
         "raw_snippet": getattr(candidate, "raw_snippet"),
@@ -845,24 +838,52 @@ def _record_group_a_output(
 
 
 def _build_group_a_report(result: GroupABuildResult) -> dict[str, object]:
-    candidate_counts = Counter(getattr(candidate, "event_type") for candidate in result.candidates)
+    group_a_types = {"ECB_decision", "BOE_decision", "BOJ_decision", "election"}
+    group_a_candidates = [candidate for candidate in result.candidates if getattr(candidate, "event_type") in group_a_types]
+    group_a_decisions = [decision for decision in result.decisions if getattr(decision, "candidate_key")[0] in group_a_types]
+    candidate_counts = Counter(getattr(candidate, "event_type") for candidate in group_a_candidates)
     promoted_counts = Counter(
         getattr(decision, "candidate_key")[0]
-        for decision in result.decisions
+        for decision in group_a_decisions
         if getattr(decision, "outcome") == "promote"
     )
     quarantined_counts = Counter(
         getattr(decision, "candidate_key")[0]
-        for decision in result.decisions
+        for decision in group_a_decisions
         if getattr(decision, "outcome") == "quarantine"
     )
-    source_ids = sorted({getattr(candidate, "source_id") for candidate in result.candidates})
+    source_ids = sorted({getattr(candidate, "source_id") for candidate in group_a_candidates})
     return {
         "candidates": {key: candidate_counts[key] for key in sorted(candidate_counts)},
         "promoted": {key: promoted_counts[key] for key in sorted(promoted_counts)},
         "quarantined": {key: quarantined_counts[key] for key in sorted(quarantined_counts)},
         "source_ids": source_ids,
         "paths": {key: str(value) for key, value in result.output_paths.items()},
+    }
+
+
+def _build_group_b_report(result: GroupABuildResult) -> dict[str, object]:
+    group_b_types = {"geopolitical_event", "budget"}
+    group_b_candidates = [candidate for candidate in result.candidates if getattr(candidate, "event_type") in group_b_types]
+    group_b_decisions = [decision for decision in result.decisions if getattr(decision, "candidate_key")[0] in group_b_types]
+    candidate_counts = Counter(getattr(candidate, "event_type") for candidate in group_b_candidates)
+    promoted_counts = Counter(
+        getattr(decision, "candidate_key")[0]
+        for decision in group_b_decisions
+        if getattr(decision, "outcome") == "promote"
+    )
+    manual_review_counts = Counter(
+        getattr(decision, "candidate_key")[0]
+        for decision in group_b_decisions
+        if getattr(decision, "outcome") == "withhold"
+    )
+    return {
+        "candidates": {key: candidate_counts[key] for key in sorted(candidate_counts)},
+        "promoted": {key: promoted_counts[key] for key in sorted(promoted_counts)},
+        "manual_review_pending": {key: manual_review_counts[key] for key in sorted(manual_review_counts)},
+        "stale_approvals": [],
+        "stale_evidence": [],
+        "contradicted_approvals": [],
     }
 
 

@@ -642,6 +642,8 @@ def test_run_us_event_calendar_fetch_wires_group_a_candidate_artifacts(tmp_path:
     report = json.loads(report_path.read_text())
     assert report["group_a"]["candidates"]["ECB_decision"] == 2
     assert report["group_a"]["promoted"]["election"] == 1
+    assert report["group_b"]["candidates"]["budget"] == 1
+    assert report["group_b"]["promoted"]["budget"] == 1
 
     candidate_path = tmp_path / "data" / "raw" / "event_calendar" / "candidates" / "event_candidates.parquet"
     validation_path = tmp_path / "data" / "raw" / "event_calendar" / "candidates" / "event_validations.parquet"
@@ -651,6 +653,16 @@ def test_run_us_event_calendar_fetch_wires_group_a_candidate_artifacts(tmp_path:
     assert quarantine_path.exists()
     candidate_columns = list(pd.read_parquet(candidate_path).columns)
     assert list(pd.read_parquet(quarantine_path).columns) == candidate_columns
+    candidates_df = pd.read_parquet(candidate_path)
+    budget_rows = candidates_df[candidates_df["event_type"] == "budget"]
+    assert budget_rows[["date", "event_subtype", "source_id"]].to_dict("records") == [
+        {
+            "date": "2026-09-30",
+            "event_subtype": "fy_deadline",
+            "source_id": "usa.gov:federal-budget-process",
+        }
+    ]
+    assert budget_rows["candidate_id"].iloc[0]
 
     import sqlite3
 
