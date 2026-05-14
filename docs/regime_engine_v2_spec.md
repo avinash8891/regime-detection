@@ -1673,6 +1673,13 @@ the slice/commit that resolved it. Entries are append-only.
     now single-source. Provenance row code:
     `credit_spread_ice_bofa_oas_fred`.
 
+    Status update — superseded in part by Ambiguity Log #71: FRED later
+    truncated the ICE BofA OAS public history to a trailing ~3-year
+    window (2023-05-15+), and the `hy_spread_proxy_*` / `ig_spread_proxy_*`
+    fields were renamed to `hy_oas_*` / `ig_oas_*`. #71 reintroduces the
+    TLT proxy as a *separate, parallel* metric — which is NOT the
+    dual-source design this entry deleted.
+
 50. **§2D Event Calendar V2 — operational pins + §4.2 score expansion.**
 
     Pinned in §2D and §4.2:
@@ -2391,6 +2398,76 @@ the slice/commit that resolved it. Entries are append-only.
     a subsequent TDD commit (jointly with the §69 `breadth_thrust`
     predicate).
 
+71. **§2C Credit/Funding — FRED ICE BofA OAS history truncation + a
+    parallel TLT-proxy credit metric.**
+
+    Ambiguity Log #49 closed §2C's spread sourcing onto the real
+    FRED-redistributed ICE BofA Option-Adjusted Spread series
+    (`BAMLH0A0HYM2` HY, `BAMLC0A4CBBB` BBB IG), and commit `9cad7e7`
+    deleted the prior TLT-vs-HYG/LQD total-return-differential proxy
+    *fallback* — on the reasoning that the fallback was unreachable
+    ("any operator able to build the §2C seam at all already has the
+    FRED key that fetches the OAS series").
+
+    A 2026-05 macro re-fetch invalidated that reasoning. FRED now
+    exposes only a **trailing ~3-year window** of these ICE BofA OAS
+    series — both `BAMLH0A0HYM2` and `BAMLC0A4CBBB` start
+    **2023-05-15** (confirmed against FRED's `/series` metadata:
+    `observation_start = 2023-05-15`; ICE Data Indices tightened
+    redistribution licensing — the series IDs are unchanged but the
+    public history is truncated). The previously-"impossible" state
+    is now real: the FRED key is present and the OAS fetch *succeeds*,
+    but the series is empty before 2023-05-15. §2C therefore has no
+    real-OAS signal for ~70% of the available backtest history
+    (~2016–2023).
+
+    Resolution — three pins:
+
+    (a) **Accept the 2023+ depth for the real-OAS metric.** No
+        splicing, no backfill. Where OAS has no data the §2C
+        real-OAS label is NaN/`unknown` (V1 §2.7 cold-start — "use
+        the feed when it is available").
+
+    (b) **Reintroduce the TLT-vs-HYG/LQD proxy as a SEPARATE,
+        parallel metric that produces its own §2C label**, covering
+        the longer history. This is NOT the dual-sourcing `9cad7e7`
+        removed: that was one column fed by *either* source
+        depending on availability — mixing two genuinely-different
+        measurements into one series. This is two distinct metrics,
+        two distinct label outputs (`RegimeOutput.credit_funding_state`
+        from real OAS, `RegimeOutput.credit_funding_state_proxy` from
+        the proxy) that never blend. The §2C rule schema is
+        scale-invariant (percentile + slope predicates), so the SAME
+        `CreditFundingSeriesClassifier` logic runs a second time on
+        the proxy series — one rule schema, two input series, two
+        outputs. The proxy output always carries the
+        `credit_spread_proxy_total_return_differential` bias-warning
+        row.
+
+    (c) **Rename the misleadingly-named legacy fields.** The fields
+        `hy_spread_proxy_63d` / `ig_spread_proxy_63d` /
+        `hy_spread_proxy_percentile_504d` / `hy_spread_proxy_slope_21d`
+        / `ig_spread_proxy_slope_21d` hold the *real* OAS values
+        (since #49) but are named "proxy" — backwards. They are
+        renamed to the `hy_oas_*` / `ig_oas_*` family. The new proxy
+        metric's fields are `hy_tr_differential_*` /
+        `ig_tr_differential_*` (total-return-differential).
+
+    Proxy coverage honesty: the proxy's `_percentile_504d` needs a
+    504-session warm-up from the 2016-01-04 data start, so the proxy
+    label is live from ~2018 onward (`unknown` before that). It does
+    not cover all of 2016–2018, but it covers ~2018→2023, which is
+    otherwise fully dark for §2C. The two metrics measure a *similar*
+    thing (credit-spread direction); the proxy exists because FRED's
+    OAS series lacks pre-2023 history. They are parallel and
+    independent — never spliced.
+
+    Resolved by spec-amendment commit (this doc-only change — §2C
+    Features/Rules text amended below). The code-wiring slice
+    (`credit_funding.py` rename + proxy compute, parallel classifier
+    in `axis_series.py`, `RegimeOutput.credit_funding_state_proxy`,
+    tests) ships in a subsequent TDD commit.
+
 ---
 
 ## 2. Layer 2 V2 — Full Structural-Causal State
@@ -2706,25 +2783,45 @@ deleveraging > funding_squeeze > credit_stress > spread_widening > credit_calm >
 
 #### Features (operational definitions)
 
-True OAS feeds (ICE BofA H0A0 / C0A0) are not ingested. §2C uses
-total-return-differential proxies on the available ETFs (HYG, LQD, TLT)
-and the FRED short-rate series (SOFR, IORB, NFCI). Documented as proxy,
-not as absolute spread level — the §2C rules only consume percentile and
-slope of these series, both of which are scale-invariant, so the proxy
-survives every rule predicate. Vendor upgrade noted as a TODO in code.
+§2C carries **two parallel credit-spread metrics** (Ambiguity Log #49 + #71),
+kept strictly separate — never blended into one series or one label:
+
+1. **Real ICE BofA OAS** (`hy_oas_*` / `ig_oas_*`) — the authoritative
+   metric, sourced from the FRED-redistributed ICE BofA Option-Adjusted
+   Spread series (`BAMLH0A0HYM2` HY, `BAMLC0A4CBBB` BBB IG). FRED exposes
+   only a trailing ~3-year window (both series start 2023-05-15 — Log #71),
+   so the real-OAS §2C label (`credit_funding_state`) is `unknown`
+   before ~2023.
+2. **TLT-vs-HYG/LQD total-return-differential proxy** (`hy_tr_differential_*`
+   / `ig_tr_differential_*`) — a SEPARATE parallel metric covering the full
+   history (live from ~2018, after the 504-session percentile warm-up from
+   the 2016-01-04 data start). It produces its own §2C label
+   (`credit_funding_state_proxy`) via the same scale-invariant rule schema,
+   and always carries a `credit_spread_proxy_total_return_differential`
+   bias-warning row. Documented as proxy *direction*, not absolute bps level.
+
+The §2C rules only consume percentile and slope — both scale-invariant — so
+the identical rule predicates run unchanged on either metric's series.
 
 ```python
-# Total-return series for HY, IG, Treasury proxies (close-to-close cumulative)
+# Metric 1 — real ICE BofA OAS (FRED), authoritative, 2023-05-15+
+#   sign convention: rising OAS = spread widening
+hy_oas_63d = BAMLH0A0HYM2          # ICE BofA US High Yield Master II OAS
+ig_oas_63d = BAMLC0A4CBBB          # ICE BofA BBB US Corporate OAS
+
+# Metric 2 — TLT-vs-HYG/LQD total-return-differential proxy, full history
 #   sign convention: rising proxy = spread widening (Treasury outperforming HY/IG)
-hy_spread_proxy_63d = tlt_total_return_63d - hyg_total_return_63d
-ig_spread_proxy_63d = tlt_total_return_63d - lqd_total_return_63d
+hy_tr_differential_63d = tlt_total_return_63d - hyg_total_return_63d
+ig_tr_differential_63d = tlt_total_return_63d - lqd_total_return_63d
 
-# Percentile rank (504d window, mirrors §3.2 / §1E percentile convention)
-hy_spread_proxy_percentile_504d = rolling(hy_spread_proxy_63d, window=504).rank(pct=True)
-
-# Slope (21d OLS, mirrors §2A / §2B slope convention)
-hy_spread_proxy_slope_21d = ols_slope(hy_spread_proxy_63d, window=21)
-ig_spread_proxy_slope_21d = ols_slope(ig_spread_proxy_63d, window=21)
+# Percentile rank (504d, §3.2 / §1E convention) + 21d OLS slope (§2A / §2B
+# convention) — identical scale-invariant transforms applied to BOTH metrics:
+hy_oas_percentile_504d             = rolling(hy_oas_63d, window=504).rank(pct=True)
+hy_oas_slope_21d                   = ols_slope(hy_oas_63d, window=21)
+ig_oas_slope_21d                   = ols_slope(ig_oas_63d, window=21)
+hy_tr_differential_percentile_504d = rolling(hy_tr_differential_63d, window=504).rank(pct=True)
+hy_tr_differential_slope_21d       = ols_slope(hy_tr_differential_63d, window=21)
+ig_tr_differential_slope_21d       = ols_slope(ig_tr_differential_63d, window=21)
 
 # Bank index relative strength
 kre_spy_ratio       = kre_close / spy_close
@@ -2748,15 +2845,15 @@ sofr_iorb_slope_21d    = ols_slope(sofr_iorb_spread, window=21)
 
 ```text
 credit_calm:
-  hy_spread_proxy_percentile_504d < 0.50
-  AND hy_spread_proxy_slope_21d <= 0                # "non-rising" = non-positive slope
+  hy_oas_percentile_504d < 0.50
+  AND hy_oas_slope_21d <= 0                         # "non-rising" = non-positive slope
 
 spread_widening:
-  hy_spread_proxy_slope_21d > 0
-  AND ig_spread_proxy_slope_21d > 0                 # strict rising on BOTH HY and IG
+  hy_oas_slope_21d > 0
+  AND ig_oas_slope_21d > 0                          # strict rising on BOTH HY and IG
 
 credit_stress:
-  hy_spread_proxy_percentile_504d > 0.80
+  hy_oas_percentile_504d > 0.80
   AND spy_21d_return < -0.05                        # "equities falling" = >5% drop over 21d
 
 funding_squeeze:
@@ -2810,9 +2907,32 @@ credit_funding:
 - SOFR or IORB missing
 - `assess_series_input_quality` fails on any required series
 
+#### Two label outputs — authoritative + proxy
+
+The rules above are written against the authoritative real-OAS metric
+(`hy_oas_*` / `ig_oas_*`) and produce `RegimeOutput.credit_funding_state`.
+Because the rule predicates are scale-invariant (percentile + slope only),
+the **same `CreditFundingSeriesClassifier` runs a second time** on the
+parallel proxy metric (`hy_tr_differential_*` / `ig_tr_differential_*`),
+producing `RegimeOutput.credit_funding_state_proxy` — a distinct, separately
+keyed label (Ambiguity Log #71). The two outputs are never blended into one
+series or one label.
+
+Real-OAS coverage: `hy_oas_*` / `ig_oas_*` start 2023-05-15 (FRED truncated
+the ICE BofA OAS public history — Log #71), so `credit_funding_state` is
+`unknown` before ~2023.
+
 #### Proxy Bias Warning
 
-The `hy_spread_proxy_63d` / `ig_spread_proxy_63d` are total-return differentials, not yield-curve spreads. They preserve *direction* of spread changes (rising = widening) but **cannot be read as bps-level absolutes**. Slice that consumes them MUST stick to percentile / slope predicates and MUST emit a bias-warning row in any feature-store output (same pattern as §1D PIT-constituent bias warning). A future spec-amendment slice will replace these with direct OAS feeds (ICE BofA H0A0 / C0A0) when vendor sourcing is approved.
+The `hy_tr_differential_63d` / `ig_tr_differential_63d` are total-return
+differentials, not yield-curve spreads. They preserve *direction* of spread
+changes (rising = widening) but **cannot be read as bps-level absolutes**.
+Every `credit_funding_state_proxy` output MUST emit the
+`credit_spread_proxy_total_return_differential` bias-warning row in any
+feature-store output (same pattern as the §1D PIT-constituent bias warning).
+The proxy exists specifically because the real ICE BofA OAS series lacks
+pre-2023 history; it is a *similar* measure (credit-spread direction), kept
+strictly parallel — never spliced with the real-OAS metric.
 
 ---
 
