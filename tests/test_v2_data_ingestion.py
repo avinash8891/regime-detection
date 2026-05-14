@@ -13,6 +13,8 @@ from regime_detection.fragility_universe import (
     SECTOR_ETFS,
 )
 from regime_detection.loaders import (
+    load_aggregate_forward_eps_revision_series,
+    load_cpi_nowcast_series,
     load_cross_asset_closes,
     load_macro_series,
     load_sector_etf_closes,
@@ -149,6 +151,108 @@ def test_load_macro_series_rejects_missing_series_id() -> None:
 
     with pytest.raises(ValueError, match=r"Source missing required series_ids.*DGS10"):
         load_macro_series(df, series_ids=("DGS2", "DGS10"))
+
+
+# ---------- load_cpi_nowcast_series (v2 §2B / ADR 0006) ----------------------
+
+
+def test_load_cpi_nowcast_series_returns_sorted_date_indexed_series() -> None:
+    """Wide-form (date, cpi_nowcast) -> a single date-indexed Series, sorted
+    ascending, named for the macro_series key the feature store reads."""
+    df = pd.DataFrame(
+        {
+            # deliberately out of order to prove the loader sorts
+            "date": [
+                pd.Timestamp("2026-03-01"),
+                pd.Timestamp("2026-01-01"),
+                pd.Timestamp("2026-02-01"),
+            ],
+            "cpi_nowcast": [0.008441, 0.001350, 0.002486],
+        }
+    )
+
+    out = load_cpi_nowcast_series(df)
+
+    assert out.name == "cpi_nowcast"
+    assert list(out.index) == [
+        pd.Timestamp("2026-01-01"),
+        pd.Timestamp("2026-02-01"),
+        pd.Timestamp("2026-03-01"),
+    ]
+    assert out.loc[pd.Timestamp("2026-03-01")] == 0.008441
+
+
+def test_load_cpi_nowcast_series_rejects_missing_column() -> None:
+    df = pd.DataFrame({"date": [pd.Timestamp("2026-01-01")], "value": [0.0013]})
+
+    with pytest.raises(
+        ValueError, match=r"cpi_nowcast source missing required columns.*cpi_nowcast"
+    ):
+        load_cpi_nowcast_series(df)
+
+
+# ---------- load_aggregate_forward_eps_revision_series (v2 §2B / Log #48) -----
+
+
+def _make_eps_weekly_history(
+    observation_dates: list[date], forward_eps: list[float]
+) -> pd.DataFrame:
+    return pd.DataFrame(
+        {
+            "observation_date": observation_dates,
+            "observation_label": ["current"] * len(observation_dates),
+            "forward_estimate_value": forward_eps,
+            "source": ["S&P Global aggregate forward EPS workbook"]
+            * len(observation_dates),
+        }
+    )
+
+
+def test_load_aggregate_forward_eps_revision_series_hand_computed() -> None:
+    """5 accumulated weekly rows -> the 5th carries the hand-computed
+    4-week revision (fwd[t] - fwd[t-4]) / fwd[t-4]; rows 0-3 are cold-start
+    NaN."""
+    history = _make_eps_weekly_history(
+        [
+            date(2026, 1, 7),
+            date(2026, 1, 14),
+            date(2026, 1, 21),
+            date(2026, 1, 28),
+            date(2026, 2, 4),
+        ],
+        [270.00, 271.00, 272.00, 273.00, 277.40],
+    )
+
+    out = load_aggregate_forward_eps_revision_series(history)
+
+    assert out.index[4] == pd.Timestamp("2026-02-04")
+    assert out.iloc[:4].isna().all()
+    assert out.iloc[4] == pytest.approx((277.40 - 270.00) / 270.00)
+
+
+def test_load_aggregate_forward_eps_revision_series_cold_start_all_nan() -> None:
+    """At or below the 4-week lookback the revision series is entirely NaN —
+    the §2B earnings labels stay dark (V1 §2.7 cold-start)."""
+    history = _make_eps_weekly_history(
+        [date(2026, 1, 7), date(2026, 1, 14), date(2026, 1, 21), date(2026, 1, 28)],
+        [270.00, 271.00, 272.00, 273.00],
+    )
+
+    out = load_aggregate_forward_eps_revision_series(history)
+
+    assert out.isna().all()
+
+
+def test_load_aggregate_forward_eps_revision_series_rejects_missing_column() -> None:
+    df = pd.DataFrame(
+        {"observation_date": [date(2026, 1, 7)], "observation_label": ["current"]}
+    )
+
+    with pytest.raises(
+        ValueError,
+        match=r"aggregate forward EPS source missing required columns.*forward_estimate_value",
+    ):
+        load_aggregate_forward_eps_revision_series(df)
 
 
 # ---------- MarketContext propagation ----------------------------------------
