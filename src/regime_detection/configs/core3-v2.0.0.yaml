@@ -254,16 +254,15 @@ transition_score:
     transition_warning: [0.55, 0.75]
     high: [0.75, 1.00]
 
-# v2 §2A — Layer 2A Monetary/Liquidity V2 (Slice 4.1, evidence-only).
-# Ships ONLY the ONE spec-pinned feature formula (§2A line 896):
-#   yield_change_zscore = (yield_change_63d - mean_5y) / std_5y
-# applied to FRED DGS2 and DGS10 (source contract: §2A lines 887–889).
-#
-# DEFERRED per V2 §10 ABSOLUTE RULE (Ambiguity Log #44, #45):
-#   - broad_usd_index_zscore_63d (formula unspecified)
-#   - yield_change_zscore_21d_{2y,10y} (formula unspecified)
-#   - §2A label set, precedence, risk-rank, per-label hysteresis
-#   - MonetaryPressureSeriesClassifier (no labels to emit yet)
+# v2 §2A — Layer 2A Monetary/Liquidity V2. Feature seam (Slice 4.1) AND
+# axis classifier are both shipped. Five z-score features per §2A line 896
+# and Ambiguity Log #46 (a): yield_change_zscore_{2y,10y}_63d on FRED
+# DGS2/DGS10, broad_usd_index_zscore_63d on DTWEXBGS, and the 21d-variant
+# yield_change_zscore_21d_{2y,10y}. Source contract: §2A lines 887–889.
+# The §2A label set, precedence, risk-rank, and per-label hysteresis were
+# pinned by Ambiguity Log #46 (b–e) and are consumed by
+# MonetaryPressureV2SeriesClassifier (axis_series.py) — entries #44/#45/#46
+# are fully resolved, nothing deferred.
 monetary_pressure_v2:
   yield_change_lookback_days: 63      # v2 §2A line 896
   zscore_normalizer_window_days: 1260 # v2 §2A line 896 (5y trading days)
@@ -286,11 +285,15 @@ monetary_pressure_state:
   default_deescalation_days: 0
 
 # v2 §2C — Credit/Funding axis (Slice 4). Per Ambiguity Log #49 the HY/IG
-# spread proxies use TLT-vs-HYG/LQD total-return differentials (HYG/LQD
-# OAS feeds not ingested); the classifier emits a bias-warning row with
-# code `credit_spread_proxy_total_return_differential` flagging this
-# provenance. The 8-symbol universe (HYG/LQD/TLT/KRE + SOFR/IORB/NFCI +
-# broad_usd_index) is hard-pinned in code (spec §2C lines 2024-2030).
+# spread metrics single-source on the real ICE BofA Option-Adjusted Spread
+# series, free on FRED — `hy_oas` = BAMLH0A0HYM2, `ig_bbb_oas` =
+# BAMLC0A4CBBB — wired through `MarketContext.macro_series`. The earlier
+# TLT-vs-HYG/LQD total-return-differential proxy and its
+# `credit_spread_proxy_total_return_differential` bias-warning row were
+# deleted; there is no proxy fallback (the `REQUIRED_MACRO_KEYS` gate in
+# feature_store leaves §2C unbuilt if the OAS keys are absent). The
+# cross-asset universe (HYG/LQD/TLT/KRE + SOFR/IORB/NFCI + broad_usd_index)
+# is hard-pinned in code (spec §2C lines 2024-2030).
 credit_funding:
   rules:
     # All defaults match spec verbatim (§2C lines 2064-2088). v2 §9.1
