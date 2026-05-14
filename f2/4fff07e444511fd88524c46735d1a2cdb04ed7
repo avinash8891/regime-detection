@@ -1,0 +1,19 @@
+docs/decisions/0004-euphoria-sentiment-score-and-vol-rising-pins.md
+  s_7f3c352a4f9447::t_7b61e5ed937ca0 1-133
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.8",
+  "base_commit_sha": "f24fff07e444511fd88524c46735d1a2cdb04ed7",
+  "prompts": {},
+  "sessions": {
+    "s_7f3c352a4f9447": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "3d45e374-f98d-411d-b6a1-0697dd832539",
+        "model": "claude-opus-4-7"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}
