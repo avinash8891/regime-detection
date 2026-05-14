@@ -263,7 +263,7 @@ The hard data blockers from earlier V2 slices are now closed (see "Recently clos
 
 ### Recently closed (no longer degraded)
 
-- **Weekly `aggregate_forward_eps_revision_direction_4w`** — closed by the `aggregate_eps` weekly-snapshot accumulator + end-to-end engine wiring (Ambiguity Log #48). The weekly series is built by accumulating one current-snapshot row per weekly fetch; `earnings_expansion` / `earnings_contraction` fire once the >4-week cold-start fills. No paid feed.
+- **Weekly `aggregate_forward_eps_revision_direction_4w`** — closed by the `aggregate_eps` weekly-snapshot accumulator + end-to-end engine wiring (Ambiguity Log #48). The weekly series is built by accumulating one current-snapshot row per weekly fetch. The >4-week cold-start can be collapsed in one shot via `run_wayback_aggregate_eps_fetch` (Wayback backfill of historical workbook snapshots) followed by `seed_weekly_history_from_wayback_timeline` (bridges the Wayback timeline into the accumulator, existing live rows win on date collision); `earnings_expansion` / `earnings_contraction` then fire immediately. No paid feed.
 - **V2 §2B `inflation_surprise_zscore`** — closed by ADR 0006: the free Cleveland Fed inflation nowcast substitutes for the paid analyst `consensus_estimate`. The `regime_data_fetch.cleveland_fed_nowcast` fetch path is built (manual-drop; operator-verified CSV schema).
 - **V2 §1A `sentiment_score`** — closed: AAII fetcher ships, `sentiment_score = bull_bear_spread_8w_ma`, `euphoria` fires (Ambiguity Log #32).
 - **V2 §1C implied vol** — closed: `implied_vol_30d = VIXCLS / 100` from FRED; `vol_crush` + `iv_rv_spread` ship (Ambiguity Log #19 / #20; ADR 0005).

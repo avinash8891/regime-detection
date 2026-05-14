@@ -30,6 +30,11 @@ WEEKLY_HISTORY_FILENAME = "sp500_eps_weekly_history.parquet"
 # Spec §2B: revision direction over 4 weeks. 4 rows back in the weekly-sorted
 # accumulator history (one row per weekly fetch).
 EPS_REVISION_LOOKBACK_WEEKS = 4
+# Output sub-directory + Wayback timeline filenames (shared by the live
+# fetch, the Wayback backfill, and the accumulator-seeding bridge).
+EPS_DIR_NAME = "aggregate_forward_eps"
+WAYBACK_DIR_NAME = "aggregate_forward_eps_wayback"
+WAYBACK_TIMELINE_FILENAME = "sp500_eps_wayback_timeline.parquet"
 
 
 class AggregateEPSFetchError(RuntimeError):
@@ -311,6 +316,75 @@ def append_weekly_eps_snapshot(
     return combined
 
 
+def seed_weekly_history_from_wayback_timeline(
+    *,
+    out_dir: Path,
+    timeline_path: Path | None = None,
+) -> pd.DataFrame:
+    """Seed the weekly-history accumulator from a Wayback backfill timeline.
+
+    ``run_wayback_aggregate_eps_fetch`` materialises historical workbook
+    snapshots into ``sp500_eps_wayback_timeline.parquet`` but never feeds
+    them into the weekly-history accumulator that
+    ``compute_eps_revision_direction_4w`` reads. This bridges that gap: each
+    timeline row becomes one accumulator row keyed by ``workbook_as_of_date``.
+
+    Collapses the §2B `earnings_expansion` / `earnings_contraction`
+    cold-start. Instead of waiting for more than ``EPS_REVISION_LOOKBACK_WEEKS``
+    *live* weekly fetches to accumulate, a one-time Wayback backfill + seed
+    pre-fills the accumulator and the 4-week revision series goes non-NaN
+    immediately.
+
+    Idempotent and live-safe: on an ``observation_date`` collision the
+    EXISTING accumulator row wins — a live ``run_aggregate_eps_fetch`` row is
+    authoritative over a Wayback-archived snapshot for the same date, and
+    re-running the seed never clobbers live data. Returns the full merged
+    weekly-history DataFrame, sorted ascending by ``observation_date``.
+    """
+    if timeline_path is None:
+        timeline_path = out_dir / WAYBACK_DIR_NAME / WAYBACK_TIMELINE_FILENAME
+    if not timeline_path.exists():
+        raise AggregateEPSFetchError(
+            f"No Wayback EPS timeline at {timeline_path}. Run "
+            f"run_wayback_aggregate_eps_fetch first to materialise it."
+        )
+    timeline = pd.read_parquet(timeline_path)
+    if timeline.empty:
+        raise AggregateEPSFetchError(
+            f"Wayback EPS timeline at {timeline_path} contained no rows"
+        )
+
+    seeded = pd.DataFrame(
+        {
+            "observation_date": timeline["workbook_as_of_date"],
+            "observation_label": "wayback_backfill",
+            "forward_estimate_value": timeline["forward_estimate_value"],
+            "source": "wayback_machine",
+        }
+    )
+    # A single workbook_as_of_date can appear under multiple Wayback
+    # snapshots — keep the last (the timeline is sorted ascending by
+    # snapshot_date / timestamp, so the last row is the freshest capture).
+    seeded = seeded.drop_duplicates(subset=["observation_date"], keep="last")
+
+    eps_dir = out_dir / EPS_DIR_NAME
+    eps_dir.mkdir(parents=True, exist_ok=True)
+    history_path = eps_dir / WEEKLY_HISTORY_FILENAME
+    if history_path.exists():
+        existing = pd.read_parquet(history_path)
+        # Existing accumulator rows win on collision — a live fetch row is
+        # authoritative over a Wayback snapshot for the same date.
+        seeded = seeded[
+            ~seeded["observation_date"].isin(existing["observation_date"])
+        ]
+        combined = pd.concat([existing, seeded], ignore_index=True)
+    else:
+        combined = seeded
+    combined = combined.sort_values("observation_date").reset_index(drop=True)
+    combined.to_parquet(history_path, index=False)
+    return combined
+
+
 def compute_eps_revision_direction_4w(weekly_history: pd.DataFrame) -> pd.Series:
     """v2 §2B `aggregate_forward_eps_revision_direction_4w` from the
     accumulated weekly history.
@@ -406,7 +480,7 @@ def run_aggregate_eps_fetch(
             ]
         )
 
-        eps_dir = out_dir / "aggregate_forward_eps"
+        eps_dir = out_dir / EPS_DIR_NAME
         eps_dir.mkdir(parents=True, exist_ok=True)
         parquet_path = eps_dir / "sp500_eps_snapshots.parquet"
         df.to_parquet(parquet_path, index=False)
@@ -580,7 +654,7 @@ def run_wayback_aggregate_eps_fetch(
             max_snapshots=max_snapshots,
         )
 
-        wayback_dir = out_dir / "aggregate_forward_eps_wayback"
+        wayback_dir = out_dir / WAYBACK_DIR_NAME
         snapshots_dir = wayback_dir / "snapshots"
         snapshots_dir.mkdir(parents=True, exist_ok=True)
         snapshot_index_path = wayback_dir / "wayback_snapshot_index.json"
@@ -690,7 +764,7 @@ def run_wayback_aggregate_eps_fetch(
             raise AggregateEPSFetchError("Wayback EPS backfill produced no parsed timeline rows")
 
         timeline_df = pd.DataFrame(timeline_rows).sort_values(["snapshot_date", "timestamp"]).reset_index(drop=True)
-        timeline_path = wayback_dir / "sp500_eps_wayback_timeline.parquet"
+        timeline_path = wayback_dir / WAYBACK_TIMELINE_FILENAME
         timeline_df.to_parquet(timeline_path, index=False)
 
         preview = timeline_df.head(10).copy()
