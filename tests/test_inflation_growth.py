@@ -581,6 +581,7 @@ def _build_synthetic_context(
     cpi_truncate_calendar_days: int | None = None,
     pmi_truncate_calendar_days: int | None = None,
     dgs10_truncate_sessions: int | None = None,
+    include_nowcast_and_eps_revision: bool = False,
 ):
     """Build a full MarketContext with §2B inputs."""
     idx = _bdate_index(periods=_TRAINING_SESSIONS)
@@ -668,6 +669,11 @@ def _build_synthetic_context(
         "DGS2": pd.Series(4.5, index=idx, dtype=float),
         "DGS10": pd.Series(4.0, index=idx, dtype=float),
     }
+    if include_nowcast_and_eps_revision:
+        macro_series["cpi_nowcast"] = pd.Series(0.01, index=idx, dtype=float)
+        macro_series["aggregate_forward_eps_revision"] = pd.Series(
+            0.03, index=idx, dtype=float
+        )
 
     config = RegimeEngine().config
     context = build_market_context(
@@ -777,6 +783,18 @@ def test_feature_store_seam_lit_with_all_inputs() -> None:
     )
     assert store.inflation_growth is not None
     assert isinstance(store.inflation_growth, InflationGrowthFeatures)
+
+
+def test_classifier_rule_evidence_includes_nowcast_and_eps_revision_inputs() -> None:
+    """2B evidence must surface the optional nowcast/EPS scalars once wired."""
+    context = _build_synthetic_context(include_nowcast_and_eps_revision=True)
+    _, outputs = _build_store_and_outputs(context)
+    assert outputs is not None
+
+    last_day = context.sessions[-1]
+    evidence = outputs[last_day].evidence["rule_evidence"]
+    assert "inflation_surprise_zscore" in evidence
+    assert "aggregate_forward_eps_revision_direction_4w" in evidence
 
 
 def test_feature_store_seam_none_when_dbc_missing() -> None:

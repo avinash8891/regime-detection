@@ -1007,8 +1007,8 @@ class InflationGrowthSeriesClassifier:
       4. Materialize per-day scalar rule inputs and evaluate §2B precedence
          (inflation_shock > recession_scare > disinflation > goldilocks >
          recovery_growth > earnings_contraction > earnings_expansion >
-         unknown). The two earnings_* labels short-circuit to False per
-         spec lines 2316-2317 + Ambiguity Log #48.
+         unknown). Optional nowcast/EPS inputs falsify via NaN until their
+         source series are present.
       5. Apply per-label asymmetric hysteresis (§2B lines 2287-2303).
       6. Emit one InflationGrowthOutput per session.
     """
@@ -1146,8 +1146,10 @@ class InflationGrowthSeriesClassifier:
                         "cpi_6m_change_pct": rule_inputs.cpi_6m_change_pct,
                         "cpi_6m_change_pct_lag_21": rule_inputs.cpi_6m_change_pct_lag_21,
                         "cpi_6m_change_pct_slope_21d": rule_inputs.cpi_6m_change_pct_slope_21d,
+                        "inflation_surprise_zscore": rule_inputs.inflation_surprise_zscore,
                         "pmi_manufacturing": rule_inputs.pmi_manufacturing,
                         "pmi_manufacturing_slope_21d": rule_inputs.pmi_manufacturing_slope_21d,
+                        "aggregate_forward_eps_revision_direction_4w": rule_inputs.aggregate_forward_eps_revision_direction_4w,
                         "commodity_return_63d": rule_inputs.commodity_return_63d,
                         "treasury_10y_yield_slope_21d": rule_inputs.treasury_10y_yield_slope_21d,
                         "cyclical_defensive_slope_21d": rule_inputs.cyclical_defensive_slope_21d,
