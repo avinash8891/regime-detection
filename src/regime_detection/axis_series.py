@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import date
-from typing import Protocol
+from typing import Literal, Protocol
 
 import pandas as pd
 
@@ -27,6 +27,8 @@ from regime_detection.hysteresis import (
 from regime_detection.market_context import MarketContext
 from regime_detection.credit_funding import (
     CREDIT_FUNDING_RISK_RANK,
+    CREDIT_SPREAD_PROXY_BIAS_WARNING_CODE,
+    CREDIT_SPREAD_SOURCE_CODE,
     CreditFundingLabel,
     build_rule_inputs_by_date as build_credit_funding_rule_inputs_by_date,
     evaluate_rules as evaluate_credit_funding_rules,
@@ -107,6 +109,10 @@ class AxisSeriesBundle:
     # populated by CreditFundingSeriesClassifier when feature_store has
     # the credit_funding seam lit (Slice 4).
     credit_funding: dict[date, CreditFundingOutput] | None = None
+    # V2 §2C credit/funding PROXY label — None in pure-v1 mode; populated by
+    # CreditFundingSeriesClassifier.build_proxy on the TLT-vs-HYG/LQD
+    # differential. Parallel to `credit_funding`, never blended (Log #71).
+    credit_funding_proxy: dict[date, CreditFundingOutput] | None = None
     # V2 §2A monetary pressure — None in pure-v1 mode (no v2 config), populated
     # by MonetaryPressureV2SeriesClassifier when feature_store.monetary is lit
     # AND context.config.monetary_pressure_state is non-None (Ambiguity Log #46).
@@ -733,10 +739,12 @@ class CreditFundingSeriesClassifier:
       5. Emit one CreditFundingOutput per session.
     """
 
-    def build(
+    def _build_for_spread_source(
         self,
         context: MarketContext,
         feature_store: FeatureStore,
+        *,
+        spread_source: Literal["oas", "proxy"],
     ) -> dict[date, CreditFundingOutput] | None:
         features = feature_store.credit_funding
         if features is None:
@@ -744,6 +752,26 @@ class CreditFundingSeriesClassifier:
         cf_config = context.config.credit_funding
         if cf_config is None:
             return None
+
+        # Resolve the spread-source-specific series + bias-warning code. The
+        # §2C rule schema is scale-invariant (percentile + slope only), so the
+        # identical pipeline runs on either the real-OAS metric or the
+        # TLT-proxy metric (Ambiguity Log #71) — two parallel outputs, never
+        # blended into one series or one label.
+        if spread_source == "oas":
+            hy_spread_63d = features.hy_oas_63d
+            ig_spread_63d = features.ig_oas_63d
+            hy_spread_percentile_504d = features.hy_oas_percentile_504d
+            hy_spread_slope_21d = features.hy_oas_slope_21d
+            ig_spread_slope_21d = features.ig_oas_slope_21d
+            bias_warning_code = CREDIT_SPREAD_SOURCE_CODE
+        else:  # "proxy"
+            hy_spread_63d = features.hy_tr_differential_63d
+            ig_spread_63d = features.ig_tr_differential_63d
+            hy_spread_percentile_504d = features.hy_tr_differential_percentile_504d
+            hy_spread_slope_21d = features.hy_tr_differential_slope_21d
+            ig_spread_slope_21d = features.ig_tr_differential_slope_21d
+            bias_warning_code = CREDIT_SPREAD_PROXY_BIAS_WARNING_CODE
 
         spy_close = context.spy_ohlcv["close"]
         volatility_features = feature_store.volatility
@@ -768,8 +796,8 @@ class CreditFundingSeriesClassifier:
         # Quality-gate primary inputs. Lookback gates on the 504d percentile
         # window — the longest binding cold-start for any rule predicate.
         required_inputs: list[pd.Series] = [
-            features.hy_oas_63d,
-            features.ig_oas_63d,
+            hy_spread_63d,
+            ig_spread_63d,
             features.kre_spy_ratio,
             features.sofr_iorb_spread,
             spy_close,
@@ -802,9 +830,9 @@ class CreditFundingSeriesClassifier:
         )
         rule_inputs_by_date = build_credit_funding_rule_inputs_by_date(
             features=features,
-            hy_spread_percentile_504d=features.hy_oas_percentile_504d,
-            hy_spread_slope_21d=features.hy_oas_slope_21d,
-            ig_spread_slope_21d=features.ig_oas_slope_21d,
+            hy_spread_percentile_504d=hy_spread_percentile_504d,
+            hy_spread_slope_21d=hy_spread_slope_21d,
+            ig_spread_slope_21d=ig_spread_slope_21d,
             realized_vol_21d_percentile_252d=realized_vol_pct,
             avg_pairwise_corr_percentile_504d=avg_corr_pct_series,
         )
@@ -895,7 +923,7 @@ class CreditFundingSeriesClassifier:
                     },
                     "nfci_daily_carried": _safe_float(nfci_carried, dt),
                     "kre_spy_slope_63d": _safe_float(features.kre_spy_slope_63d, dt),
-                    "bias_warning_code": "credit_spread_proxy_total_return_differential",
+                    "bias_warning_code": bias_warning_code,
                 }
             )
 
@@ -924,6 +952,28 @@ class CreditFundingSeriesClassifier:
                 data_quality=dq,
             )
         return outputs
+
+    def build(
+        self,
+        context: MarketContext,
+        feature_store: FeatureStore,
+    ) -> dict[date, CreditFundingOutput] | None:
+        """Real-OAS §2C credit/funding labels → ``RegimeOutput.credit_funding_state``."""
+        return self._build_for_spread_source(
+            context, feature_store, spread_source="oas"
+        )
+
+    def build_proxy(
+        self,
+        context: MarketContext,
+        feature_store: FeatureStore,
+    ) -> dict[date, CreditFundingOutput] | None:
+        """TLT-vs-HYG/LQD proxy §2C labels → ``RegimeOutput.credit_funding_state_proxy``
+        (Ambiguity Log #71). Same scale-invariant rule schema, parallel run on
+        the proxy series — never blended with the real-OAS labels."""
+        return self._build_for_spread_source(
+            context, feature_store, spread_source="proxy"
+        )
 
 
 class InflationGrowthSeriesClassifier:

@@ -723,6 +723,44 @@ def _build_store_and_outputs(context):
     return store, CreditFundingSeriesClassifier().build(context, store)
 
 
+def test_build_proxy_runs_parallel_to_build_with_proxy_bias_code() -> None:
+    """build_proxy() runs the identical §2C rule schema on the TLT-proxy
+    series, producing a parallel output keyed exactly like build() — but
+    tagged with the proxy bias-warning code, never blended (Log #71)."""
+    context = _build_full_synthetic_context()
+    cfg = context.config
+    store = build_feature_store(
+        context,
+        network_fragility_config=cfg.network_fragility,
+        monetary_pressure_v2_config=cfg.monetary_pressure_v2,
+        credit_funding_config=cfg.credit_funding,
+    )
+    classifier = CreditFundingSeriesClassifier()
+    real = classifier.build(context, store)
+    proxy = classifier.build_proxy(context, store)
+
+    assert real is not None and proxy is not None
+    # One output per session from both runs.
+    assert set(real.keys()) == set(proxy.keys())
+
+    # A session where the rule engine fired (past every cold-start / gate) in
+    # both runs — its evidence must carry the source-specific bias code.
+    rule_day = next(
+        d
+        for d in real
+        if "rule_evidence" in real[d].evidence
+        and "rule_evidence" in proxy[d].evidence
+    )
+    assert (
+        real[rule_day].evidence["bias_warning_code"]
+        == "credit_spread_ice_bofa_oas_fred"
+    )
+    assert (
+        proxy[rule_day].evidence["bias_warning_code"]
+        == "credit_spread_proxy_total_return_differential"
+    )
+
+
 def test_unknown_when_hyg_stale_more_than_5_sessions() -> None:
     """§2C line 2123: HYG stale > 5 sessions → unknown gate trip."""
     context = _build_full_synthetic_context(hyg_truncate_sessions=10)
