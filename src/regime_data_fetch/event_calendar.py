@@ -727,6 +727,8 @@ def _group_a_text_fetcher_from_legacy_map(
             return global_rate_calendar_text_fetchers["ecb"]()
         if "bankofengland.co.uk/monetary-policy/upcoming-mpc-dates" in url and "boe" in global_rate_calendar_text_fetchers:
             return global_rate_calendar_text_fetchers["boe"]()
+        if "bankofengland.co.uk/sitemap/news" in url:
+            return ""
         if "boj.or.jp/en/mopo/mpmsche_minu/index.htm" in url and "boj" in global_rate_calendar_text_fetchers:
             return global_rate_calendar_text_fetchers["boj"]()
         if "boj.or.jp/en/mopo/mpmsche_minu/past.htm" in url:
@@ -764,9 +766,10 @@ def _write_group_a_artifacts(
         if (record["event_type"], dt.date.fromisoformat(record["date"])) in quarantined_keys
     ]
 
-    pd.DataFrame(candidate_records).to_parquet(candidate_path, index=False)
+    candidate_df = pd.DataFrame(candidate_records)
     pd.DataFrame(validation_records).to_parquet(validation_path, index=False)
-    pd.DataFrame(quarantine_records).to_parquet(quarantine_path, index=False)
+    candidate_df.to_parquet(candidate_path, index=False)
+    pd.DataFrame(quarantine_records, columns=candidate_df.columns).to_parquet(quarantine_path, index=False)
 
     if store and run_id is not None:
         _record_group_a_output(store, run_id, "event_group_a_candidates", candidate_path, candidate_records)

@@ -607,6 +607,8 @@ def test_run_us_event_calendar_fetch_wires_group_a_candidate_artifacts(tmp_path:
             <tr><td>Thursday 5 February</td><td><a href="/monetary-policy-summary-and-minutes/2026/february-2026">February MPC Summary and minutes</a></td></tr>
             </tbody></table>
             """
+        if url.endswith("/sitemap/news"):
+            return ""
         if url.endswith("/en/mopo/mpmsche_minu/index.htm"):
             return """
             <h2 id="p2026">2026</h2><table><tbody>
@@ -647,6 +649,8 @@ def test_run_us_event_calendar_fetch_wires_group_a_candidate_artifacts(tmp_path:
     assert candidate_path.exists()
     assert validation_path.exists()
     assert quarantine_path.exists()
+    candidate_columns = list(pd.read_parquet(candidate_path).columns)
+    assert list(pd.read_parquet(quarantine_path).columns) == candidate_columns
 
     import sqlite3
 
