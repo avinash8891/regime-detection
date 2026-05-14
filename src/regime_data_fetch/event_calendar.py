@@ -638,12 +638,15 @@ def _build_v2_curated_candidate_events(
 ) -> GroupABuildResult:
     from regime_data_fetch.event_sources.deterministic_election import ElectionAdapter
     from regime_data_fetch.event_sources.approvals import load_approval_overlay
+    from regime_data_fetch.event_sources.budget_official_discovery import BudgetOfficialDiscoveryGenerator
     from regime_data_fetch.event_sources.deterministic_budget import DeterministicBudgetAdapter
     from regime_data_fetch.event_sources.official_boe import OfficialBOEAdapter
     from regime_data_fetch.event_sources.official_boj import OfficialBOJAdapter
     from regime_data_fetch.event_sources.official_ecb import OfficialECBAdapter
     from regime_data_fetch.event_sources.orchestrator import EventSourceOrchestrator
     from regime_data_fetch.event_sources.validators_hf_central_bank import HFCentralBankValidator
+    from regime_data_fetch.event_sources.validators_gpr_gdelt import GPRGDELTSignalGenerator
+    from regime_data_fetch.event_sources.validators_tinyfish import TinyFishValidator
 
     events: list[ScheduledEvent] = []
     text_fetcher = group_a_text_fetcher or _group_a_text_fetcher_from_legacy_map(global_rate_calendar_text_fetchers)
@@ -654,6 +657,13 @@ def _build_v2_curated_candidate_events(
     boe_news_fetcher = group_a_boe_news_fetcher
     if boe_news_fetcher is None and global_rate_calendar_text_fetchers is not None:
         boe_news_fetcher = lambda page: '{"Results": ""}'
+    live_group_b_sources = global_rate_calendar_text_fetchers is None and group_a_text_fetcher is None
+    group_b_generators = []
+    group_b_validators = []
+    if live_group_b_sources:
+        gpr_gdelt = GPRGDELTSignalGenerator()
+        group_b_generators.extend([BudgetOfficialDiscoveryGenerator(), gpr_gdelt])
+        group_b_validators.extend([gpr_gdelt, TinyFishValidator()])
 
     orchestrator = EventSourceOrchestrator(
         primary_adapters=[
@@ -667,7 +677,8 @@ def _build_v2_curated_candidate_events(
             ElectionAdapter(as_of_date=as_of_date),
             DeterministicBudgetAdapter(as_of_date=as_of_date),
         ],
-        validators=[HFCentralBankValidator(parquet_fetcher=hf_parquet_fetcher)],
+        candidate_generators=group_b_generators,
+        validators=[HFCentralBankValidator(parquet_fetcher=hf_parquet_fetcher), *group_b_validators],
         approval_overlay=load_approval_overlay(repo_root / "configs" / "events" / "group_b_approvals.yaml"),
     )
     candidates, validations, decisions, promoted_events = orchestrator.run(
