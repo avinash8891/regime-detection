@@ -8,28 +8,36 @@ Implements the 5-label axis classifier from spec lines 2005-2130:
   Precedence (§2C line 2019):
     deleveraging > funding_squeeze > credit_stress > spread_widening > credit_calm > unknown
 
-Credit-spread metric — single source (Log #49 vendor-upgrade closure):
+Credit-spread metrics — two parallel sources (Ambiguity Log #49 + #71):
 
-  §2C reads the FRED-redistributed ICE BofA Option-Adjusted Spread series
-  — ``BAMLH0A0HYM2`` (HY Master II OAS) and ``BAMLC0A4CBBB`` (BBB Corporate
-  OAS), free under ICE's redistribution license at the FRED endpoint.
-  ``MarketContext.macro_series`` keys ``hy_oas`` / ``ig_bbb_oas`` (set by
-  ``V2_FRED_SERIES`` in ``regime_data_fetch.fetch_workflow``) feed the
-  ``hy_oas`` / ``ig_oas`` parameters of ``compute_credit_funding_features``.
+  §2C carries two distinct, never-blended credit-spread metrics:
 
-  There is NO proxy fallback. An earlier slice carried a TLT-vs-HYG/LQD
-  total-return-differential proxy "for operators without the OAS feed",
-  but that scenario is unreachable: ``credit_funding`` already requires
-  SOFR / IORB / NFCI / broad_usd_index from FRED's ``macro_series``, so
-  any operator able to build the §2C seam at all already has the FRED key
-  that fetches the OAS series. Dual-sourcing was duplicate behaviour over
-  two genuinely-different metrics (real bps OAS vs a total-return
-  differential) — deleted in favour of the single real-feed source.
+  1. Real ICE BofA OAS — ``hy_oas_*`` / ``ig_oas_*``, from the
+     FRED-redistributed ICE BofA Option-Adjusted Spread series
+     (``BAMLH0A0HYM2`` HY Master II OAS, ``BAMLC0A4CBBB`` BBB Corporate
+     OAS). The authoritative metric. ``MarketContext.macro_series`` keys
+     ``hy_oas`` / ``ig_bbb_oas`` (set by ``V2_FRED_SERIES`` in
+     ``regime_data_fetch.fetch_workflow``) feed the ``hy_oas`` / ``ig_oas``
+     params of ``compute_credit_funding_features``. FRED exposes only a
+     trailing ~3-year window of these series (start 2023-05-15 — Log #71),
+     so the real-OAS label (``credit_funding_state``) is ``unknown``
+     before ~2023.
+
+  2. TLT-vs-HYG/LQD total-return-differential proxy — ``hy_tr_differential_*``
+     / ``ig_tr_differential_*``, computed from the HYG/LQD/TLT closes. A
+     SEPARATE parallel metric covering the full history; it produces its
+     own label (``credit_funding_state_proxy``) via the same
+     scale-invariant rule schema, and carries a
+     ``credit_spread_proxy_total_return_differential`` bias-warning row.
+     The proxy exists because FRED's OAS series lack pre-2023 history — it
+     is a *similar* measure (credit-spread direction), kept strictly
+     parallel, never spliced with the real-OAS series.
 
   When the OAS series are absent from ``macro_series``, the §2C seam is
   simply not built (``REQUIRED_MACRO_KEYS`` gate in ``feature_store``) and
-  ``credit_funding_state`` stays ``None`` — V1 byte-identity preserved,
-  same as every other unbuilt V2 seam.
+  both ``credit_funding_state`` / ``credit_funding_state_proxy`` stay
+  ``None`` — V1 byte-identity preserved, same as every other unbuilt V2
+  seam.
 
 Inputs:
   - HYG, LQD, TLT, KRE close series via ``MarketContext.cross_asset_closes``

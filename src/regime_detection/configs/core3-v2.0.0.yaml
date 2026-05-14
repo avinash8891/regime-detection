@@ -284,16 +284,20 @@ monetary_pressure_state:
     unknown: 2
   default_deescalation_days: 0
 
-# v2 §2C — Credit/Funding axis (Slice 4). Per Ambiguity Log #49 the HY/IG
-# spread metrics single-source on the real ICE BofA Option-Adjusted Spread
-# series, free on FRED — `hy_oas` = BAMLH0A0HYM2, `ig_bbb_oas` =
-# BAMLC0A4CBBB — wired through `MarketContext.macro_series`. The earlier
-# TLT-vs-HYG/LQD total-return-differential proxy and its
-# `credit_spread_proxy_total_return_differential` bias-warning row were
-# deleted; there is no proxy fallback (the `REQUIRED_MACRO_KEYS` gate in
-# feature_store leaves §2C unbuilt if the OAS keys are absent). The
-# cross-asset universe (HYG/LQD/TLT/KRE + SOFR/IORB/NFCI + broad_usd_index)
-# is hard-pinned in code (spec §2C lines 2024-2030).
+# v2 §2C — Credit/Funding axis. Per Ambiguity Log #49 + #71, §2C carries
+# TWO parallel, never-blended credit-spread metrics:
+#  1. Real ICE BofA OAS — `hy_oas` = BAMLH0A0HYM2, `ig_bbb_oas` =
+#     BAMLC0A4CBBB, on `MarketContext.macro_series`. FRED truncated these
+#     to a trailing ~3-year window (start 2023-05-15 — Log #71), so the
+#     real-OAS label `credit_funding_state` is `unknown` before ~2023.
+#  2. TLT-vs-HYG/LQD total-return-differential proxy — computed from the
+#     HYG/LQD/TLT closes, full history, producing the parallel
+#     `credit_funding_state_proxy` label via the same scale-invariant rule
+#     schema, with a `credit_spread_proxy_total_return_differential`
+#     bias-warning row.
+# The `REQUIRED_MACRO_KEYS` gate leaves §2C unbuilt if the OAS keys are
+# absent. The cross-asset universe (HYG/LQD/TLT/KRE + SOFR/IORB/NFCI +
+# broad_usd_index) is hard-pinned in code (spec §2C lines 2024-2030).
 credit_funding:
   rules:
     # All defaults match spec verbatim (§2C lines 2064-2088). v2 §9.1
