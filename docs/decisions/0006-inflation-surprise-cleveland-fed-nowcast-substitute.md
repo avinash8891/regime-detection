@@ -96,6 +96,10 @@ inflation_surprise_zscore[t] =
 - `feature_store.build_feature_store` passes `context.macro_series.get("cpi_nowcast")` through.
 - `cpi_nowcast` is NOT added to `V2_FRED_SERIES` — the Cleveland Fed nowcast is published on the Cleveland Fed site, not cleanly on FRED. The operator wires it into `macro_series` via a dedicated fetch path; the engine code path is complete and the limb unlocks the moment `cpi_nowcast` data is present.
 
+### Fetch path (follow-on commit)
+
+`regime_data_fetch/cleveland_fed_nowcast.py` is the dedicated fetch path. It mirrors the manual-drop fallback architecture of the `aggregate_eps` spdji workbook fetcher: the operator downloads the Cleveland Fed inflation-nowcast CSV, drops it at `data/raw/cleveland_fed_nowcast/cleveland_fed_nowcast.csv`, and `run_cleveland_fed_nowcast_fetch` parses it into `cpi_nowcast.parquet`. **Verification need:** the exact CSV schema (column names, published unit) could not be confirmed without web access, so `parse_cleveland_fed_nowcast_csv` parameterizes the column mapping (`date_column` / `value_column` / `value_scale`) — the operator pins the verified schema at the `run_*` call site on first run. The default `value_scale=0.01` converts the Cleveland Fed's percent-m/m publication to the fractional monthly rate `compute_inflation_surprise_zscore` expects. A schema mismatch raises `ClevelandFedNowcastError` loudly rather than producing a silently-wrong series.
+
 ### Tests
 
 `_compute_inflation_surprise_zscore` unit tests (hand-computed surprise + z-score; cold-start all-NaN below 5y; NaN-operand falsification); single-signal limb fires on `zscore > +1.5` and falsifies on NaN / below threshold; `inflation_shock` OR-rule fires via EITHER limb; integration through `compute_inflation_growth_features` with and without `cpi_nowcast`.

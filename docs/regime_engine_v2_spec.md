@@ -1570,6 +1570,17 @@ the slice/commit that resolved it. Entries are append-only.
     only during cold-start (no `cpi_nowcast`, or < 5y of surprise
     history). §2B `inflation_surprise_zscore` spec text amended.
 
+    Fetch-path update — the dedicated `cpi_nowcast` fetch path
+    (`regime_data_fetch.cleveland_fed_nowcast`) is built. It mirrors the
+    `aggregate_eps` manual-drop fallback: the operator drops the Cleveland
+    Fed nowcast CSV at `data/raw/cleveland_fed_nowcast/`, and
+    `run_cleveland_fed_nowcast_fetch` parses it into `cpi_nowcast.parquet`.
+    The CSV schema could not be verified without web access, so the column
+    mapping (`date_column` / `value_column` / `value_scale`) is
+    parameterized — the operator pins the verified schema at first run; a
+    mismatch raises `ClevelandFedNowcastError` loudly. See ADR 0006 "Fetch
+    path".
+
 49. **§2C Credit/Funding — scaffolding + operational pins.**
 
     Applies the §2A template to §2C. Same pattern as #48: §2C had
