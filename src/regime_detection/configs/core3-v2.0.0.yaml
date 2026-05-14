@@ -128,24 +128,30 @@ trend_direction_v2:
     recovery_drawdown_threshold: -0.15  # v2 §1A line 116
     recovery_return_threshold: 0.10     # v2 §1A line 117
 
-# v2 §1C — Layer 1 V2 Volatility features (Slice 2.2, evidence-only).
-# Ships only features that don't depend on options data:
-#   atr_ratio, gap_frequency_20d, intraday_range_percentile_252d.
-# IV/RV-spread and vol_crush features (§1C lines 151–174) are deferred
-# until options-data ingestion + event calendar slices (see Ambiguity Log).
+# v2 §1C — Layer 1 V2 Volatility features (Slice 2.2 + 2.6 + ADR 0005).
+# atr_ratio / gap_frequency_20d / intraday_range_percentile_252d from OHLC;
+# the `vol_crush` IV features (implied_vol_30d, implied_vol_5d_change,
+# iv_rv_spread) light up when MarketContext.implied_vol_30d (FRED VIXCLS/100)
+# is supplied — free feed, no paid options data (Log #19+#20 closure).
 volatility_state_v2:
   atr_short_period: 14                  # v2 §1C line 142 (ATR_14, Wilder)
   atr_long_period: 50                   # v2 §1C line 142 (ATR_50, Wilder)
   gap_frequency_lookback_days: 20       # v2 §1C line 179
   gap_threshold_pct: 0.005              # v2 §1C line 181, US default
   intraday_range_lookback_days: 252     # v2 §1C line 186
-  # v2 §1C line 146-148 `rising_vol` rule (Slice 2.6). `vol_crush` deferred
-  # (Implementation Ambiguity Log #20 — needs options data).
+  # v2 §1C `rising_vol` rule (Slice 2.6) + `vol_crush` rule (ADR 0005 /
+  # Log #20 closure — implied_vol_30d from FRED VIXCLS, no paid feed).
   rules:
     atr_ratio_threshold: 1.15           # v2 §1C line 147
     realized_vol_ratio_threshold: 1.25  # v2 §1C line 148
     realized_vol_short_period: 10       # v2 §1C line 148 (realized_vol_10d)
     realized_vol_long_period: 63        # v2 §1C line 148 (realized_vol_63d)
+    # vol_crush rule knobs (ADR 0005):
+    vol_crush_realized_vol_mid_period: 21              # spec — realized_vol_21d
+    vol_crush_realized_vol_ratio_threshold: 0.75       # spec — rv_10d < rv_21d * 0.75
+    vol_crush_implied_vol_change_threshold: -0.20      # ADR 0005 Q1 — relative 5d drop
+    vol_crush_implied_vol_change_lookback_sessions: 5  # ADR 0005 Q1
+    vol_crush_event_window_trailing_sessions: 3        # ADR 0005 Q3 — spec "3 NYSE days"
 
 # v2 §1D — Layer 1 V2 Breadth features (Slice 2.3, evidence-only,
 # scope-restricted to non-PIT-dependent features).

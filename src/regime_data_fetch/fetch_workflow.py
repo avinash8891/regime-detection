@@ -64,6 +64,10 @@ V2_FRED_SERIES = {
     # fallback path.
     "hy_oas": "BAMLH0A0HYM2",       # ICE BofA US High Yield Index OAS
     "ig_bbb_oas": "BAMLC0A4CBBB",   # ICE BofA BBB US Corporate Index OAS
+    # CBOE VIX — the model-free 30-day implied vol on SPX, free on FRED.
+    # §1C `vol_crush` consumes it as `implied_vol_30d = VIXCLS / 100`
+    # (decimal-annualized, to match realized_vol units). ADR 0005.
+    "implied_vol_30d": "VIXCLS",
 }
 
 

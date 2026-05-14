@@ -267,6 +267,28 @@ class VolatilityV2RulesConfig(BaseModel):
     # 63 by spec text "realized_vol_63d"; exposed for v2 §9.1 calibration.
     realized_vol_long_period: int = Field(gt=0, default=63)
 
+    # v2 §1C `vol_crush` rule (ADR 0005 / Log #20 closure). The rule:
+    #   realized_vol_10d < realized_vol_21d * vol_crush_realized_vol_ratio_threshold
+    #   AND implied_vol_5d_change <= vol_crush_implied_vol_change_threshold
+    #   AND event_window_just_passed
+    # `realized_vol_10d` reuses `realized_vol_short_period`; the 21d mid
+    # window is its own knob.
+    vol_crush_realized_vol_mid_period: int = Field(gt=0, default=21)
+    # Spec line: "realized_vol_10d < realized_vol_21d * 0.75". Must be in
+    # (0, 1) — the rule fires when the short-window vol has COLLAPSED below
+    # a fraction of the mid-window vol.
+    vol_crush_realized_vol_ratio_threshold: float = Field(gt=0.0, lt=1.0, default=0.75)
+    # ADR 0005 Q1 — `implied_vol_5d_change <= -0.20`, a RELATIVE 5-session
+    # change. Must be < 0: the rule gates on a strictly-negative IV move
+    # (a "crush"); a non-negative threshold would defang the intent.
+    vol_crush_implied_vol_change_threshold: float = Field(lt=0.0, default=-0.20)
+    # ADR 0005 Q1 — lookback for the relative implied-vol change. Pinned at
+    # 5 sessions (cross-axis "5-session memory" convention, Log #68 / ADR 0004).
+    vol_crush_implied_vol_change_lookback_sessions: int = Field(gt=0, default=5)
+    # ADR 0005 Q3 — `event_window_just_passed` fires on the N NYSE sessions
+    # strictly AFTER an event window-end. Spec pins N = 3.
+    vol_crush_event_window_trailing_sessions: int = Field(gt=0, default=3)
+
 
 class VolatilityV2Config(BaseModel):
     """v2 §1C — Layer 1 V2 Volatility features (Slice 2.2, evidence-only).

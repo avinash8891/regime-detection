@@ -213,6 +213,87 @@ def _normalized_events(event_calendar: pd.DataFrame | None, *, market: str) -> p
     return load_event_calendar(event_calendar, market=market)
 
 
+def compute_event_window_just_passed(
+    *,
+    normalized_event_calendar: pd.DataFrame | None,
+    sessions: tuple[date, ...] | list[date],
+    trailing_sessions: int,
+) -> pd.Series:
+    """v2 §1C `event_window_just_passed` — per-session boolean (ADR 0005 Q3).
+
+    Fires at session ``t`` iff there EXISTS a calendar event whose window
+    closes at NYSE session ``E`` such that
+    ``1 <= trading_days_between(E, t) <= trailing_sessions`` — i.e. ``t``
+    is one of the ``trailing_sessions`` NYSE sessions strictly AFTER an
+    event window closed. ``t == E`` does NOT fire (still inside the
+    window).
+
+    Window-end ``E`` = the NYSE session ``end_offset`` trading days after
+    the event date, using the §1D per-type windows (``_WINDOWS``:
+    fed_week +2, cpi_week +1, nfp_week +1). Event rows whose type has no
+    recognized window (or whose publication_date is after ``t``) are
+    skipped.
+
+    When ``normalized_event_calendar`` is ``None`` or empty, the returned
+    Series is all-False — ``vol_crush`` then cannot fire, which is the
+    correct degraded, V1-byte-identity-preserving behavior.
+    """
+    session_tuple = tuple(sessions)
+    index = pd.DatetimeIndex([pd.Timestamp(d) for d in session_tuple])
+    result = pd.Series(False, index=index, dtype=bool)
+    if not session_tuple:
+        return result
+    if (
+        normalized_event_calendar is None
+        or normalized_event_calendar.empty
+    ):
+        return result
+
+    event_rows = list(normalized_event_calendar.itertuples(index=False))
+    if not event_rows:
+        return result
+
+    # Global NYSE session list spanning the union of session calendar and
+    # all event/publication dates, padded so window arithmetic never runs
+    # off the end.
+    first_session = session_tuple[0]
+    last_session = session_tuple[-1]
+    min_event = min(min(r.publication_date, r.date) for r in event_rows)
+    max_event = max(max(r.publication_date, r.date) for r in event_rows)
+    global_start = min(first_session, min_event) - timedelta(days=40)
+    global_end = max(last_session, max_event) + timedelta(days=40)
+    global_sessions = _sessions_between(global_start, global_end)
+    global_pos = {day: idx for idx, day in enumerate(global_sessions)}
+    n_global = len(global_sessions)
+    session_pos = {day: idx for idx, day in enumerate(session_tuple)}
+
+    for row in event_rows:
+        label = _TYPE_TO_LABEL.get(str(row.type))
+        if label is None or label not in _WINDOWS:
+            continue
+        end_offset = _WINDOWS[label][1]
+        event_idx = global_pos.get(row.date)
+        if event_idx is None:
+            continue
+        window_end_idx = event_idx + end_offset
+        if window_end_idx < 0 or window_end_idx >= n_global:
+            continue
+        # Sessions [E+1, E+trailing_sessions] (trading days) just-passed.
+        for offset in range(1, trailing_sessions + 1):
+            trailing_idx = window_end_idx + offset
+            if trailing_idx >= n_global:
+                break
+            trailing_day = global_sessions[trailing_idx]
+            # V1 §2.2 stateless replay: only consult events whose
+            # publication_date is on or before the firing session.
+            if trailing_day < row.publication_date:
+                continue
+            pos = session_pos.get(trailing_day)
+            if pos is not None:
+                result.iloc[pos] = True
+    return result
+
+
 def _third_friday_of_month(*, year: int, month: int) -> date:
     month_weeks = calendar.monthcalendar(year, month)
     friday_days = [week[calendar.FRIDAY] for week in month_weeks if week[calendar.FRIDAY] != 0]

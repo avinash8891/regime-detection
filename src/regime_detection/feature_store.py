@@ -36,6 +36,7 @@ from regime_detection.credit_funding import (
     IG_OAS_KEY as _CF_IG_OAS_KEY,
     compute_credit_funding_features,
 )
+from regime_detection.event_calendar import compute_event_window_just_passed
 from regime_detection.fragility_universe import SECTOR_ETFS
 from regime_detection.market_context import MarketContext
 from regime_detection.network_fragility import (
@@ -322,8 +323,26 @@ def build_feature_store(
     else:
         trend_direction_v2 = None
 
-    # V2 §1C volatility features (slice 2.2 + slice 2.6 rising_vol RV).
+    # V2 §1C volatility features (slice 2.2 + slice 2.6 rising_vol RV +
+    # vol_crush IV inputs, ADR 0005 / Log #19+#20).
     if volatility_state_v2_config is not None:
+        # §1C vol_crush seam (ADR 0005): when context carries the FRED
+        # VIXCLS implied-vol series, pass it as implied_vol_30d so the
+        # IV-derived features (implied_vol_5d_change, iv_rv_spread) are
+        # computed; when absent, those features stay None and vol_crush
+        # falsifies (V1 byte-identity preserved). event_window_just_passed
+        # is computed from the context's event calendar when present.
+        event_window = (
+            compute_event_window_just_passed(
+                normalized_event_calendar=context.normalized_event_calendar,
+                sessions=tuple(spy_close.index.date),
+                trailing_sessions=(
+                    volatility_state_v2_config.rules.vol_crush_event_window_trailing_sessions
+                ),
+            )
+            if context.normalized_event_calendar is not None
+            else None
+        )
         # Pass the rules sub-block so the slice-2.6 `rising_vol` rule's
         # realized_vol_short / realized_vol_long windows are populated from
         # config (rather than the hardcoded 10/63 fallback). The two paths
@@ -335,6 +354,8 @@ def build_feature_store(
             close=spy_close,
             config=volatility_state_v2_config,
             rules_config=volatility_state_v2_config.rules,
+            implied_vol_30d=context.implied_vol_30d,
+            event_window_just_passed=event_window,
         )
     else:
         volatility_state_v2 = None

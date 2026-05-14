@@ -292,7 +292,7 @@ def raw_label_for_day(
             evidence["v2_override"] = {
                 "from": label,
                 "to": v2_label,
-                "rule": "rising_vol",  # v2 §1C lines 146-148
+                "rule": v2_label,  # the winning v2 §1C rule (rising_vol / vol_crush)
             }
             label = v2_label  # type: ignore[assignment]
 
@@ -382,7 +382,7 @@ def build_raw_outputs(
             evidence[idx]["v2_override"] = {
                 "from": v1_label,
                 "to": v2_label,
-                "rule": "rising_vol",  # v2 §1C lines 146-148
+                "rule": v2_label,  # the winning v2 §1C rule (rising_vol / vol_crush)
             }
             labels[idx] = v2_label
 

@@ -90,6 +90,9 @@ def _scalar_v2_features_at(
         intraday_range_percentile_252d=nan.copy(),
         realized_vol_short=pd.Series([realized_vol_short], index=idx),
         realized_vol_long=pd.Series([realized_vol_long], index=idx),
+        realized_vol_21d=nan.copy(),
+        # vol_crush IV inputs left None — these rising_vol tests don't
+        # exercise the vol_crush rule.
     )
 
 
@@ -341,6 +344,7 @@ def _compute_v2_features_with_rv(
         intraday_range_percentile_252d=base.intraday_range_percentile_252d,
         realized_vol_short=rv_short,
         realized_vol_long=rv_long,
+        realized_vol_21d=base.realized_vol_21d,
     )
 
 
