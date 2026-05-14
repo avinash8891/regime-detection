@@ -775,6 +775,7 @@ class CreditFundingSeriesClassifier:
             hy_spread_slope_21d = features.hy_oas_slope_21d
             ig_spread_slope_21d = features.ig_oas_slope_21d
             bias_warning_code = CREDIT_SPREAD_SOURCE_CODE
+            evidence_spread_source = "ice_bofa_oas"
         else:  # "proxy"
             hy_spread_63d = features.hy_tr_differential_63d
             ig_spread_63d = features.ig_tr_differential_63d
@@ -782,6 +783,7 @@ class CreditFundingSeriesClassifier:
             hy_spread_slope_21d = features.hy_tr_differential_slope_21d
             ig_spread_slope_21d = features.ig_tr_differential_slope_21d
             bias_warning_code = CREDIT_SPREAD_PROXY_BIAS_WARNING_CODE
+            evidence_spread_source = "tlt_total_return_differential"
 
         spy_close = context.spy_ohlcv["close"]
         volatility_features = feature_store.volatility
@@ -931,6 +933,7 @@ class CreditFundingSeriesClassifier:
                         "realized_vol_21d_percentile_252d": rule_inputs.realized_vol_21d_percentile_252d,
                         "avg_pairwise_corr_percentile_504d": rule_inputs.avg_pairwise_corr_percentile_504d,
                     },
+                    "spread_source": evidence_spread_source,
                     "nfci_daily_carried": _safe_float(nfci_carried, dt),
                     "kre_spy_slope_63d": _safe_float(features.kre_spy_slope_63d, dt),
                     "bias_warning_code": bias_warning_code,

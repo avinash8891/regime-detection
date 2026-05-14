@@ -759,6 +759,8 @@ def test_build_proxy_runs_parallel_to_build_with_proxy_bias_code() -> None:
         proxy[rule_day].evidence["bias_warning_code"]
         == "credit_spread_proxy_total_return_differential"
     )
+    assert real[rule_day].evidence["spread_source"] == "ice_bofa_oas"
+    assert proxy[rule_day].evidence["spread_source"] == "tlt_total_return_differential"
 
 
 def test_unknown_when_hyg_stale_more_than_5_sessions() -> None:
