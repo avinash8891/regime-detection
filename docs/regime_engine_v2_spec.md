@@ -359,14 +359,26 @@ the slice/commit that resolved it. Entries are append-only.
 3. **§3.5 line 634 / line 656 — `narrowing_breadth` enum gap.**
    v2 §3.5 names `narrowing_breadth` in the accepted breadth sets for
    `rising_fragility` and `systemic_stress`, but V1's `BreadthLabel` enum
-   (`regime_detection.breadth_state`) does not yet contain that literal.
-   Resolution: pin the accepted sets to what V1 can express today —
-   `rising_fragility` accepts `{weak_breadth, divergent_fragile}` and
-   `systemic_stress` accepts `{weak_breadth}`. Both call sites carry
-   `# TODO(v2.1-breadth-enum)` markers in
-   `regime_detection.network_fragility_rules` so they can be relinked when the
+   (`regime_detection.breadth_state`) did not contain that literal at the
+   time of Slice 1.3.
+   Resolution (Slice 1.3): pin the accepted sets to what V1 could express
+   then — `rising_fragility` accepts `{weak_breadth, divergent_fragile}` and
+   `systemic_stress` accepts `{weak_breadth}`. Both call sites in
+   `regime_detection.network_fragility_rules` carry
+   `# TODO(v2.1-breadth-enum)` markers so they can be relinked when the
    enum is extended.
    Resolved by Slice 1.3 (commit `c3badfc`).
+
+   Status update (post Slice 2.8c): the `BreadthLabel` Literal in
+   `regime_detection.breadth_state` has since been widened — it now
+   includes `narrowing_breadth`, `recovery_breadth`, `broadening_breadth`,
+   and the `breadth_thrust` slot. The two `# TODO(v2.1-breadth-enum)`
+   markers in `network_fragility_rules` (`rising_fragility` and
+   `systemic_stress` accepted_breadth sets) are therefore actionable
+   today — a small follow-up TDD slice should add `narrowing_breadth`
+   to both sets and remove the marker comments. The spec text and the
+   §3.5 rule semantics are unchanged; only the code-side mapping
+   widens.
 
 4. **§3.5 line 620 — `effective_rank_stability_threshold`.**
    Spec wrote "21d std < 5% of mean" inline.
@@ -918,7 +930,7 @@ the slice/commit that resolved it. Entries are append-only.
     `trend_break`, `macro_event`) to sum to 1.0 would be a spec
     invention.
 
-    Resolution: defer Layer 4 V2 transition score until either
+    Resolution (Slice 3): defer Layer 4 V2 transition score until either
     (a) PIT constituent membership ingestion lands (unblocks
     `pct_above_50dma`, then ship the §4.3 "Without HMM" row
     verbatim over the five non-HMM components), or (b) HMM ships
@@ -928,7 +940,40 @@ the slice/commit that resolved it. Entries are append-only.
     authoritative (per §4.5 "V1 warning labels remain
     authoritative; the score adds gradation").
 
-    No code committed for this slice — doc-only Ambiguity Log entry.
+    Status update (post Slice 8 change-point): both unblocking paths
+    have since landed and the entry is fully resolved.
+
+    - PIT constituent membership now ships through the engine
+      end-to-end (`market_context.py` accepts
+      `pit_constituent_intervals` + `constituent_ohlcv`;
+      `breadth_state_v2._compute_pit_features` materialises
+      `pct_above_50dma`), unblocking `breadth_deterioration_score`.
+    - HMM shipped in Slice 6 (`regime_detection.hmm_state`),
+      unblocking `hmm_probability_shift_score`.
+    - Change-point shipped in Slice 8
+      (`regime_detection.change_point`), adding a 7th component
+      and a third weight row.
+
+    `configs/core3-v2.0.0.yaml` now publishes THREE weight tables
+    consumed by `regime_detection.transition_score`:
+
+    - `weights_without_hmm` — 5-component fallback (V1 byte-identity
+      path when HMM seam returns None or is disabled).
+    - `weights_with_hmm` — 5-component-plus-HMM, used when the HMM
+      seam is lit.
+    - `weights_with_hmm_with_change_point` — 6-component-plus-
+      change_point, used when both HMM and change-point seams are
+      lit (per Log #66 for the `change_point_score` 7th-component
+      addition to §4.2).
+
+    `regime_detection.transition_score.compute_transition_score`
+    selects among the three tables based on which seams returned
+    non-None evidence on the as-of date (per the per-day PIT-correct
+    masking added in commit 19e395d). When neither HMM nor
+    change-point is lit, the without-HMM 5-component path runs and
+    V1 byte-identity is preserved.
+
+    Resolved by Slices 3 + 6 + 8 + Slice 2.8c (PIT) combined.
 
 44. **§2A lines 882–913 — Layer 2A Monetary/Liquidity V2 axis is blocked:
     spec defines rule predicates but omits the structural scaffolding
