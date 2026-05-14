@@ -20,13 +20,13 @@ If none match (or any required input is NaN), the label falls through to
 ``unknown`` (data-quality gate, mirrors slice 1.3 / §3.3 convention).
 
 Slice scope:
-- Ships ``panic_volume`` (§1E lines 270-274) and ``normal_volume`` (§1E
-  line 282) live.
-- ``liquidity_gap_behavior`` (§1E lines 276-280) SHORT-CIRCUITS TO False
-  because §1E line 277 names the 252d percentile of ``gap_frequency_20d``,
-  which is NOT yet computed. The signature accepts the percentile input
-  so a future slice can flip the implementation without changing call
-  sites. See Implementation Ambiguity Log entry #40.
+- Ships ``panic_volume`` (§1E lines 270-274), ``normal_volume`` (§1E
+  line 282), and ``liquidity_gap_behavior`` (§1E lines 276-280) live.
+- The 252d percentile of ``gap_frequency_20d`` was previously the
+  missing input that forced ``liquidity_gap_behavior`` to short-circuit
+  to False (Log #40). It now ships from
+  ``regime_detection.volatility_state_v2.gap_frequency_percentile_252d``
+  in the same commit that flipped this predicate. Log #40 is closed.
 
 All numeric thresholds are config-driven via
 ``VolumeLiquidityRulesConfig``; this module is magic-number free per
@@ -118,25 +118,36 @@ def evaluate_panic_volume(
 
 
 def evaluate_liquidity_gap_behavior(
-    inputs: VolumeLiquidityRuleInputs,  # noqa: ARG001 (kept for forward-compat)
-    config: VolumeLiquidityRulesConfig,  # noqa: ARG001
+    inputs: VolumeLiquidityRuleInputs,
+    config: VolumeLiquidityRulesConfig,
 ) -> bool:
-    """v2 §1E lines 276-280 — DEFERRED short-circuit.
+    """v2 §1E lines 276-280 — `liquidity_gap_behavior` predicate.
 
     Spec text:
         gap_frequency_20d percentile_252d > 0.75
         AND intraday_range_percentile_252d > 0.75
 
-    §1E line 277 references the 252d percentile of ``gap_frequency_20d``,
-    which is NOT yet computed in any feature module (the feature store
-    only exposes the raw ``gap_frequency_20d`` series, not its 252d
-    percentile rank). Per v2 §10 absolute rule we do NOT invent the
-    missing input — so this rule returns False today. A future slice
-    that computes the 252d percentile flips the implementation here
-    without touching any call site. See Implementation Ambiguity Log
-    entry #40.
+    Both inequalities are strict per spec (`> 0.75`). NaN in either
+    percentile input falsifies the rule (V1 §2.7 cold-start contract).
+    The two thresholds are configurable via
+    `VolumeLiquidityRulesConfig.liquidity_gap_*_percentile_threshold`
+    so the V2 §9.1 walk-forward calibration may retune.
+
+    Closes Log #40 — the 252d percentile of `gap_frequency_20d` now
+    ships from `regime_detection.volatility_state_v2` (in the same
+    commit that flipped this predicate from `return False`), so both
+    rule inputs are available at evaluation time.
     """
-    return False
+    if _is_nan(inputs.gap_frequency_percentile_252d) or _is_nan(
+        inputs.intraday_range_percentile_252d
+    ):
+        return False
+    return bool(
+        inputs.gap_frequency_percentile_252d
+        > config.liquidity_gap_frequency_percentile_threshold
+        and inputs.intraday_range_percentile_252d
+        > config.liquidity_gap_intraday_range_percentile_threshold
+    )
 
 
 def evaluate_normal_volume(

@@ -592,6 +592,18 @@ class VolumeLiquidityStateSeriesClassifier:
         return_1d_series = feature_store.volatility.return_1d
         volume_zscore_series = volume_features.volume_zscore_20d
 
+        # v2 §1E line 278/279 + Log #40 closure — read the two 252d
+        # percentiles for the `liquidity_gap_behavior` predicate from the
+        # §1C volatility_state_v2 seam. When that seam is absent (V1-only
+        # callers), these stay None and the rule falls through to
+        # normal_volume / unknown as before (no NaN-mask change).
+        volatility_v2 = feature_store.volatility_state_v2
+        gap_freq_pct_series: pd.Series | None = None
+        intraday_pct_series: pd.Series | None = None
+        if volatility_v2 is not None:
+            gap_freq_pct_series = volatility_v2.gap_frequency_percentile_252d
+            intraday_pct_series = volatility_v2.intraday_range_percentile_252d
+
         required_inputs: list[pd.Series] = [
             volume_zscore_series,
             return_1d_series,
@@ -626,18 +638,29 @@ class VolumeLiquidityStateSeriesClassifier:
                 per_day_evidence.append({"reason": day_quality.reason or "insufficient_data"})
                 continue
 
-            # NaN-safe scalar materialization. The deferred liquidity_gap
-            # percentile inputs are not yet available — pass NaN so the
-            # rule signature stays forward-compat without depending on
-            # data the feature store does not yet expose.
+            # NaN-safe scalar materialization. Log #40 closure: the two
+            # 252d percentile inputs for `liquidity_gap_behavior` now read
+            # from `feature_store.volatility_state_v2` when that seam is
+            # lit; otherwise they stay NaN and the rule falsifies per V1
+            # §2.7 cold-start.
             volume_zscore_20d = float(volume_zscore_series.loc[dt]) if dt in volume_zscore_series.index else float("nan")
             return_1d = float(return_1d_series.loc[dt]) if dt in return_1d_series.index else float("nan")
+            gap_freq_pct = (
+                float(gap_freq_pct_series.loc[dt])
+                if gap_freq_pct_series is not None and dt in gap_freq_pct_series.index
+                else float("nan")
+            )
+            intraday_pct = (
+                float(intraday_pct_series.loc[dt])
+                if intraday_pct_series is not None and dt in intraday_pct_series.index
+                else float("nan")
+            )
 
             inputs = VolumeLiquidityRuleInputs(
                 volume_zscore_20d=volume_zscore_20d,
                 return_1d=return_1d,
-                gap_frequency_percentile_252d=float("nan"),  # deferred (Ambiguity Log #40)
-                intraday_range_percentile_252d=float("nan"),  # deferred
+                gap_frequency_percentile_252d=gap_freq_pct,
+                intraday_range_percentile_252d=intraday_pct,
             )
             label = evaluate_volume_liquidity_rules(
                 inputs=inputs,

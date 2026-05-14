@@ -939,6 +939,22 @@ the slice/commit that resolved it. Entries are append-only.
     the type level. Risk-rank slot 2 from §1E line 291 is reserved for
     the future flip. Deferred by Slice 2.7.
 
+    Status update — fully resolved by the user-prompted FRED-availability
+    audit. The "missing input" turned out to require no new external
+    feed: the 252d percentile of `gap_frequency_20d` is just a rolling
+    rank on the already-shipped raw series. `compute_volatility_v2_
+    features` in `regime_detection.volatility_state_v2` now emits
+    `gap_frequency_percentile_252d` alongside the existing
+    `intraday_range_percentile_252d`. The
+    `VolumeLiquidityStateSeriesClassifier` reads both percentiles from
+    the §1C volatility seam and threads them into
+    `VolumeLiquidityRuleInputs`.
+    `evaluate_liquidity_gap_behavior` now implements the spec predicate
+    (strict `> 0.75` on both percentiles, configurable via
+    `VolumeLiquidityRulesConfig`); NaN in either input falsifies the
+    rule per V1 §2.7. The §1E label set, risk-rank, hysteresis, and
+    precedence are unchanged.
+
 41. **§1E — per-label hysteresis days NOT in spec.**
     The §1E text (lines 251-294) lists labels, rules, and risk_rank but
     is SILENT on per-label de-escalation days. The §3.7 spec for

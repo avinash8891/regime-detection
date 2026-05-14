@@ -86,6 +86,7 @@ def _scalar_v2_features_at(
     return VolatilityV2Features(
         atr_ratio=pd.Series([atr_ratio], index=idx),
         gap_frequency_20d=nan.copy(),
+        gap_frequency_percentile_252d=nan.copy(),
         intraday_range_percentile_252d=nan.copy(),
         realized_vol_short=pd.Series([realized_vol_short], index=idx),
         realized_vol_long=pd.Series([realized_vol_long], index=idx),
@@ -336,6 +337,7 @@ def _compute_v2_features_with_rv(
     return VolatilityV2Features(
         atr_ratio=base.atr_ratio,
         gap_frequency_20d=base.gap_frequency_20d,
+        gap_frequency_percentile_252d=base.gap_frequency_percentile_252d,
         intraday_range_percentile_252d=base.intraday_range_percentile_252d,
         realized_vol_short=rv_short,
         realized_vol_long=rv_long,

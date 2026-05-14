@@ -61,6 +61,12 @@ class VolatilityV2Features:
 
     atr_ratio: pd.Series
     gap_frequency_20d: pd.Series
+    # v2 §1E line 278 / Log #40 closure — 252d percentile rank of
+    # `gap_frequency_20d`. Consumed by the §1E `liquidity_gap_behavior`
+    # rule. Computed here (rather than at the rule layer) so the percentile
+    # shares the volatility seam's session index and the rule layer reads
+    # only scalars.
+    gap_frequency_percentile_252d: pd.Series
     intraday_range_percentile_252d: pd.Series
     # v2 §1C line 148 — `rising_vol` rule inputs (slice 2.6).
     realized_vol_short: pd.Series
@@ -71,6 +77,7 @@ class VolatilityV2Features:
         return (
             "atr_ratio",
             "gap_frequency_20d",
+            "gap_frequency_percentile_252d",
             "intraday_range_percentile_252d",
             "realized_vol_short",
             "realized_vol_long",
@@ -192,6 +199,15 @@ def compute_volatility_v2_features(
         lookback=config.gap_frequency_lookback_days,
         threshold_pct=config.gap_threshold_pct,
     )
+    # v2 §1E line 278 — 252d percentile rank of `gap_frequency_20d`. Same
+    # rolling-rank shape as `intraday_range_percentile_252d` below and the
+    # §1D `nh_nl_ratio` percentile pattern. Closes Log #40 by computing
+    # the previously-missing percentile input for `liquidity_gap_behavior`.
+    gap_freq_pct = (
+        gap_freq.rolling(config.intraday_range_lookback_days, min_periods=config.intraday_range_lookback_days)
+        .rank(pct=True)
+        .rename("gap_frequency_percentile_252d")
+    )
     intraday_pct = _intraday_range_percentile(
         high=high,
         low=low,
@@ -224,6 +240,7 @@ def compute_volatility_v2_features(
     return VolatilityV2Features(
         atr_ratio=atr_ratio,
         gap_frequency_20d=gap_freq,
+        gap_frequency_percentile_252d=gap_freq_pct,
         intraday_range_percentile_252d=intraday_pct,
         realized_vol_short=rv_short,
         realized_vol_long=rv_long,

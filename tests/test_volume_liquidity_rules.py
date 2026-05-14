@@ -128,28 +128,56 @@ def test_panic_volume_false_when_return_is_nan(volume_liquidity_rules):
     ) is False
 
 
-# ---------- liquidity_gap_behavior: DEFERRED short-circuit (Ambiguity Log #40)
+# ---------- liquidity_gap_behavior: live predicate (Log #40 closure)
 
 
-def test_liquidity_gap_behavior_returns_false_even_when_all_inputs_satisfied(
+def test_liquidity_gap_behavior_fires_when_both_percentiles_above_threshold(
     volume_liquidity_rules,
 ):
-    """Slice 2.7 defers `liquidity_gap_behavior`: §1E line 277 requires the
-    252d percentile of `gap_frequency_20d`, which is not yet computed in
-    the feature store. The rule short-circuits to False; future slice
-    flips the implementation when that feature lands. See Ambiguity Log
-    entry #40."""
+    """v2 §1E lines 276-280: rule fires when BOTH the 252d percentile of
+    `gap_frequency_20d` AND `intraday_range_percentile_252d` strictly
+    exceed 0.75. Log #40 closure: the missing percentile input now ships
+    from volatility_state_v2.gap_frequency_percentile_252d in the same
+    commit that flipped this predicate from short-circuit-False."""
     inputs = _inputs(
         gap_frequency_percentile_252d=0.95,
+        intraday_range_percentile_252d=0.95,
+    )
+    assert evaluate_liquidity_gap_behavior(inputs, volume_liquidity_rules) is True
+
+
+def test_liquidity_gap_behavior_false_when_gap_freq_pct_at_or_below_threshold(
+    volume_liquidity_rules,
+):
+    """Both inequalities are strict per spec — percentile EXACTLY at 0.75
+    falsifies."""
+    inputs = _inputs(
+        gap_frequency_percentile_252d=0.75,
         intraday_range_percentile_252d=0.95,
     )
     assert evaluate_liquidity_gap_behavior(inputs, volume_liquidity_rules) is False
 
 
+def test_liquidity_gap_behavior_false_when_intraday_pct_at_or_below_threshold(
+    volume_liquidity_rules,
+):
+    inputs = _inputs(
+        gap_frequency_percentile_252d=0.95,
+        intraday_range_percentile_252d=0.75,
+    )
+    assert evaluate_liquidity_gap_behavior(inputs, volume_liquidity_rules) is False
+
+
 def test_liquidity_gap_behavior_returns_false_on_nan_inputs(volume_liquidity_rules):
+    """V1 §2.7 cold-start: NaN in either percentile input falsifies."""
     inputs = _inputs(
         gap_frequency_percentile_252d=float("nan"),
         intraday_range_percentile_252d=0.95,
+    )
+    assert evaluate_liquidity_gap_behavior(inputs, volume_liquidity_rules) is False
+    inputs = _inputs(
+        gap_frequency_percentile_252d=0.95,
+        intraday_range_percentile_252d=float("nan"),
     )
     assert evaluate_liquidity_gap_behavior(inputs, volume_liquidity_rules) is False
 
@@ -206,17 +234,36 @@ def test_evaluate_rules_returns_unknown_when_required_inputs_nan(
     assert label == "unknown"
 
 
-def test_evaluate_rules_returns_normal_volume_when_only_liquidity_gap_inputs_fire(
+def test_evaluate_rules_returns_liquidity_gap_behavior_when_inputs_fire(
     volume_liquidity_rules,
 ):
-    """liquidity_gap_behavior is deferred (returns False) — even when its
-    inputs are above threshold, precedence falls through to normal_volume."""
+    """Log #40 closure: when both percentile inputs strictly exceed 0.75
+    and the panic rule does not fire, precedence walker returns
+    `liquidity_gap_behavior` (the slot above `normal_volume` per §1E
+    line 282 precedence)."""
     label = evaluate_rules(
         inputs=_inputs(
             volume_zscore_20d=0.5,
             return_1d=0.001,
             gap_frequency_percentile_252d=0.95,
             intraday_range_percentile_252d=0.95,
+        ),
+        config=volume_liquidity_rules,
+    )
+    assert label == "liquidity_gap_behavior"
+
+
+def test_evaluate_rules_falls_through_to_normal_when_percentiles_below_threshold(
+    volume_liquidity_rules,
+):
+    """When the percentile inputs do NOT exceed the 0.75 thresholds, the
+    walker correctly falls through to normal_volume."""
+    label = evaluate_rules(
+        inputs=_inputs(
+            volume_zscore_20d=0.5,
+            return_1d=0.001,
+            gap_frequency_percentile_252d=0.50,
+            intraday_range_percentile_252d=0.50,
         ),
         config=volume_liquidity_rules,
     )
