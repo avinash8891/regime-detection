@@ -95,6 +95,30 @@ def test_boe_parses_annual_mpc_dates_page() -> None:
     ]
 
 
+def test_boe_parses_legacy_annual_mpc_month_day_table() -> None:
+    html = """
+    <h3>2017 MPC dates</h3>
+    <table>
+      <tr>
+        <td><strong>Month</strong></td>
+        <td><h3>MPC announcement and<br />meeting minutes publication</h3></td>
+        <td><h3>Inflation Report publication</h3></td>
+      </tr>
+      <tr><td><strong>January 2017</strong></td><td>No meeting</td><td></td></tr>
+      <tr><td><strong>February 2017</strong></td><td>Thursday 2</td><td>Thursday 2</td></tr>
+      <tr><td><strong>March 2017</strong></td><td>Thursday 16</td><td></td></tr>
+    </table>
+    """
+
+    candidates = parse_boe_mpc_dates_page(
+        html,
+        source_url="https://www.bankofengland.co.uk/news/2016/september/mpc-announcement-dates-for-2017-and-2018",
+        as_of_date=dt.date(2016, 9, 29),
+    )
+
+    assert [candidate.date for candidate in candidates] == [dt.date(2017, 2, 2), dt.date(2017, 3, 16)]
+
+
 def test_boe_adapter_continues_pagination_across_empty_news_pages() -> None:
     pages = {
         1: '{"Results": "<a href=\\"/monetary-policy-summary-and-minutes/2026/march-2026\\"><time datetime=\\"2026-03-19\\"></time><h3 class=\\"list\\">March 2026 Monetary Policy Summary and Minutes</h3></a>"}',

@@ -131,6 +131,12 @@ def parse_boe_mpc_dates_page(html: str, *, source_url: str, as_of_date: dt.date)
         r"(?P<year>20\d{2}).*?(?P<day>\d{1,2})",
         flags=re.IGNORECASE,
     )
+    month_year_cell_pattern = re.compile(
+        r"(?P<month>January|February|March|April|May|June|July|August|September|October|November|December)\s+"
+        r"(?P<year>20\d{2})",
+        flags=re.IGNORECASE,
+    )
+    day_cell_pattern = re.compile(r"(?:Monday|Tuesday|Wednesday|Thursday|Friday)?\s*(?P<day>\d{1,2})\b", flags=re.IGNORECASE)
     for row_match in row_pattern.finditer(html):
         cells = cell_pattern.findall(row_match.group("row"))
         if not cells:
@@ -141,10 +147,19 @@ def parse_boe_mpc_dates_page(html: str, *, source_url: str, as_of_date: dt.date)
         date_match = full_date_pattern.search(first_cell)
         if date_match is None:
             date_match = month_year_pattern.search(first_cell)
-        if date_match is None:
+        if date_match is not None:
+            month = MONTHS[date_match.group("month").lower()]
+            event_date = dt.date(int(date_match.group("year")), month, int(date_match.group("day")))
+        elif len(cells) >= 2:
+            second_cell = strip_tags(cells[1])
+            month_year_match = month_year_cell_pattern.search(first_cell)
+            day_match = day_cell_pattern.search(second_cell)
+            if month_year_match is None or day_match is None or "no meeting" in second_cell.lower():
+                continue
+            month = MONTHS[month_year_match.group("month").lower()]
+            event_date = dt.date(int(month_year_match.group("year")), month, int(day_match.group("day")))
+        else:
             continue
-        month = MONTHS[date_match.group("month").lower()]
-        event_date = dt.date(int(date_match.group("year")), month, int(date_match.group("day")))
         candidates.append(_candidate(event_date, as_of_date, source_url, "MPC Announcement and Minutes publication", first_cell))
     return sorted(candidates, key=lambda candidate: candidate.date)
 
