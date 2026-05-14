@@ -3,7 +3,7 @@ from __future__ import annotations
 import datetime as dt
 
 from regime_data_fetch.event_sources.deterministic_election import ElectionAdapter
-from regime_data_fetch.event_sources.official_boe import parse_boe_news_api_results, parse_boe_upcoming_mpc_dates
+from regime_data_fetch.event_sources.official_boe import OfficialBOEAdapter, parse_boe_news_api_results, parse_boe_upcoming_mpc_dates
 from regime_data_fetch.event_sources.official_boj import parse_boj_mpm_dates
 from regime_data_fetch.event_sources.official_ecb import parse_ecb_current_calendar, parse_ecb_decision_archive
 
@@ -59,6 +59,25 @@ def test_boe_parses_current_page_and_news_api_results() -> None:
     assert [(candidate.date, candidate.raw_title) for candidate in historical] == [
         (dt.date(2025, 12, 18), "Bank Rate reduced to 3.75% - December 2025 Monetary Policy Summary and Minutes")
     ]
+
+
+def test_boe_adapter_continues_pagination_across_empty_news_pages() -> None:
+    pages = {
+        1: '{"Results": "<a href=\\"/monetary-policy-summary-and-minutes/2026/march-2026\\"><time datetime=\\"2026-03-19\\"></time><h3 class=\\"list\\">March 2026 Monetary Policy Summary and Minutes</h3></a>"}',
+        2: '{"Results": ""}',
+        3: '{"Results": "<a href=\\"/monetary-policy-summary-and-minutes/2025/december-2025\\"><time datetime=\\"2025-12-18\\"></time><h3 class=\\"list\\">December 2025 Monetary Policy Summary and Minutes</h3></a>"}',
+        4: '{"Results": "<a href=\\"/monetary-policy-summary-and-minutes/2015/december-2015\\"><time datetime=\\"2015-12-17\\"></time><h3 class=\\"list\\">December 2015 Monetary Policy Summary and Minutes</h3></a>"}',
+    }
+    adapter = OfficialBOEAdapter(
+        as_of_date=dt.date(2026, 5, 14),
+        text_fetcher=lambda url: "",
+        news_api_fetcher=lambda page: pages[page],
+        stop_on_empty_news_page=False,
+    )
+
+    candidates = adapter.fetch(start_year=2025, end_year=2026, store=None, run_id=None)
+
+    assert [candidate.date for candidate in candidates] == [dt.date(2025, 12, 18), dt.date(2026, 3, 19)]
 
 
 def test_boj_parses_current_and_past_mpm_tables_using_final_meeting_day() -> None:

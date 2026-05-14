@@ -26,9 +26,11 @@ class OfficialBOEAdapter:
         as_of_date: dt.date | None = None,
         text_fetcher: Callable[[str], str] = fetch_text_url,
         news_api_fetcher: Callable[[int], str] | None = None,
+        stop_on_empty_news_page: bool | None = None,
     ) -> None:
         self.as_of_date = as_of_date or dt.date.today()
         self.text_fetcher = text_fetcher
+        self._stop_on_empty_news_page = news_api_fetcher is not None if stop_on_empty_news_page is None else stop_on_empty_news_page
         self.news_api_fetcher = news_api_fetcher or fetch_boe_news_api_page
 
     def fetch(
@@ -49,7 +51,7 @@ class OfficialBOEAdapter:
             candidates.extend(page_candidates)
             if page_candidates and min(candidate.date.year for candidate in page_candidates) < start_year:
                 break
-            if not page_candidates:
+            if not page_candidates and self._stop_on_empty_news_page:
                 break
         return _dedupe(candidates, start_year=start_year, end_year=end_year)
 
