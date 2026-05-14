@@ -1,0 +1,30 @@
+src/regime_data_fetch/cleveland_fed_nowcast.py
+  s_7f3c352a4f9447::t_a4211424c04cff 5-45,59-65,68-80,90-109,111,114-127,129-149,151-152,154,156-173,176,179-181,183,187-188,199-209,212,215,218-221,223-226,237,245-249,262,264,267-268,271-272,274,276-278,280-282,309-310,315-319,321-323,327,330-342,344,346,353-357
+docs/market_data_fetch_plan.md
+  s_7f3c352a4f9447::t_b3aa34fa2c81e4 88
+  s_7f3c352a4f9447::t_b521f8c22b5452 56
+  s_7f3c352a4f9447::t_23f569b791c8dd 266
+docs/decisions/0006-inflation-surprise-cleveland-fed-nowcast-substitute.md
+  s_7f3c352a4f9447::t_7bbf5a8307000c 59
+  s_7f3c352a4f9447::t_d5c4f28a2b7248 97,99,101-106
+tests/test_cleveland_fed_nowcast.py
+  s_7f3c352a4f9447::t_71fdb9da60dfa2 3-10,13-14,28,30-32,37-86,88-95,97-102,108-109,112-138,140,143-148,150-161,163-165,168-172,175-177,179-183,187-212,215-220,227,229,237-238,241-242,244-245,247,249-250,252-255,258-259,261,269-274,279-283,287-298,300,303,306-313
+docs/regime_engine_v2_spec.md
+  s_7f3c352a4f9447::t_74288fe728d27d 1574-1585
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.8",
+  "base_commit_sha": "3219e109ae950d1991873a5979bf88572cf0980c",
+  "prompts": {},
+  "sessions": {
+    "s_7f3c352a4f9447": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "3d45e374-f98d-411d-b6a1-0697dd832539",
+        "model": "claude-opus-4-7"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}
