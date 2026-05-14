@@ -18,9 +18,16 @@ if TYPE_CHECKING:  # avoid runtime cycle: volatility_state_v2 → config → ...
 # v2 §1C line 191 precedence:
 #   crisis_vol > vol_crush > high_vol > rising_vol > low_vol > normal_vol > unknown
 # `rising_vol` lands in slice 2.6 (v2 §1C lines 146-148);
-# `vol_crush` deferred (Ambiguity Log #20 — needs options data).
+# `vol_crush` lands via ADR 0005 / Ambiguity Log #20 using FRED VIXCLS as
+# implied_vol_30d plus the event-window seam.
 VolatilityLabel = Literal[
-    "low_vol", "normal_vol", "high_vol", "crisis_vol", "unknown", "rising_vol"
+    "low_vol",
+    "normal_vol",
+    "high_vol",
+    "crisis_vol",
+    "unknown",
+    "rising_vol",
+    "vol_crush",
 ]
 
 
@@ -146,20 +153,21 @@ def wilders_atr(
 
 
 # v2 §1C line 191 precedence:
-#   crisis_vol > vol_crush(deferred) > high_vol > rising_vol > low_vol >
+#   crisis_vol > vol_crush > high_vol > rising_vol > low_vol >
 #   normal_vol > unknown.
-# Risk-rank intuition: rising_vol is a vol-expansion event — riskier than
-# normal_vol but less risky than high_vol. Slot at 2 (matching unknown,
-# below high_vol's risk_rank intent but distinct via precedence). The v1
-# label ranks are unchanged so v1 hysteresis behavior is preserved when
-# v2 labels are absent.
+# Risk-rank intuition: vol_crush is less severe than crisis_vol but outranks
+# high_vol/rising_vol per §1C precedence. rising_vol is a vol-expansion event
+# — riskier than normal_vol but less risky than high_vol. V1-only behavior is
+# preserved when v2 labels are absent because the relative order of V1 labels
+# is unchanged.
 _RISK_RANK: dict[VolatilityLabel, int] = {
     "low_vol": 0,
     "normal_vol": 1,
     "high_vol": 2,
-    "crisis_vol": 3,
+    "crisis_vol": 4,
     "unknown": 2,
     "rising_vol": 2,
+    "vol_crush": 3,
 }
 
 
@@ -223,7 +231,7 @@ def raw_label_for_day(
 
     When ``volatility_state_v2_features`` AND ``volatility_state_v2_rules``
     are both supplied, the v2 §1C precedence (line 191:
-    ``crisis_vol > vol_crush(deferred) > high_vol > rising_vol > low_vol >
+    ``crisis_vol > vol_crush > high_vol > rising_vol > low_vol >
     normal_vol > unknown``) is layered ON TOP of the v1 label. When either
     is ``None`` the function returns the v1 label and evidence unchanged
     — byte-identical to the pre-slice-2.6 implementation.

@@ -237,13 +237,11 @@ class TrendDirectionV2Config(BaseModel):
 
 
 class VolatilityV2RulesConfig(BaseModel):
-    """v2 §1C `rising_vol` rule thresholds + RV windows (Slice 2.6).
+    """v2 §1C `rising_vol` and `vol_crush` rule thresholds.
 
-    Each value cites its line in docs/regime_engine_v2_spec.md §1C. The
-    `vol_crush` rule (§1C lines 157-174) is deferred (Implementation
-    Ambiguity Log entry #20) — needs options-data ingestion + the §2D
-    event-window calendar — so this config only carries the `rising_vol`
-    knobs today.
+    Each value cites its line in docs/regime_engine_v2_spec.md §1C.
+    `vol_crush` uses FRED VIXCLS-derived implied_vol_30d and the
+    event-window seam per ADR 0005 / Ambiguity Log #20.
     """
 
     model_config = ConfigDict(extra="forbid")
@@ -291,14 +289,13 @@ class VolatilityV2RulesConfig(BaseModel):
 
 
 class VolatilityV2Config(BaseModel):
-    """v2 §1C — Layer 1 V2 Volatility features (Slice 2.2, evidence-only).
+    """v2 §1C — Layer 1 V2 Volatility features.
 
-    Ships only the volatility V2 features that DO NOT require options data:
-    ``atr_ratio``, ``gap_frequency_20d``, ``intraday_range_percentile_252d``.
-    The IV/RV-spread and vol_crush features at v2 §1C lines 151–174 are
-    deferred until an options-data ingestion + event-calendar slice lands
-    (per v2 §10 absolute rule: do not invent missing inputs). See
-    Implementation Ambiguity Log entries for the deferrals.
+    Ships ATR ratio, gap-frequency, intraday-range, realized-vol, IV/RV
+    spread, and vol-crush inputs. IV-derived features are present when the
+    context supplies FRED VIXCLS-derived ``implied_vol_30d``; otherwise
+    those optional inputs stay absent and ``vol_crush`` falsifies per
+    v2 §10.
     """
 
     model_config = ConfigDict(extra="forbid")

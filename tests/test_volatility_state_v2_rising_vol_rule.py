@@ -6,7 +6,7 @@ Spec references (docs/regime_engine_v2_spec.md):
         OR realized_vol_10d > realized_vol_63d * 1.25
     §1C line 191 — precedence:
         crisis_vol > vol_crush > high_vol > rising_vol > low_vol > normal_vol > unknown
-        (`vol_crush` deferred — Ambiguity Log #20.)
+        (`vol_crush` is covered separately in test_volatility_state_v2_vol_crush.)
 
 Per ~/.claude/CLAUDE.md and AGENTS.md G/L: realistic SPY-like price series,
 no toy a/b/c names, use the real production Pydantic config.

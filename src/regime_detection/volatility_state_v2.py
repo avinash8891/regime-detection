@@ -1,10 +1,7 @@
-"""v2 §1C Layer 1 V2 Volatility features — evidence-only compute (Slice 2.2).
+"""v2 §1C Layer 1 V2 Volatility features and labels.
 
-Pure pandas/numpy implementation of the §1C continuous features that DO
-NOT require options data. The new ``rising_vol`` / ``vol_crush`` labels
-and the updated precedence at v2 §1C line 191 are deferred to a later
-slice (per v2 §8: "Adds to existing classifiers without changing V1
-contracts").
+Pure pandas/numpy implementation of the §1C continuous features and the
+``rising_vol`` / ``vol_crush`` precedence overlay.
 
 Features (all per-session series aligned to the input close index):
 
@@ -12,15 +9,13 @@ Features (all per-session series aligned to the input close index):
 - ``gap_frequency_20d``               v2 §1C lines 176–181
 - ``intraday_range_percentile_252d``  v2 §1C lines 183–187
 
-Deferred features (require external data not yet ingested — per v2 §10
-absolute rule, do NOT invent missing inputs):
+Optional external-data features:
 
-- ``iv_rv_spread`` (§1C lines 151–155) — needs options/implied-vol feed.
-- ``vol_crush`` rule inputs (§1C lines 157–174) — needs implied_vol_5d_change
-  AND the §2D event-window calendar.
-
-Both deferrals are recorded in the Implementation Ambiguity Log in
-``docs/regime_engine_v2_spec.md``.
+- ``iv_rv_spread`` (§1C lines 151–155) — computed when FRED VIXCLS-derived
+  ``implied_vol_30d`` is supplied.
+- ``vol_crush`` (§1C lines 157–174) — computed when both implied-vol and
+  event-window inputs are supplied; otherwise the predicate falsifies per
+  v2 §10 "do not invent missing inputs".
 
 Implementation choices that resolve ambiguities:
 
@@ -329,10 +324,8 @@ def compute_volatility_v2_features(
 # Precedence (v2 §1C line 191):
 #     crisis_vol > vol_crush > high_vol > rising_vol > low_vol > normal_vol > unknown
 #
-# `vol_crush` is deferred (options data not yet ingested — see
-# Implementation Ambiguity Log entry #20). The precedence slot stays
-# defined so future authors can drop vol_crush in without re-ordering;
-# the rule predicate never fires today.
+# `vol_crush` is wired via ADR 0005 / Log #20 using FRED VIXCLS-derived
+# implied_vol_30d plus event_window_just_passed.
 # ---------------------------------------------------------------------------
 
 
