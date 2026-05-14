@@ -1512,34 +1512,30 @@ the slice/commit that resolved it. Entries are append-only.
     - **Unknown gate** — staleness-based on HYG/LQD/TLT (> 5
       sessions), NFCI (> 14 days = 2× weekly cycle), SOFR/IORB
       missing, or `assess_series_input_quality` failure.
-    - **Credit-spread metric — dual source.** §2C ships TWO source
-      paths for `hy_spread_proxy_63d` and `ig_spread_proxy_63d`:
+    - **Credit-spread metric — single source.** `hy_spread_proxy_63d`
+      and `ig_spread_proxy_63d` are populated directly from the
+      FRED-redistributed ICE BofA Option-Adjusted Spread series:
+      `BAMLH0A0HYM2` (HY Master II OAS) and `BAMLC0A4CBBB` (BBB
+      Corporate OAS), free at the FRED endpoint under ICE's
+      redistribution license. `MarketContext.macro_series` keys
+      `hy_oas` / `ig_bbb_oas` feed `compute_credit_funding_features`;
+      these keys are in the §2C `REQUIRED_MACRO_KEYS` gate, so the §2C
+      seam does not build without them. Provenance row code =
+      `credit_spread_ice_bofa_oas_fred`. Sign convention: a rising OAS
+      series IS a widening spread (§2C line 2033 holds by
+      construction).
 
-      1. **Real ICE BofA OAS (preferred)** — FRED-redistributed
-         `BAMLH0A0HYM2` (HY) and `BAMLC0A4CBBB` (BBB IG) under ICE
-         license, free at the FRED endpoint. When both series are
-         present on `MarketContext.macro_series` (keys `hy_oas` and
-         `ig_bbb_oas`), `compute_credit_funding_features` uses them
-         directly. Bias-warning row provenance =
-         `credit_spread_ice_bofa_oas_fred`. Wired in the same
-         commit that closed Log #49.
-      2. **Total-return-differential proxy (fallback)** — when either
-         OAS series is absent, §2C uses
-         `hy_spread_proxy = tlt_total_return_63d - hyg_total_return_63d`
-         and `ig_spread_proxy = tlt_total_return_63d - lqd_total_return_63d`
-         with sign convention "rising proxy = spread widening." The
-         total-return differentials are direction-only (not absolute
-         bps), but every §2C rule consumes either `percentile_504d`
-         or `slope_21d` of the spread series — both scale-invariant —
-         so the proxy survives every rule predicate. Bias-warning row
-         provenance = `credit_spread_proxy_total_return_differential`.
-
-      Both paths share the same sign convention ("rising = widening").
-      Rule predicates are scale-invariant by design so the swap is
-      byte-equivalent at the rule level. The only behavioural
-      difference between the two paths is the absolute values on the
-      `_63d` series (bps vs total-return-differential units) and the
-      bias-warning row provenance string.
+      There is NO proxy fallback. An earlier slice carried a
+      TLT-vs-HYG/LQD total-return-differential proxy "for operators
+      without the OAS feed", but that scenario is unreachable: §2C
+      already requires SOFR / IORB / NFCI / `broad_usd_index` from
+      FRED's `macro_series`, so any operator able to build the §2C
+      seam at all already has the FRED key that fetches the OAS
+      series. The dual-source design was duplicate behaviour over two
+      genuinely-different metrics (real bps OAS vs a total-return
+      differential) — deleted in favour of the single real-feed
+      source. The `_proxy` suffix in the column names is historical;
+      the columns now carry the real OAS series.
     - **Rule predicate operational forms** — "non-rising" =
       `slope_21d <= 0`; "rising over 21d" = `slope_21d > 0`;
       "equities falling" = `spy_21d_return < -0.05`; "risk assets
@@ -1557,24 +1553,32 @@ the slice/commit that resolved it. Entries are append-only.
     axis classifier can be dispatched as a TDD slice with the proxy
     bias warning surfaced through `data_quality.evidence`.
 
-    Status update — vendor upgrade COMPLETE. The "true OAS feeds (ICE
-    BofA H0A0 / C0A0) not ingested" caveat in the original entry was
-    based on an incorrect assumption that those series required a paid
-    Bloomberg / vendor terminal. They are actually free on FRED under
-    ICE's redistribution license: `BAMLH0A0HYM2` (HY Master II OAS)
-    and `BAMLC0A4CBBB` (BBB Corporate OAS). Both series are now
-    wired into `V2_FRED_SERIES` and consumed by
-    `compute_credit_funding_features` via the optional `hy_oas` /
-    `ig_oas` kwargs. When both real-feed series are present on
-    `MarketContext.macro_series`, the function uses them directly on
-    the `hy_spread_proxy_63d` / `ig_spread_proxy_63d` columns and
-    flips the bias-warning row provenance to
-    `credit_spread_ice_bofa_oas_fred`. The TLT-vs-HY/LQD total-return-
-    differential proxy remains as the FALLBACK for operators who run
-    without a FRED key. Rule predicates are unchanged (scale-invariant
-    by construction). The §2C spec text amended to document the dual
-    source paths (see §2C "Credit-spread metric — dual source"
-    block).
+    Status update — vendor upgrade COMPLETE, single source. The "true
+    OAS feeds (ICE BofA H0A0 / C0A0) not ingested" caveat in the
+    original entry was based on an incorrect assumption that those
+    series required a paid Bloomberg / vendor terminal. They are
+    actually free on FRED under ICE's redistribution license:
+    `BAMLH0A0HYM2` (HY Master II OAS) and `BAMLC0A4CBBB` (BBB
+    Corporate OAS). Both series are now in `V2_FRED_SERIES` and are
+    the SINGLE source for the §2C credit-spread metric —
+    `compute_credit_funding_features` takes them as required `hy_oas`
+    / `ig_oas` parameters and populates `hy_spread_proxy_63d` /
+    `ig_spread_proxy_63d` directly. They are listed in §2C
+    `REQUIRED_MACRO_KEYS`, so the seam does not build without them
+    (and `credit_funding_state` stays `None` — V1 byte-identity
+    preserved, same as any other unbuilt V2 seam).
+
+    An interim commit shipped a DUAL-source design (real OAS preferred,
+    TLT-vs-HYG/LQD total-return-differential proxy as fallback). That
+    was over-engineering: §2C already requires SOFR / IORB / NFCI /
+    `broad_usd_index` from FRED, so there is no reachable state where
+    an operator can build the §2C seam but cannot fetch the OAS
+    series — the proxy fallback protected against an impossible state,
+    and the two "sources" were genuinely different metrics (real bps
+    OAS vs a total-return differential). The proxy path, its config
+    field, and the dual bias-warning constants were deleted; §2C is
+    now single-source. Provenance row code:
+    `credit_spread_ice_bofa_oas_fred`.
 
 50. **§2D Event Calendar V2 — operational pins + §4.2 score expansion.**
 

@@ -26,14 +26,14 @@ from regime_detection.credit_funding import (
     CreditFundingFeatures,
     REQUIRED_CROSS_ASSET_KEYS as _CF_CROSS_ASSET_KEYS,
     REQUIRED_MACRO_KEYS as _CF_MACRO_KEYS,
-    HYG_KEY as _CF_HYG_KEY,
-    LQD_KEY as _CF_LQD_KEY,
     TLT_KEY as _CF_TLT_KEY,
     KRE_KEY as _CF_KRE_KEY,
     SOFR_KEY as _CF_SOFR_KEY,
     IORB_KEY as _CF_IORB_KEY,
     NFCI_KEY as _CF_NFCI_KEY,
     BROAD_USD_INDEX_KEY as _CF_BROAD_USD_KEY,
+    HY_OAS_KEY as _CF_HY_OAS_KEY,
+    IG_OAS_KEY as _CF_IG_OAS_KEY,
     compute_credit_funding_features,
 )
 from regime_detection.fragility_universe import SECTOR_ETFS
@@ -460,17 +460,11 @@ def build_feature_store(
         and all(k in context.cross_asset_closes for k in _CF_CROSS_ASSET_KEYS)
         and all(k in context.macro_series for k in _CF_MACRO_KEYS)
     ):
-        # Real ICE BofA OAS feeds (Log #49 vendor-upgrade path): when BOTH
-        # FRED-redistributed BAMLH0A0HYM2 (HY) and BAMLC0A4CBBB (BBB IG)
-        # series are present on macro_series, `compute_credit_funding_
-        # features` swaps the TLT-vs-HY/LQD total-return-differential proxy
-        # for the direct OAS series. The percentile_504d / slope_21d
-        # derivations consumed by the rule predicates are scale-invariant,
-        # so rule behaviour is unchanged; only the absolute values on the
-        # `_63d` series and the bias-warning provenance flip.
+        # §2C credit-spread metric — single source: FRED-redistributed
+        # ICE BofA OAS series (BAMLH0A0HYM2 / BAMLC0A4CBBB). Their
+        # macro_series keys are in `_CF_MACRO_KEYS`, so the gate above
+        # already guarantees they are present — no `.get()` needed.
         credit_funding = compute_credit_funding_features(
-            hyg_close=context.cross_asset_closes[_CF_HYG_KEY],
-            lqd_close=context.cross_asset_closes[_CF_LQD_KEY],
             tlt_close=context.cross_asset_closes[_CF_TLT_KEY],
             kre_close=context.cross_asset_closes[_CF_KRE_KEY],
             spy_close=spy_close,
@@ -478,8 +472,8 @@ def build_feature_store(
             iorb=context.macro_series[_CF_IORB_KEY],
             nfci_weekly=context.macro_series[_CF_NFCI_KEY],
             broad_usd_index=context.macro_series[_CF_BROAD_USD_KEY],
-            hy_oas=context.macro_series.get("hy_oas"),
-            ig_oas=context.macro_series.get("ig_bbb_oas"),
+            hy_oas=context.macro_series[_CF_HY_OAS_KEY],
+            ig_oas=context.macro_series[_CF_IG_OAS_KEY],
             config=credit_funding_config.rules,
         )
 

@@ -8,27 +8,28 @@ Implements the 5-label axis classifier from spec lines 2005-2130:
   Precedence (§2C line 2019):
     deleveraging > funding_squeeze > credit_stress > spread_widening > credit_calm > unknown
 
-Credit-spread metric — dual source (Log #49 vendor-upgrade closure):
+Credit-spread metric — single source (Log #49 vendor-upgrade closure):
 
-  Real ICE BofA OAS path (preferred): FRED-redistributed BAMLH0A0HYM2 (HY
-  Master II OAS) and BAMLC0A4CBBB (BBB Corporate OAS), free under ICE's
-  redistribution license at the FRED endpoint. When both series are
-  available on ``MarketContext.macro_series`` (keys ``hy_oas`` and
-  ``ig_bbb_oas``), ``compute_credit_funding_features`` reads them via the
-  ``hy_oas`` / ``ig_oas`` kwargs and emits the bias-warning row with
-  provenance code ``credit_spread_ice_bofa_oas_fred``.
+  §2C reads the FRED-redistributed ICE BofA Option-Adjusted Spread series
+  — ``BAMLH0A0HYM2`` (HY Master II OAS) and ``BAMLC0A4CBBB`` (BBB Corporate
+  OAS), free under ICE's redistribution license at the FRED endpoint.
+  ``MarketContext.macro_series`` keys ``hy_oas`` / ``ig_bbb_oas`` (set by
+  ``V2_FRED_SERIES`` in ``regime_data_fetch.fetch_workflow``) feed the
+  ``hy_oas`` / ``ig_oas`` parameters of ``compute_credit_funding_features``.
 
-  Proxy fallback: when either real series is absent (operator running
-  without a FRED key for those tickers), §2C uses TLT-vs-HYG/LQD
-  total-return differentials. The proxy preserves DIRECTION
-  (rising = widening) but cannot be read as bps-level absolutes. Slice
-  consumers stick to percentile / slope predicates (both scale-invariant),
-  and the bias-warning row emits code
-  ``credit_spread_proxy_total_return_differential``.
+  There is NO proxy fallback. An earlier slice carried a TLT-vs-HYG/LQD
+  total-return-differential proxy "for operators without the OAS feed",
+  but that scenario is unreachable: ``credit_funding`` already requires
+  SOFR / IORB / NFCI / broad_usd_index from FRED's ``macro_series``, so
+  any operator able to build the §2C seam at all already has the FRED key
+  that fetches the OAS series. Dual-sourcing was duplicate behaviour over
+  two genuinely-different metrics (real bps OAS vs a total-return
+  differential) — deleted in favour of the single real-feed source.
 
-Both paths share the §2C line 2033 sign convention. Rule predicates are
-scale-invariant by construction so behaviour at the rule level is
-byte-equivalent between the two paths.
+  When the OAS series are absent from ``macro_series``, the §2C seam is
+  simply not built (``REQUIRED_MACRO_KEYS`` gate in ``feature_store``) and
+  ``credit_funding_state`` stays ``None`` — V1 byte-identity preserved,
+  same as every other unbuilt V2 seam.
 
 Inputs:
   - HYG, LQD, TLT, KRE close series via ``MarketContext.cross_asset_closes``
@@ -110,6 +111,11 @@ SOFR_KEY = "SOFR"
 IORB_KEY = "IORB"
 NFCI_KEY = "NFCI"
 BROAD_USD_INDEX_KEY = "broad_usd_index"
+# ICE BofA Option-Adjusted Spread series — FRED-redistributed under ICE
+# license, free at the FRED endpoint. macro_series keys set by
+# `V2_FRED_SERIES` in `regime_data_fetch.fetch_workflow`.
+HY_OAS_KEY = "hy_oas"          # FRED BAMLH0A0HYM2 — ICE BofA US High Yield OAS
+IG_OAS_KEY = "ig_bbb_oas"      # FRED BAMLC0A4CBBB — ICE BofA BBB Corporate OAS
 
 
 REQUIRED_CROSS_ASSET_KEYS: tuple[str, ...] = (HYG_KEY, LQD_KEY, TLT_KEY, KRE_KEY)
@@ -118,31 +124,24 @@ REQUIRED_MACRO_KEYS: tuple[str, ...] = (
     IORB_KEY,
     NFCI_KEY,
     BROAD_USD_INDEX_KEY,
+    HY_OAS_KEY,
+    IG_OAS_KEY,
 )
 
 
 # ---------------------------------------------------------------------------
-# Bias-warning constants (§2C lines 2128-2130).
+# Credit-spread provenance (§2C lines 2128-2130).
 # ---------------------------------------------------------------------------
 
-CREDIT_SPREAD_PROXY_BIAS_WARNING_CODE = "credit_spread_proxy_total_return_differential"
-CREDIT_SPREAD_PROXY_BIAS_SOURCE = "tlt_minus_hyg_lqd_total_return_differential"
-# Internal proxy with no canonical external URL. Use an `internal:` URN-style
-# string rather than `""` so downstream consumers can distinguish an explicit
-# "computed proxy" provenance from a misconfigured/missing value.
-CREDIT_SPREAD_PROXY_BIAS_SOURCE_URL = "internal:tlt_minus_hyg_lqd_total_return_differential"
-
-# Real-feed provenance constants — emitted on the same `bias_warning` row
-# when `compute_credit_funding_features` runs with real ICE BofA OAS inputs
-# (FRED-redistributed BAMLH0A0HYM2 + BAMLC0A4CBBB). The Log #49 vendor
-# upgrade path: the row is no longer a "bias warning" in the strict sense
-# but the column carries provenance, so downstream consumers can tell
-# real-feed runs apart from proxy runs at a glance.
-CREDIT_SPREAD_REAL_FEED_PROVENANCE_CODE = "credit_spread_ice_bofa_oas_fred"
-CREDIT_SPREAD_REAL_FEED_SOURCE = "fred:BAMLH0A0HYM2+BAMLC0A4CBBB"
-CREDIT_SPREAD_REAL_FEED_SOURCE_URL = (
-    "https://fred.stlouisfed.org/series/BAMLH0A0HYM2"
-)
+# §2C credit-spread metric source: ICE BofA Option-Adjusted Spread series,
+# FRED-redistributed under ICE license. Single source — there is no proxy
+# fallback path. `credit_funding` already requires SOFR / IORB / NFCI /
+# broad_usd_index from FRED's `macro_series`, so the OAS series carry zero
+# marginal data-access cost: any operator able to build the §2C seam at
+# all already has the FRED key that fetches them.
+CREDIT_SPREAD_SOURCE_CODE = "credit_spread_ice_bofa_oas_fred"
+CREDIT_SPREAD_SOURCE = "fred:BAMLH0A0HYM2+BAMLC0A4CBBB"
+CREDIT_SPREAD_SOURCE_URL = "https://fred.stlouisfed.org/series/BAMLH0A0HYM2"
 
 # Feature names carrying the proxy bias warning (one row per emitted §2C feature
 # derived from the TLT-vs-HYG/LQD differential).
@@ -254,8 +253,6 @@ def _rolling_ols_slope(series: pd.Series, *, window: int) -> pd.Series:
 
 def compute_credit_funding_features(
     *,
-    hyg_close: pd.Series,
-    lqd_close: pd.Series,
     tlt_close: pd.Series,
     kre_close: pd.Series,
     spy_close: pd.Series,
@@ -263,41 +260,34 @@ def compute_credit_funding_features(
     iorb: pd.Series,
     nfci_weekly: pd.Series,
     broad_usd_index: pd.Series,
+    hy_oas: pd.Series,
+    ig_oas: pd.Series,
     config: CreditFundingRulesConfig,
-    hy_oas: pd.Series | None = None,
-    ig_oas: pd.Series | None = None,
 ) -> CreditFundingFeatures:
     """Compute the v2 §2C credit/funding feature seam from raw inputs.
 
     All inputs are aligned to ``spy_close.index``; missing dates within the
     NYSE calendar produce NaN at those rows.
 
-    Spread metric sourcing (Log #49 vendor-upgrade path):
-
-    - When ``hy_oas`` and ``ig_oas`` are BOTH supplied (FRED-redistributed
-      ICE BofA Option-Adjusted Spread series — BAMLH0A0HYM2 for HY and
-      BAMLC0A4CBBB for BBB IG), the `hy_spread_proxy_63d` and
-      `ig_spread_proxy_63d` columns carry the real OAS series directly.
-      Bias-warning row flips to `credit_spread_ice_bofa_oas_fred`
-      provenance and the `_internal:tlt_minus_..._differential` URL is
-      replaced with the FRED URL. The percentile_504d / slope_21d
-      derivations are unchanged (scale-invariant by construction).
-    - When either is None, falls back to the TLT-vs-HYG/LQD total-return
-      differential proxy and emits the original
-      `credit_spread_proxy_total_return_differential` bias warning.
-
-    Both paths preserve the §2C line 2033 sign convention: rising series =
-    widening spreads. The rule predicates consume percentile and slope,
-    which are scale-invariant, so the swap is byte-equivalent at the rule
-    level (only the absolute values on the `_63d` columns differ between
-    proxy and real-feed runs).
+    Credit-spread metric — single source. ``hy_oas`` / ``ig_oas`` are the
+    FRED-redistributed ICE BofA Option-Adjusted Spread series (BAMLH0A0HYM2
+    for HY, BAMLC0A4CBBB for BBB IG). They populate the
+    ``hy_spread_proxy_63d`` / ``ig_spread_proxy_63d`` columns directly (the
+    ``_proxy`` suffix in the column name is historical — there is no proxy
+    path anymore). The §2C line 2033 sign convention holds by construction:
+    a rising OAS series IS a widening spread. There is no total-return-
+    differential fallback — ``credit_funding`` already requires SOFR / IORB
+    / NFCI / broad_usd_index from FRED's ``macro_series``, so the OAS series
+    carry zero marginal data-access cost. When the OAS series are absent
+    from ``macro_series``, the §2C seam simply is not built (handled by the
+    ``REQUIRED_MACRO_KEYS`` gate in ``feature_store``) and
+    ``credit_funding_state`` stays ``None`` — V1 byte-identity preserved,
+    same as every other unbuilt V2 seam.
     """
     spy_index = spy_close.index
 
     # Reindex every input to the SPY calendar so all returned series share
     # the same DatetimeIndex (single-source-of-truth for the rule engine).
-    hyg = hyg_close.reindex(spy_index).astype(float)
-    lqd = lqd_close.reindex(spy_index).astype(float)
     tlt = tlt_close.reindex(spy_index).astype(float)
     kre = kre_close.reindex(spy_index).astype(float)
     spy = spy_close.reindex(spy_index).astype(float)
@@ -306,7 +296,6 @@ def compute_credit_funding_features(
     nfci_w = nfci_weekly.reindex(spy_index).astype(float)
     usd = broad_usd_index.reindex(spy_index).astype(float)
 
-    total_return_window = config.total_return_lookback_days
     pct_window = config.hy_percentile_504d_lookback
     slope_21d = config.slope_21d_lookback
     slope_63d = config.slope_63d_lookback
@@ -315,29 +304,15 @@ def compute_credit_funding_features(
     usd_change_window = config.broad_usd_change_window_days
     usd_norm_window = config.broad_usd_normalizer_window_days
 
-    # §2C lines 2032-2035 + Log #49 vendor-upgrade path: prefer real OAS
-    # series when both are supplied; fall back to TLT-vs-HY/LQD total-
-    # return differential proxy otherwise.
-    real_feed_lit = hy_oas is not None and ig_oas is not None
-    if real_feed_lit:
-        # Real ICE BofA OAS: rising series = wider spread (matches the
-        # spec §2C line 2033 sign convention by construction).
-        hy_spread_proxy_63d = (
-            hy_oas.reindex(spy_index).astype(float).rename("hy_spread_proxy_63d")
-        )
-        ig_spread_proxy_63d = (
-            ig_oas.reindex(spy_index).astype(float).rename("ig_spread_proxy_63d")
-        )
-    else:
-        # Proxy fallback: total-return-differential preserves direction
-        # (rising = TLT outperforming HY/IG = widening) but not absolute
-        # bps level. Rule predicates consume percentile/slope (scale-
-        # invariant) so behaviour matches the real-feed path.
-        hyg_tr = (hyg / hyg.shift(total_return_window)) - 1.0
-        lqd_tr = (lqd / lqd.shift(total_return_window)) - 1.0
-        tlt_tr = (tlt / tlt.shift(total_return_window)) - 1.0
-        hy_spread_proxy_63d = (tlt_tr - hyg_tr).rename("hy_spread_proxy_63d")
-        ig_spread_proxy_63d = (tlt_tr - lqd_tr).rename("ig_spread_proxy_63d")
+    # §2C lines 2032-2035 — ICE BofA OAS, single source. Rising OAS =
+    # wider spread (matches the §2C line 2033 sign convention by
+    # construction; no proxy translation needed).
+    hy_spread_proxy_63d = (
+        hy_oas.reindex(spy_index).astype(float).rename("hy_spread_proxy_63d")
+    )
+    ig_spread_proxy_63d = (
+        ig_oas.reindex(spy_index).astype(float).rename("ig_spread_proxy_63d")
+    )
 
     # §2C line 2038: 504d percentile (pct=True).
     hy_spread_proxy_percentile_504d = (
@@ -380,21 +355,17 @@ def compute_credit_funding_features(
     spy_21d_return = ((spy / spy.shift(spy_window)) - 1.0).rename("spy_21d_return")
     tlt_21d_return = ((tlt / tlt.shift(tlt_window)) - 1.0).rename("tlt_21d_return")
 
-    if real_feed_lit:
-        warning_code = CREDIT_SPREAD_REAL_FEED_PROVENANCE_CODE
-        warning_source = CREDIT_SPREAD_REAL_FEED_SOURCE
-        warning_source_url = CREDIT_SPREAD_REAL_FEED_SOURCE_URL
-    else:
-        warning_code = CREDIT_SPREAD_PROXY_BIAS_WARNING_CODE
-        warning_source = CREDIT_SPREAD_PROXY_BIAS_SOURCE
-        warning_source_url = CREDIT_SPREAD_PROXY_BIAS_SOURCE_URL
+    # Single-source provenance row per spread feature — ICE BofA OAS via
+    # FRED. Retained on the `bias_warnings` frame (rather than dropped)
+    # so downstream consumers have an explicit, machine-readable record
+    # of the credit-spread metric's origin; it is provenance, not a bias.
     bias_warnings = make_bias_warnings_frame(
         [
             {
-                "warning_code": warning_code,
+                "warning_code": CREDIT_SPREAD_SOURCE_CODE,
                 "feature_name": feat,
-                "source": warning_source,
-                "source_url": warning_source_url,
+                "source": CREDIT_SPREAD_SOURCE,
+                "source_url": CREDIT_SPREAD_SOURCE_URL,
             }
             for feat in _BIAS_FEATURE_NAMES
         ]
