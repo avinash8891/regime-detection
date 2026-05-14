@@ -1,5 +1,5 @@
 {
-  "as_of_utc": "2026-05-14T14:26:25.261290+00:00",
+  "as_of_utc": "2026-05-14T14:33:40.503748+00:00",
   "source": {
     "fomc": "federalreserve.gov:fomccalendars",
     "cpi": "bls.gov:schedule:consumer-price-index",
@@ -11,21 +11,20 @@
     "boj": "boj.or.jp:monetary-policy-meeting-schedule"
   },
   "counts": {
-    "total_events": 814,
+    "total_events": 454,
     "by_type": {
       "BOE_decision": 7,
       "BOJ_decision": 16,
-      "CPI": 311,
+      "CPI": 131,
       "ECB_decision": 5,
       "FOMC": 147,
-      "NFP": 311,
+      "NFP": 131,
       "budget": 11,
       "election": 6
     }
   },
   "paths": {
     "event_calendar_yaml": "/Users/avinashvankadaru/conductor/workspaces/regime-detection/provo/configs/events/us_events.yaml",
-    "acquisition_db": "/Users/avinashvankadaru/conductor/workspaces/regime-detection/provo/data/raw/acquisition.db"
-  },
-  "notes": "V2 curated deterministic candidates merged into the existing generated FOMC/CPI/NFP calendar; direct BLS historical refetch remains transport/validation-limited for the irregular 2025 schedule."
+    "acquisition_db": "data/raw/acquisition.db"
+  }
 }

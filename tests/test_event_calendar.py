@@ -18,6 +18,7 @@ from regime_data_fetch.event_calendar import (
     ScheduledEvent,
     run_us_event_calendar_fetch,
     validate_fomc_listing_integrity,
+    _validate_bls_events,
 )
 
 
@@ -560,3 +561,60 @@ def test_run_us_event_calendar_fetch_records_raw_artifacts_in_sqlite(tmp_path: P
         ("bls.gov:schedule", "html", "https://www.bls.gov/schedule/2026/"),
     ]
     assert outputs == [("event_calendar_yaml",), ("event_calendar_report",)]
+
+
+def test_validate_bls_events_allows_official_2025_lapse_cancellations() -> None:
+    events = []
+    for month in range(1, 12):
+        release_date = dt.date(2025, month, min(month, 28))
+        events.extend(
+            [
+                ScheduledEvent(
+                    date=release_date,
+                    release_timestamp_et=dt.datetime(2025, month, min(month, 28), 8, 30, tzinfo=dt.timezone(dt.timedelta(hours=-5))),
+                    market="US",
+                    type="CPI",
+                    importance="high",
+                    source="bls.gov:schedule:consumer-price-index",
+                ),
+                ScheduledEvent(
+                    date=release_date,
+                    release_timestamp_et=dt.datetime(2025, month, min(month, 28), 8, 30, tzinfo=dt.timezone(dt.timedelta(hours=-5))),
+                    market="US",
+                    type="NFP",
+                    importance="high",
+                    source="bls.gov:schedule:employment-situation",
+                ),
+            ]
+        )
+
+    _validate_bls_events(events=events, start_year=2025, end_year=2026)
+
+
+def test_validate_bls_events_rejects_unexplained_11_row_completed_year() -> None:
+    events = []
+    for month in range(1, 12):
+        release_date = dt.date(2024, month, min(month, 28))
+        events.extend(
+            [
+                ScheduledEvent(
+                    date=release_date,
+                    release_timestamp_et=dt.datetime(2024, month, min(month, 28), 8, 30, tzinfo=dt.timezone(dt.timedelta(hours=-5))),
+                    market="US",
+                    type="CPI",
+                    importance="high",
+                    source="bls.gov:schedule:consumer-price-index",
+                ),
+                ScheduledEvent(
+                    date=release_date,
+                    release_timestamp_et=dt.datetime(2024, month, min(month, 28), 8, 30, tzinfo=dt.timezone(dt.timedelta(hours=-5))),
+                    market="US",
+                    type="NFP",
+                    importance="high",
+                    source="bls.gov:schedule:employment-situation",
+                ),
+            ]
+        )
+
+    with pytest.raises(EventCalendarFetchError, match="BLS CPI year 2024 had 11 release dates; expected 12"):
+        _validate_bls_events(events=events, start_year=2024, end_year=2025)

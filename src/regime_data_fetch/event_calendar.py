@@ -42,6 +42,12 @@ _GLOBAL_RATE_URLS = {
     "boe": "https://www.bankofengland.co.uk/monetary-policy/upcoming-mpc-dates",
     "boj": "https://www.boj.or.jp/en/mopo/mpmsche_minu/",
 }
+_BLS_OFFICIAL_CANCELED_RELEASE_COUNTS = {
+    # BLS 2025 lapse page: October 2025 CPI and Employment Situation
+    # news releases were canceled, so release-date year 2025 has 11 rows.
+    ("CPI", 2025): 1,
+    ("NFP", 2025): 1,
+}
 _MONTHS = {
     "january": 1,
     "jan": 1,
@@ -591,9 +597,10 @@ def _validate_bls_events(*, events: list[ScheduledEvent], start_year: int, end_y
             if year == end_year:
                 continue
             count = counts_by_year.get(year, 0)
-            if count != 12:
+            expected_count = 12 - _BLS_OFFICIAL_CANCELED_RELEASE_COUNTS.get((event_type, year), 0)
+            if count != expected_count:
                 raise EventCalendarFetchError(
-                    f"BLS {event_type} year {year} had {count} release dates; expected 12 monthly releases"
+                    f"BLS {event_type} year {year} had {count} release dates; expected {expected_count} monthly releases"
                 )
 
 
