@@ -13,6 +13,7 @@ from regime_data_fetch.event_sources.models import EventCandidate
 
 SOURCE_ID = "bankofengland.co.uk:mpc-decisions"
 UPCOMING_MPC_URL = "https://www.bankofengland.co.uk/monetary-policy/upcoming-mpc-dates"
+NEWS_SITEMAP_URL = "https://www.bankofengland.co.uk/sitemap/news"
 NEWS_API_URL = "https://www.bankofengland.co.uk/_api/News/RefreshPagedNewsList"
 NEWS_DATASOURCE_ID = "{CE377CC8-BFBC-418B-B4D9-DBC1C64774A8}"
 
@@ -44,6 +45,12 @@ class OfficialBOEAdapter:
         html = self.text_fetcher(UPCOMING_MPC_URL)
         _record_html(store, run_id, UPCOMING_MPC_URL, html, "BoE upcoming MPC dates")
         candidates = parse_boe_upcoming_mpc_dates(html, as_of_date=self.as_of_date)
+        sitemap_html = self.text_fetcher(NEWS_SITEMAP_URL)
+        _record_html(store, run_id, NEWS_SITEMAP_URL, sitemap_html, "BoE news sitemap for MPC dates pages")
+        for dates_url in _mpc_dates_page_urls(sitemap_html, start_year=start_year, end_year=end_year):
+            dates_html = self.text_fetcher(dates_url)
+            _record_html(store, run_id, dates_url, dates_html, "BoE annual MPC dates page")
+            candidates.extend(parse_boe_mpc_dates_page(dates_html, source_url=dates_url, as_of_date=self.as_of_date))
         for page in range(1, 30):
             payload = self.news_api_fetcher(page)
             _record_html(store, run_id, f"{NEWS_API_URL}?page={page}", payload, "BoE news API MPC archive page")
@@ -106,6 +113,39 @@ def parse_boe_upcoming_mpc_dates(html: str, *, as_of_date: dt.date) -> list[Even
             candidates.append(_candidate(event_date, as_of_date, absolute_url(BOE_BASE_URL, href_match.group("href") if href_match else None), title, date_text))
     if not candidates:
         candidates.extend(_parse_legacy_text_dates(html, as_of_date=as_of_date))
+    return sorted(candidates, key=lambda candidate: candidate.date)
+
+
+def parse_boe_mpc_dates_page(html: str, *, source_url: str, as_of_date: dt.date) -> list[EventCandidate]:
+    candidates: list[EventCandidate] = []
+    row_pattern = re.compile(r"<tr[^>]*>(?P<row>.*?)</tr>", flags=re.IGNORECASE | re.DOTALL)
+    cell_pattern = re.compile(r"<td[^>]*>(?P<cell>.*?)</td>", flags=re.IGNORECASE | re.DOTALL)
+    full_date_pattern = re.compile(
+        r"(?P<day>\d{1,2})\s+"
+        r"(?P<month>January|February|March|April|May|June|July|August|September|October|November|December)\s+"
+        r"(?P<year>20\d{2})",
+        flags=re.IGNORECASE,
+    )
+    month_year_pattern = re.compile(
+        r"(?P<month>January|February|March|April|May|June|July|August|September|October|November|December)\s+"
+        r"(?P<year>20\d{2}).*?(?P<day>\d{1,2})",
+        flags=re.IGNORECASE,
+    )
+    for row_match in row_pattern.finditer(html):
+        cells = cell_pattern.findall(row_match.group("row"))
+        if not cells:
+            continue
+        first_cell = strip_tags(cells[0])
+        if "no meeting" in first_cell.lower() or "publication" in first_cell.lower():
+            continue
+        date_match = full_date_pattern.search(first_cell)
+        if date_match is None:
+            date_match = month_year_pattern.search(first_cell)
+        if date_match is None:
+            continue
+        month = MONTHS[date_match.group("month").lower()]
+        event_date = dt.date(int(date_match.group("year")), month, int(date_match.group("day")))
+        candidates.append(_candidate(event_date, as_of_date, source_url, "MPC Announcement and Minutes publication", first_cell))
     return sorted(candidates, key=lambda candidate: candidate.date)
 
 
@@ -190,6 +230,26 @@ def _extract_results_html(payload: str) -> str:
     except json.JSONDecodeError:
         return payload
     return str(parsed.get("Results", ""))
+
+
+def _mpc_dates_page_urls(html: str, *, start_year: int, end_year: int) -> list[str]:
+    urls: list[str] = []
+    link_pattern = re.compile(r"<a[^>]+href=\"(?P<href>[^\"]+)\"[^>]*>(?P<title>.*?)</a>", flags=re.IGNORECASE | re.DOTALL)
+    for match in link_pattern.finditer(html):
+        href = match.group("href")
+        title = strip_tags(match.group("title"))
+        combined = f"{href} {title}".lower()
+        if "monetary policy committee dates" not in combined and "mpc-dates" not in combined and "mpc-publication-dates" not in combined and "mpc-announcement-dates" not in combined:
+            continue
+        years = [int(value) for value in re.findall(r"20\d{2}", combined)]
+        if not any(start_year <= year <= end_year for year in years):
+            continue
+        if href.lower().endswith(".pdf"):
+            continue
+        url = absolute_url(BOE_BASE_URL, href)
+        if url and url not in urls:
+            urls.append(url)
+    return urls
 
 
 def _dedupe(candidates: list[EventCandidate], *, start_year: int, end_year: int) -> list[EventCandidate]:

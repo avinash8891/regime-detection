@@ -3,7 +3,12 @@ from __future__ import annotations
 import datetime as dt
 
 from regime_data_fetch.event_sources.deterministic_election import ElectionAdapter
-from regime_data_fetch.event_sources.official_boe import OfficialBOEAdapter, parse_boe_news_api_results, parse_boe_upcoming_mpc_dates
+from regime_data_fetch.event_sources.official_boe import (
+    OfficialBOEAdapter,
+    parse_boe_mpc_dates_page,
+    parse_boe_news_api_results,
+    parse_boe_upcoming_mpc_dates,
+)
 from regime_data_fetch.event_sources.official_boj import parse_boj_mpm_dates
 from regime_data_fetch.event_sources.official_ecb import parse_ecb_current_calendar, parse_ecb_decision_archive
 
@@ -58,6 +63,35 @@ def test_boe_parses_current_page_and_news_api_results() -> None:
     assert upcoming[0].source_url == "https://www.bankofengland.co.uk/monetary-policy-summary-and-minutes/2026/february-2026"
     assert [(candidate.date, candidate.raw_title) for candidate in historical] == [
         (dt.date(2025, 12, 18), "Bank Rate reduced to 3.75% - December 2025 Monetary Policy Summary and Minutes")
+    ]
+
+
+def test_boe_parses_annual_mpc_dates_page() -> None:
+    html = """
+    <h1>Monetary Policy Committee dates for 2025</h1>
+    <table><tbody>
+    <tr><td><strong>MPC Announcement and Minutes publication</strong></td><td>Monetary Policy Report publication</td></tr>
+    <tr><td>&nbsp;6 February 2025</td><td>&nbsp;6 February 2025</td></tr>
+    <tr><td>&nbsp;20 March 2025</td><td>&nbsp;</td></tr>
+    <tr><td>No meeting</td><td>&nbsp;</td></tr>
+    </tbody></table>
+    """
+
+    candidates = parse_boe_mpc_dates_page(
+        html,
+        source_url="https://www.bankofengland.co.uk/news/2024/september/monetary-policy-committee-dates-for-2025",
+        as_of_date=dt.date(2024, 9, 20),
+    )
+
+    assert [(candidate.date, candidate.source_url) for candidate in candidates] == [
+        (
+            dt.date(2025, 2, 6),
+            "https://www.bankofengland.co.uk/news/2024/september/monetary-policy-committee-dates-for-2025",
+        ),
+        (
+            dt.date(2025, 3, 20),
+            "https://www.bankofengland.co.uk/news/2024/september/monetary-policy-committee-dates-for-2025",
+        ),
     ]
 
 
