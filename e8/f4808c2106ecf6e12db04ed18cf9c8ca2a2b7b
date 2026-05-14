@@ -1,0 +1,25 @@
+src/regime_detection/axis_series.py
+  s_7f3c352a4f9447::t_951ac1f3c97a14 12,15
+  s_7f3c352a4f9447::t_0cc2896532f7f1 250,254-260,269-274,281-287,291-292,300,302
+src/regime_detection/breadth_state.py
+  s_7f3c352a4f9447::t_aa2a09e5daebc5 324-407
+tests/test_breadth_state_v2_labels.py
+  s_7f3c352a4f9447::t_727706cc7a268f 304-517
+  s_7f3c352a4f9447::t_beee6777f950e7 25,28
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.8",
+  "base_commit_sha": "e8f4808c2106ecf6e12db04ed18cf9c8ca2a2b7b",
+  "prompts": {},
+  "sessions": {
+    "s_7f3c352a4f9447": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "3d45e374-f98d-411d-b6a1-0697dd832539",
+        "model": "claude-opus-4-7"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}
