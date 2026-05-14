@@ -1,0 +1,30 @@
+docs/v2_slice_gate_checklist.md
+  s_7f3c352a4f9447::t_3c1385fdfe9a58 76,79-83
+docs/market_data_fetch_plan.md
+  s_7f3c352a4f9447::t_e4caa064f59db3 256,260-261
+  s_7f3c352a4f9447::t_4bb9d4a3370f5d 109
+  s_7f3c352a4f9447::t_b43343fb2a63a7 169
+  s_7f3c352a4f9447::t_40dd145755b212 52
+  s_7f3c352a4f9447::t_8f7a6eefaacab1 88-91
+  s_7f3c352a4f9447::t_48ea6facd4bdf6 278-281,285,288
+  s_7f3c352a4f9447::t_108ce0beab6d93 310,312-314
+  s_7f3c352a4f9447::t_b1935423c5da4f 172
+  s_7f3c352a4f9447::t_edf5a89735d282 54-56
+  s_7f3c352a4f9447::t_f3686be14304ba 259,264-270
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.8",
+  "base_commit_sha": "584313c33ce0d6a527c0a4fc1a564c6fa1f29171",
+  "prompts": {},
+  "sessions": {
+    "s_7f3c352a4f9447": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "3d45e374-f98d-411d-b6a1-0697dd832539",
+        "model": "claude-opus-4-7"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}
