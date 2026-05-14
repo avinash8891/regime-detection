@@ -1,0 +1,19 @@
+docs/decisions/0003-breadth-thrust-and-recovery-breadth-predicates.md
+  s_7f3c352a4f9447::t_8009763e37c08c 1-121
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.8",
+  "base_commit_sha": "131b706335e8aa5b1f50235af112e17cb451f076",
+  "prompts": {},
+  "sessions": {
+    "s_7f3c352a4f9447": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "3d45e374-f98d-411d-b6a1-0697dd832539",
+        "model": "claude-opus-4-7"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}
