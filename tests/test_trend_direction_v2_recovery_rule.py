@@ -90,6 +90,9 @@ def _scalar_features_at(
         return_126d=nan.copy(),
         drawdown_252d=pd.Series([drawdown_252d], index=idx),
         sma_50=pd.Series([sma_50], index=idx),
+        sma_200=nan.copy(),
+        realized_vol_21d=nan.copy(),
+        sentiment_score=None,
     )
     close = pd.Series([close_t], index=idx, name="close")
     return features, close

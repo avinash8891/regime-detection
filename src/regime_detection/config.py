@@ -169,6 +169,25 @@ class TrendDirectionV2RulesConfig(BaseModel):
     # admit drawdown days, defeating the rule's "rebound" intent).
     recovery_return_threshold: float = Field(gt=0.0)
 
+    # v2 §1A line 162 — euphoria rule's `return_126d > 0.20`. Strict positive
+    # required: a non-positive threshold would admit drawdown days, defeating
+    # the rule's "strong long-horizon advance" intent. ADR 0004 + Log #32
+    # closure pinned the default at +0.20 (spec verbatim).
+    euphoria_return_126d_threshold: float = Field(gt=0.0, default=0.20)
+
+    # v2 §1A line 164 — euphoria rule's `sentiment_score >= configured
+    # threshold`. ADR 0004 Q3 picked `+20` (points of AAII bull-bear-spread
+    # 8w-MA — historical top-decile / Yardeni-Stovall "high optimism"
+    # anchor). V2 §9.1 walk-forward calibration may retune; no Pydantic
+    # range bound because sentiment can go negative in the bearish regime.
+    euphoria_sentiment_threshold: float = Field(default=20.0)
+
+    # v2 §1A line 163 — euphoria rule's `realized_vol_21d rising`. ADR 0004
+    # Q2 picked 5-session strict change (vol[t] > vol[t-5]) mirroring
+    # Log #68's §1D `rising` / `falling` pin. Must be > 0; a zero-lookback
+    # would make the rule self-comparing.
+    euphoria_vol_rising_lookback_sessions: int = Field(gt=0, default=5)
+
 
 class TrendDirectionV2Config(BaseModel):
     """v2 §1A — Layer 1 V2 trend direction feature lookbacks.
