@@ -1,6 +1,8 @@
 # Decision 0003: V2 §1D `breadth_thrust` and `recovery_breadth` LABEL Predicates
 
-**Status:** proposed — awaiting spec-owner decision
+**Status:** accepted — `breadth_thrust` LABEL = (X), `recovery_breadth` LABEL = (X).
+
+Spec owner delegated the picks to the assistant with the standing instruction "tell me the best answer when spec is not clear, then edit/log the spec then code it." The recommendations in this ADR became the chosen pins; §1D spec text amended and Log #69 + Log #70 closed in the same commit as this status flip.
 
 **Context:**
 Two V2 §1D breadth LABELs have no operational predicate in the spec. Per V2 §10 ABSOLUTE RULE ("When the spec is ambiguous or silent, stop and ask. Do not invent."), the coding agent must escalate rather than pin. This document presents the candidate interpretations and a recommendation for the spec owner to accept, override, or amend.
