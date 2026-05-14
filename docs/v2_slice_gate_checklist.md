@@ -73,8 +73,11 @@ A slice = one of the ten units listed in v2 spec §8 (Network Fragility, Layer 1
 
 | Slice | v2 §8 row | Currently blocked on |
 |---|---|---|
-| Layer 1 V2 incremental features (§1A/§1C/§1D) | 2 | Some §1A features (`sentiment_score`) require AAII/put-call/IIA fetcher — defer those features to V2.1 inside the slice. |
-| Layer 2B Inflation/Growth (§2B) — 2 deferred labels | 5 | LABEL-level deferral, not row-level. The 6 spec-deterministic labels (`goldilocks`, `inflation_shock` composite limb, `disinflation`, `recession_scare`, `recovery_growth`, `unknown`) can ship today against existing free inputs (CPI/PCE/ISM/DBC/DGS10/sector-ETFs/credit_funding). The 2 deferred labels are `earnings_expansion` / `earnings_contraction` (need S&P Global weekly EPS revision feed — paid) and the single-signal `inflation_shock` limb that references `inflation_surprise_zscore` (needs BLS consensus survey aggregates — proprietary). Note: `GDPNow` and `Citi Surprise` are NOT in any §2B rule predicate (earlier checklist text was misleading); `GDPNow` IS free on FRED (series `GDPNOW`) and was added to `V2_FRED_SERIES` in the GDPNow-aware fix. |
-| Layer 5 V2 PRISM (§5.5) | 10 | PRISM framework not in repo. |
+| Layer 5 V2 PRISM (§5.5) | 10 | PRISM framework not in repo; deferred to V2.1 per spec §5.5. |
 
 Slices not in the above table can proceed from foundation as-is.
+
+### Recently unblocked (no longer in the table above)
+
+- **Layer 1 V2 incremental features (§1A/§1C/§1D), v2 §8 row 2** — was blocked on the `sentiment_score` AAII/put-call/IIA fetcher. Resolved: the AAII fetcher shipped (`regime_data_fetch.aaii_sentiment`), `sentiment_score = bull_bear_spread_8w_ma`, and `euphoria` fires (Ambiguity Log #32). Put-call / Investors Intelligence remain *optional* calibration-revision sources only — they block no label. `vol_crush` (ADR 0005) and the PIT breadth features (Slice 2.8c) also landed. `breakout_expansion` is spec-resolved (Log #46/#47) and awaits only its TDD label slice.
+- **Layer 2B Inflation/Growth (§2B), v2 §8 row 5** — all 8 labels are now reachable. `earnings_expansion` / `earnings_contraction` are wired end-to-end via the `aggregate_eps` weekly-snapshot accumulator (Log #48; silent only during the >4-week cold-start). The single-signal `inflation_shock` limb consumes `inflation_surprise_zscore`, computed from the free Cleveland Fed inflation nowcast as the `consensus_estimate` substitute (ADR 0006); the dedicated `cleveland_fed_nowcast` fetch path is built. No paid feed required. Note: `GDPNow` IS free on FRED (`GDPNOW`, in `V2_FRED_SERIES`); `GDPNow` / `Citi Surprise` are NOT in any §2B rule predicate.
