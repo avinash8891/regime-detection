@@ -352,17 +352,17 @@ def test_tlt_proxy_differential_hand_computed() -> None:
     """hy_tr_differential_63d = tlt_total_return_63d - hyg_total_return_63d,
     with total_return_lookback_days = 63 (config default)."""
     idx = _bdate_index(periods=300)
-    hyg = _make_random_walk(idx, seed=11, start=80.0, sigma=0.4)
-    lqd = _make_random_walk(idx, seed=12, start=110.0, sigma=0.3)
-    tlt = _make_random_walk(idx, seed=13, start=95.0, sigma=0.5)
-    kre = _make_random_walk(idx, seed=14, start=55.0, sigma=0.6)
-    spy = _make_random_walk(idx, seed=15, start=420.0, sigma=1.0)
+    hyg = _make_random_walk(idx, seed=11, start=80.0, sigma=0.004)
+    lqd = _make_random_walk(idx, seed=12, start=110.0, sigma=0.003)
+    tlt = _make_random_walk(idx, seed=13, start=95.0, sigma=0.005)
+    kre = _make_random_walk(idx, seed=14, start=55.0, sigma=0.006)
+    spy = _make_random_walk(idx, seed=15, start=420.0, sigma=0.008)
     hy_oas = _make_constant_series(idx, 3.5, "hy_oas")
     ig_oas = _make_constant_series(idx, 1.2, "ig_oas")
     sofr = _make_constant_series(idx, 5.3, "sofr")
     iorb = _make_constant_series(idx, 5.4, "iorb")
     nfci = _make_constant_series(idx, -0.2, "nfci")
-    usd = _make_random_walk(idx, seed=16, start=120.0, sigma=0.2)
+    usd = _make_random_walk(idx, seed=16, start=120.0, sigma=0.003)
 
     features = compute_credit_funding_features(
         hyg_close=hyg, lqd_close=lqd, tlt_close=tlt, kre_close=kre,
@@ -376,9 +376,9 @@ def test_tlt_proxy_differential_hand_computed() -> None:
     tlt_tr = tlt.iloc[t] / tlt.iloc[t - w] - 1.0
     hyg_tr = hyg.iloc[t] / hyg.iloc[t - w] - 1.0
     assert features.hy_tr_differential_63d.iloc[t] == pytest.approx(tlt_tr - hyg_tr)
-    assert features.hy_tr_differential_percentile_504d.name == "hy_tr_differential_percentile_504d"
-    assert features.hy_tr_differential_slope_21d.name == "hy_tr_differential_slope_21d"
-    assert features.ig_tr_differential_slope_21d.name == "ig_tr_differential_slope_21d"
+    # ig leg: same total-return-differential formula on LQD
+    lqd_tr = lqd.iloc[t] / lqd.iloc[t - w] - 1.0
+    assert features.ig_tr_differential_63d.iloc[t] == pytest.approx(tlt_tr - lqd_tr)
 
 
 def test_tlt_proxy_features_carry_proxy_bias_warning() -> None:
