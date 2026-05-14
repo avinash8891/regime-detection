@@ -26,6 +26,8 @@ class EventCandidate:
     requires_manual_review: bool
     release_timestamp_et: dt.datetime | None = None
     window_days: tuple[int, int] | None = None
+    event_subtype: str | None = None
+    candidate_id: str = ""
 
 
 @dataclass(frozen=True)
@@ -47,10 +49,38 @@ class PromotionDecision:
     reason: str
 
 
+@dataclass(frozen=True)
+class ApprovalRecord:
+    event_type: str
+    date: dt.date
+    approved_label: str
+    approver: str
+    approved_at: dt.date
+    evidence_candidate_id: str
+    evidence_source_count: int
+    importance: str | None = None
+    window_days: tuple[int, int] | None = None
+    notes: str | None = None
+
+
 class PrimaryAdapter(Protocol):
     source_id: str
 
     def fetch(
+        self,
+        *,
+        start_year: int,
+        end_year: int,
+        store: AcquisitionStore | None,
+        run_id: int | None,
+    ) -> list[EventCandidate]:
+        ...
+
+
+class CandidateGenerator(Protocol):
+    source_id: str
+
+    def generate(
         self,
         *,
         start_year: int,
