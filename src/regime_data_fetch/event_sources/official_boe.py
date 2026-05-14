@@ -59,7 +59,7 @@ class OfficialBOEAdapter:
 def fetch_boe_news_api_page(page: int) -> str:
     data = urlencode(
         {
-            "SearchTerm": "",
+            "SearchTerm": "Monetary Policy Summary and Minutes",
             "Id": NEWS_DATASOURCE_ID,
             "PageSize": "100",
             "Page": str(page),
