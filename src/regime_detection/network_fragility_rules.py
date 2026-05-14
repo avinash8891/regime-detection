@@ -396,20 +396,22 @@ def evaluate_rising_fragility(
      AND largest_eigenvalue_share rising over 21d
      AND breadth_state.active_label in [weak_breadth, narrowing_breadth, divergent_fragile]`
 
-    Note: v2 §3.5 line 634 references `narrowing_breadth` — V1's BreadthLabel
-    enum has no such literal. The closest semantic match in V1 §10 is the
-    pair {`weak_breadth`, `divergent_fragile`} together with `neutral_breadth`
-    when ratio_ret20 < 0. Resolution: accept the spec's stated set and let the
-    `narrowing_breadth` branch be inert until V2.1 adds the label — i.e.
-    today the rule fires iff breadth_label in {weak_breadth, divergent_fragile}.
-    Documented as a spec ambiguity in the slice 1.3 commit body.
+    Note: v2 §3.5 line 634 references `narrowing_breadth`. Slice 2.8c
+    widened V1's ``BreadthLabel`` enum to include `narrowing_breadth`
+    alongside `weak_breadth` and `divergent_fragile`, so the accepted_breadth
+    set now matches the spec text verbatim. Ambiguity Log #3 is fully
+    resolved.
     """
     if _any_nan(
         inputs.avg_pairwise_corr_slope_21d,
         inputs.largest_eigenvalue_share_slope_21d,
     ):
         return False
-    accepted_breadth: set[BreadthLabel] = {"weak_breadth", "divergent_fragile"}  # TODO(v2.1-breadth-enum): remove this mapping when `BreadthLabel` is extended to include `narrowing_breadth`; see spec §3.5 ambiguity #3 in the Implementation Ambiguity Log.
+    accepted_breadth: set[BreadthLabel] = {
+        "weak_breadth",
+        "narrowing_breadth",
+        "divergent_fragile",
+    }
     return bool(
         inputs.avg_pairwise_corr_slope_21d > 0.0
         and inputs.largest_eigenvalue_share_slope_21d > 0.0
@@ -503,7 +505,9 @@ def evaluate_systemic_stress(
     if not evaluate_correlation_to_one(inputs, config):
         return False
     accepted_credit: set[CreditFundingLabel] = {"credit_stress", "deleveraging"}
-    accepted_breadth: set[BreadthLabel] = {"weak_breadth"}  # TODO(v2.1-breadth-enum): remove this mapping when `BreadthLabel` is extended to include `narrowing_breadth`; see spec §3.5 ambiguity #3 in the Implementation Ambiguity Log.
+    # v2 §3.5 line 656: accepted breadth set matches spec verbatim now that
+    # Slice 2.8c widened the ``BreadthLabel`` enum (Ambiguity Log #3 resolved).
+    accepted_breadth: set[BreadthLabel] = {"weak_breadth", "narrowing_breadth"}
     return bool(
         credit_funding_label in accepted_credit
         and inputs.vix_percentile_252d > config.systemic_stress_vix_percentile_min

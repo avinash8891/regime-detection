@@ -369,16 +369,18 @@ the slice/commit that resolved it. Entries are append-only.
    enum is extended.
    Resolved by Slice 1.3 (commit `c3badfc`).
 
-   Status update (post Slice 2.8c): the `BreadthLabel` Literal in
-   `regime_detection.breadth_state` has since been widened — it now
-   includes `narrowing_breadth`, `recovery_breadth`, `broadening_breadth`,
-   and the `breadth_thrust` slot. The two `# TODO(v2.1-breadth-enum)`
-   markers in `network_fragility_rules` (`rising_fragility` and
-   `systemic_stress` accepted_breadth sets) are therefore actionable
-   today — a small follow-up TDD slice should add `narrowing_breadth`
-   to both sets and remove the marker comments. The spec text and the
-   §3.5 rule semantics are unchanged; only the code-side mapping
-   widens.
+   Status update (post Slice 2.8c + Log #3 follow-up):
+   `BreadthLabel` was widened in Slice 2.8c, and the two
+   `# TODO(v2.1-breadth-enum)` markers in
+   `regime_detection.network_fragility_rules` (`rising_fragility` and
+   `systemic_stress` accepted_breadth sets) have since been actioned.
+   `rising_fragility` now accepts `{weak_breadth, narrowing_breadth,
+   divergent_fragile}` (matches §3.5 line 634 verbatim) and
+   `systemic_stress` now accepts `{weak_breadth, narrowing_breadth}`
+   (matches §3.5 line 656 verbatim). The TODO markers are removed.
+   The §3.5 rule semantics are unchanged; only the code-side mapping
+   widened to match the now-canonical spec set. Ambiguity Log #3
+   is fully closed.
 
 4. **§3.5 line 620 — `effective_rank_stability_threshold`.**
    Spec wrote "21d std < 5% of mean" inline.
