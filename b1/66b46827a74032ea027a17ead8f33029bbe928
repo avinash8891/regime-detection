@@ -1,0 +1,36 @@
+src/regime_detection/volume_liquidity_rules.py
+  s_7f3c352a4f9447::t_bb900a08ac1c0e 23-29
+  s_7f3c352a4f9447::t_37a4e48442b72c 121-122,124,130-139,141-150
+src/regime_detection/volatility_state_v2.py
+  s_7f3c352a4f9447::t_99728e7a931353 202-210
+  s_7f3c352a4f9447::t_96c16f841d4834 243
+  s_7f3c352a4f9447::t_10a3b3cde0827e 80
+  s_7f3c352a4f9447::t_ff90b1fea38ffd 64-69
+src/regime_detection/axis_series.py
+  s_7f3c352a4f9447::t_ac1d0ea121987d 595-606
+  s_7f3c352a4f9447::t_86cd831ad475ca 641-645,648-657,662-663
+tests/test_volatility_state_v2_rising_vol_rule.py
+  s_7f3c352a4f9447::t_9f531fd0a733ad 340
+  s_7f3c352a4f9447::t_cdfc436d8e5f01 89
+tests/test_volume_liquidity_rules.py
+  s_7f3c352a4f9447::t_51db99f906b981 237,240-243,253-266
+  s_7f3c352a4f9447::t_1f6812644cfaea 131,134,137-141,146-167,172,178-180
+docs/regime_engine_v2_spec.md
+  s_7f3c352a4f9447::t_8305437f76e2da 942-957
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.8",
+  "base_commit_sha": "b166b46827a74032ea027a17ead8f33029bbe928",
+  "prompts": {},
+  "sessions": {
+    "s_7f3c352a4f9447": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "3d45e374-f98d-411d-b6a1-0697dd832539",
+        "model": "claude-opus-4-7"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}
