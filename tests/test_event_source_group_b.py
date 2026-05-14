@@ -6,7 +6,10 @@ from pathlib import Path
 import pytest
 
 from regime_data_fetch.event_sources.approvals import load_approval_overlay
+from regime_data_fetch.event_sources.budget_official_discovery import BudgetOfficialDiscoveryGenerator
 from regime_data_fetch.event_sources.deterministic_budget import DeterministicBudgetAdapter
+from regime_data_fetch.event_sources.orchestrator import EventSourceOrchestrator
+from regime_data_fetch.event_sources.validators_tinyfish import TinyFishValidator
 from regime_data_fetch.event_sources.validators_gpr_gdelt import GPRGDELTSignalGenerator
 
 
@@ -112,3 +115,55 @@ def test_gpr_gdelt_generator_flags_real_geopolitical_spike_date() -> None:
         (("geopolitical_event", dt.date(2022, 2, 24)), "gdelt:events-v2", "confirm"),
         (("geopolitical_event", dt.date(2022, 2, 24)), "gpr:caldara-iacoviello", "confirm"),
     }
+
+
+def test_budget_official_discovery_auto_promotes_two_independent_official_sources() -> None:
+    records_json = """
+[
+  {
+    "date": "2023-06-05",
+    "event_subtype": "debt_ceiling",
+    "source_id": "treasury.gov:debt-limit",
+    "source_url": "https://home.treasury.gov/news/press-releases/jy1480",
+    "raw_title": "Treasury debt limit X-date notice",
+    "raw_snippet": "Treasury projected the X-date."
+  },
+  {
+    "date": "2023-06-05",
+    "event_subtype": "debt_ceiling",
+    "source_id": "congress.gov:public-law",
+    "source_url": "https://www.congress.gov/bill/118th-congress/house-bill/3746",
+    "raw_title": "Fiscal Responsibility Act",
+    "raw_snippet": "Congress suspended the debt limit."
+  }
+]
+"""
+    generator = BudgetOfficialDiscoveryGenerator(records_fetcher=lambda: records_json)
+    candidates = generator.generate(start_year=2023, end_year=2023, store=None, run_id=None)
+    orchestrator = EventSourceOrchestrator(primary_adapters=[], candidate_generators=[generator], validators=[])
+
+    _, _, decisions, rendered = orchestrator.run(start_year=2023, end_year=2023, store=None, run_id=None)
+
+    assert [(candidate.date, candidate.event_subtype, candidate.source_id) for candidate in candidates] == [
+        (dt.date(2023, 6, 5), "debt_ceiling", "treasury.gov:debt-limit"),
+        (dt.date(2023, 6, 5), "debt_ceiling", "congress.gov:public-law"),
+    ]
+    assert decisions[0].outcome == "promote"
+    assert decisions[0].source_count == 2
+    assert [(event.date, event.type) for event in rendered] == [(dt.date(2023, 6, 5), "budget")]
+
+
+def test_tinyfish_unavailable_returns_unknown_for_review_candidates() -> None:
+    candidate = DeterministicBudgetAdapter(as_of_date=dt.date(2026, 5, 14)).fetch(
+        start_year=2026,
+        end_year=2026,
+        store=None,
+        run_id=None,
+    )[0]
+    validator = TinyFishValidator(search_fetcher=lambda candidate: (_ for _ in ()).throw(RuntimeError("not authenticated")))
+
+    validations = validator.validate([candidate], store=None, run_id=None)
+
+    assert [(validation.candidate_key, validation.validator_id, validation.verdict) for validation in validations] == [
+        (("budget", dt.date(2026, 9, 30)), "tinyfish:search-extract", "unknown")
+    ]
