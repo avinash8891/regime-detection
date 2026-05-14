@@ -142,6 +142,7 @@ class GroupABuildResult:
     validations: list[object]
     decisions: list[object]
     output_paths: dict[str, Path]
+    approval_overlay: list[object] | None = None
 
 
 def fetch_bls_release_timestamp(release_date: dt.date) -> dt.datetime:
@@ -665,6 +666,7 @@ def _build_v2_curated_candidate_events(
         group_b_generators.extend([BudgetOfficialDiscoveryGenerator(), gpr_gdelt])
         group_b_validators.extend([gpr_gdelt, TinyFishValidator()])
 
+    approval_overlay = load_approval_overlay(repo_root / "configs" / "events" / "group_b_approvals.yaml")
     orchestrator = EventSourceOrchestrator(
         primary_adapters=[
             OfficialECBAdapter(as_of_date=as_of_date, text_fetcher=text_fetcher or _build_url_text_fetcher_with_arg()),
@@ -679,7 +681,7 @@ def _build_v2_curated_candidate_events(
         ],
         candidate_generators=group_b_generators,
         validators=[HFCentralBankValidator(parquet_fetcher=hf_parquet_fetcher), *group_b_validators],
-        approval_overlay=load_approval_overlay(repo_root / "configs" / "events" / "group_b_approvals.yaml"),
+        approval_overlay=approval_overlay,
     )
     candidates, validations, decisions, promoted_events = orchestrator.run(
         start_year=start_year,
@@ -704,6 +706,7 @@ def _build_v2_curated_candidate_events(
         validations=validations,
         decisions=decisions,
         output_paths=output_paths,
+        approval_overlay=approval_overlay,
     )
 
 
@@ -888,13 +891,31 @@ def _build_group_b_report(result: GroupABuildResult) -> dict[str, object]:
         for decision in group_b_decisions
         if getattr(decision, "outcome") == "withhold"
     )
+    candidates_by_key = {(getattr(candidate, "event_type"), getattr(candidate, "date")): candidate for candidate in group_b_candidates}
+    decisions_by_key = {getattr(decision, "candidate_key"): decision for decision in group_b_decisions}
+    stale_approvals = []
+    stale_evidence = []
+    contradicted_approvals = []
+    for approval in result.approval_overlay or []:
+        key = (getattr(approval, "event_type"), getattr(approval, "date"))
+        if key[0] not in group_b_types:
+            continue
+        candidate = candidates_by_key.get(key)
+        decision = decisions_by_key.get(key)
+        rendered_key = {"event_type": key[0], "date": key[1].isoformat()}
+        if candidate is None:
+            stale_approvals.append(rendered_key)
+        elif decision is not None and getattr(decision, "outcome") == "quarantine":
+            contradicted_approvals.append(rendered_key)
+        elif getattr(candidate, "candidate_id", "") != getattr(approval, "evidence_candidate_id"):
+            stale_evidence.append(rendered_key)
     return {
         "candidates": {key: candidate_counts[key] for key in sorted(candidate_counts)},
         "promoted": {key: promoted_counts[key] for key in sorted(promoted_counts)},
         "manual_review_pending": {key: manual_review_counts[key] for key in sorted(manual_review_counts)},
-        "stale_approvals": [],
-        "stale_evidence": [],
-        "contradicted_approvals": [],
+        "stale_approvals": stale_approvals,
+        "stale_evidence": stale_evidence,
+        "contradicted_approvals": contradicted_approvals,
     }
 
 

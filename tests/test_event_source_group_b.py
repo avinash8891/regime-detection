@@ -5,9 +5,11 @@ from pathlib import Path
 
 import pytest
 
+from regime_data_fetch.event_calendar import GroupABuildResult, _build_group_b_report
 from regime_data_fetch.event_sources.approvals import append_approval_record, load_approval_overlay
 from regime_data_fetch.event_sources.budget_official_discovery import BudgetOfficialDiscoveryGenerator
 from regime_data_fetch.event_sources.deterministic_budget import DeterministicBudgetAdapter
+from regime_data_fetch.event_sources.models import ApprovalRecord, EventCandidate, PromotionDecision
 from regime_data_fetch.event_sources.orchestrator import EventSourceOrchestrator
 from regime_data_fetch.event_sources.validators_tinyfish import TinyFishValidator
 from regime_data_fetch.event_sources.validators_gpr_gdelt import GPRGDELTSignalGenerator
@@ -190,3 +192,45 @@ def test_append_approval_record_validates_and_round_trips(tmp_path: Path) -> Non
     assert approvals[0].evidence_candidate_id == "abc123"
     assert approvals[0].evidence_source_count == 2
     assert approvals[0].notes == "Russia invasion of Ukraine."
+
+
+def test_group_b_report_surfaces_stale_approval_states() -> None:
+    candidate = EventCandidate(
+        date=dt.date(2022, 2, 24),
+        event_type="geopolitical_event",
+        market="GLOBAL",
+        importance="high",
+        source_id="gpr:caldara-iacoviello",
+        source_url=None,
+        raw_title="Russia invasion of Ukraine",
+        raw_snippet="fixture",
+        is_future_scheduled=False,
+        confidence="medium",
+        requires_manual_review=True,
+        candidate_id="new-id",
+    )
+    contradicted = EventCandidate(
+        **{**candidate.__dict__, "date": dt.date(2022, 2, 26), "candidate_id": "contradicted-id"}
+    )
+    approvals = [
+        ApprovalRecord("geopolitical_event", dt.date(2022, 2, 24), "geopolitical_event", "avinash", dt.date(2026, 5, 14), "old-id", 2),
+        ApprovalRecord("geopolitical_event", dt.date(2022, 2, 25), "geopolitical_event", "avinash", dt.date(2026, 5, 14), "missing-id", 1),
+        ApprovalRecord("geopolitical_event", dt.date(2022, 2, 26), "geopolitical_event", "avinash", dt.date(2026, 5, 14), "contradicted-id", 1),
+    ]
+    result = GroupABuildResult(
+        scheduled_events=[],
+        candidates=[candidate, contradicted],
+        validations=[],
+        decisions=[
+            PromotionDecision(("geopolitical_event", dt.date(2022, 2, 24)), "promote", "medium", 1, False, "overlay"),
+            PromotionDecision(("geopolitical_event", dt.date(2022, 2, 26)), "quarantine", "low", 1, True, "contradict"),
+        ],
+        output_paths={},
+        approval_overlay=approvals,
+    )
+
+    report = _build_group_b_report(result)
+
+    assert report["stale_evidence"] == [{"event_type": "geopolitical_event", "date": "2022-02-24"}]
+    assert report["stale_approvals"] == [{"event_type": "geopolitical_event", "date": "2022-02-25"}]
+    assert report["contradicted_approvals"] == [{"event_type": "geopolitical_event", "date": "2022-02-26"}]
