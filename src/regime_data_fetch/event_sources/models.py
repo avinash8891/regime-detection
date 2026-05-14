@@ -8,7 +8,7 @@ from regime_data_fetch.acquisition_store import AcquisitionStore
 
 EventConfidence = Literal["low", "medium", "high"]
 Verdict = Literal["confirm", "contradict", "unknown"]
-PromotionOutcome = Literal["promote", "quarantine"]
+PromotionOutcome = Literal["promote", "quarantine", "withhold"]
 
 
 @dataclass(frozen=True)
