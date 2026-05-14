@@ -674,6 +674,13 @@ class InflationGrowthRulesConfig(BaseModel):
     # ADR 0006 — lookback for the realized 1-month CPI inflation rate
     # (~21 trading days = 1 month, matches the Cleveland Fed nowcast cadence).
     inflation_surprise_realized_rate_lookback_sessions: int = Field(default=21, ge=5)
+    # §2B line 2605 — earnings_expansion "aggregate_forward_eps_revision_
+    # direction_4w > +0.02". Must be > 0 (a strictly-positive 4-week
+    # forward-EPS revision).
+    eps_revision_expansion_threshold: float = Field(default=0.02, gt=0.0)
+    # §2B line 2609 — earnings_contraction "... < -0.02". Must be < 0
+    # (a strictly-negative 4-week revision).
+    eps_revision_contraction_threshold: float = Field(default=-0.02, lt=0.0)
 
 
 class InflationGrowthConfig(BaseModel):

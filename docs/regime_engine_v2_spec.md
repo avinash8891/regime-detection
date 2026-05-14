@@ -1544,6 +1544,17 @@ the slice/commit that resolved it. Entries are append-only.
     labels stay silent during cold-start and unlock organically once the
     accumulator fills.
 
+    Engine-wiring update — the accumulator output is now threaded end-to-end.
+    `compute_inflation_growth_features` takes an optional
+    `aggregate_forward_eps_revision` series, forward-fills it onto the SPY
+    session index via `reindex(method="ffill")` (the accumulator is keyed by
+    workbook observation_date, not the trading calendar), and `build_feature_store`
+    passes `macro_series["aggregate_forward_eps_revision"]` through. The
+    `earnings_expansion` / `earnings_contraction` predicates flipped from a
+    hard `return False` to live strict-threshold checks (`> +0.02` / `< -0.02`)
+    that NaN-falsify — V1 byte-identity is preserved because the series stays
+    all-NaN whenever `macro_series` does not carry the key.
+
     Second status update — `inflation_surprise_zscore` single-signal
     limb blocker also closed (ADR 0006). The analyst-survey
     `consensus_estimate` is genuinely paid, but the spec owner directed
@@ -2602,12 +2613,12 @@ recovery_growth:
   AND credit_funding.active_label == "credit_calm"
 
 earnings_expansion:
-  aggregate_forward_eps_revision_direction_4w > +0.02
-  # short-circuit to False until weekly EPS revision time series ships
+  aggregate_forward_eps_revision_direction_4w > +0.02     # strict
+  # Live (Log #48): NaN falsifies during the accumulator cold-start.
 
 earnings_contraction:
-  aggregate_forward_eps_revision_direction_4w < -0.02
-  # short-circuit to False until weekly EPS revision time series ships
+  aggregate_forward_eps_revision_direction_4w < -0.02     # strict
+  # Live (Log #48): NaN falsifies during the accumulator cold-start.
 ```
 
 #### Risk Rank

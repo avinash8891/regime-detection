@@ -253,6 +253,7 @@ def compute_inflation_growth_features(
     xlu_close: pd.Series,
     config: InflationGrowthRulesConfig,
     cpi_nowcast: pd.Series | None = None,
+    aggregate_forward_eps_revision: pd.Series | None = None,
 ) -> InflationGrowthFeatures:
     """Compute the v2 §2B inflation/growth feature seam from raw inputs.
 
@@ -266,6 +267,15 @@ def compute_inflation_growth_features(
     bias-warning row is emitted; when None, the all-NaN placeholder
     stays and the `inflation_shock` single-signal limb falsifies (V1
     byte-identity preserved).
+
+    ``aggregate_forward_eps_revision`` (the weekly 4-week forward-EPS
+    revision-direction series from
+    ``regime_data_fetch.aggregate_eps.compute_eps_revision_direction_4w``)
+    is optional. When supplied, it is forward-filled onto the SPY session
+    index and the `earnings_expansion` / `earnings_contraction` labels
+    can fire; when None, the all-NaN placeholder stays and both labels
+    falsify. No bias warning — this is S&P's own forward-EPS data, not a
+    proxy.
     """
     spy_index = spy_close.index
 
@@ -317,13 +327,32 @@ def compute_inflation_growth_features(
         pmi_manufacturing_series, window=config.pmi_slope_lookback_sessions
     ).rename("pmi_manufacturing_slope_21d")
 
-    # Aggregate forward EPS revision — deferred per Log #48; all-NaN.
-    aggregate_forward_eps_revision_direction_4w = pd.Series(
-        np.nan,
-        index=spy_index,
-        name="aggregate_forward_eps_revision_direction_4w",
-        dtype=float,
-    )
+    # Aggregate forward EPS revision (Log #48 closure). When the weekly
+    # revision series from the EPS accumulator is supplied, forward-fill
+    # it onto the SPY session index. `reindex(method="ffill")` carries
+    # each weekly value forward even when its observation_date is not
+    # itself an NYSE session (the accumulator is keyed by workbook
+    # observation_date, not the trading calendar). When None, emit an
+    # all-NaN series so `earnings_expansion` / `earnings_contraction`
+    # falsify.
+    if aggregate_forward_eps_revision is not None:
+        eps_revision_sorted = aggregate_forward_eps_revision.astype(float).copy()
+        eps_revision_sorted.index = pd.DatetimeIndex(
+            pd.to_datetime(eps_revision_sorted.index)
+        )
+        eps_revision_sorted = eps_revision_sorted.sort_index()
+        aggregate_forward_eps_revision_direction_4w = (
+            eps_revision_sorted.reindex(spy_index, method="ffill").rename(
+                "aggregate_forward_eps_revision_direction_4w"
+            )
+        )
+    else:
+        aggregate_forward_eps_revision_direction_4w = pd.Series(
+            np.nan,
+            index=spy_index,
+            name="aggregate_forward_eps_revision_direction_4w",
+            dtype=float,
+        )
 
     # Commodity return (§2B line 2220) — DBC 63d total return.
     commodity_return_63d = (
@@ -412,6 +441,7 @@ class InflationGrowthRuleInputs:
     cpi_6m_change_pct_lag_21: float
     cpi_6m_change_pct_slope_21d: float
     inflation_surprise_zscore: float
+    aggregate_forward_eps_revision_direction_4w: float
     pmi_manufacturing: float
     pmi_manufacturing_slope_21d: float
     commodity_return_63d: float
@@ -460,6 +490,9 @@ def build_rule_inputs_for_date(
             features.cpi_6m_change_pct_slope_21d, dt
         ),
         inflation_surprise_zscore=_scalar_at(features.inflation_surprise_zscore, dt),
+        aggregate_forward_eps_revision_direction_4w=_scalar_at(
+            features.aggregate_forward_eps_revision_direction_4w, dt
+        ),
         pmi_manufacturing=_scalar_at(features.pmi_manufacturing, dt),
         pmi_manufacturing_slope_21d=_scalar_at(
             features.pmi_manufacturing_slope_21d, dt
@@ -498,6 +531,9 @@ def build_rule_inputs_by_date(
             ),
             inflation_surprise_zscore=_scalar_at(
                 features.inflation_surprise_zscore, dt
+            ),
+            aggregate_forward_eps_revision_direction_4w=_scalar_at(
+                features.aggregate_forward_eps_revision_direction_4w, dt
             ),
             pmi_manufacturing=_scalar_at(features.pmi_manufacturing, dt),
             pmi_manufacturing_slope_21d=_scalar_at(
@@ -669,20 +705,40 @@ def evaluate_recovery_growth(
 
 
 def evaluate_earnings_expansion(
-    inputs: InflationGrowthRuleInputs,  # noqa: ARG001
-    config: InflationGrowthRulesConfig,  # noqa: ARG001
+    inputs: InflationGrowthRuleInputs,
+    config: InflationGrowthRulesConfig,
 ) -> bool:
-    """v2 §2B lines 2263-2265. Short-circuits to False until weekly EPS
-    revision time series ships (Ambiguity Log #48)."""
-    return False
+    """v2 §2B line 2605 — `earnings_expansion`:
+    ``aggregate_forward_eps_revision_direction_4w > +0.02`` (strict).
+
+    Log #48 closure: the revision series is built by the EPS weekly-
+    snapshot accumulator. NaN falsifies — the label is silent during
+    the accumulator cold-start (< 5 weekly fetches) or when the
+    revision series is not wired into ``macro_series``.
+    """
+    if _any_nan(inputs.aggregate_forward_eps_revision_direction_4w):
+        return False
+    return bool(
+        inputs.aggregate_forward_eps_revision_direction_4w
+        > config.eps_revision_expansion_threshold
+    )
 
 
 def evaluate_earnings_contraction(
-    inputs: InflationGrowthRuleInputs,  # noqa: ARG001
-    config: InflationGrowthRulesConfig,  # noqa: ARG001
+    inputs: InflationGrowthRuleInputs,
+    config: InflationGrowthRulesConfig,
 ) -> bool:
-    """v2 §2B lines 2267-2269. Short-circuits to False (Ambiguity Log #48)."""
-    return False
+    """v2 §2B line 2609 — `earnings_contraction`:
+    ``aggregate_forward_eps_revision_direction_4w < -0.02`` (strict).
+
+    Log #48 closure: NaN falsifies (accumulator cold-start / unwired).
+    """
+    if _any_nan(inputs.aggregate_forward_eps_revision_direction_4w):
+        return False
+    return bool(
+        inputs.aggregate_forward_eps_revision_direction_4w
+        < config.eps_revision_contraction_threshold
+    )
 
 
 def evaluate_rules(

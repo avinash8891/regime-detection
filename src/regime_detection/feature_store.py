@@ -528,6 +528,13 @@ def build_feature_store(
             # absent, inflation_surprise_zscore stays all-NaN and the
             # inflation_shock single-signal limb falsifies.
             cpi_nowcast=context.macro_series.get("cpi_nowcast"),
+            # §2B earnings_expansion / earnings_contraction seam (Log #48
+            # closure): the weekly 4-week forward-EPS revision-direction
+            # series from the EPS accumulator, source-agnostic via
+            # macro_series. When absent, the two earnings labels falsify.
+            aggregate_forward_eps_revision=context.macro_series.get(
+                "aggregate_forward_eps_revision"
+            ),
         )
 
     # v2 §6.3 BOCPD change-point evidence layer (Slice 8). Observation

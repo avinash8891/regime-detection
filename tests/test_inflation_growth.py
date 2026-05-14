@@ -77,6 +77,10 @@ def _rule_inputs(**overrides) -> InflationGrowthRuleInputs:
         # ADR 0006 — NaN by default so the inflation_shock single-signal
         # limb is silent unless a test explicitly supplies a z-score.
         inflation_surprise_zscore=float("nan"),
+        # Log #48 closure — NaN by default so the earnings_expansion /
+        # earnings_contraction labels are silent unless a test supplies
+        # a revision value (mirrors the accumulator cold-start state).
+        aggregate_forward_eps_revision_direction_4w=float("nan"),
         pmi_manufacturing=52.0,
         pmi_manufacturing_slope_21d=0.0,
         commodity_return_63d=0.0,
@@ -274,6 +278,61 @@ def test_build_rule_inputs_by_date_matches_single_day_builder() -> None:
                 )
 
 
+def test_aggregate_forward_eps_revision_forward_fills_onto_spy_index() -> None:
+    """Log #48 wiring: a weekly revision series (keyed by workbook
+    observation_date, not the trading calendar) is carried forward onto
+    every SPY session via reindex(method='ffill'). When None, the feature
+    stays all-NaN so the earnings labels falsify (V1 byte-identity)."""
+    idx = _bdate_index(periods=80)
+    # Filler series — values are irrelevant to this feature.
+    cpi = pd.Series(300.0, index=idx, dtype=float)
+    pmi = pd.Series(51.0, index=idx, dtype=float)
+    dgs10 = pd.Series(4.0, index=idx, dtype=float)
+    dbc = pd.Series(20.0, index=idx, dtype=float)
+    spy = pd.Series(400.0, index=idx, dtype=float)
+    tlt = pd.Series(100.0, index=idx, dtype=float)
+    xly = xli = xlp = xlu = pd.Series(100.0, index=idx, dtype=float)
+
+    common = dict(
+        cpi_all_items=cpi, pmi_manufacturing=pmi, dgs10=dgs10,
+        dbc_close=dbc, spy_close=spy, tlt_close=tlt,
+        xly_close=xly, xli_close=xli, xlp_close=xlp, xlu_close=xlu,
+        config=_default_rules(),
+    )
+
+    # None → all-NaN placeholder.
+    feats_none = compute_inflation_growth_features(**common)
+    assert feats_none.aggregate_forward_eps_revision_direction_4w.isna().all()
+
+    # Two weekly observations. The second deliberately lands on a Sunday
+    # (not an NYSE session) to prove the ffill reindex carries it forward
+    # rather than dropping it on an exact-label mismatch.
+    obs_early = idx[20]
+    obs_sunday = pd.Timestamp("2025-04-13")  # a Sunday
+    assert obs_sunday.dayofweek == 6
+    assert obs_sunday not in idx
+    revision = pd.Series(
+        [0.04, -0.03],
+        index=pd.DatetimeIndex([obs_early, obs_sunday]),
+        dtype=float,
+    )
+    feats = compute_inflation_growth_features(
+        **common, aggregate_forward_eps_revision=revision
+    )
+    out = feats.aggregate_forward_eps_revision_direction_4w
+    assert len(out) == len(idx)
+    # Before the first observation: NaN (no value to carry forward).
+    assert np.isnan(out.iloc[10])
+    # On/after the first observation, before the Sunday one: 0.04.
+    assert out.loc[obs_early] == pytest.approx(0.04)
+    assert out.iloc[25] == pytest.approx(0.04)
+    # The first NYSE session strictly after the Sunday observation carries
+    # the -0.03 value forward.
+    after_sunday = idx[idx > obs_sunday][0]
+    assert out.loc[after_sunday] == pytest.approx(-0.03)
+    assert out.iloc[-1] == pytest.approx(-0.03)
+
+
 # --- Group B — Rule predicates (10 tests) ------------------------------------
 
 
@@ -429,12 +488,56 @@ def test_recovery_growth_short_circuits_when_credit_funding_unbuilt() -> None:
     assert evaluate_recovery_growth(inputs, rules) is False
 
 
-def test_earnings_labels_short_circuit_to_false() -> None:
-    """§2B lines 2316-2317 + Log #48: earnings_* labels deferred."""
+def test_earnings_labels_falsify_on_cold_start_nan() -> None:
+    """Log #48: NaN revision (accumulator cold-start / unwired) falsifies
+    both earnings labels."""
     rules = _default_rules()
-    inputs = _rule_inputs()
+    inputs = _rule_inputs(aggregate_forward_eps_revision_direction_4w=float("nan"))
     assert evaluate_earnings_expansion(inputs, rules) is False
     assert evaluate_earnings_contraction(inputs, rules) is False
+
+
+def test_earnings_labels_falsify_in_neutral_band() -> None:
+    """§2B lines 2605/2609: a revision inside (-0.02, +0.02) fires neither
+    label — the thresholds are strict."""
+    rules = _default_rules()
+    inputs = _rule_inputs(aggregate_forward_eps_revision_direction_4w=0.01)
+    assert evaluate_earnings_expansion(inputs, rules) is False
+    assert evaluate_earnings_contraction(inputs, rules) is False
+    # Exactly on the threshold also falsifies (strict >).
+    on_threshold = _rule_inputs(aggregate_forward_eps_revision_direction_4w=0.02)
+    assert evaluate_earnings_expansion(on_threshold, rules) is False
+
+
+def test_earnings_expansion_fires_above_threshold() -> None:
+    """§2B line 2605: aggregate_forward_eps_revision_direction_4w > +0.02.
+
+    pmi_manufacturing=49.0 suppresses the higher-precedence goldilocks /
+    recovery_growth / disinflation labels so evaluate_rules dispatch
+    actually reaches earnings_expansion."""
+    rules = _default_rules()
+    inputs = _rule_inputs(
+        pmi_manufacturing=49.0,
+        aggregate_forward_eps_revision_direction_4w=0.05,
+    )
+    assert evaluate_earnings_expansion(inputs, rules) is True
+    assert evaluate_earnings_contraction(inputs, rules) is False
+    assert evaluate_rules(inputs=inputs, config=rules) == "earnings_expansion"
+
+
+def test_earnings_contraction_fires_below_threshold() -> None:
+    """§2B line 2609: aggregate_forward_eps_revision_direction_4w < -0.02.
+
+    earnings_contraction outranks earnings_expansion in the §2B
+    precedence walk."""
+    rules = _default_rules()
+    inputs = _rule_inputs(
+        pmi_manufacturing=49.0,
+        aggregate_forward_eps_revision_direction_4w=-0.05,
+    )
+    assert evaluate_earnings_contraction(inputs, rules) is True
+    assert evaluate_earnings_expansion(inputs, rules) is False
+    assert evaluate_rules(inputs=inputs, config=rules) == "earnings_contraction"
 
 
 def test_inflation_shock_outranks_recession_scare_when_both_match() -> None:

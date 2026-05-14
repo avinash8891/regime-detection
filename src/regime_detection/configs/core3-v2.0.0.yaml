@@ -326,11 +326,13 @@ credit_funding:
 # v2 §2B — Inflation / Growth axis (Slice 5). Per Ambiguity Log #48, DBC ETF
 # substitutes for the Bloomberg Commodity Index (paid feed unavailable); the
 # classifier emits a bias-warning row with code
-# `commodity_proxy_dbc_substitute`. Two labels remain deferred:
-#   - earnings_expansion / earnings_contraction: need weekly aggregate forward
-#     EPS revision series (S&P Global, paid). Predicates short-circuit to False.
-#   - inflation_shock single-signal limb (inflation_surprise_zscore > +1.5):
-#     needs BLS consensus-vs-actual feed. Composite-shock limb remains active.
+# `commodity_proxy_dbc_substitute`. Log #48 closures:
+#   - earnings_expansion / earnings_contraction: consume the weekly
+#     aggregate-forward-EPS revision series built by the EPS accumulator
+#     (regime_data_fetch.aggregate_eps); silent during the < 5-week
+#     accumulator cold-start. No paid feed.
+#   - inflation_shock single-signal limb: consumes inflation_surprise_zscore,
+#     computed from the Cleveland Fed inflation nowcast (ADR 0006). No paid feed.
 inflation_growth:
   rules:
     cpi_drift_threshold: 0.005                     # §2B line 2234 (50bps)
@@ -348,6 +350,13 @@ inflation_growth:
     cyclical_defensive_slope_lookback_sessions: 21 # §2B line 2227
     spy_return_lookback_sessions: 21               # §2B line 2237
     tlt_return_lookback_sessions: 21               # §2B line 2245
+    # ADR 0006 — inflation_shock single-signal limb (Cleveland Fed nowcast):
+    inflation_surprise_zscore_threshold: 1.5             # §2B line 2551
+    inflation_surprise_normalizer_window_sessions: 1260  # 5y, §2A z-score convention
+    inflation_surprise_realized_rate_lookback_sessions: 21
+    # Log #48 closure — earnings_expansion / earnings_contraction thresholds:
+    eps_revision_expansion_threshold: 0.02         # §2B line 2605
+    eps_revision_contraction_threshold: -0.02      # §2B line 2609
   # §2B lines 2292-2303 — per-label asymmetric hysteresis days.
   deescalation_days_by_label:
     inflation_shock: 5
