@@ -321,6 +321,90 @@ def _evaluate_broadening_breadth(
     return bool(nh_nl_now > nh_nl_then and float(slope_now) > 0.0)
 
 
+def _evaluate_recovery_breadth(
+    nh_nl_ratio: pd.Series,
+    ad_line_slope_20d: pd.Series,
+    *,
+    dt: pd.Timestamp,
+    lookback_sessions: int,
+) -> bool:
+    """v2 §1D ADR 0003 / Log #70 — `recovery_breadth` predicate.
+
+    Fires iff:
+      nh_nl_ratio is RISING over `lookback_sessions` (strict increase)
+      AND ad_line_slope_20d at `dt` <= 0 (not yet strictly positive).
+
+    "Rising" = strict 5-session increase per Ambiguity Log #68.
+
+    Disjoint from `broadening_breadth` by construction: the slope conjuncts
+    `<= 0` (recovery) and `> 0` (broadening) partition the real line at zero.
+    Recovery sits above broadening in the §1D precedence (line 284) so the
+    earlier turning-point signal surfaces before the lagging cumulative-AD
+    confirmation.
+    """
+    nh_nl_pts = _lookback_endpoint_values(
+        nh_nl_ratio, dt=dt, lookback_sessions=lookback_sessions
+    )
+    if nh_nl_pts is None:
+        return False
+    if dt not in ad_line_slope_20d.index:
+        return False
+    slope_now = ad_line_slope_20d.loc[dt]
+    if pd.isna(slope_now):
+        return False
+
+    nh_nl_then, nh_nl_now = nh_nl_pts
+    return bool(nh_nl_now > nh_nl_then and float(slope_now) <= 0.0)
+
+
+# Zweig-style `breadth_thrust` LABEL thresholds — spec-fixed, NOT configurable
+# (ADR 0003 / Log #69 pin). Values match the V2 §1D Breadth Thrust block.
+_BREADTH_THRUST_LOW_THRESHOLD = 0.40
+_BREADTH_THRUST_HIGH_THRESHOLD = 0.615
+_BREADTH_THRUST_LOOKBACK_SESSIONS = 10
+
+
+def _evaluate_breadth_thrust(
+    breadth_thrust_feature: pd.Series,
+    *,
+    dt: pd.Timestamp,
+) -> bool:
+    """v2 §1D ADR 0003 / Log #69 — `breadth_thrust` LABEL predicate.
+
+    Fires at session t iff:
+      EXISTS b in [t-10, t-1] with breadth_thrust_feature[b] < 0.40
+      AND breadth_thrust_feature[t] > 0.615
+
+    Both inequalities strict per Zweig's canonical 1986 formulation. The
+    thresholds (0.40, 0.615) and the 10-session lookback are spec-fixed
+    (not configurable). NaN at `feature[t]` or at every `b` in the
+    trailing 10-session window falsifies the rule (V1 §2.7 cold-start).
+    """
+    if dt not in breadth_thrust_feature.index:
+        return False
+    try:
+        pos_t = breadth_thrust_feature.index.get_loc(dt)
+    except KeyError:
+        return False
+    if not isinstance(pos_t, int):
+        # Non-unique index entry — refuse to guess which row.
+        return False
+    feature_now = breadth_thrust_feature.iloc[pos_t]
+    if pd.isna(feature_now):
+        return False
+    if not (float(feature_now) > _BREADTH_THRUST_HIGH_THRESHOLD):
+        return False
+    # Scan trailing window [t-10, t-1] for ANY past session with feature < 0.40.
+    start_pos = max(0, pos_t - _BREADTH_THRUST_LOOKBACK_SESSIONS)
+    if start_pos >= pos_t:
+        return False  # cold-start: no prior history at all
+    window = breadth_thrust_feature.iloc[start_pos:pos_t]
+    non_nan = window.dropna()
+    if non_nan.empty:
+        return False
+    return bool((non_nan < _BREADTH_THRUST_LOW_THRESHOLD).any())
+
+
 def _data_quality_for_asof(
     *,
     spy_close: pd.Series,

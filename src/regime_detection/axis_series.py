@@ -9,8 +9,10 @@ import pandas as pd
 from regime_detection.breadth_state import (
     _RISK_RANK as BREADTH_RISK_RANK,
     _data_quality_for_asof as breadth_data_quality_for_asof,
+    _evaluate_breadth_thrust,
     _evaluate_broadening_breadth,
     _evaluate_narrowing_breadth,
+    _evaluate_recovery_breadth,
     build_raw_outputs as build_breadth_raw_outputs,
 )
 from regime_detection.data_quality import assess_series_input_quality, quality_forces_unknown
@@ -245,9 +247,17 @@ class BreadthSeriesClassifier:
             assert v2_config is not None
             lookback = v2_config.label_rate_of_change_lookback_sessions
             nh_nl_threshold = v2_config.nh_nl_ratio_narrowing_threshold
+            breadth_thrust_series = v2_features.breadth_thrust
             updated_labels: list[str] = []
             for idx_pos, day in enumerate(spy_close.index):
                 v1_raw = raw_labels[idx_pos]
+                thrust_fires = (
+                    _evaluate_breadth_thrust(
+                        breadth_thrust_series, dt=day
+                    )
+                    if breadth_thrust_series is not None
+                    else False
+                )
                 narrowing_fires = _evaluate_narrowing_breadth(
                     pct_above_50dma=v2_features.pct_above_50dma,
                     pct_above_200dma=v2_features.pct_above_200dma,
@@ -256,19 +266,30 @@ class BreadthSeriesClassifier:
                     lookback_sessions=lookback,
                     nh_nl_threshold=nh_nl_threshold,
                 )
+                recovery_fires = _evaluate_recovery_breadth(
+                    nh_nl_ratio=v2_features.nh_nl_ratio,
+                    ad_line_slope_20d=v2_features.ad_line_slope_20d,
+                    dt=day,
+                    lookback_sessions=lookback,
+                )
                 broadening_fires = _evaluate_broadening_breadth(
                     nh_nl_ratio=v2_features.nh_nl_ratio,
                     ad_line_slope_20d=v2_features.ad_line_slope_20d,
                     dt=day,
                     lookback_sessions=lookback,
                 )
-                # Precedence walker (spec §1D line 284). breadth_thrust and
-                # recovery_breadth slots are reserved but never fire today
-                # (Ambiguity Log #69 / #70 — labels DEFERRED).
-                if v1_raw == "divergent_fragile":
+                # Precedence walker (spec §1D line 284):
+                #   breadth_thrust > divergent_fragile > narrowing_breadth >
+                #   recovery_breadth > broadening_breadth > weak_breadth >
+                #   healthy_breadth > neutral_breadth > unknown
+                if thrust_fires:
+                    resolved = "breadth_thrust"
+                elif v1_raw == "divergent_fragile":
                     resolved = "divergent_fragile"
                 elif narrowing_fires:
                     resolved = "narrowing_breadth"
+                elif v1_raw in {"weak_breadth", "healthy_breadth", "neutral_breadth", "unknown"} and recovery_fires:
+                    resolved = "recovery_breadth"
                 elif v1_raw in {"weak_breadth", "healthy_breadth", "neutral_breadth", "unknown"} and broadening_fires:
                     resolved = "broadening_breadth"
                 else:
@@ -276,7 +297,9 @@ class BreadthSeriesClassifier:
                 if resolved != v1_raw:
                     raw_evidence[idx_pos] = {
                         **raw_evidence[idx_pos],
+                        "v2_breadth_thrust": thrust_fires,
                         "v2_narrowing_breadth": narrowing_fires,
+                        "v2_recovery_breadth": recovery_fires,
                         "v2_broadening_breadth": broadening_fires,
                         "v1_raw_label": v1_raw,
                     }
