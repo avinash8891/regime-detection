@@ -1,0 +1,20 @@
+src/regime_detection/configs/core3-v2.0.0.yaml
+  s_7f3c352a4f9447::t_428d671552ee28 257-265
+  s_7f3c352a4f9447::t_bae774bd483100 288-296
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.8",
+  "base_commit_sha": "3dede3825fb262aed45e8b4b76e5662738b1debe",
+  "prompts": {},
+  "sessions": {
+    "s_7f3c352a4f9447": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "3d45e374-f98d-411d-b6a1-0697dd832539",
+        "model": "claude-opus-4-7"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}
