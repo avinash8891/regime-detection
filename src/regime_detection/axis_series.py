@@ -1,26 +1,23 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import date, timedelta
-from typing import Protocol
+from datetime import date
+from typing import Literal, Protocol
 
 import pandas as pd
 
 from regime_detection.breadth_state import (
     _RISK_RANK as BREADTH_RISK_RANK,
     _data_quality_for_asof as breadth_data_quality_for_asof,
+    _evaluate_breadth_thrust,
     _evaluate_broadening_breadth,
     _evaluate_narrowing_breadth,
+    _evaluate_recovery_breadth,
     build_raw_outputs as build_breadth_raw_outputs,
 )
 from regime_detection.data_quality import assess_series_input_quality, quality_forces_unknown
 from regime_detection.event_calendar import (
-    _PRECEDENCE,
-    _TYPE_TO_LABEL,
-    _WINDOWS,
-    _month_expiry_date,
-    _second_weekday_of_month,
-    _sessions_between,
+    compute_event_calendar_outputs,
 )
 from regime_detection.feature_store import FeatureStore
 from regime_detection.hysteresis import (
@@ -30,9 +27,10 @@ from regime_detection.hysteresis import (
 from regime_detection.market_context import MarketContext
 from regime_detection.credit_funding import (
     CREDIT_FUNDING_RISK_RANK,
+    CREDIT_SPREAD_PROXY_BIAS_WARNING_CODE,
+    CREDIT_SPREAD_SOURCE_CODE,
     CreditFundingLabel,
-    RULE_PRECEDENCE as CREDIT_FUNDING_RULE_PRECEDENCE,
-    build_rule_inputs_for_date as build_credit_funding_rule_inputs_for_date,
+    build_rule_inputs_by_date as build_credit_funding_rule_inputs_by_date,
     evaluate_rules as evaluate_credit_funding_rules,
 )
 from regime_detection.models import (
@@ -49,7 +47,7 @@ from regime_detection.models import (
 from regime_detection.inflation_growth import (
     INFLATION_GROWTH_RISK_RANK,
     InflationGrowthLabel,
-    build_rule_inputs_for_date as build_inflation_growth_rule_inputs_for_date,
+    build_rule_inputs_by_date as build_inflation_growth_rule_inputs_by_date,
     evaluate_rules as evaluate_inflation_growth_rules,
 )
 from regime_detection.monetary_pressure import (
@@ -61,7 +59,7 @@ from regime_detection.monetary_pressure import (
 from regime_detection.network_fragility_rules import (
     NETWORK_FRAGILITY_RISK_RANK,
     NetworkFragilityLabel,
-    build_rule_inputs_for_date,
+    build_rule_inputs_by_date,
     evaluate_rules,
 )
 from regime_detection.volume_liquidity_rules import (
@@ -111,6 +109,10 @@ class AxisSeriesBundle:
     # populated by CreditFundingSeriesClassifier when feature_store has
     # the credit_funding seam lit (Slice 4).
     credit_funding: dict[date, CreditFundingOutput] | None = None
+    # V2 §2C credit/funding PROXY label — None in pure-v1 mode; populated by
+    # CreditFundingSeriesClassifier.build_proxy on the TLT-vs-HYG/LQD
+    # differential. Parallel to `credit_funding`, never blended (Log #71).
+    credit_funding_proxy: dict[date, CreditFundingOutput] | None = None
     # V2 §2A monetary pressure — None in pure-v1 mode (no v2 config), populated
     # by MonetaryPressureV2SeriesClassifier when feature_store.monetary is lit
     # AND context.config.monetary_pressure_state is non-None (Ambiguity Log #46).
@@ -250,9 +252,17 @@ class BreadthSeriesClassifier:
             assert v2_config is not None
             lookback = v2_config.label_rate_of_change_lookback_sessions
             nh_nl_threshold = v2_config.nh_nl_ratio_narrowing_threshold
+            breadth_thrust_series = v2_features.breadth_thrust
             updated_labels: list[str] = []
             for idx_pos, day in enumerate(spy_close.index):
                 v1_raw = raw_labels[idx_pos]
+                thrust_fires = (
+                    _evaluate_breadth_thrust(
+                        breadth_thrust_series, dt=day
+                    )
+                    if breadth_thrust_series is not None
+                    else False
+                )
                 narrowing_fires = _evaluate_narrowing_breadth(
                     pct_above_50dma=v2_features.pct_above_50dma,
                     pct_above_200dma=v2_features.pct_above_200dma,
@@ -261,19 +271,30 @@ class BreadthSeriesClassifier:
                     lookback_sessions=lookback,
                     nh_nl_threshold=nh_nl_threshold,
                 )
+                recovery_fires = _evaluate_recovery_breadth(
+                    nh_nl_ratio=v2_features.nh_nl_ratio,
+                    ad_line_slope_20d=v2_features.ad_line_slope_20d,
+                    dt=day,
+                    lookback_sessions=lookback,
+                )
                 broadening_fires = _evaluate_broadening_breadth(
                     nh_nl_ratio=v2_features.nh_nl_ratio,
                     ad_line_slope_20d=v2_features.ad_line_slope_20d,
                     dt=day,
                     lookback_sessions=lookback,
                 )
-                # Precedence walker (spec §1D line 284). breadth_thrust and
-                # recovery_breadth slots are reserved but never fire today
-                # (Ambiguity Log #69 / #70 — labels DEFERRED).
-                if v1_raw == "divergent_fragile":
+                # Precedence walker (spec §1D line 284):
+                #   breadth_thrust > divergent_fragile > narrowing_breadth >
+                #   recovery_breadth > broadening_breadth > weak_breadth >
+                #   healthy_breadth > neutral_breadth > unknown
+                if thrust_fires:
+                    resolved = "breadth_thrust"
+                elif v1_raw == "divergent_fragile":
                     resolved = "divergent_fragile"
                 elif narrowing_fires:
                     resolved = "narrowing_breadth"
+                elif v1_raw in {"weak_breadth", "healthy_breadth", "neutral_breadth", "unknown"} and recovery_fires:
+                    resolved = "recovery_breadth"
                 elif v1_raw in {"weak_breadth", "healthy_breadth", "neutral_breadth", "unknown"} and broadening_fires:
                     resolved = "broadening_breadth"
                 else:
@@ -281,7 +302,9 @@ class BreadthSeriesClassifier:
                 if resolved != v1_raw:
                     raw_evidence[idx_pos] = {
                         **raw_evidence[idx_pos],
+                        "v2_breadth_thrust": thrust_fires,
                         "v2_narrowing_breadth": narrowing_fires,
+                        "v2_recovery_breadth": recovery_fires,
                         "v2_broadening_breadth": broadening_fires,
                         "v1_raw_label": v1_raw,
                     }
@@ -419,6 +442,12 @@ class NetworkFragilitySeriesClassifier:
         raw_labels: list[NetworkFragilityLabel] = []
         per_day_data_quality: list[DataQuality] = []
         per_day_evidence: list[dict[str, object]] = []
+        rule_inputs_by_date = build_rule_inputs_by_date(
+            features=features,
+            spy_close=spy_close,
+            realized_vol_percentile_252d=realized_vol_pct,
+            vix_percentile_252d=vix_pct,
+        )
 
         for day in context.sessions:
             dt = pd.Timestamp(day)
@@ -445,13 +474,7 @@ class NetworkFragilitySeriesClassifier:
                 per_day_evidence.append({"reason": day_quality.reason or "insufficient_data"})
                 continue
 
-            rule_inputs = build_rule_inputs_for_date(
-                features=features,
-                dt=dt,
-                spy_close=spy_close,
-                realized_vol_percentile_252d=realized_vol_pct,
-                vix_percentile_252d=vix_pct,
-            )
+            rule_inputs = rule_inputs_by_date[dt]
 
             # I1: strict V1 axis alignment. When the caller supplied a v1
             # dict, missing-day → KeyError (loud) rather than silent
@@ -574,6 +597,18 @@ class VolumeLiquidityStateSeriesClassifier:
         return_1d_series = feature_store.volatility.return_1d
         volume_zscore_series = volume_features.volume_zscore_20d
 
+        # v2 §1E line 278/279 + Log #40 closure — read the two 252d
+        # percentiles for the `liquidity_gap_behavior` predicate from the
+        # §1C volatility_state_v2 seam. When that seam is absent (V1-only
+        # callers), these stay None and the rule falls through to
+        # normal_volume / unknown as before (no NaN-mask change).
+        volatility_v2 = feature_store.volatility_state_v2
+        gap_freq_pct_series: pd.Series | None = None
+        intraday_pct_series: pd.Series | None = None
+        if volatility_v2 is not None:
+            gap_freq_pct_series = volatility_v2.gap_frequency_percentile_252d
+            intraday_pct_series = volatility_v2.intraday_range_percentile_252d
+
         required_inputs: list[pd.Series] = [
             volume_zscore_series,
             return_1d_series,
@@ -608,18 +643,29 @@ class VolumeLiquidityStateSeriesClassifier:
                 per_day_evidence.append({"reason": day_quality.reason or "insufficient_data"})
                 continue
 
-            # NaN-safe scalar materialization. The deferred liquidity_gap
-            # percentile inputs are not yet available — pass NaN so the
-            # rule signature stays forward-compat without depending on
-            # data the feature store does not yet expose.
+            # NaN-safe scalar materialization. Log #40 closure: the two
+            # 252d percentile inputs for `liquidity_gap_behavior` now read
+            # from `feature_store.volatility_state_v2` when that seam is
+            # lit; otherwise they stay NaN and the rule falsifies per V1
+            # §2.7 cold-start.
             volume_zscore_20d = float(volume_zscore_series.loc[dt]) if dt in volume_zscore_series.index else float("nan")
             return_1d = float(return_1d_series.loc[dt]) if dt in return_1d_series.index else float("nan")
+            gap_freq_pct = (
+                float(gap_freq_pct_series.loc[dt])
+                if gap_freq_pct_series is not None and dt in gap_freq_pct_series.index
+                else float("nan")
+            )
+            intraday_pct = (
+                float(intraday_pct_series.loc[dt])
+                if intraday_pct_series is not None and dt in intraday_pct_series.index
+                else float("nan")
+            )
 
             inputs = VolumeLiquidityRuleInputs(
                 volume_zscore_20d=volume_zscore_20d,
                 return_1d=return_1d,
-                gap_frequency_percentile_252d=float("nan"),  # deferred (Ambiguity Log #40)
-                intraday_range_percentile_252d=float("nan"),  # deferred
+                gap_frequency_percentile_252d=gap_freq_pct,
+                intraday_range_percentile_252d=intraday_pct,
             )
             label = evaluate_volume_liquidity_rules(
                 inputs=inputs,
@@ -693,10 +739,12 @@ class CreditFundingSeriesClassifier:
       5. Emit one CreditFundingOutput per session.
     """
 
-    def build(
+    def _build_for_spread_source(
         self,
         context: MarketContext,
         feature_store: FeatureStore,
+        *,
+        spread_source: Literal["oas", "proxy"],
     ) -> dict[date, CreditFundingOutput] | None:
         features = feature_store.credit_funding
         if features is None:
@@ -704,6 +752,26 @@ class CreditFundingSeriesClassifier:
         cf_config = context.config.credit_funding
         if cf_config is None:
             return None
+
+        # Resolve the spread-source-specific series + bias-warning code. The
+        # §2C rule schema is scale-invariant (percentile + slope only), so the
+        # identical pipeline runs on either the real-OAS metric or the
+        # TLT-proxy metric (Ambiguity Log #71) — two parallel outputs, never
+        # blended into one series or one label.
+        if spread_source == "oas":
+            hy_spread_63d = features.hy_oas_63d
+            ig_spread_63d = features.ig_oas_63d
+            hy_spread_percentile_504d = features.hy_oas_percentile_504d
+            hy_spread_slope_21d = features.hy_oas_slope_21d
+            ig_spread_slope_21d = features.ig_oas_slope_21d
+            bias_warning_code = CREDIT_SPREAD_SOURCE_CODE
+        else:  # "proxy"
+            hy_spread_63d = features.hy_tr_differential_63d
+            ig_spread_63d = features.ig_tr_differential_63d
+            hy_spread_percentile_504d = features.hy_tr_differential_percentile_504d
+            hy_spread_slope_21d = features.hy_tr_differential_slope_21d
+            ig_spread_slope_21d = features.ig_tr_differential_slope_21d
+            bias_warning_code = CREDIT_SPREAD_PROXY_BIAS_WARNING_CODE
 
         spy_close = context.spy_ohlcv["close"]
         volatility_features = feature_store.volatility
@@ -728,8 +796,8 @@ class CreditFundingSeriesClassifier:
         # Quality-gate primary inputs. Lookback gates on the 504d percentile
         # window — the longest binding cold-start for any rule predicate.
         required_inputs: list[pd.Series] = [
-            features.hy_spread_proxy_63d,
-            features.ig_spread_proxy_63d,
+            hy_spread_63d,
+            ig_spread_63d,
             features.kre_spy_ratio,
             features.sofr_iorb_spread,
             spy_close,
@@ -743,6 +811,31 @@ class CreditFundingSeriesClassifier:
         per_day_evidence: list[dict[str, object]] = []
 
         nfci_carried = features.nfci_daily_carried
+        session_index = spy_close.index
+        hyg_staleness_by_date = _trading_staleness_series(hyg_close, session_index)
+        lqd_staleness_by_date = _trading_staleness_series(lqd_close, session_index)
+        tlt_staleness_by_date = _trading_staleness_series(tlt_close, session_index)
+        nfci_staleness_by_date = _calendar_staleness_days_series(
+            nfci_series, session_index
+        )
+        sofr_missing_by_date = (
+            pd.Series(True, index=session_index)
+            if sofr_series is None
+            else sofr_series.reindex(session_index).isna()
+        )
+        iorb_missing_by_date = (
+            pd.Series(True, index=session_index)
+            if iorb_series is None
+            else iorb_series.reindex(session_index).isna()
+        )
+        rule_inputs_by_date = build_credit_funding_rule_inputs_by_date(
+            features=features,
+            hy_spread_percentile_504d=hy_spread_percentile_504d,
+            hy_spread_slope_21d=hy_spread_slope_21d,
+            ig_spread_slope_21d=ig_spread_slope_21d,
+            realized_vol_21d_percentile_252d=realized_vol_pct,
+            avg_pairwise_corr_percentile_504d=avg_corr_pct_series,
+        )
 
         for day in context.sessions:
             dt = pd.Timestamp(day)
@@ -752,32 +845,22 @@ class CreditFundingSeriesClassifier:
             # messages reach evidence.
             etf_staleness_breach = False
             etf_stale_label: str | None = None
-            for etf_label, etf_series in (
-                ("HYG", hyg_close),
-                ("LQD", lqd_close),
-                ("TLT", tlt_close),
-            ):
-                if etf_series is None:
-                    etf_staleness_breach = True
-                    etf_stale_label = etf_label
-                    break
-                staleness = _trailing_staleness_sessions(etf_series, dt)
-                if staleness > cf_config.etf_stale_sessions:
-                    etf_staleness_breach = True
-                    etf_stale_label = etf_label
-                    break
+            hyg_staleness = int(hyg_staleness_by_date.loc[dt])
+            lqd_staleness = int(lqd_staleness_by_date.loc[dt])
+            tlt_staleness = int(tlt_staleness_by_date.loc[dt])
+            if hyg_staleness > cf_config.etf_stale_sessions:
+                etf_staleness_breach = True
+                etf_stale_label = "HYG"
+            elif lqd_staleness > cf_config.etf_stale_sessions:
+                etf_staleness_breach = True
+                etf_stale_label = "LQD"
+            elif tlt_staleness > cf_config.etf_stale_sessions:
+                etf_staleness_breach = True
+                etf_stale_label = "TLT"
 
-            sofr_missing = (
-                sofr_series is None
-                or dt not in sofr_series.index
-                or pd.isna(sofr_series.loc[dt])
-            )
-            iorb_missing = (
-                iorb_series is None
-                or dt not in iorb_series.index
-                or pd.isna(iorb_series.loc[dt])
-            )
-            nfci_staleness_days = _nfci_calendar_staleness_days(nfci_series, dt)
+            sofr_missing = bool(sofr_missing_by_date.loc[dt])
+            iorb_missing = bool(iorb_missing_by_date.loc[dt])
+            nfci_staleness_days = int(nfci_staleness_by_date.loc[dt])
             nfci_stale = nfci_staleness_days > cf_config.nfci_stale_days
 
             if etf_staleness_breach or sofr_missing or iorb_missing or nfci_stale:
@@ -818,12 +901,7 @@ class CreditFundingSeriesClassifier:
                 per_day_evidence.append({"reason": day_quality.reason or "insufficient_data"})
                 continue
 
-            rule_inputs = build_credit_funding_rule_inputs_for_date(
-                features=features,
-                dt=dt,
-                realized_vol_21d_percentile_252d=realized_vol_pct,
-                avg_pairwise_corr_percentile_504d=avg_corr_pct_series,
-            )
+            rule_inputs = rule_inputs_by_date[dt]
             label = evaluate_credit_funding_rules(
                 inputs=rule_inputs,
                 config=cf_config.rules,
@@ -833,9 +911,9 @@ class CreditFundingSeriesClassifier:
             per_day_evidence.append(
                 {
                     "rule_evidence": {
-                        "hy_spread_proxy_percentile_504d": rule_inputs.hy_spread_proxy_percentile_504d,
-                        "hy_spread_proxy_slope_21d": rule_inputs.hy_spread_proxy_slope_21d,
-                        "ig_spread_proxy_slope_21d": rule_inputs.ig_spread_proxy_slope_21d,
+                        "hy_spread_percentile_504d": rule_inputs.hy_spread_percentile_504d,
+                        "hy_spread_slope_21d": rule_inputs.hy_spread_slope_21d,
+                        "ig_spread_slope_21d": rule_inputs.ig_spread_slope_21d,
                         "broad_usd_index_zscore_21d": rule_inputs.broad_usd_index_zscore_21d,
                         "sofr_iorb_slope_21d": rule_inputs.sofr_iorb_slope_21d,
                         "spy_21d_return": rule_inputs.spy_21d_return,
@@ -845,7 +923,7 @@ class CreditFundingSeriesClassifier:
                     },
                     "nfci_daily_carried": _safe_float(nfci_carried, dt),
                     "kre_spy_slope_63d": _safe_float(features.kre_spy_slope_63d, dt),
-                    "bias_warning_code": "credit_spread_proxy_total_return_differential",
+                    "bias_warning_code": bias_warning_code,
                 }
             )
 
@@ -874,6 +952,28 @@ class CreditFundingSeriesClassifier:
                 data_quality=dq,
             )
         return outputs
+
+    def build(
+        self,
+        context: MarketContext,
+        feature_store: FeatureStore,
+    ) -> dict[date, CreditFundingOutput] | None:
+        """Real-OAS §2C credit/funding labels → ``RegimeOutput.credit_funding_state``."""
+        return self._build_for_spread_source(
+            context, feature_store, spread_source="oas"
+        )
+
+    def build_proxy(
+        self,
+        context: MarketContext,
+        feature_store: FeatureStore,
+    ) -> dict[date, CreditFundingOutput] | None:
+        """TLT-vs-HYG/LQD proxy §2C labels → ``RegimeOutput.credit_funding_state_proxy``
+        (Ambiguity Log #71). Same scale-invariant rule schema, parallel run on
+        the proxy series — never blended with the real-OAS labels."""
+        return self._build_for_spread_source(
+            context, feature_store, spread_source="proxy"
+        )
 
 
 class InflationGrowthSeriesClassifier:
@@ -937,6 +1037,27 @@ class InflationGrowthSeriesClassifier:
         raw_labels: list[InflationGrowthLabel] = []
         per_day_data_quality: list[DataQuality] = []
         per_day_evidence: list[dict[str, object]] = []
+        session_index = spy_close.index
+        cpi_staleness_by_date = _calendar_staleness_days_series(
+            cpi_series, session_index
+        )
+        pmi_staleness_by_date = _calendar_staleness_days_series(
+            pmi_series, session_index
+        )
+        dgs10_staleness_by_date = _trading_staleness_series(
+            dgs10_series, session_index
+        )
+        credit_funding_labels_by_ts: dict[pd.Timestamp, str | None] | None = None
+        if credit_funding_active_labels_by_date is not None:
+            credit_funding_labels_by_ts = {
+                pd.Timestamp(day): label
+                for day, label in credit_funding_active_labels_by_date.items()
+            }
+        rule_inputs_by_date = build_inflation_growth_rule_inputs_by_date(
+            features=features,
+            config=ig_config.rules,
+            credit_funding_active_labels_by_date=credit_funding_labels_by_ts,
+        )
 
         for day in context.sessions:
             dt = pd.Timestamp(day)
@@ -944,13 +1065,9 @@ class InflationGrowthSeriesClassifier:
             # §2B unknown gate (spec lines 2308-2311). Run BEFORE the generic
             # quality assessment so the §2B-specific staleness messages reach
             # evidence.
-            cpi_staleness_days = _calendar_staleness_days(cpi_series, dt)
-            pmi_staleness_days = _calendar_staleness_days(pmi_series, dt)
-            dgs10_staleness_sessions = (
-                _trailing_staleness_sessions(dgs10_series, dt)
-                if dgs10_series is not None
-                else 10**9
-            )
+            cpi_staleness_days = int(cpi_staleness_by_date.loc[dt])
+            pmi_staleness_days = int(pmi_staleness_by_date.loc[dt])
+            dgs10_staleness_sessions = int(dgs10_staleness_by_date.loc[dt])
             cpi_stale = cpi_staleness_days > ig_config.cpi_stale_calendar_days
             pmi_stale = pmi_staleness_days > ig_config.pmi_stale_calendar_days
             dgs10_stale = dgs10_staleness_sessions > ig_config.dgs10_stale_sessions
@@ -1004,15 +1121,10 @@ class InflationGrowthSeriesClassifier:
                     raise KeyError(
                         f"credit_funding_active_labels_by_date missing session {day!r} "
                         "(v1/v2 calendar drift would silently downgrade §2B cross-axis rules)"
-                    )
+                )
                 credit_funding_active_label = credit_funding_active_labels_by_date[day]
 
-            rule_inputs = build_inflation_growth_rule_inputs_for_date(
-                features=features,
-                dt=dt,
-                config=ig_config.rules,
-                credit_funding_active_label=credit_funding_active_label,
-            )
+            rule_inputs = rule_inputs_by_date[dt]
             label = evaluate_inflation_growth_rules(
                 inputs=rule_inputs, config=ig_config.rules
             )
@@ -1080,6 +1192,20 @@ def _calendar_staleness_days(
     if last_valid is None:
         return 10**9
     return int((dt.normalize() - pd.Timestamp(last_valid).normalize()).days)
+
+
+def _calendar_staleness_days_series(
+    series: pd.Series | None, session_index: pd.Index
+) -> pd.Series:
+    if series is None:
+        return pd.Series(10**9, index=session_index, dtype="int64")
+    aligned = series.reindex(session_index)
+    last_valid_date = pd.Series(pd.NaT, index=session_index, dtype="datetime64[ns]")
+    valid = aligned.notna()
+    last_valid_date.loc[valid] = session_index[valid]
+    last_valid_date = last_valid_date.ffill()
+    delta_days = (pd.Series(session_index, index=session_index) - last_valid_date).dt.days
+    return delta_days.fillna(10**9).astype("int64")
 
 
 class MonetaryPressureV2SeriesClassifier:
@@ -1202,45 +1328,16 @@ class MonetaryPressureV2SeriesClassifier:
             )
         return outputs
 
-
-def _trailing_staleness_sessions(series: pd.Series, dt: pd.Timestamp) -> int:
-    """Trading-day distance from ``dt`` to the last non-NaN observation
-    at or before ``dt`` in ``series``. Returns a huge value if no such
-    observation exists (forces unknown gate trip)."""
-    if dt not in series.index:
-        # Find the last index value <= dt.
-        sub = series.loc[:dt]
-    else:
-        sub = series.loc[:dt]
-    last_valid = sub.last_valid_index()
-    if last_valid is None:
-        return 10**9
-    # Trading-day distance: count of session-index positions between them.
-    idx = series.index
-    try:
-        pos_now = idx.get_loc(dt)
-        pos_last = idx.get_loc(last_valid)
-    except KeyError:
-        return 10**9
-    return int(pos_now - pos_last)
-
-
-def _nfci_calendar_staleness_days(
-    nfci_series: pd.Series | None, dt: pd.Timestamp
-) -> int:
-    """Calendar-day distance from ``dt`` to the last non-NaN NFCI release.
-
-    NFCI is weekly; staleness is measured in calendar days (spec line 2124).
-    Returns a huge value if the series is None or has no non-NaN history.
-    """
-    if nfci_series is None:
-        return 10**9
-    sub = nfci_series.loc[:dt]
-    last_valid = sub.last_valid_index()
-    if last_valid is None:
-        return 10**9
-    return int((dt.normalize() - pd.Timestamp(last_valid).normalize()).days)
-
+def _trading_staleness_series(
+    series: pd.Series | None, session_index: pd.Index
+) -> pd.Series:
+    if series is None:
+        return pd.Series(10**9, index=session_index, dtype="int64")
+    aligned = series.reindex(session_index)
+    session_pos = pd.Series(range(len(session_index)), index=session_index, dtype="int64")
+    valid = aligned.notna()
+    last_valid_pos = session_pos.where(valid).ffill().fillna(-10**9).astype("int64")
+    return (session_pos - last_valid_pos).astype("int64")
 
 def _safe_float(series: pd.Series, dt: pd.Timestamp) -> float:
     if dt not in series.index:
@@ -1257,7 +1354,11 @@ def build_axis_series_bundle(*, context: MarketContext, feature_store: FeatureSt
     volatility_state = VolatilitySeriesClassifier().build(context, feature_store)
     breadth_state = BreadthSeriesClassifier().build(context, feature_store)
     event_calendar = build_event_calendar_series(context)
-    credit_funding = CreditFundingSeriesClassifier().build(context, feature_store)
+    _credit_funding_classifier = CreditFundingSeriesClassifier()
+    credit_funding = _credit_funding_classifier.build(context, feature_store)
+    credit_funding_proxy = _credit_funding_classifier.build_proxy(
+        context, feature_store
+    )
     network_fragility = NetworkFragilitySeriesClassifier().build(
         context,
         feature_store,
@@ -1288,83 +1389,20 @@ def build_axis_series_bundle(*, context: MarketContext, feature_store: FeatureSt
         network_fragility=network_fragility,
         volume_liquidity_state=volume_liquidity_state,
         credit_funding=credit_funding,
+        credit_funding_proxy=credit_funding_proxy,
         monetary_pressure_state=monetary_pressure_state,
         inflation_growth=inflation_growth,
     )
 
 
 def build_event_calendar_series(context: MarketContext) -> dict[date, EventCalendarOutput]:
-    matches_by_day: dict[date, set[str]] = {day: set() for day in context.sessions}
-    if context.normalized_event_calendar is not None and not context.normalized_event_calendar.empty:
-        for row in context.normalized_event_calendar.itertuples(index=False):
-            label = _TYPE_TO_LABEL.get(str(row.type))
-            if label is None:
-                continue
-            publication_date = row.publication_date
-            event_date = row.date
-            session_window = list(
-                _sessions_between(
-                    min(publication_date, event_date) - timedelta(days=20),
-                    max(publication_date, event_date) + timedelta(days=20),
-                )
-            )
-            if event_date not in session_window:
-                continue
-            event_idx = session_window.index(event_date)
-            start_offset, end_offset = _WINDOWS[label]
-            for idx, day in enumerate(session_window):
-                if day not in matches_by_day or day < publication_date:
-                    continue
-                delta = idx - event_idx
-                if start_offset <= delta <= end_offset:
-                    matches_by_day[day].add(label)
-
-    expiry_start, expiry_end = context.config.expiry_rules.monthly_options.window_trading_days
-    for year, month in sorted({(day.year, day.month) for day in context.sessions}):
-        expiry_date = _month_expiry_date(year, month)
-        session_window = list(_sessions_between(expiry_date - timedelta(days=10), expiry_date + timedelta(days=10)))
-        if expiry_date not in session_window:
-            continue
-        expiry_idx = session_window.index(expiry_date)
-        for idx, day in enumerate(session_window):
-            if day not in matches_by_day:
-                continue
-            delta = idx - expiry_idx
-            if expiry_start <= delta <= expiry_end:
-                matches_by_day[day].add("expiry_week")
-
-    month_lookup = {
-        "second_monday_of_january": 1,
-        "second_monday_of_april": 4,
-        "second_monday_of_july": 7,
-        "second_monday_of_october": 10,
-    }
-    for year in sorted({day.year for day in context.sessions}):
-        for season in context.config.earnings_seasons:
-            start = _second_weekday_of_month(
-                year=year,
-                month=month_lookup[season.start_rule],
-                weekday=0,
-            )
-            end = start + timedelta(days=season.end_offset_days)
-            for day in context.sessions:
-                if start <= day <= end:
-                    matches_by_day[day].add("earnings_season")
-
-    outputs: dict[date, EventCalendarOutput] = {}
-    for day in context.sessions:
-        ordered = [label for label in _PRECEDENCE if label in matches_by_day[day]]
-        selected = ordered[0] if ordered else "normal_calendar"
-        outputs[day] = EventCalendarOutput(
-            raw_label=selected,
-            stable_label=selected,
-            active_label=selected,
-            evidence={
-                "all_matching_events": ordered,
-                "selected_via_precedence": selected,
-            },
-        )
-    return outputs
+    """Bulk wrapper around :func:`compute_event_calendar_outputs` — pulls
+    ``sessions`` and the pre-normalized event calendar off the context."""
+    return compute_event_calendar_outputs(
+        sessions=context.sessions,
+        normalized_event_calendar=context.normalized_event_calendar,
+        config=context.config,
+    )
 
 
 def _build_axis_outputs(

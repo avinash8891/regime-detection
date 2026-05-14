@@ -23,6 +23,7 @@ from regime_detection.network_fragility import (
 from regime_detection.network_fragility_rules import (
     RULE_PRECEDENCE,
     NetworkFragilityRuleInputs,
+    build_rule_inputs_by_date,
     build_rule_inputs_for_date,
     evaluate_correlation_concentration,
     evaluate_correlation_to_one,
@@ -167,6 +168,19 @@ def test_rising_fragility_fires_on_divergent_fragile_breadth():
     )
 
 
+def test_rising_fragility_fires_on_narrowing_breadth():
+    """v2 §3.5 line 634 names `narrowing_breadth` in the accepted breadth set.
+    Slice 2.8c widened the `BreadthLabel` enum to include `narrowing_breadth`;
+    the Log #3 TODO follow-up adds it to the rule's accepted_breadth set so
+    the spec text and the rule predicate now agree."""
+    cfg = _default_rules_config()
+    inputs = _inputs(avg_corr_slope=0.001, largest_eig_slope=0.0005)
+    assert (
+        evaluate_rising_fragility(inputs, cfg, breadth_label="narrowing_breadth")
+        is True
+    )
+
+
 def test_rising_fragility_blocked_by_healthy_breadth():
     cfg = _default_rules_config()
     inputs = _inputs(avg_corr_slope=0.001, largest_eig_slope=0.0005)
@@ -258,6 +272,29 @@ def test_systemic_stress_fires_when_all_conditions_met():
             inputs,
             cfg,
             breadth_label="weak_breadth",
+            credit_funding_label="credit_stress",
+        )
+        is True
+    )
+
+
+def test_systemic_stress_fires_on_narrowing_breadth():
+    """v2 §3.5 line 656 names `narrowing_breadth` in the accepted breadth set
+    alongside `weak_breadth`. Log #3 TODO follow-up: the rule's
+    accepted_breadth set now includes `narrowing_breadth` so the predicate
+    matches the spec text verbatim."""
+    cfg = _default_rules_config()
+    inputs = _inputs(
+        avg_corr_pct=0.95,
+        realized_vol_pct=0.85,
+        drawdown_21d=-0.04,
+        vix_pct=0.90,
+    )
+    assert (
+        evaluate_systemic_stress(
+            inputs,
+            cfg,
+            breadth_label="narrowing_breadth",
             credit_funding_label="credit_stress",
         )
         is True
@@ -598,6 +635,50 @@ def test_build_rule_inputs_for_date_drawdown_is_negative_when_below_peak():
     )
     # Last price 399 < peak 420 within trailing 21d → drawdown < 0.
     assert inputs.drawdown_21d < 0
+
+
+def test_build_rule_inputs_by_date_matches_single_day_builder():
+    index = pd.bdate_range(end="2024-12-31", periods=80)
+    avg_corr = pd.Series(np.linspace(0.30, 0.60, 80), index=index)
+    eig = pd.Series(np.linspace(0.40, 0.55, 80), index=index)
+    eff_rank = pd.Series(np.linspace(4.0, 5.0, 80), index=index)
+    pct = pd.Series(np.linspace(0.20, 0.90, 80), index=index)
+    spy_close = pd.Series(np.linspace(400.0, 430.0, 80), index=index)
+    realized_vol_pct = pd.Series(np.linspace(0.10, 0.80, 80), index=index)
+    vix_pct = pd.Series(np.linspace(0.15, 0.85, 80), index=index)
+
+    features = NetworkFragilityFeatures(
+        avg_pairwise_corr_63d=avg_corr,
+        avg_pairwise_corr_percentile_504d=pct,
+        largest_eigenvalue_share=eig,
+        largest_eigenvalue_share_percentile_504d=pct,
+        effective_rank=eff_rank,
+        effective_rank_percentile_504d=pct,
+        absorption_ratio_top3=pct,
+        dispersion_ratio=pct,
+        dispersion_ratio_percentile_252d=pct,
+    )
+
+    precomputed = build_rule_inputs_by_date(
+        features=features,
+        spy_close=spy_close,
+        realized_vol_percentile_252d=realized_vol_pct,
+        vix_percentile_252d=vix_pct,
+    )
+
+    for dt in index[20::15]:
+        expected = build_rule_inputs_for_date(
+            features=features,
+            dt=dt,
+            spy_close=spy_close,
+            realized_vol_percentile_252d=realized_vol_pct,
+            vix_percentile_252d=vix_pct,
+        )
+        actual = precomputed[dt]
+        for field in expected.__dataclass_fields__:
+            assert getattr(actual, field) == pytest.approx(
+                getattr(expected, field), nan_ok=True
+            )
 
 
 def test_rising_fragility_blocked_when_nan_in_trailing_21d_corr_window():

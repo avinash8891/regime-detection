@@ -9,7 +9,9 @@ import pandas as pd
 import pytest
 
 from regime_detection.config import load_default_regime_config
+from regime_detection.axis_series import build_event_calendar_series
 from regime_detection.event_calendar import classify_event_calendar
+from regime_detection.market_context import build_market_context, slice_context_to_recent_sessions
 from regime_detection.loaders import load_event_calendar
 from regime_data_fetch.event_calendar import (
     EventCalendarFetchError,
@@ -111,6 +113,67 @@ def test_event_calendar_blocks_unpublished_future_scheduled_event() -> None:
     assert out.active_label == "expiry_week"
     assert out.evidence["all_matching_events"] == ["expiry_week", "earnings_season"]
     assert "fed_week" not in out.evidence["all_matching_events"]
+
+
+def test_build_event_calendar_series_matches_point_classifier(market_df_for_asof) -> None:
+    cfg = load_default_regime_config()
+    end_date = date(2024, 1, 17)
+    events = pd.DataFrame(
+        [
+            {
+                "date": date(2024, 1, 19),
+                "market": "US",
+                "type": "FOMC",
+                "importance": "high",
+                "publication_date": date(2023, 12, 1),
+            },
+            {
+                "date": date(2024, 1, 18),
+                "market": "US",
+                "type": "CPI",
+                "importance": "high",
+                "publication_date": date(2023, 12, 1),
+            },
+        ]
+    )
+
+    context = build_market_context(
+        end_date=end_date,
+        market_data=market_df_for_asof(end_date),
+        config=cfg,
+        event_calendar=events,
+    )
+    outputs = build_event_calendar_series(context)
+
+    for day in context.sessions:
+        expected = classify_event_calendar(
+            as_of_date=day,
+            event_calendar=events,
+            config=cfg,
+        )
+        assert outputs[day].model_dump() == expected.model_dump()
+
+
+def test_build_event_calendar_series_matches_point_classifier_for_holiday_shifted_expiry(
+    market_df_for_asof,
+) -> None:
+    cfg = load_default_regime_config()
+    end_date = date(2022, 4, 14)
+    context = build_market_context(
+        end_date=end_date,
+        market_data=market_df_for_asof(end_date),
+        config=cfg,
+    )
+    context = slice_context_to_recent_sessions(context=context, required_sessions=10)
+    outputs = build_event_calendar_series(context)
+
+    for day in context.sessions:
+        expected = classify_event_calendar(
+            as_of_date=day,
+            event_calendar=None,
+            config=cfg,
+        )
+        assert outputs[day].model_dump() == expected.model_dump()
 
 
 def test_validate_fomc_listing_integrity_detects_missing_structured_dates() -> None:

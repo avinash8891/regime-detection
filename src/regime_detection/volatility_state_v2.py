@@ -61,19 +61,42 @@ class VolatilityV2Features:
 
     atr_ratio: pd.Series
     gap_frequency_20d: pd.Series
+    # v2 §1E line 278 / Log #40 closure — 252d percentile rank of
+    # `gap_frequency_20d`. Consumed by the §1E `liquidity_gap_behavior`
+    # rule. Computed here (rather than at the rule layer) so the percentile
+    # shares the volatility seam's session index and the rule layer reads
+    # only scalars.
+    gap_frequency_percentile_252d: pd.Series
     intraday_range_percentile_252d: pd.Series
     # v2 §1C line 148 — `rising_vol` rule inputs (slice 2.6).
     realized_vol_short: pd.Series
     realized_vol_long: pd.Series
+    # v2 §1C `vol_crush` rule input (ADR 0005 / Log #20). 21-session
+    # realized vol — the mid window for `realized_vol_10d < realized_vol_21d
+    # * 0.75`. Always computable from close; never None.
+    realized_vol_21d: pd.Series
+    # v2 §1C IV features (ADR 0005 / Log #19+#20). Optional — populated
+    # only when `implied_vol_30d` (FRED VIXCLS / 100) is supplied to
+    # `compute_volatility_v2_features`. When None, `vol_crush` falsifies
+    # (V1 byte-identity preserved).
+    implied_vol_30d: pd.Series | None = None
+    implied_vol_5d_change: pd.Series | None = None  # relative 5-session change
+    iv_rv_spread: pd.Series | None = None  # implied_vol_30d - realized_vol_21d
+    # v2 §1C `vol_crush` rule input (ADR 0005 Q3). Optional per-session
+    # boolean — populated only when an event calendar is supplied. When
+    # None, `vol_crush` falsifies.
+    event_window_just_passed: pd.Series | None = None
 
     @property
     def feature_names(self) -> tuple[str, ...]:
         return (
             "atr_ratio",
             "gap_frequency_20d",
+            "gap_frequency_percentile_252d",
             "intraday_range_percentile_252d",
             "realized_vol_short",
             "realized_vol_long",
+            "realized_vol_21d",
         )
 
     def to_frame(self) -> pd.DataFrame:
@@ -161,12 +184,23 @@ def compute_volatility_v2_features(
     close: pd.Series,
     config: VolatilityV2Config,
     rules_config: VolatilityV2RulesConfig | None = None,
+    implied_vol_30d: pd.Series | None = None,
+    event_window_just_passed: pd.Series | None = None,
 ) -> VolatilityV2Features:
-    """Compute the three v2 §1C volatility features from a SPY-like OHLC.
+    """Compute the v2 §1C volatility features from a SPY-like OHLC.
 
     All parameters are sourced from ``VolatilityV2Config``; no magic
     numbers in the function body. Returns a frozen dataclass with each
     feature as a date-indexed ``pd.Series`` aligned to ``close.index``.
+
+    ``implied_vol_30d`` (FRED VIXCLS / 100, decimal-annualized) is
+    optional — when supplied, the `vol_crush` IV features
+    (`implied_vol_5d_change`, `iv_rv_spread`) are computed; when None,
+    those features stay None and the `vol_crush` rule falsifies (V1
+    byte-identity preserved). ``event_window_just_passed`` is the
+    optional per-session boolean from
+    ``regime_detection.event_calendar.compute_event_window_just_passed``
+    — same Optional contract.
     """
     if not isinstance(close.index, pd.DatetimeIndex):
         open_ = open_.copy()
@@ -191,6 +225,15 @@ def compute_volatility_v2_features(
         close=close,
         lookback=config.gap_frequency_lookback_days,
         threshold_pct=config.gap_threshold_pct,
+    )
+    # v2 §1E line 278 — 252d percentile rank of `gap_frequency_20d`. Same
+    # rolling-rank shape as `intraday_range_percentile_252d` below and the
+    # §1D `nh_nl_ratio` percentile pattern. Closes Log #40 by computing
+    # the previously-missing percentile input for `liquidity_gap_behavior`.
+    gap_freq_pct = (
+        gap_freq.rolling(config.intraday_range_lookback_days, min_periods=config.intraday_range_lookback_days)
+        .rank(pct=True)
+        .rename("gap_frequency_percentile_252d")
     )
     intraday_pct = _intraday_range_percentile(
         high=high,
@@ -221,12 +264,58 @@ def compute_volatility_v2_features(
         "realized_vol_long"
     )
 
+    # v2 §1C `vol_crush` rule input (ADR 0005). The 21-session mid window
+    # for `realized_vol_10d < realized_vol_21d * 0.75`.
+    rv_mid_window = (
+        rules_config.vol_crush_realized_vol_mid_period
+        if rules_config is not None
+        else 21  # spec default — "realized_vol_21d"
+    )
+    rv_mid = realized_vol(close, window=rv_mid_window).rename("realized_vol_21d")
+
+    # v2 §1C IV features (ADR 0005). Computed only when implied_vol_30d
+    # is supplied; otherwise None — the vol_crush rule then falsifies.
+    iv_change_lookback = (
+        rules_config.vol_crush_implied_vol_change_lookback_sessions
+        if rules_config is not None
+        else 5  # ADR 0005 Q1 default
+    )
+    implied_vol_aligned: pd.Series | None = None
+    implied_vol_5d_change: pd.Series | None = None
+    iv_rv_spread: pd.Series | None = None
+    if implied_vol_30d is not None:
+        implied_vol_aligned = (
+            implied_vol_30d.reindex(close.index).astype(float).rename("implied_vol_30d")
+        )
+        # Relative N-session change (ADR 0005 Q1 — unit-agnostic).
+        prior_iv = implied_vol_aligned.shift(iv_change_lookback)
+        implied_vol_5d_change = (
+            (implied_vol_aligned - prior_iv) / prior_iv.where(prior_iv != 0)
+        ).rename("implied_vol_5d_change")
+        # iv_rv_spread (§1C) — both operands decimal-annualized.
+        iv_rv_spread = (implied_vol_aligned - rv_mid).rename("iv_rv_spread")
+
+    event_window_aligned: pd.Series | None = None
+    if event_window_just_passed is not None:
+        event_window_aligned = (
+            event_window_just_passed.reindex(close.index)
+            .fillna(False)
+            .astype(bool)
+            .rename("event_window_just_passed")
+        )
+
     return VolatilityV2Features(
         atr_ratio=atr_ratio,
         gap_frequency_20d=gap_freq,
+        gap_frequency_percentile_252d=gap_freq_pct,
         intraday_range_percentile_252d=intraday_pct,
         realized_vol_short=rv_short,
         realized_vol_long=rv_long,
+        realized_vol_21d=rv_mid,
+        implied_vol_30d=implied_vol_aligned,
+        implied_vol_5d_change=implied_vol_5d_change,
+        iv_rv_spread=iv_rv_spread,
+        event_window_just_passed=event_window_aligned,
     )
 
 
@@ -284,12 +373,65 @@ def evaluate_rising_vol(
     return atr_limb or rv_limb
 
 
+def evaluate_vol_crush(
+    features: VolatilityV2Features,
+    *,
+    dt: pd.Timestamp,
+    rules_config: VolatilityV2RulesConfig,
+) -> bool:
+    """v2 §1C `vol_crush` predicate at a single session (ADR 0005 / Log #20).
+
+    Rule (spec §1C):
+      realized_vol_short < realized_vol_21d * vol_crush_realized_vol_ratio_threshold
+      AND implied_vol_5d_change <= vol_crush_implied_vol_change_threshold
+      AND event_window_just_passed
+
+    Returns False when:
+      - the Optional IV features are absent (no `implied_vol_30d` was
+        supplied — `implied_vol_5d_change` is None),
+      - the Optional `event_window_just_passed` series is absent (no
+        event calendar was supplied),
+      - any required input is NaN at ``dt`` (V1 §2.7 cold-start), or
+      - ``dt`` is outside any of the input series' indices.
+
+    All three guards collapse to the same outcome: when `vol_crush`'s
+    extra data inputs are not wired, the rule simply does not fire and
+    the precedence walker keeps the v1/`rising_vol` label.
+    """
+    iv_change = features.implied_vol_5d_change
+    event_window = features.event_window_just_passed
+    if iv_change is None or event_window is None:
+        return False
+    if (
+        dt not in features.realized_vol_short.index
+        or dt not in features.realized_vol_21d.index
+        or dt not in iv_change.index
+        or dt not in event_window.index
+    ):
+        return False
+
+    rv_short = features.realized_vol_short.loc[dt]
+    rv_mid = features.realized_vol_21d.loc[dt]
+    iv_change_t = iv_change.loc[dt]
+    if any(pd.isna(x) for x in (rv_short, rv_mid, iv_change_t)):
+        return False
+
+    rv_collapsed = bool(
+        rv_short < rv_mid * rules_config.vol_crush_realized_vol_ratio_threshold
+    )
+    iv_falling_sharply = bool(
+        iv_change_t <= rules_config.vol_crush_implied_vol_change_threshold
+    )
+    event_just_passed = bool(event_window.loc[dt])
+    return rv_collapsed and iv_falling_sharply and event_just_passed
+
+
 # v2 §1C line 191 ranking (lower index = higher precedence).
-# Index 1 is reserved for `vol_crush` (deferred — Ambiguity Log #20) so
-# future authors can slot it in without re-ordering the table.
+# `vol_crush` (index 1) was reserved-but-inert before ADR 0005 / Log #20
+# closure; it is now wired to a real predicate.
 _V2_VOLATILITY_PRECEDENCE: tuple[str, ...] = (
     "crisis_vol",
-    "vol_crush",   # deferred (Ambiguity Log #20) — never produced today
+    "vol_crush",
     "high_vol",
     "rising_vol",
     "low_vol",
@@ -310,25 +452,35 @@ def evaluate_v2_volatility_label(
     Returns the winning v2 label per the §1C line 191 ordering, or
     ``None`` when no v2 rule fires and the caller should keep ``v1_label``.
 
-    Precedence (line 191): ``crisis_vol > vol_crush(deferred) > high_vol >
-    rising_vol > low_vol > normal_vol > unknown``. `crisis_vol` and
-    `high_vol` outrank `rising_vol`, so a v1 day labelled crisis/high keeps
-    its label even when the rising_vol predicate fires. Returns
-    ``"rising_vol"`` only when the predicate fires AND the v1 label is
-    ranked strictly LOWER than `rising_vol` in the table — i.e. v1
-    emitted ``low_vol`` / ``normal_vol`` / ``unknown``.
-    """
-    rising_vol_fires = evaluate_rising_vol(features, dt=dt, rules_config=rules_config)
-    if not rising_vol_fires:
-        return None
+    Precedence (line 191): ``crisis_vol > vol_crush > high_vol >
+    rising_vol > low_vol > normal_vol > unknown``.
 
+    Dispatch order: `vol_crush` first (rank 1 — outranks high_vol /
+    rising_vol; only `crisis_vol` outranks it). When `vol_crush` fires
+    AND the v1 label is not `crisis_vol`, returns ``"vol_crush"``. Then
+    `rising_vol` (rank 3): fires only when the v1 label is ranked
+    strictly LOWER — i.e. v1 emitted ``low_vol`` / ``normal_vol`` /
+    ``unknown``.
+    """
     try:
         v1_rank = _V2_VOLATILITY_PRECEDENCE.index(v1_label)
     except ValueError:
-        # Unknown v1 label — treat as lowest precedence; rising_vol wins.
+        # Unknown v1 label — treat as lowest precedence.
         v1_rank = len(_V2_VOLATILITY_PRECEDENCE)
+
+    # vol_crush (rank 1) — only crisis_vol outranks it. Fires when the
+    # predicate is true AND v1 did not emit crisis_vol.
+    vol_crush_rank = _V2_VOLATILITY_PRECEDENCE.index("vol_crush")
+    if v1_rank >= vol_crush_rank and evaluate_vol_crush(
+        features, dt=dt, rules_config=rules_config
+    ):
+        return "vol_crush"
+
+    # rising_vol (rank 3) — fires only when v1 is ranked strictly lower.
     rising_vol_rank = _V2_VOLATILITY_PRECEDENCE.index("rising_vol")
     if v1_rank < rising_vol_rank:
         # v1 label outranks rising_vol (crisis_vol / vol_crush / high_vol).
         return None
-    return "rising_vol"
+    if evaluate_rising_vol(features, dt=dt, rules_config=rules_config):
+        return "rising_vol"
+    return None

@@ -22,8 +22,10 @@ import yaml
 from regime_detection.breadth_state import (
     BreadthLabel,
     _RISK_RANK,
+    _evaluate_breadth_thrust,
     _evaluate_broadening_breadth,
     _evaluate_narrowing_breadth,
+    _evaluate_recovery_breadth,
 )
 from regime_detection.config import BreadthV2Config
 
@@ -299,3 +301,217 @@ def test_risk_rank_contains_new_v2_labels() -> None:
         "unknown",
     }
     assert expected_labels.issubset(set(_RISK_RANK.keys()))
+
+
+# ---------------------------------------------------------------------------
+# Group F — `breadth_thrust` LABEL predicate (ADR 0003 / Log #69 closure).
+#
+# Spec §1D Breadth Thrust block (post-amendment):
+#   breadth_thrust fires at session t when:
+#     EXISTS b in [t-10, t-1] with breadth_thrust_feature[b] < 0.40
+#     AND breadth_thrust_feature[t] > 0.615
+# ---------------------------------------------------------------------------
+
+
+def test_breadth_thrust_fires_on_low_then_high_within_10_sessions() -> None:
+    """Canonical Zweig case: low reading 4 sessions ago, high reading today."""
+    n = 30
+    idx = _trading_index(n)
+    feature = pd.Series(np.full(n, 0.50), index=idx)
+    feature.iloc[-5] = 0.35          # b = t-4: below 0.40 ✓
+    feature.iloc[-1] = 0.70          # t: above 0.615 ✓
+    dt = idx[-1]
+    assert _evaluate_breadth_thrust(feature, dt=dt) is True
+
+
+def test_breadth_thrust_fails_when_no_low_in_trailing_10() -> None:
+    """Even with high reading today, absence of a low in [t-10, t-1] falsifies."""
+    n = 30
+    idx = _trading_index(n)
+    feature = pd.Series(np.full(n, 0.50), index=idx)
+    feature.iloc[-1] = 0.70          # high today ✓, but no <0.40 anywhere ✗
+    dt = idx[-1]
+    assert _evaluate_breadth_thrust(feature, dt=dt) is False
+
+
+def test_breadth_thrust_fails_when_high_not_at_t() -> None:
+    """High reading must be at session t, not earlier in the window."""
+    n = 30
+    idx = _trading_index(n)
+    feature = pd.Series(np.full(n, 0.50), index=idx)
+    feature.iloc[-5] = 0.35          # low at b=t-4 ✓
+    feature.iloc[-3] = 0.70          # high at b=t-2 (not at t) ✗
+    feature.iloc[-1] = 0.55          # t at 0.55 (not > 0.615) ✗
+    dt = idx[-1]
+    assert _evaluate_breadth_thrust(feature, dt=dt) is False
+
+
+def test_breadth_thrust_strict_inequalities_at_thresholds() -> None:
+    """Both inequalities are strict per Zweig: feature[t] == 0.615 falsifies,
+    feature[b] == 0.40 falsifies."""
+    n = 30
+    idx = _trading_index(n)
+    feature = pd.Series(np.full(n, 0.50), index=idx)
+    feature.iloc[-5] = 0.40          # b exactly at threshold (not <) ✗
+    feature.iloc[-1] = 0.615         # t exactly at threshold (not >) ✗
+    dt = idx[-1]
+    assert _evaluate_breadth_thrust(feature, dt=dt) is False
+
+
+def test_breadth_thrust_fails_when_low_outside_10_session_window() -> None:
+    """A low reading 11 sessions ago is outside the [t-10, t-1] window."""
+    n = 30
+    idx = _trading_index(n)
+    feature = pd.Series(np.full(n, 0.50), index=idx)
+    feature.iloc[-12] = 0.35         # b = t-11: outside the 10-session window
+    feature.iloc[-1] = 0.70          # t: high
+    dt = idx[-1]
+    assert _evaluate_breadth_thrust(feature, dt=dt) is False
+
+
+def test_breadth_thrust_fails_on_nan_at_t() -> None:
+    n = 30
+    idx = _trading_index(n)
+    feature = pd.Series(np.full(n, 0.50), index=idx)
+    feature.iloc[-5] = 0.35
+    feature.iloc[-1] = float("nan")
+    dt = idx[-1]
+    assert _evaluate_breadth_thrust(feature, dt=dt) is False
+
+
+def test_breadth_thrust_fails_on_all_nan_trailing_window() -> None:
+    """Cold-start: every session in [t-10, t-1] is NaN → falsifies."""
+    n = 30
+    idx = _trading_index(n)
+    feature = pd.Series(np.full(n, float("nan")), index=idx)
+    feature.iloc[-1] = 0.70  # high today
+    dt = idx[-1]
+    assert _evaluate_breadth_thrust(feature, dt=dt) is False
+
+
+# ---------------------------------------------------------------------------
+# Group G — `recovery_breadth` LABEL predicate (ADR 0003 / Log #70 closure).
+#
+# Spec §1D (post-amendment):
+#   recovery_breadth fires at session t when:
+#     nh_nl_ratio[t] > nh_nl_ratio[t-5]      (rising NH/NL per Log #68)
+#     AND ad_line_slope_20d[t] <= 0          (not yet broadening)
+# ---------------------------------------------------------------------------
+
+
+def test_recovery_breadth_fires_on_rising_nh_nl_and_negative_slope() -> None:
+    """Improvement starting (NH/NL rising) but cumulative AD still negative."""
+    n = 30
+    idx = _trading_index(n)
+    nh_nl = pd.Series(np.linspace(0.30, 0.45, n), index=idx)  # strictly rising
+    ad_slope = _const(-1.5, n, idx)                            # strictly negative
+    dt = idx[-1]
+    assert (
+        _evaluate_recovery_breadth(
+            nh_nl_ratio=nh_nl,
+            ad_line_slope_20d=ad_slope,
+            dt=dt,
+            lookback_sessions=5,
+        )
+        is True
+    )
+
+
+def test_recovery_breadth_fires_at_slope_boundary_exactly_zero() -> None:
+    """ad_line_slope_20d <= 0 is non-strict at boundary; slope == 0 fires."""
+    n = 30
+    idx = _trading_index(n)
+    nh_nl = pd.Series(np.linspace(0.30, 0.45, n), index=idx)
+    ad_slope = _const(0.0, n, idx)
+    dt = idx[-1]
+    assert (
+        _evaluate_recovery_breadth(
+            nh_nl_ratio=nh_nl,
+            ad_line_slope_20d=ad_slope,
+            dt=dt,
+            lookback_sessions=5,
+        )
+        is True
+    )
+
+
+def test_recovery_breadth_fails_when_slope_strictly_positive() -> None:
+    """ad_line_slope_20d > 0 is the broadening territory; recovery must
+    fail to avoid co-firing with broadening."""
+    n = 30
+    idx = _trading_index(n)
+    nh_nl = pd.Series(np.linspace(0.30, 0.45, n), index=idx)
+    ad_slope = _const(1.0, n, idx)
+    dt = idx[-1]
+    assert (
+        _evaluate_recovery_breadth(
+            nh_nl_ratio=nh_nl,
+            ad_line_slope_20d=ad_slope,
+            dt=dt,
+            lookback_sessions=5,
+        )
+        is False
+    )
+
+
+def test_recovery_breadth_fails_when_nh_nl_not_rising() -> None:
+    n = 30
+    idx = _trading_index(n)
+    nh_nl = _const(0.40, n, idx)   # flat, not rising
+    ad_slope = _const(-1.0, n, idx)
+    dt = idx[-1]
+    assert (
+        _evaluate_recovery_breadth(
+            nh_nl_ratio=nh_nl,
+            ad_line_slope_20d=ad_slope,
+            dt=dt,
+            lookback_sessions=5,
+        )
+        is False
+    )
+
+
+def test_recovery_breadth_fails_on_nan_slope() -> None:
+    n = 30
+    idx = _trading_index(n)
+    nh_nl = pd.Series(np.linspace(0.30, 0.45, n), index=idx)
+    ad_slope = pd.Series(np.full(n, float("nan")), index=idx)
+    dt = idx[-1]
+    assert (
+        _evaluate_recovery_breadth(
+            nh_nl_ratio=nh_nl,
+            ad_line_slope_20d=ad_slope,
+            dt=dt,
+            lookback_sessions=5,
+        )
+        is False
+    )
+
+
+def test_recovery_breadth_disjoint_from_broadening_breadth_at_zero_slope() -> None:
+    """Disjointness invariant: at ad_line_slope_20d == 0.0 with NH/NL rising,
+    recovery fires AND broadening does NOT fire. The two predicates partition
+    the real line at zero (recovery: slope <= 0, broadening: slope > 0)."""
+    n = 30
+    idx = _trading_index(n)
+    nh_nl = pd.Series(np.linspace(0.30, 0.45, n), index=idx)
+    ad_slope = _const(0.0, n, idx)
+    dt = idx[-1]
+    assert (
+        _evaluate_recovery_breadth(
+            nh_nl_ratio=nh_nl,
+            ad_line_slope_20d=ad_slope,
+            dt=dt,
+            lookback_sessions=5,
+        )
+        is True
+    )
+    assert (
+        _evaluate_broadening_breadth(
+            nh_nl_ratio=nh_nl,
+            ad_line_slope_20d=ad_slope,
+            dt=dt,
+            lookback_sessions=5,
+        )
+        is False
+    )

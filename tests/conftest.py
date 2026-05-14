@@ -74,12 +74,83 @@ def _classify_all_golden_rows(
     golden_rows: list[dict[str, object]],
     market_df_for_asof,
 ) -> dict[date, object]:
+    """Classify every golden date in ONE classify_window pass.
+
+    Previously this looped over rows and called ``engine.classify`` per
+    row, paying the full ``build_market_context`` + ``build_feature_store``
+    cost ~10 times. classify_window emits a per-day timeline from a single
+    pipeline run; we slice the requested golden dates out of its outputs.
+
+    PIT correctness: classify_window's per-day emission is V1 §2.2
+    stateless-replay compliant — each emitted day's classifier state is
+    computed using only data on or before that day. The trainable V2
+    seams (HMM/GMM/BOCPD) are NOT exercised here because this fixture
+    passes no V2 kwargs (no sector/cross-asset/macro/PIT inputs), so the
+    PIT-leak masking added in commit 19e395d is moot for this path.
+    """
     engine = RegimeEngine()
-    outputs: dict[date, object] = {}
-    for row in golden_rows:
-        as_of = date.fromisoformat(str(row["as_of_date"]))
-        outputs[as_of] = engine.classify(as_of_date=as_of, market_data=market_df_for_asof(as_of))
-    return outputs
+    golden_dates = sorted(
+        date.fromisoformat(str(row["as_of_date"])) for row in golden_rows
+    )
+    if not golden_dates:
+        return {}
+    end = golden_dates[-1]
+    earliest = golden_dates[0]
+    # NYSE has ~252 sessions per calendar year. Upper-bound lookback to
+    # comfortably cover earliest..end inclusive plus engine min-history.
+    span_days = (end - earliest).days
+    lookback_sessions = max(1, int(span_days / 365.25 * 252) + 30)
+    timeline = engine.classify_window(
+        end_date=end,
+        market_data=market_df_for_asof(end),
+        lookback_days=lookback_sessions,
+    )
+    by_date = {out.as_of_date: out for out in timeline.outputs}
+    missing = [d for d in golden_dates if d not in by_date]
+    if missing:
+        raise RuntimeError(
+            f"classify_window did not emit outputs for golden dates: {missing!r}. "
+            f"Window end={end}, lookback_sessions={lookback_sessions}, "
+            f"emitted span={timeline.outputs[0].as_of_date}..{timeline.outputs[-1].as_of_date}"
+        )
+    return {d: by_date[d] for d in golden_dates}
+
+
+def _load_module_for_fixture(name: str, rel_path: str):
+    import importlib.util
+
+    script_path = _REPO_ROOT / rel_path
+    spec = importlib.util.spec_from_file_location(name, script_path)
+    assert spec and spec.loader
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)  # type: ignore[attr-defined]
+    return mod
+
+
+@pytest.fixture(scope="session")
+def walkforward_2023_dec_template(tmp_path_factory: pytest.TempPathFactory) -> Path:
+    """Run the 3-session 2023-12-12..14 walkforward ONCE per worker session.
+
+    The three tests in ``test_historical_walkforward.py`` and
+    ``test_build_walkforward_report.py`` previously ran the same walkforward
+    independently into their own tmp_paths, paying the ~6s/session classify
+    cost 3 times. This fixture caches the walkforward output directory tree
+    so the consumer tests can ``shutil.copytree`` it into their own
+    tmp_path and run the report builder on the copy without rerunning the
+    full classify pipeline.
+    """
+    cache_dir = tmp_path_factory.mktemp("walkforward_2023_dec_template")
+    runner = _load_module_for_fixture(
+        "run_historical_walkforward", "scripts/run_historical_walkforward.py"
+    )
+    market_data_path = _REPO_ROOT / "tests" / "fixtures" / "raw" / "market_data.parquet"
+    runner.run_walkforward(
+        market_data_path=market_data_path,
+        output_root=cache_dir,
+        start_date=date(2023, 12, 12),
+        end_date=date(2023, 12, 14),
+    )
+    return cache_dir
 
 
 @pytest.fixture(scope="session")

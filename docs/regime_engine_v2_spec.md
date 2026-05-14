@@ -161,10 +161,37 @@ AND close > SMA_50
 close > SMA_200
 AND return_126d > 0.20
 AND realized_vol_21d rising
-AND sentiment_score >= configured threshold
+AND sentiment_score >= euphoria_sentiment_threshold
 ```
 
-`sentiment_score` definition required before implementation. Candidate sources: AAII bull-bear, put-call ratio percentile, Investors Intelligence sentiment.
+Operational definitions:
+
+```python
+# realized_vol_21d rising — strict 5-session change (Log #68 §1D analogue:
+# same memory horizon as `pct_above_50dma rising` / `nh_nl_ratio rising`).
+realized_vol_21d_rising = realized_vol_21d[t] > realized_vol_21d[t - 5]
+
+# sentiment_score — AAII bull-bear spread 8-week moving average.
+# Source columns: AAII weekly survey (`bullish`, `bearish` percentages).
+# Derived:
+#   bull_bear_spread       = bullish - bearish              (per weekly row)
+#   bull_bear_spread_8w_ma = rolling mean over 8 weekly rows
+#   sentiment_score        = bull_bear_spread_8w_ma         (points, not %)
+#
+# Weekly-to-daily alignment (V1 §2.2 stateless replay):
+#   sentiment_score[as_of_date] = the value carried by the latest AAII
+#   row with publication_date <= as_of_date (forward-fill from publication
+#   date; NEVER consult a future-dated reading).
+#
+# Cold-start (V1 §2.7 inheritance): until at least 4 weekly readings
+# exist on or before as_of_date, sentiment_score is NaN and the euphoria
+# rule falsifies. The 8-week MA's `min_periods=1` in the fetcher exposes
+# values from week 1, but predicate consumption requires a fuller window.
+```
+
+Default: `euphoria_sentiment_threshold = +20` (points of bull-bear-spread 8w-MA). This is a V2 §9.1 walk-forward calibration placeholder, not a fixed spec constant — historical AAII bull-bear 8w-MA distribution (1987–present) has top-10% in the +18 to +22 range; +20 sits near the Yardeni / Stovall conventional "high optimism" anchor. Operators may retune via the `trend_direction_v2.euphoria_sentiment_threshold` yaml key.
+
+Picked source notes: `bull_bear_spread_8w_ma` was chosen over the unsmoothed weekly spread (too noisy for a precedence-bearing label) and over a cross-era percentile rank (adds a 252-week warm-up the engine doesn't otherwise need). Put-call ratio and Investors Intelligence sentiment remain valid alternative sources for a future calibration revision but require fetchers not yet built.
 
 V2 trend_direction precedence (updated):
 ```text
@@ -190,17 +217,31 @@ rising_vol (V2 label):
 ```python
 iv_rv_spread = implied_vol_30d - realized_vol_21d
 ```
-Requires options data feed. Used as evidence for euphoria, vol_crush, and event_window classifiers.
+`implied_vol_30d` source = FRED `VIXCLS` (CBOE VIX — the model-free 30-day
+implied vol on SPX), divided by 100 to land in the same decimal-annualized
+units as `realized_vol_21d` (ADR 0005). Free at the FRED endpoint; no paid
+options feed needed. Used as evidence for euphoria, vol_crush, and
+event_window classifiers.
 
 #### Vol Crush
 
-Required prerequisites with definitions locked:
+Required prerequisites with definitions locked (ADR 0005 / Log #20 closure):
 ```text
 event_window_just_passed:
-  as_of_date within 3 NYSE trading days AFTER configured event end
+  EXISTS a calendar event whose window-end E satisfies
+  1 <= trading_days_between(E, as_of_date) <= 3
+  (i.e. as_of_date is one of the 3 NYSE sessions strictly AFTER an event
+  window closed; as_of_date == E does not fire — still inside the window).
+  Window-end E = event_date + end_offset(event_type), using the §1D
+  per-type windows (fed_week +2, cpi_week +1, nfp_week +1). When no event
+  calendar is supplied, event_window_just_passed is False everywhere.
+
+implied_vol_5d_change:
+  (implied_vol_30d[t] - implied_vol_30d[t-5]) / implied_vol_30d[t-5]
+  — a RELATIVE 5-NYSE-session change (unit-agnostic; ADR 0005 Q1).
 
 implied_vol_falling_sharply:
-  implied_vol_5d_change <= -0.20
+  implied_vol_5d_change <= -0.20   (a 20% relative drop over 5 sessions)
 ```
 
 Rule:
@@ -267,16 +308,30 @@ upvol_downvol_ratio = sum(volume[advances]) / max(sum(volume[declines]), 1)
 % of GICS sectors with positive 21d returns. For US: count of XLB, XLC, XLE, XLF, XLI, XLK, XLP, XLRE, XLU, XLV, XLY with `return_21d > 0` divided by 11.
 
 #### Breadth Thrust (Zweig-style)
+
+Feature:
 ```text
-breadth_thrust:
-  10d moving average of pct_advancing
-  moves from < 0.40 to > 0.615
-  within 10 trading days
+breadth_thrust_feature = 10-session moving average of pct_advancing
 ```
 
+Label predicate at session t (low-to-high transition within the trailing
+10-session window, ADR 0003 / Log #69 closure):
+```text
+breadth_thrust fires at session t when:
+  EXISTS b in [t-10, t-1] with breadth_thrust_feature[b] < 0.40
+  AND breadth_thrust_feature[t] > 0.615
+```
+
+Both inequalities are strict per Zweig's canonical formulation (the
+1986 *Winning on Wall Street* definition). The thresholds 0.40 and
+0.615 are spec-fixed (not configurable). NaN at
+`breadth_thrust_feature[t]` or at every `b` in `[t-10, t-1]`
+falsifies the rule (V1 §2.7 cold-start contract).
+
 V2 adds new breadth labels:
-- `breadth_thrust` (bullish initiation)
-- `broadening_breadth` (recovery confirmation: NH/NL ratio rising AND ad_line_slope > 0)
+- `breadth_thrust` (bullish initiation — predicate above)
+- `broadening_breadth` (recovery confirmation: NH/NL ratio rising AND ad_line_slope_20d > 0)
+- `recovery_breadth` (improvement starting, not yet confirmed: NH/NL ratio rising AND ad_line_slope_20d <= 0; ADR 0003 / Log #70 closure)
 - `narrowing_breadth` (deterioration: pct_above_50dma falling AND pct_above_200dma falling AND nh_nl_ratio < 0.4)
 
 V2 breadth precedence:
@@ -359,14 +414,27 @@ the slice/commit that resolved it. Entries are append-only.
 3. **§3.5 line 634 / line 656 — `narrowing_breadth` enum gap.**
    v2 §3.5 names `narrowing_breadth` in the accepted breadth sets for
    `rising_fragility` and `systemic_stress`, but V1's `BreadthLabel` enum
-   (`regime_detection.breadth_state`) does not yet contain that literal.
-   Resolution: pin the accepted sets to what V1 can express today —
-   `rising_fragility` accepts `{weak_breadth, divergent_fragile}` and
-   `systemic_stress` accepts `{weak_breadth}`. Both call sites carry
-   `# TODO(v2.1-breadth-enum)` markers in
-   `regime_detection.network_fragility_rules` so they can be relinked when the
-   enum is extended.
+   (`regime_detection.breadth_state`) did not contain that literal at the
+   time of Slice 1.3.
+   Resolution (Slice 1.3): pin the accepted sets to what V1 could express
+   then — `rising_fragility` accepts `{weak_breadth, divergent_fragile}` and
+   `systemic_stress` accepts `{weak_breadth}`. Both call sites in
+   `regime_detection.network_fragility_rules` carried breadth-enum
+   follow-up marker comments so they could be relinked when the enum
+   was extended.
    Resolved by Slice 1.3 (commit `c3badfc`).
+
+   Status update (post Slice 2.8c + Log #3 follow-up): fully closed.
+   `BreadthLabel` was widened in Slice 2.8c, and the breadth-enum
+   follow-up marker comments in
+   `regime_detection.network_fragility_rules` (`rising_fragility` and
+   `systemic_stress` accepted_breadth sets) have since been actioned
+   and removed. `rising_fragility` now accepts
+   `{weak_breadth, narrowing_breadth, divergent_fragile}` (matches
+   §3.5 line 634 verbatim) and `systemic_stress` now accepts
+   `{weak_breadth, narrowing_breadth}` (matches §3.5 line 656
+   verbatim). The §3.5 rule semantics are unchanged; only the
+   code-side mapping widened to match the now-canonical spec set.
 
 4. **§3.5 line 620 — `effective_rank_stability_threshold`.**
    Spec wrote "21d std < 5% of mean" inline.
@@ -546,6 +614,17 @@ the slice/commit that resolved it. Entries are append-only.
     `intraday_range_percentile_252d`).
     Deferred by Slice 2.2.
 
+    Status update — implied-vol data blocker closed by the
+    user-prompted FRED-availability audit. The "requires options data
+    feed" assumption was wrong: the CBOE VIX IS the canonical
+    model-free 30-day implied vol on SPX, and FRED publishes it free as
+    `VIXCLS`. `implied_vol_30d = VIXCLS / 100` (decimal-annualized, to
+    match `realized_vol_21d`'s units for the `iv_rv_spread`
+    subtraction). Wired into `V2_FRED_SERIES` + `MarketContext`; the
+    `iv_rv_spread`, `implied_vol_30d`, and `implied_vol_5d_change`
+    features ship on `VolatilityV2Features`. Operational forms pinned
+    in ADR 0005 and amended into §1C.
+
 20. **§1C lines 157–174 — `vol_crush` rule deferral.**
     Spec rule:
     ```
@@ -555,13 +634,28 @@ the slice/commit that resolved it. Entries are append-only.
       AND event_window_just_passed
     ```
     Two of the three inputs (`implied_vol_falling_sharply`,
-    `event_window_just_passed`) require data the V2 repo does not yet
-    ingest: an implied-vol time series (entry #19) and the §2D event
-    calendar. Per v2 §10 we do NOT invent either. Resolution: defer the
-    `vol_crush` LABEL and its rule wiring; the placeholder
-    `VolCrushConfig` in `regime_detection.config` remains a stub until
-    the prerequisite slices land.
+    `event_window_just_passed`) require data the V2 repo did not ingest
+    at Slice 2.2: an implied-vol time series (entry #19) and the §2D
+    event calendar. Per v2 §10 we did NOT invent either. Resolution at
+    Slice 2.2: defer the `vol_crush` LABEL and its rule wiring.
     Deferred by Slice 2.2.
+
+    Status update — fully resolved (ADR 0005). Both inputs are now
+    available with no paid feed: (1) `implied_vol_30d` from FRED
+    `VIXCLS` (entry #19 status update); (2) `event_window_just_passed`
+    computed from the §1D event calendar, which is already ingested —
+    "configured event end" = `event_date + end_offset(event_type)`
+    using the existing per-type windows. ADR 0005 pinned the three
+    open operational questions: `implied_vol_5d_change` is a RELATIVE
+    5-session change (`<= -0.20` = a 20% drop, unit-agnostic),
+    `event_window_just_passed` fires on the 3 NYSE sessions strictly
+    after a window-end, and `realized_vol_21d` is a new
+    `VolatilityV2Features` field via the shared realized-vol helper.
+    The `vol_crush` rule predicate + precedence
+    (`crisis_vol > vol_crush > high_vol > rising_vol > low_vol >
+    normal_vol > unknown`) ship in the code-wiring commit. Item #25
+    (`event_window_just_passed`) ships in the same slice — it has no
+    other consumer.
 
 21. **§1D lines 207–210 — `pct_above_200dma` deferral.**
     Spec formula `mean(member.close > member.sma_200)` requires a
@@ -709,15 +803,49 @@ the slice/commit that resolved it. Entries are append-only.
     Spec rule requires `sentiment_score >= configured_threshold`
     (line 126) where `sentiment_score` is sourced from AAII bull-bear,
     put-call ratio percentile, or Investors Intelligence sentiment
-    (line 129). The V2 repo does not yet ingest any of those feeds.
-    Per v2 §10 absolute rule we do NOT synthesize a sentiment proxy.
-    Resolution: defer the `euphoria` label until a sentiment ingestion
-    slice lands. The §1A line 132 precedence reserves the `euphoria`
-    slot above `bull` so the slice that lands sentiment can drop the
-    rule in without re-ordering. The precedence-evaluation table in
+    (line 129). The V2 repo did not yet ingest any of those feeds at
+    Slice 2.5.
+    Per v2 §10 absolute rule we did NOT synthesize a sentiment proxy.
+    Initial resolution: defer the `euphoria` label until a sentiment
+    ingestion slice lands. The §1A line 132 precedence reserves the
+    `euphoria` slot above `bull` so the slice that lands sentiment can
+    drop the rule in without re-ordering. The precedence-evaluation
+    table in
     `regime_detection.trend_direction_v2._V2_TREND_PRECEDENCE` includes
-    `"euphoria"` at index 0 but the rule predicate never fires today.
+    `"euphoria"` at index 0 but the rule predicate did not fire at
+    Slice 2.5.
     Deferred by Slice 2.5.
+
+    Status update — fully resolved by spec amendment and the
+    euphoria-wiring code slice. Three open sub-questions had to be
+    pinned (recorded in `docs/decisions/0004-euphoria-sentiment-score-
+    and-vol-rising-pins.md` and amended into §1A):
+
+    - `sentiment_score = bull_bear_spread_8w_ma` (AAII 8-week MA).
+      AAII fetcher (commit `8c04fae`) supplies the underlying weekly
+      `bullish` / `bearish` rows; `bull_bear_spread_8w_ma` is computed
+      in `regime_data_fetch.aaii_sentiment._compute_derived`.
+      Weekly-to-daily alignment uses the latest publication-date
+      `<= as_of_date` per V1 §2.2 stateless replay; cold-start (fewer
+      than 4 weekly readings) falsifies the rule per V1 §2.7.
+    - `realized_vol_21d rising = vol[t] > vol[t-5]` (strict 5-session
+      change), mirroring Log #68's pin for §1D breadth `rising` /
+      `falling` qualifiers — single 5-session memory horizon across
+      "rate of change" predicates.
+    - `euphoria_sentiment_threshold = +20` (points of bull-bear-spread
+      8w-MA). V2 §9.1 walk-forward calibration placeholder; configurable
+      via the `trend_direction_v2.euphoria_sentiment_threshold` yaml
+      key. The Yardeni / Stovall conventional "high optimism" anchor
+      sits in the +18 to +22 range; +20 also corresponds to the
+      historical top-decile of the AAII bull-bear 8w-MA distribution
+      (1987–present).
+
+    Implemented in `regime_detection.trend_direction_v2.evaluate_euphoria`
+    and tested by per-conjunct boundary cases in
+    `tests/test_trend_direction_v2_euphoria.py`. Side-effect:
+    `euphoria_specialist` in `regime_detection.cohort_routing` is now
+    reachable (Log entry tracking item 29 in the partial-blocker
+    audit also unblocks).
 
 33. **§1A line 90 — `breakout_expansion` label deferral.**
     Spec rule references a `followthrough_rate` metric configurable
@@ -729,6 +857,17 @@ the slice/commit that resolved it. Entries are append-only.
     concrete definition.
     Deferred by Slice 2.5.
 
+    Status update — fully resolved.
+    Entry #46 pinned the `followthrough_rate >= 0.60` threshold and
+    entry #47 pinned the remaining three rule clauses plus the
+    `followthrough_rate` windowing metadata (504-session trailing
+    lookback, 20 most-recent past upside breakouts, 5-day continuous
+    hold). The label is implemented in
+    `regime_detection.trend_character` and covered by
+    `tests/test_trend_character_v2_labels.py`
+    (`test_breakout_expansion_fires_on_4_conditions` +
+    four negative-case tests).
+
 34. **§1A line 98 — `range_bound` label deferral.**
     Spec rule writes "price oscillates inside the 20d range" without
     defining "oscillates" operationally (e.g., # of touches against
@@ -737,6 +876,16 @@ the slice/commit that resolved it. Entries are append-only.
     defer the `range_bound` label until the spec pins the
     oscillation metric.
     Deferred by Slice 2.5.
+
+    Status update — fully resolved.
+    Entry #46 pinned the operational form
+    `max_midpoint_excursion_20d <= 0.05` (where the 20d midpoint is
+    `(max + min) / 2` and the excursion is
+    `max(|close[i] - midpoint| / midpoint)` for `i in t-19..t`).
+    The label is implemented in `regime_detection.trend_character`
+    and covered by `tests/test_trend_character_v2_labels.py`
+    (`test_range_bound_fires_on_tight_oscillation` + three
+    negative-case tests).
 
 35. **§1A line 132-134 — precedence-ordering enforcement.**
     Spec lists the V2 trend precedence as
@@ -830,6 +979,22 @@ the slice/commit that resolved it. Entries are append-only.
     the type level. Risk-rank slot 2 from §1E line 291 is reserved for
     the future flip. Deferred by Slice 2.7.
 
+    Status update — fully resolved by the user-prompted FRED-availability
+    audit. The "missing input" turned out to require no new external
+    feed: the 252d percentile of `gap_frequency_20d` is just a rolling
+    rank on the already-shipped raw series. `compute_volatility_v2_
+    features` in `regime_detection.volatility_state_v2` now emits
+    `gap_frequency_percentile_252d` alongside the existing
+    `intraday_range_percentile_252d`. The
+    `VolumeLiquidityStateSeriesClassifier` reads both percentiles from
+    the §1C volatility seam and threads them into
+    `VolumeLiquidityRuleInputs`.
+    `evaluate_liquidity_gap_behavior` now implements the spec predicate
+    (strict `> 0.75` on both percentiles, configurable via
+    `VolumeLiquidityRulesConfig`); NaN in either input falsifies the
+    rule per V1 §2.7. The §1E label set, risk-rank, hysteresis, and
+    precedence are unchanged.
+
 41. **§1E — per-label hysteresis days NOT in spec.**
     The §1E text (lines 251-294) lists labels, rules, and risk_rank but
     is SILENT on per-label de-escalation days. The §3.7 spec for
@@ -918,7 +1083,7 @@ the slice/commit that resolved it. Entries are append-only.
     `trend_break`, `macro_event`) to sum to 1.0 would be a spec
     invention.
 
-    Resolution: defer Layer 4 V2 transition score until either
+    Resolution (Slice 3): defer Layer 4 V2 transition score until either
     (a) PIT constituent membership ingestion lands (unblocks
     `pct_above_50dma`, then ship the §4.3 "Without HMM" row
     verbatim over the five non-HMM components), or (b) HMM ships
@@ -928,7 +1093,40 @@ the slice/commit that resolved it. Entries are append-only.
     authoritative (per §4.5 "V1 warning labels remain
     authoritative; the score adds gradation").
 
-    No code committed for this slice — doc-only Ambiguity Log entry.
+    Status update (post Slice 8 change-point): both unblocking paths
+    have since landed and the entry is fully resolved.
+
+    - PIT constituent membership now ships through the engine
+      end-to-end (`market_context.py` accepts
+      `pit_constituent_intervals` + `constituent_ohlcv`;
+      `breadth_state_v2._compute_pit_features` materialises
+      `pct_above_50dma`), unblocking `breadth_deterioration_score`.
+    - HMM shipped in Slice 6 (`regime_detection.hmm_state`),
+      unblocking `hmm_probability_shift_score`.
+    - Change-point shipped in Slice 8
+      (`regime_detection.change_point`), adding a 7th component
+      and a third weight row.
+
+    `configs/core3-v2.0.0.yaml` now publishes THREE weight tables
+    consumed by `regime_detection.transition_score`:
+
+    - `weights_without_hmm` — 5-component fallback (V1 byte-identity
+      path when HMM seam returns None or is disabled).
+    - `weights_with_hmm` — 5-component-plus-HMM, used when the HMM
+      seam is lit.
+    - `weights_with_hmm_with_change_point` — 6-component-plus-
+      change_point, used when both HMM and change-point seams are
+      lit (per Log #66 for the `change_point_score` 7th-component
+      addition to §4.2).
+
+    `regime_detection.transition_score.compute_transition_score`
+    selects among the three tables based on which seams returned
+    non-None evidence on the as-of date (per the per-day PIT-correct
+    masking added in commit 19e395d). When neither HMM nor
+    change-point is lit, the without-HMM 5-component path runs and
+    V1 byte-identity is preserved.
+
+    Resolved by Slices 3 + 6 + 8 + Slice 2.8c (PIT) combined.
 
 44. **§2A lines 882–913 — Layer 2A Monetary/Liquidity V2 axis is blocked:
     spec defines rule predicates but omits the structural scaffolding
@@ -1333,6 +1531,59 @@ the slice/commit that resolved it. Entries are append-only.
     axis classifier can be dispatched as a TDD slice with the cross-axis
     short-circuit in place ahead of §2C.
 
+    Status update — `aggregate_forward_eps_revision_direction_4w` data
+    blocker closed by the weekly-snapshot accumulator (user-prompted
+    FRED-availability audit pass). The original blocker — "the workbook
+    snapshot path does not expose a weekly time series" — was real but
+    needed no paid feed. `regime_data_fetch.aggregate_eps` now
+    ACCUMULATES the workbook's current snapshot into a persistent
+    `sp500_eps_weekly_history.parquet` on each weekly fetch (deduped by
+    observation_date), and `compute_eps_revision_direction_4w` reads that
+    accumulator to produce the 4-week revision series. The series is
+    all-NaN until > 4 weekly fetches accumulate, so the two earnings
+    labels stay silent during cold-start and unlock organically once the
+    accumulator fills.
+
+    Engine-wiring update — the accumulator output is now threaded end-to-end.
+    `compute_inflation_growth_features` takes an optional
+    `aggregate_forward_eps_revision` series, forward-fills it onto the SPY
+    session index via `reindex(method="ffill")` (the accumulator is keyed by
+    workbook observation_date, not the trading calendar), and `build_feature_store`
+    passes `macro_series["aggregate_forward_eps_revision"]` through. The
+    `earnings_expansion` / `earnings_contraction` predicates flipped from a
+    hard `return False` to live strict-threshold checks (`> +0.02` / `< -0.02`)
+    that NaN-falsify — V1 byte-identity is preserved because the series stays
+    all-NaN whenever `macro_series` does not carry the key.
+
+    Second status update — `inflation_surprise_zscore` single-signal
+    limb blocker also closed (ADR 0006). The analyst-survey
+    `consensus_estimate` is genuinely paid, but the spec owner directed
+    a substitution: the free Cleveland Fed inflation nowcast
+    (model-derived current-period CPI inflation-rate estimate) fills
+    the same "expected value" role. `inflation_surprise_zscore =
+    (realized_cpi_rate - cpi_nowcast) / rolling_std_5y(...)`, computed
+    by `compute_inflation_growth_features` when `macro_series` carries
+    `cpi_nowcast`. The feature carries a bias-warning row
+    (`inflation_surprise_cleveland_fed_nowcast`) flagging the surprise
+    as model-relative, not survey-relative. The single-signal limb of
+    `evaluate_inflation_shock` now consumes the z-score; it is silent
+    only during cold-start (no `cpi_nowcast`, or < 5y of surprise
+    history). §2B `inflation_surprise_zscore` spec text amended.
+
+    Fetch-path update — the dedicated `cpi_nowcast` fetch path
+    (`regime_data_fetch.cleveland_fed_nowcast`) is built and the data
+    source is verified. `run_cleveland_fed_nowcast_fetch` downloads the
+    Cleveland Fed month-over-month nowcast webchart JSON
+    (`.../webcharts/inflationnowcasting/nowcast_month.json` — reachable
+    over `urllib`; only the HTML page 403s) and parses it into
+    `cpi_nowcast.parquet`. The feed is the full archive — one chart object
+    per monthly vintage, ~2013-08 to present (154 usable CPI vintages),
+    well past the 1260-session normalizer. Per vintage the parser takes
+    the last non-empty `CPI Inflation` value (settled nowcast) keyed to
+    the 1st of the target month, matching `CPIAUCSL`'s reference-date
+    convention. Manual-drop of the JSON is a fallback only. See ADR 0006
+    "Fetch path".
+
 49. **§2C Credit/Funding — scaffolding + operational pins.**
 
     Applies the §2A template to §2C. Same pattern as #48: §2C had
@@ -1354,20 +1605,30 @@ the slice/commit that resolved it. Entries are append-only.
     - **Unknown gate** — staleness-based on HYG/LQD/TLT (> 5
       sessions), NFCI (> 14 days = 2× weekly cycle), SOFR/IORB
       missing, or `assess_series_input_quality` failure.
-    - **Treasury-spread proxy** — true OAS feeds (ICE BofA H0A0 /
-      C0A0) not ingested; §2C uses
-      `hy_spread_proxy = tlt_total_return_63d - hyg_total_return_63d`
-      and `ig_spread_proxy = tlt_total_return_63d - lqd_total_return_63d`
-      with sign convention "rising proxy = spread widening."
-      Total-return differentials are direction-only (not absolute bps),
-      but every §2C rule consumes either `percentile_504d` or
-      `slope_21d` of the proxy — both scale-invariant — so the proxy
-      survives every rule predicate. Bias-warning row must be emitted
-      by the §2C classifier output (analogous to §1D PIT-constituent
-      bias warning). Vendor upgrade (ICE BofA OAS feed) noted as
-      TODO; replacement will swap the proxy formula in
-      `compute_credit_funding_features` without changing the rule
-      schema.
+    - **Credit-spread metric — single source.** `hy_spread_proxy_63d`
+      and `ig_spread_proxy_63d` are populated directly from the
+      FRED-redistributed ICE BofA Option-Adjusted Spread series:
+      `BAMLH0A0HYM2` (HY Master II OAS) and `BAMLC0A4CBBB` (BBB
+      Corporate OAS), free at the FRED endpoint under ICE's
+      redistribution license. `MarketContext.macro_series` keys
+      `hy_oas` / `ig_bbb_oas` feed `compute_credit_funding_features`;
+      these keys are in the §2C `REQUIRED_MACRO_KEYS` gate, so the §2C
+      seam does not build without them. Provenance row code =
+      `credit_spread_ice_bofa_oas_fred`. Sign convention: a rising OAS
+      series IS a widening spread (§2C line 2033 holds by
+      construction).
+
+      There is NO proxy fallback. An earlier slice carried a
+      TLT-vs-HYG/LQD total-return-differential proxy "for operators
+      without the OAS feed", but that scenario is unreachable: §2C
+      already requires SOFR / IORB / NFCI / `broad_usd_index` from
+      FRED's `macro_series`, so any operator able to build the §2C
+      seam at all already has the FRED key that fetches the OAS
+      series. The dual-source design was duplicate behaviour over two
+      genuinely-different metrics (real bps OAS vs a total-return
+      differential) — deleted in favour of the single real-feed
+      source. The `_proxy` suffix in the column names is historical;
+      the columns now carry the real OAS series.
     - **Rule predicate operational forms** — "non-rising" =
       `slope_21d <= 0`; "rising over 21d" = `slope_21d > 0`;
       "equities falling" = `spy_21d_return < -0.05`; "risk assets
@@ -1384,6 +1645,40 @@ the slice/commit that resolved it. Entries are append-only.
     Resolved by spec-amendment commit (this doc-only change). The §2C
     axis classifier can be dispatched as a TDD slice with the proxy
     bias warning surfaced through `data_quality.evidence`.
+
+    Status update — vendor upgrade COMPLETE, single source. The "true
+    OAS feeds (ICE BofA H0A0 / C0A0) not ingested" caveat in the
+    original entry was based on an incorrect assumption that those
+    series required a paid Bloomberg / vendor terminal. They are
+    actually free on FRED under ICE's redistribution license:
+    `BAMLH0A0HYM2` (HY Master II OAS) and `BAMLC0A4CBBB` (BBB
+    Corporate OAS). Both series are now in `V2_FRED_SERIES` and are
+    the SINGLE source for the §2C credit-spread metric —
+    `compute_credit_funding_features` takes them as required `hy_oas`
+    / `ig_oas` parameters and populates `hy_spread_proxy_63d` /
+    `ig_spread_proxy_63d` directly. They are listed in §2C
+    `REQUIRED_MACRO_KEYS`, so the seam does not build without them
+    (and `credit_funding_state` stays `None` — V1 byte-identity
+    preserved, same as any other unbuilt V2 seam).
+
+    An interim commit shipped a DUAL-source design (real OAS preferred,
+    TLT-vs-HYG/LQD total-return-differential proxy as fallback). That
+    was over-engineering: §2C already requires SOFR / IORB / NFCI /
+    `broad_usd_index` from FRED, so there is no reachable state where
+    an operator can build the §2C seam but cannot fetch the OAS
+    series — the proxy fallback protected against an impossible state,
+    and the two "sources" were genuinely different metrics (real bps
+    OAS vs a total-return differential). The proxy path, its config
+    field, and the dual bias-warning constants were deleted; §2C is
+    now single-source. Provenance row code:
+    `credit_spread_ice_bofa_oas_fred`.
+
+    Status update — superseded in part by Ambiguity Log #71: FRED later
+    truncated the ICE BofA OAS public history to a trailing ~3-year
+    window (2023-05-15+), and the `hy_spread_proxy_*` / `ig_spread_proxy_*`
+    fields were renamed to `hy_oas_*` / `ig_oas_*`. #71 reintroduces the
+    TLT proxy as a *separate, parallel* metric — which is NOT the
+    dual-source design this entry deleted.
 
 50. **§2D Event Calendar V2 — operational pins + §4.2 score expansion.**
 
@@ -1990,64 +2285,188 @@ the slice/commit that resolved it. Entries are append-only.
     `breadth_state.label_rate_of_change_lookback_sessions` config.
     Resolved by the §1D V2 breadth classifier slice.
 
-69. **§1D `breadth_thrust` LABEL deferral — multi-session stateful
-    event detection is undefined.**
+69. **§1D `breadth_thrust` LABEL — operational predicate pinned.**
 
-    Spec lines 273-275 define `breadth_thrust` as the "10d MA of
+    Spec lines 273-275 defined `breadth_thrust` as the "10d MA of
     pct_advancing moves from < 0.40 to > 0.615 within 10 trading
-    days". This is a multi-session STATEFUL event detector (was-low,
-    then-now-high, within-window) — not a per-day predicate like the
-    other axis rules. Three operational interpretations:
+    days" — a multi-session STATEFUL event detector, not a per-day
+    predicate. Three candidate operational forms were considered in
+    `docs/decisions/0003-breadth-thrust-and-recovery-breadth-
+    predicates.md`:
 
-    (X) at session t, fire if exists b in (t-10..t-1) where
-        breadth_thrust_feature[b] < 0.40 AND breadth_thrust_feature[t]
-        > 0.615;
-    (Y) fire if the MAX in (t-10..t) > 0.615 AND the MIN in (t-10..t)
+    (X) at session t, fire if EXISTS b in [t-10, t-1] with
+        breadth_thrust_feature[b] < 0.40 AND
+        breadth_thrust_feature[t] > 0.615;
+    (Y) fire if MAX in [t-10, t] > 0.615 AND MIN in [t-10, t]
         < 0.40 (window contains both regimes);
-    (Z) fire if min(t-10..t-N) < 0.40 AND breadth_thrust_feature[t] >
-        0.615 for some N pinning the "low-then-high" ORDERING.
+    (Z) fire if MIN in [t-10, t-N] < 0.40 AND
+        breadth_thrust_feature[t] > 0.615 for some N pinning the
+        "low-then-high" ORDERING.
 
-    Each interpretation produces different fire patterns. Per V2 §10
-    we do NOT invent. Resolution: defer the LABEL until the spec
-    pins which interpretation applies. The FEATURE
-    (`breadth_thrust` = 10-session MA of pct_advancing) ships from
-    slice 2.8c and remains available; only the label predicate
-    waits.
+    Resolution: pin (X). Rationale (per ADR 0003):
 
-    Precedence slot preserved at the top of §1D ordering (line 284)
-    so the future label-pin slice can drop the predicate in without
-    re-ordering. Pinned in `regime_detection.breadth_state` V2 rule
-    predicate table (`breadth_thrust` key documents the deferral).
-    Resolved when spec amends `breadth_thrust` to one of (X/Y/Z).
+    - "moves **from** < 0.40 **to** > 0.615" is directional;
+      interpretation (Y) fails the directional reading — it allows
+      max-first / min-after which is not a low-to-high move.
+    - "within 10 trading days" pins the window precisely;
+      interpretation (Z) requires an extra parameter N the spec
+      does not provide (V2 §10 "do not invent" violation).
+    - (X) introduces no new parameters and exactly maps the literal
+      spec text: "the low occurs somewhere in the trailing
+      10-session window, the high occurs at session t". It matches
+      Zweig's canonical Breadth Thrust formulation the spec cites at
+      line 269.
+    - (X) is stateless-per-day computable from
+      `breadth_thrust_feature[t-10..t]` alone — preserves V1 §2.2
+      stateless replay.
 
-70. **§1D `recovery_breadth` LABEL — no operational definition in
-    spec.**
+    Boundary semantics: both inequalities are strict (`< 0.40` and
+    `> 0.615`) per spec text. The thresholds 0.40 and 0.615 are
+    spec-fixed (not configurable). NaN at `breadth_thrust_feature[t]`
+    or at every `b` in `[t-10, t-1]` falsifies the rule (V1 §2.7
+    cold-start). The pinned spec form lives in §1D "Breadth Thrust
+    (Zweig-style)" predicate block.
 
-    Spec line 284 places `recovery_breadth` in the V2 §1D breadth
+    Resolved by spec-amendment commit (this doc-only change). The
+    code-wiring slice in `regime_detection.breadth_state` ships in
+    a subsequent TDD commit.
+
+70. **§1D `recovery_breadth` LABEL — operational predicate pinned.**
+
+    Spec line 284 placed `recovery_breadth` in the V2 §1D breadth
     precedence (between `narrowing_breadth` and `broadening_breadth`)
-    but never defines its predicate. The label is named only in the
-    precedence list; no §1D rule block references it.
-
-    Per V2 §10 we do NOT invent a definition. Two plausible
-    interpretations from the surrounding label semantics:
+    but never defined its predicate. Two candidate interpretations
+    were considered in
+    `docs/decisions/0003-breadth-thrust-and-recovery-breadth-
+    predicates.md`:
 
     (X) "Initial recovery" — NH/NL ratio rising (per Log #68 pin)
         AND ad_line_slope_20d not yet strictly positive
         (i.e. breadth strength improving but cumulative AD not yet
-        confirming). Sits between narrowing (deterioration) and
-        broadening (full recovery confirmation).
+        confirming).
     (Y) "Recovery confirmation precursor" — pct_above_50dma rising
-        (per Log #68 pin) AND pct_above_200dma not yet rising
-        (short-term breadth picking up, long-term still lagging).
+        AND pct_above_200dma not yet rising (short-term breadth
+        picking up, long-term still lagging).
 
-    Each interpretation is internally consistent but the spec does
-    not pin which (or any third interpretation). Resolution: defer
-    the label until the spec adds an operational definition.
-    Precedence slot preserved so the future definition can land
-    without re-ordering. Pinned in `regime_detection.breadth_state`
-    V2 rule predicate table (`recovery_breadth` key documents the
-    deferral). Resolved when spec amends `recovery_breadth` with an
-    operational predicate.
+    Resolution: pin (X). Rationale (per ADR 0003):
+
+    - **Reuses already-pinned features.** (X) operates on
+      `nh_nl_ratio` (rising-of pinned in Log #68 — strict 5-session
+      change) and `ad_line_slope_20d` — the exact two inputs of
+      `broadening_breadth` per spec §1D line 279. (Y) introduces a
+      `pct_above_50dma` + `pct_above_200dma` pair that is not used
+      by either bracketing label's predicate. Per Log #46's
+      spec-amendment pattern, prefer the form that reuses analogues
+      from already-pinned semantics over the form that introduces
+      new dependencies.
+    - **Clean "halfway" semantics.** (X) is exactly
+      `broadening_breadth` with one conjunct relaxed: same
+      "nh_nl_ratio rising" first clause, plus
+      "ad_line_slope_20d <= 0" instead of "> 0". This encodes
+      "improvement starting, not yet confirmed by the cumulative
+      advance-decline line".
+    - **Disjoint from `broadening_breadth` by construction.**
+      `recovery_breadth` fires when `ad_line_slope_20d <= 0`;
+      `broadening_breadth` fires when `ad_line_slope_20d > 0`. They
+      cannot co-fire — no precedence collision. The §1D precedence
+      chain (line 284) becomes monotone in slope:
+      `narrowing_breadth` (slope falling) → `recovery_breadth`
+      (slope ≤ 0 with NH/NL rising) → `broadening_breadth`
+      (slope > 0 with NH/NL rising).
+    - **Operator-useful early-turn signal.** Recovery sits ABOVE
+      broadening in the §1D precedence (line 284) so it surfaces
+      the earliest improvement signal rather than waiting for the
+      lagging cumulative-AD confirmation.
+
+    Pinned predicate at session t:
+
+    ```text
+    recovery_breadth fires at session t when:
+      nh_nl_ratio[t] > nh_nl_ratio[t-5]      (rising NH/NL, Log #68)
+      AND ad_line_slope_20d[t] <= 0          (not yet broadening)
+    ```
+
+    NaN in any of `nh_nl_ratio[t]`, `nh_nl_ratio[t-5]`, or
+    `ad_line_slope_20d[t]` falsifies the rule (V1 §2.7 cold-start).
+    The 5-session lookback for NH/NL rising-of inherits the
+    `BreadthV2Config.label_rate_of_change_lookback_sessions = 5`
+    config pinned in Log #68 (operator-tunable via v2 §9.1
+    calibration).
+
+    Resolved by spec-amendment commit (this doc-only change). The
+    code-wiring slice in `regime_detection.breadth_state` ships in
+    a subsequent TDD commit (jointly with the §69 `breadth_thrust`
+    predicate).
+
+71. **§2C Credit/Funding — FRED ICE BofA OAS history truncation + a
+    parallel TLT-proxy credit metric.**
+
+    Ambiguity Log #49 closed §2C's spread sourcing onto the real
+    FRED-redistributed ICE BofA Option-Adjusted Spread series
+    (`BAMLH0A0HYM2` HY, `BAMLC0A4CBBB` BBB IG), and commit `9cad7e7`
+    deleted the prior TLT-vs-HYG/LQD total-return-differential proxy
+    *fallback* — on the reasoning that the fallback was unreachable
+    ("any operator able to build the §2C seam at all already has the
+    FRED key that fetches the OAS series").
+
+    A 2026-05 macro re-fetch invalidated that reasoning. FRED now
+    exposes only a **trailing ~3-year window** of these ICE BofA OAS
+    series — both `BAMLH0A0HYM2` and `BAMLC0A4CBBB` start
+    **2023-05-15** (confirmed against FRED's `/series` metadata:
+    `observation_start = 2023-05-15`; ICE Data Indices tightened
+    redistribution licensing — the series IDs are unchanged but the
+    public history is truncated). The previously-"impossible" state
+    is now real: the FRED key is present and the OAS fetch *succeeds*,
+    but the series is empty before 2023-05-15. §2C therefore has no
+    real-OAS signal for ~70% of the available backtest history
+    (~2016–2023).
+
+    Resolution — three pins:
+
+    (a) **Accept the 2023+ depth for the real-OAS metric.** No
+        splicing, no backfill. Where OAS has no data the §2C
+        real-OAS label is NaN/`unknown` (V1 §2.7 cold-start — "use
+        the feed when it is available").
+
+    (b) **Reintroduce the TLT-vs-HYG/LQD proxy as a SEPARATE,
+        parallel metric that produces its own §2C label**, covering
+        the longer history. This is NOT the dual-sourcing `9cad7e7`
+        removed: that was one column fed by *either* source
+        depending on availability — mixing two genuinely-different
+        measurements into one series. This is two distinct metrics,
+        two distinct label outputs (`RegimeOutput.credit_funding_state`
+        from real OAS, `RegimeOutput.credit_funding_state_proxy` from
+        the proxy) that never blend. The §2C rule schema is
+        scale-invariant (percentile + slope predicates), so the SAME
+        `CreditFundingSeriesClassifier` logic runs a second time on
+        the proxy series — one rule schema, two input series, two
+        outputs. The proxy output always carries the
+        `credit_spread_proxy_total_return_differential` bias-warning
+        row.
+
+    (c) **Rename the misleadingly-named legacy fields.** The fields
+        `hy_spread_proxy_63d` / `ig_spread_proxy_63d` /
+        `hy_spread_proxy_percentile_504d` / `hy_spread_proxy_slope_21d`
+        / `ig_spread_proxy_slope_21d` hold the *real* OAS values
+        (since #49) but are named "proxy" — backwards. They are
+        renamed to the `hy_oas_*` / `ig_oas_*` family. The new proxy
+        metric's fields are `hy_tr_differential_*` /
+        `ig_tr_differential_*` (total-return-differential).
+
+    Proxy coverage honesty: the proxy's `_percentile_504d` needs a
+    504-session warm-up from the 2016-01-04 data start, so the proxy
+    label is live from ~2018 onward (`unknown` before that). It does
+    not cover all of 2016–2018, but it covers ~2018→2023, which is
+    otherwise fully dark for §2C. The two metrics measure a *similar*
+    thing (credit-spread direction); the proxy exists because FRED's
+    OAS series lacks pre-2023 history. They are parallel and
+    independent — never spliced.
+
+    Resolved by spec-amendment commit (this doc-only change — §2C
+    Features/Rules text amended below). The code-wiring slice
+    (`credit_funding.py` rename + proxy compute, parallel classifier
+    in `axis_series.py`, `RegimeOutput.credit_funding_state_proxy`,
+    tests) ships in a subsequent TDD commit.
 
 ---
 
@@ -2197,10 +2616,28 @@ inflation_shock > recession_scare > disinflation > goldilocks > recovery_growth 
 cpi_3m_change_pct = (cpi[t] - cpi[t - 3_months]) / cpi[t - 3_months]
 cpi_6m_change_pct = (cpi[t] - cpi[t - 6_months]) / cpi[t - 6_months]
 
-# Inflation surprise — z-score of actual-vs-consensus on BLS release dates.
-#   inflation_surprise_zscore = (actual_release - consensus_estimate) / std_of_surprise_history_5y
-# DEFERRED: requires consensus-vs-actual feed (not yet ingested). See Ambiguity Log #48
-# for the short-circuit behavior used by `inflation_shock` until the feed lands.
+# Inflation surprise — z-score of the realized CPI inflation rate vs the
+# Cleveland Fed inflation nowcast (ADR 0006). The nowcast SUBSTITUTES for
+# the analyst-survey `consensus_estimate` named in the original formula:
+# it is a free, model-derived, point-in-time estimate of the current-period
+# CPI inflation rate, occupying the same "expected value" role. The
+# substitution is a spec-owner-directed amendment (ADR 0006), not an
+# invention; the `inflation_surprise_zscore` feature carries a bias-warning
+# row (`inflation_surprise_cleveland_fed_nowcast`) flagging that the
+# surprise is model-relative, not survey-relative.
+#
+#   realized_cpi_rate    = 1-month % change of CPIAUCSL (macro_series `cpi_all_items`)
+#   cpi_nowcast          = Cleveland Fed current-period CPI inflation-rate nowcast
+#                          (macro_series `cpi_nowcast`)
+#   inflation_surprise   = realized_cpi_rate - cpi_nowcast
+#   inflation_surprise_zscore = inflation_surprise / rolling_std_5y(inflation_surprise)
+#                          (5y normalizer = 1260 trading days; NaN until a full
+#                          5y of surprise history exists — V1 §2.7 cold-start)
+#
+# When `cpi_nowcast` is absent from macro_series the z-score is all-NaN and
+# the `inflation_shock` single-signal limb falsifies — V1 byte-identity
+# preserved, identical to the pre-substitution behavior. See Ambiguity
+# Log #48.
 
 # PMI — ISM Manufacturing PMI is the primary signal. ISM Services is a separate
 # input only when both are available. "PMI > 50" in rule predicates refers to the
@@ -2210,9 +2647,15 @@ pmi_manufacturing_slope_21d = ols_slope(pmi_manufacturing, window=21)
 
 # Aggregate forward EPS revision direction
 #   revision_4w = (forward_eps[t] - forward_eps[t - 4_weeks]) / forward_eps[t - 4_weeks]
-# DEFERRED: workbook snapshot path does not expose weekly time series (data plan
-# line 88). Until weekly EPS data lands, `earnings_expansion` / `earnings_contraction`
-# short-circuit to False — see Ambiguity Log #48.
+# The single S&P workbook exposes quarterly history + one current snapshot,
+# not a weekly time series. `regime_data_fetch.aggregate_eps` closes this by
+# ACCUMULATING the current snapshot into a persistent weekly-history parquet
+# (sp500_eps_weekly_history.parquet) on each weekly fetch, deduped by
+# observation_date. `compute_eps_revision_direction_4w` reads that accumulator
+# and computes the 4-week revision (4 rows back in the weekly-sorted history).
+# The series is all-NaN until > 4 weekly fetches have accumulated, so
+# `earnings_expansion` / `earnings_contraction` stay silent during cold-start
+# and unlock organically once the accumulator fills — see Ambiguity Log #48.
 
 # Commodity returns — DBC ETF substitute for Bloomberg Commodity Index (paid feed
 # unavailable). Documented as proxy with bias-warning (same precedent as §1D PIT
@@ -2261,12 +2704,12 @@ recovery_growth:
   AND credit_funding.active_label == "credit_calm"
 
 earnings_expansion:
-  aggregate_forward_eps_revision_direction_4w > +0.02
-  # short-circuit to False until weekly EPS revision time series ships
+  aggregate_forward_eps_revision_direction_4w > +0.02     # strict
+  # Live (Log #48): NaN falsifies during the accumulator cold-start.
 
 earnings_contraction:
-  aggregate_forward_eps_revision_direction_4w < -0.02
-  # short-circuit to False until weekly EPS revision time series ships
+  aggregate_forward_eps_revision_direction_4w < -0.02     # strict
+  # Live (Log #48): NaN falsifies during the accumulator cold-start.
 ```
 
 #### Risk Rank
@@ -2315,9 +2758,9 @@ inflation_growth:
 
 Rules referencing `credit_funding.active_label` (`goldilocks`, `recession_scare`, `recovery_growth`) short-circuit the cross-axis predicate to `False` when the §2C axis is unbuilt (slice-4 deferral). Precedence walker then falls through to the next-rank rule. Mirrors slice 1.3's systemic_stress / credit_funding=None pattern (Ambiguity Log #1.3 inline TODO).
 
-`earnings_expansion` / `earnings_contraction` short-circuit to `False` until the weekly aggregate forward EPS revision direction time series ships (currently snapshot-only per market_data_fetch_plan.md line 88).
+`earnings_expansion` / `earnings_contraction` consume `aggregate_forward_eps_revision_direction_4w`, which is built by the `regime_data_fetch.aggregate_eps` weekly-snapshot accumulator (`sp500_eps_weekly_history.parquet`). The series is all-NaN until > 4 weekly fetches have accumulated; the two labels stay silent during that cold-start and unlock organically once the accumulator fills. No external feed dependency — the accumulator builds the weekly series from the existing free S&P workbook fetch.
 
-`inflation_shock`'s single-signal limb (`inflation_surprise_zscore > +1.5`) short-circuits to `False` until the BLS consensus-vs-actual feed is ingested. The composite-shock limb remains active.
+`inflation_shock`'s single-signal limb (`inflation_surprise_zscore > +1.5`) consumes `inflation_surprise_zscore`, computed from the realized CPI inflation rate vs the Cleveland Fed inflation nowcast (ADR 0006 — the nowcast substitutes for the analyst-survey `consensus_estimate`). The z-score is all-NaN until `cpi_nowcast` is wired into `macro_series` AND a full 5y of surprise history has accumulated; the limb is silent during that cold-start. The composite-shock limb is always active.
 
 ---
 
@@ -2340,25 +2783,45 @@ deleveraging > funding_squeeze > credit_stress > spread_widening > credit_calm >
 
 #### Features (operational definitions)
 
-True OAS feeds (ICE BofA H0A0 / C0A0) are not ingested. §2C uses
-total-return-differential proxies on the available ETFs (HYG, LQD, TLT)
-and the FRED short-rate series (SOFR, IORB, NFCI). Documented as proxy,
-not as absolute spread level — the §2C rules only consume percentile and
-slope of these series, both of which are scale-invariant, so the proxy
-survives every rule predicate. Vendor upgrade noted as a TODO in code.
+§2C carries **two parallel credit-spread metrics** (Ambiguity Log #49 + #71),
+kept strictly separate — never blended into one series or one label:
+
+1. **Real ICE BofA OAS** (`hy_oas_*` / `ig_oas_*`) — the authoritative
+   metric, sourced from the FRED-redistributed ICE BofA Option-Adjusted
+   Spread series (`BAMLH0A0HYM2` HY, `BAMLC0A4CBBB` BBB IG). FRED exposes
+   only a trailing ~3-year window (both series start 2023-05-15 — Log #71),
+   so the real-OAS §2C label (`credit_funding_state`) is `unknown`
+   before ~2023.
+2. **TLT-vs-HYG/LQD total-return-differential proxy** (`hy_tr_differential_*`
+   / `ig_tr_differential_*`) — a SEPARATE parallel metric covering the full
+   history (live from ~2018, after the 504-session percentile warm-up from
+   the 2016-01-04 data start). It produces its own §2C label
+   (`credit_funding_state_proxy`) via the same scale-invariant rule schema,
+   and always carries a `credit_spread_proxy_total_return_differential`
+   bias-warning row. Documented as proxy *direction*, not absolute bps level.
+
+The §2C rules only consume percentile and slope — both scale-invariant — so
+the identical rule predicates run unchanged on either metric's series.
 
 ```python
-# Total-return series for HY, IG, Treasury proxies (close-to-close cumulative)
+# Metric 1 — real ICE BofA OAS (FRED), authoritative, 2023-05-15+
+#   sign convention: rising OAS = spread widening
+hy_oas_63d = BAMLH0A0HYM2          # ICE BofA US High Yield Master II OAS
+ig_oas_63d = BAMLC0A4CBBB          # ICE BofA BBB US Corporate OAS
+
+# Metric 2 — TLT-vs-HYG/LQD total-return-differential proxy, full history
 #   sign convention: rising proxy = spread widening (Treasury outperforming HY/IG)
-hy_spread_proxy_63d = tlt_total_return_63d - hyg_total_return_63d
-ig_spread_proxy_63d = tlt_total_return_63d - lqd_total_return_63d
+hy_tr_differential_63d = tlt_total_return_63d - hyg_total_return_63d
+ig_tr_differential_63d = tlt_total_return_63d - lqd_total_return_63d
 
-# Percentile rank (504d window, mirrors §3.2 / §1E percentile convention)
-hy_spread_proxy_percentile_504d = rolling(hy_spread_proxy_63d, window=504).rank(pct=True)
-
-# Slope (21d OLS, mirrors §2A / §2B slope convention)
-hy_spread_proxy_slope_21d = ols_slope(hy_spread_proxy_63d, window=21)
-ig_spread_proxy_slope_21d = ols_slope(ig_spread_proxy_63d, window=21)
+# Percentile rank (504d, §3.2 / §1E convention) + 21d OLS slope (§2A / §2B
+# convention) — identical scale-invariant transforms applied to BOTH metrics:
+hy_oas_percentile_504d             = rolling(hy_oas_63d, window=504).rank(pct=True)
+hy_oas_slope_21d                   = ols_slope(hy_oas_63d, window=21)
+ig_oas_slope_21d                   = ols_slope(ig_oas_63d, window=21)
+hy_tr_differential_percentile_504d = rolling(hy_tr_differential_63d, window=504).rank(pct=True)
+hy_tr_differential_slope_21d       = ols_slope(hy_tr_differential_63d, window=21)
+ig_tr_differential_slope_21d       = ols_slope(ig_tr_differential_63d, window=21)
 
 # Bank index relative strength
 kre_spy_ratio       = kre_close / spy_close
@@ -2382,15 +2845,15 @@ sofr_iorb_slope_21d    = ols_slope(sofr_iorb_spread, window=21)
 
 ```text
 credit_calm:
-  hy_spread_proxy_percentile_504d < 0.50
-  AND hy_spread_proxy_slope_21d <= 0                # "non-rising" = non-positive slope
+  hy_oas_percentile_504d < 0.50
+  AND hy_oas_slope_21d <= 0                         # "non-rising" = non-positive slope
 
 spread_widening:
-  hy_spread_proxy_slope_21d > 0
-  AND ig_spread_proxy_slope_21d > 0                 # strict rising on BOTH HY and IG
+  hy_oas_slope_21d > 0
+  AND ig_oas_slope_21d > 0                          # strict rising on BOTH HY and IG
 
 credit_stress:
-  hy_spread_proxy_percentile_504d > 0.80
+  hy_oas_percentile_504d > 0.80
   AND spy_21d_return < -0.05                        # "equities falling" = >5% drop over 21d
 
 funding_squeeze:
@@ -2444,9 +2907,32 @@ credit_funding:
 - SOFR or IORB missing
 - `assess_series_input_quality` fails on any required series
 
+#### Two label outputs — authoritative + proxy
+
+The rules above are written against the authoritative real-OAS metric
+(`hy_oas_*` / `ig_oas_*`) and produce `RegimeOutput.credit_funding_state`.
+Because the rule predicates are scale-invariant (percentile + slope only),
+the **same `CreditFundingSeriesClassifier` runs a second time** on the
+parallel proxy metric (`hy_tr_differential_*` / `ig_tr_differential_*`),
+producing `RegimeOutput.credit_funding_state_proxy` — a distinct, separately
+keyed label (Ambiguity Log #71). The two outputs are never blended into one
+series or one label.
+
+Real-OAS coverage: `hy_oas_*` / `ig_oas_*` start 2023-05-15 (FRED truncated
+the ICE BofA OAS public history — Log #71), so `credit_funding_state` is
+`unknown` before ~2023.
+
 #### Proxy Bias Warning
 
-The `hy_spread_proxy_63d` / `ig_spread_proxy_63d` are total-return differentials, not yield-curve spreads. They preserve *direction* of spread changes (rising = widening) but **cannot be read as bps-level absolutes**. Slice that consumes them MUST stick to percentile / slope predicates and MUST emit a bias-warning row in any feature-store output (same pattern as §1D PIT-constituent bias warning). A future spec-amendment slice will replace these with direct OAS feeds (ICE BofA H0A0 / C0A0) when vendor sourcing is approved.
+The `hy_tr_differential_63d` / `ig_tr_differential_63d` are total-return
+differentials, not yield-curve spreads. They preserve *direction* of spread
+changes (rising = widening) but **cannot be read as bps-level absolutes**.
+Every `credit_funding_state_proxy` output MUST emit the
+`credit_spread_proxy_total_return_differential` bias-warning row in any
+feature-store output (same pattern as the §1D PIT-constituent bias warning).
+The proxy exists specifically because the real ICE BofA OAS series lacks
+pre-2023 history; it is a *similar* measure (credit-spread direction), kept
+strictly parallel — never spliced with the real-OAS metric.
 
 ---
 

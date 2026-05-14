@@ -31,9 +31,13 @@ from regime_detection.fragility_universe import (
 from regime_detection.hysteresis import apply_per_label_asymmetric_hysteresis
 from regime_detection.inflation_growth import (
     INFLATION_GROWTH_RISK_RANK,
+    INFLATION_SURPRISE_NOWCAST_BIAS_WARNING_CODE,
     InflationGrowthFeatures,
     InflationGrowthRuleInputs,
+    build_rule_inputs_by_date,
+    build_rule_inputs_for_date,
     compute_inflation_growth_features,
+    compute_inflation_surprise_zscore,
     evaluate_disinflation,
     evaluate_earnings_contraction,
     evaluate_earnings_expansion,
@@ -70,6 +74,13 @@ def _rule_inputs(**overrides) -> InflationGrowthRuleInputs:
         cpi_6m_change_pct=0.02,
         cpi_6m_change_pct_lag_21=0.02,
         cpi_6m_change_pct_slope_21d=0.0,
+        # ADR 0006 — NaN by default so the inflation_shock single-signal
+        # limb is silent unless a test explicitly supplies a z-score.
+        inflation_surprise_zscore=float("nan"),
+        # Log #48 closure — NaN by default so the earnings_expansion /
+        # earnings_contraction labels are silent unless a test supplies
+        # a revision value (mirrors the accumulator cold-start state).
+        aggregate_forward_eps_revision_direction_4w=float("nan"),
         pmi_manufacturing=52.0,
         pmi_manufacturing_slope_21d=0.0,
         commodity_return_63d=0.0,
@@ -212,6 +223,116 @@ def test_cyclical_defensive_ratio_hand_pinned() -> None:
     assert feats.cyclical_defensive_ratio.iloc[50] == pytest.approx(250.0 / 130.0)
 
 
+def test_build_rule_inputs_by_date_matches_single_day_builder() -> None:
+    idx = _bdate_index(periods=200)
+    n = len(idx)
+    cpi = pd.Series(np.nan, index=idx, dtype=float)
+    cpi.iloc[::21] = np.linspace(300.0, 308.0, num=len(cpi.iloc[::21]))
+    pmi = pd.Series(np.nan, index=idx, dtype=float)
+    pmi.iloc[::21] = np.linspace(49.0, 53.0, num=len(pmi.iloc[::21]))
+    dgs10 = pd.Series(np.linspace(4.0, 4.5, n), index=idx, dtype=float)
+    dbc = pd.Series(np.linspace(20.0, 25.0, n), index=idx, dtype=float)
+    spy = pd.Series(np.linspace(400.0, 420.0, n), index=idx, dtype=float)
+    tlt = pd.Series(np.linspace(100.0, 95.0, n), index=idx, dtype=float)
+    xly = pd.Series(np.linspace(150.0, 170.0, n), index=idx, dtype=float)
+    xli = pd.Series(np.linspace(100.0, 115.0, n), index=idx, dtype=float)
+    xlp = pd.Series(np.linspace(70.0, 72.0, n), index=idx, dtype=float)
+    xlu = pd.Series(np.linspace(60.0, 62.0, n), index=idx, dtype=float)
+
+    feats = compute_inflation_growth_features(
+        cpi_all_items=cpi,
+        pmi_manufacturing=pmi,
+        dgs10=dgs10,
+        dbc_close=dbc,
+        spy_close=spy,
+        tlt_close=tlt,
+        xly_close=xly,
+        xli_close=xli,
+        xlp_close=xlp,
+        xlu_close=xlu,
+        config=_default_rules(),
+    )
+    cf_labels = {
+        ts: ("credit_calm" if i % 2 == 0 else "spread_widening")
+        for i, ts in enumerate(idx)
+    }
+    precomputed = build_rule_inputs_by_date(
+        features=feats,
+        config=_default_rules(),
+        credit_funding_active_labels_by_date=cf_labels,
+    )
+    for dt in idx[126::23]:
+        expected = build_rule_inputs_for_date(
+            features=feats,
+            dt=dt,
+            config=_default_rules(),
+            credit_funding_active_label=cf_labels[dt],
+        )
+        actual = precomputed[dt]
+        for field in expected.__dataclass_fields__:
+            if field == "credit_funding_active_label":
+                assert getattr(actual, field) == getattr(expected, field)
+            else:
+                assert getattr(actual, field) == pytest.approx(
+                    getattr(expected, field), nan_ok=True
+                )
+
+
+def test_aggregate_forward_eps_revision_forward_fills_onto_spy_index() -> None:
+    """Log #48 wiring: a weekly revision series (keyed by workbook
+    observation_date, not the trading calendar) is carried forward onto
+    every SPY session via reindex(method='ffill'). When None, the feature
+    stays all-NaN so the earnings labels falsify (V1 byte-identity)."""
+    idx = _bdate_index(periods=80)
+    # Filler series — values are irrelevant to this feature.
+    cpi = pd.Series(300.0, index=idx, dtype=float)
+    pmi = pd.Series(51.0, index=idx, dtype=float)
+    dgs10 = pd.Series(4.0, index=idx, dtype=float)
+    dbc = pd.Series(20.0, index=idx, dtype=float)
+    spy = pd.Series(400.0, index=idx, dtype=float)
+    tlt = pd.Series(100.0, index=idx, dtype=float)
+    xly = xli = xlp = xlu = pd.Series(100.0, index=idx, dtype=float)
+
+    common = dict(
+        cpi_all_items=cpi, pmi_manufacturing=pmi, dgs10=dgs10,
+        dbc_close=dbc, spy_close=spy, tlt_close=tlt,
+        xly_close=xly, xli_close=xli, xlp_close=xlp, xlu_close=xlu,
+        config=_default_rules(),
+    )
+
+    # None → all-NaN placeholder.
+    feats_none = compute_inflation_growth_features(**common)
+    assert feats_none.aggregate_forward_eps_revision_direction_4w.isna().all()
+
+    # Two weekly observations. The second deliberately lands on a Sunday
+    # (not an NYSE session) to prove the ffill reindex carries it forward
+    # rather than dropping it on an exact-label mismatch.
+    obs_early = idx[20]
+    obs_sunday = pd.Timestamp("2025-04-13")  # a Sunday
+    assert obs_sunday.dayofweek == 6
+    assert obs_sunday not in idx
+    revision = pd.Series(
+        [0.04, -0.03],
+        index=pd.DatetimeIndex([obs_early, obs_sunday]),
+        dtype=float,
+    )
+    feats = compute_inflation_growth_features(
+        **common, aggregate_forward_eps_revision=revision
+    )
+    out = feats.aggregate_forward_eps_revision_direction_4w
+    assert len(out) == len(idx)
+    # Before the first observation: NaN (no value to carry forward).
+    assert np.isnan(out.iloc[10])
+    # On/after the first observation, before the Sunday one: 0.04.
+    assert out.loc[obs_early] == pytest.approx(0.04)
+    assert out.iloc[25] == pytest.approx(0.04)
+    # The first NYSE session strictly after the Sunday observation carries
+    # the -0.03 value forward.
+    after_sunday = idx[idx > obs_sunday][0]
+    assert out.loc[after_sunday] == pytest.approx(-0.03)
+    assert out.iloc[-1] == pytest.approx(-0.03)
+
+
 # --- Group B — Rule predicates (10 tests) ------------------------------------
 
 
@@ -255,18 +376,49 @@ def test_inflation_shock_composite_fires() -> None:
     assert evaluate_rules(inputs=inputs, config=rules) == "inflation_shock"
 
 
-def test_inflation_shock_single_signal_limb_short_circuits() -> None:
-    """§2B line 2320 + Log #48: single-signal limb (BLS surprise) deferred.
-
-    Even if a hypothetical inflation_surprise_zscore would fire, the predicate
-    is the composite-only path; passing all-zero composite inputs should NOT
-    fire inflation_shock.
-    """
+def test_inflation_shock_single_signal_limb_silent_when_zscore_nan() -> None:
+    """ADR 0006 / Log #48: when `cpi_nowcast` is unwired (or during the 5y
+    cold-start), `inflation_surprise_zscore` is NaN — the single-signal
+    limb falsifies, and with all-zero composite inputs inflation_shock
+    does not fire. This is the cold-start path; it must NOT block the
+    composite limb when composite inputs DO fire."""
     rules = _default_rules()
     inputs = _rule_inputs(
+        inflation_surprise_zscore=float("nan"),
         commodity_return_63d=0.0,
         treasury_10y_yield_slope_21d=0.0,
         spy_21d_return=0.0,
+        tlt_21d_return=0.0,
+    )
+    assert evaluate_inflation_shock(inputs, rules) is False
+
+
+def test_inflation_shock_single_signal_limb_fires_above_threshold() -> None:
+    """ADR 0006: the single-signal limb fires on a large positive
+    (hotter-than-nowcast) inflation surprise — `inflation_surprise_zscore
+    > +1.5` — even when EVERY composite-limb input is benign."""
+    rules = _default_rules()
+    inputs = _rule_inputs(
+        inflation_surprise_zscore=2.0,  # > +1.5 threshold
+        # all composite inputs benign — only the single-signal limb fires
+        commodity_return_63d=0.0,
+        treasury_10y_yield_slope_21d=0.0,
+        spy_21d_return=0.01,
+        tlt_21d_return=0.0,
+    )
+    assert evaluate_inflation_shock(inputs, rules) is True
+    assert evaluate_rules(inputs=inputs, config=rules) == "inflation_shock"
+
+
+def test_inflation_shock_single_signal_limb_silent_below_threshold() -> None:
+    """`inflation_surprise_zscore` at or below +1.5 does not fire the
+    single-signal limb (strict `>` per spec line 2551)."""
+    rules = _default_rules()
+    inputs = _rule_inputs(
+        inflation_surprise_zscore=1.5,  # exactly at threshold — strict `>` fails
+        commodity_return_63d=0.0,
+        treasury_10y_yield_slope_21d=0.0,
+        spy_21d_return=0.01,
         tlt_21d_return=0.0,
     )
     assert evaluate_inflation_shock(inputs, rules) is False
@@ -336,12 +488,56 @@ def test_recovery_growth_short_circuits_when_credit_funding_unbuilt() -> None:
     assert evaluate_recovery_growth(inputs, rules) is False
 
 
-def test_earnings_labels_short_circuit_to_false() -> None:
-    """§2B lines 2316-2317 + Log #48: earnings_* labels deferred."""
+def test_earnings_labels_falsify_on_cold_start_nan() -> None:
+    """Log #48: NaN revision (accumulator cold-start / unwired) falsifies
+    both earnings labels."""
     rules = _default_rules()
-    inputs = _rule_inputs()
+    inputs = _rule_inputs(aggregate_forward_eps_revision_direction_4w=float("nan"))
     assert evaluate_earnings_expansion(inputs, rules) is False
     assert evaluate_earnings_contraction(inputs, rules) is False
+
+
+def test_earnings_labels_falsify_in_neutral_band() -> None:
+    """§2B lines 2605/2609: a revision inside (-0.02, +0.02) fires neither
+    label — the thresholds are strict."""
+    rules = _default_rules()
+    inputs = _rule_inputs(aggregate_forward_eps_revision_direction_4w=0.01)
+    assert evaluate_earnings_expansion(inputs, rules) is False
+    assert evaluate_earnings_contraction(inputs, rules) is False
+    # Exactly on the threshold also falsifies (strict >).
+    on_threshold = _rule_inputs(aggregate_forward_eps_revision_direction_4w=0.02)
+    assert evaluate_earnings_expansion(on_threshold, rules) is False
+
+
+def test_earnings_expansion_fires_above_threshold() -> None:
+    """§2B line 2605: aggregate_forward_eps_revision_direction_4w > +0.02.
+
+    pmi_manufacturing=49.0 suppresses the higher-precedence goldilocks /
+    recovery_growth / disinflation labels so evaluate_rules dispatch
+    actually reaches earnings_expansion."""
+    rules = _default_rules()
+    inputs = _rule_inputs(
+        pmi_manufacturing=49.0,
+        aggregate_forward_eps_revision_direction_4w=0.05,
+    )
+    assert evaluate_earnings_expansion(inputs, rules) is True
+    assert evaluate_earnings_contraction(inputs, rules) is False
+    assert evaluate_rules(inputs=inputs, config=rules) == "earnings_expansion"
+
+
+def test_earnings_contraction_fires_below_threshold() -> None:
+    """§2B line 2609: aggregate_forward_eps_revision_direction_4w < -0.02.
+
+    earnings_contraction outranks earnings_expansion in the §2B
+    precedence walk."""
+    rules = _default_rules()
+    inputs = _rule_inputs(
+        pmi_manufacturing=49.0,
+        aggregate_forward_eps_revision_direction_4w=-0.05,
+    )
+    assert evaluate_earnings_contraction(inputs, rules) is True
+    assert evaluate_earnings_expansion(inputs, rules) is False
+    assert evaluate_rules(inputs=inputs, config=rules) == "earnings_contraction"
 
 
 def test_inflation_shock_outranks_recession_scare_when_both_match() -> None:
@@ -699,3 +895,130 @@ def test_regime_output_carries_inflation_growth_state_when_configured() -> None:
     assert out.inflation_growth_state is not None
     allowed = set(INFLATION_GROWTH_RISK_RANK.keys())
     assert out.inflation_growth_state.active_label in allowed
+
+
+# ---------------------------------------------------------------------------
+# ADR 0006 — inflation_surprise_zscore via the Cleveland Fed nowcast.
+# ---------------------------------------------------------------------------
+
+
+def test_compute_inflation_surprise_zscore_hand_computed() -> None:
+    """ADR 0006: surprise = realized_cpi_rate - cpi_nowcast, z-scored over
+    a rolling std window. With a short normalizer window and a hand-built
+    CPI/nowcast pair the z-score at the trailing session is exact."""
+    idx = _bdate_index(periods=40)
+    # CPIAUCSL index level rising ~0.5%/month over the window.
+    cpi = pd.Series(np.linspace(300.0, 306.0, len(idx)), index=idx, dtype=float)
+    # Nowcast: a constant inflation-rate estimate of 1.0% (0.01).
+    nowcast = pd.Series(0.01, index=idx, dtype=float)
+    zscore = compute_inflation_surprise_zscore(
+        cpi_all_items=cpi,
+        cpi_nowcast=nowcast,
+        session_index=idx,
+        realized_rate_lookback=5,
+        normalizer_window=10,
+    )
+    assert isinstance(zscore, pd.Series)
+    assert zscore.name == "inflation_surprise_zscore"
+    # First (realized_rate_lookback + normalizer_window - 1) rows are NaN
+    # (cold-start — the 5y/normalizer std needs a full window).
+    assert zscore.iloc[: 5 + 10 - 2].isna().all()
+    # Past the cold-start window the z-score is finite.
+    assert zscore.dropna().shape[0] > 0
+
+
+def test_compute_inflation_surprise_zscore_cold_start_all_nan_below_window() -> None:
+    """Below `normalizer_window` of surprise history, the z-score is
+    entirely NaN — the single-signal limb stays silent (V1 §2.7)."""
+    idx = _bdate_index(periods=15)
+    cpi = pd.Series(np.linspace(300.0, 302.0, len(idx)), index=idx, dtype=float)
+    nowcast = pd.Series(0.01, index=idx, dtype=float)
+    zscore = compute_inflation_surprise_zscore(
+        cpi_all_items=cpi,
+        cpi_nowcast=nowcast,
+        session_index=idx,
+        realized_rate_lookback=5,
+        normalizer_window=1260,  # far longer than the 15-session input
+    )
+    assert zscore.isna().all()
+
+
+def test_compute_inflation_growth_features_emits_real_zscore_with_nowcast() -> None:
+    """When cpi_nowcast is supplied, compute_inflation_growth_features
+    computes a real (non-all-NaN) inflation_surprise_zscore and emits the
+    Cleveland-Fed-nowcast bias-warning provenance row."""
+    idx = _bdate_index(periods=400)
+    n = len(idx)
+    cpi = pd.Series(np.linspace(300.0, 312.0, n), index=idx, dtype=float)
+    nowcast = pd.Series(0.01, index=idx, dtype=float)
+    pmi = pd.Series(51.0, index=idx, dtype=float)
+    dgs10 = pd.Series(4.0, index=idx, dtype=float)
+    dbc = pd.Series(np.linspace(20.0, 25.0, n), index=idx, dtype=float)
+    spy = pd.Series(np.linspace(400.0, 420.0, n), index=idx, dtype=float)
+    tlt = pd.Series(100.0, index=idx, dtype=float)
+    xly = xli = xlp = xlu = pd.Series(100.0, index=idx, dtype=float)
+
+    # Short normalizer window so a 400-session input produces non-NaN values.
+    rules = _default_rules().model_copy(
+        update={"inflation_surprise_normalizer_window_sessions": 60}
+    )
+    feats = compute_inflation_growth_features(
+        cpi_all_items=cpi,
+        pmi_manufacturing=pmi,
+        dgs10=dgs10,
+        dbc_close=dbc,
+        spy_close=spy,
+        tlt_close=tlt,
+        xly_close=xly,
+        xli_close=xli,
+        xlp_close=xlp,
+        xlu_close=xlu,
+        config=rules,
+        cpi_nowcast=nowcast,
+    )
+    # The z-score is no longer the all-NaN placeholder.
+    assert feats.inflation_surprise_zscore.notna().any()
+    # The bias-warning frame carries the Cleveland Fed nowcast provenance row.
+    bw = feats.bias_warnings
+    assert (
+        bw["warning_code"] == INFLATION_SURPRISE_NOWCAST_BIAS_WARNING_CODE
+    ).any()
+    nowcast_row = bw[
+        bw["warning_code"] == INFLATION_SURPRISE_NOWCAST_BIAS_WARNING_CODE
+    ]
+    assert list(nowcast_row["feature_name"]) == ["inflation_surprise_zscore"]
+
+
+def test_compute_inflation_growth_features_all_nan_zscore_without_nowcast() -> None:
+    """When cpi_nowcast is NOT supplied, inflation_surprise_zscore stays the
+    all-NaN placeholder and NO Cleveland-Fed bias-warning row is emitted —
+    V1 byte-identity preserved (the pre-ADR-0006 behaviour)."""
+    idx = _bdate_index(periods=120)
+    n = len(idx)
+    cpi = pd.Series(np.linspace(300.0, 304.0, n), index=idx, dtype=float)
+    pmi = pd.Series(51.0, index=idx, dtype=float)
+    dgs10 = pd.Series(4.0, index=idx, dtype=float)
+    dbc = pd.Series(20.0, index=idx, dtype=float)
+    spy = pd.Series(400.0, index=idx, dtype=float)
+    tlt = pd.Series(100.0, index=idx, dtype=float)
+    xly = xli = xlp = xlu = pd.Series(100.0, index=idx, dtype=float)
+
+    feats = compute_inflation_growth_features(
+        cpi_all_items=cpi,
+        pmi_manufacturing=pmi,
+        dgs10=dgs10,
+        dbc_close=dbc,
+        spy_close=spy,
+        tlt_close=tlt,
+        xly_close=xly,
+        xli_close=xli,
+        xlp_close=xlp,
+        xlu_close=xlu,
+        config=_default_rules(),
+        # cpi_nowcast omitted
+    )
+    assert feats.inflation_surprise_zscore.isna().all()
+    bw = feats.bias_warnings
+    assert not (
+        bw["warning_code"] == INFLATION_SURPRISE_NOWCAST_BIAS_WARNING_CODE
+    ).any()

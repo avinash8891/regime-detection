@@ -26,6 +26,8 @@ class MarketContext(BaseModel):
     macro_series: dict[str, pd.Series] | None = None  # v2 §2A/§2B/§2C FRED series
     pit_constituent_intervals: pd.DataFrame | None = None  # v2 §1D PIT breadth seam
     constituent_ohlcv: Annotated[dict[str, pd.DataFrame] | None, SkipValidation] = None  # v2 §1D PIT breadth seam
+    aaii_sentiment: pd.DataFrame | None = None  # v2 §1A euphoria sentiment seam (Log #32)
+    implied_vol_30d: pd.Series | None = None  # v2 §1C vol_crush seam — FRED VIXCLS/100 (Log #19+#20)
 
 
 def build_market_context(
@@ -40,6 +42,8 @@ def build_market_context(
     macro_series: dict[str, pd.Series] | None = None,
     pit_constituent_intervals: pd.DataFrame | None = None,
     constituent_ohlcv: dict[str, pd.DataFrame] | None = None,
+    aaii_sentiment: pd.DataFrame | None = None,
+    implied_vol_30d: pd.Series | None = None,
 ) -> MarketContext:
     end_date = as_date(end_date)
     require_nyse_trading_day(end_date)
@@ -61,6 +65,9 @@ def build_market_context(
     reindexed_sector_etf_closes = _reindex_optional_close_dict(sector_etf_closes, spy_ohlcv.index)
     reindexed_cross_asset_closes = _reindex_optional_close_dict(cross_asset_closes, spy_ohlcv.index)
     reindexed_macro_series = _reindex_optional_close_dict(macro_series, spy_ohlcv.index)
+    reindexed_implied_vol_30d = (
+        None if implied_vol_30d is None else implied_vol_30d.reindex(spy_ohlcv.index)
+    )
     return MarketContext(
         end_date=end_date,
         config=config,
@@ -74,6 +81,8 @@ def build_market_context(
         macro_series=reindexed_macro_series,
         pit_constituent_intervals=pit_constituent_intervals,
         constituent_ohlcv=constituent_ohlcv,
+        aaii_sentiment=aaii_sentiment,
+        implied_vol_30d=reindexed_implied_vol_30d,
     )
 
 
@@ -116,6 +125,18 @@ def slice_context_to_recent_sessions(*, context: MarketContext, required_session
         # them here would silently disable §1D PIT breadth feature compute.
         pit_constituent_intervals=context.pit_constituent_intervals,
         constituent_ohlcv=context.constituent_ohlcv,
+        # §1A euphoria sentiment seam: pass through as-is. AAII rows carry
+        # their own `date` / `publication_date` columns; the feature_store
+        # forward-fills onto the spy session index downstream. Dropping
+        # here would silently disable the euphoria predicate.
+        aaii_sentiment=context.aaii_sentiment,
+        # §1C vol_crush seam: implied_vol_30d is session-aligned, so
+        # reindex to the sliced spy index (same treatment as macro_series).
+        implied_vol_30d=(
+            None
+            if context.implied_vol_30d is None
+            else context.implied_vol_30d.reindex(spy_ohlcv.index)
+        ),
     )
 
 
@@ -156,6 +177,15 @@ def slice_context_to_end_date(*, context: MarketContext, end_date: date) -> Mark
         # for rationale — dropping them here silently disables §1D PIT breadth.
         pit_constituent_intervals=context.pit_constituent_intervals,
         constituent_ohlcv=context.constituent_ohlcv,
+        # §1A euphoria sentiment seam: pass through as-is (see
+        # slice_context_to_recent_sessions for rationale).
+        aaii_sentiment=context.aaii_sentiment,
+        # §1C vol_crush seam: session-aligned, reindex to the sliced index.
+        implied_vol_30d=(
+            None
+            if context.implied_vol_30d is None
+            else context.implied_vol_30d.reindex(spy_ohlcv.index)
+        ),
     )
 
 

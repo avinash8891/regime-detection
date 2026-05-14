@@ -124,6 +124,17 @@ COMMODITY_PROXY_BIAS_SOURCE_URL = "internal:dbc_etf_close_total_return_substitut
 
 _BIAS_FEATURE_NAMES: tuple[str, ...] = ("commodity_return_63d",)
 
+# ADR 0006 — `inflation_surprise_zscore` provenance. The `consensus_estimate`
+# term of the §2B surprise formula is substituted with the Cleveland Fed
+# inflation nowcast (a free, model-derived current-period CPI rate estimate).
+# The bias-warning row flags the surprise as MODEL-relative, not
+# survey-relative — emitted only when `cpi_nowcast` is actually wired.
+INFLATION_SURPRISE_NOWCAST_BIAS_WARNING_CODE = "inflation_surprise_cleveland_fed_nowcast"
+INFLATION_SURPRISE_NOWCAST_BIAS_SOURCE = "cleveland_fed_inflation_nowcast"
+INFLATION_SURPRISE_NOWCAST_BIAS_SOURCE_URL = (
+    "https://www.clevelandfed.org/indicators-and-data/inflation-nowcasting"
+)
+
 
 # ---------------------------------------------------------------------------
 # Feature dataclass — per-session §2B feature seam.
@@ -192,6 +203,42 @@ def _pct_change_lookback(series: pd.Series, lookback: int) -> pd.Series:
     return (series - base) / base.where(base != 0)
 
 
+def compute_inflation_surprise_zscore(
+    *,
+    cpi_all_items: pd.Series,
+    cpi_nowcast: pd.Series,
+    session_index: pd.DatetimeIndex,
+    realized_rate_lookback: int,
+    normalizer_window: int,
+) -> pd.Series:
+    """v2 §2B `inflation_surprise_zscore` from CPI vs the Cleveland Fed
+    inflation nowcast (ADR 0006).
+
+        realized_cpi_rate   = `realized_rate_lookback`-session % change of CPIAUCSL
+        inflation_surprise  = realized_cpi_rate - cpi_nowcast
+        zscore              = inflation_surprise / rolling_std(inflation_surprise,
+                                                               normalizer_window)
+
+    Both CPI and the nowcast are monthly series forward-filled onto the
+    SPY session index (the daily classifier reads the most-recent-release
+    value carried forward — same pattern as `cpi_all_items` already uses).
+    The z-score is NaN until a full `normalizer_window` of surprise
+    history exists (V1 §2.7 cold-start) and wherever either operand is
+    NaN. The 5y normalizer window matches the §2A yield z-score
+    convention.
+    """
+    cpi = cpi_all_items.reindex(session_index).astype(float).ffill()
+    nowcast = cpi_nowcast.reindex(session_index).astype(float).ffill()
+    realized_cpi_rate = _pct_change_lookback(cpi, realized_rate_lookback)
+    inflation_surprise = realized_cpi_rate - nowcast
+    rolling_std = inflation_surprise.rolling(
+        normalizer_window, min_periods=normalizer_window
+    ).std()
+    zscore = inflation_surprise / rolling_std.where(rolling_std > 0)
+    zscore.name = "inflation_surprise_zscore"
+    return zscore
+
+
 def compute_inflation_growth_features(
     *,
     cpi_all_items: pd.Series,
@@ -205,12 +252,30 @@ def compute_inflation_growth_features(
     xlp_close: pd.Series,
     xlu_close: pd.Series,
     config: InflationGrowthRulesConfig,
+    cpi_nowcast: pd.Series | None = None,
+    aggregate_forward_eps_revision: pd.Series | None = None,
 ) -> InflationGrowthFeatures:
     """Compute the v2 §2B inflation/growth feature seam from raw inputs.
 
     All inputs are aligned to ``spy_close.index``. CPI and PMI are monthly
     series and are forward-filled to daily (§2B line 2208 PMI; CPI follows
     the same NFCI-style pattern slice 4 uses).
+
+    ``cpi_nowcast`` (the Cleveland Fed inflation nowcast — ADR 0006) is
+    optional. When supplied, ``inflation_surprise_zscore`` is computed
+    from the realized CPI rate vs the nowcast and a model-relative
+    bias-warning row is emitted; when None, the all-NaN placeholder
+    stays and the `inflation_shock` single-signal limb falsifies (V1
+    byte-identity preserved).
+
+    ``aggregate_forward_eps_revision`` (the weekly 4-week forward-EPS
+    revision-direction series from
+    ``regime_data_fetch.aggregate_eps.compute_eps_revision_direction_4w``)
+    is optional. When supplied, it is forward-filled onto the SPY session
+    index and the `earnings_expansion` / `earnings_contraction` labels
+    can fire; when None, the all-NaN placeholder stays and both labels
+    falsify. No bias warning — this is S&P's own forward-EPS data, not a
+    proxy.
     """
     spy_index = spy_close.index
 
@@ -239,11 +304,22 @@ def compute_inflation_growth_features(
         cpi_6m_change_pct, window=config.cpi_slope_lookback_sessions
     ).rename("cpi_6m_change_pct_slope_21d")
 
-    # Inflation surprise — deferred per Log #48; emit as all-NaN series so
-    # the rule engine naturally falsifies the single-signal limb.
-    inflation_surprise_zscore = pd.Series(
-        np.nan, index=spy_index, name="inflation_surprise_zscore", dtype=float
-    )
+    # Inflation surprise (ADR 0006 / Log #48 closure). When `cpi_nowcast`
+    # (the Cleveland Fed inflation nowcast) is supplied, compute the real
+    # z-score; otherwise emit an all-NaN series so the rule engine
+    # naturally falsifies the `inflation_shock` single-signal limb.
+    if cpi_nowcast is not None:
+        inflation_surprise_zscore = compute_inflation_surprise_zscore(
+            cpi_all_items=cpi_all_items,
+            cpi_nowcast=cpi_nowcast,
+            session_index=spy_index,
+            realized_rate_lookback=config.inflation_surprise_realized_rate_lookback_sessions,
+            normalizer_window=config.inflation_surprise_normalizer_window_sessions,
+        )
+    else:
+        inflation_surprise_zscore = pd.Series(
+            np.nan, index=spy_index, name="inflation_surprise_zscore", dtype=float
+        )
 
     # PMI (§2B lines 2208-2209). 21d slope on the forward-filled daily series.
     pmi_manufacturing_series = pmi.rename("pmi_manufacturing")
@@ -251,13 +327,32 @@ def compute_inflation_growth_features(
         pmi_manufacturing_series, window=config.pmi_slope_lookback_sessions
     ).rename("pmi_manufacturing_slope_21d")
 
-    # Aggregate forward EPS revision — deferred per Log #48; all-NaN.
-    aggregate_forward_eps_revision_direction_4w = pd.Series(
-        np.nan,
-        index=spy_index,
-        name="aggregate_forward_eps_revision_direction_4w",
-        dtype=float,
-    )
+    # Aggregate forward EPS revision (Log #48 closure). When the weekly
+    # revision series from the EPS accumulator is supplied, forward-fill
+    # it onto the SPY session index. `reindex(method="ffill")` carries
+    # each weekly value forward even when its observation_date is not
+    # itself an NYSE session (the accumulator is keyed by workbook
+    # observation_date, not the trading calendar). When None, emit an
+    # all-NaN series so `earnings_expansion` / `earnings_contraction`
+    # falsify.
+    if aggregate_forward_eps_revision is not None:
+        eps_revision_sorted = aggregate_forward_eps_revision.astype(float).copy()
+        eps_revision_sorted.index = pd.DatetimeIndex(
+            pd.to_datetime(eps_revision_sorted.index)
+        )
+        eps_revision_sorted = eps_revision_sorted.sort_index()
+        aggregate_forward_eps_revision_direction_4w = (
+            eps_revision_sorted.reindex(spy_index, method="ffill").rename(
+                "aggregate_forward_eps_revision_direction_4w"
+            )
+        )
+    else:
+        aggregate_forward_eps_revision_direction_4w = pd.Series(
+            np.nan,
+            index=spy_index,
+            name="aggregate_forward_eps_revision_direction_4w",
+            dtype=float,
+        )
 
     # Commodity return (§2B line 2220) — DBC 63d total return.
     commodity_return_63d = (
@@ -288,17 +383,27 @@ def compute_inflation_growth_features(
         (tlt / tlt.shift(config.tlt_return_lookback_sessions)) - 1.0
     ).rename("tlt_21d_return")
 
-    bias_warnings = make_bias_warnings_frame(
-        [
+    bias_rows = [
+        {
+            "warning_code": COMMODITY_PROXY_BIAS_WARNING_CODE,
+            "feature_name": feat,
+            "source": COMMODITY_PROXY_BIAS_SOURCE,
+            "source_url": COMMODITY_PROXY_BIAS_SOURCE_URL,
+        }
+        for feat in _BIAS_FEATURE_NAMES
+    ]
+    # ADR 0006 — emit the model-relative provenance row only when the
+    # Cleveland Fed nowcast substitution is actually in effect.
+    if cpi_nowcast is not None:
+        bias_rows.append(
             {
-                "warning_code": COMMODITY_PROXY_BIAS_WARNING_CODE,
-                "feature_name": feat,
-                "source": COMMODITY_PROXY_BIAS_SOURCE,
-                "source_url": COMMODITY_PROXY_BIAS_SOURCE_URL,
+                "warning_code": INFLATION_SURPRISE_NOWCAST_BIAS_WARNING_CODE,
+                "feature_name": "inflation_surprise_zscore",
+                "source": INFLATION_SURPRISE_NOWCAST_BIAS_SOURCE,
+                "source_url": INFLATION_SURPRISE_NOWCAST_BIAS_SOURCE_URL,
             }
-            for feat in _BIAS_FEATURE_NAMES
-        ]
-    )
+        )
+    bias_warnings = make_bias_warnings_frame(bias_rows)
 
     return InflationGrowthFeatures(
         cpi_3m_change_pct=cpi_3m_change_pct,
@@ -335,6 +440,8 @@ class InflationGrowthRuleInputs:
     cpi_6m_change_pct: float
     cpi_6m_change_pct_lag_21: float
     cpi_6m_change_pct_slope_21d: float
+    inflation_surprise_zscore: float
+    aggregate_forward_eps_revision_direction_4w: float
     pmi_manufacturing: float
     pmi_manufacturing_slope_21d: float
     commodity_return_63d: float
@@ -382,6 +489,10 @@ def build_rule_inputs_for_date(
         cpi_6m_change_pct_slope_21d=_scalar_at(
             features.cpi_6m_change_pct_slope_21d, dt
         ),
+        inflation_surprise_zscore=_scalar_at(features.inflation_surprise_zscore, dt),
+        aggregate_forward_eps_revision_direction_4w=_scalar_at(
+            features.aggregate_forward_eps_revision_direction_4w, dt
+        ),
         pmi_manufacturing=_scalar_at(features.pmi_manufacturing, dt),
         pmi_manufacturing_slope_21d=_scalar_at(
             features.pmi_manufacturing_slope_21d, dt
@@ -397,6 +508,49 @@ def build_rule_inputs_for_date(
         tlt_21d_return=_scalar_at(features.tlt_21d_return, dt),
         credit_funding_active_label=credit_funding_active_label,
     )
+
+
+def build_rule_inputs_by_date(
+    *,
+    features: InflationGrowthFeatures,
+    config: InflationGrowthRulesConfig,
+    credit_funding_active_labels_by_date: dict[pd.Timestamp, str | None] | None,
+) -> dict[pd.Timestamp, InflationGrowthRuleInputs]:
+    index = features.cpi_6m_change_pct.index
+    cpi_lag_21 = features.cpi_6m_change_pct.shift(config.cpi_slope_lookback_sessions)
+    outputs: dict[pd.Timestamp, InflationGrowthRuleInputs] = {}
+    for dt in index:
+        credit_funding_active_label = None
+        if credit_funding_active_labels_by_date is not None:
+            credit_funding_active_label = credit_funding_active_labels_by_date.get(dt)
+        outputs[dt] = InflationGrowthRuleInputs(
+            cpi_6m_change_pct=_scalar_at(features.cpi_6m_change_pct, dt),
+            cpi_6m_change_pct_lag_21=_scalar_at(cpi_lag_21, dt),
+            cpi_6m_change_pct_slope_21d=_scalar_at(
+                features.cpi_6m_change_pct_slope_21d, dt
+            ),
+            inflation_surprise_zscore=_scalar_at(
+                features.inflation_surprise_zscore, dt
+            ),
+            aggregate_forward_eps_revision_direction_4w=_scalar_at(
+                features.aggregate_forward_eps_revision_direction_4w, dt
+            ),
+            pmi_manufacturing=_scalar_at(features.pmi_manufacturing, dt),
+            pmi_manufacturing_slope_21d=_scalar_at(
+                features.pmi_manufacturing_slope_21d, dt
+            ),
+            commodity_return_63d=_scalar_at(features.commodity_return_63d, dt),
+            treasury_10y_yield_slope_21d=_scalar_at(
+                features.treasury_10y_yield_slope_21d, dt
+            ),
+            cyclical_defensive_slope_21d=_scalar_at(
+                features.cyclical_defensive_slope_21d, dt
+            ),
+            spy_21d_return=_scalar_at(features.spy_21d_return, dt),
+            tlt_21d_return=_scalar_at(features.tlt_21d_return, dt),
+            credit_funding_active_label=credit_funding_active_label,
+        )
+    return outputs
 
 
 # ---------------------------------------------------------------------------
@@ -452,12 +606,27 @@ def evaluate_inflation_shock(
     inputs: InflationGrowthRuleInputs,
     config: InflationGrowthRulesConfig,
 ) -> bool:
-    """v2 §2B lines 2240-2245 (composite limb only).
+    """v2 §2B lines 2550-2555 — `inflation_shock` two-limb OR rule.
 
-    The single-signal limb (``inflation_surprise_zscore > +1.5``) short-
-    circuits to False per spec line 2320 + Ambiguity Log #48 (BLS consensus
-    feed not ingested).
+    Fires when EITHER limb is satisfied:
+
+    * Single-signal limb (ADR 0006 / Log #48 closure):
+      ``inflation_surprise_zscore > inflation_surprise_zscore_threshold``
+      (default +1.5). NaN falsifies this limb — the z-score is NaN when
+      `cpi_nowcast` is unwired or during the 5y cold-start, so the limb
+      is simply silent then (it does not block the composite limb).
+    * Composite limb: commodity return high AND 10y yield rising AND
+      equities falling AND bonds falling.
     """
+    # Single-signal limb — fires on a large positive (hotter-than-nowcast)
+    # inflation surprise. NaN falsifies (does not block the OR).
+    if not _any_nan(inputs.inflation_surprise_zscore) and (
+        inputs.inflation_surprise_zscore
+        > config.inflation_surprise_zscore_threshold
+    ):
+        return True
+
+    # Composite limb — equities AND bonds both weak under a commodity surge.
     if _any_nan(
         inputs.commodity_return_63d,
         inputs.treasury_10y_yield_slope_21d,
@@ -536,20 +705,40 @@ def evaluate_recovery_growth(
 
 
 def evaluate_earnings_expansion(
-    inputs: InflationGrowthRuleInputs,  # noqa: ARG001
-    config: InflationGrowthRulesConfig,  # noqa: ARG001
+    inputs: InflationGrowthRuleInputs,
+    config: InflationGrowthRulesConfig,
 ) -> bool:
-    """v2 §2B lines 2263-2265. Short-circuits to False until weekly EPS
-    revision time series ships (Ambiguity Log #48)."""
-    return False
+    """v2 §2B line 2605 — `earnings_expansion`:
+    ``aggregate_forward_eps_revision_direction_4w > +0.02`` (strict).
+
+    Log #48 closure: the revision series is built by the EPS weekly-
+    snapshot accumulator. NaN falsifies — the label is silent during
+    the accumulator cold-start (< 5 weekly fetches) or when the
+    revision series is not wired into ``macro_series``.
+    """
+    if _any_nan(inputs.aggregate_forward_eps_revision_direction_4w):
+        return False
+    return bool(
+        inputs.aggregate_forward_eps_revision_direction_4w
+        > config.eps_revision_expansion_threshold
+    )
 
 
 def evaluate_earnings_contraction(
-    inputs: InflationGrowthRuleInputs,  # noqa: ARG001
-    config: InflationGrowthRulesConfig,  # noqa: ARG001
+    inputs: InflationGrowthRuleInputs,
+    config: InflationGrowthRulesConfig,
 ) -> bool:
-    """v2 §2B lines 2267-2269. Short-circuits to False (Ambiguity Log #48)."""
-    return False
+    """v2 §2B line 2609 — `earnings_contraction`:
+    ``aggregate_forward_eps_revision_direction_4w < -0.02`` (strict).
+
+    Log #48 closure: NaN falsifies (accumulator cold-start / unwired).
+    """
+    if _any_nan(inputs.aggregate_forward_eps_revision_direction_4w):
+        return False
+    return bool(
+        inputs.aggregate_forward_eps_revision_direction_4w
+        < config.eps_revision_contraction_threshold
+    )
 
 
 def evaluate_rules(

@@ -169,6 +169,25 @@ class TrendDirectionV2RulesConfig(BaseModel):
     # admit drawdown days, defeating the rule's "rebound" intent).
     recovery_return_threshold: float = Field(gt=0.0)
 
+    # v2 §1A line 162 — euphoria rule's `return_126d > 0.20`. Strict positive
+    # required: a non-positive threshold would admit drawdown days, defeating
+    # the rule's "strong long-horizon advance" intent. ADR 0004 + Log #32
+    # closure pinned the default at +0.20 (spec verbatim).
+    euphoria_return_126d_threshold: float = Field(gt=0.0, default=0.20)
+
+    # v2 §1A line 164 — euphoria rule's `sentiment_score >= configured
+    # threshold`. ADR 0004 Q3 picked `+20` (points of AAII bull-bear-spread
+    # 8w-MA — historical top-decile / Yardeni-Stovall "high optimism"
+    # anchor). V2 §9.1 walk-forward calibration may retune; no Pydantic
+    # range bound because sentiment can go negative in the bearish regime.
+    euphoria_sentiment_threshold: float = Field(default=20.0)
+
+    # v2 §1A line 163 — euphoria rule's `realized_vol_21d rising`. ADR 0004
+    # Q2 picked 5-session strict change (vol[t] > vol[t-5]) mirroring
+    # Log #68's §1D `rising` / `falling` pin. Must be > 0; a zero-lookback
+    # would make the rule self-comparing.
+    euphoria_vol_rising_lookback_sessions: int = Field(gt=0, default=5)
+
 
 class TrendDirectionV2Config(BaseModel):
     """v2 §1A — Layer 1 V2 trend direction feature lookbacks.
@@ -247,6 +266,28 @@ class VolatilityV2RulesConfig(BaseModel):
     # v2 §1C line 148 — long realised-vol window (63 sessions). Pinned at
     # 63 by spec text "realized_vol_63d"; exposed for v2 §9.1 calibration.
     realized_vol_long_period: int = Field(gt=0, default=63)
+
+    # v2 §1C `vol_crush` rule (ADR 0005 / Log #20 closure). The rule:
+    #   realized_vol_10d < realized_vol_21d * vol_crush_realized_vol_ratio_threshold
+    #   AND implied_vol_5d_change <= vol_crush_implied_vol_change_threshold
+    #   AND event_window_just_passed
+    # `realized_vol_10d` reuses `realized_vol_short_period`; the 21d mid
+    # window is its own knob.
+    vol_crush_realized_vol_mid_period: int = Field(gt=0, default=21)
+    # Spec line: "realized_vol_10d < realized_vol_21d * 0.75". Must be in
+    # (0, 1) — the rule fires when the short-window vol has COLLAPSED below
+    # a fraction of the mid-window vol.
+    vol_crush_realized_vol_ratio_threshold: float = Field(gt=0.0, lt=1.0, default=0.75)
+    # ADR 0005 Q1 — `implied_vol_5d_change <= -0.20`, a RELATIVE 5-session
+    # change. Must be < 0: the rule gates on a strictly-negative IV move
+    # (a "crush"); a non-negative threshold would defang the intent.
+    vol_crush_implied_vol_change_threshold: float = Field(lt=0.0, default=-0.20)
+    # ADR 0005 Q1 — lookback for the relative implied-vol change. Pinned at
+    # 5 sessions (cross-axis "5-session memory" convention, Log #68 / ADR 0004).
+    vol_crush_implied_vol_change_lookback_sessions: int = Field(gt=0, default=5)
+    # ADR 0005 Q3 — `event_window_just_passed` fires on the N NYSE sessions
+    # strictly AFTER an event window-end. Spec pins N = 3.
+    vol_crush_event_window_trailing_sessions: int = Field(gt=0, default=3)
 
 
 class VolatilityV2Config(BaseModel):
@@ -623,6 +664,23 @@ class InflationGrowthRulesConfig(BaseModel):
     spy_return_lookback_sessions: int = Field(default=21, ge=5)
     # §2B line 2245 — TLT 21d return.
     tlt_return_lookback_sessions: int = Field(default=21, ge=5)
+    # §2B line 2551 — inflation_shock single-signal limb threshold
+    # (`inflation_surprise_zscore > +1.5`). ADR 0006. Must be > 0: the
+    # limb gates on a strictly-positive (hotter-than-nowcast) surprise.
+    inflation_surprise_zscore_threshold: float = Field(default=1.5, gt=0.0)
+    # ADR 0006 — 5y rolling-std normalizer window for the inflation
+    # surprise (1260 trading days, same convention as §2A yield z-scores).
+    inflation_surprise_normalizer_window_sessions: int = Field(default=1260, ge=20)
+    # ADR 0006 — lookback for the realized 1-month CPI inflation rate
+    # (~21 trading days = 1 month, matches the Cleveland Fed nowcast cadence).
+    inflation_surprise_realized_rate_lookback_sessions: int = Field(default=21, ge=5)
+    # §2B line 2605 — earnings_expansion "aggregate_forward_eps_revision_
+    # direction_4w > +0.02". Must be > 0 (a strictly-positive 4-week
+    # forward-EPS revision).
+    eps_revision_expansion_threshold: float = Field(default=0.02, gt=0.0)
+    # §2B line 2609 — earnings_contraction "... < -0.02". Must be < 0
+    # (a strictly-negative 4-week revision).
+    eps_revision_contraction_threshold: float = Field(default=-0.02, lt=0.0)
 
 
 class InflationGrowthConfig(BaseModel):

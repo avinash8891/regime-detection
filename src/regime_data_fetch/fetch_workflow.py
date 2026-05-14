@@ -56,6 +56,18 @@ V2_FRED_SERIES = {
     # recession_scare / recovery_growth evidence. Listed early in the slice
     # cadence so it lands in archived inputs before any spec amendment.
     "gdp_nowcast": "GDPNOW",
+    # ICE BofA Option-Adjusted Spread series — FRED redistributes under
+    # license from ICE Indices, free at the FRED endpoint. SINGLE SOURCE
+    # for the v2 §2C `hy_oas_63d` / `ig_oas_63d` metrics
+    # (Log #49 closure). `credit_funding` lists these in REQUIRED_MACRO_KEYS,
+    # so the §2C seam does not build without them — there is no proxy
+    # fallback path.
+    "hy_oas": "BAMLH0A0HYM2",       # ICE BofA US High Yield Index OAS
+    "ig_bbb_oas": "BAMLC0A4CBBB",   # ICE BofA BBB US Corporate Index OAS
+    # CBOE VIX — the model-free 30-day implied vol on SPX, free on FRED.
+    # §1C `vol_crush` consumes it as `implied_vol_30d = VIXCLS / 100`
+    # (decimal-annualized, to match realized_vol units). ADR 0005.
+    "implied_vol_30d": "VIXCLS",
 }
 
 

@@ -41,6 +41,7 @@ Implementation choices that resolve ambiguities:
 """
 from __future__ import annotations
 
+from bisect import bisect_left, bisect_right
 import datetime as dt
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
@@ -48,7 +49,6 @@ from dataclasses import dataclass
 import numpy as np
 import pandas as pd
 
-from regime_data_fetch.pit_constituents import members_on
 from regime_detection.config import BreadthV2Config
 from regime_detection.fragility_universe import SECTOR_ETFS
 
@@ -287,54 +287,52 @@ def _compute_pit_features(
 ) -> dict[str, pd.Series]:
     intervals = _normalize_interval_dates(pit_constituent_intervals)
     all_member_tickers = sorted(set(intervals["ticker"].tolist()))
+    session_days = list(reference_index.date)
+    ticker_to_col = {ticker: idx for idx, ticker in enumerate(all_member_tickers)}
 
-    # Pre-compute members-on-D once for the full reference index.
-    members_by_session: dict[pd.Timestamp, frozenset[str]] = {
-        ts: members_on(intervals, ts.date()) for ts in reference_index
-    }
+    # Build the (sessions × members) adjusted_close and volume frames by
+    # filling a preallocated dense matrix. This preserves the exact
+    # ticker-missing => all-NaN semantics without paying DataFrame-of-Series
+    # alignment costs for every member on every run.
+    adj_close_frame = _build_member_frame(
+        reference_index=reference_index,
+        all_member_tickers=all_member_tickers,
+        constituent_ohlcv=constituent_ohlcv,
+        column_name="adjusted_close",
+    )
+    volume_frame = _build_member_frame(
+        reference_index=reference_index,
+        all_member_tickers=all_member_tickers,
+        constituent_ohlcv=constituent_ohlcv,
+        column_name="volume",
+    )
 
-    # Build the (sessions × members) adjusted_close DataFrame. Tickers absent
-    # from constituent_ohlcv contribute an all-NaN column so the per-feature
-    # vectorised masks still work without per-ticker branching. NO forward
-    # fill (Ambiguity Log #58/#59).
-    adj_close_frame = pd.DataFrame(
-        {
-            ticker: (
-                constituent_ohlcv[ticker]["adjusted_close"].astype(float)
-                if ticker in constituent_ohlcv
-                else pd.Series(np.nan, index=reference_index, dtype=float)
-            )
-            for ticker in all_member_tickers
-        },
-        index=None,
-    ).reindex(reference_index)
-
-    # Build the parallel (sessions × members) volume frame for the
-    # upvol/downvol feature. Volume is RAW shares (Ambiguity Log #56) — do
-    # not adjust. Missing tickers contribute NaN, which is filtered downstream.
-    volume_frame = pd.DataFrame(
-        {
-            ticker: (
-                constituent_ohlcv[ticker]["volume"].astype(float)
-                if ticker in constituent_ohlcv
-                else pd.Series(np.nan, index=reference_index, dtype=float)
-            )
-            for ticker in all_member_tickers
-        },
-        index=None,
-    ).reindex(reference_index)
-
-    # PIT membership mask: True where ticker is a member on that session.
+    # PIT membership mask: derive directly from the interval rows. This keeps
+    # the exact members_on semantics but avoids per-session set construction.
+    membership_array = np.zeros(
+        (len(reference_index), len(all_member_tickers)),
+        dtype=bool,
+    )
+    for row in intervals.itertuples(index=False):
+        ticker = str(row.ticker)
+        col_idx = ticker_to_col.get(ticker)
+        if col_idx is None:
+            continue
+        start_pos = bisect_left(session_days, row.start_date)
+        if start_pos >= len(session_days):
+            continue
+        if row.end_date is None:
+            end_pos_exclusive = len(session_days)
+        else:
+            end_pos_exclusive = bisect_right(session_days, row.end_date)
+        if start_pos >= end_pos_exclusive:
+            continue
+        membership_array[start_pos:end_pos_exclusive, col_idx] = True
     membership_mask = pd.DataFrame(
-        {
-            ticker: pd.Series(
-                [ticker in members_by_session[ts] for ts in reference_index],
-                index=reference_index,
-                dtype=bool,
-            )
-            for ticker in all_member_tickers
-        },
+        membership_array,
         index=reference_index,
+        columns=all_member_tickers,
+        dtype=bool,
     )
 
     # Per-ticker daily direction sign on adjusted_close (Ambiguity Log #56):
@@ -389,6 +387,32 @@ def _compute_pit_features(
         "upvol_downvol_ratio": upvol_downvol_ratio,
         "breadth_thrust": breadth_thrust,
     }
+
+
+def _build_member_frame(
+    *,
+    reference_index: pd.DatetimeIndex,
+    all_member_tickers: list[str],
+    constituent_ohlcv: dict[str, pd.DataFrame],
+    column_name: str,
+) -> pd.DataFrame:
+    data = np.full(
+        (len(reference_index), len(all_member_tickers)),
+        np.nan,
+        dtype=float,
+    )
+    for col_idx, ticker in enumerate(all_member_tickers):
+        frame = constituent_ohlcv.get(ticker)
+        if frame is None:
+            continue
+        aligned = frame[column_name].reindex(reference_index)
+        data[:, col_idx] = aligned.to_numpy(dtype=float, na_value=np.nan)
+    return pd.DataFrame(
+        data,
+        index=reference_index,
+        columns=all_member_tickers,
+        dtype=float,
+    )
 
 
 def _compute_pct_above_sma(

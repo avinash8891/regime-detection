@@ -128,24 +128,30 @@ trend_direction_v2:
     recovery_drawdown_threshold: -0.15  # v2 §1A line 116
     recovery_return_threshold: 0.10     # v2 §1A line 117
 
-# v2 §1C — Layer 1 V2 Volatility features (Slice 2.2, evidence-only).
-# Ships only features that don't depend on options data:
-#   atr_ratio, gap_frequency_20d, intraday_range_percentile_252d.
-# IV/RV-spread and vol_crush features (§1C lines 151–174) are deferred
-# until options-data ingestion + event calendar slices (see Ambiguity Log).
+# v2 §1C — Layer 1 V2 Volatility features (Slice 2.2 + 2.6 + ADR 0005).
+# atr_ratio / gap_frequency_20d / intraday_range_percentile_252d from OHLC;
+# the `vol_crush` IV features (implied_vol_30d, implied_vol_5d_change,
+# iv_rv_spread) light up when MarketContext.implied_vol_30d (FRED VIXCLS/100)
+# is supplied — free feed, no paid options data (Log #19+#20 closure).
 volatility_state_v2:
   atr_short_period: 14                  # v2 §1C line 142 (ATR_14, Wilder)
   atr_long_period: 50                   # v2 §1C line 142 (ATR_50, Wilder)
   gap_frequency_lookback_days: 20       # v2 §1C line 179
   gap_threshold_pct: 0.005              # v2 §1C line 181, US default
   intraday_range_lookback_days: 252     # v2 §1C line 186
-  # v2 §1C line 146-148 `rising_vol` rule (Slice 2.6). `vol_crush` deferred
-  # (Implementation Ambiguity Log #20 — needs options data).
+  # v2 §1C `rising_vol` rule (Slice 2.6) + `vol_crush` rule (ADR 0005 /
+  # Log #20 closure — implied_vol_30d from FRED VIXCLS, no paid feed).
   rules:
     atr_ratio_threshold: 1.15           # v2 §1C line 147
     realized_vol_ratio_threshold: 1.25  # v2 §1C line 148
     realized_vol_short_period: 10       # v2 §1C line 148 (realized_vol_10d)
     realized_vol_long_period: 63        # v2 §1C line 148 (realized_vol_63d)
+    # vol_crush rule knobs (ADR 0005):
+    vol_crush_realized_vol_mid_period: 21              # spec — realized_vol_21d
+    vol_crush_realized_vol_ratio_threshold: 0.75       # spec — rv_10d < rv_21d * 0.75
+    vol_crush_implied_vol_change_threshold: -0.20      # ADR 0005 Q1 — relative 5d drop
+    vol_crush_implied_vol_change_lookback_sessions: 5  # ADR 0005 Q1
+    vol_crush_event_window_trailing_sessions: 3        # ADR 0005 Q3 — spec "3 NYSE days"
 
 # v2 §1D — Layer 1 V2 Breadth features (Slice 2.3, evidence-only,
 # scope-restricted to non-PIT-dependent features).
@@ -248,16 +254,15 @@ transition_score:
     transition_warning: [0.55, 0.75]
     high: [0.75, 1.00]
 
-# v2 §2A — Layer 2A Monetary/Liquidity V2 (Slice 4.1, evidence-only).
-# Ships ONLY the ONE spec-pinned feature formula (§2A line 896):
-#   yield_change_zscore = (yield_change_63d - mean_5y) / std_5y
-# applied to FRED DGS2 and DGS10 (source contract: §2A lines 887–889).
-#
-# DEFERRED per V2 §10 ABSOLUTE RULE (Ambiguity Log #44, #45):
-#   - broad_usd_index_zscore_63d (formula unspecified)
-#   - yield_change_zscore_21d_{2y,10y} (formula unspecified)
-#   - §2A label set, precedence, risk-rank, per-label hysteresis
-#   - MonetaryPressureSeriesClassifier (no labels to emit yet)
+# v2 §2A — Layer 2A Monetary/Liquidity V2. Feature seam (Slice 4.1) AND
+# axis classifier are both shipped. Five z-score features per §2A line 896
+# and Ambiguity Log #46 (a): yield_change_zscore_{2y,10y}_63d on FRED
+# DGS2/DGS10, broad_usd_index_zscore_63d on DTWEXBGS, and the 21d-variant
+# yield_change_zscore_21d_{2y,10y}. Source contract: §2A lines 887–889.
+# The §2A label set, precedence, risk-rank, and per-label hysteresis were
+# pinned by Ambiguity Log #46 (b–e) and are consumed by
+# MonetaryPressureV2SeriesClassifier (axis_series.py) — entries #44/#45/#46
+# are fully resolved, nothing deferred.
 monetary_pressure_v2:
   yield_change_lookback_days: 63      # v2 §2A line 896
   zscore_normalizer_window_days: 1260 # v2 §2A line 896 (5y trading days)
@@ -279,11 +284,19 @@ monetary_pressure_state:
     unknown: 2
   default_deescalation_days: 0
 
-# v2 §2C — Credit/Funding axis (Slice 4). Per Ambiguity Log #49 the HY/IG
-# spread proxies use TLT-vs-HYG/LQD total-return differentials (HYG/LQD
-# OAS feeds not ingested); the classifier emits a bias-warning row with
-# code `credit_spread_proxy_total_return_differential` flagging this
-# provenance. The 8-symbol universe (HYG/LQD/TLT/KRE + SOFR/IORB/NFCI +
+# v2 §2C — Credit/Funding axis. Per Ambiguity Log #49 + #71, §2C carries
+# TWO parallel, never-blended credit-spread metrics:
+#  1. Real ICE BofA OAS — `hy_oas` = BAMLH0A0HYM2, `ig_bbb_oas` =
+#     BAMLC0A4CBBB, on `MarketContext.macro_series`. FRED truncated these
+#     to a trailing ~3-year window (start 2023-05-15 — Log #71), so the
+#     real-OAS label `credit_funding_state` is `unknown` before ~2023.
+#  2. TLT-vs-HYG/LQD total-return-differential proxy — computed from the
+#     HYG/LQD/TLT closes, full history, producing the parallel
+#     `credit_funding_state_proxy` label via the same scale-invariant rule
+#     schema, with a `credit_spread_proxy_total_return_differential`
+#     bias-warning row.
+# The `REQUIRED_MACRO_KEYS` gate leaves §2C unbuilt if the OAS keys are
+# absent. The cross-asset universe (HYG/LQD/TLT/KRE + SOFR/IORB/NFCI +
 # broad_usd_index) is hard-pinned in code (spec §2C lines 2024-2030).
 credit_funding:
   rules:
@@ -320,11 +333,13 @@ credit_funding:
 # v2 §2B — Inflation / Growth axis (Slice 5). Per Ambiguity Log #48, DBC ETF
 # substitutes for the Bloomberg Commodity Index (paid feed unavailable); the
 # classifier emits a bias-warning row with code
-# `commodity_proxy_dbc_substitute`. Two labels remain deferred:
-#   - earnings_expansion / earnings_contraction: need weekly aggregate forward
-#     EPS revision series (S&P Global, paid). Predicates short-circuit to False.
-#   - inflation_shock single-signal limb (inflation_surprise_zscore > +1.5):
-#     needs BLS consensus-vs-actual feed. Composite-shock limb remains active.
+# `commodity_proxy_dbc_substitute`. Log #48 closures:
+#   - earnings_expansion / earnings_contraction: consume the weekly
+#     aggregate-forward-EPS revision series built by the EPS accumulator
+#     (regime_data_fetch.aggregate_eps); silent during the < 5-week
+#     accumulator cold-start. No paid feed.
+#   - inflation_shock single-signal limb: consumes inflation_surprise_zscore,
+#     computed from the Cleveland Fed inflation nowcast (ADR 0006). No paid feed.
 inflation_growth:
   rules:
     cpi_drift_threshold: 0.005                     # §2B line 2234 (50bps)
@@ -342,6 +357,13 @@ inflation_growth:
     cyclical_defensive_slope_lookback_sessions: 21 # §2B line 2227
     spy_return_lookback_sessions: 21               # §2B line 2237
     tlt_return_lookback_sessions: 21               # §2B line 2245
+    # ADR 0006 — inflation_shock single-signal limb (Cleveland Fed nowcast):
+    inflation_surprise_zscore_threshold: 1.5             # §2B line 2551
+    inflation_surprise_normalizer_window_sessions: 1260  # 5y, §2A z-score convention
+    inflation_surprise_realized_rate_lookback_sessions: 21
+    # Log #48 closure — earnings_expansion / earnings_contraction thresholds:
+    eps_revision_expansion_threshold: 0.02         # §2B line 2605
+    eps_revision_contraction_threshold: -0.02      # §2B line 2609
   # §2B lines 2292-2303 — per-label asymmetric hysteresis days.
   deescalation_days_by_label:
     inflation_shock: 5

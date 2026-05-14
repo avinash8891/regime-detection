@@ -24,18 +24,21 @@ from regime_detection.config import (
 )
 from regime_detection.credit_funding import (
     CreditFundingFeatures,
-    REQUIRED_CROSS_ASSET_KEYS as _CF_CROSS_ASSET_KEYS,
-    REQUIRED_MACRO_KEYS as _CF_MACRO_KEYS,
     HYG_KEY as _CF_HYG_KEY,
     LQD_KEY as _CF_LQD_KEY,
+    REQUIRED_CROSS_ASSET_KEYS as _CF_CROSS_ASSET_KEYS,
+    REQUIRED_MACRO_KEYS as _CF_MACRO_KEYS,
     TLT_KEY as _CF_TLT_KEY,
     KRE_KEY as _CF_KRE_KEY,
     SOFR_KEY as _CF_SOFR_KEY,
     IORB_KEY as _CF_IORB_KEY,
     NFCI_KEY as _CF_NFCI_KEY,
     BROAD_USD_INDEX_KEY as _CF_BROAD_USD_KEY,
+    HY_OAS_KEY as _CF_HY_OAS_KEY,
+    IG_OAS_KEY as _CF_IG_OAS_KEY,
     compute_credit_funding_features,
 )
+from regime_detection.event_calendar import compute_event_window_just_passed
 from regime_detection.fragility_universe import SECTOR_ETFS
 from regime_detection.market_context import MarketContext
 from regime_detection.network_fragility import (
@@ -204,6 +207,51 @@ class FeatureStore(BaseModel):
     inflation_growth: InflationGrowthFeatures | None = None
 
 
+def _build_sentiment_score_series(
+    *,
+    aaii_sentiment: pd.DataFrame | None,
+    session_index: pd.DatetimeIndex,
+) -> pd.Series | None:
+    """Align AAII bull-bear-spread 8w-MA onto the SPY session index for
+    consumption by the v2 §1A `euphoria` predicate (ADR 0004 Q1+Q4).
+
+    Forward-fill semantics: use the latest AAII row whose
+    ``publication_date`` (or ``date`` if no separate publication column) is
+    on or before each session — V1 §2.2 stateless-replay rule, never
+    consult a future-dated reading. Returns ``None`` when no AAII frame
+    is supplied (lets the euphoria predicate falsify per V2 §10 "do not
+    invent a sentiment proxy" / Log #32 lineage).
+
+    Cold-start (ADR 0004 Q5): a session with no AAII row at or before it
+    receives NaN; the euphoria predicate then falsifies on that session
+    per V1 §2.7. With the AAII fetcher's `min_periods=1` 8-week MA, the
+    output column is populated from week 1 of the data, so the practical
+    cold-start window is just "no AAII history yet."
+    """
+    if aaii_sentiment is None:
+        return None
+    if aaii_sentiment.empty:
+        return None
+    if "bull_bear_spread_8w_ma" not in aaii_sentiment.columns:
+        return None
+    publication_column = (
+        "publication_date" if "publication_date" in aaii_sentiment.columns else "date"
+    )
+    if publication_column not in aaii_sentiment.columns:
+        return None
+    sorted_aaii = aaii_sentiment.sort_values(publication_column).reset_index(drop=True)
+    publication = pd.to_datetime(sorted_aaii[publication_column])
+    score_values = sorted_aaii["bull_bear_spread_8w_ma"].astype(float).to_numpy()
+    aligned = pd.Series(
+        score_values,
+        index=pd.DatetimeIndex(publication),
+        name="sentiment_score",
+    )
+    # Reindex forward-fill onto the SPY session calendar (each session gets
+    # the value of the latest AAII publication on or before it).
+    return aligned.reindex(session_index, method="ffill")
+
+
 def build_feature_store(
     context: MarketContext,
     *,
@@ -261,14 +309,42 @@ def build_feature_store(
 
     # V2 §1A trend-direction features (slice 2.1) — evidence-only compute.
     if trend_direction_v2_config is not None:
+        # §1A euphoria seam (Log #32 closure / ADR 0004): when context
+        # carries AAII sentiment rows, derive the forward-filled
+        # bull_bear_spread_8w_ma onto the SPY session index per V1 §2.2
+        # stateless-replay (use the latest publication-date <= as_of_date).
+        sentiment_series = _build_sentiment_score_series(
+            aaii_sentiment=context.aaii_sentiment,
+            session_index=spy_close.index,
+        )
         trend_direction_v2 = compute_trend_v2_features(
-            spy_close, config=trend_direction_v2_config
+            spy_close,
+            config=trend_direction_v2_config,
+            sentiment_score=sentiment_series,
         )
     else:
         trend_direction_v2 = None
 
-    # V2 §1C volatility features (slice 2.2 + slice 2.6 rising_vol RV).
+    # V2 §1C volatility features (slice 2.2 + slice 2.6 rising_vol RV +
+    # vol_crush IV inputs, ADR 0005 / Log #19+#20).
     if volatility_state_v2_config is not None:
+        # §1C vol_crush seam (ADR 0005): when context carries the FRED
+        # VIXCLS implied-vol series, pass it as implied_vol_30d so the
+        # IV-derived features (implied_vol_5d_change, iv_rv_spread) are
+        # computed; when absent, those features stay None and vol_crush
+        # falsifies (V1 byte-identity preserved). event_window_just_passed
+        # is computed from the context's event calendar when present.
+        event_window = (
+            compute_event_window_just_passed(
+                normalized_event_calendar=context.normalized_event_calendar,
+                sessions=tuple(spy_close.index.date),
+                trailing_sessions=(
+                    volatility_state_v2_config.rules.vol_crush_event_window_trailing_sessions
+                ),
+            )
+            if context.normalized_event_calendar is not None
+            else None
+        )
         # Pass the rules sub-block so the slice-2.6 `rising_vol` rule's
         # realized_vol_short / realized_vol_long windows are populated from
         # config (rather than the hardcoded 10/63 fallback). The two paths
@@ -280,6 +356,8 @@ def build_feature_store(
             close=spy_close,
             config=volatility_state_v2_config,
             rules_config=volatility_state_v2_config.rules,
+            implied_vol_30d=context.implied_vol_30d,
+            event_window_just_passed=event_window,
         )
     else:
         volatility_state_v2 = None
@@ -405,6 +483,10 @@ def build_feature_store(
         and all(k in context.cross_asset_closes for k in _CF_CROSS_ASSET_KEYS)
         and all(k in context.macro_series for k in _CF_MACRO_KEYS)
     ):
+        # §2C credit-spread metric — single source: FRED-redistributed
+        # ICE BofA OAS series (BAMLH0A0HYM2 / BAMLC0A4CBBB). Their
+        # macro_series keys are in `_CF_MACRO_KEYS`, so the gate above
+        # already guarantees they are present — no `.get()` needed.
         credit_funding = compute_credit_funding_features(
             hyg_close=context.cross_asset_closes[_CF_HYG_KEY],
             lqd_close=context.cross_asset_closes[_CF_LQD_KEY],
@@ -415,6 +497,8 @@ def build_feature_store(
             iorb=context.macro_series[_CF_IORB_KEY],
             nfci_weekly=context.macro_series[_CF_NFCI_KEY],
             broad_usd_index=context.macro_series[_CF_BROAD_USD_KEY],
+            hy_oas=context.macro_series[_CF_HY_OAS_KEY],
+            ig_oas=context.macro_series[_CF_IG_OAS_KEY],
             config=credit_funding_config.rules,
         )
 
@@ -443,6 +527,18 @@ def build_feature_store(
             xlp_close=context.cross_asset_closes[_IG_XLP_KEY],
             xlu_close=context.cross_asset_closes[_IG_XLU_KEY],
             config=inflation_growth_config.rules,
+            # §2B inflation_surprise_zscore seam (ADR 0006): the Cleveland
+            # Fed inflation nowcast, source-agnostic via macro_series. When
+            # absent, inflation_surprise_zscore stays all-NaN and the
+            # inflation_shock single-signal limb falsifies.
+            cpi_nowcast=context.macro_series.get("cpi_nowcast"),
+            # §2B earnings_expansion / earnings_contraction seam (Log #48
+            # closure): the weekly 4-week forward-EPS revision-direction
+            # series from the EPS accumulator, source-agnostic via
+            # macro_series. When absent, the two earnings labels falsify.
+            aggregate_forward_eps_revision=context.macro_series.get(
+                "aggregate_forward_eps_revision"
+            ),
         )
 
     # v2 §6.3 BOCPD change-point evidence layer (Slice 8). Observation

@@ -94,11 +94,12 @@ def quality_forces_unknown(dq: DataQuality) -> bool:
 def _window_to_asof(*, series: pd.Series, as_of_date: pd.Timestamp, required_trading_days: int) -> pd.Series:
     idx = series.index
     if isinstance(idx, pd.DatetimeIndex) and idx.is_monotonic_increasing:
-        # Hot path: avoid full-series copy, redundant pd.to_datetime on an
-        # already-DatetimeIndex (~0.4ms per call), and a re-sort of an already
-        # monotonic index. Downstream consumers (notna, dropna, len) are
-        # read-only on the returned slice, so no defensive copy is needed.
-        return series.loc[:as_of_date].tail(required_trading_days)
+        # Hot path: avoid label slicing over the entire prefix on every call.
+        # searchsorted + iloc keeps the same trailing required_trading_days
+        # semantics while operating on integer bounds only.
+        end = idx.searchsorted(as_of_date, side="right")
+        start = max(0, end - required_trading_days)
+        return series.iloc[start:end]
     # Slow path: legacy callers with non-datetime or unsorted indexes. Behavior
     # is byte-identical to the prior implementation.
     out = series.copy()

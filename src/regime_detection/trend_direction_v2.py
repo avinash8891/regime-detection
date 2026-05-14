@@ -64,6 +64,20 @@ class TrendDirectionV2Features:
     # Exposed as a level (not a slope) so the slice-2.5 recovery predicate
     # has direct access without recomputing the 50d SMA.
     sma_50: pd.Series
+    # v2 §1A line 161 — `euphoria` rule input: close > SMA_200. Exposed as
+    # a level so the euphoria predicate compares against close[t] directly
+    # without recomputing the 200d SMA (already computed for slope_sma_200).
+    sma_200: pd.Series
+    # v2 §1A line 163 — `euphoria` rule input: realized_vol_21d rising
+    # (strict 5-session change per ADR 0004 Q2 / Log #68 §1D analogue).
+    # 21-session annualized realized vol of SPY log-returns.
+    realized_vol_21d: pd.Series
+    # v2 §1A line 164 — `euphoria` rule input: sentiment_score >= threshold.
+    # Optional because not every engine call wires AAII sentiment; when None
+    # the euphoria predicate falsifies (V2 §10 "do not invent a proxy").
+    # When supplied, the series is forward-filled from AAII weekly readings
+    # onto the SPY session index per ADR 0004 Q4 (V1 §2.2 stateless replay).
+    sentiment_score: pd.Series | None = None
 
     @property
     def feature_names(self) -> tuple[str, ...]:
@@ -76,10 +90,17 @@ class TrendDirectionV2Features:
             "return_126d",
             "drawdown_252d",
             "sma_50",
+            "sma_200",
+            "realized_vol_21d",
         )
 
     def to_frame(self) -> pd.DataFrame:
-        """All features as a single date-indexed DataFrame (one column per name)."""
+        """All non-Optional features as a single date-indexed DataFrame.
+
+        ``sentiment_score`` is excluded from the default frame view because
+        it is Optional and routinely None when no AAII feed is wired. Use
+        ``getattr(features, "sentiment_score")`` for direct access.
+        """
         return pd.DataFrame(
             {name: getattr(self, name) for name in self.feature_names}
         )
@@ -193,12 +214,20 @@ def compute_trend_v2_features(
     close: pd.Series,
     *,
     config: TrendDirectionV2Config,
+    sentiment_score: pd.Series | None = None,
 ) -> TrendDirectionV2Features:
-    """Compute the seven v2 §1A trend-direction features from a close series.
+    """Compute the nine v2 §1A trend-direction features from a close series.
 
     All parameters are sourced from ``TrendDirectionV2Config``; no magic
     numbers in the function body. Returns a frozen dataclass with each
     feature as a date-indexed ``pd.Series`` aligned to ``close.index``.
+
+    ``sentiment_score`` is an Optional pre-aligned series carrying the
+    forward-filled AAII bull-bear-spread 8w-MA on the close index (per
+    ADR 0004 Q1 / Q4 — V1 §2.2 stateless replay; values originate from
+    weekly publication dates ≤ as_of). When omitted, the v2 §1A
+    `euphoria` rule falsifies on every session (V2 §10 "do not invent
+    a sentiment proxy").
     """
     if not isinstance(close.index, pd.DatetimeIndex):
         # Match the existing v1 trend_direction.classify_series convention —
@@ -212,7 +241,7 @@ def compute_trend_v2_features(
     )
     hurst = _hurst_series(close, config.hurst_lookback_days).rename("hurst_250d")
     sma_short = _sma(close, config.sma_short_period).rename("sma_50")
-    sma_long = _sma(close, config.sma_long_period)
+    sma_long = _sma(close, config.sma_long_period).rename("sma_200")
     slope_short = _slope_of_sma(
         sma_short,
         slope_lookback=config.slope_lookback_days,
@@ -230,6 +259,11 @@ def compute_trend_v2_features(
     dd = _trailing_drawdown(close, config.drawdown_lookback_days).rename(
         "drawdown_252d"
     )
+    realized_vol_21d = _realized_vol_21d_for_euphoria(close).rename("realized_vol_21d")
+
+    if sentiment_score is not None:
+        sentiment_score = sentiment_score.reindex(close.index)
+        sentiment_score = sentiment_score.rename("sentiment_score")
 
     return TrendDirectionV2Features(
         efficiency_ratio_20d=eff,
@@ -240,7 +274,28 @@ def compute_trend_v2_features(
         return_126d=ret_long,
         drawdown_252d=dd,
         sma_50=sma_short,
+        sma_200=sma_long,
+        realized_vol_21d=realized_vol_21d,
+        sentiment_score=sentiment_score,
     )
+
+
+def _realized_vol_21d_for_euphoria(close: pd.Series) -> pd.Series:
+    """21-session annualized realized vol of log-returns.
+
+    Standalone implementation rather than reusing
+    ``regime_detection.volatility_state.realized_vol`` because the
+    euphoria predicate is computed inside the §1A trend pipeline before
+    the volatility seam is necessarily lit. Output semantics are
+    identical (log-returns, ddof=1, sqrt(252) annualization) so the
+    rule reads the same value the operator would see on the §1C
+    `realized_vol_long` series.
+    """
+    if not isinstance(close.index, pd.DatetimeIndex):
+        close = close.copy()
+        close.index = pd.to_datetime(close.index)
+    log_returns = np.log(close / close.shift(1))
+    return log_returns.rolling(21, min_periods=21).std(ddof=1) * np.sqrt(252.0)
 
 
 # ---------------------------------------------------------------------------
@@ -297,10 +352,10 @@ def evaluate_recovery(
 
 
 # v2 §1A line 132-134 ranking (lower index = higher precedence).
-# Index 0 is reserved for `euphoria` (deferred — Ambiguity Log #32) so
-# future authors can slot it in without re-ordering the table.
+# `euphoria` (index 0) was reserved-but-inert before ADR 0004 / Log #32
+# closure; it is now wired to a real predicate.
 _V2_TREND_PRECEDENCE: tuple[str, ...] = (
-    "euphoria",   # deferred (Ambiguity Log #32) — never produced today
+    "euphoria",
     "bull",
     "recovery",
     "bear",
@@ -308,6 +363,71 @@ _V2_TREND_PRECEDENCE: tuple[str, ...] = (
     "transition",
     "unknown",
 )
+
+
+def evaluate_euphoria(
+    features: TrendDirectionV2Features,
+    close: pd.Series,
+    *,
+    dt: pd.Timestamp,
+    rules_config: TrendDirectionV2RulesConfig,
+) -> bool:
+    """v2 §1A line 159-165 `euphoria` predicate at a single session.
+
+    Returns False when any of the four inputs is NaN or when the
+    Optional ``sentiment_score`` feature is absent (V2 §10 "do not
+    invent a sentiment proxy" — Log #32 closure).
+
+    Spec citations (post ADR 0004 amendment):
+
+    * line 161 — ``close > SMA_200`` (strict)
+    * line 162 — ``return_126d > euphoria_return_126d_threshold`` (0.20, strict)
+    * line 163 — ``realized_vol_21d rising`` (strict 5-session change
+      per Log #68 §1D analogue: ``vol[t] > vol[t - N]`` where
+      ``N = euphoria_vol_rising_lookback_sessions``)
+    * line 164 — ``sentiment_score >= euphoria_sentiment_threshold``
+      (+20 default; non-strict at boundary)
+    """
+    sentiment_series = features.sentiment_score
+    if sentiment_series is None:
+        return False
+
+    if dt not in features.return_126d.index or dt not in close.index:
+        return False
+    if dt not in features.sma_200.index or dt not in features.realized_vol_21d.index:
+        return False
+    if dt not in sentiment_series.index:
+        return False
+
+    lookback = rules_config.euphoria_vol_rising_lookback_sessions
+    vol_index = features.realized_vol_21d.index
+    try:
+        pos_t = vol_index.get_loc(dt)
+    except KeyError:
+        return False
+    pos_back = pos_t - lookback
+    if pos_back < 0:
+        return False
+    vol_t = features.realized_vol_21d.iloc[pos_t]
+    vol_back = features.realized_vol_21d.iloc[pos_back]
+
+    close_t = close.loc[dt]
+    sma_200_t = features.sma_200.loc[dt]
+    return_126d_t = features.return_126d.loc[dt]
+    sentiment_t = sentiment_series.loc[dt]
+
+    # Cold-start / NaN propagation: any missing input falsifies the rule.
+    if any(
+        pd.isna(x)
+        for x in (close_t, sma_200_t, return_126d_t, vol_t, vol_back, sentiment_t)
+    ):
+        return False
+
+    close_above_sma = bool(close_t > sma_200_t)                                  # line 161
+    return_ok = bool(return_126d_t > rules_config.euphoria_return_126d_threshold)  # line 162
+    vol_rising = bool(vol_t > vol_back)                                          # line 163
+    sentiment_ok = bool(sentiment_t >= rules_config.euphoria_sentiment_threshold)  # line 164
+    return close_above_sma and return_ok and vol_rising and sentiment_ok
 
 
 def evaluate_v2_trend_label(
@@ -324,13 +444,19 @@ def evaluate_v2_trend_label(
     ``None`` when no v2 rule fires and the caller should keep ``v1_label``.
 
     Precedence (line 132-134): ``euphoria > bull > recovery > bear >
-    sideways > transition > unknown``. `bull` outranks `recovery`, so a
-    v1 `bull` day with the recovery predicate true keeps `bull` (v2 spec
-    intent: a confirmed bull trend dominates a rebound-off-drawdown
-    label). Returns ``"recovery"`` only when the predicate fires AND the
-    v1 label is ranked strictly LOWER than `recovery` in the table —
-    i.e. v1 emitted ``bear`` / ``sideways`` / ``transition`` / ``unknown``.
+    sideways > transition > unknown``.
+
+    Dispatch order: euphoria first (top of precedence — outranks every
+    v1 label including bull); then recovery (only fires when v1 is
+    strictly lower-ranked, i.e. ``bear`` / ``sideways`` / ``transition``
+    / ``unknown``).
     """
+    euphoria_fires = evaluate_euphoria(
+        features, close, dt=dt, rules_config=rules_config
+    )
+    if euphoria_fires:
+        return "euphoria"
+
     recovery_fires = evaluate_recovery(
         features, close, dt=dt, rules_config=rules_config
     )

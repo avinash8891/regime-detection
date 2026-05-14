@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import shutil
 from datetime import date
 from pathlib import Path
 
@@ -16,23 +17,19 @@ def _load_module(name: str, rel_path: str):
     return mod
 
 
-def _prepare_walkforward_root(tmp_path: Path) -> Path:
-    runner = _load_module("run_historical_walkforward", "scripts/run_historical_walkforward.py")
-    repo_root = Path(__file__).resolve().parents[1]
-    market_data_path = repo_root / "tests" / "fixtures" / "raw" / "market_data.parquet"
+def _prepare_walkforward_root(tmp_path: Path, template: Path) -> Path:
+    """Copy the cached walkforward template directory into the test's tmp_path
+    so each test gets its own writable copy for the report builder to mutate."""
     out_root = tmp_path / "walkforward"
-    runner.run_walkforward(
-        market_data_path=market_data_path,
-        output_root=out_root,
-        start_date=date(2023, 12, 12),
-        end_date=date(2023, 12, 14),
-    )
+    shutil.copytree(template, out_root)
     return out_root
 
 
-def test_build_walkforward_report_fails_without_required_gates(tmp_path: Path) -> None:
+def test_build_walkforward_report_fails_without_required_gates(
+    tmp_path: Path, walkforward_2023_dec_template: Path
+) -> None:
     report_mod = _load_module("build_walkforward_report", "scripts/build_walkforward_report.py")
-    out_root = _prepare_walkforward_root(tmp_path)
+    out_root = _prepare_walkforward_root(tmp_path, walkforward_2023_dec_template)
 
     result = report_mod.build_walkforward_report(output_root=out_root)
 
@@ -53,9 +50,11 @@ def test_build_walkforward_report_fails_without_required_gates(tmp_path: Path) -
     assert payload["label_distributions"]["transition_risk_label"]
 
 
-def test_build_walkforward_report_passes_with_golden_and_baseline_inputs(tmp_path: Path) -> None:
+def test_build_walkforward_report_passes_with_golden_and_baseline_inputs(
+    tmp_path: Path, walkforward_2023_dec_template: Path
+) -> None:
     report_mod = _load_module("build_walkforward_report", "scripts/build_walkforward_report.py")
-    out_root = _prepare_walkforward_root(tmp_path)
+    out_root = _prepare_walkforward_root(tmp_path, walkforward_2023_dec_template)
 
     golden_path = tmp_path / "golden_results.json"
     golden_path.write_text(

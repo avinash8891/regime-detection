@@ -44,6 +44,7 @@ from typing import Literal
 
 import numpy as np
 import pandas as pd
+from numpy.lib.stride_tricks import sliding_window_view
 
 from regime_detection.breadth_state import BreadthLabel
 from regime_detection.config import NetworkFragilityRulesConfig
@@ -232,6 +233,102 @@ def build_rule_inputs_for_date(
     )
 
 
+def _rolling_ols_slope_series(series: pd.Series, window: int) -> pd.Series:
+    values = series.to_numpy(dtype=float)
+    out = np.full(len(values), np.nan, dtype=float)
+    if len(values) < window:
+        return pd.Series(out, index=series.index)
+
+    windows = sliding_window_view(values, window_shape=window)
+    valid = np.isfinite(windows).all(axis=1)
+    if valid.any():
+        x = np.arange(window, dtype=float)
+        x_sum = float(x.sum())
+        x_sq_sum = float(np.square(x).sum())
+        denom = window * x_sq_sum - x_sum * x_sum
+        valid_windows = windows[valid]
+        y_sum = valid_windows.sum(axis=1)
+        xy_sum = valid_windows @ x
+        out[window - 1 :][valid] = (
+            window * xy_sum - x_sum * y_sum
+        ) / denom
+    return pd.Series(out, index=series.index)
+
+
+def _rolling_stability_series(series: pd.Series, window: int) -> pd.Series:
+    values = series.to_numpy(dtype=float)
+    out = np.full(len(values), np.nan, dtype=float)
+    if len(values) < window:
+        return pd.Series(out, index=series.index)
+
+    windows = sliding_window_view(values, window_shape=window)
+    valid = np.isfinite(windows).all(axis=1)
+    if valid.any():
+        valid_windows = windows[valid]
+        means = valid_windows.mean(axis=1)
+        stabilities = np.full(len(valid_windows), np.nan, dtype=float)
+        nonzero = means != 0.0
+        if nonzero.any():
+            stabilities[nonzero] = (
+                valid_windows[nonzero].std(axis=1, ddof=0) / means[nonzero]
+            )
+        out[window - 1 :][valid] = stabilities
+    return pd.Series(out, index=series.index)
+
+
+def _rolling_drawdown_series(spy_close: pd.Series, window: int) -> pd.Series:
+    peak = spy_close.rolling(window=window, min_periods=window).max()
+    drawdown = spy_close / peak - 1.0
+    drawdown = drawdown.where(peak > 0)
+    return drawdown.astype(float)
+
+
+def build_rule_inputs_by_date(
+    *,
+    features: NetworkFragilityFeatures,
+    spy_close: pd.Series,
+    realized_vol_percentile_252d: pd.Series,
+    vix_percentile_252d: pd.Series,
+) -> dict[pd.Timestamp, NetworkFragilityRuleInputs]:
+    index = features.avg_pairwise_corr_63d.index
+    avg_corr_slope = _rolling_ols_slope_series(
+        features.avg_pairwise_corr_63d, _SPEC_SLOPE_WINDOW_DAYS
+    )
+    largest_eig_slope = _rolling_ols_slope_series(
+        features.largest_eigenvalue_share, _SPEC_SLOPE_WINDOW_DAYS
+    )
+    eff_rank_stability = _rolling_stability_series(
+        features.effective_rank, _SPEC_STABILITY_WINDOW_DAYS
+    )
+    drawdown = _rolling_drawdown_series(spy_close.reindex(index), _SPEC_DRAWDOWN_WINDOW_DAYS)
+    realized_vol = realized_vol_percentile_252d.reindex(index)
+    vix_pct = vix_percentile_252d.reindex(index)
+
+    outputs: dict[pd.Timestamp, NetworkFragilityRuleInputs] = {}
+    for dt in index:
+        outputs[dt] = NetworkFragilityRuleInputs(
+            avg_pairwise_corr_percentile_504d=float(
+                features.avg_pairwise_corr_percentile_504d.loc[dt]
+            ),
+            largest_eigenvalue_share_percentile_504d=float(
+                features.largest_eigenvalue_share_percentile_504d.loc[dt]
+            ),
+            effective_rank_percentile_504d=float(
+                features.effective_rank_percentile_504d.loc[dt]
+            ),
+            dispersion_ratio_percentile_252d=float(
+                features.dispersion_ratio_percentile_252d.loc[dt]
+            ),
+            avg_pairwise_corr_slope_21d=float(avg_corr_slope.loc[dt]),
+            largest_eigenvalue_share_slope_21d=float(largest_eig_slope.loc[dt]),
+            effective_rank_stability_21d=float(eff_rank_stability.loc[dt]),
+            realized_vol_percentile_252d=float(realized_vol.loc[dt]),
+            drawdown_21d=float(drawdown.loc[dt]),
+            vix_percentile_252d=float(vix_pct.loc[dt]),
+        )
+    return outputs
+
+
 # -- Rule predicates (v2 §3.5) -------------------------------------------------
 
 
@@ -299,20 +396,22 @@ def evaluate_rising_fragility(
      AND largest_eigenvalue_share rising over 21d
      AND breadth_state.active_label in [weak_breadth, narrowing_breadth, divergent_fragile]`
 
-    Note: v2 §3.5 line 634 references `narrowing_breadth` — V1's BreadthLabel
-    enum has no such literal. The closest semantic match in V1 §10 is the
-    pair {`weak_breadth`, `divergent_fragile`} together with `neutral_breadth`
-    when ratio_ret20 < 0. Resolution: accept the spec's stated set and let the
-    `narrowing_breadth` branch be inert until V2.1 adds the label — i.e.
-    today the rule fires iff breadth_label in {weak_breadth, divergent_fragile}.
-    Documented as a spec ambiguity in the slice 1.3 commit body.
+    Note: v2 §3.5 line 634 references `narrowing_breadth`. Slice 2.8c
+    widened V1's ``BreadthLabel`` enum to include `narrowing_breadth`
+    alongside `weak_breadth` and `divergent_fragile`, so the accepted_breadth
+    set now matches the spec text verbatim. Ambiguity Log #3 is fully
+    resolved.
     """
     if _any_nan(
         inputs.avg_pairwise_corr_slope_21d,
         inputs.largest_eigenvalue_share_slope_21d,
     ):
         return False
-    accepted_breadth: set[BreadthLabel] = {"weak_breadth", "divergent_fragile"}  # TODO(v2.1-breadth-enum): remove this mapping when `BreadthLabel` is extended to include `narrowing_breadth`; see spec §3.5 ambiguity #3 in the Implementation Ambiguity Log.
+    accepted_breadth: set[BreadthLabel] = {
+        "weak_breadth",
+        "narrowing_breadth",
+        "divergent_fragile",
+    }
     return bool(
         inputs.avg_pairwise_corr_slope_21d > 0.0
         and inputs.largest_eigenvalue_share_slope_21d > 0.0
@@ -406,7 +505,9 @@ def evaluate_systemic_stress(
     if not evaluate_correlation_to_one(inputs, config):
         return False
     accepted_credit: set[CreditFundingLabel] = {"credit_stress", "deleveraging"}
-    accepted_breadth: set[BreadthLabel] = {"weak_breadth"}  # TODO(v2.1-breadth-enum): remove this mapping when `BreadthLabel` is extended to include `narrowing_breadth`; see spec §3.5 ambiguity #3 in the Implementation Ambiguity Log.
+    # v2 §3.5 line 656: accepted breadth set matches spec verbatim now that
+    # Slice 2.8c widened the ``BreadthLabel`` enum (Ambiguity Log #3 resolved).
+    accepted_breadth: set[BreadthLabel] = {"weak_breadth", "narrowing_breadth"}
     return bool(
         credit_funding_label in accepted_credit
         and inputs.vix_percentile_252d > config.systemic_stress_vix_percentile_min

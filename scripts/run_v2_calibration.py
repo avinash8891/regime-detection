@@ -34,6 +34,7 @@ import yaml
 REPO_ROOT = Path(__file__).resolve().parents[1]
 SRC_DIR = REPO_ROOT / "src"
 sys.path.insert(0, str(SRC_DIR))
+sys.path.insert(0, str(REPO_ROOT))
 
 from regime_data_fetch.local_daily_ohlcv_sqlite import EXPECTED_COLUMNS  # noqa: E402
 
@@ -42,6 +43,7 @@ from regime_detection.engine import RegimeEngine  # noqa: E402
 from regime_detection.feature_store import build_feature_store  # noqa: E402
 from regime_detection.fragility_universe import SECTOR_ETFS  # noqa: E402
 from regime_detection.market_context import build_market_context  # noqa: E402
+from scripts._v2_calibration_helpers import load_macro_series  # noqa: E402
 
 
 def _load_market_data(daily_ohlcv_dir: Path) -> pd.DataFrame:
@@ -64,37 +66,6 @@ def _load_close_dict(daily_ohlcv_dir: Path, symbols: list[str], spy_index: pd.Da
             continue
         out[sym] = sub["close"].astype(float).reindex(spy_index).rename(sym)
     return out
-
-
-def _load_macro_series(macro_parquet: Path, pmi_path: Path | None) -> dict[str, pd.Series]:
-    """Load FRED macro series + manually-supplied PMI into a dict keyed by name."""
-    macro = pd.read_parquet(macro_parquet)
-    # Fetcher long-format columns: date, series_id, value, logical_name, ...
-    macro["date"] = pd.to_datetime(macro["date"])
-    series_dict: dict[str, pd.Series] = {}
-    # Key by logical_name (e.g. 2y_yield, broad_usd_index, cpi_all_items) to
-    # match the spec/feature_store seam names. Also key by series_id as alias
-    # so downstream consumers that expect DGS2 / DGS10 / CPIAUCSL still work.
-    for name, group in macro.groupby("logical_name"):
-        s = group.set_index("date")["value"].astype(float).sort_index()
-        series_dict[name] = s.rename(name)
-    for sid, group in macro.groupby("series_id"):
-        s = group.set_index("date")["value"].astype(float).sort_index()
-        # don't clobber logical_name keys already present
-        series_dict.setdefault(sid, s.rename(sid))
-    if pmi_path and pmi_path.exists():
-        pmi_df = pd.read_csv(pmi_path, sep="\t")
-        # PMI tsv columns: period, release_date_local (DD-MM-YYYY), actual, ...
-        if "release_date_local" in pmi_df.columns and "actual" in pmi_df.columns:
-            pmi_df["release_date_local"] = pd.to_datetime(pmi_df["release_date_local"], format="%d-%m-%Y")
-            pmi = pmi_df.set_index("release_date_local")["actual"].astype(float).sort_index()
-            series_dict["pmi_manufacturing"] = pmi.rename("pmi_manufacturing")
-    # Lowercase aliases that some axis modules expect:
-    if "DGS10" in series_dict and "dgs10" not in series_dict:
-        series_dict["dgs10"] = series_dict["DGS10"].rename("dgs10")
-    if "DGS2" in series_dict and "dgs2" not in series_dict:
-        series_dict["dgs2"] = series_dict["DGS2"].rename("dgs2")
-    return series_dict
 
 
 def _fit_summary_hmm(feature_store: Any, training_window_days: int) -> dict[str, Any]:
@@ -253,7 +224,7 @@ def main() -> int:
     ]
     sector_etf_closes = _load_close_dict(daily_dir, list(SECTOR_ETFS), spy_index)
     cross_asset_closes = _load_close_dict(daily_dir, cross_asset_symbols, spy_index)
-    macro_series = _load_macro_series(macro_parquet, pmi_path)
+    macro_series = load_macro_series(macro_parquet, pmi_path)
 
     print(f"as_of = {end_date}; spy sessions = {len(spy_index)}")
     print(f"sector_etf symbols: {sorted(sector_etf_closes.keys())}")
