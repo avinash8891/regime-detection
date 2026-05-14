@@ -18,7 +18,11 @@ from regime_detection.models import EventCalendarOutput
 LOG = logging.getLogger(__name__)
 
 EventCalendarLabel = Literal[
+    "geopolitical_event",
+    "election_window",
     "fed_week",
+    "global_rate_decision",
+    "budget_week",
     "cpi_week",
     "nfp_week",
     "expiry_week",
@@ -34,10 +38,18 @@ _RISK_RANK: dict[EventCalendarLabel, int] = {
     "expiry_week": 3,
     "nfp_week": 4,
     "cpi_week": 5,
-    "fed_week": 6,
+    "budget_week": 6,
+    "global_rate_decision": 7,
+    "fed_week": 8,
+    "election_window": 9,
+    "geopolitical_event": 10,
 }
 _PRECEDENCE: list[EventCalendarLabel] = [
+    "geopolitical_event",
+    "election_window",
     "fed_week",
+    "global_rate_decision",
+    "budget_week",
     "cpi_week",
     "nfp_week",
     "expiry_week",
@@ -45,8 +57,27 @@ _PRECEDENCE: list[EventCalendarLabel] = [
     "normal_calendar",
     "unknown",
 ]
-_TYPE_TO_LABEL = {"FOMC": "fed_week", "CPI": "cpi_week", "NFP": "nfp_week"}
-_WINDOWS = {"fed_week": (-2, 2), "cpi_week": (-1, 1), "nfp_week": (-1, 1)}
+_TYPE_TO_LABEL = {
+    "FOMC": "fed_week",
+    "CPI": "cpi_week",
+    "NFP": "nfp_week",
+    "budget": "budget_week",
+    "election": "election_window",
+    "geopolitical_event": "geopolitical_event",
+    "global_rate_decision": "global_rate_decision",
+    "ECB_decision": "global_rate_decision",
+    "BOE_decision": "global_rate_decision",
+    "BOJ_decision": "global_rate_decision",
+}
+_WINDOWS = {
+    "fed_week": (-2, 2),
+    "cpi_week": (-1, 1),
+    "nfp_week": (-1, 1),
+    "budget_week": (0, 0),
+    "election_window": (-5, 10),
+    "geopolitical_event": (0, 0),
+    "global_rate_decision": (0, 0),
+}
 
 
 def classify_event_calendar(
@@ -144,6 +175,9 @@ def compute_event_calendar_outputs(
             continue
         publication_date = row.publication_date
         start_offset, end_offset = _WINDOWS[label]
+        row_window = getattr(row, "window_days", None)
+        if isinstance(row_window, (list, tuple)) and len(row_window) == 2:
+            start_offset, end_offset = int(row_window[0]), int(row_window[1])
         start_idx = max(0, event_idx + start_offset)
         end_idx = min(len(global_sessions) - 1, event_idx + end_offset)
         bit = label_bits[label]

@@ -33,6 +33,46 @@ def test_load_event_calendar_yaml_defaults_publication_date() -> None:
     assert fomc_row["publication_date"] == date(2023, 10, 21)
 
 
+def test_load_event_calendar_yaml_accepts_v2_manual_types_and_window_days(
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / "events.yaml"
+    path.write_text(
+        "\n".join(
+            [
+                "events:",
+                '  - date: "2026-11-03"',
+                '    market: "US"',
+                '    type: "election"',
+                '    importance: "high"',
+                "    window_days: [-5, +10]",
+                '  - date: "2026-12-10"',
+                '    market: "GLOBAL"',
+                '    type: "global_rate_decision"',
+                '    importance: "medium"',
+                '  - date: "2026-06-15"',
+                '    market: "US"',
+                '    type: "geopolitical_event"',
+                '    importance: "high"',
+            ]
+        )
+        + "\n"
+    )
+
+    us = load_event_calendar(path, market="US")
+    assert set(us["type"]) == {
+        "election",
+        "geopolitical_event",
+        "global_rate_decision",
+    }
+    election = us[us["type"] == "election"].iloc[0]
+    assert election["window_days"] == [-5, 10]
+    assert election["publication_date"] == date(2026, 8, 5)
+
+    global_events = load_event_calendar(path, market="GLOBAL")
+    assert list(global_events["type"]) == ["global_rate_decision"]
+
+
 def test_load_event_calendar_csv_defaults_publication_date() -> None:
     path = Path(__file__).resolve().parent / "fixtures" / "events" / "us_events.csv"
     df = load_event_calendar(path)
@@ -113,6 +153,83 @@ def test_event_calendar_blocks_unpublished_future_scheduled_event() -> None:
     assert out.active_label == "expiry_week"
     assert out.evidence["all_matching_events"] == ["expiry_week", "earnings_season"]
     assert "fed_week" not in out.evidence["all_matching_events"]
+
+
+def test_event_calendar_v2_election_uses_default_trading_day_window() -> None:
+    cfg = load_default_regime_config()
+    events = pd.DataFrame(
+        [
+            {
+                "date": date(2026, 11, 3),
+                "market": "US",
+                "type": "election",
+                "importance": "high",
+            }
+        ]
+    )
+
+    start_out = classify_event_calendar(
+        as_of_date=date(2026, 10, 27),
+        event_calendar=events,
+        config=cfg,
+    )
+    end_out = classify_event_calendar(
+        as_of_date=date(2026, 11, 17),
+        event_calendar=events,
+        config=cfg,
+    )
+    before_out = classify_event_calendar(
+        as_of_date=date(2026, 10, 26),
+        event_calendar=events,
+        config=cfg,
+    )
+
+    assert start_out.active_label == "election_window"
+    assert end_out.active_label == "election_window"
+    assert before_out.active_label != "election_window"
+
+
+def test_event_calendar_v2_precedence_and_labels() -> None:
+    cfg = load_default_regime_config()
+    events = pd.DataFrame(
+        [
+            {
+                "date": date(2026, 11, 3),
+                "market": "US",
+                "type": "election",
+                "importance": "high",
+                "publication_date": date(2026, 8, 1),
+            },
+            {
+                "date": date(2026, 11, 3),
+                "market": "US",
+                "type": "geopolitical_event",
+                "importance": "high",
+                "publication_date": date(2026, 11, 3),
+            },
+            {
+                "date": date(2026, 11, 3),
+                "market": "US",
+                "type": "budget",
+                "importance": "medium",
+                "publication_date": date(2026, 8, 1),
+            },
+        ]
+    )
+
+    out = classify_event_calendar(
+        as_of_date=date(2026, 11, 3),
+        event_calendar=events,
+        config=cfg,
+    )
+
+    assert out.active_label == "geopolitical_event"
+    assert out.evidence["selected_via_precedence"] == "geopolitical_event"
+    assert set(out.evidence["all_matching_events"]) >= {
+        "geopolitical_event",
+        "election_window",
+        "budget_week",
+    }
 
 
 def test_build_event_calendar_series_matches_point_classifier(market_df_for_asof) -> None:

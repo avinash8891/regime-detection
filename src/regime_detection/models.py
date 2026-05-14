@@ -100,9 +100,9 @@ class InflationGrowthOutput(BaseModel):
     Three-tier label triple (raw/stable/active) per the v2 axis pattern.
     ``evidence`` carries the per-day rule inputs and the bias-warning code
     (``commodity_proxy_dbc_substitute``) when applicable. The
-    ``earnings_expansion``/``earnings_contraction`` labels are reserved in
-    precedence but short-circuit to False until the weekly aggregate
-    forward-EPS revision feed lands (spec line 2316-2317 + Ambiguity Log #48).
+    ``earnings_expansion``/``earnings_contraction`` labels consume the weekly
+    aggregate forward-EPS revision series when it is wired and naturally
+    falsify while that series is absent or in accumulator cold-start.
     """
 
     model_config = ConfigDict(extra="forbid")

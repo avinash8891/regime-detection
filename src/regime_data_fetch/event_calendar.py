@@ -30,11 +30,30 @@ SOURCE_CPI = "bls.gov:schedule:consumer-price-index"
 SOURCE_NFP = "bls.gov:schedule:employment-situation"
 _FOMC_MINUTES_LINK_RE = re.compile(r"/monetarypolicy/fomcminutes(?P<meeting_end>\d{8})\.htm", flags=re.IGNORECASE)
 _NYSE = mcal.get_calendar("NYSE")
-EVENT_PRECEDENCE = ("fed_week", "cpi_week", "nfp_week", "expiry_week", "earnings_season", "normal_calendar", "unknown")
+EVENT_PRECEDENCE = (
+    "geopolitical_event",
+    "election_window",
+    "fed_week",
+    "global_rate_decision",
+    "budget_week",
+    "cpi_week",
+    "nfp_week",
+    "expiry_week",
+    "earnings_season",
+    "normal_calendar",
+    "unknown",
+)
 SCHEDULED_EVENT_WINDOWS: dict[str, tuple[str, int, int]] = {
     "FOMC": ("fed_week", 2, 2),
     "CPI": ("cpi_week", 1, 1),
     "NFP": ("nfp_week", 1, 1),
+    "budget": ("budget_week", 0, 0),
+    "election": ("election_window", 5, 10),
+    "geopolitical_event": ("geopolitical_event", 0, 0),
+    "global_rate_decision": ("global_rate_decision", 0, 0),
+    "ECB_decision": ("global_rate_decision", 0, 0),
+    "BOE_decision": ("global_rate_decision", 0, 0),
+    "BOJ_decision": ("global_rate_decision", 0, 0),
 }
 
 
@@ -50,6 +69,7 @@ class ScheduledEvent:
     type: str
     importance: str
     source: str
+    window_days: tuple[int, int] | None = None
 
 
 @dataclass(frozen=True)
@@ -80,11 +100,24 @@ def load_scheduled_events_yaml(path: Path) -> list[ScheduledEvent]:
             raise EventCalendarFetchError(f"Event calendar YAML entry {idx} was not a mapping")
         try:
             event_date = dt.date.fromisoformat(str(entry["date"]))
-            release_timestamp = dt.datetime.fromisoformat(str(entry["release_timestamp_et"]))
+            release_timestamp_raw = entry.get("release_timestamp_et")
+            release_timestamp = (
+                dt.datetime.fromisoformat(str(release_timestamp_raw))
+                if release_timestamp_raw is not None
+                else dt.datetime(
+                    event_date.year,
+                    event_date.month,
+                    event_date.day,
+                    0,
+                    0,
+                    tzinfo=US_EASTERN,
+                )
+            )
             market = str(entry["market"])
             event_type = str(entry["type"])
             importance = str(entry["importance"])
             source = str(entry["source"])
+            window_days = _parse_window_days(entry.get("window_days"))
         except KeyError as exc:
             raise EventCalendarFetchError(f"Event calendar YAML entry {idx} missing field {exc.args[0]!r}") from exc
         except ValueError as exc:
@@ -98,6 +131,7 @@ def load_scheduled_events_yaml(path: Path) -> list[ScheduledEvent]:
                 type=event_type,
                 importance=importance,
                 source=source,
+                window_days=window_days,
             )
         )
     return events
@@ -274,12 +308,16 @@ def run_us_event_calendar_fetch(
 def _matching_scheduled_event_labels(*, as_of_date: dt.date, scheduled_events: list[ScheduledEvent]) -> set[str]:
     labels: set[str] = set()
     for event in scheduled_events:
-        if event.market != "US":
+        if event.market not in {"US", "GLOBAL"}:
             continue
         window_spec = SCHEDULED_EVENT_WINDOWS.get(event.type)
         if window_spec is None:
             continue
         label, lookback_days, lookahead_days = window_spec
+        if event.window_days is not None:
+            start_offset, end_offset = event.window_days
+            lookback_days = abs(start_offset)
+            lookahead_days = end_offset
         window = set(
             _expand_nyse_window_for_scheduled_event(
                 anchor_date=event.date,
@@ -290,6 +328,25 @@ def _matching_scheduled_event_labels(*, as_of_date: dt.date, scheduled_events: l
         if as_of_date in window:
             labels.add(label)
     return labels
+
+
+def _parse_window_days(value: object) -> tuple[int, int] | None:
+    if value is None:
+        return None
+    if isinstance(value, str):
+        parsed = yaml.safe_load(value)
+    else:
+        parsed = value
+    if not isinstance(parsed, (list, tuple)) or len(parsed) != 2:
+        raise EventCalendarFetchError(
+            f"window_days must be a two-item list, got {value!r}"
+        )
+    try:
+        return (int(parsed[0]), int(parsed[1]))
+    except (TypeError, ValueError) as exc:
+        raise EventCalendarFetchError(
+            f"window_days entries must be integers, got {value!r}"
+        ) from exc
 
 
 def _fetch_fomc_events(
