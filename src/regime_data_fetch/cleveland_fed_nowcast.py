@@ -2,40 +2,51 @@
 
 Produces the ``cpi_nowcast`` series the v2 §2B ``inflation_surprise_zscore``
 feature consumes. ADR 0006 picked the free Cleveland Fed inflation nowcast
-as the substitute for the (paid) analyst-survey ``consensus_estimate`` and
-explicitly left the fetch path to the operator:
+as the substitute for the (paid) analyst-survey ``consensus_estimate``.
 
-    "cpi_nowcast is NOT added to V2_FRED_SERIES — the Cleveland Fed nowcast
-     is published on the Cleveland Fed site, not cleanly on FRED. The
-     operator wires it into macro_series via a dedicated fetch path."
+The data source is the Cleveland Fed "Inflation Nowcasting" page's
+month-over-month webchart feed — a single JSON file holding the full
+historical archive (one chart object per monthly vintage, ~2013-08 to
+present). It is fetched directly over HTTPS via ``urllib``; the manual-drop
+path is only a fallback for when the network call fails.
 
-This module IS that dedicated fetch path. It mirrors the manual-drop
-fallback architecture proven by ``aggregate_eps`` (the spdji workbook) and
-``aaii_sentiment``: try a best-effort download, and on failure route the
-operator to drop the file at a known path and re-run.
+JSON shape (FusionCharts export, verified 2026-05):
 
-VERIFICATION NEEDED — the exact CSV schema of the Cleveland Fed export
-cannot be confirmed without web access. Two things the operator MUST
-verify on first run and pin via the parameters below:
+    [
+      {
+        "chart": {"subcaption": "2019-12", "_comment": "2026-05-13 00:00", ...},
+        "categories": [{"category": [{"label": "12/02"}, ...]}],
+        "dataset": [
+          {"seriesname": "CPI Inflation", "data": [{"value": "0.243..."}, ...]},
+          {"seriesname": "Core CPI Inflation", ...},
+          {"seriesname": "PCE Inflation", ...},
+          {"seriesname": "Core PCE Inflation", ...},
+          {"seriesname": "Actual CPI Inflation", ...},
+          ...
+        ]
+      },
+      ...
+    ]
 
-  1. Column names — ``date_column`` / ``value_column`` (the CSV carries
-     several inflation measures: CPI / Core CPI / PCE / Core PCE, each
-     month-over-month and year-over-year).
-  2. Published unit — ``value_scale``. ``compute_inflation_surprise_zscore``
-     subtracts the nowcast from a *fractional* monthly % change of CPIAUCSL
-     (e.g. 0.003 for +0.3% m/m). The Cleveland Fed publishes its nowcast in
-     *percent* m/m, so the default ``value_scale=0.01`` converts percent to
-     fraction. If the export is already fractional, pass ``value_scale=1.0``;
-     if it is annualised, the operator must pick the m/m column instead.
+Each chart object is one monthly nowcast vintage. ``chart.subcaption`` is
+the target month (``YYYY-M``); the ``CPI Inflation`` series holds the daily
+evolution of the nowcast within that vintage's nowcasting period. We take
+the **last non-empty** value per vintage — the settled nowcast right before
+the BLS release — as that month's ``cpi_nowcast``.
 
-Parse failures raise ``ClevelandFedNowcastError`` loudly rather than
-producing a silently-wrong series.
+Dating convention (ADR 0006): each vintage is keyed to the **1st of its
+target month**, matching FRED ``CPIAUCSL``'s reference-date convention, so
+that ``compute_inflation_surprise_zscore``'s ``realized - nowcast`` stays
+like-for-like (both operands forward-fill on the same monthly anchor).
+
+Unit: the feed publishes month-over-month inflation in *percent*;
+``DEFAULT_VALUE_SCALE = 0.01`` converts to the fractional monthly rate the
+z-score expects. Parse failures raise ``ClevelandFedNowcastError`` loudly
+rather than producing a silently-wrong series.
 """
 from __future__ import annotations
 
-import csv
 import datetime as dt
-import io
 import json
 import logging
 import urllib.error
@@ -45,24 +56,28 @@ from pathlib import Path
 import pandas as pd
 
 SOURCE_NAME = "Cleveland Fed inflation nowcast"
-# The Cleveland Fed "Inflation Nowcasting" indicator page. This is the
-# human-facing page, not a direct CSV endpoint — the operator passes the
-# verified direct-download URL to ``download_cleveland_fed_nowcast_csv``.
-SOURCE_URL = "https://www.clevelandfed.org/indicators-and-data/inflation-nowcasting"
+# Month-over-month webchart feed backing the "Inflation Nowcasting" page.
+# Verified reachable over urllib/curl (the human-facing HTML page is the
+# one that 403s programmatic clients — this media endpoint does not).
+SOURCE_URL = (
+    "https://www.clevelandfed.org/-/media/files/webcharts/"
+    "inflationnowcasting/nowcast_month.json?sc_lang=en"
+)
 CPI_NOWCAST_PARQUET = "cpi_nowcast.parquet"
 
-# Manual-drop path — same convention as the spdji EPS workbook
-# (data/raw/<vendor>/<file>). The operator downloads the CSV from the
-# Cleveland Fed page and drops it here; ``run_cleveland_fed_nowcast_fetch``
-# detects and parses it.
-MANUAL_REL_PATH = Path("cleveland_fed_nowcast") / "cleveland_fed_nowcast.csv"
+# Manual-drop fallback path — same convention as the spdji EPS workbook
+# (data/raw/<vendor>/<file>). Only used when the direct download fails: the
+# operator saves the nowcast_month.json there and re-runs.
+MANUAL_REL_PATH = Path("cleveland_fed_nowcast") / "nowcast_month.json"
 
-# Parameterised column mapping — see the module docstring's VERIFICATION
-# NEEDED note. These defaults are a best guess and will raise loudly on a
-# header mismatch.
-DEFAULT_DATE_COLUMN = "date"
-DEFAULT_VALUE_COLUMN = "CPI"
-# Percent -> fraction. See the module docstring's unit note.
+# The dataset series carrying the CPI month-over-month nowcast. The feed
+# also carries Core CPI / PCE / Core PCE and matching "Actual ..." series;
+# the series name is parameterised so an operator can switch measures, but
+# the §2B feature consumes headline CPI.
+NOWCAST_SERIES_NAME = "CPI Inflation"
+# Percent -> fraction. The feed publishes month-over-month inflation in
+# percent (e.g. 0.243 = +0.243% m/m); compute_inflation_surprise_zscore
+# subtracts the nowcast from a fractional 21-session % change of CPIAUCSL.
 DEFAULT_VALUE_SCALE = 0.01
 
 _log = logging.getLogger(__name__)
@@ -72,62 +87,105 @@ class ClevelandFedNowcastError(RuntimeError):
     pass
 
 
-def parse_cleveland_fed_nowcast_csv(
-    csv_text: str,
+def _parse_subcaption_to_month_start(subcaption: str) -> pd.Timestamp:
+    """``"2019-12"`` -> ``Timestamp("2019-12-01")`` (target-month anchor)."""
+    parts = subcaption.strip().split("-")
+    if len(parts) != 2:
+        raise ClevelandFedNowcastError(
+            f"Cleveland Fed nowcast: unparseable chart subcaption "
+            f"{subcaption!r} (expected 'YYYY-M')"
+        )
+    try:
+        year, month = int(parts[0]), int(parts[1])
+        return pd.Timestamp(year=year, month=month, day=1)
+    except (ValueError, TypeError) as exc:
+        raise ClevelandFedNowcastError(
+            f"Cleveland Fed nowcast: unparseable chart subcaption "
+            f"{subcaption!r} (expected 'YYYY-M')"
+        ) from exc
+
+
+def parse_cleveland_fed_nowcast_json(
+    json_text: str,
     *,
-    date_column: str = DEFAULT_DATE_COLUMN,
-    value_column: str = DEFAULT_VALUE_COLUMN,
+    series_name: str = NOWCAST_SERIES_NAME,
     value_scale: float = DEFAULT_VALUE_SCALE,
 ) -> pd.DataFrame:
-    """Parse a Cleveland Fed inflation-nowcast CSV export into a clean
-    two-column DataFrame: ``date`` (Timestamp) and ``cpi_nowcast`` (float,
-    a fractional monthly inflation rate after applying ``value_scale``).
+    """Parse the Cleveland Fed month-over-month nowcast webchart JSON into a
+    clean two-column DataFrame: ``date`` (Timestamp, 1st of the target
+    month) and ``cpi_nowcast`` (float, fractional monthly rate after
+    ``value_scale``).
 
-    The column mapping is parameterised because the exact CSV schema of the
-    Cleveland Fed export cannot be verified without web access (see the
-    module docstring). A missing column or an unparseable cell raises
-    ``ClevelandFedNowcastError`` so a schema drift fails loudly rather than
-    silently producing a wrong ``cpi_nowcast`` series.
+    For each chart object (one monthly vintage): the target month comes from
+    ``chart.subcaption`` and the nowcast value is the **last non-empty**
+    point of the ``series_name`` dataset series — the settled nowcast right
+    before the BLS release. Vintages with no non-empty value for that series
+    are skipped (the earliest vintages carry only PCE, no CPI).
 
-    Rows with a blank date or value cell are skipped (export footers /
-    partial rows). Duplicate dates keep the last occurrence — the export is
-    cumulative and a later row supersedes an earlier same-date estimate.
+    A structurally wrong payload raises ``ClevelandFedNowcastError`` so a
+    feed-shape drift fails loudly rather than producing a silently-wrong
+    ``cpi_nowcast`` series.
     """
-    reader = csv.DictReader(io.StringIO(csv_text))
-    if reader.fieldnames is None:
-        raise ClevelandFedNowcastError("Cleveland Fed nowcast CSV had no header row")
-    for required in (date_column, value_column):
-        if required not in reader.fieldnames:
-            raise ClevelandFedNowcastError(
-                f"Cleveland Fed nowcast CSV missing column {required!r}; "
-                f"found columns: {list(reader.fieldnames)}"
-            )
+    try:
+        payload = json.loads(json_text)
+    except json.JSONDecodeError as exc:
+        raise ClevelandFedNowcastError(
+            f"Cleveland Fed nowcast feed was not valid JSON: {exc}"
+        ) from exc
+    if not isinstance(payload, list) or not payload:
+        raise ClevelandFedNowcastError(
+            "Cleveland Fed nowcast feed was not a non-empty list of chart "
+            "objects"
+        )
 
     rows: list[dict[str, object]] = []
-    for line_no, raw in enumerate(reader, start=2):
-        raw_date = (raw.get(date_column) or "").strip()
-        raw_value = (raw.get(value_column) or "").strip()
-        if not raw_date or not raw_value:
+    for idx, obj in enumerate(payload):
+        if not isinstance(obj, dict) or "chart" not in obj or "dataset" not in obj:
+            raise ClevelandFedNowcastError(
+                f"Cleveland Fed nowcast feed: chart object {idx} missing "
+                f"'chart' / 'dataset' keys"
+            )
+        subcaption = obj["chart"].get("subcaption")
+        if not subcaption:
+            raise ClevelandFedNowcastError(
+                f"Cleveland Fed nowcast feed: chart object {idx} has no "
+                f"chart.subcaption (target month)"
+            )
+        target_month = _parse_subcaption_to_month_start(str(subcaption))
+
+        series = next(
+            (s for s in obj["dataset"] if s.get("seriesname") == series_name),
+            None,
+        )
+        if series is None:
+            raise ClevelandFedNowcastError(
+                f"Cleveland Fed nowcast feed: chart object {idx} "
+                f"({subcaption}) has no {series_name!r} dataset series; "
+                f"found: {[s.get('seriesname') for s in obj['dataset']]}"
+            )
+        non_empty = [
+            point["value"]
+            for point in series.get("data", [])
+            if str(point.get("value", "")).strip() != ""
+        ]
+        if not non_empty:
+            # Earliest vintages carry no CPI nowcast — the series simply
+            # starts later. Skip rather than fail.
             continue
         try:
-            parsed_date = pd.Timestamp(raw_date)
+            settled = float(non_empty[-1])
         except (ValueError, TypeError) as exc:
             raise ClevelandFedNowcastError(
-                f"Cleveland Fed nowcast CSV line {line_no}: unparseable "
-                f"date {raw_date!r}"
+                f"Cleveland Fed nowcast feed: chart object {idx} "
+                f"({subcaption}) has an unparseable {series_name!r} value "
+                f"{non_empty[-1]!r}"
             ) from exc
-        try:
-            parsed_value = float(raw_value)
-        except ValueError as exc:
-            raise ClevelandFedNowcastError(
-                f"Cleveland Fed nowcast CSV line {line_no}: unparseable "
-                f"value {raw_value!r}"
-            ) from exc
-        rows.append({"date": parsed_date, "cpi_nowcast": parsed_value * value_scale})
+        rows.append({"date": target_month, "cpi_nowcast": settled * value_scale})
 
     if not rows:
         raise ClevelandFedNowcastError(
-            "Cleveland Fed nowcast CSV contained no usable rows"
+            f"Cleveland Fed nowcast feed held no usable {series_name!r} "
+            f"vintages"
         )
     df = pd.DataFrame(rows)
     df = (
@@ -138,28 +196,34 @@ def parse_cleveland_fed_nowcast_csv(
     return df
 
 
-def download_cleveland_fed_nowcast_csv(
+def extract_data_vintage(json_text: str) -> str | None:
+    """Return the feed's ``chart._comment`` (its generation timestamp) for
+    provenance, or None if absent / unparseable."""
+    try:
+        payload = json.loads(json_text)
+        return payload[0]["chart"].get("_comment")
+    except (json.JSONDecodeError, KeyError, IndexError, TypeError):
+        return None
+
+
+def download_cleveland_fed_nowcast_json(
     *,
     out_path: Path,
-    source_url: str,
+    source_url: str = SOURCE_URL,
     timeout_seconds: int = 60,
 ) -> Path:
-    """Best-effort download of the Cleveland Fed inflation-nowcast CSV to
+    """Download the Cleveland Fed month-over-month nowcast webchart JSON to
     ``out_path``.
 
-    ``source_url`` MUST be the verified direct-CSV download URL from the
-    Cleveland Fed "Inflation Nowcasting" page — the module-level
-    ``SOURCE_URL`` is the human-facing HTML page, not a CSV endpoint, so it
-    is intentionally not the default here. On any network failure this
-    raises ``ClevelandFedNowcastError`` with the manual-drop instructions:
+    The ``nowcast_month.json`` media endpoint is reachable over ``urllib``
+    (unlike the human-facing HTML page, which 403s programmatic clients). On
+    a network failure this raises ``ClevelandFedNowcastError`` routing the
+    operator to the manual-drop fallback:
 
-      1. Open the Cleveland Fed inflation-nowcasting page in a browser and
-         download the historical CSV.
-      2. Copy it to ``data/raw/cleveland_fed_nowcast/cleveland_fed_nowcast.csv``.
-      3. Re-run the fetch — ``run_cleveland_fed_nowcast_fetch`` detects the
-         manually-dropped file and parses it.
-
-    Same pattern as the spdji EPS workbook and the PMI TSV workflow.
+      1. Open ``SOURCE_URL`` in a browser and save the JSON.
+      2. Copy it to ``data/raw/cleveland_fed_nowcast/nowcast_month.json``.
+      3. Re-run the fetch — ``run_cleveland_fed_nowcast_fetch`` falls back to
+         the already-present file.
     """
     out_path.parent.mkdir(parents=True, exist_ok=True)
     request = urllib.request.Request(
@@ -170,7 +234,7 @@ def download_cleveland_fed_nowcast_csv(
                 "AppleWebKit/537.36 (KHTML, like Gecko) "
                 "Chrome/126.0.0.0 Safari/537.36"
             ),
-            "Accept": "text/csv,application/octet-stream,*/*",
+            "Accept": "application/json,text/plain,*/*",
         },
     )
     try:
@@ -178,12 +242,11 @@ def download_cleveland_fed_nowcast_csv(
             payload = response.read()
     except urllib.error.URLError as exc:
         raise ClevelandFedNowcastError(
-            f"Failed to download Cleveland Fed nowcast CSV from {source_url}: "
-            f"{exc}. To complete the fetch manually: (1) open the Cleveland "
-            f"Fed inflation-nowcasting page and download the historical CSV; "
-            f"(2) copy it to data/raw/{MANUAL_REL_PATH}; (3) re-run the "
-            f"fetch — run_cleveland_fed_nowcast_fetch detects the "
-            f"manually-dropped file and parses it."
+            f"Failed to download Cleveland Fed nowcast JSON from "
+            f"{source_url}: {exc}. To complete the fetch manually: (1) open "
+            f"the URL in a browser and save the JSON; (2) copy it to "
+            f"data/raw/{MANUAL_REL_PATH}; (3) re-run the fetch — "
+            f"run_cleveland_fed_nowcast_fetch falls back to the present file."
         ) from exc
     if not payload:
         raise ClevelandFedNowcastError(
@@ -196,30 +259,27 @@ def download_cleveland_fed_nowcast_csv(
 
 def update_cpi_nowcast_parquet(
     *,
-    csv_path: Path,
+    json_path: Path,
     out_path: Path,
-    date_column: str = DEFAULT_DATE_COLUMN,
-    value_column: str = DEFAULT_VALUE_COLUMN,
+    series_name: str = NOWCAST_SERIES_NAME,
     value_scale: float = DEFAULT_VALUE_SCALE,
 ) -> pd.DataFrame:
-    """Parse the manually-dropped (or downloaded) Cleveland Fed CSV, merge
-    it with any existing ``cpi_nowcast`` parquet, dedupe by date, re-save.
+    """Parse the nowcast JSON, merge it with any existing ``cpi_nowcast``
+    parquet, dedupe by date, re-save.
 
     The merge keeps the freshly-parsed row on a date collision — a later
-    export supersedes an earlier same-date nowcast (the nowcast is revised
-    as new daily data arrives within the month). Returns the full merged
-    DataFrame, sorted ascending by date.
+    feed snapshot carries revised nowcast values for recent months. Returns
+    the full merged DataFrame, sorted ascending by date.
     """
-    if not csv_path.exists():
+    if not json_path.exists():
         raise ClevelandFedNowcastError(
-            f"No Cleveland Fed nowcast CSV at {csv_path}. Download the "
-            f"historical CSV from the Cleveland Fed inflation-nowcasting "
-            f"page and drop it there, then re-run."
+            f"No Cleveland Fed nowcast JSON at {json_path}. The download "
+            f"step should have written it; see "
+            f"download_cleveland_fed_nowcast_json for the manual fallback."
         )
-    parsed = parse_cleveland_fed_nowcast_csv(
-        csv_path.read_text(),
-        date_column=date_column,
-        value_column=value_column,
+    parsed = parse_cleveland_fed_nowcast_json(
+        json_path.read_text(),
+        series_name=series_name,
         value_scale=value_scale,
     )
     if out_path.exists():
@@ -246,55 +306,58 @@ def update_cpi_nowcast_parquet(
 def run_cleveland_fed_nowcast_fetch(
     *,
     out_dir: Path,
-    date_column: str = DEFAULT_DATE_COLUMN,
-    value_column: str = DEFAULT_VALUE_COLUMN,
+    source_url: str = SOURCE_URL,
+    series_name: str = NOWCAST_SERIES_NAME,
     value_scale: float = DEFAULT_VALUE_SCALE,
 ) -> Path:
     """Orchestrate the Cleveland Fed inflation-nowcast fetch.
 
-    Resolution: parse the manually-dropped CSV at
-    ``out_dir / cleveland_fed_nowcast / cleveland_fed_nowcast.csv`` (the
-    operator downloads it from the Cleveland Fed page — see
-    ``download_cleveland_fed_nowcast_csv``), merge into
-    ``cleveland_fed_nowcast/cpi_nowcast.parquet``, and write a report JSON.
+    Downloads the month-over-month webchart JSON to
+    ``out_dir/cleveland_fed_nowcast/nowcast_month.json``, parses it, merges
+    into ``cpi_nowcast.parquet``, and writes a report JSON. If the download
+    fails but a JSON is already present (prior download or manual drop),
+    that file is parsed instead.
 
-    Cadence: the Cleveland Fed nowcast updates intra-month as daily data
-    arrives. Weekly or monthly re-fetch is sufficient — the engine reads the
-    most-recent value carried forward.
+    Cadence: the Cleveland Fed nowcast updates daily and the feed is the
+    full archive, so a monthly re-fetch keeps ``cpi_nowcast`` current — the
+    engine reads the most-recent monthly value carried forward.
     """
     nowcast_dir = out_dir / "cleveland_fed_nowcast"
     nowcast_dir.mkdir(parents=True, exist_ok=True)
-    csv_path = out_dir / MANUAL_REL_PATH
+    json_path = out_dir / MANUAL_REL_PATH
     out_path = nowcast_dir / CPI_NOWCAST_PARQUET
 
+    try:
+        download_cleveland_fed_nowcast_json(
+            out_path=json_path, source_url=source_url
+        )
+    except ClevelandFedNowcastError:
+        if not json_path.exists():
+            raise
+        _log.warning(
+            "cleveland_fed_nowcast: download failed, falling back to the "
+            "already-present JSON at %s",
+            json_path,
+        )
+
     df = update_cpi_nowcast_parquet(
-        csv_path=csv_path,
+        json_path=json_path,
         out_path=out_path,
-        date_column=date_column,
-        value_column=value_column,
+        series_name=series_name,
         value_scale=value_scale,
     )
 
     report = {
         "as_of_utc": dt.datetime.now(dt.timezone.utc).isoformat(),
         "source": SOURCE_NAME,
-        "source_url": SOURCE_URL,
-        "source_path": str(csv_path),
+        "source_url": source_url,
+        "source_path": str(json_path),
+        "data_vintage": extract_data_vintage(json_path.read_text()),
+        "series_name": series_name,
+        "value_scale": value_scale,
         "rows": int(len(df)),
         "min_date": str(df["date"].min().date()) if not df.empty else None,
         "max_date": str(df["date"].max().date()) if not df.empty else None,
-        "column_mapping": {
-            "date_column": date_column,
-            "value_column": value_column,
-            "value_scale": value_scale,
-        },
-        "verification_needed": (
-            "The Cleveland Fed CSV schema and published unit could not be "
-            "verified without web access. Confirm date_column / value_column "
-            "match the export header and that value_scale converts the "
-            "published unit to a fractional monthly inflation rate (see "
-            "ADR 0006 and the module docstring)."
-        ),
         "paths": {
             "cpi_nowcast_parquet": str(out_path),
         },

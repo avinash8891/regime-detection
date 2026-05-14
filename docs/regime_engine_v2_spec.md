@@ -1571,15 +1571,18 @@ the slice/commit that resolved it. Entries are append-only.
     history). §2B `inflation_surprise_zscore` spec text amended.
 
     Fetch-path update — the dedicated `cpi_nowcast` fetch path
-    (`regime_data_fetch.cleveland_fed_nowcast`) is built. It mirrors the
-    `aggregate_eps` manual-drop fallback: the operator drops the Cleveland
-    Fed nowcast CSV at `data/raw/cleveland_fed_nowcast/`, and
-    `run_cleveland_fed_nowcast_fetch` parses it into `cpi_nowcast.parquet`.
-    The CSV schema could not be verified without web access, so the column
-    mapping (`date_column` / `value_column` / `value_scale`) is
-    parameterized — the operator pins the verified schema at first run; a
-    mismatch raises `ClevelandFedNowcastError` loudly. See ADR 0006 "Fetch
-    path".
+    (`regime_data_fetch.cleveland_fed_nowcast`) is built and the data
+    source is verified. `run_cleveland_fed_nowcast_fetch` downloads the
+    Cleveland Fed month-over-month nowcast webchart JSON
+    (`.../webcharts/inflationnowcasting/nowcast_month.json` — reachable
+    over `urllib`; only the HTML page 403s) and parses it into
+    `cpi_nowcast.parquet`. The feed is the full archive — one chart object
+    per monthly vintage, ~2013-08 to present (154 usable CPI vintages),
+    well past the 1260-session normalizer. Per vintage the parser takes
+    the last non-empty `CPI Inflation` value (settled nowcast) keyed to
+    the 1st of the target month, matching `CPIAUCSL`'s reference-date
+    convention. Manual-drop of the JSON is a fallback only. See ADR 0006
+    "Fetch path".
 
 49. **§2C Credit/Funding — scaffolding + operational pins.**
 

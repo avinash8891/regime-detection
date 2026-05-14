@@ -56,7 +56,7 @@ The `inflation_surprise_zscore` feature carries a **bias-warning row** with prov
 
 ### `cpi_nowcast` input
 
-Supplied via `MarketContext.macro_series["cpi_nowcast"]` — the Cleveland Fed nowcast of the current-period CPI inflation **rate** (not a price-index level). Source-agnostic at the engine boundary: the operator wires it from the Cleveland Fed nowcasting publication (their site publishes a downloadable historical file) into `macro_series` by whatever fetch path; the engine consumes whatever is in that key. When `cpi_nowcast` is absent from `macro_series`, `inflation_surprise_zscore` stays all-NaN and the single-signal limb falsifies — V1 byte-identity preserved, identical to the pre-substitution behavior.
+Supplied via `MarketContext.macro_series["cpi_nowcast"]` — the Cleveland Fed nowcast of the current-period CPI inflation **rate** (not a price-index level), as a monthly time series. Source-agnostic at the engine boundary: the engine consumes whatever is in that key; `regime_data_fetch.cleveland_fed_nowcast` produces it (see "Fetch path" below). When `cpi_nowcast` is absent from `macro_series`, `inflation_surprise_zscore` stays all-NaN and the single-signal limb falsifies — V1 byte-identity preserved, identical to the pre-substitution behavior.
 
 ### `inflation_surprise_zscore` computation
 
@@ -94,11 +94,16 @@ inflation_surprise_zscore[t] =
 - `evaluate_inflation_shock` single-signal limb flips from hardcoded-skip to `inflation_surprise_zscore > threshold` (NaN falsifies).
 - `InflationGrowthRulesConfig` += `inflation_surprise_zscore_threshold: float = 1.5`.
 - `feature_store.build_feature_store` passes `context.macro_series.get("cpi_nowcast")` through.
-- `cpi_nowcast` is NOT added to `V2_FRED_SERIES` — the Cleveland Fed nowcast is published on the Cleveland Fed site, not cleanly on FRED. The operator wires it into `macro_series` via a dedicated fetch path; the engine code path is complete and the limb unlocks the moment `cpi_nowcast` data is present.
+- `cpi_nowcast` is NOT added to `V2_FRED_SERIES` — the Cleveland Fed nowcast is published on the Cleveland Fed site, not on FRED (FRED carries the Cleveland Fed *median* / *trimmed-mean* CPI, which are core-inflation measures, not the nowcast). It is sourced by its own fetcher (below) and wired into `macro_series`; the engine code path is complete and the limb unlocks the moment `cpi_nowcast` data is present.
 
-### Fetch path (follow-on commit)
+### Fetch path
 
-`regime_data_fetch/cleveland_fed_nowcast.py` is the dedicated fetch path. It mirrors the manual-drop fallback architecture of the `aggregate_eps` spdji workbook fetcher: the operator downloads the Cleveland Fed inflation-nowcast CSV, drops it at `data/raw/cleveland_fed_nowcast/cleveland_fed_nowcast.csv`, and `run_cleveland_fed_nowcast_fetch` parses it into `cpi_nowcast.parquet`. **Verification need:** the exact CSV schema (column names, published unit) could not be confirmed without web access, so `parse_cleveland_fed_nowcast_csv` parameterizes the column mapping (`date_column` / `value_column` / `value_scale`) — the operator pins the verified schema at the `run_*` call site on first run. The default `value_scale=0.01` converts the Cleveland Fed's percent-m/m publication to the fractional monthly rate `compute_inflation_surprise_zscore` expects. A schema mismatch raises `ClevelandFedNowcastError` loudly rather than producing a silently-wrong series.
+`regime_data_fetch/cleveland_fed_nowcast.py` is the dedicated fetch path, and the data source is **verified**: the Cleveland Fed "Inflation Nowcasting" page backs its month-over-month chart with a single JSON archive at `https://www.clevelandfed.org/-/media/files/webcharts/inflationnowcasting/nowcast_month.json` — reachable directly over `urllib` (only the human-facing HTML page 403s programmatic clients). The feed is the **full history**: one FusionCharts-style chart object per monthly vintage, ~2013-08 to present (154 usable CPI vintages as of the 2026-05 data vintage — far past the 1260-session normalizer, so the limb is not cold-start-blocked).
+
+- `download_cleveland_fed_nowcast_json` fetches the feed; `parse_cleveland_fed_nowcast_json` extracts, per vintage, the **last non-empty `CPI Inflation` value** (the settled nowcast right before the BLS release), keyed to the **1st of the target month** (`chart.subcaption` `"YYYY-M"`). The 1st-of-month anchor matches FRED `CPIAUCSL`'s reference-date convention, so `realized − nowcast` forward-fills like-for-like.
+- `value_scale = 0.01` converts the feed's percent-m/m publication to the fractional monthly rate `compute_inflation_surprise_zscore` expects.
+- `series_name` / `value_scale` are parameterized (an operator could switch to Core CPI / PCE) but the headline-CPI defaults are verified, not guessed. A structurally-wrong feed raises `ClevelandFedNowcastError` loudly rather than producing a silently-wrong series.
+- Manual-drop is a *fallback only* — if the download fails, `run_cleveland_fed_nowcast_fetch` parses an already-present `nowcast_month.json`. No dual-source path.
 
 ### Tests
 
