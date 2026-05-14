@@ -1,0 +1,42 @@
+docs/regime_engine_v2_spec.md
+  s_7f3c352a4f9447::t_48290638770671 2517-2538
+  s_7f3c352a4f9447::t_ae49276ef7d52f 2661
+  s_7f3c352a4f9447::t_ea29f77f3ca330 1545-1560
+docs/decisions/0006-inflation-surprise-cleveland-fed-nowcast-substitute.md
+  s_7f3c352a4f9447::t_7f82baa2552cb5 1-107
+src/regime_detection/inflation_growth.py
+  s_7f3c352a4f9447::t_afcde48d24c5b4 414
+  s_7f3c352a4f9447::t_1be75bee83e933 127-137
+  s_7f3c352a4f9447::t_254b3ab0c12540 297-312
+  s_7f3c352a4f9447::t_7b0b5e34165282 462
+  s_7f3c352a4f9447::t_1af96e48e880df 255,262-268
+  s_7f3c352a4f9447::t_38531f115dd776 573-575,577-583,585-593
+  s_7f3c352a4f9447::t_66e4ca346116cc 206-241
+  s_7f3c352a4f9447::t_c20ae7c3a79202 357-369,371-374,376-377
+  s_7f3c352a4f9447::t_c5403a0afea56e 499-501
+src/regime_detection/config.py
+  s_7f3c352a4f9447::t_982b46c831ffca 667-676
+src/regime_detection/feature_store.py
+  s_7f3c352a4f9447::t_c0a1ffbd9b645b 526-530
+tests/test_inflation_growth.py
+  s_7f3c352a4f9447::t_ba206a1318fe03 34,40
+  s_7f3c352a4f9447::t_cd54cf3254e244 77-79
+  s_7f3c352a4f9447::t_b8fd4058e5148d 320-325,328,337-362
+  s_7f3c352a4f9447::t_6353a320fc1477 795-921
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.8",
+  "base_commit_sha": "9002da9c516b37a4ed26639eccfef42e926c799a",
+  "prompts": {},
+  "sessions": {
+    "s_7f3c352a4f9447": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "3d45e374-f98d-411d-b6a1-0697dd832539",
+        "model": "claude-opus-4-7"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}
