@@ -119,6 +119,25 @@ def test_boe_parses_legacy_annual_mpc_month_day_table() -> None:
     assert [candidate.date for candidate in candidates] == [dt.date(2017, 2, 2), dt.date(2017, 3, 16)]
 
 
+def test_boe_parses_annual_mpc_section_year_table() -> None:
+    html = """
+    <h3>2019 confirmed dates</h3>
+    <table>
+      <tr><td><p><strong>MPC Announcement and Minutes Publication</strong></p></td><td></td></tr>
+      <tr><td><p>Thursday 7 February</p></td><td><p>Thursday 7 February</p></td></tr>
+      <tr><td><p>Thursday 21 March</p></td><td></td></tr>
+    </table>
+    """
+
+    candidates = parse_boe_mpc_dates_page(
+        html,
+        source_url="https://www.bankofengland.co.uk/news/2018/september/monetary-policy-committee-dates-for-2019",
+        as_of_date=dt.date(2018, 9, 21),
+    )
+
+    assert [candidate.date for candidate in candidates] == [dt.date(2019, 2, 7), dt.date(2019, 3, 21)]
+
+
 def test_boe_adapter_continues_pagination_across_empty_news_pages() -> None:
     pages = {
         1: '{"Results": "<a href=\\"/monetary-policy-summary-and-minutes/2026/march-2026\\"><time datetime=\\"2026-03-19\\"></time><h3 class=\\"list\\">March 2026 Monetary Policy Summary and Minutes</h3></a>"}',

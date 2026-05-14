@@ -137,6 +137,30 @@ def parse_boe_mpc_dates_page(html: str, *, source_url: str, as_of_date: dt.date)
         flags=re.IGNORECASE,
     )
     day_cell_pattern = re.compile(r"(?:Monday|Tuesday|Wednesday|Thursday|Friday)?\s*(?P<day>\d{1,2})\b", flags=re.IGNORECASE)
+    section_pattern = re.compile(
+        r"<h[23][^>]*>\s*(?P<year>20\d{2})\s+(?:confirmed|provisional|MPC)?\s*dates\s*</h[23]>(?P<section>.*?)(?=<h[23]|$)",
+        flags=re.IGNORECASE | re.DOTALL,
+    )
+    day_month_pattern = re.compile(
+        r"(?:Monday|Tuesday|Wednesday|Thursday|Friday)?\s*(?P<day>\d{1,2})\s+"
+        r"(?P<month>January|February|March|April|May|June|July|August|September|October|November|December)\b",
+        flags=re.IGNORECASE,
+    )
+    for section_match in section_pattern.finditer(html):
+        year = int(section_match.group("year"))
+        for row_match in row_pattern.finditer(section_match.group("section")):
+            cells = cell_pattern.findall(row_match.group("row"))
+            if not cells:
+                continue
+            first_cell = strip_tags(cells[0])
+            if "no meeting" in first_cell.lower() or "publication" in first_cell.lower() or re.search(r"20\d{2}", first_cell):
+                continue
+            date_match = day_month_pattern.search(first_cell)
+            if date_match is None:
+                continue
+            month = MONTHS[date_match.group("month").lower()]
+            event_date = dt.date(year, month, int(date_match.group("day")))
+            candidates.append(_candidate(event_date, as_of_date, source_url, "MPC Announcement and Minutes publication", first_cell))
     for row_match in row_pattern.finditer(html):
         cells = cell_pattern.findall(row_match.group("row"))
         if not cells:
@@ -161,7 +185,8 @@ def parse_boe_mpc_dates_page(html: str, *, source_url: str, as_of_date: dt.date)
         else:
             continue
         candidates.append(_candidate(event_date, as_of_date, source_url, "MPC Announcement and Minutes publication", first_cell))
-    return sorted(candidates, key=lambda candidate: candidate.date)
+    deduped = {candidate.date: candidate for candidate in candidates}
+    return [deduped[date] for date in sorted(deduped)]
 
 
 def _parse_legacy_text_dates(html: str, *, as_of_date: dt.date) -> list[EventCandidate]:
