@@ -31,11 +31,13 @@ from regime_detection.fragility_universe import (
 from regime_detection.hysteresis import apply_per_label_asymmetric_hysteresis
 from regime_detection.inflation_growth import (
     INFLATION_GROWTH_RISK_RANK,
+    INFLATION_SURPRISE_NOWCAST_BIAS_WARNING_CODE,
     InflationGrowthFeatures,
     InflationGrowthRuleInputs,
     build_rule_inputs_by_date,
     build_rule_inputs_for_date,
     compute_inflation_growth_features,
+    compute_inflation_surprise_zscore,
     evaluate_disinflation,
     evaluate_earnings_contraction,
     evaluate_earnings_expansion,
@@ -72,6 +74,9 @@ def _rule_inputs(**overrides) -> InflationGrowthRuleInputs:
         cpi_6m_change_pct=0.02,
         cpi_6m_change_pct_lag_21=0.02,
         cpi_6m_change_pct_slope_21d=0.0,
+        # ADR 0006 — NaN by default so the inflation_shock single-signal
+        # limb is silent unless a test explicitly supplies a z-score.
+        inflation_surprise_zscore=float("nan"),
         pmi_manufacturing=52.0,
         pmi_manufacturing_slope_21d=0.0,
         commodity_return_63d=0.0,
@@ -312,18 +317,49 @@ def test_inflation_shock_composite_fires() -> None:
     assert evaluate_rules(inputs=inputs, config=rules) == "inflation_shock"
 
 
-def test_inflation_shock_single_signal_limb_short_circuits() -> None:
-    """§2B line 2320 + Log #48: single-signal limb (BLS surprise) deferred.
-
-    Even if a hypothetical inflation_surprise_zscore would fire, the predicate
-    is the composite-only path; passing all-zero composite inputs should NOT
-    fire inflation_shock.
-    """
+def test_inflation_shock_single_signal_limb_silent_when_zscore_nan() -> None:
+    """ADR 0006 / Log #48: when `cpi_nowcast` is unwired (or during the 5y
+    cold-start), `inflation_surprise_zscore` is NaN — the single-signal
+    limb falsifies, and with all-zero composite inputs inflation_shock
+    does not fire. This is the cold-start path; it must NOT block the
+    composite limb when composite inputs DO fire."""
     rules = _default_rules()
     inputs = _rule_inputs(
+        inflation_surprise_zscore=float("nan"),
         commodity_return_63d=0.0,
         treasury_10y_yield_slope_21d=0.0,
         spy_21d_return=0.0,
+        tlt_21d_return=0.0,
+    )
+    assert evaluate_inflation_shock(inputs, rules) is False
+
+
+def test_inflation_shock_single_signal_limb_fires_above_threshold() -> None:
+    """ADR 0006: the single-signal limb fires on a large positive
+    (hotter-than-nowcast) inflation surprise — `inflation_surprise_zscore
+    > +1.5` — even when EVERY composite-limb input is benign."""
+    rules = _default_rules()
+    inputs = _rule_inputs(
+        inflation_surprise_zscore=2.0,  # > +1.5 threshold
+        # all composite inputs benign — only the single-signal limb fires
+        commodity_return_63d=0.0,
+        treasury_10y_yield_slope_21d=0.0,
+        spy_21d_return=0.01,
+        tlt_21d_return=0.0,
+    )
+    assert evaluate_inflation_shock(inputs, rules) is True
+    assert evaluate_rules(inputs=inputs, config=rules) == "inflation_shock"
+
+
+def test_inflation_shock_single_signal_limb_silent_below_threshold() -> None:
+    """`inflation_surprise_zscore` at or below +1.5 does not fire the
+    single-signal limb (strict `>` per spec line 2551)."""
+    rules = _default_rules()
+    inputs = _rule_inputs(
+        inflation_surprise_zscore=1.5,  # exactly at threshold — strict `>` fails
+        commodity_return_63d=0.0,
+        treasury_10y_yield_slope_21d=0.0,
+        spy_21d_return=0.01,
         tlt_21d_return=0.0,
     )
     assert evaluate_inflation_shock(inputs, rules) is False
@@ -756,3 +792,130 @@ def test_regime_output_carries_inflation_growth_state_when_configured() -> None:
     assert out.inflation_growth_state is not None
     allowed = set(INFLATION_GROWTH_RISK_RANK.keys())
     assert out.inflation_growth_state.active_label in allowed
+
+
+# ---------------------------------------------------------------------------
+# ADR 0006 — inflation_surprise_zscore via the Cleveland Fed nowcast.
+# ---------------------------------------------------------------------------
+
+
+def test_compute_inflation_surprise_zscore_hand_computed() -> None:
+    """ADR 0006: surprise = realized_cpi_rate - cpi_nowcast, z-scored over
+    a rolling std window. With a short normalizer window and a hand-built
+    CPI/nowcast pair the z-score at the trailing session is exact."""
+    idx = _bdate_index(periods=40)
+    # CPIAUCSL index level rising ~0.5%/month over the window.
+    cpi = pd.Series(np.linspace(300.0, 306.0, len(idx)), index=idx, dtype=float)
+    # Nowcast: a constant inflation-rate estimate of 1.0% (0.01).
+    nowcast = pd.Series(0.01, index=idx, dtype=float)
+    zscore = compute_inflation_surprise_zscore(
+        cpi_all_items=cpi,
+        cpi_nowcast=nowcast,
+        session_index=idx,
+        realized_rate_lookback=5,
+        normalizer_window=10,
+    )
+    assert isinstance(zscore, pd.Series)
+    assert zscore.name == "inflation_surprise_zscore"
+    # First (realized_rate_lookback + normalizer_window - 1) rows are NaN
+    # (cold-start — the 5y/normalizer std needs a full window).
+    assert zscore.iloc[: 5 + 10 - 2].isna().all()
+    # Past the cold-start window the z-score is finite.
+    assert zscore.dropna().shape[0] > 0
+
+
+def test_compute_inflation_surprise_zscore_cold_start_all_nan_below_window() -> None:
+    """Below `normalizer_window` of surprise history, the z-score is
+    entirely NaN — the single-signal limb stays silent (V1 §2.7)."""
+    idx = _bdate_index(periods=15)
+    cpi = pd.Series(np.linspace(300.0, 302.0, len(idx)), index=idx, dtype=float)
+    nowcast = pd.Series(0.01, index=idx, dtype=float)
+    zscore = compute_inflation_surprise_zscore(
+        cpi_all_items=cpi,
+        cpi_nowcast=nowcast,
+        session_index=idx,
+        realized_rate_lookback=5,
+        normalizer_window=1260,  # far longer than the 15-session input
+    )
+    assert zscore.isna().all()
+
+
+def test_compute_inflation_growth_features_emits_real_zscore_with_nowcast() -> None:
+    """When cpi_nowcast is supplied, compute_inflation_growth_features
+    computes a real (non-all-NaN) inflation_surprise_zscore and emits the
+    Cleveland-Fed-nowcast bias-warning provenance row."""
+    idx = _bdate_index(periods=400)
+    n = len(idx)
+    cpi = pd.Series(np.linspace(300.0, 312.0, n), index=idx, dtype=float)
+    nowcast = pd.Series(0.01, index=idx, dtype=float)
+    pmi = pd.Series(51.0, index=idx, dtype=float)
+    dgs10 = pd.Series(4.0, index=idx, dtype=float)
+    dbc = pd.Series(np.linspace(20.0, 25.0, n), index=idx, dtype=float)
+    spy = pd.Series(np.linspace(400.0, 420.0, n), index=idx, dtype=float)
+    tlt = pd.Series(100.0, index=idx, dtype=float)
+    xly = xli = xlp = xlu = pd.Series(100.0, index=idx, dtype=float)
+
+    # Short normalizer window so a 400-session input produces non-NaN values.
+    rules = _default_rules().model_copy(
+        update={"inflation_surprise_normalizer_window_sessions": 60}
+    )
+    feats = compute_inflation_growth_features(
+        cpi_all_items=cpi,
+        pmi_manufacturing=pmi,
+        dgs10=dgs10,
+        dbc_close=dbc,
+        spy_close=spy,
+        tlt_close=tlt,
+        xly_close=xly,
+        xli_close=xli,
+        xlp_close=xlp,
+        xlu_close=xlu,
+        config=rules,
+        cpi_nowcast=nowcast,
+    )
+    # The z-score is no longer the all-NaN placeholder.
+    assert feats.inflation_surprise_zscore.notna().any()
+    # The bias-warning frame carries the Cleveland Fed nowcast provenance row.
+    bw = feats.bias_warnings
+    assert (
+        bw["warning_code"] == INFLATION_SURPRISE_NOWCAST_BIAS_WARNING_CODE
+    ).any()
+    nowcast_row = bw[
+        bw["warning_code"] == INFLATION_SURPRISE_NOWCAST_BIAS_WARNING_CODE
+    ]
+    assert list(nowcast_row["feature_name"]) == ["inflation_surprise_zscore"]
+
+
+def test_compute_inflation_growth_features_all_nan_zscore_without_nowcast() -> None:
+    """When cpi_nowcast is NOT supplied, inflation_surprise_zscore stays the
+    all-NaN placeholder and NO Cleveland-Fed bias-warning row is emitted —
+    V1 byte-identity preserved (the pre-ADR-0006 behaviour)."""
+    idx = _bdate_index(periods=120)
+    n = len(idx)
+    cpi = pd.Series(np.linspace(300.0, 304.0, n), index=idx, dtype=float)
+    pmi = pd.Series(51.0, index=idx, dtype=float)
+    dgs10 = pd.Series(4.0, index=idx, dtype=float)
+    dbc = pd.Series(20.0, index=idx, dtype=float)
+    spy = pd.Series(400.0, index=idx, dtype=float)
+    tlt = pd.Series(100.0, index=idx, dtype=float)
+    xly = xli = xlp = xlu = pd.Series(100.0, index=idx, dtype=float)
+
+    feats = compute_inflation_growth_features(
+        cpi_all_items=cpi,
+        pmi_manufacturing=pmi,
+        dgs10=dgs10,
+        dbc_close=dbc,
+        spy_close=spy,
+        tlt_close=tlt,
+        xly_close=xly,
+        xli_close=xli,
+        xlp_close=xlp,
+        xlu_close=xlu,
+        config=_default_rules(),
+        # cpi_nowcast omitted
+    )
+    assert feats.inflation_surprise_zscore.isna().all()
+    bw = feats.bias_warnings
+    assert not (
+        bw["warning_code"] == INFLATION_SURPRISE_NOWCAST_BIAS_WARNING_CODE
+    ).any()

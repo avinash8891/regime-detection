@@ -664,6 +664,16 @@ class InflationGrowthRulesConfig(BaseModel):
     spy_return_lookback_sessions: int = Field(default=21, ge=5)
     # §2B line 2245 — TLT 21d return.
     tlt_return_lookback_sessions: int = Field(default=21, ge=5)
+    # §2B line 2551 — inflation_shock single-signal limb threshold
+    # (`inflation_surprise_zscore > +1.5`). ADR 0006. Must be > 0: the
+    # limb gates on a strictly-positive (hotter-than-nowcast) surprise.
+    inflation_surprise_zscore_threshold: float = Field(default=1.5, gt=0.0)
+    # ADR 0006 — 5y rolling-std normalizer window for the inflation
+    # surprise (1260 trading days, same convention as §2A yield z-scores).
+    inflation_surprise_normalizer_window_sessions: int = Field(default=1260, ge=20)
+    # ADR 0006 — lookback for the realized 1-month CPI inflation rate
+    # (~21 trading days = 1 month, matches the Cleveland Fed nowcast cadence).
+    inflation_surprise_realized_rate_lookback_sessions: int = Field(default=21, ge=5)
 
 
 class InflationGrowthConfig(BaseModel):

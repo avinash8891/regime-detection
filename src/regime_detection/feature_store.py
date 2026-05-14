@@ -523,6 +523,11 @@ def build_feature_store(
             xlp_close=context.cross_asset_closes[_IG_XLP_KEY],
             xlu_close=context.cross_asset_closes[_IG_XLU_KEY],
             config=inflation_growth_config.rules,
+            # §2B inflation_surprise_zscore seam (ADR 0006): the Cleveland
+            # Fed inflation nowcast, source-agnostic via macro_series. When
+            # absent, inflation_surprise_zscore stays all-NaN and the
+            # inflation_shock single-signal limb falsifies.
+            cpi_nowcast=context.macro_series.get("cpi_nowcast"),
         )
 
     # v2 §6.3 BOCPD change-point evidence layer (Slice 8). Observation

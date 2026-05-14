@@ -1542,9 +1542,22 @@ the slice/commit that resolved it. Entries are append-only.
     accumulator to produce the 4-week revision series. The series is
     all-NaN until > 4 weekly fetches accumulate, so the two earnings
     labels stay silent during cold-start and unlock organically once the
-    accumulator fills. The `inflation_surprise_zscore` single-signal
-    limb of `inflation_shock` remains genuinely blocked (analyst-consensus
-    survey data — separate audit item).
+    accumulator fills.
+
+    Second status update — `inflation_surprise_zscore` single-signal
+    limb blocker also closed (ADR 0006). The analyst-survey
+    `consensus_estimate` is genuinely paid, but the spec owner directed
+    a substitution: the free Cleveland Fed inflation nowcast
+    (model-derived current-period CPI inflation-rate estimate) fills
+    the same "expected value" role. `inflation_surprise_zscore =
+    (realized_cpi_rate - cpi_nowcast) / rolling_std_5y(...)`, computed
+    by `compute_inflation_growth_features` when `macro_series` carries
+    `cpi_nowcast`. The feature carries a bias-warning row
+    (`inflation_surprise_cleveland_fed_nowcast`) flagging the surprise
+    as model-relative, not survey-relative. The single-signal limb of
+    `evaluate_inflation_shock` now consumes the z-score; it is silent
+    only during cold-start (no `cpi_nowcast`, or < 5y of surprise
+    history). §2B `inflation_surprise_zscore` spec text amended.
 
 49. **§2C Credit/Funding — scaffolding + operational pins.**
 
@@ -2501,10 +2514,28 @@ inflation_shock > recession_scare > disinflation > goldilocks > recovery_growth 
 cpi_3m_change_pct = (cpi[t] - cpi[t - 3_months]) / cpi[t - 3_months]
 cpi_6m_change_pct = (cpi[t] - cpi[t - 6_months]) / cpi[t - 6_months]
 
-# Inflation surprise — z-score of actual-vs-consensus on BLS release dates.
-#   inflation_surprise_zscore = (actual_release - consensus_estimate) / std_of_surprise_history_5y
-# DEFERRED: requires consensus-vs-actual feed (not yet ingested). See Ambiguity Log #48
-# for the short-circuit behavior used by `inflation_shock` until the feed lands.
+# Inflation surprise — z-score of the realized CPI inflation rate vs the
+# Cleveland Fed inflation nowcast (ADR 0006). The nowcast SUBSTITUTES for
+# the analyst-survey `consensus_estimate` named in the original formula:
+# it is a free, model-derived, point-in-time estimate of the current-period
+# CPI inflation rate, occupying the same "expected value" role. The
+# substitution is a spec-owner-directed amendment (ADR 0006), not an
+# invention; the `inflation_surprise_zscore` feature carries a bias-warning
+# row (`inflation_surprise_cleveland_fed_nowcast`) flagging that the
+# surprise is model-relative, not survey-relative.
+#
+#   realized_cpi_rate    = 1-month % change of CPIAUCSL (macro_series `cpi_all_items`)
+#   cpi_nowcast          = Cleveland Fed current-period CPI inflation-rate nowcast
+#                          (macro_series `cpi_nowcast`)
+#   inflation_surprise   = realized_cpi_rate - cpi_nowcast
+#   inflation_surprise_zscore = inflation_surprise / rolling_std_5y(inflation_surprise)
+#                          (5y normalizer = 1260 trading days; NaN until a full
+#                          5y of surprise history exists — V1 §2.7 cold-start)
+#
+# When `cpi_nowcast` is absent from macro_series the z-score is all-NaN and
+# the `inflation_shock` single-signal limb falsifies — V1 byte-identity
+# preserved, identical to the pre-substitution behavior. See Ambiguity
+# Log #48.
 
 # PMI — ISM Manufacturing PMI is the primary signal. ISM Services is a separate
 # input only when both are available. "PMI > 50" in rule predicates refers to the
@@ -2627,7 +2658,7 @@ Rules referencing `credit_funding.active_label` (`goldilocks`, `recession_scare`
 
 `earnings_expansion` / `earnings_contraction` consume `aggregate_forward_eps_revision_direction_4w`, which is built by the `regime_data_fetch.aggregate_eps` weekly-snapshot accumulator (`sp500_eps_weekly_history.parquet`). The series is all-NaN until > 4 weekly fetches have accumulated; the two labels stay silent during that cold-start and unlock organically once the accumulator fills. No external feed dependency — the accumulator builds the weekly series from the existing free S&P workbook fetch.
 
-`inflation_shock`'s single-signal limb (`inflation_surprise_zscore > +1.5`) short-circuits to `False` until the BLS consensus-vs-actual feed is ingested. The composite-shock limb remains active.
+`inflation_shock`'s single-signal limb (`inflation_surprise_zscore > +1.5`) consumes `inflation_surprise_zscore`, computed from the realized CPI inflation rate vs the Cleveland Fed inflation nowcast (ADR 0006 — the nowcast substitutes for the analyst-survey `consensus_estimate`). The z-score is all-NaN until `cpi_nowcast` is wired into `macro_series` AND a full 5y of surprise history has accumulated; the limb is silent during that cold-start. The composite-shock limb is always active.
 
 ---
 
