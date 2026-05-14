@@ -1354,7 +1354,11 @@ def build_axis_series_bundle(*, context: MarketContext, feature_store: FeatureSt
     volatility_state = VolatilitySeriesClassifier().build(context, feature_store)
     breadth_state = BreadthSeriesClassifier().build(context, feature_store)
     event_calendar = build_event_calendar_series(context)
-    credit_funding = CreditFundingSeriesClassifier().build(context, feature_store)
+    _credit_funding_classifier = CreditFundingSeriesClassifier()
+    credit_funding = _credit_funding_classifier.build(context, feature_store)
+    credit_funding_proxy = _credit_funding_classifier.build_proxy(
+        context, feature_store
+    )
     network_fragility = NetworkFragilitySeriesClassifier().build(
         context,
         feature_store,
@@ -1385,6 +1389,7 @@ def build_axis_series_bundle(*, context: MarketContext, feature_store: FeatureSt
         network_fragility=network_fragility,
         volume_liquidity_state=volume_liquidity_state,
         credit_funding=credit_funding,
+        credit_funding_proxy=credit_funding_proxy,
         monetary_pressure_state=monetary_pressure_state,
         inflation_growth=inflation_growth,
     )

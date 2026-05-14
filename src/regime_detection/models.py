@@ -383,6 +383,7 @@ class RegimeOutput(BaseModel):
     # exclude_none=True). Each lands when its v2 slice ships.
     inflation_growth_state: InflationGrowthOutput | None = None  # v2 §2B (slice 5)
     credit_funding_state: CreditFundingOutput | None = None  # v2 §2C (slice 4)
+    credit_funding_state_proxy: CreditFundingOutput | None = None  # v2 §2C proxy (Log #71)
     volume_liquidity_state: VolumeLiquidityStateOutput | None = None  # v2 §1E (slice 2.7)
     monetary_pressure_state: MonetaryPressureV2Output | None = None  # v2 §2A (Log #46)
     change_point: ChangePointOutput | None = None  # v2 §4.6 (V2.1)

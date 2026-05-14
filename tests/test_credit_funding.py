@@ -972,3 +972,8 @@ def test_regime_output_carries_credit_funding_state_when_configured() -> None:
     assert out.credit_funding_state is not None
     allowed = set(CREDIT_FUNDING_RISK_RANK.keys())
     assert out.credit_funding_state.active_label in allowed
+    # §2C parallel proxy label (Ambiguity Log #71) — emitted alongside the
+    # real-OAS label, a distinct CreditFundingOutput, never blended.
+    assert out.credit_funding_state_proxy is not None
+    assert out.credit_funding_state_proxy is not out.credit_funding_state
+    assert out.credit_funding_state_proxy.active_label in allowed
