@@ -161,10 +161,37 @@ AND close > SMA_50
 close > SMA_200
 AND return_126d > 0.20
 AND realized_vol_21d rising
-AND sentiment_score >= configured threshold
+AND sentiment_score >= euphoria_sentiment_threshold
 ```
 
-`sentiment_score` definition required before implementation. Candidate sources: AAII bull-bear, put-call ratio percentile, Investors Intelligence sentiment.
+Operational definitions:
+
+```python
+# realized_vol_21d rising — strict 5-session change (Log #68 §1D analogue:
+# same memory horizon as `pct_above_50dma rising` / `nh_nl_ratio rising`).
+realized_vol_21d_rising = realized_vol_21d[t] > realized_vol_21d[t - 5]
+
+# sentiment_score — AAII bull-bear spread 8-week moving average.
+# Source columns: AAII weekly survey (`bullish`, `bearish` percentages).
+# Derived:
+#   bull_bear_spread       = bullish - bearish              (per weekly row)
+#   bull_bear_spread_8w_ma = rolling mean over 8 weekly rows
+#   sentiment_score        = bull_bear_spread_8w_ma         (points, not %)
+#
+# Weekly-to-daily alignment (V1 §2.2 stateless replay):
+#   sentiment_score[as_of_date] = the value carried by the latest AAII
+#   row with publication_date <= as_of_date (forward-fill from publication
+#   date; NEVER consult a future-dated reading).
+#
+# Cold-start (V1 §2.7 inheritance): until at least 4 weekly readings
+# exist on or before as_of_date, sentiment_score is NaN and the euphoria
+# rule falsifies. The 8-week MA's `min_periods=1` in the fetcher exposes
+# values from week 1, but predicate consumption requires a fuller window.
+```
+
+Default: `euphoria_sentiment_threshold = +20` (points of bull-bear-spread 8w-MA). This is a V2 §9.1 walk-forward calibration placeholder, not a fixed spec constant — historical AAII bull-bear 8w-MA distribution (1987–present) has top-10% in the +18 to +22 range; +20 sits near the Yardeni / Stovall conventional "high optimism" anchor. Operators may retune via the `trend_direction_v2.euphoria_sentiment_threshold` yaml key.
+
+Picked source notes: `bull_bear_spread_8w_ma` was chosen over the unsmoothed weekly spread (too noisy for a precedence-bearing label) and over a cross-era percentile rank (adds a 252-week warm-up the engine doesn't otherwise need). Put-call ratio and Investors Intelligence sentiment remain valid alternative sources for a future calibration revision but require fetchers not yet built.
 
 V2 trend_direction precedence (updated):
 ```text
@@ -722,15 +749,49 @@ the slice/commit that resolved it. Entries are append-only.
     Spec rule requires `sentiment_score >= configured_threshold`
     (line 126) where `sentiment_score` is sourced from AAII bull-bear,
     put-call ratio percentile, or Investors Intelligence sentiment
-    (line 129). The V2 repo does not yet ingest any of those feeds.
-    Per v2 §10 absolute rule we do NOT synthesize a sentiment proxy.
-    Resolution: defer the `euphoria` label until a sentiment ingestion
-    slice lands. The §1A line 132 precedence reserves the `euphoria`
-    slot above `bull` so the slice that lands sentiment can drop the
-    rule in without re-ordering. The precedence-evaluation table in
+    (line 129). The V2 repo did not yet ingest any of those feeds at
+    Slice 2.5.
+    Per v2 §10 absolute rule we did NOT synthesize a sentiment proxy.
+    Initial resolution: defer the `euphoria` label until a sentiment
+    ingestion slice lands. The §1A line 132 precedence reserves the
+    `euphoria` slot above `bull` so the slice that lands sentiment can
+    drop the rule in without re-ordering. The precedence-evaluation
+    table in
     `regime_detection.trend_direction_v2._V2_TREND_PRECEDENCE` includes
-    `"euphoria"` at index 0 but the rule predicate never fires today.
+    `"euphoria"` at index 0 but the rule predicate did not fire at
+    Slice 2.5.
     Deferred by Slice 2.5.
+
+    Status update — fully resolved by spec amendment and the
+    euphoria-wiring code slice. Three open sub-questions had to be
+    pinned (recorded in `docs/decisions/0004-euphoria-sentiment-score-
+    and-vol-rising-pins.md` and amended into §1A):
+
+    - `sentiment_score = bull_bear_spread_8w_ma` (AAII 8-week MA).
+      AAII fetcher (commit `8c04fae`) supplies the underlying weekly
+      `bullish` / `bearish` rows; `bull_bear_spread_8w_ma` is computed
+      in `regime_data_fetch.aaii_sentiment._compute_derived`.
+      Weekly-to-daily alignment uses the latest publication-date
+      `<= as_of_date` per V1 §2.2 stateless replay; cold-start (fewer
+      than 4 weekly readings) falsifies the rule per V1 §2.7.
+    - `realized_vol_21d rising = vol[t] > vol[t-5]` (strict 5-session
+      change), mirroring Log #68's pin for §1D breadth `rising` /
+      `falling` qualifiers — single 5-session memory horizon across
+      "rate of change" predicates.
+    - `euphoria_sentiment_threshold = +20` (points of bull-bear-spread
+      8w-MA). V2 §9.1 walk-forward calibration placeholder; configurable
+      via the `trend_direction_v2.euphoria_sentiment_threshold` yaml
+      key. The Yardeni / Stovall conventional "high optimism" anchor
+      sits in the +18 to +22 range; +20 also corresponds to the
+      historical top-decile of the AAII bull-bear 8w-MA distribution
+      (1987–present).
+
+    Implemented in `regime_detection.trend_direction_v2.evaluate_euphoria`
+    and tested by per-conjunct boundary cases in
+    `tests/test_trend_direction_v2_euphoria.py`. Side-effect:
+    `euphoria_specialist` in `regime_detection.cohort_routing` is now
+    reachable (Log entry tracking item 29 in the partial-blocker
+    audit also unblocks).
 
 33. **§1A line 90 — `breakout_expansion` label deferral.**
     Spec rule references a `followthrough_rate` metric configurable

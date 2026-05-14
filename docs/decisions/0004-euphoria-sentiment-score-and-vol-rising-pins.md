@@ -1,6 +1,8 @@
 # Decision 0004: V2 §1A `euphoria` LABEL — `sentiment_score` definition, `realized_vol_21d rising` lookback, threshold
 
-**Status:** proposed — awaiting spec-owner decision
+**Status:** accepted — picks Q1=A, Q2=X, Q3=+20, Q4=publication-date forward-fill, Q5=4-week cold-start.
+
+Spec owner delegated the picks to the assistant with the explicit instruction "tell me the best answer when spec is not clear, then edit/log the spec then code it." The recommendations in this ADR became the chosen pins; §1A spec text amended and Log #32 closed in the same commit as this status flip.
 
 **Context:**
 The V2 §1A `euphoria` label has four rule conjuncts (spec lines 159–165):
