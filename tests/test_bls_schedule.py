@@ -1,12 +1,15 @@
 from __future__ import annotations
 
 import datetime as dt
+import json
+import urllib.error
 
 from regime_data_fetch.bls_schedule import (
     BLSReleaseDate,
     build_bls_schedule_year_urls,
     fetch_bls_year_releases,
     parse_bls_schedule_page,
+    fetch_bls_schedule_page_text,
 )
 
 
@@ -205,3 +208,46 @@ def test_fetch_bls_year_releases_dedupes_cross_year_rollover_releases() -> None:
         ("2001-01-17", "CPI"),
         ("2001-02-21", "CPI"),
     ]
+
+
+def test_fetch_bls_schedule_page_text_falls_back_to_tinyfish(monkeypatch) -> None:
+    calls: list[str] = []
+
+    class FakeResponse:
+        def __init__(self, body: bytes):
+            self.body = body
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def read(self) -> bytes:
+            return self.body
+
+    def fake_urlopen(request, timeout):
+        del timeout
+        url = request.full_url
+        calls.append(url)
+        if url.startswith("https://www.bls.gov/"):
+            raise urllib.error.HTTPError(url, 403, "Forbidden", hdrs=None, fp=None)
+        assert url == "https://api.fetch.tinyfish.ai"
+        payload = {
+            "results": [
+                {
+                    "url": "https://www.bls.gov/schedule/2026/",
+                    "text": "Friday, January 09, 2026 08:30 AM Employment Situation for December 2025",
+                }
+            ],
+            "errors": [],
+        }
+        return FakeResponse(json.dumps(payload).encode())
+
+    monkeypatch.setenv("TINYFISH_API_KEY", "test-key")
+    monkeypatch.setattr("regime_data_fetch.bls_schedule.urllib.request.urlopen", fake_urlopen)
+
+    text = fetch_bls_schedule_page_text("https://www.bls.gov/schedule/2026/")
+
+    assert text == "Friday, January 09, 2026 08:30 AM Employment Situation for December 2025"
+    assert calls == ["https://www.bls.gov/schedule/2026/", "https://api.fetch.tinyfish.ai"]

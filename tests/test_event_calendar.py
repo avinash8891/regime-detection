@@ -371,6 +371,71 @@ def test_run_us_event_calendar_fetch_writes_yaml_and_report(tmp_path: Path) -> N
     assert 'source: "bls.gov:schedule:consumer-price-index"' in contents
 
 
+def test_run_us_event_calendar_fetch_adds_v2_curated_candidates(tmp_path: Path) -> None:
+    def fake_fomc_listing_fetcher() -> str:
+        return (FOMC_FIXTURES / "fomc_calendars_snippet.html").read_text()
+
+    def fake_fomc_historical_index_fetcher() -> str:
+        return ""
+
+    def fake_fomc_historical_page_fetcher(url: str) -> str:
+        raise AssertionError(f"Unexpected historical URL: {url}")
+
+    def fake_bls_page_fetcher(url: str) -> str:
+        if url.endswith("/2026/"):
+            return """
+            Friday, January 09, 2026
+            08:30 AM
+            Employment Situation for December 2025
+            Wednesday, January 14, 2026
+            08:30 AM
+            Consumer Price Index for December 2025
+            """
+        raise AssertionError(f"Unexpected BLS schedule URL: {url}")
+
+    report_path = run_us_event_calendar_fetch(
+        repo_root=tmp_path,
+        fred_api_key=None,
+        fomc_listing_fetcher=fake_fomc_listing_fetcher,
+        fomc_historical_index_fetcher=fake_fomc_historical_index_fetcher,
+        fomc_historical_page_fetcher=fake_fomc_historical_page_fetcher,
+        bls_page_fetcher=fake_bls_page_fetcher,
+        bls_start_year=2026,
+        bls_end_year=2026,
+        include_v2_curated_candidates=True,
+        global_rate_calendar_text_fetchers={
+            "ecb": lambda: """
+                <dt>10/06/2026</dt>
+                <dd>Governing Council of the ECB: monetary policy meeting in Frankfurt (Day 1)</dd>
+                <dt>11/06/2026</dt>
+                <dd>Governing Council of the ECB: monetary policy meeting in Frankfurt (Day 2), followed by press conference</dd>
+            """,
+            "boe": lambda: """
+                2026 confirmed dates
+                Thursday 5 February | February MPC Summary and minutes
+            """,
+            "boj": lambda: "Next Monetary Policy Meeting Date June 15 and 16, 2026",
+        },
+    )
+
+    report = json.loads(report_path.read_text())
+    contents = (tmp_path / "configs" / "events" / "us_events.yaml").read_text()
+
+    assert report["counts"]["by_type"]["election"] == 1
+    assert report["counts"]["by_type"]["budget"] == 1
+    assert report["counts"]["by_type"]["ECB_decision"] == 1
+    assert report["counts"]["by_type"]["BOE_decision"] == 1
+    assert report["counts"]["by_type"]["BOJ_decision"] == 1
+    assert 'date: "2026-11-03"' in contents
+    assert 'type: "election"' in contents
+    assert "window_days: [-5, 10]" in contents
+    assert 'date: "2026-09-30"' in contents
+    assert 'type: "budget"' in contents
+    assert 'type: "ECB_decision"' in contents
+    assert 'type: "BOE_decision"' in contents
+    assert 'type: "BOJ_decision"' in contents
+
+
 def test_run_us_event_calendar_fetch_sorts_events_by_release_timestamp(tmp_path: Path) -> None:
     def fake_fomc_listing_fetcher() -> str:
         return (FOMC_FIXTURES / "fomc_calendars_snippet.html").read_text()

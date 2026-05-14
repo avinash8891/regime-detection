@@ -7,6 +7,7 @@ from regime_data_fetch.event_calendar import (
     EventLabelResolution,
     ScheduledEvent,
     load_scheduled_events_yaml,
+    _parse_global_rate_decision_events,
     resolve_event_label,
 )
 
@@ -63,6 +64,52 @@ def test_load_scheduled_events_yaml_reads_v2_manual_window_days(tmp_path: Path) 
 
     assert events[0].type == "election"
     assert events[0].window_days == (-5, 10)
+
+
+def test_parse_boj_calendar_reads_html_table_year_heading() -> None:
+    events = _parse_global_rate_decision_events(
+        source_key="boj",
+        text="""
+        <h2 id="p2026">2026</h2>
+        <table>
+          <tr>
+            <td>June 15 (Mon.), 16 (Tues.)</td>
+            <td>-</td>
+            <td>June 24 (Wed.)</td>
+          </tr>
+          <tr>
+            <td>Dec. 17 (Thurs.), 18 (Fri.)</td>
+            <td>-</td>
+            <td>Dec. 28 (Mon.)</td>
+          </tr>
+        </table>
+        """,
+    )
+
+    assert [(event.date.isoformat(), event.type) for event in events] == [
+        ("2026-06-16", "BOJ_decision"),
+        ("2026-12-18", "BOJ_decision"),
+    ]
+
+
+def test_parse_ecb_calendar_uses_day_2_monetary_policy_rows() -> None:
+    events = _parse_global_rate_decision_events(
+        source_key="ecb",
+        text="""
+        <dt>20/05/2026</dt>
+        <dd>Governing Council of the ECB: non-monetary policy meeting in Frankfurt</dd>
+        <dt>10/06/2026</dt>
+        <dd>Governing Council of the ECB: monetary policy meeting in Frankfurt (Day 1)</dd>
+        <dt>11/06/2026</dt>
+        <dd>Governing Council of the ECB: monetary policy meeting in Frankfurt (Day 2), followed by press conference</dd>
+        <dt>25/06/2026</dt>
+        <dd>General Council meeting of the ECB (virtual)</dd>
+        """,
+    )
+
+    assert [(event.date.isoformat(), event.type) for event in events] == [
+        ("2026-06-11", "ECB_decision"),
+    ]
 
 
 def test_resolve_event_label_uses_precedence_over_earnings_season() -> None:

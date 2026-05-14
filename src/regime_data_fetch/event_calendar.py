@@ -3,9 +3,11 @@ from __future__ import annotations
 import datetime as dt
 import json
 from collections import Counter
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
 import re
+from urllib.request import Request, urlopen
 
 import pandas_market_calendars as mcal
 import yaml
@@ -28,8 +30,56 @@ US_EASTERN = dt.timezone(dt.timedelta(hours=-5))
 SOURCE_FOMC = "federalreserve.gov:fomccalendars"
 SOURCE_CPI = "bls.gov:schedule:consumer-price-index"
 SOURCE_NFP = "bls.gov:schedule:employment-situation"
+SOURCE_ECB = "ecb.europa.eu:governing-council-calendar"
+SOURCE_BOE = "bankofengland.co.uk:mpc-dates"
+SOURCE_BOJ = "boj.or.jp:monetary-policy-meeting-schedule"
+SOURCE_FEC = "fec.gov:election-dates"
+SOURCE_US_BUDGET = "usa.gov:federal-budget-process"
 _FOMC_MINUTES_LINK_RE = re.compile(r"/monetarypolicy/fomcminutes(?P<meeting_end>\d{8})\.htm", flags=re.IGNORECASE)
 _NYSE = mcal.get_calendar("NYSE")
+_GLOBAL_RATE_URLS = {
+    "ecb": "https://www.ecb.europa.eu/events/calendar/mgcgc/html/index.en.html",
+    "boe": "https://www.bankofengland.co.uk/monetary-policy/upcoming-mpc-dates",
+    "boj": "https://www.boj.or.jp/en/mopo/mpmsche_minu/",
+}
+_MONTHS = {
+    "january": 1,
+    "jan": 1,
+    "jan.": 1,
+    "february": 2,
+    "feb": 2,
+    "feb.": 2,
+    "march": 3,
+    "mar": 3,
+    "mar.": 3,
+    "april": 4,
+    "apr": 4,
+    "apr.": 4,
+    "may": 5,
+    "june": 6,
+    "jun": 6,
+    "jun.": 6,
+    "july": 7,
+    "jul": 7,
+    "jul.": 7,
+    "august": 8,
+    "aug": 8,
+    "aug.": 8,
+    "september": 9,
+    "sept": 9,
+    "sept.": 9,
+    "sep": 9,
+    "sep.": 9,
+    "october": 10,
+    "oct": 10,
+    "oct.": 10,
+    "november": 11,
+    "nov": 11,
+    "nov.": 11,
+    "december": 12,
+    "dec": 12,
+    "dec.": 12,
+}
 EVENT_PRECEDENCE = (
     "geopolitical_event",
     "election_window",
@@ -217,6 +267,8 @@ def run_us_event_calendar_fetch(
     acquisition_db_path: Path | None = None,
     bls_start_year: int = 2000,
     bls_end_year: int | None = None,
+    include_v2_curated_candidates: bool = False,
+    global_rate_calendar_text_fetchers: Mapping[str, Callable[[], str]] | None = None,
 ) -> Path:
     del fred_api_key
 
@@ -250,6 +302,16 @@ def run_us_event_calendar_fetch(
                 run_id=fetch_run.run_id if fetch_run else None,
             )
         )
+        if include_v2_curated_candidates:
+            events.extend(
+                _build_v2_curated_candidate_events(
+                    start_year=bls_start_year,
+                    end_year=bls_end_year or dt.date.today().year,
+                    global_rate_calendar_text_fetchers=global_rate_calendar_text_fetchers,
+                    store=store,
+                    run_id=fetch_run.run_id if fetch_run else None,
+                )
+            )
 
         events.sort(key=lambda event: (event.release_timestamp_et, event.type))
 
@@ -265,6 +327,11 @@ def run_us_event_calendar_fetch(
                 "fomc": SOURCE_FOMC,
                 "cpi": SOURCE_CPI,
                 "nfp": SOURCE_NFP,
+                "election": SOURCE_FEC if include_v2_curated_candidates else None,
+                "budget": SOURCE_US_BUDGET if include_v2_curated_candidates else None,
+                "ecb": SOURCE_ECB if include_v2_curated_candidates else None,
+                "boe": SOURCE_BOE if include_v2_curated_candidates else None,
+                "boj": SOURCE_BOJ if include_v2_curated_candidates else None,
             },
             "counts": {
                 "total_events": len(events),
@@ -530,6 +597,207 @@ def _validate_bls_events(*, events: list[ScheduledEvent], start_year: int, end_y
                 )
 
 
+def _build_v2_curated_candidate_events(
+    *,
+    start_year: int,
+    end_year: int,
+    global_rate_calendar_text_fetchers: Mapping[str, Callable[[], str]] | None,
+    store: AcquisitionStore | None,
+    run_id: int | None,
+) -> list[ScheduledEvent]:
+    events: list[ScheduledEvent] = []
+    for year in range(start_year, end_year + 1):
+        if year % 2 == 0:
+            events.append(
+                ScheduledEvent(
+                    date=_us_general_election_date(year),
+                    release_timestamp_et=_midnight_et(_us_general_election_date(year)),
+                    market="US",
+                    type="election",
+                    importance="high",
+                    source=SOURCE_FEC,
+                    window_days=(-5, 10),
+                )
+            )
+        budget_date = dt.date(year, 9, 30)
+        events.append(
+            ScheduledEvent(
+                date=budget_date,
+                release_timestamp_et=_midnight_et(budget_date),
+                market="US",
+                type="budget",
+                importance="medium",
+                source=SOURCE_US_BUDGET,
+            )
+        )
+
+    text_fetchers = global_rate_calendar_text_fetchers or {
+        key: _build_url_text_fetcher(url) for key, url in _GLOBAL_RATE_URLS.items()
+    }
+    for source_key, fetcher in text_fetchers.items():
+        text = fetcher()
+        source_name = _global_rate_source_name(source_key)
+        if store and run_id is not None:
+            store.record_text_artifact(
+                run_id=run_id,
+                source_name=source_name,
+                artifact_kind="html",
+                source_identifier=_GLOBAL_RATE_URLS.get(source_key, source_key),
+                content_text=text,
+                calendar_assumption="NYSE trading calendar",
+                timezone="America/New_York",
+                license_note="Official central-bank public calendar page",
+                notes=f"{source_key.upper()} monetary-policy calendar candidate source",
+            )
+        events.extend(
+            event
+            for event in _parse_global_rate_decision_events(source_key=source_key, text=text)
+            if start_year <= event.date.year <= end_year
+        )
+
+    deduped = {(event.date, event.type, event.source): event for event in events}
+    return list(deduped.values())
+
+
+def _build_url_text_fetcher(url: str) -> Callable[[], str]:
+    def fetch() -> str:
+        request = Request(url, headers={"User-Agent": "regime-detection-event-fetch/1.0"})
+        with urlopen(request, timeout=30) as response:
+            return response.read().decode("utf-8", errors="replace")
+
+    return fetch
+
+
+def _parse_global_rate_decision_events(*, source_key: str, text: str) -> list[ScheduledEvent]:
+    if source_key == "ecb":
+        return _parse_ecb_decision_events(text)
+    if source_key == "boj":
+        return _parse_boj_decision_events(text)
+    normalized = re.sub(r"<[^>]+>", " ", text)
+    normalized = re.sub(r"\s+", " ", normalized)
+    if source_key == "boe":
+        return _parse_boe_decision_events(normalized)
+    raise EventCalendarFetchError(f"Unsupported global rate calendar source: {source_key}")
+
+
+def _parse_ecb_decision_events(text: str) -> list[ScheduledEvent]:
+    events: list[ScheduledEvent] = []
+    row_pattern = re.compile(
+        r"<dt[^>]*>\s*(?P<date>\d{2}/\d{2}/\d{4})\s*</dt>\s*<dd[^>]*>(?P<description>.*?)</dd>",
+        flags=re.IGNORECASE | re.DOTALL,
+    )
+    for match in row_pattern.finditer(text):
+        description = re.sub(r"<[^>]+>", " ", match.group("description"))
+        if "non-monetary" in description.lower():
+            continue
+        if "monetary policy meeting" not in description.lower():
+            continue
+        if "day 2" not in description.lower() and "press conference" not in description.lower():
+            continue
+        day, month, year = (int(part) for part in match.group("date").split("/"))
+        event_date = dt.date(year, month, day)
+        events.append(_global_rate_event(event_date, "ECB_decision", SOURCE_ECB))
+    return _dedupe_events(events)
+
+
+def _parse_boe_decision_events(text: str) -> list[ScheduledEvent]:
+    events: list[ScheduledEvent] = []
+    current_year: int | None = None
+    tokens = re.split(r"(?=(?:20\d{2})\s+(?:confirmed|provisional)\s+dates)|(?=(?:Monday|Tuesday|Wednesday|Thursday|Friday)\s+\d{1,2}\s+[A-Za-z]+)", text)
+    date_pattern = re.compile(
+        r"(?:(?:Monday|Tuesday|Wednesday|Thursday|Friday)\s+)?(?P<day>\d{1,2})\s+(?P<month>[A-Za-z]+).*?(?:MPC|Monetary Policy)",
+        flags=re.IGNORECASE,
+    )
+    for token in tokens:
+        year_match = re.search(r"\b(?P<year>20\d{2})\s+(?:confirmed|provisional)\s+dates\b", token, flags=re.IGNORECASE)
+        if year_match:
+            current_year = int(year_match.group("year"))
+        if current_year is None:
+            continue
+        date_match = date_pattern.search(token)
+        if not date_match:
+            continue
+        month = _MONTHS.get(date_match.group("month").lower())
+        if month is None:
+            continue
+        event_date = dt.date(current_year, month, int(date_match.group("day")))
+        events.append(_global_rate_event(event_date, "BOE_decision", SOURCE_BOE))
+    return _dedupe_events(events)
+
+
+def _parse_boj_decision_events(text: str) -> list[ScheduledEvent]:
+    events: list[ScheduledEvent] = []
+    section_pattern = re.compile(
+        r"<h2[^>]*>\s*(?P<year>20\d{2})\s*</h2>(?P<section>.*?)(?=<h2[^>]*>\s*20\d{2}\s*</h2>|$)",
+        flags=re.IGNORECASE | re.DOTALL,
+    )
+    row_pattern = re.compile(r"<tr[^>]*>(?P<row>.*?)</tr>", flags=re.IGNORECASE | re.DOTALL)
+    cell_pattern = re.compile(r"<td[^>]*>(?P<cell>.*?)</td>", flags=re.IGNORECASE | re.DOTALL)
+    table_date_pattern = re.compile(
+        r"(?P<month>Jan\.?|January|Feb\.?|February|Mar\.?|March|Apr\.?|April|May|June|July|Aug\.?|August|Sep\.?|Sept\.?|September|Oct\.?|October|Nov\.?|November|Dec\.?|December)\s+"
+        r"(?P<start>\d{1,2})(?:\s*\([^)]+\))?(?:\s*,\s*(?P<end>\d{1,2})(?:\s*\([^)]+\))?)?",
+        flags=re.IGNORECASE,
+    )
+    for section_match in section_pattern.finditer(text):
+        year = int(section_match.group("year"))
+        for row_match in row_pattern.finditer(section_match.group("section")):
+            cell_match = cell_pattern.search(row_match.group("row"))
+            if cell_match is None:
+                continue
+            cell_text = re.sub(r"<[^>]+>", " ", cell_match.group("cell"))
+            cell_text = re.sub(r"\s+", " ", cell_text)
+            date_match = table_date_pattern.search(cell_text)
+            if date_match is None:
+                continue
+            month = _MONTHS[date_match.group("month").lower()]
+            day = int(date_match.group("end") or date_match.group("start"))
+            events.append(_global_rate_event(dt.date(year, month, day), "BOJ_decision", SOURCE_BOJ))
+
+    normalized = re.sub(r"<[^>]+>", " ", text)
+    normalized = re.sub(r"\s+", " ", normalized)
+    pattern = re.compile(
+        r"(?P<month>Jan\.?|January|Feb\.?|February|Mar\.?|March|Apr\.?|April|May|June|July|Aug\.?|August|Sep\.?|Sept\.?|September|Oct\.?|October|Nov\.?|November|Dec\.?|December)\s+"
+        r"(?P<start>\d{1,2})(?:\s*(?:-|and)\s*(?P<end>\d{1,2}))?,\s*(?P<year>20\d{2})",
+        flags=re.IGNORECASE,
+    )
+    for match in pattern.finditer(normalized):
+        month = _MONTHS[match.group("month").lower()]
+        day = int(match.group("end") or match.group("start"))
+        event_date = dt.date(int(match.group("year")), month, day)
+        events.append(_global_rate_event(event_date, "BOJ_decision", SOURCE_BOJ))
+    return _dedupe_events(events)
+
+
+def _global_rate_event(event_date: dt.date, event_type: str, source: str) -> ScheduledEvent:
+    return ScheduledEvent(
+        date=event_date,
+        release_timestamp_et=_midnight_et(event_date),
+        market="GLOBAL",
+        type=event_type,
+        importance="high",
+        source=source,
+    )
+
+
+def _global_rate_source_name(source_key: str) -> str:
+    return {"ecb": SOURCE_ECB, "boe": SOURCE_BOE, "boj": SOURCE_BOJ}.get(source_key, source_key)
+
+
+def _us_general_election_date(year: int) -> dt.date:
+    first_november = dt.date(year, 11, 1)
+    days_until_monday = (0 - first_november.weekday()) % 7
+    first_monday = first_november + dt.timedelta(days=days_until_monday)
+    return first_monday + dt.timedelta(days=1)
+
+
+def _midnight_et(value: dt.date) -> dt.datetime:
+    return dt.datetime(value.year, value.month, value.day, 0, 0, tzinfo=US_EASTERN)
+
+
+def _dedupe_events(events: list[ScheduledEvent]) -> list[ScheduledEvent]:
+    return list({(event.date, event.type, event.source): event for event in events}.values())
+
+
 def _render_events_yaml(events: list[ScheduledEvent]) -> str:
     lines = ["events:"]
     for event in events:
@@ -543,6 +811,8 @@ def _render_events_yaml(events: list[ScheduledEvent]) -> str:
                 f'    source: "{event.source}"',
             ]
         )
+        if event.window_days is not None:
+            lines.append(f"    window_days: [{event.window_days[0]}, {event.window_days[1]}]")
     return "\n".join(lines) + "\n"
 
 
