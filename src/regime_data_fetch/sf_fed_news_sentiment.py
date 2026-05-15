@@ -38,6 +38,8 @@ from pathlib import Path
 
 import pandas as pd
 
+from regime_data_fetch.acquisition_store import AcquisitionStore
+
 
 SF_FED_NEWS_SENTIMENT_URL = (
     "https://www.frbsf.org/wp-content/uploads/news_sentiment_data.xlsx"
@@ -111,7 +113,9 @@ def run_sf_fed_news_sentiment_fetch(
     workbook_bytes: bytes | None = None,
     workbook_path: str | Path | None = None,
     timeout: int = 30,
-) -> dict[str, object]:
+    acquisition_db_path: Path | None = None,
+    artifact_store_root: str | Path | None = None,
+) -> Path:
     """Materialize ``data/raw/news_sentiment/sf_fed_news_sentiment.parquet``.
 
     Parameters
@@ -129,36 +133,85 @@ def run_sf_fed_news_sentiment_fetch(
 
     Returns
     -------
-    dict
-        Fetch report — written to ``out_dir / sf_fed_news_sentiment_fetch_report.json``.
+    Path
+        Path to ``out_dir / sf_fed_news_sentiment_fetch_report.json``.
     """
-    if workbook_bytes is None and workbook_path is not None:
-        workbook_bytes = Path(workbook_path).read_bytes()
-    if workbook_bytes is None:
-        _log.info("Fetching SF Fed news sentiment workbook (live)")
-        workbook_bytes = fetch_workbook_bytes(timeout=timeout)
+    store = AcquisitionStore(acquisition_db_path, artifact_store_root=artifact_store_root) if acquisition_db_path else None
+    fetch_run = store.start_fetch_run(fetch_type="sf_fed_news_sentiment", params={"source_url": SF_FED_NEWS_SENTIMENT_URL}) if store else None
+    try:
+        raw_path = Path(out_dir) / "news_sentiment" / "sf_fed_news_sentiment.xlsx"
+        if workbook_bytes is None and workbook_path is not None:
+            raw_path = Path(workbook_path)
+            workbook_bytes = raw_path.read_bytes()
+        if workbook_bytes is None:
+            _log.info("Fetching SF Fed news sentiment workbook (live)")
+            workbook_bytes = fetch_workbook_bytes(timeout=timeout)
 
-    df = parse_workbook(workbook_bytes)
-    out_subdir = Path(out_dir) / "news_sentiment"
-    out_subdir.mkdir(parents=True, exist_ok=True)
-    parquet_path = out_subdir / SF_FED_NEWS_SENTIMENT_PARQUET
-    df.to_parquet(parquet_path, index=False)
+        df = parse_workbook(workbook_bytes)
+        out_subdir = Path(out_dir) / "news_sentiment"
+        out_subdir.mkdir(parents=True, exist_ok=True)
+        if workbook_path is None:
+            raw_path.write_bytes(workbook_bytes)
+        parquet_path = out_subdir / SF_FED_NEWS_SENTIMENT_PARQUET
+        df.to_parquet(parquet_path, index=False)
 
-    report = {
-        "as_of_utc": dt.datetime.now(dt.timezone.utc).isoformat(),
-        "rows": int(len(df)),
-        "min_date": df["date"].min().date().isoformat() if not df.empty else None,
-        "max_date": df["date"].max().date().isoformat() if not df.empty else None,
-        "parquet": str(parquet_path),
-        "source": _SOURCE_NAME,
-        "source_url": SF_FED_NEWS_SENTIMENT_URL,
-    }
-    report_path = Path(out_dir) / "sf_fed_news_sentiment_fetch_report.json"
-    report_path.write_text(json.dumps(report, indent=2))
-    _log.info(
-        "SF Fed news sentiment parquet: %d rows, %s → %s",
-        report["rows"],
-        report["min_date"],
-        report["max_date"],
-    )
-    return report
+        report = {
+            "as_of_utc": dt.datetime.now(dt.timezone.utc).isoformat(),
+            "rows": int(len(df)),
+            "min_date": df["date"].min().date().isoformat() if not df.empty else None,
+            "max_date": df["date"].max().date().isoformat() if not df.empty else None,
+            "parquet": str(parquet_path),
+            "source": _SOURCE_NAME,
+            "source_url": SF_FED_NEWS_SENTIMENT_URL,
+        }
+        report_path = Path(out_dir) / "sf_fed_news_sentiment_fetch_report.json"
+        report_path.write_text(json.dumps(report, indent=2))
+        if store and fetch_run:
+            raw_record = store.record_file_artifact(
+                run_id=fetch_run.run_id,
+                source_name=_SOURCE_NAME,
+                artifact_kind="xlsx",
+                source_identifier=SF_FED_NEWS_SENTIMENT_URL,
+                file_path=raw_path,
+                start_date=report["min_date"],
+                end_date=report["max_date"],
+                notes="SF Fed Daily News Sentiment workbook",
+            )
+            output_record = store.record_output(
+                run_id=fetch_run.run_id,
+                output_kind="sf_fed_news_sentiment_parquet",
+                path=parquet_path,
+                row_count=report["rows"],
+                min_date=report["min_date"],
+                max_date=report["max_date"],
+                source_name=_SOURCE_NAME,
+                artifact_kind="parquet",
+                notes="Canonical SF Fed Daily News Sentiment series",
+            )
+            store.record_output(
+                run_id=fetch_run.run_id,
+                output_kind="sf_fed_news_sentiment_report",
+                path=report_path,
+                row_count=report["rows"],
+                min_date=report["min_date"],
+                max_date=report["max_date"],
+                notes="SF Fed Daily News Sentiment fetch report",
+            )
+            if output_record and raw_record.artifact_record_id is not None:
+                store.record_artifact_lineage(
+                    output_artifact_record_id=output_record.artifact_record_id,
+                    input_artifact_record_id=raw_record.artifact_record_id,
+                    transform_name="parse_sf_fed_news_sentiment_workbook",
+                )
+            store.finish_fetch_run(run_id=fetch_run.run_id, status="ok")
+        _log.info(
+            "SF Fed news sentiment parquet: %d rows, %s → %s",
+            report["rows"],
+            report["min_date"],
+            report["max_date"],
+        )
+        return report_path
+    except Exception as exc:
+        if store and fetch_run:
+            store.finish_fetch_run(run_id=fetch_run.run_id, status="failed", notes=str(exc))
+        raise

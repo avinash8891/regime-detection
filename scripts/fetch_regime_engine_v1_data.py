@@ -28,11 +28,14 @@ from regime_data_fetch.aggregate_eps import (
 )
 from regime_data_fetch.fomc_minutes import run_fomc_minutes_fetch
 from regime_data_fetch.investing_archive import run_local_investing_archive_import
+from regime_data_fetch.investing_live import run_investing_live_fetch
+from regime_data_fetch.cleveland_fed_nowcast import run_cleveland_fed_nowcast_fetch
 from regime_data_fetch.local_daily_ohlcv_sqlite import run_local_daily_ohlcv_sqlite_import
 from regime_data_fetch.local_usd_index import run_local_usd_index_import
 from regime_data_fetch.pmi import DEFAULT_MANUAL_PMI_HISTORY_DIR, run_pmi_fetch
 from regime_data_fetch.pit_constituents import run_pit_constituents_fetch
 from regime_data_fetch.powell_speeches import run_powell_speeches_fetch
+from regime_data_fetch.sf_fed_news_sentiment import run_sf_fed_news_sentiment_fetch
 
 
 def main() -> int:
@@ -41,7 +44,7 @@ def main() -> int:
     ap.add_argument("--start", default="2015-01-01", help="Start date (YYYY-MM-DD).")
     ap.add_argument("--end", default=dt.date.today().isoformat(), help="End date (YYYY-MM-DD).")
     ap.add_argument("--scope", default="v1", help="Data scope: v1|v2|all.")
-    ap.add_argument("--fetch", default="market", help="What to fetch: market|macro|events|pmi|pit|fomc|powell|eps|eps-spglobal-auto|eps-wayback|usd-index-local|daily-ohlcv-local-sqlite|sentiment|investing-archive-local|all.")
+    ap.add_argument("--fetch", default="market", help="What to fetch: market|macro|events|pmi|pit|fomc|powell|eps|eps-spglobal-auto|eps-wayback|usd-index-local|daily-ohlcv-local-sqlite|sentiment|investing-archive-local|investing-live|cleveland-fed-nowcast|sf-fed-news-sentiment|all.")
     ap.add_argument("--min-cap-b", type=float, default=10.0, help="Universe filter threshold in $B.")
     ap.add_argument("--adjustment", default="raw", help="Alpaca adjustment: raw|split|dividend|all.")
     ap.add_argument("--alpaca-feed", default=None, help="Alpaca data feed: sip|iex|otc. Omit to use SDK default.")
@@ -129,8 +132,8 @@ def main() -> int:
 
     if args.scope not in {"v1", "v2", "all"}:
         raise SystemExit("--scope must be v1|v2|all")
-    if args.fetch not in {"market", "macro", "events", "pmi", "pit", "fomc", "powell", "eps", "eps-spglobal-auto", "eps-wayback", "usd-index-local", "daily-ohlcv-local-sqlite", "sentiment", "investing-archive-local", "all"}:
-        raise SystemExit("--fetch must be market|macro|events|pmi|pit|fomc|powell|eps|eps-spglobal-auto|eps-wayback|usd-index-local|daily-ohlcv-local-sqlite|sentiment|investing-archive-local|all")
+    if args.fetch not in {"market", "macro", "events", "pmi", "pit", "fomc", "powell", "eps", "eps-spglobal-auto", "eps-wayback", "usd-index-local", "daily-ohlcv-local-sqlite", "sentiment", "investing-archive-local", "investing-live", "cleveland-fed-nowcast", "sf-fed-news-sentiment", "all"}:
+        raise SystemExit("--fetch must be market|macro|events|pmi|pit|fomc|powell|eps|eps-spglobal-auto|eps-wayback|usd-index-local|daily-ohlcv-local-sqlite|sentiment|investing-archive-local|investing-live|cleveland-fed-nowcast|sf-fed-news-sentiment|all")
     if args.emit_manifest and not args.artifact_store:
         raise SystemExit("--artifact-store is required when --emit-manifest is set")
 
@@ -258,6 +261,24 @@ def main() -> int:
         report_paths.append(powell_report)
         print(str(powell_report))
 
+    if args.fetch in {"cleveland-fed-nowcast", "all"}:
+        nowcast_report = run_cleveland_fed_nowcast_fetch(
+            out_dir=out_dir,
+            acquisition_db_path=acquisition_db_path,
+            artifact_store_root=acquisition_artifact_store_root,
+        )
+        report_paths.append(nowcast_report)
+        print(str(nowcast_report))
+
+    if args.fetch in {"sf-fed-news-sentiment", "all"}:
+        news_sentiment_report = run_sf_fed_news_sentiment_fetch(
+            out_dir=out_dir,
+            acquisition_db_path=acquisition_db_path,
+            artifact_store_root=acquisition_artifact_store_root,
+        )
+        report_paths.append(news_sentiment_report)
+        print(str(news_sentiment_report))
+
     if args.fetch in {"eps", "all"}:
         if not args.eps_workbook:
             raise SystemExit("--eps-workbook is required for eps fetches")
@@ -319,6 +340,19 @@ def main() -> int:
         investing_report = run_local_investing_archive_import(
             out_dir=out_dir,
             archive_root=Path(args.investing_archive_root),
+            acquisition_db_path=Path(args.acquisition_db),
+            artifact_store_root=acquisition_artifact_store_root,
+        )
+        report_paths.append(investing_report)
+        print(str(investing_report))
+
+    if args.fetch == "investing-live":
+        if not args.acquisition_db:
+            raise SystemExit("--acquisition-db is required for investing-live fetches")
+        investing_report = run_investing_live_fetch(
+            out_dir=out_dir,
+            start=start,
+            end=end,
             acquisition_db_path=Path(args.acquisition_db),
             artifact_store_root=acquisition_artifact_store_root,
         )

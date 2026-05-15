@@ -20,6 +20,31 @@ EARNINGS_FETCH_REPORT_REL = Path("investing_earnings_2016_2026/fetch_report.json
 EARNINGS_RAW_INSTRUMENTS_REL = Path("investing_earnings_2016_2026/raw_instruments")
 
 
+def _single_match(root: Path, pattern: str, *, required: bool = True) -> Path | None:
+    matches = sorted(root.glob(pattern))
+    if not matches:
+        if required:
+            raise SystemExit(f"Missing Investing.com archive file matching {root / pattern}")
+        return None
+    if len(matches) > 1:
+        raise SystemExit(f"Ambiguous Investing.com archive files for {root / pattern}: {matches}")
+    return matches[0]
+
+
+def _archive_paths(archive_root: Path) -> dict[str, Path | None]:
+    return {
+        "economic_events": _single_match(archive_root, "investing_calendar_structured_*/investing_economic_events_*.csv"),
+        "holidays": _single_match(archive_root, "investing_calendar_structured_*/investing_holidays_*.csv"),
+        "calendar_combined": _single_match(archive_root, "investing_calendar_structured_*/investing_calendar_combined_*.jsonl"),
+        "calendar_fetch_report": _single_match(archive_root, "investing_calendar_structured_*/fetch_report.json"),
+        "earnings": _single_match(archive_root, "investing_earnings_*/investing_earnings_*.csv"),
+        "earnings_jsonl": _single_match(archive_root, "investing_earnings_*/investing_earnings_*.jsonl"),
+        "earnings_quarantine": _single_match(archive_root, "investing_earnings_*/quarantine_earnings_fetch_errors.jsonl", required=False),
+        "earnings_fetch_report": _single_match(archive_root, "investing_earnings_*/fetch_report.json"),
+        "earnings_raw_instruments": _single_match(archive_root, "investing_earnings_*/raw_instruments", required=False),
+    }
+
+
 def run_local_investing_archive_import(
     *,
     out_dir: Path,
@@ -27,18 +52,7 @@ def run_local_investing_archive_import(
     acquisition_db_path: Path,
     artifact_store_root: str | Path | None = None,
 ) -> Path:
-    required = [
-        ECONOMIC_EVENTS_REL,
-        HOLIDAYS_REL,
-        CALENDAR_COMBINED_REL,
-        CALENDAR_FETCH_REPORT_REL,
-        EARNINGS_REL,
-        EARNINGS_JSONL_REL,
-        EARNINGS_FETCH_REPORT_REL,
-    ]
-    missing = [str(archive_root / rel) for rel in required if not (archive_root / rel).exists()]
-    if missing:
-        raise SystemExit(f"Missing Investing.com archive file(s): {missing}")
+    archive_paths = _archive_paths(archive_root)
 
     out_dir.mkdir(parents=True, exist_ok=True)
     investing_dir = out_dir / "investing"
@@ -47,9 +61,9 @@ def run_local_investing_archive_import(
     raw_archive_dir.mkdir(parents=True, exist_ok=True)
 
     copied_raw_files = _copy_archive_files(archive_root=archive_root, raw_archive_dir=raw_archive_dir)
-    economic_events = _read_csv(archive_root / ECONOMIC_EVENTS_REL)
-    holidays = _read_csv(archive_root / HOLIDAYS_REL)
-    earnings = _read_csv(archive_root / EARNINGS_REL)
+    economic_events = _read_csv(archive_paths["economic_events"])
+    holidays = _read_csv(archive_paths["holidays"])
+    earnings = _read_csv(archive_paths["earnings"])
 
     economic_min, economic_max = _date_range(economic_events["occurrence_time_utc"])
     holiday_min, holiday_max = _date_range(holidays["holiday_start_utc"])
@@ -187,28 +201,27 @@ def run_local_investing_archive_import(
 
 
 def _copy_archive_files(*, archive_root: Path, raw_archive_dir: Path) -> list[Path]:
-    rels = [
-        ECONOMIC_EVENTS_REL,
-        HOLIDAYS_REL,
-        CALENDAR_COMBINED_REL,
-        CALENDAR_FETCH_REPORT_REL,
-        EARNINGS_REL,
-        EARNINGS_JSONL_REL,
-        EARNINGS_FETCH_REPORT_REL,
+    archive_paths = _archive_paths(archive_root)
+    files = [
+        archive_paths["economic_events"],
+        archive_paths["holidays"],
+        archive_paths["calendar_combined"],
+        archive_paths["calendar_fetch_report"],
+        archive_paths["earnings"],
+        archive_paths["earnings_jsonl"],
+        archive_paths["earnings_fetch_report"],
+        archive_paths["earnings_quarantine"],
     ]
-    if (archive_root / EARNINGS_QUARANTINE_REL).exists():
-        rels.append(EARNINGS_QUARANTINE_REL)
     copied: list[Path] = []
-    for rel in rels:
-        src = archive_root / rel
-        dst = raw_archive_dir / rel
+    for src in [path for path in files if path is not None]:
+        dst = raw_archive_dir / src.relative_to(archive_root)
         dst.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(src, dst)
         copied.append(dst)
-    raw_instruments = archive_root / EARNINGS_RAW_INSTRUMENTS_REL
-    if raw_instruments.exists():
+    raw_instruments = archive_paths["earnings_raw_instruments"]
+    if raw_instruments is not None and raw_instruments.exists():
         for src in sorted(path for path in raw_instruments.rglob("*") if path.is_file()):
-            dst = raw_archive_dir / EARNINGS_RAW_INSTRUMENTS_REL / src.relative_to(raw_instruments)
+            dst = raw_archive_dir / raw_instruments.relative_to(archive_root) / src.relative_to(raw_instruments)
             dst.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(src, dst)
             copied.append(dst)
@@ -228,20 +241,20 @@ def _date_range(values: pd.Series) -> tuple[str | None, str | None]:
 
 
 def _start_for_raw_rel(rel: str, economic_min: str | None, holiday_min: str | None, earnings_min: str | None) -> str | None:
-    if rel.startswith("investing_calendar_structured_2016_2026/investing_economic_events"):
+    if "investing_economic_events_" in rel:
         return economic_min
-    if rel.startswith("investing_calendar_structured_2016_2026/investing_holidays"):
+    if "investing_holidays_" in rel:
         return holiday_min
-    if rel.startswith("investing_earnings_2016_2026/"):
+    if rel.startswith("investing_earnings_"):
         return earnings_min
     return None
 
 
 def _end_for_raw_rel(rel: str, economic_max: str | None, holiday_max: str | None, earnings_max: str | None) -> str | None:
-    if rel.startswith("investing_calendar_structured_2016_2026/investing_economic_events"):
+    if "investing_economic_events_" in rel:
         return economic_max
-    if rel.startswith("investing_calendar_structured_2016_2026/investing_holidays"):
+    if "investing_holidays_" in rel:
         return holiday_max
-    if rel.startswith("investing_earnings_2016_2026/"):
+    if rel.startswith("investing_earnings_"):
         return earnings_max
     return None
