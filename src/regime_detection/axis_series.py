@@ -174,7 +174,10 @@ class TrendCharacterSeriesClassifier:
     def build(self, context: MarketContext, feature_store: FeatureStore) -> AxisSeriesResult:
         close = context.spy_ohlcv["close"]
         features = feature_store.trend_character
-        raw_labels, raw_evidence = build_trend_character_raw_outputs(features)
+        raw_labels, raw_evidence = build_trend_character_raw_outputs(
+            features,
+            allow_v2_labels=context.config.config_version != "core3-v1.0.0",
+        )
         stable_labels, active_labels = apply_asymmetric_hysteresis(
             raw_labels=raw_labels,
             risk_rank=TREND_CHARACTER_RISK_RANK,
@@ -396,10 +399,9 @@ class NetworkFragilitySeriesClassifier:
       3. Cross-reference V1 axes (breadth_state.active_label,
          volatility_state.active_label) for that date.
       4. Evaluate rules (evaluate_rules) → raw label per v2 §3.4 precedence.
-         credit_funding_label is hard-coded to None until Slice 4 ships the
-         v2 §2C axis; per network_fragility_rules.evaluate_systemic_stress
-         this short-circuits the systemic_stress rule and precedence falls
-         through to correlation_to_one.
+         credit_funding_label is read from the authoritative §2C axis when
+         supplied; otherwise it stays None and systemic_stress short-circuits
+         to False per the spec.
       5. Apply per-label asymmetric hysteresis (v2 §3.7) over the raw label
          series.
       6. Emit one NetworkFragilityOutput per session.
@@ -411,6 +413,7 @@ class NetworkFragilitySeriesClassifier:
         feature_store: FeatureStore,
         breadth_active_labels_by_date: dict[date, str] | None = None,
         volatility_active_labels_by_date: dict[date, str] | None = None,
+        credit_funding_active_labels_by_date: dict[date, str] | None = None,
     ) -> dict[date, NetworkFragilityOutput] | None:
         features = feature_store.network_fragility
         if features is None:
@@ -511,17 +514,21 @@ class NetworkFragilitySeriesClassifier:
                         "(v1/v2 calendar drift would silently downgrade rules to 'unknown')"
                     )
                 volatility_label = volatility_active_labels_by_date[day]
+            credit_funding_label: str | None = None
+            if credit_funding_active_labels_by_date is not None:
+                if day not in credit_funding_active_labels_by_date:
+                    raise KeyError(
+                        f"credit_funding_active_labels_by_date missing session {day!r} "
+                        "(v2/v2 calendar drift would silently downgrade systemic_stress)"
+                    )
+                credit_funding_label = credit_funding_active_labels_by_date[day]
 
             label = evaluate_rules(
                 inputs=rule_inputs,
                 config=network_fragility_config.rules,
                 breadth_label=breadth_label,  # type: ignore[arg-type]
                 volatility_label=volatility_label,  # type: ignore[arg-type]
-                # TODO(slice-4): wire credit_funding.active_label per v2 §2C.
-                # network_fragility_rules.evaluate_systemic_stress short-
-                # circuits to False on None and precedence falls through
-                # to correlation_to_one per v2 §3.4.
-                credit_funding_label=None,
+                credit_funding_label=credit_funding_label,  # type: ignore[arg-type]
             )
             raw_labels.append(label)
             per_day_data_quality.append(day_quality)
@@ -537,7 +544,7 @@ class NetworkFragilitySeriesClassifier:
                 },
                 "breadth_active_label": breadth_label,
                 "volatility_active_label": volatility_label,
-                "credit_funding_active_label": None,
+                "credit_funding_active_label": credit_funding_label,
             })
 
         stable_labels, active_labels = apply_per_label_asymmetric_hysteresis(
@@ -1379,6 +1386,11 @@ def build_axis_series_bundle(*, context: MarketContext, feature_store: FeatureSt
         feature_store,
         breadth_active_labels_by_date=breadth_state.active_labels_by_date,
         volatility_active_labels_by_date=volatility_state.active_labels_by_date,
+        credit_funding_active_labels_by_date=(
+            {day: out.active_label for day, out in credit_funding.items()}
+            if credit_funding is not None
+            else None
+        ),
     )
     volume_liquidity_state = VolumeLiquidityStateSeriesClassifier().build(
         context, feature_store

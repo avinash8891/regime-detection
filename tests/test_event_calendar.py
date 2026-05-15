@@ -207,6 +207,7 @@ def test_event_calendar_v2_precedence_and_labels() -> None:
                 "type": "geopolitical_event",
                 "importance": "high",
                 "publication_date": date(2026, 11, 3),
+                "approved_label": "geopolitical_event",
             },
             {
                 "date": date(2026, 11, 3),

@@ -16,13 +16,17 @@ The classifier signatures referenced here:
 """
 from __future__ import annotations
 
+from dataclasses import replace
 from datetime import date
 
 import numpy as np
 import pandas as pd
 import pytest
 
-from regime_detection.axis_series import NetworkFragilitySeriesClassifier
+from regime_detection.axis_series import (
+    NetworkFragilitySeriesClassifier,
+    build_axis_series_bundle,
+)
 from regime_detection.calendar import nyse_sessions_between
 from regime_detection.config import (
     NetworkFragilityConfig,
@@ -39,6 +43,8 @@ from regime_detection.fragility_universe import (
 )
 from regime_detection.market_context import build_market_context
 from regime_detection.models import NetworkFragilityOutput
+from regime_detection.network_fragility import NetworkFragilityFeatures
+from regime_detection.volatility_state import VolatilityFeatures
 from regime_detection.network_fragility_rules import (
     NETWORK_FRAGILITY_RISK_RANK,
     NetworkFragilityLabel,
@@ -417,6 +423,148 @@ def test_classifier_raises_on_v1_axis_calendar_drift_volatility():
             breadth_active_labels_by_date=breadth,
             volatility_active_labels_by_date=volatility,
         )
+
+
+def test_classifier_emits_systemic_stress_when_credit_funding_confirms_it():
+    """`systemic_stress` is a cross-axis label: the fragility classifier must
+    consume credit_funding.active_label when the §2C axis is already built.
+    """
+    context, _ = _build_context_with_full_universe()
+    store = build_feature_store(
+        context, network_fragility_config=context.config.network_fragility
+    )
+    nf = store.network_fragility
+    assert nf is not None
+
+    idx = nf.avg_pairwise_corr_63d.index
+    corr_pct = pd.Series(0.95, index=idx)
+    eig_pct = pd.Series(0.50, index=idx)
+    eff_rank_pct = pd.Series(0.50, index=idx)
+    disp_pct = pd.Series(0.50, index=idx)
+    corr_level = pd.Series(0.60, index=idx)
+    eig_level = pd.Series(0.60, index=idx)
+    eff_rank = pd.Series(0.40, index=idx)
+    absorb = pd.Series(0.70, index=idx)
+    dispersion = pd.Series(0.30, index=idx)
+    stressed_nf = NetworkFragilityFeatures(
+        avg_pairwise_corr_63d=corr_level,
+        avg_pairwise_corr_percentile_504d=corr_pct,
+        largest_eigenvalue_share=eig_level,
+        largest_eigenvalue_share_percentile_504d=eig_pct,
+        effective_rank=eff_rank,
+        effective_rank_percentile_504d=eff_rank_pct,
+        absorption_ratio_top3=absorb,
+        dispersion_ratio=dispersion,
+        dispersion_ratio_percentile_252d=disp_pct,
+    )
+
+    vol = store.volatility
+    stressed_volatility = VolatilityFeatures(
+        close=vol.close,
+        return_1d=vol.return_1d,
+        return_5d=vol.return_5d,
+        return_21d=pd.Series(-0.05, index=idx),
+        realized_vol_percentile_252d=pd.Series(0.85, index=idx),
+        vix_percentile_252d=pd.Series(0.85, index=idx),
+    )
+    stressed_store = store.model_copy(
+        update={
+            "network_fragility": stressed_nf,
+            "volatility": stressed_volatility,
+        }
+    )
+
+    breadth = {day: "weak_breadth" for day in context.sessions}
+    volatility = {day: "normal_vol" for day in context.sessions}
+    credit_funding = {day: "credit_stress" for day in context.sessions}
+
+    out = NetworkFragilitySeriesClassifier().build(
+        context,
+        stressed_store,
+        breadth_active_labels_by_date=breadth,
+        volatility_active_labels_by_date=volatility,
+        credit_funding_active_labels_by_date=credit_funding,
+    )
+
+    assert out is not None
+    assert out[context.sessions[-1]].raw_label == "systemic_stress"
+    assert out[context.sessions[-1]].active_label == "systemic_stress"
+
+
+def test_axis_bundle_threads_credit_funding_into_network_fragility_systemic_stress():
+    """The live bundle path must pass the authoritative §2C active label into
+    network fragility so `systemic_stress` can outrank `correlation_to_one`.
+    """
+    from test_credit_funding import _build_full_synthetic_context
+
+    context = _build_full_synthetic_context()
+    idx = pd.DatetimeIndex(context.spy_ohlcv.index)
+    spy_factor = pd.Series(
+        np.r_[np.ones(len(idx) - 21), np.linspace(1.0, 0.90, 21)],
+        index=idx,
+    )
+    rsp_factor = pd.Series(
+        np.r_[np.ones(len(idx) - 21), np.linspace(1.0, 0.50, 21)],
+        index=idx,
+    )
+    stressed_spy_ohlcv = context.spy_ohlcv.copy()
+    for col in ["open", "high", "low", "close"]:
+        stressed_spy_ohlcv[col] = stressed_spy_ohlcv[col] * spy_factor
+    stressed_context = context.model_copy(
+        update={
+            "spy_ohlcv": stressed_spy_ohlcv,
+            "rsp_close": context.spy_ohlcv["close"] * rsp_factor,
+        }
+    )
+    store = build_feature_store(
+        stressed_context,
+        network_fragility_config=stressed_context.config.network_fragility,
+        credit_funding_config=stressed_context.config.credit_funding,
+    )
+    assert store.network_fragility is not None
+    assert store.credit_funding is not None
+
+    idx = store.network_fragility.avg_pairwise_corr_63d.index
+    stressed_nf = replace(
+        store.network_fragility,
+        avg_pairwise_corr_63d=pd.Series(0.60, index=idx),
+        avg_pairwise_corr_percentile_504d=pd.Series(0.95, index=idx),
+        largest_eigenvalue_share=pd.Series(0.60, index=idx),
+        largest_eigenvalue_share_percentile_504d=pd.Series(0.50, index=idx),
+        effective_rank=pd.Series(0.40, index=idx),
+        effective_rank_percentile_504d=pd.Series(0.50, index=idx),
+        absorption_ratio_top3=pd.Series(0.70, index=idx),
+        dispersion_ratio=pd.Series(0.30, index=idx),
+        dispersion_ratio_percentile_252d=pd.Series(0.50, index=idx),
+    )
+    stressed_cf = replace(
+        store.credit_funding,
+        hy_oas_percentile_504d=pd.Series(0.95, index=idx),
+        spy_21d_return=pd.Series(-0.06, index=idx),
+    )
+    stressed_volatility = VolatilityFeatures(
+        close=store.volatility.close,
+        return_1d=store.volatility.return_1d,
+        return_5d=store.volatility.return_5d,
+        return_21d=pd.Series(-0.05, index=idx),
+        realized_vol_percentile_252d=pd.Series(0.85, index=idx),
+        vix_percentile_252d=pd.Series(0.85, index=idx),
+    )
+    stressed_store = store.model_copy(
+        update={
+            "network_fragility": stressed_nf,
+            "credit_funding": stressed_cf,
+            "volatility": stressed_volatility,
+        }
+    )
+
+    bundle = build_axis_series_bundle(context=stressed_context, feature_store=stressed_store)
+
+    assert bundle.credit_funding is not None
+    assert bundle.network_fragility is not None
+    assert bundle.breadth_state.active_labels_by_date[context.sessions[-1]] == "weak_breadth"
+    assert bundle.credit_funding[context.sessions[-1]].active_label == "credit_stress"
+    assert bundle.network_fragility[context.sessions[-1]].active_label == "systemic_stress"
 
 
 def test_unknown_flicker_does_not_fast_track_deescalation_through_correlation_to_one():

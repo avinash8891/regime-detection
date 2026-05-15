@@ -169,6 +169,11 @@ def compute_event_calendar_outputs(
         label = _TYPE_TO_LABEL.get(str(row.type))
         if label is None:
             continue
+        if (
+            label == "geopolitical_event"
+            and getattr(row, "approved_label", None) != "geopolitical_event"
+        ):
+            continue
         event_date = row.date
         event_idx = global_pos.get(event_date)
         if event_idx is None:
@@ -243,7 +248,16 @@ def compute_event_calendar_outputs(
 
 def _normalized_events(event_calendar: pd.DataFrame | None, *, market: str) -> pd.DataFrame:
     if event_calendar is None:
-        return pd.DataFrame(columns=["date", "market", "type", "importance", "publication_date"])
+        return pd.DataFrame(
+            columns=[
+                "date",
+                "market",
+                "type",
+                "importance",
+                "publication_date",
+                "approved_label",
+            ]
+        )
     return load_event_calendar(event_calendar, market=market)
 
 

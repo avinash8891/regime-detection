@@ -236,6 +236,7 @@ def render_events_from_candidates(
                 importance=approval.importance if approval and approval.importance else candidate.importance,
                 source=candidate.source_id,
                 window_days=approval.window_days if approval and approval.window_days is not None else candidate.window_days,
+                approved_label=approval.approved_label if approval is not None else None,
             )
         )
     return sorted(rendered, key=lambda event: (event.release_timestamp_et, event.type))

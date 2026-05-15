@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from datetime import date
 
+from pathlib import Path
+
 from regime_detection.calendar import nyse_calendar
 from regime_detection.axis_series import build_axis_series_bundle
 from regime_detection.engine import RegimeEngine
@@ -13,48 +15,35 @@ from regime_detection.transition_risk_series import build_transition_risk_histor
 from regime_detection.versioning import engine_version
 
 
-def test_regime_output_emits_v2_unknown_placeholders_until_classifiers_ship(market_df_for_asof) -> None:
-    """Until V2 slice 1 (network_fragility) and slice 4 (monetary_pressure) ship,
-    those wire fields emit the V2 shape with `unknown` labels per V1 §2.7
-    NaN-cold-start pattern. Optional V2 top-level fields stay omitted.
+def test_core3_v1_regime_output_keeps_legacy_placeholder_wire_shapes(market_df_for_asof) -> None:
+    """V2 extends V1 cumulatively, but the core3-v1.0.0 archive replay wire
+    contract stays byte-identical for the legacy placeholder fields.
     """
     as_of = date(2023, 12, 14)
-    out = RegimeEngine().classify(as_of_date=as_of, market_data=market_df_for_asof(as_of))
+    engine = RegimeEngine(
+        config_path=Path("src/regime_detection/configs/core3-v1.0.0.yaml")
+    )
+    out = engine.classify(as_of_date=as_of, market_data=market_df_for_asof(as_of))
     dumped = out.model_dump()
 
     assert dumped["structural_causal_state"]["monetary_pressure"] == {
         "label": "unknown",
-        "evidence": {"reason": "v2_classifier_not_yet_implemented"},
-        "data_quality": {
-            "status": "insufficient_history",
-            "reason": "required_feature_is_nan",
-        },
+        "reason": "not_implemented_v1",
     }
     assert dumped["network_fragility"] == {
-        "raw_label": "unknown",
-        "stable_label": "unknown",
-        "active_label": "unknown",
-        "evidence": {"reason": "v2_classifier_not_yet_implemented"},
-        "data_quality": {
-            "status": "insufficient_history",
-            "reason": "required_feature_is_nan",
-        },
-        "mode": "sector_cross_asset_22",
+        "label": "not_implemented_v1",
+        "reason": "breadth_state_used_as_v1_fragility_proxy",
     }
     # Strategy-response conditional modifiers still omitted when not applicable.
     assert "hard_max_loss_required" not in dumped["strategy_response"]
-    # New V2 top-level fields default to None → omitted via exclude_none=True.
-    # `volume_liquidity_state` ships in Slice 2.7 and IS populated when the v2
-    # config carries the axis block (default core3-v2.0.0.yaml does).
-    # Slice 8 ships change_point end-to-end; it's no longer in the omit list.
-    for v2_field in ("inflation_growth_state", "credit_funding_state"):
+    # Under the archived V1 config, cumulative V2 top-level axes stay omitted.
+    for v2_field in (
+        "inflation_growth_state",
+        "credit_funding_state",
+        "volume_liquidity_state",
+        "monetary_pressure_state",
+    ):
         assert v2_field not in dumped, f"V2 optional field {v2_field!r} should be omitted until its slice ships"
-    # Slice 2.7: volume_liquidity_state is now populated end-to-end.
-    assert "volume_liquidity_state" in dumped
-    assert dumped["volume_liquidity_state"]["mode"] == "volume_zscore_v1"
-    assert dumped["volume_liquidity_state"]["raw_label"] in {
-        "normal_volume", "panic_volume", "liquidity_gap_behavior", "unknown",
-    }
     # TransitionRisk V2 optional fields stay omitted too (no score until slice 3).
     for v2_field in ("score", "score_interpretation", "score_components"):
         assert v2_field not in dumped["transition_risk"], f"transition_risk.{v2_field} should be omitted until v2 slice 3"

@@ -233,6 +233,11 @@ def _validate_event_df(df: pd.DataFrame, *, market: str) -> pd.DataFrame:
         out["publication_date"] = parsed_publication.dt.date.astype("object")
     else:
         out["publication_date"] = None
+    if "approved_label" not in out.columns:
+        out["approved_label"] = None
+    else:
+        approved = out["approved_label"].where(out["approved_label"].notna(), None)
+        out["approved_label"] = approved.astype("object")
 
     for idx, row in out.iterrows():
         if pd.isna(row["publication_date"]):
@@ -241,7 +246,7 @@ def _validate_event_df(df: pd.DataFrame, *, market: str) -> pd.DataFrame:
             else:
                 out.at[idx, "publication_date"] = row["date"]
 
-    return out[["date", "market", "type", "importance", "publication_date", "window_days"]].sort_values(
+    return out[["date", "market", "type", "importance", "publication_date", "window_days", "approved_label"]].sort_values(
         ["date", "type"]
     ).reset_index(drop=True)
 

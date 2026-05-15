@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from datetime import date
 from typing import Any, Literal
 
@@ -362,6 +363,26 @@ class AgentRouting(BaseModel):
     blocked_cohorts: list[str]
 
 
+_V1_CONFIG_VERSION = "core3-v1.0.0"
+
+
+def _rewrite_legacy_v1_wire_shapes(payload: dict[str, Any]) -> dict[str, Any]:
+    if payload.get("config_version") != _V1_CONFIG_VERSION:
+        return payload
+
+    structural = payload.get("structural_causal_state")
+    if isinstance(structural, dict):
+        structural["monetary_pressure"] = {
+            "label": "unknown",
+            "reason": "not_implemented_v1",
+        }
+    payload["network_fragility"] = {
+        "label": "not_implemented_v1",
+        "reason": "breadth_state_used_as_v1_fragility_proxy",
+    }
+    return payload
+
+
 class RegimeOutput(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -395,11 +416,15 @@ class RegimeOutput(BaseModel):
     # This must be applied at the top-level dump to propagate into nested models.
     def model_dump(self, *args: Any, **kwargs: Any) -> dict[str, Any]:
         kwargs.setdefault("exclude_none", True)
-        return super().model_dump(*args, **kwargs)
+        payload = super().model_dump(*args, **kwargs)
+        return _rewrite_legacy_v1_wire_shapes(payload)
 
     def model_dump_json(self, *args: Any, **kwargs: Any) -> str:
-        kwargs.setdefault("exclude_none", True)
-        return super().model_dump_json(*args, **kwargs)
+        return json.dumps(
+            self.model_dump(*args, **kwargs),
+            separators=(",", ":"),
+            ensure_ascii=False,
+        )
 
 
 class RegimeTimeline(BaseModel):
@@ -412,3 +437,19 @@ class RegimeTimeline(BaseModel):
     end_date: date
     trading_calendar: str
     outputs: list[RegimeOutput]
+
+    def model_dump(self, *args: Any, **kwargs: Any) -> dict[str, Any]:
+        kwargs.setdefault("exclude_none", True)
+        payload = super().model_dump(*args, **kwargs)
+        payload["outputs"] = [
+            _rewrite_legacy_v1_wire_shapes(output)
+            for output in payload.get("outputs", [])
+        ]
+        return payload
+
+    def model_dump_json(self, *args: Any, **kwargs: Any) -> str:
+        return json.dumps(
+            self.model_dump(*args, **kwargs),
+            separators=(",", ":"),
+            ensure_ascii=False,
+        )

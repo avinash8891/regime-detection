@@ -265,7 +265,7 @@ def compute_features(
 
 
 def raw_label_for_day(
-    f: TrendCharacterFeatures, dt: pd.Timestamp
+    f: TrendCharacterFeatures, dt: pd.Timestamp, *, allow_v2_labels: bool = True
 ) -> tuple[TrendCharacterLabel, dict[str, Any]]:
     close = f.close.loc[dt]
     sma50 = f.sma_50.loc[dt]
@@ -292,14 +292,16 @@ def raw_label_for_day(
     ft_rate = f.followthrough_rate.loc[dt]
 
     breakout_expansion = bool(
-        not pd.isna(ft_rate)
+        allow_v2_labels
+        and not pd.isna(ft_rate)
         and bool(breakout_flag)
         and bool(bb_expanding)
         and bool(vol_above)
         and ft_rate >= _DEFAULT_FOLLOWTHROUGH_RATE_THRESHOLD
     )
     range_bound = bool(
-        (not pd.isna(ret63))
+        allow_v2_labels
+        and (not pd.isna(ret63))
         and (not pd.isna(midpoint_ex))
         and abs(ret63) < _DEFAULT_RANGE_BOUND_RETURN_63D_THRESHOLD
         and midpoint_ex <= _DEFAULT_RANGE_BOUND_MIDPOINT_EXCURSION_THRESHOLD
@@ -334,7 +336,9 @@ def raw_label_for_day(
     }
 
 
-def build_raw_outputs(f: TrendCharacterFeatures) -> tuple[list[TrendCharacterLabel], list[dict[str, Any]]]:
+def build_raw_outputs(
+    f: TrendCharacterFeatures, *, allow_v2_labels: bool = True
+) -> tuple[list[TrendCharacterLabel], list[dict[str, Any]]]:
     close = f.close
     sma50 = f.sma_50
     ret10 = f.return_10d
@@ -370,6 +374,9 @@ def build_raw_outputs(f: TrendCharacterFeatures) -> tuple[list[TrendCharacterLab
         & midpoint_ex.le(_DEFAULT_RANGE_BOUND_MIDPOINT_EXCURSION_THRESHOLD)
         & adx.lt(_DEFAULT_RANGE_BOUND_ADX_THRESHOLD)
     )
+    if not allow_v2_labels:
+        breakout_expansion = breakout_expansion & False
+        range_bound = range_bound & False
 
     transition = valid & ~(
         breakout_expansion | recovery_attempt | trending | range_bound | chop

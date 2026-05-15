@@ -128,6 +128,7 @@ class ScheduledEvent:
     importance: str
     source: str
     window_days: tuple[int, int] | None = None
+    approved_label: str | None = None
 
 
 @dataclass(frozen=True)
@@ -186,6 +187,11 @@ def load_scheduled_events_yaml(path: Path) -> list[ScheduledEvent]:
             importance = str(entry["importance"])
             source = str(entry["source"])
             window_days = _parse_window_days(entry.get("window_days"))
+            approved_label = (
+                str(entry["approved_label"])
+                if entry.get("approved_label") is not None
+                else None
+            )
         except KeyError as exc:
             raise EventCalendarFetchError(f"Event calendar YAML entry {idx} missing field {exc.args[0]!r}") from exc
         except ValueError as exc:
@@ -200,6 +206,7 @@ def load_scheduled_events_yaml(path: Path) -> list[ScheduledEvent]:
                 importance=importance,
                 source=source,
                 window_days=window_days,
+                approved_label=approved_label,
             )
         )
     return events
@@ -1088,6 +1095,8 @@ def _render_events_yaml(events: list[ScheduledEvent]) -> str:
         )
         if event.window_days is not None:
             lines.append(f"    window_days: [{event.window_days[0]}, {event.window_days[1]}]")
+        if event.approved_label is not None:
+            lines.append(f'    approved_label: "{event.approved_label}"')
     return "\n".join(lines) + "\n"
 
 
