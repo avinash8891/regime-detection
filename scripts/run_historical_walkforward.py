@@ -17,10 +17,11 @@ import yaml
 REPO_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO_ROOT / "src"))
 
-from regime_detection.calendar import nyse_calendar
-from regime_detection.engine import RegimeEngine
-from regime_detection.loaders import load_event_calendar
-from regime_detection.versioning import engine_version as resolved_engine_version
+from regime_detection.calendar import nyse_calendar  # noqa: E402
+from regime_detection.engine import RegimeEngine  # noqa: E402
+from regime_detection.loaders import load_event_calendar  # noqa: E402
+from regime_detection.shadow_storage import event_rows_for_yaml  # noqa: E402
+from regime_detection.versioning import engine_version as resolved_engine_version  # noqa: E402
 
 
 RUNS_SCHEMA = """
@@ -73,23 +74,6 @@ def _normalize_event_calendar(path: Path | None) -> pd.DataFrame | None:
     return load_event_calendar(path)
 
 
-def _event_rows_for_yaml(event_df: pd.DataFrame | None) -> list[dict[str, Any]]:
-    if event_df is None or event_df.empty:
-        return []
-    rows: list[dict[str, Any]] = []
-    for row in event_df.to_dict(orient="records"):
-        out: dict[str, Any] = {}
-        for key, value in row.items():
-            if pd.isna(value):
-                out[key] = None
-            elif isinstance(value, (date, datetime, pd.Timestamp)):
-                out[key] = pd.Timestamp(value).date().isoformat()
-            else:
-                out[key] = value
-        rows.append(out)
-    return rows
-
-
 def _ensure_layout(output_root: Path) -> dict[str, Path]:
     paths = {
         "db": output_root / "regime_walkforward.db",
@@ -129,7 +113,7 @@ def _write_archived_inputs(
 
     market_slice.to_parquet(market_path, index=False)
     events_path.write_text(
-        yaml.safe_dump({"events": _event_rows_for_yaml(event_df)}, sort_keys=False),
+        yaml.safe_dump({"events": event_rows_for_yaml(event_df)}, sort_keys=False),
         encoding="utf-8",
     )
     checksums_path.write_text(
