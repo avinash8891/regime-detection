@@ -7,6 +7,73 @@ This document now separates two workflows that were previously mixed together:
 
 Those are not interchangeable. Historical backfills test engine logic. Forward shadow tests operational stability.
 
+## 0. Artifact Storage and Materialization Contract
+
+`data/raw/` is a local materialized cache, not the durable source of truth. It
+stays gitignored so large, licensed, or frequently changing source artifacts do
+not enter Git history. Any workflow that needs to run outside the original
+machine must rebuild `data/raw/` from an explicit artifact manifest.
+
+The durable storage boundary is:
+
+| Layer | Responsibility | Durable home |
+|---|---|---|
+| Raw capture | Exact bytes returned by a source or supplied by an operator: FRED JSON, Alpaca bars, Investing pages/CSVs, AAII files, manual workbooks | S3-compatible object storage under `raw_capture/` |
+| Normalized | Source-specific cleaned tables that still preserve the source shape | S3-compatible object storage under `normalized/` |
+| Canonical | Engine-ready parquet/SQLite/YAML contracts such as macro series, daily OHLCV, sentiment, event candidates, PIT constituents | S3-compatible object storage under `canonical/` |
+| Run inputs | Frozen input bundle for one regime run or replay window | S3-compatible object storage under `run_inputs/` |
+| Ledger | Fetch runs, source checkpoints, artifact URIs, hashes, row counts, date ranges, schema versions, lineage, and quarantine records | SQLite |
+| Local cache | Files read by current scripts and loaders | `data/raw/` rebuilt from a manifest |
+| Version control | Code, schemas, fetch contracts, implementation plans, and small lock/manifest files | Git |
+
+SQLite is the artifact ledger, not the warehouse. Large source bodies and
+processed tables live as files in object storage; SQLite records their URI,
+hash, size, row count, date range, source metadata, producing code version, and
+lineage. Small payloads may be embedded only when that improves operator
+debugging without turning SQLite into the primary data store.
+
+Every production fetch must finish in this order:
+
+1. Fetch new source data plus a source-specific lookback window for revisions.
+2. Store the exact raw bytes in object storage.
+3. Normalize into source-shaped rows and store the normalized artifact.
+4. Build or update the canonical engine artifact.
+5. Validate schema, row count, date range, and hash.
+6. Record artifact and lineage metadata in SQLite.
+7. Advance the source checkpoint only after every required artifact has been
+   written and validated.
+
+Incremental fetches update the artifact lake. Regime-engine runs consume a
+manifest that pins exact canonical artifacts. A manifest is the only supported
+cross-environment handoff: it states which S3 artifacts to materialize into
+which local `data/raw/` paths and includes hashes that must verify before the
+engine starts.
+
+Minimum manifest fields:
+
+```yaml
+artifact_set: regime_engine_YYYY-MM-DD
+created_at_utc: "YYYY-MM-DDTHH:MM:SSZ"
+storage_root: s3://regime-data
+artifacts:
+  - name: fred_macro_series
+    stage: canonical
+    uri: canonical/macro/fred_macro_series/as_of=YYYY-MM-DD/fred_macro_series.parquet
+    local_path: data/raw/macro/fred_macro_series.parquet
+    sha256: "<hex>"
+    schema_version: fred_macro_series.v1
+    rows: 0
+    min_date: YYYY-MM-DD
+    max_date: YYYY-MM-DD
+    required_for:
+      - v2_calibration
+      - profile_engine_30d
+```
+
+The implementation may keep existing local paths during migration, but the
+contract is logical: `data/raw/` is replaceable, and the manifest plus artifact
+store is what makes the data portable and replayable.
+
 ## 1. Validation Sequence
 
 ### 1.0 Current Status (mirrors `regime_engine_v1_final_spec.md` §14.1)

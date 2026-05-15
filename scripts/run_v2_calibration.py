@@ -22,6 +22,7 @@ explicitly requires this manual step (§6.1 line 2748, §6.2 line 2842,
 from __future__ import annotations
 
 import datetime as dt
+import argparse
 import sys
 from pathlib import Path
 from typing import Any
@@ -37,6 +38,7 @@ sys.path.insert(0, str(SRC_DIR))
 sys.path.insert(0, str(REPO_ROOT))
 
 from regime_data_fetch.local_daily_ohlcv_sqlite import EXPECTED_COLUMNS  # noqa: E402
+from regime_data_fetch.materialization import materialize_if_requested  # noqa: E402
 
 from regime_detection.config import load_default_regime_config  # noqa: E402
 from regime_detection.engine import RegimeEngine  # noqa: E402
@@ -231,8 +233,23 @@ def _fit_summary_clustering(feature_store: Any) -> dict[str, Any]:
     return summary
 
 
+def _parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description="V2 calibration artifact runner.")
+    parser.add_argument("--data-root", type=Path, default=REPO_ROOT / "data" / "raw")
+    parser.add_argument("--manifest", type=Path, default=None, help="Optional artifact manifest to materialize before calibration.")
+    parser.add_argument("--artifact-store", default=None, help="Optional artifact-store root override for --manifest.")
+    return parser.parse_args()
+
+
 def main() -> int:
-    data_root = REPO_ROOT / "data" / "raw"
+    args = _parse_args()
+    data_root = args.data_root
+    materialize_if_requested(
+        manifest_path=args.manifest,
+        local_root=data_root,
+        store_root=args.artifact_store,
+        required_for="v2_calibration",
+    )
     daily_dir = data_root / "daily_ohlcv"
     macro_parquet = data_root / "macro" / "fred_macro_series.parquet"
     pmi_path = REPO_ROOT / "data" / "manual_inputs" / "pmi" / "ism_manufacturing_pmi.tsv"

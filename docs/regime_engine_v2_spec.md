@@ -32,6 +32,11 @@ V2 activation requires **both**, in sequence:
 
 Qualification details for the forward shadow runner, storage, freeze policy, and replay verification live in `docs/shadow_runner_spec.md`.
 Historical walk-forward qualification details, required artifacts, and pass/fail criteria live in `docs/historical_walkforward_spec.md`.
+Data-source acquisition, S3/object-storage artifact persistence, SQLite ledger
+state, local `data/raw/` materialization, and manifest-pinned replay are owned
+by `docs/market_data_fetch_plan.md` §0. V2 classifier semantics must consume
+the canonical artifacts named by that contract; this spec does not make
+gitignored local files the source of truth.
 
 V2 inherits every V1 contract:
 

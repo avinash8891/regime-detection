@@ -24,6 +24,12 @@ class FetchRun:
     started_at_utc: str
 
 
+@dataclass(frozen=True)
+class ArtifactRecord:
+    artifact_record_id: int
+    content_sha256: str
+
+
 class AcquisitionStore:
     def __init__(self, db_path: Path) -> None:
         self.db_path = db_path
@@ -240,6 +246,175 @@ class AcquisitionStore:
                 ),
             )
 
+    def record_artifact_record(
+        self,
+        *,
+        run_id: int,
+        name: str,
+        stage: str,
+        uri: str,
+        local_path: str,
+        content_sha256: str,
+        size_bytes: int,
+        source_name: str,
+        artifact_kind: str,
+        row_count: int | None = None,
+        min_date: str | None = None,
+        max_date: str | None = None,
+        schema_version: str | None = None,
+        notes: str | None = None,
+    ) -> ArtifactRecord:
+        if stage not in {"raw_capture", "normalized", "canonical", "run_inputs"}:
+            raise ValueError(f"unknown artifact stage: {stage}")
+        with self._connect() as conn:
+            cursor = conn.execute(
+                """
+                INSERT INTO artifact_records (
+                    run_id,
+                    name,
+                    stage,
+                    uri,
+                    local_path,
+                    content_sha256,
+                    size_bytes,
+                    source_name,
+                    artifact_kind,
+                    row_count,
+                    min_date,
+                    max_date,
+                    schema_version,
+                    recorded_at_utc,
+                    notes
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    run_id,
+                    name,
+                    stage,
+                    uri,
+                    local_path,
+                    content_sha256,
+                    size_bytes,
+                    source_name,
+                    artifact_kind,
+                    row_count,
+                    min_date,
+                    max_date,
+                    schema_version,
+                    utc_now_iso(),
+                    notes,
+                ),
+            )
+            return ArtifactRecord(
+                artifact_record_id=int(cursor.lastrowid),
+                content_sha256=content_sha256,
+            )
+
+    def record_artifact_lineage(
+        self,
+        *,
+        output_artifact_record_id: int,
+        input_artifact_record_id: int,
+        transform_name: str,
+    ) -> None:
+        with self._connect() as conn:
+            conn.execute(
+                """
+                INSERT INTO artifact_lineage (
+                    output_artifact_record_id,
+                    input_artifact_record_id,
+                    transform_name,
+                    recorded_at_utc
+                ) VALUES (?, ?, ?, ?)
+                """,
+                (
+                    output_artifact_record_id,
+                    input_artifact_record_id,
+                    transform_name,
+                    utc_now_iso(),
+                ),
+            )
+
+    def record_canonical_version(
+        self,
+        *,
+        dataset_name: str,
+        version: str,
+        artifact_record_id: int,
+        manifest_uri: str | None,
+        status: str,
+    ) -> None:
+        with self._connect() as conn:
+            conn.execute(
+                """
+                INSERT INTO canonical_versions (
+                    dataset_name,
+                    version,
+                    artifact_record_id,
+                    manifest_uri,
+                    status,
+                    recorded_at_utc
+                ) VALUES (?, ?, ?, ?, ?, ?)
+                ON CONFLICT(dataset_name, version) DO UPDATE SET
+                    artifact_record_id = excluded.artifact_record_id,
+                    manifest_uri = excluded.manifest_uri,
+                    status = excluded.status,
+                    recorded_at_utc = excluded.recorded_at_utc
+                """,
+                (
+                    dataset_name,
+                    version,
+                    artifact_record_id,
+                    manifest_uri,
+                    status,
+                    utc_now_iso(),
+                ),
+            )
+
+    def set_source_checkpoint(
+        self,
+        *,
+        source_name: str,
+        cursor_key: str,
+        cursor_value: str,
+        successful_run_id: int,
+    ) -> None:
+        with self._connect() as conn:
+            conn.execute(
+                """
+                INSERT INTO source_checkpoints (
+                    source_name,
+                    cursor_key,
+                    cursor_value,
+                    successful_run_id,
+                    updated_at_utc
+                ) VALUES (?, ?, ?, ?, ?)
+                ON CONFLICT(source_name, cursor_key) DO UPDATE SET
+                    cursor_value = excluded.cursor_value,
+                    successful_run_id = excluded.successful_run_id,
+                    updated_at_utc = excluded.updated_at_utc
+                """,
+                (
+                    source_name,
+                    cursor_key,
+                    cursor_value,
+                    successful_run_id,
+                    utc_now_iso(),
+                ),
+            )
+
+    def get_source_checkpoint(self, *, source_name: str, cursor_key: str) -> str | None:
+        with self._connect() as conn:
+            row = conn.execute(
+                """
+                SELECT cursor_value
+                FROM source_checkpoints
+                WHERE source_name = ? AND cursor_key = ?
+                """,
+                (source_name, cursor_key),
+            ).fetchone()
+        return str(row[0]) if row else None
+
     def _connect(self) -> sqlite3.Connection:
         conn = sqlite3.connect(self.db_path)
         conn.execute("PRAGMA foreign_keys = ON")
@@ -297,6 +472,54 @@ class AcquisitionStore:
                     max_date TEXT,
                     recorded_at_utc TEXT NOT NULL,
                     notes TEXT
+                );
+
+                CREATE TABLE IF NOT EXISTS artifact_records (
+                    artifact_record_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    run_id INTEGER NOT NULL REFERENCES fetch_runs(run_id) ON DELETE CASCADE,
+                    name TEXT NOT NULL,
+                    stage TEXT NOT NULL,
+                    uri TEXT NOT NULL,
+                    local_path TEXT NOT NULL,
+                    content_sha256 TEXT NOT NULL,
+                    size_bytes INTEGER NOT NULL,
+                    source_name TEXT NOT NULL,
+                    artifact_kind TEXT NOT NULL,
+                    row_count INTEGER,
+                    min_date TEXT,
+                    max_date TEXT,
+                    schema_version TEXT,
+                    recorded_at_utc TEXT NOT NULL,
+                    notes TEXT
+                );
+
+                CREATE TABLE IF NOT EXISTS artifact_lineage (
+                    lineage_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    output_artifact_record_id INTEGER NOT NULL REFERENCES artifact_records(artifact_record_id) ON DELETE CASCADE,
+                    input_artifact_record_id INTEGER NOT NULL REFERENCES artifact_records(artifact_record_id) ON DELETE CASCADE,
+                    transform_name TEXT NOT NULL,
+                    recorded_at_utc TEXT NOT NULL
+                );
+
+                CREATE TABLE IF NOT EXISTS canonical_versions (
+                    canonical_version_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    dataset_name TEXT NOT NULL,
+                    version TEXT NOT NULL,
+                    artifact_record_id INTEGER NOT NULL REFERENCES artifact_records(artifact_record_id) ON DELETE CASCADE,
+                    manifest_uri TEXT,
+                    status TEXT NOT NULL,
+                    recorded_at_utc TEXT NOT NULL,
+                    UNIQUE(dataset_name, version)
+                );
+
+                CREATE TABLE IF NOT EXISTS source_checkpoints (
+                    checkpoint_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    source_name TEXT NOT NULL,
+                    cursor_key TEXT NOT NULL,
+                    cursor_value TEXT NOT NULL,
+                    successful_run_id INTEGER NOT NULL REFERENCES fetch_runs(run_id) ON DELETE CASCADE,
+                    updated_at_utc TEXT NOT NULL,
+                    UNIQUE(source_name, cursor_key)
                 );
                 """
             )

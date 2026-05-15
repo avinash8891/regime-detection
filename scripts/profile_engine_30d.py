@@ -23,6 +23,7 @@ if str(SRC_ROOT) not in sys.path:
     sys.path.insert(0, str(SRC_ROOT))
 
 from regime_data_fetch.pit_constituents import read_pit_intervals
+from regime_data_fetch.materialization import materialize_if_requested
 from regime_detection.engine import RegimeEngine
 from regime_detection.feature_store import FeatureStore
 from regime_detection.fragility_universe import CROSS_ASSET_SYMBOLS, SECTOR_ETFS
@@ -444,13 +445,31 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="Profile 30-session RegimeEngine.classify_window() wall-clock stages.")
     parser.add_argument("--lookback-days", type=_positive_int, default=30)
     parser.add_argument("--config-path", type=Path, default=DEFAULT_CONFIG_PATH)
-    parser.add_argument("--daily-dir", type=Path, default=DEFAULT_DAILY_DIR)
-    parser.add_argument("--constituent-tree", type=Path, default=DEFAULT_CONSTITUENT_TREE)
-    parser.add_argument("--macro-parquet", type=Path, default=DEFAULT_MACRO_PARQUET)
-    parser.add_argument("--pit-parquet", type=Path, default=DEFAULT_PIT_PARQUET)
+    parser.add_argument("--daily-dir", type=Path, default=None)
+    parser.add_argument("--constituent-tree", type=Path, default=None)
+    parser.add_argument("--macro-parquet", type=Path, default=None)
+    parser.add_argument("--pit-parquet", type=Path, default=None)
     parser.add_argument("--pmi-path", type=Path, default=DEFAULT_PMI_PATH)
+    parser.add_argument("--manifest", type=Path, default=None, help="Optional artifact manifest to materialize before profiling.")
+    parser.add_argument("--artifact-store", default=None, help="Optional artifact-store root override for --manifest.")
+    parser.add_argument("--data-root", type=Path, default=REPO_ROOT / "data" / "raw", help="Local data/raw root used for manifest materialization.")
     parser.add_argument("--allow-missing-constituent-files", action="store_true")
     args = parser.parse_args()
+    if args.daily_dir is None:
+        args.daily_dir = args.data_root / "daily_ohlcv"
+    if args.constituent_tree is None:
+        args.constituent_tree = args.data_root / "daily_ohlcv_762"
+    if args.macro_parquet is None:
+        args.macro_parquet = args.data_root / "macro" / "fred_macro_series.parquet"
+    if args.pit_parquet is None:
+        args.pit_parquet = args.data_root / "pit_constituents" / "sp500_ticker_intervals.parquet"
+
+    materialize_if_requested(
+        manifest_path=args.manifest,
+        local_root=args.data_root,
+        store_root=args.artifact_store,
+        required_for="profile_engine_30d",
+    )
 
     _require_path(args.config_path, kind="config path")
     _require_path(args.daily_dir, kind="daily OHLCV path")

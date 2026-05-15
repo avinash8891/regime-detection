@@ -24,3 +24,23 @@ The runner tests are marked `slow`, so execute them explicitly:
 ```bash
 python3 -m pytest tests/test_historical_walkforward.py -m slow -q
 ```
+
+## Data Artifacts
+
+Production data is not stored in Git. `data/raw/` is a local materialized cache
+rebuilt from a manifest that points at durable artifacts in object storage.
+
+```bash
+python3 scripts/fetch_regime_engine_v1_data.py \
+  --fetch sentiment \
+  --out-dir data/raw \
+  --acquisition-db data/raw/acquisition/acquisition.db \
+  --artifact-store /path/to/regime-data-store \
+  --emit-manifest data/manifests/regime_engine_latest.yaml
+
+python3 scripts/materialize_regime_data.py \
+  --manifest data/manifests/regime_engine_latest.yaml \
+  --local-root data/raw
+```
+
+See `docs/market_data_fetch_plan.md` section 0 for the storage contract.

@@ -10,6 +10,9 @@ from pathlib import Path
 
 import pandas as pd
 
+from regime_data_fetch.acquisition_store import AcquisitionStore
+from regime_data_fetch.artifact_store import sha256_file
+
 AAII_SENTIMENT_URL = "https://www.aaii.com/sentimentsurvey/sent_results"
 AAII_SENTIMENT_PARQUET = "aaii_sentiment.parquet"
 AAII_SENTIMENT_SEED_CFB = "aaii_sentiment_historical.cfb"
@@ -204,23 +207,111 @@ def run_sentiment_fetch(
     *,
     out_dir: Path,
     url: str = AAII_SENTIMENT_URL,
+    acquisition_db_path: Path | None = None,
 ) -> Path:
     """Orchestrate the AAII sentiment fetch and write a report JSON."""
     sentiment_dir = out_dir / "sentiment"
     sentiment_dir.mkdir(parents=True, exist_ok=True)
     out_path = sentiment_dir / AAII_SENTIMENT_PARQUET
+    seed_path = sentiment_dir / AAII_SENTIMENT_SEED_CFB
 
-    df = update_aaii_parquet(raw_dir=out_dir, out_path=out_path, url=url)
+    store = AcquisitionStore(acquisition_db_path) if acquisition_db_path else None
+    fetch_run = (
+        store.start_fetch_run(
+            fetch_type="sentiment",
+            params={"source": "aaii", "url": url},
+        )
+        if store
+        else None
+    )
 
-    report = {
-        "as_of_utc": dt.datetime.now(dt.timezone.utc).isoformat(),
-        "rows": int(len(df)),
-        "min_date": str(df["date"].min().date()) if not df.empty else None,
-        "max_date": str(df["date"].max().date()) if not df.empty else None,
-        "paths": {
-            "sentiment_parquet": str(out_path),
-        },
-    }
-    report_path = out_dir / "sentiment_fetch_report.json"
-    report_path.write_text(json.dumps(report, indent=2))
-    return report_path
+    try:
+        df = update_aaii_parquet(raw_dir=out_dir, out_path=out_path, url=url)
+
+        report = {
+            "as_of_utc": dt.datetime.now(dt.timezone.utc).isoformat(),
+            "rows": int(len(df)),
+            "min_date": str(df["date"].min().date()) if not df.empty else None,
+            "max_date": str(df["date"].max().date()) if not df.empty else None,
+            "paths": {
+                "sentiment_parquet": str(out_path),
+                "acquisition_db": str(acquisition_db_path) if acquisition_db_path else None,
+            },
+        }
+        report_path = out_dir / "sentiment_fetch_report.json"
+        report_path.write_text(json.dumps(report, indent=2))
+
+        if store and fetch_run:
+            raw_record = None
+            if seed_path.exists():
+                raw_sha = sha256_file(seed_path)
+                raw_record = store.record_artifact_record(
+                    run_id=fetch_run.run_id,
+                    name="aaii_sentiment_historical_seed",
+                    stage="raw_capture",
+                    uri=f"raw_capture/aaii/{fetch_run.run_id}/{AAII_SENTIMENT_SEED_CFB}",
+                    local_path=str(seed_path),
+                    content_sha256=raw_sha,
+                    size_bytes=seed_path.stat().st_size,
+                    source_name="aaii",
+                    artifact_kind="cfb",
+                    min_date=report["min_date"],
+                    max_date=report["max_date"],
+                    notes="AAII historical seed file used when canonical parquet is bootstrapped locally",
+                )
+            canonical_sha = sha256_file(out_path)
+            canonical_record = store.record_artifact_record(
+                run_id=fetch_run.run_id,
+                name="aaii_sentiment",
+                stage="canonical",
+                uri=(
+                    "canonical/sentiment/aaii_sentiment/"
+                    f"as_of={report['max_date']}/{AAII_SENTIMENT_PARQUET}"
+                ),
+                local_path=str(out_path),
+                content_sha256=canonical_sha,
+                size_bytes=out_path.stat().st_size,
+                source_name="aaii",
+                artifact_kind="parquet",
+                row_count=int(len(df)),
+                min_date=report["min_date"],
+                max_date=report["max_date"],
+                schema_version="aaii_sentiment.v1",
+            )
+            if raw_record is not None:
+                store.record_artifact_lineage(
+                    output_artifact_record_id=canonical_record.artifact_record_id,
+                    input_artifact_record_id=raw_record.artifact_record_id,
+                    transform_name="normalize_aaii_sentiment",
+                )
+            if report["max_date"]:
+                store.set_source_checkpoint(
+                    source_name="aaii",
+                    cursor_key="survey_week",
+                    cursor_value=str(report["max_date"]),
+                    successful_run_id=fetch_run.run_id,
+                )
+            store.record_output(
+                run_id=fetch_run.run_id,
+                output_kind="aaii_sentiment_parquet",
+                path=out_path,
+                row_count=int(len(df)),
+                min_date=report["min_date"],
+                max_date=report["max_date"],
+                notes="AAII sentiment canonical parquet",
+            )
+            store.record_output(
+                run_id=fetch_run.run_id,
+                output_kind="aaii_sentiment_fetch_report",
+                path=report_path,
+                row_count=int(len(df)),
+                min_date=report["min_date"],
+                max_date=report["max_date"],
+                notes="AAII sentiment fetch report",
+            )
+            store.finish_fetch_run(run_id=fetch_run.run_id, status="ok")
+        return report_path
+    except Exception as exc:
+        if store and fetch_run:
+            store.finish_fetch_run(run_id=fetch_run.run_id, status="failed", notes=str(exc))
+        raise

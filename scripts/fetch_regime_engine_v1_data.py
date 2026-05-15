@@ -17,6 +17,7 @@ if str(SRC_DIR) not in sys.path:
 from regime_data_fetch.cli_common import load_env_file, parse_date
 from regime_data_fetch.bls_schedule import build_bls_local_archive_page_fetcher
 from regime_data_fetch.event_calendar import run_us_event_calendar_fetch
+from regime_data_fetch.artifact_export import emit_manifest_for_report_paths
 from regime_data_fetch.fetch_workflow import run_macro_fetch, run_market_fetch, run_sentiment_fetch
 from regime_data_fetch.aggregate_eps import (
     run_aggregate_eps_fetch,
@@ -83,6 +84,26 @@ def main() -> int:
     ap.add_argument("--usd-index-csv", default=None, help="Path to a local Yahoo Finance ^NYICDX historical CSV export. Required for --fetch usd-index-local.")
     ap.add_argument("--daily-ohlcv-dir", default=None, help="Path to a local partitioned daily_ohlcv parquet directory. Required for --fetch daily-ohlcv-local-sqlite.")
     ap.add_argument("--acquisition-db", default=None, help="Optional SQLite path for raw acquisition/provenance recording.")
+    ap.add_argument(
+        "--artifact-store",
+        default=None,
+        help="Optional object-store root for emitted artifacts, e.g. s3://regime-data or /mnt/regime-data.",
+    )
+    ap.add_argument(
+        "--emit-manifest",
+        default=None,
+        help="Optional manifest YAML path to write after fetch outputs are uploaded to --artifact-store.",
+    )
+    ap.add_argument(
+        "--manifest-artifact-set",
+        default=None,
+        help="Optional artifact_set name for --emit-manifest. Defaults to regime_engine_<end-date>.",
+    )
+    ap.add_argument(
+        "--manifest-required-for",
+        default="profile_engine_30d,v2_calibration",
+        help="Comma-separated use cases attached to emitted manifest artifacts.",
+    )
     ap.add_argument("--bls-schedule-dir", default=None, help="Optional local directory containing bls_schedule_YYYY.html files for BLS historical release schedules.")
     ap.add_argument("--bls-start-year", type=int, default=2000, help="Start year for BLS CPI/NFP schedule generation.")
     ap.add_argument("--bls-end-year", type=int, default=None, help="End year for BLS CPI/NFP schedule generation. Defaults to --end year.")
@@ -106,6 +127,8 @@ def main() -> int:
         raise SystemExit("--scope must be v1|v2|all")
     if args.fetch not in {"market", "macro", "events", "pmi", "pit", "fomc", "powell", "eps", "eps-spglobal-auto", "eps-wayback", "usd-index-local", "daily-ohlcv-local-sqlite", "sentiment", "all"}:
         raise SystemExit("--fetch must be market|macro|events|pmi|pit|fomc|powell|eps|eps-spglobal-auto|eps-wayback|usd-index-local|daily-ohlcv-local-sqlite|sentiment|all")
+    if args.emit_manifest and not args.artifact_store:
+        raise SystemExit("--artifact-store is required when --emit-manifest is set")
 
     if args.env_file:
         load_env_file(Path(args.env_file))
@@ -128,6 +151,8 @@ def main() -> int:
         )
         return 0
 
+    report_paths: list[Path] = []
+
     if args.fetch in {"market", "all"}:
         stocks = _resolve_stock_universe(args) if args.scope in {"v1", "all"} else []
         market_report = run_market_fetch(
@@ -143,6 +168,7 @@ def main() -> int:
             verbose=args.verbose,
             acquisition_db_path=Path(args.acquisition_db) if args.acquisition_db else None,
         )
+        report_paths.append(market_report)
         print(str(market_report))
 
     if args.fetch in {"macro", "all"}:
@@ -154,10 +180,15 @@ def main() -> int:
             include_cpi_vintages=args.include_cpi_vintages,
             acquisition_db_path=Path(args.acquisition_db) if args.acquisition_db else None,
         )
+        report_paths.append(macro_report)
         print(str(macro_report))
 
     if args.fetch in {"sentiment", "all"}:
-        sentiment_report = run_sentiment_fetch(out_dir=out_dir)
+        sentiment_report = run_sentiment_fetch(
+            out_dir=out_dir,
+            acquisition_db_path=Path(args.acquisition_db) if args.acquisition_db else None,
+        )
+        report_paths.append(sentiment_report)
         print(str(sentiment_report))
 
     if args.fetch in {"events", "all"}:
@@ -176,6 +207,7 @@ def main() -> int:
             include_v2_curated_candidates=args.include_v2_curated_event_candidates,
             as_of_date=end,
         )
+        report_paths.append(event_report)
         print(str(event_report))
 
     if args.fetch in {"pmi", "all"}:
@@ -185,6 +217,7 @@ def main() -> int:
             acquisition_db_path=Path(args.acquisition_db) if args.acquisition_db else None,
             manual_history_dir=DEFAULT_MANUAL_PMI_HISTORY_DIR,
         )
+        report_paths.append(pmi_report)
         print(str(pmi_report))
 
     if args.fetch in {"pit", "all"}:
@@ -192,6 +225,7 @@ def main() -> int:
             out_dir=out_dir,
             acquisition_db_path=Path(args.acquisition_db) if args.acquisition_db else None,
         )
+        report_paths.append(pit_report)
         print(str(pit_report))
 
     if args.fetch in {"fomc", "all"}:
@@ -199,6 +233,7 @@ def main() -> int:
             out_dir=out_dir,
             acquisition_db_path=Path(args.acquisition_db) if args.acquisition_db else None,
         )
+        report_paths.append(fomc_report)
         print(str(fomc_report))
 
     if args.fetch in {"powell", "all"}:
@@ -206,6 +241,7 @@ def main() -> int:
             out_dir=out_dir,
             acquisition_db_path=Path(args.acquisition_db) if args.acquisition_db else None,
         )
+        report_paths.append(powell_report)
         print(str(powell_report))
 
     if args.fetch in {"eps", "all"}:
@@ -216,6 +252,7 @@ def main() -> int:
             workbook_path=Path(args.eps_workbook),
             acquisition_db_path=Path(args.acquisition_db) if args.acquisition_db else None,
         )
+        report_paths.append(eps_report)
         print(str(eps_report))
 
     if args.fetch == "eps-spglobal-auto":
@@ -230,6 +267,7 @@ def main() -> int:
             out_dir=out_dir,
             acquisition_db_path=Path(args.acquisition_db) if args.acquisition_db else None,
         )
+        report_paths.append(eps_auto_report)
         print(str(eps_auto_report))
 
     if args.fetch in {"eps-wayback", "all"}:
@@ -241,6 +279,7 @@ def main() -> int:
             stop_after_first_success=args.eps_wayback_stop_after_first_success,
             acquisition_db_path=Path(args.acquisition_db) if args.acquisition_db else None,
         )
+        report_paths.append(eps_wayback_report)
         print(str(eps_wayback_report))
 
     if args.fetch == "usd-index-local":
@@ -251,6 +290,7 @@ def main() -> int:
             csv_path=Path(args.usd_index_csv),
             acquisition_db_path=Path(args.acquisition_db) if args.acquisition_db else None,
         )
+        report_paths.append(usd_index_report)
         print(str(usd_index_report))
 
     if args.fetch == "daily-ohlcv-local-sqlite":
@@ -263,7 +303,20 @@ def main() -> int:
             source_dir=Path(args.daily_ohlcv_dir),
             acquisition_db_path=Path(args.acquisition_db),
         )
+        report_paths.append(ohlcv_import_report)
         print(str(ohlcv_import_report))
+    if args.emit_manifest:
+        required_for = [item.strip() for item in args.manifest_required_for.split(",") if item.strip()]
+        manifest = emit_manifest_for_report_paths(
+            report_paths=report_paths,
+            out_dir=out_dir,
+            artifact_store_root=args.artifact_store,
+            manifest_path=Path(args.emit_manifest),
+            artifact_set=args.manifest_artifact_set or f"regime_engine_{end.isoformat()}",
+            required_for=required_for,
+        )
+        print(str(Path(args.emit_manifest)))
+        print(f"manifest_artifacts={len(manifest.artifacts)}")
     return 0
 
 

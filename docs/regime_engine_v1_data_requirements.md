@@ -22,6 +22,13 @@ This document lists all data needed to build V1 with real fixtures and real test
 
 This document defines the **required V1 data artifacts and semantics**. It does not imply that every source already has a production-ready live fetcher.
 
+Storage and portability are owned by `docs/market_data_fetch_plan.md` §0. The
+paths named in this document are logical local materialization targets, not Git
+tracking requirements. Production data may be fetched from Alpaca, FRED,
+official pages, manual CSV/XLSX files, or crawler outputs, but any cross-machine
+run must materialize those required artifacts from a manifest with verified
+hashes before V1 classification starts.
+
 ---
 
 ## 1. Raw Market Data

@@ -42,6 +42,7 @@ from regime_detection.loaders import (  # noqa: E402
 )
 from regime_detection.market_context import build_market_context  # noqa: E402
 from regime_detection.versioning import engine_version as resolved_engine_version  # noqa: E402
+from regime_data_fetch.materialization import materialize_if_requested  # noqa: E402
 
 from _v2_calibration_helpers import (  # noqa: E402
     CROSS_ASSET_SYMBOLS,
@@ -290,16 +291,8 @@ def _build_markdown(
 
 def _parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="V2 §9.3 60-session shadow A/B gate runner.")
-    parser.add_argument(
-        "--daily-dir",
-        type=Path,
-        default=REPO_ROOT / "data" / "raw" / "daily_ohlcv",
-    )
-    parser.add_argument(
-        "--macro-parquet",
-        type=Path,
-        default=REPO_ROOT / "data" / "raw" / "macro" / "fred_macro_series.parquet",
-    )
+    parser.add_argument("--daily-dir", type=Path, default=None)
+    parser.add_argument("--macro-parquet", type=Path, default=None)
     parser.add_argument(
         "--pmi-path",
         type=Path,
@@ -312,7 +305,21 @@ def _parse_args() -> argparse.Namespace:
         type=Path,
         default=REPO_ROOT / "docs" / "verification" / "v2_shadow_ab_60session.md",
     )
-    return parser.parse_args()
+    parser.add_argument("--manifest", type=Path, default=None, help="Optional artifact manifest to materialize before running.")
+    parser.add_argument("--artifact-store", default=None, help="Optional artifact-store root override for --manifest.")
+    parser.add_argument("--data-root", type=Path, default=REPO_ROOT / "data" / "raw", help="Local data/raw root used for manifest materialization.")
+    args = parser.parse_args()
+    if args.daily_dir is None:
+        args.daily_dir = args.data_root / "daily_ohlcv"
+    if args.macro_parquet is None:
+        args.macro_parquet = args.data_root / "macro" / "fred_macro_series.parquet"
+    materialize_if_requested(
+        manifest_path=args.manifest,
+        local_root=args.data_root,
+        store_root=args.artifact_store,
+        required_for="v2_calibration",
+    )
+    return args
 
 
 def main() -> int:
