@@ -339,6 +339,7 @@ def test_build_event_calendar_series_matches_point_classifier(market_df_for_asof
         config=cfg,
         event_calendar=events,
     )
+    context = slice_context_to_recent_sessions(context=context, required_sessions=10)
     outputs = build_event_calendar_series(context)
 
     for day in context.sessions:

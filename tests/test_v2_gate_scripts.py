@@ -4,8 +4,11 @@ import sys
 from pathlib import Path
 
 import pandas as pd
+import pytest
 
 from scripts import run_v2_shadow_ab_gate, run_v2_walkforward_gate
+
+pytestmark = [pytest.mark.slow, pytest.mark.v2_gate]
 
 
 def _write_v2_gate_parquets(tmp_path: Path) -> tuple[Path, Path]:

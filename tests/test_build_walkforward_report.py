@@ -3,8 +3,11 @@ from __future__ import annotations
 import importlib.util
 import json
 import shutil
-from datetime import date
 from pathlib import Path
+
+import pytest
+
+pytestmark = pytest.mark.slow
 
 
 def _load_module(name: str, rel_path: str):
