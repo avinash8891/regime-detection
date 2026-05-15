@@ -342,7 +342,7 @@ def test_run_macro_fetch_uses_env_fred_api_key(monkeypatch, tmp_path: Path) -> N
 
 def test_fetch_help_surface_mentions_pmi_and_pit() -> None:
     help_text = Path("scripts/fetch_regime_engine_v1_data.py").read_text()
-    assert "market|macro|events|pmi|pit|fomc|powell|eps|eps-spglobal-auto|eps-wayback|usd-index-local|daily-ohlcv-local-sqlite|sentiment|all" in help_text
+    assert "market|macro|events|pmi|pit|fomc|powell|eps|eps-spglobal-auto|eps-wayback|usd-index-local|daily-ohlcv-local-sqlite|sentiment|investing-archive-local|all" in help_text
     assert "--eps-workbook" in help_text
     assert "--eps-wayback-max-snapshots" in help_text
     assert "--eps-wayback-from" in help_text
@@ -350,6 +350,7 @@ def test_fetch_help_surface_mentions_pmi_and_pit() -> None:
     assert "--eps-wayback-stop-after-first-success" in help_text
     assert "--usd-index-csv" in help_text
     assert "--daily-ohlcv-dir" in help_text
+    assert "--investing-archive-root" in help_text
 
 
 def test_event_calendar_fetch_symbol_is_wired() -> None:

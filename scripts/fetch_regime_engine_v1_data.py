@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# ruff: noqa: E402
 from __future__ import annotations
 
 import argparse
@@ -26,6 +27,7 @@ from regime_data_fetch.aggregate_eps import (
     run_wayback_aggregate_eps_fetch,
 )
 from regime_data_fetch.fomc_minutes import run_fomc_minutes_fetch
+from regime_data_fetch.investing_archive import run_local_investing_archive_import
 from regime_data_fetch.local_daily_ohlcv_sqlite import run_local_daily_ohlcv_sqlite_import
 from regime_data_fetch.local_usd_index import run_local_usd_index_import
 from regime_data_fetch.pmi import DEFAULT_MANUAL_PMI_HISTORY_DIR, run_pmi_fetch
@@ -39,7 +41,7 @@ def main() -> int:
     ap.add_argument("--start", default="2015-01-01", help="Start date (YYYY-MM-DD).")
     ap.add_argument("--end", default=dt.date.today().isoformat(), help="End date (YYYY-MM-DD).")
     ap.add_argument("--scope", default="v1", help="Data scope: v1|v2|all.")
-    ap.add_argument("--fetch", default="market", help="What to fetch: market|macro|events|pmi|pit|fomc|powell|eps|eps-spglobal-auto|eps-wayback|usd-index-local|daily-ohlcv-local-sqlite|sentiment|all.")
+    ap.add_argument("--fetch", default="market", help="What to fetch: market|macro|events|pmi|pit|fomc|powell|eps|eps-spglobal-auto|eps-wayback|usd-index-local|daily-ohlcv-local-sqlite|sentiment|investing-archive-local|all.")
     ap.add_argument("--min-cap-b", type=float, default=10.0, help="Universe filter threshold in $B.")
     ap.add_argument("--adjustment", default="raw", help="Alpaca adjustment: raw|split|dividend|all.")
     ap.add_argument("--alpaca-feed", default=None, help="Alpaca data feed: sip|iex|otc. Omit to use SDK default.")
@@ -84,6 +86,7 @@ def main() -> int:
     ap.add_argument("--eps-wayback-stop-after-first-success", action="store_true", help="Stop Wayback EPS processing after the first successfully parsed snapshot.")
     ap.add_argument("--usd-index-csv", default=None, help="Path to a local Yahoo Finance ^NYICDX historical CSV export. Required for --fetch usd-index-local.")
     ap.add_argument("--daily-ohlcv-dir", default=None, help="Path to a local partitioned daily_ohlcv parquet directory. Required for --fetch daily-ohlcv-local-sqlite.")
+    ap.add_argument("--investing-archive-root", default=None, help="Path to archived Investing.com source_pages root. Required for --fetch investing-archive-local.")
     ap.add_argument("--acquisition-db", default=None, help="Optional SQLite path for raw acquisition/provenance recording.")
     ap.add_argument(
         "--artifact-store",
@@ -126,8 +129,8 @@ def main() -> int:
 
     if args.scope not in {"v1", "v2", "all"}:
         raise SystemExit("--scope must be v1|v2|all")
-    if args.fetch not in {"market", "macro", "events", "pmi", "pit", "fomc", "powell", "eps", "eps-spglobal-auto", "eps-wayback", "usd-index-local", "daily-ohlcv-local-sqlite", "sentiment", "all"}:
-        raise SystemExit("--fetch must be market|macro|events|pmi|pit|fomc|powell|eps|eps-spglobal-auto|eps-wayback|usd-index-local|daily-ohlcv-local-sqlite|sentiment|all")
+    if args.fetch not in {"market", "macro", "events", "pmi", "pit", "fomc", "powell", "eps", "eps-spglobal-auto", "eps-wayback", "usd-index-local", "daily-ohlcv-local-sqlite", "sentiment", "investing-archive-local", "all"}:
+        raise SystemExit("--fetch must be market|macro|events|pmi|pit|fomc|powell|eps|eps-spglobal-auto|eps-wayback|usd-index-local|daily-ohlcv-local-sqlite|sentiment|investing-archive-local|all")
     if args.emit_manifest and not args.artifact_store:
         raise SystemExit("--artifact-store is required when --emit-manifest is set")
 
@@ -307,6 +310,20 @@ def main() -> int:
         )
         report_paths.append(usd_index_report)
         print(str(usd_index_report))
+
+    if args.fetch == "investing-archive-local":
+        if not args.investing_archive_root:
+            raise SystemExit("--investing-archive-root is required for investing-archive-local fetches")
+        if not args.acquisition_db:
+            raise SystemExit("--acquisition-db is required for investing-archive-local fetches")
+        investing_report = run_local_investing_archive_import(
+            out_dir=out_dir,
+            archive_root=Path(args.investing_archive_root),
+            acquisition_db_path=Path(args.acquisition_db),
+            artifact_store_root=acquisition_artifact_store_root,
+        )
+        report_paths.append(investing_report)
+        print(str(investing_report))
 
     if args.fetch == "daily-ohlcv-local-sqlite":
         if not args.daily_ohlcv_dir:
