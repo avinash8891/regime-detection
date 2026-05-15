@@ -3,6 +3,7 @@ from __future__ import annotations
 import datetime as dt
 import io
 import logging
+import zipfile
 from collections.abc import Callable
 from urllib.request import Request, urlopen
 
@@ -15,6 +16,13 @@ LOGGER = logging.getLogger(__name__)
 GPR_SOURCE_ID = "gpr:caldara-iacoviello"
 GDELT_SOURCE_ID = "gdelt:events-v2"
 GPR_DAILY_URL = "https://www.matteoiacoviello.com/gpr_files/data_gpr_daily_recent.xls"
+GDELT_DAILY_EXPORT_URL_TEMPLATE = "http://data.gdeltproject.org/events/{date:%Y%m%d}.export.CSV.zip"
+GDELT_EVENT_ROOT_CODES = {"14", "18", "19", "20"}
+GDELT_SQLDATE_IDX = 1
+GDELT_EVENT_ROOT_CODE_IDX = 28
+GDELT_QUAD_CLASS_IDX = 29
+GDELT_NUM_MENTIONS_IDX = 31
+GDELT_SOURCE_URL_IDX = 56
 
 
 class GPRGDELTSignalGenerator:
@@ -26,12 +34,14 @@ class GPRGDELTSignalGenerator:
         *,
         gpr_fetcher: Callable[[], str | bytes] | None = None,
         gdelt_fetcher: Callable[[], str | bytes] | None = None,
+        gdelt_daily_fetcher: Callable[[dt.date], bytes] | None = None,
         min_history_days: int = 252,
         stddev_threshold: float = 3.0,
         merge_window_days: int = 2,
     ) -> None:
         self.gpr_fetcher = gpr_fetcher or _fetch_gpr_daily
         self.gdelt_fetcher = gdelt_fetcher
+        self.gdelt_daily_fetcher = gdelt_daily_fetcher or _fetch_gdelt_daily_export
         self.min_history_days = min_history_days
         self.stddev_threshold = stddev_threshold
         self.merge_window_days = merge_window_days
@@ -47,8 +57,12 @@ class GPRGDELTSignalGenerator:
         run_id: int | None,
     ) -> list[EventCandidate]:
         candidates: list[EventCandidate] = []
-        gpr_spikes = self._fetch_gpr_spikes(store=store, run_id=run_id)
-        gdelt_spikes = self._fetch_gdelt_spikes(store=store, run_id=run_id)
+        gpr_spikes = [
+            row
+            for row in self._fetch_gpr_spikes(store=store, run_id=run_id)
+            if start_year <= row["date"].year <= end_year
+        ]
+        gdelt_spikes = self._fetch_gdelt_spikes(gpr_spikes, store=store, run_id=run_id)
         self._last_gpr_dates = {row["date"] for row in gpr_spikes}
         self._last_gdelt_dates = {row["date"] for row in gdelt_spikes}
 
@@ -89,9 +103,15 @@ class GPRGDELTSignalGenerator:
         _record_payload(store, run_id, GPR_SOURCE_ID, "gpr_daily", payload, "GPR daily index")
         return detect_gpr_spikes(parse_gpr_table(payload), min_history_days=self.min_history_days, stddev_threshold=self.stddev_threshold)
 
-    def _fetch_gdelt_spikes(self, *, store: AcquisitionStore | None, run_id: int | None) -> list[dict[str, object]]:
+    def _fetch_gdelt_spikes(
+        self,
+        gpr_spikes: list[dict[str, object]],
+        *,
+        store: AcquisitionStore | None,
+        run_id: int | None,
+    ) -> list[dict[str, object]]:
         if self.gdelt_fetcher is None:
-            return []
+            return self._fetch_gdelt_daily_spike_windows(gpr_spikes, store=store, run_id=run_id)
         try:
             payload = self.gdelt_fetcher()
         except Exception as exc:  # pragma: no cover - exercised via integration degradation
@@ -99,6 +119,32 @@ class GPRGDELTSignalGenerator:
             return []
         _record_payload(store, run_id, GDELT_SOURCE_ID, "gdelt_geopolitical_volume", payload, "GDELT geopolitical volume sample")
         return parse_gdelt_volume_table(payload)
+
+    def _fetch_gdelt_daily_spike_windows(
+        self,
+        gpr_spikes: list[dict[str, object]],
+        *,
+        store: AcquisitionStore | None,
+        run_id: int | None,
+    ) -> list[dict[str, object]]:
+        dates = sorted({day for row in gpr_spikes for day in _window_dates(row["date"], self.merge_window_days)})
+        rows: list[dict[str, object]] = []
+        for day in dates:
+            try:
+                payload = self.gdelt_daily_fetcher(day)
+            except Exception as exc:  # pragma: no cover - exercised via integration degradation
+                LOGGER.error("GDELT daily export fetch failed for %s; date skipped: %s", day.isoformat(), exc)
+                continue
+            source_identifier = f"gdelt_daily_export_{day:%Y%m%d}"
+            _record_payload(store, run_id, GDELT_SOURCE_ID, source_identifier, payload, "GDELT daily event export")
+            rows.extend(
+                parse_gdelt_event_export(
+                    payload,
+                    source_url=GDELT_DAILY_EXPORT_URL_TEMPLATE.format(date=day),
+                    expected_date=day,
+                )
+            )
+        return sorted(rows, key=lambda row: (row["date"], row["event_count"]))
 
 
 def parse_gpr_table(payload: str | bytes) -> pd.DataFrame:
@@ -163,6 +209,67 @@ def parse_gdelt_volume_table(payload: str | bytes) -> list[dict[str, object]]:
     return rows
 
 
+def parse_gdelt_event_export(
+    payload: str | bytes,
+    *,
+    source_url: str,
+    expected_date: dt.date | None = None,
+) -> list[dict[str, object]]:
+    text = _decode_gdelt_export(payload)
+    totals: dict[dt.date, dict[str, object]] = {}
+    for line in text.splitlines():
+        if not line.strip():
+            continue
+        columns = line.split("\t")
+        if len(columns) <= GDELT_SOURCE_URL_IDX:
+            continue
+        root_code = columns[GDELT_EVENT_ROOT_CODE_IDX].strip()
+        quad_class = columns[GDELT_QUAD_CLASS_IDX].strip()
+        if root_code not in GDELT_EVENT_ROOT_CODES and quad_class != "4":
+            continue
+        try:
+            event_date = dt.datetime.strptime(columns[GDELT_SQLDATE_IDX], "%Y%m%d").date()
+        except ValueError:
+            continue
+        if expected_date is not None and event_date != expected_date:
+            continue
+        mentions = _parse_positive_int(columns[GDELT_NUM_MENTIONS_IDX], default=1)
+        current = totals.setdefault(
+            event_date,
+            {
+                "date": event_date,
+                "event_count": 0,
+                "dominant_theme": "GDELT material conflict / protest volume",
+                "source_url": _source_url_or_export_url(columns[GDELT_SOURCE_URL_IDX], source_url),
+            },
+        )
+        current["event_count"] = int(current["event_count"]) + mentions
+    return [row for _, row in sorted(totals.items()) if int(row["event_count"]) > 0]
+
+
+def _decode_gdelt_export(payload: str | bytes) -> str:
+    if isinstance(payload, str):
+        return payload
+    if payload[:2] == b"PK":
+        with zipfile.ZipFile(io.BytesIO(payload)) as archive:
+            first_name = archive.namelist()[0]
+            return archive.read(first_name).decode("utf-8", errors="replace")
+    return payload.decode("utf-8", errors="replace")
+
+
+def _parse_positive_int(value: str, *, default: int) -> int:
+    try:
+        parsed = int(value)
+    except ValueError:
+        return default
+    return parsed if parsed > 0 else default
+
+
+def _source_url_or_export_url(value: str, export_url: str) -> str:
+    candidate = value.strip()
+    return candidate if candidate.startswith(("http://", "https://")) else export_url
+
+
 def _gpr_candidate(row: dict[str, object], anchor_date: dt.date) -> EventCandidate:
     return EventCandidate(
         date=anchor_date,
@@ -206,8 +313,18 @@ def _has_nearby(event_date: dt.date, dates: set[dt.date], window_days: int) -> b
     return any(abs((date - event_date).days) <= window_days for date in dates)
 
 
+def _window_dates(anchor: dt.date, window_days: int) -> list[dt.date]:
+    return [anchor + dt.timedelta(days=offset) for offset in range(-window_days, window_days + 1)]
+
+
 def _fetch_gpr_daily() -> bytes:
     request = Request(GPR_DAILY_URL, headers={"User-Agent": "regime-detection-event-fetch/1.0"})
+    with urlopen(request, timeout=30) as response:
+        return response.read()
+
+
+def _fetch_gdelt_daily_export(day: dt.date) -> bytes:
+    request = Request(GDELT_DAILY_EXPORT_URL_TEMPLATE.format(date=day), headers={"User-Agent": "regime-detection-event-fetch/1.0"})
     with urlopen(request, timeout=30) as response:
         return response.read()
 

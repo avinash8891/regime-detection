@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import datetime as dt
+import io
 from pathlib import Path
+import zipfile
 
 import pytest
 
@@ -19,6 +21,7 @@ from regime_data_fetch.event_sources.models import ApprovalRecord, EventCandidat
 from regime_data_fetch.event_sources.orchestrator import EventSourceOrchestrator
 from regime_data_fetch.event_sources.validators_tinyfish import TinyFishValidator
 from regime_data_fetch.event_sources.validators_gpr_gdelt import GPRGDELTSignalGenerator
+from regime_data_fetch.event_sources.validators_gpr_gdelt import parse_gdelt_event_export
 
 
 def test_deterministic_budget_emits_exact_fy_deadline_rows() -> None:
@@ -119,6 +122,105 @@ def test_gpr_gdelt_generator_flags_real_geopolitical_spike_date() -> None:
     ]
     assert all(candidate.requires_manual_review for candidate in candidates)
     assert all(candidate.confidence == "medium" for candidate in candidates)
+    assert {(validation.candidate_key, validation.validator_id, validation.verdict) for validation in validations} == {
+        (("geopolitical_event", dt.date(2022, 2, 24)), "gdelt:events-v2", "confirm"),
+        (("geopolitical_event", dt.date(2022, 2, 24)), "gpr:caldara-iacoviello", "confirm"),
+    }
+
+
+def test_parse_gdelt_event_export_counts_material_conflict_rows() -> None:
+    conflict = [""] * 58
+    conflict[1] = "20220224"
+    conflict[28] = "19"
+    conflict[29] = "4"
+    conflict[31] = "12"
+    conflict[56] = "https://example.test/ukraine-invasion"
+    cooperation = [""] * 58
+    cooperation[1] = "20220224"
+    cooperation[28] = "05"
+    cooperation[29] = "1"
+    cooperation[31] = "20"
+    payload = ("\t".join(conflict) + "\n" + "\t".join(cooperation) + "\n").encode()
+
+    rows = parse_gdelt_event_export(payload, source_url="https://data.gdeltproject.org/events/20220224.export.CSV.zip")
+
+    assert rows == [
+        {
+            "date": dt.date(2022, 2, 24),
+            "event_count": 12,
+            "dominant_theme": "GDELT material conflict / protest volume",
+            "source_url": "https://example.test/ukraine-invasion",
+        }
+    ]
+
+
+def test_parse_gdelt_event_export_filters_to_expected_export_date() -> None:
+    current = [""] * 58
+    current[1] = "20220224"
+    current[28] = "19"
+    current[29] = "4"
+    current[31] = "12"
+    current[56] = "https://example.test/current"
+    stale = [""] * 58
+    stale[1] = "20210224"
+    stale[28] = "19"
+    stale[29] = "4"
+    stale[31] = "99"
+    stale[56] = "https://example.test/stale"
+    payload = ("\t".join(stale) + "\n" + "\t".join(current) + "\n").encode()
+
+    rows = parse_gdelt_event_export(
+        payload,
+        source_url="https://data.gdeltproject.org/events/20220224.export.CSV.zip",
+        expected_date=dt.date(2022, 2, 24),
+    )
+
+    assert [(row["date"], row["event_count"], row["source_url"]) for row in rows] == [
+        (dt.date(2022, 2, 24), 12, "https://example.test/current")
+    ]
+
+
+def test_gpr_generator_fetches_gdelt_daily_exports_for_spike_dates() -> None:
+    gpr_csv = """date,gpr
+2022-02-20,100
+2022-02-21,101
+2022-02-22,99
+2022-02-23,101
+2022-02-24,500
+2022-02-25,120
+"""
+
+    def gdelt_daily_fetcher(day: dt.date) -> bytes:
+        row = [""] * 58
+        row[1] = day.strftime("%Y%m%d")
+        row[28] = "19"
+        row[29] = "4"
+        row[31] = "8"
+        row[56] = f"https://example.test/gdelt/{day:%Y%m%d}"
+        buffer = io.BytesIO()
+        with zipfile.ZipFile(buffer, "w") as zf:
+            zf.writestr(f"{day:%Y%m%d}.export.CSV", "\t".join(row) + "\n")
+        return buffer.getvalue()
+
+    generator = GPRGDELTSignalGenerator(
+        gpr_fetcher=lambda: gpr_csv,
+        gdelt_daily_fetcher=gdelt_daily_fetcher,
+        min_history_days=3,
+        stddev_threshold=2.0,
+        merge_window_days=0,
+    )
+
+    candidates = generator.generate(start_year=2022, end_year=2022, store=None, run_id=None)
+    validations = generator.validate(candidates, store=None, run_id=None)
+
+    assert [(candidate.date, candidate.source_id, candidate.raw_snippet) for candidate in candidates] == [
+        (dt.date(2022, 2, 24), "gdelt:events-v2", "GDELT geopolitical event volume: 8."),
+        (
+            dt.date(2022, 2, 24),
+            "gpr:caldara-iacoviello",
+            "GPR daily value 500.00 exceeded trailing threshold 102.22.",
+        ),
+    ]
     assert {(validation.candidate_key, validation.validator_id, validation.verdict) for validation in validations} == {
         (("geopolitical_event", dt.date(2022, 2, 24)), "gdelt:events-v2", "confirm"),
         (("geopolitical_event", dt.date(2022, 2, 24)), "gpr:caldara-iacoviello", "confirm"),
