@@ -90,7 +90,6 @@ def raw_label_for_day(
     bull = bool((close > sma50) and (close > sma200) and (sma50 > sma200))
     bear = bool((close < sma50) and (close < sma200) and (sma50 < sma200))
     sideways = bool((abs(ret63) < 0.05) and within_5pct_sma200)
-    transition = not (bull or bear or sideways)
 
     if bull:
         label: TrendDirectionLabel = "bull"
@@ -219,6 +218,7 @@ def apply_hysteresis(
     *,
     dates: pd.DatetimeIndex,
     raw_labels: list[TrendDirectionLabel],
+    escalation_days: int = 1,
     deescalation_days: int,
 ) -> tuple[list[TrendDirectionLabel], list[TrendDirectionLabel]]:
     if len(dates) != len(raw_labels):
@@ -226,6 +226,7 @@ def apply_hysteresis(
     return apply_asymmetric_hysteresis(
         raw_labels=raw_labels,
         risk_rank=_RISK_RANK,
+        escalation_days=escalation_days,
         deescalation_days=deescalation_days,
     )
 
@@ -234,6 +235,7 @@ def classify_series(
     *,
     close: pd.Series,
     as_of_date: date,
+    escalation_days: int = 1,
     deescalation_days: int,
 ) -> AxisOutput:
     """
@@ -256,7 +258,10 @@ def classify_series(
         raw_evidence.append(ev)
 
     stable_labels, active_labels = apply_hysteresis(
-        dates=s.index, raw_labels=raw_labels, deescalation_days=deescalation_days
+        dates=s.index,
+        raw_labels=raw_labels,
+        escalation_days=escalation_days,
+        deescalation_days=deescalation_days,
     )
 
     raw = raw_labels[-1]

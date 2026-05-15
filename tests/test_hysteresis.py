@@ -48,3 +48,25 @@ def test_apply_asymmetric_hysteresis_escalates_immediately_and_deescalates_after
 
     assert stable == ["low", "high", "high", "medium"]
     assert active == ["low", "high", "high", "medium"]
+
+
+def test_apply_asymmetric_hysteresis_delays_escalation_when_configured() -> None:
+    stable, active = apply_asymmetric_hysteresis(
+        raw_labels=["low", "high", "low", "high", "high"],
+        risk_rank=_RISK_RANK,
+        escalation_days=2,
+        deescalation_days=1,
+    )
+
+    assert stable == ["low", "low", "low", "low", "high"]
+    assert active == ["low", "high", "low", "high", "high"]
+
+
+def test_apply_asymmetric_hysteresis_rejects_non_positive_escalation_days() -> None:
+    with pytest.raises(ValueError, match="escalation_days must be >= 1"):
+        apply_asymmetric_hysteresis(
+            raw_labels=["low"],
+            risk_rank=_RISK_RANK,
+            escalation_days=0,
+            deescalation_days=1,
+        )

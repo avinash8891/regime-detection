@@ -13,9 +13,13 @@ from regime_detection import __version__
 class HysteresisConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
+    trend_direction_escalation_days: int = Field(default=1, ge=1)
     trend_direction_deescalation_days: int = Field(ge=0)
+    trend_character_escalation_days: int = Field(default=1, ge=1)
     trend_character_deescalation_days: int = Field(ge=0)
+    volatility_escalation_days: int = Field(default=1, ge=1)
     volatility_deescalation_days: int = Field(ge=0)
+    breadth_escalation_days: int = Field(default=1, ge=1)
     breadth_deescalation_days: int = Field(ge=0)
     composite_deescalation_days: int = Field(ge=0)
     # NOTE: event_calendar has no hysteresis. Calendar windows are themselves

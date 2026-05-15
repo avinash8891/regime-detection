@@ -153,6 +153,7 @@ class TrendDirectionSeriesClassifier:
         stable_labels, active_labels = apply_trend_direction_hysteresis(
             dates=close.index,
             raw_labels=raw_labels,
+            escalation_days=context.config.hysteresis.trend_direction_escalation_days,
             deescalation_days=context.config.hysteresis.trend_direction_deescalation_days,
         )
         return _build_axis_outputs(
@@ -181,6 +182,7 @@ class TrendCharacterSeriesClassifier:
         stable_labels, active_labels = apply_asymmetric_hysteresis(
             raw_labels=raw_labels,
             risk_rank=TREND_CHARACTER_RISK_RANK,
+            escalation_days=context.config.hysteresis.trend_character_escalation_days,
             deescalation_days=context.config.hysteresis.trend_character_deescalation_days,
         )
         return _build_axis_outputs(
@@ -217,6 +219,7 @@ class VolatilitySeriesClassifier:
         stable_labels, active_labels = apply_asymmetric_hysteresis(
             raw_labels=raw_labels,
             risk_rank=VOLATILITY_RISK_RANK,
+            escalation_days=context.config.hysteresis.volatility_escalation_days,
             deescalation_days=context.config.hysteresis.volatility_deescalation_days,
         )
         return _build_axis_outputs(
@@ -324,6 +327,7 @@ class BreadthSeriesClassifier:
         stable_labels, active_labels = apply_asymmetric_hysteresis(
             raw_labels=raw_labels,
             risk_rank=BREADTH_RISK_RANK,
+            escalation_days=context.config.hysteresis.breadth_escalation_days,
             deescalation_days=context.config.hysteresis.breadth_deescalation_days,
         )
         outputs_by_date: dict[date, BreadthStateOutput] = {}

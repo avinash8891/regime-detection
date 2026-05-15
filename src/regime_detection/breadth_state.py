@@ -89,7 +89,6 @@ def raw_label_for_day(f: BreadthFeatures, dt: pd.Timestamp) -> tuple[BreadthLabe
     divergent_fragile = bool((idx_dist >= -0.05) and (ratio < ratio_sma) and (ratio_ret20 <= -0.03))
     weak_breadth = bool((ratio < ratio_sma) and (ratio_ret20 < 0))
     healthy_breadth = bool((ratio > ratio_sma) and (ratio_ret20 >= 0))
-    neutral_breadth = not (divergent_fragile or weak_breadth or healthy_breadth)
 
     if divergent_fragile:
         label: BreadthLabel = "divergent_fragile"
@@ -156,6 +155,7 @@ def classify_series(
     spy_close: pd.Series,
     rsp_close: pd.Series,
     as_of_date: date,
+    escalation_days: int = 1,
     deescalation_days: int,
 ) -> BreadthStateOutput:
     dt = pd.Timestamp(as_of_date)
@@ -183,6 +183,7 @@ def classify_series(
     stable_labels, active_labels = apply_asymmetric_hysteresis(
         raw_labels=raw_labels,
         risk_rank=_RISK_RANK,
+        escalation_days=escalation_days,
         deescalation_days=deescalation_days,
     )
 

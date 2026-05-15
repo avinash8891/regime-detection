@@ -57,9 +57,13 @@ def test_regime_config_forbids_unknown_keys() -> None:
                 "config_version": "core3-v1.0.0",
                 "trading_calendar": "NYSE",
                 "hysteresis": {
+                    "trend_direction_escalation_days": 1,
                     "trend_direction_deescalation_days": 3,
+                    "trend_character_escalation_days": 1,
                     "trend_character_deescalation_days": 3,
+                    "volatility_escalation_days": 1,
                     "volatility_deescalation_days": 2,
+                    "breadth_escalation_days": 1,
                     "breadth_deescalation_days": 2,
                     "composite_deescalation_days": 3,
                 },
@@ -75,6 +79,10 @@ def test_default_config_is_packaged_and_loadable() -> None:
     cfg = load_default_regime_config()
     # Default dispatch is keyed on package __version__; package is 2.x → v2 yaml.
     assert cfg.config_version == "core3-v2.0.0"
+    assert cfg.hysteresis.trend_direction_escalation_days == 1
+    assert cfg.hysteresis.trend_character_escalation_days == 1
+    assert cfg.hysteresis.volatility_escalation_days == 1
+    assert cfg.hysteresis.breadth_escalation_days == 1
 
 
 def test_classify_emits_regime_output_shape(market_df_for_asof) -> None:
