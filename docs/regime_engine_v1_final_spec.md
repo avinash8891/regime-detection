@@ -484,7 +484,7 @@ crisis_vol > high_vol > low_vol > normal_vol > unknown
 ### 5.4 Formulas
 
 ```python
-daily_returns = close.pct_change()
+daily_returns = close.pct_change(fill_method=None)
 realized_vol_21d = daily_returns.rolling(21).std() * sqrt(252)
 realized_vol_percentile_252d = percentile_rank(realized_vol_21d, lookback=252)
 return_1d = close / close.shift(1) - 1
@@ -527,9 +527,13 @@ volatility_risk_rank:
   low_vol: 0
   normal_vol: 1
   high_vol: 2
+  rising_vol: 2
   crisis_vol: 3
+  vol_crush: 3
   unknown: 2
 ```
+
+> `rising_vol` and `vol_crush` are V2 §1C labels. They share risk-rank values with `high_vol` and `crisis_vol` respectively because V2 precedence (`crisis_vol > vol_crush > high_vol > rising_vol`) is enforced by rule evaluation order in `evaluate_v2_volatility_label`, not by distinct risk-rank integers. Hysteresis de-escalation uses the rank values; the V2 intra-tier ordering is resolved before hysteresis.
 
 ### 5.7 Hysteresis
 
@@ -613,7 +617,7 @@ divergent_fragile > recovery_breadth > weak_breadth > healthy_breadth > neutral_
 valid_members = constituents[as_of_date].dropna(subset=["close", "sma_50"])
 pct_above_50dma = (valid_members.close > valid_members.sma_50).mean()
 breadth_change_20d = pct_above_50dma - pct_above_50dma_20d_ago
-index_distance_from_63d_high = close / close.rolling(63).max() - 1
+index_distance_from_63d_high = close / close.rolling(63, min_periods=50).max() - 1
 ```
 
 ### 6.7 PIT Rules
@@ -654,7 +658,7 @@ valid constituent coverage < 70% OR required features NaN
 relative_breadth_ratio = RSP_close / SPY_close
 relative_breadth_sma50 = relative_breadth_ratio.rolling(50).mean()
 relative_breadth_return_20d = relative_breadth_ratio / relative_breadth_ratio.shift(20) - 1
-index_distance_from_63d_high = SPY_close / SPY_close.rolling(63).max() - 1
+index_distance_from_63d_high = SPY_close / SPY_close.rolling(63, min_periods=50).max() - 1
 ```
 
 ### 6.9 ETF Proxy Rules
@@ -878,8 +882,10 @@ unknown
 ### 9.3 Precedence
 
 ```text
-crisis_override > bear_stress_warning > bull_fragile_warning > recovery_attempt > post_switch_cooldown > stable > unknown
+crisis_override > bear_stress_warning > bull_fragile_warning > recovery_attempt > post_switch_cooldown > unknown > stable
 ```
+
+> When no warning condition fires, the engine checks whether any input axis label is `"unknown"`. If so, `transition_risk` emits `"unknown"` rather than `"stable"` — an axis in cold-start or data-quality failure means the composite assessment is itself uncertain. `"stable"` is only emitted when no warning fires **and** all axis labels are known.
 
 ### 9.4 Rules
 
