@@ -6,6 +6,7 @@ import json
 import logging
 import re
 import urllib.request
+from concurrent.futures import ThreadPoolExecutor
 from collections.abc import Callable
 from urllib.parse import urljoin
 from typing import Any
@@ -16,10 +17,9 @@ from regime_data_fetch.event_sources.models import EventCandidate
 LOGGER = logging.getLogger(__name__)
 SOURCE_ID = "official-us-budget-discovery"
 TREASURY_DEBT_LIMIT_URL = "https://home.treasury.gov/policy-issues/financial-markets-financial-institutions-and-fiscal-service/debt-limit"
-DEFAULT_GOVINFO_PUBLIC_LAW_URLS = (
-    "https://www.govinfo.gov/content/pkg/PLAW-118publ83/html/PLAW-118publ83.htm",
-    "https://www.govinfo.gov/content/pkg/PLAW-118publ158/html/PLAW-118publ158.htm",
-)
+DEFAULT_START_YEAR = 2016
+DEFAULT_GOVINFO_MAX_PUBLIC_LAW_NUMBER = 350
+DEFAULT_GOVINFO_WORKERS = 24
 VALID_SUBTYPES = {"debt_ceiling", "shutdown", "cr_expiration"}
 MONTHS = {
     "january": 1,
@@ -49,8 +49,17 @@ CR_TITLE_RE = re.compile(r"\b(CONTINUING APPROPRIATIONS[A-Z\s,-]*\d{4})\b", re.I
 class BudgetOfficialDiscoveryGenerator:
     source_id = SOURCE_ID
 
-    def __init__(self, *, records_fetcher: Callable[[], str | list[dict[str, Any]]] | None = None, as_of_date: dt.date | None = None) -> None:
-        self.records_fetcher = records_fetcher or fetch_official_budget_records
+    def __init__(
+        self,
+        *,
+        records_fetcher: Callable[[], str | list[dict[str, Any]]] | None = None,
+        text_fetcher: Callable[[str], str] | None = None,
+        max_govinfo_public_law_number: int = DEFAULT_GOVINFO_MAX_PUBLIC_LAW_NUMBER,
+        as_of_date: dt.date | None = None,
+    ) -> None:
+        self.records_fetcher = records_fetcher
+        self.text_fetcher = text_fetcher
+        self.max_govinfo_public_law_number = max_govinfo_public_law_number
         self.as_of_date = as_of_date or dt.date.today()
 
     def generate(
@@ -62,7 +71,16 @@ class BudgetOfficialDiscoveryGenerator:
         run_id: int | None,
     ) -> list[EventCandidate]:
         try:
-            payload = self.records_fetcher()
+            payload = (
+                self.records_fetcher()
+                if self.records_fetcher is not None
+                else fetch_official_budget_records(
+                    start_year=start_year,
+                    end_year=end_year,
+                    text_fetcher=self.text_fetcher,
+                    max_govinfo_public_law_number=self.max_govinfo_public_law_number,
+                )
+            )
         except Exception as exc:  # pragma: no cover - external degradation path
             LOGGER.error("official budget discovery failed; non-deterministic budget candidates skipped: %s", exc)
             return []
@@ -138,10 +156,15 @@ def _record_payload(store: AcquisitionStore | None, run_id: int | None, payload:
 
 def fetch_official_budget_records(
     *,
+    start_year: int = DEFAULT_START_YEAR,
+    end_year: int | None = None,
     text_fetcher: Callable[[str], str] | None = None,
-    govinfo_public_law_urls: list[str] | tuple[str, ...] = DEFAULT_GOVINFO_PUBLIC_LAW_URLS,
+    govinfo_public_law_urls: list[str] | tuple[str, ...] | None = None,
+    max_govinfo_public_law_number: int = DEFAULT_GOVINFO_MAX_PUBLIC_LAW_NUMBER,
+    max_workers: int = DEFAULT_GOVINFO_WORKERS,
 ) -> list[dict[str, Any]]:
     fetcher = text_fetcher or _fetch_text
+    effective_end_year = end_year or dt.date.today().year
     records: list[dict[str, Any]] = []
 
     try:
@@ -150,14 +173,64 @@ def fetch_official_budget_records(
     except Exception as exc:  # pragma: no cover - external degradation path
         LOGGER.error("Treasury debt-limit discovery failed; debt-ceiling candidates skipped: %s", exc)
 
-    for url in govinfo_public_law_urls:
-        try:
-            public_law_text = fetcher(url)
-            records.extend(extract_govinfo_cr_records(public_law_text, source_url=url))
-        except Exception as exc:  # pragma: no cover - external degradation path
-            LOGGER.error("GovInfo CR discovery failed for %s; CR candidates skipped: %s", url, exc)
+    urls = list(govinfo_public_law_urls) if govinfo_public_law_urls is not None else list(
+        iter_govinfo_public_law_urls(
+            start_year=start_year,
+            end_year=effective_end_year,
+            max_public_law_number=max_govinfo_public_law_number,
+        )
+    )
+    records.extend(_fetch_govinfo_cr_records(urls, fetcher=fetcher, max_workers=max_workers))
 
     return _dedupe_records(records)
+
+
+def iter_govinfo_public_law_urls(
+    *,
+    start_year: int,
+    end_year: int,
+    max_public_law_number: int = DEFAULT_GOVINFO_MAX_PUBLIC_LAW_NUMBER,
+) -> list[str]:
+    if start_year > end_year:
+        raise ValueError("start_year must be <= end_year")
+    if max_public_law_number < 1:
+        raise ValueError("max_public_law_number must be >= 1")
+    urls: list[str] = []
+    for congress in range(_congress_for_year(start_year), _congress_for_year(end_year) + 1):
+        for public_law_number in range(1, max_public_law_number + 1):
+            package_id = f"PLAW-{congress}publ{public_law_number}"
+            urls.append(f"https://www.govinfo.gov/content/pkg/{package_id}/html/{package_id}.htm")
+    return urls
+
+
+def _congress_for_year(year: int) -> int:
+    return ((year - 1789) // 2) + 1
+
+
+def _fetch_govinfo_cr_records(
+    urls: list[str],
+    *,
+    fetcher: Callable[[str], str],
+    max_workers: int,
+) -> list[dict[str, Any]]:
+    if not urls:
+        return []
+    if max_workers < 1:
+        raise ValueError("max_workers must be >= 1")
+
+    def fetch_one(url: str) -> list[dict[str, Any]]:
+        try:
+            public_law_text = fetcher(url)
+            return extract_govinfo_cr_records(public_law_text, source_url=url)
+        except Exception as exc:  # pragma: no cover - external degradation path
+            LOGGER.debug("GovInfo public-law URL skipped: %s (%s)", url, exc)
+            return []
+
+    records: list[dict[str, Any]] = []
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        for page_records in executor.map(fetch_one, urls):
+            records.extend(page_records)
+    return records
 
 
 def extract_treasury_debt_limit_records(index_html: str, *, source_url: str) -> list[dict[str, Any]]:

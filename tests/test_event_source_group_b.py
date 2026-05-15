@@ -12,6 +12,7 @@ from regime_data_fetch.event_sources.budget_official_discovery import (
     extract_govinfo_cr_records,
     extract_treasury_debt_limit_records,
     fetch_official_budget_records,
+    iter_govinfo_public_law_urls,
 )
 from regime_data_fetch.event_sources.deterministic_budget import DeterministicBudgetAdapter
 from regime_data_fetch.event_sources.models import ApprovalRecord, EventCandidate, PromotionDecision
@@ -262,6 +263,43 @@ Sec. 106. (3) &lt;&lt;NOTE: Expiration date.&gt;&gt; December 20, 2024.
     assert [(record["date"], record["event_subtype"], record["source_id"]) for record in records] == [
         ("2021-11-16", "debt_ceiling", "treasury.gov:debt-limit"),
         ("2024-12-20", "cr_expiration", "govinfo.gov:public-law"),
+    ]
+
+
+def test_govinfo_public_law_url_enumerator_covers_2016_to_current_congresses() -> None:
+    urls = list(iter_govinfo_public_law_urls(start_year=2016, end_year=2026, max_public_law_number=2))
+
+    assert urls[0] == "https://www.govinfo.gov/content/pkg/PLAW-114publ1/html/PLAW-114publ1.htm"
+    assert urls[-1] == "https://www.govinfo.gov/content/pkg/PLAW-119publ2/html/PLAW-119publ2.htm"
+    assert len(urls) == 12
+
+
+def test_generator_default_fetcher_uses_requested_years_for_govinfo_discovery() -> None:
+    fetched_urls: list[str] = []
+
+    def fake_fetch(url: str) -> str:
+        fetched_urls.append(url)
+        if "home.treasury.gov" in url:
+            return ""
+        if "PLAW-117publ70" in url:
+            return """
+FURTHER CONTINUING APPROPRIATIONS ACT, 2022
+The Continuing Appropriations Act, 2022 is amended by striking the date
+specified in section 106(3) and inserting ``February 18, 2022'';
+"""
+        return ""
+
+    generator = BudgetOfficialDiscoveryGenerator(
+        text_fetcher=fake_fetch,
+        max_govinfo_public_law_number=70,
+        as_of_date=dt.date(2026, 5, 15),
+    )
+
+    candidates = generator.generate(start_year=2021, end_year=2022, store=None, run_id=None)
+
+    assert any("PLAW-117publ70" in url for url in fetched_urls)
+    assert [(candidate.date, candidate.event_subtype, candidate.source_id) for candidate in candidates] == [
+        (dt.date(2022, 2, 18), "cr_expiration", "govinfo.gov:public-law")
     ]
 
 
