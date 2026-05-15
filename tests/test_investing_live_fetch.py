@@ -182,6 +182,7 @@ def test_run_investing_live_fetch_skips_earnings_without_token(tmp_path: Path) -
         json_fetcher=json_fetcher,
         calendar_country_ids=[5],
         earnings_country_ids=[5],
+        earnings_browser_capture=False,
     )
 
     report = json.loads(report_path.read_text())
@@ -203,6 +204,60 @@ def test_run_investing_live_fetch_skips_earnings_without_token(tmp_path: Path) -
         }
     ]
     assert pd.read_parquet(out_dir / "investing" / "earnings.parquet").empty
+
+
+def test_run_investing_live_fetch_captures_browser_page_when_missing_token(tmp_path: Path) -> None:
+    out_dir = tmp_path / "data" / "raw"
+    db_path = out_dir / "acquisition" / "acquisition.db"
+
+    def earnings_page_capturer(output_path: Path) -> Path:
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        output_path.write_text(
+            _next_data_html({"stockCountries": [{"id": 5, "name": "United States", "country_code": "US"}]}, access_token=_future_jwt())
+        )
+        return output_path
+
+    def json_fetcher(url: str, params: dict[str, str], headers: dict[str, str]) -> object:
+        if url == f"{CALENDAR_BASE}/v1/calendars/economic/events/occurrences":
+            return {"events": [], "occurrences": []}
+        if url == f"{CALENDAR_BASE}/v1/calendars/holidays":
+            return {"holidays": []}
+        if url == f"{EARNINGS_BASE}/v1/instruments/earnings":
+            assert headers["Authorization"].startswith("Bearer ")
+            return {"earnings": [{"date": "2026-05-01", "instrument_id": 100}]}
+        if url == f"{CALENDAR_BASE}/v1/instruments":
+            return [{"id": 100, "long_name": "Fixture Co", "country_id": 5}]
+        if url == f"{CALENDAR_BASE}/v1/instruments/key-metrics":
+            return [{"instrument_id": 100, "key_metrics": {"market_cap": 123}}]
+        raise AssertionError(url)
+
+    report_path = run_investing_live_fetch(
+        out_dir=out_dir,
+        start=pd.Timestamp("2026-05-01").date(),
+        end=pd.Timestamp("2026-05-01").date(),
+        acquisition_db_path=db_path,
+        artifact_store_root=tmp_path / "store",
+        json_fetcher=json_fetcher,
+        calendar_country_ids=[5],
+        earnings_country_ids=[5],
+        earnings_page_capturer=earnings_page_capturer,
+    )
+
+    report = json.loads(report_path.read_text())
+    assert report["counts"] == {
+        "economic_events_rows": 0,
+        "holiday_rows": 0,
+        "earnings_rows": 1,
+        "raw_files": 10,
+    }
+    assert (
+        out_dir
+        / "investing"
+        / "raw_archive"
+        / "investing_earnings_2026-05-01_2026-05-01"
+        / "browser_pages"
+        / "investing_earnings_calendar_loaded_page.html"
+    ).exists()
 
 
 def test_run_investing_live_fetch_reads_token_from_loaded_earnings_page(tmp_path: Path) -> None:

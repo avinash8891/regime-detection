@@ -91,6 +91,11 @@ def main() -> int:
     ap.add_argument("--daily-ohlcv-dir", default=None, help="Path to a local partitioned daily_ohlcv parquet directory. Required for --fetch daily-ohlcv-local-sqlite.")
     ap.add_argument("--investing-archive-root", default=None, help="Path to archived Investing.com source_pages root. Required for --fetch investing-archive-local.")
     ap.add_argument("--investing-earnings-loaded-page", default=None, help="Path to a browser-loaded Investing.com earnings calendar HTML page containing __NEXT_DATA__. Optional for --fetch investing-live.")
+    ap.add_argument("--investing-earnings-browser-capture", action=argparse.BooleanOptionalAction, default=True, help="For --fetch investing-live, capture a fresh Investing.com earnings page with Playwright when no page/token is supplied. Default True.")
+    ap.add_argument("--investing-browser-user-data-dir", default=None, help="Persistent browser profile directory for Investing.com browser capture. Defaults to archive-local browser_profile or INVESTING_BROWSER_USER_DATA_DIR.")
+    ap.add_argument("--investing-browser-executable", default=None, help="Chrome/Chromium executable for Investing.com browser capture. Defaults to Playwright browser or INVESTING_BROWSER_EXECUTABLE.")
+    ap.add_argument("--investing-browser-headless", action=argparse.BooleanOptionalAction, default=None, help="Run Investing.com browser capture headless/headful. Defaults to INVESTING_BROWSER_HEADLESS or headful.")
+    ap.add_argument("--investing-browser-timeout-ms", type=int, default=None, help="Timeout in milliseconds while waiting for Investing.com accessToken. Defaults to INVESTING_BROWSER_TIMEOUT_MS or 120000.")
     ap.add_argument("--acquisition-db", default=None, help="Optional SQLite path for raw acquisition/provenance recording.")
     ap.add_argument(
         "--artifact-store",
@@ -357,6 +362,11 @@ def main() -> int:
             acquisition_db_path=Path(args.acquisition_db),
             artifact_store_root=acquisition_artifact_store_root,
             earnings_loaded_page_path=Path(args.investing_earnings_loaded_page) if args.investing_earnings_loaded_page else None,
+            earnings_browser_capture=args.investing_earnings_browser_capture,
+            earnings_browser_user_data_dir=Path(args.investing_browser_user_data_dir) if args.investing_browser_user_data_dir else None,
+            earnings_browser_executable=Path(args.investing_browser_executable) if args.investing_browser_executable else None,
+            earnings_browser_headless=args.investing_browser_headless,
+            earnings_browser_timeout_ms=args.investing_browser_timeout_ms,
         )
         report_paths.append(investing_report)
         print(str(investing_report))

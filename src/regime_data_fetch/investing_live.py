@@ -29,6 +29,7 @@ DEFAULT_CALENDAR_COUNTRY_IDS = [
 DEFAULT_EARNINGS_COUNTRY_IDS = [5, 4, 14]
 JsonFetcher = Callable[[str, dict[str, str], dict[str, str]], object]
 PageFetcher = Callable[[str], str]
+EarningsPageCapturer = Callable[[Path], Path]
 
 
 def run_investing_live_fetch(
@@ -44,6 +45,12 @@ def run_investing_live_fetch(
     earnings_country_ids: list[int] | None = None,
     earnings_access_token: str | None = None,
     earnings_loaded_page_path: Path | None = None,
+    earnings_browser_capture: bool = True,
+    earnings_browser_user_data_dir: Path | None = None,
+    earnings_browser_executable: Path | None = None,
+    earnings_browser_headless: bool | None = None,
+    earnings_browser_timeout_ms: int | None = None,
+    earnings_page_capturer: EarningsPageCapturer | None = None,
 ) -> Path:
     archive_root = out_dir / "investing_live_archive"
     capture_investing_live_archive(
@@ -56,6 +63,12 @@ def run_investing_live_fetch(
         earnings_country_ids=earnings_country_ids or DEFAULT_EARNINGS_COUNTRY_IDS,
         earnings_access_token=earnings_access_token,
         earnings_loaded_page_path=earnings_loaded_page_path,
+        earnings_browser_capture=earnings_browser_capture,
+        earnings_browser_user_data_dir=earnings_browser_user_data_dir,
+        earnings_browser_executable=earnings_browser_executable,
+        earnings_browser_headless=earnings_browser_headless,
+        earnings_browser_timeout_ms=earnings_browser_timeout_ms,
+        earnings_page_capturer=earnings_page_capturer,
     )
     return run_local_investing_archive_import(
         out_dir=out_dir,
@@ -76,6 +89,12 @@ def capture_investing_live_archive(
     earnings_country_ids: list[int],
     earnings_access_token: str | None = None,
     earnings_loaded_page_path: Path | None = None,
+    earnings_browser_capture: bool = True,
+    earnings_browser_user_data_dir: Path | None = None,
+    earnings_browser_executable: Path | None = None,
+    earnings_browser_headless: bool | None = None,
+    earnings_browser_timeout_ms: int | None = None,
+    earnings_page_capturer: EarningsPageCapturer | None = None,
 ) -> None:
     if end < start:
         raise ValueError("end must be >= start")
@@ -88,6 +107,24 @@ def capture_investing_live_archive(
     calendar_page = page_fetcher(SOURCE_CALENDAR_URL) if page_fetcher else ""
     earnings_page = page_fetcher(SOURCE_EARNINGS_URL) if page_fetcher else ""
     countries = _country_map_from_page(calendar_page, key="eventAndHolidayCountries") if calendar_page else {}
+    if (
+        earnings_browser_capture
+        and earnings_access_token is None
+        and earnings_loaded_page_path is None
+        and not _investing_earnings_access_token()
+        and not earnings_page
+    ):
+        capture_path = earnings_dir / "browser_pages" / "investing_earnings_calendar_loaded_page.html"
+        if earnings_page_capturer is not None:
+            earnings_loaded_page_path = earnings_page_capturer(capture_path)
+        else:
+            earnings_loaded_page_path = capture_investing_earnings_loaded_page(
+                output_path=capture_path,
+                user_data_dir=earnings_browser_user_data_dir,
+                executable_path=earnings_browser_executable,
+                headless=earnings_browser_headless,
+                timeout_ms=earnings_browser_timeout_ms,
+            )
     loaded_earnings_page = _loaded_earnings_page_html(earnings_loaded_page_path)
     if loaded_earnings_page:
         earnings_page = loaded_earnings_page
@@ -470,6 +507,73 @@ def _fetch_text(url: str) -> str:
     request = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
     with urllib.request.urlopen(request, timeout=60) as response:
         return response.read().decode("utf-8", errors="replace")
+
+
+def capture_investing_earnings_loaded_page(
+    *,
+    output_path: Path,
+    user_data_dir: Path | None = None,
+    executable_path: Path | None = None,
+    headless: bool | None = None,
+    timeout_ms: int | None = None,
+) -> Path:
+    """Capture a browser-loaded Investing.com earnings page with a fresh token.
+
+    Investing.com's earnings JSON endpoint requires a short-lived token embedded
+    in the real browser page. Direct HTTP clients commonly receive a Cloudflare
+    challenge, so this uses Playwright with a persistent Chrome profile. Set
+    ``INVESTING_BROWSER_USER_DATA_DIR`` to reuse an existing solved session.
+    """
+    try:
+        from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
+        from playwright.sync_api import sync_playwright
+    except ImportError as exc:
+        raise RuntimeError(
+            "Playwright is required for automatic Investing.com earnings browser capture; "
+            "install the browser extra or pass --investing-earnings-loaded-page"
+        ) from exc
+
+    resolved_user_data_dir = user_data_dir or Path(os.environ.get("INVESTING_BROWSER_USER_DATA_DIR", output_path.parent / "browser_profile"))
+    env_executable = os.environ.get("INVESTING_BROWSER_EXECUTABLE", "").strip()
+    resolved_executable_path = executable_path or (Path(env_executable) if env_executable else None)
+    resolved_headless = (
+        os.environ.get("INVESTING_BROWSER_HEADLESS", "0").strip().lower() in {"1", "true", "yes"}
+        if headless is None
+        else headless
+    )
+    resolved_timeout_ms = timeout_ms or int(os.environ.get("INVESTING_BROWSER_TIMEOUT_MS", "120000"))
+
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    resolved_user_data_dir.mkdir(parents=True, exist_ok=True)
+    with sync_playwright() as playwright:
+        launch_kwargs: dict[str, object] = {
+            "headless": resolved_headless,
+            "user_data_dir": str(resolved_user_data_dir),
+            "args": ["--disable-blink-features=AutomationControlled"],
+        }
+        if resolved_executable_path:
+            launch_kwargs["executable_path"] = str(resolved_executable_path)
+        context = playwright.chromium.launch_persistent_context(**launch_kwargs)
+        try:
+            page = context.pages[0] if context.pages else context.new_page()
+            page.goto(SOURCE_EARNINGS_URL, wait_until="domcontentloaded", timeout=resolved_timeout_ms)
+            try:
+                page.wait_for_function(
+                    "() => document.documentElement.innerHTML.includes('accessToken')",
+                    timeout=resolved_timeout_ms,
+                )
+            except PlaywrightTimeoutError as exc:
+                output_path.write_text(page.content())
+                raise RuntimeError(
+                    "Investing.com earnings browser capture did not expose accessToken; "
+                    f"saved current page to {output_path}. Complete the browser challenge and retry."
+                ) from exc
+            output_path.write_text(page.content())
+        finally:
+            context.close()
+    token = _access_token_from_page(output_path.read_text(errors="replace"))
+    _validate_token_not_expired(token)
+    return output_path
 
 
 def _request_json(url: str, params: dict[str, str], headers: dict[str, str]) -> object:

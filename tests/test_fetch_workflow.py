@@ -352,6 +352,11 @@ def test_fetch_help_surface_mentions_pmi_and_pit() -> None:
     assert "--daily-ohlcv-dir" in help_text
     assert "--investing-archive-root" in help_text
     assert "--investing-earnings-loaded-page" in help_text
+    assert "--investing-earnings-browser-capture" in help_text
+    assert "--investing-browser-user-data-dir" in help_text
+    assert "--investing-browser-executable" in help_text
+    assert "--investing-browser-headless" in help_text
+    assert "--investing-browser-timeout-ms" in help_text
     assert "investing-live" in help_text
     assert "cleveland-fed-nowcast" in help_text
     assert "sf-fed-news-sentiment" in help_text

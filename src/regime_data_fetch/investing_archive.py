@@ -41,6 +41,7 @@ def _archive_paths(archive_root: Path) -> dict[str, Path | None]:
         "earnings_jsonl": _single_match(archive_root, "investing_earnings_*/investing_earnings_*.jsonl"),
         "earnings_quarantine": _single_match(archive_root, "investing_earnings_*/quarantine_earnings_fetch_errors.jsonl", required=False),
         "earnings_fetch_report": _single_match(archive_root, "investing_earnings_*/fetch_report.json"),
+        "earnings_loaded_page": _single_match(archive_root, "investing_earnings_*/browser_pages/investing_earnings_calendar_loaded_page.html", required=False),
         "earnings_raw_instruments": _single_match(archive_root, "investing_earnings_*/raw_instruments", required=False),
     }
 
@@ -211,6 +212,7 @@ def _copy_archive_files(*, archive_root: Path, raw_archive_dir: Path) -> list[Pa
         archive_paths["earnings_jsonl"],
         archive_paths["earnings_fetch_report"],
         archive_paths["earnings_quarantine"],
+        archive_paths["earnings_loaded_page"],
     ]
     copied: list[Path] = []
     for src in [path for path in files if path is not None]:
