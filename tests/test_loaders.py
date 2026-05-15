@@ -6,6 +6,7 @@ import pandas as pd
 import pytest
 
 from regime_detection.loaders import (
+    load_event_calendar,
     load_macro_series,
     load_sector_etf_closes,
 )
@@ -61,3 +62,16 @@ def test_load_macro_series_rejects_non_numeric_values() -> None:
 
     with pytest.raises(ValueError, match="non-numeric value"):
         load_macro_series(source)
+
+
+def test_load_event_calendar_rejects_missing_required_columns() -> None:
+    source = pd.DataFrame(
+        {
+            "date": [date(2026, 1, 2)],
+            "market": ["US"],
+            "type": ["FOMC"],
+        }
+    )
+
+    with pytest.raises(ValueError, match=r"event_calendar missing required columns.*importance"):
+        load_event_calendar(source)
