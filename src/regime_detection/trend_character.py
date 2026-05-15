@@ -425,7 +425,20 @@ def classify_series(
     as_of_date: date,
     deescalation_days: int,
     volume: pd.Series | None = None,
+    allow_v2_labels: bool = False,
 ) -> AxisOutput:
+    """Per-day raw/stable/active trend_character labels for ``as_of_date``.
+
+    ``allow_v2_labels`` defaults to ``False`` so the per-axis API is V1-safe:
+    direct callers cannot accidentally surface the V2-only `range_bound` /
+    `breakout_expansion` labels (the latter requires volume confirmation,
+    but `range_bound` does not — leaving it as a leak surface for V1-only
+    consumers). The engine path (`axis_series.build_axis_series_bundle`)
+    bypasses this function and threads V2 labels through `build_raw_outputs`
+    explicitly when the V2 config is active. Set to ``True`` only when the
+    caller is intentionally in V2 mode AND has confirmed it consumes V2
+    labels.
+    """
     dt = pd.Timestamp(as_of_date)
     close = close.copy()
     high = high.copy()
@@ -450,7 +463,7 @@ def classify_series(
     raw_labels: list[TrendCharacterLabel] = []
     raw_evidence: list[dict[str, Any]] = []
     for day in close.index:
-        lbl, ev = raw_label_for_day(f, day)
+        lbl, ev = raw_label_for_day(f, day, allow_v2_labels=allow_v2_labels)
         raw_labels.append(lbl)
         raw_evidence.append(ev)
 

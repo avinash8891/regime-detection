@@ -3144,6 +3144,37 @@ AND breadth_state.active_label in [weak_breadth, divergent_fragile]
 
 This captures banking-crisis, election-uncertainty, and macro-shock environments that are stressed but have not committed to V1 `bear`. V1 intentionally emits `stable` for this pattern unless another V1 warning fires; do not backport this warning to V1.
 
+**V2 transition_risk precedence (with sideways_stress_warning inserted):**
+
+```text
+crisis_override > bear_stress_warning > sideways_stress_warning
+> bull_fragile_warning > recovery_attempt > post_switch_cooldown
+> unknown > stable
+```
+
+`sideways_stress_warning` slots between `bear_stress_warning` and `bull_fragile_warning`: it is a compositional warning like `bull_fragile_warning` but defensively skewed (stressed-but-not-bear is more dangerous than fragile-but-trending). When `bear_stress_warning` already fires (full defensive posture), it takes precedence.
+
+**V2 gating:** the rule is enabled when `config_version != "core3-v1.0.0"`. Under V1 config the rule is silent and V1 byte-identity is preserved (enforced by `tests/test_v1_frozen_replay.py`).
+
+**Strategy response modifier (V2 §10.4 extension):**
+
+```json
+"sideways_stress": {
+  "position_size_multiplier": 0.5,
+  "allow_breakout": false,
+  "allow_leverage_expansion": false,
+  "take_profit_faster": true,
+  "require_confirmation_for_new_longs": true
+}
+```
+
+V2 strategy_response scenario precedence (with sideways_stress inserted between bull_fragile and bear_stress in apply order — same defensive ordering as transition_risk):
+
+```text
+crisis > bear_stress > sideways_stress > bull_fragile > sideways_chop
+> recovery_attempt > bull_healthy_low_vol > default_neutral
+```
+
 ### 4.1 Composition
 
 V2 adds a continuous transition score that **augments** V1's named warnings, not replaces them.
@@ -3308,7 +3339,7 @@ Output:
 }
 ```
 
-Feeds `transition_score` as additional evidence (V2.1 — not in initial V2 ship; change-point detection ships in V2.1 alongside §6.3 implementation).
+Feeds `transition_score` as additional evidence. **Status: shipped in initial V2** (Slice 8) — wired through `RegimeOutput.change_point` and consumed by the `compose_transition_score_for_session` 4-table weight-selection logic per §4.3 (Ambiguity Log #66). When the change_point seam is lit, the composer selects either `weights_with_change_point` (5+1 = 6 components) or `weights_with_hmm_with_change_point` (5+2 = 7 components) depending on whether the HMM seam is also lit. The earlier "ships in V2.1" note in this section is superseded by the §4.3 4-table system.
 
 ---
 
@@ -3492,6 +3523,8 @@ The override-on-default inheritance pattern keeps the ship surface small (one ba
 
 ### 5.3 Vol-Crush Exit Rules
 
+> **Scope:** §5.3 is a **downstream strategy contract**, not regime-engine logic. The engine's responsibility is to emit the `vol_crush` label correctly (per §1C); the rules below describe how a position-management layer should respond to that label. They are not implemented in `regime_detection`. They are documented here so the contract is in one place for the strategy layer that consumes engine outputs.
+
 When `volatility_state.active_label = vol_crush`:
 - Exit all event-vol longs immediately
 - Reduce long-vol exposure by `long_vol_position_reduction_pct = 0.50` (V2 ship default; V2 §9.1 walk-forward calibration placeholder)
@@ -3509,6 +3542,8 @@ Rationale for the soft 50% reduction (not hard 100% exit): `vol_crush` can fire 
 Asymmetric-cost framing (same pattern as §1A 0.60 threshold): false-positive (exit when vol re-expands) has active execution cost + opportunity cost; false-negative (stay long when vol stays crushed) has only passive opportunity cost. 0.50 deliberately skews toward false-negative bias.
 
 ### 5.4 No-Flip-Flop Windows
+
+> **Scope:** §5.4 is a **downstream strategy contract**, not regime-engine logic. The engine emits the upstream regime labels (`tightening_pressure` from §2A, `fed_week` from §2D, `rising_vol` from §1C); the timing-control rules below describe how a position-management layer should compose them into trade-frequency limits. The `NoFlipFlopConfig` Pydantic block exists in `config.py` so the yaml can carry `window_trading_days`, but the engine does not consume it — the value is exposed through `RegimeConfig.no_flip_flop` for the strategy layer to read.
 
 Beyond V1's `post_switch_cooldown`:
 - `tightening_pressure` + `fed_week` + `rising_vol` → `no_flip_flop_window = 15 trading days`

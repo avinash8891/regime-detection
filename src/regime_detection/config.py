@@ -18,7 +18,12 @@ class HysteresisConfig(BaseModel):
     volatility_deescalation_days: int = Field(ge=0)
     breadth_deescalation_days: int = Field(ge=0)
     composite_deescalation_days: int = Field(ge=0)
-    event_calendar_days: int = Field(ge=0)
+    # NOTE: event_calendar has no hysteresis. Calendar windows are themselves
+    # deterministic (you are inside a -2..+2 FOMC window or you are not), so a
+    # debounce knob is meaningless. The previously-defined `event_calendar_days`
+    # field was unused by every consumer and has been removed (V1 spec §2.10
+    # updated). Adding it back requires a corresponding hysteresis call site
+    # in event_calendar.py.
 
 
 class DataQualityConfig(BaseModel):

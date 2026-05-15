@@ -4,6 +4,8 @@ from datetime import date
 
 from pathlib import Path
 
+import pytest
+
 from regime_detection.calendar import nyse_calendar
 from regime_detection.axis_series import build_axis_series_bundle
 from regime_detection.engine import RegimeEngine
@@ -13,6 +15,35 @@ from regime_detection.models import RegimeTimeline
 from regime_detection.timeline import ENGINE_MINIMUM_HISTORY, build_regime_timeline
 from regime_detection.transition_risk_series import build_transition_risk_history
 from regime_detection.versioning import engine_version
+
+
+@pytest.fixture(scope="module")
+def shared_timeline_pipeline(market_df_for_asof):
+    end_date = date(2023, 12, 14)
+    engine = RegimeEngine()
+    market_data = market_df_for_asof(end_date)
+    context = build_market_context(
+        end_date=end_date,
+        market_data=market_data,
+        config=engine.config,
+    )
+    feature_store = build_feature_store(context)
+    bundle = build_axis_series_bundle(context=context, feature_store=feature_store)
+    timeline = build_regime_timeline(
+        context=context,
+        lookback_days=ENGINE_MINIMUM_HISTORY,
+        config=engine.config,
+    )
+    point_output = engine.classify(as_of_date=end_date, market_data=market_data)
+    return {
+        "end_date": end_date,
+        "market_data": market_data,
+        "context": context,
+        "feature_store": feature_store,
+        "bundle": bundle,
+        "timeline": timeline,
+        "point_output": point_output,
+    }
 
 
 def test_core3_v1_regime_output_keeps_legacy_placeholder_wire_shapes(market_df_for_asof) -> None:
@@ -83,13 +114,9 @@ def test_classify_window_uses_lookback_days_not_fixed_calendar_span(market_df_fo
     assert len(timeline.outputs) == 23
 
 
-def test_market_context_builds_normalized_series_once(market_df_for_asof) -> None:
-    end_date = date(2023, 12, 14)
-    context = build_market_context(
-        end_date=end_date,
-        market_data=market_df_for_asof(end_date),
-        config=RegimeEngine().config,
-    )
+def test_market_context_builds_normalized_series_once(shared_timeline_pipeline) -> None:
+    end_date = shared_timeline_pipeline["end_date"]
+    context = shared_timeline_pipeline["context"]
 
     assert context.end_date == end_date
     assert context.sessions[-1] == end_date
@@ -98,14 +125,9 @@ def test_market_context_builds_normalized_series_once(market_df_for_asof) -> Non
     assert context.rsp_close.name == "close"
 
 
-def test_feature_store_precomputes_aligned_axis_features(market_df_for_asof) -> None:
-    end_date = date(2023, 12, 14)
-    context = build_market_context(
-        end_date=end_date,
-        market_data=market_df_for_asof(end_date),
-        config=RegimeEngine().config,
-    )
-    feature_store = build_feature_store(context)
+def test_feature_store_precomputes_aligned_axis_features(shared_timeline_pipeline) -> None:
+    context = shared_timeline_pipeline["context"]
+    feature_store = shared_timeline_pipeline["feature_store"]
 
     assert feature_store.spy_index.equals(context.spy_ohlcv.index)
     assert feature_store.trend_direction.close.index.equals(context.spy_ohlcv.index)
@@ -114,18 +136,10 @@ def test_feature_store_precomputes_aligned_axis_features(market_df_for_asof) -> 
     assert feature_store.breadth.spy_close.index.equals(context.spy_ohlcv.index)
 
 
-def test_axis_series_bundle_reuses_feature_store_for_all_axes(market_df_for_asof) -> None:
-    end_date = date(2023, 12, 14)
-    engine = RegimeEngine()
-    market_data = market_df_for_asof(end_date)
-    context = build_market_context(
-        end_date=end_date,
-        market_data=market_data,
-        config=engine.config,
-    )
-    feature_store = build_feature_store(context)
-    bundle = build_axis_series_bundle(context=context, feature_store=feature_store)
-    point_output = engine.classify(as_of_date=end_date, market_data=market_data)
+def test_axis_series_bundle_reuses_feature_store_for_all_axes(shared_timeline_pipeline) -> None:
+    end_date = shared_timeline_pipeline["end_date"]
+    bundle = shared_timeline_pipeline["bundle"]
+    point_output = shared_timeline_pipeline["point_output"]
 
     assert bundle.trend_direction.outputs_by_date[end_date].model_dump() == point_output.trend_direction.model_dump()
     assert bundle.trend_character.outputs_by_date[end_date].model_dump() == point_output.trend_character.model_dump()
@@ -134,22 +148,9 @@ def test_axis_series_bundle_reuses_feature_store_for_all_axes(market_df_for_asof
     assert bundle.event_calendar[end_date].model_dump() == point_output.structural_causal_state.event_calendar.model_dump()
 
 
-def test_classify_matches_last_output_of_shared_timeline_pipeline(market_df_for_asof) -> None:
-    end_date = date(2023, 12, 14)
-    engine = RegimeEngine()
-    market_data = market_df_for_asof(end_date)
-
-    context = build_market_context(
-        end_date=end_date,
-        market_data=market_data,
-        config=engine.config,
-    )
-    timeline = build_regime_timeline(
-        context=context,
-        lookback_days=ENGINE_MINIMUM_HISTORY,
-        config=engine.config,
-    )
-    point_output = engine.classify(as_of_date=end_date, market_data=market_data)
+def test_classify_matches_last_output_of_shared_timeline_pipeline(shared_timeline_pipeline) -> None:
+    timeline = shared_timeline_pipeline["timeline"]
+    point_output = shared_timeline_pipeline["point_output"]
 
     assert timeline.outputs[-1].model_dump() == point_output.model_dump()
 
@@ -208,6 +209,13 @@ def test_transition_risk_history_precomputes_axis_switch_and_prior_bear_flags() 
     assert history.days_since_axis_switch_by_date[sessions[2]] == 0
     assert history.days_since_axis_switch_by_date[sessions[3]] == 1
     assert history.days_since_axis_switch_by_date[sessions[4]] == 0
+    # v1 §9.4 (post-Q2 fix): prior_bear excludes today's stable_label from the
+    # 60-session lookback. sessions[2] is the FIRST day stable goes bear, so
+    # the prior window (sessions[0..1] = bull, bull) has no bear and the flag
+    # is False. By sessions[3] (the day AFTER the first bear print), the prior
+    # window includes sessions[2]=bear, so the flag is True. sessions[4]
+    # (bull again) still has bear in its prior window.
     assert history.prior_bear_by_date[sessions[1]] is False
-    assert history.prior_bear_by_date[sessions[2]] is True
+    assert history.prior_bear_by_date[sessions[2]] is False
+    assert history.prior_bear_by_date[sessions[3]] is True
     assert history.prior_bear_by_date[sessions[4]] is True

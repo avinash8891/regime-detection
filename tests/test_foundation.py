@@ -62,7 +62,6 @@ def test_regime_config_forbids_unknown_keys() -> None:
                     "volatility_deescalation_days": 2,
                     "breadth_deescalation_days": 2,
                     "composite_deescalation_days": 3,
-                    "event_calendar_days": 1,
                 },
                 "unknown_key": True,
             }
