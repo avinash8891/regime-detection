@@ -27,6 +27,7 @@ def pytest_configure() -> None:
 _FIXTURES_DIR = Path(__file__).resolve().parent / "fixtures"
 _RAW_DIR = _FIXTURES_DIR / "raw"
 _MARKET_PARQUET_PATH = _RAW_DIR / "market_data.parquet"
+_V2_DAILY_OHLCV_PATH = _RAW_DIR / "v2" / "daily_ohlcv.csv"
 _GOLDEN_DATES_PATH = _FIXTURES_DIR / "derived" / "golden_dates.yaml"
 
 
@@ -37,6 +38,15 @@ def _load_market_data() -> pd.DataFrame:
     else:
         parts = [pd.read_csv(_RAW_DIR / f"{symbol}.csv") for symbol in ("SPY", "RSP", "VIXY")]
         df = pd.concat(parts, ignore_index=True)
+    df = df.copy()
+    df["date"] = pd.to_datetime(df["date"]).dt.date
+    keep = ["date", "symbol", "open", "high", "low", "close", "volume"]
+    return df[keep].sort_values(["date", "symbol"]).reset_index(drop=True)
+
+
+@lru_cache(maxsize=1)
+def _load_v2_daily_ohlcv() -> pd.DataFrame:
+    df = pd.read_csv(_V2_DAILY_OHLCV_PATH)
     df = df.copy()
     df["date"] = pd.to_datetime(df["date"]).dt.date
     keep = ["date", "symbol", "open", "high", "low", "close", "volume"]
@@ -62,6 +72,35 @@ def market_df_for_asof(raw_market_data: pd.DataFrame):
         return raw_market_data[raw_market_data["date"] <= as_of].copy().reset_index(drop=True)
 
     return _build
+
+
+@pytest.fixture(scope="session")
+def v2_daily_ohlcv() -> pd.DataFrame:
+    return _load_v2_daily_ohlcv().copy()
+
+
+@pytest.fixture(scope="session")
+def v2_market_df_for_asof(v2_daily_ohlcv: pd.DataFrame):
+    def _build(as_of: date) -> pd.DataFrame:
+        return v2_daily_ohlcv[
+            (v2_daily_ohlcv["date"] <= as_of)
+            & (v2_daily_ohlcv["symbol"].isin({"SPY", "RSP", "VIXY"}))
+        ].copy().reset_index(drop=True)
+
+    return _build
+
+
+@pytest.fixture(scope="session")
+def v2_close_series_by_symbol(v2_daily_ohlcv: pd.DataFrame) -> dict[str, pd.Series]:
+    series_by_symbol: dict[str, pd.Series] = {}
+    for symbol, frame in v2_daily_ohlcv.groupby("symbol", sort=True):
+        idx = pd.to_datetime(frame["date"])
+        series_by_symbol[str(symbol)] = pd.Series(
+            frame["close"].astype(float).to_numpy(),
+            index=idx,
+            name=str(symbol),
+        )
+    return series_by_symbol
 
 
 @pytest.fixture(scope="session")

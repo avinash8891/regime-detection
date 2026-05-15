@@ -366,6 +366,17 @@ class AgentRouting(BaseModel):
 _V1_CONFIG_VERSION = "core3-v1.0.0"
 
 
+def _dump_json_payload(payload: dict[str, Any], *, indent: int | None, ensure_ascii: bool) -> str:
+    json_kwargs: dict[str, Any] = {
+        "ensure_ascii": ensure_ascii,
+    }
+    if indent is None:
+        json_kwargs["separators"] = (",", ":")
+    else:
+        json_kwargs["indent"] = indent
+    return json.dumps(payload, **json_kwargs)
+
+
 def _rewrite_legacy_v1_wire_shapes(payload: dict[str, Any]) -> dict[str, Any]:
     if payload.get("config_version") != _V1_CONFIG_VERSION:
         return payload
@@ -420,10 +431,13 @@ class RegimeOutput(BaseModel):
         return _rewrite_legacy_v1_wire_shapes(payload)
 
     def model_dump_json(self, *args: Any, **kwargs: Any) -> str:
-        return json.dumps(
+        indent = kwargs.pop("indent", None)
+        ensure_ascii = kwargs.pop("ensure_ascii", False)
+        kwargs.setdefault("mode", "json")
+        return _dump_json_payload(
             self.model_dump(*args, **kwargs),
-            separators=(",", ":"),
-            ensure_ascii=False,
+            indent=indent,
+            ensure_ascii=ensure_ascii,
         )
 
 
@@ -448,8 +462,11 @@ class RegimeTimeline(BaseModel):
         return payload
 
     def model_dump_json(self, *args: Any, **kwargs: Any) -> str:
-        return json.dumps(
+        indent = kwargs.pop("indent", None)
+        ensure_ascii = kwargs.pop("ensure_ascii", False)
+        kwargs.setdefault("mode", "json")
+        return _dump_json_payload(
             self.model_dump(*args, **kwargs),
-            separators=(",", ":"),
-            ensure_ascii=False,
+            indent=indent,
+            ensure_ascii=ensure_ascii,
         )
