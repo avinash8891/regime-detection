@@ -27,6 +27,9 @@ def test_walkforward_gate_parse_args_materializes_manifest_defaults(
         macro_source,
         index=False,
     )
+    pmi_source = store_root / "canonical" / "manual_inputs" / "pmi" / "ism_manufacturing_pmi.tsv"
+    pmi_source.parent.mkdir(parents=True)
+    pmi_source.write_text("period\trelease_date_local\ttime_local\tactual\n2026-04\t01-05-2026\t10:00\t52.7\n")
     manifest = ArtifactManifest(
         artifact_set="runner-test",
         created_at_utc="2026-05-15T12:00:00Z",
@@ -52,11 +55,23 @@ def test_walkforward_gate_parse_args_materializes_manifest_defaults(
                     "required_for": ["v2_calibration"],
                 }
             ),
+            ManifestArtifact.from_dict(
+                {
+                    "name": "manual_pmi",
+                    "stage": "canonical",
+                    "uri": "canonical/manual_inputs/pmi/ism_manufacturing_pmi.tsv",
+                    "local_path": "data/manual_inputs/pmi/ism_manufacturing_pmi.tsv",
+                    "sha256": sha256_file(pmi_source),
+                    "required_for": ["v2_calibration"],
+                }
+            ),
         ],
     )
     manifest_path = tmp_path / "manifest.yaml"
     data_root = tmp_path / "data" / "raw"
+    repo_root = tmp_path / "repo"
     write_manifest(manifest, manifest_path)
+    monkeypatch.setattr(run_v2_walkforward_gate, "REPO_ROOT", repo_root)
     monkeypatch.setattr(
         sys,
         "argv",
@@ -78,3 +93,4 @@ def test_walkforward_gate_parse_args_materializes_manifest_defaults(
     assert args.end_date.isoformat() == "2026-05-15"
     assert (data_root / "daily_ohlcv" / "part.parquet").exists()
     assert args.macro_parquet.exists()
+    assert (repo_root / "data" / "manual_inputs" / "pmi" / "ism_manufacturing_pmi.tsv").exists()

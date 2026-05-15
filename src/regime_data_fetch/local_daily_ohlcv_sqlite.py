@@ -123,6 +123,10 @@ def run_local_daily_ohlcv_sqlite_import(
             },
             "paths": {
                 "acquisition_db": str(acquisition_db_path),
+                "profile_constituent_tree": {
+                    "path": str(source_dir),
+                    "local_path": "data/raw/daily_ohlcv_762",
+                },
             },
         }
         report_path = out_dir / "daily_ohlcv_local_sqlite_import_report.json"

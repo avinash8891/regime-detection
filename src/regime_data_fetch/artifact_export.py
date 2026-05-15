@@ -23,8 +23,13 @@ def emit_manifest_for_report_paths(
     artifacts: list[ManifestArtifact] = []
     seen_local_paths: set[str] = set()
     for report_path in report_paths:
-        for name, path in _iter_existing_report_files(report_path):
-            local_path = _local_path_for(path=path, out_dir=out_dir, repo_root=repo_root)
+        for name, path, local_path_override in _iter_existing_report_files(report_path):
+            local_path = _local_path_for(
+                path=path,
+                out_dir=out_dir,
+                repo_root=repo_root,
+                local_path_override=local_path_override,
+            )
             if local_path is None:
                 continue
             if local_path in seen_local_paths:
@@ -60,7 +65,7 @@ def emit_manifest_for_report_paths(
     return manifest
 
 
-def _iter_existing_report_files(report_path: Path) -> Iterable[tuple[str, Path]]:
+def _iter_existing_report_files(report_path: Path) -> Iterable[tuple[str, Path, str | None]]:
     if not report_path.exists() or report_path.suffix.lower() != ".json":
         return
     payload = json.loads(report_path.read_text())
@@ -68,18 +73,42 @@ def _iter_existing_report_files(report_path: Path) -> Iterable[tuple[str, Path]]
     if not isinstance(paths, dict):
         return
     for name, value in sorted(paths.items()):
-        if not isinstance(value, str):
+        entry = _parse_report_path_entry(value)
+        if entry is None:
             continue
-        path = Path(value)
+        path, local_path_override = entry
         if path.exists() and path.is_file():
-            yield name, path
+            yield name, path, local_path_override
         elif path.exists() and path.is_dir():
             for child in sorted(item for item in path.rglob("*") if item.is_file()):
                 child_name = f"{name}_{child.relative_to(path).as_posix().replace('/', '_')}"
-                yield child_name, child
+                child_local_path = None
+                if local_path_override is not None:
+                    child_local_path = str(Path(local_path_override) / child.relative_to(path))
+                yield child_name, child, child_local_path
 
 
-def _local_path_for(*, path: Path, out_dir: Path, repo_root: Path | None = None) -> str | None:
+def _parse_report_path_entry(value: object) -> tuple[Path, str | None] | None:
+    if isinstance(value, str):
+        return Path(value), None
+    if not isinstance(value, dict):
+        return None
+    path_value = value.get("path")
+    local_path_value = value.get("local_path")
+    if not isinstance(path_value, str) or not isinstance(local_path_value, str):
+        return None
+    return Path(path_value), _normalize_manifest_local_path(local_path_value)
+
+
+def _local_path_for(
+    *,
+    path: Path,
+    out_dir: Path,
+    repo_root: Path | None = None,
+    local_path_override: str | None = None,
+) -> str | None:
+    if local_path_override is not None:
+        return _normalize_manifest_local_path(local_path_override)
     path = path.resolve()
     out_dir = out_dir.resolve()
     try:
@@ -101,3 +130,10 @@ def _store_key_for(local_path: str) -> str:
     else:
         relative = path
     return str(Path("canonical") / relative)
+
+
+def _normalize_manifest_local_path(local_path: str) -> str:
+    normalized = Path(local_path)
+    if normalized.is_absolute() or normalized == Path("..") or ".." in normalized.parts:
+        raise ValueError(f"manifest local_path must be relative within the repo: {local_path}")
+    return str(normalized)

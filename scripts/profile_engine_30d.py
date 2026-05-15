@@ -467,6 +467,7 @@ def main() -> int:
     materialize_if_requested(
         manifest_path=args.manifest,
         local_root=args.data_root,
+        repo_root=REPO_ROOT,
         store_root=args.artifact_store,
         required_for="profile_engine_30d",
     )

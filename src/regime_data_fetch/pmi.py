@@ -469,6 +469,14 @@ def run_manual_pmi_history_import(
             "paths": {
                 "pmi_parquet": str(parquet_path),
                 "pmi_history_parquet": str(history_path),
+                "manual_pmi_manufacturing_tsv": {
+                    "path": str(history_dir / "ism_manufacturing_pmi.tsv"),
+                    "local_path": "data/manual_inputs/pmi/ism_manufacturing_pmi.tsv",
+                },
+                "manual_pmi_services_tsv": {
+                    "path": str(history_dir / "ism_services_pmi.tsv"),
+                    "local_path": "data/manual_inputs/pmi/ism_services_pmi.tsv",
+                },
                 "acquisition_db": str(acquisition_db_path) if acquisition_db_path else None,
             },
         }

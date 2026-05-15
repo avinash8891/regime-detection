@@ -11,6 +11,11 @@ engine data.
 5. On another environment, run `scripts/materialize_regime_data.py` with that
    manifest before running profile, calibration, or V2 gate scripts.
 
+Report `paths` may be either a string path or an object with `path` and
+`local_path`. Use the object form when a source artifact lives outside its
+eventual runner location, such as restoring archived `daily_ohlcv_762` files to
+`data/raw/daily_ohlcv_762/` or manual PMI TSVs to `data/manual_inputs/pmi/`.
+
 Focused verification commands:
 
 ```bash

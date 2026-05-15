@@ -10,7 +10,7 @@ from regime_data_fetch.local_daily_ohlcv_sqlite import run_local_daily_ohlcv_sql
 
 
 def test_run_local_daily_ohlcv_sqlite_import_records_rows_and_artifacts(tmp_path: Path) -> None:
-    source_dir = tmp_path / "daily_ohlcv"
+    source_dir = tmp_path / "daily_ohlcv_762"
     symbol_dir = source_dir / "symbol=AAPL"
     symbol_dir.mkdir(parents=True)
     parquet_path = symbol_dir / "part-0.parquet"
@@ -50,6 +50,10 @@ def test_run_local_daily_ohlcv_sqlite_import_records_rows_and_artifacts(tmp_path
     assert report["counts"]["imported_rows"] == 2
     assert report["date_range"]["min_date"] == "2026-05-05"
     assert report["date_range"]["max_date"] == "2026-05-06"
+    assert report["paths"]["profile_constituent_tree"] == {
+        "path": str(source_dir),
+        "local_path": "data/raw/daily_ohlcv_762",
+    }
 
     with sqlite3.connect(acquisition_db) as conn:
         fetch_runs = conn.execute("SELECT fetch_type, status FROM fetch_runs").fetchall()

@@ -131,3 +131,39 @@ def test_emit_manifest_for_report_paths_exports_repo_relative_event_config(tmp_p
     assert manifest.artifacts[0].local_path == "configs/events/us_events.yaml"
     assert manifest.artifacts[0].uri == "canonical/configs/events/us_events.yaml"
     assert (tmp_path / "store" / "canonical" / "configs" / "events" / "us_events.yaml").read_text() == "events: []\n"
+
+
+def test_emit_manifest_for_report_paths_honors_explicit_materialized_local_path(tmp_path: Path) -> None:
+    source_root = tmp_path / "archive" / "daily_ohlcv_762"
+    source_file = source_root / "symbol=SPY" / "ohlcv.parquet"
+    source_file.parent.mkdir(parents=True)
+    source_file.write_bytes(b"spy-762")
+    out_dir = tmp_path / "repo" / "data" / "raw"
+    report = out_dir / "daily_ohlcv_local_sqlite_import_report.json"
+    report.parent.mkdir(parents=True)
+    report.write_text(
+        json.dumps(
+            {
+                "paths": {
+                    "profile_constituent_tree": {
+                        "path": str(source_root),
+                        "local_path": "data/raw/daily_ohlcv_762",
+                    }
+                }
+            }
+        )
+    )
+
+    manifest = emit_manifest_for_report_paths(
+        report_paths=[report],
+        out_dir=out_dir,
+        artifact_store_root=str(tmp_path / "store"),
+        manifest_path=tmp_path / "manifest.yaml",
+        artifact_set="profile",
+        required_for=["profile_engine_30d"],
+    )
+
+    assert [artifact.local_path for artifact in manifest.artifacts] == [
+        "data/raw/daily_ohlcv_762/symbol=SPY/ohlcv.parquet"
+    ]
+    assert (tmp_path / "store" / "canonical" / "daily_ohlcv_762" / "symbol=SPY" / "ohlcv.parquet").read_bytes() == b"spy-762"
