@@ -110,6 +110,12 @@ class MonetaryPressureV2Features:
     broad_usd_index_zscore_63d: pd.Series
     yield_change_zscore_21d_2y: pd.Series
     yield_change_zscore_21d_10y: pd.Series
+    # v2 §2A central-bank-text evidence (spec lines 2578-2586). Daily
+    # forward-filled, smoothed net_score (hawkish - dovish) / total in
+    # [-1, +1]. Evidence-only — never consumed by §2A rule predicates.
+    # None when no central-bank-text release frame was supplied to
+    # build_feature_store (V1 byte-identity preserved). See audit M1.
+    central_bank_text_score: pd.Series | None = None
 
     @property
     def feature_names(self) -> tuple[str, ...]:
@@ -152,6 +158,7 @@ def compute_monetary_pressure_features(
     dgs2: pd.Series,
     dgs10: pd.Series,
     broad_usd_index: pd.Series | None = None,
+    central_bank_text_score: pd.Series | None = None,
     config: MonetaryPressureV2FeaturesConfig,
 ) -> MonetaryPressureV2Features:
     """Compute the v2 §2A yield + USD z-score features.
@@ -208,12 +215,22 @@ def compute_monetary_pressure_features(
             normalizer_window=config.zscore_normalizer_window_days,
             output_name="broad_usd_index_zscore_63d",
         )
+    # v2 §2A central-bank-text seam (audit M1). Pure pass-through onto
+    # the features dataclass — the rule engine never reads this field.
+    # Reindexed to the yield series' DatetimeIndex so downstream
+    # consumers get a single coherent calendar.
+    if central_bank_text_score is not None:
+        aligned_cb_score = central_bank_text_score.reindex(dgs2.index)
+        aligned_cb_score.name = "central_bank_text_score"
+    else:
+        aligned_cb_score = None
     return MonetaryPressureV2Features(
         yield_change_zscore_2y_63d=z_2y,
         yield_change_zscore_10y_63d=z_10y,
         broad_usd_index_zscore_63d=usd_z,
         yield_change_zscore_21d_2y=z_21d_2y,
         yield_change_zscore_21d_10y=z_21d_10y,
+        central_bank_text_score=aligned_cb_score,
     )
 
 

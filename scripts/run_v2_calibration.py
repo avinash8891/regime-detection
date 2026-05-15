@@ -42,6 +42,11 @@ from regime_detection.config import load_default_regime_config  # noqa: E402
 from regime_detection.engine import RegimeEngine  # noqa: E402
 from regime_detection.feature_store import build_feature_store  # noqa: E402
 from regime_detection.fragility_universe import SECTOR_ETFS  # noqa: E402
+from regime_detection.loaders import (  # noqa: E402
+    load_central_bank_text_score,
+    load_cpi_vintages_first_release,
+    load_news_sentiment_series,
+)
 from regime_detection.market_context import build_market_context  # noqa: E402
 from scripts._v2_calibration_helpers import load_macro_series  # noqa: E402
 
@@ -66,6 +71,72 @@ def _load_close_dict(daily_ohlcv_dir: Path, symbols: list[str], spy_index: pd.Da
             continue
         out[sym] = sub["close"].astype(float).reindex(spy_index).rename(sym)
     return out
+
+
+def _summarize_central_bank_text(feature_store: Any, config: Any) -> list[str]:
+    """Surface the v2 §2A central-bank-text smoothed score distribution.
+
+    Audit M1 — `CentralBankTextConfig.smoothing_window_sessions` defaults
+    to 30 (six weeks, AAII-style cadence). This rollup prints the actual
+    distribution under the current setting so v2 §9.1 walk-forward
+    calibration has the data it needs to retune.
+    """
+    monetary = feature_store.monetary
+    cb_cfg = config.central_bank_text
+    if monetary is None or monetary.central_bank_text_score is None:
+        return [
+            "- `feature_store.monetary.central_bank_text_score` lit: **False** "
+            "(no FOMC minutes / Powell speech releases supplied, or config absent)",
+        ]
+    series = monetary.central_bank_text_score.dropna()
+    if series.empty:
+        return [
+            "- `feature_store.monetary.central_bank_text_score` lit but all NaN "
+            "(cold-start — first release is after the SPY index start)",
+        ]
+    lines = [
+        f"- `feature_store.monetary.central_bank_text_score` lit: **True** "
+        f"(n={len(series)} sessions)",
+        f"- Smoothing window: **{cb_cfg.smoothing_window_sessions}** NYSE "
+        f"sessions (CentralBankTextConfig.smoothing_window_sessions; "
+        f"v2 §9.1 walk-forward calibration placeholder).",
+        f"- max_release_age_days: **{cb_cfg.max_release_age_days}**.",
+        f"- Score distribution after smoothing:",
+        f"    - min: {float(series.min()):+.3f}",
+        f"    - p25: {float(series.quantile(0.25)):+.3f}",
+        f"    - median: {float(series.median()):+.3f}",
+        f"    - p75: {float(series.quantile(0.75)):+.3f}",
+        f"    - max: {float(series.max()):+.3f}",
+        f"    - mean: {float(series.mean()):+.3f}",
+        f"- Bias-warning code emitted on feature output: "
+        f"`central_bank_text_deterministic_lexicon_substitute` (audit M1 / "
+        f"docs/spec_code_data_audit_2026_05_15.md §3.1).",
+    ]
+    return lines
+
+
+def _summarize_first_release_cpi(
+    feature_store: Any, cpi_first_release: pd.Series | None
+) -> list[str]:
+    """Surface whether the audit M2 first-release CPI seam is in effect."""
+    inflation = feature_store.inflation_growth
+    if inflation is None:
+        return ["- `feature_store.inflation_growth` lit: **False**"]
+    bias_codes = (
+        set(inflation.bias_warnings["warning_code"].tolist())
+        if not inflation.bias_warnings.empty
+        else set()
+    )
+    first_release_active = "cpi_first_release_vintage_replay" in bias_codes
+    lines = [
+        f"- First-release CPI seam supplied: "
+        f"**{cpi_first_release is not None}** "
+        f"({'%d releases' % len(cpi_first_release) if cpi_first_release is not None else 'absent'}).",
+        f"- First-release substitution in effect: **{first_release_active}** "
+        f"(bias-warning row `cpi_first_release_vintage_replay` "
+        f"{'present' if first_release_active else 'absent'} on feature output).",
+    ]
+    return lines
 
 
 def _fit_summary_hmm(feature_store: Any, training_window_days: int) -> dict[str, Any]:
@@ -167,6 +238,14 @@ def main() -> int:
     pmi_path = REPO_ROOT / "data" / "manual_inputs" / "pmi" / "ism_manufacturing_pmi.tsv"
     pit_intervals_parquet = data_root / "pit_constituents" / "sp500_ticker_intervals.parquet"
     constituent_db_path = data_root / "constituent_ohlcv.db"
+    # v2 §2A central-bank-text + first-release CPI seams (audit M1 / M2).
+    # Standard fetch paths under data/raw/; absence is non-fatal — the
+    # engine falls through to the existing latest-revision CPI path and
+    # the central_bank_text_score stays None.
+    fomc_minutes_parquet = data_root / "fomc_minutes" / "fomc_minutes.parquet"
+    powell_speeches_parquet = data_root / "powell_speeches" / "powell_speeches.parquet"
+    cpi_vintages_parquet = data_root / "macro_vintages" / "cpi_all_items_vintages.parquet"
+    news_sentiment_parquet = data_root / "news_sentiment" / "sf_fed_news_sentiment.parquet"
     verification_dir = REPO_ROOT / "docs" / "verification"
     verification_dir.mkdir(parents=True, exist_ok=True)
 
@@ -231,6 +310,52 @@ def main() -> int:
     print(f"cross_asset symbols: {sorted(cross_asset_closes.keys())}")
     print(f"macro series: {sorted(macro_series.keys())}")
 
+    # v2 §2A central-bank-text release frame (audit M1). When neither
+    # source parquet exists the loader returns an empty frame and the
+    # downstream score series is all-NaN.
+    central_bank_text_releases = load_central_bank_text_score(
+        fomc_minutes_source=(
+            fomc_minutes_parquet if fomc_minutes_parquet.exists() else None
+        ),
+        powell_speeches_source=(
+            powell_speeches_parquet if powell_speeches_parquet.exists() else None
+        ),
+    )
+    if central_bank_text_releases.empty:
+        print("central_bank_text_releases: empty (no FOMC minutes / Powell speeches parquets)")
+    else:
+        print(
+            f"central_bank_text_releases: {len(central_bank_text_releases)} rows "
+            f"({central_bank_text_releases['release_date'].min()} → "
+            f"{central_bank_text_releases['release_date'].max()})"
+        )
+
+    # v2 §2A first-release CPI for historical replay (audit M2). When the
+    # vintages parquet is absent the loader is skipped and the engine
+    # falls through to the existing revised CPIAUCSL path.
+    cpi_first_release = None
+    if cpi_vintages_parquet.exists():
+        cpi_first_release = load_cpi_vintages_first_release(cpi_vintages_parquet)
+        print(
+            f"cpi_first_release: {len(cpi_first_release)} releases "
+            f"({cpi_first_release.index.min().date()} → "
+            f"{cpi_first_release.index.max().date()})"
+        )
+    else:
+        print(f"cpi_first_release: skipped (no {cpi_vintages_parquet.name})")
+
+    # v2 §1A SF Fed news sentiment evidence (audit post-#12 follow-up).
+    news_sentiment = None
+    if news_sentiment_parquet.exists():
+        news_sentiment = load_news_sentiment_series(news_sentiment_parquet)
+        print(
+            f"news_sentiment: {len(news_sentiment)} daily rows "
+            f"({news_sentiment.index.min().date()} → "
+            f"{news_sentiment.index.max().date()})"
+        )
+    else:
+        print(f"news_sentiment: skipped (no {news_sentiment_parquet.name})")
+
     # Rebuild context with full V2 inputs + PIT seams.
     context = build_market_context(
         end_date=end_date,
@@ -241,6 +366,11 @@ def main() -> int:
         macro_series=macro_series,
         pit_constituent_intervals=pit_intervals,
         constituent_ohlcv=constituent_ohlcv,
+        central_bank_text_releases=(
+            central_bank_text_releases if not central_bank_text_releases.empty else None
+        ),
+        cpi_first_release=cpi_first_release,
+        news_sentiment=news_sentiment,
     )
 
     feature_store = build_feature_store(
@@ -253,6 +383,15 @@ def main() -> int:
         monetary_pressure_v2_config=config.monetary_pressure_v2,
         credit_funding_config=config.credit_funding,
         inflation_growth_config=config.inflation_growth,
+        # Audit M1 — v2 §9.1 walk-forward calibration placeholder for
+        # CentralBankTextConfig.smoothing_window_sessions. The summary
+        # report below surfaces the resulting score distribution so the
+        # default (30 sessions) can be retuned against actual FOMC
+        # tightening / easing cycles.
+        central_bank_text_config=config.central_bank_text,
+        # Audit post-#12 — SF Fed news sentiment evidence (EVIDENCE ONLY;
+        # `euphoria` rule predicate unchanged).
+        news_sentiment_config=config.news_sentiment,
     )
 
     print(f"feature_store.hmm lit: {feature_store.hmm is not None}")
@@ -327,6 +466,14 @@ def main() -> int:
         f"- `feature_store.change_point` lit: **{feature_store.change_point is not None}**",
         f"- `feature_store.credit_funding` lit: **{feature_store.credit_funding is not None}**",
         f"- `feature_store.inflation_growth` lit: **{feature_store.inflation_growth is not None}**",
+        "",
+        "## Audit M1 — central-bank-text score (v2 §9.1 calibration placeholder)",
+        "",
+        *_summarize_central_bank_text(feature_store, config),
+        "",
+        "## Audit M2 — first-release CPI provenance",
+        "",
+        *_summarize_first_release_cpi(feature_store, cpi_first_release),
         "",
         "## Candidate artifacts (require operator review per V2 §10)",
         "",

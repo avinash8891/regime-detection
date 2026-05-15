@@ -12,12 +12,15 @@ from regime_detection.change_point import (
     ChangePointFeatures,
     compute_change_point_features,
 )
+from regime_detection.central_bank_text import to_daily_score_series
 from regime_detection.config import (
     BreadthV2Config,
+    CentralBankTextConfig,
     CreditFundingConfig,
     InflationGrowthConfig,
     MonetaryPressureV2FeaturesConfig,
     NetworkFragilityConfig,
+    NewsSentimentConfig,
     TrendDirectionV2Config,
     VolatilityV2Config,
     VolumeLiquidityV2Config,
@@ -263,6 +266,8 @@ def build_feature_store(
     monetary_pressure_v2_config: MonetaryPressureV2FeaturesConfig | None = None,
     credit_funding_config: CreditFundingConfig | None = None,
     inflation_growth_config: InflationGrowthConfig | None = None,
+    central_bank_text_config: CentralBankTextConfig | None = None,
+    news_sentiment_config: NewsSentimentConfig | None = None,
 ) -> FeatureStore:
     spy_ohlcv = context.spy_ohlcv
     spy_close = spy_ohlcv["close"]
@@ -317,10 +322,30 @@ def build_feature_store(
             aaii_sentiment=context.aaii_sentiment,
             session_index=spy_close.index,
         )
+        # v2 §1A SF Fed news sentiment evidence (audit follow-up). When the
+        # context carries the raw daily series AND a NewsSentimentConfig is
+        # threaded, smooth it onto the SPY session index. The result feeds
+        # `compute_trend_v2_features` as evidence; the `euphoria` rule
+        # predicate is unchanged.
+        news_sentiment_series: pd.Series | None = None
+        if (
+            news_sentiment_config is not None
+            and context.news_sentiment is not None
+            and not context.news_sentiment.empty
+        ):
+            news_sentiment_series = (
+                context.news_sentiment.reindex(spy_close.index, method="ffill")
+                .rolling(
+                    news_sentiment_config.smoothing_window_sessions, min_periods=1
+                )
+                .mean()
+                .rename("news_sentiment_score")
+            )
         trend_direction_v2 = compute_trend_v2_features(
             spy_close,
             config=trend_direction_v2_config,
             sentiment_score=sentiment_series,
+            news_sentiment_score=news_sentiment_series,
         )
     else:
         trend_direction_v2 = None
@@ -414,10 +439,27 @@ def build_feature_store(
         broad_usd_series = None
         if context.macro_series is not None:
             broad_usd_series = context.macro_series.get("broad_usd_index")
+        # v2 §2A central-bank-text evidence seam (audit M1). When the
+        # context carries a scored release frame AND a CentralBankTextConfig
+        # is threaded, forward-fill onto the SPY session index and pass
+        # to compute_monetary_pressure_features as evidence-only.
+        cb_text_score_series: pd.Series | None = None
+        if (
+            central_bank_text_config is not None
+            and context.central_bank_text_releases is not None
+            and not context.central_bank_text_releases.empty
+        ):
+            cb_text_score_series = to_daily_score_series(
+                context.central_bank_text_releases,
+                session_index=spy_close.index,
+                smoothing_window_sessions=central_bank_text_config.smoothing_window_sessions,
+                same_date_aggregation=central_bank_text_config.same_date_aggregation,
+            )
         monetary = compute_monetary_pressure_features(
             dgs2=context.macro_series[_FRED_DGS2_KEY],
             dgs10=context.macro_series[_FRED_DGS10_KEY],
             broad_usd_index=broad_usd_series,
+            central_bank_text_score=cb_text_score_series,
             config=monetary_pressure_v2_config,
         )
     else:
@@ -538,6 +580,15 @@ def build_feature_store(
             # macro_series. When absent, the two earnings labels falsify.
             aggregate_forward_eps_revision=context.macro_series.get(
                 "aggregate_forward_eps_revision"
+            ),
+            # §2A first-release CPI seam (audit M2). Routes through to
+            # `compute_inflation_growth_features` which switches the
+            # `cpi_source` when the config flag is set AND the vintage
+            # series is supplied. When None, the existing latest-revision
+            # path is preserved unchanged.
+            cpi_first_release=context.cpi_first_release,
+            use_first_release_cpi_when_available=(
+                inflation_growth_config.rules.use_first_release_cpi_when_available
             ),
         )
 

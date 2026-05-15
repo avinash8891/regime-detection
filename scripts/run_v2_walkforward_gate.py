@@ -34,6 +34,10 @@ from regime_detection.calendar import nyse_calendar  # noqa: E402
 from regime_detection.config import load_default_regime_config  # noqa: E402
 from regime_detection.engine import RegimeEngine  # noqa: E402
 from regime_detection.fragility_universe import SECTOR_ETFS  # noqa: E402
+from regime_detection.loaders import (  # noqa: E402
+    load_central_bank_text_score,
+    load_cpi_vintages_first_release,
+)
 from regime_detection.market_context import build_market_context  # noqa: E402
 from regime_detection.versioning import engine_version as resolved_engine_version  # noqa: E402
 
@@ -347,10 +351,34 @@ def main() -> int:
     cross_asset_closes = load_close_dict(daily_dir, CROSS_ASSET_SYMBOLS, spy_index)
     macro_series = load_macro_series(macro_parquet, pmi_path)
 
+    # v2 §2A central-bank-text + first-release CPI seams (audit M1 / M2).
+    data_root = daily_dir.parent
+    fomc_parquet = data_root / "fomc_minutes" / "fomc_minutes.parquet"
+    powell_parquet = data_root / "powell_speeches" / "powell_speeches.parquet"
+    cpi_vintages_parquet = data_root / "macro_vintages" / "cpi_all_items_vintages.parquet"
+    central_bank_text_releases = load_central_bank_text_score(
+        fomc_minutes_source=fomc_parquet if fomc_parquet.exists() else None,
+        powell_speeches_source=powell_parquet if powell_parquet.exists() else None,
+    )
+    cpi_first_release = (
+        load_cpi_vintages_first_release(cpi_vintages_parquet)
+        if cpi_vintages_parquet.exists()
+        else None
+    )
+    logger.info(
+        "central_bank_text_releases: %d rows; cpi_first_release: %s",
+        len(central_bank_text_releases),
+        "wired" if cpi_first_release is not None else "absent (revised CPI fallback)",
+    )
+
     v2_kwargs = {
         "sector_etf_closes": sector_etf_closes,
         "cross_asset_closes": cross_asset_closes,
         "macro_series": macro_series,
+        "central_bank_text_releases": (
+            central_bank_text_releases if not central_bank_text_releases.empty else None
+        ),
+        "cpi_first_release": cpi_first_release,
     }
 
     sessions = list(

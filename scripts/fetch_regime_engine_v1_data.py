@@ -42,7 +42,18 @@ def main() -> int:
     ap.add_argument("--adjustment", default="raw", help="Alpaca adjustment: raw|split|dividend|all.")
     ap.add_argument("--alpaca-feed", default=None, help="Alpaca data feed: sip|iex|otc. Omit to use SDK default.")
     ap.add_argument("--fred-api-key", default=None, help="Optional FRED API key for macro fetches.")
-    ap.add_argument("--include-cpi-vintages", action="store_true", help="Also fetch CPI vintages via ALFRED-style realtime observations.")
+    ap.add_argument(
+        "--include-cpi-vintages",
+        dest="include_cpi_vintages",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help=(
+            "Fetch CPI vintages via FRED ALFRED-style realtime observations. "
+            "Required by V2 §2A lines 2587-2593 for first-release replay PIT "
+            "accuracy (see docs/spec_code_data_audit_2026_05_15.md §3.2 / M2). "
+            "Default True; pass --no-include-cpi-vintages to skip."
+        ),
+    )
     ap.add_argument("--list-symbols", action="store_true", help="Only print symbol counts and exit.")
     ap.add_argument("--env-file", default=None, help="Optional .env file to load (for Alpaca creds).")
     ap.add_argument(
