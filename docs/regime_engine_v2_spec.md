@@ -1693,7 +1693,8 @@ the slice/commit that resolved it. Entries are append-only.
       deadlines plus official Treasury/GovInfo budget discovery.
     - `geopolitical_event` = approval-gated Group B candidate generated
       from GPR daily-index spikes, GDELT daily Event export volume,
-      and credential-gated ACLED / UCDP / HDX HAPI conflict evidence;
+      HDX HAPI conflict evidence, and TODO credential-gated
+      ACLED / Uppsala-UCDP conflict evidence once entitled API keys are present;
       still overlay-only, never auto-promoted.
     - **§4.2 `macro_event_score` expansion** — set extended from
       `{fed_week, cpi_week, nfp_week}` to also include
@@ -2943,7 +2944,7 @@ strictly parallel — never spliced with the real-OAS metric.
 Add labels to V1's calendar:
 - `budget_week` — event-source row from deterministic fiscal deadlines plus official Treasury/GovInfo budget discovery (relevant for India only when an India-specific official source is added)
 - `election_window` — default trading-day window `[-5, +10]` around the result date (matches the §2D YAML example below); configurable via `window_days` in the event row
-- `geopolitical_event` — approval-gated Group B candidate for war, sanctions, terrorism, conflict/protest shocks; generated from GPR, GDELT, ACLED, UCDP, and HDX HAPI evidence when those live sources are available, and rendered only when the approval overlay promotes it
+- `geopolitical_event` — approval-gated Group B candidate for war, sanctions, terrorism, conflict/protest shocks; generated from GPR, GDELT, and HDX HAPI evidence when those live sources are available; ACLED and Uppsala/UCDP evidence is TODO pending entitled API keys/account access; rendered only when the approval overlay promotes it
 - `global_rate_decision` — manual YAML for BOE / ECB / BOJ scheduled meetings; operator maintains the calendar (analogous to V1 FOMC pre-2021 pre-fetch path)
 
 YAML schema extension:
@@ -3196,7 +3197,7 @@ score = 1.0 if event_calendar.label in [
 ] else 0.0
 ```
 
-`geopolitical_event` is treated separately (high-impact ad-hoc — not part of the routine `macro_event_score`; expected to manifest through `correlation_to_one` / `deleveraging` / `crisis_vol` labels rather than through scheduled-event scoring). Its candidate evidence is generated from GPR, GDELT, ACLED, UCDP, and HDX HAPI when available, but source corroboration is not promotion; a human approval overlay remains mandatory.
+`geopolitical_event` is treated separately (high-impact ad-hoc — not part of the routine `macro_event_score`; expected to manifest through `correlation_to_one` / `deleveraging` / `crisis_vol` labels rather than through scheduled-event scoring). Its candidate evidence is generated from GPR, GDELT, and HDX HAPI when available; ACLED and Uppsala/UCDP evidence is TODO pending entitled API keys/account access. Source corroboration is not promotion; a human approval overlay remains mandatory.
 
 `hmm_probability_shift_score`:
 ```python
