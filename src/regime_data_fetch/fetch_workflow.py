@@ -8,9 +8,8 @@ from pathlib import Path
 import pandas as pd
 
 from regime_data_fetch.acquisition_store import AcquisitionStore
-from regime_data_fetch.aaii_sentiment import run_sentiment_fetch
 from regime_data_fetch.alpaca_daily import fetch_daily_bars_alpaca, verify_min_start_date
-from regime_data_fetch.fred import fetch_fred_series, fetch_fred_series_json, parse_fred_series_json
+from regime_data_fetch.fred import fetch_fred_series_json, parse_fred_series_json
 
 V2_V1_SHARED_ANCHORS = ["SPY", "RSP"]
 V2_SECTOR_SYMBOLS = [
@@ -151,6 +150,7 @@ def run_market_fetch(
     allow_vix_proxy: bool,
     verbose: bool,
     acquisition_db_path: Path | None = None,
+    artifact_store_root: str | Path | None = None,
 ) -> Path:
     if end < start:
         raise SystemExit("--end must be >= --start")
@@ -167,7 +167,7 @@ def run_market_fetch(
         vix_symbol=vix_symbol,
     )
 
-    store = AcquisitionStore(acquisition_db_path) if acquisition_db_path else None
+    store = AcquisitionStore(acquisition_db_path, artifact_store_root=artifact_store_root) if acquisition_db_path else None
     fetch_run = (
         store.start_fetch_run(
             fetch_type="market",
@@ -323,13 +323,14 @@ def run_macro_fetch(
     fred_api_key: str | None,
     include_cpi_vintages: bool,
     acquisition_db_path: Path | None = None,
+    artifact_store_root: str | Path | None = None,
 ) -> Path:
     out_dir.mkdir(parents=True, exist_ok=True)
     effective_fred_api_key = fred_api_key or os.environ.get("FRED_API_KEY", "").strip() or None
     if not effective_fred_api_key:
         raise SystemExit("Missing required FRED API key: pass --fred-api-key or set FRED_API_KEY")
 
-    store = AcquisitionStore(acquisition_db_path) if acquisition_db_path else None
+    store = AcquisitionStore(acquisition_db_path, artifact_store_root=artifact_store_root) if acquisition_db_path else None
     fetch_run = (
         store.start_fetch_run(
             fetch_type="macro",

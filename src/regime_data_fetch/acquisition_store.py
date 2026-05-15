@@ -7,6 +7,8 @@ import sqlite3
 from dataclasses import dataclass
 from pathlib import Path
 
+from regime_data_fetch.artifact_store import ArtifactStore, build_artifact_store
+
 
 def utc_now_iso() -> str:
     return dt.datetime.now(dt.timezone.utc).isoformat()
@@ -16,6 +18,7 @@ def utc_now_iso() -> str:
 class RecordedArtifact:
     artifact_id: int
     content_sha256: str
+    artifact_record_id: int | None = None
 
 
 @dataclass(frozen=True)
@@ -31,8 +34,19 @@ class ArtifactRecord:
 
 
 class AcquisitionStore:
-    def __init__(self, db_path: Path) -> None:
+    def __init__(
+        self,
+        db_path: Path,
+        *,
+        artifact_store: ArtifactStore | None = None,
+        artifact_store_root: str | Path | None = None,
+    ) -> None:
+        if artifact_store is not None and artifact_store_root is not None:
+            raise ValueError("pass either artifact_store or artifact_store_root, not both")
         self.db_path = db_path
+        self.artifact_store = artifact_store or (
+            build_artifact_store(artifact_store_root) if artifact_store_root is not None else None
+        )
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
         self._init_schema()
 
@@ -86,7 +100,8 @@ class AcquisitionStore:
         license_note: str | None = None,
         notes: str | None = None,
     ) -> RecordedArtifact:
-        sha256 = hashlib.sha256(content_text.encode("utf-8")).hexdigest()
+        payload = content_text.encode("utf-8")
+        sha256 = hashlib.sha256(payload).hexdigest()
         with self._connect() as conn:
             cursor = conn.execute(
                 """
@@ -126,7 +141,24 @@ class AcquisitionStore:
                     notes,
                 ),
             )
-            return RecordedArtifact(artifact_id=int(cursor.lastrowid), content_sha256=sha256)
+            artifact_id = int(cursor.lastrowid)
+        artifact_record = self._store_raw_artifact(
+            run_id=run_id,
+            source_name=source_name,
+            artifact_kind=artifact_kind,
+            source_identifier=source_identifier,
+            payload=payload,
+            content_sha256=sha256,
+            effective_date=effective_date,
+            start_date=start_date,
+            end_date=end_date,
+            notes=notes,
+        )
+        return RecordedArtifact(
+            artifact_id=artifact_id,
+            content_sha256=sha256,
+            artifact_record_id=artifact_record.artifact_record_id if artifact_record else None,
+        )
 
     def record_file_artifact(
         self,
@@ -204,7 +236,24 @@ class AcquisitionStore:
                     """,
                     (artifact_id, payload),
                 )
-            return RecordedArtifact(artifact_id=artifact_id, content_sha256=sha256)
+        artifact_record = self._store_raw_artifact(
+            run_id=run_id,
+            source_name=source_name,
+            artifact_kind=artifact_kind,
+            source_identifier=source_identifier,
+            payload=payload,
+            content_sha256=sha256,
+            effective_date=effective_date,
+            start_date=start_date,
+            end_date=end_date,
+            local_path=str(file_path),
+            notes=notes,
+        )
+        return RecordedArtifact(
+            artifact_id=artifact_id,
+            content_sha256=sha256,
+            artifact_record_id=artifact_record.artifact_record_id if artifact_record else None,
+        )
 
     def record_output(
         self,
@@ -215,9 +264,14 @@ class AcquisitionStore:
         row_count: int | None = None,
         min_date: str | None = None,
         max_date: str | None = None,
+        artifact_name: str | None = None,
+        source_name: str = "derived_output",
+        artifact_kind: str | None = None,
+        record_artifact: bool = True,
         notes: str | None = None,
-    ) -> None:
-        content_sha256 = hashlib.sha256(path.read_bytes()).hexdigest()
+    ) -> ArtifactRecord | None:
+        payload = path.read_bytes()
+        content_sha256 = hashlib.sha256(payload).hexdigest()
         with self._connect() as conn:
             conn.execute(
                 """
@@ -245,6 +299,30 @@ class AcquisitionStore:
                     notes,
                 ),
             )
+        if not record_artifact:
+            return None
+        key = str(
+            Path("canonical")
+            / _safe_path_part(output_kind)
+            / f"run_id={run_id}"
+            / path.name
+        )
+        stored = self.artifact_store.put_file(path, key) if self.artifact_store is not None else None
+        return self.record_artifact_record(
+            run_id=run_id,
+            name=artifact_name or output_kind,
+            stage="canonical",
+            uri=stored.uri if stored else key,
+            local_path=str(path),
+            content_sha256=stored.sha256 if stored else content_sha256,
+            size_bytes=stored.size_bytes if stored else len(payload),
+            source_name=source_name,
+            artifact_kind=artifact_kind or output_kind,
+            row_count=row_count,
+            min_date=min_date,
+            max_date=max_date,
+            notes=notes,
+        )
 
     def record_artifact_record(
         self,
@@ -538,3 +616,58 @@ class AcquisitionStore:
         for column_name, ddl in required_columns.items():
             if column_name not in existing:
                 conn.execute(ddl)
+
+    def _store_raw_artifact(
+        self,
+        *,
+        run_id: int,
+        source_name: str,
+        artifact_kind: str,
+        source_identifier: str,
+        payload: bytes,
+        content_sha256: str,
+        effective_date: str | None,
+        start_date: str | None,
+        end_date: str | None,
+        local_path: str | None = None,
+        notes: str | None = None,
+    ) -> ArtifactRecord | None:
+        suffix = _artifact_suffix(artifact_kind=artifact_kind, local_path=local_path)
+        key = str(
+            Path("raw_capture")
+            / _safe_path_part(source_name)
+            / f"run_id={run_id}"
+            / f"{_safe_path_part(source_identifier)}-{content_sha256[:12]}{suffix}"
+        )
+        stored = self.artifact_store.put_bytes(payload, key) if self.artifact_store is not None else None
+        return self.record_artifact_record(
+            run_id=run_id,
+            name=f"{source_name}_{artifact_kind}",
+            stage="raw_capture",
+            uri=stored.uri if stored else key,
+            local_path=local_path or key,
+            content_sha256=stored.sha256 if stored else content_sha256,
+            size_bytes=stored.size_bytes if stored else len(payload),
+            source_name=source_name,
+            artifact_kind=artifact_kind,
+            min_date=start_date or effective_date,
+            max_date=end_date or effective_date,
+            notes=notes,
+        )
+
+
+def _safe_path_part(value: str) -> str:
+    normalized = "".join(ch.lower() if ch.isalnum() else "_" for ch in value.strip())
+    normalized = "_".join(part for part in normalized.split("_") if part)
+    return normalized or "artifact"
+
+
+def _artifact_suffix(*, artifact_kind: str, local_path: str | None) -> str:
+    if local_path:
+        suffix = Path(local_path).suffix
+        if suffix:
+            return suffix
+    safe_kind = _safe_path_part(artifact_kind)
+    if safe_kind in {"json", "csv", "html", "txt", "xml", "cfb"}:
+        return f".{safe_kind}"
+    return ".bin"

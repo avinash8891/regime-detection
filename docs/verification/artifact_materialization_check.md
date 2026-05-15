@@ -5,7 +5,8 @@ engine data.
 
 1. Fetch or import source data into local `data/raw/`.
 2. Record acquisition metadata in SQLite with `--acquisition-db`.
-3. Upload report-listed outputs to the artifact store with `--artifact-store`.
+3. Upload raw captures and outputs to the artifact store with `--artifact-store`
+   and `--acquisition-db`. S3 roots require the optional `s3` extra.
 4. Emit a manifest with `--emit-manifest`.
 5. On another environment, run `scripts/materialize_regime_data.py` with that
    manifest before running profile, calibration, or V2 gate scripts.

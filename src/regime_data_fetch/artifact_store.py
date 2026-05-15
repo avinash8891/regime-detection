@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import shutil
+import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 from urllib.parse import urlparse
@@ -42,6 +43,9 @@ class ArtifactStore:
     def put_file(self, source_path: Path, key: str) -> StoredArtifact:
         raise NotImplementedError
 
+    def put_bytes(self, payload: bytes, key: str) -> StoredArtifact:
+        raise NotImplementedError
+
     def get_file(self, uri: str, destination_path: Path, *, expected_sha256: str) -> Path:
         raise NotImplementedError
 
@@ -70,6 +74,24 @@ class LocalArtifactStore(ArtifactStore):
         shutil.copy2(source_path, destination)
         return StoredArtifact(uri=relative_key, sha256=source_sha, size_bytes=size_bytes)
 
+    def put_bytes(self, payload: bytes, key: str) -> StoredArtifact:
+        relative_key = _normalize_key(key)
+        destination = self.root / relative_key
+        payload_sha = sha256_bytes(payload)
+        size_bytes = len(payload)
+
+        if destination.exists():
+            existing_sha = sha256_file(destination)
+            if existing_sha != payload_sha:
+                raise ArtifactOverwriteError(
+                    f"artifact key already exists with different bytes: {relative_key}"
+                )
+            return StoredArtifact(uri=relative_key, sha256=existing_sha, size_bytes=destination.stat().st_size)
+
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        _write_bytes_atomically(destination, payload)
+        return StoredArtifact(uri=relative_key, sha256=payload_sha, size_bytes=size_bytes)
+
     def get_file(self, uri: str, destination_path: Path, *, expected_sha256: str) -> Path:
         relative_key = _normalize_key(uri)
         source = self.root / relative_key
@@ -83,13 +105,19 @@ class LocalArtifactStore(ArtifactStore):
             )
 
         destination_path.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copy2(source, destination_path)
-        copied_sha = sha256_file(destination_path)
-        if copied_sha != expected_sha256:
-            raise ArtifactHashMismatchError(
-                f"sha256 mismatch after materializing {relative_key}: "
-                f"expected {expected_sha256}, got {copied_sha}"
-            )
+        tmp_path = _temporary_path(destination_path)
+        try:
+            shutil.copy2(source, tmp_path)
+            copied_sha = sha256_file(tmp_path)
+            if copied_sha != expected_sha256:
+                raise ArtifactHashMismatchError(
+                    f"sha256 mismatch after materializing {relative_key}: "
+                    f"expected {expected_sha256}, got {copied_sha}"
+                )
+            tmp_path.replace(destination_path)
+        except Exception:
+            tmp_path.unlink(missing_ok=True)
+            raise
         return destination_path
 
 
@@ -149,17 +177,51 @@ class S3ArtifactStore(ArtifactStore):
         )
         return StoredArtifact(uri=relative_key, sha256=sha, size_bytes=size_bytes)
 
+    def put_bytes(self, payload: bytes, key: str) -> StoredArtifact:
+        relative_key = _normalize_key(key)
+        object_key = _join_s3_key(self.prefix, relative_key)
+        sha = sha256_bytes(payload)
+        size_bytes = len(payload)
+        try:
+            existing = self.client.head_object(Bucket=self.bucket, Key=object_key)
+        except Exception as exc:  # botocore is optional; avoid importing its exception type.
+            response = getattr(exc, "response", {})
+            error_code = str(response.get("Error", {}).get("Code", ""))
+            if error_code not in {"404", "NoSuchKey", "NotFound"}:
+                raise
+        else:
+            existing_sha = existing.get("Metadata", {}).get("sha256")
+            existing_size = int(existing.get("ContentLength", -1))
+            if existing_sha == sha and existing_size == size_bytes:
+                return StoredArtifact(uri=relative_key, sha256=sha, size_bytes=size_bytes)
+            raise ArtifactOverwriteError(
+                f"s3 artifact key already exists with different bytes: s3://{self.bucket}/{object_key}"
+            )
+        self.client.put_object(
+            Bucket=self.bucket,
+            Key=object_key,
+            Body=payload,
+            Metadata={"sha256": sha},
+        )
+        return StoredArtifact(uri=relative_key, sha256=sha, size_bytes=size_bytes)
+
     def get_file(self, uri: str, destination_path: Path, *, expected_sha256: str) -> Path:
         relative_key = _normalize_key(uri)
         object_key = _join_s3_key(self.prefix, relative_key)
         destination_path.parent.mkdir(parents=True, exist_ok=True)
-        self.client.download_file(self.bucket, object_key, str(destination_path))
-        actual_sha = sha256_file(destination_path)
-        if actual_sha != expected_sha256:
-            raise ArtifactHashMismatchError(
-                f"sha256 mismatch for s3://{self.bucket}/{object_key}: "
-                f"expected {expected_sha256}, got {actual_sha}"
-            )
+        tmp_path = _temporary_path(destination_path)
+        try:
+            self.client.download_file(self.bucket, object_key, str(tmp_path))
+            actual_sha = sha256_file(tmp_path)
+            if actual_sha != expected_sha256:
+                raise ArtifactHashMismatchError(
+                    f"sha256 mismatch for s3://{self.bucket}/{object_key}: "
+                    f"expected {expected_sha256}, got {actual_sha}"
+                )
+            tmp_path.replace(destination_path)
+        except Exception:
+            tmp_path.unlink(missing_ok=True)
+            raise
         return destination_path
 
 
@@ -177,3 +239,25 @@ def _normalize_key(key: str) -> str:
 
 def _join_s3_key(prefix: str, key: str) -> str:
     return "/".join(part.strip("/") for part in (prefix, key) if part.strip("/"))
+
+
+def _temporary_path(destination_path: Path) -> Path:
+    destination_path.parent.mkdir(parents=True, exist_ok=True)
+    handle = tempfile.NamedTemporaryFile(
+        delete=False,
+        dir=destination_path.parent,
+        prefix=f".{destination_path.name}.",
+        suffix=".tmp",
+    )
+    handle.close()
+    return Path(handle.name)
+
+
+def _write_bytes_atomically(destination_path: Path, payload: bytes) -> None:
+    tmp_path = _temporary_path(destination_path)
+    try:
+        tmp_path.write_bytes(payload)
+        tmp_path.replace(destination_path)
+    except Exception:
+        tmp_path.unlink(missing_ok=True)
+        raise

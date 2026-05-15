@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import sys
+import types
 from pathlib import Path
 
 import pytest
@@ -8,6 +10,7 @@ from regime_data_fetch.artifact_store import (
     ArtifactHashMismatchError,
     ArtifactOverwriteError,
     LocalArtifactStore,
+    S3ArtifactStore,
     sha256_bytes,
     sha256_file,
 )
@@ -65,3 +68,24 @@ def test_local_artifact_store_allows_idempotent_same_bytes_for_existing_key(tmp_
 
     assert duplicate == original
     assert duplicate.sha256 == sha256_bytes(b"same")
+
+
+def test_s3_artifact_store_removes_temp_file_when_download_hash_mismatches(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class FakeS3Client:
+        def download_file(self, bucket: str, key: str, filename: str) -> None:
+            del bucket, key
+            Path(filename).write_bytes(b"corrupt")
+
+    fake_boto3 = types.SimpleNamespace(client=lambda service: FakeS3Client())
+    monkeypatch.setitem(sys.modules, "boto3", fake_boto3)
+    store = S3ArtifactStore("s3://regime-data/artifacts")
+    destination = tmp_path / "data" / "raw" / "macro.parquet"
+
+    with pytest.raises(ArtifactHashMismatchError, match="sha256 mismatch"):
+        store.get_file("canonical/macro.parquet", destination, expected_sha256=sha256_bytes(b"good"))
+
+    assert not destination.exists()
+    assert list(destination.parent.glob(".macro.parquet.*.tmp")) == []

@@ -29,6 +29,9 @@ python3 -m pytest tests/test_historical_walkforward.py -m slow -q
 
 Production data is not stored in Git. `data/raw/` is a local materialized cache
 rebuilt from a manifest that points at durable artifacts in object storage.
+When `--acquisition-db` and `--artifact-store` are both set, acquisition records
+persist raw captures and derived outputs to the same artifact store.
+Use `pip install ".[s3]"` before passing an `s3://...` artifact store.
 
 ```bash
 python3 scripts/fetch_regime_engine_v1_data.py \

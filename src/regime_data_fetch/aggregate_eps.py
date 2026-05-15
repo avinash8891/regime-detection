@@ -241,6 +241,7 @@ def run_aggregate_eps_auto_fetch(
     out_dir: Path,
     source_url: str = SOURCE_URL,
     acquisition_db_path: Path | None = None,
+    artifact_store_root: str | Path | None = None,
 ) -> Path:
     """Fetch + parse the latest S&P aggregate-EPS workbook.
 
@@ -271,6 +272,7 @@ def run_aggregate_eps_auto_fetch(
         out_dir=out_dir,
         workbook_path=workbook_path,
         acquisition_db_path=acquisition_db_path,
+        artifact_store_root=artifact_store_root,
     )
 
 
@@ -422,9 +424,10 @@ def run_aggregate_eps_fetch(
     out_dir: Path,
     workbook_path: Path,
     acquisition_db_path: Path | None = None,
+    artifact_store_root: str | Path | None = None,
 ) -> Path:
     out_dir.mkdir(parents=True, exist_ok=True)
-    store = AcquisitionStore(acquisition_db_path) if acquisition_db_path else None
+    store = AcquisitionStore(acquisition_db_path, artifact_store_root=artifact_store_root) if acquisition_db_path else None
     fetch_run = (
         store.start_fetch_run(
             fetch_type="aggregate_eps",
@@ -624,11 +627,12 @@ def run_wayback_aggregate_eps_fetch(
     to_date: dt.date | None = None,
     stop_after_first_success: bool = False,
     acquisition_db_path: Path | None = None,
+    artifact_store_root: str | Path | None = None,
     cdx_fetcher=fetch_wayback_cdx,
     snapshot_fetcher=fetch_wayback_snapshot_bytes,
 ) -> Path:
     out_dir.mkdir(parents=True, exist_ok=True)
-    store = AcquisitionStore(acquisition_db_path) if acquisition_db_path else None
+    store = AcquisitionStore(acquisition_db_path, artifact_store_root=artifact_store_root) if acquisition_db_path else None
     fetch_run = (
         store.start_fetch_run(
             fetch_type="aggregate_eps_wayback",

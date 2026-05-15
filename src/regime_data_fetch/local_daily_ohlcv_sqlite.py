@@ -17,6 +17,7 @@ def run_local_daily_ohlcv_sqlite_import(
     out_dir: Path,
     source_dir: Path,
     acquisition_db_path: Path,
+    artifact_store_root: str | Path | None = None,
 ) -> Path:
     if not source_dir.exists():
         raise SystemExit(f"Missing OHLCV source directory: {source_dir}")
@@ -26,7 +27,7 @@ def run_local_daily_ohlcv_sqlite_import(
         raise SystemExit(f"No parquet files found under: {source_dir}")
 
     out_dir.mkdir(parents=True, exist_ok=True)
-    store = AcquisitionStore(acquisition_db_path)
+    store = AcquisitionStore(acquisition_db_path, artifact_store_root=artifact_store_root)
     fetch_run = store.start_fetch_run(
         fetch_type="daily_ohlcv_local_sqlite",
         params={

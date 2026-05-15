@@ -18,6 +18,7 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Materialize regime data artifacts from a manifest.")
     parser.add_argument("--manifest", required=True, type=Path, help="Manifest YAML path.")
     parser.add_argument("--local-root", required=True, type=Path, help="Local data/raw root to materialize into.")
+    parser.add_argument("--repo-root", default=REPO_ROOT, type=Path, help="Repo root for repo-relative manifest paths.")
     parser.add_argument("--store-root", default=None, help="Override manifest storage_root.")
     parser.add_argument("--required-for", default=None, help="Only materialize artifacts required for this use case.")
     args = parser.parse_args(argv)
@@ -25,6 +26,7 @@ def main(argv: list[str] | None = None) -> int:
     materialized = materialize_manifest(
         manifest_path=args.manifest,
         local_root=args.local_root,
+        repo_root=args.repo_root,
         store_root=args.store_root,
         required_for=args.required_for,
     )

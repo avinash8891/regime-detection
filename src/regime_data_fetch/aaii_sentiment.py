@@ -11,7 +11,6 @@ from pathlib import Path
 import pandas as pd
 
 from regime_data_fetch.acquisition_store import AcquisitionStore
-from regime_data_fetch.artifact_store import sha256_file
 
 AAII_SENTIMENT_URL = "https://www.aaii.com/sentimentsurvey/sent_results"
 AAII_SENTIMENT_PARQUET = "aaii_sentiment.parquet"
@@ -208,6 +207,7 @@ def run_sentiment_fetch(
     out_dir: Path,
     url: str = AAII_SENTIMENT_URL,
     acquisition_db_path: Path | None = None,
+    artifact_store_root: str | Path | None = None,
 ) -> Path:
     """Orchestrate the AAII sentiment fetch and write a report JSON."""
     sentiment_dir = out_dir / "sentiment"
@@ -215,7 +215,7 @@ def run_sentiment_fetch(
     out_path = sentiment_dir / AAII_SENTIMENT_PARQUET
     seed_path = sentiment_dir / AAII_SENTIMENT_SEED_CFB
 
-    store = AcquisitionStore(acquisition_db_path) if acquisition_db_path else None
+    store = AcquisitionStore(acquisition_db_path, artifact_store_root=artifact_store_root) if acquisition_db_path else None
     fetch_run = (
         store.start_fetch_run(
             fetch_type="sentiment",
@@ -244,44 +244,33 @@ def run_sentiment_fetch(
         if store and fetch_run:
             raw_record = None
             if seed_path.exists():
-                raw_sha = sha256_file(seed_path)
-                raw_record = store.record_artifact_record(
+                raw_artifact = store.record_file_artifact(
                     run_id=fetch_run.run_id,
-                    name="aaii_sentiment_historical_seed",
-                    stage="raw_capture",
-                    uri=f"raw_capture/aaii/{fetch_run.run_id}/{AAII_SENTIMENT_SEED_CFB}",
-                    local_path=str(seed_path),
-                    content_sha256=raw_sha,
-                    size_bytes=seed_path.stat().st_size,
                     source_name="aaii",
                     artifact_kind="cfb",
-                    min_date=report["min_date"],
-                    max_date=report["max_date"],
+                    source_identifier=AAII_SENTIMENT_SEED_CFB,
+                    file_path=seed_path,
+                    start_date=report["min_date"],
+                    end_date=report["max_date"],
                     notes="AAII historical seed file used when canonical parquet is bootstrapped locally",
                 )
-            canonical_sha = sha256_file(out_path)
-            canonical_record = store.record_artifact_record(
+                raw_record = raw_artifact.artifact_record_id
+            canonical_record = store.record_output(
                 run_id=fetch_run.run_id,
-                name="aaii_sentiment",
-                stage="canonical",
-                uri=(
-                    "canonical/sentiment/aaii_sentiment/"
-                    f"as_of={report['max_date']}/{AAII_SENTIMENT_PARQUET}"
-                ),
-                local_path=str(out_path),
-                content_sha256=canonical_sha,
-                size_bytes=out_path.stat().st_size,
-                source_name="aaii",
-                artifact_kind="parquet",
+                output_kind="aaii_sentiment_parquet",
+                path=out_path,
                 row_count=int(len(df)),
                 min_date=report["min_date"],
                 max_date=report["max_date"],
-                schema_version="aaii_sentiment.v1",
+                artifact_name="aaii_sentiment",
+                source_name="aaii",
+                artifact_kind="parquet",
+                notes="AAII sentiment canonical parquet",
             )
-            if raw_record is not None:
+            if raw_record is not None and canonical_record is not None:
                 store.record_artifact_lineage(
                     output_artifact_record_id=canonical_record.artifact_record_id,
-                    input_artifact_record_id=raw_record.artifact_record_id,
+                    input_artifact_record_id=raw_record,
                     transform_name="normalize_aaii_sentiment",
                 )
             if report["max_date"]:
@@ -293,20 +282,12 @@ def run_sentiment_fetch(
                 )
             store.record_output(
                 run_id=fetch_run.run_id,
-                output_kind="aaii_sentiment_parquet",
-                path=out_path,
-                row_count=int(len(df)),
-                min_date=report["min_date"],
-                max_date=report["max_date"],
-                notes="AAII sentiment canonical parquet",
-            )
-            store.record_output(
-                run_id=fetch_run.run_id,
                 output_kind="aaii_sentiment_fetch_report",
                 path=report_path,
                 row_count=int(len(df)),
                 min_date=report["min_date"],
                 max_date=report["max_date"],
+                record_artifact=False,
                 notes="AAII sentiment fetch report",
             )
             store.finish_fetch_run(run_id=fetch_run.run_id, status="ok")

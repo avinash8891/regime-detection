@@ -18,6 +18,7 @@ def materialize_manifest(
     *,
     manifest_path: Path,
     local_root: Path,
+    repo_root: Path | None = None,
     store_root: str | None = None,
     required_for: str | None = None,
 ) -> list[MaterializedArtifact]:
@@ -29,7 +30,7 @@ def materialize_manifest(
     store = build_artifact_store(store_root or manifest.storage_root)
     materialized: list[MaterializedArtifact] = []
     for artifact in artifacts:
-        destination = destination_for(artifact, local_root)
+        destination = destination_for(artifact, local_root, repo_root=repo_root)
         store.get_file(artifact.uri, destination, expected_sha256=artifact.sha256)
         materialized.append(
             MaterializedArtifact(
@@ -41,19 +42,21 @@ def materialize_manifest(
     return materialized
 
 
-def destination_for(artifact: ManifestArtifact, local_root: Path) -> Path:
+def destination_for(artifact: ManifestArtifact, local_root: Path, *, repo_root: Path | None = None) -> Path:
     local_path = Path(artifact.local_path)
     if local_path.parts[:2] == ("data", "raw"):
         relative = Path(*local_path.parts[2:])
-    else:
-        relative = local_path
-    return local_root / relative
+        return local_root / relative
+    if repo_root is None:
+        return local_root / local_path
+    return repo_root / local_path
 
 
 def materialize_if_requested(
     *,
     manifest_path: Path | None,
     local_root: Path,
+    repo_root: Path | None = None,
     store_root: str | None,
     required_for: str,
 ) -> list[MaterializedArtifact]:
@@ -62,6 +65,7 @@ def materialize_if_requested(
     return materialize_manifest(
         manifest_path=manifest_path,
         local_root=local_root,
+        repo_root=repo_root,
         store_root=store_root,
         required_for=required_for,
     )

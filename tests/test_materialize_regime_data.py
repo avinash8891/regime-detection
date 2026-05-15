@@ -83,3 +83,37 @@ def test_materialize_manifest_rejects_hash_mismatch_before_partial_success(tmp_p
         materialize_manifest(manifest_path=manifest_path, local_root=tmp_path / "data" / "raw")
 
     assert not (tmp_path / "data" / "raw" / "macro" / "fred_macro_series.parquet").exists()
+
+
+def test_materialize_manifest_restores_repo_relative_paths_to_repo_root(tmp_path: Path) -> None:
+    store_root = tmp_path / "store"
+    source = store_root / "canonical" / "configs" / "events" / "us_events.yaml"
+    source.parent.mkdir(parents=True)
+    source.write_text("events: []\n")
+    manifest = ArtifactManifest(
+        artifact_set="regime_engine_2026-05-15",
+        created_at_utc="2026-05-15T12:00:00Z",
+        storage_root=str(store_root),
+        artifacts=[
+            ManifestArtifact.from_dict(
+                {
+                    "name": "events",
+                    "stage": "canonical",
+                    "uri": "canonical/configs/events/us_events.yaml",
+                    "local_path": "configs/events/us_events.yaml",
+                    "sha256": "fb9b2e59663fe1741488ac52428726f13fd98f2f28cc73db64f022c8ae629999",
+                    "required_for": ["profile_engine_30d"],
+                }
+            )
+        ],
+    )
+    manifest_path = tmp_path / "manifest.yaml"
+    write_manifest(manifest, manifest_path)
+
+    materialize_manifest(
+        manifest_path=manifest_path,
+        local_root=tmp_path / "repo" / "data" / "raw",
+        repo_root=tmp_path / "repo",
+    )
+
+    assert (tmp_path / "repo" / "configs" / "events" / "us_events.yaml").read_text() == "events: []\n"

@@ -17,13 +17,14 @@ def emit_manifest_for_report_paths(
     manifest_path: Path,
     artifact_set: str,
     required_for: list[str],
+    repo_root: Path | None = None,
 ) -> ArtifactManifest:
     store = build_artifact_store(artifact_store_root)
     artifacts: list[ManifestArtifact] = []
     seen_local_paths: set[str] = set()
     for report_path in report_paths:
         for name, path in _iter_existing_report_files(report_path):
-            local_path = _local_path_for(path=path, out_dir=out_dir)
+            local_path = _local_path_for(path=path, out_dir=out_dir, repo_root=repo_root)
             if local_path is None:
                 continue
             if local_path in seen_local_paths:
@@ -78,13 +79,18 @@ def _iter_existing_report_files(report_path: Path) -> Iterable[tuple[str, Path]]
                 yield child_name, child
 
 
-def _local_path_for(*, path: Path, out_dir: Path) -> str | None:
+def _local_path_for(*, path: Path, out_dir: Path, repo_root: Path | None = None) -> str | None:
     path = path.resolve()
     out_dir = out_dir.resolve()
     try:
         relative = path.relative_to(out_dir)
     except ValueError:
-        return None
+        if repo_root is None:
+            return None
+        try:
+            return str(path.relative_to(repo_root.resolve()))
+        except ValueError:
+            return None
     return str(Path("data") / "raw" / relative)
 
 

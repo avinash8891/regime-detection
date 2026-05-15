@@ -106,3 +106,28 @@ def test_emit_manifest_for_report_paths_skips_files_outside_out_dir(tmp_path: Pa
             artifact_set="skip-outside",
             required_for=[],
         )
+
+
+def test_emit_manifest_for_report_paths_exports_repo_relative_event_config(tmp_path: Path) -> None:
+    repo_root = tmp_path / "repo"
+    out_dir = repo_root / "data" / "raw"
+    event_config = repo_root / "configs" / "events" / "us_events.yaml"
+    report = out_dir / "events" / "us_event_calendar_report.json"
+    event_config.parent.mkdir(parents=True)
+    report.parent.mkdir(parents=True)
+    event_config.write_text("events: []\n")
+    report.write_text(json.dumps({"paths": {"us_events_yaml": str(event_config)}}))
+
+    manifest = emit_manifest_for_report_paths(
+        report_paths=[report],
+        out_dir=out_dir,
+        repo_root=repo_root,
+        artifact_store_root=str(tmp_path / "store"),
+        manifest_path=tmp_path / "manifest.yaml",
+        artifact_set="events",
+        required_for=["profile_engine_30d"],
+    )
+
+    assert manifest.artifacts[0].local_path == "configs/events/us_events.yaml"
+    assert manifest.artifacts[0].uri == "canonical/configs/events/us_events.yaml"
+    assert (tmp_path / "store" / "canonical" / "configs" / "events" / "us_events.yaml").read_text() == "events: []\n"

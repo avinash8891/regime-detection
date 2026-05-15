@@ -18,7 +18,8 @@ from regime_data_fetch.cli_common import load_env_file, parse_date
 from regime_data_fetch.bls_schedule import build_bls_local_archive_page_fetcher
 from regime_data_fetch.event_calendar import run_us_event_calendar_fetch
 from regime_data_fetch.artifact_export import emit_manifest_for_report_paths
-from regime_data_fetch.fetch_workflow import run_macro_fetch, run_market_fetch, run_sentiment_fetch
+from regime_data_fetch.aaii_sentiment import run_sentiment_fetch
+from regime_data_fetch.fetch_workflow import run_macro_fetch, run_market_fetch
 from regime_data_fetch.aggregate_eps import (
     run_aggregate_eps_fetch,
     run_aggregate_eps_auto_fetch,
@@ -152,6 +153,8 @@ def main() -> int:
         return 0
 
     report_paths: list[Path] = []
+    acquisition_db_path = Path(args.acquisition_db) if args.acquisition_db else None
+    acquisition_artifact_store_root = args.artifact_store if acquisition_db_path and args.artifact_store else None
 
     if args.fetch in {"market", "all"}:
         stocks = _resolve_stock_universe(args) if args.scope in {"v1", "all"} else []
@@ -166,7 +169,8 @@ def main() -> int:
             vix_symbol=args.vix_symbol,
             allow_vix_proxy=args.allow_vix_proxy,
             verbose=args.verbose,
-            acquisition_db_path=Path(args.acquisition_db) if args.acquisition_db else None,
+            acquisition_db_path=acquisition_db_path,
+            artifact_store_root=acquisition_artifact_store_root,
         )
         report_paths.append(market_report)
         print(str(market_report))
@@ -178,7 +182,8 @@ def main() -> int:
             end=end,
             fred_api_key=args.fred_api_key,
             include_cpi_vintages=args.include_cpi_vintages,
-            acquisition_db_path=Path(args.acquisition_db) if args.acquisition_db else None,
+            acquisition_db_path=acquisition_db_path,
+            artifact_store_root=acquisition_artifact_store_root,
         )
         report_paths.append(macro_report)
         print(str(macro_report))
@@ -186,7 +191,8 @@ def main() -> int:
     if args.fetch in {"sentiment", "all"}:
         sentiment_report = run_sentiment_fetch(
             out_dir=out_dir,
-            acquisition_db_path=Path(args.acquisition_db) if args.acquisition_db else None,
+            acquisition_db_path=acquisition_db_path,
+            artifact_store_root=acquisition_artifact_store_root,
         )
         report_paths.append(sentiment_report)
         print(str(sentiment_report))
@@ -201,7 +207,8 @@ def main() -> int:
             repo_root=REPO_ROOT,
             fred_api_key=args.fred_api_key or None,
             bls_page_fetcher=bls_page_fetcher,
-            acquisition_db_path=Path(args.acquisition_db) if args.acquisition_db else None,
+            acquisition_db_path=acquisition_db_path,
+            artifact_store_root=acquisition_artifact_store_root,
             bls_start_year=args.bls_start_year,
             bls_end_year=args.bls_end_year,
             include_v2_curated_candidates=args.include_v2_curated_event_candidates,
@@ -214,7 +221,8 @@ def main() -> int:
         pmi_report = run_pmi_fetch(
             out_dir=out_dir,
             as_of_date=end,
-            acquisition_db_path=Path(args.acquisition_db) if args.acquisition_db else None,
+            acquisition_db_path=acquisition_db_path,
+            artifact_store_root=acquisition_artifact_store_root,
             manual_history_dir=DEFAULT_MANUAL_PMI_HISTORY_DIR,
         )
         report_paths.append(pmi_report)
@@ -223,7 +231,8 @@ def main() -> int:
     if args.fetch in {"pit", "all"}:
         pit_report = run_pit_constituents_fetch(
             out_dir=out_dir,
-            acquisition_db_path=Path(args.acquisition_db) if args.acquisition_db else None,
+            acquisition_db_path=acquisition_db_path,
+            artifact_store_root=acquisition_artifact_store_root,
         )
         report_paths.append(pit_report)
         print(str(pit_report))
@@ -231,7 +240,8 @@ def main() -> int:
     if args.fetch in {"fomc", "all"}:
         fomc_report = run_fomc_minutes_fetch(
             out_dir=out_dir,
-            acquisition_db_path=Path(args.acquisition_db) if args.acquisition_db else None,
+            acquisition_db_path=acquisition_db_path,
+            artifact_store_root=acquisition_artifact_store_root,
         )
         report_paths.append(fomc_report)
         print(str(fomc_report))
@@ -239,7 +249,8 @@ def main() -> int:
     if args.fetch in {"powell", "all"}:
         powell_report = run_powell_speeches_fetch(
             out_dir=out_dir,
-            acquisition_db_path=Path(args.acquisition_db) if args.acquisition_db else None,
+            acquisition_db_path=acquisition_db_path,
+            artifact_store_root=acquisition_artifact_store_root,
         )
         report_paths.append(powell_report)
         print(str(powell_report))
@@ -250,7 +261,8 @@ def main() -> int:
         eps_report = run_aggregate_eps_fetch(
             out_dir=out_dir,
             workbook_path=Path(args.eps_workbook),
-            acquisition_db_path=Path(args.acquisition_db) if args.acquisition_db else None,
+            acquisition_db_path=acquisition_db_path,
+            artifact_store_root=acquisition_artifact_store_root,
         )
         report_paths.append(eps_report)
         print(str(eps_report))
@@ -265,7 +277,8 @@ def main() -> int:
         # docstring for the 4-week revision-direction rationale.
         eps_auto_report = run_aggregate_eps_auto_fetch(
             out_dir=out_dir,
-            acquisition_db_path=Path(args.acquisition_db) if args.acquisition_db else None,
+            acquisition_db_path=acquisition_db_path,
+            artifact_store_root=acquisition_artifact_store_root,
         )
         report_paths.append(eps_auto_report)
         print(str(eps_auto_report))
@@ -277,7 +290,8 @@ def main() -> int:
             from_date=parse_date(args.eps_wayback_from) if args.eps_wayback_from else None,
             to_date=parse_date(args.eps_wayback_to) if args.eps_wayback_to else None,
             stop_after_first_success=args.eps_wayback_stop_after_first_success,
-            acquisition_db_path=Path(args.acquisition_db) if args.acquisition_db else None,
+            acquisition_db_path=acquisition_db_path,
+            artifact_store_root=acquisition_artifact_store_root,
         )
         report_paths.append(eps_wayback_report)
         print(str(eps_wayback_report))
@@ -288,7 +302,8 @@ def main() -> int:
         usd_index_report = run_local_usd_index_import(
             out_dir=out_dir,
             csv_path=Path(args.usd_index_csv),
-            acquisition_db_path=Path(args.acquisition_db) if args.acquisition_db else None,
+            acquisition_db_path=acquisition_db_path,
+            artifact_store_root=acquisition_artifact_store_root,
         )
         report_paths.append(usd_index_report)
         print(str(usd_index_report))
@@ -302,6 +317,7 @@ def main() -> int:
             out_dir=out_dir,
             source_dir=Path(args.daily_ohlcv_dir),
             acquisition_db_path=Path(args.acquisition_db),
+            artifact_store_root=acquisition_artifact_store_root,
         )
         report_paths.append(ohlcv_import_report)
         print(str(ohlcv_import_report))
@@ -314,6 +330,7 @@ def main() -> int:
             manifest_path=Path(args.emit_manifest),
             artifact_set=args.manifest_artifact_set or f"regime_engine_{end.isoformat()}",
             required_for=required_for,
+            repo_root=REPO_ROOT,
         )
         print(str(Path(args.emit_manifest)))
         print(f"manifest_artifacts={len(manifest.artifacts)}")

@@ -4,6 +4,7 @@ import sqlite3
 from pathlib import Path
 
 from regime_data_fetch.acquisition_store import AcquisitionStore
+from regime_data_fetch.artifact_store import LocalArtifactStore
 
 
 def test_acquisition_store_records_artifact_ledger_checkpoint_and_lineage(tmp_path: Path) -> None:
@@ -118,3 +119,50 @@ def test_source_checkpoint_upserts_latest_successful_run(tmp_path: Path) -> None
     )
 
     assert store.get_source_checkpoint(source_name="fred", cursor_key="DGS10") == "2026-05-15"
+
+
+def test_acquisition_store_uploads_raw_and_output_artifacts_to_configured_store(tmp_path: Path) -> None:
+    db_path = tmp_path / "acquisition.db"
+    artifact_root = tmp_path / "artifact-store"
+    store = AcquisitionStore(db_path, artifact_store=LocalArtifactStore(artifact_root))
+    run = store.start_fetch_run(fetch_type="sentiment", params={"source": "aaii"})
+
+    raw = store.record_text_artifact(
+        run_id=run.run_id,
+        source_name="aaii",
+        artifact_kind="html",
+        source_identifier="https://www.aaii.com/sentimentsurvey",
+        content_text="<html>survey</html>",
+        effective_date="2026-05-15",
+    )
+    output_path = tmp_path / "data" / "raw" / "sentiment" / "aaii_sentiment.parquet"
+    output_path.parent.mkdir(parents=True)
+    output_path.write_bytes(b"canonical")
+    canonical = store.record_output(
+        run_id=run.run_id,
+        output_kind="aaii_sentiment_parquet",
+        path=output_path,
+        row_count=1,
+        min_date="2026-05-15",
+        max_date="2026-05-15",
+    )
+
+    assert raw.artifact_record_id is not None
+    assert canonical is not None
+    assert list((artifact_root / "raw_capture" / "aaii" / f"run_id={run.run_id}").iterdir())[0].read_text() == "<html>survey</html>"
+    assert (
+        artifact_root
+        / "canonical"
+        / "aaii_sentiment_parquet"
+        / f"run_id={run.run_id}"
+        / "aaii_sentiment.parquet"
+    ).read_bytes() == b"canonical"
+
+    with sqlite3.connect(db_path) as conn:
+        rows = conn.execute(
+            "SELECT stage, uri, content_sha256 FROM artifact_records ORDER BY artifact_record_id"
+        ).fetchall()
+
+    assert [row[0] for row in rows] == ["raw_capture", "canonical"]
+    assert rows[0][1].startswith(f"raw_capture/aaii/run_id={run.run_id}/")
+    assert rows[1][1] == f"canonical/aaii_sentiment_parquet/run_id={run.run_id}/aaii_sentiment.parquet"
