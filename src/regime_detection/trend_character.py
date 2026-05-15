@@ -75,6 +75,10 @@ class TrendCharacterFeatures:
     followthrough_rate: pd.Series
 
 
+def _ev_float(x: float) -> float:
+    return round(float(x), 8)
+
+
 def _wilder_ewm(series: pd.Series, n: int) -> pd.Series:
     return series.ewm(alpha=1 / n, adjust=False, min_periods=n).mean()
 
@@ -325,14 +329,15 @@ def raw_label_for_day(
         label = "transition"
 
     return label, {
-        "breakout_expansion": breakout_expansion,
+        "adx_14": _ev_float(adx),
+        "return_10d": _ev_float(ret10),
+        "return_21d": _ev_float(ret21),
+        "prior_63d_drawdown": _ev_float(prior_dd),
         "recovery_attempt": recovery_attempt,
         "trending": trending,
-        "range_bound": range_bound,
         "chop": chop,
-        "transition": not (
-            breakout_expansion or recovery_attempt or trending or range_bound or chop
-        ),
+        "range_bound": range_bound,
+        "breakout_expansion": breakout_expansion,
     }
 
 
@@ -397,12 +402,15 @@ def build_raw_outputs(
             continue
         evidence.append(
             {
-                "breakout_expansion": bool(breakout_expansion.iat[idx]),
+                "adx_14": _ev_float(adx.iat[idx]),
+                "return_10d": _ev_float(ret10.iat[idx]),
+                "return_21d": _ev_float(ret21.iat[idx]),
+                "prior_63d_drawdown": _ev_float(prior_dd.iat[idx]),
                 "recovery_attempt": bool(recovery_attempt.iat[idx]),
                 "trending": bool(trending.iat[idx]),
-                "range_bound": bool(range_bound.iat[idx]),
                 "chop": bool(chop.iat[idx]),
-                "transition": bool(transition.iat[idx]),
+                "range_bound": bool(range_bound.iat[idx]),
+                "breakout_expansion": bool(breakout_expansion.iat[idx]),
             }
         )
 

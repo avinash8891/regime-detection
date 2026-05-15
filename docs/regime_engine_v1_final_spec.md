@@ -1085,10 +1085,13 @@ Modifier:
     "stable_label": "bull",
     "active_label": "bull",
     "evidence": {
+      "sma_50": 482.3,
+      "sma_200": 461.1,
+      "return_63d": 0.072,
       "close_gt_sma50": true,
       "close_gt_sma200": true,
       "sma50_gt_sma200": true,
-      "return_63d": 0.072
+      "within_5pct_sma200": true
     },
     "data_quality": {
       "status": "ok",
@@ -1104,7 +1107,13 @@ Modifier:
     "evidence": {
       "adx_14": 17.8,
       "return_10d": 0.014,
-      "return_21d": 0.028
+      "return_21d": 0.028,
+      "prior_63d_drawdown": -0.032,
+      "recovery_attempt": false,
+      "trending": false,
+      "chop": true,
+      "range_bound": false,
+      "breakout_expansion": false
     },
     "data_quality": {
       "status": "ok",
@@ -1120,7 +1129,10 @@ Modifier:
     "evidence": {
       "realized_vol_21d": 0.142,
       "realized_vol_percentile_252d": 0.52,
-      "vix_percentile_252d": 0.48
+      "vix_percentile_252d": 0.48,
+      "crisis_vol": false,
+      "high_vol": false,
+      "low_vol": false
     },
     "data_quality": {
       "status": "ok",
@@ -1131,13 +1143,18 @@ Modifier:
   },
   "breadth_state": {
     "mode": "etf_proxy",
-    "raw_label": "neutral_breadth",
-    "stable_label": "neutral_breadth",
-    "active_label": "neutral_breadth",
+    "raw_label": "weak_breadth",
+    "stable_label": "weak_breadth",
+    "active_label": "weak_breadth",
     "evidence": {
       "proxy": "RSP/SPY",
+      "relative_breadth_ratio": 0.312,
+      "relative_breadth_sma50": 0.315,
       "relative_breadth_return_20d": -0.006,
-      "relative_breadth_ratio_vs_sma50": -0.003
+      "index_distance_from_63d_high": -0.021,
+      "divergent_fragile": false,
+      "weak_breadth": true,
+      "healthy_breadth": false
     },
     "data_quality": {
       "status": "ok",

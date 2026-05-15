@@ -58,6 +58,10 @@ class BreadthFeatures:
     index_distance_from_63d_high: pd.Series
 
 
+def _ev_float(x: float) -> float:
+    return round(float(x), 8)
+
+
 def compute_features(*, spy_close: pd.Series, rsp_close: pd.Series) -> BreadthFeatures:
     ratio = rsp_close / spy_close
     ratio_sma50 = ratio.rolling(50).mean()
@@ -97,10 +101,14 @@ def raw_label_for_day(f: BreadthFeatures, dt: pd.Timestamp) -> tuple[BreadthLabe
         label = "neutral_breadth"
 
     return label, {
+        "proxy": "RSP/SPY",
+        "relative_breadth_ratio": _ev_float(ratio),
+        "relative_breadth_sma50": _ev_float(ratio_sma),
+        "relative_breadth_return_20d": _ev_float(ratio_ret20),
+        "index_distance_from_63d_high": _ev_float(idx_dist),
         "divergent_fragile": divergent_fragile,
         "weak_breadth": weak_breadth,
         "healthy_breadth": healthy_breadth,
-        "neutral_breadth": neutral_breadth,
     }
 
 
@@ -129,10 +137,14 @@ def build_raw_outputs(f: BreadthFeatures) -> tuple[list[BreadthLabel], list[dict
             continue
         evidence.append(
             {
+                "proxy": "RSP/SPY",
+                "relative_breadth_ratio": _ev_float(ratio.iat[idx]),
+                "relative_breadth_sma50": _ev_float(ratio_sma.iat[idx]),
+                "relative_breadth_return_20d": _ev_float(ratio_ret20.iat[idx]),
+                "index_distance_from_63d_high": _ev_float(idx_dist.iat[idx]),
                 "divergent_fragile": bool(divergent_fragile.iat[idx]),
                 "weak_breadth": bool(weak_breadth.iat[idx]),
                 "healthy_breadth": bool(healthy_breadth.iat[idx]),
-                "neutral_breadth": bool(neutral_breadth.iat[idx]),
             }
         )
 

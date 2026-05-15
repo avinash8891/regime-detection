@@ -169,6 +169,10 @@ _RISK_RANK: dict[VolatilityLabel, int] = {
 }
 
 
+def _ev_float(x: float) -> float:
+    return round(float(x), 8)
+
+
 def _pct_rank_last(arr: np.ndarray) -> float:
     x = arr[-1]
     if np.isnan(x):
@@ -185,6 +189,7 @@ class VolatilityFeatures:
     return_1d: pd.Series
     return_5d: pd.Series
     return_21d: pd.Series
+    realized_vol_21d: pd.Series
     realized_vol_percentile_252d: pd.Series
     vix_percentile_252d: pd.Series | None
 
@@ -213,6 +218,7 @@ def compute_features(*, close: pd.Series, vix_proxy_close: pd.Series | None) -> 
         return_1d=return_1d,
         return_5d=return_5d,
         return_21d=return_21d,
+        realized_vol_21d=realized_vol_21d,
         realized_vol_percentile_252d=realized_vol_percentile_252d,
         vix_percentile_252d=vix_pct,
     )
@@ -237,6 +243,7 @@ def raw_label_for_day(
     ret1 = f.return_1d.loc[dt]
     ret5 = f.return_5d.loc[dt]
     ret21 = f.return_21d.loc[dt]
+    rv21 = f.realized_vol_21d.loc[dt]
     vol_pct = f.realized_vol_percentile_252d.loc[dt]
     vix_pct = None if f.vix_percentile_252d is None else f.vix_percentile_252d.loc[dt]
 
@@ -270,11 +277,12 @@ def raw_label_for_day(
         label = "normal_vol"
 
     evidence: dict[str, Any] = {
+        "realized_vol_21d": _ev_float(rv21),
+        "realized_vol_percentile_252d": _ev_float(vol_pct),
+        "vix_percentile_252d": _ev_float(vix_pct) if (vix_pct is not None and not pd.isna(vix_pct)) else None,
         "crisis_vol": crisis,
         "high_vol": high_vol,
         "low_vol": low_vol,
-        "normal_vol": normal_vol,
-        "vix_percentile_present": vix_pct is not None and not pd.isna(vix_pct),
     }
 
     if (
@@ -325,14 +333,16 @@ def build_raw_outputs(
     vol_pct = f.realized_vol_percentile_252d
     valid = ~(ret1.isna() | ret5.isna() | ret21.isna() | vol_pct.isna())
 
+    rv21 = f.realized_vol_21d
+    vix_pct_series = pd.Series(float("nan"), index=ret1.index, dtype=float)
     vix_present = pd.Series(False, index=ret1.index, dtype="bool")
     vix_crisis = pd.Series(False, index=ret1.index, dtype="bool")
     vix_high = pd.Series(False, index=ret1.index, dtype="bool")
     if f.vix_percentile_252d is not None:
-        vix_pct = f.vix_percentile_252d.reindex(ret1.index)
-        vix_present = vix_pct.notna()
-        vix_crisis = vix_present & vix_pct.ge(0.95)
-        vix_high = vix_present & vix_pct.ge(0.80)
+        vix_pct_series = f.vix_percentile_252d.reindex(ret1.index)
+        vix_present = vix_pct_series.notna()
+        vix_crisis = vix_present & vix_pct_series.ge(0.95)
+        vix_high = vix_present & vix_pct_series.ge(0.80)
 
     crisis = valid & (
         ret1.le(-0.05)
@@ -357,11 +367,12 @@ def build_raw_outputs(
             continue
         evidence.append(
             {
+                "realized_vol_21d": _ev_float(rv21.iat[idx]),
+                "realized_vol_percentile_252d": _ev_float(vol_pct.iat[idx]),
+                "vix_percentile_252d": _ev_float(vix_pct_series.iat[idx]) if bool(vix_present.iat[idx]) else None,
                 "crisis_vol": bool(crisis.iat[idx]),
                 "high_vol": bool(high_vol.iat[idx]),
                 "low_vol": bool(low_vol.iat[idx]),
-                "normal_vol": bool(normal_vol.iat[idx]),
-                "vix_percentile_present": bool(vix_present.iat[idx]),
             }
         )
 

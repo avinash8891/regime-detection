@@ -50,6 +50,10 @@ class TrendDirectionFeatures:
     return_63d: pd.Series
 
 
+def _ev_float(x: float) -> float:
+    return round(float(x), 8)
+
+
 def compute_features(close: pd.Series) -> TrendDirectionFeatures:
     sma_50 = close.rolling(50).mean()
     sma_200 = close.rolling(200).mean()
@@ -98,10 +102,12 @@ def raw_label_for_day(
         label = "transition"
 
     evidence: dict[str, Any] = {
-        "bull": bull,
-        "bear": bear,
-        "sideways": sideways,
-        "transition": transition,
+        "sma_50": _ev_float(sma50),
+        "sma_200": _ev_float(sma200),
+        "return_63d": _ev_float(ret63),
+        "close_gt_sma50": bool(close > sma50),
+        "close_gt_sma200": bool(close > sma200),
+        "sma50_gt_sma200": bool(sma50 > sma200),
         "within_5pct_sma200": within_5pct_sma200,
     }
 
@@ -156,6 +162,9 @@ def build_raw_outputs(
     bear = valid & close.lt(sma50) & close.lt(sma200) & sma50.lt(sma200)
     sideways = valid & ret63.abs().lt(0.05) & within_5pct_sma200
     transition = valid & ~(bull | bear | sideways)
+    close_gt_sma50 = valid & close.gt(sma50)
+    close_gt_sma200 = valid & close.gt(sma200)
+    sma50_gt_sma200 = valid & sma50.gt(sma200)
 
     labels = np.full(len(close), "unknown", dtype=object)
     labels[transition.to_numpy()] = "transition"
@@ -170,10 +179,12 @@ def build_raw_outputs(
             continue
         evidence.append(
             {
-                "bull": bool(bull.iat[idx]),
-                "bear": bool(bear.iat[idx]),
-                "sideways": bool(sideways.iat[idx]),
-                "transition": bool(transition.iat[idx]),
+                "sma_50": _ev_float(sma50.iat[idx]),
+                "sma_200": _ev_float(sma200.iat[idx]),
+                "return_63d": _ev_float(ret63.iat[idx]),
+                "close_gt_sma50": bool(close_gt_sma50.iat[idx]),
+                "close_gt_sma200": bool(close_gt_sma200.iat[idx]),
+                "sma50_gt_sma200": bool(sma50_gt_sma200.iat[idx]),
                 "within_5pct_sma200": bool(within_5pct_sma200.iat[idx]),
             }
         )
