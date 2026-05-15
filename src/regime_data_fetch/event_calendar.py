@@ -300,8 +300,9 @@ def run_us_event_calendar_fetch(
     as_of_date: dt.date | None = None,
 ) -> Path:
     del fred_api_key
-    effective_as_of_date = as_of_date or dt.date.today()
-    effective_end_year = bls_end_year or effective_as_of_date.year
+    if as_of_date is None and (bls_end_year is None or include_v2_curated_candidates):
+        raise ValueError("run_us_event_calendar_fetch requires as_of_date for deterministic replay")
+    effective_end_year = bls_end_year if bls_end_year is not None else as_of_date.year
 
     store = AcquisitionStore(acquisition_db_path) if acquisition_db_path else None
     fetch_run = (
@@ -339,7 +340,7 @@ def run_us_event_calendar_fetch(
                 repo_root=repo_root,
                 start_year=bls_start_year,
                 end_year=effective_end_year,
-                as_of_date=effective_as_of_date,
+                as_of_date=as_of_date,
                 global_rate_calendar_text_fetchers=global_rate_calendar_text_fetchers,
                 group_a_text_fetcher=group_a_text_fetcher,
                 group_a_boe_news_fetcher=group_a_boe_news_fetcher,

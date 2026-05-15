@@ -74,7 +74,7 @@ def main() -> int:
     ap.add_argument("--acquisition-db", default=None, help="Optional SQLite path for raw acquisition/provenance recording.")
     ap.add_argument("--bls-schedule-dir", default=None, help="Optional local directory containing bls_schedule_YYYY.html files for BLS historical release schedules.")
     ap.add_argument("--bls-start-year", type=int, default=2000, help="Start year for BLS CPI/NFP schedule generation.")
-    ap.add_argument("--bls-end-year", type=int, default=None, help="End year for BLS CPI/NFP schedule generation. Defaults to the current year.")
+    ap.add_argument("--bls-end-year", type=int, default=None, help="End year for BLS CPI/NFP schedule generation. Defaults to --end year.")
     ap.add_argument(
         "--include-v2-curated-event-candidates",
         action="store_true",
@@ -163,6 +163,7 @@ def main() -> int:
             bls_start_year=args.bls_start_year,
             bls_end_year=args.bls_end_year,
             include_v2_curated_candidates=args.include_v2_curated_event_candidates,
+            as_of_date=end,
         )
         print(str(event_report))
 

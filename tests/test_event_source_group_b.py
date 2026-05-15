@@ -31,7 +31,7 @@ from regime_data_fetch.event_sources.validators_gpr_gdelt import (
 )
 
 
-def test_deterministic_budget_emits_exact_fy_deadline_rows() -> None:
+def test_deterministic_budget_emits_fy_deadline_rows_on_nyse_sessions() -> None:
     candidates = DeterministicBudgetAdapter(as_of_date=dt.date(2026, 5, 14)).fetch(
         start_year=2016,
         end_year=2018,
@@ -41,11 +41,26 @@ def test_deterministic_budget_emits_exact_fy_deadline_rows() -> None:
 
     assert [(candidate.date, candidate.event_type, candidate.event_subtype, candidate.source_id) for candidate in candidates] == [
         (dt.date(2016, 9, 30), "budget", "fy_deadline", "usa.gov:federal-budget-process"),
-        (dt.date(2017, 9, 30), "budget", "fy_deadline", "usa.gov:federal-budget-process"),
-        (dt.date(2018, 9, 30), "budget", "fy_deadline", "usa.gov:federal-budget-process"),
+        (dt.date(2017, 9, 29), "budget", "fy_deadline", "usa.gov:federal-budget-process"),
+        (dt.date(2018, 9, 28), "budget", "fy_deadline", "usa.gov:federal-budget-process"),
     ]
     assert [candidate.requires_manual_review for candidate in candidates] == [False, False, False]
     assert [candidate.confidence for candidate in candidates] == ["high", "high", "high"]
+
+
+def test_deterministic_budget_rolls_weekend_deadlines_to_previous_nyse_session() -> None:
+    candidates = DeterministicBudgetAdapter(as_of_date=dt.date(2026, 5, 14)).fetch(
+        start_year=2017,
+        end_year=2023,
+        store=None,
+        run_id=None,
+    )
+
+    by_year = {candidate.raw_title: candidate.date for candidate in candidates}
+
+    assert by_year["US federal fiscal year 2017 deadline"] == dt.date(2017, 9, 29)
+    assert by_year["US federal fiscal year 2018 deadline"] == dt.date(2018, 9, 28)
+    assert by_year["US federal fiscal year 2023 deadline"] == dt.date(2023, 9, 29)
 
 
 def test_load_approval_overlay_parses_valid_records(tmp_path: Path) -> None:

@@ -20,6 +20,7 @@ from regime_data_fetch.event_calendar import (
     validate_fomc_listing_integrity,
     _validate_bls_events,
 )
+from regime_data_fetch.event_sources.deterministic_budget import DeterministicBudgetAdapter
 
 
 FOMC_FIXTURES = Path("tests/fixtures/raw/fomc")
@@ -234,6 +235,36 @@ def test_event_calendar_v2_precedence_and_labels() -> None:
     }
 
 
+def test_budget_week_fires_when_fiscal_year_deadline_falls_on_weekend() -> None:
+    cfg = load_default_regime_config()
+    candidate = DeterministicBudgetAdapter(as_of_date=dt.date(2017, 1, 1)).fetch(
+        start_year=2017,
+        end_year=2017,
+        store=None,
+        run_id=None,
+    )[0]
+    events = pd.DataFrame(
+        [
+            {
+                "date": candidate.date,
+                "market": candidate.market,
+                "type": candidate.event_type,
+                "importance": candidate.importance,
+            }
+        ]
+    )
+
+    out = classify_event_calendar(
+        as_of_date=date(2017, 9, 29),
+        event_calendar=events,
+        config=cfg,
+    )
+
+    assert candidate.date == date(2017, 9, 29)
+    assert out.active_label == "budget_week"
+    assert out.evidence["all_matching_events"] == ["budget_week"]
+
+
 def test_build_event_calendar_series_matches_point_classifier(market_df_for_asof) -> None:
     cfg = load_default_regime_config()
     end_date = date(2024, 1, 17)
@@ -405,6 +436,7 @@ def test_run_us_event_calendar_fetch_adds_v2_curated_candidates(tmp_path: Path) 
         bls_start_year=2026,
         bls_end_year=2026,
         include_v2_curated_candidates=True,
+        as_of_date=dt.date(2026, 5, 14),
         global_rate_calendar_text_fetchers={
             "ecb": lambda: """
                 <dt>10/06/2026</dt>
@@ -436,6 +468,20 @@ def test_run_us_event_calendar_fetch_adds_v2_curated_candidates(tmp_path: Path) 
     assert 'type: "ECB_decision"' in contents
     assert 'type: "BOE_decision"' in contents
     assert 'type: "BOJ_decision"' in contents
+
+
+def test_run_us_event_calendar_fetch_requires_as_of_date_when_replay_date_is_needed(tmp_path: Path) -> None:
+    with pytest.raises(ValueError, match="requires as_of_date"):
+        run_us_event_calendar_fetch(
+            repo_root=tmp_path,
+            fred_api_key=None,
+            fomc_listing_fetcher=lambda: "",
+            fomc_historical_index_fetcher=lambda: "",
+            fomc_historical_page_fetcher=lambda url: "",
+            bls_page_fetcher=lambda url: "",
+            bls_start_year=2026,
+            include_v2_curated_candidates=True,
+        )
 
 
 def test_run_us_event_calendar_fetch_uses_supplied_as_of_date_for_v2_candidates(tmp_path: Path) -> None:
@@ -681,6 +727,7 @@ def test_run_us_event_calendar_fetch_wires_group_a_candidate_artifacts(tmp_path:
         group_a_text_fetcher=group_a_text_fetcher,
         group_a_boe_news_fetcher=boe_news_fetcher,
         group_a_hf_parquet_fetcher=lambda: b"",
+        as_of_date=dt.date(2026, 5, 14),
     )
 
     report = json.loads(report_path.read_text())
