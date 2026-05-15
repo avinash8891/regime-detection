@@ -285,7 +285,7 @@ def main() -> int:
         report_paths.append(news_sentiment_report)
         print(str(news_sentiment_report))
 
-    if args.fetch in {"eps", "all"}:
+    if args.fetch == "eps":
         if not args.eps_workbook:
             raise SystemExit("--eps-workbook is required for eps fetches")
         eps_report = run_aggregate_eps_fetch(
@@ -313,7 +313,7 @@ def main() -> int:
         report_paths.append(eps_auto_report)
         print(str(eps_auto_report))
 
-    if args.fetch in {"eps-wayback", "all"}:
+    if args.fetch == "eps-wayback":
         eps_wayback_report = run_wayback_aggregate_eps_fetch(
             out_dir=out_dir,
             max_snapshots=args.eps_wayback_max_snapshots,

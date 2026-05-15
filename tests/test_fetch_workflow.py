@@ -362,6 +362,14 @@ def test_fetch_help_surface_mentions_pmi_and_pit() -> None:
     assert "sf-fed-news-sentiment" in help_text
 
 
+def test_fetch_all_excludes_manual_eps_and_wayback_backfill() -> None:
+    script = Path("scripts/fetch_regime_engine_v1_data.py").read_text()
+    assert 'if args.fetch == "eps":' in script
+    assert 'if args.fetch == "eps-wayback":' in script
+    assert 'if args.fetch in {"eps", "all"}:' not in script
+    assert 'if args.fetch in {"eps-wayback", "all"}:' not in script
+
+
 def test_event_calendar_fetch_symbol_is_wired() -> None:
     script = Path("scripts/fetch_regime_engine_v1_data.py").read_text()
     assert "run_us_event_calendar_fetch" in script
