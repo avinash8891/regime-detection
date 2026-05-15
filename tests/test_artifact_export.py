@@ -86,6 +86,27 @@ def test_emit_manifest_for_report_paths_fails_when_no_files_found(tmp_path: Path
         )
 
 
+def test_emit_manifest_for_report_paths_skips_acquisition_db_metadata(tmp_path: Path) -> None:
+    out_dir = tmp_path / "data" / "raw"
+    out_dir.mkdir(parents=True)
+    acquisition_db = out_dir / "acquisition.db"
+    acquisition_db.write_bytes(b"sqlite")
+    report = out_dir / "fetch_report.json"
+    report.write_text(json.dumps({"paths": {"acquisition_db": str(acquisition_db)}}))
+
+    import pytest
+
+    with pytest.raises(ValueError, match="no existing artifact files"):
+        emit_manifest_for_report_paths(
+            report_paths=[report],
+            out_dir=out_dir,
+            artifact_store_root=str(tmp_path / "store"),
+            manifest_path=tmp_path / "manifest.yaml",
+            artifact_set="skip-db",
+            required_for=[],
+        )
+
+
 def test_emit_manifest_for_report_paths_skips_files_outside_out_dir(tmp_path: Path) -> None:
     out_dir = tmp_path / "data" / "raw"
     out_dir.mkdir(parents=True)

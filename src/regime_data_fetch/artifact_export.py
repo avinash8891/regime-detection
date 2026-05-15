@@ -73,6 +73,8 @@ def _iter_existing_report_files(report_path: Path) -> Iterable[tuple[str, Path, 
     if not isinstance(paths, dict):
         return
     for name, value in sorted(paths.items()):
+        if name in {"acquisition_db"}:
+            continue
         entry = _parse_report_path_entry(value)
         if entry is None:
             continue
