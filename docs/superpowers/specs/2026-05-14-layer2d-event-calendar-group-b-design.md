@@ -282,14 +282,14 @@ quarantines malformed rows (rule I).
 
 | Field | Value |
 |---|---|
-| Source / API | **GPR / AI-GPR** (Caldara-Iacoviello Geopolitical Risk index) — live fetch from `https://www.matteoiacoviello.com/gpr_files/data_gpr_daily_recent.xls`, history to 1985. **GDELT Event Database daily exports** — live fetch from `http://data.gdeltproject.org/events/YYYYMMDD.export.CSV.zip`, parsed for CAMEO root event codes `14/18/19/20` and material-conflict `QuadClass=4`. ACLED remains deferred because it requires registration/API credentials and redistribution review. UCDP API now requires token access as of 2026; HDX HAPI requires an app identifier and exposes monthly/admin-level ACLED aggregates, not daily shock rows. |
-| Coverage | GPR: daily 1985→ (monthly republish). GDELT: 2015→ present. Both cover the full 2016→ window for *historical* geopolitical shocks. |
+| Source / API | **GPR / AI-GPR** (Caldara-Iacoviello Geopolitical Risk index) — live fetch from `https://www.matteoiacoviello.com/gpr_files/data_gpr_daily_recent.xls`, history to 1985. **GDELT Event Database daily exports** — live fetch from `http://data.gdeltproject.org/events/YYYYMMDD.export.CSV.zip`, parsed for CAMEO root event codes `14/18/19/20` and material-conflict `QuadClass=4`. **ACLED** — credential-gated `https://acleddata.com/api/acled/read` JSON rows when `ACLED_API_TOKEN` or `ACLED_USERNAME`/`ACLED_PASSWORD` is present. **UCDP GED Candidate** — token-gated `https://ucdpapi.pcr.uu.se/api/gedevents/26.0.3` rows when `UCDP_ACCESS_TOKEN` is present. **HDX HAPI conflict-events** — app-identifier-gated `https://hapi.humdata.org/api/v2/coordination-context/conflict-events` monthly/admin evidence when `HDX_HAPI_APP_IDENTIFIER` is present. |
+| Coverage | GPR: daily 1985→ (monthly republish). GDELT: 2015→ present. ACLED / UCDP / HDX coverage follows account/API availability and requested-year filters; HDX is monthly/admin aggregate evidence, not a daily shock row. |
 | Future-date support | **None** — geopolitical events are unscheduled by nature. |
 | Self-updating | GPR: monthly maintainer republish (static snapshot between). GDELT: continuous. |
-| License / access risk | GPR: free for research, cite the paper. GDELT: open event exports. ACLED/UCDP/HDX-HAPI are not wired until credentials and redistribution/aggregation decisions are accepted. Cache GPR/GDELT pulls as `AcquisitionStore` artifacts for reproducibility. |
-| Role | `CandidateGenerator` (spike/event → `requires_manual_review=true`, `confidence` capped at `medium`) **+** `SecondaryValidator` (GDELT corroborates a GPR-seeded candidate and vice versa → `confirm`). |
-| Parser fields | GPR: `date`, GPR value + trailing-window threshold → `raw_snippet`. GDELT daily export: `SQLDATE`, `EventRootCode`, `QuadClass`, `NumMentions`, `SOURCEURL` → per-day `event_count`, `raw_title`, `raw_snippet`, `source_url`. |
-| Test fixture | Inline fixture rows in `tests/test_event_source_group_b.py` cover GPR spike detection, injected GDELT volume CSV, and real-shaped GDELT daily export ZIP/TSV parsing. |
+| License / access risk | GPR: free for research, cite the paper. GDELT: open event exports. ACLED and UCDP require credentials/tokens; HDX HAPI requires an app identifier and is transformed from ACLED into monthly/admin aggregates. Cache available pulls as `AcquisitionStore` artifacts for reproducibility. |
+| Role | `CandidateGenerator` (spike/event/aggregate → `requires_manual_review=true`, `confidence` capped at `medium`) **+** `SecondaryValidator` (nearby independent source dates corroborate one another → `confirm`). |
+| Parser fields | GPR: `date`, GPR value + trailing-window threshold → `raw_snippet`. GDELT daily export: `SQLDATE`, `EventRootCode`, `QuadClass`, `NumMentions`, `SOURCEURL` → per-day `event_count`, `raw_title`, `raw_snippet`, `source_url`. ACLED: `event_date`, `event_type`, `country`, `fatalities`. UCDP: `date_start`, `country`, `best` / death fields, `source_article`. HDX HAPI: `reference_period_start`, `event_type`, `events`, `fatalities`, `location_name`. |
+| Test fixture | Inline fixture rows in `tests/test_event_source_group_b.py` cover GPR spike detection, injected GDELT volume CSV, real-shaped GDELT daily export ZIP/TSV parsing, and ACLED/UCDP/HDX JSON parsing/generator wiring. |
 | Failure behavior | Source unreachable → log + degrade; that source contributes no candidates/verdicts. A geopolitical run with *zero* generated candidates is **not** a failed run (there may simply be no shocks in range) — but it is reported explicitly. |
 
 ### 6.4 `validators_tinyfish.py` — `validator_id: tinyfish:search-extract`
@@ -319,6 +319,9 @@ This is the step Group A never needed. Pinned design, with thresholds as confirm
    mean + 3·std). For each requested-year GPR spike date, the generator fetches
    GDELT daily Event export ZIPs for the spike window and flags material
    conflict/protest volume rows from the raw export.
+   Credential-gated ACLED, UCDP GED Candidate, and HDX HAPI fetchers add
+   extra candidate rows for the requested years when their environment
+   variables are present; missing credentials degrade to skipped sources.
 2. **Merge / dedup.** Spike days from GPR and GDELT within a small window of
    each other (Confirm item #6 — default ±2 calendar days) collapse to a single
    candidate keyed `(geopolitical_event, anchor_date)`. The anchor date is the
@@ -471,9 +474,9 @@ Per AGENTS.md rule G — real fixtures, real names (real shock dates like
    or rename to `generators_*` to match the `CandidateGenerator` role (§3.1).
 2. **Budget file split** — `deterministic_budget.py` +
    `budget_official_discovery.py` (recommended) vs. one file (§3.2).
-3. **ACLED / UCDP / HDX-HAPI** — deferred until credentials, redistribution
-   terms, and daily-vs-aggregate fit are accepted. Current implementation ships
-   GPR + GDELT only (§6.3).
+3. **ACLED / UCDP / HDX-HAPI** — implemented as optional live sources in
+   `validators_gpr_gdelt.py`. They are credential-gated and manual-review-only;
+   HDX HAPI remains monthly/admin aggregate corroboration, not daily truth.
 4. **TinyFish auth** — is `mcp__tinyfish__*` authentication provisioned for the
    fetch environment? (§6.4)
 5. **GPR spike threshold** — default trailing-252-day mean + 3·std or top-0.5

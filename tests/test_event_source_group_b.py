@@ -21,7 +21,12 @@ from regime_data_fetch.event_sources.models import ApprovalRecord, EventCandidat
 from regime_data_fetch.event_sources.orchestrator import EventSourceOrchestrator
 from regime_data_fetch.event_sources.validators_tinyfish import TinyFishValidator
 from regime_data_fetch.event_sources.validators_gpr_gdelt import GPRGDELTSignalGenerator
-from regime_data_fetch.event_sources.validators_gpr_gdelt import parse_gdelt_event_export
+from regime_data_fetch.event_sources.validators_gpr_gdelt import (
+    parse_acled_events,
+    parse_gdelt_event_export,
+    parse_hdx_hapi_conflict_events,
+    parse_ucdp_events,
+)
 
 
 def test_deterministic_budget_emits_exact_fy_deadline_rows() -> None:
@@ -225,6 +230,148 @@ def test_gpr_generator_fetches_gdelt_daily_exports_for_spike_dates() -> None:
         (("geopolitical_event", dt.date(2022, 2, 24)), "gdelt:events-v2", "confirm"),
         (("geopolitical_event", dt.date(2022, 2, 24)), "gpr:caldara-iacoviello", "confirm"),
     }
+
+
+def test_parse_acled_events_aggregates_conflict_rows_by_day() -> None:
+    payload = """
+{
+  "status": 200,
+  "data": [
+    {
+      "event_date": "2022-02-24",
+      "event_type": "Battles",
+      "sub_event_type": "Armed clash",
+      "country": "Ukraine",
+      "fatalities": "42",
+      "source": "Reuters",
+      "notes": "Russian forces entered Ukraine."
+    },
+    {
+      "event_date": "2022-02-24",
+      "event_type": "Protests",
+      "sub_event_type": "Peaceful protest",
+      "country": "Russia",
+      "fatalities": "0",
+      "source": "Local media",
+      "notes": "Anti-war protest."
+    }
+  ]
+}
+"""
+
+    rows = parse_acled_events(payload, source_url="https://acleddata.com/api/acled/read")
+
+    assert rows == [
+        {
+            "date": dt.date(2022, 2, 24),
+            "event_count": 2,
+            "fatalities": 42,
+            "dominant_theme": "ACLED Battles / Protests: Ukraine, Russia",
+            "source_url": "https://acleddata.com/api/acled/read",
+        }
+    ]
+
+
+def test_parse_ucdp_events_aggregates_candidate_events_by_day() -> None:
+    payload = """
+{
+  "Result": [
+    {
+      "date_start": "2022-02-24",
+      "country": "Ukraine",
+      "type_of_violence": 1,
+      "best": 10,
+      "source_article": "https://example.test/ucdp/1"
+    },
+    {
+      "date_start": "2022-02-24",
+      "country": "Ukraine",
+      "type_of_violence": 3,
+      "deaths_civilians": 5
+    }
+  ]
+}
+"""
+
+    rows = parse_ucdp_events(payload, source_url="https://ucdpapi.pcr.uu.se/api/gedevents/26.0.3")
+
+    assert rows == [
+        {
+            "date": dt.date(2022, 2, 24),
+            "event_count": 2,
+            "fatalities": 15,
+            "dominant_theme": "UCDP organized violence: Ukraine",
+            "source_url": "https://example.test/ucdp/1",
+        }
+    ]
+
+
+def test_parse_hdx_hapi_conflict_events_emits_monthly_admin_evidence() -> None:
+    payload = """
+{
+  "data": [
+    {
+      "event_type": "political_violence",
+      "events": 17,
+      "fatalities": 91,
+      "reference_period_start": "2022-02-01",
+      "reference_period_end": "2022-02-28",
+      "location_name": "Ukraine"
+    }
+  ]
+}
+"""
+
+    rows = parse_hdx_hapi_conflict_events(
+        payload,
+        source_url="https://hapi.humdata.org/api/v2/coordination-context/conflict-events",
+    )
+
+    assert rows == [
+        {
+            "date": dt.date(2022, 2, 1),
+            "event_count": 17,
+            "fatalities": 91,
+            "dominant_theme": "HDX HAPI monthly political_violence: Ukraine",
+            "source_url": "https://hapi.humdata.org/api/v2/coordination-context/conflict-events",
+        }
+    ]
+
+
+def test_generator_includes_acled_ucdp_and_hdx_candidate_sources() -> None:
+    gpr_csv = """date,gpr
+2022-02-20,100
+2022-02-21,101
+2022-02-22,99
+2022-02-23,101
+2022-02-24,500
+2022-02-25,120
+"""
+    gdelt_csv = """date,event_count,dominant_theme,source_url
+2022-02-24,1200,Russia invasion of Ukraine,https://example.test/gdelt/20220224
+"""
+    acled_json = """{"status": 200, "data": [{"event_date": "2022-02-24", "event_type": "Battles", "country": "Ukraine", "fatalities": "42"}]}"""
+    ucdp_json = """{"Result": [{"date_start": "2022-02-24", "country": "Ukraine", "best": 10}]}"""
+    hdx_json = """{"data": [{"event_type": "political_violence", "events": 17, "fatalities": 91, "reference_period_start": "2022-02-01", "reference_period_end": "2022-02-28", "location_name": "Ukraine"}]}"""
+    generator = GPRGDELTSignalGenerator(
+        gpr_fetcher=lambda: gpr_csv,
+        gdelt_fetcher=lambda: gdelt_csv,
+        acled_fetcher=lambda start_year, end_year: acled_json,
+        ucdp_fetcher=lambda start_year, end_year: ucdp_json,
+        hdx_hapi_fetcher=lambda start_year, end_year: hdx_json,
+        min_history_days=3,
+        stddev_threshold=2.0,
+    )
+
+    candidates = generator.generate(start_year=2022, end_year=2022, store=None, run_id=None)
+
+    assert [(candidate.date, candidate.source_id, candidate.event_subtype, candidate.requires_manual_review) for candidate in candidates] == [
+        (dt.date(2022, 2, 1), "hdx-hapi:conflict-events", "hdx_hapi_monthly_conflict", True),
+        (dt.date(2022, 2, 24), "acled:events", "acled_conflict_event", True),
+        (dt.date(2022, 2, 24), "gdelt:events-v2", "gdelt_volume_spike", True),
+        (dt.date(2022, 2, 24), "gpr:caldara-iacoviello", "gpr_spike", True),
+        (dt.date(2022, 2, 24), "ucdp:ged-candidate", "ucdp_organized_violence", True),
+    ]
 
 
 def test_budget_official_discovery_auto_promotes_two_independent_official_sources() -> None:
