@@ -57,10 +57,12 @@ _PRECEDENCE: list[EventCalendarLabel] = [
     "normal_calendar",
     "unknown",
 ]
-_TYPE_TO_LABEL = {
+_TYPE_TO_LABEL: dict[str, EventCalendarLabel] = {
     "FOMC": "fed_week",
     "CPI": "cpi_week",
     "NFP": "nfp_week",
+}
+_V2_TYPE_TO_LABEL: dict[str, EventCalendarLabel] = {
     "budget": "budget_week",
     "election": "election_window",
     "geopolitical_event": "geopolitical_event",
@@ -144,6 +146,7 @@ def compute_event_calendar_outputs(
     )
     first_session = sessions_tuple[0]
     last_session = sessions_tuple[-1]
+    allow_v2_event_labels = config.config_version != "core3-v1.0.0"
     # Align to year boundaries so the lru_cached `_sessions_between` hits
     # whenever a tight-loop caller (e.g. the bulk-matches-point test) walks
     # sessions one at a time. Month-boundary alignment cycled the cache key
@@ -166,7 +169,9 @@ def compute_event_calendar_outputs(
     global_pos = {day: idx for idx, day in enumerate(global_session_list)}
 
     for row in event_rows:
-        label = _TYPE_TO_LABEL.get(str(row.type))
+        label = _label_for_event_type(
+            str(row.type), allow_v2_event_labels=allow_v2_event_labels
+        )
         if label is None:
             continue
         if (
@@ -244,6 +249,17 @@ def compute_event_calendar_outputs(
             },
         )
     return outputs
+
+
+def _label_for_event_type(
+    event_type: str, *, allow_v2_event_labels: bool
+) -> EventCalendarLabel | None:
+    label = _TYPE_TO_LABEL.get(event_type)
+    if label is not None:
+        return label
+    if not allow_v2_event_labels:
+        return None
+    return _V2_TYPE_TO_LABEL.get(event_type)
 
 
 def _normalized_events(event_calendar: pd.DataFrame | None, *, market: str) -> pd.DataFrame:

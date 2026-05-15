@@ -8,7 +8,7 @@ from pathlib import Path
 import pandas as pd
 import pytest
 
-from regime_detection.config import load_default_regime_config
+from regime_detection.config import load_default_regime_config, load_regime_config
 from regime_detection.axis_series import build_event_calendar_series
 from regime_detection.event_calendar import classify_event_calendar
 from regime_detection.market_context import build_market_context, slice_context_to_recent_sessions
@@ -233,6 +233,52 @@ def test_event_calendar_v2_precedence_and_labels() -> None:
         "election_window",
         "budget_week",
     }
+
+
+def test_event_calendar_v1_config_ignores_v2_event_labels() -> None:
+    cfg = load_regime_config(Path("src/regime_detection/configs/core3-v1.0.0.yaml"))
+    events = pd.DataFrame(
+        [
+            {
+                "date": date(2026, 6, 15),
+                "market": "US",
+                "type": "election",
+                "importance": "high",
+                "publication_date": date(2026, 6, 1),
+            },
+            {
+                "date": date(2026, 6, 15),
+                "market": "US",
+                "type": "budget",
+                "importance": "medium",
+                "publication_date": date(2026, 6, 1),
+            },
+            {
+                "date": date(2026, 6, 15),
+                "market": "GLOBAL",
+                "type": "global_rate_decision",
+                "importance": "medium",
+                "publication_date": date(2026, 6, 1),
+            },
+            {
+                "date": date(2026, 6, 15),
+                "market": "US",
+                "type": "geopolitical_event",
+                "importance": "high",
+                "publication_date": date(2026, 6, 15),
+                "approved_label": "geopolitical_event",
+            },
+        ]
+    )
+
+    out = classify_event_calendar(
+        as_of_date=date(2026, 6, 15),
+        event_calendar=events,
+        config=cfg,
+    )
+
+    assert out.active_label == "normal_calendar"
+    assert out.evidence["all_matching_events"] == []
 
 
 def test_budget_week_fires_when_fiscal_year_deadline_falls_on_weekend() -> None:

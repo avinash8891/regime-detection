@@ -16,8 +16,15 @@ if TYPE_CHECKING:  # avoid runtime cycle: trend_direction_v2 → config → ...
 
 
 # v2 §1A line 132-134 precedence: euphoria > bull > recovery > bear > sideways > transition > unknown.
-# `recovery` lands in slice 2.5 (v2 §1A line 114-119); `euphoria` deferred (Ambiguity Log #31).
-TrendDirectionLabel = Literal["bull", "bear", "sideways", "transition", "unknown", "recovery"]
+TrendDirectionLabel = Literal[
+    "euphoria",
+    "bull",
+    "bear",
+    "sideways",
+    "transition",
+    "unknown",
+    "recovery",
+]
 
 
 # v2 §1A line 132 places `recovery` between `bull` (0) and `bear` (3): bull > recovery > bear.
@@ -29,6 +36,7 @@ _RISK_RANK: dict[TrendDirectionLabel, int] = {
     "sideways": 1,
     "recovery": 1,
     "transition": 2,
+    "euphoria": 4,
     "bear": 3,
     "unknown": 2,
 }
@@ -115,7 +123,7 @@ def raw_label_for_day(
             evidence["v2_override"] = {
                 "from": label,
                 "to": v2_label,
-                "rule": "recovery",  # v2 §1A line 114-119
+                "rule": v2_label,
             }
             label = v2_label  # type: ignore[assignment]
 
@@ -189,7 +197,7 @@ def build_raw_outputs(
             evidence[idx]["v2_override"] = {
                 "from": v1_label,
                 "to": v2_label,
-                "rule": "recovery",  # v2 §1A line 114-119
+                "rule": v2_label,
             }
             labels[idx] = v2_label
 
