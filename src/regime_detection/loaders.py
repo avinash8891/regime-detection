@@ -97,9 +97,29 @@ def _load_long_form_closes(
     out: dict[str, pd.Series] = {}
     for key, sub in df.groupby(group_col):
         sub = sub.sort_values("date")
+        try:
+            index = pd.to_datetime(sub["date"], errors="raise")
+        except (ValueError, TypeError) as exc:
+            raise ValueError(
+                f"Source contains malformed date values for {group_col}={key!r}"
+            ) from exc
+        if index.isna().any():
+            raise ValueError(
+                f"Source contains malformed date values for {group_col}={key!r}"
+            )
+        try:
+            values = pd.to_numeric(sub[value_col], errors="raise").astype(float)
+        except (ValueError, TypeError) as exc:
+            raise ValueError(
+                f"Source contains non-numeric {value_col} values for {group_col}={key!r}"
+            ) from exc
+        if values.isna().any():
+            raise ValueError(
+                f"Source contains non-numeric {value_col} values for {group_col}={key!r}"
+            )
         series = pd.Series(
-            sub[value_col].to_numpy(),
-            index=pd.to_datetime(sub["date"]),
+            values.to_numpy(),
+            index=index,
             name=value_col,
         )
         out[str(key)] = series

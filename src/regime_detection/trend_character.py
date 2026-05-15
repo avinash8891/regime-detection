@@ -423,6 +423,7 @@ def classify_series(
     high: pd.Series,
     low: pd.Series,
     as_of_date: date,
+    escalation_days: int = 1,
     deescalation_days: int,
     volume: pd.Series | None = None,
     allow_v2_labels: bool = False,
@@ -470,6 +471,7 @@ def classify_series(
     stable_labels, active_labels = apply_asymmetric_hysteresis(
         raw_labels=raw_labels,
         risk_rank=_RISK_RANK,
+        escalation_days=escalation_days,
         deescalation_days=deescalation_days,
     )
 

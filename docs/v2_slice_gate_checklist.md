@@ -27,13 +27,13 @@ A slice = one of the ten units listed in v2 spec §8 (Network Fragility, Layer 1
 - [ ] New feature dataclass lives in the axis module (e.g., `network_fragility.py`), not in `feature_store.py`.
 - [ ] `feature_store.py` is extended with `Optional[X] = None` and only computes when the corresponding `MarketContext` data input is present.
 - [ ] New `XYZSeriesClassifier` follows the existing protocol: `build(context, feature_store) -> AxisSeriesResult | dict[date, OutputType]`.
-- [ ] Hysteresis routed through the appropriate helper: `apply_asymmetric_hysteresis` (single-int de-escalation, v1 axes) or `apply_per_label_asymmetric_hysteresis` (per-label de-escalation, v2 §3.7).
+- [ ] Hysteresis routed through the appropriate helper: `apply_asymmetric_hysteresis` (configurable escalation, single-int de-escalation, v1 axes) or `apply_per_label_asymmetric_hysteresis` (per-label de-escalation, v2 §3.7).
 
 ### 5. Tests
 
 - [ ] Unit tests for the new feature compute (synthetic inputs, hand-computed expected values; no toy names per AGENTS rule).
 - [ ] Unit tests for the rule engine (one test per rule precedence position).
-- [ ] Unit tests for the hysteresis wrapper (escalation immediate; de-escalation honors per-label thresholds).
+- [ ] Unit tests for the hysteresis wrapper (default immediate escalation, configurable delayed escalation where used, and de-escalation honors per-label thresholds).
 - [ ] Integration test invoking `engine.classify` end-to-end with the slice's data input.
 - [ ] At least one v2 golden date passes (`tests/fixtures/derived/golden_dates_v2.yaml` row's `expected.<slice_field>`).
 

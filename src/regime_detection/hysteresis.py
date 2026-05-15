@@ -10,14 +10,18 @@ def apply_asymmetric_hysteresis(
     *,
     raw_labels: list[TLabel],
     risk_rank: dict[TLabel, int],
+    escalation_days: int = 1,
     deescalation_days: int,
 ) -> tuple[list[TLabel], list[TLabel]]:
     """
     Generic asymmetric hysteresis (spec §2.10):
-    - Escalation (higher risk_rank) updates stable immediately.
+    - Escalation (higher risk_rank) requires `escalation_days` consecutive
+      days on the candidate label. Default 1 preserves immediate escalation.
     - De-escalation requires `deescalation_days` consecutive days on the candidate label.
     - active_label uses fast-path: if raw is riskier than stable, active=raw else active=stable.
     """
+    if escalation_days < 1:
+        raise ValueError("escalation_days must be >= 1")
     if deescalation_days < 0:
         raise ValueError("deescalation_days must be >= 0")
     if not raw_labels:
@@ -35,9 +39,20 @@ def apply_asymmetric_hysteresis(
         stable_rank = risk_rank[stable_label]
 
         if raw_rank > stable_rank:
-            stable_label = raw
-            pending_label = None
-            pending_count = 0
+            if escalation_days == 1:
+                stable_label = raw
+                pending_label = None
+                pending_count = 0
+            else:
+                if pending_label != raw:
+                    pending_label = raw
+                    pending_count = 1
+                else:
+                    pending_count += 1
+                if pending_count >= escalation_days:
+                    stable_label = raw
+                    pending_label = None
+                    pending_count = 0
         elif raw_rank < stable_rank or raw != stable_label:
             if deescalation_days == 0:
                 stable_label = raw
