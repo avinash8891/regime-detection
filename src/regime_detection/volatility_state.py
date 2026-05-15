@@ -155,16 +155,14 @@ def wilders_atr(
 # v2 §1C line 191 precedence:
 #   crisis_vol > vol_crush > high_vol > rising_vol > low_vol >
 #   normal_vol > unknown.
-# Risk-rank intuition: vol_crush is less severe than crisis_vol but outranks
-# high_vol/rising_vol per §1C precedence. rising_vol is a vol-expansion event
-# — riskier than normal_vol but less risky than high_vol. V1-only behavior is
-# preserved when v2 labels are absent because the relative order of V1 labels
-# is unchanged.
+# V1 risk-rank contract is frozen in replay fixtures; crisis_vol remains 3.
+# V2 crisis-vs-vol_crush precedence is resolved before hysteresis in
+# volatility_state_v2, not by changing the V1 evidence rank.
 _RISK_RANK: dict[VolatilityLabel, int] = {
     "low_vol": 0,
     "normal_vol": 1,
     "high_vol": 2,
-    "crisis_vol": 4,
+    "crisis_vol": 3,
     "unknown": 2,
     "rising_vol": 2,
     "vol_crush": 3,

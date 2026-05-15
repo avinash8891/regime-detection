@@ -51,10 +51,10 @@ The AAII fetcher exposes weekly columns. Spec line 167 names three CANDIDATE sou
 
 If you prefer (C), the cross-era percentile form, the engine work is identical but the threshold becomes a percentile, not a points value (affects Question 3 below).
 
-### Open sub-questions
+### Resolved pins
 
-- **Weekly → daily forward-fill semantics.** AAII is weekly-Thursday-released. For per-NYSE-day classification, the spec is silent on how to align: forward-fill from the last Thursday release? Take Thursday-of-week-containing-`as_of_date`? *Recommendation: forward-fill from the latest publication date `≤ as_of_date` (V1 §2.2 stateless replay — never use future-dated readings).*
-- **Cold-start.** First non-NaN observation: with the 8-week MA, the fetcher's `min_periods=1` produces values from week 1. *Recommendation: require at least 4 weeks of history before `sentiment_score` is considered lit; below that, the euphoria rule falsifies on the NaN.*
+- Weekly to daily alignment: forward-fill from the latest AAII publication date `<= as_of_date`.
+- Cold-start: require at least 4 weeks of history before `sentiment_score` is lit; below that the euphoria rule falsifies on NaN.
 
 ---
 
@@ -127,9 +127,4 @@ The threshold is explicitly a **V2 §9.1 walk-forward calibration knob**, not a 
 
 ## Decision
 
-**Spec owner action required:**
-1. Pick a form for `sentiment_score` (A / B / C / D / E / F — recommend A).
-2. Pick a lookback for `realized_vol_21d rising` (X / Y / Z — recommend X).
-3. Pick a default for `euphoria_sentiment_threshold` (recommend +20 if Q1=A, 0.90 if Q1=C).
-
-Reply with the chosen pins and I'll land the spec amendment + TDD code wiring as separate commits in that order.
+Accepted pins: Q1=A (`sentiment_score = bull_bear_spread_8w_ma`), Q2=X (`realized_vol_21d[t] > realized_vol_21d[t-5]`), Q3=`+20`, Q4=publication-date forward-fill, and Q5=4-week cold-start. The spec amendment and TDD wiring have landed; no further spec-owner choice is pending in this ADR.

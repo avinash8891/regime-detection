@@ -420,8 +420,11 @@ Per AGENTS.md rule G (real tests, real fixtures, real names):
 - [ ] `election` rows for 2016–2028 are produced by `deterministic_election.py`
       with FEC-page provenance and a fixture cross-check.
 - [ ] Every promoted row traces to: exact date, event type, source id/URL,
-      `is_future_scheduled`, `confidence`, `source_count`, `requires_manual_review`
-      — recorded in `event_candidates.parquet`.
+      `is_future_scheduled`, and candidate `confidence` in
+      `event_candidates.parquet`; promotion-level fields (`source_count`,
+      `requires_manual_review`, outcome, reason) come from the matching
+      `PromotionDecision` and may be denormalized into candidate artifacts
+      for operator review.
 - [ ] `event_candidates.parquet`, `event_validations.parquet`,
       `quarantine.parquet` are written and registered in
       `AcquisitionStore.derived_outputs`.

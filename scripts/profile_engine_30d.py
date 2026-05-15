@@ -41,6 +41,13 @@ DEFAULT_PMI_PATH = REPO_ROOT / "data" / "manual_inputs" / "pmi" / "ism_manufactu
 RUN_TIMEOUT_SECONDS = 300
 
 
+def _positive_int(value: str) -> int:
+    parsed = int(value)
+    if parsed <= 0:
+        raise argparse.ArgumentTypeError("must be a positive integer")
+    return parsed
+
+
 @dataclass
 class StageTimer:
     totals: dict[str, float]
@@ -435,7 +442,7 @@ def _verify_invariants(
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="Profile 30-session RegimeEngine.classify_window() wall-clock stages.")
-    parser.add_argument("--lookback-days", type=int, default=30)
+    parser.add_argument("--lookback-days", type=_positive_int, default=30)
     parser.add_argument("--config-path", type=Path, default=DEFAULT_CONFIG_PATH)
     parser.add_argument("--daily-dir", type=Path, default=DEFAULT_DAILY_DIR)
     parser.add_argument("--constituent-tree", type=Path, default=DEFAULT_CONSTITUENT_TREE)

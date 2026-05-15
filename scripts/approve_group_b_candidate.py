@@ -16,6 +16,10 @@ if str(SRC_DIR) not in sys.path:
 from regime_data_fetch.event_sources.approvals import append_approval_record
 
 
+def _utc_today() -> dt.date:
+    return dt.datetime.now(dt.timezone.utc).date()
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Approve a pending Group B event candidate.")
     parser.add_argument("--candidate-id", required=True)
@@ -32,6 +36,8 @@ def main() -> int:
     row = matches.iloc[0]
     if row["event_type"] not in {"geopolitical_event", "budget"}:
         raise SystemExit(f"candidate_id is not a Group B candidate: {args.candidate_id}")
+    if str(row.get("promotion_outcome", "")) != "withhold" or bool(row.get("requires_manual_review")) is not True:
+        raise SystemExit(f"candidate_id is not pending manual review: {args.candidate_id}")
     source_count = int(row["source_count"]) if "source_count" in row and pd.notna(row["source_count"]) else 1
     append_approval_record(
         Path(args.overlay),
@@ -40,7 +46,7 @@ def main() -> int:
         candidate_id=args.candidate_id,
         source_count=source_count,
         approver=args.approver,
-        approved_at=dt.date.today(),
+        approved_at=_utc_today(),
         notes=args.notes,
         importance=str(row["importance"]) if pd.notna(row["importance"]) else None,
     )

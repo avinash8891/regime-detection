@@ -24,7 +24,7 @@
     }
   },
   "paths": {
-    "event_calendar_yaml": "/Users/avinashvankadaru/conductor/workspaces/regime-detection/provo/configs/events/us_events.yaml",
+    "event_calendar_yaml": "configs/events/us_events.yaml",
     "acquisition_db": "data/raw/acquisition.db"
   }
 }

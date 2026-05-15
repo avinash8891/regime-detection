@@ -1579,10 +1579,10 @@ the slice/commit that resolved it. Entries are append-only.
     `cpi_nowcast.parquet`. The feed is the full archive — one chart object
     per monthly vintage, ~2013-08 to present (154 usable CPI vintages),
     well past the 1260-session normalizer. Per vintage the parser takes
-    the last non-empty `CPI Inflation` value (settled nowcast) keyed to
-    the 1st of the target month, matching `CPIAUCSL`'s reference-date
-    convention. Manual-drop of the JSON is a fallback only. See ADR 0006
-    "Fetch path".
+    the last non-empty `CPI Inflation` value keyed to that point's chart
+    category date, preserving point-in-time availability instead of
+    back-dating the settled value to the 1st of the target month.
+    Manual-drop of the JSON is a fallback only. See ADR 0006 "Fetch path".
 
 49. **§2C Credit/Funding — scaffolding + operational pins.**
 

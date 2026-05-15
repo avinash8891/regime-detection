@@ -36,7 +36,14 @@ class TinyFishValidator:
         except Exception as exc:
             LOGGER.error("TinyFish unavailable for %s %s; verdict unknown: %s", candidate.event_type, candidate.date, exc)
             return ValidationResult(key, self.validator_id, "unknown", None, "TinyFish unavailable or unauthenticated")
-        parsed = json.loads(payload) if isinstance(payload, str) else payload
+        try:
+            parsed = json.loads(payload) if isinstance(payload, str) else payload
+        except json.JSONDecodeError as exc:
+            LOGGER.error("TinyFish returned invalid JSON for %s %s; verdict unknown: %s", candidate.event_type, candidate.date, exc)
+            return ValidationResult(key, self.validator_id, "unknown", None, "TinyFish returned invalid JSON")
+        if not isinstance(parsed, dict):
+            LOGGER.error("TinyFish returned non-object payload for %s %s; verdict unknown", candidate.event_type, candidate.date)
+            return ValidationResult(key, self.validator_id, "unknown", None, "TinyFish returned non-object payload")
         if bool(parsed.get("confirm")):
             return ValidationResult(
                 key,

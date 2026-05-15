@@ -1,9 +1,13 @@
 from __future__ import annotations
 
 from html import unescape
+import logging
 import re
 from urllib.parse import urljoin
+from urllib.error import URLError
 from urllib.request import Request, urlopen
+
+LOGGER = logging.getLogger(__name__)
 
 ECB_BASE_URL = "https://www.ecb.europa.eu"
 BOE_BASE_URL = "https://www.bankofengland.co.uk"
@@ -51,8 +55,12 @@ MONTHS = {
 
 def fetch_text_url(url: str, *, timeout: int = 30) -> str:
     request = Request(url, headers={"User-Agent": "regime-detection-event-fetch/1.0"})
-    with urlopen(request, timeout=timeout) as response:
-        return response.read().decode("utf-8", errors="replace")
+    try:
+        with urlopen(request, timeout=timeout) as response:
+            return response.read().decode("utf-8")
+    except URLError as exc:
+        LOGGER.error("event source fetch failed for %s; skipping source for this run: %s", url, exc)
+        return ""
 
 
 def strip_tags(value: str) -> str:

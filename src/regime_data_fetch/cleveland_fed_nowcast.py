@@ -31,13 +31,12 @@ JSON shape (FusionCharts export, verified 2026-05):
 Each chart object is one monthly nowcast vintage. ``chart.subcaption`` is
 the target month (``YYYY-M``); the ``CPI Inflation`` series holds the daily
 evolution of the nowcast within that vintage's nowcasting period. We take
-the **last non-empty** value per vintage — the settled nowcast right before
-the BLS release — as that month's ``cpi_nowcast``.
+the **last non-empty** value per vintage and key it to that point's category
+label date, preserving point-in-time availability.
 
-Dating convention (ADR 0006): each vintage is keyed to the **1st of its
-target month**, matching FRED ``CPIAUCSL``'s reference-date convention, so
-that ``compute_inflation_surprise_zscore``'s ``realized - nowcast`` stays
-like-for-like (both operands forward-fill on the same monthly anchor).
+Dating convention (ADR 0006): each vintage is keyed to the date on which the
+nowcast point appears in the chart data. This avoids leaking a settled
+monthly nowcast into trading sessions earlier than its publication point.
 
 Unit: the feed publishes month-over-month inflation in *percent*;
 ``DEFAULT_VALUE_SCALE = 0.01`` converts to the fractional monthly rate the
@@ -112,15 +111,16 @@ def parse_cleveland_fed_nowcast_json(
     value_scale: float = DEFAULT_VALUE_SCALE,
 ) -> pd.DataFrame:
     """Parse the Cleveland Fed month-over-month nowcast webchart JSON into a
-    clean two-column DataFrame: ``date`` (Timestamp, 1st of the target
-    month) and ``cpi_nowcast`` (float, fractional monthly rate after
-    ``value_scale``).
+    clean two-column DataFrame: ``date`` (Timestamp, point-in-time category
+    date for the last non-empty nowcast) and ``cpi_nowcast`` (float,
+    fractional monthly rate after ``value_scale``).
 
     For each chart object (one monthly vintage): the target month comes from
     ``chart.subcaption`` and the nowcast value is the **last non-empty**
-    point of the ``series_name`` dataset series — the settled nowcast right
-    before the BLS release. Vintages with no non-empty value for that series
-    are skipped (the earliest vintages carry only PCE, no CPI).
+    point of the ``series_name`` dataset series. The row date is the aligned
+    chart category label for that point. Vintages with no non-empty value
+    for that series are skipped (the earliest vintages carry only PCE, no
+    CPI).
 
     A structurally wrong payload raises ``ClevelandFedNowcastError`` so a
     feed-shape drift fails loudly rather than producing a silently-wrong
@@ -164,8 +164,8 @@ def parse_cleveland_fed_nowcast_json(
                 f"found: {[s.get('seriesname') for s in obj['dataset']]}"
             )
         non_empty = [
-            point["value"]
-            for point in series.get("data", [])
+            (point_idx, point["value"])
+            for point_idx, point in enumerate(series.get("data", []))
             if str(point.get("value", "")).strip() != ""
         ]
         if not non_empty:
@@ -173,14 +173,20 @@ def parse_cleveland_fed_nowcast_json(
             # starts later. Skip rather than fail.
             continue
         try:
-            settled = float(non_empty[-1])
+            last_idx, raw_value = non_empty[-1]
+            settled = float(raw_value)
         except (ValueError, TypeError) as exc:
             raise ClevelandFedNowcastError(
                 f"Cleveland Fed nowcast feed: chart object {idx} "
                 f"({subcaption}) has an unparseable {series_name!r} value "
-                f"{non_empty[-1]!r}"
+                f"{non_empty[-1][1]!r}"
             ) from exc
-        rows.append({"date": target_month, "cpi_nowcast": settled * value_scale})
+        rows.append(
+            {
+                "date": _parse_category_date(obj, chart_idx=idx, point_idx=last_idx, target_month=target_month),
+                "cpi_nowcast": settled * value_scale,
+            }
+        )
 
     if not rows:
         raise ClevelandFedNowcastError(
@@ -194,6 +200,45 @@ def parse_cleveland_fed_nowcast_json(
         .reset_index(drop=True)
     )
     return df
+
+
+def _parse_category_date(
+    obj: dict[str, object],
+    *,
+    chart_idx: int,
+    point_idx: int,
+    target_month: pd.Timestamp,
+) -> pd.Timestamp:
+    categories = obj.get("categories")
+    if not isinstance(categories, list) or not categories:
+        raise ClevelandFedNowcastError(
+            f"Cleveland Fed nowcast feed: chart object {chart_idx} has no category labels for point-in-time dates"
+        )
+    first_category = categories[0]
+    if not isinstance(first_category, dict) or not isinstance(first_category.get("category"), list):
+        raise ClevelandFedNowcastError(
+            f"Cleveland Fed nowcast feed: chart object {chart_idx} has malformed category labels"
+        )
+    labels = first_category["category"]
+    if point_idx >= len(labels) or not isinstance(labels[point_idx], dict):
+        raise ClevelandFedNowcastError(
+            f"Cleveland Fed nowcast feed: chart object {chart_idx} missing category label for data point {point_idx}"
+        )
+    raw_label = str(labels[point_idx].get("label", "")).strip()
+    for fmt in ("%m/%d/%Y", "%m/%d/%y", "%Y-%m-%d"):
+        try:
+            return pd.Timestamp(dt.datetime.strptime(raw_label, fmt).date())
+        except ValueError:
+            pass
+    try:
+        parsed = pd.to_datetime(raw_label, errors="raise")
+    except (TypeError, ValueError) as exc:
+        raise ClevelandFedNowcastError(
+            f"Cleveland Fed nowcast feed: chart object {chart_idx} category label {raw_label!r} is not a parseable date"
+        ) from exc
+    if parsed.year == 1900:
+        parsed = parsed.replace(year=target_month.year)
+    return pd.Timestamp(parsed).normalize()
 
 
 def extract_data_vintage(json_text: str) -> str | None:

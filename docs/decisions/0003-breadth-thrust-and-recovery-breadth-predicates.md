@@ -44,11 +44,11 @@ The FEATURE (`breadth_thrust_feature` = 10-session MA of `pct_advancing`) ships 
 3. **Canonical literature reference.** Spec line 269 cites "Breadth Thrust (Zweig-style)". Zweig's original 1986 *Winning on Wall Street* definition is exactly form (X): "the 10-day MA of the advances-issues ratio rises from below 0.40 to above 0.615 within 10 trading days." Technician-community references (Investopedia, StockCharts, Edwards-Magee) reproduce this form.
 4. **Statelessness.** (X) is computable per session from `feature[t-10..t]` alone — preserves V1 §2.2 stateless replay.
 
-### Open questions (please answer)
+### Resolved pins
 
-- **Window inclusivity at the low end** — does "exists b in trailing 10 days" mean `b ∈ [t-10, t-1]` (10 candidate sessions before t) or `b ∈ [t-9, t-1]` (9 sessions, today excluded)? Zweig's literal text supports either; the spec doesn't pin. *Recommendation: `[t-10, t-1]`.*
-- **NaN policy** — if `feature[t]` is NaN, the rule trivially falsifies. If every `feature[b]` in the trailing window is NaN (cold-start), what does the rule emit? *Recommendation: falsify the rule (V1 §2.7 cold-start contract — propagate `unknown` via the data-quality gate rather than co-fire).*
-- **Threshold tunability** — should 0.40 and 0.615 be configurable for V2 §9.1 walk-forward calibration, or spec-fixed? *Recommendation: spec-fixed (Zweig literature anchor + analogous treatment of §1D `nh_nl_ratio` threshold 0.4 which is spec-fixed).*
+- Window inclusivity: `b ∈ [t-10, t-1]`.
+- NaN policy: falsify the rule; cold-start is handled by the data-quality gate.
+- Thresholds: `0.40` and `0.615` are spec-fixed pins for this label.
 
 ---
 
@@ -85,11 +85,11 @@ Semantic role: "improving but not yet fully confirmed", sitting between deterior
 3. **Precedence-ordering rationale.** Recovery sits ABOVE broadening in the §1D precedence (line 284). The operator-useful interpretation: surface the EARLY turning-point signal before the LAGGING cumulative-AD confirmation. (X) directly encodes "early turning point". (Y) is a different concept ("short-term breadth picking up, long-term lagging") that doesn't naturally fit the "between narrowing and broadening" semantics.
 4. **Inherited lookback.** (X) uses the same `label_rate_of_change_lookback_sessions = 5` config already pinned by Log #68 for `nh_nl_ratio_rising`. No new config keys needed.
 
-### Open questions (please answer)
+### Resolved pins
 
-- **Slope boundary at zero** — should `ad_line_slope_20d == 0` route to recovery (`<= 0`) or broadening (`>= 0`)? *Recommendation: route to recovery (`<= 0`), so broadening is strictly `> 0` per the existing spec text "ad_line_slope > 0".*
-- **NaN policy** — same V1 §2.7 cold-start contract: falsify on NaN in any input. *Recommendation: confirm.*
-- **Is (Y) worth considering?** (Y) is internally consistent but uses different inputs. Worth surfacing in case the spec owner's intent was the "50dma vs 200dma" reading.
+- Slope boundary at zero: `ad_line_slope_20d == 0` routes to `recovery_breadth`; `broadening_breadth` remains strictly `> 0`.
+- NaN policy: falsify on NaN in any input.
+- Alternative (Y) was rejected; implementation uses predicate (X).
 
 ---
 
@@ -120,4 +120,4 @@ Semantic role: "improving but not yet fully confirmed", sitting between deterior
 
 ## Decision
 
-**Spec owner action required:** confirm (X)/(X), pick alternatives, or request additional candidates. Reply on this doc (or in the spec PR) with the chosen pins, and I'll land the spec amendment + code wiring as separate commits.
+Accepted pins: `breadth_thrust` uses predicate (X) with `[t-10, t-1]`; `recovery_breadth` uses predicate (X) with `ad_line_slope_20d <= 0`. The spec amendment and TDD wiring have landed; no further spec-owner decision is pending in this ADR.

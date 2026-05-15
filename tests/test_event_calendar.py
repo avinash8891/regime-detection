@@ -363,7 +363,7 @@ def test_run_us_event_calendar_fetch_writes_yaml_and_report(tmp_path: Path) -> N
 
     assert report["counts"]["total_events"] == 6
     assert report["counts"]["by_type"] == {"CPI": 1, "FOMC": 4, "NFP": 1}
-    assert report["paths"]["event_calendar_yaml"] == str(yaml_path)
+    assert report["paths"]["event_calendar_yaml"] == "configs/events/us_events.yaml"
     assert 'type: "FOMC"' in contents
     assert 'type: "CPI"' in contents
     assert 'type: "NFP"' in contents
@@ -435,6 +435,49 @@ def test_run_us_event_calendar_fetch_adds_v2_curated_candidates(tmp_path: Path) 
     assert 'type: "ECB_decision"' in contents
     assert 'type: "BOE_decision"' in contents
     assert 'type: "BOJ_decision"' in contents
+
+
+def test_run_us_event_calendar_fetch_uses_supplied_as_of_date_for_v2_candidates(tmp_path: Path) -> None:
+    def fake_fomc_listing_fetcher() -> str:
+        return (FOMC_FIXTURES / "fomc_calendars_snippet.html").read_text()
+
+    def fake_bls_page_fetcher(url: str) -> str:
+        if url.endswith("/2026/"):
+            return """
+            Friday, January 09, 2026
+            08:30 AM
+            Employment Situation for December 2025
+            Wednesday, January 14, 2026
+            08:30 AM
+            Consumer Price Index for December 2025
+            """
+        raise AssertionError(f"Unexpected BLS schedule URL: {url}")
+
+    run_us_event_calendar_fetch(
+        repo_root=tmp_path,
+        fred_api_key=None,
+        fomc_listing_fetcher=fake_fomc_listing_fetcher,
+        fomc_historical_index_fetcher=lambda: "",
+        fomc_historical_page_fetcher=lambda url: "",
+        bls_page_fetcher=fake_bls_page_fetcher,
+        bls_start_year=2026,
+        bls_end_year=2026,
+        include_v2_curated_candidates=True,
+        as_of_date=dt.date(2025, 1, 1),
+        global_rate_calendar_text_fetchers={
+            "ecb": lambda: "",
+            "boe": lambda: """
+                2026 confirmed dates
+                Thursday 5 February | February MPC Summary and minutes
+            """,
+            "boj": lambda: "",
+        },
+    )
+
+    candidates = pd.read_parquet(tmp_path / "data" / "raw" / "event_calendar" / "candidates" / "event_candidates.parquet")
+    boe = candidates[candidates["event_type"] == "BOE_decision"].iloc[0]
+    assert boe["date"] == "2026-02-05"
+    assert bool(boe["is_future_scheduled"]) is True
 
 
 def test_run_us_event_calendar_fetch_sorts_events_by_release_timestamp(tmp_path: Path) -> None:
@@ -546,7 +589,7 @@ def test_run_us_event_calendar_fetch_records_raw_artifacts_in_sqlite(tmp_path: P
     )
 
     report = json.loads(report_path.read_text())
-    assert report["paths"]["acquisition_db"] == str(acquisition_db)
+    assert report["paths"]["acquisition_db"] == "acquisition.db"
 
     import sqlite3
 

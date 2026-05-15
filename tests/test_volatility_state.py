@@ -5,6 +5,8 @@ from pathlib import Path
 
 import yaml
 
+from regime_detection.volatility_state import _RISK_RANK
+
 def test_volatility_state_matches_pinned_fixtures(classified_golden_outputs) -> None:
     repo_root = Path(__file__).resolve().parents[1]
     golden = yaml.safe_load(
@@ -14,3 +16,7 @@ def test_volatility_state_matches_pinned_fixtures(classified_golden_outputs) -> 
         as_of = date.fromisoformat(row["as_of_date"])
         out = classified_golden_outputs[as_of]
         assert out.volatility_state.active_label == row["expected"]["volatility_state"]
+
+
+def test_v1_volatility_risk_rank_contract_keeps_crisis_vol_at_three() -> None:
+    assert _RISK_RANK["crisis_vol"] == 3

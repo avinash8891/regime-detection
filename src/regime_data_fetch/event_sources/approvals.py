@@ -51,20 +51,22 @@ def append_approval_record(
     window_days: tuple[int, int] | None = None,
 ) -> None:
     approvals = load_approval_overlay(path)
-    approvals.append(
-        ApprovalRecord(
-            event_type=event_type,
-            date=event_date,
-            approved_label=event_type,
-            approver=approver,
-            approved_at=approved_at,
-            evidence_candidate_id=candidate_id,
-            evidence_source_count=source_count,
-            importance=importance,
-            window_days=window_days,
-            notes=notes,
-        )
+    key = (event_type, event_date)
+    if any((approval.event_type, approval.date) == key for approval in approvals):
+        raise ValueError(f"duplicate approval for {event_type} on {event_date.isoformat()}")
+    approval = ApprovalRecord(
+        event_type=event_type,
+        date=event_date,
+        approved_label=event_type,
+        approver=approver,
+        approved_at=approved_at,
+        evidence_candidate_id=candidate_id,
+        evidence_source_count=source_count,
+        importance=importance,
+        window_days=window_days,
+        notes=notes,
     )
+    approvals.append(approval)
     _write_approval_overlay(path, approvals)
     load_approval_overlay(path)
 

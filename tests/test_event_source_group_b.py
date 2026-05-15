@@ -599,6 +599,23 @@ def test_tinyfish_unavailable_returns_unknown_for_review_candidates() -> None:
     ]
 
 
+@pytest.mark.parametrize("payload", ["{not json", ["not", "a", "mapping"]])
+def test_tinyfish_invalid_payload_returns_unknown(payload: object) -> None:
+    candidate = DeterministicBudgetAdapter(as_of_date=dt.date(2026, 5, 14)).fetch(
+        start_year=2026,
+        end_year=2026,
+        store=None,
+        run_id=None,
+    )[0]
+    validator = TinyFishValidator(search_fetcher=lambda candidate: payload)
+
+    validations = validator.validate([candidate], store=None, run_id=None)
+
+    assert [(validation.candidate_key, validation.validator_id, validation.verdict) for validation in validations] == [
+        (("budget", dt.date(2026, 9, 30)), "tinyfish:search-extract", "unknown")
+    ]
+
+
 def test_append_approval_record_validates_and_round_trips(tmp_path: Path) -> None:
     overlay_path = tmp_path / "group_b_approvals.yaml"
     overlay_path.write_text("approvals: []\n")
@@ -620,6 +637,37 @@ def test_append_approval_record_validates_and_round_trips(tmp_path: Path) -> Non
     assert approvals[0].evidence_candidate_id == "abc123"
     assert approvals[0].evidence_source_count == 2
     assert approvals[0].notes == "Russia invasion of Ukraine."
+
+
+def test_append_approval_record_rejects_duplicate_without_rewriting_overlay(tmp_path: Path) -> None:
+    overlay_path = tmp_path / "group_b_approvals.yaml"
+    overlay_path.write_text(
+        """
+approvals:
+  - event_type: geopolitical_event
+    date: "2022-02-24"
+    approved_label: geopolitical_event
+    approver: avinash
+    approved_at: "2026-05-14"
+    evidence_candidate_id: "abc123"
+    evidence_source_count: 2
+"""
+    )
+    original_text = overlay_path.read_text()
+
+    with pytest.raises(ValueError, match="duplicate approval"):
+        append_approval_record(
+            overlay_path,
+            event_type="geopolitical_event",
+            event_date=dt.date(2022, 2, 24),
+            candidate_id="def456",
+            source_count=2,
+            approver="avinash",
+            approved_at=dt.date(2026, 5, 15),
+            notes="duplicate",
+        )
+
+    assert overlay_path.read_text() == original_text
 
 
 def test_group_b_report_surfaces_stale_approval_states() -> None:

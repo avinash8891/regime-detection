@@ -7,6 +7,7 @@ from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
 import re
+from urllib.error import URLError
 from urllib.request import Request, urlopen
 
 import pandas_market_calendars as mcal
@@ -289,8 +290,11 @@ def run_us_event_calendar_fetch(
     group_a_text_fetcher: Callable[[str], str] | None = None,
     group_a_boe_news_fetcher: Callable[[int], str] | None = None,
     group_a_hf_parquet_fetcher: Callable[[], bytes] | None = None,
+    as_of_date: dt.date | None = None,
 ) -> Path:
     del fred_api_key
+    effective_as_of_date = as_of_date or dt.date.today()
+    effective_end_year = bls_end_year or effective_as_of_date.year
 
     store = AcquisitionStore(acquisition_db_path) if acquisition_db_path else None
     fetch_run = (
@@ -298,7 +302,7 @@ def run_us_event_calendar_fetch(
             fetch_type="events",
             params={
                 "bls_start_year": bls_start_year,
-                "bls_end_year": bls_end_year or dt.date.today().year,
+                "bls_end_year": effective_end_year,
             },
         )
         if store
@@ -317,7 +321,7 @@ def run_us_event_calendar_fetch(
             _fetch_bls_events(
                 page_fetcher=bls_page_fetcher,
                 start_year=bls_start_year,
-                end_year=bls_end_year or dt.date.today().year,
+                end_year=effective_end_year,
                 store=store,
                 run_id=fetch_run.run_id if fetch_run else None,
             )
@@ -327,7 +331,8 @@ def run_us_event_calendar_fetch(
             group_a_result = _build_v2_curated_candidate_events(
                 repo_root=repo_root,
                 start_year=bls_start_year,
-                end_year=bls_end_year or dt.date.today().year,
+                end_year=effective_end_year,
+                as_of_date=effective_as_of_date,
                 global_rate_calendar_text_fetchers=global_rate_calendar_text_fetchers,
                 group_a_text_fetcher=group_a_text_fetcher,
                 group_a_boe_news_fetcher=group_a_boe_news_fetcher,
@@ -362,12 +367,12 @@ def run_us_event_calendar_fetch(
                 "by_type": {key: counts[key] for key in sorted(counts)},
             },
             "paths": {
-                "event_calendar_yaml": str(yaml_path),
-                "acquisition_db": str(acquisition_db_path) if acquisition_db_path else None,
+                "event_calendar_yaml": _report_path(yaml_path, repo_root=repo_root),
+                "acquisition_db": _report_path(acquisition_db_path, repo_root=repo_root) if acquisition_db_path else None,
             },
         }
         if group_a_result is not None:
-            report["group_a"] = _build_group_a_report(group_a_result)
+            report["group_a"] = _build_group_a_report(group_a_result, repo_root=repo_root)
             report["group_b"] = _build_group_b_report(group_a_result)
         report_path = repo_root / "event_calendar_fetch_report.json"
         report_path.write_text(json.dumps(report, indent=2))
@@ -630,6 +635,7 @@ def _build_v2_curated_candidate_events(
     repo_root: Path,
     start_year: int,
     end_year: int,
+    as_of_date: dt.date,
     global_rate_calendar_text_fetchers: Mapping[str, Callable[[], str]] | None,
     group_a_text_fetcher: Callable[[str], str] | None,
     group_a_boe_news_fetcher: Callable[[int], str] | None,
@@ -651,7 +657,6 @@ def _build_v2_curated_candidate_events(
 
     events: list[ScheduledEvent] = []
     text_fetcher = group_a_text_fetcher or _group_a_text_fetcher_from_legacy_map(global_rate_calendar_text_fetchers)
-    as_of_date = dt.date.today()
     hf_parquet_fetcher = group_a_hf_parquet_fetcher
     if hf_parquet_fetcher is None and global_rate_calendar_text_fetchers is not None:
         hf_parquet_fetcher = lambda: b""
@@ -851,7 +856,7 @@ def _record_group_a_output(
     )
 
 
-def _build_group_a_report(result: GroupABuildResult) -> dict[str, object]:
+def _build_group_a_report(result: GroupABuildResult, *, repo_root: Path) -> dict[str, object]:
     group_a_types = {"ECB_decision", "BOE_decision", "BOJ_decision", "election"}
     group_a_candidates = [candidate for candidate in result.candidates if getattr(candidate, "event_type") in group_a_types]
     group_a_decisions = [decision for decision in result.decisions if getattr(decision, "candidate_key")[0] in group_a_types]
@@ -872,7 +877,7 @@ def _build_group_a_report(result: GroupABuildResult) -> dict[str, object]:
         "promoted": {key: promoted_counts[key] for key in sorted(promoted_counts)},
         "quarantined": {key: quarantined_counts[key] for key in sorted(quarantined_counts)},
         "source_ids": source_ids,
-        "paths": {key: str(value) for key, value in result.output_paths.items()},
+        "paths": {key: _report_path(value, repo_root=repo_root) for key, value in result.output_paths.items()},
     }
 
 
@@ -922,10 +927,20 @@ def _build_group_b_report(result: GroupABuildResult) -> dict[str, object]:
 def _build_url_text_fetcher(url: str) -> Callable[[], str]:
     def fetch() -> str:
         request = Request(url, headers={"User-Agent": "regime-detection-event-fetch/1.0"})
-        with urlopen(request, timeout=30) as response:
-            return response.read().decode("utf-8", errors="replace")
+        try:
+            with urlopen(request, timeout=30) as response:
+                return response.read().decode("utf-8")
+        except URLError:
+            return ""
 
     return fetch
+
+
+def _report_path(path: Path, *, repo_root: Path) -> str:
+    try:
+        return path.relative_to(repo_root).as_posix()
+    except ValueError:
+        return path.as_posix()
 
 
 def _parse_global_rate_decision_events(*, source_key: str, text: str) -> list[ScheduledEvent]:
