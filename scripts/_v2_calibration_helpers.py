@@ -14,6 +14,7 @@ import pandas as pd
 from regime_detection.loaders import (
     load_aggregate_forward_eps_revision_series,
     load_cpi_nowcast_series,
+    load_macro_series as load_fred_macro_series,
 )
 
 
@@ -69,15 +70,7 @@ def load_macro_series(
     the fetchers ran. ``run_cleveland_fed_nowcast_fetch`` and the
     ``aggregate_eps`` weekly accumulator produce these parquets.
     """
-    macro = pd.read_parquet(macro_parquet)
-    macro["date"] = pd.to_datetime(macro["date"])
-    series_dict: dict[str, pd.Series] = {}
-    for name, group in macro.groupby("logical_name"):
-        s = group.set_index("date")["value"].astype(float).sort_index()
-        series_dict[name] = s.rename(name)
-    for sid, group in macro.groupby("series_id"):
-        s = group.set_index("date")["value"].astype(float).sort_index()
-        series_dict.setdefault(sid, s.rename(sid))
+    series_dict = load_fred_macro_series(macro_parquet)
     if pmi_path and pmi_path.exists():
         pmi_df = pd.read_csv(pmi_path, sep="\t")
         if "release_date_local" in pmi_df.columns and "actual" in pmi_df.columns:
@@ -90,11 +83,6 @@ def load_macro_series(
                 .sort_index()
             )
             series_dict["pmi_manufacturing"] = pmi.rename("pmi_manufacturing")
-    if "DGS10" in series_dict and "dgs10" not in series_dict:
-        series_dict["dgs10"] = series_dict["DGS10"].rename("dgs10")
-    if "DGS2" in series_dict and "dgs2" not in series_dict:
-        series_dict["dgs2"] = series_dict["DGS2"].rename("dgs2")
-
     # §2B nowcast / EPS-revision seams (ADR 0006 / Ambiguity Log #48). Both
     # parquets live as siblings of macro_parquet under data/raw/; load them
     # when present so the §2B `inflation_shock` single-signal limb and the

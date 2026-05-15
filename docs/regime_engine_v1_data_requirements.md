@@ -146,7 +146,7 @@ Availability note:
 - `expiry_week` and `earnings_season` should be computed from deterministic rules rather than stored as historical rows;
 - ad-hoc events are out of scope for V1.
 - current FOMC coverage has been live-verified from `2007-10-31` through `2026-03-18`;
-- current CPI/NFP parser logic plus event-label wiring are implemented against BLS yearly schedule pages, but full historical live fetches from this environment are not yet verified because the BLS site is returning `HTTP 403` to CLI/browser automation requests here.
+- current checked YAML/report contains `131` CPI rows (`2016-01-20` through `2026-12-10`) and `131` NFP rows (`2016-01-08` through `2026-12-04`), generated from the BLS yearly schedule structure via the repo-local archive-backed fetch path;
 - current `expiry_week` and `earnings_season` runtime rules are implemented and wired through the repo event-label resolver.
 
 Required event fields:

@@ -147,12 +147,36 @@ def load_macro_series(
 
     Source schema: long-form parquet/CSV/DataFrame with columns
     `(date, series_id, value)` (and optionally `realtime_start`,
-    `realtime_end` — extra columns are ignored).
-    Returns one date-indexed Series per series_id.
+    `realtime_end`, `logical_name` — extra columns are ignored).
+    Returns date-indexed Series by FRED `series_id`. When the fetch-workflow
+    `logical_name` column is present, also returns the engine-facing logical
+    keys consumed by V2 feature seams.
     """
-    return _load_long_form_closes(
+    out = _load_long_form_closes(
         source, group_col="series_id", value_col="value", universe=series_ids,
     )
+    out = {key: series.rename(key) for key, series in out.items()}
+    df = _read_source(source)
+
+    if series_ids is not None:
+        df = df[df["series_id"].isin(series_ids)].copy()
+
+    if "logical_name" in df.columns:
+        logical_df = df.dropna(subset=["logical_name"])
+        for key, sub in logical_df.groupby("logical_name"):
+            sub = sub.sort_values("date")
+            series_key = str(key)
+            out[series_key] = pd.Series(
+                sub["value"].astype(float).to_numpy(),
+                index=pd.to_datetime(sub["date"]),
+                name=series_key,
+            )
+
+    if "DGS10" in out and "dgs10" not in out:
+        out["dgs10"] = out["DGS10"].rename("dgs10")
+    if "DGS2" in out and "dgs2" not in out:
+        out["dgs2"] = out["DGS2"].rename("dgs2")
+    return out
 
 
 def load_cpi_nowcast_series(source: str | Path | pd.DataFrame) -> pd.Series:

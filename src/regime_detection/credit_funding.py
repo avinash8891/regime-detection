@@ -140,12 +140,9 @@ REQUIRED_MACRO_KEYS: tuple[str, ...] = (
 # Credit-spread provenance (§2C lines 2128-2130).
 # ---------------------------------------------------------------------------
 
-# §2C credit-spread metric source: ICE BofA Option-Adjusted Spread series,
-# FRED-redistributed under ICE license. Single source — there is no proxy
-# fallback path. `credit_funding` already requires SOFR / IORB / NFCI /
-# broad_usd_index from FRED's `macro_series`, so the OAS series carry zero
-# marginal data-access cost: any operator able to build the §2C seam at
-# all already has the FRED key that fetches them.
+# §2C authoritative credit-spread source: ICE BofA Option-Adjusted Spread
+# series, FRED-redistributed under ICE license. The parallel TLT-vs-HYG/LQD
+# metric below is a separate proxy output, not a fallback or splice into OAS.
 CREDIT_SPREAD_SOURCE_CODE = "credit_spread_ice_bofa_oas_fred"
 CREDIT_SPREAD_SOURCE = "fred:BAMLH0A0HYM2+BAMLC0A4CBBB"
 CREDIT_SPREAD_SOURCE_URL = "https://fred.stlouisfed.org/series/BAMLH0A0HYM2"
@@ -304,19 +301,16 @@ def compute_credit_funding_features(
     All inputs are aligned to ``spy_close.index``; missing dates within the
     NYSE calendar produce NaN at those rows.
 
-    Credit-spread metric — single source. ``hy_oas`` / ``ig_oas`` are the
-    FRED-redistributed ICE BofA Option-Adjusted Spread series (BAMLH0A0HYM2
-    for HY, BAMLC0A4CBBB for BBB IG). They populate the
-    ``hy_oas_63d`` / ``ig_oas_63d`` columns directly. The §2C line 2033 sign
-    convention holds by construction: a rising OAS series IS a widening
-    spread. There is no total-return-differential fallback —
-    ``credit_funding`` already requires SOFR / IORB / NFCI /
-    broad_usd_index from FRED's ``macro_series``, so the OAS series carry
-    zero marginal data-access cost. When the OAS series are absent from
+    Credit-spread metrics are parallel. ``hy_oas`` / ``ig_oas`` are the
+    authoritative FRED-redistributed ICE BofA Option-Adjusted Spread series
+    (BAMLH0A0HYM2 for HY, BAMLC0A4CBBB for BBB IG). The TLT-vs-HYG/LQD
+    total-return differential is computed separately below and produces
+    ``credit_funding_state_proxy`` through the axis-series classifier. The
+    two metrics are never blended. When the OAS series are absent from
     ``macro_series``, the §2C seam simply is not built (handled by the
     ``REQUIRED_MACRO_KEYS`` gate in ``feature_store``) and
-    ``credit_funding_state`` stays ``None`` — V1 byte-identity preserved,
-    same as every other unbuilt V2 seam.
+    ``credit_funding_state`` / ``credit_funding_state_proxy`` stay ``None`` —
+    V1 byte-identity preserved, same as every other unbuilt V2 seam.
     """
     spy_index = spy_close.index
 
@@ -340,9 +334,8 @@ def compute_credit_funding_features(
     usd_change_window = config.broad_usd_change_window_days
     usd_norm_window = config.broad_usd_normalizer_window_days
 
-    # §2C lines 2032-2035 — ICE BofA OAS, single source. Rising OAS =
-    # wider spread (matches the §2C line 2033 sign convention by
-    # construction; no proxy translation needed).
+    # §2C lines 2032-2035 — authoritative ICE BofA OAS. Rising OAS =
+    # wider spread (matches the §2C line 2033 sign convention by construction).
     hy_oas_63d = (
         hy_oas.reindex(spy_index).astype(float).rename("hy_oas_63d")
     )
