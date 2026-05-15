@@ -23,13 +23,21 @@ import pandas as pd
 import pytest
 
 from regime_detection.config import (
+    TrendDirectionV2Config,
     TrendDirectionV2RulesConfig,
+)
+from regime_detection.trend_direction import (
+    TrendDirectionFeatures,
+    apply_hysteresis,
+    build_raw_outputs as build_trend_direction_raw_outputs,
 )
 from regime_detection.trend_direction_v2 import (
     TrendDirectionV2Features,
+    compute_trend_v2_features,
     evaluate_euphoria,
     evaluate_v2_trend_label,
 )
+from regime_detection.volatility_state import realized_vol
 
 
 # v2 §1A line 162 — exact spec thresholds.
@@ -351,6 +359,85 @@ def test_realized_vol_21d_and_sma_200_and_sentiment_score_exposed_on_features() 
     assert "realized_vol_21d" in fields
     assert "sma_200" in fields
     assert "sentiment_score" in fields
+
+
+def test_euphoria_realized_vol_21d_reuses_shared_volatility_helper() -> None:
+    """§1A euphoria uses the same realized_vol_21d series as the shared
+    volatility axis helper, not a private return convention."""
+    idx = pd.bdate_range(end="2024-03-15", periods=80, freq="B")
+    returns = np.r_[
+        np.full(40, 0.002),
+        np.linspace(-0.03, 0.035, 40),
+    ]
+    close = pd.Series(400.0 * (1.0 + returns).cumprod(), index=idx, name="close")
+    config = TrendDirectionV2Config(
+        efficiency_ratio_lookback_days=20,
+        hurst_lookback_days=250,
+        slope_lookback_days=20,
+        sma_short_period=50,
+        sma_long_period=200,
+        return_short_period=63,
+        return_long_period=126,
+        drawdown_lookback_days=252,
+    )
+
+    features = compute_trend_v2_features(close, config=config)
+    expected = realized_vol(close, window=21).rename("realized_vol_21d")
+
+    pd.testing.assert_series_equal(features.realized_vol_21d, expected)
+
+
+def test_build_raw_outputs_records_euphoria_override_rule(
+    euphoria_rules: TrendDirectionV2RulesConfig,
+) -> None:
+    """When euphoria wins the V2 overlay, evidence must name the euphoria
+    rule rather than the lower-precedence recovery rule."""
+    dt = pd.Timestamp("2024-03-15")
+    idx = pd.bdate_range(
+        end=dt, periods=_SPEC_EUPHORIA_VOL_RISING_LOOKBACK + 1, freq="B"
+    )
+    close = pd.Series(np.linspace(500.0, 520.0, len(idx)), index=idx, name="close")
+    v1_features = TrendDirectionFeatures(
+        close=close,
+        sma_50=pd.Series(460.0, index=idx),
+        sma_200=pd.Series(450.0, index=idx),
+        return_63d=pd.Series(0.30, index=idx),
+    )
+    v2_features, _ = _euphoria_inputs_at(
+        dt=dt,
+        close_t=520.0,
+        sma_200=450.0,
+        return_126d=0.30,
+        realized_vol_21d_now=0.18,
+        realized_vol_21d_5d_ago=0.15,
+        sentiment_score=25.0,
+    )
+
+    labels, evidence = build_trend_direction_raw_outputs(
+        v1_features,
+        trend_direction_v2_features=v2_features,
+        trend_direction_v2_rules=euphoria_rules,
+    )
+
+    assert labels[-1] == "euphoria"
+    assert evidence[-1]["v2_override"] == {
+        "from": "bull",
+        "to": "euphoria",
+        "rule": "euphoria",
+    }
+
+
+def test_hysteresis_accepts_euphoria_trend_label() -> None:
+    dates = pd.DatetimeIndex([pd.Timestamp("2024-03-14"), pd.Timestamp("2024-03-15")])
+
+    stable, active = apply_hysteresis(
+        dates=dates,
+        raw_labels=["bull", "euphoria"],
+        deescalation_days=3,
+    )
+
+    assert stable == ["bull", "euphoria"]
+    assert active == ["bull", "euphoria"]
 
 
 def test_build_sentiment_score_series_forward_fills_from_publication_date() -> None:

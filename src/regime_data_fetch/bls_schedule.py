@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import datetime as dt
+import json
+import os
 import re
 import urllib.request
 from dataclasses import dataclass
@@ -112,8 +114,48 @@ def build_bls_local_archive_page_fetcher(
 
 def fetch_bls_schedule_page_text(url: str) -> str:
     req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
-    with urllib.request.urlopen(req, timeout=30) as response:
-        return response.read().decode("utf-8", errors="replace")
+    try:
+        with urllib.request.urlopen(req, timeout=30) as response:
+            return response.read().decode("utf-8", errors="replace")
+    except Exception as exc:
+        api_key = os.environ.get("TINYFISH_API_KEY")
+        if not api_key:
+            raise
+        try:
+            return _fetch_page_text_with_tinyfish(url=url, api_key=api_key)
+        except Exception as fallback_exc:
+            raise BLSScheduleFetchError(
+                f"BLS direct fetch failed and TinyFish fallback failed for {url}: {fallback_exc}"
+            ) from exc
+
+
+def _fetch_page_text_with_tinyfish(*, url: str, api_key: str) -> str:
+    payload = json.dumps(
+        {
+            "urls": [url],
+            "format": "markdown",
+            "links": False,
+            "image_links": False,
+            "proxy_config": {"country_code": "US"},
+        }
+    ).encode("utf-8")
+    request = urllib.request.Request(
+        "https://api.fetch.tinyfish.ai",
+        data=payload,
+        headers={
+            "Content-Type": "application/json",
+            "X-API-Key": api_key,
+        },
+        method="POST",
+    )
+    with urllib.request.urlopen(request, timeout=150) as response:
+        body = response.read().decode("utf-8", errors="replace")
+    decoded = json.loads(body)
+    results = decoded.get("results") or []
+    if results and isinstance(results[0].get("text"), str):
+        return results[0]["text"]
+    errors = decoded.get("errors") or []
+    raise BLSScheduleFetchError(f"TinyFish returned no text for {url}: {errors}")
 
 
 def _extract_year_from_schedule_url(url: str) -> int:

@@ -34,11 +34,11 @@ Rules (verbatim §2A lines 1093-1104):
 
   easing_pressure:
     yield_change_zscore_2y_63d < -1.5
-    AND yield_change_zscore_10y_63d < -1.5
+    OR yield_change_zscore_10y_63d < -1.5
 
   rate_shock:
-    abs(yield_change_zscore_21d_2y) > +2.0
-    OR abs(yield_change_zscore_21d_10y) > +2.0
+    abs(yield_change_zscore_21d_2y) > 2.0
+    OR abs(yield_change_zscore_21d_10y) > 2.0
 
 NaN-safe: ``<`` / ``>`` on NaN evaluates False in Python, so a NaN
 input naturally falsifies the predicate and the precedence falls
@@ -288,10 +288,10 @@ def evaluate_rules(
         or inputs.broad_usd_zscore_63d > config.tightening_pressure_zscore_threshold
     ):
         return "tightening_pressure"
-    # easing_pressure — AND on the two 63d-change yield signals.
+    # easing_pressure — OR on the two 63d-change yield signals.
     if (
         inputs.zscore_2y_63d < config.easing_pressure_zscore_threshold
-        and inputs.zscore_10y_63d < config.easing_pressure_zscore_threshold
+        or inputs.zscore_10y_63d < config.easing_pressure_zscore_threshold
     ):
         return "easing_pressure"
     return "neutral_monetary"

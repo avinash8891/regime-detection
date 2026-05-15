@@ -1,11 +1,9 @@
-"""TDD RED tests for V2 Slice 2.8b — BreadthV2Features.bias_warnings scaffold.
+"""Tests for V2 §1D BreadthV2Features.bias_warnings.
 
 Pins the optional ``bias_warnings`` metadata field on ``BreadthV2Features`` and
-the public ``make_bias_warnings_frame`` schema helper. Slice 2.8b is
-scaffolding-only: the existing sector-breadth path must return
-``bias_warnings=None`` (no PIT inputs consumed). Slice 2.8c will emit the
-``survivorship_biased_constituent_universe`` warning for PIT-derived breadth
-features.
+the public ``make_bias_warnings_frame`` schema helper. The sector-breadth path
+returns ``bias_warnings=None``; PIT-derived breadth features emit the
+``survivorship_biased_constituent_universe`` warning.
 
 Spec refs:
     docs/regime_engine_v2_spec.md §1D PIT breadth bias-warning seam.

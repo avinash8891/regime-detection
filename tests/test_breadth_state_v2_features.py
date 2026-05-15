@@ -1,13 +1,11 @@
-"""TDD tests for v2 §1D Layer 1 V2 Breadth features (Slice 2.3).
+"""Tests for v2 §1D Layer 1 V2 Breadth features.
 
-Scope-restricted slice: only `sector_breadth` (the non-PIT-dependent §1D
-feature) is in scope. Per ~/.claude/CLAUDE.md and AGENTS rule G/L: real
-production sector symbols imported from `SECTOR_ETFS` — NO toy names.
+Per ~/.claude/CLAUDE.md and AGENTS rule G/L: real production sector symbols
+imported from `SECTOR_ETFS` — NO toy names.
 
 Spec references:
     docs/regime_engine_v2_spec.md §1D (lines 196–247).
-    Slice scope: sector_breadth only. PIT-dependent features and new V2
-    breadth labels are deferred (Ambiguity Log entries #21–#27).
+    Sector breadth plus optional PIT-derived features / labels.
 """
 from __future__ import annotations
 

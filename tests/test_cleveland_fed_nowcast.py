@@ -16,6 +16,7 @@ no mocks.
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 
 import pandas as pd
@@ -43,12 +44,18 @@ def _chart_obj(
     *,
     series_name: str = NOWCAST_SERIES_NAME,
     include_series: bool = True,
+    labels: list[str] | None = None,
 ) -> dict:
     """One FusionCharts-style chart object = one monthly nowcast vintage.
 
     ``cpi_values`` are the daily nowcast points (strings, possibly "" for
     not-yet-computed days), mirroring the real feed.
     """
+    if labels is None:
+        match = re.fullmatch(r"(?P<year>\d{4})-(?P<month>\d{1,2})", subcaption)
+        assert match is not None
+        start = pd.Timestamp(year=int(match.group("year")), month=int(match.group("month")), day=1)
+        labels = [(start + pd.Timedelta(days=i)).strftime("%m/%d/%Y") for i in range(len(cpi_values))]
     dataset = [
         {
             "seriesname": "Core CPI Inflation",
@@ -75,7 +82,7 @@ def _chart_obj(
             "yaxisname": "Month-over-month percent change",
         },
         "categories": [
-            {"category": [{"label": f"d{i:02d}"} for i in range(len(cpi_values))]}
+            {"category": [{"label": label} for label in labels]}
         ],
         "dataset": dataset,
     }
@@ -105,20 +112,34 @@ def _write_feed(tmp_path: Path, json_text: str = _FIXTURE_JSON) -> Path:
 # --- parse ------------------------------------------------------------------
 
 
-def test_parse_takes_last_nonempty_value_per_vintage_keyed_to_month_start() -> None:
+def test_parse_takes_last_nonempty_value_per_vintage_keyed_to_publication_date() -> None:
     df = parse_cleveland_fed_nowcast_json(_FIXTURE_JSON)
     assert list(df.columns) == ["date", "cpi_nowcast"]
     assert len(df) == 3
-    # Each vintage keyed to the 1st of its target month.
     assert list(df["date"]) == [
-        pd.Timestamp("2019-11-01"),
-        pd.Timestamp("2019-12-01"),
-        pd.Timestamp("2020-01-01"),
+        pd.Timestamp("2019-11-03"),
+        pd.Timestamp("2019-12-04"),
+        pd.Timestamp("2020-01-03"),
     ]
     # The settled (last non-empty) nowcast, percent -> fraction.
     assert df.loc[0, "cpi_nowcast"] == pytest.approx(0.2284 * DEFAULT_VALUE_SCALE)
     assert df.loc[1, "cpi_nowcast"] == pytest.approx(0.2463 * DEFAULT_VALUE_SCALE)
     assert df.loc[2, "cpi_nowcast"] == pytest.approx(0.1571 * DEFAULT_VALUE_SCALE)
+
+
+def test_parse_keys_nowcast_to_last_nonempty_publication_date() -> None:
+    objs = [
+        _chart_obj(
+            "2024-3",
+            ["", "0.30", "0.34"],
+            labels=["03/01/2024", "03/07/2024", "03/12/2024"],
+        )
+    ]
+
+    df = parse_cleveland_fed_nowcast_json(_feed_json(objs))
+
+    assert list(df["date"]) == [pd.Timestamp("2024-03-12")]
+    assert df.loc[0, "cpi_nowcast"] == pytest.approx(0.34 * DEFAULT_VALUE_SCALE)
 
 
 def test_parse_skips_vintage_with_no_nonempty_value() -> None:
@@ -129,7 +150,7 @@ def test_parse_skips_vintage_with_no_nonempty_value() -> None:
         _chart_obj("2013-8", ["", "0.1249"]),
     ]
     df = parse_cleveland_fed_nowcast_json(_feed_json(objs))
-    assert list(df["date"]) == [pd.Timestamp("2013-08-01")]
+    assert list(df["date"]) == [pd.Timestamp("2013-08-02")]
 
 
 def test_parse_honours_custom_series_and_scale() -> None:
@@ -174,7 +195,9 @@ def test_parse_raises_on_missing_subcaption() -> None:
 
 def test_parse_raises_on_bad_subcaption_format() -> None:
     with pytest.raises(ClevelandFedNowcastError, match="unparseable chart subcaption"):
-        parse_cleveland_fed_nowcast_json(_feed_json([_chart_obj("March2024", ["0.3"])]))
+        parse_cleveland_fed_nowcast_json(
+            _feed_json([_chart_obj("March2024", ["0.3"], labels=["03/01/2024"])])
+        )
 
 
 def test_parse_raises_on_missing_series() -> None:
@@ -241,7 +264,7 @@ def test_update_merges_and_supersedes_existing(tmp_path: Path) -> None:
     # Seed an existing parquet with a stale 2019-12 value.
     pd.DataFrame(
         {
-            "date": [pd.Timestamp("2019-11-01"), pd.Timestamp("2019-12-01")],
+            "date": [pd.Timestamp("2019-11-03"), pd.Timestamp("2019-12-04")],
             "cpi_nowcast": [0.002284, 0.009999],
         }
     ).to_parquet(out_path, index=False)
@@ -250,7 +273,7 @@ def test_update_merges_and_supersedes_existing(tmp_path: Path) -> None:
     df = update_cpi_nowcast_parquet(json_path=json_path, out_path=out_path)
 
     assert len(df) == 3  # Nov superseded, Dec superseded, Jan appended
-    dec = df.loc[df["date"] == pd.Timestamp("2019-12-01"), "cpi_nowcast"].iloc[0]
+    dec = df.loc[df["date"] == pd.Timestamp("2019-12-04"), "cpi_nowcast"].iloc[0]
     # Stale 0.009999 replaced by the fresh parse (0.2463 percent -> fraction).
     assert dec == pytest.approx(0.2463 * DEFAULT_VALUE_SCALE)
 
@@ -276,8 +299,8 @@ def test_run_fetch_downloads_parses_and_reports(tmp_path: Path) -> None:
     assert report_path.exists()
     report = json.loads(report_path.read_text())
     assert report["rows"] == 3
-    assert report["min_date"] == "2019-11-01"
-    assert report["max_date"] == "2020-01-01"
+    assert report["min_date"] == "2019-11-03"
+    assert report["max_date"] == "2020-01-03"
     assert report["data_vintage"] == _DATA_VINTAGE
     assert report["series_name"] == NOWCAST_SERIES_NAME
     assert report["value_scale"] == DEFAULT_VALUE_SCALE

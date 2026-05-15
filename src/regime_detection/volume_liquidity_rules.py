@@ -5,8 +5,8 @@ Pure scalar rule layer over the v2 §1E features:
 - ``return_1d`` from V1 ``VolatilityFeatures.return_1d``
   (single source of truth — see Ambiguity Log #42).
 - ``gap_frequency_percentile_252d`` + ``intraday_range_percentile_252d``
-  (forward-compat inputs for the DEFERRED ``liquidity_gap_behavior`` rule;
-  see Ambiguity Log #40).
+  from the §1C ``volatility_state_v2`` seam for ``liquidity_gap_behavior``
+  (see Ambiguity Log #40 closure).
 
 Spec references (docs/regime_engine_v2_spec.md):
     §1E lines 260-266  Labels
@@ -42,9 +42,7 @@ import numpy as np
 from regime_detection.config import VolumeLiquidityRulesConfig
 
 
-# v2 §1E lines 260-266 labels (full Literal — `liquidity_gap_behavior` is
-# defined here even though the rule is deferred so the type stays
-# forward-compat).
+# v2 §1E lines 260-266 labels (full Literal).
 VolumeLiquidityLabel = Literal[
     "normal_volume",
     "panic_volume",
@@ -76,17 +74,15 @@ RULE_PRECEDENCE: tuple[VolumeLiquidityLabel, ...] = (
 class VolumeLiquidityRuleInputs:
     """Per-day scalar inputs the §1E rules consume.
 
-    All four fields are populated even when only the panic/normal rules
-    fire — the deferred ``liquidity_gap_behavior`` rule consumes the two
-    percentile fields and the call sites already supply them so the
-    forward flip is mechanical.
+    All four fields are populated because ``liquidity_gap_behavior``
+    consumes the two percentile fields from ``volatility_state_v2``.
     """
 
     # §1E line 272 / 256 — z-score of today's volume vs trailing 20d.
     volume_zscore_20d: float
     # §1E line 273 — today's SPY total return.
     return_1d: float
-    # §1E line 278 — 252d percentile of `gap_frequency_20d` (DEFERRED).
+    # §1E line 278 — 252d percentile of `gap_frequency_20d`.
     gap_frequency_percentile_252d: float
     # §1E line 279 — 252d percentile of intraday range.
     intraday_range_percentile_252d: float
@@ -179,7 +175,7 @@ def evaluate_rules(
 
     Falls through to ``unknown`` when no rule fires (cold-start /
     data-quality path). Precedence:
-        panic_volume > liquidity_gap_behavior (deferred) > normal_volume > unknown
+        panic_volume > liquidity_gap_behavior > normal_volume > unknown
     """
     for label in RULE_PRECEDENCE:
         if label == "panic_volume":

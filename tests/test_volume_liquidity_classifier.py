@@ -148,6 +148,32 @@ def test_classifier_emits_labels_from_v2_label_set():
         assert output.active_label in allowed
 
 
+def test_classifier_evidence_reports_live_liquidity_gap_inputs():
+    """Log #40 closure: classifier evidence must expose the percentile inputs
+    actually used by the live liquidity_gap_behavior predicate."""
+    context, _ = _build_context_with_volume()
+    store = build_feature_store(
+        context,
+        volume_liquidity_v2_config=context.config.volume_liquidity_v2,
+        volatility_state_v2_config=context.config.volatility_state_v2,
+    )
+    out = VolumeLiquidityStateSeriesClassifier().build(context, store)
+    assert out is not None
+
+    last_day = context.sessions[-1]
+    evidence = out[last_day].evidence
+    assert set(evidence) == {"rule_evidence"}
+    rule_evidence = evidence["rule_evidence"]
+    assert set(rule_evidence) == {
+        "volume_zscore_20d",
+        "return_1d",
+        "gap_frequency_percentile_252d",
+        "intraday_range_percentile_252d",
+    }
+    assert isinstance(rule_evidence["gap_frequency_percentile_252d"], float)
+    assert isinstance(rule_evidence["intraday_range_percentile_252d"], float)
+
+
 def test_classifier_emits_normal_volume_after_warmup():
     """After ≥20 sessions, the rules must produce at least one normal_volume
     label across the post-warmup window (most days are normal)."""

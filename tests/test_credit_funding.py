@@ -11,6 +11,8 @@ Spec authority: docs/regime_engine_v2_spec.md §2C lines 2005-2130.
 from __future__ import annotations
 
 
+from datetime import date
+
 import numpy as np
 import pandas as pd
 import pytest
@@ -56,6 +58,7 @@ from regime_detection.market_context import build_market_context
 _TRAINING_SESSIONS = 650  # > 504 + 63 cold-start
 _LAST_SESSION = pd.Timestamp("2025-04-30")
 _SEED = 20260513
+_REAL_FIXTURE_CREDIT_AS_OF = date(2026, 5, 12)
 
 
 def _bdate_index(periods: int = _TRAINING_SESSIONS) -> pd.DatetimeIndex:
@@ -723,6 +726,32 @@ def _build_store_and_outputs(context):
     return store, CreditFundingSeriesClassifier().build(context, store)
 
 
+def _build_real_v2_credit_context(
+    as_of: date,
+    v2_market_df_for_asof,
+    v2_close_series_by_symbol: dict[str, pd.Series],
+    v2_macro_series_by_key: dict[str, pd.Series],
+):
+    required_symbols = set(SECTOR_ETFS) | set(CROSS_ASSET_SYMBOLS) | {"KRE"}
+    missing = required_symbols - set(v2_close_series_by_symbol)
+    assert not missing, f"V2 OHLCV fixture missing symbols: {sorted(missing)}"
+    sector_etf_closes = {
+        symbol: v2_close_series_by_symbol[symbol] for symbol in SECTOR_ETFS
+    }
+    cross_asset_closes = {
+        symbol: v2_close_series_by_symbol[symbol]
+        for symbol in set(CROSS_ASSET_SYMBOLS) | {"KRE"}
+    }
+    return build_market_context(
+        end_date=as_of,
+        market_data=v2_market_df_for_asof(as_of),
+        config=RegimeEngine().config,
+        sector_etf_closes=sector_etf_closes,
+        cross_asset_closes=cross_asset_closes,
+        macro_series=v2_macro_series_by_key,
+    )
+
+
 def test_build_proxy_runs_parallel_to_build_with_proxy_bias_code() -> None:
     """build_proxy() runs the identical §2C rule schema on the TLT-proxy
     series, producing a parallel output keyed exactly like build() — but
@@ -759,6 +788,8 @@ def test_build_proxy_runs_parallel_to_build_with_proxy_bias_code() -> None:
         proxy[rule_day].evidence["bias_warning_code"]
         == "credit_spread_proxy_total_return_differential"
     )
+    assert real[rule_day].evidence["spread_source"] == "ice_bofa_oas"
+    assert proxy[rule_day].evidence["spread_source"] == "tlt_total_return_differential"
 
 
 def test_unknown_when_hyg_stale_more_than_5_sessions() -> None:
@@ -931,6 +962,113 @@ def test_feature_store_credit_funding_seam_lit_with_all_inputs() -> None:
     )
     assert store.credit_funding is not None
     assert isinstance(store.credit_funding, CreditFundingFeatures)
+
+
+def test_real_v2_fixture_credit_funding_golden_label(
+    v2_market_df_for_asof,
+    v2_close_series_by_symbol: dict[str, pd.Series],
+    v2_macro_series_by_key: dict[str, pd.Series],
+) -> None:
+    """Real V2 OHLCV + FRED fixture lights §2C and pins current labels."""
+    as_of = _REAL_FIXTURE_CREDIT_AS_OF
+    context = _build_real_v2_credit_context(
+        as_of,
+        v2_market_df_for_asof,
+        v2_close_series_by_symbol,
+        v2_macro_series_by_key,
+    )
+    store = build_feature_store(
+        context,
+        network_fragility_config=context.config.network_fragility,
+        monetary_pressure_v2_config=context.config.monetary_pressure_v2,
+        credit_funding_config=context.config.credit_funding,
+    )
+    assert store.credit_funding is not None
+
+    classifier = CreditFundingSeriesClassifier()
+    real_outputs = classifier.build(context, store)
+    proxy_outputs = classifier.build_proxy(context, store)
+    assert real_outputs is not None
+    assert proxy_outputs is not None
+
+    real = real_outputs[as_of]
+    proxy = proxy_outputs[as_of]
+    assert real.raw_label == "credit_calm"
+    assert real.stable_label == "credit_calm"
+    assert real.active_label == "credit_calm"
+    assert real.data_quality.status == "ok"
+    assert real.data_quality.reason is None
+    assert real.evidence["spread_source"] == "ice_bofa_oas"
+    assert real.evidence["bias_warning_code"] == "credit_spread_ice_bofa_oas_fred"
+    assert real.evidence["nfci_daily_carried"] == pytest.approx(-0.524)
+    assert real.evidence["kre_spy_slope_63d"] == pytest.approx(
+        -7.786519147306989e-05
+    )
+    real_rule = real.evidence["rule_evidence"]
+    assert real_rule["hy_spread_percentile_504d"] == pytest.approx(
+        0.24305555555555555
+    )
+    assert real_rule["hy_spread_slope_21d"] == pytest.approx(
+        -0.004064935064935065
+    )
+    assert real_rule["spy_21d_return"] == pytest.approx(0.07590730214254471)
+    assert real_rule["avg_pairwise_corr_percentile_504d"] == pytest.approx(
+        0.3055555555555556
+    )
+
+    assert proxy.raw_label == "credit_calm"
+    assert proxy.stable_label == "credit_calm"
+    assert proxy.active_label == "credit_calm"
+    assert proxy.data_quality.status == "ok"
+    assert proxy.evidence["spread_source"] == "tlt_total_return_differential"
+    assert (
+        proxy.evidence["bias_warning_code"]
+        == "credit_spread_proxy_total_return_differential"
+    )
+    proxy_rule = proxy.evidence["rule_evidence"]
+    assert proxy_rule["hy_spread_percentile_504d"] == pytest.approx(
+        0.31746031746031744
+    )
+    assert proxy_rule["hy_spread_slope_21d"] == pytest.approx(
+        -0.0005359273106014766
+    )
+
+
+def test_regime_output_carries_real_fixture_credit_funding_state_when_configured(
+    v2_market_df_for_asof,
+    v2_close_series_by_symbol: dict[str, pd.Series],
+    v2_macro_series_by_key: dict[str, pd.Series],
+) -> None:
+    """End-to-end: real fixture reaches both §2C wire fields."""
+    as_of = _REAL_FIXTURE_CREDIT_AS_OF
+    context = _build_real_v2_credit_context(
+        as_of,
+        v2_market_df_for_asof,
+        v2_close_series_by_symbol,
+        v2_macro_series_by_key,
+    )
+    engine = RegimeEngine()
+    timeline = engine.classify_window(
+        end_date=as_of,
+        market_data=v2_market_df_for_asof(as_of),
+        lookback_days=1,
+        sector_etf_closes=context.sector_etf_closes,
+        cross_asset_closes=context.cross_asset_closes,
+        macro_series=v2_macro_series_by_key,
+    )
+    out = timeline.outputs[-1]
+    assert out.as_of_date == as_of
+    assert out.credit_funding_state is not None
+    assert out.credit_funding_state.raw_label == "credit_calm"
+    assert out.credit_funding_state.active_label == "credit_calm"
+    assert out.credit_funding_state.evidence["spread_source"] == "ice_bofa_oas"
+    assert out.credit_funding_state_proxy is not None
+    assert out.credit_funding_state_proxy.raw_label == "credit_calm"
+    assert out.credit_funding_state_proxy.active_label == "credit_calm"
+    assert (
+        out.credit_funding_state_proxy.evidence["spread_source"]
+        == "tlt_total_return_differential"
+    )
 
 
 def test_regime_output_carries_credit_funding_state_when_configured() -> None:

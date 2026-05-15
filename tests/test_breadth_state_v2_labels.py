@@ -1,8 +1,7 @@
-"""V2 §1D Breadth State extensions: ``narrowing_breadth`` and
-``broadening_breadth`` (Ambiguity Log #21–#26 + #68).
+"""V2 §1D Breadth State extensions.
 
-The deferred labels ``breadth_thrust`` and ``recovery_breadth`` reserve
-precedence slots but never fire today (Ambiguity Log #69 / #70).
+Includes ``breadth_thrust``, ``narrowing_breadth``, ``recovery_breadth``,
+and ``broadening_breadth`` (Ambiguity Log #21–#26, #68, #69, #70).
 
 Tests use the same per-day predicate / vectorised label paths as the §1B
 trend-character slice. PIT features are constructed as synthetic
@@ -28,6 +27,7 @@ from regime_detection.breadth_state import (
     _evaluate_recovery_breadth,
 )
 from regime_detection.config import BreadthV2Config
+from regime_detection.models import BreadthStateOutput, DataQuality
 
 
 _V1_LABELS: set[str] = {
@@ -288,7 +288,7 @@ def test_breadth_v2_config_defaults_match_spec() -> None:
 
 def test_risk_rank_contains_new_v2_labels() -> None:
     # Sanity: the rank table must include every label in the V2 BreadthLabel
-    # Literal — including the deferred slots (breadth_thrust, recovery_breadth).
+    # Literal.
     expected_labels = {
         "breadth_thrust",
         "divergent_fragile",
@@ -301,6 +301,18 @@ def test_risk_rank_contains_new_v2_labels() -> None:
         "unknown",
     }
     assert expected_labels.issubset(set(_RISK_RANK.keys()))
+
+
+def test_breadth_state_output_accepts_pit_biased_research_mode() -> None:
+    out = BreadthStateOutput(
+        mode="pit_constituent_biased_research",
+        raw_label="narrowing_breadth",
+        stable_label="narrowing_breadth",
+        active_label="narrowing_breadth",
+        evidence={"source": "pit_constituent_biased_research"},
+        data_quality=DataQuality(status="ok"),
+    )
+    assert out.mode == "pit_constituent_biased_research"
 
 
 # ---------------------------------------------------------------------------

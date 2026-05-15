@@ -10,8 +10,27 @@ import yaml
 
 LOG = logging.getLogger(__name__)
 
-_SCHEDULED_TYPES = {"FOMC", "CPI", "NFP"}
-_ALLOWED_TYPES = _SCHEDULED_TYPES | {"ad_hoc"}
+_SCHEDULED_TYPES = {
+    "FOMC",
+    "CPI",
+    "NFP",
+    "election",
+    "budget",
+    "global_rate_decision",
+    "ECB_decision",
+    "BOE_decision",
+    "BOJ_decision",
+}
+_V2_MANUAL_TYPES = {
+    "budget",
+    "election",
+    "geopolitical_event",
+    "global_rate_decision",
+    "ECB_decision",
+    "BOE_decision",
+    "BOJ_decision",
+}
+_ALLOWED_TYPES = _SCHEDULED_TYPES | _V2_MANUAL_TYPES | {"ad_hoc"}
 
 
 def load_event_calendar(
@@ -193,13 +212,17 @@ def _validate_event_df(df: pd.DataFrame, *, market: str) -> pd.DataFrame:
         raise ValueError(f"event_calendar missing required columns: {missing}")
 
     out = df.copy()
-    out = out[out["market"] == market].copy()
+    out = out[(out["market"] == market) | (out["market"] == "GLOBAL")].copy()
     out["type"] = out["type"].astype(str)
     bad_types = sorted(set(out["type"]) - _ALLOWED_TYPES)
     if bad_types:
         raise ValueError(f"event_calendar contains unsupported types for V1: {bad_types}")
 
     out["date"] = pd.to_datetime(out["date"], errors="raise").dt.date
+    if "window_days" not in out.columns:
+        out["window_days"] = None
+    else:
+        out["window_days"] = out["window_days"].apply(_parse_window_days)
     if "publication_date" in out.columns:
         provided_mask = out["publication_date"].notna()
         parsed_publication = pd.to_datetime(out["publication_date"], errors="coerce")
@@ -210,6 +233,11 @@ def _validate_event_df(df: pd.DataFrame, *, market: str) -> pd.DataFrame:
         out["publication_date"] = parsed_publication.dt.date.astype("object")
     else:
         out["publication_date"] = None
+    if "approved_label" not in out.columns:
+        out["approved_label"] = None
+    else:
+        approved = out["approved_label"].where(out["approved_label"].notna(), None)
+        out["approved_label"] = approved.astype("object")
 
     for idx, row in out.iterrows():
         if pd.isna(row["publication_date"]):
@@ -218,6 +246,23 @@ def _validate_event_df(df: pd.DataFrame, *, market: str) -> pd.DataFrame:
             else:
                 out.at[idx, "publication_date"] = row["date"]
 
-    return out[["date", "market", "type", "importance", "publication_date"]].sort_values(
+    return out[["date", "market", "type", "importance", "publication_date", "window_days", "approved_label"]].sort_values(
         ["date", "type"]
     ).reset_index(drop=True)
+
+
+def _parse_window_days(value: object) -> list[int] | None:
+    if value is None or (isinstance(value, float) and pd.isna(value)):
+        return None
+    if isinstance(value, str):
+        parsed = yaml.safe_load(value)
+    else:
+        parsed = value
+    if not isinstance(parsed, (list, tuple)) or len(parsed) != 2:
+        raise ValueError(f"event_calendar window_days must be a two-item list: {value!r}")
+    try:
+        return [int(parsed[0]), int(parsed[1])]
+    except (TypeError, ValueError) as exc:
+        raise ValueError(
+            f"event_calendar window_days entries must be integers: {value!r}"
+        ) from exc

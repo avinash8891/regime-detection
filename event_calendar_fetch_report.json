@@ -1,20 +1,30 @@
 {
-  "as_of_utc": "2026-05-06T19:36:58.898959+00:00",
+  "as_of_utc": "2026-05-14T14:33:40.503748+00:00",
   "source": {
     "fomc": "federalreserve.gov:fomccalendars",
     "cpi": "bls.gov:schedule:consumer-price-index",
-    "nfp": "bls.gov:schedule:employment-situation"
+    "nfp": "bls.gov:schedule:employment-situation",
+    "election": "fec.gov:election-dates",
+    "budget": "usa.gov:federal-budget-process",
+    "ecb": "ecb.europa.eu:governing-council-calendar",
+    "boe": "bankofengland.co.uk:mpc-dates",
+    "boj": "boj.or.jp:monetary-policy-meeting-schedule"
   },
   "counts": {
-    "total_events": 769,
+    "total_events": 454,
     "by_type": {
-      "CPI": 311,
+      "BOE_decision": 7,
+      "BOJ_decision": 16,
+      "CPI": 131,
+      "ECB_decision": 5,
       "FOMC": 147,
-      "NFP": 311
+      "NFP": 131,
+      "budget": 11,
+      "election": 6
     }
   },
   "paths": {
-    "event_calendar_yaml": "/Users/avinashvankadaru/.superset/worktrees/regime-detection/market-data-retrieval-request/configs/events/us_events.yaml",
-    "acquisition_db": "/private/tmp/regime_events_acquisition/acquisition.db"
+    "event_calendar_yaml": "configs/events/us_events.yaml",
+    "acquisition_db": "data/raw/acquisition.db"
   }
 }

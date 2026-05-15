@@ -75,6 +75,10 @@ class TrendCharacterFeatures:
     followthrough_rate: pd.Series
 
 
+def _ev_float(x: float) -> float:
+    return round(float(x), 8)
+
+
 def _wilder_ewm(series: pd.Series, n: int) -> pd.Series:
     return series.ewm(alpha=1 / n, adjust=False, min_periods=n).mean()
 
@@ -265,7 +269,7 @@ def compute_features(
 
 
 def raw_label_for_day(
-    f: TrendCharacterFeatures, dt: pd.Timestamp
+    f: TrendCharacterFeatures, dt: pd.Timestamp, *, allow_v2_labels: bool = True
 ) -> tuple[TrendCharacterLabel, dict[str, Any]]:
     close = f.close.loc[dt]
     sma50 = f.sma_50.loc[dt]
@@ -292,14 +296,16 @@ def raw_label_for_day(
     ft_rate = f.followthrough_rate.loc[dt]
 
     breakout_expansion = bool(
-        not pd.isna(ft_rate)
+        allow_v2_labels
+        and not pd.isna(ft_rate)
         and bool(breakout_flag)
         and bool(bb_expanding)
         and bool(vol_above)
         and ft_rate >= _DEFAULT_FOLLOWTHROUGH_RATE_THRESHOLD
     )
     range_bound = bool(
-        (not pd.isna(ret63))
+        allow_v2_labels
+        and (not pd.isna(ret63))
         and (not pd.isna(midpoint_ex))
         and abs(ret63) < _DEFAULT_RANGE_BOUND_RETURN_63D_THRESHOLD
         and midpoint_ex <= _DEFAULT_RANGE_BOUND_MIDPOINT_EXCURSION_THRESHOLD
@@ -323,18 +329,21 @@ def raw_label_for_day(
         label = "transition"
 
     return label, {
-        "breakout_expansion": breakout_expansion,
+        "adx_14": _ev_float(adx),
+        "return_10d": _ev_float(ret10),
+        "return_21d": _ev_float(ret21),
+        "prior_63d_drawdown": _ev_float(prior_dd),
         "recovery_attempt": recovery_attempt,
         "trending": trending,
-        "range_bound": range_bound,
         "chop": chop,
-        "transition": not (
-            breakout_expansion or recovery_attempt or trending or range_bound or chop
-        ),
+        "range_bound": range_bound,
+        "breakout_expansion": breakout_expansion,
     }
 
 
-def build_raw_outputs(f: TrendCharacterFeatures) -> tuple[list[TrendCharacterLabel], list[dict[str, Any]]]:
+def build_raw_outputs(
+    f: TrendCharacterFeatures, *, allow_v2_labels: bool = True
+) -> tuple[list[TrendCharacterLabel], list[dict[str, Any]]]:
     close = f.close
     sma50 = f.sma_50
     ret10 = f.return_10d
@@ -370,6 +379,9 @@ def build_raw_outputs(f: TrendCharacterFeatures) -> tuple[list[TrendCharacterLab
         & midpoint_ex.le(_DEFAULT_RANGE_BOUND_MIDPOINT_EXCURSION_THRESHOLD)
         & adx.lt(_DEFAULT_RANGE_BOUND_ADX_THRESHOLD)
     )
+    if not allow_v2_labels:
+        breakout_expansion = breakout_expansion & False
+        range_bound = range_bound & False
 
     transition = valid & ~(
         breakout_expansion | recovery_attempt | trending | range_bound | chop
@@ -390,12 +402,15 @@ def build_raw_outputs(f: TrendCharacterFeatures) -> tuple[list[TrendCharacterLab
             continue
         evidence.append(
             {
-                "breakout_expansion": bool(breakout_expansion.iat[idx]),
+                "adx_14": _ev_float(adx.iat[idx]),
+                "return_10d": _ev_float(ret10.iat[idx]),
+                "return_21d": _ev_float(ret21.iat[idx]),
+                "prior_63d_drawdown": _ev_float(prior_dd.iat[idx]),
                 "recovery_attempt": bool(recovery_attempt.iat[idx]),
                 "trending": bool(trending.iat[idx]),
-                "range_bound": bool(range_bound.iat[idx]),
                 "chop": bool(chop.iat[idx]),
-                "transition": bool(transition.iat[idx]),
+                "range_bound": bool(range_bound.iat[idx]),
+                "breakout_expansion": bool(breakout_expansion.iat[idx]),
             }
         )
 

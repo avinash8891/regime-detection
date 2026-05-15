@@ -16,13 +16,17 @@ The classifier signatures referenced here:
 """
 from __future__ import annotations
 
+from dataclasses import replace
 from datetime import date
 
 import numpy as np
 import pandas as pd
 import pytest
 
-from regime_detection.axis_series import NetworkFragilitySeriesClassifier
+from regime_detection.axis_series import (
+    NetworkFragilitySeriesClassifier,
+    build_axis_series_bundle,
+)
 from regime_detection.calendar import nyse_sessions_between
 from regime_detection.config import (
     NetworkFragilityConfig,
@@ -39,6 +43,8 @@ from regime_detection.fragility_universe import (
 )
 from regime_detection.market_context import build_market_context
 from regime_detection.models import NetworkFragilityOutput
+from regime_detection.network_fragility import NetworkFragilityFeatures
+from regime_detection.volatility_state import VolatilityFeatures
 from regime_detection.network_fragility_rules import (
     NETWORK_FRAGILITY_RISK_RANK,
     NetworkFragilityLabel,
@@ -136,6 +142,30 @@ def _build_context_with_full_universe(*, end_session: pd.Timestamp = _LAST_SESSI
         cross_asset_closes=cross_asset_closes,
     )
     return context, prices
+
+
+def _build_real_v2_network_context(
+    *,
+    as_of: date,
+    market_df_for_asof,
+    v2_close_series_by_symbol: dict[str, pd.Series],
+):
+    missing = sorted(
+        set(NETWORK_FRAGILITY_UNIVERSE).difference(v2_close_series_by_symbol)
+    )
+    if missing:
+        raise AssertionError(f"real V2 OHLCV fixture missing symbols: {missing}")
+
+    config = RegimeEngine().config
+    return build_market_context(
+        end_date=as_of,
+        market_data=market_df_for_asof(as_of),
+        config=config,
+        sector_etf_closes={s: v2_close_series_by_symbol[s] for s in SECTOR_ETFS},
+        cross_asset_closes={
+            s: v2_close_series_by_symbol[s] for s in CROSS_ASSET_SYMBOLS
+        },
+    )
 
 
 # ---------- Unit tests on NETWORK_FRAGILITY_RISK_RANK (v2 §3.6) --------------
@@ -260,6 +290,55 @@ def test_classifier_emits_non_unknown_labels_after_warmup():
     assert seen_non_unknown, "classifier produced only unknowns on a 100-session window"
 
 
+def test_real_v2_ohlcv_fixture_network_fragility_golden_labels(
+    v2_market_df_for_asof,
+    v2_close_series_by_symbol,
+):
+    """Real-market fixture acceptance: prove the V2 network-fragility
+    classifier emits deterministic golden labels from tracked OHLCV, not only
+    from synthetic random walks."""
+    context = _build_real_v2_network_context(
+        as_of=date(2026, 5, 13),
+        market_df_for_asof=v2_market_df_for_asof,
+        v2_close_series_by_symbol=v2_close_series_by_symbol,
+    )
+    store = build_feature_store(
+        context, network_fragility_config=context.config.network_fragility
+    )
+    out = NetworkFragilitySeriesClassifier().build(context, store)
+
+    assert out is not None
+    golden_rows = [
+        (
+            date(2022, 6, 16),
+            "correlation_to_one",
+            "avg_pairwise_corr_percentile_504d",
+            0.996031746031746,
+        ),
+        (
+            date(2024, 1, 3),
+            "diversified_normal",
+            "dispersion_ratio_percentile_252d",
+            0.9206349206349206,
+        ),
+        (
+            date(2026, 5, 13),
+            "correlation_concentration",
+            "largest_eigenvalue_share_percentile_504d",
+            0.8591269841269841,
+        ),
+    ]
+    for day, expected_label, evidence_key, expected_value in golden_rows:
+        output = out[day]
+        assert output.raw_label == expected_label
+        assert output.stable_label == expected_label
+        assert output.active_label == expected_label
+        assert output.data_quality.status == "ok"
+        assert output.evidence["rule_evidence"][evidence_key] == pytest.approx(
+            expected_value
+        )
+
+
 def test_classifier_forces_unknown_when_feature_column_is_all_nan():
     """Quality gating: if a required feature series is all NaN at the as-of
     date, assess_series_input_quality must mark the day insufficient and the
@@ -320,7 +399,7 @@ def test_classifier_applies_per_label_hysteresis_so_single_day_flip_does_not_pro
 # ---------- Engine end-to-end (AGENTS rule A) --------------------------------
 
 
-def test_engine_classify_window_emits_real_network_fragility_labels():
+def test_engine_classify_window_emits_network_fragility_labels_on_full_universe():
     """Top-level engine entrypoint: with sector + cross-asset data, the
     network_fragility axis MUST emit non-unknown labels for at least some of
     the days in the window (proves end-to-end wiring is live, not stubbed)."""
@@ -353,6 +432,33 @@ def test_engine_classify_window_emits_real_network_fragility_labels():
         assert isinstance(out.network_fragility, NetworkFragilityOutput)
         # mode must remain pinned to the v2 §3.1 closed-universe identifier.
         assert out.network_fragility.mode == "sector_cross_asset_22"
+
+
+def test_engine_classify_window_emits_real_fixture_network_fragility_label(
+    v2_market_df_for_asof,
+    v2_close_series_by_symbol,
+):
+    """Top-level engine entrypoint over tracked real OHLCV: protects the
+    RegimeEngine → MarketContext → FeatureStore → AxisSeriesBundle seam."""
+    as_of = date(2026, 5, 13)
+    timeline = RegimeEngine().classify_window(
+        end_date=as_of,
+        market_data=v2_market_df_for_asof(as_of),
+        lookback_days=600,
+        sector_etf_closes={s: v2_close_series_by_symbol[s] for s in SECTOR_ETFS},
+        cross_asset_closes={
+            s: v2_close_series_by_symbol[s] for s in CROSS_ASSET_SYMBOLS
+        },
+    )
+
+    by_date = {out.as_of_date: out for out in timeline.outputs}
+    network_fragility = by_date[as_of].network_fragility
+    assert network_fragility.raw_label == "correlation_concentration"
+    assert network_fragility.stable_label == "correlation_concentration"
+    assert network_fragility.active_label == "correlation_concentration"
+    assert network_fragility.evidence["rule_evidence"][
+        "largest_eigenvalue_share_percentile_504d"
+    ] == pytest.approx(0.8591269841269841)
 
 
 def test_engine_classify_window_forces_unknown_when_universe_data_missing():
@@ -417,6 +523,150 @@ def test_classifier_raises_on_v1_axis_calendar_drift_volatility():
             breadth_active_labels_by_date=breadth,
             volatility_active_labels_by_date=volatility,
         )
+
+
+def test_classifier_emits_systemic_stress_when_credit_funding_confirms_it():
+    """`systemic_stress` is a cross-axis label: the fragility classifier must
+    consume credit_funding.active_label when the §2C axis is already built.
+    """
+    context, _ = _build_context_with_full_universe()
+    store = build_feature_store(
+        context, network_fragility_config=context.config.network_fragility
+    )
+    nf = store.network_fragility
+    assert nf is not None
+
+    idx = nf.avg_pairwise_corr_63d.index
+    corr_pct = pd.Series(0.95, index=idx)
+    eig_pct = pd.Series(0.50, index=idx)
+    eff_rank_pct = pd.Series(0.50, index=idx)
+    disp_pct = pd.Series(0.50, index=idx)
+    corr_level = pd.Series(0.60, index=idx)
+    eig_level = pd.Series(0.60, index=idx)
+    eff_rank = pd.Series(0.40, index=idx)
+    absorb = pd.Series(0.70, index=idx)
+    dispersion = pd.Series(0.30, index=idx)
+    stressed_nf = NetworkFragilityFeatures(
+        avg_pairwise_corr_63d=corr_level,
+        avg_pairwise_corr_percentile_504d=corr_pct,
+        largest_eigenvalue_share=eig_level,
+        largest_eigenvalue_share_percentile_504d=eig_pct,
+        effective_rank=eff_rank,
+        effective_rank_percentile_504d=eff_rank_pct,
+        absorption_ratio_top3=absorb,
+        dispersion_ratio=dispersion,
+        dispersion_ratio_percentile_252d=disp_pct,
+    )
+
+    vol = store.volatility
+    stressed_volatility = VolatilityFeatures(
+        close=vol.close,
+        return_1d=vol.return_1d,
+        return_5d=vol.return_5d,
+        return_21d=pd.Series(-0.05, index=idx),
+        realized_vol_21d=pd.Series(0.30, index=idx),
+        realized_vol_percentile_252d=pd.Series(0.85, index=idx),
+        vix_percentile_252d=pd.Series(0.85, index=idx),
+    )
+    stressed_store = store.model_copy(
+        update={
+            "network_fragility": stressed_nf,
+            "volatility": stressed_volatility,
+        }
+    )
+
+    breadth = {day: "weak_breadth" for day in context.sessions}
+    volatility = {day: "normal_vol" for day in context.sessions}
+    credit_funding = {day: "credit_stress" for day in context.sessions}
+
+    out = NetworkFragilitySeriesClassifier().build(
+        context,
+        stressed_store,
+        breadth_active_labels_by_date=breadth,
+        volatility_active_labels_by_date=volatility,
+        credit_funding_active_labels_by_date=credit_funding,
+    )
+
+    assert out is not None
+    assert out[context.sessions[-1]].raw_label == "systemic_stress"
+    assert out[context.sessions[-1]].active_label == "systemic_stress"
+
+
+def test_axis_bundle_threads_credit_funding_into_network_fragility_systemic_stress():
+    """The live bundle path must pass the authoritative §2C active label into
+    network fragility so `systemic_stress` can outrank `correlation_to_one`.
+    """
+    from test_credit_funding import _build_full_synthetic_context
+
+    context = _build_full_synthetic_context()
+    idx = pd.DatetimeIndex(context.spy_ohlcv.index)
+    spy_factor = pd.Series(
+        np.r_[np.ones(len(idx) - 21), np.linspace(1.0, 0.90, 21)],
+        index=idx,
+    )
+    rsp_factor = pd.Series(
+        np.r_[np.ones(len(idx) - 21), np.linspace(1.0, 0.50, 21)],
+        index=idx,
+    )
+    stressed_spy_ohlcv = context.spy_ohlcv.copy()
+    for col in ["open", "high", "low", "close"]:
+        stressed_spy_ohlcv[col] = stressed_spy_ohlcv[col] * spy_factor
+    stressed_context = context.model_copy(
+        update={
+            "spy_ohlcv": stressed_spy_ohlcv,
+            "rsp_close": context.spy_ohlcv["close"] * rsp_factor,
+        }
+    )
+    store = build_feature_store(
+        stressed_context,
+        network_fragility_config=stressed_context.config.network_fragility,
+        credit_funding_config=stressed_context.config.credit_funding,
+    )
+    assert store.network_fragility is not None
+    assert store.credit_funding is not None
+
+    idx = store.network_fragility.avg_pairwise_corr_63d.index
+    stressed_nf = replace(
+        store.network_fragility,
+        avg_pairwise_corr_63d=pd.Series(0.60, index=idx),
+        avg_pairwise_corr_percentile_504d=pd.Series(0.95, index=idx),
+        largest_eigenvalue_share=pd.Series(0.60, index=idx),
+        largest_eigenvalue_share_percentile_504d=pd.Series(0.50, index=idx),
+        effective_rank=pd.Series(0.40, index=idx),
+        effective_rank_percentile_504d=pd.Series(0.50, index=idx),
+        absorption_ratio_top3=pd.Series(0.70, index=idx),
+        dispersion_ratio=pd.Series(0.30, index=idx),
+        dispersion_ratio_percentile_252d=pd.Series(0.50, index=idx),
+    )
+    stressed_cf = replace(
+        store.credit_funding,
+        hy_oas_percentile_504d=pd.Series(0.95, index=idx),
+        spy_21d_return=pd.Series(-0.06, index=idx),
+    )
+    stressed_volatility = VolatilityFeatures(
+        close=store.volatility.close,
+        return_1d=store.volatility.return_1d,
+        return_5d=store.volatility.return_5d,
+        return_21d=pd.Series(-0.05, index=idx),
+        realized_vol_21d=pd.Series(0.30, index=idx),
+        realized_vol_percentile_252d=pd.Series(0.85, index=idx),
+        vix_percentile_252d=pd.Series(0.85, index=idx),
+    )
+    stressed_store = store.model_copy(
+        update={
+            "network_fragility": stressed_nf,
+            "credit_funding": stressed_cf,
+            "volatility": stressed_volatility,
+        }
+    )
+
+    bundle = build_axis_series_bundle(context=stressed_context, feature_store=stressed_store)
+
+    assert bundle.credit_funding is not None
+    assert bundle.network_fragility is not None
+    assert bundle.breadth_state.active_labels_by_date[context.sessions[-1]] == "weak_breadth"
+    assert bundle.credit_funding[context.sessions[-1]].active_label == "credit_stress"
+    assert bundle.network_fragility[context.sessions[-1]].active_label == "systemic_stress"
 
 
 def test_unknown_flicker_does_not_fast_track_deescalation_through_correlation_to_one():

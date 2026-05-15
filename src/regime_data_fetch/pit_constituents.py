@@ -29,6 +29,17 @@ SOURCE_URL = "https://raw.githubusercontent.com/fja05680/sp500/master/sp500_tick
 SOURCE_NAME = "fja05680/sp500"
 BIAS_WARNING = "survivorship_biased_constituent_universe"
 
+# Source-correction overlay for open intervals that the community CSV has not
+# closed yet. Dates are the last valid membership/trading date for this feed:
+# DAY ceased trading after the 2026-02-04 Thoma Bravo close, HOLX before the
+# 2026-04-07 Blackstone/TPG private-company close, and S&P deleted CTRA
+# effective before the 2026-05-07 open.
+SOURCE_END_DATE_CORRECTIONS: dict[str, dt.date] = {
+    "DAY": dt.date(2026, 2, 3),
+    "HOLX": dt.date(2026, 4, 6),
+    "CTRA": dt.date(2026, 5, 6),
+}
+
 
 class PITConstituentFetchError(RuntimeError):
     pass
@@ -58,6 +69,9 @@ def parse_sp500_ticker_start_end_csv(csv_text: str, *, source_url: str) -> list[
 
         start_date = _parse_date(raw.get("start_date"), field="start_date", row_number=idx)
         end_date = _parse_optional_date(raw.get("end_date"), field="end_date", row_number=idx)
+        corrected_end_date = SOURCE_END_DATE_CORRECTIONS.get(ticker)
+        if end_date is None and corrected_end_date is not None:
+            end_date = corrected_end_date
         if end_date and end_date < start_date:
             raise PITConstituentFetchError(f"Row {idx}: end_date before start_date for {ticker}")
 

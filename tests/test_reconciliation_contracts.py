@@ -22,7 +22,7 @@ def test_classify_uses_vix_data_when_vix_proxy_missing_from_market_data(raw_mark
     from regime_detection.engine import RegimeEngine
 
     out = RegimeEngine().classify(as_of_date=as_of, market_data=market_df, vix_data=vix_df)
-    assert out.volatility_state.evidence["rule_evidence"]["vix_percentile_present"] is True
+    assert out.volatility_state.evidence["rule_evidence"]["vix_percentile_252d"] is not None
 
 
 def test_trend_character_adx_cold_start_stays_nan(raw_market_frames) -> None:

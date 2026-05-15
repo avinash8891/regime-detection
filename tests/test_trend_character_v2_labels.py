@@ -75,6 +75,24 @@ def test_range_bound_fires_on_tight_oscillation() -> None:
     assert label == "range_bound", (label, ev)
 
 
+def test_v1_rule_path_does_not_emit_range_bound_on_tight_oscillation() -> None:
+    """V2 extends the live default engine, but the V1 layer-1B contract keeps
+    the original 5-label set. The same oscillation that qualifies for the V2
+    `range_bound` label must fall back to the V1 `chop` rule when the caller
+    requests the V1 path.
+    """
+    idx = _trading_index(220)
+    closes = 100.0 + np.sin(np.arange(220) * np.pi / 5.0) * 2.0
+    close = pd.Series(closes, index=idx)
+    high = close + 0.1
+    low = close - 0.1
+    f = _make_features(close=close, high=high, low=low)
+
+    label, ev = raw_label_for_day(f, idx[-1], allow_v2_labels=False)
+
+    assert label == "chop", (label, ev)
+
+
 def test_range_bound_fails_on_midpoint_excursion_over_5pct() -> None:
     # Tight cluster except for one spike at t-5 to 110 (excursion > 0.05).
     idx = _trading_index(220)
@@ -201,6 +219,23 @@ def test_breakout_expansion_fires_on_4_conditions() -> None:
         and f.followthrough_rate.iloc[-1] >= 0.60
     ):
         assert label == "breakout_expansion", (label, ev)
+
+
+def test_v1_rule_path_does_not_emit_breakout_expansion() -> None:
+    """A fully-qualified V2 breakout still has to collapse back onto the V1
+    label set when the caller explicitly asks for the V1 path.
+    """
+    close, volume = _build_breakout_series(
+        n_sessions=260,
+        breakout_step_size=2.0,
+        breakout_every=10,
+        hold_above=True,
+    )
+    f = _make_features(close=close, volume=volume)
+
+    label, ev = raw_label_for_day(f, close.index[-1], allow_v2_labels=False)
+
+    assert label == "trending", (label, ev)
 
 
 def test_breakout_expansion_fails_on_followthrough_under_60pct() -> None:

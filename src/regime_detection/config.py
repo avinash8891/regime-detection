@@ -237,13 +237,11 @@ class TrendDirectionV2Config(BaseModel):
 
 
 class VolatilityV2RulesConfig(BaseModel):
-    """v2 §1C `rising_vol` rule thresholds + RV windows (Slice 2.6).
+    """v2 §1C `rising_vol` and `vol_crush` rule thresholds.
 
-    Each value cites its line in docs/regime_engine_v2_spec.md §1C. The
-    `vol_crush` rule (§1C lines 157-174) is deferred (Implementation
-    Ambiguity Log entry #20) — needs options-data ingestion + the §2D
-    event-window calendar — so this config only carries the `rising_vol`
-    knobs today.
+    Each value cites its line in docs/regime_engine_v2_spec.md §1C.
+    `vol_crush` uses FRED VIXCLS-derived implied_vol_30d and the
+    event-window seam per ADR 0005 / Ambiguity Log #20.
     """
 
     model_config = ConfigDict(extra="forbid")
@@ -291,14 +289,13 @@ class VolatilityV2RulesConfig(BaseModel):
 
 
 class VolatilityV2Config(BaseModel):
-    """v2 §1C — Layer 1 V2 Volatility features (Slice 2.2, evidence-only).
+    """v2 §1C — Layer 1 V2 Volatility features.
 
-    Ships only the volatility V2 features that DO NOT require options data:
-    ``atr_ratio``, ``gap_frequency_20d``, ``intraday_range_percentile_252d``.
-    The IV/RV-spread and vol_crush features at v2 §1C lines 151–174 are
-    deferred until an options-data ingestion + event-calendar slice lands
-    (per v2 §10 absolute rule: do not invent missing inputs). See
-    Implementation Ambiguity Log entries for the deferrals.
+    Ships ATR ratio, gap-frequency, intraday-range, realized-vol, IV/RV
+    spread, and vol-crush inputs. IV-derived features are present when the
+    context supplies FRED VIXCLS-derived ``implied_vol_30d``; otherwise
+    those optional inputs stay absent and ``vol_crush`` falsifies per
+    v2 §10.
     """
 
     model_config = ConfigDict(extra="forbid")
@@ -334,17 +331,16 @@ class VolatilityV2Config(BaseModel):
 
 
 class VolumeLiquidityV2Config(BaseModel):
-    """v2 §1E — Layer 1 V2 Volume / Liquidity features (Slice 2.4, evidence-only).
+    """v2 §1E — Layer 1 V2 Volume / Liquidity feature config (Slice 2.4).
 
     Ships ONLY ``volume_zscore_20d`` (v2 §1E line 256). The other two §1E
     features (``gap_frequency_20d``, ``intraday_range_percentile_252d``)
     already live on ``VolatilityV2Config`` / ``volatility_state_v2.py``
     (Slice 2.2) and are read from the ``FeatureStore.volatility_state_v2``
-    seam by the future §1E axis classifier — no recompute. The §1E labels
+    seam by the §1E axis classifier — no recompute. The §1E labels
     (``normal_volume``, ``panic_volume``, ``liquidity_gap_behavior``),
-    rule engine, risk-rank table, and hysteresis are all deferred to a
-    follow-up volume-axis-classifier slice. See Implementation Ambiguity
-    Log entries.
+    rule engine, risk-rank table, and hysteresis live in
+    ``VolumeLiquidityConfig`` and ``volume_liquidity_rules``.
     """
 
     model_config = ConfigDict(extra="forbid")
@@ -362,12 +358,10 @@ class VolumeLiquidityRulesConfig(BaseModel):
     """v2 §1E rule-engine thresholds (Slice 2.7).
 
     Each threshold is cited to its line in
-    ``docs/regime_engine_v2_spec.md`` §1E. The
-    ``liquidity_gap_*`` thresholds are carried for forward-compat — the
-    rule itself is DEFERRED (Implementation Ambiguity Log entry #40)
-    because the 252d-percentile of ``gap_frequency_20d`` is not yet
-    computed. The thresholds load and validate today; only the rule
-    predicate short-circuits to ``False`` until that feature lands.
+    ``docs/regime_engine_v2_spec.md`` §1E. The ``liquidity_gap_*``
+    thresholds are live: the classifier receives
+    ``gap_frequency_percentile_252d`` and
+    ``intraday_range_percentile_252d`` from ``volatility_state_v2``.
     """
 
     model_config = ConfigDict(extra="forbid")
@@ -382,12 +376,12 @@ class VolumeLiquidityRulesConfig(BaseModel):
     # would admit up days, defeating the "selling pressure" intent).
     panic_volume_return_threshold: float = Field(lt=0.0, default=-0.02)
 
-    # liquidity_gap_behavior (DEFERRED, Ambiguity Log #40) — v2 §1E line 278.
+    # liquidity_gap_behavior — v2 §1E line 278.
     liquidity_gap_frequency_percentile_threshold: float = Field(
         ge=0.0, le=1.0, default=0.75
     )
 
-    # liquidity_gap_behavior (DEFERRED) — v2 §1E line 279.
+    # liquidity_gap_behavior — v2 §1E line 279.
     liquidity_gap_intraday_range_percentile_threshold: float = Field(
         ge=0.0, le=1.0, default=0.75
     )
@@ -412,9 +406,7 @@ class VolumeLiquidityConfig(BaseModel):
     # #41 pins panic_volume=3 (high-risk hold, analogous to §3.7
     # correlation_to_one=3-5), normal_volume=0 (immediate de-escalation),
     # unknown=2 (modest hold to absorb single-day NaN flickers without
-    # stranding the axis), liquidity_gap_behavior=2 (reserved at same
-    # rank as unknown — pinned even though the rule never fires today
-    # so the future flip needs no config edits).
+    # stranding the axis), liquidity_gap_behavior=2 (same rank as unknown).
     deescalation_days_by_label: dict[str, int]
 
     # Default for labels NOT in `deescalation_days_by_label`. Matches the
@@ -423,15 +415,13 @@ class VolumeLiquidityConfig(BaseModel):
 
 
 class BreadthV2Config(BaseModel):
-    """v2 §1D — Layer 1 V2 Breadth features (Slice 2.3, evidence-only).
+    """v2 §1D — Layer 1 V2 Breadth features.
 
-    Slice 2.3 ships ONLY the §1D feature that does not require a point-in-time
-    (PIT) constituent-membership data pipeline: ``sector_breadth``. All other
-    §1D features (`pct_above_200dma`, `ad_line` / `ad_line_slope_20d`,
-    `nh_nl_ratio`, `upvol_downvol_ratio`, `breadth_thrust`) and the new V2
-    breadth labels (`breadth_thrust`, `broadening_breadth`, `narrowing_breadth`)
-    are deferred until the PIT membership pipeline lands (§1D lines 198–205).
-    See Implementation Ambiguity Log entries #21–#27.
+    Ships sector breadth plus PIT-derived breadth features and labels when
+    PIT constituent intervals and constituent OHLCV are supplied. The current
+    free PIT source is bias-warning tagged; V2 PIT labels surface under
+    ``pit_constituent_biased_research`` mode until a true vendor PIT feed
+    replaces it.
     """
 
     model_config = ConfigDict(extra="forbid")
@@ -602,7 +592,7 @@ class MonetaryPressureV2RulesConfig(BaseModel):
 
     # §2A tightening_pressure: yield_change_zscore_*_63d > +1.5 OR broad_usd > +1.5.
     tightening_pressure_zscore_threshold: float = Field(default=1.5, gt=0.0)
-    # §2A easing_pressure: yield_change_zscore_*_63d < -1.5 (both legs).
+    # §2A easing_pressure: yield_change_zscore_*_63d < -1.5 on either tenor.
     easing_pressure_zscore_threshold: float = Field(default=-1.5, lt=0.0)
     # §2A rate_shock: abs(yield_change_zscore_21d_*) > 2.0.
     rate_shock_zscore_threshold: float = Field(default=2.0, gt=0.0)

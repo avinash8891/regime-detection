@@ -27,7 +27,17 @@ def pytest_configure() -> None:
 _FIXTURES_DIR = Path(__file__).resolve().parent / "fixtures"
 _RAW_DIR = _FIXTURES_DIR / "raw"
 _MARKET_PARQUET_PATH = _RAW_DIR / "market_data.parquet"
+_V2_DAILY_OHLCV_PATH = _RAW_DIR / "v2" / "daily_ohlcv.csv"
+_V2_FRED_MACRO_PATH = _RAW_DIR / "v2" / "fred_macro_series.csv"
 _GOLDEN_DATES_PATH = _FIXTURES_DIR / "derived" / "golden_dates.yaml"
+_V2_MACRO_KEY_BY_LOGICAL_NAME = {
+    "sofr": "SOFR",
+    "iorb": "IORB",
+    "nfci": "NFCI",
+    "broad_usd_index": "broad_usd_index",
+    "hy_oas": "hy_oas",
+    "ig_bbb_oas": "ig_bbb_oas",
+}
 
 
 @lru_cache(maxsize=1)
@@ -41,6 +51,24 @@ def _load_market_data() -> pd.DataFrame:
     df["date"] = pd.to_datetime(df["date"]).dt.date
     keep = ["date", "symbol", "open", "high", "low", "close", "volume"]
     return df[keep].sort_values(["date", "symbol"]).reset_index(drop=True)
+
+
+@lru_cache(maxsize=1)
+def _load_v2_daily_ohlcv() -> pd.DataFrame:
+    df = pd.read_csv(_V2_DAILY_OHLCV_PATH)
+    df = df.copy()
+    df["date"] = pd.to_datetime(df["date"]).dt.date
+    keep = ["date", "symbol", "open", "high", "low", "close", "volume"]
+    return df[keep].sort_values(["date", "symbol"]).reset_index(drop=True)
+
+
+@lru_cache(maxsize=1)
+def _load_v2_fred_macro() -> pd.DataFrame:
+    df = pd.read_csv(_V2_FRED_MACRO_PATH)
+    df = df.copy()
+    df["date"] = pd.to_datetime(df["date"])
+    keep = ["date", "series_id", "logical_name", "value"]
+    return df[keep].sort_values(["date", "logical_name"]).reset_index(drop=True)
 
 
 @pytest.fixture(scope="session")
@@ -62,6 +90,51 @@ def market_df_for_asof(raw_market_data: pd.DataFrame):
         return raw_market_data[raw_market_data["date"] <= as_of].copy().reset_index(drop=True)
 
     return _build
+
+
+@pytest.fixture(scope="session")
+def v2_daily_ohlcv() -> pd.DataFrame:
+    return _load_v2_daily_ohlcv().copy()
+
+
+@pytest.fixture(scope="session")
+def v2_market_df_for_asof(v2_daily_ohlcv: pd.DataFrame):
+    def _build(as_of: date) -> pd.DataFrame:
+        return v2_daily_ohlcv[
+            (v2_daily_ohlcv["date"] <= as_of)
+            & (v2_daily_ohlcv["symbol"].isin({"SPY", "RSP", "VIXY"}))
+        ].copy().reset_index(drop=True)
+
+    return _build
+
+
+@pytest.fixture(scope="session")
+def v2_close_series_by_symbol(v2_daily_ohlcv: pd.DataFrame) -> dict[str, pd.Series]:
+    series_by_symbol: dict[str, pd.Series] = {}
+    for symbol, frame in v2_daily_ohlcv.groupby("symbol", sort=True):
+        idx = pd.to_datetime(frame["date"])
+        series_by_symbol[str(symbol)] = pd.Series(
+            frame["close"].astype(float).to_numpy(),
+            index=idx,
+            name=str(symbol),
+        )
+    return series_by_symbol
+
+
+@pytest.fixture(scope="session")
+def v2_macro_series_by_key() -> dict[str, pd.Series]:
+    macro = _load_v2_fred_macro()
+    series_by_key: dict[str, pd.Series] = {}
+    for logical_name, key in _V2_MACRO_KEY_BY_LOGICAL_NAME.items():
+        frame = macro[macro["logical_name"] == logical_name]
+        if frame.empty:
+            raise RuntimeError(f"V2 FRED macro fixture missing {logical_name!r}")
+        series_by_key[key] = pd.Series(
+            frame["value"].astype(float).to_numpy(),
+            index=frame["date"],
+            name=key,
+        )
+    return series_by_key
 
 
 @pytest.fixture(scope="session")

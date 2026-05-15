@@ -82,6 +82,13 @@ from regime_detection.volatility_state import (
     build_raw_outputs as build_volatility_raw_outputs,
 )
 
+_PIT_BREADTH_LABELS = {
+    "breadth_thrust",
+    "narrowing_breadth",
+    "recovery_breadth",
+    "broadening_breadth",
+}
+
 
 @dataclass(frozen=True)
 class AxisSeriesResult:
@@ -167,7 +174,10 @@ class TrendCharacterSeriesClassifier:
     def build(self, context: MarketContext, feature_store: FeatureStore) -> AxisSeriesResult:
         close = context.spy_ohlcv["close"]
         features = feature_store.trend_character
-        raw_labels, raw_evidence = build_trend_character_raw_outputs(features)
+        raw_labels, raw_evidence = build_trend_character_raw_outputs(
+            features,
+            allow_v2_labels=context.config.config_version != "core3-v1.0.0",
+        )
         stable_labels, active_labels = apply_asymmetric_hysteresis(
             raw_labels=raw_labels,
             risk_rank=TREND_CHARACTER_RISK_RANK,
@@ -322,9 +332,14 @@ class BreadthSeriesClassifier:
         for day, raw, stable, active, evidence in zip(
             spy_close.index.date, raw_labels, stable_labels, active_labels, raw_evidence, strict=True
         ):
+            mode = (
+                "pit_constituent_biased_research"
+                if {raw, stable, active} & _PIT_BREADTH_LABELS
+                else "etf_proxy"
+            )
             if raw == "unknown":
                 output = BreadthStateOutput(
-                    mode="etf_proxy",
+                    mode=mode,
                     raw_label="unknown",
                     stable_label="unknown",
                     active_label="unknown",
@@ -338,7 +353,7 @@ class BreadthSeriesClassifier:
                 )
             else:
                 output = BreadthStateOutput(
-                    mode="etf_proxy",
+                    mode=mode,
                     raw_label=raw,
                     stable_label=stable,
                     active_label=active,
@@ -384,10 +399,9 @@ class NetworkFragilitySeriesClassifier:
       3. Cross-reference V1 axes (breadth_state.active_label,
          volatility_state.active_label) for that date.
       4. Evaluate rules (evaluate_rules) → raw label per v2 §3.4 precedence.
-         credit_funding_label is hard-coded to None until Slice 4 ships the
-         v2 §2C axis; per network_fragility_rules.evaluate_systemic_stress
-         this short-circuits the systemic_stress rule and precedence falls
-         through to correlation_to_one.
+         credit_funding_label is read from the authoritative §2C axis when
+         supplied; otherwise it stays None and systemic_stress short-circuits
+         to False per the spec.
       5. Apply per-label asymmetric hysteresis (v2 §3.7) over the raw label
          series.
       6. Emit one NetworkFragilityOutput per session.
@@ -399,6 +413,7 @@ class NetworkFragilitySeriesClassifier:
         feature_store: FeatureStore,
         breadth_active_labels_by_date: dict[date, str] | None = None,
         volatility_active_labels_by_date: dict[date, str] | None = None,
+        credit_funding_active_labels_by_date: dict[date, str] | None = None,
     ) -> dict[date, NetworkFragilityOutput] | None:
         features = feature_store.network_fragility
         if features is None:
@@ -499,17 +514,21 @@ class NetworkFragilitySeriesClassifier:
                         "(v1/v2 calendar drift would silently downgrade rules to 'unknown')"
                     )
                 volatility_label = volatility_active_labels_by_date[day]
+            credit_funding_label: str | None = None
+            if credit_funding_active_labels_by_date is not None:
+                if day not in credit_funding_active_labels_by_date:
+                    raise KeyError(
+                        f"credit_funding_active_labels_by_date missing session {day!r} "
+                        "(v2/v2 calendar drift would silently downgrade systemic_stress)"
+                    )
+                credit_funding_label = credit_funding_active_labels_by_date[day]
 
             label = evaluate_rules(
                 inputs=rule_inputs,
                 config=network_fragility_config.rules,
                 breadth_label=breadth_label,  # type: ignore[arg-type]
                 volatility_label=volatility_label,  # type: ignore[arg-type]
-                # TODO(slice-4): wire credit_funding.active_label per v2 §2C.
-                # network_fragility_rules.evaluate_systemic_stress short-
-                # circuits to False on None and precedence falls through
-                # to correlation_to_one per v2 §3.4.
-                credit_funding_label=None,
+                credit_funding_label=credit_funding_label,  # type: ignore[arg-type]
             )
             raw_labels.append(label)
             per_day_data_quality.append(day_quality)
@@ -525,7 +544,7 @@ class NetworkFragilitySeriesClassifier:
                 },
                 "breadth_active_label": breadth_label,
                 "volatility_active_label": volatility_label,
-                "credit_funding_active_label": None,
+                "credit_funding_active_label": credit_funding_label,
             })
 
         stable_labels, active_labels = apply_per_label_asymmetric_hysteresis(
@@ -571,7 +590,7 @@ class VolumeLiquidityStateSeriesClassifier:
          + ``quality_forces_unknown``). Quality failures force ``unknown``.
       4. Evaluate ``volume_liquidity_rules.evaluate_rules`` to produce
          the raw label per §1E precedence
-         (``panic_volume > liquidity_gap_behavior(deferred) > normal_volume > unknown``).
+         (``panic_volume > liquidity_gap_behavior > normal_volume > unknown``).
       5. Apply per-label asymmetric hysteresis (Ambiguity Log #41).
       6. Emit one ``VolumeLiquidityStateOutput`` per session.
     """
@@ -684,10 +703,8 @@ class VolumeLiquidityStateSeriesClassifier:
                 "rule_evidence": {
                     "volume_zscore_20d": float(f"{volume_zscore_20d:.8g}"),
                     "return_1d": float(f"{return_1d:.8g}"),
-                },
-                "deferred_inputs": {
-                    "gap_frequency_percentile_252d": "deferred (Ambiguity Log #40)",
-                    "intraday_range_percentile_252d": "deferred (Ambiguity Log #40)",
+                    "gap_frequency_percentile_252d": float(f"{gap_freq_pct:.8g}"),
+                    "intraday_range_percentile_252d": float(f"{intraday_pct:.8g}"),
                 },
             })
 
@@ -765,6 +782,7 @@ class CreditFundingSeriesClassifier:
             hy_spread_slope_21d = features.hy_oas_slope_21d
             ig_spread_slope_21d = features.ig_oas_slope_21d
             bias_warning_code = CREDIT_SPREAD_SOURCE_CODE
+            evidence_spread_source = "ice_bofa_oas"
         else:  # "proxy"
             hy_spread_63d = features.hy_tr_differential_63d
             ig_spread_63d = features.ig_tr_differential_63d
@@ -772,6 +790,7 @@ class CreditFundingSeriesClassifier:
             hy_spread_slope_21d = features.hy_tr_differential_slope_21d
             ig_spread_slope_21d = features.ig_tr_differential_slope_21d
             bias_warning_code = CREDIT_SPREAD_PROXY_BIAS_WARNING_CODE
+            evidence_spread_source = "tlt_total_return_differential"
 
         spy_close = context.spy_ohlcv["close"]
         volatility_features = feature_store.volatility
@@ -921,6 +940,7 @@ class CreditFundingSeriesClassifier:
                         "realized_vol_21d_percentile_252d": rule_inputs.realized_vol_21d_percentile_252d,
                         "avg_pairwise_corr_percentile_504d": rule_inputs.avg_pairwise_corr_percentile_504d,
                     },
+                    "spread_source": evidence_spread_source,
                     "nfci_daily_carried": _safe_float(nfci_carried, dt),
                     "kre_spy_slope_63d": _safe_float(features.kre_spy_slope_63d, dt),
                     "bias_warning_code": bias_warning_code,
@@ -997,8 +1017,8 @@ class InflationGrowthSeriesClassifier:
       4. Materialize per-day scalar rule inputs and evaluate §2B precedence
          (inflation_shock > recession_scare > disinflation > goldilocks >
          recovery_growth > earnings_contraction > earnings_expansion >
-         unknown). The two earnings_* labels short-circuit to False per
-         spec lines 2316-2317 + Ambiguity Log #48.
+         unknown). Optional nowcast/EPS inputs falsify via NaN until their
+         source series are present.
       5. Apply per-label asymmetric hysteresis (§2B lines 2287-2303).
       6. Emit one InflationGrowthOutput per session.
     """
@@ -1136,8 +1156,10 @@ class InflationGrowthSeriesClassifier:
                         "cpi_6m_change_pct": rule_inputs.cpi_6m_change_pct,
                         "cpi_6m_change_pct_lag_21": rule_inputs.cpi_6m_change_pct_lag_21,
                         "cpi_6m_change_pct_slope_21d": rule_inputs.cpi_6m_change_pct_slope_21d,
+                        "inflation_surprise_zscore": rule_inputs.inflation_surprise_zscore,
                         "pmi_manufacturing": rule_inputs.pmi_manufacturing,
                         "pmi_manufacturing_slope_21d": rule_inputs.pmi_manufacturing_slope_21d,
+                        "aggregate_forward_eps_revision_direction_4w": rule_inputs.aggregate_forward_eps_revision_direction_4w,
                         "commodity_return_63d": rule_inputs.commodity_return_63d,
                         "treasury_10y_yield_slope_21d": rule_inputs.treasury_10y_yield_slope_21d,
                         "cyclical_defensive_slope_21d": rule_inputs.cyclical_defensive_slope_21d,
@@ -1364,6 +1386,11 @@ def build_axis_series_bundle(*, context: MarketContext, feature_store: FeatureSt
         feature_store,
         breadth_active_labels_by_date=breadth_state.active_labels_by_date,
         volatility_active_labels_by_date=volatility_state.active_labels_by_date,
+        credit_funding_active_labels_by_date=(
+            {day: out.active_label for day, out in credit_funding.items()}
+            if credit_funding is not None
+            else None
+        ),
     )
     volume_liquidity_state = VolumeLiquidityStateSeriesClassifier().build(
         context, feature_store

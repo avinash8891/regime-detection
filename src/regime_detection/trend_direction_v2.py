@@ -41,6 +41,7 @@ import numpy as np
 import pandas as pd
 
 from regime_detection.config import TrendDirectionV2Config, TrendDirectionV2RulesConfig
+from regime_detection.volatility_state import realized_vol
 
 
 # Spec-fixed constants (not configurable — v2 §1A line 67 defines the
@@ -281,21 +282,16 @@ def compute_trend_v2_features(
 
 
 def _realized_vol_21d_for_euphoria(close: pd.Series) -> pd.Series:
-    """21-session annualized realized vol of log-returns.
+    """21-session annualized realized vol using the shared volatility helper.
 
-    Standalone implementation rather than reusing
-    ``regime_detection.volatility_state.realized_vol`` because the
-    euphoria predicate is computed inside the §1A trend pipeline before
-    the volatility seam is necessarily lit. Output semantics are
-    identical (log-returns, ddof=1, sqrt(252) annualization) so the
-    rule reads the same value the operator would see on the §1C
-    `realized_vol_long` series.
+    The euphoria predicate is computed inside the §1A trend pipeline before
+    the volatility seam is necessarily lit, but the series definition must
+    remain identical to ``regime_detection.volatility_state.realized_vol``.
     """
     if not isinstance(close.index, pd.DatetimeIndex):
         close = close.copy()
         close.index = pd.to_datetime(close.index)
-    log_returns = np.log(close / close.shift(1))
-    return log_returns.rolling(21, min_periods=21).std(ddof=1) * np.sqrt(252.0)
+    return realized_vol(close, window=21)
 
 
 # ---------------------------------------------------------------------------

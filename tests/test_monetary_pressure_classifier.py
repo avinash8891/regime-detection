@@ -172,7 +172,7 @@ def test_rate_shock_fires_on_2y_21d_abs_threshold():
     assert label == "rate_shock"
 
 
-def test_rate_shock_fires_on_10y_21d_abs_negative_threshold():
+def test_rate_shock_fires_on_10y_21d_absolute_negative_move():
     label = evaluate_rules(inputs=_inputs(zscore_21d_10y=-2.5), config=_rules())
     assert label == "rate_shock"
 
@@ -187,11 +187,13 @@ def test_tightening_pressure_fires_on_broad_usd_above_threshold():
     assert label == "tightening_pressure"
 
 
-def test_easing_pressure_requires_both_yield_signals():
-    # Only one yield below threshold → does NOT fire easing.
+def test_easing_pressure_fires_when_either_yield_signal_eases():
     label = evaluate_rules(inputs=_inputs(zscore_2y_63d=-1.6), config=_rules())
-    assert label == "neutral_monetary"
-    # Both yields below threshold → fires easing.
+    assert label == "easing_pressure"
+
+    label = evaluate_rules(inputs=_inputs(zscore_10y_63d=-1.6), config=_rules())
+    assert label == "easing_pressure"
+
     label = evaluate_rules(
         inputs=_inputs(zscore_2y_63d=-1.6, zscore_10y_63d=-1.6), config=_rules()
     )

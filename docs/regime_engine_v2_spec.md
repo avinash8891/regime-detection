@@ -1385,12 +1385,12 @@ the slice/commit that resolved it. Entries are append-only.
       (c) **Precedence**
           `rate_shock > tightening_pressure > easing_pressure >
           neutral_monetary > unknown`. Pattern matches §3.4. Reasoning
-          documented inline: `rate_shock` (21d ±2σ) is a stronger
+          documented inline: `rate_shock` (absolute 21d ±2σ) is a stronger
           signal than `tightening_pressure` (63d ±1.5σ) and must
           outrank when both fire; `tightening_pressure` and
-          `easing_pressure` are opposite-sign predicates on the same
-          metric and cannot co-fire (their order is for log
-          readability).
+          `easing_pressure` can both be partially indicated across
+          different tenors or USD, so their order is deterministic
+          label resolution.
       (d) **Risk rank**
           `{neutral_monetary: 0, easing_pressure: 1, unknown: 1,
           tightening_pressure: 2, rate_shock: 3}`. Pattern matches
@@ -1579,10 +1579,10 @@ the slice/commit that resolved it. Entries are append-only.
     `cpi_nowcast.parquet`. The feed is the full archive — one chart object
     per monthly vintage, ~2013-08 to present (154 usable CPI vintages),
     well past the 1260-session normalizer. Per vintage the parser takes
-    the last non-empty `CPI Inflation` value (settled nowcast) keyed to
-    the 1st of the target month, matching `CPIAUCSL`'s reference-date
-    convention. Manual-drop of the JSON is a fallback only. See ADR 0006
-    "Fetch path".
+    the last non-empty `CPI Inflation` value keyed to that point's chart
+    category date, preserving point-in-time availability instead of
+    back-dating the settled value to the 1st of the target month.
+    Manual-drop of the JSON is a fallback only. See ADR 0006 "Fetch path".
 
 49. **§2C Credit/Funding — scaffolding + operational pins.**
 
@@ -1689,10 +1689,13 @@ the slice/commit that resolved it. Entries are append-only.
     - `global_rate_decision` source = operator-maintained YAML for
       BOE / ECB / BOJ scheduled meetings (analogous to V1 FOMC
       pre-2021 pre-fetch path).
-    - `budget_week` = manual YAML flag (US has no fixed federal
-      budget date; tied to operator-defined fiscal events).
-    - `geopolitical_event` = manual YAML flag (war, sanctions,
-      terrorism) — already pinned in §2D source text.
+    - `budget_week` = event-source candidate from deterministic fiscal
+      deadlines plus official Treasury/GovInfo budget discovery.
+    - `geopolitical_event` = approval-gated Group B candidate generated
+      from GPR daily-index spikes, GDELT daily Event export volume,
+      HDX HAPI conflict evidence, and TODO credential-gated
+      ACLED / Uppsala-UCDP conflict evidence once entitled API keys are present;
+      still overlay-only, never auto-promoted.
     - **§4.2 `macro_event_score` expansion** — set extended from
       `{fed_week, cpi_week, nfp_week}` to also include
       `{budget_week, election_window, global_rate_decision}`.
@@ -2520,8 +2523,8 @@ easing_pressure:
   OR yield_change_zscore_10y_63d < -1.5
 
 rate_shock:
-  yield_change_zscore_21d_2y > +2.0
-  OR yield_change_zscore_21d_10y > +2.0
+  abs(yield_change_zscore_21d_2y) > 2.0
+  OR abs(yield_change_zscore_21d_10y) > 2.0
 ```
 
 #### Labels
@@ -2542,7 +2545,7 @@ unknown
 rate_shock > tightening_pressure > easing_pressure > neutral_monetary > unknown
 ```
 
-Reasoning: `rate_shock` (21d, ±2.0σ) is a stronger move than `tightening_pressure` (63d, ±1.5σ) and must outrank when both fire. `tightening_pressure` and `easing_pressure` are opposite-sign predicates on the same yield-change z-score and cannot co-fire; their relative order is for log readability only.
+Reasoning: `rate_shock` uses absolute 21d moves (±2.0σ), a stronger short-horizon signal than the 63d ±1.5σ pressure predicates, and must outrank when both fire. `tightening_pressure` and `easing_pressure` can both be partially indicated across different tenors or USD; precedence keeps tightening ahead of easing for deterministic label resolution.
 
 #### Risk Rank
 
@@ -2939,9 +2942,9 @@ strictly parallel — never spliced with the real-OAS metric.
 ### 2D. Event Calendar V2
 
 Add labels to V1's calendar:
-- `budget_week` — manual YAML flag (relevant for India when extended; US has no fixed federal budget date, so tied to operator-defined fiscal events)
+- `budget_week` — event-source row from deterministic fiscal deadlines plus official Treasury/GovInfo budget discovery (relevant for India only when an India-specific official source is added)
 - `election_window` — default trading-day window `[-5, +10]` around the result date (matches the §2D YAML example below); configurable via `window_days` in the event row
-- `geopolitical_event` — manual YAML flag (war, sanctions, terrorism)
+- `geopolitical_event` — approval-gated Group B candidate for war, sanctions, terrorism, conflict/protest shocks; generated from GPR, GDELT, and HDX HAPI evidence when those live sources are available; ACLED and Uppsala/UCDP evidence is TODO pending entitled API keys/account access; rendered only when the approval overlay promotes it
 - `global_rate_decision` — manual YAML for BOE / ECB / BOJ scheduled meetings; operator maintains the calendar (analogous to V1 FOMC pre-2021 pre-fetch path)
 
 YAML schema extension:
@@ -3194,7 +3197,7 @@ score = 1.0 if event_calendar.label in [
 ] else 0.0
 ```
 
-`geopolitical_event` is treated separately (high-impact ad-hoc — not part of the routine `macro_event_score`; expected to manifest through `correlation_to_one` / `deleveraging` / `crisis_vol` labels rather than through scheduled-event scoring).
+`geopolitical_event` is treated separately (high-impact ad-hoc — not part of the routine `macro_event_score`; expected to manifest through `correlation_to_one` / `deleveraging` / `crisis_vol` labels rather than through scheduled-event scoring). Its candidate evidence is generated from GPR, GDELT, and HDX HAPI when available; ACLED and Uppsala/UCDP evidence is TODO pending entitled API keys/account access. Source corroboration is not promotion; a human approval overlay remains mandatory.
 
 `hmm_probability_shift_score`:
 ```python

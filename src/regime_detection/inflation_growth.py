@@ -1,15 +1,16 @@
 """v2 §2B Inflation / Growth axis — feature compute + rule materialisation (Slice 5).
 
-Implements the 8-label axis classifier from spec lines 2174-2326. Per
-Implementation Ambiguity Log #48 two labels short-circuit to False until
-their paid-data dependency lands:
+Implements the 8-label axis classifier from spec lines 2174-2326. Optional
+nowcast and EPS-revision source series are consumed when present and
+otherwise falsify via NaN:
 
   - ``earnings_expansion`` / ``earnings_contraction`` need the weekly
-    ``aggregate_forward_eps_revision_direction_4w`` time series (S&P Global
-    weekly EPS revision feed — paid).
+    ``aggregate_forward_eps_revision_direction_4w`` time series from the
+    S&P Global aggregate forward-EPS weekly snapshot accumulator.
   - ``inflation_shock``'s single-signal limb
-    (``inflation_surprise_zscore > +1.5``) needs the BLS consensus-vs-
-    actual feed; the composite-shock limb remains active.
+    (``inflation_surprise_zscore > +1.5``) uses the Cleveland Fed nowcast
+    substitution when ``cpi_nowcast`` is wired; the composite-shock limb
+    remains active.
 
 Labels (§2B lines 2177-2186):
     goldilocks, inflation_shock, disinflation, recession_scare,
@@ -148,19 +149,19 @@ class InflationGrowthFeatures:
     All series are aligned to the SPY DatetimeIndex. NaN cold-start at the
     head of each series until the corresponding lookback fills.
 
-    The two paid-data series (``inflation_surprise_zscore`` and
-    ``aggregate_forward_eps_revision_direction_4w``) are exposed as all-NaN
-    series per Ambiguity Log #48 so consumers can wire them in once the
-    feeds land without a feature-store schema change.
+    The optional series (``inflation_surprise_zscore`` and
+    ``aggregate_forward_eps_revision_direction_4w``) are real when their
+    source inputs are wired and all-NaN otherwise, preserving the rule
+    engine's NaN-falsifies behavior without a feature-store schema change.
     """
 
     cpi_3m_change_pct: pd.Series
     cpi_6m_change_pct: pd.Series
     cpi_6m_change_pct_slope_21d: pd.Series
-    inflation_surprise_zscore: pd.Series  # all-NaN; deferred (Log #48)
+    inflation_surprise_zscore: pd.Series
     pmi_manufacturing: pd.Series
     pmi_manufacturing_slope_21d: pd.Series
-    aggregate_forward_eps_revision_direction_4w: pd.Series  # all-NaN; deferred
+    aggregate_forward_eps_revision_direction_4w: pd.Series
     commodity_return_63d: pd.Series
     treasury_10y_yield_slope_21d: pd.Series
     cyclical_defensive_ratio: pd.Series
