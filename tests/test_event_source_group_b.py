@@ -7,7 +7,12 @@ import pytest
 
 from regime_data_fetch.event_calendar import GroupABuildResult, _build_group_b_report
 from regime_data_fetch.event_sources.approvals import append_approval_record, load_approval_overlay
-from regime_data_fetch.event_sources.budget_official_discovery import BudgetOfficialDiscoveryGenerator
+from regime_data_fetch.event_sources.budget_official_discovery import (
+    BudgetOfficialDiscoveryGenerator,
+    extract_govinfo_cr_records,
+    extract_treasury_debt_limit_records,
+    fetch_official_budget_records,
+)
 from regime_data_fetch.event_sources.deterministic_budget import DeterministicBudgetAdapter
 from regime_data_fetch.event_sources.models import ApprovalRecord, EventCandidate, PromotionDecision
 from regime_data_fetch.event_sources.orchestrator import EventSourceOrchestrator
@@ -153,6 +158,111 @@ def test_budget_official_discovery_auto_promotes_two_independent_official_source
     assert decisions[0].outcome == "promote"
     assert decisions[0].source_count == 2
     assert [(event.date, event.type) for event in rendered] == [(dt.date(2023, 6, 5), "budget")]
+
+
+def test_treasury_debt_limit_extractor_uses_official_index_links() -> None:
+    index_html = """
+<a href="/system/files/136/Debt-Limit-Letter-to-Congress-Members-20230526-McCarthy.pdf">
+Secretary Yellen Sends Debt Limit Letter to Congress (5/26/23)</a>
+<a href="/system/files/136/07282023_Letter_to_Speaker_McCarthy_2023_CSRDF_Report.pdf">
+Assistant Secretary Davidson Sends Letter on Report on Fund Operations and Status of the CSRDF/PSRHBF under the DISP ending June 5, 2023 (7/28/23)</a>
+"""
+
+    records = extract_treasury_debt_limit_records(
+        index_html,
+        source_url="https://home.treasury.gov/policy-issues/financial-markets-financial-institutions-and-fiscal-service/debt-limit",
+    )
+
+    assert records == [
+        {
+            "date": "2023-05-26",
+            "event_subtype": "debt_ceiling",
+            "source_id": "treasury.gov:debt-limit",
+            "source_url": "https://home.treasury.gov/system/files/136/Debt-Limit-Letter-to-Congress-Members-20230526-McCarthy.pdf",
+            "raw_title": "Secretary Yellen Sends Debt Limit Letter to Congress (5/26/23)",
+            "raw_snippet": "Treasury debt-limit notice dated 2023-05-26.",
+        },
+        {
+            "date": "2023-06-05",
+            "event_subtype": "debt_ceiling",
+            "source_id": "treasury.gov:debt-limit",
+            "source_url": "https://home.treasury.gov/system/files/136/07282023_Letter_to_Speaker_McCarthy_2023_CSRDF_Report.pdf",
+            "raw_title": "Assistant Secretary Davidson Sends Letter on Report on Fund Operations and Status of the CSRDF/PSRHBF under the DISP ending June 5, 2023 (7/28/23)",
+            "raw_snippet": "Treasury debt-limit DISP period ending 2023-06-05.",
+        },
+    ]
+
+
+def test_govinfo_cr_extractor_reads_public_law_expiration_date() -> None:
+    public_law_html = """
+CONTINUING APPROPRIATIONS AND EXTENSIONS ACT, 2025
+Sec. 106. Unless otherwise provided for in this Act or in the applicable
+appropriations Act for fiscal year 2025, appropriations and funds made
+available and authority granted pursuant to this Act shall be available
+until whichever of the following first occurs:
+(3) &lt;&lt;NOTE: Expiration date.&gt;&gt; December 20, 2024.
+"""
+
+    records = extract_govinfo_cr_records(
+        public_law_html,
+        source_url="https://www.govinfo.gov/content/pkg/PLAW-118publ83/html/PLAW-118publ83.htm",
+    )
+
+    assert records == [
+        {
+            "date": "2024-12-20",
+            "event_subtype": "cr_expiration",
+            "source_id": "govinfo.gov:public-law",
+            "source_url": "https://www.govinfo.gov/content/pkg/PLAW-118publ83/html/PLAW-118publ83.htm",
+            "raw_title": "CONTINUING APPROPRIATIONS AND EXTENSIONS ACT, 2025",
+            "raw_snippet": "GovInfo continuing appropriations expiration date 2024-12-20.",
+        }
+    ]
+
+
+def test_govinfo_cr_extractor_reads_amended_public_law_expiration_date() -> None:
+    public_law_html = """
+DIVISION A -- FURTHER CONTINUING APPROPRIATIONS ACT, 2025
+Sec. 101. The Continuing Appropriations Act, 2025 (division A of
+Public Law 118-83) is amended--
+(1) by striking the date specified in section 106(3) and inserting
+``March 14, 2025'';
+Sec. 155. To remain available until September 30, 2029.
+"""
+
+    records = extract_govinfo_cr_records(
+        public_law_html,
+        source_url="https://www.govinfo.gov/content/pkg/PLAW-118publ158/html/PLAW-118publ158.htm",
+    )
+
+    assert [(record["date"], record["raw_snippet"]) for record in records] == [
+        ("2025-03-14", "GovInfo continuing appropriations expiration date 2025-03-14.")
+    ]
+
+
+def test_default_official_budget_fetcher_combines_live_official_sources() -> None:
+    def fake_fetch(url: str) -> str:
+        if "home.treasury.gov" in url:
+            return """
+<a href="/system/files/136/Debt-Limit-Letter-to-Congress-20211116.pdf">
+Secretary Yellen Sends Debt Limit Letter to Congress (11/16/2021)</a>
+"""
+        if "PLAW-118publ83" in url:
+            return """
+CONTINUING APPROPRIATIONS AND EXTENSIONS ACT, 2025
+Sec. 106. (3) &lt;&lt;NOTE: Expiration date.&gt;&gt; December 20, 2024.
+"""
+        raise AssertionError(url)
+
+    records = fetch_official_budget_records(
+        text_fetcher=fake_fetch,
+        govinfo_public_law_urls=["https://www.govinfo.gov/content/pkg/PLAW-118publ83/html/PLAW-118publ83.htm"],
+    )
+
+    assert [(record["date"], record["event_subtype"], record["source_id"]) for record in records] == [
+        ("2021-11-16", "debt_ceiling", "treasury.gov:debt-limit"),
+        ("2024-12-20", "cr_expiration", "govinfo.gov:public-law"),
+    ]
 
 
 def test_tinyfish_unavailable_returns_unknown_for_review_candidates() -> None:
