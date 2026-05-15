@@ -351,6 +351,7 @@ def test_fetch_help_surface_mentions_pmi_and_pit() -> None:
     assert "--usd-index-csv" in help_text
     assert "--daily-ohlcv-dir" in help_text
     assert "--investing-archive-root" in help_text
+    assert "--investing-earnings-loaded-page" in help_text
     assert "investing-live" in help_text
     assert "cleveland-fed-nowcast" in help_text
     assert "sf-fed-news-sentiment" in help_text

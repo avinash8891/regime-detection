@@ -90,6 +90,7 @@ def main() -> int:
     ap.add_argument("--usd-index-csv", default=None, help="Path to a local Yahoo Finance ^NYICDX historical CSV export. Required for --fetch usd-index-local.")
     ap.add_argument("--daily-ohlcv-dir", default=None, help="Path to a local partitioned daily_ohlcv parquet directory. Required for --fetch daily-ohlcv-local-sqlite.")
     ap.add_argument("--investing-archive-root", default=None, help="Path to archived Investing.com source_pages root. Required for --fetch investing-archive-local.")
+    ap.add_argument("--investing-earnings-loaded-page", default=None, help="Path to a browser-loaded Investing.com earnings calendar HTML page containing __NEXT_DATA__. Optional for --fetch investing-live.")
     ap.add_argument("--acquisition-db", default=None, help="Optional SQLite path for raw acquisition/provenance recording.")
     ap.add_argument(
         "--artifact-store",
@@ -355,6 +356,7 @@ def main() -> int:
             end=end,
             acquisition_db_path=Path(args.acquisition_db),
             artifact_store_root=acquisition_artifact_store_root,
+            earnings_loaded_page_path=Path(args.investing_earnings_loaded_page) if args.investing_earnings_loaded_page else None,
         )
         report_paths.append(investing_report)
         print(str(investing_report))

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import csv
 import datetime as dt
+import base64
 import json
 import os
 import re
@@ -9,6 +10,7 @@ import time
 import urllib.parse
 import urllib.request
 from collections.abc import Callable
+from collections.abc import Iterable
 from pathlib import Path
 
 from regime_data_fetch.investing_archive import run_local_investing_archive_import
@@ -41,6 +43,7 @@ def run_investing_live_fetch(
     calendar_country_ids: list[int] | None = None,
     earnings_country_ids: list[int] | None = None,
     earnings_access_token: str | None = None,
+    earnings_loaded_page_path: Path | None = None,
 ) -> Path:
     archive_root = out_dir / "investing_live_archive"
     capture_investing_live_archive(
@@ -52,6 +55,7 @@ def run_investing_live_fetch(
         calendar_country_ids=calendar_country_ids or DEFAULT_CALENDAR_COUNTRY_IDS,
         earnings_country_ids=earnings_country_ids or DEFAULT_EARNINGS_COUNTRY_IDS,
         earnings_access_token=earnings_access_token,
+        earnings_loaded_page_path=earnings_loaded_page_path,
     )
     return run_local_investing_archive_import(
         out_dir=out_dir,
@@ -71,6 +75,7 @@ def capture_investing_live_archive(
     calendar_country_ids: list[int],
     earnings_country_ids: list[int],
     earnings_access_token: str | None = None,
+    earnings_loaded_page_path: Path | None = None,
 ) -> None:
     if end < start:
         raise ValueError("end must be >= start")
@@ -83,10 +88,15 @@ def capture_investing_live_archive(
     calendar_page = page_fetcher(SOURCE_CALENDAR_URL) if page_fetcher else ""
     earnings_page = page_fetcher(SOURCE_EARNINGS_URL) if page_fetcher else ""
     countries = _country_map_from_page(calendar_page, key="eventAndHolidayCountries") if calendar_page else {}
+    loaded_earnings_page = _loaded_earnings_page_html(earnings_loaded_page_path)
+    if loaded_earnings_page:
+        earnings_page = loaded_earnings_page
     stock_countries = _country_map_from_page(earnings_page, key="stockCountries") if earnings_page else {}
     access_token = earnings_access_token or _investing_earnings_access_token()
     if not access_token and earnings_page:
         access_token = _access_token_from_page(earnings_page)
+    if access_token:
+        _validate_token_not_expired(access_token)
 
     event_rows, holiday_rows, calendar_reports = _fetch_calendar_archive(
         calendar_dir=calendar_dir,
@@ -97,15 +107,27 @@ def capture_investing_live_archive(
         json_fetcher=json_fetcher,
     )
     if access_token:
-        earnings_rows, earnings_reports = _fetch_earnings_archive(
+        raw_earnings, earnings_reports = _fetch_earnings_archive(
             earnings_dir=earnings_dir,
             start=start,
             end=end,
             access_token=access_token,
-            countries=stock_countries,
             country_ids=earnings_country_ids,
             json_fetcher=json_fetcher,
         )
+        instruments, instrument_reports = _fetch_instruments(
+            earnings_dir=earnings_dir,
+            ids=sorted({int(item["instrument_id"]) for item in raw_earnings if item.get("instrument_id")}),
+            json_fetcher=json_fetcher,
+        )
+        key_metrics, metrics_reports = _fetch_key_metrics(
+            earnings_dir=earnings_dir,
+            ids=sorted({int(item["instrument_id"]) for item in raw_earnings if item.get("instrument_id")}),
+            json_fetcher=json_fetcher,
+        )
+        earnings_rows = _normalize_earnings_rows(raw_earnings, instruments, key_metrics, stock_countries)
+        earnings_reports.extend(instrument_reports)
+        earnings_reports.extend(metrics_reports)
     else:
         earnings_rows = []
         earnings_reports = [{
@@ -244,7 +266,6 @@ def _fetch_earnings_archive(
     start: dt.date,
     end: dt.date,
     access_token: str,
-    countries: dict[str, dict[str, object]],
     country_ids: list[int],
     json_fetcher: JsonFetcher,
 ) -> tuple[list[dict[str, object]], list[dict[str, object]]]:
@@ -272,13 +293,72 @@ def _fetch_earnings_archive(
             raw_path.parent.mkdir(parents=True, exist_ok=True)
             raw_path.write_text(json.dumps(payload, indent=2, sort_keys=True))
             page_rows = [item for item in payload.get("earnings", []) if isinstance(item, dict)]
-            rows.extend(_normalize_earnings_rows(page_rows, countries))
+            rows.extend(page_rows)
             cursor = str(payload.get("cursor") or "")
             reports.append({"date_from": month_start.isoformat(), "date_to": month_end.isoformat(), "page": page, "raw_path": str(raw_path), "rows": len(page_rows), "cursor_present": bool(cursor)})
             if not cursor:
                 break
             time.sleep(0.1)
     return _dedupe(rows), reports
+
+
+def _chunks(values: list[int], size: int) -> Iterable[list[int]]:
+    for index in range(0, len(values), size):
+        yield values[index : index + size]
+
+
+def _fetch_instruments(
+    *,
+    earnings_dir: Path,
+    ids: list[int],
+    json_fetcher: JsonFetcher,
+) -> tuple[dict[str, dict[str, object]], list[dict[str, object]]]:
+    by_id: dict[str, dict[str, object]] = {}
+    reports: list[dict[str, object]] = []
+    for index, batch in enumerate(_chunks(ids, 50), start=1):
+        payload = json_fetcher(
+            f"{CALENDAR_BASE}/v1/instruments",
+            {"instrument_ids": ",".join(str(item) for item in batch), "domain_id": DOMAIN_ID},
+            _calendar_headers(),
+        )
+        if not isinstance(payload, list):
+            raise RuntimeError(f"unexpected Investing.com instruments payload: {type(payload).__name__}")
+        raw_path = earnings_dir / "raw_instruments" / f"instruments_batch_{index:04d}.json"
+        raw_path.parent.mkdir(parents=True, exist_ok=True)
+        raw_path.write_text(json.dumps(payload, indent=2, sort_keys=True))
+        for item in payload:
+            if isinstance(item, dict) and item.get("id") is not None:
+                by_id[str(item.get("id"))] = item
+        reports.append({"kind": "instruments", "batch": index, "requested": len(batch), "rows": len(payload), "raw_path": str(raw_path)})
+        time.sleep(0.05)
+    return by_id, reports
+
+
+def _fetch_key_metrics(
+    *,
+    earnings_dir: Path,
+    ids: list[int],
+    json_fetcher: JsonFetcher,
+) -> tuple[dict[str, dict[str, object]], list[dict[str, object]]]:
+    by_id: dict[str, dict[str, object]] = {}
+    reports: list[dict[str, object]] = []
+    for index, batch in enumerate(_chunks(ids, 50), start=1):
+        payload = json_fetcher(
+            f"{CALENDAR_BASE}/v1/instruments/key-metrics",
+            {"instrument_ids": ",".join(str(item) for item in batch), "domain_id": DOMAIN_ID},
+            _calendar_headers(),
+        )
+        if not isinstance(payload, list):
+            raise RuntimeError(f"unexpected Investing.com key-metrics payload: {type(payload).__name__}")
+        raw_path = earnings_dir / "raw_instruments" / f"key_metrics_batch_{index:04d}.json"
+        raw_path.parent.mkdir(parents=True, exist_ok=True)
+        raw_path.write_text(json.dumps(payload, indent=2, sort_keys=True))
+        for item in payload:
+            if isinstance(item, dict) and item.get("instrument_id") is not None:
+                by_id[str(item.get("instrument_id"))] = item
+        reports.append({"kind": "key_metrics", "batch": index, "requested": len(batch), "rows": len(payload), "raw_path": str(raw_path)})
+        time.sleep(0.05)
+    return by_id, reports
 
 
 def _normalize_event_rows(occurrences: list[dict[str, object]], events: list[dict[str, object]], start: dt.date, end: dt.date, countries: dict[str, dict[str, object]]) -> list[dict[str, object]]:
@@ -313,14 +393,66 @@ def _normalize_holiday_rows(holidays: list[dict[str, object]], start: dt.date, e
     return rows
 
 
-def _normalize_earnings_rows(earnings: list[dict[str, object]], countries: dict[str, dict[str, object]]) -> list[dict[str, object]]:
+def _normalize_earnings_rows(
+    earnings: list[dict[str, object]],
+    instruments: dict[str, dict[str, object]],
+    key_metrics: dict[str, dict[str, object]],
+    countries: dict[str, dict[str, object]],
+) -> list[dict[str, object]]:
     rows = []
     for earning in earnings:
-        country_id = str(earning.get("country_id") or "")
+        instrument_id = str(earning.get("instrument_id") or "")
+        instrument = instruments.get(instrument_id, {})
+        metrics = key_metrics.get(instrument_id, {}).get("key_metrics") or {}
+        if not isinstance(metrics, dict):
+            metrics = {}
+        attributes = instrument.get("attributes") or {}
+        if not isinstance(attributes, dict):
+            attributes = {}
+        price = instrument.get("price") or {}
+        if not isinstance(price, dict):
+            price = {}
+        country_id = str(instrument.get("country_id") or earning.get("country_id") or "")
         country = countries.get(country_id, {})
-        row = dict(earning)
-        row.update({"kind": "earnings", "source_url": SOURCE_EARNINGS_URL, "country_code": country.get("country_code", row.get("country_code", ""))})
-        rows.append(row)
+        rows.append(
+            {
+                "kind": "earnings",
+                "source_url": SOURCE_EARNINGS_URL,
+                "date": earning.get("date", ""),
+                "instrument_id": instrument_id,
+                "company": instrument.get("long_name", earning.get("company", "")),
+                "short_name": instrument.get("short_name", ""),
+                "symbol": instrument.get("symbol", earning.get("symbol", "")),
+                "display_symbol": instrument.get("display_symbol", ""),
+                "country_id": country_id,
+                "country": instrument.get("country", country.get("name", "")),
+                "country_code": country.get("country_code", earning.get("country_code", "")),
+                "exchange_id": instrument.get("exchange_id", ""),
+                "exchange_short_name": instrument.get("exchange_short_name", ""),
+                "currency_id": earning.get("currency_id", instrument.get("currency_id", "")),
+                "currency_code": instrument.get("currency_code", ""),
+                "sector_id": attributes.get("sector_id", ""),
+                "importance": attributes.get("importance", ""),
+                "instrument_type": instrument.get("type", metrics.get("instrument_type", "")),
+                "market_phase": earning.get("market_phase", ""),
+                "earning_date_type": earning.get("earning_date_type", ""),
+                "report_month": earning.get("report_month", ""),
+                "report_year": earning.get("report_year", ""),
+                "eps_actual": earning.get("eps_actual", ""),
+                "eps_forecast": earning.get("eps_forecast", ""),
+                "revenue_actual": earning.get("revenue_actual", ""),
+                "revenue_forecast": earning.get("revenue_forecast", ""),
+                "market_cap": metrics.get("market_cap", ""),
+                "price_last": price.get("last", ""),
+                "price_change": price.get("change", ""),
+                "price_change_percent": price.get("change_percent", ""),
+                "last_price_timestamp_utc": price.get("last_price_timestamp", ""),
+                "instrument_link": instrument.get("link", ""),
+                "market_link": instrument.get("market_link", ""),
+                "active": instrument.get("active", ""),
+                "realtime": instrument.get("realtime", ""),
+            }
+        )
     return rows
 
 
@@ -359,6 +491,35 @@ def _earnings_headers(access_token: str) -> dict[str, str]:
 
 def _investing_earnings_access_token() -> str:
     return os.environ.get("INVESTING_EARNINGS_ACCESS_TOKEN", "").strip()
+
+
+def _loaded_earnings_page_html(path: Path | None) -> str:
+    configured = path or _investing_earnings_loaded_page_path()
+    if configured is None:
+        return ""
+    return configured.read_text(errors="replace")
+
+
+def _investing_earnings_loaded_page_path() -> Path | None:
+    configured = os.environ.get("INVESTING_EARNINGS_LOADED_PAGE", "").strip()
+    return Path(configured) if configured else None
+
+
+def _validate_token_not_expired(token: str) -> None:
+    parts = token.split(".")
+    if len(parts) != 3:
+        return
+    try:
+        payload_bytes = base64.urlsafe_b64decode(parts[1] + "=" * (-len(parts[1]) % 4))
+        payload = json.loads(payload_bytes)
+    except Exception:
+        return
+    exp = payload.get("exp")
+    if not isinstance(exp, int | float):
+        return
+    now = dt.datetime.now(dt.timezone.utc).timestamp()
+    if exp <= now:
+        raise RuntimeError("Investing.com earnings accessToken is expired; reload the earnings calendar page and retry")
 
 
 def _page_data(html: str) -> dict[str, object]:
