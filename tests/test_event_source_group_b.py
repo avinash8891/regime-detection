@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import datetime as dt
 import io
+import json
 from pathlib import Path
 import zipfile
 
@@ -22,6 +23,7 @@ from regime_data_fetch.event_sources.orchestrator import EventSourceOrchestrator
 from regime_data_fetch.event_sources.validators_tinyfish import TinyFishValidator
 from regime_data_fetch.event_sources.validators_gpr_gdelt import GPRGDELTSignalGenerator
 from regime_data_fetch.event_sources.validators_gpr_gdelt import (
+    _fetch_acled_events,
     parse_acled_events,
     parse_gdelt_event_export,
     parse_hdx_hapi_conflict_events,
@@ -270,6 +272,35 @@ def test_parse_acled_events_aggregates_conflict_rows_by_day() -> None:
             "source_url": "https://acleddata.com/api/acled/read",
         }
     ]
+
+
+def test_acled_fetcher_paginates_until_short_page(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("ACLED_API_TOKEN", "fixture-token")
+    calls: list[str] = []
+
+    def fake_http_text(url: str, *, headers: dict[str, str]) -> str:
+        calls.append(url)
+        assert headers["Authorization"] == "Bearer fixture-token"
+        page = "2" if "page=2" in url else "1"
+        row_count = 5000 if page == "1" else 1
+        rows = [
+            {
+                "event_date": "2022-02-24",
+                "event_type": "Battles",
+                "country": "Ukraine",
+                "fatalities": "1",
+            }
+            for _ in range(row_count)
+        ]
+        return '{"data": ' + json.dumps(rows) + "}"
+
+    monkeypatch.setattr("regime_data_fetch.event_sources.validators_gpr_gdelt._http_text", fake_http_text)
+
+    payload = _fetch_acled_events(2022, 2022)
+    rows = parse_acled_events(payload, source_url="https://acleddata.com/api/acled/read")
+
+    assert len(calls) == 2
+    assert rows[0]["event_count"] == 5001
 
 
 def test_parse_ucdp_events_aggregates_candidate_events_by_day() -> None:

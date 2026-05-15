@@ -584,10 +584,19 @@ def _fetch_acled_events(start_year: int, end_year: int) -> str | None:
         "fields": "event_date|event_type|sub_event_type|country|fatalities|source|notes",
         "limit": "5000",
     }
-    return _http_text(
-        f"{ACLED_READ_URL}?{urlencode(params)}",
-        headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
-    )
+    records: list[dict[str, object]] = []
+    page = 1
+    while True:
+        payload = _http_text(
+            f"{ACLED_READ_URL}?{urlencode({**params, 'page': str(page)})}",
+            headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
+        )
+        page_records = _json_records(payload, container_keys=("data",))
+        records.extend(page_records)
+        if len(page_records) < 5000:
+            break
+        page += 1
+    return json.dumps({"data": records}, sort_keys=True)
 
 
 def _acled_access_token() -> str | None:
