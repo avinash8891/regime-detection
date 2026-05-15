@@ -283,27 +283,47 @@ def _build_markdown(
 
 
 def _parse_args() -> argparse.Namespace:
-    daily_dir = REPO_ROOT / "data" / "raw" / "daily_ohlcv"
-    default_start, default_end = _resolve_default_window(daily_dir)
     parser = argparse.ArgumentParser(description="V2 §9.1 walk-forward performance gate runner.")
-    parser.add_argument("--start-date", type=dt.date.fromisoformat, default=default_start)
-    parser.add_argument("--end-date", type=dt.date.fromisoformat, default=default_end)
+    parser.add_argument(
+        "--daily-dir",
+        type=Path,
+        default=REPO_ROOT / "data" / "raw" / "daily_ohlcv",
+    )
+    parser.add_argument(
+        "--macro-parquet",
+        type=Path,
+        default=REPO_ROOT / "data" / "raw" / "macro" / "fred_macro_series.parquet",
+    )
+    parser.add_argument(
+        "--pmi-path",
+        type=Path,
+        default=REPO_ROOT / "data" / "manual_inputs" / "pmi" / "ism_manufacturing_pmi.tsv",
+    )
+    parser.add_argument("--start-date", type=dt.date.fromisoformat, default=None)
+    parser.add_argument("--end-date", type=dt.date.fromisoformat, default=None)
     parser.add_argument(
         "--output",
+        "--out",
         type=Path,
         default=REPO_ROOT / "docs" / "verification" / "v2_walkforward_perf_gate.md",
     )
-    return parser.parse_args()
+    args = parser.parse_args()
+    if args.start_date is None or args.end_date is None:
+        default_start, default_end = _resolve_default_window(args.daily_dir)
+        if args.start_date is None:
+            args.start_date = default_start
+        if args.end_date is None:
+            args.end_date = default_end
+    return args
 
 
 def main() -> int:
     _setup_logging()
     args = _parse_args()
 
-    data_root = REPO_ROOT / "data" / "raw"
-    daily_dir = data_root / "daily_ohlcv"
-    macro_parquet = data_root / "macro" / "fred_macro_series.parquet"
-    pmi_path = REPO_ROOT / "data" / "manual_inputs" / "pmi" / "ism_manufacturing_pmi.tsv"
+    daily_dir = args.daily_dir
+    macro_parquet = args.macro_parquet
+    pmi_path = args.pmi_path
 
     if not daily_dir.exists():
         raise SystemExit(f"daily_ohlcv directory not found at {daily_dir}")

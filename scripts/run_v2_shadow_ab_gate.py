@@ -286,9 +286,25 @@ def _build_markdown(
 
 def _parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="V2 §9.3 60-session shadow A/B gate runner.")
+    parser.add_argument(
+        "--daily-dir",
+        type=Path,
+        default=REPO_ROOT / "data" / "raw" / "daily_ohlcv",
+    )
+    parser.add_argument(
+        "--macro-parquet",
+        type=Path,
+        default=REPO_ROOT / "data" / "raw" / "macro" / "fred_macro_series.parquet",
+    )
+    parser.add_argument(
+        "--pmi-path",
+        type=Path,
+        default=REPO_ROOT / "data" / "manual_inputs" / "pmi" / "ism_manufacturing_pmi.tsv",
+    )
     parser.add_argument("--n-sessions", type=int, default=60)
     parser.add_argument(
         "--output",
+        "--out",
         type=Path,
         default=REPO_ROOT / "docs" / "verification" / "v2_shadow_ab_60session.md",
     )
@@ -299,10 +315,9 @@ def main() -> int:
     _setup_logging()
     args = _parse_args()
 
-    data_root = REPO_ROOT / "data" / "raw"
-    daily_dir = data_root / "daily_ohlcv"
-    macro_parquet = data_root / "macro" / "fred_macro_series.parquet"
-    pmi_path = REPO_ROOT / "data" / "manual_inputs" / "pmi" / "ism_manufacturing_pmi.tsv"
+    daily_dir = args.daily_dir
+    macro_parquet = args.macro_parquet
+    pmi_path = args.pmi_path
 
     if not daily_dir.exists():
         raise SystemExit(f"daily_ohlcv directory not found at {daily_dir}")
