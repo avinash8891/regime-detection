@@ -155,6 +155,23 @@ def test_classify_matches_last_output_of_shared_timeline_pipeline(shared_timelin
     assert timeline.outputs[-1].model_dump() == point_output.model_dump()
 
 
+def test_build_regime_timeline_uses_context_config_when_config_arg_omitted(market_df_for_asof) -> None:
+    """Direct callers must not silently disable v2 seams by omitting config."""
+    end_date = date(2023, 12, 14)
+    engine = RegimeEngine()
+    context = build_market_context(
+        end_date=end_date,
+        market_data=market_df_for_asof(end_date),
+        config=engine.config,
+    )
+
+    timeline = build_regime_timeline(context=context, lookback_days=3)
+
+    assert timeline.config_version == engine.config.config_version
+    assert timeline.outputs[-1].config_version == engine.config.config_version
+    assert timeline.outputs[-1].change_point is not None
+
+
 def test_classify_delegates_to_classify_window_with_single_day_lookback(mocker, market_df_for_asof) -> None:
     engine = RegimeEngine()
     as_of = date(2023, 12, 14)

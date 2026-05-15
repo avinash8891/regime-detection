@@ -11,11 +11,8 @@ Ambiguity Log #46 pins).
 """
 from __future__ import annotations
 
-from datetime import date
-
 import numpy as np
 import pandas as pd
-import pytest
 
 from regime_detection.axis_series import MonetaryPressureV2SeriesClassifier
 from regime_detection.calendar import nyse_sessions_between
@@ -379,6 +376,18 @@ def test_engine_classify_window_populates_monetary_pressure_state():
     allowed = set(MONETARY_PRESSURE_V2_RISK_RANK.keys())
     for out in populated:
         assert out.monetary_pressure_state.active_label in allowed
+        assert (
+            out.structural_causal_state.monetary_pressure.label
+            == out.monetary_pressure_state.active_label
+        )
+        assert (
+            out.structural_causal_state.monetary_pressure.evidence
+            == out.monetary_pressure_state.evidence
+        )
+        assert (
+            out.structural_causal_state.monetary_pressure.data_quality
+            == out.monetary_pressure_state.data_quality
+        )
 
 
 def test_engine_classify_window_monetary_pressure_state_none_in_pure_v1_mode():

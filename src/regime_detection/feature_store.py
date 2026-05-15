@@ -269,6 +269,9 @@ def build_feature_store(
     central_bank_text_config: CentralBankTextConfig | None = None,
     news_sentiment_config: NewsSentimentConfig | None = None,
 ) -> FeatureStore:
+    # TODO(refactor): Decompose this builder in a dedicated no-behavior-change
+    # refactor. Keep feature wiring and fixture replay frozen while extracting
+    # helpers so classifier changes do not hide inside the decomposition.
     spy_ohlcv = context.spy_ohlcv
     spy_close = spy_ohlcv["close"]
     trend_direction = compute_trend_direction_features(spy_close)
@@ -465,6 +468,16 @@ def build_feature_store(
     else:
         monetary = None
 
+    realized_vol_21d_series = (
+        realized_vol(spy_close, 21)
+        if (
+            context.config.hmm is not None
+            or context.config.clustering is not None
+            or context.config.change_point is not None
+        )
+        else None
+    )
+
     # v2 §6.1 HMM evidence layer (Slice 6) — reuses the existing FeatureStore
     # seams as inputs. Requires the volume_liquidity_v2 and network_fragility
     # seams to be lit (their fields supply 2 of the 5 HMM inputs). The
@@ -479,7 +492,7 @@ def build_feature_store(
     ):
         hmm = compute_hmm_features(
             return_1d=volatility.return_1d,
-            realized_vol_21d=realized_vol(spy_close, 21),
+            realized_vol_21d=realized_vol_21d_series,
             drawdown_63d=compute_trailing_drawdown(spy_close, 63),
             volume_zscore_20d=volume_liquidity_v2.volume_zscore_20d,
             avg_pairwise_corr_63d=network_fragility.avg_pairwise_corr_63d,
@@ -502,7 +515,7 @@ def build_feature_store(
         clustering = compute_clustering_features(
             return_21d=trend_character.return_21d,
             return_63d=trend_direction_v2.return_63d,
-            realized_vol_21d=realized_vol(spy_close, 21),
+            realized_vol_21d=realized_vol_21d_series,
             drawdown_63d=compute_trailing_drawdown(spy_close, 63),
             adx_14=trend_character.adx_14,
             avg_pairwise_corr_63d=network_fragility.avg_pairwise_corr_63d,
@@ -597,7 +610,6 @@ def build_feature_store(
     # SPY close on the V1 path, so the seam is only None when the config
     # is absent or when SPY history is too short.
     if context.config.change_point is not None:
-        realized_vol_21d_series = realized_vol(spy_close, 21)
         change_point = compute_change_point_features(
             realized_vol_21d=realized_vol_21d_series,
             config=context.config.change_point,

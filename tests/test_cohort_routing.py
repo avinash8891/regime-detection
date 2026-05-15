@@ -25,7 +25,6 @@ from __future__ import annotations
 from datetime import date
 import logging
 
-import pandas as pd
 import pytest
 
 # Real V2 axis label types — imported here so the test file fails fast

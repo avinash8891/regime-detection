@@ -42,6 +42,11 @@ class RegimeEngine:
         cpi_first_release: pd.Series | None = None,
         news_sentiment: pd.Series | None = None,
     ) -> RegimeOutput:
+        # TODO(api): Consider a ClassifyRequest input object only if this
+        # public signature keeps growing, and ship it with a compatibility
+        # plan rather than replacing the current call shape in-place.
+        # TODO(api): `breadth_data` is a public V1 parameter. If removed,
+        # do it through an explicit deprecation path; do not quietly delete it.
         del breadth_data  # V1 breadth uses ETF-proxy RSP rows in market_data per spec §6.
         as_of_date = as_date(as_of_date)
         require_nyse_trading_day(as_of_date)
@@ -85,6 +90,8 @@ class RegimeEngine:
         cpi_first_release: pd.Series | None = None,
         news_sentiment: pd.Series | None = None,
     ) -> RegimeTimeline:
+        # TODO(api): Keep `breadth_data` until a deprecation decision is made;
+        # compatibility matters even though current breadth uses RSP/SPY inputs.
         del breadth_data  # V1 breadth uses ETF-proxy RSP rows in market_data per spec §6.
         end_date = as_date(end_date)
         require_nyse_trading_day(end_date)

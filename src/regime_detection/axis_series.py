@@ -2,18 +2,15 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import date
-from typing import Literal, Protocol
+from typing import Literal
 
 import pandas as pd
 
 from regime_detection.breadth_state import (
     _RISK_RANK as BREADTH_RISK_RANK,
     _data_quality_for_asof as breadth_data_quality_for_asof,
-    _evaluate_breadth_thrust,
-    _evaluate_broadening_breadth,
-    _evaluate_narrowing_breadth,
-    _evaluate_recovery_breadth,
     build_raw_outputs as build_breadth_raw_outputs,
+    resolve_v2_raw_outputs as resolve_breadth_v2_raw_outputs,
 )
 from regime_detection.data_quality import assess_series_input_quality, quality_forces_unknown
 from regime_detection.event_calendar import (
@@ -88,6 +85,7 @@ _PIT_BREADTH_LABELS = {
     "recovery_breadth",
     "broadening_breadth",
 }
+_STALENESS_SENTINEL = 10**9
 
 
 @dataclass(frozen=True)
@@ -99,6 +97,9 @@ class AxisSeriesResult:
 
 @dataclass(frozen=True)
 class AxisSeriesBundle:
+    # TODO(model): Consider Pydantic/model validation only after defining the
+    # real cross-axis invariants this bundle must enforce. A wrapper-only
+    # conversion from dataclass to model would add surface area without safety.
     trend_direction: AxisSeriesResult
     trend_character: AxisSeriesResult
     volatility_state: AxisSeriesResult
@@ -128,10 +129,6 @@ class AxisSeriesBundle:
     # by InflationGrowthSeriesClassifier when feature_store.inflation_growth is
     # lit AND context.config.inflation_growth is non-None (Slice 5).
     inflation_growth: dict[date, InflationGrowthOutput] | None = None
-
-
-class AxisSeriesClassifier(Protocol):
-    def build(self, context: MarketContext, feature_store: FeatureStore) -> AxisSeriesResult: ...
 
 
 class TrendDirectionSeriesClassifier:
@@ -263,66 +260,18 @@ class BreadthSeriesClassifier:
         if v2_active:
             assert v2_features is not None  # narrowing for type-checker
             assert v2_config is not None
-            lookback = v2_config.label_rate_of_change_lookback_sessions
-            nh_nl_threshold = v2_config.nh_nl_ratio_narrowing_threshold
-            breadth_thrust_series = v2_features.breadth_thrust
-            updated_labels: list[str] = []
-            for idx_pos, day in enumerate(spy_close.index):
-                v1_raw = raw_labels[idx_pos]
-                thrust_fires = (
-                    _evaluate_breadth_thrust(
-                        breadth_thrust_series, dt=day
-                    )
-                    if breadth_thrust_series is not None
-                    else False
-                )
-                narrowing_fires = _evaluate_narrowing_breadth(
-                    pct_above_50dma=v2_features.pct_above_50dma,
-                    pct_above_200dma=v2_features.pct_above_200dma,
-                    nh_nl_ratio=v2_features.nh_nl_ratio,
-                    dt=day,
-                    lookback_sessions=lookback,
-                    nh_nl_threshold=nh_nl_threshold,
-                )
-                recovery_fires = _evaluate_recovery_breadth(
-                    nh_nl_ratio=v2_features.nh_nl_ratio,
-                    ad_line_slope_20d=v2_features.ad_line_slope_20d,
-                    dt=day,
-                    lookback_sessions=lookback,
-                )
-                broadening_fires = _evaluate_broadening_breadth(
-                    nh_nl_ratio=v2_features.nh_nl_ratio,
-                    ad_line_slope_20d=v2_features.ad_line_slope_20d,
-                    dt=day,
-                    lookback_sessions=lookback,
-                )
-                # Precedence walker (spec §1D line 284):
-                #   breadth_thrust > divergent_fragile > narrowing_breadth >
-                #   recovery_breadth > broadening_breadth > weak_breadth >
-                #   healthy_breadth > neutral_breadth > unknown
-                if thrust_fires:
-                    resolved = "breadth_thrust"
-                elif v1_raw == "divergent_fragile":
-                    resolved = "divergent_fragile"
-                elif narrowing_fires:
-                    resolved = "narrowing_breadth"
-                elif v1_raw in {"weak_breadth", "healthy_breadth", "neutral_breadth", "unknown"} and recovery_fires:
-                    resolved = "recovery_breadth"
-                elif v1_raw in {"weak_breadth", "healthy_breadth", "neutral_breadth", "unknown"} and broadening_fires:
-                    resolved = "broadening_breadth"
-                else:
-                    resolved = v1_raw
-                if resolved != v1_raw:
-                    raw_evidence[idx_pos] = {
-                        **raw_evidence[idx_pos],
-                        "v2_breadth_thrust": thrust_fires,
-                        "v2_narrowing_breadth": narrowing_fires,
-                        "v2_recovery_breadth": recovery_fires,
-                        "v2_broadening_breadth": broadening_fires,
-                        "v1_raw_label": v1_raw,
-                    }
-                updated_labels.append(resolved)
-            raw_labels = updated_labels  # type: ignore[assignment]
+            raw_labels, raw_evidence = resolve_breadth_v2_raw_outputs(
+                dates=spy_close.index,
+                raw_labels=raw_labels,
+                raw_evidence=raw_evidence,
+                pct_above_50dma=v2_features.pct_above_50dma,
+                pct_above_200dma=v2_features.pct_above_200dma,
+                nh_nl_ratio=v2_features.nh_nl_ratio,
+                ad_line_slope_20d=v2_features.ad_line_slope_20d,
+                breadth_thrust=v2_features.breadth_thrust,
+                lookback_sessions=v2_config.label_rate_of_change_lookback_sessions,
+                nh_nl_threshold=v2_config.nh_nl_ratio_narrowing_threshold,
+            )
 
         stable_labels, active_labels = apply_asymmetric_hysteresis(
             raw_labels=raw_labels,
@@ -1202,36 +1151,18 @@ class InflationGrowthSeriesClassifier:
         return outputs
 
 
-def _calendar_staleness_days(
-    series: pd.Series | None, dt: pd.Timestamp
-) -> int:
-    """Calendar-day distance from ``dt`` to the last non-NaN observation.
-
-    Used for monthly macro series (CPI / PMI) where staleness is measured
-    in calendar days (§2B lines 2309-2310). Returns 10**9 if the series is
-    None or carries no non-NaN history at or before ``dt``.
-    """
-    if series is None:
-        return 10**9
-    sub = series.loc[:dt]
-    last_valid = sub.last_valid_index()
-    if last_valid is None:
-        return 10**9
-    return int((dt.normalize() - pd.Timestamp(last_valid).normalize()).days)
-
-
 def _calendar_staleness_days_series(
     series: pd.Series | None, session_index: pd.Index
 ) -> pd.Series:
     if series is None:
-        return pd.Series(10**9, index=session_index, dtype="int64")
+        return pd.Series(_STALENESS_SENTINEL, index=session_index, dtype="int64")
     aligned = series.reindex(session_index)
     last_valid_date = pd.Series(pd.NaT, index=session_index, dtype="datetime64[ns]")
     valid = aligned.notna()
     last_valid_date.loc[valid] = session_index[valid]
     last_valid_date = last_valid_date.ffill()
     delta_days = (pd.Series(session_index, index=session_index) - last_valid_date).dt.days
-    return delta_days.fillna(10**9).astype("int64")
+    return delta_days.fillna(_STALENESS_SENTINEL).astype("int64")
 
 
 class MonetaryPressureV2SeriesClassifier:
@@ -1358,11 +1289,11 @@ def _trading_staleness_series(
     series: pd.Series | None, session_index: pd.Index
 ) -> pd.Series:
     if series is None:
-        return pd.Series(10**9, index=session_index, dtype="int64")
+        return pd.Series(_STALENESS_SENTINEL, index=session_index, dtype="int64")
     aligned = series.reindex(session_index)
     session_pos = pd.Series(range(len(session_index)), index=session_index, dtype="int64")
     valid = aligned.notna()
-    last_valid_pos = session_pos.where(valid).ffill().fillna(-10**9).astype("int64")
+    last_valid_pos = session_pos.where(valid).ffill().fillna(-_STALENESS_SENTINEL).astype("int64")
     return (session_pos - last_valid_pos).astype("int64")
 
 def _safe_float(series: pd.Series, dt: pd.Timestamp) -> float:

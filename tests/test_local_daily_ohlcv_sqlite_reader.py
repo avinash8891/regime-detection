@@ -60,8 +60,8 @@ def _create_real_schema_db(db_path: Path) -> None:
 
         def _rows_for(symbol: str, rows):
             return [
-                (symbol, d, o, h, l, c, v, ac, f"fixture://{symbol}.parquet")
-                for (d, o, h, l, c, v, ac) in rows
+                (symbol, d, o, h, low, c, v, ac, f"fixture://{symbol}.parquet")
+                for (d, o, h, low, c, v, ac) in rows
             ]
 
         conn.executemany(

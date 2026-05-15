@@ -8,9 +8,8 @@ from pathlib import Path
 import pandas as pd
 
 from regime_data_fetch.acquisition_store import AcquisitionStore
-from regime_data_fetch.aaii_sentiment import run_sentiment_fetch
 from regime_data_fetch.alpaca_daily import fetch_daily_bars_alpaca, verify_min_start_date
-from regime_data_fetch.fred import fetch_fred_series, fetch_fred_series_json, parse_fred_series_json
+from regime_data_fetch.fred import fetch_fred_series_json, parse_fred_series_json
 
 V2_V1_SHARED_ANCHORS = ["SPY", "RSP"]
 V2_SECTOR_SYMBOLS = [

@@ -25,6 +25,9 @@ class AxisOutput(BaseModel):
     raw_label: str
     stable_label: str
     active_label: str
+    # TODO(schema): Replace free-form evidence dicts axis-by-axis when each
+    # axis is next touched. A repo-wide evidence schema pass has a large blast
+    # radius and needs frozen replay coverage per axis.
     evidence: dict[str, Any]
     data_quality: DataQuality
 

@@ -27,7 +27,6 @@ from regime_detection.config import (
 )
 from regime_detection.engine import RegimeEngine
 from regime_detection.trend_direction import (
-    TrendDirectionFeatures,
     build_raw_outputs as build_v1_raw_outputs,
     compute_features as compute_v1_features,
     raw_label_for_day,

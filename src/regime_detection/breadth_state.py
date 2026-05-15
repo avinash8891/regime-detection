@@ -150,6 +150,79 @@ def build_raw_outputs(f: BreadthFeatures) -> tuple[list[BreadthLabel], list[dict
     return list(labels), evidence
 
 
+def resolve_v2_raw_outputs(
+    *,
+    dates: pd.Index,
+    raw_labels: list[BreadthLabel],
+    raw_evidence: list[dict[str, Any]],
+    pct_above_50dma: pd.Series,
+    pct_above_200dma: pd.Series,
+    nh_nl_ratio: pd.Series,
+    ad_line_slope_20d: pd.Series,
+    breadth_thrust: pd.Series | None,
+    lookback_sessions: int,
+    nh_nl_threshold: float,
+) -> tuple[list[BreadthLabel], list[dict[str, Any]]]:
+    updated_labels: list[BreadthLabel] = []
+    updated_evidence = list(raw_evidence)
+    for idx_pos, day in enumerate(dates):
+        v1_raw = raw_labels[idx_pos]
+        thrust_fires = (
+            _evaluate_breadth_thrust(breadth_thrust, dt=day)
+            if breadth_thrust is not None
+            else False
+        )
+        narrowing_fires = _evaluate_narrowing_breadth(
+            pct_above_50dma=pct_above_50dma,
+            pct_above_200dma=pct_above_200dma,
+            nh_nl_ratio=nh_nl_ratio,
+            dt=day,
+            lookback_sessions=lookback_sessions,
+            nh_nl_threshold=nh_nl_threshold,
+        )
+        recovery_fires = _evaluate_recovery_breadth(
+            nh_nl_ratio=nh_nl_ratio,
+            ad_line_slope_20d=ad_line_slope_20d,
+            dt=day,
+            lookback_sessions=lookback_sessions,
+        )
+        broadening_fires = _evaluate_broadening_breadth(
+            nh_nl_ratio=nh_nl_ratio,
+            ad_line_slope_20d=ad_line_slope_20d,
+            dt=day,
+            lookback_sessions=lookback_sessions,
+        )
+        if thrust_fires:
+            resolved: BreadthLabel = "breadth_thrust"
+        elif v1_raw == "divergent_fragile":
+            resolved = "divergent_fragile"
+        elif narrowing_fires:
+            resolved = "narrowing_breadth"
+        elif (
+            v1_raw in {"weak_breadth", "healthy_breadth", "neutral_breadth", "unknown"}
+            and recovery_fires
+        ):
+            resolved = "recovery_breadth"
+        elif (
+            v1_raw in {"weak_breadth", "healthy_breadth", "neutral_breadth", "unknown"}
+            and broadening_fires
+        ):
+            resolved = "broadening_breadth"
+        else:
+            resolved = v1_raw
+        if resolved != v1_raw:
+            updated_evidence[idx_pos] = {
+                **updated_evidence[idx_pos],
+                "v2_breadth_thrust": thrust_fires,
+                "v2_narrowing_breadth": narrowing_fires,
+                "v2_recovery_breadth": recovery_fires,
+                "v2_broadening_breadth": broadening_fires,
+                "v1_raw_label": v1_raw,
+            }
+        updated_labels.append(resolved)
+    return updated_labels, updated_evidence
+
+
 def classify_series(
     *,
     spy_close: pd.Series,

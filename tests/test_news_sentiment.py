@@ -18,12 +18,10 @@ Contract under test:
 """
 from __future__ import annotations
 
-import datetime as dt
 
 import numpy as np
 import pandas as pd
 
-import pytest
 
 from regime_detection.config import NewsSentimentConfig, TrendDirectionV2Config
 from regime_detection.loaders import load_news_sentiment_series

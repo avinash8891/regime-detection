@@ -32,8 +32,6 @@ from __future__ import annotations
 import datetime as dt
 from pathlib import Path
 
-import numpy as np
-import pandas as pd
 import pytest
 
 from regime_detection.central_bank_text import score_text
