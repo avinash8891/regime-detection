@@ -24,6 +24,8 @@ from regime_data_fetch.event_sources.validators_tinyfish import TinyFishValidato
 from regime_data_fetch.event_sources.validators_gpr_gdelt import GPRGDELTSignalGenerator
 from regime_data_fetch.event_sources.validators_gpr_gdelt import (
     _fetch_acled_events,
+    _fetch_hdx_hapi_conflict_events,
+    _fetch_paged_json,
     parse_acled_events,
     parse_gdelt_event_export,
     parse_hdx_hapi_conflict_events,
@@ -382,6 +384,75 @@ def test_parse_hdx_hapi_conflict_events_emits_monthly_admin_evidence() -> None:
             "source_url": "https://hapi.humdata.org/api/v2/coordination-context/conflict-events",
         }
     ]
+
+
+def test_hdx_hapi_fetcher_uses_generated_app_identifier_and_supported_date_filters(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv("HDX_HAPI_APP_IDENTIFIER", raising=False)
+    monkeypatch.setenv("HDX_HAPI_APP_NAME", "regime-detection-test")
+    monkeypatch.setenv("HDX_HAPI_APP_EMAIL", "regime-detection@example.invalid")
+    captured: dict[str, object] = {}
+
+    def fake_fetch_paged_json(
+        base_url: str,
+        *,
+        headers: dict[str, str],
+        result_key: str,
+        extra_params: dict[str, str],
+    ) -> str:
+        captured.update(
+            base_url=base_url,
+            headers=headers,
+            result_key=result_key,
+            extra_params=extra_params,
+        )
+        return '{"data": []}'
+
+    monkeypatch.setattr(
+        "regime_data_fetch.event_sources.validators_gpr_gdelt._fetch_paged_json",
+        fake_fetch_paged_json,
+    )
+
+    payload = _fetch_hdx_hapi_conflict_events(2022, 2023)
+
+    assert payload == '{"data": []}'
+    assert captured["result_key"] == "data"
+    extra_params = captured["extra_params"]
+    assert isinstance(extra_params, dict)
+    assert extra_params["start_date"] == "2022-01-01"
+    assert extra_params["end_date"] == "2023-12-31"
+    assert "reference_period_start" not in extra_params
+    assert "reference_period_end" not in extra_params
+    assert extra_params["app_identifier"] == "cmVnaW1lLWRldGVjdGlvbi10ZXN0OnJlZ2ltZS1kZXRlY3Rpb25AZXhhbXBsZS5pbnZhbGlk"
+
+
+def test_conflict_pager_continues_without_total_count_until_short_page(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr("regime_data_fetch.event_sources.validators_gpr_gdelt.CONFLICT_API_PAGE_SIZE", 2)
+    calls: list[str] = []
+
+    def fake_http_text(url: str, *, headers: dict[str, str]) -> str:
+        del headers
+        calls.append(url)
+        if "offset=0" in url:
+            return '{"data": [{"id": 1}, {"id": 2}]}'
+        if "offset=2" in url:
+            return '{"data": [{"id": 3}]}'
+        raise AssertionError(f"unexpected page request: {url}")
+
+    monkeypatch.setattr("regime_data_fetch.event_sources.validators_gpr_gdelt._http_text", fake_http_text)
+
+    payload = _fetch_paged_json(
+        "https://example.test/conflict-events",
+        headers={},
+        result_key="data",
+        extra_params={"app_identifier": "fixture"},
+    )
+
+    assert json.loads(payload) == {"data": [{"id": 1}, {"id": 2}, {"id": 3}]}
+    assert len(calls) == 2
 
 
 def test_generator_includes_acled_ucdp_and_hdx_candidate_sources() -> None:
