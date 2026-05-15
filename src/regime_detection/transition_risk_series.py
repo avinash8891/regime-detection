@@ -101,6 +101,11 @@ def build_transition_risk_series(
         history=history,
         transition_score_inputs_by_date=transition_score_inputs_by_date,
         transition_score_config=transition_score_config,
+        # v2 §4.0 — sideways_stress_warning is a V2-only named warning
+        # extension. Spec line 3145 forbids backporting to V1, so the rule
+        # only fires when the active config_version is NOT the V1 frozen
+        # tag. V1 byte-identity preserved when this is False.
+        v2_warnings_enabled=context.config.config_version != "core3-v1.0.0",
     )
 
 
@@ -186,6 +191,7 @@ def build_transition_risk_outputs_by_date(
     history: TransitionRiskHistory,
     transition_score_inputs_by_date: dict[date, dict[str, float | str]] | None = None,
     transition_score_config: TransitionScoreConfig | None = None,
+    v2_warnings_enabled: bool = False,
 ) -> dict[date, TransitionRiskOutput]:
     index = pd.Index(sessions)
     trend_direction_active = pd.Series([trend_direction_active_by_date[day] for day in sessions], index=index)
@@ -208,13 +214,29 @@ def build_transition_risk_outputs_by_date(
         & volatility_state_active.isin(["high_vol", "crisis_vol"])
         & breadth_state_active.isin(["weak_breadth", "divergent_fragile", "unknown"])
     )
+    # v2 §4.0 named warning extension. Spec line 3145 forbids backporting to
+    # V1; the `v2_warnings_enabled` flag is only True when the active
+    # config_version is NOT the V1 frozen tag. V1 byte-identity preserved
+    # when False (the rule never fires regardless of input).
+    if v2_warnings_enabled:
+        sideways_stress_warning = (
+            trend_direction_active.eq("sideways")
+            & volatility_state_active.eq("high_vol")
+            & breadth_state_active.isin(["weak_breadth", "divergent_fragile"])
+        )
+    else:
+        sideways_stress_warning = pd.Series(False, index=index, dtype="bool")
     bull_fragile_warning = trend_direction_active.eq("bull") & breadth_state_active.eq("divergent_fragile")
     recovery_attempt = trend_character_active.eq("recovery_attempt") | (
         prior_bear
         & close.gt(sma_50)
         & breadth_state_active.isin(["recovery_breadth", "healthy_breadth"])
     )
-    post_switch_cooldown = stable_changed & days_since_axis_switch.notna() & days_since_axis_switch.le(5) & ~crisis_override
+    # v1 §9.4: cooldown is a 5-session window after a switch (days 0..5 inclusive),
+    # not a single-day flag. `days_since_axis_switch <= 5` already covers the full
+    # window because `days_since_axis_switch_by_date` increments daily after a switch.
+    # crisis_override still breaks cooldown.
+    post_switch_cooldown = days_since_axis_switch.notna() & days_since_axis_switch.le(5) & ~crisis_override
     any_unknown = (
         trend_direction_active.eq("unknown")
         | trend_character_active.eq("unknown")
@@ -232,6 +254,7 @@ def build_transition_risk_outputs_by_date(
         output = build_transition_risk_output_from_flags(
             crisis_override=bool(crisis_override.loc[day]),
             bear_stress_warning=bool(bear_stress_warning.loc[day]),
+            sideways_stress_warning=bool(sideways_stress_warning.loc[day]),
             bull_fragile_warning=bool(bull_fragile_warning.loc[day]),
             recovery_attempt=bool(recovery_attempt.loc[day]),
             post_switch_cooldown=bool(post_switch_cooldown.loc[day]),
@@ -325,11 +348,19 @@ def build_transition_risk_history(
     within_60_sessions = last_switch_position.ge(0) & last_switch_position.ge(position - 59)
     days_since_axis_switch = delta.where(within_60_sessions)
 
+    # v1 §9.4 recovery_attempt clause: "trend_direction.stable_label was bear
+    # at any point in the prior 60 NYSE trading days (excluding as_of_date)".
+    # `.shift(1)` drops today from the lookback so the recovery rule only fires
+    # when the bear print is in the PAST — preventing recovery_attempt from
+    # firing while today's stable_label is still bear (a transition-window
+    # edge case during hysteresis lag).
     prior_bear = (
         stable_frame["trend_direction"]
         .eq("bear")
+        .shift(1)
         .rolling(window=60, min_periods=1)
         .max()
+        .fillna(False)
         .astype(bool)
     )
 

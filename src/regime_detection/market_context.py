@@ -28,6 +28,23 @@ class MarketContext(BaseModel):
     constituent_ohlcv: Annotated[dict[str, pd.DataFrame] | None, SkipValidation] = None  # v2 §1D PIT breadth seam
     aaii_sentiment: pd.DataFrame | None = None  # v2 §1A euphoria sentiment seam (Log #32)
     implied_vol_30d: pd.Series | None = None  # v2 §1C vol_crush seam — FRED VIXCLS/100 (Log #19+#20)
+    # v2 §2A central-bank-text evidence seam — deterministic-lexicon score
+    # over FOMC minutes + Powell speech body_text per release. See
+    # docs/spec_code_data_audit_2026_05_15.md §3.1 (M1). Always evidence-
+    # only — never consumed by §2A rule predicates.
+    central_bank_text_releases: pd.DataFrame | None = None
+    # v2 §2A first-release CPI seam for historical replay (spec lines
+    # 2587-2593). Series keyed by RELEASE DATE (not reference date) of
+    # the value-as-of-release. See docs/spec_code_data_audit_2026_05_15.md
+    # §3.2 (M2). When None, the existing latest-revision CPIAUCSL path is
+    # preserved unchanged.
+    cpi_first_release: pd.Series | None = None
+    # v2 §1A SF Fed Daily News Sentiment Index — evidence-only second
+    # sentiment voice alongside the AAII bull-bear 8w-MA `sentiment_score`.
+    # NOT consumed by the `euphoria` rule predicate; surfaces on
+    # TrendDirectionV2Features.news_sentiment_score for evidence dicts and
+    # the calibration summary. See audit post-#12 follow-up.
+    news_sentiment: pd.Series | None = None
 
 
 def build_market_context(
@@ -44,6 +61,9 @@ def build_market_context(
     constituent_ohlcv: dict[str, pd.DataFrame] | None = None,
     aaii_sentiment: pd.DataFrame | None = None,
     implied_vol_30d: pd.Series | None = None,
+    central_bank_text_releases: pd.DataFrame | None = None,
+    cpi_first_release: pd.Series | None = None,
+    news_sentiment: pd.Series | None = None,
 ) -> MarketContext:
     end_date = as_date(end_date)
     require_nyse_trading_day(end_date)
@@ -83,6 +103,9 @@ def build_market_context(
         constituent_ohlcv=constituent_ohlcv,
         aaii_sentiment=aaii_sentiment,
         implied_vol_30d=reindexed_implied_vol_30d,
+        central_bank_text_releases=central_bank_text_releases,
+        cpi_first_release=cpi_first_release,
+        news_sentiment=news_sentiment,
     )
 
 
@@ -137,6 +160,16 @@ def slice_context_to_recent_sessions(*, context: MarketContext, required_session
             if context.implied_vol_30d is None
             else context.implied_vol_30d.reindex(spy_ohlcv.index)
         ),
+        # §2A central-bank-text seam: pass through as-is (release frame
+        # carries its own release_date column; feature_store aligns to
+        # the sliced spy session index downstream).
+        central_bank_text_releases=context.central_bank_text_releases,
+        # §2A first-release CPI seam: pass through as-is — keyed by
+        # release date, not session, so downstream forward-fill handles
+        # alignment.
+        cpi_first_release=context.cpi_first_release,
+        # §1A SF Fed news sentiment evidence (audit post-#12 follow-up).
+        news_sentiment=context.news_sentiment,
     )
 
 
@@ -186,6 +219,12 @@ def slice_context_to_end_date(*, context: MarketContext, end_date: date) -> Mark
             if context.implied_vol_30d is None
             else context.implied_vol_30d.reindex(spy_ohlcv.index)
         ),
+        # §2A central-bank-text seam (audit M1).
+        central_bank_text_releases=context.central_bank_text_releases,
+        # §2A first-release CPI seam (audit M2).
+        cpi_first_release=context.cpi_first_release,
+        # §1A SF Fed news sentiment evidence (audit post-#12 follow-up).
+        news_sentiment=context.news_sentiment,
     )
 
 

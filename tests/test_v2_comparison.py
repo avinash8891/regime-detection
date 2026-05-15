@@ -10,7 +10,19 @@ from regime_detection.comparison import (
     compute_v1_v2_diff,
     evaluate_v2_gate,
 )
-from regime_detection.engine import RegimeEngine
+from regime_detection.models import (
+    AxisOutput,
+    BreadthStateOutput,
+    DataQuality,
+    EventCalendarOutput,
+    MonetaryPressureOutput,
+    NetworkFragilityOutput,
+    RegimeOutput,
+    RegimeTimeline,
+    StrategyResponse,
+    StructuralCausalState,
+    TransitionRiskOutput,
+)
 
 
 # ---------- evaluate_v2_gate (v2 §9.1) --------------------------------------
@@ -135,22 +147,100 @@ def test_evaluate_v2_gate_fails_when_v2_worse_on_every_metric() -> None:
 # ---------- compute_v1_v2_diff (v2 §9.3 A/B shadow review) -------------------
 
 
-def _classify_two_dates(market_df_for_asof):
-    """Build two identical RegimeTimelines (same engine, same inputs) for
-    diff testing. They should produce zero label diffs."""
-    end_date = date(2023, 12, 14)
-    engine = RegimeEngine()
-    timeline = engine.classify_window(
-        end_date=end_date,
-        market_data=market_df_for_asof(end_date),
-        lookback_days=5,
+def _data_quality() -> DataQuality:
+    return DataQuality(status="ok")
+
+
+def _axis(label: str) -> AxisOutput:
+    return AxisOutput(
+        raw_label=label,
+        stable_label=label,
+        active_label=label,
+        evidence={},
+        data_quality=_data_quality(),
     )
-    return timeline
 
 
-def test_compute_v1_v2_diff_zero_disagreements_for_identical_timelines(market_df_for_asof) -> None:
-    timeline_a = _classify_two_dates(market_df_for_asof)
-    timeline_b = _classify_two_dates(market_df_for_asof)
+def _breadth(label: str) -> BreadthStateOutput:
+    return BreadthStateOutput(
+        raw_label=label,
+        stable_label=label,
+        active_label=label,
+        evidence={},
+        data_quality=_data_quality(),
+        mode="etf_proxy",
+    )
+
+
+def _output(as_of_date: date, *, trend_label: str = "bull") -> RegimeOutput:
+    return RegimeOutput(
+        engine_version="regime-engine-v-test",
+        config_version="test",
+        as_of_date=as_of_date,
+        market="SPY",
+        trend_direction=_axis(trend_label),
+        trend_character=_axis("steady"),
+        volatility_state=_axis("normal_vol"),
+        breadth_state=_breadth("healthy"),
+        structural_causal_state=StructuralCausalState(
+            event_calendar=EventCalendarOutput(
+                raw_label="none",
+                stable_label="none",
+                active_label="none",
+                evidence={},
+            ),
+            monetary_pressure=MonetaryPressureOutput(
+                label="unknown",
+                evidence={},
+                data_quality=_data_quality(),
+            ),
+        ),
+        network_fragility=NetworkFragilityOutput(
+            raw_label="unknown",
+            stable_label="unknown",
+            active_label="unknown",
+            evidence={},
+            data_quality=_data_quality(),
+        ),
+        transition_risk=TransitionRiskOutput(label="stable", evidence={}),
+        strategy_response=StrategyResponse(
+            position_size_multiplier=1.0,
+            allow_trend_following=True,
+            allow_mean_reversion=True,
+            leverage_allowed=False,
+            allow_buy_dip=True,
+            allow_breakout=True,
+            allow_shorts=False,
+            require_confirmation_for_new_longs=False,
+            require_confirmation_for_shorts=True,
+            log_for_review=False,
+            modifiers_applied=[],
+        ),
+    )
+
+
+def _timeline(*outputs: RegimeOutput) -> RegimeTimeline:
+    return RegimeTimeline(
+        engine_version="regime-engine-v-test",
+        config_version="test",
+        market="SPY",
+        start_date=outputs[0].as_of_date,
+        end_date=outputs[-1].as_of_date,
+        trading_calendar="XNYS",
+        outputs=list(outputs),
+    )
+
+
+def _two_date_timeline() -> RegimeTimeline:
+    return _timeline(
+        _output(date(2023, 12, 13)),
+        _output(date(2023, 12, 14)),
+    )
+
+
+def test_compute_v1_v2_diff_zero_disagreements_for_identical_timelines() -> None:
+    timeline_a = _two_date_timeline()
+    timeline_b = _two_date_timeline()
 
     diff = compute_v1_v2_diff(timeline_a, timeline_b)
 
@@ -159,28 +249,18 @@ def test_compute_v1_v2_diff_zero_disagreements_for_identical_timelines(market_df
     assert diff.v2_only_top_level_fields == ()
 
 
-def test_compute_v1_v2_diff_raises_on_length_mismatch(market_df_for_asof) -> None:
-    end_date = date(2023, 12, 14)
-    engine = RegimeEngine()
-    long_tl = engine.classify_window(
-        end_date=end_date,
-        market_data=market_df_for_asof(end_date),
-        lookback_days=5,
-    )
-    short_tl = engine.classify_window(
-        end_date=end_date,
-        market_data=market_df_for_asof(end_date),
-        lookback_days=3,
-    )
+def test_compute_v1_v2_diff_raises_on_length_mismatch() -> None:
+    long_tl = _two_date_timeline()
+    short_tl = _timeline(_output(date(2023, 12, 14)))
 
     with pytest.raises(ValueError, match="length mismatch"):
         compute_v1_v2_diff(long_tl, short_tl)
 
 
-def test_compute_v1_v2_diff_detects_axis_label_disagreement(market_df_for_asof) -> None:
+def test_compute_v1_v2_diff_detects_axis_label_disagreement() -> None:
     """Force a label disagreement by mutating one timeline's first output."""
-    timeline_a = _classify_two_dates(market_df_for_asof)
-    timeline_b = _classify_two_dates(market_df_for_asof)
+    timeline_a = _two_date_timeline()
+    timeline_b = _two_date_timeline()
 
     # Override timeline_b.outputs[0].trend_direction.active_label by deep-copy
     # mutation via model_copy.

@@ -18,7 +18,12 @@ class HysteresisConfig(BaseModel):
     volatility_deescalation_days: int = Field(ge=0)
     breadth_deescalation_days: int = Field(ge=0)
     composite_deescalation_days: int = Field(ge=0)
-    event_calendar_days: int = Field(ge=0)
+    # NOTE: event_calendar has no hysteresis. Calendar windows are themselves
+    # deterministic (you are inside a -2..+2 FOMC window or you are not), so a
+    # debounce knob is meaningless. The previously-defined `event_calendar_days`
+    # field was unused by every consumer and has been removed (V1 spec §2.10
+    # updated). Adding it back requires a corresponding hysteresis call site
+    # in event_calendar.py.
 
 
 class DataQualityConfig(BaseModel):
@@ -617,6 +622,68 @@ class MonetaryPressureV2Config(BaseModel):
     default_deescalation_days: int = Field(default=0, ge=0)
 
 
+class NewsSentimentConfig(BaseModel):
+    """v2 §1A SF Fed Daily News Sentiment evidence config.
+
+    Audit follow-up (post-#12). Pinned as an EVIDENCE-only second
+    sentiment voice alongside the AAII bull-bear 8w-MA `sentiment_score`.
+    The §1A `euphoria` rule predicate consumes only the AAII series per
+    spec line 164; this config does NOT modify that rule. The news
+    sentiment score and the derived `sentiment_concordance` flag surface
+    in evidence dicts so downstream consumers can treat divergent
+    euphoria firings as lower-conviction.
+
+    Bias-warning code emitted in feature output:
+    ``news_sentiment_sf_fed_daily_news_index``.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    # Smoothing window over the daily SF Fed news sentiment. Default 21
+    # NYSE sessions ≈ 1 month — short enough to react to material
+    # narrative shifts, long enough to dampen single-day noise. v2 §9.1
+    # walk-forward calibration placeholder.
+    smoothing_window_sessions: int = Field(default=21, gt=0)
+
+
+class CentralBankTextConfig(BaseModel):
+    """v2 §2A central-bank-text classifier config (spec lines 2578-2586).
+
+    Pinned as an approved deterministic-lexicon substitute for the
+    spec's "LLM classifier" phrasing. The substitution preserves V1 §2.2
+    stateless replay (LLM calls are non-deterministic; the lexicon is
+    pure-function). The resulting score is fed into
+    ``monetary_pressure.evidence`` — never a standalone label per spec.
+
+    Bias-warning code emitted in the feature output:
+    ``central_bank_text_deterministic_lexicon_substitute``.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    # Smoothing window in NYSE sessions over the forward-filled per-release
+    # net_score series. Default 30 sessions ≈ 6 weeks ≈ four FOMC-cycle
+    # releases, mirrors the AAII 8w-MA smoothing pattern §1A uses for
+    # ``sentiment_score``. v2 §9.1 walk-forward calibration may retune.
+    smoothing_window_sessions: int = Field(default=30, gt=0)
+
+    # Optional safety cap: drop releases older than this many calendar
+    # days at score time. Default 365 keeps an entire policy cycle of
+    # history while excluding stale rows that pre-date the OHLCV window.
+    max_release_age_days: int = Field(default=365, gt=0)
+
+    # Same-date collision strategy (audit follow-up #12). When FOMC
+    # minutes and a Powell speech share a release date, this picks
+    # which voice wins. Default `pick_longer` matches the audit M1
+    # initial wiring (token-count is a rough proxy for material
+    # content). `token_weighted_average` averages all same-date rows
+    # by token weight. `fomc_priority` favours FOMC minutes
+    # unconditionally. v2 §9.1 walk-forward calibration placeholder.
+    same_date_aggregation: Literal[
+        "pick_longer", "token_weighted_average", "fomc_priority"
+    ] = Field(default="pick_longer")
+
+
 class InflationGrowthRulesConfig(BaseModel):
     """v2 §2B inflation/growth rule thresholds (Slice 5).
 
@@ -671,6 +738,13 @@ class InflationGrowthRulesConfig(BaseModel):
     # §2B line 2609 — earnings_contraction "... < -0.02". Must be < 0
     # (a strictly-negative 4-week revision).
     eps_revision_contraction_threshold: float = Field(default=-0.02, lt=0.0)
+    # §2A line 2587-2593 — first-release vs latest-revision CPI for replay.
+    # When True AND ``MarketContext.cpi_first_release`` is supplied, the
+    # realized inflation rate (and the cpi 3m/6m change series) read from
+    # the first-release vintage so historical replay is PIT-accurate. When
+    # False or when the vintage seam is absent, the existing revised
+    # CPIAUCSL path is preserved unchanged. Default True per spec contract.
+    use_first_release_cpi_when_available: bool = Field(default=True)
 
 
 class InflationGrowthConfig(BaseModel):
@@ -950,6 +1024,13 @@ class RegimeConfig(BaseModel):
     monetary_pressure_v2: MonetaryPressureV2FeaturesConfig | None = None
     # v2 §2A axis classifier configuration (Ambiguity Log #46 pins).
     monetary_pressure_state: MonetaryPressureV2Config | None = None
+    # v2 §2A central-bank-text evidence config (deterministic-lexicon
+    # substitute for the spec's "LLM classifier" phrasing; see
+    # docs/spec_code_data_audit_2026_05_15.md §3.1 / M1).
+    central_bank_text: CentralBankTextConfig | None = None
+    # v2 §1A SF Fed news sentiment evidence config (audit follow-up
+    # post-#12). Evidence only — never read by the `euphoria` rule.
+    news_sentiment: NewsSentimentConfig | None = None
     inflation_growth: InflationGrowthConfig | None = None
     credit_funding: CreditFundingConfig | None = None
     event_calendar_v2: EventCalendarV2Config | None = None

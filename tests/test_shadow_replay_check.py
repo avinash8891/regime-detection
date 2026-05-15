@@ -2,9 +2,14 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import shutil
 import sqlite3
 from datetime import date
 from pathlib import Path
+
+import pytest
+
+pytestmark = pytest.mark.slow
 
 
 def _load_module(name: str, rel_path: str):
@@ -17,12 +22,13 @@ def _load_module(name: str, rel_path: str):
     return mod
 
 
-def _prepare_shadow_root(tmp_path: Path) -> Path:
+@pytest.fixture(scope="session")
+def shadow_root_template(tmp_path_factory: pytest.TempPathFactory) -> Path:
     runner = _load_module("run_shadow_regime", "scripts/run_shadow_regime.py")
     repo_root = Path(__file__).resolve().parents[1]
     market_data_path = repo_root / "tests" / "fixtures" / "raw" / "market_data.parquet"
     event_calendar_path = repo_root / "tests" / "fixtures" / "events" / "us_events.yaml"
-    out_root = tmp_path / "shadow_run"
+    out_root = tmp_path_factory.mktemp("shadow_replay_template")
     result = runner.run_shadow(
         as_of_date=date(2023, 12, 14),
         market_data_path=market_data_path,
@@ -33,9 +39,30 @@ def _prepare_shadow_root(tmp_path: Path) -> Path:
     return out_root
 
 
-def test_shadow_replay_check_records_exact_match(tmp_path: Path) -> None:
+def _prepare_shadow_root(tmp_path: Path, template: Path) -> Path:
+    out_root = tmp_path / "shadow_run"
+    shutil.copytree(template, out_root)
+    with sqlite3.connect(out_root / "regime_shadow.db") as conn:
+        conn.execute(
+            """
+            UPDATE runs
+            SET input_archive_path = ?, output_path = ?
+            WHERE as_of_date = ?
+            """,
+            (
+                str(out_root / "input_archives" / "2023-12-14"),
+                str(out_root / "outputs" / "2023-12-14.json"),
+                "2023-12-14",
+            ),
+        )
+    return out_root
+
+
+def test_shadow_replay_check_records_exact_match(
+    tmp_path: Path, shadow_root_template: Path
+) -> None:
     replay_mod = _load_module("run_shadow_replay_check", "scripts/run_shadow_replay_check.py")
-    out_root = _prepare_shadow_root(tmp_path)
+    out_root = _prepare_shadow_root(tmp_path, shadow_root_template)
 
     result = replay_mod.run_replay_check(
         output_root=out_root,
@@ -58,9 +85,11 @@ def test_shadow_replay_check_records_exact_match(tmp_path: Path) -> None:
     assert rows == [(run_row[0], 1, None)]
 
 
-def test_shadow_replay_check_records_mismatch_with_diff(tmp_path: Path) -> None:
+def test_shadow_replay_check_records_mismatch_with_diff(
+    tmp_path: Path, shadow_root_template: Path
+) -> None:
     replay_mod = _load_module("run_shadow_replay_check", "scripts/run_shadow_replay_check.py")
-    out_root = _prepare_shadow_root(tmp_path)
+    out_root = _prepare_shadow_root(tmp_path, shadow_root_template)
 
     output_path = out_root / "outputs" / "2023-12-14.json"
     payload = json.loads(output_path.read_text())
@@ -87,9 +116,11 @@ def test_shadow_replay_check_records_mismatch_with_diff(tmp_path: Path) -> None:
     assert diff["transition_risk_label"]["replayed"] != diff["transition_risk_label"]["stored"]
 
 
-def test_shadow_replay_check_uses_only_archived_inputs(tmp_path: Path) -> None:
+def test_shadow_replay_check_uses_only_archived_inputs(
+    tmp_path: Path, shadow_root_template: Path
+) -> None:
     replay_mod = _load_module("run_shadow_replay_check", "scripts/run_shadow_replay_check.py")
-    out_root = _prepare_shadow_root(tmp_path)
+    out_root = _prepare_shadow_root(tmp_path, shadow_root_template)
 
     archive_dir = out_root / "input_archives" / "2023-12-14"
     market_archive = archive_dir / "market_data.parquet"

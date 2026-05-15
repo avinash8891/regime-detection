@@ -278,8 +278,9 @@ hysteresis:
   volatility_deescalation_days: 2
   breadth_deescalation_days: 2
   composite_deescalation_days: 3
-  event_calendar_days: 1
 ```
+
+> The event_calendar axis intentionally has **no hysteresis**. Calendar windows are themselves deterministic (`as_of_date` is inside an event window or it is not), so a debounce knob is meaningless. `raw_label`, `stable_label`, and `active_label` are equal for event_calendar by construction.
 
 ### 2.11 No Confidence Field in V1
 
@@ -601,9 +602,11 @@ healthy_breadth
 neutral_breadth
 weak_breadth
 divergent_fragile
-recovery_breadth
+recovery_breadth     # PIT mode only — unreachable in V1 ETF proxy mode
 unknown
 ```
+
+> **Mode-availability note:** `recovery_breadth` can only be produced by the §6.7 PIT formulas. The §6.9 ETF-proxy rules (the only V1 mode shipped) cannot fire it. Consequently, every V1 cross-reference to `recovery_breadth` (e.g., the §9.4 `recovery_attempt` clause "breadth in [recovery_breadth, healthy_breadth]") effectively reduces to `healthy_breadth` in V1. The label slot is preserved in the precedence and risk-rank tables so V2's PIT-mode emission can land additively without renumbering.
 
 ### 6.5 Precedence
 
@@ -803,6 +806,22 @@ If multiple event windows match, `raw_label`, `stable_label`, and `active_label`
 
 Additional event-specific evidence such as `days_to_fomc` may be included when computable from the event calendar. Importance does not override the hardcoded precedence in V1.
 
+#### Per-event `window_days` Override (Optional)
+
+Individual event rows may override the per-type window via a `window_days` column. The value must be a 2-element `[start_offset, end_offset]` pair in NYSE trading days; absence falls back to the type's default window from §7.2 above. Use sparingly — the override is intended for one-off events whose impact window differs from the standard pattern (e.g., an FOMC meeting paired with mid-meeting Powell remarks that extend the natural window). Any override should be documented in the event row's `notes`/`reason` column for replay clarity.
+
+```yaml
+events:
+  - date: "2025-12-10"
+    market: "US"
+    type: "FOMC"
+    importance: "high"
+    window_days: [-3, 3]   # override: extend default (-2, +2) to (-3, +3)
+    notes: "Mid-meeting press leak window"
+```
+
+The override is consumed by `compute_event_calendar_outputs` per the row; the type's spec window remains the default for rows without the column. PIT publication-date gating still applies — a row's window cannot fire before its `publication_date`.
+
 ### 7.3 Monetary Pressure (Deferred)
 
 Inputs: 2y yield, 10y yield, DXY.
@@ -913,17 +932,21 @@ AND breadth_state.active_label = divergent_fragile
 ```text
 trend_character.active_label = recovery_attempt
 OR (
-  trend_direction.stable_label was bear at any point in last 60 NYSE trading days
+  trend_direction.stable_label was bear at any point in the PRIOR 60 NYSE trading days
+    (excluding as_of_date — the lookback is shifted by 1 session)
   AND close > SMA_50
   AND breadth_state.active_label in [recovery_breadth, healthy_breadth]
 )
 ```
 
+> Note: in V1 ETF-proxy breadth mode, `recovery_breadth` is unreachable (§6.4 lists it as a label, but only §6.7 PIT formulas can produce it). The clause therefore reduces to `breadth_state.active_label = healthy_breadth` in V1.
+
 `post_switch_cooldown`:
 ```text
-any axis stable_label changed today
-AND days_since_axis_switch <= 5
+days_since_axis_switch <= 5
 ```
+Where `days_since_axis_switch` is the count of NYSE trading days since the most recent axis `stable_label` change (0 on the switch day, 1 the next session, …, 5 on the fifth session after). The label fires across the entire 6-session window (days 0–5 inclusive). When no axis has switched in the trailing 60 sessions, `days_since_axis_switch` is `None` and the rule does not fire.
+
 Emergency override (`crisis_vol`) breaks cooldown.
 
 `stable`:
@@ -1080,6 +1103,13 @@ Modifier:
 
 ## 11. Final V1 Output Schema (Canonical)
 
+> **V1 wire contract.** This canonical shape is what the engine emits when `config_version == "core3-v1.0.0"`. Byte-identity is enforced by `tests/test_v1_frozen_replay.py` against archived JSON fixtures under `tests/fixtures/v1_frozen_outputs/`. The Python `RegimeOutput` Pydantic model holds the V2-extended internal shape (see §11.1 below) but coerces to the V1 wire shape via `_rewrite_legacy_v1_wire_shapes()` in `models.py` whenever `config_version` matches the V1 string. The two extensions where coercion is load-bearing:
+>
+> - `structural_causal_state.monetary_pressure` is rewritten to `{"label": "unknown", "reason": "not_implemented_v1"}`.
+> - `network_fragility` is rewritten to `{"label": "not_implemented_v1", "reason": "breadth_state_used_as_v1_fragility_proxy"}`.
+>
+> When `config_version != "core3-v1.0.0"` (V2 mode), the live richer shapes are emitted instead and additional V2-only top-level fields appear — see §11.1.
+
 ```json
 {
   "engine_version": "regime-engine-v1.0.0",
@@ -1209,6 +1239,49 @@ Modifier:
   }
 }
 ```
+
+### 11.1 V2-Extended Output Shape (when `config_version != "core3-v1.0.0"`)
+
+When the engine runs under a V2 config, the wire shape extends in two ways:
+
+**Reshaped fields** (formerly flat `{label, reason}` in V1, now full axis triples in V2):
+
+```json
+"structural_causal_state": {
+  "event_calendar": { /* unchanged from V1 */ },
+  "monetary_pressure": {
+    "label": "unknown",
+    "evidence": {},
+    "data_quality": { "status": "insufficient_history", ... }
+  }
+},
+"network_fragility": {
+  "raw_label": "diversified_normal",
+  "stable_label": "diversified_normal",
+  "active_label": "diversified_normal",
+  "evidence": { /* §3.5 rule inputs */ },
+  "data_quality": { ... },
+  "mode": "sector_cross_asset_22"
+}
+```
+
+**New optional top-level fields** (each lands when its V2 slice ships and the config + inputs are wired; omitted from the wire via `exclude_none=True` when absent):
+
+```text
+inflation_growth_state         v2 §2B
+credit_funding_state           v2 §2C (real ICE BofA OAS)
+credit_funding_state_proxy     v2 §2C proxy (TLT vs HYG/LQD; Ambiguity Log #71)
+volume_liquidity_state         v2 §1E
+monetary_pressure_state        v2 §2A (replaces structural_causal_state.monetary_pressure semantically; both coexist for V1 compatibility)
+change_point                   v2 §4.6 / §6.3 (BOCPD)
+cluster                        v2 §6.2 (GMM)
+agent_routing                  v2 §5.1
+strategy_family_constraints    v2 §5.2
+```
+
+`transition_risk` may also gain `score`, `score_interpretation`, and `score_components` per V2 §4. These additions are detailed in `regime_engine_v2_spec.md`.
+
+The V1 wire shape in §11 remains the canonical V1 contract; V2 fields strictly extend, never mutate, the V1 base. V1 byte-identity is mechanically enforced by `tests/test_v1_frozen_replay.py`.
 
 ---
 

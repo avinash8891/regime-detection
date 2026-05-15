@@ -136,6 +136,15 @@ INFLATION_SURPRISE_NOWCAST_BIAS_SOURCE_URL = (
     "https://www.clevelandfed.org/indicators-and-data/inflation-nowcasting"
 )
 
+# v2 §2A lines 2587-2593 — `value_first_release` provenance row. Emitted
+# only when the historical-replay first-release CPI substitution is in
+# effect (audit M2 / docs/spec_code_data_audit_2026_05_15.md §3.2).
+FIRST_RELEASE_CPI_PROVENANCE_CODE = "cpi_first_release_vintage_replay"
+FIRST_RELEASE_CPI_PROVENANCE_SOURCE = "fred_cpiaucsl_realtime_vintages"
+FIRST_RELEASE_CPI_PROVENANCE_SOURCE_URL = (
+    "https://fred.stlouisfed.org/series/CPIAUCSL"
+)
+
 
 # ---------------------------------------------------------------------------
 # Feature dataclass — per-session §2B feature seam.
@@ -255,6 +264,8 @@ def compute_inflation_growth_features(
     config: InflationGrowthRulesConfig,
     cpi_nowcast: pd.Series | None = None,
     aggregate_forward_eps_revision: pd.Series | None = None,
+    cpi_first_release: pd.Series | None = None,
+    use_first_release_cpi_when_available: bool = True,
 ) -> InflationGrowthFeatures:
     """Compute the v2 §2B inflation/growth feature seam from raw inputs.
 
@@ -280,9 +291,20 @@ def compute_inflation_growth_features(
     """
     spy_index = spy_close.index
 
+    # v2 §2A lines 2587-2593 — first-release vs latest-revision CPI for
+    # historical replay (audit M2). When the vintage seam is supplied
+    # AND the config flag enables the substitution, replace the
+    # latest-revision `cpi_all_items` with the release-date-keyed
+    # first-release Series. Both series live on the same SPY calendar
+    # after the standard reindex/ffill.
+    if cpi_first_release is not None and use_first_release_cpi_when_available:
+        cpi_source = cpi_first_release
+    else:
+        cpi_source = cpi_all_items
+
     # Reindex every input to the SPY calendar so all returned series share
     # the same DatetimeIndex (single source of truth for the rule engine).
-    cpi = cpi_all_items.reindex(spy_index).astype(float).ffill()
+    cpi = cpi_source.reindex(spy_index).astype(float).ffill()
     pmi = pmi_manufacturing.reindex(spy_index).astype(float).ffill()
     dgs10_s = dgs10.reindex(spy_index).astype(float)
     dbc = dbc_close.reindex(spy_index).astype(float)
@@ -311,7 +333,7 @@ def compute_inflation_growth_features(
     # naturally falsifies the `inflation_shock` single-signal limb.
     if cpi_nowcast is not None:
         inflation_surprise_zscore = compute_inflation_surprise_zscore(
-            cpi_all_items=cpi_all_items,
+            cpi_all_items=cpi_source,
             cpi_nowcast=cpi_nowcast,
             session_index=spy_index,
             realized_rate_lookback=config.inflation_surprise_realized_rate_lookback_sessions,
@@ -404,6 +426,19 @@ def compute_inflation_growth_features(
                 "source_url": INFLATION_SURPRISE_NOWCAST_BIAS_SOURCE_URL,
             }
         )
+    # v2 §2A lines 2587-2593 — first-release CPI provenance row (audit M2).
+    # Surfaces in the feature store output so replay consumers can audit
+    # which CPI vintage powered each `as_of_date`.
+    if cpi_first_release is not None and use_first_release_cpi_when_available:
+        for feat in ("cpi_3m_change_pct", "cpi_6m_change_pct", "inflation_surprise_zscore"):
+            bias_rows.append(
+                {
+                    "warning_code": FIRST_RELEASE_CPI_PROVENANCE_CODE,
+                    "feature_name": feat,
+                    "source": FIRST_RELEASE_CPI_PROVENANCE_SOURCE,
+                    "source_url": FIRST_RELEASE_CPI_PROVENANCE_SOURCE_URL,
+                }
+            )
     bias_warnings = make_bias_warnings_frame(bias_rows)
 
     return InflationGrowthFeatures(

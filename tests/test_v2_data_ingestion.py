@@ -119,19 +119,25 @@ def test_load_cross_asset_closes_returns_v2_universe() -> None:
 # ---------- load_macro_series ------------------------------------------------
 
 
-def _make_long_macro(series_ids: list[str], dates: list[date]) -> pd.DataFrame:
+def _make_long_macro(
+    series_ids: list[str],
+    dates: list[date],
+    *,
+    logical_names: dict[str, str] | None = None,
+) -> pd.DataFrame:
     rows = []
     for sid in series_ids:
         for i, d in enumerate(dates):
-            rows.append(
-                {
-                    "date": pd.Timestamp(d),
-                    "series_id": sid,
-                    "value": 4.0 + 0.01 * i,
-                    "realtime_start": pd.Timestamp(d),
-                    "realtime_end": pd.Timestamp(d),
-                }
-            )
+            row = {
+                "date": pd.Timestamp(d),
+                "series_id": sid,
+                "value": 4.0 + 0.01 * i,
+                "realtime_start": pd.Timestamp(d),
+                "realtime_end": pd.Timestamp(d),
+            }
+            if logical_names is not None:
+                row["logical_name"] = logical_names[sid]
+            rows.append(row)
     return pd.DataFrame(rows)
 
 
@@ -141,9 +147,42 @@ def test_load_macro_series_returns_v2_fred_ids() -> None:
 
     out = load_macro_series(df, series_ids=("DGS2", "DGS10", "DTWEXBGS", "SOFR", "NFCI"))
 
-    assert set(out.keys()) == {"DGS2", "DGS10", "DTWEXBGS", "SOFR", "NFCI"}
+    assert {"DGS2", "DGS10", "DTWEXBGS", "SOFR", "NFCI"}.issubset(out)
+    assert {"dgs2", "dgs10"}.issubset(out)
     assert len(out["DGS2"]) == 2
     assert out["DGS2"].iloc[0] == 4.0
+
+
+def test_load_macro_series_returns_fetch_logical_names_and_aliases() -> None:
+    dates = [date(2024, 1, 2), date(2024, 1, 3)]
+    logical_names = {
+        "DGS2": "2y_yield",
+        "DGS10": "10y_yield",
+        "DTWEXBGS": "broad_usd_index",
+        "BAMLH0A0HYM2": "hy_oas",
+        "BAMLC0A4CBBB": "ig_bbb_oas",
+        "CPIAUCSL": "cpi_all_items",
+    }
+    df = _make_long_macro(
+        list(logical_names),
+        dates,
+        logical_names=logical_names,
+    )
+
+    out = load_macro_series(df)
+
+    assert {
+        "DGS2",
+        "DGS10",
+        "dgs2",
+        "dgs10",
+        "broad_usd_index",
+        "hy_oas",
+        "ig_bbb_oas",
+        "cpi_all_items",
+    }.issubset(out)
+    assert out["hy_oas"].iloc[0] == 4.0
+    assert out["dgs10"].equals(out["DGS10"].rename("dgs10"))
 
 
 def test_load_macro_series_rejects_missing_series_id() -> None:
@@ -291,7 +330,8 @@ def test_market_context_holds_v2_data_dicts(market_df_for_asof) -> None:
     assert ctx.cross_asset_closes is not None
     assert set(ctx.cross_asset_closes.keys()) == set(CROSS_ASSET_SYMBOLS)
     assert ctx.macro_series is not None
-    assert set(ctx.macro_series.keys()) == {"DGS2", "DGS10", "DTWEXBGS"}
+    assert {"DGS2", "DGS10", "DTWEXBGS"}.issubset(ctx.macro_series)
+    assert {"dgs2", "dgs10"}.issubset(ctx.macro_series)
 
 
 def test_market_context_reindexes_v2_series_to_spy_session_index(market_df_for_asof) -> None:

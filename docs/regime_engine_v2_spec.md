@@ -2471,6 +2471,219 @@ the slice/commit that resolved it. Entries are append-only.
     in `axis_series.py`, `RegimeOutput.credit_funding_state_proxy`,
     tests) ships in a subsequent TDD commit.
 
+72. **§2A lines 2578-2586 — central bank text classifier substituted by
+    a deterministic hawkish/dovish lexicon.**
+
+    The §2A "Central Bank Text / Sentiment" subsection describes a
+    three-step pipeline:
+
+        1. Ingest FOMC minutes / Powell speech text on release.
+        2. **LLM classifier** outputs {hawkish, dovish, neutral} with
+           confidence.
+        3. Output as structured score, fed into
+           `monetary_pressure.evidence` — **never** as standalone label.
+
+    The literal "LLM classifier" phrasing conflicts with V1 §2.2 (the
+    stateless-replay rule the engine inherits everywhere): same inputs
+    must produce identical outputs. An LLM call inside the classification
+    path is non-deterministic (sampling, temperature, model-version
+    drift), so following the spec letter would break the contract
+    that all of V1 + V2 rest on.
+
+    The audit committed 2026-05-15
+    (`docs/spec_code_data_audit_2026_05_15.md` §3.1 / M1) discovered the
+    pipeline was specified but never wired — FOMC minutes and Powell
+    speeches were fetched and stored in `data/raw/fomc_minutes/` and
+    `data/raw/powell_speeches/` but no consumer existed in
+    `regime_detection`.
+
+    Resolution — deterministic hawkish/dovish lexicon as approved
+    substitute. The substitution follows the same precedent already
+    used elsewhere in V2 for vendor-blocked or spec-conflicted
+    inputs:
+
+      - DBC for Bloomberg Commodity Index (Ambiguity Log #48)
+      - VIXCLS/100 for options-implied 30d vol (ADR 0005 / Log #19/#20)
+      - AAII bull-bear 8w-MA for analyst-survey sentiment (Log #32)
+      - Cleveland Fed nowcast for analyst CPI consensus (ADR 0006)
+      - fja05680/sp500 for vendor PIT membership (§1D substitute)
+
+    Each is documented as an approved-substitute with a feature-store
+    bias-warning row. The central-bank-text substitute follows the
+    same pattern:
+
+      - Lexicon: curated hawkish + dovish vocabularies derived from
+        Apel & Blix-Grimaldi (2014), Bennani & Neuenkirch (2017),
+        Romer & Romer (2004), and Bank of England MPC public
+        sentiment dictionary. Two disjoint sets — verified by
+        `tests/test_central_bank_text.py::test_lexicons_have_no_overlapping_terms`.
+      - Per release: net_score = (hawkish_count − dovish_count) /
+        (hawkish_count + dovish_count) in [-1, +1]; NaN when both
+        counts are zero.
+      - Daily series: forward-filled per V1 §2.2 (each session reads
+        the latest score with `release_date <= as_of_date`, never a
+        future-dated reading), then smoothed with a trailing
+        `smoothing_window_sessions` rolling mean (default 30,
+        mirrors the AAII 8w-MA cadence used by §1A).
+      - Bias-warning code:
+        `central_bank_text_deterministic_lexicon_substitute`.
+
+    Pinned guarantees:
+
+    (a) **Evidence only, never a label.** The score lands on
+        `MonetaryPressureV2Features.central_bank_text_score` and is
+        surfaced in `axis_series` evidence dicts, exactly as the
+        original spec line 2585 requires. No §2A rule predicate
+        reads the field; `MonetaryPressureRuleInputs` is unchanged
+        and `evaluate_rules` is byte-identical to its pre-audit form.
+
+    (b) **V1 byte-identity preserved.** Optional everywhere —
+        `CentralBankTextConfig` defaults to None on `RegimeConfig`,
+        and `compute_monetary_pressure_features` accepts an optional
+        `central_bank_text_score` series that defaults to None.
+        Test gate: `tests/test_v1_frozen_replay.py` continues to
+        pass after the wiring (verified 2026-05-15).
+
+    (c) **V2 §9.1 walk-forward calibration placeholder.**
+        `smoothing_window_sessions=30` is a starter chosen to mirror
+        AAII cadence. The v2 calibration runner
+        (`scripts/run_v2_calibration.py`) surfaces the resulting
+        score distribution (min/p25/median/p75/max) in
+        `docs/verification/v2_calibration_summary.md` so this knob
+        can be retuned against actual FOMC tightening / easing
+        cycles.
+
+    (d) **Future LLM upgrade path.** If a deterministic LLM
+        classifier becomes available (e.g., a pinned model version
+        with `temperature=0`, replayable from a content-addressed
+        weights snapshot, with a documented compatibility contract),
+        it can REPLACE the lexicon. Until then, the lexicon is the
+        spec-amendment ship default. Any replacement must continue
+        to emit a bias-warning row recording its source so
+        historical replays remain auditable.
+
+    Resolved by audit M1: code lives at
+    `src/regime_detection/central_bank_text.py` plus loader, config,
+    feature-store, and monetary_pressure wiring. Tests at
+    `tests/test_central_bank_text.py` (14 cases). Fetch-doc updated
+    at `docs/market_data_fetch_plan.md`. See
+    `docs/spec_code_data_audit_2026_05_15.md` §3.1 for the full
+    implementation diff.
+
+73. **§2A lines 2587-2593 — first-release CPI for historical replay.**
+
+    The spec contract pins:
+
+        Original release values are point-in-time-correct; revised
+        values are not. The engine must use original values for
+        historical replay. Implementation: data store has both
+        `value_first_release` and `value_latest_revision` per data
+        point.
+
+    The audit committed 2026-05-15
+    (`docs/spec_code_data_audit_2026_05_15.md` §3.2 / M2) discovered
+    that while `regime_data_fetch.fred` had a `--include-cpi-vintages`
+    flag, it was default-off and no V2 metric consumed vintages —
+    `inflation_growth.compute_inflation_growth_features` read only the
+    latest-revision CPIAUCSL series, so every `as_of_date` saw today's
+    revised CPI rather than the value-as-of-release.
+
+    Resolution — three pins:
+
+    (a) **`--include-cpi-vintages` default flipped to True** in
+        `scripts/fetch_regime_engine_v1_data.py`. The argparse flag
+        is now a BooleanOptionalAction with `default=True`; pass
+        `--no-include-cpi-vintages` to opt out (e.g., shadow-mode
+        operators pinning to revised CPI by intent).
+
+    (b) **First-release loader landed**:
+        `loaders.load_cpi_vintages_first_release` picks the row with
+        the earliest `realtime_start` per reference date from the
+        FRED vintages parquet and returns a Series keyed by
+        **release date** (not reference date), so replay reads each
+        `as_of_date` against the day-of-release index.
+
+    (c) **Engine substitution gated by config flag**:
+        `inflation_growth.rules.use_first_release_cpi_when_available`
+        (default True). When True AND `MarketContext.cpi_first_release`
+        is supplied, `compute_inflation_growth_features` uses the
+        vintage Series in place of the latest-revision CPIAUCSL for
+        the realized inflation rate and the `cpi_3m/6m_change_pct`
+        series. The substitution emits a
+        `cpi_first_release_vintage_replay` bias-warning row on the
+        three CPI-derived features so historical replays carry their
+        own provenance. When False or when the vintage seam is None,
+        the existing revised path is preserved unchanged
+        (V1/V2 byte-identity).
+
+    Resolved by audit M2: parquet materialized at
+    `data/raw/macro_vintages/cpi_all_items_vintages.parquet` (136
+    first-release rows, 2015-02-26 → 2026-05-12). Tests at
+    `tests/test_cpi_vintages_first_release.py` (6 cases). Fetch-doc
+    updated at `docs/market_data_fetch_plan.md`. See
+    `docs/spec_code_data_audit_2026_05_15.md` §3.2 for the full
+    implementation diff.
+
+74. **§1A — SF Fed Daily News Sentiment as a second sentiment voice
+    (evidence only).**
+
+    The §1A `euphoria` rule predicate consumes `sentiment_score` (the
+    AAII bull-bear 8-week MA) per spec line 164. AAII measures retail
+    investor positioning intent; it is one of two distinct sentiment
+    populations. The other — narrative tone in the financial press —
+    is captured by the Federal Reserve Bank of San Francisco's Daily
+    News Sentiment Index (Shapiro, Sudhof, Wilson 2020, "Measuring
+    news sentiment", *Journal of Econometrics*; free daily series).
+
+    The two signals can disagree usefully: retail strongly bullish
+    while the press is deeply negative is a textbook late-cycle
+    divergence. Adding the SF Fed series gives §1A a second voice
+    without spec-amending the rule predicate.
+
+    Pinned guarantees:
+
+    (a) **Evidence only.** The score lands on
+        `TrendDirectionV2Features.news_sentiment_score` and a derived
+        pointwise `sentiment_concordance` flag (+1/0/-1/NaN) also
+        surfaces on the same dataclass. Neither field is read by the
+        §1A `euphoria` rule predicate or by any other rule. The
+        rule-evaluation surface is byte-identical to its pre-amendment
+        form (verified by `tests/test_news_sentiment.py::
+        test_news_sentiment_does_not_change_euphoria_predicate_inputs`).
+
+    (b) **V1 byte-identity preserved.** `NewsSentimentConfig` defaults
+        to None on `RegimeConfig`; `compute_trend_v2_features` accepts
+        the new input as Optional, defaulting to None. Without the
+        config block the feature dataclass keeps the field as None.
+        V1 frozen-replay continues to pass.
+
+    (c) **Replay safety.** The SF Fed publishes a single XLSX with no
+        ALFRED-style realtime metadata. The series is forward-filled
+        onto the SPY session calendar (V1 §2.2: each session reads the
+        latest value with `date <= as_of_date`). Updates land
+        approximately weekly. A future revision-tracking upgrade could
+        mirror the §2A first-release contract; for now the bias-warning
+        row `news_sentiment_sf_fed_daily_news_index` flags the
+        single-source provenance.
+
+    (d) **Concordance gate — future promotion path.** If walk-forward
+        evidence shows that filtering `euphoria` firings by
+        `sentiment_concordance > 0` reduces false positives without
+        hurting recall, the rule predicate can be amended via a
+        subsequent log entry and a `require_news_concordance: bool`
+        config flag (default False initially, reversible). Until that
+        evidence exists, the concordance flag is surfaced for
+        downstream consumers (strategy_response, dashboards) but is
+        not a rule input.
+
+    Resolved by code lives at
+    `src/regime_data_fetch/sf_fed_news_sentiment.py` (fetcher),
+    `loaders.load_news_sentiment_series`, `MarketContext.news_sentiment`,
+    `NewsSentimentConfig`, the new `TrendDirectionV2Features.
+    news_sentiment_score` + `sentiment_concordance` fields, and the
+    feature-store wiring. Tests at `tests/test_news_sentiment.py`
+    (9 cases). YAML block added to `configs/core3-v2.0.0.yaml`.
+
 ---
 
 ## 2. Layer 2 V2 — Full Structural-Causal State
@@ -3144,6 +3357,37 @@ AND breadth_state.active_label in [weak_breadth, divergent_fragile]
 
 This captures banking-crisis, election-uncertainty, and macro-shock environments that are stressed but have not committed to V1 `bear`. V1 intentionally emits `stable` for this pattern unless another V1 warning fires; do not backport this warning to V1.
 
+**V2 transition_risk precedence (with sideways_stress_warning inserted):**
+
+```text
+crisis_override > bear_stress_warning > sideways_stress_warning
+> bull_fragile_warning > recovery_attempt > post_switch_cooldown
+> unknown > stable
+```
+
+`sideways_stress_warning` slots between `bear_stress_warning` and `bull_fragile_warning`: it is a compositional warning like `bull_fragile_warning` but defensively skewed (stressed-but-not-bear is more dangerous than fragile-but-trending). When `bear_stress_warning` already fires (full defensive posture), it takes precedence.
+
+**V2 gating:** the rule is enabled when `config_version != "core3-v1.0.0"`. Under V1 config the rule is silent and V1 byte-identity is preserved (enforced by `tests/test_v1_frozen_replay.py`).
+
+**Strategy response modifier (V2 §10.4 extension):**
+
+```json
+"sideways_stress": {
+  "position_size_multiplier": 0.5,
+  "allow_breakout": false,
+  "allow_leverage_expansion": false,
+  "take_profit_faster": true,
+  "require_confirmation_for_new_longs": true
+}
+```
+
+V2 strategy_response scenario precedence (with sideways_stress inserted between bull_fragile and bear_stress in apply order — same defensive ordering as transition_risk):
+
+```text
+crisis > bear_stress > sideways_stress > bull_fragile > sideways_chop
+> recovery_attempt > bull_healthy_low_vol > default_neutral
+```
+
 ### 4.1 Composition
 
 V2 adds a continuous transition score that **augments** V1's named warnings, not replaces them.
@@ -3308,7 +3552,7 @@ Output:
 }
 ```
 
-Feeds `transition_score` as additional evidence (V2.1 — not in initial V2 ship; change-point detection ships in V2.1 alongside §6.3 implementation).
+Feeds `transition_score` as additional evidence. **Status: shipped in initial V2** (Slice 8) — wired through `RegimeOutput.change_point` and consumed by the `compose_transition_score_for_session` 4-table weight-selection logic per §4.3 (Ambiguity Log #66). When the change_point seam is lit, the composer selects either `weights_with_change_point` (5+1 = 6 components) or `weights_with_hmm_with_change_point` (5+2 = 7 components) depending on whether the HMM seam is also lit. The earlier "ships in V2.1" note in this section is superseded by the §4.3 4-table system.
 
 ---
 
@@ -3492,6 +3736,8 @@ The override-on-default inheritance pattern keeps the ship surface small (one ba
 
 ### 5.3 Vol-Crush Exit Rules
 
+> **Scope:** §5.3 is a **downstream strategy contract**, not regime-engine logic. The engine's responsibility is to emit the `vol_crush` label correctly (per §1C); the rules below describe how a position-management layer should respond to that label. They are not implemented in `regime_detection`. They are documented here so the contract is in one place for the strategy layer that consumes engine outputs.
+
 When `volatility_state.active_label = vol_crush`:
 - Exit all event-vol longs immediately
 - Reduce long-vol exposure by `long_vol_position_reduction_pct = 0.50` (V2 ship default; V2 §9.1 walk-forward calibration placeholder)
@@ -3509,6 +3755,8 @@ Rationale for the soft 50% reduction (not hard 100% exit): `vol_crush` can fire 
 Asymmetric-cost framing (same pattern as §1A 0.60 threshold): false-positive (exit when vol re-expands) has active execution cost + opportunity cost; false-negative (stay long when vol stays crushed) has only passive opportunity cost. 0.50 deliberately skews toward false-negative bias.
 
 ### 5.4 No-Flip-Flop Windows
+
+> **Scope:** §5.4 is a **downstream strategy contract**, not regime-engine logic. The engine emits the upstream regime labels (`tightening_pressure` from §2A, `fed_week` from §2D, `rising_vol` from §1C); the timing-control rules below describe how a position-management layer should compose them into trade-frequency limits. The `NoFlipFlopConfig` Pydantic block exists in `config.py` so the yaml can carry `window_trading_days`, but the engine does not consume it — the value is exposed through `RegimeConfig.no_flip_flop` for the strategy layer to read.
 
 Beyond V1's `post_switch_cooldown`:
 - `tightening_pressure` + `fed_week` + `rising_vol` → `no_flip_flop_window = 15 trading days`

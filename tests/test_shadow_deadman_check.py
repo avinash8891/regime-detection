@@ -5,6 +5,10 @@ import sqlite3
 from datetime import date
 from pathlib import Path
 
+import pytest
+
+pytestmark = pytest.mark.slow
+
 
 def _load_module(name: str, rel_path: str):
     repo_root = Path(__file__).resolve().parents[1]

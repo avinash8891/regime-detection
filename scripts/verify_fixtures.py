@@ -52,7 +52,6 @@ def _load_hysteresis_days() -> dict[str, int]:
         "volatility_state": int(h["volatility_deescalation_days"]),
         "breadth_state": int(h["breadth_deescalation_days"]),
         "composite": int(h["composite_deescalation_days"]),
-        "event_calendar": int(h["event_calendar_days"]),
     }
 
 

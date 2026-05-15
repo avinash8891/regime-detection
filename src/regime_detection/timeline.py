@@ -141,6 +141,12 @@ def build_regime_timeline(
     inflation_growth_config = (
         config.inflation_growth if config is not None else None
     )
+    central_bank_text_config = (
+        config.central_bank_text if config is not None else None
+    )
+    news_sentiment_config = (
+        config.news_sentiment if config is not None else None
+    )
     feature_store = build_feature_store(
         working_context,
         network_fragility_config=network_fragility_config,
@@ -151,6 +157,8 @@ def build_regime_timeline(
         monetary_pressure_v2_config=monetary_pressure_v2_config,
         credit_funding_config=credit_funding_config,
         inflation_growth_config=inflation_growth_config,
+        central_bank_text_config=central_bank_text_config,
+        news_sentiment_config=news_sentiment_config,
     )
     axis_bundle = build_axis_series_bundle(context=working_context, feature_store=feature_store)
     transition_risk = build_transition_risk_series(

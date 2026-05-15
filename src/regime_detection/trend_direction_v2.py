@@ -79,6 +79,18 @@ class TrendDirectionV2Features:
     # When supplied, the series is forward-filled from AAII weekly readings
     # onto the SPY session index per ADR 0004 Q4 (V1 §2.2 stateless replay).
     sentiment_score: pd.Series | None = None
+    # v2 §1A second sentiment voice — SF Fed Daily News Sentiment Index
+    # (Shapiro, Sudhof, Wilson 2020). Smoothed onto the SPY session index.
+    # EVIDENCE ONLY — never read by the `euphoria` rule predicate. See audit
+    # follow-up: docs/spec_code_data_audit_2026_05_15.md "news sentiment".
+    news_sentiment_score: pd.Series | None = None
+    # Derived concordance flag — True when AAII and news sentiment agree on
+    # sign (both positive or both negative), False when they diverge, NaN
+    # when either is NaN. Surfaces in evidence dicts so downstream
+    # consumers (strategy_response, calibration review, dashboards) can
+    # treat divergent euphoria firings as lower-conviction without the
+    # label predicate itself changing.
+    sentiment_concordance: pd.Series | None = None
 
     @property
     def feature_names(self) -> tuple[str, ...]:
@@ -216,6 +228,7 @@ def compute_trend_v2_features(
     *,
     config: TrendDirectionV2Config,
     sentiment_score: pd.Series | None = None,
+    news_sentiment_score: pd.Series | None = None,
 ) -> TrendDirectionV2Features:
     """Compute the nine v2 §1A trend-direction features from a close series.
 
@@ -266,6 +279,19 @@ def compute_trend_v2_features(
         sentiment_score = sentiment_score.reindex(close.index)
         sentiment_score = sentiment_score.rename("sentiment_score")
 
+    # v2 §1A second sentiment voice (SF Fed). Evidence only; never read
+    # by the `euphoria` rule. Reindex onto the close calendar so the
+    # concordance flag can be computed pointwise against `sentiment_score`.
+    sentiment_concordance: pd.Series | None = None
+    if news_sentiment_score is not None:
+        news_sentiment_score = news_sentiment_score.reindex(close.index).rename(
+            "news_sentiment_score"
+        )
+        if sentiment_score is not None:
+            sentiment_concordance = _compute_sentiment_concordance(
+                aaii=sentiment_score, news=news_sentiment_score
+            )
+
     return TrendDirectionV2Features(
         efficiency_ratio_20d=eff,
         hurst_250d=hurst,
@@ -278,7 +304,41 @@ def compute_trend_v2_features(
         sma_200=sma_long,
         realized_vol_21d=realized_vol_21d,
         sentiment_score=sentiment_score,
+        news_sentiment_score=news_sentiment_score,
+        sentiment_concordance=sentiment_concordance,
     )
+
+
+def _compute_sentiment_concordance(
+    *, aaii: pd.Series, news: pd.Series
+) -> pd.Series:
+    """Pointwise concordance between AAII bull-bear and SF Fed news sentiment.
+
+    Returns a per-session float Series:
+
+        +1.0  — both signals positive
+         0.0  — signals disagree on sign
+        -1.0  — both signals negative
+         NaN  — either signal NaN at that session
+
+    NOTE: this is an EVIDENCE-only derivation. The §1A `euphoria` rule
+    predicate is unchanged (it consumes only ``sentiment_score`` per
+    spec line 164). Downstream consumers may treat
+    `sentiment_concordance == 0` firings as lower-conviction.
+    """
+    aaii_aligned = aaii.reindex(news.index)
+    out_index = news.index
+    score = pd.Series(float("nan"), index=out_index, name="sentiment_concordance")
+    aaii_sign = aaii_aligned.where(aaii_aligned.notna())
+    news_sign = news.where(news.notna())
+    both_valid = aaii_sign.notna() & news_sign.notna()
+    both_pos = both_valid & (aaii_sign > 0) & (news_sign > 0)
+    both_neg = both_valid & (aaii_sign < 0) & (news_sign < 0)
+    disagree = both_valid & ~both_pos & ~both_neg
+    score = score.mask(both_pos, 1.0)
+    score = score.mask(both_neg, -1.0)
+    score = score.mask(disagree, 0.0)
+    return score
 
 
 def _realized_vol_21d_for_euphoria(close: pd.Series) -> pd.Series:

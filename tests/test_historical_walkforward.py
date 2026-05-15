@@ -7,6 +7,9 @@ from datetime import date
 from pathlib import Path
 
 import pandas as pd
+import pytest
+
+pytestmark = pytest.mark.slow
 
 
 def _load_runner_module():

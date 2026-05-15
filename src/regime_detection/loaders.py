@@ -147,12 +147,36 @@ def load_macro_series(
 
     Source schema: long-form parquet/CSV/DataFrame with columns
     `(date, series_id, value)` (and optionally `realtime_start`,
-    `realtime_end` — extra columns are ignored).
-    Returns one date-indexed Series per series_id.
+    `realtime_end`, `logical_name` — extra columns are ignored).
+    Returns date-indexed Series by FRED `series_id`. When the fetch-workflow
+    `logical_name` column is present, also returns the engine-facing logical
+    keys consumed by V2 feature seams.
     """
-    return _load_long_form_closes(
+    out = _load_long_form_closes(
         source, group_col="series_id", value_col="value", universe=series_ids,
     )
+    out = {key: series.rename(key) for key, series in out.items()}
+    df = _read_source(source)
+
+    if series_ids is not None:
+        df = df[df["series_id"].isin(series_ids)].copy()
+
+    if "logical_name" in df.columns:
+        logical_df = df.dropna(subset=["logical_name"])
+        for key, sub in logical_df.groupby("logical_name"):
+            sub = sub.sort_values("date")
+            series_key = str(key)
+            out[series_key] = pd.Series(
+                sub["value"].astype(float).to_numpy(),
+                index=pd.to_datetime(sub["date"]),
+                name=series_key,
+            )
+
+    if "DGS10" in out and "dgs10" not in out:
+        out["dgs10"] = out["DGS10"].rename("dgs10")
+    if "DGS2" in out and "dgs2" not in out:
+        out["dgs2"] = out["DGS2"].rename("dgs2")
+    return out
 
 
 def load_cpi_nowcast_series(source: str | Path | pd.DataFrame) -> pd.Series:
@@ -203,6 +227,151 @@ def load_aggregate_forward_eps_revision_series(
             f"aggregate forward EPS source missing required columns: {missing}"
         )
     return compute_eps_revision_direction_4w(df)
+
+
+def load_central_bank_text_score(
+    *,
+    fomc_minutes_source: str | Path | pd.DataFrame | None = None,
+    powell_speeches_source: str | Path | pd.DataFrame | None = None,
+    max_release_age_days: int | None = None,
+    as_of_date: pd.Timestamp | None = None,
+) -> pd.DataFrame:
+    """Load FOMC minutes + Powell speech parquets and score each release.
+
+    Returns a per-release frame with columns ``release_date``,
+    ``hawkish_count``, ``dovish_count``, ``total_tokens``, ``net_score``,
+    ``source`` — the input to
+    ``central_bank_text.to_daily_score_series``. When neither source is
+    supplied, returns the empty frame (the engine then sees all-NaN
+    daily series and the §2A evidence column is silent).
+
+    Per V2 §2A line 2585 the score feeds ``monetary_pressure.evidence``
+    only — this loader has no awareness of rule predicates.
+    """
+    from regime_detection.central_bank_text import (
+        combine_release_frames,
+        score_release_frame,
+    )
+
+    frames: list[pd.DataFrame] = []
+    if fomc_minutes_source is not None:
+        df = _read_source(fomc_minutes_source)
+        # FOMC parquet column from regime_data_fetch.fomc_minutes is
+        # ``release_timestamp`` (datetime). The score scaffold treats it
+        # as the release date.
+        date_column = (
+            "release_timestamp"
+            if "release_timestamp" in df.columns
+            else "release_date"
+        )
+        frames.append(
+            score_release_frame(df, date_column=date_column, source_label="fomc_minutes")
+        )
+    if powell_speeches_source is not None:
+        df = _read_source(powell_speeches_source)
+        # Powell parquet from regime_data_fetch.powell_speeches uses
+        # ``publication_timestamp`` (date-only precision per repo notes).
+        date_column = (
+            "publication_timestamp"
+            if "publication_timestamp" in df.columns
+            else "publication_date"
+        )
+        frames.append(
+            score_release_frame(df, date_column=date_column, source_label="powell_speech")
+        )
+    combined = combine_release_frames(*frames)
+    if combined.empty:
+        return combined
+    if max_release_age_days is not None and as_of_date is not None:
+        cutoff = pd.Timestamp(as_of_date).date() - pd.Timedelta(days=max_release_age_days).to_pytimedelta()
+        combined = combined[combined["release_date"] >= cutoff].reset_index(drop=True)
+    return combined
+
+
+def load_news_sentiment_series(
+    source: str | Path | pd.DataFrame,
+) -> pd.Series:
+    """Load the SF Fed Daily News Sentiment Index as a date-indexed Series.
+
+    Source schema: long-form parquet (or CSV/DataFrame) written by
+    ``regime_data_fetch.sf_fed_news_sentiment`` with columns
+    ``date`` and ``news_sentiment`` (extra columns ``source``,
+    ``source_url`` are ignored). Returns a Series indexed by date
+    suitable for ``MarketContext.news_sentiment``.
+
+    Used as v2 §1A evidence ONLY — never consumed by the `euphoria`
+    rule predicate. The §1A `sentiment_score` (AAII bull-bear 8w-MA)
+    remains the canonical input to that rule.
+    """
+    df = _read_source(source)
+    required = {"date", "news_sentiment"}
+    missing = sorted(required - set(df.columns))
+    if missing:
+        raise ValueError(
+            f"news_sentiment source missing required columns: {missing}"
+        )
+    df = df.sort_values("date")
+    return pd.Series(
+        df["news_sentiment"].astype(float).to_numpy(),
+        index=pd.DatetimeIndex(pd.to_datetime(df["date"])),
+        name="news_sentiment",
+    )
+
+
+def load_cpi_vintages_first_release(
+    source: str | Path | pd.DataFrame,
+) -> pd.Series:
+    """Load the first-release CPI series from a FRED vintages parquet.
+
+    Spec: V2 §2A lines 2587-2593 — "Original release values are
+    point-in-time-correct; revised values are not. The engine must use
+    original values for historical replay."
+
+    Source schema: long-form ``cpi_all_items_vintages.parquet`` written
+    by ``regime_data_fetch.fred`` with realtime params. Each row has at
+    minimum:
+
+        date              (the reference date; typically the 1st of the
+                           reference month for CPIAUCSL)
+        value             (the published level for that reference date
+                           in that vintage)
+        realtime_start    (the date this value first became public)
+        realtime_end      (the date this value was superseded by a
+                           revision, or NaT if still current)
+
+    For each reference ``date``, this loader picks the row with the
+    **earliest** ``realtime_start`` — the first-release value — and
+    returns a Series keyed by that ``realtime_start`` (the *release
+    date*, not the reference date). Historical replay then looks up
+    each ``as_of_date`` against the release-date index and forward-fills.
+
+    Falls back to a release-date-keyed Series of NaN when the source
+    is empty.
+    """
+    df = _read_source(source)
+    required = {"date", "value", "realtime_start"}
+    missing = sorted(required - set(df.columns))
+    if missing:
+        raise ValueError(
+            f"cpi_vintages source missing required columns: {missing}"
+        )
+    if df.empty:
+        return pd.Series([], dtype=float, name="cpi_first_release")
+    work = df.copy()
+    work["date"] = pd.to_datetime(work["date"])
+    work["realtime_start"] = pd.to_datetime(work["realtime_start"])
+    # Earliest realtime_start per reference date = the first release.
+    first_releases = (
+        work.sort_values(["date", "realtime_start"])
+        .drop_duplicates(subset="date", keep="first")
+        .reset_index(drop=True)
+    )
+    series = pd.Series(
+        first_releases["value"].astype(float).to_numpy(),
+        index=pd.DatetimeIndex(first_releases["realtime_start"]),
+        name="cpi_first_release",
+    )
+    return series.sort_index()
 
 
 def _validate_event_df(df: pd.DataFrame, *, market: str) -> pd.DataFrame:

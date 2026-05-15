@@ -36,6 +36,10 @@ from regime_detection.calendar import nyse_calendar  # noqa: E402
 from regime_detection.config import load_default_regime_config  # noqa: E402
 from regime_detection.engine import RegimeEngine  # noqa: E402
 from regime_detection.fragility_universe import SECTOR_ETFS  # noqa: E402
+from regime_detection.loaders import (  # noqa: E402
+    load_central_bank_text_score,
+    load_cpi_vintages_first_release,
+)
 from regime_detection.market_context import build_market_context  # noqa: E402
 from regime_detection.versioning import engine_version as resolved_engine_version  # noqa: E402
 
@@ -286,9 +290,25 @@ def _build_markdown(
 
 def _parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="V2 §9.3 60-session shadow A/B gate runner.")
+    parser.add_argument(
+        "--daily-dir",
+        type=Path,
+        default=REPO_ROOT / "data" / "raw" / "daily_ohlcv",
+    )
+    parser.add_argument(
+        "--macro-parquet",
+        type=Path,
+        default=REPO_ROOT / "data" / "raw" / "macro" / "fred_macro_series.parquet",
+    )
+    parser.add_argument(
+        "--pmi-path",
+        type=Path,
+        default=REPO_ROOT / "data" / "manual_inputs" / "pmi" / "ism_manufacturing_pmi.tsv",
+    )
     parser.add_argument("--n-sessions", type=int, default=60)
     parser.add_argument(
         "--output",
+        "--out",
         type=Path,
         default=REPO_ROOT / "docs" / "verification" / "v2_shadow_ab_60session.md",
     )
@@ -299,10 +319,9 @@ def main() -> int:
     _setup_logging()
     args = _parse_args()
 
-    data_root = REPO_ROOT / "data" / "raw"
-    daily_dir = data_root / "daily_ohlcv"
-    macro_parquet = data_root / "macro" / "fred_macro_series.parquet"
-    pmi_path = REPO_ROOT / "data" / "manual_inputs" / "pmi" / "ism_manufacturing_pmi.tsv"
+    daily_dir = args.daily_dir
+    macro_parquet = args.macro_parquet
+    pmi_path = args.pmi_path
 
     if not daily_dir.exists():
         raise SystemExit(f"daily_ohlcv directory not found at {daily_dir}")
@@ -344,10 +363,29 @@ def main() -> int:
     cross_asset_closes = load_close_dict(daily_dir, CROSS_ASSET_SYMBOLS, spy_index)
     macro_series = load_macro_series(macro_parquet, pmi_path)
 
+    # v2 §2A central-bank-text + first-release CPI seams (audit M1 / M2).
+    data_root = daily_dir.parent
+    fomc_parquet = data_root / "fomc_minutes" / "fomc_minutes.parquet"
+    powell_parquet = data_root / "powell_speeches" / "powell_speeches.parquet"
+    cpi_vintages_parquet = data_root / "macro_vintages" / "cpi_all_items_vintages.parquet"
+    central_bank_text_releases = load_central_bank_text_score(
+        fomc_minutes_source=fomc_parquet if fomc_parquet.exists() else None,
+        powell_speeches_source=powell_parquet if powell_parquet.exists() else None,
+    )
+    cpi_first_release = (
+        load_cpi_vintages_first_release(cpi_vintages_parquet)
+        if cpi_vintages_parquet.exists()
+        else None
+    )
+
     v2_kwargs = {
         "sector_etf_closes": sector_etf_closes,
         "cross_asset_closes": cross_asset_closes,
         "macro_series": macro_series,
+        "central_bank_text_releases": (
+            central_bank_text_releases if not central_bank_text_releases.empty else None
+        ),
+        "cpi_first_release": cpi_first_release,
     }
 
     engine = RegimeEngine()

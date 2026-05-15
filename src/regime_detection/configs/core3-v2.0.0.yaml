@@ -34,7 +34,6 @@ hysteresis:
   volatility_deescalation_days: 2
   breadth_deescalation_days: 2
   composite_deescalation_days: 3
-  event_calendar_days: 1
 
 # ---------------------------------------------------------------------------
 # V2 sub-configs (per docs/regime_engine_v2_spec.md).
@@ -268,6 +267,47 @@ monetary_pressure_state:
     unknown: 2
   default_deescalation_days: 0
 
+# v2 §2A lines 2578-2586 — central-bank-text classifier feeding
+# monetary_pressure.evidence. Audit M1 (docs/spec_code_data_audit_2026_05_15.md
+# §3.1). The spec phrasing names an "LLM classifier" but V1 §2.2 stateless
+# replay forbids non-deterministic ops, so the engine uses a deterministic
+# hawkish/dovish lexicon (regime_detection.central_bank_text) as the
+# approved-substitute. Bias-warning row emitted with code
+# `central_bank_text_deterministic_lexicon_substitute`. The score is
+# EVIDENCE ONLY — never read by any §2A rule predicate per spec line 2585.
+central_bank_text:
+  # NYSE-session smoothing window over the per-release forward-filled
+  # net_score series. Default 30 ≈ 6 weeks ≈ four FOMC-cycle releases,
+  # mirrors AAII 8w-MA cadence used by §1A `sentiment_score`. v2 §9.1
+  # walk-forward calibration placeholder — may retune.
+  smoothing_window_sessions: 30
+  # Drop releases older than this many calendar days at scoring time.
+  # Default 365 keeps one full policy cycle of evidence and excludes
+  # rows that pre-date the OHLCV window.
+  max_release_age_days: 365
+  # Audit follow-up #12 — same-date collision strategy. When FOMC
+  # minutes and a Powell speech share a release date:
+  #   pick_longer            — row with larger total_tokens wins (default)
+  #   token_weighted_average — average net_score by token weight
+  #   fomc_priority          — FOMC minutes win unconditionally
+  same_date_aggregation: pick_longer
+
+# v2 §1A SF Fed Daily News Sentiment Index — EVIDENCE-only second
+# sentiment voice alongside the AAII bull-bear 8w-MA `sentiment_score`.
+# The §1A `euphoria` rule predicate (spec line 164) consumes only the
+# AAII series; this block does NOT modify that rule. The news sentiment
+# score + the derived `sentiment_concordance` flag surface in evidence
+# dicts so downstream consumers can treat divergent firings as lower-
+# conviction. Source: Shapiro / Sudhof / Wilson 2020, "Measuring news
+# sentiment", *Journal of Econometrics*; published daily by SF Fed.
+# Bias-warning code: `news_sentiment_sf_fed_daily_news_index`.
+news_sentiment:
+  # Smoothing window over the daily SF Fed series. Default 21 NYSE
+  # sessions ≈ 1 month — short enough to react to material narrative
+  # shifts, long enough to dampen single-day noise. v2 §9.1
+  # walk-forward calibration placeholder.
+  smoothing_window_sessions: 21
+
 # v2 §2C — Credit/Funding axis. Per Ambiguity Log #49 + #71, §2C carries
 # TWO parallel, never-blended credit-spread metrics:
 #  1. Real ICE BofA OAS — `hy_oas` = BAMLH0A0HYM2, `ig_bbb_oas` =
@@ -348,6 +388,14 @@ inflation_growth:
     # Log #48 closure — earnings_expansion / earnings_contraction thresholds:
     eps_revision_expansion_threshold: 0.02         # §2B line 2605
     eps_revision_contraction_threshold: -0.02      # §2B line 2609
+    # §2A lines 2587-2593 — first-release vs latest-revision CPI for replay.
+    # Audit M2 (docs/spec_code_data_audit_2026_05_15.md §3.2). When True and
+    # MarketContext.cpi_first_release is supplied (from the CPIAUCSL vintages
+    # parquet), inflation_growth uses the value-as-of-release. When False or
+    # when the vintage seam is absent, the existing latest-revision CPIAUCSL
+    # path is preserved unchanged. Emits the `cpi_first_release_vintage_replay`
+    # provenance row on the feature-store bias-warnings frame.
+    use_first_release_cpi_when_available: true
   # §2B lines 2292-2303 — per-label asymmetric hysteresis days.
   deescalation_days_by_label:
     inflation_shock: 5

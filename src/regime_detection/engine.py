@@ -38,6 +38,9 @@ class RegimeEngine:
         constituent_ohlcv: dict[str, pd.DataFrame] | None = None,
         aaii_sentiment: pd.DataFrame | None = None,
         implied_vol_30d: pd.Series | None = None,
+        central_bank_text_releases: pd.DataFrame | None = None,
+        cpi_first_release: pd.Series | None = None,
+        news_sentiment: pd.Series | None = None,
     ) -> RegimeOutput:
         del breadth_data  # V1 breadth uses ETF-proxy RSP rows in market_data per spec §6.
         as_of_date = as_date(as_of_date)
@@ -56,6 +59,9 @@ class RegimeEngine:
             constituent_ohlcv=constituent_ohlcv,
             aaii_sentiment=aaii_sentiment,
             implied_vol_30d=implied_vol_30d,
+            central_bank_text_releases=central_bank_text_releases,
+            cpi_first_release=cpi_first_release,
+            news_sentiment=news_sentiment,
         )
         return timeline.outputs[-1]
 
@@ -75,6 +81,9 @@ class RegimeEngine:
         constituent_ohlcv: dict[str, pd.DataFrame] | None = None,
         aaii_sentiment: pd.DataFrame | None = None,
         implied_vol_30d: pd.Series | None = None,
+        central_bank_text_releases: pd.DataFrame | None = None,
+        cpi_first_release: pd.Series | None = None,
+        news_sentiment: pd.Series | None = None,
     ) -> RegimeTimeline:
         del breadth_data  # V1 breadth uses ETF-proxy RSP rows in market_data per spec §6.
         end_date = as_date(end_date)
@@ -95,6 +104,9 @@ class RegimeEngine:
             constituent_ohlcv=constituent_ohlcv,
             aaii_sentiment=aaii_sentiment,
             implied_vol_30d=implied_vol_30d,
+            central_bank_text_releases=central_bank_text_releases,
+            cpi_first_release=cpi_first_release,
+            news_sentiment=news_sentiment,
         )
         return build_regime_timeline(
             context=context, lookback_days=lookback_days, config=cfg
