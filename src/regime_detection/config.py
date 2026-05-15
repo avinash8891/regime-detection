@@ -1052,25 +1052,34 @@ def load_regime_config(path: str | Path) -> RegimeConfig:
     return RegimeConfig.model_validate(data)
 
 
+def _default_config_resource_name_for_version(version: str) -> str:
+    major_text = version.split(".", 1)[0]
+    if not major_text.isdigit():
+        raise ValueError(
+            f"Unsupported package __version__ for default config dispatch: {version!r}"
+        )
+    major = int(major_text)
+    if major == 2:
+        return "configs/core3-v2.0.0.yaml"
+    if major == 1:
+        return "configs/core3-v1.0.0.yaml"
+    raise ValueError(
+        f"Unsupported package __version__ for default config dispatch: {version!r}"
+    )
+
+
 def load_default_regime_config() -> RegimeConfig:
     """
     Load the packaged default config shipped with the library.
 
-    Dispatches on package ``__version__``:
-        - "2.x"  -> configs/core3-v2.0.0.yaml
-        - "1.x"  -> configs/core3-v1.0.0.yaml
+    Dispatches on package ``__version__`` major:
+        - 2  -> configs/core3-v2.0.0.yaml
+        - 1  -> configs/core3-v1.0.0.yaml
 
     NOTE: We load the resource content directly (instead of returning a filesystem
     Path) so this works even when the package is distributed as a zip/egg.
     """
-    if __version__.startswith("2."):
-        resource_name = "configs/core3-v2.0.0.yaml"
-    elif __version__.startswith("1."):
-        resource_name = "configs/core3-v1.0.0.yaml"
-    else:
-        raise ValueError(
-            f"Unsupported package __version__ for default config dispatch: {__version__!r}"
-        )
+    resource_name = _default_config_resource_name_for_version(__version__)
 
     pkg_file = importlib.resources.files("regime_detection").joinpath(resource_name)
     text = pkg_file.read_text(encoding="utf-8")

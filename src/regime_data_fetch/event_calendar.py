@@ -667,10 +667,14 @@ def _build_v2_curated_candidate_events(
     text_fetcher = group_a_text_fetcher or _group_a_text_fetcher_from_legacy_map(global_rate_calendar_text_fetchers)
     hf_parquet_fetcher = group_a_hf_parquet_fetcher
     if hf_parquet_fetcher is None and global_rate_calendar_text_fetchers is not None:
-        hf_parquet_fetcher = lambda: b""
+        def hf_parquet_fetcher() -> bytes:
+            return b""
+
     boe_news_fetcher = group_a_boe_news_fetcher
     if boe_news_fetcher is None and global_rate_calendar_text_fetchers is not None:
-        boe_news_fetcher = lambda page: '{"Results": ""}'
+        def boe_news_fetcher(page: int) -> str:
+            return '{"Results": ""}'
+
     live_group_b_sources = global_rate_calendar_text_fetchers is None and group_a_text_fetcher is None
     group_b_generators = []
     group_b_validators = []

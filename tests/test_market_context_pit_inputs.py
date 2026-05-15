@@ -15,11 +15,8 @@ from __future__ import annotations
 from datetime import date
 
 import pandas as pd
-import pytest
 
 from regime_detection.engine import RegimeEngine
-from regime_detection.fragility_universe import SECTOR_ETFS
-from regime_detection.loaders import load_sector_etf_closes
 from regime_detection.market_context import MarketContext, build_market_context
 
 

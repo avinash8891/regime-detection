@@ -201,7 +201,6 @@ def build_transition_risk_outputs_by_date(
     close = pd.Series([close_by_date[day] for day in sessions], index=index, dtype="float64")
     sma_50 = pd.Series([sma_50_by_date[day] for day in sessions], index=index, dtype="float64")
     prior_bear = pd.Series([history.prior_bear_by_date[day] for day in sessions], index=index, dtype="bool")
-    stable_changed = pd.Series([history.stable_changed_by_date[day] for day in sessions], index=index, dtype="bool")
     days_since_axis_switch = pd.Series(
         [history.days_since_axis_switch_by_date[day] for day in sessions],
         index=index,

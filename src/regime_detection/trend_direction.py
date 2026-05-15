@@ -90,7 +90,6 @@ def raw_label_for_day(
     bull = bool((close > sma50) and (close > sma200) and (sma50 > sma200))
     bear = bool((close < sma50) and (close < sma200) and (sma50 < sma200))
     sideways = bool((abs(ret63) < 0.05) and within_5pct_sma200)
-    transition = not (bull or bear or sideways)
 
     if bull:
         label: TrendDirectionLabel = "bull"

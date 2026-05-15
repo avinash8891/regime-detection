@@ -265,7 +265,6 @@ def raw_label_for_day(
     )
     high_vol = bool((vol_pct >= 0.80) or vix_high)
     low_vol = bool(vol_pct <= 0.30)
-    normal_vol = not (crisis or high_vol or low_vol)
 
     if crisis:
         label: VolatilityLabel = "crisis_vol"

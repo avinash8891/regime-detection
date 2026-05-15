@@ -8,11 +8,9 @@ score 6th component.
 
 from __future__ import annotations
 
-from datetime import date
 
 import numpy as np
 import pandas as pd
-import pytest
 
 from regime_detection.config import HMMConfig, load_default_regime_config
 from regime_detection.hmm_state import (
@@ -256,11 +254,9 @@ def test_feature_store_hmm_seam_none_when_hmm_config_absent(
     raw_market_frames: dict[str, pd.DataFrame],
 ) -> None:
     from regime_detection.config import load_default_regime_config
-    from regime_detection.engine import RegimeEngine
     from regime_detection.feature_store import build_feature_store
     from regime_detection.market_context import build_market_context
 
-    engine = RegimeEngine()
     cfg = load_default_regime_config().model_copy(update={"hmm": None})
     # Use the last available date in the fixture.
     spy = raw_market_frames["SPY"]
@@ -268,7 +264,6 @@ def test_feature_store_hmm_seam_none_when_hmm_config_absent(
     vixy = raw_market_frames["VIXY"]
     raw = pd.concat([spy, rsp, vixy], ignore_index=True)
     raw["date"] = pd.to_datetime(raw["date"]).dt.date
-    from regime_detection.calendar import nyse_sessions_between
 
     last_session = max(d for d in raw["date"].unique())
     # Walk back to a valid NYSE session if needed.

@@ -4,7 +4,6 @@ import datetime as dt
 from pathlib import Path
 
 import pandas as pd
-import pytest
 
 from regime_data_fetch.pit_constituents import (
     BIAS_WARNING,
