@@ -765,6 +765,7 @@ def test_build_transition_risk_outputs_emits_change_point_when_seam_lit(
         TransitionRiskHistory,
         build_transition_risk_outputs_by_date,
     )
+    from regime_detection.transition_score_inputs import TransitionScoreInputs
 
     session = _date(2023, 12, 14)
     sessions = [session]
@@ -774,17 +775,17 @@ def test_build_transition_risk_outputs_emits_change_point_when_seam_lit(
         prior_bear_by_date={session: False},
     )
     inputs = {
-        session: {
-            "realized_vol_short": 12.0,
-            "realized_vol_long": 10.0,
-            "pct_above_50dma": 0.45,
-            "avg_pairwise_corr_percentile_504d": 0.60,
-            "drawdown_252d": -0.10,
-            "event_calendar_label": "cpi_week",
-            "hmm_top_state_prob_now": float("nan"),
-            "hmm_top_state_prob_5d_ago": float("nan"),
-            "change_point_score": 0.5,
-        }
+        session: TransitionScoreInputs(
+            realized_vol_short=12.0,
+            realized_vol_long=10.0,
+            pct_above_50dma=0.45,
+            avg_pairwise_corr_percentile_504d=0.60,
+            drawdown_252d=-0.10,
+            event_calendar_label="cpi_week",
+            hmm_top_state_prob_now=float("nan"),
+            hmm_top_state_prob_5d_ago=float("nan"),
+            change_point_score=0.5,
+        )
     }
     outputs = build_transition_risk_outputs_by_date(
         sessions=sessions,
