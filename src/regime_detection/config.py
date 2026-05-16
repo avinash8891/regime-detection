@@ -158,12 +158,12 @@ class NetworkFragilityConfig(BaseModel):
 
 
 class TrendDirectionV2RulesConfig(BaseModel):
-    """v2 §1A `recovery` rule thresholds (Slice 2.5).
+    """v2 §1A trend-direction rule thresholds.
 
-    Each value cites its line in docs/regime_engine_v2_spec.md §1A. The
-    `euphoria` / `breakout_expansion` / `range_bound` thresholds are
-    deferred (see Implementation Ambiguity Log entries #32–#34) until
-    their data inputs / spec ambiguities land.
+    Each value cites its line in docs/regime_engine_v2_spec.md §1A.
+    `recovery` and `euphoria` have live rule config and predicates.
+    `breakout_expansion` / `range_bound` remain separate follow-on label
+    qualifications from Implementation Ambiguity Log entries #33–#34.
     """
 
     model_config = ConfigDict(extra="forbid")
@@ -203,9 +203,10 @@ class TrendDirectionV2Config(BaseModel):
 
     Slice 2.1 ships the §1A continuous features as evidence-only.
     Slice 2.5 lands the ``recovery`` label + updated §1A precedence on
-    top of those features (see ``rules`` sub-block). The other new V2
-    trend labels (``euphoria`` / ``breakout_expansion`` / ``range_bound``)
-    remain deferred — see Implementation Ambiguity Log entries #32–#34.
+    top of those features (see ``rules`` sub-block). ADR 0004 / Log #32
+    later wired ``euphoria`` config, evidence, and predicate activation.
+    ``breakout_expansion`` / ``range_bound`` remain separate follow-on
+    label qualifications from Implementation Ambiguity Log entries #33–#34.
     """
 
     model_config = ConfigDict(extra="forbid")

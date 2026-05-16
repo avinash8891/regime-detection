@@ -1,10 +1,15 @@
 from __future__ import annotations
 
 import datetime as _dt
+import logging
 import os
 from dataclasses import dataclass
 
 import pandas as pd
+
+logger = logging.getLogger(__name__)
+
+_ALPACA_ENV_VARS = ("ALPACA_API_KEY_ID", "ALPACA_API_SECRET_KEY")
 
 
 @dataclass(frozen=True)
@@ -14,11 +19,20 @@ class DailyBarsFetchResult:
 
 
 def _get_alpaca_client():
+    missing = [key for key in _ALPACA_ENV_VARS if not os.environ.get(key, "").strip()]
+    if missing:
+        joined = ", ".join(missing)
+        raise RuntimeError(
+            "regime_data_fetch Alpaca credentials are not configured; "
+            f"missing env var(s): {joined}. Set them before running the "
+            "daily Alpaca OHLCV fetch."
+        )
+
     from alpaca.data.historical import StockHistoricalDataClient
 
     return StockHistoricalDataClient(
-        api_key=os.environ["ALPACA_API_KEY_ID"],
-        secret_key=os.environ["ALPACA_API_SECRET_KEY"],
+        api_key=os.environ["ALPACA_API_KEY_ID"].strip(),
+        secret_key=os.environ["ALPACA_API_SECRET_KEY"].strip(),
     )
 
 
@@ -70,8 +84,20 @@ def fetch_daily_bars_alpaca(
 
     for i in range(0, len(req_syms), batch_size):
         batch = req_syms[i : i + batch_size]
+        batch_index = i // batch_size + 1
+        batch_count = (len(req_syms) + batch_size - 1) // batch_size
         if verbose:
-            print(f"[alpaca] daily batch {i//batch_size + 1}/{(len(req_syms)+batch_size-1)//batch_size}: requesting {len(batch)} symbols", flush=True)
+            logger.info(
+                "alpaca daily bars batch request",
+                extra={
+                    "data_source": "alpaca_daily_ohlcv",
+                    "run_id": None,
+                    "batch_index": batch_index,
+                    "batch_count": batch_count,
+                    "requested_symbol_count": len(batch),
+                    "total_symbol_count": len(req_syms),
+                },
+            )
         req = StockBarsRequest(
             symbol_or_symbols=batch,
             timeframe=TimeFrame.Day,
@@ -115,7 +141,18 @@ def fetch_daily_bars_alpaca(
             out_frames.append(df)
         if verbose:
             got = sum(1 for s in batch if s in bar_data and bar_data.get(s))
-            print(f"[alpaca] batch done: got_bars_for={got}/{len(batch)} (cumulative_frames={len(out_frames)})", flush=True)
+            logger.info(
+                "alpaca daily bars batch complete",
+                extra={
+                    "data_source": "alpaca_daily_ohlcv",
+                    "run_id": None,
+                    "batch_index": batch_index,
+                    "batch_count": batch_count,
+                    "returned_symbol_count": got,
+                    "requested_symbol_count": len(batch),
+                    "cumulative_frame_count": len(out_frames),
+                },
+            )
 
     if out_frames:
         out = pd.concat(out_frames, ignore_index=True)
