@@ -362,6 +362,16 @@ def test_fetch_help_surface_mentions_pmi_and_pit() -> None:
     assert "sf-fed-news-sentiment" in help_text
 
 
+def test_unattended_usd_ingestion_uses_fred_macro_not_local_csv() -> None:
+    runner_text = Path("scripts/fetch_regime_engine_v1_data.py").read_text()
+    workflow_text = Path("src/regime_data_fetch/fetch_workflow.py").read_text()
+
+    assert '"broad_usd_index": "DTWEXBGS"' in workflow_text
+    assert "Routine future USD ingestion uses FRED DTWEXBGS through --fetch macro." in runner_text
+    assert 'if args.fetch == "usd-index-local":' in runner_text
+    assert 'if args.fetch in {"usd-index-local", "all"}:' not in runner_text
+
+
 def test_fetch_all_excludes_manual_eps_and_wayback_backfill() -> None:
     script = Path("scripts/fetch_regime_engine_v1_data.py").read_text()
     assert 'if args.fetch == "eps":' in script

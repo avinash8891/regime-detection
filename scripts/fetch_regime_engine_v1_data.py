@@ -87,7 +87,14 @@ def main() -> int:
     ap.add_argument("--eps-wayback-from", default=None, help="Optional lower bound date (YYYY-MM-DD) for Wayback EPS snapshot dates.")
     ap.add_argument("--eps-wayback-to", default=None, help="Optional upper bound date (YYYY-MM-DD) for Wayback EPS snapshot dates.")
     ap.add_argument("--eps-wayback-stop-after-first-success", action="store_true", help="Stop Wayback EPS processing after the first successfully parsed snapshot.")
-    ap.add_argument("--usd-index-csv", default=None, help="Path to a local Yahoo Finance ^NYICDX historical CSV export. Required for --fetch usd-index-local.")
+    ap.add_argument(
+        "--usd-index-csv",
+        default=None,
+        help=(
+            "Optional/manual Yahoo Finance ^NYICDX historical CSV export for --fetch usd-index-local. "
+            "Routine future USD ingestion uses FRED DTWEXBGS through --fetch macro."
+        ),
+    )
     ap.add_argument("--daily-ohlcv-dir", default=None, help="Path to a local partitioned daily_ohlcv parquet directory. Required for --fetch daily-ohlcv-local-sqlite.")
     ap.add_argument("--investing-archive-root", default=None, help="Path to archived Investing.com source_pages root. Required for --fetch investing-archive-local.")
     ap.add_argument("--investing-earnings-loaded-page", default=None, help="Path to a browser-loaded Investing.com earnings calendar HTML page containing __NEXT_DATA__. Optional for --fetch investing-live.")
@@ -327,6 +334,8 @@ def main() -> int:
         print(str(eps_wayback_report))
 
     if args.fetch == "usd-index-local":
+        # Optional diagnostic import only. The regime-engine USD input is
+        # broad_usd_index from FRED DTWEXBGS, fetched by the macro workflow.
         if not args.usd_index_csv:
             raise SystemExit("--usd-index-csv is required for usd-index-local fetches")
         usd_index_report = run_local_usd_index_import(
