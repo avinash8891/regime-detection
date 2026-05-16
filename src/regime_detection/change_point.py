@@ -33,9 +33,9 @@ from functools import partial
 import numpy as np
 import pandas as pd
 from bayesian_changepoint_detection.online_changepoint_detection import (
-    StudentT,
-    constant_hazard,
-    online_changepoint_detection,
+    StudentT as _StudentT,
+    constant_hazard as _constant_hazard,
+    online_changepoint_detection as _online_changepoint_detection,
 )
 
 from regime_detection.config import ChangePointConfig
@@ -130,16 +130,7 @@ def compute_change_point_features(
         return None
 
     try:
-        R, _maxes = online_changepoint_detection(
-            data,
-            partial(constant_hazard, config.hazard_lambda),
-            StudentT(
-                alpha=config.student_t_alpha,
-                beta=config.student_t_beta,
-                kappa=config.student_t_kappa,
-                mu=config.student_t_mu,
-            ),
-        )
+        posterior_arr = _bocpd_posterior_changepoint_prob(data=data, config=config)
     except Exception as exc:  # noqa: BLE001
         _LOGGER.warning(
             "BOCPD online_changepoint_detection failed; "
@@ -147,11 +138,6 @@ def compute_change_point_features(
             exc,
         )
         return None
-
-    # See module docstring for why row 1 of R carries the per-session
-    # change-point posterior in this library.
-    n = len(data)
-    posterior_arr = R[1, 1 : n + 1]
 
     posterior_aligned = pd.Series(
         posterior_arr,
@@ -173,6 +159,37 @@ def compute_change_point_features(
         days_since_last_break=days_since,
         method=config.method,
     )
+
+
+def _bocpd_posterior_changepoint_prob(
+    *,
+    data: np.ndarray,
+    config: ChangePointConfig,
+) -> np.ndarray:
+    """Adapter for the ``bayesian-changepoint-detection`` API.
+
+    The project needs the Adams-MacKay online BOCPD implementation, exposed by
+    the package as:
+
+    - ``online_changepoint_detection(data, hazard_func, observation_likelihood)``
+    - ``constant_hazard(lam, r)``, passed via ``functools.partial``
+    - ``StudentT(alpha, beta, kappa, mu)`` observation likelihood
+
+    See the module docstring for why row 1 of ``R`` carries the per-session
+    change-point posterior in this library.
+    """
+    R, _maxes = _online_changepoint_detection(
+        data,
+        partial(_constant_hazard, config.hazard_lambda),
+        _StudentT(
+            alpha=config.student_t_alpha,
+            beta=config.student_t_beta,
+            kappa=config.student_t_kappa,
+            mu=config.student_t_mu,
+        ),
+    )
+    n = len(data)
+    return np.asarray(R[1, 1 : n + 1], dtype=float)
 
 
 def _rolling_max_changepoint_prob(posterior: pd.Series, window: int) -> pd.Series:
