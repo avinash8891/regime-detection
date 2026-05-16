@@ -11,9 +11,12 @@ from __future__ import annotations
 
 import datetime as dt
 import json
+import logging
 from dataclasses import dataclass
 from pathlib import Path
 import urllib.request
+
+_LOG = logging.getLogger(__name__)
 
 import pandas as pd
 
@@ -33,6 +36,21 @@ class EPSWaybackSnapshot:
     timestamp: str
     archive_url: str
     snapshot_date: dt.date
+
+    def __post_init__(self) -> None:
+        if len(self.timestamp) < 8 or not self.timestamp[:8].isdigit():
+            raise ValueError(f"timestamp {self.timestamp!r} is not a valid Wayback timestamp (must start with 8 digits)")
+        expected_date = dt.datetime.strptime(self.timestamp[:8], "%Y%m%d").date()
+        if self.snapshot_date != expected_date:
+            raise ValueError(
+                f"snapshot_date {self.snapshot_date} does not match timestamp {self.timestamp!r}"
+            )
+
+    @classmethod
+    def from_timestamp(cls, timestamp: str, *, target_url: str) -> "EPSWaybackSnapshot":
+        snapshot_date = dt.datetime.strptime(timestamp[:8], "%Y%m%d").date()
+        archive_url = f"https://web.archive.org/web/{timestamp}if_/{target_url}"
+        return cls(timestamp=timestamp, archive_url=archive_url, snapshot_date=snapshot_date)
 
 
 def parse_wayback_cdx_json(cdx_json: str, *, target_url: str) -> list[EPSWaybackSnapshot]:
@@ -57,14 +75,7 @@ def parse_wayback_cdx_json(cdx_json: str, *, target_url: str) -> list[EPSWayback
             continue
         if "spreadsheetml.sheet" not in mimetype and "excel" not in mimetype:
             continue
-        snapshot_dt = dt.datetime.strptime(timestamp[:8], "%Y%m%d").date()
-        snapshots.append(
-            EPSWaybackSnapshot(
-                timestamp=timestamp,
-                archive_url=f"https://web.archive.org/web/{timestamp}if_/{target_url}",
-                snapshot_date=snapshot_dt,
-            )
-        )
+        snapshots.append(EPSWaybackSnapshot.from_timestamp(timestamp, target_url=target_url))
 
     if not snapshots:
         raise AggregateEPSFetchError("Wayback CDX response contained no usable workbook snapshots")
@@ -223,6 +234,12 @@ def run_wayback_aggregate_eps_fetch(
                     break
             except Exception as exc:
                 failures += 1
+                _LOG.warning(
+                    "Wayback EPS snapshot %s (%s) failed — skipping",
+                    snapshot.timestamp,
+                    snapshot.snapshot_date.isoformat(),
+                    exc_info=True,
+                )
                 _append_wayback_status(
                     status_path,
                     snapshot=snapshot,
@@ -311,8 +328,16 @@ def run_wayback_aggregate_eps_fetch(
             store.finish_fetch_run(run_id=fetch_run.run_id, status="ok")
         return report_path
     except Exception as exc:
+        _LOG.error("Wayback EPS fetch run failed: %s", exc, exc_info=True)
         if store and fetch_run:
-            store.finish_fetch_run(run_id=fetch_run.run_id, status="failed", notes=str(exc))
+            try:
+                store.finish_fetch_run(run_id=fetch_run.run_id, status="failed", notes=str(exc))
+            except Exception:
+                _LOG.warning(
+                    "Could not mark fetch run %d as failed in acquisition store",
+                    fetch_run.run_id,
+                    exc_info=True,
+                )
         raise
 
 
