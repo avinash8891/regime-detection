@@ -3,6 +3,7 @@ from __future__ import annotations
 from datetime import date
 
 import pandas as pd
+import pytest
 
 from regime_detection.data_quality import (
     assess_series_input_quality,
@@ -72,6 +73,48 @@ def test_assess_series_input_quality_multiple_inputs_uses_worst_quality() -> Non
     assert dq.freshness_days == 0
     assert dq.completeness == 0.4
     assert dq.reason == "insufficient_data"
+
+
+@pytest.mark.unit
+def test_raw_label_unknown_with_good_quality_forces_insufficient_history() -> None:
+    # All 5 sessions have real data → completeness 1.0, freshness 0.
+    # raw_label="unknown" must override this to insufficient_history.
+    series = _series([1.0, 2.0, 3.0, 4.0, 5.0])
+
+    dq = assess_series_input_quality(
+        as_of_date=date(2024, 1, 8),
+        required_inputs=[series],
+        required_trading_days=5,
+        raw_label="unknown",
+        max_freshness_days=10,
+        min_completeness=0.80,
+    )
+
+    assert dq.status == "insufficient_history"
+    assert dq.reason == "required_feature_is_nan"
+    assert dq.freshness_days is None
+    assert dq.completeness is None
+
+
+@pytest.mark.unit
+def test_skip_raw_label_short_circuit_bypasses_unknown_label_gate() -> None:
+    # Same perfect inputs and raw_label="unknown" as above, but the
+    # short-circuit flag is True — should produce "ok".
+    series = _series([1.0, 2.0, 3.0, 4.0, 5.0])
+
+    dq = assess_series_input_quality(
+        as_of_date=date(2024, 1, 8),
+        required_inputs=[series],
+        required_trading_days=5,
+        raw_label="unknown",
+        max_freshness_days=10,
+        min_completeness=0.80,
+        skip_raw_label_short_circuit=True,
+    )
+
+    assert dq.status == "ok"
+    assert dq.completeness is not None
+    assert dq.freshness_days is not None
 
 
 def test_quality_forces_unknown_only_for_terminal_bad_quality_statuses() -> None:
