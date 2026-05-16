@@ -22,7 +22,9 @@ def _load_script_module():
 profile_engine_30d = _load_script_module()
 
 
-def test_profile_engine_rejects_non_positive_lookback_days(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_profile_engine_rejects_non_positive_lookback_days(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     monkeypatch.setattr(sys, "argv", ["profile_engine_30d.py", "--lookback-days", "0"])
 
     with pytest.raises(SystemExit) as exc_info:
@@ -32,7 +34,9 @@ def test_profile_engine_rejects_non_positive_lookback_days(monkeypatch: pytest.M
 
 
 def test_profile_reporting_label_uses_granular_status_for_unknown() -> None:
-    output = SimpleNamespace(active_label="unknown", classification_status="no_rule_fired")
+    output = SimpleNamespace(
+        active_label="unknown", classification_status="no_rule_fired"
+    )
 
     assert profile_engine_30d._reporting_label(output) == "no_rule_fired"
 
@@ -84,9 +88,10 @@ def test_profile_engine_loads_aaii_sentiment_when_present(tmp_path: Path) -> Non
 
 
 def test_profile_engine_skips_aaii_sentiment_when_absent(tmp_path: Path) -> None:
-    assert profile_engine_30d._load_optional_aaii_sentiment(
-        tmp_path / "missing.parquet"
-    ) is None
+    assert (
+        profile_engine_30d._load_optional_aaii_sentiment(tmp_path / "missing.parquet")
+        is None
+    )
 
 
 def test_profile_engine_loads_event_calendar_when_present(tmp_path: Path) -> None:
@@ -99,7 +104,7 @@ def test_profile_engine_loads_event_calendar_when_present(tmp_path: Path) -> Non
                 '    market: "US"',
                 '    type: "CPI"',
                 '    importance: "high"',
-                '    window_days: [-1, 1]',
+                "    window_days: [-1, 1]",
             ]
         )
     )
