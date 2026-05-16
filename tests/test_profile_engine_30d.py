@@ -59,6 +59,29 @@ def test_profile_engine_skips_aaii_sentiment_when_absent(tmp_path: Path) -> None
     ) is None
 
 
+def test_profile_engine_loads_event_calendar_when_present(tmp_path: Path) -> None:
+    yaml_path = tmp_path / "events.yaml"
+    yaml_path.write_text(
+        "\n".join(
+            [
+                "events:",
+                '  - date: "2026-05-12"',
+                '    market: "US"',
+                '    type: "CPI"',
+                '    importance: "high"',
+                '    window_days: [-1, 1]',
+            ]
+        )
+    )
+
+    actual = profile_engine_30d._load_optional_event_calendar(yaml_path)
+
+    assert actual is not None
+    assert len(actual) == 1
+    assert actual.loc[0, "type"] == "CPI"
+    assert actual.loc[0, "window_days"] == [-1, 1]
+
+
 def test_profile_engine_loads_news_sentiment_when_present(tmp_path: Path) -> None:
     parquet_path = tmp_path / "sf_fed_news_sentiment.parquet"
     pd.DataFrame(

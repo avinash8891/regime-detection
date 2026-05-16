@@ -31,6 +31,7 @@ from regime_detection.fragility_universe import CROSS_ASSET_SYMBOLS, SECTOR_ETFS
 from regime_detection.loaders import (
     load_central_bank_text_score,
     load_cpi_vintages_first_release,
+    load_event_calendar,
     load_news_sentiment_series,
 )
 from regime_detection.market_context import build_market_context
@@ -45,6 +46,7 @@ DEFAULT_CONSTITUENT_TREE = REPO_ROOT / "data" / "raw" / "daily_ohlcv_762"
 DEFAULT_MACRO_PARQUET = REPO_ROOT / "data" / "raw" / "macro" / "fred_macro_series.parquet"
 DEFAULT_PIT_PARQUET = REPO_ROOT / "data" / "raw" / "pit_constituents" / "sp500_ticker_intervals.parquet"
 DEFAULT_PMI_PATH = REPO_ROOT / "data" / "manual_inputs" / "pmi" / "ism_manufacturing_pmi.tsv"
+DEFAULT_EVENT_CALENDAR = REPO_ROOT / "configs" / "events" / "us_events.yaml"
 RUN_TIMEOUT_SECONDS = 300
 
 
@@ -136,6 +138,12 @@ def _load_optional_aaii_sentiment(path: Path) -> pd.DataFrame | None:
     if "publication_date" not in frame.columns and "date" not in frame.columns:
         raise ValueError(f"{path} must contain either publication_date or date")
     return frame
+
+
+def _load_optional_event_calendar(path: Path) -> pd.DataFrame | None:
+    if not path.exists():
+        return None
+    return load_event_calendar(path)
 
 
 def _load_optional_news_sentiment(path: Path) -> pd.Series | None:
@@ -499,6 +507,7 @@ def main() -> int:
     parser.add_argument("--macro-parquet", type=Path, default=None)
     parser.add_argument("--pit-parquet", type=Path, default=None)
     parser.add_argument("--pmi-path", type=Path, default=DEFAULT_PMI_PATH)
+    parser.add_argument("--event-calendar", type=Path, default=DEFAULT_EVENT_CALENDAR)
     parser.add_argument("--aaii-sentiment-parquet", type=Path, default=None)
     parser.add_argument("--news-sentiment-parquet", type=Path, default=None)
     parser.add_argument("--fomc-minutes-parquet", type=Path, default=None)
@@ -564,6 +573,7 @@ def main() -> int:
     cross_asset_symbols = [*CROSS_ASSET_SYMBOLS, "DBC", "KRE", "XLY", "XLI", "XLP", "XLU"]
     cross_asset_closes = load_close_dict(args.daily_dir, cross_asset_symbols, spy_index)
     macro_series = load_macro_series(args.macro_parquet, args.pmi_path if args.pmi_path.exists() else None)
+    event_calendar = _load_optional_event_calendar(args.event_calendar)
     aaii_sentiment = _load_optional_aaii_sentiment(args.aaii_sentiment_parquet)
     news_sentiment = _load_optional_news_sentiment(args.news_sentiment_parquet)
     implied_vol_30d = macro_series.get("implied_vol_30d")
@@ -585,6 +595,7 @@ def main() -> int:
         "sector_etf_closes": sector_etf_closes,
         "cross_asset_closes": cross_asset_closes,
         "macro_series": macro_series,
+        "event_calendar": event_calendar,
         "aaii_sentiment": aaii_sentiment,
         "news_sentiment": news_sentiment,
         "implied_vol_30d": implied_vol_30d,
@@ -608,6 +619,7 @@ def main() -> int:
                 sector_etf_closes=sector_etf_closes,
                 cross_asset_closes=cross_asset_closes,
                 macro_series=macro_series,
+                event_calendar=event_calendar,
                 aaii_sentiment=aaii_sentiment,
                 implied_vol_30d=implied_vol_30d,
                 central_bank_text_releases=central_bank_text_releases,
@@ -628,6 +640,7 @@ def main() -> int:
         sector_etf_closes=sector_etf_closes,
         cross_asset_closes=cross_asset_closes,
         macro_series=macro_series,
+        event_calendar=event_calendar,
         aaii_sentiment=aaii_sentiment,
         implied_vol_30d=implied_vol_30d,
         central_bank_text_releases=central_bank_text_releases,
@@ -722,6 +735,7 @@ def main() -> int:
     print(f"market_data_source={args.daily_dir}")
     print(f"constituent_tree_source={args.constituent_tree}")
     print(f"macro_source={args.macro_parquet}")
+    print(f"event_calendar_source={args.event_calendar if event_calendar is not None else '<absent>'}")
     print(f"aaii_sentiment_source={args.aaii_sentiment_parquet if aaii_sentiment is not None else '<absent>'}")
     print(f"news_sentiment_source={args.news_sentiment_parquet if news_sentiment is not None else '<absent>'}")
     print(f"implied_vol_30d_source={'macro_series[implied_vol_30d]' if implied_vol_30d is not None else '<absent>'}")
@@ -742,6 +756,7 @@ def main() -> int:
         "sector_etf_closes",
         "cross_asset_closes",
         "macro_series",
+        "event_calendar",
         "aaii_sentiment",
         "news_sentiment",
         "implied_vol_30d",
