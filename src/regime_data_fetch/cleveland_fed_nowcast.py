@@ -233,6 +233,17 @@ def _parse_category_date(
         except ValueError:
             pass
     try:
+        month_text, day_text = raw_label.split("/", maxsplit=1)
+        month = int(month_text)
+        day = int(day_text)
+        return pd.Timestamp(
+            year=target_month.year,
+            month=month,
+            day=day,
+        )
+    except (TypeError, ValueError):
+        pass
+    try:
         parsed = pd.to_datetime(raw_label, errors="raise")
     except (TypeError, ValueError) as exc:
         raise ClevelandFedNowcastError(

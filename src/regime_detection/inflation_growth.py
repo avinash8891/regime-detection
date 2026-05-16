@@ -363,7 +363,7 @@ def compute_inflation_growth_features(
         eps_revision_sorted.index = pd.DatetimeIndex(
             pd.to_datetime(eps_revision_sorted.index)
         )
-        eps_revision_sorted = eps_revision_sorted.sort_index()
+        eps_revision_sorted = eps_revision_sorted.dropna().sort_index()
         aggregate_forward_eps_revision_direction_4w = (
             eps_revision_sorted.reindex(spy_index, method="ffill").rename(
                 "aggregate_forward_eps_revision_direction_4w"
