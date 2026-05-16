@@ -1384,7 +1384,7 @@ def _build_axis_outputs(
     outputs_by_date: dict[date, AxisOutput] = {}
     stable_by_date: dict[date, str] = {}
     active_by_date: dict[date, str] = {}
-    input_by_date = [series for series in required_inputs]
+    input_by_date = list(required_inputs)
     for day, raw, stable, active, evidence in zip(
         dates, raw_labels, stable_labels, active_labels, raw_evidence, strict=True
     ):
