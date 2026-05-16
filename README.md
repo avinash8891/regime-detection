@@ -1,9 +1,13 @@
 # regime-detection
 
-V1 regime detection engine. See:
+Unified V1+V2 regime detection engine checkout.
+
+Primary docs:
 
 - `docs/regime_engine_v1_final_spec.md`
 - `docs/regime_engine_v1_data_requirements.md`
+- `docs/regime_engine_v2_spec.md`
+- `docs/market_data_fetch_plan.md`
 
 ## Historical Walk-Forward Runner
 
@@ -44,6 +48,14 @@ python3 scripts/fetch_regime_engine_v1_data.py \
 python3 scripts/materialize_regime_data.py \
   --manifest data/manifests/regime_engine_latest.yaml \
   --local-root data/raw
+
+python3 scripts/profile_engine_30d.py \
+  --manifest data/manifests/regime_engine_latest.yaml \
+  --data-root data/raw
+
+python3 scripts/run_v2_walkforward_gate.py \
+  --manifest data/manifests/regime_engine_latest.yaml \
+  --data-root data/raw
 ```
 
 See `docs/market_data_fetch_plan.md` section 0 for the storage contract.

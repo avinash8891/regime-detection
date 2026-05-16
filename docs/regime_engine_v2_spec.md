@@ -1,6 +1,6 @@
 # Regime Detection Engine — V2 Spec
 
-**Status:** roadmap. Do not implement until V1 passes historical walk-forward validation and forward shadow qualification.
+**Status:** normative V2 spec with partial implementation already present in this unified checkout. Treat this file as the rule/contract source, not as a statement that every section is still unbuilt or that every implemented section is already qualified.
 **Builds on:** `regime_engine_v1_final_spec.md`
 **Engine version:** `regime-engine-v2.0.0` (when shipped)
 
@@ -8,7 +8,7 @@
 
 ## 0. Prerequisites
 
-V2 work begins **only after** all of the following hold:
+Net-new V2 work begins **only after** all of the following hold:
 
 - V1 ships all 9 vertical slices.
 - All 10 V1 golden test dates pass.
@@ -37,6 +37,12 @@ state, local `data/raw/` materialization, and manifest-pinned replay are owned
 by `docs/market_data_fetch_plan.md` §0. V2 classifier semantics must consume
 the canonical artifacts named by that contract; this spec does not make
 gitignored local files the source of truth.
+
+Implementation-status note for this repo:
+
+- This branch already contains shipped or partially shipped V2 slices in code and tests.
+- Qualification gates above still control whether those slices are considered operationally approved.
+- When code and this spec disagree, fix the inconsistency explicitly; do not treat the top-level status line as proof that a live code path is absent.
 
 V2 inherits every V1 contract:
 
