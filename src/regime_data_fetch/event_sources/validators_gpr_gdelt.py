@@ -255,8 +255,15 @@ def parse_gpr_table(payload: str | bytes) -> pd.DataFrame:
         try:
             df = pd.read_excel(io.BytesIO(payload))
         except Exception:
-            LOGGER.debug("GPR payload is not Excel, falling back to CSV parsing", exc_info=True)
-            df = pd.read_csv(io.BytesIO(payload))
+            LOGGER.warning(
+                "GPR payload is not valid Excel, falling back to CSV parsing — verify upstream format has not changed",
+                exc_info=True,
+            )
+            try:
+                df = pd.read_csv(io.BytesIO(payload))
+            except Exception:
+                LOGGER.error("GPR payload is neither valid Excel nor valid CSV; cannot parse", exc_info=True)
+                raise
     else:
         df = pd.read_csv(io.StringIO(payload))
     lower_columns = {str(column).strip().lower(): column for column in df.columns}

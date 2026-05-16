@@ -830,7 +830,7 @@ def _merge_notes(existing: str | None, extra: str) -> str:
 def _augment_params_json(params_json: str, *, source_label: str, source_db_path: str) -> str:
     try:
         payload = json.loads(params_json)
-    except Exception:
+    except json.JSONDecodeError:
         LOG.warning(
             "params_json unparseable in _augment_params_json, using raw fallback (first 200 chars): %s",
             params_json[:200],

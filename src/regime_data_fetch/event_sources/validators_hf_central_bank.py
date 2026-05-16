@@ -53,10 +53,18 @@ class HFCentralBankValidator:
             return []
         try:
             parquet_bytes = self.parquet_fetcher()
+        except Exception:
+            _LOG.warning(
+                "HF central bank parquet fetch failed — returning unknown for %d candidates",
+                len(central_bank_candidates),
+                exc_info=True,
+            )
+            return [_unknown(candidate) for candidate in central_bank_candidates]
+        try:
             frame = pd.read_parquet(BytesIO(parquet_bytes))
         except Exception:
             _LOG.warning(
-                "HF central bank parquet fetch/parse failed — returning unknown for %d candidates",
+                "HF central bank parquet parse failed — returning unknown for %d candidates",
                 len(central_bank_candidates),
                 exc_info=True,
             )
