@@ -56,15 +56,10 @@ jobs:
           bash -n scripts/cubic_review.sh
           bash -n scripts/codex_pr_review_toolkit.sh
 
-      - name: Python test discovery
+      - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
           pip install -e ".[dev]"
-          if [ -d tests ]; then
-            pytest -q
-          else
-            echo "No tests directory yet; skipping pytest until V1 implementation begins."
-          fi
 
       - name: Ruff lint check
         run: ruff check .
@@ -72,10 +67,5 @@ jobs:
       - name: Mypy type check
         run: python -m mypy src/ --ignore-missing-imports
 
-      - name: Pytest with coverage floor
-        run: |
-          if [ -d tests ]; then
-            python -m pytest tests/ --cov=src --cov-report=term-missing --cov-fail-under=55 -q --tb=short
-          else
-            echo "No tests directory yet; skipping coverage check."
-          fi
+      - name: Run tests with coverage floor
+        run: python -m pytest tests/ --cov=src --cov-report=term-missing --cov-fail-under=55 -q --tb=short
