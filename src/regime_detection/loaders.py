@@ -7,6 +7,12 @@ from pathlib import Path
 import pandas as pd
 import yaml
 
+from regime_detection.temporal import (
+    parse_date_series,
+    parse_datetime_index,
+    parse_datetime_series,
+)
+
 
 LOG = logging.getLogger(__name__)
 
@@ -97,16 +103,11 @@ def _load_long_form_closes(
     out: dict[str, pd.Series] = {}
     for key, sub in df.groupby(group_col):
         sub = sub.sort_values("date")
-        try:
-            index = pd.to_datetime(sub["date"], errors="raise")
-        except (ValueError, TypeError) as exc:
-            raise ValueError(
-                f"Source contains malformed date values for {group_col}={key!r}"
-            ) from exc
-        if index.isna().any():
-            raise ValueError(
-                f"Source contains malformed date values for {group_col}={key!r}"
-            )
+        index = parse_datetime_index(
+            sub["date"],
+            field_name="date",
+            context=f"Source for {group_col}={key!r}",
+        )
         try:
             values = pd.to_numeric(sub[value_col], errors="raise").astype(float)
         except (ValueError, TypeError) as exc:
@@ -188,7 +189,11 @@ def load_macro_series(
             series_key = str(key)
             out[series_key] = pd.Series(
                 sub["value"].astype(float).to_numpy(),
-                index=pd.to_datetime(sub["date"]),
+                index=parse_datetime_index(
+                    sub["date"],
+                    field_name="date",
+                    context=f"macro logical_name={series_key!r}",
+                ),
                 name=series_key,
             )
 
@@ -216,7 +221,9 @@ def load_cpi_nowcast_series(source: str | Path | pd.DataFrame) -> pd.Series:
     df = df.sort_values("date")
     return pd.Series(
         df["cpi_nowcast"].astype(float).to_numpy(),
-        index=pd.to_datetime(df["date"]),
+        index=parse_datetime_index(
+            df["date"], field_name="date", context="cpi_nowcast source"
+        ),
         name="cpi_nowcast",
     )
 
@@ -333,7 +340,9 @@ def load_news_sentiment_series(
     df = df.sort_values("date")
     return pd.Series(
         df["news_sentiment"].astype(float).to_numpy(),
-        index=pd.DatetimeIndex(pd.to_datetime(df["date"])),
+        index=parse_datetime_index(
+            df["date"], field_name="date", context="news_sentiment source"
+        ),
         name="news_sentiment",
     )
 
@@ -378,8 +387,14 @@ def load_cpi_vintages_first_release(
     if df.empty:
         return pd.Series([], dtype=float, name="cpi_first_release")
     work = df.copy()
-    work["date"] = pd.to_datetime(work["date"])
-    work["realtime_start"] = pd.to_datetime(work["realtime_start"])
+    work["date"] = parse_datetime_series(
+        work["date"], field_name="date", context="cpi_vintages source"
+    )
+    work["realtime_start"] = parse_datetime_series(
+        work["realtime_start"],
+        field_name="realtime_start",
+        context="cpi_vintages source",
+    )
     # Earliest realtime_start per reference date = the first release.
     first_releases = (
         work.sort_values(["date", "realtime_start"])
@@ -417,19 +432,20 @@ def _validate_event_df(df: pd.DataFrame, *, market: str) -> pd.DataFrame:
     if bad_types:
         raise ValueError(f"event_calendar contains unsupported types for V1: {bad_types}")
 
-    out["date"] = pd.to_datetime(out["date"], errors="raise").dt.date
+    out["date"] = parse_date_series(
+        out["date"], field_name="date", context="event_calendar"
+    )
     if "window_days" not in out.columns:
         out["window_days"] = None
     else:
         out["window_days"] = out["window_days"].apply(_parse_window_days)
     if "publication_date" in out.columns:
-        provided_mask = out["publication_date"].notna()
-        parsed_publication = pd.to_datetime(out["publication_date"], errors="coerce")
-        bad_mask = provided_mask & parsed_publication.isna()
-        if bad_mask.any():
-            bad_values = sorted({str(value) for value in out.loc[bad_mask, "publication_date"].tolist()})
-            raise ValueError(f"event_calendar contains malformed publication_date values: {bad_values}")
-        out["publication_date"] = parsed_publication.dt.date.astype("object")
+        out["publication_date"] = parse_date_series(
+            out["publication_date"],
+            field_name="publication_date",
+            context="event_calendar",
+            nullable=True,
+        )
     else:
         out["publication_date"] = None
     if "approved_label" not in out.columns:

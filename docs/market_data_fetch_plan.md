@@ -106,12 +106,17 @@ Canonical rules:
   including source time zones, offsets, or strings. Normalized and canonical
   artifacts apply this contract.
 
-Implementation TODO for the next data-contract slice:
+Implementation status:
 
-1. Add a shared `regime_data_fetch.time_normalization` module with helpers for
-   UTC instants, normalized date-only columns, source-local-to-UTC conversion,
+- Engine-facing loaders now route canonical date/date-index parsing through
+  `regime_detection.temporal` so malformed dates fail with source-specific
+  errors at the loader boundary.
+
+Remaining TODO for the next data-contract slice:
+
+1. Add writer-side helpers for UTC instants, source-local-to-UTC conversion,
    and artifact-level temporal contract assertions.
-2. Route every canonical writer through that module before `to_parquet()`:
+2. Route every canonical writer through those helpers before `to_parquet()`:
    FRED macro/vintages, Alpaca daily OHLCV, Investing economic/holiday/earnings,
    PMI, AAII, SF Fed news sentiment, Cleveland Fed nowcast, FOMC minutes, Powell
    speeches, event candidates/YAML export, EPS history, and PIT constituents.
