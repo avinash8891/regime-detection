@@ -263,6 +263,8 @@ def build_transition_risk_outputs_by_date(
             days_since_axis_switch=switch_days,
         )
         if compose_score:
+            assert transition_score_inputs_by_date is not None
+            assert transition_score_config is not None
             inputs = transition_score_inputs_by_date[day]
             # v2 §6.1 (Slice 6) — pass HMM probabilities as None when NaN
             # so the composer fall-through to the 5-component
