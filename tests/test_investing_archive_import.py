@@ -97,7 +97,7 @@ def test_run_local_investing_archive_import_allows_empty_windows(tmp_path: Path)
         assert conn.execute("SELECT status FROM fetch_runs").fetchone() == ("ok",)
 
 
-def test_run_local_investing_archive_import_does_not_persist_loaded_earnings_page(tmp_path: Path) -> None:
+def test_run_local_investing_archive_import_redacts_loaded_earnings_page(tmp_path: Path) -> None:
     archive_root = tmp_path / "archive"
     _write_archive_fixture(archive_root)
     browser_page = (
@@ -107,7 +107,7 @@ def test_run_local_investing_archive_import_does_not_persist_loaded_earnings_pag
         / "investing_earnings_calendar_loaded_page.html"
     )
     browser_page.parent.mkdir(parents=True)
-    browser_page.write_text('<html>accessToken":"secret-token"</html>')
+    browser_page.write_text('<html>{"accessToken":"secret-token"}</html>')
     out_dir = tmp_path / "data" / "raw"
     db_path = out_dir / "acquisition" / "acquisition.db"
 
@@ -126,7 +126,11 @@ def test_run_local_investing_archive_import_does_not_persist_loaded_earnings_pag
         / "browser_pages"
         / "investing_earnings_calendar_loaded_page.html"
     )
-    assert not raw_browser_page.exists()
+    assert raw_browser_page.exists()
+    raw_page_html = raw_browser_page.read_text()
+    assert "accessToken" in raw_page_html
+    assert "[redacted]" in raw_page_html
+    assert "secret-token" not in raw_page_html
     with sqlite3.connect(db_path) as conn:
         recorded_paths = [
             row[0]
@@ -140,8 +144,8 @@ def test_run_local_investing_archive_import_does_not_persist_loaded_earnings_pag
                 "SELECT uri FROM artifact_records WHERE source_name='investing.com:archive'"
             ).fetchall()
         ]
-    assert all("loaded_page" not in path for path in recorded_paths)
-    assert all("loaded_page" not in path for path in artifact_record_paths)
+    assert any("loaded_page" in path for path in recorded_paths)
+    assert any("loaded_page" in path for path in artifact_record_paths)
 
 
 def test_single_match_uses_latest_archive_capture(tmp_path: Path) -> None:

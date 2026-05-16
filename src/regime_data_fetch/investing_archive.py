@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 import shutil
 from pathlib import Path
 
@@ -216,6 +217,11 @@ def _copy_archive_files(*, archive_root: Path, raw_archive_dir: Path) -> list[Pa
             dst.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(src, dst)
             copied.append(dst)
+    for src in sorted(archive_root.glob("investing_earnings_*/browser_pages/*.html")):
+        dst = raw_archive_dir / src.relative_to(archive_root)
+        dst.parent.mkdir(parents=True, exist_ok=True)
+        dst.write_text(_redact_access_token_html(src.read_text(errors="replace")))
+        copied.append(dst)
     return copied
 
 
@@ -239,6 +245,14 @@ def _min_optional_date(values: list[str | None]) -> str | None:
 def _max_optional_date(values: list[str | None]) -> str | None:
     present = [value for value in values if value is not None]
     return max(present) if present else None
+
+
+def _redact_access_token_html(html: str) -> str:
+    return re.sub(
+        r'("accessToken"\s*:\s*")[^"]+(")',
+        r"\1[redacted]\2",
+        html,
+    )
 
 
 def _start_for_raw_rel(rel: str, economic_min: str | None, holiday_min: str | None, earnings_min: str | None) -> str | None:

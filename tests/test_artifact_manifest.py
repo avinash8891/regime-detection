@@ -75,6 +75,21 @@ def test_manifest_rejects_duplicate_artifact_uris() -> None:
         manifest.validate()
 
 
+def test_manifest_rejects_duplicate_artifact_names() -> None:
+    manifest = ArtifactManifest(
+        artifact_set="regime_engine_2026-05-15",
+        created_at_utc="2026-05-15T12:00:00Z",
+        storage_root="file:///tmp/regime-data",
+        artifacts=[
+            _artifact(name="macro", uri="canonical/a.parquet", local_path="a.parquet"),
+            _artifact(name="macro", uri="canonical/b.parquet", local_path="b.parquet"),
+        ],
+    )
+
+    with pytest.raises(ManifestValidationError, match="duplicate artifact name"):
+        manifest.validate()
+
+
 def test_manifest_ignores_forward_compatible_unknown_fields() -> None:
     payload = _artifact().to_dict()
     payload["future_field"] = {"ignored": True}

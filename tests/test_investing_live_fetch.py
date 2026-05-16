@@ -21,6 +21,11 @@ from regime_data_fetch.investing_live import (
     run_investing_live_fetch,
 )
 
+APPLE_INSTRUMENT_ID = 6408
+APPLE_SYMBOL = "AAPL"
+APPLE_COMPANY = "Apple Inc"
+US_COUNTRY_ID = 5
+
 
 def test_run_investing_live_fetch_materializes_archive_and_records_outputs(
     tmp_path: Path,
@@ -34,7 +39,11 @@ def test_run_investing_live_fetch_materializes_archive_and_records_outputs(
             return _next_data_html(
                 {
                     "eventAndHolidayCountries": [
-                        {"id": 5, "name": "United States", "country_code": "US"}
+                        {
+                            "id": US_COUNTRY_ID,
+                            "name": "United States",
+                            "country_code": "US",
+                        }
                     ]
                 }
             )
@@ -42,7 +51,11 @@ def test_run_investing_live_fetch_materializes_archive_and_records_outputs(
             return _next_data_html(
                 {
                     "stockCountries": [
-                        {"id": 5, "name": "United States", "country_code": "US"}
+                        {
+                            "id": US_COUNTRY_ID,
+                            "name": "United States",
+                            "country_code": "US",
+                        }
                     ]
                 },
                 access_token="fixture-token",
@@ -53,12 +66,12 @@ def test_run_investing_live_fetch_materializes_archive_and_records_outputs(
         url: str, params: dict[str, str], headers: dict[str, str]
     ) -> object:
         if url == f"{CALENDAR_BASE}/v1/calendars/economic/events/occurrences":
-            assert params["country_ids"] == "5"
+            assert params["country_ids"] == str(US_COUNTRY_ID)
             return {
                 "events": [
                     {
                         "id": 1,
-                        "country_id": 5,
+                        "country_id": US_COUNTRY_ID,
                         "currency": "USD",
                         "category": "employment",
                         "importance": "high",
@@ -91,7 +104,7 @@ def test_run_investing_live_fetch_materializes_archive_and_records_outputs(
                         "exchange_id": 1,
                         "exchange_closed": True,
                         "exchange": {
-                            "country_id": 5,
+                            "country_id": US_COUNTRY_ID,
                             "country": "United States",
                             "short_name": "NYSE",
                         },
@@ -105,24 +118,27 @@ def test_run_investing_live_fetch_materializes_archive_and_records_outputs(
                 "earnings": [
                     {
                         "date": "2026-05-01",
-                        "instrument_id": 100,
-                        "country_id": 5,
-                        "company": "Fixture Co",
-                        "symbol": "FIX",
+                        "instrument_id": APPLE_INSTRUMENT_ID,
+                        "country_id": US_COUNTRY_ID,
+                        "company": APPLE_COMPANY,
+                        "symbol": APPLE_SYMBOL,
                         "eps_actual": 1.2,
                     }
                 ]
             }
         if url == f"{CALENDAR_BASE}/v1/instruments":
-            assert params == {"instrument_ids": "100", "domain_id": "56"}
+            assert params == {
+                "instrument_ids": str(APPLE_INSTRUMENT_ID),
+                "domain_id": "56",
+            }
             return [
                 {
-                    "id": 100,
-                    "long_name": "Fixture Co",
-                    "short_name": "Fixture",
-                    "symbol": "FIX",
-                    "display_symbol": "FIX",
-                    "country_id": 5,
+                    "id": APPLE_INSTRUMENT_ID,
+                    "long_name": APPLE_COMPANY,
+                    "short_name": "Apple",
+                    "symbol": APPLE_SYMBOL,
+                    "display_symbol": APPLE_SYMBOL,
+                    "country_id": US_COUNTRY_ID,
                     "country": "United States",
                     "exchange_id": 1,
                     "exchange_short_name": "NYSE",
@@ -133,10 +149,13 @@ def test_run_investing_live_fetch_materializes_archive_and_records_outputs(
                 }
             ]
         if url == f"{CALENDAR_BASE}/v1/instruments/key-metrics":
-            assert params == {"instrument_ids": "100", "domain_id": "56"}
+            assert params == {
+                "instrument_ids": str(APPLE_INSTRUMENT_ID),
+                "domain_id": "56",
+            }
             return [
                 {
-                    "instrument_id": 100,
+                    "instrument_id": APPLE_INSTRUMENT_ID,
                     "key_metrics": {"market_cap": 123, "instrument_type": "Stock"},
                 }
             ]
@@ -150,8 +169,8 @@ def test_run_investing_live_fetch_materializes_archive_and_records_outputs(
         artifact_store_root=tmp_path / "store",
         page_fetcher=page_fetcher,
         json_fetcher=json_fetcher,
-        calendar_country_ids=[5],
-        earnings_country_ids=[5],
+        calendar_country_ids=[US_COUNTRY_ID],
+        earnings_country_ids=[US_COUNTRY_ID],
     )
 
     report = json.loads(report_path.read_text())
@@ -170,7 +189,7 @@ def test_run_investing_live_fetch_materializes_archive_and_records_outputs(
     assert earnings[["company", "country_code", "market_cap", "importance"]].iloc[
         0
     ].to_dict() == {
-        "company": "Fixture Co",
+        "company": APPLE_COMPANY,
         "country_code": "US",
         "market_cap": 123,
         "importance": "high",
@@ -199,7 +218,7 @@ def test_run_investing_live_fetch_fails_loudly_without_earnings_token(
     ) -> object:
         if url == f"{CALENDAR_BASE}/v1/calendars/economic/events/occurrences":
             return {
-                "events": [{"id": 1, "country_id": 5, "event_translated": "Payrolls"}],
+                "events": [{"id": 1, "country_id": US_COUNTRY_ID, "event_translated": "Payrolls"}],
                 "occurrences": [
                     {
                         "occurrence_id": 10,
@@ -214,7 +233,7 @@ def test_run_investing_live_fetch_fails_loudly_without_earnings_token(
                     {
                         "holiday_id": 20,
                         "holiday_start": "2026-05-01T00:00:00Z",
-                        "exchange": {"country_id": 5, "country": "United States"},
+                        "exchange": {"country_id": US_COUNTRY_ID, "country": "United States"},
                     }
                 ]
             }
@@ -232,8 +251,8 @@ def test_run_investing_live_fetch_fails_loudly_without_earnings_token(
             acquisition_db_path=db_path,
             artifact_store_root=tmp_path / "store",
             json_fetcher=json_fetcher,
-            calendar_country_ids=[5],
-            earnings_country_ids=[5],
+            calendar_country_ids=[US_COUNTRY_ID],
+            earnings_country_ids=[US_COUNTRY_ID],
             earnings_browser_capture=False,
         )
 
@@ -245,6 +264,7 @@ def test_run_investing_live_fetch_captures_browser_page_when_missing_token(
 ) -> None:
     out_dir = tmp_path / "data" / "raw"
     db_path = out_dir / "acquisition" / "acquisition.db"
+    token = _future_jwt()
 
     def earnings_page_capturer(output_path: Path) -> Path:
         output_path.parent.mkdir(parents=True, exist_ok=True)
@@ -252,10 +272,14 @@ def test_run_investing_live_fetch_captures_browser_page_when_missing_token(
             _next_data_html(
                 {
                     "stockCountries": [
-                        {"id": 5, "name": "United States", "country_code": "US"}
+                        {
+                            "id": US_COUNTRY_ID,
+                            "name": "United States",
+                            "country_code": "US",
+                        }
                     ]
                 },
-                access_token=_future_jwt(),
+                access_token=token,
             )
         )
         return output_path
@@ -269,11 +293,27 @@ def test_run_investing_live_fetch_captures_browser_page_when_missing_token(
             return {"holidays": []}
         if url == f"{EARNINGS_BASE}/v1/instruments/earnings":
             assert headers["Authorization"].startswith("Bearer ")
-            return {"earnings": [{"date": "2026-05-01", "instrument_id": 100}]}
+            return {
+                "earnings": [
+                    {"date": "2026-05-01", "instrument_id": APPLE_INSTRUMENT_ID}
+                ]
+            }
         if url == f"{CALENDAR_BASE}/v1/instruments":
-            return [{"id": 100, "long_name": "Fixture Co", "country_id": 5}]
+            return [
+                {
+                    "id": APPLE_INSTRUMENT_ID,
+                    "long_name": APPLE_COMPANY,
+                    "symbol": APPLE_SYMBOL,
+                    "country_id": US_COUNTRY_ID,
+                }
+            ]
         if url == f"{CALENDAR_BASE}/v1/instruments/key-metrics":
-            return [{"instrument_id": 100, "key_metrics": {"market_cap": 123}}]
+            return [
+                {
+                    "instrument_id": APPLE_INSTRUMENT_ID,
+                    "key_metrics": {"market_cap": 123},
+                }
+            ]
         raise AssertionError(url)
 
     report_path = run_investing_live_fetch(
@@ -283,8 +323,8 @@ def test_run_investing_live_fetch_captures_browser_page_when_missing_token(
         acquisition_db_path=db_path,
         artifact_store_root=tmp_path / "store",
         json_fetcher=json_fetcher,
-        calendar_country_ids=[5],
-        earnings_country_ids=[5],
+        calendar_country_ids=[US_COUNTRY_ID],
+        earnings_country_ids=[US_COUNTRY_ID],
         earnings_page_capturer=earnings_page_capturer,
     )
 
@@ -293,23 +333,33 @@ def test_run_investing_live_fetch_captures_browser_page_when_missing_token(
         "economic_events_rows": 0,
         "holiday_rows": 0,
         "earnings_rows": 1,
-        "raw_files": 9,
+        "raw_files": 10,
     }
-    assert (
+    live_page = (
         out_dir
         / "investing_live_archive"
         / "investing_earnings_2026-05-01_2026-05-01"
         / "browser_pages"
         / "investing_earnings_calendar_loaded_page.html"
-    ).exists()
-    assert not (
+    )
+    raw_page = (
         out_dir
         / "investing"
         / "raw_archive"
         / "investing_earnings_2026-05-01_2026-05-01"
         / "browser_pages"
         / "investing_earnings_calendar_loaded_page.html"
-    ).exists()
+    )
+    assert live_page.exists()
+    assert raw_page.exists()
+    live_page_html = live_page.read_text()
+    raw_page_html = raw_page.read_text()
+    assert "accessToken" in live_page_html
+    assert "accessToken" in raw_page_html
+    assert "[redacted]" in live_page_html
+    assert "[redacted]" in raw_page_html
+    assert token not in live_page_html
+    assert token not in raw_page_html
 
 
 def test_run_investing_live_fetch_reads_token_from_loaded_earnings_page(
@@ -322,7 +372,7 @@ def test_run_investing_live_fetch_reads_token_from_loaded_earnings_page(
         _next_data_html(
             {
                 "stockCountries": [
-                    {"id": 5, "name": "United States", "country_code": "US"}
+                    {"id": US_COUNTRY_ID, "name": "United States", "country_code": "US"}
                 ]
             },
             access_token=_future_jwt(),
@@ -340,13 +390,29 @@ def test_run_investing_live_fetch_reads_token_from_loaded_earnings_page(
             assert headers["Authorization"].startswith("Bearer ")
             return {
                 "earnings": [
-                    {"date": "2026-05-01", "instrument_id": 100, "eps_actual": 1.2}
+                    {
+                        "date": "2026-05-01",
+                        "instrument_id": APPLE_INSTRUMENT_ID,
+                        "eps_actual": 1.2,
+                    }
                 ]
             }
         if url == f"{CALENDAR_BASE}/v1/instruments":
-            return [{"id": 100, "long_name": "Fixture Co", "country_id": 5}]
+            return [
+                {
+                    "id": APPLE_INSTRUMENT_ID,
+                    "long_name": APPLE_COMPANY,
+                    "symbol": APPLE_SYMBOL,
+                    "country_id": US_COUNTRY_ID,
+                }
+            ]
         if url == f"{CALENDAR_BASE}/v1/instruments/key-metrics":
-            return [{"instrument_id": 100, "key_metrics": {"market_cap": 123}}]
+            return [
+                {
+                    "instrument_id": APPLE_INSTRUMENT_ID,
+                    "key_metrics": {"market_cap": 123},
+                }
+            ]
         raise AssertionError(url)
 
     report_path = run_investing_live_fetch(
@@ -356,8 +422,8 @@ def test_run_investing_live_fetch_reads_token_from_loaded_earnings_page(
         acquisition_db_path=db_path,
         artifact_store_root=tmp_path / "store",
         json_fetcher=json_fetcher,
-        calendar_country_ids=[5],
-        earnings_country_ids=[5],
+        calendar_country_ids=[US_COUNTRY_ID],
+        earnings_country_ids=[US_COUNTRY_ID],
         earnings_loaded_page_path=loaded_page,
     )
 
@@ -365,7 +431,7 @@ def test_run_investing_live_fetch_reads_token_from_loaded_earnings_page(
     assert report["counts"]["earnings_rows"] == 1
     earnings = pd.read_parquet(out_dir / "investing" / "earnings.parquet")
     assert earnings[["company", "country_code", "market_cap"]].iloc[0].to_dict() == {
-        "company": "Fixture Co",
+        "company": APPLE_COMPANY,
         "country_code": "US",
         "market_cap": 123,
     }
@@ -374,6 +440,52 @@ def test_run_investing_live_fetch_reads_token_from_loaded_earnings_page(
 def test_validate_token_rejects_malformed_jwt_payload() -> None:
     with pytest.raises(RuntimeError, match="malformed"):
         _validate_token_not_expired("header.not-base64.signature")
+
+
+def test_validate_token_rejects_expired_jwt_payload() -> None:
+    header = _b64({"alg": "HS256", "typ": "JWT"})
+    payload = _b64({"exp": int(time.time()) - 60})
+
+    with pytest.raises(RuntimeError, match="expired"):
+        _validate_token_not_expired(f"{header}.{payload}.signature")
+
+
+def test_run_investing_live_fetch_slices_earnings_by_inclusive_month(
+    tmp_path: Path,
+) -> None:
+    out_dir = tmp_path / "data" / "raw"
+    db_path = out_dir / "acquisition" / "acquisition.db"
+    earnings_windows: list[tuple[str, str]] = []
+
+    def json_fetcher(
+        url: str, params: dict[str, str], headers: dict[str, str]
+    ) -> object:
+        del headers
+        if url == f"{CALENDAR_BASE}/v1/calendars/economic/events/occurrences":
+            return {"events": [], "occurrences": []}
+        if url == f"{CALENDAR_BASE}/v1/calendars/holidays":
+            return {"holidays": []}
+        if url == f"{EARNINGS_BASE}/v1/instruments/earnings":
+            earnings_windows.append((params["start_date"], params["end_date"]))
+            return {"earnings": []}
+        raise AssertionError(url)
+
+    run_investing_live_fetch(
+        out_dir=out_dir,
+        start=pd.Timestamp("2026-01-31").date(),
+        end=pd.Timestamp("2026-02-01").date(),
+        acquisition_db_path=db_path,
+        artifact_store_root=tmp_path / "store",
+        json_fetcher=json_fetcher,
+        calendar_country_ids=[US_COUNTRY_ID],
+        earnings_country_ids=[US_COUNTRY_ID],
+        earnings_access_token=_future_jwt(),
+    )
+
+    assert earnings_windows == [
+        ("2026-01-31T00:00:00.000Z", "2026-01-31T23:59:59.999Z"),
+        ("2026-02-01T00:00:00.000Z", "2026-02-01T23:59:59.999Z"),
+    ]
 
 
 def test_browser_capture_writes_redacted_page_without_access_token(

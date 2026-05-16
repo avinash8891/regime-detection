@@ -176,6 +176,12 @@ def capture_investing_live_archive(
         )
         if earnings_page_capturer is not None:
             earnings_loaded_page_path = earnings_page_capturer(capture_path)
+            captured_html = earnings_loaded_page_path.read_text(errors="replace")
+            captured_access_token = _access_token_from_page(captured_html)
+            _validate_token_not_expired(captured_access_token)
+            earnings_loaded_page_path.write_text(
+                _redact_access_token(captured_html, captured_access_token)
+            )
         else:
             captured_page = _capture_investing_earnings_page_with_token(
                 output_path=capture_path,

@@ -2,18 +2,24 @@ from __future__ import annotations
 
 import sys
 from pathlib import Path
-from types import SimpleNamespace
 
 import pandas as pd
 import pytest
 
+from regime_detection.models import AxisOutput, DataQuality
 from scripts import run_v2_shadow_ab_gate, run_v2_walkforward_gate
 
 pytestmark = [pytest.mark.slow, pytest.mark.v2_gate]
 
 
 def test_gate_reporting_label_uses_granular_status() -> None:
-    output = SimpleNamespace(active_label="unknown", classification_status="no_rule_fired")
+    output = AxisOutput(
+        raw_label="unknown",
+        stable_label="unknown",
+        active_label="unknown",
+        evidence={},
+        data_quality=DataQuality(status="ok", freshness_days=0, completeness=1.0),
+    )
 
     assert run_v2_walkforward_gate._reporting_label(output) == "no_rule_fired"
     assert run_v2_shadow_ab_gate._reporting_label(output) == "no_rule_fired"

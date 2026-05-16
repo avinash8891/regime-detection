@@ -21,6 +21,7 @@ from regime_data_fetch.fetch_workflow import (
 )
 from regime_data_fetch.ism import extract_ism_pmi_value, release_timestamp_for
 from regime_data_fetch.universe import FIXED_UNIVERSE_SYMBOL_COUNT
+from scripts import fetch_regime_engine_v1_data as fetch_script
 from scripts.fetch_regime_engine_v1_data import (
     FETCH_MODES,
     OPERATOR_ASSISTED_FETCH_MODES,
@@ -717,6 +718,128 @@ def test_fetch_mode_sets_make_operator_assisted_boundary_explicit() -> None:
         assert not _should_fetch("all", mode), mode
     for mode in UNATTENDED_FETCH_MODES:
         assert _should_fetch("all", mode), mode
+
+
+def test_fetch_all_dispatches_only_unattended_modes(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    called: list[str] = []
+
+    def report_for(name: str):
+        def _fake(**kwargs):
+            del kwargs
+            called.append(name)
+            path = tmp_path / f"{name}.json"
+            path.write_text(json.dumps({"paths": {}}))
+            return path
+
+        return _fake
+
+    unattended_callables = {
+        "market": "run_market_fetch",
+        "macro": "run_macro_fetch",
+        "sentiment": "run_sentiment_fetch",
+        "events": "run_us_event_calendar_fetch",
+        "pmi": "run_pmi_fetch",
+        "pit": "run_pit_constituents_fetch",
+        "fomc": "run_fomc_minutes_fetch",
+        "powell": "run_powell_speeches_fetch",
+        "cleveland-fed-nowcast": "run_cleveland_fed_nowcast_fetch",
+        "sf-fed-news-sentiment": "run_sf_fed_news_sentiment_fetch",
+        "daily-ohlcv-constituents-alpaca": "run_alpaca_constituent_daily_ohlcv_fetch",
+    }
+    for mode, attr in unattended_callables.items():
+        monkeypatch.setattr(fetch_script, attr, report_for(mode))
+
+    def operator_called(name: str):
+        def _fake(**kwargs):
+            del kwargs
+            raise AssertionError(f"operator-assisted fetch was called by --fetch all: {name}")
+
+        return _fake
+
+    operator_callables = {
+        "eps": "run_aggregate_eps_fetch",
+        "eps-spglobal-auto": "run_aggregate_eps_auto_fetch",
+        "eps-wayback": "run_wayback_aggregate_eps_fetch",
+        "usd-index-local": "run_local_usd_index_import",
+        "daily-ohlcv-local-sqlite": "run_local_daily_ohlcv_sqlite_import",
+        "investing-archive-local": "run_local_investing_archive_import",
+        "investing-live": "run_investing_live_fetch",
+    }
+    for mode, attr in operator_callables.items():
+        monkeypatch.setattr(fetch_script, attr, operator_called(mode))
+
+    monkeypatch.setattr(
+        "sys.argv",
+        [
+            "fetch_regime_engine_v1_data.py",
+            "--fetch",
+            "all",
+            "--scope",
+            "v2",
+            "--out-dir",
+            str(tmp_path / "data" / "raw"),
+            "--acquisition-db",
+            str(tmp_path / "data" / "raw" / "acquisition.db"),
+        ],
+    )
+
+    assert fetch_script.main() == 0
+    assert set(called) == set(UNATTENDED_FETCH_MODES)
+    assert set(called).isdisjoint(OPERATOR_ASSISTED_FETCH_MODES)
+
+
+def test_emit_manifest_uses_all_runner_use_cases_by_default(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    captured: dict[str, object] = {}
+
+    def fake_market(**kwargs):
+        del kwargs
+        report = tmp_path / "market_report.json"
+        report.write_text(json.dumps({"paths": {}}))
+        return report
+
+    class FakeManifest:
+        artifacts = [object(), object()]
+
+    def fake_emit_manifest_for_report_paths(**kwargs):
+        captured.update(kwargs)
+        return FakeManifest()
+
+    monkeypatch.setattr(fetch_script, "run_market_fetch", fake_market)
+    monkeypatch.setattr(
+        fetch_script,
+        "emit_manifest_for_report_paths",
+        fake_emit_manifest_for_report_paths,
+    )
+    monkeypatch.setattr(
+        "sys.argv",
+        [
+            "fetch_regime_engine_v1_data.py",
+            "--fetch",
+            "market",
+            "--scope",
+            "v2",
+            "--out-dir",
+            str(tmp_path / "data" / "raw"),
+            "--emit-manifest",
+            str(tmp_path / "manifest.yaml"),
+            "--artifact-store",
+            str(tmp_path / "store"),
+        ],
+    )
+
+    assert fetch_script.main() == 0
+    assert captured["required_for"] == [
+        "profile_engine_30d",
+        "v2_calibration",
+        "historical_walkforward",
+        "audit_layer2_30d",
+    ]
 
 
 def test_event_calendar_fetch_symbol_is_wired() -> None:

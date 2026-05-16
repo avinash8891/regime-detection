@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+import subprocess
 import sys
 from pathlib import Path
 
 import pandas as pd
+import pytest
 
 from regime_data_fetch.artifact_manifest import (
     ArtifactManifest,
@@ -115,27 +117,98 @@ def test_walkforward_gate_parse_args_materializes_manifest_defaults(
     assert args.pmi_path.exists()
 
 
-def test_manifest_materialization_is_wired_for_all_runner_entrypoints() -> None:
-    expected = {
-        "scripts/run_v2_walkforward_gate.py": 'required_for="v2_calibration"',
-        "scripts/run_v2_shadow_ab_gate.py": 'required_for="v2_calibration"',
-        "scripts/run_v2_calibration.py": 'required_for="v2_calibration"',
-        "scripts/run_historical_walkforward.py": 'required_for="historical_walkforward"',
-        "scripts/profile_engine_30d.py": 'required_for="profile_engine_30d"',
-        "scripts/audit_layer2_30d.py": 'required_for="audit_layer2_30d"',
-    }
-    for path, required_for in expected.items():
-        text = Path(path).read_text()
-        assert "materialize_if_requested" in text, path
-        assert "--manifest" in text, path
-        assert "--artifact-store" in text, path
-        assert "--data-root" in text, path
-        assert required_for in text, path
-
-
-def test_emitted_manifest_tags_all_runner_use_cases_by_default() -> None:
-    text = Path("scripts/fetch_regime_engine_v1_data.py").read_text()
-    assert (
-        'default="profile_engine_30d,v2_calibration,historical_walkforward,audit_layer2_30d"'
-        in text
+@pytest.mark.parametrize(
+    ("script_path", "required_for", "extra_args"),
+    [
+        (
+            "scripts/run_v2_walkforward_gate.py",
+            "v2_calibration",
+            ["--output", "out.md", "--start-date", "2026-05-15", "--end-date", "2026-05-15"],
+        ),
+        (
+            "scripts/run_v2_shadow_ab_gate.py",
+            "v2_calibration",
+            ["--output", "out.md", "--n-sessions", "1"],
+        ),
+        ("scripts/run_v2_calibration.py", "v2_calibration", []),
+        (
+            "scripts/run_historical_walkforward.py",
+            "historical_walkforward",
+            [
+                "--market-data",
+                "missing-market.parquet",
+                "--output-root",
+                "walkforward-out",
+                "--start-date",
+                "2026-05-15",
+                "--end-date",
+                "2026-05-15",
+            ],
+        ),
+        (
+            "scripts/profile_engine_30d.py",
+            "profile_engine_30d",
+            ["--config-path", "missing-config.yaml"],
+        ),
+        (
+            "scripts/audit_layer2_30d.py",
+            "audit_layer2_30d",
+            ["--config-path", "missing-config.yaml"],
+        ),
+    ],
+)
+def test_runner_entrypoints_materialize_manifest_before_loading_inputs(
+    tmp_path: Path,
+    script_path: str,
+    required_for: str,
+    extra_args: list[str],
+) -> None:
+    store_root = tmp_path / "store"
+    source = store_root / "canonical" / required_for / "marker.txt"
+    source.parent.mkdir(parents=True)
+    source.write_text(f"{required_for}\n")
+    manifest = ArtifactManifest(
+        artifact_set=f"{required_for}-runner-test",
+        created_at_utc="2026-05-15T12:00:00Z",
+        storage_root=str(store_root),
+        artifacts=[
+            ManifestArtifact.from_dict(
+                {
+                    "name": f"{required_for}_marker",
+                    "stage": "canonical",
+                    "uri": f"canonical/{required_for}/marker.txt",
+                    "local_path": f"data/raw/{required_for}/marker.txt",
+                    "sha256": sha256_file(source),
+                    "required_for": [required_for],
+                }
+            )
+        ],
     )
+    manifest_path = tmp_path / "manifest.yaml"
+    data_root = tmp_path / "data" / "raw"
+    write_manifest(manifest, manifest_path)
+
+    def tmp_arg(arg: str) -> str:
+        if arg.startswith("--"):
+            return arg
+        if arg.endswith((".md", ".parquet", ".yaml")) or arg.endswith("-out"):
+            return str(tmp_path / arg)
+        return arg
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            script_path,
+            "--manifest",
+            str(manifest_path),
+            "--data-root",
+            str(data_root),
+            *[tmp_arg(arg) for arg in extra_args],
+        ],
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+    assert result.returncode != 0
+    assert (data_root / required_for / "marker.txt").read_text() == f"{required_for}\n"
