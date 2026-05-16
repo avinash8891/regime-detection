@@ -464,7 +464,7 @@ def _dump_json_payload(payload: dict[str, Any], *, indent: int | None, ensure_as
     return json.dumps(payload, **json_kwargs)
 
 
-def _rewrite_legacy_v1_wire_shapes(payload: dict[str, Any]) -> dict[str, Any]:
+def _project_legacy_v1_wire_shapes(payload: dict[str, Any]) -> dict[str, Any]:
     if payload.get("config_version") != _V1_CONFIG_VERSION:
         return payload
 
@@ -524,22 +524,29 @@ class RegimeOutput(BaseModel):
     agent_routing: "AgentRouting | None" = None  # v2 §5.1 (slice 5.1)
     strategy_family_constraints: dict[str, StrategyFamilyConstraint] | None = None  # v2 §5.2 (slice 5.2)
 
-    # V1 wire contract: omit any None-valued conditional fields in nested models.
-    # This must be applied at the top-level dump to propagate into nested models.
-    def model_dump(self, *args: Any, **kwargs: Any) -> dict[str, Any]:
+    def model_dump_legacy_v1_wire(self, *args: Any, **kwargs: Any) -> dict[str, Any]:
+        """Compatibility projection for archived V1 wire-shape replay."""
         kwargs.setdefault("exclude_none", True)
         payload = super().model_dump(*args, **kwargs)
-        return _rewrite_legacy_v1_wire_shapes(payload)
+        return _project_legacy_v1_wire_shapes(payload)
 
-    def model_dump_json(self, *args: Any, **kwargs: Any) -> str:
+    # V1 wire contract: omit any None-valued conditional fields in nested models.
+    # Existing callers still receive the archived compatibility projection.
+    def model_dump(self, *args: Any, **kwargs: Any) -> dict[str, Any]:
+        return self.model_dump_legacy_v1_wire(*args, **kwargs)
+
+    def model_dump_json_legacy_v1_wire(self, *args: Any, **kwargs: Any) -> str:
         indent = kwargs.pop("indent", None)
         ensure_ascii = kwargs.pop("ensure_ascii", False)
         kwargs.setdefault("mode", "json")
         return _dump_json_payload(
-            self.model_dump(*args, **kwargs),
+            self.model_dump_legacy_v1_wire(*args, **kwargs),
             indent=indent,
             ensure_ascii=ensure_ascii,
         )
+
+    def model_dump_json(self, *args: Any, **kwargs: Any) -> str:
+        return self.model_dump_json_legacy_v1_wire(*args, **kwargs)
 
 
 class RegimeTimeline(BaseModel):
@@ -553,21 +560,28 @@ class RegimeTimeline(BaseModel):
     trading_calendar: str
     outputs: list[RegimeOutput]
 
-    def model_dump(self, *args: Any, **kwargs: Any) -> dict[str, Any]:
+    def model_dump_legacy_v1_wire(self, *args: Any, **kwargs: Any) -> dict[str, Any]:
+        """Compatibility projection for archived V1 wire-shape replay."""
         kwargs.setdefault("exclude_none", True)
         payload = super().model_dump(*args, **kwargs)
         payload["outputs"] = [
-            _rewrite_legacy_v1_wire_shapes(output)
+            _project_legacy_v1_wire_shapes(output)
             for output in payload.get("outputs", [])
         ]
         return payload
 
-    def model_dump_json(self, *args: Any, **kwargs: Any) -> str:
+    def model_dump(self, *args: Any, **kwargs: Any) -> dict[str, Any]:
+        return self.model_dump_legacy_v1_wire(*args, **kwargs)
+
+    def model_dump_json_legacy_v1_wire(self, *args: Any, **kwargs: Any) -> str:
         indent = kwargs.pop("indent", None)
         ensure_ascii = kwargs.pop("ensure_ascii", False)
         kwargs.setdefault("mode", "json")
         return _dump_json_payload(
-            self.model_dump(*args, **kwargs),
+            self.model_dump_legacy_v1_wire(*args, **kwargs),
             indent=indent,
             ensure_ascii=ensure_ascii,
         )
+
+    def model_dump_json(self, *args: Any, **kwargs: Any) -> str:
+        return self.model_dump_json_legacy_v1_wire(*args, **kwargs)

@@ -55,7 +55,18 @@ def test_core3_v1_regime_output_keeps_legacy_placeholder_wire_shapes(market_df_f
         config_path=Path("src/regime_detection/configs/core3-v1.0.0.yaml")
     )
     out = engine.classify(as_of_date=as_of, market_data=market_df_for_asof(as_of))
-    dumped = out.model_dump()
+    dumped = out.model_dump_legacy_v1_wire()
+
+    assert dumped == out.model_dump()
+    assert out.model_dump_json_legacy_v1_wire(indent=2) == out.model_dump_json(indent=2)
+
+    timeline = engine.classify_window(
+        end_date=as_of,
+        market_data=market_df_for_asof(as_of),
+        lookback_days=1,
+    )
+    assert timeline.model_dump_legacy_v1_wire() == timeline.model_dump()
+    assert timeline.model_dump_legacy_v1_wire()["outputs"][-1] == dumped
 
     assert dumped["structural_causal_state"]["monetary_pressure"] == {
         "label": "unknown",
