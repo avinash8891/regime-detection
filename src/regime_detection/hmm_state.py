@@ -57,27 +57,6 @@ class _StrictConvergenceMonitor(ConvergenceMonitor):
         return self.non_monotonic or super().converged
 
 
-class _StrictConvergenceMonitor(ConvergenceMonitor):
-    """Track non-monotonic EM fits without letting hmmlearn write to stderr."""
-
-    non_monotonic: bool
-
-    def __init__(self, tol: float, n_iter: int, verbose: bool) -> None:
-        super().__init__(tol=tol, n_iter=n_iter, verbose=verbose)
-        self.non_monotonic = False
-
-    def report(self, log_prob: float) -> None:
-        precision = np.finfo(float).eps ** 0.5
-        if self.history and (log_prob - self.history[-1]) < -precision:
-            self.non_monotonic = True
-        self.history.append(log_prob)
-        self.iter += 1
-
-    @property
-    def converged(self) -> bool:
-        return self.non_monotonic or super().converged
-
-
 @dataclass(frozen=True)
 class HMMFeatures:
     """v2 §6.1 — per-session HMM posterior + top-state probability.
