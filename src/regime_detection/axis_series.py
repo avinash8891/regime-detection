@@ -123,7 +123,19 @@ def build_axis_series_bundle(*, context: MarketContext, feature_store: FeatureSt
 
 def build_event_calendar_series(context: MarketContext) -> dict[date, EventCalendarOutput]:
     """Bulk wrapper around :func:`compute_event_calendar_outputs` — pulls
-    ``sessions`` and the pre-normalized event calendar off the context."""
+    ``sessions`` and the pre-normalized event calendar off the context.
+
+    **By Design**: Event calendar is intentionally asymmetric to all other axes.
+    Unlike trend_direction, trend_character, volatility_state, and breadth_state
+    (which wrap their outputs in AxisSeriesResult with hysteresis, staleness gating,
+    and DataQuality logic), event_calendar produces raw EventCalendarOutput dicts—
+    it is a label-lookup service, not a signal classifier. There is no hysteresis,
+    no staleness gating, no DataQuality wrapping.
+
+    Downstream code (e.g., transition_risk_series.py) accesses .active_label
+    directly and expects KeyError if a date is missing, consistent with the
+    strict-lookup pattern throughout the engine.
+    """
     return compute_event_calendar_outputs(
         sessions=context.sessions,
         normalized_event_calendar=context.normalized_event_calendar,

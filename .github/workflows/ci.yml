@@ -68,4 +68,5 @@ jobs:
         run: python -m mypy src/ --ignore-missing-imports
 
       - name: Run tests with coverage floor
+        # TODO: ratchet coverage floor to 80% per repo standard (currently 55% — reflects in-flight tech debt reduction)
         run: python -m pytest tests/ --cov=src --cov-report=term-missing --cov-fail-under=55 -q --tb=short
