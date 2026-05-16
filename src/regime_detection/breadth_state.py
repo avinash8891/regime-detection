@@ -13,7 +13,7 @@ import pandas as pd
 from regime_detection._axis_result import AxisSeriesResult
 from regime_detection.data_quality import assess_series_input_quality
 from regime_detection.hysteresis import apply_asymmetric_hysteresis
-from regime_detection.models import BreadthStateOutput, DataQuality
+from regime_detection.models import AxisOutput, BreadthStateOutput, DataQuality
 
 
 # V2 §1D (Ambiguity Log #21-#26, #68, #69, #70) extends the V1 5-label set
@@ -568,9 +568,7 @@ def build_axis_series(
         escalation_days=context.config.hysteresis.breadth_escalation_days,
         deescalation_days=context.config.hysteresis.breadth_deescalation_days,
     )
-    outputs_by_date: dict[date, BreadthStateOutput] = {}
-    stable_by_date: dict[date, str] = {}
-    active_by_date: dict[date, str] = {}
+    outputs_by_date: dict[date, AxisOutput | BreadthStateOutput] = {}
     for day, raw, stable, active, evidence in zip(
         spy_close.index.date, raw_labels, stable_labels, active_labels, raw_evidence, strict=True
     ):
@@ -616,10 +614,4 @@ def build_axis_series(
                 ),
             )
         outputs_by_date[day] = output
-        stable_by_date[day] = output.stable_label
-        active_by_date[day] = output.active_label
-    return AxisSeriesResult(
-        outputs_by_date=outputs_by_date,
-        stable_labels_by_date=stable_by_date,
-        active_labels_by_date=active_by_date,
-    )
+    return AxisSeriesResult(outputs_by_date=outputs_by_date)

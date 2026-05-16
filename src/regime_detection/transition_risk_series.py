@@ -2,11 +2,13 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import date
+from typing import cast
 
 import pandas as pd
 
 from regime_detection.axis_series import AxisSeriesBundle
 from regime_detection.config import TransitionScoreConfig
+from regime_detection.event_calendar import EventCalendarLabel
 from regime_detection.feature_store import FeatureStore
 from regime_detection.market_context import MarketContext
 from regime_detection.models import EventCalendarOutput, TransitionRiskOutput
@@ -172,7 +174,7 @@ def _build_transition_score_inputs_by_date(
             pct_above_50dma=float(pct50[i]),
             avg_pairwise_corr_percentile_504d=float(corr[i]),
             drawdown_252d=float(dd252[i]),
-            event_calendar_label=event_calendar[day].active_label,
+            event_calendar_label=cast(EventCalendarLabel, event_calendar[day].active_label),
             hmm_top_state_prob_now=float(hmm_now[i]),
             hmm_top_state_prob_5d_ago=float(hmm_5d_ago[i]),
             change_point_score=float(cp[i]),
@@ -263,8 +265,11 @@ def build_transition_risk_outputs_by_date(
             days_since_axis_switch=switch_days,
         )
         if compose_score:
-            assert transition_score_inputs_by_date is not None
-            assert transition_score_config is not None
+            if transition_score_inputs_by_date is None or transition_score_config is None:
+                raise RuntimeError(
+                    "compose_score is True but transition_score_inputs_by_date or "
+                    "transition_score_config is None — caller error"
+                )
             inputs = transition_score_inputs_by_date[day]
             # v2 §6.1 (Slice 6) — pass HMM probabilities as None when NaN
             # so the composer fall-through to the 5-component

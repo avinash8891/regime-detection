@@ -16,8 +16,14 @@ from regime_detection.models import AxisOutput, BreadthStateOutput, DataQuality
 @dataclass(frozen=True)
 class AxisSeriesResult:
     outputs_by_date: dict[date, AxisOutput | BreadthStateOutput]
-    stable_labels_by_date: dict[date, str]
-    active_labels_by_date: dict[date, str]
+
+    @property
+    def stable_labels_by_date(self) -> dict[date, str]:
+        return {d: out.stable_label for d, out in self.outputs_by_date.items()}
+
+    @property
+    def active_labels_by_date(self) -> dict[date, str]:
+        return {d: out.active_label for d, out in self.outputs_by_date.items()}
 
 
 def _build_axis_outputs(
@@ -35,8 +41,6 @@ def _build_axis_outputs(
     min_completeness: float,
 ) -> AxisSeriesResult:
     outputs_by_date: dict[date, AxisOutput] = {}
-    stable_by_date: dict[date, str] = {}
-    active_by_date: dict[date, str] = {}
     input_by_date = list(required_inputs)
     for day, raw, stable, active, evidence in zip(
         dates, raw_labels, stable_labels, active_labels, raw_evidence, strict=True
@@ -70,10 +74,4 @@ def _build_axis_outputs(
                 data_quality=dq,
             )
         outputs_by_date[day] = output
-        stable_by_date[day] = output.stable_label
-        active_by_date[day] = output.active_label
-    return AxisSeriesResult(
-        outputs_by_date=outputs_by_date,
-        stable_labels_by_date=stable_by_date,
-        active_labels_by_date=active_by_date,
-    )
+    return AxisSeriesResult(outputs_by_date=outputs_by_date)
