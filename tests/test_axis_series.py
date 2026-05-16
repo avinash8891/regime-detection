@@ -22,6 +22,7 @@ def test_axis_series_bundle_contract_names_every_timeline_axis() -> None:
         "volume_liquidity_state",
         "credit_funding",
         "credit_funding_proxy",
+        "credit_funding_effective",
         "monetary_pressure_state",
         "inflation_growth",
     }
