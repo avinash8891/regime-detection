@@ -30,7 +30,7 @@ from regime_detection.config import HMMConfig
 
 __all__ = ["HMMFeatures", "compute_hmm_features"]
 
-_LOGGER = logging.getLogger(__name__)
+_LOG = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -110,7 +110,7 @@ def compute_hmm_features(
         # Fail-open: degenerate inputs (singular covariance, etc.) should
         # not crash the engine — the seam goes None and downstream falls
         # back to the 5-component transition score.
-        _LOGGER.warning(
+        _LOG.warning(
             "GaussianHMM fit/predict failed; HMM seam returns None: %s", exc
         )
         return None

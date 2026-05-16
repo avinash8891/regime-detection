@@ -31,7 +31,7 @@ from regime_detection.config import ClusteringConfig
 
 __all__ = ["ClusteringFeatures", "compute_clustering_features"]
 
-_LOGGER = logging.getLogger(__name__)
+_LOG = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -125,7 +125,7 @@ def compute_clustering_features(
         full_X = frame.to_numpy(dtype=float)
         proba = model.predict_proba(full_X)
     except Exception as exc:  # noqa: BLE001
-        _LOGGER.warning(
+        _LOG.warning(
             "GaussianMixture fit/predict failed; clustering seam returns None: %s",
             exc,
         )

@@ -8,7 +8,7 @@ import pandas as pd
 import yaml
 
 
-LOG = logging.getLogger(__name__)
+_LOG = logging.getLogger(__name__)
 
 _SCHEDULED_TYPES = {
     "FOMC",

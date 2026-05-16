@@ -42,7 +42,7 @@ from regime_detection.config import ChangePointConfig
 
 __all__ = ["ChangePointFeatures", "compute_change_point_features"]
 
-_LOGGER = logging.getLogger(__name__)
+_LOG = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -141,7 +141,7 @@ def compute_change_point_features(
             ),
         )
     except Exception as exc:  # noqa: BLE001
-        _LOGGER.warning(
+        _LOG.warning(
             "BOCPD online_changepoint_detection failed; "
             "change_point seam returns None: %s",
             exc,
