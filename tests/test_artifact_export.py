@@ -5,6 +5,7 @@ from pathlib import Path
 
 from regime_data_fetch.artifact_export import emit_manifest_for_report_paths
 from regime_data_fetch.artifact_manifest import load_manifest
+from regime_data_fetch.sf_fed_news_sentiment import SF_FED_NEWS_SENTIMENT_PARQUET
 
 
 def test_emit_manifest_for_report_paths_uploads_existing_report_outputs(tmp_path: Path) -> None:
@@ -75,7 +76,7 @@ def test_emit_manifest_for_report_paths_fails_when_no_files_found(tmp_path: Path
 
     import pytest
 
-    with pytest.raises(ValueError, match="no existing artifact files"):
+    with pytest.raises(ValueError, match="no exportable artifact files in report"):
         emit_manifest_for_report_paths(
             report_paths=[report],
             out_dir=out_dir,
@@ -84,6 +85,66 @@ def test_emit_manifest_for_report_paths_fails_when_no_files_found(tmp_path: Path
             artifact_set="empty_not_ok",
             required_for=[],
         )
+
+
+def test_emit_manifest_for_report_paths_fails_when_one_report_has_no_exportable_artifacts(
+    tmp_path: Path,
+) -> None:
+    out_dir = tmp_path / "data" / "raw"
+    macro = out_dir / "macro" / "fred_macro_series.parquet"
+    macro.parent.mkdir(parents=True)
+    macro.write_bytes(b"macro")
+    good_report = out_dir / "macro_fetch_report.json"
+    good_report.write_text(json.dumps({"paths": {"macro_parquet": str(macro)}}))
+    bad_report = out_dir / "sf_fed_news_sentiment_fetch_report.json"
+    bad_report.write_text(
+        json.dumps(
+            {
+                "source": "frbsf:daily_news_sentiment",
+                "parquet": str(
+                    out_dir / "news_sentiment" / SF_FED_NEWS_SENTIMENT_PARQUET
+                ),
+            }
+        )
+    )
+
+    import pytest
+
+    with pytest.raises(ValueError, match="no exportable artifact files in report"):
+        emit_manifest_for_report_paths(
+            report_paths=[good_report, bad_report],
+            out_dir=out_dir,
+            artifact_store_root=str(tmp_path / "store"),
+            manifest_path=tmp_path / "manifest.yaml",
+            artifact_set="mixed",
+            required_for=["profile_engine_30d"],
+        )
+
+
+def test_emit_manifest_for_report_paths_allows_explicit_non_materializable_report(
+    tmp_path: Path,
+) -> None:
+    out_dir = tmp_path / "data" / "raw"
+    macro = out_dir / "macro" / "fred_macro_series.parquet"
+    macro.parent.mkdir(parents=True)
+    macro.write_bytes(b"macro")
+    good_report = out_dir / "macro_fetch_report.json"
+    good_report.write_text(json.dumps({"paths": {"macro_parquet": str(macro)}}))
+    ledger_report = out_dir / "ledger_report.json"
+    ledger_report.write_text(
+        json.dumps({"materializable": False, "paths": {"acquisition_db": "ignored"}})
+    )
+
+    manifest = emit_manifest_for_report_paths(
+        report_paths=[good_report, ledger_report],
+        out_dir=out_dir,
+        artifact_store_root=str(tmp_path / "store"),
+        manifest_path=tmp_path / "manifest.yaml",
+        artifact_set="mixed",
+        required_for=["profile_engine_30d"],
+    )
+
+    assert [artifact.name for artifact in manifest.artifacts] == ["macro_parquet"]
 
 
 def test_emit_manifest_for_report_paths_skips_acquisition_db_metadata(tmp_path: Path) -> None:
@@ -96,7 +157,7 @@ def test_emit_manifest_for_report_paths_skips_acquisition_db_metadata(tmp_path: 
 
     import pytest
 
-    with pytest.raises(ValueError, match="no existing artifact files"):
+    with pytest.raises(ValueError, match="no exportable artifact files in report"):
         emit_manifest_for_report_paths(
             report_paths=[report],
             out_dir=out_dir,
@@ -118,7 +179,7 @@ def test_emit_manifest_for_report_paths_skips_files_outside_out_dir(tmp_path: Pa
 
     import pytest
 
-    with pytest.raises(ValueError, match="no existing artifact files"):
+    with pytest.raises(ValueError, match="no exportable artifact files in report"):
         emit_manifest_for_report_paths(
             report_paths=[report],
             out_dir=out_dir,
@@ -188,3 +249,40 @@ def test_emit_manifest_for_report_paths_honors_explicit_materialized_local_path(
         "data/raw/daily_ohlcv_762/symbol=SPY/ohlcv.parquet"
     ]
     assert (tmp_path / "store" / "canonical" / "daily_ohlcv_762" / "symbol=SPY" / "ohlcv.parquet").read_bytes() == b"spy-762"
+
+
+def test_emit_manifest_for_report_paths_exports_sf_fed_news_sentiment_report(
+    tmp_path: Path,
+) -> None:
+    out_dir = tmp_path / "data" / "raw"
+    parquet = out_dir / "news_sentiment" / SF_FED_NEWS_SENTIMENT_PARQUET
+    report = out_dir / "sf_fed_news_sentiment_fetch_report.json"
+    parquet.parent.mkdir(parents=True)
+    parquet.write_bytes(b"sf-fed-news")
+    report.write_text(
+        json.dumps(
+            {
+                "source": "frbsf:daily_news_sentiment",
+                "paths": {"news_sentiment_parquet": str(parquet)},
+            }
+        )
+    )
+
+    manifest = emit_manifest_for_report_paths(
+        report_paths=[report],
+        out_dir=out_dir,
+        artifact_store_root=str(tmp_path / "store"),
+        manifest_path=tmp_path / "manifest.yaml",
+        artifact_set="sf-fed-news",
+        required_for=["profile_engine_30d"],
+    )
+
+    assert [artifact.name for artifact in manifest.artifacts] == [
+        "news_sentiment_parquet"
+    ]
+    assert manifest.artifacts[0].local_path == (
+        f"data/raw/news_sentiment/{SF_FED_NEWS_SENTIMENT_PARQUET}"
+    )
+    assert (
+        tmp_path / "store" / "canonical" / "news_sentiment" / SF_FED_NEWS_SENTIMENT_PARQUET
+    ).read_bytes() == b"sf-fed-news"

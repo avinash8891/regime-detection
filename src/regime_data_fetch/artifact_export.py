@@ -28,7 +28,11 @@ def emit_manifest_for_report_paths(
     artifacts: list[ManifestArtifact] = []
     seen_local_paths: set[str] = set()
     for report_path in report_paths:
-        for name, path, local_path_override in _iter_existing_report_files(report_path):
+        payload = _load_report_payload(report_path)
+        if payload is None:
+            continue
+        exportable_for_report = 0
+        for name, path, local_path_override in _iter_existing_report_files(payload):
             local_path = _local_path_for(
                 path=path,
                 out_dir=out_dir,
@@ -37,6 +41,7 @@ def emit_manifest_for_report_paths(
             )
             if local_path is None:
                 continue
+            exportable_for_report += 1
             if local_path in seen_local_paths:
                 continue
             seen_local_paths.add(local_path)
@@ -58,6 +63,8 @@ def emit_manifest_for_report_paths(
                     }
                 )
             )
+        if exportable_for_report == 0 and payload.get("materializable") is not False:
+            raise ValueError(f"no exportable artifact files in report: {report_path}")
     if not artifacts:
         raise ValueError("no existing artifact files found in report paths")
     manifest = ArtifactManifest(
@@ -70,10 +77,14 @@ def emit_manifest_for_report_paths(
     return manifest
 
 
-def _iter_existing_report_files(report_path: Path) -> Iterable[tuple[str, Path, str | None]]:
+def _load_report_payload(report_path: Path) -> dict[str, object] | None:
     if not report_path.exists() or report_path.suffix.lower() != ".json":
-        return
+        return None
     payload = json.loads(report_path.read_text())
+    return payload if isinstance(payload, dict) else None
+
+
+def _iter_existing_report_files(payload: dict[str, object]) -> Iterable[tuple[str, Path, str | None]]:
     paths = payload.get("paths", {})
     if not isinstance(paths, dict):
         return

@@ -11,6 +11,7 @@ from regime_data_fetch.artifact_manifest import (
     ManifestArtifact,
     write_manifest,
 )
+from regime_data_fetch.artifact_store import sha256_file
 from regime_data_fetch.materialization import materialize_manifest
 
 
@@ -143,7 +144,7 @@ def test_materialize_manifest_restores_repo_relative_paths_to_repo_root(
     ).read_text() == "events: []\n"
 
 
-def test_materialize_manifest_skips_existing_same_bytes_and_detects_drift(
+def test_materialize_manifest_refreshes_existing_drift_after_source_verification(
     tmp_path: Path,
 ) -> None:
     store_root = tmp_path / "store"
@@ -179,10 +180,61 @@ def test_materialize_manifest_skips_existing_same_bytes_and_detects_drift(
     assert destination.read_bytes() == b"macro"
 
     destination.write_bytes(b"local drift")
-    with pytest.raises(ValueError, match="local materialized artifact drift"):
-        materialize_manifest(
-            manifest_path=manifest_path, local_root=tmp_path / "data" / "raw"
-        )
+    materialize_manifest(
+        manifest_path=manifest_path, local_root=tmp_path / "data" / "raw"
+    )
+    assert destination.read_bytes() == b"macro"
+
+
+def test_materialize_manifest_does_not_replace_existing_files_until_all_artifacts_verify(
+    tmp_path: Path,
+) -> None:
+    store_root = tmp_path / "store"
+    first_source = store_root / "canonical" / "macro" / "fred_macro_series.parquet"
+    first_source.parent.mkdir(parents=True)
+    first_source.write_bytes(b"new macro")
+    second_source = store_root / "canonical" / "sentiment" / "aaii_sentiment.parquet"
+    second_source.parent.mkdir(parents=True)
+    second_source.write_bytes(b"bad sentiment")
+    local_root = tmp_path / "data" / "raw"
+    first_destination = local_root / "macro" / "fred_macro_series.parquet"
+    first_destination.parent.mkdir(parents=True)
+    first_destination.write_bytes(b"old macro")
+    manifest = ArtifactManifest(
+        artifact_set="regime_engine_2026-05-15",
+        created_at_utc="2026-05-15T12:00:00Z",
+        storage_root=str(store_root),
+        artifacts=[
+            ManifestArtifact.from_dict(
+                {
+                    "name": "macro",
+                    "stage": "canonical",
+                    "uri": "canonical/macro/fred_macro_series.parquet",
+                    "local_path": "data/raw/macro/fred_macro_series.parquet",
+                    "sha256": sha256_file(first_source),
+                    "required_for": ["profile_engine_30d"],
+                }
+            ),
+            ManifestArtifact.from_dict(
+                {
+                    "name": "aaii",
+                    "stage": "canonical",
+                    "uri": "canonical/sentiment/aaii_sentiment.parquet",
+                    "local_path": "data/raw/sentiment/aaii_sentiment.parquet",
+                    "sha256": "0" * 64,
+                    "required_for": ["profile_engine_30d"],
+                }
+            ),
+        ],
+    )
+    manifest_path = tmp_path / "manifest.yaml"
+    write_manifest(manifest, manifest_path)
+
+    with pytest.raises(Exception, match="sha256 mismatch"):
+        materialize_manifest(manifest_path=manifest_path, local_root=local_root)
+
+    assert first_destination.read_bytes() == b"old macro"
+    assert not (local_root / "sentiment" / "aaii_sentiment.parquet").exists()
 
 
 def test_materialize_regime_data_cli_materializes_manifest(tmp_path: Path) -> None:

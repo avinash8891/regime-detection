@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -34,26 +35,52 @@ def materialize_manifest(
         raise ValueError(f"manifest has no artifacts required for {required_for}")
 
     store = build_artifact_store(store_root or manifest.storage_root)
-    materialized: list[MaterializedArtifact] = []
-    for artifact in artifacts:
-        destination = destination_for(artifact, local_root, repo_root=repo_root)
-        if destination.exists():
-            existing_sha = sha256_file(destination)
-            if existing_sha != artifact.sha256:
-                raise ValueError(
-                    f"local materialized artifact drift for {artifact.local_path}: "
-                    f"expected {artifact.sha256}, got {existing_sha}"
-                )
-        else:
-            store.get_file(artifact.uri, destination, expected_sha256=artifact.sha256)
-        materialized.append(
-            MaterializedArtifact(
-                name=artifact.name,
-                destination=destination,
-                sha256=artifact.sha256,
+    staging_parent = local_root.parent
+    staging_parent.mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory(
+        prefix=".manifest-materialize-", dir=staging_parent
+    ) as tmp_dir:
+        staging_root = Path(tmp_dir)
+        staged: list[tuple[ManifestArtifact, Path, Path]] = []
+        for index, artifact in enumerate(artifacts):
+            destination = destination_for(artifact, local_root, repo_root=repo_root)
+            staged_path = staging_root / "staged" / str(index) / destination.name
+            store.get_file(
+                artifact.uri,
+                staged_path,
+                expected_sha256=artifact.sha256,
             )
+            staged.append((artifact, destination, staged_path))
+
+        promoted: list[tuple[Path, Path | None]] = []
+        backup_root = staging_root / "backups"
+        try:
+            for index, (_artifact, destination, staged_path) in enumerate(staged):
+                destination.parent.mkdir(parents=True, exist_ok=True)
+                backup_path: Path | None = None
+                if destination.exists():
+                    backup_path = backup_root / str(index) / destination.name
+                    backup_path.parent.mkdir(parents=True, exist_ok=True)
+                    destination.replace(backup_path)
+                staged_path.replace(destination)
+                promoted.append((destination, backup_path))
+        except Exception:
+            for destination, backup_path in reversed(promoted):
+                if destination.exists():
+                    destination.unlink()
+                if backup_path is not None and backup_path.exists():
+                    backup_path.parent.mkdir(parents=True, exist_ok=True)
+                    backup_path.replace(destination)
+            raise
+
+    return [
+        MaterializedArtifact(
+            name=artifact.name,
+            destination=destination,
+            sha256=artifact.sha256,
         )
-    return materialized
+        for artifact, destination, _staged_path in staged
+    ]
 
 
 def destination_for(artifact: ManifestArtifact, local_root: Path, *, repo_root: Path | None = None) -> Path:
