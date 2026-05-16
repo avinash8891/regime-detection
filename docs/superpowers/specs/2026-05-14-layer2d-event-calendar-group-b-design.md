@@ -282,7 +282,7 @@ quarantines malformed rows (rule I).
 
 | Field | Value |
 |---|---|
-| Source / API | **GPR / AI-GPR** (Caldara-Iacoviello Geopolitical Risk index) — live fetch from `https://www.matteoiacoviello.com/gpr_files/data_gpr_daily_recent.xls`, history to 1985. **GDELT Event Database daily exports** — live fetch from `http://data.gdeltproject.org/events/YYYYMMDD.export.CSV.zip`, parsed for CAMEO root event codes `14/18/19/20` and material-conflict `QuadClass=4`. **ACLED** — client implemented for `https://acleddata.com/api/acled/read`, but live raw-event pulls are TODO pending an entitled API key/account; a Gmail/Open myACLED token is not enough. **Uppsala/UCDP GED Candidate** — client implemented for `https://ucdpapi.pcr.uu.se/api/gedevents/26.0.3`, TODO pending `UCDP_ACCESS_TOKEN`. **HDX HAPI conflict-events** — `https://hapi.humdata.org/api/v2/coordination-context/conflict-events` monthly/admin evidence using the configured app identifier when present, otherwise the default `regime-detection` identifier. |
+| Source / API | **GPR / AI-GPR** (Caldara-Iacoviello Geopolitical Risk index) — live fetch from `https://www.matteoiacoviello.com/gpr_files/data_gpr_daily_recent.xls`, history to 1985. **GDELT Event Database daily exports** — live fetch from `http://data.gdeltproject.org/events/YYYYMMDD.export.CSV.zip`, parsed for CAMEO root event codes `14/18/19/20` and material-conflict `QuadClass=4`. **ACLED** — client implemented for `https://acleddata.com/api/acled/read`, but live raw-event pulls are TODO pending an entitled API key/account; a Gmail/Open myACLED token is not enough. **Uppsala/UCDP GED Candidate** — client implemented for `https://ucdpapi.pcr.uu.se/api/gedevents/26.0.3`, TODO pending `UCDP_ACCESS_TOKEN`. **HDX HAPI conflict-events** — `https://hapi.humdata.org/api/v2/coordination-context/conflict-events` monthly/admin evidence requiring `HDX_HAPI_APP_IDENTIFIER`, or both `HDX_HAPI_APP_NAME` and `HDX_HAPI_APP_EMAIL`; missing app identity is logged and skipped. |
 | Coverage | GPR: daily 1985→ (monthly republish). GDELT: 2015→ present. ACLED / Uppsala-UCDP coverage is pending API-key entitlement; HDX is monthly/admin aggregate evidence, not a daily shock row. |
 | Future-date support | **None** — geopolitical events are unscheduled by nature. |
 | Self-updating | GPR: monthly maintainer republish (static snapshot between). GDELT: continuous. |
@@ -319,8 +319,9 @@ This is the step Group A never needed. Pinned design, with thresholds as confirm
    mean + 3·std). For each requested-year GPR spike date, the generator fetches
    GDELT daily Event export ZIPs for the spike window and flags material
    conflict/protest volume rows from the raw export.
-   HDX HAPI adds extra aggregate candidate rows for the requested years, using
-   `HDX_HAPI_APP_IDENTIFIER` when configured and `regime-detection` otherwise. TODO: ACLED and Uppsala/UCDP raw-event
+   HDX HAPI adds extra aggregate candidate rows for the requested years when
+   `HDX_HAPI_APP_IDENTIFIER` is configured, or when both `HDX_HAPI_APP_NAME`
+   and `HDX_HAPI_APP_EMAIL` are configured. TODO: ACLED and Uppsala/UCDP raw-event
    rows remain pending entitled API keys/account access; missing credentials or
    denied access degrade to skipped sources.
 2. **Merge / dedup.** Spike days from GPR and GDELT within a small window of

@@ -630,6 +630,12 @@ def _fetch_ucdp_events(start_year: int, end_year: int) -> str | None:
 
 def _fetch_hdx_hapi_conflict_events(start_year: int, end_year: int) -> str | None:
     app_identifier = _hdx_hapi_app_identifier()
+    if app_identifier is None:
+        LOGGER.error(
+            "HDX HAPI app identifier unavailable; set HDX_HAPI_APP_IDENTIFIER "
+            "or HDX_HAPI_APP_NAME and HDX_HAPI_APP_EMAIL to fetch conflict events"
+        )
+        return None
     return _fetch_paged_json(
         HDX_HAPI_CONFLICT_EVENTS_URL,
         headers={},
@@ -651,7 +657,7 @@ def _hdx_hapi_app_identifier() -> str | None:
     app_name = os.environ.get("HDX_HAPI_APP_NAME", "").strip()
     app_email = os.environ.get("HDX_HAPI_APP_EMAIL", "").strip()
     if not app_name or not app_email:
-        return "regime-detection"
+        return None
     return base64.b64encode(f"{app_name}:{app_email}".encode("utf-8")).decode("ascii")
 
 
@@ -673,6 +679,11 @@ def _fetch_paged_json(
         records.extend(record for record in page_records if isinstance(record, dict))
         total_count = _payload_total_count(payload)
         if len(page_records) < CONFLICT_API_PAGE_SIZE:
+            if total_count is not None and len(records) < total_count:
+                raise RuntimeError(
+                    f"{base_url} returned short page before TotalCount was satisfied: "
+                    f"records={len(records)} total_count={total_count} page={page}"
+                )
             break
         if total_count is not None and len(records) >= total_count:
             break

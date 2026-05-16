@@ -9,7 +9,10 @@ import zipfile
 import pytest
 
 from regime_data_fetch.event_calendar import GroupABuildResult, _build_group_b_report
-from regime_data_fetch.event_sources.approvals import append_approval_record, load_approval_overlay
+from regime_data_fetch.event_sources.approvals import (
+    append_approval_record,
+    load_approval_overlay,
+)
 from regime_data_fetch.event_sources.budget_official_discovery import (
     BudgetOfficialDiscoveryGenerator,
     extract_govinfo_cr_records,
@@ -17,8 +20,14 @@ from regime_data_fetch.event_sources.budget_official_discovery import (
     fetch_official_budget_records,
     iter_govinfo_public_law_urls,
 )
-from regime_data_fetch.event_sources.deterministic_budget import DeterministicBudgetAdapter
-from regime_data_fetch.event_sources.models import ApprovalRecord, EventCandidate, PromotionDecision
+from regime_data_fetch.event_sources.deterministic_budget import (
+    DeterministicBudgetAdapter,
+)
+from regime_data_fetch.event_sources.models import (
+    ApprovalRecord,
+    EventCandidate,
+    PromotionDecision,
+)
 from regime_data_fetch.event_sources.orchestrator import EventSourceOrchestrator
 from regime_data_fetch.event_sources.validators_tinyfish import TinyFishValidator
 from regime_data_fetch.event_sources.validators_gpr_gdelt import GPRGDELTSignalGenerator
@@ -41,16 +50,49 @@ def test_deterministic_budget_emits_fy_deadline_rows_on_nyse_sessions() -> None:
         run_id=None,
     )
 
-    assert [(candidate.date, candidate.event_type, candidate.event_subtype, candidate.source_id) for candidate in candidates] == [
-        (dt.date(2016, 9, 30), "budget", "fy_deadline", "usa.gov:federal-budget-process"),
-        (dt.date(2017, 9, 29), "budget", "fy_deadline", "usa.gov:federal-budget-process"),
-        (dt.date(2018, 9, 28), "budget", "fy_deadline", "usa.gov:federal-budget-process"),
+    assert [
+        (
+            candidate.date,
+            candidate.event_type,
+            candidate.event_subtype,
+            candidate.source_id,
+        )
+        for candidate in candidates
+    ] == [
+        (
+            dt.date(2016, 9, 30),
+            "budget",
+            "fy_deadline",
+            "usa.gov:federal-budget-process",
+        ),
+        (
+            dt.date(2017, 9, 29),
+            "budget",
+            "fy_deadline",
+            "usa.gov:federal-budget-process",
+        ),
+        (
+            dt.date(2018, 9, 28),
+            "budget",
+            "fy_deadline",
+            "usa.gov:federal-budget-process",
+        ),
     ]
-    assert [candidate.requires_manual_review for candidate in candidates] == [False, False, False]
-    assert [candidate.confidence for candidate in candidates] == ["high", "high", "high"]
+    assert [candidate.requires_manual_review for candidate in candidates] == [
+        False,
+        False,
+        False,
+    ]
+    assert [candidate.confidence for candidate in candidates] == [
+        "high",
+        "high",
+        "high",
+    ]
 
 
-def test_deterministic_budget_rolls_weekend_deadlines_to_previous_nyse_session() -> None:
+def test_deterministic_budget_rolls_weekend_deadlines_to_previous_nyse_session() -> (
+    None
+):
     candidates = DeterministicBudgetAdapter(as_of_date=dt.date(2026, 5, 14)).fetch(
         start_year=2017,
         end_year=2023,
@@ -137,18 +179,30 @@ def test_gpr_gdelt_generator_flags_real_geopolitical_spike_date() -> None:
         stddev_threshold=2.0,
     )
 
-    candidates = generator.generate(start_year=2022, end_year=2022, store=None, run_id=None)
+    candidates = generator.generate(
+        start_year=2022, end_year=2022, store=None, run_id=None
+    )
     validations = generator.validate(candidates, store=None, run_id=None)
 
-    assert [(candidate.date, candidate.event_type, candidate.source_id) for candidate in candidates] == [
+    assert [
+        (candidate.date, candidate.event_type, candidate.source_id)
+        for candidate in candidates
+    ] == [
         (dt.date(2022, 2, 24), "geopolitical_event", "gdelt:events-v2"),
         (dt.date(2022, 2, 24), "geopolitical_event", "gpr:caldara-iacoviello"),
     ]
     assert all(candidate.requires_manual_review for candidate in candidates)
     assert all(candidate.confidence == "medium" for candidate in candidates)
-    assert {(validation.candidate_key, validation.validator_id, validation.verdict) for validation in validations} == {
+    assert {
+        (validation.candidate_key, validation.validator_id, validation.verdict)
+        for validation in validations
+    } == {
         (("geopolitical_event", dt.date(2022, 2, 24)), "gdelt:events-v2", "confirm"),
-        (("geopolitical_event", dt.date(2022, 2, 24)), "gpr:caldara-iacoviello", "confirm"),
+        (
+            ("geopolitical_event", dt.date(2022, 2, 24)),
+            "gpr:caldara-iacoviello",
+            "confirm",
+        ),
     }
 
 
@@ -166,7 +220,10 @@ def test_parse_gdelt_event_export_counts_material_conflict_rows() -> None:
     cooperation[31] = "20"
     payload = ("\t".join(conflict) + "\n" + "\t".join(cooperation) + "\n").encode()
 
-    rows = parse_gdelt_event_export(payload, source_url="https://data.gdeltproject.org/events/20220224.export.CSV.zip")
+    rows = parse_gdelt_event_export(
+        payload,
+        source_url="https://data.gdeltproject.org/events/20220224.export.CSV.zip",
+    )
 
     assert rows == [
         {
@@ -234,20 +291,36 @@ def test_gpr_generator_fetches_gdelt_daily_exports_for_spike_dates() -> None:
         merge_window_days=0,
     )
 
-    candidates = generator.generate(start_year=2022, end_year=2022, store=None, run_id=None)
+    candidates = generator.generate(
+        start_year=2022, end_year=2022, store=None, run_id=None
+    )
     validations = generator.validate(candidates, store=None, run_id=None)
 
-    assert [(candidate.date, candidate.source_id, candidate.raw_snippet) for candidate in candidates] == [
-        (dt.date(2022, 2, 24), "gdelt:events-v2", "GDELT geopolitical event volume: 8."),
+    assert [
+        (candidate.date, candidate.source_id, candidate.raw_snippet)
+        for candidate in candidates
+    ] == [
+        (
+            dt.date(2022, 2, 24),
+            "gdelt:events-v2",
+            "GDELT geopolitical event volume: 8.",
+        ),
         (
             dt.date(2022, 2, 24),
             "gpr:caldara-iacoviello",
             "GPR daily value 500.00 exceeded trailing threshold 102.22.",
         ),
     ]
-    assert {(validation.candidate_key, validation.validator_id, validation.verdict) for validation in validations} == {
+    assert {
+        (validation.candidate_key, validation.validator_id, validation.verdict)
+        for validation in validations
+    } == {
         (("geopolitical_event", dt.date(2022, 2, 24)), "gdelt:events-v2", "confirm"),
-        (("geopolitical_event", dt.date(2022, 2, 24)), "gpr:caldara-iacoviello", "confirm"),
+        (
+            ("geopolitical_event", dt.date(2022, 2, 24)),
+            "gpr:caldara-iacoviello",
+            "confirm",
+        ),
     }
 
 
@@ -278,7 +351,9 @@ def test_parse_acled_events_aggregates_conflict_rows_by_day() -> None:
 }
 """
 
-    rows = parse_acled_events(payload, source_url="https://acleddata.com/api/acled/read")
+    rows = parse_acled_events(
+        payload, source_url="https://acleddata.com/api/acled/read"
+    )
 
     assert rows == [
         {
@@ -291,7 +366,9 @@ def test_parse_acled_events_aggregates_conflict_rows_by_day() -> None:
     ]
 
 
-def test_acled_fetcher_paginates_until_short_page(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_acled_fetcher_paginates_until_short_page(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     monkeypatch.setenv("ACLED_API_TOKEN", "fixture-token")
     calls: list[str] = []
 
@@ -311,10 +388,15 @@ def test_acled_fetcher_paginates_until_short_page(monkeypatch: pytest.MonkeyPatc
         ]
         return '{"data": ' + json.dumps(rows) + "}"
 
-    monkeypatch.setattr("regime_data_fetch.event_sources.validators_gpr_gdelt._http_text", fake_http_text)
+    monkeypatch.setattr(
+        "regime_data_fetch.event_sources.validators_gpr_gdelt._http_text",
+        fake_http_text,
+    )
 
     payload = _fetch_acled_events(2022, 2022)
-    rows = parse_acled_events(payload, source_url="https://acleddata.com/api/acled/read")
+    rows = parse_acled_events(
+        payload, source_url="https://acleddata.com/api/acled/read"
+    )
 
     assert len(calls) == 2
     assert rows[0]["event_count"] == 5001
@@ -341,7 +423,9 @@ def test_parse_ucdp_events_aggregates_candidate_events_by_day() -> None:
 }
 """
 
-    rows = parse_ucdp_events(payload, source_url="https://ucdpapi.pcr.uu.se/api/gedevents/26.0.3")
+    rows = parse_ucdp_events(
+        payload, source_url="https://ucdpapi.pcr.uu.se/api/gedevents/26.0.3"
+    )
 
     assert rows == [
         {
@@ -424,10 +508,14 @@ def test_hdx_hapi_fetcher_uses_generated_app_identifier_and_supported_date_filte
     assert extra_params["end_date"] == "2023-12-31"
     assert "reference_period_start" not in extra_params
     assert "reference_period_end" not in extra_params
-    assert extra_params["app_identifier"] == "cmVnaW1lLWRldGVjdGlvbi10ZXN0OnJlZ2ltZS1kZXRlY3Rpb25AZXhhbXBsZS5pbnZhbGlk"
+    assert (
+        extra_params["app_identifier"]
+        == "cmVnaW1lLWRldGVjdGlvbi10ZXN0OnJlZ2ltZS1kZXRlY3Rpb25AZXhhbXBsZS5pbnZhbGlk"
+    )
 
 
-def test_hdx_hapi_fetcher_uses_default_app_identifier_without_credentials(
+def test_hdx_hapi_fetcher_returns_none_and_logs_without_app_identifier(
+    caplog: pytest.LogCaptureFixture,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     for key in (
@@ -437,33 +525,16 @@ def test_hdx_hapi_fetcher_uses_default_app_identifier_without_credentials(
         "HDX_HAPI_APP_EMAIL",
     ):
         monkeypatch.delenv(key, raising=False)
-    captured: dict[str, object] = {}
-
-    def fake_fetch_paged_json(
-        base_url: str,
-        *,
-        headers: dict[str, str],
-        result_key: str,
-        extra_params: dict[str, str],
-    ) -> str:
-        captured.update(extra_params=extra_params)
-        return '{"data": []}'
-
-    monkeypatch.setattr(
-        "regime_data_fetch.event_sources.validators_gpr_gdelt._fetch_paged_json",
-        fake_fetch_paged_json,
-    )
-
-    assert _fetch_hdx_hapi_conflict_events(2022, 2022) == '{"data": []}'
-    extra_params = captured["extra_params"]
-    assert isinstance(extra_params, dict)
-    assert extra_params["app_identifier"] == "regime-detection"
+    assert _fetch_hdx_hapi_conflict_events(2022, 2022) is None
+    assert "HDX HAPI app identifier unavailable" in caplog.text
 
 
 def test_conflict_pager_continues_without_total_count_until_short_page(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr("regime_data_fetch.event_sources.validators_gpr_gdelt.CONFLICT_API_PAGE_SIZE", 2)
+    monkeypatch.setattr(
+        "regime_data_fetch.event_sources.validators_gpr_gdelt.CONFLICT_API_PAGE_SIZE", 2
+    )
     calls: list[str] = []
 
     def fake_http_text(url: str, *, headers: dict[str, str]) -> str:
@@ -475,7 +546,10 @@ def test_conflict_pager_continues_without_total_count_until_short_page(
             return '{"data": [{"id": 3}]}'
         raise AssertionError(f"unexpected page request: {url}")
 
-    monkeypatch.setattr("regime_data_fetch.event_sources.validators_gpr_gdelt._http_text", fake_http_text)
+    monkeypatch.setattr(
+        "regime_data_fetch.event_sources.validators_gpr_gdelt._http_text",
+        fake_http_text,
+    )
 
     payload = _fetch_paged_json(
         "https://example.test/conflict-events",
@@ -486,6 +560,31 @@ def test_conflict_pager_continues_without_total_count_until_short_page(
 
     assert json.loads(payload) == {"data": [{"id": 1}, {"id": 2}, {"id": 3}]}
     assert len(calls) == 2
+
+
+def test_conflict_pager_fails_loudly_on_short_page_before_total_count(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        "regime_data_fetch.event_sources.validators_gpr_gdelt.CONFLICT_API_PAGE_SIZE", 2
+    )
+
+    def fake_http_text(url: str, *, headers: dict[str, str]) -> str:
+        del url, headers
+        return '{"TotalCount": 5, "data": [{"id": 1}]}'
+
+    monkeypatch.setattr(
+        "regime_data_fetch.event_sources.validators_gpr_gdelt._http_text",
+        fake_http_text,
+    )
+
+    with pytest.raises(RuntimeError, match="returned short page before TotalCount"):
+        _fetch_paged_json(
+            "https://example.test/conflict-events",
+            headers={},
+            result_key="data",
+            extra_params={"app_identifier": "fixture"},
+        )
 
 
 def test_generator_includes_acled_ucdp_and_hdx_candidate_sources() -> None:
@@ -513,10 +612,25 @@ def test_generator_includes_acled_ucdp_and_hdx_candidate_sources() -> None:
         stddev_threshold=2.0,
     )
 
-    candidates = generator.generate(start_year=2022, end_year=2022, store=None, run_id=None)
+    candidates = generator.generate(
+        start_year=2022, end_year=2022, store=None, run_id=None
+    )
 
-    assert [(candidate.date, candidate.source_id, candidate.event_subtype, candidate.requires_manual_review) for candidate in candidates] == [
-        (dt.date(2022, 2, 1), "hdx-hapi:conflict-events", "hdx_hapi_monthly_conflict", True),
+    assert [
+        (
+            candidate.date,
+            candidate.source_id,
+            candidate.event_subtype,
+            candidate.requires_manual_review,
+        )
+        for candidate in candidates
+    ] == [
+        (
+            dt.date(2022, 2, 1),
+            "hdx-hapi:conflict-events",
+            "hdx_hapi_monthly_conflict",
+            True,
+        ),
         (dt.date(2022, 2, 24), "acled:events", "acled_conflict_event", True),
         (dt.date(2022, 2, 24), "gdelt:events-v2", "gdelt_volume_spike", True),
         (dt.date(2022, 2, 24), "gpr:caldara-iacoviello", "gpr_spike", True),
@@ -524,7 +638,9 @@ def test_generator_includes_acled_ucdp_and_hdx_candidate_sources() -> None:
     ]
 
 
-def test_budget_official_discovery_auto_promotes_two_independent_official_sources() -> None:
+def test_budget_official_discovery_auto_promotes_two_independent_official_sources() -> (
+    None
+):
     records_json = """
 [
   {
@@ -546,18 +662,29 @@ def test_budget_official_discovery_auto_promotes_two_independent_official_source
 ]
 """
     generator = BudgetOfficialDiscoveryGenerator(records_fetcher=lambda: records_json)
-    candidates = generator.generate(start_year=2023, end_year=2023, store=None, run_id=None)
-    orchestrator = EventSourceOrchestrator(primary_adapters=[], candidate_generators=[generator], validators=[])
+    candidates = generator.generate(
+        start_year=2023, end_year=2023, store=None, run_id=None
+    )
+    orchestrator = EventSourceOrchestrator(
+        primary_adapters=[], candidate_generators=[generator], validators=[]
+    )
 
-    _, _, decisions, rendered = orchestrator.run(start_year=2023, end_year=2023, store=None, run_id=None)
+    _, _, decisions, rendered = orchestrator.run(
+        start_year=2023, end_year=2023, store=None, run_id=None
+    )
 
-    assert [(candidate.date, candidate.event_subtype, candidate.source_id) for candidate in candidates] == [
+    assert [
+        (candidate.date, candidate.event_subtype, candidate.source_id)
+        for candidate in candidates
+    ] == [
         (dt.date(2023, 6, 5), "debt_ceiling", "treasury.gov:debt-limit"),
         (dt.date(2023, 6, 5), "debt_ceiling", "congress.gov:public-law"),
     ]
     assert decisions[0].outcome == "promote"
     assert decisions[0].source_count == 2
-    assert [(event.date, event.type) for event in rendered] == [(dt.date(2023, 6, 5), "budget")]
+    assert [(event.date, event.type) for event in rendered] == [
+        (dt.date(2023, 6, 5), "budget")
+    ]
 
 
 def test_treasury_debt_limit_extractor_uses_official_index_links() -> None:
@@ -656,20 +783,35 @@ Sec. 106. (3) &lt;&lt;NOTE: Expiration date.&gt;&gt; December 20, 2024.
 
     records = fetch_official_budget_records(
         text_fetcher=fake_fetch,
-        govinfo_public_law_urls=["https://www.govinfo.gov/content/pkg/PLAW-118publ83/html/PLAW-118publ83.htm"],
+        govinfo_public_law_urls=[
+            "https://www.govinfo.gov/content/pkg/PLAW-118publ83/html/PLAW-118publ83.htm"
+        ],
     )
 
-    assert [(record["date"], record["event_subtype"], record["source_id"]) for record in records] == [
+    assert [
+        (record["date"], record["event_subtype"], record["source_id"])
+        for record in records
+    ] == [
         ("2021-11-16", "debt_ceiling", "treasury.gov:debt-limit"),
         ("2024-12-20", "cr_expiration", "govinfo.gov:public-law"),
     ]
 
 
 def test_govinfo_public_law_url_enumerator_covers_2016_to_current_congresses() -> None:
-    urls = list(iter_govinfo_public_law_urls(start_year=2016, end_year=2026, max_public_law_number=2))
+    urls = list(
+        iter_govinfo_public_law_urls(
+            start_year=2016, end_year=2026, max_public_law_number=2
+        )
+    )
 
-    assert urls[0] == "https://www.govinfo.gov/content/pkg/PLAW-114publ1/html/PLAW-114publ1.htm"
-    assert urls[-1] == "https://www.govinfo.gov/content/pkg/PLAW-119publ2/html/PLAW-119publ2.htm"
+    assert (
+        urls[0]
+        == "https://www.govinfo.gov/content/pkg/PLAW-114publ1/html/PLAW-114publ1.htm"
+    )
+    assert (
+        urls[-1]
+        == "https://www.govinfo.gov/content/pkg/PLAW-119publ2/html/PLAW-119publ2.htm"
+    )
     assert len(urls) == 12
 
 
@@ -694,12 +836,15 @@ specified in section 106(3) and inserting ``February 18, 2022'';
         as_of_date=dt.date(2026, 5, 15),
     )
 
-    candidates = generator.generate(start_year=2021, end_year=2022, store=None, run_id=None)
+    candidates = generator.generate(
+        start_year=2021, end_year=2022, store=None, run_id=None
+    )
 
     assert any("PLAW-117publ70" in url for url in fetched_urls)
-    assert [(candidate.date, candidate.event_subtype, candidate.source_id) for candidate in candidates] == [
-        (dt.date(2022, 2, 18), "cr_expiration", "govinfo.gov:public-law")
-    ]
+    assert [
+        (candidate.date, candidate.event_subtype, candidate.source_id)
+        for candidate in candidates
+    ] == [(dt.date(2022, 2, 18), "cr_expiration", "govinfo.gov:public-law")]
 
 
 def test_tinyfish_unavailable_returns_unknown_for_review_candidates() -> None:
@@ -709,13 +854,18 @@ def test_tinyfish_unavailable_returns_unknown_for_review_candidates() -> None:
         store=None,
         run_id=None,
     )[0]
-    validator = TinyFishValidator(search_fetcher=lambda candidate: (_ for _ in ()).throw(RuntimeError("not authenticated")))
+    validator = TinyFishValidator(
+        search_fetcher=lambda candidate: (_ for _ in ()).throw(
+            RuntimeError("not authenticated")
+        )
+    )
 
     validations = validator.validate([candidate], store=None, run_id=None)
 
-    assert [(validation.candidate_key, validation.validator_id, validation.verdict) for validation in validations] == [
-        (("budget", dt.date(2026, 9, 30)), "tinyfish:search-extract", "unknown")
-    ]
+    assert [
+        (validation.candidate_key, validation.validator_id, validation.verdict)
+        for validation in validations
+    ] == [(("budget", dt.date(2026, 9, 30)), "tinyfish:search-extract", "unknown")]
 
 
 @pytest.mark.parametrize("payload", ["{not json", ["not", "a", "mapping"]])
@@ -730,9 +880,10 @@ def test_tinyfish_invalid_payload_returns_unknown(payload: object) -> None:
 
     validations = validator.validate([candidate], store=None, run_id=None)
 
-    assert [(validation.candidate_key, validation.validator_id, validation.verdict) for validation in validations] == [
-        (("budget", dt.date(2026, 9, 30)), "tinyfish:search-extract", "unknown")
-    ]
+    assert [
+        (validation.candidate_key, validation.validator_id, validation.verdict)
+        for validation in validations
+    ] == [(("budget", dt.date(2026, 9, 30)), "tinyfish:search-extract", "unknown")]
 
 
 def test_append_approval_record_validates_and_round_trips(tmp_path: Path) -> None:
@@ -758,7 +909,9 @@ def test_append_approval_record_validates_and_round_trips(tmp_path: Path) -> Non
     assert approvals[0].notes == "Russia invasion of Ukraine."
 
 
-def test_append_approval_record_rejects_duplicate_without_rewriting_overlay(tmp_path: Path) -> None:
+def test_append_approval_record_rejects_duplicate_without_rewriting_overlay(
+    tmp_path: Path,
+) -> None:
     overlay_path = tmp_path / "group_b_approvals.yaml"
     overlay_path.write_text(
         """
@@ -805,20 +958,62 @@ def test_group_b_report_surfaces_stale_approval_states() -> None:
         candidate_id="new-id",
     )
     contradicted = EventCandidate(
-        **{**candidate.__dict__, "date": dt.date(2022, 2, 26), "candidate_id": "contradicted-id"}
+        **{
+            **candidate.__dict__,
+            "date": dt.date(2022, 2, 26),
+            "candidate_id": "contradicted-id",
+        }
     )
     approvals = [
-        ApprovalRecord("geopolitical_event", dt.date(2022, 2, 24), "geopolitical_event", "avinash", dt.date(2026, 5, 14), "old-id", 2),
-        ApprovalRecord("geopolitical_event", dt.date(2022, 2, 25), "geopolitical_event", "avinash", dt.date(2026, 5, 14), "missing-id", 1),
-        ApprovalRecord("geopolitical_event", dt.date(2022, 2, 26), "geopolitical_event", "avinash", dt.date(2026, 5, 14), "contradicted-id", 1),
+        ApprovalRecord(
+            "geopolitical_event",
+            dt.date(2022, 2, 24),
+            "geopolitical_event",
+            "avinash",
+            dt.date(2026, 5, 14),
+            "old-id",
+            2,
+        ),
+        ApprovalRecord(
+            "geopolitical_event",
+            dt.date(2022, 2, 25),
+            "geopolitical_event",
+            "avinash",
+            dt.date(2026, 5, 14),
+            "missing-id",
+            1,
+        ),
+        ApprovalRecord(
+            "geopolitical_event",
+            dt.date(2022, 2, 26),
+            "geopolitical_event",
+            "avinash",
+            dt.date(2026, 5, 14),
+            "contradicted-id",
+            1,
+        ),
     ]
     result = GroupABuildResult(
         scheduled_events=[],
         candidates=[candidate, contradicted],
         validations=[],
         decisions=[
-            PromotionDecision(("geopolitical_event", dt.date(2022, 2, 24)), "promote", "medium", 1, False, "overlay"),
-            PromotionDecision(("geopolitical_event", dt.date(2022, 2, 26)), "quarantine", "low", 1, True, "contradict"),
+            PromotionDecision(
+                ("geopolitical_event", dt.date(2022, 2, 24)),
+                "promote",
+                "medium",
+                1,
+                False,
+                "overlay",
+            ),
+            PromotionDecision(
+                ("geopolitical_event", dt.date(2022, 2, 26)),
+                "quarantine",
+                "low",
+                1,
+                True,
+                "contradict",
+            ),
         ],
         output_paths={},
         approval_overlay=approvals,
@@ -826,6 +1021,12 @@ def test_group_b_report_surfaces_stale_approval_states() -> None:
 
     report = _build_group_b_report(result)
 
-    assert report["stale_evidence"] == [{"event_type": "geopolitical_event", "date": "2022-02-24"}]
-    assert report["stale_approvals"] == [{"event_type": "geopolitical_event", "date": "2022-02-25"}]
-    assert report["contradicted_approvals"] == [{"event_type": "geopolitical_event", "date": "2022-02-26"}]
+    assert report["stale_evidence"] == [
+        {"event_type": "geopolitical_event", "date": "2022-02-24"}
+    ]
+    assert report["stale_approvals"] == [
+        {"event_type": "geopolitical_event", "date": "2022-02-25"}
+    ]
+    assert report["contradicted_approvals"] == [
+        {"event_type": "geopolitical_event", "date": "2022-02-26"}
+    ]

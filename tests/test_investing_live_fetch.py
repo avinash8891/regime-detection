@@ -7,29 +7,48 @@ import time
 from pathlib import Path
 
 import pandas as pd
+import pytest
 
 from regime_data_fetch.investing_live import (
     CALENDAR_BASE,
     EARNINGS_BASE,
     SOURCE_CALENDAR_URL,
     SOURCE_EARNINGS_URL,
+    _validate_token_not_expired,
     run_investing_live_fetch,
 )
 
 
-def test_run_investing_live_fetch_materializes_archive_and_records_outputs(tmp_path: Path) -> None:
+def test_run_investing_live_fetch_materializes_archive_and_records_outputs(
+    tmp_path: Path,
+) -> None:
     out_dir = tmp_path / "data" / "raw"
     db_path = out_dir / "acquisition" / "acquisition.db"
     earnings_params: list[dict[str, str]] = []
 
     def page_fetcher(url: str) -> str:
         if url == SOURCE_CALENDAR_URL:
-            return _next_data_html({"eventAndHolidayCountries": [{"id": 5, "name": "United States", "country_code": "US"}]})
+            return _next_data_html(
+                {
+                    "eventAndHolidayCountries": [
+                        {"id": 5, "name": "United States", "country_code": "US"}
+                    ]
+                }
+            )
         if url == SOURCE_EARNINGS_URL:
-            return _next_data_html({"stockCountries": [{"id": 5, "name": "United States", "country_code": "US"}]}, access_token="fixture-token")
+            return _next_data_html(
+                {
+                    "stockCountries": [
+                        {"id": 5, "name": "United States", "country_code": "US"}
+                    ]
+                },
+                access_token="fixture-token",
+            )
         raise AssertionError(url)
 
-    def json_fetcher(url: str, params: dict[str, str], headers: dict[str, str]) -> object:
+    def json_fetcher(
+        url: str, params: dict[str, str], headers: dict[str, str]
+    ) -> object:
         if url == f"{CALENDAR_BASE}/v1/calendars/economic/events/occurrences":
             assert params["country_ids"] == "5"
             return {
@@ -68,7 +87,11 @@ def test_run_investing_live_fetch_materializes_archive_and_records_outputs(tmp_p
                         "holiday_name": "Market Holiday",
                         "exchange_id": 1,
                         "exchange_closed": True,
-                        "exchange": {"country_id": 5, "country": "United States", "short_name": "NYSE"},
+                        "exchange": {
+                            "country_id": 5,
+                            "country": "United States",
+                            "short_name": "NYSE",
+                        },
                     }
                 ]
             }
@@ -108,7 +131,12 @@ def test_run_investing_live_fetch_materializes_archive_and_records_outputs(tmp_p
             ]
         if url == f"{CALENDAR_BASE}/v1/instruments/key-metrics":
             assert params == {"instrument_ids": "100", "domain_id": "56"}
-            return [{"instrument_id": 100, "key_metrics": {"market_cap": 123, "instrument_type": "Stock"}}]
+            return [
+                {
+                    "instrument_id": 100,
+                    "key_metrics": {"market_cap": 123, "instrument_type": "Stock"},
+                }
+            ]
         raise AssertionError(url)
 
     report_path = run_investing_live_fetch(
@@ -130,11 +158,15 @@ def test_run_investing_live_fetch_materializes_archive_and_records_outputs(tmp_p
         "earnings_rows": 1,
         "raw_files": 9,
     }
-    assert pd.read_parquet(out_dir / "investing" / "economic_events.parquet").shape[0] == 1
+    assert (
+        pd.read_parquet(out_dir / "investing" / "economic_events.parquet").shape[0] == 1
+    )
     assert pd.read_parquet(out_dir / "investing" / "holidays.parquet").shape[0] == 1
     earnings = pd.read_parquet(out_dir / "investing" / "earnings.parquet")
     assert earnings.shape[0] == 1
-    assert earnings[["company", "country_code", "market_cap", "importance"]].iloc[0].to_dict() == {
+    assert earnings[["company", "country_code", "market_cap", "importance"]].iloc[
+        0
+    ].to_dict() == {
         "company": "Fixture Co",
         "country_code": "US",
         "market_cap": 123,
@@ -153,15 +185,25 @@ def test_run_investing_live_fetch_materializes_archive_and_records_outputs(tmp_p
         ).fetchone() == (3,)
 
 
-def test_run_investing_live_fetch_skips_earnings_without_token(tmp_path: Path) -> None:
+def test_run_investing_live_fetch_fails_loudly_without_earnings_token(
+    tmp_path: Path,
+) -> None:
     out_dir = tmp_path / "data" / "raw"
     db_path = out_dir / "acquisition" / "acquisition.db"
 
-    def json_fetcher(url: str, params: dict[str, str], headers: dict[str, str]) -> object:
+    def json_fetcher(
+        url: str, params: dict[str, str], headers: dict[str, str]
+    ) -> object:
         if url == f"{CALENDAR_BASE}/v1/calendars/economic/events/occurrences":
             return {
                 "events": [{"id": 1, "country_id": 5, "event_translated": "Payrolls"}],
-                "occurrences": [{"occurrence_id": 10, "event_id": 1, "occurrence_time": "2026-05-01T12:30:00Z"}],
+                "occurrences": [
+                    {
+                        "occurrence_id": 10,
+                        "event_id": 1,
+                        "occurrence_time": "2026-05-01T12:30:00Z",
+                    }
+                ],
             }
         if url == f"{CALENDAR_BASE}/v1/calendars/holidays":
             return {
@@ -177,51 +219,47 @@ def test_run_investing_live_fetch_skips_earnings_without_token(tmp_path: Path) -
             raise AssertionError("earnings endpoint should not be called without token")
         raise AssertionError(url)
 
-    report_path = run_investing_live_fetch(
-        out_dir=out_dir,
-        start=pd.Timestamp("2026-05-01").date(),
-        end=pd.Timestamp("2026-05-01").date(),
-        acquisition_db_path=db_path,
-        artifact_store_root=tmp_path / "store",
-        json_fetcher=json_fetcher,
-        calendar_country_ids=[5],
-        earnings_country_ids=[5],
-        earnings_browser_capture=False,
-    )
+    with pytest.raises(
+        RuntimeError, match="Investing.com earnings access token unavailable"
+    ):
+        run_investing_live_fetch(
+            out_dir=out_dir,
+            start=pd.Timestamp("2026-05-01").date(),
+            end=pd.Timestamp("2026-05-01").date(),
+            acquisition_db_path=db_path,
+            artifact_store_root=tmp_path / "store",
+            json_fetcher=json_fetcher,
+            calendar_country_ids=[5],
+            earnings_country_ids=[5],
+            earnings_browser_capture=False,
+        )
 
-    report = json.loads(report_path.read_text())
-    assert report["counts"] == {
-        "economic_events_rows": 1,
-        "holiday_rows": 1,
-        "earnings_rows": 0,
-        "raw_files": 7,
-    }
-    earnings_report = json.loads(
-        (out_dir / "investing_live_archive" / "investing_earnings_2026-05-01_2026-05-01" / "fetch_report.json").read_text()
-    )
-    assert earnings_report["chunk_reports"] == [
-        {
-            "date_from": "2026-05-01",
-            "date_to": "2026-05-01",
-            "status": "skipped",
-            "reason": "missing_INVESTING_EARNINGS_ACCESS_TOKEN",
-        }
-    ]
-    assert pd.read_parquet(out_dir / "investing" / "earnings.parquet").empty
+    assert not (out_dir / "investing" / "earnings.parquet").exists()
 
 
-def test_run_investing_live_fetch_captures_browser_page_when_missing_token(tmp_path: Path) -> None:
+def test_run_investing_live_fetch_captures_browser_page_when_missing_token(
+    tmp_path: Path,
+) -> None:
     out_dir = tmp_path / "data" / "raw"
     db_path = out_dir / "acquisition" / "acquisition.db"
 
     def earnings_page_capturer(output_path: Path) -> Path:
         output_path.parent.mkdir(parents=True, exist_ok=True)
         output_path.write_text(
-            _next_data_html({"stockCountries": [{"id": 5, "name": "United States", "country_code": "US"}]}, access_token=_future_jwt())
+            _next_data_html(
+                {
+                    "stockCountries": [
+                        {"id": 5, "name": "United States", "country_code": "US"}
+                    ]
+                },
+                access_token=_future_jwt(),
+            )
         )
         return output_path
 
-    def json_fetcher(url: str, params: dict[str, str], headers: dict[str, str]) -> object:
+    def json_fetcher(
+        url: str, params: dict[str, str], headers: dict[str, str]
+    ) -> object:
         if url == f"{CALENDAR_BASE}/v1/calendars/economic/events/occurrences":
             return {"events": [], "occurrences": []}
         if url == f"{CALENDAR_BASE}/v1/calendars/holidays":
@@ -271,20 +309,37 @@ def test_run_investing_live_fetch_captures_browser_page_when_missing_token(tmp_p
     ).exists()
 
 
-def test_run_investing_live_fetch_reads_token_from_loaded_earnings_page(tmp_path: Path) -> None:
+def test_run_investing_live_fetch_reads_token_from_loaded_earnings_page(
+    tmp_path: Path,
+) -> None:
     out_dir = tmp_path / "data" / "raw"
     db_path = out_dir / "acquisition" / "acquisition.db"
     loaded_page = tmp_path / "earnings_page.html"
-    loaded_page.write_text(_next_data_html({"stockCountries": [{"id": 5, "name": "United States", "country_code": "US"}]}, access_token=_future_jwt()))
+    loaded_page.write_text(
+        _next_data_html(
+            {
+                "stockCountries": [
+                    {"id": 5, "name": "United States", "country_code": "US"}
+                ]
+            },
+            access_token=_future_jwt(),
+        )
+    )
 
-    def json_fetcher(url: str, params: dict[str, str], headers: dict[str, str]) -> object:
+    def json_fetcher(
+        url: str, params: dict[str, str], headers: dict[str, str]
+    ) -> object:
         if url == f"{CALENDAR_BASE}/v1/calendars/economic/events/occurrences":
             return {"events": [], "occurrences": []}
         if url == f"{CALENDAR_BASE}/v1/calendars/holidays":
             return {"holidays": []}
         if url == f"{EARNINGS_BASE}/v1/instruments/earnings":
             assert headers["Authorization"].startswith("Bearer ")
-            return {"earnings": [{"date": "2026-05-01", "instrument_id": 100, "eps_actual": 1.2}]}
+            return {
+                "earnings": [
+                    {"date": "2026-05-01", "instrument_id": 100, "eps_actual": 1.2}
+                ]
+            }
         if url == f"{CALENDAR_BASE}/v1/instruments":
             return [{"id": 100, "long_name": "Fixture Co", "country_id": 5}]
         if url == f"{CALENDAR_BASE}/v1/instruments/key-metrics":
@@ -313,15 +368,21 @@ def test_run_investing_live_fetch_reads_token_from_loaded_earnings_page(tmp_path
     }
 
 
-def _next_data_html(countries: dict[str, list[dict[str, object]]], *, access_token: str = "") -> str:
+def test_validate_token_rejects_malformed_jwt_payload() -> None:
+    with pytest.raises(RuntimeError, match="malformed"):
+        _validate_token_not_expired("header.not-base64.signature")
+
+
+def _next_data_html(
+    countries: dict[str, list[dict[str, object]]], *, access_token: str = ""
+) -> str:
     payload = {
         "props": {
             "pageProps": {
                 "accessToken": access_token,
                 "state": {
                     "countryStore": {
-                        key: [{"countries": value}]
-                        for key, value in countries.items()
+                        key: [{"countries": value}] for key, value in countries.items()
                     }
                 },
             }

@@ -9,17 +9,6 @@ import pandas as pd
 from regime_data_fetch.acquisition_store import AcquisitionStore
 
 
-ECONOMIC_EVENTS_REL = Path("investing_calendar_structured_2016_2026/investing_economic_events_2016-01-01_2026-05-15.csv")
-HOLIDAYS_REL = Path("investing_calendar_structured_2016_2026/investing_holidays_2016-01-01_2026-05-15.csv")
-CALENDAR_COMBINED_REL = Path("investing_calendar_structured_2016_2026/investing_calendar_combined_2016-01-01_2026-05-15.jsonl")
-CALENDAR_FETCH_REPORT_REL = Path("investing_calendar_structured_2016_2026/fetch_report.json")
-EARNINGS_REL = Path("investing_earnings_2016_2026/investing_earnings_2016-01-01_2026-05-15.csv")
-EARNINGS_JSONL_REL = Path("investing_earnings_2016_2026/investing_earnings_2016-01-01_2026-05-15.jsonl")
-EARNINGS_QUARANTINE_REL = Path("investing_earnings_2016_2026/quarantine_earnings_fetch_errors.jsonl")
-EARNINGS_FETCH_REPORT_REL = Path("investing_earnings_2016_2026/fetch_report.json")
-EARNINGS_RAW_INSTRUMENTS_REL = Path("investing_earnings_2016_2026/raw_instruments")
-
-
 def _single_match(root: Path, pattern: str, *, required: bool = True) -> Path | None:
     matches = sorted(root.glob(pattern))
     if not matches:
