@@ -149,6 +149,12 @@ def compute_hmm_features(
                 standardize_inputs=config.standardize_inputs,
             )
             best: dict[str, Any] | None = None
+            # TODO(simplify): the retrain loop now runs this full seed sweep
+            # (`len(random_seeds)` fits × n_iter=200) at every checkpoint —
+            # dominant cost in classify_window. Warm-start from the previous
+            # checkpoint's startprob/transmat/means/covars and drop n_iter for
+            # follow-on retrains; cuts ~5-10x. Requires spec sign-off because
+            # warm-start changes calibration math.
             for seed in config.random_seeds:
                 model = GaussianHMM(
                     n_components=config.n_states,

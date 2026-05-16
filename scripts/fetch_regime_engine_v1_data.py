@@ -218,6 +218,13 @@ def main() -> int:
     if args.emit_manifest and not args.artifact_store:
         raise SystemExit("--artifact-store is required when --emit-manifest is set")
 
+    # TODO(simplify): under --fetch all, the per-source fetches (market, macro,
+    # sentiment, events, pmi, pit, fomc, powell, cleveland-fed-nowcast,
+    # sf-fed-news-sentiment, daily-ohlcv-constituents-alpaca) run strictly in
+    # series, even though they hit independent upstreams. A ThreadPoolExecutor
+    # would cut wall-clock to ~max(N) instead of sum(N). Held back because
+    # Alpaca shares a rate-limit budget with daily-ohlcv-constituents-alpaca —
+    # confirm upstream rate-limit policy per source before parallelizing.
     if args.env_file:
         load_env_file(Path(args.env_file))
 

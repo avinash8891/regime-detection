@@ -177,6 +177,13 @@ class AcquisitionStore:
             else None,
         )
 
+    # TODO(simplify): record_file_artifact + record_output read the full file
+    # into RAM (`path.read_bytes()`) just to sha256 it and feed _store_raw_artifact.
+    # For the 762-parquet daily_ohlcv_762 import (store_bytes=False), each
+    # parquet can be 10s of MB — peak RSS scales with file size for no reason.
+    # Switch to streaming sha256_file + accept an already-hashed payload path
+    # in _store_raw_artifact; only read_bytes when artifact_store + store_bytes
+    # actually need the blob in memory.
     def record_file_artifact(
         self,
         *,

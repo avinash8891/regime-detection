@@ -22,6 +22,12 @@ class ArtifactOverwriteError(ArtifactStoreError):
 
 @dataclass(frozen=True)
 class StoredArtifact:
+    # TODO(simplify): `uri` is a raw relative key for LocalArtifactStore but a
+    # scheme-qualified URI for S3ArtifactStore — manifest readers must know
+    # which backend produced the value to resolve it. Either always emit a
+    # scheme-qualified URI (file:// for local) or add `store.resolve(uri) -> Path`
+    # and route all callers through it. Today `_iter_existing_report_files`
+    # leaks this ambiguity into manifests.
     uri: str
     sha256: str
     size_bytes: int
