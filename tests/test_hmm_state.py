@@ -86,6 +86,10 @@ def _default_hmm_config(training_window_days: int = 1260) -> HMMConfig:
         training_window_days=training_window_days,
         retrain_cadence_days=21,
         random_state=42,
+        standardize_inputs=True,
+        covariance_type="full",
+        min_covar=0.001,
+        random_seeds=(42, 101, 202),
     )
 
 
@@ -201,6 +205,66 @@ def test_compute_hmm_features_returns_none_when_hmm_fit_is_non_monotonic(
     assert compute_hmm_features(config=cfg, **inputs) is None
 
 
+def test_compute_hmm_features_uses_best_monotonic_seed_after_standardizing(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    inputs = _synthetic_inputs(n_sessions=1500)
+    cfg = _default_hmm_config().model_copy(
+        update={
+            "covariance_type": "diag",
+            "min_covar": 0.123,
+            "standardize_inputs": True,
+            "random_seeds": (42, 101),
+        }
+    )
+    seen: list[dict[str, object]] = []
+
+    class FakeMonitor:
+        tol = 0.01
+        n_iter = 200
+        verbose = False
+
+    class FakeGaussianHMM:
+        def __init__(self, **kwargs) -> None:
+            self.kwargs = kwargs
+            self.random_state = kwargs["random_state"]
+            self.monitor_ = FakeMonitor()
+
+        def fit(self, train):
+            seen.append(
+                {
+                    "random_state": self.random_state,
+                    "covariance_type": self.kwargs["covariance_type"],
+                    "min_covar": self.kwargs["min_covar"],
+                    "mean": float(train.mean()),
+                    "std": float(train.std()),
+                }
+            )
+            if self.random_state == 42:
+                self.monitor_.report(10.0)
+                self.monitor_.report(9.0)
+            else:
+                self.monitor_.report(10.0)
+                self.monitor_.report(12.0)
+            return self
+
+        def predict_proba(self, frame):
+            return np.tile(np.array([[0.7, 0.1, 0.1, 0.1]]), (len(frame), 1))
+
+    monkeypatch.setattr("regime_detection.hmm_state.GaussianHMM", FakeGaussianHMM)
+
+    result = compute_hmm_features(config=cfg, **inputs)
+
+    assert result is not None
+    assert result.selected_seed == 101
+    assert result.log_likelihood == 12.0
+    assert [item["random_state"] for item in seen] == [42, 101]
+    assert all(item["covariance_type"] == "diag" for item in seen)
+    assert all(item["min_covar"] == 0.123 for item in seen)
+    assert abs(float(seen[0]["mean"])) < 1e-12
+    assert float(seen[0]["std"]) == pytest.approx(1.0)
+
+
 def test_top_state_prob_is_at_least_one_over_n_states() -> None:
     inputs = _synthetic_inputs(n_sessions=1500)
     cfg = _default_hmm_config()
@@ -215,6 +279,10 @@ def test_hmm_uses_real_default_config_n_states() -> None:
     cfg = load_default_regime_config().hmm
     assert cfg is not None
     assert cfg.n_states == 4
+    assert cfg.standardize_inputs is True
+    assert cfg.covariance_type == "full"
+    assert cfg.min_covar == pytest.approx(0.001)
+    assert cfg.random_seeds == (42, 101, 202, 303, 404, 505, 606, 707, 808, 909)
     assert cfg.training_window_days == 1260
     assert cfg.random_state == 42
 

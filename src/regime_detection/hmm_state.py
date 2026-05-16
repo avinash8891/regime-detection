@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
+from typing import Any
 
 import numpy as np
 import pandas as pd
@@ -71,6 +72,8 @@ class HMMFeatures:
     top_state_prob: pd.Series
     state_probabilities: pd.DataFrame
     n_states: int
+    selected_seed: int
+    log_likelihood: float
 
 
 def compute_hmm_features(
@@ -119,32 +122,48 @@ def compute_hmm_features(
     if len(frame) < n_train:
         return None
 
-    train = frame.tail(n_train).to_numpy(dtype=float)
-    model = GaussianHMM(
-        n_components=config.n_states,
-        covariance_type="full",
-        n_iter=200,
-        random_state=config.random_state,
+    train_frame = frame.tail(n_train)
+    fit_frame, predict_frame = _prepare_hmm_frames(
+        train_frame=train_frame,
+        full_frame=frame,
+        standardize_inputs=config.standardize_inputs,
     )
-    model.monitor_ = _StrictConvergenceMonitor(
-        tol=model.monitor_.tol,
-        n_iter=model.monitor_.n_iter,
-        verbose=model.monitor_.verbose,
-    )
+    best: dict[str, Any] | None = None
+    skipped: list[tuple[int, float | None, float | None, float | None]] = []
     try:
-        model.fit(train)
-        if getattr(model.monitor_, "non_monotonic", False):
-            history = list(model.monitor_.history)
-            delta = history[-1] - history[-2] if len(history) >= 2 else float("nan")
-            _LOGGER.warning(
-                "GaussianHMM fit produced non-monotonic log likelihood; "
-                "HMM seam returns None: current=%s previous=%s delta=%s",
-                history[-1] if history else None,
-                history[-2] if len(history) >= 2 else None,
-                delta,
+        for seed in config.random_seeds:
+            model = GaussianHMM(
+                n_components=config.n_states,
+                covariance_type=config.covariance_type,
+                min_covar=config.min_covar,
+                n_iter=200,
+                random_state=seed,
             )
-            return None
-        posterior = model.predict_proba(frame.to_numpy(dtype=float))
+            model.monitor_ = _StrictConvergenceMonitor(
+                tol=model.monitor_.tol,
+                n_iter=model.monitor_.n_iter,
+                verbose=model.monitor_.verbose,
+            )
+            model.fit(fit_frame)
+            history = list(model.monitor_.history)
+            final_log_likelihood = float(history[-1]) if history else float("-inf")
+            previous_log_likelihood = float(history[-2]) if len(history) >= 2 else None
+            delta = (
+                final_log_likelihood - previous_log_likelihood
+                if previous_log_likelihood is not None
+                else None
+            )
+            if getattr(model.monitor_, "non_monotonic", False):
+                skipped.append((seed, final_log_likelihood, previous_log_likelihood, delta))
+                continue
+            posterior = model.predict_proba(predict_frame)
+            candidate = {
+                "posterior": posterior,
+                "seed": seed,
+                "log_likelihood": final_log_likelihood,
+            }
+            if best is None or final_log_likelihood > best["log_likelihood"]:
+                best = candidate
     except Exception as exc:  # noqa: BLE001
         # Fail-open: degenerate inputs (singular covariance, etc.) should
         # not crash the engine — the seam goes None and downstream falls
@@ -153,13 +172,21 @@ def compute_hmm_features(
             "GaussianHMM fit/predict failed; HMM seam returns None: %s", exc
         )
         return None
+    if best is None:
+        _LOGGER.warning(
+            "GaussianHMM produced no monotonic fit across %d seed(s); "
+            "HMM seam returns None. skipped=%s",
+            len(config.random_seeds),
+            skipped[:5],
+        )
+        return None
 
     # Re-align to the canonical SPY index (return_1d carries it). Sessions
     # dropped by .dropna() get NaN both in the state_probabilities frame
     # and in the top_state_prob series.
     canonical_index = return_1d.index  # type: ignore[union-attr]
     state_prob_frame = pd.DataFrame(
-        posterior,
+        best["posterior"],
         index=frame.index,
         columns=list(range(config.n_states)),
     ).reindex(canonical_index)
@@ -185,4 +212,21 @@ def compute_hmm_features(
         top_state_prob=top_state_prob,
         state_probabilities=state_prob_frame,
         n_states=config.n_states,
+        selected_seed=int(best["seed"]),
+        log_likelihood=float(best["log_likelihood"]),
     )
+
+
+def _prepare_hmm_frames(
+    *,
+    train_frame: pd.DataFrame,
+    full_frame: pd.DataFrame,
+    standardize_inputs: bool,
+) -> tuple[np.ndarray, np.ndarray]:
+    if not standardize_inputs:
+        return train_frame.to_numpy(dtype=float), full_frame.to_numpy(dtype=float)
+    means = train_frame.mean()
+    stds = train_frame.std(ddof=0).replace(0.0, 1.0)
+    train = ((train_frame - means) / stds).to_numpy(dtype=float)
+    full = ((full_frame - means) / stds).to_numpy(dtype=float)
+    return train, full

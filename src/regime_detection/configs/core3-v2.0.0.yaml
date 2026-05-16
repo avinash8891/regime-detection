@@ -429,6 +429,13 @@ hmm:
   retrain_cadence_days: 21
   # Slice 6: reproducibility seed for hmmlearn.GaussianHMM.
   random_state: 42
+  # Stabilize EM on mixed-scale market features while keeping deterministic
+  # hmmlearn fits. The wrapper tries these seeds and accepts the highest
+  # final log-likelihood among monotonic fits.
+  standardize_inputs: true
+  covariance_type: full
+  min_covar: 0.001
+  random_seeds: [42, 101, 202, 303, 404, 505, 606, 707, 808, 909]
 
 # v2 §6.2 K-Means/GMM Clustering — diagnostic evidence layer (Slice 7).
 clustering:

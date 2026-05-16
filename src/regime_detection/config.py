@@ -851,6 +851,13 @@ class HMMConfig(BaseModel):
     # Slice 6: deterministic seed for hmmlearn.GaussianHMM. Reproducibility
     # gate — same inputs + same seed → byte-identical posterior.
     random_state: int = Field(default=42, ge=0)
+    covariance_type: Literal["full", "tied", "diag", "spherical"] = "full"
+    min_covar: float = Field(default=0.001, ge=0.0)
+    standardize_inputs: bool = True
+    random_seeds: tuple[int, ...] = Field(
+        default=(42, 101, 202, 303, 404, 505, 606, 707, 808, 909),
+        min_length=1,
+    )
 
 
 class ClusteringConfig(BaseModel):
