@@ -86,6 +86,7 @@ def test_shadow_ab_classify_reuses_sorted_market_slice_bounds() -> None:
     assert captures[0].index.tolist() == [0, 1]
 
 
+
 def _write_v2_gate_parquets(tmp_path: Path) -> tuple[Path, Path]:
     fixture_root = Path(__file__).resolve().parent / "fixtures" / "raw" / "v2"
     daily = pd.read_csv(fixture_root / "daily_ohlcv.csv")

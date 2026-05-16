@@ -399,6 +399,31 @@ def _install_timers(timer: StageTimer):
             ),
         ),
         (
+            timeline_module,
+            "build_feature_store",
+            _timed_wrapper(
+                timer, "build_feature_store_total", timeline_module.build_feature_store
+            ),
+        ),
+        (
+            timeline_module,
+            "build_axis_series_bundle",
+            _timed_wrapper(
+                timer,
+                "build_axis_series_bundle",
+                timeline_module.build_axis_series_bundle,
+            ),
+        ),
+        (
+            timeline_module,
+            "build_transition_risk_series",
+            _timed_wrapper(
+                timer,
+                "build_transition_risk_series",
+                timeline_module.build_transition_risk_series,
+            ),
+        ),
+        (
             feature_store_module,
             "compute_network_fragility_features",
             _timed_wrapper(

@@ -255,9 +255,9 @@ def download_spglobal_eps_workbook_with_browser(
         context = None
         try:
             if user_data_dir is not None:
-                context = playwright.chromium.launch_persistent_context(  # type: ignore[arg-type]
+                context = playwright.chromium.launch_persistent_context(
                     str(user_data_dir),
-                    **launch_kwargs,  # type: ignore[arg-type]
+                    **launch_kwargs,
                 )
             else:
                 browser = playwright.chromium.launch(
