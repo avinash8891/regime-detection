@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import contextlib
 import datetime as dt
+import json
 import math
 import signal
 import sys
@@ -103,9 +104,9 @@ class ProfileInputBundle:
     aaii_sentiment: pd.DataFrame | None
     news_sentiment: pd.Series | None
     implied_vol_30d: pd.Series | None
-    central_bank_text_releases: pd.Series | None
+    central_bank_text_releases: pd.DataFrame | None
     cpi_first_release: pd.Series | None
-    pit_constituent_intervals: dict[str, Any]
+    pit_constituent_intervals: pd.DataFrame
     constituent_ohlcv: dict[str, pd.DataFrame]
     constituent_tickers: list[str]
     missing_constituent_paths: list[Path]
@@ -274,6 +275,39 @@ def _input_status(name: str, value: Any) -> str:
     if isinstance(value, pd.Series):
         return f"{name}: {len(value)} rows"
     return f"{name}: type={type(value).__name__}"
+
+
+def _input_status_report(name: str, value: Any) -> dict[str, Any]:
+    if value is None:
+        return {"name": name, "status": "none", "count": 0}
+    if isinstance(value, dict):
+        return {
+            "name": name,
+            "status": "empty_dict" if not value else "present",
+            "kind": "dict",
+            "count": len(value),
+        }
+    if isinstance(value, pd.DataFrame):
+        return {
+            "name": name,
+            "status": "present",
+            "kind": "dataframe",
+            "rows": len(value),
+            "columns": list(value.columns),
+        }
+    if isinstance(value, pd.Series):
+        return {
+            "name": name,
+            "status": "present",
+            "kind": "series",
+            "rows": len(value),
+            "name_in_series": value.name,
+        }
+    return {
+        "name": name,
+        "status": "present",
+        "kind": type(value).__name__,
+    }
 
 
 def _timed_wrapper(
@@ -636,6 +670,24 @@ def _format_stage_rows(
     return rows
 
 
+def _stage_report(
+    stage_names: list[str], timer: StageTimer, total: float
+) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    for stage_name in stage_names:
+        seconds = timer.totals.get(stage_name, 0.0)
+        pct = (seconds / total * 100.0) if total > 0 else 0.0
+        rows.append(
+            {
+                "stage_name": stage_name,
+                "wall_clock_seconds": seconds,
+                "percent_of_total": pct,
+                "call_count": timer.counts.get(stage_name, 0),
+            }
+        )
+    return rows
+
+
 def _reporting_label(output: Any) -> str | None:
     if output is None:
         return None
@@ -706,6 +758,59 @@ def _compact_timeline_rows(outputs: list[RegimeOutput]) -> list[str]:
     return rows
 
 
+def _compact_timeline_report(outputs: list[RegimeOutput]) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    for out in outputs:
+        seams: dict[str, Any] = {}
+        network_fragility_label = _reporting_label(out.network_fragility)
+        if (
+            network_fragility_label is not None
+            and network_fragility_label not in NON_CLASSIFIED_REPORTING_LABELS
+        ):
+            seams["network_fragility"] = network_fragility_label
+        if out.volume_liquidity_state is not None:
+            seams["volume_liquidity_state"] = _reporting_label(
+                out.volume_liquidity_state
+            )
+        if out.credit_funding_state is not None:
+            seams["credit_funding_state"] = _reporting_label(out.credit_funding_state)
+        if out.credit_funding_state_proxy is not None:
+            seams["credit_funding_state_proxy"] = _reporting_label(
+                out.credit_funding_state_proxy
+            )
+        if out.credit_funding_effective_state is not None:
+            seams["credit_funding_effective_state"] = {
+                "reported": _reporting_label(out.credit_funding_effective_state),
+                "source_used": out.credit_funding_effective_state.evidence.get(
+                    "source_used", "not_recorded"
+                ),
+            }
+        if out.inflation_growth_state is not None:
+            seams["inflation_growth_state"] = _reporting_label(
+                out.inflation_growth_state
+            )
+        if out.monetary_pressure_state is not None:
+            seams["monetary_pressure_state"] = _reporting_label(
+                out.monetary_pressure_state
+            )
+        if out.cluster is not None:
+            seams["cluster"] = out.cluster.cluster_id
+        if out.change_point is not None:
+            seams["change_point"] = out.change_point.score
+        if out.transition_risk.score is not None:
+            seams["transition_score"] = out.transition_risk.score
+        rows.append(
+            {
+                "as_of_date": out.as_of_date.isoformat(),
+                "trend_direction": _reporting_label(out.trend_direction),
+                "volatility_state": _reporting_label(out.volatility_state),
+                "transition_risk": out.transition_risk.label,
+                "activated_v2_seams": seams,
+            }
+        )
+    return rows
+
+
 def _trailing_v2_status(out: RegimeOutput) -> list[str]:
     rows = ["field | status"]
 
@@ -720,6 +825,41 @@ def _trailing_v2_status(out: RegimeOutput) -> list[str]:
             rows.append(f"{name} | reported={_reporting_label(value)}")
             return
         rows.append(f"{name} | present")
+
+    add("network_fragility", out.network_fragility)
+    add("volume_liquidity_state", out.volume_liquidity_state)
+    add("credit_funding_state", out.credit_funding_state)
+    add("credit_funding_state_proxy", out.credit_funding_state_proxy)
+    add("credit_funding_effective_state", out.credit_funding_effective_state)
+    add("inflation_growth_state", out.inflation_growth_state)
+    add("monetary_pressure_state", out.monetary_pressure_state)
+    add("cluster", out.cluster)
+    add("change_point", out.change_point)
+    add("transition_risk.score", out.transition_risk.score)
+    add("transition_risk.score_components", out.transition_risk.score_components)
+    return rows
+
+
+def _trailing_v2_status_report(out: RegimeOutput) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+
+    def add(name: str, value: Any) -> None:
+        if value is None:
+            rows.append({"field": name, "status": "none"})
+            return
+        if isinstance(value, float) and math.isnan(value):
+            rows.append({"field": name, "status": "nan"})
+            return
+        if hasattr(value, "active_label"):
+            rows.append(
+                {
+                    "field": name,
+                    "status": "present",
+                    "reported": _reporting_label(value),
+                }
+            )
+            return
+        rows.append({"field": name, "status": "present"})
 
     add("network_fragility", out.network_fragility)
     add("volume_liquidity_state", out.volume_liquidity_state)
@@ -791,6 +931,176 @@ def _verify_invariants(
                     f"{seam_name} is None; missing inputs: {', '.join(missing)}"
                 )
     return issues
+
+
+def _path_text(path: Path | None, *, present: bool = True) -> str | None:
+    if path is None or not present:
+        return None
+    return str(path)
+
+
+def _build_json_report(
+    *,
+    args: argparse.Namespace,
+    inputs: ProfileInputBundle,
+    timeline: RegimeTimeline,
+    timer: StageTimer,
+    total_wall_clock: float,
+    per_day_emission_total: float,
+    per_day_avg_ms: float,
+    verification_issues: list[str],
+) -> dict[str, Any]:
+    stage_names = [
+        "build_market_context",
+        "slice_context_to_recent_sessions",
+        "build_feature_store_total",
+        "build_axis_series_bundle",
+        "build_transition_risk_series",
+        "build_regime_timeline_total",
+    ]
+    stage_rows = _stage_report(stage_names, timer, total_wall_clock)
+    residual_pct = (
+        per_day_emission_total / total_wall_clock * 100.0
+        if total_wall_clock > 0
+        else 0.0
+    )
+    stage_rows.append(
+        {
+            "stage_name": "per_day_output_emission_loop_residual",
+            "wall_clock_seconds": per_day_emission_total,
+            "percent_of_total": residual_pct,
+            "call_count": args.lookback_days,
+        }
+    )
+
+    input_names = [
+        "sector_etf_closes",
+        "cross_asset_closes",
+        "macro_series",
+        "event_calendar",
+        "aaii_sentiment",
+        "news_sentiment",
+        "implied_vol_30d",
+        "central_bank_text_releases",
+        "cpi_first_release",
+        "pit_constituent_intervals",
+        "constituent_ohlcv",
+    ]
+
+    return {
+        "sources": {
+            "config_path": str(args.config_path),
+            "market_data": str(args.daily_dir),
+            "constituent_tree": str(args.constituent_tree),
+            "macro": str(args.macro_parquet),
+            "event_calendar": _path_text(
+                args.event_calendar, present=inputs.event_calendar is not None
+            ),
+            "aaii_sentiment": _path_text(
+                args.aaii_sentiment_parquet,
+                present=inputs.aaii_sentiment is not None,
+            ),
+            "news_sentiment": _path_text(
+                args.news_sentiment_parquet,
+                present=inputs.news_sentiment is not None,
+            ),
+            "implied_vol_30d": (
+                "macro_series[implied_vol_30d]"
+                if inputs.implied_vol_30d is not None
+                else None
+            ),
+            "fomc_minutes": _path_text(
+                args.fomc_minutes_parquet,
+                present=args.fomc_minutes_parquet.exists(),
+            ),
+            "powell_speeches": _path_text(
+                args.powell_speeches_parquet,
+                present=args.powell_speeches_parquet.exists(),
+            ),
+            "cpi_vintages": _path_text(
+                args.cpi_vintages_parquet,
+                present=inputs.cpi_first_release is not None,
+            ),
+            "pit": str(args.pit_parquet),
+        },
+        "window": {
+            "end_date": inputs.end_date.isoformat(),
+            "selected_window_start": inputs.selected_dates[0].isoformat(),
+            "selected_window_end": inputs.selected_dates[-1].isoformat(),
+            "working_window_start": inputs.working_start_date.isoformat(),
+            "required_sessions": inputs.required_sessions,
+            "lookback_days": args.lookback_days,
+        },
+        "inputs": {
+            "seams": [
+                _input_status_report(name, inputs.input_kwargs[name])
+                for name in input_names
+            ],
+            "pit_overlap_tickers_requested": len(inputs.constituent_tickers),
+            "constituent_tickers_loaded": len(inputs.constituent_ohlcv),
+            "missing_constituent_files": [
+                str(path) for path in inputs.missing_constituent_paths
+            ],
+        },
+        "timing": {
+            "stages": stage_rows,
+            "feature_store": _stage_report(
+                [
+                    "feature_store.network_fragility",
+                    "feature_store.trend_direction_v2",
+                    "feature_store.volatility_state_v2",
+                    "feature_store.breadth_state_v2",
+                    "feature_store.volume_liquidity_v2",
+                    "feature_store.monetary_pressure_v2",
+                    "feature_store.credit_funding",
+                    "feature_store.inflation_growth",
+                    "feature_store.hmm",
+                    "feature_store.gmm_clustering",
+                    "feature_store.change_point",
+                ],
+                timer,
+                timer.totals.get("build_feature_store_total", 0.0),
+            ),
+            "axis_series_bundle": _stage_report(
+                [
+                    "axis_series.trend_direction",
+                    "axis_series.trend_character",
+                    "axis_series.volatility_state",
+                    "axis_series.breadth_state",
+                    "axis_series.event_calendar",
+                    "axis_series.credit_funding",
+                    "axis_series.network_fragility",
+                    "axis_series.volume_liquidity_state",
+                    "axis_series.monetary_pressure_state",
+                    "axis_series.inflation_growth",
+                ],
+                timer,
+                timer.totals.get("build_axis_series_bundle", 0.0),
+            ),
+            "inflation_growth": _stage_report(
+                [
+                    "axis_series.inflation_growth.build_rule_inputs_by_date",
+                    "axis_series.inflation_growth.assess_series_input_quality",
+                    "axis_series.inflation_growth.evaluate_rules",
+                ],
+                timer,
+                timer.totals.get("axis_series.inflation_growth", 0.0),
+            ),
+            "per_day_output_emission": {
+                "total_seconds": per_day_emission_total,
+                "avg_ms_per_day": per_day_avg_ms,
+            },
+            "bottom_line_total_wall_clock_seconds": total_wall_clock,
+        },
+        "timeline": _compact_timeline_report(timeline.outputs),
+        "trailing_v2_field_status": _trailing_v2_status_report(timeline.outputs[-1]),
+        "verification_issues": verification_issues,
+    }
+
+
+def _write_json_report(path: Path, report: dict[str, Any]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(report, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 
 
 def _load_profile_inputs(
@@ -918,6 +1228,12 @@ def _parse_args() -> argparse.Namespace:
         type=Path,
         default=REPO_ROOT / "data" / "raw",
         help="Local data/raw root used for manifest materialization.",
+    )
+    parser.add_argument(
+        "--json-output",
+        type=Path,
+        default=None,
+        help="Optional path for a machine-readable profiling report JSON artifact.",
     )
     parser.add_argument("--allow-missing-constituent-files", action="store_true")
     args = parser.parse_args()
@@ -1105,6 +1421,20 @@ def main() -> int:
     verification_issues = _verify_invariants(
         timeline, feature_store, inputs.input_kwargs
     )
+    if args.json_output is not None:
+        _write_json_report(
+            args.json_output,
+            _build_json_report(
+                args=args,
+                inputs=inputs,
+                timeline=timeline,
+                timer=timer,
+                total_wall_clock=total_wall_clock,
+                per_day_emission_total=per_day_emission_total,
+                per_day_avg_ms=per_day_avg_ms,
+                verification_issues=verification_issues,
+            ),
+        )
 
     print(f"config_path={args.config_path}")
     print(f"market_data_source={args.daily_dir}")
