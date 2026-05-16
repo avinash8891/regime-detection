@@ -66,6 +66,19 @@ def _setup_logging() -> None:
     )
 
 
+def _session_error_exit_code(
+    *,
+    v1_errors: int,
+    v2_errors: int,
+    allow_session_errors: bool,
+) -> int:
+    if allow_session_errors:
+        return 0
+    if v1_errors or v2_errors:
+        return 1
+    return 0
+
+
 def _resolve_default_window(daily_dir: Path) -> tuple[dt.date, dt.date]:
     """Return (start, end). end = max date in daily parquet; start = end-1y-90d."""
     df = pd.read_parquet(daily_dir, columns=["date"])
@@ -347,6 +360,11 @@ def _parse_args() -> argparse.Namespace:
         default=REPO_ROOT / "data" / "raw",
         help="Local data/raw root used for manifest materialization.",
     )
+    parser.add_argument(
+        "--allow-session-errors",
+        action="store_true",
+        help="Allow exploratory report output even when per-session classify errors occur.",
+    )
     args = parser.parse_args()
     if args.daily_dir is None:
         args.daily_dir = args.data_root / "daily_ohlcv"
@@ -484,7 +502,19 @@ def main() -> int:
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(markdown, encoding="utf-8")
     logger.info("Wrote %s", args.output)
-    return 0
+    exit_code = _session_error_exit_code(
+        v1_errors=v1_errors,
+        v2_errors=v2_errors,
+        allow_session_errors=args.allow_session_errors,
+    )
+    if exit_code:
+        logger.error(
+            "Session classify errors occurred: v1_errors=%d v2_errors=%d. "
+            "Re-run with --allow-session-errors only for exploratory output.",
+            v1_errors,
+            v2_errors,
+        )
+    return exit_code
 
 
 if __name__ == "__main__":

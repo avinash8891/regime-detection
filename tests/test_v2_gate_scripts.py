@@ -25,6 +25,82 @@ def test_gate_reporting_label_uses_granular_status() -> None:
     assert run_v2_shadow_ab_gate._reporting_label(output) == "no_rule_fired"
 
 
+@pytest.mark.parametrize(
+    ("v1_errors", "v2_errors", "allow_session_errors", "expected"),
+    [
+        (0, 0, False, 0),
+        (1, 0, False, 1),
+        (0, 1, False, 1),
+        (1, 1, True, 0),
+    ],
+)
+def test_gate_scripts_fail_on_session_errors_unless_explicitly_allowed(
+    v1_errors: int,
+    v2_errors: int,
+    allow_session_errors: bool,
+    expected: int,
+) -> None:
+    assert (
+        run_v2_walkforward_gate._session_error_exit_code(
+            v1_errors=v1_errors,
+            v2_errors=v2_errors,
+            allow_session_errors=allow_session_errors,
+        )
+        == expected
+    )
+    assert (
+        run_v2_shadow_ab_gate._session_error_exit_code(
+            v1_errors=v1_errors,
+            v2_errors=v2_errors,
+            allow_session_errors=allow_session_errors,
+        )
+        == expected
+    )
+
+
+@pytest.mark.parametrize(
+    ("module", "argv_base"),
+    [
+        (
+            run_v2_walkforward_gate,
+            [
+                "run_v2_walkforward_gate.py",
+                "--daily-dir",
+                "unused_daily.parquet",
+                "--macro-parquet",
+                "unused_macro.parquet",
+                "--start-date",
+                "2026-05-12",
+                "--end-date",
+                "2026-05-12",
+            ],
+        ),
+        (
+            run_v2_shadow_ab_gate,
+            [
+                "run_v2_shadow_ab_gate.py",
+                "--daily-dir",
+                "unused_daily.parquet",
+                "--macro-parquet",
+                "unused_macro.parquet",
+            ],
+        ),
+    ],
+)
+def test_gate_scripts_parse_allow_session_errors_flag(
+    module,
+    argv_base: list[str],
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(module, "materialize_if_requested", lambda **_: None)
+
+    monkeypatch.setattr(sys, "argv", argv_base)
+    assert module._parse_args().allow_session_errors is False
+
+    monkeypatch.setattr(sys, "argv", [*argv_base, "--allow-session-errors"])
+    assert module._parse_args().allow_session_errors is True
+
+
 def _write_v2_gate_parquets(tmp_path: Path) -> tuple[Path, Path]:
     fixture_root = Path(__file__).resolve().parent / "fixtures" / "raw" / "v2"
     daily = pd.read_csv(fixture_root / "daily_ohlcv.csv")
