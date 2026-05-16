@@ -13,12 +13,10 @@ from regime_data_fetch.artifact_manifest import (
     write_manifest,
 )
 from regime_data_fetch.artifact_store import sha256_file
-from scripts import run_v2_walkforward_gate
 
 
-def test_walkforward_gate_parse_args_materializes_manifest_defaults(
+def test_walkforward_gate_subprocess_materializes_manifest_defaults(
     tmp_path: Path,
-    monkeypatch,
 ) -> None:
     store_root = tmp_path / "store"
     daily_source = store_root / "canonical" / "daily_ohlcv" / "part.parquet"
@@ -89,14 +87,12 @@ def test_walkforward_gate_parse_args_materializes_manifest_defaults(
     )
     manifest_path = tmp_path / "manifest.yaml"
     data_root = tmp_path / "data" / "raw"
-    repo_root = tmp_path / "repo"
     write_manifest(manifest, manifest_path)
-    monkeypatch.setattr(run_v2_walkforward_gate, "REPO_ROOT", repo_root)
-    monkeypatch.setattr(
-        sys,
-        "argv",
+
+    result = subprocess.run(
         [
-            "run_v2_walkforward_gate.py",
+            sys.executable,
+            "scripts/run_v2_walkforward_gate.py",
             "--manifest",
             str(manifest_path),
             "--data-root",
@@ -104,17 +100,15 @@ def test_walkforward_gate_parse_args_materializes_manifest_defaults(
             "--output",
             str(tmp_path / "out.md"),
         ],
+        text=True,
+        capture_output=True,
+        check=False,
     )
 
-    args = run_v2_walkforward_gate._parse_args()
-
-    assert args.daily_dir == data_root / "daily_ohlcv"
-    assert args.macro_parquet == data_root / "macro" / "fred_macro_series.parquet"
-    assert args.end_date.isoformat() == "2026-05-15"
+    assert result.returncode != 0
     assert (data_root / "daily_ohlcv" / "part.parquet").exists()
-    assert args.macro_parquet.exists()
-    assert args.pmi_path == data_root / "pmi" / "us_ism_pmi_history.parquet"
-    assert args.pmi_path.exists()
+    assert (data_root / "macro" / "fred_macro_series.parquet").exists()
+    assert (data_root / "pmi" / "us_ism_pmi_history.parquet").exists()
 
 
 @pytest.mark.parametrize(

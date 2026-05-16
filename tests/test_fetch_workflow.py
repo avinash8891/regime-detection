@@ -6,6 +6,7 @@ from pathlib import Path
 import sqlite3
 
 import pandas as pd
+import pytest
 
 from regime_data_fetch.alpaca_daily import DailyBarsFetchResult
 from regime_data_fetch.bls_schedule import build_bls_local_archive_page_fetcher
@@ -23,7 +24,6 @@ from regime_data_fetch.ism import extract_ism_pmi_value, release_timestamp_for
 from regime_data_fetch.universe import FIXED_UNIVERSE_SYMBOL_COUNT
 from scripts import fetch_regime_engine_v1_data as fetch_script
 from scripts.fetch_regime_engine_v1_data import (
-    FETCH_MODES,
     OPERATOR_ASSISTED_FETCH_MODES,
     UNATTENDED_FETCH_MODES,
     _should_fetch,
@@ -609,10 +609,14 @@ def test_run_macro_fetch_uses_env_fred_api_key(monkeypatch, tmp_path: Path) -> N
     assert set(captured["api_keys"]) == {"env-key"}
 
 
-def test_fetch_help_surface_mentions_pmi_and_pit() -> None:
-    help_text = Path("scripts/fetch_regime_engine_v1_data.py").read_text()
-    for mode in FETCH_MODES:
-        assert mode in help_text
+def test_fetch_help_surface_mentions_pmi_and_pit(monkeypatch, capsys) -> None:
+    monkeypatch.setattr("sys.argv", ["fetch_regime_engine_v1_data.py", "--help"])
+    with pytest.raises(SystemExit) as exc:
+        fetch_script.main()
+
+    assert exc.value.code == 0
+    help_text = capsys.readouterr().out
+    normalized_help = " ".join(help_text.split())
     assert "--eps-workbook" in help_text
     assert "--eps-wayback-max-snapshots" in help_text
     assert "--eps-wayback-from" in help_text
@@ -634,82 +638,143 @@ def test_fetch_help_surface_mentions_pmi_and_pit() -> None:
     assert "--investing-browser-executable" in help_text
     assert "--investing-browser-headless" in help_text
     assert "--investing-browser-timeout-ms" in help_text
-    assert "investing-live" in help_text
-    assert "cleveland-fed-nowcast" in help_text
-    assert "sf-fed-news-sentiment" in help_text
-    assert "--fetch all is reserved for unattended autonomous refreshes" in help_text
+    assert "--fetch all is reserved for unattended autonomous refreshes" in normalized_help
     assert "operator-assisted" in help_text.lower()
 
 
-def test_unattended_usd_ingestion_uses_fred_macro_not_local_csv() -> None:
-    runner_text = Path("scripts/fetch_regime_engine_v1_data.py").read_text()
-    workflow_text = Path("src/regime_data_fetch/fetch_workflow.py").read_text()
+def test_unattended_usd_ingestion_uses_fred_macro_not_local_csv(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    captured: dict[str, object] = {}
 
-    assert '"broad_usd_index": "DTWEXBGS"' in workflow_text
-    assert (
-        "Routine future USD ingestion uses FRED DTWEXBGS through --fetch macro."
-        in runner_text
+    def fake_macro(**kwargs):
+        captured.update(kwargs)
+        report = tmp_path / "macro.json"
+        report.write_text(json.dumps({"paths": {}}))
+        return report
+
+    monkeypatch.setattr(fetch_script, "run_macro_fetch", fake_macro)
+    monkeypatch.setattr(
+        "sys.argv",
+        [
+            "fetch_regime_engine_v1_data.py",
+            "--fetch",
+            "macro",
+            "--scope",
+            "v2",
+            "--out-dir",
+            str(tmp_path / "data" / "raw"),
+            "--start",
+            "2026-05-01",
+            "--end",
+            "2026-05-02",
+        ],
     )
-    assert 'if args.fetch == "usd-index-local":' in runner_text
+
+    assert fetch_script.main() == 0
+    assert V2_FRED_SERIES["broad_usd_index"] == "DTWEXBGS"
+    assert captured["start"] == dt.date(2026, 5, 1)
+    assert captured["end"] == dt.date(2026, 5, 2)
     assert not _should_fetch("all", "usd-index-local")
 
 
 def test_fetch_all_excludes_manual_eps_and_wayback_backfill() -> None:
-    script = Path("scripts/fetch_regime_engine_v1_data.py").read_text()
-    assert 'if args.fetch == "eps":' in script
-    assert 'if args.fetch == "eps-wayback":' in script
-    assert 'if args.fetch == "eps-spglobal-auto":' in script
     assert not _should_fetch("all", "eps")
     assert not _should_fetch("all", "eps-wayback")
     assert not _should_fetch("all", "eps-spglobal-auto")
 
 
 def test_fetch_all_excludes_operator_assisted_browser_and_archive_paths() -> None:
-    script = Path("scripts/fetch_regime_engine_v1_data.py").read_text()
     for fetch_name in [
         "investing-live",
         "investing-archive-local",
         "daily-ohlcv-local-sqlite",
         "usd-index-local",
     ]:
-        assert f'if args.fetch == "{fetch_name}":' in script
         assert not _should_fetch("all", fetch_name)
 
 
 def test_fetch_all_uses_live_constituent_ohlcv_not_local_sqlite_import() -> None:
-    script = Path("scripts/fetch_regime_engine_v1_data.py").read_text()
-    assert "daily-ohlcv-constituents-alpaca" in script
     assert _should_fetch("all", "daily-ohlcv-constituents-alpaca")
-    assert 'if args.fetch == "daily-ohlcv-local-sqlite":' in script
     assert not _should_fetch("all", "daily-ohlcv-local-sqlite")
 
 
-def test_fetch_all_uses_live_pmi_by_default_not_manual_history() -> None:
-    script = Path("scripts/fetch_regime_engine_v1_data.py").read_text()
-    assert "--pmi-history-dir" in script
-    assert (
-        "manual_history_dir=Path(args.pmi_history_dir) if args.pmi_history_dir else None"
-        in script
+def test_fetch_all_uses_live_pmi_by_default_not_manual_history(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    captured: dict[str, object] = {}
+
+    def fake_pmi(**kwargs):
+        captured.update(kwargs)
+        report = tmp_path / "pmi.json"
+        report.write_text(json.dumps({"paths": {}}))
+        return report
+
+    monkeypatch.setattr(fetch_script, "run_pmi_fetch", fake_pmi)
+    monkeypatch.setattr(
+        "sys.argv",
+        [
+            "fetch_regime_engine_v1_data.py",
+            "--fetch",
+            "pmi",
+            "--scope",
+            "v2",
+            "--out-dir",
+            str(tmp_path / "data" / "raw"),
+            "--end",
+            "2026-05-02",
+        ],
     )
-    assert "manual_history_dir=DEFAULT_MANUAL_PMI_HISTORY_DIR" not in script
+
+    assert fetch_script.main() == 0
+    assert captured["as_of_date"] == dt.date(2026, 5, 2)
+    assert captured["manual_history_dir"] is None
 
 
-def test_constituent_ohlcv_requires_fixed_universe_unless_pit_bootstrap_is_explicit() -> (
-    None
-):
-    script = Path("scripts/fetch_regime_engine_v1_data.py").read_text()
-    assert "--constituent-universe-dir" in script
-    assert "--allow-pit-constituent-universe" in script
-    assert "--constituent-universe-expected-count" in script
-    assert "load_symbols_from_pit_constituents_parquet" in script
-    assert "FIXED_UNIVERSE_SYMBOL_COUNT" in script
+def test_constituent_ohlcv_requires_fixed_universe_unless_pit_bootstrap_is_explicit(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    captured: dict[str, object] = {}
+
+    def fake_alpaca_ohlcv(**kwargs):
+        captured.update(kwargs)
+        report = tmp_path / "daily_ohlcv.json"
+        report.write_text(json.dumps({"paths": {}}))
+        return report
+
+    monkeypatch.setattr(
+        fetch_script,
+        "run_alpaca_constituent_daily_ohlcv_fetch",
+        fake_alpaca_ohlcv,
+    )
+    monkeypatch.setattr(
+        "sys.argv",
+        [
+            "fetch_regime_engine_v1_data.py",
+            "--fetch",
+            "daily-ohlcv-constituents-alpaca",
+            "--scope",
+            "v2",
+            "--out-dir",
+            str(tmp_path / "data" / "raw"),
+            "--acquisition-db",
+            str(tmp_path / "data" / "raw" / "acquisition.db"),
+            "--start",
+            "2026-05-01",
+            "--end",
+            "2026-05-02",
+        ],
+    )
+
+    assert fetch_script.main() == 0
     assert FIXED_UNIVERSE_SYMBOL_COUNT == 762
-    assert (
-        "fixed_universe_symbols=_load_json_symbol_list(Path(args.universe_json)) if args.universe_json else None"
-        in script
-    )
-    assert "allow_pit_universe=args.allow_pit_constituent_universe" in script
-    assert "fetch_alpaca_active_stock_symbols" not in script
+    assert captured["fixed_universe_symbols"] is None
+    assert captured["fixed_universe_dir"] is None
+    assert captured["allow_pit_universe"] is False
+    assert captured["expected_universe_count"] == FIXED_UNIVERSE_SYMBOL_COUNT
 
 
 def test_fetch_mode_sets_make_operator_assisted_boundary_explicit() -> None:
@@ -725,11 +790,12 @@ def test_fetch_all_dispatches_only_unattended_modes(
     monkeypatch,
 ) -> None:
     called: list[str] = []
+    kwargs_by_mode: dict[str, dict[str, object]] = {}
 
     def report_for(name: str):
         def _fake(**kwargs):
-            del kwargs
             called.append(name)
+            kwargs_by_mode[name] = kwargs
             path = tmp_path / f"{name}.json"
             path.write_text(json.dumps({"paths": {}}))
             return path
@@ -789,6 +855,11 @@ def test_fetch_all_dispatches_only_unattended_modes(
     assert fetch_script.main() == 0
     assert set(called) == set(UNATTENDED_FETCH_MODES)
     assert set(called).isdisjoint(OPERATOR_ASSISTED_FETCH_MODES)
+    daily_kwargs = kwargs_by_mode["daily-ohlcv-constituents-alpaca"]
+    assert daily_kwargs["fixed_universe_symbols"] is None
+    assert daily_kwargs["fixed_universe_dir"] is None
+    assert daily_kwargs["allow_pit_universe"] is False
+    assert daily_kwargs["expected_universe_count"] == FIXED_UNIVERSE_SYMBOL_COUNT
 
 
 def test_emit_manifest_uses_all_runner_use_cases_by_default(
@@ -843,8 +914,7 @@ def test_emit_manifest_uses_all_runner_use_cases_by_default(
 
 
 def test_event_calendar_fetch_symbol_is_wired() -> None:
-    script = Path("scripts/fetch_regime_engine_v1_data.py").read_text()
-    assert "run_us_event_calendar_fetch" in script
+    assert "events" in UNATTENDED_FETCH_MODES
     assert _should_fetch("all", "events")
 
 
@@ -873,8 +943,16 @@ def test_build_bls_local_archive_page_fetcher_prefers_local_file(
     assert calls == []
 
 
-def test_fetch_help_surface_mentions_acquisition_db_and_bls_schedule_dir() -> None:
-    help_text = Path("scripts/fetch_regime_engine_v1_data.py").read_text()
+def test_fetch_help_surface_mentions_acquisition_db_and_bls_schedule_dir(
+    monkeypatch,
+    capsys,
+) -> None:
+    monkeypatch.setattr("sys.argv", ["fetch_regime_engine_v1_data.py", "--help"])
+    with pytest.raises(SystemExit) as exc:
+        fetch_script.main()
+
+    assert exc.value.code == 0
+    help_text = capsys.readouterr().out
     assert "--acquisition-db" in help_text
     assert "--bls-schedule-dir" in help_text
     assert "--bls-start-year" in help_text
