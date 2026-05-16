@@ -168,6 +168,88 @@ def test_run_market_fetch_records_alpaca_payload_in_sqlite(monkeypatch, tmp_path
     ]
 
 
+def test_run_market_fetch_merges_incremental_daily_ohlcv(monkeypatch, tmp_path: Path) -> None:
+    existing_dir = tmp_path / "daily_ohlcv"
+    existing_dir.mkdir()
+    pd.DataFrame(
+        [
+            {
+                "date": dt.date(2026, 5, 14),
+                "symbol": "TLT",
+                "open": 90.0,
+                "high": 91.0,
+                "low": 89.0,
+                "close": 90.5,
+                "volume": 1000,
+                "adjusted_close": 90.5,
+            },
+            {
+                "date": dt.date(2026, 5, 15),
+                "symbol": "TLT",
+                "open": 91.0,
+                "high": 92.0,
+                "low": 90.0,
+                "close": 91.5,
+                "volume": 1000,
+                "adjusted_close": 91.5,
+            },
+        ]
+    ).to_parquet(existing_dir, index=False, partition_cols=["symbol"])
+
+    def fake_fetch_daily_bars_alpaca(**kwargs) -> DailyBarsFetchResult:
+        return DailyBarsFetchResult(
+            df=pd.DataFrame(
+                [
+                    {
+                        "date": dt.date(2026, 5, 15),
+                        "symbol": "TLT",
+                        "open": 91.1,
+                        "high": 92.1,
+                        "low": 90.1,
+                        "close": 91.7,
+                        "volume": 1100,
+                        "adjusted_close": 91.7,
+                    },
+                    {
+                        "date": dt.date(2026, 5, 16),
+                        "symbol": "TLT",
+                        "open": 92.0,
+                        "high": 93.0,
+                        "low": 91.0,
+                        "close": 92.5,
+                        "volume": 1200,
+                        "adjusted_close": 92.5,
+                    },
+                ]
+            ),
+            missing_symbols=[],
+        )
+
+    monkeypatch.setattr("regime_data_fetch.fetch_workflow.fetch_daily_bars_alpaca", fake_fetch_daily_bars_alpaca)
+    monkeypatch.setenv("ALPACA_API_KEY_ID", "key")
+    monkeypatch.setenv("ALPACA_API_SECRET_KEY", "secret")
+
+    run_market_fetch(
+        out_dir=tmp_path,
+        scope="v2",
+        stock_symbols=[],
+        start=dt.date(2026, 5, 15),
+        end=dt.date(2026, 5, 16),
+        adjustment="raw",
+        alpaca_feed="iex",
+        vix_symbol="VIXY",
+        allow_vix_proxy=True,
+        verbose=False,
+    )
+
+    merged = pd.read_parquet(existing_dir).sort_values(["symbol", "date"])
+    assert merged[merged["symbol"] == "TLT"][["date", "close"]].to_dict(orient="records") == [
+        {"date": dt.date(2026, 5, 14), "close": 90.5},
+        {"date": dt.date(2026, 5, 15), "close": 91.7},
+        {"date": dt.date(2026, 5, 16), "close": 92.5},
+    ]
+
+
 def test_extract_ism_pmi_value_and_release_timestamp() -> None:
     html = """
     <html><body>
@@ -224,6 +306,128 @@ def test_run_macro_fetch_writes_macro_and_vintage_reports(monkeypatch, tmp_path:
     assert report["series"]["iorb"]["series_id"] == "IORB"
     assert (tmp_path / "macro" / "fred_macro_series.parquet").exists()
     assert (tmp_path / "macro_vintages" / "cpi_all_items_vintages.parquet").exists()
+
+
+def test_run_macro_fetch_merges_incremental_fred_rows(monkeypatch, tmp_path: Path) -> None:
+    macro_dir = tmp_path / "macro"
+    macro_dir.mkdir()
+    pd.DataFrame(
+        [
+            {
+                "date": pd.Timestamp("2026-05-14"),
+                "value": 4.10,
+                "series_id": "BAMLH0A0HYM2",
+                "realtime_start": "2026-05-14",
+                "realtime_end": "2026-05-14",
+                "logical_name": "hy_oas",
+            }
+        ]
+    ).to_parquet(macro_dir / "fred_macro_series.parquet", index=False)
+
+    def fake_fetch_fred_series_json(
+        *,
+        series_id: str,
+        start_date: dt.date,
+        end_date: dt.date,
+        api_key: str | None = None,
+        realtime_start: str | None = None,
+        realtime_end: str | None = None,
+        max_retries: int = 4,
+        base_sleep_sec: float = 2.0,
+    ) -> str:
+        value = "4.25" if series_id == "BAMLH0A0HYM2" else "1.00"
+        return json.dumps(
+            {
+                "observations": [
+                    {
+                        "date": "2026-05-15",
+                        "value": value,
+                        "realtime_start": realtime_start or "2026-05-15",
+                        "realtime_end": realtime_end or "2026-05-15",
+                    }
+                ]
+            }
+        )
+
+    monkeypatch.setattr("regime_data_fetch.fetch_workflow.fetch_fred_series_json", fake_fetch_fred_series_json)
+    monkeypatch.setenv("FRED_API_KEY", "env-key")
+
+    run_macro_fetch(
+        out_dir=tmp_path,
+        start=dt.date(2026, 5, 15),
+        end=dt.date(2026, 5, 15),
+        fred_api_key=None,
+        include_cpi_vintages=False,
+    )
+
+    merged = pd.read_parquet(macro_dir / "fred_macro_series.parquet")
+    hy = merged[merged["logical_name"] == "hy_oas"].sort_values("date")
+    assert hy[["date", "value"]].to_dict(orient="records") == [
+        {"date": dt.date(2026, 5, 14), "value": 4.10},
+        {"date": dt.date(2026, 5, 15), "value": 4.25},
+    ]
+
+
+def test_run_macro_fetch_preserves_existing_vintages_when_incremental_window_empty(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    vintages_dir = tmp_path / "macro_vintages"
+    vintages_dir.mkdir()
+    pd.DataFrame(
+        [
+            {
+                "date": pd.Timestamp("2026-04-01"),
+                "value": 300.0,
+                "series_id": "CPIAUCSL",
+                "realtime_start": "2026-04-10",
+                "realtime_end": "2026-04-10",
+                "logical_name": "cpi_all_items_vintages",
+            }
+        ]
+    ).to_parquet(vintages_dir / "cpi_all_items_vintages.parquet", index=False)
+
+    def fake_fetch_fred_series_json(
+        *,
+        series_id: str,
+        start_date: dt.date,
+        end_date: dt.date,
+        api_key: str | None = None,
+        realtime_start: str | None = None,
+        realtime_end: str | None = None,
+        max_retries: int = 4,
+        base_sleep_sec: float = 2.0,
+    ) -> str:
+        if realtime_start is not None:
+            return json.dumps({"observations": []})
+        return json.dumps(
+            {
+                "observations": [
+                    {
+                        "date": "2026-05-15",
+                        "value": "1.00",
+                        "realtime_start": "2026-05-15",
+                        "realtime_end": "2026-05-15",
+                    }
+                ]
+            }
+        )
+
+    monkeypatch.setattr("regime_data_fetch.fetch_workflow.fetch_fred_series_json", fake_fetch_fred_series_json)
+    monkeypatch.setenv("FRED_API_KEY", "env-key")
+
+    run_macro_fetch(
+        out_dir=tmp_path,
+        start=dt.date(2026, 5, 15),
+        end=dt.date(2026, 5, 15),
+        fred_api_key=None,
+        include_cpi_vintages=True,
+    )
+
+    preserved = pd.read_parquet(vintages_dir / "cpi_all_items_vintages.parquet")
+    assert preserved[["date", "value"]].to_dict(orient="records") == [
+        {"date": dt.date(2026, 4, 1), "value": 300.0}
+    ]
 
 
 def test_run_macro_fetch_records_raw_fred_json_in_sqlite(monkeypatch, tmp_path: Path) -> None:

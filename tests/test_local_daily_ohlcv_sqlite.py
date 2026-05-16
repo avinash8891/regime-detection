@@ -209,3 +209,85 @@ def test_run_alpaca_constituent_daily_ohlcv_fetch_uses_fixed_universe_before_pit
     report = json.loads(report_path.read_text())
     assert report["universe_source"] == "fixed_symbol_list"
     assert report["counts"]["symbols_requested"] == 1
+
+
+def test_run_alpaca_constituent_daily_ohlcv_fetch_merges_incremental_rows(
+    tmp_path: Path,
+) -> None:
+    tree_root = tmp_path / "data" / "raw" / "daily_ohlcv_762"
+    symbol_dir = tree_root / "symbol=AAPL"
+    symbol_dir.mkdir(parents=True)
+    (symbol_dir / "ohlcv.parquet").write_bytes(b"")
+    pd.DataFrame(
+        [
+            {
+                "date": "2026-05-04",
+                "open": 99.0,
+                "high": 100.0,
+                "low": 98.0,
+                "close": 99.5,
+                "volume": 900,
+                "adjusted_close": 99.5,
+            },
+            {
+                "date": "2026-05-05",
+                "open": 100.0,
+                "high": 101.0,
+                "low": 99.0,
+                "close": 100.5,
+                "volume": 1000,
+                "adjusted_close": 100.5,
+            },
+        ]
+    ).to_parquet(symbol_dir / "ohlcv.parquet", index=False)
+
+    def fake_fetcher(**kwargs) -> DailyBarsFetchResult:
+        assert kwargs["symbols"] == ["AAPL"]
+        assert kwargs["start_date"].isoformat() == "2026-05-05"
+        return DailyBarsFetchResult(
+            df=pd.DataFrame(
+                [
+                    {
+                        "date": "2026-05-05",
+                        "symbol": "AAPL",
+                        "open": 100.1,
+                        "high": 101.1,
+                        "low": 99.1,
+                        "close": 100.7,
+                        "volume": 1100,
+                        "adjusted_close": 100.7,
+                    },
+                    {
+                        "date": "2026-05-06",
+                        "symbol": "AAPL",
+                        "open": 101.0,
+                        "high": 102.0,
+                        "low": 100.0,
+                        "close": 101.5,
+                        "volume": 1200,
+                        "adjusted_close": 101.5,
+                    },
+                ]
+            ),
+            missing_symbols=[],
+        )
+
+    run_alpaca_constituent_daily_ohlcv_fetch(
+        out_dir=tmp_path / "data" / "raw",
+        pit_parquet_path=tmp_path / "unused.parquet",
+        start=pd.Timestamp("2026-05-05").date(),
+        end=pd.Timestamp("2026-05-06").date(),
+        adjustment="split",
+        alpaca_feed="sip",
+        acquisition_db_path=tmp_path / "acquisition.db",
+        bars_fetcher=fake_fetcher,
+        fixed_universe_symbols=["AAPL"],
+        expected_universe_count=1,
+    )
+
+    merged = pd.read_parquet(symbol_dir / "ohlcv.parquet").sort_values("date")
+    assert merged[["date", "close"]].to_dict(orient="records") == [
+        {"date": "2026-05-04", "close": 99.5},
+        {"date": "2026-05-05", "close": 100.7},
+        {"date": "2026-05-06", "close": 101.5},
+    ]

@@ -187,7 +187,7 @@ def main() -> int:
         load_env_file(Path(args.env_file))
 
     if args.list_symbols:
-        stocks = _resolve_stock_universe(args)
+        stocks = _resolve_stock_universe(args, out_dir=out_dir)
         print(
             json.dumps(
                 {
@@ -210,7 +210,7 @@ def main() -> int:
     acquisition_artifact_store_root = args.artifact_store if acquisition_db_path and args.artifact_store else None
 
     if args.fetch in {"market", "all"}:
-        stocks = _resolve_stock_universe(args) if args.scope in {"v1", "all"} else []
+        stocks = _resolve_stock_universe(args, out_dir=out_dir) if args.scope in {"v1", "all"} else []
         market_report = run_market_fetch(
             out_dir=out_dir,
             scope=args.scope,
@@ -477,7 +477,7 @@ def main() -> int:
     return 0
 
 
-def _resolve_stock_universe(args: argparse.Namespace) -> list[str]:
+def _resolve_stock_universe(args: argparse.Namespace, *, out_dir: Path) -> list[str]:
     if args.universe_json:
         return _load_json_symbol_list(Path(args.universe_json))
     if args.constituent_universe_dir:
@@ -485,7 +485,7 @@ def _resolve_stock_universe(args: argparse.Namespace) -> list[str]:
     pit_parquet = (
         Path(args.pit_parquet)
         if args.pit_parquet
-        else REPO_ROOT / "data" / "raw" / "pit_constituents" / "sp500_ticker_intervals.parquet"
+        else out_dir / "pit_constituents" / "sp500_ticker_intervals.parquet"
     )
     return load_symbols_from_pit_constituents_parquet(pit_parquet)
 

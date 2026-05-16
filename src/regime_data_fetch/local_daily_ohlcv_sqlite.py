@@ -370,7 +370,19 @@ def _write_daily_ohlcv_symbol_tree(frame: pd.DataFrame, *, tree_root: Path) -> l
         symbol_dir = tree_root / f"symbol={symbol}"
         symbol_dir.mkdir(parents=True, exist_ok=True)
         parquet_path = symbol_dir / "ohlcv.parquet"
-        symbol_frame[EXPECTED_COLUMNS].sort_values("date").to_parquet(parquet_path, index=False)
+        outgoing = symbol_frame[EXPECTED_COLUMNS].copy()
+        if parquet_path.exists():
+            existing = pd.read_parquet(parquet_path)
+            _validate_ohlcv_frame(frame=existing, parquet_path=parquet_path)
+            existing = existing.copy()
+            existing["date"] = pd.to_datetime(existing["date"]).dt.date.astype(str)
+            outgoing = pd.concat([existing, outgoing], ignore_index=True)
+        outgoing = (
+            outgoing.sort_values("date")
+            .drop_duplicates(subset=["date"], keep="last")
+            .sort_values("date")
+        )
+        outgoing.to_parquet(parquet_path, index=False)
         written.append(parquet_path)
     if not written:
         raise RuntimeError("Alpaca constituent OHLCV frame produced no symbol parquet files")

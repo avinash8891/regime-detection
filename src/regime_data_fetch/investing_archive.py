@@ -27,7 +27,7 @@ def _single_match(root: Path, pattern: str, *, required: bool = True) -> Path | 
             raise SystemExit(f"Missing Investing.com archive file matching {root / pattern}")
         return None
     if len(matches) > 1:
-        raise SystemExit(f"Ambiguous Investing.com archive files for {root / pattern}: {matches}")
+        return matches[-1]
     return matches[0]
 
 
@@ -41,7 +41,6 @@ def _archive_paths(archive_root: Path) -> dict[str, Path | None]:
         "earnings_jsonl": _single_match(archive_root, "investing_earnings_*/investing_earnings_*.jsonl"),
         "earnings_quarantine": _single_match(archive_root, "investing_earnings_*/quarantine_earnings_fetch_errors.jsonl", required=False),
         "earnings_fetch_report": _single_match(archive_root, "investing_earnings_*/fetch_report.json"),
-        "earnings_loaded_page": _single_match(archive_root, "investing_earnings_*/browser_pages/investing_earnings_calendar_loaded_page.html", required=False),
         "earnings_raw_instruments": _single_match(archive_root, "investing_earnings_*/raw_instruments", required=False),
     }
 
@@ -181,13 +180,15 @@ def run_local_investing_archive_import(
         }
         report_path = out_dir / "investing_archive_import_report.json"
         report_path.write_text(json.dumps(report, indent=2))
+        report_min = _min_optional_date([economic_min, holiday_min, earnings_min])
+        report_max = _max_optional_date([economic_max, holiday_max, earnings_max])
         store.record_output(
             run_id=fetch_run.run_id,
             output_kind="investing_archive_import_report",
             path=report_path,
             row_count=int(len(economic_events) + len(holidays) + len(earnings)),
-            min_date=min(value for value in [economic_min, holiday_min, earnings_min] if value is not None),
-            max_date=max(value for value in [economic_max, holiday_max, earnings_max] if value is not None),
+            min_date=report_min,
+            max_date=report_max,
             notes="Investing.com archive import report",
         )
         store.finish_fetch_run(
@@ -212,7 +213,6 @@ def _copy_archive_files(*, archive_root: Path, raw_archive_dir: Path) -> list[Pa
         archive_paths["earnings_jsonl"],
         archive_paths["earnings_fetch_report"],
         archive_paths["earnings_quarantine"],
-        archive_paths["earnings_loaded_page"],
     ]
     copied: list[Path] = []
     for src in [path for path in files if path is not None]:
@@ -240,6 +240,16 @@ def _date_range(values: pd.Series) -> tuple[str | None, str | None]:
     if parsed.empty:
         return None, None
     return parsed.min().date().isoformat(), parsed.max().date().isoformat()
+
+
+def _min_optional_date(values: list[str | None]) -> str | None:
+    present = [value for value in values if value is not None]
+    return min(present) if present else None
+
+
+def _max_optional_date(values: list[str | None]) -> str | None:
+    present = [value for value in values if value is not None]
+    return max(present) if present else None
 
 
 def _start_for_raw_rel(rel: str, economic_min: str | None, holiday_min: str | None, earnings_min: str | None) -> str | None:

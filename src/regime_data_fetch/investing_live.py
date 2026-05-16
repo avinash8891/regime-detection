@@ -315,7 +315,7 @@ def _fetch_earnings_archive(
             page += 1
             params = {
                 "start_date": f"{month_start.isoformat()}T00:00:00.000Z",
-                "end_date": f"{month_end.isoformat()}T00:00:00.000Z",
+                "end_date": f"{month_end.isoformat()}T23:59:59.999Z",
                 "country_ids": ",".join(str(item) for item in country_ids),
                 "limit": "200",
                 "deduplicate": "true",

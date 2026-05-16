@@ -20,6 +20,7 @@ from regime_data_fetch.investing_live import (
 def test_run_investing_live_fetch_materializes_archive_and_records_outputs(tmp_path: Path) -> None:
     out_dir = tmp_path / "data" / "raw"
     db_path = out_dir / "acquisition" / "acquisition.db"
+    earnings_params: list[dict[str, str]] = []
 
     def page_fetcher(url: str) -> str:
         if url == SOURCE_CALENDAR_URL:
@@ -73,6 +74,7 @@ def test_run_investing_live_fetch_materializes_archive_and_records_outputs(tmp_p
             }
         if url == f"{EARNINGS_BASE}/v1/instruments/earnings":
             assert headers["Authorization"] == "Bearer fixture-token"
+            earnings_params.append(params)
             return {
                 "earnings": [
                     {
@@ -138,6 +140,8 @@ def test_run_investing_live_fetch_materializes_archive_and_records_outputs(tmp_p
         "market_cap": 123,
         "importance": "high",
     }
+    assert earnings_params[0]["start_date"] == "2026-05-01T00:00:00.000Z"
+    assert earnings_params[0]["end_date"] == "2026-05-01T23:59:59.999Z"
     assert (out_dir / "investing_live_archive").exists()
 
     with sqlite3.connect(db_path) as conn:
@@ -248,9 +252,16 @@ def test_run_investing_live_fetch_captures_browser_page_when_missing_token(tmp_p
         "economic_events_rows": 0,
         "holiday_rows": 0,
         "earnings_rows": 1,
-        "raw_files": 10,
+        "raw_files": 9,
     }
     assert (
+        out_dir
+        / "investing_live_archive"
+        / "investing_earnings_2026-05-01_2026-05-01"
+        / "browser_pages"
+        / "investing_earnings_calendar_loaded_page.html"
+    ).exists()
+    assert not (
         out_dir
         / "investing"
         / "raw_archive"

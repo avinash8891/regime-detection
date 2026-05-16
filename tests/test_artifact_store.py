@@ -11,6 +11,7 @@ from regime_data_fetch.artifact_store import (
     ArtifactOverwriteError,
     LocalArtifactStore,
     S3ArtifactStore,
+    build_artifact_store,
     sha256_bytes,
     sha256_file,
 )
@@ -68,6 +69,18 @@ def test_local_artifact_store_allows_idempotent_same_bytes_for_existing_key(tmp_
 
     assert duplicate == original
     assert duplicate.sha256 == sha256_bytes(b"same")
+
+
+def test_build_artifact_store_accepts_windows_drive_path(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.chdir(tmp_path)
+
+    store = build_artifact_store(r"C:\regime-data")
+
+    assert isinstance(store, LocalArtifactStore)
+    assert store.root == Path(r"C:\regime-data")
 
 
 def test_s3_artifact_store_removes_temp_file_when_download_hash_mismatches(

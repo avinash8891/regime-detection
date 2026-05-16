@@ -123,6 +123,8 @@ class LocalArtifactStore(ArtifactStore):
 
 def build_artifact_store(root_uri: str | Path) -> ArtifactStore:
     root_text = str(root_uri)
+    if _is_windows_absolute_path(root_text):
+        return LocalArtifactStore(Path(root_text))
     parsed = urlparse(root_text)
     if parsed.scheme in {"", "file"}:
         root = Path(parsed.path if parsed.scheme == "file" else root_text)
@@ -130,6 +132,10 @@ def build_artifact_store(root_uri: str | Path) -> ArtifactStore:
     if parsed.scheme == "s3":
         return S3ArtifactStore(root_text)
     raise ValueError(f"unsupported artifact store URI scheme: {parsed.scheme}")
+
+
+def _is_windows_absolute_path(value: str) -> bool:
+    return len(value) >= 3 and value[0].isalpha() and value[1] == ":" and value[2] in {"\\", "/"}
 
 
 class S3ArtifactStore(ArtifactStore):
