@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import datetime as dt
+import logging
 from collections.abc import Callable
 from io import BytesIO
 from pathlib import Path
@@ -10,6 +11,8 @@ import pandas as pd
 
 from regime_data_fetch.acquisition_store import AcquisitionStore
 from regime_data_fetch.event_sources.models import EventCandidate, ValidationResult
+
+_LOG = logging.getLogger(__name__)
 
 VALIDATOR_ID = "hf:aufklarer-central-bank-communications"
 PARQUET_URL = (
@@ -52,6 +55,11 @@ class HFCentralBankValidator:
             parquet_bytes = self.parquet_fetcher()
             frame = pd.read_parquet(BytesIO(parquet_bytes))
         except Exception:
+            _LOG.warning(
+                "HF central bank parquet fetch/parse failed — returning unknown for %d candidates",
+                len(central_bank_candidates),
+                exc_info=True,
+            )
             return [_unknown(candidate) for candidate in central_bank_candidates]
 
         if store is not None and run_id is not None:
