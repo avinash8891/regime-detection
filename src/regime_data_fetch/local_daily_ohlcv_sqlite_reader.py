@@ -11,7 +11,7 @@ import pandas as pd
 from regime_data_fetch.local_daily_ohlcv_sqlite import EXPECTED_COLUMNS
 
 
-_TABLE_NAME = "daily_ohlcv_rows"
+DAILY_OHLCV_ROWS_TABLE = "daily_ohlcv_rows"
 _REQUIRED_COLUMNS = frozenset(["symbol", "source_file", *EXPECTED_COLUMNS])
 _VALUE_COLUMNS = [c for c in EXPECTED_COLUMNS if c != "date"]
 
@@ -45,7 +45,7 @@ def read_constituent_ohlcv(
         placeholders = ",".join("?" for _ in ticker_list)
         query = (
             f"SELECT symbol, date, open, high, low, close, volume, adjusted_close "
-            f"FROM {_TABLE_NAME} "
+            f"FROM {DAILY_OHLCV_ROWS_TABLE} "
             f"WHERE symbol IN ({placeholders}) AND date BETWEEN ? AND ? "
             f"ORDER BY symbol, date"
         )
@@ -69,15 +69,15 @@ def read_constituent_ohlcv(
 
 
 def _validate_schema(conn: sqlite3.Connection) -> None:
-    cursor = conn.execute(f"PRAGMA table_info({_TABLE_NAME})")
+    cursor = conn.execute(f"PRAGMA table_info({DAILY_OHLCV_ROWS_TABLE})")
     info = cursor.fetchall()
     if not info:
         raise LocalDailyOHLCVReadError(
-            f"Missing required table '{_TABLE_NAME}' in SQLite store"
+            f"Missing required table '{DAILY_OHLCV_ROWS_TABLE}' in SQLite store"
         )
     present = {row[1] for row in info}
     missing = _REQUIRED_COLUMNS - present
     if missing:
         raise LocalDailyOHLCVReadError(
-            f"Table '{_TABLE_NAME}' missing required columns: {sorted(missing)!r}"
+            f"Table '{DAILY_OHLCV_ROWS_TABLE}' missing required columns: {sorted(missing)!r}"
         )

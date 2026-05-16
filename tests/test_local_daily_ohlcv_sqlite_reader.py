@@ -10,6 +10,7 @@ import pytest
 
 from regime_data_fetch.local_daily_ohlcv_sqlite import EXPECTED_COLUMNS
 from regime_data_fetch.local_daily_ohlcv_sqlite_reader import (
+    DAILY_OHLCV_ROWS_TABLE,
     LocalDailyOHLCVReadError,
     read_constituent_ohlcv,
 )
@@ -40,8 +41,8 @@ _MSFT_ROWS: list[tuple[str, float, float, float, float, int, float]] = [
 def _create_real_schema_db(db_path: Path) -> None:
     with sqlite3.connect(db_path) as conn:
         conn.executescript(
-            """
-            CREATE TABLE IF NOT EXISTS daily_ohlcv_rows (
+            f"""
+            CREATE TABLE IF NOT EXISTS {DAILY_OHLCV_ROWS_TABLE} (
                 symbol TEXT NOT NULL,
                 date TEXT NOT NULL,
                 open REAL NOT NULL,
@@ -54,7 +55,7 @@ def _create_real_schema_db(db_path: Path) -> None:
                 PRIMARY KEY (symbol, date)
             );
             CREATE INDEX IF NOT EXISTS idx_daily_ohlcv_rows_date
-                ON daily_ohlcv_rows (date);
+                ON {DAILY_OHLCV_ROWS_TABLE} (date);
             """
         )
 
@@ -65,8 +66,8 @@ def _create_real_schema_db(db_path: Path) -> None:
             ]
 
         conn.executemany(
-            """
-            INSERT INTO daily_ohlcv_rows (
+            f"""
+            INSERT INTO {DAILY_OHLCV_ROWS_TABLE} (
                 symbol, date, open, high, low, close, volume, adjusted_close, source_file
             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
@@ -141,7 +142,7 @@ def test_read_constituent_ohlcv_omits_tickers_not_in_store(tmp_path: Path) -> No
     _create_real_schema_db(db)
     # Drop MSFT rows so only AAPL is in the store.
     with sqlite3.connect(db) as conn:
-        conn.execute("DELETE FROM daily_ohlcv_rows WHERE symbol = 'MSFT'")
+        conn.execute(f"DELETE FROM {DAILY_OHLCV_ROWS_TABLE} WHERE symbol = 'MSFT'")
         conn.commit()
 
     result = read_constituent_ohlcv(

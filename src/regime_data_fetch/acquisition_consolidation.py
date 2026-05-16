@@ -12,6 +12,55 @@ import yaml
 from regime_data_fetch.acquisition_store import AcquisitionStore
 from regime_data_fetch.local_daily_ohlcv_sqlite import _ensure_daily_ohlcv_table
 
+FETCH_RUNS_TABLE = "fetch_runs"
+ARTIFACTS_TABLE = "artifacts"
+ARTIFACT_BLOBS_TABLE = "artifact_blobs"
+DERIVED_OUTPUTS_TABLE = "derived_outputs"
+DAILY_OHLCV_ROWS_TABLE = "daily_ohlcv_rows"
+EVENT_CALENDAR_ROWS_TABLE = "event_calendar_rows"
+MACRO_ROWS_TABLE = "macro_rows"
+PMI_ROWS_TABLE = "pmi_rows"
+PIT_CONSTITUENT_ROWS_TABLE = "pit_constituent_rows"
+FOMC_MINUTES_ROWS_TABLE = "fomc_minutes_rows"
+POWELL_SPEECHES_ROWS_TABLE = "powell_speeches_rows"
+USD_INDEX_ROWS_TABLE = "usd_index_rows"
+AGGREGATE_EPS_SNAPSHOT_ROWS_TABLE = "aggregate_eps_snapshot_rows"
+AGGREGATE_EPS_WAYBACK_ROWS_TABLE = "aggregate_eps_wayback_rows"
+ALPACA_MARKET_ROWS_TABLE = "alpaca_market_rows"
+
+_COUNTABLE_TABLES = frozenset(
+    {
+        FETCH_RUNS_TABLE,
+        ARTIFACTS_TABLE,
+        ARTIFACT_BLOBS_TABLE,
+        DERIVED_OUTPUTS_TABLE,
+        DAILY_OHLCV_ROWS_TABLE,
+        EVENT_CALENDAR_ROWS_TABLE,
+        MACRO_ROWS_TABLE,
+        PMI_ROWS_TABLE,
+        PIT_CONSTITUENT_ROWS_TABLE,
+        FOMC_MINUTES_ROWS_TABLE,
+        POWELL_SPEECHES_ROWS_TABLE,
+        USD_INDEX_ROWS_TABLE,
+        AGGREGATE_EPS_SNAPSHOT_ROWS_TABLE,
+        AGGREGATE_EPS_WAYBACK_ROWS_TABLE,
+        ALPACA_MARKET_ROWS_TABLE,
+    }
+)
+
+_NORMALIZED_TABLES = (
+    EVENT_CALENDAR_ROWS_TABLE,
+    MACRO_ROWS_TABLE,
+    PMI_ROWS_TABLE,
+    PIT_CONSTITUENT_ROWS_TABLE,
+    FOMC_MINUTES_ROWS_TABLE,
+    POWELL_SPEECHES_ROWS_TABLE,
+    USD_INDEX_ROWS_TABLE,
+    AGGREGATE_EPS_SNAPSHOT_ROWS_TABLE,
+    AGGREGATE_EPS_WAYBACK_ROWS_TABLE,
+    ALPACA_MARKET_ROWS_TABLE,
+)
+
 
 @dataclass(frozen=True)
 class ConsolidationSource:
@@ -19,27 +68,14 @@ class ConsolidationSource:
     db_path: Path
 
 
-DEFAULT_CONSOLIDATION_SOURCES = [
-    ConsolidationSource("events", Path("/private/tmp/regime_events_acquisition/acquisition.db")),
-    ConsolidationSource("macro_full_history", Path("/private/tmp/regime_macro_full_history/acquisition.db")),
-    ConsolidationSource("market_smoke", Path("/private/tmp/regime_market_sqlite_smoke/acquisition.db")),
-    ConsolidationSource("local_ohlcv", Path("/private/tmp/regime_local_ohlcv_sqlite/acquisition.db")),
-    ConsolidationSource("pmi_manual", Path("/private/tmp/regime_pmi_manual_sqlite/acquisition.db")),
-    ConsolidationSource("pit", Path("/private/tmp/regime_pit_sqlite_smoke/acquisition.db")),
-    ConsolidationSource("fomc", Path("/private/tmp/regime_fomc_sqlite_smoke/acquisition.db")),
-    ConsolidationSource("powell", Path("/private/tmp/regime_powell_sqlite_smoke/acquisition.db")),
-    ConsolidationSource("usd_index", Path("/private/tmp/regime_usd_index_sqlite_smoke/acquisition.db")),
-    ConsolidationSource("eps_snapshot", Path("/private/tmp/regime_eps_sqlite_smoke/acquisition.db")),
-    ConsolidationSource("eps_wayback", Path("/private/tmp/regime_eps_wayback_sqlite_smoke/acquisition.db")),
-]
-
-
 def consolidate_acquisition_dbs(
     *,
     target_db_path: Path,
     sources: list[ConsolidationSource] | None = None,
 ) -> dict[str, object]:
-    selected_sources = sources or DEFAULT_CONSOLIDATION_SOURCES
+    if sources is None:
+        raise ValueError("consolidate_acquisition_dbs requires explicit sources")
+    selected_sources = sources
     target_db_path.parent.mkdir(parents=True, exist_ok=True)
     if target_db_path.exists():
         target_db_path.unlink()
@@ -56,7 +92,7 @@ def consolidate_acquisition_dbs(
         if not source.db_path.exists():
             raise FileNotFoundError(f"Missing acquisition db for consolidation: {source.db_path}")
         counts = _import_one_source(target_db_path=target_db_path, source=source)
-        total_daily_ohlcv_rows += counts.get("daily_ohlcv_rows", 0)
+        total_daily_ohlcv_rows += counts.get(DAILY_OHLCV_ROWS_TABLE, 0)
         summary_sources.append(
             {
                 "label": source.label,
@@ -67,21 +103,21 @@ def consolidate_acquisition_dbs(
 
     with sqlite3.connect(target_db_path) as conn:
         final_counts = {
-            "fetch_runs": conn.execute("SELECT count(*) FROM fetch_runs").fetchone()[0],
-            "artifacts": conn.execute("SELECT count(*) FROM artifacts").fetchone()[0],
-            "artifact_blobs": conn.execute("SELECT count(*) FROM artifact_blobs").fetchone()[0],
-            "derived_outputs": conn.execute("SELECT count(*) FROM derived_outputs").fetchone()[0],
-            "daily_ohlcv_rows": conn.execute("SELECT count(*) FROM daily_ohlcv_rows").fetchone()[0],
-            "event_calendar_rows": conn.execute("SELECT count(*) FROM event_calendar_rows").fetchone()[0],
-            "macro_rows": conn.execute("SELECT count(*) FROM macro_rows").fetchone()[0],
-            "pmi_rows": conn.execute("SELECT count(*) FROM pmi_rows").fetchone()[0],
-            "pit_constituent_rows": conn.execute("SELECT count(*) FROM pit_constituent_rows").fetchone()[0],
-            "fomc_minutes_rows": conn.execute("SELECT count(*) FROM fomc_minutes_rows").fetchone()[0],
-            "powell_speeches_rows": conn.execute("SELECT count(*) FROM powell_speeches_rows").fetchone()[0],
-            "usd_index_rows": conn.execute("SELECT count(*) FROM usd_index_rows").fetchone()[0],
-            "aggregate_eps_snapshot_rows": conn.execute("SELECT count(*) FROM aggregate_eps_snapshot_rows").fetchone()[0],
-            "aggregate_eps_wayback_rows": conn.execute("SELECT count(*) FROM aggregate_eps_wayback_rows").fetchone()[0],
-            "alpaca_market_rows": conn.execute("SELECT count(*) FROM alpaca_market_rows").fetchone()[0],
+            FETCH_RUNS_TABLE: _count_rows(conn, FETCH_RUNS_TABLE),
+            ARTIFACTS_TABLE: _count_rows(conn, ARTIFACTS_TABLE),
+            ARTIFACT_BLOBS_TABLE: _count_rows(conn, ARTIFACT_BLOBS_TABLE),
+            DERIVED_OUTPUTS_TABLE: _count_rows(conn, DERIVED_OUTPUTS_TABLE),
+            DAILY_OHLCV_ROWS_TABLE: _count_rows(conn, DAILY_OHLCV_ROWS_TABLE),
+            EVENT_CALENDAR_ROWS_TABLE: _count_rows(conn, EVENT_CALENDAR_ROWS_TABLE),
+            MACRO_ROWS_TABLE: _count_rows(conn, MACRO_ROWS_TABLE),
+            PMI_ROWS_TABLE: _count_rows(conn, PMI_ROWS_TABLE),
+            PIT_CONSTITUENT_ROWS_TABLE: _count_rows(conn, PIT_CONSTITUENT_ROWS_TABLE),
+            FOMC_MINUTES_ROWS_TABLE: _count_rows(conn, FOMC_MINUTES_ROWS_TABLE),
+            POWELL_SPEECHES_ROWS_TABLE: _count_rows(conn, POWELL_SPEECHES_ROWS_TABLE),
+            USD_INDEX_ROWS_TABLE: _count_rows(conn, USD_INDEX_ROWS_TABLE),
+            AGGREGATE_EPS_SNAPSHOT_ROWS_TABLE: _count_rows(conn, AGGREGATE_EPS_SNAPSHOT_ROWS_TABLE),
+            AGGREGATE_EPS_WAYBACK_ROWS_TABLE: _count_rows(conn, AGGREGATE_EPS_WAYBACK_ROWS_TABLE),
+            ALPACA_MARKET_ROWS_TABLE: _count_rows(conn, ALPACA_MARKET_ROWS_TABLE),
         }
 
     report = {
@@ -100,18 +136,7 @@ def _import_one_source(*, target_db_path: Path, source: ConsolidationSource) -> 
         src_conn.row_factory = sqlite3.Row
         fetch_run_id_map: dict[int, int] = {}
         artifact_id_map: dict[int, int] = {}
-        normalized_counts = {
-            "event_calendar_rows": 0,
-            "macro_rows": 0,
-            "pmi_rows": 0,
-            "pit_constituent_rows": 0,
-            "fomc_minutes_rows": 0,
-            "powell_speeches_rows": 0,
-            "usd_index_rows": 0,
-            "aggregate_eps_snapshot_rows": 0,
-            "aggregate_eps_wayback_rows": 0,
-            "alpaca_market_rows": 0,
-        }
+        normalized_counts = dict.fromkeys(_NORMALIZED_TABLES, 0)
 
         for row in src_conn.execute("SELECT * FROM fetch_runs ORDER BY run_id"):
             params_json = _augment_params_json(row["params_json"], source_label=source.label, source_db_path=str(source.db_path))
@@ -187,7 +212,7 @@ def _import_one_source(*, target_db_path: Path, source: ConsolidationSource) -> 
             )
             artifact_id_map[int(row["artifact_id"])] = int(cursor.lastrowid)
 
-        if _table_exists(src_conn, "artifact_blobs"):
+        if _table_exists(src_conn, ARTIFACT_BLOBS_TABLE):
             for row in src_conn.execute("SELECT * FROM artifact_blobs ORDER BY artifact_id"):
                 old_artifact_id = int(row["artifact_id"])
                 if old_artifact_id not in artifact_id_map:
@@ -241,12 +266,14 @@ def _import_one_source(*, target_db_path: Path, source: ConsolidationSource) -> 
                 normalized_counts[imported] += int(row["row_count"] or 0)
 
         imported_daily_ohlcv_rows = 0
-        if _table_exists(src_conn, "daily_ohlcv_rows"):
-            rows = src_conn.execute("SELECT * FROM daily_ohlcv_rows ORDER BY symbol, date").fetchall()
+        if _table_exists(src_conn, DAILY_OHLCV_ROWS_TABLE):
+            rows = src_conn.execute(
+                f"SELECT * FROM {DAILY_OHLCV_ROWS_TABLE} ORDER BY symbol, date"
+            ).fetchall()
             if rows:
                 dst_conn.executemany(
-                    """
-                    INSERT OR REPLACE INTO daily_ohlcv_rows (
+                    f"""
+                    INSERT OR REPLACE INTO {DAILY_OHLCV_ROWS_TABLE} (
                         symbol,
                         date,
                         open,
@@ -277,11 +304,11 @@ def _import_one_source(*, target_db_path: Path, source: ConsolidationSource) -> 
 
         dst_conn.commit()
         return {
-            "fetch_runs": len(fetch_run_id_map),
-            "artifacts": len(artifact_id_map),
-            "artifact_blobs": _count_rows(src_conn, "artifact_blobs"),
-            "derived_outputs": _count_rows(src_conn, "derived_outputs"),
-            "daily_ohlcv_rows": imported_daily_ohlcv_rows,
+            FETCH_RUNS_TABLE: len(fetch_run_id_map),
+            ARTIFACTS_TABLE: len(artifact_id_map),
+            ARTIFACT_BLOBS_TABLE: _count_rows(src_conn, ARTIFACT_BLOBS_TABLE),
+            DERIVED_OUTPUTS_TABLE: _count_rows(src_conn, DERIVED_OUTPUTS_TABLE),
+            DAILY_OHLCV_ROWS_TABLE: imported_daily_ohlcv_rows,
             **normalized_counts,
         }
 
@@ -462,40 +489,40 @@ def _import_normalized_output(
 ) -> str | None:
     if output_kind == "event_calendar_yaml":
         _import_event_calendar_rows(dst_conn=dst_conn, run_id=run_id, path=path)
-        return "event_calendar_rows"
+        return EVENT_CALENDAR_ROWS_TABLE
     if output_kind == "fred_macro_parquet":
         _import_macro_rows(dst_conn=dst_conn, run_id=run_id, path=path, dataset_kind="series")
-        return "macro_rows"
+        return MACRO_ROWS_TABLE
     if output_kind == "fred_cpi_vintages_parquet":
         _import_macro_rows(dst_conn=dst_conn, run_id=run_id, path=path, dataset_kind="cpi_vintages")
-        return "macro_rows"
+        return MACRO_ROWS_TABLE
     if output_kind == "pmi_parquet":
         _import_pmi_rows(dst_conn=dst_conn, run_id=run_id, path=path, dataset_kind="latest")
-        return "pmi_rows"
+        return PMI_ROWS_TABLE
     if output_kind == "pmi_history_parquet":
         _import_pmi_rows(dst_conn=dst_conn, run_id=run_id, path=path, dataset_kind="history")
-        return "pmi_rows"
+        return PMI_ROWS_TABLE
     if output_kind == "pit_constituents_parquet":
         _import_pit_rows(dst_conn=dst_conn, run_id=run_id, path=path)
-        return "pit_constituent_rows"
+        return PIT_CONSTITUENT_ROWS_TABLE
     if output_kind == "fomc_minutes_parquet":
         _import_fomc_rows(dst_conn=dst_conn, run_id=run_id, path=path)
-        return "fomc_minutes_rows"
+        return FOMC_MINUTES_ROWS_TABLE
     if output_kind == "powell_speeches_parquet":
         _import_powell_rows(dst_conn=dst_conn, run_id=run_id, path=path)
-        return "powell_speeches_rows"
+        return POWELL_SPEECHES_ROWS_TABLE
     if output_kind == "usd_index_parquet":
         _import_usd_index_rows(dst_conn=dst_conn, run_id=run_id, path=path)
-        return "usd_index_rows"
+        return USD_INDEX_ROWS_TABLE
     if output_kind == "aggregate_eps_parquet":
         _import_aggregate_eps_snapshot_rows(dst_conn=dst_conn, run_id=run_id, path=path)
-        return "aggregate_eps_snapshot_rows"
+        return AGGREGATE_EPS_SNAPSHOT_ROWS_TABLE
     if output_kind == "aggregate_eps_wayback_timeline":
         _import_aggregate_eps_wayback_rows(dst_conn=dst_conn, run_id=run_id, path=path)
-        return "aggregate_eps_wayback_rows"
+        return AGGREGATE_EPS_WAYBACK_ROWS_TABLE
     if output_kind == "alpaca_daily_ohlcv_parquet":
         _import_alpaca_market_rows(dst_conn=dst_conn, run_id=run_id, path=path)
-        return "alpaca_market_rows"
+        return ALPACA_MARKET_ROWS_TABLE
     return None
 
 
@@ -812,6 +839,8 @@ def _table_exists(conn: sqlite3.Connection, table_name: str) -> bool:
 
 
 def _count_rows(conn: sqlite3.Connection, table_name: str) -> int:
+    if table_name not in _COUNTABLE_TABLES:
+        raise ValueError(f"Unexpected SQLite table for count: {table_name!r}")
     if not _table_exists(conn, table_name):
         return 0
     return int(conn.execute(f"SELECT count(*) FROM {table_name}").fetchone()[0])
