@@ -13,7 +13,7 @@ SRC_DIR = REPO_ROOT / "src"
 if str(SRC_DIR) not in sys.path:
     sys.path.insert(0, str(SRC_DIR))
 
-from regime_data_fetch.event_sources.approvals import append_approval_record
+from regime_data_fetch.event_sources.approvals import append_approval_record  # noqa: E402
 
 
 def _utc_today() -> dt.date:

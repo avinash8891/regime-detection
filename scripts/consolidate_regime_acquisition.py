@@ -10,7 +10,7 @@ SRC_DIR = REPO_ROOT / "src"
 if str(SRC_DIR) not in sys.path:
     sys.path.insert(0, str(SRC_DIR))
 
-from regime_data_fetch.acquisition_consolidation import consolidate_acquisition_dbs
+from regime_data_fetch.acquisition_consolidation import consolidate_acquisition_dbs  # noqa: E402
 
 
 def main() -> int:

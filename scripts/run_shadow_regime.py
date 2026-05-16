@@ -14,10 +14,10 @@ import pandas as pd
 REPO_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO_ROOT / "src"))
 
-from regime_detection.calendar import require_nyse_trading_day
-from regime_detection.engine import RegimeEngine
-from regime_detection.loaders import load_event_calendar
-from regime_detection.shadow_storage import (
+from regime_detection.calendar import require_nyse_trading_day  # noqa: E402
+from regime_detection.engine import RegimeEngine  # noqa: E402
+from regime_detection.loaders import load_event_calendar  # noqa: E402
+from regime_detection.shadow_storage import (  # noqa: E402
     ensure_shadow_layout,
     insert_run_row,
     load_archived_event_calendar,
@@ -28,7 +28,7 @@ from regime_detection.shadow_storage import (
     utc_iso_now,
     write_archived_inputs,
 )
-from regime_detection.versioning import engine_version as resolved_engine_version
+from regime_detection.versioning import engine_version as resolved_engine_version  # noqa: E402
 
 
 def _normalize_market_data(path: Path) -> pd.DataFrame:

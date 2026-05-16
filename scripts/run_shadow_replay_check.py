@@ -14,9 +14,9 @@ import pandas as pd
 REPO_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO_ROOT / "src"))
 
-from regime_detection.engine import RegimeEngine
-from regime_detection.loaders import load_event_calendar
-from regime_detection.shadow_storage import (
+from regime_detection.engine import RegimeEngine  # noqa: E402
+from regime_detection.loaders import load_event_calendar  # noqa: E402
+from regime_detection.shadow_storage import (  # noqa: E402
     fetch_run_row,
     insert_replay_check,
     load_archived_event_calendar,

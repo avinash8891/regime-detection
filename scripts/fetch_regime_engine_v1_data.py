@@ -14,21 +14,21 @@ SRC_DIR = REPO_ROOT / "src"
 if str(SRC_DIR) not in sys.path:
     sys.path.insert(0, str(SRC_DIR))
 
-from regime_data_fetch.cli_common import load_env_file, parse_date
-from regime_data_fetch.bls_schedule import build_bls_local_archive_page_fetcher
-from regime_data_fetch.event_calendar import run_us_event_calendar_fetch
-from regime_data_fetch.fetch_workflow import run_macro_fetch, run_market_fetch, run_sentiment_fetch
-from regime_data_fetch.aggregate_eps import (
+from regime_data_fetch.cli_common import load_env_file, parse_date  # noqa: E402
+from regime_data_fetch.bls_schedule import build_bls_local_archive_page_fetcher  # noqa: E402
+from regime_data_fetch.event_calendar import run_us_event_calendar_fetch  # noqa: E402
+from regime_data_fetch.fetch_workflow import run_macro_fetch, run_market_fetch, run_sentiment_fetch  # noqa: E402
+from regime_data_fetch.aggregate_eps import (  # noqa: E402
     run_aggregate_eps_fetch,
     run_aggregate_eps_auto_fetch,
     run_wayback_aggregate_eps_fetch,
 )
-from regime_data_fetch.fomc_minutes import run_fomc_minutes_fetch
-from regime_data_fetch.local_daily_ohlcv_sqlite import run_local_daily_ohlcv_sqlite_import
-from regime_data_fetch.local_usd_index import run_local_usd_index_import
-from regime_data_fetch.pmi import DEFAULT_MANUAL_PMI_HISTORY_DIR, run_pmi_fetch
-from regime_data_fetch.pit_constituents import run_pit_constituents_fetch
-from regime_data_fetch.powell_speeches import run_powell_speeches_fetch
+from regime_data_fetch.fomc_minutes import run_fomc_minutes_fetch  # noqa: E402
+from regime_data_fetch.local_daily_ohlcv_sqlite import run_local_daily_ohlcv_sqlite_import  # noqa: E402
+from regime_data_fetch.local_usd_index import run_local_usd_index_import  # noqa: E402
+from regime_data_fetch.pmi import DEFAULT_MANUAL_PMI_HISTORY_DIR, run_pmi_fetch  # noqa: E402
+from regime_data_fetch.pit_constituents import run_pit_constituents_fetch  # noqa: E402
+from regime_data_fetch.powell_speeches import run_powell_speeches_fetch  # noqa: E402
 
 
 def main() -> int:

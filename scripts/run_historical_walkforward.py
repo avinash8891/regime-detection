@@ -17,10 +17,10 @@ import yaml
 REPO_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO_ROOT / "src"))
 
-from regime_detection.calendar import nyse_calendar
-from regime_detection.engine import RegimeEngine
-from regime_detection.loaders import load_event_calendar
-from regime_detection.versioning import engine_version as resolved_engine_version
+from regime_detection.calendar import nyse_calendar  # noqa: E402
+from regime_detection.engine import RegimeEngine  # noqa: E402
+from regime_detection.loaders import load_event_calendar  # noqa: E402
+from regime_detection.versioning import engine_version as resolved_engine_version  # noqa: E402
 
 
 RUNS_SCHEMA = """

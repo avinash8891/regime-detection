@@ -13,8 +13,8 @@ import pandas as pd
 REPO_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO_ROOT / "src"))
 
-from regime_detection.calendar import nyse_calendar
-from regime_detection.shadow_storage import ensure_shadow_layout, fetch_run_row, insert_incident, open_shadow_db
+from regime_detection.calendar import nyse_calendar  # noqa: E402
+from regime_detection.shadow_storage import ensure_shadow_layout, fetch_run_row, insert_incident, open_shadow_db  # noqa: E402
 
 
 def _previous_nyse_session(check_date: date) -> date:

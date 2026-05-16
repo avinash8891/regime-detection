@@ -22,7 +22,7 @@ SRC_DIR = REPO_ROOT / "src"
 if str(SRC_DIR) not in sys.path:
     sys.path.insert(0, str(SRC_DIR))
 
-from regime_data_fetch.aaii_sentiment import AAII_SENTIMENT_URL, run_sentiment_fetch
+from regime_data_fetch.aaii_sentiment import AAII_SENTIMENT_URL, run_sentiment_fetch  # noqa: E402
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
 
