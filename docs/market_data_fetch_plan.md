@@ -7,6 +7,123 @@ This document now separates two workflows that were previously mixed together:
 
 Those are not interchangeable. Historical backfills test engine logic. Forward shadow tests operational stability.
 
+## 0. Artifact Storage and Materialization Contract
+
+`data/raw/` is a local materialized cache, not the durable source of truth. It
+stays gitignored so large, licensed, or frequently changing source artifacts do
+not enter Git history. Any workflow that needs to run outside the original
+machine must rebuild `data/raw/` from an explicit artifact manifest.
+
+The durable storage boundary is:
+
+| Layer | Responsibility | Durable home |
+|---|---|---|
+| Raw capture | Exact bytes returned by a source or supplied by an operator: FRED JSON, Alpaca bars, Investing pages/CSVs, AAII files, manual workbooks | S3-compatible object storage under `raw_capture/` |
+| Normalized | Source-specific cleaned tables that still preserve the source shape | S3-compatible object storage under `normalized/` |
+| Canonical | Engine-ready parquet/SQLite/YAML contracts such as macro series, daily OHLCV, sentiment, event candidates, PIT constituents | S3-compatible object storage under `canonical/` |
+| Run inputs | Frozen input bundle for one regime run or replay window | S3-compatible object storage under `run_inputs/` |
+| Ledger | Fetch runs, source checkpoints, artifact URIs, hashes, row counts, date ranges, schema versions, lineage, and quarantine records | SQLite |
+| Local cache | Files read by current scripts and loaders | `data/raw/` rebuilt from a manifest |
+| Version control | Code, schemas, fetch contracts, implementation plans, and small lock/manifest files | Git |
+
+SQLite is the artifact ledger, not the warehouse. Large source bodies and
+processed tables live as files in object storage; SQLite records their URI,
+hash, size, row count, date range, source metadata, producing code version, and
+lineage. Small payloads may be embedded only when that improves operator
+debugging without turning SQLite into the primary data store.
+
+Every production fetch must finish in this order:
+
+1. Fetch new source data plus a source-specific lookback window for revisions.
+2. Store the exact raw bytes in object storage.
+3. Normalize into source-shaped rows and store the normalized artifact.
+4. Build or update the canonical engine artifact.
+5. Validate schema, row count, date range, and hash.
+6. Record artifact and lineage metadata in SQLite.
+7. Advance the source checkpoint only after every required artifact has been
+   written and validated.
+
+Incremental fetches update the artifact lake. Regime-engine runs consume a
+manifest that pins exact canonical artifacts. A manifest is the only supported
+cross-environment handoff: it states which S3 artifacts to materialize into
+which local `data/raw/` paths and includes hashes that must verify before the
+engine starts.
+
+Minimum manifest fields:
+
+```yaml
+artifact_set: regime_engine_YYYY-MM-DD
+created_at_utc: "YYYY-MM-DDTHH:MM:SSZ"
+storage_root: s3://regime-data
+artifacts:
+  - name: fred_macro_series
+    stage: canonical
+    uri: canonical/macro/fred_macro_series/as_of=YYYY-MM-DD/fred_macro_series.parquet
+    local_path: data/raw/macro/fred_macro_series.parquet
+    sha256: "<hex>"
+    schema_version: fred_macro_series.v1
+    rows: 0
+    min_date: YYYY-MM-DD
+    max_date: YYYY-MM-DD
+    required_for:
+      - v2_calibration
+      - profile_engine_30d
+```
+
+The implementation may keep existing local paths during migration, but the
+contract is logical: `data/raw/` is replaceable, and the manifest plus artifact
+store is what makes the data portable and replayable.
+
+### 0.1 Temporal Normalization Contract
+
+All persistent canonical artifacts must use one temporal contract across data
+sources. Source-specific time zones may exist only in raw captures or explicit
+source-metadata columns; they must not leak into engine-facing parquet with
+mixed semantics.
+
+Canonical rules:
+
+- **Intraday instants**: columns that represent a real instant in time must be
+  named `*_timestamp_utc` or `*_time_utc`, stored in UTC, and round-trip as
+  timezone-aware UTC timestamps or ISO-8601 strings with a `Z` suffix. Examples:
+  Investing event occurrences, last-price timestamps, artifact creation times,
+  and fetch-run start/finish times.
+- **Source-local release timestamps**: if the source publishes a release time in
+  local civil time, normalize the canonical instant to UTC and retain the source
+  zone only as metadata, e.g. `release_timestamp_utc` plus
+  `release_timezone="America/New_York"`. Existing `*_et` fields are tolerated
+  during migration but are not the forward canonical storage shape.
+- **Date-only observations**: columns that represent an observation date, NYSE
+  session date, vintage date, constituent interval boundary, or monthly/weekly
+  period must be stored as normalized `YYYY-MM-DD` dates, not midnight timestamps.
+  Examples: FRED observation dates, Alpaca daily bars, AAII weekly dates,
+  Cleveland Fed nowcast dates, S&P EPS observation dates, PIT start/end dates,
+  and NYSE session dates.
+- **Session alignment**: engine loaders may convert a UTC release timestamp to a
+  NYSE session date at the loader boundary. That derived session date is a date,
+  not a replacement for the stored UTC instant.
+- **Raw preservation**: raw captures keep the source payload exactly as received,
+  including source time zones, offsets, or strings. Normalized and canonical
+  artifacts apply this contract.
+
+Implementation TODO for the next data-contract slice:
+
+1. Add a shared `regime_data_fetch.time_normalization` module with helpers for
+   UTC instants, normalized date-only columns, source-local-to-UTC conversion,
+   and artifact-level temporal contract assertions.
+2. Route every canonical writer through that module before `to_parquet()`:
+   FRED macro/vintages, Alpaca daily OHLCV, Investing economic/holiday/earnings,
+   PMI, AAII, SF Fed news sentiment, Cleveland Fed nowcast, FOMC minutes, Powell
+   speeches, event candidates/YAML export, EPS history, and PIT constituents.
+3. Add schema tests that read each canonical parquet family and assert temporal
+   column names, parseability, timezone handling, and date-only semantics. A
+   source with `+05:30`, `ET`, naive timestamps, or mixed string/datetime values
+   must fail before the artifact is recorded as valid.
+4. Record the temporal schema version in SQLite artifact metadata and manifests
+   so old mixed-semantics artifacts cannot be silently used in future runs.
+5. Keep display-time conversion outside storage. Reports may render local time;
+   stored canonical artifacts stay UTC instants or normalized dates only.
+
 ## 1. Validation Sequence
 
 ### 1.0 Current Status (mirrors `regime_engine_v1_final_spec.md` §14.1)
@@ -46,10 +163,10 @@ These source choices are already approved and should be treated as explicit spec
 
 - `DXY` is **not** fetched in V2 build mode. The spec-level field is `broad_usd_index`, sourced from FRED `DTWEXBGS`.
 - PMI stays PMI. Do **not** substitute CFNAI or another macro proxy.
-- PMI retrieval for backtesting now uses repo-local manually supplied Investing release-history tables for manufacturing and services, aligned to the live OHLCV lower bound. The older DBnomics / TradingEconomics fetch path is no longer the canonical backtest source in this repo.
+- PMI retrieval now uses live DBnomics / TradingEconomics by default. Repo-local manually supplied Investing release-history tables remain an explicit fallback via `--pmi-history-dir` for pinned historical backtests.
 - `earnings_revision_breadth` is replaced by `aggregate_forward_eps_revision_direction`, sourced from S&P Global aggregate forward EPS data.
 - **V2 §2B commodity returns**: `DBC` ETF (Invesco DB Commodity Index Tracking Fund) is the approved substitute for the Bloomberg Commodity Index (paid feed unavailable). Pinned in V2 §2B Ambiguity Log entry #48. Rows must carry a documented bias-warning analogous to the §1D PIT-source pattern; a future spec-amendment slice may replace DBC with a direct Bloomberg / Refinitiv commodity-index feed when vendor sourcing is approved.
-- **V2 §2C HY/IG spread direction**: §2C carries two separate, never-blended metrics. The authoritative real-OAS metric is sourced from **real ICE BofA Option-Adjusted Spread series, free on FRED** — `hy_oas = BAMLH0A0HYM2` (HY Master II OAS) and `ig_bbb_oas = BAMLC0A4CBBB` (BBB Corporate OAS), both in `V2_FRED_SERIES` (Ambiguity Log #49 closed; commits `814a8d5` + `9cad7e7`). Because FRED now exposes only 2023-05-15+ OAS history, ADR 0007 / Ambiguity Log #71 keeps the TLT-vs-HYG/LQD total-return-differential proxy as a **separate parallel metric** producing `credit_funding_state_proxy`; it is not a fallback and is never spliced into real OAS.
+- **V2 §2C HY/IG spread direction**: §2C carries two separate raw metrics plus an explicit effective downstream resolver. The authoritative real-OAS metric is sourced from **real ICE BofA Option-Adjusted Spread series, free on FRED** — `hy_oas = BAMLH0A0HYM2` (HY Master II OAS) and `ig_bbb_oas = BAMLC0A4CBBB` (BBB Corporate OAS), both in `V2_FRED_SERIES` (Ambiguity Log #49 closed; commits `814a8d5` + `9cad7e7`). Because FRED now exposes only 2023-05-15+ OAS history, ADR 0007 / Ambiguity Log #71 keeps the TLT-vs-HYG/LQD total-return-differential proxy as a **separate parallel metric** producing `credit_funding_state_proxy`. `credit_funding_effective_state` is the downstream field: OAS when it is the only classified signal, proxy when OAS is unavailable/stale/insufficient-history, and the higher-risk label when both directional labels diverge. Raw OAS/proxy series are never spliced.
   - **Coverage caveat (discovered 2026-05 re-fetch):** FRED now publishes only a **trailing ~3-year window** of these ICE BofA OAS series — `BAMLH0A0HYM2` and `BAMLC0A4CBBB` both start **2023-05-15** (confirmed against FRED's `/series` metadata: `observation_start = 2023-05-15`). ICE Data Indices tightened redistribution licensing; the series IDs are unchanged but pre-2023 history is no longer public on FRED. **Consequence:** §2C real-OAS backtests start around 2023-05. The proxy covers earlier history directionally from already-fetched `TLT`, `HYG`, and `LQD` closes and carries `credit_spread_proxy_total_return_differential` bias warnings. **Do not add `IEF` or `BIL`** for another proxy without a spec amendment.
 - **V2 §2D event rows** (`budget_week`, `election_window`, `geopolitical_event`, `global_rate_decision`) are generated as candidate evidence first, then promoted under the Group B rules. `election_window`, `budget_week`, and global-rate decisions have deterministic/official-source paths. `geopolitical_event` now has live GPR + GDELT evidence generation plus implemented clients for ACLED, Uppsala/UCDP GED Candidate, and HDX HAPI conflict-event fetchers. **TODO:** ACLED and Uppsala/UCDP live pulls remain pending entitled API keys/account access; the current Gmail ACLED account can mint a token but the API endpoint denies raw data access. All geopolitical evidence still reaches YAML only through the human approval overlay; no geopolitical source auto-promotes.
 - **V2 §1A `euphoria` label — resolved**: `sentiment_score = bull_bear_spread_8w_ma` from the AAII weekly survey; the AAII fetcher ships (`regime_data_fetch.aaii_sentiment`), and `euphoria` fires (Ambiguity Log #32 status update). Put-call ratio / Investors Intelligence remain *optional* alternative sources for a future calibration revision — they block no label and need no fetcher to ship V2.
@@ -63,18 +180,19 @@ Status meanings used below:
 
 - `done-live-verified`: implemented and verified against the real source in this repo workflow
 - `implemented-not-live-verified`: implemented in code but not live-verified in the current session
+- `operator-assisted`: useful explicit tool, but not part of unattended `--fetch all` because it depends on a browser session, local file, archive, or historical-backfill decision
 - `template-only`: only a placeholder/template exists
 - `planned`: source/path identified, loader not implemented yet
 - `hard-fail`: intentionally unsupported unless the spec/source decision changes
 
 | Data | Source | Cadence | Output / Path | Status | Comment |
 |---|---|---|---|---|---|
-| US universe cache JSON | manually supplied external artifact | ad hoc refresh | `data/raw/universe/us_universe_cache.json` if you choose to keep a local copy | template-only | this repo no longer builds or refreshes the universe cache from yfinance; if you want to preserve a cache artifact, manage it outside this repo and treat it as an external input |
-| 10B+ US stock universe symbol list | explicit `--universe-json` symbol file | ad hoc refresh | loaded in-memory from `--universe-json` | done-live-verified | V1/all stock-universe fetches now require an explicit JSON list of symbols; this repo does not attempt to derive or refresh the universe membership itself |
+| V1/all stock universe symbol list | fixed regime universe artifact; PIT parquet only for explicit bootstrap/listing | ad hoc refresh | materialized as a JSON symbol list or `data/raw/daily_ohlcv_762/symbol=*/` tree by the manifest | done-live-verified | routine Alpaca constituent refreshes use the fixed 762-symbol universe (`--universe-json` or `--constituent-universe-dir`) and validate the expected count. PIT expansion is blocked unless `--allow-pit-constituent-universe` is explicit. The runner never uses Alpaca's full active asset catalog for regime-engine OHLCV |
 
 > **Engine-facing ETF OHLCV — updated 2026-05.** `data/raw/daily_ohlcv/` (the partitioned parquet the engine's market-data loader actually reads) was re-fetched directly from Alpaca — SIP feed, `adjustment=split` — covering the full **26-symbol V2 ETF universe, 2016-01-04 → current, one consistent source** (26 symbols / 67,111 rows; `XLC` starts 2018-06-19, its genuine launch). This replaced a stale 2018-start parquet that was also missing `RSP`/`DBC` and disagreed with the SQLite store on prices. The SQLite `daily_ohlcv_rows` store described in the rows below is a **separate artifact** used only for the 762 PIT constituent stocks (V2 §1D PIT breadth) — it is not what the ETF axes load.
 
-| 762-stock daily OHLCV backfill | local imported parquet dataset; Alpaca REST remains an optional refresh path | daily | SQLite `daily_ohlcv_rows` plus source parquet artifacts in the acquisition DB | done-live-verified | live-verified local import from `/Users/avinashvankadaru/.superset/worktrees/regime-detection/v1-of-regime-detection/data/raw/daily_ohlcv` now exists in SQLite with `763` symbols, `1,686,570` rows, and checked coverage `2016-01-04` through `2026-05-05`; the direct Alpaca fetch path is still available but is no longer the only grounded source of truth here |
+| 762-stock daily OHLCV backfill | Alpaca REST from the fixed 762-symbol regime universe; local parquet import remains an explicit backfill path | daily | `data/raw/daily_ohlcv_762/symbol=*/ohlcv.parquet` plus SQLite `daily_ohlcv_rows` | done-live-verified | routine future runs use `--fetch daily-ohlcv-constituents-alpaca`, or `--fetch all` only when the fixed universe artifact is already supplied via `--universe-json` or `--constituent-universe-dir`. The current fetch script still falls back to the PIT parquet when no fixed-universe input is provided, so `--fetch all` is not clean-bootstrap-safe yet. PIT constituent expansion is an explicit bootstrap mode only, not the default refresh universe. `--fetch daily-ohlcv-local-sqlite --daily-ohlcv-dir ...` stays available only for archived/local backfills |
+| local 762-stock daily OHLCV import | existing partitioned parquet tree supplied by an operator | manual/replay | SQLite `daily_ohlcv_rows` plus source parquet artifacts in the acquisition DB | operator-assisted | explicit `--fetch daily-ohlcv-local-sqlite --daily-ohlcv-dir ...` materializes or replays an already-captured tree. It is excluded from unattended `--fetch all`; routine future refresh is Alpaca constituent OHLCV with the fixed 762-symbol artifact |
 | `SPY` daily OHLCV | local imported parquet dataset; Alpaca REST remains an optional refresh path | daily | SQLite `daily_ohlcv_rows` plus source parquet artifacts in the acquisition DB | done-live-verified | V1 market anchor is present in the live-verified local OHLCV import covering `2016-01-04` through `2026-05-05`; Alpaca remains the documented refresh path if you later need a direct pull |
 | `RSP` daily OHLCV | local imported parquet dataset; Alpaca REST remains an optional refresh path | daily | SQLite `daily_ohlcv_rows` plus source parquet artifacts in the acquisition DB | done-live-verified | V1 breadth proxy is present in the live-verified local OHLCV import covering `2016-01-04` through `2026-05-05`; Alpaca remains the documented refresh path if you later need a direct pull |
 | `VIX` daily proxy bars | local imported parquet dataset; Alpaca REST remains an optional refresh path | daily | SQLite `daily_ohlcv_rows` plus source parquet artifacts in the acquisition DB | done-live-verified | the checked local market dataset covers the documented volatility proxy requirement operationally via the imported symbol set; if you later refresh from Alpaca directly, true `VIX` is preferred when the account supports it |
@@ -88,11 +206,11 @@ Status meanings used below:
 | Scheduled event rows: `NFP` | generated repo-local YAML from BLS yearly release-schedule pages, using the local yearly HTML archive when direct access is blocked | monthly | `configs/events/us_events.yaml` | done-live-verified | generated by `--fetch events`; parse BLS yearly schedule pages under `/schedule/YYYY/` or `/schedule/YYYY/home.htm`, keep only `The Employment Situation` / `Employment Situation` rows, and store release timestamps at `08:30 ET`; current checked YAML/report contains `131` NFP rows spanning `2016-01-08` through `2026-12-04` |
 | Rule-derived event window: `expiry_week` | computed from deterministic rules in config/runtime | monthly | no stored raw file | done-live-verified | compute the third Friday of each month, roll back to the previous NYSE trading day if that Friday is closed, then expand the configured NYSE trading-day window around the anchor; the runtime rule is now wired through `resolve_event_label()` and live-verified with NYSE holiday-sensitive months like `2019-04`, `2022-04`, and `2026-06` |
 | Rule-derived event window: `earnings_season` | computed from deterministic rules in config/runtime | quarterly window | no stored raw file | done-live-verified | compute quarter windows starting on the second Monday of `Jan/Apr/Jul/Oct` and ending `+35` calendar days later; the runtime rule is now wired through `resolve_event_label()` and live-verified across `2015-01-01` through `2026-05-07` |
-| V2 §2D event rows (`election_window`, `geopolitical_event`, `budget_week`, `global_rate_decision`) | official/deterministic adapters plus Group B candidate evidence | irregular | `data/raw/event_calendar/candidates/*.parquet`; promoted rows render into `configs/events/us_events.yaml` | implemented-live-source-paths | `election_window` is deterministic; `global_rate_decision` uses official BOE / ECB / BOJ pages; `budget_week` uses deterministic Sep-30 plus Treasury/GovInfo official budget discovery. `geopolitical_event` uses GPR daily-index spikes and GDELT daily Event export ZIPs for GPR spike windows. ACLED and Uppsala/UCDP client code is present, but live raw-event pulls are TODO pending entitled API keys/account access (`ACLED_API_TOKEN` must be API-authorized; `UCDP_ACCESS_TOKEN` required). HDX HAPI monthly/admin conflict evidence is available when `HDX_HAPI_APP_IDENTIFIER` is present. Geopolitical rows remain overlay-only and are excluded from routine `macro_event_score`; V1 path remains unaffected. |
-| V2 §2B `cpi_nowcast` (Cleveland Fed inflation nowcast) | Cleveland Fed month-over-month nowcast webchart JSON, free — `.../webcharts/inflationnowcasting/nowcast_month.json` (reachable over urllib) | intra-month; re-fetch monthly | `data/raw/cleveland_fed_nowcast/cpi_nowcast.parquet` | done | feeds `inflation_surprise_zscore` (V2 §2B single-signal `inflation_shock` limb); ADR 0006 substituted the free Cleveland Fed nowcast for the paid analyst `consensus_estimate`. `regime_data_fetch.cleveland_fed_nowcast` downloads + parses the JSON archive directly — 154 monthly vintages 2013-08→present, last non-empty CPI value per vintage keyed to the 1st of the target month. Manual-drop of the JSON is a fallback only |
+| V2 §2D event rows (`election_window`, `geopolitical_event`, `budget_week`, `global_rate_decision`) | official/deterministic adapters plus Group B candidate evidence | irregular | `data/raw/event_calendar/candidates/*.parquet`; promoted rows render into `configs/events/us_events.yaml` | implemented-live-source-paths | `election_window` is deterministic; `global_rate_decision` uses official BOE / ECB / BOJ pages; `budget_week` uses deterministic Sep-30 plus Treasury/GovInfo official budget discovery. `geopolitical_event` uses GPR daily-index spikes and GDELT daily Event export ZIPs for GPR spike windows. ACLED and Uppsala/UCDP client code is present, but live raw-event pulls are TODO pending entitled API keys/account access (`ACLED_API_TOKEN` must be API-authorized; `UCDP_ACCESS_TOKEN` required). HDX HAPI monthly/admin conflict evidence requires `HDX_HAPI_APP_IDENTIFIER`, or both `HDX_HAPI_APP_NAME` and `HDX_HAPI_APP_EMAIL`; missing app identity is logged and skipped instead of using a fake default. Geopolitical rows remain overlay-only and are excluded from routine `macro_event_score`; V1 path remains unaffected. |
+| V2 §2B `cpi_nowcast` (Cleveland Fed inflation nowcast) | Cleveland Fed month-over-month nowcast webchart JSON, free — `.../webcharts/inflationnowcasting/nowcast_month.json` (reachable over urllib) | intra-month; re-fetch monthly | `data/raw/cleveland_fed_nowcast/cpi_nowcast.parquet` | done | feeds `inflation_surprise_zscore` (V2 §2B single-signal `inflation_shock` limb); ADR 0006 substituted the free Cleveland Fed nowcast for the paid analyst `consensus_estimate`. `regime_data_fetch.cleveland_fed_nowcast` downloads + parses the JSON archive directly — 154 monthly vintages 2013-01→present in the current materialization, last non-empty CPI value per vintage keyed to its chart publication date. Manual-drop of the JSON is a fallback only |
 | V2 §1A sentiment_score | AAII bull-bear weekly survey (sourced) | weekly | `data/raw/sentiment/aaii_sentiment.parquet` | done | `sentiment_score = bull_bear_spread_8w_ma`; `regime_data_fetch.aaii_sentiment` ships and the V2 §1A `euphoria` label fires (Ambiguity Log #32). Put-call ratio / Investors Intelligence are optional future calibration-revision sources only — they block no label |
 | V2 §1C implied vol (`VIXCLS`) | FRED API (CBOE VIX — the model-free 30-day implied vol on SPX) | daily | `data/raw/macro/fred_macro_series.parquet` | done | `implied_vol_30d = VIXCLS / 100`; feeds V2 §1C `vol_crush` rule + `iv_rv_spread` feature (Ambiguity Log #19 / #20; ADR 0005). No options-chain feed needed — VIX is the canonical implied-vol series and is free on FRED |
-| V2 §2C HY/IG OAS feeds | ICE BofA Option-Adjusted Spread series, free on FRED: `BAMLH0A0HYM2` (HY) + `BAMLC0A4CBBB` (BBB) | daily | `data/raw/macro/fred_macro_series.parquet` | done — **2023-05-15 → current only** | authoritative real-OAS metric sourced directly from FRED and in `V2_FRED_SERIES` (Ambiguity Log #49; commits `814a8d5` + `9cad7e7`). **Coverage limit:** FRED exposes only a trailing ~3-year window of these series (both start `2023-05-15` as of the 2026-05 re-fetch — ICE Data Indices licensing truncation, confirmed against FRED `/series` metadata); §2C real-OAS backtest depth is capped at ~2023. The separate `credit_funding_state_proxy` metric uses already-fetched `TLT`/`HYG`/`LQD` total-return differentials for longer directional history; do not add `IEF` / `BIL` without a spec amendment. |
+| V2 §2C HY/IG OAS feeds | ICE BofA Option-Adjusted Spread series, free on FRED: `BAMLH0A0HYM2` (HY) + `BAMLC0A4CBBB` (BBB) | daily | `data/raw/macro/fred_macro_series.parquet` | done — **2023-05-15 → current only** | authoritative real-OAS metric sourced directly from FRED and in `V2_FRED_SERIES` (Ambiguity Log #49; commits `814a8d5` + `9cad7e7`). **Coverage limit:** FRED exposes only a trailing ~3-year window of these series (both start `2023-05-15` as of the 2026-05 re-fetch — ICE Data Indices licensing truncation, confirmed against FRED `/series` metadata); §2C real-OAS backtest depth is capped at ~2023. The separate `credit_funding_state_proxy` metric uses already-fetched `TLT`/`HYG`/`LQD` total-return differentials for longer directional history. `credit_funding_effective_state` is what downstream rules consume; do not add `IEF` / `BIL` without a spec amendment. |
 | V2 §1D true PIT vendor data | CRSP / Compustat / FactSet / Norgate point-in-time S&P 500 membership (paid, not yet sourced) | event-driven membership changes | no output path | planned | V2 §1D currently uses `fja05680/sp500` GitHub CSV with documented `survivorship_biased_constituent_universe` warning (live-verified). True vendor PIT is the future upgrade path; TODO note added inline at `src/regime_data_fetch/pit_constituents.py`; the parquet schema (ticker / start_date / end_date intervals) is unchanged on swap. |
 | `2y_yield` / `DGS2` | FRED API | daily | `data/raw/macro/fred_macro_series.parquet` | done-live-verified | Treasury daily constant-maturity yield; typically published on business days after market hours; when `--acquisition-db` is supplied, the raw FRED JSON response is recorded before parquet/report output |
 | `10y_yield` / `DGS10` | FRED API | daily | `data/raw/macro/fred_macro_series.parquet` | done-live-verified | Treasury daily constant-maturity yield; typically published on business days after market hours; when `--acquisition-db` is supplied, the raw FRED JSON response is recorded before parquet/report output |
@@ -104,15 +222,16 @@ Status meanings used below:
 | V2 §2A central-bank-text score | FOMC minutes + Powell speeches body_text (already fetched) | per release | derived in-engine via `regime_detection.central_bank_text` | done | deterministic-lexicon substitute for the spec's "LLM classifier" phrasing (V2 §2A lines 2578-2586). Required because V1 §2.2 stateless replay forbids LLM calls inside the engine — same precedent as DBC/AAII/Cleveland-Fed substitutes. Implemented in `src/regime_detection/central_bank_text.py`, loaded via `loaders.load_central_bank_text_score`, routed onto `MonetaryPressureV2Features.central_bank_text_score` as **evidence only — never a standalone label** per spec. Emits `central_bank_text_deterministic_lexicon_substitute` bias-warning row. See audit M1 — `docs/spec_code_data_audit_2026_05_15.md` §3.1 |
 | V2 §1A SF Fed Daily News Sentiment Index | SF Fed XLSX (Shapiro/Sudhof/Wilson 2020) — `https://www.frbsf.org/wp-content/uploads/news_sentiment_data.xlsx` | weekly (workbook refresh) | `data/raw/news_sentiment/sf_fed_news_sentiment.parquet` | done | second sentiment voice alongside the AAII bull-bear 8w-MA `sentiment_score`. EVIDENCE ONLY — never read by the §1A `euphoria` rule predicate (spec line 164). Fetcher at `src/regime_data_fetch/sf_fed_news_sentiment.py`; loaded via `loaders.load_news_sentiment_series`; routed onto `TrendDirectionV2Features.news_sentiment_score` + derived `sentiment_concordance` (+1/0/-1/NaN). YAML block in `configs/core3-v2.0.0.yaml`. See V2 spec Ambiguity Log entry #74 + audit doc §4.1 |
 | `iorb` / `IORB` | FRED API | business day | `data/raw/macro/fred_macro_series.parquet` | done-live-verified | interest on reserve balances; use the published effective date from FRED; when `--acquisition-db` is supplied, the raw FRED JSON response is recorded before parquet/report output |
-| local `^NYICDX` dollar-index history | manual Yahoo Finance CSV export | daily | `data/raw/usd_index/nyicdx_daily.parquet` | done-live-verified | imported via `--fetch usd-index-local --usd-index-csv /Users/avinashvankadaru/Desktop/NYICDX_history.csv`; keep this row explicit for V2 so any DXY-style downstream use points to the Yahoo `^NYICDX` artifact and not to the separate unsupported licensed ICE feed row; when `--acquisition-db` is supplied, the manual CSV file is recorded in SQLite before parquet/report output |
-| PMI manufacturing headline values | repo-local manually supplied Investing release-history table | monthly | `data/raw/pmi/us_ism_pmi.parquet` | done-live-verified | current canonical backtest source is the repo-local manufacturing PMI history table derived from the Investing manufacturing PMI calendar page and aligned to the OHLCV lower bound `2016-01-04`; normalized output keeps monthly headline values and code-derived `10:00 ET` release timestamps |
-| PMI services headline values | repo-local manually supplied Investing release-history table | monthly | `data/raw/pmi/us_ism_pmi.parquet` | done-live-verified | current canonical backtest source is the repo-local services PMI history table derived from the Investing services PMI calendar page and aligned to the OHLCV lower bound `2016-01-04`; normalized output keeps monthly headline values and code-derived `10:00 ET` release timestamps |
+| local `^NYICDX` dollar-index history | manual Yahoo Finance CSV export | daily | `data/raw/usd_index/nyicdx_daily.parquet` | operator-assisted | imported only by explicit `--fetch usd-index-local --usd-index-csv ...`; routine future USD ingestion for the regime engine is `broad_usd_index` from FRED `DTWEXBGS` through `--fetch macro`, so this local CSV path is intentionally excluded from unattended `--fetch all`; when `--acquisition-db` is supplied, the manual CSV file is recorded in SQLite before parquet/report output |
+| PMI manufacturing headline values | live DBnomics primary, TradingEconomics backup; optional manual Investing TSV fallback | monthly | `data/raw/pmi/us_ism_pmi.parquet` | done-live-verified | routine `--fetch pmi` / `--fetch all` uses live sources; live smoke selected TradingEconomics for latest values and DBnomics for `132` history rows. Use `--pmi-history-dir` only for pinned manual Investing histories |
+| PMI services headline values | live DBnomics primary, TradingEconomics backup; optional manual Investing TSV fallback | monthly | `data/raw/pmi/us_ism_pmi.parquet` | done-live-verified | routine `--fetch pmi` / `--fetch all` uses live sources; normalized output keeps monthly headline values and code-derived `10:00 ET` release timestamps |
 | PMI release timestamps | code-derived ISM release calendar convention | monthly metadata | `data/raw/pmi/us_ism_pmi.parquet` | done-live-verified | manufacturing = first business day 10:00 ET; services = third business day 10:00 ET |
 | PIT S&P 500 constituents | `fja05680/sp500` `sp500_ticker_start_end.csv` | event-driven membership changes | `data/raw/pit_constituents/sp500_ticker_intervals.parquet` | done-live-verified | live fetch succeeded; rows carry `survivorship_biased_constituent_universe` warning and interval dates; when `--acquisition-db` is supplied, the raw GitHub CSV is recorded before parquet/report output |
 | FOMC minutes raw text | Federal Reserve official pages: `https://www.federalreserve.gov/monetarypolicy/fomccalendars.htm` + `https://www.federalreserve.gov/monetarypolicy/fomc_historical_year.htm` + yearly `fomchistoricalYYYY.htm` pages + per-meeting `fomcminutesYYYYMMDD.htm` pages | about 8 times per year | `data/raw/fomc_minutes/fomc_minutes.parquet` | done-live-verified | fetched by walking the current calendar page for 2021+ meetings, walking the official historical year index for pre-2021 pages, then fetching each meeting HTML page and extracting title, meeting date text, body text, source URL, and PDF URL; current verified coverage reaches `2011-01-26` through `2026-03-18`; release timestamps encoded at `14:00 ET` on the Fed released date; when `--acquisition-db` is supplied, the raw listing pages, historical pages, and article pages are recorded before parquet/report output; pre-2011 not implemented yet |
 | Powell speeches raw text | Federal Reserve official pages: `https://www.federalreserve.gov/newsevents/speeches.htm?speaker=Jerome+H.+Powell` + yearly `YYYY-speeches.htm` archives + per-speech `powellYYYYMMDDx.htm` pages | irregular / event-driven | `data/raw/powell_speeches/powell_speeches.parquet` | done-live-verified | live fetch succeeded; current verified coverage reaches `2013-02-22` through `2026-03-21`; yearly archive pages are filtered to Powell-only entries and each speech page is fetched for title, speaker, location, and body text; Fed pages expose a date but no reliable publication time, so `publication_timestamp_precision=date_only` and timestamps are normalized to midnight Eastern; when `--acquisition-db` is supplied, the raw index page, yearly pages, and article pages are recorded before parquet/report output |
-| aggregate forward EPS workbook snapshots | manually downloaded S&P Global workbook `sp-500-eps-est.xlsx`, parsed from `ESTIMATES&PEs` | manual snapshot / irregular | `data/raw/aggregate_forward_eps/sp500_eps_snapshots.parquet` | done-live-verified | fetched by pointing `--fetch eps --eps-workbook /Users/avinashvankadaru/Desktop/sp-500-eps-est.xlsx` at the saved workbook; parser extracts the workbook `as_of` date, historical quarterly observation rows, and the current forward estimate row into parquet plus `aggregate_eps_fetch_report.json`; when `--acquisition-db` is supplied, the manual workbook file is recorded in the shared SQLite acquisition store before output materialization; live-verified workbook date is `2026-01-30`; the workbook itself says the public files were discontinued |
-| `aggregate_forward_eps_revision_direction_4w` | derived from the weekly EPS-snapshot accumulator | weekly | `data/raw/aggregate_forward_eps/sp500_eps_weekly_history.parquet` | done | each weekly `--fetch eps` run appends the workbook's current snapshot to `sp500_eps_weekly_history.parquet` (deduped by `observation_date`); `compute_eps_revision_direction_4w` derives the 4-week revision direction from that accumulator (Ambiguity Log #48 closed). The single workbook only exposes quarterly history + one current point — weekly granularity is built by accumulation. All-NaN during the >4-week cold-start. The Wayback backfill path additionally records raw CDX listings, archived workbook files, and derived timeline artifacts in SQLite when `--acquisition-db` is supplied |
+| aggregate forward EPS workbook snapshots | manually downloaded S&P Global workbook `sp-500-eps-est.xlsx`, parsed from `ESTIMATES&PEs`; browser-assisted S&P auto path exists as explicit tool | manual snapshot / irregular | `data/raw/aggregate_forward_eps/sp500_eps_snapshots.parquet` | operator-assisted | fetched by explicit `--fetch eps --eps-workbook ...` or `--fetch eps-spglobal-auto`; both are excluded from unattended `--fetch all` because S&P access can require a local browser/session and the workbook itself says public files were discontinued. Parser extracts the workbook `as_of` date, historical quarterly rows, and the current forward estimate row; when `--acquisition-db` is supplied, the source workbook is recorded before output materialization |
+| `aggregate_forward_eps_revision_direction_4w` | derived from the weekly EPS-snapshot accumulator | weekly | `data/raw/aggregate_forward_eps/sp500_eps_weekly_history.parquet` | operator-assisted | each explicit EPS snapshot run appends the workbook's current snapshot to `sp500_eps_weekly_history.parquet` (deduped by `observation_date`); `compute_eps_revision_direction_4w` derives the 4-week revision direction from that accumulator. The Wayback path (`--fetch eps-wayback`) is an explicit historical backfill, not a live unattended source |
+| Investing.com economic calendar / holidays / earnings capture | Investing.com website via browser-backed capture, or archived captured pages | explicit operator-assisted capture/replay | live capture root at `data/raw/investing_live_archive/`; imported canonical outputs at `data/raw/investing/` plus SQLite artifact rows | operator-assisted | `--fetch investing-live` writes a dated archive under `investing_live_archive/`, then imports canonical `economic_events.parquet`, `holidays.parquet`, `earnings.parquet`, and `investing/raw_archive/`. `--fetch investing-archive-local` replays a supplied archive root into the same canonical outputs. Both are excluded from unattended `--fetch all` because Investing access can depend on local browser/session state and anti-bot behavior |
 | Bloomberg / Refinitiv consensus surveys | paid vendor feeds | event-driven macro release cycle | no output path | hard-fail | unsupported unless spec explicitly adopts a paid source |
 | I/B/E/S per-stock analyst revisions | paid vendor feeds | daily to weekly | no output path | hard-fail | unsupported in current V2 plan |
 | ICE DXY history | licensed ICE feed | daily | no output path while spec stays on `broad_usd_index` | hard-fail | this row is only for the strict licensed ICE feed; do not point V2 at this row when using the available local Yahoo `^NYICDX` artifact instead |
@@ -128,13 +247,13 @@ Status meanings used below:
 | Scheduled event calendar | `FOMC`, `CPI`, `NFP` | generated YAML from Fed meeting pages + BLS release-schedule pages | `configs/events/us_events.yaml` |
 | Rule-derived event windows | `expiry_week`, `earnings_season` | runtime rules in config/calendar logic | no stored raw file |
 
-Universe source:
+Constituent OHLCV universe source:
 
 ```text
---universe-json /path/to/symbols.json
+data/raw/daily_ohlcv_762/symbol=*/ohlcv.parquet
 ```
 
-provided explicitly by the operator.
+The default operating model is a fixed 762-symbol regime universe materialized by the manifest. Operators pass either `--universe-json /path/to/symbols.json` or `--constituent-universe-dir /path/to/daily_ohlcv_762`. The PIT constituent parquet is available only behind `--allow-pit-constituent-universe` for bootstrap/backfill decisions, because using every historical PIT ticker expands beyond the intended 762-symbol engine universe.
 
 ### 2.2 V2 Build Scope
 
@@ -162,6 +281,13 @@ provided explicitly by the operator.
 | `cpi_all_items_vintages` | `CPIAUCSL` with realtime params | FRED / ALFRED-style observations | `data/raw/macro_vintages/cpi_all_items_vintages.parquet` |
 | `iorb` | `IORB` | FRED | `data/raw/macro/fred_macro_series.parquet` |
 
+Runtime alignment note: V2 macro feature math reads FRED observations with
+latest-known-as-of semantics on the NYSE session calendar. DGS2, DGS10,
+DTWEXBGS, SOFR, IORB, and OAS are forward-filled for rolling computations,
+while classifiers enforce freshness and staleness budgets. Do not treat a
+one-session publication lag as missing; do treat values older than the
+configured budget as stale/`unknown`.
+
 #### Higher-Maintenance Inputs
 
 These are part of the V2 data plan but are not all implemented yet:
@@ -175,7 +301,7 @@ These are part of the V2 data plan but are not all implemented yet:
 | Aggregate forward EPS revision direction | manually downloaded S&P Global workbook `sp-500-eps-est.xlsx` parsed from `ESTIMATES&PEs` | the loader stores workbook-date observations and the current forward-estimate row, **and** accumulates one current-snapshot row per weekly fetch into `sp500_eps_weekly_history.parquet` (deduped by `observation_date`). `compute_eps_revision_direction_4w` reads that accumulator to produce `aggregate_forward_eps_revision_direction_4w`; the series is forward-filled onto the SPY session index and consumed by the V2 §2B `earnings_expansion` / `earnings_contraction` rules (Ambiguity Log #48 closed). All-NaN during the >4-week accumulator cold-start, so the two labels stay silent until enough weekly fetches accumulate. No paid feed — the weekly series is built by accumulation, not by a new source |
 | Event calendar extension | generated `FOMC` / `CPI` / `NFP` YAML plus runtime `expiry_week` / `earnings_season` rules; V2 §2D adds official/deterministic/candidate-generated `budget_week` / `election_window` / `geopolitical_event` / `global_rate_decision` evidence | V1 auto-generates the V1 scheduled events and computes rule-derived windows at runtime. V2 §2D candidate generation writes parquet evidence first; only approved/promoted rows enter YAML. GPR/GDELT geopolitical candidates are never auto-promoted. `macro_event_score` in §4.2 includes `budget_week` / `election_window` / `global_rate_decision` in addition to `fed_week` / `cpi_week` / `nfp_week`; `geopolitical_event` is separate high-impact evidence. |
 | V2 §2B commodity-index proxy (DBC) | Alpaca REST daily OHLCV | substitute for Bloomberg Commodity Index per Ambiguity Log #48; bias-warning row must be carried in feature-store output; not a §3.1 fragility universe member — V2 §2B-only feature input |
-| V2 §2C HY/IG OAS + proxy | FRED `BAMLH0A0HYM2` (HY Master II OAS) + `BAMLC0A4CBBB` (BBB Corporate OAS), plus already-fetched `TLT`/`HYG`/`LQD` closes | real bps-level OAS produces authoritative `credit_funding_state` for 2023-05-15+; TLT-vs-HYG/LQD total-return differentials produce separate `credit_funding_state_proxy` for longer directional history (Ambiguity Log #49 + #71, ADR 0007). The proxy is never blended into real OAS. **Do not add IEF or BIL to the universe** for a different proxy without a spec amendment. |
+| V2 §2C HY/IG OAS + proxy | FRED `BAMLH0A0HYM2` (HY Master II OAS) + `BAMLC0A4CBBB` (BBB Corporate OAS), plus already-fetched `TLT`/`HYG`/`LQD` closes | real bps-level OAS produces `credit_funding_state` for 2023-05-15+; TLT-vs-HYG/LQD total-return differentials produce separate `credit_funding_state_proxy` for longer directional history (Ambiguity Log #49 + #71, ADR 0007). `credit_funding_effective_state` resolves the two classified labels for downstream rules without splicing raw series. **Do not add IEF or BIL to the universe** for a different proxy without a spec amendment. |
 
 Implemented scheduled-event logic:
 
@@ -271,11 +397,12 @@ The hard data blockers from earlier V2 slices are now closed (see "Recently clos
 - **V2 §2A central-bank-text → hawkish/dovish evidence** — closed by audit M1 (`docs/spec_code_data_audit_2026_05_15.md` §3.1). FOMC minutes + Powell speeches were already fetched and stored; the engine now scores them deterministically via `regime_detection.central_bank_text` (lexicon-based, replay-safe) and surfaces the score on `MonetaryPressureV2Features.central_bank_text_score` as evidence — never a standalone label per spec. Bias warning `central_bank_text_deterministic_lexicon_substitute` is emitted. The lexicon substitution mirrors the existing precedent (DBC ← BCOM, AAII ← Bloomberg consensus, Cleveland Fed ← analyst consensus, VIXCLS ← options-IV, fja05680 ← vendor PIT).
 - **V2 §2A first-release CPI for historical replay** — closed by audit M2 (`docs/spec_code_data_audit_2026_05_15.md` §3.2). `--include-cpi-vintages` default flipped to True; `loaders.load_cpi_vintages_first_release` picks the earliest `realtime_start` per reference date; `inflation_growth.compute_inflation_growth_features` accepts a `cpi_first_release` series and substitutes it for revised CPIAUCSL when the `use_first_release_cpi_when_available` flag is True (default). Bias warning `cpi_first_release_vintage_replay` is emitted on the three CPI-derived features.
 
-- **Weekly `aggregate_forward_eps_revision_direction_4w`** — closed by the `aggregate_eps` weekly-snapshot accumulator + end-to-end engine wiring (Ambiguity Log #48). The weekly series is built by accumulating one current-snapshot row per weekly fetch. The >4-week cold-start can be collapsed in one shot via `run_wayback_aggregate_eps_fetch` (Wayback backfill of historical workbook snapshots) followed by `seed_weekly_history_from_wayback_timeline` (bridges the Wayback timeline into the accumulator, existing live rows win on date collision); `earnings_expansion` / `earnings_contraction` then fire immediately. No paid feed.
-- **V2 §2B `inflation_surprise_zscore`** — closed by ADR 0006: the free Cleveland Fed inflation nowcast substitutes for the paid analyst `consensus_estimate`. `regime_data_fetch.cleveland_fed_nowcast` downloads + parses the Cleveland Fed month-over-month nowcast webchart JSON directly (verified reachable over urllib) — 154 monthly vintages 2013-08→present, no operator action and no manual drop required.
+- **Weekly `aggregate_forward_eps_revision_direction_4w`** — closed by the `aggregate_eps` weekly-snapshot accumulator + end-to-end engine wiring (Ambiguity Log #48). The weekly series is built by accumulating one current-snapshot row per weekly fetch. The >4-week cold-start is collapsed in one shot by `run_wayback_aggregate_eps_fetch`: the Wayback backfill now automatically seeds `data/raw/aggregate_forward_eps/sp500_eps_weekly_history.parquet` from the historical timeline, with existing live rows winning on date collision. `earnings_expansion` / `earnings_contraction` then have real evidence immediately. No paid feed.
+- **V2 §2B `inflation_surprise_zscore`** — closed by ADR 0006: the free Cleveland Fed inflation nowcast substitutes for the paid analyst `consensus_estimate`. `regime_data_fetch.cleveland_fed_nowcast` downloads + parses the Cleveland Fed month-over-month nowcast webchart JSON directly (verified reachable over urllib) — 154 monthly vintages 2013-01→present in the current materialization, no operator action and no manual drop required. Category labels in the feed can be `MM/DD/YYYY`, `YYYY-MM-DD`, or no-year `MM/DD`; the parser keys each nowcast to the last non-empty point's publication date without leaking future values.
 - **V2 §1A `sentiment_score`** — closed: AAII fetcher ships, `sentiment_score = bull_bear_spread_8w_ma`, `euphoria` fires (Ambiguity Log #32).
 - **V2 §1C implied vol** — closed: `implied_vol_30d = VIXCLS / 100` from FRED; `vol_crush` + `iv_rv_spread` ship (Ambiguity Log #19 / #20; ADR 0005).
-- **V2 §2C HY/IG OAS + parallel proxy** — closed: real ICE BofA OAS is sourced free from FRED (`BAMLH0A0HYM2` / `BAMLC0A4CBBB`) for 2023-05-15+; the TLT-vs-HYG/LQD total-return proxy remains as a separate `credit_funding_state_proxy` metric for longer directional history (Ambiguity Log #49 + #71, ADR 0007).
+- **V2 §2C HY/IG OAS + parallel proxy** — closed: real ICE BofA OAS is sourced free from FRED (`BAMLH0A0HYM2` / `BAMLC0A4CBBB`) for 2023-05-15+; the TLT-vs-HYG/LQD total-return proxy remains as a separate `credit_funding_state_proxy` metric for longer directional history, and `credit_funding_effective_state` resolves the two labels for downstream rules (Ambiguity Log #49 + #71, ADR 0007).
+- **30-session profile evidence completeness** — closed by ADR 0008. Macro feature math now uses latest-known-as-of FRED alignment with freshness gates, HMM/GMM evidence is emitted point-in-time per warmed session, and profile/timeline materialization keeps five extra warmed sessions for `hmm_probability_shift[t-5]`.
 
 ## 5. Explicit Hard Failures
 
@@ -293,7 +420,7 @@ Documented substitute policies (each pinned in the V2 Implementation Ambiguity L
 - **CPI surprise**: substituted by the free Cleveland Fed inflation nowcast for the analyst `consensus_estimate` (ADR 0006 / Ambiguity Log #48); the feature carries a model-relative bias-warning row. Fetch path: `regime_data_fetch.cleveland_fed_nowcast`.
 - **`broad_usd_index`**: approved field name for the free FRED route (FRED `DTWEXBGS`); do not back-door ICE DXY semantics into it.
 - **Bloomberg Commodity Index**: substituted by `DBC` ETF per V2 §2B / Ambiguity Log #48; bias-warning row required in feature-store output.
-- **HY/IG OAS**: sourced directly as real ICE BofA OAS from FRED (`BAMLH0A0HYM2` / `BAMLC0A4CBBB`) for authoritative `credit_funding_state`; the TLT-vs-HYG/LQD total-return proxy is separate `credit_funding_state_proxy`, not a substitute or fallback (Ambiguity Log #49 + #71, ADR 0007).
+- **HY/IG OAS**: sourced directly as real ICE BofA OAS from FRED (`BAMLH0A0HYM2` / `BAMLC0A4CBBB`) for `credit_funding_state`; the TLT-vs-HYG/LQD total-return proxy is separate `credit_funding_state_proxy`; downstream uses `credit_funding_effective_state` with source/agreement evidence (Ambiguity Log #49 + #71, ADR 0007).
 - **PIT S&P 500 membership**: currently using `fja05680/sp500` GitHub CSV with documented `survivorship_biased_constituent_universe` warning; vendor upgrade noted in `pit_constituents.py` TODO.
 
 ## 6. Source Rules
@@ -315,7 +442,7 @@ V1 / V2 source pins (each enforces a spec field):
 V2 spec-amendment pins (this session, Ambiguity Log #46–#53):
 
 - If V2 §2B says **commodity returns**, fetch `DBC` ETF as the approved Bloomberg Commodity Index substitute (Ambiguity Log #48). Emit a bias-warning row in the V2 §2B feature-store output.
-- If V2 §2C says **HY/IG credit spread**, read the real ICE BofA OAS series from FRED — `BAMLH0A0HYM2` (HY) and `BAMLC0A4CBBB` (BBB), both in `V2_FRED_SERIES` (Ambiguity Log #49). Keep the approved TLT-vs-HYG/LQD proxy as the separate `credit_funding_state_proxy` metric for longer directional history (Ambiguity Log #71 / ADR 0007). Do not add IEF/BIL or introduce another ETF-pair proxy without a spec amendment.
+- If V2 §2C says **HY/IG credit spread**, read the real ICE BofA OAS series from FRED — `BAMLH0A0HYM2` (HY) and `BAMLC0A4CBBB` (BBB), both in `V2_FRED_SERIES` (Ambiguity Log #49). Keep the approved TLT-vs-HYG/LQD proxy as the separate `credit_funding_state_proxy` metric for longer directional history and route downstream rules through `credit_funding_effective_state` (Ambiguity Log #71 / ADR 0007). Do not add IEF/BIL or introduce another ETF-pair proxy without a spec amendment.
 - If V2 §2D says **`budget_week` / `election_window` / `geopolitical_event` / `global_rate_decision`**, use the event-source pipeline: deterministic/official adapters for scheduled/official rows and Group B candidate parquet for approval-gated rows. `geopolitical_event` may be generated from GPR, GDELT, HDX HAPI, and, after TODO API-key entitlement is resolved, ACLED plus Uppsala/UCDP evidence. It must stay overlay-only; do not auto-promote it from external news APIs, humanitarian aggregates, or LLM extraction.
 - If V2 §1A says **`euphoria`**, read `sentiment_score = bull_bear_spread_8w_ma` from the AAII fetcher (`regime_data_fetch.aaii_sentiment`); the label fires (Ambiguity Log #32). Do not substitute a different sentiment proxy; put-call / Investors Intelligence are optional future calibration sources only.
 - If V2 §1C says **`vol_crush`** or **IV/RV spread**, read `implied_vol_30d = VIXCLS / 100` from FRED (Ambiguity Log #19 / #20; ADR 0005). Do not synthesise IV from realized-vol — VIX is the canonical implied-vol series.

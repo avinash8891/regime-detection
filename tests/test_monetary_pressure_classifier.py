@@ -272,6 +272,19 @@ def test_neutral_monetary_immediate_de_escalation():
     assert cfg.deescalation_days_by_label["neutral_monetary"] == 0
 
 
+def test_unknown_quality_gap_clears_immediately_when_monetary_features_recover():
+    cfg = _default_classifier_config()
+    assert cfg.deescalation_days_by_label["unknown"] == 0
+    stable, active = apply_per_label_asymmetric_hysteresis(
+        raw_labels=["unknown", "neutral_monetary"],
+        risk_rank=MONETARY_PRESSURE_V2_RISK_RANK,
+        deescalation_days_by_label=cfg.deescalation_days_by_label,
+        default_deescalation_days=cfg.default_deescalation_days,
+    )
+    assert stable[-1] == "neutral_monetary"
+    assert active[-1] == "neutral_monetary"
+
+
 # =============================================================================
 # Group E — Wire integration end-to-end
 # =============================================================================

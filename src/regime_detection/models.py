@@ -4,10 +4,18 @@ import json
 from datetime import date
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
 DataQualityStatus = Literal["ok", "degraded", "insufficient_data", "insufficient_history", "stale_data"]
+ClassificationStatus = Literal[
+    "classified",
+    "no_rule_fired",
+    "data_unavailable",
+    "stale_data",
+    "insufficient_history",
+    "not_wired",
+]
 
 
 class DataQuality(BaseModel):
@@ -17,6 +25,37 @@ class DataQuality(BaseModel):
     freshness_days: int | None = Field(default=None, ge=0)
     completeness: float | None = Field(default=None, ge=0.0, le=1.0)
     reason: str | None = None
+
+
+def derive_classification_status(
+    *,
+    active_label: str,
+    data_quality: DataQuality,
+    evidence: dict[str, Any] | None = None,
+) -> tuple[ClassificationStatus, str | None]:
+    """Disambiguate legacy ``unknown`` labels from data-quality failures.
+
+    ``active_label`` remains the backward-compatible regime label. This helper
+    adds the semantic reason a label was emitted, so reports can distinguish
+    "data was unavailable" from "data was usable but no rule matched".
+    """
+    if active_label != "unknown":
+        return "classified", None
+
+    evidence_reason = None
+    if evidence is not None:
+        raw_reason = evidence.get("reason")
+        if isinstance(raw_reason, str) and raw_reason:
+            evidence_reason = raw_reason
+
+    reason = data_quality.reason or evidence_reason
+    if data_quality.status == "stale_data":
+        return "stale_data", reason or "stale_data"
+    if data_quality.status == "insufficient_history":
+        return "insufficient_history", reason or "insufficient_history"
+    if data_quality.status == "insufficient_data":
+        return "data_unavailable", reason or "insufficient_data"
+    return "no_rule_fired", reason or "no_rule_fired"
 
 
 class AxisOutput(BaseModel):
@@ -30,6 +69,26 @@ class AxisOutput(BaseModel):
     # radius and needs frozen replay coverage per axis.
     evidence: dict[str, Any]
     data_quality: DataQuality
+    classification_status: ClassificationStatus | None = None
+    classification_reason: str | None = None
+
+    @property
+    def reporting_label(self) -> str:
+        if self.classification_status == "classified":
+            return self.active_label
+        return self.classification_status or "not_wired"
+
+    @model_validator(mode="after")
+    def _populate_classification_metadata(self) -> "AxisOutput":
+        if self.classification_status is None:
+            status, reason = derive_classification_status(
+                active_label=self.active_label,
+                data_quality=self.data_quality,
+                evidence=self.evidence,
+            )
+            self.classification_status = status
+            self.classification_reason = reason
+        return self
 
 
 class BreadthStateOutput(AxisOutput):
@@ -54,7 +113,7 @@ class LabelReasonOutput(BaseModel):
     reason: str
 
 
-class NetworkFragilityOutput(BaseModel):
+class NetworkFragilityOutput(AxisOutput):
     """Layer 3 network fragility classifier output (v2 spec §3).
 
     Until slice 1 ships the v2 fragility classifier, emit `unknown` labels
@@ -64,11 +123,6 @@ class NetworkFragilityOutput(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    raw_label: str
-    stable_label: str
-    active_label: str
-    evidence: dict[str, Any]
-    data_quality: DataQuality
     mode: Literal["sector_cross_asset_22"] = "sector_cross_asset_22"
 
 
@@ -84,6 +138,20 @@ class MonetaryPressureOutput(BaseModel):
     label: str
     evidence: dict[str, Any]
     data_quality: DataQuality
+    classification_status: ClassificationStatus | None = None
+    classification_reason: str | None = None
+
+    @model_validator(mode="after")
+    def _populate_classification_metadata(self) -> "MonetaryPressureOutput":
+        if self.classification_status is None:
+            status, reason = derive_classification_status(
+                active_label=self.label,
+                data_quality=self.data_quality,
+                evidence=self.evidence,
+            )
+            self.classification_status = status
+            self.classification_reason = reason
+        return self
 
 
 InflationGrowthLabel = Literal[
@@ -98,7 +166,7 @@ InflationGrowthLabel = Literal[
 ]
 
 
-class InflationGrowthOutput(BaseModel):
+class InflationGrowthOutput(AxisOutput):
     """v2 §2B inflation/growth axis output (Slice 5).
 
     Three-tier label triple (raw/stable/active) per the v2 axis pattern.
@@ -114,8 +182,6 @@ class InflationGrowthOutput(BaseModel):
     raw_label: InflationGrowthLabel
     stable_label: InflationGrowthLabel
     active_label: InflationGrowthLabel
-    evidence: dict[str, Any]
-    data_quality: DataQuality
 
 
 CreditFundingLabel = Literal[
@@ -128,7 +194,7 @@ CreditFundingLabel = Literal[
 ]
 
 
-class CreditFundingOutput(BaseModel):
+class CreditFundingOutput(AxisOutput):
     """v2 §2C credit/funding state output (Slice 4).
 
     Three-tier label triple (raw/stable/active) per the v2 axis pattern.
@@ -141,8 +207,6 @@ class CreditFundingOutput(BaseModel):
     raw_label: CreditFundingLabel
     stable_label: CreditFundingLabel
     active_label: CreditFundingLabel
-    evidence: dict[str, Any]
-    data_quality: DataQuality
 
 
 MonetaryPressureV2Label = Literal[
@@ -154,7 +218,7 @@ MonetaryPressureV2Label = Literal[
 ]
 
 
-class MonetaryPressureV2Output(BaseModel):
+class MonetaryPressureV2Output(AxisOutput):
     """v2 §2A monetary-pressure axis output (Ambiguity Log #46).
 
     Three-tier label triple per the v2 axis pattern (raw/stable/active);
@@ -167,8 +231,6 @@ class MonetaryPressureV2Output(BaseModel):
     raw_label: MonetaryPressureV2Label
     stable_label: MonetaryPressureV2Label
     active_label: MonetaryPressureV2Label
-    evidence: dict[str, Any]
-    data_quality: DataQuality
 
 
 class VolumeLiquidityOutput(BaseModel):
@@ -179,6 +241,26 @@ class VolumeLiquidityOutput(BaseModel):
     label: str
     evidence: dict[str, Any]
     data_quality: DataQuality
+    classification_status: ClassificationStatus | None = None
+    classification_reason: str | None = None
+
+    @property
+    def reporting_label(self) -> str:
+        if self.classification_status == "classified":
+            return self.label
+        return self.classification_status or "not_wired"
+
+    @model_validator(mode="after")
+    def _populate_classification_metadata(self) -> "VolumeLiquidityOutput":
+        if self.classification_status is None:
+            status, reason = derive_classification_status(
+                active_label=self.label,
+                data_quality=self.data_quality,
+                evidence=self.evidence,
+            )
+            self.classification_status = status
+            self.classification_reason = reason
+        return self
 
 
 VolumeLiquidityLabel = Literal[
@@ -189,7 +271,7 @@ VolumeLiquidityLabel = Literal[
 ]
 
 
-class VolumeLiquidityStateOutput(BaseModel):
+class VolumeLiquidityStateOutput(AxisOutput):
     """v2 §1E volume/liquidity state output (Slice 2.7).
 
     Carries the three-tier label triple (raw/stable/active) the v2
@@ -206,8 +288,6 @@ class VolumeLiquidityStateOutput(BaseModel):
     raw_label: VolumeLiquidityLabel
     stable_label: VolumeLiquidityLabel
     active_label: VolumeLiquidityLabel
-    evidence: dict[str, Any]
-    data_quality: DataQuality
     mode: Literal["volume_zscore_v1"] = "volume_zscore_v1"
 
 
@@ -357,13 +437,17 @@ class StrategyFamilyConstraint(BaseModel):
 
 
 class AgentRouting(BaseModel):
-    """v2 §5.1 Agent Cohort Routing output (Slice 5.1)."""
+    """v2 §5.1 Agent Cohort Routing output (Slice 5.1).
+
+    ``blocked_strategy_modes`` names strategy modes/families the active cohort
+    suppresses; it does not list alternate agent cohorts.
+    """
 
     model_config = ConfigDict(extra="forbid")
 
     active_cohort: str
     fallback_cohort: str
-    blocked_cohorts: list[str]
+    blocked_strategy_modes: list[str]
 
 
 _V1_CONFIG_VERSION = "core3-v1.0.0"
@@ -384,6 +468,8 @@ def _rewrite_legacy_v1_wire_shapes(payload: dict[str, Any]) -> dict[str, Any]:
     if payload.get("config_version") != _V1_CONFIG_VERSION:
         return payload
 
+    _strip_classification_metadata(payload)
+
     structural = payload.get("structural_causal_state")
     if isinstance(structural, dict):
         structural["monetary_pressure"] = {
@@ -395,6 +481,17 @@ def _rewrite_legacy_v1_wire_shapes(payload: dict[str, Any]) -> dict[str, Any]:
         "reason": "breadth_state_used_as_v1_fragility_proxy",
     }
     return payload
+
+
+def _strip_classification_metadata(value: Any) -> None:
+    if isinstance(value, dict):
+        value.pop("classification_status", None)
+        value.pop("classification_reason", None)
+        for nested in value.values():
+            _strip_classification_metadata(nested)
+    elif isinstance(value, list):
+        for item in value:
+            _strip_classification_metadata(item)
 
 
 class RegimeOutput(BaseModel):
@@ -419,6 +516,7 @@ class RegimeOutput(BaseModel):
     inflation_growth_state: InflationGrowthOutput | None = None  # v2 §2B (slice 5)
     credit_funding_state: CreditFundingOutput | None = None  # v2 §2C (slice 4)
     credit_funding_state_proxy: CreditFundingOutput | None = None  # v2 §2C proxy (Log #71)
+    credit_funding_effective_state: CreditFundingOutput | None = None  # v2 §2C downstream OAS/proxy resolver
     volume_liquidity_state: VolumeLiquidityStateOutput | None = None  # v2 §1E (slice 2.7)
     monetary_pressure_state: MonetaryPressureV2Output | None = None  # v2 §2A (Log #46)
     change_point: ChangePointOutput | None = None  # v2 §4.6 (V2.1)

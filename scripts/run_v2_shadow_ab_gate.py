@@ -15,6 +15,7 @@ credit_funding_state, inflation_growth_state, cluster) are EXPECTED to
 differ — those are wins, not regressions. The markdown surfaces both
 tables separately so reviewers can see the distinction at a glance.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -42,9 +43,11 @@ from regime_detection.loaders import (  # noqa: E402
 )
 from regime_detection.market_context import build_market_context  # noqa: E402
 from regime_detection.versioning import engine_version as resolved_engine_version  # noqa: E402
+from regime_data_fetch.materialization import materialize_if_requested  # noqa: E402
 
 from _v2_calibration_helpers import (  # noqa: E402
     CROSS_ASSET_SYMBOLS,
+    default_pmi_path,
     load_close_dict,
     load_macro_series,
     load_market_data,
@@ -69,6 +72,7 @@ V2_FIELDS: list[str] = [
     "agent_routing",
     "change_point",
     "credit_funding_state",
+    "credit_funding_effective_state",
     "inflation_growth_state",
     "cluster",
     "monetary_pressure_state",
@@ -82,6 +86,18 @@ def _setup_logging() -> None:
         level=logging.INFO,
         format="%(asctime)s %(levelname)s %(name)s | %(message)s",
     )
+
+
+def _reporting_label(output: Any) -> str | None:
+    if output is None:
+        return None
+    reporting = getattr(output, "reporting_label", None)
+    if reporting is not None:
+        return reporting
+    classification_status = getattr(output, "classification_status", "classified")
+    if classification_status != "classified":
+        return classification_status
+    return getattr(output, "active_label", None)
 
 
 def _extract_v1_fields(output: Any) -> dict[str, Any]:
@@ -98,34 +114,41 @@ def _extract_v2_fields(output: Any) -> dict[str, Any]:
     return {
         "transition_risk_score": output.transition_risk.score,
         "agent_routing": (
-            output.agent_routing.active_cohort if output.agent_routing is not None else None
+            output.agent_routing.active_cohort
+            if output.agent_routing is not None
+            else None
         ),
         "change_point": (
             output.change_point.score if output.change_point is not None else None
         ),
         "credit_funding_state": (
-            output.credit_funding_state.active_label
+            _reporting_label(output.credit_funding_state)
             if output.credit_funding_state is not None
             else None
         ),
+        "credit_funding_effective_state": (
+            _reporting_label(output.credit_funding_effective_state)
+            if output.credit_funding_effective_state is not None
+            else None
+        ),
         "inflation_growth_state": (
-            output.inflation_growth_state.active_label
+            _reporting_label(output.inflation_growth_state)
             if output.inflation_growth_state is not None
             else None
         ),
         "cluster": (output.cluster.cluster_id if output.cluster is not None else None),
         "monetary_pressure_state": (
-            output.monetary_pressure_state.active_label
+            _reporting_label(output.monetary_pressure_state)
             if output.monetary_pressure_state is not None
             else None
         ),
         "volume_liquidity_state": (
-            output.volume_liquidity_state.active_label
+            _reporting_label(output.volume_liquidity_state)
             if output.volume_liquidity_state is not None
             else None
         ),
         "network_fragility": (
-            output.network_fragility.active_label
+            _reporting_label(output.network_fragility)
             if output.network_fragility is not None
             else None
         ),
@@ -145,7 +168,9 @@ def _classify_per_session(
     errors = 0
     total = len(sessions)
     for idx, as_of_date in enumerate(sessions, start=1):
-        market_slice = market_data[market_data["date"] <= as_of_date].copy().reset_index(drop=True)
+        market_slice = (
+            market_data[market_data["date"] <= as_of_date].copy().reset_index(drop=True)
+        )
         kwargs: dict[str, Any] = {
             "as_of_date": as_of_date,
             "market_data": market_slice,
@@ -156,7 +181,9 @@ def _classify_per_session(
             output = engine.classify(**kwargs)
         except Exception as exc:
             errors += 1
-            logger.warning("[%s] %s classify failed: %s", mode_label, as_of_date.isoformat(), exc)
+            logger.warning(
+                "[%s] %s classify failed: %s", mode_label, as_of_date.isoformat(), exc
+            )
             continue
         v1_field_records[as_of_date] = _extract_v1_fields(output)
         v2_field_records[as_of_date] = _extract_v2_fields(output)
@@ -289,21 +316,15 @@ def _build_markdown(
 
 
 def _parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="V2 §9.3 60-session shadow A/B gate runner.")
-    parser.add_argument(
-        "--daily-dir",
-        type=Path,
-        default=REPO_ROOT / "data" / "raw" / "daily_ohlcv",
+    parser = argparse.ArgumentParser(
+        description="V2 §9.3 60-session shadow A/B gate runner."
     )
-    parser.add_argument(
-        "--macro-parquet",
-        type=Path,
-        default=REPO_ROOT / "data" / "raw" / "macro" / "fred_macro_series.parquet",
-    )
+    parser.add_argument("--daily-dir", type=Path, default=None)
+    parser.add_argument("--macro-parquet", type=Path, default=None)
     parser.add_argument(
         "--pmi-path",
         type=Path,
-        default=REPO_ROOT / "data" / "manual_inputs" / "pmi" / "ism_manufacturing_pmi.tsv",
+        default=None,
     )
     parser.add_argument("--n-sessions", type=int, default=60)
     parser.add_argument(
@@ -312,7 +333,38 @@ def _parse_args() -> argparse.Namespace:
         type=Path,
         default=REPO_ROOT / "docs" / "verification" / "v2_shadow_ab_60session.md",
     )
-    return parser.parse_args()
+    parser.add_argument(
+        "--manifest",
+        type=Path,
+        default=None,
+        help="Optional artifact manifest to materialize before running.",
+    )
+    parser.add_argument(
+        "--artifact-store",
+        default=None,
+        help="Optional artifact-store root override for --manifest.",
+    )
+    parser.add_argument(
+        "--data-root",
+        type=Path,
+        default=REPO_ROOT / "data" / "raw",
+        help="Local data/raw root used for manifest materialization.",
+    )
+    args = parser.parse_args()
+    if args.daily_dir is None:
+        args.daily_dir = args.data_root / "daily_ohlcv"
+    if args.macro_parquet is None:
+        args.macro_parquet = args.data_root / "macro" / "fred_macro_series.parquet"
+    if args.pmi_path is None:
+        args.pmi_path = default_pmi_path(args.data_root)
+    materialize_if_requested(
+        manifest_path=args.manifest,
+        local_root=args.data_root,
+        repo_root=REPO_ROOT,
+        store_root=args.artifact_store,
+        required_for="v2_calibration",
+    )
+    return args
 
 
 def main() -> int:
@@ -339,7 +391,7 @@ def main() -> int:
         .schedule(start_date=look_back_start, end_date=end_date)
         .index.date
     )
-    sessions = all_sessions[-args.n_sessions:]
+    sessions = all_sessions[-args.n_sessions :]
     if len(sessions) < args.n_sessions:
         raise SystemExit(
             f"Only {len(sessions)} sessions available between {look_back_start} and {end_date}; "
@@ -347,7 +399,12 @@ def main() -> int:
         )
     start_date = sessions[0]
 
-    logger.info("Window: %s → %s (%d sessions)", start_date.isoformat(), end_date.isoformat(), len(sessions))
+    logger.info(
+        "Window: %s → %s (%d sessions)",
+        start_date.isoformat(),
+        end_date.isoformat(),
+        len(sessions),
+    )
 
     # Build bootstrap context to derive SPY session index.
     config = load_default_regime_config()
@@ -367,7 +424,9 @@ def main() -> int:
     data_root = daily_dir.parent
     fomc_parquet = data_root / "fomc_minutes" / "fomc_minutes.parquet"
     powell_parquet = data_root / "powell_speeches" / "powell_speeches.parquet"
-    cpi_vintages_parquet = data_root / "macro_vintages" / "cpi_all_items_vintages.parquet"
+    cpi_vintages_parquet = (
+        data_root / "macro_vintages" / "cpi_all_items_vintages.parquet"
+    )
     central_bank_text_releases = load_central_bank_text_score(
         fomc_minutes_source=fomc_parquet if fomc_parquet.exists() else None,
         powell_speeches_source=powell_parquet if powell_parquet.exists() else None,

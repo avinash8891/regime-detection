@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import datetime as dt
 import json
+import time
 from dataclasses import asdict, dataclass
 from pathlib import Path
 import urllib.error
@@ -177,20 +178,9 @@ def download_spglobal_eps_workbook(
 
     Known issue: ``www.spglobal.com`` is served behind Akamai (AkamaiGHost)
     bot mitigation that returns HTTP 403 to direct HTTP requests including
-    browser-User-Agent spoofs. The URL serves the file to real browsers but
-    not to ``urllib`` / ``curl`` / ``requests`` clients. When this happens
-    we raise ``AggregateEPSFetchError`` with a clear operator message
-    routing them to the manual workflow:
-
-    1. Open the spdji URL in a browser, download the .xlsx.
-    2. Copy to ``data/raw/spglobal_eps/sp-500-eps-est.xlsx`` (the
-       MANUAL-DROP PATH ``run_aggregate_eps_auto_fetch`` checks first).
-    3. Re-run the same fetch command — it will parse the manually-dropped
-       file via the fallback.
-
-    Same pattern as the existing PMI workflow
-    (``data/manual_inputs/pmi/*.tsv`` — Investing.com also blocks
-    programmatic access).
+    browser-User-Agent spoofs. ``run_aggregate_eps_auto_fetch`` handles that
+    by trying a browser-backed download next, while still honoring an
+    operator-staged workbook at ``data/raw/spglobal_eps/sp-500-eps-est.xlsx``.
     """
     out_path.parent.mkdir(parents=True, exist_ok=True)
     request = urllib.request.Request(
@@ -236,11 +226,83 @@ def download_spglobal_eps_workbook(
     return out_path
 
 
+def download_spglobal_eps_workbook_with_browser(
+    *,
+    out_path: Path,
+    source_url: str = SOURCE_URL,
+    timeout_ms: int = 120_000,
+    user_data_dir: Path | None = None,
+    executable_path: Path | None = None,
+    headless: bool = True,
+) -> Path:
+    """Download the S&P workbook through a real browser session.
+
+    This is the long-term fallback for Akamai-protected S&P downloads: direct
+    HTTP remains first, then a scheduler can use a persistent browser profile
+    that has already passed the provider's browser checks.
+    """
+    try:
+        from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
+        from playwright.sync_api import sync_playwright
+    except ImportError as exc:
+        raise AggregateEPSFetchError(
+            "Playwright is required for browser-backed EPS download. "
+            "Install the browser extra and browser runtime, or pre-stage the workbook."
+        ) from exc
+
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    with sync_playwright() as playwright:
+        launch_kwargs: dict[str, object] = {
+            "headless": headless,
+            "accept_downloads": True,
+        }
+        if executable_path is not None:
+            launch_kwargs["executable_path"] = str(executable_path)
+
+        browser = None
+        context = None
+        try:
+            if user_data_dir is not None:
+                context = playwright.chromium.launch_persistent_context(
+                    str(user_data_dir),
+                    **launch_kwargs,
+                )
+            else:
+                browser = playwright.chromium.launch(
+                    headless=headless,
+                    executable_path=str(executable_path) if executable_path else None,
+                )
+                context = browser.new_context(accept_downloads=True)
+            page = context.new_page()
+            try:
+                with page.expect_download(timeout=timeout_ms) as download_info:
+                    page.goto(source_url, wait_until="domcontentloaded", timeout=timeout_ms)
+                download = download_info.value
+                download.save_as(out_path)
+            except PlaywrightTimeoutError as exc:
+                raise AggregateEPSFetchError(
+                    "Browser-backed S&P EPS download did not produce a workbook download before timeout"
+                ) from exc
+        finally:
+            if context is not None:
+                context.close()
+            if browser is not None:
+                browser.close()
+    return out_path
+
+
 def run_aggregate_eps_auto_fetch(
     *,
     out_dir: Path,
     source_url: str = SOURCE_URL,
     acquisition_db_path: Path | None = None,
+    artifact_store_root: str | Path | None = None,
+    workbook_downloader=download_spglobal_eps_workbook,
+    browser_downloader=download_spglobal_eps_workbook_with_browser,
+    browser_user_data_dir: Path | None = None,
+    browser_executable: Path | None = None,
+    browser_headless: bool = True,
+    browser_timeout_ms: int = 120_000,
 ) -> Path:
     """Fetch + parse the latest S&P aggregate-EPS workbook.
 
@@ -254,9 +316,8 @@ def run_aggregate_eps_auto_fetch(
          b. Operator (or a scheduler) runs ``--fetch eps-spglobal-auto``,
             which detects the file and emits the same parquet + report
             artifacts as the manual ``--eps-workbook`` path.
-    2. If the file is absent, try downloading from ``source_url``. Expected
-       to fail with 403 on Akamai-protected sources; on failure, the error
-       message points the operator to step (1a).
+    2. If the file is absent, try downloading from ``source_url`` directly.
+       If direct download is blocked, try the browser-backed download path.
 
     Cadence: invoke weekly. Polling daily is wasteful — the workbook URL
     serves the same file between weekly publications.
@@ -264,13 +325,22 @@ def run_aggregate_eps_auto_fetch(
     out_dir.mkdir(parents=True, exist_ok=True)
     workbook_path = out_dir / _SPGLOBAL_EPS_MANUAL_REL_PATH
     if not workbook_path.exists():
-        # Best-effort auto-download. On Akamai 403 we surface a clear error
-        # routing the operator to the manual-drop workflow.
-        download_spglobal_eps_workbook(out_path=workbook_path, source_url=source_url)
+        try:
+            workbook_downloader(out_path=workbook_path, source_url=source_url)
+        except AggregateEPSFetchError:
+            browser_downloader(
+                out_path=workbook_path,
+                source_url=source_url,
+                timeout_ms=browser_timeout_ms,
+                user_data_dir=browser_user_data_dir,
+                executable_path=browser_executable,
+                headless=browser_headless,
+            )
     return run_aggregate_eps_fetch(
         out_dir=out_dir,
         workbook_path=workbook_path,
         acquisition_db_path=acquisition_db_path,
+        artifact_store_root=artifact_store_root,
     )
 
 
@@ -422,9 +492,10 @@ def run_aggregate_eps_fetch(
     out_dir: Path,
     workbook_path: Path,
     acquisition_db_path: Path | None = None,
+    artifact_store_root: str | Path | None = None,
 ) -> Path:
     out_dir.mkdir(parents=True, exist_ok=True)
-    store = AcquisitionStore(acquisition_db_path) if acquisition_db_path else None
+    store = AcquisitionStore(acquisition_db_path, artifact_store_root=artifact_store_root) if acquisition_db_path else None
     fetch_run = (
         store.start_fetch_run(
             fetch_type="aggregate_eps",
@@ -600,14 +671,33 @@ def parse_wayback_cdx_json(cdx_json: str, *, target_url: str) -> list[EPSWayback
     return snapshots
 
 
-def fetch_wayback_cdx(target_url: str = SOURCE_URL) -> str:
+def fetch_wayback_cdx(
+    target_url: str = SOURCE_URL,
+    *,
+    max_attempts: int = 3,
+    backoff_seconds: float = 2.0,
+) -> str:
     query = (
         f"{WAYBACK_CDX_URL}?url={target_url}&output=json"
         "&fl=timestamp,original,statuscode,mimetype&filter=statuscode:200"
     )
     req = urllib.request.Request(query, headers={"User-Agent": "Mozilla/5.0"})
-    with urllib.request.urlopen(req, timeout=60) as response:
-        return response.read().decode("utf-8", errors="replace")
+    last_exc: Exception | None = None
+    for attempt in range(1, max_attempts + 1):
+        try:
+            with urllib.request.urlopen(req, timeout=60) as response:
+                return response.read().decode("utf-8", errors="replace")
+        except urllib.error.HTTPError as exc:
+            if exc.code not in {429, 500, 502, 503, 504}:
+                raise
+            last_exc = exc
+        except urllib.error.URLError as exc:
+            last_exc = exc
+        if attempt < max_attempts:
+            time.sleep(backoff_seconds * attempt)
+    raise AggregateEPSFetchError(
+        f"Wayback CDX fetch failed after {max_attempts} attempts: {last_exc}"
+    ) from last_exc
 
 
 def fetch_wayback_snapshot_bytes(snapshot: EPSWaybackSnapshot) -> bytes:
@@ -624,11 +714,12 @@ def run_wayback_aggregate_eps_fetch(
     to_date: dt.date | None = None,
     stop_after_first_success: bool = False,
     acquisition_db_path: Path | None = None,
+    artifact_store_root: str | Path | None = None,
     cdx_fetcher=fetch_wayback_cdx,
     snapshot_fetcher=fetch_wayback_snapshot_bytes,
 ) -> Path:
     out_dir.mkdir(parents=True, exist_ok=True)
-    store = AcquisitionStore(acquisition_db_path) if acquisition_db_path else None
+    store = AcquisitionStore(acquisition_db_path, artifact_store_root=artifact_store_root) if acquisition_db_path else None
     fetch_run = (
         store.start_fetch_run(
             fetch_type="aggregate_eps_wayback",
@@ -766,6 +857,13 @@ def run_wayback_aggregate_eps_fetch(
         timeline_df = pd.DataFrame(timeline_rows).sort_values(["snapshot_date", "timestamp"]).reset_index(drop=True)
         timeline_path = wayback_dir / WAYBACK_TIMELINE_FILENAME
         timeline_df.to_parquet(timeline_path, index=False)
+        weekly_history = seed_weekly_history_from_wayback_timeline(
+            out_dir=out_dir,
+            timeline_path=timeline_path,
+        )
+        weekly_history_path = out_dir / EPS_DIR_NAME / WEEKLY_HISTORY_FILENAME
+        revision_series = compute_eps_revision_direction_4w(weekly_history)
+        revision_available = bool(revision_series.notna().any())
 
         preview = timeline_df.head(10).copy()
         if "snapshot_date" in preview:
@@ -783,6 +881,11 @@ def run_wayback_aggregate_eps_fetch(
                 "snapshots_failed": failures,
                 "snapshots_parsed_ok": parsed_ok,
                 "timeline_rows": int(len(timeline_df)),
+                "weekly_history_rows": int(len(weekly_history)),
+            },
+            "limitations": {
+                "aggregate_forward_eps_revision_direction_4w_available": revision_available,
+                "revision_cold_start_weeks": EPS_REVISION_LOOKBACK_WEEKS,
             },
             "requested": {
                 "max_snapshots": max_snapshots,
@@ -796,6 +899,7 @@ def run_wayback_aggregate_eps_fetch(
                 "snapshot_index_json": str(snapshot_index_path),
                 "snapshot_status_jsonl": str(status_path),
                 "timeline_parquet": str(timeline_path),
+                "aggregate_eps_weekly_history_parquet": str(weekly_history_path),
                 "acquisition_db": str(acquisition_db_path) if acquisition_db_path else None,
             },
         }
@@ -827,6 +931,15 @@ def run_wayback_aggregate_eps_fetch(
                 min_date=min(timeline_df["snapshot_date"]).isoformat() if not timeline_df.empty else None,
                 max_date=max(timeline_df["snapshot_date"]).isoformat() if not timeline_df.empty else None,
                 notes="Wayback EPS historical snapshot timeline parquet",
+            )
+            store.record_output(
+                run_id=fetch_run.run_id,
+                output_kind="aggregate_eps_weekly_history",
+                path=weekly_history_path,
+                row_count=len(weekly_history),
+                min_date=min(weekly_history["observation_date"]).isoformat() if not weekly_history.empty else None,
+                max_date=max(weekly_history["observation_date"]).isoformat() if not weekly_history.empty else None,
+                notes="Aggregate EPS weekly accumulator seeded from Wayback timeline",
             )
             store.record_output(
                 run_id=fetch_run.run_id,

@@ -13,6 +13,7 @@ import pytest
 import yaml
 
 _REPO_ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(_REPO_ROOT))
 sys.path.insert(0, str(_REPO_ROOT / "src"))
 
 from regime_detection.engine import RegimeEngine  # noqa: E402
@@ -20,6 +21,8 @@ from regime_detection.engine import RegimeEngine  # noqa: E402
 
 def pytest_configure() -> None:
     # Ensure src/ layout is importable without requiring an editable install.
+    if str(_REPO_ROOT) not in sys.path:
+        sys.path.insert(0, str(_REPO_ROOT))
     if str(_REPO_ROOT / "src") not in sys.path:
         sys.path.insert(0, str(_REPO_ROOT / "src"))
 

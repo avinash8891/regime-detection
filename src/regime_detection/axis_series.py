@@ -119,8 +119,12 @@ class AxisSeriesBundle:
     credit_funding: dict[date, CreditFundingOutput] | None = None
     # V2 §2C credit/funding PROXY label — None in pure-v1 mode; populated by
     # CreditFundingSeriesClassifier.build_proxy on the TLT-vs-HYG/LQD
-    # differential. Parallel to `credit_funding`, never blended (Log #71).
+    # differential. Parallel to `credit_funding`; the effective output below
+    # carries the explicit downstream source-selection policy.
     credit_funding_proxy: dict[date, CreditFundingOutput] | None = None
+    # V2 §2C effective downstream credit/funding label. OAS and proxy remain
+    # visible separately; this map is what cross-axis rules consume.
+    credit_funding_effective: dict[date, CreditFundingOutput] | None = None
     # V2 §2A monetary pressure — None in pure-v1 mode (no v2 config), populated
     # by MonetaryPressureV2SeriesClassifier when feature_store.monetary is lit
     # AND context.config.monetary_pressure_state is non-None (Ambiguity Log #46).
@@ -700,7 +704,7 @@ class CreditFundingSeriesClassifier:
       2. Per session, run the §2C unknown gate (spec lines 2122-2126):
          - HYG/LQD/TLT stale > 5 sessions → unknown
          - NFCI stale > 14 days → unknown
-         - SOFR or IORB missing on session → unknown
+         - SOFR or IORB stale beyond the global freshness budget → unknown
          - assess_series_input_quality fails on any required series → unknown
       3. Materialize per-day scalar rule inputs (build_rule_inputs_for_date),
          then evaluate §2C precedence (deleveraging > funding_squeeze >
@@ -790,15 +794,11 @@ class CreditFundingSeriesClassifier:
         nfci_staleness_by_date = _calendar_staleness_days_series(
             nfci_series, session_index
         )
-        sofr_missing_by_date = (
-            pd.Series(True, index=session_index)
-            if sofr_series is None
-            else sofr_series.reindex(session_index).isna()
+        sofr_staleness_by_date = _calendar_staleness_days_series(
+            sofr_series, session_index
         )
-        iorb_missing_by_date = (
-            pd.Series(True, index=session_index)
-            if iorb_series is None
-            else iorb_series.reindex(session_index).isna()
+        iorb_staleness_by_date = _calendar_staleness_days_series(
+            iorb_series, session_index
         )
         rule_inputs_by_date = build_credit_funding_rule_inputs_by_date(
             features=features,
@@ -830,26 +830,28 @@ class CreditFundingSeriesClassifier:
                 etf_staleness_breach = True
                 etf_stale_label = "TLT"
 
-            sofr_missing = bool(sofr_missing_by_date.loc[dt])
-            iorb_missing = bool(iorb_missing_by_date.loc[dt])
+            sofr_staleness_days = int(sofr_staleness_by_date.loc[dt])
+            iorb_staleness_days = int(iorb_staleness_by_date.loc[dt])
+            sofr_stale = sofr_staleness_days > max_freshness_days
+            iorb_stale = iorb_staleness_days > max_freshness_days
             nfci_staleness_days = int(nfci_staleness_by_date.loc[dt])
             nfci_stale = nfci_staleness_days > cf_config.nfci_stale_days
 
-            if etf_staleness_breach or sofr_missing or iorb_missing or nfci_stale:
+            if etf_staleness_breach or sofr_stale or iorb_stale or nfci_stale:
                 reason_parts: list[str] = []
                 if etf_staleness_breach:
                     reason_parts.append(f"etf_stale:{etf_stale_label}")
-                if sofr_missing:
-                    reason_parts.append("sofr_missing")
-                if iorb_missing:
-                    reason_parts.append("iorb_missing")
+                if sofr_stale:
+                    reason_parts.append(f"sofr_stale_{sofr_staleness_days}d")
+                if iorb_stale:
+                    reason_parts.append(f"iorb_stale_{iorb_staleness_days}d")
                 if nfci_stale:
                     reason_parts.append(f"nfci_stale_{nfci_staleness_days}d")
                 gate_reason = ",".join(reason_parts)
                 raw_labels.append("unknown")
                 per_day_data_quality.append(
                     DataQuality(
-                        status="stale_data" if (etf_staleness_breach or nfci_stale) else "insufficient_data",
+                        status="stale_data",
                         freshness_days=None,
                         completeness=None,
                         reason=gate_reason,
@@ -947,6 +949,156 @@ class CreditFundingSeriesClassifier:
         return self._build_for_spread_source(
             context, feature_store, spread_source="proxy"
         )
+
+
+def _credit_output_has_classified_signal(output: CreditFundingOutput | None) -> bool:
+    if output is None:
+        return False
+    return output.active_label != "unknown" and output.data_quality.status in {
+        "ok",
+        "degraded",
+    }
+
+
+def _credit_output_is_data_unavailable(output: CreditFundingOutput | None) -> bool:
+    if output is None:
+        return True
+    return output.classification_status in {
+        "data_unavailable",
+        "stale_data",
+        "insufficient_history",
+    }
+
+
+def _with_effective_credit_evidence(
+    *,
+    chosen: CreditFundingOutput,
+    oas: CreditFundingOutput | None,
+    proxy: CreditFundingOutput | None,
+    source_used: str,
+    agreement_status: str,
+) -> CreditFundingOutput:
+    evidence = dict(chosen.evidence)
+    evidence.update(
+        {
+            "source_used": source_used,
+            "agreement_status": agreement_status,
+            "oas_label": oas.active_label if oas is not None else None,
+            "proxy_label": proxy.active_label if proxy is not None else None,
+            "oas_classification_status": (
+                oas.classification_status if oas is not None else None
+            ),
+            "proxy_classification_status": (
+                proxy.classification_status if proxy is not None else None
+            ),
+            "oas_spread_source": (
+                oas.evidence.get("spread_source") if oas is not None else None
+            ),
+            "proxy_spread_source": (
+                proxy.evidence.get("spread_source") if proxy is not None else None
+            ),
+        }
+    )
+    return chosen.model_copy(update={"evidence": evidence})
+
+
+def resolve_credit_funding_effective_output(
+    *,
+    oas: CreditFundingOutput | None,
+    proxy: CreditFundingOutput | None,
+) -> CreditFundingOutput | None:
+    """Resolve OAS + ETF proxy into the one label consumed downstream.
+
+    OAS and proxy are still emitted separately. The effective output uses OAS
+    when it is the only classified signal, uses proxy when OAS is unavailable,
+    and uses the higher-risk label when both directional signals disagree.
+    """
+    if oas is None and proxy is None:
+        return None
+
+    oas_signal = _credit_output_has_classified_signal(oas)
+    proxy_signal = _credit_output_has_classified_signal(proxy)
+
+    if oas_signal and proxy_signal:
+        assert oas is not None and proxy is not None
+        oas_rank = CREDIT_FUNDING_RISK_RANK[oas.active_label]
+        proxy_rank = CREDIT_FUNDING_RISK_RANK[proxy.active_label]
+        if oas_rank == proxy_rank:
+            return _with_effective_credit_evidence(
+                chosen=oas,
+                oas=oas,
+                proxy=proxy,
+                source_used="oas_confirmed",
+                agreement_status="confirmed",
+            )
+        if proxy_rank > oas_rank:
+            return _with_effective_credit_evidence(
+                chosen=proxy,
+                oas=oas,
+                proxy=proxy,
+                source_used="proxy_higher_risk",
+                agreement_status="divergent",
+            )
+        return _with_effective_credit_evidence(
+            chosen=oas,
+            oas=oas,
+            proxy=proxy,
+            source_used="oas_higher_risk",
+            agreement_status="divergent",
+        )
+
+    if proxy_signal:
+        assert proxy is not None
+        return _with_effective_credit_evidence(
+            chosen=proxy,
+            oas=oas,
+            proxy=proxy,
+            source_used=(
+                "proxy_fallback"
+                if _credit_output_is_data_unavailable(oas)
+                else "proxy_only"
+            ),
+            agreement_status="proxy_only",
+        )
+
+    if oas_signal:
+        assert oas is not None
+        return _with_effective_credit_evidence(
+            chosen=oas,
+            oas=oas,
+            proxy=proxy,
+            source_used="oas_only",
+            agreement_status="oas_only",
+        )
+
+    chosen = oas if oas is not None else proxy
+    assert chosen is not None
+    return _with_effective_credit_evidence(
+        chosen=chosen,
+        oas=oas,
+        proxy=proxy,
+        source_used="no_classified_signal",
+        agreement_status="unavailable",
+    )
+
+
+def resolve_credit_funding_effective_series(
+    *,
+    sessions: list[date],
+    oas_by_date: dict[date, CreditFundingOutput] | None,
+    proxy_by_date: dict[date, CreditFundingOutput] | None,
+) -> dict[date, CreditFundingOutput] | None:
+    if oas_by_date is None and proxy_by_date is None:
+        return None
+    outputs: dict[date, CreditFundingOutput] = {}
+    for day in sessions:
+        effective = resolve_credit_funding_effective_output(
+            oas=oas_by_date.get(day) if oas_by_date is not None else None,
+            proxy=proxy_by_date.get(day) if proxy_by_date is not None else None,
+        )
+        if effective is not None:
+            outputs[day] = effective
+    return outputs
 
 
 class InflationGrowthSeriesClassifier:
@@ -1194,17 +1346,16 @@ class MonetaryPressureV2SeriesClassifier:
         if mp_config is None:
             return None
 
-        # The 63d-change + 1260d-normalizer window is the binding cold-start
-        # for the §2A rules. The 21d-change variant warms up sooner so the
-        # 63d-derived series gate the data-quality assessment.
         v2_features_config = context.config.monetary_pressure_v2
         if v2_features_config is None:
             # Defensive: features seam lit but feature config missing.
             return None
-        required_trading_days = (
-            v2_features_config.yield_change_lookback_days
-            + v2_features_config.zscore_normalizer_window_days
-        )
+        # The z-score feature series already encode the 63d/21d change window
+        # plus 1260d normalizer warm-up as NaN. At the classifier boundary we
+        # only need the current session's computed feature values; requiring
+        # 1323 non-NaN z-score observations would double-count the warm-up and
+        # keep the axis permanently unknown on a 30-session profile window.
+        required_trading_days = 1
 
         required_inputs: list[pd.Series] = [
             features.yield_change_zscore_2y_63d,
@@ -1316,14 +1467,19 @@ def build_axis_series_bundle(*, context: MarketContext, feature_store: FeatureSt
     credit_funding_proxy = _credit_funding_classifier.build_proxy(
         context, feature_store
     )
+    credit_funding_effective = resolve_credit_funding_effective_series(
+        sessions=context.sessions,
+        oas_by_date=credit_funding,
+        proxy_by_date=credit_funding_proxy,
+    )
     network_fragility = NetworkFragilitySeriesClassifier().build(
         context,
         feature_store,
         breadth_active_labels_by_date=breadth_state.active_labels_by_date,
         volatility_active_labels_by_date=volatility_state.active_labels_by_date,
         credit_funding_active_labels_by_date=(
-            {day: out.active_label for day, out in credit_funding.items()}
-            if credit_funding is not None
+            {day: out.active_label for day, out in credit_funding_effective.items()}
+            if credit_funding_effective is not None
             else None
         ),
     )
@@ -1337,8 +1493,8 @@ def build_axis_series_bundle(*, context: MarketContext, feature_store: FeatureSt
         context,
         feature_store,
         credit_funding_active_labels_by_date=(
-            {day: out.active_label for day, out in credit_funding.items()}
-            if credit_funding is not None
+            {day: out.active_label for day, out in credit_funding_effective.items()}
+            if credit_funding_effective is not None
             else None
         ),
     )
@@ -1352,6 +1508,7 @@ def build_axis_series_bundle(*, context: MarketContext, feature_store: FeatureSt
         volume_liquidity_state=volume_liquidity_state,
         credit_funding=credit_funding,
         credit_funding_proxy=credit_funding_proxy,
+        credit_funding_effective=credit_funding_effective,
         monetary_pressure_state=monetary_pressure_state,
         inflation_growth=inflation_growth,
     )

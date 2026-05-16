@@ -90,14 +90,23 @@ def event_rows_for_yaml(event_df: pd.DataFrame | None) -> list[dict[str, Any]]:
     for row in event_df.to_dict(orient="records"):
         out: dict[str, Any] = {}
         for key, value in row.items():
-            if pd.isna(value):
-                out[key] = None
-            elif isinstance(value, (date, datetime, pd.Timestamp)):
-                out[key] = pd.Timestamp(value).date().isoformat()
-            else:
-                out[key] = value
+            out[key] = event_value_for_yaml(value)
         rows.append(out)
     return rows
+
+
+def event_value_for_yaml(value: Any) -> Any:
+    if isinstance(value, dict):
+        return {key: event_value_for_yaml(item) for key, item in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [event_value_for_yaml(item) for item in value]
+    if value is None:
+        return None
+    if bool(pd.isna(value)):
+        return None
+    if isinstance(value, (date, datetime, pd.Timestamp)):
+        return pd.Timestamp(value).date().isoformat()
+    return value
 
 
 def write_archived_inputs(

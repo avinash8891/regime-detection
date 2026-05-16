@@ -332,6 +332,44 @@ def test_aggregate_forward_eps_revision_forward_fills_onto_spy_index() -> None:
     assert out.iloc[-1] == pytest.approx(-0.03)
 
 
+def test_aggregate_forward_eps_revision_forward_fills_daily_sparse_series() -> None:
+    """MarketContext aligns sparse macro series to the SPY calendar, leaving
+    NaN rows between actual observations. EPS revision must carry the last
+    non-NaN observation through those daily placeholder rows."""
+    idx = _bdate_index(periods=80)
+    cpi = pd.Series(300.0, index=idx, dtype=float)
+    pmi = pd.Series(51.0, index=idx, dtype=float)
+    dgs10 = pd.Series(4.0, index=idx, dtype=float)
+    dbc = pd.Series(20.0, index=idx, dtype=float)
+    spy = pd.Series(400.0, index=idx, dtype=float)
+    tlt = pd.Series(100.0, index=idx, dtype=float)
+    xly = xli = xlp = xlu = pd.Series(100.0, index=idx, dtype=float)
+    revision = pd.Series(np.nan, index=idx, dtype=float)
+    revision.loc[idx[20]] = 0.04
+    revision.loc[idx[40]] = -0.03
+
+    feats = compute_inflation_growth_features(
+        cpi_all_items=cpi,
+        pmi_manufacturing=pmi,
+        dgs10=dgs10,
+        dbc_close=dbc,
+        spy_close=spy,
+        tlt_close=tlt,
+        xly_close=xly,
+        xli_close=xli,
+        xlp_close=xlp,
+        xlu_close=xlu,
+        config=_default_rules(),
+        aggregate_forward_eps_revision=revision,
+    )
+
+    out = feats.aggregate_forward_eps_revision_direction_4w
+    assert out.loc[idx[20]] == pytest.approx(0.04)
+    assert out.loc[idx[30]] == pytest.approx(0.04)
+    assert out.loc[idx[40]] == pytest.approx(-0.03)
+    assert out.iloc[-1] == pytest.approx(-0.03)
+
+
 # --- Group B — Rule predicates (10 tests) ------------------------------------
 
 

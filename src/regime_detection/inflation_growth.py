@@ -306,7 +306,7 @@ def compute_inflation_growth_features(
     # the same DatetimeIndex (single source of truth for the rule engine).
     cpi = cpi_source.reindex(spy_index).astype(float).ffill()
     pmi = pmi_manufacturing.reindex(spy_index).astype(float).ffill()
-    dgs10_s = dgs10.reindex(spy_index).astype(float)
+    dgs10_s = dgs10.reindex(spy_index).astype(float).ffill()
     dbc = dbc_close.reindex(spy_index).astype(float)
     spy = spy_close.reindex(spy_index).astype(float)
     tlt = tlt_close.reindex(spy_index).astype(float)
@@ -363,7 +363,7 @@ def compute_inflation_growth_features(
         eps_revision_sorted.index = pd.DatetimeIndex(
             pd.to_datetime(eps_revision_sorted.index)
         )
-        eps_revision_sorted = eps_revision_sorted.sort_index()
+        eps_revision_sorted = eps_revision_sorted.dropna().sort_index()
         aggregate_forward_eps_revision_direction_4w = (
             eps_revision_sorted.reindex(spy_index, method="ffill").rename(
                 "aggregate_forward_eps_revision_direction_4w"

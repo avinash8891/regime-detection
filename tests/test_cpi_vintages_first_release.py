@@ -76,6 +76,35 @@ def test_load_cpi_vintages_first_release_picks_earliest_realtime_start() -> None
     assert out.loc[pd.Timestamp("2024-03-12")] == 309.7
 
 
+def test_load_cpi_vintages_first_release_deduplicates_release_dates() -> None:
+    """FRED/ALFRED history can contain multiple reference months whose first
+    available vintage shares the same realtime_start. The as-of replay series
+    must still have a unique release-date index so pandas reindex/ffill works."""
+    frame = pd.DataFrame(
+        [
+            {
+                "date": "2024-01-01",
+                "value": 308.5,
+                "realtime_start": "2024-02-13",
+                "realtime_end": pd.NaT,
+                "series_id": "CPIAUCSL",
+            },
+            {
+                "date": "2024-02-01",
+                "value": 309.7,
+                "realtime_start": "2024-02-13",
+                "realtime_end": pd.NaT,
+                "series_id": "CPIAUCSL",
+            },
+        ]
+    )
+
+    out = load_cpi_vintages_first_release(frame)
+
+    assert out.index.tolist() == [pd.Timestamp("2024-02-13")]
+    assert out.tolist() == [309.7]
+
+
 def test_load_cpi_vintages_first_release_empty_returns_empty_series() -> None:
     empty = pd.DataFrame(columns=["date", "value", "realtime_start"])
     out = load_cpi_vintages_first_release(empty)

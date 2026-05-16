@@ -54,6 +54,8 @@ from pathlib import Path
 
 import pandas as pd
 
+from regime_data_fetch.acquisition_store import AcquisitionStore
+
 SOURCE_NAME = "Cleveland Fed inflation nowcast"
 # Month-over-month webchart feed backing the "Inflation Nowcasting" page.
 # Verified reachable over urllib/curl (the human-facing HTML page is the
@@ -231,6 +233,17 @@ def _parse_category_date(
         except ValueError:
             pass
     try:
+        month_text, day_text = raw_label.split("/", maxsplit=1)
+        month = int(month_text)
+        day = int(day_text)
+        return pd.Timestamp(
+            year=target_month.year,
+            month=month,
+            day=day,
+        )
+    except (TypeError, ValueError):
+        pass
+    try:
         parsed = pd.to_datetime(raw_label, errors="raise")
     except (TypeError, ValueError) as exc:
         raise ClevelandFedNowcastError(
@@ -354,6 +367,8 @@ def run_cleveland_fed_nowcast_fetch(
     source_url: str = SOURCE_URL,
     series_name: str = NOWCAST_SERIES_NAME,
     value_scale: float = DEFAULT_VALUE_SCALE,
+    acquisition_db_path: Path | None = None,
+    artifact_store_root: str | Path | None = None,
 ) -> Path:
     """Orchestrate the Cleveland Fed inflation-nowcast fetch.
 
@@ -371,42 +386,87 @@ def run_cleveland_fed_nowcast_fetch(
     nowcast_dir.mkdir(parents=True, exist_ok=True)
     json_path = out_dir / MANUAL_REL_PATH
     out_path = nowcast_dir / CPI_NOWCAST_PARQUET
+    store = AcquisitionStore(acquisition_db_path, artifact_store_root=artifact_store_root) if acquisition_db_path else None
+    fetch_run = store.start_fetch_run(fetch_type="cleveland_fed_nowcast", params={"source_url": source_url}) if store else None
 
     try:
-        download_cleveland_fed_nowcast_json(
-            out_path=json_path, source_url=source_url
-        )
-    except ClevelandFedNowcastError:
-        if not json_path.exists():
-            raise
-        _log.warning(
-            "cleveland_fed_nowcast: download failed, falling back to the "
-            "already-present JSON at %s",
-            json_path,
+        try:
+            download_cleveland_fed_nowcast_json(
+                out_path=json_path, source_url=source_url
+            )
+        except ClevelandFedNowcastError:
+            if not json_path.exists():
+                raise
+            _log.warning(
+                "cleveland_fed_nowcast: download failed, falling back to the "
+                "already-present JSON at %s",
+                json_path,
+            )
+
+        df = update_cpi_nowcast_parquet(
+            json_path=json_path,
+            out_path=out_path,
+            series_name=series_name,
+            value_scale=value_scale,
         )
 
-    df = update_cpi_nowcast_parquet(
-        json_path=json_path,
-        out_path=out_path,
-        series_name=series_name,
-        value_scale=value_scale,
-    )
-
-    report = {
-        "as_of_utc": dt.datetime.now(dt.timezone.utc).isoformat(),
-        "source": SOURCE_NAME,
-        "source_url": source_url,
-        "source_path": str(json_path),
-        "data_vintage": extract_data_vintage(json_path.read_text()),
-        "series_name": series_name,
-        "value_scale": value_scale,
-        "rows": int(len(df)),
-        "min_date": str(df["date"].min().date()) if not df.empty else None,
-        "max_date": str(df["date"].max().date()) if not df.empty else None,
-        "paths": {
-            "cpi_nowcast_parquet": str(out_path),
-        },
-    }
-    report_path = out_dir / "cleveland_fed_nowcast_fetch_report.json"
-    report_path.write_text(json.dumps(report, indent=2))
-    return report_path
+        report = {
+            "as_of_utc": dt.datetime.now(dt.timezone.utc).isoformat(),
+            "source": SOURCE_NAME,
+            "source_url": source_url,
+            "source_path": str(json_path),
+            "data_vintage": extract_data_vintage(json_path.read_text()),
+            "series_name": series_name,
+            "value_scale": value_scale,
+            "rows": int(len(df)),
+            "min_date": str(df["date"].min().date()) if not df.empty else None,
+            "max_date": str(df["date"].max().date()) if not df.empty else None,
+            "paths": {
+                "cpi_nowcast_parquet": str(out_path),
+            },
+        }
+        report_path = out_dir / "cleveland_fed_nowcast_fetch_report.json"
+        report_path.write_text(json.dumps(report, indent=2))
+        if store and fetch_run:
+            raw_record = store.record_file_artifact(
+                run_id=fetch_run.run_id,
+                source_name="clevelandfed.org:inflation-nowcast",
+                artifact_kind="json",
+                source_identifier=source_url,
+                file_path=json_path,
+                start_date=report["min_date"],
+                end_date=report["max_date"],
+                notes="Cleveland Fed nowcast webchart JSON",
+            )
+            output_record = store.record_output(
+                run_id=fetch_run.run_id,
+                output_kind="cleveland_fed_cpi_nowcast_parquet",
+                path=out_path,
+                row_count=report["rows"],
+                min_date=report["min_date"],
+                max_date=report["max_date"],
+                source_name="clevelandfed.org:inflation-nowcast",
+                artifact_kind="parquet",
+                notes="Canonical Cleveland Fed CPI nowcast series",
+            )
+            store.record_output(
+                run_id=fetch_run.run_id,
+                output_kind="cleveland_fed_nowcast_report",
+                path=report_path,
+                row_count=report["rows"],
+                min_date=report["min_date"],
+                max_date=report["max_date"],
+                notes="Cleveland Fed nowcast fetch report",
+            )
+            if output_record and raw_record.artifact_record_id is not None:
+                store.record_artifact_lineage(
+                    output_artifact_record_id=output_record.artifact_record_id,
+                    input_artifact_record_id=raw_record.artifact_record_id,
+                    transform_name="parse_cleveland_fed_nowcast_json",
+                )
+            store.finish_fetch_run(run_id=fetch_run.run_id, status="ok")
+        return report_path
+    except Exception as exc:
+        if store and fetch_run:
+            store.finish_fetch_run(run_id=fetch_run.run_id, status="failed", notes=str(exc))
+        raise

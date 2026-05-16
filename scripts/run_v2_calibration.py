@@ -19,9 +19,11 @@ committed ``*.yaml`` files (dropping the ``.candidate`` suffix). The spec
 explicitly requires this manual step (§6.1 line 2748, §6.2 line 2842,
 §10).
 """
+
 from __future__ import annotations
 
 import datetime as dt
+import argparse
 import sys
 from pathlib import Path
 from typing import Any
@@ -37,6 +39,7 @@ sys.path.insert(0, str(SRC_DIR))
 sys.path.insert(0, str(REPO_ROOT))
 
 from regime_data_fetch.local_daily_ohlcv_sqlite import EXPECTED_COLUMNS  # noqa: E402
+from regime_data_fetch.materialization import materialize_if_requested  # noqa: E402
 
 from regime_detection.config import load_default_regime_config  # noqa: E402
 from regime_detection.engine import RegimeEngine  # noqa: E402
@@ -48,7 +51,7 @@ from regime_detection.loaders import (  # noqa: E402
     load_news_sentiment_series,
 )
 from regime_detection.market_context import build_market_context  # noqa: E402
-from scripts._v2_calibration_helpers import load_macro_series  # noqa: E402
+from scripts._v2_calibration_helpers import default_pmi_path, load_macro_series  # noqa: E402
 
 
 def _load_market_data(daily_ohlcv_dir: Path) -> pd.DataFrame:
@@ -60,7 +63,9 @@ def _load_market_data(daily_ohlcv_dir: Path) -> pd.DataFrame:
     return out.sort_values(["date", "symbol"]).reset_index(drop=True)
 
 
-def _load_close_dict(daily_ohlcv_dir: Path, symbols: list[str], spy_index: pd.DatetimeIndex) -> dict[str, pd.Series]:
+def _load_close_dict(
+    daily_ohlcv_dir: Path, symbols: list[str], spy_index: pd.DatetimeIndex
+) -> dict[str, pd.Series]:
     """Pivot daily OHLCV parquet into close-series keyed by symbol, reindexed to SPY sessions."""
     df = pd.read_parquet(daily_ohlcv_dir)
     df["date"] = pd.to_datetime(df["date"])
@@ -143,7 +148,10 @@ def _fit_summary_hmm(feature_store: Any, training_window_days: int) -> dict[str,
     """Produce the candidate HMM state-mean / persistence table from feature_store.hmm."""
     hmm = feature_store.hmm
     if hmm is None:
-        return {"status": "unfit", "reason": "feature_store.hmm is None — input gate not lit"}
+        return {
+            "status": "unfit",
+            "reason": "feature_store.hmm is None — input gate not lit",
+        }
     state_probs = hmm.state_probabilities.dropna(how="any")
     n_states = hmm.n_states
     summary: dict[str, Any] = {
@@ -160,10 +168,13 @@ def _fit_summary_hmm(feature_store: Any, training_window_days: int) -> dict[str,
     # Persistence (probability that argmax stays same on consecutive sessions).
     argmax = argmax_series.to_numpy()
     persistence = {
-        int(k): int(((argmax[:-1] == k) & (argmax[1:] == k)).sum()) / max(1, int((argmax[:-1] == k).sum()))
+        int(k): int(((argmax[:-1] == k) & (argmax[1:] == k)).sum())
+        / max(1, int((argmax[:-1] == k).sum()))
         for k in range(n_states)
     }
-    summary["persistence_probability_per_state"] = {k: round(v, 4) for k, v in persistence.items()}
+    summary["persistence_probability_per_state"] = {
+        k: round(v, 4) for k, v in persistence.items()
+    }
     # Top-5 most-recent dominant sessions per state — gives the operator a
     # concrete anchor for the manual label mapping (V2 §6.1 line 2748 + §10).
     representative_dates: dict[int, list[str]] = {}
@@ -173,7 +184,9 @@ def _fit_summary_hmm(feature_store: Any, training_window_days: int) -> dict[str,
             representative_dates[int(k)] = []
             continue
         dates = state_probs.index[mask][-5:].tolist()
-        representative_dates[int(k)] = [pd.Timestamp(d).date().isoformat() for d in dates]
+        representative_dates[int(k)] = [
+            pd.Timestamp(d).date().isoformat() for d in dates
+        ]
     summary["recent_dominant_dates_per_state"] = representative_dates
     summary["candidate_mappings"] = {
         int(k): f"<operator review: assign economic label for state {k}>"
@@ -186,7 +199,10 @@ def _fit_summary_clustering(feature_store: Any) -> dict[str, Any]:
     """Produce the candidate cluster centroid / size table from feature_store.clustering."""
     clustering = feature_store.clustering
     if clustering is None:
-        return {"status": "unfit", "reason": "feature_store.clustering is None — input gate not lit"}
+        return {
+            "status": "unfit",
+            "reason": "feature_store.clustering is None — input gate not lit",
+        }
     n_clusters = clustering.n_clusters
     cluster_id = clustering.cluster_id.dropna()
     distances = clustering.distance_to_centroid.dropna()
@@ -196,7 +212,9 @@ def _fit_summary_clustering(feature_store: Any) -> dict[str, Any]:
         "n_predicted_sessions": int(len(cluster_id)),
     }
     cluster_counts = cluster_id.value_counts().sort_index().to_dict()
-    summary["sessions_per_cluster"] = {int(k): int(v) for k, v in cluster_counts.items()}
+    summary["sessions_per_cluster"] = {
+        int(k): int(v) for k, v in cluster_counts.items()
+    }
     # Mean distance to centroid per cluster — proxy for cluster tightness.
     per_cluster_distance = {}
     for k in range(n_clusters):
@@ -218,10 +236,14 @@ def _fit_summary_clustering(feature_store: Any) -> dict[str, Any]:
             extreme_dates[int(k)] = []
             continue
         cluster_dates = cluster_id.index[mask]
-        recent_dates[int(k)] = [pd.Timestamp(d).date().isoformat() for d in cluster_dates[-5:]]
+        recent_dates[int(k)] = [
+            pd.Timestamp(d).date().isoformat() for d in cluster_dates[-5:]
+        ]
         cluster_distances = distances.loc[cluster_dates]
         top_extreme = cluster_distances.nlargest(5).index
-        extreme_dates[int(k)] = [pd.Timestamp(d).date().isoformat() for d in top_extreme]
+        extreme_dates[int(k)] = [
+            pd.Timestamp(d).date().isoformat() for d in top_extreme
+        ]
     summary["recent_dates_per_cluster"] = recent_dates
     summary["most_extreme_distance_dates_per_cluster"] = extreme_dates
     summary["candidate_mappings"] = {
@@ -231,12 +253,39 @@ def _fit_summary_clustering(feature_store: Any) -> dict[str, Any]:
     return summary
 
 
+def _parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description="V2 calibration artifact runner.")
+    parser.add_argument("--data-root", type=Path, default=REPO_ROOT / "data" / "raw")
+    parser.add_argument(
+        "--manifest",
+        type=Path,
+        default=None,
+        help="Optional artifact manifest to materialize before calibration.",
+    )
+    parser.add_argument(
+        "--artifact-store",
+        default=None,
+        help="Optional artifact-store root override for --manifest.",
+    )
+    return parser.parse_args()
+
+
 def main() -> int:
-    data_root = REPO_ROOT / "data" / "raw"
+    args = _parse_args()
+    data_root = args.data_root
+    materialize_if_requested(
+        manifest_path=args.manifest,
+        local_root=data_root,
+        repo_root=REPO_ROOT,
+        store_root=args.artifact_store,
+        required_for="v2_calibration",
+    )
     daily_dir = data_root / "daily_ohlcv"
     macro_parquet = data_root / "macro" / "fred_macro_series.parquet"
-    pmi_path = REPO_ROOT / "data" / "manual_inputs" / "pmi" / "ism_manufacturing_pmi.tsv"
-    pit_intervals_parquet = data_root / "pit_constituents" / "sp500_ticker_intervals.parquet"
+    pmi_path = default_pmi_path(data_root)
+    pit_intervals_parquet = (
+        data_root / "pit_constituents" / "sp500_ticker_intervals.parquet"
+    )
     constituent_db_path = data_root / "constituent_ohlcv.db"
     # v2 §2A central-bank-text + first-release CPI seams (audit M1 / M2).
     # Standard fetch paths under data/raw/; absence is non-fatal — the
@@ -244,15 +293,23 @@ def main() -> int:
     # the central_bank_text_score stays None.
     fomc_minutes_parquet = data_root / "fomc_minutes" / "fomc_minutes.parquet"
     powell_speeches_parquet = data_root / "powell_speeches" / "powell_speeches.parquet"
-    cpi_vintages_parquet = data_root / "macro_vintages" / "cpi_all_items_vintages.parquet"
-    news_sentiment_parquet = data_root / "news_sentiment" / "sf_fed_news_sentiment.parquet"
+    cpi_vintages_parquet = (
+        data_root / "macro_vintages" / "cpi_all_items_vintages.parquet"
+    )
+    news_sentiment_parquet = (
+        data_root / "news_sentiment" / "sf_fed_news_sentiment.parquet"
+    )
     verification_dir = REPO_ROOT / "docs" / "verification"
     verification_dir.mkdir(parents=True, exist_ok=True)
 
     if not daily_dir.exists():
-        raise SystemExit(f"daily_ohlcv directory not found at {daily_dir} — run fetch first")
+        raise SystemExit(
+            f"daily_ohlcv directory not found at {daily_dir} — run fetch first"
+        )
     if not macro_parquet.exists():
-        raise SystemExit(f"macro parquet not found at {macro_parquet} — run macro fetch first")
+        raise SystemExit(
+            f"macro parquet not found at {macro_parquet} — run macro fetch first"
+        )
 
     market_data = _load_market_data(daily_dir)
     end_date = market_data["date"].max()
@@ -264,14 +321,19 @@ def main() -> int:
     constituent_ohlcv = None
     if pit_intervals_parquet.exists():
         from regime_data_fetch.pit_constituents import read_pit_intervals, members_on
+
         pit_intervals = read_pit_intervals(pit_intervals_parquet)
         print(f"PIT intervals: {len(pit_intervals)} rows")
     if constituent_db_path.exists() and pit_intervals is not None:
-        from regime_data_fetch.local_daily_ohlcv_sqlite_reader import read_constituent_ohlcv
+        from regime_data_fetch.local_daily_ohlcv_sqlite_reader import (
+            read_constituent_ohlcv,
+        )
+
         # Members on the end_date define the universe whose OHLCV we load.
         # Reader is keyed by ticker; we pass the full distinct-ticker list
         # across the trailing window so newly-listed members have data.
         from regime_data_fetch.pit_constituents import members_on as _members_on
+
         all_member_tickers = sorted({t for t in pit_intervals["ticker"].unique()})
         # Optimization: only read tickers that DBC-style classifier expects.
         # In practice the universe is ~1200 tickers; read_constituent_ohlcv
@@ -295,11 +357,25 @@ def main() -> int:
 
     # Build full V2 inputs.
     cross_asset_symbols = [
-        "QQQ", "IWM", "EFA", "EEM", "TLT", "HYG", "LQD", "GLD", "USO", "UUP", "DBC", "KRE",
+        "QQQ",
+        "IWM",
+        "EFA",
+        "EEM",
+        "TLT",
+        "HYG",
+        "LQD",
+        "GLD",
+        "USO",
+        "UUP",
+        "DBC",
+        "KRE",
         # XLY/XLI/XLP/XLU are sector ETFs but §2B inflation_growth reads them
         # from cross_asset_closes (cyclical-vs-defensive ratio). Mirroring the
         # slice-5 test fixtures' convention.
-        "XLY", "XLI", "XLP", "XLU",
+        "XLY",
+        "XLI",
+        "XLP",
+        "XLU",
     ]
     sector_etf_closes = _load_close_dict(daily_dir, list(SECTOR_ETFS), spy_index)
     cross_asset_closes = _load_close_dict(daily_dir, cross_asset_symbols, spy_index)
@@ -322,7 +398,9 @@ def main() -> int:
         ),
     )
     if central_bank_text_releases.empty:
-        print("central_bank_text_releases: empty (no FOMC minutes / Powell speeches parquets)")
+        print(
+            "central_bank_text_releases: empty (no FOMC minutes / Powell speeches parquets)"
+        )
     else:
         print(
             f"central_bank_text_releases: {len(central_bank_text_releases)} rows "
@@ -396,9 +474,13 @@ def main() -> int:
 
     print(f"feature_store.hmm lit: {feature_store.hmm is not None}")
     print(f"feature_store.clustering lit: {feature_store.clustering is not None}")
-    print(f"feature_store.network_fragility lit: {feature_store.network_fragility is not None}")
+    print(
+        f"feature_store.network_fragility lit: {feature_store.network_fragility is not None}"
+    )
 
-    hmm_summary = _fit_summary_hmm(feature_store, config.hmm.training_window_days if config.hmm else 0)
+    hmm_summary = _fit_summary_hmm(
+        feature_store, config.hmm.training_window_days if config.hmm else 0
+    )
     cluster_summary = _fit_summary_clustering(feature_store)
 
     # Write candidate label maps.
@@ -407,7 +489,9 @@ def main() -> int:
             "version": "0.1-candidate",
             "fitted_at_utc": dt.datetime.now(dt.timezone.utc).isoformat(),
             "fitted_end_date": end_date.isoformat(),
-            "training_window_days": int(config.hmm.training_window_days) if config.hmm else None,
+            "training_window_days": int(config.hmm.training_window_days)
+            if config.hmm
+            else None,
             "random_state": int(config.hmm.random_state) if config.hmm else None,
             "summary": hmm_summary,
             "review_instructions": (
@@ -425,8 +509,12 @@ def main() -> int:
             "version": "0.1-candidate",
             "fitted_at_utc": dt.datetime.now(dt.timezone.utc).isoformat(),
             "fitted_end_date": end_date.isoformat(),
-            "training_window_days": int(config.clustering.training_window_days) if config.clustering else None,
-            "random_state": int(config.clustering.random_state) if config.clustering else None,
+            "training_window_days": int(config.clustering.training_window_days)
+            if config.clustering
+            else None,
+            "random_state": int(config.clustering.random_state)
+            if config.clustering
+            else None,
             "summary": cluster_summary,
             "review_instructions": (
                 "Per V2 §6.2 line 2842 + §10: inspect the per-cluster size and mean "

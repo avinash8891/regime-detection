@@ -221,6 +221,36 @@ def test_nan_in_dgs2_does_not_propagate_to_dgs10(v2_monetary_config):
     )
 
 
+def test_fred_style_missing_sessions_do_not_poison_monetary_zscores(v2_monetary_config):
+    """FRED series can miss NYSE sessions while the last observation is still fresh.
+
+    The feature math should use last-known values for those publication/calendar
+    gaps; otherwise one missing row inside the 5y normalizer keeps the whole
+    monetary-pressure axis unknown.
+    """
+    n = _FIRST_VALID_T + 100
+    dgs2 = _fred_like_yield_series(n=n, seed=20260520, base=4.50)
+    dgs10 = _fred_like_yield_series(n=n, seed=20260521, base=4.10)
+    usd = _fred_like_yield_series(n=n, seed=20260522, base=100.0)
+    # Simulate regular FRED publication/calendar gaps on NYSE sessions.
+    dgs2.iloc[::31] = np.nan
+    dgs10.iloc[::37] = np.nan
+    usd.iloc[::29] = np.nan
+
+    out = compute_monetary_pressure_features(
+        dgs2=dgs2,
+        dgs10=dgs10,
+        broad_usd_index=usd,
+        config=v2_monetary_config,
+    )
+
+    assert out.yield_change_zscore_2y_63d.tail(30).notna().all()
+    assert out.yield_change_zscore_10y_63d.tail(30).notna().all()
+    assert out.yield_change_zscore_21d_2y.tail(30).notna().all()
+    assert out.yield_change_zscore_21d_10y.tail(30).notna().all()
+    assert out.broad_usd_index_zscore_63d.tail(30).notna().all()
+
+
 # =============================================================================
 # Shape / to_frame
 # =============================================================================

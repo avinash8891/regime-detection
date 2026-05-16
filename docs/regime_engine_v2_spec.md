@@ -1,6 +1,6 @@
 # Regime Detection Engine — V2 Spec
 
-**Status:** roadmap. Do not implement until V1 passes historical walk-forward validation and forward shadow qualification.
+**Status:** normative V2 spec with partial implementation already present in this unified checkout. Treat this file as the rule/contract source, not as a statement that every section is still unbuilt or that every implemented section is already qualified.
 **Builds on:** `regime_engine_v1_final_spec.md`
 **Engine version:** `regime-engine-v2.0.0` (when shipped)
 
@@ -8,7 +8,7 @@
 
 ## 0. Prerequisites
 
-V2 work begins **only after** all of the following hold:
+Net-new V2 work begins **only after** all of the following hold:
 
 - V1 ships all 9 vertical slices.
 - All 10 V1 golden test dates pass.
@@ -32,6 +32,17 @@ V2 activation requires **both**, in sequence:
 
 Qualification details for the forward shadow runner, storage, freeze policy, and replay verification live in `docs/shadow_runner_spec.md`.
 Historical walk-forward qualification details, required artifacts, and pass/fail criteria live in `docs/historical_walkforward_spec.md`.
+Data-source acquisition, S3/object-storage artifact persistence, SQLite ledger
+state, local `data/raw/` materialization, and manifest-pinned replay are owned
+by `docs/market_data_fetch_plan.md` §0. V2 classifier semantics must consume
+the canonical artifacts named by that contract; this spec does not make
+gitignored local files the source of truth.
+
+Implementation-status note for this repo:
+
+- This branch already contains shipped or partially shipped V2 slices in code and tests.
+- Qualification gates above still control whether those slices are considered operationally approved.
+- When code and this spec disagree, fix the inconsistency explicitly; do not treat the top-level status line as proof that a live code path is absent.
 
 V2 inherits every V1 contract:
 
@@ -40,11 +51,41 @@ V2 inherits every V1 contract:
 - Asymmetric hysteresis (escalation configurable, default immediate; de-escalation debounced)
 - `raw_label` / `stable_label` / `active_label` triple
 - `evidence` and `data_quality` blocks on every output
+- `classification_status` / `classification_reason` metadata on every
+  data-quality-aware label output, so legacy `unknown` labels are never
+  semantically ambiguous
 - Pydantic types
 - NYSE trading calendar (US v2)
 - No-hallucination rule for the coding agent
 
 V2 does not modify V1 outputs. V2 adds new fields and new classifiers.
+
+### Classification Status Metadata
+
+`active_label="unknown"` is a backward-compatible label value, not a complete
+diagnosis. Every data-quality-aware label output MUST also expose:
+
+```json
+{
+  "classification_status": "classified | no_rule_fired | data_unavailable | stale_data | insufficient_history | not_wired",
+  "classification_reason": "short machine-readable reason or null"
+}
+```
+
+Status semantics:
+
+| status | Meaning |
+|---|---|
+| `classified` | A non-`unknown` label is active. |
+| `no_rule_fired` | Required data was usable, but no rule predicate matched a named state. |
+| `data_unavailable` | Required data existed too sparsely to evaluate the classifier. |
+| `stale_data` | A required source exists, but its latest usable point is older than the axis freshness budget. |
+| `insufficient_history` | A required lookback/window is still in cold-start. |
+| `not_wired` | The classifier or seam is not present in this engine configuration. |
+
+Reports MUST group `unknown` labels by `classification_status`. For example,
+`unknown/no_rule_fired` is a neutral rule fall-through; `unknown/stale_data` is
+a data problem. The `active_label` field remains unchanged for compatibility.
 
 V2 also owns the items intentionally descoped from V1:
 
@@ -1121,8 +1162,10 @@ the slice/commit that resolved it. Entries are append-only.
 
     `regime_detection.transition_score.compute_transition_score`
     selects among the three tables based on which seams returned
-    non-None evidence on the as-of date (per the per-day PIT-correct
-    masking added in commit 19e395d). When neither HMM nor
+    non-None evidence on the as-of date. HMM evidence must be
+    point-in-time for the emitted session: `top_state_prob[t]` and
+    `top_state_prob[t-5]` both come from models trained only on data
+    available through their respective sessions. When neither HMM nor
     change-point is lit, the without-HMM 5-component path runs and
     V1 byte-identity is preserved.
 
@@ -1418,6 +1461,14 @@ the slice/commit that resolved it. Entries are append-only.
     downstream code slices that consume these pins ship in
     subsequent commits.
 
+    Status update — the §2A `unknown` hysteresis pin is amended by
+    Log #75 / ADR 0008. `unknown` is a data-quality absence, not a
+    monetary-pressure regime. Runtime config now sets
+    `monetary_pressure_state.deescalation_days_by_label.unknown = 0`
+    so a recovered current-session feature set can immediately emit
+    the rule-derived label (`neutral_monetary`, `tightening_pressure`,
+    etc.) instead of holding a stale quality-gap state.
+
 47. **§1A `breakout_expansion` — operational forms for the remaining
     three clauses (clauses 1–3) and `followthrough_rate` windowing
     metadata.**
@@ -1604,7 +1655,10 @@ the slice/commit that resolved it. Entries are append-only.
       §3.7 / §2A / §2B.
     - **Unknown gate** — staleness-based on HYG/LQD/TLT (> 5
       sessions), NFCI (> 14 days = 2× weekly cycle), SOFR/IORB
-      missing, or `assess_series_input_quality` failure.
+      stale beyond the global freshness budget, or
+      `assess_series_input_quality` failure. SOFR/IORB publication
+      lag within the freshness budget is carried forward, not treated
+      as missing.
     - **Credit-spread metric — single source.** `hy_spread_proxy_63d`
       and `ig_spread_proxy_63d` are populated directly from the
       FRED-redistributed ICE BofA Option-Adjusted Spread series:
@@ -1782,6 +1836,15 @@ the slice/commit that resolved it. Entries are append-only.
     only their manual-mapping artifacts remain a per-fit operator
     deliverable.
 
+    Status update — PIT emission clarified by Log #75 / ADR 0008.
+    HMM and GMM evidence in `classify_window` is emitted per warmed
+    session from models trained only through that session. A final-date
+    model may not be used to backfill earlier rows; blanking all
+    pre-final warmed rows is also not acceptable for profile outputs.
+    Runners that expose the HMM shift component must materialize five
+    extra warmed sessions before the emitted window so the first
+    output has `top_state_prob[t-5]`.
+
 52. **§5.5 PRISM — explicit V2.1 deferral.**
 
     PRISM (the user's signal-engine rule-discovery framework) is not
@@ -1829,7 +1892,7 @@ the slice/commit that resolved it. Entries are append-only.
       cohort's routing rule defined in terms of V2-axis label
       membership (`network_fragility`, `volatility_state`,
       `trend_direction`, `monetary_pressure`, `trend_character`,
-      `breadth_state`). Per-cohort `blocked_cohorts` table also pinned.
+      `breadth_state`). Per-cohort `blocked_strategy_modes` table also pinned.
       All rules and blocks are walk-forward calibration placeholders;
       `euphoria_specialist` is silent until §1A sentiment_score data
       ships (Ambiguity Log #32).
@@ -2439,7 +2502,7 @@ the slice/commit that resolved it. Entries are append-only.
         measurements into one series. This is two distinct metrics,
         two distinct label outputs (`RegimeOutput.credit_funding_state`
         from real OAS, `RegimeOutput.credit_funding_state_proxy` from
-        the proxy) that never blend. The §2C rule schema is
+        the proxy). The §2C rule schema is
         scale-invariant (percentile + slope predicates), so the SAME
         `CreditFundingSeriesClassifier` logic runs a second time on
         the proxy series — one rule schema, two input series, two
@@ -2447,7 +2510,17 @@ the slice/commit that resolved it. Entries are append-only.
         `credit_spread_proxy_total_return_differential` bias-warning
         row.
 
-    (c) **Rename the misleadingly-named legacy fields.** The fields
+    (c) **Add an explicit downstream resolver.** Cross-axis consumers
+        read `RegimeOutput.credit_funding_effective_state`, not the
+        raw OAS/proxy fields directly. The resolver preserves
+        `oas_label`, `proxy_label`, `source_used`, and
+        `agreement_status` in evidence. It uses OAS when OAS is the
+        only classified signal, uses proxy when OAS is unavailable, and
+        uses the higher-risk label when both directional signals are
+        classified but divergent. This is not series splicing: raw OAS
+        and proxy labels remain separately emitted and auditable.
+
+    (d) **Rename the misleadingly-named legacy fields.** The fields
         `hy_spread_proxy_63d` / `ig_spread_proxy_63d` /
         `hy_spread_proxy_percentile_504d` / `hy_spread_proxy_slope_21d`
         / `ig_spread_proxy_slope_21d` hold the *real* OAS values
@@ -2684,6 +2757,57 @@ the slice/commit that resolved it. Entries are append-only.
     feature-store wiring. Tests at `tests/test_news_sentiment.py`
     (9 cases). YAML block added to `configs/core3-v2.0.0.yaml`.
 
+75. **30-session profile completeness — macro carry-forward, PIT HMM/GMM,
+    and monetary `unknown` hysteresis.**
+
+    The end-to-end 30-session runner surfaced blank/`unknown` metric cells
+    even when all required source artifacts were present. Root causes were
+    implementation-level contract gaps, not missing sources:
+
+    - FRED daily macro series (`DGS2`, `DGS10`, `DTWEXBGS`, SOFR/IORB,
+      OAS, and `DGS10` inside §2B) were reindexed to NYSE sessions without
+      last-known-value carry-forward before rolling computations. Normal
+      publication gaps inside long rolling windows created artificial NaNs.
+    - Credit/funding treated SOFR/IORB absence on the current NYSE session
+      as missing, even when the last published observation was still fresh.
+    - HMM/GMM emitted only the final-date fit and masked all prior emitted
+      rows to avoid future leak. This was leak-safe but made multi-day
+      profile evidence blank.
+    - Monetary pressure required a second 1323-session non-NaN history on
+      the already-warmed z-score feature series, double-counting the raw
+      feature warm-up.
+    - Monetary `unknown` held for two sessions after data quality recovered,
+      even though `unknown` is a data-quality absence rather than an
+      economic monetary regime.
+
+    Resolution:
+
+    (a) Macro feature math uses latest-known-as-of observations before
+        rolling calculations. Staleness is still checked at the classifier
+        boundary; carry-forward is not permission to use stale data.
+
+    (b) SOFR/IORB unknown gates are freshness-based. A publication lag
+        within `data_quality.max_freshness_days` is valid; stale beyond
+        that budget is `unknown`.
+
+    (c) HMM/GMM evidence is point-in-time by emitted session. For session
+        `t`, the model must be trained only on data available through `t`.
+        A final-date model may not backfill earlier rows, and warmed rows
+        must not be blanked solely because a final-date fit would leak.
+
+    (d) `hmm_probability_shift[t]` requires both `top_state_prob[t]` and
+        `top_state_prob[t-5]`. Runners must materialize five extra warmed
+        sessions before the emitted window when HMM is enabled.
+
+    (e) `monetary_pressure_state.deescalation_days_by_label.unknown = 0`.
+        Once current-session monetary features are present, the active label
+        moves immediately to the rule-derived label.
+
+    Decision record: `docs/decisions/0008-v2-pit-evidence-and-macro-carry-forward.md`.
+    Verification: the repaired 30-session profile has zero `unknown` metric
+    labels and zero blank metric cells when run against the current full data
+    materialization.
+
 ---
 
 ## 2. Layer 2 V2 — Full Structural-Causal State
@@ -2723,6 +2847,12 @@ yield_change_zscore_21d         = (yield_change_21d - mean_5y_of_yield_changes_2
 ```
 
 Each formula reuses the same template (`(change - mean_5y_of_changes) / std_5y_of_changes`); only the change-window length (63d vs 21d) and the input series (DGS2 / DGS10 / DTWEXBGS) vary.
+
+Macro observations are aligned by latest-known-as-of semantics before rolling
+feature math runs. FRED business-day series can miss NYSE sessions because of
+publication calendars; those gaps are forward-filled for feature computation.
+The classifier still enforces freshness separately, so a carried value older
+than the applicable staleness budget forces `unknown`.
 
 Updated rules:
 ```text
@@ -2784,7 +2914,7 @@ monetary_pressure:
     tightening_pressure: 3    # matches §3.7 rising_fragility / correlation_concentration
     easing_pressure: 2
     neutral_monetary: 0       # immediate de-escalation
-    unknown: 2                # matches slice 2.7 volume-axis unknown hold
+    unknown: 0                # data-quality absence; clear immediately on recovery
   default_deescalation_days: 0
 ```
 
@@ -3120,10 +3250,13 @@ credit_funding:
 `unknown` is forced when:
 - HYG / LQD / TLT stale > 5 sessions
 - NFCI stale > 14 days (2× weekly release cycle)
-- SOFR or IORB missing
+- SOFR or IORB stale beyond `data_quality.max_freshness_days`
 - `assess_series_input_quality` fails on any required series
 
-#### Two label outputs — authoritative + proxy
+SOFR/IORB and OAS observations are carried forward for feature math when fresh;
+stale carried values still force `unknown`.
+
+#### Two label outputs plus effective downstream resolver
 
 The rules above are written against the authoritative real-OAS metric
 (`hy_oas_*` / `ig_oas_*`) and produce `RegimeOutput.credit_funding_state`.
@@ -3131,8 +3264,25 @@ Because the rule predicates are scale-invariant (percentile + slope only),
 the **same `CreditFundingSeriesClassifier` runs a second time** on the
 parallel proxy metric (`hy_tr_differential_*` / `ig_tr_differential_*`),
 producing `RegimeOutput.credit_funding_state_proxy` — a distinct, separately
-keyed label (Ambiguity Log #71). The two outputs are never blended into one
-series or one label.
+keyed label (Ambiguity Log #71). The two raw outputs are never blended into
+one feature series.
+
+Downstream cross-axis rules consume `RegimeOutput.credit_funding_effective_state`.
+That effective output is a resolver over the two classified labels:
+
+- OAS classified and proxy unavailable/unknown → use OAS (`source_used=oas_only`).
+- Proxy classified and OAS unavailable/stale/insufficient-history → use proxy
+  (`source_used=proxy_fallback`).
+- OAS and proxy classified with the same risk rank → use OAS and mark
+  `agreement_status=confirmed`.
+- OAS and proxy classified but divergent → use the higher-risk directional
+  label and mark `agreement_status=divergent`.
+- Neither classified → emit the chosen unknown evidence with
+  `agreement_status=unavailable`.
+
+Network fragility and inflation/growth MUST consume the effective label, so
+pre-2023 OAS gaps do not darken §2C and same-day OAS/proxy disagreement remains
+visible instead of being discarded.
 
 Real-OAS coverage: `hy_oas_*` / `ig_oas_*` start 2023-05-15 (FRED truncated
 the ICE BofA OAS public history — Log #71), so `credit_funding_state` is
@@ -3148,7 +3298,8 @@ Every `credit_funding_state_proxy` output MUST emit the
 feature-store output (same pattern as the §1D PIT-constituent bias warning).
 The proxy exists specifically because the real ICE BofA OAS series lacks
 pre-2023 history; it is a *similar* measure (credit-spread direction), kept
-strictly parallel — never spliced with the real-OAS metric.
+strictly parallel at the feature/raw-label level. The effective output is the
+only place where raw OAS and proxy labels are resolved for downstream use.
 
 ---
 
@@ -3448,6 +3599,11 @@ score = 1.0 if event_calendar.label in [
 score = abs(hmm.top_state_prob[t] - hmm.top_state_prob[t-5])
 ```
 
+`top_state_prob[t]` and `top_state_prob[t-5]` must both be point-in-time
+values from HMM fits trained no later than their respective sessions. A runner
+that emits a 30-session window must keep at least five extra warmed sessions
+before the first emitted row so this component can be present from day 1.
+
 ### 4.3 Weights
 
 **With HMM (full V2):**
@@ -3567,7 +3723,7 @@ V2 adds explicit agent routing on top of V1's permission modifiers.
   "agent_routing": {
     "active_cohort": "tightening_specialist",
     "fallback_cohort": "default_neutral",
-    "blocked_cohorts": ["short_vol", "leveraged_long"]
+    "blocked_strategy_modes": ["short_vol", "leveraged_long"]
   }
 }
 ```
@@ -3631,12 +3787,12 @@ cohort_routing:
     # falls through when no rule above matches
 ```
 
-#### Blocked Cohorts (per active cohort)
+#### Blocked Strategy Modes (per active cohort)
 
-The `blocked_cohorts` JSON field at the top of §5.1 is populated by the active cohort's blocklist:
+The `blocked_strategy_modes` JSON field at the top of §5.1 is populated by the active cohort's strategy-mode blocklist. These values are strategy modes/families to suppress under the active cohort, not alternate agent cohorts.
 
 ```yaml
-blocked_cohorts:
+blocked_strategy_modes:
   crisis_specialist:        [short_vol, leveraged_long, breakout]
   euphoria_specialist:      [mean_reversion]    # don't fade strength
   bear_stress_specialist:   [short_vol, breakout, leveraged_long]
@@ -3648,7 +3804,7 @@ blocked_cohorts:
   default_neutral:          []
 ```
 
-The starter routing rules + blocked-cohorts table are V2 §9.1 walk-forward calibration placeholders (same pattern as §1A `0.60` threshold). Operator refines after walk-forward evidence reveals false-positive / false-negative rates per cohort.
+The starter routing rules + blocked-strategy-modes table are V2 §9.1 walk-forward calibration placeholders (same pattern as §1A `0.60` threshold). Operator refines after walk-forward evidence reveals false-positive / false-negative rates per cohort.
 
 ### 5.2 Strategy-Family Constraints
 
@@ -3823,6 +3979,12 @@ Infer latent market states from returns and volatility.
 
 All HMM inputs reuse existing FeatureStore seams. The HMM module MUST NOT recompute any of them.
 
+For multi-session output, HMM evidence is emitted point-in-time. Each populated
+session uses a model fit on a trailing `training_window_days` slice ending at
+or before that session. It is invalid to fit once on the final profile date and
+reuse that model for earlier rows; it is also invalid to blank warmed earlier
+rows solely because final-fit parameters would leak future data.
+
 #### Model
 - Gaussian HMM
 - 3 states (recommended): `calm_bull`, `choppy_normal`, `stress_crash`
@@ -3922,6 +4084,11 @@ Discover empirical clusters of market days for diagnostic purposes.
 - Algorithm: GMM (Gaussian Mixture Model) preferred over hard K-Means because it provides per-day cluster membership probabilities (useful as evidence). K-Means is an acceptable fallback when GMM convergence is unstable.
 - **Number of clusters: 8** (matches the `gmm_8cluster_v1.0` example in the output JSON below; pinned as the V2 ship default).
 - Like the HMM (§6.1), cluster index → economic label mapping is **manual and config-versioned**. Never auto-map.
+
+For multi-session output, cluster assignment is point-in-time. Session `t` uses
+a GMM fit on data available through `t`; final-date clusters must not be
+backfilled into earlier emitted rows. Raw cluster IDs remain diagnostic and
+operator-mapped per V2 §10.
 
 #### Constraint
 Clusters must be **manually mapped** to economic labels after inspection. Never auto-label. Mapping is config-versioned.

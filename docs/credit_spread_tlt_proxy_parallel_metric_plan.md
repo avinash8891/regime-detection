@@ -6,6 +6,12 @@
 
 **Architecture:** The §2C rule predicates are scale-invariant (percentile + slope only), so the *same* `CreditFundingSeriesClassifier` rule logic runs twice — once on the real-OAS feature series, once on the proxy series — producing two never-blended `CreditFundingOutput`s. Legacy `hy_spread_proxy_*` feature fields (which hold *real* OAS since Ambiguity Log #49) are renamed `hy_oas_*`; the new proxy fields are `hy_tr_differential_*`. `CreditFundingRuleInputs` spread fields become source-neutral so one builder serves both runs.
 
+**2026-05-16 amendment:** raw OAS and proxy outputs still remain separate, but
+downstream consumers now read `RegimeOutput.credit_funding_effective_state`.
+That resolver records `oas_label`, `proxy_label`, `source_used`, and
+`agreement_status`; it uses proxy when OAS is unavailable/stale/insufficient,
+and uses the higher-risk label when both directional labels diverge.
+
 **Tech Stack:** Python 3.14, pandas, pydantic v2, pytest (`rtk proxy python3 -m pytest`, xdist `--dist loadfile`). Spec authority: `docs/regime_engine_v2_spec.md` §2C + Ambiguity Log #71.
 
 ---

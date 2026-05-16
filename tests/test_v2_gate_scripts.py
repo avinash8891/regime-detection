@@ -6,9 +6,23 @@ from pathlib import Path
 import pandas as pd
 import pytest
 
+from regime_detection.models import AxisOutput, DataQuality
 from scripts import run_v2_shadow_ab_gate, run_v2_walkforward_gate
 
 pytestmark = [pytest.mark.slow, pytest.mark.v2_gate]
+
+
+def test_gate_reporting_label_uses_granular_status() -> None:
+    output = AxisOutput(
+        raw_label="unknown",
+        stable_label="unknown",
+        active_label="unknown",
+        evidence={},
+        data_quality=DataQuality(status="ok", freshness_days=0, completeness=1.0),
+    )
+
+    assert run_v2_walkforward_gate._reporting_label(output) == "no_rule_fired"
+    assert run_v2_shadow_ab_gate._reporting_label(output) == "no_rule_fired"
 
 
 def _write_v2_gate_parquets(tmp_path: Path) -> tuple[Path, Path]:
@@ -55,7 +69,8 @@ def test_walkforward_gate_main_runs_against_committed_v2_fixtures(
     assert "- Window: 2026-05-12" in markdown
     assert "| sessions classified | 1 | 1 | 0 |" in markdown
     assert "| sessions with credit_funding_state | 0 | 1 | 1 |" in markdown
-    assert "| credit_funding (non-unknown) | 1 | 100.0% |" in markdown
+    assert "| sessions with credit_funding_effective_state | 0 | 1 | 1 |" in markdown
+    assert "| credit_funding (classified) | 1 | 100.0% |" in markdown
 
 
 def test_shadow_ab_gate_main_runs_against_committed_v2_fixtures(
@@ -87,4 +102,5 @@ def test_shadow_ab_gate_main_runs_against_committed_v2_fixtures(
     assert "| trend_direction | 0 |" in markdown
     assert "| transition_risk_label | 0 |" in markdown
     assert "| credit_funding_state | 1 |" in markdown
+    assert "| credit_funding_effective_state | 1 |" in markdown
     assert "| network_fragility | 1 |" in markdown
