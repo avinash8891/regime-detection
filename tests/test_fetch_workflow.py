@@ -367,6 +367,8 @@ def test_fetch_help_surface_mentions_pmi_and_pit() -> None:
     assert "investing-live" in help_text
     assert "cleveland-fed-nowcast" in help_text
     assert "sf-fed-news-sentiment" in help_text
+    assert "--fetch all is reserved for unattended autonomous refreshes" in help_text
+    assert "operator-assisted" in help_text.lower()
 
 
 def test_unattended_usd_ingestion_uses_fred_macro_not_local_csv() -> None:
@@ -383,8 +385,22 @@ def test_fetch_all_excludes_manual_eps_and_wayback_backfill() -> None:
     script = Path("scripts/fetch_regime_engine_v1_data.py").read_text()
     assert 'if args.fetch == "eps":' in script
     assert 'if args.fetch == "eps-wayback":' in script
+    assert 'if args.fetch == "eps-spglobal-auto":' in script
     assert 'if args.fetch in {"eps", "all"}:' not in script
     assert 'if args.fetch in {"eps-wayback", "all"}:' not in script
+    assert 'if args.fetch in {"eps-spglobal-auto", "all"}:' not in script
+
+
+def test_fetch_all_excludes_operator_assisted_browser_and_archive_paths() -> None:
+    script = Path("scripts/fetch_regime_engine_v1_data.py").read_text()
+    for fetch_name in [
+        "investing-live",
+        "investing-archive-local",
+        "daily-ohlcv-local-sqlite",
+        "usd-index-local",
+    ]:
+        assert f'if args.fetch == "{fetch_name}":' in script
+        assert f'if args.fetch in {{"{fetch_name}", "all"}}:' not in script
 
 
 def test_fetch_all_uses_live_constituent_ohlcv_not_local_sqlite_import() -> None:

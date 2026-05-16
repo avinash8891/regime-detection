@@ -43,7 +43,13 @@ from regime_data_fetch.universe import load_symbols_from_daily_ohlcv_tree, load_
 
 
 def main() -> int:
-    ap = argparse.ArgumentParser(description="Fetch regime-engine raw market and macro data for V1/V2 scopes.")
+    ap = argparse.ArgumentParser(
+        description=(
+            "Fetch regime-engine raw market and macro data for V1/V2 scopes. "
+            "--fetch all is reserved for unattended autonomous refreshes; browser-session, "
+            "local-file, and historical-backfill tools remain explicit operator-assisted fetches."
+        )
+    )
     ap.add_argument("--out-dir", default="data/raw", help="Output directory for Parquet + reports.")
     ap.add_argument("--start", default="2015-01-01", help="Start date (YYYY-MM-DD).")
     ap.add_argument("--end", default=dt.date.today().isoformat(), help="End date (YYYY-MM-DD).")
@@ -85,16 +91,16 @@ def main() -> int:
     ap.add_argument(
         "--eps-workbook",
         default=None,
-        help="Path to a manually downloaded S&P aggregate EPS workbook (.xlsx). Required for --fetch eps.",
+        help="Operator-assisted manual import: path to a downloaded S&P aggregate EPS workbook (.xlsx). Required for --fetch eps.",
     )
-    ap.add_argument("--eps-wayback-max-snapshots", type=int, default=None, help="Optional maximum number of Wayback EPS snapshots to process.")
+    ap.add_argument("--eps-wayback-max-snapshots", type=int, default=None, help="Operator-assisted backfill: optional maximum number of Wayback EPS snapshots to process.")
     ap.add_argument("--eps-wayback-from", default=None, help="Optional lower bound date (YYYY-MM-DD) for Wayback EPS snapshot dates.")
     ap.add_argument("--eps-wayback-to", default=None, help="Optional upper bound date (YYYY-MM-DD) for Wayback EPS snapshot dates.")
     ap.add_argument("--eps-wayback-stop-after-first-success", action="store_true", help="Stop Wayback EPS processing after the first successfully parsed snapshot.")
-    ap.add_argument("--eps-browser-user-data-dir", default=None, help="Persistent browser profile directory for S&P EPS browser fallback.")
-    ap.add_argument("--eps-browser-executable", default=None, help="Chrome/Chromium executable for S&P EPS browser fallback.")
-    ap.add_argument("--eps-browser-headless", action=argparse.BooleanOptionalAction, default=True, help="Run S&P EPS browser fallback headless/headful. Default headless.")
-    ap.add_argument("--eps-browser-timeout-ms", type=int, default=120000, help="Timeout in milliseconds for S&P EPS browser fallback.")
+    ap.add_argument("--eps-browser-user-data-dir", default=None, help="Operator-assisted EPS auto fetch: persistent browser profile directory for S&P browser fallback.")
+    ap.add_argument("--eps-browser-executable", default=None, help="Operator-assisted EPS auto fetch: Chrome/Chromium executable for S&P browser fallback.")
+    ap.add_argument("--eps-browser-headless", action=argparse.BooleanOptionalAction, default=True, help="Operator-assisted EPS auto fetch: run browser fallback headless/headful. Default headless.")
+    ap.add_argument("--eps-browser-timeout-ms", type=int, default=120000, help="Operator-assisted EPS auto fetch: timeout in milliseconds for S&P browser fallback.")
     ap.add_argument(
         "--usd-index-csv",
         default=None,
@@ -103,7 +109,7 @@ def main() -> int:
             "Routine future USD ingestion uses FRED DTWEXBGS through --fetch macro."
         ),
     )
-    ap.add_argument("--daily-ohlcv-dir", default=None, help="Path to a local partitioned daily_ohlcv parquet directory. Required for --fetch daily-ohlcv-local-sqlite.")
+    ap.add_argument("--daily-ohlcv-dir", default=None, help="Operator-assisted manual import: path to a local partitioned daily_ohlcv parquet directory. Required for --fetch daily-ohlcv-local-sqlite.")
     ap.add_argument("--pit-parquet", default=None, help="PIT constituent parquet for --fetch daily-ohlcv-constituents-alpaca. Defaults to <out-dir>/pit_constituents/sp500_ticker_intervals.parquet.")
     ap.add_argument(
         "--constituent-universe-dir",
@@ -123,13 +129,13 @@ def main() -> int:
     )
     ap.add_argument("--allow-missing-constituent-symbols", action="store_true", help="Allow daily-ohlcv-constituents-alpaca to continue when Alpaca returns no bars for some PIT symbols.")
     ap.add_argument("--pmi-history-dir", default=None, help="Optional manual Investing PMI history directory. Omit for live DBnomics/TradingEconomics PMI ingestion.")
-    ap.add_argument("--investing-archive-root", default=None, help="Path to archived Investing.com source_pages root. Required for --fetch investing-archive-local.")
-    ap.add_argument("--investing-earnings-loaded-page", default=None, help="Path to a browser-loaded Investing.com earnings calendar HTML page containing __NEXT_DATA__. Optional for --fetch investing-live.")
-    ap.add_argument("--investing-earnings-browser-capture", action=argparse.BooleanOptionalAction, default=True, help="For --fetch investing-live, capture a fresh Investing.com earnings page with Playwright when no page/token is supplied. Default True.")
-    ap.add_argument("--investing-browser-user-data-dir", default=None, help="Persistent browser profile directory for Investing.com browser capture. Defaults to archive-local browser_profile or INVESTING_BROWSER_USER_DATA_DIR.")
-    ap.add_argument("--investing-browser-executable", default=None, help="Chrome/Chromium executable for Investing.com browser capture. Defaults to Playwright browser or INVESTING_BROWSER_EXECUTABLE.")
-    ap.add_argument("--investing-browser-headless", action=argparse.BooleanOptionalAction, default=None, help="Run Investing.com browser capture headless/headful. Defaults to INVESTING_BROWSER_HEADLESS or headful.")
-    ap.add_argument("--investing-browser-timeout-ms", type=int, default=None, help="Timeout in milliseconds while waiting for Investing.com accessToken. Defaults to INVESTING_BROWSER_TIMEOUT_MS or 120000.")
+    ap.add_argument("--investing-archive-root", default=None, help="Operator-assisted manual import: path to archived Investing.com source_pages root. Required for --fetch investing-archive-local.")
+    ap.add_argument("--investing-earnings-loaded-page", default=None, help="Operator-assisted Investing fetch: path to a browser-loaded earnings calendar HTML page containing __NEXT_DATA__. Optional for --fetch investing-live.")
+    ap.add_argument("--investing-earnings-browser-capture", action=argparse.BooleanOptionalAction, default=True, help="Operator-assisted Investing fetch: capture a fresh earnings page with Playwright when no page/token is supplied. Default True.")
+    ap.add_argument("--investing-browser-user-data-dir", default=None, help="Operator-assisted Investing fetch: persistent browser profile directory. Defaults to archive-local browser_profile or INVESTING_BROWSER_USER_DATA_DIR.")
+    ap.add_argument("--investing-browser-executable", default=None, help="Operator-assisted Investing fetch: Chrome/Chromium executable. Defaults to Playwright browser or INVESTING_BROWSER_EXECUTABLE.")
+    ap.add_argument("--investing-browser-headless", action=argparse.BooleanOptionalAction, default=None, help="Operator-assisted Investing fetch: run browser capture headless/headful. Defaults to INVESTING_BROWSER_HEADLESS or headful.")
+    ap.add_argument("--investing-browser-timeout-ms", type=int, default=None, help="Operator-assisted Investing fetch: timeout in milliseconds while waiting for accessToken. Defaults to INVESTING_BROWSER_TIMEOUT_MS or 120000.")
     ap.add_argument("--acquisition-db", default=None, help="Optional SQLite path for raw acquisition/provenance recording.")
     ap.add_argument(
         "--artifact-store",
@@ -321,6 +327,7 @@ def main() -> int:
         print(str(news_sentiment_report))
 
     if args.fetch == "eps":
+        # Operator-assisted/manual import only; excluded from --fetch all.
         if not args.eps_workbook:
             raise SystemExit("--eps-workbook is required for eps fetches")
         eps_report = run_aggregate_eps_fetch(
@@ -351,6 +358,7 @@ def main() -> int:
         print(str(eps_auto_report))
 
     if args.fetch == "eps-wayback":
+        # Operator-assisted historical backfill only; excluded from --fetch all.
         eps_wayback_report = run_wayback_aggregate_eps_fetch(
             out_dir=out_dir,
             max_snapshots=args.eps_wayback_max_snapshots,
@@ -378,6 +386,7 @@ def main() -> int:
         print(str(usd_index_report))
 
     if args.fetch == "investing-archive-local":
+        # Operator-assisted archive import only; excluded from --fetch all.
         if not args.investing_archive_root:
             raise SystemExit("--investing-archive-root is required for investing-archive-local fetches")
         if not args.acquisition_db:
@@ -392,6 +401,7 @@ def main() -> int:
         print(str(investing_report))
 
     if args.fetch == "investing-live":
+        # Operator-assisted browser/session fetch only; excluded from --fetch all.
         if not args.acquisition_db:
             raise SystemExit("--acquisition-db is required for investing-live fetches")
         investing_report = run_investing_live_fetch(
@@ -411,6 +421,7 @@ def main() -> int:
         print(str(investing_report))
 
     if args.fetch == "daily-ohlcv-local-sqlite":
+        # Operator-assisted local materialization/import only; excluded from --fetch all.
         if not args.daily_ohlcv_dir:
             raise SystemExit("--daily-ohlcv-dir is required for daily-ohlcv-local-sqlite fetches")
         if not args.acquisition_db:
