@@ -188,32 +188,15 @@ def _timed_wrapper(
     return wrapped
 
 
-def _timed_method_wrapper(
-    timer: StageTimer,
-    stage_name: str,
-    method: Callable[..., Any],
-) -> Callable[..., Any]:
-    def wrapped(*args: Any, **kwargs: Any) -> Any:
-        with timer.measure(stage_name):
-            return method(*args, **kwargs)
-
-    return wrapped
-
-
 def _timed_inflation_growth_builder(
     timer: StageTimer,
-    method: Callable[..., Any],
+    func: Callable[..., Any],
 ) -> Callable[..., Any]:
-    def wrapped(self, context: Any, feature_store: Any, credit_funding_active_labels_by_date: Any = None) -> Any:
-        import regime_detection.axis_series as axis_series_module
+    import regime_detection.inflation_growth as _inflation_growth_mod
 
-        original_assess = axis_series_module.assess_series_input_quality
-        original_build_inputs = axis_series_module.build_inflation_growth_rule_inputs_by_date
-        original_eval = axis_series_module.evaluate_inflation_growth_rules
-
-        def timed_assess(*args: Any, **kwargs: Any) -> Any:
-            with timer.measure("axis_series.inflation_growth.assess_series_input_quality"):
-                return original_assess(*args, **kwargs)
+    def wrapped(context: Any, feature_store: Any, credit_funding_active_labels_by_date: Any = None) -> Any:
+        original_build_inputs = _inflation_growth_mod.build_rule_inputs_by_date
+        original_eval = _inflation_growth_mod.evaluate_rules
 
         def timed_build_inputs(*args: Any, **kwargs: Any) -> Any:
             with timer.measure("axis_series.inflation_growth.build_rule_inputs_by_date"):
@@ -225,11 +208,9 @@ def _timed_inflation_growth_builder(
 
         with timer.measure("axis_series.inflation_growth"):
             with contextlib.ExitStack() as stack:
-                stack.enter_context(_patched_attr(axis_series_module, "assess_series_input_quality", timed_assess))
-                stack.enter_context(_patched_attr(axis_series_module, "build_inflation_growth_rule_inputs_by_date", timed_build_inputs))
-                stack.enter_context(_patched_attr(axis_series_module, "evaluate_inflation_growth_rules", timed_eval))
-                return method(
-                    self,
+                stack.enter_context(_patched_attr(_inflation_growth_mod, "build_rule_inputs_by_date", timed_build_inputs))
+                stack.enter_context(_patched_attr(_inflation_growth_mod, "evaluate_rules", timed_eval))
+                return func(
                     context,
                     feature_store,
                     credit_funding_active_labels_by_date=credit_funding_active_labels_by_date,
@@ -254,6 +235,15 @@ def _install_timers(timer: StageTimer):
     import regime_detection.axis_series as axis_series_module
     import regime_detection.feature_store as feature_store_module
     import regime_detection.timeline as timeline_module
+    import regime_detection.trend_direction as _trend_direction_mod
+    import regime_detection.trend_character as _trend_character_mod
+    import regime_detection.volatility_state as _volatility_state_mod
+    import regime_detection.breadth_state as _breadth_state_mod
+    import regime_detection.credit_funding as _credit_funding_mod
+    import regime_detection.network_fragility_rules as _network_fragility_mod
+    import regime_detection.volume_liquidity_rules as _volume_liquidity_mod
+    import regime_detection.monetary_pressure as _monetary_pressure_mod
+    import regime_detection.inflation_growth as _inflation_growth_mod
 
     patches = [
         (engine_module, "build_market_context", _timed_wrapper(timer, "build_market_context", engine_module.build_market_context)),
@@ -274,49 +264,49 @@ def _install_timers(timer: StageTimer):
         (feature_store_module, "compute_clustering_features", _timed_wrapper(timer, "feature_store.gmm_clustering", feature_store_module.compute_clustering_features)),
         (feature_store_module, "compute_change_point_features", _timed_wrapper(timer, "feature_store.change_point", feature_store_module.compute_change_point_features)),
         (
-            axis_series_module.TrendDirectionSeriesClassifier,
-            "build",
-            _timed_method_wrapper(timer, "axis_series.trend_direction", axis_series_module.TrendDirectionSeriesClassifier.build),
+            _trend_direction_mod,
+            "build_axis_series",
+            _timed_wrapper(timer, "axis_series.trend_direction", _trend_direction_mod.build_axis_series),
         ),
         (
-            axis_series_module.TrendCharacterSeriesClassifier,
-            "build",
-            _timed_method_wrapper(timer, "axis_series.trend_character", axis_series_module.TrendCharacterSeriesClassifier.build),
+            _trend_character_mod,
+            "build_axis_series",
+            _timed_wrapper(timer, "axis_series.trend_character", _trend_character_mod.build_axis_series),
         ),
         (
-            axis_series_module.VolatilitySeriesClassifier,
-            "build",
-            _timed_method_wrapper(timer, "axis_series.volatility_state", axis_series_module.VolatilitySeriesClassifier.build),
+            _volatility_state_mod,
+            "build_axis_series",
+            _timed_wrapper(timer, "axis_series.volatility_state", _volatility_state_mod.build_axis_series),
         ),
         (
-            axis_series_module.BreadthSeriesClassifier,
-            "build",
-            _timed_method_wrapper(timer, "axis_series.breadth_state", axis_series_module.BreadthSeriesClassifier.build),
+            _breadth_state_mod,
+            "build_axis_series",
+            _timed_wrapper(timer, "axis_series.breadth_state", _breadth_state_mod.build_axis_series),
         ),
         (
-            axis_series_module.CreditFundingSeriesClassifier,
-            "build",
-            _timed_method_wrapper(timer, "axis_series.credit_funding", axis_series_module.CreditFundingSeriesClassifier.build),
+            _credit_funding_mod,
+            "build_axis_series",
+            _timed_wrapper(timer, "axis_series.credit_funding", _credit_funding_mod.build_axis_series),
         ),
         (
-            axis_series_module.NetworkFragilitySeriesClassifier,
-            "build",
-            _timed_method_wrapper(timer, "axis_series.network_fragility", axis_series_module.NetworkFragilitySeriesClassifier.build),
+            _network_fragility_mod,
+            "build_axis_series",
+            _timed_wrapper(timer, "axis_series.network_fragility", _network_fragility_mod.build_axis_series),
         ),
         (
-            axis_series_module.VolumeLiquidityStateSeriesClassifier,
-            "build",
-            _timed_method_wrapper(timer, "axis_series.volume_liquidity_state", axis_series_module.VolumeLiquidityStateSeriesClassifier.build),
+            _volume_liquidity_mod,
+            "build_axis_series",
+            _timed_wrapper(timer, "axis_series.volume_liquidity_state", _volume_liquidity_mod.build_axis_series),
         ),
         (
-            axis_series_module.MonetaryPressureV2SeriesClassifier,
-            "build",
-            _timed_method_wrapper(timer, "axis_series.monetary_pressure_state", axis_series_module.MonetaryPressureV2SeriesClassifier.build),
+            _monetary_pressure_mod,
+            "build_axis_series",
+            _timed_wrapper(timer, "axis_series.monetary_pressure_state", _monetary_pressure_mod.build_axis_series),
         ),
         (
-            axis_series_module.InflationGrowthSeriesClassifier,
-            "build",
-            _timed_inflation_growth_builder(timer, axis_series_module.InflationGrowthSeriesClassifier.build),
+            _inflation_growth_mod,
+            "build_axis_series",
+            _timed_inflation_growth_builder(timer, _inflation_growth_mod.build_axis_series),
         ),
         (
             axis_series_module,
