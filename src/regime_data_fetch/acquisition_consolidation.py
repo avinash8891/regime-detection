@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import datetime as dt
 import json
+import logging
 import sqlite3
 from dataclasses import dataclass
 from pathlib import Path
@@ -11,6 +12,9 @@ import yaml
 
 from regime_data_fetch.acquisition_store import AcquisitionStore
 from regime_data_fetch.local_daily_ohlcv_sqlite import _ensure_daily_ohlcv_table
+
+
+LOG = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -827,6 +831,10 @@ def _augment_params_json(params_json: str, *, source_label: str, source_db_path:
     try:
         payload = json.loads(params_json)
     except Exception:
+        LOG.warning(
+            "params_json unparseable in _augment_params_json, using raw fallback (first 200 chars): %s",
+            params_json[:200],
+        )
         payload = {"raw_params_json": params_json}
     payload["consolidated_from_label"] = source_label
     payload["consolidated_from_db"] = source_db_path
