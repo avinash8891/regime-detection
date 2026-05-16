@@ -45,11 +45,41 @@ V2 inherits every V1 contract:
 - Asymmetric hysteresis (escalation immediate, de-escalation debounced)
 - `raw_label` / `stable_label` / `active_label` triple
 - `evidence` and `data_quality` blocks on every output
+- `classification_status` / `classification_reason` metadata on every
+  data-quality-aware label output, so legacy `unknown` labels are never
+  semantically ambiguous
 - Pydantic types
 - NYSE trading calendar (US v2)
 - No-hallucination rule for the coding agent
 
 V2 does not modify V1 outputs. V2 adds new fields and new classifiers.
+
+### Classification Status Metadata
+
+`active_label="unknown"` is a backward-compatible label value, not a complete
+diagnosis. Every data-quality-aware label output MUST also expose:
+
+```json
+{
+  "classification_status": "classified | no_rule_fired | data_unavailable | stale_data | insufficient_history | not_wired",
+  "classification_reason": "short machine-readable reason or null"
+}
+```
+
+Status semantics:
+
+| status | Meaning |
+|---|---|
+| `classified` | A non-`unknown` label is active. |
+| `no_rule_fired` | Required data was usable, but no rule predicate matched a named state. |
+| `data_unavailable` | Required data existed too sparsely to evaluate the classifier. |
+| `stale_data` | A required source exists, but its latest usable point is older than the axis freshness budget. |
+| `insufficient_history` | A required lookback/window is still in cold-start. |
+| `not_wired` | The classifier or seam is not present in this engine configuration. |
+
+Reports MUST group `unknown` labels by `classification_status`. For example,
+`unknown/no_rule_fired` is a neutral rule fall-through; `unknown/stale_data` is
+a data problem. The `active_label` field remains unchanged for compatibility.
 
 V2 also owns the items intentionally descoped from V1:
 
