@@ -792,7 +792,7 @@ def test_run_wayback_aggregate_eps_fetch_all_snapshots_fail(tmp_path: Path) -> N
     AggregateEPSFetchError because no timeline rows are produced."""
     sp500_eps_url = "https://www.spglobal.com/spdji/en/documents/additional-material/sp-500-eps-est.xlsx"
 
-    valid_snapshots = [
+    _valid_snapshots = [
         EPSWaybackSnapshot.from_timestamp("20230614120000", target_url=sp500_eps_url),
         EPSWaybackSnapshot.from_timestamp("20230721090000", target_url=sp500_eps_url),
     ]

@@ -1233,16 +1233,11 @@ def test_build_axis_series_returns_none_when_ig_config_is_none() -> None:
 def test_build_axis_series_raises_key_error_when_credit_funding_session_missing() -> None:
     """build_axis_series raises KeyError when credit_funding_active_labels_by_date
     is provided but missing a required session. Lines 915-920 path."""
-    import datetime
 
     from regime_detection.inflation_growth import (
-        InflationGrowthFeatures,
         build_axis_series as _build_ig_axis,
-        compute_inflation_growth_features,
     )
-    from regime_detection.engine import RegimeEngine
     from regime_detection.feature_store import build_feature_store
-    from regime_detection.market_context import build_market_context
 
     context = _build_synthetic_context()
     store = build_feature_store(
@@ -1361,5 +1356,5 @@ def test_build_axis_series_credit_funding_label_populates_when_all_sessions_pres
     # With credit_calm on every session the goldilocks/recovery_growth rules
     # are eligible — the engine should not short-circuit to unknown everywhere.
     labels = {out.raw_label for out in outputs.values()}
-    # At minimum the engine ran successfully and returned outputs for all sessions.
+    assert "unknown" not in labels, f"Engine short-circuited to unknown with credit_calm inputs: {labels}"
     assert len(outputs) == len(context.sessions)

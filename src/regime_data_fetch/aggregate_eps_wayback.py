@@ -16,8 +16,6 @@ from dataclasses import dataclass
 from pathlib import Path
 import urllib.request
 
-_LOG = logging.getLogger(__name__)
-
 import pandas as pd
 
 from regime_data_fetch.acquisition_store import AcquisitionStore
@@ -29,6 +27,8 @@ from regime_data_fetch.aggregate_eps import (
     AggregateEPSFetchError,
     parse_sp500_eps_workbook,
 )
+
+_LOG = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
