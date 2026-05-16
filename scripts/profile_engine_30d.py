@@ -120,6 +120,19 @@ def _read_symbol_ohlcv(tree_root: Path, symbol: str) -> pd.DataFrame:
     return frame
 
 
+def _load_optional_aaii_sentiment(path: Path) -> pd.DataFrame | None:
+    if not path.exists():
+        return None
+    frame = pd.read_parquet(path)
+    required_cols = {"bull_bear_spread_8w_ma"}
+    missing = sorted(required_cols - set(frame.columns))
+    if missing:
+        raise ValueError(f"{path} missing required AAII sentiment columns: {missing}")
+    if "publication_date" not in frame.columns and "date" not in frame.columns:
+        raise ValueError(f"{path} must contain either publication_date or date")
+    return frame
+
+
 def _load_market_data_from_tree(tree_root: Path, symbols: list[str]) -> pd.DataFrame:
     frames: list[pd.DataFrame] = []
     for symbol in symbols:
@@ -453,6 +466,7 @@ def main() -> int:
     parser.add_argument("--macro-parquet", type=Path, default=None)
     parser.add_argument("--pit-parquet", type=Path, default=None)
     parser.add_argument("--pmi-path", type=Path, default=DEFAULT_PMI_PATH)
+    parser.add_argument("--aaii-sentiment-parquet", type=Path, default=None)
     parser.add_argument("--manifest", type=Path, default=None, help="Optional artifact manifest to materialize before profiling.")
     parser.add_argument("--artifact-store", default=None, help="Optional artifact-store root override for --manifest.")
     parser.add_argument("--data-root", type=Path, default=REPO_ROOT / "data" / "raw", help="Local data/raw root used for manifest materialization.")
@@ -466,6 +480,8 @@ def main() -> int:
         args.macro_parquet = args.data_root / "macro" / "fred_macro_series.parquet"
     if args.pit_parquet is None:
         args.pit_parquet = args.data_root / "pit_constituents" / "sp500_ticker_intervals.parquet"
+    if args.aaii_sentiment_parquet is None:
+        args.aaii_sentiment_parquet = args.data_root / "sentiment" / "aaii_sentiment.parquet"
 
     materialize_if_requested(
         manifest_path=args.manifest,
@@ -503,6 +519,7 @@ def main() -> int:
     cross_asset_symbols = [*CROSS_ASSET_SYMBOLS, "DBC", "KRE", "XLY", "XLI", "XLP", "XLU"]
     cross_asset_closes = load_close_dict(args.daily_dir, cross_asset_symbols, spy_index)
     macro_series = load_macro_series(args.macro_parquet, args.pmi_path if args.pmi_path.exists() else None)
+    aaii_sentiment = _load_optional_aaii_sentiment(args.aaii_sentiment_parquet)
     pit_constituent_intervals = read_pit_intervals(args.pit_parquet)
     constituent_ohlcv, constituent_tickers, missing_constituent_paths = _load_constituent_ohlcv_from_tree(
         args.constituent_tree,
@@ -516,6 +533,7 @@ def main() -> int:
         "sector_etf_closes": sector_etf_closes,
         "cross_asset_closes": cross_asset_closes,
         "macro_series": macro_series,
+        "aaii_sentiment": aaii_sentiment,
         "pit_constituent_intervals": pit_constituent_intervals,
         "constituent_ohlcv": constituent_ohlcv,
     }
@@ -534,6 +552,7 @@ def main() -> int:
                 sector_etf_closes=sector_etf_closes,
                 cross_asset_closes=cross_asset_closes,
                 macro_series=macro_series,
+                aaii_sentiment=aaii_sentiment,
                 pit_constituent_intervals=pit_constituent_intervals,
                 constituent_ohlcv=constituent_ohlcv,
             )
@@ -549,6 +568,7 @@ def main() -> int:
         sector_etf_closes=sector_etf_closes,
         cross_asset_closes=cross_asset_closes,
         macro_series=macro_series,
+        aaii_sentiment=aaii_sentiment,
         pit_constituent_intervals=pit_constituent_intervals,
         constituent_ohlcv=constituent_ohlcv,
     )
@@ -636,6 +656,7 @@ def main() -> int:
     print(f"market_data_source={args.daily_dir}")
     print(f"constituent_tree_source={args.constituent_tree}")
     print(f"macro_source={args.macro_parquet}")
+    print(f"aaii_sentiment_source={args.aaii_sentiment_parquet if aaii_sentiment is not None else '<absent>'}")
     print(f"pit_source={args.pit_parquet}")
     print(f"end_date={end_date.isoformat()}")
     print(f"selected_window_start={selected_dates[0].isoformat()}")
@@ -650,6 +671,7 @@ def main() -> int:
         "sector_etf_closes",
         "cross_asset_closes",
         "macro_series",
+        "aaii_sentiment",
         "pit_constituent_intervals",
         "constituent_ohlcv",
     ]:
