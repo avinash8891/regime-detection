@@ -12,7 +12,6 @@ from datetime import date
 
 import numpy as np
 import pandas as pd
-import pytest
 
 from regime_detection.hysteresis import apply_asymmetric_hysteresis
 from regime_detection.trend_character import (

@@ -48,7 +48,7 @@ V2 inherits every V1 contract:
 
 - `classify(as_of_date)` stateless replay
 - NaN cold-start handling
-- Asymmetric hysteresis (escalation immediate, de-escalation debounced)
+- Asymmetric hysteresis (escalation configurable, default immediate; de-escalation debounced)
 - `raw_label` / `stable_label` / `active_label` triple
 - `evidence` and `data_quality` blocks on every output
 - `classification_status` / `classification_reason` metadata on every

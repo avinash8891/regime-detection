@@ -15,8 +15,10 @@ import yaml
 from pydantic import ValidationError
 
 from regime_detection import __version__
+import regime_detection.config as config_module
 from regime_detection.config import (
     RegimeConfig,
+    _default_config_resource_name_for_version,
     load_default_regime_config,
     load_regime_config,
 )
@@ -247,3 +249,21 @@ def test_load_default_regime_config_dispatches_on_package_version() -> None:
     assert cfg.config_version == "core3-v2.0.0"
     assert cfg.no_flip_flop is not None
     assert cfg.no_flip_flop.window_trading_days == 15
+
+
+def test_default_config_resource_dispatch_parses_version_major() -> None:
+    assert _default_config_resource_name_for_version("1.9.9") == "configs/core3-v1.0.0.yaml"
+    assert _default_config_resource_name_for_version("2.0.0rc1") == "configs/core3-v2.0.0.yaml"
+
+
+def test_default_config_resource_dispatch_rejects_unsupported_major() -> None:
+    with pytest.raises(ValueError, match="Unsupported package __version__"):
+        _default_config_resource_name_for_version("20.0.0")
+
+
+def test_load_default_regime_config_uses_parsed_version_dispatch(monkeypatch) -> None:
+    monkeypatch.setattr(config_module, "__version__", "2.0.0rc1")
+
+    cfg = load_default_regime_config()
+
+    assert cfg.config_version == "core3-v2.0.0"

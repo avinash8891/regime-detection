@@ -140,7 +140,6 @@ def test_cpi_forward_fills_monthly_to_daily() -> None:
     cpi.iloc[10] = 300.0
     cpi.iloc[31] = 303.0  # next month
     # Filler.
-    pmi = pd.Series(50.0, index=idx, dtype=float)
     dgs10 = pd.Series(4.0, index=idx, dtype=float)
     dbc = pd.Series(20.0, index=idx, dtype=float)
     spy = pd.Series(400.0, index=idx, dtype=float)

@@ -265,7 +265,6 @@ def raw_label_for_day(
     )
     high_vol = bool((vol_pct >= 0.80) or vix_high)
     low_vol = bool(vol_pct <= 0.30)
-    normal_vol = not (crisis or high_vol or low_vol)
 
     if crisis:
         label: VolatilityLabel = "crisis_vol"
@@ -411,6 +410,7 @@ def classify_series(
     close: pd.Series,
     vix_proxy_close: pd.Series | None,
     as_of_date: date,
+    escalation_days: int = 1,
     deescalation_days: int,
 ) -> AxisOutput:
     dt = pd.Timestamp(as_of_date)
@@ -441,6 +441,7 @@ def classify_series(
     stable_labels, active_labels = apply_asymmetric_hysteresis(
         raw_labels=raw_labels,
         risk_rank=_RISK_RANK,
+        escalation_days=escalation_days,
         deescalation_days=deescalation_days,
     )
 

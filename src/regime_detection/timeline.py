@@ -76,6 +76,7 @@ def build_regime_timeline(
     lookback_days: int,
     config: RegimeConfig | None = None,
 ) -> RegimeTimeline:
+    cfg = config if config is not None else context.config
     if lookback_days <= 0:
         raise ValueError(f"lookback_days must be > 0. Got: {lookback_days}")
     if len(context.sessions) < lookback_days:
@@ -96,65 +97,45 @@ def build_regime_timeline(
     # (max() collapses to ENGINE_MINIMUM_HISTORY).
     v2_min_history = ENGINE_MINIMUM_HISTORY
     trailing_component_lookback = 0
-    if config is not None and config.change_point is not None:
+    if cfg.change_point is not None:
         # +21 absorbs the realized_vol_21d warmup so BOCPD sees a full
         # non-NaN training window on the trailing slice.
         v2_min_history = max(
-            v2_min_history, config.change_point.training_window_days + 21
+            v2_min_history, cfg.change_point.training_window_days + 21
         )
-    if config is not None and config.hmm is not None:
+    if cfg.hmm is not None:
         # +63 absorbs the deepest HMM input warmup (drawdown_63d /
         # avg_pairwise_corr_63d) so the trailing slice gives the GaussianHMM
         # fit a full non-NaN training window.
         v2_min_history = max(
-            v2_min_history, config.hmm.training_window_days + 63
+            v2_min_history, cfg.hmm.training_window_days + 63
         )
         # transition_score.hmm_probability_shift needs top_state_prob[t-5].
         # Keep five extra warmed sessions ahead of the emitted window so the
         # first requested output can use the same PIT evidence as later rows.
         trailing_component_lookback = max(trailing_component_lookback, 5)
-    if config is not None and config.clustering is not None:
+    if cfg.clustering is not None:
         # +63 absorbs the deepest GMM input warmup (return_63d /
         # drawdown_63d / avg_pairwise_corr_63d) so the trailing slice gives
         # the GaussianMixture fit a full non-NaN training window.
         v2_min_history = max(
-            v2_min_history, config.clustering.training_window_days + 63
+            v2_min_history, cfg.clustering.training_window_days + 63
         )
     required_sessions = min(
         len(context.sessions),
         v2_min_history + lookback_days - 1 + trailing_component_lookback,
     )
     working_context = slice_context_to_recent_sessions(context=context, required_sessions=required_sessions)
-    network_fragility_config = (
-        config.network_fragility if config is not None else None
-    )
-    trend_direction_v2_config = (
-        config.trend_direction_v2 if config is not None else None
-    )
-    volatility_state_v2_config = (
-        config.volatility_state_v2 if config is not None else None
-    )
-    breadth_state_v2_config = (
-        config.breadth_state_v2 if config is not None else None
-    )
-    volume_liquidity_v2_config = (
-        config.volume_liquidity_v2 if config is not None else None
-    )
-    monetary_pressure_v2_config = (
-        config.monetary_pressure_v2 if config is not None else None
-    )
-    credit_funding_config = (
-        config.credit_funding if config is not None else None
-    )
-    inflation_growth_config = (
-        config.inflation_growth if config is not None else None
-    )
-    central_bank_text_config = (
-        config.central_bank_text if config is not None else None
-    )
-    news_sentiment_config = (
-        config.news_sentiment if config is not None else None
-    )
+    network_fragility_config = cfg.network_fragility
+    trend_direction_v2_config = cfg.trend_direction_v2
+    volatility_state_v2_config = cfg.volatility_state_v2
+    breadth_state_v2_config = cfg.breadth_state_v2
+    volume_liquidity_v2_config = cfg.volume_liquidity_v2
+    monetary_pressure_v2_config = cfg.monetary_pressure_v2
+    credit_funding_config = cfg.credit_funding
+    inflation_growth_config = cfg.inflation_growth
+    central_bank_text_config = cfg.central_bank_text
+    news_sentiment_config = cfg.news_sentiment
     feature_store = build_feature_store(
         working_context,
         network_fragility_config=network_fragility_config,
@@ -244,11 +225,6 @@ def build_regime_timeline(
     # since RegimeOutput.inflation_growth_state defaults to None.
     inflation_growth_by_date = axis_bundle.inflation_growth
     cohort_routing_config = working_context.config.cohort_routing
-    monetary_pressure = MonetaryPressureOutput(
-        label="unknown",
-        evidence={"reason": "v2_classifier_not_yet_implemented"},
-        data_quality=_v2_classifier_not_yet_implemented_data_quality(),
-    )
 
     outputs: list[RegimeOutput] = []
     for idx, day in enumerate(selected_days):
@@ -283,6 +259,19 @@ def build_regime_timeline(
             monetary_pressure_state_by_date.get(day)
             if monetary_pressure_state_by_date is not None
             else None
+        )
+        monetary_pressure = (
+            MonetaryPressureOutput(
+                label=monetary_pressure_output.active_label,
+                evidence=monetary_pressure_output.evidence,
+                data_quality=monetary_pressure_output.data_quality,
+            )
+            if monetary_pressure_output is not None
+            else MonetaryPressureOutput(
+                label="unknown",
+                evidence={"reason": "v2_classifier_not_yet_implemented"},
+                data_quality=_v2_classifier_not_yet_implemented_data_quality(),
+            )
         )
         inflation_growth_output = (
             inflation_growth_by_date.get(day)
@@ -351,6 +340,8 @@ def build_regime_timeline(
                 engine_version=engine_version(),
                 config_version=working_context.config.config_version,
                 as_of_date=day,
+                # V1 wire contract: output.market is the classified proxy
+                # instrument; RegimeConfig.market is the broader universe.
                 market="SPY",
                 trend_direction=trend_direction_output,
                 trend_character=trend_character_output,
@@ -386,6 +377,8 @@ def build_regime_timeline(
     return RegimeTimeline(
         engine_version=engine_version(),
         config_version=working_context.config.config_version,
+        # V1 wire contract: output.market is the classified proxy instrument;
+        # RegimeConfig.market remains the broader universe identifier.
         market="SPY",
         start_date=selected_days[0],
         end_date=selected_days[-1],

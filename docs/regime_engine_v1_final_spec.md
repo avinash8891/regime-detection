@@ -258,7 +258,7 @@ Every classifier outputs three labels:
 
 ### 2.10 Asymmetric Hysteresis
 
-Risk escalation immediate, de-escalation debounced.
+Risk escalation defaults to immediate via `*_escalation_days: 1`; raising those knobs delays stable-label entry. De-escalation remains debounced.
 
 ```python
 if risk_rank(raw_label) > risk_rank(stable_label):
@@ -273,9 +273,13 @@ Default V1 hysteresis:
 
 ```yaml
 hysteresis:
+  trend_direction_escalation_days: 1
   trend_direction_deescalation_days: 3
+  trend_character_escalation_days: 1
   trend_character_deescalation_days: 3
+  volatility_escalation_days: 1
   volatility_deescalation_days: 2
+  breadth_escalation_days: 1
   breadth_deescalation_days: 2
   composite_deescalation_days: 3
 ```
@@ -1450,7 +1454,7 @@ V1 implementation contract:
    Section 11 output shape and the Section 10 conditional strategy-response
    field whitelist exactly.
 
-8. Hysteresis is asymmetric: escalation immediate, de-escalation debounced.
+8. Hysteresis is asymmetric: escalation defaults to immediate via `*_escalation_days: 1`; raising those knobs delays stable-label entry. De-escalation remains debounced.
 
 9. trend_direction and trend_character are SEPARATE axes. Never collapse
    them into a single label.

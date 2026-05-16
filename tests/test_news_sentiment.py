@@ -27,7 +27,6 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-import pytest
 
 from regime_data_fetch.artifact_export import emit_manifest_for_report_paths
 from regime_data_fetch.sf_fed_news_sentiment import run_sf_fed_news_sentiment_fetch

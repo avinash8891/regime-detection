@@ -15,16 +15,18 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
-import pytest
 import yaml
 
 from regime_detection.breadth_state import (
+    BreadthFeatures,
     BreadthLabel,
     _RISK_RANK,
     _evaluate_breadth_thrust,
     _evaluate_broadening_breadth,
     _evaluate_narrowing_breadth,
     _evaluate_recovery_breadth,
+    build_raw_outputs,
+    resolve_v2_raw_outputs,
 )
 from regime_detection.config import BreadthV2Config
 from regime_detection.models import BreadthStateOutput, DataQuality
@@ -235,6 +237,44 @@ def test_broadening_breadth_promotes_neutral_to_broadening() -> None:
         )
         == "broadening_breadth"
     )
+
+
+def test_build_raw_outputs_applies_v2_precedence_when_pit_features_present() -> None:
+    n = 80
+    idx = _trading_index(n)
+    spy = pd.Series(np.linspace(100.0, 130.0, n), index=idx)
+    rsp = spy * pd.Series(np.linspace(0.95, 0.85, n), index=idx)
+    features = BreadthFeatures(
+        spy_close=spy,
+        rsp_close=rsp,
+        relative_breadth_ratio=rsp / spy,
+        relative_breadth_sma50=pd.Series(0.90, index=idx),
+        relative_breadth_return_20d=pd.Series(-0.01, index=idx),
+        index_distance_from_63d_high=pd.Series(-0.10, index=idx),
+    )
+    raw_labels, raw_evidence = build_raw_outputs(features)
+    assert raw_labels[-1] == "weak_breadth"
+
+    pct50 = pd.Series(np.linspace(0.80, 0.20, n), index=idx)
+    pct200 = pd.Series(np.linspace(0.70, 0.30, n), index=idx)
+    nh_nl = pd.Series(0.20, index=idx)
+    ad_slope = pd.Series(-1.0, index=idx)
+    updated_labels, updated_evidence = resolve_v2_raw_outputs(
+        dates=idx,
+        raw_labels=raw_labels,
+        raw_evidence=raw_evidence,
+        pct_above_50dma=pct50,
+        pct_above_200dma=pct200,
+        nh_nl_ratio=nh_nl,
+        ad_line_slope_20d=ad_slope,
+        breadth_thrust=None,
+        lookback_sessions=5,
+        nh_nl_threshold=0.4,
+    )
+
+    assert updated_labels[-1] == "narrowing_breadth"
+    assert updated_evidence[-1]["v1_raw_label"] == "weak_breadth"
+    assert updated_evidence[-1]["v2_narrowing_breadth"] is True
 
 
 # ---------------------------------------------------------------------------
