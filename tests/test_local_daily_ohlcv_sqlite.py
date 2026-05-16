@@ -6,7 +6,9 @@ from pathlib import Path
 
 import pandas as pd
 
+from regime_data_fetch.alpaca_daily import DailyBarsFetchResult
 from regime_data_fetch.local_daily_ohlcv_sqlite import run_local_daily_ohlcv_sqlite_import
+from regime_data_fetch.local_daily_ohlcv_sqlite import run_alpaca_constituent_daily_ohlcv_fetch
 
 
 def test_run_local_daily_ohlcv_sqlite_import_records_rows_and_artifacts(tmp_path: Path) -> None:
@@ -69,4 +71,90 @@ def test_run_local_daily_ohlcv_sqlite_import_records_rows_and_artifacts(tmp_path
     assert ohlcv_rows == [
         ("AAPL", "2026-05-05", 100.5),
         ("AAPL", "2026-05-06", 101.0),
+    ]
+
+
+def test_run_alpaca_constituent_daily_ohlcv_fetch_materializes_profile_tree_and_sqlite(
+    tmp_path: Path,
+) -> None:
+    pit_path = tmp_path / "pit_constituents.parquet"
+    pd.DataFrame(
+        [
+            {"ticker": "MSFT", "start_date": "2015-01-01", "end_date": None},
+            {"ticker": "AAPL", "start_date": "2015-01-01", "end_date": "2026-12-31"},
+            {"ticker": "AAPL", "start_date": "2010-01-01", "end_date": "2014-12-31"},
+        ]
+    ).to_parquet(pit_path, index=False)
+
+    def fake_fetcher(**kwargs) -> DailyBarsFetchResult:
+        assert kwargs["symbols"] == ["AAPL", "MSFT"]
+        assert kwargs["start_date"].isoformat() == "2026-05-05"
+        assert kwargs["end_date"].isoformat() == "2026-05-06"
+        return DailyBarsFetchResult(
+            df=pd.DataFrame(
+                [
+                    {
+                        "date": "2026-05-05",
+                        "symbol": "AAPL",
+                        "open": 100.0,
+                        "high": 101.0,
+                        "low": 99.0,
+                        "close": 100.5,
+                        "volume": 1000,
+                        "adjusted_close": 100.5,
+                    },
+                    {
+                        "date": "2026-05-06",
+                        "symbol": "MSFT",
+                        "open": 200.0,
+                        "high": 202.0,
+                        "low": 199.0,
+                        "close": 201.5,
+                        "volume": 2000,
+                        "adjusted_close": 201.5,
+                    },
+                ]
+            ),
+            missing_symbols=[],
+        )
+
+    acquisition_db = tmp_path / "acquisition.db"
+    report_path = run_alpaca_constituent_daily_ohlcv_fetch(
+        out_dir=tmp_path / "data" / "raw",
+        pit_parquet_path=pit_path,
+        start=pd.Timestamp("2026-05-05").date(),
+        end=pd.Timestamp("2026-05-06").date(),
+        adjustment="split",
+        alpaca_feed="sip",
+        acquisition_db_path=acquisition_db,
+        bars_fetcher=fake_fetcher,
+    )
+
+    report = json.loads(report_path.read_text())
+    assert report["counts"] == {
+        "symbols_requested": 2,
+        "symbols_returned": 2,
+        "rows": 2,
+        "missing_symbols": 0,
+    }
+    assert report["paths"]["profile_constituent_tree"] == {
+        "path": str(tmp_path / "data" / "raw" / "daily_ohlcv_762"),
+        "local_path": "data/raw/daily_ohlcv_762",
+    }
+    assert (tmp_path / "data" / "raw" / "daily_ohlcv_762" / "symbol=AAPL" / "ohlcv.parquet").exists()
+    assert (tmp_path / "data" / "raw" / "daily_ohlcv_762" / "symbol=MSFT" / "ohlcv.parquet").exists()
+
+    with sqlite3.connect(acquisition_db) as conn:
+        ohlcv_rows = conn.execute(
+            "SELECT symbol, date, close FROM daily_ohlcv_rows ORDER BY symbol, date"
+        ).fetchall()
+        fetch_runs = conn.execute("SELECT fetch_type, status FROM fetch_runs ORDER BY run_id").fetchall()
+
+    assert fetch_runs == [
+        ("daily_ohlcv_constituents_alpaca", "ok"),
+        ("daily_ohlcv_local_sqlite", "ok"),
+    ]
+    assert ohlcv_rows == [
+        ("AAPL", "2026-05-05", 100.5),
+        ("MSFT", "2026-05-06", 201.5),
     ]

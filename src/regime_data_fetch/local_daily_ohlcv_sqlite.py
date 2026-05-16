@@ -1,15 +1,149 @@
 from __future__ import annotations
 
 import json
+import os
 import sqlite3
+import datetime as dt
+from collections.abc import Callable
 from pathlib import Path
 
 import pandas as pd
 
 from regime_data_fetch.acquisition_store import AcquisitionStore
+from regime_data_fetch.alpaca_daily import DailyBarsFetchResult, fetch_daily_bars_alpaca
 
 
 EXPECTED_COLUMNS = ["date", "open", "high", "low", "close", "volume", "adjusted_close"]
+
+
+def run_alpaca_constituent_daily_ohlcv_fetch(
+    *,
+    out_dir: Path,
+    pit_parquet_path: Path,
+    start: dt.date,
+    end: dt.date,
+    adjustment: str,
+    alpaca_feed: str | None,
+    acquisition_db_path: Path,
+    artifact_store_root: str | Path | None = None,
+    bars_fetcher: Callable[..., DailyBarsFetchResult] | None = None,
+    allow_missing_symbols: bool = False,
+    verbose: bool = False,
+) -> Path:
+    if end < start:
+        raise SystemExit("--end must be >= --start")
+    if not pit_parquet_path.exists():
+        raise SystemExit(f"Missing PIT constituents parquet: {pit_parquet_path}")
+
+    effective_fetcher = bars_fetcher or fetch_daily_bars_alpaca
+    if bars_fetcher is None:
+        for key in ("ALPACA_API_KEY_ID", "ALPACA_API_SECRET_KEY"):
+            if not os.environ.get(key, "").strip():
+                raise SystemExit(f"Missing required env var: {key}")
+
+    symbols = _symbols_from_pit_parquet(pit_parquet_path)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    tree_root = out_dir / "daily_ohlcv_762"
+
+    store = AcquisitionStore(acquisition_db_path, artifact_store_root=artifact_store_root)
+    fetch_run = store.start_fetch_run(
+        fetch_type="daily_ohlcv_constituents_alpaca",
+        params={
+            "pit_parquet_path": str(pit_parquet_path),
+            "symbols_requested": len(symbols),
+            "start": start.isoformat(),
+            "end": end.isoformat(),
+            "adjustment": adjustment,
+            "alpaca_feed": alpaca_feed,
+            "allow_missing_symbols": allow_missing_symbols,
+        },
+    )
+    try:
+        bars = effective_fetcher(
+            symbols=symbols,
+            start_date=start,
+            end_date=end,
+            adjustment=adjustment,
+            feed=alpaca_feed,
+            verbose=verbose,
+        )
+        if bars.df.empty:
+            raise RuntimeError("Alpaca returned no constituent OHLCV rows")
+        if bars.missing_symbols and not allow_missing_symbols:
+            sample = ", ".join(bars.missing_symbols[:20])
+            raise RuntimeError(
+                f"Alpaca returned no bars for {len(bars.missing_symbols)} constituent symbols: {sample}"
+            )
+
+        written_files = _write_daily_ohlcv_symbol_tree(bars.df, tree_root=tree_root)
+        min_date = str(pd.to_datetime(bars.df["date"]).dt.date.min())
+        max_date = str(pd.to_datetime(bars.df["date"]).dt.date.max())
+
+        store.record_output(
+            run_id=fetch_run.run_id,
+            output_kind="alpaca_constituent_daily_ohlcv_tree",
+            path=written_files[0],
+            row_count=len(bars.df),
+            min_date=min_date,
+            max_date=max_date,
+            notes=f"profile_tree={tree_root};files={len(written_files)}",
+        )
+        store.finish_fetch_run(
+            run_id=fetch_run.run_id,
+            status="ok",
+            notes=f"symbols={bars.df['symbol'].nunique()};rows={len(bars.df)};missing={len(bars.missing_symbols)}",
+        )
+
+        import_report = run_local_daily_ohlcv_sqlite_import(
+            out_dir=out_dir,
+            source_dir=tree_root,
+            acquisition_db_path=acquisition_db_path,
+            artifact_store_root=artifact_store_root,
+        )
+        report = {
+            "source": "alpaca:daily_bars",
+            "pit_parquet_path": str(pit_parquet_path),
+            "requested": {
+                "start": start.isoformat(),
+                "end": end.isoformat(),
+                "adjustment": adjustment,
+                "alpaca_feed": alpaca_feed,
+            },
+            "counts": {
+                "symbols_requested": len(symbols),
+                "symbols_returned": int(bars.df["symbol"].nunique()),
+                "rows": int(len(bars.df)),
+                "missing_symbols": len(bars.missing_symbols),
+            },
+            "missing_symbols_sample": bars.missing_symbols[:50],
+            "date_range": {
+                "min_date": min_date,
+                "max_date": max_date,
+            },
+            "paths": {
+                "profile_constituent_tree": {
+                    "path": str(tree_root),
+                    "local_path": "data/raw/daily_ohlcv_762",
+                },
+                "sqlite_import_report": str(import_report),
+                "acquisition_db": str(acquisition_db_path),
+            },
+        }
+        report_path = out_dir / "daily_ohlcv_constituents_alpaca_fetch_report.json"
+        report_path.write_text(json.dumps(report, indent=2))
+        store.record_output(
+            run_id=fetch_run.run_id,
+            output_kind="alpaca_constituent_daily_ohlcv_report",
+            path=report_path,
+            row_count=len(bars.df),
+            min_date=min_date,
+            max_date=max_date,
+            notes="Alpaca PIT constituent OHLCV fetch report",
+        )
+        return report_path
+    except Exception as exc:
+        store.finish_fetch_run(run_id=fetch_run.run_id, status="failed", notes=str(exc))
+        raise
 
 
 def run_local_daily_ohlcv_sqlite_import(
@@ -170,6 +304,35 @@ def _ensure_daily_ohlcv_table(conn: sqlite3.Connection) -> None:
             ON daily_ohlcv_rows (date);
         """
     )
+
+
+def _symbols_from_pit_parquet(pit_parquet_path: Path) -> list[str]:
+    frame = pd.read_parquet(pit_parquet_path)
+    if "ticker" not in frame.columns:
+        raise RuntimeError(f"PIT constituents parquet missing ticker column: {pit_parquet_path}")
+    symbols = sorted({str(value).strip() for value in frame["ticker"].dropna().tolist() if str(value).strip()})
+    if not symbols:
+        raise RuntimeError(f"PIT constituents parquet has no ticker values: {pit_parquet_path}")
+    return symbols
+
+
+def _write_daily_ohlcv_symbol_tree(frame: pd.DataFrame, *, tree_root: Path) -> list[Path]:
+    _validate_ohlcv_frame(frame=frame[EXPECTED_COLUMNS], parquet_path=tree_root)
+    if "symbol" not in frame.columns:
+        raise RuntimeError("Alpaca constituent OHLCV frame missing symbol column")
+    tree_root.mkdir(parents=True, exist_ok=True)
+    written: list[Path] = []
+    normalized = frame.copy()
+    normalized["date"] = pd.to_datetime(normalized["date"]).dt.date.astype(str)
+    for symbol, symbol_frame in normalized.groupby("symbol", sort=True):
+        symbol_dir = tree_root / f"symbol={symbol}"
+        symbol_dir.mkdir(parents=True, exist_ok=True)
+        parquet_path = symbol_dir / "ohlcv.parquet"
+        symbol_frame[EXPECTED_COLUMNS].sort_values("date").to_parquet(parquet_path, index=False)
+        written.append(parquet_path)
+    if not written:
+        raise RuntimeError("Alpaca constituent OHLCV frame produced no symbol parquet files")
+    return written
 
 
 def _infer_symbol_from_path(parquet_path: Path) -> str:

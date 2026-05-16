@@ -30,7 +30,10 @@ from regime_data_fetch.fomc_minutes import run_fomc_minutes_fetch
 from regime_data_fetch.investing_archive import run_local_investing_archive_import
 from regime_data_fetch.investing_live import run_investing_live_fetch
 from regime_data_fetch.cleveland_fed_nowcast import run_cleveland_fed_nowcast_fetch
-from regime_data_fetch.local_daily_ohlcv_sqlite import run_local_daily_ohlcv_sqlite_import
+from regime_data_fetch.local_daily_ohlcv_sqlite import (
+    run_alpaca_constituent_daily_ohlcv_fetch,
+    run_local_daily_ohlcv_sqlite_import,
+)
 from regime_data_fetch.local_usd_index import run_local_usd_index_import
 from regime_data_fetch.pmi import DEFAULT_MANUAL_PMI_HISTORY_DIR, run_pmi_fetch
 from regime_data_fetch.pit_constituents import run_pit_constituents_fetch
@@ -44,7 +47,7 @@ def main() -> int:
     ap.add_argument("--start", default="2015-01-01", help="Start date (YYYY-MM-DD).")
     ap.add_argument("--end", default=dt.date.today().isoformat(), help="End date (YYYY-MM-DD).")
     ap.add_argument("--scope", default="v1", help="Data scope: v1|v2|all.")
-    ap.add_argument("--fetch", default="market", help="What to fetch: market|macro|events|pmi|pit|fomc|powell|eps|eps-spglobal-auto|eps-wayback|usd-index-local|daily-ohlcv-local-sqlite|sentiment|investing-archive-local|investing-live|cleveland-fed-nowcast|sf-fed-news-sentiment|all.")
+    ap.add_argument("--fetch", default="market", help="What to fetch: market|macro|events|pmi|pit|fomc|powell|eps|eps-spglobal-auto|eps-wayback|usd-index-local|daily-ohlcv-local-sqlite|daily-ohlcv-constituents-alpaca|sentiment|investing-archive-local|investing-live|cleveland-fed-nowcast|sf-fed-news-sentiment|all.")
     ap.add_argument("--min-cap-b", type=float, default=10.0, help="Universe filter threshold in $B.")
     ap.add_argument("--adjustment", default="raw", help="Alpaca adjustment: raw|split|dividend|all.")
     ap.add_argument("--alpaca-feed", default=None, help="Alpaca data feed: sip|iex|otc. Omit to use SDK default.")
@@ -96,6 +99,8 @@ def main() -> int:
         ),
     )
     ap.add_argument("--daily-ohlcv-dir", default=None, help="Path to a local partitioned daily_ohlcv parquet directory. Required for --fetch daily-ohlcv-local-sqlite.")
+    ap.add_argument("--pit-parquet", default=None, help="PIT constituent parquet for --fetch daily-ohlcv-constituents-alpaca. Defaults to <out-dir>/pit_constituents/sp500_ticker_intervals.parquet.")
+    ap.add_argument("--allow-missing-constituent-symbols", action="store_true", help="Allow daily-ohlcv-constituents-alpaca to continue when Alpaca returns no bars for some PIT symbols.")
     ap.add_argument("--investing-archive-root", default=None, help="Path to archived Investing.com source_pages root. Required for --fetch investing-archive-local.")
     ap.add_argument("--investing-earnings-loaded-page", default=None, help="Path to a browser-loaded Investing.com earnings calendar HTML page containing __NEXT_DATA__. Optional for --fetch investing-live.")
     ap.add_argument("--investing-earnings-browser-capture", action=argparse.BooleanOptionalAction, default=True, help="For --fetch investing-live, capture a fresh Investing.com earnings page with Playwright when no page/token is supplied. Default True.")
@@ -145,8 +150,8 @@ def main() -> int:
 
     if args.scope not in {"v1", "v2", "all"}:
         raise SystemExit("--scope must be v1|v2|all")
-    if args.fetch not in {"market", "macro", "events", "pmi", "pit", "fomc", "powell", "eps", "eps-spglobal-auto", "eps-wayback", "usd-index-local", "daily-ohlcv-local-sqlite", "sentiment", "investing-archive-local", "investing-live", "cleveland-fed-nowcast", "sf-fed-news-sentiment", "all"}:
-        raise SystemExit("--fetch must be market|macro|events|pmi|pit|fomc|powell|eps|eps-spglobal-auto|eps-wayback|usd-index-local|daily-ohlcv-local-sqlite|sentiment|investing-archive-local|investing-live|cleveland-fed-nowcast|sf-fed-news-sentiment|all")
+    if args.fetch not in {"market", "macro", "events", "pmi", "pit", "fomc", "powell", "eps", "eps-spglobal-auto", "eps-wayback", "usd-index-local", "daily-ohlcv-local-sqlite", "daily-ohlcv-constituents-alpaca", "sentiment", "investing-archive-local", "investing-live", "cleveland-fed-nowcast", "sf-fed-news-sentiment", "all"}:
+        raise SystemExit("--fetch must be market|macro|events|pmi|pit|fomc|powell|eps|eps-spglobal-auto|eps-wayback|usd-index-local|daily-ohlcv-local-sqlite|daily-ohlcv-constituents-alpaca|sentiment|investing-archive-local|investing-live|cleveland-fed-nowcast|sf-fed-news-sentiment|all")
     if args.emit_manifest and not args.artifact_store:
         raise SystemExit("--artifact-store is required when --emit-manifest is set")
 
@@ -393,6 +398,29 @@ def main() -> int:
         )
         report_paths.append(ohlcv_import_report)
         print(str(ohlcv_import_report))
+
+    if args.fetch in {"daily-ohlcv-constituents-alpaca", "all"}:
+        if not args.acquisition_db:
+            raise SystemExit("--acquisition-db is required for daily-ohlcv-constituents-alpaca fetches")
+        pit_parquet_path = (
+            Path(args.pit_parquet)
+            if args.pit_parquet
+            else out_dir / "pit_constituents" / "sp500_ticker_intervals.parquet"
+        )
+        ohlcv_constituent_report = run_alpaca_constituent_daily_ohlcv_fetch(
+            out_dir=out_dir,
+            pit_parquet_path=pit_parquet_path,
+            start=start,
+            end=end,
+            adjustment=args.adjustment,
+            alpaca_feed=args.alpaca_feed,
+            acquisition_db_path=Path(args.acquisition_db),
+            artifact_store_root=acquisition_artifact_store_root,
+            allow_missing_symbols=args.allow_missing_constituent_symbols,
+            verbose=args.verbose,
+        )
+        report_paths.append(ohlcv_constituent_report)
+        print(str(ohlcv_constituent_report))
     if args.emit_manifest:
         required_for = [item.strip() for item in args.manifest_required_for.split(",") if item.strip()]
         manifest = emit_manifest_for_report_paths(
