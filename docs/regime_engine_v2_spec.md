@@ -2496,7 +2496,7 @@ the slice/commit that resolved it. Entries are append-only.
         measurements into one series. This is two distinct metrics,
         two distinct label outputs (`RegimeOutput.credit_funding_state`
         from real OAS, `RegimeOutput.credit_funding_state_proxy` from
-        the proxy) that never blend. The §2C rule schema is
+        the proxy). The §2C rule schema is
         scale-invariant (percentile + slope predicates), so the SAME
         `CreditFundingSeriesClassifier` logic runs a second time on
         the proxy series — one rule schema, two input series, two
@@ -2504,7 +2504,17 @@ the slice/commit that resolved it. Entries are append-only.
         `credit_spread_proxy_total_return_differential` bias-warning
         row.
 
-    (c) **Rename the misleadingly-named legacy fields.** The fields
+    (c) **Add an explicit downstream resolver.** Cross-axis consumers
+        read `RegimeOutput.credit_funding_effective_state`, not the
+        raw OAS/proxy fields directly. The resolver preserves
+        `oas_label`, `proxy_label`, `source_used`, and
+        `agreement_status` in evidence. It uses OAS when OAS is the
+        only classified signal, uses proxy when OAS is unavailable, and
+        uses the higher-risk label when both directional signals are
+        classified but divergent. This is not series splicing: raw OAS
+        and proxy labels remain separately emitted and auditable.
+
+    (d) **Rename the misleadingly-named legacy fields.** The fields
         `hy_spread_proxy_63d` / `ig_spread_proxy_63d` /
         `hy_spread_proxy_percentile_504d` / `hy_spread_proxy_slope_21d`
         / `ig_spread_proxy_slope_21d` hold the *real* OAS values
@@ -3240,7 +3250,7 @@ credit_funding:
 SOFR/IORB and OAS observations are carried forward for feature math when fresh;
 stale carried values still force `unknown`.
 
-#### Two label outputs — authoritative + proxy
+#### Two label outputs plus effective downstream resolver
 
 The rules above are written against the authoritative real-OAS metric
 (`hy_oas_*` / `ig_oas_*`) and produce `RegimeOutput.credit_funding_state`.
@@ -3248,8 +3258,25 @@ Because the rule predicates are scale-invariant (percentile + slope only),
 the **same `CreditFundingSeriesClassifier` runs a second time** on the
 parallel proxy metric (`hy_tr_differential_*` / `ig_tr_differential_*`),
 producing `RegimeOutput.credit_funding_state_proxy` — a distinct, separately
-keyed label (Ambiguity Log #71). The two outputs are never blended into one
-series or one label.
+keyed label (Ambiguity Log #71). The two raw outputs are never blended into
+one feature series.
+
+Downstream cross-axis rules consume `RegimeOutput.credit_funding_effective_state`.
+That effective output is a resolver over the two classified labels:
+
+- OAS classified and proxy unavailable/unknown → use OAS (`source_used=oas_only`).
+- Proxy classified and OAS unavailable/stale/insufficient-history → use proxy
+  (`source_used=proxy_fallback`).
+- OAS and proxy classified with the same risk rank → use OAS and mark
+  `agreement_status=confirmed`.
+- OAS and proxy classified but divergent → use the higher-risk directional
+  label and mark `agreement_status=divergent`.
+- Neither classified → emit the chosen unknown evidence with
+  `agreement_status=unavailable`.
+
+Network fragility and inflation/growth MUST consume the effective label, so
+pre-2023 OAS gaps do not darken §2C and same-day OAS/proxy disagreement remains
+visible instead of being discarded.
 
 Real-OAS coverage: `hy_oas_*` / `ig_oas_*` start 2023-05-15 (FRED truncated
 the ICE BofA OAS public history — Log #71), so `credit_funding_state` is
@@ -3265,7 +3292,8 @@ Every `credit_funding_state_proxy` output MUST emit the
 feature-store output (same pattern as the §1D PIT-constituent bias warning).
 The proxy exists specifically because the real ICE BofA OAS series lacks
 pre-2023 history; it is a *similar* measure (credit-spread direction), kept
-strictly parallel — never spliced with the real-OAS metric.
+strictly parallel at the feature/raw-label level. The effective output is the
+only place where raw OAS and proxy labels are resolved for downstream use.
 
 ---
 

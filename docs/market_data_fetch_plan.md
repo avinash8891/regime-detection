@@ -74,6 +74,56 @@ The implementation may keep existing local paths during migration, but the
 contract is logical: `data/raw/` is replaceable, and the manifest plus artifact
 store is what makes the data portable and replayable.
 
+### 0.1 Temporal Normalization Contract
+
+All persistent canonical artifacts must use one temporal contract across data
+sources. Source-specific time zones may exist only in raw captures or explicit
+source-metadata columns; they must not leak into engine-facing parquet with
+mixed semantics.
+
+Canonical rules:
+
+- **Intraday instants**: columns that represent a real instant in time must be
+  named `*_timestamp_utc` or `*_time_utc`, stored in UTC, and round-trip as
+  timezone-aware UTC timestamps or ISO-8601 strings with a `Z` suffix. Examples:
+  Investing event occurrences, last-price timestamps, artifact creation times,
+  and fetch-run start/finish times.
+- **Source-local release timestamps**: if the source publishes a release time in
+  local civil time, normalize the canonical instant to UTC and retain the source
+  zone only as metadata, e.g. `release_timestamp_utc` plus
+  `release_timezone="America/New_York"`. Existing `*_et` fields are tolerated
+  during migration but are not the forward canonical storage shape.
+- **Date-only observations**: columns that represent an observation date, NYSE
+  session date, vintage date, constituent interval boundary, or monthly/weekly
+  period must be stored as normalized `YYYY-MM-DD` dates, not midnight timestamps.
+  Examples: FRED observation dates, Alpaca daily bars, AAII weekly dates,
+  Cleveland Fed nowcast dates, S&P EPS observation dates, PIT start/end dates,
+  and NYSE session dates.
+- **Session alignment**: engine loaders may convert a UTC release timestamp to a
+  NYSE session date at the loader boundary. That derived session date is a date,
+  not a replacement for the stored UTC instant.
+- **Raw preservation**: raw captures keep the source payload exactly as received,
+  including source time zones, offsets, or strings. Normalized and canonical
+  artifacts apply this contract.
+
+Implementation TODO for the next data-contract slice:
+
+1. Add a shared `regime_data_fetch.time_normalization` module with helpers for
+   UTC instants, normalized date-only columns, source-local-to-UTC conversion,
+   and artifact-level temporal contract assertions.
+2. Route every canonical writer through that module before `to_parquet()`:
+   FRED macro/vintages, Alpaca daily OHLCV, Investing economic/holiday/earnings,
+   PMI, AAII, SF Fed news sentiment, Cleveland Fed nowcast, FOMC minutes, Powell
+   speeches, event candidates/YAML export, EPS history, and PIT constituents.
+3. Add schema tests that read each canonical parquet family and assert temporal
+   column names, parseability, timezone handling, and date-only semantics. A
+   source with `+05:30`, `ET`, naive timestamps, or mixed string/datetime values
+   must fail before the artifact is recorded as valid.
+4. Record the temporal schema version in SQLite artifact metadata and manifests
+   so old mixed-semantics artifacts cannot be silently used in future runs.
+5. Keep display-time conversion outside storage. Reports may render local time;
+   stored canonical artifacts stay UTC instants or normalized dates only.
+
 ## 1. Validation Sequence
 
 ### 1.0 Current Status (mirrors `regime_engine_v1_final_spec.md` §14.1)
@@ -116,7 +166,7 @@ These source choices are already approved and should be treated as explicit spec
 - PMI retrieval now uses live DBnomics / TradingEconomics by default. Repo-local manually supplied Investing release-history tables remain an explicit fallback via `--pmi-history-dir` for pinned historical backtests.
 - `earnings_revision_breadth` is replaced by `aggregate_forward_eps_revision_direction`, sourced from S&P Global aggregate forward EPS data.
 - **V2 §2B commodity returns**: `DBC` ETF (Invesco DB Commodity Index Tracking Fund) is the approved substitute for the Bloomberg Commodity Index (paid feed unavailable). Pinned in V2 §2B Ambiguity Log entry #48. Rows must carry a documented bias-warning analogous to the §1D PIT-source pattern; a future spec-amendment slice may replace DBC with a direct Bloomberg / Refinitiv commodity-index feed when vendor sourcing is approved.
-- **V2 §2C HY/IG spread direction**: §2C carries two separate, never-blended metrics. The authoritative real-OAS metric is sourced from **real ICE BofA Option-Adjusted Spread series, free on FRED** — `hy_oas = BAMLH0A0HYM2` (HY Master II OAS) and `ig_bbb_oas = BAMLC0A4CBBB` (BBB Corporate OAS), both in `V2_FRED_SERIES` (Ambiguity Log #49 closed; commits `814a8d5` + `9cad7e7`). Because FRED now exposes only 2023-05-15+ OAS history, ADR 0007 / Ambiguity Log #71 keeps the TLT-vs-HYG/LQD total-return-differential proxy as a **separate parallel metric** producing `credit_funding_state_proxy`; it is not a fallback and is never spliced into real OAS.
+- **V2 §2C HY/IG spread direction**: §2C carries two separate raw metrics plus an explicit effective downstream resolver. The authoritative real-OAS metric is sourced from **real ICE BofA Option-Adjusted Spread series, free on FRED** — `hy_oas = BAMLH0A0HYM2` (HY Master II OAS) and `ig_bbb_oas = BAMLC0A4CBBB` (BBB Corporate OAS), both in `V2_FRED_SERIES` (Ambiguity Log #49 closed; commits `814a8d5` + `9cad7e7`). Because FRED now exposes only 2023-05-15+ OAS history, ADR 0007 / Ambiguity Log #71 keeps the TLT-vs-HYG/LQD total-return-differential proxy as a **separate parallel metric** producing `credit_funding_state_proxy`. `credit_funding_effective_state` is the downstream field: OAS when it is the only classified signal, proxy when OAS is unavailable/stale/insufficient-history, and the higher-risk label when both directional labels diverge. Raw OAS/proxy series are never spliced.
   - **Coverage caveat (discovered 2026-05 re-fetch):** FRED now publishes only a **trailing ~3-year window** of these ICE BofA OAS series — `BAMLH0A0HYM2` and `BAMLC0A4CBBB` both start **2023-05-15** (confirmed against FRED's `/series` metadata: `observation_start = 2023-05-15`). ICE Data Indices tightened redistribution licensing; the series IDs are unchanged but pre-2023 history is no longer public on FRED. **Consequence:** §2C real-OAS backtests start around 2023-05. The proxy covers earlier history directionally from already-fetched `TLT`, `HYG`, and `LQD` closes and carries `credit_spread_proxy_total_return_differential` bias warnings. **Do not add `IEF` or `BIL`** for another proxy without a spec amendment.
 - **V2 §2D event rows** (`budget_week`, `election_window`, `geopolitical_event`, `global_rate_decision`) are generated as candidate evidence first, then promoted under the Group B rules. `election_window`, `budget_week`, and global-rate decisions have deterministic/official-source paths. `geopolitical_event` now has live GPR + GDELT evidence generation plus implemented clients for ACLED, Uppsala/UCDP GED Candidate, and HDX HAPI conflict-event fetchers. **TODO:** ACLED and Uppsala/UCDP live pulls remain pending entitled API keys/account access; the current Gmail ACLED account can mint a token but the API endpoint denies raw data access. All geopolitical evidence still reaches YAML only through the human approval overlay; no geopolitical source auto-promotes.
 - **V2 §1A `euphoria` label — resolved**: `sentiment_score = bull_bear_spread_8w_ma` from the AAII weekly survey; the AAII fetcher ships (`regime_data_fetch.aaii_sentiment`), and `euphoria` fires (Ambiguity Log #32 status update). Put-call ratio / Investors Intelligence remain *optional* alternative sources for a future calibration revision — they block no label and need no fetcher to ship V2.
@@ -160,7 +210,7 @@ Status meanings used below:
 | V2 §2B `cpi_nowcast` (Cleveland Fed inflation nowcast) | Cleveland Fed month-over-month nowcast webchart JSON, free — `.../webcharts/inflationnowcasting/nowcast_month.json` (reachable over urllib) | intra-month; re-fetch monthly | `data/raw/cleveland_fed_nowcast/cpi_nowcast.parquet` | done | feeds `inflation_surprise_zscore` (V2 §2B single-signal `inflation_shock` limb); ADR 0006 substituted the free Cleveland Fed nowcast for the paid analyst `consensus_estimate`. `regime_data_fetch.cleveland_fed_nowcast` downloads + parses the JSON archive directly — 154 monthly vintages 2013-01→present in the current materialization, last non-empty CPI value per vintage keyed to its chart publication date. Manual-drop of the JSON is a fallback only |
 | V2 §1A sentiment_score | AAII bull-bear weekly survey (sourced) | weekly | `data/raw/sentiment/aaii_sentiment.parquet` | done | `sentiment_score = bull_bear_spread_8w_ma`; `regime_data_fetch.aaii_sentiment` ships and the V2 §1A `euphoria` label fires (Ambiguity Log #32). Put-call ratio / Investors Intelligence are optional future calibration-revision sources only — they block no label |
 | V2 §1C implied vol (`VIXCLS`) | FRED API (CBOE VIX — the model-free 30-day implied vol on SPX) | daily | `data/raw/macro/fred_macro_series.parquet` | done | `implied_vol_30d = VIXCLS / 100`; feeds V2 §1C `vol_crush` rule + `iv_rv_spread` feature (Ambiguity Log #19 / #20; ADR 0005). No options-chain feed needed — VIX is the canonical implied-vol series and is free on FRED |
-| V2 §2C HY/IG OAS feeds | ICE BofA Option-Adjusted Spread series, free on FRED: `BAMLH0A0HYM2` (HY) + `BAMLC0A4CBBB` (BBB) | daily | `data/raw/macro/fred_macro_series.parquet` | done — **2023-05-15 → current only** | authoritative real-OAS metric sourced directly from FRED and in `V2_FRED_SERIES` (Ambiguity Log #49; commits `814a8d5` + `9cad7e7`). **Coverage limit:** FRED exposes only a trailing ~3-year window of these series (both start `2023-05-15` as of the 2026-05 re-fetch — ICE Data Indices licensing truncation, confirmed against FRED `/series` metadata); §2C real-OAS backtest depth is capped at ~2023. The separate `credit_funding_state_proxy` metric uses already-fetched `TLT`/`HYG`/`LQD` total-return differentials for longer directional history; do not add `IEF` / `BIL` without a spec amendment. |
+| V2 §2C HY/IG OAS feeds | ICE BofA Option-Adjusted Spread series, free on FRED: `BAMLH0A0HYM2` (HY) + `BAMLC0A4CBBB` (BBB) | daily | `data/raw/macro/fred_macro_series.parquet` | done — **2023-05-15 → current only** | authoritative real-OAS metric sourced directly from FRED and in `V2_FRED_SERIES` (Ambiguity Log #49; commits `814a8d5` + `9cad7e7`). **Coverage limit:** FRED exposes only a trailing ~3-year window of these series (both start `2023-05-15` as of the 2026-05 re-fetch — ICE Data Indices licensing truncation, confirmed against FRED `/series` metadata); §2C real-OAS backtest depth is capped at ~2023. The separate `credit_funding_state_proxy` metric uses already-fetched `TLT`/`HYG`/`LQD` total-return differentials for longer directional history. `credit_funding_effective_state` is what downstream rules consume; do not add `IEF` / `BIL` without a spec amendment. |
 | V2 §1D true PIT vendor data | CRSP / Compustat / FactSet / Norgate point-in-time S&P 500 membership (paid, not yet sourced) | event-driven membership changes | no output path | planned | V2 §1D currently uses `fja05680/sp500` GitHub CSV with documented `survivorship_biased_constituent_universe` warning (live-verified). True vendor PIT is the future upgrade path; TODO note added inline at `src/regime_data_fetch/pit_constituents.py`; the parquet schema (ticker / start_date / end_date intervals) is unchanged on swap. |
 | `2y_yield` / `DGS2` | FRED API | daily | `data/raw/macro/fred_macro_series.parquet` | done-live-verified | Treasury daily constant-maturity yield; typically published on business days after market hours; when `--acquisition-db` is supplied, the raw FRED JSON response is recorded before parquet/report output |
 | `10y_yield` / `DGS10` | FRED API | daily | `data/raw/macro/fred_macro_series.parquet` | done-live-verified | Treasury daily constant-maturity yield; typically published on business days after market hours; when `--acquisition-db` is supplied, the raw FRED JSON response is recorded before parquet/report output |
@@ -251,7 +301,7 @@ These are part of the V2 data plan but are not all implemented yet:
 | Aggregate forward EPS revision direction | manually downloaded S&P Global workbook `sp-500-eps-est.xlsx` parsed from `ESTIMATES&PEs` | the loader stores workbook-date observations and the current forward-estimate row, **and** accumulates one current-snapshot row per weekly fetch into `sp500_eps_weekly_history.parquet` (deduped by `observation_date`). `compute_eps_revision_direction_4w` reads that accumulator to produce `aggregate_forward_eps_revision_direction_4w`; the series is forward-filled onto the SPY session index and consumed by the V2 §2B `earnings_expansion` / `earnings_contraction` rules (Ambiguity Log #48 closed). All-NaN during the >4-week accumulator cold-start, so the two labels stay silent until enough weekly fetches accumulate. No paid feed — the weekly series is built by accumulation, not by a new source |
 | Event calendar extension | generated `FOMC` / `CPI` / `NFP` YAML plus runtime `expiry_week` / `earnings_season` rules; V2 §2D adds official/deterministic/candidate-generated `budget_week` / `election_window` / `geopolitical_event` / `global_rate_decision` evidence | V1 auto-generates the V1 scheduled events and computes rule-derived windows at runtime. V2 §2D candidate generation writes parquet evidence first; only approved/promoted rows enter YAML. GPR/GDELT geopolitical candidates are never auto-promoted. `macro_event_score` in §4.2 includes `budget_week` / `election_window` / `global_rate_decision` in addition to `fed_week` / `cpi_week` / `nfp_week`; `geopolitical_event` is separate high-impact evidence. |
 | V2 §2B commodity-index proxy (DBC) | Alpaca REST daily OHLCV | substitute for Bloomberg Commodity Index per Ambiguity Log #48; bias-warning row must be carried in feature-store output; not a §3.1 fragility universe member — V2 §2B-only feature input |
-| V2 §2C HY/IG OAS + proxy | FRED `BAMLH0A0HYM2` (HY Master II OAS) + `BAMLC0A4CBBB` (BBB Corporate OAS), plus already-fetched `TLT`/`HYG`/`LQD` closes | real bps-level OAS produces authoritative `credit_funding_state` for 2023-05-15+; TLT-vs-HYG/LQD total-return differentials produce separate `credit_funding_state_proxy` for longer directional history (Ambiguity Log #49 + #71, ADR 0007). The proxy is never blended into real OAS. **Do not add IEF or BIL to the universe** for a different proxy without a spec amendment. |
+| V2 §2C HY/IG OAS + proxy | FRED `BAMLH0A0HYM2` (HY Master II OAS) + `BAMLC0A4CBBB` (BBB Corporate OAS), plus already-fetched `TLT`/`HYG`/`LQD` closes | real bps-level OAS produces `credit_funding_state` for 2023-05-15+; TLT-vs-HYG/LQD total-return differentials produce separate `credit_funding_state_proxy` for longer directional history (Ambiguity Log #49 + #71, ADR 0007). `credit_funding_effective_state` resolves the two classified labels for downstream rules without splicing raw series. **Do not add IEF or BIL to the universe** for a different proxy without a spec amendment. |
 
 Implemented scheduled-event logic:
 
@@ -351,7 +401,7 @@ The hard data blockers from earlier V2 slices are now closed (see "Recently clos
 - **V2 §2B `inflation_surprise_zscore`** — closed by ADR 0006: the free Cleveland Fed inflation nowcast substitutes for the paid analyst `consensus_estimate`. `regime_data_fetch.cleveland_fed_nowcast` downloads + parses the Cleveland Fed month-over-month nowcast webchart JSON directly (verified reachable over urllib) — 154 monthly vintages 2013-01→present in the current materialization, no operator action and no manual drop required. Category labels in the feed can be `MM/DD/YYYY`, `YYYY-MM-DD`, or no-year `MM/DD`; the parser keys each nowcast to the last non-empty point's publication date without leaking future values.
 - **V2 §1A `sentiment_score`** — closed: AAII fetcher ships, `sentiment_score = bull_bear_spread_8w_ma`, `euphoria` fires (Ambiguity Log #32).
 - **V2 §1C implied vol** — closed: `implied_vol_30d = VIXCLS / 100` from FRED; `vol_crush` + `iv_rv_spread` ship (Ambiguity Log #19 / #20; ADR 0005).
-- **V2 §2C HY/IG OAS + parallel proxy** — closed: real ICE BofA OAS is sourced free from FRED (`BAMLH0A0HYM2` / `BAMLC0A4CBBB`) for 2023-05-15+; the TLT-vs-HYG/LQD total-return proxy remains as a separate `credit_funding_state_proxy` metric for longer directional history (Ambiguity Log #49 + #71, ADR 0007).
+- **V2 §2C HY/IG OAS + parallel proxy** — closed: real ICE BofA OAS is sourced free from FRED (`BAMLH0A0HYM2` / `BAMLC0A4CBBB`) for 2023-05-15+; the TLT-vs-HYG/LQD total-return proxy remains as a separate `credit_funding_state_proxy` metric for longer directional history, and `credit_funding_effective_state` resolves the two labels for downstream rules (Ambiguity Log #49 + #71, ADR 0007).
 - **30-session profile evidence completeness** — closed by ADR 0008. Macro feature math now uses latest-known-as-of FRED alignment with freshness gates, HMM/GMM evidence is emitted point-in-time per warmed session, and profile/timeline materialization keeps five extra warmed sessions for `hmm_probability_shift[t-5]`.
 
 ## 5. Explicit Hard Failures
@@ -370,7 +420,7 @@ Documented substitute policies (each pinned in the V2 Implementation Ambiguity L
 - **CPI surprise**: substituted by the free Cleveland Fed inflation nowcast for the analyst `consensus_estimate` (ADR 0006 / Ambiguity Log #48); the feature carries a model-relative bias-warning row. Fetch path: `regime_data_fetch.cleveland_fed_nowcast`.
 - **`broad_usd_index`**: approved field name for the free FRED route (FRED `DTWEXBGS`); do not back-door ICE DXY semantics into it.
 - **Bloomberg Commodity Index**: substituted by `DBC` ETF per V2 §2B / Ambiguity Log #48; bias-warning row required in feature-store output.
-- **HY/IG OAS**: sourced directly as real ICE BofA OAS from FRED (`BAMLH0A0HYM2` / `BAMLC0A4CBBB`) for authoritative `credit_funding_state`; the TLT-vs-HYG/LQD total-return proxy is separate `credit_funding_state_proxy`, not a substitute or fallback (Ambiguity Log #49 + #71, ADR 0007).
+- **HY/IG OAS**: sourced directly as real ICE BofA OAS from FRED (`BAMLH0A0HYM2` / `BAMLC0A4CBBB`) for `credit_funding_state`; the TLT-vs-HYG/LQD total-return proxy is separate `credit_funding_state_proxy`; downstream uses `credit_funding_effective_state` with source/agreement evidence (Ambiguity Log #49 + #71, ADR 0007).
 - **PIT S&P 500 membership**: currently using `fja05680/sp500` GitHub CSV with documented `survivorship_biased_constituent_universe` warning; vendor upgrade noted in `pit_constituents.py` TODO.
 
 ## 6. Source Rules
@@ -392,7 +442,7 @@ V1 / V2 source pins (each enforces a spec field):
 V2 spec-amendment pins (this session, Ambiguity Log #46–#53):
 
 - If V2 §2B says **commodity returns**, fetch `DBC` ETF as the approved Bloomberg Commodity Index substitute (Ambiguity Log #48). Emit a bias-warning row in the V2 §2B feature-store output.
-- If V2 §2C says **HY/IG credit spread**, read the real ICE BofA OAS series from FRED — `BAMLH0A0HYM2` (HY) and `BAMLC0A4CBBB` (BBB), both in `V2_FRED_SERIES` (Ambiguity Log #49). Keep the approved TLT-vs-HYG/LQD proxy as the separate `credit_funding_state_proxy` metric for longer directional history (Ambiguity Log #71 / ADR 0007). Do not add IEF/BIL or introduce another ETF-pair proxy without a spec amendment.
+- If V2 §2C says **HY/IG credit spread**, read the real ICE BofA OAS series from FRED — `BAMLH0A0HYM2` (HY) and `BAMLC0A4CBBB` (BBB), both in `V2_FRED_SERIES` (Ambiguity Log #49). Keep the approved TLT-vs-HYG/LQD proxy as the separate `credit_funding_state_proxy` metric for longer directional history and route downstream rules through `credit_funding_effective_state` (Ambiguity Log #71 / ADR 0007). Do not add IEF/BIL or introduce another ETF-pair proxy without a spec amendment.
 - If V2 §2D says **`budget_week` / `election_window` / `geopolitical_event` / `global_rate_decision`**, use the event-source pipeline: deterministic/official adapters for scheduled/official rows and Group B candidate parquet for approval-gated rows. `geopolitical_event` may be generated from GPR, GDELT, HDX HAPI, and, after TODO API-key entitlement is resolved, ACLED plus Uppsala/UCDP evidence. It must stay overlay-only; do not auto-promote it from external news APIs, humanitarian aggregates, or LLM extraction.
 - If V2 §1A says **`euphoria`**, read `sentiment_score = bull_bear_spread_8w_ma` from the AAII fetcher (`regime_data_fetch.aaii_sentiment`); the label fires (Ambiguity Log #32). Do not substitute a different sentiment proxy; put-call / Investors Intelligence are optional future calibration sources only.
 - If V2 §1C says **`vol_crush`** or **IV/RV spread**, read `implied_vol_30d = VIXCLS / 100` from FRED (Ambiguity Log #19 / #20; ADR 0005). Do not synthesise IV from realized-vol — VIX is the canonical implied-vol series.

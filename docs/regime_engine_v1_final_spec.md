@@ -1271,6 +1271,7 @@ When the engine runs under a V2 config, the wire shape extends in two ways:
 inflation_growth_state         v2 §2B
 credit_funding_state           v2 §2C (real ICE BofA OAS)
 credit_funding_state_proxy     v2 §2C proxy (TLT vs HYG/LQD; Ambiguity Log #71)
+credit_funding_effective_state v2 §2C downstream OAS/proxy resolver
 volume_liquidity_state         v2 §1E
 monetary_pressure_state        v2 §2A (replaces structural_causal_state.monetary_pressure semantically; both coexist for V1 compatibility)
 change_point                   v2 §4.6 / §6.3 (BOCPD)
