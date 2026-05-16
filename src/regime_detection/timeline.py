@@ -231,9 +231,10 @@ def build_regime_timeline(
     # since RegimeOutput.credit_funding_state already defaults to None.
     credit_funding_by_date = axis_bundle.credit_funding
     # v2 §2C credit/funding PROXY axis (Ambiguity Log #71) — the TLT-vs-HYG/LQD
-    # differential run. Parallel to credit_funding, never blended; stays None
-    # alongside it so RegimeOutput.credit_funding_state_proxy defaults to None.
+    # differential run. Parallel to credit_funding; downstream consumers use
+    # the explicit effective resolver.
     credit_funding_proxy_by_date = axis_bundle.credit_funding_proxy
+    credit_funding_effective_by_date = axis_bundle.credit_funding_effective
     # v2 §2A monetary pressure axis (Ambiguity Log #46). Stays None when the
     # v2 config / macro_series seam is absent — preserves V1 byte-identity
     # since RegimeOutput.monetary_pressure_state defaults to None.
@@ -271,6 +272,11 @@ def build_regime_timeline(
         credit_funding_proxy_output = (
             credit_funding_proxy_by_date.get(day)
             if credit_funding_proxy_by_date is not None
+            else None
+        )
+        credit_funding_effective_output = (
+            credit_funding_effective_by_date.get(day)
+            if credit_funding_effective_by_date is not None
             else None
         )
         monetary_pressure_output = (
@@ -367,6 +373,7 @@ def build_regime_timeline(
                 volume_liquidity_state=volume_liquidity_output,
                 credit_funding_state=credit_funding_output,
                 credit_funding_state_proxy=credit_funding_proxy_output,
+                credit_funding_effective_state=credit_funding_effective_output,
                 inflation_growth_state=inflation_growth_output,
                 monetary_pressure_state=monetary_pressure_output,
                 cluster=cluster_output,

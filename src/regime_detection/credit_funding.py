@@ -10,7 +10,7 @@ Implements the 5-label axis classifier from spec lines 2005-2130:
 
 Credit-spread metrics — two parallel sources (Ambiguity Log #49 + #71):
 
-  §2C carries two distinct, never-blended credit-spread metrics:
+  §2C carries two distinct credit-spread metrics:
 
   1. Real ICE BofA OAS — ``hy_oas_*`` / ``ig_oas_*``, from the
      FRED-redistributed ICE BofA Option-Adjusted Spread series
@@ -31,13 +31,12 @@ Credit-spread metrics — two parallel sources (Ambiguity Log #49 + #71):
      ``credit_spread_proxy_total_return_differential`` bias-warning row.
      The proxy exists because FRED's OAS series lack pre-2023 history — it
      is a *similar* measure (credit-spread direction), kept strictly
-     parallel, never spliced with the real-OAS series.
+     parallel at the raw-series level.
 
-  When the OAS series are absent from ``macro_series``, the §2C seam is
-  simply not built (``REQUIRED_MACRO_KEYS`` gate in ``feature_store``) and
-  both ``credit_funding_state`` / ``credit_funding_state_proxy`` stay
-  ``None`` — V1 byte-identity preserved, same as every other unbuilt V2
-  seam.
+  When the OAS series are absent from ``macro_series``, real-OAS features are
+  all-NaN and ``credit_funding_state`` emits unknown/data-unavailable. The
+  proxy still builds from ETF closes, so ``credit_funding_effective_state`` can
+  use proxy fallback with source evidence.
 
 Inputs:
   - HYG, LQD, TLT, KRE close series via ``MarketContext.cross_asset_closes``
@@ -131,8 +130,6 @@ REQUIRED_MACRO_KEYS: tuple[str, ...] = (
     IORB_KEY,
     NFCI_KEY,
     BROAD_USD_INDEX_KEY,
-    HY_OAS_KEY,
-    IG_OAS_KEY,
 )
 
 
@@ -306,11 +303,9 @@ def compute_credit_funding_features(
     (BAMLH0A0HYM2 for HY, BAMLC0A4CBBB for BBB IG). The TLT-vs-HYG/LQD
     total-return differential is computed separately below and produces
     ``credit_funding_state_proxy`` through the axis-series classifier. The
-    two metrics are never blended. When the OAS series are absent from
-    ``macro_series``, the §2C seam simply is not built (handled by the
-    ``REQUIRED_MACRO_KEYS`` gate in ``feature_store``) and
-    ``credit_funding_state`` / ``credit_funding_state_proxy`` stay ``None`` —
-    V1 byte-identity preserved, same as every other unbuilt V2 seam.
+    raw spread series are never spliced. When the OAS series are absent from
+    ``macro_series``, real-OAS features are all-NaN and the real-OAS label
+    emits unknown/data-unavailable; proxy features still build from ETF closes.
     """
     spy_index = spy_close.index
 

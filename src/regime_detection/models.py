@@ -69,6 +69,12 @@ class AxisOutput(BaseModel):
     classification_status: ClassificationStatus | None = None
     classification_reason: str | None = None
 
+    @property
+    def reporting_label(self) -> str:
+        if self.classification_status == "classified":
+            return self.active_label
+        return self.classification_status or "not_wired"
+
     @model_validator(mode="after")
     def _populate_classification_metadata(self) -> "AxisOutput":
         if self.classification_status is None:
@@ -234,6 +240,12 @@ class VolumeLiquidityOutput(BaseModel):
     data_quality: DataQuality
     classification_status: ClassificationStatus | None = None
     classification_reason: str | None = None
+
+    @property
+    def reporting_label(self) -> str:
+        if self.classification_status == "classified":
+            return self.label
+        return self.classification_status or "not_wired"
 
     @model_validator(mode="after")
     def _populate_classification_metadata(self) -> "VolumeLiquidityOutput":
@@ -497,6 +509,7 @@ class RegimeOutput(BaseModel):
     inflation_growth_state: InflationGrowthOutput | None = None  # v2 §2B (slice 5)
     credit_funding_state: CreditFundingOutput | None = None  # v2 §2C (slice 4)
     credit_funding_state_proxy: CreditFundingOutput | None = None  # v2 §2C proxy (Log #71)
+    credit_funding_effective_state: CreditFundingOutput | None = None  # v2 §2C downstream OAS/proxy resolver
     volume_liquidity_state: VolumeLiquidityStateOutput | None = None  # v2 §1E (slice 2.7)
     monetary_pressure_state: MonetaryPressureV2Output | None = None  # v2 §2A (Log #46)
     change_point: ChangePointOutput | None = None  # v2 §4.6 (V2.1)

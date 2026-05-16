@@ -71,6 +71,8 @@ def test_core3_v1_regime_output_keeps_legacy_placeholder_wire_shapes(market_df_f
     for v2_field in (
         "inflation_growth_state",
         "credit_funding_state",
+        "credit_funding_state_proxy",
+        "credit_funding_effective_state",
         "volume_liquidity_state",
         "monetary_pressure_state",
     ):

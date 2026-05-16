@@ -17,7 +17,11 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from regime_detection.axis_series import CreditFundingSeriesClassifier
+from regime_detection.axis_series import (
+    CreditFundingSeriesClassifier,
+    resolve_credit_funding_effective_output,
+)
+from regime_detection.models import CreditFundingOutput, DataQuality
 from regime_detection.calendar import nyse_sessions_between
 from regime_detection.config import (
     CreditFundingRulesConfig,
@@ -625,6 +629,7 @@ def _build_full_synthetic_context(
     hyg_truncate_sessions: int | None = None,
     nfci_truncate_calendar_days: int | None = None,
     sofr_drop_last: bool = False,
+    omit_oas_series: bool = False,
 ):
     """Build a MarketContext with full cross_asset_closes and macro_series.
 
@@ -702,6 +707,9 @@ def _build_full_synthetic_context(
         "DGS2": _make_constant_series(idx, 4.5, "DGS2"),
         "DGS10": _make_constant_series(idx, 4.0, "DGS10"),
     }
+    if omit_oas_series:
+        macro_series.pop("hy_oas")
+        macro_series.pop("ig_bbb_oas")
 
     config = RegimeEngine().config
     context = build_market_context(
@@ -790,6 +798,89 @@ def test_build_proxy_runs_parallel_to_build_with_proxy_bias_code() -> None:
     )
     assert real[rule_day].evidence["spread_source"] == "ice_bofa_oas"
     assert proxy[rule_day].evidence["spread_source"] == "tlt_total_return_differential"
+
+
+def _credit_output(
+    *,
+    label: str,
+    source: str,
+    status: str = "ok",
+) -> CreditFundingOutput:
+    return CreditFundingOutput(
+        raw_label=label,
+        stable_label=label,
+        active_label=label,
+        evidence={"spread_source": source},
+        data_quality=DataQuality(status=status),
+    )
+
+
+def test_effective_credit_funding_uses_higher_risk_when_oas_and_proxy_diverge() -> None:
+    oas = _credit_output(label="credit_calm", source="ice_bofa_oas")
+    proxy = _credit_output(
+        label="spread_widening",
+        source="tlt_total_return_differential",
+    )
+
+    effective = resolve_credit_funding_effective_output(oas=oas, proxy=proxy)
+
+    assert effective is not None
+    assert effective.active_label == "spread_widening"
+    assert effective.evidence["source_used"] == "proxy_higher_risk"
+    assert effective.evidence["agreement_status"] == "divergent"
+    assert effective.evidence["oas_label"] == "credit_calm"
+    assert effective.evidence["proxy_label"] == "spread_widening"
+
+
+def test_effective_credit_funding_falls_back_to_proxy_when_oas_unavailable() -> None:
+    oas = _credit_output(
+        label="unknown",
+        source="ice_bofa_oas",
+        status="insufficient_data",
+    )
+    proxy = _credit_output(
+        label="credit_calm",
+        source="tlt_total_return_differential",
+    )
+
+    effective = resolve_credit_funding_effective_output(oas=oas, proxy=proxy)
+
+    assert effective is not None
+    assert effective.active_label == "credit_calm"
+    assert effective.evidence["source_used"] == "proxy_fallback"
+    assert effective.evidence["agreement_status"] == "proxy_only"
+
+
+def test_credit_funding_proxy_builds_when_oas_series_are_absent() -> None:
+    context = _build_full_synthetic_context(omit_oas_series=True)
+    cfg = context.config
+    store = build_feature_store(
+        context,
+        network_fragility_config=cfg.network_fragility,
+        monetary_pressure_v2_config=cfg.monetary_pressure_v2,
+        credit_funding_config=cfg.credit_funding,
+    )
+    classifier = CreditFundingSeriesClassifier()
+
+    real = classifier.build(context, store)
+    proxy = classifier.build_proxy(context, store)
+
+    assert real is not None
+    assert proxy is not None
+    rule_day = next(
+        d
+        for d in proxy
+        if "rule_evidence" in proxy[d].evidence
+        and proxy[d].active_label != "unknown"
+    )
+    assert real[rule_day].active_label == "unknown"
+    assert proxy[rule_day].active_label in CREDIT_FUNDING_RISK_RANK
+    effective = resolve_credit_funding_effective_output(
+        oas=real[rule_day],
+        proxy=proxy[rule_day],
+    )
+    assert effective is not None
+    assert effective.evidence["source_used"] == "proxy_fallback"
 
 
 def test_unknown_when_hyg_stale_more_than_5_sessions() -> None:
@@ -1069,6 +1160,12 @@ def test_regime_output_carries_real_fixture_credit_funding_state_when_configured
         out.credit_funding_state_proxy.evidence["spread_source"]
         == "tlt_total_return_differential"
     )
+    assert out.credit_funding_effective_state is not None
+    assert out.credit_funding_effective_state.active_label == "credit_calm"
+    assert out.credit_funding_effective_state.evidence["agreement_status"] in {
+        "confirmed",
+        "divergent",
+    }
 
 
 def test_regime_output_carries_credit_funding_state_when_configured() -> None:
@@ -1115,3 +1212,5 @@ def test_regime_output_carries_credit_funding_state_when_configured() -> None:
     assert out.credit_funding_state_proxy is not None
     assert out.credit_funding_state_proxy is not out.credit_funding_state
     assert out.credit_funding_state_proxy.active_label in allowed
+    assert out.credit_funding_effective_state is not None
+    assert out.credit_funding_effective_state.active_label in allowed

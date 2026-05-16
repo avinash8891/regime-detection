@@ -118,8 +118,12 @@ class AxisSeriesBundle:
     credit_funding: dict[date, CreditFundingOutput] | None = None
     # V2 §2C credit/funding PROXY label — None in pure-v1 mode; populated by
     # CreditFundingSeriesClassifier.build_proxy on the TLT-vs-HYG/LQD
-    # differential. Parallel to `credit_funding`, never blended (Log #71).
+    # differential. Parallel to `credit_funding`; the effective output below
+    # carries the explicit downstream source-selection policy.
     credit_funding_proxy: dict[date, CreditFundingOutput] | None = None
+    # V2 §2C effective downstream credit/funding label. OAS and proxy remain
+    # visible separately; this map is what cross-axis rules consume.
+    credit_funding_effective: dict[date, CreditFundingOutput] | None = None
     # V2 §2A monetary pressure — None in pure-v1 mode (no v2 config), populated
     # by MonetaryPressureV2SeriesClassifier when feature_store.monetary is lit
     # AND context.config.monetary_pressure_state is non-None (Ambiguity Log #46).
@@ -994,6 +998,156 @@ class CreditFundingSeriesClassifier:
         )
 
 
+def _credit_output_has_classified_signal(output: CreditFundingOutput | None) -> bool:
+    if output is None:
+        return False
+    return output.active_label != "unknown" and output.data_quality.status in {
+        "ok",
+        "degraded",
+    }
+
+
+def _credit_output_is_data_unavailable(output: CreditFundingOutput | None) -> bool:
+    if output is None:
+        return True
+    return output.classification_status in {
+        "data_unavailable",
+        "stale_data",
+        "insufficient_history",
+    }
+
+
+def _with_effective_credit_evidence(
+    *,
+    chosen: CreditFundingOutput,
+    oas: CreditFundingOutput | None,
+    proxy: CreditFundingOutput | None,
+    source_used: str,
+    agreement_status: str,
+) -> CreditFundingOutput:
+    evidence = dict(chosen.evidence)
+    evidence.update(
+        {
+            "source_used": source_used,
+            "agreement_status": agreement_status,
+            "oas_label": oas.active_label if oas is not None else None,
+            "proxy_label": proxy.active_label if proxy is not None else None,
+            "oas_classification_status": (
+                oas.classification_status if oas is not None else None
+            ),
+            "proxy_classification_status": (
+                proxy.classification_status if proxy is not None else None
+            ),
+            "oas_spread_source": (
+                oas.evidence.get("spread_source") if oas is not None else None
+            ),
+            "proxy_spread_source": (
+                proxy.evidence.get("spread_source") if proxy is not None else None
+            ),
+        }
+    )
+    return chosen.model_copy(update={"evidence": evidence})
+
+
+def resolve_credit_funding_effective_output(
+    *,
+    oas: CreditFundingOutput | None,
+    proxy: CreditFundingOutput | None,
+) -> CreditFundingOutput | None:
+    """Resolve OAS + ETF proxy into the one label consumed downstream.
+
+    OAS and proxy are still emitted separately. The effective output uses OAS
+    when it is the only classified signal, uses proxy when OAS is unavailable,
+    and uses the higher-risk label when both directional signals disagree.
+    """
+    if oas is None and proxy is None:
+        return None
+
+    oas_signal = _credit_output_has_classified_signal(oas)
+    proxy_signal = _credit_output_has_classified_signal(proxy)
+
+    if oas_signal and proxy_signal:
+        assert oas is not None and proxy is not None
+        oas_rank = CREDIT_FUNDING_RISK_RANK[oas.active_label]
+        proxy_rank = CREDIT_FUNDING_RISK_RANK[proxy.active_label]
+        if oas_rank == proxy_rank:
+            return _with_effective_credit_evidence(
+                chosen=oas,
+                oas=oas,
+                proxy=proxy,
+                source_used="oas_confirmed",
+                agreement_status="confirmed",
+            )
+        if proxy_rank > oas_rank:
+            return _with_effective_credit_evidence(
+                chosen=proxy,
+                oas=oas,
+                proxy=proxy,
+                source_used="proxy_higher_risk",
+                agreement_status="divergent",
+            )
+        return _with_effective_credit_evidence(
+            chosen=oas,
+            oas=oas,
+            proxy=proxy,
+            source_used="oas_higher_risk",
+            agreement_status="divergent",
+        )
+
+    if proxy_signal:
+        assert proxy is not None
+        return _with_effective_credit_evidence(
+            chosen=proxy,
+            oas=oas,
+            proxy=proxy,
+            source_used=(
+                "proxy_fallback"
+                if _credit_output_is_data_unavailable(oas)
+                else "proxy_only"
+            ),
+            agreement_status="proxy_only",
+        )
+
+    if oas_signal:
+        assert oas is not None
+        return _with_effective_credit_evidence(
+            chosen=oas,
+            oas=oas,
+            proxy=proxy,
+            source_used="oas_only",
+            agreement_status="oas_only",
+        )
+
+    chosen = oas if oas is not None else proxy
+    assert chosen is not None
+    return _with_effective_credit_evidence(
+        chosen=chosen,
+        oas=oas,
+        proxy=proxy,
+        source_used="no_classified_signal",
+        agreement_status="unavailable",
+    )
+
+
+def resolve_credit_funding_effective_series(
+    *,
+    sessions: list[date],
+    oas_by_date: dict[date, CreditFundingOutput] | None,
+    proxy_by_date: dict[date, CreditFundingOutput] | None,
+) -> dict[date, CreditFundingOutput] | None:
+    if oas_by_date is None and proxy_by_date is None:
+        return None
+    outputs: dict[date, CreditFundingOutput] = {}
+    for day in sessions:
+        effective = resolve_credit_funding_effective_output(
+            oas=oas_by_date.get(day) if oas_by_date is not None else None,
+            proxy=proxy_by_date.get(day) if proxy_by_date is not None else None,
+        )
+        if effective is not None:
+            outputs[day] = effective
+    return outputs
+
+
 class InflationGrowthSeriesClassifier:
     """V2 §2B inflation/growth axis classifier (Slice 5).
 
@@ -1378,14 +1532,19 @@ def build_axis_series_bundle(*, context: MarketContext, feature_store: FeatureSt
     credit_funding_proxy = _credit_funding_classifier.build_proxy(
         context, feature_store
     )
+    credit_funding_effective = resolve_credit_funding_effective_series(
+        sessions=context.sessions,
+        oas_by_date=credit_funding,
+        proxy_by_date=credit_funding_proxy,
+    )
     network_fragility = NetworkFragilitySeriesClassifier().build(
         context,
         feature_store,
         breadth_active_labels_by_date=breadth_state.active_labels_by_date,
         volatility_active_labels_by_date=volatility_state.active_labels_by_date,
         credit_funding_active_labels_by_date=(
-            {day: out.active_label for day, out in credit_funding.items()}
-            if credit_funding is not None
+            {day: out.active_label for day, out in credit_funding_effective.items()}
+            if credit_funding_effective is not None
             else None
         ),
     )
@@ -1399,8 +1558,8 @@ def build_axis_series_bundle(*, context: MarketContext, feature_store: FeatureSt
         context,
         feature_store,
         credit_funding_active_labels_by_date=(
-            {day: out.active_label for day, out in credit_funding.items()}
-            if credit_funding is not None
+            {day: out.active_label for day, out in credit_funding_effective.items()}
+            if credit_funding_effective is not None
             else None
         ),
     )
@@ -1414,6 +1573,7 @@ def build_axis_series_bundle(*, context: MarketContext, feature_store: FeatureSt
         volume_liquidity_state=volume_liquidity_state,
         credit_funding=credit_funding,
         credit_funding_proxy=credit_funding_proxy,
+        credit_funding_effective=credit_funding_effective,
         monetary_pressure_state=monetary_pressure_state,
         inflation_growth=inflation_growth,
     )

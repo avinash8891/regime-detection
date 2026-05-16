@@ -312,7 +312,8 @@ news_sentiment:
   smoothing_window_sessions: 21
 
 # v2 §2C — Credit/Funding axis. Per Ambiguity Log #49 + #71, §2C carries
-# TWO parallel, never-blended credit-spread metrics:
+# TWO parallel credit-spread metrics plus an explicit effective downstream
+# resolver:
 #  1. Real ICE BofA OAS — `hy_oas` = BAMLH0A0HYM2, `ig_bbb_oas` =
 #     BAMLC0A4CBBB, on `MarketContext.macro_series`. FRED truncated these
 #     to a trailing ~3-year window (start 2023-05-15 — Log #71), so the
@@ -322,8 +323,11 @@ news_sentiment:
 #     `credit_funding_state_proxy` label via the same scale-invariant rule
 #     schema, with a `credit_spread_proxy_total_return_differential`
 #     bias-warning row.
-# The `REQUIRED_MACRO_KEYS` gate leaves §2C unbuilt if the OAS keys are
-# absent. The cross-asset universe (HYG/LQD/TLT/KRE + SOFR/IORB/NFCI +
+#  3. `credit_funding_effective_state` preserves both labels in evidence and
+#     routes cross-axis consumers through this policy: OAS when it is the only
+#     classified signal, proxy when OAS is unavailable, and the higher-risk
+#     label when both directional signals diverge.
+# The cross-asset universe (HYG/LQD/TLT/KRE + SOFR/IORB/NFCI +
 # broad_usd_index) is hard-pinned in code (spec §2C lines 2024-2030).
 credit_funding:
   rules:
