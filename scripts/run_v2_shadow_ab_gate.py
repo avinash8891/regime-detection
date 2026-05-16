@@ -70,6 +70,7 @@ V2_FIELDS: list[str] = [
     "agent_routing",
     "change_point",
     "credit_funding_state",
+    "credit_funding_effective_state",
     "inflation_growth_state",
     "cluster",
     "monetary_pressure_state",
@@ -83,6 +84,18 @@ def _setup_logging() -> None:
         level=logging.INFO,
         format="%(asctime)s %(levelname)s %(name)s | %(message)s",
     )
+
+
+def _reporting_label(output: Any) -> str | None:
+    if output is None:
+        return None
+    reporting = getattr(output, "reporting_label", None)
+    if reporting is not None:
+        return reporting
+    classification_status = getattr(output, "classification_status", "classified")
+    if classification_status != "classified":
+        return classification_status
+    return getattr(output, "active_label", None)
 
 
 def _extract_v1_fields(output: Any) -> dict[str, Any]:
@@ -105,28 +118,33 @@ def _extract_v2_fields(output: Any) -> dict[str, Any]:
             output.change_point.score if output.change_point is not None else None
         ),
         "credit_funding_state": (
-            output.credit_funding_state.active_label
+            _reporting_label(output.credit_funding_state)
             if output.credit_funding_state is not None
             else None
         ),
+        "credit_funding_effective_state": (
+            _reporting_label(output.credit_funding_effective_state)
+            if output.credit_funding_effective_state is not None
+            else None
+        ),
         "inflation_growth_state": (
-            output.inflation_growth_state.active_label
+            _reporting_label(output.inflation_growth_state)
             if output.inflation_growth_state is not None
             else None
         ),
         "cluster": (output.cluster.cluster_id if output.cluster is not None else None),
         "monetary_pressure_state": (
-            output.monetary_pressure_state.active_label
+            _reporting_label(output.monetary_pressure_state)
             if output.monetary_pressure_state is not None
             else None
         ),
         "volume_liquidity_state": (
-            output.volume_liquidity_state.active_label
+            _reporting_label(output.volume_liquidity_state)
             if output.volume_liquidity_state is not None
             else None
         ),
         "network_fragility": (
-            output.network_fragility.active_label
+            _reporting_label(output.network_fragility)
             if output.network_fragility is not None
             else None
         ),

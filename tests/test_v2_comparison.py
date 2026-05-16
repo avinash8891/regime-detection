@@ -276,3 +276,42 @@ def test_compute_v1_v2_diff_detects_axis_label_disagreement() -> None:
     assert len(matches) == 1
     assert matches[0].v1_active_label == timeline_a.outputs[0].trend_direction.active_label
     assert matches[0].v2_active_label == "bear"
+
+
+def test_compute_v1_v2_diff_reports_granular_status_for_unknown_labels() -> None:
+    timeline_a = _timeline(_output(date(2023, 12, 13)))
+    timeline_b = _timeline(_output(date(2023, 12, 13)))
+
+    left_outputs = list(timeline_a.outputs)
+    left = left_outputs[0].model_copy(deep=True)
+    left.network_fragility = left.network_fragility.model_copy(
+        update={
+            "active_label": "unknown",
+            "raw_label": "unknown",
+            "stable_label": "unknown",
+            "classification_status": "no_rule_fired",
+        }
+    )
+    left_outputs[0] = left
+
+    right_outputs = list(timeline_b.outputs)
+    right = right_outputs[0].model_copy(deep=True)
+    right.network_fragility = right.network_fragility.model_copy(
+        update={
+            "active_label": "unknown",
+            "raw_label": "unknown",
+            "stable_label": "unknown",
+            "classification_status": "stale_data",
+        }
+    )
+    right_outputs[0] = right
+
+    diff = compute_v1_v2_diff(
+        timeline_a.model_copy(update={"outputs": left_outputs}),
+        timeline_b.model_copy(update={"outputs": right_outputs}),
+    )
+
+    matches = [d for d in diff.label_diffs if d.axis == "network_fragility"]
+    assert len(matches) == 1
+    assert matches[0].v1_active_label == "no_rule_fired"
+    assert matches[0].v2_active_label == "stale_data"

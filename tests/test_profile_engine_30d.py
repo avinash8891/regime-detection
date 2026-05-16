@@ -3,6 +3,7 @@ from __future__ import annotations
 import importlib.util
 import sys
 from pathlib import Path
+from types import SimpleNamespace
 
 import pandas as pd
 import pytest
@@ -28,6 +29,35 @@ def test_profile_engine_rejects_non_positive_lookback_days(monkeypatch: pytest.M
         profile_engine_30d.main()
 
     assert exc_info.value.code == 2
+
+
+def test_profile_reporting_label_uses_granular_status_for_unknown() -> None:
+    output = SimpleNamespace(active_label="unknown", classification_status="no_rule_fired")
+
+    assert profile_engine_30d._reporting_label(output) == "no_rule_fired"
+
+
+def test_profile_trailing_status_reports_no_rule_fired_not_unknown() -> None:
+    output = SimpleNamespace(
+        network_fragility=None,
+        volume_liquidity_state=None,
+        credit_funding_state=None,
+        credit_funding_state_proxy=SimpleNamespace(
+            active_label="unknown",
+            classification_status="no_rule_fired",
+        ),
+        credit_funding_effective_state=None,
+        inflation_growth_state=None,
+        monetary_pressure_state=None,
+        cluster=None,
+        change_point=None,
+        transition_risk=SimpleNamespace(score=None, score_components=None),
+    )
+
+    rows = profile_engine_30d._trailing_v2_status(output)
+
+    assert "credit_funding_state_proxy | reported=no_rule_fired" in rows
+    assert all("active_label=unknown" not in row for row in rows)
 
 
 def test_profile_engine_loads_aaii_sentiment_when_present(tmp_path: Path) -> None:

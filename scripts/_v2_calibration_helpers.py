@@ -59,7 +59,7 @@ def load_macro_series(
     cpi_nowcast_parquet: Path | None = None,
     eps_weekly_history_parquet: Path | None = None,
 ) -> dict[str, pd.Series]:
-    """Load FRED macro + manual PMI + the §2B nowcast / EPS-revision seams
+    """Load FRED macro + PMI + the §2B nowcast / EPS-revision seams
     into a name-keyed dict.
 
     ``cpi_nowcast_parquet`` and ``eps_weekly_history_parquet`` default to
@@ -72,17 +72,9 @@ def load_macro_series(
     """
     series_dict = load_fred_macro_series(macro_parquet)
     if pmi_path and pmi_path.exists():
-        pmi_df = pd.read_csv(pmi_path, sep="\t")
-        if "release_date_local" in pmi_df.columns and "actual" in pmi_df.columns:
-            pmi_df["release_date_local"] = pd.to_datetime(
-                pmi_df["release_date_local"], format="%d-%m-%Y"
-            )
-            pmi = (
-                pmi_df.set_index("release_date_local")["actual"]
-                .astype(float)
-                .sort_index()
-            )
-            series_dict["pmi_manufacturing"] = pmi.rename("pmi_manufacturing")
+        pmi = _load_pmi_manufacturing_series(pmi_path)
+        if pmi is not None:
+            series_dict["pmi_manufacturing"] = pmi
     # §2B nowcast / EPS-revision seams (ADR 0006 / Ambiguity Log #48). Both
     # parquets live as siblings of macro_parquet under data/raw/; load them
     # when present so the §2B `inflation_shock` single-signal limb and the
@@ -111,6 +103,47 @@ def load_macro_series(
             eps_weekly_history_parquet,
         )
     return series_dict
+
+
+def _load_pmi_manufacturing_series(pmi_path: Path) -> pd.Series | None:
+    if pmi_path.suffix.lower() == ".parquet":
+        history_path = pmi_path.with_name("us_ism_pmi_history.parquet")
+        effective_path = history_path if history_path.exists() else pmi_path
+        pmi_df = pd.read_parquet(effective_path)
+        required = {"series_name", "value", "release_timestamp"}
+        if not required.issubset(pmi_df.columns):
+            return None
+        pmi_df = pmi_df[pmi_df["series_name"] == "manufacturing"].copy()
+        if pmi_df.empty:
+            return None
+        release_timestamp = pd.to_datetime(
+            pmi_df["release_timestamp"],
+            utc=True,
+        )
+        pmi_df["release_date_local"] = (
+            release_timestamp.dt.tz_convert("America/New_York")
+            .dt.tz_localize(None)
+            .dt.normalize()
+        )
+        return (
+            pmi_df.set_index("release_date_local")["value"]
+            .astype(float)
+            .sort_index()
+            .rename("pmi_manufacturing")
+        )
+
+    pmi_df = pd.read_csv(pmi_path, sep="\t")
+    if "release_date_local" not in pmi_df.columns or "actual" not in pmi_df.columns:
+        return None
+    pmi_df["release_date_local"] = pd.to_datetime(
+        pmi_df["release_date_local"], format="%d-%m-%Y"
+    )
+    return (
+        pmi_df.set_index("release_date_local")["actual"]
+        .astype(float)
+        .sort_index()
+        .rename("pmi_manufacturing")
+    )
 
 
 # Cross-asset symbols pulled by V2 §2B / §2C / §3 axes. Mirrors the

@@ -397,22 +397,44 @@ def _format_stage_rows(stage_names: list[str], timer: StageTimer, total: float) 
     return rows
 
 
+def _reporting_label(output: Any) -> str | None:
+    if output is None:
+        return None
+    reporting = getattr(output, "reporting_label", None)
+    if reporting is not None:
+        return reporting
+    classification_status = getattr(output, "classification_status", "classified")
+    if classification_status != "classified":
+        return classification_status
+    return getattr(output, "active_label", None)
+
+
 def _compact_timeline_rows(outputs: list[RegimeOutput]) -> list[str]:
     rows = [
         "as_of_date | trend_direction | volatility_state | transition_risk | activated_v2_seams"
     ]
     for out in outputs:
         seams: list[str] = []
-        if out.network_fragility.active_label != "unknown":
-            seams.append(f"network_fragility={out.network_fragility.active_label}")
+        network_fragility_label = _reporting_label(out.network_fragility)
+        if network_fragility_label not in {None, "no_rule_fired", "data_unavailable", "stale_data", "insufficient_history", "not_wired"}:
+            seams.append(f"network_fragility={network_fragility_label}")
         if out.volume_liquidity_state is not None:
-            seams.append(f"volume_liquidity_state={out.volume_liquidity_state.active_label}")
+            seams.append(f"volume_liquidity_state={_reporting_label(out.volume_liquidity_state)}")
         if out.credit_funding_state is not None:
-            seams.append(f"credit_funding_state={out.credit_funding_state.active_label}")
+            seams.append(f"credit_funding_state={_reporting_label(out.credit_funding_state)}")
+        if out.credit_funding_state_proxy is not None:
+            seams.append(f"credit_funding_state_proxy={_reporting_label(out.credit_funding_state_proxy)}")
+        if out.credit_funding_effective_state is not None:
+            source = out.credit_funding_effective_state.evidence.get("source_used", "not_recorded")
+            seams.append(
+                "credit_funding_effective_state="
+                f"{_reporting_label(out.credit_funding_effective_state)}"
+                f"({source})"
+            )
         if out.inflation_growth_state is not None:
-            seams.append(f"inflation_growth_state={out.inflation_growth_state.active_label}")
+            seams.append(f"inflation_growth_state={_reporting_label(out.inflation_growth_state)}")
         if out.monetary_pressure_state is not None:
-            seams.append(f"monetary_pressure_state={out.monetary_pressure_state.active_label}")
+            seams.append(f"monetary_pressure_state={_reporting_label(out.monetary_pressure_state)}")
         if out.cluster is not None:
             seams.append(f"cluster={out.cluster.cluster_id}")
         if out.change_point is not None:
@@ -422,8 +444,8 @@ def _compact_timeline_rows(outputs: list[RegimeOutput]) -> list[str]:
         seam_text = ", ".join(seams) if seams else "-"
         rows.append(
             f"{out.as_of_date.isoformat()} | "
-            f"{out.trend_direction.active_label} | "
-            f"{out.volatility_state.active_label} | "
+            f"{_reporting_label(out.trend_direction)} | "
+            f"{_reporting_label(out.volatility_state)} | "
             f"{out.transition_risk.label} | "
             f"{seam_text}"
         )
@@ -441,13 +463,15 @@ def _trailing_v2_status(out: RegimeOutput) -> list[str]:
             rows.append(f"{name} | NaN")
             return
         if hasattr(value, "active_label"):
-            rows.append(f"{name} | active_label={value.active_label}")
+            rows.append(f"{name} | reported={_reporting_label(value)}")
             return
         rows.append(f"{name} | present")
 
     add("network_fragility", out.network_fragility)
     add("volume_liquidity_state", out.volume_liquidity_state)
     add("credit_funding_state", out.credit_funding_state)
+    add("credit_funding_state_proxy", out.credit_funding_state_proxy)
+    add("credit_funding_effective_state", out.credit_funding_effective_state)
     add("inflation_growth_state", out.inflation_growth_state)
     add("monetary_pressure_state", out.monetary_pressure_state)
     add("cluster", out.cluster)
@@ -471,6 +495,7 @@ def _verify_invariants(
         ("network_fragility", trailing.network_fragility),
         ("volume_liquidity_state", trailing.volume_liquidity_state),
         ("credit_funding_state", trailing.credit_funding_state),
+        ("credit_funding_effective_state", trailing.credit_funding_effective_state),
         ("inflation_growth_state", trailing.inflation_growth_state),
         ("monetary_pressure_state", trailing.monetary_pressure_state),
     ]

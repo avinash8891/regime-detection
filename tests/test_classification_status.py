@@ -1,4 +1,4 @@
-from regime_detection.models import AxisOutput, CreditFundingOutput, DataQuality
+from regime_detection.models import AxisOutput, CreditFundingOutput, DataQuality, VolumeLiquidityOutput
 
 
 def test_unknown_with_ok_data_quality_is_no_rule_fired() -> None:
@@ -12,6 +12,7 @@ def test_unknown_with_ok_data_quality_is_no_rule_fired() -> None:
 
     assert out.classification_status == "no_rule_fired"
     assert out.classification_reason == "no_rule_fired"
+    assert out.reporting_label == "no_rule_fired"
 
 
 def test_unknown_with_stale_data_quality_is_stale_data() -> None:
@@ -48,3 +49,51 @@ def test_non_unknown_label_is_classified_even_when_data_quality_is_degraded() ->
 
     assert out.classification_status == "classified"
     assert out.classification_reason is None
+    assert out.reporting_label == "bull"
+
+
+def test_unknown_with_insufficient_data_reports_data_unavailable() -> None:
+    out = AxisOutput(
+        raw_label="unknown",
+        stable_label="unknown",
+        active_label="unknown",
+        evidence={},
+        data_quality=DataQuality(
+            status="insufficient_data",
+            freshness_days=None,
+            completeness=0.0,
+            reason="source_missing",
+        ),
+    )
+
+    assert out.classification_status == "data_unavailable"
+    assert out.reporting_label == "data_unavailable"
+
+
+def test_volume_liquidity_reporting_label_uses_same_contract() -> None:
+    unknown = VolumeLiquidityOutput(
+        label="unknown",
+        evidence={},
+        data_quality=DataQuality(status="ok", freshness_days=0, completeness=1.0),
+    )
+    classified = VolumeLiquidityOutput(
+        label="normal_volume",
+        evidence={},
+        data_quality=DataQuality(status="ok", freshness_days=0, completeness=1.0),
+    )
+    missing = VolumeLiquidityOutput(
+        label="unknown",
+        evidence={},
+        data_quality=DataQuality(
+            status="insufficient_data",
+            freshness_days=None,
+            completeness=0.0,
+        ),
+    )
+
+    assert unknown.classification_status == "no_rule_fired"
+    assert unknown.reporting_label == "no_rule_fired"
+    assert classified.classification_status == "classified"
+    assert classified.reporting_label == "normal_volume"
+    assert missing.classification_status == "data_unavailable"
+    assert missing.reporting_label == "data_unavailable"

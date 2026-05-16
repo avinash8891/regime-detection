@@ -53,6 +53,13 @@ from _v2_calibration_helpers import (  # noqa: E402
 logger = logging.getLogger("v2_walkforward_gate")
 
 V1_AXIS_DEFAULT_AGENT = "default"
+NON_CLASSIFIED_REPORTING_LABELS = {
+    "no_rule_fired",
+    "data_unavailable",
+    "stale_data",
+    "insufficient_history",
+    "not_wired",
+}
 
 
 def _setup_logging() -> None:
@@ -84,6 +91,7 @@ def _session_metrics_empty() -> dict[str, int]:
         "change_point_score": 0,
         "hmm_evidence_on_score": 0,
         "credit_funding_state": 0,
+        "credit_funding_effective_state": 0,
         "inflation_growth_state": 0,
         "cluster_output": 0,
     }
@@ -112,6 +120,8 @@ def _tally_output(metrics: dict[str, int], output: Any) -> None:
         metrics["change_point_score"] += 1
     if output.credit_funding_state is not None:
         metrics["credit_funding_state"] += 1
+    if output.credit_funding_effective_state is not None:
+        metrics["credit_funding_effective_state"] += 1
     if output.inflation_growth_state is not None:
         metrics["inflation_growth_state"] += 1
     if output.cluster is not None:
@@ -130,27 +140,34 @@ def _axis_activation_empty() -> dict[str, int]:
     }
 
 
+def _reporting_label(output: Any) -> str | None:
+    if output is None:
+        return None
+    reporting = getattr(output, "reporting_label", None)
+    if reporting is not None:
+        return reporting
+    classification_status = getattr(output, "classification_status", "classified")
+    if classification_status != "classified":
+        return classification_status
+    return getattr(output, "active_label", None)
+
+
+def _is_classified_axis_output(output: Any) -> bool:
+    label = (_reporting_label(output) or "").lower()
+    return bool(label) and label not in NON_CLASSIFIED_REPORTING_LABELS
+
+
 def _tally_axis_activation(axes: dict[str, int], output: Any) -> None:
-    if output.network_fragility is not None:
-        lbl = (output.network_fragility.active_label or "").lower()
-        if lbl and lbl != "unknown":
-            axes["network_fragility"] += 1
-    if output.credit_funding_state is not None:
-        lbl = (output.credit_funding_state.active_label or "").lower()
-        if lbl and lbl != "unknown":
-            axes["credit_funding"] += 1
-    if output.inflation_growth_state is not None:
-        lbl = (output.inflation_growth_state.active_label or "").lower()
-        if lbl and lbl != "unknown":
-            axes["inflation_growth"] += 1
-    if output.monetary_pressure_state is not None:
-        lbl = (output.monetary_pressure_state.active_label or "").lower()
-        if lbl and lbl != "unknown":
-            axes["monetary_pressure_v2"] += 1
-    if output.volume_liquidity_state is not None:
-        lbl = (output.volume_liquidity_state.active_label or "").lower()
-        if lbl and lbl != "unknown":
-            axes["volume_liquidity_state"] += 1
+    if _is_classified_axis_output(output.network_fragility):
+        axes["network_fragility"] += 1
+    if _is_classified_axis_output(output.credit_funding_effective_state):
+        axes["credit_funding"] += 1
+    if _is_classified_axis_output(output.inflation_growth_state):
+        axes["inflation_growth"] += 1
+    if _is_classified_axis_output(output.monetary_pressure_state):
+        axes["monetary_pressure_v2"] += 1
+    if _is_classified_axis_output(output.volume_liquidity_state):
+        axes["volume_liquidity_state"] += 1
     if output.agent_routing is not None:
         if (output.agent_routing.active_cohort or "").lower() != V1_AXIS_DEFAULT_AGENT:
             axes["agent_routing_non_default"] += 1
@@ -228,17 +245,18 @@ def _build_markdown(
         _row("sessions with change_point.score", "change_point_score"),
         _row("sessions with hmm evidence on score", "hmm_evidence_on_score"),
         _row("sessions with credit_funding_state", "credit_funding_state"),
+        _row("sessions with credit_funding_effective_state", "credit_funding_effective_state"),
         _row("sessions with inflation_growth_state", "inflation_growth_state"),
         _row("sessions with cluster output", "cluster_output"),
     ]
 
     classified = max(1, v2_metrics["sessions_classified"])
     axis_rows = [
-        ("network_fragility (non-unknown)", v2_axes["network_fragility"]),
-        ("credit_funding (non-unknown)", v2_axes["credit_funding"]),
-        ("inflation_growth (non-unknown)", v2_axes["inflation_growth"]),
-        ("monetary_pressure_v2 (non-unknown)", v2_axes["monetary_pressure_v2"]),
-        ("volume_liquidity_state (non-unknown)", v2_axes["volume_liquidity_state"]),
+        ("network_fragility (classified)", v2_axes["network_fragility"]),
+        ("credit_funding (classified)", v2_axes["credit_funding"]),
+        ("inflation_growth (classified)", v2_axes["inflation_growth"]),
+        ("monetary_pressure_v2 (classified)", v2_axes["monetary_pressure_v2"]),
+        ("volume_liquidity_state (classified)", v2_axes["volume_liquidity_state"]),
         ("agent_routing != default", v2_axes["agent_routing_non_default"]),
         ("change_point >= 0.5", v2_axes["change_point_ge_0_5"]),
     ]
