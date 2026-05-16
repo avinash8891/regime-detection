@@ -247,6 +247,8 @@ def test_load_default_regime_config_dispatches_on_package_version() -> None:
     cfg = load_default_regime_config()
     assert isinstance(cfg, RegimeConfig)
     assert cfg.config_version == "core3-v2.0.0"
+    assert cfg.no_flip_flop is not None
+    assert cfg.no_flip_flop.window_trading_days == 15
 
 
 def test_default_config_resource_dispatch_parses_version_major() -> None:

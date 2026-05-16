@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import base64
 import datetime as dt
 import io
 import json
@@ -636,9 +637,12 @@ def _fetch_ucdp_events(start_year: int, end_year: int) -> str | None:
 
 
 def _fetch_hdx_hapi_conflict_events(start_year: int, end_year: int) -> str | None:
-    app_identifier = os.environ.get("HDX_HAPI_APP_IDENTIFIER", "").strip()
-    if not app_identifier:
-        LOGGER.error("HDX HAPI app identifier unavailable; set HDX_HAPI_APP_IDENTIFIER to fetch HDX conflict events")
+    app_identifier = _hdx_hapi_app_identifier()
+    if app_identifier is None:
+        LOGGER.error(
+            "HDX HAPI app identifier unavailable; set HDX_HAPI_APP_IDENTIFIER "
+            "or HDX_HAPI_APP_NAME and HDX_HAPI_APP_EMAIL to fetch conflict events"
+        )
         return None
     return _fetch_paged_json(
         HDX_HAPI_CONFLICT_EVENTS_URL,
@@ -647,10 +651,22 @@ def _fetch_hdx_hapi_conflict_events(start_year: int, end_year: int) -> str | Non
         extra_params={
             "output_format": "json",
             "app_identifier": app_identifier,
-            "reference_period_start": f"{start_year}-01-01",
-            "reference_period_end": f"{end_year}-12-31",
+            "start_date": f"{start_year}-01-01",
+            "end_date": f"{end_year}-12-31",
         },
     )
+
+
+def _hdx_hapi_app_identifier() -> str | None:
+    for env_var in ("HDX_HAPI_APP_IDENTIFIER", "HDX_APP_IDENTIFIER"):
+        value = os.environ.get(env_var, "").strip()
+        if value:
+            return value
+    app_name = os.environ.get("HDX_HAPI_APP_NAME", "").strip()
+    app_email = os.environ.get("HDX_HAPI_APP_EMAIL", "").strip()
+    if not app_name or not app_email:
+        return None
+    return base64.b64encode(f"{app_name}:{app_email}".encode("utf-8")).decode("ascii")
 
 
 def _fetch_paged_json(
@@ -669,11 +685,32 @@ def _fetch_paged_json(
         if not isinstance(page_records, list):
             break
         records.extend(record for record in page_records if isinstance(record, dict))
-        total_count = int(payload.get("TotalCount", len(records))) if isinstance(payload, dict) else len(records)
-        if len(page_records) < CONFLICT_API_PAGE_SIZE or len(records) >= total_count:
+        total_count = _payload_total_count(payload)
+        if len(page_records) < CONFLICT_API_PAGE_SIZE:
+            if total_count is not None and len(records) < total_count:
+                raise RuntimeError(
+                    f"{base_url} returned short page before TotalCount was satisfied: "
+                    f"records={len(records)} total_count={total_count} page={page}"
+                )
+            break
+        if total_count is not None and len(records) >= total_count:
             break
         page += 1
     return json.dumps({result_key: records}, sort_keys=True)
+
+
+def _payload_total_count(payload: object) -> int | None:
+    if not isinstance(payload, dict):
+        return None
+    for key in ("TotalCount", "total_count", "count"):
+        value = payload.get(key)
+        if value is None:
+            continue
+        try:
+            return int(value)
+        except (TypeError, ValueError):
+            return None
+    return None
 
 
 def _http_text(url: str, *, headers: dict[str, str]) -> str:

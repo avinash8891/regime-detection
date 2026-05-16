@@ -9,9 +9,9 @@ labels (operator-side mapping per V2 §10 + spec line 2837).
 
 from __future__ import annotations
 
-
 import numpy as np
 import pandas as pd
+import pytest
 
 from regime_detection.config import (
     ClusteringConfig,
@@ -104,6 +104,23 @@ def _default_clustering_config(
     )
 
 
+@pytest.fixture(scope="module")
+def _computed_default_clustering_pair() -> tuple[ClusteringFeatures, ClusteringFeatures]:
+    inputs = _synthetic_inputs(n_sessions=1500)
+    cfg = _default_clustering_config()
+    first = compute_clustering_features(config=cfg, **inputs)
+    second = compute_clustering_features(config=cfg, **inputs)
+    assert first is not None and second is not None
+    return first, second
+
+
+@pytest.fixture(scope="module")
+def _computed_default_clustering(
+    _computed_default_clustering_pair: tuple[ClusteringFeatures, ClusteringFeatures],
+) -> ClusteringFeatures:
+    return _computed_default_clustering_pair[0]
+
+
 # ---------------------------------------------------------------------------
 # Group A — compute_clustering_features unit tests
 # ---------------------------------------------------------------------------
@@ -125,30 +142,29 @@ def test_compute_clustering_features_returns_none_when_insufficient_history() ->
     assert result is None
 
 
-def test_compute_clustering_features_succeeds_on_synthetic_inputs() -> None:
+def test_compute_clustering_features_succeeds_on_synthetic_inputs(
+    _computed_default_clustering: ClusteringFeatures,
+) -> None:
     inputs = _synthetic_inputs(n_sessions=1500)
-    cfg = _default_clustering_config()
-    result = compute_clustering_features(config=cfg, **inputs)
+    result = _computed_default_clustering
     assert result is not None
     assert isinstance(result, ClusteringFeatures)
     assert result.n_clusters == 8
     assert result.model_version == "gmm_8cluster_v1.0"
     assert len(result.cluster_id) == 1500
     non_null = result.cluster_id.dropna()
-    # V1 §2.2 PIT semantics: GMM is fit ONCE per classify_window call on
-    # frame.tail(n_train) ending at frame.index[-1]. Earlier sessions are
-    # masked to NA to prevent future-leak. Exactly the trailing aligned
-    # session carries a real cluster assignment.
-    assert len(non_null) == 1
-    assert non_null.index[0] == inputs["return_21d"].dropna().index[-1]
+    # V1 §2.2 PIT semantics: every warmed session gets a cluster assignment
+    # from a GMM trained only on data available through that session.
+    assert len(non_null) > 30
+    assert non_null.index.max() == inputs["return_21d"].dropna().index[-1]
     for val in non_null.unique():
         assert int(val) in range(8)
 
 
-def test_cluster_probabilities_sum_to_one_per_session() -> None:
-    inputs = _synthetic_inputs(n_sessions=1500)
-    cfg = _default_clustering_config()
-    result = compute_clustering_features(config=cfg, **inputs)
+def test_cluster_probabilities_sum_to_one_per_session(
+    _computed_default_clustering: ClusteringFeatures,
+) -> None:
+    result = _computed_default_clustering
     assert result is not None
     valid_rows = result.cluster_probabilities.dropna(how="any")
     assert len(valid_rows) > 0
@@ -156,10 +172,10 @@ def test_cluster_probabilities_sum_to_one_per_session() -> None:
     np.testing.assert_allclose(row_sums.to_numpy(), 1.0, atol=1e-6)
 
 
-def test_cluster_id_is_argmax_of_probabilities() -> None:
-    inputs = _synthetic_inputs(n_sessions=1500)
-    cfg = _default_clustering_config()
-    result = compute_clustering_features(config=cfg, **inputs)
+def test_cluster_id_is_argmax_of_probabilities(
+    _computed_default_clustering: ClusteringFeatures,
+) -> None:
+    result = _computed_default_clustering
     assert result is not None
     valid_proba = result.cluster_probabilities.dropna(how="any")
     valid_id = result.cluster_id.dropna()
@@ -171,21 +187,20 @@ def test_cluster_id_is_argmax_of_probabilities() -> None:
     assert actual == expected
 
 
-def test_distance_to_centroid_is_non_negative() -> None:
-    inputs = _synthetic_inputs(n_sessions=1500)
-    cfg = _default_clustering_config()
-    result = compute_clustering_features(config=cfg, **inputs)
+def test_distance_to_centroid_is_non_negative(
+    _computed_default_clustering: ClusteringFeatures,
+) -> None:
+    result = _computed_default_clustering
     assert result is not None
     non_null = result.distance_to_centroid.dropna()
     assert len(non_null) > 0
     assert (non_null >= 0.0).all()
 
 
-def test_seed_determinism() -> None:
-    inputs = _synthetic_inputs(n_sessions=1500)
-    cfg = _default_clustering_config()
-    first = compute_clustering_features(config=cfg, **inputs)
-    second = compute_clustering_features(config=cfg, **inputs)
+def test_seed_determinism(
+    _computed_default_clustering_pair: tuple[ClusteringFeatures, ClusteringFeatures],
+) -> None:
+    first, second = _computed_default_clustering_pair
     assert first is not None and second is not None
     pd.testing.assert_series_equal(first.cluster_id, second.cluster_id)
     pd.testing.assert_series_equal(

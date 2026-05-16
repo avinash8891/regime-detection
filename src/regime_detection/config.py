@@ -855,6 +855,13 @@ class HMMConfig(BaseModel):
     # Slice 6: deterministic seed for hmmlearn.GaussianHMM. Reproducibility
     # gate — same inputs + same seed → byte-identical posterior.
     random_state: int = Field(default=42, ge=0)
+    covariance_type: Literal["full", "tied", "diag", "spherical"] = "full"
+    min_covar: float = Field(default=0.001, ge=0.0)
+    standardize_inputs: bool = True
+    random_seeds: tuple[int, ...] = Field(
+        default=(42, 101, 202, 303, 404, 505, 606, 707, 808, 909),
+        min_length=1,
+    )
 
 
 class ClusteringConfig(BaseModel):
@@ -898,7 +905,7 @@ class ChangePointConfig(BaseModel):
 
 
 class VolCrushConfig(BaseModel):
-    """Volatility crush detection configuration (v2 spec §5.3)."""
+    """Vol-crush strategy-contract knobs exposed for downstream consumers."""
 
     model_config = ConfigDict(extra="forbid")
 
@@ -911,7 +918,7 @@ class VolCrushConfig(BaseModel):
 
 
 class NoFlipFlopConfig(BaseModel):
-    """No-flip-flop stability guard configuration (v2 spec §5.4). Stub."""
+    """No-flip-flop timing-control knobs exposed for downstream consumers."""
 
     model_config = ConfigDict(extra="forbid")
 
@@ -955,7 +962,9 @@ class CohortRoutingConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     routing_rules: dict[str, CohortRoutingRule]
-    blocked_cohorts: dict[str, list[str]]
+    # Values are strategy modes/families suppressed by the active cohort, not
+    # alternate agent cohorts.
+    blocked_strategy_modes: dict[str, list[str]]
 
 
 class FamilyOverride(BaseModel):

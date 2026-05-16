@@ -147,9 +147,20 @@ _V1_AXES_TO_COMPARE: tuple[str, ...] = (
 _V2_OPTIONAL_TOP_LEVEL_FIELDS: tuple[str, ...] = (
     "inflation_growth_state",
     "credit_funding_state",
+    "credit_funding_effective_state",
     "volume_liquidity_state",
     "change_point",
 )
+
+
+def _reporting_label(output: object) -> str:
+    reporting = getattr(output, "reporting_label", None)
+    if reporting is not None:
+        return str(reporting)
+    classification_status = getattr(output, "classification_status", "classified")
+    if classification_status != "classified":
+        return str(classification_status)
+    return str(getattr(output, "active_label"))
 
 
 def compute_v1_v2_diff(
@@ -181,10 +192,10 @@ def compute_v1_v2_diff(
                 "RegimeTimeline date misalignment: "
                 f"v1={v1_out.as_of_date.isoformat()} "
                 f"v2={v2_out.as_of_date.isoformat()}"
-            )
+        )
         for axis in _V1_AXES_TO_COMPARE:
-            v1_label = getattr(v1_out, axis).active_label
-            v2_label = getattr(v2_out, axis).active_label
+            v1_label = _reporting_label(getattr(v1_out, axis))
+            v2_label = _reporting_label(getattr(v2_out, axis))
             if v1_label != v2_label:
                 diffs.append(
                     AxisLabelDiff(
@@ -194,13 +205,15 @@ def compute_v1_v2_diff(
                         v2_active_label=v2_label,
                     )
                 )
-        if v1_out.network_fragility.active_label != v2_out.network_fragility.active_label:
+        v1_network_label = _reporting_label(v1_out.network_fragility)
+        v2_network_label = _reporting_label(v2_out.network_fragility)
+        if v1_network_label != v2_network_label:
             diffs.append(
                 AxisLabelDiff(
                     axis="network_fragility",
                     as_of_date=v1_out.as_of_date,
-                    v1_active_label=v1_out.network_fragility.active_label,
-                    v2_active_label=v2_out.network_fragility.active_label,
+                    v1_active_label=v1_network_label,
+                    v2_active_label=v2_network_label,
                 )
             )
 

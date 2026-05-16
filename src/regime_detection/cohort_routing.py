@@ -68,12 +68,12 @@ def evaluate_cohort_routing(
             return AgentRouting(
                 active_cohort=cohort,
                 fallback_cohort=_FALLBACK,
-                blocked_cohorts=list(config.blocked_cohorts.get(cohort, ())),
+                blocked_strategy_modes=list(config.blocked_strategy_modes.get(cohort, ())),
             )
     return AgentRouting(
         active_cohort=_FALLBACK,
         fallback_cohort=_FALLBACK,
-        blocked_cohorts=list(config.blocked_cohorts.get(_FALLBACK, ())),
+        blocked_strategy_modes=list(config.blocked_strategy_modes.get(_FALLBACK, ())),
     )
 
 

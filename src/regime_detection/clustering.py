@@ -104,85 +104,59 @@ def compute_clustering_features(
     if len(frame) < n_train:
         return None
 
-    train = frame.tail(n_train).to_numpy(dtype=float)
-    # Fail-open guard: when the training window has zero variance across
-    # every feature, GMM converges to a degenerate solution (all rows in
-    # cluster 0 with epsilon spread from reg_covar). That's not evidence;
-    # surface as a seam-absent signal instead — matches the
-    # singular-covariance fail-open contract documented in the module
-    # docstring.
-    if not np.any(train.std(axis=0) > 0.0):
-        return None
-    model = GaussianMixture(
-        n_components=config.n_clusters,
-        covariance_type=config.covariance_type,
-        random_state=config.random_state,
-        max_iter=200,
-        reg_covar=1e-6,
-    )
-    try:
-        model.fit(train)
-        full_X = frame.to_numpy(dtype=float)
-        proba = model.predict_proba(full_X)
-    except Exception as exc:  # noqa: BLE001
-        _LOG.warning(
-            "GaussianMixture fit/predict failed; clustering seam returns None: %s",
-            exc,
-        )
-        return None
-
-    cluster_id_arr = proba.argmax(axis=1)
-
-    # Mahalanobis distance to the *assigned* cluster centroid.
-    distance_arr = np.empty(len(frame), dtype=float)
-    for k in range(config.n_clusters):
-        mask = cluster_id_arr == k
-        if not mask.any():
-            continue
-        diff = full_X[mask] - model.means_[k]
-        if config.covariance_type == "full":
-            # precisions_ shape: (n_components, n_features, n_features)
-            precision = model.precisions_[k]
-            # Mahalanobis: sqrt(diff @ P @ diff.T) per row
-            # Clamp negative values from FP noise before sqrt.
-            quad = np.einsum("ij,jk,ik->i", diff, precision, diff)
-            distance_arr[mask] = np.sqrt(np.clip(quad, 0.0, None))
-        else:
-            # tied/diag/spherical — fall back to Euclidean (K-Means style,
-            # matches the spec-line-2835 K-Means fallback case).
-            distance_arr[mask] = np.linalg.norm(diff, axis=1)
-
-    canonical_index = return_21d.index  # type: ignore[union-attr]
     proba_frame = pd.DataFrame(
-        proba,
+        float("nan"),
         index=frame.index,
         columns=list(range(config.n_clusters)),
-    ).reindex(canonical_index)
-    cluster_id_series = pd.Series(
-        cluster_id_arr,
-        index=frame.index,
-        dtype="Int64",
-    ).reindex(canonical_index)
-    distance_series = pd.Series(
-        distance_arr,
-        index=frame.index,
-        dtype="float64",
-    ).reindex(canonical_index)
+    )
+    cluster_id_series = pd.Series(pd.NA, index=frame.index, dtype="Int64")
+    distance_series = pd.Series(float("nan"), index=frame.index, dtype="float64")
+    successful_fit = False
+    for train_end_pos in range(n_train - 1, len(frame)):
+        train = frame.iloc[train_end_pos - n_train + 1 : train_end_pos + 1].to_numpy(
+            dtype=float
+        )
+        if not np.any(train.std(axis=0) > 0.0):
+            continue
+        model = GaussianMixture(
+            n_components=config.n_clusters,
+            covariance_type=config.covariance_type,
+            random_state=config.random_state,
+            max_iter=200,
+            reg_covar=1e-6,
+        )
+        try:
+            model.fit(train)
+            row = frame.iloc[[train_end_pos]]
+            row_X = row.to_numpy(dtype=float)
+            proba = model.predict_proba(row_X)
+        except Exception as exc:  # noqa: BLE001
+            _LOG.warning(
+                "GaussianMixture PIT fit/predict skipped for %s: %s",
+                frame.index[train_end_pos],
+                exc,
+            )
+            continue
+        cluster_id = int(proba.argmax(axis=1)[0])
+        diff = row_X - model.means_[cluster_id]
+        if config.covariance_type == "full":
+            precision = model.precisions_[cluster_id]
+            quad = np.einsum("ij,jk,ik->i", diff, precision, diff)
+            distance = float(np.sqrt(np.clip(quad, 0.0, None))[0])
+        else:
+            distance = float(np.linalg.norm(diff, axis=1)[0])
+        idx = frame.index[train_end_pos]
+        proba_frame.loc[idx, :] = proba[0]
+        cluster_id_series.loc[idx] = cluster_id
+        distance_series.loc[idx] = distance
+        successful_fit = True
+    if not successful_fit:
+        return None
 
-    # V1 §2.2 stateless-replay: GMM is fit ONCE on frame.tail(n_train) ending
-    # at frame.index[-1]. Cluster assignments + Mahalanobis distances for
-    # sessions earlier than that fit-end were derived from parameters
-    # trained on (from that earlier session's perspective) future data. Mask
-    # them to NaN/NA so classify_window(lookback_days > 1) preserves PIT
-    # semantics. The clustering seam is diagnostic-only (not consumed by
-    # transition_score), so masking only affects the wire surface for the
-    # earlier emitted sessions; the trailing session keeps its real values.
-    fit_end = frame.index[-1]
-    leak_mask = canonical_index < fit_end
-    if leak_mask.any():
-        proba_frame.loc[leak_mask, :] = float("nan")
-        cluster_id_series.loc[leak_mask] = pd.NA
-        distance_series.loc[leak_mask] = float("nan")
+    canonical_index = return_21d.index  # type: ignore[union-attr]
+    proba_frame = proba_frame.reindex(canonical_index)
+    cluster_id_series = cluster_id_series.reindex(canonical_index)
+    distance_series = distance_series.reindex(canonical_index)
 
     return ClusteringFeatures(
         cluster_id=cluster_id_series.rename("cluster_id"),

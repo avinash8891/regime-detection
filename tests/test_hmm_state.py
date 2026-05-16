@@ -8,9 +8,9 @@ score 6th component.
 
 from __future__ import annotations
 
-
 import numpy as np
 import pandas as pd
+import pytest
 
 from regime_detection.config import HMMConfig, load_default_regime_config
 from regime_detection.hmm_state import (
@@ -86,7 +86,28 @@ def _default_hmm_config(training_window_days: int = 1260) -> HMMConfig:
         training_window_days=training_window_days,
         retrain_cadence_days=21,
         random_state=42,
+        standardize_inputs=True,
+        covariance_type="full",
+        min_covar=0.001,
+        random_seeds=(42, 101, 202),
     )
+
+
+@pytest.fixture(scope="module")
+def _computed_default_hmm_pair() -> tuple[HMMFeatures, HMMFeatures]:
+    inputs = _synthetic_inputs(n_sessions=1500)
+    cfg = _default_hmm_config()
+    first = compute_hmm_features(config=cfg, **inputs)
+    second = compute_hmm_features(config=cfg, **inputs)
+    assert first is not None and second is not None
+    return first, second
+
+
+@pytest.fixture(scope="module")
+def _computed_default_hmm(
+    _computed_default_hmm_pair: tuple[HMMFeatures, HMMFeatures],
+) -> HMMFeatures:
+    return _computed_default_hmm_pair[0]
 
 
 # ---------------------------------------------------------------------------
@@ -116,10 +137,11 @@ def test_compute_hmm_features_returns_none_when_insufficient_history() -> None:
     assert result is None
 
 
-def test_compute_hmm_features_succeeds_on_synthetic_inputs_with_full_history() -> None:
+def test_compute_hmm_features_succeeds_on_synthetic_inputs_with_full_history(
+    _computed_default_hmm: HMMFeatures,
+) -> None:
     inputs = _synthetic_inputs(n_sessions=1500)
-    cfg = _default_hmm_config()
-    result = compute_hmm_features(config=cfg, **inputs)
+    result = _computed_default_hmm
     assert result is not None
     assert isinstance(result, HMMFeatures)
     assert result.n_states == 4
@@ -129,27 +151,26 @@ def test_compute_hmm_features_succeeds_on_synthetic_inputs_with_full_history() -
     non_null = result.top_state_prob.dropna()
     assert (non_null >= 0.0).all()
     assert (non_null <= 1.0).all()
-    # V1 §2.2 PIT semantics: HMM is fit ONCE per classify_window call on
-    # frame.tail(n_train) ending at frame.index[-1]. Earlier sessions are
-    # masked to NaN to prevent future-leak. Exactly the trailing aligned
-    # session (intersected non-NaN tail) carries a real posterior.
-    assert len(non_null) == 1
-    assert non_null.index[0] == inputs["return_1d"].dropna().index[-1]
+    # V1 §2.2 PIT semantics: HMM evidence is populated from models trained
+    # on data available at or before each emitted session. With a 1260-session
+    # training window and the default 21-session retrain cadence, the warmed
+    # tail should be populated instead of blanking every pre-final row.
+    assert len(non_null) > 30
+    assert non_null.index.max() == inputs["return_1d"].dropna().index[-1]
 
 
-def test_top_state_prob_permutation_invariant_under_fixed_seed() -> None:
-    inputs = _synthetic_inputs(n_sessions=1500)
-    cfg = _default_hmm_config()
-    first = compute_hmm_features(config=cfg, **inputs)
-    second = compute_hmm_features(config=cfg, **inputs)
+def test_top_state_prob_permutation_invariant_under_fixed_seed(
+    _computed_default_hmm_pair: tuple[HMMFeatures, HMMFeatures],
+) -> None:
+    first, second = _computed_default_hmm_pair
     assert first is not None and second is not None
     pd.testing.assert_series_equal(first.top_state_prob, second.top_state_prob)
 
 
-def test_state_probabilities_sum_to_one_per_session() -> None:
-    inputs = _synthetic_inputs(n_sessions=1500)
-    cfg = _default_hmm_config()
-    result = compute_hmm_features(config=cfg, **inputs)
+def test_state_probabilities_sum_to_one_per_session(
+    _computed_default_hmm: HMMFeatures,
+) -> None:
+    result = _computed_default_hmm
     assert result is not None
     valid_rows = result.state_probabilities.dropna(how="any")
     assert len(valid_rows) > 0
@@ -173,10 +194,100 @@ def test_compute_hmm_features_returns_none_when_hmm_fit_fails() -> None:
     assert result is None
 
 
-def test_top_state_prob_is_at_least_one_over_n_states() -> None:
+def test_compute_hmm_features_returns_none_when_hmm_fit_is_non_monotonic(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     inputs = _synthetic_inputs(n_sessions=1500)
     cfg = _default_hmm_config()
+
+    class FakeMonitor:
+        tol = 0.01
+        n_iter = 200
+        verbose = False
+        non_monotonic = True
+
+    class FakeGaussianHMM:
+        def __init__(self, *args, **kwargs) -> None:
+            self.monitor_ = FakeMonitor()
+
+        def fit(self, _train):
+            self.monitor_.non_monotonic = True
+            return self
+
+        def predict_proba(self, frame):
+            return np.full((len(frame), cfg.n_states), 1.0 / cfg.n_states)
+
+    monkeypatch.setattr("regime_detection.hmm_state.GaussianHMM", FakeGaussianHMM)
+
+    assert compute_hmm_features(config=cfg, **inputs) is None
+
+
+def test_compute_hmm_features_uses_best_monotonic_seed_after_standardizing(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    inputs = _synthetic_inputs(n_sessions=1500)
+    cfg = _default_hmm_config().model_copy(
+        update={
+            "covariance_type": "diag",
+            "min_covar": 0.123,
+            "standardize_inputs": True,
+            "random_seeds": (42, 101),
+        }
+    )
+    seen: list[dict[str, object]] = []
+
+    class FakeMonitor:
+        tol = 0.01
+        n_iter = 200
+        verbose = False
+
+    class FakeGaussianHMM:
+        def __init__(self, **kwargs) -> None:
+            self.kwargs = kwargs
+            self.random_state = kwargs["random_state"]
+            self.monitor_ = FakeMonitor()
+
+        def fit(self, train):
+            seen.append(
+                {
+                    "random_state": self.random_state,
+                    "covariance_type": self.kwargs["covariance_type"],
+                    "min_covar": self.kwargs["min_covar"],
+                    "mean": float(train.mean()),
+                    "std": float(train.std()),
+                }
+            )
+            if self.random_state == 42:
+                self.monitor_.report(10.0)
+                self.monitor_.report(9.0)
+            else:
+                self.monitor_.report(10.0)
+                self.monitor_.report(12.0)
+            return self
+
+        def predict_proba(self, frame):
+            return np.tile(np.array([[0.7, 0.1, 0.1, 0.1]]), (len(frame), 1))
+
+    monkeypatch.setattr("regime_detection.hmm_state.GaussianHMM", FakeGaussianHMM)
+
     result = compute_hmm_features(config=cfg, **inputs)
+
+    assert result is not None
+    assert result.selected_seed == 101
+    assert result.log_likelihood == 12.0
+    assert [item["random_state"] for item in seen[:2]] == [42, 101]
+    assert {item["random_state"] for item in seen} == {42, 101}
+    assert all(item["covariance_type"] == "diag" for item in seen)
+    assert all(item["min_covar"] == 0.123 for item in seen)
+    assert abs(float(seen[0]["mean"])) < 1e-12
+    assert float(seen[0]["std"]) == pytest.approx(1.0)
+
+
+def test_top_state_prob_is_at_least_one_over_n_states(
+    _computed_default_hmm: HMMFeatures,
+) -> None:
+    cfg = _default_hmm_config()
+    result = _computed_default_hmm
     assert result is not None
     non_null = result.top_state_prob.dropna()
     # argmax probability ≥ 1/n_states by construction
@@ -187,6 +298,10 @@ def test_hmm_uses_real_default_config_n_states() -> None:
     cfg = load_default_regime_config().hmm
     assert cfg is not None
     assert cfg.n_states == 4
+    assert cfg.standardize_inputs is True
+    assert cfg.covariance_type == "full"
+    assert cfg.min_covar == pytest.approx(0.001)
+    assert cfg.random_seeds == (42, 101, 202, 303, 404, 505, 606, 707, 808, 909)
     assert cfg.training_window_days == 1260
     assert cfg.random_state == 42
 

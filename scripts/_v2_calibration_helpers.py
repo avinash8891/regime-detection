@@ -4,8 +4,10 @@ Extracted from ``scripts/run_v2_calibration.py`` so the V2 walk-forward gate
 (§9.1) and 60-session shadow A/B (§9.3) runners can reuse the same data-prep
 plumbing instead of duplicating the per-input ``_load_*`` blocks.
 """
+
 from __future__ import annotations
 
+import argparse
 import logging
 from pathlib import Path
 
@@ -19,6 +21,30 @@ from regime_detection.loaders import (
 
 
 logger = logging.getLogger(__name__)
+
+
+def default_pmi_path(data_root: Path) -> Path:
+    return data_root / "pmi" / "us_ism_pmi_history.parquet"
+
+
+# TODO(simplify): hoist `_reporting_label` (4 near-identical copies in
+# run_v2_walkforward_gate.py, run_v2_shadow_ab_gate.py, profile_engine_30d.py,
+# audit_layer2_30d.py) into a single `axis_reporting_label(output, *, default=None)`
+# helper here. Each caller's fallback (None vs "not_wired" vs str(active_label))
+# becomes a `default` argument. Skipped during 2026-05-16 simplify pass because
+# semantics diverge subtly across callers and a regression here would silently
+# corrupt gate metrics.
+#
+# TODO(simplify): add `add_manifest_args(parser)` / `materialize_from_args(args, *,
+# repo_root, required_for)` helpers to remove the 4-runner copy-paste of
+# --manifest/--artifact-store/--data-root wiring. Also fixes the ordering bug in
+# run_v2_calibration.py where materialize_if_requested runs BEFORE daily_dir /
+# macro_parquet are derived from args.data_root (other runners derive first).
+def positive_int(value: str) -> int:
+    parsed = int(value)
+    if parsed <= 0:
+        raise argparse.ArgumentTypeError("must be a positive integer")
+    return parsed
 
 
 def load_market_data(daily_ohlcv_dir: Path) -> pd.DataFrame:
@@ -59,7 +85,7 @@ def load_macro_series(
     cpi_nowcast_parquet: Path | None = None,
     eps_weekly_history_parquet: Path | None = None,
 ) -> dict[str, pd.Series]:
-    """Load FRED macro + manual PMI + the §2B nowcast / EPS-revision seams
+    """Load FRED macro + PMI + the §2B nowcast / EPS-revision seams
     into a name-keyed dict.
 
     ``cpi_nowcast_parquet`` and ``eps_weekly_history_parquet`` default to
@@ -72,17 +98,9 @@ def load_macro_series(
     """
     series_dict = load_fred_macro_series(macro_parquet)
     if pmi_path and pmi_path.exists():
-        pmi_df = pd.read_csv(pmi_path, sep="\t")
-        if "release_date_local" in pmi_df.columns and "actual" in pmi_df.columns:
-            pmi_df["release_date_local"] = pd.to_datetime(
-                pmi_df["release_date_local"], format="%d-%m-%Y"
-            )
-            pmi = (
-                pmi_df.set_index("release_date_local")["actual"]
-                .astype(float)
-                .sort_index()
-            )
-            series_dict["pmi_manufacturing"] = pmi.rename("pmi_manufacturing")
+        pmi = _load_pmi_manufacturing_series(pmi_path)
+        if pmi is not None:
+            series_dict["pmi_manufacturing"] = pmi
     # §2B nowcast / EPS-revision seams (ADR 0006 / Ambiguity Log #48). Both
     # parquets live as siblings of macro_parquet under data/raw/; load them
     # when present so the §2B `inflation_shock` single-signal limb and the
@@ -100,7 +118,9 @@ def load_macro_series(
     if cpi_nowcast_parquet.exists():
         series_dict["cpi_nowcast"] = load_cpi_nowcast_series(cpi_nowcast_parquet)
     else:
-        logger.info("cpi_nowcast parquet not found at %s — skipping", cpi_nowcast_parquet)
+        logger.info(
+            "cpi_nowcast parquet not found at %s — skipping", cpi_nowcast_parquet
+        )
     if eps_weekly_history_parquet.exists():
         series_dict["aggregate_forward_eps_revision"] = (
             load_aggregate_forward_eps_revision_series(eps_weekly_history_parquet)
@@ -113,10 +133,64 @@ def load_macro_series(
     return series_dict
 
 
+def _load_pmi_manufacturing_series(pmi_path: Path) -> pd.Series | None:
+    if pmi_path.suffix.lower() == ".parquet":
+        history_path = pmi_path.with_name("us_ism_pmi_history.parquet")
+        effective_path = history_path if history_path.exists() else pmi_path
+        pmi_df = pd.read_parquet(effective_path)
+        required = {"series_name", "value", "release_timestamp"}
+        if not required.issubset(pmi_df.columns):
+            return None
+        pmi_df = pmi_df[pmi_df["series_name"] == "manufacturing"].copy()
+        if pmi_df.empty:
+            return None
+        release_timestamp = pd.to_datetime(
+            pmi_df["release_timestamp"],
+            utc=True,
+        )
+        pmi_df["release_date_local"] = (
+            release_timestamp.dt.tz_convert("America/New_York")
+            .dt.tz_localize(None)
+            .dt.normalize()
+        )
+        return (
+            pmi_df.set_index("release_date_local")["value"]
+            .astype(float)
+            .sort_index()
+            .rename("pmi_manufacturing")
+        )
+
+    pmi_df = pd.read_csv(pmi_path, sep="\t")
+    if "release_date_local" not in pmi_df.columns or "actual" not in pmi_df.columns:
+        return None
+    pmi_df["release_date_local"] = pd.to_datetime(
+        pmi_df["release_date_local"], format="%d-%m-%Y"
+    )
+    return (
+        pmi_df.set_index("release_date_local")["actual"]
+        .astype(float)
+        .sort_index()
+        .rename("pmi_manufacturing")
+    )
+
+
 # Cross-asset symbols pulled by V2 §2B / §2C / §3 axes. Mirrors the
 # ``cross_asset_symbols`` list in ``scripts/run_v2_calibration.py::main``.
 CROSS_ASSET_SYMBOLS: list[str] = [
-    "QQQ", "IWM", "EFA", "EEM", "TLT", "HYG", "LQD", "GLD",
-    "USO", "UUP", "DBC", "KRE",
-    "XLY", "XLI", "XLP", "XLU",
+    "QQQ",
+    "IWM",
+    "EFA",
+    "EEM",
+    "TLT",
+    "HYG",
+    "LQD",
+    "GLD",
+    "USO",
+    "UUP",
+    "DBC",
+    "KRE",
+    "XLY",
+    "XLI",
+    "XLP",
+    "XLU",
 ]

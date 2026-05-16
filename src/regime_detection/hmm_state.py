@@ -22,8 +22,11 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
+from typing import Any
 
+import numpy as np
 import pandas as pd
+from hmmlearn.base import ConvergenceMonitor
 from hmmlearn.hmm import GaussianHMM
 
 from regime_detection.config import HMMConfig
@@ -31,6 +34,27 @@ from regime_detection.config import HMMConfig
 __all__ = ["HMMFeatures", "compute_hmm_features"]
 
 _LOG = logging.getLogger(__name__)
+
+
+class _StrictConvergenceMonitor(ConvergenceMonitor):
+    """Track non-monotonic EM fits without letting hmmlearn write to stderr."""
+
+    non_monotonic: bool
+
+    def __init__(self, tol: float, n_iter: int, verbose: bool) -> None:
+        super().__init__(tol=tol, n_iter=n_iter, verbose=verbose)
+        self.non_monotonic = False
+
+    def report(self, log_prob: float) -> None:
+        precision = np.finfo(float).eps ** 0.5
+        if self.history and (log_prob - self.history[-1]) < -precision:
+            self.non_monotonic = True
+        self.history.append(log_prob)
+        self.iter += 1
+
+    @property
+    def converged(self) -> bool:
+        return self.non_monotonic or super().converged
 
 
 @dataclass(frozen=True)
@@ -48,6 +72,8 @@ class HMMFeatures:
     top_state_prob: pd.Series
     state_probabilities: pd.DataFrame
     n_states: int
+    selected_seed: int
+    log_likelihood: float
 
 
 def compute_hmm_features(
@@ -96,16 +122,84 @@ def compute_hmm_features(
     if len(frame) < n_train:
         return None
 
-    train = frame.tail(n_train).to_numpy(dtype=float)
-    model = GaussianHMM(
-        n_components=config.n_states,
-        covariance_type="full",
-        n_iter=200,
-        random_state=config.random_state,
+    state_prob_frame = pd.DataFrame(
+        float("nan"),
+        index=frame.index,
+        columns=list(range(config.n_states)),
     )
+    latest_fit: dict[str, Any] | None = None
+    all_skipped: list[tuple[int, int, float | None, float | None, float | None]] = []
     try:
-        model.fit(train)
-        posterior = model.predict_proba(frame.to_numpy(dtype=float))
+        train_end_positions = list(
+            range(n_train - 1, len(frame), max(1, config.retrain_cadence_days))
+        )
+        if train_end_positions[-1] != len(frame) - 1:
+            train_end_positions.append(len(frame) - 1)
+        for offset, train_end_pos in enumerate(train_end_positions):
+            train_frame = frame.iloc[train_end_pos - n_train + 1 : train_end_pos + 1]
+            next_train_end_pos = (
+                train_end_positions[offset + 1]
+                if offset + 1 < len(train_end_positions)
+                else len(frame)
+            )
+            segment_frame = frame.iloc[train_end_pos:next_train_end_pos]
+            fit_frame, predict_frame = _prepare_hmm_frames(
+                train_frame=train_frame,
+                full_frame=segment_frame,
+                standardize_inputs=config.standardize_inputs,
+            )
+            best: dict[str, Any] | None = None
+            # TODO(simplify): the retrain loop now runs this full seed sweep
+            # (`len(random_seeds)` fits × n_iter=200) at every checkpoint —
+            # dominant cost in classify_window. Warm-start from the previous
+            # checkpoint's startprob/transmat/means/covars and drop n_iter for
+            # follow-on retrains; cuts ~5-10x. Requires spec sign-off because
+            # warm-start changes calibration math.
+            for seed in config.random_seeds:
+                model = GaussianHMM(
+                    n_components=config.n_states,
+                    covariance_type=config.covariance_type,
+                    min_covar=config.min_covar,
+                    n_iter=200,
+                    random_state=seed,
+                )
+                model.monitor_ = _StrictConvergenceMonitor(
+                    tol=model.monitor_.tol,
+                    n_iter=model.monitor_.n_iter,
+                    verbose=model.monitor_.verbose,
+                )
+                model.fit(fit_frame)
+                history = list(model.monitor_.history)
+                final_log_likelihood = float(history[-1]) if history else float("-inf")
+                previous_log_likelihood = float(history[-2]) if len(history) >= 2 else None
+                delta = (
+                    final_log_likelihood - previous_log_likelihood
+                    if previous_log_likelihood is not None
+                    else None
+                )
+                if getattr(model.monitor_, "non_monotonic", False):
+                    all_skipped.append(
+                        (
+                            train_end_pos,
+                            seed,
+                            final_log_likelihood,
+                            previous_log_likelihood,
+                            delta,
+                        )
+                    )
+                    continue
+                posterior = model.predict_proba(predict_frame)
+                candidate = {
+                    "posterior": posterior,
+                    "seed": seed,
+                    "log_likelihood": final_log_likelihood,
+                }
+                if best is None or final_log_likelihood > best["log_likelihood"]:
+                    best = candidate
+            if best is None:
+                continue
+            state_prob_frame.loc[segment_frame.index, :] = best["posterior"]
+            latest_fit = best
     except Exception as exc:  # noqa: BLE001
         # Fail-open: degenerate inputs (singular covariance, etc.) should
         # not crash the engine — the seam goes None and downstream falls
@@ -114,29 +208,20 @@ def compute_hmm_features(
             "GaussianHMM fit/predict failed; HMM seam returns None: %s", exc
         )
         return None
+    if latest_fit is None:
+        _LOG.warning(
+            "GaussianHMM produced no PIT monotonic fit across %d seed(s); "
+            "HMM seam returns None. skipped=%s",
+            len(config.random_seeds),
+            all_skipped[:5],
+        )
+        return None
 
     # Re-align to the canonical SPY index (return_1d carries it). Sessions
     # dropped by .dropna() get NaN both in the state_probabilities frame
     # and in the top_state_prob series.
     canonical_index = return_1d.index  # type: ignore[union-attr]
-    state_prob_frame = pd.DataFrame(
-        posterior,
-        index=frame.index,
-        columns=list(range(config.n_states)),
-    ).reindex(canonical_index)
-
-    # V1 §2.2 stateless-replay: the HMM is fit ONCE on frame.tail(n_train)
-    # ending at frame.index[-1]. Posterior values for sessions earlier than
-    # that fit-end were computed using parameters trained on data that, from
-    # the earlier session's perspective, is the FUTURE. To preserve PIT
-    # semantics in classify_window(lookback_days > 1), mask every session
-    # before the trailing training row to NaN. The transition_score consumer
-    # treats NaN as "HMM seam absent at this session" and falls back to the
-    # 5-component weights_without_hmm path (V1 byte-identity preserved).
-    fit_end = frame.index[-1]
-    leak_mask = state_prob_frame.index < fit_end
-    if leak_mask.any():
-        state_prob_frame.loc[leak_mask, :] = float("nan")
+    state_prob_frame = state_prob_frame.reindex(canonical_index)
 
     top_state_prob = state_prob_frame.max(axis=1).rename("top_state_prob")
     # state_probabilities.max on an all-NaN row returns NaN — desired
@@ -146,4 +231,21 @@ def compute_hmm_features(
         top_state_prob=top_state_prob,
         state_probabilities=state_prob_frame,
         n_states=config.n_states,
+        selected_seed=int(latest_fit["seed"]),
+        log_likelihood=float(latest_fit["log_likelihood"]),
     )
+
+
+def _prepare_hmm_frames(
+    *,
+    train_frame: pd.DataFrame,
+    full_frame: pd.DataFrame,
+    standardize_inputs: bool,
+) -> tuple[np.ndarray, np.ndarray]:
+    if not standardize_inputs:
+        return train_frame.to_numpy(dtype=float), full_frame.to_numpy(dtype=float)
+    means = train_frame.mean()
+    stds = train_frame.std(ddof=0).replace(0.0, 1.0)
+    train = ((train_frame - means) / stds).to_numpy(dtype=float)
+    full = ((full_frame - means) / stds).to_numpy(dtype=float)
+    return train, full

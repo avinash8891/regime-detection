@@ -13,6 +13,7 @@ downstream when v2 outputs route into a backtester. This runner ships
 the wire-level lit-vs-unlit precondition required before the strategy
 gate can run.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -20,7 +21,7 @@ import datetime as dt
 import logging
 import sys
 from pathlib import Path
-from typing import Any
+from typing import Any, get_args
 
 import pandas as pd
 
@@ -39,10 +40,13 @@ from regime_detection.loaders import (  # noqa: E402
     load_cpi_vintages_first_release,
 )
 from regime_detection.market_context import build_market_context  # noqa: E402
+from regime_detection.models import ClassificationStatus  # noqa: E402
 from regime_detection.versioning import engine_version as resolved_engine_version  # noqa: E402
+from regime_data_fetch.materialization import materialize_if_requested  # noqa: E402
 
 from _v2_calibration_helpers import (  # noqa: E402
     CROSS_ASSET_SYMBOLS,
+    default_pmi_path,
     load_close_dict,
     load_macro_series,
     load_market_data,
@@ -52,6 +56,7 @@ from _v2_calibration_helpers import (  # noqa: E402
 logger = logging.getLogger("v2_walkforward_gate")
 
 V1_AXIS_DEFAULT_AGENT = "default"
+NON_CLASSIFIED_REPORTING_LABELS = set(get_args(ClassificationStatus)) - {"classified"}
 
 
 def _setup_logging() -> None:
@@ -83,6 +88,7 @@ def _session_metrics_empty() -> dict[str, int]:
         "change_point_score": 0,
         "hmm_evidence_on_score": 0,
         "credit_funding_state": 0,
+        "credit_funding_effective_state": 0,
         "inflation_growth_state": 0,
         "cluster_output": 0,
     }
@@ -111,6 +117,8 @@ def _tally_output(metrics: dict[str, int], output: Any) -> None:
         metrics["change_point_score"] += 1
     if output.credit_funding_state is not None:
         metrics["credit_funding_state"] += 1
+    if output.credit_funding_effective_state is not None:
+        metrics["credit_funding_effective_state"] += 1
     if output.inflation_growth_state is not None:
         metrics["inflation_growth_state"] += 1
     if output.cluster is not None:
@@ -129,27 +137,34 @@ def _axis_activation_empty() -> dict[str, int]:
     }
 
 
+def _reporting_label(output: Any) -> str | None:
+    if output is None:
+        return None
+    reporting = getattr(output, "reporting_label", None)
+    if reporting is not None:
+        return reporting
+    classification_status = getattr(output, "classification_status", "classified")
+    if classification_status != "classified":
+        return classification_status
+    return getattr(output, "active_label", None)
+
+
+def _is_classified_axis_output(output: Any) -> bool:
+    label = (_reporting_label(output) or "").lower()
+    return bool(label) and label not in NON_CLASSIFIED_REPORTING_LABELS
+
+
 def _tally_axis_activation(axes: dict[str, int], output: Any) -> None:
-    if output.network_fragility is not None:
-        lbl = (output.network_fragility.active_label or "").lower()
-        if lbl and lbl != "unknown":
-            axes["network_fragility"] += 1
-    if output.credit_funding_state is not None:
-        lbl = (output.credit_funding_state.active_label or "").lower()
-        if lbl and lbl != "unknown":
-            axes["credit_funding"] += 1
-    if output.inflation_growth_state is not None:
-        lbl = (output.inflation_growth_state.active_label or "").lower()
-        if lbl and lbl != "unknown":
-            axes["inflation_growth"] += 1
-    if output.monetary_pressure_state is not None:
-        lbl = (output.monetary_pressure_state.active_label or "").lower()
-        if lbl and lbl != "unknown":
-            axes["monetary_pressure_v2"] += 1
-    if output.volume_liquidity_state is not None:
-        lbl = (output.volume_liquidity_state.active_label or "").lower()
-        if lbl and lbl != "unknown":
-            axes["volume_liquidity_state"] += 1
+    if _is_classified_axis_output(output.network_fragility):
+        axes["network_fragility"] += 1
+    if _is_classified_axis_output(output.credit_funding_effective_state):
+        axes["credit_funding"] += 1
+    if _is_classified_axis_output(output.inflation_growth_state):
+        axes["inflation_growth"] += 1
+    if _is_classified_axis_output(output.monetary_pressure_state):
+        axes["monetary_pressure_v2"] += 1
+    if _is_classified_axis_output(output.volume_liquidity_state):
+        axes["volume_liquidity_state"] += 1
     if output.agent_routing is not None:
         if (output.agent_routing.active_cohort or "").lower() != V1_AXIS_DEFAULT_AGENT:
             axes["agent_routing_non_default"] += 1
@@ -171,7 +186,9 @@ def _classify_window(
     errors = 0
     total = len(sessions)
     for idx, as_of_date in enumerate(sessions, start=1):
-        market_slice = market_data[market_data["date"] <= as_of_date].copy().reset_index(drop=True)
+        market_slice = (
+            market_data[market_data["date"] <= as_of_date].copy().reset_index(drop=True)
+        )
         kwargs: dict[str, Any] = {
             "as_of_date": as_of_date,
             "market_data": market_slice,
@@ -180,9 +197,13 @@ def _classify_window(
             kwargs.update(v2_kwargs)
         try:
             output = engine.classify(**kwargs)
-        except Exception as exc:  # fail-open per spec — single bad session doesn't kill the run
+        except (
+            Exception
+        ) as exc:  # fail-open per spec — single bad session doesn't kill the run
             errors += 1
-            logger.warning("[%s] %s classify failed: %s", mode_label, as_of_date.isoformat(), exc)
+            logger.warning(
+                "[%s] %s classify failed: %s", mode_label, as_of_date.isoformat(), exc
+            )
             continue
         _tally_output(metrics, output)
         _tally_axis_activation(axes, output)
@@ -227,17 +248,21 @@ def _build_markdown(
         _row("sessions with change_point.score", "change_point_score"),
         _row("sessions with hmm evidence on score", "hmm_evidence_on_score"),
         _row("sessions with credit_funding_state", "credit_funding_state"),
+        _row(
+            "sessions with credit_funding_effective_state",
+            "credit_funding_effective_state",
+        ),
         _row("sessions with inflation_growth_state", "inflation_growth_state"),
         _row("sessions with cluster output", "cluster_output"),
     ]
 
     classified = max(1, v2_metrics["sessions_classified"])
     axis_rows = [
-        ("network_fragility (non-unknown)", v2_axes["network_fragility"]),
-        ("credit_funding (non-unknown)", v2_axes["credit_funding"]),
-        ("inflation_growth (non-unknown)", v2_axes["inflation_growth"]),
-        ("monetary_pressure_v2 (non-unknown)", v2_axes["monetary_pressure_v2"]),
-        ("volume_liquidity_state (non-unknown)", v2_axes["volume_liquidity_state"]),
+        ("network_fragility (classified)", v2_axes["network_fragility"]),
+        ("credit_funding (classified)", v2_axes["credit_funding"]),
+        ("inflation_growth (classified)", v2_axes["inflation_growth"]),
+        ("monetary_pressure_v2 (classified)", v2_axes["monetary_pressure_v2"]),
+        ("volume_liquidity_state (classified)", v2_axes["volume_liquidity_state"]),
         ("agent_routing != default", v2_axes["agent_routing_non_default"]),
         ("change_point >= 0.5", v2_axes["change_point_ge_0_5"]),
     ]
@@ -287,21 +312,15 @@ def _build_markdown(
 
 
 def _parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="V2 §9.1 walk-forward performance gate runner.")
-    parser.add_argument(
-        "--daily-dir",
-        type=Path,
-        default=REPO_ROOT / "data" / "raw" / "daily_ohlcv",
+    parser = argparse.ArgumentParser(
+        description="V2 §9.1 walk-forward performance gate runner."
     )
-    parser.add_argument(
-        "--macro-parquet",
-        type=Path,
-        default=REPO_ROOT / "data" / "raw" / "macro" / "fred_macro_series.parquet",
-    )
+    parser.add_argument("--daily-dir", type=Path, default=None)
+    parser.add_argument("--macro-parquet", type=Path, default=None)
     parser.add_argument(
         "--pmi-path",
         type=Path,
-        default=REPO_ROOT / "data" / "manual_inputs" / "pmi" / "ism_manufacturing_pmi.tsv",
+        default=None,
     )
     parser.add_argument("--start-date", type=dt.date.fromisoformat, default=None)
     parser.add_argument("--end-date", type=dt.date.fromisoformat, default=None)
@@ -311,7 +330,37 @@ def _parse_args() -> argparse.Namespace:
         type=Path,
         default=REPO_ROOT / "docs" / "verification" / "v2_walkforward_perf_gate.md",
     )
+    parser.add_argument(
+        "--manifest",
+        type=Path,
+        default=None,
+        help="Optional artifact manifest to materialize before running.",
+    )
+    parser.add_argument(
+        "--artifact-store",
+        default=None,
+        help="Optional artifact-store root override for --manifest.",
+    )
+    parser.add_argument(
+        "--data-root",
+        type=Path,
+        default=REPO_ROOT / "data" / "raw",
+        help="Local data/raw root used for manifest materialization.",
+    )
     args = parser.parse_args()
+    if args.daily_dir is None:
+        args.daily_dir = args.data_root / "daily_ohlcv"
+    if args.macro_parquet is None:
+        args.macro_parquet = args.data_root / "macro" / "fred_macro_series.parquet"
+    if args.pmi_path is None:
+        args.pmi_path = default_pmi_path(args.data_root)
+    materialize_if_requested(
+        manifest_path=args.manifest,
+        local_root=args.data_root,
+        repo_root=REPO_ROOT,
+        store_root=args.artifact_store,
+        required_for="v2_calibration",
+    )
     if args.start_date is None or args.end_date is None:
         default_start, default_end = _resolve_default_window(args.daily_dir)
         if args.start_date is None:
@@ -355,7 +404,9 @@ def main() -> int:
     data_root = daily_dir.parent
     fomc_parquet = data_root / "fomc_minutes" / "fomc_minutes.parquet"
     powell_parquet = data_root / "powell_speeches" / "powell_speeches.parquet"
-    cpi_vintages_parquet = data_root / "macro_vintages" / "cpi_all_items_vintages.parquet"
+    cpi_vintages_parquet = (
+        data_root / "macro_vintages" / "cpi_all_items_vintages.parquet"
+    )
     central_bank_text_releases = load_central_bank_text_score(
         fomc_minutes_source=fomc_parquet if fomc_parquet.exists() else None,
         powell_speeches_source=powell_parquet if powell_parquet.exists() else None,

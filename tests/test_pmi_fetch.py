@@ -302,6 +302,10 @@ def test_run_pmi_fetch_uses_manual_history_dir_and_records_sqlite(tmp_path: Path
     assert report["history_source"] == "manual_investing_history"
     assert report["counts"]["rows"] == 2
     assert report["counts"]["history_rows"] == 248
+    assert report["paths"]["manual_pmi_manufacturing_tsv"] == {
+        "path": str(DEFAULT_MANUAL_PMI_HISTORY_DIR / "ism_manufacturing_pmi.tsv"),
+        "local_path": "data/manual_inputs/pmi/ism_manufacturing_pmi.tsv",
+    }
 
     latest_df = pd.read_parquet(tmp_path / "pmi" / "us_ism_pmi.parquet")
     assert latest_df["period"].tolist() == ["2026-04", "2026-04"]

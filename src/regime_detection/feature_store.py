@@ -198,9 +198,9 @@ class FeatureStore(BaseModel):
 
     # V2 §2C credit/funding seam (Slice 4) — populated when a CreditFundingConfig
     # is threaded through AND cross_asset_closes carries HYG/LQD/TLT/KRE AND
-    # macro_series carries SOFR/IORB/NFCI/broad_usd_index. Otherwise None
-    # (V1 byte-identity preserved: RegimeOutput.credit_funding_state defaults
-    # to None and is omitted on the JSON wire via exclude_none=True).
+    # macro_series carries SOFR/IORB/NFCI/broad_usd_index. OAS keys are optional
+    # at this gate; when absent the real-OAS label is unknown/data-unavailable
+    # and the ETF proxy can still drive credit_funding_effective_state.
     credit_funding: CreditFundingFeatures | None = None
 
     # V2 §2B inflation/growth seam (Slice 5) — populated when an
@@ -526,11 +526,10 @@ def build_feature_store(
     else:
         clustering = None
 
-    # v2 §2C credit/funding feature compute (Slice 4). Requires the eight
-    # spec-pinned input series: HYG/LQD/TLT/KRE on cross_asset_closes plus
-    # SOFR/IORB/NFCI/broad_usd_index on macro_series. When any input is
-    # absent OR the config is None, fall back to None — V1 byte-identity
-    # preserved on the credit_funding_state wire field.
+    # v2 §2C credit/funding feature compute (Slice 4). Requires the shared
+    # inputs HYG/LQD/TLT/KRE plus SOFR/IORB/NFCI/broad_usd_index. Real OAS
+    # macro keys are optional at the seam level: if FRED omits them, the OAS
+    # branch becomes unknown while the proxy branch remains usable.
     credit_funding: CreditFundingFeatures | None = None
     if (
         credit_funding_config is not None
@@ -539,10 +538,7 @@ def build_feature_store(
         and all(k in context.cross_asset_closes for k in _CF_CROSS_ASSET_KEYS)
         and all(k in context.macro_series for k in _CF_MACRO_KEYS)
     ):
-        # §2C credit-spread metric — single source: FRED-redistributed
-        # ICE BofA OAS series (BAMLH0A0HYM2 / BAMLC0A4CBBB). Their
-        # macro_series keys are in `_CF_MACRO_KEYS`, so the gate above
-        # already guarantees they are present — no `.get()` needed.
+        nan_oas = pd.Series(float("nan"), index=spy_close.index)
         credit_funding = compute_credit_funding_features(
             hyg_close=context.cross_asset_closes[_CF_HYG_KEY],
             lqd_close=context.cross_asset_closes[_CF_LQD_KEY],
@@ -553,8 +549,8 @@ def build_feature_store(
             iorb=context.macro_series[_CF_IORB_KEY],
             nfci_weekly=context.macro_series[_CF_NFCI_KEY],
             broad_usd_index=context.macro_series[_CF_BROAD_USD_KEY],
-            hy_oas=context.macro_series[_CF_HY_OAS_KEY],
-            ig_oas=context.macro_series[_CF_IG_OAS_KEY],
+            hy_oas=context.macro_series.get(_CF_HY_OAS_KEY, nan_oas),
+            ig_oas=context.macro_series.get(_CF_IG_OAS_KEY, nan_oas),
             config=credit_funding_config.rules,
         )
 

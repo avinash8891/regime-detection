@@ -76,7 +76,7 @@ implementation diffs are in Section 3.
 | Metric | Spec data | Fetch | Code | Verdict |
 |---|---|---|---|---|
 | `hy_oas_*`, `ig_oas_*` (authoritative, 2023-05-15+) | FRED `BAMLH0A0HYM2`, `BAMLC0A4CBBB` | ✅ trailing ~3y FRED window | `credit_funding.py` → `credit_funding_state` | OK with documented coverage cap (Log #71 / ADR 0007) |
-| `hy_tr_differential_*`, `ig_tr_differential_*` (parallel proxy, full history) | TLT, HYG, LQD closes | ✅ | same classifier → `credit_funding_state_proxy` + bias warning | OK — strict parallel, never blended |
+| `hy_tr_differential_*`, `ig_tr_differential_*` (parallel proxy, full history) | TLT, HYG, LQD closes | ✅ | same classifier → `credit_funding_state_proxy` + bias warning; downstream resolver → `credit_funding_effective_state` | OK — raw series stay parallel; effective label records source/agreement evidence |
 | `kre_spy_ratio`, `kre_spy_slope_63d`, `sofr_iorb_spread`, `broad_usd_index_zscore_21d`, `nfci_weekly_carried` | KRE, SPY, SOFR, IORB, DTWEXBGS, NFCI | ✅ | `credit_funding.py` | OK |
 
 ### 1.9 V2 §2D event calendar extensions
@@ -256,7 +256,8 @@ limitations. They are NOT spec/code drift.
   `survivorship_biased_constituent_universe` warning everywhere.
 - Pre-2023 ICE BofA OAS history not on FRED — the TLT-vs-HYG/LQD proxy
   covers earlier history as a *separate* parallel metric
-  (`credit_funding_state_proxy`). Never spliced.
+  (`credit_funding_state_proxy`). Raw series are never spliced; downstream rules
+  consume the audited `credit_funding_effective_state` resolver.
 - Dedicated shadow runner with SQLite ledger and archived daily input
   snapshots — operational, not a data-source gap.
 

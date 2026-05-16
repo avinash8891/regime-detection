@@ -153,11 +153,22 @@ def _yield_change_zscore(
     differ in their change_window / normalizer_window defaults.
     """
     return _rolling_change_zscore(
-        yield_series,
+        _carry_forward_observations(yield_series),
         change_window=lookback,
         normalizer_window=normalizer_window,
         output_name=output_name,
     )
+
+
+def _carry_forward_observations(series: pd.Series) -> pd.Series:
+    """Align sparse macro observations to NYSE sessions without lookahead.
+
+    FRED daily rates can miss NYSE sessions because of source publication
+    calendars. Rolling 5y normalizers should consume the latest observation
+    available as of the session; staleness remains a separate data-quality
+    concern at the classifier boundary.
+    """
+    return series.astype(float).ffill()
 
 
 def compute_monetary_pressure_features(
@@ -217,7 +228,7 @@ def compute_monetary_pressure_features(
         )
     else:
         usd_z = _rolling_change_zscore(
-            broad_usd_index,
+            _carry_forward_observations(broad_usd_index),
             change_window=config.broad_usd_lookback_days,
             normalizer_window=config.zscore_normalizer_window_days,
             output_name="broad_usd_index_zscore_63d",

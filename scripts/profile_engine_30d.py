@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# ruff: noqa: E402
 from __future__ import annotations
 
 import argparse
@@ -11,7 +12,7 @@ import time
 from collections import defaultdict
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any, Callable, get_args
 
 import pandas as pd
 
@@ -23,29 +24,44 @@ if str(SRC_ROOT) not in sys.path:
     sys.path.insert(0, str(SRC_ROOT))
 
 from regime_data_fetch.pit_constituents import read_pit_intervals  # noqa: E402
+from regime_data_fetch.materialization import materialize_if_requested  # noqa: E402
+from regime_data_fetch.universe import FIXED_UNIVERSE_TREE_NAME  # noqa: E402
 from regime_detection.engine import RegimeEngine  # noqa: E402
 from regime_detection.feature_store import FeatureStore  # noqa: E402
 from regime_detection.fragility_universe import CROSS_ASSET_SYMBOLS, SECTOR_ETFS  # noqa: E402
+from regime_detection.loaders import (  # noqa: E402
+    load_central_bank_text_score,
+    load_cpi_vintages_first_release,
+    load_event_calendar,
+    load_news_sentiment_series,
+)
 from regime_detection.market_context import build_market_context  # noqa: E402
-from regime_detection.models import RegimeOutput, RegimeTimeline  # noqa: E402
+from regime_detection.models import ClassificationStatus, RegimeOutput, RegimeTimeline  # noqa: E402
 from regime_detection.timeline import ENGINE_MINIMUM_HISTORY  # noqa: E402
-from scripts._v2_calibration_helpers import load_close_dict, load_macro_series, load_market_data  # noqa: E402
+from scripts._v2_calibration_helpers import (  # noqa: E402
+    default_pmi_path,
+    load_close_dict,
+    load_macro_series,
+    load_market_data,
+    positive_int,
+)
 
 
-DEFAULT_CONFIG_PATH = REPO_ROOT / "src" / "regime_detection" / "configs" / "core3-v2.0.0.yaml"
+DEFAULT_CONFIG_PATH = (
+    REPO_ROOT / "src" / "regime_detection" / "configs" / "core3-v2.0.0.yaml"
+)
 DEFAULT_DAILY_DIR = REPO_ROOT / "data" / "raw" / "daily_ohlcv"
-DEFAULT_CONSTITUENT_TREE = REPO_ROOT / "data" / "raw" / "daily_ohlcv_762"
-DEFAULT_MACRO_PARQUET = REPO_ROOT / "data" / "raw" / "macro" / "fred_macro_series.parquet"
-DEFAULT_PIT_PARQUET = REPO_ROOT / "data" / "raw" / "pit_constituents" / "sp500_ticker_intervals.parquet"
-DEFAULT_PMI_PATH = REPO_ROOT / "data" / "manual_inputs" / "pmi" / "ism_manufacturing_pmi.tsv"
+DEFAULT_CONSTITUENT_TREE = REPO_ROOT / "data" / "raw" / FIXED_UNIVERSE_TREE_NAME
+DEFAULT_MACRO_PARQUET = (
+    REPO_ROOT / "data" / "raw" / "macro" / "fred_macro_series.parquet"
+)
+DEFAULT_PIT_PARQUET = (
+    REPO_ROOT / "data" / "raw" / "pit_constituents" / "sp500_ticker_intervals.parquet"
+)
+DEFAULT_PMI_PATH = default_pmi_path(REPO_ROOT / "data" / "raw")
+DEFAULT_EVENT_CALENDAR = REPO_ROOT / "configs" / "events" / "us_events.yaml"
 RUN_TIMEOUT_SECONDS = 300
-
-
-def _positive_int(value: str) -> int:
-    parsed = int(value)
-    if parsed <= 0:
-        raise argparse.ArgumentTypeError("must be a positive integer")
-    return parsed
+NON_CLASSIFIED_REPORTING_LABELS = set(get_args(ClassificationStatus)) - {"classified"}
 
 
 @dataclass
@@ -73,6 +89,29 @@ class StageTimer:
             self.current_stage = previous_stage
 
 
+@dataclass(frozen=True)
+class ProfileInputBundle:
+    market_data: pd.DataFrame
+    end_date: dt.date
+    required_sessions: int
+    working_start_date: dt.date
+    selected_dates: list[dt.date]
+    sector_etf_closes: dict[str, pd.Series]
+    cross_asset_closes: dict[str, pd.Series]
+    macro_series: dict[str, pd.Series]
+    event_calendar: pd.DataFrame | None
+    aaii_sentiment: pd.DataFrame | None
+    news_sentiment: pd.Series | None
+    implied_vol_30d: pd.Series | None
+    central_bank_text_releases: pd.Series | None
+    cpi_first_release: pd.Series | None
+    pit_constituent_intervals: dict[str, Any]
+    constituent_ohlcv: dict[str, pd.DataFrame]
+    constituent_tickers: list[str]
+    missing_constituent_paths: list[Path]
+    input_kwargs: dict[str, Any]
+
+
 class RunTimeout(RuntimeError):
     pass
 
@@ -90,15 +129,25 @@ def _require_path(path: Path, *, kind: str) -> Path:
     return path
 
 
-def _build_required_sessions(config: Any, session_count: int, lookback_days: int) -> int:
+def _build_required_sessions(
+    config: Any, session_count: int, lookback_days: int
+) -> int:
     v2_min_history = ENGINE_MINIMUM_HISTORY
+    trailing_component_lookback = 0
     if config.change_point is not None:
-        v2_min_history = max(v2_min_history, config.change_point.training_window_days + 21)
+        v2_min_history = max(
+            v2_min_history, config.change_point.training_window_days + 21
+        )
     if config.hmm is not None:
         v2_min_history = max(v2_min_history, config.hmm.training_window_days + 63)
+        trailing_component_lookback = max(trailing_component_lookback, 5)
     if config.clustering is not None:
-        v2_min_history = max(v2_min_history, config.clustering.training_window_days + 63)
-    return min(session_count, v2_min_history + lookback_days - 1)
+        v2_min_history = max(
+            v2_min_history, config.clustering.training_window_days + 63
+        )
+    return min(
+        session_count, v2_min_history + lookback_days - 1 + trailing_component_lookback
+    )
 
 
 def _read_symbol_ohlcv(tree_root: Path, symbol: str) -> pd.DataFrame:
@@ -116,12 +165,59 @@ def _read_symbol_ohlcv(tree_root: Path, symbol: str) -> pd.DataFrame:
     return frame
 
 
+def _load_optional_aaii_sentiment(path: Path) -> pd.DataFrame | None:
+    if not path.exists():
+        return None
+    frame = pd.read_parquet(path)
+    required_cols = {"bull_bear_spread_8w_ma"}
+    missing = sorted(required_cols - set(frame.columns))
+    if missing:
+        raise ValueError(f"{path} missing required AAII sentiment columns: {missing}")
+    if "publication_date" not in frame.columns and "date" not in frame.columns:
+        raise ValueError(f"{path} must contain either publication_date or date")
+    return frame
+
+
+def _load_optional_event_calendar(path: Path) -> pd.DataFrame | None:
+    if not path.exists():
+        return None
+    return load_event_calendar(path)
+
+
+def _load_optional_news_sentiment(path: Path) -> pd.Series | None:
+    if not path.exists():
+        return None
+    return load_news_sentiment_series(path)
+
+
+def _load_optional_cpi_first_release(path: Path) -> pd.Series | None:
+    if not path.exists():
+        return None
+    return load_cpi_vintages_first_release(path)
+
+
+def _load_optional_central_bank_text_releases(
+    *,
+    fomc_path: Path,
+    powell_path: Path,
+) -> pd.DataFrame | None:
+    releases = load_central_bank_text_score(
+        fomc_minutes_source=fomc_path if fomc_path.exists() else None,
+        powell_speeches_source=powell_path if powell_path.exists() else None,
+    )
+    if releases.empty:
+        return None
+    return releases
+
+
 def _load_market_data_from_tree(tree_root: Path, symbols: list[str]) -> pd.DataFrame:
     frames: list[pd.DataFrame] = []
     for symbol in symbols:
         frame = _read_symbol_ohlcv(tree_root, symbol)
         frame["symbol"] = symbol
-        frames.append(frame[["date", "symbol", "open", "high", "low", "close", "volume"]])
+        frames.append(
+            frame[["date", "symbol", "open", "high", "low", "close", "volume"]]
+        )
     out = pd.concat(frames, ignore_index=True)
     out["date"] = pd.to_datetime(out["date"]).dt.date
     return out.sort_values(["date", "symbol"]).reset_index(drop=True)
@@ -158,7 +254,9 @@ def _load_constituent_ohlcv_from_tree(
         for col in ("open", "high", "low", "close", "adjusted_close"):
             frame[col] = frame[col].astype("float64")
         frame["volume"] = frame["volume"].astype("int64")
-        frame = frame.set_index("date")[["open", "high", "low", "close", "volume", "adjusted_close"]]
+        frame = frame.set_index("date")[
+            ["open", "high", "low", "close", "volume", "adjusted_close"]
+        ]
         frame.index.name = "date"
         out[ticker] = frame
     return out, tickers, missing_paths
@@ -172,6 +270,8 @@ def _input_status(name: str, value: Any) -> str:
             return f"{name}: EMPTY_DICT"
         return f"{name}: {len(value)} keys"
     if isinstance(value, pd.DataFrame):
+        return f"{name}: {len(value)} rows"
+    if isinstance(value, pd.Series):
         return f"{name}: {len(value)} rows"
     return f"{name}: type={type(value).__name__}"
 
@@ -199,7 +299,9 @@ def _timed_inflation_growth_builder(
         original_eval = _inflation_growth_mod.evaluate_rules
 
         def timed_build_inputs(*args: Any, **kwargs: Any) -> Any:
-            with timer.measure("axis_series.inflation_growth.build_rule_inputs_by_date"):
+            with timer.measure(
+                "axis_series.inflation_growth.build_rule_inputs_by_date"
+            ):
                 return original_build_inputs(*args, **kwargs)
 
         def timed_eval(*args: Any, **kwargs: Any) -> Any:
@@ -246,23 +348,153 @@ def _install_timers(timer: StageTimer):
     import regime_detection.inflation_growth as _inflation_growth_mod
 
     patches = [
-        (engine_module, "build_market_context", _timed_wrapper(timer, "build_market_context", engine_module.build_market_context)),
-        (engine_module, "build_regime_timeline", _timed_wrapper(timer, "build_regime_timeline_total", engine_module.build_regime_timeline)),
-        (timeline_module, "slice_context_to_recent_sessions", _timed_wrapper(timer, "slice_context_to_recent_sessions", timeline_module.slice_context_to_recent_sessions)),
-        (timeline_module, "build_feature_store", _timed_wrapper(timer, "build_feature_store_total", timeline_module.build_feature_store)),
-        (timeline_module, "build_axis_series_bundle", _timed_wrapper(timer, "build_axis_series_bundle", timeline_module.build_axis_series_bundle)),
-        (timeline_module, "build_transition_risk_series", _timed_wrapper(timer, "build_transition_risk_series", timeline_module.build_transition_risk_series)),
-        (feature_store_module, "compute_network_fragility_features", _timed_wrapper(timer, "feature_store.network_fragility", feature_store_module.compute_network_fragility_features)),
-        (feature_store_module, "compute_trend_v2_features", _timed_wrapper(timer, "feature_store.trend_direction_v2", feature_store_module.compute_trend_v2_features)),
-        (feature_store_module, "compute_volatility_v2_features", _timed_wrapper(timer, "feature_store.volatility_state_v2", feature_store_module.compute_volatility_v2_features)),
-        (feature_store_module, "compute_breadth_v2_features", _timed_wrapper(timer, "feature_store.breadth_state_v2", feature_store_module.compute_breadth_v2_features)),
-        (feature_store_module, "compute_volume_liquidity_v2_features", _timed_wrapper(timer, "feature_store.volume_liquidity_v2", feature_store_module.compute_volume_liquidity_v2_features)),
-        (feature_store_module, "compute_monetary_pressure_features", _timed_wrapper(timer, "feature_store.monetary_pressure_v2", feature_store_module.compute_monetary_pressure_features)),
-        (feature_store_module, "compute_credit_funding_features", _timed_wrapper(timer, "feature_store.credit_funding", feature_store_module.compute_credit_funding_features)),
-        (feature_store_module, "compute_inflation_growth_features", _timed_wrapper(timer, "feature_store.inflation_growth", feature_store_module.compute_inflation_growth_features)),
-        (feature_store_module, "compute_hmm_features", _timed_wrapper(timer, "feature_store.hmm", feature_store_module.compute_hmm_features)),
-        (feature_store_module, "compute_clustering_features", _timed_wrapper(timer, "feature_store.gmm_clustering", feature_store_module.compute_clustering_features)),
-        (feature_store_module, "compute_change_point_features", _timed_wrapper(timer, "feature_store.change_point", feature_store_module.compute_change_point_features)),
+        (
+            engine_module,
+            "build_market_context",
+            _timed_wrapper(
+                timer, "build_market_context", engine_module.build_market_context
+            ),
+        ),
+        (
+            engine_module,
+            "build_regime_timeline",
+            _timed_wrapper(
+                timer,
+                "build_regime_timeline_total",
+                engine_module.build_regime_timeline,
+            ),
+        ),
+        (
+            timeline_module,
+            "slice_context_to_recent_sessions",
+            _timed_wrapper(
+                timer,
+                "slice_context_to_recent_sessions",
+                timeline_module.slice_context_to_recent_sessions,
+            ),
+        ),
+        (
+            timeline_module,
+            "build_feature_store",
+            _timed_wrapper(
+                timer, "build_feature_store_total", timeline_module.build_feature_store
+            ),
+        ),
+        (
+            timeline_module,
+            "build_axis_series_bundle",
+            _timed_wrapper(
+                timer,
+                "build_axis_series_bundle",
+                timeline_module.build_axis_series_bundle,
+            ),
+        ),
+        (
+            timeline_module,
+            "build_transition_risk_series",
+            _timed_wrapper(
+                timer,
+                "build_transition_risk_series",
+                timeline_module.build_transition_risk_series,
+            ),
+        ),
+        (
+            feature_store_module,
+            "compute_network_fragility_features",
+            _timed_wrapper(
+                timer,
+                "feature_store.network_fragility",
+                feature_store_module.compute_network_fragility_features,
+            ),
+        ),
+        (
+            feature_store_module,
+            "compute_trend_v2_features",
+            _timed_wrapper(
+                timer,
+                "feature_store.trend_direction_v2",
+                feature_store_module.compute_trend_v2_features,
+            ),
+        ),
+        (
+            feature_store_module,
+            "compute_volatility_v2_features",
+            _timed_wrapper(
+                timer,
+                "feature_store.volatility_state_v2",
+                feature_store_module.compute_volatility_v2_features,
+            ),
+        ),
+        (
+            feature_store_module,
+            "compute_breadth_v2_features",
+            _timed_wrapper(
+                timer,
+                "feature_store.breadth_state_v2",
+                feature_store_module.compute_breadth_v2_features,
+            ),
+        ),
+        (
+            feature_store_module,
+            "compute_volume_liquidity_v2_features",
+            _timed_wrapper(
+                timer,
+                "feature_store.volume_liquidity_v2",
+                feature_store_module.compute_volume_liquidity_v2_features,
+            ),
+        ),
+        (
+            feature_store_module,
+            "compute_monetary_pressure_features",
+            _timed_wrapper(
+                timer,
+                "feature_store.monetary_pressure_v2",
+                feature_store_module.compute_monetary_pressure_features,
+            ),
+        ),
+        (
+            feature_store_module,
+            "compute_credit_funding_features",
+            _timed_wrapper(
+                timer,
+                "feature_store.credit_funding",
+                feature_store_module.compute_credit_funding_features,
+            ),
+        ),
+        (
+            feature_store_module,
+            "compute_inflation_growth_features",
+            _timed_wrapper(
+                timer,
+                "feature_store.inflation_growth",
+                feature_store_module.compute_inflation_growth_features,
+            ),
+        ),
+        (
+            feature_store_module,
+            "compute_hmm_features",
+            _timed_wrapper(
+                timer, "feature_store.hmm", feature_store_module.compute_hmm_features
+            ),
+        ),
+        (
+            feature_store_module,
+            "compute_clustering_features",
+            _timed_wrapper(
+                timer,
+                "feature_store.gmm_clustering",
+                feature_store_module.compute_clustering_features,
+            ),
+        ),
+        (
+            feature_store_module,
+            "compute_change_point_features",
+            _timed_wrapper(
+                timer,
+                "feature_store.change_point",
+                feature_store_module.compute_change_point_features,
+            ),
+        ),
         (
             _trend_direction_mod,
             "build_axis_series",
@@ -311,7 +543,11 @@ def _install_timers(timer: StageTimer):
         (
             axis_series_module,
             "build_event_calendar_series",
-            _timed_wrapper(timer, "axis_series.event_calendar", axis_series_module.build_event_calendar_series),
+            _timed_wrapper(
+                timer,
+                "axis_series.event_calendar",
+                axis_series_module.build_event_calendar_series,
+            ),
         ),
     ]
     with contextlib.ExitStack() as stack:
@@ -320,7 +556,9 @@ def _install_timers(timer: StageTimer):
         yield
 
 
-def _format_stage_rows(stage_names: list[str], timer: StageTimer, total: float) -> list[str]:
+def _format_stage_rows(
+    stage_names: list[str], timer: StageTimer, total: float
+) -> list[str]:
     rows = ["stage_name | wall_clock_seconds | % of total"]
     for stage_name in stage_names:
         seconds = timer.totals.get(stage_name, 0.0)
@@ -329,22 +567,59 @@ def _format_stage_rows(stage_names: list[str], timer: StageTimer, total: float) 
     return rows
 
 
+def _reporting_label(output: Any) -> str | None:
+    if output is None:
+        return None
+    reporting = getattr(output, "reporting_label", None)
+    if reporting is not None:
+        return reporting
+    classification_status = getattr(output, "classification_status", "classified")
+    if classification_status != "classified":
+        return classification_status
+    return getattr(output, "active_label", None)
+
+
 def _compact_timeline_rows(outputs: list[RegimeOutput]) -> list[str]:
     rows = [
         "as_of_date | trend_direction | volatility_state | transition_risk | activated_v2_seams"
     ]
     for out in outputs:
         seams: list[str] = []
-        if out.network_fragility.active_label != "unknown":
-            seams.append(f"network_fragility={out.network_fragility.active_label}")
+        network_fragility_label = _reporting_label(out.network_fragility)
+        if (
+            network_fragility_label is not None
+            and network_fragility_label not in NON_CLASSIFIED_REPORTING_LABELS
+        ):
+            seams.append(f"network_fragility={network_fragility_label}")
         if out.volume_liquidity_state is not None:
-            seams.append(f"volume_liquidity_state={out.volume_liquidity_state.active_label}")
+            seams.append(
+                f"volume_liquidity_state={_reporting_label(out.volume_liquidity_state)}"
+            )
         if out.credit_funding_state is not None:
-            seams.append(f"credit_funding_state={out.credit_funding_state.active_label}")
+            seams.append(
+                f"credit_funding_state={_reporting_label(out.credit_funding_state)}"
+            )
+        if out.credit_funding_state_proxy is not None:
+            seams.append(
+                f"credit_funding_state_proxy={_reporting_label(out.credit_funding_state_proxy)}"
+            )
+        if out.credit_funding_effective_state is not None:
+            source = out.credit_funding_effective_state.evidence.get(
+                "source_used", "not_recorded"
+            )
+            seams.append(
+                "credit_funding_effective_state="
+                f"{_reporting_label(out.credit_funding_effective_state)}"
+                f"({source})"
+            )
         if out.inflation_growth_state is not None:
-            seams.append(f"inflation_growth_state={out.inflation_growth_state.active_label}")
+            seams.append(
+                f"inflation_growth_state={_reporting_label(out.inflation_growth_state)}"
+            )
         if out.monetary_pressure_state is not None:
-            seams.append(f"monetary_pressure_state={out.monetary_pressure_state.active_label}")
+            seams.append(
+                f"monetary_pressure_state={_reporting_label(out.monetary_pressure_state)}"
+            )
         if out.cluster is not None:
             seams.append(f"cluster={out.cluster.cluster_id}")
         if out.change_point is not None:
@@ -354,8 +629,8 @@ def _compact_timeline_rows(outputs: list[RegimeOutput]) -> list[str]:
         seam_text = ", ".join(seams) if seams else "-"
         rows.append(
             f"{out.as_of_date.isoformat()} | "
-            f"{out.trend_direction.active_label} | "
-            f"{out.volatility_state.active_label} | "
+            f"{_reporting_label(out.trend_direction)} | "
+            f"{_reporting_label(out.volatility_state)} | "
             f"{out.transition_risk.label} | "
             f"{seam_text}"
         )
@@ -373,13 +648,15 @@ def _trailing_v2_status(out: RegimeOutput) -> list[str]:
             rows.append(f"{name} | NaN")
             return
         if hasattr(value, "active_label"):
-            rows.append(f"{name} | active_label={value.active_label}")
+            rows.append(f"{name} | reported={_reporting_label(value)}")
             return
         rows.append(f"{name} | present")
 
     add("network_fragility", out.network_fragility)
     add("volume_liquidity_state", out.volume_liquidity_state)
     add("credit_funding_state", out.credit_funding_state)
+    add("credit_funding_state_proxy", out.credit_funding_state_proxy)
+    add("credit_funding_effective_state", out.credit_funding_effective_state)
     add("inflation_growth_state", out.inflation_growth_state)
     add("monetary_pressure_state", out.monetary_pressure_state)
     add("cluster", out.cluster)
@@ -397,12 +674,15 @@ def _verify_invariants(
     issues: list[str] = []
     for out in timeline.outputs:
         if out.trend_direction.active_label is None:
-            issues.append(f"{out.as_of_date.isoformat()}: trend_direction.active_label is None")
+            issues.append(
+                f"{out.as_of_date.isoformat()}: trend_direction.active_label is None"
+            )
     trailing = timeline.outputs[-1]
     expected_non_none = [
         ("network_fragility", trailing.network_fragility),
         ("volume_liquidity_state", trailing.volume_liquidity_state),
         ("credit_funding_state", trailing.credit_funding_state),
+        ("credit_funding_effective_state", trailing.credit_funding_effective_state),
         ("inflation_growth_state", trailing.inflation_growth_state),
         ("monetary_pressure_state", trailing.monetary_pressure_state),
     ]
@@ -413,11 +693,23 @@ def _verify_invariants(
         ("network_fragility", feature_store.network_fragility, ["sector_etf_closes"]),
         ("trend_direction_v2", feature_store.trend_direction_v2, []),
         ("volatility_state_v2", feature_store.volatility_state_v2, []),
-        ("breadth_state_v2", feature_store.breadth_state_v2, ["sector_etf_closes", "pit_constituent_intervals", "constituent_ohlcv"]),
+        (
+            "breadth_state_v2",
+            feature_store.breadth_state_v2,
+            ["sector_etf_closes", "pit_constituent_intervals", "constituent_ohlcv"],
+        ),
         ("volume_liquidity_v2", feature_store.volume_liquidity_v2, []),
         ("monetary_pressure_v2", feature_store.monetary, ["macro_series"]),
-        ("credit_funding", feature_store.credit_funding, ["cross_asset_closes", "macro_series"]),
-        ("inflation_growth", feature_store.inflation_growth, ["cross_asset_closes", "macro_series"]),
+        (
+            "credit_funding",
+            feature_store.credit_funding,
+            ["cross_asset_closes", "macro_series"],
+        ),
+        (
+            "inflation_growth",
+            feature_store.inflation_growth,
+            ["cross_asset_closes", "macro_series"],
+        ),
         ("hmm", feature_store.hmm, []),
         ("gmm_clustering", feature_store.clustering, []),
         ("change_point", feature_store.change_point, []),
@@ -426,31 +718,15 @@ def _verify_invariants(
         if seam_value is None:
             missing = [dep for dep in deps if not input_kwargs.get(dep)]
             if missing:
-                issues.append(f"{seam_name} is None; missing inputs: {', '.join(missing)}")
+                issues.append(
+                    f"{seam_name} is None; missing inputs: {', '.join(missing)}"
+                )
     return issues
 
 
-def main() -> int:
-    parser = argparse.ArgumentParser(description="Profile 30-session RegimeEngine.classify_window() wall-clock stages.")
-    parser.add_argument("--lookback-days", type=_positive_int, default=30)
-    parser.add_argument("--config-path", type=Path, default=DEFAULT_CONFIG_PATH)
-    parser.add_argument("--daily-dir", type=Path, default=DEFAULT_DAILY_DIR)
-    parser.add_argument("--constituent-tree", type=Path, default=DEFAULT_CONSTITUENT_TREE)
-    parser.add_argument("--macro-parquet", type=Path, default=DEFAULT_MACRO_PARQUET)
-    parser.add_argument("--pit-parquet", type=Path, default=DEFAULT_PIT_PARQUET)
-    parser.add_argument("--pmi-path", type=Path, default=DEFAULT_PMI_PATH)
-    parser.add_argument("--allow-missing-constituent-files", action="store_true")
-    args = parser.parse_args()
-
-    _require_path(args.config_path, kind="config path")
-    _require_path(args.daily_dir, kind="daily OHLCV path")
-    _require_path(args.constituent_tree, kind="constituent tree path")
-    _require_path(args.macro_parquet, kind="macro parquet")
-    _require_path(args.pit_parquet, kind="PIT parquet")
-
-    engine = RegimeEngine(config_path=args.config_path)
-    config = engine.config
-
+def _load_profile_inputs(
+    args: argparse.Namespace, *, config: Any
+) -> ProfileInputBundle:
     market_data = load_market_data(args.daily_dir)
     if market_data.empty:
         raise ValueError(f"market_data is empty from {args.daily_dir}")
@@ -462,30 +738,175 @@ def main() -> int:
         config=config,
     )
     spy_index = bootstrap_context.spy_ohlcv.index
-    required_sessions = _build_required_sessions(config, len(bootstrap_context.sessions), args.lookback_days)
+    required_sessions = _build_required_sessions(
+        config,
+        len(bootstrap_context.sessions),
+        args.lookback_days,
+    )
     working_start_date = bootstrap_context.sessions[-required_sessions]
-    selected_dates = list(bootstrap_context.sessions[-args.lookback_days:])
+    selected_dates = list(bootstrap_context.sessions[-args.lookback_days :])
 
     sector_etf_closes = load_close_dict(args.daily_dir, list(SECTOR_ETFS), spy_index)
-    cross_asset_symbols = [*CROSS_ASSET_SYMBOLS, "DBC", "KRE", "XLY", "XLI", "XLP", "XLU"]
+    cross_asset_symbols = [
+        *CROSS_ASSET_SYMBOLS,
+        "DBC",
+        "KRE",
+        "XLY",
+        "XLI",
+        "XLP",
+        "XLU",
+    ]
     cross_asset_closes = load_close_dict(args.daily_dir, cross_asset_symbols, spy_index)
-    macro_series = load_macro_series(args.macro_parquet, args.pmi_path if args.pmi_path.exists() else None)
+    macro_series = load_macro_series(
+        args.macro_parquet, args.pmi_path if args.pmi_path.exists() else None
+    )
+    event_calendar = _load_optional_event_calendar(args.event_calendar)
+    aaii_sentiment = _load_optional_aaii_sentiment(args.aaii_sentiment_parquet)
+    news_sentiment = _load_optional_news_sentiment(args.news_sentiment_parquet)
+    implied_vol_30d = macro_series.get("implied_vol_30d")
+    central_bank_text_releases = _load_optional_central_bank_text_releases(
+        fomc_path=args.fomc_minutes_parquet,
+        powell_path=args.powell_speeches_parquet,
+    )
+    cpi_first_release = _load_optional_cpi_first_release(args.cpi_vintages_parquet)
     pit_constituent_intervals = read_pit_intervals(args.pit_parquet)
-    constituent_ohlcv, constituent_tickers, missing_constituent_paths = _load_constituent_ohlcv_from_tree(
-        args.constituent_tree,
-        pit_constituent_intervals,
-        start_date=working_start_date,
-        end_date=end_date,
-        allow_missing_files=args.allow_missing_constituent_files,
+    constituent_ohlcv, constituent_tickers, missing_constituent_paths = (
+        _load_constituent_ohlcv_from_tree(
+            args.constituent_tree,
+            pit_constituent_intervals,
+            start_date=working_start_date,
+            end_date=end_date,
+            allow_missing_files=args.allow_missing_constituent_files,
+        )
     )
 
     input_kwargs = {
         "sector_etf_closes": sector_etf_closes,
         "cross_asset_closes": cross_asset_closes,
         "macro_series": macro_series,
+        "event_calendar": event_calendar,
+        "aaii_sentiment": aaii_sentiment,
+        "news_sentiment": news_sentiment,
+        "implied_vol_30d": implied_vol_30d,
+        "central_bank_text_releases": central_bank_text_releases,
+        "cpi_first_release": cpi_first_release,
         "pit_constituent_intervals": pit_constituent_intervals,
         "constituent_ohlcv": constituent_ohlcv,
     }
+    return ProfileInputBundle(
+        market_data=market_data,
+        end_date=end_date,
+        required_sessions=required_sessions,
+        working_start_date=working_start_date,
+        selected_dates=selected_dates,
+        sector_etf_closes=sector_etf_closes,
+        cross_asset_closes=cross_asset_closes,
+        macro_series=macro_series,
+        event_calendar=event_calendar,
+        aaii_sentiment=aaii_sentiment,
+        news_sentiment=news_sentiment,
+        implied_vol_30d=implied_vol_30d,
+        central_bank_text_releases=central_bank_text_releases,
+        cpi_first_release=cpi_first_release,
+        pit_constituent_intervals=pit_constituent_intervals,
+        constituent_ohlcv=constituent_ohlcv,
+        constituent_tickers=constituent_tickers,
+        missing_constituent_paths=missing_constituent_paths,
+        input_kwargs=input_kwargs,
+    )
+
+
+def _parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(
+        description="Profile 30-session RegimeEngine.classify_window() wall-clock stages."
+    )
+    parser.add_argument("--lookback-days", type=positive_int, default=30)
+    parser.add_argument("--config-path", type=Path, default=DEFAULT_CONFIG_PATH)
+    parser.add_argument("--daily-dir", type=Path, default=None)
+    parser.add_argument("--constituent-tree", type=Path, default=None)
+    parser.add_argument("--macro-parquet", type=Path, default=None)
+    parser.add_argument("--pit-parquet", type=Path, default=None)
+    parser.add_argument("--pmi-path", type=Path, default=None)
+    parser.add_argument("--event-calendar", type=Path, default=DEFAULT_EVENT_CALENDAR)
+    parser.add_argument("--aaii-sentiment-parquet", type=Path, default=None)
+    parser.add_argument("--news-sentiment-parquet", type=Path, default=None)
+    parser.add_argument("--fomc-minutes-parquet", type=Path, default=None)
+    parser.add_argument("--powell-speeches-parquet", type=Path, default=None)
+    parser.add_argument("--cpi-vintages-parquet", type=Path, default=None)
+    parser.add_argument(
+        "--manifest",
+        type=Path,
+        default=None,
+        help="Optional artifact manifest to materialize before profiling.",
+    )
+    parser.add_argument(
+        "--artifact-store",
+        default=None,
+        help="Optional artifact-store root override for --manifest.",
+    )
+    parser.add_argument(
+        "--data-root",
+        type=Path,
+        default=REPO_ROOT / "data" / "raw",
+        help="Local data/raw root used for manifest materialization.",
+    )
+    parser.add_argument("--allow-missing-constituent-files", action="store_true")
+    args = parser.parse_args()
+    if args.daily_dir is None:
+        args.daily_dir = args.data_root / "daily_ohlcv"
+    if args.constituent_tree is None:
+        args.constituent_tree = args.data_root / FIXED_UNIVERSE_TREE_NAME
+    if args.macro_parquet is None:
+        args.macro_parquet = args.data_root / "macro" / "fred_macro_series.parquet"
+    if args.pmi_path is None:
+        args.pmi_path = default_pmi_path(args.data_root)
+    if args.pit_parquet is None:
+        args.pit_parquet = (
+            args.data_root / "pit_constituents" / "sp500_ticker_intervals.parquet"
+        )
+    if args.aaii_sentiment_parquet is None:
+        args.aaii_sentiment_parquet = (
+            args.data_root / "sentiment" / "aaii_sentiment.parquet"
+        )
+    if args.news_sentiment_parquet is None:
+        args.news_sentiment_parquet = (
+            args.data_root / "news_sentiment" / "sf_fed_news_sentiment.parquet"
+        )
+    if args.fomc_minutes_parquet is None:
+        args.fomc_minutes_parquet = (
+            args.data_root / "fomc_minutes" / "fomc_minutes.parquet"
+        )
+    if args.powell_speeches_parquet is None:
+        args.powell_speeches_parquet = (
+            args.data_root / "powell_speeches" / "powell_speeches.parquet"
+        )
+    if args.cpi_vintages_parquet is None:
+        args.cpi_vintages_parquet = (
+            args.data_root / "macro_vintages" / "cpi_all_items_vintages.parquet"
+        )
+    return args
+
+
+def main() -> int:
+    args = _parse_args()
+    materialize_if_requested(
+        manifest_path=args.manifest,
+        local_root=args.data_root,
+        repo_root=REPO_ROOT,
+        store_root=args.artifact_store,
+        required_for="profile_engine_30d",
+    )
+
+    _require_path(args.config_path, kind="config path")
+    _require_path(args.daily_dir, kind="daily OHLCV path")
+    _require_path(args.constituent_tree, kind="constituent tree path")
+    _require_path(args.macro_parquet, kind="macro parquet")
+    _require_path(args.pit_parquet, kind="PIT parquet")
+
+    engine = RegimeEngine(config_path=args.config_path)
+    config = engine.config
+
+    inputs = _load_profile_inputs(args, config=config)
 
     timer = StageTimer()
     previous_handler = signal.getsignal(signal.SIGALRM)
@@ -495,14 +916,20 @@ def main() -> int:
     try:
         with _install_timers(timer):
             timeline = engine.classify_window(
-                end_date=end_date,
-                market_data=market_data,
+                end_date=inputs.end_date,
+                market_data=inputs.market_data,
                 lookback_days=args.lookback_days,
-                sector_etf_closes=sector_etf_closes,
-                cross_asset_closes=cross_asset_closes,
-                macro_series=macro_series,
-                pit_constituent_intervals=pit_constituent_intervals,
-                constituent_ohlcv=constituent_ohlcv,
+                sector_etf_closes=inputs.sector_etf_closes,
+                cross_asset_closes=inputs.cross_asset_closes,
+                macro_series=inputs.macro_series,
+                event_calendar=inputs.event_calendar,
+                aaii_sentiment=inputs.aaii_sentiment,
+                implied_vol_30d=inputs.implied_vol_30d,
+                central_bank_text_releases=inputs.central_bank_text_releases,
+                cpi_first_release=inputs.cpi_first_release,
+                news_sentiment=inputs.news_sentiment,
+                pit_constituent_intervals=inputs.pit_constituent_intervals,
+                constituent_ohlcv=inputs.constituent_ohlcv,
             )
     finally:
         signal.alarm(0)
@@ -510,21 +937,27 @@ def main() -> int:
     total_wall_clock = time.perf_counter() - wall_start
 
     context = build_market_context(
-        end_date=end_date,
-        market_data=market_data,
+        end_date=inputs.end_date,
+        market_data=inputs.market_data,
         config=config,
-        sector_etf_closes=sector_etf_closes,
-        cross_asset_closes=cross_asset_closes,
-        macro_series=macro_series,
-        pit_constituent_intervals=pit_constituent_intervals,
-        constituent_ohlcv=constituent_ohlcv,
+        sector_etf_closes=inputs.sector_etf_closes,
+        cross_asset_closes=inputs.cross_asset_closes,
+        macro_series=inputs.macro_series,
+        event_calendar=inputs.event_calendar,
+        aaii_sentiment=inputs.aaii_sentiment,
+        implied_vol_30d=inputs.implied_vol_30d,
+        central_bank_text_releases=inputs.central_bank_text_releases,
+        cpi_first_release=inputs.cpi_first_release,
+        news_sentiment=inputs.news_sentiment,
+        pit_constituent_intervals=inputs.pit_constituent_intervals,
+        constituent_ohlcv=inputs.constituent_ohlcv,
     )
     import regime_detection.market_context as market_context_module
     import regime_detection.feature_store as feature_store_module
 
     working_context = market_context_module.slice_context_to_recent_sessions(
         context=context,
-        required_sessions=required_sessions,
+        required_sessions=inputs.required_sessions,
     )
     feature_store = feature_store_module.build_feature_store(
         working_context,
@@ -536,6 +969,8 @@ def main() -> int:
         monetary_pressure_v2_config=config.monetary_pressure_v2,
         credit_funding_config=config.credit_funding,
         inflation_growth_config=config.inflation_growth,
+        central_bank_text_config=config.central_bank_text,
+        news_sentiment_config=config.news_sentiment,
     )
 
     per_day_emission_total = max(
@@ -598,18 +1033,41 @@ def main() -> int:
         timer.totals.get("build_feature_store_total", 0.0),
     )
 
-    verification_issues = _verify_invariants(timeline, feature_store, input_kwargs)
+    verification_issues = _verify_invariants(
+        timeline, feature_store, inputs.input_kwargs
+    )
 
     print(f"config_path={args.config_path}")
     print(f"market_data_source={args.daily_dir}")
     print(f"constituent_tree_source={args.constituent_tree}")
     print(f"macro_source={args.macro_parquet}")
+    print(
+        f"event_calendar_source={args.event_calendar if inputs.event_calendar is not None else '<absent>'}"
+    )
+    print(
+        f"aaii_sentiment_source={args.aaii_sentiment_parquet if inputs.aaii_sentiment is not None else '<absent>'}"
+    )
+    print(
+        f"news_sentiment_source={args.news_sentiment_parquet if inputs.news_sentiment is not None else '<absent>'}"
+    )
+    print(
+        f"implied_vol_30d_source={'macro_series[implied_vol_30d]' if inputs.implied_vol_30d is not None else '<absent>'}"
+    )
+    print(
+        f"fomc_minutes_source={args.fomc_minutes_parquet if args.fomc_minutes_parquet.exists() else '<absent>'}"
+    )
+    print(
+        f"powell_speeches_source={args.powell_speeches_parquet if args.powell_speeches_parquet.exists() else '<absent>'}"
+    )
+    print(
+        f"cpi_vintages_source={args.cpi_vintages_parquet if inputs.cpi_first_release is not None else '<absent>'}"
+    )
     print(f"pit_source={args.pit_parquet}")
-    print(f"end_date={end_date.isoformat()}")
-    print(f"selected_window_start={selected_dates[0].isoformat()}")
-    print(f"selected_window_end={selected_dates[-1].isoformat()}")
-    print(f"working_window_start={working_start_date.isoformat()}")
-    print(f"required_sessions={required_sessions}")
+    print(f"end_date={inputs.end_date.isoformat()}")
+    print(f"selected_window_start={inputs.selected_dates[0].isoformat()}")
+    print(f"selected_window_end={inputs.selected_dates[-1].isoformat()}")
+    print(f"working_window_start={inputs.working_start_date.isoformat()}")
+    print(f"required_sessions={inputs.required_sessions}")
     print(f"lookback_days={args.lookback_days}")
     print()
 
@@ -618,15 +1076,21 @@ def main() -> int:
         "sector_etf_closes",
         "cross_asset_closes",
         "macro_series",
+        "event_calendar",
+        "aaii_sentiment",
+        "news_sentiment",
+        "implied_vol_30d",
+        "central_bank_text_releases",
+        "cpi_first_release",
         "pit_constituent_intervals",
         "constituent_ohlcv",
     ]:
-        print(_input_status(name, input_kwargs[name]))
-    print(f"pit_overlap_tickers_requested={len(constituent_tickers)}")
-    print(f"constituent_tickers_loaded={len(constituent_ohlcv)}")
-    print(f"missing_constituent_files={len(missing_constituent_paths)}")
-    if missing_constituent_paths:
-        for path in missing_constituent_paths[:20]:
+        print(_input_status(name, inputs.input_kwargs[name]))
+    print(f"pit_overlap_tickers_requested={len(inputs.constituent_tickers)}")
+    print(f"constituent_tickers_loaded={len(inputs.constituent_ohlcv)}")
+    print(f"missing_constituent_files={len(inputs.missing_constituent_paths)}")
+    if inputs.missing_constituent_paths:
+        for path in inputs.missing_constituent_paths[:20]:
             print(f"missing_constituent_file={path}")
     print()
 

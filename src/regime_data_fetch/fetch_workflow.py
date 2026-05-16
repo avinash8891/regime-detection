@@ -3,6 +3,7 @@ from __future__ import annotations
 import datetime as dt
 import json
 import os
+import shutil
 from pathlib import Path
 
 import pandas as pd
@@ -68,6 +69,57 @@ V2_FRED_SERIES = {
     # (decimal-annualized, to match realized_vol units). ADR 0005.
     "implied_vol_30d": "VIXCLS",
 }
+
+
+def _normalize_date_column(frame: pd.DataFrame) -> pd.DataFrame:
+    normalized = frame.copy()
+    if normalized.empty and "date" not in normalized.columns:
+        return normalized
+    normalized["date"] = pd.to_datetime(normalized["date"]).dt.date
+    return normalized
+
+
+def _merge_existing_rows(
+    *,
+    existing_path: Path,
+    new_frame: pd.DataFrame,
+    key_columns: list[str],
+) -> pd.DataFrame:
+    if new_frame.empty and "date" not in new_frame.columns:
+        if existing_path.exists():
+            return _normalize_date_column(pd.read_parquet(existing_path))
+        return new_frame
+    normalized_new = _normalize_date_column(new_frame)
+    if not existing_path.exists():
+        return normalized_new
+    existing = pd.read_parquet(existing_path)
+    if existing.empty:
+        return normalized_new
+    normalized_existing = _normalize_date_column(existing)
+    merged = pd.concat([normalized_existing, normalized_new], ignore_index=True)
+    return (
+        merged.sort_values(key_columns)
+        .drop_duplicates(subset=key_columns, keep="last")
+        .sort_values(key_columns)
+        .reset_index(drop=True)
+    )
+
+
+def _write_merged_partitioned_daily_ohlcv(
+    *,
+    parquet_dir: Path,
+    new_frame: pd.DataFrame,
+) -> pd.DataFrame:
+    merged = _merge_existing_rows(
+        existing_path=parquet_dir,
+        new_frame=new_frame,
+        key_columns=["symbol", "date"],
+    )
+    if parquet_dir.exists():
+        shutil.rmtree(parquet_dir)
+    parquet_dir.mkdir(parents=True, exist_ok=True)
+    merged.to_parquet(parquet_dir, index=False, partition_cols=["symbol"])
+    return merged
 
 
 def _dedupe_preserve_order(symbols: list[str]) -> list[str]:
@@ -150,6 +202,7 @@ def run_market_fetch(
     allow_vix_proxy: bool,
     verbose: bool,
     acquisition_db_path: Path | None = None,
+    artifact_store_root: str | Path | None = None,
 ) -> Path:
     if end < start:
         raise SystemExit("--end must be >= --start")
@@ -166,7 +219,7 @@ def run_market_fetch(
         vix_symbol=vix_symbol,
     )
 
-    store = AcquisitionStore(acquisition_db_path) if acquisition_db_path else None
+    store = AcquisitionStore(acquisition_db_path, artifact_store_root=artifact_store_root) if acquisition_db_path else None
     fetch_run = (
         store.start_fetch_run(
             fetch_type="market",
@@ -246,8 +299,10 @@ def run_market_fetch(
             )
 
         parquet_dir = out_dir / "daily_ohlcv"
-        parquet_dir.mkdir(parents=True, exist_ok=True)
-        df.to_parquet(parquet_dir, index=False, partition_cols=["symbol"])
+        merged_df = _write_merged_partitioned_daily_ohlcv(
+            parquet_dir=parquet_dir,
+            new_frame=df,
+        )
 
         event_template = write_event_calendar_template(out_dir)
 
@@ -267,8 +322,10 @@ def run_market_fetch(
             },
             "counts": {
                 "rows": int(len(df)),
+                "merged_rows": int(len(merged_df)),
                 "symbols_requested_for_alpaca": len(all_symbols),
                 "symbols_returned": int(df["symbol"].nunique()) if not df.empty else 0,
+                "merged_symbols": int(merged_df["symbol"].nunique()) if not merged_df.empty else 0,
                 "missing_symbols": len(bars.missing_symbols),
             },
             "min_date_checks": checks,
@@ -292,9 +349,9 @@ def run_market_fetch(
                 run_id=fetch_run.run_id,
                 output_kind="alpaca_daily_ohlcv_parquet",
                 path=parquet_dir / "_metadata" if (parquet_dir / "_metadata").exists() else next(parquet_dir.rglob("*.parquet")),
-                row_count=len(df),
-                min_date=min(df["date"]).isoformat() if not df.empty else None,
-                max_date=max(df["date"]).isoformat() if not df.empty else None,
+                row_count=len(merged_df),
+                min_date=min(merged_df["date"]).isoformat() if not merged_df.empty else None,
+                max_date=max(merged_df["date"]).isoformat() if not merged_df.empty else None,
                 notes="Partitioned Alpaca daily OHLCV parquet output",
             )
             store.record_output(
@@ -322,13 +379,14 @@ def run_macro_fetch(
     fred_api_key: str | None,
     include_cpi_vintages: bool,
     acquisition_db_path: Path | None = None,
+    artifact_store_root: str | Path | None = None,
 ) -> Path:
     out_dir.mkdir(parents=True, exist_ok=True)
     effective_fred_api_key = fred_api_key or os.environ.get("FRED_API_KEY", "").strip() or None
     if not effective_fred_api_key:
         raise SystemExit("Missing required FRED API key: pass --fred-api-key or set FRED_API_KEY")
 
-    store = AcquisitionStore(acquisition_db_path) if acquisition_db_path else None
+    store = AcquisitionStore(acquisition_db_path, artifact_store_root=artifact_store_root) if acquisition_db_path else None
     fetch_run = (
         store.start_fetch_run(
             fetch_type="macro",
@@ -403,6 +461,11 @@ def run_macro_fetch(
             vintages_dir = out_dir / "macro_vintages"
             vintages_dir.mkdir(parents=True, exist_ok=True)
             vintages_path = vintages_dir / "cpi_all_items_vintages.parquet"
+            vintages = _merge_existing_rows(
+                existing_path=vintages_path,
+                new_frame=vintages,
+                key_columns=["logical_name", "series_id", "date", "realtime_start", "realtime_end"],
+            )
             vintages.to_parquet(vintages_path, index=False)
             series_meta["cpi_all_items_vintages"] = {
                 "series_id": V2_FRED_SERIES["cpi_all_items"],
@@ -415,6 +478,11 @@ def run_macro_fetch(
         macro_dir.mkdir(parents=True, exist_ok=True)
         macro_path = macro_dir / "fred_macro_series.parquet"
         macro_df = pd.concat(macro_frames, ignore_index=True)
+        macro_df = _merge_existing_rows(
+            existing_path=macro_path,
+            new_frame=macro_df,
+            key_columns=["logical_name", "series_id", "date"],
+        )
         macro_df.to_parquet(macro_path, index=False)
 
         report = {

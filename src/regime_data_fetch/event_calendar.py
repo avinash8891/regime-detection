@@ -290,6 +290,7 @@ def run_us_event_calendar_fetch(
     fomc_historical_page_fetcher=fetch_fomc_historical_year_page,
     bls_page_fetcher=None,
     acquisition_db_path: Path | None = None,
+    artifact_store_root: str | Path | None = None,
     bls_start_year: int = 2000,
     bls_end_year: int | None = None,
     include_v2_curated_candidates: bool = False,
@@ -304,7 +305,7 @@ def run_us_event_calendar_fetch(
         raise ValueError("run_us_event_calendar_fetch requires as_of_date for deterministic replay")
     effective_end_year = bls_end_year if bls_end_year is not None else as_of_date.year
 
-    store = AcquisitionStore(acquisition_db_path) if acquisition_db_path else None
+    store = AcquisitionStore(acquisition_db_path, artifact_store_root=artifact_store_root) if acquisition_db_path else None
     fetch_run = (
         store.start_fetch_run(
             fetch_type="events",

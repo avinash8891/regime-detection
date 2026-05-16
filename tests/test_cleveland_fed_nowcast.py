@@ -142,6 +142,21 @@ def test_parse_keys_nowcast_to_last_nonempty_publication_date() -> None:
     assert df.loc[0, "cpi_nowcast"] == pytest.approx(0.34 * DEFAULT_VALUE_SCALE)
 
 
+def test_parse_accepts_month_day_category_labels_without_year() -> None:
+    objs = [
+        _chart_obj(
+            "2025-9",
+            ["", "0.30", "0.34"],
+            labels=["09/01", "09/08", "09/13"],
+        )
+    ]
+
+    df = parse_cleveland_fed_nowcast_json(_feed_json(objs))
+
+    assert list(df["date"]) == [pd.Timestamp("2025-09-13")]
+    assert df.loc[0, "cpi_nowcast"] == pytest.approx(0.34 * DEFAULT_VALUE_SCALE)
+
+
 def test_parse_skips_vintage_with_no_nonempty_value() -> None:
     """The earliest feed vintages carry only PCE — an all-empty CPI series
     is skipped, not a parse failure."""

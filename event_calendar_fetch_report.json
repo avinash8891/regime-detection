@@ -1,5 +1,5 @@
 {
-  "as_of_utc": "2026-05-14T14:33:40.503748+00:00",
+  "as_of_utc": "2026-05-15T18:01:29.977585+00:00",
   "source": {
     "fomc": "federalreserve.gov:fomccalendars",
     "cpi": "bls.gov:schedule:consumer-price-index",
@@ -23,8 +23,13 @@
       "election": 6
     }
   },
+  "date_range": {
+    "min_date": "2007-10-31",
+    "max_date": "2026-12-18"
+  },
   "paths": {
     "event_calendar_yaml": "configs/events/us_events.yaml",
-    "acquisition_db": "data/raw/acquisition.db"
-  }
+    "acquisition_db": "data/raw/acquisition/acquisition.db"
+  },
+  "notes": "BLS CPI/NFP rows were refreshed and verified through the TinyFish fallback; committed V2 curated event rows were preserved."
 }

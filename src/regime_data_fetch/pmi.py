@@ -204,6 +204,7 @@ def run_pmi_fetch(
     primary_fetcher=fetch_pmi_dbnomics,
     backup_fetcher=fetch_pmi_tradingeconomics,
     acquisition_db_path: Path | None = None,
+    artifact_store_root: str | Path | None = None,
     manual_history_dir: Path | None = None,
 ) -> Path:
     if manual_history_dir is not None:
@@ -212,10 +213,11 @@ def run_pmi_fetch(
             as_of_date=as_of_date,
             history_dir=manual_history_dir,
             acquisition_db_path=acquisition_db_path,
+            artifact_store_root=artifact_store_root,
         )
 
     out_dir.mkdir(parents=True, exist_ok=True)
-    store = AcquisitionStore(acquisition_db_path) if acquisition_db_path else None
+    store = AcquisitionStore(acquisition_db_path, artifact_store_root=artifact_store_root) if acquisition_db_path else None
     fetch_run = (
         store.start_fetch_run(
             fetch_type="pmi",
@@ -375,9 +377,10 @@ def run_manual_pmi_history_import(
     as_of_date: dt.date,
     history_dir: Path,
     acquisition_db_path: Path | None = None,
+    artifact_store_root: str | Path | None = None,
 ) -> Path:
     out_dir.mkdir(parents=True, exist_ok=True)
-    store = AcquisitionStore(acquisition_db_path) if acquisition_db_path else None
+    store = AcquisitionStore(acquisition_db_path, artifact_store_root=artifact_store_root) if acquisition_db_path else None
     fetch_run = (
         store.start_fetch_run(
             fetch_type="pmi",
@@ -466,6 +469,14 @@ def run_manual_pmi_history_import(
             "paths": {
                 "pmi_parquet": str(parquet_path),
                 "pmi_history_parquet": str(history_path),
+                "manual_pmi_manufacturing_tsv": {
+                    "path": str(history_dir / "ism_manufacturing_pmi.tsv"),
+                    "local_path": "data/manual_inputs/pmi/ism_manufacturing_pmi.tsv",
+                },
+                "manual_pmi_services_tsv": {
+                    "path": str(history_dir / "ism_services_pmi.tsv"),
+                    "local_path": "data/manual_inputs/pmi/ism_services_pmi.tsv",
+                },
                 "acquisition_db": str(acquisition_db_path) if acquisition_db_path else None,
             },
         }

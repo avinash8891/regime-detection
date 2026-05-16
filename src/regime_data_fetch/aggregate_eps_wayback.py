@@ -12,20 +12,25 @@ from __future__ import annotations
 import datetime as dt
 import json
 import logging
+import time
+import urllib.error
+import urllib.request
 from dataclasses import dataclass
 from pathlib import Path
-import urllib.request
 
 import pandas as pd
 
 from regime_data_fetch.acquisition_store import AcquisitionStore
 from regime_data_fetch.aggregate_eps import (
+    EPS_DIR_NAME,
     SOURCE_URL,
     WAYBACK_CDX_URL,
     WAYBACK_DIR_NAME,
     WAYBACK_TIMELINE_FILENAME,
+    WEEKLY_HISTORY_FILENAME,
     AggregateEPSFetchError,
     parse_sp500_eps_workbook,
+    seed_weekly_history_from_wayback_timeline,
 )
 
 _LOG = logging.getLogger(__name__)
@@ -82,14 +87,33 @@ def parse_wayback_cdx_json(cdx_json: str, *, target_url: str) -> list[EPSWayback
     return snapshots
 
 
-def fetch_wayback_cdx(target_url: str = SOURCE_URL) -> str:
+def fetch_wayback_cdx(
+    target_url: str = SOURCE_URL,
+    *,
+    max_attempts: int = 3,
+    backoff_seconds: float = 2.0,
+) -> str:
     query = (
         f"{WAYBACK_CDX_URL}?url={target_url}&output=json"
         "&fl=timestamp,original,statuscode,mimetype&filter=statuscode:200"
     )
     req = urllib.request.Request(query, headers={"User-Agent": "Mozilla/5.0"})
-    with urllib.request.urlopen(req, timeout=60) as response:
-        return response.read().decode("utf-8", errors="replace")
+    last_exc: Exception | None = None
+    for attempt in range(1, max_attempts + 1):
+        try:
+            with urllib.request.urlopen(req, timeout=60) as response:
+                return response.read().decode("utf-8", errors="replace")
+        except urllib.error.HTTPError as exc:
+            if exc.code not in {429, 500, 502, 503, 504}:
+                raise
+            last_exc = exc
+        except urllib.error.URLError as exc:
+            last_exc = exc
+        if attempt < max_attempts:
+            time.sleep(backoff_seconds * attempt)
+    raise AggregateEPSFetchError(
+        f"Wayback CDX fetch failed after {max_attempts} attempts: {last_exc}"
+    ) from last_exc
 
 
 def fetch_wayback_snapshot_bytes(snapshot: EPSWaybackSnapshot) -> bytes:
@@ -255,6 +279,12 @@ def run_wayback_aggregate_eps_fetch(
         timeline_path = wayback_dir / WAYBACK_TIMELINE_FILENAME
         timeline_df.to_parquet(timeline_path, index=False)
 
+        weekly_history = seed_weekly_history_from_wayback_timeline(
+            out_dir=out_dir,
+            timeline_path=timeline_path,
+        )
+        weekly_history_path = out_dir / EPS_DIR_NAME / WEEKLY_HISTORY_FILENAME
+
         preview = timeline_df.head(10).copy()
         if "snapshot_date" in preview:
             preview["snapshot_date"] = preview["snapshot_date"].map(lambda x: x.isoformat())
@@ -271,6 +301,7 @@ def run_wayback_aggregate_eps_fetch(
                 "snapshots_failed": failures,
                 "snapshots_parsed_ok": parsed_ok,
                 "timeline_rows": int(len(timeline_df)),
+                "weekly_history_rows": int(len(weekly_history)),
             },
             "requested": {
                 "max_snapshots": max_snapshots,
@@ -284,6 +315,7 @@ def run_wayback_aggregate_eps_fetch(
                 "snapshot_index_json": str(snapshot_index_path),
                 "snapshot_status_jsonl": str(status_path),
                 "timeline_parquet": str(timeline_path),
+                "aggregate_eps_weekly_history_parquet": str(weekly_history_path),
                 "acquisition_db": str(acquisition_db_path) if acquisition_db_path else None,
             },
         }
@@ -315,6 +347,15 @@ def run_wayback_aggregate_eps_fetch(
                 min_date=min(timeline_df["snapshot_date"]).isoformat() if not timeline_df.empty else None,
                 max_date=max(timeline_df["snapshot_date"]).isoformat() if not timeline_df.empty else None,
                 notes="Wayback EPS historical snapshot timeline parquet",
+            )
+            store.record_output(
+                run_id=fetch_run.run_id,
+                output_kind="aggregate_eps_weekly_history",
+                path=weekly_history_path,
+                row_count=len(weekly_history),
+                min_date=min(weekly_history["observation_date"]).isoformat() if not weekly_history.empty else None,
+                max_date=max(weekly_history["observation_date"]).isoformat() if not weekly_history.empty else None,
+                notes="Aggregate EPS weekly accumulator seeded from Wayback timeline",
             )
             store.record_output(
                 run_id=fetch_run.run_id,

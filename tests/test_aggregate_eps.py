@@ -4,6 +4,7 @@ import datetime as dt
 import json
 from pathlib import Path
 import sqlite3
+import urllib.error
 
 import pandas as pd
 import pytest
@@ -21,11 +22,13 @@ from regime_data_fetch.aggregate_eps import (
     append_weekly_eps_snapshot,
     compute_eps_revision_direction_4w,
     parse_sp500_eps_workbook,
+    run_aggregate_eps_auto_fetch,
     run_aggregate_eps_fetch,
     seed_weekly_history_from_wayback_timeline,
 )
 from regime_data_fetch.aggregate_eps_wayback import (
     EPSWaybackSnapshot,
+    fetch_wayback_cdx,
     parse_wayback_cdx_json,
     run_wayback_aggregate_eps_fetch,
 )
@@ -161,6 +164,55 @@ def test_run_aggregate_eps_fetch_records_manual_workbook_in_sqlite(tmp_path: Pat
     assert outputs == [("aggregate_eps_parquet",), ("aggregate_eps_report",)]
 
 
+def test_run_aggregate_eps_auto_fetch_uses_browser_fallback_after_direct_download_failure(
+    tmp_path: Path,
+) -> None:
+    workbook_bytes = (FIXTURES / "sp500_eps_est_fixture.xlsx").read_bytes()
+
+    def failing_downloader(**kwargs) -> Path:
+        raise AggregateEPSFetchError("direct download blocked")
+
+    def browser_downloader(**kwargs) -> Path:
+        out_path = kwargs["out_path"]
+        out_path.parent.mkdir(parents=True, exist_ok=True)
+        out_path.write_bytes(workbook_bytes)
+        return out_path
+
+    report_path = run_aggregate_eps_auto_fetch(
+        out_dir=tmp_path,
+        workbook_downloader=failing_downloader,
+        browser_downloader=browser_downloader,
+    )
+
+    report = json.loads(report_path.read_text())
+    assert report["source_path"] == str(tmp_path / "spglobal_eps" / "sp-500-eps-est.xlsx")
+    assert report["counts"]["current_snapshots"] == 1
+
+
+def test_run_aggregate_eps_auto_fetch_has_no_disable_fallback_mode(tmp_path: Path) -> None:
+    workbook_bytes = (FIXTURES / "sp500_eps_est_fixture.xlsx").read_bytes()
+    calls: list[str] = []
+
+    def failing_downloader(**kwargs) -> Path:
+        calls.append("direct")
+        raise AggregateEPSFetchError("direct download blocked")
+
+    def browser_downloader(**kwargs) -> Path:
+        calls.append("browser")
+        out_path = kwargs["out_path"]
+        out_path.parent.mkdir(parents=True, exist_ok=True)
+        out_path.write_bytes(workbook_bytes)
+        return out_path
+
+    run_aggregate_eps_auto_fetch(
+        out_dir=tmp_path,
+        workbook_downloader=failing_downloader,
+        browser_downloader=browser_downloader,
+    )
+
+    assert calls == ["direct", "browser"]
+
+
 def test_parse_sp500_eps_workbook_raises_when_expected_sheet_is_missing(tmp_path: Path) -> None:
     bad_path = tmp_path / "bad.xlsx"
     wb = Workbook()
@@ -235,6 +287,43 @@ def test_parse_wayback_cdx_json_extracts_successful_workbook_snapshots() -> None
     ]
 
 
+def test_fetch_wayback_cdx_retries_transient_http_errors(monkeypatch: pytest.MonkeyPatch) -> None:
+    calls = {"count": 0}
+
+    class _Response:
+        def __enter__(self) -> "_Response":
+            return self
+
+        def __exit__(self, *_args: object) -> None:
+            return None
+
+        def read(self) -> bytes:
+            return b'[["timestamp","original","statuscode","mimetype"]]'
+
+    def fake_urlopen(*_args: object, **_kwargs: object) -> _Response:
+        calls["count"] += 1
+        if calls["count"] == 1:
+            raise urllib.error.HTTPError(
+                url="https://web.archive.org/cdx",
+                code=503,
+                msg="Service Unavailable",
+                hdrs=None,
+                fp=None,
+            )
+        return _Response()
+
+    monkeypatch.setattr(
+        "regime_data_fetch.aggregate_eps_wayback.urllib.request.urlopen",
+        fake_urlopen,
+    )
+    monkeypatch.setattr("regime_data_fetch.aggregate_eps_wayback.time.sleep", lambda *_args: None)
+
+    payload = fetch_wayback_cdx(max_attempts=2, backoff_seconds=0)
+
+    assert calls["count"] == 2
+    assert payload == '[["timestamp","original","statuscode","mimetype"]]'
+
+
 def test_run_wayback_aggregate_eps_fetch_builds_timeline_from_snapshots(tmp_path: Path) -> None:
     workbook_bytes = (FIXTURES / "sp500_eps_est_fixture.xlsx").read_bytes()
 
@@ -269,6 +358,13 @@ def test_run_wayback_aggregate_eps_fetch_builds_timeline_from_snapshots(tmp_path
     )
     assert (tmp_path / "aggregate_forward_eps_wayback" / "snapshots" / "20200110123456.xlsx").exists()
     assert (tmp_path / "aggregate_forward_eps_wayback" / "snapshots" / "20200214101010.xlsx").exists()
+    assert report["counts"]["weekly_history_rows"] == 1
+    assert report["paths"]["aggregate_eps_weekly_history_parquet"] == str(
+        tmp_path / "aggregate_forward_eps" / WEEKLY_HISTORY_FILENAME
+    )
+    assert (
+        tmp_path / "aggregate_forward_eps" / WEEKLY_HISTORY_FILENAME
+    ).exists()
 
     df = pd.read_parquet(tmp_path / "aggregate_forward_eps_wayback" / "sp500_eps_wayback_timeline.parquet")
     assert list(df.columns) == [
@@ -393,6 +489,7 @@ def test_run_wayback_aggregate_eps_fetch_records_sqlite_artifacts_and_outputs(tm
         ("aggregate_eps_wayback_snapshot_index",),
         ("aggregate_eps_wayback_status",),
         ("aggregate_eps_wayback_timeline",),
+        ("aggregate_eps_weekly_history",),
         ("aggregate_eps_wayback_report",),
     ]
 

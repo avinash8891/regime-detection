@@ -10,7 +10,7 @@ Implements the 5-label axis classifier from spec lines 2005-2130:
 
 Credit-spread metrics — two parallel sources (Ambiguity Log #49 + #71):
 
-  §2C carries two distinct, never-blended credit-spread metrics:
+  §2C carries two distinct credit-spread metrics:
 
   1. Real ICE BofA OAS — ``hy_oas_*`` / ``ig_oas_*``, from the
      FRED-redistributed ICE BofA Option-Adjusted Spread series
@@ -31,13 +31,12 @@ Credit-spread metrics — two parallel sources (Ambiguity Log #49 + #71):
      ``credit_spread_proxy_total_return_differential`` bias-warning row.
      The proxy exists because FRED's OAS series lack pre-2023 history — it
      is a *similar* measure (credit-spread direction), kept strictly
-     parallel, never spliced with the real-OAS series.
+     parallel at the raw-series level.
 
-  When the OAS series are absent from ``macro_series``, the §2C seam is
-  simply not built (``REQUIRED_MACRO_KEYS`` gate in ``feature_store``) and
-  both ``credit_funding_state`` / ``credit_funding_state_proxy`` stay
-  ``None`` — V1 byte-identity preserved, same as every other unbuilt V2
-  seam.
+  When the OAS series are absent from ``macro_series``, real-OAS features are
+  all-NaN and ``credit_funding_state`` emits unknown/data-unavailable. The
+  proxy still builds from ETF closes, so ``credit_funding_effective_state`` can
+  use proxy fallback with source evidence.
 
 Inputs:
   - HYG, LQD, TLT, KRE close series via ``MarketContext.cross_asset_closes``
@@ -145,8 +144,6 @@ REQUIRED_MACRO_KEYS: tuple[str, ...] = (
     IORB_KEY,
     NFCI_KEY,
     BROAD_USD_INDEX_KEY,
-    HY_OAS_KEY,
-    IG_OAS_KEY,
 )
 
 
@@ -318,11 +315,9 @@ def compute_credit_funding_features(
     (BAMLH0A0HYM2 for HY, BAMLC0A4CBBB for BBB IG). The TLT-vs-HYG/LQD
     total-return differential is computed separately below and produces
     ``credit_funding_state_proxy`` through the axis-series classifier. The
-    two metrics are never blended. When the OAS series are absent from
-    ``macro_series``, the §2C seam simply is not built (handled by the
-    ``REQUIRED_MACRO_KEYS`` gate in ``feature_store``) and
-    ``credit_funding_state`` / ``credit_funding_state_proxy`` stay ``None`` —
-    V1 byte-identity preserved, same as every other unbuilt V2 seam.
+    raw spread series are never spliced. When the OAS series are absent from
+    ``macro_series``, real-OAS features are all-NaN and the real-OAS label
+    emits unknown/data-unavailable; proxy features still build from ETF closes.
     """
     spy_index = spy_close.index
 
@@ -333,10 +328,10 @@ def compute_credit_funding_features(
     tlt = tlt_close.reindex(spy_index).astype(float)
     kre = kre_close.reindex(spy_index).astype(float)
     spy = spy_close.reindex(spy_index).astype(float)
-    sofr_s = sofr.reindex(spy_index).astype(float)
-    iorb_s = iorb.reindex(spy_index).astype(float)
+    sofr_s = sofr.reindex(spy_index).astype(float).ffill()
+    iorb_s = iorb.reindex(spy_index).astype(float).ffill()
     nfci_w = nfci_weekly.reindex(spy_index).astype(float)
-    usd = broad_usd_index.reindex(spy_index).astype(float)
+    usd = broad_usd_index.reindex(spy_index).astype(float).ffill()
 
     pct_window = config.hy_percentile_504d_lookback
     slope_21d = config.slope_21d_lookback
@@ -349,10 +344,10 @@ def compute_credit_funding_features(
     # §2C lines 2032-2035 — authoritative ICE BofA OAS. Rising OAS =
     # wider spread (matches the §2C line 2033 sign convention by construction).
     hy_oas_63d = (
-        hy_oas.reindex(spy_index).astype(float).rename("hy_oas_63d")
+        hy_oas.reindex(spy_index).astype(float).ffill().rename("hy_oas_63d")
     )
     ig_oas_63d = (
-        ig_oas.reindex(spy_index).astype(float).rename("ig_oas_63d")
+        ig_oas.reindex(spy_index).astype(float).ffill().rename("ig_oas_63d")
     )
 
     # §2C line 2038: 504d percentile (pct=True).
@@ -750,8 +745,6 @@ def _build_for_spread_source(
     hyg_close = cross_asset_closes.get("HYG")
     lqd_close = cross_asset_closes.get("LQD")
     tlt_close = cross_asset_closes.get("TLT")
-    sofr_series = macro_series.get("SOFR")
-    iorb_series = macro_series.get("IORB")
     nfci_series = macro_series.get("NFCI")
 
     required_inputs: list[pd.Series] = [
@@ -775,16 +768,12 @@ def _build_for_spread_source(
     lqd_staleness_by_date = _trading_staleness_series(lqd_close, session_index)
     tlt_staleness_by_date = _trading_staleness_series(tlt_close, session_index)
     nfci_staleness_by_date = _calendar_staleness_days_series(nfci_series, session_index)
-    sofr_missing_by_date = (
-        pd.Series(True, index=session_index)
-        if sofr_series is None
-        else sofr_series.reindex(session_index).isna()
-    )
-    iorb_missing_by_date = (
-        pd.Series(True, index=session_index)
-        if iorb_series is None
-        else iorb_series.reindex(session_index).isna()
-    )
+    # Use the feature-store's sofr_iorb_spread (which is forward-filled) to
+    # detect SOFR/IORB absence — a single-session publication lag is carried
+    # forward in compute_credit_funding_features, so the raw macro series NaN
+    # on the last day is not a true data outage that should gate to "unknown".
+    sofr_missing_by_date = features.sofr_iorb_spread.reindex(session_index).isna()
+    iorb_missing_by_date = sofr_missing_by_date  # same series encodes both
     rule_inputs_by_date = build_rule_inputs_by_date(
         features=features,
         hy_spread_percentile_504d=hy_spread_percentile_504d,
