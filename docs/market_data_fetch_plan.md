@@ -58,7 +58,7 @@ storage_root: s3://regime-data
 artifacts:
   - name: fred_macro_series
     stage: canonical
-    uri: canonical/macro/fred_macro_series/as_of=YYYY-MM-DD/fred_macro_series.parquet
+    uri: file:///absolute/artifact-root/canonical/macro/fred_macro_series/as_of=YYYY-MM-DD/fred_macro_series.parquet
     local_path: data/raw/macro/fred_macro_series.parquet
     sha256: "<hex>"
     schema_version: fred_macro_series.v1

@@ -15,6 +15,10 @@ from regime_data_fetch.artifact_manifest import (
 from regime_data_fetch.artifact_store import sha256_file
 
 
+def _store_uri(root: Path, key: str) -> str:
+    return (root.resolve() / key).as_uri()
+
+
 def test_walkforward_gate_subprocess_materializes_manifest_defaults(
     tmp_path: Path,
 ) -> None:
@@ -57,7 +61,9 @@ def test_walkforward_gate_subprocess_materializes_manifest_defaults(
                 {
                     "name": "daily_ohlcv_part",
                     "stage": "canonical",
-                    "uri": "canonical/daily_ohlcv/part.parquet",
+                    "uri": _store_uri(
+                        store_root, "canonical/daily_ohlcv/part.parquet"
+                    ),
                     "local_path": "data/raw/daily_ohlcv/part.parquet",
                     "sha256": sha256_file(daily_source),
                     "required_for": ["v2_calibration"],
@@ -67,7 +73,9 @@ def test_walkforward_gate_subprocess_materializes_manifest_defaults(
                 {
                     "name": "macro",
                     "stage": "canonical",
-                    "uri": "canonical/macro/fred_macro_series.parquet",
+                    "uri": _store_uri(
+                        store_root, "canonical/macro/fred_macro_series.parquet"
+                    ),
                     "local_path": "data/raw/macro/fred_macro_series.parquet",
                     "sha256": sha256_file(macro_source),
                     "required_for": ["v2_calibration"],
@@ -77,7 +85,9 @@ def test_walkforward_gate_subprocess_materializes_manifest_defaults(
                 {
                     "name": "pmi_history",
                     "stage": "canonical",
-                    "uri": "canonical/pmi/us_ism_pmi_history.parquet",
+                    "uri": _store_uri(
+                        store_root, "canonical/pmi/us_ism_pmi_history.parquet"
+                    ),
                     "local_path": "data/raw/pmi/us_ism_pmi_history.parquet",
                     "sha256": sha256_file(pmi_source),
                     "required_for": ["v2_calibration"],
@@ -170,7 +180,9 @@ def test_runner_entrypoints_materialize_manifest_before_loading_inputs(
                 {
                     "name": f"{required_for}_marker",
                     "stage": "canonical",
-                    "uri": f"canonical/{required_for}/marker.txt",
+                    "uri": _store_uri(
+                        store_root, f"canonical/{required_for}/marker.txt"
+                    ),
                     "local_path": f"data/raw/{required_for}/marker.txt",
                     "sha256": sha256_file(source),
                     "required_for": [required_for],

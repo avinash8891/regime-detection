@@ -8,6 +8,10 @@ from regime_data_fetch.artifact_manifest import load_manifest
 from regime_data_fetch.sf_fed_news_sentiment import SF_FED_NEWS_SENTIMENT_PARQUET
 
 
+def _store_uri(root: Path, key: str) -> str:
+    return (root.resolve() / key).as_uri()
+
+
 def test_emit_manifest_for_report_paths_uploads_existing_report_outputs(tmp_path: Path) -> None:
     out_dir = tmp_path / "data" / "raw"
     macro = out_dir / "macro" / "fred_macro_series.parquet"
@@ -39,7 +43,9 @@ def test_emit_manifest_for_report_paths_uploads_existing_report_outputs(tmp_path
     loaded = load_manifest(manifest_path)
     assert loaded == manifest
     assert [artifact.name for artifact in loaded.artifacts] == ["macro_parquet"]
-    assert loaded.artifacts[0].uri == "canonical/macro/fred_macro_series.parquet"
+    assert loaded.artifacts[0].uri == _store_uri(
+        store_root, "canonical/macro/fred_macro_series.parquet"
+    )
     assert loaded.artifacts[0].local_path == "data/raw/macro/fred_macro_series.parquet"
     assert loaded.artifacts[0].required_for == ("v2_calibration",)
     assert (store_root / "canonical" / "macro" / "fred_macro_series.parquet").read_bytes() == b"macro"
@@ -211,7 +217,9 @@ def test_emit_manifest_for_report_paths_exports_repo_relative_event_config(tmp_p
     )
 
     assert manifest.artifacts[0].local_path == "configs/events/us_events.yaml"
-    assert manifest.artifacts[0].uri == "canonical/configs/events/us_events.yaml"
+    assert manifest.artifacts[0].uri == _store_uri(
+        tmp_path / "store", "canonical/configs/events/us_events.yaml"
+    )
     assert (tmp_path / "store" / "canonical" / "configs" / "events" / "us_events.yaml").read_text() == "events: []\n"
 
 

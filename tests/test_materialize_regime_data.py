@@ -15,6 +15,10 @@ from regime_data_fetch.artifact_store import sha256_file
 from regime_data_fetch.materialization import materialize_manifest
 
 
+def _store_uri(root: Path, key: str) -> str:
+    return (root.resolve() / key).as_uri()
+
+
 def test_materialize_manifest_copies_artifacts_into_local_raw_root(
     tmp_path: Path,
 ) -> None:
@@ -35,7 +39,9 @@ def test_materialize_manifest_copies_artifacts_into_local_raw_root(
                 {
                     "name": "macro",
                     "stage": "canonical",
-                    "uri": "canonical/macro/fred_macro_series.parquet",
+                    "uri": _store_uri(
+                        store_root, "canonical/macro/fred_macro_series.parquet"
+                    ),
                     "local_path": "data/raw/macro/fred_macro_series.parquet",
                     "sha256": "27d66c0dcef19a926429158d80111b954a5c23d076833347da3e27b91e4b423d",
                     "required_for": ["profile_engine_30d"],
@@ -45,7 +51,9 @@ def test_materialize_manifest_copies_artifacts_into_local_raw_root(
                 {
                     "name": "aaii",
                     "stage": "canonical",
-                    "uri": "canonical/sentiment/aaii_sentiment.parquet",
+                    "uri": _store_uri(
+                        store_root, "canonical/sentiment/aaii_sentiment.parquet"
+                    ),
                     "local_path": "data/raw/sentiment/aaii_sentiment.parquet",
                     "sha256": "df82d7244147796b6a6486dc21c4502c0c4d67a8aecc64d86ab310926503c5e3",
                     "required_for": ["profile_engine_30d"],
@@ -85,7 +93,9 @@ def test_materialize_manifest_rejects_hash_mismatch_before_partial_success(
                 {
                     "name": "macro",
                     "stage": "canonical",
-                    "uri": "canonical/macro/fred_macro_series.parquet",
+                    "uri": _store_uri(
+                        store_root, "canonical/macro/fred_macro_series.parquet"
+                    ),
                     "local_path": "data/raw/macro/fred_macro_series.parquet",
                     "sha256": "dc2f66a495b3469d8a9e3e7da70c9176d82768e9742117b92eedd8c8c5a84a3c",
                     "required_for": ["profile_engine_30d"],
@@ -122,7 +132,9 @@ def test_materialize_manifest_restores_repo_relative_paths_to_repo_root(
                 {
                     "name": "events",
                     "stage": "canonical",
-                    "uri": "canonical/configs/events/us_events.yaml",
+                    "uri": _store_uri(
+                        store_root, "canonical/configs/events/us_events.yaml"
+                    ),
                     "local_path": "configs/events/us_events.yaml",
                     "sha256": "fb9b2e59663fe1741488ac52428726f13fd98f2f28cc73db64f022c8ae629999",
                     "required_for": ["profile_engine_30d"],
@@ -160,7 +172,9 @@ def test_materialize_manifest_refreshes_existing_drift_after_source_verification
                 {
                     "name": "macro",
                     "stage": "canonical",
-                    "uri": "canonical/macro/fred_macro_series.parquet",
+                    "uri": _store_uri(
+                        store_root, "canonical/macro/fred_macro_series.parquet"
+                    ),
                     "local_path": "data/raw/macro/fred_macro_series.parquet",
                     "sha256": "27d66c0dcef19a926429158d80111b954a5c23d076833347da3e27b91e4b423d",
                     "required_for": ["profile_engine_30d"],
@@ -209,7 +223,9 @@ def test_materialize_manifest_does_not_replace_existing_files_until_all_artifact
                 {
                     "name": "macro",
                     "stage": "canonical",
-                    "uri": "canonical/macro/fred_macro_series.parquet",
+                    "uri": _store_uri(
+                        store_root, "canonical/macro/fred_macro_series.parquet"
+                    ),
                     "local_path": "data/raw/macro/fred_macro_series.parquet",
                     "sha256": sha256_file(first_source),
                     "required_for": ["profile_engine_30d"],
@@ -219,7 +235,9 @@ def test_materialize_manifest_does_not_replace_existing_files_until_all_artifact
                 {
                     "name": "aaii",
                     "stage": "canonical",
-                    "uri": "canonical/sentiment/aaii_sentiment.parquet",
+                    "uri": _store_uri(
+                        store_root, "canonical/sentiment/aaii_sentiment.parquet"
+                    ),
                     "local_path": "data/raw/sentiment/aaii_sentiment.parquet",
                     "sha256": "0" * 64,
                     "required_for": ["profile_engine_30d"],
@@ -251,7 +269,9 @@ def test_materialize_regime_data_cli_materializes_manifest(tmp_path: Path) -> No
                 {
                     "name": "macro",
                     "stage": "canonical",
-                    "uri": "canonical/macro/fred_macro_series.parquet",
+                    "uri": _store_uri(
+                        store_root, "canonical/macro/fred_macro_series.parquet"
+                    ),
                     "local_path": "data/raw/macro/fred_macro_series.parquet",
                     "sha256": "27d66c0dcef19a926429158d80111b954a5c23d076833347da3e27b91e4b423d",
                     "required_for": ["profile_engine_30d"],

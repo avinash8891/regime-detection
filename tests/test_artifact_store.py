@@ -17,17 +17,24 @@ from regime_data_fetch.artifact_store import (
 )
 
 
+def _store_uri(root: Path, key: str) -> str:
+    return (root.resolve() / key).as_uri()
+
+
 def test_local_artifact_store_put_get_and_verify_hash(tmp_path: Path) -> None:
     source = tmp_path / "source.parquet"
     source.write_bytes(b"regime-data")
-    store = LocalArtifactStore(tmp_path / "store")
+    store_root = tmp_path / "store"
+    store = LocalArtifactStore(store_root)
 
     stored = store.put_file(source, "canonical/macro/fred_macro_series.parquet")
     destination = tmp_path / "materialized" / "fred_macro_series.parquet"
 
     copied = store.get_file(stored.uri, destination, expected_sha256=stored.sha256)
 
-    assert stored.uri == "canonical/macro/fred_macro_series.parquet"
+    assert stored.uri == _store_uri(
+        store_root, "canonical/macro/fred_macro_series.parquet"
+    )
     assert stored.size_bytes == len(b"regime-data")
     assert stored.sha256 == sha256_file(source)
     assert copied == destination
@@ -152,8 +159,9 @@ def test_s3_artifact_store_put_file_and_bytes_share_idempotent_overwrite_contrac
     second.write_bytes(b"different")
 
     stored = store.put_file(first, "canonical/a.csv")
-    duplicate = store.put_bytes(b"same", "canonical/a.csv")
+    duplicate = store.put_bytes(b"same", stored.uri)
 
     assert duplicate == stored
+    assert stored.uri == "s3://regime-data/artifacts/canonical/a.csv"
     with pytest.raises(ArtifactOverwriteError, match="different bytes"):
         store.put_file(second, "canonical/a.csv")
