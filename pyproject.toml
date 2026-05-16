@@ -47,3 +47,13 @@ where = ["src"]
 
 [tool.setuptools.package-data]
 regime_detection = ["configs/*.yaml"]
+
+[tool.ruff.lint.per-file-ignores]
+"scripts/approve_group_b_candidate.py" = ["E402"]
+"scripts/audit_layer2_30d.py" = ["E402"]
+"scripts/consolidate_regime_acquisition.py" = ["E402"]
+"scripts/fetch_aaii_sentiment.py" = ["E402"]
+"scripts/materialize_regime_data.py" = ["E402"]
+"scripts/run_shadow_deadman_check.py" = ["E402"]
+"scripts/run_shadow_regime.py" = ["E402"]
+"scripts/run_shadow_replay_check.py" = ["E402"]

@@ -11,7 +11,6 @@ from regime_data_fetch.artifact_manifest import (
     strip_data_raw_prefix,
 )
 from regime_data_fetch.artifact_store import build_artifact_store
-from regime_data_fetch.artifact_store import sha256_file
 
 
 @dataclass(frozen=True)

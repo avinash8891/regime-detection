@@ -28,7 +28,6 @@ import sys
 from pathlib import Path
 from typing import Any
 
-import numpy as np
 import pandas as pd
 import yaml
 
@@ -38,11 +37,9 @@ SRC_DIR = REPO_ROOT / "src"
 sys.path.insert(0, str(SRC_DIR))
 sys.path.insert(0, str(REPO_ROOT))
 
-from regime_data_fetch.local_daily_ohlcv_sqlite import EXPECTED_COLUMNS  # noqa: E402
 from regime_data_fetch.materialization import materialize_if_requested  # noqa: E402
 
 from regime_detection.config import load_default_regime_config  # noqa: E402
-from regime_detection.engine import RegimeEngine  # noqa: E402
 from regime_detection.feature_store import build_feature_store  # noqa: E402
 from regime_detection.fragility_universe import SECTOR_ETFS  # noqa: E402
 from regime_detection.loaders import (  # noqa: E402
@@ -106,16 +103,16 @@ def _summarize_central_bank_text(feature_store: Any, config: Any) -> list[str]:
         f"sessions (CentralBankTextConfig.smoothing_window_sessions; "
         f"v2 §9.1 walk-forward calibration placeholder).",
         f"- max_release_age_days: **{cb_cfg.max_release_age_days}**.",
-        f"- Score distribution after smoothing:",
+        "- Score distribution after smoothing:",
         f"    - min: {float(series.min()):+.3f}",
         f"    - p25: {float(series.quantile(0.25)):+.3f}",
         f"    - median: {float(series.median()):+.3f}",
         f"    - p75: {float(series.quantile(0.75)):+.3f}",
         f"    - max: {float(series.max()):+.3f}",
         f"    - mean: {float(series.mean()):+.3f}",
-        f"- Bias-warning code emitted on feature output: "
-        f"`central_bank_text_deterministic_lexicon_substitute` (audit M1 / "
-        f"docs/spec_code_data_audit_2026_05_15.md §3.1).",
+        "- Bias-warning code emitted on feature output: "
+        "`central_bank_text_deterministic_lexicon_substitute` (audit M1 / "
+        "docs/spec_code_data_audit_2026_05_15.md §3.1).",
     ]
     return lines
 
@@ -320,7 +317,7 @@ def main() -> int:
     pit_intervals = None
     constituent_ohlcv = None
     if pit_intervals_parquet.exists():
-        from regime_data_fetch.pit_constituents import read_pit_intervals, members_on
+        from regime_data_fetch.pit_constituents import read_pit_intervals
 
         pit_intervals = read_pit_intervals(pit_intervals_parquet)
         print(f"PIT intervals: {len(pit_intervals)} rows")
@@ -332,8 +329,6 @@ def main() -> int:
         # Members on the end_date define the universe whose OHLCV we load.
         # Reader is keyed by ticker; we pass the full distinct-ticker list
         # across the trailing window so newly-listed members have data.
-        from regime_data_fetch.pit_constituents import members_on as _members_on
-
         all_member_tickers = sorted({t for t in pit_intervals["ticker"].unique()})
         # Optimization: only read tickers that DBC-style classifier expects.
         # In practice the universe is ~1200 tickers; read_constituent_ohlcv
@@ -571,7 +566,7 @@ def main() -> int:
     summary_path = verification_dir / "v2_calibration_summary.md"
     summary_path.write_text("\n".join(summary_md) + "\n")
 
-    print(f"\nWrote candidate label maps:")
+    print("\nWrote candidate label maps:")
     print(f"  {hmm_path}")
     print(f"  {cluster_path}")
     print(f"  {summary_path}")

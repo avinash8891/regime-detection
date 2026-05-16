@@ -19,7 +19,6 @@ Contract under test:
 
 from __future__ import annotations
 
-import datetime as dt
 import io
 import json
 from pathlib import Path
