@@ -560,6 +560,204 @@ def evaluate_rules(
     return "unknown"
 
 
+# ---------------------------------------------------------------------------
+# Per-session classification helpers — extracted from build_axis_series.
+# ---------------------------------------------------------------------------
+
+
+def _resolve_cross_axis_labels(
+    *,
+    day: date,
+    breadth_active_labels_by_date: dict[date, str] | None,
+    volatility_active_labels_by_date: dict[date, str] | None,
+    credit_funding_active_labels_by_date: dict[date, str] | None,
+) -> tuple[str, str, str | None]:
+    """Return (breadth_label, volatility_label, credit_funding_label) for a session.
+
+    Raises KeyError on calendar drift (missing session in a non-None mapping).
+    """
+    if breadth_active_labels_by_date is None:
+        breadth_label = "unknown"
+    else:
+        if day not in breadth_active_labels_by_date:
+            raise KeyError(
+                f"breadth_active_labels_by_date missing session {day!r} "
+                "(v1/v2 calendar drift would silently downgrade rules to 'unknown')"
+            )
+        breadth_label = breadth_active_labels_by_date[day]
+
+    if volatility_active_labels_by_date is None:
+        volatility_label = "unknown"
+    else:
+        if day not in volatility_active_labels_by_date:
+            raise KeyError(
+                f"volatility_active_labels_by_date missing session {day!r} "
+                "(v1/v2 calendar drift would silently downgrade rules to 'unknown')"
+            )
+        volatility_label = volatility_active_labels_by_date[day]
+
+    credit_funding_label: str | None = None
+    if credit_funding_active_labels_by_date is not None:
+        if day not in credit_funding_active_labels_by_date:
+            raise KeyError(
+                f"credit_funding_active_labels_by_date missing session {day!r} "
+                "(v2/v2 calendar drift would silently downgrade systemic_stress)"
+            )
+        credit_funding_label = credit_funding_active_labels_by_date[day]
+
+    return breadth_label, volatility_label, credit_funding_label
+
+
+def _build_network_fragility_evidence(
+    rule_inputs: NetworkFragilityRuleInputs,
+    breadth_label: str,
+    volatility_label: str,
+    credit_funding_label: str | None,
+) -> dict[str, object]:
+    """Build the evidence dict for a single classified session."""
+    return {
+        "rule_evidence": {
+            "avg_pairwise_corr_percentile_504d": rule_inputs.avg_pairwise_corr_percentile_504d,
+            "largest_eigenvalue_share_percentile_504d": rule_inputs.largest_eigenvalue_share_percentile_504d,
+            "effective_rank_percentile_504d": rule_inputs.effective_rank_percentile_504d,
+            "dispersion_ratio_percentile_252d": rule_inputs.dispersion_ratio_percentile_252d,
+            "realized_vol_percentile_252d": rule_inputs.realized_vol_percentile_252d,
+            "drawdown_21d": rule_inputs.drawdown_21d,
+            "vix_percentile_252d": rule_inputs.vix_percentile_252d,
+        },
+        "breadth_active_label": breadth_label,
+        "volatility_active_label": volatility_label,
+        "credit_funding_active_label": credit_funding_label,
+    }
+
+
+def _classify_network_fragility_session(
+    *,
+    day: date,
+    dt: pd.Timestamp,
+    required_inputs: list[pd.Series],
+    required_trading_days: int,
+    max_freshness_days: int,
+    min_completeness: float,
+    breadth_active_labels_by_date: dict[date, str] | None,
+    volatility_active_labels_by_date: dict[date, str] | None,
+    credit_funding_active_labels_by_date: dict[date, str] | None,
+    rule_inputs_by_date: dict[pd.Timestamp, NetworkFragilityRuleInputs],
+    network_fragility_config: object,
+) -> tuple[NetworkFragilityLabel, DataQuality, dict[str, object]]:
+    """Classify a single session. Returns (raw_label, data_quality, evidence)."""
+    day_quality = assess_series_input_quality(
+        as_of_date=day,
+        required_inputs=required_inputs,
+        required_trading_days=required_trading_days,
+        raw_label="",
+        max_freshness_days=max_freshness_days,
+        min_completeness=min_completeness,
+        skip_raw_label_short_circuit=True,
+    )
+    if quality_forces_unknown(day_quality):
+        return "unknown", day_quality, {"reason": day_quality.reason or "insufficient_data"}
+
+    breadth_label, volatility_label, credit_funding_label = _resolve_cross_axis_labels(
+        day=day,
+        breadth_active_labels_by_date=breadth_active_labels_by_date,
+        volatility_active_labels_by_date=volatility_active_labels_by_date,
+        credit_funding_active_labels_by_date=credit_funding_active_labels_by_date,
+    )
+    rule_inputs = rule_inputs_by_date[dt]
+    label = evaluate_rules(
+        inputs=rule_inputs,
+        config=network_fragility_config.rules,  # type: ignore[union-attr]
+        breadth_label=breadth_label,  # type: ignore[arg-type]
+        volatility_label=volatility_label,  # type: ignore[arg-type]
+        credit_funding_label=credit_funding_label,  # type: ignore[arg-type]
+    )
+    return label, day_quality, _build_network_fragility_evidence(
+        rule_inputs, breadth_label, volatility_label, credit_funding_label
+    )
+
+
+def _accumulate_nf_session_lists(
+    *,
+    sessions: list[date],
+    required_inputs: list[pd.Series],
+    required_trading_days: int,
+    max_freshness_days: int,
+    min_completeness: float,
+    breadth_active_labels_by_date: dict[date, str] | None,
+    volatility_active_labels_by_date: dict[date, str] | None,
+    credit_funding_active_labels_by_date: dict[date, str] | None,
+    rule_inputs_by_date: dict[pd.Timestamp, NetworkFragilityRuleInputs],
+    network_fragility_config: object,
+) -> tuple[list[NetworkFragilityLabel], list[DataQuality], list[dict[str, object]]]:
+    """Iterate sessions and return (raw_labels, per_day_dq, per_day_evidence)."""
+    raw_labels: list[NetworkFragilityLabel] = []
+    per_day_data_quality: list[DataQuality] = []
+    per_day_evidence: list[dict[str, object]] = []
+    for day in sessions:
+        label, dq, evidence = _classify_network_fragility_session(
+            day=day, dt=pd.Timestamp(day),
+            required_inputs=required_inputs,
+            required_trading_days=required_trading_days,
+            max_freshness_days=max_freshness_days,
+            min_completeness=min_completeness,
+            breadth_active_labels_by_date=breadth_active_labels_by_date,
+            volatility_active_labels_by_date=volatility_active_labels_by_date,
+            credit_funding_active_labels_by_date=credit_funding_active_labels_by_date,
+            rule_inputs_by_date=rule_inputs_by_date,
+            network_fragility_config=network_fragility_config,
+        )
+        raw_labels.append(label)
+        per_day_data_quality.append(dq)
+        per_day_evidence.append(evidence)
+    return raw_labels, per_day_data_quality, per_day_evidence
+
+
+def _prepare_nf_rule_inputs(
+    *,
+    features: NetworkFragilityFeatures,
+    spy_close: pd.Series,
+    volatility_features: object,
+) -> dict[pd.Timestamp, NetworkFragilityRuleInputs]:
+    """Build rule_inputs_by_date from volatility features and fragility features."""
+    realized_vol_pct = volatility_features.realized_vol_percentile_252d  # type: ignore[union-attr]
+    vix_pct = (
+        volatility_features.vix_percentile_252d  # type: ignore[union-attr]
+        if volatility_features.vix_percentile_252d is not None  # type: ignore[union-attr]
+        else pd.Series(float("nan"), index=spy_close.index)
+    )
+    return build_rule_inputs_by_date(
+        features=features, spy_close=spy_close,
+        realized_vol_percentile_252d=realized_vol_pct,
+        vix_percentile_252d=vix_pct,
+    )
+
+
+def _build_nf_outputs(
+    sessions: list[date],
+    nf_config: object,
+    raw_labels: list[NetworkFragilityLabel],
+    per_day_dq: list[DataQuality],
+    per_day_evidence: list[dict[str, object]],
+) -> dict[date, NetworkFragilityOutput]:
+    """Apply hysteresis and zip per-session lists into the final output dict."""
+    stable_labels, active_labels = apply_per_label_asymmetric_hysteresis(
+        raw_labels=raw_labels, risk_rank=NETWORK_FRAGILITY_RISK_RANK,
+        deescalation_days_by_label=nf_config.deescalation_days_by_label,  # type: ignore[union-attr]
+        default_deescalation_days=nf_config.default_deescalation_days,  # type: ignore[union-attr]
+    )
+    return {
+        day: NetworkFragilityOutput(
+            raw_label=raw, stable_label=stable, active_label=active,
+            evidence=evidence, data_quality=dq,
+        )
+        for day, raw, stable, active, dq, evidence in zip(
+            sessions, raw_labels, stable_labels, active_labels,
+            per_day_dq, per_day_evidence, strict=True,
+        )
+    }
+
+
 def build_axis_series(
     context: MarketContext,
     feature_store: FeatureStore,
@@ -571,135 +769,27 @@ def build_axis_series(
     features = feature_store.network_fragility
     if features is None:
         return None
-
     network_fragility_config = context.config.network_fragility
     if network_fragility_config is None:
         return None
-
     spy_close = context.spy_ohlcv["close"]
-    volatility_features = feature_store.volatility
-    realized_vol_pct = volatility_features.realized_vol_percentile_252d
-    vix_pct = (
-        volatility_features.vix_percentile_252d
-        if volatility_features.vix_percentile_252d is not None
-        else pd.Series(float("nan"), index=spy_close.index)
+    rule_inputs_by_date = _prepare_nf_rule_inputs(
+        features=features, spy_close=spy_close,
+        volatility_features=feature_store.volatility,
     )
-
-    required_inputs: list[pd.Series] = [
-        features.avg_pairwise_corr_63d,
-        features.largest_eigenvalue_share,
-        features.effective_rank,
-        features.dispersion_ratio,
-        spy_close,
-    ]
-    required_trading_days = network_fragility_config.correlation_lookback_days
-    max_freshness_days = context.config.data_quality.max_freshness_days
-    min_completeness = context.config.data_quality.min_completeness
-
-    raw_labels: list[NetworkFragilityLabel] = []
-    per_day_data_quality: list[DataQuality] = []
-    per_day_evidence: list[dict[str, object]] = []
-    rule_inputs_by_date = build_rule_inputs_by_date(
-        features=features,
-        spy_close=spy_close,
-        realized_vol_percentile_252d=realized_vol_pct,
-        vix_percentile_252d=vix_pct,
+    raw_labels, per_day_dq, per_day_evidence = _accumulate_nf_session_lists(
+        sessions=context.sessions,
+        required_inputs=[
+            features.avg_pairwise_corr_63d, features.largest_eigenvalue_share,
+            features.effective_rank, features.dispersion_ratio, spy_close,
+        ],
+        required_trading_days=network_fragility_config.correlation_lookback_days,
+        max_freshness_days=context.config.data_quality.max_freshness_days,
+        min_completeness=context.config.data_quality.min_completeness,
+        breadth_active_labels_by_date=breadth_active_labels_by_date,
+        volatility_active_labels_by_date=volatility_active_labels_by_date,
+        credit_funding_active_labels_by_date=credit_funding_active_labels_by_date,
+        rule_inputs_by_date=rule_inputs_by_date,
+        network_fragility_config=network_fragility_config,
     )
-
-    for day in context.sessions:
-        dt = pd.Timestamp(day)
-
-        day_quality = assess_series_input_quality(
-            as_of_date=day,
-            required_inputs=required_inputs,
-            required_trading_days=required_trading_days,
-            raw_label="",
-            max_freshness_days=max_freshness_days,
-            min_completeness=min_completeness,
-            skip_raw_label_short_circuit=True,
-        )
-
-        if quality_forces_unknown(day_quality):
-            raw_labels.append("unknown")
-            per_day_data_quality.append(day_quality)
-            per_day_evidence.append({"reason": day_quality.reason or "insufficient_data"})
-            continue
-
-        rule_inputs = rule_inputs_by_date[dt]
-
-        if breadth_active_labels_by_date is None:
-            breadth_label = "unknown"
-        else:
-            if day not in breadth_active_labels_by_date:
-                raise KeyError(
-                    f"breadth_active_labels_by_date missing session {day!r} "
-                    "(v1/v2 calendar drift would silently downgrade rules to 'unknown')"
-                )
-            breadth_label = breadth_active_labels_by_date[day]
-        if volatility_active_labels_by_date is None:
-            volatility_label = "unknown"
-        else:
-            if day not in volatility_active_labels_by_date:
-                raise KeyError(
-                    f"volatility_active_labels_by_date missing session {day!r} "
-                    "(v1/v2 calendar drift would silently downgrade rules to 'unknown')"
-                )
-            volatility_label = volatility_active_labels_by_date[day]
-        credit_funding_label: str | None = None
-        if credit_funding_active_labels_by_date is not None:
-            if day not in credit_funding_active_labels_by_date:
-                raise KeyError(
-                    f"credit_funding_active_labels_by_date missing session {day!r} "
-                    "(v2/v2 calendar drift would silently downgrade systemic_stress)"
-                )
-            credit_funding_label = credit_funding_active_labels_by_date[day]
-
-        label = evaluate_rules(
-            inputs=rule_inputs,
-            config=network_fragility_config.rules,
-            breadth_label=breadth_label,  # type: ignore[arg-type]
-            volatility_label=volatility_label,  # type: ignore[arg-type]
-            credit_funding_label=credit_funding_label,  # type: ignore[arg-type]
-        )
-        raw_labels.append(label)
-        per_day_data_quality.append(day_quality)
-        per_day_evidence.append({
-            "rule_evidence": {
-                "avg_pairwise_corr_percentile_504d": rule_inputs.avg_pairwise_corr_percentile_504d,
-                "largest_eigenvalue_share_percentile_504d": rule_inputs.largest_eigenvalue_share_percentile_504d,
-                "effective_rank_percentile_504d": rule_inputs.effective_rank_percentile_504d,
-                "dispersion_ratio_percentile_252d": rule_inputs.dispersion_ratio_percentile_252d,
-                "realized_vol_percentile_252d": rule_inputs.realized_vol_percentile_252d,
-                "drawdown_21d": rule_inputs.drawdown_21d,
-                "vix_percentile_252d": rule_inputs.vix_percentile_252d,
-            },
-            "breadth_active_label": breadth_label,
-            "volatility_active_label": volatility_label,
-            "credit_funding_active_label": credit_funding_label,
-        })
-
-    stable_labels, active_labels = apply_per_label_asymmetric_hysteresis(
-        raw_labels=raw_labels,
-        risk_rank=NETWORK_FRAGILITY_RISK_RANK,
-        deescalation_days_by_label=network_fragility_config.deescalation_days_by_label,
-        default_deescalation_days=network_fragility_config.default_deescalation_days,
-    )
-
-    outputs: dict[date, NetworkFragilityOutput] = {}
-    for day, raw, stable, active, dq, evidence in zip(
-        context.sessions,
-        raw_labels,
-        stable_labels,
-        active_labels,
-        per_day_data_quality,
-        per_day_evidence,
-        strict=True,
-    ):
-        outputs[day] = NetworkFragilityOutput(
-            raw_label=raw,
-            stable_label=stable,
-            active_label=active,
-            evidence=evidence,
-            data_quality=dq,
-        )
-    return outputs
+    return _build_nf_outputs(context.sessions, network_fragility_config, raw_labels, per_day_dq, per_day_evidence)

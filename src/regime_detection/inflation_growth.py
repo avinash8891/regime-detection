@@ -815,6 +815,206 @@ def evaluate_rules(
     return "unknown"
 
 
+# ---------------------------------------------------------------------------
+# Per-session classification helpers — extracted from build_axis_series.
+# ---------------------------------------------------------------------------
+
+
+def _check_staleness_gate(
+    *,
+    dt: pd.Timestamp,
+    day: date,
+    cpi_staleness_by_date: pd.Series,
+    pmi_staleness_by_date: pd.Series,
+    dgs10_staleness_by_date: pd.Series,
+    ig_config: object,
+) -> tuple[bool, str]:
+    """Return (is_stale, gate_reason). gate_reason is empty when not stale."""
+    cpi_staleness_days = int(cpi_staleness_by_date.loc[dt])
+    pmi_staleness_days = int(pmi_staleness_by_date.loc[dt])
+    dgs10_staleness_sessions = int(dgs10_staleness_by_date.loc[dt])
+    cpi_stale = cpi_staleness_days > ig_config.cpi_stale_calendar_days  # type: ignore[union-attr]
+    pmi_stale = pmi_staleness_days > ig_config.pmi_stale_calendar_days  # type: ignore[union-attr]
+    dgs10_stale = dgs10_staleness_sessions > ig_config.dgs10_stale_sessions  # type: ignore[union-attr]
+    if not (cpi_stale or pmi_stale or dgs10_stale):
+        return False, ""
+    reason_parts: list[str] = []
+    if cpi_stale:
+        reason_parts.append(f"cpi_stale_{cpi_staleness_days}d")
+    if pmi_stale:
+        reason_parts.append(f"pmi_stale_{pmi_staleness_days}d")
+    if dgs10_stale:
+        reason_parts.append(f"dgs10_stale_{dgs10_staleness_sessions}s")
+    return True, ",".join(reason_parts)
+
+
+def _build_inflation_growth_evidence(
+    rule_inputs: InflationGrowthRuleInputs,
+    credit_funding_active_label: str | None,
+) -> dict[str, object]:
+    """Build the evidence dict for a single classified session."""
+    return {
+        "rule_evidence": {
+            "cpi_6m_change_pct": rule_inputs.cpi_6m_change_pct,
+            "cpi_6m_change_pct_lag_21": rule_inputs.cpi_6m_change_pct_lag_21,
+            "cpi_6m_change_pct_slope_21d": rule_inputs.cpi_6m_change_pct_slope_21d,
+            "inflation_surprise_zscore": rule_inputs.inflation_surprise_zscore,
+            "pmi_manufacturing": rule_inputs.pmi_manufacturing,
+            "pmi_manufacturing_slope_21d": rule_inputs.pmi_manufacturing_slope_21d,
+            "aggregate_forward_eps_revision_direction_4w": rule_inputs.aggregate_forward_eps_revision_direction_4w,
+            "commodity_return_63d": rule_inputs.commodity_return_63d,
+            "treasury_10y_yield_slope_21d": rule_inputs.treasury_10y_yield_slope_21d,
+            "cyclical_defensive_slope_21d": rule_inputs.cyclical_defensive_slope_21d,
+            "spy_21d_return": rule_inputs.spy_21d_return,
+            "tlt_21d_return": rule_inputs.tlt_21d_return,
+        },
+        "credit_funding_active_label": credit_funding_active_label,
+        "bias_warning_code": "commodity_proxy_dbc_substitute",
+    }
+
+
+def _classify_inflation_growth_session(
+    *,
+    day: date,
+    dt: pd.Timestamp,
+    required_inputs: list[pd.Series],
+    required_trading_days: int,
+    max_freshness_days: int,
+    min_completeness: float,
+    credit_funding_active_labels_by_date: dict[date, str] | None,
+    rule_inputs_by_date: dict[pd.Timestamp, InflationGrowthRuleInputs],
+    ig_config: object,
+) -> tuple[InflationGrowthLabel, DataQuality, dict[str, object]]:
+    """Classify a single session after the staleness gate has passed.
+
+    Returns (raw_label, data_quality, evidence).
+    """
+    day_quality = assess_series_input_quality(
+        as_of_date=day,
+        required_inputs=required_inputs,
+        required_trading_days=required_trading_days,
+        raw_label="",
+        max_freshness_days=max_freshness_days,
+        min_completeness=min_completeness,
+        skip_raw_label_short_circuit=True,
+    )
+    if quality_forces_unknown(day_quality):
+        return "unknown", day_quality, {"reason": day_quality.reason or "insufficient_data"}
+
+    credit_funding_active_label: str | None = None
+    if credit_funding_active_labels_by_date is not None:
+        if day not in credit_funding_active_labels_by_date:
+            raise KeyError(
+                f"credit_funding_active_labels_by_date missing session {day!r} "
+                "(v1/v2 calendar drift would silently downgrade §2B cross-axis rules)"
+            )
+        credit_funding_active_label = credit_funding_active_labels_by_date[day]
+
+    rule_inputs = rule_inputs_by_date[dt]
+    label = evaluate_rules(inputs=rule_inputs, config=ig_config.rules)  # type: ignore[union-attr]
+    return label, day_quality, _build_inflation_growth_evidence(rule_inputs, credit_funding_active_label)
+
+
+def _accumulate_ig_session_lists(
+    *,
+    sessions: list[date],
+    cpi_staleness_by_date: pd.Series,
+    pmi_staleness_by_date: pd.Series,
+    dgs10_staleness_by_date: pd.Series,
+    ig_config: object,
+    required_inputs: list[pd.Series],
+    required_trading_days: int,
+    max_freshness_days: int,
+    min_completeness: float,
+    credit_funding_active_labels_by_date: dict[date, str] | None,
+    rule_inputs_by_date: dict[pd.Timestamp, InflationGrowthRuleInputs],
+) -> tuple[list[InflationGrowthLabel], list[DataQuality], list[dict[str, object]]]:
+    """Iterate sessions and return (raw_labels, per_day_dq, per_day_evidence)."""
+    raw_labels: list[InflationGrowthLabel] = []
+    per_day_data_quality: list[DataQuality] = []
+    per_day_evidence: list[dict[str, object]] = []
+    for day in sessions:
+        dt = pd.Timestamp(day)
+        is_stale, gate_reason = _check_staleness_gate(
+            dt=dt, day=day,
+            cpi_staleness_by_date=cpi_staleness_by_date,
+            pmi_staleness_by_date=pmi_staleness_by_date,
+            dgs10_staleness_by_date=dgs10_staleness_by_date,
+            ig_config=ig_config,
+        )
+        if is_stale:
+            raw_labels.append("unknown")
+            per_day_data_quality.append(
+                DataQuality(status="stale_data", freshness_days=None, completeness=None, reason=gate_reason)
+            )
+            per_day_evidence.append({"reason": gate_reason})
+            continue
+        label, dq, evidence = _classify_inflation_growth_session(
+            day=day, dt=dt,
+            required_inputs=required_inputs,
+            required_trading_days=required_trading_days,
+            max_freshness_days=max_freshness_days,
+            min_completeness=min_completeness,
+            credit_funding_active_labels_by_date=credit_funding_active_labels_by_date,
+            rule_inputs_by_date=rule_inputs_by_date,
+            ig_config=ig_config,
+        )
+        raw_labels.append(label)
+        per_day_data_quality.append(dq)
+        per_day_evidence.append(evidence)
+    return raw_labels, per_day_data_quality, per_day_evidence
+
+
+def _prepare_ig_rule_inputs(
+    *,
+    features: InflationGrowthFeatures,
+    ig_config: object,
+    spy_close: pd.Series,
+    macro_series: dict,
+    credit_funding_active_labels_by_date: dict[date, str] | None,
+) -> tuple[pd.Series, pd.Series, pd.Series, dict[pd.Timestamp, InflationGrowthRuleInputs]]:
+    """Build staleness series and rule_inputs_by_date for the axis loop."""
+    session_index = spy_close.index
+    cpi_staleness = _calendar_staleness_days_series(macro_series.get("cpi_all_items"), session_index)
+    pmi_staleness = _calendar_staleness_days_series(macro_series.get("pmi_manufacturing"), session_index)
+    dgs10_staleness = _trading_staleness_series(macro_series.get("dgs10"), session_index)
+    credit_funding_labels_by_ts: dict[pd.Timestamp, str | None] | None = None
+    if credit_funding_active_labels_by_date is not None:
+        credit_funding_labels_by_ts = {
+            pd.Timestamp(d): lbl for d, lbl in credit_funding_active_labels_by_date.items()
+        }
+    rule_inputs_by_date = build_rule_inputs_by_date(
+        features=features, config=ig_config.rules,  # type: ignore[union-attr]
+        credit_funding_active_labels_by_date=credit_funding_labels_by_ts,
+    )
+    return cpi_staleness, pmi_staleness, dgs10_staleness, rule_inputs_by_date
+
+
+def _build_ig_outputs(
+    sessions: list[date],
+    ig_config: object,
+    raw_labels: list[InflationGrowthLabel],
+    per_day_dq: list[DataQuality],
+    per_day_evidence: list[dict[str, object]],
+) -> dict[date, InflationGrowthOutput]:
+    """Apply hysteresis and zip per-session lists into the final output dict."""
+    stable_labels, active_labels = apply_per_label_asymmetric_hysteresis(
+        raw_labels=raw_labels, risk_rank=INFLATION_GROWTH_RISK_RANK,
+        deescalation_days_by_label=ig_config.deescalation_days_by_label,  # type: ignore[union-attr]
+        default_deescalation_days=ig_config.default_deescalation_days,  # type: ignore[union-attr]
+    )
+    return {
+        day: InflationGrowthOutput(
+            raw_label=raw, stable_label=stable, active_label=active,
+            evidence=evidence, data_quality=dq,
+        )
+        for day, raw, stable, active, dq, evidence in zip(
+            sessions, raw_labels, stable_labels, active_labels,
+            per_day_dq, per_day_evidence, strict=True,
+        )
+    }
+
+
 def build_axis_series(
     context: MarketContext,
     feature_store: FeatureStore,
@@ -827,145 +1027,26 @@ def build_axis_series(
     ig_config = context.config.inflation_growth
     if ig_config is None:
         return None
-
     spy_close = context.spy_ohlcv["close"]
-    macro_series = context.macro_series or {}
-    cpi_series = macro_series.get("cpi_all_items")
-    pmi_series = macro_series.get("pmi_manufacturing")
-    dgs10_series = macro_series.get("dgs10")
-
-    required_inputs: list[pd.Series] = [
-        features.cpi_6m_change_pct,
-        features.pmi_manufacturing,
-        features.treasury_10y_yield_slope_21d,
-        features.commodity_return_63d,
-        spy_close,
-    ]
-    required_trading_days = ig_config.rules.cpi_lookback_6m_sessions
-    max_freshness_days = context.config.data_quality.max_freshness_days
-    min_completeness = context.config.data_quality.min_completeness
-
-    raw_labels: list[InflationGrowthLabel] = []
-    per_day_data_quality: list[DataQuality] = []
-    per_day_evidence: list[dict[str, object]] = []
-    session_index = spy_close.index
-    cpi_staleness_by_date = _calendar_staleness_days_series(cpi_series, session_index)
-    pmi_staleness_by_date = _calendar_staleness_days_series(pmi_series, session_index)
-    dgs10_staleness_by_date = _trading_staleness_series(dgs10_series, session_index)
-    credit_funding_labels_by_ts: dict[pd.Timestamp, str | None] | None = None
-    if credit_funding_active_labels_by_date is not None:
-        credit_funding_labels_by_ts = {
-            pd.Timestamp(day): label
-            for day, label in credit_funding_active_labels_by_date.items()
-        }
-    rule_inputs_by_date = build_rule_inputs_by_date(
-        features=features,
-        config=ig_config.rules,
-        credit_funding_active_labels_by_date=credit_funding_labels_by_ts,
+    cpi_staleness, pmi_staleness, dgs10_staleness, rule_inputs_by_date = _prepare_ig_rule_inputs(
+        features=features, ig_config=ig_config, spy_close=spy_close,
+        macro_series=context.macro_series or {},
+        credit_funding_active_labels_by_date=credit_funding_active_labels_by_date,
     )
-
-    for day in context.sessions:
-        dt = pd.Timestamp(day)
-
-        cpi_staleness_days = int(cpi_staleness_by_date.loc[dt])
-        pmi_staleness_days = int(pmi_staleness_by_date.loc[dt])
-        dgs10_staleness_sessions = int(dgs10_staleness_by_date.loc[dt])
-        cpi_stale = cpi_staleness_days > ig_config.cpi_stale_calendar_days
-        pmi_stale = pmi_staleness_days > ig_config.pmi_stale_calendar_days
-        dgs10_stale = dgs10_staleness_sessions > ig_config.dgs10_stale_sessions
-
-        if cpi_stale or pmi_stale or dgs10_stale:
-            reason_parts: list[str] = []
-            if cpi_stale:
-                reason_parts.append(f"cpi_stale_{cpi_staleness_days}d")
-            if pmi_stale:
-                reason_parts.append(f"pmi_stale_{pmi_staleness_days}d")
-            if dgs10_stale:
-                reason_parts.append(f"dgs10_stale_{dgs10_staleness_sessions}s")
-            gate_reason = ",".join(reason_parts)
-            raw_labels.append("unknown")
-            per_day_data_quality.append(
-                DataQuality(
-                    status="stale_data",
-                    freshness_days=None,
-                    completeness=None,
-                    reason=gate_reason,
-                )
-            )
-            per_day_evidence.append({"reason": gate_reason})
-            continue
-
-        day_quality = assess_series_input_quality(
-            as_of_date=day,
-            required_inputs=required_inputs,
-            required_trading_days=required_trading_days,
-            raw_label="",
-            max_freshness_days=max_freshness_days,
-            min_completeness=min_completeness,
-            skip_raw_label_short_circuit=True,
-        )
-        if quality_forces_unknown(day_quality):
-            raw_labels.append("unknown")
-            per_day_data_quality.append(day_quality)
-            per_day_evidence.append({"reason": day_quality.reason or "insufficient_data"})
-            continue
-
-        credit_funding_active_label: str | None = None
-        if credit_funding_active_labels_by_date is not None:
-            if day not in credit_funding_active_labels_by_date:
-                raise KeyError(
-                    f"credit_funding_active_labels_by_date missing session {day!r} "
-                    "(v1/v2 calendar drift would silently downgrade §2B cross-axis rules)"
-                )
-            credit_funding_active_label = credit_funding_active_labels_by_date[day]
-
-        rule_inputs = rule_inputs_by_date[dt]
-        label = evaluate_rules(inputs=rule_inputs, config=ig_config.rules)
-        raw_labels.append(label)
-        per_day_data_quality.append(day_quality)
-        per_day_evidence.append(
-            {
-                "rule_evidence": {
-                    "cpi_6m_change_pct": rule_inputs.cpi_6m_change_pct,
-                    "cpi_6m_change_pct_lag_21": rule_inputs.cpi_6m_change_pct_lag_21,
-                    "cpi_6m_change_pct_slope_21d": rule_inputs.cpi_6m_change_pct_slope_21d,
-                    "inflation_surprise_zscore": rule_inputs.inflation_surprise_zscore,
-                    "pmi_manufacturing": rule_inputs.pmi_manufacturing,
-                    "pmi_manufacturing_slope_21d": rule_inputs.pmi_manufacturing_slope_21d,
-                    "aggregate_forward_eps_revision_direction_4w": rule_inputs.aggregate_forward_eps_revision_direction_4w,
-                    "commodity_return_63d": rule_inputs.commodity_return_63d,
-                    "treasury_10y_yield_slope_21d": rule_inputs.treasury_10y_yield_slope_21d,
-                    "cyclical_defensive_slope_21d": rule_inputs.cyclical_defensive_slope_21d,
-                    "spy_21d_return": rule_inputs.spy_21d_return,
-                    "tlt_21d_return": rule_inputs.tlt_21d_return,
-                },
-                "credit_funding_active_label": credit_funding_active_label,
-                "bias_warning_code": "commodity_proxy_dbc_substitute",
-            }
-        )
-
-    stable_labels, active_labels = apply_per_label_asymmetric_hysteresis(
-        raw_labels=raw_labels,
-        risk_rank=INFLATION_GROWTH_RISK_RANK,
-        deescalation_days_by_label=ig_config.deescalation_days_by_label,
-        default_deescalation_days=ig_config.default_deescalation_days,
+    raw_labels, per_day_dq, per_day_evidence = _accumulate_ig_session_lists(
+        sessions=context.sessions,
+        cpi_staleness_by_date=cpi_staleness,
+        pmi_staleness_by_date=pmi_staleness,
+        dgs10_staleness_by_date=dgs10_staleness,
+        ig_config=ig_config,
+        required_inputs=[
+            features.cpi_6m_change_pct, features.pmi_manufacturing,
+            features.treasury_10y_yield_slope_21d, features.commodity_return_63d, spy_close,
+        ],
+        required_trading_days=ig_config.rules.cpi_lookback_6m_sessions,
+        max_freshness_days=context.config.data_quality.max_freshness_days,
+        min_completeness=context.config.data_quality.min_completeness,
+        credit_funding_active_labels_by_date=credit_funding_active_labels_by_date,
+        rule_inputs_by_date=rule_inputs_by_date,
     )
-
-    outputs: dict[date, InflationGrowthOutput] = {}
-    for day, raw, stable, active, dq, evidence in zip(
-        context.sessions,
-        raw_labels,
-        stable_labels,
-        active_labels,
-        per_day_data_quality,
-        per_day_evidence,
-        strict=True,
-    ):
-        outputs[day] = InflationGrowthOutput(
-            raw_label=raw,
-            stable_label=stable,
-            active_label=active,
-            evidence=evidence,
-            data_quality=dq,
-        )
-    return outputs
+    return _build_ig_outputs(context.sessions, ig_config, raw_labels, per_day_dq, per_day_evidence)
