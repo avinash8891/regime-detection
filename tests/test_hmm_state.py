@@ -93,6 +93,23 @@ def _default_hmm_config(training_window_days: int = 1260) -> HMMConfig:
     )
 
 
+@pytest.fixture(scope="module")
+def _computed_default_hmm_pair() -> tuple[HMMFeatures, HMMFeatures]:
+    inputs = _synthetic_inputs(n_sessions=1500)
+    cfg = _default_hmm_config()
+    first = compute_hmm_features(config=cfg, **inputs)
+    second = compute_hmm_features(config=cfg, **inputs)
+    assert first is not None and second is not None
+    return first, second
+
+
+@pytest.fixture(scope="module")
+def _computed_default_hmm(
+    _computed_default_hmm_pair: tuple[HMMFeatures, HMMFeatures],
+) -> HMMFeatures:
+    return _computed_default_hmm_pair[0]
+
+
 # ---------------------------------------------------------------------------
 # Group A — compute_hmm_features unit tests
 # ---------------------------------------------------------------------------
@@ -120,10 +137,11 @@ def test_compute_hmm_features_returns_none_when_insufficient_history() -> None:
     assert result is None
 
 
-def test_compute_hmm_features_succeeds_on_synthetic_inputs_with_full_history() -> None:
+def test_compute_hmm_features_succeeds_on_synthetic_inputs_with_full_history(
+    _computed_default_hmm: HMMFeatures,
+) -> None:
     inputs = _synthetic_inputs(n_sessions=1500)
-    cfg = _default_hmm_config()
-    result = compute_hmm_features(config=cfg, **inputs)
+    result = _computed_default_hmm
     assert result is not None
     assert isinstance(result, HMMFeatures)
     assert result.n_states == 4
@@ -141,19 +159,18 @@ def test_compute_hmm_features_succeeds_on_synthetic_inputs_with_full_history() -
     assert non_null.index.max() == inputs["return_1d"].dropna().index[-1]
 
 
-def test_top_state_prob_permutation_invariant_under_fixed_seed() -> None:
-    inputs = _synthetic_inputs(n_sessions=1500)
-    cfg = _default_hmm_config()
-    first = compute_hmm_features(config=cfg, **inputs)
-    second = compute_hmm_features(config=cfg, **inputs)
+def test_top_state_prob_permutation_invariant_under_fixed_seed(
+    _computed_default_hmm_pair: tuple[HMMFeatures, HMMFeatures],
+) -> None:
+    first, second = _computed_default_hmm_pair
     assert first is not None and second is not None
     pd.testing.assert_series_equal(first.top_state_prob, second.top_state_prob)
 
 
-def test_state_probabilities_sum_to_one_per_session() -> None:
-    inputs = _synthetic_inputs(n_sessions=1500)
-    cfg = _default_hmm_config()
-    result = compute_hmm_features(config=cfg, **inputs)
+def test_state_probabilities_sum_to_one_per_session(
+    _computed_default_hmm: HMMFeatures,
+) -> None:
+    result = _computed_default_hmm
     assert result is not None
     valid_rows = result.state_probabilities.dropna(how="any")
     assert len(valid_rows) > 0
@@ -266,10 +283,11 @@ def test_compute_hmm_features_uses_best_monotonic_seed_after_standardizing(
     assert float(seen[0]["std"]) == pytest.approx(1.0)
 
 
-def test_top_state_prob_is_at_least_one_over_n_states() -> None:
-    inputs = _synthetic_inputs(n_sessions=1500)
+def test_top_state_prob_is_at_least_one_over_n_states(
+    _computed_default_hmm: HMMFeatures,
+) -> None:
     cfg = _default_hmm_config()
-    result = compute_hmm_features(config=cfg, **inputs)
+    result = _computed_default_hmm
     assert result is not None
     non_null = result.top_state_prob.dropna()
     # argmax probability ≥ 1/n_states by construction

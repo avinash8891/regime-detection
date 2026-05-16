@@ -444,7 +444,7 @@ def test_engine_classify_window_emits_real_fixture_network_fragility_label(
     timeline = RegimeEngine().classify_window(
         end_date=as_of,
         market_data=v2_market_df_for_asof(as_of),
-        lookback_days=600,
+        lookback_days=1,
         sector_etf_closes={s: v2_close_series_by_symbol[s] for s in SECTOR_ETFS},
         cross_asset_closes={
             s: v2_close_series_by_symbol[s] for s in CROSS_ASSET_SYMBOLS
