@@ -21,8 +21,8 @@ from regime_data_fetch.fetch_workflow import run_macro_fetch, run_market_fetch, 
 from regime_data_fetch.aggregate_eps import (  # noqa: E402
     run_aggregate_eps_fetch,
     run_aggregate_eps_auto_fetch,
-    run_wayback_aggregate_eps_fetch,
 )
+from regime_data_fetch.aggregate_eps_wayback import run_wayback_aggregate_eps_fetch  # noqa: E402
 from regime_data_fetch.fomc_minutes import run_fomc_minutes_fetch  # noqa: E402
 from regime_data_fetch.local_daily_ohlcv_sqlite import run_local_daily_ohlcv_sqlite_import  # noqa: E402
 from regime_data_fetch.local_usd_index import run_local_usd_index_import  # noqa: E402

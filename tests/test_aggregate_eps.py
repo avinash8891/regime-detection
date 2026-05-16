@@ -18,14 +18,16 @@ from regime_data_fetch.aggregate_eps import (
     WEEKLY_HISTORY_FILENAME,
     AggregateEPSFetchError,
     AggregateEPSSnapshot,
-    EPSWaybackSnapshot,
     append_weekly_eps_snapshot,
     compute_eps_revision_direction_4w,
-    parse_wayback_cdx_json,
     parse_sp500_eps_workbook,
-    run_wayback_aggregate_eps_fetch,
     run_aggregate_eps_fetch,
     seed_weekly_history_from_wayback_timeline,
+)
+from regime_data_fetch.aggregate_eps_wayback import (
+    EPSWaybackSnapshot,
+    parse_wayback_cdx_json,
+    run_wayback_aggregate_eps_fetch,
 )
 
 
