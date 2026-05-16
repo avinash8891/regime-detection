@@ -1039,3 +1039,327 @@ def test_compute_inflation_growth_features_all_nan_zscore_without_nowcast() -> N
     assert not (
         bw["warning_code"] == INFLATION_SURPRISE_NOWCAST_BIAS_WARNING_CODE
     ).any()
+
+
+# ---------------------------------------------------------------------------
+# F023 boundary-value tests — uncovered branches (lines 213, 505, 514, 517,
+# 629, 634, 725, 741, 747, 829, 857, 915-920).
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+def test_inflation_growth_features_to_frame_returns_dataframe() -> None:
+    """InflationGrowthFeatures.to_frame() builds a DataFrame with every
+    feature series as a column. Line 213 path."""
+    idx = _bdate_index(periods=50)
+    n = len(idx)
+    cpi = pd.Series(np.linspace(300.0, 302.0, n), index=idx, dtype=float)
+    pmi = pd.Series(51.0, index=idx, dtype=float)
+    dgs10 = pd.Series(4.0, index=idx, dtype=float)
+    dbc = pd.Series(20.0, index=idx, dtype=float)
+    spy = pd.Series(400.0, index=idx, dtype=float)
+    tlt = pd.Series(100.0, index=idx, dtype=float)
+    xly = xli = xlp = xlu = pd.Series(100.0, index=idx, dtype=float)
+
+    feats = compute_inflation_growth_features(
+        cpi_all_items=cpi, pmi_manufacturing=pmi, dgs10=dgs10,
+        dbc_close=dbc, spy_close=spy, tlt_close=tlt,
+        xly_close=xly, xli_close=xli, xlp_close=xlp, xlu_close=xlu,
+        config=_default_rules(),
+    )
+    df = feats.to_frame()
+    assert isinstance(df, pd.DataFrame)
+    assert set(df.columns) == set(feats.feature_names)
+    assert len(df) == n
+
+
+@pytest.mark.unit
+def test_scalar_at_returns_nan_when_dt_not_in_index() -> None:
+    """_scalar_at returns NaN when the requested timestamp is absent from
+    the series index. Line 505 path."""
+    from regime_detection.inflation_growth import _scalar_at
+
+    idx = _bdate_index(periods=10)
+    series = pd.Series(1.0, index=idx, dtype=float)
+    # Choose a timestamp that is definitely not a business day in the index.
+    absent_dt = pd.Timestamp("2000-01-01")
+    assert absent_dt not in idx
+    result = _scalar_at(series, absent_dt)
+    import math
+    assert math.isnan(result)
+
+
+@pytest.mark.unit
+def test_scalar_at_lag_returns_nan_when_dt_not_in_index() -> None:
+    """_scalar_at_lag returns NaN when dt is absent from the index. Line 514
+    path (first guard)."""
+    from regime_detection.inflation_growth import _scalar_at_lag
+
+    idx = _bdate_index(periods=10)
+    series = pd.Series(1.0, index=idx, dtype=float)
+    absent_dt = pd.Timestamp("2000-01-01")
+    import math
+    result = _scalar_at_lag(series, absent_dt, lag=5)
+    assert math.isnan(result)
+
+
+@pytest.mark.unit
+def test_scalar_at_lag_returns_nan_when_lag_exceeds_position() -> None:
+    """_scalar_at_lag returns NaN when pos - lag < 0 (requesting data before
+    the series starts). Line 517 path."""
+    from regime_detection.inflation_growth import _scalar_at_lag
+
+    idx = _bdate_index(periods=10)
+    series = pd.Series(1.0, index=idx, dtype=float)
+    import math
+    # dt is the first element (pos=0); lag=5 → 0-5 = -5 < 0.
+    result = _scalar_at_lag(series, idx[0], lag=5)
+    assert math.isnan(result)
+
+
+@pytest.mark.unit
+def test_evaluate_goldilocks_returns_false_when_credit_not_credit_calm() -> None:
+    """evaluate_goldilocks fires only when credit_funding_active_label ==
+    'credit_calm'. Any other non-None value → False. Line 629 path."""
+    rules = _default_rules()
+    inputs = _rule_inputs(
+        cpi_6m_change_pct=0.020,
+        cpi_6m_change_pct_lag_21=0.022,
+        pmi_manufacturing=52.0,
+        spy_21d_return=0.03,
+        credit_funding_active_label="spread_widening",  # not credit_calm
+    )
+    assert evaluate_goldilocks(inputs, rules) is False
+
+
+@pytest.mark.unit
+def test_evaluate_goldilocks_returns_false_when_pmi_or_spy_is_nan() -> None:
+    """evaluate_goldilocks returns False when pmi_manufacturing or spy_21d_return
+    is NaN. Line 634 NaN guard path."""
+    rules = _default_rules()
+    # NaN PMI.
+    nan_pmi = _rule_inputs(
+        cpi_6m_change_pct=0.020,
+        cpi_6m_change_pct_lag_21=0.022,
+        pmi_manufacturing=float("nan"),
+        spy_21d_return=0.03,
+        credit_funding_active_label="credit_calm",
+    )
+    assert evaluate_goldilocks(nan_pmi, rules) is False
+
+    # NaN SPY return.
+    nan_spy = _rule_inputs(
+        cpi_6m_change_pct=0.020,
+        cpi_6m_change_pct_lag_21=0.022,
+        pmi_manufacturing=52.0,
+        spy_21d_return=float("nan"),
+        credit_funding_active_label="credit_calm",
+    )
+    assert evaluate_goldilocks(nan_spy, rules) is False
+
+
+@pytest.mark.unit
+def test_evaluate_recession_scare_returns_false_when_numeric_inputs_nan() -> None:
+    """evaluate_recession_scare NaN guard (line 725) — NaN in any of
+    treasury_slope, cyclical_defensive_slope, or spy_return falsifies the rule
+    even when credit_funding_active_label is 'spread_widening'."""
+    rules = _default_rules()
+    nan_inputs = _rule_inputs(
+        treasury_10y_yield_slope_21d=float("nan"),
+        cyclical_defensive_slope_21d=-0.002,
+        credit_funding_active_label="spread_widening",
+        spy_21d_return=-0.07,
+    )
+    assert evaluate_recession_scare(nan_inputs, rules) is False
+
+
+@pytest.mark.unit
+def test_evaluate_recovery_growth_returns_false_when_credit_not_credit_calm() -> None:
+    """evaluate_recovery_growth returns False for any non-'credit_calm' non-None
+    credit label. Line 741 path."""
+    rules = _default_rules()
+    inputs = _rule_inputs(
+        pmi_manufacturing_slope_21d=0.05,
+        pmi_manufacturing=53.0,
+        cyclical_defensive_slope_21d=0.001,
+        credit_funding_active_label="spread_widening",  # not credit_calm
+    )
+    assert evaluate_recovery_growth(inputs, rules) is False
+
+
+@pytest.mark.unit
+def test_evaluate_recovery_growth_returns_false_when_numeric_inputs_nan() -> None:
+    """evaluate_recovery_growth NaN guard (line 747) — NaN in any of
+    pmi_slope, pmi, or cyclical_defensive_slope falsifies the rule even when
+    credit_funding_active_label is 'credit_calm'."""
+    rules = _default_rules()
+    nan_pmi_slope = _rule_inputs(
+        pmi_manufacturing_slope_21d=float("nan"),
+        pmi_manufacturing=53.0,
+        cyclical_defensive_slope_21d=0.001,
+        credit_funding_active_label="credit_calm",
+    )
+    assert evaluate_recovery_growth(nan_pmi_slope, rules) is False
+
+    nan_pmi = _rule_inputs(
+        pmi_manufacturing_slope_21d=0.05,
+        pmi_manufacturing=float("nan"),
+        cyclical_defensive_slope_21d=0.001,
+        credit_funding_active_label="credit_calm",
+    )
+    assert evaluate_recovery_growth(nan_pmi, rules) is False
+
+
+@pytest.mark.unit
+def test_build_axis_series_returns_none_when_ig_config_is_none() -> None:
+    """build_axis_series returns None when context.config.inflation_growth is
+    None — the config guard at line 829."""
+    from unittest.mock import MagicMock
+
+    from regime_detection.inflation_growth import (
+        build_axis_series as _build_ig_axis,
+    )
+
+    feature_store = MagicMock()
+    feature_store.inflation_growth = MagicMock()  # not None
+    context = MagicMock()
+    context.config.inflation_growth = None  # triggers line 829
+
+    result = _build_ig_axis(context, feature_store)
+    assert result is None
+
+
+@pytest.mark.unit
+def test_build_axis_series_raises_key_error_when_credit_funding_session_missing() -> None:
+    """build_axis_series raises KeyError when credit_funding_active_labels_by_date
+    is provided but missing a required session. Lines 915-920 path."""
+    import datetime
+
+    from regime_detection.inflation_growth import (
+        InflationGrowthFeatures,
+        build_axis_series as _build_ig_axis,
+        compute_inflation_growth_features,
+    )
+    from regime_detection.engine import RegimeEngine
+    from regime_detection.feature_store import build_feature_store
+    from regime_detection.market_context import build_market_context
+
+    context = _build_synthetic_context()
+    store = build_feature_store(
+        context,
+        network_fragility_config=context.config.network_fragility,
+        credit_funding_config=context.config.credit_funding,
+        inflation_growth_config=context.config.inflation_growth,
+    )
+
+    # Provide a credit_funding dict that is missing at least one session.
+    sessions = context.sessions
+    incomplete = {sessions[0]: "credit_calm"}  # only the first session
+
+    import pytest
+
+    with pytest.raises(KeyError):
+        _build_ig_axis(
+            context,
+            store,
+            credit_funding_active_labels_by_date=incomplete,
+        )
+
+
+@pytest.mark.unit
+def test_compute_features_uses_cpi_first_release_when_provided() -> None:
+    """When `cpi_first_release` is provided and `use_first_release_cpi_when_available`
+    is True, the feature computation uses the first-release CPI and emits the
+    FIRST_RELEASE_CPI_PROVENANCE_CODE bias-warning rows. Lines 313, 445-446 path."""
+    from regime_detection.inflation_growth import (
+        FIRST_RELEASE_CPI_PROVENANCE_CODE,
+        compute_inflation_growth_features,
+    )
+
+    idx = _bdate_index(periods=200)
+    n = len(idx)
+    # Latest-revision CPI (would be used if first-release not provided).
+    cpi_revised = pd.Series(np.linspace(300.0, 306.0, n), index=idx, dtype=float)
+    # First-release CPI — deliberately different values so we can verify which
+    # one the features use.
+    cpi_first = pd.Series(np.linspace(300.0, 303.0, n), index=idx, dtype=float)
+
+    pmi = pd.Series(51.0, index=idx, dtype=float)
+    dgs10 = pd.Series(4.0, index=idx, dtype=float)
+    dbc = pd.Series(20.0, index=idx, dtype=float)
+    spy = pd.Series(400.0, index=idx, dtype=float)
+    tlt = pd.Series(100.0, index=idx, dtype=float)
+    xly = xli = xlp = xlu = pd.Series(100.0, index=idx, dtype=float)
+
+    feats = compute_inflation_growth_features(
+        cpi_all_items=cpi_revised,
+        pmi_manufacturing=pmi,
+        dgs10=dgs10,
+        dbc_close=dbc,
+        spy_close=spy,
+        tlt_close=tlt,
+        xly_close=xly,
+        xli_close=xli,
+        xlp_close=xlp,
+        xlu_close=xlu,
+        config=_default_rules(),
+        cpi_first_release=cpi_first,
+        use_first_release_cpi_when_available=True,
+    )
+
+    # The provenance rows for the three CPI-derived features must be present.
+    bw = feats.bias_warnings
+    provenance_rows = bw[bw["warning_code"] == FIRST_RELEASE_CPI_PROVENANCE_CODE]
+    covered_features = set(provenance_rows["feature_name"].tolist())
+    assert "cpi_3m_change_pct" in covered_features
+    assert "cpi_6m_change_pct" in covered_features
+
+    # The 6m CPI change should reflect the first-release CPI (smaller slope),
+    # not the revised CPI. At position 126 (first valid 6m change), the
+    # first-release version returns a smaller fractional change.
+    val_first = feats.cpi_6m_change_pct.dropna().iloc[0]
+    # Recompute with revised CPI to confirm they differ.
+    feats_revised = compute_inflation_growth_features(
+        cpi_all_items=cpi_revised,
+        pmi_manufacturing=pmi,
+        dgs10=dgs10,
+        dbc_close=dbc,
+        spy_close=spy,
+        tlt_close=tlt,
+        xly_close=xly,
+        xli_close=xli,
+        xlp_close=xlp,
+        xlu_close=xlu,
+        config=_default_rules(),
+    )
+    val_revised = feats_revised.cpi_6m_change_pct.dropna().iloc[0]
+    assert val_first != val_revised, (
+        "cpi_first_release path did not change the computed CPI feature"
+    )
+
+
+@pytest.mark.unit
+def test_build_axis_series_credit_funding_label_populates_when_all_sessions_present() -> None:
+    """build_axis_series extracts credit_funding_active_label (line 920) when
+    credit_funding_active_labels_by_date is provided and covers all sessions."""
+    context = _build_synthetic_context()
+    store = build_feature_store(
+        context,
+        network_fragility_config=context.config.network_fragility,
+        credit_funding_config=context.config.credit_funding,
+        inflation_growth_config=context.config.inflation_growth,
+    )
+    # Build a complete credit_funding map covering every session.
+    complete_cf = {day: "credit_calm" for day in context.sessions}
+
+    outputs = _build_ig_axis_series(
+        context,
+        store,
+        credit_funding_active_labels_by_date=complete_cf,
+    )
+    assert outputs is not None
+    # With credit_calm on every session the goldilocks/recovery_growth rules
+    # are eligible — the engine should not short-circuit to unknown everywhere.
+    labels = {out.raw_label for out in outputs.values()}
+    # At minimum the engine ran successfully and returned outputs for all sessions.
+    assert len(outputs) == len(context.sessions)

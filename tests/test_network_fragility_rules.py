@@ -846,3 +846,349 @@ def test_evaluate_rules_end_to_end_via_compute_features():
     # The engine must produce at least one non-unknown label on a 100-day
     # window of real percentile-rank-driven inputs.
     assert seen_labels - {"unknown"}, f"engine yielded only {seen_labels}"
+
+
+# ---------- Boundary: _trailing_slope / _trailing_stability / _trailing_drawdown --------
+
+
+@pytest.mark.unit
+def test_trailing_slope_returns_nan_when_insufficient_window():
+    """_trailing_slope returns NaN when the series has fewer than `window`
+    sessions before (inclusive of) `dt`. Line 159 path."""
+    from regime_detection.network_fragility_rules import _trailing_slope
+
+    index = pd.bdate_range(end="2024-12-31", periods=5)
+    series = pd.Series(np.linspace(0.30, 0.50, 5), index=index)
+    # Request a 21-day window — only 5 sessions available.
+    result = _trailing_slope(series, index[-1], 21)
+    assert math.isnan(result)
+
+
+@pytest.mark.unit
+def test_trailing_slope_returns_nan_when_nan_in_window():
+    """_trailing_slope returns NaN when ANY element in the trailing window is NaN.
+    This covers the NaN-propagation guard inside _trailing_slope."""
+    from regime_detection.network_fragility_rules import _trailing_slope
+
+    index = pd.bdate_range(end="2024-12-31", periods=30)
+    series = pd.Series(np.linspace(0.30, 0.60, 30), index=index)
+    series.iloc[-5] = float("nan")
+    result = _trailing_slope(series, index[-1], 21)
+    assert math.isnan(result)
+
+
+@pytest.mark.unit
+def test_trailing_stability_returns_nan_when_insufficient_window():
+    """_trailing_stability returns NaN when the series has fewer than `window`
+    sessions before (inclusive of) `dt`. Line 178 path."""
+    from regime_detection.network_fragility_rules import _trailing_stability
+
+    index = pd.bdate_range(end="2024-12-31", periods=5)
+    series = pd.Series(np.linspace(4.0, 5.0, 5), index=index)
+    result = _trailing_stability(series, index[-1], 21)
+    assert math.isnan(result)
+
+
+@pytest.mark.unit
+def test_trailing_stability_returns_nan_when_nan_in_window():
+    """_trailing_stability returns NaN when ANY element in the trailing window
+    is NaN. Line 181 path."""
+    from regime_detection.network_fragility_rules import _trailing_stability
+
+    index = pd.bdate_range(end="2024-12-31", periods=30)
+    series = pd.Series(4.0, index=index, dtype=float)
+    series.iloc[-3] = float("nan")
+    result = _trailing_stability(series, index[-1], 21)
+    assert math.isnan(result)
+
+
+@pytest.mark.unit
+def test_trailing_stability_returns_nan_when_mean_is_zero():
+    """_trailing_stability returns NaN when the mean of the window is zero
+    (division by zero guard). Line 184 path."""
+    from regime_detection.network_fragility_rules import _trailing_stability
+
+    index = pd.bdate_range(end="2024-12-31", periods=30)
+    series = pd.Series(0.0, index=index, dtype=float)
+    result = _trailing_stability(series, index[-1], 21)
+    assert math.isnan(result)
+
+
+@pytest.mark.unit
+def test_trailing_drawdown_returns_nan_when_insufficient_window():
+    """_trailing_drawdown returns NaN when the series has fewer than `window`
+    sessions before (inclusive of) `dt`. Line 194 path."""
+    from regime_detection.network_fragility_rules import _trailing_drawdown
+
+    index = pd.bdate_range(end="2024-12-31", periods=5)
+    series = pd.Series(np.linspace(400.0, 420.0, 5), index=index)
+    result = _trailing_drawdown(series, index[-1], 21)
+    assert math.isnan(result)
+
+
+@pytest.mark.unit
+def test_trailing_drawdown_returns_nan_when_nan_in_window():
+    """_trailing_drawdown returns NaN when ANY element in the trailing window
+    is NaN. Line 197 path."""
+    from regime_detection.network_fragility_rules import _trailing_drawdown
+
+    index = pd.bdate_range(end="2024-12-31", periods=30)
+    series = pd.Series(400.0, index=index, dtype=float)
+    series.iloc[-5] = float("nan")
+    result = _trailing_drawdown(series, index[-1], 21)
+    assert math.isnan(result)
+
+
+@pytest.mark.unit
+def test_trailing_drawdown_returns_nan_when_peak_is_nonpositive():
+    """_trailing_drawdown returns NaN when the 21d peak <= 0 (guard line 200)."""
+    from regime_detection.network_fragility_rules import _trailing_drawdown
+
+    index = pd.bdate_range(end="2024-12-31", periods=30)
+    series = pd.Series(-1.0, index=index, dtype=float)
+    result = _trailing_drawdown(series, index[-1], 21)
+    assert math.isnan(result)
+
+
+@pytest.mark.unit
+def test_rolling_ols_slope_series_shorter_than_window():
+    """_rolling_ols_slope_series returns all-NaN when input is shorter than
+    the requested window. Line 249 path."""
+    from regime_detection.network_fragility_rules import _rolling_ols_slope_series
+
+    index = pd.bdate_range(end="2024-12-31", periods=5)
+    series = pd.Series(np.linspace(0.3, 0.5, 5), index=index)
+    result = _rolling_ols_slope_series(series, window=21)
+    assert result.isna().all()
+
+
+@pytest.mark.unit
+def test_rolling_stability_series_shorter_than_window():
+    """_rolling_stability_series returns all-NaN when input is shorter than
+    the requested window. Line 271 path."""
+    from regime_detection.network_fragility_rules import _rolling_stability_series
+
+    index = pd.bdate_range(end="2024-12-31", periods=5)
+    series = pd.Series(4.0, index=index, dtype=float)
+    result = _rolling_stability_series(series, window=21)
+    assert result.isna().all()
+
+
+# ---------- Boundary: build_axis_series guard paths --------------------------
+
+
+@pytest.mark.unit
+def test_build_axis_series_returns_none_when_network_fragility_config_is_none():
+    """build_axis_series returns None when context.config.network_fragility is
+    None — the config guard at line 577."""
+    from unittest.mock import MagicMock
+
+    from regime_detection.network_fragility_rules import build_axis_series
+
+    # Build a minimal feature store with a real feature object.
+    feature_store = MagicMock()
+    feature_store.network_fragility = MagicMock()  # not None
+    context = MagicMock()
+    context.config.network_fragility = None  # triggers line 577
+
+    result = build_axis_series(context, feature_store)
+    assert result is None
+
+
+@pytest.mark.unit
+def test_build_axis_series_raises_key_error_when_credit_funding_label_missing_session():
+    """build_axis_series raises KeyError when credit_funding_active_labels_by_date
+    is provided but is missing a required session. Line 651 path.
+
+    The data-quality gate is patched to return a passing quality object so the
+    loop reaches the credit_funding check rather than short-circuiting via
+    quality_forces_unknown.
+    """
+    from unittest.mock import MagicMock, patch
+
+    from regime_detection.models import DataQuality
+    from regime_detection.network_fragility import NetworkFragilityFeatures
+    from regime_detection.network_fragility_rules import build_axis_series
+
+    index = pd.bdate_range(end="2024-12-31", periods=30)
+    flat = pd.Series(0.50, index=index)
+    eff_rank = pd.Series(4.0, index=index)
+    spy_close = pd.Series(400.0, index=index)
+
+    features = NetworkFragilityFeatures(
+        avg_pairwise_corr_63d=flat,
+        avg_pairwise_corr_percentile_504d=flat,
+        largest_eigenvalue_share=flat,
+        largest_eigenvalue_share_percentile_504d=flat,
+        effective_rank=eff_rank,
+        effective_rank_percentile_504d=flat,
+        absorption_ratio_top3=flat,
+        dispersion_ratio=flat,
+        dispersion_ratio_percentile_252d=flat,
+    )
+
+    from regime_detection.config import load_default_regime_config
+
+    cfg = load_default_regime_config()
+    nf_cfg = cfg.network_fragility
+
+    feature_store = MagicMock()
+    feature_store.network_fragility = features
+    feature_store.volatility = MagicMock()
+    feature_store.volatility.realized_vol_percentile_252d = flat
+    feature_store.volatility.vix_percentile_252d = flat
+
+    sessions = [dt.date() for dt in index[-3:]]
+    context = MagicMock()
+    context.config = cfg
+    context.config.network_fragility = nf_cfg
+    context.sessions = sessions
+    context.spy_ohlcv = {"close": spy_close}
+
+    # Provide only ONE session in the credit_funding dict — the remaining two
+    # sessions in context.sessions are absent → KeyError.
+    incomplete_credit_funding = {sessions[0]: "credit_calm"}
+
+    passing_quality = DataQuality(status="ok", freshness_days=1, completeness=1.0)
+    with (
+        patch(
+            "regime_detection.network_fragility_rules.assess_series_input_quality",
+            return_value=passing_quality,
+        ),
+        patch(
+            "regime_detection.network_fragility_rules.quality_forces_unknown",
+            return_value=False,
+        ),
+    ):
+        with pytest.raises(KeyError):
+            build_axis_series(
+                context,
+                feature_store,
+                credit_funding_active_labels_by_date=incomplete_credit_funding,
+            )
+
+
+@pytest.mark.unit
+def test_build_axis_series_raises_key_error_when_breadth_label_missing_session():
+    """build_axis_series raises KeyError when breadth_active_labels_by_date
+    is provided but missing a required session. Line 634 path."""
+    from unittest.mock import MagicMock, patch
+
+    from regime_detection.models import DataQuality
+    from regime_detection.network_fragility import NetworkFragilityFeatures
+    from regime_detection.network_fragility_rules import build_axis_series
+    from regime_detection.config import load_default_regime_config
+
+    index = pd.bdate_range(end="2024-12-31", periods=30)
+    flat = pd.Series(0.50, index=index)
+    spy_close = pd.Series(400.0, index=index)
+
+    features = NetworkFragilityFeatures(
+        avg_pairwise_corr_63d=flat,
+        avg_pairwise_corr_percentile_504d=flat,
+        largest_eigenvalue_share=flat,
+        largest_eigenvalue_share_percentile_504d=flat,
+        effective_rank=pd.Series(4.0, index=index),
+        effective_rank_percentile_504d=flat,
+        absorption_ratio_top3=flat,
+        dispersion_ratio=flat,
+        dispersion_ratio_percentile_252d=flat,
+    )
+
+    cfg = load_default_regime_config()
+    feature_store = MagicMock()
+    feature_store.network_fragility = features
+    feature_store.volatility = MagicMock()
+    feature_store.volatility.realized_vol_percentile_252d = flat
+    feature_store.volatility.vix_percentile_252d = flat
+
+    sessions = [dt.date() for dt in index[-3:]]
+    context = MagicMock()
+    context.config = cfg
+    context.config.network_fragility = cfg.network_fragility
+    context.sessions = sessions
+    context.spy_ohlcv = {"close": spy_close}
+
+    # Provide only ONE breadth session — two are missing → KeyError.
+    incomplete_breadth = {sessions[0]: "healthy_breadth"}
+
+    passing_quality = DataQuality(status="ok", freshness_days=1, completeness=1.0)
+    with (
+        patch(
+            "regime_detection.network_fragility_rules.assess_series_input_quality",
+            return_value=passing_quality,
+        ),
+        patch(
+            "regime_detection.network_fragility_rules.quality_forces_unknown",
+            return_value=False,
+        ),
+    ):
+        with pytest.raises(KeyError):
+            build_axis_series(
+                context,
+                feature_store,
+                breadth_active_labels_by_date=incomplete_breadth,
+            )
+
+
+@pytest.mark.unit
+def test_build_axis_series_raises_key_error_when_volatility_label_missing_session():
+    """build_axis_series raises KeyError when volatility_active_labels_by_date
+    is provided but missing a required session. Line 643 path."""
+    from unittest.mock import MagicMock, patch
+
+    from regime_detection.models import DataQuality
+    from regime_detection.network_fragility import NetworkFragilityFeatures
+    from regime_detection.network_fragility_rules import build_axis_series
+    from regime_detection.config import load_default_regime_config
+
+    index = pd.bdate_range(end="2024-12-31", periods=30)
+    flat = pd.Series(0.50, index=index)
+    spy_close = pd.Series(400.0, index=index)
+
+    features = NetworkFragilityFeatures(
+        avg_pairwise_corr_63d=flat,
+        avg_pairwise_corr_percentile_504d=flat,
+        largest_eigenvalue_share=flat,
+        largest_eigenvalue_share_percentile_504d=flat,
+        effective_rank=pd.Series(4.0, index=index),
+        effective_rank_percentile_504d=flat,
+        absorption_ratio_top3=flat,
+        dispersion_ratio=flat,
+        dispersion_ratio_percentile_252d=flat,
+    )
+
+    cfg = load_default_regime_config()
+    feature_store = MagicMock()
+    feature_store.network_fragility = features
+    feature_store.volatility = MagicMock()
+    feature_store.volatility.realized_vol_percentile_252d = flat
+    feature_store.volatility.vix_percentile_252d = flat
+
+    sessions = [dt.date() for dt in index[-3:]]
+    context = MagicMock()
+    context.config = cfg
+    context.config.network_fragility = cfg.network_fragility
+    context.sessions = sessions
+    context.spy_ohlcv = {"close": spy_close}
+
+    # Provide only ONE volatility session — two are missing → KeyError.
+    incomplete_volatility = {sessions[0]: "normal_vol"}
+
+    passing_quality = DataQuality(status="ok", freshness_days=1, completeness=1.0)
+    with (
+        patch(
+            "regime_detection.network_fragility_rules.assess_series_input_quality",
+            return_value=passing_quality,
+        ),
+        patch(
+            "regime_detection.network_fragility_rules.quality_forces_unknown",
+            return_value=False,
+        ),
+    ):
+        with pytest.raises(KeyError):
+            build_axis_series(
+                context,
+                feature_store,
+                volatility_active_labels_by_date=incomplete_volatility,
+            )
