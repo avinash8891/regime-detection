@@ -7,12 +7,22 @@ from pathlib import Path
 import pandas as pd
 
 from regime_data_fetch.alpaca_daily import DailyBarsFetchResult
-from regime_data_fetch.local_daily_ohlcv_sqlite import run_local_daily_ohlcv_sqlite_import
-from regime_data_fetch.local_daily_ohlcv_sqlite import run_alpaca_constituent_daily_ohlcv_fetch
+from regime_data_fetch.local_daily_ohlcv_sqlite import (
+    run_local_daily_ohlcv_sqlite_import,
+)
+from regime_data_fetch.local_daily_ohlcv_sqlite import (
+    run_alpaca_constituent_daily_ohlcv_fetch,
+)
+from regime_data_fetch.universe import (
+    FIXED_UNIVERSE_LOCAL_PATH,
+    FIXED_UNIVERSE_TREE_NAME,
+)
 
 
-def test_run_local_daily_ohlcv_sqlite_import_records_rows_and_artifacts(tmp_path: Path) -> None:
-    source_dir = tmp_path / "daily_ohlcv_762"
+def test_run_local_daily_ohlcv_sqlite_import_records_rows_and_artifacts(
+    tmp_path: Path,
+) -> None:
+    source_dir = tmp_path / FIXED_UNIVERSE_TREE_NAME
     symbol_dir = source_dir / "symbol=AAPL"
     symbol_dir.mkdir(parents=True)
     parquet_path = symbol_dir / "part-0.parquet"
@@ -54,13 +64,19 @@ def test_run_local_daily_ohlcv_sqlite_import_records_rows_and_artifacts(tmp_path
     assert report["date_range"]["max_date"] == "2026-05-06"
     assert report["paths"]["profile_constituent_tree"] == {
         "path": str(source_dir),
-        "local_path": "data/raw/daily_ohlcv_762",
+        "local_path": FIXED_UNIVERSE_LOCAL_PATH,
     }
 
     with sqlite3.connect(acquisition_db) as conn:
-        fetch_runs = conn.execute("SELECT fetch_type, status FROM fetch_runs").fetchall()
-        artifact_sources = conn.execute("SELECT source_name, artifact_kind FROM artifacts").fetchall()
-        outputs = conn.execute("SELECT output_kind FROM derived_outputs ORDER BY output_id").fetchall()
+        fetch_runs = conn.execute(
+            "SELECT fetch_type, status FROM fetch_runs"
+        ).fetchall()
+        artifact_sources = conn.execute(
+            "SELECT source_name, artifact_kind FROM artifacts"
+        ).fetchall()
+        outputs = conn.execute(
+            "SELECT output_kind FROM derived_outputs ORDER BY output_id"
+        ).fetchall()
         ohlcv_rows = conn.execute(
             "SELECT symbol, date, close FROM daily_ohlcv_rows ORDER BY symbol, date"
         ).fetchall()
@@ -140,17 +156,33 @@ def test_run_alpaca_constituent_daily_ohlcv_fetch_materializes_profile_tree_and_
         "missing_symbols": 0,
     }
     assert report["paths"]["profile_constituent_tree"] == {
-        "path": str(tmp_path / "data" / "raw" / "daily_ohlcv_762"),
-        "local_path": "data/raw/daily_ohlcv_762",
+        "path": str(tmp_path / "data" / "raw" / FIXED_UNIVERSE_TREE_NAME),
+        "local_path": FIXED_UNIVERSE_LOCAL_PATH,
     }
-    assert (tmp_path / "data" / "raw" / "daily_ohlcv_762" / "symbol=AAPL" / "ohlcv.parquet").exists()
-    assert (tmp_path / "data" / "raw" / "daily_ohlcv_762" / "symbol=MSFT" / "ohlcv.parquet").exists()
+    assert (
+        tmp_path
+        / "data"
+        / "raw"
+        / FIXED_UNIVERSE_TREE_NAME
+        / "symbol=AAPL"
+        / "ohlcv.parquet"
+    ).exists()
+    assert (
+        tmp_path
+        / "data"
+        / "raw"
+        / FIXED_UNIVERSE_TREE_NAME
+        / "symbol=MSFT"
+        / "ohlcv.parquet"
+    ).exists()
 
     with sqlite3.connect(acquisition_db) as conn:
         ohlcv_rows = conn.execute(
             "SELECT symbol, date, close FROM daily_ohlcv_rows ORDER BY symbol, date"
         ).fetchall()
-        fetch_runs = conn.execute("SELECT fetch_type, status FROM fetch_runs ORDER BY run_id").fetchall()
+        fetch_runs = conn.execute(
+            "SELECT fetch_type, status FROM fetch_runs ORDER BY run_id"
+        ).fetchall()
 
     assert fetch_runs == [
         ("daily_ohlcv_constituents_alpaca", "ok"),
@@ -214,7 +246,7 @@ def test_run_alpaca_constituent_daily_ohlcv_fetch_uses_fixed_universe_before_pit
 def test_run_alpaca_constituent_daily_ohlcv_fetch_merges_incremental_rows(
     tmp_path: Path,
 ) -> None:
-    tree_root = tmp_path / "data" / "raw" / "daily_ohlcv_762"
+    tree_root = tmp_path / "data" / "raw" / FIXED_UNIVERSE_TREE_NAME
     symbol_dir = tree_root / "symbol=AAPL"
     symbol_dir.mkdir(parents=True)
     (symbol_dir / "ohlcv.parquet").write_bytes(b"")

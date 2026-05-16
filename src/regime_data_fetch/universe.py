@@ -6,6 +6,11 @@ from pathlib import Path
 import pandas as pd
 
 
+FIXED_UNIVERSE_SYMBOL_COUNT = 762
+FIXED_UNIVERSE_TREE_NAME = "daily_ohlcv_762"
+FIXED_UNIVERSE_LOCAL_PATH = f"data/raw/{FIXED_UNIVERSE_TREE_NAME}"
+
+
 def load_symbols_from_pit_constituents_parquet(parquet_path: str | os.PathLike[str]) -> list[str]:
     """Load the current workflow stock universe from PIT constituent intervals."""
     path = Path(parquet_path)

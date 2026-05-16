@@ -20,10 +20,19 @@ from regime_data_fetch.fetch_workflow import (
     write_event_calendar_template,
 )
 from regime_data_fetch.ism import extract_ism_pmi_value, release_timestamp_for
+from regime_data_fetch.universe import FIXED_UNIVERSE_SYMBOL_COUNT
+from scripts.fetch_regime_engine_v1_data import (
+    FETCH_MODES,
+    OPERATOR_ASSISTED_FETCH_MODES,
+    UNATTENDED_FETCH_MODES,
+    _should_fetch,
+)
 
 
 def test_build_market_symbols_supports_v1_v2_and_all() -> None:
-    v1 = build_market_symbols(scope="v1", stock_symbols=["AAPL", "MSFT"], vix_symbol="VIX")
+    v1 = build_market_symbols(
+        scope="v1", stock_symbols=["AAPL", "MSFT"], vix_symbol="VIX"
+    )
     assert v1[:4] == ["AAPL", "MSFT", "SPY", "RSP"]
     assert v1[-1] == "VIX"
 
@@ -33,14 +42,18 @@ def test_build_market_symbols_supports_v1_v2_and_all() -> None:
     assert set(V2_SECTOR_SYMBOLS).issubset(v2)
     assert set(V2_CROSS_ASSET_SYMBOLS).issubset(v2)
 
-    combined = build_market_symbols(scope="all", stock_symbols=["AAPL", "AAPL"], vix_symbol="VIX")
+    combined = build_market_symbols(
+        scope="all", stock_symbols=["AAPL", "AAPL"], vix_symbol="VIX"
+    )
     assert combined.count("AAPL") == 1
     assert combined.count("SPY") == 1
     assert combined.count("VIX") == 1
     assert set(V2_V1_SHARED_ANCHORS).issubset(combined)
 
 
-def test_write_event_calendar_template_includes_v1_and_v2_examples(tmp_path: Path) -> None:
+def test_write_event_calendar_template_includes_v1_and_v2_examples(
+    tmp_path: Path,
+) -> None:
     template_path = write_event_calendar_template(tmp_path)
     contents = template_path.read_text()
 
@@ -79,7 +92,10 @@ def test_run_market_fetch_writes_unified_report(monkeypatch, tmp_path: Path) -> 
         ]
         return DailyBarsFetchResult(df=pd.DataFrame(rows), missing_symbols=[])
 
-    monkeypatch.setattr("regime_data_fetch.fetch_workflow.fetch_daily_bars_alpaca", fake_fetch_daily_bars_alpaca)
+    monkeypatch.setattr(
+        "regime_data_fetch.fetch_workflow.fetch_daily_bars_alpaca",
+        fake_fetch_daily_bars_alpaca,
+    )
     monkeypatch.setenv("ALPACA_API_KEY_ID", "key")
     monkeypatch.setenv("ALPACA_API_SECRET_KEY", "secret")
 
@@ -101,10 +117,14 @@ def test_run_market_fetch_writes_unified_report(monkeypatch, tmp_path: Path) -> 
     assert report["counts"]["symbols_requested_for_alpaca"] == len(captured["symbols"])
     assert report["vix"]["source"] == "alpaca"
     assert report["vix"]["symbol"] == "VIXY"
-    assert report["paths"]["event_calendar_template"] == str(tmp_path / "event_calendar" / "events.template.yaml")
+    assert report["paths"]["event_calendar_template"] == str(
+        tmp_path / "event_calendar" / "events.template.yaml"
+    )
 
 
-def test_run_market_fetch_records_alpaca_payload_in_sqlite(monkeypatch, tmp_path: Path) -> None:
+def test_run_market_fetch_records_alpaca_payload_in_sqlite(
+    monkeypatch, tmp_path: Path
+) -> None:
     acquisition_db = tmp_path / "acquisition.db"
 
     def fake_fetch_daily_bars_alpaca(
@@ -132,7 +152,10 @@ def test_run_market_fetch_records_alpaca_payload_in_sqlite(monkeypatch, tmp_path
         ]
         return DailyBarsFetchResult(df=pd.DataFrame(rows), missing_symbols=["ZZZZ"])
 
-    monkeypatch.setattr("regime_data_fetch.fetch_workflow.fetch_daily_bars_alpaca", fake_fetch_daily_bars_alpaca)
+    monkeypatch.setattr(
+        "regime_data_fetch.fetch_workflow.fetch_daily_bars_alpaca",
+        fake_fetch_daily_bars_alpaca,
+    )
     monkeypatch.setenv("ALPACA_API_KEY_ID", "key")
     monkeypatch.setenv("ALPACA_API_SECRET_KEY", "secret")
 
@@ -154,10 +177,16 @@ def test_run_market_fetch_records_alpaca_payload_in_sqlite(monkeypatch, tmp_path
     assert report["paths"]["acquisition_db"] == str(acquisition_db)
 
     with sqlite3.connect(acquisition_db) as conn:
-        fetch_runs = conn.execute("SELECT fetch_type, status FROM fetch_runs").fetchall()
+        fetch_runs = conn.execute(
+            "SELECT fetch_type, status FROM fetch_runs"
+        ).fetchall()
         artifact_count = conn.execute("SELECT count(*) FROM artifacts").fetchone()[0]
-        artifact_source = conn.execute("SELECT source_name, artifact_kind FROM artifacts").fetchall()
-        outputs = conn.execute("SELECT output_kind FROM derived_outputs ORDER BY output_id").fetchall()
+        artifact_source = conn.execute(
+            "SELECT source_name, artifact_kind FROM artifacts"
+        ).fetchall()
+        outputs = conn.execute(
+            "SELECT output_kind FROM derived_outputs ORDER BY output_id"
+        ).fetchall()
 
     assert fetch_runs == [("market", "ok")]
     assert artifact_count == 1
@@ -168,7 +197,9 @@ def test_run_market_fetch_records_alpaca_payload_in_sqlite(monkeypatch, tmp_path
     ]
 
 
-def test_run_market_fetch_merges_incremental_daily_ohlcv(monkeypatch, tmp_path: Path) -> None:
+def test_run_market_fetch_merges_incremental_daily_ohlcv(
+    monkeypatch, tmp_path: Path
+) -> None:
     existing_dir = tmp_path / "daily_ohlcv"
     existing_dir.mkdir()
     pd.DataFrame(
@@ -225,7 +256,10 @@ def test_run_market_fetch_merges_incremental_daily_ohlcv(monkeypatch, tmp_path: 
             missing_symbols=[],
         )
 
-    monkeypatch.setattr("regime_data_fetch.fetch_workflow.fetch_daily_bars_alpaca", fake_fetch_daily_bars_alpaca)
+    monkeypatch.setattr(
+        "regime_data_fetch.fetch_workflow.fetch_daily_bars_alpaca",
+        fake_fetch_daily_bars_alpaca,
+    )
     monkeypatch.setenv("ALPACA_API_KEY_ID", "key")
     monkeypatch.setenv("ALPACA_API_SECRET_KEY", "secret")
 
@@ -243,7 +277,9 @@ def test_run_market_fetch_merges_incremental_daily_ohlcv(monkeypatch, tmp_path: 
     )
 
     merged = pd.read_parquet(existing_dir).sort_values(["symbol", "date"])
-    assert merged[merged["symbol"] == "TLT"][["date", "close"]].to_dict(orient="records") == [
+    assert merged[merged["symbol"] == "TLT"][["date", "close"]].to_dict(
+        orient="records"
+    ) == [
         {"date": dt.date(2026, 5, 14), "close": 90.5},
         {"date": dt.date(2026, 5, 15), "close": 91.7},
         {"date": dt.date(2026, 5, 16), "close": 92.5},
@@ -264,7 +300,9 @@ def test_extract_ism_pmi_value_and_release_timestamp() -> None:
     assert ts.isoformat() == "2026-04-01T10:00:00-04:00"
 
 
-def test_run_macro_fetch_writes_macro_and_vintage_reports(monkeypatch, tmp_path: Path) -> None:
+def test_run_macro_fetch_writes_macro_and_vintage_reports(
+    monkeypatch, tmp_path: Path
+) -> None:
     def fake_fetch_fred_series_json(
         *,
         series_id: str,
@@ -289,7 +327,10 @@ def test_run_macro_fetch_writes_macro_and_vintage_reports(monkeypatch, tmp_path:
             }
         )
 
-    monkeypatch.setattr("regime_data_fetch.fetch_workflow.fetch_fred_series_json", fake_fetch_fred_series_json)
+    monkeypatch.setattr(
+        "regime_data_fetch.fetch_workflow.fetch_fred_series_json",
+        fake_fetch_fred_series_json,
+    )
     monkeypatch.setenv("FRED_API_KEY", "env-key")
 
     report_path = run_macro_fetch(
@@ -308,7 +349,9 @@ def test_run_macro_fetch_writes_macro_and_vintage_reports(monkeypatch, tmp_path:
     assert (tmp_path / "macro_vintages" / "cpi_all_items_vintages.parquet").exists()
 
 
-def test_run_macro_fetch_merges_incremental_fred_rows(monkeypatch, tmp_path: Path) -> None:
+def test_run_macro_fetch_merges_incremental_fred_rows(
+    monkeypatch, tmp_path: Path
+) -> None:
     macro_dir = tmp_path / "macro"
     macro_dir.mkdir()
     pd.DataFrame(
@@ -349,7 +392,10 @@ def test_run_macro_fetch_merges_incremental_fred_rows(monkeypatch, tmp_path: Pat
             }
         )
 
-    monkeypatch.setattr("regime_data_fetch.fetch_workflow.fetch_fred_series_json", fake_fetch_fred_series_json)
+    monkeypatch.setattr(
+        "regime_data_fetch.fetch_workflow.fetch_fred_series_json",
+        fake_fetch_fred_series_json,
+    )
     monkeypatch.setenv("FRED_API_KEY", "env-key")
 
     run_macro_fetch(
@@ -413,7 +459,10 @@ def test_run_macro_fetch_preserves_existing_vintages_when_incremental_window_emp
             }
         )
 
-    monkeypatch.setattr("regime_data_fetch.fetch_workflow.fetch_fred_series_json", fake_fetch_fred_series_json)
+    monkeypatch.setattr(
+        "regime_data_fetch.fetch_workflow.fetch_fred_series_json",
+        fake_fetch_fred_series_json,
+    )
     monkeypatch.setenv("FRED_API_KEY", "env-key")
 
     run_macro_fetch(
@@ -430,7 +479,9 @@ def test_run_macro_fetch_preserves_existing_vintages_when_incremental_window_emp
     ]
 
 
-def test_run_macro_fetch_records_raw_fred_json_in_sqlite(monkeypatch, tmp_path: Path) -> None:
+def test_run_macro_fetch_records_raw_fred_json_in_sqlite(
+    monkeypatch, tmp_path: Path
+) -> None:
     acquisition_db = tmp_path / "acquisition.db"
 
     def fake_fetch_fred_series_json(
@@ -457,7 +508,10 @@ def test_run_macro_fetch_records_raw_fred_json_in_sqlite(monkeypatch, tmp_path: 
             }
         )
 
-    monkeypatch.setattr("regime_data_fetch.fetch_workflow.fetch_fred_series_json", fake_fetch_fred_series_json)
+    monkeypatch.setattr(
+        "regime_data_fetch.fetch_workflow.fetch_fred_series_json",
+        fake_fetch_fred_series_json,
+    )
     monkeypatch.setenv("FRED_API_KEY", "env-key")
 
     report_path = run_macro_fetch(
@@ -473,9 +527,13 @@ def test_run_macro_fetch_records_raw_fred_json_in_sqlite(monkeypatch, tmp_path: 
     assert report["paths"]["acquisition_db"] == str(acquisition_db)
 
     with sqlite3.connect(acquisition_db) as conn:
-        fetch_runs = conn.execute("SELECT fetch_type, status FROM fetch_runs").fetchall()
+        fetch_runs = conn.execute(
+            "SELECT fetch_type, status FROM fetch_runs"
+        ).fetchall()
         artifact_count = conn.execute("SELECT count(*) FROM artifacts").fetchone()[0]
-        derived_outputs = conn.execute("SELECT output_kind FROM derived_outputs ORDER BY output_id").fetchall()
+        derived_outputs = conn.execute(
+            "SELECT output_kind FROM derived_outputs ORDER BY output_id"
+        ).fetchall()
 
     assert fetch_runs == [("macro", "ok")]
     assert artifact_count == len(V2_FRED_SERIES) + 1
@@ -496,7 +554,10 @@ def test_run_macro_fetch_requires_fred_api_key(tmp_path: Path) -> None:
             include_cpi_vintages=False,
         )
     except SystemExit as exc:
-        assert str(exc) == "Missing required FRED API key: pass --fred-api-key or set FRED_API_KEY"
+        assert (
+            str(exc)
+            == "Missing required FRED API key: pass --fred-api-key or set FRED_API_KEY"
+        )
     else:
         raise AssertionError("Expected SystemExit when FRED API key is missing")
 
@@ -529,7 +590,10 @@ def test_run_macro_fetch_uses_env_fred_api_key(monkeypatch, tmp_path: Path) -> N
             }
         )
 
-    monkeypatch.setattr("regime_data_fetch.fetch_workflow.fetch_fred_series_json", fake_fetch_fred_series_json)
+    monkeypatch.setattr(
+        "regime_data_fetch.fetch_workflow.fetch_fred_series_json",
+        fake_fetch_fred_series_json,
+    )
     monkeypatch.setenv("FRED_API_KEY", "env-key")
 
     run_macro_fetch(
@@ -546,7 +610,8 @@ def test_run_macro_fetch_uses_env_fred_api_key(monkeypatch, tmp_path: Path) -> N
 
 def test_fetch_help_surface_mentions_pmi_and_pit() -> None:
     help_text = Path("scripts/fetch_regime_engine_v1_data.py").read_text()
-    assert "market|macro|events|pmi|pit|fomc|powell|eps|eps-spglobal-auto|eps-wayback|usd-index-local|daily-ohlcv-local-sqlite|daily-ohlcv-constituents-alpaca|sentiment|investing-archive-local|investing-live|cleveland-fed-nowcast|sf-fed-news-sentiment|all" in help_text
+    for mode in FETCH_MODES:
+        assert mode in help_text
     assert "--eps-workbook" in help_text
     assert "--eps-wayback-max-snapshots" in help_text
     assert "--eps-wayback-from" in help_text
@@ -580,9 +645,12 @@ def test_unattended_usd_ingestion_uses_fred_macro_not_local_csv() -> None:
     workflow_text = Path("src/regime_data_fetch/fetch_workflow.py").read_text()
 
     assert '"broad_usd_index": "DTWEXBGS"' in workflow_text
-    assert "Routine future USD ingestion uses FRED DTWEXBGS through --fetch macro." in runner_text
+    assert (
+        "Routine future USD ingestion uses FRED DTWEXBGS through --fetch macro."
+        in runner_text
+    )
     assert 'if args.fetch == "usd-index-local":' in runner_text
-    assert 'if args.fetch in {"usd-index-local", "all"}:' not in runner_text
+    assert not _should_fetch("all", "usd-index-local")
 
 
 def test_fetch_all_excludes_manual_eps_and_wayback_backfill() -> None:
@@ -590,9 +658,9 @@ def test_fetch_all_excludes_manual_eps_and_wayback_backfill() -> None:
     assert 'if args.fetch == "eps":' in script
     assert 'if args.fetch == "eps-wayback":' in script
     assert 'if args.fetch == "eps-spglobal-auto":' in script
-    assert 'if args.fetch in {"eps", "all"}:' not in script
-    assert 'if args.fetch in {"eps-wayback", "all"}:' not in script
-    assert 'if args.fetch in {"eps-spglobal-auto", "all"}:' not in script
+    assert not _should_fetch("all", "eps")
+    assert not _should_fetch("all", "eps-wayback")
+    assert not _should_fetch("all", "eps-spglobal-auto")
 
 
 def test_fetch_all_excludes_operator_assisted_browser_and_archive_paths() -> None:
@@ -604,42 +672,62 @@ def test_fetch_all_excludes_operator_assisted_browser_and_archive_paths() -> Non
         "usd-index-local",
     ]:
         assert f'if args.fetch == "{fetch_name}":' in script
-        assert f'if args.fetch in {{"{fetch_name}", "all"}}:' not in script
+        assert not _should_fetch("all", fetch_name)
 
 
 def test_fetch_all_uses_live_constituent_ohlcv_not_local_sqlite_import() -> None:
     script = Path("scripts/fetch_regime_engine_v1_data.py").read_text()
     assert "daily-ohlcv-constituents-alpaca" in script
-    assert 'if args.fetch in {"daily-ohlcv-constituents-alpaca", "all"}:' in script
+    assert _should_fetch("all", "daily-ohlcv-constituents-alpaca")
     assert 'if args.fetch == "daily-ohlcv-local-sqlite":' in script
-    assert 'if args.fetch in {"daily-ohlcv-local-sqlite", "all"}:' not in script
+    assert not _should_fetch("all", "daily-ohlcv-local-sqlite")
 
 
 def test_fetch_all_uses_live_pmi_by_default_not_manual_history() -> None:
     script = Path("scripts/fetch_regime_engine_v1_data.py").read_text()
     assert "--pmi-history-dir" in script
-    assert 'manual_history_dir=Path(args.pmi_history_dir) if args.pmi_history_dir else None' in script
+    assert (
+        "manual_history_dir=Path(args.pmi_history_dir) if args.pmi_history_dir else None"
+        in script
+    )
     assert "manual_history_dir=DEFAULT_MANUAL_PMI_HISTORY_DIR" not in script
 
 
-def test_constituent_ohlcv_requires_fixed_universe_unless_pit_bootstrap_is_explicit() -> None:
+def test_constituent_ohlcv_requires_fixed_universe_unless_pit_bootstrap_is_explicit() -> (
+    None
+):
     script = Path("scripts/fetch_regime_engine_v1_data.py").read_text()
     assert "--constituent-universe-dir" in script
     assert "--allow-pit-constituent-universe" in script
     assert "--constituent-universe-expected-count" in script
     assert "load_symbols_from_pit_constituents_parquet" in script
-    assert "fixed_universe_symbols=_load_json_symbol_list(Path(args.universe_json)) if args.universe_json else None" in script
+    assert "FIXED_UNIVERSE_SYMBOL_COUNT" in script
+    assert FIXED_UNIVERSE_SYMBOL_COUNT == 762
+    assert (
+        "fixed_universe_symbols=_load_json_symbol_list(Path(args.universe_json)) if args.universe_json else None"
+        in script
+    )
     assert "allow_pit_universe=args.allow_pit_constituent_universe" in script
     assert "fetch_alpaca_active_stock_symbols" not in script
+
+
+def test_fetch_mode_sets_make_operator_assisted_boundary_explicit() -> None:
+    assert UNATTENDED_FETCH_MODES.isdisjoint(OPERATOR_ASSISTED_FETCH_MODES)
+    for mode in OPERATOR_ASSISTED_FETCH_MODES:
+        assert not _should_fetch("all", mode), mode
+    for mode in UNATTENDED_FETCH_MODES:
+        assert _should_fetch("all", mode), mode
 
 
 def test_event_calendar_fetch_symbol_is_wired() -> None:
     script = Path("scripts/fetch_regime_engine_v1_data.py").read_text()
     assert "run_us_event_calendar_fetch" in script
-    assert 'if args.fetch in {"events", "all"}:' in script
+    assert _should_fetch("all", "events")
 
 
-def test_build_bls_local_archive_page_fetcher_prefers_local_file(tmp_path: Path) -> None:
+def test_build_bls_local_archive_page_fetcher_prefers_local_file(
+    tmp_path: Path,
+) -> None:
     schedule_dir = tmp_path / "bls"
     schedule_dir.mkdir()
     local_file = schedule_dir / "bls_schedule_2024.html"

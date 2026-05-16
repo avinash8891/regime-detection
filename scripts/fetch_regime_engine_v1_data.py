@@ -39,7 +39,41 @@ from regime_data_fetch.pmi import run_pmi_fetch
 from regime_data_fetch.pit_constituents import run_pit_constituents_fetch
 from regime_data_fetch.powell_speeches import run_powell_speeches_fetch
 from regime_data_fetch.sf_fed_news_sentiment import run_sf_fed_news_sentiment_fetch
-from regime_data_fetch.universe import load_symbols_from_daily_ohlcv_tree, load_symbols_from_pit_constituents_parquet
+from regime_data_fetch.universe import (
+    FIXED_UNIVERSE_SYMBOL_COUNT,
+    FIXED_UNIVERSE_TREE_NAME,
+    load_symbols_from_daily_ohlcv_tree,
+    load_symbols_from_pit_constituents_parquet,
+)
+
+
+UNATTENDED_FETCH_MODES = frozenset(
+    {
+        "market",
+        "macro",
+        "events",
+        "pmi",
+        "pit",
+        "fomc",
+        "powell",
+        "sentiment",
+        "cleveland-fed-nowcast",
+        "sf-fed-news-sentiment",
+        "daily-ohlcv-constituents-alpaca",
+    }
+)
+OPERATOR_ASSISTED_FETCH_MODES = frozenset(
+    {
+        "eps",
+        "eps-spglobal-auto",
+        "eps-wayback",
+        "usd-index-local",
+        "daily-ohlcv-local-sqlite",
+        "investing-archive-local",
+        "investing-live",
+    }
+)
+FETCH_MODES = UNATTENDED_FETCH_MODES | OPERATOR_ASSISTED_FETCH_MODES | {"all"}
 
 
 def main() -> int:
@@ -54,7 +88,7 @@ def main() -> int:
     ap.add_argument("--start", default="2015-01-01", help="Start date (YYYY-MM-DD).")
     ap.add_argument("--end", default=dt.date.today().isoformat(), help="End date (YYYY-MM-DD).")
     ap.add_argument("--scope", default="v1", help="Data scope: v1|v2|all.")
-    ap.add_argument("--fetch", default="market", help="What to fetch: market|macro|events|pmi|pit|fomc|powell|eps|eps-spglobal-auto|eps-wayback|usd-index-local|daily-ohlcv-local-sqlite|daily-ohlcv-constituents-alpaca|sentiment|investing-archive-local|investing-live|cleveland-fed-nowcast|sf-fed-news-sentiment|all.")
+    ap.add_argument("--fetch", default="market", help=f"What to fetch: {'|'.join(sorted(FETCH_MODES))}.")
     ap.add_argument("--min-cap-b", type=float, default=10.0, help="Universe filter threshold in $B.")
     ap.add_argument("--adjustment", default="raw", help="Alpaca adjustment: raw|split|dividend|all.")
     ap.add_argument("--alpaca-feed", default=None, help="Alpaca data feed: sip|iex|otc. Omit to use SDK default.")
@@ -76,7 +110,7 @@ def main() -> int:
     ap.add_argument(
         "--universe-json",
         default=None,
-        help="Optional JSON list[str] of symbols to fetch. For constituent OHLCV, this should be the fixed 762-symbol universe.",
+        help=f"Optional JSON list[str] of symbols to fetch. For constituent OHLCV, this should be the fixed {FIXED_UNIVERSE_SYMBOL_COUNT}-symbol universe.",
     )
     ap.add_argument(
         "--vix-symbol",
@@ -114,7 +148,7 @@ def main() -> int:
     ap.add_argument(
         "--constituent-universe-dir",
         default=None,
-        help="Fixed partitioned daily_ohlcv_762 tree to use as the Alpaca constituent refresh universe.",
+        help=f"Fixed partitioned {FIXED_UNIVERSE_TREE_NAME} tree to use as the Alpaca constituent refresh universe.",
     )
     ap.add_argument(
         "--allow-pit-constituent-universe",
@@ -124,8 +158,8 @@ def main() -> int:
     ap.add_argument(
         "--constituent-universe-expected-count",
         type=int,
-        default=762,
-        help="Expected fixed constituent universe size for Alpaca refreshes. Default 762.",
+        default=FIXED_UNIVERSE_SYMBOL_COUNT,
+        help=f"Expected fixed constituent universe size for Alpaca refreshes. Default {FIXED_UNIVERSE_SYMBOL_COUNT}.",
     )
     ap.add_argument("--allow-missing-constituent-symbols", action="store_true", help="Allow daily-ohlcv-constituents-alpaca to continue when Alpaca returns no bars for some PIT symbols.")
     ap.add_argument("--pmi-history-dir", default=None, help="Optional manual Investing PMI history directory. Omit for live DBnomics/TradingEconomics PMI ingestion.")
@@ -154,7 +188,7 @@ def main() -> int:
     )
     ap.add_argument(
         "--manifest-required-for",
-        default="profile_engine_30d,v2_calibration",
+        default="profile_engine_30d,v2_calibration,historical_walkforward,audit_layer2_30d",
         help="Comma-separated use cases attached to emitted manifest artifacts.",
     )
     ap.add_argument("--bls-schedule-dir", default=None, help="Optional local directory containing bls_schedule_YYYY.html files for BLS historical release schedules.")
@@ -178,8 +212,9 @@ def main() -> int:
 
     if args.scope not in {"v1", "v2", "all"}:
         raise SystemExit("--scope must be v1|v2|all")
-    if args.fetch not in {"market", "macro", "events", "pmi", "pit", "fomc", "powell", "eps", "eps-spglobal-auto", "eps-wayback", "usd-index-local", "daily-ohlcv-local-sqlite", "daily-ohlcv-constituents-alpaca", "sentiment", "investing-archive-local", "investing-live", "cleveland-fed-nowcast", "sf-fed-news-sentiment", "all"}:
-        raise SystemExit("--fetch must be market|macro|events|pmi|pit|fomc|powell|eps|eps-spglobal-auto|eps-wayback|usd-index-local|daily-ohlcv-local-sqlite|daily-ohlcv-constituents-alpaca|sentiment|investing-archive-local|investing-live|cleveland-fed-nowcast|sf-fed-news-sentiment|all")
+    _validate_fetch_modes()
+    if args.fetch not in FETCH_MODES:
+        raise SystemExit(f"--fetch must be {'|'.join(sorted(FETCH_MODES))}")
     if args.emit_manifest and not args.artifact_store:
         raise SystemExit("--artifact-store is required when --emit-manifest is set")
 
@@ -196,7 +231,7 @@ def main() -> int:
                     "note": (
                         "V1/all stock-universe listings use --universe-json when supplied, otherwise "
                         "the PIT constituent parquet ticker set. Constituent OHLCV refreshes require "
-                        "the fixed 762-symbol artifact unless --allow-pit-constituent-universe is explicit."
+                        f"the fixed {FIXED_UNIVERSE_SYMBOL_COUNT}-symbol artifact unless --allow-pit-constituent-universe is explicit."
                     ),
                 },
                 indent=2,
@@ -209,7 +244,7 @@ def main() -> int:
     acquisition_db_path = Path(args.acquisition_db) if args.acquisition_db else None
     acquisition_artifact_store_root = args.artifact_store if acquisition_db_path and args.artifact_store else None
 
-    if args.fetch in {"market", "all"}:
+    if _should_fetch(args.fetch, "market"):
         stocks = _resolve_stock_universe(args, out_dir=out_dir) if args.scope in {"v1", "all"} else []
         market_report = run_market_fetch(
             out_dir=out_dir,
@@ -228,7 +263,7 @@ def main() -> int:
         report_paths.append(market_report)
         print(str(market_report))
 
-    if args.fetch in {"macro", "all"}:
+    if _should_fetch(args.fetch, "macro"):
         macro_report = run_macro_fetch(
             out_dir=out_dir,
             start=start,
@@ -241,7 +276,7 @@ def main() -> int:
         report_paths.append(macro_report)
         print(str(macro_report))
 
-    if args.fetch in {"sentiment", "all"}:
+    if _should_fetch(args.fetch, "sentiment"):
         sentiment_report = run_sentiment_fetch(
             out_dir=out_dir,
             acquisition_db_path=acquisition_db_path,
@@ -250,7 +285,7 @@ def main() -> int:
         report_paths.append(sentiment_report)
         print(str(sentiment_report))
 
-    if args.fetch in {"events", "all"}:
+    if _should_fetch(args.fetch, "events"):
         bls_page_fetcher = None
         if args.bls_schedule_dir:
             bls_page_fetcher = build_bls_local_archive_page_fetcher(
@@ -270,7 +305,7 @@ def main() -> int:
         report_paths.append(event_report)
         print(str(event_report))
 
-    if args.fetch in {"pmi", "all"}:
+    if _should_fetch(args.fetch, "pmi"):
         pmi_report = run_pmi_fetch(
             out_dir=out_dir,
             as_of_date=end,
@@ -281,7 +316,7 @@ def main() -> int:
         report_paths.append(pmi_report)
         print(str(pmi_report))
 
-    if args.fetch in {"pit", "all"}:
+    if _should_fetch(args.fetch, "pit"):
         pit_report = run_pit_constituents_fetch(
             out_dir=out_dir,
             acquisition_db_path=acquisition_db_path,
@@ -290,7 +325,7 @@ def main() -> int:
         report_paths.append(pit_report)
         print(str(pit_report))
 
-    if args.fetch in {"fomc", "all"}:
+    if _should_fetch(args.fetch, "fomc"):
         fomc_report = run_fomc_minutes_fetch(
             out_dir=out_dir,
             acquisition_db_path=acquisition_db_path,
@@ -299,7 +334,7 @@ def main() -> int:
         report_paths.append(fomc_report)
         print(str(fomc_report))
 
-    if args.fetch in {"powell", "all"}:
+    if _should_fetch(args.fetch, "powell"):
         powell_report = run_powell_speeches_fetch(
             out_dir=out_dir,
             acquisition_db_path=acquisition_db_path,
@@ -308,7 +343,7 @@ def main() -> int:
         report_paths.append(powell_report)
         print(str(powell_report))
 
-    if args.fetch in {"cleveland-fed-nowcast", "all"}:
+    if _should_fetch(args.fetch, "cleveland-fed-nowcast"):
         nowcast_report = run_cleveland_fed_nowcast_fetch(
             out_dir=out_dir,
             acquisition_db_path=acquisition_db_path,
@@ -317,7 +352,7 @@ def main() -> int:
         report_paths.append(nowcast_report)
         print(str(nowcast_report))
 
-    if args.fetch in {"sf-fed-news-sentiment", "all"}:
+    if _should_fetch(args.fetch, "sf-fed-news-sentiment"):
         news_sentiment_report = run_sf_fed_news_sentiment_fetch(
             out_dir=out_dir,
             acquisition_db_path=acquisition_db_path,
@@ -435,7 +470,7 @@ def main() -> int:
         report_paths.append(ohlcv_import_report)
         print(str(ohlcv_import_report))
 
-    if args.fetch in {"daily-ohlcv-constituents-alpaca", "all"}:
+    if _should_fetch(args.fetch, "daily-ohlcv-constituents-alpaca"):
         if not args.acquisition_db:
             raise SystemExit("--acquisition-db is required for daily-ohlcv-constituents-alpaca fetches")
         pit_parquet_path = (
@@ -488,6 +523,16 @@ def _resolve_stock_universe(args: argparse.Namespace, *, out_dir: Path) -> list[
         else out_dir / "pit_constituents" / "sp500_ticker_intervals.parquet"
     )
     return load_symbols_from_pit_constituents_parquet(pit_parquet)
+
+
+def _should_fetch(selected: str, mode: str) -> bool:
+    return selected == mode or (selected == "all" and mode in UNATTENDED_FETCH_MODES)
+
+
+def _validate_fetch_modes() -> None:
+    overlap = UNATTENDED_FETCH_MODES & OPERATOR_ASSISTED_FETCH_MODES
+    if overlap:
+        raise RuntimeError(f"Fetch mode sets overlap: {sorted(overlap)}")
 
 
 def _load_json_symbol_list(universe_path: Path) -> list[str]:

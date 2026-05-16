@@ -11,7 +11,12 @@ import pandas as pd
 
 from regime_data_fetch.acquisition_store import AcquisitionStore
 from regime_data_fetch.alpaca_daily import DailyBarsFetchResult, fetch_daily_bars_alpaca
-from regime_data_fetch.universe import load_symbols_from_daily_ohlcv_tree
+from regime_data_fetch.universe import (
+    FIXED_UNIVERSE_LOCAL_PATH,
+    FIXED_UNIVERSE_SYMBOL_COUNT,
+    FIXED_UNIVERSE_TREE_NAME,
+    load_symbols_from_daily_ohlcv_tree,
+)
 
 
 EXPECTED_COLUMNS = ["date", "open", "high", "low", "close", "volume", "adjusted_close"]
@@ -32,7 +37,7 @@ def run_alpaca_constituent_daily_ohlcv_fetch(
     fixed_universe_symbols: list[str] | None = None,
     fixed_universe_dir: Path | None = None,
     allow_pit_universe: bool = False,
-    expected_universe_count: int | None = 762,
+    expected_universe_count: int | None = FIXED_UNIVERSE_SYMBOL_COUNT,
     verbose: bool = False,
 ) -> Path:
     if end < start:
@@ -54,11 +59,11 @@ def run_alpaca_constituent_daily_ohlcv_fetch(
         raise SystemExit(
             "Constituent OHLCV refresh resolved "
             f"{len(symbols)} symbols from {universe_source}; expected {expected_universe_count}. "
-            "Pass the fixed 762-symbol universe artifact, or override --constituent-universe-expected-count "
+            f"Pass the fixed {FIXED_UNIVERSE_SYMBOL_COUNT}-symbol universe artifact, or override --constituent-universe-expected-count "
             "only for an intentional replay."
         )
     out_dir.mkdir(parents=True, exist_ok=True)
-    tree_root = out_dir / "daily_ohlcv_762"
+    tree_root = out_dir / FIXED_UNIVERSE_TREE_NAME
 
     store = AcquisitionStore(acquisition_db_path, artifact_store_root=artifact_store_root)
     fetch_run = store.start_fetch_run(
@@ -140,7 +145,7 @@ def run_alpaca_constituent_daily_ohlcv_fetch(
             "paths": {
                 "profile_constituent_tree": {
                     "path": str(tree_root),
-                    "local_path": "data/raw/daily_ohlcv_762",
+                    "local_path": FIXED_UNIVERSE_LOCAL_PATH,
                 },
                 "sqlite_import_report": str(import_report),
                 "acquisition_db": str(acquisition_db_path),
@@ -276,7 +281,7 @@ def run_local_daily_ohlcv_sqlite_import(
                 "acquisition_db": str(acquisition_db_path),
                 "profile_constituent_tree": {
                     "path": str(source_dir),
-                    "local_path": "data/raw/daily_ohlcv_762",
+                    "local_path": FIXED_UNIVERSE_LOCAL_PATH,
                 },
             },
         }
@@ -353,8 +358,8 @@ def _resolve_constituent_symbols(
         return _symbols_from_pit_parquet(pit_parquet_path), f"pit_constituents_bootstrap:{pit_parquet_path}"
     raise SystemExit(
         "daily-ohlcv-constituents-alpaca requires a fixed constituent universe. "
-        "Pass --universe-json with the 762 symbols or --constituent-universe-dir pointing at the "
-        "materialized daily_ohlcv_762 tree. Use --allow-pit-constituent-universe only for an explicit bootstrap."
+        f"Pass --universe-json with the {FIXED_UNIVERSE_SYMBOL_COUNT} symbols or --constituent-universe-dir pointing at the "
+        f"materialized {FIXED_UNIVERSE_TREE_NAME} tree. Use --allow-pit-constituent-universe only for an explicit bootstrap."
     )
 
 
