@@ -8,8 +8,6 @@ score 6th component.
 
 from __future__ import annotations
 
-from datetime import date
-
 import numpy as np
 import pandas as pd
 import pytest
@@ -175,6 +173,34 @@ def test_compute_hmm_features_returns_none_when_hmm_fit_fails() -> None:
     assert result is None
 
 
+def test_compute_hmm_features_returns_none_when_hmm_fit_is_non_monotonic(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    inputs = _synthetic_inputs(n_sessions=1500)
+    cfg = _default_hmm_config()
+
+    class FakeMonitor:
+        tol = 0.01
+        n_iter = 200
+        verbose = False
+        non_monotonic = True
+
+    class FakeGaussianHMM:
+        def __init__(self, *args, **kwargs) -> None:
+            self.monitor_ = FakeMonitor()
+
+        def fit(self, _train):
+            self.monitor_.non_monotonic = True
+            return self
+
+        def predict_proba(self, frame):
+            return np.full((len(frame), cfg.n_states), 1.0 / cfg.n_states)
+
+    monkeypatch.setattr("regime_detection.hmm_state.GaussianHMM", FakeGaussianHMM)
+
+    assert compute_hmm_features(config=cfg, **inputs) is None
+
+
 def test_top_state_prob_is_at_least_one_over_n_states() -> None:
     inputs = _synthetic_inputs(n_sessions=1500)
     cfg = _default_hmm_config()
@@ -256,11 +282,9 @@ def test_feature_store_hmm_seam_none_when_hmm_config_absent(
     raw_market_frames: dict[str, pd.DataFrame],
 ) -> None:
     from regime_detection.config import load_default_regime_config
-    from regime_detection.engine import RegimeEngine
     from regime_detection.feature_store import build_feature_store
     from regime_detection.market_context import build_market_context
 
-    engine = RegimeEngine()
     cfg = load_default_regime_config().model_copy(update={"hmm": None})
     # Use the last available date in the fixture.
     spy = raw_market_frames["SPY"]
@@ -268,7 +292,6 @@ def test_feature_store_hmm_seam_none_when_hmm_config_absent(
     vixy = raw_market_frames["VIXY"]
     raw = pd.concat([spy, rsp, vixy], ignore_index=True)
     raw["date"] = pd.to_datetime(raw["date"]).dt.date
-    from regime_detection.calendar import nyse_sessions_between
 
     last_session = max(d for d in raw["date"].unique())
     # Walk back to a valid NYSE session if needed.

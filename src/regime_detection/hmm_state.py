@@ -23,7 +23,9 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass
 
+import numpy as np
 import pandas as pd
+from hmmlearn.base import ConvergenceMonitor
 from hmmlearn.hmm import GaussianHMM
 
 from regime_detection.config import HMMConfig
@@ -31,6 +33,27 @@ from regime_detection.config import HMMConfig
 __all__ = ["HMMFeatures", "compute_hmm_features"]
 
 _LOGGER = logging.getLogger(__name__)
+
+
+class _StrictConvergenceMonitor(ConvergenceMonitor):
+    """Track non-monotonic EM fits without letting hmmlearn write to stderr."""
+
+    non_monotonic: bool
+
+    def __init__(self, tol: float, n_iter: int, verbose: bool) -> None:
+        super().__init__(tol=tol, n_iter=n_iter, verbose=verbose)
+        self.non_monotonic = False
+
+    def report(self, log_prob: float) -> None:
+        precision = np.finfo(float).eps ** 0.5
+        if self.history and (log_prob - self.history[-1]) < -precision:
+            self.non_monotonic = True
+        self.history.append(log_prob)
+        self.iter += 1
+
+    @property
+    def converged(self) -> bool:
+        return self.non_monotonic or super().converged
 
 
 @dataclass(frozen=True)
@@ -103,8 +126,24 @@ def compute_hmm_features(
         n_iter=200,
         random_state=config.random_state,
     )
+    model.monitor_ = _StrictConvergenceMonitor(
+        tol=model.monitor_.tol,
+        n_iter=model.monitor_.n_iter,
+        verbose=model.monitor_.verbose,
+    )
     try:
         model.fit(train)
+        if getattr(model.monitor_, "non_monotonic", False):
+            history = list(model.monitor_.history)
+            delta = history[-1] - history[-2] if len(history) >= 2 else float("nan")
+            _LOGGER.warning(
+                "GaussianHMM fit produced non-monotonic log likelihood; "
+                "HMM seam returns None: current=%s previous=%s delta=%s",
+                history[-1] if history else None,
+                history[-2] if len(history) >= 2 else None,
+                delta,
+            )
+            return None
         posterior = model.predict_proba(frame.to_numpy(dtype=float))
     except Exception as exc:  # noqa: BLE001
         # Fail-open: degenerate inputs (singular covariance, etc.) should
