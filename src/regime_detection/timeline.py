@@ -10,6 +10,7 @@ from regime_detection.config import RegimeConfig
 from regime_detection.feature_store import build_feature_store
 from regime_detection.market_context import MarketContext, slice_context_to_recent_sessions
 from regime_detection.models import (
+    BreadthStateOutput,
     ChangePointOutput,
     ClusterOutput,
     DataQuality,
@@ -222,7 +223,9 @@ def build_regime_timeline(
         trend_direction_output = trend_direction_outputs[day]
         trend_character_output = trend_character_outputs[day]
         volatility_output = volatility_outputs[day]
-        breadth_output = breadth_outputs[day]
+        _raw_breadth = breadth_outputs[day]
+        assert isinstance(_raw_breadth, BreadthStateOutput), f"breadth_state produced {type(_raw_breadth).__name__}, expected BreadthStateOutput"
+        breadth_output = _raw_breadth
         event_output = event_outputs[day]
         transition_output = transition_risk[day]
         network_fragility_output = network_fragility_by_date[day]

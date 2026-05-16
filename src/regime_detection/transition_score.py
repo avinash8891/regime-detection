@@ -75,17 +75,20 @@ def compute_transition_score(
         "hmm_probability_shift": hmm_probability_shift_score,
         "change_point": change_point_score,
     }
-    for key in weights:
+    total = 0.0
+    for key, weight in weights.items():
         if key not in values:
             raise ValueError(
                 f"Unknown component in weights: {key!r}. "
                 f"Valid components: {sorted(values.keys())}"
             )
-        if values[key] is None:
+        val = values[key]
+        if val is None:
             raise ValueError(
                 f"Weight references {key!r} but no value was provided"
             )
-    return sum(weight * float(values[key]) for key, weight in weights.items())
+        total += weight * val
+    return total
 
 
 def interpret_transition_score(

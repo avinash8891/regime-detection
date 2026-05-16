@@ -6,11 +6,12 @@ Split out from axis_series.py so that individual axis modules can return
 """
 from __future__ import annotations
 
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import date
 
 from regime_detection.data_quality import assess_series_input_quality, quality_forces_unknown
-from regime_detection.models import AxisOutput, BreadthStateOutput, DataQuality
+from regime_detection.models import AxisOutput, BreadthStateOutput
 
 
 @dataclass(frozen=True)
@@ -28,12 +29,12 @@ class AxisSeriesResult:
 
 def _build_axis_outputs(
     *,
-    dates: list[date] | tuple[date, ...],
-    raw_labels: list[str],
-    stable_labels: list[str],
-    active_labels: list[str],
-    raw_evidence: list[dict[str, object]],
-    risk_rank: dict[str, int],
+    dates: Sequence[date],
+    raw_labels: Sequence[str],
+    stable_labels: Sequence[str],
+    active_labels: Sequence[str],
+    raw_evidence: Sequence[dict[str, object]],
+    risk_rank: Mapping[str, int],
     deescalation_days: int,
     required_inputs: list,
     required_trading_days: int,

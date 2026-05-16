@@ -295,24 +295,24 @@ def build_feature_store(
     # consumes these series; for now they populate the seam so build_feature_store
     # returns a typed NetworkFragilityFeatures whenever sector data is present.
     if context.sector_etf_closes is not None:
-        nf_kwargs: dict[str, int | float] = {}
         if network_fragility_config is not None:
-            nf_kwargs = {
-                "correlation_lookback_days": network_fragility_config.correlation_lookback_days,
-                "percentile_lookback_days": network_fragility_config.percentile_lookback_days,
-                "realized_vol_lookback_days": network_fragility_config.realized_vol_lookback_days,
-                "dispersion_percentile_lookback_days": (
-                    network_fragility_config.dispersion_percentile_lookback_days
-                ),
-                "min_universe_size": network_fragility_config.min_universe_size,
-                "min_window_completeness": network_fragility_config.min_window_completeness,
-            }
-        network_fragility = compute_network_fragility_features(
-            sector_etf_closes=context.sector_etf_closes,
-            cross_asset_closes=context.cross_asset_closes or {},
-            spy_close=spy_close,
-            **nf_kwargs,
-        )
+            network_fragility = compute_network_fragility_features(
+                sector_etf_closes=context.sector_etf_closes,
+                cross_asset_closes=context.cross_asset_closes or {},
+                spy_close=spy_close,
+                correlation_lookback_days=network_fragility_config.correlation_lookback_days,
+                percentile_lookback_days=network_fragility_config.percentile_lookback_days,
+                realized_vol_lookback_days=network_fragility_config.realized_vol_lookback_days,
+                dispersion_percentile_lookback_days=network_fragility_config.dispersion_percentile_lookback_days,
+                min_universe_size=network_fragility_config.min_universe_size,
+                min_window_completeness=network_fragility_config.min_window_completeness,
+            )
+        else:
+            network_fragility = compute_network_fragility_features(
+                sector_etf_closes=context.sector_etf_closes,
+                cross_asset_closes=context.cross_asset_closes or {},
+                spy_close=spy_close,
+            )
     else:
         network_fragility = None
 

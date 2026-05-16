@@ -49,7 +49,9 @@ from regime_detection._staleness_utils import (
     trading_staleness_series as _trading_staleness_series,
 )
 from regime_detection.breadth_state_v2 import make_bias_warnings_frame
-from regime_detection.config import InflationGrowthRulesConfig
+from collections.abc import Sequence
+
+from regime_detection.config import InflationGrowthConfig, InflationGrowthRulesConfig
 from regime_detection.credit_funding import _rolling_ols_slope
 from regime_detection.data_quality import assess_series_input_quality, quality_forces_unknown
 from regime_detection.hysteresis import apply_per_label_asymmetric_hysteresis
@@ -77,7 +79,7 @@ InflationGrowthLabel = Literal[
 
 
 # v2 §2B lines 2274-2284 verbatim.
-INFLATION_GROWTH_RISK_RANK: dict[InflationGrowthLabel, int] = {
+INFLATION_GROWTH_RISK_RANK: dict[str, int] = {
     "goldilocks": 0,
     "recovery_growth": 0,
     "earnings_expansion": 0,
@@ -827,15 +829,15 @@ def _check_staleness_gate(
     cpi_staleness_by_date: pd.Series,
     pmi_staleness_by_date: pd.Series,
     dgs10_staleness_by_date: pd.Series,
-    ig_config: object,
+    ig_config: InflationGrowthConfig,
 ) -> tuple[bool, str]:
     """Return (is_stale, gate_reason). gate_reason is empty when not stale."""
     cpi_staleness_days = int(cpi_staleness_by_date.loc[dt])
     pmi_staleness_days = int(pmi_staleness_by_date.loc[dt])
     dgs10_staleness_sessions = int(dgs10_staleness_by_date.loc[dt])
-    cpi_stale = cpi_staleness_days > ig_config.cpi_stale_calendar_days  # type: ignore[union-attr]
-    pmi_stale = pmi_staleness_days > ig_config.pmi_stale_calendar_days  # type: ignore[union-attr]
-    dgs10_stale = dgs10_staleness_sessions > ig_config.dgs10_stale_sessions  # type: ignore[union-attr]
+    cpi_stale = cpi_staleness_days > ig_config.cpi_stale_calendar_days
+    pmi_stale = pmi_staleness_days > ig_config.pmi_stale_calendar_days
+    dgs10_stale = dgs10_staleness_sessions > ig_config.dgs10_stale_sessions
     if not (cpi_stale or pmi_stale or dgs10_stale):
         return False, ""
     reason_parts: list[str] = []
@@ -883,7 +885,7 @@ def _classify_inflation_growth_session(
     min_completeness: float,
     credit_funding_active_labels_by_date: dict[date, str] | None,
     rule_inputs_by_date: dict[pd.Timestamp, InflationGrowthRuleInputs],
-    ig_config: object,
+    ig_config: InflationGrowthConfig,
 ) -> tuple[InflationGrowthLabel, DataQuality, dict[str, object]]:
     """Classify a single session after the staleness gate has passed.
 
@@ -911,17 +913,17 @@ def _classify_inflation_growth_session(
         credit_funding_active_label = credit_funding_active_labels_by_date[day]
 
     rule_inputs = rule_inputs_by_date[dt]
-    label = evaluate_rules(inputs=rule_inputs, config=ig_config.rules)  # type: ignore[union-attr]
+    label = evaluate_rules(inputs=rule_inputs, config=ig_config.rules)
     return label, day_quality, _build_inflation_growth_evidence(rule_inputs, credit_funding_active_label)
 
 
 def _accumulate_ig_session_lists(
     *,
-    sessions: list[date],
+    sessions: Sequence[date],
     cpi_staleness_by_date: pd.Series,
     pmi_staleness_by_date: pd.Series,
     dgs10_staleness_by_date: pd.Series,
-    ig_config: object,
+    ig_config: InflationGrowthConfig,
     required_inputs: list[pd.Series],
     required_trading_days: int,
     max_freshness_days: int,
@@ -968,7 +970,7 @@ def _accumulate_ig_session_lists(
 def _prepare_ig_rule_inputs(
     *,
     features: InflationGrowthFeatures,
-    ig_config: object,
+    ig_config: InflationGrowthConfig,
     spy_close: pd.Series,
     macro_series: dict,
     credit_funding_active_labels_by_date: dict[date, str] | None,
@@ -984,15 +986,15 @@ def _prepare_ig_rule_inputs(
             pd.Timestamp(d): lbl for d, lbl in credit_funding_active_labels_by_date.items()
         }
     rule_inputs_by_date = build_rule_inputs_by_date(
-        features=features, config=ig_config.rules,  # type: ignore[union-attr]
+        features=features, config=ig_config.rules,
         credit_funding_active_labels_by_date=credit_funding_labels_by_ts,
     )
     return cpi_staleness, pmi_staleness, dgs10_staleness, rule_inputs_by_date
 
 
 def _build_ig_outputs(
-    sessions: list[date],
-    ig_config: object,
+    sessions: Sequence[date],
+    ig_config: InflationGrowthConfig,
     raw_labels: list[InflationGrowthLabel],
     per_day_dq: list[DataQuality],
     per_day_evidence: list[dict[str, object]],
@@ -1000,8 +1002,8 @@ def _build_ig_outputs(
     """Apply hysteresis and zip per-session lists into the final output dict."""
     stable_labels, active_labels = apply_per_label_asymmetric_hysteresis(
         raw_labels=raw_labels, risk_rank=INFLATION_GROWTH_RISK_RANK,
-        deescalation_days_by_label=ig_config.deescalation_days_by_label,  # type: ignore[union-attr]
-        default_deescalation_days=ig_config.default_deescalation_days,  # type: ignore[union-attr]
+        deescalation_days_by_label=ig_config.deescalation_days_by_label,
+        default_deescalation_days=ig_config.default_deescalation_days,
     )
     return {
         day: InflationGrowthOutput(

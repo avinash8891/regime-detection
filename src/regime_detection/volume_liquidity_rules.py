@@ -62,7 +62,7 @@ VolumeLiquidityLabel = Literal[
 
 # v2 §1E lines 288-294 — risk rank, verbatim from spec. Drives per-label
 # asymmetric hysteresis. Pinned constant (NOT a tunable).
-VOLUME_LIQUIDITY_RISK_RANK: dict[VolumeLiquidityLabel, int] = {
+VOLUME_LIQUIDITY_RISK_RANK: dict[str, int] = {
     "normal_volume": 0,
     "unknown": 1,
     "liquidity_gap_behavior": 2,

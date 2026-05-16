@@ -36,7 +36,7 @@ TrendCharacterLabel = Literal[
 # "high-conviction directional" labels). range_bound shares rank 1 with
 # recovery_attempt/chop (mid risk — calm but live regimes). transition/unknown
 # remain at rank 2 (catch-all / cold-start).
-_RISK_RANK: dict[TrendCharacterLabel, int] = {
+_RISK_RANK: dict[str, int] = {
     "trending": 0,
     "breakout_expansion": 0,
     "recovery_attempt": 1,

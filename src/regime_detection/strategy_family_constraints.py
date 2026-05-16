@@ -84,4 +84,4 @@ def _merge(
         default_value = getattr(default, field)
         override_value = getattr(override, field) if override is not None else None
         values[field] = override_value if override_value is not None else default_value
-    return StrategyFamilyConstraint(**values)
+    return StrategyFamilyConstraint.model_validate(values)

@@ -98,7 +98,7 @@ CreditFundingLabel = Literal[
 # v2 §2C lines 2092-2099 verbatim. ``deleveraging: 4`` is the ONLY V2 axis label
 # with risk_rank>3 — reflects that the rule fires only when five distinct stress
 # signals coincide (spec line 2102).
-CREDIT_FUNDING_RISK_RANK: dict[CreditFundingLabel, int] = {
+CREDIT_FUNDING_RISK_RANK: dict[str, int] = {
     "credit_calm": 0,
     "unknown": 1,
     "spread_widening": 1,

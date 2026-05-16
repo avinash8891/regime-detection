@@ -161,7 +161,7 @@ def wilders_atr(
 # V1 risk-rank contract is frozen in replay fixtures; crisis_vol remains 3.
 # V2 crisis-vs-vol_crush precedence is resolved before hysteresis in
 # volatility_state_v2, not by changing the V1 evidence rank.
-_RISK_RANK: dict[VolatilityLabel, int] = {
+_RISK_RANK: dict[str, int] = {
     "low_vol": 0,
     "normal_vol": 1,
     "high_vol": 2,

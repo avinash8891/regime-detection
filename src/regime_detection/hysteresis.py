@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Mapping
 from typing import TypeVar
 
 
@@ -9,7 +10,7 @@ TLabel = TypeVar("TLabel", bound=str)
 def apply_asymmetric_hysteresis(
     *,
     raw_labels: list[TLabel],
-    risk_rank: dict[TLabel, int],
+    risk_rank: Mapping[str, int],
     escalation_days: int = 1,
     deescalation_days: int,
 ) -> tuple[list[TLabel], list[TLabel]]:
@@ -84,8 +85,8 @@ def apply_asymmetric_hysteresis(
 def apply_per_label_asymmetric_hysteresis(
     *,
     raw_labels: list[TLabel],
-    risk_rank: dict[TLabel, int],
-    deescalation_days_by_label: dict[TLabel, int],
+    risk_rank: Mapping[str, int],
+    deescalation_days_by_label: Mapping[str, int],
     default_deescalation_days: int = 0,
 ) -> tuple[list[TLabel], list[TLabel]]:
     """

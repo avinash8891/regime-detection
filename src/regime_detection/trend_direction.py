@@ -35,7 +35,7 @@ TrendDirectionLabel = Literal[
 # Risk-rank intuition: recovery is mid-rally off a deep drawdown — riskier than steady bull
 # but less risky than a bear. Slot at 1 (matching sideways) so existing v1 hysteresis
 # behavior for non-recovery labels is unchanged.
-_RISK_RANK: dict[TrendDirectionLabel, int] = {
+_RISK_RANK: dict[str, int] = {
     "bull": 0,
     "sideways": 1,
     "recovery": 1,

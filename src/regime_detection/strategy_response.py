@@ -136,4 +136,4 @@ def build_strategy_response(
         )
         modifiers.append("crisis")
 
-    return StrategyResponse(modifiers_applied=modifiers, **state)
+    return StrategyResponse.model_validate({**state, "modifiers_applied": modifiers})

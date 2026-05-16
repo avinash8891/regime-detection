@@ -44,7 +44,8 @@ class AcquisitionStore:
                 """,
                 (fetch_type, started_at_utc, "running", json.dumps(params, sort_keys=True)),
             )
-            return FetchRun(run_id=int(cursor.lastrowid), started_at_utc=started_at_utc)
+            assert cursor.lastrowid is not None
+            return FetchRun(run_id=cursor.lastrowid, started_at_utc=started_at_utc)
 
     def finish_fetch_run(
         self,
@@ -120,7 +121,8 @@ class AcquisitionStore:
                     notes,
                 ),
             )
-            return RecordedArtifact(artifact_id=int(cursor.lastrowid), content_sha256=sha256)
+            assert cursor.lastrowid is not None
+            return RecordedArtifact(artifact_id=cursor.lastrowid, content_sha256=sha256)
 
     def record_file_artifact(
         self,
@@ -187,7 +189,8 @@ class AcquisitionStore:
                     "binary",
                 ),
             )
-            artifact_id = int(cursor.lastrowid)
+            assert cursor.lastrowid is not None
+            artifact_id = cursor.lastrowid
             if store_bytes:
                 conn.execute(
                     """

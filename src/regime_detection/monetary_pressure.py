@@ -85,7 +85,7 @@ MonetaryPressureV2Label = Literal[
 
 
 # v2 §2A risk rank per Ambiguity Log #46 (d). Pinned constant (NOT a tunable).
-MONETARY_PRESSURE_V2_RISK_RANK: dict[MonetaryPressureV2Label, int] = {
+MONETARY_PRESSURE_V2_RISK_RANK: dict[str, int] = {
     "neutral_monetary": 0,
     "easing_pressure": 1,
     "unknown": 1,

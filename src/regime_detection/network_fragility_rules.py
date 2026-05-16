@@ -49,12 +49,14 @@ from numpy.lib.stride_tricks import sliding_window_view
 
 from regime_detection._staleness_utils import _STALENESS_SENTINEL  # noqa: F401 (re-export sentinel)
 from regime_detection.breadth_state import BreadthLabel
-from regime_detection.config import NetworkFragilityRulesConfig
+from collections.abc import Sequence
+
+from regime_detection.config import NetworkFragilityConfig, NetworkFragilityRulesConfig
 from regime_detection.data_quality import assess_series_input_quality, quality_forces_unknown
 from regime_detection.hysteresis import apply_per_label_asymmetric_hysteresis
 from regime_detection.models import DataQuality, NetworkFragilityOutput
 from regime_detection.network_fragility import NetworkFragilityFeatures
-from regime_detection.volatility_state import VolatilityLabel
+from regime_detection.volatility_state import VolatilityFeatures, VolatilityLabel
 
 if TYPE_CHECKING:
     from regime_detection.feature_store import FeatureStore
@@ -91,7 +93,7 @@ RULE_PRECEDENCE: tuple[NetworkFragilityLabel, ...] = (
 # `correlation_concentration`. `unknown` is mid-rank (2) so it neither
 # fast-tracks escalation past correlation_to_one nor strands the engine
 # in a low-risk label across NaN gaps.
-NETWORK_FRAGILITY_RISK_RANK: dict[NetworkFragilityLabel, int] = {
+NETWORK_FRAGILITY_RISK_RANK: dict[str, int] = {
     "diversified_normal": 0,
     "stock_picker_dispersion": 1,
     "rising_fragility": 2,
@@ -643,7 +645,7 @@ def _classify_network_fragility_session(
     volatility_active_labels_by_date: dict[date, str] | None,
     credit_funding_active_labels_by_date: dict[date, str] | None,
     rule_inputs_by_date: dict[pd.Timestamp, NetworkFragilityRuleInputs],
-    network_fragility_config: object,
+    network_fragility_config: NetworkFragilityConfig,
 ) -> tuple[NetworkFragilityLabel, DataQuality, dict[str, object]]:
     """Classify a single session. Returns (raw_label, data_quality, evidence)."""
     day_quality = assess_series_input_quality(
@@ -667,7 +669,7 @@ def _classify_network_fragility_session(
     rule_inputs = rule_inputs_by_date[dt]
     label = evaluate_rules(
         inputs=rule_inputs,
-        config=network_fragility_config.rules,  # type: ignore[union-attr]
+        config=network_fragility_config.rules,
         breadth_label=breadth_label,  # type: ignore[arg-type]
         volatility_label=volatility_label,  # type: ignore[arg-type]
         credit_funding_label=credit_funding_label,  # type: ignore[arg-type]
@@ -679,7 +681,7 @@ def _classify_network_fragility_session(
 
 def _accumulate_nf_session_lists(
     *,
-    sessions: list[date],
+    sessions: Sequence[date],
     required_inputs: list[pd.Series],
     required_trading_days: int,
     max_freshness_days: int,
@@ -688,7 +690,7 @@ def _accumulate_nf_session_lists(
     volatility_active_labels_by_date: dict[date, str] | None,
     credit_funding_active_labels_by_date: dict[date, str] | None,
     rule_inputs_by_date: dict[pd.Timestamp, NetworkFragilityRuleInputs],
-    network_fragility_config: object,
+    network_fragility_config: NetworkFragilityConfig,
 ) -> tuple[list[NetworkFragilityLabel], list[DataQuality], list[dict[str, object]]]:
     """Iterate sessions and return (raw_labels, per_day_dq, per_day_evidence)."""
     raw_labels: list[NetworkFragilityLabel] = []
@@ -717,13 +719,13 @@ def _prepare_nf_rule_inputs(
     *,
     features: NetworkFragilityFeatures,
     spy_close: pd.Series,
-    volatility_features: object,
+    volatility_features: VolatilityFeatures,
 ) -> dict[pd.Timestamp, NetworkFragilityRuleInputs]:
     """Build rule_inputs_by_date from volatility features and fragility features."""
-    realized_vol_pct = volatility_features.realized_vol_percentile_252d  # type: ignore[union-attr]
+    realized_vol_pct = volatility_features.realized_vol_percentile_252d
     vix_pct = (
-        volatility_features.vix_percentile_252d  # type: ignore[union-attr]
-        if volatility_features.vix_percentile_252d is not None  # type: ignore[union-attr]
+        volatility_features.vix_percentile_252d
+        if volatility_features.vix_percentile_252d is not None
         else pd.Series(float("nan"), index=spy_close.index)
     )
     return build_rule_inputs_by_date(
@@ -734,8 +736,8 @@ def _prepare_nf_rule_inputs(
 
 
 def _build_nf_outputs(
-    sessions: list[date],
-    nf_config: object,
+    sessions: Sequence[date],
+    nf_config: NetworkFragilityConfig,
     raw_labels: list[NetworkFragilityLabel],
     per_day_dq: list[DataQuality],
     per_day_evidence: list[dict[str, object]],
@@ -743,8 +745,8 @@ def _build_nf_outputs(
     """Apply hysteresis and zip per-session lists into the final output dict."""
     stable_labels, active_labels = apply_per_label_asymmetric_hysteresis(
         raw_labels=raw_labels, risk_rank=NETWORK_FRAGILITY_RISK_RANK,
-        deescalation_days_by_label=nf_config.deescalation_days_by_label,  # type: ignore[union-attr]
-        default_deescalation_days=nf_config.default_deescalation_days,  # type: ignore[union-attr]
+        deescalation_days_by_label=nf_config.deescalation_days_by_label,
+        default_deescalation_days=nf_config.default_deescalation_days,
     )
     return {
         day: NetworkFragilityOutput(

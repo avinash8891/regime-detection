@@ -731,7 +731,9 @@ def _find_current_change_row(ws, header_row: int) -> tuple[float | None, float |
 def _as_float(value: object) -> float | None:
     if value is None:
         return None
-    return float(value)
+    if isinstance(value, (int, float, str)):
+        return float(value)
+    raise TypeError(f"_as_float expected int, float, or str, got {type(value).__name__}")
 
 
 def _build_observation_value_map(labels: list[str], row: tuple[object, ...]) -> dict[str, float | None]:

@@ -40,7 +40,7 @@ BreadthLabel = Literal[
 # is a benign recovery confirmation (rank 0). narrowing_breadth is deterioration
 # at mid-severity (rank 2, same as weak_breadth). divergent_fragile remains the
 # highest-risk V1 label at rank 3.
-_RISK_RANK: dict[BreadthLabel, int] = {
+_RISK_RANK: dict[str, int] = {
     "breadth_thrust": 0,        # bullish initiation (Log #69)
     "healthy_breadth": 0,
     "broadening_breadth": 0,    # V2 recovery confirmation (Log #21-#26)
@@ -572,7 +572,7 @@ def build_axis_series(
     for day, raw, stable, active, evidence in zip(
         spy_close.index.date, raw_labels, stable_labels, active_labels, raw_evidence, strict=True
     ):
-        mode = (
+        mode: Literal["etf_proxy", "pit_constituent_biased_research"] = (
             "pit_constituent_biased_research"
             if {raw, stable, active} & _PIT_BREADTH_LABELS
             else "etf_proxy"
