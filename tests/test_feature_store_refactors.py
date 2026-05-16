@@ -5,7 +5,7 @@ from datetime import date
 import numpy as np
 import pandas as pd
 
-from regime_detection.config import load_default_regime_config
+from regime_detection.config import NewsSentimentConfig, load_default_regime_config
 from regime_detection.feature_store import build_feature_store
 from regime_detection.fragility_universe import SECTOR_ETFS
 from regime_detection.market_context import build_market_context
@@ -17,6 +17,40 @@ def _sector_etf_closes(index: pd.DatetimeIndex) -> dict[str, pd.Series]:
         values = 100.0 * np.exp(np.arange(len(index)) * (0.0003 + i * 0.00002))
         closes[symbol] = pd.Series(values, index=index, name=symbol)
     return closes
+
+
+def test_build_news_sentiment_score_series_preserves_existing_alignment_and_smoothing() -> None:
+    from regime_detection.feature_store import _build_news_sentiment_score_series
+
+    sessions = pd.bdate_range(start="2024-03-04", end="2024-03-08", freq="B")
+    news = pd.Series(
+        [0.10, 0.30, -0.20],
+        index=pd.DatetimeIndex(
+            [
+                pd.Timestamp("2024-03-04"),
+                pd.Timestamp("2024-03-06"),
+                pd.Timestamp("2024-03-08"),
+            ]
+        ),
+        name="news_sentiment",
+    )
+
+    score = _build_news_sentiment_score_series(
+        news_sentiment=news,
+        session_index=sessions,
+        config=NewsSentimentConfig(smoothing_window_sessions=2),
+    )
+
+    assert score is not None
+    assert score.name == "news_sentiment_score"
+    pd.testing.assert_series_equal(
+        score,
+        pd.Series(
+            [0.10, 0.10, 0.20, 0.30, 0.05],
+            index=sessions,
+            name="news_sentiment_score",
+        ),
+    )
 
 
 def test_feature_store_reuses_realized_vol_21d_for_trainable_evidence_layers(

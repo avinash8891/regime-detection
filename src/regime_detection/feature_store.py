@@ -255,6 +255,26 @@ def _build_sentiment_score_series(
     return aligned.reindex(session_index, method="ffill")
 
 
+def _build_news_sentiment_score_series(
+    *,
+    news_sentiment: pd.Series | None,
+    session_index: pd.DatetimeIndex,
+    config: NewsSentimentConfig | None,
+) -> pd.Series | None:
+    if config is None:
+        return None
+    if news_sentiment is None:
+        return None
+    if news_sentiment.empty:
+        return None
+    return (
+        news_sentiment.reindex(session_index, method="ffill")
+        .rolling(config.smoothing_window_sessions, min_periods=1)
+        .mean()
+        .rename("news_sentiment_score")
+    )
+
+
 def build_feature_store(
     context: MarketContext,
     *,
@@ -330,20 +350,11 @@ def build_feature_store(
         # threaded, smooth it onto the SPY session index. The result feeds
         # `compute_trend_v2_features` as evidence; the `euphoria` rule
         # predicate is unchanged.
-        news_sentiment_series: pd.Series | None = None
-        if (
-            news_sentiment_config is not None
-            and context.news_sentiment is not None
-            and not context.news_sentiment.empty
-        ):
-            news_sentiment_series = (
-                context.news_sentiment.reindex(spy_close.index, method="ffill")
-                .rolling(
-                    news_sentiment_config.smoothing_window_sessions, min_periods=1
-                )
-                .mean()
-                .rename("news_sentiment_score")
-            )
+        news_sentiment_series = _build_news_sentiment_score_series(
+            news_sentiment=context.news_sentiment,
+            session_index=spy_close.index,
+            config=news_sentiment_config,
+        )
         trend_direction_v2 = compute_trend_v2_features(
             spy_close,
             config=trend_direction_v2_config,
