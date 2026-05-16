@@ -26,6 +26,7 @@ Output parquet schema:
     source            (str)      — "frbsf:daily_news_sentiment"
     source_url        (str)      — the published XLSX URL
 """
+
 from __future__ import annotations
 
 import datetime as dt
@@ -136,8 +137,19 @@ def run_sf_fed_news_sentiment_fetch(
     Path
         Path to ``out_dir / sf_fed_news_sentiment_fetch_report.json``.
     """
-    store = AcquisitionStore(acquisition_db_path, artifact_store_root=artifact_store_root) if acquisition_db_path else None
-    fetch_run = store.start_fetch_run(fetch_type="sf_fed_news_sentiment", params={"source_url": SF_FED_NEWS_SENTIMENT_URL}) if store else None
+    store = (
+        AcquisitionStore(acquisition_db_path, artifact_store_root=artifact_store_root)
+        if acquisition_db_path
+        else None
+    )
+    fetch_run = (
+        store.start_fetch_run(
+            fetch_type="sf_fed_news_sentiment",
+            params={"source_url": SF_FED_NEWS_SENTIMENT_URL},
+        )
+        if store
+        else None
+    )
     try:
         raw_path = Path(out_dir) / "news_sentiment" / "sf_fed_news_sentiment.xlsx"
         if workbook_bytes is None and workbook_path is not None:
@@ -160,7 +172,9 @@ def run_sf_fed_news_sentiment_fetch(
             "rows": int(len(df)),
             "min_date": df["date"].min().date().isoformat() if not df.empty else None,
             "max_date": df["date"].max().date().isoformat() if not df.empty else None,
-            "parquet": str(parquet_path),
+            "paths": {
+                "news_sentiment_parquet": str(parquet_path),
+            },
             "source": _SOURCE_NAME,
             "source_url": SF_FED_NEWS_SENTIMENT_URL,
         }
@@ -213,5 +227,7 @@ def run_sf_fed_news_sentiment_fetch(
         return report_path
     except Exception as exc:
         if store and fetch_run:
-            store.finish_fetch_run(run_id=fetch_run.run_id, status="failed", notes=str(exc))
+            store.finish_fetch_run(
+                run_id=fetch_run.run_id, status="failed", notes=str(exc)
+            )
         raise

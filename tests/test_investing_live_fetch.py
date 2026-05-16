@@ -3,7 +3,9 @@ from __future__ import annotations
 import base64
 import json
 import sqlite3
+import sys
 import time
+import types
 from pathlib import Path
 
 import pandas as pd
@@ -14,6 +16,7 @@ from regime_data_fetch.investing_live import (
     EARNINGS_BASE,
     SOURCE_CALENDAR_URL,
     SOURCE_EARNINGS_URL,
+    capture_investing_earnings_loaded_page,
     _validate_token_not_expired,
     run_investing_live_fetch,
 )
@@ -371,6 +374,68 @@ def test_run_investing_live_fetch_reads_token_from_loaded_earnings_page(
 def test_validate_token_rejects_malformed_jwt_payload() -> None:
     with pytest.raises(RuntimeError, match="malformed"):
         _validate_token_not_expired("header.not-base64.signature")
+
+
+def test_browser_capture_writes_redacted_page_without_access_token(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    token = _future_jwt()
+    html = _next_data_html({"stockCountries": []}, access_token=token)
+
+    class FakePage:
+        def goto(self, *args: object, **kwargs: object) -> None:
+            del args, kwargs
+
+        def wait_for_function(self, *args: object, **kwargs: object) -> None:
+            del args, kwargs
+
+        def content(self) -> str:
+            return html
+
+    class FakeContext:
+        pages = [FakePage()]
+
+        def new_page(self) -> FakePage:
+            return FakePage()
+
+        def close(self) -> None:
+            pass
+
+    class FakeChromium:
+        def launch_persistent_context(self, **kwargs: object) -> FakeContext:
+            del kwargs
+            return FakeContext()
+
+    class FakePlaywright:
+        chromium = FakeChromium()
+
+        def __enter__(self) -> "FakePlaywright":
+            return self
+
+        def __exit__(self, *args: object) -> None:
+            del args
+
+    fake_sync_api = types.SimpleNamespace(
+        TimeoutError=TimeoutError,
+        sync_playwright=lambda: FakePlaywright(),
+    )
+    monkeypatch.setitem(sys.modules, "playwright", types.SimpleNamespace())
+    monkeypatch.setitem(sys.modules, "playwright.sync_api", fake_sync_api)
+    output_path = (
+        tmp_path / "data" / "raw" / "investing_live_archive" / "loaded_page.html"
+    )
+
+    captured_path = capture_investing_earnings_loaded_page(
+        output_path=output_path,
+        user_data_dir=tmp_path / "profile",
+        headless=True,
+        timeout_ms=1000,
+    )
+
+    persisted_html = captured_path.read_text()
+    assert token not in persisted_html
+    assert "accessToken" in persisted_html
 
 
 def _next_data_html(

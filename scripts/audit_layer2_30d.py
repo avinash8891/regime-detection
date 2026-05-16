@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Generate Layer 2 wiring/label audit artifacts from the 30-day runner path."""
+
 from __future__ import annotations
 
 import argparse
@@ -32,9 +33,11 @@ from regime_detection.market_context import (
     slice_context_to_recent_sessions,
 )
 from scripts._v2_calibration_helpers import (
+    default_pmi_path,
     load_close_dict,
     load_macro_series,
     load_market_data,
+    positive_int,
 )
 from scripts.profile_engine_30d import (
     DEFAULT_CONFIG_PATH,
@@ -43,7 +46,6 @@ from scripts.profile_engine_30d import (
     DEFAULT_EVENT_CALENDAR,
     DEFAULT_MACRO_PARQUET,
     DEFAULT_PIT_PARQUET,
-    DEFAULT_PMI_PATH,
     _build_required_sessions,
     _load_constituent_ohlcv_from_tree,
     _load_optional_aaii_sentiment,
@@ -99,13 +101,6 @@ LAYER2_FEATURES: dict[str, tuple[str, ...]] = {
         "tlt_21d_return",
     ),
 }
-
-
-def _positive_int(value: str) -> int:
-    parsed = int(value)
-    if parsed <= 0:
-        raise argparse.ArgumentTypeError("must be a positive integer")
-    return parsed
 
 
 def _json_counter(counter: Counter[Any]) -> dict[str, int]:
@@ -243,7 +238,9 @@ def _summarize_output_series(
         classification_status[output.classification_status] += 1
         evidence = output.evidence or {}
         for metric, value in dict(evidence.get("rule_evidence", {})).items():
-            if value is not None and not (isinstance(value, float) and math.isnan(value)):
+            if value is not None and not (
+                isinstance(value, float) and math.isnan(value)
+            ):
                 rule_evidence_present[str(metric)] += 1
         if "source_used" in evidence:
             source_used[evidence.get("source_used")] += 1
@@ -290,7 +287,9 @@ def build_label_rule_summary(
     }
 
 
-def _build_current_layer2_state(args: argparse.Namespace) -> tuple[MarketContext, FeatureStore, Any, list[dt.date], int]:
+def _build_current_layer2_state(
+    args: argparse.Namespace,
+) -> tuple[MarketContext, FeatureStore, Any, list[dt.date], int]:
     engine = RegimeEngine(config_path=args.config_path)
     config = engine.config
     market_data = load_market_data(args.daily_dir)
@@ -389,13 +388,15 @@ def _parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Generate Layer 2 feature/label audit artifacts from profile_engine_30d inputs."
     )
-    parser.add_argument("--lookback-days", type=_positive_int, default=30)
+    parser.add_argument("--lookback-days", type=positive_int, default=30)
     parser.add_argument("--config-path", type=Path, default=DEFAULT_CONFIG_PATH)
     parser.add_argument("--daily-dir", type=Path, default=DEFAULT_DAILY_DIR)
-    parser.add_argument("--constituent-tree", type=Path, default=DEFAULT_CONSTITUENT_TREE)
+    parser.add_argument(
+        "--constituent-tree", type=Path, default=DEFAULT_CONSTITUENT_TREE
+    )
     parser.add_argument("--macro-parquet", type=Path, default=DEFAULT_MACRO_PARQUET)
     parser.add_argument("--pit-parquet", type=Path, default=DEFAULT_PIT_PARQUET)
-    parser.add_argument("--pmi-path", type=Path, default=DEFAULT_PMI_PATH)
+    parser.add_argument("--pmi-path", type=Path, default=None)
     parser.add_argument("--event-calendar", type=Path, default=DEFAULT_EVENT_CALENDAR)
     parser.add_argument("--aaii-sentiment-parquet", type=Path, default=None)
     parser.add_argument("--news-sentiment-parquet", type=Path, default=None)
@@ -403,12 +404,29 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--powell-speeches-parquet", type=Path, default=None)
     parser.add_argument("--cpi-vintages-parquet", type=Path, default=None)
     parser.add_argument("--allow-missing-constituent-files", action="store_true")
-    parser.add_argument("--manifest", type=Path, default=None, help="Optional artifact manifest to materialize before audit.")
-    parser.add_argument("--artifact-store", default=None, help="Optional artifact-store root override for --manifest.")
-    parser.add_argument("--data-root", type=Path, default=REPO_ROOT / "data" / "raw", help="Local data/raw root used for manifest materialization.")
+    parser.add_argument(
+        "--manifest",
+        type=Path,
+        default=None,
+        help="Optional artifact manifest to materialize before audit.",
+    )
+    parser.add_argument(
+        "--artifact-store",
+        default=None,
+        help="Optional artifact-store root override for --manifest.",
+    )
+    parser.add_argument(
+        "--data-root",
+        type=Path,
+        default=REPO_ROOT / "data" / "raw",
+        help="Local data/raw root used for manifest materialization.",
+    )
     parser.add_argument("--out-dir", type=Path, default=REPO_ROOT / ".context")
     parser.add_argument("--stamp", default=dt.date.today().strftime("%Y%m%d"))
-    return parser.parse_args()
+    args = parser.parse_args()
+    if args.pmi_path is None:
+        args.pmi_path = default_pmi_path(args.data_root)
+    return args
 
 
 def main() -> int:

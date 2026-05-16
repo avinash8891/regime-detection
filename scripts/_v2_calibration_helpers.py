@@ -4,6 +4,7 @@ Extracted from ``scripts/run_v2_calibration.py`` so the V2 walk-forward gate
 (§9.1) and 60-session shadow A/B (§9.3) runners can reuse the same data-prep
 plumbing instead of duplicating the per-input ``_load_*`` blocks.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -22,6 +23,23 @@ from regime_detection.loaders import (
 logger = logging.getLogger(__name__)
 
 
+def default_pmi_path(data_root: Path) -> Path:
+    return data_root / "pmi" / "us_ism_pmi_history.parquet"
+
+
+# TODO(simplify): hoist `_reporting_label` (4 near-identical copies in
+# run_v2_walkforward_gate.py, run_v2_shadow_ab_gate.py, profile_engine_30d.py,
+# audit_layer2_30d.py) into a single `axis_reporting_label(output, *, default=None)`
+# helper here. Each caller's fallback (None vs "not_wired" vs str(active_label))
+# becomes a `default` argument. Skipped during 2026-05-16 simplify pass because
+# semantics diverge subtly across callers and a regression here would silently
+# corrupt gate metrics.
+#
+# TODO(simplify): add `add_manifest_args(parser)` / `materialize_from_args(args, *,
+# repo_root, required_for)` helpers to remove the 4-runner copy-paste of
+# --manifest/--artifact-store/--data-root wiring. Also fixes the ordering bug in
+# run_v2_calibration.py where materialize_if_requested runs BEFORE daily_dir /
+# macro_parquet are derived from args.data_root (other runners derive first).
 def positive_int(value: str) -> int:
     parsed = int(value)
     if parsed <= 0:
@@ -100,7 +118,9 @@ def load_macro_series(
     if cpi_nowcast_parquet.exists():
         series_dict["cpi_nowcast"] = load_cpi_nowcast_series(cpi_nowcast_parquet)
     else:
-        logger.info("cpi_nowcast parquet not found at %s — skipping", cpi_nowcast_parquet)
+        logger.info(
+            "cpi_nowcast parquet not found at %s — skipping", cpi_nowcast_parquet
+        )
     if eps_weekly_history_parquet.exists():
         series_dict["aggregate_forward_eps_revision"] = (
             load_aggregate_forward_eps_revision_series(eps_weekly_history_parquet)
@@ -157,7 +177,20 @@ def _load_pmi_manufacturing_series(pmi_path: Path) -> pd.Series | None:
 # Cross-asset symbols pulled by V2 §2B / §2C / §3 axes. Mirrors the
 # ``cross_asset_symbols`` list in ``scripts/run_v2_calibration.py::main``.
 CROSS_ASSET_SYMBOLS: list[str] = [
-    "QQQ", "IWM", "EFA", "EEM", "TLT", "HYG", "LQD", "GLD",
-    "USO", "UUP", "DBC", "KRE",
-    "XLY", "XLI", "XLP", "XLU",
+    "QQQ",
+    "IWM",
+    "EFA",
+    "EEM",
+    "TLT",
+    "HYG",
+    "LQD",
+    "GLD",
+    "USO",
+    "UUP",
+    "DBC",
+    "KRE",
+    "XLY",
+    "XLI",
+    "XLP",
+    "XLU",
 ]

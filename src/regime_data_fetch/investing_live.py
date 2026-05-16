@@ -13,6 +13,7 @@ import urllib.parse
 import urllib.request
 from collections.abc import Callable
 from collections.abc import Iterable
+from dataclasses import dataclass
 from pathlib import Path
 
 from regime_data_fetch.investing_archive import run_local_investing_archive_import
@@ -64,6 +65,18 @@ PageFetcher = Callable[[str], str]
 EarningsPageCapturer = Callable[[Path], Path]
 
 
+@dataclass(frozen=True)
+class CapturedEarningsPage:
+    path: Path
+    access_token: str
+
+
+# TODO(simplify): the 7 passthrough `earnings_browser_*` kwargs on
+# run_investing_live_fetch / capture_investing_live_archive should collapse
+# into an `EarningsBrowserConfig` dataclass (user_data_dir, executable,
+# headless, timeout_ms, page_capturer, loaded_page_path, access_token,
+# capture). One param replaces the sprawl, and the 3-arg env-resolution
+# ternary chain (~line 536) becomes a linear `_resolve_browser_config()`.
 def run_investing_live_fetch(
     *,
     out_dir: Path,
@@ -143,6 +156,7 @@ def capture_investing_live_archive(
 
     calendar_page = page_fetcher(SOURCE_CALENDAR_URL) if page_fetcher else ""
     earnings_page = page_fetcher(SOURCE_EARNINGS_URL) if page_fetcher else ""
+    captured_access_token = None
     countries = (
         _country_map_from_page(calendar_page, key="eventAndHolidayCountries")
         if calendar_page
@@ -163,13 +177,15 @@ def capture_investing_live_archive(
         if earnings_page_capturer is not None:
             earnings_loaded_page_path = earnings_page_capturer(capture_path)
         else:
-            earnings_loaded_page_path = capture_investing_earnings_loaded_page(
+            captured_page = _capture_investing_earnings_page_with_token(
                 output_path=capture_path,
                 user_data_dir=earnings_browser_user_data_dir,
                 executable_path=earnings_browser_executable,
                 headless=earnings_browser_headless,
                 timeout_ms=earnings_browser_timeout_ms,
             )
+            earnings_loaded_page_path = captured_page.path
+            captured_access_token = captured_page.access_token
     loaded_earnings_page = _loaded_earnings_page_html(earnings_loaded_page_path)
     if loaded_earnings_page:
         earnings_page = loaded_earnings_page
@@ -179,7 +195,7 @@ def capture_investing_live_archive(
         else {}
     )
     access_token = _resolve_earnings_access_token(
-        explicit_token=earnings_access_token,
+        explicit_token=earnings_access_token or captured_access_token,
         earnings_page=earnings_page,
     )
 
@@ -786,6 +802,23 @@ def capture_investing_earnings_loaded_page(
     timeout_ms: int | None = None,
 ) -> Path:
     """Capture a browser-loaded Investing.com earnings page with a fresh token."""
+    return _capture_investing_earnings_page_with_token(
+        output_path=output_path,
+        user_data_dir=user_data_dir,
+        executable_path=executable_path,
+        headless=headless,
+        timeout_ms=timeout_ms,
+    ).path
+
+
+def _capture_investing_earnings_page_with_token(
+    *,
+    output_path: Path,
+    user_data_dir: Path | None = None,
+    executable_path: Path | None = None,
+    headless: bool | None = None,
+    timeout_ms: int | None = None,
+) -> CapturedEarningsPage:
     try:
         from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
         from playwright.sync_api import sync_playwright
@@ -846,12 +879,13 @@ def capture_investing_earnings_loaded_page(
                     "Investing.com earnings browser capture did not expose accessToken; "
                     f"saved current page to {partial_path}. Complete the browser challenge and retry."
                 ) from exc
-            output_path.write_text(page.content())
+            html = page.content()
+            token = _access_token_from_page(html)
+            _validate_token_not_expired(token)
+            output_path.write_text(_redact_access_token(html, token))
         finally:
             context.close()
-    token = _access_token_from_page(output_path.read_text(errors="replace"))
-    _validate_token_not_expired(token)
-    return output_path
+    return CapturedEarningsPage(path=output_path, access_token=token)
 
 
 def _request_json(url: str, params: dict[str, str], headers: dict[str, str]) -> object:
@@ -923,6 +957,15 @@ def _validate_token_not_expired(token: str) -> None:
         raise RuntimeError(
             "Investing.com earnings accessToken is expired; reload the earnings calendar page and retry"
         )
+
+
+def _redact_access_token(html: str, token: str) -> str:
+    redacted = html.replace(token, "[redacted]")
+    return re.sub(
+        r'("accessToken"\s*:\s*")[^"]+(")',
+        r"\1[redacted]\2",
+        redacted,
+    )
 
 
 def _page_data(html: str) -> dict[str, object]:

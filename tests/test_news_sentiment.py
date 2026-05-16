@@ -16,15 +16,21 @@ Contract under test:
    to fire euphoria on a synthetic day and confirming the predicate
    fires irrespective of news_sentiment value.
 """
+
 from __future__ import annotations
 
 import datetime as dt
+import io
+import json
+from pathlib import Path
 
 import numpy as np
 import pandas as pd
 
 import pytest
 
+from regime_data_fetch.artifact_export import emit_manifest_for_report_paths
+from regime_data_fetch.sf_fed_news_sentiment import run_sf_fed_news_sentiment_fetch
 from regime_detection.config import NewsSentimentConfig, TrendDirectionV2Config
 from regime_detection.loaders import load_news_sentiment_series
 from regime_detection.trend_direction_v2 import compute_trend_v2_features
@@ -59,9 +65,21 @@ def _trend_config() -> TrendDirectionV2Config:
 def test_load_news_sentiment_series_reads_long_form_parquet_shape() -> None:
     df = pd.DataFrame(
         [
-            {"date": "2024-01-02", "news_sentiment": 0.12, "source": "frbsf:daily_news_sentiment"},
-            {"date": "2024-01-03", "news_sentiment": 0.18, "source": "frbsf:daily_news_sentiment"},
-            {"date": "2024-01-04", "news_sentiment": -0.05, "source": "frbsf:daily_news_sentiment"},
+            {
+                "date": "2024-01-02",
+                "news_sentiment": 0.12,
+                "source": "frbsf:daily_news_sentiment",
+            },
+            {
+                "date": "2024-01-03",
+                "news_sentiment": 0.18,
+                "source": "frbsf:daily_news_sentiment",
+            },
+            {
+                "date": "2024-01-04",
+                "news_sentiment": -0.05,
+                "source": "frbsf:daily_news_sentiment",
+            },
         ]
     )
     s = load_news_sentiment_series(df)
@@ -88,9 +106,13 @@ def test_compute_trend_v2_features_surfaces_news_sentiment_when_supplied() -> No
     idx = _spy_index()
     close = _close_series(idx)
     # AAII slowly drifting positive across the window.
-    aaii = pd.Series(np.linspace(10.0, 25.0, len(idx)), index=idx, name="sentiment_score")
+    aaii = pd.Series(
+        np.linspace(10.0, 25.0, len(idx)), index=idx, name="sentiment_score"
+    )
     # News sentiment also drifting positive.
-    news = pd.Series(np.linspace(-0.05, 0.30, len(idx)), index=idx, name="news_sentiment_score")
+    news = pd.Series(
+        np.linspace(-0.05, 0.30, len(idx)), index=idx, name="news_sentiment_score"
+    )
     out = compute_trend_v2_features(
         close, config=_trend_config(), sentiment_score=aaii, news_sentiment_score=news
     )
@@ -146,7 +168,10 @@ def test_news_sentiment_does_not_change_euphoria_predicate_inputs() -> None:
     # Wildly divergent news sentiment.
     news_neg = pd.Series([-0.95] * 10, index=idx, name="news_sentiment_score")
     out_with = compute_trend_v2_features(
-        close, config=_trend_config(), sentiment_score=aaii, news_sentiment_score=news_neg
+        close,
+        config=_trend_config(),
+        sentiment_score=aaii,
+        news_sentiment_score=news_neg,
     )
     out_without = compute_trend_v2_features(
         close, config=_trend_config(), sentiment_score=aaii
@@ -156,8 +181,12 @@ def test_news_sentiment_does_not_change_euphoria_predicate_inputs() -> None:
     # identical regardless of news sentiment.
     pd.testing.assert_series_equal(out_with.sma_200, out_without.sma_200)
     pd.testing.assert_series_equal(out_with.return_126d, out_without.return_126d)
-    pd.testing.assert_series_equal(out_with.realized_vol_21d, out_without.realized_vol_21d)
-    pd.testing.assert_series_equal(out_with.sentiment_score, out_without.sentiment_score)
+    pd.testing.assert_series_equal(
+        out_with.realized_vol_21d, out_without.realized_vol_21d
+    )
+    pd.testing.assert_series_equal(
+        out_with.sentiment_score, out_without.sentiment_score
+    )
 
 
 def test_news_sentiment_config_default_smoothing_window() -> None:
@@ -172,3 +201,45 @@ def test_news_sentiment_config_rejects_zero_window() -> None:
         pass
     else:
         raise AssertionError("expected ValidationError for zero smoothing window")
+
+
+def test_sf_fed_fetch_report_exposes_parquet_under_paths_for_manifest(
+    tmp_path: Path,
+) -> None:
+    workbook = io.BytesIO()
+    with pd.ExcelWriter(workbook, engine="openpyxl") as writer:
+        pd.DataFrame({"note": ["fixture"]}).to_excel(
+            writer,
+            sheet_name="Methodology",
+            index=False,
+        )
+        pd.DataFrame(
+            {
+                "Date": [pd.Timestamp("2026-05-14"), pd.Timestamp("2026-05-15")],
+                "News Sentiment": [0.1, -0.2],
+            }
+        ).to_excel(writer, sheet_name="Data", index=False)
+
+    report_path = run_sf_fed_news_sentiment_fetch(
+        out_dir=tmp_path,
+        workbook_bytes=workbook.getvalue(),
+        acquisition_db_path=None,
+    )
+
+    report = json.loads(report_path.read_text())
+    assert report["paths"]["news_sentiment_parquet"] == str(
+        tmp_path / "news_sentiment" / "sf_fed_news_sentiment.parquet"
+    )
+
+    manifest = emit_manifest_for_report_paths(
+        report_paths=[report_path],
+        out_dir=tmp_path,
+        artifact_store_root=str(tmp_path / "store"),
+        manifest_path=tmp_path / "manifest.yaml",
+        artifact_set="sf-fed-test",
+        required_for=["profile_engine_30d"],
+    )
+
+    assert [artifact.local_path for artifact in manifest.artifacts] == [
+        "data/raw/news_sentiment/sf_fed_news_sentiment.parquet"
+    ]

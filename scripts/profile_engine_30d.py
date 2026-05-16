@@ -39,6 +39,7 @@ from regime_detection.market_context import build_market_context
 from regime_detection.models import ClassificationStatus, RegimeOutput, RegimeTimeline
 from regime_detection.timeline import ENGINE_MINIMUM_HISTORY
 from scripts._v2_calibration_helpers import (
+    default_pmi_path,
     load_close_dict,
     load_macro_series,
     load_market_data,
@@ -57,9 +58,7 @@ DEFAULT_MACRO_PARQUET = (
 DEFAULT_PIT_PARQUET = (
     REPO_ROOT / "data" / "raw" / "pit_constituents" / "sp500_ticker_intervals.parquet"
 )
-DEFAULT_PMI_PATH = (
-    REPO_ROOT / "data" / "manual_inputs" / "pmi" / "ism_manufacturing_pmi.tsv"
-)
+DEFAULT_PMI_PATH = default_pmi_path(REPO_ROOT / "data" / "raw")
 DEFAULT_EVENT_CALENDAR = REPO_ROOT / "configs" / "events" / "us_events.yaml"
 RUN_TIMEOUT_SECONDS = 300
 NON_CLASSIFIED_REPORTING_LABELS = set(get_args(ClassificationStatus)) - {"classified"}
@@ -886,7 +885,7 @@ def _load_profile_inputs(
     )
 
 
-def main() -> int:
+def _parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Profile 30-session RegimeEngine.classify_window() wall-clock stages."
     )
@@ -896,7 +895,7 @@ def main() -> int:
     parser.add_argument("--constituent-tree", type=Path, default=None)
     parser.add_argument("--macro-parquet", type=Path, default=None)
     parser.add_argument("--pit-parquet", type=Path, default=None)
-    parser.add_argument("--pmi-path", type=Path, default=DEFAULT_PMI_PATH)
+    parser.add_argument("--pmi-path", type=Path, default=None)
     parser.add_argument("--event-calendar", type=Path, default=DEFAULT_EVENT_CALENDAR)
     parser.add_argument("--aaii-sentiment-parquet", type=Path, default=None)
     parser.add_argument("--news-sentiment-parquet", type=Path, default=None)
@@ -928,6 +927,8 @@ def main() -> int:
         args.constituent_tree = args.data_root / FIXED_UNIVERSE_TREE_NAME
     if args.macro_parquet is None:
         args.macro_parquet = args.data_root / "macro" / "fred_macro_series.parquet"
+    if args.pmi_path is None:
+        args.pmi_path = default_pmi_path(args.data_root)
     if args.pit_parquet is None:
         args.pit_parquet = (
             args.data_root / "pit_constituents" / "sp500_ticker_intervals.parquet"
@@ -952,7 +953,11 @@ def main() -> int:
         args.cpi_vintages_parquet = (
             args.data_root / "macro_vintages" / "cpi_all_items_vintages.parquet"
         )
+    return args
 
+
+def main() -> int:
+    args = _parse_args()
     materialize_if_requested(
         manifest_path=args.manifest,
         local_root=args.data_root,
