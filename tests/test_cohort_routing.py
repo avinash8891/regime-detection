@@ -27,6 +27,7 @@ import logging
 
 import pandas as pd
 import pytest
+from pydantic import ValidationError
 
 # Real V2 axis label types — imported here so the test file fails fast
 # (NameError, not toy-string compile) if the production enums move.
@@ -98,7 +99,7 @@ def test_crisis_specialist_fires_on_correlation_to_one() -> None:
     out = _route(network_fragility_active="correlation_to_one")
     assert out.active_cohort == "crisis_specialist"
     assert out.fallback_cohort == "default_neutral"
-    assert out.blocked_cohorts == ["short_vol", "leveraged_long", "breakout"]
+    assert out.blocked_strategy_modes == ["short_vol", "leveraged_long", "breakout"]
 
 
 @pytest.mark.unit
@@ -106,7 +107,7 @@ def test_crisis_specialist_fires_on_systemic_stress() -> None:
     """§5.1 lines 2517-2519: systemic_stress also triggers crisis_specialist."""
     out = _route(network_fragility_active="systemic_stress")
     assert out.active_cohort == "crisis_specialist"
-    assert out.blocked_cohorts == ["short_vol", "leveraged_long", "breakout"]
+    assert out.blocked_strategy_modes == ["short_vol", "leveraged_long", "breakout"]
 
 
 @pytest.mark.unit
@@ -115,7 +116,7 @@ def test_crisis_specialist_fires_on_crisis_vol_alone() -> None:
     — crisis_vol alone fires crisis even when network_fragility is benign."""
     out = _route(volatility_state_active="crisis_vol")
     assert out.active_cohort == "crisis_specialist"
-    assert out.blocked_cohorts == ["short_vol", "leveraged_long", "breakout"]
+    assert out.blocked_strategy_modes == ["short_vol", "leveraged_long", "breakout"]
 
 
 @pytest.mark.unit
@@ -128,7 +129,7 @@ def test_crisis_outranks_bear_stress_when_both_match() -> None:
         volatility_state_active="crisis_vol",
     )
     assert out.active_cohort == "crisis_specialist"
-    assert out.blocked_cohorts == ["short_vol", "leveraged_long", "breakout"]
+    assert out.blocked_strategy_modes == ["short_vol", "leveraged_long", "breakout"]
 
 
 @pytest.mark.unit
@@ -141,7 +142,7 @@ def test_bear_stress_specialist_fires_on_bear_and_weak_breadth() -> None:
         breadth_state_active="weak_breadth",
     )
     assert out.active_cohort == "bear_stress_specialist"
-    assert out.blocked_cohorts == ["short_vol", "breakout", "leveraged_long"]
+    assert out.blocked_strategy_modes == ["short_vol", "breakout", "leveraged_long"]
 
 
 @pytest.mark.unit
@@ -154,7 +155,7 @@ def test_bear_stress_does_not_fire_when_only_bear() -> None:
         breadth_state_active="healthy_breadth",
     )
     assert out.active_cohort == "default_neutral"
-    assert out.blocked_cohorts == []
+    assert out.blocked_strategy_modes == []
 
 
 @pytest.mark.unit
@@ -167,7 +168,7 @@ def test_recovery_specialist_fires_on_trend_recovery() -> None:
         volatility_state_active="normal_vol",
     )
     assert out.active_cohort == "recovery_specialist"
-    assert out.blocked_cohorts == ["short_vol"]
+    assert out.blocked_strategy_modes == ["short_vol"]
 
 
 @pytest.mark.unit
@@ -180,7 +181,7 @@ def test_bull_low_vol_specialist_fires_on_bull_low_vol() -> None:
         breadth_state_active="healthy_breadth",
     )
     assert out.active_cohort == "bull_low_vol_specialist"
-    assert out.blocked_cohorts == []
+    assert out.blocked_strategy_modes == []
 
 
 @pytest.mark.unit
@@ -196,7 +197,7 @@ def test_default_neutral_when_no_specialist_matches() -> None:
         network_fragility_active="diversified_normal",
     )
     assert out.active_cohort == "default_neutral"
-    assert out.blocked_cohorts == []
+    assert out.blocked_strategy_modes == []
 
 
 @pytest.mark.unit
@@ -212,7 +213,7 @@ def test_default_neutral_when_all_axes_unknown() -> None:
         monetary_pressure_active=None,
     )
     assert out.active_cohort == "default_neutral"
-    assert out.blocked_cohorts == []
+    assert out.blocked_strategy_modes == []
 
 
 # ===========================================================================
@@ -229,7 +230,7 @@ def test_euphoria_specialist_fires_when_trend_direction_is_euphoria() -> None:
     sentiment lands. We pass the synthetic 'euphoria' string to verify."""
     out = _route(trend_direction_active="euphoria")
     assert out.active_cohort == "euphoria_specialist"
-    assert out.blocked_cohorts == ["mean_reversion"]
+    assert out.blocked_strategy_modes == ["mean_reversion"]
 
 
 @pytest.mark.unit
@@ -248,7 +249,7 @@ def test_tightening_specialist_fires_when_monetary_pressure_is_tightening_pressu
     'tightening_pressure', the predicate must fire."""
     out = _route(monetary_pressure_active="tightening_pressure")
     assert out.active_cohort == "tightening_specialist"
-    assert out.blocked_cohorts == []
+    assert out.blocked_strategy_modes == []
 
 
 # ===========================================================================
@@ -289,11 +290,39 @@ def test_evaluate_cohort_routing_uses_real_default_config() -> None:
     )
     assert out.active_cohort == "bull_low_vol_specialist"
     assert out.fallback_cohort == "default_neutral"
-    assert out.blocked_cohorts == []
+    assert out.blocked_strategy_modes == []
 
 
 # ===========================================================================
-# Group D — Wire-in to RegimeOutput
+# Group D — No legacy field aliases
+# ===========================================================================
+
+
+@pytest.mark.unit
+def test_agent_routing_rejects_legacy_blocked_cohorts_field() -> None:
+    """No backward-compatible alias: strategy-mode blocks are not cohorts."""
+    with pytest.raises(ValidationError):
+        AgentRouting.model_validate(
+            {
+                "active_cohort": "default_neutral",
+                "fallback_cohort": "default_neutral",
+                "blocked_cohorts": [],
+            }
+        )
+
+
+@pytest.mark.unit
+def test_cohort_routing_config_rejects_legacy_blocked_cohorts_field() -> None:
+    """The config contract uses blocked_strategy_modes only."""
+    cfg = _cohort_config()
+    data = cfg.model_dump()
+    data["blocked_cohorts"] = data.pop("blocked_strategy_modes")
+    with pytest.raises(ValidationError):
+        CohortRoutingConfig.model_validate(data)
+
+
+# ===========================================================================
+# Group E — Wire-in to RegimeOutput
 # ===========================================================================
 
 

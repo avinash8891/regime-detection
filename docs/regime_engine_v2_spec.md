@@ -1886,7 +1886,7 @@ the slice/commit that resolved it. Entries are append-only.
       cohort's routing rule defined in terms of V2-axis label
       membership (`network_fragility`, `volatility_state`,
       `trend_direction`, `monetary_pressure`, `trend_character`,
-      `breadth_state`). Per-cohort `blocked_cohorts` table also pinned.
+      `breadth_state`). Per-cohort `blocked_strategy_modes` table also pinned.
       All rules and blocks are walk-forward calibration placeholders;
       `euphoria_specialist` is silent until §1A sentiment_score data
       ships (Ambiguity Log #32).
@@ -3717,7 +3717,7 @@ V2 adds explicit agent routing on top of V1's permission modifiers.
   "agent_routing": {
     "active_cohort": "tightening_specialist",
     "fallback_cohort": "default_neutral",
-    "blocked_cohorts": ["short_vol", "leveraged_long"]
+    "blocked_strategy_modes": ["short_vol", "leveraged_long"]
   }
 }
 ```
@@ -3781,12 +3781,12 @@ cohort_routing:
     # falls through when no rule above matches
 ```
 
-#### Blocked Cohorts (per active cohort)
+#### Blocked Strategy Modes (per active cohort)
 
-The `blocked_cohorts` JSON field at the top of §5.1 is populated by the active cohort's blocklist:
+The `blocked_strategy_modes` JSON field at the top of §5.1 is populated by the active cohort's strategy-mode blocklist. These values are strategy modes/families to suppress under the active cohort, not alternate agent cohorts.
 
 ```yaml
-blocked_cohorts:
+blocked_strategy_modes:
   crisis_specialist:        [short_vol, leveraged_long, breakout]
   euphoria_specialist:      [mean_reversion]    # don't fade strength
   bear_stress_specialist:   [short_vol, breakout, leveraged_long]
@@ -3798,7 +3798,7 @@ blocked_cohorts:
   default_neutral:          []
 ```
 
-The starter routing rules + blocked-cohorts table are V2 §9.1 walk-forward calibration placeholders (same pattern as §1A `0.60` threshold). Operator refines after walk-forward evidence reveals false-positive / false-negative rates per cohort.
+The starter routing rules + blocked-strategy-modes table are V2 §9.1 walk-forward calibration placeholders (same pattern as §1A `0.60` threshold). Operator refines after walk-forward evidence reveals false-positive / false-negative rates per cohort.
 
 ### 5.2 Strategy-Family Constraints
 

@@ -434,13 +434,17 @@ class StrategyFamilyConstraint(BaseModel):
 
 
 class AgentRouting(BaseModel):
-    """v2 §5.1 Agent Cohort Routing output (Slice 5.1)."""
+    """v2 §5.1 Agent Cohort Routing output (Slice 5.1).
+
+    ``blocked_strategy_modes`` names strategy modes/families the active cohort
+    suppresses; it does not list alternate agent cohorts.
+    """
 
     model_config = ConfigDict(extra="forbid")
 
     active_cohort: str
     fallback_cohort: str
-    blocked_cohorts: list[str]
+    blocked_strategy_modes: list[str]
 
 
 _V1_CONFIG_VERSION = "core3-v1.0.0"

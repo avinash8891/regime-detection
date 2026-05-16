@@ -901,7 +901,7 @@ class ChangePointConfig(BaseModel):
 
 
 class VolCrushConfig(BaseModel):
-    """Volatility crush detection configuration (v2 spec §5.3)."""
+    """Vol-crush strategy-contract knobs exposed for downstream consumers."""
 
     model_config = ConfigDict(extra="forbid")
 
@@ -914,7 +914,7 @@ class VolCrushConfig(BaseModel):
 
 
 class NoFlipFlopConfig(BaseModel):
-    """No-flip-flop stability guard configuration (v2 spec §5.4). Stub."""
+    """No-flip-flop timing-control knobs exposed for downstream consumers."""
 
     model_config = ConfigDict(extra="forbid")
 
@@ -958,7 +958,9 @@ class CohortRoutingConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     routing_rules: dict[str, CohortRoutingRule]
-    blocked_cohorts: dict[str, list[str]]
+    # Values are strategy modes/families suppressed by the active cohort, not
+    # alternate agent cohorts.
+    blocked_strategy_modes: dict[str, list[str]]
 
 
 class FamilyOverride(BaseModel):

@@ -504,7 +504,7 @@ cohort_routing:
       all_of:
         - {axis: "trend_direction", values: ["bull"]}
         - {axis: "volatility_state", values: ["low_vol", "normal_vol"]}
-  blocked_cohorts:
+  blocked_strategy_modes:
     crisis_specialist:       ["short_vol", "leveraged_long", "breakout"]
     euphoria_specialist:     ["mean_reversion"]
     bear_stress_specialist:  ["short_vol", "breakout", "leveraged_long"]
