@@ -318,6 +318,7 @@ def main() -> int:
     constituent_ohlcv = None
     if pit_intervals_parquet.exists():
         from regime_data_fetch.pit_constituents import read_pit_intervals
+
         pit_intervals = read_pit_intervals(pit_intervals_parquet)
         print(f"PIT intervals: {len(pit_intervals)} rows")
     if constituent_db_path.exists() and pit_intervals is not None:

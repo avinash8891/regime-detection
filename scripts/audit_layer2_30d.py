@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# ruff: noqa: E402
 """Generate Layer 2 wiring/label audit artifacts from the 30-day runner path."""
 
 from __future__ import annotations
