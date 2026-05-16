@@ -69,6 +69,7 @@ def build_market_context(
     require_nyse_trading_day(end_date)
     normalized_market_data = _normalize_market_data_for_runtime(market_data)
     _require_market_data_contract(normalized_market_data, as_of_date=end_date)
+    _require_constituent_ohlcv_contract(constituent_ohlcv)
 
     spy_ohlcv = _spy_ohlcv_frame(normalized_market_data, as_of_date=end_date)
     rsp_close = _symbol_close_series(normalized_market_data, symbol="RSP", as_of_date=end_date)
@@ -278,6 +279,36 @@ def _require_market_data_contract(df: pd.DataFrame, *, as_of_date: date) -> None
             raise ValueError(
                 "market_data contains non-NYSE session dates (forbidden in V1). "
                 f"Examples: {bad_dates[:5]}"
+            )
+
+
+def _require_constituent_ohlcv_contract(
+    constituent_ohlcv: dict[str, pd.DataFrame] | None,
+) -> None:
+    if constituent_ohlcv is None:
+        return
+    required_cols = {"open", "high", "low", "close", "volume", "adjusted_close"}
+    for ticker, frame in constituent_ohlcv.items():
+        if not isinstance(frame, pd.DataFrame):
+            raise ValueError(
+                "constituent_ohlcv frame must be a pandas DataFrame. "
+                f"ticker={ticker!r} actual_type={type(frame).__name__}"
+            )
+        missing = sorted(required_cols - set(frame.columns))
+        if missing:
+            raise ValueError(
+                "constituent_ohlcv frame missing required columns. "
+                f"ticker={ticker!r} missing={missing}"
+            )
+        if not isinstance(frame.index, pd.DatetimeIndex):
+            raise ValueError(
+                "constituent_ohlcv frame must use a DatetimeIndex date index. "
+                f"ticker={ticker!r} actual_index_type={type(frame.index).__name__}"
+            )
+        if frame.index.hasnans:
+            raise ValueError(
+                "constituent_ohlcv frame contains null dates in DatetimeIndex. "
+                f"ticker={ticker!r}"
             )
 
 

@@ -15,6 +15,7 @@ from __future__ import annotations
 from datetime import date
 
 import pandas as pd
+import pytest
 
 from regime_detection.engine import RegimeEngine
 from regime_detection.market_context import MarketContext, build_market_context
@@ -46,6 +47,7 @@ def _ohlcv_for_ticker(ticker: str) -> pd.DataFrame:
             "low": [99.0, 100.0, 101.0, 102.0, 103.0],
             "close": [100.5, 101.5, 102.5, 103.5, 104.5],
             "volume": [1_000_000, 1_100_000, 1_200_000, 1_300_000, 1_400_000],
+            "adjusted_close": [100.5, 101.5, 102.5, 103.5, 104.5],
         },
         index=idx,
     ).rename_axis("date")
@@ -171,3 +173,39 @@ def test_build_market_context_plumbs_constituent_ohlcv(market_df_for_asof) -> No
     # Equality on per-ticker frames; explicitly NOT reindexed to SPY sessions.
     pd.testing.assert_frame_equal(ctx.constituent_ohlcv["AAPL"], aapl)
     pd.testing.assert_frame_equal(ctx.constituent_ohlcv["MSFT"], msft)
+
+
+def test_build_market_context_rejects_constituent_ohlcv_missing_required_column(
+    market_df_for_asof,
+) -> None:
+    as_of = date(2023, 12, 14)
+    bad_aapl = _ohlcv_for_ticker("AAPL").drop(columns=["adjusted_close"])
+
+    with pytest.raises(
+        ValueError,
+        match=r"constituent_ohlcv frame missing required columns.*ticker='AAPL'.*adjusted_close",
+    ):
+        build_market_context(
+            end_date=as_of,
+            market_data=market_df_for_asof(as_of),
+            config=RegimeEngine().config,
+            constituent_ohlcv={"AAPL": bad_aapl},
+        )
+
+
+def test_build_market_context_rejects_constituent_ohlcv_without_datetime_index(
+    market_df_for_asof,
+) -> None:
+    as_of = date(2023, 12, 14)
+    bad_msft = _ohlcv_for_ticker("MSFT").reset_index(drop=True)
+
+    with pytest.raises(
+        ValueError,
+        match=r"constituent_ohlcv frame must use a DatetimeIndex date index.*ticker='MSFT'",
+    ):
+        build_market_context(
+            end_date=as_of,
+            market_data=market_df_for_asof(as_of),
+            config=RegimeEngine().config,
+            constituent_ohlcv={"MSFT": bad_msft},
+        )

@@ -399,8 +399,16 @@ def test_slice_context_to_recent_sessions_preserves_pit_breadth_seams(
     )
     constituent_ohlcv = {
         "AAPL": pd.DataFrame(
-            {"date": [as_of], "close": [195.0]},
-        )
+            {
+                "open": [195.0],
+                "high": [196.0],
+                "low": [194.0],
+                "close": [195.0],
+                "volume": [1_000_000],
+                "adjusted_close": [195.0],
+            },
+            index=pd.DatetimeIndex([pd.Timestamp(as_of)], name="date"),
+        ),
     }
     ctx_with_pit = ctx.model_copy(
         update={
@@ -442,8 +450,16 @@ def test_slice_context_to_end_date_preserves_pit_breadth_seams(
     )
     constituent_ohlcv = {
         "MSFT": pd.DataFrame(
-            {"date": [as_of], "close": [370.0]},
-        )
+            {
+                "open": [370.0],
+                "high": [371.0],
+                "low": [369.0],
+                "close": [370.0],
+                "volume": [1_000_000],
+                "adjusted_close": [370.0],
+            },
+            index=pd.DatetimeIndex([pd.Timestamp(as_of)], name="date"),
+        ),
     }
     ctx_with_pit = ctx.model_copy(
         update={
@@ -482,7 +498,17 @@ def test_engine_classify_threads_pit_constituent_inputs_into_context(
         ]
     )
     constituent_ohlcv = {
-        "AAPL": pd.DataFrame({"date": [as_of], "close": [195.0]}),
+        "AAPL": pd.DataFrame(
+            {
+                "open": [195.0],
+                "high": [196.0],
+                "low": [194.0],
+                "close": [195.0],
+                "volume": [1_000_000],
+                "adjusted_close": [195.0],
+            },
+            index=pd.DatetimeIndex([pd.Timestamp(as_of)], name="date"),
+        ),
     }
 
     out = RegimeEngine().classify(
