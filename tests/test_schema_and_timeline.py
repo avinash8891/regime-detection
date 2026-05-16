@@ -10,9 +10,14 @@ from regime_detection.calendar import nyse_calendar
 from regime_detection.axis_series import build_axis_series_bundle
 from regime_detection.engine import RegimeEngine
 from regime_detection.feature_store import build_feature_store
+from regime_detection.config import load_default_regime_config
 from regime_detection.market_context import build_market_context
 from regime_detection.models import RegimeTimeline
-from regime_detection.timeline import ENGINE_MINIMUM_HISTORY, build_regime_timeline
+from regime_detection.timeline import (
+    ENGINE_MINIMUM_HISTORY,
+    _resolve_timeline_required_sessions,
+    build_regime_timeline,
+)
 from regime_detection.transition_risk_series import build_transition_risk_history
 from regime_detection.versioning import engine_version
 
@@ -183,6 +188,60 @@ def test_build_regime_timeline_uses_context_config_when_config_arg_omitted(marke
     assert timeline.config_version == engine.config.config_version
     assert timeline.outputs[-1].config_version == engine.config.config_version
     assert timeline.outputs[-1].change_point is not None
+
+
+@pytest.mark.parametrize(
+    ("disabled_fields", "expected_sessions"),
+    [
+        (
+            {"change_point": None, "hmm": None, "clustering": None},
+            ENGINE_MINIMUM_HISTORY + 7 - 1,
+        ),
+        (
+            {"hmm": None, "clustering": None},
+            1260 + 21 + 7 - 1,
+        ),
+        (
+            {"change_point": None, "clustering": None},
+            1260 + 63 + 7 - 1 + 5,
+        ),
+        (
+            {"change_point": None, "hmm": None},
+            1260 + 63 + 7 - 1,
+        ),
+        (
+            {},
+            1260 + 63 + 7 - 1 + 5,
+        ),
+    ],
+)
+def test_timeline_required_sessions_preserves_v2_window_math(
+    disabled_fields: dict[str, object],
+    expected_sessions: int,
+) -> None:
+    cfg = load_default_regime_config().model_copy(update=disabled_fields)
+
+    assert (
+        _resolve_timeline_required_sessions(
+            available_sessions=2_000,
+            lookback_days=7,
+            config=cfg,
+        )
+        == expected_sessions
+    )
+
+
+def test_timeline_required_sessions_caps_at_available_history() -> None:
+    cfg = load_default_regime_config()
+
+    assert (
+        _resolve_timeline_required_sessions(
+            available_sessions=500,
+            lookback_days=7,
+            config=cfg,
+        )
+        == 500
+    )
 
 
 def test_classify_delegates_to_classify_window_with_single_day_lookback(mocker, market_df_for_asof) -> None:

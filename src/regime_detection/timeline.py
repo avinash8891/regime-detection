@@ -1,13 +1,14 @@
 from __future__ import annotations
 
 from datetime import date
+from typing import NamedTuple
 
 import pandas as pd
 
 from regime_detection.axis_series import build_axis_series_bundle
 from regime_detection.cohort_routing import evaluate_cohort_routing
 from regime_detection.config import RegimeConfig
-from regime_detection.feature_store import build_feature_store
+from regime_detection.feature_store import FeatureStore, build_feature_store
 from regime_detection.market_context import MarketContext, slice_context_to_recent_sessions
 from regime_detection.models import (
     ChangePointOutput,
@@ -28,6 +29,15 @@ from regime_detection.versioning import engine_version
 
 
 ENGINE_MINIMUM_HISTORY = 320
+
+
+class _AlignedV2Evidence(NamedTuple):
+    cp_score_aligned: pd.Series | None
+    cp_days_since_aligned: pd.Series | None
+    cp_method: str | None
+    cluster_id_aligned: pd.Series | None
+    cluster_distance_aligned: pd.Series | None
+    cluster_model_version: str | None
 
 
 def _v2_classifier_not_yet_implemented_data_quality() -> DataQuality:
@@ -70,6 +80,98 @@ def _resolve_network_fragility_by_date(
     }
 
 
+def _resolve_timeline_required_sessions(
+    *,
+    available_sessions: int,
+    lookback_days: int,
+    config: RegimeConfig,
+) -> int:
+    # Slice 6/7/8 trainable v2 evidence layers (HMM, GMM clustering, BOCPD
+    # change-point) each need the trailing ``training_window_days`` rows of
+    # their inputs to fit. Extend the engine's minimum slicing window to
+    # the LARGEST configured training window. Without this, disabling one
+    # seam (e.g. change_point) but keeping another (e.g. HMM) would slice
+    # the context down below HMM's training_window_days and the HMM seam
+    # would silently return None for insufficient history.
+    # Keeps V1 byte-identity for callers that omit all three configs
+    # (max() collapses to ENGINE_MINIMUM_HISTORY).
+    v2_min_history = ENGINE_MINIMUM_HISTORY
+    trailing_component_lookback = 0
+    if config.change_point is not None:
+        # +21 absorbs the realized_vol_21d warmup so BOCPD sees a full
+        # non-NaN training window on the trailing slice.
+        v2_min_history = max(
+            v2_min_history, config.change_point.training_window_days + 21
+        )
+    if config.hmm is not None:
+        # +63 absorbs the deepest HMM input warmup (drawdown_63d /
+        # avg_pairwise_corr_63d) so the trailing slice gives the GaussianHMM
+        # fit a full non-NaN training window.
+        v2_min_history = max(v2_min_history, config.hmm.training_window_days + 63)
+        # transition_score.hmm_probability_shift needs top_state_prob[t-5].
+        # Keep five extra warmed sessions ahead of the emitted window so the
+        # first requested output can use the same PIT evidence as later rows.
+        trailing_component_lookback = max(trailing_component_lookback, 5)
+    if config.clustering is not None:
+        # +63 absorbs the deepest GMM input warmup (return_63d /
+        # drawdown_63d / avg_pairwise_corr_63d) so the trailing slice gives
+        # the GaussianMixture fit a full non-NaN training window.
+        v2_min_history = max(
+            v2_min_history, config.clustering.training_window_days + 63
+        )
+    return min(
+        available_sessions,
+        v2_min_history + lookback_days - 1 + trailing_component_lookback,
+    )
+
+
+def _align_v2_evidence_for_selected_days(
+    *,
+    feature_store: FeatureStore,
+    selected_days: list[date],
+) -> _AlignedV2Evidence:
+    # v2 §6.2 GMM clustering evidence (Slice 7) — bulk-reindex BEFORE the
+    # per-day loop (matches the `_build_transition_score_inputs_by_date`
+    # pattern). Per-day `.get(pd.Timestamp(day))` would re-scan the index
+    # n_sessions times; one reindex + positional access keeps the loop O(N).
+    # v2 §6.3 BOCPD change-point evidence (Slice 8) — bulk-reindex BEFORE the
+    # per-day loop, same pattern as clustering. Stays None when the seam is
+    # absent (config off, or SPY history shorter than training_window_days).
+    session_index = pd.DatetimeIndex([pd.Timestamp(d) for d in selected_days])
+    change_point_features = feature_store.change_point
+    if change_point_features is not None:
+        cp_score_aligned = change_point_features.score.reindex(session_index)
+        cp_days_since_aligned = change_point_features.days_since_last_break.reindex(
+            session_index
+        )
+        cp_method = change_point_features.method
+    else:
+        cp_score_aligned = None
+        cp_days_since_aligned = None
+        cp_method = None
+
+    clustering_features = feature_store.clustering
+    if clustering_features is not None:
+        cluster_id_aligned = clustering_features.cluster_id.reindex(session_index)
+        cluster_distance_aligned = clustering_features.distance_to_centroid.reindex(
+            session_index
+        )
+        cluster_model_version = clustering_features.model_version
+    else:
+        cluster_id_aligned = None
+        cluster_distance_aligned = None
+        cluster_model_version = None
+
+    return _AlignedV2Evidence(
+        cp_score_aligned=cp_score_aligned,
+        cp_days_since_aligned=cp_days_since_aligned,
+        cp_method=cp_method,
+        cluster_id_aligned=cluster_id_aligned,
+        cluster_distance_aligned=cluster_distance_aligned,
+        cluster_model_version=cluster_model_version,
+    )
+
+
 def build_regime_timeline(
     *,
     context: MarketContext,
@@ -86,44 +188,10 @@ def build_regime_timeline(
             f"end_date={context.end_date.isoformat()}."
         )
 
-    # Slice 6/7/8 trainable v2 evidence layers (HMM, GMM clustering, BOCPD
-    # change-point) each need the trailing ``training_window_days`` rows of
-    # their inputs to fit. Extend the engine's minimum slicing window to
-    # the LARGEST configured training window. Without this, disabling one
-    # seam (e.g. change_point) but keeping another (e.g. HMM) would slice
-    # the context down below HMM's training_window_days and the HMM seam
-    # would silently return None for insufficient history.
-    # Keeps V1 byte-identity for callers that omit all three configs
-    # (max() collapses to ENGINE_MINIMUM_HISTORY).
-    v2_min_history = ENGINE_MINIMUM_HISTORY
-    trailing_component_lookback = 0
-    if cfg.change_point is not None:
-        # +21 absorbs the realized_vol_21d warmup so BOCPD sees a full
-        # non-NaN training window on the trailing slice.
-        v2_min_history = max(
-            v2_min_history, cfg.change_point.training_window_days + 21
-        )
-    if cfg.hmm is not None:
-        # +63 absorbs the deepest HMM input warmup (drawdown_63d /
-        # avg_pairwise_corr_63d) so the trailing slice gives the GaussianHMM
-        # fit a full non-NaN training window.
-        v2_min_history = max(
-            v2_min_history, cfg.hmm.training_window_days + 63
-        )
-        # transition_score.hmm_probability_shift needs top_state_prob[t-5].
-        # Keep five extra warmed sessions ahead of the emitted window so the
-        # first requested output can use the same PIT evidence as later rows.
-        trailing_component_lookback = max(trailing_component_lookback, 5)
-    if cfg.clustering is not None:
-        # +63 absorbs the deepest GMM input warmup (return_63d /
-        # drawdown_63d / avg_pairwise_corr_63d) so the trailing slice gives
-        # the GaussianMixture fit a full non-NaN training window.
-        v2_min_history = max(
-            v2_min_history, cfg.clustering.training_window_days + 63
-        )
-    required_sessions = min(
-        len(context.sessions),
-        v2_min_history + lookback_days - 1 + trailing_component_lookback,
+    required_sessions = _resolve_timeline_required_sessions(
+        available_sessions=len(context.sessions),
+        lookback_days=lookback_days,
+        config=cfg,
     )
     working_context = slice_context_to_recent_sessions(context=context, required_sessions=required_sessions)
     network_fragility_config = cfg.network_fragility
@@ -158,42 +226,10 @@ def build_regime_timeline(
 
     selected_days = list(working_context.sessions[-lookback_days:])
 
-    # v2 §6.2 GMM clustering evidence (Slice 7) — bulk-reindex BEFORE the
-    # per-day loop (matches the `_build_transition_score_inputs_by_date`
-    # pattern). Per-day `.get(pd.Timestamp(day))` would re-scan the index
-    # n_sessions times; one reindex + positional access keeps the loop O(N).
-    # v2 §6.3 BOCPD change-point evidence (Slice 8) — bulk-reindex BEFORE the
-    # per-day loop, same pattern as clustering. Stays None when the seam is
-    # absent (config off, or SPY history shorter than training_window_days).
-    change_point_features = feature_store.change_point
-    if change_point_features is not None:
-        cp_session_index = pd.DatetimeIndex(
-            [pd.Timestamp(d) for d in selected_days]
-        )
-        cp_score_aligned = change_point_features.score.reindex(cp_session_index)
-        cp_days_since_aligned = change_point_features.days_since_last_break.reindex(
-            cp_session_index
-        )
-        cp_method = change_point_features.method
-    else:
-        cp_score_aligned = None
-        cp_days_since_aligned = None
-        cp_method = None
-
-    clustering_features = feature_store.clustering
-    if clustering_features is not None:
-        session_index = pd.DatetimeIndex(
-            [pd.Timestamp(d) for d in selected_days]
-        )
-        cluster_id_aligned = clustering_features.cluster_id.reindex(session_index)
-        cluster_distance_aligned = clustering_features.distance_to_centroid.reindex(
-            session_index
-        )
-        cluster_model_version = clustering_features.model_version
-    else:
-        cluster_id_aligned = None
-        cluster_distance_aligned = None
-        cluster_model_version = None
+    aligned_v2_evidence = _align_v2_evidence_for_selected_days(
+        feature_store=feature_store,
+        selected_days=selected_days,
+    )
     trend_direction_outputs = axis_bundle.trend_direction.outputs_by_date
     trend_character_outputs = axis_bundle.trend_character.outputs_by_date
     volatility_outputs = axis_bundle.volatility_state.outputs_by_date
@@ -280,13 +316,13 @@ def build_regime_timeline(
         )
         change_point_output: ChangePointOutput | None = None
         if (
-            cp_score_aligned is not None
-            and cp_days_since_aligned is not None
-            and cp_method is not None
+            aligned_v2_evidence.cp_score_aligned is not None
+            and aligned_v2_evidence.cp_days_since_aligned is not None
+            and aligned_v2_evidence.cp_method is not None
         ):
-            score_val = cp_score_aligned.iloc[idx]
+            score_val = aligned_v2_evidence.cp_score_aligned.iloc[idx]
             if score_val is not None and not pd.isna(score_val):
-                days_val = cp_days_since_aligned.iloc[idx]
+                days_val = aligned_v2_evidence.cp_days_since_aligned.iloc[idx]
                 days_since_int: int | None
                 if days_val is None or pd.isna(days_val):
                     days_since_int = None
@@ -295,22 +331,22 @@ def build_regime_timeline(
                 change_point_output = ChangePointOutput(
                     score=float(score_val),
                     days_since_last_break=days_since_int,
-                    method=cp_method,
+                    method=aligned_v2_evidence.cp_method,
                 )
 
         cluster_output: ClusterOutput | None = None
         if (
-            cluster_id_aligned is not None
-            and cluster_distance_aligned is not None
-            and cluster_model_version is not None
+            aligned_v2_evidence.cluster_id_aligned is not None
+            and aligned_v2_evidence.cluster_distance_aligned is not None
+            and aligned_v2_evidence.cluster_model_version is not None
         ):
-            cid_val = cluster_id_aligned.iloc[idx]
-            dist_val = cluster_distance_aligned.iloc[idx]
+            cid_val = aligned_v2_evidence.cluster_id_aligned.iloc[idx]
+            dist_val = aligned_v2_evidence.cluster_distance_aligned.iloc[idx]
             if cid_val is not None and not pd.isna(cid_val) and not pd.isna(dist_val):
                 cluster_output = ClusterOutput(
                     cluster_id=int(cid_val),
                     distance_to_centroid=float(dist_val),
-                    model_version=cluster_model_version,
+                    model_version=aligned_v2_evidence.cluster_model_version,
                 )
         agent_routing = None
         strategy_family_constraints = None
