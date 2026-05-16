@@ -26,6 +26,7 @@ dev = [
   "pytest-xdist",
   "hypothesis",
   "ruff",
+  "mypy",
   "pyright",
   "pyarrow",
   "xlrd",

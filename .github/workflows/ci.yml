@@ -65,3 +65,17 @@ jobs:
           else
             echo "No tests directory yet; skipping pytest until V1 implementation begins."
           fi
+
+      - name: Ruff lint check
+        run: ruff check .
+
+      - name: Mypy type check
+        run: python -m mypy src/ --ignore-missing-imports
+
+      - name: Pytest with coverage floor
+        run: |
+          if [ -d tests ]; then
+            python -m pytest tests/ --cov=src --cov-report=term-missing --cov-fail-under=55 -q --tb=short
+          else
+            echo "No tests directory yet; skipping coverage check."
+          fi
