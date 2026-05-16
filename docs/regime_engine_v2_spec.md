@@ -1126,8 +1126,10 @@ the slice/commit that resolved it. Entries are append-only.
 
     `regime_detection.transition_score.compute_transition_score`
     selects among the three tables based on which seams returned
-    non-None evidence on the as-of date (per the per-day PIT-correct
-    masking added in commit 19e395d). When neither HMM nor
+    non-None evidence on the as-of date. HMM evidence must be
+    point-in-time for the emitted session: `top_state_prob[t]` and
+    `top_state_prob[t-5]` both come from models trained only on data
+    available through their respective sessions. When neither HMM nor
     change-point is lit, the without-HMM 5-component path runs and
     V1 byte-identity is preserved.
 
@@ -1423,6 +1425,14 @@ the slice/commit that resolved it. Entries are append-only.
     downstream code slices that consume these pins ship in
     subsequent commits.
 
+    Status update — the §2A `unknown` hysteresis pin is amended by
+    Log #75 / ADR 0008. `unknown` is a data-quality absence, not a
+    monetary-pressure regime. Runtime config now sets
+    `monetary_pressure_state.deescalation_days_by_label.unknown = 0`
+    so a recovered current-session feature set can immediately emit
+    the rule-derived label (`neutral_monetary`, `tightening_pressure`,
+    etc.) instead of holding a stale quality-gap state.
+
 47. **§1A `breakout_expansion` — operational forms for the remaining
     three clauses (clauses 1–3) and `followthrough_rate` windowing
     metadata.**
@@ -1609,7 +1619,10 @@ the slice/commit that resolved it. Entries are append-only.
       §3.7 / §2A / §2B.
     - **Unknown gate** — staleness-based on HYG/LQD/TLT (> 5
       sessions), NFCI (> 14 days = 2× weekly cycle), SOFR/IORB
-      missing, or `assess_series_input_quality` failure.
+      stale beyond the global freshness budget, or
+      `assess_series_input_quality` failure. SOFR/IORB publication
+      lag within the freshness budget is carried forward, not treated
+      as missing.
     - **Credit-spread metric — single source.** `hy_spread_proxy_63d`
       and `ig_spread_proxy_63d` are populated directly from the
       FRED-redistributed ICE BofA Option-Adjusted Spread series:
@@ -1786,6 +1799,15 @@ the slice/commit that resolved it. Entries are append-only.
     (slice 6) and GMM (slice 7) can now be dispatched as TDD slices;
     only their manual-mapping artifacts remain a per-fit operator
     deliverable.
+
+    Status update — PIT emission clarified by Log #75 / ADR 0008.
+    HMM and GMM evidence in `classify_window` is emitted per warmed
+    session from models trained only through that session. A final-date
+    model may not be used to backfill earlier rows; blanking all
+    pre-final warmed rows is also not acceptable for profile outputs.
+    Runners that expose the HMM shift component must materialize five
+    extra warmed sessions before the emitted window so the first
+    output has `top_state_prob[t-5]`.
 
 52. **§5.5 PRISM — explicit V2.1 deferral.**
 
@@ -2689,6 +2711,57 @@ the slice/commit that resolved it. Entries are append-only.
     feature-store wiring. Tests at `tests/test_news_sentiment.py`
     (9 cases). YAML block added to `configs/core3-v2.0.0.yaml`.
 
+75. **30-session profile completeness — macro carry-forward, PIT HMM/GMM,
+    and monetary `unknown` hysteresis.**
+
+    The end-to-end 30-session runner surfaced blank/`unknown` metric cells
+    even when all required source artifacts were present. Root causes were
+    implementation-level contract gaps, not missing sources:
+
+    - FRED daily macro series (`DGS2`, `DGS10`, `DTWEXBGS`, SOFR/IORB,
+      OAS, and `DGS10` inside §2B) were reindexed to NYSE sessions without
+      last-known-value carry-forward before rolling computations. Normal
+      publication gaps inside long rolling windows created artificial NaNs.
+    - Credit/funding treated SOFR/IORB absence on the current NYSE session
+      as missing, even when the last published observation was still fresh.
+    - HMM/GMM emitted only the final-date fit and masked all prior emitted
+      rows to avoid future leak. This was leak-safe but made multi-day
+      profile evidence blank.
+    - Monetary pressure required a second 1323-session non-NaN history on
+      the already-warmed z-score feature series, double-counting the raw
+      feature warm-up.
+    - Monetary `unknown` held for two sessions after data quality recovered,
+      even though `unknown` is a data-quality absence rather than an
+      economic monetary regime.
+
+    Resolution:
+
+    (a) Macro feature math uses latest-known-as-of observations before
+        rolling calculations. Staleness is still checked at the classifier
+        boundary; carry-forward is not permission to use stale data.
+
+    (b) SOFR/IORB unknown gates are freshness-based. A publication lag
+        within `data_quality.max_freshness_days` is valid; stale beyond
+        that budget is `unknown`.
+
+    (c) HMM/GMM evidence is point-in-time by emitted session. For session
+        `t`, the model must be trained only on data available through `t`.
+        A final-date model may not backfill earlier rows, and warmed rows
+        must not be blanked solely because a final-date fit would leak.
+
+    (d) `hmm_probability_shift[t]` requires both `top_state_prob[t]` and
+        `top_state_prob[t-5]`. Runners must materialize five extra warmed
+        sessions before the emitted window when HMM is enabled.
+
+    (e) `monetary_pressure_state.deescalation_days_by_label.unknown = 0`.
+        Once current-session monetary features are present, the active label
+        moves immediately to the rule-derived label.
+
+    Decision record: `docs/decisions/0008-v2-pit-evidence-and-macro-carry-forward.md`.
+    Verification: the repaired 30-session profile has zero `unknown` metric
+    labels and zero blank metric cells when run against the current full data
+    materialization.
+
 ---
 
 ## 2. Layer 2 V2 — Full Structural-Causal State
@@ -2728,6 +2801,12 @@ yield_change_zscore_21d         = (yield_change_21d - mean_5y_of_yield_changes_2
 ```
 
 Each formula reuses the same template (`(change - mean_5y_of_changes) / std_5y_of_changes`); only the change-window length (63d vs 21d) and the input series (DGS2 / DGS10 / DTWEXBGS) vary.
+
+Macro observations are aligned by latest-known-as-of semantics before rolling
+feature math runs. FRED business-day series can miss NYSE sessions because of
+publication calendars; those gaps are forward-filled for feature computation.
+The classifier still enforces freshness separately, so a carried value older
+than the applicable staleness budget forces `unknown`.
 
 Updated rules:
 ```text
@@ -2789,7 +2868,7 @@ monetary_pressure:
     tightening_pressure: 3    # matches §3.7 rising_fragility / correlation_concentration
     easing_pressure: 2
     neutral_monetary: 0       # immediate de-escalation
-    unknown: 2                # matches slice 2.7 volume-axis unknown hold
+    unknown: 0                # data-quality absence; clear immediately on recovery
   default_deescalation_days: 0
 ```
 
@@ -3125,8 +3204,11 @@ credit_funding:
 `unknown` is forced when:
 - HYG / LQD / TLT stale > 5 sessions
 - NFCI stale > 14 days (2× weekly release cycle)
-- SOFR or IORB missing
+- SOFR or IORB stale beyond `data_quality.max_freshness_days`
 - `assess_series_input_quality` fails on any required series
+
+SOFR/IORB and OAS observations are carried forward for feature math when fresh;
+stale carried values still force `unknown`.
 
 #### Two label outputs — authoritative + proxy
 
@@ -3452,6 +3534,11 @@ score = 1.0 if event_calendar.label in [
 ```python
 score = abs(hmm.top_state_prob[t] - hmm.top_state_prob[t-5])
 ```
+
+`top_state_prob[t]` and `top_state_prob[t-5]` must both be point-in-time
+values from HMM fits trained no later than their respective sessions. A runner
+that emits a 30-session window must keep at least five extra warmed sessions
+before the first emitted row so this component can be present from day 1.
 
 ### 4.3 Weights
 
@@ -3828,6 +3915,12 @@ Infer latent market states from returns and volatility.
 
 All HMM inputs reuse existing FeatureStore seams. The HMM module MUST NOT recompute any of them.
 
+For multi-session output, HMM evidence is emitted point-in-time. Each populated
+session uses a model fit on a trailing `training_window_days` slice ending at
+or before that session. It is invalid to fit once on the final profile date and
+reuse that model for earlier rows; it is also invalid to blank warmed earlier
+rows solely because final-fit parameters would leak future data.
+
 #### Model
 - Gaussian HMM
 - 3 states (recommended): `calm_bull`, `choppy_normal`, `stress_crash`
@@ -3927,6 +4020,11 @@ Discover empirical clusters of market days for diagnostic purposes.
 - Algorithm: GMM (Gaussian Mixture Model) preferred over hard K-Means because it provides per-day cluster membership probabilities (useful as evidence). K-Means is an acceptable fallback when GMM convergence is unstable.
 - **Number of clusters: 8** (matches the `gmm_8cluster_v1.0` example in the output JSON below; pinned as the V2 ship default).
 - Like the HMM (§6.1), cluster index → economic label mapping is **manual and config-versioned**. Never auto-map.
+
+For multi-session output, cluster assignment is point-in-time. Session `t` uses
+a GMM fit on data available through `t`; final-date clusters must not be
+backfilled into earlier emitted rows. Raw cluster IDs remain diagnostic and
+operator-mapped per V2 §10.
 
 #### Constraint
 Clusters must be **manually mapped** to economic labels after inspection. Never auto-label. Mapping is config-versioned.
