@@ -366,6 +366,16 @@ def load_cpi_vintages_first_release(
         .drop_duplicates(subset="date", keep="first")
         .reset_index(drop=True)
     )
+    # The replay series is keyed by release date and then forward-filled
+    # onto trading sessions. If the upstream vintage file contains multiple
+    # reference periods with the same earliest realtime_start, keep the most
+    # recent reference period available on that release date so the as-of
+    # index remains unique and reindex-safe.
+    first_releases = (
+        first_releases.sort_values(["realtime_start", "date"])
+        .drop_duplicates(subset="realtime_start", keep="last")
+        .reset_index(drop=True)
+    )
     series = pd.Series(
         first_releases["value"].astype(float).to_numpy(),
         index=pd.DatetimeIndex(first_releases["realtime_start"]),

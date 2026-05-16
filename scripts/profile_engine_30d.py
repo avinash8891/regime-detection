@@ -28,6 +28,11 @@ from regime_data_fetch.materialization import materialize_if_requested
 from regime_detection.engine import RegimeEngine
 from regime_detection.feature_store import FeatureStore
 from regime_detection.fragility_universe import CROSS_ASSET_SYMBOLS, SECTOR_ETFS
+from regime_detection.loaders import (
+    load_central_bank_text_score,
+    load_cpi_vintages_first_release,
+    load_news_sentiment_series,
+)
 from regime_detection.market_context import build_market_context
 from regime_detection.models import RegimeOutput, RegimeTimeline
 from regime_detection.timeline import ENGINE_MINIMUM_HISTORY
@@ -133,6 +138,32 @@ def _load_optional_aaii_sentiment(path: Path) -> pd.DataFrame | None:
     return frame
 
 
+def _load_optional_news_sentiment(path: Path) -> pd.Series | None:
+    if not path.exists():
+        return None
+    return load_news_sentiment_series(path)
+
+
+def _load_optional_cpi_first_release(path: Path) -> pd.Series | None:
+    if not path.exists():
+        return None
+    return load_cpi_vintages_first_release(path)
+
+
+def _load_optional_central_bank_text_releases(
+    *,
+    fomc_path: Path,
+    powell_path: Path,
+) -> pd.DataFrame | None:
+    releases = load_central_bank_text_score(
+        fomc_minutes_source=fomc_path if fomc_path.exists() else None,
+        powell_speeches_source=powell_path if powell_path.exists() else None,
+    )
+    if releases.empty:
+        return None
+    return releases
+
+
 def _load_market_data_from_tree(tree_root: Path, symbols: list[str]) -> pd.DataFrame:
     frames: list[pd.DataFrame] = []
     for symbol in symbols:
@@ -189,6 +220,8 @@ def _input_status(name: str, value: Any) -> str:
             return f"{name}: EMPTY_DICT"
         return f"{name}: {len(value)} keys"
     if isinstance(value, pd.DataFrame):
+        return f"{name}: {len(value)} rows"
+    if isinstance(value, pd.Series):
         return f"{name}: {len(value)} rows"
     return f"{name}: type={type(value).__name__}"
 
@@ -467,6 +500,10 @@ def main() -> int:
     parser.add_argument("--pit-parquet", type=Path, default=None)
     parser.add_argument("--pmi-path", type=Path, default=DEFAULT_PMI_PATH)
     parser.add_argument("--aaii-sentiment-parquet", type=Path, default=None)
+    parser.add_argument("--news-sentiment-parquet", type=Path, default=None)
+    parser.add_argument("--fomc-minutes-parquet", type=Path, default=None)
+    parser.add_argument("--powell-speeches-parquet", type=Path, default=None)
+    parser.add_argument("--cpi-vintages-parquet", type=Path, default=None)
     parser.add_argument("--manifest", type=Path, default=None, help="Optional artifact manifest to materialize before profiling.")
     parser.add_argument("--artifact-store", default=None, help="Optional artifact-store root override for --manifest.")
     parser.add_argument("--data-root", type=Path, default=REPO_ROOT / "data" / "raw", help="Local data/raw root used for manifest materialization.")
@@ -482,6 +519,14 @@ def main() -> int:
         args.pit_parquet = args.data_root / "pit_constituents" / "sp500_ticker_intervals.parquet"
     if args.aaii_sentiment_parquet is None:
         args.aaii_sentiment_parquet = args.data_root / "sentiment" / "aaii_sentiment.parquet"
+    if args.news_sentiment_parquet is None:
+        args.news_sentiment_parquet = args.data_root / "news_sentiment" / "sf_fed_news_sentiment.parquet"
+    if args.fomc_minutes_parquet is None:
+        args.fomc_minutes_parquet = args.data_root / "fomc_minutes" / "fomc_minutes.parquet"
+    if args.powell_speeches_parquet is None:
+        args.powell_speeches_parquet = args.data_root / "powell_speeches" / "powell_speeches.parquet"
+    if args.cpi_vintages_parquet is None:
+        args.cpi_vintages_parquet = args.data_root / "macro_vintages" / "cpi_all_items_vintages.parquet"
 
     materialize_if_requested(
         manifest_path=args.manifest,
@@ -520,6 +565,13 @@ def main() -> int:
     cross_asset_closes = load_close_dict(args.daily_dir, cross_asset_symbols, spy_index)
     macro_series = load_macro_series(args.macro_parquet, args.pmi_path if args.pmi_path.exists() else None)
     aaii_sentiment = _load_optional_aaii_sentiment(args.aaii_sentiment_parquet)
+    news_sentiment = _load_optional_news_sentiment(args.news_sentiment_parquet)
+    implied_vol_30d = macro_series.get("implied_vol_30d")
+    central_bank_text_releases = _load_optional_central_bank_text_releases(
+        fomc_path=args.fomc_minutes_parquet,
+        powell_path=args.powell_speeches_parquet,
+    )
+    cpi_first_release = _load_optional_cpi_first_release(args.cpi_vintages_parquet)
     pit_constituent_intervals = read_pit_intervals(args.pit_parquet)
     constituent_ohlcv, constituent_tickers, missing_constituent_paths = _load_constituent_ohlcv_from_tree(
         args.constituent_tree,
@@ -534,6 +586,10 @@ def main() -> int:
         "cross_asset_closes": cross_asset_closes,
         "macro_series": macro_series,
         "aaii_sentiment": aaii_sentiment,
+        "news_sentiment": news_sentiment,
+        "implied_vol_30d": implied_vol_30d,
+        "central_bank_text_releases": central_bank_text_releases,
+        "cpi_first_release": cpi_first_release,
         "pit_constituent_intervals": pit_constituent_intervals,
         "constituent_ohlcv": constituent_ohlcv,
     }
@@ -553,6 +609,10 @@ def main() -> int:
                 cross_asset_closes=cross_asset_closes,
                 macro_series=macro_series,
                 aaii_sentiment=aaii_sentiment,
+                implied_vol_30d=implied_vol_30d,
+                central_bank_text_releases=central_bank_text_releases,
+                cpi_first_release=cpi_first_release,
+                news_sentiment=news_sentiment,
                 pit_constituent_intervals=pit_constituent_intervals,
                 constituent_ohlcv=constituent_ohlcv,
             )
@@ -569,6 +629,10 @@ def main() -> int:
         cross_asset_closes=cross_asset_closes,
         macro_series=macro_series,
         aaii_sentiment=aaii_sentiment,
+        implied_vol_30d=implied_vol_30d,
+        central_bank_text_releases=central_bank_text_releases,
+        cpi_first_release=cpi_first_release,
+        news_sentiment=news_sentiment,
         pit_constituent_intervals=pit_constituent_intervals,
         constituent_ohlcv=constituent_ohlcv,
     )
@@ -588,6 +652,8 @@ def main() -> int:
         monetary_pressure_v2_config=config.monetary_pressure_v2,
         credit_funding_config=config.credit_funding,
         inflation_growth_config=config.inflation_growth,
+        central_bank_text_config=config.central_bank_text,
+        news_sentiment_config=config.news_sentiment,
     )
 
     per_day_emission_total = max(
@@ -657,6 +723,11 @@ def main() -> int:
     print(f"constituent_tree_source={args.constituent_tree}")
     print(f"macro_source={args.macro_parquet}")
     print(f"aaii_sentiment_source={args.aaii_sentiment_parquet if aaii_sentiment is not None else '<absent>'}")
+    print(f"news_sentiment_source={args.news_sentiment_parquet if news_sentiment is not None else '<absent>'}")
+    print(f"implied_vol_30d_source={'macro_series[implied_vol_30d]' if implied_vol_30d is not None else '<absent>'}")
+    print(f"fomc_minutes_source={args.fomc_minutes_parquet if args.fomc_minutes_parquet.exists() else '<absent>'}")
+    print(f"powell_speeches_source={args.powell_speeches_parquet if args.powell_speeches_parquet.exists() else '<absent>'}")
+    print(f"cpi_vintages_source={args.cpi_vintages_parquet if cpi_first_release is not None else '<absent>'}")
     print(f"pit_source={args.pit_parquet}")
     print(f"end_date={end_date.isoformat()}")
     print(f"selected_window_start={selected_dates[0].isoformat()}")
@@ -672,6 +743,10 @@ def main() -> int:
         "cross_asset_closes",
         "macro_series",
         "aaii_sentiment",
+        "news_sentiment",
+        "implied_vol_30d",
+        "central_bank_text_releases",
+        "cpi_first_release",
         "pit_constituent_intervals",
         "constituent_ohlcv",
     ]:
