@@ -165,11 +165,17 @@ def _classify_per_session(
 ) -> tuple[dict[dt.date, dict[str, Any]], dict[dt.date, dict[str, Any]], int]:
     v1_field_records: dict[dt.date, dict[str, Any]] = {}
     v2_field_records: dict[dt.date, dict[str, Any]] = {}
+    slice_end_positions = _market_slice_end_positions(
+        sessions=sessions,
+        market_data=market_data,
+    )
     errors = 0
     total = len(sessions)
     for idx, as_of_date in enumerate(sessions, start=1):
         market_slice = (
-            market_data[market_data["date"] <= as_of_date].copy().reset_index(drop=True)
+            market_data.iloc[: slice_end_positions[as_of_date]]
+            .copy()
+            .reset_index(drop=True)
         )
         kwargs: dict[str, Any] = {
             "as_of_date": as_of_date,
@@ -190,6 +196,28 @@ def _classify_per_session(
         if idx % 10 == 0 or idx == total:
             logger.info("[%s] %d/%d sessions classified", mode_label, idx, total)
     return v1_field_records, v2_field_records, errors
+
+
+def _market_slice_end_positions(
+    *,
+    sessions: list[dt.date],
+    market_data: pd.DataFrame,
+) -> dict[dt.date, int]:
+    """Return per-session exclusive iloc bounds for sorted market data."""
+    if sessions != sorted(sessions):
+        raise ValueError("sessions must be sorted ascending")
+    if not market_data["date"].is_monotonic_increasing:
+        raise ValueError("market_data must be sorted by date ascending")
+
+    date_values = market_data["date"].tolist()
+    positions: dict[dt.date, int] = {}
+    cursor = 0
+    row_count = len(date_values)
+    for as_of_date in sessions:
+        while cursor < row_count and date_values[cursor] <= as_of_date:
+            cursor += 1
+        positions[as_of_date] = cursor
+    return positions
 
 
 def _compute_v1_disagreements(
