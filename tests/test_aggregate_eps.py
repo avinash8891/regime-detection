@@ -682,6 +682,149 @@ def test_seed_weekly_history_raises_when_timeline_missing(
         seed_weekly_history_from_wayback_timeline(out_dir=tmp_path)
 
 
+# ---------------------------------------------------------------------------
+# parse_wayback_cdx_json — error branches
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+def test_parse_wayback_cdx_json_raises_on_malformed_json() -> None:
+    """Non-JSON bytes decoded to a string cause AggregateEPSFetchError."""
+    bad_text = b"this is not valid json {{{".decode("utf-8")
+    with pytest.raises(AggregateEPSFetchError, match="not valid JSON"):
+        parse_wayback_cdx_json(
+            bad_text,
+            target_url="https://www.spglobal.com/spdji/en/documents/additional-material/sp-500-eps-est.xlsx",
+        )
+
+
+@pytest.mark.unit
+def test_parse_wayback_cdx_json_raises_on_empty_response() -> None:
+    """An empty JSON array (no header, no rows) raises AggregateEPSFetchError."""
+    with pytest.raises(AggregateEPSFetchError, match="no rows"):
+        parse_wayback_cdx_json(
+            "[]",
+            target_url="https://www.spglobal.com/spdji/en/documents/additional-material/sp-500-eps-est.xlsx",
+        )
+
+
+@pytest.mark.unit
+def test_parse_wayback_cdx_json_raises_on_non_list_response() -> None:
+    """A JSON object (dict) instead of a list raises AggregateEPSFetchError."""
+    with pytest.raises(AggregateEPSFetchError, match="no rows"):
+        parse_wayback_cdx_json(
+            '{"key": "value"}',
+            target_url="https://www.spglobal.com/spdji/en/documents/additional-material/sp-500-eps-est.xlsx",
+        )
+
+
+@pytest.mark.unit
+def test_parse_wayback_cdx_json_raises_when_no_usable_snapshots_after_filtering() -> None:
+    """All data rows with status 404 or wrong MIME type → AggregateEPSFetchError."""
+    cdx_json = json.dumps([
+        ["timestamp", "original", "statuscode", "mimetype"],
+        [
+            "20230614120000",
+            "https://www.spglobal.com/spdji/en/documents/additional-material/sp-500-eps-est.xlsx",
+            "404",
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        ],
+        [
+            "20230615120000",
+            "https://www.spglobal.com/spdji/en/documents/additional-material/sp-500-eps-est.xlsx",
+            "200",
+            "text/html",
+        ],
+    ])
+    with pytest.raises(AggregateEPSFetchError, match="no usable workbook snapshots"):
+        parse_wayback_cdx_json(
+            cdx_json,
+            target_url="https://www.spglobal.com/spdji/en/documents/additional-material/sp-500-eps-est.xlsx",
+        )
+
+
+# ---------------------------------------------------------------------------
+# EPSWaybackSnapshot.from_timestamp and __post_init__ validation
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+def test_eps_wayback_snapshot_from_timestamp_derives_correct_fields() -> None:
+    """from_timestamp correctly derives snapshot_date and archive_url."""
+    snapshot = EPSWaybackSnapshot.from_timestamp(
+        "20230614120000",
+        target_url="https://www.spglobal.com/spdji/en/documents/additional-material/sp-500-eps-est.xlsx",
+    )
+    assert snapshot.snapshot_date == dt.date(2023, 6, 14)
+    assert "20230614120000if_" in snapshot.archive_url
+
+
+@pytest.mark.unit
+def test_eps_wayback_snapshot_raises_on_invalid_timestamp() -> None:
+    """A timestamp shorter than 8 chars raises ValueError in __post_init__."""
+    with pytest.raises(ValueError, match="not a valid Wayback timestamp"):
+        EPSWaybackSnapshot(
+            timestamp="NOTADAT",
+            archive_url="https://web.archive.org/web/NOTADAT/https://www.spglobal.com/spdji/en/documents/additional-material/sp-500-eps-est.xlsx",
+            snapshot_date=dt.date(2023, 6, 14),
+        )
+
+
+@pytest.mark.unit
+def test_eps_wayback_snapshot_raises_on_mismatched_snapshot_date() -> None:
+    """A snapshot_date that disagrees with the timestamp raises ValueError."""
+    with pytest.raises(ValueError, match="does not match timestamp"):
+        EPSWaybackSnapshot(
+            timestamp="20230614120000",
+            archive_url="https://web.archive.org/web/20230614120000if_/https://www.spglobal.com/spdji/en/documents/additional-material/sp-500-eps-est.xlsx",
+            snapshot_date=dt.date(2023, 1, 1),
+        )
+
+
+# ---------------------------------------------------------------------------
+# run_wayback_aggregate_eps_fetch — all-failures path
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+def test_run_wayback_aggregate_eps_fetch_all_snapshots_fail(tmp_path: Path) -> None:
+    """When every snapshot fetch raises, the function propagates
+    AggregateEPSFetchError because no timeline rows are produced."""
+    sp500_eps_url = "https://www.spglobal.com/spdji/en/documents/additional-material/sp-500-eps-est.xlsx"
+
+    valid_snapshots = [
+        EPSWaybackSnapshot.from_timestamp("20230614120000", target_url=sp500_eps_url),
+        EPSWaybackSnapshot.from_timestamp("20230721090000", target_url=sp500_eps_url),
+    ]
+
+    def fake_cdx_fetcher() -> str:
+        return json.dumps([
+            ["timestamp", "original", "statuscode", "mimetype"],
+            [
+                "20230614120000",
+                sp500_eps_url,
+                "200",
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            ],
+            [
+                "20230721090000",
+                sp500_eps_url,
+                "200",
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            ],
+        ])
+
+    def always_failing_snapshot_fetcher(snapshot: EPSWaybackSnapshot) -> bytes:
+        raise RuntimeError("fetch error")
+
+    with pytest.raises(AggregateEPSFetchError, match="no parsed timeline rows"):
+        run_wayback_aggregate_eps_fetch(
+            out_dir=tmp_path,
+            cdx_fetcher=fake_cdx_fetcher,
+            snapshot_fetcher=always_failing_snapshot_fetcher,
+        )
+
+
 def test_seed_weekly_history_collapses_earnings_cold_start(
     tmp_path: Path,
 ) -> None:
