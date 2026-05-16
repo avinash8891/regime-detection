@@ -60,6 +60,37 @@ def test_manifest_rejects_duplicate_local_paths() -> None:
         manifest.validate()
 
 
+def test_manifest_rejects_duplicate_artifact_uris() -> None:
+    manifest = ArtifactManifest(
+        artifact_set="regime_engine_2026-05-15",
+        created_at_utc="2026-05-15T12:00:00Z",
+        storage_root="file:///tmp/regime-data",
+        artifacts=[
+            _artifact(name="macro", local_path="data/raw/macro/a.parquet"),
+            _artifact(name="macro_copy", local_path="data/raw/macro/b.parquet"),
+        ],
+    )
+
+    with pytest.raises(ManifestValidationError, match="duplicate artifact uri"):
+        manifest.validate()
+
+
+def test_manifest_ignores_forward_compatible_unknown_fields() -> None:
+    payload = _artifact().to_dict()
+    payload["future_field"] = {"ignored": True}
+    manifest = ArtifactManifest.from_dict(
+        {
+            "artifact_set": "regime_engine_2026-05-15",
+            "created_at_utc": "2026-05-15T12:00:00Z",
+            "storage_root": "file:///tmp/regime-data",
+            "artifacts": [payload],
+            "future_top_level_field": ["ignored"],
+        }
+    )
+
+    assert manifest.artifacts[0].name == "fred_macro_series"
+
+
 def test_manifest_rejects_unknown_stage() -> None:
     with pytest.raises(ManifestValidationError, match="unknown artifact stage"):
         _artifact(stage="scratch")
@@ -81,7 +112,9 @@ def test_manifest_required_artifacts_for_use_case() -> None:
         created_at_utc="2026-05-15T12:00:00Z",
         storage_root="file:///tmp/regime-data",
         artifacts=[
-            _artifact(name="macro", required_for=["profile_engine_30d", "v2_calibration"]),
+            _artifact(
+                name="macro", required_for=["profile_engine_30d", "v2_calibration"]
+            ),
             _artifact(
                 name="aaii",
                 uri="canonical/sentiment/aaii_sentiment.parquet",
@@ -92,4 +125,7 @@ def test_manifest_required_artifacts_for_use_case() -> None:
     )
 
     assert [a.name for a in manifest.required_for("v2_calibration")] == ["macro"]
-    assert [a.name for a in manifest.required_for("profile_engine_30d")] == ["macro", "aaii"]
+    assert [a.name for a in manifest.required_for("profile_engine_30d")] == [
+        "macro",
+        "aaii",
+    ]

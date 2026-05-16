@@ -5,7 +5,11 @@ from pathlib import Path
 
 import pandas as pd
 
-from regime_data_fetch.artifact_manifest import ArtifactManifest, ManifestArtifact, write_manifest
+from regime_data_fetch.artifact_manifest import (
+    ArtifactManifest,
+    ManifestArtifact,
+    write_manifest,
+)
 from regime_data_fetch.artifact_store import sha256_file
 from scripts import run_v2_walkforward_gate
 
@@ -23,13 +27,19 @@ def test_walkforward_gate_parse_args_materializes_manifest_defaults(
     )
     macro_source = store_root / "canonical" / "macro" / "fred_macro_series.parquet"
     macro_source.parent.mkdir(parents=True)
-    pd.DataFrame([{"date": pd.Timestamp("2026-05-15"), "series_id": "DGS10", "value": 4.0}]).to_parquet(
+    pd.DataFrame(
+        [{"date": pd.Timestamp("2026-05-15"), "series_id": "DGS10", "value": 4.0}]
+    ).to_parquet(
         macro_source,
         index=False,
     )
-    pmi_source = store_root / "canonical" / "manual_inputs" / "pmi" / "ism_manufacturing_pmi.tsv"
+    pmi_source = (
+        store_root / "canonical" / "manual_inputs" / "pmi" / "ism_manufacturing_pmi.tsv"
+    )
     pmi_source.parent.mkdir(parents=True)
-    pmi_source.write_text("period\trelease_date_local\ttime_local\tactual\n2026-04\t01-05-2026\t10:00\t52.7\n")
+    pmi_source.write_text(
+        "period\trelease_date_local\ttime_local\tactual\n2026-04\t01-05-2026\t10:00\t52.7\n"
+    )
     manifest = ArtifactManifest(
         artifact_set="runner-test",
         created_at_utc="2026-05-15T12:00:00Z",
@@ -93,4 +103,32 @@ def test_walkforward_gate_parse_args_materializes_manifest_defaults(
     assert args.end_date.isoformat() == "2026-05-15"
     assert (data_root / "daily_ohlcv" / "part.parquet").exists()
     assert args.macro_parquet.exists()
-    assert (repo_root / "data" / "manual_inputs" / "pmi" / "ism_manufacturing_pmi.tsv").exists()
+    assert (
+        repo_root / "data" / "manual_inputs" / "pmi" / "ism_manufacturing_pmi.tsv"
+    ).exists()
+
+
+def test_manifest_materialization_is_wired_for_all_runner_entrypoints() -> None:
+    expected = {
+        "scripts/run_v2_walkforward_gate.py": 'required_for="v2_calibration"',
+        "scripts/run_v2_shadow_ab_gate.py": 'required_for="v2_calibration"',
+        "scripts/run_v2_calibration.py": 'required_for="v2_calibration"',
+        "scripts/run_historical_walkforward.py": 'required_for="historical_walkforward"',
+        "scripts/profile_engine_30d.py": 'required_for="profile_engine_30d"',
+        "scripts/audit_layer2_30d.py": 'required_for="audit_layer2_30d"',
+    }
+    for path, required_for in expected.items():
+        text = Path(path).read_text()
+        assert "materialize_if_requested" in text, path
+        assert "--manifest" in text, path
+        assert "--artifact-store" in text, path
+        assert "--data-root" in text, path
+        assert required_for in text, path
+
+
+def test_emitted_manifest_tags_all_runner_use_cases_by_default() -> None:
+    text = Path("scripts/fetch_regime_engine_v1_data.py").read_text()
+    assert (
+        'default="profile_engine_30d,v2_calibration,historical_walkforward,audit_layer2_30d"'
+        in text
+    )

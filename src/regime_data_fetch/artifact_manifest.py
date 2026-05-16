@@ -10,6 +10,14 @@ import yaml
 
 VALID_STAGES = {"raw_capture", "normalized", "canonical", "run_inputs"}
 SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
+DATA_RAW_PREFIX: tuple[str, ...] = ("data", "raw")
+
+
+def strip_data_raw_prefix(path: Path) -> Path:
+    """Strip the conventional ``data/raw/`` prefix from a manifest-relative path."""
+    if path.parts[: len(DATA_RAW_PREFIX)] == DATA_RAW_PREFIX:
+        return Path(*path.parts[len(DATA_RAW_PREFIX) :])
+    return path
 
 
 class ManifestValidationError(ValueError):
@@ -34,10 +42,14 @@ class ManifestArtifact:
         required = ["name", "stage", "uri", "local_path", "sha256"]
         missing = [field for field in required if not payload.get(field)]
         if missing:
-            raise ManifestValidationError(f"manifest artifact missing required fields: {missing}")
+            raise ManifestValidationError(
+                f"manifest artifact missing required fields: {missing}"
+            )
 
         required_for = payload.get("required_for", [])
-        if not isinstance(required_for, list) or not all(isinstance(item, str) for item in required_for):
+        if not isinstance(required_for, list) or not all(
+            isinstance(item, str) for item in required_for
+        ):
             raise ManifestValidationError("required_for must be a list[str]")
 
         artifact = cls(
@@ -52,8 +64,12 @@ class ManifestArtifact:
                 else None
             ),
             rows=int(payload["rows"]) if payload.get("rows") is not None else None,
-            min_date=str(payload["min_date"]) if payload.get("min_date") is not None else None,
-            max_date=str(payload["max_date"]) if payload.get("max_date") is not None else None,
+            min_date=str(payload["min_date"])
+            if payload.get("min_date") is not None
+            else None,
+            max_date=str(payload["max_date"])
+            if payload.get("max_date") is not None
+            else None,
             required_for=tuple(required_for),
         )
         artifact.validate()
@@ -77,10 +93,14 @@ class ManifestArtifact:
         if self.stage not in VALID_STAGES:
             raise ManifestValidationError(f"unknown artifact stage: {self.stage}")
         if not SHA256_RE.fullmatch(self.sha256):
-            raise ManifestValidationError(f"sha256 must be 64 lowercase hex chars for {self.name}")
+            raise ManifestValidationError(
+                f"sha256 must be 64 lowercase hex chars for {self.name}"
+            )
         local_path = Path(self.local_path)
         if local_path.is_absolute() or ".." in local_path.parts:
-            raise ManifestValidationError(f"local_path must be relative and stay within data root: {self.local_path}")
+            raise ManifestValidationError(
+                f"local_path must be relative and stay within data root: {self.local_path}"
+            )
         if self.rows is not None and self.rows < 0:
             raise ManifestValidationError(f"rows must be non-negative for {self.name}")
 
@@ -97,7 +117,9 @@ class ArtifactManifest:
         required = ["artifact_set", "created_at_utc", "storage_root", "artifacts"]
         missing = [field for field in required if not payload.get(field)]
         if missing:
-            raise ManifestValidationError(f"manifest missing required fields: {missing}")
+            raise ManifestValidationError(
+                f"manifest missing required fields: {missing}"
+            )
         raw_artifacts = payload["artifacts"]
         if not isinstance(raw_artifacts, list):
             raise ManifestValidationError("artifacts must be a list")
@@ -123,17 +145,29 @@ class ArtifactManifest:
             raise ManifestValidationError("manifest must include at least one artifact")
         local_paths: set[str] = set()
         names: set[str] = set()
+        uris: set[str] = set()
         for artifact in self.artifacts:
             artifact.validate()
             if artifact.local_path in local_paths:
-                raise ManifestValidationError(f"duplicate local_path in manifest: {artifact.local_path}")
+                raise ManifestValidationError(
+                    f"duplicate local_path in manifest: {artifact.local_path}"
+                )
             if artifact.name in names:
-                raise ManifestValidationError(f"duplicate artifact name in manifest: {artifact.name}")
+                raise ManifestValidationError(
+                    f"duplicate artifact name in manifest: {artifact.name}"
+                )
+            if artifact.uri in uris:
+                raise ManifestValidationError(
+                    f"duplicate artifact uri in manifest: {artifact.uri}"
+                )
             local_paths.add(artifact.local_path)
             names.add(artifact.name)
+            uris.add(artifact.uri)
 
     def required_for(self, use_case: str) -> list[ManifestArtifact]:
-        return [artifact for artifact in self.artifacts if use_case in artifact.required_for]
+        return [
+            artifact for artifact in self.artifacts if use_case in artifact.required_for
+        ]
 
 
 def load_manifest(path: Path) -> ArtifactManifest:

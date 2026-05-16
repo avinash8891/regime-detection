@@ -21,6 +21,7 @@ if str(SRC_ROOT) not in sys.path:
     sys.path.insert(0, str(SRC_ROOT))
 
 from regime_data_fetch.pit_constituents import read_pit_intervals
+from regime_data_fetch.materialization import materialize_if_requested
 from regime_detection.axis_series import build_axis_series_bundle
 from regime_detection.engine import RegimeEngine
 from regime_detection.feature_store import FeatureStore, build_feature_store
@@ -402,6 +403,9 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--powell-speeches-parquet", type=Path, default=None)
     parser.add_argument("--cpi-vintages-parquet", type=Path, default=None)
     parser.add_argument("--allow-missing-constituent-files", action="store_true")
+    parser.add_argument("--manifest", type=Path, default=None, help="Optional artifact manifest to materialize before audit.")
+    parser.add_argument("--artifact-store", default=None, help="Optional artifact-store root override for --manifest.")
+    parser.add_argument("--data-root", type=Path, default=REPO_ROOT / "data" / "raw", help="Local data/raw root used for manifest materialization.")
     parser.add_argument("--out-dir", type=Path, default=REPO_ROOT / ".context")
     parser.add_argument("--stamp", default=dt.date.today().strftime("%Y%m%d"))
     return parser.parse_args()
@@ -409,6 +413,13 @@ def _parse_args() -> argparse.Namespace:
 
 def main() -> int:
     args = _parse_args()
+    materialize_if_requested(
+        manifest_path=args.manifest,
+        local_root=args.data_root,
+        repo_root=REPO_ROOT,
+        store_root=args.artifact_store,
+        required_for="audit_layer2_30d",
+    )
     args.out_dir.mkdir(parents=True, exist_ok=True)
     _working_context, feature_store, axis_bundle, selected_dates, missing_files = (
         _build_current_layer2_state(args)

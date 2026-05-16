@@ -4,10 +4,26 @@ import sqlite3
 from pathlib import Path
 
 from regime_data_fetch.acquisition_store import AcquisitionStore
-from regime_data_fetch.artifact_store import LocalArtifactStore
+from regime_data_fetch.artifact_store import (
+    ArtifactStore,
+    LocalArtifactStore,
+    StoredArtifact,
+)
 
 
-def test_acquisition_store_records_artifact_ledger_checkpoint_and_lineage(tmp_path: Path) -> None:
+class FailingArtifactStore(ArtifactStore):
+    def put_file(self, source_path: Path, key: str) -> StoredArtifact:
+        del source_path, key
+        raise OSError("disk full")
+
+    def put_bytes(self, payload: bytes, key: str) -> StoredArtifact:
+        del payload, key
+        raise OSError("disk full")
+
+
+def test_acquisition_store_records_artifact_ledger_checkpoint_and_lineage(
+    tmp_path: Path,
+) -> None:
     db_path = tmp_path / "acquisition.db"
     store = AcquisitionStore(db_path)
     run = store.start_fetch_run(fetch_type="sentiment", params={"source": "aaii"})
@@ -87,7 +103,13 @@ def test_acquisition_store_records_artifact_ledger_checkpoint_and_lineage(tmp_pa
             1900,
         ),
     ]
-    assert lineage_rows == [(canonical.artifact_record_id, raw.artifact_record_id, "normalize_aaii_sentiment")]
+    assert lineage_rows == [
+        (
+            canonical.artifact_record_id,
+            raw.artifact_record_id,
+            "normalize_aaii_sentiment",
+        )
+    ]
     assert version_rows == [
         (
             "aaii_sentiment",
@@ -118,10 +140,25 @@ def test_source_checkpoint_upserts_latest_successful_run(tmp_path: Path) -> None
         successful_run_id=second.run_id,
     )
 
-    assert store.get_source_checkpoint(source_name="fred", cursor_key="DGS10") == "2026-05-15"
+    assert (
+        store.get_source_checkpoint(source_name="fred", cursor_key="DGS10")
+        == "2026-05-15"
+    )
+    with sqlite3.connect(tmp_path / "acquisition.db") as conn:
+        row = conn.execute(
+            """
+            SELECT successful_run_id
+            FROM source_checkpoints
+            WHERE source_name = 'fred' AND cursor_key = 'DGS10'
+            """
+        ).fetchone()
+
+    assert row == (second.run_id,)
 
 
-def test_acquisition_store_uploads_raw_and_output_artifacts_to_configured_store(tmp_path: Path) -> None:
+def test_acquisition_store_uploads_raw_and_output_artifacts_to_configured_store(
+    tmp_path: Path,
+) -> None:
     db_path = tmp_path / "acquisition.db"
     artifact_root = tmp_path / "artifact-store"
     store = AcquisitionStore(db_path, artifact_store=LocalArtifactStore(artifact_root))
@@ -149,7 +186,12 @@ def test_acquisition_store_uploads_raw_and_output_artifacts_to_configured_store(
 
     assert raw.artifact_record_id is not None
     assert canonical is not None
-    assert list((artifact_root / "raw_capture" / "aaii" / f"run_id={run.run_id}").iterdir())[0].read_text() == "<html>survey</html>"
+    assert (
+        list(
+            (artifact_root / "raw_capture" / "aaii" / f"run_id={run.run_id}").iterdir()
+        )[0].read_text()
+        == "<html>survey</html>"
+    )
     assert (
         artifact_root
         / "canonical"
@@ -165,4 +207,32 @@ def test_acquisition_store_uploads_raw_and_output_artifacts_to_configured_store(
 
     assert [row[0] for row in rows] == ["raw_capture", "canonical"]
     assert rows[0][1].startswith(f"raw_capture/aaii/run_id={run.run_id}/")
-    assert rows[1][1] == f"canonical/aaii_sentiment_parquet/run_id={run.run_id}/aaii_sentiment.parquet"
+    assert (
+        rows[1][1]
+        == f"canonical/aaii_sentiment_parquet/run_id={run.run_id}/aaii_sentiment.parquet"
+    )
+
+
+def test_acquisition_store_adds_context_to_artifact_store_failures(
+    tmp_path: Path,
+) -> None:
+    store = AcquisitionStore(
+        tmp_path / "acquisition.db", artifact_store=FailingArtifactStore()
+    )
+    run = store.start_fetch_run(fetch_type="sentiment", params={"source": "aaii"})
+
+    try:
+        store.record_text_artifact(
+            run_id=run.run_id,
+            source_name="aaii",
+            artifact_kind="html",
+            source_identifier="https://www.aaii.com/sentimentsurvey",
+            content_text="<html>survey</html>",
+        )
+    except RuntimeError as exc:
+        assert f"failed to store raw artifact aaii/html for run_id={run.run_id}" in str(
+            exc
+        )
+        assert isinstance(exc.__cause__, OSError)
+    else:
+        raise AssertionError("expected contextual artifact-store failure")

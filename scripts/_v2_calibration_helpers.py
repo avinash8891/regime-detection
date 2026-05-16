@@ -6,6 +6,7 @@ plumbing instead of duplicating the per-input ``_load_*`` blocks.
 """
 from __future__ import annotations
 
+import argparse
 import logging
 from pathlib import Path
 
@@ -19,6 +20,13 @@ from regime_detection.loaders import (
 
 
 logger = logging.getLogger(__name__)
+
+
+def positive_int(value: str) -> int:
+    parsed = int(value)
+    if parsed <= 0:
+        raise argparse.ArgumentTypeError("must be a positive integer")
+    return parsed
 
 
 def load_market_data(daily_ohlcv_dir: Path) -> pd.DataFrame:

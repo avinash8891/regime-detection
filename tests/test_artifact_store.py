@@ -44,7 +44,9 @@ def test_local_artifact_store_rejects_hash_mismatch_on_get(tmp_path: Path) -> No
         store.get_file(stored.uri, tmp_path / "out.json", expected_sha256="0" * 64)
 
 
-def test_local_artifact_store_rejects_different_bytes_for_existing_key(tmp_path: Path) -> None:
+def test_local_artifact_store_rejects_different_bytes_for_existing_key(
+    tmp_path: Path,
+) -> None:
     first = tmp_path / "first.csv"
     second = tmp_path / "second.csv"
     first.write_text("date,value\n2026-05-15,1\n")
@@ -57,7 +59,9 @@ def test_local_artifact_store_rejects_different_bytes_for_existing_key(tmp_path:
         store.put_file(second, original.uri)
 
 
-def test_local_artifact_store_allows_idempotent_same_bytes_for_existing_key(tmp_path: Path) -> None:
+def test_local_artifact_store_allows_idempotent_same_bytes_for_existing_key(
+    tmp_path: Path,
+) -> None:
     first = tmp_path / "first.csv"
     second = tmp_path / "second.csv"
     first.write_bytes(b"same")
@@ -98,7 +102,58 @@ def test_s3_artifact_store_removes_temp_file_when_download_hash_mismatches(
     destination = tmp_path / "data" / "raw" / "macro.parquet"
 
     with pytest.raises(ArtifactHashMismatchError, match="sha256 mismatch"):
-        store.get_file("canonical/macro.parquet", destination, expected_sha256=sha256_bytes(b"good"))
+        store.get_file(
+            "canonical/macro.parquet",
+            destination,
+            expected_sha256=sha256_bytes(b"good"),
+        )
 
     assert not destination.exists()
     assert list(destination.parent.glob(".macro.parquet.*.tmp")) == []
+
+
+def test_s3_artifact_store_put_file_and_bytes_share_idempotent_overwrite_contract(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class MissingObject(Exception):
+        response = {"Error": {"Code": "404"}}
+
+    class FakeS3Client:
+        def __init__(self) -> None:
+            self.objects: dict[str, tuple[bytes, dict[str, str]]] = {}
+
+        def head_object(self, Bucket: str, Key: str) -> dict[str, object]:
+            del Bucket
+            if Key not in self.objects:
+                raise MissingObject()
+            payload, metadata = self.objects[Key]
+            return {"Metadata": metadata, "ContentLength": len(payload)}
+
+        def upload_file(
+            self, filename: str, bucket: str, key: str, ExtraArgs: dict[str, object]
+        ) -> None:
+            del bucket
+            self.objects[key] = (Path(filename).read_bytes(), ExtraArgs["Metadata"])
+
+        def put_object(
+            self, Bucket: str, Key: str, Body: bytes, Metadata: dict[str, str]
+        ) -> None:
+            del Bucket
+            self.objects[Key] = (Body, Metadata)
+
+    client = FakeS3Client()
+    fake_boto3 = types.SimpleNamespace(client=lambda service: client)
+    monkeypatch.setitem(sys.modules, "boto3", fake_boto3)
+    store = S3ArtifactStore("s3://regime-data/artifacts")
+    first = tmp_path / "first.csv"
+    second = tmp_path / "second.csv"
+    first.write_bytes(b"same")
+    second.write_bytes(b"different")
+
+    stored = store.put_file(first, "canonical/a.csv")
+    duplicate = store.put_bytes(b"same", "canonical/a.csv")
+
+    assert duplicate == stored
+    with pytest.raises(ArtifactOverwriteError, match="different bytes"):
+        store.put_file(second, "canonical/a.csv")

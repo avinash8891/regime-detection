@@ -1,13 +1,17 @@
 from __future__ import annotations
 
 import datetime as dt
-import hashlib
 import json
 import sqlite3
 from dataclasses import dataclass
 from pathlib import Path
 
-from regime_data_fetch.artifact_store import ArtifactStore, build_artifact_store
+from regime_data_fetch.artifact_store import (
+    ArtifactStore,
+    StoredArtifact,
+    build_artifact_store,
+    sha256_bytes,
+)
 
 
 def utc_now_iso() -> str:
@@ -42,15 +46,21 @@ class AcquisitionStore:
         artifact_store_root: str | Path | None = None,
     ) -> None:
         if artifact_store is not None and artifact_store_root is not None:
-            raise ValueError("pass either artifact_store or artifact_store_root, not both")
+            raise ValueError(
+                "pass either artifact_store or artifact_store_root, not both"
+            )
         self.db_path = db_path
         self.artifact_store = artifact_store or (
-            build_artifact_store(artifact_store_root) if artifact_store_root is not None else None
+            build_artifact_store(artifact_store_root)
+            if artifact_store_root is not None
+            else None
         )
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
         self._init_schema()
 
-    def start_fetch_run(self, *, fetch_type: str, params: dict[str, object]) -> FetchRun:
+    def start_fetch_run(
+        self, *, fetch_type: str, params: dict[str, object]
+    ) -> FetchRun:
         started_at_utc = utc_now_iso()
         with self._connect() as conn:
             cursor = conn.execute(
@@ -62,7 +72,12 @@ class AcquisitionStore:
                     params_json
                 ) VALUES (?, ?, ?, ?)
                 """,
-                (fetch_type, started_at_utc, "running", json.dumps(params, sort_keys=True)),
+                (
+                    fetch_type,
+                    started_at_utc,
+                    "running",
+                    json.dumps(params, sort_keys=True),
+                ),
             )
             return FetchRun(run_id=int(cursor.lastrowid), started_at_utc=started_at_utc)
 
@@ -101,7 +116,7 @@ class AcquisitionStore:
         notes: str | None = None,
     ) -> RecordedArtifact:
         payload = content_text.encode("utf-8")
-        sha256 = hashlib.sha256(payload).hexdigest()
+        sha256 = sha256_bytes(payload)
         with self._connect() as conn:
             cursor = conn.execute(
                 """
@@ -157,7 +172,9 @@ class AcquisitionStore:
         return RecordedArtifact(
             artifact_id=artifact_id,
             content_sha256=sha256,
-            artifact_record_id=artifact_record.artifact_record_id if artifact_record else None,
+            artifact_record_id=artifact_record.artifact_record_id
+            if artifact_record
+            else None,
         )
 
     def record_file_artifact(
@@ -179,7 +196,7 @@ class AcquisitionStore:
         store_bytes: bool = True,
     ) -> RecordedArtifact:
         payload = file_path.read_bytes()
-        sha256 = hashlib.sha256(payload).hexdigest()
+        sha256 = sha256_bytes(payload)
         with self._connect() as conn:
             cursor = conn.execute(
                 """
@@ -252,7 +269,9 @@ class AcquisitionStore:
         return RecordedArtifact(
             artifact_id=artifact_id,
             content_sha256=sha256,
-            artifact_record_id=artifact_record.artifact_record_id if artifact_record else None,
+            artifact_record_id=artifact_record.artifact_record_id
+            if artifact_record
+            else None,
         )
 
     def record_output(
@@ -271,7 +290,7 @@ class AcquisitionStore:
         notes: str | None = None,
     ) -> ArtifactRecord | None:
         payload = path.read_bytes()
-        content_sha256 = hashlib.sha256(payload).hexdigest()
+        content_sha256 = sha256_bytes(payload)
         with self._connect() as conn:
             conn.execute(
                 """
@@ -307,7 +326,15 @@ class AcquisitionStore:
             / f"run_id={run_id}"
             / path.name
         )
-        stored = self.artifact_store.put_file(path, key) if self.artifact_store is not None else None
+        stored = (
+            self._put_file_artifact(
+                path,
+                key,
+                context=f"canonical artifact {output_kind} for run_id={run_id}",
+            )
+            if self.artifact_store is not None
+            else None
+        )
         return self.record_artifact_record(
             run_id=run_id,
             name=artifact_name or output_kind,
@@ -604,10 +631,7 @@ class AcquisitionStore:
             self._ensure_artifact_columns(conn)
 
     def _ensure_artifact_columns(self, conn: sqlite3.Connection) -> None:
-        existing = {
-            row[1]
-            for row in conn.execute("PRAGMA table_info(artifacts)")
-        }
+        existing = {row[1] for row in conn.execute("PRAGMA table_info(artifacts)")}
         required_columns = {
             "local_path": "ALTER TABLE artifacts ADD COLUMN local_path TEXT",
             "content_size_bytes": "ALTER TABLE artifacts ADD COLUMN content_size_bytes INTEGER",
@@ -639,7 +663,15 @@ class AcquisitionStore:
             / f"run_id={run_id}"
             / f"{_safe_path_part(source_identifier)}-{content_sha256[:12]}{suffix}"
         )
-        stored = self.artifact_store.put_bytes(payload, key) if self.artifact_store is not None else None
+        stored = (
+            self._put_bytes_artifact(
+                payload,
+                key,
+                context=f"raw artifact {source_name}/{artifact_kind} for run_id={run_id}",
+            )
+            if self.artifact_store is not None
+            else None
+        )
         return self.record_artifact_record(
             run_id=run_id,
             name=f"{source_name}_{artifact_kind}",
@@ -654,6 +686,24 @@ class AcquisitionStore:
             max_date=end_date or effective_date,
             notes=notes,
         )
+
+    def _put_file_artifact(
+        self, path: Path, key: str, *, context: str
+    ) -> StoredArtifact:
+        assert self.artifact_store is not None
+        try:
+            return self.artifact_store.put_file(path, key)
+        except Exception as exc:
+            raise RuntimeError(f"failed to store {context}: {key}") from exc
+
+    def _put_bytes_artifact(
+        self, payload: bytes, key: str, *, context: str
+    ) -> StoredArtifact:
+        assert self.artifact_store is not None
+        try:
+            return self.artifact_store.put_bytes(payload, key)
+        except Exception as exc:
+            raise RuntimeError(f"failed to store {context}: {key}") from exc
 
 
 def _safe_path_part(value: str) -> str:

@@ -46,7 +46,9 @@ class ArtifactStore:
     def put_bytes(self, payload: bytes, key: str) -> StoredArtifact:
         raise NotImplementedError
 
-    def get_file(self, uri: str, destination_path: Path, *, expected_sha256: str) -> Path:
+    def get_file(
+        self, uri: str, destination_path: Path, *, expected_sha256: str
+    ) -> Path:
         raise NotImplementedError
 
 
@@ -68,11 +70,17 @@ class LocalArtifactStore(ArtifactStore):
                 raise ArtifactOverwriteError(
                     f"artifact key already exists with different bytes: {relative_key}"
                 )
-            return StoredArtifact(uri=relative_key, sha256=existing_sha, size_bytes=destination.stat().st_size)
+            return StoredArtifact(
+                uri=relative_key,
+                sha256=existing_sha,
+                size_bytes=destination.stat().st_size,
+            )
 
         destination.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(source_path, destination)
-        return StoredArtifact(uri=relative_key, sha256=source_sha, size_bytes=size_bytes)
+        return StoredArtifact(
+            uri=relative_key, sha256=source_sha, size_bytes=size_bytes
+        )
 
     def put_bytes(self, payload: bytes, key: str) -> StoredArtifact:
         relative_key = _normalize_key(key)
@@ -86,18 +94,23 @@ class LocalArtifactStore(ArtifactStore):
                 raise ArtifactOverwriteError(
                     f"artifact key already exists with different bytes: {relative_key}"
                 )
-            return StoredArtifact(uri=relative_key, sha256=existing_sha, size_bytes=destination.stat().st_size)
+            return StoredArtifact(
+                uri=relative_key,
+                sha256=existing_sha,
+                size_bytes=destination.stat().st_size,
+            )
 
         destination.parent.mkdir(parents=True, exist_ok=True)
         _write_bytes_atomically(destination, payload)
-        return StoredArtifact(uri=relative_key, sha256=payload_sha, size_bytes=size_bytes)
+        return StoredArtifact(
+            uri=relative_key, sha256=payload_sha, size_bytes=size_bytes
+        )
 
-    def get_file(self, uri: str, destination_path: Path, *, expected_sha256: str) -> Path:
+    def get_file(
+        self, uri: str, destination_path: Path, *, expected_sha256: str
+    ) -> Path:
         relative_key = _normalize_key(uri)
         source = self.root / relative_key
-        if not source.exists():
-            raise FileNotFoundError(source)
-
         actual_sha = sha256_file(source)
         if actual_sha != expected_sha256:
             raise ArtifactHashMismatchError(
@@ -135,7 +148,12 @@ def build_artifact_store(root_uri: str | Path) -> ArtifactStore:
 
 
 def _is_windows_absolute_path(value: str) -> bool:
-    return len(value) >= 3 and value[0].isalpha() and value[1] == ":" and value[2] in {"\\", "/"}
+    return (
+        len(value) >= 3
+        and value[0].isalpha()
+        and value[1] == ":"
+        and value[2] in {"\\", "/"}
+    )
 
 
 class S3ArtifactStore(ArtifactStore):
@@ -160,18 +178,15 @@ class S3ArtifactStore(ArtifactStore):
         object_key = _join_s3_key(self.prefix, relative_key)
         sha = sha256_file(source_path)
         size_bytes = source_path.stat().st_size
-        try:
-            existing = self.client.head_object(Bucket=self.bucket, Key=object_key)
-        except Exception as exc:  # botocore is optional; avoid importing its exception type.
-            response = getattr(exc, "response", {})
-            error_code = str(response.get("Error", {}).get("Code", ""))
-            if error_code not in {"404", "NoSuchKey", "NotFound"}:
-                raise
-        else:
-            existing_sha = existing.get("Metadata", {}).get("sha256")
-            existing_size = int(existing.get("ContentLength", -1))
+        existing = _s3_existing_artifact(
+            self.client, bucket=self.bucket, object_key=object_key
+        )
+        if existing is not None:
+            existing_sha, existing_size = existing
             if existing_sha == sha and existing_size == size_bytes:
-                return StoredArtifact(uri=relative_key, sha256=sha, size_bytes=size_bytes)
+                return StoredArtifact(
+                    uri=relative_key, sha256=sha, size_bytes=size_bytes
+                )
             raise ArtifactOverwriteError(
                 f"s3 artifact key already exists with different bytes: s3://{self.bucket}/{object_key}"
             )
@@ -188,18 +203,15 @@ class S3ArtifactStore(ArtifactStore):
         object_key = _join_s3_key(self.prefix, relative_key)
         sha = sha256_bytes(payload)
         size_bytes = len(payload)
-        try:
-            existing = self.client.head_object(Bucket=self.bucket, Key=object_key)
-        except Exception as exc:  # botocore is optional; avoid importing its exception type.
-            response = getattr(exc, "response", {})
-            error_code = str(response.get("Error", {}).get("Code", ""))
-            if error_code not in {"404", "NoSuchKey", "NotFound"}:
-                raise
-        else:
-            existing_sha = existing.get("Metadata", {}).get("sha256")
-            existing_size = int(existing.get("ContentLength", -1))
+        existing = _s3_existing_artifact(
+            self.client, bucket=self.bucket, object_key=object_key
+        )
+        if existing is not None:
+            existing_sha, existing_size = existing
             if existing_sha == sha and existing_size == size_bytes:
-                return StoredArtifact(uri=relative_key, sha256=sha, size_bytes=size_bytes)
+                return StoredArtifact(
+                    uri=relative_key, sha256=sha, size_bytes=size_bytes
+                )
             raise ArtifactOverwriteError(
                 f"s3 artifact key already exists with different bytes: s3://{self.bucket}/{object_key}"
             )
@@ -211,7 +223,9 @@ class S3ArtifactStore(ArtifactStore):
         )
         return StoredArtifact(uri=relative_key, sha256=sha, size_bytes=size_bytes)
 
-    def get_file(self, uri: str, destination_path: Path, *, expected_sha256: str) -> Path:
+    def get_file(
+        self, uri: str, destination_path: Path, *, expected_sha256: str
+    ) -> Path:
         relative_key = _normalize_key(uri)
         object_key = _join_s3_key(self.prefix, relative_key)
         destination_path.parent.mkdir(parents=True, exist_ok=True)
@@ -238,13 +252,35 @@ def _normalize_key(key: str) -> str:
     elif parsed.scheme == "s3":
         key = parsed.path
     normalized = str(Path(key))
-    if normalized.startswith("../") or normalized == ".." or Path(normalized).is_absolute():
+    if (
+        normalized.startswith("../")
+        or normalized == ".."
+        or Path(normalized).is_absolute()
+    ):
         raise ValueError(f"artifact key must be relative within the store: {key}")
     return normalized
 
 
 def _join_s3_key(prefix: str, key: str) -> str:
     return "/".join(part.strip("/") for part in (prefix, key) if part.strip("/"))
+
+
+def _s3_existing_artifact(
+    client: object, *, bucket: str, object_key: str
+) -> tuple[str | None, int] | None:
+    try:
+        existing = client.head_object(Bucket=bucket, Key=object_key)
+    except Exception as exc:
+        # boto3 is optional here, so do not import botocore just to name its
+        # ClientError. Tests and local file-store users should not need it.
+        response = getattr(exc, "response", {})
+        error_code = str(response.get("Error", {}).get("Code", ""))
+        if error_code in {"404", "NoSuchKey", "NotFound"}:
+            return None
+        raise
+    return existing.get("Metadata", {}).get("sha256"), int(
+        existing.get("ContentLength", -1)
+    )
 
 
 def _temporary_path(destination_path: Path) -> Path:

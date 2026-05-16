@@ -20,7 +20,7 @@ import datetime as dt
 import logging
 import sys
 from pathlib import Path
-from typing import Any
+from typing import Any, get_args
 
 import pandas as pd
 
@@ -39,6 +39,7 @@ from regime_detection.loaders import (  # noqa: E402
     load_cpi_vintages_first_release,
 )
 from regime_detection.market_context import build_market_context  # noqa: E402
+from regime_detection.models import ClassificationStatus  # noqa: E402
 from regime_detection.versioning import engine_version as resolved_engine_version  # noqa: E402
 from regime_data_fetch.materialization import materialize_if_requested  # noqa: E402
 
@@ -53,13 +54,7 @@ from _v2_calibration_helpers import (  # noqa: E402
 logger = logging.getLogger("v2_walkforward_gate")
 
 V1_AXIS_DEFAULT_AGENT = "default"
-NON_CLASSIFIED_REPORTING_LABELS = {
-    "no_rule_fired",
-    "data_unavailable",
-    "stale_data",
-    "insufficient_history",
-    "not_wired",
-}
+NON_CLASSIFIED_REPORTING_LABELS = set(get_args(ClassificationStatus)) - {"classified"}
 
 
 def _setup_logging() -> None:

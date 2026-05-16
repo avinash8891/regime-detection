@@ -5,7 +5,12 @@ import json
 from pathlib import Path
 from typing import Iterable
 
-from regime_data_fetch.artifact_manifest import ArtifactManifest, ManifestArtifact, write_manifest
+from regime_data_fetch.artifact_manifest import (
+    ArtifactManifest,
+    ManifestArtifact,
+    strip_data_raw_prefix,
+    write_manifest,
+)
 from regime_data_fetch.artifact_store import build_artifact_store
 
 
@@ -126,12 +131,7 @@ def _local_path_for(
 
 
 def _store_key_for(local_path: str) -> str:
-    path = Path(local_path)
-    if path.parts[:2] == ("data", "raw"):
-        relative = Path(*path.parts[2:])
-    else:
-        relative = path
-    return str(Path("canonical") / relative)
+    return str(Path("canonical") / strip_data_raw_prefix(Path(local_path)))
 
 
 def _normalize_manifest_local_path(local_path: str) -> str:
