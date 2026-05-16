@@ -471,7 +471,7 @@ change_point:
   method: "BOCPD"
 
 no_flip_flop:
-  window_trading_days: 5
+  window_trading_days: 15
 
 # v2 §5.1 Agent Cohort Routing (Slice 5.1, Ambiguity Log #53 calibration placeholder).
 cohort_routing:
