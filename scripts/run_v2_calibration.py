@@ -98,19 +98,19 @@ def _summarize_central_bank_text(feature_store: Any, config: Any) -> list[str]:
         f"- `feature_store.monetary.central_bank_text_score` lit: **True** "
         f"(n={len(series)} sessions)",
         f"- Smoothing window: **{cb_cfg.smoothing_window_sessions}** NYSE "
-        f"sessions (CentralBankTextConfig.smoothing_window_sessions; "
-        f"v2 §9.1 walk-forward calibration placeholder).",
+        "sessions (CentralBankTextConfig.smoothing_window_sessions; "
+        "v2 §9.1 walk-forward calibration placeholder).",
         f"- max_release_age_days: **{cb_cfg.max_release_age_days}**.",
-        f"- Score distribution after smoothing:",
+        "- Score distribution after smoothing:",
         f"    - min: {float(series.min()):+.3f}",
         f"    - p25: {float(series.quantile(0.25)):+.3f}",
         f"    - median: {float(series.median()):+.3f}",
         f"    - p75: {float(series.quantile(0.75)):+.3f}",
         f"    - max: {float(series.max()):+.3f}",
         f"    - mean: {float(series.mean()):+.3f}",
-        f"- Bias-warning code emitted on feature output: "
-        f"`central_bank_text_deterministic_lexicon_substitute` (audit M1 / "
-        f"docs/spec_code_data_audit_2026_05_15.md §3.1).",
+        "- Bias-warning code emitted on feature output: "
+        "`central_bank_text_deterministic_lexicon_substitute` (audit M1 / "
+        "docs/spec_code_data_audit_2026_05_15.md §3.1).",
     ]
     return lines
 
@@ -483,7 +483,7 @@ def main() -> int:
     summary_path = verification_dir / "v2_calibration_summary.md"
     summary_path.write_text("\n".join(summary_md) + "\n")
 
-    print(f"\nWrote candidate label maps:")
+    print("\nWrote candidate label maps:")
     print(f"  {hmm_path}")
     print(f"  {cluster_path}")
     print(f"  {summary_path}")
