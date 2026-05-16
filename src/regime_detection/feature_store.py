@@ -3,6 +3,7 @@ from __future__ import annotations
 import pandas as pd
 from pydantic import BaseModel, ConfigDict
 
+from regime_detection._rolling_stats import sma
 from regime_detection.breadth_state import BreadthFeatures, compute_features as compute_breadth_features
 from regime_detection.breadth_state_v2 import (
     BreadthV2Features,
@@ -289,7 +290,7 @@ def build_feature_store(
         spy_close=spy_close,
         rsp_close=context.rsp_close.reindex(spy_ohlcv.index),
     )
-    sma_50 = spy_close.rolling(50).mean()
+    sma_50 = sma(spy_close, 50)
     # V2 §3.2 feature compute (slice 1.2). The classifier wiring (slice 1.3+)
     # consumes these series; for now they populate the seam so build_feature_store
     # returns a typed NetworkFragilityFeatures whenever sector data is present.

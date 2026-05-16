@@ -18,6 +18,16 @@ import pandas as pd
 _ZSCORE_DDOF = 1
 
 
+def sma(series: pd.Series, window: int) -> pd.Series:
+    """Simple moving average over ``window`` periods."""
+    return series.rolling(window).mean()
+
+
+def period_return(series: pd.Series, periods: int) -> pd.Series:
+    """Percentage return over ``periods`` look-back: series / series.shift(periods) - 1."""
+    return series / series.shift(periods) - 1
+
+
 def rolling_change_zscore(
     series: pd.Series,
     *,
