@@ -348,10 +348,15 @@ def test_fetch_help_surface_mentions_pmi_and_pit() -> None:
     assert "--eps-wayback-from" in help_text
     assert "--eps-wayback-to" in help_text
     assert "--eps-wayback-stop-after-first-success" in help_text
+    assert "--eps-browser-user-data-dir" in help_text
+    assert "--eps-browser-executable" in help_text
+    assert "--eps-browser-headless" in help_text
+    assert "--eps-browser-timeout-ms" in help_text
     assert "--usd-index-csv" in help_text
     assert "--daily-ohlcv-dir" in help_text
     assert "--pit-parquet" in help_text
     assert "--allow-missing-constituent-symbols" in help_text
+    assert "--pmi-history-dir" in help_text
     assert "--investing-archive-root" in help_text
     assert "--investing-earnings-loaded-page" in help_text
     assert "--investing-earnings-browser-capture" in help_text
@@ -388,6 +393,24 @@ def test_fetch_all_uses_live_constituent_ohlcv_not_local_sqlite_import() -> None
     assert 'if args.fetch in {"daily-ohlcv-constituents-alpaca", "all"}:' in script
     assert 'if args.fetch == "daily-ohlcv-local-sqlite":' in script
     assert 'if args.fetch in {"daily-ohlcv-local-sqlite", "all"}:' not in script
+
+
+def test_fetch_all_uses_live_pmi_by_default_not_manual_history() -> None:
+    script = Path("scripts/fetch_regime_engine_v1_data.py").read_text()
+    assert "--pmi-history-dir" in script
+    assert 'manual_history_dir=Path(args.pmi_history_dir) if args.pmi_history_dir else None' in script
+    assert "manual_history_dir=DEFAULT_MANUAL_PMI_HISTORY_DIR" not in script
+
+
+def test_v1_all_universe_defaults_to_pit_constituents_when_json_is_absent() -> None:
+    script = Path("scripts/fetch_regime_engine_v1_data.py").read_text()
+    assert "load_symbols_from_pit_constituents_parquet" in script
+    assert 'if args.universe_json:' in script
+    assert "return load_symbols_from_pit_constituents_parquet(pit_parquet)" in script
+    assert "fetch_alpaca_active_stock_symbols" not in script
+    assert "--universe-source" not in script
+    assert "universe_source" not in script
+    assert '== "none"' not in script
 
 
 def test_event_calendar_fetch_symbol_is_wired() -> None:

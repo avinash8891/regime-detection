@@ -35,10 +35,11 @@ from regime_data_fetch.local_daily_ohlcv_sqlite import (
     run_local_daily_ohlcv_sqlite_import,
 )
 from regime_data_fetch.local_usd_index import run_local_usd_index_import
-from regime_data_fetch.pmi import DEFAULT_MANUAL_PMI_HISTORY_DIR, run_pmi_fetch
+from regime_data_fetch.pmi import run_pmi_fetch
 from regime_data_fetch.pit_constituents import run_pit_constituents_fetch
 from regime_data_fetch.powell_speeches import run_powell_speeches_fetch
 from regime_data_fetch.sf_fed_news_sentiment import run_sf_fed_news_sentiment_fetch
+from regime_data_fetch.universe import load_symbols_from_pit_constituents_parquet
 
 
 def main() -> int:
@@ -69,7 +70,7 @@ def main() -> int:
     ap.add_argument(
         "--universe-json",
         default=None,
-        help="Path to a JSON list[str] of symbols to fetch. Required for V1/all stock-universe market fetches.",
+        help="Optional JSON list[str] of symbols to fetch. If omitted for V1/all, the PIT constituent parquet ticker set is used.",
     )
     ap.add_argument(
         "--vix-symbol",
@@ -90,6 +91,10 @@ def main() -> int:
     ap.add_argument("--eps-wayback-from", default=None, help="Optional lower bound date (YYYY-MM-DD) for Wayback EPS snapshot dates.")
     ap.add_argument("--eps-wayback-to", default=None, help="Optional upper bound date (YYYY-MM-DD) for Wayback EPS snapshot dates.")
     ap.add_argument("--eps-wayback-stop-after-first-success", action="store_true", help="Stop Wayback EPS processing after the first successfully parsed snapshot.")
+    ap.add_argument("--eps-browser-user-data-dir", default=None, help="Persistent browser profile directory for S&P EPS browser fallback.")
+    ap.add_argument("--eps-browser-executable", default=None, help="Chrome/Chromium executable for S&P EPS browser fallback.")
+    ap.add_argument("--eps-browser-headless", action=argparse.BooleanOptionalAction, default=True, help="Run S&P EPS browser fallback headless/headful. Default headless.")
+    ap.add_argument("--eps-browser-timeout-ms", type=int, default=120000, help="Timeout in milliseconds for S&P EPS browser fallback.")
     ap.add_argument(
         "--usd-index-csv",
         default=None,
@@ -101,6 +106,7 @@ def main() -> int:
     ap.add_argument("--daily-ohlcv-dir", default=None, help="Path to a local partitioned daily_ohlcv parquet directory. Required for --fetch daily-ohlcv-local-sqlite.")
     ap.add_argument("--pit-parquet", default=None, help="PIT constituent parquet for --fetch daily-ohlcv-constituents-alpaca. Defaults to <out-dir>/pit_constituents/sp500_ticker_intervals.parquet.")
     ap.add_argument("--allow-missing-constituent-symbols", action="store_true", help="Allow daily-ohlcv-constituents-alpaca to continue when Alpaca returns no bars for some PIT symbols.")
+    ap.add_argument("--pmi-history-dir", default=None, help="Optional manual Investing PMI history directory. Omit for live DBnomics/TradingEconomics PMI ingestion.")
     ap.add_argument("--investing-archive-root", default=None, help="Path to archived Investing.com source_pages root. Required for --fetch investing-archive-local.")
     ap.add_argument("--investing-earnings-loaded-page", default=None, help="Path to a browser-loaded Investing.com earnings calendar HTML page containing __NEXT_DATA__. Optional for --fetch investing-live.")
     ap.add_argument("--investing-earnings-browser-capture", action=argparse.BooleanOptionalAction, default=True, help="For --fetch investing-live, capture a fresh Investing.com earnings page with Playwright when no page/token is supplied. Default True.")
@@ -166,8 +172,9 @@ def main() -> int:
                     "scope": args.scope,
                     "stocks_count": len(stocks),
                     "note": (
-                        "V1/all stock-universe fetches require an explicit --universe-json symbol list. "
-                        "V2 scope adds the fixed ETF/cross-asset universe in code."
+                        "V1/all stock-universe fetches use --universe-json when supplied, otherwise "
+                        "the PIT constituent parquet ticker set. V2 scope adds the fixed ETF/cross-asset "
+                        "universe in code."
                     ),
                 },
                 indent=2,
@@ -247,7 +254,7 @@ def main() -> int:
             as_of_date=end,
             acquisition_db_path=acquisition_db_path,
             artifact_store_root=acquisition_artifact_store_root,
-            manual_history_dir=DEFAULT_MANUAL_PMI_HISTORY_DIR,
+            manual_history_dir=Path(args.pmi_history_dir) if args.pmi_history_dir else None,
         )
         report_paths.append(pmi_report)
         print(str(pmi_report))
@@ -310,17 +317,19 @@ def main() -> int:
         print(str(eps_report))
 
     if args.fetch == "eps-spglobal-auto":
-        # Opt-in only; intentionally excluded from --fetch all because the
-        # spdji URL is Akamai-protected and returns HTTP 403 to programmatic
-        # clients. Including it in `all` would abort the full fetch midway in
-        # any environment without a pre-staged manual-drop file. Cadence is
-        # WEEKLY (S&P publishes weekly); see
+        # Opt-in only; intentionally excluded from --fetch all because S&P
+        # publishes the workbook weekly and the spdji URL can require a real
+        # browser session. Cadence is WEEKLY; see
         # regime_data_fetch.aggregate_eps.download_spglobal_eps_workbook
         # docstring for the 4-week revision-direction rationale.
         eps_auto_report = run_aggregate_eps_auto_fetch(
             out_dir=out_dir,
             acquisition_db_path=acquisition_db_path,
             artifact_store_root=acquisition_artifact_store_root,
+            browser_user_data_dir=Path(args.eps_browser_user_data_dir) if args.eps_browser_user_data_dir else None,
+            browser_executable=Path(args.eps_browser_executable) if args.eps_browser_executable else None,
+            browser_headless=args.eps_browser_headless,
+            browser_timeout_ms=args.eps_browser_timeout_ms,
         )
         report_paths.append(eps_auto_report)
         print(str(eps_auto_report))
@@ -438,13 +447,18 @@ def main() -> int:
 
 
 def _resolve_stock_universe(args: argparse.Namespace) -> list[str]:
-    if not args.universe_json:
-        raise SystemExit("--universe-json is required for V1/all stock-universe fetches")
-    universe_path = Path(args.universe_json)
-    stocks = json.loads(universe_path.read_text())
-    if not isinstance(stocks, list) or not all(isinstance(symbol, str) for symbol in stocks):
-        raise SystemExit("--universe-json must be a JSON list[str]")
-    return stocks
+    if args.universe_json:
+        universe_path = Path(args.universe_json)
+        stocks = json.loads(universe_path.read_text())
+        if not isinstance(stocks, list) or not all(isinstance(symbol, str) for symbol in stocks):
+            raise SystemExit("--universe-json must be a JSON list[str]")
+        return stocks
+    pit_parquet = (
+        Path(args.pit_parquet)
+        if args.pit_parquet
+        else REPO_ROOT / "data" / "raw" / "pit_constituents" / "sp500_ticker_intervals.parquet"
+    )
+    return load_symbols_from_pit_constituents_parquet(pit_parquet)
 
 
 if __name__ == "__main__":

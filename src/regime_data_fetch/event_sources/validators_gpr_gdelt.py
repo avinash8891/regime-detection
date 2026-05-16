@@ -630,12 +630,6 @@ def _fetch_ucdp_events(start_year: int, end_year: int) -> str | None:
 
 def _fetch_hdx_hapi_conflict_events(start_year: int, end_year: int) -> str | None:
     app_identifier = _hdx_hapi_app_identifier()
-    if not app_identifier:
-        LOGGER.error(
-            "HDX HAPI app identifier unavailable; set HDX_HAPI_APP_IDENTIFIER "
-            "or HDX_HAPI_APP_NAME/HDX_HAPI_APP_EMAIL to fetch HDX conflict events"
-        )
-        return None
     return _fetch_paged_json(
         HDX_HAPI_CONFLICT_EVENTS_URL,
         headers={},
@@ -657,7 +651,7 @@ def _hdx_hapi_app_identifier() -> str | None:
     app_name = os.environ.get("HDX_HAPI_APP_NAME", "").strip()
     app_email = os.environ.get("HDX_HAPI_APP_EMAIL", "").strip()
     if not app_name or not app_email:
-        return None
+        return "regime-detection"
     return base64.b64encode(f"{app_name}:{app_email}".encode("utf-8")).decode("ascii")
 
 

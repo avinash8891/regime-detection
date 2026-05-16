@@ -23,6 +23,7 @@ from regime_data_fetch.aggregate_eps import (
     compute_eps_revision_direction_4w,
     parse_wayback_cdx_json,
     parse_sp500_eps_workbook,
+    run_aggregate_eps_auto_fetch,
     run_wayback_aggregate_eps_fetch,
     run_aggregate_eps_fetch,
     seed_weekly_history_from_wayback_timeline,
@@ -157,6 +158,55 @@ def test_run_aggregate_eps_fetch_records_manual_workbook_in_sqlite(tmp_path: Pat
     ]
     assert blob_sizes == [((FIXTURES / "sp500_eps_est_fixture.xlsx").stat().st_size,)]
     assert outputs == [("aggregate_eps_parquet",), ("aggregate_eps_report",)]
+
+
+def test_run_aggregate_eps_auto_fetch_uses_browser_fallback_after_direct_download_failure(
+    tmp_path: Path,
+) -> None:
+    workbook_bytes = (FIXTURES / "sp500_eps_est_fixture.xlsx").read_bytes()
+
+    def failing_downloader(**kwargs) -> Path:
+        raise AggregateEPSFetchError("direct download blocked")
+
+    def browser_downloader(**kwargs) -> Path:
+        out_path = kwargs["out_path"]
+        out_path.parent.mkdir(parents=True, exist_ok=True)
+        out_path.write_bytes(workbook_bytes)
+        return out_path
+
+    report_path = run_aggregate_eps_auto_fetch(
+        out_dir=tmp_path,
+        workbook_downloader=failing_downloader,
+        browser_downloader=browser_downloader,
+    )
+
+    report = json.loads(report_path.read_text())
+    assert report["source_path"] == str(tmp_path / "spglobal_eps" / "sp-500-eps-est.xlsx")
+    assert report["counts"]["current_snapshots"] == 1
+
+
+def test_run_aggregate_eps_auto_fetch_has_no_disable_fallback_mode(tmp_path: Path) -> None:
+    workbook_bytes = (FIXTURES / "sp500_eps_est_fixture.xlsx").read_bytes()
+    calls: list[str] = []
+
+    def failing_downloader(**kwargs) -> Path:
+        calls.append("direct")
+        raise AggregateEPSFetchError("direct download blocked")
+
+    def browser_downloader(**kwargs) -> Path:
+        calls.append("browser")
+        out_path = kwargs["out_path"]
+        out_path.parent.mkdir(parents=True, exist_ok=True)
+        out_path.write_bytes(workbook_bytes)
+        return out_path
+
+    run_aggregate_eps_auto_fetch(
+        out_dir=tmp_path,
+        workbook_downloader=failing_downloader,
+        browser_downloader=browser_downloader,
+    )
+
+    assert calls == ["direct", "browser"]
 
 
 def test_parse_sp500_eps_workbook_raises_when_expected_sheet_is_missing(tmp_path: Path) -> None:

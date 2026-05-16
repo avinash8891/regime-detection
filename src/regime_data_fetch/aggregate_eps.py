@@ -177,20 +177,9 @@ def download_spglobal_eps_workbook(
 
     Known issue: ``www.spglobal.com`` is served behind Akamai (AkamaiGHost)
     bot mitigation that returns HTTP 403 to direct HTTP requests including
-    browser-User-Agent spoofs. The URL serves the file to real browsers but
-    not to ``urllib`` / ``curl`` / ``requests`` clients. When this happens
-    we raise ``AggregateEPSFetchError`` with a clear operator message
-    routing them to the manual workflow:
-
-    1. Open the spdji URL in a browser, download the .xlsx.
-    2. Copy to ``data/raw/spglobal_eps/sp-500-eps-est.xlsx`` (the
-       MANUAL-DROP PATH ``run_aggregate_eps_auto_fetch`` checks first).
-    3. Re-run the same fetch command — it will parse the manually-dropped
-       file via the fallback.
-
-    Same pattern as the existing PMI workflow
-    (``data/manual_inputs/pmi/*.tsv`` — Investing.com also blocks
-    programmatic access).
+    browser-User-Agent spoofs. ``run_aggregate_eps_auto_fetch`` handles that
+    by trying a browser-backed download next, while still honoring an
+    operator-staged workbook at ``data/raw/spglobal_eps/sp-500-eps-est.xlsx``.
     """
     out_path.parent.mkdir(parents=True, exist_ok=True)
     request = urllib.request.Request(
@@ -236,12 +225,83 @@ def download_spglobal_eps_workbook(
     return out_path
 
 
+def download_spglobal_eps_workbook_with_browser(
+    *,
+    out_path: Path,
+    source_url: str = SOURCE_URL,
+    timeout_ms: int = 120_000,
+    user_data_dir: Path | None = None,
+    executable_path: Path | None = None,
+    headless: bool = True,
+) -> Path:
+    """Download the S&P workbook through a real browser session.
+
+    This is the long-term fallback for Akamai-protected S&P downloads: direct
+    HTTP remains first, then a scheduler can use a persistent browser profile
+    that has already passed the provider's browser checks.
+    """
+    try:
+        from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
+        from playwright.sync_api import sync_playwright
+    except ImportError as exc:
+        raise AggregateEPSFetchError(
+            "Playwright is required for browser-backed EPS download. "
+            "Install the browser extra and browser runtime, or pre-stage the workbook."
+        ) from exc
+
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    with sync_playwright() as playwright:
+        launch_kwargs: dict[str, object] = {
+            "headless": headless,
+            "accept_downloads": True,
+        }
+        if executable_path is not None:
+            launch_kwargs["executable_path"] = str(executable_path)
+
+        browser = None
+        context = None
+        try:
+            if user_data_dir is not None:
+                context = playwright.chromium.launch_persistent_context(
+                    str(user_data_dir),
+                    **launch_kwargs,
+                )
+            else:
+                browser = playwright.chromium.launch(
+                    headless=headless,
+                    executable_path=str(executable_path) if executable_path else None,
+                )
+                context = browser.new_context(accept_downloads=True)
+            page = context.new_page()
+            try:
+                with page.expect_download(timeout=timeout_ms) as download_info:
+                    page.goto(source_url, wait_until="domcontentloaded", timeout=timeout_ms)
+                download = download_info.value
+                download.save_as(out_path)
+            except PlaywrightTimeoutError as exc:
+                raise AggregateEPSFetchError(
+                    "Browser-backed S&P EPS download did not produce a workbook download before timeout"
+                ) from exc
+        finally:
+            if context is not None:
+                context.close()
+            if browser is not None:
+                browser.close()
+    return out_path
+
+
 def run_aggregate_eps_auto_fetch(
     *,
     out_dir: Path,
     source_url: str = SOURCE_URL,
     acquisition_db_path: Path | None = None,
     artifact_store_root: str | Path | None = None,
+    workbook_downloader=download_spglobal_eps_workbook,
+    browser_downloader=download_spglobal_eps_workbook_with_browser,
+    browser_user_data_dir: Path | None = None,
+    browser_executable: Path | None = None,
+    browser_headless: bool = True,
+    browser_timeout_ms: int = 120_000,
 ) -> Path:
     """Fetch + parse the latest S&P aggregate-EPS workbook.
 
@@ -255,9 +315,8 @@ def run_aggregate_eps_auto_fetch(
          b. Operator (or a scheduler) runs ``--fetch eps-spglobal-auto``,
             which detects the file and emits the same parquet + report
             artifacts as the manual ``--eps-workbook`` path.
-    2. If the file is absent, try downloading from ``source_url``. Expected
-       to fail with 403 on Akamai-protected sources; on failure, the error
-       message points the operator to step (1a).
+    2. If the file is absent, try downloading from ``source_url`` directly.
+       If direct download is blocked, try the browser-backed download path.
 
     Cadence: invoke weekly. Polling daily is wasteful — the workbook URL
     serves the same file between weekly publications.
@@ -265,9 +324,17 @@ def run_aggregate_eps_auto_fetch(
     out_dir.mkdir(parents=True, exist_ok=True)
     workbook_path = out_dir / _SPGLOBAL_EPS_MANUAL_REL_PATH
     if not workbook_path.exists():
-        # Best-effort auto-download. On Akamai 403 we surface a clear error
-        # routing the operator to the manual-drop workflow.
-        download_spglobal_eps_workbook(out_path=workbook_path, source_url=source_url)
+        try:
+            workbook_downloader(out_path=workbook_path, source_url=source_url)
+        except AggregateEPSFetchError:
+            browser_downloader(
+                out_path=workbook_path,
+                source_url=source_url,
+                timeout_ms=browser_timeout_ms,
+                user_data_dir=browser_user_data_dir,
+                executable_path=browser_executable,
+                headless=browser_headless,
+            )
     return run_aggregate_eps_fetch(
         out_dir=out_dir,
         workbook_path=workbook_path,

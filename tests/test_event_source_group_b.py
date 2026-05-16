@@ -427,6 +427,39 @@ def test_hdx_hapi_fetcher_uses_generated_app_identifier_and_supported_date_filte
     assert extra_params["app_identifier"] == "cmVnaW1lLWRldGVjdGlvbi10ZXN0OnJlZ2ltZS1kZXRlY3Rpb25AZXhhbXBsZS5pbnZhbGlk"
 
 
+def test_hdx_hapi_fetcher_uses_default_app_identifier_without_credentials(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    for key in (
+        "HDX_HAPI_APP_IDENTIFIER",
+        "HDX_APP_IDENTIFIER",
+        "HDX_HAPI_APP_NAME",
+        "HDX_HAPI_APP_EMAIL",
+    ):
+        monkeypatch.delenv(key, raising=False)
+    captured: dict[str, object] = {}
+
+    def fake_fetch_paged_json(
+        base_url: str,
+        *,
+        headers: dict[str, str],
+        result_key: str,
+        extra_params: dict[str, str],
+    ) -> str:
+        captured.update(extra_params=extra_params)
+        return '{"data": []}'
+
+    monkeypatch.setattr(
+        "regime_data_fetch.event_sources.validators_gpr_gdelt._fetch_paged_json",
+        fake_fetch_paged_json,
+    )
+
+    assert _fetch_hdx_hapi_conflict_events(2022, 2022) == '{"data": []}'
+    extra_params = captured["extra_params"]
+    assert isinstance(extra_params, dict)
+    assert extra_params["app_identifier"] == "regime-detection"
+
+
 def test_conflict_pager_continues_without_total_count_until_short_page(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
