@@ -87,6 +87,12 @@ _PIT_BREADTH_LABELS = {
 }
 _STALENESS_SENTINEL = 10**9
 
+# Lookback windows for data-quality sufficiency gates (cite the spec section per window).
+_TREND_DIRECTION_MIN_SESSIONS = 200   # §1A: 200-day SMA lookback
+_TREND_CHARACTER_MIN_SESSIONS = 63    # §1B: 63-day drawdown lookback
+_VOLATILITY_MIN_SESSIONS = 252        # §1C: 252-day realized-vol window
+_BREADTH_MIN_SESSIONS = 50            # §1D: breadth 50-period minimum
+
 
 @dataclass(frozen=True)
 class AxisSeriesResult:
@@ -162,7 +168,7 @@ class TrendDirectionSeriesClassifier:
             risk_rank=TREND_DIRECTION_RISK_RANK,
             deescalation_days=context.config.hysteresis.trend_direction_deescalation_days,
             required_inputs=[close],
-            required_trading_days=200,
+            required_trading_days=_TREND_DIRECTION_MIN_SESSIONS,
             max_freshness_days=context.config.data_quality.max_freshness_days,
             min_completeness=context.config.data_quality.min_completeness,
         )
@@ -191,7 +197,7 @@ class TrendCharacterSeriesClassifier:
             risk_rank=TREND_CHARACTER_RISK_RANK,
             deescalation_days=context.config.hysteresis.trend_character_deescalation_days,
             required_inputs=[close, context.spy_ohlcv["high"], context.spy_ohlcv["low"]],
-            required_trading_days=63,
+            required_trading_days=_TREND_CHARACTER_MIN_SESSIONS,
             max_freshness_days=context.config.data_quality.max_freshness_days,
             min_completeness=context.config.data_quality.min_completeness,
         )
@@ -228,7 +234,7 @@ class VolatilitySeriesClassifier:
             risk_rank=VOLATILITY_RISK_RANK,
             deescalation_days=context.config.hysteresis.volatility_deescalation_days,
             required_inputs=[close],
-            required_trading_days=252,
+            required_trading_days=_VOLATILITY_MIN_SESSIONS,
             max_freshness_days=context.config.data_quality.max_freshness_days,
             min_completeness=context.config.data_quality.min_completeness,
         )
@@ -320,7 +326,7 @@ class BreadthSeriesClassifier:
                         spy_close=spy_close,
                         rsp_close=rsp_close,
                         as_of_date=day,
-                        required_trading_days=50,
+                        required_trading_days=_BREADTH_MIN_SESSIONS,
                         raw_label=raw,
                         max_freshness_days=context.config.data_quality.max_freshness_days,
                         min_completeness=context.config.data_quality.min_completeness,
