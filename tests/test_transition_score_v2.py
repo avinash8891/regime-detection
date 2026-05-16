@@ -747,6 +747,64 @@ def test_compose_transition_score_nan_hmm_with_non_nan_cp_uses_with_change_point
     )
 
 
+# ---------------------------------------------------------------------------
+# Group F — error-guard and cold-start branches (lines 85, 96, 143)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+def test_compute_transition_score_raises_when_weight_references_none_component(
+    transition_score_config: TransitionScoreConfig,
+) -> None:
+    """Line 85: ValueError when a weight key references a component whose value
+    is None (e.g. 'hmm_probability_shift' listed in weights but not supplied).
+    """
+    weights_requiring_hmm = {
+        "volatility_acceleration": 0.5,
+        "hmm_probability_shift": 0.5,
+    }
+    with pytest.raises(ValueError, match="hmm_probability_shift"):
+        compute_transition_score(
+            volatility_acceleration_score=0.4,
+            breadth_deterioration_score=0.0,
+            correlation_concentration_score=0.0,
+            trend_break_score=0.0,
+            macro_event_score=0.0,
+            weights=weights_requiring_hmm,
+            # hmm_probability_shift_score intentionally omitted → None
+        )
+
+
+@pytest.mark.unit
+def test_interpret_transition_score_raises_on_out_of_range_score(
+    transition_score_config: TransitionScoreConfig,
+) -> None:
+    """Line 96: ValueError for score outside [0.0, 1.0] (e.g. negative value)."""
+    with pytest.raises(ValueError, match=r"transition_score must be in \[0\.0, 1\.0\]"):
+        interpret_transition_score(-0.01, transition_score_config.bands)
+    with pytest.raises(ValueError, match=r"transition_score must be in \[0\.0, 1\.0\]"):
+        interpret_transition_score(1.01, transition_score_config.bands)
+
+
+@pytest.mark.unit
+def test_compose_transition_score_rv_long_zero_returns_none_triple(
+    transition_score_config: TransitionScoreConfig,
+) -> None:
+    """Line 143: cold-start guard — realized_vol_long == 0.0 → (None, None, None)
+    propagation to avoid ZeroDivisionError while both vol windows are warming up.
+    """
+    out = compose_transition_score_for_session(
+        realized_vol_short=0.0,
+        realized_vol_long=0.0,
+        pct_above_50dma=0.50,
+        avg_pairwise_corr_percentile_504d=0.0,
+        drawdown_252d=0.0,
+        event_calendar_label="normal",
+        config=transition_score_config,
+    )
+    assert out == ComposedTransitionScore(score=None, interpretation=None, components=None)
+
+
 def test_build_transition_risk_outputs_emits_change_point_when_seam_lit(
     transition_score_config: TransitionScoreConfig,
 ) -> None:
