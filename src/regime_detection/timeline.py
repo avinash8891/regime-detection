@@ -95,6 +95,7 @@ def build_regime_timeline(
     # Keeps V1 byte-identity for callers that omit all three configs
     # (max() collapses to ENGINE_MINIMUM_HISTORY).
     v2_min_history = ENGINE_MINIMUM_HISTORY
+    trailing_component_lookback = 0
     if config is not None and config.change_point is not None:
         # +21 absorbs the realized_vol_21d warmup so BOCPD sees a full
         # non-NaN training window on the trailing slice.
@@ -108,6 +109,10 @@ def build_regime_timeline(
         v2_min_history = max(
             v2_min_history, config.hmm.training_window_days + 63
         )
+        # transition_score.hmm_probability_shift needs top_state_prob[t-5].
+        # Keep five extra warmed sessions ahead of the emitted window so the
+        # first requested output can use the same PIT evidence as later rows.
+        trailing_component_lookback = max(trailing_component_lookback, 5)
     if config is not None and config.clustering is not None:
         # +63 absorbs the deepest GMM input warmup (return_63d /
         # drawdown_63d / avg_pairwise_corr_63d) so the trailing slice gives
@@ -115,7 +120,10 @@ def build_regime_timeline(
         v2_min_history = max(
             v2_min_history, config.clustering.training_window_days + 63
         )
-    required_sessions = min(len(context.sessions), v2_min_history + lookback_days - 1)
+    required_sessions = min(
+        len(context.sessions),
+        v2_min_history + lookback_days - 1 + trailing_component_lookback,
+    )
     working_context = slice_context_to_recent_sessions(context=context, required_sessions=required_sessions)
     network_fragility_config = (
         config.network_fragility if config is not None else None

@@ -747,7 +747,7 @@ class CreditFundingSeriesClassifier:
       2. Per session, run the §2C unknown gate (spec lines 2122-2126):
          - HYG/LQD/TLT stale > 5 sessions → unknown
          - NFCI stale > 14 days → unknown
-         - SOFR or IORB missing on session → unknown
+         - SOFR or IORB stale beyond the global freshness budget → unknown
          - assess_series_input_quality fails on any required series → unknown
       3. Materialize per-day scalar rule inputs (build_rule_inputs_for_date),
          then evaluate §2C precedence (deleveraging > funding_squeeze >
@@ -837,15 +837,11 @@ class CreditFundingSeriesClassifier:
         nfci_staleness_by_date = _calendar_staleness_days_series(
             nfci_series, session_index
         )
-        sofr_missing_by_date = (
-            pd.Series(True, index=session_index)
-            if sofr_series is None
-            else sofr_series.reindex(session_index).isna()
+        sofr_staleness_by_date = _calendar_staleness_days_series(
+            sofr_series, session_index
         )
-        iorb_missing_by_date = (
-            pd.Series(True, index=session_index)
-            if iorb_series is None
-            else iorb_series.reindex(session_index).isna()
+        iorb_staleness_by_date = _calendar_staleness_days_series(
+            iorb_series, session_index
         )
         rule_inputs_by_date = build_credit_funding_rule_inputs_by_date(
             features=features,
@@ -877,26 +873,28 @@ class CreditFundingSeriesClassifier:
                 etf_staleness_breach = True
                 etf_stale_label = "TLT"
 
-            sofr_missing = bool(sofr_missing_by_date.loc[dt])
-            iorb_missing = bool(iorb_missing_by_date.loc[dt])
+            sofr_staleness_days = int(sofr_staleness_by_date.loc[dt])
+            iorb_staleness_days = int(iorb_staleness_by_date.loc[dt])
+            sofr_stale = sofr_staleness_days > max_freshness_days
+            iorb_stale = iorb_staleness_days > max_freshness_days
             nfci_staleness_days = int(nfci_staleness_by_date.loc[dt])
             nfci_stale = nfci_staleness_days > cf_config.nfci_stale_days
 
-            if etf_staleness_breach or sofr_missing or iorb_missing or nfci_stale:
+            if etf_staleness_breach or sofr_stale or iorb_stale or nfci_stale:
                 reason_parts: list[str] = []
                 if etf_staleness_breach:
                     reason_parts.append(f"etf_stale:{etf_stale_label}")
-                if sofr_missing:
-                    reason_parts.append("sofr_missing")
-                if iorb_missing:
-                    reason_parts.append("iorb_missing")
+                if sofr_stale:
+                    reason_parts.append(f"sofr_stale_{sofr_staleness_days}d")
+                if iorb_stale:
+                    reason_parts.append(f"iorb_stale_{iorb_staleness_days}d")
                 if nfci_stale:
                     reason_parts.append(f"nfci_stale_{nfci_staleness_days}d")
                 gate_reason = ",".join(reason_parts)
                 raw_labels.append("unknown")
                 per_day_data_quality.append(
                     DataQuality(
-                        status="stale_data" if (etf_staleness_breach or nfci_stale) else "insufficient_data",
+                        status="stale_data",
                         freshness_days=None,
                         completeness=None,
                         reason=gate_reason,
@@ -1259,17 +1257,16 @@ class MonetaryPressureV2SeriesClassifier:
         if mp_config is None:
             return None
 
-        # The 63d-change + 1260d-normalizer window is the binding cold-start
-        # for the §2A rules. The 21d-change variant warms up sooner so the
-        # 63d-derived series gate the data-quality assessment.
         v2_features_config = context.config.monetary_pressure_v2
         if v2_features_config is None:
             # Defensive: features seam lit but feature config missing.
             return None
-        required_trading_days = (
-            v2_features_config.yield_change_lookback_days
-            + v2_features_config.zscore_normalizer_window_days
-        )
+        # The z-score feature series already encode the 63d/21d change window
+        # plus 1260d normalizer warm-up as NaN. At the classifier boundary we
+        # only need the current session's computed feature values; requiring
+        # 1323 non-NaN z-score observations would double-count the warm-up and
+        # keep the axis permanently unknown on a 30-session profile window.
+        required_trading_days = 1
 
         required_inputs: list[pd.Series] = [
             features.yield_change_zscore_2y_63d,

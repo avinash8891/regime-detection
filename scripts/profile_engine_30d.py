@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# ruff: noqa: E402
 from __future__ import annotations
 
 import argparse
@@ -27,7 +28,7 @@ from regime_data_fetch.materialization import materialize_if_requested
 from regime_detection.engine import RegimeEngine
 from regime_detection.feature_store import FeatureStore
 from regime_detection.fragility_universe import CROSS_ASSET_SYMBOLS, SECTOR_ETFS
-from regime_detection.market_context import MarketContext, build_market_context
+from regime_detection.market_context import build_market_context
 from regime_detection.models import RegimeOutput, RegimeTimeline
 from regime_detection.timeline import ENGINE_MINIMUM_HISTORY
 from scripts._v2_calibration_helpers import load_close_dict, load_macro_series, load_market_data
@@ -93,13 +94,15 @@ def _require_path(path: Path, *, kind: str) -> Path:
 
 def _build_required_sessions(config: Any, session_count: int, lookback_days: int) -> int:
     v2_min_history = ENGINE_MINIMUM_HISTORY
+    trailing_component_lookback = 0
     if config.change_point is not None:
         v2_min_history = max(v2_min_history, config.change_point.training_window_days + 21)
     if config.hmm is not None:
         v2_min_history = max(v2_min_history, config.hmm.training_window_days + 63)
+        trailing_component_lookback = max(trailing_component_lookback, 5)
     if config.clustering is not None:
         v2_min_history = max(v2_min_history, config.clustering.training_window_days + 63)
-    return min(session_count, v2_min_history + lookback_days - 1)
+    return min(session_count, v2_min_history + lookback_days - 1 + trailing_component_lookback)
 
 
 def _read_symbol_ohlcv(tree_root: Path, symbol: str) -> pd.DataFrame:
@@ -551,8 +554,6 @@ def main() -> int:
     )
     import regime_detection.market_context as market_context_module
     import regime_detection.feature_store as feature_store_module
-    import regime_detection.timeline as timeline_module
-
     working_context = market_context_module.slice_context_to_recent_sessions(
         context=context,
         required_sessions=required_sessions,

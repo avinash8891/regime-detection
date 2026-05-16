@@ -133,12 +133,12 @@ def test_compute_hmm_features_succeeds_on_synthetic_inputs_with_full_history() -
     non_null = result.top_state_prob.dropna()
     assert (non_null >= 0.0).all()
     assert (non_null <= 1.0).all()
-    # V1 §2.2 PIT semantics: HMM is fit ONCE per classify_window call on
-    # frame.tail(n_train) ending at frame.index[-1]. Earlier sessions are
-    # masked to NaN to prevent future-leak. Exactly the trailing aligned
-    # session (intersected non-NaN tail) carries a real posterior.
-    assert len(non_null) == 1
-    assert non_null.index[0] == inputs["return_1d"].dropna().index[-1]
+    # V1 §2.2 PIT semantics: HMM evidence is populated from models trained
+    # on data available at or before each emitted session. With a 1260-session
+    # training window and the default 21-session retrain cadence, the warmed
+    # tail should be populated instead of blanking every pre-final row.
+    assert len(non_null) > 30
+    assert non_null.index.max() == inputs["return_1d"].dropna().index[-1]
 
 
 def test_top_state_prob_permutation_invariant_under_fixed_seed() -> None:
@@ -258,7 +258,8 @@ def test_compute_hmm_features_uses_best_monotonic_seed_after_standardizing(
     assert result is not None
     assert result.selected_seed == 101
     assert result.log_likelihood == 12.0
-    assert [item["random_state"] for item in seen] == [42, 101]
+    assert [item["random_state"] for item in seen[:2]] == [42, 101]
+    assert {item["random_state"] for item in seen} == {42, 101}
     assert all(item["covariance_type"] == "diag" for item in seen)
     assert all(item["min_covar"] == 0.123 for item in seen)
     assert abs(float(seen[0]["mean"])) < 1e-12

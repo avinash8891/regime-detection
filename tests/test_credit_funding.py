@@ -814,15 +814,15 @@ def test_unknown_when_nfci_stale_more_than_14_days() -> None:
     assert "nfci_stale" in (out.data_quality.reason or "")
 
 
-def test_unknown_when_sofr_missing() -> None:
-    """§2C line 2125: SOFR missing at session → unknown gate trip."""
+def test_credit_funding_carries_one_session_sofr_publication_lag() -> None:
+    """SOFR can be absent on the latest NYSE session until publication catches up."""
     context = _build_full_synthetic_context(sofr_drop_last=True)
     _, outputs = _build_store_and_outputs(context)
     assert outputs is not None
     last_day = context.sessions[-1]
     out = outputs[last_day]
-    assert out.raw_label == "unknown"
-    assert "sofr_missing" in (out.data_quality.reason or "")
+    assert out.raw_label != "unknown"
+    assert out.data_quality.status != "insufficient_data"
 
 
 def test_unknown_when_assess_series_input_quality_fails() -> None:

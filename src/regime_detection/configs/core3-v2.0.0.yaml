@@ -264,7 +264,10 @@ monetary_pressure_state:
     tightening_pressure: 3
     easing_pressure: 2
     neutral_monetary: 0
-    unknown: 2
+    # Unknown means source/feature quality was unavailable, not a monetary
+    # regime. Once the current-session §2A features recover, do not keep a
+    # stale unknown label active via hysteresis.
+    unknown: 0
   default_deescalation_days: 0
 
 # v2 §2A lines 2578-2586 — central-bank-text classifier feeding

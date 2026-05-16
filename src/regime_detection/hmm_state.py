@@ -122,48 +122,78 @@ def compute_hmm_features(
     if len(frame) < n_train:
         return None
 
-    train_frame = frame.tail(n_train)
-    fit_frame, predict_frame = _prepare_hmm_frames(
-        train_frame=train_frame,
-        full_frame=frame,
-        standardize_inputs=config.standardize_inputs,
+    state_prob_frame = pd.DataFrame(
+        float("nan"),
+        index=frame.index,
+        columns=list(range(config.n_states)),
     )
-    best: dict[str, Any] | None = None
-    skipped: list[tuple[int, float | None, float | None, float | None]] = []
+    latest_fit: dict[str, Any] | None = None
+    all_skipped: list[tuple[int, int, float | None, float | None, float | None]] = []
     try:
-        for seed in config.random_seeds:
-            model = GaussianHMM(
-                n_components=config.n_states,
-                covariance_type=config.covariance_type,
-                min_covar=config.min_covar,
-                n_iter=200,
-                random_state=seed,
+        train_end_positions = list(
+            range(n_train - 1, len(frame), max(1, config.retrain_cadence_days))
+        )
+        if train_end_positions[-1] != len(frame) - 1:
+            train_end_positions.append(len(frame) - 1)
+        for offset, train_end_pos in enumerate(train_end_positions):
+            train_frame = frame.iloc[train_end_pos - n_train + 1 : train_end_pos + 1]
+            next_train_end_pos = (
+                train_end_positions[offset + 1]
+                if offset + 1 < len(train_end_positions)
+                else len(frame)
             )
-            model.monitor_ = _StrictConvergenceMonitor(
-                tol=model.monitor_.tol,
-                n_iter=model.monitor_.n_iter,
-                verbose=model.monitor_.verbose,
+            segment_frame = frame.iloc[train_end_pos:next_train_end_pos]
+            fit_frame, predict_frame = _prepare_hmm_frames(
+                train_frame=train_frame,
+                full_frame=segment_frame,
+                standardize_inputs=config.standardize_inputs,
             )
-            model.fit(fit_frame)
-            history = list(model.monitor_.history)
-            final_log_likelihood = float(history[-1]) if history else float("-inf")
-            previous_log_likelihood = float(history[-2]) if len(history) >= 2 else None
-            delta = (
-                final_log_likelihood - previous_log_likelihood
-                if previous_log_likelihood is not None
-                else None
-            )
-            if getattr(model.monitor_, "non_monotonic", False):
-                skipped.append((seed, final_log_likelihood, previous_log_likelihood, delta))
+            best: dict[str, Any] | None = None
+            for seed in config.random_seeds:
+                model = GaussianHMM(
+                    n_components=config.n_states,
+                    covariance_type=config.covariance_type,
+                    min_covar=config.min_covar,
+                    n_iter=200,
+                    random_state=seed,
+                )
+                model.monitor_ = _StrictConvergenceMonitor(
+                    tol=model.monitor_.tol,
+                    n_iter=model.monitor_.n_iter,
+                    verbose=model.monitor_.verbose,
+                )
+                model.fit(fit_frame)
+                history = list(model.monitor_.history)
+                final_log_likelihood = float(history[-1]) if history else float("-inf")
+                previous_log_likelihood = float(history[-2]) if len(history) >= 2 else None
+                delta = (
+                    final_log_likelihood - previous_log_likelihood
+                    if previous_log_likelihood is not None
+                    else None
+                )
+                if getattr(model.monitor_, "non_monotonic", False):
+                    all_skipped.append(
+                        (
+                            train_end_pos,
+                            seed,
+                            final_log_likelihood,
+                            previous_log_likelihood,
+                            delta,
+                        )
+                    )
+                    continue
+                posterior = model.predict_proba(predict_frame)
+                candidate = {
+                    "posterior": posterior,
+                    "seed": seed,
+                    "log_likelihood": final_log_likelihood,
+                }
+                if best is None or final_log_likelihood > best["log_likelihood"]:
+                    best = candidate
+            if best is None:
                 continue
-            posterior = model.predict_proba(predict_frame)
-            candidate = {
-                "posterior": posterior,
-                "seed": seed,
-                "log_likelihood": final_log_likelihood,
-            }
-            if best is None or final_log_likelihood > best["log_likelihood"]:
-                best = candidate
+            state_prob_frame.loc[segment_frame.index, :] = best["posterior"]
+            latest_fit = best
     except Exception as exc:  # noqa: BLE001
         # Fail-open: degenerate inputs (singular covariance, etc.) should
         # not crash the engine — the seam goes None and downstream falls
@@ -172,12 +202,12 @@ def compute_hmm_features(
             "GaussianHMM fit/predict failed; HMM seam returns None: %s", exc
         )
         return None
-    if best is None:
+    if latest_fit is None:
         _LOGGER.warning(
-            "GaussianHMM produced no monotonic fit across %d seed(s); "
+            "GaussianHMM produced no PIT monotonic fit across %d seed(s); "
             "HMM seam returns None. skipped=%s",
             len(config.random_seeds),
-            skipped[:5],
+            all_skipped[:5],
         )
         return None
 
@@ -185,24 +215,7 @@ def compute_hmm_features(
     # dropped by .dropna() get NaN both in the state_probabilities frame
     # and in the top_state_prob series.
     canonical_index = return_1d.index  # type: ignore[union-attr]
-    state_prob_frame = pd.DataFrame(
-        best["posterior"],
-        index=frame.index,
-        columns=list(range(config.n_states)),
-    ).reindex(canonical_index)
-
-    # V1 §2.2 stateless-replay: the HMM is fit ONCE on frame.tail(n_train)
-    # ending at frame.index[-1]. Posterior values for sessions earlier than
-    # that fit-end were computed using parameters trained on data that, from
-    # the earlier session's perspective, is the FUTURE. To preserve PIT
-    # semantics in classify_window(lookback_days > 1), mask every session
-    # before the trailing training row to NaN. The transition_score consumer
-    # treats NaN as "HMM seam absent at this session" and falls back to the
-    # 5-component weights_without_hmm path (V1 byte-identity preserved).
-    fit_end = frame.index[-1]
-    leak_mask = state_prob_frame.index < fit_end
-    if leak_mask.any():
-        state_prob_frame.loc[leak_mask, :] = float("nan")
+    state_prob_frame = state_prob_frame.reindex(canonical_index)
 
     top_state_prob = state_prob_frame.max(axis=1).rename("top_state_prob")
     # state_probabilities.max on an all-NaN row returns NaN — desired
@@ -212,8 +225,8 @@ def compute_hmm_features(
         top_state_prob=top_state_prob,
         state_probabilities=state_prob_frame,
         n_states=config.n_states,
-        selected_seed=int(best["seed"]),
-        log_likelihood=float(best["log_likelihood"]),
+        selected_seed=int(latest_fit["seed"]),
+        log_likelihood=float(latest_fit["log_likelihood"]),
     )
 
 

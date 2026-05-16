@@ -321,10 +321,10 @@ def compute_credit_funding_features(
     tlt = tlt_close.reindex(spy_index).astype(float)
     kre = kre_close.reindex(spy_index).astype(float)
     spy = spy_close.reindex(spy_index).astype(float)
-    sofr_s = sofr.reindex(spy_index).astype(float)
-    iorb_s = iorb.reindex(spy_index).astype(float)
+    sofr_s = sofr.reindex(spy_index).astype(float).ffill()
+    iorb_s = iorb.reindex(spy_index).astype(float).ffill()
     nfci_w = nfci_weekly.reindex(spy_index).astype(float)
-    usd = broad_usd_index.reindex(spy_index).astype(float)
+    usd = broad_usd_index.reindex(spy_index).astype(float).ffill()
 
     pct_window = config.hy_percentile_504d_lookback
     slope_21d = config.slope_21d_lookback
@@ -337,10 +337,10 @@ def compute_credit_funding_features(
     # §2C lines 2032-2035 — authoritative ICE BofA OAS. Rising OAS =
     # wider spread (matches the §2C line 2033 sign convention by construction).
     hy_oas_63d = (
-        hy_oas.reindex(spy_index).astype(float).rename("hy_oas_63d")
+        hy_oas.reindex(spy_index).astype(float).ffill().rename("hy_oas_63d")
     )
     ig_oas_63d = (
-        ig_oas.reindex(spy_index).astype(float).rename("ig_oas_63d")
+        ig_oas.reindex(spy_index).astype(float).ffill().rename("ig_oas_63d")
     )
 
     # §2C line 2038: 504d percentile (pct=True).
