@@ -364,6 +364,25 @@ class NetworkFragilitySeriesClassifier:
       6. Emit one NetworkFragilityOutput per session.
     """
 
+    @staticmethod
+    def _assess_day_quality(
+        *,
+        day: date,
+        required_inputs: list[pd.Series],
+        required_trading_days: int,
+        max_freshness_days: int,
+        min_completeness: float,
+    ) -> DataQuality:
+        return assess_series_input_quality(
+            as_of_date=day,
+            required_inputs=required_inputs,
+            required_trading_days=required_trading_days,
+            raw_label="",
+            max_freshness_days=max_freshness_days,
+            min_completeness=min_completeness,
+            skip_raw_label_short_circuit=True,
+        )
+
     def build(
         self,
         context: MarketContext,
@@ -430,14 +449,12 @@ class NetworkFragilitySeriesClassifier:
             # (rule engine, below) and re-check with quality_forces_unknown.
             # `skip_raw_label_short_circuit=True` keeps the helper from
             # collapsing to "insufficient_history" before we have a label.
-            day_quality = assess_series_input_quality(
-                as_of_date=day,
+            day_quality = self._assess_day_quality(
+                day=day,
                 required_inputs=required_inputs,
                 required_trading_days=required_trading_days,
-                raw_label="",
                 max_freshness_days=max_freshness_days,
                 min_completeness=min_completeness,
-                skip_raw_label_short_circuit=True,
             )
 
             if quality_forces_unknown(day_quality):
