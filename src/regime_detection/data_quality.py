@@ -12,6 +12,17 @@ from regime_detection.models import DataQuality
 INSUFFICIENT_COMPLETENESS_FLOOR = 0.70
 
 
+# TODO(perf): this is O(W) per call and is invoked once per session per
+# axis (~2500 sessions * 7 axes). Vectorise by precomputing rolling
+# `notna().mean()` (completeness) and a `cummax`-of-last-valid-position
+# (freshness) over the full session index once, then `.loc[dt]` in the
+# session loop. Drops the per-engine cost from O(S*W) to O(N).
+# TODO(perf): the 4 leaf axes (trend_direction, trend_character,
+# volatility_state, breadth_state) have no cross-axis dependencies and
+# can run in a ThreadPoolExecutor — the free-function refactor on this
+# branch makes that trivial. credit_funding → inflation_growth →
+# network_fragility must remain sequential. Wire this up in
+# `timeline.py` once axis throughput becomes a bottleneck.
 def assess_series_input_quality(
     *,
     as_of_date: date,

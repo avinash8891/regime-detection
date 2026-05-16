@@ -93,6 +93,9 @@ RULE_PRECEDENCE: tuple[NetworkFragilityLabel, ...] = (
 # `correlation_concentration`. `unknown` is mid-rank (2) so it neither
 # fast-tracks escalation past correlation_to_one nor strands the engine
 # in a low-risk label across NaN gaps.
+# TODO(tech-debt): tighten key type to `NetworkFragilityLabel` (Literal) —
+# see matching TODO in `inflation_growth.py`. Both axes were widened to
+# `str` to satisfy `_axis_result._build_axis_outputs`'s `Mapping[str, int]`.
 NETWORK_FRAGILITY_RISK_RANK: dict[str, int] = {
     "diversified_normal": 0,
     "stock_picker_dispersion": 1,

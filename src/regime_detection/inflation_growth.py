@@ -78,6 +78,14 @@ InflationGrowthLabel = Literal[
 ]
 
 
+# TODO(tech-debt): tighten key type to `InflationGrowthLabel` (Literal).
+# Was widened to `str` to satisfy `_axis_result._build_axis_outputs`'s
+# `Mapping[str, int]` parameter; fix by narrowing the helper's param or
+# accepting a generic `Mapping[LabelT, int]`.
+# TODO(perf): the parallel `_classify_*_session`/`_build_*_outputs`
+# scaffolding here mirrors `network_fragility_rules.py` almost verbatim;
+# lift the session loop + DQ short-circuit + hysteresis-then-zip pattern
+# into `_axis_result.py` parameterised by output factory.
 # v2 §2B lines 2274-2284 verbatim.
 INFLATION_GROWTH_RISK_RANK: dict[str, int] = {
     "goldilocks": 0,

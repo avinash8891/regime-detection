@@ -1353,8 +1353,22 @@ def test_build_axis_series_credit_funding_label_populates_when_all_sessions_pres
         credit_funding_active_labels_by_date=complete_cf,
     )
     assert outputs is not None
-    # With credit_calm on every session the goldilocks/recovery_growth rules
-    # are eligible — the engine should not short-circuit to unknown everywhere.
-    labels = {out.raw_label for out in outputs.values()}
-    assert "unknown" not in labels, f"Engine short-circuited to unknown with credit_calm inputs: {labels}"
     assert len(outputs) == len(context.sessions)
+    # The cross-axis label must be threaded into every DQ-passing session's
+    # evidence dict — that is the contract this test exercises (line 920
+    # extraction path). DQ-failed sessions short-circuit before classification
+    # and carry only a `reason` in evidence; skip those.
+    classified = {
+        day: out for day, out in outputs.items() if out.data_quality.reason is None
+    }
+    assert classified, "No sessions passed data-quality gating; cannot verify extraction"
+    for day, out in classified.items():
+        assert out.evidence["credit_funding_active_label"] == "credit_calm", (
+            f"{day}: credit_funding_active_label missing or wrong in evidence: {out.evidence}"
+        )
+    # Sanity-check that the rule engine actually ran (i.e. credit_calm
+    # eligibility was not silently dropped): at least some sessions classify
+    # to a non-unknown label. The specific count depends on synthetic-input
+    # rule predicates, so we only assert presence.
+    labels = {out.raw_label for out in outputs.values()}
+    assert labels - {"unknown"}, f"Engine produced only 'unknown' labels: {labels}"

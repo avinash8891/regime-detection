@@ -183,6 +183,10 @@ def _hurst_series(close: pd.Series, lookback: int) -> pd.Series:
     return pd.Series(out, index=close.index, name="hurst_250d")
 
 
+# TODO(tech-debt): unify with `_rolling_stats.sma`. Cannot drop-in replace
+# today because that helper uses pandas' default `min_periods` (looser
+# cold-start) while this one requires strict cold-start. Fix is to extend
+# `_rolling_stats.sma` with a `strict: bool = False` flag, then migrate.
 def _sma(close: pd.Series, sma_period: int) -> pd.Series:
     """Rolling simple moving average with strict cold-start (NaN until
     `sma_period` observations are available)."""
