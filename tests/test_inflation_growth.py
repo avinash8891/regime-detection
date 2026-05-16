@@ -14,7 +14,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from regime_detection.axis_series import InflationGrowthSeriesClassifier
+from regime_detection.inflation_growth import build_axis_series as _build_ig_axis_series
 from regime_detection.calendar import nyse_sessions_between
 from regime_detection.config import (
     InflationGrowthRulesConfig,
@@ -694,7 +694,7 @@ def _build_store_and_outputs(context, *, credit_funding_active_labels_by_date=No
         credit_funding_config=cfg.credit_funding,
         inflation_growth_config=cfg.inflation_growth,
     )
-    outputs = InflationGrowthSeriesClassifier().build(
+    outputs = _build_ig_axis_series(
         context,
         store,
         credit_funding_active_labels_by_date=credit_funding_active_labels_by_date,
@@ -767,7 +767,7 @@ def test_unknown_when_assess_series_input_quality_fails() -> None:
         bias_warnings=ig.bias_warnings,
     )
     broken_store = store.model_copy(update={"inflation_growth": broken})
-    outputs = InflationGrowthSeriesClassifier().build(context, broken_store)
+    outputs = _build_ig_axis_series(context, broken_store)
     assert outputs is not None
     last_day = context.sessions[-1]
     assert outputs[last_day].raw_label == "unknown"

@@ -17,7 +17,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from regime_detection.axis_series import CreditFundingSeriesClassifier
+from regime_detection.credit_funding import build_axis_series as _build_cf_axis_series, build_axis_series_proxy as _build_cf_axis_series_proxy
 from regime_detection.calendar import nyse_sessions_between
 from regime_detection.config import (
     CreditFundingRulesConfig,
@@ -723,7 +723,7 @@ def _build_store_and_outputs(context):
         monetary_pressure_v2_config=cfg.monetary_pressure_v2,
         credit_funding_config=cfg.credit_funding,
     )
-    return store, CreditFundingSeriesClassifier().build(context, store)
+    return store, _build_cf_axis_series(context, store)
 
 
 def _build_real_v2_credit_context(
@@ -764,9 +764,8 @@ def test_build_proxy_runs_parallel_to_build_with_proxy_bias_code() -> None:
         monetary_pressure_v2_config=cfg.monetary_pressure_v2,
         credit_funding_config=cfg.credit_funding,
     )
-    classifier = CreditFundingSeriesClassifier()
-    real = classifier.build(context, store)
-    proxy = classifier.build_proxy(context, store)
+    real = _build_cf_axis_series(context, store)
+    proxy = _build_cf_axis_series_proxy(context, store)
 
     assert real is not None and proxy is not None
     # One output per session from both runs.
@@ -863,7 +862,7 @@ def test_unknown_when_assess_series_input_quality_fails() -> None:
         bias_warnings=cf.bias_warnings,
     )
     broken_store = store.model_copy(update={"credit_funding": broken})
-    outputs = CreditFundingSeriesClassifier().build(context, broken_store)
+    outputs = _build_cf_axis_series(context, broken_store)
     assert outputs is not None
     last_day = context.sessions[-1]
     assert outputs[last_day].raw_label == "unknown"
@@ -985,9 +984,8 @@ def test_real_v2_fixture_credit_funding_golden_label(
     )
     assert store.credit_funding is not None
 
-    classifier = CreditFundingSeriesClassifier()
-    real_outputs = classifier.build(context, store)
-    proxy_outputs = classifier.build_proxy(context, store)
+    real_outputs = _build_cf_axis_series(context, store)
+    proxy_outputs = _build_cf_axis_series_proxy(context, store)
     assert real_outputs is not None
     assert proxy_outputs is not None
 

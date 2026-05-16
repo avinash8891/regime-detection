@@ -35,11 +35,20 @@ CLAUDE.md Constants rule.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Literal
+from datetime import date
+from typing import TYPE_CHECKING, Literal
 
 import numpy as np
+import pandas as pd
 
 from regime_detection.config import VolumeLiquidityRulesConfig
+from regime_detection.data_quality import assess_series_input_quality, quality_forces_unknown
+from regime_detection.hysteresis import apply_per_label_asymmetric_hysteresis
+from regime_detection.models import DataQuality, VolumeLiquidityStateOutput
+
+if TYPE_CHECKING:
+    from regime_detection.feature_store import FeatureStore
+    from regime_detection.market_context import MarketContext
 
 
 # v2 §1E lines 260-266 labels (full Literal).
@@ -188,3 +197,118 @@ def evaluate_rules(
             if evaluate_normal_volume(inputs, config):
                 return "normal_volume"
     return "unknown"
+
+
+def build_axis_series(
+    context: MarketContext,
+    feature_store: FeatureStore,
+) -> dict[date, VolumeLiquidityStateOutput] | None:
+    """Free-function replacement for VolumeLiquidityStateSeriesClassifier.build()."""
+    volume_features = feature_store.volume_liquidity_v2
+    if volume_features is None:
+        return None
+
+    volume_liquidity_config = context.config.volume_liquidity_state
+    if volume_liquidity_config is None:
+        return None
+
+    return_1d_series = feature_store.volatility.return_1d
+    volume_zscore_series = volume_features.volume_zscore_20d
+
+    volatility_v2 = feature_store.volatility_state_v2
+    gap_freq_pct_series: pd.Series | None = None
+    intraday_pct_series: pd.Series | None = None
+    if volatility_v2 is not None:
+        gap_freq_pct_series = volatility_v2.gap_frequency_percentile_252d
+        intraday_pct_series = volatility_v2.intraday_range_percentile_252d
+
+    required_inputs: list[pd.Series] = [
+        volume_zscore_series,
+        return_1d_series,
+    ]
+    required_trading_days = 20
+    max_freshness_days = context.config.data_quality.max_freshness_days
+    min_completeness = context.config.data_quality.min_completeness
+
+    raw_labels: list[VolumeLiquidityLabel] = []
+    per_day_data_quality: list[DataQuality] = []
+    per_day_evidence: list[dict[str, object]] = []
+
+    for day in context.sessions:
+        dt = pd.Timestamp(day)
+
+        day_quality = assess_series_input_quality(
+            as_of_date=day,
+            required_inputs=required_inputs,
+            required_trading_days=required_trading_days,
+            raw_label="",
+            max_freshness_days=max_freshness_days,
+            min_completeness=min_completeness,
+            skip_raw_label_short_circuit=True,
+        )
+
+        if quality_forces_unknown(day_quality):
+            raw_labels.append("unknown")
+            per_day_data_quality.append(day_quality)
+            per_day_evidence.append({"reason": day_quality.reason or "insufficient_data"})
+            continue
+
+        volume_zscore_20d = float(volume_zscore_series.loc[dt]) if dt in volume_zscore_series.index else float("nan")
+        return_1d = float(return_1d_series.loc[dt]) if dt in return_1d_series.index else float("nan")
+        gap_freq_pct = (
+            float(gap_freq_pct_series.loc[dt])
+            if gap_freq_pct_series is not None and dt in gap_freq_pct_series.index
+            else float("nan")
+        )
+        intraday_pct = (
+            float(intraday_pct_series.loc[dt])
+            if intraday_pct_series is not None and dt in intraday_pct_series.index
+            else float("nan")
+        )
+
+        inputs = VolumeLiquidityRuleInputs(
+            volume_zscore_20d=volume_zscore_20d,
+            return_1d=return_1d,
+            gap_frequency_percentile_252d=gap_freq_pct,
+            intraday_range_percentile_252d=intraday_pct,
+        )
+        label = evaluate_rules(
+            inputs=inputs,
+            config=volume_liquidity_config.rules,
+        )
+        raw_labels.append(label)
+        per_day_data_quality.append(day_quality)
+        per_day_evidence.append({
+            "rule_evidence": {
+                "volume_zscore_20d": float(f"{volume_zscore_20d:.8g}"),
+                "return_1d": float(f"{return_1d:.8g}"),
+                "gap_frequency_percentile_252d": float(f"{gap_freq_pct:.8g}"),
+                "intraday_range_percentile_252d": float(f"{intraday_pct:.8g}"),
+            },
+        })
+
+    stable_labels, active_labels = apply_per_label_asymmetric_hysteresis(
+        raw_labels=raw_labels,
+        risk_rank=VOLUME_LIQUIDITY_RISK_RANK,
+        deescalation_days_by_label=volume_liquidity_config.deescalation_days_by_label,
+        default_deescalation_days=volume_liquidity_config.default_deescalation_days,
+    )
+
+    outputs: dict[date, VolumeLiquidityStateOutput] = {}
+    for day, raw, stable, active, dq, evidence in zip(
+        context.sessions,
+        raw_labels,
+        stable_labels,
+        active_labels,
+        per_day_data_quality,
+        per_day_evidence,
+        strict=True,
+    ):
+        outputs[day] = VolumeLiquidityStateOutput(
+            raw_label=raw,
+            stable_label=stable,
+            active_label=active,
+            evidence=evidence,
+            data_quality=dq,
+        )
+    return outputs

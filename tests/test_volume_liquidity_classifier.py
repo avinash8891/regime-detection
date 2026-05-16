@@ -12,7 +12,7 @@ from __future__ import annotations
 import numpy as np
 import pandas as pd
 
-from regime_detection.axis_series import VolumeLiquidityStateSeriesClassifier
+from regime_detection.volume_liquidity_rules import build_axis_series as _build_vl_axis_series
 from regime_detection.calendar import nyse_sessions_between
 from regime_detection.config import (
     load_default_regime_config,
@@ -115,7 +115,7 @@ def test_classifier_returns_none_when_feature_store_volume_seam_is_none():
     bare_store = build_feature_store(context)
     assert bare_store.volume_liquidity_v2 is None
 
-    out = VolumeLiquidityStateSeriesClassifier().build(context, bare_store)
+    out = _build_vl_axis_series(context, bare_store)
     assert out is None
 
 
@@ -124,7 +124,7 @@ def test_classifier_emits_one_output_per_session_in_context():
     store = build_feature_store(
         context, volume_liquidity_v2_config=context.config.volume_liquidity_v2
     )
-    out = VolumeLiquidityStateSeriesClassifier().build(context, store)
+    out = _build_vl_axis_series(context, store)
 
     assert out is not None
     assert set(out.keys()) == set(context.sessions)
@@ -135,7 +135,7 @@ def test_classifier_emits_labels_from_v2_label_set():
     store = build_feature_store(
         context, volume_liquidity_v2_config=context.config.volume_liquidity_v2
     )
-    out = VolumeLiquidityStateSeriesClassifier().build(context, store)
+    out = _build_vl_axis_series(context, store)
 
     allowed = set(VOLUME_LIQUIDITY_RISK_RANK.keys())
     for day, output in out.items():
@@ -153,7 +153,7 @@ def test_classifier_evidence_reports_live_liquidity_gap_inputs():
         volume_liquidity_v2_config=context.config.volume_liquidity_v2,
         volatility_state_v2_config=context.config.volatility_state_v2,
     )
-    out = VolumeLiquidityStateSeriesClassifier().build(context, store)
+    out = _build_vl_axis_series(context, store)
     assert out is not None
 
     last_day = context.sessions[-1]
@@ -177,7 +177,7 @@ def test_classifier_emits_normal_volume_after_warmup():
     store = build_feature_store(
         context, volume_liquidity_v2_config=context.config.volume_liquidity_v2
     )
-    out = VolumeLiquidityStateSeriesClassifier().build(context, store)
+    out = _build_vl_axis_series(context, store)
 
     last_100 = list(context.sessions)[-100:]
     raw_labels = [out[day].raw_label for day in last_100]
@@ -191,7 +191,7 @@ def test_classifier_emits_panic_volume_when_injected():
     store = build_feature_store(
         context, volume_liquidity_v2_config=context.config.volume_liquidity_v2
     )
-    out = VolumeLiquidityStateSeriesClassifier().build(context, store)
+    out = _build_vl_axis_series(context, store)
 
     seen = {out[day].raw_label for day in context.sessions}
     assert "panic_volume" in seen, seen
@@ -211,7 +211,7 @@ def test_classifier_forces_unknown_when_volume_zscore_is_all_nan():
     broken = vl.__class__(volume_zscore_20d=nan_series)
     broken_store = store.model_copy(update={"volume_liquidity_v2": broken})
 
-    out = VolumeLiquidityStateSeriesClassifier().build(context, broken_store)
+    out = _build_vl_axis_series(context, broken_store)
     last_100 = list(context.sessions)[-100:]
     for day in last_100:
         assert out[day].raw_label == "unknown"

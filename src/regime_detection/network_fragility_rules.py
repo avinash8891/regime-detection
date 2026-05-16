@@ -40,16 +40,25 @@ from __future__ import annotations
 
 import warnings
 from dataclasses import dataclass
-from typing import Literal
+from datetime import date
+from typing import TYPE_CHECKING, Literal
 
 import numpy as np
 import pandas as pd
 from numpy.lib.stride_tricks import sliding_window_view
 
+from regime_detection._staleness_utils import _STALENESS_SENTINEL  # noqa: F401 (re-export sentinel)
 from regime_detection.breadth_state import BreadthLabel
 from regime_detection.config import NetworkFragilityRulesConfig
+from regime_detection.data_quality import assess_series_input_quality, quality_forces_unknown
+from regime_detection.hysteresis import apply_per_label_asymmetric_hysteresis
+from regime_detection.models import DataQuality, NetworkFragilityOutput
 from regime_detection.network_fragility import NetworkFragilityFeatures
 from regime_detection.volatility_state import VolatilityLabel
+
+if TYPE_CHECKING:
+    from regime_detection.feature_store import FeatureStore
+    from regime_detection.market_context import MarketContext
 
 
 # v2 §3.3 labels.
@@ -549,3 +558,148 @@ def evaluate_rules(
             if evaluate_diversified_normal(inputs, config):
                 return "diversified_normal"
     return "unknown"
+
+
+def build_axis_series(
+    context: MarketContext,
+    feature_store: FeatureStore,
+    breadth_active_labels_by_date: dict[date, str] | None = None,
+    volatility_active_labels_by_date: dict[date, str] | None = None,
+    credit_funding_active_labels_by_date: dict[date, str] | None = None,
+) -> dict[date, NetworkFragilityOutput] | None:
+    """Free-function replacement for NetworkFragilitySeriesClassifier.build()."""
+    features = feature_store.network_fragility
+    if features is None:
+        return None
+
+    network_fragility_config = context.config.network_fragility
+    if network_fragility_config is None:
+        return None
+
+    spy_close = context.spy_ohlcv["close"]
+    volatility_features = feature_store.volatility
+    realized_vol_pct = volatility_features.realized_vol_percentile_252d
+    vix_pct = (
+        volatility_features.vix_percentile_252d
+        if volatility_features.vix_percentile_252d is not None
+        else pd.Series(float("nan"), index=spy_close.index)
+    )
+
+    required_inputs: list[pd.Series] = [
+        features.avg_pairwise_corr_63d,
+        features.largest_eigenvalue_share,
+        features.effective_rank,
+        features.dispersion_ratio,
+        spy_close,
+    ]
+    required_trading_days = network_fragility_config.correlation_lookback_days
+    max_freshness_days = context.config.data_quality.max_freshness_days
+    min_completeness = context.config.data_quality.min_completeness
+
+    raw_labels: list[NetworkFragilityLabel] = []
+    per_day_data_quality: list[DataQuality] = []
+    per_day_evidence: list[dict[str, object]] = []
+    rule_inputs_by_date = build_rule_inputs_by_date(
+        features=features,
+        spy_close=spy_close,
+        realized_vol_percentile_252d=realized_vol_pct,
+        vix_percentile_252d=vix_pct,
+    )
+
+    for day in context.sessions:
+        dt = pd.Timestamp(day)
+
+        day_quality = assess_series_input_quality(
+            as_of_date=day,
+            required_inputs=required_inputs,
+            required_trading_days=required_trading_days,
+            raw_label="",
+            max_freshness_days=max_freshness_days,
+            min_completeness=min_completeness,
+            skip_raw_label_short_circuit=True,
+        )
+
+        if quality_forces_unknown(day_quality):
+            raw_labels.append("unknown")
+            per_day_data_quality.append(day_quality)
+            per_day_evidence.append({"reason": day_quality.reason or "insufficient_data"})
+            continue
+
+        rule_inputs = rule_inputs_by_date[dt]
+
+        if breadth_active_labels_by_date is None:
+            breadth_label = "unknown"
+        else:
+            if day not in breadth_active_labels_by_date:
+                raise KeyError(
+                    f"breadth_active_labels_by_date missing session {day!r} "
+                    "(v1/v2 calendar drift would silently downgrade rules to 'unknown')"
+                )
+            breadth_label = breadth_active_labels_by_date[day]
+        if volatility_active_labels_by_date is None:
+            volatility_label = "unknown"
+        else:
+            if day not in volatility_active_labels_by_date:
+                raise KeyError(
+                    f"volatility_active_labels_by_date missing session {day!r} "
+                    "(v1/v2 calendar drift would silently downgrade rules to 'unknown')"
+                )
+            volatility_label = volatility_active_labels_by_date[day]
+        credit_funding_label: str | None = None
+        if credit_funding_active_labels_by_date is not None:
+            if day not in credit_funding_active_labels_by_date:
+                raise KeyError(
+                    f"credit_funding_active_labels_by_date missing session {day!r} "
+                    "(v2/v2 calendar drift would silently downgrade systemic_stress)"
+                )
+            credit_funding_label = credit_funding_active_labels_by_date[day]
+
+        label = evaluate_rules(
+            inputs=rule_inputs,
+            config=network_fragility_config.rules,
+            breadth_label=breadth_label,  # type: ignore[arg-type]
+            volatility_label=volatility_label,  # type: ignore[arg-type]
+            credit_funding_label=credit_funding_label,  # type: ignore[arg-type]
+        )
+        raw_labels.append(label)
+        per_day_data_quality.append(day_quality)
+        per_day_evidence.append({
+            "rule_evidence": {
+                "avg_pairwise_corr_percentile_504d": rule_inputs.avg_pairwise_corr_percentile_504d,
+                "largest_eigenvalue_share_percentile_504d": rule_inputs.largest_eigenvalue_share_percentile_504d,
+                "effective_rank_percentile_504d": rule_inputs.effective_rank_percentile_504d,
+                "dispersion_ratio_percentile_252d": rule_inputs.dispersion_ratio_percentile_252d,
+                "realized_vol_percentile_252d": rule_inputs.realized_vol_percentile_252d,
+                "drawdown_21d": rule_inputs.drawdown_21d,
+                "vix_percentile_252d": rule_inputs.vix_percentile_252d,
+            },
+            "breadth_active_label": breadth_label,
+            "volatility_active_label": volatility_label,
+            "credit_funding_active_label": credit_funding_label,
+        })
+
+    stable_labels, active_labels = apply_per_label_asymmetric_hysteresis(
+        raw_labels=raw_labels,
+        risk_rank=NETWORK_FRAGILITY_RISK_RANK,
+        deescalation_days_by_label=network_fragility_config.deescalation_days_by_label,
+        default_deescalation_days=network_fragility_config.default_deescalation_days,
+    )
+
+    outputs: dict[date, NetworkFragilityOutput] = {}
+    for day, raw, stable, active, dq, evidence in zip(
+        context.sessions,
+        raw_labels,
+        stable_labels,
+        active_labels,
+        per_day_data_quality,
+        per_day_evidence,
+        strict=True,
+    ):
+        outputs[day] = NetworkFragilityOutput(
+            raw_label=raw,
+            stable_label=stable,
+            active_label=active,
+            evidence=evidence,
+            data_quality=dq,
+        )
+    return outputs

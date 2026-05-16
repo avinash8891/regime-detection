@@ -2,11 +2,16 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import date
-from typing import Any, Literal
+from typing import TYPE_CHECKING, Any, Literal
+
+if TYPE_CHECKING:
+    from regime_detection.feature_store import FeatureStore
+    from regime_detection.market_context import MarketContext
 
 import numpy as np
 import pandas as pd
 
+from regime_detection._axis_result import AxisSeriesResult, _build_axis_outputs
 from regime_detection._rolling_stats import period_return, sma
 from regime_detection.hysteresis import apply_asymmetric_hysteresis
 from regime_detection.models import AxisOutput, DataQuality
@@ -495,4 +500,37 @@ def classify_series(
             "deescalation_days": deescalation_days,
         },
         data_quality=dq,
+    )
+
+
+def build_axis_series(
+    context: MarketContext,
+    feature_store: FeatureStore,
+    required_trading_days: int,
+) -> AxisSeriesResult:
+    """Free-function replacement for TrendCharacterSeriesClassifier.build()."""
+    close = context.spy_ohlcv["close"]
+    features = feature_store.trend_character
+    raw_labels, raw_evidence = build_raw_outputs(
+        features,
+        allow_v2_labels=context.config.config_version != "core3-v1.0.0",
+    )
+    stable_labels, active_labels = apply_asymmetric_hysteresis(
+        raw_labels=raw_labels,
+        risk_rank=_RISK_RANK,
+        escalation_days=context.config.hysteresis.trend_character_escalation_days,
+        deescalation_days=context.config.hysteresis.trend_character_deescalation_days,
+    )
+    return _build_axis_outputs(
+        dates=close.index.date,
+        raw_labels=raw_labels,
+        stable_labels=stable_labels,
+        active_labels=active_labels,
+        raw_evidence=raw_evidence,
+        risk_rank=_RISK_RANK,
+        deescalation_days=context.config.hysteresis.trend_character_deescalation_days,
+        required_inputs=[close, context.spy_ohlcv["high"], context.spy_ohlcv["low"]],
+        required_trading_days=required_trading_days,
+        max_freshness_days=context.config.data_quality.max_freshness_days,
+        min_completeness=context.config.data_quality.min_completeness,
     )

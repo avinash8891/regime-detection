@@ -7,11 +7,14 @@ from typing import TYPE_CHECKING, Any, Literal
 import numpy as np
 import pandas as pd
 
+from regime_detection._axis_result import AxisSeriesResult, _build_axis_outputs
 from regime_detection.hysteresis import apply_asymmetric_hysteresis
 from regime_detection.models import AxisOutput, DataQuality
 
 if TYPE_CHECKING:  # avoid runtime cycle: volatility_state_v2 → config → ...
     from regime_detection.config import VolatilityV2RulesConfig
+    from regime_detection.feature_store import FeatureStore
+    from regime_detection.market_context import MarketContext
     from regime_detection.volatility_state_v2 import VolatilityV2Features
 
 
@@ -475,4 +478,41 @@ def classify_series(
             "deescalation_days": deescalation_days,
         },
         data_quality=dq,
+    )
+
+
+def build_axis_series(
+    context: MarketContext,
+    feature_store: FeatureStore,
+    required_trading_days: int,
+) -> AxisSeriesResult:
+    """Free-function replacement for VolatilitySeriesClassifier.build()."""
+    close = context.spy_ohlcv["close"]
+    features = feature_store.volatility
+    vol_v2_features = feature_store.volatility_state_v2
+    vol_v2_config = context.config.volatility_state_v2
+    vol_v2_rules = vol_v2_config.rules if vol_v2_config is not None else None
+    raw_labels, raw_evidence = build_raw_outputs(
+        features,
+        volatility_state_v2_features=vol_v2_features,
+        volatility_state_v2_rules=vol_v2_rules,
+    )
+    stable_labels, active_labels = apply_asymmetric_hysteresis(
+        raw_labels=raw_labels,
+        risk_rank=_RISK_RANK,
+        escalation_days=context.config.hysteresis.volatility_escalation_days,
+        deescalation_days=context.config.hysteresis.volatility_deescalation_days,
+    )
+    return _build_axis_outputs(
+        dates=close.index.date,
+        raw_labels=raw_labels,
+        stable_labels=stable_labels,
+        active_labels=active_labels,
+        raw_evidence=raw_evidence,
+        risk_rank=_RISK_RANK,
+        deescalation_days=context.config.hysteresis.volatility_deescalation_days,
+        required_inputs=[close],
+        required_trading_days=required_trading_days,
+        max_freshness_days=context.config.data_quality.max_freshness_days,
+        min_completeness=context.config.data_quality.min_completeness,
     )

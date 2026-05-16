@@ -5,10 +5,8 @@ from datetime import date
 import pandas as pd
 import pytest
 
-from regime_detection.axis_series import (
-    NetworkFragilitySeriesClassifier,
-    build_axis_series_bundle,
-)
+from regime_detection.axis_series import build_axis_series_bundle
+from regime_detection.network_fragility_rules import build_axis_series as _build_nf_axis_series
 from regime_detection.engine import RegimeEngine
 from regime_detection.feature_store import NetworkFragilityFeatures, build_feature_store
 from regime_detection.fragility_universe import (
@@ -90,7 +88,7 @@ def test_network_fragility_classifier_returns_none_without_sector_data(market_df
     )
     store = build_feature_store(context)
 
-    result = NetworkFragilitySeriesClassifier().build(context, store)
+    result = _build_nf_axis_series(context, store)
 
     assert result is None
 
@@ -109,7 +107,7 @@ def test_network_fragility_classifier_returns_real_fixture_outputs(
         context, network_fragility_config=context.config.network_fragility
     )
 
-    result = NetworkFragilitySeriesClassifier().build(context, store)
+    result = _build_nf_axis_series(context, store)
 
     assert result is not None
     assert set(result.keys()) == set(context.sessions)

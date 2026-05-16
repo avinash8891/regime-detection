@@ -14,7 +14,7 @@ from __future__ import annotations
 import numpy as np
 import pandas as pd
 
-from regime_detection.axis_series import MonetaryPressureV2SeriesClassifier
+from regime_detection.monetary_pressure import build_axis_series as _build_mp_axis_series
 from regime_detection.calendar import nyse_sessions_between
 from regime_detection.config import (
     MonetaryPressureV2Config,
@@ -335,7 +335,7 @@ def test_classifier_returns_none_when_feature_store_monetary_seam_is_none():
     )
     bare_store = build_feature_store(context)
     assert bare_store.monetary is None
-    out = MonetaryPressureV2SeriesClassifier().build(context, bare_store)
+    out = _build_mp_axis_series(context, bare_store)
     assert out is None
 
 
@@ -346,7 +346,7 @@ def test_classifier_emits_outputs_when_seam_lit():
         monetary_pressure_v2_config=context.config.monetary_pressure_v2,
     )
     assert store.monetary is not None
-    out = MonetaryPressureV2SeriesClassifier().build(context, store)
+    out = _build_mp_axis_series(context, store)
     assert out is not None
     assert set(out.keys()) == set(context.sessions)
     allowed = set(MONETARY_PRESSURE_V2_RISK_RANK.keys())

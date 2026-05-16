@@ -56,15 +56,28 @@ The module also defines:
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Literal
+from datetime import date
+from typing import TYPE_CHECKING, Literal
 
 import numpy as np
 import pandas as pd
 
+from regime_detection._staleness_utils import (
+    calendar_staleness_days_series as _calendar_staleness_days_series,
+    safe_float as _safe_float,
+    trading_staleness_series as _trading_staleness_series,
+)
 from regime_detection.breadth_state_v2 import make_bias_warnings_frame
 from regime_detection.config import (
     CreditFundingRulesConfig,
 )
+from regime_detection.data_quality import assess_series_input_quality, quality_forces_unknown
+from regime_detection.hysteresis import apply_per_label_asymmetric_hysteresis
+from regime_detection.models import CreditFundingOutput, DataQuality
+
+if TYPE_CHECKING:
+    from regime_detection.feature_store import FeatureStore
+    from regime_detection.market_context import MarketContext
 
 
 # ---------------------------------------------------------------------------
@@ -691,3 +704,223 @@ def evaluate_rules(
     if evaluate_credit_calm(inputs, config):
         return "credit_calm"
     return "unknown"
+
+
+def _build_for_spread_source(
+    context: MarketContext,
+    feature_store: FeatureStore,
+    *,
+    spread_source: Literal["oas", "proxy"],
+) -> dict[date, CreditFundingOutput] | None:
+    """Shared pipeline for build_axis_series() and build_axis_series_proxy()."""
+    features = feature_store.credit_funding
+    if features is None:
+        return None
+    cf_config = context.config.credit_funding
+    if cf_config is None:
+        return None
+
+    if spread_source == "oas":
+        hy_spread_63d = features.hy_oas_63d
+        ig_spread_63d = features.ig_oas_63d
+        hy_spread_percentile_504d = features.hy_oas_percentile_504d
+        hy_spread_slope_21d = features.hy_oas_slope_21d
+        ig_spread_slope_21d = features.ig_oas_slope_21d
+        bias_warning_code = CREDIT_SPREAD_SOURCE_CODE
+        evidence_spread_source = "ice_bofa_oas"
+    else:  # "proxy"
+        hy_spread_63d = features.hy_tr_differential_63d
+        ig_spread_63d = features.ig_tr_differential_63d
+        hy_spread_percentile_504d = features.hy_tr_differential_percentile_504d
+        hy_spread_slope_21d = features.hy_tr_differential_slope_21d
+        ig_spread_slope_21d = features.ig_tr_differential_slope_21d
+        bias_warning_code = CREDIT_SPREAD_PROXY_BIAS_WARNING_CODE
+        evidence_spread_source = "tlt_total_return_differential"
+
+    spy_close = context.spy_ohlcv["close"]
+    volatility_features = feature_store.volatility
+    realized_vol_pct = volatility_features.realized_vol_percentile_252d
+    nf_features = feature_store.network_fragility
+    if nf_features is None:
+        avg_corr_pct_series = pd.Series(float("nan"), index=spy_close.index)
+    else:
+        avg_corr_pct_series = nf_features.avg_pairwise_corr_percentile_504d
+
+    cross_asset_closes = context.cross_asset_closes or {}
+    macro_series = context.macro_series or {}
+    hyg_close = cross_asset_closes.get("HYG")
+    lqd_close = cross_asset_closes.get("LQD")
+    tlt_close = cross_asset_closes.get("TLT")
+    sofr_series = macro_series.get("SOFR")
+    iorb_series = macro_series.get("IORB")
+    nfci_series = macro_series.get("NFCI")
+
+    required_inputs: list[pd.Series] = [
+        hy_spread_63d,
+        ig_spread_63d,
+        features.kre_spy_ratio,
+        features.sofr_iorb_spread,
+        spy_close,
+    ]
+    required_trading_days = cf_config.rules.hy_percentile_504d_lookback
+    max_freshness_days = context.config.data_quality.max_freshness_days
+    min_completeness = context.config.data_quality.min_completeness
+
+    raw_labels: list[CreditFundingLabel] = []
+    per_day_data_quality: list[DataQuality] = []
+    per_day_evidence: list[dict[str, object]] = []
+
+    nfci_carried = features.nfci_daily_carried
+    session_index = spy_close.index
+    hyg_staleness_by_date = _trading_staleness_series(hyg_close, session_index)
+    lqd_staleness_by_date = _trading_staleness_series(lqd_close, session_index)
+    tlt_staleness_by_date = _trading_staleness_series(tlt_close, session_index)
+    nfci_staleness_by_date = _calendar_staleness_days_series(nfci_series, session_index)
+    sofr_missing_by_date = (
+        pd.Series(True, index=session_index)
+        if sofr_series is None
+        else sofr_series.reindex(session_index).isna()
+    )
+    iorb_missing_by_date = (
+        pd.Series(True, index=session_index)
+        if iorb_series is None
+        else iorb_series.reindex(session_index).isna()
+    )
+    rule_inputs_by_date = build_rule_inputs_by_date(
+        features=features,
+        hy_spread_percentile_504d=hy_spread_percentile_504d,
+        hy_spread_slope_21d=hy_spread_slope_21d,
+        ig_spread_slope_21d=ig_spread_slope_21d,
+        realized_vol_21d_percentile_252d=realized_vol_pct,
+        avg_pairwise_corr_percentile_504d=avg_corr_pct_series,
+    )
+
+    for day in context.sessions:
+        dt = pd.Timestamp(day)
+
+        etf_staleness_breach = False
+        etf_stale_label: str | None = None
+        hyg_staleness = int(hyg_staleness_by_date.loc[dt])
+        lqd_staleness = int(lqd_staleness_by_date.loc[dt])
+        tlt_staleness = int(tlt_staleness_by_date.loc[dt])
+        if hyg_staleness > cf_config.etf_stale_sessions:
+            etf_staleness_breach = True
+            etf_stale_label = "HYG"
+        elif lqd_staleness > cf_config.etf_stale_sessions:
+            etf_staleness_breach = True
+            etf_stale_label = "LQD"
+        elif tlt_staleness > cf_config.etf_stale_sessions:
+            etf_staleness_breach = True
+            etf_stale_label = "TLT"
+
+        sofr_missing = bool(sofr_missing_by_date.loc[dt])
+        iorb_missing = bool(iorb_missing_by_date.loc[dt])
+        nfci_staleness_days = int(nfci_staleness_by_date.loc[dt])
+        nfci_stale = nfci_staleness_days > cf_config.nfci_stale_days
+
+        if etf_staleness_breach or sofr_missing or iorb_missing or nfci_stale:
+            reason_parts: list[str] = []
+            if etf_staleness_breach:
+                reason_parts.append(f"etf_stale:{etf_stale_label}")
+            if sofr_missing:
+                reason_parts.append("sofr_missing")
+            if iorb_missing:
+                reason_parts.append("iorb_missing")
+            if nfci_stale:
+                reason_parts.append(f"nfci_stale_{nfci_staleness_days}d")
+            gate_reason = ",".join(reason_parts)
+            raw_labels.append("unknown")
+            per_day_data_quality.append(
+                DataQuality(
+                    status="stale_data" if (etf_staleness_breach or nfci_stale) else "insufficient_data",
+                    freshness_days=None,
+                    completeness=None,
+                    reason=gate_reason,
+                )
+            )
+            per_day_evidence.append({"reason": gate_reason})
+            continue
+
+        day_quality = assess_series_input_quality(
+            as_of_date=day,
+            required_inputs=required_inputs,
+            required_trading_days=required_trading_days,
+            raw_label="",
+            max_freshness_days=max_freshness_days,
+            min_completeness=min_completeness,
+            skip_raw_label_short_circuit=True,
+        )
+        if quality_forces_unknown(day_quality):
+            raw_labels.append("unknown")
+            per_day_data_quality.append(day_quality)
+            per_day_evidence.append({"reason": day_quality.reason or "insufficient_data"})
+            continue
+
+        rule_inputs = rule_inputs_by_date[dt]
+        label = evaluate_rules(
+            inputs=rule_inputs,
+            config=cf_config.rules,
+        )
+        raw_labels.append(label)
+        per_day_data_quality.append(day_quality)
+        per_day_evidence.append(
+            {
+                "rule_evidence": {
+                    "hy_spread_percentile_504d": rule_inputs.hy_spread_percentile_504d,
+                    "hy_spread_slope_21d": rule_inputs.hy_spread_slope_21d,
+                    "ig_spread_slope_21d": rule_inputs.ig_spread_slope_21d,
+                    "broad_usd_index_zscore_21d": rule_inputs.broad_usd_index_zscore_21d,
+                    "sofr_iorb_slope_21d": rule_inputs.sofr_iorb_slope_21d,
+                    "spy_21d_return": rule_inputs.spy_21d_return,
+                    "tlt_21d_return": rule_inputs.tlt_21d_return,
+                    "realized_vol_21d_percentile_252d": rule_inputs.realized_vol_21d_percentile_252d,
+                    "avg_pairwise_corr_percentile_504d": rule_inputs.avg_pairwise_corr_percentile_504d,
+                },
+                "spread_source": evidence_spread_source,
+                "nfci_daily_carried": _safe_float(nfci_carried, dt),
+                "kre_spy_slope_63d": _safe_float(features.kre_spy_slope_63d, dt),
+                "bias_warning_code": bias_warning_code,
+            }
+        )
+
+    stable_labels, active_labels = apply_per_label_asymmetric_hysteresis(
+        raw_labels=raw_labels,
+        risk_rank=CREDIT_FUNDING_RISK_RANK,
+        deescalation_days_by_label=cf_config.deescalation_days_by_label,
+        default_deescalation_days=cf_config.default_deescalation_days,
+    )
+
+    outputs: dict[date, CreditFundingOutput] = {}
+    for day, raw, stable, active, dq, evidence in zip(
+        context.sessions,
+        raw_labels,
+        stable_labels,
+        active_labels,
+        per_day_data_quality,
+        per_day_evidence,
+        strict=True,
+    ):
+        outputs[day] = CreditFundingOutput(
+            raw_label=raw,
+            stable_label=stable,
+            active_label=active,
+            evidence=evidence,
+            data_quality=dq,
+        )
+    return outputs
+
+
+def build_axis_series(
+    context: MarketContext,
+    feature_store: FeatureStore,
+) -> dict[date, CreditFundingOutput] | None:
+    """Real-OAS §2C credit/funding labels (free-function replacement for CreditFundingSeriesClassifier.build())."""
+    return _build_for_spread_source(context, feature_store, spread_source="oas")
+
+
+def build_axis_series_proxy(
+    context: MarketContext,
+    feature_store: FeatureStore,
+) -> dict[date, CreditFundingOutput] | None:
+    """TLT-proxy §2C labels (free-function replacement for CreditFundingSeriesClassifier.build_proxy())."""
+    return _build_for_spread_source(context, feature_store, spread_source="proxy")

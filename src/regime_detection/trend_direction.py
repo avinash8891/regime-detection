@@ -7,12 +7,15 @@ from typing import TYPE_CHECKING, Any, Literal
 import numpy as np
 import pandas as pd
 
+from regime_detection._axis_result import AxisSeriesResult, _build_axis_outputs
 from regime_detection._rolling_stats import period_return, sma
 from regime_detection.hysteresis import apply_asymmetric_hysteresis
 from regime_detection.models import AxisOutput, DataQuality
 
 if TYPE_CHECKING:  # avoid runtime cycle: trend_direction_v2 → config → ...
     from regime_detection.config import TrendDirectionV2RulesConfig
+    from regime_detection.feature_store import FeatureStore
+    from regime_detection.market_context import MarketContext
     from regime_detection.trend_direction_v2 import TrendDirectionV2Features
 
 
@@ -295,4 +298,41 @@ def classify_series(
             "deescalation_days": deescalation_days,
         },
         data_quality=dq,
+    )
+
+
+def build_axis_series(
+    context: MarketContext,
+    feature_store: FeatureStore,
+    required_trading_days: int,
+) -> AxisSeriesResult:
+    """Free-function replacement for TrendDirectionSeriesClassifier.build()."""
+    close = context.spy_ohlcv["close"]
+    features = feature_store.trend_direction
+    trend_v2_features = feature_store.trend_direction_v2
+    trend_v2_config = context.config.trend_direction_v2
+    trend_v2_rules = trend_v2_config.rules if trend_v2_config is not None else None
+    raw_labels, raw_evidence = build_raw_outputs(
+        features,
+        trend_direction_v2_features=trend_v2_features,
+        trend_direction_v2_rules=trend_v2_rules,
+    )
+    stable_labels, active_labels = apply_hysteresis(
+        dates=close.index,
+        raw_labels=raw_labels,
+        escalation_days=context.config.hysteresis.trend_direction_escalation_days,
+        deescalation_days=context.config.hysteresis.trend_direction_deescalation_days,
+    )
+    return _build_axis_outputs(
+        dates=close.index.date,
+        raw_labels=raw_labels,
+        stable_labels=stable_labels,
+        active_labels=active_labels,
+        raw_evidence=raw_evidence,
+        risk_rank=_RISK_RANK,
+        deescalation_days=context.config.hysteresis.trend_direction_deescalation_days,
+        required_inputs=[close],
+        required_trading_days=required_trading_days,
+        max_freshness_days=context.config.data_quality.max_freshness_days,
+        min_completeness=context.config.data_quality.min_completeness,
     )

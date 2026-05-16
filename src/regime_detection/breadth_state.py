@@ -2,10 +2,15 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import date
-from typing import Any, Literal
+from typing import TYPE_CHECKING, Any, Literal
+
+if TYPE_CHECKING:
+    from regime_detection.feature_store import FeatureStore
+    from regime_detection.market_context import MarketContext
 
 import pandas as pd
 
+from regime_detection._axis_result import AxisSeriesResult
 from regime_detection.data_quality import assess_series_input_quality
 from regime_detection.hysteresis import apply_asymmetric_hysteresis
 from regime_detection.models import BreadthStateOutput, DataQuality
@@ -506,4 +511,115 @@ def _data_quality_for_asof(
         raw_label=raw_label,
         max_freshness_days=max_freshness_days,
         min_completeness=min_completeness,
+    )
+
+
+# Labels that require PIT constituent data — used to determine the mode field
+# of BreadthStateOutput. Defined here (not in axis_series) because they are
+# semantically part of the breadth-state domain.
+_PIT_BREADTH_LABELS: frozenset[str] = frozenset({
+    "breadth_thrust",
+    "narrowing_breadth",
+    "recovery_breadth",
+    "broadening_breadth",
+})
+
+
+def build_axis_series(
+    context: MarketContext,
+    feature_store: FeatureStore,
+    required_trading_days: int,
+) -> AxisSeriesResult:
+    """Free-function replacement for BreadthSeriesClassifier.build()."""
+    spy_close = context.spy_ohlcv["close"]
+    rsp_close = context.rsp_close.reindex(context.spy_ohlcv.index)
+    features = feature_store.breadth
+    raw_labels, raw_evidence = build_raw_outputs(features)
+
+    v2_features = feature_store.breadth_state_v2
+    v2_config = context.config.breadth_state_v2
+    v2_active = (
+        v2_features is not None
+        and v2_config is not None
+        and v2_features.pct_above_50dma is not None
+        and v2_features.pct_above_200dma is not None
+        and v2_features.nh_nl_ratio is not None
+        and v2_features.ad_line_slope_20d is not None
+    )
+    if v2_active:
+        assert v2_features is not None  # narrowing for type-checker
+        assert v2_config is not None
+        raw_labels, raw_evidence = resolve_v2_raw_outputs(
+            dates=spy_close.index,
+            raw_labels=raw_labels,
+            raw_evidence=raw_evidence,
+            pct_above_50dma=v2_features.pct_above_50dma,
+            pct_above_200dma=v2_features.pct_above_200dma,
+            nh_nl_ratio=v2_features.nh_nl_ratio,
+            ad_line_slope_20d=v2_features.ad_line_slope_20d,
+            breadth_thrust=v2_features.breadth_thrust,
+            lookback_sessions=v2_config.label_rate_of_change_lookback_sessions,
+            nh_nl_threshold=v2_config.nh_nl_ratio_narrowing_threshold,
+        )
+
+    stable_labels, active_labels = apply_asymmetric_hysteresis(
+        raw_labels=raw_labels,
+        risk_rank=_RISK_RANK,
+        escalation_days=context.config.hysteresis.breadth_escalation_days,
+        deescalation_days=context.config.hysteresis.breadth_deescalation_days,
+    )
+    outputs_by_date: dict[date, BreadthStateOutput] = {}
+    stable_by_date: dict[date, str] = {}
+    active_by_date: dict[date, str] = {}
+    for day, raw, stable, active, evidence in zip(
+        spy_close.index.date, raw_labels, stable_labels, active_labels, raw_evidence, strict=True
+    ):
+        mode = (
+            "pit_constituent_biased_research"
+            if {raw, stable, active} & _PIT_BREADTH_LABELS
+            else "etf_proxy"
+        )
+        if raw == "unknown":
+            output = BreadthStateOutput(
+                mode=mode,
+                raw_label="unknown",
+                stable_label="unknown",
+                active_label="unknown",
+                evidence={"reason": "insufficient_history", "proxy": "RSP/SPY"},
+                data_quality=DataQuality(
+                    status="insufficient_history",
+                    freshness_days=None,
+                    completeness=None,
+                    reason="required_feature_is_nan",
+                ),
+            )
+        else:
+            output = BreadthStateOutput(
+                mode=mode,
+                raw_label=raw,
+                stable_label=stable,
+                active_label=active,
+                evidence={
+                    "proxy": "RSP/SPY",
+                    "rule_evidence": evidence,
+                    "risk_rank": _RISK_RANK,
+                    "deescalation_days": context.config.hysteresis.breadth_deescalation_days,
+                },
+                data_quality=_data_quality_for_asof(
+                    spy_close=spy_close,
+                    rsp_close=rsp_close,
+                    as_of_date=day,
+                    required_trading_days=required_trading_days,
+                    raw_label=raw,
+                    max_freshness_days=context.config.data_quality.max_freshness_days,
+                    min_completeness=context.config.data_quality.min_completeness,
+                ),
+            )
+        outputs_by_date[day] = output
+        stable_by_date[day] = output.stable_label
+        active_by_date[day] = output.active_label
+    return AxisSeriesResult(
+        outputs_by_date=outputs_by_date,
+        stable_labels_by_date=stable_by_date,
+        active_labels_by_date=active_by_date,
     )

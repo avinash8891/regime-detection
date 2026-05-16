@@ -23,10 +23,8 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from regime_detection.axis_series import (
-    NetworkFragilitySeriesClassifier,
-    build_axis_series_bundle,
-)
+from regime_detection.axis_series import build_axis_series_bundle
+from regime_detection.network_fragility_rules import build_axis_series as _build_nf_axis_series
 from regime_detection.calendar import nyse_sessions_between
 from regime_detection.config import (
     NetworkFragilityConfig,
@@ -244,7 +242,7 @@ def test_classifier_returns_none_when_feature_store_network_fragility_is_none():
     )
     store = build_feature_store(bare_context)
     assert store.network_fragility is None
-    out = NetworkFragilitySeriesClassifier().build(bare_context, store)
+    out = _build_nf_axis_series(bare_context, store)
     assert out is None
 
 
@@ -253,7 +251,7 @@ def test_classifier_emits_one_output_per_session_in_context():
     store = build_feature_store(
         context, network_fragility_config=context.config.network_fragility
     )
-    out = NetworkFragilitySeriesClassifier().build(context, store)
+    out = _build_nf_axis_series(context, store)
 
     assert out is not None
     assert set(out.keys()) == set(context.sessions)
@@ -264,7 +262,7 @@ def test_classifier_emits_labels_from_v2_label_set():
     store = build_feature_store(
         context, network_fragility_config=context.config.network_fragility
     )
-    out = NetworkFragilitySeriesClassifier().build(context, store)
+    out = _build_nf_axis_series(context, store)
 
     allowed: set[str] = set(NETWORK_FRAGILITY_RISK_RANK.keys())
     for day, output in out.items():
@@ -280,7 +278,7 @@ def test_classifier_emits_non_unknown_labels_after_warmup():
     store = build_feature_store(
         context, network_fragility_config=context.config.network_fragility
     )
-    out = NetworkFragilitySeriesClassifier().build(context, store)
+    out = _build_nf_axis_series(context, store)
 
     # Look only at the last 100 sessions (well past warmup).
     last_100 = list(context.sessions)[-100:]
@@ -305,7 +303,7 @@ def test_real_v2_ohlcv_fixture_network_fragility_golden_labels(
     store = build_feature_store(
         context, network_fragility_config=context.config.network_fragility
     )
-    out = NetworkFragilitySeriesClassifier().build(context, store)
+    out = _build_nf_axis_series(context, store)
 
     assert out is not None
     golden_rows = [
@@ -363,7 +361,7 @@ def test_classifier_forces_unknown_when_feature_column_is_all_nan():
         dispersion_ratio_percentile_252d=nf.dispersion_ratio_percentile_252d,
     )
     broken_store = store.model_copy(update={"network_fragility": broken})
-    out = NetworkFragilitySeriesClassifier().build(context, broken_store)
+    out = _build_nf_axis_series(context, broken_store)
 
     # Every session must be forced to unknown by the data-quality gate.
     last_100 = list(context.sessions)[-100:]
@@ -497,7 +495,7 @@ def test_classifier_raises_on_v1_axis_calendar_drift_breadth():
     del breadth[dropped]
 
     with pytest.raises(KeyError, match="breadth_active_labels_by_date missing session"):
-        NetworkFragilitySeriesClassifier().build(
+        _build_nf_axis_series(
             context,
             store,
             breadth_active_labels_by_date=breadth,
@@ -517,7 +515,7 @@ def test_classifier_raises_on_v1_axis_calendar_drift_volatility():
     del volatility[dropped]
 
     with pytest.raises(KeyError, match="volatility_active_labels_by_date missing session"):
-        NetworkFragilitySeriesClassifier().build(
+        _build_nf_axis_series(
             context,
             store,
             breadth_active_labels_by_date=breadth,
@@ -579,7 +577,7 @@ def test_classifier_emits_systemic_stress_when_credit_funding_confirms_it():
     volatility = {day: "normal_vol" for day in context.sessions}
     credit_funding = {day: "credit_stress" for day in context.sessions}
 
-    out = NetworkFragilitySeriesClassifier().build(
+    out = _build_nf_axis_series(
         context,
         stressed_store,
         breadth_active_labels_by_date=breadth,

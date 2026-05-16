@@ -38,14 +38,26 @@ Inputs:
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Literal
+from datetime import date
+from typing import TYPE_CHECKING, Literal
 
 import numpy as np
 import pandas as pd
 
+from regime_detection._staleness_utils import (
+    calendar_staleness_days_series as _calendar_staleness_days_series,
+    trading_staleness_series as _trading_staleness_series,
+)
 from regime_detection.breadth_state_v2 import make_bias_warnings_frame
 from regime_detection.config import InflationGrowthRulesConfig
 from regime_detection.credit_funding import _rolling_ols_slope
+from regime_detection.data_quality import assess_series_input_quality, quality_forces_unknown
+from regime_detection.hysteresis import apply_per_label_asymmetric_hysteresis
+from regime_detection.models import DataQuality, InflationGrowthOutput
+
+if TYPE_CHECKING:
+    from regime_detection.feature_store import FeatureStore
+    from regime_detection.market_context import MarketContext
 
 
 # ---------------------------------------------------------------------------
@@ -801,3 +813,159 @@ def evaluate_rules(
     if evaluate_earnings_expansion(inputs, config):
         return "earnings_expansion"
     return "unknown"
+
+
+def build_axis_series(
+    context: MarketContext,
+    feature_store: FeatureStore,
+    credit_funding_active_labels_by_date: dict[date, str] | None = None,
+) -> dict[date, InflationGrowthOutput] | None:
+    """Free-function replacement for InflationGrowthSeriesClassifier.build()."""
+    features = feature_store.inflation_growth
+    if features is None:
+        return None
+    ig_config = context.config.inflation_growth
+    if ig_config is None:
+        return None
+
+    spy_close = context.spy_ohlcv["close"]
+    macro_series = context.macro_series or {}
+    cpi_series = macro_series.get("cpi_all_items")
+    pmi_series = macro_series.get("pmi_manufacturing")
+    dgs10_series = macro_series.get("dgs10")
+
+    required_inputs: list[pd.Series] = [
+        features.cpi_6m_change_pct,
+        features.pmi_manufacturing,
+        features.treasury_10y_yield_slope_21d,
+        features.commodity_return_63d,
+        spy_close,
+    ]
+    required_trading_days = ig_config.rules.cpi_lookback_6m_sessions
+    max_freshness_days = context.config.data_quality.max_freshness_days
+    min_completeness = context.config.data_quality.min_completeness
+
+    raw_labels: list[InflationGrowthLabel] = []
+    per_day_data_quality: list[DataQuality] = []
+    per_day_evidence: list[dict[str, object]] = []
+    session_index = spy_close.index
+    cpi_staleness_by_date = _calendar_staleness_days_series(cpi_series, session_index)
+    pmi_staleness_by_date = _calendar_staleness_days_series(pmi_series, session_index)
+    dgs10_staleness_by_date = _trading_staleness_series(dgs10_series, session_index)
+    credit_funding_labels_by_ts: dict[pd.Timestamp, str | None] | None = None
+    if credit_funding_active_labels_by_date is not None:
+        credit_funding_labels_by_ts = {
+            pd.Timestamp(day): label
+            for day, label in credit_funding_active_labels_by_date.items()
+        }
+    rule_inputs_by_date = build_rule_inputs_by_date(
+        features=features,
+        config=ig_config.rules,
+        credit_funding_active_labels_by_date=credit_funding_labels_by_ts,
+    )
+
+    for day in context.sessions:
+        dt = pd.Timestamp(day)
+
+        cpi_staleness_days = int(cpi_staleness_by_date.loc[dt])
+        pmi_staleness_days = int(pmi_staleness_by_date.loc[dt])
+        dgs10_staleness_sessions = int(dgs10_staleness_by_date.loc[dt])
+        cpi_stale = cpi_staleness_days > ig_config.cpi_stale_calendar_days
+        pmi_stale = pmi_staleness_days > ig_config.pmi_stale_calendar_days
+        dgs10_stale = dgs10_staleness_sessions > ig_config.dgs10_stale_sessions
+
+        if cpi_stale or pmi_stale or dgs10_stale:
+            reason_parts: list[str] = []
+            if cpi_stale:
+                reason_parts.append(f"cpi_stale_{cpi_staleness_days}d")
+            if pmi_stale:
+                reason_parts.append(f"pmi_stale_{pmi_staleness_days}d")
+            if dgs10_stale:
+                reason_parts.append(f"dgs10_stale_{dgs10_staleness_sessions}s")
+            gate_reason = ",".join(reason_parts)
+            raw_labels.append("unknown")
+            per_day_data_quality.append(
+                DataQuality(
+                    status="stale_data",
+                    freshness_days=None,
+                    completeness=None,
+                    reason=gate_reason,
+                )
+            )
+            per_day_evidence.append({"reason": gate_reason})
+            continue
+
+        day_quality = assess_series_input_quality(
+            as_of_date=day,
+            required_inputs=required_inputs,
+            required_trading_days=required_trading_days,
+            raw_label="",
+            max_freshness_days=max_freshness_days,
+            min_completeness=min_completeness,
+            skip_raw_label_short_circuit=True,
+        )
+        if quality_forces_unknown(day_quality):
+            raw_labels.append("unknown")
+            per_day_data_quality.append(day_quality)
+            per_day_evidence.append({"reason": day_quality.reason or "insufficient_data"})
+            continue
+
+        credit_funding_active_label: str | None = None
+        if credit_funding_active_labels_by_date is not None:
+            if day not in credit_funding_active_labels_by_date:
+                raise KeyError(
+                    f"credit_funding_active_labels_by_date missing session {day!r} "
+                    "(v1/v2 calendar drift would silently downgrade §2B cross-axis rules)"
+                )
+            credit_funding_active_label = credit_funding_active_labels_by_date[day]
+
+        rule_inputs = rule_inputs_by_date[dt]
+        label = evaluate_rules(inputs=rule_inputs, config=ig_config.rules)
+        raw_labels.append(label)
+        per_day_data_quality.append(day_quality)
+        per_day_evidence.append(
+            {
+                "rule_evidence": {
+                    "cpi_6m_change_pct": rule_inputs.cpi_6m_change_pct,
+                    "cpi_6m_change_pct_lag_21": rule_inputs.cpi_6m_change_pct_lag_21,
+                    "cpi_6m_change_pct_slope_21d": rule_inputs.cpi_6m_change_pct_slope_21d,
+                    "inflation_surprise_zscore": rule_inputs.inflation_surprise_zscore,
+                    "pmi_manufacturing": rule_inputs.pmi_manufacturing,
+                    "pmi_manufacturing_slope_21d": rule_inputs.pmi_manufacturing_slope_21d,
+                    "aggregate_forward_eps_revision_direction_4w": rule_inputs.aggregate_forward_eps_revision_direction_4w,
+                    "commodity_return_63d": rule_inputs.commodity_return_63d,
+                    "treasury_10y_yield_slope_21d": rule_inputs.treasury_10y_yield_slope_21d,
+                    "cyclical_defensive_slope_21d": rule_inputs.cyclical_defensive_slope_21d,
+                    "spy_21d_return": rule_inputs.spy_21d_return,
+                    "tlt_21d_return": rule_inputs.tlt_21d_return,
+                },
+                "credit_funding_active_label": credit_funding_active_label,
+                "bias_warning_code": "commodity_proxy_dbc_substitute",
+            }
+        )
+
+    stable_labels, active_labels = apply_per_label_asymmetric_hysteresis(
+        raw_labels=raw_labels,
+        risk_rank=INFLATION_GROWTH_RISK_RANK,
+        deescalation_days_by_label=ig_config.deescalation_days_by_label,
+        default_deescalation_days=ig_config.default_deescalation_days,
+    )
+
+    outputs: dict[date, InflationGrowthOutput] = {}
+    for day, raw, stable, active, dq, evidence in zip(
+        context.sessions,
+        raw_labels,
+        stable_labels,
+        active_labels,
+        per_day_data_quality,
+        per_day_evidence,
+        strict=True,
+    ):
+        outputs[day] = InflationGrowthOutput(
+            raw_label=raw,
+            stable_label=stable,
+            active_label=active,
+            evidence=evidence,
+            data_quality=dq,
+        )
+    return outputs
