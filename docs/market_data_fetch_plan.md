@@ -136,11 +136,11 @@ Status meanings used below:
 
 | Data | Source | Cadence | Output / Path | Status | Comment |
 |---|---|---|---|---|---|
-| V1/all stock universe symbol list | PIT constituent parquet by default; optional `--universe-json` override | ad hoc refresh | loaded in-memory from `data/raw/pit_constituents/sp500_ticker_intervals.parquet` | done-live-verified | when `--universe-json` is omitted, V1/all fetches use the PIT constituent ticker set. This keeps the stock universe scoped to the PIT constituent set used by `daily_ohlcv_762`, not Alpaca's full active asset catalog |
+| V1/all stock universe symbol list | fixed regime universe artifact; PIT parquet only for explicit bootstrap/listing | ad hoc refresh | materialized as a JSON symbol list or `data/raw/daily_ohlcv_762/symbol=*/` tree by the manifest | done-live-verified | routine Alpaca constituent refreshes use the fixed 762-symbol universe (`--universe-json` or `--constituent-universe-dir`) and validate the expected count. PIT expansion is blocked unless `--allow-pit-constituent-universe` is explicit. The runner never uses Alpaca's full active asset catalog for regime-engine OHLCV |
 
 > **Engine-facing ETF OHLCV — updated 2026-05.** `data/raw/daily_ohlcv/` (the partitioned parquet the engine's market-data loader actually reads) was re-fetched directly from Alpaca — SIP feed, `adjustment=split` — covering the full **26-symbol V2 ETF universe, 2016-01-04 → current, one consistent source** (26 symbols / 67,111 rows; `XLC` starts 2018-06-19, its genuine launch). This replaced a stale 2018-start parquet that was also missing `RSP`/`DBC` and disagreed with the SQLite store on prices. The SQLite `daily_ohlcv_rows` store described in the rows below is a **separate artifact** used only for the 762 PIT constituent stocks (V2 §1D PIT breadth) — it is not what the ETF axes load.
 
-| 762-stock daily OHLCV backfill | Alpaca REST from PIT constituent symbols; local parquet import remains an explicit backfill path | daily | `data/raw/daily_ohlcv_762/symbol=*/ohlcv.parquet` plus SQLite `daily_ohlcv_rows` | done-live-verified | routine future runs use `--fetch daily-ohlcv-constituents-alpaca` or `--fetch all`: derive the symbol set from `data/raw/pit_constituents/sp500_ticker_intervals.parquet`, fetch daily bars from Alpaca, materialize the profile runner tree, then populate SQLite through the same importer. Live smoke for `2026-05-05` through `2026-05-06` requested `1,194` PIT symbols, returned `735` symbols / `1,468` rows. `--fetch daily-ohlcv-local-sqlite --daily-ohlcv-dir ...` stays available only for archived/local backfills |
+| 762-stock daily OHLCV backfill | Alpaca REST from the fixed 762-symbol regime universe; local parquet import remains an explicit backfill path | daily | `data/raw/daily_ohlcv_762/symbol=*/ohlcv.parquet` plus SQLite `daily_ohlcv_rows` | done-live-verified | routine future runs use `--fetch daily-ohlcv-constituents-alpaca` or `--fetch all` with the fixed universe artifact, fetch daily bars from Alpaca, materialize the profile runner tree, then populate SQLite through the same importer. PIT constituent expansion is an explicit bootstrap mode only, not the default refresh universe. `--fetch daily-ohlcv-local-sqlite --daily-ohlcv-dir ...` stays available only for archived/local backfills |
 | `SPY` daily OHLCV | local imported parquet dataset; Alpaca REST remains an optional refresh path | daily | SQLite `daily_ohlcv_rows` plus source parquet artifacts in the acquisition DB | done-live-verified | V1 market anchor is present in the live-verified local OHLCV import covering `2016-01-04` through `2026-05-05`; Alpaca remains the documented refresh path if you later need a direct pull |
 | `RSP` daily OHLCV | local imported parquet dataset; Alpaca REST remains an optional refresh path | daily | SQLite `daily_ohlcv_rows` plus source parquet artifacts in the acquisition DB | done-live-verified | V1 breadth proxy is present in the live-verified local OHLCV import covering `2016-01-04` through `2026-05-05`; Alpaca remains the documented refresh path if you later need a direct pull |
 | `VIX` daily proxy bars | local imported parquet dataset; Alpaca REST remains an optional refresh path | daily | SQLite `daily_ohlcv_rows` plus source parquet artifacts in the acquisition DB | done-live-verified | the checked local market dataset covers the documented volatility proxy requirement operationally via the imported symbol set; if you later refresh from Alpaca directly, true `VIX` is preferred when the account supports it |
@@ -194,13 +194,13 @@ Status meanings used below:
 | Scheduled event calendar | `FOMC`, `CPI`, `NFP` | generated YAML from Fed meeting pages + BLS release-schedule pages | `configs/events/us_events.yaml` |
 | Rule-derived event windows | `expiry_week`, `earnings_season` | runtime rules in config/calendar logic | no stored raw file |
 
-Universe source:
+Constituent OHLCV universe source:
 
 ```text
-data/raw/pit_constituents/sp500_ticker_intervals.parquet
+data/raw/daily_ohlcv_762/symbol=*/ohlcv.parquet
 ```
 
-The default is the PIT constituent parquet. Operators can pass `--universe-json /path/to/symbols.json` only when they need an exact replay symbol list.
+The default operating model is a fixed 762-symbol regime universe materialized by the manifest. Operators pass either `--universe-json /path/to/symbols.json` or `--constituent-universe-dir /path/to/daily_ohlcv_762`. The PIT constituent parquet is available only behind `--allow-pit-constituent-universe` for bootstrap/backfill decisions, because using every historical PIT ticker expands beyond the intended 762-symbol engine universe.
 
 ### 2.2 V2 Build Scope
 

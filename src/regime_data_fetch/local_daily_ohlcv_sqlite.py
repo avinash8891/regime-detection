@@ -11,6 +11,7 @@ import pandas as pd
 
 from regime_data_fetch.acquisition_store import AcquisitionStore
 from regime_data_fetch.alpaca_daily import DailyBarsFetchResult, fetch_daily_bars_alpaca
+from regime_data_fetch.universe import load_symbols_from_daily_ohlcv_tree
 
 
 EXPECTED_COLUMNS = ["date", "open", "high", "low", "close", "volume", "adjusted_close"]
@@ -28,12 +29,14 @@ def run_alpaca_constituent_daily_ohlcv_fetch(
     artifact_store_root: str | Path | None = None,
     bars_fetcher: Callable[..., DailyBarsFetchResult] | None = None,
     allow_missing_symbols: bool = False,
+    fixed_universe_symbols: list[str] | None = None,
+    fixed_universe_dir: Path | None = None,
+    allow_pit_universe: bool = False,
+    expected_universe_count: int | None = 762,
     verbose: bool = False,
 ) -> Path:
     if end < start:
         raise SystemExit("--end must be >= --start")
-    if not pit_parquet_path.exists():
-        raise SystemExit(f"Missing PIT constituents parquet: {pit_parquet_path}")
 
     effective_fetcher = bars_fetcher or fetch_daily_bars_alpaca
     if bars_fetcher is None:
@@ -41,7 +44,19 @@ def run_alpaca_constituent_daily_ohlcv_fetch(
             if not os.environ.get(key, "").strip():
                 raise SystemExit(f"Missing required env var: {key}")
 
-    symbols = _symbols_from_pit_parquet(pit_parquet_path)
+    symbols, universe_source = _resolve_constituent_symbols(
+        fixed_universe_symbols=fixed_universe_symbols,
+        fixed_universe_dir=fixed_universe_dir,
+        pit_parquet_path=pit_parquet_path,
+        allow_pit_universe=allow_pit_universe,
+    )
+    if expected_universe_count is not None and len(symbols) != expected_universe_count:
+        raise SystemExit(
+            "Constituent OHLCV refresh resolved "
+            f"{len(symbols)} symbols from {universe_source}; expected {expected_universe_count}. "
+            "Pass the fixed 762-symbol universe artifact, or override --constituent-universe-expected-count "
+            "only for an intentional replay."
+        )
     out_dir.mkdir(parents=True, exist_ok=True)
     tree_root = out_dir / "daily_ohlcv_762"
 
@@ -50,6 +65,7 @@ def run_alpaca_constituent_daily_ohlcv_fetch(
         fetch_type="daily_ohlcv_constituents_alpaca",
         params={
             "pit_parquet_path": str(pit_parquet_path),
+            "universe_source": universe_source,
             "symbols_requested": len(symbols),
             "start": start.isoformat(),
             "end": end.isoformat(),
@@ -103,6 +119,7 @@ def run_alpaca_constituent_daily_ohlcv_fetch(
         report = {
             "source": "alpaca:daily_bars",
             "pit_parquet_path": str(pit_parquet_path),
+            "universe_source": universe_source,
             "requested": {
                 "start": start.isoformat(),
                 "end": end.isoformat(),
@@ -307,6 +324,8 @@ def _ensure_daily_ohlcv_table(conn: sqlite3.Connection) -> None:
 
 
 def _symbols_from_pit_parquet(pit_parquet_path: Path) -> list[str]:
+    if not pit_parquet_path.exists():
+        raise SystemExit(f"Missing PIT constituents parquet: {pit_parquet_path}")
     frame = pd.read_parquet(pit_parquet_path)
     if "ticker" not in frame.columns:
         raise RuntimeError(f"PIT constituents parquet missing ticker column: {pit_parquet_path}")
@@ -314,6 +333,29 @@ def _symbols_from_pit_parquet(pit_parquet_path: Path) -> list[str]:
     if not symbols:
         raise RuntimeError(f"PIT constituents parquet has no ticker values: {pit_parquet_path}")
     return symbols
+
+
+def _resolve_constituent_symbols(
+    *,
+    fixed_universe_symbols: list[str] | None,
+    fixed_universe_dir: Path | None,
+    pit_parquet_path: Path,
+    allow_pit_universe: bool,
+) -> tuple[list[str], str]:
+    if fixed_universe_symbols is not None:
+        symbols = sorted({symbol.strip() for symbol in fixed_universe_symbols if symbol.strip()})
+        if not symbols:
+            raise SystemExit("Fixed constituent universe list is empty")
+        return symbols, "fixed_symbol_list"
+    if fixed_universe_dir is not None:
+        return load_symbols_from_daily_ohlcv_tree(fixed_universe_dir), f"fixed_daily_ohlcv_tree:{fixed_universe_dir}"
+    if allow_pit_universe:
+        return _symbols_from_pit_parquet(pit_parquet_path), f"pit_constituents_bootstrap:{pit_parquet_path}"
+    raise SystemExit(
+        "daily-ohlcv-constituents-alpaca requires a fixed constituent universe. "
+        "Pass --universe-json with the 762 symbols or --constituent-universe-dir pointing at the "
+        "materialized daily_ohlcv_762 tree. Use --allow-pit-constituent-universe only for an explicit bootstrap."
+    )
 
 
 def _write_daily_ohlcv_symbol_tree(frame: pd.DataFrame, *, tree_root: Path) -> list[Path]:

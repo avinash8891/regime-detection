@@ -16,3 +16,18 @@ def load_symbols_from_pit_constituents_parquet(parquet_path: str | os.PathLike[s
     if not symbols:
         raise ValueError(f"PIT constituents parquet has no ticker values: {path}")
     return symbols
+
+
+def load_symbols_from_daily_ohlcv_tree(tree_root: str | os.PathLike[str]) -> list[str]:
+    """Load the fixed profile stock universe from a partitioned OHLCV tree."""
+    root = Path(tree_root)
+    symbols = sorted(
+        {
+            child.name.split("=", 1)[1].strip()
+            for child in root.iterdir()
+            if child.is_dir() and child.name.startswith("symbol=") and child.name.split("=", 1)[1].strip()
+        }
+    )
+    if not symbols:
+        raise ValueError(f"Daily OHLCV tree has no symbol partitions: {root}")
+    return symbols

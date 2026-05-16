@@ -39,7 +39,7 @@ from regime_data_fetch.pmi import run_pmi_fetch
 from regime_data_fetch.pit_constituents import run_pit_constituents_fetch
 from regime_data_fetch.powell_speeches import run_powell_speeches_fetch
 from regime_data_fetch.sf_fed_news_sentiment import run_sf_fed_news_sentiment_fetch
-from regime_data_fetch.universe import load_symbols_from_pit_constituents_parquet
+from regime_data_fetch.universe import load_symbols_from_daily_ohlcv_tree, load_symbols_from_pit_constituents_parquet
 
 
 def main() -> int:
@@ -70,7 +70,7 @@ def main() -> int:
     ap.add_argument(
         "--universe-json",
         default=None,
-        help="Optional JSON list[str] of symbols to fetch. If omitted for V1/all, the PIT constituent parquet ticker set is used.",
+        help="Optional JSON list[str] of symbols to fetch. For constituent OHLCV, this should be the fixed 762-symbol universe.",
     )
     ap.add_argument(
         "--vix-symbol",
@@ -105,6 +105,22 @@ def main() -> int:
     )
     ap.add_argument("--daily-ohlcv-dir", default=None, help="Path to a local partitioned daily_ohlcv parquet directory. Required for --fetch daily-ohlcv-local-sqlite.")
     ap.add_argument("--pit-parquet", default=None, help="PIT constituent parquet for --fetch daily-ohlcv-constituents-alpaca. Defaults to <out-dir>/pit_constituents/sp500_ticker_intervals.parquet.")
+    ap.add_argument(
+        "--constituent-universe-dir",
+        default=None,
+        help="Fixed partitioned daily_ohlcv_762 tree to use as the Alpaca constituent refresh universe.",
+    )
+    ap.add_argument(
+        "--allow-pit-constituent-universe",
+        action="store_true",
+        help="Explicitly allow PIT-constituent parquet expansion as a bootstrap universe for Alpaca constituent OHLCV.",
+    )
+    ap.add_argument(
+        "--constituent-universe-expected-count",
+        type=int,
+        default=762,
+        help="Expected fixed constituent universe size for Alpaca refreshes. Default 762.",
+    )
     ap.add_argument("--allow-missing-constituent-symbols", action="store_true", help="Allow daily-ohlcv-constituents-alpaca to continue when Alpaca returns no bars for some PIT symbols.")
     ap.add_argument("--pmi-history-dir", default=None, help="Optional manual Investing PMI history directory. Omit for live DBnomics/TradingEconomics PMI ingestion.")
     ap.add_argument("--investing-archive-root", default=None, help="Path to archived Investing.com source_pages root. Required for --fetch investing-archive-local.")
@@ -172,9 +188,9 @@ def main() -> int:
                     "scope": args.scope,
                     "stocks_count": len(stocks),
                     "note": (
-                        "V1/all stock-universe fetches use --universe-json when supplied, otherwise "
-                        "the PIT constituent parquet ticker set. V2 scope adds the fixed ETF/cross-asset "
-                        "universe in code."
+                        "V1/all stock-universe listings use --universe-json when supplied, otherwise "
+                        "the PIT constituent parquet ticker set. Constituent OHLCV refreshes require "
+                        "the fixed 762-symbol artifact unless --allow-pit-constituent-universe is explicit."
                     ),
                 },
                 indent=2,
@@ -426,6 +442,10 @@ def main() -> int:
             acquisition_db_path=Path(args.acquisition_db),
             artifact_store_root=acquisition_artifact_store_root,
             allow_missing_symbols=args.allow_missing_constituent_symbols,
+            fixed_universe_symbols=_load_json_symbol_list(Path(args.universe_json)) if args.universe_json else None,
+            fixed_universe_dir=Path(args.constituent_universe_dir) if args.constituent_universe_dir else None,
+            allow_pit_universe=args.allow_pit_constituent_universe,
+            expected_universe_count=args.constituent_universe_expected_count,
             verbose=args.verbose,
         )
         report_paths.append(ohlcv_constituent_report)
@@ -448,17 +468,22 @@ def main() -> int:
 
 def _resolve_stock_universe(args: argparse.Namespace) -> list[str]:
     if args.universe_json:
-        universe_path = Path(args.universe_json)
-        stocks = json.loads(universe_path.read_text())
-        if not isinstance(stocks, list) or not all(isinstance(symbol, str) for symbol in stocks):
-            raise SystemExit("--universe-json must be a JSON list[str]")
-        return stocks
+        return _load_json_symbol_list(Path(args.universe_json))
+    if args.constituent_universe_dir:
+        return load_symbols_from_daily_ohlcv_tree(Path(args.constituent_universe_dir))
     pit_parquet = (
         Path(args.pit_parquet)
         if args.pit_parquet
         else REPO_ROOT / "data" / "raw" / "pit_constituents" / "sp500_ticker_intervals.parquet"
     )
     return load_symbols_from_pit_constituents_parquet(pit_parquet)
+
+
+def _load_json_symbol_list(universe_path: Path) -> list[str]:
+    stocks = json.loads(universe_path.read_text())
+    if not isinstance(stocks, list) or not all(isinstance(symbol, str) for symbol in stocks):
+        raise SystemExit("--universe-json must be a JSON list[str]")
+    return stocks
 
 
 if __name__ == "__main__":

@@ -128,6 +128,8 @@ def test_run_alpaca_constituent_daily_ohlcv_fetch_materializes_profile_tree_and_
         alpaca_feed="sip",
         acquisition_db_path=acquisition_db,
         bars_fetcher=fake_fetcher,
+        allow_pit_universe=True,
+        expected_universe_count=None,
     )
 
     report = json.loads(report_path.read_text())
@@ -158,3 +160,52 @@ def test_run_alpaca_constituent_daily_ohlcv_fetch_materializes_profile_tree_and_
         ("AAPL", "2026-05-05", 100.5),
         ("MSFT", "2026-05-06", 201.5),
     ]
+
+
+def test_run_alpaca_constituent_daily_ohlcv_fetch_uses_fixed_universe_before_pit(
+    tmp_path: Path,
+) -> None:
+    pit_path = tmp_path / "pit_constituents.parquet"
+    pd.DataFrame(
+        [
+            {"ticker": "MSFT", "start_date": "2015-01-01", "end_date": None},
+            {"ticker": "AAPL", "start_date": "2015-01-01", "end_date": None},
+        ]
+    ).to_parquet(pit_path, index=False)
+
+    def fake_fetcher(**kwargs) -> DailyBarsFetchResult:
+        assert kwargs["symbols"] == ["AAPL"]
+        return DailyBarsFetchResult(
+            df=pd.DataFrame(
+                [
+                    {
+                        "date": "2026-05-05",
+                        "symbol": "AAPL",
+                        "open": 100.0,
+                        "high": 101.0,
+                        "low": 99.0,
+                        "close": 100.5,
+                        "volume": 1000,
+                        "adjusted_close": 100.5,
+                    }
+                ]
+            ),
+            missing_symbols=[],
+        )
+
+    report_path = run_alpaca_constituent_daily_ohlcv_fetch(
+        out_dir=tmp_path / "data" / "raw",
+        pit_parquet_path=pit_path,
+        start=pd.Timestamp("2026-05-05").date(),
+        end=pd.Timestamp("2026-05-05").date(),
+        adjustment="split",
+        alpaca_feed="sip",
+        acquisition_db_path=tmp_path / "acquisition.db",
+        bars_fetcher=fake_fetcher,
+        fixed_universe_symbols=["AAPL"],
+        expected_universe_count=1,
+    )
+
+    report = json.loads(report_path.read_text())
+    assert report["universe_source"] == "fixed_symbol_list"
+    assert report["counts"]["symbols_requested"] == 1

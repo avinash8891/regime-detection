@@ -402,15 +402,15 @@ def test_fetch_all_uses_live_pmi_by_default_not_manual_history() -> None:
     assert "manual_history_dir=DEFAULT_MANUAL_PMI_HISTORY_DIR" not in script
 
 
-def test_v1_all_universe_defaults_to_pit_constituents_when_json_is_absent() -> None:
+def test_constituent_ohlcv_requires_fixed_universe_unless_pit_bootstrap_is_explicit() -> None:
     script = Path("scripts/fetch_regime_engine_v1_data.py").read_text()
+    assert "--constituent-universe-dir" in script
+    assert "--allow-pit-constituent-universe" in script
+    assert "--constituent-universe-expected-count" in script
     assert "load_symbols_from_pit_constituents_parquet" in script
-    assert 'if args.universe_json:' in script
-    assert "return load_symbols_from_pit_constituents_parquet(pit_parquet)" in script
+    assert "fixed_universe_symbols=_load_json_symbol_list(Path(args.universe_json)) if args.universe_json else None" in script
+    assert "allow_pit_universe=args.allow_pit_constituent_universe" in script
     assert "fetch_alpaca_active_stock_symbols" not in script
-    assert "--universe-source" not in script
-    assert "universe_source" not in script
-    assert '== "none"' not in script
 
 
 def test_event_calendar_fetch_symbol_is_wired() -> None:
