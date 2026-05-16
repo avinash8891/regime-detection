@@ -26,7 +26,7 @@ from regime_data_fetch.pit_constituents import read_pit_intervals  # noqa: E402
 from regime_detection.engine import RegimeEngine  # noqa: E402
 from regime_detection.feature_store import FeatureStore  # noqa: E402
 from regime_detection.fragility_universe import CROSS_ASSET_SYMBOLS, SECTOR_ETFS  # noqa: E402
-from regime_detection.market_context import MarketContext, build_market_context  # noqa: E402
+from regime_detection.market_context import build_market_context  # noqa: E402
 from regime_detection.models import RegimeOutput, RegimeTimeline  # noqa: E402
 from regime_detection.timeline import ENGINE_MINIMUM_HISTORY  # noqa: E402
 from scripts._v2_calibration_helpers import load_close_dict, load_macro_series, load_market_data  # noqa: E402
@@ -521,7 +521,6 @@ def main() -> int:
     )
     import regime_detection.market_context as market_context_module
     import regime_detection.feature_store as feature_store_module
-    import regime_detection.timeline as timeline_module
 
     working_context = market_context_module.slice_context_to_recent_sessions(
         context=context,

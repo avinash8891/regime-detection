@@ -4,7 +4,7 @@ from __future__ import annotations
 import hashlib
 import json
 import sqlite3
-from datetime import date, datetime, timezone
+from datetime import date, datetime
 from pathlib import Path
 
 import pandas as pd

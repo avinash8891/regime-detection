@@ -26,7 +26,6 @@ import sys
 from pathlib import Path
 from typing import Any
 
-import numpy as np
 import pandas as pd
 import yaml
 
@@ -36,10 +35,8 @@ SRC_DIR = REPO_ROOT / "src"
 sys.path.insert(0, str(SRC_DIR))
 sys.path.insert(0, str(REPO_ROOT))
 
-from regime_data_fetch.local_daily_ohlcv_sqlite import EXPECTED_COLUMNS  # noqa: E402
 
 from regime_detection.config import load_default_regime_config  # noqa: E402
-from regime_detection.engine import RegimeEngine  # noqa: E402
 from regime_detection.feature_store import build_feature_store  # noqa: E402
 from regime_detection.fragility_universe import SECTOR_ETFS  # noqa: E402
 from regime_detection.loaders import (  # noqa: E402
@@ -263,7 +260,7 @@ def main() -> int:
     pit_intervals = None
     constituent_ohlcv = None
     if pit_intervals_parquet.exists():
-        from regime_data_fetch.pit_constituents import read_pit_intervals, members_on
+        from regime_data_fetch.pit_constituents import read_pit_intervals
         pit_intervals = read_pit_intervals(pit_intervals_parquet)
         print(f"PIT intervals: {len(pit_intervals)} rows")
     if constituent_db_path.exists() and pit_intervals is not None:
@@ -271,7 +268,6 @@ def main() -> int:
         # Members on the end_date define the universe whose OHLCV we load.
         # Reader is keyed by ticker; we pass the full distinct-ticker list
         # across the trailing window so newly-listed members have data.
-        from regime_data_fetch.pit_constituents import members_on as _members_on
         all_member_tickers = sorted({t for t in pit_intervals["ticker"].unique()})
         # Optimization: only read tickers that DBC-style classifier expects.
         # In practice the universe is ~1200 tickers; read_constituent_ohlcv
