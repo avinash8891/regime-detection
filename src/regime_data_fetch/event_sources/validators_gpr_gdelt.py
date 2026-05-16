@@ -8,6 +8,7 @@ import logging
 import os
 import zipfile
 from collections.abc import Callable
+from dataclasses import dataclass
 from urllib.parse import urlencode
 from urllib.request import Request, urlopen
 
@@ -38,6 +39,17 @@ CONFLICT_API_PAGE_SIZE = 1000
 ConflictFetcher = Callable[[int, int], str | bytes | None]
 
 
+@dataclass(frozen=True)
+class SourceFetchStatus:
+    source_id: str
+    status: str
+    rows: int = 0
+    error: str | None = None
+    attempted_fetches: int = 0
+    failed_fetches: int = 0
+    empty_payload: bool = False
+
+
 class GPRGDELTSignalGenerator:
     source_id = "gpr-gdelt:geopolitical-signals"
     validator_id = "gpr-gdelt:cross-source"
@@ -65,6 +77,8 @@ class GPRGDELTSignalGenerator:
         self.stddev_threshold = stddev_threshold
         self.merge_window_days = merge_window_days
         self._last_source_dates: dict[str, set[dt.date]] = {}
+        self.last_source_statuses: dict[str, SourceFetchStatus] = {}
+        self.last_run_status = "not_run"
 
     def generate(
         self,
@@ -74,6 +88,8 @@ class GPRGDELTSignalGenerator:
         store: AcquisitionStore | None,
         run_id: int | None,
     ) -> list[EventCandidate]:
+        self.last_source_statuses = {}
+        self.last_run_status = "ok"
         candidates: list[EventCandidate] = []
         gpr_spikes = [
             row
@@ -108,6 +124,7 @@ class GPRGDELTSignalGenerator:
         for row in ucdp_events:
             if start_year <= row["date"].year <= end_year:
                 candidates.append(_signal_candidate(row, source_id=UCDP_SOURCE_ID, event_subtype="ucdp_organized_violence"))
+        self.last_run_status = "partial" if any(status.status in {"failed", "partial"} for status in self.last_source_statuses.values()) else "ok"
         return sorted(candidates, key=lambda candidate: (candidate.date, candidate.source_id))
 
     def validate(
@@ -143,9 +160,12 @@ class GPRGDELTSignalGenerator:
             payload = self.gpr_fetcher()
         except Exception as exc:  # pragma: no cover - exercised via integration degradation
             LOGGER.error("GPR fetch failed; geopolitical GPR candidates skipped: %s", exc)
+            self._record_source_status(GPR_SOURCE_ID, "failed", error=str(exc), attempted_fetches=1, failed_fetches=1)
             return []
         _record_payload(store, run_id, GPR_SOURCE_ID, "gpr_daily", payload, "GPR daily index")
-        return detect_gpr_spikes(parse_gpr_table(payload), min_history_days=self.min_history_days, stddev_threshold=self.stddev_threshold)
+        rows = detect_gpr_spikes(parse_gpr_table(payload), min_history_days=self.min_history_days, stddev_threshold=self.stddev_threshold)
+        self._record_source_status(GPR_SOURCE_ID, "ok" if rows else "empty", rows=len(rows), attempted_fetches=1, empty_payload=_is_empty_payload(payload))
+        return rows
 
     def _fetch_gdelt_spikes(
         self,
@@ -160,9 +180,12 @@ class GPRGDELTSignalGenerator:
             payload = self.gdelt_fetcher()
         except Exception as exc:  # pragma: no cover - exercised via integration degradation
             LOGGER.error("GDELT fetch failed; geopolitical GDELT candidates skipped: %s", exc)
+            self._record_source_status(GDELT_SOURCE_ID, "failed", error=str(exc), attempted_fetches=1, failed_fetches=1)
             return []
         _record_payload(store, run_id, GDELT_SOURCE_ID, "gdelt_geopolitical_volume", payload, "GDELT geopolitical volume sample")
-        return parse_gdelt_volume_table(payload)
+        rows = parse_gdelt_volume_table(payload)
+        self._record_source_status(GDELT_SOURCE_ID, "ok" if rows else "empty", rows=len(rows), attempted_fetches=1, empty_payload=_is_empty_payload(payload))
+        return rows
 
     def _fetch_gdelt_daily_spike_windows(
         self,
@@ -173,11 +196,15 @@ class GPRGDELTSignalGenerator:
     ) -> list[dict[str, object]]:
         dates = sorted({day for row in gpr_spikes for day in _window_dates(row["date"], self.merge_window_days)})
         rows: list[dict[str, object]] = []
+        failed_fetches = 0
+        last_error: str | None = None
         for day in dates:
             try:
                 payload = self.gdelt_daily_fetcher(day)
             except Exception as exc:  # pragma: no cover - exercised via integration degradation
                 LOGGER.error("GDELT daily export fetch failed for %s; date skipped: %s", day.isoformat(), exc)
+                failed_fetches += 1
+                last_error = str(exc)
                 continue
             source_identifier = f"gdelt_daily_export_{day:%Y%m%d}"
             _record_payload(store, run_id, GDELT_SOURCE_ID, source_identifier, payload, "GDELT daily event export")
@@ -188,7 +215,38 @@ class GPRGDELTSignalGenerator:
                     expected_date=day,
                 )
             )
-        return sorted(rows, key=lambda row: (row["date"], row["event_count"]))
+        rows = sorted(rows, key=lambda row: (row["date"], row["event_count"]))
+        status = "partial" if failed_fetches else "ok" if rows else "empty"
+        self._record_source_status(
+            GDELT_SOURCE_ID,
+            status,
+            rows=len(rows),
+            error=last_error,
+            attempted_fetches=len(dates),
+            failed_fetches=failed_fetches,
+        )
+        return rows
+
+    def _record_source_status(
+        self,
+        source_id: str,
+        status: str,
+        *,
+        rows: int = 0,
+        error: str | None = None,
+        attempted_fetches: int = 0,
+        failed_fetches: int = 0,
+        empty_payload: bool = False,
+    ) -> None:
+        self.last_source_statuses[source_id] = SourceFetchStatus(
+            source_id=source_id,
+            status=status,
+            rows=rows,
+            error=error,
+            attempted_fetches=attempted_fetches,
+            failed_fetches=failed_fetches,
+            empty_payload=empty_payload,
+        )
 
     def _fetch_acled_event_rows(
         self,
@@ -555,6 +613,10 @@ def _anchor_date(gpr_date: dt.date, gdelt_dates: set[dt.date], window_days: int)
 
 def _has_nearby(event_date: dt.date, dates: set[dt.date], window_days: int) -> bool:
     return any(abs((date - event_date).days) <= window_days for date in dates)
+
+
+def _is_empty_payload(payload: str | bytes) -> bool:
+    return not payload.strip() if isinstance(payload, str) else not payload.strip()
 
 
 def _window_dates(anchor: dt.date, window_days: int) -> list[dt.date]:

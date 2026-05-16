@@ -324,6 +324,69 @@ def test_gpr_generator_fetches_gdelt_daily_exports_for_spike_dates() -> None:
     }
 
 
+def test_gpr_gdelt_generator_records_source_status_for_fetch_failures() -> None:
+    def failing_gpr_fetcher() -> str:
+        raise TimeoutError("gpr timed out")
+
+    generator = GPRGDELTSignalGenerator(
+        gpr_fetcher=failing_gpr_fetcher,
+        gdelt_fetcher=lambda: "date,event_count,dominant_theme,source_url\n",
+        acled_fetcher=lambda _start_year, _end_year: None,
+        ucdp_fetcher=lambda _start_year, _end_year: None,
+        hdx_hapi_fetcher=lambda _start_year, _end_year: None,
+        min_history_days=3,
+        stddev_threshold=2.0,
+    )
+
+    candidates = generator.generate(
+        start_year=2022, end_year=2022, store=None, run_id=None
+    )
+
+    assert candidates == []
+    assert generator.last_source_statuses["gpr:caldara-iacoviello"].status == "failed"
+    assert generator.last_source_statuses["gpr:caldara-iacoviello"].error == "gpr timed out"
+    assert generator.last_source_statuses["gdelt:events-v2"].status == "empty"
+    assert generator.last_run_status == "partial"
+
+
+def test_gpr_gdelt_generator_records_partial_daily_gdelt_failure() -> None:
+    gpr_csv = """date,gpr
+2022-02-20,100
+2022-02-21,101
+2022-02-22,99
+2022-02-23,101
+2022-02-24,500
+2022-02-25,120
+"""
+
+    def failing_gdelt_daily_fetcher(_day: dt.date) -> bytes:
+        raise TimeoutError("gdelt timed out")
+
+    generator = GPRGDELTSignalGenerator(
+        gpr_fetcher=lambda: gpr_csv,
+        gdelt_daily_fetcher=failing_gdelt_daily_fetcher,
+        acled_fetcher=lambda _start_year, _end_year: None,
+        ucdp_fetcher=lambda _start_year, _end_year: None,
+        hdx_hapi_fetcher=lambda _start_year, _end_year: None,
+        min_history_days=3,
+        stddev_threshold=2.0,
+        merge_window_days=0,
+    )
+
+    candidates = generator.generate(
+        start_year=2022, end_year=2022, store=None, run_id=None
+    )
+
+    assert [(candidate.date, candidate.source_id) for candidate in candidates] == [
+        (dt.date(2022, 2, 24), "gpr:caldara-iacoviello")
+    ]
+    assert generator.last_source_statuses["gpr:caldara-iacoviello"].status == "ok"
+    assert generator.last_source_statuses["gdelt:events-v2"].status == "partial"
+    assert generator.last_source_statuses["gdelt:events-v2"].failed_fetches == 1
+    assert generator.last_source_statuses["gdelt:events-v2"].empty_payload is False
+    assert generator.last_run_status == "partial"
+
+
 def test_parse_acled_events_aggregates_conflict_rows_by_day() -> None:
     payload = """
 {
