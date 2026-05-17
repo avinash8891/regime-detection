@@ -90,6 +90,68 @@ def test_profile_input_bundle_annotations_match_loaded_shapes() -> None:
     assert hints["pit_constituent_intervals"] is pd.DataFrame
 
 
+def test_read_symbol_ohlcv_accepts_partitioned_parquet_file_name(tmp_path: Path) -> None:
+    symbol_dir = tmp_path / "daily_ohlcv" / "symbol=AAPL"
+    symbol_dir.mkdir(parents=True)
+    pd.DataFrame(
+        [
+            {
+                "date": "2026-05-15",
+                "open": 10.0,
+                "high": 11.0,
+                "low": 9.0,
+                "close": 10.5,
+                "volume": 100,
+                "adjusted_close": 10.5,
+            }
+        ]
+    ).to_parquet(symbol_dir / "hash-0.parquet", index=False)
+
+    frame = profile_engine_30d._read_symbol_ohlcv(tmp_path / "daily_ohlcv", "AAPL")
+
+    assert frame[["date", "close"]].to_dict(orient="records") == [
+        {"date": pd.Timestamp("2026-05-15"), "close": 10.5}
+    ]
+
+
+def test_load_constituent_ohlcv_accepts_partitioned_parquet_file_name(
+    tmp_path: Path,
+) -> None:
+    symbol_dir = tmp_path / "daily_ohlcv" / "symbol=AAPL"
+    symbol_dir.mkdir(parents=True)
+    pd.DataFrame(
+        [
+            {
+                "date": "2026-05-15",
+                "open": 10.0,
+                "high": 11.0,
+                "low": 9.0,
+                "close": 10.5,
+                "volume": 100,
+                "adjusted_close": 10.5,
+            }
+        ]
+    ).to_parquet(symbol_dir / "hash-0.parquet", index=False)
+    intervals = pd.DataFrame(
+        {
+            "ticker": ["AAPL"],
+            "start_date": [pd.Timestamp("2020-01-01").date()],
+            "end_date": [None],
+        }
+    )
+
+    loaded, tickers, missing = profile_engine_30d._load_constituent_ohlcv_from_tree(
+        tmp_path / "daily_ohlcv",
+        intervals,
+        start_date=pd.Timestamp("2026-05-01").date(),
+        end_date=pd.Timestamp("2026-05-31").date(),
+    )
+
+    assert tickers == ["AAPL"]
+    assert missing == []
+    assert loaded["AAPL"]["close"].to_list() == [10.5]
+
+
 def test_profile_reporting_label_uses_granular_status_for_unknown() -> None:
     output = SimpleNamespace(
         active_label="unknown", classification_status="no_rule_fired"

@@ -270,6 +270,11 @@ def main() -> int:
     emit_manifest_path = _resolve_emit_manifest_path(args.emit_manifest, end=end)
     if emit_manifest_path is not None and not args.artifact_store:
         raise SystemExit("--artifact-store is required when --emit-manifest is set")
+    if emit_manifest_path is not None:
+        _validate_manifest_artifact_store(
+            manifest_path=emit_manifest_path,
+            artifact_store_root=args.artifact_store,
+        )
 
     if args.env_file:
         load_env_file(Path(args.env_file))
@@ -495,6 +500,31 @@ def _validate_manifest_lockfile_path(path: Path) -> None:
         )
 
 
+def _validate_manifest_artifact_store(
+    *, manifest_path: Path, artifact_store_root: str
+) -> None:
+    if "://" in artifact_store_root:
+        return
+    repo_root = REPO_ROOT.resolve()
+    try:
+        manifest_relative = manifest_path.resolve(strict=False).relative_to(repo_root)
+    except ValueError:
+        return
+    if manifest_relative.parts[:1] != ("manifests",):
+        return
+    store_path = Path(artifact_store_root)
+    if not store_path.is_absolute():
+        store_path = repo_root / store_path
+    try:
+        store_relative = store_path.resolve(strict=False).relative_to(repo_root)
+    except ValueError:
+        return
+    if store_relative.parts[:1] == (".context",):
+        raise SystemExit(
+            "tracked manifests require durable artifact storage; .context artifact stores are local scratch only"
+        )
+
+
 def _plan_fetch_mode_execution(
     selected: str,
     *,
@@ -571,6 +601,7 @@ def _run_unattended_fetch_mode(
             out_dir=out_dir,
             acquisition_db_path=acquisition_db_path,
             artifact_store_root=acquisition_artifact_store_root,
+            required=args.fetch == "sentiment",
         )
 
     if mode == "events":

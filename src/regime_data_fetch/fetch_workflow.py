@@ -122,6 +122,14 @@ def _write_merged_partitioned_daily_ohlcv(
     return merged
 
 
+def _drop_null_fred_observations(frame: pd.DataFrame) -> tuple[pd.DataFrame, int]:
+    if frame.empty or "value" not in frame.columns:
+        return frame, 0
+    mask = frame["value"].notna()
+    dropped = int((~mask).sum())
+    return frame.loc[mask].copy(), dropped
+
+
 def _dedupe_preserve_order(symbols: list[str]) -> list[str]:
     out: list[str] = []
     seen: set[str] = set()
@@ -403,6 +411,7 @@ def run_macro_fetch(
     try:
         macro_frames: list[pd.DataFrame] = []
         series_meta: dict[str, dict[str, object]] = {}
+        dropped_null_observations = 0
         for logical_name, series_id in V2_FRED_SERIES.items():
             raw_json = fetch_fred_series_json(
                 series_id=series_id,
@@ -425,6 +434,8 @@ def run_macro_fetch(
                 )
             df = parse_fred_series_json(raw_json, series_id=series_id)
             df["logical_name"] = logical_name
+            df, dropped = _drop_null_fred_observations(df)
+            dropped_null_observations += dropped
             macro_frames.append(df)
             series_meta[logical_name] = {
                 "series_id": series_id,
@@ -458,6 +469,8 @@ def run_macro_fetch(
                 )
             vintages = parse_fred_series_json(raw_vintages_json, series_id=V2_FRED_SERIES["cpi_all_items"])
             vintages["logical_name"] = "cpi_all_items_vintages"
+            vintages, dropped = _drop_null_fred_observations(vintages)
+            dropped_null_observations += dropped
             vintages_dir = out_dir / "macro_vintages"
             vintages_dir.mkdir(parents=True, exist_ok=True)
             vintages_path = vintages_dir / "cpi_all_items_vintages.parquet"
@@ -483,6 +496,8 @@ def run_macro_fetch(
             new_frame=macro_df,
             key_columns=["logical_name", "series_id", "date"],
         )
+        macro_df, dropped = _drop_null_fred_observations(macro_df)
+        dropped_null_observations += dropped
         macro_df.to_parquet(macro_path, index=False)
 
         report = {
@@ -493,6 +508,9 @@ def run_macro_fetch(
                 "include_cpi_vintages": include_cpi_vintages,
             },
             "series": series_meta,
+            "quality": {
+                "dropped_null_observations": dropped_null_observations,
+            },
             "paths": {
                 "macro_parquet": str(macro_path),
                 "cpi_vintages_parquet": str(vintages_path) if vintages_path else None,

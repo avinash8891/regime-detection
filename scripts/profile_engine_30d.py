@@ -153,14 +153,20 @@ def _build_required_sessions(
 
 
 def _read_symbol_ohlcv(tree_root: Path, symbol: str) -> pd.DataFrame:
-    parquet_path = tree_root / f"symbol={symbol}" / "ohlcv.parquet"
-    if not parquet_path.exists():
-        raise FileNotFoundError(parquet_path)
-    frame = pd.read_parquet(parquet_path)
+    symbol_dir = tree_root / f"symbol={symbol}"
+    parquet_path = symbol_dir / "ohlcv.parquet"
+    if parquet_path.exists():
+        source = parquet_path
+    else:
+        partition_files = sorted(symbol_dir.glob("*.parquet"))
+        if not partition_files:
+            raise FileNotFoundError(parquet_path)
+        source = symbol_dir
+    frame = pd.read_parquet(source)
     required_cols = ["date", "open", "high", "low", "close", "volume", "adjusted_close"]
     missing = [col for col in required_cols if col not in frame.columns]
     if missing:
-        raise ValueError(f"{parquet_path} missing required columns: {missing}")
+        raise ValueError(f"{source} missing required columns: {missing}")
     frame = frame[required_cols].copy()
     frame["date"] = pd.to_datetime(frame["date"]).dt.normalize()
     frame = frame.sort_values("date").reset_index(drop=True)
@@ -241,12 +247,13 @@ def _load_constituent_ohlcv_from_tree(
     missing_paths: list[Path] = []
     for ticker in tickers:
         parquet_path = tree_root / f"symbol={ticker}" / "ohlcv.parquet"
-        if not parquet_path.exists():
+        try:
+            frame = _read_symbol_ohlcv(tree_root, ticker)
+        except FileNotFoundError:
             if not allow_missing_files:
                 raise FileNotFoundError(parquet_path)
             missing_paths.append(parquet_path)
             continue
-        frame = _read_symbol_ohlcv(tree_root, ticker)
         frame = frame[
             (frame["date"] >= pd.Timestamp(start_date))
             & (frame["date"] <= pd.Timestamp(end_date))

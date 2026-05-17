@@ -417,6 +417,59 @@ def test_run_macro_fetch_merges_incremental_fred_rows(
     ]
 
 
+def test_run_macro_fetch_drops_fred_null_observations_at_canonical_boundary(
+    monkeypatch, tmp_path: Path
+) -> None:
+    def fake_fetch_fred_series_json(
+        *,
+        series_id: str,
+        start_date: dt.date,
+        end_date: dt.date,
+        api_key: str | None = None,
+        realtime_start: str | None = None,
+        realtime_end: str | None = None,
+        max_retries: int = 4,
+        base_sleep_sec: float = 2.0,
+    ) -> str:
+        return json.dumps(
+            {
+                "observations": [
+                    {
+                        "date": "2026-05-14",
+                        "value": ".",
+                        "realtime_start": "2026-05-14",
+                        "realtime_end": "2026-05-14",
+                    },
+                    {
+                        "date": "2026-05-15",
+                        "value": "4.25",
+                        "realtime_start": "2026-05-15",
+                        "realtime_end": "2026-05-15",
+                    },
+                ]
+            }
+        )
+
+    monkeypatch.setattr(
+        "regime_data_fetch.fetch_workflow.fetch_fred_series_json",
+        fake_fetch_fred_series_json,
+    )
+    monkeypatch.setenv("FRED_API_KEY", "env-key")
+
+    report_path = run_macro_fetch(
+        out_dir=tmp_path,
+        start=dt.date(2026, 5, 14),
+        end=dt.date(2026, 5, 15),
+        fred_api_key=None,
+        include_cpi_vintages=False,
+    )
+
+    macro = pd.read_parquet(tmp_path / "macro" / "fred_macro_series.parquet")
+    report = json.loads(report_path.read_text())
+    assert not macro["value"].isna().any()
+    assert report["quality"]["dropped_null_observations"] == len(V2_FRED_SERIES)
+
+
 def test_run_macro_fetch_preserves_existing_vintages_when_incremental_window_empty(
     monkeypatch,
     tmp_path: Path,
@@ -1028,6 +1081,30 @@ def test_emit_manifest_rejects_ignored_data_manifest_path(
     )
 
     with pytest.raises(SystemExit, match="manifest lockfiles must be written outside ignored data/"):
+        fetch_script.main()
+
+
+def test_tracked_manifest_rejects_context_artifact_store(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(
+        "sys.argv",
+        [
+            "fetch_regime_engine_v1_data.py",
+            "--fetch",
+            "market",
+            "--scope",
+            "v2",
+            "--out-dir",
+            str(tmp_path / "data" / "raw"),
+            "--emit-manifest",
+            "--artifact-store",
+            ".context/regime-artifact-store",
+        ],
+    )
+
+    with pytest.raises(SystemExit, match="tracked manifests require durable artifact storage"):
         fetch_script.main()
 
 
