@@ -3,6 +3,7 @@ from __future__ import annotations
 import datetime as dt
 import io
 import json
+import logging
 from pathlib import Path
 import zipfile
 
@@ -37,6 +38,7 @@ from regime_data_fetch.event_sources.validators_gpr_gdelt import (
     _fetch_paged_json,
     parse_acled_events,
     parse_gdelt_event_export,
+    parse_gpr_table,
     parse_hdx_hapi_conflict_events,
     parse_ucdp_events,
 )
@@ -347,6 +349,26 @@ def test_gpr_gdelt_generator_records_source_status_for_fetch_failures() -> None:
     assert generator.last_source_statuses["gpr:caldara-iacoviello"].error == "gpr timed out"
     assert generator.last_source_statuses["gdelt:events-v2"].status == "empty"
     assert generator.last_run_status == "partial"
+
+
+def test_parse_gpr_table_logs_excel_parse_failure_before_csv_fallback(
+    caplog: pytest.LogCaptureFixture,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def fail_excel(*args: object, **kwargs: object) -> object:
+        del args, kwargs
+        raise ValueError("not an excel workbook")
+
+    monkeypatch.setattr(
+        "regime_data_fetch.event_sources.validators_gpr_gdelt.pd.read_excel",
+        fail_excel,
+    )
+    caplog.set_level(logging.DEBUG, logger="regime_data_fetch.event_sources.validators_gpr_gdelt")
+
+    frame = parse_gpr_table(b"date,gpr\n2026-05-01,123\n")
+
+    assert frame.to_dict(orient="records") == [{"date": dt.date(2026, 5, 1), "gpr": 123}]
+    assert "GPR Excel parse failed; falling back to CSV parser" in caplog.text
 
 
 def test_gpr_gdelt_generator_records_partial_daily_gdelt_failure() -> None:

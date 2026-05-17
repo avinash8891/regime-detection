@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+import logging
 import sqlite3
 from pathlib import Path
 
 import pandas as pd
 import pytest
 
+import regime_data_fetch.acquisition_consolidation as acquisition_consolidation
 from regime_data_fetch.acquisition_consolidation import (
     ConsolidationSource,
     DAILY_OHLCV_ROWS_TABLE,
@@ -74,6 +76,24 @@ def test_consolidate_acquisition_dbs_merges_runs_artifacts_outputs_and_ohlcv(tmp
     assert ohlcv == [("SPY", "2026-05-05", 565.0)]
     assert events == [("2026-05-01", "CPI")]
     assert pmi == [("history", "manufacturing", "2026-04", 52.7)]
+
+
+def test_augment_params_json_logs_unparseable_json_without_raw_payload(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    raw_payload = '{"api_key": "secret-token"'
+    caplog.set_level(logging.WARNING, logger="regime_data_fetch.acquisition_consolidation")
+
+    augmented = acquisition_consolidation._augment_params_json(
+        raw_payload,
+        source_label="source-one",
+        source_db_path="/tmp/source-one.db",
+    )
+
+    assert '"raw_params_json": "{\\"api_key\\": \\"secret-token\\""' in augmented
+    assert "params_json unparseable" in caplog.text
+    assert "source_label=source-one" in caplog.text
+    assert "secret-token" not in caplog.text
 
 
 def _build_source_db_one(path: Path) -> None:

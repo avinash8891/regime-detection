@@ -314,6 +314,11 @@ def parse_gpr_table(payload: str | bytes) -> pd.DataFrame:
         try:
             df = pd.read_excel(io.BytesIO(payload))
         except Exception:
+            LOGGER.debug(
+                "GPR Excel parse failed; falling back to CSV parser source_id=%s",
+                GPR_SOURCE_ID,
+                exc_info=True,
+            )
             df = pd.read_csv(io.BytesIO(payload))
     else:
         df = pd.read_csv(io.StringIO(payload))

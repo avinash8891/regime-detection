@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import datetime as dt
 import json
+import logging
 import sqlite3
 from dataclasses import dataclass
 from pathlib import Path
@@ -12,6 +13,7 @@ import yaml
 from regime_data_fetch.acquisition_store import AcquisitionStore
 from regime_data_fetch.local_daily_ohlcv_sqlite import _ensure_daily_ohlcv_table
 
+LOGGER = logging.getLogger(__name__)
 FETCH_RUNS_TABLE = "fetch_runs"
 ARTIFACTS_TABLE = "artifacts"
 ARTIFACT_BLOBS_TABLE = "artifact_blobs"
@@ -855,7 +857,13 @@ def _merge_notes(existing: str | None, extra: str) -> str:
 def _augment_params_json(params_json: str, *, source_label: str, source_db_path: str) -> str:
     try:
         payload = json.loads(params_json)
-    except Exception:
+    except json.JSONDecodeError:
+        LOGGER.warning(
+            "params_json unparseable; using raw fallback source_label=%s source_db_path=%s",
+            source_label,
+            source_db_path,
+            exc_info=True,
+        )
         payload = {"raw_params_json": params_json}
     payload["consolidated_from_label"] = source_label
     payload["consolidated_from_db"] = source_db_path
