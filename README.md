@@ -39,6 +39,25 @@ commit only small, non-secret manifest lockfiles. When `--acquisition-db` and
 derived outputs to the same artifact store.
 Use `pip install ".[s3]"` before passing an `s3://...` artifact store.
 
+## Operator Env
+
+Do not commit API keys. Fetch and materialization runners automatically load a
+non-secret pointer file from the first available location:
+
+1. `--operator-env-file /path/to/pointer.env`
+2. `REGIME_OPERATOR_ENV_FILE=/path/to/pointer.env`
+3. repo-local `.regime-operator.env` (gitignored)
+4. `~/.config/regime-detection/operator.env`
+
+The pointer file lists credential env files, not secret values. See
+`.regime-operator.env.example` for the full repo-known key list, including
+Alpaca, FRED, TinyFish, ACLED, UCDP, HDX operator identity, and Investing
+browser/session keys. HDX HAPI does not use an auth secret in this repo path;
+the runner sends an `app_identifier` query parameter derived from
+`HDX_HAPI_APP_IDENTIFIER` or `HDX_HAPI_APP_NAME` plus `HDX_HAPI_APP_EMAIL`.
+Use the home-level file for Conductor workspaces so new workspaces stop
+rediscovering the same local key locations.
+
 ```bash
 python3 scripts/fetch_regime_engine_v1_data.py \
   --fetch sentiment \

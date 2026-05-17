@@ -67,6 +67,22 @@ def test_profile_parse_args_accepts_json_output(
     assert args.json_output == report_path
 
 
+def test_profile_parse_args_accepts_operator_env_file(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    pointer_file = tmp_path / ".regime-operator.env"
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        ["profile_engine_30d.py", "--operator-env-file", str(pointer_file)],
+    )
+
+    args = profile_engine_30d._parse_args()
+
+    assert args.operator_env_file == pointer_file
+
+
 def test_profile_input_bundle_annotations_match_loaded_shapes() -> None:
     hints = get_type_hints(profile_engine_30d.ProfileInputBundle)
 

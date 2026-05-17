@@ -25,6 +25,7 @@ if str(SRC_ROOT) not in sys.path:
     sys.path.insert(0, str(SRC_ROOT))
 
 from regime_data_fetch.pit_constituents import read_pit_intervals
+from regime_data_fetch.cli_common import OPERATOR_ENV_POINTER_FILE, load_operator_env_files
 from regime_data_fetch.materialization import materialize_if_requested
 from regime_data_fetch.universe import FIXED_UNIVERSE_TREE_NAME
 from regime_detection.engine import RegimeEngine
@@ -1224,6 +1225,15 @@ def _parse_args() -> argparse.Namespace:
         help="Optional artifact-store root override for --manifest.",
     )
     parser.add_argument(
+        "--operator-env-file",
+        type=Path,
+        default=None,
+        help=(
+            "Optional non-secret pointer file listing repo credential env files. "
+            f"Defaults to {OPERATOR_ENV_POINTER_FILE} or ~/.config/regime-detection/operator.env."
+        ),
+    )
+    parser.add_argument(
         "--data-root",
         type=Path,
         default=REPO_ROOT / "data" / "raw",
@@ -1274,6 +1284,7 @@ def _parse_args() -> argparse.Namespace:
 
 def main() -> int:
     args = _parse_args()
+    load_operator_env_files(repo_root=REPO_ROOT, explicit_path=args.operator_env_file)
     materialize_if_requested(
         manifest_path=args.manifest,
         local_root=args.data_root,

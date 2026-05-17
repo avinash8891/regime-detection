@@ -18,7 +18,12 @@ SRC_DIR = REPO_ROOT / "src"
 if str(SRC_DIR) not in sys.path:
     sys.path.insert(0, str(SRC_DIR))
 
-from regime_data_fetch.cli_common import load_env_file, parse_date
+from regime_data_fetch.cli_common import (
+    OPERATOR_ENV_POINTER_FILE,
+    load_env_file,
+    load_operator_env_files,
+    parse_date,
+)
 from regime_data_fetch.bls_schedule import build_bls_local_archive_page_fetcher
 from regime_data_fetch.event_calendar import run_us_event_calendar_fetch
 from regime_data_fetch.artifact_export import emit_manifest_for_report_paths
@@ -131,7 +136,15 @@ def main() -> int:
         ),
     )
     ap.add_argument("--list-symbols", action="store_true", help="Only print symbol counts and exit.")
-    ap.add_argument("--env-file", default=None, help="Optional .env file to load (for Alpaca creds).")
+    ap.add_argument("--env-file", default=None, help="Optional direct .env file to load.")
+    ap.add_argument(
+        "--operator-env-file",
+        default=None,
+        help=(
+            "Optional non-secret pointer file listing repo credential env files. "
+            f"Defaults to {OPERATOR_ENV_POINTER_FILE} or ~/.config/regime-detection/operator.env."
+        ),
+    )
     ap.add_argument(
         "--universe-json",
         default=None,
@@ -260,6 +273,10 @@ def main() -> int:
 
     if args.env_file:
         load_env_file(Path(args.env_file))
+    load_operator_env_files(
+        repo_root=REPO_ROOT,
+        explicit_path=Path(args.operator_env_file) if args.operator_env_file else None,
+    )
 
     if args.list_symbols:
         stocks = _resolve_stock_universe(args, out_dir=out_dir)
