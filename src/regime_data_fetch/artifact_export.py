@@ -13,6 +13,23 @@ from regime_data_fetch.artifact_manifest import (
 )
 from regime_data_fetch.artifact_store import build_artifact_store
 
+REPORT_PATH_NAME_TO_ARTIFACT_NAME = {
+    "macro_parquet": "fred_macro_series",
+    "cpi_vintages_parquet": "cpi_all_items_vintages",
+    "pit_constituents_parquet": "sp500_pit_constituents",
+    "event_calendar_yaml": "event_calendar_us",
+    "us_events_yaml": "event_calendar_us",
+    "pmi_history_parquet": "ism_pmi_history",
+    "pmi_parquet": "ism_pmi_latest",
+    "sentiment_parquet": "aaii_sentiment",
+    "news_sentiment_parquet": "sf_fed_news_sentiment",
+    "fomc_minutes_parquet": "fomc_minutes",
+    "powell_speeches_parquet": "powell_speeches",
+    "cpi_nowcast_parquet": "cleveland_fed_cpi_nowcast",
+    "aggregate_eps_parquet": "sp500_eps_snapshots",
+    "aggregate_eps_weekly_history_parquet": "sp500_eps_weekly_history",
+}
+
 
 def emit_manifest_for_report_paths(
     *,
@@ -47,10 +64,11 @@ def emit_manifest_for_report_paths(
             seen_local_paths.add(local_path)
             key = _store_key_for(local_path)
             stored = store.put_file(path, key)
+            artifact_name = _canonical_artifact_name(name=name, local_path=local_path)
             artifacts.append(
                 ManifestArtifact.from_dict(
                     {
-                        "name": name,
+                        "name": artifact_name,
                         "stage": "canonical",
                         "uri": stored.uri,
                         "local_path": local_path,
@@ -146,6 +164,26 @@ def _local_path_for(
 
 def _store_key_for(local_path: str) -> str:
     return str(Path("canonical") / strip_data_raw_prefix(Path(local_path)))
+
+
+def _canonical_artifact_name(*, name: str, local_path: str) -> str:
+    symbol = _daily_ohlcv_symbol(local_path)
+    if symbol is not None:
+        return f"constituent_ohlcv_{symbol}"
+    return REPORT_PATH_NAME_TO_ARTIFACT_NAME.get(name, name)
+
+
+def _daily_ohlcv_symbol(local_path: str) -> str | None:
+    parts = Path(local_path).parts
+    if len(parts) < 5 or parts[0:2] != ("data", "raw"):
+        return None
+    if not parts[2].startswith("daily_ohlcv"):
+        return None
+    symbol_part = parts[3]
+    if not symbol_part.startswith("symbol="):
+        return None
+    symbol = symbol_part.removeprefix("symbol=")
+    return symbol or None
 
 
 def _normalize_manifest_local_path(local_path: str) -> str:

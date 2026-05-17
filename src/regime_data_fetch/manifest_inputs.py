@@ -125,14 +125,8 @@ def _constituent_tree_root(
     constituent_artifacts = [
         artifact
         for artifact in artifacts
-        if artifact.name.startswith("constituent_ohlcv_")
+        if _is_constituent_ohlcv_artifact(artifact)
     ]
-    if not constituent_artifacts:
-        constituent_artifacts = [
-            artifact
-            for artifact in artifacts
-            if Path(artifact.local_path).match("data/raw/daily_ohlcv*/*")
-        ]
     if not constituent_artifacts:
         raise ManifestInputResolutionError(
             "manifest missing required daily OHLCV artifacts"
@@ -147,6 +141,18 @@ def _constituent_tree_root(
             f"constituent OHLCV artifact path is too shallow: {first_destination}"
         )
     return first_destination.parents[1]
+
+
+def _is_constituent_ohlcv_artifact(artifact: ManifestArtifact) -> bool:
+    if artifact.name.startswith(("constituent_ohlcv_", "daily_ohlcv_parquet_")):
+        return True
+    parts = Path(artifact.local_path).parts
+    return (
+        len(parts) >= 5
+        and parts[0:2] == ("data", "raw")
+        and parts[2].startswith("daily_ohlcv")
+        and parts[3].startswith("symbol=")
+    )
 
 
 def _require_resolved_path(resolved: dict[str, Path | None], field: str) -> Path:

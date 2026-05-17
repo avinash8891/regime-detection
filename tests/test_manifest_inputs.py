@@ -101,6 +101,39 @@ def test_resolve_runner_input_paths_uses_manifest_artifact_names(tmp_path: Path)
     assert "news_sentiment_parquet" in resolved.resolved_from_manifest
 
 
+def test_resolve_runner_input_paths_accepts_emitted_partition_tree_names(
+    tmp_path: Path,
+) -> None:
+    manifest_path = _write_manifest(
+        tmp_path,
+        [
+            _artifact(
+                "daily_ohlcv_parquet_symbol=SPY_ohlcv.parquet",
+                "data/raw/daily_ohlcv_762/symbol=SPY/ohlcv.parquet",
+            ),
+            _artifact("fred_macro_series", "data/raw/macro/fred_macro_series.parquet"),
+            _artifact(
+                "sp500_pit_constituents",
+                "data/raw/pit_constituents/sp500_ticker_intervals.parquet",
+            ),
+            _artifact("event_calendar_us", "data/raw/event_calendar/us_events.yaml"),
+        ],
+    )
+    data_root = tmp_path / "materialized" / "data" / "raw"
+
+    resolved = resolve_runner_input_paths(
+        manifest_path=manifest_path,
+        data_root=data_root,
+        runner_name="profile_engine_30d",
+        cli_values={},
+        cli_overrides=set(),
+        repo_root=tmp_path,
+    )
+
+    assert resolved.daily_dir == data_root / "daily_ohlcv_762"
+    assert resolved.constituent_tree == data_root / "daily_ohlcv_762"
+
+
 def test_resolve_runner_input_paths_respects_cli_override(tmp_path: Path) -> None:
     manifest_path = _write_manifest(
         tmp_path,
