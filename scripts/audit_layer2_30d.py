@@ -27,7 +27,6 @@ from regime_detection.axis_series import build_axis_series_bundle
 from regime_detection.engine import RegimeEngine
 from regime_detection.feature_store import FeatureStore, build_feature_store
 from regime_detection.fragility_universe import CROSS_ASSET_SYMBOLS, SECTOR_ETFS
-from regime_detection.layer2_input_contract import validate_layer2_incremental_inputs
 from regime_detection.market_context import (
     MarketContext,
     build_market_context,
@@ -310,7 +309,6 @@ def _build_current_layer2_state(
     )
     working_start_date = bootstrap_context.sessions[-required_sessions]
 
-    validate_layer2_incremental_inputs(data_root=args.data_root, as_of_date=end_date)
     sector_etf_closes = load_close_dict(args.daily_dir, list(SECTOR_ETFS), spy_index)
     cross_asset_symbols = [
         *CROSS_ASSET_SYMBOLS,
