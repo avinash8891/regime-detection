@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING, Any, Literal
 import numpy as np
 import pandas as pd
 
+from regime_detection._rolling_stats import period_return, simple_moving_average
 from regime_detection.hysteresis import apply_asymmetric_hysteresis
 from regime_detection.models import AxisOutput, DataQuality
 
@@ -55,9 +56,9 @@ def _ev_float(x: float) -> float:
 
 
 def compute_features(close: pd.Series) -> TrendDirectionFeatures:
-    sma_50 = close.rolling(50).mean()
-    sma_200 = close.rolling(200).mean()
-    return_63d = close / close.shift(63) - 1
+    sma_50 = simple_moving_average(close, window=50)
+    sma_200 = simple_moving_average(close, window=200)
+    return_63d = period_return(close, periods=63)
     return TrendDirectionFeatures(close=close, sma_50=sma_50, sma_200=sma_200, return_63d=return_63d)
 
 

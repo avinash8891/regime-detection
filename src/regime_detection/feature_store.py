@@ -7,6 +7,7 @@ from typing import Any
 import pandas as pd
 from pydantic import BaseModel, ConfigDict
 
+from regime_detection._rolling_stats import simple_moving_average
 from regime_detection.breadth_state import BreadthFeatures, compute_features as compute_breadth_features
 from regime_detection.breadth_state_v2 import (
     BreadthV2Features,
@@ -366,7 +367,7 @@ def _build_breadth_feature(state: _FeatureStoreBuildState) -> None:
 
 
 def _build_sma_50_feature(state: _FeatureStoreBuildState) -> None:
-    state.values["sma_50"] = state.spy_close.rolling(50).mean()
+    state.values["sma_50"] = simple_moving_average(state.spy_close, window=50)
 
 
 def _build_network_fragility_feature(state: _FeatureStoreBuildState) -> None:

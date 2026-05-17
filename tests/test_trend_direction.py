@@ -6,7 +6,11 @@ from pathlib import Path
 import pandas as pd
 import yaml
 
-from regime_detection.trend_direction import TrendDirectionFeatures, raw_label_for_day
+from regime_detection.trend_direction import (
+    TrendDirectionFeatures,
+    compute_features,
+    raw_label_for_day,
+)
 
 
 def test_trend_direction_matches_pinned_fixtures(classified_golden_outputs) -> None:
@@ -34,6 +38,32 @@ def _trend_direction_features(
         sma_50=pd.Series([sma_50], index=idx),
         sma_200=pd.Series([sma_200], index=idx),
         return_63d=pd.Series([return_63d], index=idx),
+    )
+
+
+def test_trend_direction_rolling_features_match_legacy_inline_formulas() -> None:
+    close = pd.Series(
+        [100.0 + i + (i % 7) * 0.25 for i in range(240)],
+        index=pd.bdate_range("2023-01-02", periods=240),
+        name="close",
+    )
+
+    out = compute_features(close)
+
+    pd.testing.assert_series_equal(
+        out.sma_50,
+        close.rolling(50).mean(),
+        check_exact=True,
+    )
+    pd.testing.assert_series_equal(
+        out.sma_200,
+        close.rolling(200).mean(),
+        check_exact=True,
+    )
+    pd.testing.assert_series_equal(
+        out.return_63d,
+        close / close.shift(63) - 1,
+        check_exact=True,
     )
 
 

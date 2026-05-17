@@ -29,10 +29,6 @@ Implementation choices that resolve ambiguities are documented in
   ``_trailing_drawdown`` convention in ``network_fragility_rules.py``.
   See Ambiguity Log entry #13.
 """
-# TODO(slice-2.x): v1 `trend_direction.compute_features` and `feature_store.build_feature_store`
-# also compute sma_50, sma_200, and return_63d from the SPY close. Consolidate into a shared
-# rolling-stats utility when the v2 trend labels slice lands (euphoria/recovery/breakout).
-# Until then, the three computations are independent (acceptable per evidence-only slice scope).
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -40,6 +36,7 @@ from dataclasses import dataclass
 import numpy as np
 import pandas as pd
 
+from regime_detection._rolling_stats import period_return, simple_moving_average
 from regime_detection.config import TrendDirectionV2Config, TrendDirectionV2RulesConfig
 from regime_detection.volatility_state import realized_vol
 
@@ -186,7 +183,7 @@ def _hurst_series(close: pd.Series, lookback: int) -> pd.Series:
 def _sma(close: pd.Series, sma_period: int) -> pd.Series:
     """Rolling simple moving average with strict cold-start (NaN until
     `sma_period` observations are available)."""
-    return close.rolling(window=sma_period, min_periods=sma_period).mean()
+    return simple_moving_average(close, window=sma_period)
 
 
 def _slope_of_sma(sma: pd.Series, slope_lookback: int) -> pd.Series:
@@ -264,11 +261,11 @@ def compute_trend_v2_features(
         sma_long,
         slope_lookback=config.slope_lookback_days,
     ).rename("slope_sma_200")
-    ret_short = (close / close.shift(config.return_short_period) - 1.0).rename(
-        "return_63d"
+    ret_short = period_return(
+        close, periods=config.return_short_period, output_name="return_63d"
     )
-    ret_long = (close / close.shift(config.return_long_period) - 1.0).rename(
-        "return_126d"
+    ret_long = period_return(
+        close, periods=config.return_long_period, output_name="return_126d"
     )
     dd = _trailing_drawdown(close, config.drawdown_lookback_days).rename(
         "drawdown_252d"

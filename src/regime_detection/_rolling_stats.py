@@ -18,6 +18,37 @@ import pandas as pd
 _ZSCORE_DDOF = 1
 
 
+def simple_moving_average(
+    series: pd.Series,
+    *,
+    window: int,
+    output_name: str | None = None,
+) -> pd.Series:
+    """Strict simple moving average: NaN until ``window`` observations exist."""
+    if window <= 0:
+        raise ValueError(f"window must be > 0; got {window}")
+    out = series.astype(float).rolling(window=window, min_periods=window).mean()
+    if output_name is not None:
+        out = out.rename(output_name)
+    return out
+
+
+def period_return(
+    series: pd.Series,
+    *,
+    periods: int,
+    output_name: str | None = None,
+) -> pd.Series:
+    """Period return: ``series[t] / series[t-periods] - 1``."""
+    if periods <= 0:
+        raise ValueError(f"periods must be > 0; got {periods}")
+    series = series.astype(float)
+    out = series / series.shift(periods) - 1.0
+    if output_name is not None:
+        out = out.rename(output_name)
+    return out
+
+
 def rolling_change_zscore(
     series: pd.Series,
     *,

@@ -7,6 +7,7 @@ from typing import Any, Literal
 import numpy as np
 import pandas as pd
 
+from regime_detection._rolling_stats import period_return, simple_moving_average
 from regime_detection.hysteresis import apply_asymmetric_hysteresis
 from regime_detection.models import AxisOutput, DataQuality
 
@@ -232,10 +233,10 @@ def compute_features(
     low: pd.Series,
     volume: pd.Series | None = None,
 ) -> TrendCharacterFeatures:
-    sma_50 = close.rolling(50).mean()
-    return_10d = close / close.shift(10) - 1
-    return_21d = close / close.shift(21) - 1
-    return_63d = close / close.shift(63) - 1
+    sma_50 = simple_moving_average(close, window=50)
+    return_10d = period_return(close, periods=10)
+    return_21d = period_return(close, periods=21)
+    return_63d = period_return(close, periods=63)
     prior_63d_drawdown = close / close.rolling(63).max() - 1
     adx_14 = _compute_adx_14(high=high, low=low, close=close)
 
