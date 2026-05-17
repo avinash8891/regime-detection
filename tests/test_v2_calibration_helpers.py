@@ -7,7 +7,7 @@ import pandas as pd
 from scripts._v2_calibration_helpers import load_macro_series
 
 
-def test_load_macro_series_accepts_live_pmi_parquet_and_prefers_history(
+def test_load_macro_series_merges_pmi_history_with_latest_parquet(
     tmp_path: Path,
 ) -> None:
     macro_path = tmp_path / "macro" / "fred_macro_series.parquet"
@@ -61,5 +61,8 @@ def test_load_macro_series_accepts_live_pmi_parquet_and_prefers_history(
     series = load_macro_series(macro_path, latest_path)
 
     pmi = series["pmi_manufacturing"]
-    assert list(pmi.index) == [pd.Timestamp("2026-04-01")]
-    assert pmi.iloc[0] == 50.3
+    assert list(pmi.index) == [
+        pd.Timestamp("2026-04-01"),
+        pd.Timestamp("2026-05-01"),
+    ]
+    assert list(pmi) == [50.3, 52.7]

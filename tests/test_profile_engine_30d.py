@@ -48,7 +48,7 @@ def test_profile_parse_args_defaults_pmi_to_materialized_data_root(
 
     args = profile_engine_30d._parse_args()
 
-    assert args.pmi_path == data_root / "pmi" / "us_ism_pmi_history.parquet"
+    assert args.pmi_path == data_root / "pmi" / "us_ism_pmi.parquet"
 
 
 def test_profile_parse_args_accepts_json_output(
@@ -249,7 +249,13 @@ def test_timed_inflation_growth_builder_patches_axis_builder_helpers(
 
 def test_profile_json_report_emits_machine_readable_sections(tmp_path: Path) -> None:
     def axis(label: str) -> SimpleNamespace:
-        return SimpleNamespace(active_label=label, classification_status="classified")
+        return SimpleNamespace(
+            active_label=label,
+            classification_status="classified",
+            classification_reason=None,
+            evidence={"rule_evidence": {"sample_metric": 1.25}},
+            data_quality={"status": "ok"},
+        )
 
     timer = profile_engine_30d.StageTimer()
     timer.totals["build_feature_store_total"] = 1.5
@@ -303,19 +309,63 @@ def test_profile_json_report_emits_machine_readable_sections(tmp_path: Path) -> 
     output = SimpleNamespace(
         as_of_date=pd.Timestamp("2026-05-15").date(),
         trend_direction=axis("uptrend"),
+        trend_character=axis("trending"),
         volatility_state=axis("low_vol"),
+        breadth_state=axis("broadening_breadth"),
+        structural_causal_state=SimpleNamespace(
+            event_calendar=SimpleNamespace(
+                active_label="normal_calendar",
+                evidence={"days_to_event": 4},
+            ),
+            monetary_pressure=SimpleNamespace(
+                label="neutral_monetary",
+                evidence={"fed_funds_change_63d": 0.0},
+                data_quality={"status": "ok"},
+            ),
+        ),
         transition_risk=SimpleNamespace(
             label="low", score=0.2, score_components={"breadth": 0.2}
         ),
-        network_fragility=None,
+        network_fragility=axis("correlation_concentration"),
         volume_liquidity_state=None,
         credit_funding_state=None,
-        credit_funding_state_proxy=None,
+        credit_funding_state_proxy=SimpleNamespace(
+            active_label="unknown",
+            classification_status="no_rule_fired",
+            classification_reason="no_rule_fired",
+            evidence={"reason": "no_rule_fired"},
+            data_quality={"status": "ok"},
+        ),
         credit_funding_effective_state=None,
-        inflation_growth_state=None,
+        inflation_growth_state=SimpleNamespace(
+            active_label="unknown",
+            classification_status="stale_data",
+            classification_reason="latest_observation_too_old",
+            evidence={"reason": "latest_observation_too_old"},
+            data_quality={"status": "stale_data"},
+        ),
         monetary_pressure_state=None,
-        cluster=None,
-        change_point=None,
+        cluster=SimpleNamespace(
+            cluster_id=3, distance_to_centroid=1.75, model_version="test-cluster"
+        ),
+        change_point=SimpleNamespace(
+            score=0.42, days_since_last_break=7, method="BOCPD"
+        ),
+        agent_routing=SimpleNamespace(
+            active_cohort="risk_on",
+            fallback_cohort="neutral",
+            blocked_strategy_modes=["short_vol"],
+        ),
+        strategy_family_constraints={
+            "trend_following": SimpleNamespace(
+                allowed=True, max_lookback_days=60, reason="classified"
+            )
+        },
+        strategy_response=SimpleNamespace(
+            position_size_multiplier=1.0,
+            allow_trend_following=True,
+            modifiers_applied=["none"],
+        ),
     )
 
     report = profile_engine_30d._build_json_report(
@@ -344,16 +394,65 @@ def test_profile_json_report_emits_machine_readable_sections(tmp_path: Path) -> 
     }
     assert payload["timeline"] == [
         {
-            "activated_v2_seams": {"transition_score": 0.2},
+            "activated_v2_seams": {
+                "change_point": 0.42,
+                "cluster": 3,
+                "credit_funding_state_proxy": "no_rule_fired",
+                "inflation_growth_state": "stale_data",
+                "network_fragility": "correlation_concentration",
+                "transition_score": 0.2,
+            },
             "as_of_date": "2026-05-15",
             "transition_risk": "low",
             "trend_direction": "uptrend",
             "volatility_state": "low_vol",
         }
     ]
+    assert payload["label_summary"]["inflation_growth_state"] == {
+        "active": {"unknown": 1},
+        "reported": {"stale_data": 1},
+        "status": {"stale_data": 1},
+    }
+    assert payload["label_summary"]["credit_funding_state_proxy"] == {
+        "active": {"unknown": 1},
+        "reported": {"no_rule_fired": 1},
+        "status": {"no_rule_fired": 1},
+    }
     assert payload["trailing_v2_field_status"][-1] == {
         "field": "transition_risk.score_components",
         "status": "present",
+    }
+    full_output = payload["full_timeline"][0]
+    assert full_output["trend_direction"]["classification_status"] == "classified"
+    assert full_output["trend_direction"]["evidence"]["rule_evidence"] == {
+        "sample_metric": 1.25
+    }
+    assert full_output["inflation_growth_state"]["classification_status"] == "stale_data"
+    assert full_output["inflation_growth_state"]["active_label"] == "unknown"
+    assert full_output["inflation_growth_state"]["reporting_label"] == "stale_data"
+    assert full_output["credit_funding_state_proxy"]["classification_status"] == (
+        "no_rule_fired"
+    )
+    assert full_output["credit_funding_state_proxy"]["active_label"] == "unknown"
+    assert full_output["credit_funding_state_proxy"]["reporting_label"] == (
+        "no_rule_fired"
+    )
+    assert full_output["transition_risk"]["score_components"] == {"breadth": 0.2}
+    assert full_output["cluster"] == {
+        "cluster_id": 3,
+        "distance_to_centroid": 1.75,
+        "model_version": "test-cluster",
+    }
+    assert full_output["change_point"] == {
+        "days_since_last_break": 7,
+        "method": "BOCPD",
+        "score": 0.42,
+    }
+    assert full_output["agent_routing"]["blocked_strategy_modes"] == ["short_vol"]
+    assert full_output["strategy_family_constraints"]["trend_following"] == {
+        "allowed": True,
+        "max_lookback_days": 60,
+        "reason": "classified",
     }
 
 

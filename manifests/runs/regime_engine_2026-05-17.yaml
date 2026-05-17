@@ -1,0 +1,18 @@
+artifact_set: regime_engine_2026-05-17
+created_at_utc: '2026-05-17T04:59:18Z'
+storage_root: .context/regime-artifact-store-20260517
+artifacts:
+- name: pit_constituents_parquet
+  stage: canonical
+  uri: file:///Users/avinashvankadaru/conductor/workspaces/regime-detection/vaduz/.context/regime-artifact-store-20260517/canonical/pit_constituents/sp500_ticker_intervals.parquet
+  local_path: data/raw/pit_constituents/sp500_ticker_intervals.parquet
+  sha256: a115cb8583f6d2c8d90b5d2fe01ca6e91859ad029a23b760bcdf0e8c8eec295c
+  schema_version: null
+  rows: null
+  min_date: null
+  max_date: null
+  required_for:
+  - profile_engine_30d
+  - v2_calibration
+  - historical_walkforward
+  - audit_layer2_30d

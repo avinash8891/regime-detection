@@ -24,7 +24,7 @@ logger = logging.getLogger(__name__)
 
 
 def default_pmi_path(data_root: Path) -> Path:
-    return data_root / "pmi" / "us_ism_pmi_history.parquet"
+    return data_root / "pmi" / "us_ism_pmi.parquet"
 
 
 # TODO(simplify, owner=regime-maintainers, ticket=TD-CALIBRATION-REPORTING): hoist `_reporting_label` (4 near-identical copies in
@@ -136,8 +136,16 @@ def load_macro_series(
 def _load_pmi_manufacturing_series(pmi_path: Path) -> pd.Series | None:
     if pmi_path.suffix.lower() == ".parquet":
         history_path = pmi_path.with_name("us_ism_pmi_history.parquet")
-        effective_path = history_path if history_path.exists() else pmi_path
-        pmi_df = pd.read_parquet(effective_path)
+        latest_path = pmi_path.with_name("us_ism_pmi.parquet")
+        candidates = [path for path in (history_path, latest_path) if path.exists()]
+        if pmi_path.exists() and pmi_path not in candidates:
+            candidates.append(pmi_path)
+        if not candidates:
+            return None
+        pmi_df = pd.concat(
+            [pd.read_parquet(path) for path in candidates],
+            ignore_index=True,
+        )
         required = {"series_name", "value", "release_timestamp"}
         if not required.issubset(pmi_df.columns):
             return None
@@ -152,6 +160,9 @@ def _load_pmi_manufacturing_series(pmi_path: Path) -> pd.Series | None:
             release_timestamp.dt.tz_convert("America/New_York")
             .dt.tz_localize(None)
             .dt.normalize()
+        )
+        pmi_df = pmi_df.drop_duplicates(
+            subset=["release_date_local"], keep="last"
         )
         return (
             pmi_df.set_index("release_date_local")["value"]

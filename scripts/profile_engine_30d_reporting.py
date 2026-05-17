@@ -5,6 +5,7 @@ import datetime as dt
 import enum
 import json
 import math
+from collections import Counter
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, get_args
 
@@ -31,6 +32,23 @@ PROFILE_INPUT_SEAM_NAMES = [
     "pit_constituent_intervals",
     "constituent_ohlcv",
 ]
+REPORTING_SUMMARY_FIELDS = [
+    "trend_direction",
+    "trend_character",
+    "volatility_state",
+    "breadth_state",
+    "network_fragility",
+    "volume_liquidity_state",
+    "credit_funding_state",
+    "credit_funding_state_proxy",
+    "credit_funding_effective_state",
+    "inflation_growth_state",
+    "monetary_pressure_state",
+]
+
+
+def _counter_dict(counter: Counter[str]) -> dict[str, int]:
+    return {key: counter[key] for key in sorted(counter)}
 
 def _input_status(name: str, value: Any) -> str:
     if value is None:
@@ -286,6 +304,33 @@ def _json_safe_value(value: Any) -> Any:
 
 def _full_timeline_report(outputs: list[RegimeOutput]) -> list[dict[str, Any]]:
     return [_json_safe_value(output) for output in outputs]
+
+
+def _label_summary_report(outputs: list[RegimeOutput]) -> dict[str, dict[str, dict[str, int]]]:
+    summary: dict[str, dict[str, dict[str, int]]] = {}
+    for field_name in REPORTING_SUMMARY_FIELDS:
+        active_counts: Counter[str] = Counter()
+        reported_counts: Counter[str] = Counter()
+        status_counts: Counter[str] = Counter()
+        for output in outputs:
+            value = getattr(output, field_name, None)
+            if value is None:
+                active_counts["missing"] += 1
+                reported_counts["missing"] += 1
+                status_counts["missing"] += 1
+                continue
+            active_label = getattr(value, "active_label", getattr(value, "label", None))
+            active_counts[str(active_label or "missing")] += 1
+            reported_counts[str(_reporting_label(value) or "missing")] += 1
+            status_counts[
+                str(getattr(value, "classification_status", "classified") or "missing")
+            ] += 1
+        summary[field_name] = {
+            "active": _counter_dict(active_counts),
+            "reported": _counter_dict(reported_counts),
+            "status": _counter_dict(status_counts),
+        }
+    return summary
 
 
 def _trailing_v2_status(out: RegimeOutput) -> list[str]:
@@ -561,6 +606,7 @@ def _build_json_report(
             "bottom_line_total_wall_clock_seconds": total_wall_clock,
         },
         "timeline": _compact_timeline_report(timeline.outputs),
+        "label_summary": _label_summary_report(timeline.outputs),
         "full_timeline": _full_timeline_report(timeline.outputs),
         "trailing_v2_field_status": _trailing_v2_status_report(timeline.outputs[-1]),
         "verification_issues": verification_issues,

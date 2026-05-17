@@ -1,4 +1,4 @@
-MANIFEST ?= manifests/latest.yaml
+MANIFEST ?= manifests/runs/profile_ready_daily_ohlcv_762_2016_20260515.yaml
 DATA_ROOT ?= data/raw
 OPERATOR_ENV_FILE ?=
 OPERATOR_ENV_ARG = $(if $(OPERATOR_ENV_FILE),--operator-env-file "$(OPERATOR_ENV_FILE)",)
@@ -8,7 +8,7 @@ OPERATOR_ENV_ARG = $(if $(OPERATOR_ENV_FILE),--operator-env-file "$(OPERATOR_ENV
 regime-data:
 	@if [ ! -f "$(MANIFEST)" ]; then \
 		echo "Missing manifest lockfile: $(MANIFEST)"; \
-		echo "Pass MANIFEST=manifests/runs/regime_engine_YYYY-MM-DD.yaml"; \
+		echo "Pass MANIFEST=manifests/runs/profile_ready_daily_ohlcv_762_2016_20260515.yaml"; \
 		exit 2; \
 	fi
 	python3 scripts/materialize_regime_data.py \
@@ -18,7 +18,7 @@ regime-data:
 profile-30d:
 	@if [ ! -f "$(MANIFEST)" ]; then \
 		echo "Missing manifest lockfile: $(MANIFEST)"; \
-		echo "Pass MANIFEST=manifests/runs/regime_engine_YYYY-MM-DD.yaml"; \
+		echo "Pass MANIFEST=manifests/runs/profile_ready_daily_ohlcv_762_2016_20260515.yaml"; \
 		exit 2; \
 	fi
 	python3 scripts/profile_engine_30d.py \
