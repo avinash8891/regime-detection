@@ -57,7 +57,8 @@ class AcquisitionStore:
             else None
         )
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
-        self._init_schema()
+        with self._connect() as conn:
+            init_acquisition_schema(conn)
 
     def start_fetch_run(
         self, *, fetch_type: str, params: dict[str, object]
@@ -535,10 +536,6 @@ class AcquisitionStore:
         conn = sqlite3.connect(self.db_path)
         conn.execute("PRAGMA foreign_keys = ON")
         return conn
-
-    def _init_schema(self) -> None:
-        with self._connect() as conn:
-            init_acquisition_schema(conn)
 
     def _store_raw_artifact(
         self,

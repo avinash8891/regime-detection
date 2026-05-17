@@ -29,8 +29,8 @@ from scripts.fetch_regime_engine_v1_data import (
     OPERATOR_ASSISTED_FETCH_MODES,
     UNATTENDED_FETCH_MODES,
     FetchModeSpec,
+    _invoke_unattended_fetch_mode,
     _plan_fetch_mode_execution,
-    _run_unattended_fetch_mode,
     _should_fetch,
 )
 
@@ -696,7 +696,9 @@ def test_fetch_help_surface_mentions_pmi_and_pit(monkeypatch, capsys) -> None:
     assert "--investing-browser-executable" in help_text
     assert "--investing-browser-headless" in help_text
     assert "--investing-browser-timeout-ms" in help_text
-    assert "--fetch all is reserved for unattended autonomous refreshes" in normalized_help
+    assert (
+        "--fetch all is reserved for unattended autonomous refreshes" in normalized_help
+    )
     assert "operator-assisted" in help_text.lower()
 
 
@@ -837,10 +839,15 @@ def test_constituent_ohlcv_requires_fixed_universe_unless_pit_bootstrap_is_expli
 
 def test_fetch_mode_sets_make_operator_assisted_boundary_explicit() -> None:
     assert UNATTENDED_FETCH_MODES.isdisjoint(OPERATOR_ASSISTED_FETCH_MODES)
-    assert set(FETCH_MODE_REGISTRY) == UNATTENDED_FETCH_MODES | OPERATOR_ASSISTED_FETCH_MODES
+    assert (
+        set(FETCH_MODE_REGISTRY)
+        == UNATTENDED_FETCH_MODES | OPERATOR_ASSISTED_FETCH_MODES
+    )
     assert all(spec.name == name for name, spec in FETCH_MODE_REGISTRY.items())
     assert {
-        spec.name for spec in FETCH_MODE_REGISTRY.values() if spec.category == "unattended"
+        spec.name
+        for spec in FETCH_MODE_REGISTRY.values()
+        if spec.category == "unattended"
     } == UNATTENDED_FETCH_MODES
     assert {
         spec.name
@@ -867,7 +874,9 @@ def test_fetch_all_execution_plan_is_serial_by_default() -> None:
     assert not any(group.concurrent for group in plan)
 
 
-def test_fetch_all_conservative_concurrency_batches_only_safe_unattended_modes() -> None:
+def test_fetch_all_conservative_concurrency_batches_only_safe_unattended_modes() -> (
+    None
+):
     plan = _plan_fetch_mode_execution("all", conservative_concurrency=True)
 
     assert plan[0].modes == ("market",)
@@ -901,7 +910,9 @@ def test_unattended_fetch_dispatch_uses_registry_invoker(
         FetchModeSpec("test-registry-mode", "unattended", invoke=fake_invoke),
     )
 
-    report_path = _run_unattended_fetch_mode(
+    assert not hasattr(fetch_script, "_run_unattended_fetch_mode")
+
+    report_path = _invoke_unattended_fetch_mode(
         "test-registry-mode",
         args=argparse.Namespace(fetch="test-registry-mode"),
         out_dir=tmp_path,
@@ -951,7 +962,9 @@ def test_fetch_all_dispatches_only_unattended_modes(
     def operator_called(name: str):
         def _fake(**kwargs):
             del kwargs
-            raise AssertionError(f"operator-assisted fetch was called by --fetch all: {name}")
+            raise AssertionError(
+                f"operator-assisted fetch was called by --fetch all: {name}"
+            )
 
         return _fake
 
@@ -1088,10 +1101,7 @@ def test_emit_manifest_without_path_uses_tracked_immutable_run_manifest(
 
     assert fetch_script.main() == 0
     assert captured["manifest_path"] == (
-        fetch_script.REPO_ROOT
-        / "manifests"
-        / "runs"
-        / "regime_engine_2026-05-17.yaml"
+        fetch_script.REPO_ROOT / "manifests" / "runs" / "regime_engine_2026-05-17.yaml"
     )
 
 
@@ -1116,7 +1126,9 @@ def test_emit_manifest_rejects_ignored_data_manifest_path(
         ],
     )
 
-    with pytest.raises(SystemExit, match="manifest lockfiles must be written outside ignored data/"):
+    with pytest.raises(
+        SystemExit, match="manifest lockfiles must be written outside ignored data/"
+    ):
         fetch_script.main()
 
 
@@ -1140,7 +1152,9 @@ def test_tracked_manifest_rejects_context_artifact_store(
         ],
     )
 
-    with pytest.raises(SystemExit, match="tracked manifests require durable artifact storage"):
+    with pytest.raises(
+        SystemExit, match="tracked manifests require durable artifact storage"
+    ):
         fetch_script.main()
 
 

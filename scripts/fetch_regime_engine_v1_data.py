@@ -202,7 +202,9 @@ def _invoke_sf_fed_news_sentiment_fetch(context: FetchModeInvocation) -> Path:
 def _invoke_constituent_daily_ohlcv_fetch(context: FetchModeInvocation) -> Path:
     args = context.args
     if not context.acquisition_db_path:
-        raise SystemExit("--acquisition-db is required for daily-ohlcv-constituents-alpaca fetches")
+        raise SystemExit(
+            "--acquisition-db is required for daily-ohlcv-constituents-alpaca fetches"
+        )
     pit_parquet_path = (
         Path(args.pit_parquet)
         if args.pit_parquet
@@ -218,8 +220,12 @@ def _invoke_constituent_daily_ohlcv_fetch(context: FetchModeInvocation) -> Path:
         acquisition_db_path=context.acquisition_db_path,
         artifact_store_root=context.acquisition_artifact_store_root,
         allow_missing_symbols=args.allow_missing_constituent_symbols,
-        fixed_universe_symbols=_load_json_symbol_list(Path(args.universe_json)) if args.universe_json else None,
-        fixed_universe_dir=Path(args.constituent_universe_dir) if args.constituent_universe_dir else None,
+        fixed_universe_symbols=_load_json_symbol_list(Path(args.universe_json))
+        if args.universe_json
+        else None,
+        fixed_universe_dir=Path(args.constituent_universe_dir)
+        if args.constituent_universe_dir
+        else None,
         allow_pit_universe=args.allow_pit_constituent_universe,
         expected_universe_count=args.constituent_universe_expected_count,
         verbose=args.verbose,
@@ -230,13 +236,42 @@ FETCH_MODE_REGISTRY = {
     spec.name: spec
     for spec in (
         FetchModeSpec("market", "unattended", invoke=_invoke_market_fetch),
-        FetchModeSpec("macro", "unattended", conservative_concurrent=True, invoke=_invoke_macro_fetch),
-        FetchModeSpec("sentiment", "unattended", conservative_concurrent=True, invoke=_invoke_sentiment_fetch),
-        FetchModeSpec("events", "unattended", conservative_concurrent=True, invoke=_invoke_event_fetch),
-        FetchModeSpec("pmi", "unattended", conservative_concurrent=True, invoke=_invoke_pmi_fetch),
-        FetchModeSpec("pit", "unattended", conservative_concurrent=True, invoke=_invoke_pit_fetch),
-        FetchModeSpec("fomc", "unattended", conservative_concurrent=True, invoke=_invoke_fomc_fetch),
-        FetchModeSpec("powell", "unattended", conservative_concurrent=True, invoke=_invoke_powell_fetch),
+        FetchModeSpec(
+            "macro",
+            "unattended",
+            conservative_concurrent=True,
+            invoke=_invoke_macro_fetch,
+        ),
+        FetchModeSpec(
+            "sentiment",
+            "unattended",
+            conservative_concurrent=True,
+            invoke=_invoke_sentiment_fetch,
+        ),
+        FetchModeSpec(
+            "events",
+            "unattended",
+            conservative_concurrent=True,
+            invoke=_invoke_event_fetch,
+        ),
+        FetchModeSpec(
+            "pmi", "unattended", conservative_concurrent=True, invoke=_invoke_pmi_fetch
+        ),
+        FetchModeSpec(
+            "pit", "unattended", conservative_concurrent=True, invoke=_invoke_pit_fetch
+        ),
+        FetchModeSpec(
+            "fomc",
+            "unattended",
+            conservative_concurrent=True,
+            invoke=_invoke_fomc_fetch,
+        ),
+        FetchModeSpec(
+            "powell",
+            "unattended",
+            conservative_concurrent=True,
+            invoke=_invoke_powell_fetch,
+        ),
         FetchModeSpec(
             "cleveland-fed-nowcast",
             "unattended",
@@ -267,7 +302,9 @@ UNATTENDED_FETCH_MODES = frozenset(
     name for name, spec in FETCH_MODE_REGISTRY.items() if spec.category == "unattended"
 )
 OPERATOR_ASSISTED_FETCH_MODES = frozenset(
-    name for name, spec in FETCH_MODE_REGISTRY.items() if spec.category == "operator-assisted"
+    name
+    for name, spec in FETCH_MODE_REGISTRY.items()
+    if spec.category == "operator-assisted"
 )
 FETCH_MODES = frozenset(FETCH_MODE_REGISTRY) | {"all"}
 AUTO_EMIT_MANIFEST = "__auto_emit_manifest__"
@@ -283,15 +320,33 @@ def main() -> int:
             "local-file, and historical-backfill tools remain explicit operator-assisted fetches."
         )
     )
-    ap.add_argument("--out-dir", default="data/raw", help="Output directory for Parquet + reports.")
+    ap.add_argument(
+        "--out-dir", default="data/raw", help="Output directory for Parquet + reports."
+    )
     ap.add_argument("--start", default="2015-01-01", help="Start date (YYYY-MM-DD).")
-    ap.add_argument("--end", default=dt.date.today().isoformat(), help="End date (YYYY-MM-DD).")
+    ap.add_argument(
+        "--end", default=dt.date.today().isoformat(), help="End date (YYYY-MM-DD)."
+    )
     ap.add_argument("--scope", default="v1", help="Data scope: v1|v2|all.")
-    ap.add_argument("--fetch", default="market", help=f"What to fetch: {'|'.join(sorted(FETCH_MODES))}.")
-    ap.add_argument("--min-cap-b", type=float, default=10.0, help="Universe filter threshold in $B.")
-    ap.add_argument("--adjustment", default="raw", help="Alpaca adjustment: raw|split|dividend|all.")
-    ap.add_argument("--alpaca-feed", default=None, help="Alpaca data feed: sip|iex|otc. Omit to use SDK default.")
-    ap.add_argument("--fred-api-key", default=None, help="Optional FRED API key for macro fetches.")
+    ap.add_argument(
+        "--fetch",
+        default="market",
+        help=f"What to fetch: {'|'.join(sorted(FETCH_MODES))}.",
+    )
+    ap.add_argument(
+        "--min-cap-b", type=float, default=10.0, help="Universe filter threshold in $B."
+    )
+    ap.add_argument(
+        "--adjustment", default="raw", help="Alpaca adjustment: raw|split|dividend|all."
+    )
+    ap.add_argument(
+        "--alpaca-feed",
+        default=None,
+        help="Alpaca data feed: sip|iex|otc. Omit to use SDK default.",
+    )
+    ap.add_argument(
+        "--fred-api-key", default=None, help="Optional FRED API key for macro fetches."
+    )
     ap.add_argument(
         "--include-cpi-vintages",
         dest="include_cpi_vintages",
@@ -304,8 +359,12 @@ def main() -> int:
             "Default True; pass --no-include-cpi-vintages to skip."
         ),
     )
-    ap.add_argument("--list-symbols", action="store_true", help="Only print symbol counts and exit.")
-    ap.add_argument("--env-file", default=None, help="Optional direct .env file to load.")
+    ap.add_argument(
+        "--list-symbols", action="store_true", help="Only print symbol counts and exit."
+    )
+    ap.add_argument(
+        "--env-file", default=None, help="Optional direct .env file to load."
+    )
     ap.add_argument(
         "--operator-env-file",
         default=None,
@@ -334,14 +393,49 @@ def main() -> int:
         default=None,
         help="Operator-assisted manual import: path to a downloaded S&P aggregate EPS workbook (.xlsx). Required for --fetch eps.",
     )
-    ap.add_argument("--eps-wayback-max-snapshots", type=int, default=None, help="Operator-assisted backfill: optional maximum number of Wayback EPS snapshots to process.")
-    ap.add_argument("--eps-wayback-from", default=None, help="Optional lower bound date (YYYY-MM-DD) for Wayback EPS snapshot dates.")
-    ap.add_argument("--eps-wayback-to", default=None, help="Optional upper bound date (YYYY-MM-DD) for Wayback EPS snapshot dates.")
-    ap.add_argument("--eps-wayback-stop-after-first-success", action="store_true", help="Stop Wayback EPS processing after the first successfully parsed snapshot.")
-    ap.add_argument("--eps-browser-user-data-dir", default=None, help="Operator-assisted EPS auto fetch: persistent browser profile directory for S&P browser fallback.")
-    ap.add_argument("--eps-browser-executable", default=None, help="Operator-assisted EPS auto fetch: Chrome/Chromium executable for S&P browser fallback.")
-    ap.add_argument("--eps-browser-headless", action=argparse.BooleanOptionalAction, default=True, help="Operator-assisted EPS auto fetch: run browser fallback headless/headful. Default headless.")
-    ap.add_argument("--eps-browser-timeout-ms", type=int, default=120000, help="Operator-assisted EPS auto fetch: timeout in milliseconds for S&P browser fallback.")
+    ap.add_argument(
+        "--eps-wayback-max-snapshots",
+        type=int,
+        default=None,
+        help="Operator-assisted backfill: optional maximum number of Wayback EPS snapshots to process.",
+    )
+    ap.add_argument(
+        "--eps-wayback-from",
+        default=None,
+        help="Optional lower bound date (YYYY-MM-DD) for Wayback EPS snapshot dates.",
+    )
+    ap.add_argument(
+        "--eps-wayback-to",
+        default=None,
+        help="Optional upper bound date (YYYY-MM-DD) for Wayback EPS snapshot dates.",
+    )
+    ap.add_argument(
+        "--eps-wayback-stop-after-first-success",
+        action="store_true",
+        help="Stop Wayback EPS processing after the first successfully parsed snapshot.",
+    )
+    ap.add_argument(
+        "--eps-browser-user-data-dir",
+        default=None,
+        help="Operator-assisted EPS auto fetch: persistent browser profile directory for S&P browser fallback.",
+    )
+    ap.add_argument(
+        "--eps-browser-executable",
+        default=None,
+        help="Operator-assisted EPS auto fetch: Chrome/Chromium executable for S&P browser fallback.",
+    )
+    ap.add_argument(
+        "--eps-browser-headless",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Operator-assisted EPS auto fetch: run browser fallback headless/headful. Default headless.",
+    )
+    ap.add_argument(
+        "--eps-browser-timeout-ms",
+        type=int,
+        default=120000,
+        help="Operator-assisted EPS auto fetch: timeout in milliseconds for S&P browser fallback.",
+    )
     ap.add_argument(
         "--usd-index-csv",
         default=None,
@@ -350,8 +444,16 @@ def main() -> int:
             "Routine future USD ingestion uses FRED DTWEXBGS through --fetch macro."
         ),
     )
-    ap.add_argument("--daily-ohlcv-dir", default=None, help="Operator-assisted manual import: path to a local partitioned daily_ohlcv parquet directory. Required for --fetch daily-ohlcv-local-sqlite.")
-    ap.add_argument("--pit-parquet", default=None, help="PIT constituent parquet for --fetch daily-ohlcv-constituents-alpaca. Defaults to <out-dir>/pit_constituents/sp500_ticker_intervals.parquet.")
+    ap.add_argument(
+        "--daily-ohlcv-dir",
+        default=None,
+        help="Operator-assisted manual import: path to a local partitioned daily_ohlcv parquet directory. Required for --fetch daily-ohlcv-local-sqlite.",
+    )
+    ap.add_argument(
+        "--pit-parquet",
+        default=None,
+        help="PIT constituent parquet for --fetch daily-ohlcv-constituents-alpaca. Defaults to <out-dir>/pit_constituents/sp500_ticker_intervals.parquet.",
+    )
     ap.add_argument(
         "--constituent-universe-dir",
         default=None,
@@ -368,16 +470,59 @@ def main() -> int:
         default=FIXED_UNIVERSE_SYMBOL_COUNT,
         help=f"Expected fixed constituent universe size for Alpaca refreshes. Default {FIXED_UNIVERSE_SYMBOL_COUNT}.",
     )
-    ap.add_argument("--allow-missing-constituent-symbols", action="store_true", help="Allow daily-ohlcv-constituents-alpaca to continue when Alpaca returns no bars for some PIT symbols.")
-    ap.add_argument("--pmi-history-dir", default=None, help="Optional manual Investing PMI history directory. Omit for live DBnomics/TradingEconomics PMI ingestion.")
-    ap.add_argument("--investing-archive-root", default=None, help="Operator-assisted manual import: path to archived Investing.com source_pages root. Required for --fetch investing-archive-local.")
-    ap.add_argument("--investing-earnings-loaded-page", default=None, help="Operator-assisted Investing fetch: path to a browser-loaded earnings calendar HTML page containing __NEXT_DATA__. Optional for --fetch investing-live.")
-    ap.add_argument("--investing-earnings-browser-capture", action=argparse.BooleanOptionalAction, default=True, help="Operator-assisted Investing fetch: capture a fresh earnings page with Playwright when no page/token is supplied. Default True.")
-    ap.add_argument("--investing-browser-user-data-dir", default=None, help="Operator-assisted Investing fetch: persistent browser profile directory. Defaults to archive-local browser_profile or INVESTING_BROWSER_USER_DATA_DIR.")
-    ap.add_argument("--investing-browser-executable", default=None, help="Operator-assisted Investing fetch: Chrome/Chromium executable. Defaults to Playwright browser or INVESTING_BROWSER_EXECUTABLE.")
-    ap.add_argument("--investing-browser-headless", action=argparse.BooleanOptionalAction, default=None, help="Operator-assisted Investing fetch: run browser capture headless/headful. Defaults to INVESTING_BROWSER_HEADLESS or headful.")
-    ap.add_argument("--investing-browser-timeout-ms", type=int, default=None, help="Operator-assisted Investing fetch: timeout in milliseconds while waiting for accessToken. Defaults to INVESTING_BROWSER_TIMEOUT_MS or 120000.")
-    ap.add_argument("--acquisition-db", default=None, help="Optional SQLite path for raw acquisition/provenance recording.")
+    ap.add_argument(
+        "--allow-missing-constituent-symbols",
+        action="store_true",
+        help="Allow daily-ohlcv-constituents-alpaca to continue when Alpaca returns no bars for some PIT symbols.",
+    )
+    ap.add_argument(
+        "--pmi-history-dir",
+        default=None,
+        help="Optional manual Investing PMI history directory. Omit for live DBnomics/TradingEconomics PMI ingestion.",
+    )
+    ap.add_argument(
+        "--investing-archive-root",
+        default=None,
+        help="Operator-assisted manual import: path to archived Investing.com source_pages root. Required for --fetch investing-archive-local.",
+    )
+    ap.add_argument(
+        "--investing-earnings-loaded-page",
+        default=None,
+        help="Operator-assisted Investing fetch: path to a browser-loaded earnings calendar HTML page containing __NEXT_DATA__. Optional for --fetch investing-live.",
+    )
+    ap.add_argument(
+        "--investing-earnings-browser-capture",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Operator-assisted Investing fetch: capture a fresh earnings page with Playwright when no page/token is supplied. Default True.",
+    )
+    ap.add_argument(
+        "--investing-browser-user-data-dir",
+        default=None,
+        help="Operator-assisted Investing fetch: persistent browser profile directory. Defaults to archive-local browser_profile or INVESTING_BROWSER_USER_DATA_DIR.",
+    )
+    ap.add_argument(
+        "--investing-browser-executable",
+        default=None,
+        help="Operator-assisted Investing fetch: Chrome/Chromium executable. Defaults to Playwright browser or INVESTING_BROWSER_EXECUTABLE.",
+    )
+    ap.add_argument(
+        "--investing-browser-headless",
+        action=argparse.BooleanOptionalAction,
+        default=None,
+        help="Operator-assisted Investing fetch: run browser capture headless/headful. Defaults to INVESTING_BROWSER_HEADLESS or headful.",
+    )
+    ap.add_argument(
+        "--investing-browser-timeout-ms",
+        type=int,
+        default=None,
+        help="Operator-assisted Investing fetch: timeout in milliseconds while waiting for accessToken. Defaults to INVESTING_BROWSER_TIMEOUT_MS or 120000.",
+    )
+    ap.add_argument(
+        "--acquisition-db",
+        default=None,
+        help="Optional SQLite path for raw acquisition/provenance recording.",
+    )
     ap.add_argument(
         "--artifact-store",
         default=None,
@@ -404,9 +549,23 @@ def main() -> int:
         default="profile_engine_30d,v2_calibration,historical_walkforward,audit_layer2_30d",
         help="Comma-separated use cases attached to emitted manifest artifacts.",
     )
-    ap.add_argument("--bls-schedule-dir", default=None, help="Optional local directory containing bls_schedule_YYYY.html files for BLS historical release schedules.")
-    ap.add_argument("--bls-start-year", type=int, default=2000, help="Start year for BLS CPI/NFP schedule generation.")
-    ap.add_argument("--bls-end-year", type=int, default=None, help="End year for BLS CPI/NFP schedule generation. Defaults to --end year.")
+    ap.add_argument(
+        "--bls-schedule-dir",
+        default=None,
+        help="Optional local directory containing bls_schedule_YYYY.html files for BLS historical release schedules.",
+    )
+    ap.add_argument(
+        "--bls-start-year",
+        type=int,
+        default=2000,
+        help="Start year for BLS CPI/NFP schedule generation.",
+    )
+    ap.add_argument(
+        "--bls-end-year",
+        type=int,
+        default=None,
+        help="End year for BLS CPI/NFP schedule generation. Defaults to --end year.",
+    )
     ap.add_argument(
         "--include-v2-curated-event-candidates",
         action="store_true",
@@ -420,7 +579,9 @@ def main() -> int:
             "under --fetch all. Default fetch execution remains serial."
         ),
     )
-    ap.add_argument("--verbose", action="store_true", help="Print progress while fetching.")
+    ap.add_argument(
+        "--verbose", action="store_true", help="Print progress while fetching."
+    )
     args = ap.parse_args()
 
     out_dir = Path(args.out_dir)
@@ -473,7 +634,9 @@ def main() -> int:
 
     report_paths: list[Path] = []
     acquisition_db_path = Path(args.acquisition_db) if args.acquisition_db else None
-    acquisition_artifact_store_root = args.artifact_store if acquisition_db_path and args.artifact_store else None
+    acquisition_artifact_store_root = (
+        args.artifact_store if acquisition_db_path and args.artifact_store else None
+    )
 
     for group in _plan_fetch_mode_execution(
         args.fetch,
@@ -484,7 +647,7 @@ def main() -> int:
             with ThreadPoolExecutor(max_workers=max_workers) as executor:
                 reports = list(
                     executor.map(
-                        lambda mode: _run_unattended_fetch_mode(
+                        lambda mode: _invoke_unattended_fetch_mode(
                             mode,
                             args=args,
                             out_dir=out_dir,
@@ -498,7 +661,7 @@ def main() -> int:
                 )
         else:
             reports = [
-                _run_unattended_fetch_mode(
+                _invoke_unattended_fetch_mode(
                     mode,
                     args=args,
                     out_dir=out_dir,
@@ -536,8 +699,12 @@ def main() -> int:
             out_dir=out_dir,
             acquisition_db_path=acquisition_db_path,
             artifact_store_root=acquisition_artifact_store_root,
-            browser_user_data_dir=Path(args.eps_browser_user_data_dir) if args.eps_browser_user_data_dir else None,
-            browser_executable=Path(args.eps_browser_executable) if args.eps_browser_executable else None,
+            browser_user_data_dir=Path(args.eps_browser_user_data_dir)
+            if args.eps_browser_user_data_dir
+            else None,
+            browser_executable=Path(args.eps_browser_executable)
+            if args.eps_browser_executable
+            else None,
             browser_headless=args.eps_browser_headless,
             browser_timeout_ms=args.eps_browser_timeout_ms,
         )
@@ -549,7 +716,9 @@ def main() -> int:
         eps_wayback_report = run_wayback_aggregate_eps_fetch(
             out_dir=out_dir,
             max_snapshots=args.eps_wayback_max_snapshots,
-            from_date=parse_date(args.eps_wayback_from) if args.eps_wayback_from else None,
+            from_date=parse_date(args.eps_wayback_from)
+            if args.eps_wayback_from
+            else None,
             to_date=parse_date(args.eps_wayback_to) if args.eps_wayback_to else None,
             stop_after_first_success=args.eps_wayback_stop_after_first_success,
             acquisition_db_path=acquisition_db_path,
@@ -575,9 +744,13 @@ def main() -> int:
     if args.fetch == "investing-archive-local":
         # Operator-assisted archive import only; excluded from --fetch all.
         if not args.investing_archive_root:
-            raise SystemExit("--investing-archive-root is required for investing-archive-local fetches")
+            raise SystemExit(
+                "--investing-archive-root is required for investing-archive-local fetches"
+            )
         if not args.acquisition_db:
-            raise SystemExit("--acquisition-db is required for investing-archive-local fetches")
+            raise SystemExit(
+                "--acquisition-db is required for investing-archive-local fetches"
+            )
         investing_report = run_local_investing_archive_import(
             out_dir=out_dir,
             archive_root=Path(args.investing_archive_root),
@@ -597,10 +770,16 @@ def main() -> int:
             end=end,
             acquisition_db_path=Path(args.acquisition_db),
             artifact_store_root=acquisition_artifact_store_root,
-            earnings_loaded_page_path=Path(args.investing_earnings_loaded_page) if args.investing_earnings_loaded_page else None,
+            earnings_loaded_page_path=Path(args.investing_earnings_loaded_page)
+            if args.investing_earnings_loaded_page
+            else None,
             earnings_browser_capture=args.investing_earnings_browser_capture,
-            earnings_browser_user_data_dir=Path(args.investing_browser_user_data_dir) if args.investing_browser_user_data_dir else None,
-            earnings_browser_executable=Path(args.investing_browser_executable) if args.investing_browser_executable else None,
+            earnings_browser_user_data_dir=Path(args.investing_browser_user_data_dir)
+            if args.investing_browser_user_data_dir
+            else None,
+            earnings_browser_executable=Path(args.investing_browser_executable)
+            if args.investing_browser_executable
+            else None,
             earnings_browser_headless=args.investing_browser_headless,
             earnings_browser_timeout_ms=args.investing_browser_timeout_ms,
         )
@@ -610,9 +789,13 @@ def main() -> int:
     if args.fetch == "daily-ohlcv-local-sqlite":
         # Operator-assisted local materialization/import only; excluded from --fetch all.
         if not args.daily_ohlcv_dir:
-            raise SystemExit("--daily-ohlcv-dir is required for daily-ohlcv-local-sqlite fetches")
+            raise SystemExit(
+                "--daily-ohlcv-dir is required for daily-ohlcv-local-sqlite fetches"
+            )
         if not args.acquisition_db:
-            raise SystemExit("--acquisition-db is required for daily-ohlcv-local-sqlite fetches")
+            raise SystemExit(
+                "--acquisition-db is required for daily-ohlcv-local-sqlite fetches"
+            )
         ohlcv_import_report = run_local_daily_ohlcv_sqlite_import(
             out_dir=out_dir,
             source_dir=Path(args.daily_ohlcv_dir),
@@ -623,13 +806,18 @@ def main() -> int:
         print(str(ohlcv_import_report))
 
     if emit_manifest_path is not None:
-        required_for = [item.strip() for item in args.manifest_required_for.split(",") if item.strip()]
+        required_for = [
+            item.strip()
+            for item in args.manifest_required_for.split(",")
+            if item.strip()
+        ]
         manifest = emit_manifest_for_report_paths(
             report_paths=report_paths,
             out_dir=out_dir,
             artifact_store_root=args.artifact_store,
             manifest_path=emit_manifest_path,
-            artifact_set=args.manifest_artifact_set or f"regime_engine_{end.isoformat()}",
+            artifact_set=args.manifest_artifact_set
+            or f"regime_engine_{end.isoformat()}",
             required_for=required_for,
             repo_root=REPO_ROOT,
         )
@@ -641,7 +829,9 @@ def main() -> int:
 def _resolve_emit_manifest_path(value: str | None, *, end: dt.date) -> Path | None:
     if value is None:
         return None
-    path = _default_run_manifest_path(end) if value == AUTO_EMIT_MANIFEST else Path(value)
+    path = (
+        _default_run_manifest_path(end) if value == AUTO_EMIT_MANIFEST else Path(value)
+    )
     if not path.is_absolute():
         path = REPO_ROOT / path
     _validate_manifest_lockfile_path(path)
@@ -727,7 +917,7 @@ def _plan_fetch_mode_execution(
     return groups
 
 
-def _run_unattended_fetch_mode(
+def _invoke_unattended_fetch_mode(
     mode: str,
     *,
     args: argparse.Namespace,
@@ -766,7 +956,12 @@ def _resolve_stock_universe(args: argparse.Namespace, *, out_dir: Path) -> list[
 
 
 def _should_fetch(selected: str, mode: str) -> bool:
-    return selected == mode or any(mode in group.modes for group in _plan_fetch_mode_execution(selected, conservative_concurrency=False))
+    return selected == mode or any(
+        mode in group.modes
+        for group in _plan_fetch_mode_execution(
+            selected, conservative_concurrency=False
+        )
+    )
 
 
 def _validate_fetch_modes() -> None:
@@ -777,7 +972,9 @@ def _validate_fetch_modes() -> None:
 
 def _load_json_symbol_list(universe_path: Path) -> list[str]:
     stocks = json.loads(universe_path.read_text())
-    if not isinstance(stocks, list) or not all(isinstance(symbol, str) for symbol in stocks):
+    if not isinstance(stocks, list) or not all(
+        isinstance(symbol, str) for symbol in stocks
+    ):
         raise SystemExit("--universe-json must be a JSON list[str]")
     return stocks
 

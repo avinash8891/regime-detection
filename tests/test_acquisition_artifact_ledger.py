@@ -27,6 +27,8 @@ class FailingArtifactStore(ArtifactStore):
 def test_acquisition_schema_helper_creates_tables_and_migrates_legacy_artifacts(
     tmp_path: Path,
 ) -> None:
+    assert not hasattr(AcquisitionStore, "_init_schema")
+
     db_path = tmp_path / "legacy.db"
     with sqlite3.connect(db_path) as conn:
         conn.execute(
@@ -265,7 +267,9 @@ def test_acquisition_store_uploads_raw_and_output_artifacts_to_configured_store(
 
     assert [row[0] for row in rows] == ["raw_capture", "canonical"]
     assert rows[0][1].startswith(
-        (artifact_root.resolve() / "raw_capture" / "aaii" / f"run_id={run.run_id}").as_uri()
+        (
+            artifact_root.resolve() / "raw_capture" / "aaii" / f"run_id={run.run_id}"
+        ).as_uri()
     )
     assert (
         rows[1][1]

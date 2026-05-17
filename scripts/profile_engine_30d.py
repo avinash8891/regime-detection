@@ -25,7 +25,10 @@ if str(SRC_ROOT) not in sys.path:
     sys.path.insert(0, str(SRC_ROOT))
 
 from regime_data_fetch.pit_constituents import read_pit_intervals
-from regime_data_fetch.cli_common import OPERATOR_ENV_POINTER_FILE, load_operator_env_files
+from regime_data_fetch.cli_common import (
+    OPERATOR_ENV_POINTER_FILE,
+    load_operator_env_files,
+)
 from regime_data_fetch.materialization import materialize_if_requested
 from regime_data_fetch.universe import FIXED_UNIVERSE_TREE_NAME
 from regime_detection.engine import RegimeEngine
@@ -379,13 +382,13 @@ def _timed_inflation_growth_builder(
         feature_store: Any,
         credit_funding_active_labels_by_date: Any = None,
     ) -> Any:
-        import regime_detection.axis_builders.series as axis_builder_series
+        import regime_detection.axis_builders.inflation_growth as inflation_growth_builder
 
-        original_assess = axis_builder_series.assess_series_input_quality
+        original_assess = inflation_growth_builder.assess_series_input_quality
         original_build_inputs = (
-            axis_builder_series.build_inflation_growth_rule_inputs_by_date
+            inflation_growth_builder.build_inflation_growth_rule_inputs_by_date
         )
-        original_eval = axis_builder_series.evaluate_inflation_growth_rules
+        original_eval = inflation_growth_builder.evaluate_inflation_growth_rules
 
         def timed_assess(*args: Any, **kwargs: Any) -> Any:
             with timer.measure(
@@ -407,21 +410,21 @@ def _timed_inflation_growth_builder(
             with contextlib.ExitStack() as stack:
                 stack.enter_context(
                     _patched_attr(
-                        axis_builder_series,
+                        inflation_growth_builder,
                         "assess_series_input_quality",
                         timed_assess,
                     )
                 )
                 stack.enter_context(
                     _patched_attr(
-                        axis_builder_series,
+                        inflation_growth_builder,
                         "build_inflation_growth_rule_inputs_by_date",
                         timed_build_inputs,
                     )
                 )
                 stack.enter_context(
                     _patched_attr(
-                        axis_builder_series,
+                        inflation_growth_builder,
                         "evaluate_inflation_growth_rules",
                         timed_eval,
                     )
