@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import datetime as dt
+import argparse
 import json
 from pathlib import Path
 import sqlite3
@@ -27,7 +28,9 @@ from scripts.fetch_regime_engine_v1_data import (
     FETCH_MODE_REGISTRY,
     OPERATOR_ASSISTED_FETCH_MODES,
     UNATTENDED_FETCH_MODES,
+    FetchModeSpec,
     _plan_fetch_mode_execution,
+    _run_unattended_fetch_mode,
     _should_fetch,
 )
 
@@ -877,6 +880,39 @@ def test_fetch_all_conservative_concurrency_batches_only_safe_unattended_modes()
     assert set(concurrent_groups[0].modes).isdisjoint(OPERATOR_ASSISTED_FETCH_MODES)
     assert "market" not in concurrent_groups[0].modes
     assert "daily-ohlcv-constituents-alpaca" not in concurrent_groups[0].modes
+
+
+def test_unattended_fetch_dispatch_uses_registry_invoker(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    called: dict[str, object] = {}
+
+    def fake_invoke(context: fetch_script.FetchModeInvocation) -> Path:
+        called["mode"] = "test-registry-mode"
+        called["out_dir"] = context.out_dir
+        path = tmp_path / "registry-mode-report.json"
+        path.write_text(json.dumps({"paths": {}}))
+        return path
+
+    monkeypatch.setitem(
+        fetch_script.FETCH_MODE_REGISTRY,
+        "test-registry-mode",
+        FetchModeSpec("test-registry-mode", "unattended", invoke=fake_invoke),
+    )
+
+    report_path = _run_unattended_fetch_mode(
+        "test-registry-mode",
+        args=argparse.Namespace(fetch="test-registry-mode"),
+        out_dir=tmp_path,
+        start=dt.date(2026, 5, 1),
+        end=dt.date(2026, 5, 2),
+        acquisition_db_path=None,
+        acquisition_artifact_store_root=None,
+    )
+
+    assert report_path == tmp_path / "registry-mode-report.json"
+    assert called == {"mode": "test-registry-mode", "out_dir": tmp_path}
 
 
 def test_fetch_all_dispatches_only_unattended_modes(

@@ -10,6 +10,7 @@ import json
 from pathlib import Path
 
 import sys
+from collections.abc import Callable
 from typing import Literal
 
 # Allow running as a script without requiring PYTHONPATH/installation.
@@ -59,10 +60,21 @@ FetchModeCategory = Literal["unattended", "operator-assisted"]
 
 
 @dataclass(frozen=True)
+class FetchModeInvocation:
+    args: argparse.Namespace
+    out_dir: Path
+    start: dt.date
+    end: dt.date
+    acquisition_db_path: Path | None
+    acquisition_artifact_store_root: str | None
+
+
+@dataclass(frozen=True)
 class FetchModeSpec:
     name: str
     category: FetchModeCategory
     conservative_concurrent: bool = False
+    invoke: Callable[[FetchModeInvocation], Path] | None = None
 
 
 @dataclass(frozen=True)
@@ -71,20 +83,177 @@ class FetchExecutionGroup:
     concurrent: bool = False
 
 
+def _invoke_market_fetch(context: FetchModeInvocation) -> Path:
+    args = context.args
+    stocks = (
+        _resolve_stock_universe(args, out_dir=context.out_dir)
+        if args.scope in {"v1", "all"}
+        else []
+    )
+    return run_market_fetch(
+        out_dir=context.out_dir,
+        scope=args.scope,
+        stock_symbols=stocks,
+        start=context.start,
+        end=context.end,
+        adjustment=args.adjustment,
+        alpaca_feed=args.alpaca_feed,
+        vix_symbol=args.vix_symbol,
+        allow_vix_proxy=args.allow_vix_proxy,
+        verbose=args.verbose,
+        acquisition_db_path=context.acquisition_db_path,
+        artifact_store_root=context.acquisition_artifact_store_root,
+    )
+
+
+def _invoke_macro_fetch(context: FetchModeInvocation) -> Path:
+    args = context.args
+    return run_macro_fetch(
+        out_dir=context.out_dir,
+        start=context.start,
+        end=context.end,
+        fred_api_key=args.fred_api_key,
+        include_cpi_vintages=args.include_cpi_vintages,
+        acquisition_db_path=context.acquisition_db_path,
+        artifact_store_root=context.acquisition_artifact_store_root,
+    )
+
+
+def _invoke_sentiment_fetch(context: FetchModeInvocation) -> Path:
+    return run_sentiment_fetch(
+        out_dir=context.out_dir,
+        acquisition_db_path=context.acquisition_db_path,
+        artifact_store_root=context.acquisition_artifact_store_root,
+        required=context.args.fetch == "sentiment",
+    )
+
+
+def _invoke_event_fetch(context: FetchModeInvocation) -> Path:
+    args = context.args
+    bls_page_fetcher = None
+    if args.bls_schedule_dir:
+        bls_page_fetcher = build_bls_local_archive_page_fetcher(
+            schedule_dir=Path(args.bls_schedule_dir),
+        )
+    return run_us_event_calendar_fetch(
+        repo_root=REPO_ROOT,
+        fred_api_key=args.fred_api_key or None,
+        bls_page_fetcher=bls_page_fetcher,
+        acquisition_db_path=context.acquisition_db_path,
+        artifact_store_root=context.acquisition_artifact_store_root,
+        bls_start_year=args.bls_start_year,
+        bls_end_year=args.bls_end_year,
+        include_v2_curated_candidates=args.include_v2_curated_event_candidates,
+        as_of_date=context.end,
+    )
+
+
+def _invoke_pmi_fetch(context: FetchModeInvocation) -> Path:
+    args = context.args
+    return run_pmi_fetch(
+        out_dir=context.out_dir,
+        as_of_date=context.end,
+        acquisition_db_path=context.acquisition_db_path,
+        artifact_store_root=context.acquisition_artifact_store_root,
+        manual_history_dir=Path(args.pmi_history_dir) if args.pmi_history_dir else None,
+    )
+
+
+def _invoke_pit_fetch(context: FetchModeInvocation) -> Path:
+    return run_pit_constituents_fetch(
+        out_dir=context.out_dir,
+        acquisition_db_path=context.acquisition_db_path,
+        artifact_store_root=context.acquisition_artifact_store_root,
+    )
+
+
+def _invoke_fomc_fetch(context: FetchModeInvocation) -> Path:
+    return run_fomc_minutes_fetch(
+        out_dir=context.out_dir,
+        acquisition_db_path=context.acquisition_db_path,
+        artifact_store_root=context.acquisition_artifact_store_root,
+    )
+
+
+def _invoke_powell_fetch(context: FetchModeInvocation) -> Path:
+    return run_powell_speeches_fetch(
+        out_dir=context.out_dir,
+        acquisition_db_path=context.acquisition_db_path,
+        artifact_store_root=context.acquisition_artifact_store_root,
+    )
+
+
+def _invoke_cleveland_fed_nowcast_fetch(context: FetchModeInvocation) -> Path:
+    return run_cleveland_fed_nowcast_fetch(
+        out_dir=context.out_dir,
+        acquisition_db_path=context.acquisition_db_path,
+        artifact_store_root=context.acquisition_artifact_store_root,
+    )
+
+
+def _invoke_sf_fed_news_sentiment_fetch(context: FetchModeInvocation) -> Path:
+    return run_sf_fed_news_sentiment_fetch(
+        out_dir=context.out_dir,
+        acquisition_db_path=context.acquisition_db_path,
+        artifact_store_root=context.acquisition_artifact_store_root,
+    )
+
+
+def _invoke_constituent_daily_ohlcv_fetch(context: FetchModeInvocation) -> Path:
+    args = context.args
+    if not context.acquisition_db_path:
+        raise SystemExit("--acquisition-db is required for daily-ohlcv-constituents-alpaca fetches")
+    pit_parquet_path = (
+        Path(args.pit_parquet)
+        if args.pit_parquet
+        else context.out_dir / "pit_constituents" / "sp500_ticker_intervals.parquet"
+    )
+    return run_alpaca_constituent_daily_ohlcv_fetch(
+        out_dir=context.out_dir,
+        pit_parquet_path=pit_parquet_path,
+        start=context.start,
+        end=context.end,
+        adjustment=args.adjustment,
+        alpaca_feed=args.alpaca_feed,
+        acquisition_db_path=context.acquisition_db_path,
+        artifact_store_root=context.acquisition_artifact_store_root,
+        allow_missing_symbols=args.allow_missing_constituent_symbols,
+        fixed_universe_symbols=_load_json_symbol_list(Path(args.universe_json)) if args.universe_json else None,
+        fixed_universe_dir=Path(args.constituent_universe_dir) if args.constituent_universe_dir else None,
+        allow_pit_universe=args.allow_pit_constituent_universe,
+        expected_universe_count=args.constituent_universe_expected_count,
+        verbose=args.verbose,
+    )
+
+
 FETCH_MODE_REGISTRY = {
     spec.name: spec
     for spec in (
-        FetchModeSpec("market", "unattended"),
-        FetchModeSpec("macro", "unattended", conservative_concurrent=True),
-        FetchModeSpec("sentiment", "unattended", conservative_concurrent=True),
-        FetchModeSpec("events", "unattended", conservative_concurrent=True),
-        FetchModeSpec("pmi", "unattended", conservative_concurrent=True),
-        FetchModeSpec("pit", "unattended", conservative_concurrent=True),
-        FetchModeSpec("fomc", "unattended", conservative_concurrent=True),
-        FetchModeSpec("powell", "unattended", conservative_concurrent=True),
-        FetchModeSpec("cleveland-fed-nowcast", "unattended", conservative_concurrent=True),
-        FetchModeSpec("sf-fed-news-sentiment", "unattended", conservative_concurrent=True),
-        FetchModeSpec("daily-ohlcv-constituents-alpaca", "unattended"),
+        FetchModeSpec("market", "unattended", invoke=_invoke_market_fetch),
+        FetchModeSpec("macro", "unattended", conservative_concurrent=True, invoke=_invoke_macro_fetch),
+        FetchModeSpec("sentiment", "unattended", conservative_concurrent=True, invoke=_invoke_sentiment_fetch),
+        FetchModeSpec("events", "unattended", conservative_concurrent=True, invoke=_invoke_event_fetch),
+        FetchModeSpec("pmi", "unattended", conservative_concurrent=True, invoke=_invoke_pmi_fetch),
+        FetchModeSpec("pit", "unattended", conservative_concurrent=True, invoke=_invoke_pit_fetch),
+        FetchModeSpec("fomc", "unattended", conservative_concurrent=True, invoke=_invoke_fomc_fetch),
+        FetchModeSpec("powell", "unattended", conservative_concurrent=True, invoke=_invoke_powell_fetch),
+        FetchModeSpec(
+            "cleveland-fed-nowcast",
+            "unattended",
+            conservative_concurrent=True,
+            invoke=_invoke_cleveland_fed_nowcast_fetch,
+        ),
+        FetchModeSpec(
+            "sf-fed-news-sentiment",
+            "unattended",
+            conservative_concurrent=True,
+            invoke=_invoke_sf_fed_news_sentiment_fetch,
+        ),
+        FetchModeSpec(
+            "daily-ohlcv-constituents-alpaca",
+            "unattended",
+            invoke=_invoke_constituent_daily_ohlcv_fetch,
+        ),
         FetchModeSpec("eps", "operator-assisted"),
         FetchModeSpec("eps-spglobal-auto", "operator-assisted"),
         FetchModeSpec("eps-wayback", "operator-assisted"),
@@ -568,130 +737,19 @@ def _run_unattended_fetch_mode(
     acquisition_db_path: Path | None,
     acquisition_artifact_store_root: str | None,
 ) -> Path:
-    if mode == "market":
-        stocks = _resolve_stock_universe(args, out_dir=out_dir) if args.scope in {"v1", "all"} else []
-        return run_market_fetch(
-            out_dir=out_dir,
-            scope=args.scope,
-            stock_symbols=stocks,
-            start=start,
-            end=end,
-            adjustment=args.adjustment,
-            alpaca_feed=args.alpaca_feed,
-            vix_symbol=args.vix_symbol,
-            allow_vix_proxy=args.allow_vix_proxy,
-            verbose=args.verbose,
-            acquisition_db_path=acquisition_db_path,
-            artifact_store_root=acquisition_artifact_store_root,
-        )
-
-    if mode == "macro":
-        return run_macro_fetch(
+    spec = FETCH_MODE_REGISTRY.get(mode)
+    if spec is None or spec.category != "unattended" or spec.invoke is None:
+        raise RuntimeError(f"Unsupported unattended fetch mode: {mode}")
+    return spec.invoke(
+        FetchModeInvocation(
+            args=args,
             out_dir=out_dir,
             start=start,
             end=end,
-            fred_api_key=args.fred_api_key,
-            include_cpi_vintages=args.include_cpi_vintages,
             acquisition_db_path=acquisition_db_path,
-            artifact_store_root=acquisition_artifact_store_root,
+            acquisition_artifact_store_root=acquisition_artifact_store_root,
         )
-
-    if mode == "sentiment":
-        return run_sentiment_fetch(
-            out_dir=out_dir,
-            acquisition_db_path=acquisition_db_path,
-            artifact_store_root=acquisition_artifact_store_root,
-            required=args.fetch == "sentiment",
-        )
-
-    if mode == "events":
-        bls_page_fetcher = None
-        if args.bls_schedule_dir:
-            bls_page_fetcher = build_bls_local_archive_page_fetcher(
-                schedule_dir=Path(args.bls_schedule_dir),
-            )
-        return run_us_event_calendar_fetch(
-            repo_root=REPO_ROOT,
-            fred_api_key=args.fred_api_key or None,
-            bls_page_fetcher=bls_page_fetcher,
-            acquisition_db_path=acquisition_db_path,
-            artifact_store_root=acquisition_artifact_store_root,
-            bls_start_year=args.bls_start_year,
-            bls_end_year=args.bls_end_year,
-            include_v2_curated_candidates=args.include_v2_curated_event_candidates,
-            as_of_date=end,
-        )
-
-    if mode == "pmi":
-        return run_pmi_fetch(
-            out_dir=out_dir,
-            as_of_date=end,
-            acquisition_db_path=acquisition_db_path,
-            artifact_store_root=acquisition_artifact_store_root,
-            manual_history_dir=Path(args.pmi_history_dir) if args.pmi_history_dir else None,
-        )
-
-    if mode == "pit":
-        return run_pit_constituents_fetch(
-            out_dir=out_dir,
-            acquisition_db_path=acquisition_db_path,
-            artifact_store_root=acquisition_artifact_store_root,
-        )
-
-    if mode == "fomc":
-        return run_fomc_minutes_fetch(
-            out_dir=out_dir,
-            acquisition_db_path=acquisition_db_path,
-            artifact_store_root=acquisition_artifact_store_root,
-        )
-
-    if mode == "powell":
-        return run_powell_speeches_fetch(
-            out_dir=out_dir,
-            acquisition_db_path=acquisition_db_path,
-            artifact_store_root=acquisition_artifact_store_root,
-        )
-
-    if mode == "cleveland-fed-nowcast":
-        return run_cleveland_fed_nowcast_fetch(
-            out_dir=out_dir,
-            acquisition_db_path=acquisition_db_path,
-            artifact_store_root=acquisition_artifact_store_root,
-        )
-
-    if mode == "sf-fed-news-sentiment":
-        return run_sf_fed_news_sentiment_fetch(
-            out_dir=out_dir,
-            acquisition_db_path=acquisition_db_path,
-            artifact_store_root=acquisition_artifact_store_root,
-        )
-
-    if mode == "daily-ohlcv-constituents-alpaca":
-        if not acquisition_db_path:
-            raise SystemExit("--acquisition-db is required for daily-ohlcv-constituents-alpaca fetches")
-        pit_parquet_path = (
-            Path(args.pit_parquet)
-            if args.pit_parquet
-            else out_dir / "pit_constituents" / "sp500_ticker_intervals.parquet"
-        )
-        return run_alpaca_constituent_daily_ohlcv_fetch(
-            out_dir=out_dir,
-            pit_parquet_path=pit_parquet_path,
-            start=start,
-            end=end,
-            adjustment=args.adjustment,
-            alpaca_feed=args.alpaca_feed,
-            acquisition_db_path=acquisition_db_path,
-            artifact_store_root=acquisition_artifact_store_root,
-            allow_missing_symbols=args.allow_missing_constituent_symbols,
-            fixed_universe_symbols=_load_json_symbol_list(Path(args.universe_json)) if args.universe_json else None,
-            fixed_universe_dir=Path(args.constituent_universe_dir) if args.constituent_universe_dir else None,
-            allow_pit_universe=args.allow_pit_constituent_universe,
-            expected_universe_count=args.constituent_universe_expected_count,
-            verbose=args.verbose,
-        )
-
-    raise RuntimeError(f"Unsupported unattended fetch mode: {mode}")
+    )
 
 
 def _resolve_stock_universe(args: argparse.Namespace, *, out_dir: Path) -> list[str]:
