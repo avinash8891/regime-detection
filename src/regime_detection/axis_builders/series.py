@@ -28,6 +28,9 @@ from regime_detection.hysteresis import (
     apply_asymmetric_hysteresis,
     apply_per_label_asymmetric_hysteresis,
 )
+from regime_detection.axis_builders.volume_liquidity import (
+    build_volume_liquidity_axis_series as build_volume_liquidity_axis_series,
+)
 from regime_detection.inflation_growth import (
     INFLATION_GROWTH_RISK_RANK,
     InflationGrowthLabel,
@@ -42,7 +45,6 @@ from regime_detection.models import (
     InflationGrowthOutput,
     MonetaryPressureV2Output,
     NetworkFragilityOutput,
-    VolumeLiquidityStateOutput,
 )
 from regime_detection.monetary_pressure import (
     MONETARY_PRESSURE_V2_RISK_RANK,
@@ -68,12 +70,6 @@ from regime_detection.trend_direction import (
 from regime_detection.volatility_state import (
     _RISK_RANK as VOLATILITY_RISK_RANK,
     build_raw_outputs as build_volatility_raw_outputs,
-)
-from regime_detection.volume_liquidity_rules import (
-    VOLUME_LIQUIDITY_RISK_RANK,
-    VolumeLiquidityLabel,
-    VolumeLiquidityRuleInputs,
-    evaluate_rules as evaluate_volume_liquidity_rules,
 )
 
 if TYPE_CHECKING:
@@ -109,8 +105,6 @@ TREND_CHARACTER_REQUIRED_TRADING_DAYS = 63
 VOLATILITY_REQUIRED_TRADING_DAYS = 252
 # V1 breadth ETF-proxy quality gate uses the existing 50-session calibration.
 BREADTH_REQUIRED_TRADING_DAYS = 50
-# V2 §1E volume/liquidity gate follows the existing 20d z-score cold start.
-VOLUME_LIQUIDITY_REQUIRED_TRADING_DAYS = 20
 # V2 §2A feature series already encode their longer warm-ups as NaN.
 MONETARY_PRESSURE_REQUIRED_TRADING_DAYS = 1
 
@@ -529,176 +523,6 @@ def build_network_fragility_axis_series(
         strict=True,
     ):
         outputs[day] = NetworkFragilityOutput(
-            raw_label=raw,
-            stable_label=stable,
-            active_label=active,
-            evidence=evidence,
-            data_quality=dq,
-        )
-    return outputs
-
-
-def build_volume_liquidity_axis_series(
-    context: MarketContext,
-    feature_store: FeatureStore,
-) -> dict[date, VolumeLiquidityStateOutput] | None:
-    """V2 §1E volume/liquidity axis classifier (Slice 2.7).
-
-    Pipeline:
-
-      1. Read pre-computed ``volume_zscore_20d`` from
-         ``feature_store.volume_liquidity_v2`` (slice 2.4). If the seam
-         is None (no v2 config / no volume column) return None — the
-         timeline then leaves ``RegimeOutput.volume_liquidity_state``
-         as ``None`` and the V1 wire contract is preserved.
-      2. Pull ``return_1d`` from the V1 ``feature_store.volatility``
-         (single source of truth — see Ambiguity Log #42).
-      3. Per session, assess data quality (``assess_series_input_quality``
-         + ``quality_forces_unknown``). Quality failures force ``unknown``.
-      4. Evaluate ``volume_liquidity_rules.evaluate_rules`` to produce
-         the raw label per §1E precedence
-         (``panic_volume > liquidity_gap_behavior > normal_volume > unknown``).
-      5. Apply per-label asymmetric hysteresis (Ambiguity Log #41).
-      6. Emit one ``VolumeLiquidityStateOutput`` per session.
-    """
-    volume_features = feature_store.volume_liquidity_v2
-    if volume_features is None:
-        return None
-
-    volume_liquidity_config = context.config.volume_liquidity_state
-    if volume_liquidity_config is None:
-        # Defensive: feature seam present but classifier config missing.
-        return None
-
-    # `return_1d` is the V1 single source of truth (Ambiguity Log #42).
-    # The slice-2.4 volume_zscore_20d feature shares the SPY index with
-    # the V1 volatility features, so direct .loc access on the same dt
-    # is safe — no reindex needed.
-    return_1d_series = feature_store.volatility.return_1d
-    volume_zscore_series = volume_features.volume_zscore_20d
-
-    # v2 §1E line 278/279 + Log #40 closure — read the two 252d
-    # percentiles for the `liquidity_gap_behavior` predicate from the
-    # §1C volatility_state_v2 seam. When that seam is absent (V1-only
-    # callers), these stay None and the rule falls through to
-    # normal_volume / unknown as before (no NaN-mask change).
-    volatility_v2 = feature_store.volatility_state_v2
-    gap_freq_pct_series: pd.Series | None = None
-    intraday_pct_series: pd.Series | None = None
-    if volatility_v2 is not None:
-        gap_freq_pct_series = volatility_v2.gap_frequency_percentile_252d
-        intraday_pct_series = volatility_v2.intraday_range_percentile_252d
-
-    required_inputs: list[pd.Series] = [
-        volume_zscore_series,
-        return_1d_series,
-    ]
-    # The 20d z-score is the binding cold-start window. Once it has
-    # 20 sessions of data the rules can fire; the engine's outer
-    # ENGINE_MINIMUM_HISTORY (320) already comfortably exceeds this.
-    required_trading_days = VOLUME_LIQUIDITY_REQUIRED_TRADING_DAYS
-    max_freshness_days = context.config.data_quality.max_freshness_days
-    min_completeness = context.config.data_quality.min_completeness
-
-    raw_labels: list[VolumeLiquidityLabel] = []
-    per_day_data_quality: list[DataQuality] = []
-    per_day_evidence: list[dict[str, object]] = []
-
-    for day in context.sessions:
-        dt = pd.Timestamp(day)
-
-        day_quality = assess_series_input_quality(
-            as_of_date=day,
-            required_inputs=required_inputs,
-            required_trading_days=required_trading_days,
-            raw_label="",
-            max_freshness_days=max_freshness_days,
-            min_completeness=min_completeness,
-            skip_raw_label_short_circuit=True,
-        )
-
-        if quality_forces_unknown(day_quality):
-            raw_labels.append("unknown")
-            per_day_data_quality.append(day_quality)
-            per_day_evidence.append(
-                {"reason": day_quality.reason or "insufficient_data"}
-            )
-            continue
-
-        # NaN-safe scalar materialization. Log #40 closure: the two
-        # 252d percentile inputs for `liquidity_gap_behavior` now read
-        # from `feature_store.volatility_state_v2` when that seam is
-        # lit; otherwise they stay NaN and the rule falsifies per V1
-        # §2.7 cold-start.
-        volume_zscore_20d = (
-            float(volume_zscore_series.loc[dt])
-            if dt in volume_zscore_series.index
-            else float("nan")
-        )
-        return_1d = (
-            float(return_1d_series.loc[dt])
-            if dt in return_1d_series.index
-            else float("nan")
-        )
-        gap_freq_pct = (
-            float(gap_freq_pct_series.loc[dt])
-            if gap_freq_pct_series is not None and dt in gap_freq_pct_series.index
-            else float("nan")
-        )
-        intraday_pct = (
-            float(intraday_pct_series.loc[dt])
-            if intraday_pct_series is not None and dt in intraday_pct_series.index
-            else float("nan")
-        )
-
-        inputs = VolumeLiquidityRuleInputs(
-            volume_zscore_20d=volume_zscore_20d,
-            return_1d=return_1d,
-            gap_frequency_percentile_252d=gap_freq_pct,
-            intraday_range_percentile_252d=intraday_pct,
-        )
-        label = evaluate_volume_liquidity_rules(
-            inputs=inputs,
-            config=volume_liquidity_config.rules,
-        )
-        raw_labels.append(label)
-        per_day_data_quality.append(day_quality)
-        # Round evidence floats to 8 significant digits to absorb
-        # pandas-rolling accumulation drift that depends on the size
-        # of the input window slice (the same as-of-day value can
-        # differ at ~1e-11 between callers that pre-slice the context
-        # at different lookbacks). 8 sig-figs is well above any
-        # threshold the rules care about (2.0 / -0.02) but trims the
-        # noise so the wire is reproducible across call paths.
-        per_day_evidence.append(
-            {
-                "rule_evidence": {
-                    "volume_zscore_20d": float(f"{volume_zscore_20d:.8g}"),
-                    "return_1d": float(f"{return_1d:.8g}"),
-                    "gap_frequency_percentile_252d": float(f"{gap_freq_pct:.8g}"),
-                    "intraday_range_percentile_252d": float(f"{intraday_pct:.8g}"),
-                },
-            }
-        )
-
-    stable_labels, active_labels = apply_per_label_asymmetric_hysteresis(
-        raw_labels=raw_labels,
-        risk_rank=VOLUME_LIQUIDITY_RISK_RANK,
-        deescalation_days_by_label=volume_liquidity_config.deescalation_days_by_label,
-        default_deescalation_days=volume_liquidity_config.default_deescalation_days,
-    )
-
-    outputs: dict[date, VolumeLiquidityStateOutput] = {}
-    for day, raw, stable, active, dq, evidence in zip(
-        context.sessions,
-        raw_labels,
-        stable_labels,
-        active_labels,
-        per_day_data_quality,
-        per_day_evidence,
-        strict=True,
-    ):
-        outputs[day] = VolumeLiquidityStateOutput(
             raw_label=raw,
             stable_label=stable,
             active_label=active,
