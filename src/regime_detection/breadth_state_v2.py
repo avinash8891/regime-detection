@@ -47,6 +47,11 @@ import pandas as pd
 
 from regime_detection.config import BreadthV2Config
 from regime_detection.fragility_universe import SECTOR_ETFS
+from regime_shared.pit_provenance import (
+    BIAS_WARNING as _PIT_BIAS_WARNING_CODE,
+    SOURCE_NAME as _PIT_BIAS_SOURCE,
+    SOURCE_URL as _PIT_BIAS_SOURCE_URL,
+)
 
 
 # PIT feature names in spec order (v2 §1D lines 207-237).
@@ -59,12 +64,6 @@ _PIT_FEATURE_NAMES: tuple[str, ...] = (
     "upvol_downvol_ratio",
     "breadth_thrust",
 )
-
-# Bias-warning provenance: local duplicates avoid an acquisition-layer
-# dependency while preserving the published PIT provenance contract exactly.
-_PIT_BIAS_WARNING_CODE = "survivorship_biased_constituent_universe"
-_PIT_BIAS_SOURCE = "fja05680/sp500"
-_PIT_BIAS_SOURCE_URL = "https://raw.githubusercontent.com/fja05680/sp500/master/sp500_ticker_start_end.csv"
 
 # breadth_thrust 10-session rolling mean window (v2 §1D line 231-237).
 _BREADTH_THRUST_WINDOW = 10

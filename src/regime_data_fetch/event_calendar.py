@@ -4,13 +4,11 @@ import datetime as dt
 import json
 from collections import Counter
 from collections.abc import Callable, Mapping
-from dataclasses import dataclass
 from pathlib import Path
 import re
 from urllib.error import URLError
 from urllib.request import Request, urlopen
 
-import pandas_market_calendars as mcal
 import pandas as pd
 import yaml
 
@@ -24,6 +22,29 @@ from regime_data_fetch.event_calendar_reporting import (
     build_group_b_report,
     report_path as format_report_path,
 )
+from regime_data_fetch.event_calendar_global_rate_parsers import (
+    global_rate_event as _global_rate_event,
+    global_rate_source_name as _global_rate_source_name,
+    midnight_et as _midnight_et,
+    parse_boe_decision_events as _parse_boe_decision_events,
+    parse_boj_decision_events as _parse_boj_decision_events,
+    parse_ecb_decision_events as _parse_ecb_decision_events,
+    parse_global_rate_decision_events as _parse_global_rate_decision_events,
+)
+from regime_data_fetch.event_calendar_models import (
+    EventCalendarFetchError,
+    EventLabelResolution,
+    GroupABuildResult,
+    ScheduledEvent,
+    US_EASTERN,
+)
+from regime_data_fetch.event_calendar_rendering import (
+    render_events_yaml as _render_events_yaml,
+)
+from regime_data_fetch.event_calendar_windows import (
+    expand_nyse_window_for_scheduled_event as _expand_nyse_window_for_scheduled_event,
+    us_general_election_date as _us_general_election_date,
+)
 from regime_data_fetch.expiry_calendar import expand_trading_day_window, compute_monthly_options_expiry_anchor
 from regime_data_fetch.fomc_minutes import (
     fetch_fomc_historical_year_index,
@@ -35,7 +56,6 @@ from regime_data_fetch.fomc_minutes import (
     parse_fomc_minutes_listing,
 )
 
-US_EASTERN = dt.timezone(dt.timedelta(hours=-5))
 SOURCE_FOMC = "federalreserve.gov:fomccalendars"
 SOURCE_CPI = "bls.gov:schedule:consumer-price-index"
 SOURCE_NFP = "bls.gov:schedule:employment-situation"
@@ -45,7 +65,6 @@ SOURCE_BOJ = _global_rates.SOURCE_BOJ
 SOURCE_FEC = "fec.gov:election-dates"
 SOURCE_US_BUDGET = "usa.gov:federal-budget-process"
 _FOMC_MINUTES_LINK_RE = re.compile(r"/monetarypolicy/fomcminutes(?P<meeting_end>\d{8})\.htm", flags=re.IGNORECASE)
-_NYSE = mcal.get_calendar("NYSE")
 _GLOBAL_RATE_URLS = _global_rates.GLOBAL_RATE_URLS
 _BLS_OFFICIAL_CANCELED_RELEASE_COUNTS = {
     # BLS 2025 lapse page: October 2025 CPI and Employment Situation
@@ -79,37 +98,18 @@ SCHEDULED_EVENT_WINDOWS: dict[str, tuple[str, int, int]] = {
     "BOJ_decision": ("global_rate_decision", 0, 0),
 }
 
-
-class EventCalendarFetchError(RuntimeError):
-    pass
-
-
-@dataclass(frozen=True)
-class ScheduledEvent:
-    date: dt.date
-    release_timestamp_et: dt.datetime
-    market: str
-    type: str
-    importance: str
-    source: str
-    window_days: tuple[int, int] | None = None
-    approved_label: str | None = None
-
-
-@dataclass(frozen=True)
-class EventLabelResolution:
-    all_matching_events: list[str]
-    selected_via_precedence: str
-
-
-@dataclass(frozen=True)
-class GroupABuildResult:
-    scheduled_events: list[ScheduledEvent]
-    candidates: list[object]
-    validations: list[object]
-    decisions: list[object]
-    output_paths: dict[str, Path]
-    approval_overlay: list[object] | None = None
+__all__ = [
+    "_expand_nyse_window_for_scheduled_event",
+    "_global_rate_event",
+    "_global_rate_source_name",
+    "_midnight_et",
+    "_parse_boe_decision_events",
+    "_parse_boj_decision_events",
+    "_parse_ecb_decision_events",
+    "_parse_global_rate_decision_events",
+    "_render_events_yaml",
+    "_us_general_election_date",
+]
 
 
 def fetch_bls_release_timestamp(release_date: dt.date) -> dt.datetime:
@@ -798,102 +798,3 @@ def _build_url_text_fetcher(url: str) -> Callable[[], str]:
             return ""
 
     return fetch
-
-
-def _parse_global_rate_decision_events(*, source_key: str, text: str) -> list[ScheduledEvent]:
-    try:
-        decisions = _global_rates.parse_global_rate_decision_events(source_key=source_key, text=text)
-    except _global_rates.UnsupportedGlobalRateSource as exc:
-        raise EventCalendarFetchError(str(exc)) from None
-    return [_global_rate_event(decision.date, decision.event_type, decision.source) for decision in decisions]
-
-
-def _parse_ecb_decision_events(text: str) -> list[ScheduledEvent]:
-    return [
-        _global_rate_event(decision.date, decision.event_type, decision.source)
-        for decision in _global_rates.parse_ecb_decision_events(text)
-    ]
-
-
-def _parse_boe_decision_events(text: str) -> list[ScheduledEvent]:
-    return [
-        _global_rate_event(decision.date, decision.event_type, decision.source)
-        for decision in _global_rates.parse_boe_decision_events(text)
-    ]
-
-
-def _parse_boj_decision_events(text: str) -> list[ScheduledEvent]:
-    return [
-        _global_rate_event(decision.date, decision.event_type, decision.source)
-        for decision in _global_rates.parse_boj_decision_events(text)
-    ]
-
-
-def _global_rate_event(event_date: dt.date, event_type: str, source: str) -> ScheduledEvent:
-    return ScheduledEvent(
-        date=event_date,
-        release_timestamp_et=_midnight_et(event_date),
-        market="GLOBAL",
-        type=event_type,
-        importance="high",
-        source=source,
-    )
-
-
-def _global_rate_source_name(source_key: str) -> str:
-    return _global_rates.global_rate_source_name(source_key)
-
-
-def _us_general_election_date(year: int) -> dt.date:
-    first_november = dt.date(year, 11, 1)
-    days_until_monday = (0 - first_november.weekday()) % 7
-    first_monday = first_november + dt.timedelta(days=days_until_monday)
-    return first_monday + dt.timedelta(days=1)
-
-
-def _midnight_et(value: dt.date) -> dt.datetime:
-    return dt.datetime(value.year, value.month, value.day, 0, 0, tzinfo=US_EASTERN)
-
-
-def _render_events_yaml(events: list[ScheduledEvent]) -> str:
-    lines = ["events:"]
-    for event in events:
-        lines.extend(
-            [
-                f'  - date: "{event.date.isoformat()}"',
-                f'    release_timestamp_et: "{event.release_timestamp_et.isoformat()}"',
-                f'    market: "{event.market}"',
-                f'    type: "{event.type}"',
-                f'    importance: "{event.importance}"',
-                f'    source: "{event.source}"',
-            ]
-        )
-        if event.window_days is not None:
-            lines.append(f"    window_days: [{event.window_days[0]}, {event.window_days[1]}]")
-        if event.approved_label is not None:
-            lines.append(f'    approved_label: "{event.approved_label}"')
-    return "\n".join(lines) + "\n"
-
-
-def _expand_nyse_window_for_scheduled_event(
-    *,
-    anchor_date: dt.date,
-    lookback_trading_days: int,
-    lookahead_trading_days: int,
-) -> list[dt.date]:
-    start_date = anchor_date - dt.timedelta(days=14)
-    end_date = anchor_date + dt.timedelta(days=14)
-    schedule = _NYSE.schedule(start_date.isoformat(), end_date.isoformat())
-    trading_days = [index.date() for index in schedule.index]
-    try:
-        anchor_idx = trading_days.index(anchor_date)
-    except ValueError as exc:
-        raise EventCalendarFetchError(f"Scheduled event date {anchor_date.isoformat()} is not an NYSE trading day") from exc
-
-    window_start = anchor_idx - lookback_trading_days
-    window_end = anchor_idx + lookahead_trading_days
-    if window_start < 0 or window_end >= len(trading_days):
-        raise EventCalendarFetchError(
-            f"NYSE window [{lookback_trading_days}, {lookahead_trading_days}] around {anchor_date.isoformat()} exceeded available trading-day slice"
-        )
-    return trading_days[window_start : window_end + 1]

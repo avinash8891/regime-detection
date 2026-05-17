@@ -143,6 +143,15 @@ def test_default_feature_store_builder_registry_orders_trend_news_before_trend_v
     assert builder_names.index("news_sentiment_score") < builder_names.index(
         "trend_direction_v2"
     )
+    assert builder_names.index("volatility_state_v2") < builder_names.index(
+        "breadth_state_v2"
+    )
+    assert builder_names.index("volatility_state_v2") < builder_names.index(
+        "realized_vol_21d"
+    )
+    assert builder_names.index("breadth_state_v2") < builder_names.index(
+        "realized_vol_21d"
+    )
 
 
 def test_feature_store_registry_preserves_trend_and_news_outputs(

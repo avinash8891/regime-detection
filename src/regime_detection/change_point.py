@@ -131,7 +131,7 @@ def compute_change_point_features(
 
     try:
         posterior_arr = _bocpd_posterior_changepoint_prob(data=data, config=config)
-    except Exception as exc:  # noqa: BLE001
+    except ArithmeticError as exc:
         _LOGGER.warning(
             "BOCPD online_changepoint_detection failed; "
             "change_point seam returns None: %s",

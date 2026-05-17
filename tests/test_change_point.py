@@ -165,6 +165,31 @@ def test_compute_change_point_features_returns_none_on_zero_variance_input() -> 
     assert result is None
 
 
+def test_compute_change_point_features_returns_none_on_numeric_instability(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import regime_detection.change_point as change_point
+
+    series = _synthetic_two_regime_realized_vol(
+        n_sessions=1500, shift_index=750, seed=0
+    )
+    cfg = _default_change_point_config(training_window_days=1260)
+
+    def raise_floating_point_error(*, data: np.ndarray, config: ChangePointConfig) -> np.ndarray:
+        del data, config
+        raise FloatingPointError("singular predictive")
+
+    monkeypatch.setattr(
+        change_point,
+        "_bocpd_posterior_changepoint_prob",
+        raise_floating_point_error,
+    )
+
+    result = compute_change_point_features(realized_vol_21d=series, config=cfg)
+
+    assert result is None
+
+
 def test_bocpd_adapter_calls_expected_dependency_api(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

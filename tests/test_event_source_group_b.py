@@ -9,7 +9,10 @@ import zipfile
 
 import pytest
 
-from regime_data_fetch.event_calendar import GroupABuildResult, _build_group_b_report
+from regime_data_fetch.event_calendar import GroupABuildResult
+from regime_data_fetch.event_calendar_reporting import (
+    build_group_b_report,
+)
 from regime_data_fetch.event_sources.approvals import (
     append_approval_record,
     load_approval_overlay,
@@ -42,6 +45,14 @@ from regime_data_fetch.event_sources.validators_gpr_gdelt import (
     parse_hdx_hapi_conflict_events,
     parse_ucdp_events,
 )
+
+
+def _build_group_b_report(result: GroupABuildResult) -> dict[str, object]:
+    return build_group_b_report(
+        candidates=result.candidates,
+        decisions=result.decisions,
+        approval_overlay=result.approval_overlay,
+    )
 
 
 def test_deterministic_budget_emits_fy_deadline_rows_on_nyse_sessions() -> None:
@@ -348,6 +359,45 @@ def test_gpr_gdelt_generator_records_source_status_for_fetch_failures() -> None:
     assert generator.last_source_statuses["gpr:caldara-iacoviello"].status == "failed"
     assert generator.last_source_statuses["gpr:caldara-iacoviello"].error == "gpr timed out"
     assert generator.last_source_statuses["gdelt:events-v2"].status == "empty"
+    assert generator.last_run_status == "partial"
+
+
+def test_gpr_gdelt_generator_records_direct_gdelt_fetch_failure() -> None:
+    gpr_csv = """date,gpr
+2022-02-20,100
+2022-02-21,101
+2022-02-22,99
+2022-02-23,101
+2022-02-24,500
+2022-02-25,120
+"""
+
+    def failing_gdelt_fetcher() -> str:
+        raise TimeoutError("gdelt timed out")
+
+    generator = GPRGDELTSignalGenerator(
+        gpr_fetcher=lambda: gpr_csv,
+        gdelt_fetcher=failing_gdelt_fetcher,
+        acled_fetcher=lambda _start_year, _end_year: None,
+        ucdp_fetcher=lambda _start_year, _end_year: None,
+        hdx_hapi_fetcher=lambda _start_year, _end_year: None,
+        min_history_days=3,
+        stddev_threshold=2.0,
+    )
+
+    candidates = generator.generate(
+        start_year=2022, end_year=2022, store=None, run_id=None
+    )
+
+    assert [(candidate.date, candidate.source_id) for candidate in candidates] == [
+        (dt.date(2022, 2, 24), "gpr:caldara-iacoviello")
+    ]
+    assert generator.last_source_statuses["gpr:caldara-iacoviello"].status == "ok"
+    assert generator.last_source_statuses["gdelt:events-v2"].status == "failed"
+    assert (
+        generator.last_source_statuses["gdelt:events-v2"].error
+        == "gdelt timed out"
+    )
     assert generator.last_run_status == "partial"
 
 

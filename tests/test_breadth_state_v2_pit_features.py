@@ -41,7 +41,7 @@ from regime_detection.fragility_universe import SECTOR_ETFS
 # would let the two homes drift silently (AGENTS rule B).
 # ---------------------------------------------------------------------------
 
-from regime_data_fetch.pit_constituents import (  # noqa: E402
+from regime_shared.pit_provenance import (  # noqa: E402
     BIAS_WARNING as _PIT_BIAS_WARNING,
     SOURCE_NAME as _PIT_SOURCE,
     SOURCE_URL as _PIT_SOURCE_URL,

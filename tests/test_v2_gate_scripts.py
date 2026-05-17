@@ -101,6 +101,76 @@ def test_gate_scripts_parse_allow_session_errors_flag(
     assert module._parse_args().allow_session_errors is True
 
 
+def test_shadow_ab_classify_per_session_continues_after_runtime_error() -> None:
+    sessions = [pd.Timestamp("2026-05-12").date(), pd.Timestamp("2026-05-13").date()]
+    market_data = pd.DataFrame(
+        {
+            "date": pd.to_datetime(["2026-05-12", "2026-05-13"]),
+            "close": [100.0, 101.0],
+        }
+    )
+
+    class Output:
+        trend_direction = AxisOutput(
+            raw_label="up",
+            stable_label="up",
+            active_label="up",
+            evidence={},
+            data_quality=DataQuality(status="ok", freshness_days=0, completeness=1.0),
+        )
+        trend_character = trend_direction
+        volatility_state = trend_direction
+        breadth_state = trend_direction
+        transition_risk = type("TransitionRisk", (), {"label": "none", "score": None})()
+        agent_routing = None
+        change_point = None
+        credit_funding_state = None
+        credit_funding_effective_state = None
+        inflation_growth_state = None
+        cluster = None
+        monetary_pressure_state = None
+        volume_liquidity_state = None
+        network_fragility = None
+
+    class Engine:
+        def classify(self, **kwargs):
+            if kwargs["as_of_date"] == sessions[0]:
+                raise RuntimeError("insufficient window")
+            return Output()
+
+    v1_records, v2_records, errors = run_v2_shadow_ab_gate._classify_per_session(
+        engine=Engine(),
+        sessions=sessions,
+        market_data=market_data,
+        v2_kwargs=None,
+        mode_label="test",
+    )
+
+    assert errors == 1
+    assert list(v1_records) == [sessions[1]]
+    assert list(v2_records) == [sessions[1]]
+
+
+def test_shadow_ab_classify_per_session_propagates_programmer_errors() -> None:
+    sessions = [pd.Timestamp("2026-05-12").date()]
+    market_data = pd.DataFrame(
+        {"date": pd.to_datetime(["2026-05-12"]), "close": [100.0]}
+    )
+
+    class Engine:
+        def classify(self, **_kwargs):
+            raise TypeError("bad call shape")
+
+    with pytest.raises(TypeError, match="bad call shape"):
+        run_v2_shadow_ab_gate._classify_per_session(
+            engine=Engine(),
+            sessions=sessions,
+            market_data=market_data,
+            v2_kwargs=None,
+            mode_label="test",
+        )
+
+
 def _write_v2_gate_parquets(tmp_path: Path) -> tuple[Path, Path]:
     fixture_root = Path(__file__).resolve().parent / "fixtures" / "raw" / "v2"
     daily = pd.read_csv(fixture_root / "daily_ohlcv.csv")

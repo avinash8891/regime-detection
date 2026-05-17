@@ -192,7 +192,7 @@ def _classify_per_session(
             kwargs.update(v2_kwargs)
         try:
             output = engine.classify(**kwargs)
-        except Exception as exc:
+        except (ValueError, RuntimeError) as exc:
             errors += 1
             logger.warning(
                 "[%s] %s classify failed: %s", mode_label, as_of_date.isoformat(), exc

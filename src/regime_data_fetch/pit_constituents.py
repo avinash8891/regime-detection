@@ -10,6 +10,7 @@ from pathlib import Path
 import pandas as pd
 
 from regime_data_fetch.acquisition_store import AcquisitionStore
+from regime_shared.pit_provenance import BIAS_WARNING, SOURCE_NAME, SOURCE_URL
 
 
 # Community-maintained S&P 500 ticker-membership CSV on GitHub. This is an
@@ -22,12 +23,7 @@ from regime_data_fetch.acquisition_store import AcquisitionStore
 # TODO: replace with a true point-in-time vendor feed (CRSP / Compustat /
 # FactSet / Norgate) when sourcing is approved. The expected vendor format
 # matches the same ticker / start_date / end_date interval shape, so the
-# parquet schema does not need to change — only `SOURCE_URL`, `SOURCE_NAME`,
-# and the `BIAS_WARNING` value (which should become e.g. `"none"` or be
-# removed entirely).
-SOURCE_URL = "https://raw.githubusercontent.com/fja05680/sp500/master/sp500_ticker_start_end.csv"
-SOURCE_NAME = "fja05680/sp500"
-BIAS_WARNING = "survivorship_biased_constituent_universe"
+# parquet schema does not need to change — only the shared provenance constants.
 
 # Source-correction overlay for open intervals that the community CSV has not
 # closed yet. Dates are the last valid membership/trading date for this feed:
