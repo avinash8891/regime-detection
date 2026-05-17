@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import datetime as dt
 import json
+import re
 from pathlib import Path
 from typing import Iterable
 
@@ -167,13 +168,13 @@ def _store_key_for(local_path: str) -> str:
 
 
 def _canonical_artifact_name(*, name: str, local_path: str) -> str:
-    symbol = _daily_ohlcv_symbol(local_path)
-    if symbol is not None:
-        return f"constituent_ohlcv_{symbol}"
+    daily_name = _daily_ohlcv_artifact_name(local_path)
+    if daily_name is not None:
+        return daily_name
     return REPORT_PATH_NAME_TO_ARTIFACT_NAME.get(name, name)
 
 
-def _daily_ohlcv_symbol(local_path: str) -> str | None:
+def _daily_ohlcv_artifact_name(local_path: str) -> str | None:
     parts = Path(local_path).parts
     if len(parts) < 5 or parts[0:2] != ("data", "raw"):
         return None
@@ -183,7 +184,17 @@ def _daily_ohlcv_symbol(local_path: str) -> str | None:
     if not symbol_part.startswith("symbol="):
         return None
     symbol = symbol_part.removeprefix("symbol=")
-    return symbol or None
+    if not symbol:
+        return None
+    file_parts = parts[4:]
+    if file_parts == ("ohlcv.parquet",):
+        return f"constituent_ohlcv_{symbol}"
+    suffix = _artifact_name_suffix(file_parts)
+    return f"constituent_ohlcv_{symbol}_{suffix}" if suffix else f"constituent_ohlcv_{symbol}"
+
+
+def _artifact_name_suffix(parts: tuple[str, ...]) -> str:
+    return re.sub(r"[^A-Za-z0-9]+", "_", "_".join(parts)).strip("_")
 
 
 def _normalize_manifest_local_path(local_path: str) -> str:

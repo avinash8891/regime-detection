@@ -75,6 +75,69 @@ def test_emit_manifest_for_report_paths_expands_partitioned_parquet_directories(
     assert (tmp_path / "store" / "canonical" / "daily_ohlcv" / "symbol=SPY" / "part.parquet").read_bytes() == b"spy"
 
 
+def test_emit_manifest_for_report_paths_allows_multi_file_symbol_partitions(
+    tmp_path: Path,
+) -> None:
+    out_dir = tmp_path / "data" / "raw"
+    symbol_dir = out_dir / "daily_ohlcv_762" / "symbol=SPY"
+    part_0 = symbol_dir / "part-0.parquet"
+    part_1 = symbol_dir / "part-1.parquet"
+    symbol_dir.mkdir(parents=True)
+    part_0.write_bytes(b"spy-0")
+    part_1.write_bytes(b"spy-1")
+    macro = out_dir / "macro" / "fred_macro_series.parquet"
+    pit = out_dir / "pit_constituents" / "sp500_ticker_intervals.parquet"
+    events = out_dir / "event_calendar" / "us_events.yaml"
+    for path, payload in [
+        (macro, b"macro"),
+        (pit, b"pit"),
+        (events, b"events: []\n"),
+    ]:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(payload)
+    report = out_dir / "combined_report.json"
+    report.write_text(
+        json.dumps(
+            {
+                "paths": {
+                    "profile_constituent_tree": str(out_dir / "daily_ohlcv_762"),
+                    "macro_parquet": str(macro),
+                    "pit_constituents_parquet": str(pit),
+                    "event_calendar_yaml": str(events),
+                }
+            }
+        )
+    )
+    manifest_path = tmp_path / "manifest.yaml"
+
+    manifest = emit_manifest_for_report_paths(
+        report_paths=[report],
+        out_dir=out_dir,
+        artifact_store_root=str(tmp_path / "store"),
+        manifest_path=manifest_path,
+        artifact_set="profile",
+        required_for=["profile_engine_30d"],
+    )
+    resolved = resolve_runner_input_paths(
+        manifest_path=manifest_path,
+        data_root=tmp_path / "materialized" / "data" / "raw",
+        runner_name="profile_engine_30d",
+        cli_values={},
+        cli_overrides=set(),
+    )
+
+    daily_names = [
+        artifact.name
+        for artifact in manifest.artifacts
+        if artifact.local_path.startswith("data/raw/daily_ohlcv_762/")
+    ]
+    assert daily_names == [
+        "constituent_ohlcv_SPY_part_0_parquet",
+        "constituent_ohlcv_SPY_part_1_parquet",
+    ]
+    assert resolved.daily_dir == tmp_path / "materialized" / "data" / "raw" / "daily_ohlcv_762"
+
+
 def test_emit_manifest_for_report_paths_fails_when_no_files_found(tmp_path: Path) -> None:
     out_dir = tmp_path / "data" / "raw"
     out_dir.mkdir(parents=True)
