@@ -342,6 +342,27 @@ def test_build_raw_outputs_emits_recovery_on_synthetic_rebound(
             "to": "recovery",
             "rule": "recovery",
         }
+        assert evidence[idx]["efficiency_ratio_20d"] == pytest.approx(
+            v2_features.efficiency_ratio_20d.loc[dt], rel=1e-5
+        )
+        assert evidence[idx]["hurst_250d"] == pytest.approx(
+            v2_features.hurst_250d.loc[dt], rel=1e-5
+        )
+        assert evidence[idx]["slope_sma_50"] == pytest.approx(
+            v2_features.slope_sma_50.loc[dt], rel=1e-5
+        )
+        assert evidence[idx]["slope_sma_200"] == pytest.approx(
+            v2_features.slope_sma_200.loc[dt], rel=1e-5
+        )
+        assert evidence[idx]["return_126d"] == pytest.approx(
+            v2_features.return_126d.loc[dt], rel=1e-5
+        )
+        assert evidence[idx]["drawdown_252d"] == pytest.approx(
+            v2_features.drawdown_252d.loc[dt], rel=1e-5
+        )
+        assert evidence[idx]["realized_vol_21d"] == pytest.approx(
+            v2_features.realized_vol_21d.loc[dt], rel=1e-5
+        )
         # Override must be from a label lower-ranked than `recovery`
         # (bear / sideways / transition / unknown — NEVER bull).
         assert evidence[idx]["v2_override"]["from"] != "bull"

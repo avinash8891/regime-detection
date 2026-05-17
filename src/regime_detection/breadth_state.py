@@ -164,7 +164,7 @@ def resolve_v2_raw_outputs(
     nh_nl_threshold: float,
 ) -> tuple[list[BreadthLabel], list[dict[str, Any]]]:
     updated_labels: list[BreadthLabel] = []
-    updated_evidence = list(raw_evidence)
+    updated_evidence = [dict(evidence) for evidence in raw_evidence]
     for idx_pos, day in enumerate(dates):
         v1_raw = raw_labels[idx_pos]
         thrust_fires = (
@@ -210,15 +210,15 @@ def resolve_v2_raw_outputs(
             resolved = "broadening_breadth"
         else:
             resolved = v1_raw
-        if resolved != v1_raw:
-            updated_evidence[idx_pos] = {
-                **updated_evidence[idx_pos],
+        updated_evidence[idx_pos].update(
+            {
                 "v2_breadth_thrust": thrust_fires,
                 "v2_narrowing_breadth": narrowing_fires,
                 "v2_recovery_breadth": recovery_fires,
                 "v2_broadening_breadth": broadening_fires,
                 "v1_raw_label": v1_raw,
             }
+        )
         updated_labels.append(resolved)
     return updated_labels, updated_evidence
 
