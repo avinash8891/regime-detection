@@ -41,6 +41,9 @@ from regime_detection.axis_builders.monetary_pressure import (
 from regime_detection.axis_builders.trend_direction import (
     build_trend_direction_axis_series as build_trend_direction_axis_series,
 )
+from regime_detection.axis_builders.trend_character import (
+    build_trend_character_axis_series as build_trend_character_axis_series,
+)
 from regime_detection.inflation_growth import (
     INFLATION_GROWTH_RISK_RANK,
     InflationGrowthLabel,
@@ -61,10 +64,6 @@ from regime_detection.network_fragility_rules import (
     build_rule_inputs_by_date,
     evaluate_rules,
 )
-from regime_detection.trend_character import (
-    _RISK_RANK as TREND_CHARACTER_RISK_RANK,
-    build_raw_outputs as build_trend_character_raw_outputs,
-)
 from regime_detection.volatility_state import (
     _RISK_RANK as VOLATILITY_RISK_RANK,
     build_raw_outputs as build_volatility_raw_outputs,
@@ -82,42 +81,10 @@ _PIT_BREADTH_LABELS = {
 }
 _STALENESS_SENTINEL = 10**9
 
-# V1 trend-character warm-up follows the existing 63-session ADX/range gate.
-TREND_CHARACTER_REQUIRED_TRADING_DAYS = 63
 # V1 volatility warm-up follows the existing 252-session percentile gate.
 VOLATILITY_REQUIRED_TRADING_DAYS = 252
 # V1 breadth ETF-proxy quality gate uses the existing 50-session calibration.
 BREADTH_REQUIRED_TRADING_DAYS = 50
-def build_trend_character_axis_series(
-    context: MarketContext, feature_store: FeatureStore
-) -> AxisSeriesResult:
-    close = context.spy_ohlcv["close"]
-    features = feature_store.trend_character
-    raw_labels, raw_evidence = build_trend_character_raw_outputs(
-        features,
-        allow_v2_labels=context.config.config_version != "core3-v1.0.0",
-    )
-    stable_labels, active_labels = apply_asymmetric_hysteresis(
-        raw_labels=raw_labels,
-        risk_rank=TREND_CHARACTER_RISK_RANK,
-        escalation_days=context.config.hysteresis.trend_character_escalation_days,
-        deescalation_days=context.config.hysteresis.trend_character_deescalation_days,
-    )
-    return _axis_outputs_from_core(
-        dates=close.index.date,
-        raw_labels=raw_labels,
-        stable_labels=stable_labels,
-        active_labels=active_labels,
-        raw_evidence=raw_evidence,
-        risk_rank=TREND_CHARACTER_RISK_RANK,
-        deescalation_days=context.config.hysteresis.trend_character_deescalation_days,
-        required_inputs=[close, context.spy_ohlcv["high"], context.spy_ohlcv["low"]],
-        required_trading_days=TREND_CHARACTER_REQUIRED_TRADING_DAYS,
-        max_freshness_days=context.config.data_quality.max_freshness_days,
-        min_completeness=context.config.data_quality.min_completeness,
-    )
-
-
 def build_volatility_axis_series(
     context: MarketContext, feature_store: FeatureStore
 ) -> AxisSeriesResult:
