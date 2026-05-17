@@ -70,6 +70,13 @@ python3 scripts/materialize_regime_data.py \
   --manifest manifests/runs/regime_engine_YYYY-MM-DD.yaml \
   --local-root data/raw
 
+python3 scripts/materialize_constituent_ohlcv_tree.py \
+  --source-tree data/raw/daily_ohlcv \
+  --out-tree data/raw/daily_ohlcv_762 \
+  --pit-parquet data/raw/pit_constituents/sp500_ticker_intervals.parquet \
+  --start YYYY-MM-DD \
+  --end YYYY-MM-DD
+
 python3 scripts/profile_engine_30d.py \
   --manifest manifests/runs/regime_engine_YYYY-MM-DD.yaml \
   --data-root data/raw

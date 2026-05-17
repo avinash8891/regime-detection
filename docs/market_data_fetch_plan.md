@@ -290,6 +290,19 @@ data/raw/daily_ohlcv_762/symbol=*/ohlcv.parquet
 
 The default operating model is a fixed 762-symbol regime universe materialized by the manifest. Operators pass either `--universe-json /path/to/symbols.json` or `--constituent-universe-dir /path/to/daily_ohlcv_762`. The PIT constituent parquet is available only behind `--allow-pit-constituent-universe` for bootstrap/backfill decisions, because using every historical PIT ticker expands beyond the intended 762-symbol engine universe.
 
+When an operator already has a broader local OHLCV tree, materialize the runner-facing constituent tree explicitly instead of pointing runners at the broad source tree:
+
+```bash
+python3 scripts/materialize_constituent_ohlcv_tree.py \
+  --source-tree data/raw/daily_ohlcv \
+  --out-tree data/raw/daily_ohlcv_762 \
+  --pit-parquet data/raw/pit_constituents/sp500_ticker_intervals.parquet \
+  --start YYYY-MM-DD \
+  --end YYYY-MM-DD
+```
+
+The materializer accepts both `symbol=X/ohlcv.parquet` and partition-file source layouts, writes canonical `symbol=X/ohlcv.parquet` outputs, and fails loudly if any PIT-overlap constituent is missing unless `--allow-missing-symbols` is explicitly passed. It also writes `MANIFEST.sha256.json` under the output tree so a later run can verify exactly which symbol files were materialized.
+
 ### 2.2 V2 Build Scope
 
 #### Market / Cross-Asset
