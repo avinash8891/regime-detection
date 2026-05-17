@@ -9,6 +9,7 @@ import logging
 import os
 import re
 import time
+import urllib.error
 import urllib.parse
 import urllib.request
 from collections.abc import Callable
@@ -894,12 +895,33 @@ def _capture_investing_earnings_page_with_token(
     return CapturedEarningsPage(path=output_path, access_token=token)
 
 
-def _request_json(url: str, params: dict[str, str], headers: dict[str, str]) -> object:
+def _request_json(
+    url: str,
+    params: dict[str, str],
+    headers: dict[str, str],
+    *,
+    max_retries: int = 3,
+    backoff_seconds: float = 1.0,
+) -> object:
     request = urllib.request.Request(
         f"{url}?{urllib.parse.urlencode(params)}", headers=headers
     )
-    with urllib.request.urlopen(request, timeout=60) as response:
-        return json.loads(response.read().decode("utf-8", errors="replace"))
+    for attempt in range(1, max_retries + 1):
+        try:
+            with urllib.request.urlopen(request, timeout=60) as response:
+                return json.loads(response.read().decode("utf-8", errors="replace"))
+        except (TimeoutError, urllib.error.URLError) as exc:
+            if attempt == max_retries:
+                raise
+            LOGGER.warning(
+                "Investing.com JSON request failed for %s; retrying attempt %s/%s: %s",
+                url,
+                attempt + 1,
+                max_retries,
+                exc,
+            )
+            time.sleep(backoff_seconds * attempt)
+    raise RuntimeError("unreachable Investing.com JSON retry state")
 
 
 def _calendar_headers() -> dict[str, str]:

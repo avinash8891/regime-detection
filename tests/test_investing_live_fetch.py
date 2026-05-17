@@ -6,6 +6,7 @@ import sqlite3
 import sys
 import time
 import types
+import urllib.error
 from pathlib import Path
 
 import pandas as pd
@@ -16,6 +17,7 @@ from regime_data_fetch.investing_live import (
     EARNINGS_BASE,
     SOURCE_CALENDAR_URL,
     SOURCE_EARNINGS_URL,
+    _request_json,
     capture_investing_earnings_loaded_page,
     _validate_token_not_expired,
     run_investing_live_fetch,
@@ -25,6 +27,46 @@ APPLE_INSTRUMENT_ID = 6408
 APPLE_SYMBOL = "AAPL"
 APPLE_COMPANY = "Apple Inc"
 US_COUNTRY_ID = 5
+
+
+def test_request_json_retries_transient_url_errors(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    attempts = 0
+
+    class Response:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb) -> None:
+            return None
+
+        def read(self) -> bytes:
+            return b'{"ok": true}'
+
+    def fake_urlopen(request, *, timeout: int):
+        nonlocal attempts
+        assert timeout == 60
+        attempts += 1
+        if attempts == 1:
+            raise urllib.error.URLError("temporary outage")
+        return Response()
+
+    monkeypatch.setattr(
+        "regime_data_fetch.investing_live.urllib.request.urlopen", fake_urlopen
+    )
+    monkeypatch.setattr(
+        "regime_data_fetch.investing_live.time.sleep", lambda _seconds: None
+    )
+
+    payload = _request_json(
+        "https://example.test/api",
+        params={"symbol": "AAPL"},
+        headers={"User-Agent": "test"},
+    )
+
+    assert payload == {"ok": True}
+    assert attempts == 2
 
 
 def test_run_investing_live_fetch_materializes_archive_and_records_outputs(
