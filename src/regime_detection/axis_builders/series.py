@@ -29,7 +29,6 @@ from regime_detection.hysteresis import (
     apply_per_label_asymmetric_hysteresis,
 )
 from regime_detection.axis_builders.common import (
-    axis_outputs_from_core as _axis_outputs_from_core,
     new_axis_series_result as _new_axis_series_result,
 )
 from regime_detection.axis_builders.volume_liquidity import (
@@ -43,6 +42,9 @@ from regime_detection.axis_builders.trend_direction import (
 )
 from regime_detection.axis_builders.trend_character import (
     build_trend_character_axis_series as build_trend_character_axis_series,
+)
+from regime_detection.axis_builders.volatility import (
+    build_volatility_axis_series as build_volatility_axis_series,
 )
 from regime_detection.inflation_growth import (
     INFLATION_GROWTH_RISK_RANK,
@@ -64,10 +66,6 @@ from regime_detection.network_fragility_rules import (
     build_rule_inputs_by_date,
     evaluate_rules,
 )
-from regime_detection.volatility_state import (
-    _RISK_RANK as VOLATILITY_RISK_RANK,
-    build_raw_outputs as build_volatility_raw_outputs,
-)
 
 if TYPE_CHECKING:
     from regime_detection.axis_series import AxisSeriesResult
@@ -81,48 +79,8 @@ _PIT_BREADTH_LABELS = {
 }
 _STALENESS_SENTINEL = 10**9
 
-# V1 volatility warm-up follows the existing 252-session percentile gate.
-VOLATILITY_REQUIRED_TRADING_DAYS = 252
 # V1 breadth ETF-proxy quality gate uses the existing 50-session calibration.
 BREADTH_REQUIRED_TRADING_DAYS = 50
-def build_volatility_axis_series(
-    context: MarketContext, feature_store: FeatureStore
-) -> AxisSeriesResult:
-    close = context.spy_ohlcv["close"]
-    features = feature_store.volatility
-    # Slice 2.6 — thread v2 §1C features + rules through when the v2
-    # seam is populated. When the v2 config is absent (v1-only callers),
-    # the arguments stay None and v1 byte-identity is preserved by
-    # build_raw_outputs (see test_volatility_state_v2_rising_vol_rule).
-    vol_v2_features = feature_store.volatility_state_v2
-    vol_v2_config = context.config.volatility_state_v2
-    vol_v2_rules = vol_v2_config.rules if vol_v2_config is not None else None
-    raw_labels, raw_evidence = build_volatility_raw_outputs(
-        features,
-        volatility_state_v2_features=vol_v2_features,
-        volatility_state_v2_rules=vol_v2_rules,
-    )
-    stable_labels, active_labels = apply_asymmetric_hysteresis(
-        raw_labels=raw_labels,
-        risk_rank=VOLATILITY_RISK_RANK,
-        escalation_days=context.config.hysteresis.volatility_escalation_days,
-        deescalation_days=context.config.hysteresis.volatility_deescalation_days,
-    )
-    return _axis_outputs_from_core(
-        dates=close.index.date,
-        raw_labels=raw_labels,
-        stable_labels=stable_labels,
-        active_labels=active_labels,
-        raw_evidence=raw_evidence,
-        risk_rank=VOLATILITY_RISK_RANK,
-        deescalation_days=context.config.hysteresis.volatility_deescalation_days,
-        required_inputs=[close],
-        required_trading_days=VOLATILITY_REQUIRED_TRADING_DAYS,
-        max_freshness_days=context.config.data_quality.max_freshness_days,
-        min_completeness=context.config.data_quality.min_completeness,
-    )
-
-
 def build_breadth_axis_series(
     context: MarketContext, feature_store: FeatureStore
 ) -> AxisSeriesResult:
