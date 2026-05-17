@@ -1,114 +1,179 @@
-# Tech Debt Audit - regime-detection
+# Tech Debt Audit - 2026-05-17
 
-Generated: 2026-05-17
+Grounding: live repository state in `/Users/avinashvankadaru/conductor/workspaces/regime-detection/vaduz` on branch `avinash8891/tech-debt-audit`. This is a repeat audit; older findings were rechecked against current code before being kept, narrowed, or marked resolved.
 
-## Executive summary
+## Executive Summary
 
-- The largest debt concentration is orchestration: `scripts/fetch_regime_engine_v1_data.py`, `scripts/profile_engine_30d.py`, `src/regime_detection/feature_store.py`, `src/regime_detection/axis_series.py`, and `src/regime_detection/timeline.py` each carry multiple responsibilities and are also the highest-churn surfaces.
-- The repo has good behavioral tests, but static quality gates are not yet real gates: `ruff` currently fails with 37 findings and `pyright` reports 1,315 errors.
-- The artifact-store/materialization work is directionally right, but URI semantics are still ambiguous and documented as a TODO inside the core abstraction.
-- Several production-like scripts treat per-session classifier failures as report rows and still exit `0`, which can make a failed gate look like a successful CI/job run unless an operator reads the report.
-- Integration coverage for some important real-data contracts is skip-gated on local `data/raw/` materialization, so default CI does not prove those live-data contracts.
-- Temporal normalization is acknowledged in the docs as a next slice, but current loaders/writers still mix date-only fields, ET fields, naive `pd.to_datetime`, and UTC strings.
-- Config and output models are strongly validated with Pydantic, but evidence payloads are still free-form `dict[str, Any]`, which leaves the riskiest cross-axis contract weakly typed.
-- The fetch layer has many source-specific validators, but there is no single source-normalization contract yet; missing or failing optional sources often degrade to empty rows with logs rather than run-level status.
-- Some code that looks suspicious is intentional: V1 wire-shape rewriting, cluster output without economic labels, and PIT breadth "biased research" labeling are load-bearing compatibility or safety choices, not debt to remove casually.
+The repo is materially healthier than the previous audit snapshot in several places: the axis-series surface is split out of `axis_series.py`, feature-store and fetch-mode registries exist, slow/V2 gate tests are wired in CI, artifact URI handling is fixed, and several formerly skip-gated tests now use fixtures. The remaining debt is concentrated in four areas:
 
-## Architectural mental model
+1. Large orchestrator modules still own too many contracts at once.
+2. New registries stop short of owning typed outputs or invocation.
+3. Type checking is mostly not enforceable yet: full pyright currently reports 714 errors, while CI only checks `src/regime_detection/config.py`.
+4. Operational scripts are still runtime products, but several are too large, monkeypatch-heavy, or outside strict type gates.
 
-This checkout is a unified V1+V2 regime engine. `src/regime_detection` owns the runtime classifier: `engine` builds a `MarketContext`, `feature_store` computes V1/V2 features, `axis_series` turns feature seams into per-session axis outputs, `transition_risk_series` composes transition evidence, and `timeline` emits the final Pydantic `RegimeOutput`/`RegimeTimeline` wire shape. V2 is cumulative on V1, so a lot of code intentionally preserves V1 byte identity while adding optional V2 seams.
+Top implementation priorities:
 
-`src/regime_data_fetch` owns source acquisition, canonical artifacts, local materialization, and SQLite provenance. `scripts/` are not thin wrappers; many are operational products themselves: fetch/backfill, materialize, historical walk-forward, shadow checks, V2 calibration, 30-day profiling, and layer-2 audits. The specs under `docs/` are normative and often more detailed than the code. The repo's practical risk is not a lack of tests; it is that the operational surface is broad, recent, and only partially enforced by static gates and real-data CI.
+1. Fix the broken `profile_engine_30d.py` inflation-growth timing hook after the axis split.
+2. Expand pyright coverage incrementally beyond config-only.
+3. Finish evidence model typing where timeline and classifiers still pass plain dict payloads.
+4. Replace the feature-store `dict[str, Any]` builder bus with typed builder outputs.
+5. Move fetch-mode invocation into the registry so `FETCH_MODE_REGISTRY` owns execution, not just classification.
 
-## Findings table
+## Mental Model
 
-| ID | Category | File:Line | Severity | Effort | Description | Recommendation |
-|---|---|---:|---|---|---|---|
-| F001 | Architectural decay | `src/regime_detection/axis_series.py:91` | High | L | `AxisSeriesBundle` has become the cross-axis hub for V1 plus many V2 axes, with optional maps for network, volume, credit, proxy credit, effective credit, monetary, and inflation outputs. | Split per-axis builders into small modules with one shared interface, then keep `axis_series.py` as an assembly layer only. |
-| F002 | Architectural decay | `src/regime_detection/axis_series.py:367` | High | M | `NetworkFragilitySeriesClassifier.build` is a 165-line orchestration method handling data-quality gates, cross-axis lookups, rule evaluation, hysteresis, and output construction. | Extract day-quality assessment, dependency label resolution, and output construction into tested helpers. |
-| F003 | Architectural decay | `src/regime_detection/axis_series.py:716` | High | M | Credit/funding's `_build_for_spread_source` is 214 LOC and handles both source policy and per-day classifier mechanics. | Split source selection from rule evaluation so OAS/proxy policy changes cannot alter per-day scoring by accident. |
-| F004 | Architectural decay | `src/regime_detection/feature_store.py:258` | High | L | `build_feature_store` is 377 LOC and computes every V1/V2 seam in one function; the file already carries a TODO to decompose it. | Convert to a registry/list of feature builders that each declare required context keys and config dependencies. |
-| F005 | Architectural decay | `src/regime_detection/timeline.py:73` | High | L | `build_regime_timeline` is 315 LOC and handles minimum-history math, feature/axis building, transition risk, V2 optional fields, routing, and output emission. | Extract the history-window resolver and output-emission loop; keep final `RegimeTimeline` assembly separate from feature orchestration. |
-| F006 | Architectural decay | `scripts/fetch_regime_engine_v1_data.py:79` | High | L | The main fetch CLI is 441 LOC and combines argument parsing, mode validation, source orchestration, artifact-store policy, and manifest emission. | Replace the if-chain with a fetch-mode registry whose entries own args, validation, and invocation. |
-| F007 | Architectural decay | `scripts/profile_engine_30d.py:959` | Medium | M | `profile_engine_30d.main` is 276 LOC and repeats engine setup, timing, feature-store rebuild, invariant checks, and report printing. | Separate profiling instrumentation from data loading and report rendering. |
-| F008 | Architectural decay | `src/regime_data_fetch/acquisition_consolidation.py:22` | Medium | S | Core package code carries machine-specific `/private/tmp/...` default consolidation DB paths. | Move these defaults into a script/config file; require explicit paths for library use. |
-| F009 | Consistency rot | `src/regime_data_fetch/artifact_store.py:23` | High | M | `StoredArtifact.uri` is documented as relative for local stores but scheme-qualified for S3, so manifest consumers must know which backend produced it. | Normalize to a single URI contract, preferably fully-qualified `file://`/`s3://`, and update manifest materialization tests. |
-| F010 | Consistency rot | `src/regime_detection/loaders.py:420` | High | M | Event dates are normalized with `pd.to_datetime(...).dt.date`, while `publication_date` uses `errors="coerce"` plus manual validation, and other loaders use naive `DatetimeIndex` conversion. | Implement the documented shared temporal-normalization module and route every canonical loader/writer through it. |
-| F011 | Documentation drift | `docs/market_data_fetch_plan.md:87` | High | M | The docs explicitly list a temporal-normalization implementation TODO, but the current code still has mixed temporal handling. | Promote the TODO into a tracked debt item or implement it before treating artifact portability as complete. |
-| F012 | Type and contract debt | `src/regime_detection/models.py:67` | High | L | Axis evidence is still `dict[str, Any]` on the shared output model. This is the highest-value wire payload but has no per-axis schema. | Add typed evidence models axis-by-axis when touching each classifier, starting with credit/funding and inflation/growth. |
-| F013 | Type and contract debt | `src/regime_detection/models.py:456` | Medium | M | V1 wire compatibility rewrites raw dump payloads after Pydantic validation, which keeps compatibility but bypasses model-level schema clarity. | Keep the behavior, but wrap legacy serialization behind named serializer methods and golden tests so callers know this is a compatibility projection. |
-| F014 | Type and contract debt | `src/regime_detection/market_context.py:28` | Medium | M | `constituent_ohlcv` uses `SkipValidation`, so a major PIT input bypasses Pydantic even though downstream V2 breadth depends on it. | Add a source-specific validator for the dict's required columns/index shape before constructing `MarketContext`. |
-| F015 | Type and contract debt | `scripts/profile_engine_30d.py:878` | Medium | S | Pyright catches that `ProfileInputBundle` annotations do not match actual values for `central_bank_text_releases` and `pit_constituent_intervals`. | Fix the dataclass annotations or the loaded values; this makes profiling code a useful type-check target. |
-| F016 | Test debt | `tests/test_central_bank_text_cycle_regression.py:148` | High | M | Real FOMC integration checks skip whenever `data/raw/fomc_minutes/fomc_minutes.parquet` is absent. Default CI therefore does not prove the live-parquet cycle behavior. | Add a small checked-in redacted/captured FOMC fixture or CI materialization step for the two cycle windows. |
-| F017 | Test debt | `tests/test_news_sentiment_coverage.py:125` | High | M | News sentiment coverage/freshness checks skip unless both live news parquet and `data/raw/daily_ohlcv` exist locally. | Add a fixture-backed coverage contract in CI and reserve local-data tests for larger operational validation. |
-| F018 | Test debt | `pytest.ini:2` | Medium | S | Default pytest excludes `slow` and uses xdist, so historical walk-forward and V2 gate tests are not part of the default CI proof. | Add a separate required CI job for gate/slow tests on PRs touching engine, data, or V2 config paths. |
-| F019 | Tooling debt | `.github/workflows/ci.yml:59` | High | S | CI installs dev deps and runs pytest, but does not run Ruff, Pyright, package build, or audit tooling. | Add separate CI steps for `ruff check`, a scoped type-check target, and package import/build smoke tests. |
-| F020 | Tooling debt | `scripts/run_v2_calibration.py:31` | Medium | S | Ruff reports unused imports and trivial f-string issues in operational scripts, showing lint is not currently a clean gate. | Clean the current 37 Ruff findings, then make Ruff required in CI. |
-| F021 | Tooling debt | `scripts/approve_group_b_candidate.py:16` | Low | S | Multiple scripts use `sys.path.insert` before imports, triggering E402 and making script/package invocation inconsistent. | Prefer `python -m scripts.<name>` with package-safe imports, or configure Ruff exceptions intentionally for these scripts. |
-| F022 | Error handling | `scripts/run_v2_walkforward_gate.py:198` | High | S | Per-session `engine.classify` exceptions are logged and counted, but the script still writes a report and returns `0`. | Exit non-zero when `v1_errors` or `v2_errors` is nonzero, or add an explicit `--allow-errors` flag. |
-| F023 | Error handling | `scripts/run_v2_shadow_ab_gate.py:180` | High | S | The shadow A/B gate has the same fail-open classifier loop and returns success after session errors. | Make session errors a failed gate unless explicitly downgraded by operator flag. |
-| F024 | Error handling | `src/regime_data_fetch/event_sources/_common.py:56` | Medium | S | Shared event-source fetch returns an empty string on URL failure; downstream parsers cannot distinguish "empty valid page" from "source failed" unless callers add side channels. | Return a typed result with status/error, or raise and let orchestrators record source-level failure explicitly. |
-| F025 | Error handling | `src/regime_data_fetch/event_sources/validators_gpr_gdelt.py:141` | Medium | M | GPR/GDELT fetch failures degrade to empty candidate lists after logging; this is acceptable for optional evidence but not surfaced as a run-level partial failure. | Record skipped source counts/status in the fetch report and propagate >threshold missing evidence as failed/partial. |
-| F026 | Performance | `scripts/fetch_regime_engine_v1_data.py:221` | Medium | M | `--fetch all` runs many independent upstream fetches serially; the TODO notes wall-clock is sum(N). | Add a conservative per-source concurrency plan with rate-limit groups rather than one global serial chain. |
-| F027 | Performance | `src/regime_detection/timeline.py:230` | Medium | M | Final timeline emission loops per day and performs many dict lookups plus nested Pydantic model construction; acceptable today, but it is on every classification window. | Keep the loop, but extract and benchmark an output-emission builder before adding more V2 fields. |
-| F028 | Performance | `src/regime_data_fetch/alpaca_daily.py:71` | Medium | M | Alpaca daily fetch loops batches serially and uses print progress instead of structured progress logging. | Add rate-limit-aware concurrency or at least structured batch timing/row counts in stdlib logging. |
-| F029 | Security hygiene | `src/regime_data_fetch/local_daily_ohlcv_sqlite_reader.py:45` | Low | S | SQL uses dynamic placeholder construction. Values are parameterized, so this is not injection-prone, but table names elsewhere are string-formatted. | Keep values parameterized; centralize safe table-name constants and avoid expanding dynamic SQL beyond fixed constants. |
-| F030 | Documentation drift | `src/regime_detection/config.py:160` | Medium | S | Comments say some V2 trend labels remain deferred, but the same config class includes `euphoria_*` rule defaults and the live code wires euphoria evidence. | Update comments to separate "feature/rule config present" from "operationally qualified". |
-| F031 | Documentation drift | `docs/v2_slice_gate_checklist.md:29` | Medium | S | The checklist is still blank-template style (`XYZSeriesClassifier`) while multiple V2 slices have already landed. | Replace template placeholders with a living checklist keyed to current shipped axes and required evidence. |
-| F032 | Dependency/config debt | `pyproject.toml:15` | Medium | S | Runtime dependency `bayesian-changepoint-detection>=0.2.dev1` pins to a dev release range without an upper compatibility bound beyond the package family. | Add a comment/constraint explaining the exact API used, or vendor-wrap the dependency behind a small adapter with tests. |
-| F033 | Dependency/config debt | `src/regime_detection/config.py:1012` | Medium | M | `RegimeConfig` is one 90-field-ish model file with many nested V2 classes; it is high churn and hard to review for spec drift. | Split config models by axis module, then re-export through `config.py` to preserve public imports. |
-| F034 | Observability | `scripts/profile_engine_30d.py:1109` | Low | S | Profiling output is many `print` lines, not structured logs or a machine-readable report artifact. | Emit JSON plus markdown/text so CI and agents can diff timings and seam statuses. |
-| F035 | Observability | `src/regime_data_fetch/alpaca_daily.py:74` | Low | S | Fetch progress uses `print(..., flush=True)` and omits logger context like run id/acquisition db. | Convert to module logger and include source, batch, symbol counts, and run id when available. |
-| F036 | Security hygiene | `src/regime_data_fetch/alpaca_daily.py:16` | Low | S | Alpaca credentials are read directly from env inside the client helper. It does not print secrets, but missing env vars raise raw `KeyError`. | Raise a project-scoped error naming the missing env var and remediation without exposing values. |
+This repo has three coupled products:
 
-## Top 5 if you fix nothing else
+- Runtime classifier: `src/regime_detection` builds `MarketContext`, features, axis series, timeline outputs, and Pydantic wire models.
+- Data acquisition: `src/regime_data_fetch` and fetch scripts collect external market/macro/event artifacts, persist provenance, and materialize inputs.
+- Operational scripts and gates: `scripts/` runs fetches, profiling, calibration, walk-forward gates, shadow checks, and audit/report generation.
 
-1. **F022/F023 - Make V2 gates fail closed on classifier errors.**
-   Sketch: after both `_classify_*` calls, add `if v1_errors or v2_errors: logger.error(...); return 2`. Add `--allow-session-errors` only if an operator truly needs exploratory reports.
+Most risk appears at the boundaries between those products: typed model boundaries, feature-store handoff, script/runtime imports, and acquisition artifact contracts.
 
-2. **F004/F005 - Decompose feature/timeline orchestration.**
-   Sketch: introduce `FeatureBuilder` objects with `name`, `required_context`, `config_getter`, and `build(context)`; move one low-risk seam first, then require byte-identical V1 replay before continuing.
+## Tool Evidence
 
-3. **F009/F010/F011 - Finish the artifact/temporal contract.**
-   Sketch: make `StoredArtifact.uri` backend-independent, add `time_normalization.py`, and fail canonical writes that emit mixed naive datetimes, ET fields, or timestamp/date ambiguity.
+| Command | Result |
+|---|---|
+| `python3 -m ruff check .` | Passed: `All checks passed!` |
+| `python3 -m pyright src/regime_detection src/regime_data_fetch scripts` | Failed: 714 errors. Examples include `scripts/profile_engine_30d.py:351` / `:353`, `src/regime_detection/timeline.py:89`, `:233`, `:239`, `src/regime_detection/transition_risk.py:138`, and pandas typing errors in calibration/audit scripts. |
+| `python3 -m vulture src scripts tests` | Unavailable: `No module named vulture`. |
+| `python3 -m pydeps src/regime_detection --show-cycles --noshow` | Unavailable: `No module named pydeps`. |
+| `python3 -m pip_audit --desc off` | Environment-level failure: 51 known vulnerabilities in 23 packages. The output also skipped local/non-PyPI packages including `regime-detection (2.0.0)`, so this is not a clean project-lock audit. |
+| `PYTHONPATH=src python3 - <<'PY' ... hasattr(axis_series, ...)` | `assess_series_input_quality=True`, `build_inflation_growth_rule_inputs_by_date=False`, `evaluate_inflation_growth_rules=False`; confirms the profiler still points at moved symbols. |
+| `python3 -m pytest --cov=src --cov-report=term --cov-fail-under=80 -q` | Failed: 5 tests failed, coverage still reached 88.33%. All failures are `TransitionRiskOutput` validation errors where tests still pass `{}` or `{"warnings": []}` evidence. |
 
-4. **F016/F017/F018 - Make real-data contracts visible in CI.**
-   Sketch: create tiny captured fixtures for FOMC/news coverage and add a separate gate job for slow/gate markers when engine, loaders, configs, or scripts change.
+CI currently runs ruff, pyright only against `src/regime_detection/config.py`, and default pytest with coverage in `.github/workflows/ci.yml:63-66`. Slow/V2 gate tests are in a separate path-sensitive job at `.github/workflows/ci.yml:71-120`.
 
-5. **F019/F020 - Turn Ruff into a required gate.**
-   Sketch: fix the current 37 findings, decide whether `scripts/` path shims get a deliberate per-file ignore, then add `python -m ruff check .` to CI.
+## Repeat-Audit Status
 
-## Quick wins
+Resolved or mostly resolved from earlier audit:
 
-- [ ] F020: Remove unused imports and extraneous f-string prefixes reported by Ruff.
-- [ ] F021: Add intentional Ruff ignores or package-safe invocation for scripts with import-path shims.
-- [ ] F022/F023: Return non-zero from V2 gate scripts when session errors are nonzero.
-- [ ] F030: Fix stale comments in `TrendDirectionV2RulesConfig`.
-- [ ] F031: Replace `XYZSeriesClassifier` placeholder in the V2 gate checklist.
-- [ ] F034/F035: Convert profiling/fetch progress `print` calls to logger calls or JSON report output.
-- [ ] F036: Wrap missing Alpaca env vars in a clearer error.
+- Full axis split out of `axis_series.py`: resolved at the import surface; implementation now lives in `src/regime_detection/axis_builders/series.py`.
+- Feature-store registry: partially resolved; `_FeatureStoreBuilder` and `_FEATURE_STORE_BUILDERS` exist at `src/regime_detection/feature_store.py:146-158` and `:607-627`.
+- Fetch-mode registry/concurrency: partially resolved; `FETCH_MODE_REGISTRY` exists at `scripts/fetch_regime_engine_v1_data.py:74-96`, and conservative concurrency is planned/executed at `:304-324` and `:500-528`.
+- Typed transition-risk evidence: partially resolved; `TransitionRiskEvidencePayload` exists at `src/regime_detection/models.py:73-80`.
+- Config v1/v2 split: intentionally reverted/deferred by user decision. Current debt is "large config file", not "missing v1/v2 files".
+- Timeline output builder: partially resolved; helper extraction exists, but evidence construction and output assembly still contain untyped dict payloads.
+- Artifact URI contract: resolved; `StoredArtifact.uri` is a fully qualified URI contract in `src/regime_data_fetch/artifact_store.py`.
+- V2 gate fail-closed behavior: resolved enough for prior finding; gate script tests cover failure behavior, and CI has a slow/V2 gate job.
+- FOMC/news sentiment skip-gate concerns: resolved enough; fixture-backed tests exist.
 
-## Things that look bad but are actually fine
+## Findings
 
-- `src/regime_detection/models.py:467` rewrites V1 wire payloads after model dump. This looks like a schema smell, but it is preserving V1 byte identity while V2 fields exist in the internal model. Do not remove it without `tests/test_v1_frozen_replay.py` coverage.
-- `src/regime_detection/models.py:294` deliberately omits mapped economic labels for clusters. That matches the V2 requirement that HMM/GMM clusters are not auto-labeled.
-- `src/regime_detection/axis_series.py:292` labels PIT breadth mode as `pit_constituent_biased_research`. The wording is noisy but useful: it prevents biased constituent evidence from looking like a production-grade PIT vendor feed.
-- `src/regime_detection/market_context.py:145` passes PIT intervals/constituent OHLCV through when slicing. That looks inconsistent with reindexing other inputs, but the comments explain why slicing them there would silently disable PIT breadth.
-- `src/regime_detection/config.py:1095` dispatches default config from package `__version__`. It is easy to dislike implicit version dispatch, but here it supports the V1/V2 packaged-config split and should be changed only with a migration plan.
+| ID | Severity | Status | Finding | Evidence |
+|---|---:|---|---|---|
+| TD-001 | P1 | New | `profile_engine_30d.py` has a real post-axis-split broken hook: it imports `regime_detection.axis_series` then dereferences inflation-growth helpers that now live in `axis_builders/series.py`. | `scripts/profile_engine_30d.py:347-353`; live import check reports `build_inflation_growth_rule_inputs_by_date=False` and `evaluate_inflation_growth_rules=False` on `axis_series`. |
+| TD-002 | P1 | Still open | Full pyright is not actionable yet: 714 errors across runtime/data/scripts, while CI only checks `src/regime_detection/config.py`. This lets typed contract drift accumulate outside config. | `.github/workflows/ci.yml:63-66`; pyright examples from `_v2_calibration_helpers.py:58`, `profile_engine_30d.py:351`, `timeline.py:89`, `transition_risk.py:138`. |
+| TD-003 | P1 | Still open | Evidence models are only partially typed. Most evidence payload classes still inherit `RootModel[dict[str, Any]]`, so Pydantic accepts arbitrary payloads and pyright cannot enforce field contracts. | `src/regime_detection/models.py:22-70`. |
+| TD-004 | P1 | Still open | Timeline still builds typed output objects using plain dict evidence payloads. This is a direct source of pyright failures and weakens the typed evidence migration. | `src/regime_detection/timeline.py:84-90`, `:230-240`. |
+| TD-005 | P1 | New | Transition-risk now has a typed payload class, but callers/tests still use old `{}` or `{"warnings": []}` evidence shapes, and the default test suite currently fails on this mismatch. Runtime code also passes a plain dict into the typed output. | `src/regime_detection/transition_risk.py:136-142`; payload class at `models.py:73-80`; failing test constructors at `tests/test_schema_and_timeline.py:155-158` and `tests/test_v2_comparison.py:205`. |
+| TD-006 | P1 | Still open | The feature-store registry exists, but its internal bus is `values: dict[str, Any]`; final assembly depends on string keys and untyped values. A misspelled key or wrong feature object is caught late or only by runtime tests. | `src/regime_detection/feature_store.py:140-143`, `:667-685`. |
+| TD-007 | P2 | Still open | `build_feature_store` remains the central feature assembly choke point with many optional configs and an explicit TODO to decompose it. The registry reduced the if-chain shape but did not create typed builder outputs. | `src/regime_detection/feature_store.py:630-685`, TODO at `:644-646`. |
+| TD-008 | P2 | Still open | Axis implementation moved out of `axis_series.py`, but the new module is a 1455-line all-axis builder file importing every rule family and owning every axis pipeline. The "full split" is not exhausted. | `src/regime_detection/axis_builders/series.py:1-77`, axis builders at `:118`, `:351`, `:941`, `:1113`, `:1320`. |
+| TD-009 | P2 | Still open | `Config` remains a 1103-line monolith with `RegimeConfig` and all V2 optional sub-configs in one file. This is accepted deferred debt after the v1/v2 split was reverted. | `src/regime_detection/config.py:1013-1055`. |
+| TD-010 | P2 | Partially resolved | Fetch-mode classification/concurrency moved into a registry, but invocation still lives in a long `_run_unattended_fetch_mode` if-chain. Adding a mode requires editing both registry data and dispatch logic. | Registry at `scripts/fetch_regime_engine_v1_data.py:74-103`; dispatch at `:531-663`. |
+| TD-011 | P2 | Still open | `profile_engine_30d.py` remains a 1579-line operational script that loads all input families, monkeypatches runtime modules for timing, and generates reports. It is a product surface, not just a helper script. | Timing wrapper at `scripts/profile_engine_30d.py:338-370`; input orchestration at `:1115-1155`. |
+| TD-012 | P2 | Still open | Acquisition event calendar remains a large orchestration module: fetches official sources, builds curated candidates, writes YAML, and formats candidate/validation records in one file. | `src/regime_data_fetch/event_calendar.py:280-335`, `:638-669`, `:768-820`. |
+| TD-013 | P2 | Still open | Aggregate EPS acquisition combines operator/manual detection, direct download, browser fallback, parsing, output/report writing, and Wayback backfill in one module. | `src/regime_data_fetch/aggregate_eps.py:185-235`, `:493-500`, `:700-745`. |
+| TD-014 | P2 | Still open | Investing.com live fetch has no retry/backoff wrapper around the JSON request path; a single transient URL open failure fails that operation. | `src/regime_data_fetch/investing_live.py:897-902`. |
+| TD-015 | P2 | Still open | `AcquisitionStore` owns schema creation, artifact-store selection, run lifecycle, artifact records, lineage, and ad hoc migrations. That makes persistent-state changes high blast radius. | `src/regime_data_fetch/acquisition_store.py:40-59`, `:361-423`, `:600-650`. |
+| TD-016 | P2 | Still open | SQLite schema migrations are embedded as opportunistic `ALTER TABLE` checks during store initialization, with no explicit schema version/migration history. | `src/regime_data_fetch/acquisition_store.py:638-650`. |
+| TD-017 | P2 | Still open | `fetch_text_result` is typed and logs, but the compatibility facade `fetch_text_url` still returns an empty string on error. Any caller using the facade can silently convert source failure into empty content. | `src/regime_data_fetch/event_sources/_common.py:67-80`. |
+| TD-018 | P2 | Still open | Strategy response construction builds a loose dict and unpacks it into a typed Pydantic model, producing type-checking failures and hiding field-level contract mistakes. | `src/regime_detection/strategy_response.py:124-139`. |
+| TD-019 | P2 | Still open | V2 calibration and audit helpers have broad pandas typing debt, including `.dt` on inferred `DatetimeIndex` and `sort_values`/`rename` overload mismatches. Some are probably harmless stubs noise, but CI does not force triage. | pyright examples: `scripts/_v2_calibration_helpers.py:58-77`, `scripts/audit_layer2_30d.py:167-171`. |
+| TD-020 | P3 | Still open | Dev tooling is incomplete for repeatable debt audits: `vulture` and `pydeps` are not installed and not declared in `[project.optional-dependencies].dev`. | `pyproject.toml:27-42`; command failures: `No module named vulture`, `No module named pydeps`. |
+| TD-021 | P3 | Still open | Supply-chain audit is not repo-scoped. Running `pip-audit` against the current environment reports many unrelated package vulnerabilities and skips local packages, so it is noisy but not enforceable. | `pyproject.toml:5-18`, `:27-42`; `pip-audit` output skipped `regime-detection (2.0.0)` and other local packages. |
+| TD-022 | P3 | Accepted risk | Default local pytest excludes `slow`, and `v2_shadow` remains off by default. CI now has a path-sensitive slow/V2 gate job, so this is acceptable if shadow runs remain an explicit operational gate. | `pytest.ini:1-11`; `.github/workflows/ci.yml:71-120`. |
 
-## Open questions for the maintainer
+## Top 5 Concrete Tasks
 
-- Should V2 walk-forward/shadow A/B gate scripts ever exit `0` with classifier errors, or should all error counts be hard failures?
-- Are the `/private/tmp/...` acquisition consolidation defaults still intended to be runnable, or are they post-migration archaeology that should move out of `src/`?
-- Which static tool should become authoritative first: Ruff only, Pyright scoped to `src/`, or a smaller hand-written type check target for runtime modules?
-- Should `data/raw`-dependent integration tests become required through fixture snapshots, or should CI materialize a small object-store manifest?
-- Is `event_calendar_fetch_report.json` a durable repo artifact or a generated local report? Its placement affects whether docs can cite it as current evidence.
+### Task 1 - Fix profiler hook after axis split
 
-## Verification and tooling evidence
+Subtasks:
 
-- `python3 -m ruff check .` failed with 37 findings. Main classes: E402 script path-shim imports, F401 unused imports, and F541 f-strings without placeholders.
-- `python3 -m pyright` failed with 1,315 errors. Most are pandas typing/annotation drift in scripts and tests; examples include mismatched `ProfileInputBundle` fields in `scripts/profile_engine_30d.py`.
-- `python3 -m pip_audit` was unavailable: `No module named pip_audit`.
-- `python3 -m vulture` was unavailable: `No module named vulture`.
-- `python3 -m pydeps src/regime_detection --show-cycles --noshow` was unavailable: `No module named pydeps`.
-- `python3 -m pytest -q` passed under default pytest options (`-q -m "not slow" -n 2`): progress reached `[100%]`; one warning remained from `tests/test_hmm_state.py::test_compute_hmm_features_returns_none_when_hmm_fit_fails` (`sklearn.base.ConvergenceWarning: Number of distinct clusters (1) found smaller than n_clusters (4)`).
+1. Move the inflation-growth timing hook in `scripts/profile_engine_30d.py` to patch `regime_detection.axis_builders.series`, or expose stable instrumentation hooks from the axis builder module.
+2. Add a focused test that calls `_timed_inflation_growth_builder` and asserts it no longer raises `AttributeError` when the wrapped builder runs.
+3. Run `python3 -m pytest tests/test_profile_engine_30d.py -q`.
+
+Acceptance evidence:
+
+- `PYTHONPATH=src` import check shows the patched module owns all referenced attributes.
+- The focused profiler test fails before the fix and passes after.
+
+### Task 2 - Typed evidence model slice
+
+Subtasks:
+
+1. Replace placeholder dict evidence for network fragility and monetary pressure timeline fallbacks with explicit typed payload models.
+2. Update transition-risk construction to instantiate `TransitionRiskEvidencePayload` explicitly.
+3. Add tests that invalid evidence fields are rejected for the typed models.
+4. Run pyright on the touched files only, then add them to the CI pyright list.
+
+Acceptance evidence:
+
+- Pyright no longer flags `timeline.py` evidence construction for the touched outputs.
+- Runtime output JSON remains backward-compatible where V1 frozen replay applies.
+
+### Task 3 - Feature-store builder output typing
+
+Subtasks:
+
+1. Replace `_FeatureStoreBuildState.values: dict[str, Any]` with a typed intermediate object or one dataclass field per feature.
+2. Make each `_FeatureStoreBuilder` return a typed update instead of mutating string-keyed shared state.
+3. Keep `build_feature_store(...)` as the public entry point until the typed builder bus is stable.
+4. Run feature-store and timeline tests.
+
+Acceptance evidence:
+
+- No string-key lookup remains in final `FeatureStore(...)` assembly.
+- Pyright can validate the feature object types used by `FeatureStore`.
+
+### Task 4 - Fetch-mode registry owns invocation
+
+Subtasks:
+
+1. Extend `FetchModeSpec` with an invocation callable or adapter object.
+2. Move each branch of `_run_unattended_fetch_mode` into a mode-specific callable with owned argument validation.
+3. Keep `_plan_fetch_mode_execution` unchanged except for reading registry metadata.
+4. Add a test that a new fake mode can be planned and invoked through registry metadata without editing an if-chain.
+
+Acceptance evidence:
+
+- `_run_unattended_fetch_mode` disappears or becomes a one-line registry dispatch.
+- Existing `tests/test_fetch_workflow.py` coverage still passes.
+
+### Task 5 - Incremental pyright ratchet
+
+Subtasks:
+
+1. Keep the current full pyright command as a non-blocking audit target.
+2. Expand CI pyright from `src/regime_detection/config.py` to the fixed files from Tasks 1-4.
+3. Add a `scripts/typecheck_changed.py` or documented command if path-scoped pyright becomes too noisy.
+4. Track remaining error count in this audit file or a dedicated type debt note.
+
+Acceptance evidence:
+
+- CI fails on type regression in at least the files touched by the debt tasks.
+- Full pyright error count decreases from 714.
+
+## Quick Wins
+
+- Add `vulture`, `pydeps`, and `pip-audit` to a separate optional `audit` extra instead of the default `dev` extra.
+- Add a tiny regression test around `profile_engine_30d._timed_inflation_growth_builder`.
+- Replace `fetch_text_url` callers with `fetch_text_result`, then delete the empty-string facade.
+- Add retry/backoff around `investing_live._request_json`.
+- Move acquisition-store schema DDL into a dedicated schema/migration module without changing tables.
+
+## Looks Bad But Is Fine For Now
+
+- Keeping a single `src/regime_detection/config.py` is an explicit current decision. The debt is size/cohesion, not "missing v1/v2 split".
+- `axis_series.py` no longer being the implementation home is a real improvement. The remaining problem is the new `axis_builders/series.py` size and coupling.
+- Default pytest excluding `slow` is acceptable because CI has a path-sensitive slow/V2 gate job. `v2_shadow` should remain an explicit long-running operational gate unless product requirements change.
+- `pip-audit` output is useful as an environment warning, but it is too noisy to treat as this repo's dependency baseline until a lockfile or isolated environment audit exists.
+
+## Open Questions
+
+1. Should typed evidence preserve dict-compatible access permanently, or can callers migrate to field access?
+2. Should pyright be ratcheted by file list, package, or error-count budget?
+3. Should fetch mode invocation support concurrent operator-assisted modes, or should concurrency stay unattended-only?
+4. Should acquisition-store migrations be versioned in SQLite metadata or kept as code-only migrations?
+5. Should `profile_engine_30d.py` remain a script with imports, or become a package module with a thin CLI wrapper?
