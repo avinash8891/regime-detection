@@ -3,6 +3,7 @@ from __future__ import annotations
 import sqlite3
 from pathlib import Path
 
+from regime_data_fetch.acquisition_schema import init_acquisition_schema
 from regime_data_fetch.acquisition_store import AcquisitionStore
 from regime_data_fetch.artifact_store import (
     ArtifactStore,
@@ -21,6 +22,61 @@ class FailingArtifactStore(ArtifactStore):
     def put_bytes(self, payload: bytes, key: str) -> StoredArtifact:
         del payload, key
         raise OSError("disk full")
+
+
+def test_acquisition_schema_helper_creates_tables_and_migrates_legacy_artifacts(
+    tmp_path: Path,
+) -> None:
+    db_path = tmp_path / "legacy.db"
+    with sqlite3.connect(db_path) as conn:
+        conn.execute(
+            """
+            CREATE TABLE artifacts (
+                artifact_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                run_id INTEGER NOT NULL,
+                source_name TEXT NOT NULL,
+                artifact_kind TEXT NOT NULL,
+                source_identifier TEXT NOT NULL,
+                content_text TEXT NOT NULL,
+                content_sha256 TEXT NOT NULL,
+                downloaded_at_utc TEXT NOT NULL,
+                effective_date TEXT,
+                start_date TEXT,
+                end_date TEXT,
+                timezone TEXT,
+                calendar_assumption TEXT,
+                adjustment_policy TEXT,
+                license_note TEXT,
+                notes TEXT
+            )
+            """
+        )
+
+        init_acquisition_schema(conn)
+
+        table_names = {
+            row[0]
+            for row in conn.execute(
+                "SELECT name FROM sqlite_master WHERE type = 'table'"
+            )
+        }
+        artifact_columns = {
+            row[1] for row in conn.execute("PRAGMA table_info(artifacts)")
+        }
+
+    assert {
+        "fetch_runs",
+        "artifacts",
+        "artifact_blobs",
+        "derived_outputs",
+        "artifact_records",
+        "artifact_lineage",
+        "canonical_versions",
+        "source_checkpoints",
+    }.issubset(table_names)
+    assert {"local_path", "content_size_bytes", "content_encoding"}.issubset(
+        artifact_columns
+    )
 
 
 def test_acquisition_store_records_artifact_ledger_checkpoint_and_lineage(

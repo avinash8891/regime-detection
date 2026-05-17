@@ -12,6 +12,7 @@ from regime_data_fetch.artifact_store import (
     build_artifact_store,
     sha256_bytes,
 )
+from regime_data_fetch.acquisition_schema import init_acquisition_schema
 
 
 def utc_now_iso() -> str:
@@ -79,7 +80,10 @@ class AcquisitionStore:
                     json.dumps(params, sort_keys=True),
                 ),
             )
-            return FetchRun(run_id=int(cursor.lastrowid), started_at_utc=started_at_utc)
+            return FetchRun(
+                run_id=_last_insert_rowid(cursor),
+                started_at_utc=started_at_utc,
+            )
 
     def finish_fetch_run(
         self,
@@ -156,7 +160,7 @@ class AcquisitionStore:
                     notes,
                 ),
             )
-            artifact_id = int(cursor.lastrowid)
+            artifact_id = _last_insert_rowid(cursor)
         artifact_record = self._store_raw_artifact(
             run_id=run_id,
             source_name=source_name,
@@ -249,7 +253,7 @@ class AcquisitionStore:
                     "binary",
                 ),
             )
-            artifact_id = int(cursor.lastrowid)
+            artifact_id = _last_insert_rowid(cursor)
             if store_bytes:
                 conn.execute(
                     """
@@ -418,7 +422,7 @@ class AcquisitionStore:
                 ),
             )
             return ArtifactRecord(
-                artifact_record_id=int(cursor.lastrowid),
+                artifact_record_id=_last_insert_rowid(cursor),
                 content_sha256=content_sha256,
             )
 
@@ -534,119 +538,7 @@ class AcquisitionStore:
 
     def _init_schema(self) -> None:
         with self._connect() as conn:
-            conn.executescript(
-                """
-                CREATE TABLE IF NOT EXISTS fetch_runs (
-                    run_id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    fetch_type TEXT NOT NULL,
-                    started_at_utc TEXT NOT NULL,
-                    finished_at_utc TEXT,
-                    status TEXT NOT NULL,
-                    params_json TEXT NOT NULL,
-                    notes TEXT
-                );
-
-                CREATE TABLE IF NOT EXISTS artifacts (
-                    artifact_id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    run_id INTEGER NOT NULL REFERENCES fetch_runs(run_id) ON DELETE CASCADE,
-                    source_name TEXT NOT NULL,
-                    artifact_kind TEXT NOT NULL,
-                    source_identifier TEXT NOT NULL,
-                    content_text TEXT NOT NULL,
-                    content_sha256 TEXT NOT NULL,
-                    downloaded_at_utc TEXT NOT NULL,
-                    effective_date TEXT,
-                    start_date TEXT,
-                    end_date TEXT,
-                    timezone TEXT,
-                    calendar_assumption TEXT,
-                    adjustment_policy TEXT,
-                    license_note TEXT,
-                    notes TEXT,
-                    local_path TEXT,
-                    content_size_bytes INTEGER,
-                    content_encoding TEXT
-                );
-
-                CREATE TABLE IF NOT EXISTS artifact_blobs (
-                    artifact_id INTEGER PRIMARY KEY REFERENCES artifacts(artifact_id) ON DELETE CASCADE,
-                    content_bytes BLOB NOT NULL
-                );
-
-                CREATE TABLE IF NOT EXISTS derived_outputs (
-                    output_id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    run_id INTEGER NOT NULL REFERENCES fetch_runs(run_id) ON DELETE CASCADE,
-                    output_kind TEXT NOT NULL,
-                    path TEXT NOT NULL,
-                    content_sha256 TEXT NOT NULL,
-                    row_count INTEGER,
-                    min_date TEXT,
-                    max_date TEXT,
-                    recorded_at_utc TEXT NOT NULL,
-                    notes TEXT
-                );
-
-                CREATE TABLE IF NOT EXISTS artifact_records (
-                    artifact_record_id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    run_id INTEGER NOT NULL REFERENCES fetch_runs(run_id) ON DELETE CASCADE,
-                    name TEXT NOT NULL,
-                    stage TEXT NOT NULL,
-                    uri TEXT NOT NULL,
-                    local_path TEXT NOT NULL,
-                    content_sha256 TEXT NOT NULL,
-                    size_bytes INTEGER NOT NULL,
-                    source_name TEXT NOT NULL,
-                    artifact_kind TEXT NOT NULL,
-                    row_count INTEGER,
-                    min_date TEXT,
-                    max_date TEXT,
-                    schema_version TEXT,
-                    recorded_at_utc TEXT NOT NULL,
-                    notes TEXT
-                );
-
-                CREATE TABLE IF NOT EXISTS artifact_lineage (
-                    lineage_id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    output_artifact_record_id INTEGER NOT NULL REFERENCES artifact_records(artifact_record_id) ON DELETE CASCADE,
-                    input_artifact_record_id INTEGER NOT NULL REFERENCES artifact_records(artifact_record_id) ON DELETE CASCADE,
-                    transform_name TEXT NOT NULL,
-                    recorded_at_utc TEXT NOT NULL
-                );
-
-                CREATE TABLE IF NOT EXISTS canonical_versions (
-                    canonical_version_id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    dataset_name TEXT NOT NULL,
-                    version TEXT NOT NULL,
-                    artifact_record_id INTEGER NOT NULL REFERENCES artifact_records(artifact_record_id) ON DELETE CASCADE,
-                    manifest_uri TEXT,
-                    status TEXT NOT NULL,
-                    recorded_at_utc TEXT NOT NULL,
-                    UNIQUE(dataset_name, version)
-                );
-
-                CREATE TABLE IF NOT EXISTS source_checkpoints (
-                    checkpoint_id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    source_name TEXT NOT NULL,
-                    cursor_key TEXT NOT NULL,
-                    cursor_value TEXT NOT NULL,
-                    successful_run_id INTEGER NOT NULL REFERENCES fetch_runs(run_id) ON DELETE CASCADE,
-                    updated_at_utc TEXT NOT NULL,
-                    UNIQUE(source_name, cursor_key)
-                );
-                """
-            )
-            self._ensure_artifact_columns(conn)
-
-    def _ensure_artifact_columns(self, conn: sqlite3.Connection) -> None:
-        existing = {row[1] for row in conn.execute("PRAGMA table_info(artifacts)")}
-        required_columns = {
-            "local_path": "ALTER TABLE artifacts ADD COLUMN local_path TEXT",
-            "content_size_bytes": "ALTER TABLE artifacts ADD COLUMN content_size_bytes INTEGER",
-            "content_encoding": "ALTER TABLE artifacts ADD COLUMN content_encoding TEXT",
-        }
-        for column_name, ddl in required_columns.items():
-            if column_name not in existing:
-                conn.execute(ddl)
+            init_acquisition_schema(conn)
 
     def _store_raw_artifact(
         self,
@@ -728,3 +620,9 @@ def _artifact_suffix(*, artifact_kind: str, local_path: str | None) -> str:
     if safe_kind in {"json", "csv", "html", "txt", "xml", "cfb"}:
         return f".{safe_kind}"
     return ".bin"
+
+
+def _last_insert_rowid(cursor: sqlite3.Cursor) -> int:
+    if cursor.lastrowid is None:
+        raise RuntimeError("sqlite insert did not return a row id")
+    return cursor.lastrowid
