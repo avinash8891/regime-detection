@@ -339,7 +339,6 @@ def _timed_inflation_growth_builder(
     method: Callable[..., Any],
 ) -> Callable[..., Any]:
     def wrapped(
-        self,
         context: Any,
         feature_store: Any,
         credit_funding_active_labels_by_date: Any = None,
@@ -390,7 +389,6 @@ def _timed_inflation_growth_builder(
                     )
                 )
                 return method(
-                    self,
                     context,
                     feature_store,
                     credit_funding_active_labels_by_date=credit_funding_active_labels_by_date,
@@ -565,82 +563,82 @@ def _install_timers(timer: StageTimer):
             ),
         ),
         (
-            axis_series_module.TrendDirectionSeriesClassifier,
-            "build",
+            axis_series_module,
+            "build_trend_direction_axis_series",
             _timed_method_wrapper(
                 timer,
                 "axis_series.trend_direction",
-                axis_series_module.TrendDirectionSeriesClassifier.build,
+                axis_series_module.build_trend_direction_axis_series,
             ),
         ),
         (
-            axis_series_module.TrendCharacterSeriesClassifier,
-            "build",
+            axis_series_module,
+            "build_trend_character_axis_series",
             _timed_method_wrapper(
                 timer,
                 "axis_series.trend_character",
-                axis_series_module.TrendCharacterSeriesClassifier.build,
+                axis_series_module.build_trend_character_axis_series,
             ),
         ),
         (
-            axis_series_module.VolatilitySeriesClassifier,
-            "build",
+            axis_series_module,
+            "build_volatility_axis_series",
             _timed_method_wrapper(
                 timer,
                 "axis_series.volatility_state",
-                axis_series_module.VolatilitySeriesClassifier.build,
+                axis_series_module.build_volatility_axis_series,
             ),
         ),
         (
-            axis_series_module.BreadthSeriesClassifier,
-            "build",
+            axis_series_module,
+            "build_breadth_axis_series",
             _timed_method_wrapper(
                 timer,
                 "axis_series.breadth_state",
-                axis_series_module.BreadthSeriesClassifier.build,
+                axis_series_module.build_breadth_axis_series,
             ),
         ),
         (
-            axis_series_module.CreditFundingSeriesClassifier,
-            "build",
+            axis_series_module,
+            "build_credit_funding_axis_series",
             _timed_method_wrapper(
                 timer,
                 "axis_series.credit_funding",
-                axis_series_module.CreditFundingSeriesClassifier.build,
+                axis_series_module.build_credit_funding_axis_series,
             ),
         ),
         (
-            axis_series_module.NetworkFragilitySeriesClassifier,
-            "build",
+            axis_series_module,
+            "build_network_fragility_axis_series",
             _timed_method_wrapper(
                 timer,
                 "axis_series.network_fragility",
-                axis_series_module.NetworkFragilitySeriesClassifier.build,
+                axis_series_module.build_network_fragility_axis_series,
             ),
         ),
         (
-            axis_series_module.VolumeLiquidityStateSeriesClassifier,
-            "build",
+            axis_series_module,
+            "build_volume_liquidity_axis_series",
             _timed_method_wrapper(
                 timer,
                 "axis_series.volume_liquidity_state",
-                axis_series_module.VolumeLiquidityStateSeriesClassifier.build,
+                axis_series_module.build_volume_liquidity_axis_series,
             ),
         ),
         (
-            axis_series_module.MonetaryPressureV2SeriesClassifier,
-            "build",
+            axis_series_module,
+            "build_monetary_pressure_axis_series",
             _timed_method_wrapper(
                 timer,
                 "axis_series.monetary_pressure_state",
-                axis_series_module.MonetaryPressureV2SeriesClassifier.build,
+                axis_series_module.build_monetary_pressure_axis_series,
             ),
         ),
         (
-            axis_series_module.InflationGrowthSeriesClassifier,
-            "build",
+            axis_series_module,
+            "build_inflation_growth_axis_series",
             _timed_inflation_growth_builder(
-                timer, axis_series_module.InflationGrowthSeriesClassifier.build
+                timer, axis_series_module.build_inflation_growth_axis_series
             ),
         ),
         (
@@ -1100,7 +1098,9 @@ def _build_json_report(
 
 def _write_json_report(path: Path, report: dict[str, Any]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(report, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    path.write_text(
+        json.dumps(report, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+    )
 
 
 def _load_profile_inputs(

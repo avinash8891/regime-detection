@@ -6,7 +6,7 @@ import pandas as pd
 import pytest
 
 from regime_detection.axis_series import (
-    NetworkFragilitySeriesClassifier,
+    build_network_fragility_axis_series,
     build_axis_series_bundle,
 )
 from regime_detection.engine import RegimeEngine
@@ -47,7 +47,9 @@ def _build_context_with_real_v2_universe(
 # ---------- feature_store seam -----------------------------------------------
 
 
-def test_feature_store_network_fragility_is_none_without_sector_data(market_df_for_asof) -> None:
+def test_feature_store_network_fragility_is_none_without_sector_data(
+    market_df_for_asof,
+) -> None:
     as_of = date(2023, 12, 14)
     context = build_market_context(
         end_date=as_of,
@@ -81,7 +83,9 @@ def test_feature_store_populates_network_fragility_with_real_v2_universe(
 # ---------- axis classifier stub --------------------------------------------
 
 
-def test_network_fragility_classifier_returns_none_without_sector_data(market_df_for_asof) -> None:
+def test_network_fragility_classifier_returns_none_without_sector_data(
+    market_df_for_asof,
+) -> None:
     as_of = date(2023, 12, 14)
     context = build_market_context(
         end_date=as_of,
@@ -90,7 +94,7 @@ def test_network_fragility_classifier_returns_none_without_sector_data(market_df
     )
     store = build_feature_store(context)
 
-    result = NetworkFragilitySeriesClassifier().build(context, store)
+    result = build_network_fragility_axis_series(context, store)
 
     assert result is None
 
@@ -109,7 +113,7 @@ def test_network_fragility_classifier_returns_real_fixture_outputs(
         context, network_fragility_config=context.config.network_fragility
     )
 
-    result = NetworkFragilitySeriesClassifier().build(context, store)
+    result = build_network_fragility_axis_series(context, store)
 
     assert result is not None
     assert set(result.keys()) == set(context.sessions)
@@ -133,7 +137,9 @@ def test_network_fragility_classifier_returns_real_fixture_outputs(
 # ---------- bundle wiring ---------------------------------------------------
 
 
-def test_axis_bundle_network_fragility_is_none_in_pure_v1_mode(market_df_for_asof) -> None:
+def test_axis_bundle_network_fragility_is_none_in_pure_v1_mode(
+    market_df_for_asof,
+) -> None:
     as_of = date(2023, 12, 14)
     context = build_market_context(
         end_date=as_of,
@@ -161,13 +167,18 @@ def test_axis_bundle_network_fragility_present_with_real_v2_universe(
 
     assert bundle.network_fragility is not None
     assert len(bundle.network_fragility) == len(context.sessions)
-    assert bundle.network_fragility[_REAL_V2_AS_OF].active_label == "correlation_concentration"
+    assert (
+        bundle.network_fragility[_REAL_V2_AS_OF].active_label
+        == "correlation_concentration"
+    )
 
 
 # ---------- timeline integration --------------------------------------------
 
 
-def test_timeline_emits_network_fragility_unknown_in_pure_v1_mode(market_df_for_asof) -> None:
+def test_timeline_emits_network_fragility_unknown_in_pure_v1_mode(
+    market_df_for_asof,
+) -> None:
     """Regression: without V2 data, network_fragility still emits the v2
     'unknown' placeholder shape locked in Phase C."""
     as_of = date(2023, 12, 14)
@@ -197,7 +208,10 @@ def test_timeline_pulls_network_fragility_from_axis_bundle_when_sector_data_pres
         },
     )
 
-    assert "v2_classifier_not_yet_implemented" not in out.network_fragility.evidence.get("reason", "")
+    assert (
+        "v2_classifier_not_yet_implemented"
+        not in out.network_fragility.evidence.get("reason", "")
+    )
     assert out.network_fragility.mode == "sector_cross_asset_22"
     assert out.network_fragility.active_label == "correlation_concentration"
     assert out.network_fragility.evidence["rule_evidence"][

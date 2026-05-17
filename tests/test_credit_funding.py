@@ -8,6 +8,7 @@ TDD per AGENTS.md / ~/.claude/CLAUDE.md testing rules:
 
 Spec authority: docs/regime_engine_v2_spec.md §2C lines 2005-2130.
 """
+
 from __future__ import annotations
 
 
@@ -18,7 +19,8 @@ import pandas as pd
 import pytest
 
 from regime_detection.axis_series import (
-    CreditFundingSeriesClassifier,
+    build_credit_funding_axis_series,
+    build_credit_funding_proxy_axis_series,
     resolve_credit_funding_effective_output,
 )
 from regime_detection.models import CreditFundingOutput, DataQuality
@@ -73,11 +75,15 @@ def _bdate_index(periods: int = _TRAINING_SESSIONS) -> pd.DatetimeIndex:
     return pd.DatetimeIndex([pd.Timestamp(d) for d in sessions[-periods:]])
 
 
-def _make_constant_series(index: pd.DatetimeIndex, value: float, name: str) -> pd.Series:
+def _make_constant_series(
+    index: pd.DatetimeIndex, value: float, name: str
+) -> pd.Series:
     return pd.Series(value, index=index, name=name)
 
 
-def _make_random_walk(index: pd.DatetimeIndex, *, seed: int, start: float, sigma: float) -> pd.Series:
+def _make_random_walk(
+    index: pd.DatetimeIndex, *, seed: int, start: float, sigma: float
+) -> pd.Series:
     rng = np.random.default_rng(seed)
     rets = rng.normal(0.0, sigma, size=len(index))
     closes = start * (1.0 + rets).cumprod()
@@ -154,9 +160,17 @@ def test_hy_oas_63d_carries_hy_oas_input_verbatim() -> None:
     usd = pd.Series(100.0, index=idx, dtype=float)
 
     features = compute_credit_funding_features(
-        hyg_close=hyg, lqd_close=lqd, tlt_close=tlt, kre_close=kre,
-        spy_close=spy, sofr=sofr, iorb=iorb, nfci_weekly=nfci_w,
-        broad_usd_index=usd, hy_oas=hy_oas, ig_oas=ig_oas,
+        hyg_close=hyg,
+        lqd_close=lqd,
+        tlt_close=tlt,
+        kre_close=kre,
+        spy_close=spy,
+        sofr=sofr,
+        iorb=iorb,
+        nfci_weekly=nfci_w,
+        broad_usd_index=usd,
+        hy_oas=hy_oas,
+        ig_oas=ig_oas,
         config=_default_rules(),
     )
     # hy_oas_63d carries the OAS series verbatim (reindexed only).
@@ -190,9 +204,17 @@ def test_nfci_carries_forward_weekly_to_daily() -> None:
         nfci_w.iloc[pos] = val
 
     features = compute_credit_funding_features(
-        hyg_close=hyg, lqd_close=lqd, tlt_close=tlt, kre_close=kre,
-        spy_close=spy, sofr=sofr, iorb=iorb, nfci_weekly=nfci_w,
-        broad_usd_index=usd, hy_oas=hy_oas, ig_oas=ig_oas,
+        hyg_close=hyg,
+        lqd_close=lqd,
+        tlt_close=tlt,
+        kre_close=kre,
+        spy_close=spy,
+        sofr=sofr,
+        iorb=iorb,
+        nfci_weekly=nfci_w,
+        broad_usd_index=usd,
+        hy_oas=hy_oas,
+        ig_oas=ig_oas,
         config=_default_rules(),
     )
     carried = features.nfci_daily_carried
@@ -224,9 +246,17 @@ def test_kre_spy_ratio_at_specific_date() -> None:
     ig_oas = pd.Series(150.0, index=idx, dtype=float)
 
     features = compute_credit_funding_features(
-        hyg_close=hyg, lqd_close=lqd, tlt_close=tlt, kre_close=kre,
-        spy_close=spy, sofr=sofr, iorb=iorb, nfci_weekly=nfci_w,
-        broad_usd_index=usd, hy_oas=hy_oas, ig_oas=ig_oas,
+        hyg_close=hyg,
+        lqd_close=lqd,
+        tlt_close=tlt,
+        kre_close=kre,
+        spy_close=spy,
+        sofr=sofr,
+        iorb=iorb,
+        nfci_weekly=nfci_w,
+        broad_usd_index=usd,
+        hy_oas=hy_oas,
+        ig_oas=ig_oas,
         config=_default_rules(),
     )
     assert features.kre_spy_ratio.iloc[50] == pytest.approx(0.125)
@@ -250,9 +280,17 @@ def test_credit_spread_provenance_row_present_with_single_source_code() -> None:
     ig_oas = pd.Series(150.0, index=idx, dtype=float)
 
     features = compute_credit_funding_features(
-        hyg_close=hyg, lqd_close=lqd, tlt_close=tlt, kre_close=kre,
-        spy_close=spy, sofr=sofr, iorb=iorb, nfci_weekly=nfci_w,
-        broad_usd_index=usd, hy_oas=hy_oas, ig_oas=ig_oas,
+        hyg_close=hyg,
+        lqd_close=lqd,
+        tlt_close=tlt,
+        kre_close=kre,
+        spy_close=spy,
+        sofr=sofr,
+        iorb=iorb,
+        nfci_weekly=nfci_w,
+        broad_usd_index=usd,
+        hy_oas=hy_oas,
+        ig_oas=ig_oas,
         config=_default_rules(),
     )
     bw = features.bias_warnings
@@ -305,9 +343,17 @@ def test_ice_bofa_oas_is_the_single_credit_spread_source() -> None:
     ig_oas = pd.Series(np.linspace(100.0, 200.0, n), index=idx, dtype=float)
 
     features = compute_credit_funding_features(
-        hyg_close=hyg, lqd_close=lqd, tlt_close=tlt, kre_close=kre,
-        spy_close=spy, sofr=sofr, iorb=iorb, nfci_weekly=nfci_w,
-        broad_usd_index=usd, hy_oas=hy_oas, ig_oas=ig_oas,
+        hyg_close=hyg,
+        lqd_close=lqd,
+        tlt_close=tlt,
+        kre_close=kre,
+        spy_close=spy,
+        sofr=sofr,
+        iorb=iorb,
+        nfci_weekly=nfci_w,
+        broad_usd_index=usd,
+        hy_oas=hy_oas,
+        ig_oas=ig_oas,
         config=_default_rules(),
     )
 
@@ -347,8 +393,14 @@ def test_compute_credit_funding_features_requires_both_oas_series() -> None:
 
     with pytest.raises(TypeError):
         compute_credit_funding_features(
-            hyg_close=hyg, lqd_close=lqd, tlt_close=tlt, kre_close=kre,
-            spy_close=spy, sofr=sofr, iorb=iorb, nfci_weekly=nfci_w,
+            hyg_close=hyg,
+            lqd_close=lqd,
+            tlt_close=tlt,
+            kre_close=kre,
+            spy_close=spy,
+            sofr=sofr,
+            iorb=iorb,
+            nfci_weekly=nfci_w,
             broad_usd_index=usd,
             hy_oas=hy_oas,  # ig_oas omitted — required kwarg
             config=_default_rules(),
@@ -372,9 +424,17 @@ def test_tlt_proxy_differential_hand_computed() -> None:
     usd = _make_random_walk(idx, seed=16, start=120.0, sigma=0.003)
 
     features = compute_credit_funding_features(
-        hyg_close=hyg, lqd_close=lqd, tlt_close=tlt, kre_close=kre,
-        spy_close=spy, sofr=sofr, iorb=iorb, nfci_weekly=nfci,
-        broad_usd_index=usd, hy_oas=hy_oas, ig_oas=ig_oas,
+        hyg_close=hyg,
+        lqd_close=lqd,
+        tlt_close=tlt,
+        kre_close=kre,
+        spy_close=spy,
+        sofr=sofr,
+        iorb=iorb,
+        nfci_weekly=nfci,
+        broad_usd_index=usd,
+        hy_oas=hy_oas,
+        ig_oas=ig_oas,
         config=_default_rules(),
     )
 
@@ -414,7 +474,10 @@ def test_tlt_proxy_features_carry_proxy_bias_warning() -> None:
             features.bias_warnings["warning_code"],
         )
     )
-    assert ("hy_tr_differential_63d", "credit_spread_proxy_total_return_differential") in codes
+    assert (
+        "hy_tr_differential_63d",
+        "credit_spread_proxy_total_return_differential",
+    ) in codes
     assert ("hy_oas_63d", "credit_spread_ice_bofa_oas_fred") in codes
 
 
@@ -499,7 +562,8 @@ def test_build_rule_inputs_accepts_either_spread_source() -> None:
     dt = idx[550]
 
     oas_inputs = build_rule_inputs_for_date(
-        features=f, dt=dt,
+        features=f,
+        dt=dt,
         hy_spread_percentile_504d=f.hy_oas_percentile_504d,
         hy_spread_slope_21d=f.hy_oas_slope_21d,
         ig_spread_slope_21d=f.ig_oas_slope_21d,
@@ -507,7 +571,8 @@ def test_build_rule_inputs_accepts_either_spread_source() -> None:
         avg_pairwise_corr_percentile_504d=acp,
     )
     proxy_inputs = build_rule_inputs_for_date(
-        features=f, dt=dt,
+        features=f,
+        dt=dt,
         hy_spread_percentile_504d=f.hy_tr_differential_percentile_504d,
         hy_spread_slope_21d=f.hy_tr_differential_slope_21d,
         ig_spread_slope_21d=f.ig_tr_differential_slope_21d,
@@ -515,7 +580,9 @@ def test_build_rule_inputs_accepts_either_spread_source() -> None:
         avg_pairwise_corr_percentile_504d=acp,
     )
     # Source-neutral spread fields differ between the two metrics...
-    assert oas_inputs.hy_spread_percentile_504d != proxy_inputs.hy_spread_percentile_504d
+    assert (
+        oas_inputs.hy_spread_percentile_504d != proxy_inputs.hy_spread_percentile_504d
+    )
     # ...while the shared macro/vol fields are identical.
     assert oas_inputs.spy_21d_return == proxy_inputs.spy_21d_return
     assert oas_inputs.sofr_iorb_slope_21d == proxy_inputs.sofr_iorb_slope_21d
@@ -575,7 +642,9 @@ def test_credit_stress_fires_on_high_percentile_and_falling_spy() -> None:
     assert evaluate_rules(inputs=inputs, config=rules) == "credit_stress"
 
 
-def test_funding_squeeze_fires_on_usd_zscore_and_sofr_widening_and_falling_spy() -> None:
+def test_funding_squeeze_fires_on_usd_zscore_and_sofr_widening_and_falling_spy() -> (
+    None
+):
     """§2C lines 2077-2080: usd_z=2.0, sofr_slope=0.001, spy_21d=-0.02."""
     rules = _default_rules()
     inputs = _rule_inputs(
@@ -641,7 +710,9 @@ def _build_full_synthetic_context(
 
     # Build full NETWORK_FRAGILITY_UNIVERSE prices (so feature_store.network_fragility lights up).
     universe_prices = pd.DataFrame(
-        (1.0 + rng.normal(0.0, 0.01, size=(n, len(NETWORK_FRAGILITY_UNIVERSE)))).cumprod(axis=0)
+        (
+            1.0 + rng.normal(0.0, 0.01, size=(n, len(NETWORK_FRAGILITY_UNIVERSE)))
+        ).cumprod(axis=0)
         * 100.0,
         index=idx,
         columns=list(NETWORK_FRAGILITY_UNIVERSE),
@@ -650,20 +721,39 @@ def _build_full_synthetic_context(
     market_rows: list[dict[str, object]] = []
     for ts in idx:
         close = float(spy_close.loc[ts])
-        market_rows.append({
-            "date": ts.date(), "symbol": "SPY",
-            "open": close, "high": close * 1.005, "low": close * 0.995,
-            "close": close, "volume": 1_000_000,
-        })
-        market_rows.append({
-            "date": ts.date(), "symbol": "RSP",
-            "open": close * 0.5, "high": close * 0.5 * 1.005,
-            "low": close * 0.5 * 0.995, "close": close * 0.5, "volume": 500_000,
-        })
-        market_rows.append({
-            "date": ts.date(), "symbol": "VIXY",
-            "open": 20.0, "high": 20.5, "low": 19.5, "close": 20.0, "volume": 100_000,
-        })
+        market_rows.append(
+            {
+                "date": ts.date(),
+                "symbol": "SPY",
+                "open": close,
+                "high": close * 1.005,
+                "low": close * 0.995,
+                "close": close,
+                "volume": 1_000_000,
+            }
+        )
+        market_rows.append(
+            {
+                "date": ts.date(),
+                "symbol": "RSP",
+                "open": close * 0.5,
+                "high": close * 0.5 * 1.005,
+                "low": close * 0.5 * 0.995,
+                "close": close * 0.5,
+                "volume": 500_000,
+            }
+        )
+        market_rows.append(
+            {
+                "date": ts.date(),
+                "symbol": "VIXY",
+                "open": 20.0,
+                "high": 20.5,
+                "low": 19.5,
+                "close": 20.0,
+                "volume": 100_000,
+            }
+        )
     market_data = pd.DataFrame(market_rows)
 
     sector_etf_closes = {s: universe_prices[s] for s in SECTOR_ETFS}
@@ -696,7 +786,9 @@ def _build_full_synthetic_context(
     usd = _make_random_walk(idx, seed=_SEED + 100, start=100.0, sigma=0.003)
 
     macro_series = {
-        "SOFR": sofr, "IORB": iorb, "NFCI": nfci_w,
+        "SOFR": sofr,
+        "IORB": iorb,
+        "NFCI": nfci_w,
         "broad_usd_index": usd,
         # ICE BofA OAS series — single source for the §2C credit-spread
         # metric. Required by `_CF_MACRO_KEYS`, so the §2C seam does not
@@ -731,7 +823,7 @@ def _build_store_and_outputs(context):
         monetary_pressure_v2_config=cfg.monetary_pressure_v2,
         credit_funding_config=cfg.credit_funding,
     )
-    return store, CreditFundingSeriesClassifier().build(context, store)
+    return store, build_credit_funding_axis_series(context, store)
 
 
 def _build_real_v2_credit_context(
@@ -772,9 +864,8 @@ def test_build_proxy_runs_parallel_to_build_with_proxy_bias_code() -> None:
         monetary_pressure_v2_config=cfg.monetary_pressure_v2,
         credit_funding_config=cfg.credit_funding,
     )
-    classifier = CreditFundingSeriesClassifier()
-    real = classifier.build(context, store)
-    proxy = classifier.build_proxy(context, store)
+    real = build_credit_funding_axis_series(context, store)
+    proxy = build_credit_funding_proxy_axis_series(context, store)
 
     assert real is not None and proxy is not None
     # One output per session from both runs.
@@ -785,8 +876,7 @@ def test_build_proxy_runs_parallel_to_build_with_proxy_bias_code() -> None:
     rule_day = next(
         d
         for d in real
-        if "rule_evidence" in real[d].evidence
-        and "rule_evidence" in proxy[d].evidence
+        if "rule_evidence" in real[d].evidence and "rule_evidence" in proxy[d].evidence
     )
     assert (
         real[rule_day].evidence["bias_warning_code"]
@@ -860,18 +950,15 @@ def test_credit_funding_proxy_builds_when_oas_series_are_absent() -> None:
         monetary_pressure_v2_config=cfg.monetary_pressure_v2,
         credit_funding_config=cfg.credit_funding,
     )
-    classifier = CreditFundingSeriesClassifier()
-
-    real = classifier.build(context, store)
-    proxy = classifier.build_proxy(context, store)
+    real = build_credit_funding_axis_series(context, store)
+    proxy = build_credit_funding_proxy_axis_series(context, store)
 
     assert real is not None
     assert proxy is not None
     rule_day = next(
         d
         for d in proxy
-        if "rule_evidence" in proxy[d].evidence
-        and proxy[d].active_label != "unknown"
+        if "rule_evidence" in proxy[d].evidence and proxy[d].active_label != "unknown"
     )
     assert real[rule_day].active_label == "unknown"
     assert proxy[rule_day].active_label in CREDIT_FUNDING_RISK_RANK
@@ -954,7 +1041,7 @@ def test_unknown_when_assess_series_input_quality_fails() -> None:
         bias_warnings=cf.bias_warnings,
     )
     broken_store = store.model_copy(update={"credit_funding": broken})
-    outputs = CreditFundingSeriesClassifier().build(context, broken_store)
+    outputs = build_credit_funding_axis_series(context, broken_store)
     assert outputs is not None
     last_day = context.sessions[-1]
     assert outputs[last_day].raw_label == "unknown"
@@ -1001,17 +1088,22 @@ def test_credit_calm_deescalates_immediately() -> None:
 # --- Group E — Wire integration (3 tests) ------------------------------------
 
 
-def test_feature_store_credit_funding_seam_none_without_kre_in_cross_asset_closes() -> None:
+def test_feature_store_credit_funding_seam_none_without_kre_in_cross_asset_closes() -> (
+    None
+):
     """Missing KRE on cross_asset_closes → feature_store.credit_funding is None."""
     context = _build_full_synthetic_context()
     # Strip KRE from the cross_asset_closes dict.
-    stripped = {k: v for k, v in (context.cross_asset_closes or {}).items() if k != "KRE"}
+    stripped = {
+        k: v for k, v in (context.cross_asset_closes or {}).items() if k != "KRE"
+    }
     new_context = build_market_context(
         end_date=context.end_date,
         market_data=pd.DataFrame(
             [
                 {
-                    "date": ts.date(), "symbol": "SPY",
+                    "date": ts.date(),
+                    "symbol": "SPY",
                     "open": float(context.spy_ohlcv["open"].loc[ts]),
                     "high": float(context.spy_ohlcv["high"].loc[ts]),
                     "low": float(context.spy_ohlcv["low"].loc[ts]),
@@ -1022,7 +1114,8 @@ def test_feature_store_credit_funding_seam_none_without_kre_in_cross_asset_close
             ]
             + [
                 {
-                    "date": ts.date(), "symbol": "RSP",
+                    "date": ts.date(),
+                    "symbol": "RSP",
                     "open": float(context.rsp_close.loc[ts]),
                     "high": float(context.rsp_close.loc[ts]),
                     "low": float(context.rsp_close.loc[ts]),
@@ -1076,9 +1169,8 @@ def test_real_v2_fixture_credit_funding_golden_label(
     )
     assert store.credit_funding is not None
 
-    classifier = CreditFundingSeriesClassifier()
-    real_outputs = classifier.build(context, store)
-    proxy_outputs = classifier.build_proxy(context, store)
+    real_outputs = build_credit_funding_axis_series(context, store)
+    proxy_outputs = build_credit_funding_proxy_axis_series(context, store)
     assert real_outputs is not None
     assert proxy_outputs is not None
 
@@ -1092,16 +1184,10 @@ def test_real_v2_fixture_credit_funding_golden_label(
     assert real.evidence["spread_source"] == "ice_bofa_oas"
     assert real.evidence["bias_warning_code"] == "credit_spread_ice_bofa_oas_fred"
     assert real.evidence["nfci_daily_carried"] == pytest.approx(-0.524)
-    assert real.evidence["kre_spy_slope_63d"] == pytest.approx(
-        -7.786519147306989e-05
-    )
+    assert real.evidence["kre_spy_slope_63d"] == pytest.approx(-7.786519147306989e-05)
     real_rule = real.evidence["rule_evidence"]
-    assert real_rule["hy_spread_percentile_504d"] == pytest.approx(
-        0.24305555555555555
-    )
-    assert real_rule["hy_spread_slope_21d"] == pytest.approx(
-        -0.004064935064935065
-    )
+    assert real_rule["hy_spread_percentile_504d"] == pytest.approx(0.24305555555555555)
+    assert real_rule["hy_spread_slope_21d"] == pytest.approx(-0.004064935064935065)
     assert real_rule["spy_21d_return"] == pytest.approx(0.07590730214254471)
     assert real_rule["avg_pairwise_corr_percentile_504d"] == pytest.approx(
         0.3055555555555556
@@ -1117,12 +1203,8 @@ def test_real_v2_fixture_credit_funding_golden_label(
         == "credit_spread_proxy_total_return_differential"
     )
     proxy_rule = proxy.evidence["rule_evidence"]
-    assert proxy_rule["hy_spread_percentile_504d"] == pytest.approx(
-        0.31746031746031744
-    )
-    assert proxy_rule["hy_spread_slope_21d"] == pytest.approx(
-        -0.0005359273106014766
-    )
+    assert proxy_rule["hy_spread_percentile_504d"] == pytest.approx(0.31746031746031744)
+    assert proxy_rule["hy_spread_slope_21d"] == pytest.approx(-0.0005359273106014766)
 
 
 def test_regime_output_carries_real_fixture_credit_funding_state_when_configured(
@@ -1177,7 +1259,8 @@ def test_regime_output_carries_credit_funding_state_when_configured() -> None:
         market_data=pd.DataFrame(
             [
                 {
-                    "date": ts.date(), "symbol": "SPY",
+                    "date": ts.date(),
+                    "symbol": "SPY",
                     "open": float(context.spy_ohlcv["open"].loc[ts]),
                     "high": float(context.spy_ohlcv["high"].loc[ts]),
                     "low": float(context.spy_ohlcv["low"].loc[ts]),
@@ -1188,7 +1271,8 @@ def test_regime_output_carries_credit_funding_state_when_configured() -> None:
             ]
             + [
                 {
-                    "date": ts.date(), "symbol": "RSP",
+                    "date": ts.date(),
+                    "symbol": "RSP",
                     "open": float(context.rsp_close.loc[ts]),
                     "high": float(context.rsp_close.loc[ts]),
                     "low": float(context.rsp_close.loc[ts]),

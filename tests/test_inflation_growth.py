@@ -8,13 +8,14 @@ TDD per AGENTS.md / ~/.claude/CLAUDE.md testing rules:
 
 Spec authority: docs/regime_engine_v2_spec.md §2B lines 2174-2326.
 """
+
 from __future__ import annotations
 
 import numpy as np
 import pandas as pd
 import pytest
 
-from regime_detection.axis_series import InflationGrowthSeriesClassifier
+from regime_detection.axis_series import build_inflation_growth_axis_series
 from regime_detection.calendar import nyse_sessions_between
 from regime_detection.config import (
     InflationGrowthRulesConfig,
@@ -189,9 +190,16 @@ def test_commodity_return_63d_hand_pinned() -> None:
     xly = xli = xlp = xlu = pd.Series(100.0, index=idx, dtype=float)
 
     feats = compute_inflation_growth_features(
-        cpi_all_items=cpi, pmi_manufacturing=pmi, dgs10=dgs10,
-        dbc_close=dbc, spy_close=spy, tlt_close=tlt,
-        xly_close=xly, xli_close=xli, xlp_close=xlp, xlu_close=xlu,
+        cpi_all_items=cpi,
+        pmi_manufacturing=pmi,
+        dgs10=dgs10,
+        dbc_close=dbc,
+        spy_close=spy,
+        tlt_close=tlt,
+        xly_close=xly,
+        xli_close=xli,
+        xlp_close=xlp,
+        xlu_close=xlu,
         config=_default_rules(),
     )
     expected = (dbc.iloc[100] / dbc.iloc[100 - 63]) - 1.0
@@ -214,9 +222,16 @@ def test_cyclical_defensive_ratio_hand_pinned() -> None:
     tlt = pd.Series(100.0, index=idx, dtype=float)
 
     feats = compute_inflation_growth_features(
-        cpi_all_items=cpi, pmi_manufacturing=pmi, dgs10=dgs10,
-        dbc_close=dbc, spy_close=spy, tlt_close=tlt,
-        xly_close=xly, xli_close=xli, xlp_close=xlp, xlu_close=xlu,
+        cpi_all_items=cpi,
+        pmi_manufacturing=pmi,
+        dgs10=dgs10,
+        dbc_close=dbc,
+        spy_close=spy,
+        tlt_close=tlt,
+        xly_close=xly,
+        xli_close=xli,
+        xlp_close=xlp,
+        xlu_close=xlu,
         config=_default_rules(),
     )
     assert feats.cyclical_defensive_ratio.iloc[50] == pytest.approx(250.0 / 130.0)
@@ -293,9 +308,16 @@ def test_aggregate_forward_eps_revision_forward_fills_onto_spy_index() -> None:
     xly = xli = xlp = xlu = pd.Series(100.0, index=idx, dtype=float)
 
     common = dict(
-        cpi_all_items=cpi, pmi_manufacturing=pmi, dgs10=dgs10,
-        dbc_close=dbc, spy_close=spy, tlt_close=tlt,
-        xly_close=xly, xli_close=xli, xlp_close=xlp, xlu_close=xlu,
+        cpi_all_items=cpi,
+        pmi_manufacturing=pmi,
+        dgs10=dgs10,
+        dbc_close=dbc,
+        spy_close=spy,
+        tlt_close=tlt,
+        xly_close=xly,
+        xli_close=xli,
+        xlp_close=xlp,
+        xlu_close=xlu,
         config=_default_rules(),
     )
 
@@ -377,7 +399,7 @@ def test_goldilocks_fires_under_drift_pmi_spy_creditcalm() -> None:
     rules = _default_rules()
     inputs = _rule_inputs(
         cpi_6m_change_pct=0.020,
-        cpi_6m_change_pct_lag_21=0.022,   # drift = 0.002 <= 0.005
+        cpi_6m_change_pct_lag_21=0.022,  # drift = 0.002 <= 0.005
         pmi_manufacturing=52.0,
         spy_21d_return=0.03,
         credit_funding_active_label="credit_calm",
@@ -508,7 +530,7 @@ def test_recovery_growth_fires() -> None:
         cpi_6m_change_pct=0.02,
         cpi_6m_change_pct_lag_21=0.035,  # drift = 0.015 > 0.005
         cpi_6m_change_pct_slope_21d=0.001,  # > 0 too
-        spy_21d_return=-0.01,             # < 0 → goldilocks fails on spy leg
+        spy_21d_return=-0.01,  # < 0 → goldilocks fails on spy leg
     )
     assert evaluate_recovery_growth(inputs, rules) is True
     assert evaluate_rules(inputs=inputs, config=rules) == "recovery_growth"
@@ -626,7 +648,9 @@ def _build_synthetic_context(
     rng = np.random.default_rng(_SEED)
 
     universe_prices = pd.DataFrame(
-        (1.0 + rng.normal(0.0, 0.01, size=(n, len(NETWORK_FRAGILITY_UNIVERSE)))).cumprod(axis=0)
+        (
+            1.0 + rng.normal(0.0, 0.01, size=(n, len(NETWORK_FRAGILITY_UNIVERSE)))
+        ).cumprod(axis=0)
         * 100.0,
         index=idx,
         columns=list(NETWORK_FRAGILITY_UNIVERSE),
@@ -635,24 +659,45 @@ def _build_synthetic_context(
     market_rows: list[dict[str, object]] = []
     for ts in idx:
         close = float(spy_close.loc[ts])
-        market_rows.append({
-            "date": ts.date(), "symbol": "SPY",
-            "open": close, "high": close * 1.005, "low": close * 0.995,
-            "close": close, "volume": 1_000_000,
-        })
-        market_rows.append({
-            "date": ts.date(), "symbol": "RSP",
-            "open": close * 0.5, "high": close * 0.5 * 1.005,
-            "low": close * 0.5 * 0.995, "close": close * 0.5, "volume": 500_000,
-        })
-        market_rows.append({
-            "date": ts.date(), "symbol": "VIXY",
-            "open": 20.0, "high": 20.5, "low": 19.5, "close": 20.0, "volume": 100_000,
-        })
+        market_rows.append(
+            {
+                "date": ts.date(),
+                "symbol": "SPY",
+                "open": close,
+                "high": close * 1.005,
+                "low": close * 0.995,
+                "close": close,
+                "volume": 1_000_000,
+            }
+        )
+        market_rows.append(
+            {
+                "date": ts.date(),
+                "symbol": "RSP",
+                "open": close * 0.5,
+                "high": close * 0.5 * 1.005,
+                "low": close * 0.5 * 0.995,
+                "close": close * 0.5,
+                "volume": 500_000,
+            }
+        )
+        market_rows.append(
+            {
+                "date": ts.date(),
+                "symbol": "VIXY",
+                "open": 20.0,
+                "high": 20.5,
+                "low": 19.5,
+                "close": 20.0,
+                "volume": 100_000,
+            }
+        )
     market_data = pd.DataFrame(market_rows)
 
     sector_etf_closes = {s: universe_prices[s] for s in SECTOR_ETFS}
-    cross_asset_closes: dict[str, pd.Series] = {s: universe_prices[s] for s in CROSS_ASSET_SYMBOLS}
+    cross_asset_closes: dict[str, pd.Series] = {
+        s: universe_prices[s] for s in CROSS_ASSET_SYMBOLS
+    }
     # Add KRE for credit_funding seam.
     cross_asset_closes["KRE"] = pd.Series(
         np.linspace(50.0, 55.0, n), index=idx, dtype=float, name="KRE"
@@ -670,7 +715,9 @@ def _build_synthetic_context(
     # credit_funding macro inputs for the §2C axis dependency.
     cpi = pd.Series(np.nan, index=idx, dtype=float)
     cpi_release_positions = list(range(0, n, 21))
-    cpi.iloc[cpi_release_positions] = np.linspace(300.0, 320.0, len(cpi_release_positions))
+    cpi.iloc[cpi_release_positions] = np.linspace(
+        300.0, 320.0, len(cpi_release_positions)
+    )
     if cpi_truncate_calendar_days is not None:
         cutoff = idx[-1] - pd.Timedelta(days=cpi_truncate_calendar_days)
         cpi.loc[cpi.index > cutoff] = np.nan
@@ -693,7 +740,9 @@ def _build_synthetic_context(
     nfci_w = pd.Series(np.nan, index=idx, dtype=float, name="NFCI")
     for pos in range(0, n, 5):
         nfci_w.iloc[pos] = -0.5
-    usd = pd.Series(np.linspace(100.0, 102.0, n), index=idx, dtype=float, name="broad_usd_index")
+    usd = pd.Series(
+        np.linspace(100.0, 102.0, n), index=idx, dtype=float, name="broad_usd_index"
+    )
 
     macro_series = {
         "cpi_all_items": cpi,
@@ -732,7 +781,7 @@ def _build_store_and_outputs(context, *, credit_funding_active_labels_by_date=No
         credit_funding_config=cfg.credit_funding,
         inflation_growth_config=cfg.inflation_growth,
     )
-    outputs = InflationGrowthSeriesClassifier().build(
+    outputs = build_inflation_growth_axis_series(
         context,
         store,
         credit_funding_active_labels_by_date=credit_funding_active_labels_by_date,
@@ -805,7 +854,7 @@ def test_unknown_when_assess_series_input_quality_fails() -> None:
         bias_warnings=ig.bias_warnings,
     )
     broken_store = store.model_copy(update={"inflation_growth": broken})
-    outputs = InflationGrowthSeriesClassifier().build(context, broken_store)
+    outputs = build_inflation_growth_axis_series(context, broken_store)
     assert outputs is not None
     last_day = context.sessions[-1]
     assert outputs[last_day].raw_label == "unknown"
@@ -838,13 +887,16 @@ def test_feature_store_seam_none_when_dbc_missing() -> None:
     """Missing DBC → feature_store.inflation_growth is None."""
     context = _build_synthetic_context()
     # Strip DBC.
-    stripped = {k: v for k, v in (context.cross_asset_closes or {}).items() if k != "DBC"}
+    stripped = {
+        k: v for k, v in (context.cross_asset_closes or {}).items() if k != "DBC"
+    }
     new_context = build_market_context(
         end_date=context.end_date,
         market_data=pd.DataFrame(
             [
                 {
-                    "date": ts.date(), "symbol": "SPY",
+                    "date": ts.date(),
+                    "symbol": "SPY",
                     "open": float(context.spy_ohlcv["open"].loc[ts]),
                     "high": float(context.spy_ohlcv["high"].loc[ts]),
                     "low": float(context.spy_ohlcv["low"].loc[ts]),
@@ -855,7 +907,8 @@ def test_feature_store_seam_none_when_dbc_missing() -> None:
             ]
             + [
                 {
-                    "date": ts.date(), "symbol": "RSP",
+                    "date": ts.date(),
+                    "symbol": "RSP",
                     "open": float(context.rsp_close.loc[ts]),
                     "high": float(context.rsp_close.loc[ts]),
                     "low": float(context.rsp_close.loc[ts]),
@@ -920,7 +973,8 @@ def test_regime_output_carries_inflation_growth_state_when_configured() -> None:
         market_data=pd.DataFrame(
             [
                 {
-                    "date": ts.date(), "symbol": "SPY",
+                    "date": ts.date(),
+                    "symbol": "SPY",
                     "open": float(context.spy_ohlcv["open"].loc[ts]),
                     "high": float(context.spy_ohlcv["high"].loc[ts]),
                     "low": float(context.spy_ohlcv["low"].loc[ts]),
@@ -931,7 +985,8 @@ def test_regime_output_carries_inflation_growth_state_when_configured() -> None:
             ]
             + [
                 {
-                    "date": ts.date(), "symbol": "RSP",
+                    "date": ts.date(),
+                    "symbol": "RSP",
                     "open": float(context.rsp_close.loc[ts]),
                     "high": float(context.rsp_close.loc[ts]),
                     "low": float(context.rsp_close.loc[ts]),
@@ -1035,12 +1090,8 @@ def test_compute_inflation_growth_features_emits_real_zscore_with_nowcast() -> N
     assert feats.inflation_surprise_zscore.notna().any()
     # The bias-warning frame carries the Cleveland Fed nowcast provenance row.
     bw = feats.bias_warnings
-    assert (
-        bw["warning_code"] == INFLATION_SURPRISE_NOWCAST_BIAS_WARNING_CODE
-    ).any()
-    nowcast_row = bw[
-        bw["warning_code"] == INFLATION_SURPRISE_NOWCAST_BIAS_WARNING_CODE
-    ]
+    assert (bw["warning_code"] == INFLATION_SURPRISE_NOWCAST_BIAS_WARNING_CODE).any()
+    nowcast_row = bw[bw["warning_code"] == INFLATION_SURPRISE_NOWCAST_BIAS_WARNING_CODE]
     assert list(nowcast_row["feature_name"]) == ["inflation_surprise_zscore"]
 
 
