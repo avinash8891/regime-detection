@@ -15237,11 +15237,11 @@ artifacts:
   stage: canonical
   uri: s3://autoresearch-platform/regime-detection/artifacts/zurich-v1/profile-ready-daily-ohlcv-762-2016-20260515/canonical/pmi/us_ism_pmi_history.parquet
   local_path: data/raw/pmi/us_ism_pmi_history.parquet
-  sha256: 8e4259cf3eb08dfe51f03a3ace16ca3a0ff6d3a6e5af4db1547a5400fea066a8
+  sha256: 55a266f16c2335022b02eeaa6406a3bb49cdbaaefbf7dbfb27cc8ee9a339c5a0
   schema_version: ism_pmi.v1
-  rows: 132
-  min_date: '2020-05-01'
-  max_date: '2025-12-01'
+  rows: 248
+  min_date: '2016-01-01'
+  max_date: '2026-04-01'
   required_for:
   - profile_engine_30d
   - v2_calibration
@@ -15250,11 +15250,37 @@ artifacts:
   stage: canonical
   uri: s3://autoresearch-platform/regime-detection/artifacts/zurich-v1/profile-ready-daily-ohlcv-762-2016-20260515/canonical/pmi/us_ism_pmi.parquet
   local_path: data/raw/pmi/us_ism_pmi.parquet
-  sha256: 008f7ed1bc25ab1da6b11672264470e5f49ac7d92c377d93526e89395629fefb
+  sha256: 9de7b1e7e4057db7b89358de75391837cf8d5afaef7237d52e8d7c79cc420e46
   schema_version: ism_pmi.v1
   rows: 2
   min_date: '2026-04-01'
   max_date: '2026-05-01'
+  required_for:
+  - profile_engine_30d
+  - v2_calibration
+  - audit_layer2_30d
+- name: cpi_nowcast_cleveland_fed
+  stage: canonical
+  uri: s3://autoresearch-platform/regime-detection/artifacts/zurich-v1/profile-ready-daily-ohlcv-762-2016-20260515/canonical/cleveland_fed_nowcast/cpi_nowcast.parquet
+  local_path: data/raw/cleveland_fed_nowcast/cpi_nowcast.parquet
+  sha256: 5840567f5841a9fb173341798585f145456b9d2b6040c9a8233790bfb309e3e8
+  schema_version: cleveland_fed_nowcast.v1
+  rows: 154
+  min_date: '2013-01-10'
+  max_date: '2026-05-14'
+  required_for:
+  - profile_engine_30d
+  - v2_calibration
+  - audit_layer2_30d
+- name: aggregate_forward_eps_weekly_history
+  stage: canonical
+  uri: s3://autoresearch-platform/regime-detection/artifacts/zurich-v1/profile-ready-daily-ohlcv-762-2016-20260515/canonical/aggregate_forward_eps/sp500_eps_weekly_history.parquet
+  local_path: data/raw/aggregate_forward_eps/sp500_eps_weekly_history.parquet
+  sha256: 65878e51fd28afb1fb6b05d9cd72d9d131c009c3de7b6c656eede1019f94df76
+  schema_version: aggregate_forward_eps.weekly_history.v1
+  rows: 7
+  min_date: '2025-05-26'
+  max_date: '2026-01-22'
   required_for:
   - profile_engine_30d
   - v2_calibration
