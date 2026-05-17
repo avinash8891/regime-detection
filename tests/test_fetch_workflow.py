@@ -954,6 +954,83 @@ def test_emit_manifest_uses_all_runner_use_cases_by_default(
     ]
 
 
+def test_emit_manifest_without_path_uses_tracked_immutable_run_manifest(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    captured: dict[str, object] = {}
+
+    def fake_market(**kwargs):
+        del kwargs
+        report = tmp_path / "market_report.json"
+        report.write_text(json.dumps({"paths": {}}))
+        return report
+
+    class FakeManifest:
+        artifacts = [object()]
+
+    def fake_emit_manifest_for_report_paths(**kwargs):
+        captured.update(kwargs)
+        return FakeManifest()
+
+    monkeypatch.setattr(fetch_script, "run_market_fetch", fake_market)
+    monkeypatch.setattr(
+        fetch_script,
+        "emit_manifest_for_report_paths",
+        fake_emit_manifest_for_report_paths,
+    )
+    monkeypatch.setattr(
+        "sys.argv",
+        [
+            "fetch_regime_engine_v1_data.py",
+            "--fetch",
+            "market",
+            "--scope",
+            "v2",
+            "--end",
+            "2026-05-17",
+            "--out-dir",
+            str(tmp_path / "data" / "raw"),
+            "--emit-manifest",
+            "--artifact-store",
+            str(tmp_path / "store"),
+        ],
+    )
+
+    assert fetch_script.main() == 0
+    assert captured["manifest_path"] == (
+        fetch_script.REPO_ROOT
+        / "manifests"
+        / "runs"
+        / "regime_engine_2026-05-17.yaml"
+    )
+
+
+def test_emit_manifest_rejects_ignored_data_manifest_path(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(
+        "sys.argv",
+        [
+            "fetch_regime_engine_v1_data.py",
+            "--fetch",
+            "market",
+            "--scope",
+            "v2",
+            "--out-dir",
+            str(tmp_path / "data" / "raw"),
+            "--emit-manifest",
+            "data/manifests/regime_engine_latest.yaml",
+            "--artifact-store",
+            str(tmp_path / "store"),
+        ],
+    )
+
+    with pytest.raises(SystemExit, match="manifest lockfiles must be written outside ignored data/"):
+        fetch_script.main()
+
+
 def test_event_calendar_fetch_symbol_is_wired() -> None:
     assert "events" in UNATTENDED_FETCH_MODES
     assert _should_fetch("all", "events")
@@ -998,3 +1075,4 @@ def test_fetch_help_surface_mentions_acquisition_db_and_bls_schedule_dir(
     assert "--bls-schedule-dir" in help_text
     assert "--bls-start-year" in help_text
     assert "--bls-end-year" in help_text
+    assert "manifests/runs" in help_text

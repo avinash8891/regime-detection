@@ -32,9 +32,11 @@ python3 -m pytest tests/test_historical_walkforward.py -m slow -q
 ## Data Artifacts
 
 Production data is not stored in Git. `data/raw/` is a local materialized cache
-rebuilt from a manifest that points at durable artifacts in object storage.
-When `--acquisition-db` and `--artifact-store` are both set, acquisition records
-persist raw captures and derived outputs to the same artifact store.
+rebuilt from a tracked manifest lockfile under `manifests/` that points at
+durable artifacts in object storage. Keep raw Parquet/SQLite caches ignored;
+commit only small, non-secret manifest lockfiles. When `--acquisition-db` and
+`--artifact-store` are both set, acquisition records persist raw captures and
+derived outputs to the same artifact store.
 Use `pip install ".[s3]"` before passing an `s3://...` artifact store.
 
 ```bash
@@ -43,19 +45,26 @@ python3 scripts/fetch_regime_engine_v1_data.py \
   --out-dir data/raw \
   --acquisition-db data/raw/acquisition/acquisition.db \
   --artifact-store /path/to/regime-data-store \
-  --emit-manifest data/manifests/regime_engine_latest.yaml
+  --emit-manifest
 
 python3 scripts/materialize_regime_data.py \
-  --manifest data/manifests/regime_engine_latest.yaml \
+  --manifest manifests/runs/regime_engine_YYYY-MM-DD.yaml \
   --local-root data/raw
 
 python3 scripts/profile_engine_30d.py \
-  --manifest data/manifests/regime_engine_latest.yaml \
+  --manifest manifests/runs/regime_engine_YYYY-MM-DD.yaml \
   --data-root data/raw
 
 python3 scripts/run_v2_walkforward_gate.py \
-  --manifest data/manifests/regime_engine_latest.yaml \
+  --manifest manifests/runs/regime_engine_YYYY-MM-DD.yaml \
   --data-root data/raw
+```
+
+For a fresh workspace, pass the approved manifest lockfile explicitly:
+
+```bash
+make regime-data MANIFEST=manifests/runs/regime_engine_YYYY-MM-DD.yaml
+make profile-30d MANIFEST=manifests/runs/regime_engine_YYYY-MM-DD.yaml
 ```
 
 See `docs/market_data_fetch_plan.md` section 0 for the storage contract.

@@ -96,6 +96,9 @@ OPERATOR_ASSISTED_FETCH_MODES = frozenset(
     name for name, spec in FETCH_MODE_REGISTRY.items() if spec.category == "operator-assisted"
 )
 FETCH_MODES = frozenset(FETCH_MODE_REGISTRY) | {"all"}
+AUTO_EMIT_MANIFEST = "__auto_emit_manifest__"
+MANIFEST_LOCKFILE_ROOT = REPO_ROOT / "manifests"
+RUN_MANIFEST_DIR = MANIFEST_LOCKFILE_ROOT / "runs"
 
 
 def main() -> int:
@@ -200,8 +203,14 @@ def main() -> int:
     )
     ap.add_argument(
         "--emit-manifest",
+        nargs="?",
+        const=AUTO_EMIT_MANIFEST,
         default=None,
-        help="Optional manifest YAML path to write after fetch outputs are uploaded to --artifact-store.",
+        help=(
+            "Optional manifest YAML path to write after fetch outputs are uploaded to "
+            "--artifact-store. If supplied without a value, writes an immutable tracked "
+            "lockfile under manifests/runs/."
+        ),
     )
     ap.add_argument(
         "--manifest-artifact-set",
@@ -245,7 +254,8 @@ def main() -> int:
     _validate_fetch_modes()
     if args.fetch not in FETCH_MODES:
         raise SystemExit(f"--fetch must be {'|'.join(sorted(FETCH_MODES))}")
-    if args.emit_manifest and not args.artifact_store:
+    emit_manifest_path = _resolve_emit_manifest_path(args.emit_manifest, end=end)
+    if emit_manifest_path is not None and not args.artifact_store:
         raise SystemExit("--artifact-store is required when --emit-manifest is set")
 
     if args.env_file:
@@ -421,20 +431,51 @@ def main() -> int:
         report_paths.append(ohlcv_import_report)
         print(str(ohlcv_import_report))
 
-    if args.emit_manifest:
+    if emit_manifest_path is not None:
         required_for = [item.strip() for item in args.manifest_required_for.split(",") if item.strip()]
         manifest = emit_manifest_for_report_paths(
             report_paths=report_paths,
             out_dir=out_dir,
             artifact_store_root=args.artifact_store,
-            manifest_path=Path(args.emit_manifest),
+            manifest_path=emit_manifest_path,
             artifact_set=args.manifest_artifact_set or f"regime_engine_{end.isoformat()}",
             required_for=required_for,
             repo_root=REPO_ROOT,
         )
-        print(str(Path(args.emit_manifest)))
+        print(str(emit_manifest_path))
         print(f"manifest_artifacts={len(manifest.artifacts)}")
     return 0
+
+
+def _resolve_emit_manifest_path(value: str | None, *, end: dt.date) -> Path | None:
+    if value is None:
+        return None
+    path = _default_run_manifest_path(end) if value == AUTO_EMIT_MANIFEST else Path(value)
+    if not path.is_absolute():
+        path = REPO_ROOT / path
+    _validate_manifest_lockfile_path(path)
+    return path
+
+
+def _default_run_manifest_path(end: dt.date) -> Path:
+    return RUN_MANIFEST_DIR / f"regime_engine_{end.isoformat()}.yaml"
+
+
+def _validate_manifest_lockfile_path(path: Path) -> None:
+    repo_root = REPO_ROOT.resolve()
+    resolved = path if path.is_absolute() else (repo_root / path)
+    try:
+        relative = resolved.resolve(strict=False).relative_to(repo_root)
+    except ValueError:
+        return
+    if relative.parts[:1] == ("data",):
+        raise SystemExit(
+            "manifest lockfiles must be written outside ignored data/; use manifests/runs/<name>.yaml"
+        )
+    if relative.parts[:1] == (".context",):
+        raise SystemExit(
+            "manifest lockfiles must be written outside ignored .context/; use manifests/runs/<name>.yaml"
+        )
 
 
 def _plan_fetch_mode_execution(

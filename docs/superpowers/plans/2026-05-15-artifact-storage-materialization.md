@@ -121,7 +121,7 @@ git commit -m "feat: record durable artifact ledger metadata"
 **Files:**
 - Create: `src/regime_data_fetch/artifact_manifest.py`
 - Create: `tests/test_artifact_manifest.py`
-- Create: `data/manifests/.gitkeep`
+- Create: `manifests/runs/.gitkeep`
 
 - [ ] **Step 1: Write failing tests for manifest validation**
 
@@ -152,7 +152,7 @@ Expected: pass.
 - [ ] **Step 4: Commit**
 
 ```bash
-git add src/regime_data_fetch/artifact_manifest.py tests/test_artifact_manifest.py data/manifests/.gitkeep
+git add src/regime_data_fetch/artifact_manifest.py tests/test_artifact_manifest.py manifests/runs/.gitkeep
 git commit -m "feat: define regime data artifact manifests"
 ```
 
@@ -180,7 +180,7 @@ Support:
 
 ```bash
 python scripts/materialize_regime_data.py \
-  --manifest data/manifests/regime_engine_latest.yaml \
+  --manifest manifests/runs/regime_engine_YYYY-MM-DD.yaml \
   --local-root data/raw \
   --store-root s3://regime-data
 ```
@@ -299,9 +299,9 @@ git commit -m "feat: run regime scripts from artifact manifests"
 Add the three-command path:
 
 ```bash
-python scripts/fetch_regime_engine_v1_data.py --fetch all --artifact-store s3://regime-data --emit-manifest data/manifests/regime_engine_latest.yaml
-python scripts/materialize_regime_data.py --manifest data/manifests/regime_engine_latest.yaml --local-root data/raw
-python scripts/profile_engine_30d.py --manifest data/manifests/regime_engine_latest.yaml
+python scripts/fetch_regime_engine_v1_data.py --fetch all --artifact-store s3://regime-data --emit-manifest
+python scripts/materialize_regime_data.py --manifest manifests/runs/regime_engine_YYYY-MM-DD.yaml --local-root data/raw
+python scripts/profile_engine_30d.py --manifest manifests/runs/regime_engine_YYYY-MM-DD.yaml
 ```
 
 - [ ] **Step 2: Run verification**

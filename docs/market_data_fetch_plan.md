@@ -12,7 +12,8 @@ Those are not interchangeable. Historical backfills test engine logic. Forward s
 `data/raw/` is a local materialized cache, not the durable source of truth. It
 stays gitignored so large, licensed, or frequently changing source artifacts do
 not enter Git history. Any workflow that needs to run outside the original
-machine must rebuild `data/raw/` from an explicit artifact manifest.
+machine must rebuild `data/raw/` from an explicit artifact manifest lockfile
+tracked under `manifests/`.
 
 The durable storage boundary is:
 
@@ -24,7 +25,7 @@ The durable storage boundary is:
 | Run inputs | Frozen input bundle for one regime run or replay window | S3-compatible object storage under `run_inputs/` |
 | Ledger | Fetch runs, source checkpoints, artifact URIs, hashes, row counts, date ranges, schema versions, lineage, and quarantine records | SQLite |
 | Local cache | Files read by current scripts and loaders | `data/raw/` rebuilt from a manifest |
-| Version control | Code, schemas, fetch contracts, implementation plans, and small lock/manifest files | Git |
+| Version control | Code, schemas, fetch contracts, implementation plans, and small manifest lockfiles under `manifests/` | Git |
 
 SQLite is the artifact ledger, not the warehouse. Large source bodies and
 processed tables live as files in object storage; SQLite records their URI,
@@ -43,11 +44,13 @@ Every production fetch must finish in this order:
 7. Advance the source checkpoint only after every required artifact has been
    written and validated.
 
-Incremental fetches update the artifact lake. Regime-engine runs consume a
-manifest that pins exact canonical artifacts. A manifest is the only supported
-cross-environment handoff: it states which S3 artifacts to materialize into
-which local `data/raw/` paths and includes hashes that must verify before the
-engine starts.
+Incremental fetches update the artifact lake. Regime-engine runs consume an
+immutable manifest lockfile that pins exact canonical artifacts. A tracked
+manifest under `manifests/runs/` is the only supported cross-environment
+handoff: it states which S3 artifacts to materialize into which local
+`data/raw/` paths and includes hashes that must verify before the engine
+starts. `data/manifests/` is not a valid durable handoff location because
+`data/` is intentionally gitignored.
 
 Minimum manifest fields:
 
@@ -73,6 +76,21 @@ artifacts:
 The implementation may keep existing local paths during migration, but the
 contract is logical: `data/raw/` is replaceable, and the manifest plus artifact
 store is what makes the data portable and replayable.
+
+Default fetch behavior:
+
+```bash
+python3 scripts/fetch_regime_engine_v1_data.py \
+  --fetch all \
+  --artifact-store s3://regime-data \
+  --emit-manifest
+```
+
+When `--emit-manifest` is supplied without a path, the fetch script writes an
+immutable lockfile to `manifests/runs/regime_engine_<end-date>.yaml`. If a
+stable alias is desired, update a small tracked alias such as
+`manifests/latest.yaml` deliberately after validating the immutable lockfile.
+Do not write durable manifests under `data/` or `.context/`.
 
 ### 0.1 Temporal Normalization Contract
 
