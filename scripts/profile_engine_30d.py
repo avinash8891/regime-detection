@@ -212,7 +212,15 @@ def _load_optional_event_calendar(path: Path) -> pd.DataFrame | None:
     return load_event_calendar(path)
 
 
+def _resolve_news_sentiment_path(path: Path) -> Path:
+    canonical = path.with_name("sf_fed_news_sentiment.parquet")
+    if path.exists() or path == canonical or not canonical.exists():
+        return path
+    return canonical
+
+
 def _load_optional_news_sentiment(path: Path) -> pd.Series | None:
+    path = _resolve_news_sentiment_path(path)
     if not path.exists():
         return None
     return load_news_sentiment_series(path)
@@ -440,6 +448,9 @@ def _parse_args() -> argparse.Namespace:
         args.news_sentiment_parquet = (
             args.data_root / "news_sentiment" / "sf_fed_news_sentiment.parquet"
         )
+    args.news_sentiment_parquet = _resolve_news_sentiment_path(
+        args.news_sentiment_parquet
+    )
     if args.fomc_minutes_parquet is None:
         args.fomc_minutes_parquet = (
             args.data_root / "fomc_minutes" / "fomc_minutes.parquet"

@@ -747,6 +747,27 @@ def test_profile_engine_loads_news_sentiment_when_present(tmp_path: Path) -> Non
     assert actual.tolist() == [-0.1, 0.2]
 
 
+def test_profile_engine_resolves_legacy_news_sentiment_alias(tmp_path: Path) -> None:
+    canonical_path = tmp_path / "sf_fed_news_sentiment.parquet"
+    legacy_path = tmp_path / "news_sentiment.parquet"
+    pd.DataFrame(
+        [
+            {"date": "2026-05-14", "news_sentiment": -0.1},
+            {"date": "2026-05-15", "news_sentiment": 0.2},
+        ]
+    ).to_parquet(canonical_path, index=False)
+
+    actual = profile_engine_30d._load_optional_news_sentiment(legacy_path)
+
+    assert actual is not None
+    assert actual.name == "news_sentiment"
+    assert actual.index.tolist() == [
+        pd.Timestamp("2026-05-14"),
+        pd.Timestamp("2026-05-15"),
+    ]
+    assert actual.tolist() == [-0.1, 0.2]
+
+
 def test_profile_engine_loads_central_bank_text_when_present(tmp_path: Path) -> None:
     fomc_path = tmp_path / "fomc_minutes.parquet"
     powell_path = tmp_path / "powell_speeches.parquet"
