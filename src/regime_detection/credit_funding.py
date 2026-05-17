@@ -60,6 +60,7 @@ from typing import Literal
 import numpy as np
 import pandas as pd
 
+from regime_detection._rolling_stats import rolling_change_zscore as _change_zscore
 from regime_detection.breadth_state_v2 import make_bias_warnings_frame
 from regime_detection.config import (
     CreditFundingRulesConfig,
@@ -240,8 +241,6 @@ class CreditFundingFeatures:
 # shared with §2A — imported from `_rolling_stats` (one home, AGENTS
 # rule B).
 # ---------------------------------------------------------------------------
-
-from regime_detection._rolling_stats import rolling_change_zscore as _change_zscore  # noqa: E402
 
 
 def _rolling_ols_slope(series: pd.Series, *, window: int) -> pd.Series:
