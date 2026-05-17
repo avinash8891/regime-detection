@@ -49,6 +49,7 @@ def test_profile_parse_args_defaults_pmi_to_materialized_data_root(
     args = profile_engine_30d._parse_args()
 
     assert args.pmi_path == data_root / "pmi" / "us_ism_pmi.parquet"
+    assert args.daily_dir == data_root / "daily_ohlcv_762"
 
 
 def test_profile_parse_args_accepts_json_output(

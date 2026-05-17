@@ -94,8 +94,9 @@ make profile-30d MANIFEST=manifests/runs/profile_ready_daily_ohlcv_762_2016_2026
 ```
 
 That approved profile-ready manifest is the portable data contract for the 30d
-operator run. It includes the constituent OHLCV tree plus Layer 1 sentiment
-extension inputs at the runner defaults:
+operator run. It includes the fixed OHLCV tree used by the runner defaults
+(`data/raw/daily_ohlcv_762`), macro, PMI, PIT constituents, CPI vintages,
+FOMC/Powell text inputs, and Layer 1 sentiment extension inputs:
 `data/raw/sentiment/aaii_sentiment.parquet` and
 `data/raw/news_sentiment/sf_fed_news_sentiment.parquet`.
 

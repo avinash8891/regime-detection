@@ -67,7 +67,7 @@ from scripts.profile_engine_30d_timers import (
 DEFAULT_CONFIG_PATH = (
     REPO_ROOT / "src" / "regime_detection" / "configs" / "core3-v2.0.0.yaml"
 )
-DEFAULT_DAILY_DIR = REPO_ROOT / "data" / "raw" / "daily_ohlcv"
+DEFAULT_DAILY_DIR = REPO_ROOT / "data" / "raw" / FIXED_UNIVERSE_TREE_NAME
 DEFAULT_CONSTITUENT_TREE = REPO_ROOT / "data" / "raw" / FIXED_UNIVERSE_TREE_NAME
 DEFAULT_MACRO_PARQUET = (
     REPO_ROOT / "data" / "raw" / "macro" / "fred_macro_series.parquet"
@@ -421,7 +421,7 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--allow-missing-constituent-files", action="store_true")
     args = parser.parse_args()
     if args.daily_dir is None:
-        args.daily_dir = args.data_root / "daily_ohlcv"
+        args.daily_dir = args.data_root / FIXED_UNIVERSE_TREE_NAME
     if args.constituent_tree is None:
         args.constituent_tree = args.data_root / FIXED_UNIVERSE_TREE_NAME
     if args.macro_parquet is None:

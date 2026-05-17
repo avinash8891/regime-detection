@@ -38,6 +38,7 @@ sys.path.insert(0, str(SRC_DIR))
 sys.path.insert(0, str(REPO_ROOT))
 
 from regime_data_fetch.materialization import materialize_if_requested  # noqa: E402
+from regime_data_fetch.universe import FIXED_UNIVERSE_TREE_NAME  # noqa: E402
 
 from regime_detection.config import load_default_regime_config  # noqa: E402
 from regime_detection.feature_store import build_feature_store  # noqa: E402
@@ -48,31 +49,12 @@ from regime_detection.loaders import (  # noqa: E402
     load_news_sentiment_series,
 )
 from regime_detection.market_context import build_market_context  # noqa: E402
-from scripts._v2_calibration_helpers import default_pmi_path, load_macro_series  # noqa: E402
-
-
-def _load_market_data(daily_ohlcv_dir: Path) -> pd.DataFrame:
-    """Load the v1-shape (SPY/RSP/VIXY) long-format DataFrame the engine wants."""
-    df = pd.read_parquet(daily_ohlcv_dir)
-    keep = ["date", "symbol", "open", "high", "low", "close", "volume"]
-    out = df[df["symbol"].isin(["SPY", "RSP", "VIXY"])][keep].copy()
-    out["date"] = pd.to_datetime(out["date"]).dt.date
-    return out.sort_values(["date", "symbol"]).reset_index(drop=True)
-
-
-def _load_close_dict(
-    daily_ohlcv_dir: Path, symbols: list[str], spy_index: pd.DatetimeIndex
-) -> dict[str, pd.Series]:
-    """Pivot daily OHLCV parquet into close-series keyed by symbol, reindexed to SPY sessions."""
-    df = pd.read_parquet(daily_ohlcv_dir)
-    df["date"] = pd.to_datetime(df["date"])
-    out: dict[str, pd.Series] = {}
-    for sym in symbols:
-        sub = df[df["symbol"] == sym].sort_values("date").set_index("date")
-        if sub.empty:
-            continue
-        out[sym] = sub["close"].astype(float).reindex(spy_index).rename(sym)
-    return out
+from scripts._v2_calibration_helpers import (  # noqa: E402
+    default_pmi_path,
+    load_close_dict,
+    load_macro_series,
+    load_market_data,
+)
 
 
 def _summarize_central_bank_text(feature_store: Any, config: Any) -> list[str]:
@@ -277,7 +259,7 @@ def main() -> int:
         store_root=args.artifact_store,
         required_for="v2_calibration",
     )
-    daily_dir = data_root / "daily_ohlcv"
+    daily_dir = data_root / FIXED_UNIVERSE_TREE_NAME
     macro_parquet = data_root / "macro" / "fred_macro_series.parquet"
     pmi_path = default_pmi_path(data_root)
     pit_intervals_parquet = (
@@ -308,7 +290,7 @@ def main() -> int:
             f"macro parquet not found at {macro_parquet} — run macro fetch first"
         )
 
-    market_data = _load_market_data(daily_dir)
+    market_data = load_market_data(daily_dir)
     end_date = market_data["date"].max()
 
     # Load PIT inputs for clustering / pct_above_50dma path. Both are optional
@@ -372,8 +354,8 @@ def main() -> int:
         "XLP",
         "XLU",
     ]
-    sector_etf_closes = _load_close_dict(daily_dir, list(SECTOR_ETFS), spy_index)
-    cross_asset_closes = _load_close_dict(daily_dir, cross_asset_symbols, spy_index)
+    sector_etf_closes = load_close_dict(daily_dir, list(SECTOR_ETFS), spy_index)
+    cross_asset_closes = load_close_dict(daily_dir, cross_asset_symbols, spy_index)
     macro_series = load_macro_series(macro_parquet, pmi_path)
 
     print(f"as_of = {end_date}; spy sessions = {len(spy_index)}")

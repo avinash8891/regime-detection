@@ -43,6 +43,7 @@ from regime_detection.market_context import build_market_context  # noqa: E402
 from regime_detection.models import ClassificationStatus  # noqa: E402
 from regime_detection.versioning import engine_version as resolved_engine_version  # noqa: E402
 from regime_data_fetch.materialization import materialize_if_requested  # noqa: E402
+from regime_data_fetch.universe import FIXED_UNIVERSE_TREE_NAME  # noqa: E402
 
 from _v2_calibration_helpers import (  # noqa: E402
     CROSS_ASSET_SYMBOLS,
@@ -367,7 +368,7 @@ def _parse_args() -> argparse.Namespace:
     )
     args = parser.parse_args()
     if args.daily_dir is None:
-        args.daily_dir = args.data_root / "daily_ohlcv"
+        args.daily_dir = args.data_root / FIXED_UNIVERSE_TREE_NAME
     if args.macro_parquet is None:
         args.macro_parquet = args.data_root / "macro" / "fred_macro_series.parquet"
     if args.pmi_path is None:

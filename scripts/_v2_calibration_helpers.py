@@ -52,7 +52,7 @@ def load_market_data(daily_ohlcv_dir: Path) -> pd.DataFrame:
 
     Mirrors ``scripts/run_v2_calibration.py::_load_market_data``.
     """
-    df = pd.read_parquet(daily_ohlcv_dir)
+    df = _read_daily_ohlcv(daily_ohlcv_dir, symbols=["SPY", "RSP", "VIXY"])
     keep = ["date", "symbol", "open", "high", "low", "close", "volume"]
     out = df[df["symbol"].isin(["SPY", "RSP", "VIXY"])][keep].copy()
     out["date"] = pd.to_datetime(out["date"]).dt.date
@@ -67,7 +67,7 @@ def load_close_dict(
     """Pivot daily OHLCV parquet into close-series keyed by symbol, reindexed
     to ``spy_index``. Mirrors ``run_v2_calibration._load_close_dict``.
     """
-    df = pd.read_parquet(daily_ohlcv_dir)
+    df = _read_daily_ohlcv(daily_ohlcv_dir, symbols=symbols)
     df["date"] = pd.to_datetime(df["date"])
     out: dict[str, pd.Series] = {}
     for sym in symbols:
@@ -76,6 +76,40 @@ def load_close_dict(
             continue
         out[sym] = sub["close"].astype(float).reindex(spy_index).rename(sym)
     return out
+
+
+def _read_daily_ohlcv(
+    daily_ohlcv_dir: Path, *, symbols: list[str] | None = None
+) -> pd.DataFrame:
+    if daily_ohlcv_dir.is_file():
+        return pd.read_parquet(daily_ohlcv_dir)
+    if not daily_ohlcv_dir.exists():
+        raise FileNotFoundError(daily_ohlcv_dir)
+    frames: list[pd.DataFrame] = []
+    if symbols is not None:
+        for symbol in symbols:
+            symbol_dir = daily_ohlcv_dir / f"symbol={symbol}"
+            candidates = [symbol_dir / "ohlcv.parquet"]
+            if symbol_dir.exists():
+                candidates.extend(sorted(symbol_dir.glob("*.parquet")))
+            symbol_file = next((path for path in candidates if path.exists()), None)
+            if symbol_file is None:
+                continue
+            frame = pd.read_parquet(symbol_file)
+            if "symbol" not in frame.columns:
+                frame = frame.assign(symbol=symbol)
+            frames.append(frame)
+    else:
+        for parquet_file in sorted(daily_ohlcv_dir.rglob("*.parquet")):
+            frame = pd.read_parquet(parquet_file)
+            if "symbol" not in frame.columns:
+                parent = parquet_file.parent.name
+                if parent.startswith("symbol="):
+                    frame = frame.assign(symbol=parent.removeprefix("symbol="))
+            frames.append(frame)
+    if not frames:
+        raise FileNotFoundError(f"no parquet OHLCV files found under {daily_ohlcv_dir}")
+    return pd.concat(frames, ignore_index=True)
 
 
 def load_macro_series(

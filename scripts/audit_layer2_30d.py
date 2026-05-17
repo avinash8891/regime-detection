@@ -44,8 +44,6 @@ from scripts.profile_engine_30d import (
     DEFAULT_CONSTITUENT_TREE,
     DEFAULT_DAILY_DIR,
     DEFAULT_EVENT_CALENDAR,
-    DEFAULT_MACRO_PARQUET,
-    DEFAULT_PIT_PARQUET,
     _build_required_sessions,
     _load_constituent_ohlcv_from_tree,
     _load_optional_aaii_sentiment,
@@ -390,12 +388,10 @@ def _parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--lookback-days", type=positive_int, default=30)
     parser.add_argument("--config-path", type=Path, default=DEFAULT_CONFIG_PATH)
-    parser.add_argument("--daily-dir", type=Path, default=DEFAULT_DAILY_DIR)
-    parser.add_argument(
-        "--constituent-tree", type=Path, default=DEFAULT_CONSTITUENT_TREE
-    )
-    parser.add_argument("--macro-parquet", type=Path, default=DEFAULT_MACRO_PARQUET)
-    parser.add_argument("--pit-parquet", type=Path, default=DEFAULT_PIT_PARQUET)
+    parser.add_argument("--daily-dir", type=Path, default=None)
+    parser.add_argument("--constituent-tree", type=Path, default=None)
+    parser.add_argument("--macro-parquet", type=Path, default=None)
+    parser.add_argument("--pit-parquet", type=Path, default=None)
     parser.add_argument("--pmi-path", type=Path, default=None)
     parser.add_argument("--event-calendar", type=Path, default=DEFAULT_EVENT_CALENDAR)
     parser.add_argument("--aaii-sentiment-parquet", type=Path, default=None)
@@ -424,6 +420,16 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--out-dir", type=Path, default=REPO_ROOT / ".context")
     parser.add_argument("--stamp", default=dt.date.today().strftime("%Y%m%d"))
     args = parser.parse_args()
+    if args.daily_dir is None:
+        args.daily_dir = args.data_root / DEFAULT_DAILY_DIR.name
+    if args.constituent_tree is None:
+        args.constituent_tree = args.data_root / DEFAULT_CONSTITUENT_TREE.name
+    if args.macro_parquet is None:
+        args.macro_parquet = args.data_root / "macro" / "fred_macro_series.parquet"
+    if args.pit_parquet is None:
+        args.pit_parquet = (
+            args.data_root / "pit_constituents" / "sp500_ticker_intervals.parquet"
+        )
     if args.pmi_path is None:
         args.pmi_path = default_pmi_path(args.data_root)
     return args

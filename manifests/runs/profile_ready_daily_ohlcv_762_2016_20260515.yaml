@@ -15220,3 +15220,108 @@ artifacts:
   - v2_calibration
   - historical_walkforward
   - audit_layer2_30d
+- name: fred_macro_series
+  stage: canonical
+  uri: s3://autoresearch-platform/regime-detection/artifacts/zurich-v1/profile-ready-daily-ohlcv-762-2016-20260515/canonical/macro/fred_macro_series.parquet
+  local_path: data/raw/macro/fred_macro_series.parquet
+  sha256: fa154cb77fce0b782ac20203794bddfacdf4cd5c16288cda689e65ed1581db4e
+  schema_version: fred_macro_series.v1
+  rows: 17530
+  min_date: '2015-01-01'
+  max_date: '2026-05-17'
+  required_for:
+  - profile_engine_30d
+  - v2_calibration
+  - audit_layer2_30d
+- name: ism_pmi_history
+  stage: canonical
+  uri: s3://autoresearch-platform/regime-detection/artifacts/zurich-v1/profile-ready-daily-ohlcv-762-2016-20260515/canonical/pmi/us_ism_pmi_history.parquet
+  local_path: data/raw/pmi/us_ism_pmi_history.parquet
+  sha256: 8e4259cf3eb08dfe51f03a3ace16ca3a0ff6d3a6e5af4db1547a5400fea066a8
+  schema_version: ism_pmi.v1
+  rows: 132
+  min_date: '2020-05-01'
+  max_date: '2025-12-01'
+  required_for:
+  - profile_engine_30d
+  - v2_calibration
+  - audit_layer2_30d
+- name: ism_pmi_latest
+  stage: canonical
+  uri: s3://autoresearch-platform/regime-detection/artifacts/zurich-v1/profile-ready-daily-ohlcv-762-2016-20260515/canonical/pmi/us_ism_pmi.parquet
+  local_path: data/raw/pmi/us_ism_pmi.parquet
+  sha256: 008f7ed1bc25ab1da6b11672264470e5f49ac7d92c377d93526e89395629fefb
+  schema_version: ism_pmi.v1
+  rows: 2
+  min_date: '2026-04-01'
+  max_date: '2026-05-01'
+  required_for:
+  - profile_engine_30d
+  - v2_calibration
+  - audit_layer2_30d
+- name: sp500_pit_constituents
+  stage: canonical
+  uri: s3://autoresearch-platform/regime-detection/artifacts/zurich-v1/profile-ready-daily-ohlcv-762-2016-20260515/canonical/pit_constituents/sp500_ticker_intervals.parquet
+  local_path: data/raw/pit_constituents/sp500_ticker_intervals.parquet
+  sha256: a115cb8583f6d2c8d90b5d2fe01ca6e91859ad029a23b760bcdf0e8c8eec295c
+  schema_version: sp500_pit_constituents.v1
+  rows: 1246
+  min_date: '1996-01-02'
+  max_date: '2026-05-06'
+  required_for:
+  - profile_engine_30d
+  - v2_calibration
+  - audit_layer2_30d
+- name: cpi_all_items_vintages
+  stage: canonical
+  uri: s3://autoresearch-platform/regime-detection/artifacts/zurich-v1/profile-ready-daily-ohlcv-762-2016-20260515/canonical/macro_vintages/cpi_all_items_vintages.parquet
+  local_path: data/raw/macro_vintages/cpi_all_items_vintages.parquet
+  sha256: fe7e0a7efb0ce33bd4b023c3e353511cd43e5adb28b1d213c36dd8ac7d167547
+  schema_version: fred_macro_series.vintage.v1
+  rows: 678
+  min_date: '2015-01-01'
+  max_date: '2026-04-01'
+  required_for:
+  - profile_engine_30d
+  - v2_calibration
+  - audit_layer2_30d
+- name: fomc_minutes
+  stage: canonical
+  uri: s3://autoresearch-platform/regime-detection/artifacts/zurich-v1/profile-ready-daily-ohlcv-762-2016-20260515/canonical/fomc_minutes/fomc_minutes.parquet
+  local_path: data/raw/fomc_minutes/fomc_minutes.parquet
+  sha256: bade532e31781bf6a35ffb1651f738b71a5760216a7f740f7acda2cd88148c65
+  schema_version: fomc_minutes.v1
+  rows: 147
+  min_date: '2007-10-31'
+  max_date: '2026-03-18'
+  required_for:
+  - profile_engine_30d
+  - v2_calibration
+  - audit_layer2_30d
+- name: powell_speeches
+  stage: canonical
+  uri: s3://autoresearch-platform/regime-detection/artifacts/zurich-v1/profile-ready-daily-ohlcv-762-2016-20260515/canonical/powell_speeches/powell_speeches.parquet
+  local_path: data/raw/powell_speeches/powell_speeches.parquet
+  sha256: fa404062ef2910c47e4e0e437fb1850e3e8b569f5360b2d627307ca0c477b646
+  schema_version: powell_speeches.v1
+  rows: 123
+  min_date: '2013-02-22'
+  max_date: '2026-03-21'
+  required_for:
+  - profile_engine_30d
+  - v2_calibration
+  - audit_layer2_30d
+- name: constituent_ohlcv_DBC
+  stage: canonical
+  uri: s3://autoresearch-platform/regime-detection/artifacts/zurich-v1/profile-ready-daily-ohlcv-762-2016-20260515/canonical/daily_ohlcv_762/symbol=DBC/ohlcv.parquet
+  local_path: data/raw/daily_ohlcv_762/symbol=DBC/ohlcv.parquet
+  sha256: 6608160448dabbf69ba7e0ed9913bcabaa222b79974af60492a9e6fd8af3835e
+  schema_version: null
+  rows: 2607
+  min_date: '2016-01-04'
+  max_date: '2026-05-15'
+  required_for:
+  - profile_engine_30d
+  - v2_calibration
+  - historical_walkforward
+  - audit_layer2_30d

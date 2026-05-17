@@ -23,7 +23,7 @@ def test_walkforward_gate_subprocess_materializes_manifest_defaults(
     tmp_path: Path,
 ) -> None:
     store_root = tmp_path / "store"
-    daily_source = store_root / "canonical" / "daily_ohlcv" / "part.parquet"
+    daily_source = store_root / "canonical" / "daily_ohlcv_762" / "part.parquet"
     daily_source.parent.mkdir(parents=True)
     pd.DataFrame([{"date": pd.Timestamp("2026-05-15"), "symbol": "SPY"}]).to_parquet(
         daily_source,
@@ -62,9 +62,9 @@ def test_walkforward_gate_subprocess_materializes_manifest_defaults(
                     "name": "daily_ohlcv_part",
                     "stage": "canonical",
                     "uri": _store_uri(
-                        store_root, "canonical/daily_ohlcv/part.parquet"
+                        store_root, "canonical/daily_ohlcv_762/part.parquet"
                     ),
-                    "local_path": "data/raw/daily_ohlcv/part.parquet",
+                    "local_path": "data/raw/daily_ohlcv_762/part.parquet",
                     "sha256": sha256_file(daily_source),
                     "required_for": ["v2_calibration"],
                 }
@@ -116,7 +116,7 @@ def test_walkforward_gate_subprocess_materializes_manifest_defaults(
     )
 
     assert result.returncode != 0
-    assert (data_root / "daily_ohlcv" / "part.parquet").exists()
+    assert (data_root / "daily_ohlcv_762" / "part.parquet").exists()
     assert (data_root / "macro" / "fred_macro_series.parquet").exists()
     assert (data_root / "pmi" / "us_ism_pmi_history.parquet").exists()
 
