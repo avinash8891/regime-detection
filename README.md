@@ -93,6 +93,12 @@ make regime-data MANIFEST=manifests/runs/profile_ready_daily_ohlcv_762_2016_2026
 make profile-30d MANIFEST=manifests/runs/profile_ready_daily_ohlcv_762_2016_20260515.yaml
 ```
 
+That approved profile-ready manifest is the portable data contract for the 30d
+operator run. It includes the constituent OHLCV tree plus Layer 1 sentiment
+extension inputs at the runner defaults:
+`data/raw/sentiment/aaii_sentiment.parquet` and
+`data/raw/news_sentiment/sf_fed_news_sentiment.parquet`.
+
 The approved constituent OHLCV lockfile currently points at
 `s3://autoresearch-platform/regime-detection/artifacts/zurich-v1/profile-ready-daily-ohlcv-762-2016-20260515/canonical/daily_ohlcv_762/`.
 It pins 1085 canonical symbol files through SHA-256 metadata and intentionally

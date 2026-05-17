@@ -111,6 +111,48 @@ def _input_is_present(value: Any) -> bool:
     return True
 
 
+def _series_metric_summary(
+    series: pd.Series | None, selected_dates: list[dt.date]
+) -> dict[str, Any]:
+    if series is None:
+        return {"status": "missing", "non_null": 0, "total": len(selected_dates)}
+    selected_index = pd.DatetimeIndex(selected_dates)
+    aligned = series.reindex(selected_index)
+    non_null = aligned.dropna()
+    summary: dict[str, Any] = {
+        "status": "present",
+        "non_null": int(non_null.size),
+        "total": int(aligned.size),
+    }
+    if not non_null.empty:
+        summary["first_date"] = non_null.index[0].date().isoformat()
+        summary["first_value"] = _json_safe_value(non_null.iloc[0])
+        summary["last_date"] = non_null.index[-1].date().isoformat()
+        summary["last_value"] = _json_safe_value(non_null.iloc[-1])
+    return summary
+
+
+def _feature_metric_summary_report(
+    feature_store: FeatureStore | None, selected_dates: list[dt.date]
+) -> dict[str, Any]:
+    if feature_store is None or feature_store.trend_direction_v2 is None:
+        return {}
+    trend_direction_v2 = feature_store.trend_direction_v2
+    return {
+        "trend_direction_v2": {
+            "sentiment_score": _series_metric_summary(
+                trend_direction_v2.sentiment_score, selected_dates
+            ),
+            "news_sentiment_score": _series_metric_summary(
+                trend_direction_v2.news_sentiment_score, selected_dates
+            ),
+            "sentiment_concordance": _series_metric_summary(
+                trend_direction_v2.sentiment_concordance, selected_dates
+            ),
+        }
+    }
+
+
 def _format_stage_rows(
     stage_names: list[str], timer: StageTimer, total: float
 ) -> list[str]:
@@ -455,6 +497,23 @@ def _verify_invariants(
                 issues.append(
                     f"{seam_name} is None; missing inputs: {', '.join(missing)}"
                 )
+    trend_direction_v2 = feature_store.trend_direction_v2
+    if trend_direction_v2 is not None:
+        sentiment_checks = [
+            ("sentiment_score", ["aaii_sentiment"]),
+            ("news_sentiment_score", ["news_sentiment"]),
+            ("sentiment_concordance", ["aaii_sentiment", "news_sentiment"]),
+        ]
+        for metric_name, deps in sentiment_checks:
+            if getattr(trend_direction_v2, metric_name) is not None:
+                continue
+            missing = [
+                dep for dep in deps if not _input_is_present(input_values.get(dep))
+            ]
+            reason = ", ".join(missing) if missing else "not_computed"
+            issues.append(
+                f"trend_direction.{metric_name} missing; missing inputs: {reason}"
+            )
     return issues
 
 
@@ -474,6 +533,7 @@ def _build_json_report(
     per_day_emission_total: float,
     per_day_avg_ms: float,
     verification_issues: list[str],
+    feature_store: FeatureStore | None = None,
 ) -> dict[str, Any]:
     stage_names = [
         "build_market_context",
@@ -607,6 +667,9 @@ def _build_json_report(
         },
         "timeline": _compact_timeline_report(timeline.outputs),
         "label_summary": _label_summary_report(timeline.outputs),
+        "feature_metrics": _feature_metric_summary_report(
+            feature_store, inputs.selected_dates
+        ),
         "full_timeline": _full_timeline_report(timeline.outputs),
         "trailing_v2_field_status": _trailing_v2_status_report(timeline.outputs[-1]),
         "verification_issues": verification_issues,

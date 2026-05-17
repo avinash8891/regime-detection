@@ -15192,3 +15192,31 @@ artifacts:
   - v2_calibration
   - historical_walkforward
   - audit_layer2_30d
+- name: aaii_sentiment
+  stage: canonical
+  uri: s3://autoresearch-platform/regime-detection/artifacts/zurich-v1/profile-ready-daily-ohlcv-762-2016-20260515/canonical/sentiment/aaii_sentiment.parquet
+  local_path: data/raw/sentiment/aaii_sentiment.parquet
+  sha256: 7af89999554c8a58cbbf11570dc32bd554d7967ac11d29939386753fbe200571
+  schema_version: aaii_sentiment.v1
+  rows: 2023
+  min_date: '1987-07-24'
+  max_date: '2026-05-13'
+  required_for:
+  - profile_engine_30d
+  - v2_calibration
+  - historical_walkforward
+  - audit_layer2_30d
+- name: sf_fed_news_sentiment
+  stage: canonical
+  uri: s3://autoresearch-platform/regime-detection/artifacts/zurich-v1/profile-ready-daily-ohlcv-762-2016-20260515/canonical/news_sentiment/sf_fed_news_sentiment.parquet
+  local_path: data/raw/news_sentiment/sf_fed_news_sentiment.parquet
+  sha256: 3cf86343364e8003bdbea37268decca3834634e288f872004043e652aa497894
+  schema_version: sf_fed_news_sentiment.v1
+  rows: 16913
+  min_date: '1980-01-01'
+  max_date: '2026-05-10'
+  required_for:
+  - profile_engine_30d
+  - v2_calibration
+  - historical_walkforward
+  - audit_layer2_30d
