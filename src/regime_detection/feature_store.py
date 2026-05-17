@@ -1,8 +1,8 @@
 from __future__ import annotations
 
 from collections.abc import Callable
-from dataclasses import dataclass, field
-from typing import Any
+from dataclasses import dataclass
+from typing import TypeVar, cast
 
 import pandas as pd
 from pydantic import BaseModel, ConfigDict
@@ -123,6 +123,20 @@ __all__ = [
 # required FRED series without scattering string literals.
 _FRED_DGS2_KEY = "DGS2"
 _FRED_DGS10_KEY = "DGS10"
+_T = TypeVar("_T")
+
+
+def _as_datetime_index(index: pd.Index) -> pd.DatetimeIndex:
+    if not isinstance(index, pd.DatetimeIndex):
+        raise RuntimeError("feature store requires a DatetimeIndex-backed SPY frame")
+    return index
+
+
+def _series_column(frame: pd.DataFrame, column: str) -> pd.Series:
+    series = frame[column]
+    if not isinstance(series, pd.Series):
+        raise RuntimeError(f"feature store requires a single {column!r} column")
+    return series
 
 
 @dataclass
@@ -140,7 +154,31 @@ class _FeatureStoreBuildState:
     inflation_growth_config: InflationGrowthConfig | None = None
     central_bank_text_config: CentralBankTextConfig | None = None
     news_sentiment_config: NewsSentimentConfig | None = None
-    values: dict[str, Any] = field(default_factory=dict)
+    trend_direction: TrendDirectionFeatures | None = None
+    sentiment_score: pd.Series | None = None
+    news_sentiment_score: pd.Series | None = None
+    trend_direction_v2: TrendDirectionV2Features | None = None
+    trend_character: TrendCharacterFeatures | None = None
+    volatility: VolatilityFeatures | None = None
+    breadth: BreadthFeatures | None = None
+    sma_50: pd.Series | None = None
+    network_fragility: NetworkFragilityFeatures | None = None
+    volatility_state_v2: VolatilityV2Features | None = None
+    breadth_state_v2: BreadthV2Features | None = None
+    volume_liquidity_v2: VolumeLiquidityV2Features | None = None
+    monetary: MonetaryPressureV2Features | None = None
+    realized_vol_21d: pd.Series | None = None
+    hmm: HMMFeatures | None = None
+    clustering: ClusteringFeatures | None = None
+    credit_funding: CreditFundingFeatures | None = None
+    inflation_growth: InflationGrowthFeatures | None = None
+    change_point: ChangePointFeatures | None = None
+
+
+def _require_feature(value: _T | None, name: str) -> _T:
+    if value is None:
+        raise RuntimeError(f"feature builder did not populate required feature: {name}")
+    return value
 
 
 @dataclass(frozen=True)
@@ -304,104 +342,111 @@ def _build_news_sentiment_score_series(
         return None
     if news_sentiment.empty:
         return None
-    return (
+    score = cast(
+        pd.Series,
         news_sentiment.reindex(session_index, method="ffill")
         .rolling(config.smoothing_window_sessions, min_periods=1)
-        .mean()
-        .rename("news_sentiment_score")
+        .mean(),
     )
+    score.name = "news_sentiment_score"
+    return cast(pd.Series, score)
 
 
 def _build_trend_direction_feature(state: _FeatureStoreBuildState) -> None:
-    state.values["trend_direction"] = compute_trend_direction_features(state.spy_close)
+    state.trend_direction = compute_trend_direction_features(state.spy_close)
 
 
 def _build_sentiment_score_feature(state: _FeatureStoreBuildState) -> None:
-    state.values["sentiment_score"] = _build_sentiment_score_series(
+    state.sentiment_score = _build_sentiment_score_series(
         aaii_sentiment=state.context.aaii_sentiment,
-        session_index=state.spy_close.index,
+        session_index=_as_datetime_index(state.spy_close.index),
     )
 
 
 def _build_news_sentiment_score_feature(state: _FeatureStoreBuildState) -> None:
-    state.values["news_sentiment_score"] = _build_news_sentiment_score_series(
+    state.news_sentiment_score = _build_news_sentiment_score_series(
         news_sentiment=state.context.news_sentiment,
-        session_index=state.spy_close.index,
+        session_index=_as_datetime_index(state.spy_close.index),
         config=state.news_sentiment_config,
     )
 
 
 def _build_trend_direction_v2_feature(state: _FeatureStoreBuildState) -> None:
     if state.trend_direction_v2_config is None:
-        state.values["trend_direction_v2"] = None
+        state.trend_direction_v2 = None
         return
-    state.values["trend_direction_v2"] = compute_trend_v2_features(
+    state.trend_direction_v2 = compute_trend_v2_features(
         state.spy_close,
         config=state.trend_direction_v2_config,
-        sentiment_score=state.values.get("sentiment_score"),
-        news_sentiment_score=state.values.get("news_sentiment_score"),
+        sentiment_score=state.sentiment_score,
+        news_sentiment_score=state.news_sentiment_score,
     )
 
 
 def _build_trend_character_feature(state: _FeatureStoreBuildState) -> None:
-    state.values["trend_character"] = compute_trend_character_features(
+    state.trend_character = compute_trend_character_features(
         close=state.spy_close,
-        high=state.spy_ohlcv["high"],
-        low=state.spy_ohlcv["low"],
-        volume=state.spy_ohlcv["volume"] if "volume" in state.spy_ohlcv.columns else None,
+        high=_series_column(state.spy_ohlcv, "high"),
+        low=_series_column(state.spy_ohlcv, "low"),
+        volume=(
+            _series_column(state.spy_ohlcv, "volume")
+            if "volume" in state.spy_ohlcv.columns
+            else None
+        ),
     )
 
 
 def _build_volatility_feature(state: _FeatureStoreBuildState) -> None:
-    state.values["volatility"] = compute_volatility_features(
+    state.volatility = compute_volatility_features(
         close=state.spy_close,
         vix_proxy_close=state.context.vix_proxy_close,
     )
 
 
 def _build_breadth_feature(state: _FeatureStoreBuildState) -> None:
-    state.values["breadth"] = compute_breadth_features(
+    state.breadth = compute_breadth_features(
         spy_close=state.spy_close,
         rsp_close=state.context.rsp_close.reindex(state.spy_ohlcv.index),
     )
 
 
 def _build_sma_50_feature(state: _FeatureStoreBuildState) -> None:
-    state.values["sma_50"] = simple_moving_average(state.spy_close, window=50)
+    state.sma_50 = simple_moving_average(state.spy_close, window=50)
 
 
 def _build_network_fragility_feature(state: _FeatureStoreBuildState) -> None:
     if state.context.sector_etf_closes is None:
-        state.values["network_fragility"] = None
+        state.network_fragility = None
         return
-    nf_kwargs: dict[str, int | float] = {}
-    if state.network_fragility_config is not None:
-        nf_kwargs = {
-            "correlation_lookback_days": state.network_fragility_config.correlation_lookback_days,
-            "percentile_lookback_days": state.network_fragility_config.percentile_lookback_days,
-            "realized_vol_lookback_days": state.network_fragility_config.realized_vol_lookback_days,
-            "dispersion_percentile_lookback_days": (
-                state.network_fragility_config.dispersion_percentile_lookback_days
-            ),
-            "min_universe_size": state.network_fragility_config.min_universe_size,
-            "min_window_completeness": state.network_fragility_config.min_window_completeness,
-        }
-    state.values["network_fragility"] = compute_network_fragility_features(
+    if state.network_fragility_config is None:
+        state.network_fragility = compute_network_fragility_features(
+            sector_etf_closes=state.context.sector_etf_closes,
+            cross_asset_closes=state.context.cross_asset_closes or {},
+            spy_close=state.spy_close,
+        )
+        return
+    config = state.network_fragility_config
+    state.network_fragility = compute_network_fragility_features(
         sector_etf_closes=state.context.sector_etf_closes,
         cross_asset_closes=state.context.cross_asset_closes or {},
         spy_close=state.spy_close,
-        **nf_kwargs,
+        correlation_lookback_days=config.correlation_lookback_days,
+        percentile_lookback_days=config.percentile_lookback_days,
+        realized_vol_lookback_days=config.realized_vol_lookback_days,
+        dispersion_percentile_lookback_days=config.dispersion_percentile_lookback_days,
+        min_universe_size=config.min_universe_size,
+        min_window_completeness=config.min_window_completeness,
     )
 
 
 def _build_volatility_state_v2_feature(state: _FeatureStoreBuildState) -> None:
     if state.volatility_state_v2_config is None:
-        state.values["volatility_state_v2"] = None
+        state.volatility_state_v2 = None
         return
     event_window = (
         compute_event_window_just_passed(
             normalized_event_calendar=state.context.normalized_event_calendar,
-            sessions=tuple(state.spy_close.index.date),
+            sessions=tuple(ts.date() for ts in _as_datetime_index(state.spy_close.index)),
             trailing_sessions=(
                 state.volatility_state_v2_config.rules.vol_crush_event_window_trailing_sessions
             ),
@@ -409,10 +454,10 @@ def _build_volatility_state_v2_feature(state: _FeatureStoreBuildState) -> None:
         if state.context.normalized_event_calendar is not None
         else None
     )
-    state.values["volatility_state_v2"] = compute_volatility_v2_features(
-        open_=state.spy_ohlcv["open"],
-        high=state.spy_ohlcv["high"],
-        low=state.spy_ohlcv["low"],
+    state.volatility_state_v2 = compute_volatility_v2_features(
+        open_=_series_column(state.spy_ohlcv, "open"),
+        high=_series_column(state.spy_ohlcv, "high"),
+        low=_series_column(state.spy_ohlcv, "low"),
         close=state.spy_close,
         config=state.volatility_state_v2_config,
         rules_config=state.volatility_state_v2_config.rules,
@@ -423,13 +468,13 @@ def _build_volatility_state_v2_feature(state: _FeatureStoreBuildState) -> None:
 
 def _build_breadth_state_v2_feature(state: _FeatureStoreBuildState) -> None:
     if state.breadth_state_v2_config is None or state.context.sector_etf_closes is None:
-        state.values["breadth_state_v2"] = None
+        state.breadth_state_v2 = None
         return
     sector_closes = state.context.sector_etf_closes
     if not all(symbol in sector_closes for symbol in SECTOR_ETFS):
-        state.values["breadth_state_v2"] = None
+        state.breadth_state_v2 = None
         return
-    state.values["breadth_state_v2"] = compute_breadth_v2_features(
+    state.breadth_state_v2 = compute_breadth_v2_features(
         sector_etf_closes=sector_closes,
         config=state.breadth_state_v2_config,
         pit_constituent_intervals=state.context.pit_constituent_intervals,
@@ -438,15 +483,20 @@ def _build_breadth_state_v2_feature(state: _FeatureStoreBuildState) -> None:
 
 
 def _build_volume_liquidity_v2_feature(state: _FeatureStoreBuildState) -> None:
+    spy_volume = (
+        _series_column(state.spy_ohlcv, "volume")
+        if "volume" in state.spy_ohlcv.columns
+        else None
+    )
     if (
         state.volume_liquidity_v2_config is None
-        or "volume" not in state.spy_ohlcv.columns
-        or state.spy_ohlcv["volume"].isna().all()
+        or spy_volume is None
+        or bool(spy_volume.isna().all())
     ):
-        state.values["volume_liquidity_v2"] = None
+        state.volume_liquidity_v2 = None
         return
-    state.values["volume_liquidity_v2"] = compute_volume_liquidity_v2_features(
-        volume=state.spy_ohlcv["volume"],
+    state.volume_liquidity_v2 = compute_volume_liquidity_v2_features(
+        volume=spy_volume,
         config=state.volume_liquidity_v2_config,
     )
 
@@ -458,7 +508,7 @@ def _build_monetary_feature(state: _FeatureStoreBuildState) -> None:
         or _FRED_DGS2_KEY not in state.context.macro_series
         or _FRED_DGS10_KEY not in state.context.macro_series
     ):
-        state.values["monetary"] = None
+        state.monetary = None
         return
     broad_usd_series = state.context.macro_series.get("broad_usd_index")
     cb_text_score_series: pd.Series | None = None
@@ -469,11 +519,11 @@ def _build_monetary_feature(state: _FeatureStoreBuildState) -> None:
     ):
         cb_text_score_series = to_daily_score_series(
             state.context.central_bank_text_releases,
-            session_index=state.spy_close.index,
+            session_index=_as_datetime_index(state.spy_close.index),
             smoothing_window_sessions=state.central_bank_text_config.smoothing_window_sessions,
             same_date_aggregation=state.central_bank_text_config.same_date_aggregation,
         )
-    state.values["monetary"] = compute_monetary_pressure_features(
+    state.monetary = compute_monetary_pressure_features(
         dgs2=state.context.macro_series[_FRED_DGS2_KEY],
         dgs10=state.context.macro_series[_FRED_DGS10_KEY],
         broad_usd_index=broad_usd_series,
@@ -483,7 +533,7 @@ def _build_monetary_feature(state: _FeatureStoreBuildState) -> None:
 
 
 def _build_realized_vol_21d_feature(state: _FeatureStoreBuildState) -> None:
-    state.values["realized_vol_21d"] = (
+    state.realized_vol_21d = (
         realized_vol(state.spy_close, 21)
         if (
             state.context.config.hmm is not None
@@ -495,41 +545,48 @@ def _build_realized_vol_21d_feature(state: _FeatureStoreBuildState) -> None:
 
 
 def _build_hmm_feature(state: _FeatureStoreBuildState) -> None:
+    volume_liquidity_v2 = state.volume_liquidity_v2
+    network_fragility = state.network_fragility
     if (
         state.context.config.hmm is None
-        or state.values["volume_liquidity_v2"] is None
-        or state.values["network_fragility"] is None
+        or volume_liquidity_v2 is None
+        or network_fragility is None
     ):
-        state.values["hmm"] = None
+        state.hmm = None
         return
-    state.values["hmm"] = compute_hmm_features(
-        return_1d=state.values["volatility"].return_1d,
-        realized_vol_21d=state.values["realized_vol_21d"],
+    volatility = _require_feature(state.volatility, "volatility")
+    state.hmm = compute_hmm_features(
+        return_1d=volatility.return_1d,
+        realized_vol_21d=state.realized_vol_21d,
         drawdown_63d=compute_trailing_drawdown(state.spy_close, 63),
-        volume_zscore_20d=state.values["volume_liquidity_v2"].volume_zscore_20d,
-        avg_pairwise_corr_63d=state.values["network_fragility"].avg_pairwise_corr_63d,
+        volume_zscore_20d=volume_liquidity_v2.volume_zscore_20d,
+        avg_pairwise_corr_63d=network_fragility.avg_pairwise_corr_63d,
         config=state.context.config.hmm,
     )
 
 
 def _build_clustering_feature(state: _FeatureStoreBuildState) -> None:
+    breadth_state_v2 = state.breadth_state_v2
+    network_fragility = state.network_fragility
+    trend_direction_v2 = state.trend_direction_v2
     if (
         state.context.config.clustering is None
-        or state.values["breadth_state_v2"] is None
-        or state.values["breadth_state_v2"].pct_above_50dma is None
-        or state.values["network_fragility"] is None
-        or state.values["trend_direction_v2"] is None
+        or breadth_state_v2 is None
+        or breadth_state_v2.pct_above_50dma is None
+        or network_fragility is None
+        or trend_direction_v2 is None
     ):
-        state.values["clustering"] = None
+        state.clustering = None
         return
-    state.values["clustering"] = compute_clustering_features(
-        return_21d=state.values["trend_character"].return_21d,
-        return_63d=state.values["trend_direction_v2"].return_63d,
-        realized_vol_21d=state.values["realized_vol_21d"],
+    trend_character = _require_feature(state.trend_character, "trend_character")
+    state.clustering = compute_clustering_features(
+        return_21d=trend_character.return_21d,
+        return_63d=trend_direction_v2.return_63d,
+        realized_vol_21d=state.realized_vol_21d,
         drawdown_63d=compute_trailing_drawdown(state.spy_close, 63),
-        adx_14=state.values["trend_character"].adx_14,
-        avg_pairwise_corr_63d=state.values["network_fragility"].avg_pairwise_corr_63d,
-        pct_above_50dma=state.values["breadth_state_v2"].pct_above_50dma,
+        adx_14=trend_character.adx_14,
+        avg_pairwise_corr_63d=network_fragility.avg_pairwise_corr_63d,
+        pct_above_50dma=breadth_state_v2.pct_above_50dma,
         config=state.context.config.clustering,
     )
 
@@ -542,10 +599,10 @@ def _build_credit_funding_feature(state: _FeatureStoreBuildState) -> None:
         or not all(k in state.context.cross_asset_closes for k in _CF_CROSS_ASSET_KEYS)
         or not all(k in state.context.macro_series for k in _CF_MACRO_KEYS)
     ):
-        state.values["credit_funding"] = None
+        state.credit_funding = None
         return
     nan_oas = pd.Series(float("nan"), index=state.spy_close.index)
-    state.values["credit_funding"] = compute_credit_funding_features(
+    state.credit_funding = compute_credit_funding_features(
         hyg_close=state.context.cross_asset_closes[_CF_HYG_KEY],
         lqd_close=state.context.cross_asset_closes[_CF_LQD_KEY],
         tlt_close=state.context.cross_asset_closes[_CF_TLT_KEY],
@@ -569,9 +626,9 @@ def _build_inflation_growth_feature(state: _FeatureStoreBuildState) -> None:
         or not all(k in state.context.cross_asset_closes for k in _IG_CROSS_ASSET_KEYS)
         or not all(k in state.context.macro_series for k in _IG_MACRO_KEYS)
     ):
-        state.values["inflation_growth"] = None
+        state.inflation_growth = None
         return
-    state.values["inflation_growth"] = compute_inflation_growth_features(
+    state.inflation_growth = compute_inflation_growth_features(
         cpi_all_items=state.context.macro_series[_IG_CPI_KEY],
         pmi_manufacturing=state.context.macro_series[_IG_PMI_KEY],
         dgs10=state.context.macro_series[_IG_DGS10_KEY],
@@ -596,10 +653,10 @@ def _build_inflation_growth_feature(state: _FeatureStoreBuildState) -> None:
 
 def _build_change_point_feature(state: _FeatureStoreBuildState) -> None:
     if state.context.config.change_point is None:
-        state.values["change_point"] = None
+        state.change_point = None
         return
-    state.values["change_point"] = compute_change_point_features(
-        realized_vol_21d=state.values["realized_vol_21d"],
+    state.change_point = compute_change_point_features(
+        realized_vol_21d=state.realized_vol_21d,
         config=state.context.config.change_point,
     )
 
@@ -645,7 +702,7 @@ def build_feature_store(
     # refactor. Keep feature wiring and fixture replay frozen while extracting
     # helpers so classifier changes do not hide inside the decomposition.
     spy_ohlcv = context.spy_ohlcv
-    spy_close = spy_ohlcv["close"]
+    spy_close = _series_column(spy_ohlcv, "close")
     build_state = _FeatureStoreBuildState(
         context=context,
         spy_ohlcv=spy_ohlcv,
@@ -662,24 +719,23 @@ def build_feature_store(
         news_sentiment_config=news_sentiment_config,
     )
     _run_feature_store_builders(_FEATURE_STORE_BUILDERS, build_state)
-    values = build_state.values
 
     return FeatureStore(
-        spy_index=spy_ohlcv.index,
-        trend_direction=values["trend_direction"],
-        trend_character=values["trend_character"],
-        volatility=values["volatility"],
-        breadth=values["breadth"],
-        sma_50=values["sma_50"],
-        network_fragility=values["network_fragility"],
-        trend_direction_v2=values["trend_direction_v2"],
-        volatility_state_v2=values["volatility_state_v2"],
-        breadth_state_v2=values["breadth_state_v2"],
-        volume_liquidity_v2=values["volume_liquidity_v2"],
-        monetary=values["monetary"],
-        hmm=values["hmm"],
-        clustering=values["clustering"],
-        change_point=values["change_point"],
-        credit_funding=values["credit_funding"],
-        inflation_growth=values["inflation_growth"],
+        spy_index=_as_datetime_index(spy_ohlcv.index),
+        trend_direction=_require_feature(build_state.trend_direction, "trend_direction"),
+        trend_character=_require_feature(build_state.trend_character, "trend_character"),
+        volatility=_require_feature(build_state.volatility, "volatility"),
+        breadth=_require_feature(build_state.breadth, "breadth"),
+        sma_50=_require_feature(build_state.sma_50, "sma_50"),
+        network_fragility=build_state.network_fragility,
+        trend_direction_v2=build_state.trend_direction_v2,
+        volatility_state_v2=build_state.volatility_state_v2,
+        breadth_state_v2=build_state.breadth_state_v2,
+        volume_liquidity_v2=build_state.volume_liquidity_v2,
+        monetary=build_state.monetary,
+        hmm=build_state.hmm,
+        clustering=build_state.clustering,
+        change_point=build_state.change_point,
+        credit_funding=build_state.credit_funding,
+        inflation_growth=build_state.inflation_growth,
     )
