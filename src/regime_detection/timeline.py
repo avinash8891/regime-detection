@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from datetime import date
-from typing import NamedTuple
+from typing import NamedTuple, cast
 
 import pandas as pd
 
@@ -14,9 +14,12 @@ from regime_detection.market_context import (
     slice_context_to_recent_sessions,
 )
 from regime_detection.models import (
+    AxisEvidencePayload,
+    BreadthStateOutput,
     ChangePointOutput,
     ClusterOutput,
     DataQuality,
+    MonetaryPressureEvidencePayload,
     MonetaryPressureOutput,
     NetworkFragilityOutput,
     RegimeOutput,
@@ -86,7 +89,9 @@ def _resolve_network_fragility_by_date(
             raw_label="unknown",
             stable_label="unknown",
             active_label="unknown",
-            evidence={"reason": "v2_classifier_not_yet_implemented"},
+            evidence=AxisEvidencePayload(
+                root={"reason": "v2_classifier_not_yet_implemented"}
+            ),
             data_quality=placeholder_dq,
         )
         for day in sessions
@@ -198,7 +203,9 @@ def _build_timeline_output_for_day(
     trend_direction_output = axis_bundle.trend_direction.outputs_by_date[day]
     trend_character_output = axis_bundle.trend_character.outputs_by_date[day]
     volatility_output = axis_bundle.volatility_state.outputs_by_date[day]
-    breadth_output = axis_bundle.breadth_state.outputs_by_date[day]
+    breadth_output = cast(
+        BreadthStateOutput, axis_bundle.breadth_state.outputs_by_date[day]
+    )
     event_output = axis_bundle.event_calendar[day]
     transition_output = transition_risk[day]
     network_fragility_output = network_fragility_by_date[day]
@@ -230,13 +237,17 @@ def _build_timeline_output_for_day(
     monetary_pressure = (
         MonetaryPressureOutput(
             label=monetary_pressure_output.active_label,
-            evidence=_plain_evidence_dict(monetary_pressure_output.evidence),
+            evidence=MonetaryPressureEvidencePayload(
+                root=_plain_evidence_dict(monetary_pressure_output.evidence)
+            ),
             data_quality=monetary_pressure_output.data_quality,
         )
         if monetary_pressure_output is not None
         else MonetaryPressureOutput(
             label="unknown",
-            evidence={"reason": "v2_classifier_not_yet_implemented"},
+            evidence=MonetaryPressureEvidencePayload(
+                root={"reason": "v2_classifier_not_yet_implemented"}
+            ),
             data_quality=_v2_classifier_not_yet_implemented_data_quality(),
         )
     )
