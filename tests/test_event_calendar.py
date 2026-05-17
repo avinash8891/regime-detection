@@ -20,10 +20,122 @@ from regime_data_fetch.event_calendar import (
     validate_fomc_listing_integrity,
     _validate_bls_events,
 )
+from regime_data_fetch.event_calendar_reporting import (
+    build_candidate_artifact_records,
+    build_group_a_report,
+    build_group_b_report,
+)
+from regime_data_fetch.event_sources.models import EventCandidate, PromotionDecision, ValidationResult
 from regime_data_fetch.event_sources.deterministic_budget import DeterministicBudgetAdapter
 
 
 FOMC_FIXTURES = Path("tests/fixtures/raw/fomc")
+
+
+def test_event_calendar_reporting_builds_candidate_records_and_group_reports(tmp_path: Path) -> None:
+    ecb_candidate = EventCandidate(
+        date=dt.date(2026, 4, 30),
+        event_type="ECB_decision",
+        market="GLOBAL",
+        importance="medium",
+        source_id="ecb.europa.eu:monetary-policy-decisions",
+        source_url="https://www.ecb.europa.eu/example",
+        raw_title="Monetary policy decisions",
+        raw_snippet="ECB decision snippet",
+        is_future_scheduled=False,
+        confidence="medium",
+        requires_manual_review=True,
+        release_timestamp_et=dt.datetime(2026, 4, 30, 8, 0, tzinfo=dt.timezone.utc),
+        window_days=(0, 1),
+        candidate_id="ecb-20260430",
+    )
+    budget_candidate = EventCandidate(
+        date=dt.date(2026, 9, 30),
+        event_type="budget",
+        market="US",
+        importance="medium",
+        source_id="usa.gov:federal-budget-process",
+        source_url="https://www.usa.gov/federal-budget-process",
+        raw_title="Federal budget deadline",
+        raw_snippet="Budget process snippet",
+        is_future_scheduled=True,
+        confidence="high",
+        requires_manual_review=False,
+        event_subtype="fy_deadline",
+        candidate_id="budget-20260930",
+    )
+    validations = [
+        ValidationResult(
+            candidate_key=("ECB_decision", dt.date(2026, 4, 30)),
+            validator_id="hf_central_bank",
+            verdict="confirm",
+            evidence_url="https://evidence.example/ecb",
+            evidence_snippet="confirmed",
+        )
+    ]
+    decisions = [
+        PromotionDecision(
+            candidate_key=("ECB_decision", dt.date(2026, 4, 30)),
+            outcome="quarantine",
+            final_confidence="low",
+            source_count=2,
+            requires_manual_review=True,
+            reason="contradictory evidence",
+        ),
+        PromotionDecision(
+            candidate_key=("budget", dt.date(2026, 9, 30)),
+            outcome="promote",
+            final_confidence="high",
+            source_count=1,
+            requires_manual_review=False,
+            reason="deterministic schedule",
+        ),
+    ]
+
+    records = build_candidate_artifact_records(
+        candidates=[ecb_candidate, budget_candidate],
+        validations=validations,
+        decisions=decisions,
+    )
+
+    assert records.candidates[0]["promotion_outcome"] == "quarantine"
+    assert records.candidates[0]["confidence"] == "low"
+    assert records.candidates[0]["release_timestamp_et"] == "2026-04-30T08:00:00+00:00"
+    assert records.candidates[0]["window_days"] == [0, 1]
+    assert records.validations == [
+        {
+            "event_type": "ECB_decision",
+            "date": "2026-04-30",
+            "validator_id": "hf_central_bank",
+            "verdict": "confirm",
+            "evidence_url": "https://evidence.example/ecb",
+            "evidence_snippet": "confirmed",
+        }
+    ]
+    assert records.quarantine == [records.candidates[0]]
+
+    output_paths = {
+        "candidates": tmp_path / "data" / "raw" / "event_calendar" / "candidates" / "event_candidates.parquet",
+        "validations": tmp_path / "data" / "raw" / "event_calendar" / "candidates" / "event_validations.parquet",
+        "quarantine": tmp_path / "data" / "raw" / "event_calendar" / "candidates" / "quarantine.parquet",
+    }
+    group_a_report = build_group_a_report(
+        candidates=[ecb_candidate, budget_candidate],
+        decisions=decisions,
+        output_paths=output_paths,
+        repo_root=tmp_path,
+    )
+    group_b_report = build_group_b_report(
+        candidates=[ecb_candidate, budget_candidate],
+        decisions=decisions,
+        approval_overlay=[],
+    )
+
+    assert group_a_report["candidates"] == {"ECB_decision": 1}
+    assert group_a_report["quarantined"] == {"ECB_decision": 1}
+    assert group_a_report["paths"]["candidates"] == "data/raw/event_calendar/candidates/event_candidates.parquet"
+    assert group_b_report["candidates"] == {"budget": 1}
+    assert group_b_report["promoted"] == {"budget": 1}
 
 
 def test_load_event_calendar_yaml_defaults_publication_date() -> None:
