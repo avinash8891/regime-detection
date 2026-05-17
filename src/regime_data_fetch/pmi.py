@@ -292,9 +292,15 @@ def run_pmi_fetch(
                 for row in chosen_rows
             ]
         )
+        history_path = out_dir / "pmi" / "us_ism_pmi_history.parquet"
         history_rows = _select_history_rows(
             bundles_by_source=bundles_by_source,
             chosen_bundle=chosen_bundle,
+            as_of_timestamp=as_of_timestamp,
+        )
+        history_rows = _merge_existing_history_rows(
+            history_path=history_path,
+            new_rows=[*history_rows, *chosen_rows],
             as_of_timestamp=as_of_timestamp,
         )
         history_df = pd.DataFrame(
@@ -314,7 +320,6 @@ def run_pmi_fetch(
         pmi_dir.mkdir(parents=True, exist_ok=True)
         parquet_path = pmi_dir / "us_ism_pmi.parquet"
         latest_df.to_parquet(parquet_path, index=False)
-        history_path = pmi_dir / "us_ism_pmi_history.parquet"
         history_df.to_parquet(history_path, index=False)
 
         report = {
@@ -555,9 +560,55 @@ def _select_history_rows(
     return best_rows
 
 
+def _merge_existing_history_rows(
+    *,
+    history_path: Path,
+    new_rows: list[PMIObservation],
+    as_of_timestamp: dt.datetime,
+) -> list[PMIObservation]:
+    if not history_path.exists():
+        return _dedupe_history_rows(
+            [row for row in new_rows if row.release_timestamp <= as_of_timestamp]
+        )
+
+    existing_df = pd.read_parquet(history_path)
+    required = {
+        "series_name",
+        "period",
+        "value",
+        "release_timestamp",
+        "source",
+        "source_url",
+    }
+    if not required.issubset(existing_df.columns):
+        missing = sorted(required - set(existing_df.columns))
+        raise PMIFetchError(f"existing PMI history missing columns: {missing}")
+
+    existing_rows = []
+    for row in existing_df.itertuples(index=False):
+        release_timestamp = pd.Timestamp(row.release_timestamp)
+        if release_timestamp.tzinfo is None:
+            release_timestamp = release_timestamp.tz_localize(dt.UTC)
+        else:
+            release_timestamp = release_timestamp.tz_convert(dt.UTC)
+        existing_rows.append(
+            PMIObservation(
+                series_name=str(row.series_name),
+                period=str(row.period),
+                value=float(row.value),
+                release_timestamp=release_timestamp.to_pydatetime(),
+                source=str(row.source),
+                source_url=str(row.source_url),
+            )
+        )
+
+    current_rows = [row for row in new_rows if row.release_timestamp <= as_of_timestamp]
+    return _dedupe_history_rows([*existing_rows, *current_rows])
+
+
 def _dedupe_history_rows(rows: list[PMIObservation]) -> list[PMIObservation]:
     by_key: dict[tuple[str, str], PMIObservation] = {}
-    for row in sorted(rows, key=lambda item: (item.series_name, item.period, item.release_timestamp, item.source)):
+    for row in sorted(rows, key=lambda item: (item.series_name, item.period, item.release_timestamp)):
         by_key[(row.series_name, row.period)] = row
     return sorted(by_key.values(), key=lambda item: (item.period, item.series_name))
 

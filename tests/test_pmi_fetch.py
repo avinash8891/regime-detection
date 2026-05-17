@@ -140,6 +140,90 @@ def test_run_pmi_fetch_falls_back_to_backup(monkeypatch, tmp_path: Path) -> None
     assert (tmp_path / "pmi" / "us_ism_pmi_history.parquet").exists()
 
 
+def test_run_pmi_fetch_merges_latest_rows_into_existing_history(tmp_path: Path) -> None:
+    history_path = tmp_path / "pmi" / "us_ism_pmi_history.parquet"
+    history_path.parent.mkdir(parents=True)
+    pd.DataFrame(
+        [
+            {
+                "series_name": "manufacturing",
+                "period": "2026-03",
+                "value": 50.3,
+                "release_timestamp": release_timestamp_for_period(
+                    series_name="manufacturing", period="2026-03"
+                ).isoformat(),
+                "source": "investing_manual",
+                "source_url": "manual://investing/ism_manufacturing_pmi.tsv",
+            },
+            {
+                "series_name": "services",
+                "period": "2026-03",
+                "value": 50.8,
+                "release_timestamp": release_timestamp_for_period(
+                    series_name="services", period="2026-03"
+                ).isoformat(),
+                "source": "investing_manual",
+                "source_url": "manual://investing/ism_services_pmi.tsv",
+            },
+            {
+                "series_name": "manufacturing",
+                "period": "2026-04",
+                "value": 51.0,
+                "release_timestamp": release_timestamp_for_period(
+                    series_name="manufacturing", period="2026-04"
+                ).isoformat(),
+                "source": "investing_manual",
+                "source_url": "manual://investing/ism_manufacturing_pmi.tsv",
+            },
+        ]
+    ).to_parquet(history_path, index=False)
+
+    def failing_primary(*, as_of_date: dt.date) -> list[PMIObservation]:
+        del as_of_date
+        raise PMIFetchError("primary down")
+
+    def backup_fetcher(*, as_of_date: dt.date) -> list[PMIObservation]:
+        del as_of_date
+        return [
+            PMIObservation(
+                series_name="manufacturing",
+                period="2026-04",
+                value=52.7,
+                release_timestamp=release_timestamp_for_period(
+                    series_name="manufacturing", period="2026-04"
+                ),
+                source="tradingeconomics",
+                source_url="https://tradingeconomics.com/united-states/business-confidence",
+            ),
+            PMIObservation(
+                series_name="services",
+                period="2026-04",
+                value=53.6,
+                release_timestamp=release_timestamp_for_period(
+                    series_name="services", period="2026-04"
+                ),
+                source="tradingeconomics",
+                source_url="https://tradingeconomics.com/united-states/non-manufacturing-pmi",
+            ),
+        ]
+
+    report_path = run_pmi_fetch(
+        out_dir=tmp_path,
+        as_of_date=dt.date(2026, 5, 15),
+        primary_fetcher=failing_primary,
+        backup_fetcher=backup_fetcher,
+    )
+
+    report = json.loads(report_path.read_text())
+    assert report["counts"]["history_rows"] == 4
+
+    history_df = pd.read_parquet(history_path)
+    assert history_df["period"].tolist() == ["2026-03", "2026-03", "2026-04", "2026-04"]
+    april = history_df[history_df["period"] == "2026-04"].sort_values("series_name")
+    assert april["source"].tolist() == ["tradingeconomics", "tradingeconomics"]
+    assert april["value"].tolist() == [52.7, 53.6]
+
+
 def test_run_pmi_fetch_falls_back_when_primary_data_is_stale(tmp_path: Path) -> None:
     def stale_primary(*, as_of_date: dt.date) -> list[PMIObservation]:
         del as_of_date
@@ -196,11 +280,16 @@ def test_run_pmi_fetch_falls_back_when_primary_data_is_stale(tmp_path: Path) -> 
     assert report["attempts"][0]["source"] == "dbnomics"
     assert report["attempts"][0]["status"] == "failure"
     assert "stale" in report["attempts"][0]["error"].lower()
-    assert report["counts"]["history_rows"] == 2
+    assert report["counts"]["history_rows"] == 4
 
     history_df = pd.read_parquet(tmp_path / "pmi" / "us_ism_pmi_history.parquet")
-    assert history_df["period"].tolist() == ["2025-08", "2025-12"]
-    assert history_df["source"].tolist() == ["dbnomics", "dbnomics"]
+    assert history_df["period"].tolist() == ["2025-08", "2025-12", "2026-04", "2026-04"]
+    assert history_df["source"].tolist() == [
+        "dbnomics",
+        "dbnomics",
+        "tradingeconomics",
+        "tradingeconomics",
+    ]
 
 
 def test_run_pmi_fetch_raises_when_all_sources_fail(tmp_path: Path) -> None:
