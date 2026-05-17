@@ -44,6 +44,7 @@ from scripts.profile_engine_30d import (
     DEFAULT_CONSTITUENT_TREE,
     DEFAULT_DAILY_DIR,
     DEFAULT_EVENT_CALENDAR,
+    _apply_manifest_input_paths,
     _build_required_sessions,
     _load_constituent_ohlcv_from_tree,
     _load_optional_aaii_sentiment,
@@ -51,6 +52,7 @@ from scripts.profile_engine_30d import (
     _load_optional_cpi_first_release,
     _load_optional_event_calendar,
     _load_optional_news_sentiment,
+    _manifest_input_overrides,
 )
 
 
@@ -322,7 +324,7 @@ def _build_current_layer2_state(
     cross_asset_closes = load_close_dict(args.daily_dir, cross_asset_symbols, spy_index)
     macro_series = load_macro_series(
         args.macro_parquet,
-        args.pmi_path if args.pmi_path.exists() else None,
+        args.pmi_path if args.pmi_path is not None and args.pmi_path.exists() else None,
     )
     pit_constituent_intervals = read_pit_intervals(args.pit_parquet)
     constituent_ohlcv, _constituent_tickers, missing_constituent_paths = (
@@ -423,6 +425,7 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--out-dir", type=Path, default=REPO_ROOT / ".context")
     parser.add_argument("--stamp", default=dt.date.today().strftime("%Y%m%d"))
     args = parser.parse_args()
+    args.manifest_input_overrides = _manifest_input_overrides(sys.argv[1:])
     if args.daily_dir is None:
         args.daily_dir = args.data_root / DEFAULT_DAILY_DIR.name
     if args.constituent_tree is None:
@@ -467,6 +470,7 @@ def main() -> int:
         store_root=args.artifact_store,
         required_for="audit_layer2_30d",
     )
+    _apply_manifest_input_paths(args, runner_name="audit_layer2_30d")
     args.out_dir.mkdir(parents=True, exist_ok=True)
     _working_context, feature_store, axis_bundle, selected_dates, missing_files = (
         _build_current_layer2_state(args)

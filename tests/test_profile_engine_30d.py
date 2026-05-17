@@ -9,6 +9,7 @@ from typing import get_type_hints
 
 import pandas as pd
 import pytest
+import yaml
 
 
 def _load_script_module():
@@ -22,6 +23,59 @@ def _load_script_module():
 
 
 profile_engine_30d = _load_script_module()
+SHA = "0" * 64
+
+
+def _manifest_artifact(name: str, local_path: str) -> dict[str, object]:
+    return {
+        "name": name,
+        "stage": "canonical",
+        "uri": f"s3://bucket/{local_path}",
+        "local_path": local_path,
+        "sha256": SHA,
+        "schema_version": None,
+        "rows": 1,
+        "min_date": None,
+        "max_date": None,
+        "required_for": ["profile_engine_30d"],
+    }
+
+
+def _write_profile_manifest(tmp_path: Path) -> Path:
+    path = tmp_path / "manifest.yaml"
+    path.write_text(
+        yaml.safe_dump(
+            {
+                "artifact_set": "profile",
+                "created_at_utc": "2026-05-17T00:00:00Z",
+                "storage_root": "s3://bucket/root",
+                "artifacts": [
+                    _manifest_artifact(
+                        "constituent_ohlcv_AAPL",
+                        "data/raw/daily_ohlcv_762/symbol=AAPL/ohlcv.parquet",
+                    ),
+                    _manifest_artifact(
+                        "fred_macro_series",
+                        "data/raw/macro/fred_macro_series.parquet",
+                    ),
+                    _manifest_artifact(
+                        "sp500_pit_constituents",
+                        "data/raw/pit_constituents/sp500_ticker_intervals.parquet",
+                    ),
+                    _manifest_artifact(
+                        "ism_pmi_history",
+                        "data/raw/pmi/us_ism_pmi_history.parquet",
+                    ),
+                    _manifest_artifact(
+                        "sf_fed_news_sentiment",
+                        "data/raw/news_sentiment/sf_fed_news_sentiment.parquet",
+                    ),
+                ],
+            },
+            sort_keys=False,
+        )
+    )
+    return path
 
 
 def test_profile_engine_rejects_non_positive_lookback_days(
@@ -50,6 +104,67 @@ def test_profile_parse_args_defaults_pmi_to_materialized_data_root(
 
     assert args.pmi_path == data_root / "pmi" / "us_ism_pmi.parquet"
     assert args.daily_dir == data_root / "daily_ohlcv_762"
+
+
+def test_profile_manifest_resolution_replaces_default_input_paths(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    data_root = tmp_path / "materialized" / "data" / "raw"
+    manifest_path = _write_profile_manifest(tmp_path)
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "profile_engine_30d.py",
+            "--manifest",
+            str(manifest_path),
+            "--data-root",
+            str(data_root),
+        ],
+    )
+    args = profile_engine_30d._parse_args()
+
+    profile_engine_30d._apply_manifest_input_paths(
+        args, runner_name="profile_engine_30d"
+    )
+
+    assert args.daily_dir == data_root / "daily_ohlcv_762"
+    assert args.pmi_path == data_root / "pmi" / "us_ism_pmi_history.parquet"
+    assert args.news_sentiment_parquet == (
+        data_root / "news_sentiment" / "sf_fed_news_sentiment.parquet"
+    )
+    assert "news_sentiment_parquet" in args.manifest_resolved_inputs
+
+
+def test_profile_manifest_resolution_keeps_explicit_cli_override(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    data_root = tmp_path / "materialized" / "data" / "raw"
+    manifest_path = _write_profile_manifest(tmp_path)
+    override_path = tmp_path / "manual" / "news.parquet"
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "profile_engine_30d.py",
+            "--manifest",
+            str(manifest_path),
+            "--data-root",
+            str(data_root),
+            "--news-sentiment-parquet",
+            str(override_path),
+        ],
+    )
+    args = profile_engine_30d._parse_args()
+
+    profile_engine_30d._apply_manifest_input_paths(
+        args, runner_name="profile_engine_30d"
+    )
+
+    assert args.news_sentiment_parquet == override_path
+    assert "news_sentiment_parquet" in args.manifest_cli_overrides
 
 
 def test_profile_parse_args_accepts_json_output(

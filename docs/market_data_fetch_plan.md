@@ -77,6 +77,13 @@ The implementation may keep existing local paths during migration, but the
 contract is logical: `data/raw/` is replaceable, and the manifest plus artifact
 store is what makes the data portable and replayable.
 
+Runner input resolution is manifest-driven. When `profile_engine_30d.py` or
+`audit_layer2_30d.py` receives `--manifest`, the runner materializes the
+manifest and resolves its required input paths from stable artifact names such
+as `fred_macro_series`, `ism_pmi_history`, `sf_fed_news_sentiment`, and
+`sp500_pit_constituents`. Direct per-file CLI arguments remain available only
+as explicit debug overrides.
+
 Default fetch behavior:
 
 ```bash

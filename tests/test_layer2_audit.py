@@ -1,11 +1,94 @@
 from __future__ import annotations
 
 import datetime as dt
+import sys
+from pathlib import Path
 from types import SimpleNamespace
 
 import pandas as pd
+import pytest
+import yaml
 
+from scripts import audit_layer2_30d
 from scripts.audit_layer2_30d import build_label_rule_summary, build_wiring_presence_rows
+
+
+SHA = "0" * 64
+
+
+def _artifact(name: str, local_path: str) -> dict[str, object]:
+    return {
+        "name": name,
+        "stage": "canonical",
+        "uri": f"s3://bucket/{local_path}",
+        "local_path": local_path,
+        "sha256": SHA,
+        "schema_version": None,
+        "rows": 1,
+        "min_date": None,
+        "max_date": None,
+        "required_for": ["audit_layer2_30d"],
+    }
+
+
+def _write_audit_manifest(tmp_path: Path) -> Path:
+    path = tmp_path / "manifest.yaml"
+    path.write_text(
+        yaml.safe_dump(
+            {
+                "artifact_set": "audit",
+                "created_at_utc": "2026-05-17T00:00:00Z",
+                "storage_root": "s3://bucket/root",
+                "artifacts": [
+                    _artifact(
+                        "constituent_ohlcv_AAPL",
+                        "data/raw/daily_ohlcv_762/symbol=AAPL/ohlcv.parquet",
+                    ),
+                    _artifact(
+                        "fred_macro_series",
+                        "data/raw/macro/fred_macro_series.parquet",
+                    ),
+                    _artifact(
+                        "sp500_pit_constituents",
+                        "data/raw/pit_constituents/sp500_ticker_intervals.parquet",
+                    ),
+                    _artifact(
+                        "ism_pmi_history",
+                        "data/raw/pmi/us_ism_pmi_history.parquet",
+                    ),
+                ],
+            },
+            sort_keys=False,
+        )
+    )
+    return path
+
+
+def test_layer2_audit_manifest_resolution_replaces_default_paths(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    data_root = tmp_path / "materialized" / "data" / "raw"
+    manifest_path = _write_audit_manifest(tmp_path)
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "audit_layer2_30d.py",
+            "--manifest",
+            str(manifest_path),
+            "--data-root",
+            str(data_root),
+        ],
+    )
+    args = audit_layer2_30d._parse_args()
+
+    audit_layer2_30d._apply_manifest_input_paths(
+        args, runner_name="audit_layer2_30d"
+    )
+
+    assert args.daily_dir == data_root / "daily_ohlcv_762"
+    assert args.pmi_path == data_root / "pmi" / "us_ism_pmi_history.parquet"
 
 
 def test_layer2_wiring_audit_counts_optional_inflation_growth_features() -> None:

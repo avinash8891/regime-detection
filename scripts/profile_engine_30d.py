@@ -28,6 +28,7 @@ from regime_data_fetch.cli_common import (
     load_operator_env_files,
 )
 from regime_data_fetch.materialization import materialize_if_requested
+from regime_data_fetch.manifest_inputs import resolve_runner_input_paths
 from regime_data_fetch.universe import FIXED_UNIVERSE_TREE_NAME
 from regime_detection.engine import RegimeEngine
 from regime_detection.fragility_universe import CROSS_ASSET_SYMBOLS, SECTOR_ETFS
@@ -78,6 +79,18 @@ DEFAULT_PIT_PARQUET = (
 DEFAULT_PMI_PATH = default_pmi_path(REPO_ROOT / "data" / "raw")
 DEFAULT_EVENT_CALENDAR = REPO_ROOT / "configs" / "events" / "us_events.yaml"
 RUN_TIMEOUT_SECONDS = 300
+MANIFEST_INPUT_FLAGS = {
+    "daily_dir": "--daily-dir",
+    "constituent_tree": "--constituent-tree",
+    "macro_parquet": "--macro-parquet",
+    "pit_parquet": "--pit-parquet",
+    "pmi_path": "--pmi-path",
+    "aaii_sentiment_parquet": "--aaii-sentiment-parquet",
+    "news_sentiment_parquet": "--news-sentiment-parquet",
+    "fomc_minutes_parquet": "--fomc-minutes-parquet",
+    "powell_speeches_parquet": "--powell-speeches-parquet",
+    "cpi_vintages_parquet": "--cpi-vintages-parquet",
+}
 __all__ = [
     "_build_json_report",
     "_reporting_label",
@@ -193,7 +206,9 @@ def _read_symbol_ohlcv(tree_root: Path, symbol: str) -> pd.DataFrame:
     return frame
 
 
-def _load_optional_aaii_sentiment(path: Path) -> pd.DataFrame | None:
+def _load_optional_aaii_sentiment(path: Path | None) -> pd.DataFrame | None:
+    if path is None:
+        return None
     if not path.exists():
         return None
     frame = pd.read_parquet(path)
@@ -219,14 +234,18 @@ def _resolve_news_sentiment_path(path: Path) -> Path:
     return canonical
 
 
-def _load_optional_news_sentiment(path: Path) -> pd.Series | None:
+def _load_optional_news_sentiment(path: Path | None) -> pd.Series | None:
+    if path is None:
+        return None
     path = _resolve_news_sentiment_path(path)
     if not path.exists():
         return None
     return load_news_sentiment_series(path)
 
 
-def _load_optional_cpi_first_release(path: Path) -> pd.Series | None:
+def _load_optional_cpi_first_release(path: Path | None) -> pd.Series | None:
+    if path is None:
+        return None
     if not path.exists():
         return None
     return load_cpi_vintages_first_release(path)
@@ -234,12 +253,16 @@ def _load_optional_cpi_first_release(path: Path) -> pd.Series | None:
 
 def _load_optional_central_bank_text_releases(
     *,
-    fomc_path: Path,
-    powell_path: Path,
+    fomc_path: Path | None,
+    powell_path: Path | None,
 ) -> pd.DataFrame | None:
     releases = load_central_bank_text_score(
-        fomc_minutes_source=fomc_path if fomc_path.exists() else None,
-        powell_speeches_source=powell_path if powell_path.exists() else None,
+        fomc_minutes_source=(
+            fomc_path if fomc_path is not None and fomc_path.exists() else None
+        ),
+        powell_speeches_source=(
+            powell_path if powell_path is not None and powell_path.exists() else None
+        ),
     )
     if releases.empty:
         return None
@@ -333,7 +356,8 @@ def _load_profile_inputs(
     ]
     cross_asset_closes = load_close_dict(args.daily_dir, cross_asset_symbols, spy_index)
     macro_series = load_macro_series(
-        args.macro_parquet, args.pmi_path if args.pmi_path.exists() else None
+        args.macro_parquet,
+        args.pmi_path if args.pmi_path is not None and args.pmi_path.exists() else None,
     )
     event_calendar = _load_optional_event_calendar(args.event_calendar)
     aaii_sentiment = _load_optional_aaii_sentiment(args.aaii_sentiment_parquet)
@@ -428,6 +452,7 @@ def _parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--allow-missing-constituent-files", action="store_true")
     args = parser.parse_args()
+    args.manifest_input_overrides = _manifest_input_overrides(sys.argv[1:])
     if args.daily_dir is None:
         args.daily_dir = args.data_root / FIXED_UNIVERSE_TREE_NAME
     if args.constituent_tree is None:
@@ -466,6 +491,31 @@ def _parse_args() -> argparse.Namespace:
     return args
 
 
+def _manifest_input_overrides(argv: list[str]) -> frozenset[str]:
+    overrides: set[str] = set()
+    for field, flag in MANIFEST_INPUT_FLAGS.items():
+        if any(item == flag or item.startswith(f"{flag}=") for item in argv):
+            overrides.add(field)
+    return frozenset(overrides)
+
+
+def _apply_manifest_input_paths(args: argparse.Namespace, *, runner_name: str) -> None:
+    if args.manifest is None:
+        return
+    resolved = resolve_runner_input_paths(
+        manifest_path=args.manifest,
+        data_root=args.data_root,
+        runner_name=runner_name,
+        cli_values={field: getattr(args, field) for field in MANIFEST_INPUT_FLAGS},
+        cli_overrides=args.manifest_input_overrides,
+        repo_root=REPO_ROOT,
+    )
+    for field in MANIFEST_INPUT_FLAGS:
+        setattr(args, field, getattr(resolved, field))
+    args.manifest_resolved_inputs = resolved.resolved_from_manifest
+    args.manifest_cli_overrides = resolved.cli_overrides
+
+
 def main() -> int:
     args = _parse_args()
     load_operator_env_files(repo_root=REPO_ROOT, explicit_path=args.operator_env_file)
@@ -476,6 +526,7 @@ def main() -> int:
         store_root=args.artifact_store,
         required_for="profile_engine_30d",
     )
+    _apply_manifest_input_paths(args, runner_name="profile_engine_30d")
 
     _require_path(args.config_path, kind="config path")
     _require_path(args.daily_dir, kind="daily OHLCV path")
@@ -647,10 +698,10 @@ def main() -> int:
         f"implied_vol_30d_source={'macro_series[implied_vol_30d]' if inputs.implied_vol_30d is not None else '<absent>'}"
     )
     print(
-        f"fomc_minutes_source={args.fomc_minutes_parquet if args.fomc_minutes_parquet.exists() else '<absent>'}"
+        f"fomc_minutes_source={args.fomc_minutes_parquet if args.fomc_minutes_parquet is not None and args.fomc_minutes_parquet.exists() else '<absent>'}"
     )
     print(
-        f"powell_speeches_source={args.powell_speeches_parquet if args.powell_speeches_parquet.exists() else '<absent>'}"
+        f"powell_speeches_source={args.powell_speeches_parquet if args.powell_speeches_parquet is not None and args.powell_speeches_parquet.exists() else '<absent>'}"
     )
     print(
         f"cpi_vintages_source={args.cpi_vintages_parquet if inputs.cpi_first_release is not None else '<absent>'}"

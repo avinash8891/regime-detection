@@ -93,6 +93,12 @@ make regime-data MANIFEST=manifests/runs/profile_ready_daily_ohlcv_762_2016_2026
 make profile-30d MANIFEST=manifests/runs/profile_ready_daily_ohlcv_762_2016_20260515.yaml
 ```
 
+When `--manifest` is supplied, runner data inputs are resolved from manifest
+artifact names after materialization. Per-file flags such as
+`--macro-parquet`, `--pmi-path`, or `--news-sentiment-parquet` are manual
+debug overrides; they are not needed for a fresh workspace using the approved
+manifest lockfile.
+
 That approved profile-ready manifest is the portable data contract for the 30d
 operator run. It includes the fixed OHLCV tree used by the runner defaults
 (`data/raw/daily_ohlcv_762`), macro, PMI, PIT constituents, CPI vintages,
