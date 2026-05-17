@@ -1,5 +1,9 @@
 from __future__ import annotations
 
+from collections.abc import Callable
+from dataclasses import dataclass, field
+from typing import Any
+
 import pandas as pd
 from pydantic import BaseModel, ConfigDict
 
@@ -118,6 +122,38 @@ __all__ = [
 # required FRED series without scattering string literals.
 _FRED_DGS2_KEY = "DGS2"
 _FRED_DGS10_KEY = "DGS10"
+
+
+@dataclass
+class _FeatureStoreBuildState:
+    context: MarketContext
+    spy_ohlcv: pd.DataFrame
+    spy_close: pd.Series
+    network_fragility_config: NetworkFragilityConfig | None = None
+    trend_direction_v2_config: TrendDirectionV2Config | None = None
+    volatility_state_v2_config: VolatilityV2Config | None = None
+    breadth_state_v2_config: BreadthV2Config | None = None
+    volume_liquidity_v2_config: VolumeLiquidityV2Config | None = None
+    monetary_pressure_v2_config: MonetaryPressureV2FeaturesConfig | None = None
+    credit_funding_config: CreditFundingConfig | None = None
+    inflation_growth_config: InflationGrowthConfig | None = None
+    central_bank_text_config: CentralBankTextConfig | None = None
+    news_sentiment_config: NewsSentimentConfig | None = None
+    values: dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
+class _FeatureStoreBuilder:
+    name: str
+    build: Callable[[_FeatureStoreBuildState], None]
+
+
+def _run_feature_store_builders(
+    builders: tuple[_FeatureStoreBuilder, ...],
+    state: _FeatureStoreBuildState,
+) -> None:
+    for builder in builders:
+        builder.build(state)
 
 
 class FeatureStore(BaseModel):
@@ -275,6 +311,45 @@ def _build_news_sentiment_score_series(
     )
 
 
+def _build_trend_direction_feature(state: _FeatureStoreBuildState) -> None:
+    state.values["trend_direction"] = compute_trend_direction_features(state.spy_close)
+
+
+def _build_sentiment_score_feature(state: _FeatureStoreBuildState) -> None:
+    state.values["sentiment_score"] = _build_sentiment_score_series(
+        aaii_sentiment=state.context.aaii_sentiment,
+        session_index=state.spy_close.index,
+    )
+
+
+def _build_news_sentiment_score_feature(state: _FeatureStoreBuildState) -> None:
+    state.values["news_sentiment_score"] = _build_news_sentiment_score_series(
+        news_sentiment=state.context.news_sentiment,
+        session_index=state.spy_close.index,
+        config=state.news_sentiment_config,
+    )
+
+
+def _build_trend_direction_v2_feature(state: _FeatureStoreBuildState) -> None:
+    if state.trend_direction_v2_config is None:
+        state.values["trend_direction_v2"] = None
+        return
+    state.values["trend_direction_v2"] = compute_trend_v2_features(
+        state.spy_close,
+        config=state.trend_direction_v2_config,
+        sentiment_score=state.values.get("sentiment_score"),
+        news_sentiment_score=state.values.get("news_sentiment_score"),
+    )
+
+
+_FEATURE_STORE_BUILDERS: tuple[_FeatureStoreBuilder, ...] = (
+    _FeatureStoreBuilder("trend_direction", _build_trend_direction_feature),
+    _FeatureStoreBuilder("sentiment_score", _build_sentiment_score_feature),
+    _FeatureStoreBuilder("news_sentiment_score", _build_news_sentiment_score_feature),
+    _FeatureStoreBuilder("trend_direction_v2", _build_trend_direction_v2_feature),
+)
+
+
 def build_feature_store(
     context: MarketContext,
     *,
@@ -294,7 +369,24 @@ def build_feature_store(
     # helpers so classifier changes do not hide inside the decomposition.
     spy_ohlcv = context.spy_ohlcv
     spy_close = spy_ohlcv["close"]
-    trend_direction = compute_trend_direction_features(spy_close)
+    build_state = _FeatureStoreBuildState(
+        context=context,
+        spy_ohlcv=spy_ohlcv,
+        spy_close=spy_close,
+        network_fragility_config=network_fragility_config,
+        trend_direction_v2_config=trend_direction_v2_config,
+        volatility_state_v2_config=volatility_state_v2_config,
+        breadth_state_v2_config=breadth_state_v2_config,
+        volume_liquidity_v2_config=volume_liquidity_v2_config,
+        monetary_pressure_v2_config=monetary_pressure_v2_config,
+        credit_funding_config=credit_funding_config,
+        inflation_growth_config=inflation_growth_config,
+        central_bank_text_config=central_bank_text_config,
+        news_sentiment_config=news_sentiment_config,
+    )
+    _run_feature_store_builders(_FEATURE_STORE_BUILDERS, build_state)
+    trend_direction = build_state.values["trend_direction"]
+    trend_direction_v2 = build_state.values["trend_direction_v2"]
     trend_character = compute_trend_character_features(
         close=spy_close,
         high=spy_ohlcv["high"],
@@ -334,35 +426,6 @@ def build_feature_store(
         )
     else:
         network_fragility = None
-
-    # V2 §1A trend-direction features (slice 2.1) — evidence-only compute.
-    if trend_direction_v2_config is not None:
-        # §1A euphoria seam (Log #32 closure / ADR 0004): when context
-        # carries AAII sentiment rows, derive the forward-filled
-        # bull_bear_spread_8w_ma onto the SPY session index per V1 §2.2
-        # stateless-replay (use the latest publication-date <= as_of_date).
-        sentiment_series = _build_sentiment_score_series(
-            aaii_sentiment=context.aaii_sentiment,
-            session_index=spy_close.index,
-        )
-        # v2 §1A SF Fed news sentiment evidence (audit follow-up). When the
-        # context carries the raw daily series AND a NewsSentimentConfig is
-        # threaded, smooth it onto the SPY session index. The result feeds
-        # `compute_trend_v2_features` as evidence; the `euphoria` rule
-        # predicate is unchanged.
-        news_sentiment_series = _build_news_sentiment_score_series(
-            news_sentiment=context.news_sentiment,
-            session_index=spy_close.index,
-            config=news_sentiment_config,
-        )
-        trend_direction_v2 = compute_trend_v2_features(
-            spy_close,
-            config=trend_direction_v2_config,
-            sentiment_score=sentiment_series,
-            news_sentiment_score=news_sentiment_series,
-        )
-    else:
-        trend_direction_v2 = None
 
     # V2 §1C volatility features (slice 2.2 + slice 2.6 rising_vol RV +
     # vol_crush IV inputs, ADR 0005 / Log #19+#20).

@@ -9,6 +9,7 @@ from regime_detection.config import NewsSentimentConfig, load_default_regime_con
 from regime_detection.feature_store import build_feature_store
 from regime_detection.fragility_universe import SECTOR_ETFS
 from regime_detection.market_context import build_market_context
+from regime_detection.trend_direction import compute_features as compute_trend_direction_features
 
 
 def _sector_etf_closes(index: pd.DatetimeIndex) -> dict[str, pd.Series]:
@@ -50,6 +51,118 @@ def test_build_news_sentiment_score_series_preserves_existing_alignment_and_smoo
             index=sessions,
             name="news_sentiment_score",
         ),
+    )
+
+
+def test_feature_store_builder_registry_runs_builders_in_declared_order(
+    market_df_for_asof,
+) -> None:
+    from regime_detection.feature_store import (
+        _FeatureStoreBuilder,
+        _FeatureStoreBuildState,
+        _run_feature_store_builders,
+    )
+
+    cfg = load_default_regime_config()
+    as_of = date(2023, 12, 14)
+    context = build_market_context(
+        end_date=as_of,
+        market_data=market_df_for_asof(as_of),
+        config=cfg,
+    )
+    state = _FeatureStoreBuildState(
+        context=context,
+        spy_ohlcv=context.spy_ohlcv,
+        spy_close=context.spy_ohlcv["close"],
+    )
+    calls: list[tuple[str, object]] = []
+
+    def first_builder(build_state: _FeatureStoreBuildState) -> None:
+        calls.append(("first", build_state.spy_close.name))
+        build_state.values["first_output"] = "ready"
+
+    def second_builder(build_state: _FeatureStoreBuildState) -> None:
+        calls.append(("second", build_state.values["first_output"]))
+
+    _run_feature_store_builders(
+        (
+            _FeatureStoreBuilder("first", first_builder),
+            _FeatureStoreBuilder("second", second_builder),
+        ),
+        state,
+    )
+
+    assert calls == [("first", "close"), ("second", "ready")]
+
+
+def test_default_feature_store_builder_registry_orders_trend_news_before_trend_v2() -> None:
+    from regime_detection.feature_store import _FEATURE_STORE_BUILDERS
+
+    builder_names = tuple(builder.name for builder in _FEATURE_STORE_BUILDERS)
+
+    assert builder_names.index("trend_direction") < builder_names.index(
+        "news_sentiment_score"
+    )
+    assert builder_names.index("news_sentiment_score") < builder_names.index(
+        "trend_direction_v2"
+    )
+
+
+def test_feature_store_registry_preserves_trend_and_news_outputs(
+    market_df_for_asof,
+) -> None:
+    from regime_detection.feature_store import _build_news_sentiment_score_series
+
+    cfg = load_default_regime_config()
+    as_of = date(2023, 12, 14)
+    base_context = build_market_context(
+        end_date=as_of,
+        market_data=market_df_for_asof(as_of),
+        config=cfg,
+    )
+    news = pd.Series(
+        [0.2, -0.1, 0.4],
+        index=pd.DatetimeIndex(
+            [
+                base_context.spy_ohlcv.index[-5],
+                base_context.spy_ohlcv.index[-3],
+                base_context.spy_ohlcv.index[-1],
+            ]
+        ),
+        name="news_sentiment",
+    )
+    context = build_market_context(
+        end_date=as_of,
+        market_data=market_df_for_asof(as_of),
+        config=cfg,
+        news_sentiment=news,
+    )
+
+    store = build_feature_store(
+        context,
+        trend_direction_v2_config=cfg.trend_direction_v2,
+        news_sentiment_config=NewsSentimentConfig(smoothing_window_sessions=2),
+    )
+
+    expected_trend = compute_trend_direction_features(context.spy_ohlcv["close"])
+    pd.testing.assert_series_equal(store.trend_direction.close, expected_trend.close)
+    pd.testing.assert_series_equal(store.trend_direction.sma_50, expected_trend.sma_50)
+    pd.testing.assert_series_equal(store.trend_direction.sma_200, expected_trend.sma_200)
+    pd.testing.assert_series_equal(
+        store.trend_direction.return_63d,
+        expected_trend.return_63d,
+    )
+
+    assert store.trend_direction_v2 is not None
+    expected_news = _build_news_sentiment_score_series(
+        news_sentiment=context.news_sentiment,
+        session_index=context.spy_ohlcv.index,
+        config=NewsSentimentConfig(smoothing_window_sessions=2),
+    )
+    assert expected_news is not None
+    pd.testing.assert_series_equal(
+        store.trend_direction_v2.news_sentiment_score,
+        expected_news,
     )
 
 
