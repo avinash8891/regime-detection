@@ -128,6 +128,25 @@ def test_bull_low_vol_specialist_short_vol_max_position_pct_quarter() -> None:
 
 
 @pytest.mark.unit
+def test_allowed_specialist_override_clears_inherited_block_reason() -> None:
+    cfg = _real_config()
+
+    bull_low_vol = resolve_strategy_family_constraints(
+        active_cohort="bull_low_vol_specialist", config=cfg
+    )
+    tightening = resolve_strategy_family_constraints(
+        active_cohort="tightening_specialist", config=cfg
+    )
+
+    assert bull_low_vol["breakout"].allowed is True
+    assert bull_low_vol["breakout"].reason is None
+    assert bull_low_vol["short_vol"].allowed is True
+    assert bull_low_vol["short_vol"].reason is None
+    assert tightening["breakout"].allowed is True
+    assert tightening["breakout"].reason is None
+
+
+@pytest.mark.unit
 def test_chop_mean_reversion_specialist_disables_trend_following_and_breakout() -> None:
     out = resolve_strategy_family_constraints(
         active_cohort="chop_mean_reversion_specialist", config=_real_config()
