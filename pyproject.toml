@@ -28,6 +28,11 @@ s3 = [
 browser = [
   "playwright>=1.50,<2",
 ]
+audit = [
+  "pip-audit",
+  "pydeps",
+  "vulture",
+]
 dev = [
   "pytest",
   "pytest-cov",
