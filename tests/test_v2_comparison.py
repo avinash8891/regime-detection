@@ -21,6 +21,7 @@ from regime_detection.models import (
     RegimeTimeline,
     StrategyResponse,
     StructuralCausalState,
+    TransitionRiskEvidencePayload,
     TransitionRiskOutput,
 )
 
@@ -202,7 +203,14 @@ def _output(as_of_date: date, *, trend_label: str = "bull") -> RegimeOutput:
             evidence={},
             data_quality=_data_quality(),
         ),
-        transition_risk=TransitionRiskOutput(label="stable", evidence={}),
+        transition_risk=TransitionRiskOutput(
+            label="stable",
+            evidence=TransitionRiskEvidencePayload(
+                warnings_active=[],
+                stable_changed_today=False,
+                days_since_axis_switch=None,
+            ),
+        ),
         strategy_response=StrategyResponse(
             position_size_multiplier=1.0,
             allow_trend_following=True,

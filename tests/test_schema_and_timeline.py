@@ -126,7 +126,7 @@ def test_core3_v1_regime_output_keeps_legacy_placeholder_wire_shapes(
         )
 
 
-def test_runtime_evidence_fields_use_named_payloads_and_accept_dict_input() -> None:
+def test_runtime_evidence_fields_use_named_payloads() -> None:
     dq = DataQuality(status="ok")
 
     axis = AxisOutput(
@@ -154,7 +154,11 @@ def test_runtime_evidence_fields_use_named_payloads_and_accept_dict_input() -> N
     )
     transition_risk = TransitionRiskOutput(
         label="stable",
-        evidence={"warnings": []},
+        evidence=TransitionRiskEvidencePayload(
+            warnings_active=[],
+            stable_changed_today=False,
+            days_since_axis_switch=None,
+        ),
     )
 
     assert AxisOutput.model_fields["evidence"].annotation is AxisEvidencePayload
@@ -183,7 +187,11 @@ def test_runtime_evidence_fields_use_named_payloads_and_accept_dict_input() -> N
         "reason": "v2_classifier_not_yet_implemented"
     }
     assert volume_liquidity.model_dump()["evidence"] == {"volume_zscore": 0.5}
-    assert transition_risk.model_dump()["evidence"] == {"warnings": []}
+    assert transition_risk.model_dump()["evidence"] == {
+        "warnings_active": [],
+        "stable_changed_today": False,
+        "days_since_axis_switch": None,
+    }
 
 
 def test_classify_window_returns_one_output_per_nyse_trading_day(
