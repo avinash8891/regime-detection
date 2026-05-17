@@ -14,7 +14,7 @@ from regime_detection.temporal import (
 )
 
 
-LOG = logging.getLogger(__name__)
+LOGGER = logging.getLogger(__name__)
 
 _SCHEDULED_TYPES = {
     "FOMC",

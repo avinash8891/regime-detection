@@ -57,7 +57,7 @@ from typing import Literal
 import pandas as pd
 
 
-LOG = logging.getLogger(__name__)
+LOGGER = logging.getLogger(__name__)
 
 
 # ---------------------------------------------------------------------------
