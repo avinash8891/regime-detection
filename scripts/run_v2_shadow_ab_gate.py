@@ -45,6 +45,10 @@ from regime_detection.market_context import build_market_context  # noqa: E402
 from regime_detection.versioning import engine_version as resolved_engine_version  # noqa: E402
 from regime_data_fetch.materialization import materialize_if_requested  # noqa: E402
 from regime_data_fetch.universe import FIXED_UNIVERSE_TREE_NAME  # noqa: E402
+from profile_engine_30d import (  # noqa: E402
+    _apply_manifest_input_paths,
+    _manifest_input_overrides,
+)
 
 from _v2_calibration_helpers import (  # noqa: E402
     CROSS_ASSET_SYMBOLS,
@@ -370,6 +374,7 @@ def _parse_args() -> argparse.Namespace:
         help="Allow exploratory report output even when per-session classify errors occur.",
     )
     args = parser.parse_args()
+    args.manifest_input_overrides = _manifest_input_overrides(sys.argv[1:])
     if args.daily_dir is None:
         args.daily_dir = args.data_root / FIXED_UNIVERSE_TREE_NAME
     if args.macro_parquet is None:
@@ -382,6 +387,11 @@ def _parse_args() -> argparse.Namespace:
         repo_root=REPO_ROOT,
         store_root=args.artifact_store,
         required_for="v2_calibration",
+    )
+    _apply_manifest_input_paths(
+        args,
+        runner_name="v2_calibration",
+        required_fields=frozenset({"daily_dir", "macro_parquet"}),
     )
     return args
 
@@ -440,19 +450,22 @@ def main() -> int:
     macro_series = load_macro_series(macro_parquet, pmi_path)
 
     # v2 §2A central-bank-text + first-release CPI seams (audit M1 / M2).
-    data_root = daily_dir.parent
-    fomc_parquet = data_root / "fomc_minutes" / "fomc_minutes.parquet"
-    powell_parquet = data_root / "powell_speeches" / "powell_speeches.parquet"
-    cpi_vintages_parquet = (
-        data_root / "macro_vintages" / "cpi_all_items_vintages.parquet"
-    )
+    fomc_parquet = getattr(args, "fomc_minutes_parquet", None)
+    powell_parquet = getattr(args, "powell_speeches_parquet", None)
+    cpi_vintages_parquet = getattr(args, "cpi_vintages_parquet", None)
     central_bank_text_releases = load_central_bank_text_score(
-        fomc_minutes_source=fomc_parquet if fomc_parquet.exists() else None,
-        powell_speeches_source=powell_parquet if powell_parquet.exists() else None,
+        fomc_minutes_source=(
+            fomc_parquet if fomc_parquet is not None and fomc_parquet.exists() else None
+        ),
+        powell_speeches_source=(
+            powell_parquet
+            if powell_parquet is not None and powell_parquet.exists()
+            else None
+        ),
     )
     cpi_first_release = (
         load_cpi_vintages_first_release(cpi_vintages_parquet)
-        if cpi_vintages_parquet.exists()
+        if cpi_vintages_parquet is not None and cpi_vintages_parquet.exists()
         else None
     )
 

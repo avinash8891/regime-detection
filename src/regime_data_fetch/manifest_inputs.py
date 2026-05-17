@@ -16,7 +16,7 @@ class RunnerInputPaths:
     daily_dir: Path
     constituent_tree: Path
     macro_parquet: Path
-    pit_parquet: Path
+    pit_parquet: Path | None
     pmi_path: Path | None
     aaii_sentiment_parquet: Path | None
     news_sentiment_parquet: Path | None
@@ -51,6 +51,7 @@ def resolve_runner_input_paths(
     cli_values: dict[str, Path | None],
     cli_overrides: set[str] | frozenset[str],
     repo_root: Path | None = None,
+    required_fields: frozenset[str] = REQUIRED_FIELDS,
 ) -> RunnerInputPaths:
     manifest = load_manifest(manifest_path)
     artifacts = manifest.required_for(runner_name)
@@ -81,7 +82,7 @@ def resolve_runner_input_paths(
             continue
         artifact = by_name.get(artifact_name)
         if artifact is None:
-            if field in REQUIRED_FIELDS:
+            if field in required_fields:
                 raise ManifestInputResolutionError(
                     f"manifest missing required artifact {artifact_name} for {field}"
                 )
@@ -90,7 +91,7 @@ def resolve_runner_input_paths(
         resolved[field] = destination_for(artifact, data_root, repo_root=repo_root)
         resolved_from_manifest.append(field)
 
-    for field in REQUIRED_FIELDS:
+    for field in required_fields:
         if resolved.get(field) is None:
             raise ManifestInputResolutionError(
                 f"required runner input {field} was not resolved"
@@ -100,7 +101,7 @@ def resolve_runner_input_paths(
         daily_dir=_require_resolved_path(resolved, "daily_dir"),
         constituent_tree=_require_resolved_path(resolved, "constituent_tree"),
         macro_parquet=_require_resolved_path(resolved, "macro_parquet"),
-        pit_parquet=_require_resolved_path(resolved, "pit_parquet"),
+        pit_parquet=resolved["pit_parquet"],
         pmi_path=resolved["pmi_path"],
         aaii_sentiment_parquet=resolved["aaii_sentiment_parquet"],
         news_sentiment_parquet=resolved["news_sentiment_parquet"],
@@ -124,8 +125,14 @@ def _constituent_tree_root(
         if artifact.name.startswith("constituent_ohlcv_")
     ]
     if not constituent_artifacts:
+        constituent_artifacts = [
+            artifact
+            for artifact in artifacts
+            if Path(artifact.local_path).match("data/raw/daily_ohlcv*/*")
+        ]
+    if not constituent_artifacts:
         raise ManifestInputResolutionError(
-            "manifest missing required constituent_ohlcv_* artifacts"
+            "manifest missing required daily OHLCV artifacts"
         )
     first_destination = destination_for(
         constituent_artifacts[0],

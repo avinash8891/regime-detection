@@ -499,16 +499,22 @@ def _manifest_input_overrides(argv: list[str]) -> frozenset[str]:
     return frozenset(overrides)
 
 
-def _apply_manifest_input_paths(args: argparse.Namespace, *, runner_name: str) -> None:
+def _apply_manifest_input_paths(
+    args: argparse.Namespace,
+    *,
+    runner_name: str,
+    required_fields: frozenset[str] | None = None,
+) -> None:
     if args.manifest is None:
         return
     resolved = resolve_runner_input_paths(
         manifest_path=args.manifest,
         data_root=args.data_root,
         runner_name=runner_name,
-        cli_values={field: getattr(args, field) for field in MANIFEST_INPUT_FLAGS},
+        cli_values={field: getattr(args, field, None) for field in MANIFEST_INPUT_FLAGS},
         cli_overrides=args.manifest_input_overrides,
         repo_root=REPO_ROOT,
+        **({"required_fields": required_fields} if required_fields is not None else {}),
     )
     for field in MANIFEST_INPUT_FLAGS:
         setattr(args, field, getattr(resolved, field))

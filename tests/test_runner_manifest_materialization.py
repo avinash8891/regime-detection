@@ -71,7 +71,7 @@ def test_walkforward_gate_subprocess_materializes_manifest_defaults(
             ),
             ManifestArtifact.from_dict(
                 {
-                    "name": "macro",
+                    "name": "fred_macro_series",
                     "stage": "canonical",
                     "uri": _store_uri(
                         store_root, "canonical/macro/fred_macro_series.parquet"
@@ -83,7 +83,7 @@ def test_walkforward_gate_subprocess_materializes_manifest_defaults(
             ),
             ManifestArtifact.from_dict(
                 {
-                    "name": "pmi_history",
+                    "name": "ism_pmi_history",
                     "stage": "canonical",
                     "uri": _store_uri(
                         store_root, "canonical/pmi/us_ism_pmi_history.parquet"

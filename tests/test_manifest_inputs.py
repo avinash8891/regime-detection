@@ -148,7 +148,7 @@ def test_resolve_runner_input_paths_fails_without_constituent_tree(
 
     with pytest.raises(
         ManifestInputResolutionError,
-        match=r"missing required constituent_ohlcv_\* artifacts",
+        match="missing required daily OHLCV artifacts",
     ):
         resolve_runner_input_paths(
             manifest_path=manifest_path,
