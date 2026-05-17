@@ -75,11 +75,6 @@ def fetch_text_result(url: str, *, timeout: int = 30) -> FetchTextResult:
         return FetchTextResult(text=None, error=str(reason))
 
 
-def fetch_text_url(url: str, *, timeout: int = 30) -> str:
-    result = fetch_text_result(url, timeout=timeout)
-    return result.text if result.ok else ""
-
-
 def strip_tags(value: str) -> str:
     return re.sub(r"\s+", " ", unescape(re.sub(r"<[^>]+>", " ", value))).strip()
 

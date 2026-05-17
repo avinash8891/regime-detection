@@ -5,7 +5,7 @@ import re
 from collections.abc import Callable
 
 from regime_data_fetch.acquisition_store import AcquisitionStore
-from regime_data_fetch.event_sources._common import ECB_BASE_URL, absolute_url, fetch_text_url, strip_tags
+from regime_data_fetch.event_sources._common import ECB_BASE_URL, FetchTextResult, absolute_url, fetch_text_result, strip_tags
 from regime_data_fetch.event_sources.models import EventCandidate
 
 SOURCE_ID = "ecb.europa.eu:monetary-policy-decisions"
@@ -20,10 +20,12 @@ class OfficialECBAdapter:
         self,
         *,
         as_of_date: dt.date | None = None,
-        text_fetcher: Callable[[str], str] = fetch_text_url,
+        text_fetcher: Callable[[str], str] | None = None,
+        result_fetcher: Callable[[str], FetchTextResult] = fetch_text_result,
     ) -> None:
         self.as_of_date = as_of_date or dt.date.today()
         self.text_fetcher = text_fetcher
+        self.result_fetcher = result_fetcher
 
     def fetch(
         self,
@@ -33,18 +35,24 @@ class OfficialECBAdapter:
         store: AcquisitionStore | None,
         run_id: int | None,
     ) -> list[EventCandidate]:
-        html = self.text_fetcher(ARCHIVE_INDEX_URL)
+        html = self._fetch_text(ARCHIVE_INDEX_URL)
         _record_html(store, run_id, ARCHIVE_INDEX_URL, html, "ECB monetary-policy decisions archive index")
         candidates: list[EventCandidate] = []
         for snippet_url in _archive_snippet_urls(html, start_year=start_year, end_year=end_year):
-            snippet = self.text_fetcher(snippet_url)
+            snippet = self._fetch_text(snippet_url)
             _record_html(store, run_id, snippet_url, snippet, "ECB monetary-policy decisions yearly archive snippet")
             candidates.extend(parse_ecb_decision_archive(snippet, as_of_date=self.as_of_date))
 
-        calendar_html = self.text_fetcher(CURRENT_CALENDAR_URL)
+        calendar_html = self._fetch_text(CURRENT_CALENDAR_URL)
         _record_html(store, run_id, CURRENT_CALENDAR_URL, calendar_html, "ECB Governing Council current calendar")
         candidates.extend(parse_ecb_current_calendar(calendar_html, as_of_date=self.as_of_date))
         return _dedupe(candidates, start_year=start_year, end_year=end_year)
+
+    def _fetch_text(self, url: str) -> str:
+        if self.text_fetcher is not None:
+            return self.text_fetcher(url)
+        result = self.result_fetcher(url)
+        return result.text if result.ok and result.text is not None else ""
 
 
 def parse_ecb_decision_archive(html: str, *, as_of_date: dt.date) -> list[EventCandidate]:

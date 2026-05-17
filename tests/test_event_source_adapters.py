@@ -9,8 +9,9 @@ from regime_data_fetch.event_sources.official_boe import (
     parse_boe_news_api_results,
     parse_boe_upcoming_mpc_dates,
 )
-from regime_data_fetch.event_sources.official_boj import parse_boj_mpm_dates
-from regime_data_fetch.event_sources.official_ecb import parse_ecb_current_calendar, parse_ecb_decision_archive
+from regime_data_fetch.event_sources.official_boj import OfficialBOJAdapter, parse_boj_mpm_dates
+from regime_data_fetch.event_sources.official_ecb import OfficialECBAdapter, parse_ecb_current_calendar, parse_ecb_decision_archive
+from regime_data_fetch.event_sources._common import FetchTextResult
 
 
 def test_ecb_parses_archive_snippet_and_current_calendar_day_two_only() -> None:
@@ -155,6 +156,63 @@ def test_boe_adapter_continues_pagination_across_empty_news_pages() -> None:
     candidates = adapter.fetch(start_year=2025, end_year=2026, store=None, run_id=None)
 
     assert [candidate.date for candidate in candidates] == [dt.date(2025, 12, 18), dt.date(2026, 3, 19)]
+
+
+def test_official_rate_adapters_default_to_typed_text_results() -> None:
+    fetched_urls: list[str] = []
+
+    def fake_result_fetcher(url: str) -> FetchTextResult:
+        fetched_urls.append(url)
+        if "ecb.europa.eu/press/govcdec/mopo/html/index.en.html" in url:
+            return FetchTextResult(
+                text="<div data-snippets='/press/govcdec/mopo/2026/html/index_include.en.html'></div>"
+            )
+        if "ecb.europa.eu/press/govcdec/mopo/2026/html/index_include.en.html" in url:
+            return FetchTextResult(
+                text='<dt isoDate="2026-04-30"></dt><dd><a href="/press/pr/date/2026/html/ecb.en.html">Monetary policy decisions</a></dd>'
+            )
+        if "ecb.europa.eu/press/calendars/mgcgc/html/index.en.html" in url:
+            return FetchTextResult(text=None, error="timeout")
+        return FetchTextResult(text="")
+
+    candidates = OfficialECBAdapter(
+        as_of_date=dt.date(2026, 5, 14),
+        result_fetcher=fake_result_fetcher,
+    ).fetch(start_year=2026, end_year=2026, store=None, run_id=None)
+
+    assert fetched_urls == [
+        "https://www.ecb.europa.eu/press/govcdec/mopo/html/index.en.html",
+        "https://www.ecb.europa.eu/press/govcdec/mopo/2026/html/index_include.en.html",
+        "https://www.ecb.europa.eu/press/calendars/mgcgc/html/index.en.html",
+    ]
+    assert [candidate.date for candidate in candidates] == [dt.date(2026, 4, 30)]
+
+
+def test_official_rate_adapters_preserve_legacy_text_fetcher_override() -> None:
+    def fail_result_fetcher(url: str) -> FetchTextResult:
+        raise AssertionError(url)
+
+    ecb_candidates = OfficialECBAdapter(
+        as_of_date=dt.date(2026, 5, 14),
+        text_fetcher=lambda _url: "",
+        result_fetcher=fail_result_fetcher,
+    ).fetch(start_year=2026, end_year=2026, store=None, run_id=None)
+    boe_candidates = OfficialBOEAdapter(
+        as_of_date=dt.date(2026, 5, 14),
+        text_fetcher=lambda _url: "",
+        result_fetcher=fail_result_fetcher,
+        news_api_fetcher=lambda _page: '{"Results": ""}',
+        stop_on_empty_news_page=True,
+    ).fetch(start_year=2026, end_year=2026, store=None, run_id=None)
+    boj_candidates = OfficialBOJAdapter(
+        as_of_date=dt.date(2026, 5, 14),
+        text_fetcher=lambda _url: "",
+        result_fetcher=fail_result_fetcher,
+    ).fetch(start_year=2026, end_year=2026, store=None, run_id=None)
+
+    assert ecb_candidates == []
+    assert boe_candidates == []
+    assert boj_candidates == []
 
 
 def test_boj_parses_current_and_past_mpm_tables_using_final_meeting_day() -> None:

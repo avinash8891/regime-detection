@@ -5,7 +5,7 @@ import re
 from collections.abc import Callable
 
 from regime_data_fetch.acquisition_store import AcquisitionStore
-from regime_data_fetch.event_sources._common import BOJ_BASE_URL, MONTHS, absolute_url, fetch_text_url, strip_tags
+from regime_data_fetch.event_sources._common import BOJ_BASE_URL, MONTHS, FetchTextResult, absolute_url, fetch_text_result, strip_tags
 from regime_data_fetch.event_sources.models import EventCandidate
 
 SOURCE_ID = "boj.or.jp:monetary-policy-meetings"
@@ -20,10 +20,12 @@ class OfficialBOJAdapter:
         self,
         *,
         as_of_date: dt.date | None = None,
-        text_fetcher: Callable[[str], str] = fetch_text_url,
+        text_fetcher: Callable[[str], str] | None = None,
+        result_fetcher: Callable[[str], FetchTextResult] = fetch_text_result,
     ) -> None:
         self.as_of_date = as_of_date or dt.date.today()
         self.text_fetcher = text_fetcher
+        self.result_fetcher = result_fetcher
 
     def fetch(
         self,
@@ -35,10 +37,16 @@ class OfficialBOJAdapter:
     ) -> list[EventCandidate]:
         candidates: list[EventCandidate] = []
         for url, notes in [(CURRENT_URL, "BoJ current MPM schedule"), (PAST_URL, "BoJ past MPM schedule")]:
-            html = self.text_fetcher(url)
+            html = self._fetch_text(url)
             _record_html(store, run_id, url, html, notes)
             candidates.extend(parse_boj_mpm_dates(html, as_of_date=self.as_of_date))
         return _dedupe(candidates, start_year=start_year, end_year=end_year)
+
+    def _fetch_text(self, url: str) -> str:
+        if self.text_fetcher is not None:
+            return self.text_fetcher(url)
+        result = self.result_fetcher(url)
+        return result.text if result.ok and result.text is not None else ""
 
 
 def parse_boj_mpm_dates(html: str, *, as_of_date: dt.date) -> list[EventCandidate]:

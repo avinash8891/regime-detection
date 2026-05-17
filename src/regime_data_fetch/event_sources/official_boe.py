@@ -8,7 +8,7 @@ from urllib.parse import urlencode
 from urllib.request import Request, urlopen
 
 from regime_data_fetch.acquisition_store import AcquisitionStore
-from regime_data_fetch.event_sources._common import BOE_BASE_URL, MONTHS, absolute_url, fetch_text_url, strip_tags
+from regime_data_fetch.event_sources._common import BOE_BASE_URL, MONTHS, FetchTextResult, absolute_url, fetch_text_result, strip_tags
 from regime_data_fetch.event_sources.models import EventCandidate
 
 SOURCE_ID = "bankofengland.co.uk:mpc-decisions"
@@ -25,12 +25,14 @@ class OfficialBOEAdapter:
         self,
         *,
         as_of_date: dt.date | None = None,
-        text_fetcher: Callable[[str], str] = fetch_text_url,
+        text_fetcher: Callable[[str], str] | None = None,
+        result_fetcher: Callable[[str], FetchTextResult] = fetch_text_result,
         news_api_fetcher: Callable[[int], str] | None = None,
         stop_on_empty_news_page: bool | None = None,
     ) -> None:
         self.as_of_date = as_of_date or dt.date.today()
         self.text_fetcher = text_fetcher
+        self.result_fetcher = result_fetcher
         self._stop_on_empty_news_page = news_api_fetcher is not None if stop_on_empty_news_page is None else stop_on_empty_news_page
         self.news_api_fetcher = news_api_fetcher or fetch_boe_news_api_page
 
@@ -42,13 +44,13 @@ class OfficialBOEAdapter:
         store: AcquisitionStore | None,
         run_id: int | None,
     ) -> list[EventCandidate]:
-        html = self.text_fetcher(UPCOMING_MPC_URL)
+        html = self._fetch_text(UPCOMING_MPC_URL)
         _record_html(store, run_id, UPCOMING_MPC_URL, html, "BoE upcoming MPC dates")
         candidates = parse_boe_upcoming_mpc_dates(html, as_of_date=self.as_of_date)
-        sitemap_html = self.text_fetcher(NEWS_SITEMAP_URL)
+        sitemap_html = self._fetch_text(NEWS_SITEMAP_URL)
         _record_html(store, run_id, NEWS_SITEMAP_URL, sitemap_html, "BoE news sitemap for MPC dates pages")
         for dates_url in _mpc_dates_page_urls(sitemap_html, start_year=start_year, end_year=end_year):
-            dates_html = self.text_fetcher(dates_url)
+            dates_html = self._fetch_text(dates_url)
             _record_html(store, run_id, dates_url, dates_html, "BoE annual MPC dates page")
             candidates.extend(parse_boe_mpc_dates_page(dates_html, source_url=dates_url, as_of_date=self.as_of_date))
         for page in range(1, 30):
@@ -61,6 +63,12 @@ class OfficialBOEAdapter:
             if not page_candidates and self._stop_on_empty_news_page:
                 break
         return _dedupe(candidates, start_year=start_year, end_year=end_year)
+
+    def _fetch_text(self, url: str) -> str:
+        if self.text_fetcher is not None:
+            return self.text_fetcher(url)
+        result = self.result_fetcher(url)
+        return result.text if result.ok and result.text is not None else ""
 
 
 def fetch_boe_news_api_page(page: int) -> str:
