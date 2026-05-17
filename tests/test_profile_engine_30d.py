@@ -121,6 +121,68 @@ def test_profile_trailing_status_reports_no_rule_fired_not_unknown() -> None:
     assert all("active_label=unknown" not in row for row in rows)
 
 
+def test_timed_inflation_growth_builder_patches_axis_builder_helpers(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import regime_detection.axis_builders.series as axis_builder_series
+
+    calls: list[str] = []
+
+    def assess(*_args: object, **_kwargs: object) -> str:
+        calls.append("assess")
+        return "assessed"
+
+    def build_inputs(*_args: object, **_kwargs: object) -> str:
+        calls.append("build_inputs")
+        return "inputs"
+
+    def evaluate(*_args: object, **_kwargs: object) -> str:
+        calls.append("evaluate")
+        return "label"
+
+    monkeypatch.setattr(axis_builder_series, "assess_series_input_quality", assess)
+    monkeypatch.setattr(
+        axis_builder_series,
+        "build_inflation_growth_rule_inputs_by_date",
+        build_inputs,
+    )
+    monkeypatch.setattr(axis_builder_series, "evaluate_inflation_growth_rules", evaluate)
+
+    def builder(
+        context: object,
+        feature_store: object,
+        credit_funding_active_labels_by_date: object = None,
+    ) -> str:
+        assert context == "context"
+        assert feature_store == "store"
+        assert credit_funding_active_labels_by_date == {"2026-05-15": "benign"}
+        assert axis_builder_series.assess_series_input_quality() == "assessed"
+        assert (
+            axis_builder_series.build_inflation_growth_rule_inputs_by_date()
+            == "inputs"
+        )
+        assert axis_builder_series.evaluate_inflation_growth_rules() == "label"
+        return "built"
+
+    timer = profile_engine_30d.StageTimer()
+    timed_builder = profile_engine_30d._timed_inflation_growth_builder(timer, builder)
+
+    actual = timed_builder(
+        "context",
+        "store",
+        credit_funding_active_labels_by_date={"2026-05-15": "benign"},
+    )
+
+    assert actual == "built"
+    assert calls == ["assess", "build_inputs", "evaluate"]
+    assert timer.counts["axis_series.inflation_growth"] == 1
+    assert (
+        timer.counts["axis_series.inflation_growth.assess_series_input_quality"] == 1
+    )
+    assert timer.counts["axis_series.inflation_growth.build_rule_inputs_by_date"] == 1
+    assert timer.counts["axis_series.inflation_growth.evaluate_rules"] == 1
+
+
 def test_profile_json_report_emits_machine_readable_sections(tmp_path: Path) -> None:
     def axis(label: str) -> SimpleNamespace:
         return SimpleNamespace(active_label=label, classification_status="classified")

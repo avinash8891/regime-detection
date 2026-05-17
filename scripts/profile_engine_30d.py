@@ -344,13 +344,13 @@ def _timed_inflation_growth_builder(
         feature_store: Any,
         credit_funding_active_labels_by_date: Any = None,
     ) -> Any:
-        import regime_detection.axis_series as axis_series_module
+        import regime_detection.axis_builders.series as axis_builder_series
 
-        original_assess = axis_series_module.assess_series_input_quality
+        original_assess = axis_builder_series.assess_series_input_quality
         original_build_inputs = (
-            axis_series_module.build_inflation_growth_rule_inputs_by_date
+            axis_builder_series.build_inflation_growth_rule_inputs_by_date
         )
-        original_eval = axis_series_module.evaluate_inflation_growth_rules
+        original_eval = axis_builder_series.evaluate_inflation_growth_rules
 
         def timed_assess(*args: Any, **kwargs: Any) -> Any:
             with timer.measure(
@@ -372,19 +372,21 @@ def _timed_inflation_growth_builder(
             with contextlib.ExitStack() as stack:
                 stack.enter_context(
                     _patched_attr(
-                        axis_series_module, "assess_series_input_quality", timed_assess
+                        axis_builder_series,
+                        "assess_series_input_quality",
+                        timed_assess,
                     )
                 )
                 stack.enter_context(
                     _patched_attr(
-                        axis_series_module,
+                        axis_builder_series,
                         "build_inflation_growth_rule_inputs_by_date",
                         timed_build_inputs,
                     )
                 )
                 stack.enter_context(
                     _patched_attr(
-                        axis_series_module,
+                        axis_builder_series,
                         "evaluate_inflation_growth_rules",
                         timed_eval,
                     )
