@@ -1,0 +1,78 @@
+"""V2 regime configuration extension import surface.
+
+The compatibility module, ``regime_detection.config``, remains the authoritative
+definition site. This module groups V2-only extension config classes for callers
+that do not need the V1/shared schema names.
+"""
+
+from __future__ import annotations
+
+from regime_detection.config import (
+    BreadthV2Config,
+    CentralBankTextConfig,
+    ChangePointConfig,
+    ClusteringConfig,
+    CohortRoutingConfig,
+    CohortRoutingRule,
+    CohortRoutingRulePredicate,
+    CreditFundingConfig,
+    CreditFundingRulesConfig,
+    EventCalendarV2Config,
+    FamilyOverride,
+    HMMConfig,
+    InflationGrowthConfig,
+    InflationGrowthRulesConfig,
+    MonetaryPressureV2Config,
+    MonetaryPressureV2FeaturesConfig,
+    MonetaryPressureV2RulesConfig,
+    NetworkFragilityConfig,
+    NetworkFragilityRulesConfig,
+    NewsSentimentConfig,
+    NoFlipFlopConfig,
+    StrategyFamilyConstraintsConfig,
+    TransitionScoreConfig,
+    TrendCharacterV2Config,
+    TrendDirectionV2Config,
+    TrendDirectionV2RulesConfig,
+    VolCrushConfig,
+    VolatilityV2Config,
+    VolatilityV2RulesConfig,
+    VolumeLiquidityConfig,
+    VolumeLiquidityRulesConfig,
+    VolumeLiquidityV2Config,
+)
+
+__all__ = (
+    "NetworkFragilityRulesConfig",
+    "NetworkFragilityConfig",
+    "TrendDirectionV2RulesConfig",
+    "TrendDirectionV2Config",
+    "VolatilityV2RulesConfig",
+    "VolatilityV2Config",
+    "VolumeLiquidityV2Config",
+    "VolumeLiquidityRulesConfig",
+    "VolumeLiquidityConfig",
+    "BreadthV2Config",
+    "TrendCharacterV2Config",
+    "TransitionScoreConfig",
+    "MonetaryPressureV2FeaturesConfig",
+    "MonetaryPressureV2RulesConfig",
+    "MonetaryPressureV2Config",
+    "NewsSentimentConfig",
+    "CentralBankTextConfig",
+    "InflationGrowthRulesConfig",
+    "InflationGrowthConfig",
+    "CreditFundingRulesConfig",
+    "CreditFundingConfig",
+    "EventCalendarV2Config",
+    "HMMConfig",
+    "ClusteringConfig",
+    "ChangePointConfig",
+    "VolCrushConfig",
+    "NoFlipFlopConfig",
+    "CohortRoutingRulePredicate",
+    "CohortRoutingRule",
+    "CohortRoutingConfig",
+    "FamilyOverride",
+    "StrategyFamilyConstraintsConfig",
+)
