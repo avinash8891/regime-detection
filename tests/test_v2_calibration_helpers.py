@@ -4,7 +4,11 @@ from pathlib import Path
 
 import pandas as pd
 
-from scripts._v2_calibration_helpers import load_macro_series
+from scripts._v2_calibration_helpers import default_pmi_path, load_macro_series
+
+
+def test_default_pmi_path_uses_history_parquet(tmp_path: Path) -> None:
+    assert default_pmi_path(tmp_path) == tmp_path / "pmi" / "us_ism_pmi_history.parquet"
 
 
 def test_load_macro_series_merges_pmi_history_with_latest_parquet(

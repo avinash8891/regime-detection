@@ -45,6 +45,7 @@ REPORTING_SUMMARY_FIELDS = [
     "inflation_growth_state",
     "monetary_pressure_state",
 ]
+EPS_REVISION_STALE_DAYS = 35
 
 
 def _counter_dict(counter: Counter[str]) -> dict[str, int]:
@@ -514,7 +515,29 @@ def _verify_invariants(
             issues.append(
                 f"trend_direction.{metric_name} missing; missing inputs: {reason}"
             )
+    eps_issue = _stale_eps_revision_issue(inputs)
+    if eps_issue is not None:
+        issues.append(eps_issue)
     return issues
+
+
+def _stale_eps_revision_issue(inputs: ProfileInputBundle) -> str | None:
+    series = inputs.macro_series.get("aggregate_forward_eps_revision")
+    if series is None or series.empty or not inputs.selected_dates:
+        return None
+    non_null = series.dropna()
+    if non_null.empty:
+        return None
+    latest = pd.Timestamp(non_null.index.max()).date()
+    run_end = inputs.selected_dates[-1]
+    age_days = (run_end - latest).days
+    if age_days <= EPS_REVISION_STALE_DAYS:
+        return None
+    return (
+        "aggregate_forward_eps_revision source stale: "
+        f"latest={latest.isoformat()}, run_end={run_end.isoformat()}, "
+        f"age_days={age_days}"
+    )
 
 
 def _path_text(path: Path | None, *, present: bool = True) -> str | None:

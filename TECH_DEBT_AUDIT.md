@@ -13,11 +13,11 @@ The repo is materially healthier than the previous audit snapshot in several pla
 
 Top implementation priorities:
 
-1. Fix the broken `profile_engine_30d.py` inflation-growth timing hook after the axis split.
-2. Expand pyright coverage incrementally beyond config-only.
-3. Finish evidence model typing where timeline and classifiers still pass plain dict payloads.
-4. Replace the feature-store `dict[str, Any]` builder bus with typed builder outputs.
-5. Move fetch-mode invocation into the registry so `FETCH_MODE_REGISTRY` owns execution, not just classification.
+1. Expand pyright coverage incrementally beyond config-only.
+2. Finish evidence model typing where timeline and classifiers still pass plain dict payloads.
+3. Replace the feature-store `dict[str, Any]` builder bus with typed builder outputs.
+4. Move fetch-mode invocation into the registry so `FETCH_MODE_REGISTRY` owns execution, not just classification.
+5. Split the remaining large operational scripts once their current data-contract fixes settle.
 
 ## Mental Model
 
@@ -38,7 +38,7 @@ Most risk appears at the boundaries between those products: typed model boundari
 | `python3 -m vulture src scripts tests` | Unavailable: `No module named vulture`. |
 | `python3 -m pydeps src/regime_detection --show-cycles --noshow` | Unavailable: `No module named pydeps`. |
 | `python3 -m pip_audit --desc off` | Environment-level failure: 51 known vulnerabilities in 23 packages. The output also skipped local/non-PyPI packages including `regime-detection (2.0.0)`, so this is not a clean project-lock audit. |
-| `PYTHONPATH=src python3 - <<'PY' ... hasattr(axis_series, ...)` | `assess_series_input_quality=True`, `build_inflation_growth_rule_inputs_by_date=False`, `evaluate_inflation_growth_rules=False`; confirms the profiler still points at moved symbols. |
+| `python3 -m pytest tests/test_profile_engine_30d.py::test_timed_inflation_growth_builder_patches_axis_builder_helpers -q` | Passed; confirms the profiler timing hook patches `regime_detection.axis_builders.inflation_growth`, not the old `axis_series` import surface. |
 | `python3 -m pytest --cov=src --cov-report=term --cov-fail-under=80 -q` | Failed: 5 tests failed, coverage still reached 88.33%. All failures are `TransitionRiskOutput` validation errors where tests still pass `{}` or `{"warnings": []}` evidence. |
 
 CI currently runs ruff, pyright only against `src/regime_detection/config.py`, and default pytest with coverage in `.github/workflows/ci.yml:63-66`. Slow/V2 gate tests are in a separate path-sensitive job at `.github/workflows/ci.yml:71-120`.
@@ -56,12 +56,13 @@ Resolved or mostly resolved from earlier audit:
 - Artifact URI contract: resolved; `StoredArtifact.uri` is a fully qualified URI contract in `src/regime_data_fetch/artifact_store.py`.
 - V2 gate fail-closed behavior: resolved enough for prior finding; gate script tests cover failure behavior, and CI has a slow/V2 gate job.
 - FOMC/news sentiment skip-gate concerns: resolved enough; fixture-backed tests exist.
+- `profile_engine_30d.py` inflation-growth timing hook after the axis split: resolved; the hook now patches `regime_detection.axis_builders.inflation_growth`, covered by `tests/test_profile_engine_30d.py::test_timed_inflation_growth_builder_patches_axis_builder_helpers`.
 
 ## Findings
 
 | ID | Severity | Status | Finding | Evidence |
 |---|---:|---|---|---|
-| TD-001 | P1 | New | `profile_engine_30d.py` has a real post-axis-split broken hook: it imports `regime_detection.axis_series` then dereferences inflation-growth helpers that now live in `axis_builders/series.py`. | `scripts/profile_engine_30d.py:347-353`; live import check reports `build_inflation_growth_rule_inputs_by_date=False` and `evaluate_inflation_growth_rules=False` on `axis_series`. |
+| TD-001 | P1 | Resolved | `profile_engine_30d.py` previously had a post-axis-split broken timing hook. Current code patches the axis-builder module directly and the focused regression passes. | `scripts/profile_engine_30d_timers.py`; `tests/test_profile_engine_30d.py::test_timed_inflation_growth_builder_patches_axis_builder_helpers`. |
 | TD-002 | P1 | Still open | Full pyright is not actionable yet: 714 errors across runtime/data/scripts, while CI only checks `src/regime_detection/config.py`. This lets typed contract drift accumulate outside config. | `.github/workflows/ci.yml:63-66`; pyright examples from `_v2_calibration_helpers.py:58`, `profile_engine_30d.py:351`, `timeline.py:89`, `transition_risk.py:138`. |
 | TD-003 | P1 | Still open | Evidence models are only partially typed. Most evidence payload classes still inherit `RootModel[dict[str, Any]]`, so Pydantic accepts arbitrary payloads and pyright cannot enforce field contracts. | `src/regime_detection/models.py:22-70`. |
 | TD-004 | P1 | Still open | Timeline still builds typed output objects using plain dict evidence payloads. This is a direct source of pyright failures and weakens the typed evidence migration. | `src/regime_detection/timeline.py:84-90`, `:230-240`. |

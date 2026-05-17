@@ -24,7 +24,7 @@ logger = logging.getLogger(__name__)
 
 
 def default_pmi_path(data_root: Path) -> Path:
-    return data_root / "pmi" / "us_ism_pmi.parquet"
+    return data_root / "pmi" / "us_ism_pmi_history.parquet"
 
 
 # TODO(simplify, owner=regime-maintainers, ticket=TD-CALIBRATION-REPORTING): hoist `_reporting_label` (4 near-identical copies in
