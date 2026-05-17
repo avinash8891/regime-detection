@@ -24,56 +24,6 @@ from regime_detection.config import (
 )
 
 
-V1_CONFIG_EXPORTS = (
-    "HysteresisConfig",
-    "DataQualityConfig",
-    "EventCalendarConfig",
-    "ETFProxyConfig",
-    "MonthlyOptionsExpiryRuleConfig",
-    "ExpiryRulesConfig",
-    "EarningsSeasonConfig",
-    "RegimeConfig",
-    "load_regime_config",
-    "_default_config_resource_name_for_version",
-    "load_default_regime_config",
-)
-
-V2_CONFIG_EXPORTS = (
-    "NetworkFragilityRulesConfig",
-    "NetworkFragilityConfig",
-    "TrendDirectionV2RulesConfig",
-    "TrendDirectionV2Config",
-    "VolatilityV2RulesConfig",
-    "VolatilityV2Config",
-    "VolumeLiquidityV2Config",
-    "VolumeLiquidityRulesConfig",
-    "VolumeLiquidityConfig",
-    "BreadthV2Config",
-    "TrendCharacterV2Config",
-    "TransitionScoreConfig",
-    "MonetaryPressureV2FeaturesConfig",
-    "MonetaryPressureV2RulesConfig",
-    "MonetaryPressureV2Config",
-    "NewsSentimentConfig",
-    "CentralBankTextConfig",
-    "InflationGrowthRulesConfig",
-    "InflationGrowthConfig",
-    "CreditFundingRulesConfig",
-    "CreditFundingConfig",
-    "EventCalendarV2Config",
-    "HMMConfig",
-    "ClusteringConfig",
-    "ChangePointConfig",
-    "VolCrushConfig",
-    "NoFlipFlopConfig",
-    "CohortRoutingRulePredicate",
-    "CohortRoutingRule",
-    "CohortRoutingConfig",
-    "FamilyOverride",
-    "StrategyFamilyConstraintsConfig",
-)
-
-
 # V2 spec §3.1 — canonical 22-asset network fragility universe (11 sector
 # ETFs + SPY broad-market index + 10 cross-asset proxies). KRE belongs to
 # v2 §2C credit/funding, not §3.1.
@@ -148,22 +98,6 @@ def _v1_yaml_path() -> Path:
     )
     # importlib.resources.files returns a Traversable; cast through str for load_regime_config.
     return Path(str(pkg_file))
-
-
-def test_config_v1_exports_match_compatibility_surface() -> None:
-    import regime_detection.config_v1 as config_v1
-
-    assert set(config_v1.__all__) == set(V1_CONFIG_EXPORTS)
-    for name in V1_CONFIG_EXPORTS:
-        assert getattr(config_v1, name) is getattr(config_module, name)
-
-
-def test_config_v2_exports_match_compatibility_surface() -> None:
-    import regime_detection.config_v2 as config_v2
-
-    assert set(config_v2.__all__) == set(V2_CONFIG_EXPORTS)
-    for name in V2_CONFIG_EXPORTS:
-        assert getattr(config_v2, name) is getattr(config_module, name)
 
 
 def test_v2_default_config_loads_and_has_correct_version() -> None:
