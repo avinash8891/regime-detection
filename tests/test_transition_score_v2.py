@@ -751,11 +751,11 @@ def test_build_transition_risk_outputs_emits_change_point_when_seam_lit(
     transition_score_config: TransitionScoreConfig,
 ) -> None:
     """Integration: the per-session outputs builder threads
-    ``change_point_score`` from its inputs dict into the composer and
+    ``change_point_score`` from typed inputs into the composer and
     surfaces ``change_point`` in the ``score_components`` of the
     resulting ``TransitionRiskOutput`` row.
 
-    Drives the wire-in end-to-end (inputs dict → composer → output row)
+    Drives the wire-in end-to-end (typed inputs → composer → output row)
     without depending on the full feature-store seam being lit by the
     test fixtures.
     """
@@ -763,6 +763,7 @@ def test_build_transition_risk_outputs_emits_change_point_when_seam_lit(
 
     from regime_detection.transition_risk_series import (
         TransitionRiskHistory,
+        TransitionScoreInputs,
         build_transition_risk_outputs_by_date,
     )
 
@@ -774,17 +775,15 @@ def test_build_transition_risk_outputs_emits_change_point_when_seam_lit(
         prior_bear_by_date={session: False},
     )
     inputs = {
-        session: {
-            "realized_vol_short": 12.0,
-            "realized_vol_long": 10.0,
-            "pct_above_50dma": 0.45,
-            "avg_pairwise_corr_percentile_504d": 0.60,
-            "drawdown_252d": -0.10,
-            "event_calendar_label": "cpi_week",
-            "hmm_top_state_prob_now": float("nan"),
-            "hmm_top_state_prob_5d_ago": float("nan"),
-            "change_point_score": 0.5,
-        }
+        session: TransitionScoreInputs(
+            realized_vol_short=12.0,
+            realized_vol_long=10.0,
+            pct_above_50dma=0.45,
+            avg_pairwise_corr_percentile_504d=0.60,
+            drawdown_252d=-0.10,
+            event_calendar_label="cpi_week",
+            change_point_score=0.5,
+        )
     }
     outputs = build_transition_risk_outputs_by_date(
         sessions=sessions,

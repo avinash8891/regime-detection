@@ -2,12 +2,22 @@ from __future__ import annotations
 
 from datetime import date
 
+import pandas as pd
 import pytest
 
+from regime_detection.config import load_default_regime_config
+from regime_detection.models import EventCalendarOutput
 from regime_detection.transition_risk import (
     build_transition_risk_output_from_flags,
     classify_transition_risk,
 )
+from regime_detection.transition_risk_series import (
+    TransitionRiskHistory,
+    TransitionScoreInputs,
+    _build_transition_score_inputs_by_date,
+    build_transition_risk_outputs_by_date,
+)
+from regime_detection.transition_score import compose_transition_score_for_session
 
 
 _AS_OF = date(2024, 1, 2)
@@ -189,3 +199,90 @@ def test_classify_transition_risk_crisis_override_suppresses_cooldown_warning() 
 
     assert output.label == "crisis_override"
     assert output.evidence["warnings_active"] == ["crisis_override"]
+
+
+def test_build_transition_score_inputs_returns_typed_optional_hmm_and_change_point_values() -> None:
+    sessions = [date(2024, 1, day) for day in range(2, 10)]
+    index = pd.DatetimeIndex(sessions)
+
+    inputs_by_date = _build_transition_score_inputs_by_date(
+        sessions=sessions,
+        realized_vol_short=pd.Series([12.0] * len(sessions), index=index),
+        realized_vol_long=pd.Series([10.0] * len(sessions), index=index),
+        pct_above_50dma=pd.Series([0.45] * len(sessions), index=index),
+        avg_pairwise_corr_percentile_504d=pd.Series([0.60] * len(sessions), index=index),
+        drawdown_252d=pd.Series([-0.10] * len(sessions), index=index),
+        event_calendar={
+            day: EventCalendarOutput(
+                raw_label="normal",
+                stable_label="normal",
+                active_label="normal",
+                evidence={"upcoming_events": []},
+            )
+            for day in sessions
+        },
+        hmm_top_state_prob=pd.Series(
+            [0.10, 0.20, 0.30, 0.40, 0.50, 0.65, 0.70, 0.75],
+            index=index,
+        ),
+        change_point_score=pd.Series([0.20] * len(sessions), index=index),
+    )
+
+    first_day = sessions[0]
+    shifted_day = sessions[5]
+    assert isinstance(inputs_by_date[first_day], TransitionScoreInputs)
+    assert inputs_by_date[first_day].hmm_top_state_prob_now == pytest.approx(0.10)
+    assert pd.isna(inputs_by_date[first_day].hmm_top_state_prob_5d_ago)
+    assert inputs_by_date[first_day].change_point_score == pytest.approx(0.20)
+    assert inputs_by_date[shifted_day].hmm_top_state_prob_now == pytest.approx(0.65)
+    assert inputs_by_date[shifted_day].hmm_top_state_prob_5d_ago == pytest.approx(0.10)
+
+
+def test_transition_risk_score_inputs_match_direct_composer_for_optional_hmm_and_change_point() -> None:
+    cfg = load_default_regime_config().transition_score
+    assert cfg is not None
+    session = date(2024, 1, 9)
+    score_inputs = TransitionScoreInputs(
+        realized_vol_short=12.0,
+        realized_vol_long=10.0,
+        pct_above_50dma=0.45,
+        avg_pairwise_corr_percentile_504d=0.60,
+        drawdown_252d=-0.10,
+        event_calendar_label="cpi_week",
+        hmm_top_state_prob_now=0.70,
+        hmm_top_state_prob_5d_ago=0.30,
+        change_point_score=0.50,
+    )
+
+    outputs = build_transition_risk_outputs_by_date(
+        sessions=[session],
+        trend_direction_active_by_date={session: "bull"},
+        trend_character_active_by_date={session: "trending"},
+        volatility_state_active_by_date={session: "normal_vol"},
+        breadth_state_active_by_date={session: "healthy_breadth"},
+        close_by_date={session: 100.0},
+        sma_50_by_date={session: 95.0},
+        history=TransitionRiskHistory(
+            stable_changed_by_date={session: False},
+            days_since_axis_switch_by_date={session: None},
+            prior_bear_by_date={session: False},
+        ),
+        transition_score_inputs_by_date={session: score_inputs},
+        transition_score_config=cfg,
+    )
+    expected = compose_transition_score_for_session(
+        realized_vol_short=score_inputs.realized_vol_short,
+        realized_vol_long=score_inputs.realized_vol_long,
+        pct_above_50dma=score_inputs.pct_above_50dma,
+        avg_pairwise_corr_percentile_504d=score_inputs.avg_pairwise_corr_percentile_504d,
+        drawdown_252d=score_inputs.drawdown_252d,
+        event_calendar_label=score_inputs.event_calendar_label,
+        hmm_top_state_prob_now=score_inputs.hmm_top_state_prob_now,
+        hmm_top_state_prob_5d_ago=score_inputs.hmm_top_state_prob_5d_ago,
+        change_point_score=score_inputs.change_point_score,
+        config=cfg,
+    )
+
+    assert outputs[session].score == expected.score
+    assert outputs[session].score_interpretation == expected.interpretation
+    assert outputs[session].score_components == expected.components

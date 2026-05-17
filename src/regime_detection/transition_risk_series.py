@@ -21,6 +21,19 @@ class TransitionRiskHistory:
     prior_bear_by_date: dict[date, bool]
 
 
+@dataclass(frozen=True)
+class TransitionScoreInputs:
+    realized_vol_short: float
+    realized_vol_long: float
+    pct_above_50dma: float
+    avg_pairwise_corr_percentile_504d: float
+    drawdown_252d: float
+    event_calendar_label: str
+    hmm_top_state_prob_now: float | None = None
+    hmm_top_state_prob_5d_ago: float | None = None
+    change_point_score: float | None = None
+
+
 def build_transition_risk_series(
     *,
     context: MarketContext,
@@ -56,7 +69,7 @@ def build_transition_risk_series(
     trend_v2 = feature_store.trend_direction_v2
     transition_score_config = context.config.transition_score
 
-    transition_score_inputs_by_date: dict[date, dict[str, float | str]] | None = None
+    transition_score_inputs_by_date: dict[date, TransitionScoreInputs] | None = None
     if (
         volatility_v2 is not None
         and breadth_v2 is not None
@@ -120,8 +133,8 @@ def _build_transition_score_inputs_by_date(
     event_calendar: dict[date, EventCalendarOutput],
     hmm_top_state_prob: pd.Series | None = None,
     change_point_score: pd.Series | None = None,
-) -> dict[date, dict[str, float | str]]:
-    """Materialise the per-session v2 §4.2 input dict for every NYSE session.
+) -> dict[date, TransitionScoreInputs]:
+    """Materialise the per-session v2 §4.2 score inputs for every NYSE session.
 
     Reindexes each input series ONCE against the session DatetimeIndex
     then iterates over numpy arrays — avoids the per-session ``.loc[ts]``
@@ -163,20 +176,27 @@ def _build_transition_score_inputs_by_date(
     else:
         cp = [float("nan")] * len(sessions)
 
-    out: dict[date, dict[str, float | str]] = {}
+    out: dict[date, TransitionScoreInputs] = {}
     for i, day in enumerate(sessions):
-        out[day] = {
-            "realized_vol_short": float(rvs[i]),
-            "realized_vol_long": float(rvl[i]),
-            "pct_above_50dma": float(pct50[i]),
-            "avg_pairwise_corr_percentile_504d": float(corr[i]),
-            "drawdown_252d": float(dd252[i]),
-            "event_calendar_label": event_calendar[day].active_label,
-            "hmm_top_state_prob_now": float(hmm_now[i]),
-            "hmm_top_state_prob_5d_ago": float(hmm_5d_ago[i]),
-            "change_point_score": float(cp[i]),
-        }
+        out[day] = TransitionScoreInputs(
+            realized_vol_short=float(rvs[i]),
+            realized_vol_long=float(rvl[i]),
+            pct_above_50dma=float(pct50[i]),
+            avg_pairwise_corr_percentile_504d=float(corr[i]),
+            drawdown_252d=float(dd252[i]),
+            event_calendar_label=event_calendar[day].active_label,
+            hmm_top_state_prob_now=_optional_float(hmm_now[i]),
+            hmm_top_state_prob_5d_ago=_optional_float(hmm_5d_ago[i]),
+            change_point_score=_optional_float(cp[i]),
+        )
     return out
+
+
+def _optional_float(value: object) -> float | None:
+    parsed = float(value)
+    if pd.isna(parsed):
+        return None
+    return parsed
 
 
 def build_transition_risk_outputs_by_date(
@@ -189,7 +209,7 @@ def build_transition_risk_outputs_by_date(
     close_by_date: dict[date, float | None],
     sma_50_by_date: dict[date, float | None],
     history: TransitionRiskHistory,
-    transition_score_inputs_by_date: dict[date, dict[str, float | str]] | None = None,
+    transition_score_inputs_by_date: dict[date, TransitionScoreInputs] | None = None,
     transition_score_config: TransitionScoreConfig | None = None,
     v2_warnings_enabled: bool = False,
 ) -> dict[date, TransitionRiskOutput]:
@@ -244,10 +264,6 @@ def build_transition_risk_outputs_by_date(
     )
 
     outputs: dict[date, TransitionRiskOutput] = {}
-    compose_score = (
-        transition_score_inputs_by_date is not None
-        and transition_score_config is not None
-    )
     for day in sessions:
         switch_days = history.days_since_axis_switch_by_date[day]
         output = build_transition_risk_output_from_flags(
@@ -261,46 +277,24 @@ def build_transition_risk_outputs_by_date(
             stable_changed_today=history.stable_changed_by_date[day],
             days_since_axis_switch=switch_days,
         )
-        if compose_score:
-            inputs = transition_score_inputs_by_date[day]  # type: ignore[index]
-            # v2 §6.1 (Slice 6) — pass HMM probabilities as None when NaN
-            # so the composer fall-through to the 5-component
-            # weights_without_hmm path matches V1 byte-identity.
-            hmm_now_val = inputs.get("hmm_top_state_prob_now")  # type: ignore[union-attr]
-            hmm_5d_val = inputs.get("hmm_top_state_prob_5d_ago")  # type: ignore[union-attr]
-            hmm_now_arg = (
-                None
-                if hmm_now_val is None
-                or (isinstance(hmm_now_val, float) and pd.isna(hmm_now_val))
-                else float(hmm_now_val)  # type: ignore[arg-type]
-            )
-            hmm_5d_arg = (
-                None
-                if hmm_5d_val is None
-                or (isinstance(hmm_5d_val, float) and pd.isna(hmm_5d_val))
-                else float(hmm_5d_val)  # type: ignore[arg-type]
-            )
-            # Ambiguity Log #66 — change_point.score → optional CP arg.
-            cp_val = inputs.get("change_point_score")  # type: ignore[union-attr]
-            cp_arg = (
-                None
-                if cp_val is None
-                or (isinstance(cp_val, float) and pd.isna(cp_val))
-                else float(cp_val)  # type: ignore[arg-type]
-            )
+        if (
+            transition_score_inputs_by_date is not None
+            and transition_score_config is not None
+        ):
+            inputs = transition_score_inputs_by_date[day]
             composed = compose_transition_score_for_session(
-                realized_vol_short=inputs["realized_vol_short"],  # type: ignore[arg-type]
-                realized_vol_long=inputs["realized_vol_long"],  # type: ignore[arg-type]
-                pct_above_50dma=inputs["pct_above_50dma"],  # type: ignore[arg-type]
-                avg_pairwise_corr_percentile_504d=inputs[
-                    "avg_pairwise_corr_percentile_504d"
-                ],  # type: ignore[arg-type]
-                drawdown_252d=inputs["drawdown_252d"],  # type: ignore[arg-type]
-                event_calendar_label=inputs["event_calendar_label"],  # type: ignore[arg-type]
-                hmm_top_state_prob_now=hmm_now_arg,
-                hmm_top_state_prob_5d_ago=hmm_5d_arg,
-                change_point_score=cp_arg,
-                config=transition_score_config,  # type: ignore[arg-type]
+                realized_vol_short=inputs.realized_vol_short,
+                realized_vol_long=inputs.realized_vol_long,
+                pct_above_50dma=inputs.pct_above_50dma,
+                avg_pairwise_corr_percentile_504d=(
+                    inputs.avg_pairwise_corr_percentile_504d
+                ),
+                drawdown_252d=inputs.drawdown_252d,
+                event_calendar_label=inputs.event_calendar_label,
+                hmm_top_state_prob_now=inputs.hmm_top_state_prob_now,
+                hmm_top_state_prob_5d_ago=inputs.hmm_top_state_prob_5d_ago,
+                change_point_score=inputs.change_point_score,
+                config=transition_score_config,
             )
             if composed.score is not None:
                 output = output.model_copy(
