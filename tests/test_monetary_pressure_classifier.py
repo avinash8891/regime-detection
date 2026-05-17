@@ -12,6 +12,8 @@ Ambiguity Log #46 pins).
 
 from __future__ import annotations
 
+from dataclasses import replace
+
 import numpy as np
 import pandas as pd
 
@@ -367,6 +369,27 @@ def test_classifier_emits_outputs_when_seam_lit():
     for output in out.values():
         assert output.raw_label in allowed
         assert isinstance(output, MonetaryPressureV2Output)
+
+
+def test_classifier_emits_central_bank_text_score_as_evidence_only():
+    context = _build_context_with_macro()
+    store = build_feature_store(
+        context,
+        monetary_pressure_v2_config=context.config.monetary_pressure_v2,
+    )
+    assert store.monetary is not None
+    score = pd.Series(0.25, index=context.spy_ohlcv.index, name="central_bank_text_score")
+    store = store.model_copy(
+        update={"monetary": replace(store.monetary, central_bank_text_score=score)}
+    )
+
+    out = build_monetary_pressure_axis_series(context, store)
+
+    assert out is not None
+    sample = next(
+        output for output in out.values() if "rule_evidence" in output.evidence
+    )
+    assert sample.evidence["rule_evidence"]["central_bank_text_score"] == 0.25
 
 
 def test_engine_classify_window_populates_monetary_pressure_state():

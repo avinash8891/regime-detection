@@ -102,7 +102,10 @@ LAYER2_FEATURES: dict[str, tuple[str, ...]] = {
 
 
 def _json_counter(counter: Counter[Any]) -> dict[str, int]:
-    return {str(key): int(value) for key, value in sorted(counter.items())}
+    return {
+        str(key): int(value)
+        for key, value in sorted(counter.items(), key=lambda item: str(item[0]))
+    }
 
 
 def _finite_or_none(value: Any) -> float | None:
@@ -432,6 +435,26 @@ def _parse_args() -> argparse.Namespace:
         )
     if args.pmi_path is None:
         args.pmi_path = default_pmi_path(args.data_root)
+    if args.aaii_sentiment_parquet is None:
+        args.aaii_sentiment_parquet = (
+            args.data_root / "sentiment" / "aaii_sentiment.parquet"
+        )
+    if args.news_sentiment_parquet is None:
+        args.news_sentiment_parquet = (
+            args.data_root / "news_sentiment" / "sf_fed_news_sentiment.parquet"
+        )
+    if args.fomc_minutes_parquet is None:
+        args.fomc_minutes_parquet = (
+            args.data_root / "fomc_minutes" / "fomc_minutes.parquet"
+        )
+    if args.powell_speeches_parquet is None:
+        args.powell_speeches_parquet = (
+            args.data_root / "powell_speeches" / "powell_speeches.parquet"
+        )
+    if args.cpi_vintages_parquet is None:
+        args.cpi_vintages_parquet = (
+            args.data_root / "macro_vintages" / "cpi_all_items_vintages.parquet"
+        )
     return args
 
 

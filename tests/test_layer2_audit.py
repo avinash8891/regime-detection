@@ -108,3 +108,41 @@ def test_layer2_label_summary_counts_reporting_label_separately_from_active() ->
     assert proxy["reported"] == {"no_rule_fired": 1}
     assert proxy["active"] == {"unknown": 1}
     assert summary["axes"]["monetary_pressure_state"]["reported"] == {"not_wired": 1}
+
+
+def test_layer2_label_summary_handles_none_and_string_reasons() -> None:
+    selected = [dt.date(2026, 5, 1), dt.date(2026, 5, 2)]
+    axis_bundle = SimpleNamespace(
+        monetary_pressure_state={
+            selected[0]: SimpleNamespace(
+                active_label="neutral_monetary",
+                raw_label="neutral_monetary",
+                stable_label="neutral_monetary",
+                classification_status="classified",
+                data_quality=SimpleNamespace(status="ok", reason=None),
+                evidence={"rule_evidence": {"yield_change_zscore_2y_63d": 0.1}},
+            ),
+            selected[1]: SimpleNamespace(
+                active_label="unknown",
+                raw_label="unknown",
+                stable_label="unknown",
+                reporting_label="stale_data",
+                classification_status="stale_data",
+                data_quality=SimpleNamespace(status="stale_data", reason="pmi_stale"),
+                evidence={"reason": "pmi_stale"},
+            ),
+        },
+        credit_funding=None,
+        credit_funding_proxy=None,
+        credit_funding_effective=None,
+        inflation_growth=None,
+    )
+
+    summary = build_label_rule_summary(
+        axis_bundle=axis_bundle,
+        selected_dates=selected,
+        missing_constituent_files=0,
+    )
+
+    reasons = summary["axes"]["monetary_pressure_state"]["data_quality_reasons"]
+    assert reasons == {"None": 1, "pmi_stale": 1}
