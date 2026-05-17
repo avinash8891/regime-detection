@@ -5,6 +5,7 @@ import logging
 import sqlite3
 from dataclasses import dataclass
 from pathlib import Path
+from typing import TypedDict
 
 from regime_data_fetch.acquisition_consolidation_normalized import (
     AGGREGATE_EPS_SNAPSHOT_ROWS_TABLE,
@@ -51,6 +52,13 @@ _COUNTABLE_TABLES = frozenset(
     }
 )
 
+
+class ConsolidationReport(TypedDict):
+    target_db: str
+    sources: list[dict[str, object]]
+    final_counts: dict[str, int]
+
+
 @dataclass(frozen=True)
 class ConsolidationSource:
     label: str
@@ -61,7 +69,7 @@ def consolidate_acquisition_dbs(
     *,
     target_db_path: Path,
     sources: list[ConsolidationSource] | None = None,
-) -> dict[str, object]:
+) -> ConsolidationReport:
     if sources is None:
         raise ValueError("consolidate_acquisition_dbs requires explicit sources")
     selected_sources = sources
@@ -109,7 +117,7 @@ def consolidate_acquisition_dbs(
             ALPACA_MARKET_ROWS_TABLE: _count_rows(conn, ALPACA_MARKET_ROWS_TABLE),
         }
 
-    report = {
+    report: ConsolidationReport = {
         "target_db": str(target_db_path),
         "sources": summary_sources,
         "final_counts": final_counts,
@@ -344,4 +352,3 @@ def _row_value(row: sqlite3.Row, key: str) -> object | None:
     if key in row.keys():
         return row[key]
     return None
-
