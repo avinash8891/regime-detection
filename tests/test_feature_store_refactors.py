@@ -80,23 +80,23 @@ def test_feature_store_builder_registry_runs_builders_in_declared_order(
     )
     calls: list[tuple[str, object]] = []
 
-    def first_builder(build_state: _FeatureStoreBuildState) -> None:
-        calls.append(("first", build_state.spy_close.name))
-        build_state.sma_50 = pd.Series([1.0], name="first_output")
+    def moving_average_builder(build_state: _FeatureStoreBuildState) -> None:
+        calls.append(("moving_average", build_state.spy_close.name))
+        build_state.sma_50 = pd.Series([1.0], name="sma_50")
 
-    def second_builder(build_state: _FeatureStoreBuildState) -> None:
+    def volatility_builder(build_state: _FeatureStoreBuildState) -> None:
         output_name = build_state.sma_50.name if build_state.sma_50 is not None else None
-        calls.append(("second", output_name))
+        calls.append(("volatility", output_name))
 
     _run_feature_store_builders(
         (
-            _FeatureStoreBuilder("first", first_builder),
-            _FeatureStoreBuilder("second", second_builder),
+            _FeatureStoreBuilder("moving_average", moving_average_builder),
+            _FeatureStoreBuilder("volatility", volatility_builder),
         ),
         state,
     )
 
-    assert calls == [("first", "close"), ("second", "first_output")]
+    assert calls == [("moving_average", "close"), ("volatility", "sma_50")]
 
 
 def test_feature_store_build_state_uses_typed_intermediate_fields() -> None:

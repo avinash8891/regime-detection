@@ -55,19 +55,19 @@ class EvidencePayload(RootModel[dict[str, Any]]):
 
 
 class AxisEvidencePayload(EvidencePayload):
-    pass
+    """Dict-compatible payload for legacy V1 axis rule evidence."""
 
 
 class EventCalendarEvidencePayload(EvidencePayload):
-    pass
+    """Dict-compatible payload for event-calendar rule evidence."""
 
 
 class MonetaryPressureEvidencePayload(EvidencePayload):
-    pass
+    """Dict-compatible payload for monetary-pressure V2 rule evidence."""
 
 
 class VolumeLiquidityEvidencePayload(EvidencePayload):
-    pass
+    """Dict-compatible payload for volume/liquidity V2 rule evidence."""
 
 
 class TransitionRiskEvidencePayload(BaseModel):

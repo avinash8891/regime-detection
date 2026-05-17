@@ -1,3 +1,5 @@
+"""Parse central-bank rate-decision calendars into normalized event dates."""
+
 from __future__ import annotations
 
 import datetime as dt

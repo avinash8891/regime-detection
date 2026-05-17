@@ -698,7 +698,7 @@ def build_feature_store(
     central_bank_text_config: CentralBankTextConfig | None = None,
     news_sentiment_config: NewsSentimentConfig | None = None,
 ) -> FeatureStore:
-    # TODO(refactor): Decompose this builder in a dedicated no-behavior-change
+    # TODO(refactor, owner=regime-maintainers, ticket=TD-FEATURE-STORE-BUILDER): Decompose this builder in a dedicated no-behavior-change
     # refactor. Keep feature wiring and fixture replay frozen while extracting
     # helpers so classifier changes do not hide inside the decomposition.
     spy_ohlcv = context.spy_ohlcv

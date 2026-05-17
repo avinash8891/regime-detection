@@ -48,7 +48,7 @@ class AxisSeriesResult:
 
 @dataclass(frozen=True)
 class AxisSeriesBundle:
-    # TODO(model): Consider Pydantic/model validation only after defining the
+    # TODO(model, owner=regime-maintainers, ticket=TD-AXIS-BUNDLE-MODEL): Consider Pydantic/model validation only after defining the
     # real cross-axis invariants this bundle must enforce. A wrapper-only
     # conversion from dataclass to model would add surface area without safety.
     trend_direction: AxisSeriesResult

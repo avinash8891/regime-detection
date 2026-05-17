@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from dataclasses import asdict
 from pathlib import Path
 
 import pandas as pd
@@ -24,7 +23,7 @@ def build_aggregate_eps_report(
     weekly_history_path: Path,
     acquisition_db_path: Path | None,
 ) -> dict[str, object]:
-    current_dict = asdict(parsed.current_snapshot)
+    current_dict = parsed.current_snapshot.to_legacy_row()
     current_dict["observation_date"] = (
         parsed.current_snapshot.observation_date.isoformat()
     )

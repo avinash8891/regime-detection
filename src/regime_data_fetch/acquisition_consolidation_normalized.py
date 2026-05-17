@@ -1,3 +1,5 @@
+"""Import derived acquisition outputs into normalized consolidation tables."""
+
 from __future__ import annotations
 
 import datetime as dt

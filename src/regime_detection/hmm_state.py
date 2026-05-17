@@ -149,7 +149,7 @@ def compute_hmm_features(
                 standardize_inputs=config.standardize_inputs,
             )
             best: dict[str, Any] | None = None
-            # TODO(simplify): the retrain loop now runs this full seed sweep
+            # TODO(simplify, owner=regime-maintainers, ticket=TD-HMM-WARM-START): the retrain loop now runs this full seed sweep
             # (`len(random_seeds)` fits × n_iter=200) at every checkpoint —
             # dominant cost in classify_window. Warm-start from the previous
             # checkpoint's startprob/transmat/means/covars and drop n_iter for

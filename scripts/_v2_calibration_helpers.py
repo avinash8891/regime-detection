@@ -27,7 +27,7 @@ def default_pmi_path(data_root: Path) -> Path:
     return data_root / "pmi" / "us_ism_pmi_history.parquet"
 
 
-# TODO(simplify): hoist `_reporting_label` (4 near-identical copies in
+# TODO(simplify, owner=regime-maintainers, ticket=TD-CALIBRATION-REPORTING): hoist `_reporting_label` (4 near-identical copies in
 # run_v2_walkforward_gate.py, run_v2_shadow_ab_gate.py, profile_engine_30d.py,
 # audit_layer2_30d.py) into a single `axis_reporting_label(output, *, default=None)`
 # helper here. Each caller's fallback (None vs "not_wired" vs str(active_label))
@@ -35,7 +35,7 @@ def default_pmi_path(data_root: Path) -> Path:
 # semantics diverge subtly across callers and a regression here would silently
 # corrupt gate metrics.
 #
-# TODO(simplify): add `add_manifest_args(parser)` / `materialize_from_args(args, *,
+# TODO(simplify, owner=regime-maintainers, ticket=TD-CALIBRATION-MANIFEST-ARGS): add `add_manifest_args(parser)` / `materialize_from_args(args, *,
 # repo_root, required_for)` helpers to remove the 4-runner copy-paste of
 # --manifest/--artifact-store/--data-root wiring. Also fixes the ordering bug in
 # run_v2_calibration.py where materialize_if_requested runs BEFORE daily_dir /
