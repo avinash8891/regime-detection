@@ -24,8 +24,10 @@ from regime_data_fetch.ism import extract_ism_pmi_value, release_timestamp_for
 from regime_data_fetch.universe import FIXED_UNIVERSE_SYMBOL_COUNT
 from scripts import fetch_regime_engine_v1_data as fetch_script
 from scripts.fetch_regime_engine_v1_data import (
+    FETCH_MODE_REGISTRY,
     OPERATOR_ASSISTED_FETCH_MODES,
     UNATTENDED_FETCH_MODES,
+    _plan_fetch_mode_execution,
     _should_fetch,
 )
 
@@ -779,10 +781,49 @@ def test_constituent_ohlcv_requires_fixed_universe_unless_pit_bootstrap_is_expli
 
 def test_fetch_mode_sets_make_operator_assisted_boundary_explicit() -> None:
     assert UNATTENDED_FETCH_MODES.isdisjoint(OPERATOR_ASSISTED_FETCH_MODES)
+    assert set(FETCH_MODE_REGISTRY) == UNATTENDED_FETCH_MODES | OPERATOR_ASSISTED_FETCH_MODES
+    assert all(spec.name == name for name, spec in FETCH_MODE_REGISTRY.items())
+    assert {
+        spec.name for spec in FETCH_MODE_REGISTRY.values() if spec.category == "unattended"
+    } == UNATTENDED_FETCH_MODES
+    assert {
+        spec.name
+        for spec in FETCH_MODE_REGISTRY.values()
+        if spec.category == "operator-assisted"
+    } == OPERATOR_ASSISTED_FETCH_MODES
     for mode in OPERATOR_ASSISTED_FETCH_MODES:
         assert not _should_fetch("all", mode), mode
     for mode in UNATTENDED_FETCH_MODES:
         assert _should_fetch("all", mode), mode
+
+
+def test_fetch_all_execution_plan_is_serial_by_default() -> None:
+    plan = _plan_fetch_mode_execution("all", conservative_concurrency=False)
+
+    registry_unattended_order = [
+        name
+        for name, spec in FETCH_MODE_REGISTRY.items()
+        if spec.category == "unattended"
+    ]
+    assert [group.modes for group in plan] == [
+        (mode,) for mode in registry_unattended_order
+    ]
+    assert not any(group.concurrent for group in plan)
+
+
+def test_fetch_all_conservative_concurrency_batches_only_safe_unattended_modes() -> None:
+    plan = _plan_fetch_mode_execution("all", conservative_concurrency=True)
+
+    assert plan[0].modes == ("market",)
+    assert plan[0].concurrent is False
+    assert plan[-1].modes == ("daily-ohlcv-constituents-alpaca",)
+    assert plan[-1].concurrent is False
+    concurrent_groups = [group for group in plan if group.concurrent]
+    assert len(concurrent_groups) == 1
+    assert set(concurrent_groups[0].modes).issubset(UNATTENDED_FETCH_MODES)
+    assert set(concurrent_groups[0].modes).isdisjoint(OPERATOR_ASSISTED_FETCH_MODES)
+    assert "market" not in concurrent_groups[0].modes
+    assert "daily-ohlcv-constituents-alpaca" not in concurrent_groups[0].modes
 
 
 def test_fetch_all_dispatches_only_unattended_modes(
