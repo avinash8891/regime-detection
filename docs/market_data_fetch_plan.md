@@ -81,9 +81,9 @@ Runner input resolution is manifest-driven. When `profile_engine_30d.py`,
 `audit_layer2_30d.py`, `run_v2_walkforward_gate.py`, or
 `run_v2_shadow_ab_gate.py` receives `--manifest`, the runner materializes the
 manifest and resolves its required input paths from stable artifact names such
-as `fred_macro_series`, `ism_pmi_history`, `sf_fed_news_sentiment`, and
-`sp500_pit_constituents`. Direct per-file CLI arguments remain available only
-as explicit debug overrides.
+as `fred_macro_series`, `ism_pmi_history`, `event_calendar_us`,
+`sf_fed_news_sentiment`, and `sp500_pit_constituents`. Direct per-file CLI
+arguments remain available only as explicit debug overrides.
 
 Default fetch behavior:
 

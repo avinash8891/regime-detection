@@ -135,9 +135,12 @@ def _local_path_for(
         if repo_root is None:
             return None
         try:
-            return str(path.relative_to(repo_root.resolve()))
+            repo_relative = path.relative_to(repo_root.resolve())
         except ValueError:
             return None
+        if repo_relative == Path("configs") / "events" / "us_events.yaml":
+            return str(Path("data") / "raw" / "event_calendar" / "us_events.yaml")
+        return str(repo_relative)
     return str(Path("data") / "raw" / relative)
 
 

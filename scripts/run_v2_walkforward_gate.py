@@ -388,7 +388,7 @@ def _parse_args() -> argparse.Namespace:
     _apply_manifest_input_paths(
         args,
         runner_name="v2_calibration",
-        required_fields=frozenset({"daily_dir", "macro_parquet"}),
+        required_fields=frozenset({"daily_dir", "macro_parquet", "event_calendar"}),
     )
     if args.start_date is None or args.end_date is None:
         default_start, default_end = _resolve_default_window(args.daily_dir)

@@ -15337,6 +15337,20 @@ artifacts:
   - profile_engine_30d
   - v2_calibration
   - audit_layer2_30d
+- name: event_calendar_us
+  stage: canonical
+  uri: s3://autoresearch-platform/regime-detection/artifacts/zurich-v1/profile-ready-daily-ohlcv-762-2016-20260515/canonical/event_calendar/us_events.yaml
+  local_path: data/raw/event_calendar/us_events.yaml
+  sha256: b67caf8f8d9814e4229a5fd27b4cadcdc72b8b8f856495aa30b9041dd1170efd
+  schema_version: event_calendar.us_events.v1
+  rows: 454
+  min_date: '2007-10-31'
+  max_date: '2026-12-18'
+  required_for:
+  - profile_engine_30d
+  - v2_calibration
+  - historical_walkforward
+  - audit_layer2_30d
 - name: constituent_ohlcv_DBC
   stage: canonical
   uri: s3://autoresearch-platform/regime-detection/artifacts/zurich-v1/profile-ready-daily-ohlcv-762-2016-20260515/canonical/daily_ohlcv_762/symbol=DBC/ohlcv.parquet

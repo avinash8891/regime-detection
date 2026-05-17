@@ -216,11 +216,13 @@ def test_emit_manifest_for_report_paths_exports_repo_relative_event_config(tmp_p
         required_for=["profile_engine_30d"],
     )
 
-    assert manifest.artifacts[0].local_path == "configs/events/us_events.yaml"
+    assert manifest.artifacts[0].local_path == "data/raw/event_calendar/us_events.yaml"
     assert manifest.artifacts[0].uri == _store_uri(
-        tmp_path / "store", "canonical/configs/events/us_events.yaml"
+        tmp_path / "store", "canonical/event_calendar/us_events.yaml"
     )
-    assert (tmp_path / "store" / "canonical" / "configs" / "events" / "us_events.yaml").read_text() == "events: []\n"
+    assert (
+        tmp_path / "store" / "canonical" / "event_calendar" / "us_events.yaml"
+    ).read_text() == "events: []\n"
 
 
 def test_emit_manifest_for_report_paths_honors_explicit_materialized_local_path(tmp_path: Path) -> None:

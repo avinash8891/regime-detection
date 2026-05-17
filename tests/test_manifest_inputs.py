@@ -58,6 +58,7 @@ def test_resolve_runner_input_paths_uses_manifest_artifact_names(tmp_path: Path)
                 "sp500_pit_constituents",
                 "data/raw/pit_constituents/sp500_ticker_intervals.parquet",
             ),
+            _artifact("event_calendar_us", "data/raw/event_calendar/us_events.yaml"),
             _artifact("ism_pmi_history", "data/raw/pmi/us_ism_pmi_history.parquet"),
             _artifact(
                 "sf_fed_news_sentiment",
@@ -83,6 +84,7 @@ def test_resolve_runner_input_paths_uses_manifest_artifact_names(tmp_path: Path)
         runner_name="profile_engine_30d",
         cli_values={},
         cli_overrides=set(),
+        repo_root=tmp_path,
     )
 
     assert resolved.daily_dir == data_root / "daily_ohlcv_762"
@@ -91,6 +93,7 @@ def test_resolve_runner_input_paths_uses_manifest_artifact_names(tmp_path: Path)
     assert resolved.pit_parquet == (
         data_root / "pit_constituents" / "sp500_ticker_intervals.parquet"
     )
+    assert resolved.event_calendar == data_root / "event_calendar" / "us_events.yaml"
     assert resolved.pmi_path == data_root / "pmi" / "us_ism_pmi_history.parquet"
     assert resolved.news_sentiment_parquet == (
         data_root / "news_sentiment" / "sf_fed_news_sentiment.parquet"
@@ -111,6 +114,7 @@ def test_resolve_runner_input_paths_respects_cli_override(tmp_path: Path) -> Non
                 "sp500_pit_constituents",
                 "data/raw/pit_constituents/sp500_ticker_intervals.parquet",
             ),
+            _artifact("event_calendar_us", "data/raw/event_calendar/us_events.yaml"),
             _artifact(
                 "sf_fed_news_sentiment",
                 "data/raw/news_sentiment/sf_fed_news_sentiment.parquet",

@@ -63,6 +63,10 @@ def _write_profile_manifest(tmp_path: Path) -> Path:
                         "data/raw/pit_constituents/sp500_ticker_intervals.parquet",
                     ),
                     _manifest_artifact(
+                        "event_calendar_us",
+                        "data/raw/event_calendar/us_events.yaml",
+                    ),
+                    _manifest_artifact(
                         "ism_pmi_history",
                         "data/raw/pmi/us_ism_pmi_history.parquet",
                     ),
@@ -134,6 +138,7 @@ def test_profile_manifest_resolution_replaces_default_input_paths(
     assert args.news_sentiment_parquet == (
         data_root / "news_sentiment" / "sf_fed_news_sentiment.parquet"
     )
+    assert args.event_calendar == data_root / "event_calendar" / "us_events.yaml"
     assert "news_sentiment_parquet" in args.manifest_resolved_inputs
 
 
@@ -153,6 +158,8 @@ def test_profile_manifest_resolution_keeps_explicit_cli_override(
             str(manifest_path),
             "--data-root",
             str(data_root),
+            "--event-calendar",
+            str(tmp_path / "manual" / "events.yaml"),
             "--news-sentiment-parquet",
             str(override_path),
         ],
@@ -164,7 +171,9 @@ def test_profile_manifest_resolution_keeps_explicit_cli_override(
     )
 
     assert args.news_sentiment_parquet == override_path
+    assert args.event_calendar == tmp_path / "manual" / "events.yaml"
     assert "news_sentiment_parquet" in args.manifest_cli_overrides
+    assert "event_calendar" in args.manifest_cli_overrides
 
 
 def test_profile_parse_args_accepts_json_output(

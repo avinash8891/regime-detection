@@ -391,7 +391,7 @@ def _parse_args() -> argparse.Namespace:
     _apply_manifest_input_paths(
         args,
         runner_name="v2_calibration",
-        required_fields=frozenset({"daily_dir", "macro_parquet"}),
+        required_fields=frozenset({"daily_dir", "macro_parquet", "event_calendar"}),
     )
     return args
 

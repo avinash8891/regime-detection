@@ -53,6 +53,10 @@ def _write_audit_manifest(tmp_path: Path) -> Path:
                         "data/raw/pit_constituents/sp500_ticker_intervals.parquet",
                     ),
                     _artifact(
+                        "event_calendar_us",
+                        "data/raw/event_calendar/us_events.yaml",
+                    ),
+                    _artifact(
                         "ism_pmi_history",
                         "data/raw/pmi/us_ism_pmi_history.parquet",
                     ),
@@ -88,6 +92,7 @@ def test_layer2_audit_manifest_resolution_replaces_default_paths(
     )
 
     assert args.daily_dir == data_root / "daily_ohlcv_762"
+    assert args.event_calendar == data_root / "event_calendar" / "us_events.yaml"
     assert args.pmi_path == data_root / "pmi" / "us_ism_pmi_history.parquet"
 
 

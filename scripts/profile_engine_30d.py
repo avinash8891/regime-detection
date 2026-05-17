@@ -84,6 +84,7 @@ MANIFEST_INPUT_FLAGS = {
     "constituent_tree": "--constituent-tree",
     "macro_parquet": "--macro-parquet",
     "pit_parquet": "--pit-parquet",
+    "event_calendar": "--event-calendar",
     "pmi_path": "--pmi-path",
     "aaii_sentiment_parquet": "--aaii-sentiment-parquet",
     "news_sentiment_parquet": "--news-sentiment-parquet",

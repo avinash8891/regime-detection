@@ -95,9 +95,9 @@ make profile-30d MANIFEST=manifests/runs/profile_ready_daily_ohlcv_762_2016_2026
 
 When `--manifest` is supplied, profile, audit, and V2 gate runner data inputs
 are resolved from manifest artifact names after materialization. Per-file flags
-such as `--macro-parquet`, `--pmi-path`, or `--news-sentiment-parquet` are
-manual debug overrides; they are not needed for a fresh workspace using the
-approved manifest lockfile.
+such as `--macro-parquet`, `--pmi-path`, `--event-calendar`, or
+`--news-sentiment-parquet` are manual debug overrides; they are not needed for
+a fresh workspace using the approved manifest lockfile.
 
 That approved profile-ready manifest is the portable data contract for the 30d
 operator run. It includes the fixed OHLCV tree used by the runner defaults

@@ -17,6 +17,7 @@ class RunnerInputPaths:
     constituent_tree: Path
     macro_parquet: Path
     pit_parquet: Path | None
+    event_calendar: Path | None
     pmi_path: Path | None
     aaii_sentiment_parquet: Path | None
     news_sentiment_parquet: Path | None
@@ -30,6 +31,7 @@ class RunnerInputPaths:
 ARTIFACT_BY_FIELD: dict[str, str] = {
     "macro_parquet": "fred_macro_series",
     "pit_parquet": "sp500_pit_constituents",
+    "event_calendar": "event_calendar_us",
     "pmi_path": "ism_pmi_history",
     "aaii_sentiment_parquet": "aaii_sentiment",
     "news_sentiment_parquet": "sf_fed_news_sentiment",
@@ -39,7 +41,7 @@ ARTIFACT_BY_FIELD: dict[str, str] = {
 }
 
 REQUIRED_FIELDS: frozenset[str] = frozenset(
-    {"daily_dir", "constituent_tree", "macro_parquet", "pit_parquet"}
+    {"daily_dir", "constituent_tree", "macro_parquet", "pit_parquet", "event_calendar"}
 )
 
 
@@ -102,6 +104,7 @@ def resolve_runner_input_paths(
         constituent_tree=_require_resolved_path(resolved, "constituent_tree"),
         macro_parquet=_require_resolved_path(resolved, "macro_parquet"),
         pit_parquet=resolved["pit_parquet"],
+        event_calendar=resolved["event_calendar"],
         pmi_path=resolved["pmi_path"],
         aaii_sentiment_parquet=resolved["aaii_sentiment_parquet"],
         news_sentiment_parquet=resolved["news_sentiment_parquet"],
