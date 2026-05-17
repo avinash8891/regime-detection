@@ -1,10 +1,11 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Iterator
 from datetime import date
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, RootModel, model_validator
 
 
 DataQualityStatus = Literal["ok", "degraded", "insufficient_data", "insufficient_history", "stale_data"]
@@ -16,6 +17,61 @@ ClassificationStatus = Literal[
     "insufficient_history",
     "not_wired",
 ]
+
+
+class EvidencePayload(RootModel[dict[str, Any]]):
+    """Dict-compatible named payload for unversioned regime evidence."""
+
+    def get(self, key: str, default: Any = None) -> Any:
+        return self.root.get(key, default)
+
+    def __getitem__(self, key: str) -> Any:
+        return self.root[key]
+
+    def __contains__(self, key: object) -> bool:
+        return key in self.root
+
+    def __iter__(self) -> Iterator[str]:
+        return iter(self.root)
+
+    def __len__(self) -> int:
+        return len(self.root)
+
+    def items(self) -> Any:
+        return self.root.items()
+
+    def keys(self) -> Any:
+        return self.root.keys()
+
+    def values(self) -> Any:
+        return self.root.values()
+
+    def __eq__(self, other: object) -> bool:
+        if isinstance(other, EvidencePayload):
+            return self.root == other.root
+        if isinstance(other, dict):
+            return self.root == other
+        return NotImplemented
+
+
+class AxisEvidencePayload(EvidencePayload):
+    pass
+
+
+class EventCalendarEvidencePayload(EvidencePayload):
+    pass
+
+
+class MonetaryPressureEvidencePayload(EvidencePayload):
+    pass
+
+
+class VolumeLiquidityEvidencePayload(EvidencePayload):
+    pass
+
+
+class TransitionRiskEvidencePayload(EvidencePayload):
+    pass
 
 
 class DataQuality(BaseModel):
@@ -31,7 +87,7 @@ def derive_classification_status(
     *,
     active_label: str,
     data_quality: DataQuality,
-    evidence: dict[str, Any] | None = None,
+    evidence: EvidencePayload | None = None,
 ) -> tuple[ClassificationStatus, str | None]:
     """Disambiguate legacy ``unknown`` labels from data-quality failures.
 
@@ -64,10 +120,7 @@ class AxisOutput(BaseModel):
     raw_label: str
     stable_label: str
     active_label: str
-    # TODO(schema): Replace free-form evidence dicts axis-by-axis when each
-    # axis is next touched. A repo-wide evidence schema pass has a large blast
-    # radius and needs frozen replay coverage per axis.
-    evidence: dict[str, Any]
+    evidence: AxisEvidencePayload
     data_quality: DataQuality
     classification_status: ClassificationStatus | None = None
     classification_reason: str | None = None
@@ -103,7 +156,7 @@ class EventCalendarOutput(BaseModel):
     raw_label: str
     stable_label: str
     active_label: str
-    evidence: dict[str, Any]
+    evidence: EventCalendarEvidencePayload
 
 
 class LabelReasonOutput(BaseModel):
@@ -136,7 +189,7 @@ class MonetaryPressureOutput(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     label: str
-    evidence: dict[str, Any]
+    evidence: MonetaryPressureEvidencePayload
     data_quality: DataQuality
     classification_status: ClassificationStatus | None = None
     classification_reason: str | None = None
@@ -239,7 +292,7 @@ class VolumeLiquidityOutput(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     label: str
-    evidence: dict[str, Any]
+    evidence: VolumeLiquidityEvidencePayload
     data_quality: DataQuality
     classification_status: ClassificationStatus | None = None
     classification_reason: str | None = None
@@ -362,7 +415,7 @@ class TransitionRiskOutput(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     label: str
-    evidence: dict[str, Any]
+    evidence: TransitionRiskEvidencePayload
 
     # V2 §4.5 transition score augments (does not replace) V1 named warnings.
     score: float | None = Field(default=None, ge=0.0, le=1.0)

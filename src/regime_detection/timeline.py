@@ -5,11 +5,14 @@ from typing import NamedTuple
 
 import pandas as pd
 
-from regime_detection.axis_series import build_axis_series_bundle
+from regime_detection.axis_series import AxisSeriesBundle, build_axis_series_bundle
 from regime_detection.cohort_routing import evaluate_cohort_routing
 from regime_detection.config import RegimeConfig
 from regime_detection.feature_store import FeatureStore, build_feature_store
-from regime_detection.market_context import MarketContext, slice_context_to_recent_sessions
+from regime_detection.market_context import (
+    MarketContext,
+    slice_context_to_recent_sessions,
+)
 from regime_detection.models import (
     ChangePointOutput,
     ClusterOutput,
@@ -19,6 +22,7 @@ from regime_detection.models import (
     RegimeOutput,
     RegimeTimeline,
     StructuralCausalState,
+    TransitionRiskOutput,
 )
 from regime_detection.strategy_family_constraints import (
     resolve_strategy_family_constraints,
@@ -52,6 +56,15 @@ def _v2_classifier_not_yet_implemented_data_quality() -> DataQuality:
         completeness=None,
         reason="required_feature_is_nan",
     )
+
+
+def _plain_evidence_dict(evidence: object) -> dict[str, object]:
+    root = getattr(evidence, "root", None)
+    if isinstance(root, dict):
+        return root
+    if isinstance(evidence, dict):
+        return evidence
+    raise TypeError(f"Expected evidence payload dict, got {type(evidence).__name__}")
 
 
 def _resolve_network_fragility_by_date(
@@ -172,6 +185,164 @@ def _align_v2_evidence_for_selected_days(
     )
 
 
+def _build_timeline_output_for_day(
+    *,
+    day: date,
+    selected_day_index: int,
+    working_context: MarketContext,
+    axis_bundle: AxisSeriesBundle,
+    transition_risk: dict[date, TransitionRiskOutput],
+    network_fragility_by_date: dict[date, NetworkFragilityOutput],
+    aligned_v2_evidence: _AlignedV2Evidence,
+) -> RegimeOutput:
+    trend_direction_output = axis_bundle.trend_direction.outputs_by_date[day]
+    trend_character_output = axis_bundle.trend_character.outputs_by_date[day]
+    volatility_output = axis_bundle.volatility_state.outputs_by_date[day]
+    breadth_output = axis_bundle.breadth_state.outputs_by_date[day]
+    event_output = axis_bundle.event_calendar[day]
+    transition_output = transition_risk[day]
+    network_fragility_output = network_fragility_by_date[day]
+    volume_liquidity_output = (
+        axis_bundle.volume_liquidity_state.get(day)
+        if axis_bundle.volume_liquidity_state is not None
+        else None
+    )
+    credit_funding_output = (
+        axis_bundle.credit_funding.get(day)
+        if axis_bundle.credit_funding is not None
+        else None
+    )
+    credit_funding_proxy_output = (
+        axis_bundle.credit_funding_proxy.get(day)
+        if axis_bundle.credit_funding_proxy is not None
+        else None
+    )
+    credit_funding_effective_output = (
+        axis_bundle.credit_funding_effective.get(day)
+        if axis_bundle.credit_funding_effective is not None
+        else None
+    )
+    monetary_pressure_output = (
+        axis_bundle.monetary_pressure_state.get(day)
+        if axis_bundle.monetary_pressure_state is not None
+        else None
+    )
+    monetary_pressure = (
+        MonetaryPressureOutput(
+            label=monetary_pressure_output.active_label,
+            evidence=_plain_evidence_dict(monetary_pressure_output.evidence),
+            data_quality=monetary_pressure_output.data_quality,
+        )
+        if monetary_pressure_output is not None
+        else MonetaryPressureOutput(
+            label="unknown",
+            evidence={"reason": "v2_classifier_not_yet_implemented"},
+            data_quality=_v2_classifier_not_yet_implemented_data_quality(),
+        )
+    )
+    inflation_growth_output = (
+        axis_bundle.inflation_growth.get(day)
+        if axis_bundle.inflation_growth is not None
+        else None
+    )
+    change_point_output: ChangePointOutput | None = None
+    if (
+        aligned_v2_evidence.cp_score_aligned is not None
+        and aligned_v2_evidence.cp_days_since_aligned is not None
+        and aligned_v2_evidence.cp_method is not None
+    ):
+        score_val = aligned_v2_evidence.cp_score_aligned.iloc[selected_day_index]
+        if score_val is not None and not pd.isna(score_val):
+            days_val = aligned_v2_evidence.cp_days_since_aligned.iloc[
+                selected_day_index
+            ]
+            days_since_int: int | None
+            if days_val is None or pd.isna(days_val):
+                days_since_int = None
+            else:
+                days_since_int = int(days_val)
+            change_point_output = ChangePointOutput(
+                score=float(score_val),
+                days_since_last_break=days_since_int,
+                method=aligned_v2_evidence.cp_method,
+            )
+
+    cluster_output: ClusterOutput | None = None
+    if (
+        aligned_v2_evidence.cluster_id_aligned is not None
+        and aligned_v2_evidence.cluster_distance_aligned is not None
+        and aligned_v2_evidence.cluster_model_version is not None
+    ):
+        cid_val = aligned_v2_evidence.cluster_id_aligned.iloc[selected_day_index]
+        dist_val = aligned_v2_evidence.cluster_distance_aligned.iloc[selected_day_index]
+        if cid_val is not None and not pd.isna(cid_val) and not pd.isna(dist_val):
+            cluster_output = ClusterOutput(
+                cluster_id=int(cid_val),
+                distance_to_centroid=float(dist_val),
+                model_version=aligned_v2_evidence.cluster_model_version,
+            )
+    agent_routing = None
+    strategy_family_constraints = None
+    cohort_routing_config = working_context.config.cohort_routing
+    if cohort_routing_config is not None:
+        # v2 §2A monetary pressure axis (Ambiguity Log #46) — wire the
+        # active label through to cohort routing when the axis is lit.
+        monetary_label: str | None = None
+        if monetary_pressure_output is not None:
+            monetary_label = monetary_pressure_output.active_label
+        agent_routing = evaluate_cohort_routing(
+            trend_direction_active=trend_direction_output.active_label,
+            trend_character_active=trend_character_output.active_label,
+            volatility_state_active=volatility_output.active_label,
+            breadth_state_active=breadth_output.active_label,
+            network_fragility_active=network_fragility_output.active_label,
+            monetary_pressure_active=monetary_label,
+            config=cohort_routing_config,
+        )
+        sfc_config = working_context.config.strategy_family_constraints
+        if sfc_config is not None and agent_routing is not None:
+            strategy_family_constraints = resolve_strategy_family_constraints(
+                active_cohort=agent_routing.active_cohort,
+                config=sfc_config,
+            )
+    return RegimeOutput(
+        engine_version=engine_version(),
+        config_version=working_context.config.config_version,
+        as_of_date=day,
+        # V1 wire contract: output.market is the classified proxy
+        # instrument; RegimeConfig.market is the broader universe.
+        market="SPY",
+        trend_direction=trend_direction_output,
+        trend_character=trend_character_output,
+        volatility_state=volatility_output,
+        breadth_state=breadth_output,
+        structural_causal_state=StructuralCausalState(
+            event_calendar=event_output,
+            monetary_pressure=monetary_pressure,
+        ),
+        network_fragility=network_fragility_output,
+        transition_risk=transition_output,
+        strategy_response=build_strategy_response(
+            trend_direction_active=trend_direction_output.active_label,
+            trend_character_active=trend_character_output.active_label,
+            volatility_state_active=volatility_output.active_label,
+            breadth_state_active=breadth_output.active_label,
+            transition_risk_label=transition_output.label,
+            event_calendar_active=event_output.active_label,
+        ),
+        volume_liquidity_state=volume_liquidity_output,
+        credit_funding_state=credit_funding_output,
+        credit_funding_state_proxy=credit_funding_proxy_output,
+        credit_funding_effective_state=credit_funding_effective_output,
+        inflation_growth_state=inflation_growth_output,
+        monetary_pressure_state=monetary_pressure_output,
+        cluster=cluster_output,
+        change_point=change_point_output,
+        agent_routing=agent_routing,
+        strategy_family_constraints=strategy_family_constraints,
+    )
+
+
 def build_regime_timeline(
     *,
     context: MarketContext,
@@ -193,7 +364,10 @@ def build_regime_timeline(
         lookback_days=lookback_days,
         config=cfg,
     )
-    working_context = slice_context_to_recent_sessions(context=context, required_sessions=required_sessions)
+    working_context = slice_context_to_recent_sessions(
+        context=context,
+        required_sessions=required_sessions,
+    )
     network_fragility_config = cfg.network_fragility
     trend_direction_v2_config = cfg.trend_direction_v2
     volatility_state_v2_config = cfg.volatility_state_v2
@@ -217,7 +391,9 @@ def build_regime_timeline(
         central_bank_text_config=central_bank_text_config,
         news_sentiment_config=news_sentiment_config,
     )
-    axis_bundle = build_axis_series_bundle(context=working_context, feature_store=feature_store)
+    axis_bundle = build_axis_series_bundle(
+        context=working_context, feature_store=feature_store
+    )
     transition_risk = build_transition_risk_series(
         context=working_context,
         feature_store=feature_store,
@@ -230,183 +406,21 @@ def build_regime_timeline(
         feature_store=feature_store,
         selected_days=selected_days,
     )
-    trend_direction_outputs = axis_bundle.trend_direction.outputs_by_date
-    trend_character_outputs = axis_bundle.trend_character.outputs_by_date
-    volatility_outputs = axis_bundle.volatility_state.outputs_by_date
-    breadth_outputs = axis_bundle.breadth_state.outputs_by_date
-    event_outputs = axis_bundle.event_calendar
     network_fragility_by_date = _resolve_network_fragility_by_date(
         bundle_entry=axis_bundle.network_fragility,
         sessions=working_context.sessions,
     )
-    # v2 §1E volume/liquidity axis (Slice 2.7). Stays None when the v2
-    # config / volume seam is absent — preserves V1 byte-identity since
-    # RegimeOutput.volume_liquidity_state already defaults to None.
-    volume_liquidity_by_date = axis_bundle.volume_liquidity_state
-    # v2 §2C credit/funding axis (Slice 4). Stays None when the v2 config /
-    # cross_asset / macro seams are absent — preserves V1 byte-identity
-    # since RegimeOutput.credit_funding_state already defaults to None.
-    credit_funding_by_date = axis_bundle.credit_funding
-    # v2 §2C credit/funding PROXY axis (Ambiguity Log #71) — the TLT-vs-HYG/LQD
-    # differential run. Parallel to credit_funding; downstream consumers use
-    # the explicit effective resolver.
-    credit_funding_proxy_by_date = axis_bundle.credit_funding_proxy
-    credit_funding_effective_by_date = axis_bundle.credit_funding_effective
-    # v2 §2A monetary pressure axis (Ambiguity Log #46). Stays None when the
-    # v2 config / macro_series seam is absent — preserves V1 byte-identity
-    # since RegimeOutput.monetary_pressure_state defaults to None.
-    monetary_pressure_state_by_date = axis_bundle.monetary_pressure_state
-    # v2 §2B inflation/growth axis (Slice 5). Stays None when the v2 config /
-    # macro_series / cross_asset seams are absent — preserves V1 byte-identity
-    # since RegimeOutput.inflation_growth_state defaults to None.
-    inflation_growth_by_date = axis_bundle.inflation_growth
-    cohort_routing_config = working_context.config.cohort_routing
-
     outputs: list[RegimeOutput] = []
     for idx, day in enumerate(selected_days):
-        trend_direction_output = trend_direction_outputs[day]
-        trend_character_output = trend_character_outputs[day]
-        volatility_output = volatility_outputs[day]
-        breadth_output = breadth_outputs[day]
-        event_output = event_outputs[day]
-        transition_output = transition_risk[day]
-        network_fragility_output = network_fragility_by_date[day]
-        volume_liquidity_output = (
-            volume_liquidity_by_date.get(day)
-            if volume_liquidity_by_date is not None
-            else None
-        )
-        credit_funding_output = (
-            credit_funding_by_date.get(day)
-            if credit_funding_by_date is not None
-            else None
-        )
-        credit_funding_proxy_output = (
-            credit_funding_proxy_by_date.get(day)
-            if credit_funding_proxy_by_date is not None
-            else None
-        )
-        credit_funding_effective_output = (
-            credit_funding_effective_by_date.get(day)
-            if credit_funding_effective_by_date is not None
-            else None
-        )
-        monetary_pressure_output = (
-            monetary_pressure_state_by_date.get(day)
-            if monetary_pressure_state_by_date is not None
-            else None
-        )
-        monetary_pressure = (
-            MonetaryPressureOutput(
-                label=monetary_pressure_output.active_label,
-                evidence=monetary_pressure_output.evidence,
-                data_quality=monetary_pressure_output.data_quality,
-            )
-            if monetary_pressure_output is not None
-            else MonetaryPressureOutput(
-                label="unknown",
-                evidence={"reason": "v2_classifier_not_yet_implemented"},
-                data_quality=_v2_classifier_not_yet_implemented_data_quality(),
-            )
-        )
-        inflation_growth_output = (
-            inflation_growth_by_date.get(day)
-            if inflation_growth_by_date is not None
-            else None
-        )
-        change_point_output: ChangePointOutput | None = None
-        if (
-            aligned_v2_evidence.cp_score_aligned is not None
-            and aligned_v2_evidence.cp_days_since_aligned is not None
-            and aligned_v2_evidence.cp_method is not None
-        ):
-            score_val = aligned_v2_evidence.cp_score_aligned.iloc[idx]
-            if score_val is not None and not pd.isna(score_val):
-                days_val = aligned_v2_evidence.cp_days_since_aligned.iloc[idx]
-                days_since_int: int | None
-                if days_val is None or pd.isna(days_val):
-                    days_since_int = None
-                else:
-                    days_since_int = int(days_val)
-                change_point_output = ChangePointOutput(
-                    score=float(score_val),
-                    days_since_last_break=days_since_int,
-                    method=aligned_v2_evidence.cp_method,
-                )
-
-        cluster_output: ClusterOutput | None = None
-        if (
-            aligned_v2_evidence.cluster_id_aligned is not None
-            and aligned_v2_evidence.cluster_distance_aligned is not None
-            and aligned_v2_evidence.cluster_model_version is not None
-        ):
-            cid_val = aligned_v2_evidence.cluster_id_aligned.iloc[idx]
-            dist_val = aligned_v2_evidence.cluster_distance_aligned.iloc[idx]
-            if cid_val is not None and not pd.isna(cid_val) and not pd.isna(dist_val):
-                cluster_output = ClusterOutput(
-                    cluster_id=int(cid_val),
-                    distance_to_centroid=float(dist_val),
-                    model_version=aligned_v2_evidence.cluster_model_version,
-                )
-        agent_routing = None
-        strategy_family_constraints = None
-        if cohort_routing_config is not None:
-            # v2 §2A monetary pressure axis (Ambiguity Log #46) — wire the
-            # active label through to cohort routing when the axis is lit.
-            monetary_label: str | None = None
-            if monetary_pressure_output is not None:
-                monetary_label = monetary_pressure_output.active_label
-            agent_routing = evaluate_cohort_routing(
-                trend_direction_active=trend_direction_output.active_label,
-                trend_character_active=trend_character_output.active_label,
-                volatility_state_active=volatility_output.active_label,
-                breadth_state_active=breadth_output.active_label,
-                network_fragility_active=network_fragility_output.active_label,
-                monetary_pressure_active=monetary_label,
-                config=cohort_routing_config,
-            )
-            sfc_config = working_context.config.strategy_family_constraints
-            if sfc_config is not None and agent_routing is not None:
-                strategy_family_constraints = resolve_strategy_family_constraints(
-                    active_cohort=agent_routing.active_cohort,
-                    config=sfc_config,
-                )
         outputs.append(
-            RegimeOutput(
-                engine_version=engine_version(),
-                config_version=working_context.config.config_version,
-                as_of_date=day,
-                # V1 wire contract: output.market is the classified proxy
-                # instrument; RegimeConfig.market is the broader universe.
-                market="SPY",
-                trend_direction=trend_direction_output,
-                trend_character=trend_character_output,
-                volatility_state=volatility_output,
-                breadth_state=breadth_output,
-                structural_causal_state=StructuralCausalState(
-                    event_calendar=event_output,
-                    monetary_pressure=monetary_pressure,
-                ),
-                network_fragility=network_fragility_output,
-                transition_risk=transition_output,
-                strategy_response=build_strategy_response(
-                    trend_direction_active=trend_direction_output.active_label,
-                    trend_character_active=trend_character_output.active_label,
-                    volatility_state_active=volatility_output.active_label,
-                    breadth_state_active=breadth_output.active_label,
-                    transition_risk_label=transition_output.label,
-                    event_calendar_active=event_output.active_label,
-                ),
-                volume_liquidity_state=volume_liquidity_output,
-                credit_funding_state=credit_funding_output,
-                credit_funding_state_proxy=credit_funding_proxy_output,
-                credit_funding_effective_state=credit_funding_effective_output,
-                inflation_growth_state=inflation_growth_output,
-                monetary_pressure_state=monetary_pressure_output,
-                cluster=cluster_output,
-                change_point=change_point_output,
-                agent_routing=agent_routing,
-                strategy_family_constraints=strategy_family_constraints,
+            _build_timeline_output_for_day(
+                day=day,
+                selected_day_index=idx,
+                working_context=working_context,
+                axis_bundle=axis_bundle,
+                transition_risk=transition_risk,
+                network_fragility_by_date=network_fragility_by_date,
+                aligned_v2_evidence=aligned_v2_evidence,
             )
         )
 

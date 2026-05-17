@@ -11,14 +11,36 @@ from regime_detection.axis_series import build_axis_series_bundle
 from regime_detection.engine import RegimeEngine
 from regime_detection.feature_store import build_feature_store
 from regime_detection.config import load_default_regime_config
-from regime_detection.market_context import build_market_context
-from regime_detection.models import RegimeTimeline
+from regime_detection.market_context import (
+    build_market_context,
+    slice_context_to_recent_sessions,
+)
+from regime_detection.models import (
+    AxisEvidencePayload,
+    AxisOutput,
+    DataQuality,
+    EventCalendarEvidencePayload,
+    EventCalendarOutput,
+    MonetaryPressureEvidencePayload,
+    MonetaryPressureOutput,
+    RegimeTimeline,
+    TransitionRiskEvidencePayload,
+    TransitionRiskOutput,
+    VolumeLiquidityEvidencePayload,
+    VolumeLiquidityOutput,
+)
 from regime_detection.timeline import (
     ENGINE_MINIMUM_HISTORY,
+    _align_v2_evidence_for_selected_days,
+    _build_timeline_output_for_day,
+    _resolve_network_fragility_by_date,
     _resolve_timeline_required_sessions,
     build_regime_timeline,
 )
-from regime_detection.transition_risk_series import build_transition_risk_history
+from regime_detection.transition_risk_series import (
+    build_transition_risk_history,
+    build_transition_risk_series,
+)
 from regime_detection.versioning import engine_version
 
 
@@ -51,7 +73,9 @@ def shared_timeline_pipeline(market_df_for_asof):
     }
 
 
-def test_core3_v1_regime_output_keeps_legacy_placeholder_wire_shapes(market_df_for_asof) -> None:
+def test_core3_v1_regime_output_keeps_legacy_placeholder_wire_shapes(
+    market_df_for_asof,
+) -> None:
     """V2 extends V1 cumulatively, but the core3-v1.0.0 archive replay wire
     contract stays byte-identical for the legacy placeholder fields.
     """
@@ -92,13 +116,79 @@ def test_core3_v1_regime_output_keeps_legacy_placeholder_wire_shapes(market_df_f
         "volume_liquidity_state",
         "monetary_pressure_state",
     ):
-        assert v2_field not in dumped, f"V2 optional field {v2_field!r} should be omitted until its slice ships"
+        assert v2_field not in dumped, (
+            f"V2 optional field {v2_field!r} should be omitted until its slice ships"
+        )
     # TransitionRisk V2 optional fields stay omitted too (no score until slice 3).
     for v2_field in ("score", "score_interpretation", "score_components"):
-        assert v2_field not in dumped["transition_risk"], f"transition_risk.{v2_field} should be omitted until v2 slice 3"
+        assert v2_field not in dumped["transition_risk"], (
+            f"transition_risk.{v2_field} should be omitted until v2 slice 3"
+        )
 
 
-def test_classify_window_returns_one_output_per_nyse_trading_day(market_df_for_asof) -> None:
+def test_runtime_evidence_fields_use_named_payloads_and_accept_dict_input() -> None:
+    dq = DataQuality(status="ok")
+
+    axis = AxisOutput(
+        raw_label="bull",
+        stable_label="bull",
+        active_label="bull",
+        evidence={"rule": "trend_above_ma", "value": 1.2},
+        data_quality=dq,
+    )
+    event_calendar = EventCalendarOutput(
+        raw_label="clear",
+        stable_label="clear",
+        active_label="clear",
+        evidence={"upcoming_events": []},
+    )
+    monetary_pressure = MonetaryPressureOutput(
+        label="unknown",
+        evidence={"reason": "v2_classifier_not_yet_implemented"},
+        data_quality=DataQuality(status="insufficient_history"),
+    )
+    volume_liquidity = VolumeLiquidityOutput(
+        label="normal_volume",
+        evidence={"volume_zscore": 0.5},
+        data_quality=dq,
+    )
+    transition_risk = TransitionRiskOutput(
+        label="stable",
+        evidence={"warnings": []},
+    )
+
+    assert AxisOutput.model_fields["evidence"].annotation is AxisEvidencePayload
+    assert (
+        EventCalendarOutput.model_fields["evidence"].annotation
+        is EventCalendarEvidencePayload
+    )
+    assert (
+        MonetaryPressureOutput.model_fields["evidence"].annotation
+        is MonetaryPressureEvidencePayload
+    )
+    assert (
+        VolumeLiquidityOutput.model_fields["evidence"].annotation
+        is VolumeLiquidityEvidencePayload
+    )
+    assert (
+        TransitionRiskOutput.model_fields["evidence"].annotation
+        is TransitionRiskEvidencePayload
+    )
+
+    assert isinstance(axis.evidence, AxisEvidencePayload)
+    assert axis.evidence["rule"] == "trend_above_ma"
+    assert axis.model_dump()["evidence"] == {"rule": "trend_above_ma", "value": 1.2}
+    assert event_calendar.model_dump()["evidence"] == {"upcoming_events": []}
+    assert monetary_pressure.model_dump()["evidence"] == {
+        "reason": "v2_classifier_not_yet_implemented"
+    }
+    assert volume_liquidity.model_dump()["evidence"] == {"volume_zscore": 0.5}
+    assert transition_risk.model_dump()["evidence"] == {"warnings": []}
+
+
+def test_classify_window_returns_one_output_per_nyse_trading_day(
+    market_df_for_asof,
+) -> None:
     engine = RegimeEngine()
     end_date = date(2023, 12, 14)
     market_data = market_df_for_asof(end_date)
@@ -109,16 +199,22 @@ def test_classify_window_returns_one_output_per_nyse_trading_day(market_df_for_a
         lookback_days=5,
     )
 
-    expected_days = nyse_calendar().schedule(
-        start_date=date(2023, 12, 8),
-        end_date=end_date,
-    ).index.date
+    expected_days = (
+        nyse_calendar()
+        .schedule(
+            start_date=date(2023, 12, 8),
+            end_date=end_date,
+        )
+        .index.date
+    )
     assert [row.as_of_date for row in timeline.outputs] == list(expected_days)
     assert timeline.start_date == expected_days[0]
     assert timeline.end_date == end_date
 
 
-def test_classify_window_uses_lookback_days_not_fixed_calendar_span(market_df_for_asof) -> None:
+def test_classify_window_uses_lookback_days_not_fixed_calendar_span(
+    market_df_for_asof,
+) -> None:
     engine = RegimeEngine()
     end_date = date(2023, 12, 14)
     market_data = market_df_for_asof(end_date)
@@ -143,7 +239,9 @@ def test_market_context_builds_normalized_series_once(shared_timeline_pipeline) 
     assert context.rsp_close.name == "close"
 
 
-def test_feature_store_precomputes_aligned_axis_features(shared_timeline_pipeline) -> None:
+def test_feature_store_precomputes_aligned_axis_features(
+    shared_timeline_pipeline,
+) -> None:
     context = shared_timeline_pipeline["context"]
     feature_store = shared_timeline_pipeline["feature_store"]
 
@@ -154,26 +252,107 @@ def test_feature_store_precomputes_aligned_axis_features(shared_timeline_pipelin
     assert feature_store.breadth.spy_close.index.equals(context.spy_ohlcv.index)
 
 
-def test_axis_series_bundle_reuses_feature_store_for_all_axes(shared_timeline_pipeline) -> None:
+def test_axis_series_bundle_reuses_feature_store_for_all_axes(
+    shared_timeline_pipeline,
+) -> None:
     end_date = shared_timeline_pipeline["end_date"]
     bundle = shared_timeline_pipeline["bundle"]
     point_output = shared_timeline_pipeline["point_output"]
 
-    assert bundle.trend_direction.outputs_by_date[end_date].model_dump() == point_output.trend_direction.model_dump()
-    assert bundle.trend_character.outputs_by_date[end_date].model_dump() == point_output.trend_character.model_dump()
-    assert bundle.volatility_state.outputs_by_date[end_date].model_dump() == point_output.volatility_state.model_dump()
-    assert bundle.breadth_state.outputs_by_date[end_date].model_dump() == point_output.breadth_state.model_dump()
-    assert bundle.event_calendar[end_date].model_dump() == point_output.structural_causal_state.event_calendar.model_dump()
+    assert (
+        bundle.trend_direction.outputs_by_date[end_date].model_dump()
+        == point_output.trend_direction.model_dump()
+    )
+    assert (
+        bundle.trend_character.outputs_by_date[end_date].model_dump()
+        == point_output.trend_character.model_dump()
+    )
+    assert (
+        bundle.volatility_state.outputs_by_date[end_date].model_dump()
+        == point_output.volatility_state.model_dump()
+    )
+    assert (
+        bundle.breadth_state.outputs_by_date[end_date].model_dump()
+        == point_output.breadth_state.model_dump()
+    )
+    assert (
+        bundle.event_calendar[end_date].model_dump()
+        == point_output.structural_causal_state.event_calendar.model_dump()
+    )
 
 
-def test_classify_matches_last_output_of_shared_timeline_pipeline(shared_timeline_pipeline) -> None:
+def test_classify_matches_last_output_of_shared_timeline_pipeline(
+    shared_timeline_pipeline,
+) -> None:
     timeline = shared_timeline_pipeline["timeline"]
     point_output = shared_timeline_pipeline["point_output"]
 
     assert timeline.outputs[-1].model_dump() == point_output.model_dump()
 
 
-def test_build_regime_timeline_uses_context_config_when_config_arg_omitted(market_df_for_asof) -> None:
+def test_timeline_output_helper_matches_timeline_output(
+    shared_timeline_pipeline,
+) -> None:
+    context = shared_timeline_pipeline["context"]
+    timeline = shared_timeline_pipeline["timeline"]
+    lookback_days = ENGINE_MINIMUM_HISTORY
+    required_sessions = _resolve_timeline_required_sessions(
+        available_sessions=len(context.sessions),
+        lookback_days=lookback_days,
+        config=context.config,
+    )
+    working_context = slice_context_to_recent_sessions(
+        context=context,
+        required_sessions=required_sessions,
+    )
+    feature_store = build_feature_store(
+        working_context,
+        network_fragility_config=context.config.network_fragility,
+        trend_direction_v2_config=context.config.trend_direction_v2,
+        volatility_state_v2_config=context.config.volatility_state_v2,
+        breadth_state_v2_config=context.config.breadth_state_v2,
+        volume_liquidity_v2_config=context.config.volume_liquidity_v2,
+        monetary_pressure_v2_config=context.config.monetary_pressure_v2,
+        credit_funding_config=context.config.credit_funding,
+        inflation_growth_config=context.config.inflation_growth,
+        central_bank_text_config=context.config.central_bank_text,
+        news_sentiment_config=context.config.news_sentiment,
+    )
+    axis_bundle = build_axis_series_bundle(
+        context=working_context,
+        feature_store=feature_store,
+    )
+    transition_risk = build_transition_risk_series(
+        context=working_context,
+        feature_store=feature_store,
+        axis_bundle=axis_bundle,
+    )
+    selected_days = list(working_context.sessions[-lookback_days:])
+    aligned_v2_evidence = _align_v2_evidence_for_selected_days(
+        feature_store=feature_store,
+        selected_days=selected_days,
+    )
+    network_fragility_by_date = _resolve_network_fragility_by_date(
+        bundle_entry=axis_bundle.network_fragility,
+        sessions=working_context.sessions,
+    )
+
+    helper_output = _build_timeline_output_for_day(
+        day=selected_days[-1],
+        selected_day_index=len(selected_days) - 1,
+        working_context=working_context,
+        axis_bundle=axis_bundle,
+        transition_risk=transition_risk,
+        network_fragility_by_date=network_fragility_by_date,
+        aligned_v2_evidence=aligned_v2_evidence,
+    )
+
+    assert helper_output.model_dump() == timeline.outputs[-1].model_dump()
+
+
+def test_build_regime_timeline_uses_context_config_when_config_arg_omitted(
+    market_df_for_asof,
+) -> None:
     """Direct callers must not silently disable v2 seams by omitting config."""
     end_date = date(2023, 12, 14)
     engine = RegimeEngine()
@@ -244,7 +423,9 @@ def test_timeline_required_sessions_caps_at_available_history() -> None:
     )
 
 
-def test_classify_delegates_to_classify_window_with_single_day_lookback(mocker, market_df_for_asof) -> None:
+def test_classify_delegates_to_classify_window_with_single_day_lookback(
+    mocker, market_df_for_asof
+) -> None:
     engine = RegimeEngine()
     as_of = date(2023, 12, 14)
     expected_timeline = RegimeTimeline(
@@ -254,7 +435,11 @@ def test_classify_delegates_to_classify_window_with_single_day_lookback(mocker, 
         start_date=as_of,
         end_date=as_of,
         trading_calendar="NYSE",
-        outputs=[engine.classify_window(end_date=as_of, market_data=market_df_for_asof(as_of), lookback_days=1).outputs[0]],
+        outputs=[
+            engine.classify_window(
+                end_date=as_of, market_data=market_df_for_asof(as_of), lookback_days=1
+            ).outputs[0]
+        ],
     )
     spy = mocker.patch.object(engine, "classify_window", return_value=expected_timeline)
 
