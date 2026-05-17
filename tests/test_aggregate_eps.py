@@ -127,6 +127,35 @@ def test_run_aggregate_eps_fetch_writes_parquet_and_report(tmp_path: Path) -> No
     assert bool(current["public_files_discontinued"]) is True
 
 
+def test_aggregate_eps_report_helper_matches_fetch_report(tmp_path: Path) -> None:
+    report_path = run_aggregate_eps_fetch(
+        out_dir=tmp_path,
+        workbook_path=FIXTURES / "sp500_eps_est_fixture.xlsx",
+    )
+
+    from regime_data_fetch.aggregate_eps_reports import build_aggregate_eps_report
+
+    report = json.loads(report_path.read_text())
+    weekly_history = pd.read_parquet(
+        tmp_path / "aggregate_forward_eps" / WEEKLY_HISTORY_FILENAME
+    )
+    parsed = parse_sp500_eps_workbook(FIXTURES / "sp500_eps_est_fixture.xlsx")
+    expected = build_aggregate_eps_report(
+        as_of_utc=report["as_of_utc"],
+        workbook_path=FIXTURES / "sp500_eps_est_fixture.xlsx",
+        parsed=parsed,
+        weekly_history=weekly_history,
+        revision_available=bool(
+            compute_eps_revision_direction_4w(weekly_history).notna().any()
+        ),
+        parquet_path=tmp_path / "aggregate_forward_eps" / "sp500_eps_snapshots.parquet",
+        weekly_history_path=tmp_path / "aggregate_forward_eps" / WEEKLY_HISTORY_FILENAME,
+        acquisition_db_path=None,
+    )
+
+    assert report == expected
+
+
 def test_run_aggregate_eps_fetch_records_manual_workbook_in_sqlite(tmp_path: Path) -> None:
     acquisition_db = tmp_path / "acquisition.db"
 

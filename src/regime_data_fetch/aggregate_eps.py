@@ -3,7 +3,6 @@ from __future__ import annotations
 import datetime as dt
 import json
 import time
-from dataclasses import asdict
 from pathlib import Path
 import urllib.error
 import urllib.request
@@ -28,6 +27,7 @@ from regime_data_fetch.aggregate_eps_models import (
     EPSWaybackSnapshot,
     ParsedAggregateEPSWorkbook,
 )
+from regime_data_fetch.aggregate_eps_reports import build_aggregate_eps_report
 from regime_data_fetch.aggregate_eps_wayback import (
     append_wayback_status as _append_wayback_status,
     filter_wayback_snapshots as _filter_wayback_snapshots,
@@ -458,44 +458,16 @@ def run_aggregate_eps_fetch(
         weekly_history_path = eps_dir / WEEKLY_HISTORY_FILENAME
         revision_series = compute_eps_revision_direction_4w(weekly_history)
         revision_available = bool(revision_series.notna().any())
-
-        current_dict = asdict(parsed.current_snapshot)
-        current_dict["observation_date"] = parsed.current_snapshot.observation_date.isoformat()
-        report = {
-            "as_of_utc": dt.datetime.now(dt.timezone.utc).isoformat(),
-            "source": SOURCE_NAME,
-            "source_url": SOURCE_URL,
-            "source_path": str(workbook_path),
-            "workbook_as_of_date": parsed.workbook_as_of_date.isoformat(),
-            "public_files_discontinued": parsed.public_files_discontinued,
-            "counts": {
-                "historical_snapshots": len(parsed.historical_snapshots),
-                "current_snapshots": 1,
-                "weekly_history_rows": len(weekly_history),
-            },
-            "current_snapshot": current_dict,
-            "limitations": {
-                "aggregate_forward_eps_revision_direction_4w_available": revision_available,
-                "reason": (
-                    "Revision direction available — the weekly-snapshot accumulator "
-                    f"holds {len(weekly_history)} rows (> {EPS_REVISION_LOOKBACK_WEEKS} "
-                    "required for the 4-week lookback)."
-                    if revision_available
-                    else (
-                        "The single S&P workbook exposes quarterly history plus one "
-                        f"current snapshot. The weekly accumulator holds "
-                        f"{len(weekly_history)} row(s); "
-                        f"> {EPS_REVISION_LOOKBACK_WEEKS} weekly fetches are required "
-                        "before the 4-week revision direction is non-NaN."
-                    )
-                ),
-            },
-            "paths": {
-                "aggregate_eps_parquet": str(parquet_path),
-                "aggregate_eps_weekly_history_parquet": str(weekly_history_path),
-                "acquisition_db": str(acquisition_db_path) if acquisition_db_path else None,
-            },
-        }
+        report = build_aggregate_eps_report(
+            as_of_utc=dt.datetime.now(dt.timezone.utc).isoformat(),
+            workbook_path=workbook_path,
+            parsed=parsed,
+            weekly_history=weekly_history,
+            revision_available=revision_available,
+            parquet_path=parquet_path,
+            weekly_history_path=weekly_history_path,
+            acquisition_db_path=acquisition_db_path,
+        )
         report_path = out_dir / "aggregate_eps_fetch_report.json"
         report_path.write_text(json.dumps(report, indent=2))
 
@@ -815,4 +787,3 @@ def run_wayback_aggregate_eps_fetch(
         if store and fetch_run:
             store.finish_fetch_run(run_id=fetch_run.run_id, status="failed", notes=str(exc))
         raise
-
