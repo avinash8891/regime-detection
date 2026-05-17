@@ -17,6 +17,7 @@ import yaml
 from regime_data_fetch.acquisition_store import AcquisitionStore
 from regime_data_fetch.bls_schedule import BLSScheduleFetchError, fetch_bls_schedule_page_text, fetch_bls_year_releases
 from regime_data_fetch.earnings_season_calendar import is_in_earnings_season
+from regime_data_fetch import event_calendar_global_rates as _global_rates
 from regime_data_fetch.expiry_calendar import expand_trading_day_window, compute_monthly_options_expiry_anchor
 from regime_data_fetch.fomc_minutes import (
     fetch_fomc_historical_year_index,
@@ -32,61 +33,19 @@ US_EASTERN = dt.timezone(dt.timedelta(hours=-5))
 SOURCE_FOMC = "federalreserve.gov:fomccalendars"
 SOURCE_CPI = "bls.gov:schedule:consumer-price-index"
 SOURCE_NFP = "bls.gov:schedule:employment-situation"
-SOURCE_ECB = "ecb.europa.eu:governing-council-calendar"
-SOURCE_BOE = "bankofengland.co.uk:mpc-dates"
-SOURCE_BOJ = "boj.or.jp:monetary-policy-meeting-schedule"
+SOURCE_ECB = _global_rates.SOURCE_ECB
+SOURCE_BOE = _global_rates.SOURCE_BOE
+SOURCE_BOJ = _global_rates.SOURCE_BOJ
 SOURCE_FEC = "fec.gov:election-dates"
 SOURCE_US_BUDGET = "usa.gov:federal-budget-process"
 _FOMC_MINUTES_LINK_RE = re.compile(r"/monetarypolicy/fomcminutes(?P<meeting_end>\d{8})\.htm", flags=re.IGNORECASE)
 _NYSE = mcal.get_calendar("NYSE")
-_GLOBAL_RATE_URLS = {
-    "ecb": "https://www.ecb.europa.eu/events/calendar/mgcgc/html/index.en.html",
-    "boe": "https://www.bankofengland.co.uk/monetary-policy/upcoming-mpc-dates",
-    "boj": "https://www.boj.or.jp/en/mopo/mpmsche_minu/",
-}
+_GLOBAL_RATE_URLS = _global_rates.GLOBAL_RATE_URLS
 _BLS_OFFICIAL_CANCELED_RELEASE_COUNTS = {
     # BLS 2025 lapse page: October 2025 CPI and Employment Situation
     # news releases were canceled, so release-date year 2025 has 11 rows.
     ("CPI", 2025): 1,
     ("NFP", 2025): 1,
-}
-_MONTHS = {
-    "january": 1,
-    "jan": 1,
-    "jan.": 1,
-    "february": 2,
-    "feb": 2,
-    "feb.": 2,
-    "march": 3,
-    "mar": 3,
-    "mar.": 3,
-    "april": 4,
-    "apr": 4,
-    "apr.": 4,
-    "may": 5,
-    "june": 6,
-    "jun": 6,
-    "jun.": 6,
-    "july": 7,
-    "jul": 7,
-    "jul.": 7,
-    "august": 8,
-    "aug": 8,
-    "aug.": 8,
-    "september": 9,
-    "sept": 9,
-    "sept.": 9,
-    "sep": 9,
-    "sep.": 9,
-    "october": 10,
-    "oct": 10,
-    "oct.": 10,
-    "november": 11,
-    "nov": 11,
-    "nov.": 11,
-    "december": 12,
-    "dec": 12,
-    "dec.": 12,
 }
 EVENT_PRECEDENCE = (
     "geopolitical_event",
@@ -957,103 +916,32 @@ def _report_path(path: Path, *, repo_root: Path) -> str:
 
 
 def _parse_global_rate_decision_events(*, source_key: str, text: str) -> list[ScheduledEvent]:
-    if source_key == "ecb":
-        return _parse_ecb_decision_events(text)
-    if source_key == "boj":
-        return _parse_boj_decision_events(text)
-    normalized = re.sub(r"<[^>]+>", " ", text)
-    normalized = re.sub(r"\s+", " ", normalized)
-    if source_key == "boe":
-        return _parse_boe_decision_events(normalized)
-    raise EventCalendarFetchError(f"Unsupported global rate calendar source: {source_key}")
+    try:
+        decisions = _global_rates.parse_global_rate_decision_events(source_key=source_key, text=text)
+    except _global_rates.UnsupportedGlobalRateSource as exc:
+        raise EventCalendarFetchError(str(exc)) from None
+    return [_global_rate_event(decision.date, decision.event_type, decision.source) for decision in decisions]
 
 
 def _parse_ecb_decision_events(text: str) -> list[ScheduledEvent]:
-    events: list[ScheduledEvent] = []
-    row_pattern = re.compile(
-        r"<dt[^>]*>\s*(?P<date>\d{2}/\d{2}/\d{4})\s*</dt>\s*<dd[^>]*>(?P<description>.*?)</dd>",
-        flags=re.IGNORECASE | re.DOTALL,
-    )
-    for match in row_pattern.finditer(text):
-        description = re.sub(r"<[^>]+>", " ", match.group("description"))
-        if "non-monetary" in description.lower():
-            continue
-        if "monetary policy meeting" not in description.lower():
-            continue
-        if "day 2" not in description.lower() and "press conference" not in description.lower():
-            continue
-        day, month, year = (int(part) for part in match.group("date").split("/"))
-        event_date = dt.date(year, month, day)
-        events.append(_global_rate_event(event_date, "ECB_decision", SOURCE_ECB))
-    return _dedupe_events(events)
+    return [
+        _global_rate_event(decision.date, decision.event_type, decision.source)
+        for decision in _global_rates.parse_ecb_decision_events(text)
+    ]
 
 
 def _parse_boe_decision_events(text: str) -> list[ScheduledEvent]:
-    events: list[ScheduledEvent] = []
-    current_year: int | None = None
-    tokens = re.split(r"(?=(?:20\d{2})\s+(?:confirmed|provisional)\s+dates)|(?=(?:Monday|Tuesday|Wednesday|Thursday|Friday)\s+\d{1,2}\s+[A-Za-z]+)", text)
-    date_pattern = re.compile(
-        r"(?:(?:Monday|Tuesday|Wednesday|Thursday|Friday)\s+)?(?P<day>\d{1,2})\s+(?P<month>[A-Za-z]+).*?(?:MPC|Monetary Policy)",
-        flags=re.IGNORECASE,
-    )
-    for token in tokens:
-        year_match = re.search(r"\b(?P<year>20\d{2})\s+(?:confirmed|provisional)\s+dates\b", token, flags=re.IGNORECASE)
-        if year_match:
-            current_year = int(year_match.group("year"))
-        if current_year is None:
-            continue
-        date_match = date_pattern.search(token)
-        if not date_match:
-            continue
-        month = _MONTHS.get(date_match.group("month").lower())
-        if month is None:
-            continue
-        event_date = dt.date(current_year, month, int(date_match.group("day")))
-        events.append(_global_rate_event(event_date, "BOE_decision", SOURCE_BOE))
-    return _dedupe_events(events)
+    return [
+        _global_rate_event(decision.date, decision.event_type, decision.source)
+        for decision in _global_rates.parse_boe_decision_events(text)
+    ]
 
 
 def _parse_boj_decision_events(text: str) -> list[ScheduledEvent]:
-    events: list[ScheduledEvent] = []
-    section_pattern = re.compile(
-        r"<h2[^>]*>\s*(?P<year>20\d{2})\s*</h2>(?P<section>.*?)(?=<h2[^>]*>\s*20\d{2}\s*</h2>|$)",
-        flags=re.IGNORECASE | re.DOTALL,
-    )
-    row_pattern = re.compile(r"<tr[^>]*>(?P<row>.*?)</tr>", flags=re.IGNORECASE | re.DOTALL)
-    cell_pattern = re.compile(r"<td[^>]*>(?P<cell>.*?)</td>", flags=re.IGNORECASE | re.DOTALL)
-    table_date_pattern = re.compile(
-        r"(?P<month>Jan\.?|January|Feb\.?|February|Mar\.?|March|Apr\.?|April|May|June|July|Aug\.?|August|Sep\.?|Sept\.?|September|Oct\.?|October|Nov\.?|November|Dec\.?|December)\s+"
-        r"(?P<start>\d{1,2})(?:\s*\([^)]+\))?(?:\s*,\s*(?P<end>\d{1,2})(?:\s*\([^)]+\))?)?",
-        flags=re.IGNORECASE,
-    )
-    for section_match in section_pattern.finditer(text):
-        year = int(section_match.group("year"))
-        for row_match in row_pattern.finditer(section_match.group("section")):
-            cell_match = cell_pattern.search(row_match.group("row"))
-            if cell_match is None:
-                continue
-            cell_text = re.sub(r"<[^>]+>", " ", cell_match.group("cell"))
-            cell_text = re.sub(r"\s+", " ", cell_text)
-            date_match = table_date_pattern.search(cell_text)
-            if date_match is None:
-                continue
-            month = _MONTHS[date_match.group("month").lower()]
-            day = int(date_match.group("end") or date_match.group("start"))
-            events.append(_global_rate_event(dt.date(year, month, day), "BOJ_decision", SOURCE_BOJ))
-
-    normalized = re.sub(r"<[^>]+>", " ", text)
-    normalized = re.sub(r"\s+", " ", normalized)
-    pattern = re.compile(
-        r"(?P<month>Jan\.?|January|Feb\.?|February|Mar\.?|March|Apr\.?|April|May|June|July|Aug\.?|August|Sep\.?|Sept\.?|September|Oct\.?|October|Nov\.?|November|Dec\.?|December)\s+"
-        r"(?P<start>\d{1,2})(?:\s*(?:-|and)\s*(?P<end>\d{1,2}))?,\s*(?P<year>20\d{2})",
-        flags=re.IGNORECASE,
-    )
-    for match in pattern.finditer(normalized):
-        month = _MONTHS[match.group("month").lower()]
-        day = int(match.group("end") or match.group("start"))
-        event_date = dt.date(int(match.group("year")), month, day)
-        events.append(_global_rate_event(event_date, "BOJ_decision", SOURCE_BOJ))
-    return _dedupe_events(events)
+    return [
+        _global_rate_event(decision.date, decision.event_type, decision.source)
+        for decision in _global_rates.parse_boj_decision_events(text)
+    ]
 
 
 def _global_rate_event(event_date: dt.date, event_type: str, source: str) -> ScheduledEvent:
@@ -1068,7 +956,7 @@ def _global_rate_event(event_date: dt.date, event_type: str, source: str) -> Sch
 
 
 def _global_rate_source_name(source_key: str) -> str:
-    return {"ecb": SOURCE_ECB, "boe": SOURCE_BOE, "boj": SOURCE_BOJ}.get(source_key, source_key)
+    return _global_rates.global_rate_source_name(source_key)
 
 
 def _us_general_election_date(year: int) -> dt.date:
@@ -1080,10 +968,6 @@ def _us_general_election_date(year: int) -> dt.date:
 
 def _midnight_et(value: dt.date) -> dt.datetime:
     return dt.datetime(value.year, value.month, value.day, 0, 0, tzinfo=US_EASTERN)
-
-
-def _dedupe_events(events: list[ScheduledEvent]) -> list[ScheduledEvent]:
-    return list({(event.date, event.type, event.source): event for event in events}.values())
 
 
 def _render_events_yaml(events: list[ScheduledEvent]) -> str:
