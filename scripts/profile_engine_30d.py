@@ -111,7 +111,21 @@ class ProfileInputBundle:
     constituent_ohlcv: dict[str, pd.DataFrame]
     constituent_tickers: list[str]
     missing_constituent_paths: list[Path]
-    input_kwargs: dict[str, Any]
+
+
+PROFILE_INPUT_SEAM_NAMES = [
+    "sector_etf_closes",
+    "cross_asset_closes",
+    "macro_series",
+    "event_calendar",
+    "aaii_sentiment",
+    "news_sentiment",
+    "implied_vol_30d",
+    "central_bank_text_releases",
+    "cpi_first_release",
+    "pit_constituent_intervals",
+    "constituent_ohlcv",
+]
 
 
 class RunTimeout(RuntimeError):
@@ -316,6 +330,20 @@ def _input_status_report(name: str, value: Any) -> dict[str, Any]:
         "status": "present",
         "kind": type(value).__name__,
     }
+
+
+def _profile_input_seam_values(inputs: ProfileInputBundle) -> dict[str, Any]:
+    return {name: getattr(inputs, name) for name in PROFILE_INPUT_SEAM_NAMES}
+
+
+def _input_is_present(value: Any) -> bool:
+    if value is None:
+        return False
+    if isinstance(value, dict):
+        return bool(value)
+    if isinstance(value, pd.DataFrame | pd.Series):
+        return not value.empty
+    return True
 
 
 def _timed_wrapper(
@@ -886,7 +914,7 @@ def _trailing_v2_status_report(out: RegimeOutput) -> list[dict[str, Any]]:
 def _verify_invariants(
     timeline: RegimeTimeline,
     feature_store: FeatureStore,
-    input_kwargs: dict[str, Any],
+    inputs: ProfileInputBundle,
 ) -> list[str]:
     issues: list[str] = []
     for out in timeline.outputs:
@@ -931,9 +959,12 @@ def _verify_invariants(
         ("gmm_clustering", feature_store.clustering, []),
         ("change_point", feature_store.change_point, []),
     ]
+    input_values = _profile_input_seam_values(inputs)
     for seam_name, seam_value, deps in seam_expectations:
         if seam_value is None:
-            missing = [dep for dep in deps if not input_kwargs.get(dep)]
+            missing = [
+                dep for dep in deps if not _input_is_present(input_values.get(dep))
+            ]
             if missing:
                 issues.append(
                     f"{seam_name} is None; missing inputs: {', '.join(missing)}"
@@ -981,19 +1012,7 @@ def _build_json_report(
         }
     )
 
-    input_names = [
-        "sector_etf_closes",
-        "cross_asset_closes",
-        "macro_series",
-        "event_calendar",
-        "aaii_sentiment",
-        "news_sentiment",
-        "implied_vol_30d",
-        "central_bank_text_releases",
-        "cpi_first_release",
-        "pit_constituent_intervals",
-        "constituent_ohlcv",
-    ]
+    input_values = _profile_input_seam_values(inputs)
 
     return {
         "sources": {
@@ -1041,8 +1060,8 @@ def _build_json_report(
         },
         "inputs": {
             "seams": [
-                _input_status_report(name, inputs.input_kwargs[name])
-                for name in input_names
+                _input_status_report(name, input_values[name])
+                for name in PROFILE_INPUT_SEAM_NAMES
             ],
             "pit_overlap_tickers_requested": len(inputs.constituent_tickers),
             "constituent_tickers_loaded": len(inputs.constituent_ohlcv),
@@ -1169,19 +1188,6 @@ def _load_profile_inputs(
         )
     )
 
-    input_kwargs = {
-        "sector_etf_closes": sector_etf_closes,
-        "cross_asset_closes": cross_asset_closes,
-        "macro_series": macro_series,
-        "event_calendar": event_calendar,
-        "aaii_sentiment": aaii_sentiment,
-        "news_sentiment": news_sentiment,
-        "implied_vol_30d": implied_vol_30d,
-        "central_bank_text_releases": central_bank_text_releases,
-        "cpi_first_release": cpi_first_release,
-        "pit_constituent_intervals": pit_constituent_intervals,
-        "constituent_ohlcv": constituent_ohlcv,
-    }
     return ProfileInputBundle(
         market_data=market_data,
         end_date=end_date,
@@ -1201,7 +1207,6 @@ def _load_profile_inputs(
         constituent_ohlcv=constituent_ohlcv,
         constituent_tickers=constituent_tickers,
         missing_constituent_paths=missing_constituent_paths,
-        input_kwargs=input_kwargs,
     )
 
 
@@ -1438,9 +1443,7 @@ def main() -> int:
         timer.totals.get("build_feature_store_total", 0.0),
     )
 
-    verification_issues = _verify_invariants(
-        timeline, feature_store, inputs.input_kwargs
-    )
+    verification_issues = _verify_invariants(timeline, feature_store, inputs)
     if args.json_output is not None:
         _write_json_report(
             args.json_output,
@@ -1491,20 +1494,9 @@ def main() -> int:
     print()
 
     print("Input seam status")
-    for name in [
-        "sector_etf_closes",
-        "cross_asset_closes",
-        "macro_series",
-        "event_calendar",
-        "aaii_sentiment",
-        "news_sentiment",
-        "implied_vol_30d",
-        "central_bank_text_releases",
-        "cpi_first_release",
-        "pit_constituent_intervals",
-        "constituent_ohlcv",
-    ]:
-        print(_input_status(name, inputs.input_kwargs[name]))
+    input_values = _profile_input_seam_values(inputs)
+    for name in PROFILE_INPUT_SEAM_NAMES:
+        print(_input_status(name, input_values[name]))
     print(f"pit_overlap_tickers_requested={len(inputs.constituent_tickers)}")
     print(f"constituent_tickers_loaded={len(inputs.constituent_ohlcv)}")
     print(f"missing_constituent_files={len(inputs.missing_constituent_paths)}")

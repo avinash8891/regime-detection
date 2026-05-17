@@ -297,19 +297,6 @@ def test_profile_json_report_emits_machine_readable_sections(tmp_path: Path) -> 
         constituent_ohlcv={"AAPL": pd.DataFrame({"close": [1.0]})},
         constituent_tickers=["AAPL"],
         missing_constituent_paths=[tmp_path / "constituents" / "MSFT.parquet"],
-        input_kwargs={
-            "sector_etf_closes": {"XLK": pd.Series([1.0])},
-            "cross_asset_closes": {},
-            "macro_series": {},
-            "event_calendar": None,
-            "aaii_sentiment": None,
-            "news_sentiment": pd.Series([0.1], name="news_sentiment"),
-            "implied_vol_30d": None,
-            "central_bank_text_releases": pd.DataFrame({"release_date": [1]}),
-            "cpi_first_release": None,
-            "pit_constituent_intervals": pd.DataFrame({"ticker": ["AAPL"]}),
-            "constituent_ohlcv": {"AAPL": pd.DataFrame({"close": [1.0]})},
-        },
     )
     output = SimpleNamespace(
         as_of_date=pd.Timestamp("2026-05-15").date(),
@@ -366,6 +353,81 @@ def test_profile_json_report_emits_machine_readable_sections(tmp_path: Path) -> 
         "field": "transition_risk.score_components",
         "status": "present",
     }
+
+
+def test_profile_json_report_uses_loaded_bundle_values_for_input_status(
+    tmp_path: Path,
+) -> None:
+    timer = profile_engine_30d.StageTimer()
+    args = SimpleNamespace(
+        config_path=tmp_path / "config.yaml",
+        daily_dir=tmp_path / "daily_ohlcv",
+        constituent_tree=tmp_path / "constituents",
+        macro_parquet=tmp_path / "macro.parquet",
+        event_calendar=tmp_path / "events.yaml",
+        aaii_sentiment_parquet=tmp_path / "aaii.parquet",
+        news_sentiment_parquet=tmp_path / "news.parquet",
+        fomc_minutes_parquet=tmp_path / "fomc.parquet",
+        powell_speeches_parquet=tmp_path / "powell.parquet",
+        cpi_vintages_parquet=tmp_path / "cpi.parquet",
+        pit_parquet=tmp_path / "pit.parquet",
+        lookback_days=1,
+    )
+    inputs = profile_engine_30d.ProfileInputBundle(
+        market_data=pd.DataFrame({"date": [pd.Timestamp("2026-05-15")]}),
+        end_date=pd.Timestamp("2026-05-15").date(),
+        required_sessions=252,
+        working_start_date=pd.Timestamp("2025-05-16").date(),
+        selected_dates=[pd.Timestamp("2026-05-15").date()],
+        sector_etf_closes={"XLK": pd.Series([1.0])},
+        cross_asset_closes={},
+        macro_series={},
+        event_calendar=None,
+        aaii_sentiment=None,
+        news_sentiment=None,
+        implied_vol_30d=None,
+        central_bank_text_releases=pd.DataFrame({"release_date": [1]}),
+        cpi_first_release=None,
+        pit_constituent_intervals=pd.DataFrame({"ticker": ["AAPL"]}),
+        constituent_ohlcv={"AAPL": pd.DataFrame({"close": [1.0]})},
+        constituent_tickers=["AAPL"],
+        missing_constituent_paths=[],
+    )
+    output = SimpleNamespace(
+        as_of_date=pd.Timestamp("2026-05-15").date(),
+        trend_direction=SimpleNamespace(
+            active_label="uptrend", classification_status="classified"
+        ),
+        volatility_state=SimpleNamespace(
+            active_label="low_vol", classification_status="classified"
+        ),
+        transition_risk=SimpleNamespace(label="low", score=None, score_components=None),
+        network_fragility=None,
+        volume_liquidity_state=None,
+        credit_funding_state=None,
+        credit_funding_state_proxy=None,
+        credit_funding_effective_state=None,
+        inflation_growth_state=None,
+        monetary_pressure_state=None,
+        cluster=None,
+        change_point=None,
+    )
+
+    report = profile_engine_30d._build_json_report(
+        args=args,
+        inputs=inputs,
+        timeline=SimpleNamespace(outputs=[output]),
+        timer=timer,
+        total_wall_clock=1.0,
+        per_day_emission_total=0.0,
+        per_day_avg_ms=0.0,
+        verification_issues=[],
+    )
+
+    seams = {row["name"]: row for row in report["inputs"]["seams"]}
+    assert seams["sector_etf_closes"]["count"] == 1
+    assert seams["central_bank_text_releases"]["kind"] == "dataframe"
+    assert seams["constituent_ohlcv"]["count"] == 1
 
 
 def test_profile_engine_loads_aaii_sentiment_when_present(tmp_path: Path) -> None:
