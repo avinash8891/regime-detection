@@ -4,9 +4,10 @@ from datetime import date
 
 import pandas as pd
 import pytest
+from pydantic import ValidationError
 
 from regime_detection.config import load_default_regime_config
-from regime_detection.models import EventCalendarOutput
+from regime_detection.models import EventCalendarOutput, TransitionRiskOutput
 from regime_detection.transition_risk import (
     build_transition_risk_output_from_flags,
     classify_transition_risk,
@@ -199,6 +200,47 @@ def test_classify_transition_risk_crisis_override_suppresses_cooldown_warning() 
 
     assert output.label == "crisis_override"
     assert output.evidence["warnings_active"] == ["crisis_override"]
+
+
+def test_transition_risk_evidence_preserves_legacy_dict_access_and_dump_shape() -> None:
+    output = TransitionRiskOutput(
+        label="stable",
+        evidence={
+            "warnings_active": [],
+            "stable_changed_today": False,
+            "days_since_axis_switch": None,
+        },
+    )
+
+    expected = {
+        "warnings_active": [],
+        "stable_changed_today": False,
+        "days_since_axis_switch": None,
+    }
+    assert output.evidence["warnings_active"] == []
+    assert output.evidence.get("stable_changed_today") is False
+    assert output.evidence.get("missing", "fallback") == "fallback"
+    assert output.evidence == expected
+    assert output.evidence.model_dump() == expected
+    assert output.evidence.model_dump_json() == (
+        '{"warnings_active":[],"stable_changed_today":false,'
+        '"days_since_axis_switch":null}'
+    )
+    assert output.model_dump()["evidence"] == expected
+
+
+@pytest.mark.parametrize("bad_key", ["warning_active", "reason"])
+def test_transition_risk_evidence_rejects_unknown_keys(bad_key: str) -> None:
+    with pytest.raises(ValidationError, match=bad_key):
+        TransitionRiskOutput(
+            label="stable",
+            evidence={
+                "warnings_active": [],
+                "stable_changed_today": False,
+                "days_since_axis_switch": None,
+                bad_key: "unexpected",
+            },
+        )
 
 
 def test_build_transition_score_inputs_returns_typed_optional_hmm_and_change_point_values() -> None:

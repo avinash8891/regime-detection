@@ -70,8 +70,45 @@ class VolumeLiquidityEvidencePayload(EvidencePayload):
     pass
 
 
-class TransitionRiskEvidencePayload(EvidencePayload):
-    pass
+class TransitionRiskEvidencePayload(BaseModel):
+    """Dict-compatible typed evidence payload for transition-risk warnings."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    warnings_active: list[str]
+    stable_changed_today: bool
+    days_since_axis_switch: int | None
+
+    def get(self, key: str, default: Any = None) -> Any:
+        return self.model_dump().get(key, default)
+
+    def __getitem__(self, key: str) -> Any:
+        return self.model_dump()[key]
+
+    def __contains__(self, key: object) -> bool:
+        return key in type(self).model_fields
+
+    def __iter__(self) -> Iterator[str]:
+        return iter(type(self).model_fields)
+
+    def __len__(self) -> int:
+        return len(type(self).model_fields)
+
+    def items(self) -> Any:
+        return self.model_dump().items()
+
+    def keys(self) -> Any:
+        return self.model_dump().keys()
+
+    def values(self) -> Any:
+        return self.model_dump().values()
+
+    def __eq__(self, other: object) -> bool:
+        if isinstance(other, TransitionRiskEvidencePayload):
+            return self.model_dump() == other.model_dump()
+        if isinstance(other, dict):
+            return self.model_dump() == other
+        return NotImplemented
 
 
 class DataQuality(BaseModel):
