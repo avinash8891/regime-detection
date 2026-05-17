@@ -96,10 +96,14 @@ def test_feature_store_builder_registry_runs_builders_in_declared_order(
 
 
 def test_default_feature_store_builder_registry_orders_trend_news_before_trend_v2() -> None:
-    from regime_detection.feature_store import _FEATURE_STORE_BUILDERS
+    from regime_detection.feature_store import _FEATURE_STORE_BUILDERS, FeatureStore
 
     builder_names = tuple(builder.name for builder in _FEATURE_STORE_BUILDERS)
+    feature_fields = tuple(
+        name for name in FeatureStore.model_fields if name != "spy_index"
+    )
 
+    assert set(feature_fields).issubset(builder_names)
     assert builder_names.index("trend_direction") < builder_names.index(
         "news_sentiment_score"
     )
