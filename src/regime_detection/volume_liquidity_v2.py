@@ -1,11 +1,11 @@
-"""v2 §1E Layer 1 V2 Volume / Liquidity features (Slice 2.4).
+"""v2 §1E Layer 1 V2 Volume / Liquidity features (implementation phase).
 
 Scope-restricted feature module: ships only the volume z-score feature. The
 ``gap_frequency_20d`` and ``intraday_range_percentile_252d`` features
 that §1E references already live in
-``regime_detection.volatility_state_v2`` (Slice 2.2) and are consumed
+``regime_detection.volatility_state_v2`` (implementation phase) and are consumed
 from that seam by the §1E axis classifier — they are NOT
-recomputed here. See Implementation Ambiguity Log entry for the
+recomputed here. See documented implementation decision for the
 feature-store layout decision.
 
 The §1E labels (``normal_volume``, ``panic_volume``,
@@ -25,7 +25,7 @@ Implementation choices that resolve ambiguities:
   (``Series.rolling(N).std()``) and the standard convention for
   z-scores on financial time series. Pinned via
   ``VolumeLiquidityV2Config.volume_zscore_ddof`` so future calibration
-  (§9.1) can flip without code changes. See Ambiguity Log entry.
+  (§9.1) can flip without code changes. See documented implementation decision.
 - **Constant-volume cold-start**: ``rolling_std == 0`` ⇒ ``0 / 0 = NaN``
   (masked, not infinity). Constant series have no z-score by
   definition; surfacing NaN matches the V1 cold-start contract
@@ -45,15 +45,15 @@ from regime_detection.config import VolumeLiquidityV2Config
 
 @dataclass(frozen=True)
 class VolumeLiquidityV2Features:
-    """v2 §1E — per-session continuous volume/liquidity features (slice 2.4).
+    """v2 §1E — per-session continuous volume/liquidity features (implementation phase).
 
     NOTE: §1E also names ``gap_frequency_20d`` and
     ``intraday_range_percentile_252d`` in its feature list (lines
     257–258), but those are already computed in
     ``regime_detection.volatility_state_v2.VolatilityV2Features``
-    (slice 2.2). The §1E axis classifier reads them from the
+    (implementation phase). The §1E axis classifier reads them from the
     ``FeatureStore.volatility_state_v2`` seam rather than recomputing
-    them here. See Implementation Ambiguity Log.
+    them here. See documented implementation notes.
     """
 
     volume_zscore_20d: pd.Series

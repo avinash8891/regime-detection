@@ -232,7 +232,7 @@ def load_aggregate_forward_eps_revision_series(
     source: str | Path | pd.DataFrame,
 ) -> pd.Series:
     """Load the 4-week aggregate forward-EPS revision-direction series
-    (v2 §2B, Ambiguity Log #48).
+    (v2 §2B, documented implementation decision).
 
     Source schema: the weekly-snapshot accumulator
     (`sp500_eps_weekly_history.parquet`) with columns

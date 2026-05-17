@@ -32,6 +32,14 @@ from regime_data_fetch.event_sources.deterministic_budget import DeterministicBu
 FOMC_FIXTURES = Path("tests/fixtures/raw/fomc")
 
 
+def _empty_hf_central_bank_parquet_bytes(tmp_path: Path) -> bytes:
+    parquet_path = tmp_path / "empty_hf_central_bank.parquet"
+    pd.DataFrame(
+        columns=["central_bank", "doc_type", "title", "url", "meeting_date"]
+    ).to_parquet(parquet_path, index=False)
+    return parquet_path.read_bytes()
+
+
 def test_event_calendar_reporting_builds_candidate_records_and_group_reports(tmp_path: Path) -> None:
     ecb_candidate = EventCandidate(
         date=dt.date(2026, 4, 30),
@@ -900,7 +908,7 @@ def test_run_us_event_calendar_fetch_wires_group_a_candidate_artifacts(tmp_path:
         include_v2_curated_candidates=True,
         group_a_text_fetcher=group_a_text_fetcher,
         group_a_boe_news_fetcher=boe_news_fetcher,
-        group_a_hf_parquet_fetcher=lambda: b"",
+        group_a_hf_parquet_fetcher=lambda: _empty_hf_central_bank_parquet_bytes(tmp_path),
         as_of_date=dt.date(2026, 5, 14),
     )
 

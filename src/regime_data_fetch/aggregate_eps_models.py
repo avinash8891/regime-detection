@@ -3,6 +3,7 @@ from __future__ import annotations
 import datetime as dt
 from collections.abc import Mapping
 from dataclasses import dataclass
+from types import MappingProxyType
 
 
 class AggregateEPSFetchError(RuntimeError):
@@ -53,31 +54,35 @@ class AggregateEPSSnapshot:
         object.__setattr__(
             self,
             "estimates_by_label",
-            dict(
-                estimates_by_label
-                or {
-                    "2025E": estimate_2025e,
-                    "Q4 2025E": estimate_q4_2025e,
-                    "2026E": estimate_2026e,
-                }
+            MappingProxyType(
+                dict(
+                    estimates_by_label
+                    or {
+                        "2025E": estimate_2025e,
+                        "Q4 2025E": estimate_q4_2025e,
+                        "2026E": estimate_2026e,
+                    }
+                )
             ),
         )
         object.__setattr__(self, "price", price)
         object.__setattr__(
             self,
             "pe_by_label",
-            dict(pe_by_label or {"2025E": pe_2025e, "2026E": pe_2026e}),
+            MappingProxyType(dict(pe_by_label or {"2025E": pe_2025e, "2026E": pe_2026e})),
         )
         object.__setattr__(
             self,
             "change_vs_prior_observation_by_label",
-            dict(
-                change_vs_prior_observation_by_label
-                or {
-                    "2025E": change_vs_prior_observation_2025e,
-                    "Q4 2025E": change_vs_prior_observation_q4_2025e,
-                    "2026E": change_vs_prior_observation_2026e,
-                }
+            MappingProxyType(
+                dict(
+                    change_vs_prior_observation_by_label
+                    or {
+                        "2025E": change_vs_prior_observation_2025e,
+                        "Q4 2025E": change_vs_prior_observation_q4_2025e,
+                        "2026E": change_vs_prior_observation_2026e,
+                    }
+                )
             ),
         )
         object.__setattr__(
@@ -88,12 +93,14 @@ class AggregateEPSSnapshot:
         object.__setattr__(
             self,
             "change_vs_prior_observation_pe_by_label",
-            dict(
-                change_vs_prior_observation_pe_by_label
-                or {
-                    "2025E": change_vs_prior_observation_pe_2025e,
-                    "2026E": change_vs_prior_observation_pe_2026e,
-                }
+            MappingProxyType(
+                dict(
+                    change_vs_prior_observation_pe_by_label
+                    or {
+                        "2025E": change_vs_prior_observation_pe_2025e,
+                        "2026E": change_vs_prior_observation_pe_2026e,
+                    }
+                )
             ),
         )
 

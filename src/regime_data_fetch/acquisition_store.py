@@ -182,7 +182,7 @@ class AcquisitionStore:
             else None,
         )
 
-    # TODO(simplify, owner=regime-maintainers, ticket=TD-ACQ-ARTIFACT-STREAMING): record_file_artifact + record_output read the full file
+    # TODO(simplify, owner=regime-maintainers): record_file_artifact + record_output read the full file
     # into RAM (`path.read_bytes()`) just to sha256 it and feed _store_raw_artifact.
     # For the 762-parquet daily_ohlcv_762 import (store_bytes=False), each
     # parquet can be 10s of MB — peak RSS scales with file size for no reason.

@@ -14,9 +14,6 @@ from regime_detection.feature_store import FeatureStore
 from regime_detection.hysteresis import (
     apply_asymmetric_hysteresis,
 )
-from regime_detection.axis_builders.common import (
-    new_axis_series_result as _new_axis_series_result,
-)
 from regime_detection.market_context import MarketContext
 from regime_detection.models import (
     BreadthStateOutput,
@@ -47,7 +44,7 @@ def build_breadth_axis_series(
     features = feature_store.breadth
     raw_labels, raw_evidence = build_breadth_raw_outputs(features)
 
-    # V2 §1D extension (Ambiguity Log #21-#26, #68): when the PIT seam is
+    # V2 §1D extension (documented implementation decision): when the PIT seam is
     # lit AND ALL four required PIT features are non-None, evaluate the
     # narrowing_breadth and broadening_breadth predicates per session and
     # apply the spec §1D line 284 precedence walk. When the PIT seam is
@@ -140,7 +137,9 @@ def build_breadth_axis_series(
         outputs_by_date[day] = output
         stable_by_date[day] = output.stable_label
         active_by_date[day] = output.active_label
-    return _new_axis_series_result(
+    from regime_detection.axis_series import AxisSeriesResult
+
+    return AxisSeriesResult(
         outputs_by_date=outputs_by_date,
         stable_labels_by_date=stable_by_date,
         active_labels_by_date=active_by_date,

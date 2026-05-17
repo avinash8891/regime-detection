@@ -26,16 +26,16 @@ class MarketContext(BaseModel):
     macro_series: dict[str, pd.Series] | None = None  # v2 §2A/§2B/§2C FRED series
     pit_constituent_intervals: pd.DataFrame | None = None  # v2 §1D PIT breadth seam
     constituent_ohlcv: Annotated[dict[str, pd.DataFrame] | None, SkipValidation] = None  # v2 §1D PIT breadth seam
-    aaii_sentiment: pd.DataFrame | None = None  # v2 §1A euphoria sentiment seam (Log #32)
-    implied_vol_30d: pd.Series | None = None  # v2 §1C vol_crush seam — FRED VIXCLS/100 (Log #19+#20)
+    aaii_sentiment: pd.DataFrame | None = None  # v2 §1A euphoria sentiment seam (documented implementation decision)
+    implied_vol_30d: pd.Series | None = None  # v2 §1C vol_crush seam — FRED VIXCLS/100 (documented implementation decision)
     # v2 §2A central-bank-text evidence seam — deterministic-lexicon score
     # over FOMC minutes + Powell speech body_text per release. See
-    # docs/spec_code_data_audit_2026_05_15.md §3.1 (M1). Always evidence-
+    # the source-data audit). Always evidence-
     # only — never consumed by §2A rule predicates.
     central_bank_text_releases: pd.DataFrame | None = None
     # v2 §2A first-release CPI seam for historical replay (spec lines
     # 2587-2593). Series keyed by RELEASE DATE (not reference date) of
-    # the value-as-of-release. See docs/spec_code_data_audit_2026_05_15.md
+    # the value-as-of-release. See the source-data audit
     # §3.2 (M2). When None, the existing latest-revision CPIAUCSL path is
     # preserved unchanged.
     cpi_first_release: pd.Series | None = None
@@ -220,9 +220,9 @@ def slice_context_to_end_date(*, context: MarketContext, end_date: date) -> Mark
             if context.implied_vol_30d is None
             else context.implied_vol_30d.reindex(spy_ohlcv.index)
         ),
-        # §2A central-bank-text seam (audit M1).
+        # §2A central-bank-text seam (source-data audit).
         central_bank_text_releases=context.central_bank_text_releases,
-        # §2A first-release CPI seam (audit M2).
+        # §2A first-release CPI seam (source-data audit).
         cpi_first_release=context.cpi_first_release,
         # §1A SF Fed news sentiment evidence (audit post-#12 follow-up).
         news_sentiment=context.news_sentiment,

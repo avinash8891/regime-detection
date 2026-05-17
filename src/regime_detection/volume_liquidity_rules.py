@@ -1,12 +1,12 @@
-"""v2 §1E Volume / Liquidity rule engine + precedence (Slice 2.7).
+"""v2 §1E Volume / Liquidity rule engine + precedence (implementation phase).
 
 Pure scalar rule layer over the v2 §1E features:
-- ``volume_zscore_20d`` from ``FeatureStore.volume_liquidity_v2`` (slice 2.4).
+- ``volume_zscore_20d`` from ``FeatureStore.volume_liquidity_v2`` (implementation phase).
 - ``return_1d`` from V1 ``VolatilityFeatures.return_1d``
-  (single source of truth — see Ambiguity Log #42).
+  (single source of truth — see documented implementation decision).
 - ``gap_frequency_percentile_252d`` + ``intraday_range_percentile_252d``
   from the §1C ``volatility_state_v2`` seam for ``liquidity_gap_behavior``
-  (see Ambiguity Log #40 closure).
+  (see documented implementation decision).
 
 Spec references (docs/regime_engine_v2_spec.md):
     §1E lines 260-266  Labels
@@ -17,16 +17,12 @@ Spec references (docs/regime_engine_v2_spec.md):
 
 The three rules are evaluated in precedence order; the first match wins.
 If none match (or any required input is NaN), the label falls through to
-``unknown`` (data-quality gate, mirrors slice 1.3 / §3.3 convention).
+``unknown`` (data-quality gate, mirrors the §3.3 convention).
 
-Slice scope:
-- Ships ``panic_volume`` (§1E lines 270-274), ``normal_volume`` (§1E
-  line 282), and ``liquidity_gap_behavior`` (§1E lines 276-280) live.
-- The 252d percentile of ``gap_frequency_20d`` was previously the
-  missing input that forced ``liquidity_gap_behavior`` to short-circuit
-  to False (Log #40). It now ships from
-  ``regime_detection.volatility_state_v2.gap_frequency_percentile_252d``
-  in the same commit that flipped this predicate. Log #40 is closed.
+This module ships ``panic_volume`` (§1E lines 270-274), ``normal_volume``
+(§1E line 282), and ``liquidity_gap_behavior`` (§1E lines 276-280) live.
+The 252d percentile of ``gap_frequency_20d`` comes from
+``regime_detection.volatility_state_v2.gap_frequency_percentile_252d``.
 
 All numeric thresholds are config-driven via
 ``VolumeLiquidityRulesConfig``; this module is magic-number free per
@@ -102,7 +98,7 @@ def evaluate_panic_volume(
     AND ``return_1d < panic_volume_return_threshold (-0.02)``.
 
     Strict inequalities verbatim per spec. Any NaN input falsifies the
-    rule (mirrors slice 1.3 / slice 2.6 cold-start contract — a
+    rule (mirrors implementation phase / implementation phase cold-start contract — a
     partially-warmed-up session cannot trigger a risk-up override).
     """
     if _is_nan(inputs.volume_zscore_20d) or _is_nan(inputs.return_1d):
@@ -129,7 +125,7 @@ def evaluate_liquidity_gap_behavior(
     `VolumeLiquidityRulesConfig.liquidity_gap_*_percentile_threshold`
     so the V2 §9.1 walk-forward calibration may retune.
 
-    Closes Log #40 — the 252d percentile of `gap_frequency_20d` now
+    Implements the documented input contract — the 252d percentile of `gap_frequency_20d` now
     ships from `regime_detection.volatility_state_v2` (in the same
     commit that flipped this predicate from `return False`), so both
     rule inputs are available at evaluation time.

@@ -29,7 +29,7 @@ def build_volume_liquidity_axis_series(
     context: MarketContext,
     feature_store: FeatureStore,
 ) -> dict[date, VolumeLiquidityStateOutput] | None:
-    """V2 §1E volume/liquidity axis classifier (Slice 2.7)."""
+    """V2 §1E volume/liquidity axis classifier (implementation phase)."""
     volume_features = feature_store.volume_liquidity_v2
     if volume_features is None:
         return None
@@ -39,11 +39,11 @@ def build_volume_liquidity_axis_series(
         # Defensive: feature seam present but classifier config missing.
         return None
 
-    # `return_1d` is the V1 single source of truth (Ambiguity Log #42).
+    # `return_1d` is the V1 single source of truth (documented implementation decision).
     return_1d_series = feature_store.volatility.return_1d
     volume_zscore_series = volume_features.volume_zscore_20d
 
-    # Log #40 closure: optional §1C volatility_state_v2 percentiles feed
+    # documented implementation decision: optional §1C volatility_state_v2 percentiles feed
     # `liquidity_gap_behavior` when available. When absent, rules see NaN
     # and fall through per V1 §2.7 cold-start semantics.
     volatility_v2 = feature_store.volatility_state_v2

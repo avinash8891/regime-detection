@@ -4,7 +4,6 @@ from typing import TYPE_CHECKING
 
 import pandas as pd
 
-from regime_detection.axis_builders.common import axis_outputs_from_core
 from regime_detection.hysteresis import apply_asymmetric_hysteresis
 from regime_detection.volatility_state import (
     _RISK_RANK as VOLATILITY_RISK_RANK,
@@ -27,7 +26,7 @@ def build_volatility_axis_series(
     close = context.spy_ohlcv["close"]
     close_index = pd.DatetimeIndex(close.index)
     features = feature_store.volatility
-    # Slice 2.6 — thread v2 §1C features + rules through when the v2
+    # implementation phase — thread v2 §1C features + rules through when the v2
     # seam is populated. When the v2 config is absent (v1-only callers),
     # the arguments stay None and v1 byte-identity is preserved by
     # build_raw_outputs (see test_volatility_state_v2_rising_vol_rule).
@@ -45,7 +44,9 @@ def build_volatility_axis_series(
         escalation_days=context.config.hysteresis.volatility_escalation_days,
         deescalation_days=context.config.hysteresis.volatility_deescalation_days,
     )
-    return axis_outputs_from_core(
+    from regime_detection.axis_series import _build_axis_outputs
+
+    return _build_axis_outputs(
         dates=[ts.date() for ts in close_index],
         raw_labels=raw_labels,
         stable_labels=stable_labels,

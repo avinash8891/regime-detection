@@ -75,8 +75,7 @@ def raw_label_for_day(
     both supplied, the v2 §1A precedence (line 132-134:
     ``bull > recovery > bear > sideways > transition > unknown``) is layered
     ON TOP of the v1 label. When either is ``None`` the function returns
-    the v1 label and evidence unchanged — byte-identical to the
-    pre-slice-2.5 implementation.
+    the v1 label and evidence unchanged.
     """
     close = f.close.loc[dt]
     sma50 = f.sma_50.loc[dt]
@@ -170,8 +169,7 @@ def build_raw_outputs(
 ) -> tuple[list[TrendDirectionLabel], list[dict[str, Any]]]:
     """Vectorized v1 raw labels + optional v2 §1A `recovery` override.
 
-    The v1 pass is unchanged from pre-slice-2.5. When both
-    ``trend_direction_v2_features`` and ``trend_direction_v2_rules`` are
+    When both ``trend_direction_v2_features`` and ``trend_direction_v2_rules`` are
     supplied, the v2 §1A precedence at line 132-134 is applied per-day
     AFTER the v1 pass — `recovery` overrides v1 `bear` / `sideways` /
     `transition` / `unknown` (NOT `bull`, which outranks `recovery`).

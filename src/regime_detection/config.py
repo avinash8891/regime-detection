@@ -153,7 +153,7 @@ class NetworkFragilityConfig(BaseModel):
     # risk rank. Exposed as config so it can be retuned in v2 §9.1 calibration.
     default_deescalation_days: int = Field(default=0, ge=0)
 
-    # V2 §3.4–§3.5 rule engine thresholds (Slice 1.3).
+    # V2 §3.4–§3.5 rule engine thresholds (implementation phase).
     rules: NetworkFragilityRulesConfig
 
 
@@ -163,7 +163,7 @@ class TrendDirectionV2RulesConfig(BaseModel):
     Each value cites its line in docs/regime_engine_v2_spec.md §1A.
     `recovery` and `euphoria` have live rule config and predicates.
     `breakout_expansion` / `range_bound` remain separate follow-on label
-    qualifications from Implementation Ambiguity Log entries #33–#34.
+    qualifications from documented implementation decisions.
     """
 
     model_config = ConfigDict(extra="forbid")
@@ -180,7 +180,7 @@ class TrendDirectionV2RulesConfig(BaseModel):
 
     # v2 §1A line 162 — euphoria rule's `return_126d > 0.20`. Strict positive
     # required: a non-positive threshold would admit drawdown days, defeating
-    # the rule's "strong long-horizon advance" intent. ADR 0004 + Log #32
+    # the rule's "strong long-horizon advance" intent. documented implementation decision
     # closure pinned the default at +0.20 (spec verbatim).
     euphoria_return_126d_threshold: float = Field(gt=0.0, default=0.20)
 
@@ -193,7 +193,7 @@ class TrendDirectionV2RulesConfig(BaseModel):
 
     # v2 §1A line 163 — euphoria rule's `realized_vol_21d rising`. ADR 0004
     # Q2 picked 5-session strict change (vol[t] > vol[t-5]) mirroring
-    # Log #68's §1D `rising` / `falling` pin. Must be > 0; a zero-lookback
+    # documented implementation decision's §1D `rising` / `falling` pin. Must be > 0; a zero-lookback
     # would make the rule self-comparing.
     euphoria_vol_rising_lookback_sessions: int = Field(gt=0, default=5)
 
@@ -201,12 +201,12 @@ class TrendDirectionV2RulesConfig(BaseModel):
 class TrendDirectionV2Config(BaseModel):
     """v2 §1A — Layer 1 V2 trend direction feature lookbacks.
 
-    Slice 2.1 ships the §1A continuous features as evidence-only.
-    Slice 2.5 lands the ``recovery`` label + updated §1A precedence on
-    top of those features (see ``rules`` sub-block). ADR 0004 / Log #32
+    implementation phase ships the §1A continuous features as evidence-only.
+    implementation phase lands the ``recovery`` label + updated §1A precedence on
+    top of those features (see ``rules`` sub-block). documented implementation decision
     later wired ``euphoria`` config, evidence, and predicate activation.
     ``breakout_expansion`` / ``range_bound`` remain separate follow-on
-    label qualifications from Implementation Ambiguity Log entries #33–#34.
+    label qualifications from documented implementation decisions.
     """
 
     model_config = ConfigDict(extra="forbid")
@@ -235,7 +235,7 @@ class TrendDirectionV2Config(BaseModel):
     # v2 §1A line 116 — prior 252d drawdown (recovery rule input).
     drawdown_lookback_days: int = Field(gt=0)
 
-    # v2 §1A line 114-119 `recovery` rule thresholds (Slice 2.5). Defaults
+    # v2 §1A line 114-119 `recovery` rule thresholds (implementation phase). Defaults
     # to spec values (drawdown <= -0.15, return > 0.10) when the yaml
     # omits the sub-block; v2 §9.1 calibration may retune via yaml.
     rules: TrendDirectionV2RulesConfig = Field(
@@ -251,7 +251,7 @@ class VolatilityV2RulesConfig(BaseModel):
 
     Each value cites its line in docs/regime_engine_v2_spec.md §1C.
     `vol_crush` uses FRED VIXCLS-derived implied_vol_30d and the
-    event-window seam per ADR 0005 / Ambiguity Log #20.
+    event-window seam per ADR 0005 / documented implementation decision.
     """
 
     model_config = ConfigDict(extra="forbid")
@@ -275,7 +275,7 @@ class VolatilityV2RulesConfig(BaseModel):
     # 63 by spec text "realized_vol_63d"; exposed for v2 §9.1 calibration.
     realized_vol_long_period: int = Field(gt=0, default=63)
 
-    # v2 §1C `vol_crush` rule (ADR 0005 / Log #20 closure). The rule:
+    # v2 §1C `vol_crush` rule (documented implementation decision). The rule:
     #   realized_vol_10d < realized_vol_21d * vol_crush_realized_vol_ratio_threshold
     #   AND implied_vol_5d_change <= vol_crush_implied_vol_change_threshold
     #   AND event_window_just_passed
@@ -291,7 +291,7 @@ class VolatilityV2RulesConfig(BaseModel):
     # (a "crush"); a non-negative threshold would defang the intent.
     vol_crush_implied_vol_change_threshold: float = Field(lt=0.0, default=-0.20)
     # ADR 0005 Q1 — lookback for the relative implied-vol change. Pinned at
-    # 5 sessions (cross-axis "5-session memory" convention, Log #68 / ADR 0004).
+    # 5 sessions (cross-axis "5-session memory" convention, documented implementation decision / ADR 0004).
     vol_crush_implied_vol_change_lookback_sessions: int = Field(gt=0, default=5)
     # ADR 0005 Q3 — `event_window_just_passed` fires on the N NYSE sessions
     # strictly AFTER an event window-end. Spec pins N = 3.
@@ -327,7 +327,7 @@ class VolatilityV2Config(BaseModel):
     intraday_range_lookback_days: int = Field(gt=0)
 
     # v2 §1C line 146-148 `rising_vol` rule thresholds + RV windows
-    # (Slice 2.6). Defaults to spec values (atr_ratio > 1.15, rv_10d >
+    # (implementation phase). Defaults to spec values (atr_ratio > 1.15, rv_10d >
     # rv_63d * 1.25) when the yaml omits the sub-block; v2 §9.1
     # calibration may retune via yaml.
     rules: VolatilityV2RulesConfig = Field(
@@ -341,12 +341,12 @@ class VolatilityV2Config(BaseModel):
 
 
 class VolumeLiquidityV2Config(BaseModel):
-    """v2 §1E — Layer 1 V2 Volume / Liquidity feature config (Slice 2.4).
+    """v2 §1E — Layer 1 V2 Volume / Liquidity feature config (implementation phase).
 
     Ships ONLY ``volume_zscore_20d`` (v2 §1E line 256). The other two §1E
     features (``gap_frequency_20d``, ``intraday_range_percentile_252d``)
     already live on ``VolatilityV2Config`` / ``volatility_state_v2.py``
-    (Slice 2.2) and are read from the ``FeatureStore.volatility_state_v2``
+    (implementation phase) and are read from the ``FeatureStore.volatility_state_v2``
     seam by the §1E axis classifier — no recompute. The §1E labels
     (``normal_volume``, ``panic_volume``, ``liquidity_gap_behavior``),
     rule engine, risk-rank table, and hysteresis live in
@@ -360,12 +360,12 @@ class VolumeLiquidityV2Config(BaseModel):
 
     # v2 §1E is silent on population vs sample std. Pinned to pandas /
     # numpy default `ddof=1` (sample std) per the standard z-score
-    # convention for financial time series. See Ambiguity Log.
+    # convention for financial time series. See documented implementation notes.
     volume_zscore_ddof: int = Field(ge=0, default=1)
 
 
 class VolumeLiquidityRulesConfig(BaseModel):
-    """v2 §1E rule-engine thresholds (Slice 2.7).
+    """v2 §1E rule-engine thresholds (implementation phase).
 
     Each threshold is cited to its line in
     ``docs/regime_engine_v2_spec.md`` §1E. The ``liquidity_gap_*``
@@ -398,21 +398,21 @@ class VolumeLiquidityRulesConfig(BaseModel):
 
 
 class VolumeLiquidityConfig(BaseModel):
-    """v2 §1E volume/liquidity axis classifier configuration (Slice 2.7).
+    """v2 §1E volume/liquidity axis classifier configuration (implementation phase).
 
     Holds the rule thresholds and per-label hysteresis days for the
     new ``volume_liquidity_state`` axis. The §1E spec is silent on
-    hysteresis (Implementation Ambiguity Log entry #41 pins defaults
+    hysteresis (documented implementation decision pins defaults
     by risk_rank analogy with §3.7 — panic_volume = 3 like
     correlation_to_one's hold pattern; normal_volume = 0; unknown = 2).
     """
 
     model_config = ConfigDict(extra="forbid")
 
-    # v2 §1E rule-engine thresholds (Slice 2.7).
+    # v2 §1E rule-engine thresholds (implementation phase).
     rules: VolumeLiquidityRulesConfig
 
-    # v2 §1E is silent on per-label hysteresis days. Ambiguity Log entry
+    # v2 §1E is silent on per-label hysteresis days. documented implementation decision
     # #41 pins panic_volume=3 (high-risk hold, analogous to §3.7
     # correlation_to_one=3-5), normal_volume=0 (immediate de-escalation),
     # unknown=2 (modest hold to absorb single-day NaN flickers without
@@ -439,19 +439,19 @@ class BreadthV2Config(BaseModel):
     # v2 §1D line 229 — % of 11 GICS sector ETFs with positive 21d return.
     sector_breadth_lookback_days: int = Field(gt=0, default=21)
 
-    # v2 §1D line 207 — pct_above_50dma SMA window (Slice 2.8c).
+    # v2 §1D line 207 — pct_above_50dma SMA window (implementation phase).
     sma_lookback_50: int = Field(default=50, ge=5)
 
-    # v2 §1D line 209 — pct_above_200dma SMA window (Slice 2.8c).
+    # v2 §1D line 209 — pct_above_200dma SMA window (implementation phase).
     sma_lookback_200: int = Field(default=200, ge=20)
 
-    # v2 §1D line 218 — nh_nl_ratio 252-session lookback (Slice 2.8c,
-    # Ambiguity Log #55).
+    # v2 §1D line 218 — nh_nl_ratio 252-session lookback (implementation phase,
+    # documented implementation decision).
     nh_nl_lookback_sessions: int = Field(default=252, ge=20)
 
-    # v2 §1D Ambiguity Log #68 — "rising"/"falling" = strict change over
+    # v2 §1D documented implementation decision — "rising"/"falling" = strict change over
     # this many sessions. Used by the narrowing_breadth + broadening_breadth
-    # rule predicates (Slice 1D code).
+    # rule predicates (implementation phaseD code).
     label_rate_of_change_lookback_sessions: int = Field(default=5, ge=1)
 
     # v2 §1D line 280 — narrowing_breadth nh_nl_ratio threshold (< 0.4 fires).
@@ -460,17 +460,17 @@ class BreadthV2Config(BaseModel):
 
 
 class TrendCharacterV2Config(BaseModel):
-    """v2 §1B trend-character V2 axis configuration (Ambiguity Log #46/#47/#67).
+    """v2 §1B trend-character V2 axis configuration (documented implementation decision).
 
     Extends the existing V1 trend_character classifier with two new labels —
     ``breakout_expansion`` and ``range_bound`` — plus the per-label
-    asymmetric hysteresis days pinned in Log #67. All threshold defaults
+    asymmetric hysteresis days pinned in documented implementation decision. All threshold defaults
     track the spec lines cited inline; v2 §9.1 walk-forward may retune.
     """
 
     model_config = ConfigDict(extra="forbid")
 
-    # v2 §1B Ambiguity Log #67 per-label de-escalation days.
+    # v2 §1B documented implementation decision per-label de-escalation days.
     deescalation_days_by_label: dict[str, int] = Field(
         default_factory=lambda: {
             "breakout_expansion": 3,
@@ -483,10 +483,10 @@ class TrendCharacterV2Config(BaseModel):
         }
     )
     # Default for labels not in `deescalation_days_by_label` (matches §3.7
-    # Ambiguity Log #6 pattern).
+    # documented implementation decision pattern).
     default_deescalation_days: int = Field(default=0, ge=0)
 
-    # v2 §1B line 90 + Ambiguity Log #46. Must be in (0, 1] (a fraction).
+    # v2 §1B line 90 + documented implementation decision. Must be in (0, 1] (a fraction).
     followthrough_rate_threshold: float = Field(default=0.60, gt=0.0, le=1.0)
 
     # v2 §1B line 111 — trailing-window cap on the followthrough walk.
@@ -528,11 +528,11 @@ class TransitionScoreConfig(BaseModel):
     # V2 §4.3 weights when HMM is unavailable (5-component renormalization).
     weights_without_hmm: dict[str, float]
 
-    # V2 §4.3 + Ambiguity Log #66 — weights when change_point evidence is
+    # V2 §4.3 + documented implementation decision — weights when change_point evidence is
     # available but HMM is not (6 components).
     weights_with_change_point: dict[str, float]
 
-    # V2 §4.3 + Ambiguity Log #66 — weights when both HMM and change_point
+    # V2 §4.3 + documented implementation decision — weights when both HMM and change_point
     # evidence are available (7 components, full V2 evidence stack).
     weights_with_hmm_with_change_point: dict[str, float]
 
@@ -541,7 +541,7 @@ class TransitionScoreConfig(BaseModel):
 
 
 class MonetaryPressureV2FeaturesConfig(BaseModel):
-    """v2 §2A — Layer 2A Monetary/Liquidity V2 features (Slice 4.1, evidence-only).
+    """v2 §2A — Layer 2A Monetary/Liquidity V2 features (implementation phase, evidence-only).
 
     Ships ONLY the ONE feature formula spec-pinned at v2 §2A line 896::
 
@@ -551,8 +551,7 @@ class MonetaryPressureV2FeaturesConfig(BaseModel):
     contract (lines 887–889): ``DGS2`` (2y) and ``DGS10`` (10y).
 
     Per V2 §10 ABSOLUTE RULE the following are DEFERRED because the spec
-    does not pin them (see Implementation Ambiguity Log entries #44 and
-    #45):
+    does not pin them (see documented implementation decisions):
 
     - ``broad_usd_index_zscore_63d`` (formula unspecified).
     - ``yield_change_zscore_21d_2y`` / ``yield_change_zscore_21d_10y``
@@ -563,11 +562,9 @@ class MonetaryPressureV2FeaturesConfig(BaseModel):
     - Precedence ordering, risk-rank table, per-label hysteresis days.
     - The ``MonetaryPressureSeriesClassifier`` axis classifier.
 
-    The slice-2.4 precedent (Ambiguity Log #29) — shipping
-    ``volume_zscore_20d`` as evidence-only before its §1E axis
-    classifier landed in slice 2.7 — applies here: the two yield
-    z-scores ship as evidence-only and become inputs to the future
-    §2A axis classifier once the spec is amended.
+    The evidence-first precedent applies here: the two yield z-scores ship
+    as evidence-only and become inputs to the future §2A axis classifier
+    once the spec is amended.
     """
 
     model_config = ConfigDict(extra="forbid")
@@ -582,20 +579,20 @@ class MonetaryPressureV2FeaturesConfig(BaseModel):
     # Must be > 0 (rolling mean/std requires at least one observation).
     zscore_normalizer_window_days: int = Field(gt=0, default=1260)
 
-    # v2 §2A 21d-variant rate_shock predicate lookback per Ambiguity Log #46 (a).
+    # v2 §2A 21d-variant rate_shock predicate lookback per documented implementation decision (a).
     # Mechanical generalization of the line-896 template using a 21d change window.
     rate_shock_lookback_days: int = Field(gt=0, default=21)
 
-    # v2 §2A broad_usd_index z-score lookback per Ambiguity Log #46 (a). Mechanical
+    # v2 §2A broad_usd_index z-score lookback per documented implementation decision (a). Mechanical
     # generalization of the line-896 template applied to a USD-index level series.
     broad_usd_lookback_days: int = Field(gt=0, default=63)
 
 
 class MonetaryPressureV2RulesConfig(BaseModel):
-    """v2 §2A monetary-pressure rule thresholds (Ambiguity Log #46 b/c).
+    """v2 §2A monetary-pressure rule thresholds (documented implementation decision b/c).
 
     Each value pins the verbatim §2A rule predicate threshold. Precedence
-    is enforced in ``monetary_pressure.evaluate_rules`` per Log #46 (c).
+    is enforced in ``monetary_pressure.evaluate_rules`` per documented implementation decision (c).
     """
 
     model_config = ConfigDict(extra="forbid")
@@ -609,7 +606,7 @@ class MonetaryPressureV2RulesConfig(BaseModel):
 
 
 class MonetaryPressureV2Config(BaseModel):
-    """v2 §2A monetary-pressure axis classifier config (Ambiguity Log #46).
+    """v2 §2A monetary-pressure axis classifier config (documented implementation decision).
 
     Separate from ``MonetaryPressureV2FeaturesConfig`` (features vs
     classifier), mirroring the ``volume_liquidity_v2`` vs
@@ -621,9 +618,9 @@ class MonetaryPressureV2Config(BaseModel):
     rules: MonetaryPressureV2RulesConfig = Field(
         default_factory=MonetaryPressureV2RulesConfig
     )
-    # §2A per-label hysteresis days per Ambiguity Log #46 (e).
+    # §2A per-label hysteresis days per documented implementation decision (e).
     deescalation_days_by_label: dict[str, int]
-    # Default for labels NOT listed (matches §3.7 Ambiguity Log #6 pattern).
+    # Default for labels NOT listed (matches §3.7 documented implementation decision pattern).
     default_deescalation_days: int = Field(default=0, ge=0)
 
 
@@ -679,7 +676,7 @@ class CentralBankTextConfig(BaseModel):
 
     # Same-date collision strategy (audit follow-up #12). When FOMC
     # minutes and a Powell speech share a release date, this picks
-    # which voice wins. Default `pick_longer` matches the audit M1
+    # which voice wins. Default `pick_longer` matches the source-data audit
     # initial wiring (token-count is a rough proxy for material
     # content). `token_weighted_average` averages all same-date rows
     # by token weight. `fomc_priority` favours FOMC minutes
@@ -690,7 +687,7 @@ class CentralBankTextConfig(BaseModel):
 
 
 class InflationGrowthRulesConfig(BaseModel):
-    """v2 §2B inflation/growth rule thresholds (Slice 5).
+    """v2 §2B inflation/growth rule thresholds (implementation phase).
 
     Defaults match the spec verbatim (§2B lines 2232-2270). v2 §9.1 walk-
     forward calibration may retune via yaml.
@@ -753,7 +750,7 @@ class InflationGrowthRulesConfig(BaseModel):
 
 
 class InflationGrowthConfig(BaseModel):
-    """v2 §2B Inflation/Growth axis configuration (Slice 5).
+    """v2 §2B Inflation/Growth axis configuration (implementation phase).
 
     Wires the rule thresholds, per-label hysteresis days, and the
     unknown-gate staleness thresholds (§2B lines 2308-2312).
@@ -775,7 +772,7 @@ class InflationGrowthConfig(BaseModel):
 
 
 class CreditFundingRulesConfig(BaseModel):
-    """v2 §2C rule thresholds (Slice 4).
+    """v2 §2C rule thresholds (implementation phase).
 
     Defaults match the spec verbatim (§2C lines 2064-2088). Calibration
     placeholders per spec line 2128 (v2 §9.1 may retune via yaml).
@@ -816,7 +813,7 @@ class CreditFundingRulesConfig(BaseModel):
 
 
 class CreditFundingConfig(BaseModel):
-    """v2 §2C Credit/Funding axis configuration (Slice 4).
+    """v2 §2C Credit/Funding axis configuration (implementation phase).
 
     Wires the rule thresholds, per-label hysteresis days, and the
     unknown-gate staleness thresholds. The 8-symbol universe
@@ -829,7 +826,7 @@ class CreditFundingConfig(BaseModel):
     rules: CreditFundingRulesConfig = Field(default_factory=CreditFundingRulesConfig)
     # §2C lines 2110-2117 — per-label asymmetric hysteresis days.
     deescalation_days_by_label: dict[str, int]
-    # Labels not listed take this default (matches §3.7 Ambiguity Log #6 pattern).
+    # Labels not listed take this default (matches §3.7 documented implementation decision pattern).
     default_deescalation_days: int = Field(default=0, ge=0)
     # §2C line 2124 — NFCI weekly: "stale > 14 days (2× weekly release cycle)".
     nfci_stale_days: int = Field(default=14, ge=1)
@@ -853,7 +850,7 @@ class HMMConfig(BaseModel):
     n_states: int = Field(ge=2)
     training_window_days: int = Field(ge=100)
     retrain_cadence_days: int = Field(ge=1)
-    # Slice 6: deterministic seed for hmmlearn.GaussianHMM. Reproducibility
+    # implementation phase: deterministic seed for hmmlearn.GaussianHMM. Reproducibility
     # gate — same inputs + same seed → byte-identical posterior.
     random_state: int = Field(default=42, ge=0)
     covariance_type: Literal["full", "tied", "diag", "spherical"] = "full"
@@ -866,7 +863,7 @@ class HMMConfig(BaseModel):
 
 
 class ClusteringConfig(BaseModel):
-    """v2 §6.2 K-Means/GMM clustering configuration (Slice 7).
+    """v2 §6.2 K-Means/GMM clustering configuration (implementation phase).
 
     GMM is the V2 ship default; K-Means support deferred per spec line
     2835. Mapping cluster_id → economic_label is operator-side
@@ -883,9 +880,9 @@ class ClusteringConfig(BaseModel):
 
 
 class ChangePointConfig(BaseModel):
-    """v2 §6.3 BOCPD change-point detection (Slice 8, evidence-only).
+    """v2 §6.3 BOCPD change-point detection (implementation phase, evidence-only).
 
-    Implementation library: bayesian-changepoint-detection (Ambiguity Log #62).
+    Implementation library: bayesian-changepoint-detection (documented implementation decision).
     Observation series: realized_vol_21d (#63).
     Score = 5-session rolling max of posterior P(run_length=0) (#64).
     Break = posterior >= 0.5 threshold (#65).
@@ -894,8 +891,8 @@ class ChangePointConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     hazard_lambda: float = Field(default=250.0, gt=0.0)  # spec line 2872: 1/250 → lambda=250
-    score_window_days: int = Field(default=5, ge=1)  # Ambiguity Log #64
-    break_threshold: float = Field(default=0.5, gt=0.0, lt=1.0)  # Ambiguity Log #65
+    score_window_days: int = Field(default=5, ge=1)  # documented implementation decision
+    break_threshold: float = Field(default=0.5, gt=0.0, lt=1.0)  # documented implementation decision
     training_window_days: int = Field(default=1260, ge=100)  # 5y, matches HMM/GMM
     # StudentT prior hyperparameters (Adams-MacKay defaults — conservative).
     student_t_alpha: float = Field(default=0.1, gt=0.0)
@@ -958,7 +955,7 @@ class CohortRoutingRule(BaseModel):
 
 
 class CohortRoutingConfig(BaseModel):
-    """v2 §5.1 Agent Cohort Routing configuration (Slice 5.1)."""
+    """v2 §5.1 Agent Cohort Routing configuration (implementation phase)."""
 
     model_config = ConfigDict(extra="forbid")
 
@@ -1030,17 +1027,17 @@ class RegimeConfig(BaseModel):
     volatility_state_v2: VolatilityV2Config | None = None
     breadth_state_v2: BreadthV2Config | None = None
     volume_liquidity_v2: VolumeLiquidityV2Config | None = None
-    # v2 §1E axis classifier configuration (Slice 2.7).
+    # v2 §1E axis classifier configuration (implementation phase).
     volume_liquidity_state: VolumeLiquidityConfig | None = None
     transition_score: TransitionScoreConfig | None = None
-    # v2 §1B trend-character V2 axis configuration (Ambiguity Log #46/#47/#67).
+    # v2 §1B trend-character V2 axis configuration (documented implementation decision).
     trend_character_v2: TrendCharacterV2Config | None = None
     monetary_pressure_v2: MonetaryPressureV2FeaturesConfig | None = None
-    # v2 §2A axis classifier configuration (Ambiguity Log #46 pins).
+    # v2 §2A axis classifier configuration (documented implementation decision pins).
     monetary_pressure_state: MonetaryPressureV2Config | None = None
     # v2 §2A central-bank-text evidence config (deterministic-lexicon
     # substitute for the spec's "LLM classifier" phrasing; see
-    # docs/spec_code_data_audit_2026_05_15.md §3.1 / M1).
+    # the source-data audit).
     central_bank_text: CentralBankTextConfig | None = None
     # v2 §1A SF Fed news sentiment evidence config (audit follow-up
     # post-#12). Evidence only — never read by the `euphoria` rule.
@@ -1049,13 +1046,13 @@ class RegimeConfig(BaseModel):
     credit_funding: CreditFundingConfig | None = None
     event_calendar_v2: EventCalendarV2Config | None = None
     hmm: HMMConfig | None = None
-    # v2 §6.2 GMM clustering evidence layer (Slice 7).
+    # v2 §6.2 GMM clustering evidence layer (implementation phase).
     clustering: ClusteringConfig | None = None
-    # v2 §6.3 BOCPD change-point evidence layer (Slice 8).
+    # v2 §6.3 BOCPD change-point evidence layer (implementation phase).
     change_point: ChangePointConfig | None = None
     vol_crush: VolCrushConfig | None = None
     no_flip_flop: NoFlipFlopConfig | None = None
-    cohort_routing: CohortRoutingConfig | None = None  # v2 §5.1 (slice 5.1)
+    cohort_routing: CohortRoutingConfig | None = None  # v2 §5.1 (implementation phase)
     strategy_family_constraints: StrategyFamilyConstraintsConfig | None = None
 
 

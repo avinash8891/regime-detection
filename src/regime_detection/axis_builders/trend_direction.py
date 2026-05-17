@@ -4,7 +4,6 @@ from typing import TYPE_CHECKING
 
 import pandas as pd
 
-from regime_detection.axis_builders.common import axis_outputs_from_core
 from regime_detection.trend_direction import (
     _RISK_RANK as TREND_DIRECTION_RISK_RANK,
     apply_hysteresis as apply_trend_direction_hysteresis,
@@ -28,7 +27,7 @@ def build_trend_direction_axis_series(
     close = context.spy_ohlcv["close"]
     close_index = pd.DatetimeIndex(close.index)
     features = feature_store.trend_direction
-    # Slice 2.5 — thread v2 §1A features + rules through when the v2 seam
+    # implementation phase — thread v2 §1A features + rules through when the v2 seam
     # is populated. When the v2 config is absent (v1-only callers), the
     # arguments stay None and v1 byte-identity is preserved by
     # build_raw_outputs (see test_trend_direction_v2_recovery_rule).
@@ -46,7 +45,9 @@ def build_trend_direction_axis_series(
         escalation_days=context.config.hysteresis.trend_direction_escalation_days,
         deescalation_days=context.config.hysteresis.trend_direction_deescalation_days,
     )
-    return axis_outputs_from_core(
+    from regime_detection.axis_series import _build_axis_outputs
+
+    return _build_axis_outputs(
         dates=[ts.date() for ts in close_index],
         raw_labels=raw_labels,
         stable_labels=stable_labels,

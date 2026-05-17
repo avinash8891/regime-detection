@@ -94,5 +94,17 @@ def test_hf_validator_logs_fetch_failure_before_unknown_fallback(
     assert [(result.candidate_key, result.verdict) for result in results] == [
         (("ECB_decision", dt.date(2026, 6, 11)), "unknown")
     ]
+    assert results[0].evidence_snippet == "validator_source_unavailable: TimeoutError"
     assert "hf_central_bank parquet fetch failed" in caplog.text
     assert "candidate_count=1" in caplog.text
+
+
+def test_hf_validator_propagates_malformed_parquet() -> None:
+    validator = HFCentralBankValidator(parquet_fetcher=lambda: b"not parquet")
+
+    with pytest.raises(Exception, match="Parquet|parquet|magic bytes|metadata"):
+        validator.validate(
+            [_candidate(dt.date(2026, 6, 11), "ECB_decision")],
+            store=None,
+            run_id=None,
+        )

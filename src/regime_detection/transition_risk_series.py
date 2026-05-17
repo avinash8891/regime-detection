@@ -152,7 +152,7 @@ def _build_transition_score_inputs_by_date(
     )
     dd252 = drawdown_252d.reindex(session_index).to_numpy(dtype=float, na_value=float("nan"))
 
-    # v2 §6.1 (Slice 6) — bulk-reindex both `top_state_prob[t]` and
+    # v2 §6.1 (implementation phase) — bulk-reindex both `top_state_prob[t]` and
     # `top_state_prob[t-5]`. The 5-NYSE-session offset is materialized by
     # shifting the SOURCE series before reindexing so each session t maps
     # to the value at session t-5 (or NaN if absent).
@@ -167,7 +167,7 @@ def _build_transition_score_inputs_by_date(
         hmm_now = [float("nan")] * len(sessions)
         hmm_5d_ago = [float("nan")] * len(sessions)
 
-    # Ambiguity Log #66 — change_point.score (5-session rolling max of
+    # documented implementation decision — change_point.score (5-session rolling max of
     # BOCPD posterior P(run_length=0); already ∈ [0,1] by construction).
     if change_point_score is not None:
         cp = change_point_score.reindex(session_index).to_numpy(

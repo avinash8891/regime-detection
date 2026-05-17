@@ -4,7 +4,6 @@ from typing import TYPE_CHECKING
 
 import pandas as pd
 
-from regime_detection.axis_builders.common import axis_outputs_from_core
 from regime_detection.hysteresis import apply_asymmetric_hysteresis
 from regime_detection.trend_character import (
     _RISK_RANK as TREND_CHARACTER_RISK_RANK,
@@ -37,7 +36,9 @@ def build_trend_character_axis_series(
         escalation_days=context.config.hysteresis.trend_character_escalation_days,
         deescalation_days=context.config.hysteresis.trend_character_deescalation_days,
     )
-    return axis_outputs_from_core(
+    from regime_detection.axis_series import _build_axis_outputs
+
+    return _build_axis_outputs(
         dates=[ts.date() for ts in close_index],
         raw_labels=raw_labels,
         stable_labels=stable_labels,

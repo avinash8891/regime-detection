@@ -97,7 +97,7 @@ def capture_investing_earnings_loaded_page(
     )
 
 
-# TODO(simplify, owner=regime-maintainers, ticket=TD-INVESTING-BROWSER-CONFIG): the 7 passthrough `earnings_browser_*` kwargs on
+# TODO(simplify, owner=regime-maintainers): the 7 passthrough `earnings_browser_*` kwargs on
 # run_investing_live_fetch / capture_investing_live_archive should collapse
 # into an `EarningsBrowserConfig` dataclass (user_data_dir, executable,
 # headless, timeout_ms, page_capturer, loaded_page_path, access_token,

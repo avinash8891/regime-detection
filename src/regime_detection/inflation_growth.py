@@ -1,4 +1,4 @@
-"""v2 §2B Inflation / Growth axis — feature compute + rule materialisation (Slice 5).
+"""v2 §2B Inflation / Growth axis — feature compute + rule materialisation (implementation phase).
 
 Implements the 8-label axis classifier from spec lines 2174-2326. Optional
 nowcast and EPS-revision source series are consumed when present and
@@ -20,7 +20,7 @@ Precedence (§2B line 2190):
     inflation_shock > recession_scare > disinflation > goldilocks >
     recovery_growth > earnings_contraction > earnings_expansion > unknown
 
-Per Ambiguity Log #48: DBC ETF substitutes for the Bloomberg Commodity
+Per documented implementation decision: DBC ETF substitutes for the Bloomberg Commodity
 Index (paid feed unavailable). The classifier emits a bias-warning row
 with code ``commodity_proxy_dbc_substitute``.
 
@@ -29,7 +29,7 @@ Inputs:
     (FRED CPIAUCSL monthly → forward-fill to daily).
   - ``pmi_manufacturing`` via ``MarketContext.macro_series["pmi_manufacturing"]``
     (Investing release-history; monthly → forward-fill to daily).
-  - ``dgs10`` via ``MarketContext.macro_series["dgs10"]`` (slice 4.1 loader).
+  - ``dgs10`` via ``MarketContext.macro_series["dgs10"]`` (implementation phase loader).
   - ``dbc_close`` via ``MarketContext.cross_asset_closes["DBC"]``.
   - ``spy_close`` via ``MarketContext.spy_ohlcv["close"]``.
   - ``tlt_close`` via ``MarketContext.cross_asset_closes["TLT"]``.
@@ -115,7 +115,7 @@ REQUIRED_MACRO_KEYS: tuple[str, ...] = (CPI_KEY, PMI_KEY, DGS10_KEY)
 
 
 # ---------------------------------------------------------------------------
-# Bias-warning constants (§2B Ambiguity Log #48 — DBC substitute for the
+# Bias-warning constants (§2B documented implementation decision — DBC substitute for the
 # paid Bloomberg Commodity Index).
 # ---------------------------------------------------------------------------
 
@@ -138,7 +138,7 @@ INFLATION_SURPRISE_NOWCAST_BIAS_SOURCE_URL = (
 
 # v2 §2A lines 2587-2593 — `value_first_release` provenance row. Emitted
 # only when the historical-replay first-release CPI substitution is in
-# effect (audit M2 / docs/spec_code_data_audit_2026_05_15.md §3.2).
+# effect (source-data audit / the source-data audit).
 FIRST_RELEASE_CPI_PROVENANCE_CODE = "cpi_first_release_vintage_replay"
 FIRST_RELEASE_CPI_PROVENANCE_SOURCE = "fred_cpiaucsl_realtime_vintages"
 FIRST_RELEASE_CPI_PROVENANCE_SOURCE_URL = (
@@ -153,7 +153,7 @@ FIRST_RELEASE_CPI_PROVENANCE_SOURCE_URL = (
 
 @dataclass(frozen=True)
 class InflationGrowthFeatures:
-    """v2 §2B per-session inflation/growth feature series (Slice 5).
+    """v2 §2B per-session inflation/growth feature series (implementation phase).
 
     All series are aligned to the SPY DatetimeIndex. NaN cold-start at the
     head of each series until the corresponding lookback fills.
@@ -271,7 +271,7 @@ def compute_inflation_growth_features(
 
     All inputs are aligned to ``spy_close.index``. CPI and PMI are monthly
     series and are forward-filled to daily (§2B line 2208 PMI; CPI follows
-    the same NFCI-style pattern slice 4 uses).
+    the same NFCI-style pattern implementation phase uses).
 
     ``cpi_nowcast`` (the Cleveland Fed inflation nowcast — ADR 0006) is
     optional. When supplied, ``inflation_surprise_zscore`` is computed
@@ -292,7 +292,7 @@ def compute_inflation_growth_features(
     spy_index = spy_close.index
 
     # v2 §2A lines 2587-2593 — first-release vs latest-revision CPI for
-    # historical replay (audit M2). When the vintage seam is supplied
+    # historical replay (source-data audit). When the vintage seam is supplied
     # AND the config flag enables the substitution, replace the
     # latest-revision `cpi_all_items` with the release-date-keyed
     # first-release Series. Both series live on the same SPY calendar
@@ -327,7 +327,7 @@ def compute_inflation_growth_features(
         cpi_6m_change_pct, window=config.cpi_slope_lookback_sessions
     ).rename("cpi_6m_change_pct_slope_21d")
 
-    # Inflation surprise (ADR 0006 / Log #48 closure). When `cpi_nowcast`
+    # Inflation surprise (documented implementation decision). When `cpi_nowcast`
     # (the Cleveland Fed inflation nowcast) is supplied, compute the real
     # z-score; otherwise emit an all-NaN series so the rule engine
     # naturally falsifies the `inflation_shock` single-signal limb.
@@ -350,7 +350,7 @@ def compute_inflation_growth_features(
         pmi_manufacturing_series, window=config.pmi_slope_lookback_sessions
     ).rename("pmi_manufacturing_slope_21d")
 
-    # Aggregate forward EPS revision (Log #48 closure). When the weekly
+    # Aggregate forward EPS revision (documented implementation decision). When the weekly
     # revision series from the EPS accumulator is supplied, forward-fill
     # it onto the SPY session index. `reindex(method="ffill")` carries
     # each weekly value forward even when its observation_date is not
@@ -426,7 +426,7 @@ def compute_inflation_growth_features(
                 "source_url": INFLATION_SURPRISE_NOWCAST_BIAS_SOURCE_URL,
             }
         )
-    # v2 §2A lines 2587-2593 — first-release CPI provenance row (audit M2).
+    # v2 §2A lines 2587-2593 — first-release CPI provenance row (source-data audit).
     # Surfaces in the feature store output so replay consumers can audit
     # which CPI vintage powered each `as_of_date`.
     if cpi_first_release is not None and use_first_release_cpi_when_available:

@@ -12,7 +12,7 @@ from regime_detection.hysteresis import apply_asymmetric_hysteresis
 from regime_detection.models import AxisOutput, DataQuality
 
 
-# V2 §1B (Ambiguity Log #33/#34/#46/#47/#67) extends the V1 5-label set with
+# V2 §1B (documented implementation decision) extends the V1 5-label set with
 # `breakout_expansion` and `range_bound`. Members ordered by precedence:
 # breakout_expansion > recovery_attempt > trending > range_bound > chop >
 # transition > unknown.
@@ -27,7 +27,7 @@ TrendCharacterLabel = Literal[
 ]
 
 
-# Per Log #67. breakout_expansion shares rank 0 with trending (both are
+# Per documented implementation decision. breakout_expansion shares rank 0 with trending (both are
 # "high-conviction directional" labels). range_bound shares rank 1 with
 # recovery_attempt/chop (mid risk — calm but live regimes). transition/unknown
 # remain at rank 2 (catch-all / cold-start).
@@ -42,7 +42,7 @@ _RISK_RANK: dict[TrendCharacterLabel, int] = {
 }
 
 
-# Spec-pinned constants (Ambiguity Log #46/#47). Mirrored by yaml defaults in
+# Spec-pinned constants (documented implementation decision). Mirrored by yaml defaults in
 # TrendCharacterV2Config. The classifier reads these defaults when no v2
 # config is threaded through; yaml may retune via §9.1 walk-forward.
 _DEFAULT_FOLLOWTHROUGH_RATE_THRESHOLD = 0.60
@@ -67,7 +67,7 @@ class TrendCharacterFeatures:
     return_21d: pd.Series
     prior_63d_drawdown: pd.Series
     adx_14: pd.Series
-    # V2 §1B (Ambiguity Log #46/#47).
+    # V2 §1B (documented implementation decision).
     return_63d: pd.Series
     midpoint_excursion_20d: pd.Series
     breakout_20d_or_50d: pd.Series
@@ -160,7 +160,7 @@ def _compute_followthrough_rate(
     window_count: int = _DEFAULT_FOLLOWTHROUGH_WINDOW_COUNT,
     hold_sessions: int = _DEFAULT_FOLLOWTHROUGH_HOLD_SESSIONS,
 ) -> pd.Series:
-    """v2 §1B lines 110-116 + Ambiguity Log #47.
+    """v2 §1B lines 110-116 + documented implementation decision.
 
     Walk backwards through history collecting up to `window_count` past
     sessions where breakout_20d_or_50d fired. For each, "held" iff every
@@ -313,7 +313,7 @@ def raw_label_for_day(
         and adx < _DEFAULT_RANGE_BOUND_ADX_THRESHOLD
     )
 
-    # Precedence (Ambiguity Log #67):
+    # Precedence (documented implementation decision):
     # breakout_expansion > recovery_attempt > trending > range_bound > chop >
     # transition > unknown.
     if breakout_expansion:

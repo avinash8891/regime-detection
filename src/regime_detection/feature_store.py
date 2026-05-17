@@ -206,7 +206,7 @@ class FeatureStore(BaseModel):
     sma_50: pd.Series
 
     # V2 §3 seam — populated when context.sector_etf_closes is present.
-    # Slice 1 swaps the placeholder for the real feature compute.
+    # implementation phase swaps the placeholder for the real feature compute.
     network_fragility: NetworkFragilityFeatures | None = None
 
     # V2 §1A seam — populated when a TrendDirectionV2Config is threaded
@@ -234,15 +234,15 @@ class FeatureStore(BaseModel):
     # features per spec lines 257–258) live on volatility_state_v2.
     volume_liquidity_v2: VolumeLiquidityV2Features | None = None
 
-    # V2 §2A seam (Slice 4.1, evidence-only) — populated when a
+    # V2 §2A seam (implementation phase, evidence-only) — populated when a
     # MonetaryPressureV2FeaturesConfig is threaded through AND
     # MarketContext.macro_series carries both DGS2 and DGS10 (spec
     # source contract §2A lines 887–889). Exposes ONLY the two
     # spec-pinned yield z-scores; broad_usd_index and 21d-variant
-    # features are deferred per Ambiguity Log #44 / #45.
+    # features are deferred per documented implementation decision.
     monetary: MonetaryPressureV2Features | None = None
 
-    # V2 §6.1 HMM evidence seam (Slice 6) — populated when ``context.config.hmm``
+    # V2 §6.1 HMM evidence seam (implementation phase) — populated when ``context.config.hmm``
     # is non-None AND all five upstream feature seams are lit (volatility
     # return_1d, volume_liquidity_v2.volume_zscore_20d,
     # network_fragility.avg_pairwise_corr_63d, plus the SPY-derived
@@ -250,7 +250,7 @@ class FeatureStore(BaseModel):
     # preserved on the 5-component transition_score path.
     hmm: HMMFeatures | None = None
 
-    # v2 §6.2 GMM clustering evidence seam (Slice 7) — populated when
+    # v2 §6.2 GMM clustering evidence seam (implementation phase) — populated when
     # ``context.config.clustering`` is non-None AND the seven §6.2 inputs
     # are all available. Predicate gates on ``breadth_state_v2.pct_above_50dma``
     # (PIT path lit), ``network_fragility``, and ``trend_direction_v2``;
@@ -260,24 +260,24 @@ class FeatureStore(BaseModel):
     # wire) and V1 byte-identity is preserved.
     clustering: ClusteringFeatures | None = None
 
-    # v2 §6.3 BOCPD change-point evidence seam (Slice 8) — populated when
+    # v2 §6.3 BOCPD change-point evidence seam (implementation phase) — populated when
     # ``context.config.change_point`` is non-None AND the trailing
     # ``training_window_days`` of realized_vol_21d (SPY-derived) is
     # available. The observation series rides the SPY-close V1 path, so
     # this seam only goes None when the config is absent (v1-only callers)
     # or when SPY history is too short for the spec-pinned 5y window. The
-    # transition_score consumer is V2.1 spec-amendment work — Slice 8 is
+    # transition_score consumer is V2.1 spec-amendment work — implementation phase is
     # evidence-only and does NOT change the V1 5-component score path.
     change_point: ChangePointFeatures | None = None
 
-    # V2 §2C credit/funding seam (Slice 4) — populated when a CreditFundingConfig
+    # V2 §2C credit/funding seam (implementation phase) — populated when a CreditFundingConfig
     # is threaded through AND cross_asset_closes carries HYG/LQD/TLT/KRE AND
     # macro_series carries SOFR/IORB/NFCI/broad_usd_index. OAS keys are optional
     # at this gate; when absent the real-OAS label is unknown/data-unavailable
     # and the ETF proxy can still drive credit_funding_effective_state.
     credit_funding: CreditFundingFeatures | None = None
 
-    # V2 §2B inflation/growth seam (Slice 5) — populated when an
+    # V2 §2B inflation/growth seam (implementation phase) — populated when an
     # InflationGrowthConfig is threaded through AND cross_asset_closes carries
     # DBC/TLT/XLY/XLI/XLP/XLU AND macro_series carries cpi_all_items /
     # pmi_manufacturing / dgs10. Otherwise None — V1 byte-identity preserved
@@ -298,7 +298,7 @@ def _build_sentiment_score_series(
     on or before each session — V1 §2.2 stateless-replay rule, never
     consult a future-dated reading. Returns ``None`` when no AAII frame
     is supplied (lets the euphoria predicate falsify per V2 §10 "do not
-    invent a sentiment proxy" / Log #32 lineage).
+    invent a sentiment proxy" / documented implementation decision lineage).
 
     Cold-start (ADR 0004 Q5): a session with no AAII row at or before it
     receives NaN; the euphoria predicate then falsifies on that session
@@ -698,7 +698,7 @@ def build_feature_store(
     central_bank_text_config: CentralBankTextConfig | None = None,
     news_sentiment_config: NewsSentimentConfig | None = None,
 ) -> FeatureStore:
-    # TODO(refactor, owner=regime-maintainers, ticket=TD-FEATURE-STORE-BUILDER): Decompose this builder in a dedicated no-behavior-change
+    # TODO(refactor, owner=regime-maintainers): Decompose this builder in a dedicated no-behavior-change
     # refactor. Keep feature wiring and fixture replay frozen while extracting
     # helpers so classifier changes do not hide inside the decomposition.
     spy_ohlcv = context.spy_ohlcv

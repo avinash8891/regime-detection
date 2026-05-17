@@ -54,7 +54,19 @@ def shared_timeline_pipeline(market_df_for_asof):
         market_data=market_data,
         config=engine.config,
     )
-    feature_store = build_feature_store(context)
+    feature_store = build_feature_store(
+        context,
+        network_fragility_config=engine.config.network_fragility,
+        trend_direction_v2_config=engine.config.trend_direction_v2,
+        volatility_state_v2_config=engine.config.volatility_state_v2,
+        breadth_state_v2_config=engine.config.breadth_state_v2,
+        volume_liquidity_v2_config=engine.config.volume_liquidity_v2,
+        monetary_pressure_v2_config=engine.config.monetary_pressure_v2,
+        credit_funding_config=engine.config.credit_funding,
+        inflation_growth_config=engine.config.inflation_growth,
+        central_bank_text_config=engine.config.central_bank_text,
+        news_sentiment_config=engine.config.news_sentiment,
+    )
     bundle = build_axis_series_bundle(context=context, feature_store=feature_store)
     timeline = build_regime_timeline(
         context=context,

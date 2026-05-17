@@ -8,7 +8,7 @@ SOURCE_URL = "https://www.spglobal.com/spdji/en/documents/additional-material/sp
 SHEET_NAME = "ESTIMATES&PEs"
 WAYBACK_CDX_URL = "https://web.archive.org/cdx/search/cdx"
 
-# Weekly-snapshot accumulator (Log #48 closure path). Each weekly run of
+# Weekly-snapshot accumulator (documented implementation decision path). Each weekly run of
 # `run_aggregate_eps_fetch` appends the workbook's current snapshot to this
 # parquet, deduped by observation_date. Once at least 5 distinct weekly rows
 # have accumulated, `compute_eps_revision_direction_4w` produces a non-NaN

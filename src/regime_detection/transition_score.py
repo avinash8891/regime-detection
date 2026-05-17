@@ -1,10 +1,10 @@
-"""v2 §4 — Transition Score evidence composer (Slice 3, Without-HMM rhythm).
+"""v2 §4 — Transition Score evidence composer (implementation phase, Without-HMM rhythm).
 
 Implements the five 5-of-6 deterministic component scores defined verbatim
 in v2 §4.2, the §4.3 weighted composite (5-component, post-HMM-deferral
 renormalization), and the §4.4 half-open interpretation bands.
 HMM-driven ``hmm_probability_shift_score`` (the 6th component) is deferred
-to Slice 6; the §4.3 "Without HMM" weight table sums to 1.0 over the 5
+to implementation phase; the §4.3 "Without HMM" weight table sums to 1.0 over the 5
 components shipped here.
 """
 
@@ -56,7 +56,7 @@ def compute_transition_score(
     hmm_probability_shift_score: float | None = None,
     change_point_score: float | None = None,
 ) -> float:
-    """v2 §4.3 weighted composite (Ambiguity Log #66 4-table system).
+    """v2 §4.3 weighted composite (documented implementation decision 4-table system).
 
     The ``weights`` dict drives both the keys composed and the per-key
     weights. Valid keys are the canonical 7 components:
@@ -158,7 +158,7 @@ def compose_transition_score_for_session(
         "macro_event": macro_event,
     }
 
-    # v2 §4.2 line 2396 + §6.1 (Slice 6) — 6th component when both HMM
+    # v2 §4.2 line 2396 + §6.1 (implementation phase) — 6th component when both HMM
     # probabilities are present and non-NaN. Permutation-invariant
     # |top_state_prob[t] - top_state_prob[t-5]|, defensively clipped to
     # [0, 1] (the formula is already in-range by construction since
@@ -176,15 +176,15 @@ def compose_transition_score_for_session(
             1.0,
         )
 
-    # Ambiguity Log #66 — 7th component change_point_score wired in.
+    # documented implementation decision — 7th component change_point_score wired in.
     # `change_point.score` is already a posterior probability ∈ [0, 1] by
-    # construction (5-session rolling max per Log #64); no clip needed but
+    # construction (5-session rolling max per documented implementation decision); no clip needed but
     # we defensively clip to absorb any FP edge case at the seam.
     cp_score: float | None = None
     if change_point_score is not None and not math.isnan(float(change_point_score)):
         cp_score = _clip(float(change_point_score), 0.0, 1.0)
 
-    # Log #66 — 4-table weight selection gated on (hmm_present, cp_present).
+    # documented implementation decision — 4-table weight selection gated on (hmm_present, cp_present).
     if hmm_shift is not None and cp_score is not None:
         weights = config.weights_with_hmm_with_change_point
     elif hmm_shift is not None:

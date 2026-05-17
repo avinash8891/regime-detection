@@ -1,7 +1,7 @@
-"""v2 §6.3 BOCPD Change-Point Detection (Slice 8, evidence-only).
+"""v2 §6.3 BOCPD Change-Point Detection (implementation phase, evidence-only).
 
 Library reuse: ``bayesian_changepoint_detection.online_changepoint_detection``
-(Ambiguity Log #62) — Adams-MacKay 2007 algorithm. No hand-rolled BOCPD;
+(documented implementation decision) — Adams-MacKay 2007 algorithm. No hand-rolled BOCPD;
 ~70 lines of glue.
 
 Observation series: realized_vol_21d (#63).
@@ -50,8 +50,8 @@ class ChangePointFeatures:
     """v2 §6.3 — per-session BOCPD posterior + derived series."""
 
     posterior_changepoint_prob: pd.Series  # raw BOCPD per-session changepoint posterior
-    score: pd.Series  # 5-session rolling max of posterior (Log #64)
-    days_since_last_break: pd.Series  # nullable Int64; sessions since last break (Log #65)
+    score: pd.Series  # 5-session rolling max of posterior (documented implementation decision)
+    days_since_last_break: pd.Series  # nullable Int64; sessions since last break (documented implementation decision)
     method: str  # "BOCPD"
 
 
@@ -82,7 +82,7 @@ def compute_change_point_features(
     2. **In-window rows where no break has yet occurred in trailing
        history** (cold-start within the BOCPD window). ``posterior`` and
        ``score`` are real numbers; ``days_since_last_break`` is ``pd.NA``
-       per Ambiguity Log #65 / V1 §2.7 cold-start contract. The timeline
+       per documented implementation decision / V1 §2.7 cold-start contract. The timeline
        consumer maps ``pd.NA`` → ``None`` for the wire field while
        preserving the real ``score`` value. This is the load-bearing
        path — quiet markets with no detected breaks still emit a valid
@@ -193,14 +193,14 @@ def _bocpd_posterior_changepoint_prob(
 
 
 def _rolling_max_changepoint_prob(posterior: pd.Series, window: int) -> pd.Series:
-    """5-session rolling max per Ambiguity Log #64."""
+    """5-session rolling max per documented implementation decision."""
     return posterior.rolling(window=window, min_periods=1).max()
 
 
 def _days_since_last_break(
     posterior: pd.Series, threshold: float
 ) -> pd.Series:
-    """Sessions since last posterior crossing per Log #65.
+    """Sessions since last posterior crossing per documented implementation decision.
 
     ``pd.NA`` when no break has occurred in available history.
     """

@@ -668,7 +668,7 @@ def _build_v2_curated_candidate_events(
     hf_parquet_fetcher = group_a_hf_parquet_fetcher
     if hf_parquet_fetcher is None and global_rate_calendar_text_fetchers is not None:
         def hf_parquet_fetcher() -> bytes:
-            return b""
+            raise TimeoutError("hf central-bank parquet fetcher not provided for legacy replay")
 
     boe_news_fetcher = group_a_boe_news_fetcher
     if boe_news_fetcher is None and global_rate_calendar_text_fetchers is not None:

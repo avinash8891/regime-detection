@@ -52,8 +52,7 @@ class HFCentralBankValidator:
             return []
         try:
             parquet_bytes = self.parquet_fetcher()
-            frame = pd.read_parquet(BytesIO(parquet_bytes))
-        except Exception:
+        except (TimeoutError, OSError) as exc:
             LOGGER.warning(
                 "hf_central_bank parquet fetch failed; returning unknown fallback "
                 "validator_id=%s candidate_count=%s",
@@ -61,7 +60,14 @@ class HFCentralBankValidator:
                 len(central_bank_candidates),
                 exc_info=True,
             )
-            return [_unknown(candidate) for candidate in central_bank_candidates]
+            return [
+                _unknown(
+                    candidate,
+                    evidence_snippet=f"validator_source_unavailable: {type(exc).__name__}",
+                )
+                for candidate in central_bank_candidates
+            ]
+        frame = pd.read_parquet(BytesIO(parquet_bytes))
 
         if store is not None and run_id is not None:
             artifact_path = Path("data/raw/event_calendar/hf_central_bank_documents_other.parquet")
@@ -140,13 +146,15 @@ def _is_decision_doc(doc_type: str, title: str) -> bool:
     return any(term in combined for term in _DECISION_TERMS)
 
 
-def _unknown(candidate: EventCandidate) -> ValidationResult:
+def _unknown(
+    candidate: EventCandidate, *, evidence_snippet: str | None = None
+) -> ValidationResult:
     return ValidationResult(
         candidate_key=(candidate.event_type, candidate.date),
         validator_id=VALIDATOR_ID,
         verdict="unknown",
         evidence_url=None,
-        evidence_snippet=None,
+        evidence_snippet=evidence_snippet,
     )
 
 

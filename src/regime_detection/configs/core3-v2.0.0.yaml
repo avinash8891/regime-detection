@@ -86,7 +86,7 @@ network_fragility:
     correlation_concentration: 3
     correlation_to_one: 5
     systemic_stress: 5
-    # v2 Implementation Ambiguity Log entry #8 (slice-1 cleanup): an `unknown`
+    # v2 documented implementation decision (implementation cleanup): an `unknown`
     # raw label has risk_rank=2, lower than correlation_to_one (3). Without an
     # explicit hold, a single-day flicker through `unknown` (e.g. a quality
     # gap on day N) would fast-track de-escalation through the lower-risk
@@ -95,9 +95,9 @@ network_fragility:
     unknown: 5
   # v2 §3.7 default for labels NOT listed above (diversified_normal,
   # stock_picker_dispersion). 0 = immediate de-escalation; calibration §9.1
-  # may retune. See Implementation Ambiguity Log entry #6.
+  # may retune. See documented implementation decision.
   default_deescalation_days: 0
-  # v2 §3.4–§3.5 rule-engine thresholds (Slice 1.3). Every value cites its
+  # v2 §3.4–§3.5 rule-engine thresholds (implementation phase). Every value cites its
   # spec line in docs/regime_engine_v2_spec.md.
   rules:
     diversified_normal_percentile_lo: 0.25            # §3.5 line 619
@@ -113,9 +113,9 @@ network_fragility:
     corr_to_one_drawdown_max: 0.0                     # §3.5 line 648 ("drawdown_21d < 0")
     systemic_stress_vix_percentile_min: 0.80          # §3.5 line 655
 
-# v2 §1A — Layer 1 V2 Trend Direction (Slice 2.1 features + Slice 2.5
+# v2 §1A — Layer 1 V2 Trend Direction (implementation phase features + implementation phase
 # `recovery` label). Remaining new labels (`euphoria`, `breakout_expansion`,
-# `range_bound`) are deferred — see Implementation Ambiguity Log entries
+# `range_bound`) are deferred — see documented implementation notes entries
 # #32–#34 (sentiment_score / followthrough_rate / oscillation-range
 # ambiguities).
 trend_direction_v2:
@@ -131,19 +131,19 @@ trend_direction_v2:
     recovery_drawdown_threshold: -0.15  # v2 §1A line 116
     recovery_return_threshold: 0.10     # v2 §1A line 117
 
-# v2 §1C — Layer 1 V2 Volatility features (Slice 2.2 + 2.6 + ADR 0005).
+# v2 §1C — Layer 1 V2 Volatility features (implementation phase + 2.6 + ADR 0005).
 # atr_ratio / gap_frequency_20d / intraday_range_percentile_252d from OHLC;
 # the `vol_crush` IV features (implied_vol_30d, implied_vol_5d_change,
 # iv_rv_spread) light up when MarketContext.implied_vol_30d (FRED VIXCLS/100)
-# is supplied — free feed, no paid options data (Log #19+#20 closure).
+# is supplied — free feed, no paid options data (documented implementation decision).
 volatility_state_v2:
   atr_short_period: 14                  # v2 §1C line 142 (ATR_14, Wilder)
   atr_long_period: 50                   # v2 §1C line 142 (ATR_50, Wilder)
   gap_frequency_lookback_days: 20       # v2 §1C line 179
   gap_threshold_pct: 0.005              # v2 §1C line 181, US default
   intraday_range_lookback_days: 252     # v2 §1C line 186
-  # v2 §1C `rising_vol` rule (Slice 2.6) + `vol_crush` rule (ADR 0005 /
-  # Log #20 closure — implied_vol_30d from FRED VIXCLS, no paid feed).
+  # v2 §1C `rising_vol` rule (implementation phase) + `vol_crush` rule (ADR 0005 /
+  # documented implementation decision — implied_vol_30d from FRED VIXCLS, no paid feed).
   rules:
     atr_ratio_threshold: 1.15           # v2 §1C line 147
     realized_vol_ratio_threshold: 1.25  # v2 §1C line 148
@@ -167,32 +167,32 @@ volatility_state_v2:
 #                    mode until replaced by a true vendor PIT feed.
 breadth_state_v2:
   sector_breadth_lookback_days: 21      # v2 §1D line 229
-  label_rate_of_change_lookback_sessions: 5   # v2 §1D Ambiguity Log #68
+  label_rate_of_change_lookback_sessions: 5   # v2 §1D documented implementation decision
   nh_nl_ratio_narrowing_threshold: 0.4         # v2 §1D line 280
 
-# v2 §1E — Layer 1 V2 Volume / Liquidity features (Slice 2.4, evidence-only).
+# v2 §1E — Layer 1 V2 Volume / Liquidity features (implementation phase, evidence-only).
 # Ships ONLY:
 #   volume_zscore_20d — (volume - rolling_mean_20) / rolling_std_20 (§1E line 256).
 #
 # The other two §1E features (gap_frequency_20d, intraday_range_percentile_252d)
-# already live in volatility_state_v2 (Slice 2.2); the §1E axis classifier
+# already live in volatility_state_v2 (implementation phase); the §1E axis classifier
 # reads them from FeatureStore.volatility_state_v2 — no recompute.
 volume_liquidity_v2:
   volume_zscore_lookback_days: 20       # v2 §1E line 256
-  volume_zscore_ddof: 1                 # pandas/numpy default; pinned in Ambiguity Log
+  volume_zscore_ddof: 1                 # pandas/numpy default; pinned in documented implementation notes
 
-# v2 §1E — Volume / Liquidity axis classifier (Slice 2.7).
-# Rule layer on top of the slice-2.4 volume_zscore_20d feature.
+# v2 §1E — Volume / Liquidity axis classifier (implementation phase).
+# Rule layer on top of the volume_zscore_20d feature.
 # Ships `panic_volume`, `liquidity_gap_behavior`, and `normal_volume` live.
 # `liquidity_gap_behavior` consumes the two percentile inputs from
-# volatility_state_v2 (Implementation Ambiguity Log entry #40 closure).
+# volatility_state_v2 (documented implementation decision).
 volume_liquidity_state:
   rules:
     panic_volume_zscore_threshold: 2.0                    # v2 §1E line 272
     panic_volume_return_threshold: -0.02                  # v2 §1E line 273
     liquidity_gap_frequency_percentile_threshold: 0.75    # v2 §1E line 278
     liquidity_gap_intraday_range_percentile_threshold: 0.75  # v2 §1E line 279
-  # §1E is silent on hysteresis days. Pinned per Ambiguity Log entry #41:
+  # §1E is silent on hysteresis days. Pinned per documented implementation decision:
   #   panic_volume = 3 (high-risk hold, analogous to §3.7 correlation_to_one).
   #   normal_volume = 0 (immediate de-escalation; lowest risk_rank).
   #   unknown = 2 (modest hold so a single-day NaN flicker doesn't strand
@@ -219,7 +219,7 @@ transition_score:
     correlation_concentration: 0.225
     trend_break: 0.225
     macro_event: 0.10
-  # Ambiguity Log #66 — change_point evidence wired into transition_score.
+  # documented implementation decision — change_point evidence wired into transition_score.
   weights_with_change_point:
     volatility_acceleration: 0.20
     breadth_deterioration: 0.20
@@ -241,28 +241,28 @@ transition_score:
     transition_warning: [0.55, 0.75]
     high: [0.75, 1.00]
 
-# v2 §2A — Layer 2A Monetary/Liquidity V2. Feature seam (Slice 4.1) AND
+# v2 §2A — Layer 2A Monetary/Liquidity V2. Feature seam (implementation phase) AND
 # axis classifier are both shipped. Five z-score features per §2A line 896
-# and Ambiguity Log #46 (a): yield_change_zscore_{2y,10y}_63d on FRED
+# and documented implementation decision (a): yield_change_zscore_{2y,10y}_63d on FRED
 # DGS2/DGS10, broad_usd_index_zscore_63d on DTWEXBGS, and the 21d-variant
 # yield_change_zscore_21d_{2y,10y}. Source contract: §2A lines 887–889.
 # The §2A label set, precedence, risk-rank, and per-label hysteresis were
-# pinned by Ambiguity Log #46 (b–e) and are consumed by
+# pinned by documented implementation decision (b–e) and are consumed by
 # MonetaryPressureV2SeriesClassifier (axis_series.py) — entries #44/#45/#46
 # are fully resolved, nothing deferred.
 monetary_pressure_v2:
   yield_change_lookback_days: 63      # v2 §2A line 896
   zscore_normalizer_window_days: 1260 # v2 §2A line 896 (5y trading days)
-  rate_shock_lookback_days: 21        # v2 §2A 21d-variant (Ambiguity Log #46 a)
-  broad_usd_lookback_days: 63         # v2 §2A USD index 63d-change (Ambiguity Log #46 a)
+  rate_shock_lookback_days: 21        # v2 §2A 21d-variant (documented implementation decision a)
+  broad_usd_lookback_days: 63         # v2 §2A USD index 63d-change (documented implementation decision a)
 
-# v2 §2A — Monetary Pressure axis classifier (Ambiguity Log #46 b–e).
+# v2 §2A — Monetary Pressure axis classifier (documented implementation decision b–e).
 monetary_pressure_state:
   rules:
     tightening_pressure_zscore_threshold: 1.5   # §2A line 1093
     easing_pressure_zscore_threshold: -1.5      # §2A line 1098
     rate_shock_zscore_threshold: 2.0            # §2A line 1102
-  # Per Ambiguity Log #46 (e).
+  # Per documented implementation decision (e).
   deescalation_days_by_label:
     rate_shock: 5
     tightening_pressure: 3
@@ -275,7 +275,7 @@ monetary_pressure_state:
   default_deescalation_days: 0
 
 # v2 §2A lines 2578-2586 — central-bank-text classifier feeding
-# monetary_pressure.evidence. Audit M1 (docs/spec_code_data_audit_2026_05_15.md
+# monetary_pressure.evidence. Source-data audit (the source-data audit
 # §3.1). The spec phrasing names an "LLM classifier" but V1 §2.2 stateless
 # replay forbids non-deterministic ops, so the engine uses a deterministic
 # hawkish/dovish lexicon (regime_detection.central_bank_text) as the
@@ -315,12 +315,12 @@ news_sentiment:
   # walk-forward calibration placeholder.
   smoothing_window_sessions: 21
 
-# v2 §2C — Credit/Funding axis. Per Ambiguity Log #49 + #71, §2C carries
+# v2 §2C — Credit/Funding axis. Per documented implementation decision, §2C carries
 # TWO parallel credit-spread metrics plus an explicit effective downstream
 # resolver:
 #  1. Real ICE BofA OAS — `hy_oas` = BAMLH0A0HYM2, `ig_bbb_oas` =
 #     BAMLC0A4CBBB, on `MarketContext.macro_series`. FRED truncated these
-#     to a trailing ~3-year window (start 2023-05-15 — Log #71), so the
+#     to a trailing ~3-year window (start 2023-05-15 — documented implementation decision), so the
 #     real-OAS label `credit_funding_state` is `unknown` before ~2023.
 #  2. TLT-vs-HYG/LQD total-return-differential proxy — computed from the
 #     HYG/LQD/TLT closes, full history, producing the parallel
@@ -365,10 +365,10 @@ credit_funding:
   nfci_stale_days: 14
   etf_stale_sessions: 5
 
-# v2 §2B — Inflation / Growth axis (Slice 5). Per Ambiguity Log #48, DBC ETF
+# v2 §2B — Inflation / Growth axis (implementation phase). Per documented implementation decision, DBC ETF
 # substitutes for the Bloomberg Commodity Index (paid feed unavailable); the
 # classifier emits a bias-warning row with code
-# `commodity_proxy_dbc_substitute`. Log #48 closures:
+# `commodity_proxy_dbc_substitute`. documented implementation decisions:
 #   - earnings_expansion / earnings_contraction: consume the weekly
 #     aggregate-forward-EPS revision series built by the EPS accumulator
 #     (regime_data_fetch.aggregate_eps); silent during the < 5-week
@@ -396,11 +396,11 @@ inflation_growth:
     inflation_surprise_zscore_threshold: 1.5             # §2B line 2551
     inflation_surprise_normalizer_window_sessions: 1260  # 5y, §2A z-score convention
     inflation_surprise_realized_rate_lookback_sessions: 21
-    # Log #48 closure — earnings_expansion / earnings_contraction thresholds:
+    # documented implementation decision — earnings_expansion / earnings_contraction thresholds:
     eps_revision_expansion_threshold: 0.02         # §2B line 2605
     eps_revision_contraction_threshold: -0.02      # §2B line 2609
     # §2A lines 2587-2593 — first-release vs latest-revision CPI for replay.
-    # Audit M2 (docs/spec_code_data_audit_2026_05_15.md §3.2). When True and
+    # Source-data audit (the source-data audit). When True and
     # MarketContext.cpi_first_release is supplied (from the CPIAUCSL vintages
     # parquet), inflation_growth uses the value-as-of-release. When False or
     # when the vintage seam is absent, the existing latest-revision CPIAUCSL
@@ -431,14 +431,14 @@ vol_crush:
 hmm:
   n_states: 4
   # Spec §6.1 line 2786: "Fit on at least 5 years of data" (≈1260 NYSE
-  # sessions). Prior value (504, 2y) was a placeholder — bumped by Slice 6
-  # to satisfy the spec minimum. See Implementation Ambiguity Log #62.
+  # sessions). Prior value (504, 2y) was a placeholder — bumped by implementation phase
+  # to satisfy the spec minimum. See documented implementation notes.
   training_window_days: 1260
   # Ops/dev concern: engine is stateless and refits per classify_window.
   # The quarterly cadence is documented for operator-side scheduling. See
-  # Implementation Ambiguity Log #63.
+  # documented implementation notes.
   retrain_cadence_days: 21
-  # Slice 6: reproducibility seed for hmmlearn.GaussianHMM.
+  # implementation phase: reproducibility seed for hmmlearn.GaussianHMM.
   random_state: 42
   # Stabilize EM on mixed-scale market features while keeping deterministic
   # hmmlearn fits. The wrapper tries these seeds and accepts the highest
@@ -448,7 +448,7 @@ hmm:
   min_covar: 0.001
   random_seeds: [42, 101, 202, 303, 404, 505, 606, 707, 808, 909]
 
-# v2 §6.2 K-Means/GMM Clustering — diagnostic evidence layer (Slice 7).
+# v2 §6.2 K-Means/GMM Clustering — diagnostic evidence layer (implementation phase).
 clustering:
   n_clusters: 8
   training_window_days: 1260       # 5y, matches HMM training window
@@ -456,9 +456,9 @@ clustering:
   covariance_type: full
   model_version: "gmm_8cluster_v1.0"
 
-# v2 §6.3 + §4.6 Change-Point Detection (Slice 8, evidence-only).
+# v2 §6.3 + §4.6 Change-Point Detection (implementation phase, evidence-only).
 # Algorithm: BOCPD (Adams & MacKay 2007). Library:
-# bayesian-changepoint-detection (Ambiguity Log #62 corrects #53's
+# bayesian-changepoint-detection (documented implementation decision updates the
 # ruptures reference). Observation series: realized_vol_21d (#63).
 # Score = 5-session rolling max of posterior (#64). Break = posterior
 # >= 0.5 (#65). Hazard lambda = 250 (one expected break per trading
@@ -477,7 +477,7 @@ change_point:
 no_flip_flop:
   window_trading_days: 15
 
-# v2 §5.1 Agent Cohort Routing (Slice 5.1, Ambiguity Log #53 calibration placeholder).
+# v2 §5.1 Agent Cohort Routing (implementation phase, documented implementation decision calibration placeholder).
 cohort_routing:
   routing_rules:
     crisis_specialist:
@@ -519,7 +519,7 @@ cohort_routing:
     bull_low_vol_specialist: []
     default_neutral:         []
 
-# v2 §5.2 Strategy Family Constraints (Slice 5.2, Ambiguity Log #53 calibration placeholder).
+# v2 §5.2 Strategy Family Constraints (implementation phase, documented implementation decision calibration placeholder).
 # Override-on-default inheritance: each specialist cohort declares ONLY overrides;
 # unspecified families inherit default_neutral. Spec lines 2574-2650.
 strategy_family_constraints:

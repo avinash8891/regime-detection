@@ -1,4 +1,4 @@
-"""Cleveland Fed inflation-nowcast fetcher (ADR 0006 / Ambiguity Log #48).
+"""Cleveland Fed inflation-nowcast fetcher (ADR 0006 / documented implementation decision).
 
 Produces the ``cpi_nowcast`` series the v2 §2B ``inflation_surprise_zscore``
 feature consumes. ADR 0006 picked the free Cleveland Fed inflation nowcast

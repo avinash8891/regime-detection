@@ -157,6 +157,42 @@ def test_emit_manifest_for_report_paths_fails_when_no_files_found(tmp_path: Path
         )
 
 
+def test_emit_manifest_for_report_paths_fails_for_missing_report_path(tmp_path: Path) -> None:
+    out_dir = tmp_path / "data" / "raw"
+    out_dir.mkdir(parents=True)
+
+    import pytest
+
+    with pytest.raises(FileNotFoundError, match="manifest report path does not exist"):
+        emit_manifest_for_report_paths(
+            report_paths=[out_dir / "missing_report.json"],
+            out_dir=out_dir,
+            artifact_store_root=str(tmp_path / "store"),
+            manifest_path=tmp_path / "manifest.yaml",
+            artifact_set="missing-report",
+            required_for=[],
+        )
+
+
+def test_emit_manifest_for_report_paths_fails_for_non_json_report_path(tmp_path: Path) -> None:
+    out_dir = tmp_path / "data" / "raw"
+    out_dir.mkdir(parents=True)
+    report = out_dir / "report.txt"
+    report.write_text("not json")
+
+    import pytest
+
+    with pytest.raises(ValueError, match="manifest report path must be JSON"):
+        emit_manifest_for_report_paths(
+            report_paths=[report],
+            out_dir=out_dir,
+            artifact_store_root=str(tmp_path / "store"),
+            manifest_path=tmp_path / "manifest.yaml",
+            artifact_set="non-json-report",
+            required_for=[],
+        )
+
+
 def test_emit_manifest_for_report_paths_fails_when_one_report_has_no_exportable_artifacts(
     tmp_path: Path,
 ) -> None:

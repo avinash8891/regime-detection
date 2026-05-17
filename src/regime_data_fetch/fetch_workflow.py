@@ -37,8 +37,8 @@ V2_CROSS_ASSET_SYMBOLS = [
     "GLD",
     "USO",
     "UUP",
-    # Bloomberg Commodity Index substitute per Ambiguity Log #48; consumed
-    # by v2 §2B `commodity_return_63d` feature in slice 5.
+    # Bloomberg Commodity Index substitute per documented implementation decision; consumed
+    # by v2 §2B `commodity_return_63d` feature in implementation phase.
     "DBC",
 ]
 V2_EXTRA_SYMBOLS = ["KRE"] + V2_SECTOR_SYMBOLS + V2_CROSS_ASSET_SYMBOLS
@@ -51,7 +51,7 @@ V2_FRED_SERIES = {
     "cpi_all_items": "CPIAUCSL",
     "iorb": "IORB",
     # GDPNow nowcast (Atlanta Fed). Free on FRED at series_id GDPNOW.
-    # Not consumed by any v2 §2B rule predicate as of slice 5 ship; ingested
+    # Not consumed by any v2 §2B rule predicate as of implementation phase ship; ingested
     # here for the future-amendment slice that would use it as additional
     # recession_scare / recovery_growth evidence. Listed early in the slice
     # cadence so it lands in archived inputs before any spec amendment.
@@ -59,7 +59,7 @@ V2_FRED_SERIES = {
     # ICE BofA Option-Adjusted Spread series — FRED redistributes under
     # license from ICE Indices, free at the FRED endpoint. SINGLE SOURCE
     # for the v2 §2C `hy_oas_63d` / `ig_oas_63d` metrics
-    # (Log #49 closure). `credit_funding` lists these in REQUIRED_MACRO_KEYS,
+    # (documented implementation decision). `credit_funding` lists these in REQUIRED_MACRO_KEYS,
     # so the §2C seam does not build without them — there is no proxy
     # fallback path.
     "hy_oas": "BAMLH0A0HYM2",       # ICE BofA US High Yield Index OAS

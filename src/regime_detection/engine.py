@@ -47,8 +47,8 @@ class RegimeEngine:
         cpi_first_release: pd.Series | None = None,
         news_sentiment: pd.Series | None = None,
     ) -> RegimeOutput:
-        # TODO(api, owner=regime-maintainers, ticket=TD-ENGINE-REQUEST): Consider a ClassifyRequest input object only if this public signature keeps growing, and ship it with a compatibility plan.
-        # TODO(api, owner=regime-maintainers, ticket=TD-ENGINE-BREADTH-DATA): Decide the deprecation path for the public V1 `breadth_data` parameter.
+        # TODO(api, owner=regime-maintainers): Consider a ClassifyRequest input object only if this public signature keeps growing, and ship it with a compatibility plan.
+        # TODO(api, owner=regime-maintainers): Decide the deprecation path for the public V1 `breadth_data` parameter.
         _ignore_legacy_breadth_data(breadth_data)
         as_of_date = as_date(as_of_date)
         require_nyse_trading_day(as_of_date)

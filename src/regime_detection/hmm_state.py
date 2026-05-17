@@ -1,4 +1,4 @@
-"""v2 §6.1 Hidden Markov Model evidence layer (Slice 6).
+"""v2 §6.1 Hidden Markov Model evidence layer (implementation phase).
 
 Reuses existing FeatureStore seams as inputs (``return_1d``,
 ``realized_vol_21d``, ``drawdown_63d``, ``volume_zscore_20d``,
@@ -9,7 +9,7 @@ Reuses existing FeatureStore seams as inputs (``return_1d``,
 
 The HMM is evidence-only per V2 §10 / spec line 2780-2783: state indices
 are raw ``0``..``n-1`` integers, never auto-mapped to economic labels.
-Operator mapping is deferred — see Implementation Ambiguity Log #62/#63.
+Operator mapping is deferred — see documented implementation notes.
 
 Per V2 engine statelessness, ``compute_hmm_features`` re-fits ONCE per
 ``classify_window`` call on the trailing ``training_window_days`` rows.
@@ -149,7 +149,7 @@ def compute_hmm_features(
                 standardize_inputs=config.standardize_inputs,
             )
             best: dict[str, Any] | None = None
-            # TODO(simplify, owner=regime-maintainers, ticket=TD-HMM-WARM-START): the retrain loop now runs this full seed sweep
+            # TODO(simplify, owner=regime-maintainers): the retrain loop now runs this full seed sweep
             # (`len(random_seeds)` fits × n_iter=200) at every checkpoint —
             # dominant cost in classify_window. Warm-start from the previous
             # checkpoint's startprob/transmat/means/covars and drop n_iter for

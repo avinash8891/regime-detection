@@ -1,4 +1,4 @@
-"""v2 §2C Credit/Funding axis — feature compute + per-day rule materialisation (Slice 4).
+"""v2 §2C Credit/Funding axis — feature compute + per-day rule materialisation (implementation phase).
 
 Implements the 5-label axis classifier from spec lines 2005-2130:
 
@@ -8,7 +8,7 @@ Implements the 5-label axis classifier from spec lines 2005-2130:
   Precedence (§2C line 2019):
     deleveraging > funding_squeeze > credit_stress > spread_widening > credit_calm > unknown
 
-Credit-spread metrics — two parallel sources (Ambiguity Log #49 + #71):
+Credit-spread metrics — two parallel sources (documented implementation decision):
 
   §2C carries two distinct credit-spread metrics:
 
@@ -19,7 +19,7 @@ Credit-spread metrics — two parallel sources (Ambiguity Log #49 + #71):
      ``hy_oas`` / ``ig_bbb_oas`` (set by ``V2_FRED_SERIES`` in
      ``regime_data_fetch.fetch_workflow``) feed the ``hy_oas`` / ``ig_oas``
      params of ``compute_credit_funding_features``. FRED exposes only a
-     trailing ~3-year window of these series (start 2023-05-15 — Log #71),
+     trailing ~3-year window of these series (start 2023-05-15 — documented implementation decision),
      so the real-OAS label (``credit_funding_state``) is ``unknown``
      before ~2023.
 
@@ -156,7 +156,7 @@ _BIAS_FEATURE_NAMES: tuple[str, ...] = (
 )
 
 # Proxy provenance — the TLT-vs-HYG/LQD total-return-differential metric
-# (Ambiguity Log #71). Distinct from the real-OAS source code above; the
+# (documented implementation decision). Distinct from the real-OAS source code above; the
 # proxy is a similar measure that exists because FRED's ICE BofA OAS
 # series lack pre-2023 history.
 CREDIT_SPREAD_PROXY_BIAS_WARNING_CODE = "credit_spread_proxy_total_return_differential"
@@ -179,7 +179,7 @@ _PROXY_BIAS_FEATURE_NAMES: tuple[str, ...] = (
 
 @dataclass(frozen=True)
 class CreditFundingFeatures:
-    """v2 §2C per-session credit/funding feature series (Slice 4).
+    """v2 §2C per-session credit/funding feature series (implementation phase).
 
     All series are aligned to the SPY DatetimeIndex. NaN cold-start at the
     head of each series until the corresponding lookback fills.
@@ -351,7 +351,7 @@ def compute_credit_funding_features(
         ig_oas_63d, window=slope_21d
     ).rename("ig_oas_slope_21d")
 
-    # §2C proxy metric (Ambiguity Log #71) — TLT-vs-HYG/LQD total-return
+    # §2C proxy metric (documented implementation decision) — TLT-vs-HYG/LQD total-return
     # differential. Rising = Treasury outperforming credit = widening
     # spreads (matches the §2C line 2033 sign convention). A SEPARATE
     # parallel metric — never blended with the real-OAS series above.
@@ -490,7 +490,7 @@ def build_rule_inputs_for_date(
 
     The spread triple is passed explicitly (source-neutral) so the same
     builder serves both the real-OAS run (pass ``features.hy_oas_*``) and
-    the proxy run (pass ``features.hy_tr_differential_*``) — Ambiguity Log #71.
+    the proxy run (pass ``features.hy_tr_differential_*``) — documented implementation decision.
     """
     return CreditFundingRuleInputs(
         hy_spread_percentile_504d=_scalar_at(hy_spread_percentile_504d, dt),
@@ -520,7 +520,7 @@ def build_rule_inputs_by_date(
 ) -> dict[pd.Timestamp, CreditFundingRuleInputs]:
     """Per-date rule inputs. The spread triple is source-neutral — pass
     ``features.hy_oas_*`` for the real-OAS run or ``features.hy_tr_differential_*``
-    for the proxy run (Ambiguity Log #71)."""
+    for the proxy run (documented implementation decision)."""
     index = hy_spread_percentile_504d.index
     outputs: dict[pd.Timestamp, CreditFundingRuleInputs] = {}
     for dt in index:

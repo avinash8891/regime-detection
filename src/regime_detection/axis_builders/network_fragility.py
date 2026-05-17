@@ -51,7 +51,7 @@ def build_network_fragility_axis_series(
     volatility_active_labels_by_date: dict[date, str] | None = None,
     credit_funding_active_labels_by_date: dict[date, str] | None = None,
 ) -> dict[date, NetworkFragilityOutput] | None:
-    """V2 §3 network fragility classifier — full pipeline (Slice 1.4).
+    """V2 §3 network fragility classifier — full pipeline (implementation phase).
 
     Pipeline per v2 spec §3.2–§3.7:
 

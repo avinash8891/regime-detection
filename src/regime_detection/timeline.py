@@ -77,7 +77,7 @@ def _resolve_network_fragility_by_date(
 ) -> dict[date, NetworkFragilityOutput]:
     """Per-day fragility outputs.
 
-    Prefer the AxisSeriesBundle entry when present (slice 1+ supplies real
+    Prefer the AxisSeriesBundle entry when present (implementation phase+ supplies real
     classifications). Fall back to a v2 'unknown' placeholder per session
     when sector ETF data wasn't passed and the bundle entry is None.
     """
@@ -104,7 +104,7 @@ def _resolve_timeline_required_sessions(
     lookback_days: int,
     config: RegimeConfig,
 ) -> int:
-    # Slice 6/7/8 trainable v2 evidence layers (HMM, GMM clustering, BOCPD
+    # implementation phase/7/8 trainable v2 evidence layers (HMM, GMM clustering, BOCPD
     # change-point) each need the trailing ``training_window_days`` rows of
     # their inputs to fit. Extend the engine's minimum slicing window to
     # the LARGEST configured training window. Without this, disabling one
@@ -148,11 +148,11 @@ def _align_v2_evidence_for_selected_days(
     feature_store: FeatureStore,
     selected_days: list[date],
 ) -> _AlignedV2Evidence:
-    # v2 §6.2 GMM clustering evidence (Slice 7) — bulk-reindex BEFORE the
+    # v2 §6.2 GMM clustering evidence (implementation phase) — bulk-reindex BEFORE the
     # per-day loop (matches the `_build_transition_score_inputs_by_date`
     # pattern). Per-day `.get(pd.Timestamp(day))` would re-scan the index
     # n_sessions times; one reindex + positional access keeps the loop O(N).
-    # v2 §6.3 BOCPD change-point evidence (Slice 8) — bulk-reindex BEFORE the
+    # v2 §6.3 BOCPD change-point evidence (implementation phase) — bulk-reindex BEFORE the
     # per-day loop, same pattern as clustering. Stays None when the seam is
     # absent (config off, or SPY history shorter than training_window_days).
     session_index = pd.DatetimeIndex([pd.Timestamp(d) for d in selected_days])
@@ -296,7 +296,7 @@ def _build_timeline_output_for_day(
     strategy_family_constraints = None
     cohort_routing_config = working_context.config.cohort_routing
     if cohort_routing_config is not None:
-        # v2 §2A monetary pressure axis (Ambiguity Log #46) — wire the
+        # v2 §2A monetary pressure axis (documented implementation decision) — wire the
         # active label through to cohort routing when the axis is lit.
         monetary_label: str | None = None
         if monetary_pressure_output is not None:

@@ -97,10 +97,14 @@ def emit_manifest_for_report_paths(
 
 
 def _load_report_payload(report_path: Path) -> dict[str, object] | None:
-    if not report_path.exists() or report_path.suffix.lower() != ".json":
-        return None
+    if not report_path.exists():
+        raise FileNotFoundError(f"manifest report path does not exist: {report_path}")
+    if report_path.suffix.lower() != ".json":
+        raise ValueError(f"manifest report path must be JSON: {report_path}")
     payload = json.loads(report_path.read_text())
-    return payload if isinstance(payload, dict) else None
+    if not isinstance(payload, dict):
+        raise ValueError(f"manifest report payload must be a JSON object: {report_path}")
+    return payload
 
 
 def _iter_existing_report_files(payload: dict[str, object]) -> Iterable[tuple[str, Path, str | None]]:

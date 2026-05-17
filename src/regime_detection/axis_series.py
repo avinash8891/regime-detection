@@ -48,7 +48,7 @@ class AxisSeriesResult:
 
 @dataclass(frozen=True)
 class AxisSeriesBundle:
-    # TODO(model, owner=regime-maintainers, ticket=TD-AXIS-BUNDLE-MODEL): Consider Pydantic/model validation only after defining the
+    # TODO(model, owner=regime-maintainers): Consider Pydantic/model validation only after defining the
     # real cross-axis invariants this bundle must enforce. A wrapper-only
     # conversion from dataclass to model would add surface area without safety.
     trend_direction: AxisSeriesResult
@@ -58,15 +58,15 @@ class AxisSeriesBundle:
     event_calendar: dict[date, EventCalendarOutput]
     # V2 §3 network fragility — None in pure-v1 mode (no sector ETF data),
     # populated by build_network_fragility_axis_series when feature_store has
-    # the v2 fragility seam. Slice 1 fills in the real classifier rules.
+    # the v2 fragility seam. implementation phase fills in the real classifier rules.
     network_fragility: dict[date, NetworkFragilityOutput] | None = None
     # V2 §1E volume/liquidity — None in pure-v1 mode (no v2 config),
     # populated by build_volume_liquidity_axis_series when feature_store
-    # has the v2 volume_liquidity_v2 seam (Slice 2.7).
+    # has the v2 volume_liquidity_v2 seam (implementation phase).
     volume_liquidity_state: dict[date, VolumeLiquidityStateOutput] | None = None
     # V2 §2C credit/funding — None in pure-v1 mode (no v2 config),
     # populated by build_credit_funding_axis_series when feature_store has
-    # the credit_funding seam lit (Slice 4).
+    # the credit_funding seam lit (implementation phase).
     credit_funding: dict[date, CreditFundingOutput] | None = None
     # V2 §2C credit/funding PROXY label — None in pure-v1 mode; populated by
     # build_credit_funding_proxy_axis_series on the TLT-vs-HYG/LQD
@@ -78,11 +78,11 @@ class AxisSeriesBundle:
     credit_funding_effective: dict[date, CreditFundingOutput] | None = None
     # V2 §2A monetary pressure — None in pure-v1 mode (no v2 config), populated
     # by build_monetary_pressure_axis_series when feature_store.monetary is lit
-    # AND context.config.monetary_pressure_state is non-None (Ambiguity Log #46).
+    # AND context.config.monetary_pressure_state is non-None (documented implementation decision).
     monetary_pressure_state: dict[date, MonetaryPressureV2Output] | None = None
     # V2 §2B inflation/growth — None in pure-v1 mode (no v2 config), populated
     # by build_inflation_growth_axis_series when feature_store.inflation_growth is
-    # lit AND context.config.inflation_growth is non-None (Slice 5).
+    # lit AND context.config.inflation_growth is non-None (implementation phase).
     inflation_growth: dict[date, InflationGrowthOutput] | None = None
 
 

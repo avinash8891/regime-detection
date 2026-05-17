@@ -60,6 +60,29 @@ def _eps_snapshot(observation_date: dt.date, forward_eps: float) -> AggregateEPS
     )
 
 
+def test_aggregate_eps_snapshot_label_mappings_are_immutable() -> None:
+    estimates = {"2026E": 310.24}
+    pes = {"2026E": 20.1}
+    changes = {"2026E": 0.02}
+    pe_changes = {"2026E": 0.01}
+
+    snapshot = AggregateEPSSnapshot(
+        observation_date=dt.date(2026, 1, 30),
+        observation_label="current",
+        forward_estimate_label="2026E",
+        forward_estimate_value=310.24,
+        estimates_by_label=estimates,
+        pe_by_label=pes,
+        change_vs_prior_observation_by_label=changes,
+        change_vs_prior_observation_pe_by_label=pe_changes,
+    )
+    estimates["2026E"] = 999.0
+
+    assert snapshot.estimate_2026e == 310.24
+    with pytest.raises(TypeError):
+        snapshot.estimates_by_label["2026E"] = 999.0  # type: ignore[index]
+
+
 def test_parse_sp500_eps_workbook_extracts_current_and_historical_snapshots() -> None:
     parsed = parse_sp500_eps_workbook(FIXTURES / "sp500_eps_est_fixture.xlsx")
 

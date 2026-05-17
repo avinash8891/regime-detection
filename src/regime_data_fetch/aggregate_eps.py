@@ -62,7 +62,7 @@ def download_spglobal_eps_workbook(
     from the canonical public URL into ``out_path``.
 
     Cadence intent: the spdji workbook is published WEEKLY (typically Wed/Thu
-    around the earnings revision cycle). Slice 5 §2B's deferred
+    around the earnings revision cycle). implementation phase §2B's deferred
     ``aggregate_forward_eps_revision_direction_4w`` predicate needs at least
     4 consecutive weekly observations to compute the rolling 4-week
     direction, so this fetcher is intended to run on a weekly schedule.
@@ -247,7 +247,7 @@ def append_weekly_eps_snapshot(
     may re-run a fetch for the same week). Returns the full accumulated
     weekly-history DataFrame (sorted ascending by observation_date).
 
-    Closes Log #48's "workbook snapshot path does not expose weekly time
+    Implements the documented input contract's "workbook snapshot path does not expose weekly time
     series" blocker — the weekly series is built by accumulating one row
     per weekly fetch rather than read from a single workbook.
     """
@@ -447,7 +447,7 @@ def run_aggregate_eps_fetch(
         parquet_path = eps_dir / "sp500_eps_snapshots.parquet"
         df.to_parquet(parquet_path, index=False)
 
-        # Weekly-snapshot accumulator (Log #48 closure). Append this run's
+        # Weekly-snapshot accumulator (documented implementation decision). Append this run's
         # current snapshot to the persistent weekly-history parquet, then
         # compute the 4-week revision direction. The revision series is
         # all-NaN until > EPS_REVISION_LOOKBACK_WEEKS weekly rows have
