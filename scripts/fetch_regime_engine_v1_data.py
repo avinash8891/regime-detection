@@ -143,7 +143,7 @@ def _invoke_event_fetch(context: FetchModeInvocation) -> Path:
         artifact_store_root=context.acquisition_artifact_store_root,
         bls_start_year=args.bls_start_year,
         bls_end_year=args.bls_end_year,
-        include_v2_curated_candidates=args.include_v2_curated_event_candidates,
+        include_v2_curated_candidates=args.include_layer_event_candidates,
         as_of_date=context.end,
     )
 
@@ -567,9 +567,16 @@ def main() -> int:
         help="End year for BLS CPI/NFP schedule generation. Defaults to --end year.",
     )
     ap.add_argument(
+        "--include-layer-event-candidates",
         "--include-v2-curated-event-candidates",
-        action="store_true",
-        help="Add deterministic V2 curated event candidates: elections, budget deadlines, and official global-rate calendars.",
+        dest="include_layer_event_candidates",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help=(
+            "Include routine layer event candidates in event fetch output: elections, "
+            "budget deadlines, and official global-rate calendars. Default True; "
+            "use --no-include-layer-event-candidates for core FOMC/CPI/NFP debug runs."
+        ),
     )
     ap.add_argument(
         "--conservative-concurrent-fetches",

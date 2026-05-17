@@ -563,7 +563,7 @@ def test_run_us_event_calendar_fetch_writes_yaml_and_report(tmp_path: Path) -> N
     assert 'source: "bls.gov:schedule:consumer-price-index"' in contents
 
 
-def test_run_us_event_calendar_fetch_adds_v2_curated_candidates(tmp_path: Path) -> None:
+def test_run_us_event_calendar_fetch_adds_routine_layer_event_candidates(tmp_path: Path) -> None:
     def fake_fomc_listing_fetcher() -> str:
         return (FOMC_FIXTURES / "fomc_calendars_snippet.html").read_text()
 
@@ -619,6 +619,21 @@ def test_run_us_event_calendar_fetch_adds_v2_curated_candidates(tmp_path: Path) 
     assert report["counts"]["by_type"]["ECB_decision"] == 1
     assert report["counts"]["by_type"]["BOE_decision"] == 1
     assert report["counts"]["by_type"]["BOJ_decision"] == 1
+    assert report["coverage"] == {
+        "routine_expected_types": [
+            "BOE_decision",
+            "BOJ_decision",
+            "CPI",
+            "ECB_decision",
+            "FOMC",
+            "NFP",
+            "budget",
+            "election",
+        ],
+        "routine_missing_types": [],
+        "approval_gated_types": ["geopolitical_event"],
+        "approval_gated_by_type": {"geopolitical_event": 0},
+    }
     assert 'date: "2026-11-03"' in contents
     assert 'type: "election"' in contents
     assert "window_days: [-5, 10]" in contents

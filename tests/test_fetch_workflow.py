@@ -1003,6 +1003,7 @@ def test_fetch_all_dispatches_only_unattended_modes(
     assert daily_kwargs["fixed_universe_dir"] is None
     assert daily_kwargs["allow_pit_universe"] is False
     assert daily_kwargs["expected_universe_count"] == FIXED_UNIVERSE_SYMBOL_COUNT
+    assert kwargs_by_mode["events"]["include_v2_curated_candidates"] is True
 
 
 def test_emit_manifest_uses_all_runner_use_cases_by_default(

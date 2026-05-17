@@ -111,4 +111,9 @@ The approved constituent OHLCV lockfile currently points at
 It pins 1085 canonical symbol files through SHA-256 metadata and intentionally
 keeps raw data out of Git.
 
+Daily `--fetch all` includes the full routine layer event-calendar surface by
+default: FOMC, CPI, NFP, election, budget, ECB, BOE, and BOJ rows.
+`geopolitical_event` remains approval-gated and is rendered only from the
+operator approval overlay.
+
 See `docs/market_data_fetch_plan.md` section 0 for the storage contract.

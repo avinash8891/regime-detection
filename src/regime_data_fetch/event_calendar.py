@@ -72,6 +72,17 @@ _BLS_OFFICIAL_CANCELED_RELEASE_COUNTS = {
     ("CPI", 2025): 1,
     ("NFP", 2025): 1,
 }
+ROUTINE_LAYER_EVENT_TYPES = (
+    "BOE_decision",
+    "BOJ_decision",
+    "CPI",
+    "ECB_decision",
+    "FOMC",
+    "NFP",
+    "budget",
+    "election",
+)
+APPROVAL_GATED_EVENT_TYPES = ("geopolitical_event",)
 EVENT_PRECEDENCE = (
     "geopolitical_event",
     "election_window",
@@ -340,6 +351,7 @@ def run_us_event_calendar_fetch(
                 "total_events": len(events),
                 "by_type": {key: counts[key] for key in sorted(counts)},
             },
+            "coverage": _build_event_type_coverage(counts),
             "paths": {
                 "event_calendar_yaml": format_report_path(yaml_path, repo_root=repo_root),
                 "acquisition_db": format_report_path(acquisition_db_path, repo_root=repo_root) if acquisition_db_path else None,
@@ -385,6 +397,19 @@ def run_us_event_calendar_fetch(
         if store and fetch_run:
             store.finish_fetch_run(run_id=fetch_run.run_id, status="failed", notes=str(exc))
         raise
+
+
+def _build_event_type_coverage(counts: Counter[str]) -> dict[str, object]:
+    return {
+        "routine_expected_types": list(ROUTINE_LAYER_EVENT_TYPES),
+        "routine_missing_types": [
+            event_type for event_type in ROUTINE_LAYER_EVENT_TYPES if counts[event_type] == 0
+        ],
+        "approval_gated_types": list(APPROVAL_GATED_EVENT_TYPES),
+        "approval_gated_by_type": {
+            event_type: counts[event_type] for event_type in APPROVAL_GATED_EVENT_TYPES
+        },
+    }
 
 
 def _matching_scheduled_event_labels(*, as_of_date: dt.date, scheduled_events: list[ScheduledEvent]) -> set[str]:
