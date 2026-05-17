@@ -31,6 +31,9 @@ from regime_detection.hysteresis import (
 from regime_detection.axis_builders.volume_liquidity import (
     build_volume_liquidity_axis_series as build_volume_liquidity_axis_series,
 )
+from regime_detection.axis_builders.monetary_pressure import (
+    build_monetary_pressure_axis_series as build_monetary_pressure_axis_series,
+)
 from regime_detection.inflation_growth import (
     INFLATION_GROWTH_RISK_RANK,
     InflationGrowthLabel,
@@ -43,14 +46,7 @@ from regime_detection.models import (
     CreditFundingOutput,
     DataQuality,
     InflationGrowthOutput,
-    MonetaryPressureV2Output,
     NetworkFragilityOutput,
-)
-from regime_detection.monetary_pressure import (
-    MONETARY_PRESSURE_V2_RISK_RANK,
-    MonetaryPressureV2Label,
-    build_rule_inputs_for_date as build_monetary_pressure_rule_inputs_for_date,
-    evaluate_rules as evaluate_monetary_pressure_rules,
 )
 from regime_detection.network_fragility_rules import (
     NETWORK_FRAGILITY_RISK_RANK,
@@ -105,10 +101,6 @@ TREND_CHARACTER_REQUIRED_TRADING_DAYS = 63
 VOLATILITY_REQUIRED_TRADING_DAYS = 252
 # V1 breadth ETF-proxy quality gate uses the existing 50-session calibration.
 BREADTH_REQUIRED_TRADING_DAYS = 50
-# V2 §2A feature series already encode their longer warm-ups as NaN.
-MONETARY_PRESSURE_REQUIRED_TRADING_DAYS = 1
-
-
 def build_trend_direction_axis_series(
     context: MarketContext, feature_store: FeatureStore
 ) -> AxisSeriesResult:
@@ -1139,119 +1131,6 @@ def _calendar_staleness_days_series(
         pd.Series(session_index, index=session_index) - last_valid_date
     ).dt.days
     return delta_days.fillna(_STALENESS_SENTINEL).astype("int64")
-
-
-def build_monetary_pressure_axis_series(
-    context: MarketContext,
-    feature_store: FeatureStore,
-) -> dict[date, MonetaryPressureV2Output] | None:
-    """V2 §2A monetary pressure axis classifier (Ambiguity Log #46).
-
-    Pipeline mirrors build_volume_liquidity_axis_series:
-
-      1. Read pre-computed features from ``feature_store.monetary``. If the
-         seam is None (no v2 config / no DGS2+DGS10) return None so the
-         timeline leaves ``RegimeOutput.monetary_pressure_state`` as None.
-      2. Per session, assess data quality (``assess_series_input_quality`` +
-         ``quality_forces_unknown``). Quality failures force ``unknown``.
-      3. Materialize per-day scalar inputs and evaluate the §2A rule
-         precedence (rate_shock > tightening_pressure > easing_pressure >
-         neutral_monetary).
-      4. Apply per-label asymmetric hysteresis per Log #46 (e).
-      5. Emit one ``MonetaryPressureV2Output`` per session.
-    """
-    features = feature_store.monetary
-    if features is None:
-        return None
-    mp_config = context.config.monetary_pressure_state
-    if mp_config is None:
-        return None
-
-    v2_features_config = context.config.monetary_pressure_v2
-    if v2_features_config is None:
-        # Defensive: features seam lit but feature config missing.
-        return None
-    # The z-score feature series already encode the 63d/21d change window
-    # plus 1260d normalizer warm-up as NaN. At the classifier boundary we
-    # only need the current session's computed feature values; requiring
-    # 1323 non-NaN z-score observations would double-count the warm-up and
-    # keep the axis permanently unknown on a 30-session profile window.
-    required_trading_days = MONETARY_PRESSURE_REQUIRED_TRADING_DAYS
-
-    required_inputs: list[pd.Series] = [
-        features.yield_change_zscore_2y_63d,
-        features.yield_change_zscore_10y_63d,
-        features.yield_change_zscore_21d_2y,
-        features.yield_change_zscore_21d_10y,
-    ]
-    max_freshness_days = context.config.data_quality.max_freshness_days
-    min_completeness = context.config.data_quality.min_completeness
-
-    raw_labels: list[MonetaryPressureV2Label] = []
-    per_day_data_quality: list[DataQuality] = []
-    per_day_evidence: list[dict[str, object]] = []
-
-    for day in context.sessions:
-        dt = pd.Timestamp(day)
-
-        day_quality = assess_series_input_quality(
-            as_of_date=day,
-            required_inputs=required_inputs,
-            required_trading_days=required_trading_days,
-            raw_label="",
-            max_freshness_days=max_freshness_days,
-            min_completeness=min_completeness,
-            skip_raw_label_short_circuit=True,
-        )
-        if quality_forces_unknown(day_quality):
-            raw_labels.append("unknown")
-            per_day_data_quality.append(day_quality)
-            per_day_evidence.append(
-                {"reason": day_quality.reason or "insufficient_data"}
-            )
-            continue
-
-        inputs = build_monetary_pressure_rule_inputs_for_date(features=features, dt=dt)
-        label = evaluate_monetary_pressure_rules(inputs=inputs, config=mp_config.rules)
-        raw_labels.append(label)
-        per_day_data_quality.append(day_quality)
-        per_day_evidence.append(
-            {
-                "rule_evidence": {
-                    "yield_change_zscore_2y_63d": inputs.zscore_2y_63d,
-                    "yield_change_zscore_10y_63d": inputs.zscore_10y_63d,
-                    "broad_usd_index_zscore_63d": inputs.broad_usd_zscore_63d,
-                    "yield_change_zscore_21d_2y": inputs.zscore_21d_2y,
-                    "yield_change_zscore_21d_10y": inputs.zscore_21d_10y,
-                },
-            }
-        )
-
-    stable_labels, active_labels = apply_per_label_asymmetric_hysteresis(
-        raw_labels=raw_labels,
-        risk_rank=MONETARY_PRESSURE_V2_RISK_RANK,
-        deescalation_days_by_label=mp_config.deescalation_days_by_label,
-        default_deescalation_days=mp_config.default_deescalation_days,
-    )
-
-    outputs: dict[date, MonetaryPressureV2Output] = {}
-    for day, raw, stable, active, dq, evidence in zip(
-        context.sessions,
-        raw_labels,
-        stable_labels,
-        active_labels,
-        per_day_data_quality,
-        per_day_evidence,
-        strict=True,
-    ):
-        outputs[day] = MonetaryPressureV2Output(
-            raw_label=raw,
-            stable_label=stable,
-            active_label=active,
-            evidence=evidence,
-            data_quality=dq,
-        )
-    return outputs
 
 
 def _trading_staleness_series(
