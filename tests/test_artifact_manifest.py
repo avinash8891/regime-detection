@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import get_args, get_type_hints
 
 import pytest
 
 from regime_data_fetch.artifact_manifest import (
     ArtifactManifest,
+    ArtifactStage,
     ManifestArtifact,
     ManifestValidationError,
     load_manifest,
@@ -123,6 +125,16 @@ def test_manifest_ignores_forward_compatible_unknown_fields() -> None:
 def test_manifest_rejects_unknown_stage() -> None:
     with pytest.raises(ManifestValidationError, match="unknown artifact stage"):
         _artifact(stage="scratch")
+
+
+def test_manifest_artifact_stage_is_a_closed_type() -> None:
+    assert set(get_args(ArtifactStage)) == {
+        "raw_capture",
+        "normalized",
+        "canonical",
+        "run_inputs",
+    }
+    assert get_type_hints(ManifestArtifact)["stage"] == ArtifactStage
 
 
 def test_manifest_rejects_bad_sha256() -> None:

@@ -200,6 +200,46 @@ def test_materialize_manifest_refreshes_existing_drift_after_source_verification
     assert destination.read_bytes() == b"macro"
 
 
+def test_materialize_manifest_reruns_into_existing_local_root_directory(
+    tmp_path: Path,
+) -> None:
+    store_root = tmp_path / "store"
+    source = store_root / "canonical" / "macro" / "fred_macro_series.parquet"
+    source.parent.mkdir(parents=True)
+    source.write_bytes(b"macro")
+    manifest = ArtifactManifest(
+        artifact_set="regime_engine_2026-05-15",
+        created_at_utc="2026-05-15T12:00:00Z",
+        storage_root=str(store_root),
+        artifacts=[
+            ManifestArtifact.from_dict(
+                {
+                    "name": "macro",
+                    "stage": "canonical",
+                    "uri": _store_uri(
+                        store_root, "canonical/macro/fred_macro_series.parquet"
+                    ),
+                    "local_path": "data/raw/macro/fred_macro_series.parquet",
+                    "sha256": "27d66c0dcef19a926429158d80111b954a5c23d076833347da3e27b91e4b423d",
+                    "required_for": ["profile_engine_30d"],
+                }
+            )
+        ],
+    )
+    manifest_path = tmp_path / "manifest.yaml"
+    write_manifest(manifest, manifest_path)
+    local_root = tmp_path / "data" / "raw"
+    local_root.mkdir(parents=True)
+
+    first = materialize_manifest(manifest_path=manifest_path, local_root=local_root)
+    second = materialize_manifest(manifest_path=manifest_path, local_root=local_root)
+
+    destination = local_root / "macro" / "fred_macro_series.parquet"
+    assert [item.destination for item in first] == [destination]
+    assert [item.destination for item in second] == [destination]
+    assert destination.read_bytes() == b"macro"
+
+
 def test_materialize_manifest_does_not_replace_existing_files_until_all_artifacts_verify(
     tmp_path: Path,
 ) -> None:

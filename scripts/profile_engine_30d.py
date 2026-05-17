@@ -27,8 +27,6 @@ from regime_data_fetch.cli_common import (
     OPERATOR_ENV_POINTER_FILE,
     load_operator_env_files,
 )
-from regime_data_fetch.materialization import materialize_if_requested
-from regime_data_fetch.manifest_inputs import resolve_runner_input_paths
 from regime_data_fetch.universe import FIXED_UNIVERSE_TREE_NAME
 from regime_detection.engine import RegimeEngine
 from regime_detection.fragility_universe import CROSS_ASSET_SYMBOLS, SECTOR_ETFS
@@ -41,10 +39,14 @@ from regime_detection.loaders import (
 from regime_detection.market_context import build_market_context
 from regime_detection.timeline import ENGINE_MINIMUM_HISTORY
 from scripts._v2_calibration_helpers import (
+    add_manifest_args,
+    apply_manifest_input_paths,
     default_pmi_path,
     load_close_dict,
     load_macro_series,
     load_market_data,
+    manifest_input_overrides,
+    materialize_manifest_from_args,
     positive_int,
 )
 from scripts.profile_engine_30d_reporting import (
@@ -79,19 +81,6 @@ DEFAULT_PIT_PARQUET = (
 DEFAULT_PMI_PATH = default_pmi_path(REPO_ROOT / "data" / "raw")
 DEFAULT_EVENT_CALENDAR = REPO_ROOT / "configs" / "events" / "us_events.yaml"
 RUN_TIMEOUT_SECONDS = 300
-MANIFEST_INPUT_FLAGS = {
-    "daily_dir": "--daily-dir",
-    "constituent_tree": "--constituent-tree",
-    "macro_parquet": "--macro-parquet",
-    "pit_parquet": "--pit-parquet",
-    "event_calendar": "--event-calendar",
-    "pmi_path": "--pmi-path",
-    "aaii_sentiment_parquet": "--aaii-sentiment-parquet",
-    "news_sentiment_parquet": "--news-sentiment-parquet",
-    "fomc_minutes_parquet": "--fomc-minutes-parquet",
-    "powell_speeches_parquet": "--powell-speeches-parquet",
-    "cpi_vintages_parquet": "--cpi-vintages-parquet",
-}
 __all__ = [
     "_build_json_report",
     "_reporting_label",
@@ -420,17 +409,6 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--powell-speeches-parquet", type=Path, default=None)
     parser.add_argument("--cpi-vintages-parquet", type=Path, default=None)
     parser.add_argument(
-        "--manifest",
-        type=Path,
-        default=None,
-        help="Optional artifact manifest to materialize before profiling.",
-    )
-    parser.add_argument(
-        "--artifact-store",
-        default=None,
-        help="Optional artifact-store root override for --manifest.",
-    )
-    parser.add_argument(
         "--operator-env-file",
         type=Path,
         default=None,
@@ -439,12 +417,7 @@ def _parse_args() -> argparse.Namespace:
             f"Defaults to {OPERATOR_ENV_POINTER_FILE} or ~/.config/regime-detection/operator.env."
         ),
     )
-    parser.add_argument(
-        "--data-root",
-        type=Path,
-        default=REPO_ROOT / "data" / "raw",
-        help="Local data/raw root used for manifest materialization.",
-    )
+    add_manifest_args(parser, data_root_default=REPO_ROOT / "data" / "raw", action="profiling")
     parser.add_argument(
         "--json-output",
         type=Path,
@@ -493,11 +466,7 @@ def _parse_args() -> argparse.Namespace:
 
 
 def _manifest_input_overrides(argv: list[str]) -> frozenset[str]:
-    overrides: set[str] = set()
-    for field, flag in MANIFEST_INPUT_FLAGS.items():
-        if any(item == flag or item.startswith(f"{flag}=") for item in argv):
-            overrides.add(field)
-    return frozenset(overrides)
+    return manifest_input_overrides(argv)
 
 
 def _apply_manifest_input_paths(
@@ -506,31 +475,20 @@ def _apply_manifest_input_paths(
     runner_name: str,
     required_fields: frozenset[str] | None = None,
 ) -> None:
-    if args.manifest is None:
-        return
-    resolved = resolve_runner_input_paths(
-        manifest_path=args.manifest,
-        data_root=args.data_root,
+    apply_manifest_input_paths(
+        args,
         runner_name=runner_name,
-        cli_values={field: getattr(args, field, None) for field in MANIFEST_INPUT_FLAGS},
-        cli_overrides=args.manifest_input_overrides,
         repo_root=REPO_ROOT,
-        **({"required_fields": required_fields} if required_fields is not None else {}),
+        required_fields=required_fields,
     )
-    for field in MANIFEST_INPUT_FLAGS:
-        setattr(args, field, getattr(resolved, field))
-    args.manifest_resolved_inputs = resolved.resolved_from_manifest
-    args.manifest_cli_overrides = resolved.cli_overrides
 
 
 def main() -> int:
     args = _parse_args()
     load_operator_env_files(repo_root=REPO_ROOT, explicit_path=args.operator_env_file)
-    materialize_if_requested(
-        manifest_path=args.manifest,
-        local_root=args.data_root,
+    materialize_manifest_from_args(
+        args,
         repo_root=REPO_ROOT,
-        store_root=args.artifact_store,
         required_for="profile_engine_30d",
     )
     _apply_manifest_input_paths(args, runner_name="profile_engine_30d")

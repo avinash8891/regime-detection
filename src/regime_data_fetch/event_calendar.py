@@ -13,7 +13,11 @@ import pandas as pd
 import yaml
 
 from regime_data_fetch.acquisition_store import AcquisitionStore
-from regime_data_fetch.bls_schedule import BLSScheduleFetchError, fetch_bls_schedule_page_text, fetch_bls_year_releases
+from regime_data_fetch.bls_schedule import (
+    BLSScheduleFetchError,
+    fetch_bls_schedule_page_text,
+    fetch_bls_year_releases,
+)
 from regime_data_fetch.earnings_season_calendar import is_in_earnings_season
 from regime_data_fetch import event_calendar_global_rates as _global_rates
 from regime_data_fetch.event_calendar_reporting import (
@@ -33,7 +37,11 @@ from regime_data_fetch.event_calendar_global_rate_parsers import (
 )
 from regime_data_fetch.event_calendar_models import (
     EventCalendarFetchError,
+    EventImportance,
     EventLabelResolution,
+    EventMarket,
+    EventSource,
+    EventType,
     GroupABuildResult,
     ScheduledEvent,
     US_EASTERN,
@@ -45,8 +53,12 @@ from regime_data_fetch.event_calendar_windows import (
     expand_nyse_window_for_scheduled_event as _expand_nyse_window_for_scheduled_event,
     us_general_election_date as _us_general_election_date,
 )
-from regime_data_fetch.expiry_calendar import expand_trading_day_window, compute_monthly_options_expiry_anchor
+from regime_data_fetch.expiry_calendar import (
+    expand_trading_day_window,
+    compute_monthly_options_expiry_anchor,
+)
 from regime_data_fetch.fomc_minutes import (
+    FOMCMinutesFetchError,
     fetch_fomc_historical_year_index,
     fetch_fomc_historical_year_page,
     fetch_fomc_minutes_listing,
@@ -64,7 +76,9 @@ SOURCE_BOE = _global_rates.SOURCE_BOE
 SOURCE_BOJ = _global_rates.SOURCE_BOJ
 SOURCE_FEC = "fec.gov:election-dates"
 SOURCE_US_BUDGET = "usa.gov:federal-budget-process"
-_FOMC_MINUTES_LINK_RE = re.compile(r"/monetarypolicy/fomcminutes(?P<meeting_end>\d{8})\.htm", flags=re.IGNORECASE)
+_FOMC_MINUTES_LINK_RE = re.compile(
+    r"/monetarypolicy/fomcminutes(?P<meeting_end>\d{8})\.htm", flags=re.IGNORECASE
+)
 _GLOBAL_RATE_URLS = _global_rates.GLOBAL_RATE_URLS
 _BLS_OFFICIAL_CANCELED_RELEASE_COUNTS = {
     # BLS 2025 lapse page: October 2025 CPI and Employment Situation
@@ -110,6 +124,10 @@ SCHEDULED_EVENT_WINDOWS: dict[str, tuple[str, int, int]] = {
 }
 
 __all__ = [
+    "EventImportance",
+    "EventMarket",
+    "EventSource",
+    "EventType",
     "_expand_nyse_window_for_scheduled_event",
     "_global_rate_event",
     "_global_rate_source_name",
@@ -137,12 +155,16 @@ def fetch_bls_release_timestamp(release_date: dt.date) -> dt.datetime:
 def load_scheduled_events_yaml(path: Path) -> list[ScheduledEvent]:
     payload = yaml.safe_load(path.read_text())
     if not isinstance(payload, dict) or not isinstance(payload.get("events"), list):
-        raise EventCalendarFetchError(f"Event calendar YAML at {path} did not contain an events list")
+        raise EventCalendarFetchError(
+            f"Event calendar YAML at {path} did not contain an events list"
+        )
 
     events: list[ScheduledEvent] = []
     for idx, entry in enumerate(payload["events"], start=1):
         if not isinstance(entry, dict):
-            raise EventCalendarFetchError(f"Event calendar YAML entry {idx} was not a mapping")
+            raise EventCalendarFetchError(
+                f"Event calendar YAML entry {idx} was not a mapping"
+            )
         try:
             event_date = dt.date.fromisoformat(str(entry["date"]))
             release_timestamp_raw = entry.get("release_timestamp_et")
@@ -169,9 +191,13 @@ def load_scheduled_events_yaml(path: Path) -> list[ScheduledEvent]:
                 else None
             )
         except KeyError as exc:
-            raise EventCalendarFetchError(f"Event calendar YAML entry {idx} missing field {exc.args[0]!r}") from exc
+            raise EventCalendarFetchError(
+                f"Event calendar YAML entry {idx} missing field {exc.args[0]!r}"
+            ) from exc
         except ValueError as exc:
-            raise EventCalendarFetchError(f"Event calendar YAML entry {idx} contained an invalid date/timestamp") from exc
+            raise EventCalendarFetchError(
+                f"Event calendar YAML entry {idx} contained an invalid date/timestamp"
+            ) from exc
 
         events.append(
             ScheduledEvent(
@@ -194,10 +220,20 @@ def resolve_event_label(
     scheduled_events: list[ScheduledEvent],
 ) -> EventLabelResolution:
     matching_events: set[str] = set()
-    matching_events.update(_matching_scheduled_event_labels(as_of_date=as_of_date, scheduled_events=scheduled_events))
+    matching_events.update(
+        _matching_scheduled_event_labels(
+            as_of_date=as_of_date, scheduled_events=scheduled_events
+        )
+    )
 
-    expiry_anchor = compute_monthly_options_expiry_anchor(year=as_of_date.year, month=as_of_date.month)
-    expiry_window = set(expand_trading_day_window(anchor_date=expiry_anchor, lookback_trading_days=2, lookahead_trading_days=0))
+    expiry_anchor = compute_monthly_options_expiry_anchor(
+        year=as_of_date.year, month=as_of_date.month
+    )
+    expiry_window = set(
+        expand_trading_day_window(
+            anchor_date=expiry_anchor, lookback_trading_days=2, lookahead_trading_days=0
+        )
+    )
     if as_of_date in expiry_window:
         matching_events.add("expiry_week")
 
@@ -206,7 +242,9 @@ def resolve_event_label(
 
     ordered_matches = [label for label in EVENT_PRECEDENCE if label in matching_events]
     if not ordered_matches:
-        return EventLabelResolution(all_matching_events=[], selected_via_precedence="normal_calendar")
+        return EventLabelResolution(
+            all_matching_events=[], selected_via_precedence="normal_calendar"
+        )
     return EventLabelResolution(
         all_matching_events=ordered_matches,
         selected_via_precedence=ordered_matches[0],
@@ -278,10 +316,16 @@ def run_us_event_calendar_fetch(
 ) -> Path:
     del fred_api_key
     if as_of_date is None and (bls_end_year is None or include_v2_curated_candidates):
-        raise ValueError("run_us_event_calendar_fetch requires as_of_date for deterministic replay")
+        raise ValueError(
+            "run_us_event_calendar_fetch requires as_of_date for deterministic replay"
+        )
     effective_end_year = bls_end_year if bls_end_year is not None else as_of_date.year
 
-    store = AcquisitionStore(acquisition_db_path, artifact_store_root=artifact_store_root) if acquisition_db_path else None
+    store = (
+        AcquisitionStore(acquisition_db_path, artifact_store_root=artifact_store_root)
+        if acquisition_db_path
+        else None
+    )
     fetch_run = (
         store.start_fetch_run(
             fetch_type="events",
@@ -353,8 +397,14 @@ def run_us_event_calendar_fetch(
             },
             "coverage": _build_event_type_coverage(counts),
             "paths": {
-                "event_calendar_yaml": format_report_path(yaml_path, repo_root=repo_root),
-                "acquisition_db": format_report_path(acquisition_db_path, repo_root=repo_root) if acquisition_db_path else None,
+                "event_calendar_yaml": format_report_path(
+                    yaml_path, repo_root=repo_root
+                ),
+                "acquisition_db": format_report_path(
+                    acquisition_db_path, repo_root=repo_root
+                )
+                if acquisition_db_path
+                else None,
             },
         }
         if group_a_result is not None:
@@ -378,8 +428,12 @@ def run_us_event_calendar_fetch(
                 output_kind="event_calendar_yaml",
                 path=yaml_path,
                 row_count=len(events),
-                min_date=min(event.date for event in events).isoformat() if events else None,
-                max_date=max(event.date for event in events).isoformat() if events else None,
+                min_date=min(event.date for event in events).isoformat()
+                if events
+                else None,
+                max_date=max(event.date for event in events).isoformat()
+                if events
+                else None,
                 notes="Generated scheduled US event calendar",
             )
             store.record_output(
@@ -387,15 +441,28 @@ def run_us_event_calendar_fetch(
                 output_kind="event_calendar_report",
                 path=report_path,
                 row_count=len(events),
-                min_date=min(event.date for event in events).isoformat() if events else None,
-                max_date=max(event.date for event in events).isoformat() if events else None,
+                min_date=min(event.date for event in events).isoformat()
+                if events
+                else None,
+                max_date=max(event.date for event in events).isoformat()
+                if events
+                else None,
                 notes="Event calendar fetch report",
             )
             store.finish_fetch_run(run_id=fetch_run.run_id, status="ok")
         return report_path
-    except Exception as exc:
+    except (
+        BLSScheduleFetchError,
+        EventCalendarFetchError,
+        FOMCMinutesFetchError,
+        OSError,
+        ValueError,
+        yaml.YAMLError,
+    ) as exc:
         if store and fetch_run:
-            store.finish_fetch_run(run_id=fetch_run.run_id, status="failed", notes=str(exc))
+            store.finish_fetch_run(
+                run_id=fetch_run.run_id, status="failed", notes=str(exc)
+            )
         raise
 
 
@@ -403,7 +470,9 @@ def _build_event_type_coverage(counts: Counter[str]) -> dict[str, object]:
     return {
         "routine_expected_types": list(ROUTINE_LAYER_EVENT_TYPES),
         "routine_missing_types": [
-            event_type for event_type in ROUTINE_LAYER_EVENT_TYPES if counts[event_type] == 0
+            event_type
+            for event_type in ROUTINE_LAYER_EVENT_TYPES
+            if counts[event_type] == 0
         ],
         "approval_gated_types": list(APPROVAL_GATED_EVENT_TYPES),
         "approval_gated_by_type": {
@@ -412,7 +481,9 @@ def _build_event_type_coverage(counts: Counter[str]) -> dict[str, object]:
     }
 
 
-def _matching_scheduled_event_labels(*, as_of_date: dt.date, scheduled_events: list[ScheduledEvent]) -> set[str]:
+def _matching_scheduled_event_labels(
+    *, as_of_date: dt.date, scheduled_events: list[ScheduledEvent]
+) -> set[str]:
     labels: set[str] = set()
     for event in scheduled_events:
         if event.market not in {"US", "GLOBAL"}:
@@ -528,7 +599,9 @@ def _fetch_fomc_events(
                 parsed_entries=[
                     ScheduledEvent(
                         date=entry.meeting_end_date,
-                        release_timestamp_et=fetch_release_timestamp(entry.release_date),
+                        release_timestamp_et=fetch_release_timestamp(
+                            entry.release_date
+                        ),
                         market="US",
                         type="FOMC",
                         importance="high",
@@ -567,7 +640,9 @@ def _fetch_bls_events(
         base_fetcher = page_fetcher
 
         def recording_page_fetcher(url: str) -> str:
-            html = base_fetcher(url) if base_fetcher else fetch_bls_schedule_page_text(url)
+            html = (
+                base_fetcher(url) if base_fetcher else fetch_bls_schedule_page_text(url)
+            )
             store.record_text_artifact(
                 run_id=run_id,
                 source_name="bls.gov:schedule",
@@ -610,7 +685,9 @@ def _fetch_bls_events(
     return events
 
 
-def _validate_bls_events(*, events: list[ScheduledEvent], start_year: int, end_year: int) -> None:
+def _validate_bls_events(
+    *, events: list[ScheduledEvent], start_year: int, end_year: int
+) -> None:
     grouped: dict[str, list[ScheduledEvent]] = {"CPI": [], "NFP": []}
     for event in events:
         if event.type in grouped:
@@ -618,20 +695,28 @@ def _validate_bls_events(*, events: list[ScheduledEvent], start_year: int, end_y
 
     for event_type, typed_events in grouped.items():
         if not typed_events:
-            raise EventCalendarFetchError(f"BLS schedule returned no {event_type} events")
+            raise EventCalendarFetchError(
+                f"BLS schedule returned no {event_type} events"
+            )
 
         dates = [event.date for event in typed_events]
         if dates != sorted(dates):
-            raise EventCalendarFetchError(f"BLS {event_type} events are not sorted ascending")
+            raise EventCalendarFetchError(
+                f"BLS {event_type} events are not sorted ascending"
+            )
         if len(dates) != len(set(dates)):
-            raise EventCalendarFetchError(f"BLS {event_type} events contained duplicate release dates")
+            raise EventCalendarFetchError(
+                f"BLS {event_type} events contained duplicate release dates"
+            )
 
         counts_by_year = Counter(value.year for value in dates)
         for year in range(start_year, end_year + 1):
             if year == end_year:
                 continue
             count = counts_by_year.get(year, 0)
-            expected_count = 12 - _BLS_OFFICIAL_CANCELED_RELEASE_COUNTS.get((event_type, year), 0)
+            expected_count = 12 - _BLS_OFFICIAL_CANCELED_RELEASE_COUNTS.get(
+                (event_type, year), 0
+            )
             if count != expected_count:
                 raise EventCalendarFetchError(
                     f"BLS {event_type} year {year} had {count} release dates; expected {expected_count} monthly releases"
@@ -653,29 +738,45 @@ def _build_v2_curated_candidate_events(
 ) -> GroupABuildResult:
     from regime_data_fetch.event_sources.deterministic_election import ElectionAdapter
     from regime_data_fetch.event_sources.approvals import load_approval_overlay
-    from regime_data_fetch.event_sources.budget_official_discovery import BudgetOfficialDiscoveryGenerator
-    from regime_data_fetch.event_sources.deterministic_budget import DeterministicBudgetAdapter
+    from regime_data_fetch.event_sources.budget_official_discovery import (
+        BudgetOfficialDiscoveryGenerator,
+    )
+    from regime_data_fetch.event_sources.deterministic_budget import (
+        DeterministicBudgetAdapter,
+    )
     from regime_data_fetch.event_sources.official_boe import OfficialBOEAdapter
     from regime_data_fetch.event_sources.official_boj import OfficialBOJAdapter
     from regime_data_fetch.event_sources.official_ecb import OfficialECBAdapter
     from regime_data_fetch.event_sources.orchestrator import EventSourceOrchestrator
-    from regime_data_fetch.event_sources.validators_hf_central_bank import HFCentralBankValidator
-    from regime_data_fetch.event_sources.validators_gpr_gdelt import GPRGDELTSignalGenerator
+    from regime_data_fetch.event_sources.validators_hf_central_bank import (
+        HFCentralBankValidator,
+    )
+    from regime_data_fetch.event_sources.validators_gpr_gdelt import (
+        GPRGDELTSignalGenerator,
+    )
     from regime_data_fetch.event_sources.validators_tinyfish import TinyFishValidator
 
     events: list[ScheduledEvent] = []
-    text_fetcher = group_a_text_fetcher or _group_a_text_fetcher_from_legacy_map(global_rate_calendar_text_fetchers)
+    text_fetcher = group_a_text_fetcher or _group_a_text_fetcher_from_legacy_map(
+        global_rate_calendar_text_fetchers
+    )
     hf_parquet_fetcher = group_a_hf_parquet_fetcher
     if hf_parquet_fetcher is None and global_rate_calendar_text_fetchers is not None:
+
         def hf_parquet_fetcher() -> bytes:
-            raise TimeoutError("hf central-bank parquet fetcher not provided for legacy replay")
+            raise TimeoutError(
+                "hf central-bank parquet fetcher not provided for legacy replay"
+            )
 
     boe_news_fetcher = group_a_boe_news_fetcher
     if boe_news_fetcher is None and global_rate_calendar_text_fetchers is not None:
+
         def boe_news_fetcher(page: int) -> str:
             return '{"Results": ""}'
 
-    live_group_b_sources = global_rate_calendar_text_fetchers is None and group_a_text_fetcher is None
+    live_group_b_sources = (
+        global_rate_calendar_text_fetchers is None and group_a_text_fetcher is None
+    )
     group_b_generators = []
     group_b_validators = []
     if live_group_b_sources:
@@ -683,21 +784,32 @@ def _build_v2_curated_candidate_events(
         group_b_generators.extend([BudgetOfficialDiscoveryGenerator(), gpr_gdelt])
         group_b_validators.extend([gpr_gdelt, TinyFishValidator()])
 
-    approval_overlay = load_approval_overlay(repo_root / "configs" / "events" / "group_b_approvals.yaml")
+    approval_overlay = load_approval_overlay(
+        repo_root / "configs" / "events" / "group_b_approvals.yaml"
+    )
     orchestrator = EventSourceOrchestrator(
         primary_adapters=[
-            OfficialECBAdapter(as_of_date=as_of_date, text_fetcher=text_fetcher or _build_url_text_fetcher_with_arg()),
+            OfficialECBAdapter(
+                as_of_date=as_of_date,
+                text_fetcher=text_fetcher or _build_url_text_fetcher_with_arg(),
+            ),
             OfficialBOEAdapter(
                 as_of_date=as_of_date,
                 text_fetcher=text_fetcher or _build_url_text_fetcher_with_arg(),
                 news_api_fetcher=boe_news_fetcher,
             ),
-            OfficialBOJAdapter(as_of_date=as_of_date, text_fetcher=text_fetcher or _build_url_text_fetcher_with_arg()),
+            OfficialBOJAdapter(
+                as_of_date=as_of_date,
+                text_fetcher=text_fetcher or _build_url_text_fetcher_with_arg(),
+            ),
             ElectionAdapter(as_of_date=as_of_date),
             DeterministicBudgetAdapter(as_of_date=as_of_date),
         ],
         candidate_generators=group_b_generators,
-        validators=[HFCentralBankValidator(parquet_fetcher=hf_parquet_fetcher), *group_b_validators],
+        validators=[
+            HFCentralBankValidator(parquet_fetcher=hf_parquet_fetcher),
+            *group_b_validators,
+        ],
         approval_overlay=approval_overlay,
     )
     candidates, validations, decisions, promoted_events = orchestrator.run(
@@ -745,13 +857,22 @@ def _group_a_text_fetcher_from_legacy_map(
             return ""
         if "ecb.europa.eu/press/govcdec/mopo/" in url:
             return ""
-        if "ecb.europa.eu/press/calendars/mgcgc/html/index.en.html" in url and "ecb" in global_rate_calendar_text_fetchers:
+        if (
+            "ecb.europa.eu/press/calendars/mgcgc/html/index.en.html" in url
+            and "ecb" in global_rate_calendar_text_fetchers
+        ):
             return global_rate_calendar_text_fetchers["ecb"]()
-        if "bankofengland.co.uk/monetary-policy/upcoming-mpc-dates" in url and "boe" in global_rate_calendar_text_fetchers:
+        if (
+            "bankofengland.co.uk/monetary-policy/upcoming-mpc-dates" in url
+            and "boe" in global_rate_calendar_text_fetchers
+        ):
             return global_rate_calendar_text_fetchers["boe"]()
         if "bankofengland.co.uk/sitemap/news" in url:
             return ""
-        if "boj.or.jp/en/mopo/mpmsche_minu/index.htm" in url and "boj" in global_rate_calendar_text_fetchers:
+        if (
+            "boj.or.jp/en/mopo/mpmsche_minu/index.htm" in url
+            and "boj" in global_rate_calendar_text_fetchers
+        ):
             return global_rate_calendar_text_fetchers["boj"]()
         if "boj.or.jp/en/mopo/mpmsche_minu/past.htm" in url:
             return ""
@@ -775,17 +896,39 @@ def _write_group_a_artifacts(
     validation_path = output_dir / "event_validations.parquet"
     quarantine_path = output_dir / "quarantine.parquet"
 
-    records = build_candidate_artifact_records(candidates=candidates, validations=validations, decisions=decisions)
+    records = build_candidate_artifact_records(
+        candidates=candidates, validations=validations, decisions=decisions
+    )
 
     candidate_df = pd.DataFrame(records.candidates)
     pd.DataFrame(records.validations).to_parquet(validation_path, index=False)
     candidate_df.to_parquet(candidate_path, index=False)
-    pd.DataFrame(records.quarantine, columns=candidate_df.columns).to_parquet(quarantine_path, index=False)
+    pd.DataFrame(records.quarantine, columns=candidate_df.columns).to_parquet(
+        quarantine_path, index=False
+    )
 
     if store and run_id is not None:
-        _record_group_a_output(store, run_id, "event_group_a_candidates", candidate_path, records.candidates)
-        _record_group_a_output(store, run_id, "event_group_a_validations", validation_path, records.validations)
-        _record_group_a_output(store, run_id, "event_group_a_quarantine", quarantine_path, records.quarantine)
+        _record_group_a_output(
+            store,
+            run_id,
+            "event_group_a_candidates",
+            candidate_path,
+            records.candidates,
+        )
+        _record_group_a_output(
+            store,
+            run_id,
+            "event_group_a_validations",
+            validation_path,
+            records.validations,
+        )
+        _record_group_a_output(
+            store,
+            run_id,
+            "event_group_a_quarantine",
+            quarantine_path,
+            records.quarantine,
+        )
 
     return {
         "candidates": candidate_path,
@@ -815,7 +958,9 @@ def _record_group_a_output(
 
 def _build_url_text_fetcher(url: str) -> Callable[[], str]:
     def fetch() -> str:
-        request = Request(url, headers={"User-Agent": "regime-detection-event-fetch/1.0"})
+        request = Request(
+            url, headers={"User-Agent": "regime-detection-event-fetch/1.0"}
+        )
         try:
             with urlopen(request, timeout=30) as response:
                 return response.read().decode("utf-8")

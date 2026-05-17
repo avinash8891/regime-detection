@@ -14,6 +14,7 @@ import pandas as pd
 from regime_detection.feature_store import FeatureStore
 from regime_detection.models import ClassificationStatus
 from regime_detection.models import RegimeOutput, RegimeTimeline
+from scripts._v2_calibration_helpers import axis_reporting_label as _reporting_label
 
 if TYPE_CHECKING:
     from scripts.profile_engine_30d import ProfileInputBundle, StageTimer
@@ -181,18 +182,6 @@ def _stage_report(
             }
         )
     return rows
-
-
-def _reporting_label(output: Any) -> str | None:
-    if output is None:
-        return None
-    reporting = getattr(output, "reporting_label", None)
-    if reporting is not None:
-        return reporting
-    classification_status = getattr(output, "classification_status", "classified")
-    if classification_status != "classified":
-        return classification_status
-    return getattr(output, "active_label", None)
 
 
 def _compact_timeline_rows(outputs: list[RegimeOutput]) -> list[str]:

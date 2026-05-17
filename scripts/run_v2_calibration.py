@@ -37,7 +37,6 @@ SRC_DIR = REPO_ROOT / "src"
 sys.path.insert(0, str(SRC_DIR))
 sys.path.insert(0, str(REPO_ROOT))
 
-from regime_data_fetch.materialization import materialize_if_requested  # noqa: E402
 from regime_data_fetch.universe import FIXED_UNIVERSE_TREE_NAME  # noqa: E402
 
 from regime_detection.config import load_default_regime_config  # noqa: E402
@@ -50,10 +49,12 @@ from regime_detection.loaders import (  # noqa: E402
 )
 from regime_detection.market_context import build_market_context  # noqa: E402
 from scripts._v2_calibration_helpers import (  # noqa: E402
+    add_manifest_args,
     default_pmi_path,
     load_close_dict,
     load_macro_series,
     load_market_data,
+    materialize_manifest_from_args,
 )
 
 
@@ -234,17 +235,10 @@ def _fit_summary_clustering(feature_store: Any) -> dict[str, Any]:
 
 def _parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="V2 calibration artifact runner.")
-    parser.add_argument("--data-root", type=Path, default=REPO_ROOT / "data" / "raw")
-    parser.add_argument(
-        "--manifest",
-        type=Path,
-        default=None,
-        help="Optional artifact manifest to materialize before calibration.",
-    )
-    parser.add_argument(
-        "--artifact-store",
-        default=None,
-        help="Optional artifact-store root override for --manifest.",
+    add_manifest_args(
+        parser,
+        data_root_default=REPO_ROOT / "data" / "raw",
+        action="calibration",
     )
     return parser.parse_args()
 
@@ -252,11 +246,9 @@ def _parse_args() -> argparse.Namespace:
 def main() -> int:
     args = _parse_args()
     data_root = args.data_root
-    materialize_if_requested(
-        manifest_path=args.manifest,
-        local_root=data_root,
+    materialize_manifest_from_args(
+        args,
         repo_root=REPO_ROOT,
-        store_root=args.artifact_store,
         required_for="v2_calibration",
     )
     daily_dir = data_root / FIXED_UNIVERSE_TREE_NAME

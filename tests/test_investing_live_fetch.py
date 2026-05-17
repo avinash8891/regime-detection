@@ -22,6 +22,10 @@ from regime_data_fetch.investing_live import (
     _validate_token_not_expired,
     run_investing_live_fetch,
 )
+from regime_data_fetch.investing_earnings_browser import (
+    InvestingEarningsBrowserCaptureError,
+    capture_investing_earnings_page_with_token,
+)
 
 APPLE_INSTRUMENT_ID = 6408
 APPLE_SYMBOL = "AAPL"
@@ -260,7 +264,13 @@ def test_run_investing_live_fetch_fails_loudly_without_earnings_token(
     ) -> object:
         if url == f"{CALENDAR_BASE}/v1/calendars/economic/events/occurrences":
             return {
-                "events": [{"id": 1, "country_id": US_COUNTRY_ID, "event_translated": "Payrolls"}],
+                "events": [
+                    {
+                        "id": 1,
+                        "country_id": US_COUNTRY_ID,
+                        "event_translated": "Payrolls",
+                    }
+                ],
                 "occurrences": [
                     {
                         "occurrence_id": 10,
@@ -275,7 +285,10 @@ def test_run_investing_live_fetch_fails_loudly_without_earnings_token(
                     {
                         "holiday_id": 20,
                         "holiday_start": "2026-05-01T00:00:00Z",
-                        "exchange": {"country_id": US_COUNTRY_ID, "country": "United States"},
+                        "exchange": {
+                            "country_id": US_COUNTRY_ID,
+                            "country": "United States",
+                        },
                     }
                 ]
             }
@@ -590,6 +603,61 @@ def test_browser_capture_writes_redacted_page_without_access_token(
     persisted_html = captured_path.read_text()
     assert token not in persisted_html
     assert "accessToken" in persisted_html
+
+
+def test_browser_capture_reports_navigation_timeout(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    closed = False
+
+    class FakePage:
+        def goto(self, *args: object, **kwargs: object) -> None:
+            del args, kwargs
+            raise TimeoutError("navigation timed out")
+
+    class FakeContext:
+        pages = [FakePage()]
+
+        def new_page(self) -> FakePage:
+            return FakePage()
+
+        def close(self) -> None:
+            nonlocal closed
+            closed = True
+
+    class FakeChromium:
+        def launch_persistent_context(self, **kwargs: object) -> FakeContext:
+            del kwargs
+            return FakeContext()
+
+    class FakePlaywright:
+        chromium = FakeChromium()
+
+        def __enter__(self) -> "FakePlaywright":
+            return self
+
+        def __exit__(self, *args: object) -> None:
+            del args
+
+    fake_sync_api = types.SimpleNamespace(
+        TimeoutError=TimeoutError,
+        sync_playwright=lambda: FakePlaywright(),
+    )
+    monkeypatch.setitem(sys.modules, "playwright", types.SimpleNamespace())
+    monkeypatch.setitem(sys.modules, "playwright.sync_api", fake_sync_api)
+
+    with pytest.raises(
+        InvestingEarningsBrowserCaptureError, match="navigation timed out"
+    ):
+        capture_investing_earnings_page_with_token(
+            output_path=tmp_path / "loaded_page.html",
+            user_data_dir=tmp_path / "profile",
+            headless=True,
+            timeout_ms=1000,
+        )
+
+    assert closed is True
 
 
 def _next_data_html(

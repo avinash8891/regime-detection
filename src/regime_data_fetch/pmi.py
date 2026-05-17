@@ -12,6 +12,7 @@ from zoneinfo import ZoneInfo
 import pandas as pd
 
 from regime_data_fetch.acquisition_store import AcquisitionStore
+from regime_data_fetch.event_sources._common import MONTHS
 from regime_data_fetch.ism import release_timestamp_for
 
 
@@ -36,22 +37,6 @@ _TE_SVC_DESC_RE = re.compile(
     r"Non Manufacturing PMI in the United States [^ ]+ to (?P<value>\d+(?:\.\d+)?) points in (?P<month>[A-Za-z]+)",
     re.IGNORECASE,
 )
-_MONTHS = {
-    "jan": 1,
-    "feb": 2,
-    "mar": 3,
-    "apr": 4,
-    "may": 5,
-    "jun": 6,
-    "jul": 7,
-    "aug": 8,
-    "sep": 9,
-    "oct": 10,
-    "nov": 11,
-    "dec": 12,
-}
-
-
 class PMIFetchError(RuntimeError):
     pass
 
@@ -130,7 +115,7 @@ def parse_tradingeconomics_html(html: str, *, series_name: str, source_url: str)
         raise PMIFetchError(f"TradingEconomics page did not contain parseable PMI description for {series_name}")
 
     month_name = match.group("month")
-    month = _MONTHS[month_name[:3].lower()]
+    month = MONTHS[month_name[:3].lower()]
     year = _extract_reference_year(html)
     period = f"{year:04d}-{month:02d}"
     return PMIObservation(

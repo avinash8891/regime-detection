@@ -92,8 +92,6 @@ def test_gate_scripts_parse_allow_session_errors_flag(
     argv_base: list[str],
     monkeypatch,
 ) -> None:
-    monkeypatch.setattr(module, "materialize_if_requested", lambda **_: None)
-
     monkeypatch.setattr(sys, "argv", argv_base)
     assert module._parse_args().allow_session_errors is False
 

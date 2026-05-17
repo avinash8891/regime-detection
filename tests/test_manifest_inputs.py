@@ -1,17 +1,39 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import get_type_hints
 
 import pytest
 import yaml
 
 from regime_data_fetch.manifest_inputs import (
     ManifestInputResolutionError,
+    REQUIRED_INPUT_FIELDS,
+    RequiredRunnerInputPaths,
+    RunnerInputPaths,
     resolve_runner_input_paths,
 )
 
 
 SHA = "0" * 64
+
+
+def test_runner_input_required_fields_are_backed_by_required_dataclass() -> None:
+    required_annotations = get_type_hints(RequiredRunnerInputPaths)
+    assert required_annotations == {
+        "daily_dir": Path,
+        "constituent_tree": Path,
+        "macro_parquet": Path,
+        "pit_parquet": Path,
+        "event_calendar": Path,
+    }
+    assert REQUIRED_INPUT_FIELDS == frozenset(required_annotations)
+    assert set(get_type_hints(RunnerInputPaths)) >= {
+        "required",
+        "optional",
+        "resolved_from_manifest",
+        "cli_overrides",
+    }
 
 
 def _artifact(name: str, local_path: str, required_for: list[str] | None = None):

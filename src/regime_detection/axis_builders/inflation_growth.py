@@ -8,10 +8,8 @@ from regime_detection.data_quality import (
     assess_series_input_quality,
     quality_forces_unknown,
 )
+from regime_detection.axis_builders.per_label import build_per_label_axis_outputs
 from regime_detection.feature_store import FeatureStore
-from regime_detection.hysteresis import (
-    apply_per_label_asymmetric_hysteresis,
-)
 from regime_detection.axis_builders.staleness import (
     _calendar_staleness_days_series,
     _trading_staleness_series,
@@ -193,28 +191,13 @@ def build_inflation_growth_axis_series(
             }
         )
 
-    stable_labels, active_labels = apply_per_label_asymmetric_hysteresis(
+    return build_per_label_axis_outputs(
+        sessions=context.sessions,
         raw_labels=raw_labels,
         risk_rank=INFLATION_GROWTH_RISK_RANK,
         deescalation_days_by_label=ig_config.deescalation_days_by_label,
         default_deescalation_days=ig_config.default_deescalation_days,
+        data_quality=per_day_data_quality,
+        evidence=per_day_evidence,
+        output_factory=InflationGrowthOutput,
     )
-
-    outputs: dict[date, InflationGrowthOutput] = {}
-    for day, raw, stable, active, dq, evidence in zip(
-        context.sessions,
-        raw_labels,
-        stable_labels,
-        active_labels,
-        per_day_data_quality,
-        per_day_evidence,
-        strict=True,
-    ):
-        outputs[day] = InflationGrowthOutput(
-            raw_label=raw,
-            stable_label=stable,
-            active_label=active,
-            evidence=evidence,
-            data_quality=dq,
-        )
-    return outputs

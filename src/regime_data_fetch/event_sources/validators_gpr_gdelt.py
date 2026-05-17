@@ -31,11 +31,15 @@ ACLED_SOURCE_ID = "acled:events"
 UCDP_SOURCE_ID = "ucdp:ged-candidate"
 HDX_HAPI_SOURCE_ID = "hdx-hapi:conflict-events"
 GPR_DAILY_URL = "https://www.matteoiacoviello.com/gpr_files/data_gpr_daily_recent.xls"
-GDELT_DAILY_EXPORT_URL_TEMPLATE = "http://data.gdeltproject.org/events/{date:%Y%m%d}.export.CSV.zip"
+GDELT_DAILY_EXPORT_URL_TEMPLATE = (
+    "http://data.gdeltproject.org/events/{date:%Y%m%d}.export.CSV.zip"
+)
 ACLED_READ_URL = "https://acleddata.com/api/acled/read"
 ACLED_TOKEN_URL = "https://acleddata.com/oauth/token"
 UCDP_GED_CANDIDATE_URL = "https://ucdpapi.pcr.uu.se/api/gedevents/26.0.3"
-HDX_HAPI_CONFLICT_EVENTS_URL = "https://hapi.humdata.org/api/v2/coordination-context/conflict-events"
+HDX_HAPI_CONFLICT_EVENTS_URL = (
+    "https://hapi.humdata.org/api/v2/coordination-context/conflict-events"
+)
 GDELT_EVENT_ROOT_CODES = {"14", "18", "19", "20"}
 GDELT_SQLDATE_IDX = 1
 GDELT_EVENT_ROOT_CODE_IDX = 28
@@ -55,6 +59,12 @@ class SourceFetchStatus:
     attempted_fetches: int = 0
     failed_fetches: int = 0
     empty_payload: bool = False
+
+
+@dataclass(frozen=True)
+class FetchOutcome:
+    rows: list[dict[str, object]]
+    status: SourceFetchStatus
 
 
 class GPRGDELTSignalGenerator:
@@ -104,9 +114,15 @@ class GPRGDELTSignalGenerator:
             if start_year <= row["date"].year <= end_year
         ]
         gdelt_spikes = self._fetch_gdelt_spikes(gpr_spikes, store=store, run_id=run_id)
-        acled_events = self._fetch_acled_event_rows(start_year, end_year, store=store, run_id=run_id)
-        ucdp_events = self._fetch_ucdp_event_rows(start_year, end_year, store=store, run_id=run_id)
-        hdx_events = self._fetch_hdx_hapi_event_rows(start_year, end_year, store=store, run_id=run_id)
+        acled_events = self._fetch_acled_event_rows(
+            start_year, end_year, store=store, run_id=run_id
+        )
+        ucdp_events = self._fetch_ucdp_event_rows(
+            start_year, end_year, store=store, run_id=run_id
+        )
+        hdx_events = self._fetch_hdx_hapi_event_rows(
+            start_year, end_year, store=store, run_id=run_id
+        )
         self._last_source_dates = {
             GPR_SOURCE_ID: {row["date"] for row in gpr_spikes},
             GDELT_SOURCE_ID: {row["date"] for row in gdelt_spikes},
@@ -117,22 +133,53 @@ class GPRGDELTSignalGenerator:
 
         for row in hdx_events:
             if start_year <= row["date"].year <= end_year:
-                candidates.append(_signal_candidate(row, source_id=HDX_HAPI_SOURCE_ID, event_subtype="hdx_hapi_monthly_conflict"))
+                candidates.append(
+                    _signal_candidate(
+                        row,
+                        source_id=HDX_HAPI_SOURCE_ID,
+                        event_subtype="hdx_hapi_monthly_conflict",
+                    )
+                )
         for row in acled_events:
             if start_year <= row["date"].year <= end_year:
-                candidates.append(_signal_candidate(row, source_id=ACLED_SOURCE_ID, event_subtype="acled_conflict_event"))
+                candidates.append(
+                    _signal_candidate(
+                        row,
+                        source_id=ACLED_SOURCE_ID,
+                        event_subtype="acled_conflict_event",
+                    )
+                )
         for row in gdelt_spikes:
             if start_year <= row["date"].year <= end_year:
                 candidates.append(_gdelt_candidate(row))
         for row in gpr_spikes:
             if start_year <= row["date"].year <= end_year:
-                anchor = _anchor_date(row["date"], self._last_source_dates[GDELT_SOURCE_ID], self.merge_window_days)
+                anchor = _anchor_date(
+                    row["date"],
+                    self._last_source_dates[GDELT_SOURCE_ID],
+                    self.merge_window_days,
+                )
                 candidates.append(_gpr_candidate(row, anchor))
         for row in ucdp_events:
             if start_year <= row["date"].year <= end_year:
-                candidates.append(_signal_candidate(row, source_id=UCDP_SOURCE_ID, event_subtype="ucdp_organized_violence"))
-        self.last_run_status = "partial" if any(status.status in {"failed", "partial"} for status in self.last_source_statuses.values()) else "ok"
-        return sorted(candidates, key=lambda candidate: (candidate.date, candidate.source_id))
+                candidates.append(
+                    _signal_candidate(
+                        row,
+                        source_id=UCDP_SOURCE_ID,
+                        event_subtype="ucdp_organized_violence",
+                    )
+                )
+        self.last_run_status = (
+            "partial"
+            if any(
+                status.status in {"failed", "partial"}
+                for status in self.last_source_statuses.values()
+            )
+            else "ok"
+        )
+        return sorted(
+            candidates, key=lambda candidate: (candidate.date, candidate.source_id)
+        )
 
     def validate(
         self,
@@ -162,16 +209,41 @@ class GPRGDELTSignalGenerator:
                     )
         return validations
 
-    def _fetch_gpr_spikes(self, *, store: AcquisitionStore | None, run_id: int | None) -> list[dict[str, object]]:
+    def _fetch_gpr_spikes(
+        self, *, store: AcquisitionStore | None, run_id: int | None
+    ) -> list[dict[str, object]]:
         try:
             payload = self.gpr_fetcher()
-        except OSError as exc:  # pragma: no cover - exercised via integration degradation
-            LOGGER.error("GPR fetch failed; geopolitical GPR candidates skipped: %s", exc)
-            self._record_source_status(GPR_SOURCE_ID, "failed", error=str(exc), attempted_fetches=1, failed_fetches=1)
+            _record_payload(
+                store, run_id, GPR_SOURCE_ID, "gpr_daily", payload, "GPR daily index"
+            )
+            rows = detect_gpr_spikes(
+                parse_gpr_table(payload),
+                min_history_days=self.min_history_days,
+                stddev_threshold=self.stddev_threshold,
+            )
+        except (
+            OSError,
+            ValueError,
+        ) as exc:  # pragma: no cover - exercised via integration degradation
+            LOGGER.error(
+                "GPR fetch/parse failed; geopolitical GPR candidates skipped: %s", exc
+            )
+            self._record_source_status(
+                GPR_SOURCE_ID,
+                "failed",
+                error=str(exc),
+                attempted_fetches=1,
+                failed_fetches=1,
+            )
             return []
-        _record_payload(store, run_id, GPR_SOURCE_ID, "gpr_daily", payload, "GPR daily index")
-        rows = detect_gpr_spikes(parse_gpr_table(payload), min_history_days=self.min_history_days, stddev_threshold=self.stddev_threshold)
-        self._record_source_status(GPR_SOURCE_ID, "ok" if rows else "empty", rows=len(rows), attempted_fetches=1, empty_payload=_is_empty_payload(payload))
+        self._record_source_status(
+            GPR_SOURCE_ID,
+            "ok" if rows else "empty",
+            rows=len(rows),
+            attempted_fetches=1,
+            empty_payload=_is_empty_payload(payload),
+        )
         return rows
 
     def _fetch_gdelt_spikes(
@@ -182,16 +254,43 @@ class GPRGDELTSignalGenerator:
         run_id: int | None,
     ) -> list[dict[str, object]]:
         if self.gdelt_fetcher is None:
-            return self._fetch_gdelt_daily_spike_windows(gpr_spikes, store=store, run_id=run_id)
+            return self._fetch_gdelt_daily_spike_windows(
+                gpr_spikes, store=store, run_id=run_id
+            )
         try:
             payload = self.gdelt_fetcher()
-        except OSError as exc:  # pragma: no cover - exercised via integration degradation
-            LOGGER.error("GDELT fetch failed; geopolitical GDELT candidates skipped: %s", exc)
-            self._record_source_status(GDELT_SOURCE_ID, "failed", error=str(exc), attempted_fetches=1, failed_fetches=1)
+            _record_payload(
+                store,
+                run_id,
+                GDELT_SOURCE_ID,
+                "gdelt_geopolitical_volume",
+                payload,
+                "GDELT geopolitical volume sample",
+            )
+            rows = parse_gdelt_volume_table(payload)
+        except (
+            OSError,
+            ValueError,
+        ) as exc:  # pragma: no cover - exercised via integration degradation
+            LOGGER.error(
+                "GDELT fetch/parse failed; geopolitical GDELT candidates skipped: %s",
+                exc,
+            )
+            self._record_source_status(
+                GDELT_SOURCE_ID,
+                "failed",
+                error=str(exc),
+                attempted_fetches=1,
+                failed_fetches=1,
+            )
             return []
-        _record_payload(store, run_id, GDELT_SOURCE_ID, "gdelt_geopolitical_volume", payload, "GDELT geopolitical volume sample")
-        rows = parse_gdelt_volume_table(payload)
-        self._record_source_status(GDELT_SOURCE_ID, "ok" if rows else "empty", rows=len(rows), attempted_fetches=1, empty_payload=_is_empty_payload(payload))
+        self._record_source_status(
+            GDELT_SOURCE_ID,
+            "ok" if rows else "empty",
+            rows=len(rows),
+            attempted_fetches=1,
+            empty_payload=_is_empty_payload(payload),
+        )
         return rows
 
     def _fetch_gdelt_daily_spike_windows(
@@ -201,20 +300,39 @@ class GPRGDELTSignalGenerator:
         store: AcquisitionStore | None,
         run_id: int | None,
     ) -> list[dict[str, object]]:
-        dates = sorted({day for row in gpr_spikes for day in _window_dates(row["date"], self.merge_window_days)})
+        dates = sorted(
+            {
+                day
+                for row in gpr_spikes
+                for day in _window_dates(row["date"], self.merge_window_days)
+            }
+        )
         rows: list[dict[str, object]] = []
         failed_fetches = 0
         last_error: str | None = None
         for day in dates:
             try:
                 payload = self.gdelt_daily_fetcher(day)
-            except OSError as exc:  # pragma: no cover - exercised via integration degradation
-                LOGGER.error("GDELT daily export fetch failed for %s; date skipped: %s", day.isoformat(), exc)
+            except (
+                OSError
+            ) as exc:  # pragma: no cover - exercised via integration degradation
+                LOGGER.error(
+                    "GDELT daily export fetch failed for %s; date skipped: %s",
+                    day.isoformat(),
+                    exc,
+                )
                 failed_fetches += 1
                 last_error = str(exc)
                 continue
             source_identifier = f"gdelt_daily_export_{day:%Y%m%d}"
-            _record_payload(store, run_id, GDELT_SOURCE_ID, source_identifier, payload, "GDELT daily event export")
+            _record_payload(
+                store,
+                run_id,
+                GDELT_SOURCE_ID,
+                source_identifier,
+                payload,
+                "GDELT daily event export",
+            )
             rows.extend(
                 parse_gdelt_event_export(
                     payload,
@@ -263,7 +381,7 @@ class GPRGDELTSignalGenerator:
         store: AcquisitionStore | None,
         run_id: int | None,
     ) -> list[dict[str, object]]:
-        return _fetch_optional_conflict_rows(
+        outcome = _fetch_optional_conflict_rows(
             self.acled_fetcher,
             start_year,
             end_year,
@@ -274,6 +392,8 @@ class GPRGDELTSignalGenerator:
             source_url=ACLED_READ_URL,
             parser=parse_acled_events,
         )
+        self.last_source_statuses[ACLED_SOURCE_ID] = outcome.status
+        return outcome.rows
 
     def _fetch_ucdp_event_rows(
         self,
@@ -283,7 +403,7 @@ class GPRGDELTSignalGenerator:
         store: AcquisitionStore | None,
         run_id: int | None,
     ) -> list[dict[str, object]]:
-        return _fetch_optional_conflict_rows(
+        outcome = _fetch_optional_conflict_rows(
             self.ucdp_fetcher,
             start_year,
             end_year,
@@ -294,6 +414,8 @@ class GPRGDELTSignalGenerator:
             source_url=UCDP_GED_CANDIDATE_URL,
             parser=parse_ucdp_events,
         )
+        self.last_source_statuses[UCDP_SOURCE_ID] = outcome.status
+        return outcome.rows
 
     def _fetch_hdx_hapi_event_rows(
         self,
@@ -303,7 +425,7 @@ class GPRGDELTSignalGenerator:
         store: AcquisitionStore | None,
         run_id: int | None,
     ) -> list[dict[str, object]]:
-        return _fetch_optional_conflict_rows(
+        outcome = _fetch_optional_conflict_rows(
             self.hdx_hapi_fetcher,
             start_year,
             end_year,
@@ -314,6 +436,8 @@ class GPRGDELTSignalGenerator:
             source_url=HDX_HAPI_CONFLICT_EVENTS_URL,
             parser=parse_hdx_hapi_conflict_events,
         )
+        self.last_source_statuses[HDX_HAPI_SOURCE_ID] = outcome.status
+        return outcome.rows
 
 
 def parse_gpr_table(payload: str | bytes) -> pd.DataFrame:
@@ -331,20 +455,34 @@ def parse_gpr_table(payload: str | bytes) -> pd.DataFrame:
         df = pd.read_csv(io.StringIO(payload))
     lower_columns = {str(column).strip().lower(): column for column in df.columns}
     date_column = lower_columns.get("date") or lower_columns.get("day")
-    value_column = lower_columns.get("gpr") or lower_columns.get("gprd") or lower_columns.get("gpr_daily")
+    value_column = (
+        lower_columns.get("gpr")
+        or lower_columns.get("gprd")
+        or lower_columns.get("gpr_daily")
+    )
     if date_column is None or value_column is None:
         raise ValueError("GPR table must contain date and gpr/GPRD columns")
-    out = df[[date_column, value_column]].rename(columns={date_column: "date", value_column: "gpr"})
+    out = df[[date_column, value_column]].rename(
+        columns={date_column: "date", value_column: "gpr"}
+    )
     out["date"] = pd.to_datetime(out["date"]).dt.date
     out["gpr"] = pd.to_numeric(out["gpr"], errors="coerce")
     return out.dropna(subset=["gpr"]).sort_values("date").reset_index(drop=True)
 
 
-def detect_gpr_spikes(df: pd.DataFrame, *, min_history_days: int, stddev_threshold: float) -> list[dict[str, object]]:
+def detect_gpr_spikes(
+    df: pd.DataFrame, *, min_history_days: int, stddev_threshold: float
+) -> list[dict[str, object]]:
     rows: list[dict[str, object]] = []
     values = df["gpr"].astype(float)
-    rolling_mean = values.shift(1).rolling(min_history_days, min_periods=min_history_days).mean()
-    rolling_std = values.shift(1).rolling(min_history_days, min_periods=min_history_days).std(ddof=0)
+    rolling_mean = (
+        values.shift(1).rolling(min_history_days, min_periods=min_history_days).mean()
+    )
+    rolling_std = (
+        values.shift(1)
+        .rolling(min_history_days, min_periods=min_history_days)
+        .std(ddof=0)
+    )
     for idx, row in df.iterrows():
         mean = rolling_mean.iloc[idx]
         std = rolling_std.iloc[idx]
@@ -358,13 +496,19 @@ def detect_gpr_spikes(df: pd.DataFrame, *, min_history_days: int, stddev_thresho
 
 
 def parse_gdelt_volume_table(payload: str | bytes) -> list[dict[str, object]]:
-    text = payload.decode("utf-8", errors="replace") if isinstance(payload, bytes) else payload
+    text = (
+        payload.decode("utf-8", errors="replace")
+        if isinstance(payload, bytes)
+        else payload
+    )
     df = pd.read_csv(io.StringIO(text))
     lower_columns = {str(column).strip().lower(): column for column in df.columns}
     date_column = lower_columns.get("date")
     count_column = lower_columns.get("event_count") or lower_columns.get("count")
     if date_column is None or count_column is None:
-        raise ValueError("GDELT volume table must contain date and event_count/count columns")
+        raise ValueError(
+            "GDELT volume table must contain date and event_count/count columns"
+        )
     theme_column = lower_columns.get("dominant_theme")
     url_column = lower_columns.get("source_url")
     rows: list[dict[str, object]] = []
@@ -376,7 +520,11 @@ def parse_gdelt_volume_table(payload: str | bytes) -> list[dict[str, object]]:
             {
                 "date": dt.date.fromisoformat(str(record[date_column])),
                 "event_count": event_count,
-                "dominant_theme": str(record.get(theme_column, "geopolitical volume spike")) if theme_column else "geopolitical volume spike",
+                "dominant_theme": str(
+                    record.get(theme_column, "geopolitical volume spike")
+                )
+                if theme_column
+                else "geopolitical volume spike",
                 "source_url": str(record.get(url_column, "")) if url_column else None,
             }
         )
@@ -402,7 +550,9 @@ def parse_gdelt_event_export(
         if root_code not in GDELT_EVENT_ROOT_CODES and quad_class != "4":
             continue
         try:
-            event_date = dt.datetime.strptime(columns[GDELT_SQLDATE_IDX], "%Y%m%d").date()
+            event_date = dt.datetime.strptime(
+                columns[GDELT_SQLDATE_IDX], "%Y%m%d"
+            ).date()
         except ValueError:
             continue
         if expected_date is not None and event_date != expected_date:
@@ -414,7 +564,9 @@ def parse_gdelt_event_export(
                 "date": event_date,
                 "event_count": 0,
                 "dominant_theme": "GDELT material conflict / protest volume",
-                "source_url": _source_url_or_export_url(columns[GDELT_SOURCE_URL_IDX], source_url),
+                "source_url": _source_url_or_export_url(
+                    columns[GDELT_SOURCE_URL_IDX], source_url
+                ),
             },
         )
         current["event_count"] = int(current["event_count"]) + mentions
@@ -470,7 +622,9 @@ def _gdelt_candidate(row: dict[str, object]) -> EventCandidate:
     )
 
 
-def _signal_candidate(row: dict[str, object], *, source_id: str, event_subtype: str) -> EventCandidate:
+def _signal_candidate(
+    row: dict[str, object], *, source_id: str, event_subtype: str
+) -> EventCandidate:
     return EventCandidate(
         date=row["date"],
         event_type="geopolitical_event",
@@ -487,8 +641,12 @@ def _signal_candidate(row: dict[str, object], *, source_id: str, event_subtype: 
     )
 
 
-def _anchor_date(gpr_date: dt.date, gdelt_dates: set[dt.date], window_days: int) -> dt.date:
-    nearby = sorted(date for date in gdelt_dates if abs((date - gpr_date).days) <= window_days)
+def _anchor_date(
+    gpr_date: dt.date, gdelt_dates: set[dt.date], window_days: int
+) -> dt.date:
+    nearby = sorted(
+        date for date in gdelt_dates if abs((date - gpr_date).days) <= window_days
+    )
     return gpr_date if gpr_date in nearby or not nearby else gpr_date
 
 
@@ -501,17 +659,25 @@ def _is_empty_payload(payload: str | bytes) -> bool:
 
 
 def _window_dates(anchor: dt.date, window_days: int) -> list[dt.date]:
-    return [anchor + dt.timedelta(days=offset) for offset in range(-window_days, window_days + 1)]
+    return [
+        anchor + dt.timedelta(days=offset)
+        for offset in range(-window_days, window_days + 1)
+    ]
 
 
 def _fetch_gpr_daily() -> bytes:
-    request = Request(GPR_DAILY_URL, headers={"User-Agent": "regime-detection-event-fetch/1.0"})
+    request = Request(
+        GPR_DAILY_URL, headers={"User-Agent": "regime-detection-event-fetch/1.0"}
+    )
     with urlopen(request, timeout=30) as response:
         return response.read()
 
 
 def _fetch_gdelt_daily_export(day: dt.date) -> bytes:
-    request = Request(GDELT_DAILY_EXPORT_URL_TEMPLATE.format(date=day), headers={"User-Agent": "regime-detection-event-fetch/1.0"})
+    request = Request(
+        GDELT_DAILY_EXPORT_URL_TEMPLATE.format(date=day),
+        headers={"User-Agent": "regime-detection-event-fetch/1.0"},
+    )
     with urlopen(request, timeout=30) as response:
         return response.read()
 
@@ -519,7 +685,9 @@ def _fetch_gdelt_daily_export(day: dt.date) -> bytes:
 def _fetch_acled_events(start_year: int, end_year: int) -> str | None:
     token = _acled_access_token()
     if token is None:
-        LOGGER.error("ACLED credentials unavailable; set ACLED_API_TOKEN or ACLED_USERNAME/ACLED_PASSWORD to fetch ACLED geopolitical events")
+        LOGGER.error(
+            "ACLED credentials unavailable; set ACLED_API_TOKEN or ACLED_USERNAME/ACLED_PASSWORD to fetch ACLED geopolitical events"
+        )
         return None
     params = {
         "_format": "json",
@@ -533,7 +701,10 @@ def _fetch_acled_events(start_year: int, end_year: int) -> str | None:
     while True:
         payload = _http_text(
             f"{ACLED_READ_URL}?{urlencode({**params, 'page': str(page)})}",
-            headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
+            headers={
+                "Authorization": f"Bearer {token}",
+                "Content-Type": "application/json",
+            },
         )
         page_records = _json_records(payload, container_keys=("data",))
         records.extend(page_records)
@@ -551,8 +722,23 @@ def _acled_access_token() -> str | None:
     password = os.environ.get("ACLED_PASSWORD", "").strip()
     if not username or not password:
         return None
-    body = urlencode({"username": username, "password": password, "grant_type": "password", "client_id": "acled", "scope": "authenticated"}).encode()
-    request = Request(ACLED_TOKEN_URL, data=body, headers={"Content-Type": "application/x-www-form-urlencoded", "User-Agent": "regime-detection-event-fetch/1.0"})
+    body = urlencode(
+        {
+            "username": username,
+            "password": password,
+            "grant_type": "password",
+            "client_id": "acled",
+            "scope": "authenticated",
+        }
+    ).encode()
+    request = Request(
+        ACLED_TOKEN_URL,
+        data=body,
+        headers={
+            "Content-Type": "application/x-www-form-urlencoded",
+            "User-Agent": "regime-detection-event-fetch/1.0",
+        },
+    )
     with urlopen(request, timeout=30) as response:
         payload = json.loads(response.read().decode("utf-8"))
     return str(payload["access_token"])
@@ -561,13 +747,18 @@ def _acled_access_token() -> str | None:
 def _fetch_ucdp_events(start_year: int, end_year: int) -> str | None:
     token = os.environ.get("UCDP_ACCESS_TOKEN", "").strip()
     if not token:
-        LOGGER.error("UCDP token unavailable; set UCDP_ACCESS_TOKEN to fetch UCDP GED Candidate geopolitical events")
+        LOGGER.error(
+            "UCDP token unavailable; set UCDP_ACCESS_TOKEN to fetch UCDP GED Candidate geopolitical events"
+        )
         return None
     return _fetch_paged_json(
         UCDP_GED_CANDIDATE_URL,
         headers={"x-ucdp-access-token": token},
         result_key="Result",
-        extra_params={"StartDate": f"{start_year}-01-01", "EndDate": f"{end_year}-12-31"},
+        extra_params={
+            "StartDate": f"{start_year}-01-01",
+            "EndDate": f"{end_year}-12-31",
+        },
     )
 
 
@@ -614,8 +805,16 @@ def _fetch_paged_json(
     records: list[dict[str, object]] = []
     page = 1
     while True:
-        params = {**extra_params, "pagesize": str(CONFLICT_API_PAGE_SIZE), "limit": str(CONFLICT_API_PAGE_SIZE), "page": str(page), "offset": str((page - 1) * CONFLICT_API_PAGE_SIZE)}
-        payload = json.loads(_http_text(f"{base_url}?{urlencode(params)}", headers=headers))
+        params = {
+            **extra_params,
+            "pagesize": str(CONFLICT_API_PAGE_SIZE),
+            "limit": str(CONFLICT_API_PAGE_SIZE),
+            "page": str(page),
+            "offset": str((page - 1) * CONFLICT_API_PAGE_SIZE),
+        }
+        payload = json.loads(
+            _http_text(f"{base_url}?{urlencode(params)}", headers=headers)
+        )
         page_records = payload.get(result_key, []) if isinstance(payload, dict) else []
         if not isinstance(page_records, list):
             break
@@ -649,7 +848,9 @@ def _payload_total_count(payload: object) -> int | None:
 
 
 def _http_text(url: str, *, headers: dict[str, str]) -> str:
-    request = Request(url, headers={"User-Agent": "regime-detection-event-fetch/1.0", **headers})
+    request = Request(
+        url, headers={"User-Agent": "regime-detection-event-fetch/1.0", **headers}
+    )
     with urlopen(request, timeout=30) as response:
         return response.read().decode("utf-8", errors="replace")
 
@@ -665,16 +866,69 @@ def _fetch_optional_conflict_rows(
     source_identifier: str,
     source_url: str,
     parser: Callable[[str | bytes], list[dict[str, object]]],
-) -> list[dict[str, object]]:
+) -> FetchOutcome:
     try:
         payload = fetcher(start_year, end_year)
     except OSError as exc:  # pragma: no cover - exercised via integration degradation
-        LOGGER.error("%s fetch failed; geopolitical candidates skipped: %s", source_id, exc)
-        return []
+        LOGGER.error(
+            "%s fetch failed; geopolitical candidates skipped: %s", source_id, exc
+        )
+        return FetchOutcome(
+            rows=[],
+            status=SourceFetchStatus(
+                source_id=source_id,
+                status="failed",
+                error=str(exc),
+                attempted_fetches=1,
+                failed_fetches=1,
+            ),
+        )
     if payload is None:
-        return []
-    _record_payload(store, run_id, source_id, source_identifier, payload, f"{source_id} geopolitical event data")
-    return [row for row in parser(payload, source_url=source_url) if start_year <= row["date"].year <= end_year]
+        return FetchOutcome(
+            rows=[],
+            status=SourceFetchStatus(
+                source_id=source_id, status="skipped", attempted_fetches=0
+            ),
+        )
+    _record_payload(
+        store,
+        run_id,
+        source_id,
+        source_identifier,
+        payload,
+        f"{source_id} geopolitical event data",
+    )
+    try:
+        rows = [
+            row
+            for row in parser(payload, source_url=source_url)
+            if start_year <= row["date"].year <= end_year
+        ]
+    except (TypeError, ValueError, json.JSONDecodeError) as exc:
+        LOGGER.error(
+            "%s parse failed; geopolitical candidates skipped: %s", source_id, exc
+        )
+        return FetchOutcome(
+            rows=[],
+            status=SourceFetchStatus(
+                source_id=source_id,
+                status="failed",
+                error=str(exc),
+                attempted_fetches=1,
+                failed_fetches=1,
+                empty_payload=_is_empty_payload(payload),
+            ),
+        )
+    return FetchOutcome(
+        rows=rows,
+        status=SourceFetchStatus(
+            source_id=source_id,
+            status="ok" if rows else "empty",
+            rows=len(rows),
+            attempted_fetches=1,
+            empty_payload=_is_empty_payload(payload),
+        ),
+    )
 
 
 def _record_payload(
@@ -687,7 +941,11 @@ def _record_payload(
 ) -> None:
     if store is None or run_id is None:
         return
-    text = payload.decode("utf-8", errors="replace") if isinstance(payload, bytes) else payload
+    text = (
+        payload.decode("utf-8", errors="replace")
+        if isinstance(payload, bytes)
+        else payload
+    )
     store.record_text_artifact(
         run_id=run_id,
         source_name=source_name,

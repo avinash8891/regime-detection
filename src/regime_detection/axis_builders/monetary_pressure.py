@@ -9,8 +9,8 @@ from regime_detection.data_quality import (
     assess_series_input_quality,
     quality_forces_unknown,
 )
+from regime_detection.axis_builders.per_label import build_per_label_axis_outputs
 from regime_detection.feature_store import FeatureStore
-from regime_detection.hysteresis import apply_per_label_asymmetric_hysteresis
 from regime_detection.market_context import MarketContext
 from regime_detection.models import DataQuality, MonetaryPressureV2Output
 from regime_detection.monetary_pressure import (
@@ -23,6 +23,23 @@ from regime_detection.monetary_pressure import (
 
 # V2 §2A feature series already encode their longer warm-ups as NaN.
 MONETARY_PRESSURE_REQUIRED_TRADING_DAYS = 1
+
+
+def _monetary_pressure_output(
+    *,
+    raw_label: str,
+    stable_label: str,
+    active_label: str,
+    evidence: dict[str, object],
+    data_quality: DataQuality,
+) -> MonetaryPressureV2Output:
+    return MonetaryPressureV2Output(
+        raw_label=cast(MonetaryPressureV2Label, raw_label),
+        stable_label=cast(MonetaryPressureV2Label, stable_label),
+        active_label=cast(MonetaryPressureV2Label, active_label),
+        evidence=evidence,
+        data_quality=data_quality,
+    )
 
 
 def build_monetary_pressure_axis_series(
@@ -96,28 +113,13 @@ def build_monetary_pressure_axis_series(
                 else None
             )
 
-    stable_labels, active_labels = apply_per_label_asymmetric_hysteresis(
-        raw_labels=list(raw_labels),
-        risk_rank=cast(dict[str, int], MONETARY_PRESSURE_V2_RISK_RANK),
+    return build_per_label_axis_outputs(
+        sessions=context.sessions,
+        raw_labels=raw_labels,
+        risk_rank=MONETARY_PRESSURE_V2_RISK_RANK,
         deescalation_days_by_label=mp_config.deescalation_days_by_label,
         default_deescalation_days=mp_config.default_deescalation_days,
+        data_quality=per_day_data_quality,
+        evidence=per_day_evidence,
+        output_factory=_monetary_pressure_output,
     )
-
-    outputs: dict[date, MonetaryPressureV2Output] = {}
-    for day, raw, stable, active, dq, evidence in zip(
-        context.sessions,
-        raw_labels,
-        stable_labels,
-        active_labels,
-        per_day_data_quality,
-        per_day_evidence,
-        strict=True,
-    ):
-        outputs[day] = MonetaryPressureV2Output(
-            raw_label=cast(MonetaryPressureV2Label, raw),
-            stable_label=cast(MonetaryPressureV2Label, stable),
-            active_label=cast(MonetaryPressureV2Label, active),
-            evidence=evidence,
-            data_quality=dq,
-        )
-    return outputs

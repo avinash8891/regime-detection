@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import date
+from typing import get_type_hints
 
 import pandas as pd
 import pytest
@@ -13,6 +14,7 @@ from regime_detection.transition_risk import (
     classify_transition_risk,
 )
 from regime_detection.transition_risk_series import (
+    EventCalendarLabel,
     TransitionRiskHistory,
     TransitionScoreInputs,
     _build_transition_score_inputs_by_date,
@@ -328,3 +330,16 @@ def test_transition_risk_score_inputs_match_direct_composer_for_optional_hmm_and
     assert outputs[session].score == expected.score
     assert outputs[session].score_interpretation == expected.interpretation
     assert outputs[session].score_components == expected.components
+
+
+def test_transition_score_inputs_event_calendar_label_is_closed_type() -> None:
+    assert get_type_hints(TransitionScoreInputs)["event_calendar_label"] == EventCalendarLabel
+    with pytest.raises(ValueError, match="unknown event_calendar_label"):
+        TransitionScoreInputs(
+            realized_vol_short=12.0,
+            realized_vol_long=10.0,
+            pct_above_50dma=0.45,
+            avg_pairwise_corr_percentile_504d=0.60,
+            drawdown_252d=-0.10,
+            event_calendar_label="vendor_changed_name",  # type: ignore[arg-type]
+        )

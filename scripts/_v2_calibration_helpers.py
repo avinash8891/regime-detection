@@ -10,9 +10,12 @@ from __future__ import annotations
 import argparse
 import logging
 from pathlib import Path
+from typing import Any
 
 import pandas as pd
 
+from regime_data_fetch.materialization import materialize_if_requested
+from regime_data_fetch.manifest_inputs import resolve_runner_input_paths
 from regime_detection.loaders import (
     load_aggregate_forward_eps_revision_series,
     load_cpi_nowcast_series,
@@ -22,24 +25,119 @@ from regime_detection.loaders import (
 
 logger = logging.getLogger(__name__)
 
+MANIFEST_INPUT_FLAGS = {
+    "daily_dir": "--daily-dir",
+    "constituent_tree": "--constituent-tree",
+    "macro_parquet": "--macro-parquet",
+    "pit_parquet": "--pit-parquet",
+    "event_calendar": "--event-calendar",
+    "pmi_path": "--pmi-path",
+    "aaii_sentiment_parquet": "--aaii-sentiment-parquet",
+    "news_sentiment_parquet": "--news-sentiment-parquet",
+    "fomc_minutes_parquet": "--fomc-minutes-parquet",
+    "powell_speeches_parquet": "--powell-speeches-parquet",
+    "cpi_vintages_parquet": "--cpi-vintages-parquet",
+}
+
 
 def default_pmi_path(data_root: Path) -> Path:
     return data_root / "pmi" / "us_ism_pmi_history.parquet"
 
 
-# TODO(simplify, owner=regime-maintainers, ticket=TD-CALIBRATION-REPORTING): hoist `_reporting_label` (4 near-identical copies in
-# run_v2_walkforward_gate.py, run_v2_shadow_ab_gate.py, profile_engine_30d.py,
-# audit_layer2_30d.py) into a single `axis_reporting_label(output, *, default=None)`
-# helper here. Each caller's fallback (None vs "not_wired" vs str(active_label))
-# becomes a `default` argument. Skipped during 2026-05-16 simplify pass because
-# semantics diverge subtly across callers and a regression here would silently
-# corrupt gate metrics.
-#
-# TODO(simplify, owner=regime-maintainers, ticket=TD-CALIBRATION-MANIFEST-ARGS): add `add_manifest_args(parser)` / `materialize_from_args(args, *,
-# repo_root, required_for)` helpers to remove the 4-runner copy-paste of
-# --manifest/--artifact-store/--data-root wiring. Also fixes the ordering bug in
-# run_v2_calibration.py where materialize_if_requested runs BEFORE daily_dir /
-# macro_parquet are derived from args.data_root (other runners derive first).
+def axis_reporting_label(output: Any | None, *, default: str | None = None) -> str | None:
+    if output is None:
+        return default
+    reporting_label = getattr(output, "reporting_label", None)
+    if reporting_label is not None:
+        return str(reporting_label)
+    classification_status = getattr(output, "classification_status", "classified")
+    if classification_status != "classified":
+        return str(classification_status)
+    active_label = getattr(output, "active_label", None)
+    if active_label is not None:
+        return str(active_label)
+    label = getattr(output, "label", default)
+    return None if label is None else str(label)
+
+
+def axis_reporting_label_not_wired(output: Any | None) -> str:
+    label = axis_reporting_label(output, default="not_wired")
+    assert label is not None
+    return label
+
+
+def add_manifest_args(
+    parser: argparse.ArgumentParser,
+    *,
+    data_root_default: Path,
+    action: str,
+) -> None:
+    parser.add_argument(
+        "--manifest",
+        type=Path,
+        default=None,
+        help=f"Optional artifact manifest to materialize before {action}.",
+    )
+    parser.add_argument(
+        "--artifact-store",
+        default=None,
+        help="Optional artifact-store root override for --manifest.",
+    )
+    parser.add_argument(
+        "--data-root",
+        type=Path,
+        default=data_root_default,
+        help="Local data/raw root used for manifest materialization.",
+    )
+
+
+def manifest_input_overrides(argv: list[str]) -> frozenset[str]:
+    overrides: set[str] = set()
+    for field, flag in MANIFEST_INPUT_FLAGS.items():
+        if any(item == flag or item.startswith(f"{flag}=") for item in argv):
+            overrides.add(field)
+    return frozenset(overrides)
+
+
+def apply_manifest_input_paths(
+    args: argparse.Namespace,
+    *,
+    runner_name: str,
+    repo_root: Path,
+    required_fields: frozenset[str] | None = None,
+) -> None:
+    if args.manifest is None:
+        return
+    resolved = resolve_runner_input_paths(
+        manifest_path=args.manifest,
+        data_root=args.data_root,
+        runner_name=runner_name,
+        cli_values={field: getattr(args, field, None) for field in MANIFEST_INPUT_FLAGS},
+        cli_overrides=args.manifest_input_overrides,
+        repo_root=repo_root,
+        **({"required_fields": required_fields} if required_fields is not None else {}),
+    )
+    for field in MANIFEST_INPUT_FLAGS:
+        setattr(args, field, getattr(resolved, field))
+    args.manifest_resolved_inputs = resolved.resolved_from_manifest
+    args.manifest_cli_overrides = resolved.cli_overrides
+
+
+def materialize_manifest_from_args(
+    args: argparse.Namespace,
+    *,
+    repo_root: Path,
+    required_for: str,
+) -> None:
+    materialize_if_requested(
+        manifest_path=args.manifest,
+        local_root=args.data_root,
+        repo_root=repo_root,
+        store_root=args.artifact_store,
+        required_for=required_for,
+    )
+
+
 def positive_int(value: str) -> int:
     parsed = int(value)
     if parsed <= 0:

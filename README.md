@@ -89,8 +89,8 @@ python3 scripts/run_v2_walkforward_gate.py \
 For a fresh workspace, pass the approved manifest lockfile explicitly:
 
 ```bash
-make regime-data MANIFEST=manifests/runs/profile_ready_daily_ohlcv_762_2016_20260515.yaml
-make profile-30d MANIFEST=manifests/runs/profile_ready_daily_ohlcv_762_2016_20260515.yaml
+make regime-data MANIFEST=manifests/runs/regime_engine_YYYY-MM-DD.yaml
+make profile-30d MANIFEST=manifests/runs/regime_engine_YYYY-MM-DD.yaml
 ```
 
 When `--manifest` is supplied, profile, audit, and V2 gate runner data inputs
@@ -100,7 +100,10 @@ such as `--macro-parquet`, `--pmi-path`, `--event-calendar`, or
 a fresh workspace using the approved manifest lockfile.
 
 That approved profile-ready manifest is the portable data contract for the 30d
-operator run. It includes the fixed OHLCV tree used by the runner defaults
+operator run. Bulk generated symbol-tree manifests are not tracked in full; see
+`manifests/runs/profile_ready_daily_ohlcv_762_2016_20260515.md` for the removed
+15k-line manifest checksum and object-store prefix. A reviewed materializable
+YAML lockfile should include the fixed OHLCV tree used by the runner defaults
 (`data/raw/daily_ohlcv_762`), macro, PMI, PIT constituents, CPI vintages,
 FOMC/Powell text inputs, and Layer 1 sentiment extension inputs:
 `data/raw/sentiment/aaii_sentiment.parquet` and

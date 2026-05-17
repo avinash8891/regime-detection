@@ -10,6 +10,7 @@ from regime_detection.breadth_state import (
     build_raw_outputs as build_breadth_raw_outputs,
     resolve_v2_raw_outputs as resolve_breadth_v2_raw_outputs,
 )
+from regime_detection.data_quality import quality_forces_unknown
 from regime_detection.feature_store import FeatureStore
 from regime_detection.hysteresis import (
     apply_asymmetric_hysteresis,
@@ -113,27 +114,38 @@ def build_breadth_axis_series(
                 ),
             )
         else:
-            output = BreadthStateOutput(
-                mode=mode,
+            data_quality = breadth_data_quality_for_asof(
+                spy_close=spy_close,
+                rsp_close=rsp_close,
+                as_of_date=day,
+                required_trading_days=BREADTH_REQUIRED_TRADING_DAYS,
                 raw_label=raw,
-                stable_label=stable,
-                active_label=active,
-                evidence={
-                    "proxy": "RSP/SPY",
-                    "rule_evidence": evidence,
-                    "risk_rank": BREADTH_RISK_RANK,
-                    "deescalation_days": context.config.hysteresis.breadth_deescalation_days,
-                },
-                data_quality=breadth_data_quality_for_asof(
-                    spy_close=spy_close,
-                    rsp_close=rsp_close,
-                    as_of_date=day,
-                    required_trading_days=BREADTH_REQUIRED_TRADING_DAYS,
-                    raw_label=raw,
-                    max_freshness_days=context.config.data_quality.max_freshness_days,
-                    min_completeness=context.config.data_quality.min_completeness,
-                ),
+                max_freshness_days=context.config.data_quality.max_freshness_days,
+                min_completeness=context.config.data_quality.min_completeness,
             )
+            if quality_forces_unknown(data_quality):
+                output = BreadthStateOutput(
+                    mode=mode,
+                    raw_label="unknown",
+                    stable_label="unknown",
+                    active_label="unknown",
+                    evidence={"reason": data_quality.reason, "proxy": "RSP/SPY"},
+                    data_quality=data_quality,
+                )
+            else:
+                output = BreadthStateOutput(
+                    mode=mode,
+                    raw_label=raw,
+                    stable_label=stable,
+                    active_label=active,
+                    evidence={
+                        "proxy": "RSP/SPY",
+                        "rule_evidence": evidence,
+                        "risk_rank": BREADTH_RISK_RANK,
+                        "deescalation_days": context.config.hysteresis.breadth_deescalation_days,
+                    },
+                    data_quality=data_quality,
+                )
         outputs_by_date[day] = output
         stable_by_date[day] = output.stable_label
         active_by_date[day] = output.active_label

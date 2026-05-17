@@ -9,8 +9,15 @@ from regime_data_fetch.event_sources.official_boe import (
     parse_boe_news_api_results,
     parse_boe_upcoming_mpc_dates,
 )
-from regime_data_fetch.event_sources.official_boj import OfficialBOJAdapter, parse_boj_mpm_dates
-from regime_data_fetch.event_sources.official_ecb import OfficialECBAdapter, parse_ecb_current_calendar, parse_ecb_decision_archive
+from regime_data_fetch.event_sources.official_boj import (
+    OfficialBOJAdapter,
+    parse_boj_mpm_dates,
+)
+from regime_data_fetch.event_sources.official_ecb import (
+    OfficialECBAdapter,
+    parse_ecb_current_calendar,
+    parse_ecb_decision_archive,
+)
 from regime_data_fetch.event_sources._common import FetchTextResult
 
 
@@ -31,7 +38,10 @@ def test_ecb_parses_archive_snippet_and_current_calendar_day_two_only() -> None:
     archive = parse_ecb_decision_archive(archive_html, as_of_date=dt.date(2026, 5, 14))
     current = parse_ecb_current_calendar(current_html, as_of_date=dt.date(2026, 5, 14))
 
-    assert [(candidate.date, candidate.event_type, candidate.source_url) for candidate in archive] == [
+    assert [
+        (candidate.date, candidate.event_type, candidate.source_url)
+        for candidate in archive
+    ] == [
         (
             dt.date(2026, 4, 30),
             "ECB_decision",
@@ -57,13 +67,24 @@ def test_boe_parses_current_page_and_news_api_results() -> None:
     </a>
     """
 
-    upcoming = parse_boe_upcoming_mpc_dates(upcoming_html, as_of_date=dt.date(2026, 1, 1))
+    upcoming = parse_boe_upcoming_mpc_dates(
+        upcoming_html, as_of_date=dt.date(2026, 1, 1)
+    )
     historical = parse_boe_news_api_results(api_results, as_of_date=dt.date(2026, 1, 1))
 
-    assert [candidate.date for candidate in upcoming] == [dt.date(2026, 2, 5), dt.date(2026, 3, 19)]
-    assert upcoming[0].source_url == "https://www.bankofengland.co.uk/monetary-policy-summary-and-minutes/2026/february-2026"
+    assert [candidate.date for candidate in upcoming] == [
+        dt.date(2026, 2, 5),
+        dt.date(2026, 3, 19),
+    ]
+    assert (
+        upcoming[0].source_url
+        == "https://www.bankofengland.co.uk/monetary-policy-summary-and-minutes/2026/february-2026"
+    )
     assert [(candidate.date, candidate.raw_title) for candidate in historical] == [
-        (dt.date(2025, 12, 18), "Bank Rate reduced to 3.75% - December 2025 Monetary Policy Summary and Minutes")
+        (
+            dt.date(2025, 12, 18),
+            "Bank Rate reduced to 3.75% - December 2025 Monetary Policy Summary and Minutes",
+        )
     ]
 
 
@@ -117,7 +138,10 @@ def test_boe_parses_legacy_annual_mpc_month_day_table() -> None:
         as_of_date=dt.date(2016, 9, 29),
     )
 
-    assert [candidate.date for candidate in candidates] == [dt.date(2017, 2, 2), dt.date(2017, 3, 16)]
+    assert [candidate.date for candidate in candidates] == [
+        dt.date(2017, 2, 2),
+        dt.date(2017, 3, 16),
+    ]
 
 
 def test_boe_parses_annual_mpc_section_year_table() -> None:
@@ -136,7 +160,10 @@ def test_boe_parses_annual_mpc_section_year_table() -> None:
         as_of_date=dt.date(2018, 9, 21),
     )
 
-    assert [candidate.date for candidate in candidates] == [dt.date(2019, 2, 7), dt.date(2019, 3, 21)]
+    assert [candidate.date for candidate in candidates] == [
+        dt.date(2019, 2, 7),
+        dt.date(2019, 3, 21),
+    ]
 
 
 def test_boe_adapter_continues_pagination_across_empty_news_pages() -> None:
@@ -155,7 +182,10 @@ def test_boe_adapter_continues_pagination_across_empty_news_pages() -> None:
 
     candidates = adapter.fetch(start_year=2025, end_year=2026, store=None, run_id=None)
 
-    assert [candidate.date for candidate in candidates] == [dt.date(2025, 12, 18), dt.date(2026, 3, 19)]
+    assert [candidate.date for candidate in candidates] == [
+        dt.date(2025, 12, 18),
+        dt.date(2026, 3, 19),
+    ]
 
 
 def test_official_rate_adapters_default_to_typed_text_results() -> None:
@@ -186,6 +216,66 @@ def test_official_rate_adapters_default_to_typed_text_results() -> None:
         "https://www.ecb.europa.eu/press/calendars/mgcgc/html/index.en.html",
     ]
     assert [candidate.date for candidate in candidates] == [dt.date(2026, 4, 30)]
+
+
+def test_ecb_adapter_reports_failed_markup_fetch_in_status() -> None:
+    def fake_result_fetcher(url: str) -> FetchTextResult:
+        if url.endswith("/press/govcdec/mopo/html/index.en.html"):
+            return FetchTextResult(text=None, error="archive timeout")
+        return FetchTextResult(text="")
+
+    adapter = OfficialECBAdapter(
+        as_of_date=dt.date(2026, 5, 14),
+        result_fetcher=fake_result_fetcher,
+    )
+
+    candidates = adapter.fetch(start_year=2026, end_year=2026, store=None, run_id=None)
+
+    assert candidates == []
+    assert (
+        adapter.last_source_statuses[
+            "https://www.ecb.europa.eu/press/govcdec/mopo/html/index.en.html"
+        ].status
+        == "failed"
+    )
+    assert (
+        adapter.last_source_statuses[
+            "https://www.ecb.europa.eu/press/govcdec/mopo/html/index.en.html"
+        ].error
+        == "archive timeout"
+    )
+    assert adapter.last_run_status == "partial"
+
+
+def test_boe_adapter_reports_failed_markup_fetch_in_status() -> None:
+    def fake_result_fetcher(url: str) -> FetchTextResult:
+        if url.endswith("/monetary-policy/upcoming-mpc-dates"):
+            return FetchTextResult(text=None, error="upcoming timeout")
+        return FetchTextResult(text="")
+
+    adapter = OfficialBOEAdapter(
+        as_of_date=dt.date(2026, 5, 14),
+        result_fetcher=fake_result_fetcher,
+        news_api_fetcher=lambda _page: '{"Results": ""}',
+        stop_on_empty_news_page=True,
+    )
+
+    candidates = adapter.fetch(start_year=2026, end_year=2026, store=None, run_id=None)
+
+    assert candidates == []
+    assert (
+        adapter.last_source_statuses[
+            "https://www.bankofengland.co.uk/monetary-policy/upcoming-mpc-dates"
+        ].status
+        == "failed"
+    )
+    assert (
+        adapter.last_source_statuses[
+            "https://www.bankofengland.co.uk/monetary-policy/upcoming-mpc-dates"
+        ].error
+        == "upcoming timeout"
+    )
+    assert adapter.last_run_status == "partial"
 
 
 def test_official_rate_adapters_preserve_legacy_text_fetcher_override() -> None:
@@ -246,7 +336,10 @@ def test_election_adapter_computes_federal_general_elections() -> None:
         run_id=None,
     )
 
-    assert [(candidate.date, candidate.raw_title, candidate.window_days) for candidate in candidates] == [
+    assert [
+        (candidate.date, candidate.raw_title, candidate.window_days)
+        for candidate in candidates
+    ] == [
         (dt.date(2016, 11, 8), "2016 presidential federal general election", (-5, 10)),
         (dt.date(2018, 11, 6), "2018 midterm federal general election", (-5, 10)),
         (dt.date(2020, 11, 3), "2020 presidential federal general election", (-5, 10)),

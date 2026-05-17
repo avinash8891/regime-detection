@@ -6,6 +6,8 @@ import datetime as dt
 from dataclasses import dataclass
 import re
 
+from regime_data_fetch.event_sources._common import MONTHS
+
 SOURCE_ECB = "ecb.europa.eu:governing-council-calendar"
 SOURCE_BOE = "bankofengland.co.uk:mpc-dates"
 SOURCE_BOJ = "boj.or.jp:monetary-policy-meeting-schedule"
@@ -15,46 +17,6 @@ GLOBAL_RATE_URLS = {
     "boe": "https://www.bankofengland.co.uk/monetary-policy/upcoming-mpc-dates",
     "boj": "https://www.boj.or.jp/en/mopo/mpmsche_minu/",
 }
-
-_MONTHS = {
-    "january": 1,
-    "jan": 1,
-    "jan.": 1,
-    "february": 2,
-    "feb": 2,
-    "feb.": 2,
-    "march": 3,
-    "mar": 3,
-    "mar.": 3,
-    "april": 4,
-    "apr": 4,
-    "apr.": 4,
-    "may": 5,
-    "june": 6,
-    "jun": 6,
-    "jun.": 6,
-    "july": 7,
-    "jul": 7,
-    "jul.": 7,
-    "august": 8,
-    "aug": 8,
-    "aug.": 8,
-    "september": 9,
-    "sept": 9,
-    "sept.": 9,
-    "sep": 9,
-    "sep.": 9,
-    "october": 10,
-    "oct": 10,
-    "oct.": 10,
-    "november": 11,
-    "nov": 11,
-    "nov.": 11,
-    "december": 12,
-    "dec": 12,
-    "dec.": 12,
-}
-
 
 class UnsupportedGlobalRateSource(ValueError):
     pass
@@ -120,7 +82,7 @@ def parse_boe_decision_events(text: str) -> list[GlobalRateDecisionEvent]:
         date_match = date_pattern.search(token)
         if not date_match:
             continue
-        month = _MONTHS.get(date_match.group("month").lower())
+        month = MONTHS.get(date_match.group("month").lower())
         if month is None:
             continue
         event_date = dt.date(current_year, month, int(date_match.group("day")))
@@ -152,7 +114,7 @@ def parse_boj_decision_events(text: str) -> list[GlobalRateDecisionEvent]:
             date_match = table_date_pattern.search(cell_text)
             if date_match is None:
                 continue
-            month = _MONTHS[date_match.group("month").lower()]
+            month = MONTHS[date_match.group("month").lower()]
             day = int(date_match.group("end") or date_match.group("start"))
             events.append(GlobalRateDecisionEvent(dt.date(year, month, day), "BOJ_decision", SOURCE_BOJ))
 
@@ -164,7 +126,7 @@ def parse_boj_decision_events(text: str) -> list[GlobalRateDecisionEvent]:
         flags=re.IGNORECASE,
     )
     for match in pattern.finditer(normalized):
-        month = _MONTHS[match.group("month").lower()]
+        month = MONTHS[match.group("month").lower()]
         day = int(match.group("end") or match.group("start"))
         event_date = dt.date(int(match.group("year")), month, day)
         events.append(GlobalRateDecisionEvent(event_date, "BOJ_decision", SOURCE_BOJ))

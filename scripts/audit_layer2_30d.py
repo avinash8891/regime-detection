@@ -22,7 +22,6 @@ if str(SRC_ROOT) not in sys.path:
     sys.path.insert(0, str(SRC_ROOT))
 
 from regime_data_fetch.pit_constituents import read_pit_intervals
-from regime_data_fetch.materialization import materialize_if_requested
 from regime_detection.axis_series import build_axis_series_bundle
 from regime_detection.engine import RegimeEngine
 from regime_detection.feature_store import FeatureStore, build_feature_store
@@ -33,10 +32,15 @@ from regime_detection.market_context import (
     slice_context_to_recent_sessions,
 )
 from scripts._v2_calibration_helpers import (
+    add_manifest_args,
+    apply_manifest_input_paths,
+    axis_reporting_label_not_wired as _reporting_label,
     default_pmi_path,
     load_close_dict,
     load_macro_series,
     load_market_data,
+    manifest_input_overrides,
+    materialize_manifest_from_args,
     positive_int,
 )
 from scripts.profile_engine_30d import (
@@ -44,7 +48,6 @@ from scripts.profile_engine_30d import (
     DEFAULT_CONSTITUENT_TREE,
     DEFAULT_DAILY_DIR,
     DEFAULT_EVENT_CALENDAR,
-    _apply_manifest_input_paths,
     _build_required_sessions,
     _load_constituent_ohlcv_from_tree,
     _load_optional_aaii_sentiment,
@@ -52,7 +55,6 @@ from scripts.profile_engine_30d import (
     _load_optional_cpi_first_release,
     _load_optional_event_calendar,
     _load_optional_news_sentiment,
-    _manifest_input_overrides,
 )
 
 
@@ -117,21 +119,6 @@ def _finite_or_none(value: Any) -> float | None:
     if math.isnan(numeric) or math.isinf(numeric):
         return None
     return numeric
-
-
-def _reporting_label(output: Any | None) -> str:
-    if output is None:
-        return "not_wired"
-    reporting_label = getattr(output, "reporting_label", None)
-    if reporting_label is not None:
-        return str(reporting_label)
-    classification_status = getattr(output, "classification_status", None)
-    if classification_status != "classified":
-        return str(classification_status or "not_wired")
-    active_label = getattr(output, "active_label", None)
-    if active_label is not None:
-        return str(active_label)
-    return str(getattr(output, "label", "not_wired"))
 
 
 def _feature_row(
@@ -405,27 +392,11 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--powell-speeches-parquet", type=Path, default=None)
     parser.add_argument("--cpi-vintages-parquet", type=Path, default=None)
     parser.add_argument("--allow-missing-constituent-files", action="store_true")
-    parser.add_argument(
-        "--manifest",
-        type=Path,
-        default=None,
-        help="Optional artifact manifest to materialize before audit.",
-    )
-    parser.add_argument(
-        "--artifact-store",
-        default=None,
-        help="Optional artifact-store root override for --manifest.",
-    )
-    parser.add_argument(
-        "--data-root",
-        type=Path,
-        default=REPO_ROOT / "data" / "raw",
-        help="Local data/raw root used for manifest materialization.",
-    )
+    add_manifest_args(parser, data_root_default=REPO_ROOT / "data" / "raw", action="audit")
     parser.add_argument("--out-dir", type=Path, default=REPO_ROOT / ".context")
     parser.add_argument("--stamp", default=dt.date.today().strftime("%Y%m%d"))
     args = parser.parse_args()
-    args.manifest_input_overrides = _manifest_input_overrides(sys.argv[1:])
+    args.manifest_input_overrides = manifest_input_overrides(sys.argv[1:])
     if args.daily_dir is None:
         args.daily_dir = args.data_root / DEFAULT_DAILY_DIR.name
     if args.constituent_tree is None:
@@ -463,14 +434,16 @@ def _parse_args() -> argparse.Namespace:
 
 def main() -> int:
     args = _parse_args()
-    materialize_if_requested(
-        manifest_path=args.manifest,
-        local_root=args.data_root,
+    materialize_manifest_from_args(
+        args,
         repo_root=REPO_ROOT,
-        store_root=args.artifact_store,
         required_for="audit_layer2_30d",
     )
-    _apply_manifest_input_paths(args, runner_name="audit_layer2_30d")
+    apply_manifest_input_paths(
+        args,
+        runner_name="audit_layer2_30d",
+        repo_root=REPO_ROOT,
+    )
     args.out_dir.mkdir(parents=True, exist_ok=True)
     _working_context, feature_store, axis_bundle, selected_dates, missing_files = (
         _build_current_layer2_state(args)

@@ -39,6 +39,7 @@ from regime_data_fetch.event_sources.validators_gpr_gdelt import (
     _fetch_acled_events,
     _fetch_hdx_hapi_conflict_events,
     _fetch_paged_json,
+    ACLED_SOURCE_ID,
     parse_acled_events,
     parse_gdelt_event_export,
     parse_gpr_table,
@@ -357,7 +358,10 @@ def test_gpr_gdelt_generator_records_source_status_for_fetch_failures() -> None:
 
     assert candidates == []
     assert generator.last_source_statuses["gpr:caldara-iacoviello"].status == "failed"
-    assert generator.last_source_statuses["gpr:caldara-iacoviello"].error == "gpr timed out"
+    assert (
+        generator.last_source_statuses["gpr:caldara-iacoviello"].error
+        == "gpr timed out"
+    )
     assert generator.last_source_statuses["gdelt:events-v2"].status == "empty"
     assert generator.last_run_status == "partial"
 
@@ -394,10 +398,58 @@ def test_gpr_gdelt_generator_records_direct_gdelt_fetch_failure() -> None:
     ]
     assert generator.last_source_statuses["gpr:caldara-iacoviello"].status == "ok"
     assert generator.last_source_statuses["gdelt:events-v2"].status == "failed"
-    assert (
-        generator.last_source_statuses["gdelt:events-v2"].error
-        == "gdelt timed out"
+    assert generator.last_source_statuses["gdelt:events-v2"].error == "gdelt timed out"
+    assert generator.last_run_status == "partial"
+
+
+def test_gpr_gdelt_generator_records_optional_conflict_fetch_failure() -> None:
+    def failing_acled_fetcher(_start_year: int, _end_year: int) -> str:
+        raise TimeoutError("acled timed out")
+
+    generator = GPRGDELTSignalGenerator(
+        gpr_fetcher=lambda: "date,gpr\n2022-02-24,100\n",
+        gdelt_fetcher=lambda: "date,event_count,dominant_theme,source_url\n",
+        acled_fetcher=failing_acled_fetcher,
+        ucdp_fetcher=lambda _start_year, _end_year: None,
+        hdx_hapi_fetcher=lambda _start_year, _end_year: None,
+        min_history_days=3,
+        stddev_threshold=2.0,
     )
+
+    candidates = generator.generate(
+        start_year=2022, end_year=2022, store=None, run_id=None
+    )
+
+    assert candidates == []
+    status = generator.last_source_statuses[ACLED_SOURCE_ID]
+    assert status.status == "failed"
+    assert status.error == "acled timed out"
+    assert status.attempted_fetches == 1
+    assert status.failed_fetches == 1
+    assert generator.last_run_status == "partial"
+
+
+def test_gpr_gdelt_generator_records_optional_conflict_parse_failure() -> None:
+    generator = GPRGDELTSignalGenerator(
+        gpr_fetcher=lambda: "date,gpr\n2022-02-24,100\n",
+        gdelt_fetcher=lambda: "date,event_count,dominant_theme,source_url\n",
+        acled_fetcher=lambda _start_year, _end_year: '{"data": [',
+        ucdp_fetcher=lambda _start_year, _end_year: None,
+        hdx_hapi_fetcher=lambda _start_year, _end_year: None,
+        min_history_days=3,
+        stddev_threshold=2.0,
+    )
+
+    candidates = generator.generate(
+        start_year=2022, end_year=2022, store=None, run_id=None
+    )
+
+    assert candidates == []
+    status = generator.last_source_statuses[ACLED_SOURCE_ID]
+    assert status.status == "failed"
+    assert "Expecting value" in str(status.error)
+    assert status.attempted_fetches == 1
+    assert status.failed_fetches == 1
     assert generator.last_run_status == "partial"
 
 
@@ -413,11 +465,15 @@ def test_parse_gpr_table_logs_excel_parse_failure_before_csv_fallback(
         "regime_data_fetch.event_sources.validators_gpr_gdelt.pd.read_excel",
         fail_excel,
     )
-    caplog.set_level(logging.DEBUG, logger="regime_data_fetch.event_sources.validators_gpr_gdelt")
+    caplog.set_level(
+        logging.DEBUG, logger="regime_data_fetch.event_sources.validators_gpr_gdelt"
+    )
 
     frame = parse_gpr_table(b"date,gpr\n2026-05-01,123\n")
 
-    assert frame.to_dict(orient="records") == [{"date": dt.date(2026, 5, 1), "gpr": 123}]
+    assert frame.to_dict(orient="records") == [
+        {"date": dt.date(2026, 5, 1), "gpr": 123}
+    ]
     assert "GPR Excel parse failed; falling back to CSV parser" in caplog.text
 
 

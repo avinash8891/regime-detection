@@ -2,9 +2,16 @@ from __future__ import annotations
 
 import datetime as dt
 from pathlib import Path
+from typing import get_args, get_type_hints
+
+import pytest
 
 from regime_data_fetch.event_calendar import (
     EventLabelResolution,
+    EventImportance,
+    EventMarket,
+    EventSource,
+    EventType,
     ScheduledEvent,
     load_scheduled_events_yaml,
     _parse_global_rate_decision_events,
@@ -41,6 +48,30 @@ def test_load_scheduled_events_yaml_reads_generated_shape(tmp_path: Path) -> Non
             source="federalreserve.gov:fomccalendars",
         )
     ]
+
+
+def test_scheduled_event_closed_vocabularies_are_typed_and_validated() -> None:
+    hints = get_type_hints(ScheduledEvent)
+    assert set(get_args(EventMarket)) == {"GLOBAL", "US"}
+    assert {"FOMC", "CPI", "NFP", "budget", "election"}.issubset(
+        set(get_args(EventType))
+    )
+    assert set(get_args(EventImportance)) == {"high", "medium"}
+    assert "federalreserve.gov:fomccalendars" in set(get_args(EventSource))
+    assert hints["market"] == EventMarket
+    assert hints["type"] == EventType
+    assert hints["importance"] == EventImportance
+    assert hints["source"] == EventSource
+
+    with pytest.raises(ValueError, match="unknown scheduled event type"):
+        ScheduledEvent(
+            date=dt.date(2026, 1, 28),
+            release_timestamp_et=dt.datetime.fromisoformat("2026-02-18T14:00:00-05:00"),
+            market="US",
+            type="vendor_changed_name",  # type: ignore[arg-type]
+            importance="high",
+            source="federalreserve.gov:fomccalendars",
+        )
 
 
 def test_load_scheduled_events_yaml_reads_v2_manual_window_days(tmp_path: Path) -> None:

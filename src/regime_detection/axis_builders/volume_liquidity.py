@@ -9,8 +9,8 @@ from regime_detection.data_quality import (
     assess_series_input_quality,
     quality_forces_unknown,
 )
+from regime_detection.axis_builders.per_label import build_per_label_axis_outputs
 from regime_detection.feature_store import FeatureStore
-from regime_detection.hysteresis import apply_per_label_asymmetric_hysteresis
 from regime_detection.market_context import MarketContext
 from regime_detection.models import DataQuality, VolumeLiquidityStateOutput
 from regime_detection.volume_liquidity_rules import (
@@ -23,6 +23,23 @@ from regime_detection.volume_liquidity_rules import (
 
 # V2 §1E volume/liquidity gate follows the existing 20d z-score cold start.
 VOLUME_LIQUIDITY_REQUIRED_TRADING_DAYS = 20
+
+
+def _volume_liquidity_output(
+    *,
+    raw_label: str,
+    stable_label: str,
+    active_label: str,
+    evidence: dict[str, object],
+    data_quality: DataQuality,
+) -> VolumeLiquidityStateOutput:
+    return VolumeLiquidityStateOutput(
+        raw_label=cast(VolumeLiquidityLabel, raw_label),
+        stable_label=cast(VolumeLiquidityLabel, stable_label),
+        active_label=cast(VolumeLiquidityLabel, active_label),
+        evidence=evidence,
+        data_quality=data_quality,
+    )
 
 
 def build_volume_liquidity_axis_series(
@@ -130,28 +147,13 @@ def build_volume_liquidity_axis_series(
             }
         )
 
-    stable_labels, active_labels = apply_per_label_asymmetric_hysteresis(
-        raw_labels=list(raw_labels),
-        risk_rank=cast(dict[str, int], VOLUME_LIQUIDITY_RISK_RANK),
+    return build_per_label_axis_outputs(
+        sessions=context.sessions,
+        raw_labels=raw_labels,
+        risk_rank=VOLUME_LIQUIDITY_RISK_RANK,
         deescalation_days_by_label=volume_liquidity_config.deescalation_days_by_label,
         default_deescalation_days=volume_liquidity_config.default_deescalation_days,
+        data_quality=per_day_data_quality,
+        evidence=per_day_evidence,
+        output_factory=_volume_liquidity_output,
     )
-
-    outputs: dict[date, VolumeLiquidityStateOutput] = {}
-    for day, raw, stable, active, dq, evidence in zip(
-        context.sessions,
-        raw_labels,
-        stable_labels,
-        active_labels,
-        per_day_data_quality,
-        per_day_evidence,
-        strict=True,
-    ):
-        outputs[day] = VolumeLiquidityStateOutput(
-            raw_label=cast(VolumeLiquidityLabel, raw),
-            stable_label=cast(VolumeLiquidityLabel, stable),
-            active_label=cast(VolumeLiquidityLabel, active),
-            evidence=evidence,
-            data_quality=dq,
-        )
-    return outputs

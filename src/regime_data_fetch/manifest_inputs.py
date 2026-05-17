@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, fields
 from pathlib import Path
 
 from regime_data_fetch.artifact_manifest import ManifestArtifact, load_manifest
@@ -12,20 +12,74 @@ class ManifestInputResolutionError(ValueError):
 
 
 @dataclass(frozen=True)
-class RunnerInputPaths:
+class RequiredRunnerInputPaths:
     daily_dir: Path
     constituent_tree: Path
     macro_parquet: Path
-    pit_parquet: Path | None
-    event_calendar: Path | None
+    pit_parquet: Path
+    event_calendar: Path
+
+
+@dataclass(frozen=True)
+class OptionalRunnerInputPaths:
     pmi_path: Path | None
     aaii_sentiment_parquet: Path | None
     news_sentiment_parquet: Path | None
     fomc_minutes_parquet: Path | None
     powell_speeches_parquet: Path | None
     cpi_vintages_parquet: Path | None
+
+
+@dataclass(frozen=True)
+class RunnerInputPaths:
+    required: RequiredRunnerInputPaths
+    optional: OptionalRunnerInputPaths
     resolved_from_manifest: tuple[str, ...]
     cli_overrides: tuple[str, ...]
+
+    @property
+    def daily_dir(self) -> Path:
+        return self.required.daily_dir
+
+    @property
+    def constituent_tree(self) -> Path:
+        return self.required.constituent_tree
+
+    @property
+    def macro_parquet(self) -> Path:
+        return self.required.macro_parquet
+
+    @property
+    def pit_parquet(self) -> Path:
+        return self.required.pit_parquet
+
+    @property
+    def event_calendar(self) -> Path:
+        return self.required.event_calendar
+
+    @property
+    def pmi_path(self) -> Path | None:
+        return self.optional.pmi_path
+
+    @property
+    def aaii_sentiment_parquet(self) -> Path | None:
+        return self.optional.aaii_sentiment_parquet
+
+    @property
+    def news_sentiment_parquet(self) -> Path | None:
+        return self.optional.news_sentiment_parquet
+
+    @property
+    def fomc_minutes_parquet(self) -> Path | None:
+        return self.optional.fomc_minutes_parquet
+
+    @property
+    def powell_speeches_parquet(self) -> Path | None:
+        return self.optional.powell_speeches_parquet
+
+    @property
+    def cpi_vintages_parquet(self) -> Path | None:
+        return self.optional.cpi_vintages_parquet
 
 
 ARTIFACT_BY_FIELD: dict[str, str] = {
@@ -40,8 +94,8 @@ ARTIFACT_BY_FIELD: dict[str, str] = {
     "cpi_vintages_parquet": "cpi_all_items_vintages",
 }
 
-REQUIRED_FIELDS: frozenset[str] = frozenset(
-    {"daily_dir", "constituent_tree", "macro_parquet", "pit_parquet", "event_calendar"}
+REQUIRED_INPUT_FIELDS: frozenset[str] = frozenset(
+    field.name for field in fields(RequiredRunnerInputPaths)
 )
 
 
@@ -53,7 +107,7 @@ def resolve_runner_input_paths(
     cli_values: dict[str, Path | None],
     cli_overrides: set[str] | frozenset[str],
     repo_root: Path | None = None,
-    required_fields: frozenset[str] = REQUIRED_FIELDS,
+    required_fields: frozenset[str] = REQUIRED_INPUT_FIELDS,
 ) -> RunnerInputPaths:
     manifest = load_manifest(manifest_path)
     artifacts = manifest.required_for(runner_name)
@@ -100,17 +154,21 @@ def resolve_runner_input_paths(
             )
 
     return RunnerInputPaths(
-        daily_dir=_require_resolved_path(resolved, "daily_dir"),
-        constituent_tree=_require_resolved_path(resolved, "constituent_tree"),
-        macro_parquet=_require_resolved_path(resolved, "macro_parquet"),
-        pit_parquet=resolved["pit_parquet"],
-        event_calendar=resolved["event_calendar"],
-        pmi_path=resolved["pmi_path"],
-        aaii_sentiment_parquet=resolved["aaii_sentiment_parquet"],
-        news_sentiment_parquet=resolved["news_sentiment_parquet"],
-        fomc_minutes_parquet=resolved["fomc_minutes_parquet"],
-        powell_speeches_parquet=resolved["powell_speeches_parquet"],
-        cpi_vintages_parquet=resolved["cpi_vintages_parquet"],
+        required=RequiredRunnerInputPaths(
+            daily_dir=_require_resolved_path(resolved, "daily_dir"),
+            constituent_tree=_require_resolved_path(resolved, "constituent_tree"),
+            macro_parquet=_require_resolved_path(resolved, "macro_parquet"),
+            pit_parquet=_require_resolved_path(resolved, "pit_parquet"),
+            event_calendar=_require_resolved_path(resolved, "event_calendar"),
+        ),
+        optional=OptionalRunnerInputPaths(
+            pmi_path=resolved["pmi_path"],
+            aaii_sentiment_parquet=resolved["aaii_sentiment_parquet"],
+            news_sentiment_parquet=resolved["news_sentiment_parquet"],
+            fomc_minutes_parquet=resolved["fomc_minutes_parquet"],
+            powell_speeches_parquet=resolved["powell_speeches_parquet"],
+            cpi_vintages_parquet=resolved["cpi_vintages_parquet"],
+        ),
         resolved_from_manifest=tuple(sorted(resolved_from_manifest)),
         cli_overrides=tuple(sorted(cli_overrides)),
     )

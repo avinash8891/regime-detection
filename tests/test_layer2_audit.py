@@ -87,8 +87,10 @@ def test_layer2_audit_manifest_resolution_replaces_default_paths(
     )
     args = audit_layer2_30d._parse_args()
 
-    audit_layer2_30d._apply_manifest_input_paths(
-        args, runner_name="audit_layer2_30d"
+    audit_layer2_30d.apply_manifest_input_paths(
+        args,
+        runner_name="audit_layer2_30d",
+        repo_root=audit_layer2_30d.REPO_ROOT,
     )
 
     assert args.daily_dir == data_root / "daily_ohlcv_762"

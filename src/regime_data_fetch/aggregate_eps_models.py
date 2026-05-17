@@ -4,10 +4,17 @@ import datetime as dt
 from collections.abc import Mapping
 from dataclasses import dataclass
 from types import MappingProxyType
+from typing import Literal
 
 
 class AggregateEPSFetchError(RuntimeError):
     pass
+
+
+EPSHorizonLabel = Literal["2025E", "Q4 2025E", "2026E"]
+EPS_HORIZON_LABELS: frozenset[EPSHorizonLabel] = frozenset(
+    ("2025E", "Q4 2025E", "2026E")
+)
 
 
 @dataclass(frozen=True, init=False)
@@ -16,12 +23,12 @@ class AggregateEPSSnapshot:
     observation_label: str
     forward_estimate_label: str | None
     forward_estimate_value: float | None
-    estimates_by_label: Mapping[str, float | None]
+    estimates_by_label: Mapping[EPSHorizonLabel, float | None]
     price: float | None
-    pe_by_label: Mapping[str, float | None]
-    change_vs_prior_observation_by_label: Mapping[str, float | None]
+    pe_by_label: Mapping[EPSHorizonLabel, float | None]
+    change_vs_prior_observation_by_label: Mapping[EPSHorizonLabel, float | None]
     change_vs_prior_observation_price: float | None
-    change_vs_prior_observation_pe_by_label: Mapping[str, float | None]
+    change_vs_prior_observation_pe_by_label: Mapping[EPSHorizonLabel, float | None]
 
     def __init__(
         self,
@@ -30,20 +37,20 @@ class AggregateEPSSnapshot:
         observation_label: str,
         forward_estimate_label: str | None,
         forward_estimate_value: float | None,
-        estimates_by_label: Mapping[str, float | None] | None = None,
+        estimates_by_label: Mapping[EPSHorizonLabel, float | None] | None = None,
         estimate_2025e: float | None = None,
         estimate_q4_2025e: float | None = None,
         estimate_2026e: float | None = None,
         price: float | None = None,
-        pe_by_label: Mapping[str, float | None] | None = None,
+        pe_by_label: Mapping[EPSHorizonLabel, float | None] | None = None,
         pe_2025e: float | None = None,
         pe_2026e: float | None = None,
-        change_vs_prior_observation_by_label: Mapping[str, float | None] | None = None,
+        change_vs_prior_observation_by_label: Mapping[EPSHorizonLabel, float | None] | None = None,
         change_vs_prior_observation_2025e: float | None = None,
         change_vs_prior_observation_q4_2025e: float | None = None,
         change_vs_prior_observation_2026e: float | None = None,
         change_vs_prior_observation_price: float | None = None,
-        change_vs_prior_observation_pe_by_label: Mapping[str, float | None] | None = None,
+        change_vs_prior_observation_pe_by_label: Mapping[EPSHorizonLabel, float | None] | None = None,
         change_vs_prior_observation_pe_2025e: float | None = None,
         change_vs_prior_observation_pe_2026e: float | None = None,
     ) -> None:
@@ -55,13 +62,14 @@ class AggregateEPSSnapshot:
             self,
             "estimates_by_label",
             MappingProxyType(
-                dict(
+                _validated_horizon_map(
                     estimates_by_label
                     or {
                         "2025E": estimate_2025e,
                         "Q4 2025E": estimate_q4_2025e,
                         "2026E": estimate_2026e,
-                    }
+                    },
+                    field_name="estimates_by_label",
                 )
             ),
         )
@@ -69,19 +77,25 @@ class AggregateEPSSnapshot:
         object.__setattr__(
             self,
             "pe_by_label",
-            MappingProxyType(dict(pe_by_label or {"2025E": pe_2025e, "2026E": pe_2026e})),
+            MappingProxyType(
+                _validated_horizon_map(
+                    pe_by_label or {"2025E": pe_2025e, "2026E": pe_2026e},
+                    field_name="pe_by_label",
+                )
+            ),
         )
         object.__setattr__(
             self,
             "change_vs_prior_observation_by_label",
             MappingProxyType(
-                dict(
+                _validated_horizon_map(
                     change_vs_prior_observation_by_label
                     or {
                         "2025E": change_vs_prior_observation_2025e,
                         "Q4 2025E": change_vs_prior_observation_q4_2025e,
                         "2026E": change_vs_prior_observation_2026e,
-                    }
+                    },
+                    field_name="change_vs_prior_observation_by_label",
                 )
             ),
         )
@@ -94,12 +108,13 @@ class AggregateEPSSnapshot:
             self,
             "change_vs_prior_observation_pe_by_label",
             MappingProxyType(
-                dict(
+                _validated_horizon_map(
                     change_vs_prior_observation_pe_by_label
                     or {
                         "2025E": change_vs_prior_observation_pe_2025e,
                         "2026E": change_vs_prior_observation_pe_2026e,
-                    }
+                    },
+                    field_name="change_vs_prior_observation_pe_by_label",
                 )
             ),
         )
@@ -179,3 +194,17 @@ class EPSWaybackSnapshot:
     timestamp: str
     archive_url: str
     snapshot_date: dt.date
+
+
+def _validated_horizon_map(
+    values: Mapping[EPSHorizonLabel, float | None],
+    *,
+    field_name: str,
+) -> dict[EPSHorizonLabel, float | None]:
+    copied = dict(values)
+    unknown = sorted(str(label) for label in copied if label not in EPS_HORIZON_LABELS)
+    if unknown:
+        raise AggregateEPSFetchError(
+            f"unknown EPS horizon label in {field_name}: {unknown}"
+        )
+    return copied

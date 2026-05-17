@@ -43,19 +43,19 @@ from regime_detection.loaders import (  # noqa: E402
 )
 from regime_detection.market_context import build_market_context  # noqa: E402
 from regime_detection.versioning import engine_version as resolved_engine_version  # noqa: E402
-from regime_data_fetch.materialization import materialize_if_requested  # noqa: E402
 from regime_data_fetch.universe import FIXED_UNIVERSE_TREE_NAME  # noqa: E402
-from profile_engine_30d import (  # noqa: E402
-    _apply_manifest_input_paths,
-    _manifest_input_overrides,
-)
 
 from _v2_calibration_helpers import (  # noqa: E402
     CROSS_ASSET_SYMBOLS,
+    add_manifest_args,
+    apply_manifest_input_paths,
+    axis_reporting_label as _reporting_label,
     default_pmi_path,
     load_close_dict,
     load_macro_series,
     load_market_data,
+    manifest_input_overrides,
+    materialize_manifest_from_args,
 )
 
 
@@ -104,18 +104,6 @@ def _session_error_exit_code(
     if v1_errors or v2_errors:
         return 1
     return 0
-
-
-def _reporting_label(output: Any) -> str | None:
-    if output is None:
-        return None
-    reporting = getattr(output, "reporting_label", None)
-    if reporting is not None:
-        return reporting
-    classification_status = getattr(output, "classification_status", "classified")
-    if classification_status != "classified":
-        return classification_status
-    return getattr(output, "active_label", None)
 
 
 def _extract_v1_fields(output: Any) -> dict[str, Any]:
@@ -351,46 +339,29 @@ def _parse_args() -> argparse.Namespace:
         type=Path,
         default=REPO_ROOT / "docs" / "verification" / "v2_shadow_ab_60session.md",
     )
-    parser.add_argument(
-        "--manifest",
-        type=Path,
-        default=None,
-        help="Optional artifact manifest to materialize before running.",
-    )
-    parser.add_argument(
-        "--artifact-store",
-        default=None,
-        help="Optional artifact-store root override for --manifest.",
-    )
-    parser.add_argument(
-        "--data-root",
-        type=Path,
-        default=REPO_ROOT / "data" / "raw",
-        help="Local data/raw root used for manifest materialization.",
-    )
+    add_manifest_args(parser, data_root_default=REPO_ROOT / "data" / "raw", action="running")
     parser.add_argument(
         "--allow-session-errors",
         action="store_true",
         help="Allow exploratory report output even when per-session classify errors occur.",
     )
     args = parser.parse_args()
-    args.manifest_input_overrides = _manifest_input_overrides(sys.argv[1:])
+    args.manifest_input_overrides = manifest_input_overrides(sys.argv[1:])
     if args.daily_dir is None:
         args.daily_dir = args.data_root / FIXED_UNIVERSE_TREE_NAME
     if args.macro_parquet is None:
         args.macro_parquet = args.data_root / "macro" / "fred_macro_series.parquet"
     if args.pmi_path is None:
         args.pmi_path = default_pmi_path(args.data_root)
-    materialize_if_requested(
-        manifest_path=args.manifest,
-        local_root=args.data_root,
+    materialize_manifest_from_args(
+        args,
         repo_root=REPO_ROOT,
-        store_root=args.artifact_store,
         required_for="v2_calibration",
     )
-    _apply_manifest_input_paths(
+    apply_manifest_input_paths(
         args,
         runner_name="v2_calibration",
+        repo_root=REPO_ROOT,
         required_fields=frozenset({"daily_dir", "macro_parquet", "event_calendar"}),
     )
     return args

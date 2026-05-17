@@ -15,6 +15,10 @@ from regime_data_fetch.investing_live_constants import SOURCE_EARNINGS_URL
 LOGGER = logging.getLogger(__name__)
 
 
+class InvestingEarningsBrowserCaptureError(RuntimeError):
+    """Browser capture reached a modeled failure state."""
+
+
 @dataclass(frozen=True)
 class CapturedEarningsPage:
     path: Path
@@ -88,11 +92,17 @@ def capture_investing_earnings_page_with_token(
         context = playwright.chromium.launch_persistent_context(**launch_kwargs)
         try:
             page = context.pages[0] if context.pages else context.new_page()
-            page.goto(
-                SOURCE_EARNINGS_URL,
-                wait_until="domcontentloaded",
-                timeout=resolved_timeout_ms,
-            )
+            try:
+                page.goto(
+                    SOURCE_EARNINGS_URL,
+                    wait_until="domcontentloaded",
+                    timeout=resolved_timeout_ms,
+                )
+            except PlaywrightTimeoutError as exc:
+                raise InvestingEarningsBrowserCaptureError(
+                    "Investing.com earnings browser capture navigation timed out; "
+                    "complete the browser challenge and retry"
+                ) from exc
             try:
                 page.wait_for_function(
                     "() => document.documentElement.innerHTML.includes('accessToken')",
@@ -103,7 +113,7 @@ def capture_investing_earnings_page_with_token(
                 partial_path.write_text(page.content())
                 if output_path.exists():
                     output_path.unlink()
-                raise RuntimeError(
+                raise InvestingEarningsBrowserCaptureError(
                     "Investing.com earnings browser capture did not expose accessToken; "
                     f"saved current page to {partial_path}. Complete the browser challenge and retry."
                 ) from exc

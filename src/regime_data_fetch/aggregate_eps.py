@@ -24,6 +24,7 @@ from regime_data_fetch.aggregate_eps_constants import (
 from regime_data_fetch.aggregate_eps_models import (
     AggregateEPSFetchError,
     AggregateEPSSnapshot,
+    EPSHorizonLabel,
     EPSWaybackSnapshot,
     ParsedAggregateEPSWorkbook,
 )
@@ -41,6 +42,7 @@ from regime_data_fetch.aggregate_eps_workbook import (
 for _public_type in (
     AggregateEPSFetchError,
     AggregateEPSSnapshot,
+    EPSHorizonLabel,
     EPSWaybackSnapshot,
     ParsedAggregateEPSWorkbook,
 ):

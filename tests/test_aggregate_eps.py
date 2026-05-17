@@ -4,12 +4,14 @@ import datetime as dt
 import json
 from pathlib import Path
 import sqlite3
+from typing import get_args, get_type_hints
 import urllib.error
 
 import pandas as pd
 import pytest
 from openpyxl import Workbook
 
+import regime_data_fetch.aggregate_eps_models as aggregate_eps_models
 from regime_data_fetch.aggregate_eps import (
     EPS_DIR_NAME,
     EPS_REVISION_LOOKBACK_WEEKS,
@@ -29,6 +31,10 @@ from regime_data_fetch.aggregate_eps import (
     run_wayback_aggregate_eps_fetch,
     run_aggregate_eps_fetch,
     seed_weekly_history_from_wayback_timeline,
+)
+from regime_data_fetch.aggregate_eps_models import (
+    AggregateEPSSnapshot as AggregateEPSSnapshotModel,
+    EPSHorizonLabel,
 )
 
 
@@ -81,6 +87,25 @@ def test_aggregate_eps_snapshot_label_mappings_are_immutable() -> None:
     assert snapshot.estimate_2026e == 310.24
     with pytest.raises(TypeError):
         snapshot.estimates_by_label["2026E"] = 999.0  # type: ignore[index]
+
+
+def test_aggregate_eps_horizon_labels_are_closed_type() -> None:
+    assert set(get_args(EPSHorizonLabel)) == {"2025E", "Q4 2025E", "2026E"}
+    assert (
+        get_type_hints(
+            AggregateEPSSnapshotModel,
+            globalns=vars(aggregate_eps_models),
+        )["estimates_by_label"]
+        == aggregate_eps_models.Mapping[EPSHorizonLabel, float | None]
+    )
+    with pytest.raises(AggregateEPSFetchError, match="unknown EPS horizon label"):
+        AggregateEPSSnapshot(
+            observation_date=dt.date(2026, 5, 15),
+            observation_label="current",
+            forward_estimate_label="2026E",
+            forward_estimate_value=310.24,
+            estimates_by_label={"2027E": 1.0},  # type: ignore[dict-item]
+        )
 
 
 def test_parse_sp500_eps_workbook_extracts_current_and_historical_snapshots() -> None:

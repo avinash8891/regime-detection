@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import date
+from typing import Literal
 
 import pandas as pd
 
@@ -12,6 +13,37 @@ from regime_detection.market_context import MarketContext
 from regime_detection.models import EventCalendarOutput, TransitionRiskOutput
 from regime_detection.transition_risk import build_transition_risk_output_from_flags
 from regime_detection.transition_score import compose_transition_score_for_session
+
+EventCalendarLabel = Literal[
+    "geopolitical_event",
+    "election_window",
+    "fed_week",
+    "global_rate_decision",
+    "budget_week",
+    "cpi_week",
+    "nfp_week",
+    "expiry_week",
+    "earnings_season",
+    "normal_calendar",
+    "normal",
+    "unknown",
+]
+EVENT_CALENDAR_LABELS: frozenset[EventCalendarLabel] = frozenset(
+    (
+        "geopolitical_event",
+        "election_window",
+        "fed_week",
+        "global_rate_decision",
+        "budget_week",
+        "cpi_week",
+        "nfp_week",
+        "expiry_week",
+        "earnings_season",
+        "normal_calendar",
+        "normal",
+        "unknown",
+    )
+)
 
 
 @dataclass(frozen=True)
@@ -28,10 +60,16 @@ class TransitionScoreInputs:
     pct_above_50dma: float
     avg_pairwise_corr_percentile_504d: float
     drawdown_252d: float
-    event_calendar_label: str
+    event_calendar_label: EventCalendarLabel
     hmm_top_state_prob_now: float | None = None
     hmm_top_state_prob_5d_ago: float | None = None
     change_point_score: float | None = None
+
+    def __post_init__(self) -> None:
+        if self.event_calendar_label not in EVENT_CALENDAR_LABELS:
+            raise ValueError(
+                f"unknown event_calendar_label: {self.event_calendar_label}"
+            )
 
 
 def build_transition_risk_series(
