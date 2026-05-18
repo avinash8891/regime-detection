@@ -5,11 +5,11 @@ docs/regime_engine_v2_spec.md §3.2 (lines 552–596):
 
 - avg_pairwise_corr_63d            (mean of off-diagonal of 63d corr matrix)
 - avg_pairwise_corr_percentile_504d
-- largest_eigenvalue_share         (eigvals[0] / sum(eigvals))
+- largest_eigenvalue_share         (largest eigenvalue / sum(eigvals))
 - largest_eigenvalue_share_percentile_504d
 - effective_rank                   (exp(Shannon entropy of normalised eigvals))
 - effective_rank_percentile_504d
-- absorption_ratio_top3            (sum(eigvals[:3]) / sum(eigvals))
+- absorption_ratio_top3            (sum(top 3 eigenvalues) / sum(eigvals))
 - dispersion_ratio                 (mean 21d realised vol / SPY 21d vol)
 - dispersion_ratio_percentile_252d
 
@@ -156,11 +156,11 @@ def _per_session_corr_features(
         iu = np.triu_indices_from(corr, k=1)
         avg_corr[t] = corr[iu].mean()
 
-        eigs = np.sort(np.linalg.eigvalsh(corr))[::-1]
+        eigs = np.linalg.eigvalsh(corr)
         total = eigs.sum()
         if total > 0:
-            largest_share[t] = eigs[0] / total
-            absorption[t] = eigs[: min(3, eigs.size)].sum() / total
+            largest_share[t] = eigs[-1] / total
+            absorption[t] = eigs[-min(3, eigs.size) :].sum() / total
         eff_rank[t] = _shannon_effective_rank(eigs)
 
     return (
