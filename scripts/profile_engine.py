@@ -60,13 +60,13 @@ from scripts.profile_engine_reporting import (
     _format_stage_rows,
     _input_status,
     _profile_input_seam_values,
-    _reporting_label,
+    _reporting_label,  # noqa: F401  re-exported; tests access via profile_engine._reporting_label
     _trailing_v2_status,
     _verify_invariants,
     _write_json_report,
 )
 from scripts.profile_engine_timers import (
-    _timed_inflation_growth_builder,
+    _timed_inflation_growth_builder,  # noqa: F401  re-exported; tests access via profile_engine.*
     install_timers as _install_timers,
 )
 

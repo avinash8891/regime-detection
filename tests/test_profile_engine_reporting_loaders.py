@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import json
-import sys
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -9,8 +8,6 @@ import pandas as pd
 
 from conftest import (
     load_profile_engine_module,
-    profile_engine_manifest_artifact as _manifest_artifact,
-    write_profile_engine_manifest as _write_profile_manifest,
 )
 
 profile_engine = load_profile_engine_module()
