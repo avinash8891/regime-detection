@@ -306,7 +306,10 @@ def _load_pmi_manufacturing_series(pmi_path: Path) -> pd.Series | None:
     latest_path = pmi_path.with_name("us_ism_pmi.parquet")
     candidates = [path for path in (history_path, latest_path) if path.exists()]
     if pmi_path.exists() and pmi_path not in candidates:
-        candidates.append(pmi_path)
+        if pmi_path.suffix in {".parquet", ".pq"}:
+            candidates.append(pmi_path)
+        else:
+            logger.warning("pmi_path %s is not a parquet file; ignoring.", pmi_path)
     if not candidates:
         return None
     pmi_df = pd.concat(

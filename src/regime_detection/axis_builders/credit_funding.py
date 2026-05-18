@@ -3,6 +3,7 @@ from __future__ import annotations
 from datetime import date
 from typing import Literal
 
+import numpy as np
 import pandas as pd
 
 from regime_detection.credit_funding import (
@@ -112,11 +113,22 @@ def _build_credit_funding_for_spread_source(
     lqd_staleness_by_date = _trading_staleness_series(lqd_close, session_index)
     tlt_staleness_by_date = _trading_staleness_series(tlt_close, session_index)
     nfci_staleness_by_date = _calendar_staleness_days_series(nfci_series, session_index)
-    # Use staleness of the already-spliced sofr_iorb_spread (SOFR-IORB > SOFR-IOER >
-    # FEDFUNDS-IOER) rather than raw SOFR/IORB staleness. This allows pre-2021 sessions
-    # to pass the freshness gate when the FEDFUNDS-IOER proxy is wired.
-    funding_spread_staleness_by_date = _calendar_staleness_days_series(
-        features.sofr_iorb_spread, session_index
+    # Compute staleness from the raw SOFR and FEDFUNDS inputs rather than the
+    # already-spliced sofr_iorb_spread. The derived spread is forward-filled in
+    # compute_credit_funding_features, so it is always non-NaN and would never
+    # detect a real data outage. Taking np.minimum of both raw series preserves
+    # ADR 0009: a session covered by the FEDFUNDS-IOER proxy reads its staleness
+    # from FEDFUNDS (fresh), not from SOFR (sentinel/stale).
+    _sofr_staleness = _calendar_staleness_days_series(
+        macro_series.get("sofr"), session_index
+    )
+    _fedfunds_staleness = _calendar_staleness_days_series(
+        macro_series.get("fedfunds"), session_index
+    )
+    funding_spread_staleness_by_date = pd.Series(
+        np.minimum(_sofr_staleness.to_numpy(), _fedfunds_staleness.to_numpy()),
+        index=session_index,
+        dtype="int64",
     )
     rule_inputs_by_date = build_credit_funding_rule_inputs_by_date(
         features=features,
