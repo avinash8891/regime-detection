@@ -1,32 +1,47 @@
+"""Fetch Investing.com calendar and earnings artifacts into local archives."""
+
 from __future__ import annotations
 
 import csv
 import datetime as dt
-import base64
-import binascii
 import json
 import logging
-import os
-import re
 import time
+import urllib.error
 import urllib.parse
 import urllib.request
 from collections.abc import Callable
 from collections.abc import Iterable
-from dataclasses import dataclass
 from pathlib import Path
 
+from regime_data_fetch.investing_earnings_browser import (
+    access_token_from_page as _access_token_from_page,
+    capture_investing_earnings_loaded_page as _capture_investing_earnings_loaded_page,
+    capture_investing_earnings_page_with_token as _capture_investing_earnings_page_with_token,
+    country_map_from_page as _country_map_from_page,
+    investing_earnings_access_token as _investing_earnings_access_token,
+    loaded_earnings_page_html as _loaded_earnings_page_html,
+    redact_access_token as _redact_access_token,
+    validate_token_not_expired as _validate_token_not_expired,
+)
 from regime_data_fetch.investing_archive import run_local_investing_archive_import
+from regime_data_fetch.investing_live_constants import (
+    CALENDAR_BASE,
+    DOMAIN_ID,
+    EARNINGS_BASE,
+    SOURCE_CALENDAR_URL,
+    SOURCE_EARNINGS_URL,
+    SUBDOMAIN,
+    TIMEZONE_OFFSET,
+)
+from regime_data_fetch.investing_live_normalizers import (
+    normalize_earnings_rows as _normalize_earnings_rows,
+    normalize_event_rows as _normalize_event_rows,
+    normalize_holiday_rows as _normalize_holiday_rows,
+)
 
 LOGGER = logging.getLogger(__name__)
 
-DOMAIN_ID = "56"
-SUBDOMAIN = "in"
-TIMEZONE_OFFSET = "+05:30"
-CALENDAR_BASE = "https://endpoints.investing.com/pd-instruments"
-EARNINGS_BASE = "https://endpoints.investing.com/earnings"
-SOURCE_CALENDAR_URL = "https://in.investing.com/economic-calendar"
-SOURCE_EARNINGS_URL = "https://in.investing.com/earnings-calendar"
 DEFAULT_CALENDAR_COUNTRY_IDS = [
     25,
     32,
@@ -65,13 +80,24 @@ PageFetcher = Callable[[str], str]
 EarningsPageCapturer = Callable[[Path], Path]
 
 
-@dataclass(frozen=True)
-class CapturedEarningsPage:
-    path: Path
-    access_token: str
+def capture_investing_earnings_loaded_page(
+    *,
+    output_path: Path,
+    user_data_dir: Path | None = None,
+    executable_path: Path | None = None,
+    headless: bool | None = None,
+    timeout_ms: int | None = None,
+) -> Path:
+    return _capture_investing_earnings_loaded_page(
+        output_path=output_path,
+        user_data_dir=user_data_dir,
+        executable_path=executable_path,
+        headless=headless,
+        timeout_ms=timeout_ms,
+    )
 
 
-# TODO(simplify): the 7 passthrough `earnings_browser_*` kwargs on
+# TODO(simplify, owner=regime-maintainers): the 7 passthrough `earnings_browser_*` kwargs on
 # run_investing_live_fetch / capture_investing_live_archive should collapse
 # into an `EarningsBrowserConfig` dataclass (user_data_dir, executable,
 # headless, timeout_ms, page_capturer, loaded_page_path, access_token,
@@ -625,160 +651,6 @@ def _fetch_key_metrics(
     return by_id, reports
 
 
-def _normalize_event_rows(
-    occurrences: list[dict[str, object]],
-    events: list[dict[str, object]],
-    start: dt.date,
-    end: dt.date,
-    countries: dict[str, dict[str, object]],
-) -> list[dict[str, object]]:
-    mapped = {
-        str(event.get("id") or event.get("event_id") or ""): event for event in events
-    }
-    rows = []
-    for occurrence in occurrences:
-        event_id = str(occurrence.get("event_id") or "")
-        event = mapped.get(event_id, {})
-        country_id = str(event.get("country_id") or "")
-        country = countries.get(country_id, {})
-        rows.append(
-            {
-                "kind": "event",
-                "requested_date_from": start.isoformat(),
-                "requested_date_to": end.isoformat(),
-                "occurrence_id": occurrence.get("occurrence_id", ""),
-                "event_id": event_id,
-                "occurrence_time_utc": occurrence.get("occurrence_time", ""),
-                "actual_time_utc": occurrence.get("actual_time", ""),
-                "country_id": country_id,
-                "country_code": country.get("country_code", ""),
-                "country": country.get("name", ""),
-                "currency": event.get("currency", ""),
-                "category": event.get("category", ""),
-                "importance": event.get("importance", ""),
-                "event_type": event.get("event_type", ""),
-                "is_speech": event.get("event_type", "") == "speech",
-                "is_report": event.get("event_type", "") == "report",
-                "event": event.get("event_translated", ""),
-                "event_short_name": event.get("short_name", ""),
-                "event_long_name": event.get("long_name", ""),
-                "event_description": event.get("description", ""),
-                "period": occurrence.get("reference_period", ""),
-                "unit": event.get("unit", ""),
-                "precision": occurrence.get("precision", event.get("precision", "")),
-                "actual": occurrence.get("actual", ""),
-                "forecast": occurrence.get("forecast", ""),
-                "previous": occurrence.get("previous", ""),
-                "revised_from": occurrence.get("revised_from", ""),
-                "preliminary": occurrence.get("preliminary", ""),
-                "event_source": event.get("source", ""),
-                "event_source_url": event.get("source_url", ""),
-                "event_path": event.get("page_link", ""),
-            }
-        )
-    return rows
-
-
-def _normalize_holiday_rows(
-    holidays: list[dict[str, object]], start: dt.date, end: dt.date
-) -> list[dict[str, object]]:
-    rows = []
-    for holiday in holidays:
-        exchange = (
-            holiday.get("exchange") if isinstance(holiday.get("exchange"), dict) else {}
-        )
-        rows.append(
-            {
-                "kind": "holiday",
-                "requested_date_from": start.isoformat(),
-                "requested_date_to": end.isoformat(),
-                "holiday_id": holiday.get("holiday_id", ""),
-                "holiday_start_utc": holiday.get("holiday_start", ""),
-                "holiday_end_utc": holiday.get("holiday_end", ""),
-                "country_id": exchange.get("country_id", ""),
-                "country": exchange.get("country", ""),
-                "exchange_id": holiday.get("exchange_id", ""),
-                "exchange_short_name": exchange.get("short_name", ""),
-                "exchange_long_name": exchange.get("long_name", ""),
-                "exchange_time_zone": exchange.get("time_zone", ""),
-                "name": holiday.get("holiday_name", ""),
-                "exchange_closed": holiday.get("exchange_closed", ""),
-            }
-        )
-    return rows
-
-
-def _normalize_earnings_rows(
-    earnings: list[dict[str, object]],
-    instruments: dict[str, dict[str, object]],
-    key_metrics: dict[str, dict[str, object]],
-    countries: dict[str, dict[str, object]],
-) -> list[dict[str, object]]:
-    rows = []
-    for earning in earnings:
-        instrument_id = str(earning.get("instrument_id") or "")
-        instrument = instruments.get(instrument_id, {})
-        metrics = key_metrics.get(instrument_id, {}).get("key_metrics") or {}
-        if not isinstance(metrics, dict):
-            metrics = {}
-        attributes = instrument.get("attributes") or {}
-        if not isinstance(attributes, dict):
-            attributes = {}
-        price = instrument.get("price") or {}
-        if not isinstance(price, dict):
-            price = {}
-        country_id = str(
-            instrument.get("country_id") or earning.get("country_id") or ""
-        )
-        country = countries.get(country_id, {})
-        rows.append(
-            {
-                "kind": "earnings",
-                "source_url": SOURCE_EARNINGS_URL,
-                "date": earning.get("date", ""),
-                "instrument_id": instrument_id,
-                "company": instrument.get("long_name", earning.get("company", "")),
-                "short_name": instrument.get("short_name", ""),
-                "symbol": instrument.get("symbol", earning.get("symbol", "")),
-                "display_symbol": instrument.get("display_symbol", ""),
-                "country_id": country_id,
-                "country": instrument.get("country", country.get("name", "")),
-                "country_code": country.get(
-                    "country_code", earning.get("country_code", "")
-                ),
-                "exchange_id": instrument.get("exchange_id", ""),
-                "exchange_short_name": instrument.get("exchange_short_name", ""),
-                "currency_id": earning.get(
-                    "currency_id", instrument.get("currency_id", "")
-                ),
-                "currency_code": instrument.get("currency_code", ""),
-                "sector_id": attributes.get("sector_id", ""),
-                "importance": attributes.get("importance", ""),
-                "instrument_type": instrument.get(
-                    "type", metrics.get("instrument_type", "")
-                ),
-                "market_phase": earning.get("market_phase", ""),
-                "earning_date_type": earning.get("earning_date_type", ""),
-                "report_month": earning.get("report_month", ""),
-                "report_year": earning.get("report_year", ""),
-                "eps_actual": earning.get("eps_actual", ""),
-                "eps_forecast": earning.get("eps_forecast", ""),
-                "revenue_actual": earning.get("revenue_actual", ""),
-                "revenue_forecast": earning.get("revenue_forecast", ""),
-                "market_cap": metrics.get("market_cap", ""),
-                "price_last": price.get("last", ""),
-                "price_change": price.get("change", ""),
-                "price_change_percent": price.get("change_percent", ""),
-                "last_price_timestamp_utc": price.get("last_price_timestamp", ""),
-                "instrument_link": instrument.get("link", ""),
-                "market_link": instrument.get("market_link", ""),
-                "active": instrument.get("active", ""),
-                "realtime": instrument.get("realtime", ""),
-            }
-        )
-    return rows
-
-
 def _month_ranges(start: dt.date, end: dt.date) -> list[tuple[dt.date, dt.date]]:
     ranges: list[tuple[dt.date, dt.date]] = []
     cursor = start
@@ -799,107 +671,33 @@ def _fetch_text(url: str) -> str:
         return response.read().decode("utf-8", errors="replace")
 
 
-def capture_investing_earnings_loaded_page(
+def _request_json(
+    url: str,
+    params: dict[str, str],
+    headers: dict[str, str],
     *,
-    output_path: Path,
-    user_data_dir: Path | None = None,
-    executable_path: Path | None = None,
-    headless: bool | None = None,
-    timeout_ms: int | None = None,
-) -> Path:
-    """Capture a browser-loaded Investing.com earnings page with a fresh token."""
-    return _capture_investing_earnings_page_with_token(
-        output_path=output_path,
-        user_data_dir=user_data_dir,
-        executable_path=executable_path,
-        headless=headless,
-        timeout_ms=timeout_ms,
-    ).path
-
-
-def _capture_investing_earnings_page_with_token(
-    *,
-    output_path: Path,
-    user_data_dir: Path | None = None,
-    executable_path: Path | None = None,
-    headless: bool | None = None,
-    timeout_ms: int | None = None,
-) -> CapturedEarningsPage:
-    try:
-        from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
-        from playwright.sync_api import sync_playwright
-    except ImportError as exc:
-        raise RuntimeError(
-            "Playwright is required for automatic Investing.com earnings browser capture; "
-            "install the browser extra or pass --investing-earnings-loaded-page"
-        ) from exc
-
-    resolved_user_data_dir = user_data_dir or Path(
-        os.environ.get(
-            "INVESTING_BROWSER_USER_DATA_DIR", output_path.parent / "browser_profile"
-        )
-    )
-    env_executable = os.environ.get("INVESTING_BROWSER_EXECUTABLE", "").strip()
-    resolved_executable_path = executable_path or (
-        Path(env_executable) if env_executable else None
-    )
-    resolved_headless = (
-        os.environ.get("INVESTING_BROWSER_HEADLESS", "0").strip().lower()
-        in {"1", "true", "yes"}
-        if headless is None
-        else headless
-    )
-    resolved_timeout_ms = timeout_ms or int(
-        os.environ.get("INVESTING_BROWSER_TIMEOUT_MS", "120000")
-    )
-
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-    resolved_user_data_dir.mkdir(parents=True, exist_ok=True)
-    with sync_playwright() as playwright:
-        launch_kwargs: dict[str, object] = {
-            "headless": resolved_headless,
-            "user_data_dir": str(resolved_user_data_dir),
-            "args": ["--disable-blink-features=AutomationControlled"],
-        }
-        if resolved_executable_path:
-            launch_kwargs["executable_path"] = str(resolved_executable_path)
-        context = playwright.chromium.launch_persistent_context(**launch_kwargs)
-        try:
-            page = context.pages[0] if context.pages else context.new_page()
-            page.goto(
-                SOURCE_EARNINGS_URL,
-                wait_until="domcontentloaded",
-                timeout=resolved_timeout_ms,
-            )
-            try:
-                page.wait_for_function(
-                    "() => document.documentElement.innerHTML.includes('accessToken')",
-                    timeout=resolved_timeout_ms,
-                )
-            except PlaywrightTimeoutError as exc:
-                partial_path = output_path.with_suffix(output_path.suffix + ".partial")
-                partial_path.write_text(page.content())
-                if output_path.exists():
-                    output_path.unlink()
-                raise RuntimeError(
-                    "Investing.com earnings browser capture did not expose accessToken; "
-                    f"saved current page to {partial_path}. Complete the browser challenge and retry."
-                ) from exc
-            html = page.content()
-            token = _access_token_from_page(html)
-            _validate_token_not_expired(token)
-            output_path.write_text(_redact_access_token(html, token))
-        finally:
-            context.close()
-    return CapturedEarningsPage(path=output_path, access_token=token)
-
-
-def _request_json(url: str, params: dict[str, str], headers: dict[str, str]) -> object:
+    max_retries: int = 3,
+    backoff_seconds: float = 1.0,
+) -> object:
     request = urllib.request.Request(
         f"{url}?{urllib.parse.urlencode(params)}", headers=headers
     )
-    with urllib.request.urlopen(request, timeout=60) as response:
-        return json.loads(response.read().decode("utf-8", errors="replace"))
+    for attempt in range(1, max_retries + 1):
+        try:
+            with urllib.request.urlopen(request, timeout=60) as response:
+                return json.loads(response.read().decode("utf-8", errors="replace"))
+        except (TimeoutError, urllib.error.URLError) as exc:
+            if attempt == max_retries:
+                raise
+            LOGGER.warning(
+                "Investing.com JSON request failed for %s; retrying attempt %s/%s: %s",
+                url,
+                attempt + 1,
+                max_retries,
+                exc,
+            )
+            time.sleep(backoff_seconds * attempt)
+    raise RuntimeError("unreachable Investing.com JSON retry state")
 
 
 def _calendar_headers() -> dict[str, str]:
@@ -923,90 +721,6 @@ def _earnings_headers(access_token: str) -> dict[str, str]:
     if access_token:
         headers["Authorization"] = f"Bearer {access_token}"
     return headers
-
-
-def _investing_earnings_access_token() -> str:
-    return os.environ.get("INVESTING_EARNINGS_ACCESS_TOKEN", "").strip()
-
-
-def _loaded_earnings_page_html(path: Path | None) -> str:
-    configured = path or _investing_earnings_loaded_page_path()
-    if configured is None:
-        return ""
-    return configured.read_text(errors="replace")
-
-
-def _investing_earnings_loaded_page_path() -> Path | None:
-    configured = os.environ.get("INVESTING_EARNINGS_LOADED_PAGE", "").strip()
-    return Path(configured) if configured else None
-
-
-def _validate_token_not_expired(token: str) -> None:
-    parts = token.split(".")
-    if len(parts) != 3:
-        return
-    try:
-        payload_bytes = base64.urlsafe_b64decode(parts[1] + "=" * (-len(parts[1]) % 4))
-        payload = json.loads(payload_bytes)
-    except (binascii.Error, ValueError, json.JSONDecodeError) as exc:
-        LOGGER.error(
-            "Investing.com earnings accessToken is malformed; reload the earnings calendar page"
-        )
-        raise RuntimeError(
-            "Investing.com earnings accessToken is malformed; reload the earnings calendar page"
-        ) from exc
-    exp = payload.get("exp")
-    if not isinstance(exp, int | float):
-        return
-    now = dt.datetime.now(dt.timezone.utc).timestamp()
-    if exp <= now:
-        raise RuntimeError(
-            "Investing.com earnings accessToken is expired; reload the earnings calendar page and retry"
-        )
-
-
-def _redact_access_token(html: str, token: str) -> str:
-    redacted = html.replace(token, "[redacted]")
-    return re.sub(
-        r'("accessToken"\s*:\s*")[^"]+(")',
-        r"\1[redacted]\2",
-        redacted,
-    )
-
-
-def _page_data(html: str) -> dict[str, object]:
-    match = re.search(
-        r'<script id="__NEXT_DATA__" type="application/json">(.*?)</script>', html
-    )
-    if not match:
-        return {}
-    return json.loads(match.group(1))
-
-
-def _access_token_from_page(html: str) -> str:
-    token = str(
-        _page_data(html).get("props", {}).get("pageProps", {}).get("accessToken") or ""
-    )
-    if not token:
-        raise RuntimeError("Investing.com earnings page did not expose accessToken")
-    return token
-
-
-def _country_map_from_page(html: str, *, key: str) -> dict[str, dict[str, object]]:
-    data = _page_data(html)
-    groups = (
-        data.get("props", {})
-        .get("pageProps", {})
-        .get("state", {})
-        .get("countryStore", {})
-        .get(key, [])
-    )
-    mapped: dict[str, dict[str, object]] = {}
-    for group in groups:
-        for country in group.get("countries", []):
-            if isinstance(country, dict):
-                mapped[str(country.get("id"))] = country
-    return mapped
 
 
 def _dedupe(rows: list[dict[str, object]]) -> list[dict[str, object]]:

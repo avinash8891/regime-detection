@@ -17,8 +17,8 @@ if TYPE_CHECKING:  # avoid runtime cycle: volatility_state_v2 → config → ...
 
 # v2 §1C line 191 precedence:
 #   crisis_vol > vol_crush > high_vol > rising_vol > low_vol > normal_vol > unknown
-# `rising_vol` lands in slice 2.6 (v2 §1C lines 146-148);
-# `vol_crush` lands via ADR 0005 / Ambiguity Log #20 using FRED VIXCLS as
+# `rising_vol` lands in implementation phase (v2 §1C lines 146-148);
+# `vol_crush` lands via ADR 0005 / documented implementation decision using FRED VIXCLS as
 # implied_vol_30d plus the event-window seam.
 VolatilityLabel = Literal[
     "low_vol",
@@ -32,8 +32,8 @@ VolatilityLabel = Literal[
 
 
 # v2 §1C — annualization constant. Pinned here as the single source of truth
-# for the shared ``realized_vol`` helper so v1 (existing slice-1 path) and v2
-# (slice 2.6 `rising_vol` rule) consume one annualization convention.
+# for the shared ``realized_vol`` helper so v1 (existing implementation path) and v2
+# (implementation phase `rising_vol` rule) consume one annualization convention.
 _TRADING_DAYS_PER_YEAR = 252
 
 
@@ -42,9 +42,9 @@ def realized_vol(
 ) -> pd.Series:
     """Rolling annualised realised volatility of ``close`` log/pct returns.
 
-    Shared helper for v1 volatility classifiers (slice 1) and the v2 §1C
-    ``rising_vol`` rule (slice 2.6). One implementation prevents the
-    "second-system" pattern flagged in slice 2.2 review.
+    Shared helper for v1 volatility classifiers (implementation phase) and the v2 §1C
+    ``rising_vol`` rule (implementation phase). One implementation prevents the
+    "second-system" pattern flagged in implementation phase review.
 
     Algorithm:
         daily_returns = close.pct_change(fill_method=None)
@@ -56,7 +56,7 @@ def realized_vol(
         ddof: delta degrees-of-freedom for ``Series.std``. Pinned default
             ``1`` (sample std) matches pandas/numpy convention for
             financial time series; v2 §1C is silent so the convention is
-            recorded in the Implementation Ambiguity Log.
+            recorded in the documented implementation notes.
 
     Returns a date-indexed ``pd.Series`` aligned to ``close.index``; NaN
     until ``t >= window`` (cold-start: pandas ``rolling.std`` requires
@@ -93,7 +93,7 @@ def wilders_atr(
     implementations intentionally coexist (v1 ADX cold-start values are
     frozen; V2 §1C ATR ratio uses the more faithful textbook form). A
     future cleanup may unify them after V2 walk-forward validation per
-    v2 §9.1. See Implementation Ambiguity Log entry #15.
+    v2 §9.1. See documented implementation decision.
 
     Algorithm:
         TR[t] = max(
@@ -208,7 +208,7 @@ def compute_features(*, close: pd.Series, vix_proxy_close: pd.Series | None) -> 
     return_21d = close / close.shift(21) - 1
 
     # v1 RV percentile feeds the v1 high_vol/low_vol thresholds. Uses the
-    # shared ``realized_vol`` helper (slice 2.6) — preserves the v1 byte-
+    # shared ``realized_vol`` helper (implementation phase) — preserves the v1 byte-
     # identical output (window=21, ddof default — pandas .std() is ddof=1).
     realized_vol_21d = realized_vol(close, window=21)
     realized_vol_percentile_252d = realized_vol_21d.rolling(252, min_periods=252).apply(_pct_rank_last, raw=True)
@@ -237,8 +237,7 @@ def raw_label_for_day(
     are both supplied, the v2 §1C precedence (line 191:
     ``crisis_vol > vol_crush > high_vol > rising_vol > low_vol >
     normal_vol > unknown``) is layered ON TOP of the v1 label. When either
-    is ``None`` the function returns the v1 label and evidence unchanged
-    — byte-identical to the pre-slice-2.6 implementation.
+    is ``None`` the function returns the v1 label and evidence unchanged.
     """
     ret1 = f.return_1d.loc[dt]
     ret5 = f.return_5d.loc[dt]
@@ -320,8 +319,7 @@ def build_raw_outputs(
 ) -> tuple[list[VolatilityLabel], list[dict[str, Any]]]:
     """Vectorized v1 raw labels + optional v2 §1C `rising_vol` override.
 
-    The v1 pass is unchanged from pre-slice-2.6. When both v2 args are
-    supplied, the v2 §1C precedence at line 191 is applied per-day AFTER
+    When both v2 args are supplied, the v2 §1C precedence at line 191 is applied per-day AFTER
     the v1 pass — `rising_vol` overrides v1 `low_vol` / `normal_vol` /
     `unknown` (NOT `crisis_vol` / `high_vol`, which outrank `rising_vol`).
     When either argument is None, output is byte-identical to v1.

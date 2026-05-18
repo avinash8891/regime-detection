@@ -26,16 +26,16 @@ class MarketContext(BaseModel):
     macro_series: dict[str, pd.Series] | None = None  # v2 §2A/§2B/§2C FRED series
     pit_constituent_intervals: pd.DataFrame | None = None  # v2 §1D PIT breadth seam
     constituent_ohlcv: Annotated[dict[str, pd.DataFrame] | None, SkipValidation] = None  # v2 §1D PIT breadth seam
-    aaii_sentiment: pd.DataFrame | None = None  # v2 §1A euphoria sentiment seam (Log #32)
-    implied_vol_30d: pd.Series | None = None  # v2 §1C vol_crush seam — FRED VIXCLS/100 (Log #19+#20)
+    aaii_sentiment: pd.DataFrame | None = None  # v2 §1A euphoria sentiment seam (documented implementation decision)
+    implied_vol_30d: pd.Series | None = None  # v2 §1C vol_crush seam — FRED VIXCLS/100 (documented implementation decision)
     # v2 §2A central-bank-text evidence seam — deterministic-lexicon score
     # over FOMC minutes + Powell speech body_text per release. See
-    # docs/spec_code_data_audit_2026_05_15.md §3.1 (M1). Always evidence-
+    # the source-data audit). Always evidence-
     # only — never consumed by §2A rule predicates.
     central_bank_text_releases: pd.DataFrame | None = None
     # v2 §2A first-release CPI seam for historical replay (spec lines
     # 2587-2593). Series keyed by RELEASE DATE (not reference date) of
-    # the value-as-of-release. See docs/spec_code_data_audit_2026_05_15.md
+    # the value-as-of-release. See the source-data audit
     # §3.2 (M2). When None, the existing latest-revision CPIAUCSL path is
     # preserved unchanged.
     cpi_first_release: pd.Series | None = None
@@ -69,6 +69,7 @@ def build_market_context(
     require_nyse_trading_day(end_date)
     normalized_market_data = _normalize_market_data_for_runtime(market_data)
     _require_market_data_contract(normalized_market_data, as_of_date=end_date)
+    _require_constituent_ohlcv_contract(constituent_ohlcv)
 
     spy_ohlcv = _spy_ohlcv_frame(normalized_market_data, as_of_date=end_date)
     rsp_close = _symbol_close_series(normalized_market_data, symbol="RSP", as_of_date=end_date)
@@ -219,9 +220,9 @@ def slice_context_to_end_date(*, context: MarketContext, end_date: date) -> Mark
             if context.implied_vol_30d is None
             else context.implied_vol_30d.reindex(spy_ohlcv.index)
         ),
-        # §2A central-bank-text seam (audit M1).
+        # §2A central-bank-text seam (source-data audit).
         central_bank_text_releases=context.central_bank_text_releases,
-        # §2A first-release CPI seam (audit M2).
+        # §2A first-release CPI seam (source-data audit).
         cpi_first_release=context.cpi_first_release,
         # §1A SF Fed news sentiment evidence (audit post-#12 follow-up).
         news_sentiment=context.news_sentiment,
@@ -278,6 +279,36 @@ def _require_market_data_contract(df: pd.DataFrame, *, as_of_date: date) -> None
             raise ValueError(
                 "market_data contains non-NYSE session dates (forbidden in V1). "
                 f"Examples: {bad_dates[:5]}"
+            )
+
+
+def _require_constituent_ohlcv_contract(
+    constituent_ohlcv: dict[str, pd.DataFrame] | None,
+) -> None:
+    if constituent_ohlcv is None:
+        return
+    required_cols = {"open", "high", "low", "close", "volume", "adjusted_close"}
+    for ticker, frame in constituent_ohlcv.items():
+        if not isinstance(frame, pd.DataFrame):
+            raise ValueError(
+                "constituent_ohlcv frame must be a pandas DataFrame. "
+                f"ticker={ticker!r} actual_type={type(frame).__name__}"
+            )
+        missing = sorted(required_cols - set(frame.columns))
+        if missing:
+            raise ValueError(
+                "constituent_ohlcv frame missing required columns. "
+                f"ticker={ticker!r} missing={missing}"
+            )
+        if not isinstance(frame.index, pd.DatetimeIndex):
+            raise ValueError(
+                "constituent_ohlcv frame must use a DatetimeIndex date index. "
+                f"ticker={ticker!r} actual_index_type={type(frame.index).__name__}"
+            )
+        if frame.index.hasnans:
+            raise ValueError(
+                "constituent_ohlcv frame contains null dates in DatetimeIndex. "
+                f"ticker={ticker!r}"
             )
 
 

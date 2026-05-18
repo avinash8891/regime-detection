@@ -15,7 +15,6 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO_ROOT / "src"))
 
 from regime_detection.engine import RegimeEngine
-from regime_detection.loaders import load_event_calendar
 from regime_detection.shadow_storage import (
     fetch_run_row,
     insert_replay_check,

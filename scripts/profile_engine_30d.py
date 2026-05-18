@@ -5,14 +5,13 @@ from __future__ import annotations
 import argparse
 import contextlib
 import datetime as dt
-import math
 import signal
 import sys
 import time
 from collections import defaultdict
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Callable, get_args
+from typing import Any
 
 import pandas as pd
 
@@ -24,10 +23,12 @@ if str(SRC_ROOT) not in sys.path:
     sys.path.insert(0, str(SRC_ROOT))
 
 from regime_data_fetch.pit_constituents import read_pit_intervals
-from regime_data_fetch.materialization import materialize_if_requested
+from regime_data_fetch.cli_common import (
+    OPERATOR_ENV_POINTER_FILE,
+    load_operator_env_files,
+)
 from regime_data_fetch.universe import FIXED_UNIVERSE_TREE_NAME
 from regime_detection.engine import RegimeEngine
-from regime_detection.feature_store import FeatureStore
 from regime_detection.fragility_universe import CROSS_ASSET_SYMBOLS, SECTOR_ETFS
 from regime_detection.loaders import (
     load_central_bank_text_score,
@@ -36,21 +37,40 @@ from regime_detection.loaders import (
     load_news_sentiment_series,
 )
 from regime_detection.market_context import build_market_context
-from regime_detection.models import ClassificationStatus, RegimeOutput, RegimeTimeline
 from regime_detection.timeline import ENGINE_MINIMUM_HISTORY
 from scripts._v2_calibration_helpers import (
+    add_manifest_args,
+    apply_manifest_input_paths,
     default_pmi_path,
     load_close_dict,
     load_macro_series,
     load_market_data,
+    manifest_input_overrides,
+    materialize_manifest_from_args,
     positive_int,
+)
+from scripts.profile_engine_30d_reporting import (
+    PROFILE_INPUT_SEAM_NAMES,
+    _build_json_report,
+    _compact_timeline_rows,
+    _format_stage_rows,
+    _input_status,
+    _profile_input_seam_values,
+    _reporting_label,
+    _trailing_v2_status,
+    _verify_invariants,
+    _write_json_report,
+)
+from scripts.profile_engine_30d_timers import (
+    _timed_inflation_growth_builder,
+    install_timers as _install_timers,
 )
 
 
 DEFAULT_CONFIG_PATH = (
     REPO_ROOT / "src" / "regime_detection" / "configs" / "core3-v2.0.0.yaml"
 )
-DEFAULT_DAILY_DIR = REPO_ROOT / "data" / "raw" / "daily_ohlcv"
+DEFAULT_DAILY_DIR = REPO_ROOT / "data" / "raw" / FIXED_UNIVERSE_TREE_NAME
 DEFAULT_CONSTITUENT_TREE = REPO_ROOT / "data" / "raw" / FIXED_UNIVERSE_TREE_NAME
 DEFAULT_MACRO_PARQUET = (
     REPO_ROOT / "data" / "raw" / "macro" / "fred_macro_series.parquet"
@@ -61,7 +81,13 @@ DEFAULT_PIT_PARQUET = (
 DEFAULT_PMI_PATH = default_pmi_path(REPO_ROOT / "data" / "raw")
 DEFAULT_EVENT_CALENDAR = REPO_ROOT / "configs" / "events" / "us_events.yaml"
 RUN_TIMEOUT_SECONDS = 300
-NON_CLASSIFIED_REPORTING_LABELS = set(get_args(ClassificationStatus)) - {"classified"}
+__all__ = [
+    "_build_json_report",
+    "_reporting_label",
+    "_timed_inflation_growth_builder",
+    "_trailing_v2_status",
+    "_write_json_report",
+]
 
 
 @dataclass
@@ -103,13 +129,12 @@ class ProfileInputBundle:
     aaii_sentiment: pd.DataFrame | None
     news_sentiment: pd.Series | None
     implied_vol_30d: pd.Series | None
-    central_bank_text_releases: pd.Series | None
+    central_bank_text_releases: pd.DataFrame | None
     cpi_first_release: pd.Series | None
-    pit_constituent_intervals: dict[str, Any]
+    pit_constituent_intervals: pd.DataFrame
     constituent_ohlcv: dict[str, pd.DataFrame]
     constituent_tickers: list[str]
     missing_constituent_paths: list[Path]
-    input_kwargs: dict[str, Any]
 
 
 class RunTimeout(RuntimeError):
@@ -151,21 +176,29 @@ def _build_required_sessions(
 
 
 def _read_symbol_ohlcv(tree_root: Path, symbol: str) -> pd.DataFrame:
-    parquet_path = tree_root / f"symbol={symbol}" / "ohlcv.parquet"
-    if not parquet_path.exists():
-        raise FileNotFoundError(parquet_path)
-    frame = pd.read_parquet(parquet_path)
+    symbol_dir = tree_root / f"symbol={symbol}"
+    parquet_path = symbol_dir / "ohlcv.parquet"
+    if parquet_path.exists():
+        source = parquet_path
+    else:
+        partition_files = sorted(symbol_dir.glob("*.parquet"))
+        if not partition_files:
+            raise FileNotFoundError(parquet_path)
+        source = symbol_dir
+    frame = pd.read_parquet(source)
     required_cols = ["date", "open", "high", "low", "close", "volume", "adjusted_close"]
     missing = [col for col in required_cols if col not in frame.columns]
     if missing:
-        raise ValueError(f"{parquet_path} missing required columns: {missing}")
+        raise ValueError(f"{source} missing required columns: {missing}")
     frame = frame[required_cols].copy()
     frame["date"] = pd.to_datetime(frame["date"]).dt.normalize()
     frame = frame.sort_values("date").reset_index(drop=True)
     return frame
 
 
-def _load_optional_aaii_sentiment(path: Path) -> pd.DataFrame | None:
+def _load_optional_aaii_sentiment(path: Path | None) -> pd.DataFrame | None:
+    if path is None:
+        return None
     if not path.exists():
         return None
     frame = pd.read_parquet(path)
@@ -184,13 +217,25 @@ def _load_optional_event_calendar(path: Path) -> pd.DataFrame | None:
     return load_event_calendar(path)
 
 
-def _load_optional_news_sentiment(path: Path) -> pd.Series | None:
+def _resolve_news_sentiment_path(path: Path) -> Path:
+    canonical = path.with_name("sf_fed_news_sentiment.parquet")
+    if path.exists() or path == canonical or not canonical.exists():
+        return path
+    return canonical
+
+
+def _load_optional_news_sentiment(path: Path | None) -> pd.Series | None:
+    if path is None:
+        return None
+    path = _resolve_news_sentiment_path(path)
     if not path.exists():
         return None
     return load_news_sentiment_series(path)
 
 
-def _load_optional_cpi_first_release(path: Path) -> pd.Series | None:
+def _load_optional_cpi_first_release(path: Path | None) -> pd.Series | None:
+    if path is None:
+        return None
     if not path.exists():
         return None
     return load_cpi_vintages_first_release(path)
@@ -198,12 +243,16 @@ def _load_optional_cpi_first_release(path: Path) -> pd.Series | None:
 
 def _load_optional_central_bank_text_releases(
     *,
-    fomc_path: Path,
-    powell_path: Path,
+    fomc_path: Path | None,
+    powell_path: Path | None,
 ) -> pd.DataFrame | None:
     releases = load_central_bank_text_score(
-        fomc_minutes_source=fomc_path if fomc_path.exists() else None,
-        powell_speeches_source=powell_path if powell_path.exists() else None,
+        fomc_minutes_source=(
+            fomc_path if fomc_path is not None and fomc_path.exists() else None
+        ),
+        powell_speeches_source=(
+            powell_path if powell_path is not None and powell_path.exists() else None
+        ),
     )
     if releases.empty:
         return None
@@ -239,12 +288,13 @@ def _load_constituent_ohlcv_from_tree(
     missing_paths: list[Path] = []
     for ticker in tickers:
         parquet_path = tree_root / f"symbol={ticker}" / "ohlcv.parquet"
-        if not parquet_path.exists():
+        try:
+            frame = _read_symbol_ohlcv(tree_root, ticker)
+        except FileNotFoundError:
             if not allow_missing_files:
                 raise FileNotFoundError(parquet_path)
             missing_paths.append(parquet_path)
             continue
-        frame = _read_symbol_ohlcv(tree_root, ticker)
         frame = frame[
             (frame["date"] >= pd.Timestamp(start_date))
             & (frame["date"] <= pd.Timestamp(end_date))
@@ -260,537 +310,6 @@ def _load_constituent_ohlcv_from_tree(
         frame.index.name = "date"
         out[ticker] = frame
     return out, tickers, missing_paths
-
-
-def _input_status(name: str, value: Any) -> str:
-    if value is None:
-        return f"{name}: NONE"
-    if isinstance(value, dict):
-        if not value:
-            return f"{name}: EMPTY_DICT"
-        return f"{name}: {len(value)} keys"
-    if isinstance(value, pd.DataFrame):
-        return f"{name}: {len(value)} rows"
-    if isinstance(value, pd.Series):
-        return f"{name}: {len(value)} rows"
-    return f"{name}: type={type(value).__name__}"
-
-
-def _timed_wrapper(
-    timer: StageTimer,
-    stage_name: str,
-    func: Callable[..., Any],
-) -> Callable[..., Any]:
-    def wrapped(*args: Any, **kwargs: Any) -> Any:
-        with timer.measure(stage_name):
-            return func(*args, **kwargs)
-
-    return wrapped
-
-
-def _timed_method_wrapper(
-    timer: StageTimer,
-    stage_name: str,
-    method: Callable[..., Any],
-) -> Callable[..., Any]:
-    def wrapped(*args: Any, **kwargs: Any) -> Any:
-        with timer.measure(stage_name):
-            return method(*args, **kwargs)
-
-    return wrapped
-
-
-def _timed_inflation_growth_builder(
-    timer: StageTimer,
-    method: Callable[..., Any],
-) -> Callable[..., Any]:
-    def wrapped(
-        self,
-        context: Any,
-        feature_store: Any,
-        credit_funding_active_labels_by_date: Any = None,
-    ) -> Any:
-        import regime_detection.axis_series as axis_series_module
-
-        original_assess = axis_series_module.assess_series_input_quality
-        original_build_inputs = (
-            axis_series_module.build_inflation_growth_rule_inputs_by_date
-        )
-        original_eval = axis_series_module.evaluate_inflation_growth_rules
-
-        def timed_assess(*args: Any, **kwargs: Any) -> Any:
-            with timer.measure(
-                "axis_series.inflation_growth.assess_series_input_quality"
-            ):
-                return original_assess(*args, **kwargs)
-
-        def timed_build_inputs(*args: Any, **kwargs: Any) -> Any:
-            with timer.measure(
-                "axis_series.inflation_growth.build_rule_inputs_by_date"
-            ):
-                return original_build_inputs(*args, **kwargs)
-
-        def timed_eval(*args: Any, **kwargs: Any) -> Any:
-            with timer.measure("axis_series.inflation_growth.evaluate_rules"):
-                return original_eval(*args, **kwargs)
-
-        with timer.measure("axis_series.inflation_growth"):
-            with contextlib.ExitStack() as stack:
-                stack.enter_context(
-                    _patched_attr(
-                        axis_series_module, "assess_series_input_quality", timed_assess
-                    )
-                )
-                stack.enter_context(
-                    _patched_attr(
-                        axis_series_module,
-                        "build_inflation_growth_rule_inputs_by_date",
-                        timed_build_inputs,
-                    )
-                )
-                stack.enter_context(
-                    _patched_attr(
-                        axis_series_module,
-                        "evaluate_inflation_growth_rules",
-                        timed_eval,
-                    )
-                )
-                return method(
-                    self,
-                    context,
-                    feature_store,
-                    credit_funding_active_labels_by_date=credit_funding_active_labels_by_date,
-                )
-
-    return wrapped
-
-
-@contextlib.contextmanager
-def _patched_attr(module: Any, attr_name: str, replacement: Any):
-    original = getattr(module, attr_name)
-    setattr(module, attr_name, replacement)
-    try:
-        yield
-    finally:
-        setattr(module, attr_name, original)
-
-
-@contextlib.contextmanager
-def _install_timers(timer: StageTimer):
-    import regime_detection.engine as engine_module
-    import regime_detection.axis_series as axis_series_module
-    import regime_detection.feature_store as feature_store_module
-    import regime_detection.timeline as timeline_module
-
-    patches = [
-        (
-            engine_module,
-            "build_market_context",
-            _timed_wrapper(
-                timer, "build_market_context", engine_module.build_market_context
-            ),
-        ),
-        (
-            engine_module,
-            "build_regime_timeline",
-            _timed_wrapper(
-                timer,
-                "build_regime_timeline_total",
-                engine_module.build_regime_timeline,
-            ),
-        ),
-        (
-            timeline_module,
-            "slice_context_to_recent_sessions",
-            _timed_wrapper(
-                timer,
-                "slice_context_to_recent_sessions",
-                timeline_module.slice_context_to_recent_sessions,
-            ),
-        ),
-        (
-            timeline_module,
-            "build_feature_store",
-            _timed_wrapper(
-                timer, "build_feature_store_total", timeline_module.build_feature_store
-            ),
-        ),
-        (
-            timeline_module,
-            "build_axis_series_bundle",
-            _timed_wrapper(
-                timer,
-                "build_axis_series_bundle",
-                timeline_module.build_axis_series_bundle,
-            ),
-        ),
-        (
-            timeline_module,
-            "build_transition_risk_series",
-            _timed_wrapper(
-                timer,
-                "build_transition_risk_series",
-                timeline_module.build_transition_risk_series,
-            ),
-        ),
-        (
-            feature_store_module,
-            "compute_network_fragility_features",
-            _timed_wrapper(
-                timer,
-                "feature_store.network_fragility",
-                feature_store_module.compute_network_fragility_features,
-            ),
-        ),
-        (
-            feature_store_module,
-            "compute_trend_v2_features",
-            _timed_wrapper(
-                timer,
-                "feature_store.trend_direction_v2",
-                feature_store_module.compute_trend_v2_features,
-            ),
-        ),
-        (
-            feature_store_module,
-            "compute_volatility_v2_features",
-            _timed_wrapper(
-                timer,
-                "feature_store.volatility_state_v2",
-                feature_store_module.compute_volatility_v2_features,
-            ),
-        ),
-        (
-            feature_store_module,
-            "compute_breadth_v2_features",
-            _timed_wrapper(
-                timer,
-                "feature_store.breadth_state_v2",
-                feature_store_module.compute_breadth_v2_features,
-            ),
-        ),
-        (
-            feature_store_module,
-            "compute_volume_liquidity_v2_features",
-            _timed_wrapper(
-                timer,
-                "feature_store.volume_liquidity_v2",
-                feature_store_module.compute_volume_liquidity_v2_features,
-            ),
-        ),
-        (
-            feature_store_module,
-            "compute_monetary_pressure_features",
-            _timed_wrapper(
-                timer,
-                "feature_store.monetary_pressure_v2",
-                feature_store_module.compute_monetary_pressure_features,
-            ),
-        ),
-        (
-            feature_store_module,
-            "compute_credit_funding_features",
-            _timed_wrapper(
-                timer,
-                "feature_store.credit_funding",
-                feature_store_module.compute_credit_funding_features,
-            ),
-        ),
-        (
-            feature_store_module,
-            "compute_inflation_growth_features",
-            _timed_wrapper(
-                timer,
-                "feature_store.inflation_growth",
-                feature_store_module.compute_inflation_growth_features,
-            ),
-        ),
-        (
-            feature_store_module,
-            "compute_hmm_features",
-            _timed_wrapper(
-                timer, "feature_store.hmm", feature_store_module.compute_hmm_features
-            ),
-        ),
-        (
-            feature_store_module,
-            "compute_clustering_features",
-            _timed_wrapper(
-                timer,
-                "feature_store.gmm_clustering",
-                feature_store_module.compute_clustering_features,
-            ),
-        ),
-        (
-            feature_store_module,
-            "compute_change_point_features",
-            _timed_wrapper(
-                timer,
-                "feature_store.change_point",
-                feature_store_module.compute_change_point_features,
-            ),
-        ),
-        (
-            axis_series_module.TrendDirectionSeriesClassifier,
-            "build",
-            _timed_method_wrapper(
-                timer,
-                "axis_series.trend_direction",
-                axis_series_module.TrendDirectionSeriesClassifier.build,
-            ),
-        ),
-        (
-            axis_series_module.TrendCharacterSeriesClassifier,
-            "build",
-            _timed_method_wrapper(
-                timer,
-                "axis_series.trend_character",
-                axis_series_module.TrendCharacterSeriesClassifier.build,
-            ),
-        ),
-        (
-            axis_series_module.VolatilitySeriesClassifier,
-            "build",
-            _timed_method_wrapper(
-                timer,
-                "axis_series.volatility_state",
-                axis_series_module.VolatilitySeriesClassifier.build,
-            ),
-        ),
-        (
-            axis_series_module.BreadthSeriesClassifier,
-            "build",
-            _timed_method_wrapper(
-                timer,
-                "axis_series.breadth_state",
-                axis_series_module.BreadthSeriesClassifier.build,
-            ),
-        ),
-        (
-            axis_series_module.CreditFundingSeriesClassifier,
-            "build",
-            _timed_method_wrapper(
-                timer,
-                "axis_series.credit_funding",
-                axis_series_module.CreditFundingSeriesClassifier.build,
-            ),
-        ),
-        (
-            axis_series_module.NetworkFragilitySeriesClassifier,
-            "build",
-            _timed_method_wrapper(
-                timer,
-                "axis_series.network_fragility",
-                axis_series_module.NetworkFragilitySeriesClassifier.build,
-            ),
-        ),
-        (
-            axis_series_module.VolumeLiquidityStateSeriesClassifier,
-            "build",
-            _timed_method_wrapper(
-                timer,
-                "axis_series.volume_liquidity_state",
-                axis_series_module.VolumeLiquidityStateSeriesClassifier.build,
-            ),
-        ),
-        (
-            axis_series_module.MonetaryPressureV2SeriesClassifier,
-            "build",
-            _timed_method_wrapper(
-                timer,
-                "axis_series.monetary_pressure_state",
-                axis_series_module.MonetaryPressureV2SeriesClassifier.build,
-            ),
-        ),
-        (
-            axis_series_module.InflationGrowthSeriesClassifier,
-            "build",
-            _timed_inflation_growth_builder(
-                timer, axis_series_module.InflationGrowthSeriesClassifier.build
-            ),
-        ),
-        (
-            axis_series_module,
-            "build_event_calendar_series",
-            _timed_wrapper(
-                timer,
-                "axis_series.event_calendar",
-                axis_series_module.build_event_calendar_series,
-            ),
-        ),
-    ]
-    with contextlib.ExitStack() as stack:
-        for module, attr_name, replacement in patches:
-            stack.enter_context(_patched_attr(module, attr_name, replacement))
-        yield
-
-
-def _format_stage_rows(
-    stage_names: list[str], timer: StageTimer, total: float
-) -> list[str]:
-    rows = ["stage_name | wall_clock_seconds | % of total"]
-    for stage_name in stage_names:
-        seconds = timer.totals.get(stage_name, 0.0)
-        pct = (seconds / total * 100.0) if total > 0 else 0.0
-        rows.append(f"{stage_name} | {seconds:.6f} | {pct:6.2f}%")
-    return rows
-
-
-def _reporting_label(output: Any) -> str | None:
-    if output is None:
-        return None
-    reporting = getattr(output, "reporting_label", None)
-    if reporting is not None:
-        return reporting
-    classification_status = getattr(output, "classification_status", "classified")
-    if classification_status != "classified":
-        return classification_status
-    return getattr(output, "active_label", None)
-
-
-def _compact_timeline_rows(outputs: list[RegimeOutput]) -> list[str]:
-    rows = [
-        "as_of_date | trend_direction | volatility_state | transition_risk | activated_v2_seams"
-    ]
-    for out in outputs:
-        seams: list[str] = []
-        network_fragility_label = _reporting_label(out.network_fragility)
-        if (
-            network_fragility_label is not None
-            and network_fragility_label not in NON_CLASSIFIED_REPORTING_LABELS
-        ):
-            seams.append(f"network_fragility={network_fragility_label}")
-        if out.volume_liquidity_state is not None:
-            seams.append(
-                f"volume_liquidity_state={_reporting_label(out.volume_liquidity_state)}"
-            )
-        if out.credit_funding_state is not None:
-            seams.append(
-                f"credit_funding_state={_reporting_label(out.credit_funding_state)}"
-            )
-        if out.credit_funding_state_proxy is not None:
-            seams.append(
-                f"credit_funding_state_proxy={_reporting_label(out.credit_funding_state_proxy)}"
-            )
-        if out.credit_funding_effective_state is not None:
-            source = out.credit_funding_effective_state.evidence.get(
-                "source_used", "not_recorded"
-            )
-            seams.append(
-                "credit_funding_effective_state="
-                f"{_reporting_label(out.credit_funding_effective_state)}"
-                f"({source})"
-            )
-        if out.inflation_growth_state is not None:
-            seams.append(
-                f"inflation_growth_state={_reporting_label(out.inflation_growth_state)}"
-            )
-        if out.monetary_pressure_state is not None:
-            seams.append(
-                f"monetary_pressure_state={_reporting_label(out.monetary_pressure_state)}"
-            )
-        if out.cluster is not None:
-            seams.append(f"cluster={out.cluster.cluster_id}")
-        if out.change_point is not None:
-            seams.append(f"change_point={out.change_point.score:.4f}")
-        if out.transition_risk.score is not None:
-            seams.append(f"transition_score={out.transition_risk.score:.4f}")
-        seam_text = ", ".join(seams) if seams else "-"
-        rows.append(
-            f"{out.as_of_date.isoformat()} | "
-            f"{_reporting_label(out.trend_direction)} | "
-            f"{_reporting_label(out.volatility_state)} | "
-            f"{out.transition_risk.label} | "
-            f"{seam_text}"
-        )
-    return rows
-
-
-def _trailing_v2_status(out: RegimeOutput) -> list[str]:
-    rows = ["field | status"]
-
-    def add(name: str, value: Any) -> None:
-        if value is None:
-            rows.append(f"{name} | NONE")
-            return
-        if isinstance(value, float) and math.isnan(value):
-            rows.append(f"{name} | NaN")
-            return
-        if hasattr(value, "active_label"):
-            rows.append(f"{name} | reported={_reporting_label(value)}")
-            return
-        rows.append(f"{name} | present")
-
-    add("network_fragility", out.network_fragility)
-    add("volume_liquidity_state", out.volume_liquidity_state)
-    add("credit_funding_state", out.credit_funding_state)
-    add("credit_funding_state_proxy", out.credit_funding_state_proxy)
-    add("credit_funding_effective_state", out.credit_funding_effective_state)
-    add("inflation_growth_state", out.inflation_growth_state)
-    add("monetary_pressure_state", out.monetary_pressure_state)
-    add("cluster", out.cluster)
-    add("change_point", out.change_point)
-    add("transition_risk.score", out.transition_risk.score)
-    add("transition_risk.score_components", out.transition_risk.score_components)
-    return rows
-
-
-def _verify_invariants(
-    timeline: RegimeTimeline,
-    feature_store: FeatureStore,
-    input_kwargs: dict[str, Any],
-) -> list[str]:
-    issues: list[str] = []
-    for out in timeline.outputs:
-        if out.trend_direction.active_label is None:
-            issues.append(
-                f"{out.as_of_date.isoformat()}: trend_direction.active_label is None"
-            )
-    trailing = timeline.outputs[-1]
-    expected_non_none = [
-        ("network_fragility", trailing.network_fragility),
-        ("volume_liquidity_state", trailing.volume_liquidity_state),
-        ("credit_funding_state", trailing.credit_funding_state),
-        ("credit_funding_effective_state", trailing.credit_funding_effective_state),
-        ("inflation_growth_state", trailing.inflation_growth_state),
-        ("monetary_pressure_state", trailing.monetary_pressure_state),
-    ]
-    for name, value in expected_non_none:
-        if value is None:
-            issues.append(f"Trailing session missing expected V2 field: {name}")
-    seam_expectations = [
-        ("network_fragility", feature_store.network_fragility, ["sector_etf_closes"]),
-        ("trend_direction_v2", feature_store.trend_direction_v2, []),
-        ("volatility_state_v2", feature_store.volatility_state_v2, []),
-        (
-            "breadth_state_v2",
-            feature_store.breadth_state_v2,
-            ["sector_etf_closes", "pit_constituent_intervals", "constituent_ohlcv"],
-        ),
-        ("volume_liquidity_v2", feature_store.volume_liquidity_v2, []),
-        ("monetary_pressure_v2", feature_store.monetary, ["macro_series"]),
-        (
-            "credit_funding",
-            feature_store.credit_funding,
-            ["cross_asset_closes", "macro_series"],
-        ),
-        (
-            "inflation_growth",
-            feature_store.inflation_growth,
-            ["cross_asset_closes", "macro_series"],
-        ),
-        ("hmm", feature_store.hmm, []),
-        ("gmm_clustering", feature_store.clustering, []),
-        ("change_point", feature_store.change_point, []),
-    ]
-    for seam_name, seam_value, deps in seam_expectations:
-        if seam_value is None:
-            missing = [dep for dep in deps if not input_kwargs.get(dep)]
-            if missing:
-                issues.append(
-                    f"{seam_name} is None; missing inputs: {', '.join(missing)}"
-                )
-    return issues
 
 
 def _load_profile_inputs(
@@ -827,7 +346,8 @@ def _load_profile_inputs(
     ]
     cross_asset_closes = load_close_dict(args.daily_dir, cross_asset_symbols, spy_index)
     macro_series = load_macro_series(
-        args.macro_parquet, args.pmi_path if args.pmi_path.exists() else None
+        args.macro_parquet,
+        args.pmi_path if args.pmi_path is not None and args.pmi_path.exists() else None,
     )
     event_calendar = _load_optional_event_calendar(args.event_calendar)
     aaii_sentiment = _load_optional_aaii_sentiment(args.aaii_sentiment_parquet)
@@ -849,19 +369,6 @@ def _load_profile_inputs(
         )
     )
 
-    input_kwargs = {
-        "sector_etf_closes": sector_etf_closes,
-        "cross_asset_closes": cross_asset_closes,
-        "macro_series": macro_series,
-        "event_calendar": event_calendar,
-        "aaii_sentiment": aaii_sentiment,
-        "news_sentiment": news_sentiment,
-        "implied_vol_30d": implied_vol_30d,
-        "central_bank_text_releases": central_bank_text_releases,
-        "cpi_first_release": cpi_first_release,
-        "pit_constituent_intervals": pit_constituent_intervals,
-        "constituent_ohlcv": constituent_ohlcv,
-    }
     return ProfileInputBundle(
         market_data=market_data,
         end_date=end_date,
@@ -881,7 +388,6 @@ def _load_profile_inputs(
         constituent_ohlcv=constituent_ohlcv,
         constituent_tickers=constituent_tickers,
         missing_constituent_paths=missing_constituent_paths,
-        input_kwargs=input_kwargs,
     )
 
 
@@ -903,26 +409,26 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--powell-speeches-parquet", type=Path, default=None)
     parser.add_argument("--cpi-vintages-parquet", type=Path, default=None)
     parser.add_argument(
-        "--manifest",
+        "--operator-env-file",
         type=Path,
         default=None,
-        help="Optional artifact manifest to materialize before profiling.",
+        help=(
+            "Optional non-secret pointer file listing repo credential env files. "
+            f"Defaults to {OPERATOR_ENV_POINTER_FILE} or ~/.config/regime-detection/operator.env."
+        ),
     )
+    add_manifest_args(parser, data_root_default=REPO_ROOT / "data" / "raw", action="profiling")
     parser.add_argument(
-        "--artifact-store",
-        default=None,
-        help="Optional artifact-store root override for --manifest.",
-    )
-    parser.add_argument(
-        "--data-root",
+        "--json-output",
         type=Path,
-        default=REPO_ROOT / "data" / "raw",
-        help="Local data/raw root used for manifest materialization.",
+        default=None,
+        help="Optional path for a machine-readable profiling report JSON artifact.",
     )
     parser.add_argument("--allow-missing-constituent-files", action="store_true")
     args = parser.parse_args()
+    args.manifest_input_overrides = _manifest_input_overrides(sys.argv[1:])
     if args.daily_dir is None:
-        args.daily_dir = args.data_root / "daily_ohlcv"
+        args.daily_dir = args.data_root / FIXED_UNIVERSE_TREE_NAME
     if args.constituent_tree is None:
         args.constituent_tree = args.data_root / FIXED_UNIVERSE_TREE_NAME
     if args.macro_parquet is None:
@@ -941,6 +447,9 @@ def _parse_args() -> argparse.Namespace:
         args.news_sentiment_parquet = (
             args.data_root / "news_sentiment" / "sf_fed_news_sentiment.parquet"
         )
+    args.news_sentiment_parquet = _resolve_news_sentiment_path(
+        args.news_sentiment_parquet
+    )
     if args.fomc_minutes_parquet is None:
         args.fomc_minutes_parquet = (
             args.data_root / "fomc_minutes" / "fomc_minutes.parquet"
@@ -956,15 +465,33 @@ def _parse_args() -> argparse.Namespace:
     return args
 
 
+def _manifest_input_overrides(argv: list[str]) -> frozenset[str]:
+    return manifest_input_overrides(argv)
+
+
+def _apply_manifest_input_paths(
+    args: argparse.Namespace,
+    *,
+    runner_name: str,
+    required_fields: frozenset[str] | None = None,
+) -> None:
+    apply_manifest_input_paths(
+        args,
+        runner_name=runner_name,
+        repo_root=REPO_ROOT,
+        required_fields=required_fields,
+    )
+
+
 def main() -> int:
     args = _parse_args()
-    materialize_if_requested(
-        manifest_path=args.manifest,
-        local_root=args.data_root,
+    load_operator_env_files(repo_root=REPO_ROOT, explicit_path=args.operator_env_file)
+    materialize_manifest_from_args(
+        args,
         repo_root=REPO_ROOT,
-        store_root=args.artifact_store,
         required_for="profile_engine_30d",
     )
+    _apply_manifest_input_paths(args, runner_name="profile_engine_30d")
 
     _require_path(args.config_path, kind="config path")
     _require_path(args.daily_dir, kind="daily OHLCV path")
@@ -1102,9 +629,22 @@ def main() -> int:
         timer.totals.get("build_feature_store_total", 0.0),
     )
 
-    verification_issues = _verify_invariants(
-        timeline, feature_store, inputs.input_kwargs
-    )
+    verification_issues = _verify_invariants(timeline, feature_store, inputs)
+    if args.json_output is not None:
+        _write_json_report(
+            args.json_output,
+            _build_json_report(
+                args=args,
+                inputs=inputs,
+                timeline=timeline,
+                timer=timer,
+                total_wall_clock=total_wall_clock,
+                per_day_emission_total=per_day_emission_total,
+                per_day_avg_ms=per_day_avg_ms,
+                verification_issues=verification_issues,
+                feature_store=feature_store,
+            ),
+        )
 
     print(f"config_path={args.config_path}")
     print(f"market_data_source={args.daily_dir}")
@@ -1123,10 +663,10 @@ def main() -> int:
         f"implied_vol_30d_source={'macro_series[implied_vol_30d]' if inputs.implied_vol_30d is not None else '<absent>'}"
     )
     print(
-        f"fomc_minutes_source={args.fomc_minutes_parquet if args.fomc_minutes_parquet.exists() else '<absent>'}"
+        f"fomc_minutes_source={args.fomc_minutes_parquet if args.fomc_minutes_parquet is not None and args.fomc_minutes_parquet.exists() else '<absent>'}"
     )
     print(
-        f"powell_speeches_source={args.powell_speeches_parquet if args.powell_speeches_parquet.exists() else '<absent>'}"
+        f"powell_speeches_source={args.powell_speeches_parquet if args.powell_speeches_parquet is not None and args.powell_speeches_parquet.exists() else '<absent>'}"
     )
     print(
         f"cpi_vintages_source={args.cpi_vintages_parquet if inputs.cpi_first_release is not None else '<absent>'}"
@@ -1141,20 +681,9 @@ def main() -> int:
     print()
 
     print("Input seam status")
-    for name in [
-        "sector_etf_closes",
-        "cross_asset_closes",
-        "macro_series",
-        "event_calendar",
-        "aaii_sentiment",
-        "news_sentiment",
-        "implied_vol_30d",
-        "central_bank_text_releases",
-        "cpi_first_release",
-        "pit_constituent_intervals",
-        "constituent_ohlcv",
-    ]:
-        print(_input_status(name, inputs.input_kwargs[name]))
+    input_values = _profile_input_seam_values(inputs)
+    for name in PROFILE_INPUT_SEAM_NAMES:
+        print(_input_status(name, input_values[name]))
     print(f"pit_overlap_tickers_requested={len(inputs.constituent_tickers)}")
     print(f"constituent_tickers_loaded={len(inputs.constituent_ohlcv)}")
     print(f"missing_constituent_files={len(inputs.missing_constituent_paths)}")

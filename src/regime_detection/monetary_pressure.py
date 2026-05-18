@@ -2,26 +2,26 @@
 
 Feature slice (4.1) ships the line-896 yield z-score template; the
 classifier slice (this file) extends it with the three additional
-features pinned in Ambiguity Log #46 (a) and the §2A rule engine:
+features pinned in documented implementation decision (a) and the §2A rule engine:
 
-  Features (Log #46 a — mechanical generalizations of the line-896 template):
+  Features (documented implementation decision a — mechanical generalizations of the line-896 template):
     - yield_change_zscore_2y_63d      (existing)
     - yield_change_zscore_10y_63d     (existing)
     - broad_usd_index_zscore_63d      (NEW, 63d-change z-score on USD index)
     - yield_change_zscore_21d_2y      (NEW, 21d-change z-score on DGS2)
     - yield_change_zscore_21d_10y     (NEW, 21d-change z-score on DGS10)
 
-  Labels (Log #46 b):
+  Labels (documented implementation decision b):
     {tightening_pressure, easing_pressure, rate_shock, neutral_monetary, unknown}
 
-  Precedence (Log #46 c):
+  Precedence (documented implementation decision c):
     rate_shock > tightening_pressure > easing_pressure > neutral_monetary > unknown
 
-  Risk rank (Log #46 d):
+  Risk rank (documented implementation decision d):
     {neutral_monetary: 0, easing_pressure: 1, unknown: 1,
      tightening_pressure: 2, rate_shock: 3}
 
-  Per-label hysteresis (Log #46 e; carried on the yaml):
+  Per-label hysteresis (documented implementation decision e; carried on the yaml):
     {rate_shock: 5, tightening_pressure: 3, easing_pressure: 2,
      neutral_monetary: 0, unknown: 2}
 
@@ -63,7 +63,7 @@ from regime_detection.config import (
 
 
 # ---------------------------------------------------------------------------
-# Label set + risk rank (Ambiguity Log #46 b/d).
+# Label set + risk rank (documented implementation decision b/d).
 # ---------------------------------------------------------------------------
 
 
@@ -76,7 +76,7 @@ MonetaryPressureV2Label = Literal[
 ]
 
 
-# v2 §2A risk rank per Ambiguity Log #46 (d). Pinned constant (NOT a tunable).
+# v2 §2A risk rank per documented implementation decision (d). Pinned constant (NOT a tunable).
 MONETARY_PRESSURE_V2_RISK_RANK: dict[MonetaryPressureV2Label, int] = {
     "neutral_monetary": 0,
     "easing_pressure": 1,
@@ -86,7 +86,7 @@ MONETARY_PRESSURE_V2_RISK_RANK: dict[MonetaryPressureV2Label, int] = {
 }
 
 
-# v2 §2A precedence (highest-severity-first walk) per Ambiguity Log #46 (c).
+# v2 §2A precedence (highest-severity-first walk) per documented implementation decision (c).
 RULE_PRECEDENCE: tuple[MonetaryPressureV2Label, ...] = (
     "rate_shock",
     "tightening_pressure",
@@ -113,7 +113,7 @@ class MonetaryPressureV2Features:
     # forward-filled, smoothed net_score (hawkish - dovish) / total in
     # [-1, +1]. Evidence-only — never consumed by §2A rule predicates.
     # None when no central-bank-text release frame was supplied to
-    # build_feature_store (V1 byte-identity preserved). See audit M1.
+    # build_feature_store (V1 byte-identity preserved). See source-data audit.
     central_bank_text_score: pd.Series | None = None
 
     @property
@@ -182,7 +182,7 @@ def compute_monetary_pressure_features(
     broad_usd_index
         FRED broad USD index level (e.g. ``DTWEXBGS``). When ``None``,
         the ``broad_usd_index_zscore_63d`` output is an all-NaN series
-        aligned to the dgs2 index (Ambiguity Log #46 a graceful fallback
+        aligned to the dgs2 index (documented implementation decision a graceful fallback
         when the USD seam is absent).
     config
         ``MonetaryPressureV2FeaturesConfig`` — supplies all four window
@@ -225,7 +225,7 @@ def compute_monetary_pressure_features(
             normalizer_window=config.zscore_normalizer_window_days,
             output_name="broad_usd_index_zscore_63d",
         )
-    # v2 §2A central-bank-text seam (audit M1). Pure pass-through onto
+    # v2 §2A central-bank-text seam (source-data audit). Pure pass-through onto
     # the features dataclass — the rule engine never reads this field.
     # Reindexed to the yield series' DatetimeIndex so downstream
     # consumers get a single coherent calendar.
@@ -245,7 +245,7 @@ def compute_monetary_pressure_features(
 
 
 # ---------------------------------------------------------------------------
-# Rule predicates (§2A lines 1093-1104, Ambiguity Log #46 b/c).
+# Rule predicates (§2A lines 1093-1104, documented implementation decision b/c).
 # ---------------------------------------------------------------------------
 
 
@@ -294,7 +294,7 @@ def evaluate_rules(
 ) -> MonetaryPressureV2Label:
     """Walk §2A precedence and return the first matching label.
 
-    Precedence (Log #46 c):
+    Precedence (documented implementation decision c):
       rate_shock > tightening_pressure > easing_pressure > neutral_monetary
 
     NaN inputs naturally falsify each ``<`` / ``>`` comparison; the walker

@@ -33,7 +33,7 @@ Implementation choices that resolve ambiguities:
   ``sector_etf_closes``, every output session is NaN (do NOT fall back to a
   partial-denominator mean). Rationale: §1D line 229 explicitly writes
   "divided by 11"; silently rebasing the denominator would change the
-  feature's semantics. See Implementation Ambiguity Log entry #27.
+  feature's semantics. See documented implementation decision.
 """
 from __future__ import annotations
 
@@ -47,6 +47,11 @@ import pandas as pd
 
 from regime_detection.config import BreadthV2Config
 from regime_detection.fragility_universe import SECTOR_ETFS
+from regime_shared.pit_provenance import (
+    BIAS_WARNING as _PIT_BIAS_WARNING_CODE,
+    SOURCE_NAME as _PIT_BIAS_SOURCE,
+    SOURCE_URL as _PIT_BIAS_SOURCE_URL,
+)
 
 
 # PIT feature names in spec order (v2 §1D lines 207-237).
@@ -58,15 +63,6 @@ _PIT_FEATURE_NAMES: tuple[str, ...] = (
     "nh_nl_ratio",
     "upvol_downvol_ratio",
     "breadth_thrust",
-)
-
-# Bias-warning provenance — reuse the canonical constants from
-# regime_data_fetch.pit_constituents (one home per concept, AGENTS rule B).
-# Local aliases keep the names that internal callers (and tests) refer to.
-from regime_data_fetch.pit_constituents import (  # noqa: E402
-    BIAS_WARNING as _PIT_BIAS_WARNING_CODE,
-    SOURCE_NAME as _PIT_BIAS_SOURCE,
-    SOURCE_URL as _PIT_BIAS_SOURCE_URL,
 )
 
 # breadth_thrust 10-session rolling mean window (v2 §1D line 231-237).
@@ -175,7 +171,7 @@ def compute_breadth_v2_features(
         )
     reference_index = sector_etf_closes[present_symbols[0]].index
 
-    # Missing-sector policy (Ambiguity Log entry #27): if any of the 11
+    # Missing-sector policy (documented implementation decision): if any of the 11
     # sectors is absent, the entire output series is NaN. Do NOT rebase the
     # denominator to the present subset.
     missing = [s for s in sector_universe if s not in sector_etf_closes]
@@ -210,7 +206,7 @@ def compute_breadth_v2_features(
     sector_breadth = sector_breadth.where(~has_any_nan)
     sector_breadth.name = "sector_breadth"
 
-    # PIT-aware §1D features (Slice 2.8c). Both new kwargs must be supplied
+    # PIT-aware §1D features (implementation phase). Both new kwargs must be supplied
     # for the seven survivorship-biased features to materialise; otherwise
     # the v1+v2-sector-only callsite is preserved (all-None PIT fields).
     if pit_constituent_intervals is None or constituent_ohlcv is None:
@@ -241,7 +237,7 @@ def compute_breadth_v2_features(
 
 
 # ---------------------------------------------------------------------------
-# PIT feature helpers (Slice 2.8c). Each takes a (sessions × members)
+# PIT feature helpers (implementation phase). Each takes a (sessions × members)
 # adjusted_close DataFrame plus the precomputed members_by_session mapping
 # and returns a per-session pd.Series aligned to ``reference_index``.
 # ---------------------------------------------------------------------------
@@ -330,7 +326,7 @@ def _compute_pit_features(
         dtype=bool,
     )
 
-    # Per-ticker daily direction sign on adjusted_close (Ambiguity Log #56):
+    # Per-ticker daily direction sign on adjusted_close (documented implementation decision):
     # +1 advance, -1 decline, 0 unchanged. Diff produces NaN at t=0 → mapped
     # to NaN (no prior close → excluded from advance / decline counts).
     diff_frame = adj_close_frame.diff()
@@ -419,7 +415,7 @@ def _compute_pct_above_sma(
     """v2 §1D pct_above_{N}dma — strict ``>`` against the per-ticker SMA.
 
     NaN-SMA tickers are excluded from BOTH numerator AND denominator
-    (Ambiguity Log #58); zero-denominator → NaN.
+    (documented implementation decision); zero-denominator → NaN.
     """
     sma_frame = adj_close_frame.rolling(sma_window, min_periods=sma_window).mean()
     # A ticker is "valid" at session D if it's a member AND has a defined SMA
@@ -444,7 +440,7 @@ def _compute_ad_line(
     decline_mask: pd.DataFrame,
     membership_mask: pd.DataFrame,
 ) -> tuple[pd.Series, pd.Series]:
-    """v2 §1D ad_line / ad_line_slope_20d (Ambiguity Log #56, #57).
+    """v2 §1D ad_line / ad_line_slope_20d (documented implementation decision).
 
     ad_line[0] = 0 anchor; ad_line[t] = ad_line[t-1] + (advances - declines)
     where advances/declines count PIT members with strict direction.
@@ -452,7 +448,7 @@ def _compute_ad_line(
     advances = (advance_mask & membership_mask).sum(axis=1).astype(float)
     declines = (decline_mask & membership_mask).sum(axis=1).astype(float)
     delta = advances - declines
-    # Anchor at 0 on the first session (Ambiguity Log #57).
+    # Anchor at 0 on the first session (documented implementation decision).
     delta.iloc[0] = 0.0
     ad_line = delta.cumsum()
     ad_line.name = "ad_line"
@@ -503,7 +499,7 @@ def _compute_upvol_downvol_ratio(
     membership_mask: pd.DataFrame,
     volume_frame: pd.DataFrame,
 ) -> pd.Series:
-    """v2 §1D upvol_downvol_ratio (Ambiguity Log #56).
+    """v2 §1D upvol_downvol_ratio (documented implementation decision).
 
     Direction uses adjusted_close (strict ``>`` / ``<``); volume is RAW
     shares from constituent_ohlcv[ticker]['volume'].
@@ -528,7 +524,7 @@ def _compute_breadth_thrust(
 
     ``pct_advancing = advances / max(advances + declines + unchanged, 1)``
     where the denominator counts PIT members with a valid prior close
-    (Ambiguity Log #56).
+    (documented implementation decision).
     """
     advances = (advance_mask & membership_mask).sum(axis=1).astype(float)
     declines = (decline_mask & membership_mask).sum(axis=1).astype(float)

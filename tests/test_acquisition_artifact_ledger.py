@@ -3,12 +3,15 @@ from __future__ import annotations
 import sqlite3
 from pathlib import Path
 
+from regime_data_fetch.acquisition_schema import init_acquisition_schema
 from regime_data_fetch.acquisition_store import AcquisitionStore
 from regime_data_fetch.artifact_store import (
     ArtifactStore,
     LocalArtifactStore,
     StoredArtifact,
 )
+
+_STORE_ROOT_URI = "file:///tmp/regime-data"
 
 
 class FailingArtifactStore(ArtifactStore):
@@ -19,6 +22,63 @@ class FailingArtifactStore(ArtifactStore):
     def put_bytes(self, payload: bytes, key: str) -> StoredArtifact:
         del payload, key
         raise OSError("disk full")
+
+
+def test_acquisition_schema_helper_creates_tables_and_migrates_legacy_artifacts(
+    tmp_path: Path,
+) -> None:
+    assert not hasattr(AcquisitionStore, "_init_schema")
+
+    db_path = tmp_path / "legacy.db"
+    with sqlite3.connect(db_path) as conn:
+        conn.execute(
+            """
+            CREATE TABLE artifacts (
+                artifact_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                run_id INTEGER NOT NULL,
+                source_name TEXT NOT NULL,
+                artifact_kind TEXT NOT NULL,
+                source_identifier TEXT NOT NULL,
+                content_text TEXT NOT NULL,
+                content_sha256 TEXT NOT NULL,
+                downloaded_at_utc TEXT NOT NULL,
+                effective_date TEXT,
+                start_date TEXT,
+                end_date TEXT,
+                timezone TEXT,
+                calendar_assumption TEXT,
+                adjustment_policy TEXT,
+                license_note TEXT,
+                notes TEXT
+            )
+            """
+        )
+
+        init_acquisition_schema(conn)
+
+        table_names = {
+            row[0]
+            for row in conn.execute(
+                "SELECT name FROM sqlite_master WHERE type = 'table'"
+            )
+        }
+        artifact_columns = {
+            row[1] for row in conn.execute("PRAGMA table_info(artifacts)")
+        }
+
+    assert {
+        "fetch_runs",
+        "artifacts",
+        "artifact_blobs",
+        "derived_outputs",
+        "artifact_records",
+        "artifact_lineage",
+        "canonical_versions",
+        "source_checkpoints",
+    }.issubset(table_names)
+    assert {"local_path", "content_size_bytes", "content_encoding"}.issubset(
+        artifact_columns
+    )
 
 
 def test_acquisition_store_records_artifact_ledger_checkpoint_and_lineage(
@@ -32,7 +92,7 @@ def test_acquisition_store_records_artifact_ledger_checkpoint_and_lineage(
         run_id=run.run_id,
         name="aaii_raw_cfb",
         stage="raw_capture",
-        uri="raw_capture/aaii/2026-05-15/sentiment.cfb",
+        uri=f"{_STORE_ROOT_URI}/raw_capture/aaii/2026-05-15/sentiment.cfb",
         local_path="data/raw/sentiment/aaii_sentiment_historical.cfb",
         content_sha256="a" * 64,
         size_bytes=1140736,
@@ -43,7 +103,7 @@ def test_acquisition_store_records_artifact_ledger_checkpoint_and_lineage(
         run_id=run.run_id,
         name="aaii_sentiment",
         stage="canonical",
-        uri="canonical/sentiment/aaii_sentiment/as_of=2026-05-15/aaii_sentiment.parquet",
+        uri=f"{_STORE_ROOT_URI}/canonical/sentiment/aaii_sentiment/as_of=2026-05-15/aaii_sentiment.parquet",
         local_path="data/raw/sentiment/aaii_sentiment.parquet",
         content_sha256="b" * 64,
         size_bytes=2048,
@@ -91,14 +151,14 @@ def test_acquisition_store_records_artifact_ledger_checkpoint_and_lineage(
         (
             "aaii_raw_cfb",
             "raw_capture",
-            "raw_capture/aaii/2026-05-15/sentiment.cfb",
+            f"{_STORE_ROOT_URI}/raw_capture/aaii/2026-05-15/sentiment.cfb",
             "data/raw/sentiment/aaii_sentiment_historical.cfb",
             None,
         ),
         (
             "aaii_sentiment",
             "canonical",
-            "canonical/sentiment/aaii_sentiment/as_of=2026-05-15/aaii_sentiment.parquet",
+            f"{_STORE_ROOT_URI}/canonical/sentiment/aaii_sentiment/as_of=2026-05-15/aaii_sentiment.parquet",
             "data/raw/sentiment/aaii_sentiment.parquet",
             1900,
         ),
@@ -206,10 +266,20 @@ def test_acquisition_store_uploads_raw_and_output_artifacts_to_configured_store(
         ).fetchall()
 
     assert [row[0] for row in rows] == ["raw_capture", "canonical"]
-    assert rows[0][1].startswith(f"raw_capture/aaii/run_id={run.run_id}/")
+    assert rows[0][1].startswith(
+        (
+            artifact_root.resolve() / "raw_capture" / "aaii" / f"run_id={run.run_id}"
+        ).as_uri()
+    )
     assert (
         rows[1][1]
-        == f"canonical/aaii_sentiment_parquet/run_id={run.run_id}/aaii_sentiment.parquet"
+        == (
+            artifact_root.resolve()
+            / "canonical"
+            / "aaii_sentiment_parquet"
+            / f"run_id={run.run_id}"
+            / "aaii_sentiment.parquet"
+        ).as_uri()
     )
 
 

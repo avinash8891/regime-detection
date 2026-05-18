@@ -3,6 +3,7 @@ from __future__ import annotations
 import csv
 import datetime as dt
 import json
+import logging
 import re
 import urllib.request
 from dataclasses import dataclass
@@ -12,6 +13,7 @@ from zoneinfo import ZoneInfo
 import pandas as pd
 
 from regime_data_fetch.acquisition_store import AcquisitionStore
+from regime_data_fetch.event_sources._common import MONTHS
 from regime_data_fetch.ism import release_timestamp_for
 
 
@@ -28,6 +30,7 @@ MANUAL_PMI_SOURCE_URLS = {
     "services": "https://in.investing.com/economic-calendar/ism-non-manufacturing-pmi-176",
 }
 DEFAULT_MANUAL_PMI_HISTORY_DIR = Path(__file__).resolve().parents[2] / "data" / "manual_inputs" / "pmi"
+LOGGER = logging.getLogger(__name__)
 
 _DBNOMICS_ROW_RE = re.compile(r"(?P<period>\d{4}-\d{2})\s+(?P<value>-?\d+(?:\.\d+)?)", re.IGNORECASE)
 _TE_TITLE_RE = re.compile(r"<title>\s*United States ISM (?P<series>Manufacturing|Services) PMI\s*</title>", re.IGNORECASE)
@@ -36,22 +39,6 @@ _TE_SVC_DESC_RE = re.compile(
     r"Non Manufacturing PMI in the United States [^ ]+ to (?P<value>\d+(?:\.\d+)?) points in (?P<month>[A-Za-z]+)",
     re.IGNORECASE,
 )
-_MONTHS = {
-    "jan": 1,
-    "feb": 2,
-    "mar": 3,
-    "apr": 4,
-    "may": 5,
-    "jun": 6,
-    "jul": 7,
-    "aug": 8,
-    "sep": 9,
-    "oct": 10,
-    "nov": 11,
-    "dec": 12,
-}
-
-
 class PMIFetchError(RuntimeError):
     pass
 
@@ -130,7 +117,7 @@ def parse_tradingeconomics_html(html: str, *, series_name: str, source_url: str)
         raise PMIFetchError(f"TradingEconomics page did not contain parseable PMI description for {series_name}")
 
     month_name = match.group("month")
-    month = _MONTHS[month_name[:3].lower()]
+    month = MONTHS[month_name[:3].lower()]
     year = _extract_reference_year(html)
     period = f"{year:04d}-{month:02d}"
     return PMIObservation(
@@ -274,6 +261,12 @@ def run_pmi_fetch(
                 attempts.append({"source": source_name, "status": "success"})
                 break
             except Exception as exc:  # noqa: BLE001
+                LOGGER.warning(
+                    "PMI source %s failed: %s",
+                    source_name,
+                    exc,
+                    exc_info=True,
+                )
                 attempts.append({"source": source_name, "status": "failure", "error": str(exc)})
 
         if chosen_rows is None or selected_source is None or chosen_bundle is None:
@@ -292,9 +285,15 @@ def run_pmi_fetch(
                 for row in chosen_rows
             ]
         )
+        history_path = out_dir / "pmi" / "us_ism_pmi_history.parquet"
         history_rows = _select_history_rows(
             bundles_by_source=bundles_by_source,
             chosen_bundle=chosen_bundle,
+            as_of_timestamp=as_of_timestamp,
+        )
+        history_rows = _merge_existing_history_rows(
+            history_path=history_path,
+            new_rows=[*history_rows, *chosen_rows],
             as_of_timestamp=as_of_timestamp,
         )
         history_df = pd.DataFrame(
@@ -314,7 +313,6 @@ def run_pmi_fetch(
         pmi_dir.mkdir(parents=True, exist_ok=True)
         parquet_path = pmi_dir / "us_ism_pmi.parquet"
         latest_df.to_parquet(parquet_path, index=False)
-        history_path = pmi_dir / "us_ism_pmi_history.parquet"
         history_df.to_parquet(history_path, index=False)
 
         report = {
@@ -555,9 +553,55 @@ def _select_history_rows(
     return best_rows
 
 
+def _merge_existing_history_rows(
+    *,
+    history_path: Path,
+    new_rows: list[PMIObservation],
+    as_of_timestamp: dt.datetime,
+) -> list[PMIObservation]:
+    if not history_path.exists():
+        return _dedupe_history_rows(
+            [row for row in new_rows if row.release_timestamp <= as_of_timestamp]
+        )
+
+    existing_df = pd.read_parquet(history_path)
+    required = {
+        "series_name",
+        "period",
+        "value",
+        "release_timestamp",
+        "source",
+        "source_url",
+    }
+    if not required.issubset(existing_df.columns):
+        missing = sorted(required - set(existing_df.columns))
+        raise PMIFetchError(f"existing PMI history missing columns: {missing}")
+
+    existing_rows = []
+    for row in existing_df.itertuples(index=False):
+        release_timestamp = pd.Timestamp(row.release_timestamp)
+        if release_timestamp.tzinfo is None:
+            release_timestamp = release_timestamp.tz_localize(dt.UTC)
+        else:
+            release_timestamp = release_timestamp.tz_convert(dt.UTC)
+        existing_rows.append(
+            PMIObservation(
+                series_name=str(row.series_name),
+                period=str(row.period),
+                value=float(row.value),
+                release_timestamp=release_timestamp.to_pydatetime(),
+                source=str(row.source),
+                source_url=str(row.source_url),
+            )
+        )
+
+    current_rows = [row for row in new_rows if row.release_timestamp <= as_of_timestamp]
+    return _dedupe_history_rows([*existing_rows, *current_rows])
+
+
 def _dedupe_history_rows(rows: list[PMIObservation]) -> list[PMIObservation]:
     by_key: dict[tuple[str, str], PMIObservation] = {}
-    for row in sorted(rows, key=lambda item: (item.series_name, item.period, item.release_timestamp, item.source)):
+    for row in sorted(rows, key=lambda item: (item.series_name, item.period, item.release_timestamp)):
         by_key[(row.series_name, row.period)] = row
     return sorted(by_key.values(), key=lambda item: (item.period, item.series_name))
 

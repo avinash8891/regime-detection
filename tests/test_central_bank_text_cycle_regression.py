@@ -32,9 +32,10 @@ from __future__ import annotations
 import datetime as dt
 from pathlib import Path
 
+import pandas as pd
 import pytest
 
-from regime_detection.central_bank_text import score_text
+from regime_detection.central_bank_text import score_text, to_daily_score_series
 from regime_detection.loaders import load_central_bank_text_score
 
 
@@ -134,6 +135,72 @@ def test_lexicon_separates_cycle_pairs() -> None:
         f"tightening cycle scores {tightening} should all exceed easing "
         f"cycle scores {easing}"
     )
+
+
+def test_fixture_fomc_parquet_cycle_windows_score_with_expected_signs(
+    tmp_path: Path,
+) -> None:
+    """Default-CI contract for the parquet path used by live FOMC data.
+
+    The live-data tests below still validate materialized production history
+    when present. This smaller fixture creates the same parquet shape in
+    tmp_path so CI always exercises path loading, release scoring, and
+    session-aligned cycle behavior without depending on data/raw.
+    """
+    fixture_path = tmp_path / "fomc_minutes.parquet"
+    pd.DataFrame(
+        [
+            {
+                "release_timestamp": "2019-09-18 14:00:00",
+                "body_text": EASING_2019_SEPT_EXCERPT,
+            },
+            {
+                "release_timestamp": "2020-03-15 17:00:00",
+                "body_text": EASING_2020_MARCH_EXCERPT,
+            },
+            {
+                "release_timestamp": "2022-03-16 14:00:00",
+                "body_text": TIGHTENING_2022_MARCH_EXCERPT,
+            },
+            {
+                "release_timestamp": "2023-05-03 14:00:00",
+                "body_text": TIGHTENING_2023_MAY_EXCERPT,
+            },
+        ]
+    ).to_parquet(fixture_path, index=False)
+
+    scored = load_central_bank_text_score(fomc_minutes_source=fixture_path)
+
+    easing_window = scored[
+        (scored["release_date"] >= dt.date(2019, 7, 1))
+        & (scored["release_date"] <= dt.date(2020, 4, 30))
+    ]
+    tightening_window = scored[
+        (scored["release_date"] >= dt.date(2022, 3, 1))
+        & (scored["release_date"] <= dt.date(2023, 7, 31))
+    ]
+    assert len(easing_window) == 2
+    assert len(tightening_window) == 2
+    assert easing_window["net_score"].mean() < 0
+    assert tightening_window["net_score"].mean() > 0
+
+    sessions = pd.DatetimeIndex(
+        [
+            pd.Timestamp("2019-09-17"),
+            pd.Timestamp("2019-09-19"),
+            pd.Timestamp("2020-03-16"),
+            pd.Timestamp("2022-03-17"),
+            pd.Timestamp("2023-05-04"),
+        ]
+    )
+    daily = to_daily_score_series(
+        scored, session_index=sessions, smoothing_window_sessions=1
+    )
+    assert pd.isna(daily.loc["2019-09-17"])
+    assert daily.loc["2019-09-19"] < 0
+    assert daily.loc["2020-03-16"] < 0
+    assert daily.loc["2022-03-17"] > 0
+    assert daily.loc["2023-05-04"] > 0
 
 
 _FOMC_PARQUET = (

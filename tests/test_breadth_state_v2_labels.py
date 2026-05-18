@@ -275,6 +275,24 @@ def test_build_raw_outputs_applies_v2_precedence_when_pit_features_present() -> 
     assert updated_labels[-1] == "narrowing_breadth"
     assert updated_evidence[-1]["v1_raw_label"] == "weak_breadth"
     assert updated_evidence[-1]["v2_narrowing_breadth"] is True
+    unchanged_labels, unchanged_evidence = resolve_v2_raw_outputs(
+        dates=idx,
+        raw_labels=raw_labels,
+        raw_evidence=raw_evidence,
+        pct_above_50dma=pd.Series(0.60, index=idx),
+        pct_above_200dma=pd.Series(0.55, index=idx),
+        nh_nl_ratio=pd.Series(0.80, index=idx),
+        ad_line_slope_20d=pd.Series(0.0, index=idx),
+        breadth_thrust=None,
+        lookback_sessions=5,
+        nh_nl_threshold=0.4,
+    )
+    assert unchanged_labels[60] == raw_labels[60]
+    assert unchanged_evidence[60]["v1_raw_label"] == raw_labels[60]
+    assert unchanged_evidence[60]["v2_breadth_thrust"] is False
+    assert unchanged_evidence[60]["v2_narrowing_breadth"] is False
+    assert unchanged_evidence[60]["v2_recovery_breadth"] is False
+    assert unchanged_evidence[60]["v2_broadening_breadth"] is False
 
 
 # ---------------------------------------------------------------------------

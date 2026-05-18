@@ -1,10 +1,11 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Iterator
 from datetime import date
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, RootModel, model_validator
 
 
 DataQualityStatus = Literal["ok", "degraded", "insufficient_data", "insufficient_history", "stale_data"]
@@ -16,6 +17,98 @@ ClassificationStatus = Literal[
     "insufficient_history",
     "not_wired",
 ]
+
+
+class EvidencePayload(RootModel[dict[str, Any]]):
+    """Dict-compatible named payload for unversioned regime evidence."""
+
+    def get(self, key: str, default: Any = None) -> Any:
+        return self.root.get(key, default)
+
+    def __getitem__(self, key: str) -> Any:
+        return self.root[key]
+
+    def __contains__(self, key: object) -> bool:
+        return key in self.root
+
+    def __iter__(self) -> Iterator[str]:
+        return iter(self.root)
+
+    def __len__(self) -> int:
+        return len(self.root)
+
+    def items(self) -> Any:
+        return self.root.items()
+
+    def keys(self) -> Any:
+        return self.root.keys()
+
+    def values(self) -> Any:
+        return self.root.values()
+
+    def __eq__(self, other: object) -> bool:
+        if isinstance(other, EvidencePayload):
+            return self.root == other.root
+        if isinstance(other, dict):
+            return self.root == other
+        return NotImplemented
+
+
+class AxisEvidencePayload(EvidencePayload):
+    """Dict-compatible payload for legacy V1 axis rule evidence."""
+
+
+class EventCalendarEvidencePayload(EvidencePayload):
+    """Dict-compatible payload for event-calendar rule evidence."""
+
+
+class MonetaryPressureEvidencePayload(EvidencePayload):
+    """Dict-compatible payload for monetary-pressure V2 rule evidence."""
+
+
+class VolumeLiquidityEvidencePayload(EvidencePayload):
+    """Dict-compatible payload for volume/liquidity V2 rule evidence."""
+
+
+class TransitionRiskEvidencePayload(BaseModel):
+    """Dict-compatible typed evidence payload for transition-risk warnings."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    warnings_active: list[str]
+    stable_changed_today: bool
+    days_since_axis_switch: int | None
+
+    def get(self, key: str, default: Any = None) -> Any:
+        return self.model_dump().get(key, default)
+
+    def __getitem__(self, key: str) -> Any:
+        return self.model_dump()[key]
+
+    def __contains__(self, key: object) -> bool:
+        return key in type(self).model_fields
+
+    def __iter__(self) -> Iterator[str]:
+        return iter(type(self).model_fields)
+
+    def __len__(self) -> int:
+        return len(type(self).model_fields)
+
+    def items(self) -> Any:
+        return self.model_dump().items()
+
+    def keys(self) -> Any:
+        return self.model_dump().keys()
+
+    def values(self) -> Any:
+        return self.model_dump().values()
+
+    def __eq__(self, other: object) -> bool:
+        if isinstance(other, TransitionRiskEvidencePayload):
+            return self.model_dump() == other.model_dump()
+        if isinstance(other, dict):
+            return self.model_dump() == other
+        return NotImplemented
 
 
 class DataQuality(BaseModel):
@@ -31,7 +124,7 @@ def derive_classification_status(
     *,
     active_label: str,
     data_quality: DataQuality,
-    evidence: dict[str, Any] | None = None,
+    evidence: EvidencePayload | None = None,
 ) -> tuple[ClassificationStatus, str | None]:
     """Disambiguate legacy ``unknown`` labels from data-quality failures.
 
@@ -64,10 +157,7 @@ class AxisOutput(BaseModel):
     raw_label: str
     stable_label: str
     active_label: str
-    # TODO(schema): Replace free-form evidence dicts axis-by-axis when each
-    # axis is next touched. A repo-wide evidence schema pass has a large blast
-    # radius and needs frozen replay coverage per axis.
-    evidence: dict[str, Any]
+    evidence: AxisEvidencePayload
     data_quality: DataQuality
     classification_status: ClassificationStatus | None = None
     classification_reason: str | None = None
@@ -103,7 +193,7 @@ class EventCalendarOutput(BaseModel):
     raw_label: str
     stable_label: str
     active_label: str
-    evidence: dict[str, Any]
+    evidence: EventCalendarEvidencePayload
 
 
 class LabelReasonOutput(BaseModel):
@@ -116,7 +206,7 @@ class LabelReasonOutput(BaseModel):
 class NetworkFragilityOutput(AxisOutput):
     """Layer 3 network fragility classifier output (v2 spec §3).
 
-    Until slice 1 ships the v2 fragility classifier, emit `unknown` labels
+    Until implementation phase ships the v2 fragility classifier, emit `unknown` labels
     with `data_quality.status="insufficient_history"` per v1 §2.7 NaN
     handling pattern.
     """
@@ -129,14 +219,14 @@ class NetworkFragilityOutput(AxisOutput):
 class MonetaryPressureOutput(BaseModel):
     """Monetary pressure classifier output (v2 spec §2A).
 
-    Until slice 4 ships the v2 monetary-pressure classifier, emit
+    Until implementation phase ships the v2 monetary-pressure classifier, emit
     `label="unknown"` with `data_quality.status="insufficient_history"`.
     """
 
     model_config = ConfigDict(extra="forbid")
 
     label: str
-    evidence: dict[str, Any]
+    evidence: MonetaryPressureEvidencePayload
     data_quality: DataQuality
     classification_status: ClassificationStatus | None = None
     classification_reason: str | None = None
@@ -167,7 +257,7 @@ InflationGrowthLabel = Literal[
 
 
 class InflationGrowthOutput(AxisOutput):
-    """v2 §2B inflation/growth axis output (Slice 5).
+    """v2 §2B inflation/growth axis output (implementation phase).
 
     Three-tier label triple (raw/stable/active) per the v2 axis pattern.
     ``evidence`` carries the per-day rule inputs and the bias-warning code
@@ -195,7 +285,7 @@ CreditFundingLabel = Literal[
 
 
 class CreditFundingOutput(AxisOutput):
-    """v2 §2C credit/funding state output (Slice 4).
+    """v2 §2C credit/funding state output (implementation phase).
 
     Three-tier label triple (raw/stable/active) per the v2 axis pattern.
     ``evidence`` carries the per-day scalar rule inputs and the bias-warning
@@ -219,7 +309,7 @@ MonetaryPressureV2Label = Literal[
 
 
 class MonetaryPressureV2Output(AxisOutput):
-    """v2 §2A monetary-pressure axis output (Ambiguity Log #46).
+    """v2 §2A monetary-pressure axis output (documented implementation decision).
 
     Three-tier label triple per the v2 axis pattern (raw/stable/active);
     ``evidence`` carries the per-day scalar rule inputs; ``data_quality``
@@ -234,12 +324,12 @@ class MonetaryPressureV2Output(AxisOutput):
 
 
 class VolumeLiquidityOutput(BaseModel):
-    """Volume / liquidity internals output (v2 spec §1E). Minimal until slice 2."""
+    """Volume / liquidity internals output (v2 spec §1E). Minimal until implementation phase."""
 
     model_config = ConfigDict(extra="forbid")
 
     label: str
-    evidence: dict[str, Any]
+    evidence: VolumeLiquidityEvidencePayload
     data_quality: DataQuality
     classification_status: ClassificationStatus | None = None
     classification_reason: str | None = None
@@ -272,7 +362,7 @@ VolumeLiquidityLabel = Literal[
 
 
 class VolumeLiquidityStateOutput(AxisOutput):
-    """v2 §1E volume/liquidity state output (Slice 2.7).
+    """v2 §1E volume/liquidity state output (implementation phase).
 
     Carries the three-tier label triple (raw/stable/active) the v2
     axes use, plus per-day evidence and a data-quality record. The
@@ -292,7 +382,7 @@ class VolumeLiquidityStateOutput(AxisOutput):
 
 
 class ClusterOutput(BaseModel):
-    """v2 §6.2 clustering output (Slice 7). Diagnostic evidence; per-day
+    """v2 §6.2 clustering output (implementation phase). Diagnostic evidence; per-day
     cluster assignment + Mahalanobis distance to the assigned-cluster
     centroid. ``mapped_label`` is omitted until the operator-curated
     ``cluster_label_map.yaml`` ships (spec line 2842 + V2 §10).
@@ -314,14 +404,14 @@ class ClusterOutput(BaseModel):
 
 
 class ChangePointOutput(BaseModel):
-    """v2 §4.6 + §6.3 BOCPD change-point detection output (Slice 8, evidence-only).
+    """v2 §4.6 + §6.3 BOCPD change-point detection output (implementation phase, evidence-only).
 
     score: 5-session rolling max of BOCPD posterior P(run_length=0)
-        (Ambiguity Log #64).
+        (documented implementation decision).
     days_since_last_break: int sessions since last posterior >= break_threshold
-        (Ambiguity Log #65). None when no break has occurred in the trailing
+        (documented implementation decision). None when no break has occurred in the trailing
         BOCPD window (cold-start) — omitted from the JSON wire via exclude_none.
-    method: pinned to ``"BOCPD"`` for Slice 8 (Adams-MacKay 2007).
+    method: pinned to ``"BOCPD"`` for implementation phase (Adams-MacKay 2007).
     """
 
     model_config = ConfigDict(extra="forbid")
@@ -356,13 +446,13 @@ class TransitionRiskOutput(BaseModel):
 
     V1 emits `label` + `evidence` (named warnings per v1 §9). V2 §4 adds a
     continuous composite `score` and its components; these are optional
-    until slice 3 ships the v2 transition-score composer.
+    until implementation phase ships the v2 transition-score composer.
     """
 
     model_config = ConfigDict(extra="forbid")
 
     label: str
-    evidence: dict[str, Any]
+    evidence: TransitionRiskEvidencePayload
 
     # V2 §4.5 transition score augments (does not replace) V1 named warnings.
     score: float | None = Field(default=None, ge=0.0, le=1.0)
@@ -406,7 +496,7 @@ class StrategyResponse(BaseModel):
 
 
 class StrategyFamilyConstraint(BaseModel):
-    """v2 §5.2 — resolved per-family constraint shape (Slice 5.2).
+    """v2 §5.2 — resolved per-family constraint shape (implementation phase).
 
     Carries the post-inheritance constraint values for one strategy family
     under one active cohort. ``allowed`` is the only required dimension;
@@ -437,7 +527,7 @@ class StrategyFamilyConstraint(BaseModel):
 
 
 class AgentRouting(BaseModel):
-    """v2 §5.1 Agent Cohort Routing output (Slice 5.1).
+    """v2 §5.1 Agent Cohort Routing output (implementation phase).
 
     ``blocked_strategy_modes`` names strategy modes/families the active cohort
     suppresses; it does not list alternate agent cohorts.
@@ -464,7 +554,7 @@ def _dump_json_payload(payload: dict[str, Any], *, indent: int | None, ensure_as
     return json.dumps(payload, **json_kwargs)
 
 
-def _rewrite_legacy_v1_wire_shapes(payload: dict[str, Any]) -> dict[str, Any]:
+def _project_legacy_v1_wire_shapes(payload: dict[str, Any]) -> dict[str, Any]:
     if payload.get("config_version") != _V1_CONFIG_VERSION:
         return payload
 
@@ -513,33 +603,40 @@ class RegimeOutput(BaseModel):
 
     # V2 optional top-level fields (default None → omitted from wire via
     # exclude_none=True). Each lands when its v2 slice ships.
-    inflation_growth_state: InflationGrowthOutput | None = None  # v2 §2B (slice 5)
-    credit_funding_state: CreditFundingOutput | None = None  # v2 §2C (slice 4)
-    credit_funding_state_proxy: CreditFundingOutput | None = None  # v2 §2C proxy (Log #71)
+    inflation_growth_state: InflationGrowthOutput | None = None  # v2 §2B (implementation phase)
+    credit_funding_state: CreditFundingOutput | None = None  # v2 §2C (implementation phase)
+    credit_funding_state_proxy: CreditFundingOutput | None = None  # v2 §2C proxy (documented implementation decision)
     credit_funding_effective_state: CreditFundingOutput | None = None  # v2 §2C downstream OAS/proxy resolver
-    volume_liquidity_state: VolumeLiquidityStateOutput | None = None  # v2 §1E (slice 2.7)
-    monetary_pressure_state: MonetaryPressureV2Output | None = None  # v2 §2A (Log #46)
+    volume_liquidity_state: VolumeLiquidityStateOutput | None = None  # v2 §1E (implementation phase)
+    monetary_pressure_state: MonetaryPressureV2Output | None = None  # v2 §2A (documented implementation decision)
     change_point: ChangePointOutput | None = None  # v2 §4.6 (V2.1)
-    cluster: ClusterOutput | None = None  # v2 §6.2 (Slice 7) — diagnostic evidence
-    agent_routing: "AgentRouting | None" = None  # v2 §5.1 (slice 5.1)
-    strategy_family_constraints: dict[str, StrategyFamilyConstraint] | None = None  # v2 §5.2 (slice 5.2)
+    cluster: ClusterOutput | None = None  # v2 §6.2 (implementation phase) — diagnostic evidence
+    agent_routing: "AgentRouting | None" = None  # v2 §5.1 (implementation phase)
+    strategy_family_constraints: dict[str, StrategyFamilyConstraint] | None = None  # v2 §5.2 (implementation phase)
 
-    # V1 wire contract: omit any None-valued conditional fields in nested models.
-    # This must be applied at the top-level dump to propagate into nested models.
-    def model_dump(self, *args: Any, **kwargs: Any) -> dict[str, Any]:
+    def model_dump_legacy_v1_wire(self, *args: Any, **kwargs: Any) -> dict[str, Any]:
+        """Compatibility projection for archived V1 wire-shape replay."""
         kwargs.setdefault("exclude_none", True)
         payload = super().model_dump(*args, **kwargs)
-        return _rewrite_legacy_v1_wire_shapes(payload)
+        return _project_legacy_v1_wire_shapes(payload)
 
-    def model_dump_json(self, *args: Any, **kwargs: Any) -> str:
+    # V1 wire contract: omit any None-valued conditional fields in nested models.
+    # Existing callers still receive the archived compatibility projection.
+    def model_dump(self, *args: Any, **kwargs: Any) -> dict[str, Any]:
+        return self.model_dump_legacy_v1_wire(*args, **kwargs)
+
+    def model_dump_json_legacy_v1_wire(self, *args: Any, **kwargs: Any) -> str:
         indent = kwargs.pop("indent", None)
         ensure_ascii = kwargs.pop("ensure_ascii", False)
         kwargs.setdefault("mode", "json")
         return _dump_json_payload(
-            self.model_dump(*args, **kwargs),
+            self.model_dump_legacy_v1_wire(*args, **kwargs),
             indent=indent,
             ensure_ascii=ensure_ascii,
         )
+
+    def model_dump_json(self, *args: Any, **kwargs: Any) -> str:
+        return self.model_dump_json_legacy_v1_wire(*args, **kwargs)
 
 
 class RegimeTimeline(BaseModel):
@@ -553,21 +650,28 @@ class RegimeTimeline(BaseModel):
     trading_calendar: str
     outputs: list[RegimeOutput]
 
-    def model_dump(self, *args: Any, **kwargs: Any) -> dict[str, Any]:
+    def model_dump_legacy_v1_wire(self, *args: Any, **kwargs: Any) -> dict[str, Any]:
+        """Compatibility projection for archived V1 wire-shape replay."""
         kwargs.setdefault("exclude_none", True)
         payload = super().model_dump(*args, **kwargs)
         payload["outputs"] = [
-            _rewrite_legacy_v1_wire_shapes(output)
+            _project_legacy_v1_wire_shapes(output)
             for output in payload.get("outputs", [])
         ]
         return payload
 
-    def model_dump_json(self, *args: Any, **kwargs: Any) -> str:
+    def model_dump(self, *args: Any, **kwargs: Any) -> dict[str, Any]:
+        return self.model_dump_legacy_v1_wire(*args, **kwargs)
+
+    def model_dump_json_legacy_v1_wire(self, *args: Any, **kwargs: Any) -> str:
         indent = kwargs.pop("indent", None)
         ensure_ascii = kwargs.pop("ensure_ascii", False)
         kwargs.setdefault("mode", "json")
         return _dump_json_payload(
-            self.model_dump(*args, **kwargs),
+            self.model_dump_legacy_v1_wire(*args, **kwargs),
             indent=indent,
             ensure_ascii=ensure_ascii,
         )
+
+    def model_dump_json(self, *args: Any, **kwargs: Any) -> str:
+        return self.model_dump_json_legacy_v1_wire(*args, **kwargs)

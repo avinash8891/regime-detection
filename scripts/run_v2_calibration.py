@@ -28,7 +28,6 @@ import sys
 from pathlib import Path
 from typing import Any
 
-import numpy as np
 import pandas as pd
 import yaml
 
@@ -38,11 +37,9 @@ SRC_DIR = REPO_ROOT / "src"
 sys.path.insert(0, str(SRC_DIR))
 sys.path.insert(0, str(REPO_ROOT))
 
-from regime_data_fetch.local_daily_ohlcv_sqlite import EXPECTED_COLUMNS  # noqa: E402
-from regime_data_fetch.materialization import materialize_if_requested  # noqa: E402
+from regime_data_fetch.universe import FIXED_UNIVERSE_TREE_NAME  # noqa: E402
 
 from regime_detection.config import load_default_regime_config  # noqa: E402
-from regime_detection.engine import RegimeEngine  # noqa: E402
 from regime_detection.feature_store import build_feature_store  # noqa: E402
 from regime_detection.fragility_universe import SECTOR_ETFS  # noqa: E402
 from regime_detection.loaders import (  # noqa: E402
@@ -51,31 +48,14 @@ from regime_detection.loaders import (  # noqa: E402
     load_news_sentiment_series,
 )
 from regime_detection.market_context import build_market_context  # noqa: E402
-from scripts._v2_calibration_helpers import default_pmi_path, load_macro_series  # noqa: E402
-
-
-def _load_market_data(daily_ohlcv_dir: Path) -> pd.DataFrame:
-    """Load the v1-shape (SPY/RSP/VIXY) long-format DataFrame the engine wants."""
-    df = pd.read_parquet(daily_ohlcv_dir)
-    keep = ["date", "symbol", "open", "high", "low", "close", "volume"]
-    out = df[df["symbol"].isin(["SPY", "RSP", "VIXY"])][keep].copy()
-    out["date"] = pd.to_datetime(out["date"]).dt.date
-    return out.sort_values(["date", "symbol"]).reset_index(drop=True)
-
-
-def _load_close_dict(
-    daily_ohlcv_dir: Path, symbols: list[str], spy_index: pd.DatetimeIndex
-) -> dict[str, pd.Series]:
-    """Pivot daily OHLCV parquet into close-series keyed by symbol, reindexed to SPY sessions."""
-    df = pd.read_parquet(daily_ohlcv_dir)
-    df["date"] = pd.to_datetime(df["date"])
-    out: dict[str, pd.Series] = {}
-    for sym in symbols:
-        sub = df[df["symbol"] == sym].sort_values("date").set_index("date")
-        if sub.empty:
-            continue
-        out[sym] = sub["close"].astype(float).reindex(spy_index).rename(sym)
-    return out
+from scripts._v2_calibration_helpers import (  # noqa: E402
+    add_manifest_args,
+    default_pmi_path,
+    load_close_dict,
+    load_macro_series,
+    load_market_data,
+    materialize_manifest_from_args,
+)
 
 
 def _summarize_central_bank_text(feature_store: Any, config: Any) -> list[str]:
@@ -106,16 +86,16 @@ def _summarize_central_bank_text(feature_store: Any, config: Any) -> list[str]:
         f"sessions (CentralBankTextConfig.smoothing_window_sessions; "
         f"v2 §9.1 walk-forward calibration placeholder).",
         f"- max_release_age_days: **{cb_cfg.max_release_age_days}**.",
-        f"- Score distribution after smoothing:",
+        "- Score distribution after smoothing:",
         f"    - min: {float(series.min()):+.3f}",
         f"    - p25: {float(series.quantile(0.25)):+.3f}",
         f"    - median: {float(series.median()):+.3f}",
         f"    - p75: {float(series.quantile(0.75)):+.3f}",
         f"    - max: {float(series.max()):+.3f}",
         f"    - mean: {float(series.mean()):+.3f}",
-        f"- Bias-warning code emitted on feature output: "
-        f"`central_bank_text_deterministic_lexicon_substitute` (audit M1 / "
-        f"docs/spec_code_data_audit_2026_05_15.md §3.1).",
+        "- Bias-warning code emitted on feature output: "
+        "`central_bank_text_deterministic_lexicon_substitute` (audit M1 / "
+        "docs/spec_code_data_audit_2026_05_15.md §3.1).",
     ]
     return lines
 
@@ -255,17 +235,10 @@ def _fit_summary_clustering(feature_store: Any) -> dict[str, Any]:
 
 def _parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="V2 calibration artifact runner.")
-    parser.add_argument("--data-root", type=Path, default=REPO_ROOT / "data" / "raw")
-    parser.add_argument(
-        "--manifest",
-        type=Path,
-        default=None,
-        help="Optional artifact manifest to materialize before calibration.",
-    )
-    parser.add_argument(
-        "--artifact-store",
-        default=None,
-        help="Optional artifact-store root override for --manifest.",
+    add_manifest_args(
+        parser,
+        data_root_default=REPO_ROOT / "data" / "raw",
+        action="calibration",
     )
     return parser.parse_args()
 
@@ -273,14 +246,12 @@ def _parse_args() -> argparse.Namespace:
 def main() -> int:
     args = _parse_args()
     data_root = args.data_root
-    materialize_if_requested(
-        manifest_path=args.manifest,
-        local_root=data_root,
+    materialize_manifest_from_args(
+        args,
         repo_root=REPO_ROOT,
-        store_root=args.artifact_store,
         required_for="v2_calibration",
     )
-    daily_dir = data_root / "daily_ohlcv"
+    daily_dir = data_root / FIXED_UNIVERSE_TREE_NAME
     macro_parquet = data_root / "macro" / "fred_macro_series.parquet"
     pmi_path = default_pmi_path(data_root)
     pit_intervals_parquet = (
@@ -311,7 +282,7 @@ def main() -> int:
             f"macro parquet not found at {macro_parquet} — run macro fetch first"
         )
 
-    market_data = _load_market_data(daily_dir)
+    market_data = load_market_data(daily_dir)
     end_date = market_data["date"].max()
 
     # Load PIT inputs for clustering / pct_above_50dma path. Both are optional
@@ -320,7 +291,7 @@ def main() -> int:
     pit_intervals = None
     constituent_ohlcv = None
     if pit_intervals_parquet.exists():
-        from regime_data_fetch.pit_constituents import read_pit_intervals, members_on
+        from regime_data_fetch.pit_constituents import read_pit_intervals
 
         pit_intervals = read_pit_intervals(pit_intervals_parquet)
         print(f"PIT intervals: {len(pit_intervals)} rows")
@@ -332,8 +303,6 @@ def main() -> int:
         # Members on the end_date define the universe whose OHLCV we load.
         # Reader is keyed by ticker; we pass the full distinct-ticker list
         # across the trailing window so newly-listed members have data.
-        from regime_data_fetch.pit_constituents import members_on as _members_on
-
         all_member_tickers = sorted({t for t in pit_intervals["ticker"].unique()})
         # Optimization: only read tickers that DBC-style classifier expects.
         # In practice the universe is ~1200 tickers; read_constituent_ohlcv
@@ -377,8 +346,8 @@ def main() -> int:
         "XLP",
         "XLU",
     ]
-    sector_etf_closes = _load_close_dict(daily_dir, list(SECTOR_ETFS), spy_index)
-    cross_asset_closes = _load_close_dict(daily_dir, cross_asset_symbols, spy_index)
+    sector_etf_closes = load_close_dict(daily_dir, list(SECTOR_ETFS), spy_index)
+    cross_asset_closes = load_close_dict(daily_dir, cross_asset_symbols, spy_index)
     macro_series = load_macro_series(macro_parquet, pmi_path)
 
     print(f"as_of = {end_date}; spy sessions = {len(spy_index)}")
@@ -571,7 +540,7 @@ def main() -> int:
     summary_path = verification_dir / "v2_calibration_summary.md"
     summary_path.write_text("\n".join(summary_md) + "\n")
 
-    print(f"\nWrote candidate label maps:")
+    print("\nWrote candidate label maps:")
     print(f"  {hmm_path}")
     print(f"  {cluster_path}")
     print(f"  {summary_path}")

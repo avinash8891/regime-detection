@@ -3,12 +3,15 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal, cast
 
 import yaml
 
 
-VALID_STAGES = {"raw_capture", "normalized", "canonical", "run_inputs"}
+ArtifactStage = Literal["raw_capture", "normalized", "canonical", "run_inputs"]
+VALID_STAGES: frozenset[ArtifactStage] = frozenset(
+    ("raw_capture", "normalized", "canonical", "run_inputs")
+)
 SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 DATA_RAW_PREFIX: tuple[str, ...] = ("data", "raw")
 
@@ -24,10 +27,17 @@ class ManifestValidationError(ValueError):
     pass
 
 
+def _parse_stage(value: object) -> ArtifactStage:
+    stage = str(value)
+    if stage not in VALID_STAGES:
+        raise ManifestValidationError(f"unknown artifact stage: {stage}")
+    return cast(ArtifactStage, stage)
+
+
 @dataclass(frozen=True)
 class ManifestArtifact:
     name: str
-    stage: str
+    stage: ArtifactStage
     uri: str
     local_path: str
     sha256: str
@@ -54,7 +64,7 @@ class ManifestArtifact:
 
         artifact = cls(
             name=str(payload["name"]),
-            stage=str(payload["stage"]),
+            stage=_parse_stage(payload["stage"]),
             uri=str(payload["uri"]),
             local_path=str(payload["local_path"]),
             sha256=str(payload["sha256"]),

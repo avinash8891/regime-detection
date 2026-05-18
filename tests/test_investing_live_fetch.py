@@ -6,6 +6,7 @@ import sqlite3
 import sys
 import time
 import types
+import urllib.error
 from pathlib import Path
 
 import pandas as pd
@@ -16,15 +17,60 @@ from regime_data_fetch.investing_live import (
     EARNINGS_BASE,
     SOURCE_CALENDAR_URL,
     SOURCE_EARNINGS_URL,
+    _request_json,
     capture_investing_earnings_loaded_page,
     _validate_token_not_expired,
     run_investing_live_fetch,
+)
+from regime_data_fetch.investing_earnings_browser import (
+    InvestingEarningsBrowserCaptureError,
+    capture_investing_earnings_page_with_token,
 )
 
 APPLE_INSTRUMENT_ID = 6408
 APPLE_SYMBOL = "AAPL"
 APPLE_COMPANY = "Apple Inc"
 US_COUNTRY_ID = 5
+
+
+def test_request_json_retries_transient_url_errors(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    attempts = 0
+
+    class Response:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb) -> None:
+            return None
+
+        def read(self) -> bytes:
+            return b'{"ok": true}'
+
+    def fake_urlopen(request, *, timeout: int):
+        nonlocal attempts
+        assert timeout == 60
+        attempts += 1
+        if attempts == 1:
+            raise urllib.error.URLError("temporary outage")
+        return Response()
+
+    monkeypatch.setattr(
+        "regime_data_fetch.investing_live.urllib.request.urlopen", fake_urlopen
+    )
+    monkeypatch.setattr(
+        "regime_data_fetch.investing_live.time.sleep", lambda _seconds: None
+    )
+
+    payload = _request_json(
+        "https://example.test/api",
+        params={"symbol": "AAPL"},
+        headers={"User-Agent": "test"},
+    )
+
+    assert payload == {"ok": True}
+    assert attempts == 2
 
 
 def test_run_investing_live_fetch_materializes_archive_and_records_outputs(
@@ -218,7 +264,13 @@ def test_run_investing_live_fetch_fails_loudly_without_earnings_token(
     ) -> object:
         if url == f"{CALENDAR_BASE}/v1/calendars/economic/events/occurrences":
             return {
-                "events": [{"id": 1, "country_id": US_COUNTRY_ID, "event_translated": "Payrolls"}],
+                "events": [
+                    {
+                        "id": 1,
+                        "country_id": US_COUNTRY_ID,
+                        "event_translated": "Payrolls",
+                    }
+                ],
                 "occurrences": [
                     {
                         "occurrence_id": 10,
@@ -233,7 +285,10 @@ def test_run_investing_live_fetch_fails_loudly_without_earnings_token(
                     {
                         "holiday_id": 20,
                         "holiday_start": "2026-05-01T00:00:00Z",
-                        "exchange": {"country_id": US_COUNTRY_ID, "country": "United States"},
+                        "exchange": {
+                            "country_id": US_COUNTRY_ID,
+                            "country": "United States",
+                        },
                     }
                 ]
             }
@@ -548,6 +603,125 @@ def test_browser_capture_writes_redacted_page_without_access_token(
     persisted_html = captured_path.read_text()
     assert token not in persisted_html
     assert "accessToken" in persisted_html
+
+
+def test_browser_capture_returns_token_and_redacted_captured_html(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    token = _future_jwt()
+    html = _next_data_html(
+        {"stockCountries": [{"id": US_COUNTRY_ID, "name": "United States"}]},
+        access_token=token,
+    )
+
+    class FakePage:
+        def goto(self, *args: object, **kwargs: object) -> None:
+            del args, kwargs
+
+        def wait_for_function(self, *args: object, **kwargs: object) -> None:
+            del args, kwargs
+
+        def content(self) -> str:
+            return html
+
+    class FakeContext:
+        pages = [FakePage()]
+
+        def new_page(self) -> FakePage:
+            return FakePage()
+
+        def close(self) -> None:
+            pass
+
+    class FakeChromium:
+        def launch_persistent_context(self, **kwargs: object) -> FakeContext:
+            del kwargs
+            return FakeContext()
+
+    class FakePlaywright:
+        chromium = FakeChromium()
+
+        def __enter__(self) -> "FakePlaywright":
+            return self
+
+        def __exit__(self, *args: object) -> None:
+            del args
+
+    fake_sync_api = types.SimpleNamespace(
+        TimeoutError=TimeoutError,
+        sync_playwright=lambda: FakePlaywright(),
+    )
+    monkeypatch.setitem(sys.modules, "playwright", types.SimpleNamespace())
+    monkeypatch.setitem(sys.modules, "playwright.sync_api", fake_sync_api)
+    output_path = tmp_path / "loaded_page.html"
+
+    captured = capture_investing_earnings_page_with_token(
+        output_path=output_path,
+        user_data_dir=tmp_path / "profile",
+        headless=True,
+        timeout_ms=1000,
+    )
+
+    assert captured.access_token == token
+    assert captured.path == output_path
+    assert token not in output_path.read_text()
+    assert "[redacted]" in output_path.read_text()
+
+
+def test_browser_capture_reports_navigation_timeout(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    closed = False
+
+    class FakePage:
+        def goto(self, *args: object, **kwargs: object) -> None:
+            del args, kwargs
+            raise TimeoutError("navigation timed out")
+
+    class FakeContext:
+        pages = [FakePage()]
+
+        def new_page(self) -> FakePage:
+            return FakePage()
+
+        def close(self) -> None:
+            nonlocal closed
+            closed = True
+
+    class FakeChromium:
+        def launch_persistent_context(self, **kwargs: object) -> FakeContext:
+            del kwargs
+            return FakeContext()
+
+    class FakePlaywright:
+        chromium = FakeChromium()
+
+        def __enter__(self) -> "FakePlaywright":
+            return self
+
+        def __exit__(self, *args: object) -> None:
+            del args
+
+    fake_sync_api = types.SimpleNamespace(
+        TimeoutError=TimeoutError,
+        sync_playwright=lambda: FakePlaywright(),
+    )
+    monkeypatch.setitem(sys.modules, "playwright", types.SimpleNamespace())
+    monkeypatch.setitem(sys.modules, "playwright.sync_api", fake_sync_api)
+
+    with pytest.raises(
+        InvestingEarningsBrowserCaptureError, match="navigation timed out"
+    ):
+        capture_investing_earnings_page_with_token(
+            output_path=tmp_path / "loaded_page.html",
+            user_data_dir=tmp_path / "profile",
+            headless=True,
+            timeout_ms=1000,
+        )
+
+    assert closed is True
 
 
 def _next_data_html(

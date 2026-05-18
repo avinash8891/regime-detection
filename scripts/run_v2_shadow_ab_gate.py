@@ -43,14 +43,19 @@ from regime_detection.loaders import (  # noqa: E402
 )
 from regime_detection.market_context import build_market_context  # noqa: E402
 from regime_detection.versioning import engine_version as resolved_engine_version  # noqa: E402
-from regime_data_fetch.materialization import materialize_if_requested  # noqa: E402
+from regime_data_fetch.universe import FIXED_UNIVERSE_TREE_NAME  # noqa: E402
 
 from _v2_calibration_helpers import (  # noqa: E402
     CROSS_ASSET_SYMBOLS,
+    add_manifest_args,
+    apply_manifest_input_paths,
+    axis_reporting_label as _reporting_label,
     default_pmi_path,
     load_close_dict,
     load_macro_series,
     load_market_data,
+    manifest_input_overrides,
+    materialize_manifest_from_args,
 )
 
 
@@ -88,16 +93,17 @@ def _setup_logging() -> None:
     )
 
 
-def _reporting_label(output: Any) -> str | None:
-    if output is None:
-        return None
-    reporting = getattr(output, "reporting_label", None)
-    if reporting is not None:
-        return reporting
-    classification_status = getattr(output, "classification_status", "classified")
-    if classification_status != "classified":
-        return classification_status
-    return getattr(output, "active_label", None)
+def _session_error_exit_code(
+    *,
+    v1_errors: int,
+    v2_errors: int,
+    allow_session_errors: bool,
+) -> int:
+    if allow_session_errors:
+        return 0
+    if v1_errors or v2_errors:
+        return 1
+    return 0
 
 
 def _extract_v1_fields(output: Any) -> dict[str, Any]:
@@ -168,8 +174,12 @@ def _classify_per_session(
     errors = 0
     total = len(sessions)
     for idx, as_of_date in enumerate(sessions, start=1):
+        as_of_timestamp = pd.Timestamp(as_of_date)
+        market_dates = pd.to_datetime(market_data["date"])
         market_slice = (
-            market_data[market_data["date"] <= as_of_date].copy().reset_index(drop=True)
+            market_data[market_dates <= as_of_timestamp]
+            .copy()
+            .reset_index(drop=True)
         )
         kwargs: dict[str, Any] = {
             "as_of_date": as_of_date,
@@ -179,7 +189,7 @@ def _classify_per_session(
             kwargs.update(v2_kwargs)
         try:
             output = engine.classify(**kwargs)
-        except Exception as exc:
+        except (ValueError, RuntimeError) as exc:
             errors += 1
             logger.warning(
                 "[%s] %s classify failed: %s", mode_label, as_of_date.isoformat(), exc
@@ -333,36 +343,30 @@ def _parse_args() -> argparse.Namespace:
         type=Path,
         default=REPO_ROOT / "docs" / "verification" / "v2_shadow_ab_60session.md",
     )
+    add_manifest_args(parser, data_root_default=REPO_ROOT / "data" / "raw", action="running")
     parser.add_argument(
-        "--manifest",
-        type=Path,
-        default=None,
-        help="Optional artifact manifest to materialize before running.",
-    )
-    parser.add_argument(
-        "--artifact-store",
-        default=None,
-        help="Optional artifact-store root override for --manifest.",
-    )
-    parser.add_argument(
-        "--data-root",
-        type=Path,
-        default=REPO_ROOT / "data" / "raw",
-        help="Local data/raw root used for manifest materialization.",
+        "--allow-session-errors",
+        action="store_true",
+        help="Allow exploratory report output even when per-session classify errors occur.",
     )
     args = parser.parse_args()
+    args.manifest_input_overrides = manifest_input_overrides(sys.argv[1:])
     if args.daily_dir is None:
-        args.daily_dir = args.data_root / "daily_ohlcv"
+        args.daily_dir = args.data_root / FIXED_UNIVERSE_TREE_NAME
     if args.macro_parquet is None:
         args.macro_parquet = args.data_root / "macro" / "fred_macro_series.parquet"
     if args.pmi_path is None:
         args.pmi_path = default_pmi_path(args.data_root)
-    materialize_if_requested(
-        manifest_path=args.manifest,
-        local_root=args.data_root,
+    materialize_manifest_from_args(
+        args,
         repo_root=REPO_ROOT,
-        store_root=args.artifact_store,
         required_for="v2_calibration",
+    )
+    apply_manifest_input_paths(
+        args,
+        runner_name="v2_calibration",
+        repo_root=REPO_ROOT,
+        required_fields=frozenset({"daily_dir", "macro_parquet", "event_calendar"}),
     )
     return args
 
@@ -421,19 +425,22 @@ def main() -> int:
     macro_series = load_macro_series(macro_parquet, pmi_path)
 
     # v2 §2A central-bank-text + first-release CPI seams (audit M1 / M2).
-    data_root = daily_dir.parent
-    fomc_parquet = data_root / "fomc_minutes" / "fomc_minutes.parquet"
-    powell_parquet = data_root / "powell_speeches" / "powell_speeches.parquet"
-    cpi_vintages_parquet = (
-        data_root / "macro_vintages" / "cpi_all_items_vintages.parquet"
-    )
+    fomc_parquet = getattr(args, "fomc_minutes_parquet", None)
+    powell_parquet = getattr(args, "powell_speeches_parquet", None)
+    cpi_vintages_parquet = getattr(args, "cpi_vintages_parquet", None)
     central_bank_text_releases = load_central_bank_text_score(
-        fomc_minutes_source=fomc_parquet if fomc_parquet.exists() else None,
-        powell_speeches_source=powell_parquet if powell_parquet.exists() else None,
+        fomc_minutes_source=(
+            fomc_parquet if fomc_parquet is not None and fomc_parquet.exists() else None
+        ),
+        powell_speeches_source=(
+            powell_parquet
+            if powell_parquet is not None and powell_parquet.exists()
+            else None
+        ),
     )
     cpi_first_release = (
         load_cpi_vintages_first_release(cpi_vintages_parquet)
-        if cpi_vintages_parquet.exists()
+        if cpi_vintages_parquet is not None and cpi_vintages_parquet.exists()
         else None
     )
 
@@ -487,7 +494,19 @@ def main() -> int:
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(markdown, encoding="utf-8")
     logger.info("Wrote %s", args.output)
-    return 0
+    exit_code = _session_error_exit_code(
+        v1_errors=v1_errors,
+        v2_errors=v2_errors,
+        allow_session_errors=args.allow_session_errors,
+    )
+    if exit_code:
+        logger.error(
+            "Session classify errors occurred: v1_errors=%d v2_errors=%d. "
+            "Re-run with --allow-session-errors only for exploratory output.",
+            v1_errors,
+            v2_errors,
+        )
+    return exit_code
 
 
 if __name__ == "__main__":

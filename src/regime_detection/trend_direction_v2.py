@@ -1,7 +1,7 @@
 """v2 §1A Layer 1 V2 Trend Direction features — evidence-only compute.
 
 Pure pandas/numpy implementation of the §1A continuous features that feed
-the future V2 trend_direction classifier (slice 2.1 ships features only,
+the future V2 trend_direction classifier (implementation phase ships features only,
 no classifier — see ``docs/regime_engine_v2_spec.md`` §8 line 1181).
 
 Features (all per-session series aligned to the input close index):
@@ -15,24 +15,20 @@ Features (all per-session series aligned to the input close index):
 - ``drawdown_252d``          v2 §1A line 116 (recovery evidence)
 - ``sma_50``                 v2 §1A line 118 (recovery evidence: close > SMA_50)
 
-Slice 2.5 lands the ``recovery`` label on top of these features. The
+implementation phase lands the ``recovery`` label on top of these features. The
 ``euphoria`` / ``breakout_expansion`` / ``range_bound`` labels remain
-deferred (see Ambiguity Log entries #32–#34).
+deferred (see documented implementation decisions).
 
 Implementation choices that resolve ambiguities are documented in
-``docs/regime_engine_v2_spec.md`` Implementation Ambiguity Log:
+``docs/regime_engine_v2_spec.md`` documented implementation notes:
 
 - Hurst estimator: classical Rescaled-Range (R/S) analysis applied to
-  log-returns (Mandelbrot–Wallis). See Ambiguity Log entry #11.
+  log-returns (Mandelbrot–Wallis). See documented implementation decision.
 - ``drawdown_252d`` peak window: trailing 252 sessions INCLUDING ``t``
   (so drawdown == 0 at a fresh 252d high), matching the
   ``_trailing_drawdown`` convention in ``network_fragility_rules.py``.
-  See Ambiguity Log entry #13.
+  See documented implementation decision.
 """
-# TODO(slice-2.x): v1 `trend_direction.compute_features` and `feature_store.build_feature_store`
-# also compute sma_50, sma_200, and return_63d from the SPY close. Consolidate into a shared
-# rolling-stats utility when the v2 trend labels slice lands (euphoria/recovery/breakout).
-# Until then, the three computations are independent (acceptable per evidence-only slice scope).
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -40,6 +36,7 @@ from dataclasses import dataclass
 import numpy as np
 import pandas as pd
 
+from regime_detection._rolling_stats import period_return, simple_moving_average
 from regime_detection.config import TrendDirectionV2Config, TrendDirectionV2RulesConfig
 from regime_detection.volatility_state import realized_vol
 
@@ -62,7 +59,7 @@ class TrendDirectionV2Features:
     return_126d: pd.Series
     drawdown_252d: pd.Series
     # v2 §1A line 118 — `recovery` rule input: close > SMA_50.
-    # Exposed as a level (not a slope) so the slice-2.5 recovery predicate
+    # Exposed as a level (not a slope) so the recovery predicate
     # has direct access without recomputing the 50d SMA.
     sma_50: pd.Series
     # v2 §1A line 161 — `euphoria` rule input: close > SMA_200. Exposed as
@@ -70,7 +67,7 @@ class TrendDirectionV2Features:
     # without recomputing the 200d SMA (already computed for slope_sma_200).
     sma_200: pd.Series
     # v2 §1A line 163 — `euphoria` rule input: realized_vol_21d rising
-    # (strict 5-session change per ADR 0004 Q2 / Log #68 §1D analogue).
+    # (strict 5-session change per ADR 0004 Q2 / documented implementation decision §1D analogue).
     # 21-session annualized realized vol of SPY log-returns.
     realized_vol_21d: pd.Series
     # v2 §1A line 164 — `euphoria` rule input: sentiment_score >= threshold.
@@ -82,7 +79,7 @@ class TrendDirectionV2Features:
     # v2 §1A second sentiment voice — SF Fed Daily News Sentiment Index
     # (Shapiro, Sudhof, Wilson 2020). Smoothed onto the SPY session index.
     # EVIDENCE ONLY — never read by the `euphoria` rule predicate. See audit
-    # follow-up: docs/spec_code_data_audit_2026_05_15.md "news sentiment".
+    # follow-up: the source-data audit "news sentiment".
     news_sentiment_score: pd.Series | None = None
     # Derived concordance flag — True when AAII and news sentiment agree on
     # sign (both positive or both negative), False when they diverge, NaN
@@ -140,7 +137,7 @@ def _rs_hurst_window(values: np.ndarray) -> float:
     """Classical Mandelbrot–Wallis R/S Hurst estimator on a single window.
 
     Applied to log-returns of the window's price levels (literature
-    standard — see Ambiguity Log entry #12). Returns NaN when the window
+    standard — see documented implementation decision). Returns NaN when the window
     is too short, has any NaN, or has zero variance.
 
     Algorithm (single chunk; no chunk averaging because the spec pins
@@ -186,14 +183,14 @@ def _hurst_series(close: pd.Series, lookback: int) -> pd.Series:
 def _sma(close: pd.Series, sma_period: int) -> pd.Series:
     """Rolling simple moving average with strict cold-start (NaN until
     `sma_period` observations are available)."""
-    return close.rolling(window=sma_period, min_periods=sma_period).mean()
+    return simple_moving_average(close, window=sma_period)
 
 
 def _slope_of_sma(sma: pd.Series, slope_lookback: int) -> pd.Series:
     """v2 §1A line 106: (sma[t] - sma[t-N]) / sma[t-N].
 
     Accepts a pre-computed SMA series so callers can both expose the SMA
-    level (slice 2.5 `recovery` predicate consumes ``sma_50``) and its
+    level (implementation phase `recovery` predicate consumes ``sma_50``) and its
     slope in one pass.
 
     NaN propagates from the SMA (until t >= sma_period-1) and from the
@@ -207,19 +204,19 @@ def compute_trailing_drawdown(close: pd.Series, lookback: int) -> pd.Series:
     """v2 §1A line 116: (close[t] / max(close[t-N+1..t])) - 1.
 
     Peak window is inclusive of t (matching
-    ``network_fragility_rules._trailing_drawdown`` — Ambiguity Log #13).
+    ``network_fragility_rules._trailing_drawdown`` — documented implementation decision).
     Drawdown == 0 when t is a fresh `lookback`-day high. Negative below.
     NaN if any of the window's `lookback` sessions is NaN or if t lacks
     `lookback` prior history.
 
-    Public name added in Slice 6: the HMM evidence layer (§6.1) reuses
+    Public name added in implementation phase: the HMM evidence layer (§6.1) reuses
     this formula for its `drawdown_63d` input — one home (AGENTS rule B).
     """
     peak = close.rolling(window=lookback, min_periods=lookback).max()
     return (close / peak.where(peak > 0)) - 1.0
 
 
-# Internal alias preserved for in-module callers (slice 2.1 + 2.5 code paths).
+# Internal alias preserved for in-module callers.
 _trailing_drawdown = compute_trailing_drawdown
 
 
@@ -264,11 +261,11 @@ def compute_trend_v2_features(
         sma_long,
         slope_lookback=config.slope_lookback_days,
     ).rename("slope_sma_200")
-    ret_short = (close / close.shift(config.return_short_period) - 1.0).rename(
-        "return_63d"
+    ret_short = period_return(
+        close, periods=config.return_short_period, output_name="return_63d"
     )
-    ret_long = (close / close.shift(config.return_long_period) - 1.0).rename(
-        "return_126d"
+    ret_long = period_return(
+        close, periods=config.return_long_period, output_name="return_126d"
     )
     dd = _trailing_drawdown(close, config.drawdown_lookback_days).rename(
         "drawdown_252d"
@@ -355,7 +352,7 @@ def _realized_vol_21d_for_euphoria(close: pd.Series) -> pd.Series:
 
 
 # ---------------------------------------------------------------------------
-# Slice 2.5 — v2 §1A `recovery` rule + precedence wrapper.
+# implementation phase — v2 §1A `recovery` rule + precedence wrapper.
 #
 # Rule (v2 §1A lines 114-119, verbatim):
 #     prior 252d drawdown <= -0.15
@@ -366,7 +363,7 @@ def _realized_vol_21d_for_euphoria(close: pd.Series) -> pd.Series:
 #     euphoria > bull > recovery > bear > sideways > transition > unknown
 #
 # `euphoria` is deferred (sentiment_score data source not ingested — see
-# Implementation Ambiguity Log entry #32). The precedence slot stays
+# documented implementation decision). The precedence slot stays
 # defined so future authors can drop euphoria in without re-ordering;
 # the rule predicate never fires today.
 # ---------------------------------------------------------------------------
@@ -408,7 +405,7 @@ def evaluate_recovery(
 
 
 # v2 §1A line 132-134 ranking (lower index = higher precedence).
-# `euphoria` (index 0) was reserved-but-inert before ADR 0004 / Log #32
+# `euphoria` (index 0) was reserved-but-inert before documented implementation decision
 # closure; it is now wired to a real predicate.
 _V2_TREND_PRECEDENCE: tuple[str, ...] = (
     "euphoria",
@@ -432,14 +429,14 @@ def evaluate_euphoria(
 
     Returns False when any of the four inputs is NaN or when the
     Optional ``sentiment_score`` feature is absent (V2 §10 "do not
-    invent a sentiment proxy" — Log #32 closure).
+    invent a sentiment proxy" — documented implementation decision).
 
     Spec citations (post ADR 0004 amendment):
 
     * line 161 — ``close > SMA_200`` (strict)
     * line 162 — ``return_126d > euphoria_return_126d_threshold`` (0.20, strict)
     * line 163 — ``realized_vol_21d rising`` (strict 5-session change
-      per Log #68 §1D analogue: ``vol[t] > vol[t - N]`` where
+      per documented implementation decision §1D analogue: ``vol[t] > vol[t - N]`` where
       ``N = euphoria_vol_rising_lookback_sessions``)
     * line 164 — ``sentiment_score >= euphoria_sentiment_threshold``
       (+20 default; non-strict at boundary)

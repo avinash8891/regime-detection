@@ -1,16 +1,35 @@
 from __future__ import annotations
 
 import datetime as dt
+import logging
 import re
 from collections.abc import Callable
+from dataclasses import dataclass
 
 from regime_data_fetch.acquisition_store import AcquisitionStore
-from regime_data_fetch.event_sources._common import ECB_BASE_URL, absolute_url, fetch_text_url, strip_tags
+from regime_data_fetch.event_sources._common import (
+    ECB_BASE_URL,
+    FetchTextResult,
+    absolute_url,
+    fetch_text_result,
+    strip_tags,
+)
 from regime_data_fetch.event_sources.models import EventCandidate
 
 SOURCE_ID = "ecb.europa.eu:monetary-policy-decisions"
 ARCHIVE_INDEX_URL = "https://www.ecb.europa.eu/press/govcdec/mopo/html/index.en.html"
-CURRENT_CALENDAR_URL = "https://www.ecb.europa.eu/press/calendars/mgcgc/html/index.en.html"
+CURRENT_CALENDAR_URL = (
+    "https://www.ecb.europa.eu/press/calendars/mgcgc/html/index.en.html"
+)
+LOGGER = logging.getLogger(__name__)
+
+
+@dataclass(frozen=True)
+class MarkupFetchStatus:
+    url: str
+    status: str
+    error: str | None = None
+    bytes_read: int = 0
 
 
 class OfficialECBAdapter:
@@ -20,10 +39,14 @@ class OfficialECBAdapter:
         self,
         *,
         as_of_date: dt.date | None = None,
-        text_fetcher: Callable[[str], str] = fetch_text_url,
+        text_fetcher: Callable[[str], str] | None = None,
+        result_fetcher: Callable[[str], FetchTextResult] = fetch_text_result,
     ) -> None:
         self.as_of_date = as_of_date or dt.date.today()
         self.text_fetcher = text_fetcher
+        self.result_fetcher = result_fetcher
+        self.last_source_statuses: dict[str, MarkupFetchStatus] = {}
+        self.last_run_status = "not_run"
 
     def fetch(
         self,
@@ -33,21 +56,102 @@ class OfficialECBAdapter:
         store: AcquisitionStore | None,
         run_id: int | None,
     ) -> list[EventCandidate]:
-        html = self.text_fetcher(ARCHIVE_INDEX_URL)
-        _record_html(store, run_id, ARCHIVE_INDEX_URL, html, "ECB monetary-policy decisions archive index")
+        self.last_source_statuses = {}
+        self.last_run_status = "ok"
+        html = self._fetch_text(ARCHIVE_INDEX_URL)
+        _record_html(
+            store,
+            run_id,
+            ARCHIVE_INDEX_URL,
+            html,
+            "ECB monetary-policy decisions archive index",
+        )
         candidates: list[EventCandidate] = []
-        for snippet_url in _archive_snippet_urls(html, start_year=start_year, end_year=end_year):
-            snippet = self.text_fetcher(snippet_url)
-            _record_html(store, run_id, snippet_url, snippet, "ECB monetary-policy decisions yearly archive snippet")
-            candidates.extend(parse_ecb_decision_archive(snippet, as_of_date=self.as_of_date))
+        snippet_urls = _archive_snippet_urls(
+            html, start_year=start_year, end_year=end_year
+        )
+        if (
+            html.strip()
+            and not snippet_urls
+            and self.last_source_statuses[ARCHIVE_INDEX_URL].status == "ok"
+        ):
+            self._record_markup_status(
+                ARCHIVE_INDEX_URL,
+                "parser_layout_drift",
+                error="ECB archive index missing data-snippets attribute",
+                bytes_read=len(html.encode("utf-8")),
+            )
+            LOGGER.error(
+                "ECB archive index parser layout drift; data-snippets attribute missing from %s",
+                ARCHIVE_INDEX_URL,
+            )
+        for snippet_url in snippet_urls:
+            snippet = self._fetch_text(snippet_url)
+            _record_html(
+                store,
+                run_id,
+                snippet_url,
+                snippet,
+                "ECB monetary-policy decisions yearly archive snippet",
+            )
+            candidates.extend(
+                parse_ecb_decision_archive(snippet, as_of_date=self.as_of_date)
+            )
 
-        calendar_html = self.text_fetcher(CURRENT_CALENDAR_URL)
-        _record_html(store, run_id, CURRENT_CALENDAR_URL, calendar_html, "ECB Governing Council current calendar")
-        candidates.extend(parse_ecb_current_calendar(calendar_html, as_of_date=self.as_of_date))
+        calendar_html = self._fetch_text(CURRENT_CALENDAR_URL)
+        _record_html(
+            store,
+            run_id,
+            CURRENT_CALENDAR_URL,
+            calendar_html,
+            "ECB Governing Council current calendar",
+        )
+        candidates.extend(
+            parse_ecb_current_calendar(calendar_html, as_of_date=self.as_of_date)
+        )
+        if any(
+            status.status in {"failed", "partial", "parser_layout_drift"}
+            for status in self.last_source_statuses.values()
+        ):
+            self.last_run_status = "partial"
         return _dedupe(candidates, start_year=start_year, end_year=end_year)
 
+    def _fetch_text(self, url: str) -> str:
+        if self.text_fetcher is not None:
+            text = self.text_fetcher(url)
+            self._record_markup_status(
+                url, "ok" if text else "empty", bytes_read=len(text.encode("utf-8"))
+            )
+            return text
+        result = self.result_fetcher(url)
+        if not result.ok:
+            self._record_markup_status(url, "failed", error=result.error)
+            return ""
+        text = result.text or ""
+        self._record_markup_status(
+            url, "ok" if text else "empty", bytes_read=len(text.encode("utf-8"))
+        )
+        return text
 
-def parse_ecb_decision_archive(html: str, *, as_of_date: dt.date) -> list[EventCandidate]:
+    def _record_markup_status(
+        self,
+        url: str,
+        status: str,
+        *,
+        error: str | None = None,
+        bytes_read: int = 0,
+    ) -> None:
+        self.last_source_statuses[url] = MarkupFetchStatus(
+            url=url,
+            status=status,
+            error=error,
+            bytes_read=bytes_read,
+        )
+
+
+def parse_ecb_decision_archive(
+    html: str, *, as_of_date: dt.date
+) -> list[EventCandidate]:
     candidates: list[EventCandidate] = []
     pattern = re.compile(
         r"<dt[^>]*isoDate=\"(?P<date>\d{4}-\d{2}-\d{2})\"[^>]*>.*?</dt>\s*"
@@ -72,7 +176,9 @@ def parse_ecb_decision_archive(html: str, *, as_of_date: dt.date) -> list[EventC
     return candidates
 
 
-def parse_ecb_current_calendar(html: str, *, as_of_date: dt.date) -> list[EventCandidate]:
+def parse_ecb_current_calendar(
+    html: str, *, as_of_date: dt.date
+) -> list[EventCandidate]:
     candidates: list[EventCandidate] = []
     row_pattern = re.compile(
         r"<dt[^>]*>\s*(?P<date>\d{2}/\d{2}/\d{4})\s*</dt>\s*<dd[^>]*>(?P<description>.*?)</dd>",
@@ -135,16 +241,28 @@ def _archive_snippet_urls(html: str, *, start_year: int, end_year: int) -> list[
             continue
         year = int(year_match.group("year"))
         if start_year <= year <= end_year:
-            urls.append(absolute_url(f"{ECB_BASE_URL}/press/govcdec/mopo/html/", raw) or raw)
+            urls.append(
+                absolute_url(f"{ECB_BASE_URL}/press/govcdec/mopo/html/", raw) or raw
+            )
     return urls
 
 
-def _dedupe(candidates: list[EventCandidate], *, start_year: int, end_year: int) -> list[EventCandidate]:
-    deduped = {(candidate.event_type, candidate.date): candidate for candidate in candidates if start_year <= candidate.date.year <= end_year}
-    return [deduped[key] for key in sorted(deduped, key=lambda item: (item[1], item[0]))]
+def _dedupe(
+    candidates: list[EventCandidate], *, start_year: int, end_year: int
+) -> list[EventCandidate]:
+    deduped = {
+        (candidate.event_type, candidate.date): candidate
+        for candidate in candidates
+        if start_year <= candidate.date.year <= end_year
+    }
+    return [
+        deduped[key] for key in sorted(deduped, key=lambda item: (item[1], item[0]))
+    ]
 
 
-def _record_html(store: AcquisitionStore | None, run_id: int | None, url: str, html: str, notes: str) -> None:
+def _record_html(
+    store: AcquisitionStore | None, run_id: int | None, url: str, html: str, notes: str
+) -> None:
     if store is None or run_id is None:
         return
     store.record_text_artifact(

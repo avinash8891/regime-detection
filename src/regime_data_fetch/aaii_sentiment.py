@@ -208,6 +208,7 @@ def run_sentiment_fetch(
     url: str = AAII_SENTIMENT_URL,
     acquisition_db_path: Path | None = None,
     artifact_store_root: str | Path | None = None,
+    required: bool = True,
 ) -> Path:
     """Orchestrate the AAII sentiment fetch and write a report JSON."""
     sentiment_dir = out_dir / "sentiment"
@@ -226,7 +227,39 @@ def run_sentiment_fetch(
     )
 
     try:
-        df = update_aaii_parquet(raw_dir=out_dir, out_path=out_path, url=url)
+        try:
+            df = update_aaii_parquet(raw_dir=out_dir, out_path=out_path, url=url)
+        except FileNotFoundError as exc:
+            if required:
+                raise
+            reason = str(exc)
+            report = {
+                "as_of_utc": dt.datetime.now(dt.timezone.utc).isoformat(),
+                "status": "skipped",
+                "reason": reason,
+                "materializable": False,
+                "paths": {
+                    "sentiment_parquet": str(out_path),
+                    "seed_cfb": str(seed_path),
+                    "acquisition_db": str(acquisition_db_path)
+                    if acquisition_db_path
+                    else None,
+                },
+            }
+            report_path = out_dir / "sentiment_fetch_report.json"
+            report_path.write_text(json.dumps(report, indent=2))
+            if store and fetch_run:
+                store.record_output(
+                    run_id=fetch_run.run_id,
+                    output_kind="aaii_sentiment_fetch_report",
+                    path=report_path,
+                    record_artifact=False,
+                    notes="AAII sentiment fetch skipped because no bootstrap seed is materialized",
+                )
+                store.finish_fetch_run(
+                    run_id=fetch_run.run_id, status="skipped", notes=reason
+                )
+            return report_path
 
         report = {
             "as_of_utc": dt.datetime.now(dt.timezone.utc).isoformat(),

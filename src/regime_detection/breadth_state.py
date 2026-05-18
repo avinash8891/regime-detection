@@ -11,7 +11,7 @@ from regime_detection.hysteresis import apply_asymmetric_hysteresis
 from regime_detection.models import BreadthStateOutput, DataQuality
 
 
-# V2 §1D (Ambiguity Log #21-#26, #68, #69, #70) extends the V1 5-label set
+# V2 §1D (documented implementation decision) extends the V1 5-label set
 # with four PIT-derived labels. Members ordered by precedence (spec line 284):
 #   breadth_thrust > divergent_fragile > narrowing_breadth > recovery_breadth >
 #   broadening_breadth > weak_breadth > healthy_breadth > neutral_breadth >
@@ -36,11 +36,11 @@ BreadthLabel = Literal[
 # at mid-severity (rank 2, same as weak_breadth). divergent_fragile remains the
 # highest-risk V1 label at rank 3.
 _RISK_RANK: dict[BreadthLabel, int] = {
-    "breadth_thrust": 0,        # bullish initiation (Log #69)
+    "breadth_thrust": 0,        # bullish initiation (documented implementation decision)
     "healthy_breadth": 0,
-    "broadening_breadth": 0,    # V2 recovery confirmation (Log #21-#26)
+    "broadening_breadth": 0,    # V2 recovery confirmation
     "neutral_breadth": 1,
-    "recovery_breadth": 1,      # mid-recovery (Log #70)
+    "recovery_breadth": 1,      # mid-recovery (documented implementation decision)
     "weak_breadth": 2,
     "narrowing_breadth": 2,     # V2 deterioration — mid-severity
     "divergent_fragile": 3,
@@ -164,7 +164,7 @@ def resolve_v2_raw_outputs(
     nh_nl_threshold: float,
 ) -> tuple[list[BreadthLabel], list[dict[str, Any]]]:
     updated_labels: list[BreadthLabel] = []
-    updated_evidence = list(raw_evidence)
+    updated_evidence = [dict(evidence) for evidence in raw_evidence]
     for idx_pos, day in enumerate(dates):
         v1_raw = raw_labels[idx_pos]
         thrust_fires = (
@@ -210,15 +210,15 @@ def resolve_v2_raw_outputs(
             resolved = "broadening_breadth"
         else:
             resolved = v1_raw
-        if resolved != v1_raw:
-            updated_evidence[idx_pos] = {
-                **updated_evidence[idx_pos],
+        updated_evidence[idx_pos].update(
+            {
                 "v2_breadth_thrust": thrust_fires,
                 "v2_narrowing_breadth": narrowing_fires,
                 "v2_recovery_breadth": recovery_fires,
                 "v2_broadening_breadth": broadening_fires,
                 "v1_raw_label": v1_raw,
             }
+        )
         updated_labels.append(resolved)
     return updated_labels, updated_evidence
 
@@ -305,9 +305,9 @@ def classify_series(
 
 
 # ---------------------------------------------------------------------------
-# V2 §1D rule predicates (Ambiguity Log #21-#26, #68). The two predicates that
+# V2 §1D rule predicates (documented implementation decision). The two predicates that
 # ship today read the PIT-aware features from FeatureStore.breadth_state_v2
-# and gate on strict 5-session rate-of-change (Log #68 pin: "rising"/"falling"
+# and gate on strict 5-session rate-of-change (documented implementation decision pin: "rising"/"falling"
 # = strict change over `label_rate_of_change_lookback_sessions` sessions).
 #
 # Inputs at `t` AND at `t - lookback_sessions` must both be non-NaN; any NaN
@@ -350,7 +350,7 @@ def _evaluate_narrowing_breadth(
       AND pct_above_200dma is FALLING over `lookback_sessions`
       AND nh_nl_ratio at `dt` < nh_nl_threshold (default 0.4).
 
-    "Falling" = strict 5-session decrease per Ambiguity Log #68.
+    "Falling" = strict 5-session decrease per documented implementation decision.
     """
     pct50_pts = _lookback_endpoint_values(
         pct_above_50dma, dt=dt, lookback_sessions=lookback_sessions
@@ -388,7 +388,7 @@ def _evaluate_broadening_breadth(
       nh_nl_ratio is RISING over `lookback_sessions` (strict increase)
       AND ad_line_slope_20d at `dt` > 0 (strictly positive).
 
-    "Rising" = strict 5-session increase per Ambiguity Log #68.
+    "Rising" = strict 5-session increase per documented implementation decision.
     """
     nh_nl_pts = _lookback_endpoint_values(
         nh_nl_ratio, dt=dt, lookback_sessions=lookback_sessions
@@ -412,13 +412,13 @@ def _evaluate_recovery_breadth(
     dt: pd.Timestamp,
     lookback_sessions: int,
 ) -> bool:
-    """v2 §1D ADR 0003 / Log #70 — `recovery_breadth` predicate.
+    """v2 §1D documented implementation decision — `recovery_breadth` predicate.
 
     Fires iff:
       nh_nl_ratio is RISING over `lookback_sessions` (strict increase)
       AND ad_line_slope_20d at `dt` <= 0 (not yet strictly positive).
 
-    "Rising" = strict 5-session increase per Ambiguity Log #68.
+    "Rising" = strict 5-session increase per documented implementation decision.
 
     Disjoint from `broadening_breadth` by construction: the slope conjuncts
     `<= 0` (recovery) and `> 0` (broadening) partition the real line at zero.
@@ -442,7 +442,7 @@ def _evaluate_recovery_breadth(
 
 
 # Zweig-style `breadth_thrust` LABEL thresholds — spec-fixed, NOT configurable
-# (ADR 0003 / Log #69 pin). Values match the V2 §1D Breadth Thrust block.
+# (documented implementation decision pin). Values match the V2 §1D Breadth Thrust block.
 _BREADTH_THRUST_LOW_THRESHOLD = 0.40
 _BREADTH_THRUST_HIGH_THRESHOLD = 0.615
 _BREADTH_THRUST_LOOKBACK_SESSIONS = 10
@@ -453,7 +453,7 @@ def _evaluate_breadth_thrust(
     *,
     dt: pd.Timestamp,
 ) -> bool:
-    """v2 §1D ADR 0003 / Log #69 — `breadth_thrust` LABEL predicate.
+    """v2 §1D documented implementation decision — `breadth_thrust` LABEL predicate.
 
     Fires at session t iff:
       EXISTS b in [t-10, t-1] with breadth_thrust_feature[b] < 0.40

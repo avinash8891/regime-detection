@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import datetime as dt
+import logging
 from collections.abc import Callable
 from io import BytesIO
 from pathlib import Path
@@ -9,8 +10,10 @@ from urllib.request import Request, urlopen
 import pandas as pd
 
 from regime_data_fetch.acquisition_store import AcquisitionStore
+from regime_data_fetch.event_sources._common import HTTP_USER_AGENT
 from regime_data_fetch.event_sources.models import EventCandidate, ValidationResult
 
+LOGGER = logging.getLogger(__name__)
 VALIDATOR_ID = "hf:aufklarer-central-bank-communications"
 PARQUET_URL = (
     "https://huggingface.co/datasets/aufklarer/central-bank-communications/"
@@ -50,9 +53,22 @@ class HFCentralBankValidator:
             return []
         try:
             parquet_bytes = self.parquet_fetcher()
-            frame = pd.read_parquet(BytesIO(parquet_bytes))
-        except Exception:
-            return [_unknown(candidate) for candidate in central_bank_candidates]
+        except (TimeoutError, OSError) as exc:
+            LOGGER.warning(
+                "hf_central_bank parquet fetch failed; returning unknown fallback "
+                "validator_id=%s candidate_count=%s",
+                VALIDATOR_ID,
+                len(central_bank_candidates),
+                exc_info=True,
+            )
+            return [
+                _unknown(
+                    candidate,
+                    evidence_snippet=f"validator_source_unavailable: {type(exc).__name__}",
+                )
+                for candidate in central_bank_candidates
+            ]
+        frame = pd.read_parquet(BytesIO(parquet_bytes))
 
         if store is not None and run_id is not None:
             artifact_path = Path("data/raw/event_calendar/hf_central_bank_documents_other.parquet")
@@ -119,7 +135,7 @@ class HFCentralBankValidator:
 
 
 def fetch_hf_parquet() -> bytes:
-    request = Request(PARQUET_URL, headers={"User-Agent": "regime-detection-event-fetch/1.0"})
+    request = Request(PARQUET_URL, headers={"User-Agent": HTTP_USER_AGENT})
     with urlopen(request, timeout=60) as response:
         return response.read()
 
@@ -131,13 +147,15 @@ def _is_decision_doc(doc_type: str, title: str) -> bool:
     return any(term in combined for term in _DECISION_TERMS)
 
 
-def _unknown(candidate: EventCandidate) -> ValidationResult:
+def _unknown(
+    candidate: EventCandidate, *, evidence_snippet: str | None = None
+) -> ValidationResult:
     return ValidationResult(
         candidate_key=(candidate.event_type, candidate.date),
         validator_id=VALIDATOR_ID,
         verdict="unknown",
         evidence_url=None,
-        evidence_snippet=None,
+        evidence_snippet=evidence_snippet,
     )
 
 

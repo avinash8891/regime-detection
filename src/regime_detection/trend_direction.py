@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING, Any, Literal
 import numpy as np
 import pandas as pd
 
+from regime_detection._rolling_stats import period_return, simple_moving_average
 from regime_detection.hysteresis import apply_asymmetric_hysteresis
 from regime_detection.models import AxisOutput, DataQuality
 
@@ -55,9 +56,9 @@ def _ev_float(x: float) -> float:
 
 
 def compute_features(close: pd.Series) -> TrendDirectionFeatures:
-    sma_50 = close.rolling(50).mean()
-    sma_200 = close.rolling(200).mean()
-    return_63d = close / close.shift(63) - 1
+    sma_50 = simple_moving_average(close, window=50)
+    sma_200 = simple_moving_average(close, window=200)
+    return_63d = period_return(close, periods=63)
     return TrendDirectionFeatures(close=close, sma_50=sma_50, sma_200=sma_200, return_63d=return_63d)
 
 
@@ -74,8 +75,7 @@ def raw_label_for_day(
     both supplied, the v2 §1A precedence (line 132-134:
     ``bull > recovery > bear > sideways > transition > unknown``) is layered
     ON TOP of the v1 label. When either is ``None`` the function returns
-    the v1 label and evidence unchanged — byte-identical to the
-    pre-slice-2.5 implementation.
+    the v1 label and evidence unchanged.
     """
     close = f.close.loc[dt]
     sma50 = f.sma_50.loc[dt]
@@ -111,6 +111,7 @@ def raw_label_for_day(
     }
 
     if trend_direction_v2_features is not None and trend_direction_v2_rules is not None:
+        evidence.update(_v2_evidence_for_day(trend_direction_v2_features, dt))
         # Local import keeps the v1 path free of v2 module load on cold
         # callers (e.g., the frozen v1 replay shim) and avoids a circular
         # import (trend_direction_v2 imports TrendDirectionV2RulesConfig
@@ -135,6 +136,31 @@ def raw_label_for_day(
     return label, evidence
 
 
+def _v2_evidence_for_day(
+    features: "TrendDirectionV2Features", dt: pd.Timestamp
+) -> dict[str, Any]:
+    evidence = {
+        "efficiency_ratio_20d": _ev_float(features.efficiency_ratio_20d.loc[dt]),
+        "hurst_250d": _ev_float(features.hurst_250d.loc[dt]),
+        "slope_sma_50": _ev_float(features.slope_sma_50.loc[dt]),
+        "slope_sma_200": _ev_float(features.slope_sma_200.loc[dt]),
+        "return_126d": _ev_float(features.return_126d.loc[dt]),
+        "drawdown_252d": _ev_float(features.drawdown_252d.loc[dt]),
+        "realized_vol_21d": _ev_float(features.realized_vol_21d.loc[dt]),
+    }
+    if features.sentiment_score is not None:
+        evidence["sentiment_score"] = _ev_float(features.sentiment_score.loc[dt])
+    if features.news_sentiment_score is not None:
+        evidence["news_sentiment_score"] = _ev_float(
+            features.news_sentiment_score.loc[dt]
+        )
+    if features.sentiment_concordance is not None:
+        evidence["sentiment_concordance"] = _ev_float(
+            features.sentiment_concordance.loc[dt]
+        )
+    return evidence
+
+
 def build_raw_outputs(
     f: TrendDirectionFeatures,
     *,
@@ -143,8 +169,7 @@ def build_raw_outputs(
 ) -> tuple[list[TrendDirectionLabel], list[dict[str, Any]]]:
     """Vectorized v1 raw labels + optional v2 §1A `recovery` override.
 
-    The v1 pass is unchanged from pre-slice-2.5. When both
-    ``trend_direction_v2_features`` and ``trend_direction_v2_rules`` are
+    When both ``trend_direction_v2_features`` and ``trend_direction_v2_rules`` are
     supplied, the v2 §1A precedence at line 132-134 is applied per-day
     AFTER the v1 pass — `recovery` overrides v1 `bear` / `sideways` /
     `transition` / `unknown` (NOT `bull`, which outranks `recovery`).
@@ -194,6 +219,8 @@ def build_raw_outputs(
         from regime_detection.trend_direction_v2 import evaluate_v2_trend_label
 
         for idx, dt in enumerate(close.index):
+            if labels[idx] != "unknown":
+                evidence[idx].update(_v2_evidence_for_day(trend_direction_v2_features, dt))
             v1_label = str(labels[idx])
             v2_label = evaluate_v2_trend_label(
                 v1_label=v1_label,

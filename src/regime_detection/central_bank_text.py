@@ -7,8 +7,8 @@ non-deterministic step: same inputs must produce identical outputs.
 A free, deterministic lexicon scorer is the spec-amendment substitute,
 following the same precedent as:
 
-- DBC for the Bloomberg Commodity Index (Ambiguity Log #48)
-- AAII bull-bear for survey sentiment (Log #32)
+- DBC for the Bloomberg Commodity Index (documented implementation decision)
+- AAII bull-bear for survey sentiment (documented implementation decision)
 - Cleveland Fed nowcast for analyst CPI consensus (ADR 0006)
 - VIXCLS/100 for options-implied 30d vol (ADR 0005)
 - fja05680 for vendor PIT membership
@@ -24,7 +24,7 @@ accuracy (vs 49.4% baseline), but ~70.9% accuracy CONDITIONAL on the
 lexicon firing on a directional sentence. The upgrade is gated on
 the +750MB CPU container delta + model-SHA pinning discipline +
 running two cheaper diagnostics first (test redesign + lexicon
-ablation). See `docs/spec_code_data_audit_2026_05_15.md` §4 "M1
+ablation). See the source-data audit
 follow-up — FOMC-RoBERTa classifier swap (deferred, TODO)" for the
 full deferral rationale and the trigger criteria.
 
@@ -57,7 +57,7 @@ from typing import Literal
 import pandas as pd
 
 
-LOG = logging.getLogger(__name__)
+LOGGER = logging.getLogger(__name__)
 
 
 # ---------------------------------------------------------------------------
@@ -383,7 +383,7 @@ def to_daily_score_series(
     Same-date collisions (FOMC minutes and a Powell speech on the same
     date, for example) are resolved by the ``same_date_aggregation``
     strategy — see ``_aggregate_same_date_rows`` for the options. The
-    default ``pick_longer`` matches the audit M1 initial wiring; the
+    default ``pick_longer`` matches the source-data audit initial wiring; the
     other two options exist as v2 §9.1 walk-forward calibration knobs.
 
     A trailing ``smoothing_window_sessions`` rolling mean (default 30

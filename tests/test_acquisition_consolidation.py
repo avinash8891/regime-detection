@@ -1,16 +1,29 @@
 from __future__ import annotations
 
+import logging
 import sqlite3
 from pathlib import Path
 
 import pandas as pd
+import pytest
 
+import regime_data_fetch.acquisition_consolidation as acquisition_consolidation
 from regime_data_fetch.acquisition_consolidation import (
     ConsolidationSource,
+    DAILY_OHLCV_ROWS_TABLE,
     consolidate_acquisition_dbs,
 )
 from regime_data_fetch.acquisition_store import AcquisitionStore
 from regime_data_fetch.local_daily_ohlcv_sqlite import _ensure_daily_ohlcv_table
+
+
+def test_consolidate_acquisition_dbs_requires_explicit_sources(tmp_path: Path) -> None:
+    target = tmp_path / "canonical.db"
+
+    with pytest.raises(ValueError, match="requires explicit sources"):
+        consolidate_acquisition_dbs(target_db_path=target)
+
+    assert not target.exists()
 
 
 def test_consolidate_acquisition_dbs_merges_runs_artifacts_outputs_and_ohlcv(tmp_path: Path) -> None:
@@ -50,7 +63,7 @@ def test_consolidate_acquisition_dbs_merges_runs_artifacts_outputs_and_ohlcv(tmp
         fetch_runs = conn.execute("SELECT fetch_type, status, params_json, notes FROM fetch_runs ORDER BY run_id").fetchall()
         artifacts = conn.execute("SELECT source_name, artifact_kind, notes FROM artifacts ORDER BY artifact_id").fetchall()
         outputs = conn.execute("SELECT output_kind, notes FROM derived_outputs ORDER BY output_kind").fetchall()
-        ohlcv = conn.execute("SELECT symbol, date, close FROM daily_ohlcv_rows").fetchall()
+        ohlcv = conn.execute(f"SELECT symbol, date, close FROM {DAILY_OHLCV_ROWS_TABLE}").fetchall()
         events = conn.execute("SELECT event_date, event_type FROM event_calendar_rows").fetchall()
         pmi = conn.execute("SELECT dataset_kind, series_name, period, value FROM pmi_rows").fetchall()
 
@@ -63,6 +76,24 @@ def test_consolidate_acquisition_dbs_merges_runs_artifacts_outputs_and_ohlcv(tmp
     assert ohlcv == [("SPY", "2026-05-05", 565.0)]
     assert events == [("2026-05-01", "CPI")]
     assert pmi == [("history", "manufacturing", "2026-04", 52.7)]
+
+
+def test_augment_params_json_logs_unparseable_json_without_raw_payload(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    raw_payload = '{"api_key": "secret-token"'
+    caplog.set_level(logging.WARNING, logger="regime_data_fetch.acquisition_consolidation")
+
+    augmented = acquisition_consolidation._augment_params_json(
+        raw_payload,
+        source_label="source-one",
+        source_db_path="/tmp/source-one.db",
+    )
+
+    assert '"raw_params_json": "{\\"api_key\\": \\"secret-token\\""' in augmented
+    assert "params_json unparseable" in caplog.text
+    assert "source_label=source-one" in caplog.text
+    assert "secret-token" not in caplog.text
 
 
 def _build_source_db_one(path: Path) -> None:

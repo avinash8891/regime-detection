@@ -3,162 +3,55 @@ from __future__ import annotations
 import datetime as dt
 import json
 import time
-from dataclasses import asdict, dataclass
 from pathlib import Path
 import urllib.error
 import urllib.request
 
 import pandas as pd
-from openpyxl import load_workbook
 
 from regime_data_fetch.acquisition_store import AcquisitionStore
+from regime_data_fetch.aggregate_eps_constants import (
+    EPS_DIR_NAME,
+    EPS_REVISION_LOOKBACK_WEEKS,
+    SOURCE_NAME,
+    SOURCE_URL,
+    SPGLOBAL_EPS_MANUAL_REL_PATH,
+    WAYBACK_CDX_URL,
+    WAYBACK_DIR_NAME,
+    WAYBACK_TIMELINE_FILENAME,
+    WEEKLY_HISTORY_FILENAME,
+)
+from regime_data_fetch.aggregate_eps_models import (
+    AggregateEPSFetchError,
+    AggregateEPSSnapshot,
+    EPSHorizonLabel,
+    EPSWaybackSnapshot,
+    ParsedAggregateEPSWorkbook,
+)
+from regime_data_fetch.aggregate_eps_reports import build_aggregate_eps_report
+from regime_data_fetch.aggregate_eps_wayback import (
+    append_wayback_status as _append_wayback_status,
+    filter_wayback_snapshots as _filter_wayback_snapshots,
+    parse_wayback_cdx_json as _parse_wayback_cdx_json,
+)
+from regime_data_fetch.aggregate_eps_workbook import (
+    parse_sp500_eps_workbook as _parse_sp500_eps_workbook,
+)
 
 
-SOURCE_NAME = "S&P Global aggregate forward EPS workbook"
-SOURCE_URL = "https://www.spglobal.com/spdji/en/documents/additional-material/sp-500-eps-est.xlsx"
-SHEET_NAME = "ESTIMATES&PEs"
-WAYBACK_CDX_URL = "https://web.archive.org/cdx/search/cdx"
-
-# Weekly-snapshot accumulator (Log #48 closure path). Each weekly run of
-# `run_aggregate_eps_fetch` appends the workbook's current snapshot to this
-# parquet, deduped by observation_date. Once >= 4 distinct weekly rows have
-# accumulated, `compute_eps_revision_direction_4w` produces a non-NaN
-# revision series and the §2B `earnings_expansion` / `earnings_contraction`
-# labels unlock. The single S&P workbook only exposes quarterly history +
-# one current point, so weekly granularity can only be built by
-# accumulating one current-snapshot row per weekly fetch.
-WEEKLY_HISTORY_FILENAME = "sp500_eps_weekly_history.parquet"
-# Spec §2B: revision direction over 4 weeks. 4 rows back in the weekly-sorted
-# accumulator history (one row per weekly fetch).
-EPS_REVISION_LOOKBACK_WEEKS = 4
-# Output sub-directory + Wayback timeline filenames (shared by the live
-# fetch, the Wayback backfill, and the accumulator-seeding bridge).
-EPS_DIR_NAME = "aggregate_forward_eps"
-WAYBACK_DIR_NAME = "aggregate_forward_eps_wayback"
-WAYBACK_TIMELINE_FILENAME = "sp500_eps_wayback_timeline.parquet"
-
-
-class AggregateEPSFetchError(RuntimeError):
-    pass
-
-
-@dataclass(frozen=True)
-class AggregateEPSSnapshot:
-    observation_date: dt.date
-    observation_label: str
-    forward_estimate_label: str | None
-    forward_estimate_value: float | None
-    estimate_2025e: float | None
-    estimate_q4_2025e: float | None
-    estimate_2026e: float | None
-    price: float | None
-    pe_2025e: float | None
-    pe_2026e: float | None
-    change_vs_prior_observation_2025e: float | None
-    change_vs_prior_observation_q4_2025e: float | None
-    change_vs_prior_observation_2026e: float | None
-    change_vs_prior_observation_price: float | None
-    change_vs_prior_observation_pe_2025e: float | None
-    change_vs_prior_observation_pe_2026e: float | None
-
-
-@dataclass(frozen=True)
-class ParsedAggregateEPSWorkbook:
-    workbook_as_of_date: dt.date
-    public_files_discontinued: bool
-    historical_snapshots: list[AggregateEPSSnapshot]
-    current_snapshot: AggregateEPSSnapshot
-
-
-@dataclass(frozen=True)
-class EPSWaybackSnapshot:
-    timestamp: str
-    archive_url: str
-    snapshot_date: dt.date
+for _public_type in (
+    AggregateEPSFetchError,
+    AggregateEPSSnapshot,
+    EPSHorizonLabel,
+    EPSWaybackSnapshot,
+    ParsedAggregateEPSWorkbook,
+):
+    _public_type.__module__ = __name__
+del _public_type
 
 
 def parse_sp500_eps_workbook(workbook_path: Path) -> ParsedAggregateEPSWorkbook:
-    if workbook_path.suffix.lower() == ".xls":
-        return _parse_legacy_sp500_eps_workbook(workbook_path)
-
-    wb = load_workbook(workbook_path, read_only=True, data_only=True)
-    if SHEET_NAME not in wb.sheetnames:
-        raise AggregateEPSFetchError(f"Workbook missing expected sheet {SHEET_NAME!r}")
-
-    ws = wb[SHEET_NAME]
-    workbook_as_of_date = _extract_workbook_as_of_date(ws)
-    public_files_discontinued = _extract_discontinued_flag(ws)
-    table_start_row, header_labels = _find_observation_header_row(ws)
-    current_changes = _find_current_change_row(ws, table_start_row)
-
-    historical: list[AggregateEPSSnapshot] = []
-    current_snapshot: AggregateEPSSnapshot | None = None
-    for row_idx in range(table_start_row + 1, ws.max_row + 1):
-        row = next(ws.iter_rows(min_row=row_idx, max_row=row_idx, values_only=True))
-        first = row[0]
-        if isinstance(first, dt.datetime):
-            label_map = _build_observation_value_map(header_labels, row)
-            historical.append(
-                AggregateEPSSnapshot(
-                    observation_date=first.date(),
-                    observation_label="historical_quarter_end",
-                    forward_estimate_label=_select_forward_estimate_label(header_labels),
-                    forward_estimate_value=_select_forward_estimate_value(label_map, header_labels),
-                    estimate_2025e=_value_for_exact_label(label_map, "2025E"),
-                    estimate_q4_2025e=_value_for_exact_label(label_map, "Q4 2025E"),
-                    estimate_2026e=_value_for_exact_label(label_map, "2026E"),
-                    price=_value_for_price(label_map),
-                    pe_2025e=_value_for_exact_label(label_map, "2025E P/E"),
-                    pe_2026e=_value_for_pe(label_map, "2026"),
-                    change_vs_prior_observation_2025e=None,
-                    change_vs_prior_observation_q4_2025e=None,
-                    change_vs_prior_observation_2026e=None,
-                    change_vs_prior_observation_price=None,
-                    change_vs_prior_observation_pe_2025e=None,
-                    change_vs_prior_observation_pe_2026e=None,
-                )
-            )
-            continue
-
-        if isinstance(first, str) and first.strip().lower() == "current":
-            label_map = _build_observation_value_map(header_labels, row)
-            current_snapshot = AggregateEPSSnapshot(
-                observation_date=workbook_as_of_date,
-                observation_label="current",
-                forward_estimate_label=_select_forward_estimate_label(header_labels),
-                forward_estimate_value=_select_forward_estimate_value(label_map, header_labels),
-                estimate_2025e=_value_for_exact_label(label_map, "2025E"),
-                estimate_q4_2025e=_value_for_exact_label(label_map, "Q4 2025E"),
-                estimate_2026e=_value_for_exact_label(label_map, "2026E"),
-                price=_value_for_price(label_map),
-                pe_2025e=_value_for_exact_label(label_map, "2025E P/E"),
-                pe_2026e=_value_for_pe(label_map, "2026"),
-                change_vs_prior_observation_2025e=current_changes[0],
-                change_vs_prior_observation_q4_2025e=current_changes[1],
-                change_vs_prior_observation_2026e=current_changes[2],
-                change_vs_prior_observation_price=current_changes[3],
-                change_vs_prior_observation_pe_2025e=current_changes[4],
-                change_vs_prior_observation_pe_2026e=current_changes[5],
-            )
-            continue
-
-        if current_snapshot is not None:
-            break
-
-    if not historical:
-        raise AggregateEPSFetchError("Workbook contained no historical aggregate EPS snapshots")
-    if current_snapshot is None:
-        raise AggregateEPSFetchError("Workbook missing current aggregate EPS snapshot row")
-
-    return ParsedAggregateEPSWorkbook(
-        workbook_as_of_date=workbook_as_of_date,
-        public_files_discontinued=public_files_discontinued,
-        historical_snapshots=historical,
-        current_snapshot=current_snapshot,
-    )
-
-
-_SPGLOBAL_EPS_MANUAL_REL_PATH = Path("spglobal_eps") / "sp-500-eps-est.xlsx"
+    return _parse_sp500_eps_workbook(workbook_path, read_excel=pd.read_excel)
 
 
 def download_spglobal_eps_workbook(
@@ -167,20 +60,10 @@ def download_spglobal_eps_workbook(
     source_url: str = SOURCE_URL,
     timeout_seconds: int = 60,
 ) -> Path:
-    """Attempt to download the S&P Global aggregate forward-EPS workbook
-    from the canonical public URL into ``out_path``.
+    """Download the weekly S&P aggregate forward-EPS workbook via direct HTTP.
 
-    Cadence intent: the spdji workbook is published WEEKLY (typically Wed/Thu
-    around the earnings revision cycle). Slice 5 §2B's deferred
-    ``aggregate_forward_eps_revision_direction_4w`` predicate needs at least
-    4 consecutive weekly observations to compute the rolling 4-week
-    direction, so this fetcher is intended to run on a weekly schedule.
-
-    Known issue: ``www.spglobal.com`` is served behind Akamai (AkamaiGHost)
-    bot mitigation that returns HTTP 403 to direct HTTP requests including
-    browser-User-Agent spoofs. ``run_aggregate_eps_auto_fetch`` handles that
-    by trying a browser-backed download next, while still honoring an
-    operator-staged workbook at ``data/raw/spglobal_eps/sp-500-eps-est.xlsx``.
+    Direct S&P requests can hit Akamai 403s; the auto fetcher falls back to a
+    browser session or an operator-staged workbook at the canonical raw path.
     """
     out_path.parent.mkdir(parents=True, exist_ok=True)
     request = urllib.request.Request(
@@ -235,12 +118,7 @@ def download_spglobal_eps_workbook_with_browser(
     executable_path: Path | None = None,
     headless: bool = True,
 ) -> Path:
-    """Download the S&P workbook through a real browser session.
-
-    This is the long-term fallback for Akamai-protected S&P downloads: direct
-    HTTP remains first, then a scheduler can use a persistent browser profile
-    that has already passed the provider's browser checks.
-    """
+    """Download the S&P workbook through a persistent browser session."""
     try:
         from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
         from playwright.sync_api import sync_playwright
@@ -304,26 +182,13 @@ def run_aggregate_eps_auto_fetch(
     browser_headless: bool = True,
     browser_timeout_ms: int = 120_000,
 ) -> Path:
-    """Fetch + parse the latest S&P aggregate-EPS workbook.
+    """Fetch and parse the latest weekly S&P aggregate-EPS workbook.
 
-    Two-step resolution:
-    1. If ``out_dir / spglobal_eps / sp-500-eps-est.xlsx`` already exists
-       (operator manually downloaded — see
-       ``download_spglobal_eps_workbook`` docstring for why), parse it
-       directly. This is the canonical weekly cadence path:
-         a. Each week, operator opens the spdji URL in a browser, downloads
-            the .xlsx, copies it to data/raw/spglobal_eps/sp-500-eps-est.xlsx.
-         b. Operator (or a scheduler) runs ``--fetch eps-spglobal-auto``,
-            which detects the file and emits the same parquet + report
-            artifacts as the manual ``--eps-workbook`` path.
-    2. If the file is absent, try downloading from ``source_url`` directly.
-       If direct download is blocked, try the browser-backed download path.
-
-    Cadence: invoke weekly. Polling daily is wasteful — the workbook URL
-    serves the same file between weekly publications.
+    Resolution order is operator-staged workbook, direct HTTP, then browser
+    fallback; all paths emit the same parquet and report artifacts.
     """
     out_dir.mkdir(parents=True, exist_ok=True)
-    workbook_path = out_dir / _SPGLOBAL_EPS_MANUAL_REL_PATH
+    workbook_path = out_dir / SPGLOBAL_EPS_MANUAL_REL_PATH
     if not workbook_path.exists():
         try:
             workbook_downloader(out_path=workbook_path, source_url=source_url)
@@ -349,17 +214,7 @@ def append_weekly_eps_snapshot(
     eps_dir: Path,
     current_snapshot: AggregateEPSSnapshot,
 ) -> pd.DataFrame:
-    """Append one weekly current-snapshot row to the accumulator parquet.
-
-    Idempotent by ``observation_date``: re-running the same weekly workbook
-    overwrites that date's row rather than double-counting it (the operator
-    may re-run a fetch for the same week). Returns the full accumulated
-    weekly-history DataFrame (sorted ascending by observation_date).
-
-    Closes Log #48's "workbook snapshot path does not expose weekly time
-    series" blocker — the weekly series is built by accumulating one row
-    per weekly fetch rather than read from a single workbook.
-    """
+    """Append one idempotent weekly snapshot row to the EPS history parquet."""
     history_path = eps_dir / WEEKLY_HISTORY_FILENAME
     new_row = pd.DataFrame(
         [
@@ -391,26 +246,7 @@ def seed_weekly_history_from_wayback_timeline(
     out_dir: Path,
     timeline_path: Path | None = None,
 ) -> pd.DataFrame:
-    """Seed the weekly-history accumulator from a Wayback backfill timeline.
-
-    ``run_wayback_aggregate_eps_fetch`` materialises historical workbook
-    snapshots into ``sp500_eps_wayback_timeline.parquet`` but never feeds
-    them into the weekly-history accumulator that
-    ``compute_eps_revision_direction_4w`` reads. This bridges that gap: each
-    timeline row becomes one accumulator row keyed by ``workbook_as_of_date``.
-
-    Collapses the §2B `earnings_expansion` / `earnings_contraction`
-    cold-start. Instead of waiting for more than ``EPS_REVISION_LOOKBACK_WEEKS``
-    *live* weekly fetches to accumulate, a one-time Wayback backfill + seed
-    pre-fills the accumulator and the 4-week revision series goes non-NaN
-    immediately.
-
-    Idempotent and live-safe: on an ``observation_date`` collision the
-    EXISTING accumulator row wins — a live ``run_aggregate_eps_fetch`` row is
-    authoritative over a Wayback-archived snapshot for the same date, and
-    re-running the seed never clobbers live data. Returns the full merged
-    weekly-history DataFrame, sorted ascending by ``observation_date``.
-    """
+    """Seed weekly EPS history from Wayback snapshots without clobbering live rows."""
     if timeline_path is None:
         timeline_path = out_dir / WAYBACK_DIR_NAME / WAYBACK_TIMELINE_FILENAME
     if not timeline_path.exists():
@@ -556,7 +392,7 @@ def run_aggregate_eps_fetch(
         parquet_path = eps_dir / "sp500_eps_snapshots.parquet"
         df.to_parquet(parquet_path, index=False)
 
-        # Weekly-snapshot accumulator (Log #48 closure). Append this run's
+        # Weekly-snapshot accumulator (documented implementation decision). Append this run's
         # current snapshot to the persistent weekly-history parquet, then
         # compute the 4-week revision direction. The revision series is
         # all-NaN until > EPS_REVISION_LOOKBACK_WEEKS weekly rows have
@@ -567,44 +403,16 @@ def run_aggregate_eps_fetch(
         weekly_history_path = eps_dir / WEEKLY_HISTORY_FILENAME
         revision_series = compute_eps_revision_direction_4w(weekly_history)
         revision_available = bool(revision_series.notna().any())
-
-        current_dict = asdict(parsed.current_snapshot)
-        current_dict["observation_date"] = parsed.current_snapshot.observation_date.isoformat()
-        report = {
-            "as_of_utc": dt.datetime.now(dt.timezone.utc).isoformat(),
-            "source": SOURCE_NAME,
-            "source_url": SOURCE_URL,
-            "source_path": str(workbook_path),
-            "workbook_as_of_date": parsed.workbook_as_of_date.isoformat(),
-            "public_files_discontinued": parsed.public_files_discontinued,
-            "counts": {
-                "historical_snapshots": len(parsed.historical_snapshots),
-                "current_snapshots": 1,
-                "weekly_history_rows": len(weekly_history),
-            },
-            "current_snapshot": current_dict,
-            "limitations": {
-                "aggregate_forward_eps_revision_direction_4w_available": revision_available,
-                "reason": (
-                    "Revision direction available — the weekly-snapshot accumulator "
-                    f"holds {len(weekly_history)} rows (> {EPS_REVISION_LOOKBACK_WEEKS} "
-                    "required for the 4-week lookback)."
-                    if revision_available
-                    else (
-                        "The single S&P workbook exposes quarterly history plus one "
-                        f"current snapshot. The weekly accumulator holds "
-                        f"{len(weekly_history)} row(s); "
-                        f"> {EPS_REVISION_LOOKBACK_WEEKS} weekly fetches are required "
-                        "before the 4-week revision direction is non-NaN."
-                    )
-                ),
-            },
-            "paths": {
-                "aggregate_eps_parquet": str(parquet_path),
-                "aggregate_eps_weekly_history_parquet": str(weekly_history_path),
-                "acquisition_db": str(acquisition_db_path) if acquisition_db_path else None,
-            },
-        }
+        report = build_aggregate_eps_report(
+            as_of_utc=dt.datetime.now(dt.timezone.utc).isoformat(),
+            workbook_path=workbook_path,
+            parsed=parsed,
+            weekly_history=weekly_history,
+            revision_available=revision_available,
+            parquet_path=parquet_path,
+            weekly_history_path=weekly_history_path,
+            acquisition_db_path=acquisition_db_path,
+        )
         report_path = out_dir / "aggregate_eps_fetch_report.json"
         report_path.write_text(json.dumps(report, indent=2))
 
@@ -636,39 +444,7 @@ def run_aggregate_eps_fetch(
 
 
 def parse_wayback_cdx_json(cdx_json: str, *, target_url: str) -> list[EPSWaybackSnapshot]:
-    try:
-        rows = json.loads(cdx_json)
-    except json.JSONDecodeError as exc:
-        raise AggregateEPSFetchError("Wayback CDX response was not valid JSON") from exc
-
-    if not isinstance(rows, list) or not rows:
-        raise AggregateEPSFetchError("Wayback CDX response contained no rows")
-    if rows[0] != ["timestamp", "original", "statuscode", "mimetype"]:
-        raise AggregateEPSFetchError(f"Unexpected Wayback CDX header: {rows[0]!r}")
-
-    snapshots: list[EPSWaybackSnapshot] = []
-    for idx, row in enumerate(rows[1:], start=2):
-        if not isinstance(row, list) or len(row) != 4:
-            raise AggregateEPSFetchError(f"Wayback CDX row {idx} had unexpected shape")
-        timestamp, original, statuscode, mimetype = row
-        if statuscode != "200":
-            continue
-        if original != target_url:
-            continue
-        if "spreadsheetml.sheet" not in mimetype and "excel" not in mimetype:
-            continue
-        snapshot_dt = dt.datetime.strptime(timestamp[:8], "%Y%m%d").date()
-        snapshots.append(
-            EPSWaybackSnapshot(
-                timestamp=timestamp,
-                archive_url=f"https://web.archive.org/web/{timestamp}if_/{target_url}",
-                snapshot_date=snapshot_dt,
-            )
-        )
-
-    if not snapshots:
-        raise AggregateEPSFetchError("Wayback CDX response contained no usable workbook snapshots")
-    return snapshots
+    return _parse_wayback_cdx_json(cdx_json, target_url=target_url)
 
 
 def fetch_wayback_cdx(
@@ -956,260 +732,3 @@ def run_wayback_aggregate_eps_fetch(
         if store and fetch_run:
             store.finish_fetch_run(run_id=fetch_run.run_id, status="failed", notes=str(exc))
         raise
-
-
-def _extract_workbook_as_of_date(ws) -> dt.date:
-    for row_idx in range(1, min(30, ws.max_row) + 1):
-        row = next(ws.iter_rows(min_row=row_idx, max_row=row_idx, values_only=True))
-        first = row[0]
-        if isinstance(first, dt.datetime):
-            return first.date()
-    raise AggregateEPSFetchError("Could not find workbook as-of date in ESTIMATES&PEs sheet")
-
-
-def _parse_legacy_sp500_eps_workbook(workbook_path: Path) -> ParsedAggregateEPSWorkbook:
-    df = pd.read_excel(workbook_path, sheet_name=SHEET_NAME, header=None)
-    workbook_as_of_date = _extract_legacy_workbook_as_of_date(df)
-    table_start_row, header_labels = _find_legacy_observation_header_row(df)
-
-    historical: list[AggregateEPSSnapshot] = []
-    current_snapshot: AggregateEPSSnapshot | None = None
-    for row_idx in range(table_start_row + 1, len(df)):
-        row = df.iloc[row_idx].tolist()
-        first = row[0] if row else None
-        if isinstance(first, dt.datetime):
-            label_map = _build_legacy_observation_value_map(header_labels, row)
-            historical.append(
-                AggregateEPSSnapshot(
-                    observation_date=first.date(),
-                    observation_label="historical_quarter_end",
-                    forward_estimate_label=_select_legacy_forward_estimate_label(header_labels),
-                    forward_estimate_value=_select_legacy_forward_estimate_value(label_map, header_labels),
-                    estimate_2025e=None,
-                    estimate_q4_2025e=_value_for_legacy_exact_label(label_map, "Q4,'13 EST"),
-                    estimate_2026e=None,
-                    price=_value_for_legacy_exact_label(label_map, "IDX PRICE"),
-                    pe_2025e=None,
-                    pe_2026e=None,
-                    change_vs_prior_observation_2025e=None,
-                    change_vs_prior_observation_q4_2025e=None,
-                    change_vs_prior_observation_2026e=None,
-                    change_vs_prior_observation_price=None,
-                    change_vs_prior_observation_pe_2025e=None,
-                    change_vs_prior_observation_pe_2026e=None,
-                )
-            )
-            continue
-
-        if isinstance(first, str) and first.strip().lower() == "current":
-            label_map = _build_legacy_observation_value_map(header_labels, row)
-            current_snapshot = AggregateEPSSnapshot(
-                observation_date=workbook_as_of_date,
-                observation_label="current",
-                forward_estimate_label=_select_legacy_forward_estimate_label(header_labels),
-                forward_estimate_value=_select_legacy_forward_estimate_value(label_map, header_labels),
-                estimate_2025e=None,
-                estimate_q4_2025e=_value_for_legacy_exact_label(label_map, "Q4,'13 EST"),
-                estimate_2026e=None,
-                price=_value_for_legacy_exact_label(label_map, "IDX PRICE"),
-                pe_2025e=None,
-                pe_2026e=None,
-                change_vs_prior_observation_2025e=None,
-                change_vs_prior_observation_q4_2025e=None,
-                change_vs_prior_observation_2026e=None,
-                change_vs_prior_observation_price=None,
-                change_vs_prior_observation_pe_2025e=None,
-                change_vs_prior_observation_pe_2026e=None,
-            )
-            continue
-
-        if current_snapshot is not None:
-            break
-
-    if not historical:
-        raise AggregateEPSFetchError("Legacy workbook contained no historical aggregate EPS snapshots")
-    if current_snapshot is None:
-        raise AggregateEPSFetchError("Legacy workbook missing current aggregate EPS snapshot row")
-
-    return ParsedAggregateEPSWorkbook(
-        workbook_as_of_date=workbook_as_of_date,
-        public_files_discontinued=False,
-        historical_snapshots=historical,
-        current_snapshot=current_snapshot,
-    )
-
-
-def _extract_discontinued_flag(ws) -> bool:
-    for row_idx in range(1, min(15, ws.max_row) + 1):
-        row = next(ws.iter_rows(min_row=row_idx, max_row=row_idx, values_only=True))
-        first = row[0]
-        if isinstance(first, str) and "public files have been discontinued" in first.lower():
-            return True
-    return False
-
-
-def _find_observation_header_row(ws) -> tuple[int, list[str]]:
-    for row_idx in range(1, ws.max_row + 1):
-        row = next(ws.iter_rows(min_row=row_idx, max_row=row_idx, values_only=True))
-        if row[0] == "OBSERVATION":
-            labels: list[str] = []
-            for value in row[1:]:
-                label = str(value).strip() if value is not None else ""
-                if label == "OBSERVATION":
-                    break
-                labels.append(label)
-            if any(label.endswith("E") for label in labels):
-                return row_idx, labels
-    raise AggregateEPSFetchError("Could not find aggregate EPS observation header row")
-
-
-def _extract_legacy_workbook_as_of_date(df: pd.DataFrame) -> dt.date:
-    for row_idx in range(min(10, len(df))):
-        value = df.iat[row_idx, 0]
-        if isinstance(value, dt.datetime):
-            return value.date()
-    raise AggregateEPSFetchError("Could not find legacy workbook as-of date in ESTIMATES&PEs sheet")
-
-
-def _find_legacy_observation_header_row(df: pd.DataFrame) -> tuple[int, list[str]]:
-    for row_idx in range(len(df)):
-        first = df.iat[row_idx, 0]
-        if isinstance(first, str) and first.strip() == "OBSERVATION":
-            labels: list[str] = []
-            for col_idx in range(1, df.shape[1]):
-                value = df.iat[row_idx, col_idx]
-                label = str(value).strip() if value is not None else ""
-                if not label or label.lower() == "nan":
-                    break
-                labels.append(label)
-            if "2014 EST" in labels or "2013 EST" in labels:
-                return row_idx, labels
-    raise AggregateEPSFetchError("Could not find legacy aggregate EPS observation header row")
-
-
-def _build_legacy_observation_value_map(labels: list[str], row: list[object]) -> dict[str, float | None]:
-    values: dict[str, float | None] = {}
-    for idx, label in enumerate(labels, start=1):
-        raw = row[idx] if idx < len(row) else None
-        values[label] = _as_float(raw) if raw is not None and not pd.isna(raw) else None
-    return values
-
-
-def _value_for_legacy_exact_label(values: dict[str, float | None], label: str) -> float | None:
-    return values.get(label)
-
-
-def _select_legacy_forward_estimate_label(labels: list[str]) -> str | None:
-    for label in reversed(labels):
-        if "EST" in label and label != "Q4,'13 EST":
-            return label
-    return None
-
-
-def _select_legacy_forward_estimate_value(values: dict[str, float | None], labels: list[str]) -> float | None:
-    label = _select_legacy_forward_estimate_label(labels)
-    if label is None:
-        return None
-    return values.get(label)
-
-
-def _find_current_change_row(ws, header_row: int) -> tuple[float | None, float | None, float | None, float | None, float | None, float | None]:
-    for row_idx in range(header_row + 1, min(header_row + 20, ws.max_row) + 1):
-        row = next(ws.iter_rows(min_row=row_idx, max_row=row_idx, values_only=True))
-        first = row[0]
-        if isinstance(first, str) and first.strip().lower() == "change qtr":
-            return (
-                _as_float(row[1]),
-                _as_float(row[2]),
-                _as_float(row[3]),
-                _as_float(row[4]),
-                _as_float(row[5]),
-                _as_float(row[6]),
-            )
-    raise AggregateEPSFetchError("Could not find current aggregate EPS change row")
-
-
-def _as_float(value: object) -> float | None:
-    if value is None:
-        return None
-    return float(value)
-
-
-def _build_observation_value_map(labels: list[str], row: tuple[object, ...]) -> dict[str, float | None]:
-    values: dict[str, float | None] = {}
-    for idx, label in enumerate(labels, start=1):
-        if not label:
-            continue
-        values[label] = _as_float(row[idx]) if idx < len(row) else None
-    return values
-
-
-def _value_for_exact_label(values: dict[str, float | None], label: str) -> float | None:
-    return values.get(label)
-
-
-def _value_for_price(values: dict[str, float | None]) -> float | None:
-    return values.get("PRICE") or values.get(" PRICE")
-
-
-def _value_for_pe(values: dict[str, float | None], year_prefix: str) -> float | None:
-    for label, value in values.items():
-        normalized = label.replace(" ", "")
-        if normalized.startswith(year_prefix) and normalized.endswith("P/E"):
-            return value
-    return None
-
-
-def _select_forward_estimate_label(labels: list[str]) -> str | None:
-    annual_labels = [
-        label
-        for label in labels
-        if len(label) == 5 and label[:4].isdigit() and label.endswith("E")
-    ]
-    if not annual_labels:
-        return None
-    return annual_labels[-1]
-
-
-def _select_forward_estimate_value(values: dict[str, float | None], labels: list[str]) -> float | None:
-    label = _select_forward_estimate_label(labels)
-    if label is None:
-        return None
-    return values.get(label)
-
-
-def _filter_wayback_snapshots(
-    snapshots: list[EPSWaybackSnapshot],
-    *,
-    from_date: dt.date | None,
-    to_date: dt.date | None,
-    max_snapshots: int | None,
-) -> list[EPSWaybackSnapshot]:
-    filtered = [
-        snapshot
-        for snapshot in snapshots
-        if (from_date is None or snapshot.snapshot_date >= from_date)
-        and (to_date is None or snapshot.snapshot_date <= to_date)
-    ]
-    filtered.sort(key=lambda snapshot: (snapshot.snapshot_date, snapshot.timestamp))
-    if max_snapshots is not None:
-        return filtered[:max_snapshots]
-    return filtered
-
-
-def _append_wayback_status(
-    status_path: Path,
-    *,
-    snapshot: EPSWaybackSnapshot,
-    status: str,
-    detail: str,
-) -> None:
-    record = {
-        "snapshot_date": snapshot.snapshot_date.isoformat(),
-        "timestamp": snapshot.timestamp,
-        "archive_url": snapshot.archive_url,
-        "status": status,
-        "detail": detail,
-    }
-    with status_path.open("a") as handle:
-        handle.write(json.dumps(record) + "\n")

@@ -17,17 +17,24 @@ from regime_data_fetch.artifact_store import (
 )
 
 
+def _store_uri(root: Path, key: str) -> str:
+    return (root.resolve() / key).as_uri()
+
+
 def test_local_artifact_store_put_get_and_verify_hash(tmp_path: Path) -> None:
     source = tmp_path / "source.parquet"
     source.write_bytes(b"regime-data")
-    store = LocalArtifactStore(tmp_path / "store")
+    store_root = tmp_path / "store"
+    store = LocalArtifactStore(store_root)
 
     stored = store.put_file(source, "canonical/macro/fred_macro_series.parquet")
     destination = tmp_path / "materialized" / "fred_macro_series.parquet"
 
     copied = store.get_file(stored.uri, destination, expected_sha256=stored.sha256)
 
-    assert stored.uri == "canonical/macro/fred_macro_series.parquet"
+    assert stored.uri == _store_uri(
+        store_root, "canonical/macro/fred_macro_series.parquet"
+    )
     assert stored.size_bytes == len(b"regime-data")
     assert stored.sha256 == sha256_file(source)
     assert copied == destination
@@ -116,8 +123,10 @@ def test_s3_artifact_store_put_file_and_bytes_share_idempotent_overwrite_contrac
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    class MissingObject(Exception):
-        response = {"Error": {"Code": "404"}}
+    class ClientError(Exception):
+        def __init__(self, response: dict[str, object], operation_name: str) -> None:
+            super().__init__(operation_name)
+            self.response = response
 
     class FakeS3Client:
         def __init__(self) -> None:
@@ -126,7 +135,7 @@ def test_s3_artifact_store_put_file_and_bytes_share_idempotent_overwrite_contrac
         def head_object(self, Bucket: str, Key: str) -> dict[str, object]:
             del Bucket
             if Key not in self.objects:
-                raise MissingObject()
+                raise ClientError({"Error": {"Code": "404"}}, "HeadObject")
             payload, metadata = self.objects[Key]
             return {"Metadata": metadata, "ContentLength": len(payload)}
 
@@ -144,7 +153,12 @@ def test_s3_artifact_store_put_file_and_bytes_share_idempotent_overwrite_contrac
 
     client = FakeS3Client()
     fake_boto3 = types.SimpleNamespace(client=lambda service: client)
+    fake_botocore = types.SimpleNamespace(
+        exceptions=types.SimpleNamespace(ClientError=ClientError)
+    )
     monkeypatch.setitem(sys.modules, "boto3", fake_boto3)
+    monkeypatch.setitem(sys.modules, "botocore", fake_botocore)
+    monkeypatch.setitem(sys.modules, "botocore.exceptions", fake_botocore.exceptions)
     store = S3ArtifactStore("s3://regime-data/artifacts")
     first = tmp_path / "first.csv"
     second = tmp_path / "second.csv"
@@ -152,8 +166,9 @@ def test_s3_artifact_store_put_file_and_bytes_share_idempotent_overwrite_contrac
     second.write_bytes(b"different")
 
     stored = store.put_file(first, "canonical/a.csv")
-    duplicate = store.put_bytes(b"same", "canonical/a.csv")
+    duplicate = store.put_bytes(b"same", stored.uri)
 
     assert duplicate == stored
+    assert stored.uri == "s3://regime-data/artifacts/canonical/a.csv"
     with pytest.raises(ArtifactOverwriteError, match="different bytes"):
         store.put_file(second, "canonical/a.csv")

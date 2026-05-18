@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import datetime as dt
+import logging
 from pathlib import Path
 
 import pandas as pd
+import pytest
 
 from regime_data_fetch.event_sources.models import EventCandidate
 from regime_data_fetch.event_sources.validators_hf_central_bank import HFCentralBankValidator
@@ -69,3 +71,40 @@ def test_hf_validator_confirms_contradicts_and_returns_unknown(tmp_path: Path) -
         (("BOE_decision", dt.date(2026, 3, 19)), "contradict", "https://hf.test/boe"),
         (("BOJ_decision", dt.date(2026, 6, 16)), "unknown", None),
     ]
+
+
+def test_hf_validator_logs_fetch_failure_before_unknown_fallback(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    def failing_fetcher() -> bytes:
+        raise TimeoutError("hf timed out")
+
+    validator = HFCentralBankValidator(parquet_fetcher=failing_fetcher)
+    caplog.set_level(
+        logging.WARNING,
+        logger="regime_data_fetch.event_sources.validators_hf_central_bank",
+    )
+
+    results = validator.validate(
+        [_candidate(dt.date(2026, 6, 11), "ECB_decision")],
+        store=None,
+        run_id=None,
+    )
+
+    assert [(result.candidate_key, result.verdict) for result in results] == [
+        (("ECB_decision", dt.date(2026, 6, 11)), "unknown")
+    ]
+    assert results[0].evidence_snippet == "validator_source_unavailable: TimeoutError"
+    assert "hf_central_bank parquet fetch failed" in caplog.text
+    assert "candidate_count=1" in caplog.text
+
+
+def test_hf_validator_propagates_malformed_parquet() -> None:
+    validator = HFCentralBankValidator(parquet_fetcher=lambda: b"not parquet")
+
+    with pytest.raises(Exception, match="Parquet|parquet|magic bytes|metadata"):
+        validator.validate(
+            [_candidate(dt.date(2026, 6, 11), "ECB_decision")],
+            store=None,
+            run_id=None,
+        )

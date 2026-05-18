@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import get_args, get_type_hints
 
 import pytest
 
 from regime_data_fetch.artifact_manifest import (
     ArtifactManifest,
+    ArtifactStage,
     ManifestArtifact,
     ManifestValidationError,
     load_manifest,
@@ -13,11 +15,15 @@ from regime_data_fetch.artifact_manifest import (
 )
 
 
+def _file_uri(key: str) -> str:
+    return f"file:///tmp/regime-data/{key}"
+
+
 def _artifact(**overrides: object) -> ManifestArtifact:
     values: dict[str, object] = {
         "name": "fred_macro_series",
         "stage": "canonical",
-        "uri": "canonical/macro/fred_macro_series.parquet",
+        "uri": _file_uri("canonical/macro/fred_macro_series.parquet"),
         "local_path": "data/raw/macro/fred_macro_series.parquet",
         "sha256": "a" * 64,
         "schema_version": "fred_macro_series.v1",
@@ -51,8 +57,10 @@ def test_manifest_rejects_duplicate_local_paths() -> None:
         created_at_utc="2026-05-15T12:00:00Z",
         storage_root="file:///tmp/regime-data",
         artifacts=[
-            _artifact(name="macro", uri="canonical/macro.parquet"),
-            _artifact(name="macro_copy", uri="canonical/macro-copy.parquet"),
+            _artifact(name="macro", uri=_file_uri("canonical/macro.parquet")),
+            _artifact(
+                name="macro_copy", uri=_file_uri("canonical/macro-copy.parquet")
+            ),
         ],
     )
 
@@ -81,8 +89,16 @@ def test_manifest_rejects_duplicate_artifact_names() -> None:
         created_at_utc="2026-05-15T12:00:00Z",
         storage_root="file:///tmp/regime-data",
         artifacts=[
-            _artifact(name="macro", uri="canonical/a.parquet", local_path="a.parquet"),
-            _artifact(name="macro", uri="canonical/b.parquet", local_path="b.parquet"),
+            _artifact(
+                name="macro",
+                uri=_file_uri("canonical/a.parquet"),
+                local_path="a.parquet",
+            ),
+            _artifact(
+                name="macro",
+                uri=_file_uri("canonical/b.parquet"),
+                local_path="b.parquet",
+            ),
         ],
     )
 
@@ -111,6 +127,16 @@ def test_manifest_rejects_unknown_stage() -> None:
         _artifact(stage="scratch")
 
 
+def test_manifest_artifact_stage_is_a_closed_type() -> None:
+    assert set(get_args(ArtifactStage)) == {
+        "raw_capture",
+        "normalized",
+        "canonical",
+        "run_inputs",
+    }
+    assert get_type_hints(ManifestArtifact)["stage"] == ArtifactStage
+
+
 def test_manifest_rejects_bad_sha256() -> None:
     with pytest.raises(ManifestValidationError, match="sha256"):
         _artifact(sha256="bad")
@@ -132,7 +158,7 @@ def test_manifest_required_artifacts_for_use_case() -> None:
             ),
             _artifact(
                 name="aaii",
-                uri="canonical/sentiment/aaii_sentiment.parquet",
+                uri=_file_uri("canonical/sentiment/aaii_sentiment.parquet"),
                 local_path="data/raw/sentiment/aaii_sentiment.parquet",
                 required_for=["profile_engine_30d"],
             ),

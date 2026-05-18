@@ -15,6 +15,9 @@ dependencies = [
   "pandas_market_calendars",
   "pyyaml",
   "hmmlearn>=0.3,<0.4",
+  # Adapter in regime_detection.change_point uses
+  # online_changepoint_detection(data, hazard_func, observation_likelihood),
+  # constant_hazard(lam, r), and StudentT(alpha, beta, kappa, mu).
   "bayesian-changepoint-detection>=0.2.dev1",
 ]
 
@@ -24,6 +27,11 @@ s3 = [
 ]
 browser = [
   "playwright>=1.50,<2",
+]
+audit = [
+  "pip-audit",
+  "pydeps",
+  "vulture",
 ]
 dev = [
   "pytest",
@@ -47,3 +55,13 @@ where = ["src"]
 
 [tool.setuptools.package-data]
 regime_detection = ["configs/*.yaml"]
+
+[tool.ruff.lint.per-file-ignores]
+"scripts/approve_group_b_candidate.py" = ["E402"]
+"scripts/audit_layer2_30d.py" = ["E402"]
+"scripts/consolidate_regime_acquisition.py" = ["E402"]
+"scripts/fetch_aaii_sentiment.py" = ["E402"]
+"scripts/materialize_regime_data.py" = ["E402"]
+"scripts/run_shadow_deadman_check.py" = ["E402"]
+"scripts/run_shadow_regime.py" = ["E402"]
+"scripts/run_shadow_replay_check.py" = ["E402"]

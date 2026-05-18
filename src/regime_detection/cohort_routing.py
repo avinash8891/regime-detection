@@ -1,6 +1,6 @@
-"""v2 §5.1 Agent Cohort Routing precedence walker (Slice 5.1).
+"""v2 §5.1 Agent Cohort Routing precedence walker (implementation phase).
 
-Pins docs/regime_engine_v2_spec.md §5.1 (lines 2478-2566) per Ambiguity Log
+Pins docs/regime_engine_v2_spec.md §5.1 (lines 2478-2566) per documented implementation notes
 #53. The walker traverses ``COHORTS`` top-to-bottom and returns the first
 matching cohort's routing decision. ``default_neutral`` is the universal
 fallback and always matches when no specialist does.

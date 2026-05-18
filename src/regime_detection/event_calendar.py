@@ -15,7 +15,7 @@ from regime_detection.loaders import load_event_calendar
 from regime_detection.models import EventCalendarOutput
 
 
-LOG = logging.getLogger(__name__)
+LOGGER = logging.getLogger(__name__)
 
 EventCalendarLabel = Literal[
     "geopolitical_event",
@@ -97,7 +97,7 @@ def classify_event_calendar(
     normalized = _normalized_events(event_calendar, market=config.event_calendar.market)
     if not normalized.empty:
         if (normalized["date"] - as_of_date > timedelta(days=90)).any():
-            LOG.warning(
+            LOGGER.warning(
                 "Event calendar contains row more than 90 calendar days after as_of_date=%s",
                 as_of_date,
             )

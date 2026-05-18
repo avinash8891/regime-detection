@@ -1,4 +1,4 @@
-"""v2 §5.2 Strategy Family Constraints resolver (Slice 5.2).
+"""v2 §5.2 Strategy Family Constraints resolver (implementation phase).
 
 Pins V2 spec §5.2 (docs/regime_engine_v2_spec.md lines 2570-2652). The
 resolver implements the override-on-default inheritance contract: each
@@ -84,4 +84,11 @@ def _merge(
         default_value = getattr(default, field)
         override_value = getattr(override, field) if override is not None else None
         values[field] = override_value if override_value is not None else default_value
+    if (
+        override is not None
+        and default.allowed is False
+        and override.allowed is True
+        and override.reason is None
+    ):
+        values["reason"] = None
     return StrategyFamilyConstraint(**values)

@@ -109,17 +109,75 @@ def test_reindex_with_ffill_surfaces_gaps_when_data_is_sparse() -> None:
     assert aligned.loc["2024-01-22":].notna().all()  # after second publish
 
 
+def _load_spy_session_index_from_source(source: Path) -> pd.DatetimeIndex:
+    df = pd.read_parquet(source)
+    spy = df[df["symbol"] == "SPY"].copy()
+    spy["date"] = pd.to_datetime(spy["date"])
+    spy = spy.sort_values("date")
+    return pd.DatetimeIndex(spy["date"])
+
+
+def _write_news_coverage_fixture_parquets(tmp_path: Path) -> tuple[Path, Path]:
+    news_path = tmp_path / "sf_fed_news_sentiment.parquet"
+    pd.DataFrame(
+        {
+            "date": pd.date_range("2016-01-01", "2016-01-15", freq="D"),
+            "news_sentiment": np.linspace(-0.2, 0.2, 15),
+            "source": "frbsf:daily_news_sentiment",
+        }
+    ).to_parquet(news_path, index=False)
+
+    daily_path = tmp_path / "daily_ohlcv.parquet"
+    pd.DataFrame(
+        {
+            "date": pd.date_range("2016-01-04", "2016-01-15", freq="B"),
+            "symbol": "SPY",
+            "open": 100.0,
+            "high": 101.0,
+            "low": 99.0,
+            "close": 100.5,
+            "volume": 1000000,
+        }
+    ).to_parquet(daily_path, index=False)
+    return news_path, daily_path
+
+
+def test_fixture_news_sentiment_covers_every_engine_session_after_ffill(
+    tmp_path: Path,
+) -> None:
+    news_path, daily_path = _write_news_coverage_fixture_parquets(tmp_path)
+
+    raw = load_news_sentiment_series(news_path)
+    spy_idx = _load_spy_session_index_from_source(daily_path)
+    engine_sessions = spy_idx[spy_idx >= _ENGINE_WINDOW_START]
+    aligned = raw.reindex(engine_sessions, method="ffill")
+
+    assert len(engine_sessions) == 10
+    assert aligned.isna().sum() == 0
+    assert aligned.index.min() == pd.Timestamp("2016-01-04")
+    assert aligned.index.max() == pd.Timestamp("2016-01-15")
+
+
+def test_fixture_news_sentiment_gap_and_freshness_contracts(tmp_path: Path) -> None:
+    news_path, _ = _write_news_coverage_fixture_parquets(tmp_path)
+
+    raw = load_news_sentiment_series(news_path)
+    engine_slice = raw[raw.index >= _ENGINE_WINDOW_START]
+    gaps = engine_slice.index.to_series().diff().dt.days.dropna()
+    newest = raw.index.max()
+    today = pd.Timestamp("2016-02-01")
+
+    assert int(gaps.max()) <= _MAX_GAP_DAYS
+    assert (today - newest).days <= _MAX_STALENESS_DAYS
+
+
 # ---------------------------------------------------------------------------
 # Live-parquet integration assertions (skip when fetch not materialized)
 # ---------------------------------------------------------------------------
 
 
 def _load_spy_session_index() -> pd.DatetimeIndex:
-    df = pd.read_parquet(_DAILY_OHLCV_DIR)
-    spy = df[df["symbol"] == "SPY"].copy()
-    spy["date"] = pd.to_datetime(spy["date"])
-    spy = spy.sort_values("date")
-    return pd.DatetimeIndex(spy["date"])
+    return _load_spy_session_index_from_source(_DAILY_OHLCV_DIR)
 
 
 @pytest.mark.skipif(

@@ -4,7 +4,7 @@ from datetime import date
 
 import pandas as pd
 
-from regime_detection.models import TransitionRiskOutput
+from regime_detection.models import TransitionRiskEvidencePayload, TransitionRiskOutput
 
 
 def classify_transition_risk(
@@ -135,9 +135,9 @@ def build_transition_risk_output_from_flags(
 
     return TransitionRiskOutput(
         label=label,
-        evidence={
-            "warnings_active": warnings_active,
-            "stable_changed_today": stable_changed_today,
-            "days_since_axis_switch": days_since_axis_switch,
-        },
+        evidence=TransitionRiskEvidencePayload(
+            warnings_active=warnings_active,
+            stable_changed_today=stable_changed_today,
+            days_since_axis_switch=days_since_axis_switch,
+        ),
     )

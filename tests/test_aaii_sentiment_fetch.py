@@ -74,3 +74,28 @@ def test_run_sentiment_fetch_records_canonical_artifact_ledger(monkeypatch, tmp_
         ("aaii_sentiment_parquet",),
         ("aaii_sentiment_fetch_report",),
     ]
+
+
+def test_run_sentiment_fetch_can_skip_missing_seed_for_unattended_all(
+    tmp_path: Path,
+) -> None:
+    out_dir = tmp_path / "data" / "raw"
+    acquisition_db = tmp_path / "acquisition.db"
+
+    report_path = aaii_sentiment.run_sentiment_fetch(
+        out_dir=out_dir,
+        acquisition_db_path=acquisition_db,
+        required=False,
+    )
+
+    report = json.loads(report_path.read_text())
+    assert report["status"] == "skipped"
+    assert report["materializable"] is False
+    assert "aaii_sentiment_historical.cfb" in report["reason"]
+
+    with sqlite3.connect(acquisition_db) as conn:
+        fetch_runs = conn.execute(
+            "SELECT fetch_type, status, notes FROM fetch_runs"
+        ).fetchall()
+
+    assert fetch_runs == [("sentiment", "skipped", report["reason"])]

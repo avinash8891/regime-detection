@@ -1,8 +1,13 @@
 from __future__ import annotations
 
+from collections.abc import Callable
+from dataclasses import dataclass
+from typing import TypeVar, cast
+
 import pandas as pd
 from pydantic import BaseModel, ConfigDict
 
+from regime_detection._rolling_stats import simple_moving_average
 from regime_detection.breadth_state import BreadthFeatures, compute_features as compute_breadth_features
 from regime_detection.breadth_state_v2 import (
     BreadthV2Features,
@@ -118,6 +123,76 @@ __all__ = [
 # required FRED series without scattering string literals.
 _FRED_DGS2_KEY = "DGS2"
 _FRED_DGS10_KEY = "DGS10"
+_T = TypeVar("_T")
+
+
+def _as_datetime_index(index: pd.Index) -> pd.DatetimeIndex:
+    if not isinstance(index, pd.DatetimeIndex):
+        raise RuntimeError("feature store requires a DatetimeIndex-backed SPY frame")
+    return index
+
+
+def _series_column(frame: pd.DataFrame, column: str) -> pd.Series:
+    series = frame[column]
+    if not isinstance(series, pd.Series):
+        raise RuntimeError(f"feature store requires a single {column!r} column")
+    return series
+
+
+@dataclass
+class _FeatureStoreBuildState:
+    context: MarketContext
+    spy_ohlcv: pd.DataFrame
+    spy_close: pd.Series
+    network_fragility_config: NetworkFragilityConfig | None = None
+    trend_direction_v2_config: TrendDirectionV2Config | None = None
+    volatility_state_v2_config: VolatilityV2Config | None = None
+    breadth_state_v2_config: BreadthV2Config | None = None
+    volume_liquidity_v2_config: VolumeLiquidityV2Config | None = None
+    monetary_pressure_v2_config: MonetaryPressureV2FeaturesConfig | None = None
+    credit_funding_config: CreditFundingConfig | None = None
+    inflation_growth_config: InflationGrowthConfig | None = None
+    central_bank_text_config: CentralBankTextConfig | None = None
+    news_sentiment_config: NewsSentimentConfig | None = None
+    trend_direction: TrendDirectionFeatures | None = None
+    sentiment_score: pd.Series | None = None
+    news_sentiment_score: pd.Series | None = None
+    trend_direction_v2: TrendDirectionV2Features | None = None
+    trend_character: TrendCharacterFeatures | None = None
+    volatility: VolatilityFeatures | None = None
+    breadth: BreadthFeatures | None = None
+    sma_50: pd.Series | None = None
+    network_fragility: NetworkFragilityFeatures | None = None
+    volatility_state_v2: VolatilityV2Features | None = None
+    breadth_state_v2: BreadthV2Features | None = None
+    volume_liquidity_v2: VolumeLiquidityV2Features | None = None
+    monetary: MonetaryPressureV2Features | None = None
+    realized_vol_21d: pd.Series | None = None
+    hmm: HMMFeatures | None = None
+    clustering: ClusteringFeatures | None = None
+    credit_funding: CreditFundingFeatures | None = None
+    inflation_growth: InflationGrowthFeatures | None = None
+    change_point: ChangePointFeatures | None = None
+
+
+def _require_feature(value: _T | None, name: str) -> _T:
+    if value is None:
+        raise RuntimeError(f"feature builder did not populate required feature: {name}")
+    return value
+
+
+@dataclass(frozen=True)
+class _FeatureStoreBuilder:
+    name: str
+    build: Callable[[_FeatureStoreBuildState], None]
+
+
+def _run_feature_store_builders(
+    builders: tuple[_FeatureStoreBuilder, ...],
+    state: _FeatureStoreBuildState,
+) -> None:
+    for builder in builders:
+        builder.build(state)
 
 
 class FeatureStore(BaseModel):
@@ -131,7 +206,7 @@ class FeatureStore(BaseModel):
     sma_50: pd.Series
 
     # V2 §3 seam — populated when context.sector_etf_closes is present.
-    # Slice 1 swaps the placeholder for the real feature compute.
+    # implementation phase swaps the placeholder for the real feature compute.
     network_fragility: NetworkFragilityFeatures | None = None
 
     # V2 §1A seam — populated when a TrendDirectionV2Config is threaded
@@ -159,15 +234,15 @@ class FeatureStore(BaseModel):
     # features per spec lines 257–258) live on volatility_state_v2.
     volume_liquidity_v2: VolumeLiquidityV2Features | None = None
 
-    # V2 §2A seam (Slice 4.1, evidence-only) — populated when a
+    # V2 §2A seam (implementation phase, evidence-only) — populated when a
     # MonetaryPressureV2FeaturesConfig is threaded through AND
     # MarketContext.macro_series carries both DGS2 and DGS10 (spec
     # source contract §2A lines 887–889). Exposes ONLY the two
     # spec-pinned yield z-scores; broad_usd_index and 21d-variant
-    # features are deferred per Ambiguity Log #44 / #45.
+    # features are deferred per documented implementation decision.
     monetary: MonetaryPressureV2Features | None = None
 
-    # V2 §6.1 HMM evidence seam (Slice 6) — populated when ``context.config.hmm``
+    # V2 §6.1 HMM evidence seam (implementation phase) — populated when ``context.config.hmm``
     # is non-None AND all five upstream feature seams are lit (volatility
     # return_1d, volume_liquidity_v2.volume_zscore_20d,
     # network_fragility.avg_pairwise_corr_63d, plus the SPY-derived
@@ -175,7 +250,7 @@ class FeatureStore(BaseModel):
     # preserved on the 5-component transition_score path.
     hmm: HMMFeatures | None = None
 
-    # v2 §6.2 GMM clustering evidence seam (Slice 7) — populated when
+    # v2 §6.2 GMM clustering evidence seam (implementation phase) — populated when
     # ``context.config.clustering`` is non-None AND the seven §6.2 inputs
     # are all available. Predicate gates on ``breadth_state_v2.pct_above_50dma``
     # (PIT path lit), ``network_fragility``, and ``trend_direction_v2``;
@@ -185,24 +260,24 @@ class FeatureStore(BaseModel):
     # wire) and V1 byte-identity is preserved.
     clustering: ClusteringFeatures | None = None
 
-    # v2 §6.3 BOCPD change-point evidence seam (Slice 8) — populated when
+    # v2 §6.3 BOCPD change-point evidence seam (implementation phase) — populated when
     # ``context.config.change_point`` is non-None AND the trailing
     # ``training_window_days`` of realized_vol_21d (SPY-derived) is
     # available. The observation series rides the SPY-close V1 path, so
     # this seam only goes None when the config is absent (v1-only callers)
     # or when SPY history is too short for the spec-pinned 5y window. The
-    # transition_score consumer is V2.1 spec-amendment work — Slice 8 is
+    # transition_score consumer is V2.1 spec-amendment work — implementation phase is
     # evidence-only and does NOT change the V1 5-component score path.
     change_point: ChangePointFeatures | None = None
 
-    # V2 §2C credit/funding seam (Slice 4) — populated when a CreditFundingConfig
+    # V2 §2C credit/funding seam (implementation phase) — populated when a CreditFundingConfig
     # is threaded through AND cross_asset_closes carries HYG/LQD/TLT/KRE AND
     # macro_series carries SOFR/IORB/NFCI/broad_usd_index. OAS keys are optional
     # at this gate; when absent the real-OAS label is unknown/data-unavailable
     # and the ETF proxy can still drive credit_funding_effective_state.
     credit_funding: CreditFundingFeatures | None = None
 
-    # V2 §2B inflation/growth seam (Slice 5) — populated when an
+    # V2 §2B inflation/growth seam (implementation phase) — populated when an
     # InflationGrowthConfig is threaded through AND cross_asset_closes carries
     # DBC/TLT/XLY/XLI/XLP/XLU AND macro_series carries cpi_all_items /
     # pmi_manufacturing / dgs10. Otherwise None — V1 byte-identity preserved
@@ -223,7 +298,7 @@ def _build_sentiment_score_series(
     on or before each session — V1 §2.2 stateless-replay rule, never
     consult a future-dated reading. Returns ``None`` when no AAII frame
     is supplied (lets the euphoria predicate falsify per V2 §10 "do not
-    invent a sentiment proxy" / Log #32 lineage).
+    invent a sentiment proxy" / documented implementation decision lineage).
 
     Cold-start (ADR 0004 Q5): a session with no AAII row at or before it
     receives NaN; the euphoria predicate then falsifies on that session
@@ -255,6 +330,360 @@ def _build_sentiment_score_series(
     return aligned.reindex(session_index, method="ffill")
 
 
+def _build_news_sentiment_score_series(
+    *,
+    news_sentiment: pd.Series | None,
+    session_index: pd.DatetimeIndex,
+    config: NewsSentimentConfig | None,
+) -> pd.Series | None:
+    if config is None:
+        return None
+    if news_sentiment is None:
+        return None
+    if news_sentiment.empty:
+        return None
+    score = cast(
+        pd.Series,
+        news_sentiment.reindex(session_index, method="ffill")
+        .rolling(config.smoothing_window_sessions, min_periods=1)
+        .mean(),
+    )
+    score.name = "news_sentiment_score"
+    return cast(pd.Series, score)
+
+
+def _build_trend_direction_feature(state: _FeatureStoreBuildState) -> None:
+    state.trend_direction = compute_trend_direction_features(state.spy_close)
+
+
+def _build_sentiment_score_feature(state: _FeatureStoreBuildState) -> None:
+    state.sentiment_score = _build_sentiment_score_series(
+        aaii_sentiment=state.context.aaii_sentiment,
+        session_index=_as_datetime_index(state.spy_close.index),
+    )
+
+
+def _build_news_sentiment_score_feature(state: _FeatureStoreBuildState) -> None:
+    state.news_sentiment_score = _build_news_sentiment_score_series(
+        news_sentiment=state.context.news_sentiment,
+        session_index=_as_datetime_index(state.spy_close.index),
+        config=state.news_sentiment_config,
+    )
+
+
+def _build_trend_direction_v2_feature(state: _FeatureStoreBuildState) -> None:
+    if state.trend_direction_v2_config is None:
+        state.trend_direction_v2 = None
+        return
+    state.trend_direction_v2 = compute_trend_v2_features(
+        state.spy_close,
+        config=state.trend_direction_v2_config,
+        sentiment_score=state.sentiment_score,
+        news_sentiment_score=state.news_sentiment_score,
+    )
+
+
+def _build_trend_character_feature(state: _FeatureStoreBuildState) -> None:
+    state.trend_character = compute_trend_character_features(
+        close=state.spy_close,
+        high=_series_column(state.spy_ohlcv, "high"),
+        low=_series_column(state.spy_ohlcv, "low"),
+        volume=(
+            _series_column(state.spy_ohlcv, "volume")
+            if "volume" in state.spy_ohlcv.columns
+            else None
+        ),
+    )
+
+
+def _build_volatility_feature(state: _FeatureStoreBuildState) -> None:
+    state.volatility = compute_volatility_features(
+        close=state.spy_close,
+        vix_proxy_close=state.context.vix_proxy_close,
+    )
+
+
+def _build_breadth_feature(state: _FeatureStoreBuildState) -> None:
+    state.breadth = compute_breadth_features(
+        spy_close=state.spy_close,
+        rsp_close=state.context.rsp_close.reindex(state.spy_ohlcv.index),
+    )
+
+
+def _build_sma_50_feature(state: _FeatureStoreBuildState) -> None:
+    state.sma_50 = simple_moving_average(state.spy_close, window=50)
+
+
+def _build_network_fragility_feature(state: _FeatureStoreBuildState) -> None:
+    if state.context.sector_etf_closes is None:
+        state.network_fragility = None
+        return
+    if state.network_fragility_config is None:
+        state.network_fragility = compute_network_fragility_features(
+            sector_etf_closes=state.context.sector_etf_closes,
+            cross_asset_closes=state.context.cross_asset_closes or {},
+            spy_close=state.spy_close,
+        )
+        return
+    config = state.network_fragility_config
+    state.network_fragility = compute_network_fragility_features(
+        sector_etf_closes=state.context.sector_etf_closes,
+        cross_asset_closes=state.context.cross_asset_closes or {},
+        spy_close=state.spy_close,
+        correlation_lookback_days=config.correlation_lookback_days,
+        percentile_lookback_days=config.percentile_lookback_days,
+        realized_vol_lookback_days=config.realized_vol_lookback_days,
+        dispersion_percentile_lookback_days=config.dispersion_percentile_lookback_days,
+        min_universe_size=config.min_universe_size,
+        min_window_completeness=config.min_window_completeness,
+    )
+
+
+def _build_volatility_state_v2_feature(state: _FeatureStoreBuildState) -> None:
+    if state.volatility_state_v2_config is None:
+        state.volatility_state_v2 = None
+        return
+    event_window = (
+        compute_event_window_just_passed(
+            normalized_event_calendar=state.context.normalized_event_calendar,
+            sessions=tuple(ts.date() for ts in _as_datetime_index(state.spy_close.index)),
+            trailing_sessions=(
+                state.volatility_state_v2_config.rules.vol_crush_event_window_trailing_sessions
+            ),
+        )
+        if state.context.normalized_event_calendar is not None
+        else None
+    )
+    state.volatility_state_v2 = compute_volatility_v2_features(
+        open_=_series_column(state.spy_ohlcv, "open"),
+        high=_series_column(state.spy_ohlcv, "high"),
+        low=_series_column(state.spy_ohlcv, "low"),
+        close=state.spy_close,
+        config=state.volatility_state_v2_config,
+        rules_config=state.volatility_state_v2_config.rules,
+        implied_vol_30d=state.context.implied_vol_30d,
+        event_window_just_passed=event_window,
+    )
+
+
+def _build_breadth_state_v2_feature(state: _FeatureStoreBuildState) -> None:
+    if state.breadth_state_v2_config is None or state.context.sector_etf_closes is None:
+        state.breadth_state_v2 = None
+        return
+    sector_closes = state.context.sector_etf_closes
+    if not all(symbol in sector_closes for symbol in SECTOR_ETFS):
+        state.breadth_state_v2 = None
+        return
+    state.breadth_state_v2 = compute_breadth_v2_features(
+        sector_etf_closes=sector_closes,
+        config=state.breadth_state_v2_config,
+        pit_constituent_intervals=state.context.pit_constituent_intervals,
+        constituent_ohlcv=state.context.constituent_ohlcv,
+    )
+
+
+def _build_volume_liquidity_v2_feature(state: _FeatureStoreBuildState) -> None:
+    spy_volume = (
+        _series_column(state.spy_ohlcv, "volume")
+        if "volume" in state.spy_ohlcv.columns
+        else None
+    )
+    if (
+        state.volume_liquidity_v2_config is None
+        or spy_volume is None
+        or bool(spy_volume.isna().all())
+    ):
+        state.volume_liquidity_v2 = None
+        return
+    state.volume_liquidity_v2 = compute_volume_liquidity_v2_features(
+        volume=spy_volume,
+        config=state.volume_liquidity_v2_config,
+    )
+
+
+def _build_monetary_feature(state: _FeatureStoreBuildState) -> None:
+    if (
+        state.monetary_pressure_v2_config is None
+        or state.context.macro_series is None
+        or _FRED_DGS2_KEY not in state.context.macro_series
+        or _FRED_DGS10_KEY not in state.context.macro_series
+    ):
+        state.monetary = None
+        return
+    broad_usd_series = state.context.macro_series.get("broad_usd_index")
+    cb_text_score_series: pd.Series | None = None
+    if (
+        state.central_bank_text_config is not None
+        and state.context.central_bank_text_releases is not None
+        and not state.context.central_bank_text_releases.empty
+    ):
+        cb_text_score_series = to_daily_score_series(
+            state.context.central_bank_text_releases,
+            session_index=_as_datetime_index(state.spy_close.index),
+            smoothing_window_sessions=state.central_bank_text_config.smoothing_window_sessions,
+            same_date_aggregation=state.central_bank_text_config.same_date_aggregation,
+        )
+    state.monetary = compute_monetary_pressure_features(
+        dgs2=state.context.macro_series[_FRED_DGS2_KEY],
+        dgs10=state.context.macro_series[_FRED_DGS10_KEY],
+        broad_usd_index=broad_usd_series,
+        central_bank_text_score=cb_text_score_series,
+        config=state.monetary_pressure_v2_config,
+    )
+
+
+def _build_realized_vol_21d_feature(state: _FeatureStoreBuildState) -> None:
+    state.realized_vol_21d = (
+        realized_vol(state.spy_close, 21)
+        if (
+            state.context.config.hmm is not None
+            or state.context.config.clustering is not None
+            or state.context.config.change_point is not None
+        )
+        else None
+    )
+
+
+def _build_hmm_feature(state: _FeatureStoreBuildState) -> None:
+    volume_liquidity_v2 = state.volume_liquidity_v2
+    network_fragility = state.network_fragility
+    if (
+        state.context.config.hmm is None
+        or volume_liquidity_v2 is None
+        or network_fragility is None
+    ):
+        state.hmm = None
+        return
+    volatility = _require_feature(state.volatility, "volatility")
+    state.hmm = compute_hmm_features(
+        return_1d=volatility.return_1d,
+        realized_vol_21d=state.realized_vol_21d,
+        drawdown_63d=compute_trailing_drawdown(state.spy_close, 63),
+        volume_zscore_20d=volume_liquidity_v2.volume_zscore_20d,
+        avg_pairwise_corr_63d=network_fragility.avg_pairwise_corr_63d,
+        config=state.context.config.hmm,
+    )
+
+
+def _build_clustering_feature(state: _FeatureStoreBuildState) -> None:
+    breadth_state_v2 = state.breadth_state_v2
+    network_fragility = state.network_fragility
+    trend_direction_v2 = state.trend_direction_v2
+    if (
+        state.context.config.clustering is None
+        or breadth_state_v2 is None
+        or breadth_state_v2.pct_above_50dma is None
+        or network_fragility is None
+        or trend_direction_v2 is None
+    ):
+        state.clustering = None
+        return
+    trend_character = _require_feature(state.trend_character, "trend_character")
+    state.clustering = compute_clustering_features(
+        return_21d=trend_character.return_21d,
+        return_63d=trend_direction_v2.return_63d,
+        realized_vol_21d=state.realized_vol_21d,
+        drawdown_63d=compute_trailing_drawdown(state.spy_close, 63),
+        adx_14=trend_character.adx_14,
+        avg_pairwise_corr_63d=network_fragility.avg_pairwise_corr_63d,
+        pct_above_50dma=breadth_state_v2.pct_above_50dma,
+        config=state.context.config.clustering,
+    )
+
+
+def _build_credit_funding_feature(state: _FeatureStoreBuildState) -> None:
+    if (
+        state.credit_funding_config is None
+        or state.context.cross_asset_closes is None
+        or state.context.macro_series is None
+        or not all(k in state.context.cross_asset_closes for k in _CF_CROSS_ASSET_KEYS)
+        or not all(k in state.context.macro_series for k in _CF_MACRO_KEYS)
+    ):
+        state.credit_funding = None
+        return
+    nan_oas = pd.Series(float("nan"), index=state.spy_close.index)
+    state.credit_funding = compute_credit_funding_features(
+        hyg_close=state.context.cross_asset_closes[_CF_HYG_KEY],
+        lqd_close=state.context.cross_asset_closes[_CF_LQD_KEY],
+        tlt_close=state.context.cross_asset_closes[_CF_TLT_KEY],
+        kre_close=state.context.cross_asset_closes[_CF_KRE_KEY],
+        spy_close=state.spy_close,
+        sofr=state.context.macro_series[_CF_SOFR_KEY],
+        iorb=state.context.macro_series[_CF_IORB_KEY],
+        nfci_weekly=state.context.macro_series[_CF_NFCI_KEY],
+        broad_usd_index=state.context.macro_series[_CF_BROAD_USD_KEY],
+        hy_oas=state.context.macro_series.get(_CF_HY_OAS_KEY, nan_oas),
+        ig_oas=state.context.macro_series.get(_CF_IG_OAS_KEY, nan_oas),
+        config=state.credit_funding_config.rules,
+    )
+
+
+def _build_inflation_growth_feature(state: _FeatureStoreBuildState) -> None:
+    if (
+        state.inflation_growth_config is None
+        or state.context.cross_asset_closes is None
+        or state.context.macro_series is None
+        or not all(k in state.context.cross_asset_closes for k in _IG_CROSS_ASSET_KEYS)
+        or not all(k in state.context.macro_series for k in _IG_MACRO_KEYS)
+    ):
+        state.inflation_growth = None
+        return
+    state.inflation_growth = compute_inflation_growth_features(
+        cpi_all_items=state.context.macro_series[_IG_CPI_KEY],
+        pmi_manufacturing=state.context.macro_series[_IG_PMI_KEY],
+        dgs10=state.context.macro_series[_IG_DGS10_KEY],
+        dbc_close=state.context.cross_asset_closes[_IG_DBC_KEY],
+        spy_close=state.spy_close,
+        tlt_close=state.context.cross_asset_closes[_IG_TLT_KEY],
+        xly_close=state.context.cross_asset_closes[_IG_XLY_KEY],
+        xli_close=state.context.cross_asset_closes[_IG_XLI_KEY],
+        xlp_close=state.context.cross_asset_closes[_IG_XLP_KEY],
+        xlu_close=state.context.cross_asset_closes[_IG_XLU_KEY],
+        config=state.inflation_growth_config.rules,
+        cpi_nowcast=state.context.macro_series.get("cpi_nowcast"),
+        aggregate_forward_eps_revision=state.context.macro_series.get(
+            "aggregate_forward_eps_revision"
+        ),
+        cpi_first_release=state.context.cpi_first_release,
+        use_first_release_cpi_when_available=(
+            state.inflation_growth_config.rules.use_first_release_cpi_when_available
+        ),
+    )
+
+
+def _build_change_point_feature(state: _FeatureStoreBuildState) -> None:
+    if state.context.config.change_point is None:
+        state.change_point = None
+        return
+    state.change_point = compute_change_point_features(
+        realized_vol_21d=state.realized_vol_21d,
+        config=state.context.config.change_point,
+    )
+
+
+_FEATURE_STORE_BUILDERS: tuple[_FeatureStoreBuilder, ...] = (
+    _FeatureStoreBuilder("trend_direction", _build_trend_direction_feature),
+    _FeatureStoreBuilder("sentiment_score", _build_sentiment_score_feature),
+    _FeatureStoreBuilder("news_sentiment_score", _build_news_sentiment_score_feature),
+    _FeatureStoreBuilder("trend_direction_v2", _build_trend_direction_v2_feature),
+    _FeatureStoreBuilder("trend_character", _build_trend_character_feature),
+    _FeatureStoreBuilder("volatility", _build_volatility_feature),
+    _FeatureStoreBuilder("breadth", _build_breadth_feature),
+    _FeatureStoreBuilder("sma_50", _build_sma_50_feature),
+    _FeatureStoreBuilder("network_fragility", _build_network_fragility_feature),
+    _FeatureStoreBuilder("volatility_state_v2", _build_volatility_state_v2_feature),
+    _FeatureStoreBuilder("breadth_state_v2", _build_breadth_state_v2_feature),
+    _FeatureStoreBuilder("volume_liquidity_v2", _build_volume_liquidity_v2_feature),
+    _FeatureStoreBuilder("monetary", _build_monetary_feature),
+    _FeatureStoreBuilder("realized_vol_21d", _build_realized_vol_21d_feature),
+    _FeatureStoreBuilder("hmm", _build_hmm_feature),
+    _FeatureStoreBuilder("clustering", _build_clustering_feature),
+    _FeatureStoreBuilder("credit_funding", _build_credit_funding_feature),
+    _FeatureStoreBuilder("inflation_growth", _build_inflation_growth_feature),
+    _FeatureStoreBuilder("change_point", _build_change_point_feature),
+)
+
+
 def build_feature_store(
     context: MarketContext,
     *,
@@ -269,366 +698,44 @@ def build_feature_store(
     central_bank_text_config: CentralBankTextConfig | None = None,
     news_sentiment_config: NewsSentimentConfig | None = None,
 ) -> FeatureStore:
-    # TODO(refactor): Decompose this builder in a dedicated no-behavior-change
+    # TODO(refactor, owner=regime-maintainers): Decompose this builder in a dedicated no-behavior-change
     # refactor. Keep feature wiring and fixture replay frozen while extracting
     # helpers so classifier changes do not hide inside the decomposition.
     spy_ohlcv = context.spy_ohlcv
-    spy_close = spy_ohlcv["close"]
-    trend_direction = compute_trend_direction_features(spy_close)
-    trend_character = compute_trend_character_features(
-        close=spy_close,
-        high=spy_ohlcv["high"],
-        low=spy_ohlcv["low"],
-        volume=spy_ohlcv["volume"] if "volume" in spy_ohlcv.columns else None,
-    )
-    volatility = compute_volatility_features(
-        close=spy_close,
-        vix_proxy_close=context.vix_proxy_close,
-    )
-    breadth = compute_breadth_features(
+    spy_close = _series_column(spy_ohlcv, "close")
+    build_state = _FeatureStoreBuildState(
+        context=context,
+        spy_ohlcv=spy_ohlcv,
         spy_close=spy_close,
-        rsp_close=context.rsp_close.reindex(spy_ohlcv.index),
+        network_fragility_config=network_fragility_config,
+        trend_direction_v2_config=trend_direction_v2_config,
+        volatility_state_v2_config=volatility_state_v2_config,
+        breadth_state_v2_config=breadth_state_v2_config,
+        volume_liquidity_v2_config=volume_liquidity_v2_config,
+        monetary_pressure_v2_config=monetary_pressure_v2_config,
+        credit_funding_config=credit_funding_config,
+        inflation_growth_config=inflation_growth_config,
+        central_bank_text_config=central_bank_text_config,
+        news_sentiment_config=news_sentiment_config,
     )
-    sma_50 = spy_close.rolling(50).mean()
-    # V2 §3.2 feature compute (slice 1.2). The classifier wiring (slice 1.3+)
-    # consumes these series; for now they populate the seam so build_feature_store
-    # returns a typed NetworkFragilityFeatures whenever sector data is present.
-    if context.sector_etf_closes is not None:
-        nf_kwargs: dict[str, int | float] = {}
-        if network_fragility_config is not None:
-            nf_kwargs = {
-                "correlation_lookback_days": network_fragility_config.correlation_lookback_days,
-                "percentile_lookback_days": network_fragility_config.percentile_lookback_days,
-                "realized_vol_lookback_days": network_fragility_config.realized_vol_lookback_days,
-                "dispersion_percentile_lookback_days": (
-                    network_fragility_config.dispersion_percentile_lookback_days
-                ),
-                "min_universe_size": network_fragility_config.min_universe_size,
-                "min_window_completeness": network_fragility_config.min_window_completeness,
-            }
-        network_fragility = compute_network_fragility_features(
-            sector_etf_closes=context.sector_etf_closes,
-            cross_asset_closes=context.cross_asset_closes or {},
-            spy_close=spy_close,
-            **nf_kwargs,
-        )
-    else:
-        network_fragility = None
-
-    # V2 §1A trend-direction features (slice 2.1) — evidence-only compute.
-    if trend_direction_v2_config is not None:
-        # §1A euphoria seam (Log #32 closure / ADR 0004): when context
-        # carries AAII sentiment rows, derive the forward-filled
-        # bull_bear_spread_8w_ma onto the SPY session index per V1 §2.2
-        # stateless-replay (use the latest publication-date <= as_of_date).
-        sentiment_series = _build_sentiment_score_series(
-            aaii_sentiment=context.aaii_sentiment,
-            session_index=spy_close.index,
-        )
-        # v2 §1A SF Fed news sentiment evidence (audit follow-up). When the
-        # context carries the raw daily series AND a NewsSentimentConfig is
-        # threaded, smooth it onto the SPY session index. The result feeds
-        # `compute_trend_v2_features` as evidence; the `euphoria` rule
-        # predicate is unchanged.
-        news_sentiment_series: pd.Series | None = None
-        if (
-            news_sentiment_config is not None
-            and context.news_sentiment is not None
-            and not context.news_sentiment.empty
-        ):
-            news_sentiment_series = (
-                context.news_sentiment.reindex(spy_close.index, method="ffill")
-                .rolling(
-                    news_sentiment_config.smoothing_window_sessions, min_periods=1
-                )
-                .mean()
-                .rename("news_sentiment_score")
-            )
-        trend_direction_v2 = compute_trend_v2_features(
-            spy_close,
-            config=trend_direction_v2_config,
-            sentiment_score=sentiment_series,
-            news_sentiment_score=news_sentiment_series,
-        )
-    else:
-        trend_direction_v2 = None
-
-    # V2 §1C volatility features (slice 2.2 + slice 2.6 rising_vol RV +
-    # vol_crush IV inputs, ADR 0005 / Log #19+#20).
-    if volatility_state_v2_config is not None:
-        # §1C vol_crush seam (ADR 0005): when context carries the FRED
-        # VIXCLS implied-vol series, pass it as implied_vol_30d so the
-        # IV-derived features (implied_vol_5d_change, iv_rv_spread) are
-        # computed; when absent, those features stay None and vol_crush
-        # falsifies (V1 byte-identity preserved). event_window_just_passed
-        # is computed from the context's event calendar when present.
-        event_window = (
-            compute_event_window_just_passed(
-                normalized_event_calendar=context.normalized_event_calendar,
-                sessions=tuple(spy_close.index.date),
-                trailing_sessions=(
-                    volatility_state_v2_config.rules.vol_crush_event_window_trailing_sessions
-                ),
-            )
-            if context.normalized_event_calendar is not None
-            else None
-        )
-        # Pass the rules sub-block so the slice-2.6 `rising_vol` rule's
-        # realized_vol_short / realized_vol_long windows are populated from
-        # config (rather than the hardcoded 10/63 fallback). The two paths
-        # produce identical series when yaml carries the spec defaults.
-        volatility_state_v2 = compute_volatility_v2_features(
-            open_=spy_ohlcv["open"],
-            high=spy_ohlcv["high"],
-            low=spy_ohlcv["low"],
-            close=spy_close,
-            config=volatility_state_v2_config,
-            rules_config=volatility_state_v2_config.rules,
-            implied_vol_30d=context.implied_vol_30d,
-            event_window_just_passed=event_window,
-        )
-    else:
-        volatility_state_v2 = None
-
-    # V2 §1D breadth features (slice 2.3) — evidence-only compute. Requires
-    # all 11 sector ETFs in MarketContext.sector_etf_closes (Ambiguity Log
-    # entry #27 pins the missing-sector policy as fail-NaN). When the config
-    # is supplied but the data is missing or partial, fall back to None
-    # (matches the slice 1.2 NetworkFragility seam pattern).
-    if breadth_state_v2_config is not None and context.sector_etf_closes is not None:
-        sector_closes = context.sector_etf_closes
-        if all(symbol in sector_closes for symbol in SECTOR_ETFS):
-            breadth_state_v2 = compute_breadth_v2_features(
-                sector_etf_closes=sector_closes,
-                config=breadth_state_v2_config,
-                pit_constituent_intervals=context.pit_constituent_intervals,
-                constituent_ohlcv=context.constituent_ohlcv,
-            )
-        else:
-            breadth_state_v2 = None
-    else:
-        breadth_state_v2 = None
-
-    # V2 §1E volume/liquidity feature (slice 2.4) — evidence-only compute.
-    # Reads SPY volume from the existing MarketContext.spy_ohlcv frame (the
-    # V1 contract already requires the volume column — see
-    # market_context._require_market_data_contract). Falls back to None when
-    # the config is absent OR when the volume column is empty/missing.
-    if (
-        volume_liquidity_v2_config is not None
-        and "volume" in spy_ohlcv.columns
-        and not spy_ohlcv["volume"].isna().all()
-    ):
-        volume_liquidity_v2 = compute_volume_liquidity_v2_features(
-            volume=spy_ohlcv["volume"],
-            config=volume_liquidity_v2_config,
-        )
-    else:
-        volume_liquidity_v2 = None
-
-    # V2 §2A monetary-pressure features (slice 4.1) — evidence-only compute.
-    # Requires BOTH DGS2 and DGS10 on context.macro_series (spec source
-    # contract §2A lines 887–889). When either FRED key is absent OR the
-    # config is None, fall back to None so v1-only callers see no diff.
-    if (
-        monetary_pressure_v2_config is not None
-        and context.macro_series is not None
-        and _FRED_DGS2_KEY in context.macro_series
-        and _FRED_DGS10_KEY in context.macro_series
-    ):
-        # Ambiguity Log #46 (a): broad_usd_index is OPTIONAL — when absent the
-        # broad_usd_index_zscore_63d output is an all-NaN series and the §2A
-        # rule predicate naturally falsifies on NaN.
-        broad_usd_series = None
-        if context.macro_series is not None:
-            broad_usd_series = context.macro_series.get("broad_usd_index")
-        # v2 §2A central-bank-text evidence seam (audit M1). When the
-        # context carries a scored release frame AND a CentralBankTextConfig
-        # is threaded, forward-fill onto the SPY session index and pass
-        # to compute_monetary_pressure_features as evidence-only.
-        cb_text_score_series: pd.Series | None = None
-        if (
-            central_bank_text_config is not None
-            and context.central_bank_text_releases is not None
-            and not context.central_bank_text_releases.empty
-        ):
-            cb_text_score_series = to_daily_score_series(
-                context.central_bank_text_releases,
-                session_index=spy_close.index,
-                smoothing_window_sessions=central_bank_text_config.smoothing_window_sessions,
-                same_date_aggregation=central_bank_text_config.same_date_aggregation,
-            )
-        monetary = compute_monetary_pressure_features(
-            dgs2=context.macro_series[_FRED_DGS2_KEY],
-            dgs10=context.macro_series[_FRED_DGS10_KEY],
-            broad_usd_index=broad_usd_series,
-            central_bank_text_score=cb_text_score_series,
-            config=monetary_pressure_v2_config,
-        )
-    else:
-        monetary = None
-
-    realized_vol_21d_series = (
-        realized_vol(spy_close, 21)
-        if (
-            context.config.hmm is not None
-            or context.config.clustering is not None
-            or context.config.change_point is not None
-        )
-        else None
-    )
-
-    # v2 §6.1 HMM evidence layer (Slice 6) — reuses the existing FeatureStore
-    # seams as inputs. Requires the volume_liquidity_v2 and network_fragility
-    # seams to be lit (their fields supply 2 of the 5 HMM inputs). The
-    # SPY-derived inputs (return_1d, realized_vol_21d, drawdown_63d) are
-    # always available on the V1 path. When any predicate fails, the HMM
-    # seam is None and the transition_score falls back to its 5-component
-    # weights_without_hmm path (V1 byte-identity preserved).
-    if (
-        context.config.hmm is not None
-        and volume_liquidity_v2 is not None
-        and network_fragility is not None
-    ):
-        hmm = compute_hmm_features(
-            return_1d=volatility.return_1d,
-            realized_vol_21d=realized_vol_21d_series,
-            drawdown_63d=compute_trailing_drawdown(spy_close, 63),
-            volume_zscore_20d=volume_liquidity_v2.volume_zscore_20d,
-            avg_pairwise_corr_63d=network_fragility.avg_pairwise_corr_63d,
-            config=context.config.hmm,
-        )
-    else:
-        hmm = None
-
-    # v2 §6.2 GMM clustering evidence layer (Slice 7) — diagnostic only;
-    # NOT consumed by transition_score. Predicate gates on the PIT-aware
-    # pct_above_50dma being lit AND network_fragility / trend_direction_v2
-    # seams being populated.
-    if (
-        context.config.clustering is not None
-        and breadth_state_v2 is not None
-        and breadth_state_v2.pct_above_50dma is not None
-        and network_fragility is not None
-        and trend_direction_v2 is not None
-    ):
-        clustering = compute_clustering_features(
-            return_21d=trend_character.return_21d,
-            return_63d=trend_direction_v2.return_63d,
-            realized_vol_21d=realized_vol_21d_series,
-            drawdown_63d=compute_trailing_drawdown(spy_close, 63),
-            adx_14=trend_character.adx_14,
-            avg_pairwise_corr_63d=network_fragility.avg_pairwise_corr_63d,
-            pct_above_50dma=breadth_state_v2.pct_above_50dma,
-            config=context.config.clustering,
-        )
-    else:
-        clustering = None
-
-    # v2 §2C credit/funding feature compute (Slice 4). Requires the shared
-    # inputs HYG/LQD/TLT/KRE plus SOFR/IORB/NFCI/broad_usd_index. Real OAS
-    # macro keys are optional at the seam level: if FRED omits them, the OAS
-    # branch becomes unknown while the proxy branch remains usable.
-    credit_funding: CreditFundingFeatures | None = None
-    if (
-        credit_funding_config is not None
-        and context.cross_asset_closes is not None
-        and context.macro_series is not None
-        and all(k in context.cross_asset_closes for k in _CF_CROSS_ASSET_KEYS)
-        and all(k in context.macro_series for k in _CF_MACRO_KEYS)
-    ):
-        nan_oas = pd.Series(float("nan"), index=spy_close.index)
-        credit_funding = compute_credit_funding_features(
-            hyg_close=context.cross_asset_closes[_CF_HYG_KEY],
-            lqd_close=context.cross_asset_closes[_CF_LQD_KEY],
-            tlt_close=context.cross_asset_closes[_CF_TLT_KEY],
-            kre_close=context.cross_asset_closes[_CF_KRE_KEY],
-            spy_close=spy_close,
-            sofr=context.macro_series[_CF_SOFR_KEY],
-            iorb=context.macro_series[_CF_IORB_KEY],
-            nfci_weekly=context.macro_series[_CF_NFCI_KEY],
-            broad_usd_index=context.macro_series[_CF_BROAD_USD_KEY],
-            hy_oas=context.macro_series.get(_CF_HY_OAS_KEY, nan_oas),
-            ig_oas=context.macro_series.get(_CF_IG_OAS_KEY, nan_oas),
-            config=credit_funding_config.rules,
-        )
-
-    # v2 §2B inflation/growth feature compute (Slice 5). Requires all 9
-    # spec-pinned input series: CPI/PMI/DGS10 on macro_series + DBC/TLT plus
-    # XLY/XLI/XLP/XLU on cross_asset_closes. When any input is absent OR the
-    # config is None, fall back to None — V1 byte-identity preserved on the
-    # inflation_growth_state wire field.
-    inflation_growth: InflationGrowthFeatures | None = None
-    if (
-        inflation_growth_config is not None
-        and context.cross_asset_closes is not None
-        and context.macro_series is not None
-        and all(k in context.cross_asset_closes for k in _IG_CROSS_ASSET_KEYS)
-        and all(k in context.macro_series for k in _IG_MACRO_KEYS)
-    ):
-        inflation_growth = compute_inflation_growth_features(
-            cpi_all_items=context.macro_series[_IG_CPI_KEY],
-            pmi_manufacturing=context.macro_series[_IG_PMI_KEY],
-            dgs10=context.macro_series[_IG_DGS10_KEY],
-            dbc_close=context.cross_asset_closes[_IG_DBC_KEY],
-            spy_close=spy_close,
-            tlt_close=context.cross_asset_closes[_IG_TLT_KEY],
-            xly_close=context.cross_asset_closes[_IG_XLY_KEY],
-            xli_close=context.cross_asset_closes[_IG_XLI_KEY],
-            xlp_close=context.cross_asset_closes[_IG_XLP_KEY],
-            xlu_close=context.cross_asset_closes[_IG_XLU_KEY],
-            config=inflation_growth_config.rules,
-            # §2B inflation_surprise_zscore seam (ADR 0006): the Cleveland
-            # Fed inflation nowcast, source-agnostic via macro_series. When
-            # absent, inflation_surprise_zscore stays all-NaN and the
-            # inflation_shock single-signal limb falsifies.
-            cpi_nowcast=context.macro_series.get("cpi_nowcast"),
-            # §2B earnings_expansion / earnings_contraction seam (Log #48
-            # closure): the weekly 4-week forward-EPS revision-direction
-            # series from the EPS accumulator, source-agnostic via
-            # macro_series. When absent, the two earnings labels falsify.
-            aggregate_forward_eps_revision=context.macro_series.get(
-                "aggregate_forward_eps_revision"
-            ),
-            # §2A first-release CPI seam (audit M2). Routes through to
-            # `compute_inflation_growth_features` which switches the
-            # `cpi_source` when the config flag is set AND the vintage
-            # series is supplied. When None, the existing latest-revision
-            # path is preserved unchanged.
-            cpi_first_release=context.cpi_first_release,
-            use_first_release_cpi_when_available=(
-                inflation_growth_config.rules.use_first_release_cpi_when_available
-            ),
-        )
-
-    # v2 §6.3 BOCPD change-point evidence layer (Slice 8). Observation
-    # series is realized_vol_21d (Ambiguity Log #63) — derived from
-    # SPY close on the V1 path, so the seam is only None when the config
-    # is absent or when SPY history is too short.
-    if context.config.change_point is not None:
-        change_point = compute_change_point_features(
-            realized_vol_21d=realized_vol_21d_series,
-            config=context.config.change_point,
-        )
-    else:
-        change_point = None
+    _run_feature_store_builders(_FEATURE_STORE_BUILDERS, build_state)
 
     return FeatureStore(
-        spy_index=spy_ohlcv.index,
-        trend_direction=trend_direction,
-        trend_character=trend_character,
-        volatility=volatility,
-        breadth=breadth,
-        sma_50=sma_50,
-        network_fragility=network_fragility,
-        trend_direction_v2=trend_direction_v2,
-        volatility_state_v2=volatility_state_v2,
-        breadth_state_v2=breadth_state_v2,
-        volume_liquidity_v2=volume_liquidity_v2,
-        monetary=monetary,
-        hmm=hmm,
-        clustering=clustering,
-        change_point=change_point,
-        credit_funding=credit_funding,
-        inflation_growth=inflation_growth,
+        spy_index=_as_datetime_index(spy_ohlcv.index),
+        trend_direction=_require_feature(build_state.trend_direction, "trend_direction"),
+        trend_character=_require_feature(build_state.trend_character, "trend_character"),
+        volatility=_require_feature(build_state.volatility, "volatility"),
+        breadth=_require_feature(build_state.breadth, "breadth"),
+        sma_50=_require_feature(build_state.sma_50, "sma_50"),
+        network_fragility=build_state.network_fragility,
+        trend_direction_v2=build_state.trend_direction_v2,
+        volatility_state_v2=build_state.volatility_state_v2,
+        breadth_state_v2=build_state.breadth_state_v2,
+        volume_liquidity_v2=build_state.volume_liquidity_v2,
+        monetary=build_state.monetary,
+        hmm=build_state.hmm,
+        clustering=build_state.clustering,
+        change_point=build_state.change_point,
+        credit_funding=build_state.credit_funding,
+        inflation_growth=build_state.inflation_growth,
     )

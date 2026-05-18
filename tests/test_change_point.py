@@ -165,6 +165,94 @@ def test_compute_change_point_features_returns_none_on_zero_variance_input() -> 
     assert result is None
 
 
+def test_compute_change_point_features_returns_none_on_numeric_instability(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import regime_detection.change_point as change_point
+
+    series = _synthetic_two_regime_realized_vol(
+        n_sessions=1500, shift_index=750, seed=0
+    )
+    cfg = _default_change_point_config(training_window_days=1260)
+
+    def raise_floating_point_error(*, data: np.ndarray, config: ChangePointConfig) -> np.ndarray:
+        del data, config
+        raise FloatingPointError("singular predictive")
+
+    monkeypatch.setattr(
+        change_point,
+        "_bocpd_posterior_changepoint_prob",
+        raise_floating_point_error,
+    )
+
+    result = compute_change_point_features(realized_vol_21d=series, config=cfg)
+
+    assert result is None
+
+
+def test_bocpd_adapter_calls_expected_dependency_api(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import regime_detection.change_point as change_point
+
+    calls: dict[str, object] = {}
+
+    class FakeStudentT:
+        def __init__(
+            self, *, alpha: float, beta: float, kappa: float, mu: float
+        ) -> None:
+            calls["student_t"] = {
+                "alpha": alpha,
+                "beta": beta,
+                "kappa": kappa,
+                "mu": mu,
+            }
+
+    def fake_constant_hazard(lam: float, r: np.ndarray) -> np.ndarray:
+        return np.full_like(r, fill_value=1.0 / lam, dtype=float)
+
+    def fake_online_changepoint_detection(
+        data: np.ndarray,
+        hazard_func,
+        observation_likelihood: FakeStudentT,
+    ) -> tuple[np.ndarray, np.ndarray]:
+        calls["data"] = data.copy()
+        calls["hazard_func"] = hazard_func
+        calls["observation_likelihood"] = observation_likelihood
+        R = np.zeros((2, len(data) + 1), dtype=float)
+        R[1, 1:] = np.array([0.1, 0.2, 0.7], dtype=float)
+        return R, np.arange(len(data))
+
+    monkeypatch.setattr(change_point, "_StudentT", FakeStudentT)
+    monkeypatch.setattr(change_point, "_constant_hazard", fake_constant_hazard)
+    monkeypatch.setattr(
+        change_point,
+        "_online_changepoint_detection",
+        fake_online_changepoint_detection,
+    )
+
+    cfg = _default_change_point_config()
+    data = np.array([0.11, 0.12, 0.25], dtype=float)
+
+    posterior = change_point._bocpd_posterior_changepoint_prob(
+        data=data,
+        config=cfg,
+    )
+
+    np.testing.assert_allclose(posterior, np.array([0.1, 0.2, 0.7]))
+    np.testing.assert_allclose(calls["data"], data)
+    assert calls["student_t"] == {
+        "alpha": cfg.student_t_alpha,
+        "beta": cfg.student_t_beta,
+        "kappa": cfg.student_t_kappa,
+        "mu": cfg.student_t_mu,
+    }
+    hazard_func = calls["hazard_func"]
+    assert hazard_func.func is fake_constant_hazard
+    assert hazard_func.args == (cfg.hazard_lambda,)
+    assert isinstance(calls["observation_likelihood"], FakeStudentT)
+
+
 # ---------------------------------------------------------------------------
 # Group B — FeatureStore seam wiring + default config
 # ---------------------------------------------------------------------------

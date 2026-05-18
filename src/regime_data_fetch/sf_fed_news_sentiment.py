@@ -16,7 +16,7 @@ publishing this series since 2020 with the same workbook layout).
 
 Used by V2 §1A as **evidence only** alongside the AAII bull-bear
 8w-MA — never consumed by the `euphoria` rule predicate. See
-`docs/spec_code_data_audit_2026_05_15.md` (audit follow-up for
+`the source-data audit` (audit follow-up for
 sentiment concordance, post-#12).
 
 Output parquet schema:

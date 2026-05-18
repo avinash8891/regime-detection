@@ -222,7 +222,45 @@ def test_slope_sma_50_hand_computed_value(v2_trend_config):
     assert out.slope_sma_50.iloc[t] == pytest.approx(expected, abs=1e-12)
 
 
+def test_trend_direction_v2_sma_levels_match_legacy_inline_formulas(
+    spy_like_random_walk_1000, v2_trend_config
+):
+    out = compute_trend_v2_features(spy_like_random_walk_1000, config=v2_trend_config)
+
+    pd.testing.assert_series_equal(
+        out.sma_50,
+        spy_like_random_walk_1000.rolling(50).mean().rename("sma_50"),
+        check_exact=True,
+    )
+    pd.testing.assert_series_equal(
+        out.sma_200,
+        spy_like_random_walk_1000.rolling(200).mean().rename("sma_200"),
+        check_exact=True,
+    )
+
+
 # ---------- return_63d / return_126d -----------------------------------------
+
+
+def test_trend_direction_v2_returns_match_legacy_inline_formulas(
+    spy_like_random_walk_1000, v2_trend_config
+):
+    out = compute_trend_v2_features(spy_like_random_walk_1000, config=v2_trend_config)
+
+    pd.testing.assert_series_equal(
+        out.return_63d,
+        (spy_like_random_walk_1000 / spy_like_random_walk_1000.shift(63) - 1.0).rename(
+            "return_63d"
+        ),
+        check_exact=True,
+    )
+    pd.testing.assert_series_equal(
+        out.return_126d,
+        (
+            spy_like_random_walk_1000 / spy_like_random_walk_1000.shift(126) - 1.0
+        ).rename("return_126d"),
+        check_exact=True,
+    )
 
 
 def test_return_63d_hand_computed(v2_trend_config):

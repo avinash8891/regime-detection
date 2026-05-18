@@ -16,7 +16,7 @@ and the risk-rank table in §3.6).
 Cross-axis inputs:
     - ``breadth_label`` from V1 ``BreadthLabel`` (regime_detection.breadth_state)
     - ``volatility_label`` from V1 ``VolatilityLabel`` (regime_detection.volatility_state)
-    - ``credit_funding_label`` from V2 §2C credit/funding axis (Slice 4).
+    - ``credit_funding_label`` from V2 §2C credit/funding axis (implementation phase).
       When ``credit_funding_label is None`` the ``systemic_stress`` rule
       short-circuits to ``False`` and precedence falls through to
       ``correlation_to_one``.
@@ -93,7 +93,7 @@ NETWORK_FRAGILITY_RISK_RANK: dict[NetworkFragilityLabel, int] = {
 }
 
 
-# v2 §2C credit/funding labels (Slice 4 — formal enum lives in credit_funding.py).
+# v2 §2C credit/funding labels (implementation phase — formal enum lives in credit_funding.py).
 # Re-declared here as a local Literal alias to avoid a circular import (the
 # §2C classifier consumes nothing from this module).
 CreditFundingLabel = Literal[
@@ -396,10 +396,10 @@ def evaluate_rising_fragility(
      AND largest_eigenvalue_share rising over 21d
      AND breadth_state.active_label in [weak_breadth, narrowing_breadth, divergent_fragile]`
 
-    Note: v2 §3.5 line 634 references `narrowing_breadth`. Slice 2.8c
+    Note: v2 §3.5 line 634 references `narrowing_breadth`. implementation phase
     widened V1's ``BreadthLabel`` enum to include `narrowing_breadth`
     alongside `weak_breadth` and `divergent_fragile`, so the accepted_breadth
-    set now matches the spec text verbatim. Ambiguity Log #3 is fully
+    set now matches the spec text verbatim. documented implementation decision is fully
     resolved.
     """
     if _any_nan(
@@ -485,7 +485,7 @@ def evaluate_systemic_stress(
      AND VIX_percentile_252d > 0.80
      AND breadth_state.active_label in [weak_breadth, narrowing_breadth]`
 
-    Short-circuit: when ``credit_funding_label is None`` (Slice 4 not yet
+    Short-circuit: when ``credit_funding_label is None`` (implementation phase not yet
     shipped) this rule is False. Precedence then falls through to
     ``correlation_to_one``.
     """
@@ -506,7 +506,7 @@ def evaluate_systemic_stress(
         return False
     accepted_credit: set[CreditFundingLabel] = {"credit_stress", "deleveraging"}
     # v2 §3.5 line 656: accepted breadth set matches spec verbatim now that
-    # Slice 2.8c widened the ``BreadthLabel`` enum (Ambiguity Log #3 resolved).
+    # implementation phase widened the ``BreadthLabel`` enum (documented implementation decision resolved).
     accepted_breadth: set[BreadthLabel] = {"weak_breadth", "narrowing_breadth"}
     return bool(
         credit_funding_label in accepted_credit

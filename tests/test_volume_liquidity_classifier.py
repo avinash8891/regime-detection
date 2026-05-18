@@ -1,4 +1,4 @@
-"""Slice 2.7 — VolumeLiquidityStateSeriesClassifier integration tests.
+"""Slice 2.7 — build_volume_liquidity_axis_series integration tests.
 
 Tests follow the slice-1.4 NetworkFragility pattern:
 - Realistic SPY-volume series (~80M shares baseline).
@@ -6,13 +6,14 @@ Tests follow the slice-1.4 NetworkFragility pattern:
   VolumeLiquidityLabel).
 - End-to-end engine test (AGENTS rule A) via build_regime_timeline.
 """
+
 from __future__ import annotations
 
 
 import numpy as np
 import pandas as pd
 
-from regime_detection.axis_series import VolumeLiquidityStateSeriesClassifier
+from regime_detection.axis_series import build_volume_liquidity_axis_series
 from regime_detection.calendar import nyse_sessions_between
 from regime_detection.config import (
     load_default_regime_config,
@@ -33,7 +34,9 @@ _SEED = 20260514
 _SPY_VOLUME_BASELINE = 80_000_000  # realistic SPY daily shares baseline
 
 
-def _bdate_index(periods: int = _TRAINING_SESSIONS, end: pd.Timestamp = _LAST_SESSION) -> pd.DatetimeIndex:
+def _bdate_index(
+    periods: int = _TRAINING_SESSIONS, end: pd.Timestamp = _LAST_SESSION
+) -> pd.DatetimeIndex:
     sessions = nyse_sessions_between(
         (end - pd.Timedelta(days=periods * 2)).date(),
         end.date(),
@@ -41,13 +44,17 @@ def _bdate_index(periods: int = _TRAINING_SESSIONS, end: pd.Timestamp = _LAST_SE
     return pd.DatetimeIndex([pd.Timestamp(d) for d in sessions[-periods:]])
 
 
-def _synthetic_spy_market_data(*, index: pd.DatetimeIndex, seed: int = _SEED) -> pd.DataFrame:
+def _synthetic_spy_market_data(
+    *, index: pd.DatetimeIndex, seed: int = _SEED
+) -> pd.DataFrame:
     rng = np.random.default_rng(seed=seed)
     returns = rng.normal(0.0, 0.01, size=len(index))
     close = (1.0 + returns).cumprod() * 400.0
     # Volume noise around 80M baseline, with a panic spike on the last 5 sessions
     # so the classifier has a chance to emit panic_volume after warmup.
-    volume = rng.normal(_SPY_VOLUME_BASELINE, _SPY_VOLUME_BASELINE * 0.10, size=len(index))
+    volume = rng.normal(
+        _SPY_VOLUME_BASELINE, _SPY_VOLUME_BASELINE * 0.10, size=len(index)
+    )
     # Inject a panic event near the end: 3x baseline volume AND -3% return.
     panic_idx = len(index) - 3
     volume[panic_idx] = _SPY_VOLUME_BASELINE * 4.0
@@ -55,33 +62,39 @@ def _synthetic_spy_market_data(*, index: pd.DatetimeIndex, seed: int = _SEED) ->
 
     rows: list[dict[str, object]] = []
     for i, ts in enumerate(index):
-        rows.append({
-            "date": ts.date(),
-            "symbol": "SPY",
-            "open": float(close[i]),
-            "high": float(close[i]) * 1.005,
-            "low": float(close[i]) * 0.995,
-            "close": float(close[i]),
-            "volume": float(volume[i]),
-        })
-        rows.append({
-            "date": ts.date(),
-            "symbol": "RSP",
-            "open": float(close[i]) * 0.5,
-            "high": float(close[i]) * 0.5 * 1.005,
-            "low": float(close[i]) * 0.5 * 0.995,
-            "close": float(close[i]) * 0.5,
-            "volume": float(volume[i]) * 0.5,
-        })
-        rows.append({
-            "date": ts.date(),
-            "symbol": "VIXY",
-            "open": 20.0,
-            "high": 20.5,
-            "low": 19.5,
-            "close": 20.0,
-            "volume": 100_000.0,
-        })
+        rows.append(
+            {
+                "date": ts.date(),
+                "symbol": "SPY",
+                "open": float(close[i]),
+                "high": float(close[i]) * 1.005,
+                "low": float(close[i]) * 0.995,
+                "close": float(close[i]),
+                "volume": float(volume[i]),
+            }
+        )
+        rows.append(
+            {
+                "date": ts.date(),
+                "symbol": "RSP",
+                "open": float(close[i]) * 0.5,
+                "high": float(close[i]) * 0.5 * 1.005,
+                "low": float(close[i]) * 0.5 * 0.995,
+                "close": float(close[i]) * 0.5,
+                "volume": float(volume[i]) * 0.5,
+            }
+        )
+        rows.append(
+            {
+                "date": ts.date(),
+                "symbol": "VIXY",
+                "open": 20.0,
+                "high": 20.5,
+                "low": 19.5,
+                "close": 20.0,
+                "volume": 100_000.0,
+            }
+        )
     return pd.DataFrame(rows)
 
 
@@ -115,7 +128,7 @@ def test_classifier_returns_none_when_feature_store_volume_seam_is_none():
     bare_store = build_feature_store(context)
     assert bare_store.volume_liquidity_v2 is None
 
-    out = VolumeLiquidityStateSeriesClassifier().build(context, bare_store)
+    out = build_volume_liquidity_axis_series(context, bare_store)
     assert out is None
 
 
@@ -124,7 +137,7 @@ def test_classifier_emits_one_output_per_session_in_context():
     store = build_feature_store(
         context, volume_liquidity_v2_config=context.config.volume_liquidity_v2
     )
-    out = VolumeLiquidityStateSeriesClassifier().build(context, store)
+    out = build_volume_liquidity_axis_series(context, store)
 
     assert out is not None
     assert set(out.keys()) == set(context.sessions)
@@ -135,7 +148,7 @@ def test_classifier_emits_labels_from_v2_label_set():
     store = build_feature_store(
         context, volume_liquidity_v2_config=context.config.volume_liquidity_v2
     )
-    out = VolumeLiquidityStateSeriesClassifier().build(context, store)
+    out = build_volume_liquidity_axis_series(context, store)
 
     allowed = set(VOLUME_LIQUIDITY_RISK_RANK.keys())
     for day, output in out.items():
@@ -153,7 +166,7 @@ def test_classifier_evidence_reports_live_liquidity_gap_inputs():
         volume_liquidity_v2_config=context.config.volume_liquidity_v2,
         volatility_state_v2_config=context.config.volatility_state_v2,
     )
-    out = VolumeLiquidityStateSeriesClassifier().build(context, store)
+    out = build_volume_liquidity_axis_series(context, store)
     assert out is not None
 
     last_day = context.sessions[-1]
@@ -177,7 +190,7 @@ def test_classifier_emits_normal_volume_after_warmup():
     store = build_feature_store(
         context, volume_liquidity_v2_config=context.config.volume_liquidity_v2
     )
-    out = VolumeLiquidityStateSeriesClassifier().build(context, store)
+    out = build_volume_liquidity_axis_series(context, store)
 
     last_100 = list(context.sessions)[-100:]
     raw_labels = [out[day].raw_label for day in last_100]
@@ -191,7 +204,7 @@ def test_classifier_emits_panic_volume_when_injected():
     store = build_feature_store(
         context, volume_liquidity_v2_config=context.config.volume_liquidity_v2
     )
-    out = VolumeLiquidityStateSeriesClassifier().build(context, store)
+    out = build_volume_liquidity_axis_series(context, store)
 
     seen = {out[day].raw_label for day in context.sessions}
     assert "panic_volume" in seen, seen
@@ -211,7 +224,7 @@ def test_classifier_forces_unknown_when_volume_zscore_is_all_nan():
     broken = vl.__class__(volume_zscore_20d=nan_series)
     broken_store = store.model_copy(update={"volume_liquidity_v2": broken})
 
-    out = VolumeLiquidityStateSeriesClassifier().build(context, broken_store)
+    out = build_volume_liquidity_axis_series(context, broken_store)
     last_100 = list(context.sessions)[-100:]
     for day in last_100:
         assert out[day].raw_label == "unknown"
@@ -227,9 +240,7 @@ def test_classifier_applies_per_label_hysteresis_so_single_day_panic_flip_does_n
 
     cfg = load_default_regime_config().volume_liquidity_state
     raws: list[VolumeLiquidityLabel] = (
-        ["panic_volume"] * 10
-        + ["normal_volume"]
-        + ["panic_volume"] * 10
+        ["panic_volume"] * 10 + ["normal_volume"] + ["panic_volume"] * 10
     )
     stable, _active = apply_per_label_asymmetric_hysteresis(
         raw_labels=raws,

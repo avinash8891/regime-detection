@@ -1,7 +1,7 @@
-"""v2 §6.3 BOCPD Change-Point Detection (Slice 8, evidence-only).
+"""v2 §6.3 BOCPD Change-Point Detection (implementation phase, evidence-only).
 
 Library reuse: ``bayesian_changepoint_detection.online_changepoint_detection``
-(Ambiguity Log #62) — Adams-MacKay 2007 algorithm. No hand-rolled BOCPD;
+(documented implementation decision) — Adams-MacKay 2007 algorithm. No hand-rolled BOCPD;
 ~70 lines of glue.
 
 Observation series: realized_vol_21d (#63).
@@ -33,9 +33,9 @@ from functools import partial
 import numpy as np
 import pandas as pd
 from bayesian_changepoint_detection.online_changepoint_detection import (
-    StudentT,
-    constant_hazard,
-    online_changepoint_detection,
+    StudentT as _StudentT,
+    constant_hazard as _constant_hazard,
+    online_changepoint_detection as _online_changepoint_detection,
 )
 
 from regime_detection.config import ChangePointConfig
@@ -50,8 +50,8 @@ class ChangePointFeatures:
     """v2 §6.3 — per-session BOCPD posterior + derived series."""
 
     posterior_changepoint_prob: pd.Series  # raw BOCPD per-session changepoint posterior
-    score: pd.Series  # 5-session rolling max of posterior (Log #64)
-    days_since_last_break: pd.Series  # nullable Int64; sessions since last break (Log #65)
+    score: pd.Series  # 5-session rolling max of posterior (documented implementation decision)
+    days_since_last_break: pd.Series  # nullable Int64; sessions since last break (documented implementation decision)
     method: str  # "BOCPD"
 
 
@@ -82,7 +82,7 @@ def compute_change_point_features(
     2. **In-window rows where no break has yet occurred in trailing
        history** (cold-start within the BOCPD window). ``posterior`` and
        ``score`` are real numbers; ``days_since_last_break`` is ``pd.NA``
-       per Ambiguity Log #65 / V1 §2.7 cold-start contract. The timeline
+       per documented implementation decision / V1 §2.7 cold-start contract. The timeline
        consumer maps ``pd.NA`` → ``None`` for the wire field while
        preserving the real ``score`` value. This is the load-bearing
        path — quiet markets with no detected breaks still emit a valid
@@ -130,28 +130,14 @@ def compute_change_point_features(
         return None
 
     try:
-        R, _maxes = online_changepoint_detection(
-            data,
-            partial(constant_hazard, config.hazard_lambda),
-            StudentT(
-                alpha=config.student_t_alpha,
-                beta=config.student_t_beta,
-                kappa=config.student_t_kappa,
-                mu=config.student_t_mu,
-            ),
-        )
-    except Exception as exc:  # noqa: BLE001
+        posterior_arr = _bocpd_posterior_changepoint_prob(data=data, config=config)
+    except ArithmeticError as exc:
         _LOGGER.warning(
             "BOCPD online_changepoint_detection failed; "
             "change_point seam returns None: %s",
             exc,
         )
         return None
-
-    # See module docstring for why row 1 of R carries the per-session
-    # change-point posterior in this library.
-    n = len(data)
-    posterior_arr = R[1, 1 : n + 1]
 
     posterior_aligned = pd.Series(
         posterior_arr,
@@ -175,15 +161,46 @@ def compute_change_point_features(
     )
 
 
+def _bocpd_posterior_changepoint_prob(
+    *,
+    data: np.ndarray,
+    config: ChangePointConfig,
+) -> np.ndarray:
+    """Adapter for the ``bayesian-changepoint-detection`` API.
+
+    The project needs the Adams-MacKay online BOCPD implementation, exposed by
+    the package as:
+
+    - ``online_changepoint_detection(data, hazard_func, observation_likelihood)``
+    - ``constant_hazard(lam, r)``, passed via ``functools.partial``
+    - ``StudentT(alpha, beta, kappa, mu)`` observation likelihood
+
+    See the module docstring for why row 1 of ``R`` carries the per-session
+    change-point posterior in this library.
+    """
+    R, _maxes = _online_changepoint_detection(
+        data,
+        partial(_constant_hazard, config.hazard_lambda),
+        _StudentT(
+            alpha=config.student_t_alpha,
+            beta=config.student_t_beta,
+            kappa=config.student_t_kappa,
+            mu=config.student_t_mu,
+        ),
+    )
+    n = len(data)
+    return np.asarray(R[1, 1 : n + 1], dtype=float)
+
+
 def _rolling_max_changepoint_prob(posterior: pd.Series, window: int) -> pd.Series:
-    """5-session rolling max per Ambiguity Log #64."""
+    """5-session rolling max per documented implementation decision."""
     return posterior.rolling(window=window, min_periods=1).max()
 
 
 def _days_since_last_break(
     posterior: pd.Series, threshold: float
 ) -> pd.Series:
-    """Sessions since last posterior crossing per Log #65.
+    """Sessions since last posterior crossing per documented implementation decision.
 
     ``pd.NA`` when no break has occurred in available history.
     """

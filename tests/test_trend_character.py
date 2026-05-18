@@ -6,7 +6,11 @@ from pathlib import Path
 import pandas as pd
 import yaml
 
-from regime_detection.trend_character import TrendCharacterFeatures, raw_label_for_day
+from regime_detection.trend_character import (
+    TrendCharacterFeatures,
+    compute_features,
+    raw_label_for_day,
+)
 
 
 def test_trend_character_matches_pinned_fixtures(classified_golden_outputs) -> None:
@@ -45,6 +49,30 @@ def _trend_character_features(
         bb_width_expanding=pd.Series([False], index=idx),
         volume_above_20d_average=pd.Series([False], index=idx),
         followthrough_rate=pd.Series([float("nan")], index=idx),
+    )
+
+
+def test_trend_character_rolling_features_match_legacy_inline_formulas() -> None:
+    index = pd.bdate_range("2023-01-02", periods=120)
+    close = pd.Series(
+        [100.0 + i * 0.5 + (i % 9) * 0.2 for i in range(len(index))],
+        index=index,
+        name="close",
+    )
+    high = close + 1.0
+    low = close - 1.0
+
+    out = compute_features(close=close, high=high, low=low)
+
+    pd.testing.assert_series_equal(
+        out.sma_50,
+        close.rolling(50).mean(),
+        check_exact=True,
+    )
+    pd.testing.assert_series_equal(
+        out.return_63d,
+        close / close.shift(63) - 1,
+        check_exact=True,
     )
 
 

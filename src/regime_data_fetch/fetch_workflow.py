@@ -37,8 +37,8 @@ V2_CROSS_ASSET_SYMBOLS = [
     "GLD",
     "USO",
     "UUP",
-    # Bloomberg Commodity Index substitute per Ambiguity Log #48; consumed
-    # by v2 §2B `commodity_return_63d` feature in slice 5.
+    # Bloomberg Commodity Index substitute per documented implementation decision; consumed
+    # by v2 §2B `commodity_return_63d` feature in implementation phase.
     "DBC",
 ]
 V2_EXTRA_SYMBOLS = ["KRE"] + V2_SECTOR_SYMBOLS + V2_CROSS_ASSET_SYMBOLS
@@ -51,7 +51,7 @@ V2_FRED_SERIES = {
     "cpi_all_items": "CPIAUCSL",
     "iorb": "IORB",
     # GDPNow nowcast (Atlanta Fed). Free on FRED at series_id GDPNOW.
-    # Not consumed by any v2 §2B rule predicate as of slice 5 ship; ingested
+    # Not consumed by any v2 §2B rule predicate as of implementation phase ship; ingested
     # here for the future-amendment slice that would use it as additional
     # recession_scare / recovery_growth evidence. Listed early in the slice
     # cadence so it lands in archived inputs before any spec amendment.
@@ -59,7 +59,7 @@ V2_FRED_SERIES = {
     # ICE BofA Option-Adjusted Spread series — FRED redistributes under
     # license from ICE Indices, free at the FRED endpoint. SINGLE SOURCE
     # for the v2 §2C `hy_oas_63d` / `ig_oas_63d` metrics
-    # (Log #49 closure). `credit_funding` lists these in REQUIRED_MACRO_KEYS,
+    # (documented implementation decision). `credit_funding` lists these in REQUIRED_MACRO_KEYS,
     # so the §2C seam does not build without them — there is no proxy
     # fallback path.
     "hy_oas": "BAMLH0A0HYM2",       # ICE BofA US High Yield Index OAS
@@ -116,10 +116,21 @@ def _write_merged_partitioned_daily_ohlcv(
         key_columns=["symbol", "date"],
     )
     if parquet_dir.exists():
+        # pandas partition writes do not atomically reconcile deleted symbols.
+        # Build the full merged frame first, then replace the partition tree so
+        # stale symbol directories cannot survive an incremental refresh.
         shutil.rmtree(parquet_dir)
     parquet_dir.mkdir(parents=True, exist_ok=True)
     merged.to_parquet(parquet_dir, index=False, partition_cols=["symbol"])
     return merged
+
+
+def _drop_null_fred_observations(frame: pd.DataFrame) -> tuple[pd.DataFrame, int]:
+    if frame.empty or "value" not in frame.columns:
+        return frame, 0
+    mask = frame["value"].notna()
+    dropped = int((~mask).sum())
+    return frame.loc[mask].copy(), dropped
 
 
 def _dedupe_preserve_order(symbols: list[str]) -> list[str]:
@@ -403,6 +414,7 @@ def run_macro_fetch(
     try:
         macro_frames: list[pd.DataFrame] = []
         series_meta: dict[str, dict[str, object]] = {}
+        dropped_null_observations = 0
         for logical_name, series_id in V2_FRED_SERIES.items():
             raw_json = fetch_fred_series_json(
                 series_id=series_id,
@@ -425,6 +437,8 @@ def run_macro_fetch(
                 )
             df = parse_fred_series_json(raw_json, series_id=series_id)
             df["logical_name"] = logical_name
+            df, dropped = _drop_null_fred_observations(df)
+            dropped_null_observations += dropped
             macro_frames.append(df)
             series_meta[logical_name] = {
                 "series_id": series_id,
@@ -458,6 +472,8 @@ def run_macro_fetch(
                 )
             vintages = parse_fred_series_json(raw_vintages_json, series_id=V2_FRED_SERIES["cpi_all_items"])
             vintages["logical_name"] = "cpi_all_items_vintages"
+            vintages, dropped = _drop_null_fred_observations(vintages)
+            dropped_null_observations += dropped
             vintages_dir = out_dir / "macro_vintages"
             vintages_dir.mkdir(parents=True, exist_ok=True)
             vintages_path = vintages_dir / "cpi_all_items_vintages.parquet"
@@ -483,6 +499,8 @@ def run_macro_fetch(
             new_frame=macro_df,
             key_columns=["logical_name", "series_id", "date"],
         )
+        macro_df, dropped = _drop_null_fred_observations(macro_df)
+        dropped_null_observations += dropped
         macro_df.to_parquet(macro_path, index=False)
 
         report = {
@@ -493,6 +511,9 @@ def run_macro_fetch(
                 "include_cpi_vintages": include_cpi_vintages,
             },
             "series": series_meta,
+            "quality": {
+                "dropped_null_observations": dropped_null_observations,
+            },
             "paths": {
                 "macro_parquet": str(macro_path),
                 "cpi_vintages_parquet": str(vintages_path) if vintages_path else None,

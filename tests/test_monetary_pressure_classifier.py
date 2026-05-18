@@ -9,12 +9,15 @@ Per AGENTS.md G + ~/.claude/CLAUDE.md testing rules:
 Spec authority: docs/regime_engine_v2_spec.md §2A (lines 1093-1130
 Ambiguity Log #46 pins).
 """
+
 from __future__ import annotations
+
+from dataclasses import replace
 
 import numpy as np
 import pandas as pd
 
-from regime_detection.axis_series import MonetaryPressureV2SeriesClassifier
+from regime_detection.axis_series import build_monetary_pressure_axis_series
 from regime_detection.calendar import nyse_sessions_between
 from regime_detection.config import (
     MonetaryPressureV2Config,
@@ -250,9 +253,7 @@ def test_rate_shock_holds_five_sessions_per_log_46_e():
     assert cfg.deescalation_days_by_label["rate_shock"] == 5
 
     raws: list[MonetaryPressureV2Label] = (
-        ["rate_shock"] * 10
-        + ["neutral_monetary"] * 3
-        + ["rate_shock"] * 5
+        ["rate_shock"] * 10 + ["neutral_monetary"] * 3 + ["rate_shock"] * 5
     )
     stable, _ = apply_per_label_asymmetric_hysteresis(
         raw_labels=raws,
@@ -298,15 +299,17 @@ def _synthetic_market_data(index: pd.DatetimeIndex, seed: int = _SEED) -> pd.Dat
     for i, ts in enumerate(index):
         for symbol in ("SPY", "RSP", "VIXY"):
             mult = {"SPY": 1.0, "RSP": 0.5, "VIXY": 0.05}[symbol]
-            rows.append({
-                "date": ts.date(),
-                "symbol": symbol,
-                "open": float(close[i]) * mult,
-                "high": float(close[i]) * mult * 1.005,
-                "low": float(close[i]) * mult * 0.995,
-                "close": float(close[i]) * mult,
-                "volume": 1_000_000.0,
-            })
+            rows.append(
+                {
+                    "date": ts.date(),
+                    "symbol": symbol,
+                    "open": float(close[i]) * mult,
+                    "high": float(close[i]) * mult * 1.005,
+                    "low": float(close[i]) * mult * 0.995,
+                    "close": float(close[i]) * mult,
+                    "volume": 1_000_000.0,
+                }
+            )
     return pd.DataFrame(rows)
 
 
@@ -348,7 +351,7 @@ def test_classifier_returns_none_when_feature_store_monetary_seam_is_none():
     )
     bare_store = build_feature_store(context)
     assert bare_store.monetary is None
-    out = MonetaryPressureV2SeriesClassifier().build(context, bare_store)
+    out = build_monetary_pressure_axis_series(context, bare_store)
     assert out is None
 
 
@@ -359,13 +362,34 @@ def test_classifier_emits_outputs_when_seam_lit():
         monetary_pressure_v2_config=context.config.monetary_pressure_v2,
     )
     assert store.monetary is not None
-    out = MonetaryPressureV2SeriesClassifier().build(context, store)
+    out = build_monetary_pressure_axis_series(context, store)
     assert out is not None
     assert set(out.keys()) == set(context.sessions)
     allowed = set(MONETARY_PRESSURE_V2_RISK_RANK.keys())
     for output in out.values():
         assert output.raw_label in allowed
         assert isinstance(output, MonetaryPressureV2Output)
+
+
+def test_classifier_emits_central_bank_text_score_as_evidence_only():
+    context = _build_context_with_macro()
+    store = build_feature_store(
+        context,
+        monetary_pressure_v2_config=context.config.monetary_pressure_v2,
+    )
+    assert store.monetary is not None
+    score = pd.Series(0.25, index=context.spy_ohlcv.index, name="central_bank_text_score")
+    store = store.model_copy(
+        update={"monetary": replace(store.monetary, central_bank_text_score=score)}
+    )
+
+    out = build_monetary_pressure_axis_series(context, store)
+
+    assert out is not None
+    sample = next(
+        output for output in out.values() if "rule_evidence" in output.evidence
+    )
+    assert sample.evidence["rule_evidence"]["central_bank_text_score"] == 0.25
 
 
 def test_engine_classify_window_populates_monetary_pressure_state():

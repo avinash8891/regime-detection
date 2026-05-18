@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
 from html import unescape
 import logging
 import re
@@ -8,6 +9,8 @@ from urllib.error import URLError
 from urllib.request import Request, urlopen
 
 LOGGER = logging.getLogger(__name__)
+
+HTTP_USER_AGENT = "regime-detection-event-fetch/1.0"
 
 ECB_BASE_URL = "https://www.ecb.europa.eu"
 BOE_BASE_URL = "https://www.bankofengland.co.uk"
@@ -53,14 +56,25 @@ MONTHS = {
 }
 
 
-def fetch_text_url(url: str, *, timeout: int = 30) -> str:
-    request = Request(url, headers={"User-Agent": "regime-detection-event-fetch/1.0"})
+@dataclass(frozen=True)
+class FetchTextResult:
+    text: str | None
+    error: str | None = None
+
+    @property
+    def ok(self) -> bool:
+        return self.error is None
+
+
+def fetch_text_result(url: str, *, timeout: int = 30) -> FetchTextResult:
+    request = Request(url, headers={"User-Agent": HTTP_USER_AGENT})
     try:
         with urlopen(request, timeout=timeout) as response:
-            return response.read().decode("utf-8")
+            return FetchTextResult(text=response.read().decode("utf-8"))
     except URLError as exc:
+        reason = getattr(exc, "reason", exc)
         LOGGER.error("event source fetch failed for %s; skipping source for this run: %s", url, exc)
-        return ""
+        return FetchTextResult(text=None, error=str(reason))
 
 
 def strip_tags(value: str) -> str:
