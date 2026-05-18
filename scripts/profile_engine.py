@@ -23,13 +23,14 @@ if str(SRC_ROOT) not in sys.path:
     sys.path.insert(0, str(SRC_ROOT))
 
 from regime_data_fetch.pit_constituents import read_pit_intervals
+from regime_data_fetch.manifest_inputs import ManifestInputResolutionError
 from regime_data_fetch.cli_common import (
     OPERATOR_ENV_POINTER_FILE,
     load_operator_env_files,
 )
 from regime_data_fetch.universe import FIXED_UNIVERSE_TREE_NAME
 from regime_detection.engine import RegimeEngine
-from regime_detection.fragility_universe import CROSS_ASSET_SYMBOLS, SECTOR_ETFS
+from regime_detection.fragility_universe import SECTOR_ETFS
 from regime_detection.loaders import (
     load_central_bank_text_score,
     load_cpi_vintages_first_release,
@@ -39,7 +40,9 @@ from regime_detection.loaders import (
 from regime_detection.market_context import build_market_context
 from regime_detection.timeline import ENGINE_MINIMUM_HISTORY
 from scripts._v2_calibration_helpers import (
+    CROSS_ASSET_SYMBOLS,
     add_manifest_args,
+    apply_manifest_input_defaults,
     apply_manifest_input_paths,
     default_pmi_path,
     load_close_dict,
@@ -48,8 +51,9 @@ from scripts._v2_calibration_helpers import (
     manifest_input_overrides,
     materialize_manifest_from_args,
     positive_int,
+    register_manifest_input_args,
 )
-from scripts.profile_engine_30d_reporting import (
+from scripts.profile_engine_reporting import (
     PROFILE_INPUT_SEAM_NAMES,
     _build_json_report,
     _compact_timeline_rows,
@@ -61,11 +65,13 @@ from scripts.profile_engine_30d_reporting import (
     _verify_invariants,
     _write_json_report,
 )
-from scripts.profile_engine_30d_timers import (
+from scripts.profile_engine_timers import (
     _timed_inflation_growth_builder,
     install_timers as _install_timers,
 )
 
+
+_RUNNER_NAME = "profile_engine"
 
 DEFAULT_CONFIG_PATH = (
     REPO_ROOT / "src" / "regime_detection" / "configs" / "core3-v2.0.0.yaml"
@@ -80,25 +86,21 @@ DEFAULT_PIT_PARQUET = (
 )
 DEFAULT_PMI_PATH = default_pmi_path(REPO_ROOT / "data" / "raw")
 DEFAULT_EVENT_CALENDAR = REPO_ROOT / "configs" / "events" / "us_events.yaml"
-RUN_TIMEOUT_SECONDS = 300
-__all__ = [
-    "_build_json_report",
-    "_reporting_label",
-    "_timed_inflation_growth_builder",
-    "_trailing_v2_status",
-    "_write_json_report",
-]
+DEFAULT_RUN_TIMEOUT_SECONDS = 300
 
-
-@dataclass
+@dataclass(init=False)
 class StageTimer:
-    totals: dict[str, float]
-    counts: dict[str, int]
-    current_stage: str | None = None
+    totals: defaultdict[str, float]
+    counts: defaultdict[str, int]
+    timeout_seconds: int
+    current_stage: str | None
 
-    def __init__(self) -> None:
+    def __init__(
+        self, *, timeout_seconds: int = DEFAULT_RUN_TIMEOUT_SECONDS
+    ) -> None:
         self.totals = defaultdict(float)
         self.counts = defaultdict(int)
+        self.timeout_seconds = timeout_seconds
         self.current_stage = None
 
     @contextlib.contextmanager
@@ -134,7 +136,6 @@ class ProfileInputBundle:
     pit_constituent_intervals: pd.DataFrame
     constituent_ohlcv: dict[str, pd.DataFrame]
     constituent_tickers: list[str]
-    missing_constituent_paths: list[Path]
 
 
 class RunTimeout(RuntimeError):
@@ -144,7 +145,7 @@ class RunTimeout(RuntimeError):
 def _timeout_handler(timer: StageTimer, *_args: Any) -> None:
     stage = timer.current_stage or "<outside instrumented stage>"
     raise RunTimeout(
-        f"Profiling run exceeded {RUN_TIMEOUT_SECONDS}s while in stage: {stage}"
+        f"Profiling run exceeded {timer.timeout_seconds}s while in stage: {stage}"
     )
 
 
@@ -259,42 +260,27 @@ def _load_optional_central_bank_text_releases(
     return releases
 
 
-def _load_market_data_from_tree(tree_root: Path, symbols: list[str]) -> pd.DataFrame:
-    frames: list[pd.DataFrame] = []
-    for symbol in symbols:
-        frame = _read_symbol_ohlcv(tree_root, symbol)
-        frame["symbol"] = symbol
-        frames.append(
-            frame[["date", "symbol", "open", "high", "low", "close", "volume"]]
-        )
-    out = pd.concat(frames, ignore_index=True)
-    out["date"] = pd.to_datetime(out["date"]).dt.date
-    return out.sort_values(["date", "symbol"]).reset_index(drop=True)
-
 
 def _load_constituent_ohlcv_from_tree(
     tree_root: Path,
     intervals: pd.DataFrame,
     start_date: dt.date,
     end_date: dt.date,
-    *,
-    allow_missing_files: bool = False,
-) -> tuple[dict[str, pd.DataFrame], list[str], list[Path]]:
+) -> tuple[dict[str, pd.DataFrame], list[str]]:
     overlap_mask = (intervals["start_date"] <= end_date) & (
         intervals["end_date"].isna() | (intervals["end_date"] >= start_date)
     )
     tickers = sorted({str(t) for t in intervals.loc[overlap_mask, "ticker"].tolist()})
     out: dict[str, pd.DataFrame] = {}
-    missing_paths: list[Path] = []
     for ticker in tickers:
         parquet_path = tree_root / f"symbol={ticker}" / "ohlcv.parquet"
         try:
             frame = _read_symbol_ohlcv(tree_root, ticker)
         except FileNotFoundError:
-            if not allow_missing_files:
-                raise FileNotFoundError(parquet_path)
-            missing_paths.append(parquet_path)
-            continue
+            raise FileNotFoundError(
+                f"PIT-constituent OHLCV missing: {parquet_path}. "
+                "Re-materialize the manifest to fetch the full 1193-symbol tree."
+            ) from None
         frame = frame[
             (frame["date"] >= pd.Timestamp(start_date))
             & (frame["date"] <= pd.Timestamp(end_date))
@@ -309,7 +295,7 @@ def _load_constituent_ohlcv_from_tree(
         ]
         frame.index.name = "date"
         out[ticker] = frame
-    return out, tickers, missing_paths
+    return out, tickers
 
 
 def _load_profile_inputs(
@@ -334,20 +320,18 @@ def _load_profile_inputs(
     working_start_date = bootstrap_context.sessions[-required_sessions]
     selected_dates = list(bootstrap_context.sessions[-args.lookback_days :])
 
-    sector_etf_closes = load_close_dict(args.daily_dir, list(SECTOR_ETFS), spy_index)
-    cross_asset_symbols = [
-        *CROSS_ASSET_SYMBOLS,
-        "DBC",
-        "KRE",
-        "XLY",
-        "XLI",
-        "XLP",
-        "XLU",
-    ]
-    cross_asset_closes = load_close_dict(args.daily_dir, cross_asset_symbols, spy_index)
+    cross_asset_symbols = CROSS_ASSET_SYMBOLS
+    # Load the union of sector ETFs and cross-asset symbols in one pass to avoid
+    # reading files for symbols that appear in both lists (XLY, XLI, XLP, XLU).
+    all_close_symbols = list(dict.fromkeys([*SECTOR_ETFS, *cross_asset_symbols]))
+    all_closes = load_close_dict(args.daily_dir, all_close_symbols, spy_index)
+    sector_etf_closes = {s: all_closes[s] for s in SECTOR_ETFS if s in all_closes}
+    cross_asset_closes = {s: all_closes[s] for s in cross_asset_symbols if s in all_closes}
     macro_series = load_macro_series(
         args.macro_parquet,
         args.pmi_path if args.pmi_path is not None and args.pmi_path.exists() else None,
+        cpi_nowcast_parquet=args.cpi_nowcast_parquet,
+        eps_weekly_history_parquet=args.aggregate_forward_eps_weekly_history_parquet,
     )
     event_calendar = _load_optional_event_calendar(args.event_calendar)
     aaii_sentiment = _load_optional_aaii_sentiment(args.aaii_sentiment_parquet)
@@ -359,14 +343,11 @@ def _load_profile_inputs(
     )
     cpi_first_release = _load_optional_cpi_first_release(args.cpi_vintages_parquet)
     pit_constituent_intervals = read_pit_intervals(args.pit_parquet)
-    constituent_ohlcv, constituent_tickers, missing_constituent_paths = (
-        _load_constituent_ohlcv_from_tree(
-            args.constituent_tree,
-            pit_constituent_intervals,
-            start_date=working_start_date,
-            end_date=end_date,
-            allow_missing_files=args.allow_missing_constituent_files,
-        )
+    constituent_ohlcv, constituent_tickers = _load_constituent_ohlcv_from_tree(
+        args.constituent_tree,
+        pit_constituent_intervals,
+        start_date=working_start_date,
+        end_date=end_date,
     )
 
     return ProfileInputBundle(
@@ -387,27 +368,25 @@ def _load_profile_inputs(
         pit_constituent_intervals=pit_constituent_intervals,
         constituent_ohlcv=constituent_ohlcv,
         constituent_tickers=constituent_tickers,
-        missing_constituent_paths=missing_constituent_paths,
     )
 
 
 def _parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Profile 30-session RegimeEngine.classify_window() wall-clock stages."
+        description="Profile RegimeEngine.classify_window() wall-clock stages over a configurable lookback window."
     )
     parser.add_argument("--lookback-days", type=positive_int, default=30)
     parser.add_argument("--config-path", type=Path, default=DEFAULT_CONFIG_PATH)
     parser.add_argument("--daily-dir", type=Path, default=None)
     parser.add_argument("--constituent-tree", type=Path, default=None)
+    parser.add_argument("--event-calendar", type=Path, default=DEFAULT_EVENT_CALENDAR)
+    # Optional manifest-routed inputs are declared once in
+    # MANIFEST_INPUT_SPECS (regime_data_fetch.manifest_inputs); the
+    # helper below registers them all so the per-runner argparse list
+    # cannot silently drift behind the registry.
+    register_manifest_input_args(parser, include_required_paths=False)
     parser.add_argument("--macro-parquet", type=Path, default=None)
     parser.add_argument("--pit-parquet", type=Path, default=None)
-    parser.add_argument("--pmi-path", type=Path, default=None)
-    parser.add_argument("--event-calendar", type=Path, default=DEFAULT_EVENT_CALENDAR)
-    parser.add_argument("--aaii-sentiment-parquet", type=Path, default=None)
-    parser.add_argument("--news-sentiment-parquet", type=Path, default=None)
-    parser.add_argument("--fomc-minutes-parquet", type=Path, default=None)
-    parser.add_argument("--powell-speeches-parquet", type=Path, default=None)
-    parser.add_argument("--cpi-vintages-parquet", type=Path, default=None)
     parser.add_argument(
         "--operator-env-file",
         type=Path,
@@ -424,49 +403,30 @@ def _parse_args() -> argparse.Namespace:
         default=None,
         help="Optional path for a machine-readable profiling report JSON artifact.",
     )
-    parser.add_argument("--allow-missing-constituent-files", action="store_true")
+    parser.add_argument(
+        "--run-timeout-seconds",
+        type=int,
+        default=DEFAULT_RUN_TIMEOUT_SECONDS,
+        help=(
+            "SIGALRM budget for the instrumented classify_window() block. "
+            f"Defaults to {DEFAULT_RUN_TIMEOUT_SECONDS}s (preserves prior "
+            "behavior). Raise this for full-history profiling runs; pass 0 "
+            "or a negative value to disable the alarm entirely. When the "
+            "alarm fires, a RunTimeout exception is raised so callers can "
+            "see that clustering/HMM was not allowed to complete."
+        ),
+    )
     args = parser.parse_args()
-    args.manifest_input_overrides = _manifest_input_overrides(sys.argv[1:])
+    args.manifest_input_overrides = manifest_input_overrides(sys.argv[1:])
     if args.daily_dir is None:
         args.daily_dir = args.data_root / FIXED_UNIVERSE_TREE_NAME
     if args.constituent_tree is None:
         args.constituent_tree = args.data_root / FIXED_UNIVERSE_TREE_NAME
-    if args.macro_parquet is None:
-        args.macro_parquet = args.data_root / "macro" / "fred_macro_series.parquet"
-    if args.pmi_path is None:
-        args.pmi_path = default_pmi_path(args.data_root)
-    if args.pit_parquet is None:
-        args.pit_parquet = (
-            args.data_root / "pit_constituents" / "sp500_ticker_intervals.parquet"
-        )
-    if args.aaii_sentiment_parquet is None:
-        args.aaii_sentiment_parquet = (
-            args.data_root / "sentiment" / "aaii_sentiment.parquet"
-        )
-    if args.news_sentiment_parquet is None:
-        args.news_sentiment_parquet = (
-            args.data_root / "news_sentiment" / "sf_fed_news_sentiment.parquet"
-        )
+    apply_manifest_input_defaults(args, args.data_root)
     args.news_sentiment_parquet = _resolve_news_sentiment_path(
         args.news_sentiment_parquet
     )
-    if args.fomc_minutes_parquet is None:
-        args.fomc_minutes_parquet = (
-            args.data_root / "fomc_minutes" / "fomc_minutes.parquet"
-        )
-    if args.powell_speeches_parquet is None:
-        args.powell_speeches_parquet = (
-            args.data_root / "powell_speeches" / "powell_speeches.parquet"
-        )
-    if args.cpi_vintages_parquet is None:
-        args.cpi_vintages_parquet = (
-            args.data_root / "macro_vintages" / "cpi_all_items_vintages.parquet"
-        )
     return args
-
-
-def _manifest_input_overrides(argv: list[str]) -> frozenset[str]:
-    return manifest_input_overrides(argv)
 
 
 def _apply_manifest_input_paths(
@@ -483,15 +443,60 @@ def _apply_manifest_input_paths(
     )
 
 
+def _is_manifest_resolution_error(error: Exception) -> bool:
+    """Detect both the typed resolver error and the un-typed
+    ``ValueError("manifest has no artifacts required for ...")`` that
+    ``materialize_manifest`` raises before the typed resolver gets a chance to
+    run. Both share the same root cause from the runner's perspective: the
+    manifest does not satisfy this runner's contract."""
+    if isinstance(error, ManifestInputResolutionError):
+        return True
+    if isinstance(error, ValueError) and str(error).startswith(
+        "manifest has no artifacts required for "
+    ):
+        return True
+    return False
+
+
+def _emit_manifest_resolution_failure(
+    args: argparse.Namespace, error: Exception
+) -> None:
+    """Emit a structured manifest_resolution_failure record to ``--json-output``
+    when the runner aborts before classification. Without this, downstream
+    regression dashboards that look for the JSON file see nothing and cannot
+    distinguish "runner crashed" from "runner skipped"."""
+    if args.json_output is None:
+        return
+    failure_report: dict[str, Any] = {
+        "status": "manifest_resolution_failure",
+        "error_type": type(error).__name__,
+        "error_message": str(error),
+        "manifest": str(args.manifest) if args.manifest is not None else None,
+        "runner_name": _RUNNER_NAME,
+        "data_root": str(args.data_root) if args.data_root is not None else None,
+    }
+    _write_json_report(args.json_output, failure_report)
+
+
 def main() -> int:
     args = _parse_args()
     load_operator_env_files(repo_root=REPO_ROOT, explicit_path=args.operator_env_file)
-    materialize_manifest_from_args(
-        args,
-        repo_root=REPO_ROOT,
-        required_for="profile_engine_30d",
-    )
-    _apply_manifest_input_paths(args, runner_name="profile_engine_30d")
+    try:
+        materialize_manifest_from_args(
+            args,
+            repo_root=REPO_ROOT,
+            required_for=_RUNNER_NAME,
+        )
+        _apply_manifest_input_paths(args, runner_name=_RUNNER_NAME)
+    except (ManifestInputResolutionError, ValueError) as error:
+        if not _is_manifest_resolution_error(error):
+            raise
+        _emit_manifest_resolution_failure(args, error)
+        print(
+            f"manifest_resolution_failure: {error}",
+            file=sys.stderr,
+        )
+        return 2
 
     _require_path(args.config_path, kind="config path")
     _require_path(args.daily_dir, kind="daily OHLCV path")
@@ -504,10 +509,12 @@ def main() -> int:
 
     inputs = _load_profile_inputs(args, config=config)
 
-    timer = StageTimer()
-    previous_handler = signal.getsignal(signal.SIGALRM)
-    signal.signal(signal.SIGALRM, lambda *a: _timeout_handler(timer, *a))
-    signal.alarm(RUN_TIMEOUT_SECONDS)
+    timer = StageTimer(timeout_seconds=args.run_timeout_seconds)
+    alarm_enabled = args.run_timeout_seconds > 0
+    previous_handler = signal.getsignal(signal.SIGALRM) if alarm_enabled else None
+    if alarm_enabled:
+        signal.signal(signal.SIGALRM, lambda *a: _timeout_handler(timer, *a))
+        signal.alarm(args.run_timeout_seconds)
     wall_start = time.perf_counter()
     try:
         with _install_timers(timer):
@@ -528,8 +535,9 @@ def main() -> int:
                 constituent_ohlcv=inputs.constituent_ohlcv,
             )
     finally:
-        signal.alarm(0)
-        signal.signal(signal.SIGALRM, previous_handler)
+        if alarm_enabled:
+            signal.alarm(0)
+            signal.signal(signal.SIGALRM, previous_handler)
     total_wall_clock = time.perf_counter() - wall_start
 
     context = build_market_context(
@@ -587,29 +595,14 @@ def main() -> int:
             "build_axis_series_bundle",
             "build_transition_risk_series",
             "build_regime_timeline_total",
-            "per_day_output_emission_loop_residual",
         ],
-        StageTimer(),
+        timer,
         total_wall_clock,
     )
-    stage_rows[-1] = (
+    stage_rows.append(
         f"per_day_output_emission_loop_residual | {per_day_emission_total:.6f} | "
         f"{(per_day_emission_total / total_wall_clock * 100.0) if total_wall_clock > 0 else 0.0:6.2f}%"
     )
-    for idx, stage_name in enumerate(
-        [
-            "build_market_context",
-            "slice_context_to_recent_sessions",
-            "build_feature_store_total",
-            "build_axis_series_bundle",
-            "build_transition_risk_series",
-            "build_regime_timeline_total",
-        ],
-        start=1,
-    ):
-        seconds = timer.totals.get(stage_name, 0.0)
-        pct = (seconds / total_wall_clock * 100.0) if total_wall_clock > 0 else 0.0
-        stage_rows[idx] = f"{stage_name} | {seconds:.6f} | {pct:6.2f}%"
 
     feature_rows = _format_stage_rows(
         [
@@ -686,10 +679,6 @@ def main() -> int:
         print(_input_status(name, input_values[name]))
     print(f"pit_overlap_tickers_requested={len(inputs.constituent_tickers)}")
     print(f"constituent_tickers_loaded={len(inputs.constituent_ohlcv)}")
-    print(f"missing_constituent_files={len(inputs.missing_constituent_paths)}")
-    if inputs.missing_constituent_paths:
-        for path in inputs.missing_constituent_paths[:20]:
-            print(f"missing_constituent_file={path}")
     print()
 
     print("Timing table")

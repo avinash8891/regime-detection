@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import importlib.util
 import os
 import pickle
 import sys
@@ -7,6 +8,7 @@ import time
 from datetime import date
 from functools import lru_cache
 from pathlib import Path
+from types import ModuleType
 
 import pandas as pd
 import pytest
@@ -25,6 +27,75 @@ def pytest_configure() -> None:
         sys.path.insert(0, str(_REPO_ROOT))
     if str(_REPO_ROOT / "src") not in sys.path:
         sys.path.insert(0, str(_REPO_ROOT / "src"))
+
+
+_PROFILE_ENGINE_SHA = "0" * 64
+
+
+def load_profile_engine_module() -> ModuleType:
+    path = _REPO_ROOT / "scripts" / "profile_engine.py"
+    spec = importlib.util.spec_from_file_location("profile_engine", path)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+def profile_engine_manifest_artifact(name: str, local_path: str) -> dict[str, object]:
+    return {
+        "name": name,
+        "stage": "canonical",
+        "uri": f"s3://bucket/{local_path}",
+        "local_path": local_path,
+        "sha256": _PROFILE_ENGINE_SHA,
+        "schema_version": None,
+        "rows": 1,
+        "min_date": None,
+        "max_date": None,
+        "required_for": ["profile_engine"],
+    }
+
+
+def write_profile_engine_manifest(tmp_path: Path) -> Path:
+    path = tmp_path / "manifest.yaml"
+    path.write_text(
+        yaml.safe_dump(
+            {
+                "artifact_set": "profile",
+                "created_at_utc": "2026-05-17T00:00:00Z",
+                "storage_root": "s3://bucket/root",
+                "artifacts": [
+                    profile_engine_manifest_artifact(
+                        "constituent_ohlcv_AAPL",
+                        "data/raw/daily_ohlcv_762/symbol=AAPL/ohlcv.parquet",
+                    ),
+                    profile_engine_manifest_artifact(
+                        "fred_macro_series",
+                        "data/raw/macro/fred_macro_series.parquet",
+                    ),
+                    profile_engine_manifest_artifact(
+                        "sp500_pit_constituents",
+                        "data/raw/pit_constituents/sp500_ticker_intervals.parquet",
+                    ),
+                    profile_engine_manifest_artifact(
+                        "event_calendar_us",
+                        "data/raw/event_calendar/us_events.yaml",
+                    ),
+                    profile_engine_manifest_artifact(
+                        "ism_pmi_history",
+                        "data/raw/pmi/us_ism_pmi_history.parquet",
+                    ),
+                    profile_engine_manifest_artifact(
+                        "sf_fed_news_sentiment",
+                        "data/raw/news_sentiment/sf_fed_news_sentiment.parquet",
+                    ),
+                ],
+            },
+            sort_keys=False,
+        )
+    )
+    return path
 
 
 _FIXTURES_DIR = Path(__file__).resolve().parent / "fixtures"

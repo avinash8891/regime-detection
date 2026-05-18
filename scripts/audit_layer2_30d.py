@@ -25,25 +25,27 @@ from regime_data_fetch.pit_constituents import read_pit_intervals
 from regime_detection.axis_series import build_axis_series_bundle
 from regime_detection.engine import RegimeEngine
 from regime_detection.feature_store import FeatureStore, build_feature_store
-from regime_detection.fragility_universe import CROSS_ASSET_SYMBOLS, SECTOR_ETFS
+from regime_detection.fragility_universe import SECTOR_ETFS
 from regime_detection.market_context import (
     MarketContext,
     build_market_context,
     slice_context_to_recent_sessions,
 )
 from scripts._v2_calibration_helpers import (
+    CROSS_ASSET_SYMBOLS,
     add_manifest_args,
+    apply_manifest_input_defaults,
     apply_manifest_input_paths,
     axis_reporting_label_not_wired as _reporting_label,
-    default_pmi_path,
     load_close_dict,
     load_macro_series,
     load_market_data,
     manifest_input_overrides,
     materialize_manifest_from_args,
     positive_int,
+    register_manifest_input_args,
 )
-from scripts.profile_engine_30d import (
+from scripts.profile_engine import (
     DEFAULT_CONFIG_PATH,
     DEFAULT_CONSTITUENT_TREE,
     DEFAULT_DAILY_DIR,
@@ -298,30 +300,22 @@ def _build_current_layer2_state(
     )
     working_start_date = bootstrap_context.sessions[-required_sessions]
 
-    sector_etf_closes = load_close_dict(args.daily_dir, list(SECTOR_ETFS), spy_index)
-    cross_asset_symbols = [
-        *CROSS_ASSET_SYMBOLS,
-        "DBC",
-        "KRE",
-        "XLY",
-        "XLI",
-        "XLP",
-        "XLU",
-    ]
-    cross_asset_closes = load_close_dict(args.daily_dir, cross_asset_symbols, spy_index)
+    all_close_symbols = list(dict.fromkeys([*SECTOR_ETFS, *CROSS_ASSET_SYMBOLS]))
+    all_closes = load_close_dict(args.daily_dir, all_close_symbols, spy_index)
+    sector_etf_closes = {s: all_closes[s] for s in SECTOR_ETFS if s in all_closes}
+    cross_asset_closes = {s: all_closes[s] for s in CROSS_ASSET_SYMBOLS if s in all_closes}
     macro_series = load_macro_series(
         args.macro_parquet,
         args.pmi_path if args.pmi_path is not None and args.pmi_path.exists() else None,
+        cpi_nowcast_parquet=args.cpi_nowcast_parquet,
+        eps_weekly_history_parquet=args.aggregate_forward_eps_weekly_history_parquet,
     )
     pit_constituent_intervals = read_pit_intervals(args.pit_parquet)
-    constituent_ohlcv, _constituent_tickers, missing_constituent_paths = (
-        _load_constituent_ohlcv_from_tree(
-            args.constituent_tree,
-            pit_constituent_intervals,
-            start_date=working_start_date,
-            end_date=end_date,
-            allow_missing_files=args.allow_missing_constituent_files,
-        )
+    constituent_ohlcv, _constituent_tickers = _load_constituent_ohlcv_from_tree(
+        args.constituent_tree,
+        pit_constituent_intervals,
+        start_date=working_start_date,
+        end_date=end_date,
     )
 
     context = build_market_context(
@@ -370,28 +364,22 @@ def _build_current_layer2_state(
         feature_store,
         axis_bundle,
         selected_dates,
-        len(missing_constituent_paths),
     )
 
 
 def _parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Generate Layer 2 feature/label audit artifacts from profile_engine_30d inputs."
+        description="Generate Layer 2 feature/label audit artifacts from profile_engine inputs."
     )
     parser.add_argument("--lookback-days", type=positive_int, default=30)
     parser.add_argument("--config-path", type=Path, default=DEFAULT_CONFIG_PATH)
     parser.add_argument("--daily-dir", type=Path, default=None)
     parser.add_argument("--constituent-tree", type=Path, default=None)
+    parser.add_argument("--event-calendar", type=Path, default=DEFAULT_EVENT_CALENDAR)
+    # Optional manifest-routed inputs come from MANIFEST_INPUT_SPECS.
+    register_manifest_input_args(parser, include_required_paths=False)
     parser.add_argument("--macro-parquet", type=Path, default=None)
     parser.add_argument("--pit-parquet", type=Path, default=None)
-    parser.add_argument("--pmi-path", type=Path, default=None)
-    parser.add_argument("--event-calendar", type=Path, default=DEFAULT_EVENT_CALENDAR)
-    parser.add_argument("--aaii-sentiment-parquet", type=Path, default=None)
-    parser.add_argument("--news-sentiment-parquet", type=Path, default=None)
-    parser.add_argument("--fomc-minutes-parquet", type=Path, default=None)
-    parser.add_argument("--powell-speeches-parquet", type=Path, default=None)
-    parser.add_argument("--cpi-vintages-parquet", type=Path, default=None)
-    parser.add_argument("--allow-missing-constituent-files", action="store_true")
     add_manifest_args(parser, data_root_default=REPO_ROOT / "data" / "raw", action="audit")
     parser.add_argument("--out-dir", type=Path, default=REPO_ROOT / ".context")
     parser.add_argument("--stamp", default=dt.date.today().strftime("%Y%m%d"))
@@ -401,34 +389,7 @@ def _parse_args() -> argparse.Namespace:
         args.daily_dir = args.data_root / DEFAULT_DAILY_DIR.name
     if args.constituent_tree is None:
         args.constituent_tree = args.data_root / DEFAULT_CONSTITUENT_TREE.name
-    if args.macro_parquet is None:
-        args.macro_parquet = args.data_root / "macro" / "fred_macro_series.parquet"
-    if args.pit_parquet is None:
-        args.pit_parquet = (
-            args.data_root / "pit_constituents" / "sp500_ticker_intervals.parquet"
-        )
-    if args.pmi_path is None:
-        args.pmi_path = default_pmi_path(args.data_root)
-    if args.aaii_sentiment_parquet is None:
-        args.aaii_sentiment_parquet = (
-            args.data_root / "sentiment" / "aaii_sentiment.parquet"
-        )
-    if args.news_sentiment_parquet is None:
-        args.news_sentiment_parquet = (
-            args.data_root / "news_sentiment" / "sf_fed_news_sentiment.parquet"
-        )
-    if args.fomc_minutes_parquet is None:
-        args.fomc_minutes_parquet = (
-            args.data_root / "fomc_minutes" / "fomc_minutes.parquet"
-        )
-    if args.powell_speeches_parquet is None:
-        args.powell_speeches_parquet = (
-            args.data_root / "powell_speeches" / "powell_speeches.parquet"
-        )
-    if args.cpi_vintages_parquet is None:
-        args.cpi_vintages_parquet = (
-            args.data_root / "macro_vintages" / "cpi_all_items_vintages.parquet"
-        )
+    apply_manifest_input_defaults(args, args.data_root)
     return args
 
 
@@ -445,7 +406,7 @@ def main() -> int:
         repo_root=REPO_ROOT,
     )
     args.out_dir.mkdir(parents=True, exist_ok=True)
-    _working_context, feature_store, axis_bundle, selected_dates, missing_files = (
+    _working_context, feature_store, axis_bundle, selected_dates = (
         _build_current_layer2_state(args)
     )
     wiring_rows = build_wiring_presence_rows(
@@ -455,7 +416,7 @@ def main() -> int:
     label_summary = build_label_rule_summary(
         axis_bundle=axis_bundle,
         selected_dates=selected_dates,
-        missing_constituent_files=missing_files,
+        missing_constituent_files=0,
     )
     wiring_path = args.out_dir / f"layer2_wiring_presence_audit_{args.stamp}.csv"
     summary_path = args.out_dir / f"layer2_label_rule_summary_{args.stamp}.json"
