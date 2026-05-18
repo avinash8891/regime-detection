@@ -297,7 +297,7 @@ def build_fetch_arg_parser(
     )
     parser.add_argument(
         "--manifest-required-for",
-        default="profile_engine_30d,v2_calibration,historical_walkforward,audit_layer2_30d",
+        default="profile_engine,v2_calibration,historical_walkforward,audit_layer2_30d",
         help="Comma-separated use cases attached to emitted manifest artifacts.",
     )
     parser.add_argument(

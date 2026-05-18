@@ -7,6 +7,7 @@ import pandas as pd
 
 from regime_data_fetch.pit_constituents import (
     BIAS_WARNING,
+    SOURCE_END_DATE_CORRECTIONS,
     SOURCE_NAME,
     SOURCE_URL,
     run_pit_constituents_fetch,
@@ -130,6 +131,51 @@ def test_members_on_returns_frozenset(tmp_path: Path) -> None:
     members = members_on(df, dt.date(2000, 1, 1))
 
     assert isinstance(members, frozenset)
+
+
+def test_read_pit_intervals_patches_stale_open_intervals_on_read(tmp_path: Path) -> None:
+    """Stale S3 artifacts may have open intervals for tickers whose membership
+    has since ended. read_pit_intervals must apply SOURCE_END_DATE_CORRECTIONS
+    at read time so that members_on returns the corrected membership regardless
+    of when the parquet was generated."""
+    # Build a parquet using a CSV that intentionally omits end_dates for all
+    # corrected tickers — simulating a stale artifact fetched before the
+    # corrections were added to the codebase.
+    corrected_tickers = list(SOURCE_END_DATE_CORRECTIONS.keys())
+
+    # The fetch path also applies corrections, so bypass it by writing the
+    # parquet directly to simulate a raw stale artifact.
+    pit_dir = tmp_path / "pit_constituents"
+    pit_dir.mkdir()
+    parquet_path = pit_dir / "sp500_ticker_intervals.parquet"
+    stale_df = pd.DataFrame(
+        [
+            {
+                "ticker": ticker,
+                "start_date": "2020-01-02",
+                "end_date": None,  # open interval — stale artifact
+                "source": SOURCE_NAME,
+                "source_url": SOURCE_URL,
+                "bias_warning": BIAS_WARNING,
+            }
+            for ticker in corrected_tickers
+        ]
+    )
+    stale_df.to_parquet(parquet_path, index=False)
+
+    df = read_pit_intervals(parquet_path)
+
+    for ticker, expected_end in SOURCE_END_DATE_CORRECTIONS.items():
+        row = df[df["ticker"] == ticker].iloc[0]
+        assert row["end_date"] == expected_end, (
+            f"{ticker}: expected end_date {expected_end}, got {row['end_date']!r}"
+        )
+        # Must not be treated as a current member after the correction date.
+        future_date = dt.date(2026, 12, 31)
+        members = members_on(df, future_date)
+        assert ticker not in members, (
+            f"{ticker} incorrectly appears as a current member on {future_date}"
+        )
 
 
 def test_members_on_empty_df_returns_empty_frozenset() -> None:

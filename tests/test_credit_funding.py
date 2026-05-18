@@ -88,10 +88,10 @@ def test_compute_credit_funding_features_returns_all_series() -> None:
     tlt = _make_random_walk(idx, seed=_SEED + 3, start=100.0, sigma=0.006)
     kre = _make_random_walk(idx, seed=_SEED + 4, start=50.0, sigma=0.012)
     spy = _make_random_walk(idx, seed=_SEED + 5, start=400.0, sigma=0.008)
-    sofr = _make_constant_series(idx, 5.0, "SOFR")
-    iorb = _make_constant_series(idx, 4.9, "IORB")
+    sofr = _make_constant_series(idx, 5.0, "sofr")
+    iorb = _make_constant_series(idx, 4.9, "iorb")
     # NFCI weekly: assign every 5th index; rest NaN so ffill exercises.
-    nfci_w = pd.Series(np.nan, index=idx, name="NFCI", dtype=float)
+    nfci_w = pd.Series(np.nan, index=idx, name="nfci", dtype=float)
     rng = np.random.default_rng(_SEED + 6)
     weekly_pos = list(range(0, n, 5))
     nfci_w.iloc[weekly_pos] = rng.normal(-0.5, 0.2, size=len(weekly_pos))
@@ -670,6 +670,86 @@ def test_deleveraging_outranks_credit_stress_when_both_match() -> None:
     assert evaluate_credit_stress(inputs, rules) is True
     assert evaluate_deleveraging(inputs, rules) is True
     assert evaluate_rules(inputs=inputs, config=rules) == "deleveraging"
+
+
+# --- Group G — Pre-SOFR/IORB splice regression (ADR 0009) --------------------
+#
+# Regression guard: this bug has been resolved multiple times. The splice in
+# compute_credit_funding_features (credit_funding.py:409-416) fills the
+# sofr_iorb_spread for pre-SOFR (pre-2018-04-03) and pre-IORB (pre-2021-07-29)
+# sessions using FEDFUNDS-IOER. If fedfunds/ioer_legacy are not passed (or the
+# feature_store stops routing them), sofr_iorb_spread is all-NaN for 2016-2021
+# and the axis builder emits stale_data for 67% of history.
+
+
+def _pre_sofr_index() -> pd.DatetimeIndex:
+    """650 business days ending 2017-12-29 — entirely before SOFR (Apr 2018)."""
+    return pd.bdate_range(end="2017-12-29", periods=650)
+
+
+def _make_pre_sofr_features(*, fedfunds: pd.Series | None, ioer_legacy: pd.Series | None):
+    """Build CreditFundingFeatures over a pre-SOFR index with the splice inputs."""
+    idx = _pre_sofr_index()
+    rng = np.random.default_rng(_SEED)
+    rw = lambda start, sigma: pd.Series(  # noqa: E731
+        start * (1.0 + rng.normal(0.0, sigma, size=len(idx))).cumprod(),
+        index=idx,
+        dtype=float,
+    )
+    # SOFR and IORB are both NaN for this pre-2018 window (they don't exist yet).
+    nan_series = pd.Series(float("nan"), index=idx, dtype=float)
+    nfci_w = pd.Series(float("nan"), index=idx, dtype=float)
+    nfci_w.iloc[::5] = rng.normal(-0.5, 0.2, size=len(nfci_w.iloc[::5]))
+    return compute_credit_funding_features(
+        hyg_close=rw(80.0, 0.008),
+        lqd_close=rw(110.0, 0.006),
+        tlt_close=rw(100.0, 0.006),
+        kre_close=rw(50.0, 0.012),
+        spy_close=rw(2000.0, 0.008),
+        sofr=nan_series,
+        iorb=nan_series,
+        nfci_weekly=nfci_w,
+        broad_usd_index=rw(100.0, 0.003),
+        hy_oas=rw(400.0, 0.01),
+        ig_oas=rw(150.0, 0.01),
+        config=_default_rules(),
+        fedfunds=fedfunds,
+        ioer_legacy=ioer_legacy,
+    )
+
+
+def test_sofr_iorb_splice_fills_pre_sofr_era_when_fedfunds_ioer_supplied() -> None:
+    """ADR 0009 splice regression: with fedfunds+ioer_legacy, sofr_iorb_spread
+    is 100% non-null for 2016-2017 (pre-SOFR, pre-IORB).
+
+    Without this, the axis builder emits stale_data for 67% of full history.
+    """
+    idx = _pre_sofr_index()
+    fedfunds = pd.Series(0.41, index=idx, dtype=float, name="fedfunds")  # ~2017 FEDFUNDS
+    ioer_legacy = pd.Series(0.40, index=idx, dtype=float, name="ioer_legacy")
+
+    features = _make_pre_sofr_features(fedfunds=fedfunds, ioer_legacy=ioer_legacy)
+
+    null_count = features.sofr_iorb_spread.isna().sum()
+    assert null_count == 0, (
+        f"sofr_iorb_spread has {null_count} NaN values in pre-SOFR era — "
+        "fedfunds/ioer_legacy splice is broken. Check feature_store.py:616-617 "
+        "and credit_funding.py:409-416."
+    )
+
+
+def test_sofr_iorb_spread_all_nan_without_splice_inputs() -> None:
+    """Confirm that WITHOUT fedfunds/ioer_legacy, sofr_iorb_spread is all-NaN
+    for a pre-SOFR index. This documents the broken state the splice fixes,
+    so that the above test's assertion is meaningful and not trivially true.
+    """
+    features = _make_pre_sofr_features(fedfunds=None, ioer_legacy=None)
+
+    non_null_count = features.sofr_iorb_spread.notna().sum()
+    assert non_null_count == 0, (
+        f"Expected all-NaN without splice, got {non_null_count} non-null — "
+        "the pre-SOFR/IORB window baseline assumption has changed."
+    )
 
 
 # --- Group C — Unknown gate (4 tests) ----------------------------------------

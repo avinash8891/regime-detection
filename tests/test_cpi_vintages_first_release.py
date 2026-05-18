@@ -140,7 +140,7 @@ def test_inflation_growth_features_uses_first_release_when_flag_set() -> None:
         name="cpi_first_release",
     )
     pmi = pd.Series(52.0, index=spy_index, name="pmi_manufacturing")
-    dgs10 = pd.Series(4.0, index=spy_index, name="dgs10")
+    dgs10 = pd.Series(4.0, index=spy_index, name="10y_yield")
     dbc_close = pd.Series(
         np.linspace(20.0, 22.0, len(spy_index)), index=spy_index, name="DBC"
     )
@@ -198,7 +198,7 @@ def test_inflation_growth_features_preserves_revised_path_when_flag_off() -> Non
         name="cpi_first_release",
     )
     pmi = pd.Series(52.0, index=spy_index, name="pmi_manufacturing")
-    dgs10 = pd.Series(4.0, index=spy_index, name="dgs10")
+    dgs10 = pd.Series(4.0, index=spy_index, name="10y_yield")
     dbc_close = pd.Series(
         np.linspace(20.0, 22.0, len(spy_index)), index=spy_index, name="DBC"
     )
@@ -240,7 +240,7 @@ def test_inflation_growth_features_no_vintage_supplied_uses_revised() -> None:
         np.linspace(300.0, 310.0, len(spy_index)), index=spy_index, name="cpi_all_items"
     )
     pmi = pd.Series(52.0, index=spy_index, name="pmi_manufacturing")
-    dgs10 = pd.Series(4.0, index=spy_index, name="dgs10")
+    dgs10 = pd.Series(4.0, index=spy_index, name="10y_yield")
     dbc_close = pd.Series(
         np.linspace(20.0, 22.0, len(spy_index)), index=spy_index, name="DBC"
     )

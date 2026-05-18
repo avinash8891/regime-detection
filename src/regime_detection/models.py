@@ -206,9 +206,9 @@ class LabelReasonOutput(BaseModel):
 class NetworkFragilityOutput(AxisOutput):
     """Layer 3 network fragility classifier output (v2 spec §3).
 
-    Until implementation phase ships the v2 fragility classifier, emit `unknown` labels
-    with `data_quality.status="insufficient_history"` per v1 §2.7 NaN
-    handling pattern.
+    The v2 fragility classifier is implemented and wired. `unknown` is emitted only
+    during the 504-session percentile cold-start (`insufficient_history`) or when
+    no rule predicate fires (`no_rule_fired`).
     """
 
     model_config = ConfigDict(extra="forbid")
@@ -217,10 +217,13 @@ class NetworkFragilityOutput(AxisOutput):
 
 
 class MonetaryPressureOutput(BaseModel):
-    """Monetary pressure classifier output (v2 spec §2A).
+    """V1 structural-causal-state monetary pressure placeholder (v2 spec §2A).
 
-    Until implementation phase ships the v2 monetary-pressure classifier, emit
-    `label="unknown"` with `data_quality.status="insufficient_history"`.
+    This is the backward-compatible V1 struct surfaced on
+    ``StructuralCausalState.monetary_pressure``. The V2 monetary-pressure
+    classifier is ``MonetaryPressureV2Output``, emitted on
+    ``RegimeOutput.monetary_pressure_state`` with real labels from ~2021
+    when SOFR/IORB data is available.
     """
 
     model_config = ConfigDict(extra="forbid")
@@ -458,6 +461,23 @@ class TransitionRiskOutput(BaseModel):
     score: float | None = Field(default=None, ge=0.0, le=1.0)
     score_interpretation: TransitionScoreInterpretation | None = None
     score_components: dict[str, float] | None = None
+
+    # Symmetry with AxisOutput: surface a normalized classification status so
+    # downstream audit/report tooling can distinguish "classified" from
+    # "insufficient_history" cold-start rows without re-deriving from label.
+    # When `label == "unknown"` (any upstream axis carried `unknown`) we mark
+    # the row `insufficient_history`; everything else is `classified`.
+    # The V1 wire projection in `_strip_classification_metadata` removes this
+    # field when emitting the V1-frozen byte-identical shape.
+    classification_status: ClassificationStatus | None = None
+
+    @model_validator(mode="after")
+    def _populate_classification_status(self) -> "TransitionRiskOutput":
+        if self.classification_status is None:
+            self.classification_status = (
+                "insufficient_history" if self.label == "unknown" else "classified"
+            )
+        return self
 
 
 class StrategyResponse(BaseModel):

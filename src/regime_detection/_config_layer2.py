@@ -217,6 +217,12 @@ class InflationGrowthConfig(StrictBaseModel):
     pmi_stale_calendar_days: int = Field(default=45, ge=1)
     # §2B line 2311 — "DGS10 stale > 5 sessions".
     dgs10_stale_sessions: int = Field(default=5, ge=1)
+    # EPS revision staleness threshold — matches EPS_REVISION_STALE_DAYS = 35
+    # in profile_engine_reporting.py. When the aggregate_forward_eps_revision
+    # series has no non-NaN value within this many calendar days of the session,
+    # the EPS signal is treated as NaN and earnings_expansion /
+    # earnings_contraction labels do not fire.
+    eps_revision_stale_calendar_days: int = Field(default=35, ge=1)
 
 
 class CreditFundingRulesConfig(StrictBaseModel):

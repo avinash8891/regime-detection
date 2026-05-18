@@ -407,7 +407,7 @@ def test_emit_manifest_uses_all_runner_use_cases_by_default(
 
     assert fetch_script.main() == 0
     assert captured["required_for"] == [
-        "profile_engine_30d",
+        "profile_engine",
         "v2_calibration",
         "historical_walkforward",
         "audit_layer2_30d",

@@ -159,12 +159,12 @@ def _build_full_synthetic_context(
         cross_asset_closes["HYG"] = hyg_copy
 
     # Macro series — daily SOFR/IORB, weekly NFCI, daily broad_usd_index.
-    sofr = _make_constant_series(idx, 5.0, "SOFR")
-    iorb = _make_constant_series(idx, 4.9, "IORB")
+    sofr = _make_constant_series(idx, 5.0, "sofr")
+    iorb = _make_constant_series(idx, 4.9, "iorb")
     if sofr_drop_last:
         sofr = sofr.copy()
         sofr.iloc[-1] = np.nan
-    nfci_w = pd.Series(np.nan, index=idx, dtype=float, name="NFCI")
+    nfci_w = pd.Series(np.nan, index=idx, dtype=float, name="nfci")
     weekly_positions = list(range(0, n, 5))
     nfci_values = rng.normal(-0.5, 0.2, size=len(weekly_positions))
     for pos, val in zip(weekly_positions, nfci_values):
@@ -176,9 +176,9 @@ def _build_full_synthetic_context(
     usd = _make_random_walk(idx, seed=_SEED + 100, start=100.0, sigma=0.003)
 
     macro_series = {
-        "SOFR": sofr,
-        "IORB": iorb,
-        "NFCI": nfci_w,
+        "sofr": sofr,
+        "iorb": iorb,
+        "nfci": nfci_w,
         "broad_usd_index": usd,
         # ICE BofA OAS series — single source for the §2C credit-spread
         # metric. Required by `_CF_MACRO_KEYS`, so the §2C seam does not
@@ -186,8 +186,8 @@ def _build_full_synthetic_context(
         "hy_oas": _make_random_walk(idx, seed=_SEED + 101, start=400.0, sigma=0.01),
         "ig_bbb_oas": _make_random_walk(idx, seed=_SEED + 102, start=150.0, sigma=0.01),
         # Add yield series for monetary slice compatibility.
-        "DGS2": _make_constant_series(idx, 4.5, "DGS2"),
-        "DGS10": _make_constant_series(idx, 4.0, "DGS10"),
+        "2y_yield": _make_constant_series(idx, 4.5, "2y_yield"),
+        "10y_yield": _make_constant_series(idx, 4.0, "10y_yield"),
     }
     if omit_oas_series:
         macro_series.pop("hy_oas")
@@ -688,3 +688,87 @@ def test_regime_output_carries_credit_funding_state_when_configured() -> None:
     assert out.credit_funding_state_proxy.active_label in allowed
     assert out.credit_funding_effective_state is not None
     assert out.credit_funding_effective_state.active_label in allowed
+
+
+# --- Group F — Pre-SOFR/IORB splice regression (ADR 0009) --------------------
+#
+# Regression guard: feature_store.py must pass fedfunds/ioer_legacy through to
+# compute_credit_funding_features (feature_store.py:616-617). If those two lines
+# are removed, sofr_iorb_spread is all-NaN for pre-SOFR/IORB eras and the axis
+# builder emits stale_data for 67% of full history. This has regressed multiple
+# times because there was no test guarding the routing.
+
+
+def test_feature_store_routes_fedfunds_ioer_legacy_to_splice() -> None:
+    """feature_store.py must pass fedfunds/ioer_legacy to compute_credit_funding_features.
+
+    Simulates a pre-SOFR/IORB window by zeroing out sofr and iorb in
+    macro_series while keeping fedfunds and ioer_legacy. The resulting
+    sofr_iorb_spread must be fully non-NaN — the FEDFUNDS-IOER splice filled it.
+
+    Regression: if feature_store.py:616-617 are removed, the splice
+    receives fedfunds=None, ioer_legacy=None and sofr_iorb_spread is all-NaN.
+    """
+    base_context = _build_full_synthetic_context()
+    idx = base_context.spy_ohlcv.index
+
+    # Simulate pre-SOFR/IORB: zero out both series so the splice must carry the load.
+    nan_series = pd.Series(float("nan"), index=idx, dtype=float)
+    fedfunds = pd.Series(0.41, index=idx, dtype=float, name="fedfunds")
+    ioer_legacy = pd.Series(0.40, index=idx, dtype=float, name="ioer_legacy")
+
+    patched_macro = dict(base_context.macro_series or {})
+    patched_macro["sofr"] = nan_series
+    patched_macro["iorb"] = nan_series
+    patched_macro["fedfunds"] = fedfunds
+    patched_macro["ioer_legacy"] = ioer_legacy
+
+    patched_context = build_market_context(
+        end_date=base_context.end_date,
+        market_data=pd.DataFrame(
+            [
+                {
+                    "date": ts.date(),
+                    "symbol": "SPY",
+                    "open": float(base_context.spy_ohlcv["open"].loc[ts]),
+                    "high": float(base_context.spy_ohlcv["high"].loc[ts]),
+                    "low": float(base_context.spy_ohlcv["low"].loc[ts]),
+                    "close": float(base_context.spy_ohlcv["close"].loc[ts]),
+                    "volume": float(base_context.spy_ohlcv["volume"].loc[ts]),
+                }
+                for ts in idx
+            ]
+            + [
+                {
+                    "date": ts.date(),
+                    "symbol": "RSP",
+                    "open": float(base_context.rsp_close.loc[ts]),
+                    "high": float(base_context.rsp_close.loc[ts]),
+                    "low": float(base_context.rsp_close.loc[ts]),
+                    "close": float(base_context.rsp_close.loc[ts]),
+                    "volume": 500_000,
+                }
+                for ts in idx
+            ]
+        ),
+        config=base_context.config,
+        sector_etf_closes=base_context.sector_etf_closes,
+        cross_asset_closes=base_context.cross_asset_closes,
+        macro_series=patched_macro,
+    )
+
+    cfg = patched_context.config
+    store = build_feature_store(
+        patched_context,
+        network_fragility_config=cfg.network_fragility,
+        credit_funding_config=cfg.credit_funding,
+    )
+    assert store.credit_funding is not None, "credit_funding seam should be lit"
+
+    spread = store.credit_funding.sofr_iorb_spread
+    null_count = spread.isna().sum()
+    assert null_count == 0, (
+        f"sofr_iorb_spread has {null_count} NaN values — "
+        "feature_store.py is not routing fedfunds/ioer_legacy to the splice "
+        "(check feature_store.py:616-617 and credit_funding.py:409-416)."
+    )

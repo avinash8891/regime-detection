@@ -1,8 +1,8 @@
-"""v2 §1A Layer 1 V2 Trend Direction features — evidence-only compute.
+"""v2 §1A Layer 1 V2 Trend Direction — feature compute and classifier.
 
-Pure pandas/numpy implementation of the §1A continuous features that feed
-the future V2 trend_direction classifier (implementation phase ships features only,
-no classifier — see ``docs/regime_engine_v2_spec.md`` §8 line 1181).
+Pure pandas/numpy implementation of the §1A continuous features and the full
+V2 trend_direction classifier (``evaluate_v2_trend_label``, ``evaluate_euphoria``,
+``evaluate_recovery``) wired into ``trend_direction.py``.
 
 Features (all per-session series aligned to the input close index):
 
@@ -15,9 +15,9 @@ Features (all per-session series aligned to the input close index):
 - ``drawdown_252d``          v2 §1A line 116 (recovery evidence)
 - ``sma_50``                 v2 §1A line 118 (recovery evidence: close > SMA_50)
 
-implementation phase lands the ``recovery`` label on top of these features. The
-``euphoria`` / ``breakout_expansion`` / ``range_bound`` labels remain
-deferred (see documented implementation decisions).
+Both ``recovery`` and ``euphoria`` labels are implemented and wired.
+``breakout_expansion`` and ``range_bound`` are not wired in the V2 trend-direction
+predicate (they appear in trend_character instead).
 
 Implementation choices that resolve ambiguities are documented in
 ``docs/regime_engine_v2_spec.md`` documented implementation notes:
@@ -362,10 +362,10 @@ def _realized_vol_21d_for_euphoria(close: pd.Series) -> pd.Series:
 # Precedence (v2 §1A lines 132-134):
 #     euphoria > bull > recovery > bear > sideways > transition > unknown
 #
-# `euphoria` is deferred (sentiment_score data source not ingested — see
-# documented implementation decision). The precedence slot stays
-# defined so future authors can drop euphoria in without re-ordering;
-# the rule predicate never fires today.
+# `euphoria` is wired to a real predicate via `evaluate_euphoria` below
+# (post ADR 0004 amendment). The predicate consumes the Optional
+# `sentiment_score` (AAII) feature; when the feature is absent it
+# falsifies per V2 §10 "do not invent a sentiment proxy".
 # ---------------------------------------------------------------------------
 
 

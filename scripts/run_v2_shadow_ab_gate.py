@@ -48,14 +48,15 @@ from regime_data_fetch.universe import FIXED_UNIVERSE_TREE_NAME  # noqa: E402
 from _v2_calibration_helpers import (  # noqa: E402
     CROSS_ASSET_SYMBOLS,
     add_manifest_args,
+    apply_manifest_input_defaults,
     apply_manifest_input_paths,
     axis_reporting_label as _reporting_label,
-    default_pmi_path,
     load_close_dict,
     load_macro_series,
     load_market_data,
     manifest_input_overrides,
     materialize_manifest_from_args,
+    register_manifest_input_args,
 )
 
 
@@ -331,11 +332,8 @@ def _parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--daily-dir", type=Path, default=None)
     parser.add_argument("--macro-parquet", type=Path, default=None)
-    parser.add_argument(
-        "--pmi-path",
-        type=Path,
-        default=None,
-    )
+    # Optional manifest-routed inputs come from MANIFEST_INPUT_SPECS.
+    register_manifest_input_args(parser, include_required_paths=False)
     parser.add_argument("--n-sessions", type=int, default=60)
     parser.add_argument(
         "--output",
@@ -353,10 +351,7 @@ def _parse_args() -> argparse.Namespace:
     args.manifest_input_overrides = manifest_input_overrides(sys.argv[1:])
     if args.daily_dir is None:
         args.daily_dir = args.data_root / FIXED_UNIVERSE_TREE_NAME
-    if args.macro_parquet is None:
-        args.macro_parquet = args.data_root / "macro" / "fred_macro_series.parquet"
-    if args.pmi_path is None:
-        args.pmi_path = default_pmi_path(args.data_root)
+    apply_manifest_input_defaults(args, args.data_root)
     materialize_manifest_from_args(
         args,
         repo_root=REPO_ROOT,
@@ -422,12 +417,17 @@ def main() -> int:
     logger.info("Loading sector/cross-asset closes + macro series...")
     sector_etf_closes = load_close_dict(daily_dir, list(SECTOR_ETFS), spy_index)
     cross_asset_closes = load_close_dict(daily_dir, CROSS_ASSET_SYMBOLS, spy_index)
-    macro_series = load_macro_series(macro_parquet, pmi_path)
+    macro_series = load_macro_series(
+        macro_parquet,
+        pmi_path,
+        cpi_nowcast_parquet=args.cpi_nowcast_parquet,
+        eps_weekly_history_parquet=args.aggregate_forward_eps_weekly_history_parquet,
+    )
 
     # v2 §2A central-bank-text + first-release CPI seams (audit M1 / M2).
-    fomc_parquet = getattr(args, "fomc_minutes_parquet", None)
-    powell_parquet = getattr(args, "powell_speeches_parquet", None)
-    cpi_vintages_parquet = getattr(args, "cpi_vintages_parquet", None)
+    fomc_parquet = args.fomc_minutes_parquet
+    powell_parquet = args.powell_speeches_parquet
+    cpi_vintages_parquet = args.cpi_vintages_parquet
     central_bank_text_releases = load_central_bank_text_score(
         fomc_minutes_source=(
             fomc_parquet if fomc_parquet is not None and fomc_parquet.exists() else None

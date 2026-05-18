@@ -49,10 +49,14 @@ def sha256_file(path: Path) -> str:
 
 
 class ArtifactStore:
-    def put_file(self, source_path: Path, key: str) -> StoredArtifact:
+    def put_file(
+        self, source_path: Path, key: str, *, overwrite: bool = False
+    ) -> StoredArtifact:
         raise NotImplementedError
 
-    def put_bytes(self, payload: bytes, key: str) -> StoredArtifact:
+    def put_bytes(
+        self, payload: bytes, key: str, *, overwrite: bool = False
+    ) -> StoredArtifact:
         raise NotImplementedError
 
     def get_file(
@@ -67,24 +71,20 @@ class LocalArtifactStore(ArtifactStore):
         self.root.mkdir(parents=True, exist_ok=True)
         self._root_resolved = self.root.resolve()
 
-    def put_file(self, source_path: Path, key: str) -> StoredArtifact:
+    def put_file(
+        self, source_path: Path, key: str, *, overwrite: bool = False
+    ) -> StoredArtifact:
         source_path = source_path.resolve()
         relative_key = self._relative_key(key)
         destination = self.root / relative_key
         source_sha = sha256_file(source_path)
         size_bytes = source_path.stat().st_size
 
-        if destination.exists():
-            existing_sha = sha256_file(destination)
-            if existing_sha != source_sha:
-                raise ArtifactOverwriteError(
-                    f"artifact key already exists with different bytes: {relative_key}"
-                )
-            return StoredArtifact(
-                uri=self._uri_for_key(relative_key),
-                sha256=existing_sha,
-                size_bytes=destination.stat().st_size,
-            )
+        existing = self._existing_or_raise(
+            destination, relative_key, source_sha, overwrite=overwrite
+        )
+        if existing is not None:
+            return existing
 
         destination.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(source_path, destination)
@@ -94,23 +94,19 @@ class LocalArtifactStore(ArtifactStore):
             size_bytes=size_bytes,
         )
 
-    def put_bytes(self, payload: bytes, key: str) -> StoredArtifact:
+    def put_bytes(
+        self, payload: bytes, key: str, *, overwrite: bool = False
+    ) -> StoredArtifact:
         relative_key = self._relative_key(key)
         destination = self.root / relative_key
         payload_sha = sha256_bytes(payload)
         size_bytes = len(payload)
 
-        if destination.exists():
-            existing_sha = sha256_file(destination)
-            if existing_sha != payload_sha:
-                raise ArtifactOverwriteError(
-                    f"artifact key already exists with different bytes: {relative_key}"
-                )
-            return StoredArtifact(
-                uri=self._uri_for_key(relative_key),
-                sha256=existing_sha,
-                size_bytes=destination.stat().st_size,
-            )
+        existing = self._existing_or_raise(
+            destination, relative_key, payload_sha, overwrite=overwrite
+        )
+        if existing is not None:
+            return existing
 
         destination.parent.mkdir(parents=True, exist_ok=True)
         _write_bytes_atomically(destination, payload)
@@ -120,17 +116,34 @@ class LocalArtifactStore(ArtifactStore):
             size_bytes=size_bytes,
         )
 
+    def _existing_or_raise(
+        self,
+        destination: Path,
+        relative_key: str,
+        new_sha: str,
+        *,
+        overwrite: bool,
+    ) -> StoredArtifact | None:
+        if not destination.exists():
+            return None
+        existing_sha = sha256_file(destination)
+        if existing_sha == new_sha:
+            return StoredArtifact(
+                uri=self._uri_for_key(relative_key),
+                sha256=existing_sha,
+                size_bytes=destination.stat().st_size,
+            )
+        if not overwrite:
+            raise ArtifactOverwriteError(
+                f"artifact key already exists with different bytes: {relative_key}"
+            )
+        return None
+
     def get_file(
         self, uri: str, destination_path: Path, *, expected_sha256: str
     ) -> Path:
         relative_key = self._relative_key(uri)
         source = self.root / relative_key
-        actual_sha = sha256_file(source)
-        if actual_sha != expected_sha256:
-            raise ArtifactHashMismatchError(
-                f"sha256 mismatch for {relative_key}: expected {expected_sha256}, got {actual_sha}"
-            )
-
         destination_path.parent.mkdir(parents=True, exist_ok=True)
         tmp_path = _temporary_path(destination_path)
         try:
@@ -193,25 +206,18 @@ class S3ArtifactStore(ArtifactStore):
         self.prefix = parsed.path.strip("/")
         self.client = boto3.client("s3")
 
-    def put_file(self, source_path: Path, key: str) -> StoredArtifact:
+    def put_file(
+        self, source_path: Path, key: str, *, overwrite: bool = False
+    ) -> StoredArtifact:
         relative_key = self._relative_key(key)
         object_key = _join_s3_key(self.prefix, relative_key)
         sha = sha256_file(source_path)
         size_bytes = source_path.stat().st_size
-        existing = _s3_existing_artifact(
-            self.client, bucket=self.bucket, object_key=object_key
+        existing = self._existing_or_raise(
+            relative_key, object_key, sha, size_bytes, overwrite=overwrite
         )
         if existing is not None:
-            existing_sha, existing_size = existing
-            if existing_sha == sha and existing_size == size_bytes:
-                return StoredArtifact(
-                    uri=self._uri_for_key(relative_key),
-                    sha256=sha,
-                    size_bytes=size_bytes,
-                )
-            raise ArtifactOverwriteError(
-                f"s3 artifact key already exists with different bytes: s3://{self.bucket}/{object_key}"
-            )
+            return existing
         self.client.upload_file(
             str(source_path),
             self.bucket,
@@ -222,25 +228,18 @@ class S3ArtifactStore(ArtifactStore):
             uri=self._uri_for_key(relative_key), sha256=sha, size_bytes=size_bytes
         )
 
-    def put_bytes(self, payload: bytes, key: str) -> StoredArtifact:
+    def put_bytes(
+        self, payload: bytes, key: str, *, overwrite: bool = False
+    ) -> StoredArtifact:
         relative_key = self._relative_key(key)
         object_key = _join_s3_key(self.prefix, relative_key)
         sha = sha256_bytes(payload)
         size_bytes = len(payload)
-        existing = _s3_existing_artifact(
-            self.client, bucket=self.bucket, object_key=object_key
+        existing = self._existing_or_raise(
+            relative_key, object_key, sha, size_bytes, overwrite=overwrite
         )
         if existing is not None:
-            existing_sha, existing_size = existing
-            if existing_sha == sha and existing_size == size_bytes:
-                return StoredArtifact(
-                    uri=self._uri_for_key(relative_key),
-                    sha256=sha,
-                    size_bytes=size_bytes,
-                )
-            raise ArtifactOverwriteError(
-                f"s3 artifact key already exists with different bytes: s3://{self.bucket}/{object_key}"
-            )
+            return existing
         self.client.put_object(
             Bucket=self.bucket,
             Key=object_key,
@@ -250,6 +249,33 @@ class S3ArtifactStore(ArtifactStore):
         return StoredArtifact(
             uri=self._uri_for_key(relative_key), sha256=sha, size_bytes=size_bytes
         )
+
+    def _existing_or_raise(
+        self,
+        relative_key: str,
+        object_key: str,
+        new_sha: str,
+        size_bytes: int,
+        *,
+        overwrite: bool,
+    ) -> StoredArtifact | None:
+        existing = _s3_existing_artifact(
+            self.client, bucket=self.bucket, object_key=object_key
+        )
+        if existing is None:
+            return None
+        existing_sha, existing_size = existing
+        if existing_sha == new_sha and existing_size == size_bytes:
+            return StoredArtifact(
+                uri=self._uri_for_key(relative_key),
+                sha256=new_sha,
+                size_bytes=size_bytes,
+            )
+        if not overwrite:
+            raise ArtifactOverwriteError(
+                f"s3 artifact key already exists with different bytes: s3://{self.bucket}/{object_key}"
+            )
+        return None
 
     def get_file(
         self, uri: str, destination_path: Path, *, expected_sha256: str
@@ -288,10 +314,29 @@ def _normalize_local_key(key: str, root: Path) -> str:
         path = Path(parsed.path).resolve()
         try:
             return str(path.relative_to(root))
-        except ValueError as exc:
-            raise ValueError(
-                f"file artifact URI must stay within the store root: {key}"
-            ) from exc
+        except ValueError:
+            pass
+        # Workspace-portable fallback: a manifest authored on one machine may
+        # encode an absolute ``file://`` URI whose prefix points at a different
+        # checkout (e.g. ``/Users/alice/.../<store-name>/canonical/foo.parquet``)
+        # than the local store root (``/Users/bob/.../<store-name>``). When the
+        # store-root's basename appears as a directory component in the URI's
+        # path, treat everything after that component as the relative key.
+        # This keeps the store-relative contract (no escapes) while letting
+        # manifests survive being moved between workspaces.
+        anchor = root.name
+        if anchor:
+            parts = path.parts
+            try:
+                last_idx = len(parts) - 1 - parts[::-1].index(anchor)
+                tail = parts[last_idx + 1 :]
+                if tail:
+                    return _normalize_relative_key(str(Path(*tail)))
+            except ValueError:
+                pass
+        raise ValueError(
+            f"file artifact URI must stay within the store root: {key}"
+        )
     if parsed.scheme:
         raise ValueError(f"unsupported local artifact URI scheme: {parsed.scheme}")
     return _normalize_relative_key(key)

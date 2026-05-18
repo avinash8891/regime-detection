@@ -55,6 +55,7 @@ Operating discipline for coding agents in this repository. Project-specific cont
 
 ## Hygiene
 
+- **RTK rewrites `python3 -m pytest` → `rtk pytest` (failures-only mode).** "Pytest: No tests collected" means no failures were found — it is NOT evidence that tests ran or passed. Always append `; echo "EXIT:$?"` and treat exit 0 as pass, exit 5 as genuine no-collection. Never pipe with `| tail -N` when the exit code matters — that discards it silently.
 - `get_logger` must NOT set `propagate = False` — pytest caplog captures via the root logger; blocking propagation makes all `caplog` assertions return empty strings. No duplicate output risk in production (no root handler attached outside tests).
 - `PYTEST_CURRENT_TEST` is NOT set during pytest module import/collection — only during test execution. Module-level code cannot use it as an import guard. Use it only inside functions.
 - No new dependency without justification in commit message. Stdlib → existing deps → new dep, in that order.

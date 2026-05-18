@@ -30,7 +30,7 @@ def _artifact(**overrides: object) -> ManifestArtifact:
         "rows": 10,
         "min_date": "2026-05-01",
         "max_date": "2026-05-15",
-        "required_for": ["profile_engine_30d"],
+        "required_for": ["profile_engine"],
     }
     values.update(overrides)
     return ManifestArtifact.from_dict(values)
@@ -154,19 +154,19 @@ def test_manifest_required_artifacts_for_use_case() -> None:
         storage_root="file:///tmp/regime-data",
         artifacts=[
             _artifact(
-                name="macro", required_for=["profile_engine_30d", "v2_calibration"]
+                name="macro", required_for=["profile_engine", "v2_calibration"]
             ),
             _artifact(
                 name="aaii",
                 uri=_file_uri("canonical/sentiment/aaii_sentiment.parquet"),
                 local_path="data/raw/sentiment/aaii_sentiment.parquet",
-                required_for=["profile_engine_30d"],
+                required_for=["profile_engine"],
             ),
         ],
     )
 
     assert [a.name for a in manifest.required_for("v2_calibration")] == ["macro"]
-    assert [a.name for a in manifest.required_for("profile_engine_30d")] == [
+    assert [a.name for a in manifest.required_for("profile_engine")] == [
         "macro",
         "aaii",
     ]

@@ -271,7 +271,7 @@ def test_profile_verification_flags_missing_layer1_sentiment_extensions() -> Non
         pit_constituent_intervals=pd.DataFrame({"ticker": ["AAPL"]}),
         constituent_ohlcv={"AAPL": pd.DataFrame({"close": [1.0]})},
         cross_asset_closes={"SPY": pd.Series([1.0])},
-        macro_series={"DGS10": pd.Series([1.0])},
+        macro_series={"10y_yield": pd.Series([1.0])},
         event_calendar=None,
         aaii_sentiment=None,
         news_sentiment=None,
@@ -333,7 +333,7 @@ def test_profile_verification_warns_when_eps_revision_source_is_stale() -> None:
         constituent_ohlcv={"AAPL": pd.DataFrame({"close": [1.0]})},
         cross_asset_closes={"SPY": pd.Series([1.0])},
         macro_series={
-            "DGS10": pd.Series([1.0]),
+            "10y_yield": pd.Series([1.0]),
             "aggregate_forward_eps_revision": pd.Series(
                 [0.036],
                 index=pd.DatetimeIndex(["2026-01-22"]),
@@ -389,7 +389,7 @@ def test_profile_json_report_emits_layer1_sentiment_metric_summary(
         selected_dates=selected_dates,
         sector_etf_closes={"XLK": pd.Series([1.0])},
         cross_asset_closes={"SPY": pd.Series([1.0])},
-        macro_series={"DGS10": pd.Series([1.0])},
+        macro_series={"10y_yield": pd.Series([1.0])},
         event_calendar=None,
         aaii_sentiment=pd.DataFrame({"date": selected_dates}),
         news_sentiment=pd.Series([0.1, 0.2]),

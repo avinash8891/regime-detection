@@ -628,6 +628,10 @@ def _build_json_report(
                 args.cpi_vintages_parquet,
                 present=inputs.cpi_first_release is not None,
             ),
+            "cpi_nowcast": _path_text(
+                getattr(args, "cpi_nowcast_parquet", None),
+                present="cpi_nowcast" in inputs.macro_series,
+            ),
             "pit": str(args.pit_parquet),
         },
         "window": {

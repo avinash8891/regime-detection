@@ -40,6 +40,8 @@ from regime_detection.credit_funding import (
     KRE_KEY as _CF_KRE_KEY,
     SOFR_KEY as _CF_SOFR_KEY,
     IORB_KEY as _CF_IORB_KEY,
+    FEDFUNDS_KEY as _CF_FEDFUNDS_KEY,
+    IOER_LEGACY_KEY as _CF_IOER_LEGACY_KEY,
     NFCI_KEY as _CF_NFCI_KEY,
     BROAD_USD_INDEX_KEY as _CF_BROAD_USD_KEY,
     HY_OAS_KEY as _CF_HY_OAS_KEY,
@@ -118,11 +120,7 @@ __all__ = [
 ]
 
 
-# v2 §2A source contract (lines 887–889). Pinned here so the feature
-# store can detect whether MarketContext.macro_series carries the two
-# required FRED series without scattering string literals.
-_FRED_DGS2_KEY = "DGS2"
-_FRED_DGS10_KEY = "DGS10"
+_FRED_DGS2_KEY = "2y_yield"
 _T = TypeVar("_T")
 
 
@@ -234,11 +232,11 @@ class FeatureStore(BaseModel):
     # features per spec lines 257–258) live on volatility_state_v2.
     volume_liquidity_v2: VolumeLiquidityV2Features | None = None
 
-    # V2 §2A seam (implementation phase, evidence-only) — populated when a
+    # V2 §2A monetary-pressure feature seam — populated when a
     # MonetaryPressureV2FeaturesConfig is threaded through AND
     # MarketContext.macro_series carries both DGS2 and DGS10 (spec
-    # source contract §2A lines 887–889). Exposes ONLY the two
-    # spec-pinned yield z-scores; broad_usd_index and 21d-variant
+    # source contract §2A lines 887–889). Full label classifier implemented
+    # via MonetaryPressureV2Output. broad_usd_index and 21d-variant
     # features are deferred per documented implementation decision.
     monetary: MonetaryPressureV2Features | None = None
 
@@ -506,7 +504,7 @@ def _build_monetary_feature(state: _FeatureStoreBuildState) -> None:
         state.monetary_pressure_v2_config is None
         or state.context.macro_series is None
         or _FRED_DGS2_KEY not in state.context.macro_series
-        or _FRED_DGS10_KEY not in state.context.macro_series
+        or _IG_DGS10_KEY not in state.context.macro_series
     ):
         state.monetary = None
         return
@@ -525,7 +523,7 @@ def _build_monetary_feature(state: _FeatureStoreBuildState) -> None:
         )
     state.monetary = compute_monetary_pressure_features(
         dgs2=state.context.macro_series[_FRED_DGS2_KEY],
-        dgs10=state.context.macro_series[_FRED_DGS10_KEY],
+        dgs10=state.context.macro_series[_IG_DGS10_KEY],
         broad_usd_index=broad_usd_series,
         central_bank_text_score=cb_text_score_series,
         config=state.monetary_pressure_v2_config,
@@ -615,6 +613,8 @@ def _build_credit_funding_feature(state: _FeatureStoreBuildState) -> None:
         hy_oas=state.context.macro_series.get(_CF_HY_OAS_KEY, nan_oas),
         ig_oas=state.context.macro_series.get(_CF_IG_OAS_KEY, nan_oas),
         config=state.credit_funding_config.rules,
+        fedfunds=state.context.macro_series.get(_CF_FEDFUNDS_KEY),
+        ioer_legacy=state.context.macro_series.get(_CF_IOER_LEGACY_KEY),
     )
 
 

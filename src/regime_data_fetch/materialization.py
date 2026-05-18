@@ -3,6 +3,7 @@ from __future__ import annotations
 import tempfile
 from dataclasses import dataclass
 from pathlib import Path
+from urllib.parse import urlparse
 
 from regime_data_fetch.artifact_manifest import (
     DATA_RAW_PREFIX,
@@ -11,6 +12,12 @@ from regime_data_fetch.artifact_manifest import (
     strip_data_raw_prefix,
 )
 from regime_data_fetch.artifact_store import build_artifact_store
+
+# Sentinel SHA for documented placeholder entries (empty-string digest).
+# These are not fetchable artifacts; the OHLCV tree they represent is
+# discovered structurally by the resolver. Skipping avoids a guaranteed
+# sha mismatch that would mislead operators into thinking the store is corrupt.
+_EMPTY_SHA256 = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
 
 
 @dataclass(frozen=True)
@@ -32,8 +39,18 @@ def materialize_manifest(
     artifacts = manifest.required_for(required_for) if required_for else manifest.artifacts
     if required_for and not artifacts:
         raise ValueError(f"manifest has no artifacts required for {required_for}")
+    # Skip documented placeholder entries (empty-string sha sentinel). These
+    # are not real fetchable artifacts; their role is to mark a structural
+    # contract the resolver discovers another way (e.g. the 762-symbol OHLCV
+    # tree exposed via its own per-symbol lockfile).
+    artifacts = [a for a in artifacts if a.sha256 != _EMPTY_SHA256]
 
-    store = build_artifact_store(store_root or manifest.storage_root)
+    effective_store_root = _resolve_store_root(
+        store_root=store_root,
+        manifest_storage_root=manifest.storage_root,
+        manifest_path=manifest_path,
+    )
+    store = build_artifact_store(effective_store_root)
     staging_parent = local_root.parent
     staging_parent.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(
@@ -83,6 +100,34 @@ def materialize_manifest(
         )
         for artifact, destination, _staged_path in staged
     ]
+
+
+def _resolve_store_root(
+    *,
+    store_root: str | None,
+    manifest_storage_root: str,
+    manifest_path: Path,
+) -> str:
+    """Pick the effective artifact-store root and make relative paths portable.
+
+    An explicit ``--artifact-store`` override always wins. Otherwise the
+    manifest's ``storage_root`` field is used. When that field is a relative
+    local path (no URI scheme, not absolute), we anchor it to the manifest
+    file's own directory rather than the process cwd. That keeps a manifest
+    movable between checkouts: a checked-in
+    ``storage_root: .context/regime-artifact-store-20260517`` resolves the
+    same way no matter which workspace the operator invokes the runner from.
+    Absolute paths, ``file://`` URIs, and ``s3://`` URIs are passed through
+    untouched.
+    """
+    candidate = store_root or manifest_storage_root
+    parsed = urlparse(candidate)
+    if parsed.scheme:
+        return candidate
+    candidate_path = Path(candidate)
+    if candidate_path.is_absolute():
+        return candidate
+    return str((manifest_path.resolve().parent / candidate_path).resolve())
 
 
 def destination_for(artifact: ManifestArtifact, local_root: Path, *, repo_root: Path | None = None) -> Path:

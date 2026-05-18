@@ -62,7 +62,12 @@ def test_load_macro_series_merges_pmi_history_with_latest_parquet(
         ]
     ).to_parquet(pmi_dir / "us_ism_pmi_history.parquet", index=False)
 
-    series = load_macro_series(macro_path, latest_path)
+    series = load_macro_series(
+        macro_path,
+        latest_path,
+        cpi_nowcast_parquet=None,
+        eps_weekly_history_parquet=None,
+    )
 
     pmi = series["pmi_manufacturing"]
     assert list(pmi.index) == [

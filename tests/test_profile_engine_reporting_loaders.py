@@ -425,6 +425,177 @@ def test_profile_engine_loads_central_bank_text_when_present(tmp_path: Path) -> 
     assert set(actual["source"]) == {"fomc_minutes", "powell_speech"}
 
 
+def _make_minimal_output() -> SimpleNamespace:
+    """Return a minimal RegimeOutput stand-in for report tests."""
+    axis = SimpleNamespace(active_label="uptrend", classification_status="classified")
+    return SimpleNamespace(
+        as_of_date=pd.Timestamp("2026-05-15").date(),
+        trend_direction=axis,
+        volatility_state=SimpleNamespace(
+            active_label="low_vol", classification_status="classified"
+        ),
+        transition_risk=SimpleNamespace(label="low", score=None, score_components=None),
+        network_fragility=None,
+        volume_liquidity_state=None,
+        credit_funding_state=None,
+        credit_funding_state_proxy=None,
+        credit_funding_effective_state=None,
+        inflation_growth_state=None,
+        monetary_pressure_state=None,
+        cluster=None,
+        change_point=None,
+    )
+
+
+def _make_minimal_inputs(
+    macro_series: dict | None = None,
+) -> "profile_engine.ProfileInputBundle":
+    return profile_engine.ProfileInputBundle(
+        market_data=pd.DataFrame({"date": [pd.Timestamp("2026-05-15")]}),
+        end_date=pd.Timestamp("2026-05-15").date(),
+        required_sessions=252,
+        working_start_date=pd.Timestamp("2025-05-16").date(),
+        selected_dates=[pd.Timestamp("2026-05-15").date()],
+        sector_etf_closes={},
+        cross_asset_closes={},
+        macro_series=macro_series if macro_series is not None else {},
+        event_calendar=None,
+        aaii_sentiment=None,
+        news_sentiment=None,
+        implied_vol_30d=None,
+        central_bank_text_releases=None,
+        cpi_first_release=None,
+        pit_constituent_intervals=pd.DataFrame({"ticker": ["AAPL"]}),
+        constituent_ohlcv={},
+        constituent_tickers=[],
+    )
+
+
+def test_sources_dict_records_cpi_nowcast_path_when_wired(tmp_path: Path) -> None:
+    """Regression: cpi_nowcast must appear in sources when the arg is passed
+    and the series is present in macro_series."""
+    nowcast_path = tmp_path / "cleveland_fed_cpi_nowcast.parquet"
+    timer = profile_engine.StageTimer()
+    args = SimpleNamespace(
+        config_path=tmp_path / "config.yaml",
+        daily_dir=tmp_path / "daily_ohlcv",
+        constituent_tree=tmp_path / "constituents",
+        macro_parquet=tmp_path / "macro.parquet",
+        event_calendar=tmp_path / "events.yaml",
+        aaii_sentiment_parquet=None,
+        news_sentiment_parquet=None,
+        fomc_minutes_parquet=None,
+        powell_speeches_parquet=None,
+        cpi_vintages_parquet=None,
+        cpi_nowcast_parquet=nowcast_path,
+        pit_parquet=tmp_path / "pit.parquet",
+        lookback_days=1,
+    )
+    cpi_nowcast_series = pd.Series(
+        [0.025],
+        index=pd.DatetimeIndex([pd.Timestamp("2026-05-14")]),
+        name="cpi_nowcast",
+    )
+    inputs = _make_minimal_inputs(macro_series={"cpi_nowcast": cpi_nowcast_series})
+
+    report = profile_engine._build_json_report(
+        args=args,
+        inputs=inputs,
+        timeline=SimpleNamespace(outputs=[_make_minimal_output()]),
+        timer=timer,
+        total_wall_clock=1.0,
+        per_day_emission_total=0.0,
+        per_day_avg_ms=0.0,
+        verification_issues=[],
+    )
+
+    assert "cpi_nowcast" in report["sources"], (
+        "cpi_nowcast key must appear in sources when the parquet arg is provided"
+    )
+    assert report["sources"]["cpi_nowcast"] == str(nowcast_path), (
+        f"expected {str(nowcast_path)!r}, got {report['sources']['cpi_nowcast']!r}"
+    )
+
+
+def test_sources_dict_records_cpi_nowcast_none_when_not_wired(tmp_path: Path) -> None:
+    """Regression: cpi_nowcast must appear in sources as None when the series
+    is absent from macro_series — the key must always be present for audit
+    completeness."""
+    timer = profile_engine.StageTimer()
+    args = SimpleNamespace(
+        config_path=tmp_path / "config.yaml",
+        daily_dir=tmp_path / "daily_ohlcv",
+        constituent_tree=tmp_path / "constituents",
+        macro_parquet=tmp_path / "macro.parquet",
+        event_calendar=tmp_path / "events.yaml",
+        aaii_sentiment_parquet=None,
+        news_sentiment_parquet=None,
+        fomc_minutes_parquet=None,
+        powell_speeches_parquet=None,
+        cpi_vintages_parquet=None,
+        cpi_nowcast_parquet=None,
+        pit_parquet=tmp_path / "pit.parquet",
+        lookback_days=1,
+    )
+    inputs = _make_minimal_inputs(macro_series={})
+
+    report = profile_engine._build_json_report(
+        args=args,
+        inputs=inputs,
+        timeline=SimpleNamespace(outputs=[_make_minimal_output()]),
+        timer=timer,
+        total_wall_clock=1.0,
+        per_day_emission_total=0.0,
+        per_day_avg_ms=0.0,
+        verification_issues=[],
+    )
+
+    assert "cpi_nowcast" in report["sources"], (
+        "cpi_nowcast key must always appear in sources for audit completeness"
+    )
+    assert report["sources"]["cpi_nowcast"] is None, (
+        f"expected None when not wired, got {report['sources']['cpi_nowcast']!r}"
+    )
+
+
+def test_sources_dict_records_cpi_nowcast_none_when_arg_absent_from_namespace(
+    tmp_path: Path,
+) -> None:
+    """Regression: cpi_nowcast must not raise AttributeError when the arg is
+    not present on the namespace (legacy callers that don't set cpi_nowcast_parquet)."""
+    timer = profile_engine.StageTimer()
+    args = SimpleNamespace(
+        config_path=tmp_path / "config.yaml",
+        daily_dir=tmp_path / "daily_ohlcv",
+        constituent_tree=tmp_path / "constituents",
+        macro_parquet=tmp_path / "macro.parquet",
+        event_calendar=tmp_path / "events.yaml",
+        aaii_sentiment_parquet=None,
+        news_sentiment_parquet=None,
+        fomc_minutes_parquet=None,
+        powell_speeches_parquet=None,
+        cpi_vintages_parquet=None,
+        # intentionally omit cpi_nowcast_parquet to simulate legacy callers
+        pit_parquet=tmp_path / "pit.parquet",
+        lookback_days=1,
+    )
+    inputs = _make_minimal_inputs(macro_series={})
+
+    report = profile_engine._build_json_report(
+        args=args,
+        inputs=inputs,
+        timeline=SimpleNamespace(outputs=[_make_minimal_output()]),
+        timer=timer,
+        total_wall_clock=1.0,
+        per_day_emission_total=0.0,
+        per_day_avg_ms=0.0,
+        verification_issues=[],
+    )
+
+    assert "cpi_nowcast" in report["sources"]
+    assert report["sources"]["cpi_nowcast"] is None
+
+
 def test_profile_engine_loads_cpi_first_release_when_present(tmp_path: Path) -> None:
     parquet_path = tmp_path / "cpi_all_items_vintages.parquet"
     pd.DataFrame(

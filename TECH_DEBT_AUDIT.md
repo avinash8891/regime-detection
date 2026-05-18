@@ -34,11 +34,11 @@ Most risk appears at the boundaries between those products: typed model boundari
 | Command | Result |
 |---|---|
 | `python3 -m ruff check .` | Passed: `All checks passed!` |
-| `python3 -m pyright src/regime_detection src/regime_data_fetch scripts` | Failed: 714 errors. Examples include `scripts/profile_engine_30d.py:351` / `:353`, `src/regime_detection/timeline.py:89`, `:233`, `:239`, `src/regime_detection/transition_risk.py:138`, and pandas typing errors in calibration/audit scripts. |
+| `python3 -m pyright src/regime_detection src/regime_data_fetch scripts` | Failed: 714 errors. Examples include `scripts/profile_engine.py:351` / `:353`, `src/regime_detection/timeline.py:89`, `:233`, `:239`, `src/regime_detection/transition_risk.py:138`, and pandas typing errors in calibration/audit scripts. |
 | `python3 -m vulture src scripts tests` | Unavailable: `No module named vulture`. |
 | `python3 -m pydeps src/regime_detection --show-cycles --noshow` | Unavailable: `No module named pydeps`. |
 | `python3 -m pip_audit --desc off` | Environment-level failure: 51 known vulnerabilities in 23 packages. The output also skipped local/non-PyPI packages including `regime-detection (2.0.0)`, so this is not a clean project-lock audit. |
-| `python3 -m pytest tests/test_profile_engine_30d.py::test_timed_inflation_growth_builder_patches_axis_builder_helpers -q` | Passed; confirms the profiler timing hook patches `regime_detection.axis_builders.inflation_growth`, not the old `axis_series` import surface. |
+| `python3 -m pytest tests/test_profile_engine.py::test_timed_inflation_growth_builder_patches_axis_builder_helpers -q` | Passed; confirms the profiler timing hook patches `regime_detection.axis_builders.inflation_growth`, not the old `axis_series` import surface. |
 | `python3 -m pytest --cov=src --cov-report=term --cov-fail-under=80 -q` | Failed: 5 tests failed, coverage still reached 88.33%. All failures are `TransitionRiskOutput` validation errors where tests still pass `{}` or `{"warnings": []}` evidence. |
 
 CI currently runs ruff, pyright only against `src/regime_detection/config.py`, and default pytest with coverage in `.github/workflows/ci.yml:63-66`. Slow/V2 gate tests are in a separate path-sensitive job at `.github/workflows/ci.yml:71-120`.
@@ -56,14 +56,14 @@ Resolved or mostly resolved from earlier audit:
 - Artifact URI contract: resolved; `StoredArtifact.uri` is a fully qualified URI contract in `src/regime_data_fetch/artifact_store.py`.
 - V2 gate fail-closed behavior: resolved enough for prior finding; gate script tests cover failure behavior, and CI has a slow/V2 gate job.
 - FOMC/news sentiment skip-gate concerns: resolved enough; fixture-backed tests exist.
-- `profile_engine_30d.py` inflation-growth timing hook after the axis split: resolved; the hook now patches `regime_detection.axis_builders.inflation_growth`, covered by `tests/test_profile_engine_30d.py::test_timed_inflation_growth_builder_patches_axis_builder_helpers`.
+- `profile_engine.py` inflation-growth timing hook after the axis split: resolved; the hook now patches `regime_detection.axis_builders.inflation_growth`, covered by `tests/test_profile_engine.py::test_timed_inflation_growth_builder_patches_axis_builder_helpers`.
 
 ## Findings
 
 | ID | Severity | Status | Finding | Evidence |
 |---|---:|---|---|---|
-| TD-001 | P1 | Resolved | `profile_engine_30d.py` previously had a post-axis-split broken timing hook. Current code patches the axis-builder module directly and the focused regression passes. | `scripts/profile_engine_30d_timers.py`; `tests/test_profile_engine_30d.py::test_timed_inflation_growth_builder_patches_axis_builder_helpers`. |
-| TD-002 | P1 | Still open | Full pyright is not actionable yet: 714 errors across runtime/data/scripts, while CI only checks `src/regime_detection/config.py`. This lets typed contract drift accumulate outside config. | `.github/workflows/ci.yml:63-66`; pyright examples from `_v2_calibration_helpers.py:58`, `profile_engine_30d.py:351`, `timeline.py:89`, `transition_risk.py:138`. |
+| TD-001 | P1 | Resolved | `profile_engine.py` previously had a post-axis-split broken timing hook. Current code patches the axis-builder module directly and the focused regression passes. | `scripts/profile_engine_timers.py`; `tests/test_profile_engine.py::test_timed_inflation_growth_builder_patches_axis_builder_helpers`. |
+| TD-002 | P1 | Still open | Full pyright is not actionable yet: 714 errors across runtime/data/scripts, while CI only checks `src/regime_detection/config.py`. This lets typed contract drift accumulate outside config. | `.github/workflows/ci.yml:63-66`; pyright examples from `_v2_calibration_helpers.py:58`, `profile_engine.py:351`, `timeline.py:89`, `transition_risk.py:138`. |
 | TD-003 | P1 | Still open | Evidence models are only partially typed. Most evidence payload classes still inherit `RootModel[dict[str, Any]]`, so Pydantic accepts arbitrary payloads and pyright cannot enforce field contracts. | `src/regime_detection/models.py:22-70`. |
 | TD-004 | P1 | Still open | Timeline still builds typed output objects using plain dict evidence payloads. This is a direct source of pyright failures and weakens the typed evidence migration. | `src/regime_detection/timeline.py:84-90`, `:230-240`. |
 | TD-005 | P1 | New | Transition-risk now has a typed payload class, but callers/tests still use old `{}` or `{"warnings": []}` evidence shapes, and the default test suite currently fails on this mismatch. Runtime code also passes a plain dict into the typed output. | `src/regime_detection/transition_risk.py:136-142`; payload class at `models.py:73-80`; failing test constructors at `tests/test_schema_and_timeline.py:155-158` and `tests/test_v2_comparison.py:205`. |
@@ -72,7 +72,7 @@ Resolved or mostly resolved from earlier audit:
 | TD-008 | P2 | Still open | Axis implementation moved out of `axis_series.py`, but the new module is a 1455-line all-axis builder file importing every rule family and owning every axis pipeline. The "full split" is not exhausted. | `src/regime_detection/axis_builders/series.py:1-77`, axis builders at `:118`, `:351`, `:941`, `:1113`, `:1320`. |
 | TD-009 | P2 | Still open | `Config` remains a 1103-line monolith with `RegimeConfig` and all V2 optional sub-configs in one file. This is accepted deferred debt after the v1/v2 split was reverted. | `src/regime_detection/config.py:1013-1055`. |
 | TD-010 | P2 | Partially resolved | Fetch-mode classification/concurrency moved into a registry, but invocation still lives in a long `_run_unattended_fetch_mode` if-chain. Adding a mode requires editing both registry data and dispatch logic. | Registry at `scripts/fetch_regime_engine_v1_data.py:74-103`; dispatch at `:531-663`. |
-| TD-011 | P2 | Still open | `profile_engine_30d.py` remains a 1579-line operational script that loads all input families, monkeypatches runtime modules for timing, and generates reports. It is a product surface, not just a helper script. | Timing wrapper at `scripts/profile_engine_30d.py:338-370`; input orchestration at `:1115-1155`. |
+| TD-011 | P2 | Still open | `profile_engine.py` remains a 1579-line operational script that loads all input families, monkeypatches runtime modules for timing, and generates reports. It is a product surface, not just a helper script. | Timing wrapper at `scripts/profile_engine.py:338-370`; input orchestration at `:1115-1155`. |
 | TD-012 | P2 | Still open | Acquisition event calendar remains a large orchestration module: fetches official sources, builds curated candidates, writes YAML, and formats candidate/validation records in one file. | `src/regime_data_fetch/event_calendar.py:280-335`, `:638-669`, `:768-820`. |
 | TD-013 | P2 | Still open | Aggregate EPS acquisition combines operator/manual detection, direct download, browser fallback, parsing, output/report writing, and Wayback backfill in one module. | `src/regime_data_fetch/aggregate_eps.py:185-235`, `:493-500`, `:700-745`. |
 | TD-014 | P2 | Still open | Investing.com live fetch has no retry/backoff wrapper around the JSON request path; a single transient URL open failure fails that operation. | `src/regime_data_fetch/investing_live.py:897-902`. |
@@ -91,9 +91,9 @@ Resolved or mostly resolved from earlier audit:
 
 Subtasks:
 
-1. Move the inflation-growth timing hook in `scripts/profile_engine_30d.py` to patch `regime_detection.axis_builders.series`, or expose stable instrumentation hooks from the axis builder module.
+1. Move the inflation-growth timing hook in `scripts/profile_engine.py` to patch `regime_detection.axis_builders.series`, or expose stable instrumentation hooks from the axis builder module.
 2. Add a focused test that calls `_timed_inflation_growth_builder` and asserts it no longer raises `AttributeError` when the wrapped builder runs.
-3. Run `python3 -m pytest tests/test_profile_engine_30d.py -q`.
+3. Run `python3 -m pytest tests/test_profile_engine.py -q`.
 
 Acceptance evidence:
 
@@ -159,7 +159,7 @@ Acceptance evidence:
 ## Quick Wins
 
 - Add `vulture`, `pydeps`, and `pip-audit` to a separate optional `audit` extra instead of the default `dev` extra.
-- Add a tiny regression test around `profile_engine_30d._timed_inflation_growth_builder`.
+- Add a tiny regression test around `profile_engine._timed_inflation_growth_builder`.
 - Replace `fetch_text_url` callers with `fetch_text_result`, then delete the empty-string facade.
 - Add retry/backoff around `investing_live._request_json`.
 - Move acquisition-store schema DDL into a dedicated schema/migration module without changing tables.
@@ -177,4 +177,4 @@ Acceptance evidence:
 2. Should pyright be ratcheted by file list, package, or error-count budget?
 3. Should fetch mode invocation support concurrent operator-assisted modes, or should concurrency stay unattended-only?
 4. Should acquisition-store migrations be versioned in SQLite metadata or kept as code-only migrations?
-5. Should `profile_engine_30d.py` remain a script with imports, or become a package module with a thin CLI wrapper?
+5. Should `profile_engine.py` remain a script with imports, or become a package module with a thin CLI wrapper?

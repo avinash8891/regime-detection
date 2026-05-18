@@ -104,14 +104,14 @@ _MARKET_PARQUET_PATH = _RAW_DIR / "market_data.parquet"
 _V2_DAILY_OHLCV_PATH = _RAW_DIR / "v2" / "daily_ohlcv.csv"
 _V2_FRED_MACRO_PATH = _RAW_DIR / "v2" / "fred_macro_series.csv"
 _GOLDEN_DATES_PATH = _FIXTURES_DIR / "derived" / "golden_dates.yaml"
-_V2_MACRO_KEY_BY_LOGICAL_NAME = {
-    "sofr": "SOFR",
-    "iorb": "IORB",
-    "nfci": "NFCI",
-    "broad_usd_index": "broad_usd_index",
-    "hy_oas": "hy_oas",
-    "ig_bbb_oas": "ig_bbb_oas",
-}
+_V2_MACRO_LOGICAL_NAMES = (
+    "sofr",
+    "iorb",
+    "nfci",
+    "broad_usd_index",
+    "hy_oas",
+    "ig_bbb_oas",
+)
 
 
 @lru_cache(maxsize=1)
@@ -199,14 +199,14 @@ def v2_close_series_by_symbol(v2_daily_ohlcv: pd.DataFrame) -> dict[str, pd.Seri
 def v2_macro_series_by_key() -> dict[str, pd.Series]:
     macro = _load_v2_fred_macro()
     series_by_key: dict[str, pd.Series] = {}
-    for logical_name, key in _V2_MACRO_KEY_BY_LOGICAL_NAME.items():
+    for logical_name in _V2_MACRO_LOGICAL_NAMES:
         frame = macro[macro["logical_name"] == logical_name]
         if frame.empty:
             raise RuntimeError(f"V2 FRED macro fixture missing {logical_name!r}")
-        series_by_key[key] = pd.Series(
+        series_by_key[logical_name] = pd.Series(
             frame["value"].astype(float).to_numpy(),
             index=frame["date"],
-            name=key,
+            name=logical_name,
         )
     return series_by_key
 

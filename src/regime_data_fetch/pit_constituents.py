@@ -204,6 +204,11 @@ def read_pit_intervals(parquet_path: Path) -> pd.DataFrame:
     Inverse of the writer in ``run_pit_constituents_fetch``. Converts the
     persisted ISO yyyy-mm-dd date strings back to ``datetime.date`` objects
     (``None`` for the null open-interval tail in ``end_date``).
+
+    SOURCE_END_DATE_CORRECTIONS are re-applied here as a defensive patch-on-read
+    so that stale S3 artifacts (built before corrections were added to the code)
+    produce correct membership lookups. The patch is idempotent: rows that
+    already carry a non-null end_date are left unchanged.
     """
     df = pd.read_parquet(parquet_path)
 
@@ -216,6 +221,14 @@ def read_pit_intervals(parquet_path: Path) -> pd.DataFrame:
 
     df["start_date"] = df["start_date"].map(_to_date)
     df["end_date"] = df["end_date"].map(_to_date)
+
+    # Patch-on-read: apply corrections to any open interval whose ticker has a
+    # known correction. This fixes stale artifacts without requiring a re-fetch.
+    for ticker, corrected_end in SOURCE_END_DATE_CORRECTIONS.items():
+        mask = (df["ticker"] == ticker) & df["end_date"].isna()
+        if mask.any():
+            df.loc[mask, "end_date"] = corrected_end
+
     # Normalize remaining string columns to object dtype. Newer pandas+pyarrow
     # round-trips parquet strings as StringDtype by default; the reader contract
     # (and downstream consumers comparing dtype == object) requires plain object.

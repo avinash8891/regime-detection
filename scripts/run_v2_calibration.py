@@ -348,7 +348,16 @@ def main() -> int:
     ]
     sector_etf_closes = load_close_dict(daily_dir, list(SECTOR_ETFS), spy_index)
     cross_asset_closes = load_close_dict(daily_dir, cross_asset_symbols, spy_index)
-    macro_series = load_macro_series(macro_parquet, pmi_path)
+    macro_series = load_macro_series(
+        macro_parquet,
+        pmi_path,
+        cpi_nowcast_parquet=data_root
+        / "cleveland_fed_nowcast"
+        / "cpi_nowcast.parquet",
+        eps_weekly_history_parquet=data_root
+        / "aggregate_forward_eps"
+        / "sp500_eps_weekly_history.parquet",
+    )
 
     print(f"as_of = {end_date}; spy sessions = {len(spy_index)}")
     print(f"sector_etf symbols: {sorted(sector_etf_closes.keys())}")

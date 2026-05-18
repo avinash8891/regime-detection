@@ -28,6 +28,8 @@ class OptionalRunnerInputPaths:
     fomc_minutes_parquet: Path | None
     powell_speeches_parquet: Path | None
     cpi_vintages_parquet: Path | None
+    cpi_nowcast_parquet: Path | None = None
+    aggregate_forward_eps_weekly_history_parquet: Path | None = None
 
 
 @dataclass(frozen=True)
@@ -81,22 +83,164 @@ class RunnerInputPaths:
     def cpi_vintages_parquet(self) -> Path | None:
         return self.optional.cpi_vintages_parquet
 
+    @property
+    def cpi_nowcast_parquet(self) -> Path | None:
+        return self.optional.cpi_nowcast_parquet
 
-ARTIFACT_BY_FIELD: dict[str, str] = {
-    "macro_parquet": "fred_macro_series",
-    "pit_parquet": "sp500_pit_constituents",
-    "event_calendar": "event_calendar_us",
-    "pmi_path": "ism_pmi_history",
-    "aaii_sentiment_parquet": "aaii_sentiment",
-    "news_sentiment_parquet": "sf_fed_news_sentiment",
-    "fomc_minutes_parquet": "fomc_minutes",
-    "powell_speeches_parquet": "powell_speeches",
-    "cpi_vintages_parquet": "cpi_all_items_vintages",
-}
+    @property
+    def aggregate_forward_eps_weekly_history_parquet(self) -> Path | None:
+        return self.optional.aggregate_forward_eps_weekly_history_parquet
+
+
+@dataclass(frozen=True)
+class ManifestInputSpec:
+    """Single source of truth for a manifest-routed runner input.
+
+    Declaring a spec here automatically registers it in:
+      * ``ARTIFACT_BY_FIELD``     — used by ``resolve_runner_input_paths``
+      * ``MANIFEST_INPUT_FLAGS``  — used by the CLI plumbing
+      * ``apply_manifest_input_defaults`` — fills ``args.<field>`` from ``data_root``
+
+    A registry-driven coverage test enforces that no spec drifts away from any
+    of these surfaces. To wire a new manifest input, add exactly one
+    ``ManifestInputSpec`` entry to ``MANIFEST_INPUT_SPECS`` — no other dict,
+    dataclass, or call-site edit is required for the routing to take effect.
+    """
+
+    field: str
+    cli_flag: str
+    artifact_name: str | None
+    is_required: bool
+    default_relpath: tuple[str, ...] | None
+
+
+MANIFEST_INPUT_SPECS: tuple[ManifestInputSpec, ...] = (
+    # Required: derived structurally from the constituent OHLCV tree, not by
+    # artifact-name lookup. They participate in the CLI-override rail so an
+    # operator can point a runner at an alternate tree.
+    ManifestInputSpec(
+        field="daily_dir",
+        cli_flag="--daily-dir",
+        artifact_name=None,
+        is_required=True,
+        default_relpath=None,
+    ),
+    ManifestInputSpec(
+        field="constituent_tree",
+        cli_flag="--constituent-tree",
+        artifact_name=None,
+        is_required=True,
+        default_relpath=None,
+    ),
+    # Required: resolved by direct artifact-name lookup.
+    ManifestInputSpec(
+        field="macro_parquet",
+        cli_flag="--macro-parquet",
+        artifact_name="fred_macro_series",
+        is_required=True,
+        default_relpath=("macro", "fred_macro_series.parquet"),
+    ),
+    ManifestInputSpec(
+        field="pit_parquet",
+        cli_flag="--pit-parquet",
+        artifact_name="sp500_pit_constituents",
+        is_required=True,
+        default_relpath=("pit_constituents", "sp500_ticker_intervals.parquet"),
+    ),
+    ManifestInputSpec(
+        field="event_calendar",
+        cli_flag="--event-calendar",
+        artifact_name="event_calendar_us",
+        is_required=True,
+        # Each runner supplies its own default (typically a YAML config
+        # under ``configs/events/``); the manifest router still resolves
+        # the canonical parquet artifact when ``--manifest`` is provided.
+        default_relpath=None,
+    ),
+    # Optional inputs. Each carries a canonical default relpath under
+    # ``data_root`` so runners that bypass the manifest still locate the file.
+    ManifestInputSpec(
+        field="pmi_path",
+        cli_flag="--pmi-path",
+        artifact_name="ism_pmi_history",
+        is_required=False,
+        default_relpath=("pmi", "us_ism_pmi_history.parquet"),
+    ),
+    ManifestInputSpec(
+        field="aaii_sentiment_parquet",
+        cli_flag="--aaii-sentiment-parquet",
+        artifact_name="aaii_sentiment",
+        is_required=False,
+        default_relpath=("sentiment", "aaii_sentiment.parquet"),
+    ),
+    ManifestInputSpec(
+        field="news_sentiment_parquet",
+        cli_flag="--news-sentiment-parquet",
+        artifact_name="sf_fed_news_sentiment",
+        is_required=False,
+        default_relpath=("news_sentiment", "sf_fed_news_sentiment.parquet"),
+    ),
+    ManifestInputSpec(
+        field="fomc_minutes_parquet",
+        cli_flag="--fomc-minutes-parquet",
+        artifact_name="fomc_minutes",
+        is_required=False,
+        default_relpath=("fomc_minutes", "fomc_minutes.parquet"),
+    ),
+    ManifestInputSpec(
+        field="powell_speeches_parquet",
+        cli_flag="--powell-speeches-parquet",
+        artifact_name="powell_speeches",
+        is_required=False,
+        default_relpath=("powell_speeches", "powell_speeches.parquet"),
+    ),
+    ManifestInputSpec(
+        field="cpi_vintages_parquet",
+        cli_flag="--cpi-vintages-parquet",
+        artifact_name="cpi_all_items_vintages",
+        is_required=False,
+        default_relpath=("macro_vintages", "cpi_all_items_vintages.parquet"),
+    ),
+    ManifestInputSpec(
+        field="cpi_nowcast_parquet",
+        cli_flag="--cpi-nowcast-parquet",
+        artifact_name="cleveland_fed_cpi_nowcast",
+        is_required=False,
+        default_relpath=("cleveland_fed_nowcast", "cpi_nowcast.parquet"),
+    ),
+    ManifestInputSpec(
+        field="aggregate_forward_eps_weekly_history_parquet",
+        cli_flag="--aggregate-forward-eps-weekly-history-parquet",
+        artifact_name="sp500_eps_weekly_history",
+        is_required=False,
+        default_relpath=("aggregate_forward_eps", "sp500_eps_weekly_history.parquet"),
+    ),
+)
+
+_SPEC_BY_FIELD: dict[str, ManifestInputSpec] = {}
+# Derived views. These are public for back-compat with callers that import
+# the older flat dicts, but the registry is the source of truth.
+ARTIFACT_BY_FIELD: dict[str, str] = {}
+MANIFEST_INPUT_FLAGS: dict[str, str] = {}
+for _spec in MANIFEST_INPUT_SPECS:
+    _SPEC_BY_FIELD[_spec.field] = _spec
+    MANIFEST_INPUT_FLAGS[_spec.field] = _spec.cli_flag
+    if _spec.artifact_name is not None:
+        ARTIFACT_BY_FIELD[_spec.field] = _spec.artifact_name
 
 REQUIRED_INPUT_FIELDS: frozenset[str] = frozenset(
     field.name for field in fields(RequiredRunnerInputPaths)
 )
+
+
+def get_manifest_input_spec(field: str) -> ManifestInputSpec:
+    try:
+        return _SPEC_BY_FIELD[field]
+    except KeyError as exc:
+        raise KeyError(
+            f"{field!r} is not a registered manifest input "
+            f"(see MANIFEST_INPUT_SPECS in regime_data_fetch.manifest_inputs)"
+        ) from exc
 
 
 def resolve_runner_input_paths(
@@ -168,6 +312,10 @@ def resolve_runner_input_paths(
             fomc_minutes_parquet=resolved["fomc_minutes_parquet"],
             powell_speeches_parquet=resolved["powell_speeches_parquet"],
             cpi_vintages_parquet=resolved["cpi_vintages_parquet"],
+            cpi_nowcast_parquet=resolved["cpi_nowcast_parquet"],
+            aggregate_forward_eps_weekly_history_parquet=resolved[
+                "aggregate_forward_eps_weekly_history_parquet"
+            ],
         ),
         resolved_from_manifest=tuple(sorted(resolved_from_manifest)),
         cli_overrides=tuple(sorted(cli_overrides)),
