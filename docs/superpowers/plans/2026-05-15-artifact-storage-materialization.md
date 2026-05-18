@@ -17,7 +17,7 @@
 - Modify: `src/regime_data_fetch/acquisition_store.py` — add durable artifact registry, checkpoints, lineage, and canonical version rows.
 - Modify: `scripts/fetch_regime_engine_v1_data.py` — add object-store and manifest flags, write artifact metadata after successful fetches.
 - Create: `scripts/materialize_regime_data.py` — download/copy manifest-pinned artifacts into local `data/raw/`.
-- Modify: `scripts/profile_engine_30d.py` and V2 gate scripts — accept `--manifest` or `--data-root` and verify required artifacts before running.
+- Modify: `scripts/profile_engine.py` and V2 gate scripts — accept `--manifest` or `--data-root` and verify required artifacts before running.
 - Create: `tests/test_artifact_store.py` — file-backed object-store behavior, hash verification, no silent overwrite.
 - Create: `tests/test_artifact_manifest.py` — manifest validation and required field coverage.
 - Create: `tests/test_materialize_regime_data.py` — end-to-end local object-store to `data/raw` materialization.
@@ -251,7 +251,7 @@ git commit -m "feat: persist aaii artifacts to durable store"
 ## Task 6: Runner Integration
 
 **Files:**
-- Modify: `scripts/profile_engine_30d.py`
+- Modify: `scripts/profile_engine.py`
 - Modify: `scripts/run_v2_calibration.py`
 - Modify: `scripts/run_v2_walkforward_gate.py`
 - Modify: `scripts/run_v2_shadow_ab_gate.py`
@@ -301,7 +301,7 @@ Add the three-command path:
 ```bash
 python scripts/fetch_regime_engine_v1_data.py --fetch all --artifact-store s3://regime-data --emit-manifest
 python scripts/materialize_regime_data.py --manifest manifests/runs/regime_engine_YYYY-MM-DD.yaml --local-root data/raw
-python scripts/profile_engine_30d.py --manifest manifests/runs/regime_engine_YYYY-MM-DD.yaml
+python scripts/profile_engine.py --manifest manifests/runs/regime_engine_YYYY-MM-DD.yaml
 ```
 
 - [ ] **Step 2: Run verification**

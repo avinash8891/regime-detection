@@ -29,7 +29,7 @@ Inputs:
     (FRED CPIAUCSL monthly → forward-fill to daily).
   - ``pmi_manufacturing`` via ``MarketContext.macro_series["pmi_manufacturing"]``
     (Investing release-history; monthly → forward-fill to daily).
-  - ``dgs10`` via ``MarketContext.macro_series["dgs10"]`` (implementation phase loader).
+  - ``dgs10`` via ``MarketContext.macro_series["10y_yield"]`` (FRED DGS10).
   - ``dbc_close`` via ``MarketContext.cross_asset_closes["DBC"]``.
   - ``spy_close`` via ``MarketContext.spy_ohlcv["close"]``.
   - ``tlt_close`` via ``MarketContext.cross_asset_closes["TLT"]``.
@@ -95,7 +95,7 @@ RULE_PRECEDENCE: tuple[InflationGrowthLabel, ...] = (
 
 CPI_KEY = "cpi_all_items"
 PMI_KEY = "pmi_manufacturing"
-DGS10_KEY = "dgs10"
+DGS10_KEY = "10y_yield"
 DBC_KEY = "DBC"
 TLT_KEY = "TLT"
 XLY_KEY = "XLY"

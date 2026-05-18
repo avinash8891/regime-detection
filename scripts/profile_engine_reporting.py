@@ -7,7 +7,7 @@ import json
 import math
 from collections import Counter
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, get_args
+from typing import TYPE_CHECKING, Any, Final, get_args
 
 import pandas as pd
 
@@ -17,9 +17,10 @@ from regime_detection.models import RegimeOutput, RegimeTimeline
 from scripts._v2_calibration_helpers import axis_reporting_label as _reporting_label
 
 if TYPE_CHECKING:
-    from scripts.profile_engine_30d import ProfileInputBundle, StageTimer
+    from scripts.profile_engine import ProfileInputBundle, StageTimer
 
-NON_CLASSIFIED_REPORTING_LABELS = set(get_args(ClassificationStatus)) - {"classified"}
+_CLASSIFIED: Final[ClassificationStatus] = "classified"
+NON_CLASSIFIED_REPORTING_LABELS = set(get_args(ClassificationStatus)) - {_CLASSIFIED}
 PROFILE_INPUT_SEAM_NAMES = [
     "sector_etf_closes",
     "cross_asset_closes",
@@ -51,19 +52,6 @@ EPS_REVISION_STALE_DAYS = 35
 
 def _counter_dict(counter: Counter[str]) -> dict[str, int]:
     return {key: counter[key] for key in sorted(counter)}
-
-def _input_status(name: str, value: Any) -> str:
-    if value is None:
-        return f"{name}: NONE"
-    if isinstance(value, dict):
-        if not value:
-            return f"{name}: EMPTY_DICT"
-        return f"{name}: {len(value)} keys"
-    if isinstance(value, pd.DataFrame):
-        return f"{name}: {len(value)} rows"
-    if isinstance(value, pd.Series):
-        return f"{name}: {len(value)} rows"
-    return f"{name}: type={type(value).__name__}"
 
 
 def _input_status_report(name: str, value: Any) -> dict[str, Any]:
@@ -97,6 +85,21 @@ def _input_status_report(name: str, value: Any) -> dict[str, Any]:
         "status": "present",
         "kind": type(value).__name__,
     }
+
+
+def _input_status(name: str, value: Any) -> str:
+    r = _input_status_report(name, value)
+    status = r["status"]
+    if status == "none":
+        return f"{name}: NONE"
+    if status == "empty_dict":
+        return f"{name}: EMPTY_DICT"
+    kind = r.get("kind", "")
+    if kind == "dict":
+        return f"{name}: {r['count']} keys"
+    if kind in ("dataframe", "series"):
+        return f"{name}: {r['rows']} rows"
+    return f"{name}: type={kind}"
 
 
 def _profile_input_seam_values(inputs: ProfileInputBundle) -> dict[str, Any]:
@@ -247,11 +250,28 @@ def _compact_timeline_report(outputs: list[RegimeOutput]) -> list[dict[str, Any]
     for out in outputs:
         seams: dict[str, Any] = {}
         network_fragility_label = _reporting_label(out.network_fragility)
+        network_fragility_status = getattr(
+            out.network_fragility, "classification_status", "classified"
+        )
         if (
             network_fragility_label is not None
             and network_fragility_label not in NON_CLASSIFIED_REPORTING_LABELS
         ):
-            seams["network_fragility"] = network_fragility_label
+            seams["network_fragility"] = {
+                "reported": network_fragility_label,
+                "classification_status": network_fragility_status or "classified",
+            }
+        else:
+            # P2 #10 symmetry: always emit the network_fragility seam with its
+            # classification_status (insufficient_history / no_rule_fired /
+            # data_unavailable / etc.) instead of silently omitting the key on
+            # cold-start sessions where the sector ETF universe history is
+            # below the rule's window. Mirrors AxisOutput.reporting_label.
+            seams["network_fragility"] = {
+                "reported": network_fragility_label or "not_wired",
+                "classification_status": network_fragility_status
+                or "not_wired",
+            }
         if out.volume_liquidity_state is not None:
             seams["volume_liquidity_state"] = _reporting_label(
                 out.volume_liquidity_state
@@ -596,15 +616,21 @@ def _build_json_report(
             ),
             "fomc_minutes": _path_text(
                 args.fomc_minutes_parquet,
-                present=args.fomc_minutes_parquet.exists(),
+                present=args.fomc_minutes_parquet is not None
+                and args.fomc_minutes_parquet.exists(),
             ),
             "powell_speeches": _path_text(
                 args.powell_speeches_parquet,
-                present=args.powell_speeches_parquet.exists(),
+                present=args.powell_speeches_parquet is not None
+                and args.powell_speeches_parquet.exists(),
             ),
             "cpi_vintages": _path_text(
                 args.cpi_vintages_parquet,
                 present=inputs.cpi_first_release is not None,
+            ),
+            "cpi_nowcast": _path_text(
+                getattr(args, "cpi_nowcast_parquet", None),
+                present="cpi_nowcast" in inputs.macro_series,
             ),
             "pit": str(args.pit_parquet),
         },
@@ -623,9 +649,6 @@ def _build_json_report(
             ],
             "pit_overlap_tickers_requested": len(inputs.constituent_tickers),
             "constituent_tickers_loaded": len(inputs.constituent_ohlcv),
-            "missing_constituent_files": [
-                str(path) for path in inputs.missing_constituent_paths
-            ],
         },
         "timing": {
             "stages": stage_rows,

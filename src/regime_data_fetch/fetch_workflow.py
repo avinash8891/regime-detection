@@ -50,6 +50,16 @@ V2_FRED_SERIES = {
     "nfci": "NFCI",
     "cpi_all_items": "CPIAUCSL",
     "iorb": "IORB",
+    # Pre-SOFR/IORB funding stress proxy — spliced into sofr_iorb_spread for
+    # sessions before Apr 2018 (SOFR start) and Jul 2021 (IORB start). Covers
+    # the 2016-2021 window where SOFR-IORB is NaN, eliminating spurious
+    # credit_funding "unknown" that blocked goldilocks/recession_scare/recovery_growth.
+    # DFF: Daily Federal Funds Effective Rate (daily, 1954+; FRED DFF).
+    #      Use DFF, not FEDFUNDS — FEDFUNDS is the monthly average, which loses
+    #      daily granularity and fails the business-day reindex in feature compute.
+    # IOER: Interest on Excess Reserves (Oct 2008 - Jul 2021; FRED IOER).
+    "fedfunds": "DFF",
+    "ioer_legacy": "IOER",
     # GDPNow nowcast (Atlanta Fed). Free on FRED at series_id GDPNOW.
     # Not consumed by any v2 §2B rule predicate as of implementation phase ship; ingested
     # here for the future-amendment slice that would use it as additional

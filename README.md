@@ -77,7 +77,7 @@ python3 scripts/materialize_constituent_ohlcv_tree.py \
   --start YYYY-MM-DD \
   --end YYYY-MM-DD
 
-python3 scripts/profile_engine_30d.py \
+python3 scripts/profile_engine.py \
   --manifest manifests/runs/regime_engine_YYYY-MM-DD.yaml \
   --data-root data/raw
 
@@ -100,18 +100,60 @@ such as `--macro-parquet`, `--pmi-path`, `--event-calendar`, or
 a fresh workspace using the approved manifest lockfile.
 
 That approved profile-ready manifest is the portable data contract for the 30d
-operator run. Bulk generated symbol-tree manifests are not tracked in full; see
-`manifests/runs/profile_ready_daily_ohlcv_762_2016_20260515.md` for the removed
-15k-line manifest checksum and object-store prefix. A reviewed materializable
-YAML lockfile should include the fixed OHLCV tree used by the runner defaults
-(`data/raw/daily_ohlcv_762`), macro, PMI, PIT constituents, CPI vintages,
-FOMC/Powell text inputs, and Layer 1 sentiment extension inputs:
-`data/raw/sentiment/aaii_sentiment.parquet` and
-`data/raw/news_sentiment/sf_fed_news_sentiment.parquet`.
+operator run. The committed lockfile at
+`manifests/runs/regime_engine_2026-05-17.yaml` is the **only valid
+`--manifest` argument for `profile_engine.py`, `run_v2_walkforward_gate.py`,
+and the `audit_layer2_30d` / `historical_walkforward` runners**. The sibling
+`manifests/runs/profile_ready_daily_ohlcv_762_2016_20260515.yaml` is an
+OHLCV-only lockfile retained for universe enumeration and ad-hoc per-symbol
+re-materialization; passing it to the engine runners is a contract error and
+will fail fast at manifest resolution. The merged manifest enumerates every
+input the runners read — the fixed 762-symbol OHLCV tree root, macro, PMI, PIT
+constituents, CPI vintages, FOMC/Powell text inputs, the US event calendar,
+and the Layer 1 sentiment extensions (`aaii_sentiment`,
+`sf_fed_news_sentiment`). A relative `storage_root` in that manifest is
+anchored to the manifest file's parent directory by
+`regime_data_fetch.materialization._resolve_store_root`, so the same lockfile
+materializes correctly across checkouts (vaduz, nicosia, CI) without rewriting
+absolute paths.
+
+Operator caveats for the 2026-05-17 cut:
+
+- Per-symbol OHLCV artifacts are fully enumerated in the merged manifest
+  (`manifests/runs/regime_engine_2026-05-17.yaml`): 1193 `daily_ohlcv_762_<TICKER>`
+  entries, each carrying a full SHA-256 digest. No placeholder remains; the
+  lockfile was regenerated and merged as of the 2026-05-17 cut.
+- The Cleveland Fed CPI nowcast (`cleveland_fed_cpi_nowcast`, see
+  `docs/decisions/0006-inflation-surprise-cleveland-fed-nowcast-substitute.md`)
+  is fetched, canonical, and wired into `profile_engine` as of 2026-05-18
+  (154 monthly vintages, latest 2026-05-14). The single-signal
+  `inflation_shock` limb reads real `inflation_surprise_zscore` values
+  from this artifact.
+- The weekly aggregate forward-EPS history (`sp500_eps_weekly_history`)
+  has been seeded from the Wayback Machine (12 weekly rows, latest
+  2026-01-22) but is **not wired into `profile_engine`** because the
+  vintage is more than 90 days old. The `earnings_expansion` /
+  `earnings_contraction` labels stay dark until an operator refreshes
+  the artifact via `eps-spglobal-auto` with a Playwright browser session.
+  Manifest gates EPS to `required_for: [audit_layer2_30d]` only —
+  this is intentional, not a bug.
+- `aaii_sentiment`, `sf_fed_news_sentiment`, `fomc_minutes`,
+  `powell_speeches`, and `event_calendar_us` are now fully promoted to the
+  canonical artifact store on the 2026-05-17 vintage and resolve through the
+  manifest router on a fresh workspace; no operator fetch step is required
+  before materializing.
+- All optional manifest-routed inputs are declared in a single registry
+  (`MANIFEST_INPUT_SPECS` in `src/regime_data_fetch/manifest_inputs.py`).
+  Each entry pins the canonical artifact name, the runner CLI flag, and the
+  default relpath under `data_root`; the runner-side helpers
+  `register_manifest_input_args(parser)` and
+  `apply_manifest_input_defaults(args, data_root)` derive everything from
+  that registry, so adding a new manifest input is a single-entry edit and
+  cannot drift away from any runner.
 
 The approved constituent OHLCV lockfile currently points at
 `s3://autoresearch-platform/regime-detection/artifacts/zurich-v1/profile-ready-daily-ohlcv-762-2016-20260515/canonical/daily_ohlcv_762/`.
-It pins 1085 canonical symbol files through SHA-256 metadata and intentionally
+It pins 1193 canonical symbol files through SHA-256 metadata and intentionally
 keeps raw data out of Git.
 
 Daily `--fetch all` includes the full routine layer event-calendar surface by

@@ -1,83 +1,16 @@
 from __future__ import annotations
 
-import importlib.util
 import json
-import sys
 from pathlib import Path
 from types import SimpleNamespace
 
 import pandas as pd
-import yaml
 
+from conftest import (
+    load_profile_engine_module,
+)
 
-def _load_script_module():
-    path = Path(__file__).resolve().parents[1] / "scripts" / "profile_engine_30d.py"
-    spec = importlib.util.spec_from_file_location("profile_engine_30d", path)
-    assert spec is not None and spec.loader is not None
-    module = importlib.util.module_from_spec(spec)
-    sys.modules[spec.name] = module
-    spec.loader.exec_module(module)
-    return module
-
-
-profile_engine_30d = _load_script_module()
-SHA = "0" * 64
-
-
-def _manifest_artifact(name: str, local_path: str) -> dict[str, object]:
-    return {
-        "name": name,
-        "stage": "canonical",
-        "uri": f"s3://bucket/{local_path}",
-        "local_path": local_path,
-        "sha256": SHA,
-        "schema_version": None,
-        "rows": 1,
-        "min_date": None,
-        "max_date": None,
-        "required_for": ["profile_engine_30d"],
-    }
-
-
-def _write_profile_manifest(tmp_path: Path) -> Path:
-    path = tmp_path / "manifest.yaml"
-    path.write_text(
-        yaml.safe_dump(
-            {
-                "artifact_set": "profile",
-                "created_at_utc": "2026-05-17T00:00:00Z",
-                "storage_root": "s3://bucket/root",
-                "artifacts": [
-                    _manifest_artifact(
-                        "constituent_ohlcv_AAPL",
-                        "data/raw/daily_ohlcv_762/symbol=AAPL/ohlcv.parquet",
-                    ),
-                    _manifest_artifact(
-                        "fred_macro_series",
-                        "data/raw/macro/fred_macro_series.parquet",
-                    ),
-                    _manifest_artifact(
-                        "sp500_pit_constituents",
-                        "data/raw/pit_constituents/sp500_ticker_intervals.parquet",
-                    ),
-                    _manifest_artifact(
-                        "event_calendar_us",
-                        "data/raw/event_calendar/us_events.yaml",
-                    ),
-                    _manifest_artifact(
-                        "ism_pmi_history",
-                        "data/raw/pmi/us_ism_pmi_history.parquet",
-                    ),
-                    _manifest_artifact(
-                        "sf_fed_news_sentiment",
-                        "data/raw/news_sentiment/sf_fed_news_sentiment.parquet",
-                    ),
-                ],
-            },
-            sort_keys=False,
-        )
-    )
-    return path
+profile_engine = load_profile_engine_module()
 
 
 def test_profile_json_report_emits_machine_readable_sections(tmp_path: Path) -> None:
@@ -90,7 +23,7 @@ def test_profile_json_report_emits_machine_readable_sections(tmp_path: Path) -> 
             data_quality={"status": "ok"},
         )
 
-    timer = profile_engine_30d.StageTimer()
+    timer = profile_engine.StageTimer()
     timer.totals["build_feature_store_total"] = 1.5
     timer.counts["build_feature_store_total"] = 1
     timer.totals["feature_store.breadth_state_v2"] = 0.25
@@ -111,7 +44,7 @@ def test_profile_json_report_emits_machine_readable_sections(tmp_path: Path) -> 
         pit_parquet=tmp_path / "pit.parquet",
         lookback_days=1,
     )
-    inputs = profile_engine_30d.ProfileInputBundle(
+    inputs = profile_engine.ProfileInputBundle(
         market_data=pd.DataFrame({"date": [pd.Timestamp("2026-05-15")]}),
         end_date=pd.Timestamp("2026-05-15").date(),
         required_sessions=252,
@@ -137,7 +70,6 @@ def test_profile_json_report_emits_machine_readable_sections(tmp_path: Path) -> 
         ),
         constituent_ohlcv={"AAPL": pd.DataFrame({"close": [1.0]})},
         constituent_tickers=["AAPL"],
-        missing_constituent_paths=[tmp_path / "constituents" / "MSFT.parquet"],
     )
     output = SimpleNamespace(
         as_of_date=pd.Timestamp("2026-05-15").date(),
@@ -201,7 +133,7 @@ def test_profile_json_report_emits_machine_readable_sections(tmp_path: Path) -> 
         ),
     )
 
-    report = profile_engine_30d._build_json_report(
+    report = profile_engine._build_json_report(
         args=args,
         inputs=inputs,
         timeline=SimpleNamespace(outputs=[output]),
@@ -211,7 +143,7 @@ def test_profile_json_report_emits_machine_readable_sections(tmp_path: Path) -> 
         per_day_avg_ms=500.0,
         verification_issues=[],
     )
-    profile_engine_30d._write_json_report(report_path, report)
+    profile_engine._write_json_report(report_path, report)
 
     payload = json.loads(report_path.read_text(encoding="utf-8"))
     assert payload["sources"]["market_data"] == str(args.daily_dir)
@@ -232,7 +164,10 @@ def test_profile_json_report_emits_machine_readable_sections(tmp_path: Path) -> 
                 "cluster": 3,
                 "credit_funding_state_proxy": "no_rule_fired",
                 "inflation_growth_state": "stale_data",
-                "network_fragility": "correlation_concentration",
+                "network_fragility": {
+                    "reported": "correlation_concentration",
+                    "classification_status": "classified",
+                },
                 "transition_score": 0.2,
             },
             "as_of_date": "2026-05-15",
@@ -292,7 +227,7 @@ def test_profile_json_report_emits_machine_readable_sections(tmp_path: Path) -> 
 def test_profile_json_report_uses_loaded_bundle_values_for_input_status(
     tmp_path: Path,
 ) -> None:
-    timer = profile_engine_30d.StageTimer()
+    timer = profile_engine.StageTimer()
     args = SimpleNamespace(
         config_path=tmp_path / "config.yaml",
         daily_dir=tmp_path / "daily_ohlcv",
@@ -307,7 +242,7 @@ def test_profile_json_report_uses_loaded_bundle_values_for_input_status(
         pit_parquet=tmp_path / "pit.parquet",
         lookback_days=1,
     )
-    inputs = profile_engine_30d.ProfileInputBundle(
+    inputs = profile_engine.ProfileInputBundle(
         market_data=pd.DataFrame({"date": [pd.Timestamp("2026-05-15")]}),
         end_date=pd.Timestamp("2026-05-15").date(),
         required_sessions=252,
@@ -325,7 +260,6 @@ def test_profile_json_report_uses_loaded_bundle_values_for_input_status(
         pit_constituent_intervals=pd.DataFrame({"ticker": ["AAPL"]}),
         constituent_ohlcv={"AAPL": pd.DataFrame({"close": [1.0]})},
         constituent_tickers=["AAPL"],
-        missing_constituent_paths=[],
     )
     output = SimpleNamespace(
         as_of_date=pd.Timestamp("2026-05-15").date(),
@@ -347,7 +281,7 @@ def test_profile_json_report_uses_loaded_bundle_values_for_input_status(
         change_point=None,
     )
 
-    report = profile_engine_30d._build_json_report(
+    report = profile_engine._build_json_report(
         args=args,
         inputs=inputs,
         timeline=SimpleNamespace(outputs=[output]),
@@ -381,7 +315,7 @@ def test_profile_engine_loads_aaii_sentiment_when_present(tmp_path: Path) -> Non
     )
     expected.to_parquet(parquet_path, index=False)
 
-    actual = profile_engine_30d._load_optional_aaii_sentiment(parquet_path)
+    actual = profile_engine._load_optional_aaii_sentiment(parquet_path)
 
     assert actual is not None
     pd.testing.assert_frame_equal(actual, expected)
@@ -389,7 +323,7 @@ def test_profile_engine_loads_aaii_sentiment_when_present(tmp_path: Path) -> Non
 
 def test_profile_engine_skips_aaii_sentiment_when_absent(tmp_path: Path) -> None:
     assert (
-        profile_engine_30d._load_optional_aaii_sentiment(tmp_path / "missing.parquet")
+        profile_engine._load_optional_aaii_sentiment(tmp_path / "missing.parquet")
         is None
     )
 
@@ -409,7 +343,7 @@ def test_profile_engine_loads_event_calendar_when_present(tmp_path: Path) -> Non
         )
     )
 
-    actual = profile_engine_30d._load_optional_event_calendar(yaml_path)
+    actual = profile_engine._load_optional_event_calendar(yaml_path)
 
     assert actual is not None
     assert len(actual) == 1
@@ -426,7 +360,7 @@ def test_profile_engine_loads_news_sentiment_when_present(tmp_path: Path) -> Non
         ]
     ).to_parquet(parquet_path, index=False)
 
-    actual = profile_engine_30d._load_optional_news_sentiment(parquet_path)
+    actual = profile_engine._load_optional_news_sentiment(parquet_path)
 
     assert actual is not None
     assert actual.name == "news_sentiment"
@@ -447,7 +381,7 @@ def test_profile_engine_resolves_legacy_news_sentiment_alias(tmp_path: Path) -> 
         ]
     ).to_parquet(canonical_path, index=False)
 
-    actual = profile_engine_30d._load_optional_news_sentiment(legacy_path)
+    actual = profile_engine._load_optional_news_sentiment(legacy_path)
 
     assert actual is not None
     assert actual.name == "news_sentiment"
@@ -478,7 +412,7 @@ def test_profile_engine_loads_central_bank_text_when_present(tmp_path: Path) -> 
         ]
     ).to_parquet(powell_path, index=False)
 
-    actual = profile_engine_30d._load_optional_central_bank_text_releases(
+    actual = profile_engine._load_optional_central_bank_text_releases(
         fomc_path=fomc_path,
         powell_path=powell_path,
     )
@@ -486,6 +420,177 @@ def test_profile_engine_loads_central_bank_text_when_present(tmp_path: Path) -> 
     assert actual is not None
     assert len(actual) == 2
     assert set(actual["source"]) == {"fomc_minutes", "powell_speech"}
+
+
+def _make_minimal_output() -> SimpleNamespace:
+    """Return a minimal RegimeOutput stand-in for report tests."""
+    axis = SimpleNamespace(active_label="uptrend", classification_status="classified")
+    return SimpleNamespace(
+        as_of_date=pd.Timestamp("2026-05-15").date(),
+        trend_direction=axis,
+        volatility_state=SimpleNamespace(
+            active_label="low_vol", classification_status="classified"
+        ),
+        transition_risk=SimpleNamespace(label="low", score=None, score_components=None),
+        network_fragility=None,
+        volume_liquidity_state=None,
+        credit_funding_state=None,
+        credit_funding_state_proxy=None,
+        credit_funding_effective_state=None,
+        inflation_growth_state=None,
+        monetary_pressure_state=None,
+        cluster=None,
+        change_point=None,
+    )
+
+
+def _make_minimal_inputs(
+    macro_series: dict | None = None,
+) -> "profile_engine.ProfileInputBundle":
+    return profile_engine.ProfileInputBundle(
+        market_data=pd.DataFrame({"date": [pd.Timestamp("2026-05-15")]}),
+        end_date=pd.Timestamp("2026-05-15").date(),
+        required_sessions=252,
+        working_start_date=pd.Timestamp("2025-05-16").date(),
+        selected_dates=[pd.Timestamp("2026-05-15").date()],
+        sector_etf_closes={},
+        cross_asset_closes={},
+        macro_series=macro_series if macro_series is not None else {},
+        event_calendar=None,
+        aaii_sentiment=None,
+        news_sentiment=None,
+        implied_vol_30d=None,
+        central_bank_text_releases=None,
+        cpi_first_release=None,
+        pit_constituent_intervals=pd.DataFrame({"ticker": ["AAPL"]}),
+        constituent_ohlcv={},
+        constituent_tickers=[],
+    )
+
+
+def test_sources_dict_records_cpi_nowcast_path_when_wired(tmp_path: Path) -> None:
+    """Regression: cpi_nowcast must appear in sources when the arg is passed
+    and the series is present in macro_series."""
+    nowcast_path = tmp_path / "cleveland_fed_cpi_nowcast.parquet"
+    timer = profile_engine.StageTimer()
+    args = SimpleNamespace(
+        config_path=tmp_path / "config.yaml",
+        daily_dir=tmp_path / "daily_ohlcv",
+        constituent_tree=tmp_path / "constituents",
+        macro_parquet=tmp_path / "macro.parquet",
+        event_calendar=tmp_path / "events.yaml",
+        aaii_sentiment_parquet=None,
+        news_sentiment_parquet=None,
+        fomc_minutes_parquet=None,
+        powell_speeches_parquet=None,
+        cpi_vintages_parquet=None,
+        cpi_nowcast_parquet=nowcast_path,
+        pit_parquet=tmp_path / "pit.parquet",
+        lookback_days=1,
+    )
+    cpi_nowcast_series = pd.Series(
+        [0.025],
+        index=pd.DatetimeIndex([pd.Timestamp("2026-05-14")]),
+        name="cpi_nowcast",
+    )
+    inputs = _make_minimal_inputs(macro_series={"cpi_nowcast": cpi_nowcast_series})
+
+    report = profile_engine._build_json_report(
+        args=args,
+        inputs=inputs,
+        timeline=SimpleNamespace(outputs=[_make_minimal_output()]),
+        timer=timer,
+        total_wall_clock=1.0,
+        per_day_emission_total=0.0,
+        per_day_avg_ms=0.0,
+        verification_issues=[],
+    )
+
+    assert "cpi_nowcast" in report["sources"], (
+        "cpi_nowcast key must appear in sources when the parquet arg is provided"
+    )
+    assert report["sources"]["cpi_nowcast"] == str(nowcast_path), (
+        f"expected {str(nowcast_path)!r}, got {report['sources']['cpi_nowcast']!r}"
+    )
+
+
+def test_sources_dict_records_cpi_nowcast_none_when_not_wired(tmp_path: Path) -> None:
+    """Regression: cpi_nowcast must appear in sources as None when the series
+    is absent from macro_series — the key must always be present for audit
+    completeness."""
+    timer = profile_engine.StageTimer()
+    args = SimpleNamespace(
+        config_path=tmp_path / "config.yaml",
+        daily_dir=tmp_path / "daily_ohlcv",
+        constituent_tree=tmp_path / "constituents",
+        macro_parquet=tmp_path / "macro.parquet",
+        event_calendar=tmp_path / "events.yaml",
+        aaii_sentiment_parquet=None,
+        news_sentiment_parquet=None,
+        fomc_minutes_parquet=None,
+        powell_speeches_parquet=None,
+        cpi_vintages_parquet=None,
+        cpi_nowcast_parquet=None,
+        pit_parquet=tmp_path / "pit.parquet",
+        lookback_days=1,
+    )
+    inputs = _make_minimal_inputs(macro_series={})
+
+    report = profile_engine._build_json_report(
+        args=args,
+        inputs=inputs,
+        timeline=SimpleNamespace(outputs=[_make_minimal_output()]),
+        timer=timer,
+        total_wall_clock=1.0,
+        per_day_emission_total=0.0,
+        per_day_avg_ms=0.0,
+        verification_issues=[],
+    )
+
+    assert "cpi_nowcast" in report["sources"], (
+        "cpi_nowcast key must always appear in sources for audit completeness"
+    )
+    assert report["sources"]["cpi_nowcast"] is None, (
+        f"expected None when not wired, got {report['sources']['cpi_nowcast']!r}"
+    )
+
+
+def test_sources_dict_records_cpi_nowcast_none_when_arg_absent_from_namespace(
+    tmp_path: Path,
+) -> None:
+    """Regression: cpi_nowcast must not raise AttributeError when the arg is
+    not present on the namespace (legacy callers that don't set cpi_nowcast_parquet)."""
+    timer = profile_engine.StageTimer()
+    args = SimpleNamespace(
+        config_path=tmp_path / "config.yaml",
+        daily_dir=tmp_path / "daily_ohlcv",
+        constituent_tree=tmp_path / "constituents",
+        macro_parquet=tmp_path / "macro.parquet",
+        event_calendar=tmp_path / "events.yaml",
+        aaii_sentiment_parquet=None,
+        news_sentiment_parquet=None,
+        fomc_minutes_parquet=None,
+        powell_speeches_parquet=None,
+        cpi_vintages_parquet=None,
+        # intentionally omit cpi_nowcast_parquet to simulate legacy callers
+        pit_parquet=tmp_path / "pit.parquet",
+        lookback_days=1,
+    )
+    inputs = _make_minimal_inputs(macro_series={})
+
+    report = profile_engine._build_json_report(
+        args=args,
+        inputs=inputs,
+        timeline=SimpleNamespace(outputs=[_make_minimal_output()]),
+        timer=timer,
+        total_wall_clock=1.0,
+        per_day_emission_total=0.0,
+        per_day_avg_ms=0.0,
+        verification_issues=[],
+    )
+
+    assert "cpi_nowcast" in report["sources"]
+    assert report["sources"]["cpi_nowcast"] is None
 
 
 def test_profile_engine_loads_cpi_first_release_when_present(tmp_path: Path) -> None:
@@ -507,7 +612,7 @@ def test_profile_engine_loads_cpi_first_release_when_present(tmp_path: Path) -> 
         ]
     ).to_parquet(parquet_path, index=False)
 
-    actual = profile_engine_30d._load_optional_cpi_first_release(parquet_path)
+    actual = profile_engine._load_optional_cpi_first_release(parquet_path)
 
     assert actual is not None
     assert actual.name == "cpi_first_release"

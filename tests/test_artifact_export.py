@@ -66,7 +66,7 @@ def test_emit_manifest_for_report_paths_expands_partitioned_parquet_directories(
         artifact_store_root=str(tmp_path / "store"),
         manifest_path=tmp_path / "manifest.yaml",
         artifact_set="market",
-        required_for=["profile_engine_30d"],
+        required_for=["profile_engine"],
     )
 
     assert [artifact.local_path for artifact in manifest.artifacts] == [
@@ -116,12 +116,12 @@ def test_emit_manifest_for_report_paths_allows_multi_file_symbol_partitions(
         artifact_store_root=str(tmp_path / "store"),
         manifest_path=manifest_path,
         artifact_set="profile",
-        required_for=["profile_engine_30d"],
+        required_for=["profile_engine"],
     )
     resolved = resolve_runner_input_paths(
         manifest_path=manifest_path,
         data_root=tmp_path / "materialized" / "data" / "raw",
-        runner_name="profile_engine_30d",
+        runner_name="profile_engine",
         cli_values={},
         cli_overrides=set(),
     )
@@ -223,7 +223,7 @@ def test_emit_manifest_for_report_paths_fails_when_one_report_has_no_exportable_
             artifact_store_root=str(tmp_path / "store"),
             manifest_path=tmp_path / "manifest.yaml",
             artifact_set="mixed",
-            required_for=["profile_engine_30d"],
+            required_for=["profile_engine"],
         )
 
 
@@ -247,7 +247,7 @@ def test_emit_manifest_for_report_paths_allows_explicit_non_materializable_repor
         artifact_store_root=str(tmp_path / "store"),
         manifest_path=tmp_path / "manifest.yaml",
         artifact_set="mixed",
-        required_for=["profile_engine_30d"],
+        required_for=["profile_engine"],
     )
 
     assert [artifact.name for artifact in manifest.artifacts] == ["fred_macro_series"]
@@ -313,7 +313,7 @@ def test_emit_manifest_for_report_paths_exports_repo_relative_event_config(tmp_p
         artifact_store_root=str(tmp_path / "store"),
         manifest_path=tmp_path / "manifest.yaml",
         artifact_set="events",
-        required_for=["profile_engine_30d"],
+        required_for=["profile_engine"],
     )
 
     assert manifest.artifacts[0].local_path == "data/raw/event_calendar/us_events.yaml"
@@ -352,7 +352,7 @@ def test_emit_manifest_for_report_paths_honors_explicit_materialized_local_path(
         artifact_store_root=str(tmp_path / "store"),
         manifest_path=tmp_path / "manifest.yaml",
         artifact_set="profile",
-        required_for=["profile_engine_30d"],
+        required_for=["profile_engine"],
     )
 
     assert [artifact.local_path for artifact in manifest.artifacts] == [
@@ -385,7 +385,7 @@ def test_emit_manifest_for_report_paths_exports_sf_fed_news_sentiment_report(
         artifact_store_root=str(tmp_path / "store"),
         manifest_path=tmp_path / "manifest.yaml",
         artifact_set="sf-fed-news",
-        required_for=["profile_engine_30d"],
+        required_for=["profile_engine"],
     )
 
     assert [artifact.name for artifact in manifest.artifacts] == [
@@ -434,12 +434,12 @@ def test_emitted_manifest_resolves_profile_runner_inputs(tmp_path: Path) -> None
         artifact_store_root=str(tmp_path / "store"),
         manifest_path=manifest_path,
         artifact_set="profile",
-        required_for=["profile_engine_30d"],
+        required_for=["profile_engine"],
     )
     resolved = resolve_runner_input_paths(
         manifest_path=manifest_path,
         data_root=tmp_path / "materialized" / "data" / "raw",
-        runner_name="profile_engine_30d",
+        runner_name="profile_engine",
         cli_values={},
         cli_overrides=set(),
     )

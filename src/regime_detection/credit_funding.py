@@ -19,7 +19,7 @@ Credit-spread metrics — two parallel sources (documented implementation decisi
      ``hy_oas`` / ``ig_bbb_oas`` (set by ``V2_FRED_SERIES`` in
      ``regime_data_fetch.fetch_workflow``) feed the ``hy_oas`` / ``ig_oas``
      params of ``compute_credit_funding_features``. FRED exposes only a
-     trailing ~3-year window of these series (start 2023-05-15 — documented implementation decision),
+     trailing ~3-year window of these series (start 2023-05-19 — documented implementation decision),
      so the real-OAS label (``credit_funding_state``) is ``unknown``
      before ~2023.
 
@@ -114,9 +114,11 @@ LQD_KEY = "LQD"
 TLT_KEY = "TLT"
 KRE_KEY = "KRE"
 
-SOFR_KEY = "SOFR"
-IORB_KEY = "IORB"
-NFCI_KEY = "NFCI"
+SOFR_KEY = "sofr"
+IORB_KEY = "iorb"
+FEDFUNDS_KEY = "fedfunds"
+IOER_LEGACY_KEY = "ioer_legacy"
+NFCI_KEY = "nfci"
 BROAD_USD_INDEX_KEY = "broad_usd_index"
 # ICE BofA Option-Adjusted Spread series — FRED-redistributed under ICE
 # license, free at the FRED endpoint. macro_series keys set by
@@ -162,6 +164,13 @@ _BIAS_FEATURE_NAMES: tuple[str, ...] = (
 CREDIT_SPREAD_PROXY_BIAS_WARNING_CODE = "credit_spread_proxy_total_return_differential"
 CREDIT_SPREAD_PROXY_BIAS_SOURCE = "tlt_minus_hyg_lqd_total_return_differential"
 CREDIT_SPREAD_PROXY_BIAS_SOURCE_URL = "internal:tlt_minus_hyg_lqd_total_return_differential"
+
+# Pre-SOFR/IORB funding stress proxy — FEDFUNDS minus IOER, spliced into
+# sofr_iorb_spread for sessions before SOFR (Apr 2018) and IORB (Jul 2021)
+# availability. Emitted only when the splice is actually active.
+FUNDING_SPREAD_PROXY_BIAS_WARNING_CODE = "funding_spread_fedfunds_ioer_proxy"
+FUNDING_SPREAD_PROXY_BIAS_SOURCE = "fred:DFF-IOER"
+FUNDING_SPREAD_PROXY_BIAS_SOURCE_URL = "https://fred.stlouisfed.org/series/DFF"
 
 _PROXY_BIAS_FEATURE_NAMES: tuple[str, ...] = (
     "hy_tr_differential_63d",
@@ -291,6 +300,8 @@ def compute_credit_funding_features(
     hy_oas: pd.Series,
     ig_oas: pd.Series,
     config: CreditFundingRulesConfig,
+    fedfunds: pd.Series | None = None,
+    ioer_legacy: pd.Series | None = None,
 ) -> CreditFundingFeatures:
     """Compute the v2 §2C credit/funding feature seam from raw inputs.
 
@@ -389,7 +400,22 @@ def compute_credit_funding_features(
     ).rename("broad_usd_index_zscore_21d")
 
     # §2C lines 2058-2059: SOFR-IORB spread + 21d slope.
-    sofr_iorb_spread = (sofr_s - iorb_s).rename("sofr_iorb_spread")
+    # Splice priority for pre-SOFR/IORB eras (documented implementation decision):
+    #   SOFR-IORB (Jul 2021+) > SOFR-IOER (Apr 2018 - Jul 2021) > FEDFUNDS-IOER (Oct 2008+)
+    # When fedfunds/ioer_legacy are supplied, NaN gaps in SOFR-IORB are filled,
+    # eliminating spurious credit_funding "unknown" for 2016-2021 sessions.
+    sofr_iorb_raw = sofr_s - iorb_s
+    funding_spread_proxy_active = False
+    if fedfunds is not None and ioer_legacy is not None:
+        fedfunds_s = fedfunds.reindex(spy_index).astype(float).ffill()
+        ioer_s = ioer_legacy.reindex(spy_index).astype(float).ffill()
+        sofr_ioer = sofr_s - ioer_s
+        fedfunds_ioer = fedfunds_s - ioer_s
+        spliced = sofr_iorb_raw.fillna(sofr_ioer).fillna(fedfunds_ioer)
+        funding_spread_proxy_active = spliced.notna().sum() > sofr_iorb_raw.notna().sum()
+        sofr_iorb_spread = spliced.rename("sofr_iorb_spread")
+    else:
+        sofr_iorb_spread = sofr_iorb_raw.rename("sofr_iorb_spread")
     sofr_iorb_slope_21d = _rolling_ols_slope(
         sofr_iorb_spread, window=slope_21d
     ).rename("sofr_iorb_slope_21d")
@@ -403,6 +429,18 @@ def compute_credit_funding_features(
     # FRED. Retained on the `bias_warnings` frame (rather than dropped)
     # so downstream consumers have an explicit, machine-readable record
     # of the credit-spread metric's origin; it is provenance, not a bias.
+    proxy_funding_rows = (
+        [
+            {
+                "warning_code": FUNDING_SPREAD_PROXY_BIAS_WARNING_CODE,
+                "feature_name": "sofr_iorb_spread",
+                "source": FUNDING_SPREAD_PROXY_BIAS_SOURCE,
+                "source_url": FUNDING_SPREAD_PROXY_BIAS_SOURCE_URL,
+            }
+        ]
+        if funding_spread_proxy_active
+        else []
+    )
     bias_warnings = make_bias_warnings_frame(
         [
             {
@@ -422,6 +460,7 @@ def compute_credit_funding_features(
             }
             for feat in _PROXY_BIAS_FEATURE_NAMES
         ]
+        + proxy_funding_rows
     )
 
     return CreditFundingFeatures(

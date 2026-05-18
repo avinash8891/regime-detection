@@ -70,14 +70,14 @@ artifacts:
     max_date: YYYY-MM-DD
     required_for:
       - v2_calibration
-      - profile_engine_30d
+      - profile_engine
 ```
 
 The implementation may keep existing local paths during migration, but the
 contract is logical: `data/raw/` is replaceable, and the manifest plus artifact
 store is what makes the data portable and replayable.
 
-Runner input resolution is manifest-driven. When `profile_engine_30d.py`,
+Runner input resolution is manifest-driven. When `profile_engine.py`,
 `audit_layer2_30d.py`, `run_v2_walkforward_gate.py`, or
 `run_v2_shadow_ab_gate.py` receives `--manifest`, the runner materializes the
 manifest and resolves its required input paths from stable artifact names such
@@ -336,6 +336,8 @@ The materializer accepts both `symbol=X/ohlcv.parquet` and partition-file source
 | `cpi_all_items` | `CPIAUCSL` | FRED | `data/raw/macro/fred_macro_series.parquet` |
 | `cpi_all_items_vintages` | `CPIAUCSL` with realtime params | FRED / ALFRED-style observations | `data/raw/macro_vintages/cpi_all_items_vintages.parquet` |
 | `iorb` | `IORB` | FRED | `data/raw/macro/fred_macro_series.parquet` |
+| `fedfunds` | `DFF` | FRED | `data/raw/macro/fred_macro_series.parquet` |
+| `ioer_legacy` | `IOER` | FRED | `data/raw/macro/fred_macro_series.parquet` |
 
 Runtime alignment note: V2 macro feature math reads FRED observations with
 latest-known-as-of semantics on the NYSE session calendar. DGS2, DGS10,
@@ -343,6 +345,15 @@ DTWEXBGS, SOFR, IORB, and OAS are forward-filled for rolling computations,
 while classifiers enforce freshness and staleness budgets. Do not treat a
 one-session publication lag as missing; do treat values older than the
 configured budget as stale/`unknown`.
+
+`DFF` and `IOER` are pre-era proxies for the funding-stress seam (see ADR
+0009). SOFR was first published 2018-04-03; IORB was first published 2021-07-29
+(both confirmed against FRED API). `DFF`-`IOER` measures the same
+policy-rate-vs-overnight-funding-cost spread for the 2016–2021 window where
+SOFR-IORB does not exist. Use `DFF` (daily effective rate), not `FEDFUNDS`
+(monthly average) — the monthly series fails the business-day reindex in feature
+compute. These are fetched via `--fetch macro` as part of the standard
+`V2_FRED_SERIES` block.
 
 #### Higher-Maintenance Inputs
 

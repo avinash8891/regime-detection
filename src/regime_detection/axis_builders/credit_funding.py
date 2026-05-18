@@ -3,6 +3,7 @@ from __future__ import annotations
 from datetime import date
 from typing import Literal
 
+import numpy as np
 import pandas as pd
 
 from regime_detection.credit_funding import (
@@ -10,6 +11,10 @@ from regime_detection.credit_funding import (
     CREDIT_SPREAD_PROXY_BIAS_WARNING_CODE,
     CREDIT_SPREAD_SOURCE_CODE,
     CreditFundingLabel,
+    HYG_KEY,
+    LQD_KEY,
+    NFCI_KEY,
+    TLT_KEY,
     build_rule_inputs_by_date as build_credit_funding_rule_inputs_by_date,
     evaluate_rules as evaluate_credit_funding_rules,
 )
@@ -80,12 +85,10 @@ def _build_credit_funding_for_spread_source(
     # SPY index when feature_store.credit_funding is non-None.
     cross_asset_closes = context.cross_asset_closes or {}
     macro_series = context.macro_series or {}
-    hyg_close = cross_asset_closes.get("HYG")
-    lqd_close = cross_asset_closes.get("LQD")
-    tlt_close = cross_asset_closes.get("TLT")
-    sofr_series = macro_series.get("SOFR")
-    iorb_series = macro_series.get("IORB")
-    nfci_series = macro_series.get("NFCI")
+    hyg_close = cross_asset_closes.get(HYG_KEY)
+    lqd_close = cross_asset_closes.get(LQD_KEY)
+    tlt_close = cross_asset_closes.get(TLT_KEY)
+    nfci_series = macro_series.get(NFCI_KEY)
 
     # Quality-gate primary inputs. Lookback gates on the 504d percentile
     # window — the longest binding cold-start for any rule predicate.
@@ -110,8 +113,23 @@ def _build_credit_funding_for_spread_source(
     lqd_staleness_by_date = _trading_staleness_series(lqd_close, session_index)
     tlt_staleness_by_date = _trading_staleness_series(tlt_close, session_index)
     nfci_staleness_by_date = _calendar_staleness_days_series(nfci_series, session_index)
-    sofr_staleness_by_date = _calendar_staleness_days_series(sofr_series, session_index)
-    iorb_staleness_by_date = _calendar_staleness_days_series(iorb_series, session_index)
+    # Compute staleness from the raw SOFR and FEDFUNDS inputs rather than the
+    # already-spliced sofr_iorb_spread. The derived spread is forward-filled in
+    # compute_credit_funding_features, so it is always non-NaN and would never
+    # detect a real data outage. Taking np.minimum of both raw series preserves
+    # ADR 0009: a session covered by the FEDFUNDS-IOER proxy reads its staleness
+    # from FEDFUNDS (fresh), not from SOFR (sentinel/stale).
+    _sofr_staleness = _calendar_staleness_days_series(
+        macro_series.get("sofr"), session_index
+    )
+    _fedfunds_staleness = _calendar_staleness_days_series(
+        macro_series.get("fedfunds"), session_index
+    )
+    funding_spread_staleness_by_date = pd.Series(
+        np.minimum(_sofr_staleness.to_numpy(), _fedfunds_staleness.to_numpy()),
+        index=session_index,
+        dtype="int64",
+    )
     rule_inputs_by_date = build_credit_funding_rule_inputs_by_date(
         features=features,
         hy_spread_percentile_504d=hy_spread_percentile_504d,
@@ -142,21 +160,17 @@ def _build_credit_funding_for_spread_source(
             etf_staleness_breach = True
             etf_stale_label = "TLT"
 
-        sofr_staleness_days = int(sofr_staleness_by_date.loc[dt])
-        iorb_staleness_days = int(iorb_staleness_by_date.loc[dt])
-        sofr_stale = sofr_staleness_days > max_freshness_days
-        iorb_stale = iorb_staleness_days > max_freshness_days
+        funding_spread_staleness_days = int(funding_spread_staleness_by_date.loc[dt])
+        funding_spread_stale = funding_spread_staleness_days > max_freshness_days
         nfci_staleness_days = int(nfci_staleness_by_date.loc[dt])
         nfci_stale = nfci_staleness_days > cf_config.nfci_stale_days
 
-        if etf_staleness_breach or sofr_stale or iorb_stale or nfci_stale:
+        if etf_staleness_breach or funding_spread_stale or nfci_stale:
             reason_parts: list[str] = []
             if etf_staleness_breach:
                 reason_parts.append(f"etf_stale:{etf_stale_label}")
-            if sofr_stale:
-                reason_parts.append(f"sofr_stale_{sofr_staleness_days}d")
-            if iorb_stale:
-                reason_parts.append(f"iorb_stale_{iorb_staleness_days}d")
+            if funding_spread_stale:
+                reason_parts.append(f"funding_spread_stale_{funding_spread_staleness_days}d")
             if nfci_stale:
                 reason_parts.append(f"nfci_stale_{nfci_staleness_days}d")
             gate_reason = ",".join(reason_parts)

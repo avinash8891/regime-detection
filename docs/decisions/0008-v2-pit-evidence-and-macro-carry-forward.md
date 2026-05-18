@@ -22,10 +22,16 @@ The 30-session regime profile exposed three classes of missing evidence:
    Feature math carries the latest known observation forward before rolling
    calculations. Staleness remains enforced at the classifier boundary.
 
-2. **SOFR/IORB/OAS freshness is staleness-based.** Credit/funding carries SOFR,
-   IORB, broad USD, and OAS observations forward for feature math. The unknown
-   gate fires only when the latest SOFR/IORB observation is older than the
-   global freshness budget, not merely absent on the current NYSE session.
+2. **Funding-spread freshness is staleness-based.** Credit/funding carries the
+   funding-spread seam (`sofr_iorb_spread`) forward for feature math. The
+   unknown gate fires only when the latest observation of that seam is older
+   than the global freshness budget, not merely absent on the current NYSE
+   session. The seam is a spliced series (see ADR 0009): SOFR-IORB for
+   Jul 2021+, SOFR-IOER for Apr 2018–Jul 2021, FEDFUNDS-IOER for Oct 2008–
+   Apr 2018. For sessions before any era of the splice, SOFR and IORB are
+   genuinely non-existent (created Apr 2018 and Jul 2021 respectively), so the
+   gate would have incorrectly fired "unknown" for the entire 2016–2021 window
+   under the original raw-SOFR/IORB staleness check.
 
 3. **Trainable evidence layers emit point-in-time evidence across a window.**
    HMM and GMM outputs for session `t` must be produced from a model trained

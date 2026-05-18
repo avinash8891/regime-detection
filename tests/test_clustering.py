@@ -105,20 +105,12 @@ def _default_clustering_config(
 
 
 @pytest.fixture(scope="module")
-def _computed_default_clustering_pair() -> tuple[ClusteringFeatures, ClusteringFeatures]:
+def _computed_default_clustering() -> ClusteringFeatures:
     inputs = _synthetic_inputs(n_sessions=1500)
     cfg = _default_clustering_config()
-    first = compute_clustering_features(config=cfg, **inputs)
-    second = compute_clustering_features(config=cfg, **inputs)
-    assert first is not None and second is not None
-    return first, second
-
-
-@pytest.fixture(scope="module")
-def _computed_default_clustering(
-    _computed_default_clustering_pair: tuple[ClusteringFeatures, ClusteringFeatures],
-) -> ClusteringFeatures:
-    return _computed_default_clustering_pair[0]
+    result = compute_clustering_features(config=cfg, **inputs)
+    assert result is not None
+    return result
 
 
 # ---------------------------------------------------------------------------
@@ -197,10 +189,11 @@ def test_distance_to_centroid_is_non_negative(
     assert (non_null >= 0.0).all()
 
 
-def test_seed_determinism(
-    _computed_default_clustering_pair: tuple[ClusteringFeatures, ClusteringFeatures],
-) -> None:
-    first, second = _computed_default_clustering_pair
+def test_seed_determinism() -> None:
+    inputs = _synthetic_inputs(n_sessions=500)
+    cfg = _default_clustering_config(training_window_days=252)
+    first = compute_clustering_features(config=cfg, **inputs)
+    second = compute_clustering_features(config=cfg, **inputs)
     assert first is not None and second is not None
     pd.testing.assert_series_equal(first.cluster_id, second.cluster_id)
     pd.testing.assert_series_equal(

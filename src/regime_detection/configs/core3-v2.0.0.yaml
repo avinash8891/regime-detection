@@ -422,6 +422,11 @@ inflation_growth:
   cpi_stale_calendar_days: 60
   pmi_stale_calendar_days: 45
   dgs10_stale_sessions: 5
+  # EPS revision staleness: matches EPS_REVISION_STALE_DAYS = 35 in
+  # profile_engine_reporting.py. When the weekly EPS parquet has not updated
+  # for > 35 calendar days, the EPS signal is treated as NaN and
+  # earnings_expansion / earnings_contraction labels do not fire.
+  eps_revision_stale_calendar_days: 35
 
 vol_crush:
   event_window_trading_days: 3

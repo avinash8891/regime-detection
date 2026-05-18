@@ -328,7 +328,7 @@ def _build_context_with_macro(
         # Apply a linear drift over the last 100 sessions to push z-score up/down.
         drift = np.linspace(0, usd_drift, len(index))
         usd = usd + drift
-    macro = {"DGS2": dgs2, "DGS10": dgs10, "broad_usd_index": usd}
+    macro = {"2y_yield": dgs2, "10y_yield": dgs10, "broad_usd_index": usd}
     config = RegimeEngine().config
     context = build_market_context(
         end_date=_LAST_SESSION.date(),
@@ -399,7 +399,7 @@ def test_engine_classify_window_populates_monetary_pressure_state():
     dgs2 = _yield_series(index=index, base=4.5, seed=_SEED + 1)
     dgs10 = _yield_series(index=index, base=4.2, seed=_SEED + 2)
     usd = _usd_series(index=index, base=100.0, seed=_SEED + 3)
-    macro = {"DGS2": dgs2, "DGS10": dgs10, "broad_usd_index": usd}
+    macro = {"2y_yield": dgs2, "10y_yield": dgs10, "broad_usd_index": usd}
     timeline = RegimeEngine().classify_window(
         end_date=_LAST_SESSION.date(),
         market_data=market_data,

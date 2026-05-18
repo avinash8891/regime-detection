@@ -15,16 +15,23 @@ from regime_detection.axis_builders.staleness import (
     _trading_staleness_series,
 )
 from regime_detection.inflation_growth import (
+    CPI_KEY,
+    DGS10_KEY,
     INFLATION_GROWTH_RISK_RANK,
     InflationGrowthLabel,
+    InflationGrowthRuleInputs,
+    PMI_KEY,
     build_rule_inputs_by_date as build_inflation_growth_rule_inputs_by_date,
     evaluate_rules as evaluate_inflation_growth_rules,
 )
+
 from regime_detection.market_context import MarketContext
 from regime_detection.models import (
     DataQuality,
     InflationGrowthOutput,
 )
+
+_EPS_REVISION_MACRO_KEY = "aggregate_forward_eps_revision"
 
 
 def build_inflation_growth_axis_series(
@@ -66,9 +73,10 @@ def build_inflation_growth_axis_series(
 
     spy_close = context.spy_ohlcv["close"]
     macro_series = context.macro_series or {}
-    cpi_series = macro_series.get("cpi_all_items")
-    pmi_series = macro_series.get("pmi_manufacturing")
-    dgs10_series = macro_series.get("dgs10")
+    cpi_series = macro_series.get(CPI_KEY)
+    pmi_series = macro_series.get(PMI_KEY)
+    dgs10_series = macro_series.get(DGS10_KEY)
+    eps_revision_series = macro_series.get(_EPS_REVISION_MACRO_KEY)
 
     # The 126d (6m) CPI lookback is the binding cold-start window.
     required_inputs: list[pd.Series] = [
@@ -89,6 +97,9 @@ def build_inflation_growth_axis_series(
     cpi_staleness_by_date = _calendar_staleness_days_series(cpi_series, session_index)
     pmi_staleness_by_date = _calendar_staleness_days_series(pmi_series, session_index)
     dgs10_staleness_by_date = _trading_staleness_series(dgs10_series, session_index)
+    eps_staleness_by_date = _calendar_staleness_days_series(
+        eps_revision_series, session_index
+    )
     credit_funding_labels_by_ts: dict[pd.Timestamp, str | None] | None = None
     if credit_funding_active_labels_by_date is not None:
         credit_funding_labels_by_ts = {
@@ -165,6 +176,32 @@ def build_inflation_growth_axis_series(
             credit_funding_active_label = credit_funding_active_labels_by_date[day]
 
         rule_inputs = rule_inputs_by_date[dt]
+
+        # EPS staleness gate — mirror of the NFCI gate in credit_funding.py:154.
+        # When the aggregate_forward_eps_revision series has no non-NaN value
+        # within eps_revision_stale_calendar_days of this session, treat the
+        # EPS direction signal as NaN so earnings_expansion /
+        # earnings_contraction predicates falsify rather than forward-filling
+        # a stale revision direction.
+        eps_staleness_days = int(eps_staleness_by_date.loc[dt])
+        eps_stale = eps_staleness_days > ig_config.eps_revision_stale_calendar_days
+        if eps_stale:
+            rule_inputs = InflationGrowthRuleInputs(
+                cpi_6m_change_pct=rule_inputs.cpi_6m_change_pct,
+                cpi_6m_change_pct_lag_21=rule_inputs.cpi_6m_change_pct_lag_21,
+                cpi_6m_change_pct_slope_21d=rule_inputs.cpi_6m_change_pct_slope_21d,
+                inflation_surprise_zscore=rule_inputs.inflation_surprise_zscore,
+                aggregate_forward_eps_revision_direction_4w=float("nan"),
+                pmi_manufacturing=rule_inputs.pmi_manufacturing,
+                pmi_manufacturing_slope_21d=rule_inputs.pmi_manufacturing_slope_21d,
+                commodity_return_63d=rule_inputs.commodity_return_63d,
+                treasury_10y_yield_slope_21d=rule_inputs.treasury_10y_yield_slope_21d,
+                cyclical_defensive_slope_21d=rule_inputs.cyclical_defensive_slope_21d,
+                spy_21d_return=rule_inputs.spy_21d_return,
+                tlt_21d_return=rule_inputs.tlt_21d_return,
+                credit_funding_active_label=rule_inputs.credit_funding_active_label,
+            )
+
         label = evaluate_inflation_growth_rules(
             inputs=rule_inputs, config=ig_config.rules
         )

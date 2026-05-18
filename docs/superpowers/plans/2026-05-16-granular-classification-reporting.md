@@ -28,7 +28,7 @@ Important code anchors:
 - `src/regime_detection/models.py:30` derives granular `classification_status`.
 - `src/regime_detection/credit_funding.py:676` still falls through to `unknown` when no credit rule fires.
 - `scripts/audit_layer2_30d.py` currently writes active-label splits and exposes the mismatch.
-- `scripts/profile_engine_30d.py` currently prints active-label daily lines/splits.
+- `scripts/profile_engine.py` currently prints active-label daily lines/splits.
 
 ## File Structure
 
@@ -38,7 +38,7 @@ Important code anchors:
 - Modify `scripts/audit_layer2_30d.py`
   - Use the reporting outcome for label splits.
   - Preserve raw `active_label` counts in a separate debug section.
-- Modify `scripts/profile_engine_30d.py`
+- Modify `scripts/profile_engine.py`
   - Print/report reporting outcomes instead of bare `active_label` for metric splits.
 - Modify `scripts/run_v2_walkforward_gate.py`
   - Use reporting outcomes for activation/split metrics.
@@ -49,7 +49,7 @@ Important code anchors:
 - Add/modify tests:
   - `tests/test_classification_status.py`
   - `tests/test_layer2_audit.py`
-  - `tests/test_profile_engine_30d.py`
+  - `tests/test_profile_engine.py`
   - `tests/test_v2_gate_scripts.py`
 
 ## Reporting Contract
@@ -297,33 +297,33 @@ credit_funding_state_proxy.active = {"credit_calm": 7, "unknown": 23}
 ### Task 3: Update 30-Day Profile Reporting
 
 **Files:**
-- Modify: `scripts/profile_engine_30d.py`
-- Test: `tests/test_profile_engine_30d.py`
+- Modify: `scripts/profile_engine.py`
+- Test: `tests/test_profile_engine.py`
 
 - [ ] **Step 1: Locate active-label reporting**
 
 Run:
 
 ```bash
-rg -n "active_label|raw_label|stable_label|credit_funding_state_proxy|label split|Counter" scripts/profile_engine_30d.py tests/test_profile_engine_30d.py
+rg -n "active_label|raw_label|stable_label|credit_funding_state_proxy|label split|Counter" scripts/profile_engine.py tests/test_profile_engine.py
 ```
 
 Expected: identify every table/print path using `active_label`.
 
 - [ ] **Step 2: Add helper test**
 
-If `profile_engine_30d.py` already has a summary helper, test it directly. If not, add a small helper `_reporting_label(output)` and test:
+If `profile_engine.py` already has a summary helper, test it directly. If not, add a small helper `_reporting_label(output)` and test:
 
 ```python
 def test_profile_reporting_label_uses_classification_status_for_unknown() -> None:
     output = SimpleNamespace(active_label="unknown", classification_status="no_rule_fired")
 
-    assert profile_engine_30d._reporting_label(output) == "no_rule_fired"
+    assert profile_engine._reporting_label(output) == "no_rule_fired"
 ```
 
 - [ ] **Step 3: Implement helper**
 
-Add to `scripts/profile_engine_30d.py`:
+Add to `scripts/profile_engine.py`:
 
 ```python
 def _reporting_label(output: Any) -> str | None:
@@ -355,7 +355,7 @@ Do not remove raw/active debug fields if they are explicitly labeled as raw debu
 Run:
 
 ```bash
-python3 -m pytest tests/test_profile_engine_30d.py -q
+python3 -m pytest tests/test_profile_engine.py -q
 ```
 
 Expected: pass.
@@ -482,7 +482,7 @@ Expected: pass.
 
 **Files:**
 - No required code file.
-- Artifacts: `.context/profile_engine_30d_*.txt`, `.context/layer2_label_rule_summary_20260516.json`
+- Artifacts: `.context/profile_engine_*.txt`, `.context/layer2_label_rule_summary_20260516.json`
 
 - [ ] **Step 1: Run focused tests**
 
@@ -492,7 +492,7 @@ Run:
 python3 -m pytest \
   tests/test_classification_status.py \
   tests/test_layer2_audit.py \
-  tests/test_profile_engine_30d.py \
+  tests/test_profile_engine.py \
   tests/test_v2_gate_scripts.py \
   tests/test_v2_comparison.py \
   tests/test_credit_funding.py \
@@ -507,7 +507,7 @@ Expected: all pass.
 Run:
 
 ```bash
-python3 scripts/profile_engine_30d.py \
+python3 scripts/profile_engine.py \
   --lookback-days 30 \
   --daily-dir data/raw/daily_ohlcv \
   --constituent-tree data/raw/daily_ohlcv_762 \
@@ -520,7 +520,7 @@ python3 scripts/profile_engine_30d.py \
   --fomc-minutes-parquet data/raw/fomc_minutes/fomc_minutes.parquet \
   --powell-speeches-parquet data/raw/powell_speeches/powell_speeches.parquet \
   --cpi-vintages-parquet data/raw/macro_vintages/cpi_all_items_vintages.parquet \
-  2>&1 | tee .context/profile_engine_30d_20260516_granular_reporting.txt
+  2>&1 | tee .context/profile_engine_20260516_granular_reporting.txt
 ```
 
 Expected: runner exits 0 and reports no verification issues.

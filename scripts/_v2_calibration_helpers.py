@@ -15,7 +15,12 @@ from typing import Any
 import pandas as pd
 
 from regime_data_fetch.materialization import materialize_if_requested
-from regime_data_fetch.manifest_inputs import resolve_runner_input_paths
+from regime_data_fetch.manifest_inputs import (
+    MANIFEST_INPUT_FLAGS,
+    MANIFEST_INPUT_SPECS,
+    get_manifest_input_spec,
+    resolve_runner_input_paths,
+)
 from regime_detection.loaders import (
     load_aggregate_forward_eps_revision_series,
     load_cpi_nowcast_series,
@@ -25,23 +30,52 @@ from regime_detection.loaders import (
 
 logger = logging.getLogger(__name__)
 
-MANIFEST_INPUT_FLAGS = {
-    "daily_dir": "--daily-dir",
-    "constituent_tree": "--constituent-tree",
-    "macro_parquet": "--macro-parquet",
-    "pit_parquet": "--pit-parquet",
-    "event_calendar": "--event-calendar",
-    "pmi_path": "--pmi-path",
-    "aaii_sentiment_parquet": "--aaii-sentiment-parquet",
-    "news_sentiment_parquet": "--news-sentiment-parquet",
-    "fomc_minutes_parquet": "--fomc-minutes-parquet",
-    "powell_speeches_parquet": "--powell-speeches-parquet",
-    "cpi_vintages_parquet": "--cpi-vintages-parquet",
-}
-
 
 def default_pmi_path(data_root: Path) -> Path:
-    return data_root / "pmi" / "us_ism_pmi_history.parquet"
+    spec = get_manifest_input_spec("pmi_path")
+    assert spec.default_relpath is not None
+    return data_root.joinpath(*spec.default_relpath)
+
+
+def register_manifest_input_args(
+    parser: argparse.ArgumentParser,
+    *,
+    include_required_paths: bool = True,
+) -> None:
+    """The single source of truth is the registry in ``manifest_inputs.py``;
+    adding a spec there automatically adds the corresponding CLI flag to
+    every runner that calls this helper, so the historic drift between
+    ``ARTIFACT_BY_FIELD`` and per-runner argparse blocks can no longer
+    silently lose a manifest field. Set ``include_required_paths=False`` for
+    runners that need to register only optional paths and supply
+    ``daily_dir``/``constituent_tree`` themselves.
+    """
+    for spec in MANIFEST_INPUT_SPECS:
+        if spec.is_required and not include_required_paths:
+            continue
+        parser.add_argument(spec.cli_flag, dest=spec.field, type=Path, default=None)
+
+
+def apply_manifest_input_defaults(
+    args: argparse.Namespace,
+    data_root: Path,
+    *,
+    fields: frozenset[str] | None = None,
+) -> None:
+    """For every spec with a canonical ``default_relpath``, set
+    ``args.<field>`` from ``data_root`` when the runner did not already
+    populate it (via CLI override or manifest resolution).
+
+    Replaces the per-runner ``if args.X is None: args.X = data_root / ...``
+    blocks. Pass ``fields`` to restrict defaulting to a subset.
+    """
+    for spec in MANIFEST_INPUT_SPECS:
+        if spec.default_relpath is None:
+            continue
+        if fields is not None and spec.field not in fields:
+            continue
+        if getattr(args, spec.field, None) is None:
+            setattr(args, spec.field, data_root.joinpath(*spec.default_relpath))
 
 
 def axis_reporting_label(output: Any | None, *, default: str | None = None) -> str | None:
@@ -152,7 +186,7 @@ def load_market_data(daily_ohlcv_dir: Path) -> pd.DataFrame:
     """
     df = _read_daily_ohlcv(daily_ohlcv_dir, symbols=["SPY", "RSP", "VIXY"])
     keep = ["date", "symbol", "open", "high", "low", "close", "volume"]
-    out = df[df["symbol"].isin(["SPY", "RSP", "VIXY"])][keep].copy()
+    out = df[keep].copy()
     out["date"] = pd.to_datetime(out["date"]).dt.date
     return out.sort_values(["date", "symbol"]).reset_index(drop=True)
 
@@ -214,103 +248,94 @@ def load_macro_series(
     macro_parquet: Path,
     pmi_path: Path | None,
     *,
-    cpi_nowcast_parquet: Path | None = None,
-    eps_weekly_history_parquet: Path | None = None,
+    cpi_nowcast_parquet: Path | None,
+    eps_weekly_history_parquet: Path | None,
 ) -> dict[str, pd.Series]:
     """Load FRED macro + PMI + the §2B nowcast / EPS-revision seams
     into a name-keyed dict.
 
-    ``cpi_nowcast_parquet`` and ``eps_weekly_history_parquet`` default to
-    their canonical locations under ``data/raw/`` — siblings of
-    ``macro_parquet`` (which lives at ``data/raw/macro/...``). When a file
-    is absent the series is simply omitted: the §2B `inflation_shock`
-    single-signal limb / `earnings_*` labels stay dark, exactly as before
-    the fetchers ran. ``run_cleveland_fed_nowcast_fetch`` and the
-    ``aggregate_eps`` weekly accumulator produce these parquets.
+    All four paths are passed explicitly by the caller. The historic
+    sibling-path discovery fallback (``macro_parquet.parent.parent``) was
+    removed because it silently masked manifest-router gaps — a missing
+    ``cpi_nowcast_parquet`` would be filled by an empty default path, the
+    §2B inflation-shock limb would degrade to NaN, and no error would
+    surface. Callers must now route the path explicitly: either via the
+    manifest router (``apply_manifest_input_paths``) or via
+    ``apply_manifest_input_defaults`` for non-manifest invocations.
+
+    When ``cpi_nowcast_parquet`` or ``eps_weekly_history_parquet`` is
+    ``None`` or its file does not exist, the corresponding series is
+    omitted and the dependent §2B labels stay dark — same end state as
+    before, but the missing-file warning now points at the explicit path
+    the caller chose, which is debuggable.
     """
     series_dict = load_fred_macro_series(macro_parquet)
     if pmi_path and pmi_path.exists():
         pmi = _load_pmi_manufacturing_series(pmi_path)
         if pmi is not None:
             series_dict["pmi_manufacturing"] = pmi
-    # §2B nowcast / EPS-revision seams (ADR 0006 / Ambiguity Log #48). Both
-    # parquets live as siblings of macro_parquet under data/raw/; load them
-    # when present so the §2B `inflation_shock` single-signal limb and the
-    # `earnings_*` labels light up. Absent file -> series omitted, labels
-    # stay dark (graceful, same as pre-fetcher behaviour).
-    data_root = macro_parquet.parent.parent
-    if cpi_nowcast_parquet is None:
-        cpi_nowcast_parquet = (
-            data_root / "cleveland_fed_nowcast" / "cpi_nowcast.parquet"
-        )
-    if eps_weekly_history_parquet is None:
-        eps_weekly_history_parquet = (
-            data_root / "aggregate_forward_eps" / "sp500_eps_weekly_history.parquet"
-        )
-    if cpi_nowcast_parquet.exists():
+    if cpi_nowcast_parquet is not None and cpi_nowcast_parquet.exists():
         series_dict["cpi_nowcast"] = load_cpi_nowcast_series(cpi_nowcast_parquet)
     else:
-        logger.info(
-            "cpi_nowcast parquet not found at %s — skipping", cpi_nowcast_parquet
+        logger.warning(
+            "cpi_nowcast parquet not found at %s — Layer 2 inflation surprise "
+            "input is unwired; re-fetch with "
+            "scripts/fetch_regime_engine_v1_data.py --fetch macro",
+            cpi_nowcast_parquet,
         )
-    if eps_weekly_history_parquet.exists():
+    if (
+        eps_weekly_history_parquet is not None
+        and eps_weekly_history_parquet.exists()
+    ):
         series_dict["aggregate_forward_eps_revision"] = (
             load_aggregate_forward_eps_revision_series(eps_weekly_history_parquet)
         )
     else:
-        logger.info(
-            "EPS weekly-history parquet not found at %s — skipping",
+        logger.warning(
+            "EPS weekly-history parquet not found at %s — Layer 2 earnings "
+            "revision input is unwired; refresh with "
+            "scripts/fetch_regime_engine_v1_data.py --fetch eps "
+            "(operator-assisted; requires an S&P workbook).",
             eps_weekly_history_parquet,
         )
     return series_dict
 
 
 def _load_pmi_manufacturing_series(pmi_path: Path) -> pd.Series | None:
-    if pmi_path.suffix.lower() == ".parquet":
-        history_path = pmi_path.with_name("us_ism_pmi_history.parquet")
-        latest_path = pmi_path.with_name("us_ism_pmi.parquet")
-        candidates = [path for path in (history_path, latest_path) if path.exists()]
-        if pmi_path.exists() and pmi_path not in candidates:
+    history_path = pmi_path.with_name("us_ism_pmi_history.parquet")
+    latest_path = pmi_path.with_name("us_ism_pmi.parquet")
+    candidates = [path for path in (history_path, latest_path) if path.exists()]
+    if pmi_path.exists() and pmi_path not in candidates:
+        if pmi_path.suffix in {".parquet", ".pq"}:
             candidates.append(pmi_path)
-        if not candidates:
-            return None
-        pmi_df = pd.concat(
-            [pd.read_parquet(path) for path in candidates],
-            ignore_index=True,
-        )
-        required = {"series_name", "value", "release_timestamp"}
-        if not required.issubset(pmi_df.columns):
-            return None
-        pmi_df = pmi_df[pmi_df["series_name"] == "manufacturing"].copy()
-        if pmi_df.empty:
-            return None
-        release_timestamp = pd.to_datetime(
-            pmi_df["release_timestamp"],
-            utc=True,
-        )
-        pmi_df["release_date_local"] = (
-            release_timestamp.dt.tz_convert("America/New_York")
-            .dt.tz_localize(None)
-            .dt.normalize()
-        )
-        pmi_df = pmi_df.drop_duplicates(
-            subset=["release_date_local"], keep="last"
-        )
-        return (
-            pmi_df.set_index("release_date_local")["value"]
-            .astype(float)
-            .sort_index()
-            .rename("pmi_manufacturing")
-        )
-
-    pmi_df = pd.read_csv(pmi_path, sep="\t")
-    if "release_date_local" not in pmi_df.columns or "actual" not in pmi_df.columns:
+        else:
+            logger.warning("pmi_path %s is not a parquet file; ignoring.", pmi_path)
+    if not candidates:
         return None
-    pmi_df["release_date_local"] = pd.to_datetime(
-        pmi_df["release_date_local"], format="%d-%m-%Y"
+    pmi_df = pd.concat(
+        [pd.read_parquet(path) for path in candidates],
+        ignore_index=True,
+    )
+    required = {"series_name", "value", "release_timestamp"}
+    if not required.issubset(pmi_df.columns):
+        return None
+    pmi_df = pmi_df[pmi_df["series_name"] == "manufacturing"].copy()
+    if pmi_df.empty:
+        return None
+    release_timestamp = pd.to_datetime(
+        pmi_df["release_timestamp"],
+        utc=True,
+    )
+    pmi_df["release_date_local"] = (
+        release_timestamp.dt.tz_convert("America/New_York")
+        .dt.tz_localize(None)
+        .dt.normalize()
+    )
+    pmi_df = pmi_df.drop_duplicates(
+        subset=["release_date_local"], keep="last"
     )
     return (
-        pmi_df.set_index("release_date_local")["actual"]
+        pmi_df.set_index("release_date_local")["value"]
         .astype(float)
         .sort_index()
         .rename("pmi_manufacturing")

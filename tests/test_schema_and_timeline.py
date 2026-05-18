@@ -44,7 +44,7 @@ from regime_detection.transition_risk_series import (
 from regime_detection.versioning import engine_version
 
 
-@pytest.fixture(scope="module")
+@pytest.fixture(scope="session")
 def shared_timeline_pipeline(market_df_for_asof):
     end_date = date(2023, 12, 14)
     engine = RegimeEngine()

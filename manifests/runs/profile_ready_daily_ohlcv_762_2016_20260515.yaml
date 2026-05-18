@@ -1,192 +1,36 @@
-# Merged regime-engine artifact manifest for the 2026-05-17 cut.
+# Lockfile manifest for the daily OHLCV tree.
 #
-# Contents: 11 canonical engine artifacts (PIT constituents, FRED macro, ISM
-# PMI, CPI vintages, AAII sentiment, SF Fed news sentiment, FOMC minutes,
-# Powell speeches, event calendar, Cleveland Fed CPI nowcast, S&P 500 EPS
-# weekly history) + 1086 PIT-superset daily OHLCV per-symbol parquets that
-# were previously held in the standalone lockfile
-# ``manifests/runs/profile_ready_daily_ohlcv_762_2016_20260515.yaml``. The
-# OHLCV-only manifest remains in the tree for OHLCV-only callers and shares
-# the same ``storage_root``; pointing the runner at this merged manifest with
-# ``--manifest manifests/runs/regime_engine_2026-05-17.yaml`` materializes
-# every artifact needed to run profile_engine / audit_layer2_30d /
-# v2_calibration / historical_walkforward end-to-end.
+# Naming note: the artifact_set name and S3 prefix embed the legacy token
+# ``762`` for provenance stability (the original audit cohort had 762
+# symbols). The live S3 prefix now holds **1086** symbol parquets, all of
+# which are enumerated below. The "762" token is preserved in the
+# ``artifact_set`` / ``storage_root`` only to keep the lockfile referentially
+# stable with historical runs; consumers must NOT infer cardinality from the
+# name. See the .md sibling for the canonical 1086 count and date range.
 #
-# URI shape: workspace-agnostic. All ``uri`` fields are relative keys inside
-# ``storage_root`` so the manifest survives moving between checkouts (vaduz,
-# nicosia, CI). The canonical artifact store lives in S3 so any fresh
-# workspace can materialize without staging a local mirror.
-# ``materialize_manifest`` dispatches to ``S3ArtifactStore`` via
-# ``build_artifact_store`` when ``storage_root`` carries the ``s3://`` scheme
-# (see regime_data_fetch.materialization._resolve_store_root, which passes
-# scheme-bearing roots through unchanged).
-# Override the store at runtime with ``--artifact-store <uri>`` for tests.
-artifact_set: regime_engine_2026-05-17
-created_at_utc: '2026-05-17T04:59:18Z'
-# Canonical S3 prefix. The ``s3://`` scheme triggers S3ArtifactStore
-# selection in build_artifact_store and is passed through unchanged by
-# _resolve_store_root (no manifest-dir anchoring), so this manifest
-# materializes identically from any checkout that can authenticate to the
-# bucket.
+# This file was REGENERATED from S3 metadata after the original 15,367-line
+# YAML lockfile was removed from git (see the markdown sibling
+# ``profile_ready_daily_ohlcv_762_2016_20260515.md`` for original sha256
+# provenance: ``1e46ede94cc0dbd06faf500330839489e6b5ebb09c63bd99dfe43cc17eb90808``).
+#
+# Source of truth: ``aws s3api list-objects-v2`` over the bucket prefix
+# ``s3://autoresearch-platform/regime-detection/artifacts/zurich-v1/profile-ready-daily-ohlcv-762-2016-20260515/canonical/daily_ohlcv_762/``.
+# Every symbol parquet in S3 is enumerated below — under-counting would
+# silently drop universe members from any OHLCV-only consumer.
+#
+# sha256 strategy: every artifact below carries a real sha256 digest read
+# from the canonical S3 object metadata (the upload path stamps
+# ``Metadata.sha256`` on every put — see
+# ``src/regime_data_fetch/artifact_store.py:264``). The header's previous
+# "empty-string sentinel for 1081 of 1086" caveat is OBSOLETE; the bulk
+# backfill is enforced by ``scripts/backfill_ohlcv_manifest_sha256.py``,
+# which probes each S3 object via HEAD and rewrites the lockfile in place.
+# ``materialize_manifest`` therefore fetches ALL 1086 parquets — no entries
+# are filtered at ``src/regime_data_fetch/materialization.py:50``.
+artifact_set: profile_ready_daily_ohlcv_762_2016_20260515
+created_at_utc: '2026-05-18T06:33:27Z'
 storage_root: s3://autoresearch-platform/regime-detection/artifacts/zurich-v1/profile-ready-daily-ohlcv-762-2016-20260515
 artifacts:
-- name: sp500_pit_constituents
-  stage: canonical
-  uri: canonical/pit_constituents/sp500_ticker_intervals.parquet
-  local_path: data/raw/pit_constituents/sp500_ticker_intervals.parquet
-  sha256: a115cb8583f6d2c8d90b5d2fe01ca6e91859ad029a23b760bcdf0e8c8eec295c
-  schema_version:
-  rows: 1246
-  min_date: '1996-01-02'
-  max_date: '2026-01-14'
-  required_for:
-  - profile_engine
-  - v2_calibration
-  - historical_walkforward
-  - audit_layer2_30d
-- name: fred_macro_series
-  stage: canonical
-  uri: canonical/macro/fred_macro_series.parquet
-  local_path: data/raw/macro/fred_macro_series.parquet
-  sha256: 557cf01cbdf8616bc78e9924c1e51e9feee7212fdcab1062456a18914fdcc041
-  schema_version:
-  rows: 24082
-  min_date: '2015-01-01'
-  max_date: '2026-05-18'
-  required_for:
-  - profile_engine
-  - v2_calibration
-  - historical_walkforward
-  - audit_layer2_30d
-- name: ism_pmi_history
-  stage: canonical
-  uri: canonical/pmi/us_ism_pmi_history.parquet
-  local_path: data/raw/pmi/us_ism_pmi_history.parquet
-  sha256: 5587b8032bda8cca7bebff8a68e0d99d1d940ab7975881c15f26acc5fdf24588
-  schema_version:
-  rows: 248
-  min_date: '2016-01-01'
-  max_date: '2026-04-01'
-  required_for:
-  - profile_engine
-  - v2_calibration
-  - historical_walkforward
-  - audit_layer2_30d
-- name: cpi_all_items_vintages
-  stage: canonical
-  uri: canonical/macro_vintages/cpi_all_items_vintages.parquet
-  local_path: data/raw/macro_vintages/cpi_all_items_vintages.parquet
-  sha256: fe7e0a7efb0ce33bd4b023c3e353511cd43e5adb28b1d213c36dd8ac7d167547
-  schema_version:
-  rows: 678
-  min_date: '2015-01-01'
-  max_date: '2026-04-01'
-  required_for:
-  - profile_engine
-  - v2_calibration
-  - historical_walkforward
-  - audit_layer2_30d
-- name: aaii_sentiment
-  stage: canonical
-  uri: canonical/sentiment/aaii_sentiment.parquet
-  local_path: data/raw/sentiment/aaii_sentiment.parquet
-  sha256: 7af89999554c8a58cbbf11570dc32bd554d7967ac11d29939386753fbe200571
-  schema_version:
-  rows: 2023
-  min_date: '1987-07-24'
-  max_date: '2026-05-13'
-  required_for:
-  - profile_engine
-  - v2_calibration
-  - audit_layer2_30d
-- name: sf_fed_news_sentiment
-  stage: canonical
-  uri: canonical/news_sentiment/sf_fed_news_sentiment.parquet
-  local_path: data/raw/news_sentiment/sf_fed_news_sentiment.parquet
-  sha256: 3cf86343364e8003bdbea37268decca3834634e288f872004043e652aa497894
-  schema_version:
-  rows: 16913
-  min_date: '1980-01-01'
-  max_date: '2026-05-10'
-  required_for:
-  - profile_engine
-  - v2_calibration
-  - audit_layer2_30d
-- name: fomc_minutes
-  stage: canonical
-  uri: canonical/fomc_minutes/fomc_minutes.parquet
-  local_path: data/raw/fomc_minutes/fomc_minutes.parquet
-  sha256: bade532e31781bf6a35ffb1651f738b71a5760216a7f740f7acda2cd88148c65
-  schema_version:
-  rows: 147
-  min_date: '2007-10-31'
-  max_date: '2026-03-18'
-  required_for:
-  - profile_engine
-  - audit_layer2_30d
-- name: powell_speeches
-  stage: canonical
-  uri: canonical/powell_speeches/powell_speeches.parquet
-  local_path: data/raw/powell_speeches/powell_speeches.parquet
-  sha256: fa404062ef2910c47e4e0e437fb1850e3e8b569f5360b2d627307ca0c477b646
-  schema_version:
-  rows: 123
-  min_date: '2013-02-22'
-  max_date: '2026-03-21'
-  required_for:
-  - profile_engine
-  - audit_layer2_30d
-# event_calendar_us is the repo-committed configs/events/us_events.yaml,
-# mirrored into the canonical artifact store under canonical/event_calendar/
-# so the manifest is self-contained.
-- name: event_calendar_us
-  stage: canonical
-  uri: canonical/event_calendar/us_events.yaml
-  local_path: configs/events/us_events.yaml
-  sha256: b67caf8f8d9814e4229a5fd27b4cadcdc72b8b8f856495aa30b9041dd1170efd
-  schema_version:
-  rows:
-  min_date:
-  max_date:
-  required_for:
-  - profile_engine
-  - audit_layer2_30d
-# ADR 0006 §2B — Cleveland Fed CPI nowcast. Required for the inflation_shock
-# single-signal limb. Fetched via
-# regime_data_fetch.cleveland_fed_nowcast.run_cleveland_fed_nowcast_fetch
-# on 2026-05-18 (direct urllib pull of the FusionCharts webchart feed).
-- name: cleveland_fed_cpi_nowcast
-  stage: canonical
-  uri: canonical/cleveland_fed_nowcast/cpi_nowcast.parquet
-  local_path: data/raw/cleveland_fed_nowcast/cpi_nowcast.parquet
-  sha256: 1f71bca92a3e235e5703109036e11ac838ca88fb82e02353356e5a09be6d219f
-  schema_version:
-  rows: 154
-  min_date: '2013-01-10'
-  max_date: '2026-05-14'
-  required_for:
-  - audit_layer2_30d
-  - profile_engine
-# ADR 0006 §2B — aggregate forward-EPS weekly history. Required for the
-# earnings_expansion / earnings_contraction labels. Seeded on 2026-05-18 from
-# the Wayback Machine snapshot timeline (eps-wayback fetch mode); 12 weekly
-# rows spanning 2024-05-02 through 2026-01-22 — enough to satisfy the 4-week
-# revision-direction cold-start requirement. TODO(operator): the live
-# spdji workbook URL is currently 403/timeout; bring the workbook through
-# eps-spglobal-auto with a Playwright browser session to refresh past
-# 2026-01-22 before the §2B earnings labels run on live data.
-- name: sp500_eps_weekly_history
-  stage: canonical
-  uri: canonical/aggregate_forward_eps/sp500_eps_weekly_history.parquet
-  local_path: data/raw/aggregate_forward_eps/sp500_eps_weekly_history.parquet
-  sha256: 2093b60d455d1934ebff52c40f64433d98d248ca97008bba6b416ee30c7bc2bf
-  schema_version:
-  rows: 12
-  min_date: '2024-05-02'
-  max_date: '2026-01-22'
-  required_for:
-  - audit_layer2_30d
-  - profile_engine
 - name: daily_ohlcv_762_A
   stage: canonical
   uri: canonical/daily_ohlcv_762/symbol=A/ohlcv.parquet
@@ -196,11 +40,14 @@ artifacts:
   rows:
   min_date: '2016-01-04'
   max_date: '2026-05-15'
-  required_for: &id001
-  - profile_engine
-  - v2_calibration
-  - historical_walkforward
-  - audit_layer2_30d
+  # OHLCV-only manifest: cannot satisfy profile_engine / v2_calibration /
+  # historical_walkforward / audit_layer2_30d (those runners require macro,
+  # PIT, event-calendar, sentiment, CPI, FOMC, Powell, and EPS artifacts that
+  # this manifest does not enumerate). Use
+  # ``manifests/runs/regime_engine_2026-05-17.yaml`` for those runners. This
+  # lockfile is kept only for OHLCV-only consumers (universe enumeration and
+  # ad-hoc per-symbol re-materialization).
+  required_for: &id001 []
 - name: daily_ohlcv_762_AABA
   stage: canonical
   uri: canonical/daily_ohlcv_762/symbol=AABA/ohlcv.parquet
@@ -210,11 +57,7 @@ artifacts:
   rows: 577
   min_date: '2017-06-19'
   max_date: '2019-10-02'
-  required_for:
-  - profile_engine
-  - v2_calibration
-  - historical_walkforward
-  - audit_layer2_30d
+  required_for: *id001
 - name: daily_ohlcv_762_AAL
   stage: canonical
   uri: canonical/daily_ohlcv_762/symbol=AAL/ohlcv.parquet
@@ -424,11 +267,7 @@ artifacts:
   rows: 1574
   min_date: '2016-01-04'
   max_date: '2022-04-01'
-  required_for:
-  - profile_engine
-  - v2_calibration
-  - historical_walkforward
-  - audit_layer2_30d
+  required_for: *id001
 - name: daily_ohlcv_762_ADSK
   stage: canonical
   uri: canonical/daily_ohlcv_762/symbol=ADSK/ohlcv.parquet
@@ -448,11 +287,7 @@ artifacts:
   rows: 2607
   min_date: '2016-01-04'
   max_date: '2026-05-15'
-  required_for:
-  - profile_engine
-  - v2_calibration
-  - historical_walkforward
-  - audit_layer2_30d
+  required_for: *id001
 - name: daily_ohlcv_762_AEE
   stage: canonical
   uri: canonical/daily_ohlcv_762/symbol=AEE/ohlcv.parquet
@@ -512,11 +347,7 @@ artifacts:
   rows: 733
   min_date: '2016-01-04'
   max_date: '2018-11-28'
-  required_for:
-  - profile_engine
-  - v2_calibration
-  - historical_walkforward
-  - audit_layer2_30d
+  required_for: *id001
 - name: daily_ohlcv_762_AFL
   stage: canonical
   uri: canonical/daily_ohlcv_762/symbol=AFL/ohlcv.parquet
@@ -566,11 +397,7 @@ artifacts:
   rows: 1095
   min_date: '2016-01-04'
   max_date: '2020-05-08'
-  required_for:
-  - profile_engine
-  - v2_calibration
-  - historical_walkforward
-  - audit_layer2_30d
+  required_for: *id001
 - name: daily_ohlcv_762_AGNC
   stage: canonical
   uri: canonical/daily_ohlcv_762/symbol=AGNC/ohlcv.parquet
@@ -820,11 +647,7 @@ artifacts:
   rows: 2607
   min_date: '2016-01-04'
   max_date: '2026-05-15'
-  required_for:
-  - profile_engine
-  - v2_calibration
-  - historical_walkforward
-  - audit_layer2_30d
+  required_for: *id001
 - name: daily_ohlcv_762_AMGN
   stage: canonical
   uri: canonical/daily_ohlcv_762/symbol=AMGN/ohlcv.parquet
@@ -914,11 +737,7 @@ artifacts:
   rows: 2607
   min_date: '2016-01-04'
   max_date: '2026-05-15'
-  required_for:
-  - profile_engine
-  - v2_calibration
-  - historical_walkforward
-  - audit_layer2_30d
+  required_for: *id001
 - name: daily_ohlcv_762_ANDV
   stage: canonical
   uri: canonical/daily_ohlcv_762/symbol=ANDV/ohlcv.parquet
@@ -928,11 +747,7 @@ artifacts:
   rows: 294
   min_date: '2017-08-01'
   max_date: '2018-09-28'
-  required_for:
-  - profile_engine
-  - v2_calibration
-  - historical_walkforward
-  - audit_layer2_30d
+  required_for: *id001
 - name: daily_ohlcv_762_ANET
   stage: canonical
   uri: canonical/daily_ohlcv_762/symbol=ANET/ohlcv.parquet
@@ -1002,11 +817,7 @@ artifacts:
   rows: 971
   min_date: '2016-01-04'
   max_date: '2026-05-15'
-  required_for:
-  - profile_engine
-  - v2_calibration
-  - historical_walkforward
-  - audit_layer2_30d
+  required_for: *id001
 - name: daily_ohlcv_762_APD
   stage: canonical
   uri: canonical/daily_ohlcv_762/symbol=APD/ohlcv.parquet
@@ -1126,11 +937,7 @@ artifacts:
   rows: 97
   min_date: '2016-01-04'
   max_date: '2016-05-20'
-  required_for:
-  - profile_engine
-  - v2_calibration
-  - historical_walkforward
-  - audit_layer2_30d
+  required_for: *id001
 - name: daily_ohlcv_762_ARM
   stage: canonical
   uri: canonical/daily_ohlcv_762/symbol=ARM/ohlcv.parquet
@@ -1150,11 +957,7 @@ artifacts:
   rows: 1709
   min_date: '2016-11-01'
   max_date: '2023-08-17'
-  required_for:
-  - profile_engine
-  - v2_calibration
-  - historical_walkforward
-  - audit_layer2_30d
+  required_for: *id001
 - name: daily_ohlcv_762_ARW
   stage: canonical
   uri: canonical/daily_ohlcv_762/symbol=ARW/ohlcv.parquet
@@ -1314,11 +1117,7 @@ artifacts:
   rows: 2607
   min_date: '2016-01-04'
   max_date: '2026-05-15'
-  required_for:
-  - profile_engine
-  - v2_calibration
-  - historical_walkforward
-  - audit_layer2_30d
+  required_for: *id001
 - name: daily_ohlcv_762_AZO
   stage: canonical
   uri: canonical/daily_ohlcv_762/symbol=AZO/ohlcv.parquet
@@ -1418,11 +1217,7 @@ artifacts:
   rows: 2607
   min_date: '2016-01-04'
   max_date: '2026-05-15'
-  required_for:
-  - profile_engine
-  - v2_calibration
-  - historical_walkforward
-  - audit_layer2_30d
+  required_for: *id001
 - name: daily_ohlcv_762_BBT
   stage: canonical
   uri: canonical/daily_ohlcv_762/symbol=BBT/ohlcv.parquet
@@ -1432,11 +1227,7 @@ artifacts:
   rows: 2607
   min_date: '2016-01-04'
   max_date: '2026-05-15'
-  required_for:
-  - profile_engine
-  - v2_calibration
-  - historical_walkforward
-  - audit_layer2_30d
+  required_for: *id001
 - name: daily_ohlcv_762_BBWI
   stage: canonical
   uri: canonical/daily_ohlcv_762/symbol=BBWI/ohlcv.parquet
@@ -1476,11 +1267,7 @@ artifacts:
   rows: 502
   min_date: '2016-01-04'
   max_date: '2017-12-28'
-  required_for:
-  - profile_engine
-  - v2_calibration
-  - historical_walkforward
-  - audit_layer2_30d
+  required_for: *id001
 - name: daily_ohlcv_762_BDX
   stage: canonical
   uri: canonical/daily_ohlcv_762/symbol=BDX/ohlcv.parquet
@@ -1550,11 +1337,7 @@ artifacts:
   rows: 2221
   min_date: '2017-07-17'
   max_date: '2026-05-15'
-  required_for:
-  - profile_engine
-  - v2_calibration
-  - historical_walkforward
-  - audit_layer2_30d
+  required_for: *id001
 - name: daily_ohlcv_762_BHGE
   stage: canonical
   uri: canonical/daily_ohlcv_762/symbol=BHGE/ohlcv.parquet
@@ -1564,11 +1347,7 @@ artifacts:
   rows: 577
   min_date: '2017-07-05'
   max_date: '2019-10-17'
-  required_for:
-  - profile_engine
-  - v2_calibration
-  - historical_walkforward
-  - audit_layer2_30d
+  required_for: *id001
 - name: daily_ohlcv_762_BHP
   stage: canonical
   uri: canonical/daily_ohlcv_762/symbol=BHP/ohlcv.parquet
@@ -1838,11 +1617,7 @@ artifacts:
   rows: 19
   min_date: '2016-01-04'
   max_date: '2016-01-29'
-  required_for:
-  - profile_engine
-  - v2_calibration
-  - historical_walkforward
-  - audit_layer2_30d
+  required_for: *id001
 - name: daily_ohlcv_762_BRK.A
   stage: canonical
   uri: canonical/daily_ohlcv_762/symbol=BRK.A/ohlcv.parquet
@@ -1992,11 +1767,7 @@ artifacts:
   rows: 105
   min_date: '2016-01-04'
   max_date: '2016-06-02'
-  required_for:
-  - profile_engine
-  - v2_calibration
-  - historical_walkforward
-  - audit_layer2_30d
+  required_for: *id001
 - name: daily_ohlcv_762_BXP
   stage: canonical
   uri: canonical/daily_ohlcv_762/symbol=BXP/ohlcv.parquet
@@ -2026,11 +1797,7 @@ artifacts:
   rows: 2601
   min_date: '2016-01-04'
   max_date: '2026-05-07'
-  required_for:
-  - profile_engine
-  - v2_calibration
-  - historical_walkforward
-  - audit_layer2_30d
+  required_for: *id001
 - name: daily_ohlcv_762_CAG
   stage: canonical
   uri: canonical/daily_ohlcv_762/symbol=CAG/ohlcv.parquet
@@ -2080,11 +1847,7 @@ artifacts:
   rows: 216
   min_date: '2016-01-04'
   max_date: '2026-05-15'
-  required_for:
-  - profile_engine
-  - v2_calibration
-  - historical_walkforward
-  - audit_layer2_30d
+  required_for: *id001
 - name: daily_ohlcv_762_CAMT
   stage: canonical
   uri: canonical/daily_ohlcv_762/symbol=CAMT/ohlcv.parquet
@@ -2194,11 +1957,7 @@ artifacts:
   rows: 988
   min_date: '2016-01-04'
   max_date: '2019-12-04'
-  required_for:
-  - profile_engine
-  - v2_calibration
-  - historical_walkforward
-  - audit_layer2_30d
+  required_for: *id001
 - name: daily_ohlcv_762_CBT
   stage: canonical
   uri: canonical/daily_ohlcv_762/symbol=CBT/ohlcv.parquet
@@ -2218,11 +1977,7 @@ artifacts:
   rows: 718
   min_date: '2016-01-04'
   max_date: '2018-11-06'
-  required_for:
-  - profile_engine
-  - v2_calibration
-  - historical_walkforward
-  - audit_layer2_30d
+  required_for: *id001
 - name: daily_ohlcv_762_CCEP
   stage: canonical
   uri: canonical/daily_ohlcv_762/symbol=CCEP/ohlcv.parquet
@@ -2232,11 +1987,7 @@ artifacts:
   rows: 2607
   min_date: '2016-01-04'
   max_date: '2026-05-15'
-  required_for:
-  - profile_engine
-  - v2_calibration
-  - historical_walkforward
-  - audit_layer2_30d
+  required_for: *id001
 - name: daily_ohlcv_762_CCI
   stage: canonical
   uri: canonical/daily_ohlcv_762/symbol=CCI/ohlcv.parquet
@@ -2336,11 +2087,7 @@ artifacts:
   rows: 979
   min_date: '2016-01-04'
   max_date: '2019-11-20'
-  required_for:
-  - profile_engine
-  - v2_calibration
-  - historical_walkforward
-  - audit_layer2_30d
+  required_for: *id001
 - name: daily_ohlcv_762_CELH
   stage: canonical
   uri: canonical/daily_ohlcv_762/symbol=CELH/ohlcv.parquet
@@ -2410,11 +2157,7 @@ artifacts:
   rows: 2201
   min_date: '2016-01-04'
   max_date: '2024-10-01'
-  required_for:
-  - profile_engine
-  - v2_calibration
-  - historical_walkforward
-  - audit_layer2_30d
+  required_for: *id001
 - name: daily_ohlcv_762_CHRW
   stage: canonical
   uri: canonical/daily_ohlcv_762/symbol=CHRW/ohlcv.parquet
@@ -2704,11 +2447,7 @@ artifacts:
   rows: 731
   min_date: '2016-01-04'
   max_date: '2018-11-26'
-  required_for:
-  - profile_engine
-  - v2_calibration
-  - historical_walkforward
-  - audit_layer2_30d
+  required_for: *id001
 - name: daily_ohlcv_762_COMP
   stage: canonical
   uri: canonical/daily_ohlcv_762/symbol=COMP/ohlcv.parquet
@@ -2778,11 +2517,7 @@ artifacts:
   rows: 2607
   min_date: '2016-01-04'
   max_date: '2026-05-15'
-  required_for:
-  - profile_engine
-  - v2_calibration
-  - historical_walkforward
-  - audit_layer2_30d
+  required_for: *id001
 - name: daily_ohlcv_762_COUR
   stage: canonical
   uri: canonical/daily_ohlcv_762/symbol=COUR/ohlcv.parquet
@@ -2822,11 +2557,7 @@ artifacts:
   rows: 125
   min_date: '2016-01-04'
   max_date: '2016-06-30'
-  required_for:
-  - profile_engine
-  - v2_calibration
-  - historical_walkforward
-  - audit_layer2_30d
+  required_for: *id001
 - name: daily_ohlcv_762_CPNG
   stage: canonical
   uri: canonical/daily_ohlcv_762/symbol=CPNG/ohlcv.parquet
@@ -2846,11 +2577,7 @@ artifacts:
   rows: 2607
   min_date: '2016-01-04'
   max_date: '2026-05-15'
-  required_for:
-  - profile_engine
-  - v2_calibration
-  - historical_walkforward
-  - audit_layer2_30d
+  required_for: *id001
 - name: daily_ohlcv_762_CPRT
   stage: canonical
   uri: canonical/daily_ohlcv_762/symbol=CPRT/ohlcv.parquet
@@ -3020,11 +2747,7 @@ artifacts:
   rows: 566
   min_date: '2016-01-04'
   max_date: '2018-04-03'
-  required_for:
-  - profile_engine
-  - v2_calibration
-  - historical_walkforward
-  - audit_layer2_30d
+  required_for: *id001
 - name: daily_ohlcv_762_CSX
   stage: canonical
   uri: canonical/daily_ohlcv_762/symbol=CSX/ohlcv.parquet
@@ -3054,11 +2777,7 @@ artifacts:
   rows: 1186
   min_date: '2016-01-04'
   max_date: '2020-09-17'
-  required_for:
-  - profile_engine
-  - v2_calibration
-  - historical_walkforward
-  - audit_layer2_30d
+  required_for: *id001
 - name: daily_ohlcv_762_CTLT
   stage: canonical
   uri: canonical/daily_ohlcv_762/symbol=CTLT/ohlcv.parquet
@@ -3118,11 +2837,7 @@ artifacts:
   rows: 117
   min_date: '2016-01-04'
   max_date: '2016-06-20'
-  required_for:
-  - profile_engine
-  - v2_calibration
-  - historical_walkforward
-  - audit_layer2_30d
+  required_for: *id001
 - name: daily_ohlcv_762_CVNA
   stage: canonical
   uri: canonical/daily_ohlcv_762/symbol=CVNA/ohlcv.parquet
@@ -3522,11 +3237,7 @@ artifacts:
   rows: 2425
   min_date: '2016-01-04'
   max_date: '2025-08-25'
-  required_for:
-  - profile_engine
-  - v2_calibration
-  - historical_walkforward
-  - audit_layer2_30d
+  required_for: *id001
 - name: daily_ohlcv_762_DO
   stage: canonical
   uri: canonical/daily_ohlcv_762/symbol=DO/ohlcv.parquet
@@ -3536,11 +3247,7 @@ artifacts:
   rows: 2181
   min_date: '2016-01-04'
   max_date: '2024-09-03'
-  required_for:
-  - profile_engine
-  - v2_calibration
-  - historical_walkforward
-  - audit_layer2_30d
+  required_for: *id001
 - name: daily_ohlcv_762_DOC
   stage: canonical
   uri: canonical/daily_ohlcv_762/symbol=DOC/ohlcv.parquet
@@ -3720,11 +3427,7 @@ artifacts:
   rows: 438
   min_date: '2017-09-01'
   max_date: '2019-05-31'
-  required_for:
-  - profile_engine
-  - v2_calibration
-  - historical_walkforward
-  - audit_layer2_30d
+  required_for: *id001
 - name: daily_ohlcv_762_DXC
   stage: canonical
   uri: canonical/daily_ohlcv_762/symbol=DXC/ohlcv.parquet
@@ -3874,11 +3577,7 @@ artifacts:
   rows: 2607
   min_date: '2016-01-04'
   max_date: '2026-05-15'
-  required_for:
-  - profile_engine
-  - v2_calibration
-  - historical_walkforward
-  - audit_layer2_30d
+  required_for: *id001
 - name: daily_ohlcv_762_EME
   stage: canonical
   uri: canonical/daily_ohlcv_762/symbol=EME/ohlcv.parquet
@@ -3918,11 +3617,7 @@ artifacts:
   rows: 1674
   min_date: '2016-01-04'
   max_date: '2022-08-25'
-  required_for:
-  - profile_engine
-  - v2_calibration
-  - historical_walkforward
-  - audit_layer2_30d
+  required_for: *id001
 - name: daily_ohlcv_762_ENPH
   stage: canonical
   uri: canonical/daily_ohlcv_762/symbol=ENPH/ohlcv.parquet
@@ -4082,11 +3777,7 @@ artifacts:
   rows: 748
   min_date: '2016-01-04'
   max_date: '2018-12-20'
-  required_for:
-  - profile_engine
-  - v2_calibration
-  - historical_walkforward
-  - audit_layer2_30d
+  required_for: *id001
 - name: daily_ohlcv_762_ESS
   stage: canonical
   uri: canonical/daily_ohlcv_762/symbol=ESS/ohlcv.parquet
@@ -4116,11 +3807,7 @@ artifacts:
   rows: 899
   min_date: '2016-01-04'
   max_date: '2019-07-30'
-  required_for:
-  - profile_engine
-  - v2_calibration
-  - historical_walkforward
-  - audit_layer2_30d
+  required_for: *id001
 - name: daily_ohlcv_762_ET
   stage: canonical
   uri: canonical/daily_ohlcv_762/symbol=ET/ohlcv.parquet
@@ -4140,11 +3827,7 @@ artifacts:
   rows: 1196
   min_date: '2016-01-04'
   max_date: '2020-10-01'
-  required_for:
-  - profile_engine
-  - v2_calibration
-  - historical_walkforward
-  - audit_layer2_30d
+  required_for: *id001
 - name: daily_ohlcv_762_ETN
   stage: canonical
   uri: canonical/daily_ohlcv_762/symbol=ETN/ohlcv.parquet
@@ -4184,11 +3867,7 @@ artifacts:
   rows: 699
   min_date: '2016-01-04'
   max_date: '2018-10-10'
-  required_for:
-  - profile_engine
-  - v2_calibration
-  - historical_walkforward
-  - audit_layer2_30d
+  required_for: *id001
 - name: daily_ohlcv_762_EVRG
   stage: canonical
   uri: canonical/daily_ohlcv_762/symbol=EVRG/ohlcv.parquet
@@ -4498,11 +4177,7 @@ artifacts:
   rows: 2433
   min_date: '2016-01-04'
   max_date: '2025-09-05'
-  required_for:
-  - profile_engine
-  - v2_calibration
-  - historical_walkforward
-  - audit_layer2_30d
+  required_for: *id001
 - name: daily_ohlcv_762_FLIR
   stage: canonical
   uri: canonical/daily_ohlcv_762/symbol=FLIR/ohlcv.parquet
@@ -4532,11 +4207,7 @@ artifacts:
   rows: 2607
   min_date: '2016-01-04'
   max_date: '2026-05-15'
-  required_for:
-  - profile_engine
-  - v2_calibration
-  - historical_walkforward
-  - audit_layer2_30d
+  required_for: *id001
 - name: daily_ohlcv_762_FLS
   stage: canonical
   uri: canonical/daily_ohlcv_762/symbol=FLS/ohlcv.parquet
@@ -4596,11 +4267,7 @@ artifacts:
   rows: 2607
   min_date: '2016-01-04'
   max_date: '2026-05-15'
-  required_for:
-  - profile_engine
-  - v2_calibration
-  - historical_walkforward
-  - audit_layer2_30d
+  required_for: *id001
 - name: daily_ohlcv_762_FOUR
   stage: canonical
   uri: canonical/daily_ohlcv_762/symbol=FOUR/ohlcv.parquet
@@ -4710,11 +4377,7 @@ artifacts:
   rows: 1084
   min_date: '2016-01-04'
   max_date: '2020-04-23'
-  required_for:
-  - profile_engine
-  - v2_calibration
-  - historical_walkforward
-  - audit_layer2_30d
+  required_for: *id001
 - name: daily_ohlcv_762_FTV
   stage: canonical
   uri: canonical/daily_ohlcv_762/symbol=FTV/ohlcv.parquet
@@ -4764,11 +4427,7 @@ artifacts:
   rows: 125
   min_date: '2016-01-04'
   max_date: '2016-06-30'
-  required_for:
-  - profile_engine
-  - v2_calibration
-  - historical_walkforward
-  - audit_layer2_30d
+  required_for: *id001
 - name: daily_ohlcv_762_GD
   stage: canonical
   uri: canonical/daily_ohlcv_762/symbol=GD/ohlcv.parquet
@@ -4868,11 +4527,7 @@ artifacts:
   rows: 668
   min_date: '2016-01-04'
   max_date: '2018-08-27'
-  required_for:
-  - profile_engine
-  - v2_calibration
-  - historical_walkforward
-  - audit_layer2_30d
+  required_for: *id001
 - name: daily_ohlcv_762_GIB
   stage: canonical
   uri: canonical/daily_ohlcv_762/symbol=GIB/ohlcv.parquet
@@ -5002,11 +4657,7 @@ artifacts:
   rows: 41
   min_date: '2016-01-04'
   max_date: '2016-03-02'
-  required_for:
-  - profile_engine
-  - v2_calibration
-  - historical_walkforward
-  - audit_layer2_30d
+  required_for: *id001
 - name: daily_ohlcv_762_GME
   stage: canonical
   uri: canonical/daily_ohlcv_762/symbol=GME/ohlcv.parquet
@@ -5166,11 +4817,7 @@ artifacts:
   rows: 2607
   min_date: '2016-01-04'
   max_date: '2026-05-15'
-  required_for:
-  - profile_engine
-  - v2_calibration
-  - historical_walkforward
-  - audit_layer2_30d
+  required_for: *id001
 - name: daily_ohlcv_762_GTLB
   stage: canonical
   uri: canonical/daily_ohlcv_762/symbol=GTLB/ohlcv.parquet
@@ -5220,11 +4867,7 @@ artifacts:
   rows: 299
   min_date: '2016-01-04'
   max_date: '2017-03-10'
-  required_for:
-  - profile_engine
-  - v2_calibration
-  - historical_walkforward
-  - audit_layer2_30d
+  required_for: *id001
 - name: daily_ohlcv_762_HAS
   stage: canonical
   uri: canonical/daily_ohlcv_762/symbol=HAS/ohlcv.parquet
@@ -5274,11 +4917,7 @@ artifacts:
   rows: 2301
   min_date: '2016-01-04'
   max_date: '2025-02-26'
-  required_for:
-  - profile_engine
-  - v2_calibration
-  - historical_walkforward
-  - audit_layer2_30d
+  required_for: *id001
 - name: daily_ohlcv_762_HCSG
   stage: canonical
   uri: canonical/daily_ohlcv_762/symbol=HCSG/ohlcv.parquet
@@ -5398,11 +5037,7 @@ artifacts:
   rows: 2607
   min_date: '2016-01-04'
   max_date: '2026-05-15'
-  required_for:
-  - profile_engine
-  - v2_calibration
-  - historical_walkforward
-  - audit_layer2_30d
+  required_for: *id001
 - name: daily_ohlcv_762_HOLX
   stage: canonical
   uri: canonical/daily_ohlcv_762/symbol=HOLX/ohlcv.parquet
@@ -5442,11 +5077,7 @@ artifacts:
   rows: 183
   min_date: '2016-01-04'
   max_date: '2016-09-22'
-  required_for:
-  - profile_engine
-  - v2_calibration
-  - historical_walkforward
-  - audit_layer2_30d
+  required_for: *id001
 - name: daily_ohlcv_762_HP
   stage: canonical
   uri: canonical/daily_ohlcv_762/symbol=HP/ohlcv.parquet
@@ -5456,11 +5087,7 @@ artifacts:
   rows: 2607
   min_date: '2016-01-04'
   max_date: '2026-05-15'
-  required_for:
-  - profile_engine
-  - v2_calibration
-  - historical_walkforward
-  - audit_layer2_30d
+  required_for: *id001
 - name: daily_ohlcv_762_HPE
   stage: canonical
   uri: canonical/daily_ohlcv_762/symbol=HPE/ohlcv.parquet
@@ -5520,11 +5147,7 @@ artifacts:
   rows: 878
   min_date: '2016-01-04'
   max_date: '2019-06-28'
-  required_for:
-  - profile_engine
-  - v2_calibration
-  - historical_walkforward
-  - audit_layer2_30d
+  required_for: *id001
 - name: daily_ohlcv_762_HSBC
   stage: canonical
   uri: canonical/daily_ohlcv_762/symbol=HSBC/ohlcv.parquet
@@ -6074,11 +5697,7 @@ artifacts:
   rows: 991
   min_date: '2016-01-04'
   max_date: '2019-12-09'
-  required_for:
-  - profile_engine
-  - v2_calibration
-  - historical_walkforward
-  - audit_layer2_30d
+  required_for: *id001
 - name: daily_ohlcv_762_JEF
   stage: canonical
   uri: canonical/daily_ohlcv_762/symbol=JEF/ohlcv.parquet
@@ -6088,11 +5707,7 @@ artifacts:
   rows: 2607
   min_date: '2016-01-04'
   max_date: '2026-05-15'
-  required_for:
-  - profile_engine
-  - v2_calibration
-  - historical_walkforward
-  - audit_layer2_30d
+  required_for: *id001
 - name: daily_ohlcv_762_JKHY
   stage: canonical
   uri: canonical/daily_ohlcv_762/symbol=JKHY/ohlcv.parquet
@@ -6172,11 +5787,7 @@ artifacts:
   rows: 2359
   min_date: '2016-01-04'
   max_date: '2025-05-20'
-  required_for:
-  - profile_engine
-  - v2_calibration
-  - historical_walkforward
-  - audit_layer2_30d
+  required_for: *id001
 - name: daily_ohlcv_762_K
   stage: canonical
   uri: canonical/daily_ohlcv_762/symbol=K/ohlcv.parquet
@@ -6346,11 +5957,7 @@ artifacts:
   rows: 754
   min_date: '2016-01-04'
   max_date: '2018-12-31'
-  required_for:
-  - profile_engine
-  - v2_calibration
-  - historical_walkforward
-  - audit_layer2_30d
+  required_for: *id001
 - name: daily_ohlcv_762_KR
   stage: canonical
   uri: canonical/daily_ohlcv_762/symbol=KR/ohlcv.parquet
@@ -6590,11 +6197,7 @@ artifacts:
   rows: 1704
   min_date: '2016-01-04'
   max_date: '2022-10-07'
-  required_for:
-  - profile_engine
-  - v2_calibration
-  - historical_walkforward
-  - audit_layer2_30d
+  required_for: *id001
 - name: daily_ohlcv_762_LLTC
   stage: canonical
   uri: canonical/daily_ohlcv_762/symbol=LLTC/ohlcv.parquet
@@ -6604,11 +6207,7 @@ artifacts:
   rows: 299
   min_date: '2016-01-04'
   max_date: '2017-03-10'
-  required_for:
-  - profile_engine
-  - v2_calibration
-  - historical_walkforward
-  - audit_layer2_30d
+  required_for: *id001
 - name: daily_ohlcv_762_LLY
   stage: canonical
   uri: canonical/daily_ohlcv_762/symbol=LLY/ohlcv.parquet
@@ -6628,11 +6227,7 @@ artifacts:
   rows: 1153
   min_date: '2016-01-04'
   max_date: '2020-07-31'
-  required_for:
-  - profile_engine
-  - v2_calibration
-  - historical_walkforward
-  - audit_layer2_30d
+  required_for: *id001
 - name: daily_ohlcv_762_LMND
   stage: canonical
   uri: canonical/daily_ohlcv_762/symbol=LMND/ohlcv.parquet
@@ -6782,11 +6377,7 @@ artifacts:
   rows: 462
   min_date: '2016-01-04'
   max_date: '2017-10-31'
-  required_for:
-  - profile_engine
-  - v2_calibration
-  - historical_walkforward
-  - audit_layer2_30d
+  required_for: *id001
 - name: daily_ohlcv_762_LVS
   stage: canonical
   uri: canonical/daily_ohlcv_762/symbol=LVS/ohlcv.parquet
@@ -6856,11 +6447,7 @@ artifacts:
   rows: 2607
   min_date: '2016-01-04'
   max_date: '2026-05-15'
-  required_for:
-  - profile_engine
-  - v2_calibration
-  - historical_walkforward
-  - audit_layer2_30d
+  required_for: *id001
 - name: daily_ohlcv_762_MA
   stage: canonical
   uri: canonical/daily_ohlcv_762/symbol=MA/ohlcv.parquet
@@ -6890,11 +6477,7 @@ artifacts:
   rows: 2607
   min_date: '2016-01-04'
   max_date: '2026-05-15'
-  required_for:
-  - profile_engine
-  - v2_calibration
-  - historical_walkforward
-  - audit_layer2_30d
+  required_for: *id001
 - name: daily_ohlcv_762_MAR
   stage: canonical
   uri: canonical/daily_ohlcv_762/symbol=MAR/ohlcv.parquet
@@ -7144,11 +6727,7 @@ artifacts:
   rows: 365
   min_date: '2016-01-04'
   max_date: '2017-06-14'
-  required_for:
-  - profile_engine
-  - v2_calibration
-  - historical_walkforward
-  - audit_layer2_30d
+  required_for: *id001
 - name: daily_ohlcv_762_MKC
   stage: canonical
   uri: canonical/daily_ohlcv_762/symbol=MKC/ohlcv.parquet
@@ -7238,11 +6817,7 @@ artifacts:
   rows: 1926
   min_date: '2016-01-04'
   max_date: '2023-08-28'
-  required_for:
-  - profile_engine
-  - v2_calibration
-  - historical_walkforward
-  - audit_layer2_30d
+  required_for: *id001
 - name: daily_ohlcv_762_MNSO
   stage: canonical
   uri: canonical/daily_ohlcv_762/symbol=MNSO/ohlcv.parquet
@@ -7302,11 +6877,7 @@ artifacts:
   rows: 1758
   min_date: '2016-01-04'
   max_date: '2022-12-23'
-  required_for:
-  - profile_engine
-  - v2_calibration
-  - historical_walkforward
-  - audit_layer2_30d
+  required_for: *id001
 - name: daily_ohlcv_762_MORN
   stage: canonical
   uri: canonical/daily_ohlcv_762/symbol=MORN/ohlcv.parquet
@@ -7566,11 +7137,7 @@ artifacts:
   rows: 2607
   min_date: '2016-01-04'
   max_date: '2026-05-15'
-  required_for:
-  - profile_engine
-  - v2_calibration
-  - historical_walkforward
-  - audit_layer2_30d
+  required_for: *id001
 - name: daily_ohlcv_762_MUX
   stage: canonical
   uri: canonical/daily_ohlcv_762/symbol=MUX/ohlcv.parquet
@@ -7610,11 +7177,7 @@ artifacts:
   rows: 1228
   min_date: '2016-01-04'
   max_date: '2020-11-16'
-  required_for:
-  - profile_engine
-  - v2_calibration
-  - historical_walkforward
-  - audit_layer2_30d
+  required_for: *id001
 - name: daily_ohlcv_762_NAVI
   stage: canonical
   uri: canonical/daily_ohlcv_762/symbol=NAVI/ohlcv.parquet
@@ -7624,11 +7187,7 @@ artifacts:
   rows: 2607
   min_date: '2016-01-04'
   max_date: '2026-05-15'
-  required_for:
-  - profile_engine
-  - v2_calibration
-  - historical_walkforward
-  - audit_layer2_30d
+  required_for: *id001
 - name: daily_ohlcv_762_NBIS
   stage: canonical
   uri: canonical/daily_ohlcv_762/symbol=NBIS/ohlcv.parquet
@@ -7648,11 +7207,7 @@ artifacts:
   rows: 1197
   min_date: '2016-01-04'
   max_date: '2020-10-02'
-  required_for:
-  - profile_engine
-  - v2_calibration
-  - historical_walkforward
-  - audit_layer2_30d
+  required_for: *id001
 - name: daily_ohlcv_762_NBTX
   stage: canonical
   uri: canonical/daily_ohlcv_762/symbol=NBTX/ohlcv.parquet
@@ -7762,11 +7317,7 @@ artifacts:
   rows: 784
   min_date: '2016-01-04'
   max_date: '2019-02-13'
-  required_for:
-  - profile_engine
-  - v2_calibration
-  - historical_walkforward
-  - audit_layer2_30d
+  required_for: *id001
 - name: daily_ohlcv_762_NGG
   stage: canonical
   uri: canonical/daily_ohlcv_762/symbol=NGG/ohlcv.parquet
@@ -7826,11 +7377,7 @@ artifacts:
   rows: 2607
   min_date: '2016-01-04'
   max_date: '2026-05-15'
-  required_for:
-  - profile_engine
-  - v2_calibration
-  - historical_walkforward
-  - audit_layer2_30d
+  required_for: *id001
 - name: daily_ohlcv_762_NLOK
   stage: canonical
   uri: canonical/daily_ohlcv_762/symbol=NLOK/ohlcv.parquet
@@ -8180,11 +7727,7 @@ artifacts:
   rows: 2607
   min_date: '2016-01-04'
   max_date: '2026-05-15'
-  required_for:
-  - profile_engine
-  - v2_calibration
-  - historical_walkforward
-  - audit_layer2_30d
+  required_for: *id001
 - name: daily_ohlcv_762_OKE
   stage: canonical
   uri: canonical/daily_ohlcv_762/symbol=OKE/ohlcv.parquet
@@ -8474,11 +8017,7 @@ artifacts:
   rows: 232
   min_date: '2016-01-04'
   max_date: '2026-05-15'
-  required_for:
-  - profile_engine
-  - v2_calibration
-  - historical_walkforward
-  - audit_layer2_30d
+  required_for: *id001
 - name: daily_ohlcv_762_PCOR
   stage: canonical
   uri: canonical/daily_ohlcv_762/symbol=PCOR/ohlcv.parquet
@@ -8498,11 +8037,7 @@ artifacts:
   rows: 19
   min_date: '2016-01-04'
   max_date: '2016-01-29'
-  required_for:
-  - profile_engine
-  - v2_calibration
-  - historical_walkforward
-  - audit_layer2_30d
+  required_for: *id001
 - name: daily_ohlcv_762_PDCO
   stage: canonical
   uri: canonical/daily_ohlcv_762/symbol=PDCO/ohlcv.parquet
@@ -8512,11 +8047,7 @@ artifacts:
   rows: 2337
   min_date: '2016-01-04'
   max_date: '2025-04-17'
-  required_for:
-  - profile_engine
-  - v2_calibration
-  - historical_walkforward
-  - audit_layer2_30d
+  required_for: *id001
 - name: daily_ohlcv_762_PDD
   stage: canonical
   uri: canonical/daily_ohlcv_762/symbol=PDD/ohlcv.parquet
@@ -8796,11 +8327,7 @@ artifacts:
   rows: 208
   min_date: '2016-01-04'
   max_date: '2026-05-15'
-  required_for:
-  - profile_engine
-  - v2_calibration
-  - historical_walkforward
-  - audit_layer2_30d
+  required_for: *id001
 - name: daily_ohlcv_762_PONY
   stage: canonical
   uri: canonical/daily_ohlcv_762/symbol=PONY/ohlcv.parquet
@@ -9010,11 +8537,7 @@ artifacts:
   rows: 2541
   min_date: '2016-01-04'
   max_date: '2026-02-10'
-  required_for:
-  - profile_engine
-  - v2_calibration
-  - historical_walkforward
-  - audit_layer2_30d
+  required_for: *id001
 - name: daily_ohlcv_762_PXD
   stage: canonical
   uri: canonical/daily_ohlcv_762/symbol=PXD/ohlcv.parquet
@@ -9154,11 +8677,7 @@ artifacts:
   rows: 2607
   min_date: '2016-01-04'
   max_date: '2026-05-15'
-  required_for:
-  - profile_engine
-  - v2_calibration
-  - historical_walkforward
-  - audit_layer2_30d
+  required_for: *id001
 - name: daily_ohlcv_762_RACE
   stage: canonical
   uri: canonical/daily_ohlcv_762/symbol=RACE/ohlcv.parquet
@@ -9178,11 +8697,7 @@ artifacts:
   rows: 392
   min_date: '2016-01-04'
   max_date: '2017-07-24'
-  required_for:
-  - profile_engine
-  - v2_calibration
-  - historical_walkforward
-  - audit_layer2_30d
+  required_for: *id001
 - name: daily_ohlcv_762_RAMP
   stage: canonical
   uri: canonical/daily_ohlcv_762/symbol=RAMP/ohlcv.parquet
@@ -9382,11 +8897,7 @@ artifacts:
   rows: 883
   min_date: '2016-01-04'
   max_date: '2019-07-08'
-  required_for:
-  - profile_engine
-  - v2_calibration
-  - historical_walkforward
-  - audit_layer2_30d
+  required_for: *id001
 - name: daily_ohlcv_762_RIG
   stage: canonical
   uri: canonical/daily_ohlcv_762/symbol=RIG/ohlcv.parquet
@@ -9586,11 +9097,7 @@ artifacts:
   rows: 1070
   min_date: '2016-01-04'
   max_date: '2020-04-02'
-  required_for:
-  - profile_engine
-  - v2_calibration
-  - historical_walkforward
-  - audit_layer2_30d
+  required_for: *id001
 - name: daily_ohlcv_762_RTX
   stage: canonical
   uri: canonical/daily_ohlcv_762/symbol=RTX/ohlcv.parquet
@@ -9780,11 +9287,7 @@ artifacts:
   rows: 754
   min_date: '2016-01-04'
   max_date: '2018-12-31'
-  required_for:
-  - profile_engine
-  - v2_calibration
-  - historical_walkforward
-  - audit_layer2_30d
+  required_for: *id001
 - name: daily_ohlcv_762_SCHW
   stage: canonical
   uri: canonical/daily_ohlcv_762/symbol=SCHW/ohlcv.parquet
@@ -9934,11 +9437,7 @@ artifacts:
   rows: 2607
   min_date: '2016-01-04'
   max_date: '2026-05-15'
-  required_for:
-  - profile_engine
-  - v2_calibration
-  - historical_walkforward
-  - audit_layer2_30d
+  required_for: *id001
 - name: daily_ohlcv_762_SIRI
   stage: canonical
   uri: canonical/daily_ohlcv_762/symbol=SIRI/ohlcv.parquet
@@ -10088,11 +9587,7 @@ artifacts:
   rows: 547
   min_date: '2016-01-04'
   max_date: '2018-03-06'
-  required_for:
-  - profile_engine
-  - v2_calibration
-  - historical_walkforward
-  - audit_layer2_30d
+  required_for: *id001
 - name: daily_ohlcv_762_SNOW
   stage: canonical
   uri: canonical/daily_ohlcv_762/symbol=SNOW/ohlcv.parquet
@@ -10232,11 +9727,7 @@ artifacts:
   rows: 510
   min_date: '2016-01-04'
   max_date: '2026-05-15'
-  required_for:
-  - profile_engine
-  - v2_calibration
-  - historical_walkforward
-  - audit_layer2_30d
+  required_for: *id001
 - name: daily_ohlcv_762_SPOT
   stage: canonical
   uri: canonical/daily_ohlcv_762/symbol=SPOT/ohlcv.parquet
@@ -10276,11 +9767,7 @@ artifacts:
   rows: 2224
   min_date: '2016-01-04'
   max_date: '2024-11-01'
-  required_for:
-  - profile_engine
-  - v2_calibration
-  - historical_walkforward
-  - audit_layer2_30d
+  required_for: *id001
 - name: daily_ohlcv_762_SRE
   stage: canonical
   uri: canonical/daily_ohlcv_762/symbol=SRE/ohlcv.parquet
@@ -10330,11 +9817,7 @@ artifacts:
   rows: 1014
   min_date: '2022-05-02'
   max_date: '2026-05-15'
-  required_for:
-  - profile_engine
-  - v2_calibration
-  - historical_walkforward
-  - audit_layer2_30d
+  required_for: *id001
 - name: daily_ohlcv_762_STJ
   stage: canonical
   uri: canonical/daily_ohlcv_762/symbol=STJ/ohlcv.parquet
@@ -10344,11 +9827,7 @@ artifacts:
   rows: 254
   min_date: '2016-01-04'
   max_date: '2017-01-04'
-  required_for:
-  - profile_engine
-  - v2_calibration
-  - historical_walkforward
-  - audit_layer2_30d
+  required_for: *id001
 - name: daily_ohlcv_762_STLA
   stage: canonical
   uri: canonical/daily_ohlcv_762/symbol=STLA/ohlcv.parquet
@@ -10458,11 +9937,7 @@ artifacts:
   rows: 2200
   min_date: '2016-01-04'
   max_date: '2024-09-30'
-  required_for:
-  - profile_engine
-  - v2_calibration
-  - historical_walkforward
-  - audit_layer2_30d
+  required_for: *id001
 - name: daily_ohlcv_762_SYF
   stage: canonical
   uri: canonical/daily_ohlcv_762/symbol=SYF/ohlcv.parquet
@@ -10502,11 +9977,7 @@ artifacts:
   rows: 967
   min_date: '2016-01-04'
   max_date: '2019-11-04'
-  required_for:
-  - profile_engine
-  - v2_calibration
-  - historical_walkforward
-  - audit_layer2_30d
+  required_for: *id001
 - name: daily_ohlcv_762_SYNA
   stage: canonical
   uri: canonical/daily_ohlcv_762/symbol=SYNA/ohlcv.parquet
@@ -10686,11 +10157,7 @@ artifacts:
   rows: 2568
   min_date: '2016-01-04'
   max_date: '2026-03-20'
-  required_for:
-  - profile_engine
-  - v2_calibration
-  - historical_walkforward
-  - audit_layer2_30d
+  required_for: *id001
 - name: daily_ohlcv_762_TGT
   stage: canonical
   uri: canonical/daily_ohlcv_762/symbol=TGT/ohlcv.parquet
@@ -10710,11 +10177,7 @@ artifacts:
   rows: 2607
   min_date: '2016-01-04'
   max_date: '2026-05-15'
-  required_for:
-  - profile_engine
-  - v2_calibration
-  - historical_walkforward
-  - audit_layer2_30d
+  required_for: *id001
 - name: daily_ohlcv_762_THO
   stage: canonical
   uri: canonical/daily_ohlcv_762/symbol=THO/ohlcv.parquet
@@ -10834,11 +10297,7 @@ artifacts:
   rows: 906
   min_date: '2016-01-04'
   max_date: '2019-08-08'
-  required_for:
-  - profile_engine
-  - v2_calibration
-  - historical_walkforward
-  - audit_layer2_30d
+  required_for: *id001
 - name: daily_ohlcv_762_TMO
   stage: canonical
   uri: canonical/daily_ohlcv_762/symbol=TMO/ohlcv.parquet
@@ -11048,11 +10507,7 @@ artifacts:
   rows: 933
   min_date: '2016-01-04'
   max_date: '2019-09-17'
-  required_for:
-  - profile_engine
-  - v2_calibration
-  - historical_walkforward
-  - audit_layer2_30d
+  required_for: *id001
 - name: daily_ohlcv_762_TT
   stage: canonical
   uri: canonical/daily_ohlcv_762/symbol=TT/ohlcv.parquet
@@ -11112,11 +10567,7 @@ artifacts:
   rows: 94
   min_date: '2016-01-04'
   max_date: '2016-05-17'
-  required_for:
-  - profile_engine
-  - v2_calibration
-  - historical_walkforward
-  - audit_layer2_30d
+  required_for: *id001
 - name: daily_ohlcv_762_TWLO
   stage: canonical
   uri: canonical/daily_ohlcv_762/symbol=TWLO/ohlcv.parquet
@@ -11146,11 +10597,7 @@ artifacts:
   rows: 617
   min_date: '2016-01-04'
   max_date: '2018-06-14'
-  required_for:
-  - profile_engine
-  - v2_calibration
-  - historical_walkforward
-  - audit_layer2_30d
+  required_for: *id001
 - name: daily_ohlcv_762_TXN
   stage: canonical
   uri: canonical/daily_ohlcv_762/symbol=TXN/ohlcv.parquet
@@ -11460,11 +10907,7 @@ artifacts:
   rows: 1070
   min_date: '2016-01-04'
   max_date: '2020-04-02'
-  required_for:
-  - profile_engine
-  - v2_calibration
-  - historical_walkforward
-  - audit_layer2_30d
+  required_for: *id001
 - name: daily_ohlcv_762_UUP
   stage: canonical
   uri: canonical/daily_ohlcv_762/symbol=UUP/ohlcv.parquet
@@ -11574,11 +11017,7 @@ artifacts:
   rows: 988
   min_date: '2016-01-04'
   max_date: '2019-12-04'
-  required_for:
-  - profile_engine
-  - v2_calibration
-  - historical_walkforward
-  - audit_layer2_30d
+  required_for: *id001
 - name: daily_ohlcv_762_VIAC
   stage: canonical
   uri: canonical/daily_ohlcv_762/symbol=VIAC/ohlcv.parquet
@@ -11918,11 +11357,7 @@ artifacts:
   rows: 1021
   min_date: '2016-01-04'
   max_date: '2020-01-23'
-  required_for:
-  - profile_engine
-  - v2_calibration
-  - historical_walkforward
-  - audit_layer2_30d
+  required_for: *id001
 - name: daily_ohlcv_762_WD
   stage: canonical
   uri: canonical/daily_ohlcv_762/symbol=WD/ohlcv.parquet
@@ -11992,11 +11427,7 @@ artifacts:
   rows: 416
   min_date: '2016-01-04'
   max_date: '2017-08-25'
-  required_for:
-  - profile_engine
-  - v2_calibration
-  - historical_walkforward
-  - audit_layer2_30d
+  required_for: *id001
 - name: daily_ohlcv_762_WGO
   stage: canonical
   uri: canonical/daily_ohlcv_762/symbol=WGO/ohlcv.parquet
@@ -12206,11 +11637,7 @@ artifacts:
   rows: 682
   min_date: '2018-06-01'
   max_date: '2021-02-16'
-  required_for:
-  - profile_engine
-  - v2_calibration
-  - historical_walkforward
-  - audit_layer2_30d
+  required_for: *id001
 - name: daily_ohlcv_762_WYNN
   stage: canonical
   uri: canonical/daily_ohlcv_762/symbol=WYNN/ohlcv.parquet
@@ -12230,11 +11657,7 @@ artifacts:
   rows: 1447
   min_date: '2016-01-04'
   max_date: '2021-09-30'
-  required_for:
-  - profile_engine
-  - v2_calibration
-  - historical_walkforward
-  - audit_layer2_30d
+  required_for: *id001
 - name: daily_ohlcv_762_XEL
   stage: canonical
   uri: canonical/daily_ohlcv_762/symbol=XEL/ohlcv.parquet
@@ -12264,11 +11687,7 @@ artifacts:
   rows: 1729
   min_date: '2016-01-04'
   max_date: '2022-11-11'
-  required_for:
-  - profile_engine
-  - v2_calibration
-  - historical_walkforward
-  - audit_layer2_30d
+  required_for: *id001
 - name: daily_ohlcv_762_XLB
   stage: canonical
   uri: canonical/daily_ohlcv_762/symbol=XLB/ohlcv.parquet

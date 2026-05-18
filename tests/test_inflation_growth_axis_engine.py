@@ -93,6 +93,7 @@ def _build_synthetic_context(
     pmi_truncate_calendar_days: int | None = None,
     dgs10_truncate_sessions: int | None = None,
     include_nowcast_and_eps_revision: bool = False,
+    eps_truncate_calendar_days: int | None = None,
 ):
     """Build a full MarketContext with §2B inputs."""
     idx = _bdate_index(periods=_TRAINING_SESSIONS)
@@ -181,15 +182,15 @@ def _build_synthetic_context(
         cutoff = idx[-1] - pd.Timedelta(days=pmi_truncate_calendar_days)
         pmi.loc[pmi.index > cutoff] = np.nan
 
-    dgs10 = pd.Series(4.0, index=idx, dtype=float, name="dgs10")
+    dgs10 = pd.Series(4.0, index=idx, dtype=float, name="10y_yield")
     if dgs10_truncate_sessions is not None:
         dgs10 = dgs10.copy()
         dgs10.iloc[-dgs10_truncate_sessions:] = np.nan
 
     # Macro for §2C (credit_funding) so cross-axis label populates.
-    sofr = pd.Series(5.0, index=idx, dtype=float, name="SOFR")
-    iorb = pd.Series(4.9, index=idx, dtype=float, name="IORB")
-    nfci_w = pd.Series(np.nan, index=idx, dtype=float, name="NFCI")
+    sofr = pd.Series(5.0, index=idx, dtype=float, name="sofr")
+    iorb = pd.Series(4.9, index=idx, dtype=float, name="iorb")
+    nfci_w = pd.Series(np.nan, index=idx, dtype=float, name="nfci")
     for pos in range(0, n, 5):
         nfci_w.iloc[pos] = -0.5
     usd = pd.Series(
@@ -199,19 +200,20 @@ def _build_synthetic_context(
     macro_series = {
         "cpi_all_items": cpi,
         "pmi_manufacturing": pmi,
-        "dgs10": dgs10,
-        "SOFR": sofr,
-        "IORB": iorb,
-        "NFCI": nfci_w,
+        "10y_yield": dgs10,
+        "sofr": sofr,
+        "iorb": iorb,
+        "nfci": nfci_w,
         "broad_usd_index": usd,
-        "DGS2": pd.Series(4.5, index=idx, dtype=float),
-        "DGS10": pd.Series(4.0, index=idx, dtype=float),
+        "2y_yield": pd.Series(4.5, index=idx, dtype=float),
     }
     if include_nowcast_and_eps_revision:
         macro_series["cpi_nowcast"] = pd.Series(0.01, index=idx, dtype=float)
-        macro_series["aggregate_forward_eps_revision"] = pd.Series(
-            0.03, index=idx, dtype=float
-        )
+        eps_revision = pd.Series(0.03, index=idx, dtype=float)
+        if eps_truncate_calendar_days is not None:
+            eps_cutoff = idx[-1] - pd.Timedelta(days=eps_truncate_calendar_days)
+            eps_revision.loc[eps_revision.index > eps_cutoff] = np.nan
+        macro_series["aggregate_forward_eps_revision"] = eps_revision
 
     config = RegimeEngine().config
     context = build_market_context(
@@ -580,3 +582,62 @@ def test_compute_inflation_growth_features_all_nan_zscore_without_nowcast() -> N
     assert not (
         bw["warning_code"] == INFLATION_SURPRISE_NOWCAST_BIAS_WARNING_CODE
     ).any()
+
+
+# ---------------------------------------------------------------------------
+# EPS revision staleness gate tests
+# ---------------------------------------------------------------------------
+
+
+def test_eps_staleness_gate_suppresses_earnings_labels_when_stale() -> None:
+    """EPS staleness gate: when aggregate_forward_eps_revision has no non-NaN
+    value within eps_revision_stale_calendar_days (35d) of the session, neither
+    earnings_expansion nor earnings_contraction may fire for that session.
+
+    Setup: EPS series truncated 36 calendar days before the last session so the
+    last session is guaranteed stale. The EPS value (0.03) exceeds the
+    eps_revision_expansion_threshold (0.02) — without the gate the label would
+    be earnings_expansion on those stale sessions.
+    """
+    context = _build_synthetic_context(
+        include_nowcast_and_eps_revision=True,
+        eps_truncate_calendar_days=36,
+    )
+    _, outputs = _build_store_and_outputs(context)
+    assert outputs is not None
+
+    last_day = context.sessions[-1]
+    out = outputs[last_day]
+    assert out.raw_label not in (
+        "earnings_expansion",
+        "earnings_contraction",
+    ), (
+        f"Expected no earnings label on stale EPS session {last_day}, "
+        f"got {out.raw_label!r}"
+    )
+
+
+def test_eps_freshness_gate_permits_earnings_expansion_when_fresh() -> None:
+    """EPS freshness gate: when aggregate_forward_eps_revision is fresh (updated
+    within eps_revision_stale_calendar_days), earnings_expansion is allowed to
+    fire on sessions where it would otherwise match.
+
+    Setup: EPS series truncated only 5 calendar days before the last session
+    (well within the 35d freshness window). EPS value (0.03) exceeds
+    eps_revision_expansion_threshold (0.02).  The session should NOT be blocked
+    by the staleness gate, so the last session must carry an earnings_expansion
+    label (given no higher-precedence rule fires in this neutral macro context).
+    """
+    context = _build_synthetic_context(
+        include_nowcast_and_eps_revision=True,
+        eps_truncate_calendar_days=5,
+    )
+    _, outputs = _build_store_and_outputs(context)
+    assert outputs is not None
+
+    last_day = context.sessions[-1]
+    out = outputs[last_day]
+    assert out.raw_label == "earnings_expansion", (
+        f"Expected earnings_expansion on fresh-EPS session {last_day}, "
+        f"got {out.raw_label!r}"
+    )

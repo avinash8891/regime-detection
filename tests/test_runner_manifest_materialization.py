@@ -150,8 +150,8 @@ def test_walkforward_gate_subprocess_materializes_manifest_defaults(
             ],
         ),
         (
-            "scripts/profile_engine_30d.py",
-            "profile_engine_30d",
+            "scripts/profile_engine.py",
+            "profile_engine",
             ["--config-path", "missing-config.yaml"],
         ),
         (

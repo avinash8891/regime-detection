@@ -141,19 +141,21 @@ def _make_long_macro(
     return pd.DataFrame(rows)
 
 
-def test_load_macro_series_returns_v2_fred_ids() -> None:
+def test_load_macro_series_returns_series_id_when_no_logical_name() -> None:
     dates = [date(2024, 1, 2), date(2024, 1, 3)]
     df = _make_long_macro(["DGS2", "DGS10", "DTWEXBGS", "SOFR", "NFCI"], dates)
 
     out = load_macro_series(df, series_ids=("DGS2", "DGS10", "DTWEXBGS", "SOFR", "NFCI"))
 
+    # Without logical_name column, series_id is the canonical key — no aliases.
     assert {"DGS2", "DGS10", "DTWEXBGS", "SOFR", "NFCI"}.issubset(out)
-    assert {"dgs2", "dgs10"}.issubset(out)
+    assert "dgs2" not in out
+    assert "dgs10" not in out
     assert len(out["DGS2"]) == 2
     assert out["DGS2"].iloc[0] == 4.0
 
 
-def test_load_macro_series_returns_fetch_logical_names_and_aliases() -> None:
+def test_load_macro_series_uses_logical_name_as_sole_key() -> None:
     dates = [date(2024, 1, 2), date(2024, 1, 3)]
     logical_names = {
         "DGS2": "2y_yield",
@@ -171,18 +173,14 @@ def test_load_macro_series_returns_fetch_logical_names_and_aliases() -> None:
 
     out = load_macro_series(df)
 
-    assert {
-        "DGS2",
-        "DGS10",
-        "dgs2",
-        "dgs10",
-        "broad_usd_index",
-        "hy_oas",
-        "ig_bbb_oas",
-        "cpi_all_items",
-    }.issubset(out)
+    # logical_name is the sole key — series_id and legacy aliases absent.
+    assert {"2y_yield", "10y_yield", "broad_usd_index", "hy_oas", "ig_bbb_oas", "cpi_all_items"}.issubset(out)
+    assert "DGS2" not in out
+    assert "DGS10" not in out
+    assert "dgs2" not in out
+    assert "dgs10" not in out
     assert out["hy_oas"].iloc[0] == 4.0
-    assert out["dgs10"].equals(out["DGS10"].rename("dgs10"))
+    assert out["2y_yield"].iloc[0] == 4.0
 
 
 def test_load_macro_series_rejects_missing_series_id() -> None:
@@ -301,7 +299,11 @@ def _build_v2_context(market_df_for_asof, as_of: date) -> tuple:
     sector_dates = pd.bdate_range("2022-06-01", end=as_of, freq="C").date.tolist()
     sector_df = _make_long_ohlcv(list(SECTOR_ETFS), sector_dates)
     cross_df = _make_long_ohlcv(list(CROSS_ASSET_SYMBOLS), sector_dates)
-    macro_df = _make_long_macro(["DGS2", "DGS10", "DTWEXBGS"], sector_dates)
+    macro_df = _make_long_macro(
+        ["DGS2", "DGS10", "DTWEXBGS"],
+        sector_dates,
+        logical_names={"DGS2": "2y_yield", "DGS10": "10y_yield", "DTWEXBGS": "broad_usd_index"},
+    )
 
     sector_closes = load_sector_etf_closes(sector_df, universe=SECTOR_ETFS)
     cross_closes = load_cross_asset_closes(cross_df, universe=CROSS_ASSET_SYMBOLS)
@@ -330,8 +332,9 @@ def test_market_context_holds_v2_data_dicts(market_df_for_asof) -> None:
     assert ctx.cross_asset_closes is not None
     assert set(ctx.cross_asset_closes.keys()) == set(CROSS_ASSET_SYMBOLS)
     assert ctx.macro_series is not None
-    assert {"DGS2", "DGS10", "DTWEXBGS"}.issubset(ctx.macro_series)
-    assert {"dgs2", "dgs10"}.issubset(ctx.macro_series)
+    assert {"2y_yield", "10y_yield", "broad_usd_index"}.issubset(ctx.macro_series)
+    assert "DGS2" not in ctx.macro_series
+    assert "DGS10" not in ctx.macro_series
 
 
 def test_market_context_reindexes_v2_series_to_spy_session_index(market_df_for_asof) -> None:

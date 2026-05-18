@@ -235,7 +235,7 @@ def test_sf_fed_fetch_report_exposes_parquet_under_paths_for_manifest(
         artifact_store_root=str(tmp_path / "store"),
         manifest_path=tmp_path / "manifest.yaml",
         artifact_set="sf-fed-test",
-        required_for=["profile_engine_30d"],
+        required_for=["profile_engine"],
     )
 
     assert [artifact.local_path for artifact in manifest.artifacts] == [

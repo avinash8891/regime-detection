@@ -291,8 +291,8 @@ def _macro_series_for_spy_index(
     dgs2_levels = np.clip(np.cumsum(innovations_2y) + 4.50, 0.1, None)
     dgs10_levels = np.clip(np.cumsum(innovations_10y) + 4.00, 0.1, None)
     return {
-        "DGS2": pd.Series(dgs2_levels, index=spy_index, name="DGS2"),
-        "DGS10": pd.Series(dgs10_levels, index=spy_index, name="DGS10"),
+        "2y_yield": pd.Series(dgs2_levels, index=spy_index, name="2y_yield"),
+        "10y_yield": pd.Series(dgs10_levels, index=spy_index, name="10y_yield"),
     }
 
 

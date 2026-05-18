@@ -21,6 +21,6 @@ profile-30d:
 		echo "Pass MANIFEST=manifests/runs/<reviewed-run-lockfile>.yaml"; \
 		exit 2; \
 	fi
-	python3 scripts/profile_engine_30d.py \
+	python3 scripts/profile_engine.py \
 		--manifest "$(MANIFEST)" \
 		--data-root "$(DATA_ROOT)" $(OPERATOR_ENV_ARG)

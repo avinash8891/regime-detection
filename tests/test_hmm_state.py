@@ -94,20 +94,12 @@ def _default_hmm_config(training_window_days: int = 1260) -> HMMConfig:
 
 
 @pytest.fixture(scope="module")
-def _computed_default_hmm_pair() -> tuple[HMMFeatures, HMMFeatures]:
+def _computed_default_hmm() -> HMMFeatures:
     inputs = _synthetic_inputs(n_sessions=1500)
     cfg = _default_hmm_config()
-    first = compute_hmm_features(config=cfg, **inputs)
-    second = compute_hmm_features(config=cfg, **inputs)
-    assert first is not None and second is not None
-    return first, second
-
-
-@pytest.fixture(scope="module")
-def _computed_default_hmm(
-    _computed_default_hmm_pair: tuple[HMMFeatures, HMMFeatures],
-) -> HMMFeatures:
-    return _computed_default_hmm_pair[0]
+    result = compute_hmm_features(config=cfg, **inputs)
+    assert result is not None
+    return result
 
 
 # ---------------------------------------------------------------------------
@@ -159,10 +151,11 @@ def test_compute_hmm_features_succeeds_on_synthetic_inputs_with_full_history(
     assert non_null.index.max() == inputs["return_1d"].dropna().index[-1]
 
 
-def test_top_state_prob_permutation_invariant_under_fixed_seed(
-    _computed_default_hmm_pair: tuple[HMMFeatures, HMMFeatures],
-) -> None:
-    first, second = _computed_default_hmm_pair
+def test_top_state_prob_permutation_invariant_under_fixed_seed() -> None:
+    inputs = _synthetic_inputs(n_sessions=500)
+    cfg = _default_hmm_config(training_window_days=252)
+    first = compute_hmm_features(config=cfg, **inputs)
+    second = compute_hmm_features(config=cfg, **inputs)
     assert first is not None and second is not None
     pd.testing.assert_series_equal(first.top_state_prob, second.top_state_prob)
 

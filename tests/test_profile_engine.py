@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import importlib.util
 import sys
 from pathlib import Path
 from types import SimpleNamespace
@@ -8,86 +7,22 @@ from typing import get_type_hints
 
 import pandas as pd
 import pytest
-import yaml
 
+from conftest import (
+    load_profile_engine_module,
+    write_profile_engine_manifest as _write_profile_manifest,
+)
 
-def _load_script_module():
-    path = Path(__file__).resolve().parents[1] / "scripts" / "profile_engine_30d.py"
-    spec = importlib.util.spec_from_file_location("profile_engine_30d", path)
-    assert spec is not None and spec.loader is not None
-    module = importlib.util.module_from_spec(spec)
-    sys.modules[spec.name] = module
-    spec.loader.exec_module(module)
-    return module
-
-
-profile_engine_30d = _load_script_module()
-SHA = "0" * 64
-
-
-def _manifest_artifact(name: str, local_path: str) -> dict[str, object]:
-    return {
-        "name": name,
-        "stage": "canonical",
-        "uri": f"s3://bucket/{local_path}",
-        "local_path": local_path,
-        "sha256": SHA,
-        "schema_version": None,
-        "rows": 1,
-        "min_date": None,
-        "max_date": None,
-        "required_for": ["profile_engine_30d"],
-    }
-
-
-def _write_profile_manifest(tmp_path: Path) -> Path:
-    path = tmp_path / "manifest.yaml"
-    path.write_text(
-        yaml.safe_dump(
-            {
-                "artifact_set": "profile",
-                "created_at_utc": "2026-05-17T00:00:00Z",
-                "storage_root": "s3://bucket/root",
-                "artifacts": [
-                    _manifest_artifact(
-                        "constituent_ohlcv_AAPL",
-                        "data/raw/daily_ohlcv_762/symbol=AAPL/ohlcv.parquet",
-                    ),
-                    _manifest_artifact(
-                        "fred_macro_series",
-                        "data/raw/macro/fred_macro_series.parquet",
-                    ),
-                    _manifest_artifact(
-                        "sp500_pit_constituents",
-                        "data/raw/pit_constituents/sp500_ticker_intervals.parquet",
-                    ),
-                    _manifest_artifact(
-                        "event_calendar_us",
-                        "data/raw/event_calendar/us_events.yaml",
-                    ),
-                    _manifest_artifact(
-                        "ism_pmi_history",
-                        "data/raw/pmi/us_ism_pmi_history.parquet",
-                    ),
-                    _manifest_artifact(
-                        "sf_fed_news_sentiment",
-                        "data/raw/news_sentiment/sf_fed_news_sentiment.parquet",
-                    ),
-                ],
-            },
-            sort_keys=False,
-        )
-    )
-    return path
+profile_engine = load_profile_engine_module()
 
 
 def test_profile_engine_rejects_non_positive_lookback_days(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr(sys, "argv", ["profile_engine_30d.py", "--lookback-days", "0"])
+    monkeypatch.setattr(sys, "argv", ["profile_engine.py", "--lookback-days", "0"])
 
     with pytest.raises(SystemExit) as exc_info:
-        profile_engine_30d.main()
+        profile_engine.main()
 
     assert exc_info.value.code == 2
 
@@ -100,10 +35,10 @@ def test_profile_parse_args_defaults_pmi_to_materialized_data_root(
     monkeypatch.setattr(
         sys,
         "argv",
-        ["profile_engine_30d.py", "--data-root", str(data_root)],
+        ["profile_engine.py", "--data-root", str(data_root)],
     )
 
-    args = profile_engine_30d._parse_args()
+    args = profile_engine._parse_args()
 
     assert args.pmi_path == data_root / "pmi" / "us_ism_pmi_history.parquet"
     assert args.daily_dir == data_root / "daily_ohlcv_762"
@@ -119,17 +54,17 @@ def test_profile_manifest_resolution_replaces_default_input_paths(
         sys,
         "argv",
         [
-            "profile_engine_30d.py",
+            "profile_engine.py",
             "--manifest",
             str(manifest_path),
             "--data-root",
             str(data_root),
         ],
     )
-    args = profile_engine_30d._parse_args()
+    args = profile_engine._parse_args()
 
-    profile_engine_30d._apply_manifest_input_paths(
-        args, runner_name="profile_engine_30d"
+    profile_engine._apply_manifest_input_paths(
+        args, runner_name="profile_engine"
     )
 
     assert args.daily_dir == data_root / "daily_ohlcv_762"
@@ -152,7 +87,7 @@ def test_profile_manifest_resolution_keeps_explicit_cli_override(
         sys,
         "argv",
         [
-            "profile_engine_30d.py",
+            "profile_engine.py",
             "--manifest",
             str(manifest_path),
             "--data-root",
@@ -163,16 +98,69 @@ def test_profile_manifest_resolution_keeps_explicit_cli_override(
             str(override_path),
         ],
     )
-    args = profile_engine_30d._parse_args()
+    args = profile_engine._parse_args()
 
-    profile_engine_30d._apply_manifest_input_paths(
-        args, runner_name="profile_engine_30d"
+    profile_engine._apply_manifest_input_paths(
+        args, runner_name="profile_engine"
     )
 
     assert args.news_sentiment_parquet == override_path
     assert args.event_calendar == tmp_path / "manual" / "events.yaml"
     assert "news_sentiment_parquet" in args.manifest_cli_overrides
     assert "event_calendar" in args.manifest_cli_overrides
+
+
+def test_manifest_resolution_failure_emits_structured_json(
+    tmp_path: Path,
+) -> None:
+    """If the manifest resolver raises, the runner must still write a
+    well-formed JSON record to ``--json-output`` so downstream dashboards
+    can distinguish a manifest-shape failure from a missing file. Without
+    this, the audit's P2-7 finding stands: the runner crashes silently and
+    the consumer of the JSON output has no signal."""
+    from regime_data_fetch.manifest_inputs import ManifestInputResolutionError
+    import json
+
+    json_path = tmp_path / "profile_30d.json"
+    args = SimpleNamespace(
+        json_output=json_path,
+        manifest=tmp_path / "manifest.yaml",
+        data_root=tmp_path / "data" / "raw",
+    )
+    error = ManifestInputResolutionError(
+        "manifest has no artifacts required for profile_engine"
+    )
+
+    profile_engine._emit_manifest_resolution_failure(args, error)
+
+    payload = json.loads(json_path.read_text())
+    assert payload["status"] == "manifest_resolution_failure"
+    assert payload["error_type"] == "ManifestInputResolutionError"
+    assert "no artifacts required for profile_engine" in payload["error_message"]
+    assert payload["runner_name"] == "profile_engine"
+    assert payload["manifest"] == str(args.manifest)
+    assert payload["data_root"] == str(args.data_root)
+
+
+def test_manifest_resolution_failure_no_op_when_json_output_absent(
+    tmp_path: Path,
+) -> None:
+    """When --json-output is not provided, the emitter is a no-op rather than
+    crashing — matching the regular runner behavior (JSON write is optional)."""
+    from regime_data_fetch.manifest_inputs import ManifestInputResolutionError
+
+    args = SimpleNamespace(
+        json_output=None,
+        manifest=tmp_path / "manifest.yaml",
+        data_root=tmp_path / "data" / "raw",
+    )
+
+    profile_engine._emit_manifest_resolution_failure(
+        args,
+        ManifestInputResolutionError("missing artifact"),
+    )
+
+    assert not any(tmp_path.rglob("*.json"))
 
 
 def test_profile_parse_args_accepts_json_output(
@@ -183,12 +171,47 @@ def test_profile_parse_args_accepts_json_output(
     monkeypatch.setattr(
         sys,
         "argv",
-        ["profile_engine_30d.py", "--json-output", str(report_path)],
+        ["profile_engine.py", "--json-output", str(report_path)],
     )
 
-    args = profile_engine_30d._parse_args()
+    args = profile_engine._parse_args()
 
     assert args.json_output == report_path
+
+
+def test_profile_parse_args_run_timeout_seconds_default_preserves_prior_behavior(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(sys, "argv", ["profile_engine.py"])
+    args = profile_engine._parse_args()
+    assert args.run_timeout_seconds == profile_engine.DEFAULT_RUN_TIMEOUT_SECONDS
+
+
+def test_profile_parse_args_run_timeout_seconds_accepts_disable_value(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # P1 #7: passing 0 (or a negative integer) disables the SIGALRM budget so
+    # full-history runs of profile_engine.py can let GMM clustering /
+    # BOCPD complete instead of silently truncating the trailing sessions.
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        ["profile_engine.py", "--run-timeout-seconds", "0"],
+    )
+    args = profile_engine._parse_args()
+    assert args.run_timeout_seconds == 0
+
+
+def test_profile_parse_args_run_timeout_seconds_accepts_extended_budget(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        ["profile_engine.py", "--run-timeout-seconds", "7200"],
+    )
+    args = profile_engine._parse_args()
+    assert args.run_timeout_seconds == 7200
 
 
 def test_profile_parse_args_accepts_operator_env_file(
@@ -199,16 +222,16 @@ def test_profile_parse_args_accepts_operator_env_file(
     monkeypatch.setattr(
         sys,
         "argv",
-        ["profile_engine_30d.py", "--operator-env-file", str(pointer_file)],
+        ["profile_engine.py", "--operator-env-file", str(pointer_file)],
     )
 
-    args = profile_engine_30d._parse_args()
+    args = profile_engine._parse_args()
 
     assert args.operator_env_file == pointer_file
 
 
 def test_profile_input_bundle_annotations_match_loaded_shapes() -> None:
-    hints = get_type_hints(profile_engine_30d.ProfileInputBundle)
+    hints = get_type_hints(profile_engine.ProfileInputBundle)
 
     assert hints["central_bank_text_releases"] == pd.DataFrame | None
     assert hints["pit_constituent_intervals"] is pd.DataFrame
@@ -247,7 +270,7 @@ def test_profile_verification_flags_missing_layer1_sentiment_extensions() -> Non
         pit_constituent_intervals=pd.DataFrame({"ticker": ["AAPL"]}),
         constituent_ohlcv={"AAPL": pd.DataFrame({"close": [1.0]})},
         cross_asset_closes={"SPY": pd.Series([1.0])},
-        macro_series={"DGS10": pd.Series([1.0])},
+        macro_series={"10y_yield": pd.Series([1.0])},
         event_calendar=None,
         aaii_sentiment=None,
         news_sentiment=None,
@@ -256,7 +279,7 @@ def test_profile_verification_flags_missing_layer1_sentiment_extensions() -> Non
         cpi_first_release=None,
     )
 
-    issues = profile_engine_30d._verify_invariants(
+    issues = profile_engine._verify_invariants(
         timeline=SimpleNamespace(outputs=[output]),
         feature_store=feature_store,
         inputs=inputs,
@@ -309,7 +332,7 @@ def test_profile_verification_warns_when_eps_revision_source_is_stale() -> None:
         constituent_ohlcv={"AAPL": pd.DataFrame({"close": [1.0]})},
         cross_asset_closes={"SPY": pd.Series([1.0])},
         macro_series={
-            "DGS10": pd.Series([1.0]),
+            "10y_yield": pd.Series([1.0]),
             "aggregate_forward_eps_revision": pd.Series(
                 [0.036],
                 index=pd.DatetimeIndex(["2026-01-22"]),
@@ -324,7 +347,7 @@ def test_profile_verification_warns_when_eps_revision_source_is_stale() -> None:
         cpi_first_release=None,
     )
 
-    issues = profile_engine_30d._verify_invariants(
+    issues = profile_engine._verify_invariants(
         timeline=SimpleNamespace(outputs=[output]),
         feature_store=feature_store,
         inputs=inputs,
@@ -339,7 +362,7 @@ def test_profile_verification_warns_when_eps_revision_source_is_stale() -> None:
 def test_profile_json_report_emits_layer1_sentiment_metric_summary(
     tmp_path: Path,
 ) -> None:
-    timer = profile_engine_30d.StageTimer()
+    timer = profile_engine.StageTimer()
     args = SimpleNamespace(
         config_path=tmp_path / "config.yaml",
         daily_dir=tmp_path / "daily_ohlcv",
@@ -365,7 +388,7 @@ def test_profile_json_report_emits_layer1_sentiment_metric_summary(
         selected_dates=selected_dates,
         sector_etf_closes={"XLK": pd.Series([1.0])},
         cross_asset_closes={"SPY": pd.Series([1.0])},
-        macro_series={"DGS10": pd.Series([1.0])},
+        macro_series={"10y_yield": pd.Series([1.0])},
         event_calendar=None,
         aaii_sentiment=pd.DataFrame({"date": selected_dates}),
         news_sentiment=pd.Series([0.1, 0.2]),
@@ -375,7 +398,6 @@ def test_profile_json_report_emits_layer1_sentiment_metric_summary(
         pit_constituent_intervals=pd.DataFrame({"ticker": ["AAPL"]}),
         constituent_tickers=["AAPL"],
         constituent_ohlcv={"AAPL": pd.DataFrame({"close": [1.0]})},
-        missing_constituent_paths=[],
     )
     output = SimpleNamespace(
         as_of_date=pd.Timestamp("2026-05-15").date(),
@@ -401,7 +423,7 @@ def test_profile_json_report_emits_layer1_sentiment_metric_summary(
         )
     )
 
-    report = profile_engine_30d._build_json_report(
+    report = profile_engine._build_json_report(
         args=args,
         inputs=inputs,
         timeline=SimpleNamespace(outputs=[output]),
@@ -438,7 +460,7 @@ def test_read_symbol_ohlcv_accepts_partitioned_parquet_file_name(
         ]
     ).to_parquet(symbol_dir / "hash-0.parquet", index=False)
 
-    frame = profile_engine_30d._read_symbol_ohlcv(tmp_path / "daily_ohlcv", "AAPL")
+    frame = profile_engine._read_symbol_ohlcv(tmp_path / "daily_ohlcv", "AAPL")
 
     assert frame[["date", "close"]].to_dict(orient="records") == [
         {"date": pd.Timestamp("2026-05-15"), "close": 10.5}
@@ -471,7 +493,7 @@ def test_load_constituent_ohlcv_accepts_partitioned_parquet_file_name(
         }
     )
 
-    loaded, tickers, missing = profile_engine_30d._load_constituent_ohlcv_from_tree(
+    loaded, tickers = profile_engine._load_constituent_ohlcv_from_tree(
         tmp_path / "daily_ohlcv",
         intervals,
         start_date=pd.Timestamp("2026-05-01").date(),
@@ -479,7 +501,6 @@ def test_load_constituent_ohlcv_accepts_partitioned_parquet_file_name(
     )
 
     assert tickers == ["AAPL"]
-    assert missing == []
     assert loaded["AAPL"]["close"].to_list() == [10.5]
 
 
@@ -488,7 +509,7 @@ def test_profile_reporting_label_uses_granular_status_for_unknown() -> None:
         active_label="unknown", classification_status="no_rule_fired"
     )
 
-    assert profile_engine_30d._reporting_label(output) == "no_rule_fired"
+    assert profile_engine._reporting_label(output) == "no_rule_fired"
 
 
 def test_profile_trailing_status_reports_no_rule_fired_not_unknown() -> None:
@@ -508,7 +529,7 @@ def test_profile_trailing_status_reports_no_rule_fired_not_unknown() -> None:
         transition_risk=SimpleNamespace(score=None, score_components=None),
     )
 
-    rows = profile_engine_30d._trailing_v2_status(output)
+    rows = profile_engine._trailing_v2_status(output)
 
     assert "credit_funding_state_proxy | reported=no_rule_fired" in rows
     assert all("active_label=unknown" not in row for row in rows)
@@ -559,8 +580,8 @@ def test_timed_inflation_growth_builder_patches_axis_builder_helpers(
         assert inflation_growth_builder.evaluate_inflation_growth_rules() == "label"
         return "built"
 
-    timer = profile_engine_30d.StageTimer()
-    timed_builder = profile_engine_30d._timed_inflation_growth_builder(timer, builder)
+    timer = profile_engine.StageTimer()
+    timed_builder = profile_engine._timed_inflation_growth_builder(timer, builder)
 
     actual = timed_builder(
         "context",
