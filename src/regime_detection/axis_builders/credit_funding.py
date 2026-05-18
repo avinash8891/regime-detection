@@ -37,25 +37,7 @@ def _build_credit_funding_for_spread_source(
     *,
     spread_source: Literal["oas", "proxy"],
 ) -> dict[date, CreditFundingOutput] | None:
-    """V2 §2C credit/funding axis classifier (implementation phase).
-
-    Pipeline:
-
-      1. Read pre-computed features from ``feature_store.credit_funding``
-         (compute_credit_funding_features). If the seam is None (no v2
-         config / required inputs absent) return None — the timeline then
-         leaves ``RegimeOutput.credit_funding_state`` as ``None``.
-      2. Per session, run the §2C unknown gate (spec lines 2122-2126):
-         - HYG/LQD/TLT stale > 5 sessions → unknown
-         - NFCI stale > 14 days → unknown
-         - SOFR or IORB stale beyond the global freshness budget → unknown
-         - assess_series_input_quality fails on any required series → unknown
-      3. Materialize per-day scalar rule inputs (build_rule_inputs_for_date),
-         then evaluate §2C precedence (deleveraging > funding_squeeze >
-         credit_stress > spread_widening > credit_calm > unknown).
-      4. Apply per-label asymmetric hysteresis (§2C lines 2105-2118).
-      5. Emit one CreditFundingOutput per session.
-    """
+    """Build credit/funding outputs from pre-computed features and hysteresis."""
     features = feature_store.credit_funding
     if features is None:
         return None

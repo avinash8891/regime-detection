@@ -116,6 +116,9 @@ def _write_merged_partitioned_daily_ohlcv(
         key_columns=["symbol", "date"],
     )
     if parquet_dir.exists():
+        # pandas partition writes do not atomically reconcile deleted symbols.
+        # Build the full merged frame first, then replace the partition tree so
+        # stale symbol directories cannot survive an incremental refresh.
         shutil.rmtree(parquet_dir)
     parquet_dir.mkdir(parents=True, exist_ok=True)
     merged.to_parquet(parquet_dir, index=False, partition_cols=["symbol"])

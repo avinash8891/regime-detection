@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import datetime as dt
+import logging
 import re
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -20,6 +21,7 @@ ARCHIVE_INDEX_URL = "https://www.ecb.europa.eu/press/govcdec/mopo/html/index.en.
 CURRENT_CALENDAR_URL = (
     "https://www.ecb.europa.eu/press/calendars/mgcgc/html/index.en.html"
 )
+LOGGER = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -65,9 +67,25 @@ class OfficialECBAdapter:
             "ECB monetary-policy decisions archive index",
         )
         candidates: list[EventCandidate] = []
-        for snippet_url in _archive_snippet_urls(
+        snippet_urls = _archive_snippet_urls(
             html, start_year=start_year, end_year=end_year
+        )
+        if (
+            html.strip()
+            and not snippet_urls
+            and self.last_source_statuses[ARCHIVE_INDEX_URL].status == "ok"
         ):
+            self._record_markup_status(
+                ARCHIVE_INDEX_URL,
+                "parser_layout_drift",
+                error="ECB archive index missing data-snippets attribute",
+                bytes_read=len(html.encode("utf-8")),
+            )
+            LOGGER.error(
+                "ECB archive index parser layout drift; data-snippets attribute missing from %s",
+                ARCHIVE_INDEX_URL,
+            )
+        for snippet_url in snippet_urls:
             snippet = self._fetch_text(snippet_url)
             _record_html(
                 store,
@@ -92,7 +110,8 @@ class OfficialECBAdapter:
             parse_ecb_current_calendar(calendar_html, as_of_date=self.as_of_date)
         )
         if any(
-            status.status == "failed" for status in self.last_source_statuses.values()
+            status.status in {"failed", "partial", "parser_layout_drift"}
+            for status in self.last_source_statuses.values()
         ):
             self.last_run_status = "partial"
         return _dedupe(candidates, start_year=start_year, end_year=end_year)

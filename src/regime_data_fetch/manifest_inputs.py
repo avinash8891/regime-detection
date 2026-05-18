@@ -189,6 +189,9 @@ def _constituent_tree_root(
         raise ManifestInputResolutionError(
             "manifest missing required daily OHLCV artifacts"
         )
+    # Emitted partition artifacts point at symbol=XYZ/ohlcv.parquet leaves.
+    # Runners need the shared tree root, so this contract deliberately walks
+    # two parents up from the first verified partition file.
     first_destination = destination_for(
         constituent_artifacts[0],
         data_root,

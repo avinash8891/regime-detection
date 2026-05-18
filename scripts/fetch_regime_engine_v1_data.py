@@ -7,6 +7,7 @@ from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 import datetime as dt
 import json
+import os
 from pathlib import Path
 
 import sys
@@ -19,6 +20,10 @@ SRC_DIR = REPO_ROOT / "src"
 if str(SRC_DIR) not in sys.path:
     sys.path.insert(0, str(SRC_DIR))
 
+try:
+    from scripts._fetch_regime_engine_v1_args import build_fetch_arg_parser
+except ModuleNotFoundError:
+    from _fetch_regime_engine_v1_args import build_fetch_arg_parser
 from regime_data_fetch.cli_common import (
     OPERATOR_ENV_POINTER_FILE,
     load_env_file,
@@ -57,6 +62,8 @@ from regime_data_fetch.universe import (
 
 
 FetchModeCategory = Literal["unattended", "operator-assisted"]
+UNATTENDED: FetchModeCategory = "unattended"
+OPERATOR_ASSISTED: FetchModeCategory = "operator-assisted"
 
 
 @dataclass(frozen=True)
@@ -150,12 +157,13 @@ def _invoke_event_fetch(context: FetchModeInvocation) -> Path:
 
 def _invoke_pmi_fetch(context: FetchModeInvocation) -> Path:
     args = context.args
+    pmi_history_dir = args.pmi_history_dir or os.environ.get("REGIME_PMI_HISTORY_DIR")
     return run_pmi_fetch(
         out_dir=context.out_dir,
         as_of_date=context.end,
         acquisition_db_path=context.acquisition_db_path,
         artifact_store_root=context.acquisition_artifact_store_root,
-        manual_history_dir=Path(args.pmi_history_dir) if args.pmi_history_dir else None,
+        manual_history_dir=Path(pmi_history_dir) if pmi_history_dir else None,
     )
 
 
@@ -235,76 +243,76 @@ def _invoke_constituent_daily_ohlcv_fetch(context: FetchModeInvocation) -> Path:
 FETCH_MODE_REGISTRY = {
     spec.name: spec
     for spec in (
-        FetchModeSpec("market", "unattended", invoke=_invoke_market_fetch),
+        FetchModeSpec("market", UNATTENDED, invoke=_invoke_market_fetch),
         FetchModeSpec(
             "macro",
-            "unattended",
+            UNATTENDED,
             conservative_concurrent=True,
             invoke=_invoke_macro_fetch,
         ),
         FetchModeSpec(
             "sentiment",
-            "unattended",
+            UNATTENDED,
             conservative_concurrent=True,
             invoke=_invoke_sentiment_fetch,
         ),
         FetchModeSpec(
             "events",
-            "unattended",
+            UNATTENDED,
             conservative_concurrent=True,
             invoke=_invoke_event_fetch,
         ),
         FetchModeSpec(
-            "pmi", "unattended", conservative_concurrent=True, invoke=_invoke_pmi_fetch
+            "pmi", UNATTENDED, conservative_concurrent=True, invoke=_invoke_pmi_fetch
         ),
         FetchModeSpec(
-            "pit", "unattended", conservative_concurrent=True, invoke=_invoke_pit_fetch
+            "pit", UNATTENDED, conservative_concurrent=True, invoke=_invoke_pit_fetch
         ),
         FetchModeSpec(
             "fomc",
-            "unattended",
+            UNATTENDED,
             conservative_concurrent=True,
             invoke=_invoke_fomc_fetch,
         ),
         FetchModeSpec(
             "powell",
-            "unattended",
+            UNATTENDED,
             conservative_concurrent=True,
             invoke=_invoke_powell_fetch,
         ),
         FetchModeSpec(
             "cleveland-fed-nowcast",
-            "unattended",
+            UNATTENDED,
             conservative_concurrent=True,
             invoke=_invoke_cleveland_fed_nowcast_fetch,
         ),
         FetchModeSpec(
             "sf-fed-news-sentiment",
-            "unattended",
+            UNATTENDED,
             conservative_concurrent=True,
             invoke=_invoke_sf_fed_news_sentiment_fetch,
         ),
         FetchModeSpec(
             "daily-ohlcv-constituents-alpaca",
-            "unattended",
+            UNATTENDED,
             invoke=_invoke_constituent_daily_ohlcv_fetch,
         ),
-        FetchModeSpec("eps", "operator-assisted"),
-        FetchModeSpec("eps-spglobal-auto", "operator-assisted"),
-        FetchModeSpec("eps-wayback", "operator-assisted"),
-        FetchModeSpec("usd-index-local", "operator-assisted"),
-        FetchModeSpec("daily-ohlcv-local-sqlite", "operator-assisted"),
-        FetchModeSpec("investing-archive-local", "operator-assisted"),
-        FetchModeSpec("investing-live", "operator-assisted"),
+        FetchModeSpec("eps", OPERATOR_ASSISTED),
+        FetchModeSpec("eps-spglobal-auto", OPERATOR_ASSISTED),
+        FetchModeSpec("eps-wayback", OPERATOR_ASSISTED),
+        FetchModeSpec("usd-index-local", OPERATOR_ASSISTED),
+        FetchModeSpec("daily-ohlcv-local-sqlite", OPERATOR_ASSISTED),
+        FetchModeSpec("investing-archive-local", OPERATOR_ASSISTED),
+        FetchModeSpec("investing-live", OPERATOR_ASSISTED),
     )
 }
 UNATTENDED_FETCH_MODES = frozenset(
-    name for name, spec in FETCH_MODE_REGISTRY.items() if spec.category == "unattended"
+    name for name, spec in FETCH_MODE_REGISTRY.items() if spec.category == UNATTENDED
 )
 OPERATOR_ASSISTED_FETCH_MODES = frozenset(
     name
     for name, spec in FETCH_MODE_REGISTRY.items()
-    if spec.category == "operator-assisted"
+    if spec.category == OPERATOR_ASSISTED
 )
 FETCH_MODES = frozenset(FETCH_MODE_REGISTRY) | {"all"}
 AUTO_EMIT_MANIFEST = "__auto_emit_manifest__"
@@ -313,283 +321,13 @@ RUN_MANIFEST_DIR = MANIFEST_LOCKFILE_ROOT / "runs"
 
 
 def main() -> int:
-    ap = argparse.ArgumentParser(
-        description=(
-            "Fetch regime-engine raw market and macro data for V1/V2 scopes. "
-            "--fetch all is reserved for unattended autonomous refreshes; browser-session, "
-            "local-file, and historical-backfill tools remain explicit operator-assisted fetches."
-        )
-    )
-    ap.add_argument(
-        "--out-dir", default="data/raw", help="Output directory for Parquet + reports."
-    )
-    ap.add_argument("--start", default="2015-01-01", help="Start date (YYYY-MM-DD).")
-    ap.add_argument(
-        "--end", default=dt.date.today().isoformat(), help="End date (YYYY-MM-DD)."
-    )
-    ap.add_argument("--scope", default="v1", help="Data scope: v1|v2|all.")
-    ap.add_argument(
-        "--fetch",
-        default="market",
-        help=f"What to fetch: {'|'.join(sorted(FETCH_MODES))}.",
-    )
-    ap.add_argument(
-        "--min-cap-b", type=float, default=10.0, help="Universe filter threshold in $B."
-    )
-    ap.add_argument(
-        "--adjustment", default="raw", help="Alpaca adjustment: raw|split|dividend|all."
-    )
-    ap.add_argument(
-        "--alpaca-feed",
-        default=None,
-        help="Alpaca data feed: sip|iex|otc. Omit to use SDK default.",
-    )
-    ap.add_argument(
-        "--fred-api-key", default=None, help="Optional FRED API key for macro fetches."
-    )
-    ap.add_argument(
-        "--include-cpi-vintages",
-        dest="include_cpi_vintages",
-        action=argparse.BooleanOptionalAction,
-        default=True,
-        help=(
-            "Fetch CPI vintages via FRED ALFRED-style realtime observations. "
-            "Required by V2 §2A lines 2587-2593 for first-release replay PIT "
-            "accuracy (see docs/spec_code_data_audit_2026_05_15.md §3.2 / M2). "
-            "Default True; pass --no-include-cpi-vintages to skip."
-        ),
-    )
-    ap.add_argument(
-        "--list-symbols", action="store_true", help="Only print symbol counts and exit."
-    )
-    ap.add_argument(
-        "--env-file", default=None, help="Optional direct .env file to load."
-    )
-    ap.add_argument(
-        "--operator-env-file",
-        default=None,
-        help=(
-            "Optional non-secret pointer file listing repo credential env files. "
-            f"Defaults to {OPERATOR_ENV_POINTER_FILE} or ~/.config/regime-detection/operator.env."
-        ),
-    )
-    ap.add_argument(
-        "--universe-json",
-        default=None,
-        help=f"Optional JSON list[str] of symbols to fetch. For constituent OHLCV, this should be the fixed {FIXED_UNIVERSE_SYMBOL_COUNT}-symbol universe.",
-    )
-    ap.add_argument(
-        "--vix-symbol",
-        default="VIX",
-        help="Volatility proxy symbol to fetch from Alpaca. Use VIX when your account supports it, or VIXY as the documented proxy.",
-    )
-    ap.add_argument(
-        "--allow-vix-proxy",
-        action="store_true",
-        help="Allow proceeding when true VIX is unavailable, using --vix-symbol (e.g. VIXY).",
-    )
-    ap.add_argument(
-        "--eps-workbook",
-        default=None,
-        help="Operator-assisted manual import: path to a downloaded S&P aggregate EPS workbook (.xlsx). Required for --fetch eps.",
-    )
-    ap.add_argument(
-        "--eps-wayback-max-snapshots",
-        type=int,
-        default=None,
-        help="Operator-assisted backfill: optional maximum number of Wayback EPS snapshots to process.",
-    )
-    ap.add_argument(
-        "--eps-wayback-from",
-        default=None,
-        help="Optional lower bound date (YYYY-MM-DD) for Wayback EPS snapshot dates.",
-    )
-    ap.add_argument(
-        "--eps-wayback-to",
-        default=None,
-        help="Optional upper bound date (YYYY-MM-DD) for Wayback EPS snapshot dates.",
-    )
-    ap.add_argument(
-        "--eps-wayback-stop-after-first-success",
-        action="store_true",
-        help="Stop Wayback EPS processing after the first successfully parsed snapshot.",
-    )
-    ap.add_argument(
-        "--eps-browser-user-data-dir",
-        default=None,
-        help="Operator-assisted EPS auto fetch: persistent browser profile directory for S&P browser fallback.",
-    )
-    ap.add_argument(
-        "--eps-browser-executable",
-        default=None,
-        help="Operator-assisted EPS auto fetch: Chrome/Chromium executable for S&P browser fallback.",
-    )
-    ap.add_argument(
-        "--eps-browser-headless",
-        action=argparse.BooleanOptionalAction,
-        default=True,
-        help="Operator-assisted EPS auto fetch: run browser fallback headless/headful. Default headless.",
-    )
-    ap.add_argument(
-        "--eps-browser-timeout-ms",
-        type=int,
-        default=120000,
-        help="Operator-assisted EPS auto fetch: timeout in milliseconds for S&P browser fallback.",
-    )
-    ap.add_argument(
-        "--usd-index-csv",
-        default=None,
-        help=(
-            "Optional/manual Yahoo Finance ^NYICDX historical CSV export for --fetch usd-index-local. "
-            "Routine future USD ingestion uses FRED DTWEXBGS through --fetch macro."
-        ),
-    )
-    ap.add_argument(
-        "--daily-ohlcv-dir",
-        default=None,
-        help="Operator-assisted manual import: path to a local partitioned daily_ohlcv parquet directory. Required for --fetch daily-ohlcv-local-sqlite.",
-    )
-    ap.add_argument(
-        "--pit-parquet",
-        default=None,
-        help="PIT constituent parquet for --fetch daily-ohlcv-constituents-alpaca. Defaults to <out-dir>/pit_constituents/sp500_ticker_intervals.parquet.",
-    )
-    ap.add_argument(
-        "--constituent-universe-dir",
-        default=None,
-        help=f"Fixed partitioned {FIXED_UNIVERSE_TREE_NAME} tree to use as the Alpaca constituent refresh universe.",
-    )
-    ap.add_argument(
-        "--allow-pit-constituent-universe",
-        action="store_true",
-        help="Explicitly allow PIT-constituent parquet expansion as a bootstrap universe for Alpaca constituent OHLCV.",
-    )
-    ap.add_argument(
-        "--constituent-universe-expected-count",
-        type=int,
-        default=FIXED_UNIVERSE_SYMBOL_COUNT,
-        help=f"Expected fixed constituent universe size for Alpaca refreshes. Default {FIXED_UNIVERSE_SYMBOL_COUNT}.",
-    )
-    ap.add_argument(
-        "--allow-missing-constituent-symbols",
-        action="store_true",
-        help="Allow daily-ohlcv-constituents-alpaca to continue when Alpaca returns no bars for some PIT symbols.",
-    )
-    ap.add_argument(
-        "--pmi-history-dir",
-        default=None,
-        help="Optional manual Investing PMI history directory. Omit for live DBnomics/TradingEconomics PMI ingestion.",
-    )
-    ap.add_argument(
-        "--investing-archive-root",
-        default=None,
-        help="Operator-assisted manual import: path to archived Investing.com source_pages root. Required for --fetch investing-archive-local.",
-    )
-    ap.add_argument(
-        "--investing-earnings-loaded-page",
-        default=None,
-        help="Operator-assisted Investing fetch: path to a browser-loaded earnings calendar HTML page containing __NEXT_DATA__. Optional for --fetch investing-live.",
-    )
-    ap.add_argument(
-        "--investing-earnings-browser-capture",
-        action=argparse.BooleanOptionalAction,
-        default=True,
-        help="Operator-assisted Investing fetch: capture a fresh earnings page with Playwright when no page/token is supplied. Default True.",
-    )
-    ap.add_argument(
-        "--investing-browser-user-data-dir",
-        default=None,
-        help="Operator-assisted Investing fetch: persistent browser profile directory. Defaults to archive-local browser_profile or INVESTING_BROWSER_USER_DATA_DIR.",
-    )
-    ap.add_argument(
-        "--investing-browser-executable",
-        default=None,
-        help="Operator-assisted Investing fetch: Chrome/Chromium executable. Defaults to Playwright browser or INVESTING_BROWSER_EXECUTABLE.",
-    )
-    ap.add_argument(
-        "--investing-browser-headless",
-        action=argparse.BooleanOptionalAction,
-        default=None,
-        help="Operator-assisted Investing fetch: run browser capture headless/headful. Defaults to INVESTING_BROWSER_HEADLESS or headful.",
-    )
-    ap.add_argument(
-        "--investing-browser-timeout-ms",
-        type=int,
-        default=None,
-        help="Operator-assisted Investing fetch: timeout in milliseconds while waiting for accessToken. Defaults to INVESTING_BROWSER_TIMEOUT_MS or 120000.",
-    )
-    ap.add_argument(
-        "--acquisition-db",
-        default=None,
-        help="Optional SQLite path for raw acquisition/provenance recording.",
-    )
-    ap.add_argument(
-        "--artifact-store",
-        default=None,
-        help="Optional object-store root for emitted artifacts, e.g. s3://regime-data or /mnt/regime-data.",
-    )
-    ap.add_argument(
-        "--emit-manifest",
-        nargs="?",
-        const=AUTO_EMIT_MANIFEST,
-        default=None,
-        help=(
-            "Optional manifest YAML path to write after fetch outputs are uploaded to "
-            "--artifact-store. If supplied without a value, writes an immutable tracked "
-            "lockfile under manifests/runs/."
-        ),
-    )
-    ap.add_argument(
-        "--manifest-artifact-set",
-        default=None,
-        help="Optional artifact_set name for --emit-manifest. Defaults to regime_engine_<end-date>.",
-    )
-    ap.add_argument(
-        "--manifest-required-for",
-        default="profile_engine_30d,v2_calibration,historical_walkforward,audit_layer2_30d",
-        help="Comma-separated use cases attached to emitted manifest artifacts.",
-    )
-    ap.add_argument(
-        "--bls-schedule-dir",
-        default=None,
-        help="Optional local directory containing bls_schedule_YYYY.html files for BLS historical release schedules.",
-    )
-    ap.add_argument(
-        "--bls-start-year",
-        type=int,
-        default=2000,
-        help="Start year for BLS CPI/NFP schedule generation.",
-    )
-    ap.add_argument(
-        "--bls-end-year",
-        type=int,
-        default=None,
-        help="End year for BLS CPI/NFP schedule generation. Defaults to --end year.",
-    )
-    ap.add_argument(
-        "--include-layer-event-candidates",
-        "--include-v2-curated-event-candidates",
-        dest="include_layer_event_candidates",
-        action=argparse.BooleanOptionalAction,
-        default=True,
-        help=(
-            "Include routine layer event candidates in event fetch output: elections, "
-            "budget deadlines, and official global-rate calendars. Default True; "
-            "use --no-include-layer-event-candidates for core FOMC/CPI/NFP debug runs."
-        ),
-    )
-    ap.add_argument(
-        "--conservative-concurrent-fetches",
-        action="store_true",
-        help=(
-            "Opt in to parallel execution for registry-marked independent unattended modes "
-            "under --fetch all. Default fetch execution remains serial."
-        ),
-    )
-    ap.add_argument(
-        "--verbose", action="store_true", help="Print progress while fetching."
-    )
-    args = ap.parse_args()
+    args = build_fetch_arg_parser(
+        fetch_modes=FETCH_MODES,
+        operator_env_pointer_file=OPERATOR_ENV_POINTER_FILE,
+        fixed_universe_symbol_count=FIXED_UNIVERSE_SYMBOL_COUNT,
+        fixed_universe_tree_name=FIXED_UNIVERSE_TREE_NAME,
+        auto_emit_manifest=AUTO_EMIT_MANIFEST,
+    ).parse_args()
 
     out_dir = Path(args.out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -903,7 +641,7 @@ def _plan_fetch_mode_execution(
     modes = tuple(
         name
         for name, spec in FETCH_MODE_REGISTRY.items()
-        if spec.category == "unattended"
+        if spec.category == UNATTENDED
     )
     if not conservative_concurrency:
         return [FetchExecutionGroup((mode,)) for mode in modes]
@@ -935,7 +673,7 @@ def _invoke_unattended_fetch_mode(
     acquisition_artifact_store_root: str | None,
 ) -> Path:
     spec = FETCH_MODE_REGISTRY.get(mode)
-    if spec is None or spec.category != "unattended" or spec.invoke is None:
+    if spec is None or spec.category != UNATTENDED or spec.invoke is None:
         raise RuntimeError(f"Unsupported unattended fetch mode: {mode}")
     return spec.invoke(
         FetchModeInvocation(

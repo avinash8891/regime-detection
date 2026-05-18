@@ -605,6 +605,70 @@ def test_browser_capture_writes_redacted_page_without_access_token(
     assert "accessToken" in persisted_html
 
 
+def test_browser_capture_returns_token_and_redacted_captured_html(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    token = _future_jwt()
+    html = _next_data_html(
+        {"stockCountries": [{"id": US_COUNTRY_ID, "name": "United States"}]},
+        access_token=token,
+    )
+
+    class FakePage:
+        def goto(self, *args: object, **kwargs: object) -> None:
+            del args, kwargs
+
+        def wait_for_function(self, *args: object, **kwargs: object) -> None:
+            del args, kwargs
+
+        def content(self) -> str:
+            return html
+
+    class FakeContext:
+        pages = [FakePage()]
+
+        def new_page(self) -> FakePage:
+            return FakePage()
+
+        def close(self) -> None:
+            pass
+
+    class FakeChromium:
+        def launch_persistent_context(self, **kwargs: object) -> FakeContext:
+            del kwargs
+            return FakeContext()
+
+    class FakePlaywright:
+        chromium = FakeChromium()
+
+        def __enter__(self) -> "FakePlaywright":
+            return self
+
+        def __exit__(self, *args: object) -> None:
+            del args
+
+    fake_sync_api = types.SimpleNamespace(
+        TimeoutError=TimeoutError,
+        sync_playwright=lambda: FakePlaywright(),
+    )
+    monkeypatch.setitem(sys.modules, "playwright", types.SimpleNamespace())
+    monkeypatch.setitem(sys.modules, "playwright.sync_api", fake_sync_api)
+    output_path = tmp_path / "loaded_page.html"
+
+    captured = capture_investing_earnings_page_with_token(
+        output_path=output_path,
+        user_data_dir=tmp_path / "profile",
+        headless=True,
+        timeout_ms=1000,
+    )
+
+    assert captured.access_token == token
+    assert captured.path == output_path
+    assert token not in output_path.read_text()
+    assert "[redacted]" in output_path.read_text()
+
+
 def test_browser_capture_reports_navigation_timeout(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

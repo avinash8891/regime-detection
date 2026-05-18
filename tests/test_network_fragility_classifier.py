@@ -607,7 +607,7 @@ def test_axis_bundle_threads_credit_funding_into_network_fragility_systemic_stre
     """The live bundle path must pass the authoritative §2C active label into
     network fragility so `systemic_stress` can outrank `correlation_to_one`.
     """
-    from test_credit_funding import _build_full_synthetic_context
+    from test_credit_funding_axis_engine import _build_full_synthetic_context
 
     context = _build_full_synthetic_context()
     idx = pd.DatetimeIndex(context.spy_ohlcv.index)

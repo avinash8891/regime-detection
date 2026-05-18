@@ -54,6 +54,9 @@ def materialize_manifest(
         promoted: list[tuple[Path, Path | None]] = []
         backup_root = staging_root / "backups"
         try:
+            # Promote only after every artifact has passed checksum verification.
+            # Existing files move to the same temp tree first so a mid-run failure
+            # can roll back without leaving a mixed old/new manifest directory.
             for index, (_artifact, destination, staged_path) in enumerate(staged):
                 destination.parent.mkdir(parents=True, exist_ok=True)
                 backup_path: Path | None = None

@@ -12,10 +12,17 @@ from regime_data_fetch.event_calendar import (
     EventMarket,
     EventSource,
     EventType,
+    GroupABuildResult,
     ScheduledEvent,
     load_scheduled_events_yaml,
     _parse_global_rate_decision_events,
     resolve_event_label,
+)
+from regime_data_fetch.event_sources.models import (
+    ApprovalRecord,
+    EventCandidate,
+    PromotionDecision,
+    ValidationResult,
 )
 
 
@@ -72,6 +79,28 @@ def test_scheduled_event_closed_vocabularies_are_typed_and_validated() -> None:
             importance="high",
             source="federalreserve.gov:fomccalendars",
         )
+
+
+def test_scheduled_event_rejects_reversed_window_days() -> None:
+    with pytest.raises(ValueError, match="window_days lower bound"):
+        ScheduledEvent(
+            date=dt.date(2026, 11, 3),
+            release_timestamp_et=dt.datetime(2026, 11, 3, 8, tzinfo=dt.timezone.utc),
+            market="US",
+            type="election",
+            importance="high",
+            source="fec.gov:election-dates",
+            window_days=(10, -5),
+        )
+
+
+def test_group_a_build_result_uses_event_source_types() -> None:
+    hints = get_type_hints(GroupABuildResult)
+
+    assert hints["candidates"] == list[EventCandidate]
+    assert hints["validations"] == list[ValidationResult]
+    assert hints["decisions"] == list[PromotionDecision]
+    assert hints["approval_overlay"] == list[ApprovalRecord] | None
 
 
 def test_load_scheduled_events_yaml_reads_v2_manual_window_days(tmp_path: Path) -> None:

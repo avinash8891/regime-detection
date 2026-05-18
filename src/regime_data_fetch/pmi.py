@@ -3,6 +3,7 @@ from __future__ import annotations
 import csv
 import datetime as dt
 import json
+import logging
 import re
 import urllib.request
 from dataclasses import dataclass
@@ -29,6 +30,7 @@ MANUAL_PMI_SOURCE_URLS = {
     "services": "https://in.investing.com/economic-calendar/ism-non-manufacturing-pmi-176",
 }
 DEFAULT_MANUAL_PMI_HISTORY_DIR = Path(__file__).resolve().parents[2] / "data" / "manual_inputs" / "pmi"
+LOGGER = logging.getLogger(__name__)
 
 _DBNOMICS_ROW_RE = re.compile(r"(?P<period>\d{4}-\d{2})\s+(?P<value>-?\d+(?:\.\d+)?)", re.IGNORECASE)
 _TE_TITLE_RE = re.compile(r"<title>\s*United States ISM (?P<series>Manufacturing|Services) PMI\s*</title>", re.IGNORECASE)
@@ -259,6 +261,12 @@ def run_pmi_fetch(
                 attempts.append({"source": source_name, "status": "success"})
                 break
             except Exception as exc:  # noqa: BLE001
+                LOGGER.warning(
+                    "PMI source %s failed: %s",
+                    source_name,
+                    exc,
+                    exc_info=True,
+                )
                 attempts.append({"source": source_name, "status": "failure", "error": str(exc)})
 
         if chosen_rows is None or selected_source is None or chosen_bundle is None:

@@ -1,10 +1,10 @@
 from __future__ import annotations
 
+import importlib.util
 import inspect
 
 import pandas as pd
 
-import regime_detection.axis_builders.series as axis_builder_series
 import regime_detection.axis_series as axis_series
 
 
@@ -29,14 +29,16 @@ def test_axis_series_removes_unused_protocol_and_scalar_staleness_helper() -> No
 
 def test_axis_series_reexports_moved_builders_without_local_bodies() -> None:
     axis_series_source = inspect.getsource(axis_series)
-    axis_builder_series_source = inspect.getsource(axis_builder_series)
 
     for builder_name in _MOVED_AXIS_BUILDER_NAMES:
         builder = getattr(axis_series, builder_name)
         assert f"def {builder_name}(" not in axis_series_source
-        assert f"def {builder_name}(" not in axis_builder_series_source
         assert builder.__module__.startswith("regime_detection.axis_builders.")
         assert builder.__module__ != "regime_detection.axis_builders.series"
+
+
+def test_axis_builder_series_shim_is_removed() -> None:
+    assert importlib.util.find_spec("regime_detection.axis_builders.series") is None
 
 
 def test_axis_series_staleness_helpers_use_named_sentinel() -> None:

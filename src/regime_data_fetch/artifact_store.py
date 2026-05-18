@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import importlib
 import shutil
 import tempfile
 from dataclasses import dataclass
@@ -340,16 +341,25 @@ def _s3_existing_artifact(
     try:
         existing = client.head_object(Bucket=bucket, Key=object_key)
     except Exception as exc:
-        # boto3 is optional here, so do not import botocore just to name its
-        # ClientError. Tests and local file-store users should not need it.
-        response = getattr(exc, "response", {})
-        error_code = str(response.get("Error", {}).get("Code", ""))
-        if error_code in {"404", "NoSuchKey", "NotFound"}:
+        if _is_s3_not_found_error(exc):
             return None
         raise
     return existing.get("Metadata", {}).get("sha256"), int(
         existing.get("ContentLength", -1)
     )
+
+
+def _is_s3_not_found_error(exc: Exception) -> bool:
+    try:
+        botocore_exceptions = importlib.import_module("botocore.exceptions")
+    except ImportError:
+        return False
+    client_error_type = getattr(botocore_exceptions, "ClientError", None)
+    if client_error_type is None or not isinstance(exc, client_error_type):
+        return False
+    response = getattr(exc, "response", {})
+    error_code = str(response.get("Error", {}).get("Code", ""))
+    return error_code in {"404", "NoSuchKey", "NotFound"}
 
 
 def _temporary_path(destination_path: Path) -> Path:

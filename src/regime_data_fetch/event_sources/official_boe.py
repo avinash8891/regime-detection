@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import datetime as dt
 import json
+import logging
 import re
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -11,6 +12,7 @@ from urllib.request import Request, urlopen
 from regime_data_fetch.acquisition_store import AcquisitionStore
 from regime_data_fetch.event_sources._common import (
     BOE_BASE_URL,
+    HTTP_USER_AGENT,
     MONTHS,
     FetchTextResult,
     absolute_url,
@@ -24,6 +26,7 @@ UPCOMING_MPC_URL = "https://www.bankofengland.co.uk/monetary-policy/upcoming-mpc
 NEWS_SITEMAP_URL = "https://www.bankofengland.co.uk/sitemap/news"
 NEWS_API_URL = "https://www.bankofengland.co.uk/_api/News/RefreshPagedNewsList"
 NEWS_DATASOURCE_ID = "{CE377CC8-BFBC-418B-B4D9-DBC1C64774A8}"
+LOGGER = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -92,17 +95,26 @@ class OfficialBOEAdapter:
                 )
             )
         for page in range(1, 30):
+            page_url = f"{NEWS_API_URL}?page={page}"
             payload = self.news_api_fetcher(page)
             _record_html(
                 store,
                 run_id,
-                f"{NEWS_API_URL}?page={page}",
+                page_url,
                 payload,
                 "BoE news API MPC archive page",
             )
-            page_candidates = parse_boe_news_api_results(
-                _extract_results_html(payload), as_of_date=self.as_of_date
-            )
+            results_html = _extract_results_html(payload)
+            if _payload_is_non_json(payload):
+                message = "BoE search results not JSON; falling back to raw HTML parse"
+                LOGGER.warning("%s for %s", message, page_url)
+                self._record_markup_status(
+                    page_url,
+                    "partial",
+                    error=message,
+                    bytes_read=len(payload.encode("utf-8")),
+                )
+            page_candidates = parse_boe_news_api_results(results_html, as_of_date=self.as_of_date)
             candidates.extend(page_candidates)
             if (
                 page_candidates
@@ -113,7 +125,8 @@ class OfficialBOEAdapter:
             if not page_candidates and self._stop_on_empty_news_page:
                 break
         if any(
-            status.status == "failed" for status in self.last_source_statuses.values()
+            status.status in {"failed", "partial"}
+            for status in self.last_source_statuses.values()
         ):
             self.last_run_status = "partial"
         return _dedupe(candidates, start_year=start_year, end_year=end_year)
@@ -165,7 +178,7 @@ def fetch_boe_news_api_page(page: int) -> str:
         NEWS_API_URL,
         data=data,
         headers={
-            "User-Agent": "regime-detection-event-fetch/1.0",
+            "User-Agent": HTTP_USER_AGENT,
             "Content-Type": "application/x-www-form-urlencoded",
         },
         method="POST",
@@ -439,6 +452,14 @@ def _extract_results_html(payload: str) -> str:
     except json.JSONDecodeError:
         return payload
     return str(parsed.get("Results", ""))
+
+
+def _payload_is_non_json(payload: str) -> bool:
+    try:
+        json.loads(payload)
+    except json.JSONDecodeError:
+        return True
+    return False
 
 
 def _mpc_dates_page_urls(html: str, *, start_year: int, end_year: int) -> list[str]:

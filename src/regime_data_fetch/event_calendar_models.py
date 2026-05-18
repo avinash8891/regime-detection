@@ -5,6 +5,13 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal, cast, get_args
 
+from regime_data_fetch.event_sources.models import (
+    ApprovalRecord,
+    EventCandidate,
+    PromotionDecision,
+    ValidationResult,
+)
+
 US_EASTERN = dt.timezone(dt.timedelta(hours=-5))
 EventMarket = Literal["US", "GLOBAL"]
 EventType = Literal[
@@ -74,6 +81,12 @@ class ScheduledEvent:
             )
         if self.source not in EVENT_SOURCES:
             raise ValueError(f"unknown scheduled event source: {self.source}")
+        if self.window_days is not None:
+            lower, upper = self.window_days
+            if lower > upper:
+                raise ValueError(
+                    f"window_days lower bound must be <= upper bound: {self.window_days}"
+                )
 
 
 @dataclass(frozen=True)
@@ -85,8 +98,8 @@ class EventLabelResolution:
 @dataclass(frozen=True)
 class GroupABuildResult:
     scheduled_events: list[ScheduledEvent]
-    candidates: list[object]
-    validations: list[object]
-    decisions: list[object]
+    candidates: list[EventCandidate]
+    validations: list[ValidationResult]
+    decisions: list[PromotionDecision]
     output_paths: dict[str, Path]
-    approval_overlay: list[object] | None = None
+    approval_overlay: list[ApprovalRecord] | None = None

@@ -122,47 +122,24 @@ class AcquisitionStore:
     ) -> RecordedArtifact:
         payload = content_text.encode("utf-8")
         sha256 = sha256_bytes(payload)
-        with self._connect() as conn:
-            cursor = conn.execute(
-                """
-                INSERT INTO artifacts (
-                    run_id,
-                    source_name,
-                    artifact_kind,
-                    source_identifier,
-                    content_text,
-                    content_sha256,
-                    downloaded_at_utc,
-                    effective_date,
-                    start_date,
-                    end_date,
-                    timezone,
-                    calendar_assumption,
-                    adjustment_policy,
-                    license_note,
-                    notes
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """,
-                (
-                    run_id,
-                    source_name,
-                    artifact_kind,
-                    source_identifier,
-                    content_text,
-                    sha256,
-                    utc_now_iso(),
-                    effective_date,
-                    start_date,
-                    end_date,
-                    timezone,
-                    calendar_assumption,
-                    adjustment_policy,
-                    license_note,
-                    notes,
-                ),
-            )
-            artifact_id = _last_insert_rowid(cursor)
-        artifact_record = self._store_raw_artifact(
+        artifact_id = self._insert_artifact_metadata(
+            run_id=run_id,
+            source_name=source_name,
+            artifact_kind=artifact_kind,
+            source_identifier=source_identifier,
+            content_text=content_text,
+            content_sha256=sha256,
+            effective_date=effective_date,
+            start_date=start_date,
+            end_date=end_date,
+            timezone=timezone,
+            calendar_assumption=calendar_assumption,
+            adjustment_policy=adjustment_policy,
+            license_note=license_note,
+            notes=notes,
+        )
+        return self._record_raw_artifact_payload(
+            artifact_id=artifact_id,
             run_id=run_id,
             source_name=source_name,
             artifact_kind=artifact_kind,
@@ -173,13 +150,6 @@ class AcquisitionStore:
             start_date=start_date,
             end_date=end_date,
             notes=notes,
-        )
-        return RecordedArtifact(
-            artifact_id=artifact_id,
-            content_sha256=sha256,
-            artifact_record_id=artifact_record.artifact_record_id
-            if artifact_record
-            else None,
         )
 
     # TODO(simplify, owner=regime-maintainers): record_file_artifact + record_output read the full file
@@ -209,63 +179,28 @@ class AcquisitionStore:
     ) -> RecordedArtifact:
         payload = file_path.read_bytes()
         sha256 = sha256_bytes(payload)
-        with self._connect() as conn:
-            cursor = conn.execute(
-                """
-                INSERT INTO artifacts (
-                    run_id,
-                    source_name,
-                    artifact_kind,
-                    source_identifier,
-                    content_text,
-                    content_sha256,
-                    downloaded_at_utc,
-                    effective_date,
-                    start_date,
-                    end_date,
-                    timezone,
-                    calendar_assumption,
-                    adjustment_policy,
-                    license_note,
-                    notes,
-                    local_path,
-                    content_size_bytes,
-                    content_encoding
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """,
-                (
-                    run_id,
-                    source_name,
-                    artifact_kind,
-                    source_identifier,
-                    "",
-                    sha256,
-                    utc_now_iso(),
-                    effective_date,
-                    start_date,
-                    end_date,
-                    timezone,
-                    calendar_assumption,
-                    adjustment_policy,
-                    license_note,
-                    notes,
-                    str(file_path),
-                    len(payload),
-                    "binary",
-                ),
-            )
-            artifact_id = _last_insert_rowid(cursor)
-            if store_bytes:
-                conn.execute(
-                    """
-                    INSERT INTO artifact_blobs (
-                        artifact_id,
-                        content_bytes
-                    ) VALUES (?, ?)
-                    """,
-                    (artifact_id, payload),
-                )
-        artifact_record = self._store_raw_artifact(
+        artifact_id = self._insert_artifact_metadata(
+            run_id=run_id,
+            source_name=source_name,
+            artifact_kind=artifact_kind,
+            source_identifier=source_identifier,
+            content_text="",
+            content_sha256=sha256,
+            effective_date=effective_date,
+            start_date=start_date,
+            end_date=end_date,
+            timezone=timezone,
+            calendar_assumption=calendar_assumption,
+            adjustment_policy=adjustment_policy,
+            license_note=license_note,
+            notes=notes,
+            local_path=str(file_path),
+            content_size_bytes=len(payload),
+            content_encoding="binary",
+            content_bytes=payload if store_bytes else None,
+        )
+        return self._record_raw_artifact_payload(
+            artifact_id=artifact_id,
             run_id=run_id,
             source_name=source_name,
             artifact_kind=artifact_kind,
@@ -277,13 +212,6 @@ class AcquisitionStore:
             end_date=end_date,
             local_path=str(file_path),
             notes=notes,
-        )
-        return RecordedArtifact(
-            artifact_id=artifact_id,
-            content_sha256=sha256,
-            artifact_record_id=artifact_record.artifact_record_id
-            if artifact_record
-            else None,
         )
 
     def record_output(
@@ -303,33 +231,16 @@ class AcquisitionStore:
     ) -> ArtifactRecord | None:
         payload = path.read_bytes()
         content_sha256 = sha256_bytes(payload)
-        with self._connect() as conn:
-            conn.execute(
-                """
-                INSERT INTO derived_outputs (
-                    run_id,
-                    output_kind,
-                    path,
-                    content_sha256,
-                    row_count,
-                    min_date,
-                    max_date,
-                    recorded_at_utc,
-                    notes
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """,
-                (
-                    run_id,
-                    output_kind,
-                    str(path),
-                    content_sha256,
-                    row_count,
-                    min_date,
-                    max_date,
-                    utc_now_iso(),
-                    notes,
-                ),
-            )
+        self._insert_derived_output(
+            run_id=run_id,
+            output_kind=output_kind,
+            path=path,
+            content_sha256=content_sha256,
+            row_count=row_count,
+            min_date=min_date,
+            max_date=max_date,
+            notes=notes,
+        )
         if not record_artifact:
             return None
         key = str(
@@ -383,49 +294,25 @@ class AcquisitionStore:
     ) -> ArtifactRecord:
         if stage not in {"raw_capture", "normalized", "canonical", "run_inputs"}:
             raise ValueError(f"unknown artifact stage: {stage}")
-        with self._connect() as conn:
-            cursor = conn.execute(
-                """
-                INSERT INTO artifact_records (
-                    run_id,
-                    name,
-                    stage,
-                    uri,
-                    local_path,
-                    content_sha256,
-                    size_bytes,
-                    source_name,
-                    artifact_kind,
-                    row_count,
-                    min_date,
-                    max_date,
-                    schema_version,
-                    recorded_at_utc,
-                    notes
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """,
-                (
-                    run_id,
-                    name,
-                    stage,
-                    uri,
-                    local_path,
-                    content_sha256,
-                    size_bytes,
-                    source_name,
-                    artifact_kind,
-                    row_count,
-                    min_date,
-                    max_date,
-                    schema_version,
-                    utc_now_iso(),
-                    notes,
-                ),
-            )
-            return ArtifactRecord(
-                artifact_record_id=_last_insert_rowid(cursor),
+        return ArtifactRecord(
+            artifact_record_id=self._insert_artifact_record_row(
+                run_id=run_id,
+                name=name,
+                stage=stage,
+                uri=uri,
+                local_path=local_path,
                 content_sha256=content_sha256,
-            )
+                size_bytes=size_bytes,
+                source_name=source_name,
+                artifact_kind=artifact_kind,
+                row_count=row_count,
+                min_date=min_date,
+                max_date=max_date,
+                schema_version=schema_version,
+                notes=notes,
+            ),
+            content_sha256=content_sha256,
+        )
 
     def record_artifact_lineage(
         self,
@@ -532,10 +419,226 @@ class AcquisitionStore:
             ).fetchone()
         return str(row[0]) if row else None
 
+    def _insert_artifact_metadata(
+        self,
+        *,
+        run_id: int,
+        source_name: str,
+        artifact_kind: str,
+        source_identifier: str,
+        content_text: str,
+        content_sha256: str,
+        effective_date: str | None,
+        start_date: str | None,
+        end_date: str | None,
+        timezone: str | None,
+        calendar_assumption: str | None,
+        adjustment_policy: str | None,
+        license_note: str | None,
+        notes: str | None,
+        local_path: str | None = None,
+        content_size_bytes: int | None = None,
+        content_encoding: str | None = None,
+        content_bytes: bytes | None = None,
+    ) -> int:
+        with self._connect() as conn:
+            artifact_id = _insert_row(
+                conn,
+                """
+                INSERT INTO artifacts (
+                    run_id,
+                    source_name,
+                    artifact_kind,
+                    source_identifier,
+                    content_text,
+                    content_sha256,
+                    downloaded_at_utc,
+                    effective_date,
+                    start_date,
+                    end_date,
+                    timezone,
+                    calendar_assumption,
+                    adjustment_policy,
+                    license_note,
+                    notes,
+                    local_path,
+                    content_size_bytes,
+                    content_encoding
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    run_id,
+                    source_name,
+                    artifact_kind,
+                    source_identifier,
+                    content_text,
+                    content_sha256,
+                    utc_now_iso(),
+                    effective_date,
+                    start_date,
+                    end_date,
+                    timezone,
+                    calendar_assumption,
+                    adjustment_policy,
+                    license_note,
+                    notes,
+                    local_path,
+                    content_size_bytes,
+                    content_encoding,
+                ),
+            )
+            if content_bytes is not None:
+                conn.execute(
+                    """
+                    INSERT INTO artifact_blobs (
+                        artifact_id,
+                        content_bytes
+                    ) VALUES (?, ?)
+                    """,
+                    (artifact_id, content_bytes),
+                )
+            return artifact_id
+
+    def _insert_derived_output(
+        self,
+        *,
+        run_id: int,
+        output_kind: str,
+        path: Path,
+        content_sha256: str,
+        row_count: int | None,
+        min_date: str | None,
+        max_date: str | None,
+        notes: str | None,
+    ) -> None:
+        with self._connect() as conn:
+            conn.execute(
+                """
+                INSERT INTO derived_outputs (
+                    run_id,
+                    output_kind,
+                    path,
+                    content_sha256,
+                    row_count,
+                    min_date,
+                    max_date,
+                    recorded_at_utc,
+                    notes
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    run_id,
+                    output_kind,
+                    str(path),
+                    content_sha256,
+                    row_count,
+                    min_date,
+                    max_date,
+                    utc_now_iso(),
+                    notes,
+                ),
+            )
+
+    def _insert_artifact_record_row(
+        self,
+        *,
+        run_id: int,
+        name: str,
+        stage: str,
+        uri: str,
+        local_path: str,
+        content_sha256: str,
+        size_bytes: int,
+        source_name: str,
+        artifact_kind: str,
+        row_count: int | None,
+        min_date: str | None,
+        max_date: str | None,
+        schema_version: str | None,
+        notes: str | None,
+    ) -> int:
+        with self._connect() as conn:
+            return _insert_row(
+                conn,
+                """
+                INSERT INTO artifact_records (
+                    run_id,
+                    name,
+                    stage,
+                    uri,
+                    local_path,
+                    content_sha256,
+                    size_bytes,
+                    source_name,
+                    artifact_kind,
+                    row_count,
+                    min_date,
+                    max_date,
+                    schema_version,
+                    recorded_at_utc,
+                    notes
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    run_id,
+                    name,
+                    stage,
+                    uri,
+                    local_path,
+                    content_sha256,
+                    size_bytes,
+                    source_name,
+                    artifact_kind,
+                    row_count,
+                    min_date,
+                    max_date,
+                    schema_version,
+                    utc_now_iso(),
+                    notes,
+                ),
+            )
+
     def _connect(self) -> sqlite3.Connection:
         conn = sqlite3.connect(self.db_path)
         conn.execute("PRAGMA foreign_keys = ON")
         return conn
+
+    def _record_raw_artifact_payload(
+        self,
+        *,
+        artifact_id: int,
+        run_id: int,
+        source_name: str,
+        artifact_kind: str,
+        source_identifier: str,
+        payload: bytes,
+        content_sha256: str,
+        effective_date: str | None,
+        start_date: str | None,
+        end_date: str | None,
+        local_path: str | None = None,
+        notes: str | None = None,
+    ) -> RecordedArtifact:
+        artifact_record = self._store_raw_artifact(
+            run_id=run_id,
+            source_name=source_name,
+            artifact_kind=artifact_kind,
+            source_identifier=source_identifier,
+            payload=payload,
+            content_sha256=content_sha256,
+            effective_date=effective_date,
+            start_date=start_date,
+            end_date=end_date,
+            local_path=local_path,
+            notes=notes,
+        )
+        return RecordedArtifact(
+            artifact_id=artifact_id,
+            content_sha256=content_sha256,
+            artifact_record_id=artifact_record.artifact_record_id
+            if artifact_record
+            else None,
+        )
 
     def _store_raw_artifact(
         self,
@@ -623,3 +726,11 @@ def _last_insert_rowid(cursor: sqlite3.Cursor) -> int:
     if cursor.lastrowid is None:
         raise RuntimeError("sqlite insert did not return a row id")
     return cursor.lastrowid
+
+
+def _insert_row(
+    conn: sqlite3.Connection,
+    statement: str,
+    values: tuple[object, ...],
+) -> int:
+    return _last_insert_rowid(conn.execute(statement, values))

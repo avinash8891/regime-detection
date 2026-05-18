@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import datetime as dt
 import json
+import logging
 from pathlib import Path
 import sqlite3
 
@@ -138,6 +139,52 @@ def test_run_pmi_fetch_falls_back_to_backup(monkeypatch, tmp_path: Path) -> None
     assert report["counts"]["history_rows"] == 2
     assert (tmp_path / "pmi" / "us_ism_pmi.parquet").exists()
     assert (tmp_path / "pmi" / "us_ism_pmi_history.parquet").exists()
+
+
+def test_run_pmi_fetch_logs_source_exception_before_fallback(
+    caplog,
+    tmp_path: Path,
+) -> None:
+    def failing_primary(*, as_of_date: dt.date) -> list[PMIObservation]:
+        del as_of_date
+        raise KeyError("shape changed")
+
+    def backup_fetcher(*, as_of_date: dt.date) -> list[PMIObservation]:
+        del as_of_date
+        return [
+            PMIObservation(
+                series_name="manufacturing",
+                period="2026-04",
+                value=52.7,
+                release_timestamp=release_timestamp_for_period(
+                    series_name="manufacturing", period="2026-04"
+                ),
+                source="tradingeconomics",
+                source_url="https://tradingeconomics.com/united-states/business-confidence",
+            ),
+            PMIObservation(
+                series_name="services",
+                period="2026-04",
+                value=53.6,
+                release_timestamp=release_timestamp_for_period(
+                    series_name="services", period="2026-04"
+                ),
+                source="tradingeconomics",
+                source_url="https://tradingeconomics.com/united-states/non-manufacturing-pmi",
+            ),
+        ]
+
+    with caplog.at_level(logging.WARNING, logger="regime_data_fetch.pmi"):
+        report_path = run_pmi_fetch(
+            out_dir=tmp_path,
+            as_of_date=dt.date(2026, 5, 15),
+            primary_fetcher=failing_primary,
+            backup_fetcher=backup_fetcher,
+        )
+
+    assert json.loads(report_path.read_text())["selected_source"] == "tradingeconomics"
+    assert "PMI source dbnomics failed" in caplog.text
+    assert "shape changed" in caplog.text
 
 
 def test_run_pmi_fetch_merges_latest_rows_into_existing_history(tmp_path: Path) -> None:

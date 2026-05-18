@@ -169,7 +169,7 @@ def test_monetary_pressure_builder_forces_unknown_when_yield_input_is_missing() 
 
 def test_credit_funding_builder_marks_stale_etf_source_unknown() -> None:
     helpers = _load_test_helper_module(
-        "axis_builder_credit_helpers", "test_credit_funding.py"
+        "axis_builder_credit_helpers", "test_credit_funding_axis_engine.py"
     )
     context = helpers._build_full_synthetic_context(hyg_truncate_sessions=10)
     store = build_feature_store(
@@ -221,7 +221,7 @@ def test_network_fragility_builder_raises_when_supplied_axis_labels_miss_session
 
 def test_inflation_growth_builder_marks_stale_cpi_source_unknown() -> None:
     helpers = _load_test_helper_module(
-        "axis_builder_inflation_helpers", "test_inflation_growth.py"
+        "axis_builder_inflation_helpers", "test_inflation_growth_axis_engine.py"
     )
     context = helpers._build_synthetic_context(cpi_truncate_calendar_days=90)
     store = build_feature_store(
@@ -242,7 +242,8 @@ def test_inflation_growth_builder_marks_stale_cpi_source_unknown() -> None:
 
 def test_inflation_growth_builder_raises_when_credit_labels_miss_session() -> None:
     helpers = _load_test_helper_module(
-        "axis_builder_inflation_missing_label_helpers", "test_inflation_growth.py"
+        "axis_builder_inflation_missing_label_helpers",
+        "test_inflation_growth_axis_engine.py",
     )
     context = helpers._build_synthetic_context()
     store = build_feature_store(

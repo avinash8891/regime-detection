@@ -60,20 +60,10 @@ def download_spglobal_eps_workbook(
     source_url: str = SOURCE_URL,
     timeout_seconds: int = 60,
 ) -> Path:
-    """Attempt to download the S&P Global aggregate forward-EPS workbook
-    from the canonical public URL into ``out_path``.
+    """Download the weekly S&P aggregate forward-EPS workbook via direct HTTP.
 
-    Cadence intent: the spdji workbook is published WEEKLY (typically Wed/Thu
-    around the earnings revision cycle). implementation phase §2B's deferred
-    ``aggregate_forward_eps_revision_direction_4w`` predicate needs at least
-    4 consecutive weekly observations to compute the rolling 4-week
-    direction, so this fetcher is intended to run on a weekly schedule.
-
-    Known issue: ``www.spglobal.com`` is served behind Akamai (AkamaiGHost)
-    bot mitigation that returns HTTP 403 to direct HTTP requests including
-    browser-User-Agent spoofs. ``run_aggregate_eps_auto_fetch`` handles that
-    by trying a browser-backed download next, while still honoring an
-    operator-staged workbook at ``data/raw/spglobal_eps/sp-500-eps-est.xlsx``.
+    Direct S&P requests can hit Akamai 403s; the auto fetcher falls back to a
+    browser session or an operator-staged workbook at the canonical raw path.
     """
     out_path.parent.mkdir(parents=True, exist_ok=True)
     request = urllib.request.Request(
@@ -128,12 +118,7 @@ def download_spglobal_eps_workbook_with_browser(
     executable_path: Path | None = None,
     headless: bool = True,
 ) -> Path:
-    """Download the S&P workbook through a real browser session.
-
-    This is the long-term fallback for Akamai-protected S&P downloads: direct
-    HTTP remains first, then a scheduler can use a persistent browser profile
-    that has already passed the provider's browser checks.
-    """
+    """Download the S&P workbook through a persistent browser session."""
     try:
         from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
         from playwright.sync_api import sync_playwright
@@ -197,23 +182,10 @@ def run_aggregate_eps_auto_fetch(
     browser_headless: bool = True,
     browser_timeout_ms: int = 120_000,
 ) -> Path:
-    """Fetch + parse the latest S&P aggregate-EPS workbook.
+    """Fetch and parse the latest weekly S&P aggregate-EPS workbook.
 
-    Two-step resolution:
-    1. If ``out_dir / spglobal_eps / sp-500-eps-est.xlsx`` already exists
-       (operator manually downloaded — see
-       ``download_spglobal_eps_workbook`` docstring for why), parse it
-       directly. This is the canonical weekly cadence path:
-         a. Each week, operator opens the spdji URL in a browser, downloads
-            the .xlsx, copies it to data/raw/spglobal_eps/sp-500-eps-est.xlsx.
-         b. Operator (or a scheduler) runs ``--fetch eps-spglobal-auto``,
-            which detects the file and emits the same parquet + report
-            artifacts as the manual ``--eps-workbook`` path.
-    2. If the file is absent, try downloading from ``source_url`` directly.
-       If direct download is blocked, try the browser-backed download path.
-
-    Cadence: invoke weekly. Polling daily is wasteful — the workbook URL
-    serves the same file between weekly publications.
+    Resolution order is operator-staged workbook, direct HTTP, then browser
+    fallback; all paths emit the same parquet and report artifacts.
     """
     out_dir.mkdir(parents=True, exist_ok=True)
     workbook_path = out_dir / SPGLOBAL_EPS_MANUAL_REL_PATH
@@ -242,17 +214,7 @@ def append_weekly_eps_snapshot(
     eps_dir: Path,
     current_snapshot: AggregateEPSSnapshot,
 ) -> pd.DataFrame:
-    """Append one weekly current-snapshot row to the accumulator parquet.
-
-    Idempotent by ``observation_date``: re-running the same weekly workbook
-    overwrites that date's row rather than double-counting it (the operator
-    may re-run a fetch for the same week). Returns the full accumulated
-    weekly-history DataFrame (sorted ascending by observation_date).
-
-    Implements the documented input contract's "workbook snapshot path does not expose weekly time
-    series" blocker — the weekly series is built by accumulating one row
-    per weekly fetch rather than read from a single workbook.
-    """
+    """Append one idempotent weekly snapshot row to the EPS history parquet."""
     history_path = eps_dir / WEEKLY_HISTORY_FILENAME
     new_row = pd.DataFrame(
         [
@@ -284,26 +246,7 @@ def seed_weekly_history_from_wayback_timeline(
     out_dir: Path,
     timeline_path: Path | None = None,
 ) -> pd.DataFrame:
-    """Seed the weekly-history accumulator from a Wayback backfill timeline.
-
-    ``run_wayback_aggregate_eps_fetch`` materialises historical workbook
-    snapshots into ``sp500_eps_wayback_timeline.parquet`` but never feeds
-    them into the weekly-history accumulator that
-    ``compute_eps_revision_direction_4w`` reads. This bridges that gap: each
-    timeline row becomes one accumulator row keyed by ``workbook_as_of_date``.
-
-    Collapses the §2B `earnings_expansion` / `earnings_contraction`
-    cold-start. Instead of waiting for more than ``EPS_REVISION_LOOKBACK_WEEKS``
-    *live* weekly fetches to accumulate, a one-time Wayback backfill + seed
-    pre-fills the accumulator and the 4-week revision series goes non-NaN
-    immediately.
-
-    Idempotent and live-safe: on an ``observation_date`` collision the
-    EXISTING accumulator row wins — a live ``run_aggregate_eps_fetch`` row is
-    authoritative over a Wayback-archived snapshot for the same date, and
-    re-running the seed never clobbers live data. Returns the full merged
-    weekly-history DataFrame, sorted ascending by ``observation_date``.
-    """
+    """Seed weekly EPS history from Wayback snapshots without clobbering live rows."""
     if timeline_path is None:
         timeline_path = out_dir / WAYBACK_DIR_NAME / WAYBACK_TIMELINE_FILENAME
     if not timeline_path.exists():

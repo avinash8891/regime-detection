@@ -4,6 +4,7 @@ import datetime as dt
 
 from regime_data_fetch.event_sources.deterministic_election import ElectionAdapter
 from regime_data_fetch.event_sources.official_boe import (
+    NEWS_API_URL,
     OfficialBOEAdapter,
     parse_boe_mpc_dates_page,
     parse_boe_news_api_results,
@@ -14,6 +15,7 @@ from regime_data_fetch.event_sources.official_boj import (
     parse_boj_mpm_dates,
 )
 from regime_data_fetch.event_sources.official_ecb import (
+    ARCHIVE_INDEX_URL,
     OfficialECBAdapter,
     parse_ecb_current_calendar,
     parse_ecb_decision_archive,
@@ -166,6 +168,51 @@ def test_boe_parses_annual_mpc_section_year_table() -> None:
     ]
 
 
+def test_boe_annual_parser_ignores_malformed_table_rows() -> None:
+    html = """
+    <h3>2026 confirmed dates</h3>
+    <table>
+      <tr><td><p>MPC Announcement and Minutes Publication</p></td></tr>
+      <tr><td><p>Publication date to be confirmed</p></td><td></td></tr>
+      <tr><td><p>No meeting</p></td><td></td></tr>
+    </table>
+    """
+
+    candidates = parse_boe_mpc_dates_page(
+        html,
+        source_url="https://www.bankofengland.co.uk/news/2025/september/monetary-policy-committee-dates-for-2026",
+        as_of_date=dt.date(2025, 9, 20),
+    )
+
+    assert candidates == []
+
+
+def test_boe_annual_parser_keeps_section_year_for_month_day_rollover() -> None:
+    html = """
+    <h3>2020 confirmed dates</h3>
+    <table>
+      <tr><td><p>MPC Announcement and Minutes Publication</p></td><td></td></tr>
+      <tr><td><p>Thursday 19 December</p></td><td></td></tr>
+    </table>
+    <h3>2021 confirmed dates</h3>
+    <table>
+      <tr><td><p>MPC Announcement and Minutes Publication</p></td><td></td></tr>
+      <tr><td><p>Thursday 4 February</p></td><td></td></tr>
+    </table>
+    """
+
+    candidates = parse_boe_mpc_dates_page(
+        html,
+        source_url="https://www.bankofengland.co.uk/news/2019/september/monetary-policy-committee-dates",
+        as_of_date=dt.date(2019, 9, 20),
+    )
+
+    assert [candidate.date for candidate in candidates] == [
+        dt.date(2020, 12, 19),
+        dt.date(2021, 2, 4),
+    ]
+
+
 def test_boe_adapter_continues_pagination_across_empty_news_pages() -> None:
     pages = {
         1: '{"Results": "<a href=\\"/monetary-policy-summary-and-minutes/2026/march-2026\\"><time datetime=\\"2026-03-19\\"></time><h3 class=\\"list\\">March 2026 Monetary Policy Summary and Minutes</h3></a>"}',
@@ -247,6 +294,25 @@ def test_ecb_adapter_reports_failed_markup_fetch_in_status() -> None:
     assert adapter.last_run_status == "partial"
 
 
+def test_ecb_adapter_reports_archive_layout_drift_in_status() -> None:
+    def fake_result_fetcher(url: str) -> FetchTextResult:
+        if url == ARCHIVE_INDEX_URL:
+            return FetchTextResult(text="<html>changed archive layout</html>")
+        return FetchTextResult(text="")
+
+    adapter = OfficialECBAdapter(
+        as_of_date=dt.date(2026, 5, 14),
+        result_fetcher=fake_result_fetcher,
+    )
+
+    candidates = adapter.fetch(start_year=2026, end_year=2026, store=None, run_id=None)
+
+    assert candidates == []
+    assert adapter.last_source_statuses[ARCHIVE_INDEX_URL].status == "parser_layout_drift"
+    assert "data-snippets" in (adapter.last_source_statuses[ARCHIVE_INDEX_URL].error or "")
+    assert adapter.last_run_status == "partial"
+
+
 def test_boe_adapter_reports_failed_markup_fetch_in_status() -> None:
     def fake_result_fetcher(url: str) -> FetchTextResult:
         if url.endswith("/monetary-policy/upcoming-mpc-dates"):
@@ -275,6 +341,23 @@ def test_boe_adapter_reports_failed_markup_fetch_in_status() -> None:
         ].error
         == "upcoming timeout"
     )
+    assert adapter.last_run_status == "partial"
+
+
+def test_boe_adapter_reports_non_json_news_payload_in_status() -> None:
+    adapter = OfficialBOEAdapter(
+        as_of_date=dt.date(2026, 5, 14),
+        text_fetcher=lambda _url: "",
+        news_api_fetcher=lambda _page: "<html>cloudflare error page</html>",
+        stop_on_empty_news_page=True,
+    )
+
+    candidates = adapter.fetch(start_year=2026, end_year=2026, store=None, run_id=None)
+
+    assert candidates == []
+    status = adapter.last_source_statuses[f"{NEWS_API_URL}?page=1"]
+    assert status.status == "partial"
+    assert "not JSON" in (status.error or "")
     assert adapter.last_run_status == "partial"
 
 
