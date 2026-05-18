@@ -174,8 +174,12 @@ def _classify_per_session(
     errors = 0
     total = len(sessions)
     for idx, as_of_date in enumerate(sessions, start=1):
+        as_of_timestamp = pd.Timestamp(as_of_date)
+        market_dates = pd.to_datetime(market_data["date"])
         market_slice = (
-            market_data[market_data["date"] <= as_of_date].copy().reset_index(drop=True)
+            market_data[market_dates <= as_of_timestamp]
+            .copy()
+            .reset_index(drop=True)
         )
         kwargs: dict[str, Any] = {
             "as_of_date": as_of_date,

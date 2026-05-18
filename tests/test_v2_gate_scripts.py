@@ -178,6 +178,7 @@ def _write_v2_gate_parquets(tmp_path: Path) -> tuple[Path, Path]:
 
     macro = pd.read_csv(fixture_root / "fred_macro_series.csv")
     macro["date"] = pd.to_datetime(macro["date"])
+    macro = macro.dropna(subset=["value"]).reset_index(drop=True)
     macro_path = tmp_path / "fred_macro_series.parquet"
     macro.to_parquet(macro_path, index=False)
     return daily_path, macro_path
