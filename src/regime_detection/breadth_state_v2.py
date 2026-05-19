@@ -13,6 +13,10 @@ Features shipped here:
   return_21d > 0``. Denominator is the spec-fixed 11 (count of US GICS
   sector ETFs).
 
+- ``available_sector_breadth``  backtest/proxy evidence
+  Same positive-return test, but denominator is the count of sectors with valid
+  21d returns on that session. This does NOT replace the strict spec feature.
+
 - ``pct_above_200dma`` (§1D lines 207–210) — `mean(member.close > member.sma_200)`.
 - ``ad_line`` / ``ad_line_slope_20d`` (§1D lines 213–216).
 - ``nh_nl_ratio`` (§1D lines 218–221).
@@ -34,6 +38,9 @@ Implementation choices that resolve ambiguities:
   partial-denominator mean). Rationale: §1D line 229 explicitly writes
   "divided by 11"; silently rebasing the denominator would change the
   feature's semantics. See documented implementation decision.
+- **Available-sector proxy**: exposed separately for historical backtests
+  where newer sector ETFs such as XLC did not yet exist. It carries count and
+  missing-symbol evidence so consumers cannot mistake it for the strict feature.
 """
 from __future__ import annotations
 
@@ -83,6 +90,10 @@ class BreadthV2Features:
     """
 
     sector_breadth: pd.Series
+    available_sector_breadth: pd.Series | None = None
+    available_sector_count: pd.Series | None = None
+    missing_sector_count: pd.Series | None = None
+    missing_sector_symbols: pd.Series | None = None
     bias_warnings: pd.DataFrame | None = None
     pct_above_50dma: pd.Series | None = None
     pct_above_200dma: pd.Series | None = None
@@ -95,6 +106,14 @@ class BreadthV2Features:
     @property
     def feature_names(self) -> tuple[str, ...]:
         names: list[str] = ["sector_breadth"]
+        for proxy_name in (
+            "available_sector_breadth",
+            "available_sector_count",
+            "missing_sector_count",
+            "missing_sector_symbols",
+        ):
+            if getattr(self, proxy_name) is not None:
+                names.append(proxy_name)
         for pit_name in _PIT_FEATURE_NAMES:
             if getattr(self, pit_name) is not None:
                 names.append(pit_name)
@@ -107,6 +126,9 @@ class BreadthV2Features:
 
 
 _BIAS_WARNING_COLUMNS = ("warning_code", "feature_name", "source", "source_url")
+_AVAILABLE_SECTOR_BREADTH_WARNING_CODE = "available_sector_breadth_proxy"
+_AVAILABLE_SECTOR_BREADTH_SOURCE = "sector_etf_available_denominator_backtest_proxy"
+_AVAILABLE_SECTOR_BREADTH_SOURCE_URL = "docs/regime_engine_v2_spec.md#sector-breadth"
 
 
 def make_bias_warnings_frame(rows: Iterable[Mapping[str, str]]) -> pd.DataFrame:
@@ -130,6 +152,73 @@ def make_bias_warnings_frame(rows: Iterable[Mapping[str, str]]) -> pd.DataFrame:
     if not materialized:
         return pd.DataFrame({col: pd.Series(dtype=object) for col in _BIAS_WARNING_COLUMNS})
     return pd.DataFrame(materialized, columns=list(_BIAS_WARNING_COLUMNS))
+
+
+def _available_sector_proxy_bias_warning() -> dict[str, str]:
+    return {
+        "warning_code": _AVAILABLE_SECTOR_BREADTH_WARNING_CODE,
+        "feature_name": "available_sector_breadth",
+        "source": _AVAILABLE_SECTOR_BREADTH_SOURCE,
+        "source_url": _AVAILABLE_SECTOR_BREADTH_SOURCE_URL,
+    }
+
+
+def _compute_sector_breadth_features(
+    *,
+    sector_etf_closes: dict[str, pd.Series],
+    sector_universe: tuple[str, ...],
+    reference_index: pd.DatetimeIndex,
+    lookback: int,
+) -> tuple[pd.Series, pd.Series, pd.Series, pd.Series, pd.Series]:
+    returns_frame = pd.DataFrame(
+        {
+            symbol: sector_etf_closes[symbol].astype(float).pct_change(
+                periods=lookback,
+                fill_method=None,
+            )
+            for symbol in sector_universe
+        },
+        index=reference_index,
+    )
+    positive_mask = returns_frame > 0.0
+    valid_mask = returns_frame.notna()
+    expected_universe_size = len(sector_universe)
+
+    sector_breadth = (
+        positive_mask.sum(axis=1).astype(float) / float(expected_universe_size)
+    )
+    sector_breadth = sector_breadth.where(~returns_frame.isna().any(axis=1))
+    sector_breadth.name = "sector_breadth"
+
+    available_sector_count = valid_mask.sum(axis=1).astype("int64")
+    available_sector_count.name = "available_sector_count"
+    missing_sector_count = (
+        expected_universe_size - available_sector_count
+    ).astype("int64")
+    missing_sector_count.name = "missing_sector_count"
+
+    available_sector_breadth = (
+        positive_mask.sum(axis=1).astype(float)
+        / available_sector_count.where(available_sector_count > 0).astype(float)
+    )
+    available_sector_breadth = available_sector_breadth.where(
+        available_sector_count > 0
+    )
+    available_sector_breadth.name = "available_sector_breadth"
+
+    def _missing_symbols_for_row(row: pd.Series) -> str:
+        missing = [symbol for symbol, is_valid in row.items() if not bool(is_valid)]
+        return ",".join(missing)
+
+    missing_sector_symbols = valid_mask.apply(_missing_symbols_for_row, axis=1)
+    missing_sector_symbols.name = "missing_sector_symbols"
+    return (
+        sector_breadth,
+        available_sector_breadth,
+        available_sector_count,
+        missing_sector_count,
+        missing_sector_symbols,
+    )
 
 
 def compute_breadth_v2_features(
@@ -158,7 +247,6 @@ def compute_breadth_v2_features(
     """
     lookback = config.sector_breadth_lookback_days
     sector_universe = SECTOR_ETFS
-    expected_universe_size = len(sector_universe)
 
     # Resolve a reference index from the first present sector. If NO sectors
     # are present we cannot return a typed series at all — callers must guard
@@ -170,47 +258,40 @@ def compute_breadth_v2_features(
             f"(got: {sorted(sector_etf_closes.keys())})."
         )
     reference_index = sector_etf_closes[present_symbols[0]].index
-
-    # Missing-sector policy (documented implementation decision): if any of the 11
-    # sectors is absent, the entire output series is NaN. Do NOT rebase the
-    # denominator to the present subset.
-    missing = [s for s in sector_universe if s not in sector_etf_closes]
-    if missing:
-        nan_series = pd.Series(
-            np.full(len(reference_index), np.nan),
-            index=reference_index,
-            name="sector_breadth",
+    aligned_sector_closes = {
+        symbol: (
+            sector_etf_closes[symbol]
+            if symbol in sector_etf_closes
+            else pd.Series(np.nan, index=reference_index, name=symbol)
         )
-        return BreadthV2Features(sector_breadth=nan_series)
-
-    # Build a (n_sessions x 11) frame of returns_lookback_days for each sector.
-    returns_frame = pd.DataFrame(
-        {
-            symbol: sector_etf_closes[symbol].astype(float).pct_change(
-                periods=lookback
-            )
-            for symbol in sector_universe
-        },
-        index=reference_index,
+        for symbol in sector_universe
+    }
+    (
+        sector_breadth,
+        available_sector_breadth,
+        available_sector_count,
+        missing_sector_count,
+        missing_sector_symbols,
+    ) = _compute_sector_breadth_features(
+        sector_etf_closes=aligned_sector_closes,
+        sector_universe=sector_universe,
+        reference_index=reference_index,
+        lookback=lookback,
     )
-
-    # Strictly > 0 (spec line 229: "return_21d > 0").
-    positive_mask = returns_frame > 0.0
-    # Count positives per row, divide by the spec-fixed denominator (11).
-    sector_breadth = (
-        positive_mask.sum(axis=1).astype(float) / float(expected_universe_size)
-    )
-    # NaN cold-start: any NaN return in the row (t < lookback or missing
-    # data) must propagate to NaN, not be silently treated as "not positive".
-    has_any_nan = returns_frame.isna().any(axis=1)
-    sector_breadth = sector_breadth.where(~has_any_nan)
-    sector_breadth.name = "sector_breadth"
+    bias_warning_rows = [_available_sector_proxy_bias_warning()]
 
     # PIT-aware §1D features. Both new kwargs must be supplied
     # for the seven survivorship-biased features to materialise; otherwise
     # the v1+v2-sector-only callsite is preserved (all-None PIT fields).
     if pit_constituent_intervals is None or constituent_ohlcv is None:
-        return BreadthV2Features(sector_breadth=sector_breadth)
+        return BreadthV2Features(
+            sector_breadth=sector_breadth,
+            available_sector_breadth=available_sector_breadth,
+            available_sector_count=available_sector_count,
+            missing_sector_count=missing_sector_count,
+            missing_sector_symbols=missing_sector_symbols,
+            bias_warnings=make_bias_warnings_frame(bias_warning_rows),
+        )
 
     pit_features = _compute_pit_features(
         reference_index=reference_index,
@@ -219,7 +300,8 @@ def compute_breadth_v2_features(
         config=config,
     )
     bias_warnings = make_bias_warnings_frame(
-        [
+        bias_warning_rows
+        + [
             {
                 "warning_code": _PIT_BIAS_WARNING_CODE,
                 "feature_name": feat,
@@ -231,6 +313,10 @@ def compute_breadth_v2_features(
     )
     return BreadthV2Features(
         sector_breadth=sector_breadth,
+        available_sector_breadth=available_sector_breadth,
+        available_sector_count=available_sector_count,
+        missing_sector_count=missing_sector_count,
+        missing_sector_symbols=missing_sector_symbols,
         bias_warnings=bias_warnings,
         **pit_features,
     )

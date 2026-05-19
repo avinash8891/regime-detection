@@ -92,7 +92,7 @@ def test_feature_names_excludes_bias_warnings() -> None:
     out_none = BreadthV2Features(sector_breadth=sector_breadth)
     out_with = BreadthV2Features(sector_breadth=sector_breadth, bias_warnings=bias_df)
     assert out_none.feature_names == ("sector_breadth",)
-    assert out_with.feature_names == ("sector_breadth",)
+    assert out_with.feature_names == out_none.feature_names
 
 
 def test_to_frame_omits_bias_warnings_column() -> None:
@@ -106,17 +106,24 @@ def test_to_frame_omits_bias_warnings_column() -> None:
         columns=["warning_code", "feature_name", "source", "source_url"],
     )
     out = BreadthV2Features(sector_breadth=sector_breadth, bias_warnings=bias_df)
-    assert out.to_frame().columns.tolist() == ["sector_breadth"]
+    assert out.to_frame().columns.tolist() == list(out.feature_names)
 
 
-def test_compute_breadth_v2_features_emits_no_bias_warnings() -> None:
-    """Sector-breadth path uses ETF proxies — must NOT emit a bias warning."""
+def test_compute_breadth_v2_features_emits_available_sector_proxy_warning() -> None:
+    """The available-denominator backtest proxy is explicit metadata; it does
+    not replace strict sector_breadth."""
     config = BreadthV2Config(sector_breadth_lookback_days=21)
     out = compute_breadth_v2_features(
         sector_etf_closes=_sector_closes_all_positive(n=60),
         config=config,
     )
-    assert out.bias_warnings is None
+    assert out.bias_warnings is not None
+    assert out.bias_warnings["warning_code"].tolist() == [
+        "available_sector_breadth_proxy"
+    ]
+    assert out.bias_warnings["feature_name"].tolist() == [
+        "available_sector_breadth"
+    ]
 
 
 # -----------------------------------------------------------------------------
