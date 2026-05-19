@@ -733,7 +733,7 @@ class RegimeOutput(BaseModel):
     monetary_pressure_state: MonetaryPressureV2Output | None = None  # v2 §2A
     change_point: ChangePointOutput | None = None  # v2 §4.6
     hmm: HmmOutput | None = None  # v2 §6.1 — evidence
-    cluster: ClusterOutput | None = None  # v2 §6.2 — evidence
+    cluster: ClusterOutput | None = None  # v2 §6.2 — diagnostic evidence
     agent_routing: "AgentRouting | None" = None  # v2 §5.1
     strategy_family_constraints: dict[str, StrategyFamilyConstraint] | None = None  # v2 §5.2
 
