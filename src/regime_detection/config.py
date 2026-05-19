@@ -54,7 +54,6 @@ from regime_detection._config_evidence_strategy import (
     NoFlipFlopConfig,
     StrategyFamilyConstraintsConfig,
     TransitionScoreConfig,
-    VolCrushConfig,
 )
 
 __all__ = [
@@ -91,7 +90,6 @@ __all__ = [
     "TrendCharacterV2Config",
     "TrendDirectionV2Config",
     "TrendDirectionV2RulesConfig",
-    "VolCrushConfig",
     "VolatilityV2Config",
     "VolatilityV2RulesConfig",
     "VolumeLiquidityConfig",
@@ -141,7 +139,6 @@ class RegimeConfig(StrictBaseModel):
     clustering: ClusteringConfig | None = None
     # v2 §6.3 BOCPD change-point evidence layer.
     change_point: ChangePointConfig | None = None
-    vol_crush: VolCrushConfig | None = None
     no_flip_flop: NoFlipFlopConfig | None = None
     cohort_routing: CohortRoutingConfig | None = None  # v2 §5.1
     strategy_family_constraints: StrategyFamilyConstraintsConfig | None = None

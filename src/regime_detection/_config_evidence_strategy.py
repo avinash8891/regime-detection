@@ -82,17 +82,6 @@ class ChangePointConfig(StrictBaseModel):
     method: str = Field(default="BOCPD")
 
 
-class VolCrushConfig(StrictBaseModel):
-    """Vol-crush strategy-contract knobs exposed for downstream consumers."""
-
-    # V2 §5.3: "as_of_date within 3 NYSE trading days AFTER configured event end".
-    event_window_trading_days: int = Field(ge=0)
-
-    implied_vol_5d_change_threshold: float
-
-    realized_vol_ratio_threshold: float = Field(ge=0.0)
-
-
 class NoFlipFlopConfig(StrictBaseModel):
     """No-flip-flop timing-control knobs exposed for downstream consumers."""
 

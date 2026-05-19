@@ -468,11 +468,6 @@ inflation_growth:
   # only the optional inflation-surprise limb is treated as NaN.
   nowcast_stale_calendar_days: 60
 
-vol_crush:
-  event_window_trading_days: 3
-  implied_vol_5d_change_threshold: -0.20
-  realized_vol_ratio_threshold: 0.75
-
 hmm:
   n_states: 4
   # Spec §6.1 line 2786: "Fit on at least 5 years of data" (≈1260 NYSE
