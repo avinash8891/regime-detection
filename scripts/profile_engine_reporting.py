@@ -301,6 +301,9 @@ def _compact_timeline_report(outputs: list[RegimeOutput]) -> list[dict[str, Any]
             seams["cluster"] = out.cluster.cluster_id
         if out.change_point is not None:
             seams["change_point"] = out.change_point.score
+        hmm = getattr(out, "hmm", None)
+        if hmm is not None:
+            seams["hmm"] = hmm.top_state_prob
         if out.transition_risk.score is not None:
             seams["transition_score"] = out.transition_risk.score
         rows.append(
@@ -411,8 +414,11 @@ def _trailing_v2_status(out: RegimeOutput) -> list[str]:
     add("monetary_pressure_state", out.monetary_pressure_state)
     add("cluster", out.cluster)
     add("change_point", out.change_point)
+    add("hmm", getattr(out, "hmm", None))
     add("transition_risk.score", out.transition_risk.score)
     add("transition_risk.score_components", out.transition_risk.score_components)
+    add("agent_routing", getattr(out, "agent_routing", None))
+    add("strategy_family_constraints", getattr(out, "strategy_family_constraints", None))
     return rows
 
 
@@ -446,8 +452,11 @@ def _trailing_v2_status_report(out: RegimeOutput) -> list[dict[str, Any]]:
     add("monetary_pressure_state", out.monetary_pressure_state)
     add("cluster", out.cluster)
     add("change_point", out.change_point)
+    add("hmm", getattr(out, "hmm", None))
     add("transition_risk.score", out.transition_risk.score)
     add("transition_risk.score_components", out.transition_risk.score_components)
+    add("agent_routing", getattr(out, "agent_routing", None))
+    add("strategy_family_constraints", getattr(out, "strategy_family_constraints", None))
     return rows
 
 

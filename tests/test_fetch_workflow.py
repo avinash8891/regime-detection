@@ -50,7 +50,6 @@ def test_write_event_calendar_template_includes_v1_and_v2_examples(
     contents = template_path.read_text()
 
     assert "FOMC" in contents
-    assert "monthly_options_expiry" in contents
     assert 'type: "election"' in contents
     assert 'type: "geopolitical_event"' in contents
 

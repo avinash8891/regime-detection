@@ -18,7 +18,6 @@ EventType = Literal[
     "FOMC",
     "CPI",
     "NFP",
-    "monthly_options_expiry",
     "budget",
     "election",
     "geopolitical_event",

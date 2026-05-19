@@ -220,10 +220,10 @@ def test_profile_json_report_emits_machine_readable_sections(tmp_path: Path) -> 
         "reported": {"no_rule_fired": 1},
         "status": {"no_rule_fired": 1},
     }
-    assert payload["trailing_v2_field_status"][-1] == {
-        "field": "transition_risk.score_components",
-        "status": "present",
-    }
+    status_fields = {s["field"]: s["status"] for s in payload["trailing_v2_field_status"]}
+    assert status_fields["transition_risk.score_components"] == "present"
+    assert status_fields["agent_routing"] == "present"
+    assert status_fields["strategy_family_constraints"] == "present"
     full_output = payload["full_timeline"][0]
     assert full_output["trend_direction"]["classification_status"] == "classified"
     assert full_output["trend_direction"]["evidence"]["rule_evidence"] == {
