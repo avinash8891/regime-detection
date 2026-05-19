@@ -73,6 +73,9 @@ class TrendDirectionV2Config(StrictBaseModel):
         )
     )
 
+    deescalation_days_by_label: dict[str, int] | None = None
+    default_deescalation_days: int = Field(default=3, ge=0)
+
 
 class VolatilityV2RulesConfig(StrictBaseModel):
     """v2 §1C `rising_vol` and `vol_crush` rule thresholds.
@@ -159,6 +162,9 @@ class VolatilityV2Config(StrictBaseModel):
             realized_vol_long_period=63,             # v2 §1C line 148
         )
     )
+
+    deescalation_days_by_label: dict[str, int] | None = None
+    default_deescalation_days: int = Field(default=2, ge=0)
 
 
 class VolumeLiquidityV2Config(StrictBaseModel):
@@ -263,6 +269,9 @@ class BreadthV2Config(StrictBaseModel):
 
     # v2 §1D line 280 — narrowing_breadth nh_nl_ratio threshold (< 0.4 fires).
     nh_nl_ratio_narrowing_threshold: float = Field(default=0.4, gt=0.0, lt=1.0)
+
+    deescalation_days_by_label: dict[str, int] | None = None
+    default_deescalation_days: int = Field(default=2, ge=0)
 
 
 class TrendCharacterV2Config(StrictBaseModel):
