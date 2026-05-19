@@ -94,6 +94,7 @@ def _build_synthetic_context(
     dgs10_truncate_sessions: int | None = None,
     include_nowcast_and_eps_revision: bool = False,
     eps_truncate_calendar_days: int | None = None,
+    include_cpi_first_release: bool = False,
 ):
     """Build a full MarketContext with §2B inputs."""
     idx = _bdate_index(periods=_TRAINING_SESSIONS)
@@ -215,6 +216,13 @@ def _build_synthetic_context(
             eps_revision.loc[eps_revision.index > eps_cutoff] = np.nan
         macro_series["aggregate_forward_eps_revision"] = eps_revision
 
+    cpi_first_release = None
+    if include_cpi_first_release:
+        cpi_first_release = pd.Series(np.nan, index=idx, dtype=float)
+        cpi_first_release.iloc[cpi_release_positions] = np.linspace(
+            299.5, 319.5, len(cpi_release_positions)
+        )
+
     config = RegimeEngine().config
     context = build_market_context(
         end_date=idx[-1].date(),
@@ -223,6 +231,7 @@ def _build_synthetic_context(
         sector_etf_closes=sector_etf_closes,
         cross_asset_closes=cross_asset_closes,
         macro_series=macro_series,
+        cpi_first_release=cpi_first_release,
     )
     return context
 
@@ -252,6 +261,20 @@ def test_unknown_when_cpi_stale_more_than_60_days() -> None:
     out = outputs[last_day]
     assert out.raw_label == "unknown"
     assert "cpi_stale" in (out.data_quality.reason or "")
+
+
+def test_cpi_staleness_uses_first_release_when_enabled() -> None:
+    context = _build_synthetic_context(
+        cpi_truncate_calendar_days=90,
+        include_cpi_first_release=True,
+    )
+    _, outputs = _build_store_and_outputs(context)
+
+    assert outputs is not None
+    last_day = context.sessions[-1]
+    out = outputs[last_day]
+    assert out.data_quality.status != "stale_data"
+    assert "cpi_stale" not in (out.data_quality.reason or "")
 
 
 def test_unknown_when_pmi_stale_more_than_45_days() -> None:

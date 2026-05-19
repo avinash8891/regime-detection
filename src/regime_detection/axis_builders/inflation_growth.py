@@ -74,6 +74,12 @@ def build_inflation_growth_axis_series(
     spy_close = context.spy_ohlcv["close"]
     macro_series = context.macro_series or {}
     cpi_series = macro_series.get(CPI_KEY)
+    cpi_staleness_series = (
+        context.cpi_first_release
+        if context.cpi_first_release is not None
+        and ig_config.rules.use_first_release_cpi_when_available
+        else cpi_series
+    )
     pmi_series = macro_series.get(PMI_KEY)
     dgs10_series = macro_series.get(DGS10_KEY)
     eps_revision_series = macro_series.get(_EPS_REVISION_MACRO_KEY)
@@ -94,7 +100,9 @@ def build_inflation_growth_axis_series(
     per_day_data_quality: list[DataQuality] = []
     per_day_evidence: list[dict[str, object]] = []
     session_index = spy_close.index
-    cpi_staleness_by_date = _calendar_staleness_days_series(cpi_series, session_index)
+    cpi_staleness_by_date = _calendar_staleness_days_series(
+        cpi_staleness_series, session_index
+    )
     pmi_staleness_by_date = _calendar_staleness_days_series(pmi_series, session_index)
     dgs10_staleness_by_date = _trading_staleness_series(dgs10_series, session_index)
     eps_staleness_by_date = _calendar_staleness_days_series(

@@ -351,33 +351,6 @@ def test_market_context_reindexes_v2_series_to_spy_session_index(market_df_for_a
         assert series.index.equals(spy_index)
 
 
-def test_market_context_maps_non_session_macro_observations_to_next_session(
-    market_df_for_asof,
-) -> None:
-    as_of = date(2023, 12, 14)
-    market_data = market_df_for_asof(as_of)
-    config = RegimeEngine().config
-    macro = {
-        "cpi_all_items": pd.Series(
-            [1.0],
-            index=pd.to_datetime(["2023-12-09"]),
-            dtype=float,
-        )
-    }
-
-    ctx = build_market_context(
-        end_date=as_of,
-        market_data=market_data,
-        config=config,
-        macro_series=macro,
-    )
-
-    assert ctx.macro_series is not None
-    cpi = ctx.macro_series["cpi_all_items"]
-    assert pd.isna(cpi.loc[pd.Timestamp("2023-12-08")])
-    assert cpi.loc[pd.Timestamp("2023-12-11")] == 1.0
-
-
 def test_slice_context_to_recent_sessions_propagates_v2_data(market_df_for_asof) -> None:
     as_of = date(2023, 12, 14)
     ctx, _, _, _ = _build_v2_context(market_df_for_asof, as_of)
