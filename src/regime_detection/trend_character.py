@@ -343,7 +343,13 @@ def raw_label_for_day(
 
 
 def build_raw_outputs(
-    f: TrendCharacterFeatures, *, allow_v2_labels: bool = True
+    f: TrendCharacterFeatures,
+    *,
+    allow_v2_labels: bool = True,
+    followthrough_rate_threshold: float = _DEFAULT_FOLLOWTHROUGH_RATE_THRESHOLD,
+    range_bound_return_63d_threshold: float = _DEFAULT_RANGE_BOUND_RETURN_63D_THRESHOLD,
+    range_bound_midpoint_excursion_threshold: float = _DEFAULT_RANGE_BOUND_MIDPOINT_EXCURSION_THRESHOLD,
+    range_bound_adx_threshold: float = _DEFAULT_RANGE_BOUND_ADX_THRESHOLD,
 ) -> tuple[list[TrendCharacterLabel], list[dict[str, Any]]]:
     close = f.close
     sma50 = f.sma_50
@@ -370,15 +376,15 @@ def build_raw_outputs(
         & bb_expanding
         & vol_above
         & ft_rate.notna()
-        & ft_rate.ge(_DEFAULT_FOLLOWTHROUGH_RATE_THRESHOLD)
+        & ft_rate.ge(followthrough_rate_threshold)
     )
     range_bound = (
         valid
         & ret63.notna()
         & midpoint_ex.notna()
-        & ret63.abs().lt(_DEFAULT_RANGE_BOUND_RETURN_63D_THRESHOLD)
-        & midpoint_ex.le(_DEFAULT_RANGE_BOUND_MIDPOINT_EXCURSION_THRESHOLD)
-        & adx.lt(_DEFAULT_RANGE_BOUND_ADX_THRESHOLD)
+        & ret63.abs().lt(range_bound_return_63d_threshold)
+        & midpoint_ex.le(range_bound_midpoint_excursion_threshold)
+        & adx.lt(range_bound_adx_threshold)
     )
     if not allow_v2_labels:
         breakout_expansion = breakout_expansion & False

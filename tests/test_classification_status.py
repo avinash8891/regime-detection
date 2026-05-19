@@ -29,7 +29,7 @@ def test_unknown_held_by_hysteresis_reports_no_rule_fired_hysteresis() -> None:
     assert out.reporting_label == "no_rule_fired_hysteresis"
 
 
-def test_unknown_with_missing_rule_feature_reports_no_rule_fired_warmup() -> None:
+def test_unknown_with_missing_rule_feature_reports_no_rule_fired_missing_feature() -> None:
     out = AxisOutput(
         raw_label="unknown",
         stable_label="unknown",
@@ -38,12 +38,12 @@ def test_unknown_with_missing_rule_feature_reports_no_rule_fired_warmup() -> Non
         data_quality=DataQuality(status="ok", freshness_days=0, completeness=1.0),
     )
 
-    assert out.classification_status == "no_rule_fired_warmup"
-    assert out.classification_reason == "required_rule_feature_is_nan"
-    assert out.reporting_label == "no_rule_fired_warmup"
+    assert out.classification_status == "no_rule_fired_missing_feature"
+    assert out.classification_reason == "missing_rule_feature:hy_spread_percentile_504d"
+    assert out.reporting_label == "no_rule_fired_missing_feature"
 
 
-def test_wrapped_evidence_with_missing_rule_feature_reports_no_rule_fired_warmup() -> None:
+def test_wrapped_evidence_with_missing_rule_feature_reports_no_rule_fired_missing_feature() -> None:
     out = AxisOutput(
         raw_label="unknown",
         stable_label="unknown",
@@ -52,12 +52,12 @@ def test_wrapped_evidence_with_missing_rule_feature_reports_no_rule_fired_warmup
         data_quality=DataQuality(status="ok", freshness_days=0, completeness=1.0),
     )
 
-    assert out.classification_status == "no_rule_fired_warmup"
-    assert out.classification_reason == "required_rule_feature_is_nan"
-    assert out.reporting_label == "no_rule_fired_warmup"
+    assert out.classification_status == "no_rule_fired_missing_feature"
+    assert out.classification_reason == "missing_rule_feature:hy_spread_percentile_504d"
+    assert out.reporting_label == "no_rule_fired_missing_feature"
 
 
-def test_nan_rule_feature_reports_no_rule_fired_warmup() -> None:
+def test_nan_rule_feature_reports_no_rule_fired_missing_feature() -> None:
     out = AxisOutput(
         raw_label="unknown",
         stable_label="unknown",
@@ -66,12 +66,12 @@ def test_nan_rule_feature_reports_no_rule_fired_warmup() -> None:
         data_quality=DataQuality(status="ok", freshness_days=0, completeness=1.0),
     )
 
-    assert out.classification_status == "no_rule_fired_warmup"
-    assert out.classification_reason == "required_rule_feature_is_nan"
-    assert out.reporting_label == "no_rule_fired_warmup"
+    assert out.classification_status == "no_rule_fired_missing_feature"
+    assert out.classification_reason == "missing_rule_feature:hy_spread_percentile_504d"
+    assert out.reporting_label == "no_rule_fired_missing_feature"
 
 
-def test_existing_no_rule_status_is_refined_to_warmup() -> None:
+def test_existing_no_rule_status_is_refined_to_missing_feature() -> None:
     out = AxisOutput(
         raw_label="unknown",
         stable_label="unknown",
@@ -82,9 +82,9 @@ def test_existing_no_rule_status_is_refined_to_warmup() -> None:
         classification_reason="no_rule_fired",
     )
 
-    assert out.classification_status == "no_rule_fired_warmup"
-    assert out.classification_reason == "required_rule_feature_is_nan"
-    assert out.reporting_label == "no_rule_fired_warmup"
+    assert out.classification_status == "no_rule_fired_missing_feature"
+    assert out.classification_reason == "missing_rule_feature:hy_spread_percentile_504d"
+    assert out.reporting_label == "no_rule_fired_missing_feature"
 
 
 def test_unknown_with_stale_data_quality_is_stale_data() -> None:

@@ -26,15 +26,19 @@ def build_trend_character_axis_series(
     close = context.spy_ohlcv["close"]
     close_index = pd.DatetimeIndex(close.index)
     features = feature_store.trend_character
-    raw_labels, raw_evidence = build_trend_character_raw_outputs(
-        features,
-        allow_v2_labels=context.config.config_version != "core3-v1.0.0",
-    )
     tc_v2_config = context.config.trend_character_v2
     if tc_v2_config is None:
         raise RuntimeError(
             "trend_character_v2 is required"
         )
+    raw_labels, raw_evidence = build_trend_character_raw_outputs(
+        features,
+        allow_v2_labels=context.config.config_version != "core3-v1.0.0",
+        followthrough_rate_threshold=tc_v2_config.followthrough_rate_threshold,
+        range_bound_return_63d_threshold=tc_v2_config.range_bound_return_63d_threshold,
+        range_bound_midpoint_excursion_threshold=tc_v2_config.range_bound_midpoint_excursion_threshold,
+        range_bound_adx_threshold=tc_v2_config.range_bound_adx_threshold,
+    )
     stable_labels, active_labels = apply_per_label_asymmetric_hysteresis(
         raw_labels=raw_labels,
         risk_rank=TREND_CHARACTER_RISK_RANK,

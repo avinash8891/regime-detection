@@ -145,7 +145,7 @@ def build_breadth_axis_series(
                         "proxy": "RSP/SPY",
                         "rule_evidence": evidence,
                         "risk_rank": BREADTH_RISK_RANK,
-                        "deescalation_days": context.config.hysteresis.breadth_deescalation_days,
+                        "deescalation_days": v2_config.default_deescalation_days,
                     },
                     data_quality=data_quality,
                 )

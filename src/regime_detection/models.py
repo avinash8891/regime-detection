@@ -14,7 +14,7 @@ ClassificationStatus = Literal[
     "classified",
     "no_rule_fired",
     "no_rule_fired_hysteresis",
-    "no_rule_fired_warmup",
+    "no_rule_fired_missing_feature",
     "data_unavailable",
     "stale_data",
     "insufficient_history",
@@ -155,39 +155,60 @@ def derive_classification_status(
         return "data_unavailable", reason or "insufficient_data"
     if raw_label not in {None, "unknown"} or stable_label not in {None, "unknown"}:
         return "no_rule_fired_hysteresis", "hysteresis_held_unknown"
-    if _evidence_has_missing_rule_feature(evidence):
-        return "no_rule_fired_warmup", reason or "required_rule_feature_is_nan"
+    missing_rule_features = _missing_rule_features(evidence)
+    if missing_rule_features:
+        return "no_rule_fired_missing_feature", _missing_rule_feature_reason(
+            missing_rule_features
+        )
     return "no_rule_fired", reason or "no_rule_fired"
 
 
-def _evidence_has_missing_rule_feature(evidence: EvidencePayload | None) -> bool:
+def _missing_rule_features(evidence: EvidencePayload | None) -> list[str]:
     if evidence is None:
-        return False
-    return _has_missing_rule_evidence(evidence)
+        return []
+    features: set[str] = set()
+    _collect_missing_rule_features(evidence, features)
+    return sorted(features)
 
 
-def _has_missing_rule_evidence(value: Any) -> bool:
+def _missing_rule_feature_reason(features: list[str]) -> str:
+    prefix = "missing_rule_feature" if len(features) == 1 else "missing_rule_features"
+    return f"{prefix}:{','.join(features)}"
+
+
+def _collect_missing_rule_features(value: Any, features: set[str]) -> None:
     if isinstance(value, EvidencePayload):
         value = value.root
     elif isinstance(value, BaseModel):
         value = value.model_dump()
     if not isinstance(value, dict):
-        return False
+        return
     rule_evidence = value.get("rule_evidence")
-    if isinstance(rule_evidence, dict) and _contains_none(rule_evidence):
-        return True
-    return any(_has_missing_rule_evidence(item) for item in value.values())
+    if isinstance(rule_evidence, dict):
+        _collect_missing_leaf_keys(rule_evidence, features)
+    for item in value.values():
+        _collect_missing_rule_features(item, features)
 
 
-def _contains_none(value: Any) -> bool:
+def _collect_missing_leaf_keys(value: Any, features: set[str], prefix: str = "") -> None:
+    if isinstance(value, dict):
+        for key, item in value.items():
+            child_prefix = f"{prefix}.{key}" if prefix else str(key)
+            _collect_missing_leaf_keys(item, features, child_prefix)
+        return
+    if isinstance(value, (list, tuple)):
+        for index, item in enumerate(value):
+            _collect_missing_leaf_keys(item, features, f"{prefix}[{index}]")
+        return
+    if _is_missing_rule_value(value):
+        features.add(prefix or "unknown")
+
+
+def _is_missing_rule_value(value: Any) -> bool:
     if value is None:
         return True
     if isinstance(value, float) and math.isnan(value):
         return True
-    if isinstance(value, dict):
-        return any(_contains_none(item) for item in value.values())
-    if isinstance(value, (list, tuple)):
-        return any(_contains_none(item) for item in value)
     return False
 
 
