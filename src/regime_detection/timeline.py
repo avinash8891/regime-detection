@@ -14,6 +14,7 @@ from regime_detection.market_context import (
     slice_context_to_recent_sessions,
 )
 from regime_detection.models import (
+    AxisOutput,
     AxisEvidencePayload,
     BreadthStateOutput,
     ChangePointOutput,

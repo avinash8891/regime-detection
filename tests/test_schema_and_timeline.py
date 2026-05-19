@@ -3,6 +3,7 @@ from __future__ import annotations
 from datetime import date
 
 from pathlib import Path
+from typing import get_type_hints
 
 import pytest
 
@@ -33,6 +34,7 @@ from regime_detection.timeline import (
     ENGINE_MINIMUM_HISTORY,
     _align_v2_evidence_for_selected_days,
     _build_timeline_output_for_day,
+    _enrich_with_hmm_evidence,
     _resolve_network_fragility_by_date,
     _resolve_timeline_required_sessions,
     build_regime_timeline,
@@ -204,6 +206,13 @@ def test_runtime_evidence_fields_use_named_payloads() -> None:
         "stable_changed_today": False,
         "days_since_axis_switch": None,
     }
+
+
+def test_timeline_private_helper_type_hints_resolve() -> None:
+    hints = get_type_hints(_enrich_with_hmm_evidence)
+
+    assert hints["output"] is AxisOutput
+    assert hints["return"] is AxisOutput
 
 
 def test_classify_window_returns_one_output_per_nyse_trading_day(
