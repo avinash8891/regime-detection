@@ -427,6 +427,9 @@ inflation_growth:
   # for > 35 calendar days, the EPS signal is treated as NaN and
   # earnings_expansion / earnings_contraction labels do not fire.
   eps_revision_stale_calendar_days: 35
+  # Cleveland Fed nowcast cadence is monthly/current-period. When stale,
+  # only the optional inflation-surprise limb is treated as NaN.
+  nowcast_stale_calendar_days: 60
 
 vol_crush:
   event_window_trading_days: 3

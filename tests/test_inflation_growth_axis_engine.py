@@ -11,6 +11,8 @@ Spec authority: docs/regime_engine_v2_spec.md §2B lines 2174-2326.
 
 from __future__ import annotations
 
+from dataclasses import replace
+
 import numpy as np
 import pandas as pd
 
@@ -94,6 +96,7 @@ def _build_synthetic_context(
     dgs10_truncate_sessions: int | None = None,
     include_nowcast_and_eps_revision: bool = False,
     eps_truncate_calendar_days: int | None = None,
+    nowcast_truncate_calendar_days: int | None = None,
     include_cpi_first_release: bool = False,
 ):
     """Build a full MarketContext with §2B inputs."""
@@ -209,7 +212,11 @@ def _build_synthetic_context(
         "2y_yield": pd.Series(4.5, index=idx, dtype=float),
     }
     if include_nowcast_and_eps_revision:
-        macro_series["cpi_nowcast"] = pd.Series(0.01, index=idx, dtype=float)
+        cpi_nowcast = pd.Series(0.01, index=idx, dtype=float)
+        if nowcast_truncate_calendar_days is not None:
+            nowcast_cutoff = idx[-1] - pd.Timedelta(days=nowcast_truncate_calendar_days)
+            cpi_nowcast.loc[cpi_nowcast.index > nowcast_cutoff] = np.nan
+        macro_series["cpi_nowcast"] = cpi_nowcast
         eps_revision = pd.Series(0.03, index=idx, dtype=float)
         if eps_truncate_calendar_days is not None:
             eps_cutoff = idx[-1] - pd.Timedelta(days=eps_truncate_calendar_days)
@@ -638,6 +645,31 @@ def test_eps_staleness_gate_suppresses_earnings_labels_when_stale() -> None:
         f"Expected no earnings label on stale EPS session {last_day}, "
         f"got {out.raw_label!r}"
     )
+
+
+def test_nowcast_staleness_gate_suppresses_inflation_surprise_label() -> None:
+    context = _build_synthetic_context(
+        include_nowcast_and_eps_revision=True,
+        nowcast_truncate_calendar_days=70,
+    )
+    store, _ = _build_store_and_outputs(context)
+    assert store.inflation_growth is not None
+    forced_zscore = pd.Series(
+        2.0,
+        index=store.inflation_growth.inflation_surprise_zscore.index,
+        dtype=float,
+    )
+    patched_features = replace(
+        store.inflation_growth,
+        inflation_surprise_zscore=forced_zscore,
+    )
+    patched_store = store.model_copy(update={"inflation_growth": patched_features})
+    outputs = build_inflation_growth_axis_series(context, patched_store)
+
+    assert outputs is not None
+    last_day = context.sessions[-1]
+    out = outputs[last_day]
+    assert out.raw_label != "inflation_shock"
 
 
 def test_eps_freshness_gate_permits_earnings_expansion_when_fresh() -> None:

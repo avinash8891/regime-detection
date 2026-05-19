@@ -88,6 +88,10 @@ def _build_full_synthetic_context(
     hyg_truncate_sessions: int | None = None,
     nfci_truncate_calendar_days: int | None = None,
     sofr_drop_last: bool = False,
+    iorb_truncate_calendar_days: int | None = None,
+    legacy_funding_splice: bool = False,
+    ioer_legacy_truncate_calendar_days: int | None = None,
+    hy_oas_truncate_calendar_days: int | None = None,
     omit_oas_series: bool = False,
 ):
     """Build a MarketContext with full cross_asset_closes and macro_series.
@@ -164,6 +168,20 @@ def _build_full_synthetic_context(
     if sofr_drop_last:
         sofr = sofr.copy()
         sofr.iloc[-1] = np.nan
+    if iorb_truncate_calendar_days is not None:
+        iorb = iorb.copy()
+        cutoff = idx[-1] - pd.Timedelta(days=iorb_truncate_calendar_days)
+        iorb.loc[iorb.index > cutoff] = np.nan
+    fedfunds = None
+    ioer_legacy = None
+    if legacy_funding_splice:
+        sofr = pd.Series(np.nan, index=idx, dtype=float, name="sofr")
+        iorb = pd.Series(np.nan, index=idx, dtype=float, name="iorb")
+        fedfunds = _make_constant_series(idx, 0.41, "fedfunds")
+        ioer_legacy = _make_constant_series(idx, 0.40, "ioer_legacy")
+        if ioer_legacy_truncate_calendar_days is not None:
+            cutoff = idx[-1] - pd.Timedelta(days=ioer_legacy_truncate_calendar_days)
+            ioer_legacy.loc[ioer_legacy.index > cutoff] = np.nan
     nfci_w = pd.Series(np.nan, index=idx, dtype=float, name="nfci")
     weekly_positions = list(range(0, n, 5))
     nfci_values = rng.normal(-0.5, 0.2, size=len(weekly_positions))
@@ -175,6 +193,12 @@ def _build_full_synthetic_context(
         nfci_w.loc[nfci_w.index > cutoff] = np.nan
     usd = _make_random_walk(idx, seed=_SEED + 100, start=100.0, sigma=0.003)
 
+    hy_oas = _make_random_walk(idx, seed=_SEED + 101, start=400.0, sigma=0.01)
+    ig_oas = _make_random_walk(idx, seed=_SEED + 102, start=150.0, sigma=0.01)
+    if hy_oas_truncate_calendar_days is not None:
+        cutoff = idx[-1] - pd.Timedelta(days=hy_oas_truncate_calendar_days)
+        hy_oas.loc[hy_oas.index > cutoff] = np.nan
+
     macro_series = {
         "sofr": sofr,
         "iorb": iorb,
@@ -183,8 +207,8 @@ def _build_full_synthetic_context(
         # ICE BofA OAS series — single source for the §2C credit-spread
         # metric. Required by `_CF_MACRO_KEYS`, so the §2C seam does not
         # build without them.
-        "hy_oas": _make_random_walk(idx, seed=_SEED + 101, start=400.0, sigma=0.01),
-        "ig_bbb_oas": _make_random_walk(idx, seed=_SEED + 102, start=150.0, sigma=0.01),
+        "hy_oas": hy_oas,
+        "ig_bbb_oas": ig_oas,
         # Add yield series for monetary slice compatibility.
         "2y_yield": _make_constant_series(idx, 4.5, "2y_yield"),
         "10y_yield": _make_constant_series(idx, 4.0, "10y_yield"),
@@ -192,6 +216,9 @@ def _build_full_synthetic_context(
     if omit_oas_series:
         macro_series.pop("hy_oas")
         macro_series.pop("ig_bbb_oas")
+    if fedfunds is not None and ioer_legacy is not None:
+        macro_series["fedfunds"] = fedfunds
+        macro_series["ioer_legacy"] = ioer_legacy
 
     config = RegimeEngine().config
     context = build_market_context(
@@ -391,6 +418,42 @@ def test_credit_funding_carries_one_session_sofr_publication_lag() -> None:
     out = outputs[last_day]
     assert out.raw_label != "unknown"
     assert out.data_quality.status != "insufficient_data"
+
+
+def test_unknown_when_oas_spread_source_is_stale() -> None:
+    context = _build_full_synthetic_context(hy_oas_truncate_calendar_days=70)
+    _, outputs = _build_store_and_outputs(context)
+
+    assert outputs is not None
+    last_day = context.sessions[-1]
+    out = outputs[last_day]
+    assert out.raw_label == "unknown"
+    assert "hy_oas_stale" in (out.data_quality.reason or "")
+
+
+def test_unknown_when_iorb_component_is_stale() -> None:
+    context = _build_full_synthetic_context(iorb_truncate_calendar_days=70)
+    _, outputs = _build_store_and_outputs(context)
+
+    assert outputs is not None
+    last_day = context.sessions[-1]
+    out = outputs[last_day]
+    assert out.raw_label == "unknown"
+    assert "funding_spread_stale" in (out.data_quality.reason or "")
+
+
+def test_unknown_when_legacy_ioer_component_is_stale() -> None:
+    context = _build_full_synthetic_context(
+        legacy_funding_splice=True,
+        ioer_legacy_truncate_calendar_days=70,
+    )
+    _, outputs = _build_store_and_outputs(context)
+
+    assert outputs is not None
+    last_day = context.sessions[-1]
+    out = outputs[last_day]
+    assert out.raw_label == "unknown"
+    assert "funding_spread_stale" in (out.data_quality.reason or "")
 
 
 def test_unknown_when_assess_series_input_quality_fails() -> None:

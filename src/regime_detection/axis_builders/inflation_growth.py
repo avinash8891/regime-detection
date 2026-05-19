@@ -32,6 +32,7 @@ from regime_detection.models import (
 )
 
 _EPS_REVISION_MACRO_KEY = "aggregate_forward_eps_revision"
+_CPI_NOWCAST_MACRO_KEY = "cpi_nowcast"
 
 
 def build_inflation_growth_axis_series(
@@ -82,6 +83,7 @@ def build_inflation_growth_axis_series(
     )
     pmi_series = macro_series.get(PMI_KEY)
     dgs10_series = macro_series.get(DGS10_KEY)
+    nowcast_series = macro_series.get(_CPI_NOWCAST_MACRO_KEY)
     eps_revision_series = macro_series.get(_EPS_REVISION_MACRO_KEY)
 
     # The 126d (6m) CPI lookback is the binding cold-start window.
@@ -105,6 +107,9 @@ def build_inflation_growth_axis_series(
     )
     pmi_staleness_by_date = _calendar_staleness_days_series(pmi_series, session_index)
     dgs10_staleness_by_date = _trading_staleness_series(dgs10_series, session_index)
+    nowcast_staleness_by_date = _calendar_staleness_days_series(
+        nowcast_series, session_index
+    )
     eps_staleness_by_date = _calendar_staleness_days_series(
         eps_revision_series, session_index
     )
@@ -184,6 +189,28 @@ def build_inflation_growth_axis_series(
             credit_funding_active_label = credit_funding_active_labels_by_date[day]
 
         rule_inputs = rule_inputs_by_date[dt]
+
+        nowcast_staleness_days = int(nowcast_staleness_by_date.loc[dt])
+        nowcast_stale = (
+            nowcast_series is not None
+            and nowcast_staleness_days > ig_config.nowcast_stale_calendar_days
+        )
+        if nowcast_stale:
+            rule_inputs = InflationGrowthRuleInputs(
+                cpi_6m_change_pct=rule_inputs.cpi_6m_change_pct,
+                cpi_6m_change_pct_lag_21=rule_inputs.cpi_6m_change_pct_lag_21,
+                cpi_6m_change_pct_slope_21d=rule_inputs.cpi_6m_change_pct_slope_21d,
+                inflation_surprise_zscore=float("nan"),
+                aggregate_forward_eps_revision_direction_4w=rule_inputs.aggregate_forward_eps_revision_direction_4w,
+                pmi_manufacturing=rule_inputs.pmi_manufacturing,
+                pmi_manufacturing_slope_21d=rule_inputs.pmi_manufacturing_slope_21d,
+                commodity_return_63d=rule_inputs.commodity_return_63d,
+                treasury_10y_yield_slope_21d=rule_inputs.treasury_10y_yield_slope_21d,
+                cyclical_defensive_slope_21d=rule_inputs.cyclical_defensive_slope_21d,
+                spy_21d_return=rule_inputs.spy_21d_return,
+                tlt_21d_return=rule_inputs.tlt_21d_return,
+                credit_funding_active_label=rule_inputs.credit_funding_active_label,
+            )
 
         # EPS staleness gate — mirror of the NFCI gate in credit_funding.py:154.
         # When the aggregate_forward_eps_revision series has no non-NaN value
