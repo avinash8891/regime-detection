@@ -17,8 +17,8 @@ if TYPE_CHECKING:  # avoid runtime cycle: volatility_state_v2 → config → ...
 
 # v2 §1C line 191 precedence:
 #   crisis_vol > vol_crush > high_vol > rising_vol > low_vol > normal_vol > unknown
-# `rising_vol` lands in implementation phase (v2 §1C lines 146-148);
-# `vol_crush` lands via ADR 0005 / documented implementation decision using FRED VIXCLS as
+# `rising_vol` added per v2 §1C lines 146-148;
+# `vol_crush` added per ADR 0005 using FRED VIXCLS as
 # implied_vol_30d plus the event-window seam.
 VolatilityLabel = Literal[
     "low_vol",
@@ -32,8 +32,8 @@ VolatilityLabel = Literal[
 
 
 # v2 §1C — annualization constant. Pinned here as the single source of truth
-# for the shared ``realized_vol`` helper so v1 (existing implementation path) and v2
-# (implementation phase `rising_vol` rule) consume one annualization convention.
+# for the shared ``realized_vol`` helper so v1 and v2
+# (``rising_vol`` rule) consume one annualization convention.
 _TRADING_DAYS_PER_YEAR = 252
 
 
@@ -42,9 +42,8 @@ def realized_vol(
 ) -> pd.Series:
     """Rolling annualised realised volatility of ``close`` log/pct returns.
 
-    Shared helper for v1 volatility classifiers (implementation phase) and the v2 §1C
-    ``rising_vol`` rule (implementation phase). One implementation prevents the
-    "second-system" pattern flagged in implementation phase review.
+    Shared helper for v1 volatility classifiers and the v2 §1C
+    ``rising_vol`` rule.
 
     Algorithm:
         daily_returns = close.pct_change(fill_method=None)
@@ -208,7 +207,7 @@ def compute_features(*, close: pd.Series, vix_proxy_close: pd.Series | None) -> 
     return_21d = close / close.shift(21) - 1
 
     # v1 RV percentile feeds the v1 high_vol/low_vol thresholds. Uses the
-    # shared ``realized_vol`` helper (implementation phase) — preserves the v1 byte-
+    # shared ``realized_vol`` helper — preserves the v1 byte-
     # identical output (window=21, ddof default — pandas .std() is ddof=1).
     realized_vol_21d = realized_vol(close, window=21)
     realized_vol_percentile_252d = realized_vol_21d.rolling(252, min_periods=252).apply(_pct_rank_last, raw=True)

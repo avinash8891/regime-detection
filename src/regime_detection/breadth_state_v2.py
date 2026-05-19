@@ -206,7 +206,7 @@ def compute_breadth_v2_features(
     sector_breadth = sector_breadth.where(~has_any_nan)
     sector_breadth.name = "sector_breadth"
 
-    # PIT-aware §1D features (implementation phase). Both new kwargs must be supplied
+    # PIT-aware §1D features. Both new kwargs must be supplied
     # for the seven survivorship-biased features to materialise; otherwise
     # the v1+v2-sector-only callsite is preserved (all-None PIT fields).
     if pit_constituent_intervals is None or constituent_ohlcv is None:
@@ -237,7 +237,7 @@ def compute_breadth_v2_features(
 
 
 # ---------------------------------------------------------------------------
-# PIT feature helpers (implementation phase). Each takes a (sessions × members)
+# PIT feature helpers. Each takes a (sessions × members)
 # adjusted_close DataFrame plus the precomputed members_by_session mapping
 # and returns a per-session pd.Series aligned to ``reference_index``.
 # ---------------------------------------------------------------------------

@@ -1,4 +1,4 @@
-"""v2 §6.2 GMM clustering evidence layer (implementation phase).
+"""v2 §6.2 GMM clustering evidence layer.
 
 Library reuse: ``sklearn.mixture.GaussianMixture`` provides fit +
 ``predict_proba`` + per-cluster Mahalanobis distance via the stored
@@ -7,7 +7,7 @@ FeatureStore wiring. NO hand-rolled EM / k-means++ / covariance
 regularization.
 
 K-Means is documented in the spec (line 2835) as an "acceptable fallback
-when GMM convergence is unstable". implementation phase ships GMM only; the K-Means
+when GMM convergence is unstable". GMM is the only path shipped; K-Means
 fallback is a future option for a follow-up slice.
 
 Cluster IDs are raw integers ``0..n_clusters-1``; mapping to economic

@@ -260,7 +260,7 @@ InflationGrowthLabel = Literal[
 
 
 class InflationGrowthOutput(AxisOutput):
-    """v2 §2B inflation/growth axis output (implementation phase).
+    """v2 §2B inflation/growth axis output.
 
     Three-tier label triple (raw/stable/active) per the v2 axis pattern.
     ``evidence`` carries the per-day rule inputs and the bias-warning code
@@ -288,7 +288,7 @@ CreditFundingLabel = Literal[
 
 
 class CreditFundingOutput(AxisOutput):
-    """v2 §2C credit/funding state output (implementation phase).
+    """v2 §2C credit/funding state output.
 
     Three-tier label triple (raw/stable/active) per the v2 axis pattern.
     ``evidence`` carries the per-day scalar rule inputs and the bias-warning
@@ -327,7 +327,7 @@ class MonetaryPressureV2Output(AxisOutput):
 
 
 class VolumeLiquidityOutput(BaseModel):
-    """Volume / liquidity internals output (v2 spec §1E). Minimal until implementation phase."""
+    """Volume / liquidity internals output (v2 spec §1E)."""
 
     model_config = ConfigDict(extra="forbid")
 
@@ -365,15 +365,14 @@ VolumeLiquidityLabel = Literal[
 
 
 class VolumeLiquidityStateOutput(AxisOutput):
-    """v2 §1E volume/liquidity state output (implementation phase).
+    """v2 §1E volume/liquidity state output.
 
     Carries the three-tier label triple (raw/stable/active) the v2
     axes use, plus per-day evidence and a data-quality record. The
-    ``mode`` literal pins the only compute path shipped today: a
-    z-score over SPY's daily share volume (`volume_zscore_v1`). When
-    the feature seam is None (no volume column) the timeline emits a
-    placeholder via the engine wiring rather than instantiating this
-    output class.
+    ``mode`` literal pins the compute path: a z-score over SPY's daily
+    share volume (`volume_zscore_v1`). When the feature seam is None
+    (no volume column) the timeline emits an unknown-gate output via
+    the engine wiring rather than instantiating this output class.
     """
 
     model_config = ConfigDict(extra="forbid")
@@ -385,7 +384,7 @@ class VolumeLiquidityStateOutput(AxisOutput):
 
 
 class ClusterOutput(BaseModel):
-    """v2 §6.2 clustering output (implementation phase). Diagnostic evidence; per-day
+    """v2 §6.2 clustering output. Diagnostic evidence; per-day
     cluster assignment + Mahalanobis distance to the assigned-cluster
     centroid. ``mapped_label`` is omitted until the operator-curated
     ``cluster_label_map.yaml`` ships (spec line 2842 + V2 §10).
@@ -407,14 +406,13 @@ class ClusterOutput(BaseModel):
 
 
 class ChangePointOutput(BaseModel):
-    """v2 §4.6 + §6.3 BOCPD change-point detection output (implementation phase, evidence-only).
+    """v2 §4.6 + §6.3 BOCPD change-point detection output (evidence-only).
 
-    score: 5-session rolling max of BOCPD posterior P(run_length=0)
-        (documented implementation decision).
-    days_since_last_break: int sessions since last posterior >= break_threshold
-        (documented implementation decision). None when no break has occurred in the trailing
-        BOCPD window (cold-start) — omitted from the JSON wire via exclude_none.
-    method: pinned to ``"BOCPD"`` for implementation phase (Adams-MacKay 2007).
+    score: 5-session rolling max of BOCPD posterior P(run_length=0).
+    days_since_last_break: int sessions since last posterior >= break_threshold.
+        None when no break has occurred in the trailing BOCPD window
+        (cold-start) — omitted from the JSON wire via exclude_none.
+    method: pinned to ``"BOCPD"`` (Adams-MacKay 2007).
     """
 
     model_config = ConfigDict(extra="forbid")
@@ -448,8 +446,8 @@ class TransitionRiskOutput(BaseModel):
     """Layer 4 transition risk output.
 
     V1 emits `label` + `evidence` (named warnings per v1 §9). V2 §4 adds a
-    continuous composite `score` and its components; these are optional
-    until implementation phase ships the v2 transition-score composer.
+    continuous composite `score`, its interpretation, and per-component
+    breakdown via the transition-score composer.
     """
 
     model_config = ConfigDict(extra="forbid")
@@ -516,7 +514,7 @@ class StrategyResponse(BaseModel):
 
 
 class StrategyFamilyConstraint(BaseModel):
-    """v2 §5.2 — resolved per-family constraint shape (implementation phase).
+    """v2 §5.2 — resolved per-family constraint shape.
 
     Carries the post-inheritance constraint values for one strategy family
     under one active cohort. ``allowed`` is the only required dimension;
@@ -547,7 +545,7 @@ class StrategyFamilyConstraint(BaseModel):
 
 
 class AgentRouting(BaseModel):
-    """v2 §5.1 Agent Cohort Routing output (implementation phase).
+    """v2 §5.1 Agent Cohort Routing output.
 
     ``blocked_strategy_modes`` names strategy modes/families the active cohort
     suppresses; it does not list alternate agent cohorts.
@@ -623,16 +621,16 @@ class RegimeOutput(BaseModel):
 
     # V2 optional top-level fields (default None → omitted from wire via
     # exclude_none=True). Each lands when its v2 slice ships.
-    inflation_growth_state: InflationGrowthOutput | None = None  # v2 §2B (implementation phase)
-    credit_funding_state: CreditFundingOutput | None = None  # v2 §2C (implementation phase)
-    credit_funding_state_proxy: CreditFundingOutput | None = None  # v2 §2C proxy (documented implementation decision)
+    inflation_growth_state: InflationGrowthOutput | None = None  # v2 §2B
+    credit_funding_state: CreditFundingOutput | None = None  # v2 §2C
+    credit_funding_state_proxy: CreditFundingOutput | None = None  # v2 §2C proxy
     credit_funding_effective_state: CreditFundingOutput | None = None  # v2 §2C downstream OAS/proxy resolver
-    volume_liquidity_state: VolumeLiquidityStateOutput | None = None  # v2 §1E (implementation phase)
-    monetary_pressure_state: MonetaryPressureV2Output | None = None  # v2 §2A (documented implementation decision)
-    change_point: ChangePointOutput | None = None  # v2 §4.6 (V2.1)
-    cluster: ClusterOutput | None = None  # v2 §6.2 (implementation phase) — diagnostic evidence
-    agent_routing: "AgentRouting | None" = None  # v2 §5.1 (implementation phase)
-    strategy_family_constraints: dict[str, StrategyFamilyConstraint] | None = None  # v2 §5.2 (implementation phase)
+    volume_liquidity_state: VolumeLiquidityStateOutput | None = None  # v2 §1E
+    monetary_pressure_state: MonetaryPressureV2Output | None = None  # v2 §2A
+    change_point: ChangePointOutput | None = None  # v2 §4.6
+    cluster: ClusterOutput | None = None  # v2 §6.2 — diagnostic evidence
+    agent_routing: "AgentRouting | None" = None  # v2 §5.1
+    strategy_family_constraints: dict[str, StrategyFamilyConstraint] | None = None  # v2 §5.2
 
     def model_dump_legacy_v1_wire(self, *args: Any, **kwargs: Any) -> dict[str, Any]:
         """Compatibility projection for archived V1 wire-shape replay."""

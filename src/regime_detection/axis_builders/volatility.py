@@ -26,7 +26,7 @@ def build_volatility_axis_series(
     close = context.spy_ohlcv["close"]
     close_index = pd.DatetimeIndex(close.index)
     features = feature_store.volatility
-    # implementation phase — thread v2 §1C features + rules through when the v2
+    # Thread v2 §1C features + rules through when the v2
     # seam is populated. When the v2 config is absent (v1-only callers),
     # the arguments stay None and v1 byte-identity is preserved by
     # build_raw_outputs (see test_volatility_state_v2_rising_vol_rule).

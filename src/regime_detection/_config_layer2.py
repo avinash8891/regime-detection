@@ -8,30 +8,14 @@ from regime_detection._config_core import StrictBaseModel
 
 
 class MonetaryPressureV2FeaturesConfig(StrictBaseModel):
-    """v2 §2A — Layer 2A Monetary/Liquidity V2 features (evidence-only).
+    """v2 §2A — Layer 2A Monetary/Liquidity V2 feature config.
 
-    Ships ONLY the ONE feature formula spec-pinned at v2 §2A line 896::
-
-        yield_change_zscore = (yield_change_63d - mean_5y) / std_5y
-
-    applied to the two FRED yield series with explicit spec-given source
-    contract (lines 887–889): ``DGS2`` (2y) and ``DGS10`` (10y).
-
-    Per V2 §10 ABSOLUTE RULE the following are DEFERRED because the spec
-    does not pin them:
-
-    - ``broad_usd_index_zscore_63d`` (formula unspecified).
-    - ``yield_change_zscore_21d_2y`` / ``yield_change_zscore_21d_10y``
-      (21d variant: neither the change-window nor the mean/std window
-      length is given).
-    - The §2A label set (``tightening_pressure``, ``easing_pressure``,
-      ``rate_shock``, neutral, unknown) — no Literal[...] declared in spec.
-    - Precedence ordering, risk-rank table, per-label hysteresis days.
-    - The ``MonetaryPressureSeriesClassifier`` axis classifier.
-
-    The evidence-first precedent applies here: the two yield z-scores ship
-    as evidence-only and become inputs to the future §2A axis classifier
-    once the spec is amended.
+    Configures the yield_change_zscore template (§2A line 896) applied to
+    DGS2 (2y) and DGS10 (10y), plus the broad_usd_index_zscore_63d and
+    21d-variant features. All feed the §2A axis classifier
+    (tightening_pressure, easing_pressure, rate_shock, neutral_monetary,
+    unknown) with precedence ordering, risk-rank table, and per-label
+    hysteresis days defined in ``MonetaryPressureV2Config``.
     """
 
     # v2 §2A line 896 — `yield_change_63d[t] = yield[t] - yield[t-63]`.

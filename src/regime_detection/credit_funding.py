@@ -1,4 +1,4 @@
-"""v2 §2C Credit/Funding axis — feature compute + per-day rule materialisation (implementation phase).
+"""v2 §2C Credit/Funding axis — feature compute + per-day rule materialisation.
 
 Implements the 5-label axis classifier from spec lines 2005-2130:
 
@@ -188,7 +188,7 @@ _PROXY_BIAS_FEATURE_NAMES: tuple[str, ...] = (
 
 @dataclass(frozen=True)
 class CreditFundingFeatures:
-    """v2 §2C per-session credit/funding feature series (implementation phase).
+    """v2 §2C per-session credit/funding feature series.
 
     All series are aligned to the SPY DatetimeIndex. NaN cold-start at the
     head of each series until the corresponding lookback fills.

@@ -46,7 +46,7 @@ def build_volume_liquidity_axis_series(
     context: MarketContext,
     feature_store: FeatureStore,
 ) -> dict[date, VolumeLiquidityStateOutput] | None:
-    """V2 §1E volume/liquidity axis classifier (implementation phase)."""
+    """V2 §1E volume/liquidity axis classifier."""
     volume_features = feature_store.volume_liquidity_v2
     if volume_features is None:
         return None

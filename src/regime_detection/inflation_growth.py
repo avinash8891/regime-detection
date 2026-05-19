@@ -1,4 +1,4 @@
-"""v2 §2B Inflation / Growth axis — feature compute + rule materialisation (implementation phase).
+"""v2 §2B Inflation / Growth axis — feature compute + rule materialisation.
 
 Implements the 8-label axis classifier from spec lines 2174-2326. Optional
 nowcast and EPS-revision source series are consumed when present and
@@ -153,7 +153,7 @@ FIRST_RELEASE_CPI_PROVENANCE_SOURCE_URL = (
 
 @dataclass(frozen=True)
 class InflationGrowthFeatures:
-    """v2 §2B per-session inflation/growth feature series (implementation phase).
+    """v2 §2B per-session inflation/growth feature series.
 
     All series are aligned to the SPY DatetimeIndex. NaN cold-start at the
     head of each series until the corresponding lookback fills.
@@ -271,7 +271,7 @@ def compute_inflation_growth_features(
 
     All inputs are aligned to ``spy_close.index``. CPI and PMI are monthly
     series and are forward-filled to daily (§2B line 2208 PMI; CPI follows
-    the same NFCI-style pattern implementation phase uses).
+    the same NFCI-style forward-fill pattern).
 
     ``cpi_nowcast`` (the Cleveland Fed inflation nowcast — ADR 0006) is
     optional. When supplied, ``inflation_surprise_zscore`` is computed

@@ -1,7 +1,7 @@
-"""v2 §1E Volume / Liquidity rule engine + precedence (implementation phase).
+"""v2 §1E Volume / Liquidity rule engine + precedence.
 
 Pure scalar rule layer over the v2 §1E features:
-- ``volume_zscore_20d`` from ``FeatureStore.volume_liquidity_v2`` (implementation phase).
+- ``volume_zscore_20d`` from ``FeatureStore.volume_liquidity_v2``.
 - ``return_1d`` from V1 ``VolatilityFeatures.return_1d``
   (single source of truth — see documented implementation decision).
 - ``gap_frequency_percentile_252d`` + ``intraday_range_percentile_252d``
@@ -98,7 +98,7 @@ def evaluate_panic_volume(
     AND ``return_1d < panic_volume_return_threshold (-0.02)``.
 
     Strict inequalities verbatim per spec. Any NaN input falsifies the
-    rule (mirrors implementation phase / implementation phase cold-start contract — a
+    rule (NaN-falsifies cold-start contract — a
     partially-warmed-up session cannot trigger a risk-up override).
     """
     if _is_nan(inputs.volume_zscore_20d) or _is_nan(inputs.return_1d):

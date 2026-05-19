@@ -190,7 +190,7 @@ def _build_transition_score_inputs_by_date(
     )
     dd252 = drawdown_252d.reindex(session_index).to_numpy(dtype=float, na_value=float("nan"))
 
-    # v2 §6.1 (implementation phase) — bulk-reindex both `top_state_prob[t]` and
+    # v2 §6.1 — bulk-reindex both `top_state_prob[t]` and
     # `top_state_prob[t-5]`. The 5-NYSE-session offset is materialized by
     # shifting the SOURCE series before reindexing so each session t maps
     # to the value at session t-5 (or NaN if absent).

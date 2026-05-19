@@ -27,7 +27,7 @@ def build_trend_direction_axis_series(
     close = context.spy_ohlcv["close"]
     close_index = pd.DatetimeIndex(close.index)
     features = feature_store.trend_direction
-    # implementation phase — thread v2 §1A features + rules through when the v2 seam
+    # Thread v2 §1A features + rules through when the v2 seam
     # is populated. When the v2 config is absent (v1-only callers), the
     # arguments stay None and v1 byte-identity is preserved by
     # build_raw_outputs (see test_trend_direction_v2_recovery_rule).

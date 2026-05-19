@@ -1,11 +1,9 @@
-"""v2 §4 — Transition Score evidence composer (implementation phase, Without-HMM rhythm).
+"""v2 §4 — Transition Score evidence composer.
 
-Implements the five 5-of-6 deterministic component scores defined verbatim
-in v2 §4.2, the §4.3 weighted composite (5-component, post-HMM-deferral
-renormalization), and the §4.4 half-open interpretation bands.
-HMM-driven ``hmm_probability_shift_score`` (the 6th component) is deferred
-to implementation phase; the §4.3 "Without HMM" weight table sums to 1.0 over the 5
-components shipped here.
+Implements all 6 deterministic + HMM-probability-shift component scores
+defined in v2 §4.2, the §4.3 weighted composite (4 weight tables for all
+hmm/change-point presence combinations), and the §4.4 half-open
+interpretation bands.
 """
 
 from __future__ import annotations
@@ -158,7 +156,7 @@ def compose_transition_score_for_session(
         "macro_event": macro_event,
     }
 
-    # v2 §4.2 line 2396 + §6.1 (implementation phase) — 6th component when both HMM
+    # v2 §4.2 line 2396 + §6.1 — 6th component when both HMM
     # probabilities are present and non-NaN. Permutation-invariant
     # |top_state_prob[t] - top_state_prob[t-5]|, defensively clipped to
     # [0, 1] (the formula is already in-range by construction since

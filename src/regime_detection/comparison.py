@@ -11,11 +11,9 @@ strategy metrics). Foundation scaffolding for the v2 §9.1 gate:
 >     crisis_override)
 >   - lower false-switch rate than V1
 
-implementation phase+ will wire `compute_v1_v2_diff` and `evaluate_v2_gate` into the
-walk-forward runner (via `--engine-profile both`) and shadow A/B
-(via `scripts/run_v1_v2_diff_report.py`). Today these are pure
-functions with synthetic-input tests so the gate evaluator is ready
-the moment v2 outputs exist.
+``compute_v1_v2_diff`` and ``evaluate_v2_gate`` are pure functions
+consumed by the walk-forward runner (``--engine-profile both``) and
+shadow A/B (``scripts/run_v1_v2_diff_report.py``).
 """
 from __future__ import annotations
 

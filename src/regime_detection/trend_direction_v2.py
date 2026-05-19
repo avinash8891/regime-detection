@@ -190,7 +190,7 @@ def _slope_of_sma(sma: pd.Series, slope_lookback: int) -> pd.Series:
     """v2 §1A line 106: (sma[t] - sma[t-N]) / sma[t-N].
 
     Accepts a pre-computed SMA series so callers can both expose the SMA
-    level (implementation phase `recovery` predicate consumes ``sma_50``) and its
+    level (the `recovery` predicate consumes ``sma_50``) and its
     slope in one pass.
 
     NaN propagates from the SMA (until t >= sma_period-1) and from the
@@ -209,7 +209,7 @@ def compute_trailing_drawdown(close: pd.Series, lookback: int) -> pd.Series:
     NaN if any of the window's `lookback` sessions is NaN or if t lacks
     `lookback` prior history.
 
-    Public name added in implementation phase: the HMM evidence layer (§6.1) reuses
+    The HMM evidence layer (§6.1) reuses
     this formula for its `drawdown_63d` input — one home (AGENTS rule B).
     """
     peak = close.rolling(window=lookback, min_periods=lookback).max()
@@ -352,7 +352,7 @@ def _realized_vol_21d_for_euphoria(close: pd.Series) -> pd.Series:
 
 
 # ---------------------------------------------------------------------------
-# implementation phase — v2 §1A `recovery` rule + precedence wrapper.
+# v2 §1A `recovery` rule + precedence wrapper.
 #
 # Rule (v2 §1A lines 114-119, verbatim):
 #     prior 252d drawdown <= -0.15
