@@ -360,10 +360,21 @@ def _build_timeline_output_for_day(
         cid_val = aligned_v2_evidence.cluster_id_aligned.iloc[selected_day_index]
         dist_val = aligned_v2_evidence.cluster_distance_aligned.iloc[selected_day_index]
         if cid_val is not None and not pd.isna(cid_val) and not pd.isna(dist_val):
+            clustering_config = working_context.config.clustering
+            cluster_label_map = (
+                clustering_config.cluster_label_map
+                if clustering_config is not None
+                else None
+            )
             cluster_output = ClusterOutput(
                 cluster_id=int(cid_val),
                 distance_to_centroid=float(dist_val),
                 model_version=aligned_v2_evidence.cluster_model_version,
+                mapped_label=(
+                    cluster_label_map.get(int(cid_val))
+                    if cluster_label_map is not None
+                    else None
+                ),
             )
 
     hmm_output: HmmOutput | None = None
@@ -378,12 +389,23 @@ def _build_timeline_output_for_day(
             persistence = _hmm_state_persistence_days(
                 aligned_v2_evidence.hmm_top_state_aligned, selected_day_index
             )
+            hmm_config = working_context.config.hmm
+            hmm_label_map = (
+                hmm_config.state_label_map
+                if hmm_config is not None
+                else None
+            )
             hmm_output = HmmOutput(
                 top_state=int(hmm_state_val),
                 top_state_prob=float(hmm_prob_val),
                 n_states=aligned_v2_evidence.hmm_n_states,
                 state_persistence_days=persistence,
                 model_version=aligned_v2_evidence.hmm_model_version or "hmm_unknown",
+                mapped_label=(
+                    hmm_label_map.get(int(hmm_state_val))
+                    if hmm_label_map is not None
+                    else None
+                ),
             )
 
     agent_routing = None

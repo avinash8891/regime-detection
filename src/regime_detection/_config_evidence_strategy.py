@@ -42,6 +42,7 @@ class HMMConfig(StrictBaseModel):
         min_length=1,
     )
     model_version: str = "hmm_4state_v1.0"
+    state_label_map: dict[int, str] | None = None
 
 
 class ClusteringConfig(StrictBaseModel):
@@ -57,6 +58,7 @@ class ClusteringConfig(StrictBaseModel):
     random_state: int = Field(default=42, ge=0)
     covariance_type: Literal["full", "tied", "diag", "spherical"] = "full"
     model_version: str = Field(default="gmm_8cluster_v1.0")
+    cluster_label_map: dict[int, str] | None = None
 
 
 class ChangePointConfig(StrictBaseModel):
