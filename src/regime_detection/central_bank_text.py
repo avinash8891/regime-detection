@@ -415,7 +415,7 @@ def to_daily_score_series(
                 dtype=float,
             )
     deduped = _aggregate_same_date_rows(
-        scored_releases, same_date_aggregation=same_date_aggregation
+        working, same_date_aggregation=same_date_aggregation
     )
     deduped_index = pd.DatetimeIndex(pd.to_datetime(deduped["release_date"]))
     aligned = pd.Series(

@@ -8,34 +8,34 @@ A slice = one of the ten units listed in v2 spec §8 (Network Fragility, Layer 1
 
 ### 1. Slice scope
 
-- [ ] Slice maps to exactly one v2 spec §8 row.
-- [ ] No changes to v1 production code outside what the slice's v2 spec section explicitly authorizes.
-- [ ] No formulas, thresholds, or precedence invented (v2 spec §10: "do not invent component score formulas — use the exact formulas in §4.2"; same rule for §3.5, §2A/§2B/§2C, etc.).
+- [x] Slice maps to exactly one v2 spec §8 row.
+- [x] No changes to v1 production code outside what the slice's v2 spec section explicitly authorizes.
+- [x] No formulas, thresholds, or precedence invented (v2 spec §10: "do not invent component score formulas — use the exact formulas in §4.2"; same rule for §3.5, §2A/§2B/§2C, etc.).
 
 ### 2. Config
 
-- [ ] The slice's v2 sub-config block exists in `configs/core3-v2.0.0.yaml` with reviewed defaults (each value cited to its v2 spec line).
-- [ ] The corresponding Pydantic class in `src/regime_detection/config.py` has `extra="forbid"` and `Field(...)` constraints on every numeric range.
+- [x] The slice's v2 sub-config block exists in `configs/core3-v2.0.0.yaml` with reviewed defaults (each value cited to its v2 spec line).
+- [x] The corresponding Pydantic class in `src/regime_detection/config.py` has `extra="forbid"` and `Field(...)` constraints on every numeric range.
 
 ### 3. Models
 
-- [ ] Wire-level type evolution (if any) preserves v1 byte-identity: `tests/test_v1_frozen_replay.py::test_v1_frozen_outputs_parse_through_v1_frozen_models` still passes.
-- [ ] Optional `RegimeOutput` fields default `None` so consumers that don't enable the slice see no diff.
+- [x] Wire-level type evolution (if any) preserves v1 byte-identity: `tests/test_v1_frozen_replay.py::test_v1_frozen_outputs_parse_through_v1_frozen_models` still passes.
+- [x] Optional `RegimeOutput` fields default `None` so consumers that don't enable the slice see no diff.
 
 ### 4. Feature store + axis_series
 
-- [ ] New feature dataclass lives in the axis module (e.g., `network_fragility.py`), not in `feature_store.py`.
-- [ ] `feature_store.py` is extended with `Optional[X] = None` and only computes when the corresponding `MarketContext` data input is present.
-- [ ] Any new live-axis builder follows the current axis-series pattern: compute the slice-specific feature object in its home module, expose the axis output through `AxisSeriesResult` or the established per-axis output mapping, and wire it from `axis_series.py`/`engine.classify` only when the slice's required `MarketContext` inputs are present.
-- [ ] Hysteresis routed through `apply_per_label_asymmetric_hysteresis` with `deescalation_days_by_label` from the axis V2 config section. Per-label hysteresis is mandatory for all 9 label axes (ADR 0010); missing config raises `RuntimeError`. Both V1 and V2 configs ship per-label blocks. The old flat `apply_asymmetric_hysteresis` is no longer used for any axis.
+- [x] New feature dataclass lives in the axis module (e.g., `network_fragility.py`), not in `feature_store.py`.
+- [x] `feature_store.py` is extended with `Optional[X] = None` and only computes when the corresponding `MarketContext` data input is present.
+- [x] Any new live-axis builder follows the current axis-series pattern: compute the slice-specific feature object in its home module, expose the axis output through `AxisSeriesResult` or the established per-axis output mapping, and wire it from `axis_series.py`/`engine.classify` only when the slice's required `MarketContext` inputs are present.
+- [x] Hysteresis routed through `apply_per_label_asymmetric_hysteresis` with `deescalation_days_by_label` from the axis V2 config section. Per-label hysteresis is mandatory for all 9 label axes (ADR 0010); missing config raises `RuntimeError`. Both V1 and V2 configs ship per-label blocks. The old flat `apply_asymmetric_hysteresis` is no longer used for any axis.
 
 ### 5. Tests
 
-- [ ] Unit tests for the new feature compute (synthetic inputs, hand-computed expected values; no toy names per AGENTS rule).
-- [ ] Unit tests for the rule engine (one test per rule precedence position).
-- [ ] Unit tests for the hysteresis wrapper (default immediate escalation, configurable delayed escalation where used, and de-escalation honors per-label thresholds).
-- [ ] Integration test invoking `engine.classify` end-to-end with the slice's data input.
-- [ ] At least one v2 golden date passes (`tests/fixtures/derived/golden_dates_v2.yaml` row's `expected.<slice_field>`).
+- [x] Unit tests for the new feature compute (synthetic inputs, hand-computed expected values; no toy names per AGENTS rule).
+- [x] Unit tests for the rule engine (one test per rule precedence position).
+- [x] Unit tests for the hysteresis wrapper (default immediate escalation, configurable delayed escalation where used, and de-escalation honors per-label thresholds).
+- [x] Integration test invoking `engine.classify` end-to-end with the slice's data input.
+- [x] At least one v2 golden date passes (`tests/fixtures/derived/golden_dates.yaml` row's `expected.<slice_field>`).
 
 ### 6. v2 §9.1 performance gate
 
@@ -55,14 +55,25 @@ A slice = one of the ten units listed in v2 spec §8 (Network Fragility, Layer 1
 
 ### 8. Documentation
 
-- [ ] If a v2 spec ambiguity surfaced during implementation, it is recorded in the slice PR description and (if material) added to the spec via the rewrite-existing-lines rule from File 3.
-- [ ] No new top-level docs sections added; spec edits are inline.
+- [x] If a v2 spec ambiguity surfaced during implementation, it is recorded in the slice PR description and (if material) added to the spec via the rewrite-existing-lines rule from File 3.
+- [x] No new top-level docs sections added; spec edits are inline.
 
 ### 9. Commit + CI
 
-- [ ] Single commit per slice (or single commit per sub-step if the slice has ≥3 sub-steps).
-- [ ] Commit message identifies the slice (v2 §8 row) and the v2 spec sections implemented.
-- [ ] CI green: `pytest -m "not v2_shadow"` (unit + integration + v2_gate; v2_shadow is long-running and runs separately).
+- [x] Single commit per slice (or single commit per sub-step if the slice has ≥3 sub-steps).
+- [x] Commit message identifies the slice (v2 §8 row) and the v2 spec sections implemented.
+- [x] CI green: `pytest -m "not v2_shadow"` (unit + integration + v2_gate; v2_shadow is long-running and runs separately).
+
+### 10. Safety invariants (added by audit)
+
+- [x] V1 config does NOT light V2 feature seams — `build_regime_timeline` gates V2 feature configs on `config_version`.
+- [x] Golden fixtures are hand-labeled, not engine-generated — `golden_dates.yaml` carries `provenance: hand_labeled`.
+- [x] HMM/GMM label maps are NOT shipped in default config — auto-labeling requires reviewed operator artifact.
+- [x] HMM/GMM label maps are validated against fitted model metadata (n_states/n_clusters, model_version) before populating `mapped_label`.
+- [x] HMM `state_persistence_days` is computed across the full history, not just the output window.
+- [x] `AxisEvidencePayload` type is preserved through `model_copy` (no plain-dict leakage).
+- [x] Central-bank-text `max_release_age_days` filter applies to aggregation (pass filtered `working` frame, not original `scored_releases`).
+- [x] Available-sector breadth proxy is reachable when some (but not all) sector ETFs are present.
 
 ## After merge
 

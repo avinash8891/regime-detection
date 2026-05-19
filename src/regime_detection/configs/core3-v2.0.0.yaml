@@ -477,11 +477,6 @@ hmm:
   covariance_type: full
   min_covar: 0.001
   random_seeds: [42, 101, 202, 303, 404, 505, 606, 707, 808, 909]
-  state_label_map:
-    0: elevated_uncertainty
-    1: high_vol_stress
-    2: calm_trending
-    3: transient_spike
 
 # v2 §6.2 K-Means/GMM Clustering — diagnostic evidence layer.
 clustering:
@@ -490,15 +485,6 @@ clustering:
   random_state: 42
   covariance_type: full
   model_version: "gmm_8cluster_v1.0"
-  cluster_label_map:
-    0: post_crisis_transition
-    1: crisis_panic
-    2: tariff_shock
-    3: correction_chop
-    4: volatile_recovery
-    5: calm_trending_bull
-    6: steady_bull
-    7: high_vol_stress
 
 # v2 §6.3 + §4.6 Change-Point Detection (implementation phase, evidence-only).
 # Algorithm: BOCPD (Adams & MacKay 2007). Library:

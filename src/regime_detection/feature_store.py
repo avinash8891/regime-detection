@@ -479,7 +479,7 @@ def _build_breadth_state_v2_feature(state: _FeatureStoreBuildState) -> None:
         state.breadth_state_v2 = None
         return
     sector_closes = state.context.sector_etf_closes
-    if not all(symbol in sector_closes for symbol in SECTOR_ETFS):
+    if not any(symbol in sector_closes for symbol in SECTOR_ETFS):
         state.breadth_state_v2 = None
         return
     state.breadth_state_v2 = compute_breadth_v2_features(
