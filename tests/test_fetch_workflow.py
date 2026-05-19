@@ -337,6 +337,8 @@ def test_run_macro_fetch_writes_macro_and_vintage_reports(
     assert set(V2_FRED_SERIES).issubset(report["series"])
     assert report["series"]["broad_usd_index"]["series_id"] == "DTWEXBGS"
     assert report["series"]["iorb"]["series_id"] == "IORB"
+    assert report["series"]["fedfunds"]["series_id"] == "DFF"
+    assert report["series"]["ioer_legacy"]["series_id"] == "IOER"
     assert (tmp_path / "macro" / "fred_macro_series.parquet").exists()
     assert (tmp_path / "macro_vintages" / "cpi_all_items_vintages.parquet").exists()
 
