@@ -214,8 +214,6 @@ def score_text(body_text: str) -> CentralBankTextScore:
 # ---------------------------------------------------------------------------
 
 
-_REQUIRED_FOMC_COLUMNS: tuple[str, ...] = ("release_timestamp", "body_text")
-_REQUIRED_POWELL_COLUMNS: tuple[str, ...] = ("publication_timestamp", "body_text")
 
 
 def score_release_frame(
@@ -374,6 +372,7 @@ def to_daily_score_series(
     session_index: pd.DatetimeIndex,
     smoothing_window_sessions: int = 30,
     same_date_aggregation: SameDateAggregation = "pick_longer",
+    max_release_age_days: int | None = None,
 ) -> pd.Series:
     """Build a daily forward-filled, smoothed central-bank-text score.
 
@@ -402,8 +401,21 @@ def to_daily_score_series(
             name="central_bank_text_score",
             dtype=float,
         )
+    working = scored_releases
+    if max_release_age_days is not None and len(session_index) > 0:
+        latest_session = session_index.max()
+        cutoff = latest_session - pd.Timedelta(days=max_release_age_days)
+        release_dates = pd.to_datetime(working["release_date"])
+        working = working[release_dates >= cutoff].copy()
+        if working.empty:
+            return pd.Series(
+                float("nan"),
+                index=session_index,
+                name="central_bank_text_score",
+                dtype=float,
+            )
     deduped = _aggregate_same_date_rows(
-        scored_releases, same_date_aggregation=same_date_aggregation
+        working, same_date_aggregation=same_date_aggregation
     )
     deduped_index = pd.DatetimeIndex(pd.to_datetime(deduped["release_date"]))
     aligned = pd.Series(

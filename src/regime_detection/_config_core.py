@@ -21,19 +21,6 @@ AxisName = Literal[
 ]
 
 
-class HysteresisConfig(StrictBaseModel):
-    trend_direction_escalation_days: int = Field(default=1, ge=1)
-    trend_direction_deescalation_days: int = Field(ge=0)
-    trend_character_escalation_days: int = Field(default=1, ge=1)
-    trend_character_deescalation_days: int = Field(ge=0)
-    volatility_escalation_days: int = Field(default=1, ge=1)
-    volatility_deescalation_days: int = Field(ge=0)
-    breadth_escalation_days: int = Field(default=1, ge=1)
-    breadth_deescalation_days: int = Field(ge=0)
-    composite_deescalation_days: int = Field(ge=0)
-    # event_calendar has no hysteresis: calendar windows are deterministic.
-
-
 class DataQualityConfig(StrictBaseModel):
     # Maximum allowed age (calendar days) of the newest row in each required series.
     max_freshness_days: int = Field(ge=0)

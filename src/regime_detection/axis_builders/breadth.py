@@ -12,9 +12,7 @@ from regime_detection.breadth_state import (
 )
 from regime_detection.data_quality import quality_forces_unknown
 from regime_detection.feature_store import FeatureStore
-from regime_detection.hysteresis import (
-    apply_asymmetric_hysteresis,
-)
+from regime_detection.hysteresis import apply_per_label_asymmetric_hysteresis
 from regime_detection.market_context import MarketContext
 from regime_detection.models import (
     BreadthStateOutput,
@@ -77,11 +75,16 @@ def build_breadth_axis_series(
             nh_nl_threshold=v2_config.nh_nl_ratio_narrowing_threshold,
         )
 
-    stable_labels, active_labels = apply_asymmetric_hysteresis(
+    v2_config = context.config.breadth_state_v2
+    if v2_config is None or v2_config.deescalation_days_by_label is None:
+        raise RuntimeError(
+            "breadth_state_v2.deescalation_days_by_label is required"
+        )
+    stable_labels, active_labels = apply_per_label_asymmetric_hysteresis(
         raw_labels=raw_labels,
         risk_rank=BREADTH_RISK_RANK,
-        escalation_days=context.config.hysteresis.breadth_escalation_days,
-        deescalation_days=context.config.hysteresis.breadth_deescalation_days,
+        deescalation_days_by_label=v2_config.deescalation_days_by_label,
+        default_deescalation_days=v2_config.default_deescalation_days,
     )
     outputs_by_date: dict[date, BreadthStateOutput] = {}
     stable_by_date: dict[date, str] = {}
@@ -142,7 +145,7 @@ def build_breadth_axis_series(
                         "proxy": "RSP/SPY",
                         "rule_evidence": evidence,
                         "risk_rank": BREADTH_RISK_RANK,
-                        "deescalation_days": context.config.hysteresis.breadth_deescalation_days,
+                        "deescalation_days": v2_config.default_deescalation_days,
                     },
                     data_quality=data_quality,
                 )

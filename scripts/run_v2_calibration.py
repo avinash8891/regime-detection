@@ -45,16 +45,20 @@ from regime_detection.fragility_universe import SECTOR_ETFS  # noqa: E402
 from regime_detection.loaders import (  # noqa: E402
     load_central_bank_text_score,
     load_cpi_vintages_first_release,
+    load_event_calendar,
     load_news_sentiment_series,
 )
 from regime_detection.market_context import build_market_context  # noqa: E402
 from scripts._v2_calibration_helpers import (  # noqa: E402
     add_manifest_args,
+    apply_manifest_input_defaults,
+    apply_manifest_input_paths,
     default_pmi_path,
     load_close_dict,
     load_macro_series,
     load_market_data,
     materialize_manifest_from_args,
+    register_manifest_input_args,
 )
 
 
@@ -233,8 +237,12 @@ def _fit_summary_clustering(feature_store: Any) -> dict[str, Any]:
     return summary
 
 
+_RUNNER_NAME = "v2_calibration"
+
+
 def _parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="V2 calibration artifact runner.")
+    register_manifest_input_args(parser)
     add_manifest_args(
         parser,
         data_root_default=REPO_ROOT / "data" / "raw",
@@ -245,31 +253,25 @@ def _parse_args() -> argparse.Namespace:
 
 def main() -> int:
     args = _parse_args()
-    data_root = args.data_root
     materialize_manifest_from_args(
         args,
         repo_root=REPO_ROOT,
-        required_for="v2_calibration",
+        required_for=_RUNNER_NAME,
     )
-    daily_dir = data_root / FIXED_UNIVERSE_TREE_NAME
-    macro_parquet = data_root / "macro" / "fred_macro_series.parquet"
-    pmi_path = default_pmi_path(data_root)
-    pit_intervals_parquet = (
-        data_root / "pit_constituents" / "sp500_ticker_intervals.parquet"
-    )
+    apply_manifest_input_paths(args, runner_name=_RUNNER_NAME, repo_root=REPO_ROOT)
+    apply_manifest_input_defaults(args, args.data_root)
+    data_root = args.data_root
+    daily_dir = args.daily_dir or data_root / FIXED_UNIVERSE_TREE_NAME
+    macro_parquet = args.macro_parquet
+    pmi_path = args.pmi_path or default_pmi_path(data_root)
+    pit_intervals_parquet = args.pit_parquet
     constituent_db_path = data_root / "constituent_ohlcv.db"
-    # v2 §2A central-bank-text + first-release CPI seams (audit M1 / M2).
-    # Standard fetch paths under data/raw/; absence is non-fatal — the
-    # engine falls through to the existing latest-revision CPI path and
-    # the central_bank_text_score stays None.
-    fomc_minutes_parquet = data_root / "fomc_minutes" / "fomc_minutes.parquet"
-    powell_speeches_parquet = data_root / "powell_speeches" / "powell_speeches.parquet"
-    cpi_vintages_parquet = (
-        data_root / "macro_vintages" / "cpi_all_items_vintages.parquet"
-    )
-    news_sentiment_parquet = (
-        data_root / "news_sentiment" / "sf_fed_news_sentiment.parquet"
-    )
+    fomc_minutes_parquet = args.fomc_minutes_parquet
+    powell_speeches_parquet = args.powell_speeches_parquet
+    cpi_vintages_parquet = args.cpi_vintages_parquet
+    news_sentiment_parquet = args.news_sentiment_parquet
+    event_calendar_path = args.event_calendar
+    aaii_sentiment_parquet = args.aaii_sentiment_parquet
     verification_dir = REPO_ROOT / "docs" / "verification"
     verification_dir.mkdir(parents=True, exist_ok=True)
 
@@ -351,12 +353,8 @@ def main() -> int:
     macro_series = load_macro_series(
         macro_parquet,
         pmi_path,
-        cpi_nowcast_parquet=data_root
-        / "cleveland_fed_nowcast"
-        / "cpi_nowcast.parquet",
-        eps_weekly_history_parquet=data_root
-        / "aggregate_forward_eps"
-        / "sp500_eps_weekly_history.parquet",
+        cpi_nowcast_parquet=args.cpi_nowcast_parquet,
+        eps_weekly_history_parquet=args.aggregate_forward_eps_weekly_history_parquet,
     )
 
     print(f"as_of = {end_date}; spy sessions = {len(spy_index)}")
@@ -412,11 +410,30 @@ def main() -> int:
     else:
         print(f"news_sentiment: skipped (no {news_sentiment_parquet.name})")
 
+    event_calendar_df = None
+    if event_calendar_path.exists():
+        event_calendar_df = load_event_calendar(event_calendar_path)
+        print(f"event_calendar: {len(event_calendar_df)} rows from {event_calendar_path.name}")
+    else:
+        print(f"event_calendar: skipped (no {event_calendar_path.name})")
+
+    aaii_sentiment = None
+    if aaii_sentiment_parquet.exists():
+        aaii_sentiment = pd.read_parquet(aaii_sentiment_parquet)
+        print(f"aaii_sentiment: {len(aaii_sentiment)} rows")
+    else:
+        print(f"aaii_sentiment: skipped (no {aaii_sentiment_parquet.name})")
+
+    implied_vol_30d = macro_series.get("implied_vol_30d")
+
     # Rebuild context with full V2 inputs + PIT seams.
     context = build_market_context(
         end_date=end_date,
         market_data=market_data,
         config=config,
+        event_calendar=event_calendar_df,
+        aaii_sentiment=aaii_sentiment,
+        implied_vol_30d=implied_vol_30d,
         sector_etf_closes=sector_etf_closes,
         cross_asset_closes=cross_asset_closes,
         macro_series=macro_series,

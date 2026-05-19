@@ -68,11 +68,13 @@ def build_market_context(
     end_date = as_date(end_date)
     require_nyse_trading_day(end_date)
     normalized_market_data = _normalize_market_data_for_runtime(market_data)
-    _require_market_data_contract(normalized_market_data, as_of_date=end_date)
+    cap_weight_symbol = config.etf_proxy.cap_weight_index
+    equal_weight_symbol = config.etf_proxy.equal_weight_proxy
+    _require_market_data_contract(normalized_market_data, as_of_date=end_date, cap_weight_symbol=cap_weight_symbol)
     _require_constituent_ohlcv_contract(constituent_ohlcv)
 
-    spy_ohlcv = _spy_ohlcv_frame(normalized_market_data, as_of_date=end_date)
-    rsp_close = _symbol_close_series(normalized_market_data, symbol="RSP", as_of_date=end_date)
+    spy_ohlcv = _spy_ohlcv_frame(normalized_market_data, as_of_date=end_date, symbol=cap_weight_symbol)
+    rsp_close = _symbol_close_series(normalized_market_data, symbol=equal_weight_symbol, as_of_date=end_date)
     vix_proxy_close = _resolve_vix_proxy_close(
         market_data=normalized_market_data,
         vix_data=vix_data,
@@ -250,24 +252,26 @@ def _normalize_market_data_for_runtime(df: pd.DataFrame) -> pd.DataFrame:
     return out
 
 
-def _require_market_data_contract(df: pd.DataFrame, *, as_of_date: date) -> None:
+def _require_market_data_contract(
+    df: pd.DataFrame, *, as_of_date: date, cap_weight_symbol: str = "SPY"
+) -> None:
     required_cols = {"date", "symbol", "open", "high", "low", "close", "volume"}
     missing = sorted(required_cols - set(df.columns))
     if missing:
         raise ValueError(f"market_data missing required columns: {missing}")
     if df.empty:
         raise ValueError("market_data must not be empty")
-    if (df["symbol"] == "SPY").sum() == 0:
-        raise ValueError("market_data must contain SPY rows for V1")
+    if (df["symbol"] == cap_weight_symbol).sum() == 0:
+        raise ValueError(f"market_data must contain {cap_weight_symbol} rows")
     if df["date"].isna().any():
         # Belt-and-braces: even though _normalize_market_data_for_runtime raises
         # on coercion errors, defend against callers that bypass the normalizer
         # and pass NaT-containing frames in directly.
         raise ValueError("market_data contains null date values; reject at the ingestion boundary")
     dates = df["date"].dt.date
-    has_spy_asof = ((df["symbol"] == "SPY") & (dates == as_of_date)).any()
-    if not bool(has_spy_asof):
-        raise ValueError(f"market_data must include SPY row for as_of_date={as_of_date.isoformat()}")
+    has_cap_weight_asof = ((df["symbol"] == cap_weight_symbol) & (dates == as_of_date)).any()
+    if not bool(has_cap_weight_asof):
+        raise ValueError(f"market_data must include {cap_weight_symbol} row for as_of_date={as_of_date.isoformat()}")
     uniq_dates = sorted({d for d in dates.dropna().unique()})
     if uniq_dates:
         start = min(uniq_dates)
@@ -312,8 +316,8 @@ def _require_constituent_ohlcv_contract(
             )
 
 
-def _spy_ohlcv_frame(df: pd.DataFrame, *, as_of_date: date) -> pd.DataFrame:
-    s = df[df["symbol"] == "SPY"].copy()
+def _spy_ohlcv_frame(df: pd.DataFrame, *, as_of_date: date, symbol: str = "SPY") -> pd.DataFrame:
+    s = df[df["symbol"] == symbol].copy()
     s = s.sort_values("date")
     s = s[s["date"].dt.date <= as_of_date]
     s = s.set_index("date")

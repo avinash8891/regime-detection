@@ -379,6 +379,17 @@ def _build_trend_direction_v2_feature(state: _FeatureStoreBuildState) -> None:
 
 
 def _build_trend_character_feature(state: _FeatureStoreBuildState) -> None:
+    tc_v2 = state.context.config.trend_character_v2
+    extra_kwargs: dict[str, object] = {}
+    if tc_v2 is not None:
+        extra_kwargs = {
+            "bb_width_period": tc_v2.bb_width_period,
+            "bb_width_multiplier": tc_v2.bb_width_multiplier,
+            "bb_width_expanding_lookback": tc_v2.bb_width_expanding_lookback,
+            "followthrough_lookback_sessions": tc_v2.followthrough_lookback_sessions,
+            "followthrough_window_count": tc_v2.followthrough_window_count,
+            "followthrough_hold_sessions": tc_v2.followthrough_hold_sessions,
+        }
     state.trend_character = compute_trend_character_features(
         close=state.spy_close,
         high=_series_column(state.spy_ohlcv, "high"),
@@ -388,6 +399,7 @@ def _build_trend_character_feature(state: _FeatureStoreBuildState) -> None:
             if "volume" in state.spy_ohlcv.columns
             else None
         ),
+        **extra_kwargs,
     )
 
 
@@ -431,6 +443,7 @@ def _build_network_fragility_feature(state: _FeatureStoreBuildState) -> None:
         dispersion_percentile_lookback_days=config.dispersion_percentile_lookback_days,
         min_universe_size=config.min_universe_size,
         min_window_completeness=config.min_window_completeness,
+        universe=config.universe,
     )
 
 
@@ -466,7 +479,7 @@ def _build_breadth_state_v2_feature(state: _FeatureStoreBuildState) -> None:
         state.breadth_state_v2 = None
         return
     sector_closes = state.context.sector_etf_closes
-    if not all(symbol in sector_closes for symbol in SECTOR_ETFS):
+    if not any(symbol in sector_closes for symbol in SECTOR_ETFS):
         state.breadth_state_v2 = None
         return
     state.breadth_state_v2 = compute_breadth_v2_features(
@@ -517,6 +530,7 @@ def _build_monetary_feature(state: _FeatureStoreBuildState) -> None:
             session_index=_as_datetime_index(state.spy_close.index),
             smoothing_window_sessions=state.central_bank_text_config.smoothing_window_sessions,
             same_date_aggregation=state.central_bank_text_config.same_date_aggregation,
+            max_release_age_days=state.central_bank_text_config.max_release_age_days,
         )
     state.monetary = compute_monetary_pressure_features(
         dgs2=state.context.macro_series[_FRED_DGS2_KEY],

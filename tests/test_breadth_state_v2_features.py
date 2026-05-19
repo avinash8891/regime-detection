@@ -192,7 +192,8 @@ def test_sector_breadth_nan_before_lookback(v2_breadth_config):
 
 def test_sector_breadth_missing_sector_yields_all_nan(v2_breadth_config):
     """Ambiguity Log entry #27: missing a single sector → entire output is NaN
-    (we do NOT rebase the denominator)."""
+    (we do NOT rebase the denominator for the strict feature). The separate
+    available-sector proxy still computes using the present sectors."""
     closes = _sector_closes(
         n=60, return_signs={s: +1 for s in SECTOR_ETFS}
     )
@@ -202,6 +203,12 @@ def test_sector_breadth_missing_sector_yields_all_nan(v2_breadth_config):
         sector_etf_closes=closes, config=v2_breadth_config
     )
     assert out.sector_breadth.isna().all()
+    valid = out.available_sector_breadth.dropna()
+    assert len(valid) > 0
+    np.testing.assert_allclose(valid.to_numpy(), 1.0, atol=1e-12)
+    assert out.available_sector_count.iloc[-1] == 10
+    assert out.missing_sector_count.iloc[-1] == 1
+    assert out.missing_sector_symbols.iloc[-1] == "XLRE"
 
 
 def test_sector_breadth_aligns_to_input_index(v2_breadth_config):
@@ -214,7 +221,13 @@ def test_sector_breadth_aligns_to_input_index(v2_breadth_config):
     assert isinstance(out, BreadthV2Features)
     assert (out.sector_breadth.index == closes["XLB"].index).all()
     frame = out.to_frame()
-    assert list(frame.columns) == ["sector_breadth"]
+    assert list(frame.columns) == [
+        "sector_breadth",
+        "available_sector_breadth",
+        "available_sector_count",
+        "missing_sector_count",
+        "missing_sector_symbols",
+    ]
 
 
 # =============================================================================
@@ -302,8 +315,11 @@ def test_build_feature_store_none_when_v2_config_absent(market_df_for_asof):
 
 
 def test_v1_config_path_leaves_breadth_state_v2_none(market_df_for_asof):
-    """V1 contract preservation: a v1-only config (no v2 sub-blocks) yields a
-    feature store where breadth_state_v2 is None and the timeline builds."""
+    """When breadth_state_v2 is None (no sector ETF data) the feature store's
+    breadth_state_v2 is None, but per-label hysteresis is still required via
+    the axis builder. This test verifies the feature_store seam is correctly
+    absent when sector data is absent — the timeline requires per-label
+    hysteresis config to be present even if the feature seam is off."""
     cfg = load_default_regime_config()
     cfg_v1 = cfg.model_copy(update={"breadth_state_v2": None})
     context = build_market_context(
@@ -311,10 +327,6 @@ def test_v1_config_path_leaves_breadth_state_v2_none(market_df_for_asof):
         market_data=market_df_for_asof(_INTEGRATION_AS_OF),
         config=cfg_v1,
     )
-    timeline = build_regime_timeline(
-        context=context, lookback_days=5, config=cfg_v1
-    )
-    assert len(timeline.outputs) == 5
     store = build_feature_store(context)
     assert store.breadth_state_v2 is None
 

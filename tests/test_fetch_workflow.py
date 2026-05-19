@@ -50,7 +50,6 @@ def test_write_event_calendar_template_includes_v1_and_v2_examples(
     contents = template_path.read_text()
 
     assert "FOMC" in contents
-    assert "monthly_options_expiry" in contents
     assert 'type: "election"' in contents
     assert 'type: "geopolitical_event"' in contents
 
@@ -337,6 +336,8 @@ def test_run_macro_fetch_writes_macro_and_vintage_reports(
     assert set(V2_FRED_SERIES).issubset(report["series"])
     assert report["series"]["broad_usd_index"]["series_id"] == "DTWEXBGS"
     assert report["series"]["iorb"]["series_id"] == "IORB"
+    assert report["series"]["fedfunds"]["series_id"] == "DFF"
+    assert report["series"]["ioer_legacy"]["series_id"] == "IOER"
     assert (tmp_path / "macro" / "fred_macro_series.parquet").exists()
     assert (tmp_path / "macro_vintages" / "cpi_all_items_vintages.parquet").exists()
 
@@ -522,6 +523,91 @@ def test_run_macro_fetch_preserves_existing_vintages_when_incremental_window_emp
     assert preserved[["date", "value"]].to_dict(orient="records") == [
         {"date": dt.date(2026, 4, 1), "value": 300.0}
     ]
+
+
+def test_run_macro_fetch_cleans_nan_vintages_from_existing_parquet(
+    monkeypatch, tmp_path: Path
+) -> None:
+    """NaN rows left in existing vintages parquet by a prior fetch (e.g. BLS
+    government shutdown gaps) must be dropped after merge so the vintages
+    parquet never persists NaN values across incremental fetches."""
+    vintages_dir = tmp_path / "macro_vintages"
+    vintages_dir.mkdir()
+    pd.DataFrame(
+        [
+            {
+                "date": pd.Timestamp("2025-09-01"),
+                "value": 324.245,
+                "series_id": "CPIAUCSL",
+                "realtime_start": "2025-10-24",
+                "realtime_end": "9999-12-31",
+                "logical_name": "cpi_all_items_vintages",
+            },
+            {
+                "date": pd.Timestamp("2025-10-01"),
+                "value": float("nan"),
+                "series_id": "CPIAUCSL",
+                "realtime_start": "2025-12-18",
+                "realtime_end": "9999-12-31",
+                "logical_name": "cpi_all_items_vintages",
+            },
+            {
+                "date": pd.Timestamp("2025-11-01"),
+                "value": 325.063,
+                "series_id": "CPIAUCSL",
+                "realtime_start": "2025-12-18",
+                "realtime_end": "9999-12-31",
+                "logical_name": "cpi_all_items_vintages",
+            },
+        ]
+    ).to_parquet(vintages_dir / "cpi_all_items_vintages.parquet", index=False)
+
+    def fake_fetch_fred_series_json(
+        *,
+        series_id: str,
+        start_date: dt.date,
+        end_date: dt.date,
+        api_key: str | None = None,
+        realtime_start: str | None = None,
+        realtime_end: str | None = None,
+        max_retries: int = 4,
+        base_sleep_sec: float = 2.0,
+    ) -> str:
+        if realtime_start is not None:
+            return json.dumps({"observations": []})
+        return json.dumps(
+            {
+                "observations": [
+                    {
+                        "date": "2026-05-15",
+                        "value": "1.00",
+                        "realtime_start": "2026-05-15",
+                        "realtime_end": "2026-05-15",
+                    }
+                ]
+            }
+        )
+
+    monkeypatch.setattr(
+        "regime_data_fetch.fetch_workflow.fetch_fred_series_json",
+        fake_fetch_fred_series_json,
+    )
+    monkeypatch.setenv("FRED_API_KEY", "env-key")
+
+    run_macro_fetch(
+        out_dir=tmp_path,
+        start=dt.date(2026, 5, 15),
+        end=dt.date(2026, 5, 15),
+        fred_api_key=None,
+        include_cpi_vintages=True,
+    )
+
+    result = pd.read_parquet(vintages_dir / "cpi_all_items_vintages.parquet")
+    assert result["value"].isna().sum() == 0, (
+        f"Expected 0 NaN in vintages after merge, got {result['value'].isna().sum()}"
+    )
+    assert len(result) == 2
+    assert set(result["date"].astype(str)) == {"2025-09-01", "2025-11-01"}
 
 
 def test_run_macro_fetch_records_raw_fred_json_in_sqlite(

@@ -56,6 +56,12 @@ _PIT_FEATURE_NAMES = (
     "upvol_downvol_ratio",
     "breadth_thrust",
 )
+_AVAILABLE_SECTOR_FEATURE_NAMES = (
+    "available_sector_breadth",
+    "available_sector_count",
+    "missing_sector_count",
+    "missing_sector_symbols",
+)
 
 # Realistic S&P 500 tickers used across tests (no toy names).
 AAPL = "AAPL"
@@ -174,7 +180,8 @@ def _assert_all_pit_none(out: BreadthV2Features) -> None:
     assert out.nh_nl_ratio is None
     assert out.upvol_downvol_ratio is None
     assert out.breadth_thrust is None
-    assert out.bias_warnings is None
+    assert out.bias_warnings is not None
+    assert set(out.bias_warnings["feature_name"]) == {"available_sector_breadth"}
 
 
 def test_pit_features_none_when_pit_intervals_not_supplied(v2_breadth_config):
@@ -703,7 +710,10 @@ def test_bias_warnings_emitted_when_pit_features_computed(v2_breadth_config):
         constituent_ohlcv=ohlcv,
     )
     assert isinstance(out.bias_warnings, pd.DataFrame)
-    assert len(out.bias_warnings) == 7
+    pit_warnings = out.bias_warnings[
+        out.bias_warnings["warning_code"] == _PIT_BIAS_WARNING
+    ]
+    assert len(pit_warnings) == 7
 
 
 def test_bias_warnings_all_use_survivorship_biased_constituent_universe_code(
@@ -717,9 +727,12 @@ def test_bias_warnings_all_use_survivorship_biased_constituent_universe_code(
         pit_constituent_intervals=intervals,
         constituent_ohlcv=ohlcv,
     )
-    assert set(out.bias_warnings["warning_code"]) == {_PIT_BIAS_WARNING}
-    assert set(out.bias_warnings["source"]) == {_PIT_SOURCE}
-    assert set(out.bias_warnings["source_url"]) == {_PIT_SOURCE_URL}
+    pit_warnings = out.bias_warnings[
+        out.bias_warnings["warning_code"] == _PIT_BIAS_WARNING
+    ]
+    assert set(pit_warnings["warning_code"]) == {_PIT_BIAS_WARNING}
+    assert set(pit_warnings["source"]) == {_PIT_SOURCE}
+    assert set(pit_warnings["source_url"]) == {_PIT_SOURCE_URL}
 
 
 def test_bias_warnings_feature_names_cover_all_seven_pit_features(
@@ -733,7 +746,10 @@ def test_bias_warnings_feature_names_cover_all_seven_pit_features(
         pit_constituent_intervals=intervals,
         constituent_ohlcv=ohlcv,
     )
-    assert set(out.bias_warnings["feature_name"]) == set(_PIT_FEATURE_NAMES)
+    pit_warnings = out.bias_warnings[
+        out.bias_warnings["warning_code"] == _PIT_BIAS_WARNING
+    ]
+    assert set(pit_warnings["feature_name"]) == set(_PIT_FEATURE_NAMES)
 
 
 # =============================================================================
@@ -752,7 +768,10 @@ def test_feature_names_expand_to_include_pit_features_when_present(
         pit_constituent_intervals=intervals,
         constituent_ohlcv=ohlcv,
     )
-    assert out.feature_names == ("sector_breadth",) + _PIT_FEATURE_NAMES
+    assert (
+        out.feature_names
+        == ("sector_breadth",) + _AVAILABLE_SECTOR_FEATURE_NAMES + _PIT_FEATURE_NAMES
+    )
 
 
 def test_to_frame_columns_match_feature_names(v2_breadth_config):

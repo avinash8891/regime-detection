@@ -77,12 +77,11 @@ def test_default_config_is_packaged_and_loadable() -> None:
     from regime_detection.config import load_default_regime_config
 
     cfg = load_default_regime_config()
-    # Default dispatch is keyed on package __version__; package is 2.x → v2 yaml.
     assert cfg.config_version == "core3-v2.0.0"
-    assert cfg.hysteresis.trend_direction_escalation_days == 1
-    assert cfg.hysteresis.trend_character_escalation_days == 1
-    assert cfg.hysteresis.volatility_escalation_days == 1
-    assert cfg.hysteresis.breadth_escalation_days == 1
+    assert cfg.trend_direction_v2 is not None
+    assert cfg.trend_direction_v2.deescalation_days_by_label is not None
+    assert cfg.volatility_state_v2 is not None
+    assert cfg.volatility_state_v2.deescalation_days_by_label is not None
 
 
 def test_classify_emits_regime_output_shape(market_df_for_asof) -> None:

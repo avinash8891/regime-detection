@@ -333,6 +333,12 @@ def _load_profile_inputs(
         cpi_nowcast_parquet=args.cpi_nowcast_parquet,
         eps_weekly_history_parquet=args.aggregate_forward_eps_weekly_history_parquet,
     )
+    if args.disable_aggregate_forward_eps_revision:
+        # EPS revision is intentionally operator-disabled until the weekly S&P
+        # snapshot accumulator has reliable fresh coverage. Keep the macro key
+        # absent so earnings_expansion / earnings_contraction stay silent via
+        # existing NaN-falsifies behavior.
+        macro_series.pop("aggregate_forward_eps_revision", None)
     event_calendar = _load_optional_event_calendar(args.event_calendar)
     aaii_sentiment = _load_optional_aaii_sentiment(args.aaii_sentiment_parquet)
     news_sentiment = _load_optional_news_sentiment(args.news_sentiment_parquet)
@@ -402,6 +408,15 @@ def _parse_args() -> argparse.Namespace:
         type=Path,
         default=None,
         help="Optional path for a machine-readable profiling report JSON artifact.",
+    )
+    parser.add_argument(
+        "--disable-aggregate-forward-eps-revision",
+        action="store_true",
+        help=(
+            "Operator-disable the aggregate forward EPS revision seam. "
+            "This leaves earnings_expansion / earnings_contraction silent "
+            "without changing inflation/growth rule logic."
+        ),
     )
     parser.add_argument(
         "--run-timeout-seconds",

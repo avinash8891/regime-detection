@@ -207,6 +207,9 @@ class InflationGrowthConfig(StrictBaseModel):
     # the EPS signal is treated as NaN and earnings_expansion /
     # earnings_contraction labels do not fire.
     eps_revision_stale_calendar_days: int = Field(default=35, ge=1)
+    # Cleveland Fed nowcast cadence is monthly/current-period; stale nowcast
+    # suppresses only the optional inflation-surprise limb.
+    nowcast_stale_calendar_days: int = Field(default=60, ge=1)
 
 
 class CreditFundingRulesConfig(StrictBaseModel):
@@ -265,5 +268,4 @@ class CreditFundingConfig(StrictBaseModel):
     nfci_stale_days: int = Field(default=14, ge=1)
     # §2C line 2123 — HYG/LQD/TLT stale > 5 sessions.
     etf_stale_sessions: int = Field(default=5, ge=1)
-
 

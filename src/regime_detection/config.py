@@ -15,7 +15,6 @@ from regime_detection._config_core import (
     ETFProxyConfig,
     EventCalendarConfig,
     ExpiryRulesConfig,
-    HysteresisConfig,
     MonthlyOptionsExpiryRuleConfig,
     NetworkFragilityConfig,
     NetworkFragilityRulesConfig,
@@ -49,13 +48,11 @@ from regime_detection._config_evidence_strategy import (
     CohortRoutingConfig,
     CohortRoutingRule,
     CohortRoutingRulePredicate,
-    EventCalendarV2Config,
     FamilyOverride,
     HMMConfig,
     NoFlipFlopConfig,
     StrategyFamilyConstraintsConfig,
     TransitionScoreConfig,
-    VolCrushConfig,
 )
 
 __all__ = [
@@ -72,11 +69,9 @@ __all__ = [
     "ETFProxyConfig",
     "EarningsSeasonConfig",
     "EventCalendarConfig",
-    "EventCalendarV2Config",
     "ExpiryRulesConfig",
     "FamilyOverride",
     "HMMConfig",
-    "HysteresisConfig",
     "InflationGrowthConfig",
     "InflationGrowthRulesConfig",
     "MonetaryPressureV2Config",
@@ -93,7 +88,6 @@ __all__ = [
     "TrendCharacterV2Config",
     "TrendDirectionV2Config",
     "TrendDirectionV2RulesConfig",
-    "VolCrushConfig",
     "VolatilityV2Config",
     "VolatilityV2RulesConfig",
     "VolumeLiquidityConfig",
@@ -114,7 +108,6 @@ class RegimeConfig(StrictBaseModel):
     expiry_rules: ExpiryRulesConfig
     earnings_seasons: list[EarningsSeasonConfig]
     data_quality: DataQualityConfig
-    hysteresis: HysteresisConfig
 
     # V2 optional sub-configs (default None so V2 slices can land independently).
     network_fragility: NetworkFragilityConfig | None = None
@@ -138,13 +131,11 @@ class RegimeConfig(StrictBaseModel):
     news_sentiment: NewsSentimentConfig | None = None
     inflation_growth: InflationGrowthConfig | None = None
     credit_funding: CreditFundingConfig | None = None
-    event_calendar_v2: EventCalendarV2Config | None = None
     hmm: HMMConfig | None = None
     # v2 §6.2 GMM clustering evidence layer.
     clustering: ClusteringConfig | None = None
     # v2 §6.3 BOCPD change-point evidence layer.
     change_point: ChangePointConfig | None = None
-    vol_crush: VolCrushConfig | None = None
     no_flip_flop: NoFlipFlopConfig | None = None
     cohort_routing: CohortRoutingConfig | None = None  # v2 §5.1
     strategy_family_constraints: StrategyFamilyConstraintsConfig | None = None

@@ -1249,12 +1249,13 @@ the slice/commit that resolved it. Entries are append-only.
           — specifically: window length for the change, and window
           length / placement for the mean/std normalizer.
 
-    Until §2A is amended, the v1 `MonetaryPressureOutput` placeholder
-    (`label="unknown"`, `evidence={"reason":
-    "v2_classifier_not_yet_implemented"}`,
-    `data_quality.status="insufficient_history"`) remains on
-    `RegimeOutput.structural_causal_state.monetary_pressure`, identical
-    to the slice-1-foundation shim. The V1 frozen-replay fixtures
+    §2A is implemented. The V1 `MonetaryPressureOutput` on
+    `RegimeOutput.structural_causal_state.monetary_pressure` remains
+    for backward compatibility (V1 wire shape). The V2 classifier
+    output is `MonetaryPressureV2Output` on
+    `RegimeOutput.monetary_pressure_state` with real labels
+    (tightening_pressure, easing_pressure, rate_shock, neutral_monetary)
+    from ~2021 when SOFR/IORB data is available. The V1 frozen-replay fixtures
     (which use the separate `RegimeOutputV1Frozen` shim with
     `LabelReasonOutputV1Frozen` for `monetary_pressure`) are
     unaffected.
@@ -2905,7 +2906,7 @@ Matches the §3.6 / §1E convention: states that do not require defensive treatm
 
 #### Hysteresis
 
-Per-label asymmetric de-escalation, analogous to §3.7 and §1E:
+Per-label asymmetric de-escalation (mandatory per ADR 0010 — missing config raises `RuntimeError`):
 
 ```yaml
 monetary_pressure:
@@ -3076,7 +3077,7 @@ Pattern matches §3.6 / §1E / §2A: benign states at 0, mild/unknown at 1, medi
 
 #### Hysteresis
 
-Per-label asymmetric de-escalation, analogous to §3.7 / §2A:
+Per-label asymmetric de-escalation (mandatory per ADR 0010 — missing config raises `RuntimeError`):
 
 ```yaml
 inflation_growth:
@@ -3231,7 +3232,7 @@ The `deleveraging: 4` slot is the only V2 axis label with risk-rank above 3 — 
 
 #### Hysteresis
 
-Per-label asymmetric de-escalation, analogous to §3.7 / §2A / §2B:
+Per-label asymmetric de-escalation (mandatory per ADR 0010 — missing config raises `RuntimeError`):
 
 ```yaml
 credit_funding:
@@ -3309,7 +3310,7 @@ Add labels to V1's calendar:
 - `budget_week` — event-source row from deterministic fiscal deadlines plus official Treasury/GovInfo budget discovery (relevant for India only when an India-specific official source is added)
 - `election_window` — default trading-day window `[-5, +10]` around the result date (matches the §2D YAML example below); configurable via `window_days` in the event row
 - `geopolitical_event` — approval-gated Group B candidate for war, sanctions, terrorism, conflict/protest shocks; generated from GPR, GDELT, and HDX HAPI evidence when those live sources are available; ACLED and Uppsala/UCDP evidence is TODO pending entitled API keys/account access; rendered only when the approval overlay promotes it
-- `global_rate_decision` — manual YAML for BOE / ECB / BOJ scheduled meetings; operator maintains the calendar (analogous to V1 FOMC pre-2021 pre-fetch path)
+- `global_rate_decision` — BOE / ECB / BOJ scheduled meetings sourced from official central-bank archive and current-calendar pages via the event_sources adapter pipeline (ADR 0010 / Group A design spec). Coverage: ECB 88 decisions, BoE 96 decisions, BoJ 89 decisions (all 2016-2026). No longer manually maintained YAML.
 
 YAML schema extension:
 ```yaml
@@ -3324,6 +3325,20 @@ events:
     type: "ECB_decision"
     importance: "medium"
 ```
+
+**Wire output shape** (nested under `structural_causal_state.event_calendar`):
+```json
+{
+  "raw_label": "fed_week",
+  "stable_label": "fed_week",
+  "active_label": "fed_week",
+  "evidence": {
+    "all_matching_events": ["fed_week", "expiry_week"],
+    "selected_via_precedence": "fed_week"
+  }
+}
+```
+The §2D labels extend the V1 `EventCalendarOutput` model. No separate output struct — the label set grows but the shape is unchanged.
 
 ---
 
@@ -3482,7 +3497,9 @@ network_fragility_risk_rank:
 
 ### 3.7 Hysteresis
 
-Asymmetric per V1 rule. De-escalation defaults:
+Per-label asymmetric de-escalation is **mandatory for all 9 label axes** (ADR 0010). Every axis must supply a `deescalation_days_by_label` config block; missing config raises `RuntimeError` immediately — no silent flat fallback. Both `core3-v1.0.0.yaml` and `core3-v2.0.0.yaml` ship per-label hysteresis. V1 values are flat (all labels get the same days as the original global setting) to preserve V1 behavior while using the per-label infrastructure.
+
+Network fragility de-escalation defaults:
 ```yaml
 network_fragility_deescalation_days:
   rising_fragility: 3
@@ -3490,6 +3507,8 @@ network_fragility_deescalation_days:
   correlation_to_one: 5
   systemic_stress: 5
 ```
+
+See ADR 0010 for the complete per-label hysteresis table across all 9 axes. Hysteresis does NOT apply to evidence/score outputs (event_calendar, transition_risk, cluster, change_point, hmm).
 
 ---
 
@@ -3676,7 +3695,7 @@ Transition score is **evidence**, not the regime. Output structure:
 {
   "transition_risk": {
     "label": "bull_fragile_warning",
-    "transition_score": 0.62,
+    "score": 0.62,
     "score_interpretation": "transition_warning",
     "score_components": {
       "volatility_acceleration": 0.45,
@@ -3759,8 +3778,8 @@ cohort_routing:
 
   euphoria_specialist:
     trend_direction.active_label == "euphoria"
-    # Note: euphoria label is deferred until sentiment_score data ships
-    # (Ambiguity Log #32). Until then this rule is silent.
+    # euphoria label is implemented (sentiment_score ships via AAII fetcher;
+    # Ambiguity Log #32 resolved).
 
   bear_stress_specialist:
     trend_direction.active_label == "bear"
@@ -4028,8 +4047,9 @@ Mapping is decided by the operator after inspecting fitted state means and persi
 #### Constraint
 HMM state is **never** the final regime label. Evidence flows into:
 - `transition_score` (via `hmm_probability_shift_score`)
-- `volatility_state.evidence`
-- `trend_direction.evidence`
+- `RegimeOutput.hmm` (standalone evidence output with `top_state`, `top_state_prob`, `n_states`, `state_persistence_days`, `model_version`)
+- `volatility_state.evidence` (enriched with `hmm_top_state` and `hmm_top_state_prob` per session)
+- `trend_direction.evidence` (enriched with `hmm_top_state` and `hmm_top_state_prob` per session)
 
 #### Training
 - Fit on at least 5 years of data

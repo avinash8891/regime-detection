@@ -60,8 +60,6 @@ _DEFAULT_RANGE_BOUND_ADX_THRESHOLD = 20.0
 @dataclass(frozen=True)
 class TrendCharacterFeatures:
     close: pd.Series
-    high: pd.Series
-    low: pd.Series
     sma_50: pd.Series
     return_10d: pd.Series
     return_21d: pd.Series
@@ -232,6 +230,12 @@ def compute_features(
     high: pd.Series,
     low: pd.Series,
     volume: pd.Series | None = None,
+    bb_width_period: int = _DEFAULT_BB_WIDTH_PERIOD,
+    bb_width_multiplier: float = _DEFAULT_BB_WIDTH_MULTIPLIER,
+    bb_width_expanding_lookback: int = _DEFAULT_BB_WIDTH_EXPANDING_LOOKBACK,
+    followthrough_lookback_sessions: int = _DEFAULT_FOLLOWTHROUGH_LOOKBACK_SESSIONS,
+    followthrough_window_count: int = _DEFAULT_FOLLOWTHROUGH_WINDOW_COUNT,
+    followthrough_hold_sessions: int = _DEFAULT_FOLLOWTHROUGH_HOLD_SESSIONS,
 ) -> TrendCharacterFeatures:
     sma_50 = simple_moving_average(close, window=50)
     return_10d = period_return(close, periods=10)
@@ -242,19 +246,26 @@ def compute_features(
 
     midpoint_excursion_20d = _compute_midpoint_excursion_20d(close)
     breakout_20d_or_50d = _compute_breakout_20d_or_50d(close)
-    bb_width_expanding = _compute_bb_width_expanding(close)
+    bb_width_expanding = _compute_bb_width_expanding(
+        close,
+        period=bb_width_period,
+        multiplier=bb_width_multiplier,
+        lookback=bb_width_expanding_lookback,
+    )
     if volume is None:
-        # Volume not threaded through — fall back to an all-False mask. The
-        # breakout_expansion rule cannot fire without volume confirmation.
         volume_above_20d_average = pd.Series(False, index=close.index)
     else:
         volume_above_20d_average = _compute_volume_above_20d_average(volume)
-    followthrough_rate = _compute_followthrough_rate(close, breakout_20d_or_50d)
+    followthrough_rate = _compute_followthrough_rate(
+        close,
+        breakout_20d_or_50d,
+        lookback_sessions=followthrough_lookback_sessions,
+        window_count=followthrough_window_count,
+        hold_sessions=followthrough_hold_sessions,
+    )
 
     return TrendCharacterFeatures(
         close=close,
-        high=high,
-        low=low,
         sma_50=sma_50,
         return_10d=return_10d,
         return_21d=return_21d,
@@ -343,7 +354,13 @@ def raw_label_for_day(
 
 
 def build_raw_outputs(
-    f: TrendCharacterFeatures, *, allow_v2_labels: bool = True
+    f: TrendCharacterFeatures,
+    *,
+    allow_v2_labels: bool = True,
+    followthrough_rate_threshold: float = _DEFAULT_FOLLOWTHROUGH_RATE_THRESHOLD,
+    range_bound_return_63d_threshold: float = _DEFAULT_RANGE_BOUND_RETURN_63D_THRESHOLD,
+    range_bound_midpoint_excursion_threshold: float = _DEFAULT_RANGE_BOUND_MIDPOINT_EXCURSION_THRESHOLD,
+    range_bound_adx_threshold: float = _DEFAULT_RANGE_BOUND_ADX_THRESHOLD,
 ) -> tuple[list[TrendCharacterLabel], list[dict[str, Any]]]:
     close = f.close
     sma50 = f.sma_50
@@ -370,15 +387,15 @@ def build_raw_outputs(
         & bb_expanding
         & vol_above
         & ft_rate.notna()
-        & ft_rate.ge(_DEFAULT_FOLLOWTHROUGH_RATE_THRESHOLD)
+        & ft_rate.ge(followthrough_rate_threshold)
     )
     range_bound = (
         valid
         & ret63.notna()
         & midpoint_ex.notna()
-        & ret63.abs().lt(_DEFAULT_RANGE_BOUND_RETURN_63D_THRESHOLD)
-        & midpoint_ex.le(_DEFAULT_RANGE_BOUND_MIDPOINT_EXCURSION_THRESHOLD)
-        & adx.lt(_DEFAULT_RANGE_BOUND_ADX_THRESHOLD)
+        & ret63.abs().lt(range_bound_return_63d_threshold)
+        & midpoint_ex.le(range_bound_midpoint_excursion_threshold)
+        & adx.lt(range_bound_adx_threshold)
     )
     if not allow_v2_labels:
         breakout_expansion = breakout_expansion & False
@@ -418,81 +435,3 @@ def build_raw_outputs(
     return list(labels), evidence
 
 
-def classify_series(
-    *,
-    close: pd.Series,
-    high: pd.Series,
-    low: pd.Series,
-    as_of_date: date,
-    escalation_days: int = 1,
-    deescalation_days: int,
-    volume: pd.Series | None = None,
-    allow_v2_labels: bool = False,
-) -> AxisOutput:
-    """Per-day raw/stable/active trend_character labels for ``as_of_date``.
-
-    ``allow_v2_labels`` defaults to ``False`` so the per-axis API is V1-safe:
-    direct callers cannot accidentally surface the V2-only `range_bound` /
-    `breakout_expansion` labels (the latter requires volume confirmation,
-    but `range_bound` does not — leaving it as a leak surface for V1-only
-    consumers). The engine path (`axis_series.build_axis_series_bundle`)
-    bypasses this function and threads V2 labels through `build_raw_outputs`
-    explicitly when the V2 config is active. Set to ``True`` only when the
-    caller is intentionally in V2 mode AND has confirmed it consumes V2
-    labels.
-    """
-    dt = pd.Timestamp(as_of_date)
-    close = close.copy()
-    high = high.copy()
-    low = low.copy()
-    close.index = pd.to_datetime(close.index)
-    high.index = pd.to_datetime(high.index)
-    low.index = pd.to_datetime(low.index)
-    if volume is not None:
-        volume = volume.copy()
-        volume.index = pd.to_datetime(volume.index)
-
-    if dt not in close.index:
-        raise ValueError(f"as_of_date missing from close series: {as_of_date.isoformat()}")
-
-    close = close.loc[:dt]
-    high = high.loc[:dt]
-    low = low.loc[:dt]
-    if volume is not None:
-        volume = volume.loc[:dt]
-
-    f = compute_features(close=close, high=high, low=low, volume=volume)
-    raw_labels: list[TrendCharacterLabel] = []
-    raw_evidence: list[dict[str, Any]] = []
-    for day in close.index:
-        lbl, ev = raw_label_for_day(f, day, allow_v2_labels=allow_v2_labels)
-        raw_labels.append(lbl)
-        raw_evidence.append(ev)
-
-    stable_labels, active_labels = apply_asymmetric_hysteresis(
-        raw_labels=raw_labels,
-        risk_rank=_RISK_RANK,
-        escalation_days=escalation_days,
-        deescalation_days=deescalation_days,
-    )
-
-    raw = raw_labels[-1]
-    stable = stable_labels[-1]
-    active = active_labels[-1]
-
-    if raw == "unknown":
-        dq = DataQuality(status="insufficient_history", freshness_days=0, completeness=1.0, reason="insufficient_history")
-    else:
-        dq = DataQuality(status="ok", freshness_days=0, completeness=1.0, reason=None)
-
-    return AxisOutput(
-        raw_label=raw,
-        stable_label=stable,
-        active_label=active,
-        evidence={
-            "rule_evidence": raw_evidence[-1],
-            "risk_rank": _RISK_RANK,
-            "deescalation_days": deescalation_days,
-        },
-        data_quality=dq,
-    )

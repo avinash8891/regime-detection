@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from datetime import date
 from typing import NamedTuple, cast
 
@@ -14,11 +15,13 @@ from regime_detection.market_context import (
     slice_context_to_recent_sessions,
 )
 from regime_detection.models import (
+    AxisOutput,
     AxisEvidencePayload,
     BreadthStateOutput,
     ChangePointOutput,
     ClusterOutput,
     DataQuality,
+    HmmOutput,
     MonetaryPressureEvidencePayload,
     MonetaryPressureOutput,
     NetworkFragilityOutput,
@@ -35,6 +38,8 @@ from regime_detection.transition_risk_series import build_transition_risk_series
 from regime_detection.versioning import engine_version
 
 
+_LOGGER = logging.getLogger(__name__)
+
 ENGINE_MINIMUM_HISTORY = 320
 
 
@@ -45,6 +50,12 @@ class _AlignedV2Evidence(NamedTuple):
     cluster_id_aligned: pd.Series | None
     cluster_distance_aligned: pd.Series | None
     cluster_model_version: str | None
+    cluster_n_clusters: int | None
+    hmm_top_state_aligned: pd.Series | None
+    hmm_top_state_prob_aligned: pd.Series | None
+    hmm_top_state_full: pd.Series | None
+    hmm_n_states: int | None
+    hmm_model_version: str | None
 
 
 def _v2_classifier_seam_absent_data_quality() -> DataQuality:
@@ -155,6 +166,7 @@ def _align_v2_evidence_for_selected_days(
     *,
     feature_store: FeatureStore,
     selected_days: list[date],
+    hmm_model_version: str | None = None,
 ) -> _AlignedV2Evidence:
     # v2 §6.2 GMM clustering evidence — bulk-reindex BEFORE the per-day
     # loop (matches the `_build_transition_score_inputs_by_date` pattern).
@@ -183,10 +195,32 @@ def _align_v2_evidence_for_selected_days(
             session_index
         )
         cluster_model_version = clustering_features.model_version
+        cluster_n_clusters = clustering_features.n_clusters
     else:
         cluster_id_aligned = None
         cluster_distance_aligned = None
         cluster_model_version = None
+        cluster_n_clusters = None
+
+    hmm_features = feature_store.hmm
+    if hmm_features is not None:
+        proba = hmm_features.state_probabilities
+        valid_rows = ~proba.isna().all(axis=1)
+        hmm_top_state_full = pd.Series(pd.NA, index=proba.index, dtype="Int64")
+        if valid_rows.any():
+            hmm_top_state_full.loc[valid_rows] = (
+                proba.loc[valid_rows].idxmax(axis=1).astype("Int64")
+            )
+        hmm_top_state_aligned = hmm_top_state_full.reindex(session_index)
+        hmm_top_state_prob_aligned = hmm_features.top_state_prob.reindex(session_index)
+        hmm_n_states = hmm_features.n_states
+        hmm_model_version = hmm_model_version
+    else:
+        hmm_top_state_full = None
+        hmm_top_state_aligned = None
+        hmm_top_state_prob_aligned = None
+        hmm_n_states = None
+        hmm_model_version = None
 
     return _AlignedV2Evidence(
         cp_score_aligned=cp_score_aligned,
@@ -195,7 +229,56 @@ def _align_v2_evidence_for_selected_days(
         cluster_id_aligned=cluster_id_aligned,
         cluster_distance_aligned=cluster_distance_aligned,
         cluster_model_version=cluster_model_version,
+        cluster_n_clusters=cluster_n_clusters,
+        hmm_top_state_aligned=hmm_top_state_aligned,
+        hmm_top_state_prob_aligned=hmm_top_state_prob_aligned,
+        hmm_top_state_full=hmm_top_state_full,
+        hmm_n_states=hmm_n_states,
+        hmm_model_version=hmm_model_version,
     )
+
+
+def _hmm_state_persistence_days(
+    full_top_state_series: pd.Series,
+    target_timestamp: pd.Timestamp,
+) -> int | None:
+    """Count consecutive sessions the top state has been unchanged up to target_timestamp.
+
+    Uses the full (un-windowed) HMM top-state series so persistence
+    counts that started before the output window are reported correctly.
+    """
+    if target_timestamp not in full_top_state_series.index:
+        return None
+    loc = full_top_state_series.index.get_loc(target_timestamp)
+    if not isinstance(loc, int):
+        loc = int(loc)
+    current_state = full_top_state_series.iloc[loc]
+    if pd.isna(current_state):
+        return None
+    days = 1
+    for i in range(loc - 1, -1, -1):
+        prev = full_top_state_series.iloc[i]
+        if pd.isna(prev) or int(prev) != int(current_state):
+            break
+        days += 1
+    return days
+
+
+def _enrich_with_hmm_evidence(
+    output: AxisOutput,
+    aligned: _AlignedV2Evidence,
+    day_index: int,
+) -> AxisOutput:
+    if aligned.hmm_top_state_prob_aligned is None or aligned.hmm_top_state_aligned is None:
+        return output
+    prob = aligned.hmm_top_state_prob_aligned.iloc[day_index]
+    state = aligned.hmm_top_state_aligned.iloc[day_index]
+    if pd.isna(prob) or pd.isna(state):
+        return output
+    enriched = dict(output.evidence.root)
+    enriched["hmm_top_state"] = int(state)
+    enriched["hmm_top_state_prob"] = float(prob)
+    return output.model_copy(update={"evidence": AxisEvidencePayload(root=enriched)})
 
 
 def _build_timeline_output_for_day(
@@ -208,9 +291,15 @@ def _build_timeline_output_for_day(
     network_fragility_by_date: dict[date, NetworkFragilityOutput],
     aligned_v2_evidence: _AlignedV2Evidence,
 ) -> RegimeOutput:
-    trend_direction_output = axis_bundle.trend_direction.outputs_by_date[day]
+    trend_direction_output = _enrich_with_hmm_evidence(
+        axis_bundle.trend_direction.outputs_by_date[day],
+        aligned_v2_evidence, selected_day_index,
+    )
     trend_character_output = axis_bundle.trend_character.outputs_by_date[day]
-    volatility_output = axis_bundle.volatility_state.outputs_by_date[day]
+    volatility_output = _enrich_with_hmm_evidence(
+        axis_bundle.volatility_state.outputs_by_date[day],
+        aligned_v2_evidence, selected_day_index,
+    )
     breadth_output = cast(
         BreadthStateOutput, axis_bundle.breadth_state.outputs_by_date[day]
     )
@@ -295,11 +384,87 @@ def _build_timeline_output_for_day(
         cid_val = aligned_v2_evidence.cluster_id_aligned.iloc[selected_day_index]
         dist_val = aligned_v2_evidence.cluster_distance_aligned.iloc[selected_day_index]
         if cid_val is not None and not pd.isna(cid_val) and not pd.isna(dist_val):
+            clustering_config = working_context.config.clustering
+            cluster_label_map = (
+                clustering_config.cluster_label_map
+                if clustering_config is not None
+                else None
+            )
+            validated_cluster_label: str | None = None
+            if cluster_label_map is not None and clustering_config is not None:
+                map_covers_clusters = set(cluster_label_map.keys()) == set(
+                    range(clustering_config.n_clusters)
+                )
+                version_matches = (
+                    aligned_v2_evidence.cluster_model_version
+                    == clustering_config.model_version
+                )
+                if map_covers_clusters and version_matches:
+                    validated_cluster_label = cluster_label_map.get(int(cid_val))
+                elif selected_day_index == 0:
+                    _LOGGER.warning(
+                        "cluster_label_map skipped: map keys %s do not cover "
+                        "n_clusters=%d or model_version mismatch (map=%s, fit=%s)",
+                        sorted(cluster_label_map.keys()),
+                        clustering_config.n_clusters,
+                        clustering_config.model_version,
+                        aligned_v2_evidence.cluster_model_version,
+                    )
             cluster_output = ClusterOutput(
                 cluster_id=int(cid_val),
                 distance_to_centroid=float(dist_val),
                 model_version=aligned_v2_evidence.cluster_model_version,
+                mapped_label=validated_cluster_label,
             )
+
+    hmm_output: HmmOutput | None = None
+    if (
+        aligned_v2_evidence.hmm_top_state_aligned is not None
+        and aligned_v2_evidence.hmm_top_state_prob_aligned is not None
+        and aligned_v2_evidence.hmm_n_states is not None
+    ):
+        hmm_state_val = aligned_v2_evidence.hmm_top_state_aligned.iloc[selected_day_index]
+        hmm_prob_val = aligned_v2_evidence.hmm_top_state_prob_aligned.iloc[selected_day_index]
+        if hmm_state_val is not None and not pd.isna(hmm_state_val) and not pd.isna(hmm_prob_val):
+            persistence = _hmm_state_persistence_days(
+                aligned_v2_evidence.hmm_top_state_full,
+                pd.Timestamp(day),
+            ) if aligned_v2_evidence.hmm_top_state_full is not None else None
+            hmm_config = working_context.config.hmm
+            hmm_label_map = (
+                hmm_config.state_label_map
+                if hmm_config is not None
+                else None
+            )
+            validated_hmm_label: str | None = None
+            if hmm_label_map is not None and hmm_config is not None:
+                map_covers_states = set(hmm_label_map.keys()) == set(
+                    range(hmm_config.n_states)
+                )
+                version_matches = (
+                    (aligned_v2_evidence.hmm_model_version or "hmm_unknown")
+                    == hmm_config.model_version
+                )
+                if map_covers_states and version_matches:
+                    validated_hmm_label = hmm_label_map.get(int(hmm_state_val))
+                elif selected_day_index == 0:
+                    _LOGGER.warning(
+                        "state_label_map skipped: map keys %s do not cover "
+                        "n_states=%d or model_version mismatch (map=%s, fit=%s)",
+                        sorted(hmm_label_map.keys()),
+                        hmm_config.n_states,
+                        hmm_config.model_version,
+                        aligned_v2_evidence.hmm_model_version,
+                    )
+            hmm_output = HmmOutput(
+                top_state=int(hmm_state_val),
+                top_state_prob=float(hmm_prob_val),
+                n_states=aligned_v2_evidence.hmm_n_states,
+                state_persistence_days=persistence,
+                model_version=aligned_v2_evidence.hmm_model_version or "hmm_unknown",
+                mapped_label=validated_hmm_label,
+            )
+
     agent_routing = None
     strategy_family_constraints = None
     cohort_routing_config = working_context.config.cohort_routing
@@ -356,6 +521,7 @@ def _build_timeline_output_for_day(
         credit_funding_effective_state=credit_funding_effective_output,
         inflation_growth_state=inflation_growth_output,
         monetary_pressure_state=monetary_pressure_output,
+        hmm=hmm_output,
         cluster=cluster_output,
         change_point=change_point_output,
         agent_routing=agent_routing,
@@ -388,16 +554,17 @@ def build_regime_timeline(
         context=context,
         required_sessions=required_sessions,
     )
-    network_fragility_config = cfg.network_fragility
-    trend_direction_v2_config = cfg.trend_direction_v2
-    volatility_state_v2_config = cfg.volatility_state_v2
-    breadth_state_v2_config = cfg.breadth_state_v2
-    volume_liquidity_v2_config = cfg.volume_liquidity_v2
-    monetary_pressure_v2_config = cfg.monetary_pressure_v2
-    credit_funding_config = cfg.credit_funding
-    inflation_growth_config = cfg.inflation_growth
-    central_bank_text_config = cfg.central_bank_text
-    news_sentiment_config = cfg.news_sentiment
+    is_v2 = cfg.config_version != "core3-v1.0.0"
+    network_fragility_config = cfg.network_fragility if is_v2 else None
+    trend_direction_v2_config = cfg.trend_direction_v2 if is_v2 else None
+    volatility_state_v2_config = cfg.volatility_state_v2 if is_v2 else None
+    breadth_state_v2_config = cfg.breadth_state_v2 if is_v2 else None
+    volume_liquidity_v2_config = cfg.volume_liquidity_v2 if is_v2 else None
+    monetary_pressure_v2_config = cfg.monetary_pressure_v2 if is_v2 else None
+    credit_funding_config = cfg.credit_funding if is_v2 else None
+    inflation_growth_config = cfg.inflation_growth if is_v2 else None
+    central_bank_text_config = cfg.central_bank_text if is_v2 else None
+    news_sentiment_config = cfg.news_sentiment if is_v2 else None
     feature_store = build_feature_store(
         working_context,
         network_fragility_config=network_fragility_config,
@@ -422,9 +589,11 @@ def build_regime_timeline(
 
     selected_days = list(working_context.sessions[-lookback_days:])
 
+    hmm_config = working_context.config.hmm
     aligned_v2_evidence = _align_v2_evidence_for_selected_days(
         feature_store=feature_store,
         selected_days=selected_days,
+        hmm_model_version=hmm_config.model_version if hmm_config is not None else None,
     )
     network_fragility_by_date = _resolve_network_fragility_by_date(
         bundle_entry=axis_bundle.network_fragility,

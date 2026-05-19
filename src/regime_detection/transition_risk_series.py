@@ -157,6 +157,11 @@ def build_transition_risk_series(
         # only fires when the active config_version is NOT the V1 frozen
         # tag. V1 byte-identity preserved when this is False.
         v2_warnings_enabled=context.config.config_version != "core3-v1.0.0",
+        cooldown_window_days=(
+            transition_score_config.cooldown_window_days
+            if transition_score_config is not None
+            else 5
+        ),
     )
 
 
@@ -250,6 +255,7 @@ def build_transition_risk_outputs_by_date(
     transition_score_inputs_by_date: dict[date, TransitionScoreInputs] | None = None,
     transition_score_config: TransitionScoreConfig | None = None,
     v2_warnings_enabled: bool = False,
+    cooldown_window_days: int = 5,
 ) -> dict[date, TransitionRiskOutput]:
     index = pd.Index(sessions)
     trend_direction_active = pd.Series([trend_direction_active_by_date[day] for day in sessions], index=index)
@@ -293,7 +299,7 @@ def build_transition_risk_outputs_by_date(
     # not a single-day flag. `days_since_axis_switch <= 5` already covers the full
     # window because `days_since_axis_switch_by_date` increments daily after a switch.
     # crisis_override still breaks cooldown.
-    post_switch_cooldown = days_since_axis_switch.notna() & days_since_axis_switch.le(5) & ~crisis_override
+    post_switch_cooldown = days_since_axis_switch.notna() & days_since_axis_switch.le(cooldown_window_days) & ~crisis_override
     any_unknown = (
         trend_direction_active.eq("unknown")
         | trend_character_active.eq("unknown")

@@ -66,6 +66,10 @@ fed_week > cpi_week > nfp_week > expiry_week > earnings_season > normal_calendar
 
 Importance does not override precedence in V1.
 
+## V2 Materialization Update (ADR 0010, 2026-05-19)
+
+`us_events.yaml` is now an S3-only artifact resolved via the manifest input pattern (`default_relpath=("event_calendar", "us_events.yaml")` on `ManifestInputSpec`). It is not git-tracked for materialization. Event count expanded from 454 to 699 with full ECB/BoE/BoJ 2016-2026 coverage. `monthly_options_expiry` was removed from the `EventType` Literal — `expiry_week` is computed deterministically from the trading calendar and never originates from YAML rows.
+
 ## Agent Instruction
 
 Do not invent path-loading inside `RegimeEngine.classify(...)`. Do not convert config-defined expiry or earnings windows back into event rows. If a future change wants more convenience, add it as a helper or constructor outside the core classification path and update this decision record.

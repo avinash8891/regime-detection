@@ -17,7 +17,9 @@ def test_volatility_state_matches_pinned_fixtures(classified_golden_outputs) -> 
     for row in golden["rows"]:
         as_of = date.fromisoformat(row["as_of_date"])
         out = classified_golden_outputs[as_of]
-        assert out.volatility_state.active_label == row["expected"]["volatility_state"]
+        assert out.volatility_state.active_label == row["expected"]["volatility_state"], (
+            f"{as_of}: expected {row['expected']['volatility_state']}, got {out.volatility_state.active_label}"
+        )
 
 
 def test_v1_volatility_risk_rank_contract_keeps_crisis_vol_at_three() -> None:

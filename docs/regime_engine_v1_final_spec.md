@@ -556,9 +556,9 @@ etf_proxy
 
 US V1 ships `etf_proxy` mode only. Engine output declares `"mode": "etf_proxy"`.
 
-PIT constituent breadth is deferred to v1.1/V2 because it requires a point-in-time historical membership pipeline, delisted symbols, and separate data-quality validation. V1 source code must not implement a PIT breadth path or biased-survivorship fallback.
+PIT constituent breadth was deferred in V1. It is now implemented in V2 via `breadth_state_v2.py` using the `pit_constituent_biased_research` mode with survivorship-bias warnings. PIT features include `pct_above_50dma`, `pct_above_200dma`, `ad_line`, `nh_nl_ratio`, `upvol_downvol_ratio`, and `breadth_thrust`. The PIT data source is `sp500_ticker_intervals.parquet` + constituent OHLCV.
 
-### 6.2 PIT Constituents Mode (Deferred)
+### 6.2 PIT Constituents Mode (Implemented in V2)
 
 Required input contract:
 

@@ -18,11 +18,12 @@ def test_trend_direction_matches_pinned_fixtures(classified_golden_outputs) -> N
     golden = yaml.safe_load(
         (repo_root / "tests" / "fixtures" / "derived" / "golden_dates.yaml").read_text()
     )
-
     for row in golden["rows"]:
         as_of = date.fromisoformat(row["as_of_date"])
         out = classified_golden_outputs[as_of]
-        assert out.trend_direction.active_label == row["expected"]["trend_direction"]
+        assert out.trend_direction.active_label == row["expected"]["trend_direction"], (
+            f"{as_of}: expected {row['expected']['trend_direction']}, got {out.trend_direction.active_label}"
+        )
 
 
 def _trend_direction_features(

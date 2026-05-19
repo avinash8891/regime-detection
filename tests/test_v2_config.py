@@ -226,16 +226,21 @@ def test_v2_config_rejects_unknown_top_level_key(tmp_path: Path) -> None:
 def test_v1_yaml_still_loads_with_v1_config_version() -> None:
     cfg = load_regime_config(_v1_yaml_path())
     assert cfg.config_version == "core3-v1.0.0"
-    # All V2 sub-configs must remain None for the V1 yaml.
+    # L1 axes require per-label hysteresis in both V1 and V2.
+    assert cfg.trend_direction_v2 is not None
+    assert cfg.trend_direction_v2.deescalation_days_by_label is not None
+    assert cfg.volatility_state_v2 is not None
+    assert cfg.volatility_state_v2.deescalation_days_by_label is not None
+    assert cfg.breadth_state_v2 is not None
+    assert cfg.breadth_state_v2.deescalation_days_by_label is not None
+    assert cfg.trend_character_v2 is not None
+    # V2-only sub-configs must remain None for the V1 yaml.
     assert cfg.network_fragility is None
-    assert cfg.breadth_state_v2 is None
     assert cfg.transition_score is None
     assert cfg.monetary_pressure_v2 is None
     assert cfg.inflation_growth is None
     assert cfg.credit_funding is None
-    assert cfg.event_calendar_v2 is None
     assert cfg.hmm is None
-    assert cfg.vol_crush is None
     assert cfg.no_flip_flop is None
     assert cfg.cohort_routing is None
     assert cfg.strategy_family_constraints is None

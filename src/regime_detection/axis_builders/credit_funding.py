@@ -11,9 +11,15 @@ from regime_detection.credit_funding import (
     CREDIT_SPREAD_PROXY_BIAS_WARNING_CODE,
     CREDIT_SPREAD_SOURCE_CODE,
     CreditFundingLabel,
+    FEDFUNDS_KEY,
     HYG_KEY,
+    HY_OAS_KEY,
+    IG_OAS_KEY,
+    IOER_LEGACY_KEY,
+    IORB_KEY,
     LQD_KEY,
     NFCI_KEY,
+    SOFR_KEY,
     TLT_KEY,
     build_rule_inputs_by_date as build_credit_funding_rule_inputs_by_date,
     evaluate_rules as evaluate_credit_funding_rules,
@@ -89,6 +95,8 @@ def _build_credit_funding_for_spread_source(
     lqd_close = cross_asset_closes.get(LQD_KEY)
     tlt_close = cross_asset_closes.get(TLT_KEY)
     nfci_series = macro_series.get(NFCI_KEY)
+    hy_oas_series = macro_series.get(HY_OAS_KEY)
+    ig_oas_series = macro_series.get(IG_OAS_KEY)
 
     # Quality-gate primary inputs. Lookback gates on the 504d percentile
     # window — the longest binding cold-start for any rule predicate.
@@ -112,6 +120,12 @@ def _build_credit_funding_for_spread_source(
     hyg_staleness_by_date = _trading_staleness_series(hyg_close, session_index)
     lqd_staleness_by_date = _trading_staleness_series(lqd_close, session_index)
     tlt_staleness_by_date = _trading_staleness_series(tlt_close, session_index)
+    hy_oas_staleness_by_date = _calendar_staleness_days_series(
+        hy_oas_series, session_index
+    )
+    ig_oas_staleness_by_date = _calendar_staleness_days_series(
+        ig_oas_series, session_index
+    )
     nfci_staleness_by_date = _calendar_staleness_days_series(nfci_series, session_index)
     # Compute staleness from the raw SOFR and FEDFUNDS inputs rather than the
     # already-spliced sofr_iorb_spread. The derived spread is forward-filled in
@@ -120,13 +134,34 @@ def _build_credit_funding_for_spread_source(
     # ADR 0009: a session covered by the FEDFUNDS-IOER proxy reads its staleness
     # from FEDFUNDS (fresh), not from SOFR (sentinel/stale).
     _sofr_staleness = _calendar_staleness_days_series(
-        macro_series.get("sofr"), session_index
+        macro_series.get(SOFR_KEY), session_index
+    )
+    _iorb_staleness = _calendar_staleness_days_series(
+        macro_series.get(IORB_KEY), session_index
     )
     _fedfunds_staleness = _calendar_staleness_days_series(
-        macro_series.get("fedfunds"), session_index
+        macro_series.get(FEDFUNDS_KEY), session_index
+    )
+    _ioer_legacy_staleness = _calendar_staleness_days_series(
+        macro_series.get(IOER_LEGACY_KEY), session_index
+    )
+    sofr_iorb_pair_staleness = np.maximum(
+        _sofr_staleness.to_numpy(), _iorb_staleness.to_numpy()
+    )
+    sofr_ioer_pair_staleness = np.maximum(
+        _sofr_staleness.to_numpy(), _ioer_legacy_staleness.to_numpy()
+    )
+    fedfunds_ioer_pair_staleness = np.maximum(
+        _fedfunds_staleness.to_numpy(), _ioer_legacy_staleness.to_numpy()
     )
     funding_spread_staleness_by_date = pd.Series(
-        np.minimum(_sofr_staleness.to_numpy(), _fedfunds_staleness.to_numpy()),
+        np.minimum.reduce(
+            [
+                sofr_iorb_pair_staleness,
+                sofr_ioer_pair_staleness,
+                fedfunds_ioer_pair_staleness,
+            ]
+        ),
         index=session_index,
         dtype="int64",
     )
@@ -162,13 +197,24 @@ def _build_credit_funding_for_spread_source(
 
         funding_spread_staleness_days = int(funding_spread_staleness_by_date.loc[dt])
         funding_spread_stale = funding_spread_staleness_days > max_freshness_days
+        hy_oas_staleness_days = int(hy_oas_staleness_by_date.loc[dt])
+        ig_oas_staleness_days = int(ig_oas_staleness_by_date.loc[dt])
+        oas_stale = spread_source == "oas" and (
+            hy_oas_staleness_days > max_freshness_days
+            or ig_oas_staleness_days > max_freshness_days
+        )
         nfci_staleness_days = int(nfci_staleness_by_date.loc[dt])
         nfci_stale = nfci_staleness_days > cf_config.nfci_stale_days
 
-        if etf_staleness_breach or funding_spread_stale or nfci_stale:
+        if etf_staleness_breach or funding_spread_stale or nfci_stale or oas_stale:
             reason_parts: list[str] = []
             if etf_staleness_breach:
                 reason_parts.append(f"etf_stale:{etf_stale_label}")
+            if oas_stale:
+                if hy_oas_staleness_days > max_freshness_days:
+                    reason_parts.append(f"hy_oas_stale_{hy_oas_staleness_days}d")
+                if ig_oas_staleness_days > max_freshness_days:
+                    reason_parts.append(f"ig_oas_stale_{ig_oas_staleness_days}d")
             if funding_spread_stale:
                 reason_parts.append(f"funding_spread_stale_{funding_spread_staleness_days}d")
             if nfci_stale:
@@ -204,6 +250,25 @@ def _build_credit_funding_for_spread_source(
             continue
 
         rule_inputs = rule_inputs_by_date[dt]
+        if pd.isna(rule_inputs.hy_spread_percentile_504d):
+            reason = "hy_spread_percentile_504d_warmup"
+            raw_labels.append("unknown")
+            per_day_data_quality.append(
+                DataQuality(
+                    status="insufficient_history",
+                    freshness_days=None,
+                    completeness=None,
+                    reason=reason,
+                )
+            )
+            per_day_evidence.append(
+                {
+                    "reason": reason,
+                    "spread_source": evidence_spread_source,
+                    "bias_warning_code": bias_warning_code,
+                }
+            )
+            continue
         label = evaluate_credit_funding_rules(
             inputs=rule_inputs,
             config=cf_config.rules,

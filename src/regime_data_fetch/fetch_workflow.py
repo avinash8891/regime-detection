@@ -186,10 +186,6 @@ def write_event_calendar_template(out_dir: Path) -> Path:
                 '    market: "US"',
                 '    type: "FOMC"',
                 '    importance: "high"',
-                '  - date: "2026-02-20"',
-                '    market: "US"',
-                '    type: "monthly_options_expiry"',
-                '    importance: "medium"',
                 '  - date: "2026-11-03"',
                 '    market: "US"',
                 '    type: "election"',
@@ -492,6 +488,8 @@ def run_macro_fetch(
                 new_frame=vintages,
                 key_columns=["logical_name", "series_id", "date", "realtime_start", "realtime_end"],
             )
+            vintages, dropped = _drop_null_fred_observations(vintages)
+            dropped_null_observations += dropped
             vintages.to_parquet(vintages_path, index=False)
             series_meta["cpi_all_items_vintages"] = {
                 "series_id": V2_FRED_SERIES["cpi_all_items"],

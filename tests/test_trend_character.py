@@ -21,7 +21,9 @@ def test_trend_character_matches_pinned_fixtures(classified_golden_outputs) -> N
     for row in golden["rows"]:
         as_of = date.fromisoformat(row["as_of_date"])
         out = classified_golden_outputs[as_of]
-        assert out.trend_character.active_label == row["expected"]["trend_character"]
+        assert out.trend_character.active_label == row["expected"]["trend_character"], (
+            f"{as_of}: expected {row['expected']['trend_character']}, got {out.trend_character.active_label}"
+        )
 
 
 def _trend_character_features(
@@ -36,8 +38,6 @@ def _trend_character_features(
     idx = pd.DatetimeIndex([pd.Timestamp("2024-01-02")])
     return TrendCharacterFeatures(
         close=pd.Series([close], index=idx),
-        high=pd.Series([close + 1.0], index=idx),
-        low=pd.Series([close - 1.0], index=idx),
         sma_50=pd.Series([sma_50], index=idx),
         return_10d=pd.Series([return_10d], index=idx),
         return_21d=pd.Series([return_21d], index=idx),

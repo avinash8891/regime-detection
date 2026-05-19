@@ -88,6 +88,10 @@ def _build_full_synthetic_context(
     hyg_truncate_sessions: int | None = None,
     nfci_truncate_calendar_days: int | None = None,
     sofr_drop_last: bool = False,
+    iorb_truncate_calendar_days: int | None = None,
+    legacy_funding_splice: bool = False,
+    ioer_legacy_truncate_calendar_days: int | None = None,
+    hy_oas_truncate_calendar_days: int | None = None,
     omit_oas_series: bool = False,
 ):
     """Build a MarketContext with full cross_asset_closes and macro_series.
@@ -164,6 +168,20 @@ def _build_full_synthetic_context(
     if sofr_drop_last:
         sofr = sofr.copy()
         sofr.iloc[-1] = np.nan
+    if iorb_truncate_calendar_days is not None:
+        iorb = iorb.copy()
+        cutoff = idx[-1] - pd.Timedelta(days=iorb_truncate_calendar_days)
+        iorb.loc[iorb.index > cutoff] = np.nan
+    fedfunds = None
+    ioer_legacy = None
+    if legacy_funding_splice:
+        sofr = pd.Series(np.nan, index=idx, dtype=float, name="sofr")
+        iorb = pd.Series(np.nan, index=idx, dtype=float, name="iorb")
+        fedfunds = _make_constant_series(idx, 0.41, "fedfunds")
+        ioer_legacy = _make_constant_series(idx, 0.40, "ioer_legacy")
+        if ioer_legacy_truncate_calendar_days is not None:
+            cutoff = idx[-1] - pd.Timedelta(days=ioer_legacy_truncate_calendar_days)
+            ioer_legacy.loc[ioer_legacy.index > cutoff] = np.nan
     nfci_w = pd.Series(np.nan, index=idx, dtype=float, name="nfci")
     weekly_positions = list(range(0, n, 5))
     nfci_values = rng.normal(-0.5, 0.2, size=len(weekly_positions))
@@ -175,6 +193,12 @@ def _build_full_synthetic_context(
         nfci_w.loc[nfci_w.index > cutoff] = np.nan
     usd = _make_random_walk(idx, seed=_SEED + 100, start=100.0, sigma=0.003)
 
+    hy_oas = _make_random_walk(idx, seed=_SEED + 101, start=400.0, sigma=0.01)
+    ig_oas = _make_random_walk(idx, seed=_SEED + 102, start=150.0, sigma=0.01)
+    if hy_oas_truncate_calendar_days is not None:
+        cutoff = idx[-1] - pd.Timedelta(days=hy_oas_truncate_calendar_days)
+        hy_oas.loc[hy_oas.index > cutoff] = np.nan
+
     macro_series = {
         "sofr": sofr,
         "iorb": iorb,
@@ -183,8 +207,8 @@ def _build_full_synthetic_context(
         # ICE BofA OAS series — single source for the §2C credit-spread
         # metric. Required by `_CF_MACRO_KEYS`, so the §2C seam does not
         # build without them.
-        "hy_oas": _make_random_walk(idx, seed=_SEED + 101, start=400.0, sigma=0.01),
-        "ig_bbb_oas": _make_random_walk(idx, seed=_SEED + 102, start=150.0, sigma=0.01),
+        "hy_oas": hy_oas,
+        "ig_bbb_oas": ig_oas,
         # Add yield series for monetary slice compatibility.
         "2y_yield": _make_constant_series(idx, 4.5, "2y_yield"),
         "10y_yield": _make_constant_series(idx, 4.0, "10y_yield"),
@@ -192,6 +216,9 @@ def _build_full_synthetic_context(
     if omit_oas_series:
         macro_series.pop("hy_oas")
         macro_series.pop("ig_bbb_oas")
+    if fedfunds is not None and ioer_legacy is not None:
+        macro_series["fedfunds"] = fedfunds
+        macro_series["ioer_legacy"] = ioer_legacy
 
     config = RegimeEngine().config
     context = build_market_context(
@@ -360,6 +387,65 @@ def test_credit_funding_proxy_builds_when_oas_series_are_absent() -> None:
     assert effective.evidence["source_used"] == "proxy_fallback"
 
 
+def test_real_oas_percentile_warmup_is_insufficient_history_not_missing_feature() -> None:
+    context = _build_full_synthetic_context()
+    store = build_feature_store(
+        context,
+        network_fragility_config=context.config.network_fragility,
+        monetary_pressure_v2_config=context.config.monetary_pressure_v2,
+        credit_funding_config=context.config.credit_funding,
+    )
+    cf = store.credit_funding
+    assert cf is not None
+
+    # Simulate the real FRED OAS truncation class: raw OAS has enough recent
+    # observations to pass the generic completeness floor, but the derived
+    # 504d percentile is still NaN on the current session.
+    hy_oas = cf.hy_oas_63d.copy()
+    ig_oas = cf.ig_oas_63d.copy()
+    hy_oas.iloc[:-400] = np.nan
+    ig_oas.iloc[:-400] = np.nan
+    hy_percentile = pd.Series(np.nan, index=hy_oas.index, dtype=float)
+    warmed_store = store.model_copy(
+        update={
+            "credit_funding": CreditFundingFeatures(
+                hy_oas_63d=hy_oas,
+                ig_oas_63d=ig_oas,
+                hy_oas_percentile_504d=hy_percentile,
+                hy_oas_slope_21d=cf.hy_oas_slope_21d,
+                ig_oas_slope_21d=cf.ig_oas_slope_21d,
+                hy_tr_differential_63d=cf.hy_tr_differential_63d,
+                ig_tr_differential_63d=cf.ig_tr_differential_63d,
+                hy_tr_differential_percentile_504d=cf.hy_tr_differential_percentile_504d,
+                hy_tr_differential_slope_21d=cf.hy_tr_differential_slope_21d,
+                ig_tr_differential_slope_21d=cf.ig_tr_differential_slope_21d,
+                kre_spy_ratio=cf.kre_spy_ratio,
+                kre_spy_slope_63d=cf.kre_spy_slope_63d,
+                nfci_daily_carried=cf.nfci_daily_carried,
+                sofr_iorb_spread=cf.sofr_iorb_spread,
+                sofr_iorb_slope_21d=cf.sofr_iorb_slope_21d,
+                broad_usd_index_zscore_21d=cf.broad_usd_index_zscore_21d,
+                spy_21d_return=cf.spy_21d_return,
+                tlt_21d_return=cf.tlt_21d_return,
+                bias_warnings=cf.bias_warnings,
+            )
+        }
+    )
+
+    real = build_credit_funding_axis_series(context, warmed_store)
+    proxy = build_credit_funding_proxy_axis_series(context, warmed_store)
+    assert real is not None
+    assert proxy is not None
+    day = context.sessions[-1]
+    assert real[day].classification_status == "insufficient_history"
+    assert real[day].classification_reason == "hy_spread_percentile_504d_warmup"
+    assert real[day].reporting_label == "insufficient_history"
+
+    effective = resolve_credit_funding_effective_output(oas=real[day], proxy=proxy[day])
+    assert effective is not None
+    assert effective.evidence["source_used"] == "proxy_fallback"
+
+
 def test_unknown_when_hyg_stale_more_than_5_sessions() -> None:
     """§2C line 2123: HYG stale > 5 sessions → unknown gate trip."""
     context = _build_full_synthetic_context(hyg_truncate_sessions=10)
@@ -391,6 +477,42 @@ def test_credit_funding_carries_one_session_sofr_publication_lag() -> None:
     out = outputs[last_day]
     assert out.raw_label != "unknown"
     assert out.data_quality.status != "insufficient_data"
+
+
+def test_unknown_when_oas_spread_source_is_stale() -> None:
+    context = _build_full_synthetic_context(hy_oas_truncate_calendar_days=70)
+    _, outputs = _build_store_and_outputs(context)
+
+    assert outputs is not None
+    last_day = context.sessions[-1]
+    out = outputs[last_day]
+    assert out.raw_label == "unknown"
+    assert "hy_oas_stale" in (out.data_quality.reason or "")
+
+
+def test_unknown_when_iorb_component_is_stale() -> None:
+    context = _build_full_synthetic_context(iorb_truncate_calendar_days=70)
+    _, outputs = _build_store_and_outputs(context)
+
+    assert outputs is not None
+    last_day = context.sessions[-1]
+    out = outputs[last_day]
+    assert out.raw_label == "unknown"
+    assert "funding_spread_stale" in (out.data_quality.reason or "")
+
+
+def test_unknown_when_legacy_ioer_component_is_stale() -> None:
+    context = _build_full_synthetic_context(
+        legacy_funding_splice=True,
+        ioer_legacy_truncate_calendar_days=70,
+    )
+    _, outputs = _build_store_and_outputs(context)
+
+    assert outputs is not None
+    last_day = context.sessions[-1]
+    out = outputs[last_day]
+    assert out.raw_label == "unknown"
+    assert "funding_spread_stale" in (out.data_quality.reason or "")
 
 
 def test_unknown_when_assess_series_input_quality_fails() -> None:

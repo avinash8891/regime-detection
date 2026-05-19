@@ -44,6 +44,30 @@ def test_profile_parse_args_defaults_pmi_to_materialized_data_root(
     assert args.daily_dir == data_root / "daily_ohlcv_762"
 
 
+def test_profile_parse_args_can_disable_eps_revision(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    data_root = tmp_path / "data" / "raw"
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "profile_engine.py",
+            "--data-root",
+            str(data_root),
+            "--disable-aggregate-forward-eps-revision",
+        ],
+    )
+
+    args = profile_engine._parse_args()
+
+    assert args.disable_aggregate_forward_eps_revision is True
+    assert args.aggregate_forward_eps_weekly_history_parquet == (
+        data_root / "aggregate_forward_eps" / "sp500_eps_weekly_history.parquet"
+    )
+
+
 def test_profile_manifest_resolution_replaces_default_input_paths(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

@@ -25,11 +25,7 @@ class TransitionScoreConfig(StrictBaseModel):
     # V2 §4.4 interpretation bands: stable / weakening / transition_warning / high.
     bands: dict[str, tuple[float, float]]
 
-
-class EventCalendarV2Config(StrictBaseModel):
-    """Event calendar v2 configuration (v2 spec §2D). Stub."""
-
-    enabled: bool = False
+    cooldown_window_days: int = Field(default=3, ge=0)
 
 
 class HMMConfig(StrictBaseModel):
@@ -47,6 +43,8 @@ class HMMConfig(StrictBaseModel):
         default=(42, 101, 202, 303, 404, 505, 606, 707, 808, 909),
         min_length=1,
     )
+    model_version: str = "hmm_4state_v1.0"
+    state_label_map: dict[int, str] | None = None
 
 
 class ClusteringConfig(StrictBaseModel):
@@ -62,6 +60,7 @@ class ClusteringConfig(StrictBaseModel):
     random_state: int = Field(default=42, ge=0)
     covariance_type: Literal["full", "tied", "diag", "spherical"] = "full"
     model_version: str = Field(default="gmm_8cluster_v1.0")
+    cluster_label_map: dict[int, str] | None = None
 
 
 class ChangePointConfig(StrictBaseModel):
@@ -83,17 +82,6 @@ class ChangePointConfig(StrictBaseModel):
     student_t_kappa: float = Field(default=1.0, gt=0.0)
     student_t_mu: float = Field(default=0.0)
     method: str = Field(default="BOCPD")
-
-
-class VolCrushConfig(StrictBaseModel):
-    """Vol-crush strategy-contract knobs exposed for downstream consumers."""
-
-    # V2 §5.3: "as_of_date within 3 NYSE trading days AFTER configured event end".
-    event_window_trading_days: int = Field(ge=0)
-
-    implied_vol_5d_change_threshold: float
-
-    realized_vol_ratio_threshold: float = Field(ge=0.0)
 
 
 class NoFlipFlopConfig(StrictBaseModel):

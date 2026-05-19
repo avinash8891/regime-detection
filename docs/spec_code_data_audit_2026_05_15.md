@@ -358,3 +358,29 @@ pytest -q
 V1 frozen-replay must remain byte-identical; V2 §2A label set must be
 unchanged; V2 §2B label set must be unchanged with first-release CPI
 preferred when available.
+
+---
+
+## 6. Follow-up audit session (2026-05-19) — resolved items
+
+The following issues were discovered and resolved in the 2026-05-19 forensic audit (ADR 0010):
+
+1. **Per-label hysteresis now mandatory for all 9 label axes.** L1 axes (trend_direction, trend_character, volatility, breadth) previously used flat hysteresis. Now all axes use `apply_per_label_asymmetric_hysteresis` with `deescalation_days_by_label`. Missing config fails loudly with `RuntimeError`.
+
+2. **Event calendar expanded 454 → 699 events.** ECB (88), BoE (96), BoJ (89) decisions now cover 2016-2026 via official archive + current-calendar pages. Provenance artifacts (event_candidates, event_validations, event_quarantine) tracked in manifest.
+
+3. **CPI October 2025 permanently missing** from BLS due to government shutdown. Engine handles via forward-fill + 60-day staleness gate.
+
+4. **CPI vintages NaN bug fixed.** `_drop_null_fred_observations` now runs after merge (was before, letting old NaN rows survive).
+
+5. **`run_v2_calibration.py` refactored** to use manifest input resolver pattern. Was constructing paths manually and missing event_calendar, aaii_sentiment, implied_vol_30d.
+
+6. **`trend_character_v2` config wired.** `deescalation_days_by_label` was declared in config but never read by the axis builder.
+
+7. **`monthly_options_expiry` removed from EventType Literal.** `expiry_week` is computed deterministically from trading calendar, never from YAML rows.
+
+8. **`agent_routing` and `strategy_family_constraints`** now surfaced in profile engine `trailing_v2_status` reporting.
+
+9. **`HTTP_USER_AGENT`** in `event_sources/_common.py` changed from bot-like to browser-like string to avoid central-bank page blocks.
+
+10. **Event calendar is S3-only** via manifest. `default_relpath=("event_calendar", "us_events.yaml")` added to `ManifestInputSpec`.

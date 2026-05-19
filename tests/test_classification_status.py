@@ -15,6 +15,98 @@ def test_unknown_with_ok_data_quality_is_no_rule_fired() -> None:
     assert out.reporting_label == "no_rule_fired"
 
 
+def test_unknown_held_by_hysteresis_reports_no_rule_fired_hysteresis() -> None:
+    out = AxisOutput(
+        raw_label="sideways",
+        stable_label="unknown",
+        active_label="unknown",
+        evidence={"rule_evidence": {"within_5pct_sma200": True}},
+        data_quality=DataQuality(status="ok", freshness_days=0, completeness=1.0),
+    )
+
+    assert out.classification_status == "no_rule_fired_hysteresis"
+    assert out.classification_reason == "hysteresis_held_unknown"
+    assert out.reporting_label == "no_rule_fired_hysteresis"
+
+
+def test_unknown_with_missing_rule_feature_reports_no_rule_fired_missing_feature() -> None:
+    out = AxisOutput(
+        raw_label="unknown",
+        stable_label="unknown",
+        active_label="unknown",
+        evidence={"rule_evidence": {"hy_spread_percentile_504d": None}},
+        data_quality=DataQuality(status="ok", freshness_days=0, completeness=1.0),
+    )
+
+    assert out.classification_status == "no_rule_fired_missing_feature"
+    assert out.classification_reason == "missing_rule_feature:hy_spread_percentile_504d"
+    assert out.reporting_label == "no_rule_fired_missing_feature"
+
+
+def test_wrapped_evidence_with_missing_rule_feature_reports_no_rule_fired_missing_feature() -> None:
+    out = AxisOutput(
+        raw_label="unknown",
+        stable_label="unknown",
+        active_label="unknown",
+        evidence={"root": {"rule_evidence": {"hy_spread_percentile_504d": None}}},
+        data_quality=DataQuality(status="ok", freshness_days=0, completeness=1.0),
+    )
+
+    assert out.classification_status == "no_rule_fired_missing_feature"
+    assert out.classification_reason == "missing_rule_feature:hy_spread_percentile_504d"
+    assert out.reporting_label == "no_rule_fired_missing_feature"
+
+
+def test_nan_rule_feature_reports_no_rule_fired_missing_feature() -> None:
+    out = AxisOutput(
+        raw_label="unknown",
+        stable_label="unknown",
+        active_label="unknown",
+        evidence={"rule_evidence": {"hy_spread_percentile_504d": float("nan")}},
+        data_quality=DataQuality(status="ok", freshness_days=0, completeness=1.0),
+    )
+
+    assert out.classification_status == "no_rule_fired_missing_feature"
+    assert out.classification_reason == "missing_rule_feature:hy_spread_percentile_504d"
+    assert out.reporting_label == "no_rule_fired_missing_feature"
+
+
+def test_existing_no_rule_status_is_refined_to_missing_feature() -> None:
+    out = AxisOutput(
+        raw_label="unknown",
+        stable_label="unknown",
+        active_label="unknown",
+        evidence={"root": {"rule_evidence": {"hy_spread_percentile_504d": None}}},
+        data_quality=DataQuality(status="ok", freshness_days=0, completeness=1.0),
+        classification_status="no_rule_fired",
+        classification_reason="no_rule_fired",
+    )
+
+    assert out.classification_status == "no_rule_fired_missing_feature"
+    assert out.classification_reason == "missing_rule_feature:hy_spread_percentile_504d"
+    assert out.reporting_label == "no_rule_fired_missing_feature"
+
+
+def test_non_binding_missing_rule_feature_stays_no_rule_fired() -> None:
+    out = AxisOutput(
+        raw_label="unknown",
+        stable_label="unknown",
+        active_label="unknown",
+        evidence={
+            "rule_evidence": {
+                "hy_spread_percentile_504d": 0.60,
+                "broad_usd_index_zscore_21d": float("nan"),
+                "inflation_surprise_zscore": None,
+            }
+        },
+        data_quality=DataQuality(status="ok", freshness_days=0, completeness=1.0),
+    )
+
+    assert out.classification_status == "no_rule_fired"
+    assert out.classification_reason == "no_rule_fired"
+    assert out.reporting_label == "no_rule_fired"
+
+
 def test_unknown_with_stale_data_quality_is_stale_data() -> None:
     out = CreditFundingOutput(
         raw_label="unknown",

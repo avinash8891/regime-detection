@@ -4,7 +4,7 @@ from typing import TYPE_CHECKING
 
 import pandas as pd
 
-from regime_detection.hysteresis import apply_asymmetric_hysteresis
+from regime_detection.hysteresis import apply_per_label_asymmetric_hysteresis
 from regime_detection.volatility_state import (
     _RISK_RANK as VOLATILITY_RISK_RANK,
     build_raw_outputs as build_volatility_raw_outputs,
@@ -38,14 +38,18 @@ def build_volatility_axis_series(
         volatility_state_v2_features=vol_v2_features,
         volatility_state_v2_rules=vol_v2_rules,
     )
-    stable_labels, active_labels = apply_asymmetric_hysteresis(
+    if vol_v2_config is None or vol_v2_config.deescalation_days_by_label is None:
+        raise RuntimeError(
+            "volatility_state_v2.deescalation_days_by_label is required"
+        )
+    stable_labels, active_labels = apply_per_label_asymmetric_hysteresis(
         raw_labels=raw_labels,
         risk_rank=VOLATILITY_RISK_RANK,
-        escalation_days=context.config.hysteresis.volatility_escalation_days,
-        deescalation_days=context.config.hysteresis.volatility_deescalation_days,
+        deescalation_days_by_label=vol_v2_config.deescalation_days_by_label,
+        default_deescalation_days=vol_v2_config.default_deescalation_days,
     )
+    deescalation_days = vol_v2_config.default_deescalation_days
     from regime_detection.axis_series import _build_axis_outputs
-
     return _build_axis_outputs(
         dates=[ts.date() for ts in close_index],
         raw_labels=raw_labels,
@@ -53,7 +57,7 @@ def build_volatility_axis_series(
         active_labels=active_labels,
         raw_evidence=raw_evidence,
         risk_rank=VOLATILITY_RISK_RANK,
-        deescalation_days=context.config.hysteresis.volatility_deescalation_days,
+        deescalation_days=deescalation_days,
         required_inputs=[close],
         required_trading_days=VOLATILITY_REQUIRED_TRADING_DAYS,
         max_freshness_days=context.config.data_quality.max_freshness_days,

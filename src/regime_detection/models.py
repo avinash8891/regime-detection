@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import math
 from collections.abc import Iterator
 from datetime import date
 from typing import Any, Literal
@@ -12,11 +13,18 @@ DataQualityStatus = Literal["ok", "degraded", "insufficient_data", "insufficient
 ClassificationStatus = Literal[
     "classified",
     "no_rule_fired",
+    "no_rule_fired_hysteresis",
+    "no_rule_fired_missing_feature",
     "data_unavailable",
     "stale_data",
     "insufficient_history",
     "not_wired",
 ]
+
+_NON_BINDING_MISSING_RULE_FEATURES = {
+    "broad_usd_index_zscore_21d",
+    "inflation_surprise_zscore",
+}
 
 
 class EvidencePayload(RootModel[dict[str, Any]]):
@@ -125,6 +133,8 @@ def derive_classification_status(
     active_label: str,
     data_quality: DataQuality,
     evidence: EvidencePayload | None = None,
+    raw_label: str | None = None,
+    stable_label: str | None = None,
 ) -> tuple[ClassificationStatus, str | None]:
     """Disambiguate legacy ``unknown`` labels from data-quality failures.
 
@@ -148,7 +158,65 @@ def derive_classification_status(
         return "insufficient_history", reason or "insufficient_history"
     if data_quality.status == "insufficient_data":
         return "data_unavailable", reason or "insufficient_data"
+    if raw_label not in {None, "unknown"} or stable_label not in {None, "unknown"}:
+        return "no_rule_fired_hysteresis", "hysteresis_held_unknown"
+    missing_rule_features = _missing_rule_features(evidence)
+    if missing_rule_features:
+        return "no_rule_fired_missing_feature", _missing_rule_feature_reason(
+            missing_rule_features
+        )
     return "no_rule_fired", reason or "no_rule_fired"
+
+
+def _missing_rule_features(evidence: EvidencePayload | None) -> list[str]:
+    if evidence is None:
+        return []
+    features: set[str] = set()
+    _collect_missing_rule_features(evidence, features)
+    return sorted(features)
+
+
+def _missing_rule_feature_reason(features: list[str]) -> str:
+    prefix = "missing_rule_feature" if len(features) == 1 else "missing_rule_features"
+    return f"{prefix}:{','.join(features)}"
+
+
+def _collect_missing_rule_features(value: Any, features: set[str]) -> None:
+    if isinstance(value, EvidencePayload):
+        value = value.root
+    elif isinstance(value, BaseModel):
+        value = value.model_dump()
+    if not isinstance(value, dict):
+        return
+    rule_evidence = value.get("rule_evidence")
+    if isinstance(rule_evidence, dict):
+        _collect_missing_leaf_keys(rule_evidence, features)
+    for item in value.values():
+        _collect_missing_rule_features(item, features)
+
+
+def _collect_missing_leaf_keys(value: Any, features: set[str], prefix: str = "") -> None:
+    if isinstance(value, dict):
+        for key, item in value.items():
+            child_prefix = f"{prefix}.{key}" if prefix else str(key)
+            if child_prefix in _NON_BINDING_MISSING_RULE_FEATURES:
+                continue
+            _collect_missing_leaf_keys(item, features, child_prefix)
+        return
+    if isinstance(value, (list, tuple)):
+        for index, item in enumerate(value):
+            _collect_missing_leaf_keys(item, features, f"{prefix}[{index}]")
+        return
+    if _is_missing_rule_value(value):
+        features.add(prefix or "unknown")
+
+
+def _is_missing_rule_value(value: Any) -> bool:
+    if value is None:
+        return True
+    if isinstance(value, float) and math.isnan(value):
+        return True
+    return False
 
 
 class AxisOutput(BaseModel):
@@ -170,9 +238,11 @@ class AxisOutput(BaseModel):
 
     @model_validator(mode="after")
     def _populate_classification_metadata(self) -> "AxisOutput":
-        if self.classification_status is None:
+        if self.classification_status in {None, "no_rule_fired"}:
             status, reason = derive_classification_status(
                 active_label=self.active_label,
+                raw_label=self.raw_label,
+                stable_label=self.stable_label,
                 data_quality=self.data_quality,
                 evidence=self.evidence,
             )
@@ -236,9 +306,11 @@ class MonetaryPressureOutput(BaseModel):
 
     @model_validator(mode="after")
     def _populate_classification_metadata(self) -> "MonetaryPressureOutput":
-        if self.classification_status is None:
+        if self.classification_status in {None, "no_rule_fired"}:
             status, reason = derive_classification_status(
                 active_label=self.label,
+                raw_label=self.label,
+                stable_label=self.label,
                 data_quality=self.data_quality,
                 evidence=self.evidence,
             )
@@ -345,9 +417,11 @@ class VolumeLiquidityOutput(BaseModel):
 
     @model_validator(mode="after")
     def _populate_classification_metadata(self) -> "VolumeLiquidityOutput":
-        if self.classification_status is None:
+        if self.classification_status in {None, "no_rule_fired"}:
             status, reason = derive_classification_status(
                 active_label=self.label,
+                raw_label=self.label,
+                stable_label=self.label,
                 data_quality=self.data_quality,
                 evidence=self.evidence,
             )
@@ -386,15 +460,45 @@ class VolumeLiquidityStateOutput(AxisOutput):
 class ClusterOutput(BaseModel):
     """v2 §6.2 clustering output. Diagnostic evidence; per-day
     cluster assignment + Mahalanobis distance to the assigned-cluster
-    centroid. ``mapped_label`` is omitted until the operator-curated
-    ``cluster_label_map.yaml`` ships (spec line 2842 + V2 §10).
+    centroid. ``mapped_label`` is populated when an operator-curated
+    ``cluster_label_map.yaml`` is loaded (spec line 2842 + V2 §10);
+    None when the map is absent or still in candidate state.
     """
 
     model_config = ConfigDict(extra="forbid")
 
-    cluster_id: int  # raw 0..n_clusters-1; NOT an economic label
+    cluster_id: int
     distance_to_centroid: float
     model_version: str
+    mapped_label: str | None = None
+
+    def model_dump(self, *args: Any, **kwargs: Any) -> dict[str, Any]:
+        kwargs.setdefault("exclude_none", True)
+        return super().model_dump(*args, **kwargs)
+
+    def model_dump_json(self, *args: Any, **kwargs: Any) -> str:
+        kwargs.setdefault("exclude_none", True)
+        return super().model_dump_json(*args, **kwargs)
+
+
+class HmmOutput(BaseModel):
+    """v2 §6.1 HMM evidence output.
+
+    Surfaces the Gaussian HMM state assignment for downstream consumers.
+    ``mapped_label`` is populated when an operator-curated
+    ``hmm_state_label_map.yaml`` is loaded (§6.1 + §10); None otherwise.
+    ``state_persistence_days`` counts consecutive sessions the top state
+    has remained unchanged.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    top_state: int
+    top_state_prob: float
+    n_states: int
+    state_persistence_days: int | None = None
+    model_version: str
+    mapped_label: str | None = None
 
     def model_dump(self, *args: Any, **kwargs: Any) -> dict[str, Any]:
         kwargs.setdefault("exclude_none", True)
@@ -628,6 +732,7 @@ class RegimeOutput(BaseModel):
     volume_liquidity_state: VolumeLiquidityStateOutput | None = None  # v2 §1E
     monetary_pressure_state: MonetaryPressureV2Output | None = None  # v2 §2A
     change_point: ChangePointOutput | None = None  # v2 §4.6
+    hmm: HmmOutput | None = None  # v2 §6.1 — evidence
     cluster: ClusterOutput | None = None  # v2 §6.2 — diagnostic evidence
     agent_routing: "AgentRouting | None" = None  # v2 §5.1
     strategy_family_constraints: dict[str, StrategyFamilyConstraint] | None = None  # v2 §5.2
