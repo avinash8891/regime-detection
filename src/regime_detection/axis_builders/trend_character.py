@@ -4,7 +4,10 @@ from typing import TYPE_CHECKING
 
 import pandas as pd
 
-from regime_detection.hysteresis import apply_asymmetric_hysteresis
+from regime_detection.hysteresis import (
+    apply_asymmetric_hysteresis,
+    apply_per_label_asymmetric_hysteresis,
+)
 from regime_detection.trend_character import (
     _RISK_RANK as TREND_CHARACTER_RISK_RANK,
     build_raw_outputs as build_trend_character_raw_outputs,
@@ -30,14 +33,28 @@ def build_trend_character_axis_series(
         features,
         allow_v2_labels=context.config.config_version != "core3-v1.0.0",
     )
-    stable_labels, active_labels = apply_asymmetric_hysteresis(
-        raw_labels=raw_labels,
-        risk_rank=TREND_CHARACTER_RISK_RANK,
-        escalation_days=context.config.hysteresis.trend_character_escalation_days,
-        deescalation_days=context.config.hysteresis.trend_character_deescalation_days,
-    )
+    tc_v2_config = context.config.trend_character_v2
+    if tc_v2_config is not None:
+        stable_labels, active_labels = apply_per_label_asymmetric_hysteresis(
+            raw_labels=raw_labels,
+            risk_rank=TREND_CHARACTER_RISK_RANK,
+            deescalation_days_by_label=tc_v2_config.deescalation_days_by_label,
+            default_deescalation_days=tc_v2_config.default_deescalation_days,
+        )
+    else:
+        stable_labels, active_labels = apply_asymmetric_hysteresis(
+            raw_labels=raw_labels,
+            risk_rank=TREND_CHARACTER_RISK_RANK,
+            escalation_days=context.config.hysteresis.trend_character_escalation_days,
+            deescalation_days=context.config.hysteresis.trend_character_deescalation_days,
+        )
     from regime_detection.axis_series import _build_axis_outputs
 
+    deescalation_days = (
+        tc_v2_config.default_deescalation_days
+        if tc_v2_config is not None
+        else context.config.hysteresis.trend_character_deescalation_days
+    )
     return _build_axis_outputs(
         dates=[ts.date() for ts in close_index],
         raw_labels=raw_labels,
@@ -45,7 +62,7 @@ def build_trend_character_axis_series(
         active_labels=active_labels,
         raw_evidence=raw_evidence,
         risk_rank=TREND_CHARACTER_RISK_RANK,
-        deescalation_days=context.config.hysteresis.trend_character_deescalation_days,
+        deescalation_days=deescalation_days,
         required_inputs=[close, context.spy_ohlcv["high"], context.spy_ohlcv["low"]],
         required_trading_days=TREND_CHARACTER_REQUIRED_TRADING_DAYS,
         max_freshness_days=context.config.data_quality.max_freshness_days,

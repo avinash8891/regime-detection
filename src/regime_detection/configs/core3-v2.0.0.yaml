@@ -42,9 +42,20 @@ hysteresis:
 # ---------------------------------------------------------------------------
 # V2 sub-configs (per docs/regime_engine_v2_spec.md).
 #
-# Slices not yet implemented (event_calendar_v2) are intentionally omitted
-# so they remain None on load.
+# event_calendar_v2 is intentionally omitted (§2D stub, not yet implemented).
 # ---------------------------------------------------------------------------
+
+# v2 §1B per-label asymmetric hysteresis for trend_character.
+trend_character_v2:
+  deescalation_days_by_label:
+    breakout_expansion: 3
+    recovery_attempt: 3
+    trending: 0
+    range_bound: 3
+    chop: 0
+    transition: 2
+    unknown: 2
+  default_deescalation_days: 0
 
 network_fragility:
   # v2 spec §3.1 — 22 assets: 11 sector ETFs + SPY (broad-market index) +
