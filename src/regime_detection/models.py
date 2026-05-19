@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import math
 from collections.abc import Iterator
 from datetime import date
 from typing import Any, Literal
@@ -181,6 +182,8 @@ def _has_missing_rule_evidence(value: Any) -> bool:
 def _contains_none(value: Any) -> bool:
     if value is None:
         return True
+    if isinstance(value, float) and math.isnan(value):
+        return True
     if isinstance(value, dict):
         return any(_contains_none(item) for item in value.values())
     if isinstance(value, (list, tuple)):
@@ -207,7 +210,7 @@ class AxisOutput(BaseModel):
 
     @model_validator(mode="after")
     def _populate_classification_metadata(self) -> "AxisOutput":
-        if self.classification_status is None:
+        if self.classification_status in {None, "no_rule_fired"}:
             status, reason = derive_classification_status(
                 active_label=self.active_label,
                 raw_label=self.raw_label,
@@ -275,7 +278,7 @@ class MonetaryPressureOutput(BaseModel):
 
     @model_validator(mode="after")
     def _populate_classification_metadata(self) -> "MonetaryPressureOutput":
-        if self.classification_status is None:
+        if self.classification_status in {None, "no_rule_fired"}:
             status, reason = derive_classification_status(
                 active_label=self.label,
                 raw_label=self.label,
@@ -386,7 +389,7 @@ class VolumeLiquidityOutput(BaseModel):
 
     @model_validator(mode="after")
     def _populate_classification_metadata(self) -> "VolumeLiquidityOutput":
-        if self.classification_status is None:
+        if self.classification_status in {None, "no_rule_fired"}:
             status, reason = derive_classification_status(
                 active_label=self.label,
                 raw_label=self.label,

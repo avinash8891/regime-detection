@@ -57,6 +57,36 @@ def test_wrapped_evidence_with_missing_rule_feature_reports_no_rule_fired_warmup
     assert out.reporting_label == "no_rule_fired_warmup"
 
 
+def test_nan_rule_feature_reports_no_rule_fired_warmup() -> None:
+    out = AxisOutput(
+        raw_label="unknown",
+        stable_label="unknown",
+        active_label="unknown",
+        evidence={"rule_evidence": {"hy_spread_percentile_504d": float("nan")}},
+        data_quality=DataQuality(status="ok", freshness_days=0, completeness=1.0),
+    )
+
+    assert out.classification_status == "no_rule_fired_warmup"
+    assert out.classification_reason == "required_rule_feature_is_nan"
+    assert out.reporting_label == "no_rule_fired_warmup"
+
+
+def test_existing_no_rule_status_is_refined_to_warmup() -> None:
+    out = AxisOutput(
+        raw_label="unknown",
+        stable_label="unknown",
+        active_label="unknown",
+        evidence={"root": {"rule_evidence": {"hy_spread_percentile_504d": None}}},
+        data_quality=DataQuality(status="ok", freshness_days=0, completeness=1.0),
+        classification_status="no_rule_fired",
+        classification_reason="no_rule_fired",
+    )
+
+    assert out.classification_status == "no_rule_fired_warmup"
+    assert out.classification_reason == "required_rule_feature_is_nan"
+    assert out.reporting_label == "no_rule_fired_warmup"
+
+
 def test_unknown_with_stale_data_quality_is_stale_data() -> None:
     out = CreditFundingOutput(
         raw_label="unknown",
