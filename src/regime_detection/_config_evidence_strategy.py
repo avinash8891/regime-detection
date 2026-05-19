@@ -25,6 +25,8 @@ class TransitionScoreConfig(StrictBaseModel):
     # V2 §4.4 interpretation bands: stable / weakening / transition_warning / high.
     bands: dict[str, tuple[float, float]]
 
+    cooldown_window_days: int = Field(default=3, ge=0)
+
 
 class HMMConfig(StrictBaseModel):
     """Hidden Markov Model regime probability configuration (v2 spec §6.1)."""

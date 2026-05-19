@@ -15,7 +15,6 @@ from regime_detection._config_core import (
     ETFProxyConfig,
     EventCalendarConfig,
     ExpiryRulesConfig,
-    HysteresisConfig,
     MonthlyOptionsExpiryRuleConfig,
     NetworkFragilityConfig,
     NetworkFragilityRulesConfig,
@@ -73,7 +72,6 @@ __all__ = [
     "ExpiryRulesConfig",
     "FamilyOverride",
     "HMMConfig",
-    "HysteresisConfig",
     "InflationGrowthConfig",
     "InflationGrowthRulesConfig",
     "MonetaryPressureV2Config",
@@ -110,7 +108,6 @@ class RegimeConfig(StrictBaseModel):
     expiry_rules: ExpiryRulesConfig
     earnings_seasons: list[EarningsSeasonConfig]
     data_quality: DataQualityConfig
-    hysteresis: HysteresisConfig
 
     # V2 optional sub-configs (default None so V2 slices can land independently).
     network_fragility: NetworkFragilityConfig | None = None

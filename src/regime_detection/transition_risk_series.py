@@ -157,7 +157,11 @@ def build_transition_risk_series(
         # only fires when the active config_version is NOT the V1 frozen
         # tag. V1 byte-identity preserved when this is False.
         v2_warnings_enabled=context.config.config_version != "core3-v1.0.0",
-        cooldown_window_days=context.config.hysteresis.composite_deescalation_days,
+        cooldown_window_days=(
+            transition_score_config.cooldown_window_days
+            if transition_score_config is not None
+            else 5
+        ),
     )
 
 
