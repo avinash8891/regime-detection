@@ -589,6 +589,48 @@ def test_sources_dict_records_cpi_nowcast_none_when_not_wired(tmp_path: Path) ->
     )
 
 
+def test_sources_dict_records_eps_revision_disabled_by_operator(
+    tmp_path: Path,
+) -> None:
+    timer = profile_engine.StageTimer()
+    args = SimpleNamespace(
+        config_path=tmp_path / "config.yaml",
+        daily_dir=tmp_path / "daily_ohlcv",
+        constituent_tree=tmp_path / "constituents",
+        macro_parquet=tmp_path / "macro.parquet",
+        event_calendar=tmp_path / "events.yaml",
+        aaii_sentiment_parquet=None,
+        news_sentiment_parquet=None,
+        fomc_minutes_parquet=None,
+        powell_speeches_parquet=None,
+        cpi_vintages_parquet=None,
+        cpi_nowcast_parquet=None,
+        aggregate_forward_eps_weekly_history_parquet=(
+            tmp_path / "aggregate_forward_eps" / "sp500_eps_weekly_history.parquet"
+        ),
+        disable_aggregate_forward_eps_revision=True,
+        pit_parquet=tmp_path / "pit.parquet",
+        lookback_days=1,
+    )
+    inputs = _make_minimal_inputs(macro_series={})
+
+    report = profile_engine._build_json_report(
+        args=args,
+        inputs=inputs,
+        timeline=SimpleNamespace(outputs=[_make_minimal_output()]),
+        timer=timer,
+        total_wall_clock=1.0,
+        per_day_emission_total=0.0,
+        per_day_avg_ms=0.0,
+        verification_issues=[],
+    )
+
+    assert (
+        report["sources"]["aggregate_forward_eps_revision"]
+        == "disabled_by_operator"
+    )
+
+
 def test_sources_dict_records_cpi_nowcast_none_when_arg_absent_from_namespace(
     tmp_path: Path,
 ) -> None:

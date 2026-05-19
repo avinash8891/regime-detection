@@ -557,6 +557,15 @@ def _path_text(path: Path | None, *, present: bool = True) -> str | None:
     return str(path)
 
 
+def _eps_revision_source_report(args: argparse.Namespace, inputs: ProfileInputBundle) -> str | None:
+    if getattr(args, "disable_aggregate_forward_eps_revision", False):
+        return "disabled_by_operator"
+    return _path_text(
+        getattr(args, "aggregate_forward_eps_weekly_history_parquet", None),
+        present="aggregate_forward_eps_revision" in inputs.macro_series,
+    )
+
+
 def _build_json_report(
     *,
     args: argparse.Namespace,
@@ -633,6 +642,9 @@ def _build_json_report(
             "cpi_nowcast": _path_text(
                 getattr(args, "cpi_nowcast_parquet", None),
                 present="cpi_nowcast" in inputs.macro_series,
+            ),
+            "aggregate_forward_eps_revision": _eps_revision_source_report(
+                args, inputs
             ),
             "pit": str(args.pit_parquet),
         },
