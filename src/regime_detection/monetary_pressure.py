@@ -53,7 +53,6 @@ from typing import Literal
 import pandas as pd
 
 from regime_detection._rolling_stats import (
-    _ZSCORE_DDOF as _ZSCORE_DDOF,
     rolling_change_zscore as _rolling_change_zscore,
 )
 from regime_detection.config import (
@@ -85,14 +84,6 @@ MONETARY_PRESSURE_V2_RISK_RANK: dict[MonetaryPressureV2Label, int] = {
     "rate_shock": 3,
 }
 
-
-# v2 §2A precedence (highest-severity-first walk) per documented implementation decision (c).
-RULE_PRECEDENCE: tuple[MonetaryPressureV2Label, ...] = (
-    "rate_shock",
-    "tightening_pressure",
-    "easing_pressure",
-    "neutral_monetary",
-)
 
 
 @dataclass(frozen=True)

@@ -94,15 +94,6 @@ CREDIT_FUNDING_RISK_RANK: dict[CreditFundingLabel, int] = {
 }
 
 
-# v2 §2C line 2019 precedence (highest-severity-first walk).
-RULE_PRECEDENCE: tuple[CreditFundingLabel, ...] = (
-    "deleveraging",
-    "funding_squeeze",
-    "credit_stress",
-    "spread_widening",
-    "credit_calm",
-)
-
 
 # ---------------------------------------------------------------------------
 # Required FRED / cross-asset symbol keys. Pinned here as single source of

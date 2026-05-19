@@ -3,9 +3,7 @@ from __future__ import annotations
 
 import pandas as pd
 
-# Pandas/numpy sample-std convention. Pinned identically in
-# `regime_detection.monetary_pressure._ZSCORE_DDOF` and consumed here so
-# both §2A and §2C consumers normalize with the same ddof.
+# Pandas/numpy sample-std convention (ddof=1).
 _ZSCORE_DDOF = 1
 
 

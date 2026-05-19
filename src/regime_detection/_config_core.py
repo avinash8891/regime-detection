@@ -83,6 +83,8 @@ class NetworkFragilityRulesConfig(StrictBaseModel):
     concentration_corr_percentile_min: float = Field(ge=0.0, le=1.0)
     concentration_largest_eig_percentile_min: float = Field(ge=0.0, le=1.0)
     concentration_effective_rank_percentile_max: float = Field(ge=0.0, le=1.0)
+    # absorption_ratio_top3 > threshold → top-3 eigenvalue dominance.
+    concentration_absorption_ratio_min: float = Field(default=0.90, ge=0.0, le=1.0)
     # correlation_to_one — v2 §3.5 lines 646–648
     corr_to_one_corr_percentile_min: float = Field(ge=0.0, le=1.0)
     corr_to_one_realized_vol_percentile_min: float = Field(ge=0.0, le=1.0)

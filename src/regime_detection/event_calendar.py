@@ -31,19 +31,6 @@ EventCalendarLabel = Literal[
     "unknown",
 ]
 
-_RISK_RANK: dict[EventCalendarLabel, int] = {
-    "unknown": 0,
-    "normal_calendar": 1,
-    "earnings_season": 2,
-    "expiry_week": 3,
-    "nfp_week": 4,
-    "cpi_week": 5,
-    "budget_week": 6,
-    "global_rate_decision": 7,
-    "fed_week": 8,
-    "election_window": 9,
-    "geopolitical_event": 10,
-}
 _PRECEDENCE: list[EventCalendarLabel] = [
     "geopolitical_event",
     "election_window",

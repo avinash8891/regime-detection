@@ -49,15 +49,12 @@ to surface in the engine's monetary axis, not a primary rule input.
 """
 from __future__ import annotations
 
-import logging
 import re
 from dataclasses import dataclass
 from typing import Literal
 
 import pandas as pd
 
-
-LOGGER = logging.getLogger(__name__)
 
 
 # ---------------------------------------------------------------------------

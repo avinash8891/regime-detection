@@ -331,7 +331,6 @@ def test_unknown_when_assess_series_input_quality_fails() -> None:
         aggregate_forward_eps_revision_direction_4w=nan_series,
         commodity_return_63d=nan_series,
         treasury_10y_yield_slope_21d=nan_series,
-        cyclical_defensive_ratio=nan_series,
         cyclical_defensive_slope_21d=nan_series,
         spy_21d_return=nan_series,
         tlt_21d_return=nan_series,

@@ -77,17 +77,6 @@ INFLATION_GROWTH_RISK_RANK: dict[InflationGrowthLabel, int] = {
 }
 
 
-# v2 §2B line 2190 precedence (highest-severity-first walk).
-RULE_PRECEDENCE: tuple[InflationGrowthLabel, ...] = (
-    "inflation_shock",
-    "recession_scare",
-    "disinflation",
-    "goldilocks",
-    "recovery_growth",
-    "earnings_contraction",
-    "earnings_expansion",
-)
-
 
 # ---------------------------------------------------------------------------
 # Required input keys. Pinned here as single source of truth.
@@ -173,7 +162,6 @@ class InflationGrowthFeatures:
     aggregate_forward_eps_revision_direction_4w: pd.Series
     commodity_return_63d: pd.Series
     treasury_10y_yield_slope_21d: pd.Series
-    cyclical_defensive_ratio: pd.Series
     cyclical_defensive_slope_21d: pd.Series
     spy_21d_return: pd.Series
     tlt_21d_return: pd.Series
@@ -191,7 +179,6 @@ class InflationGrowthFeatures:
             "aggregate_forward_eps_revision_direction_4w",
             "commodity_return_63d",
             "treasury_10y_yield_slope_21d",
-            "cyclical_defensive_ratio",
             "cyclical_defensive_slope_21d",
             "spy_21d_return",
             "tlt_21d_return",
@@ -451,7 +438,6 @@ def compute_inflation_growth_features(
         aggregate_forward_eps_revision_direction_4w=aggregate_forward_eps_revision_direction_4w,
         commodity_return_63d=commodity_return_63d,
         treasury_10y_yield_slope_21d=treasury_10y_yield_slope_21d,
-        cyclical_defensive_ratio=cyclical_defensive_ratio,
         cyclical_defensive_slope_21d=cyclical_defensive_slope_21d,
         spy_21d_return=spy_21d_return,
         tlt_21d_return=tlt_21d_return,
@@ -473,6 +459,7 @@ class InflationGrowthRuleInputs:
     per spec lines 2314-2316).
     """
 
+    cpi_3m_change_pct: float
     cpi_6m_change_pct: float
     cpi_6m_change_pct_lag_21: float
     cpi_6m_change_pct_slope_21d: float
@@ -518,6 +505,7 @@ def build_rule_inputs_for_date(
 ) -> InflationGrowthRuleInputs:
     """Materialize the per-day scalar rule inputs at session ``dt``."""
     return InflationGrowthRuleInputs(
+        cpi_3m_change_pct=_scalar_at(features.cpi_3m_change_pct, dt),
         cpi_6m_change_pct=_scalar_at(features.cpi_6m_change_pct, dt),
         cpi_6m_change_pct_lag_21=_scalar_at_lag(
             features.cpi_6m_change_pct, dt, config.cpi_slope_lookback_sessions
@@ -560,6 +548,7 @@ def build_rule_inputs_by_date(
         if credit_funding_active_labels_by_date is not None:
             credit_funding_active_label = credit_funding_active_labels_by_date.get(dt)
         outputs[dt] = InflationGrowthRuleInputs(
+            cpi_3m_change_pct=_scalar_at(features.cpi_3m_change_pct, dt),
             cpi_6m_change_pct=_scalar_at(features.cpi_6m_change_pct, dt),
             cpi_6m_change_pct_lag_21=_scalar_at(cpi_lag_21, dt),
             cpi_6m_change_pct_slope_21d=_scalar_at(

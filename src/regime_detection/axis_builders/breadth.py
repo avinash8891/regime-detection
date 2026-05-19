@@ -29,8 +29,6 @@ _PIT_BREADTH_LABELS = {
     "recovery_breadth",
     "broadening_breadth",
 }
-_STALENESS_SENTINEL = 10**9
-
 # V1 breadth ETF-proxy quality gate uses the existing 50-session calibration.
 BREADTH_REQUIRED_TRADING_DAYS = 50
 

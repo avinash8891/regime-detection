@@ -116,7 +116,6 @@ def test_layer2_wiring_audit_counts_optional_inflation_growth_features() -> None
             ),
             commodity_return_63d=pd.Series([0.2, 0.3, 0.4], index=idx),
             treasury_10y_yield_slope_21d=pd.Series([0.01, 0.02, 0.03], index=idx),
-            cyclical_defensive_ratio=pd.Series([2.0, 2.1, 2.2], index=idx),
             cyclical_defensive_slope_21d=pd.Series([0.01, 0.02, 0.03], index=idx),
             spy_21d_return=pd.Series([0.01, 0.02, 0.03], index=idx),
             tlt_21d_return=pd.Series([-0.01, -0.02, -0.03], index=idx),

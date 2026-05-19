@@ -66,7 +66,3 @@ def parse_datetime_index(
     return pd.DatetimeIndex(
         parse_datetime_series(values, field_name=field_name, context=context)
     )
-
-
-def utc_now_iso() -> str:
-    return dt.datetime.now(dt.timezone.utc).isoformat().replace("+00:00", "Z")

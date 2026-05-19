@@ -197,6 +197,7 @@ def build_inflation_growth_axis_series(
         )
         if nowcast_stale:
             rule_inputs = InflationGrowthRuleInputs(
+                cpi_3m_change_pct=rule_inputs.cpi_3m_change_pct,
                 cpi_6m_change_pct=rule_inputs.cpi_6m_change_pct,
                 cpi_6m_change_pct_lag_21=rule_inputs.cpi_6m_change_pct_lag_21,
                 cpi_6m_change_pct_slope_21d=rule_inputs.cpi_6m_change_pct_slope_21d,
@@ -222,6 +223,7 @@ def build_inflation_growth_axis_series(
         eps_stale = eps_staleness_days > ig_config.eps_revision_stale_calendar_days
         if eps_stale:
             rule_inputs = InflationGrowthRuleInputs(
+                cpi_3m_change_pct=rule_inputs.cpi_3m_change_pct,
                 cpi_6m_change_pct=rule_inputs.cpi_6m_change_pct,
                 cpi_6m_change_pct_lag_21=rule_inputs.cpi_6m_change_pct_lag_21,
                 cpi_6m_change_pct_slope_21d=rule_inputs.cpi_6m_change_pct_slope_21d,
