@@ -1,4 +1,4 @@
-"""v2 §6.1 Hidden Markov Model evidence layer (implementation phase).
+"""v2 §6.1 Hidden Markov Model evidence layer.
 
 Reuses existing FeatureStore seams as inputs (``return_1d``,
 ``realized_vol_21d``, ``drawdown_63d``, ``volume_zscore_20d``,

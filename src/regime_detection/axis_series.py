@@ -60,15 +60,15 @@ class AxisSeriesBundle:
     event_calendar: dict[date, EventCalendarOutput]
     # V2 §3 network fragility — None in pure-v1 mode (no sector ETF data),
     # populated by build_network_fragility_axis_series when feature_store has
-    # the v2 fragility seam. implementation phase fills in the real classifier rules.
+    # the v2 fragility seam.
     network_fragility: dict[date, NetworkFragilityOutput] | None = None
     # V2 §1E volume/liquidity — None in pure-v1 mode (no v2 config),
     # populated by build_volume_liquidity_axis_series when feature_store
-    # has the v2 volume_liquidity_v2 seam (implementation phase).
+    # has the v2 volume_liquidity_v2 seam.
     volume_liquidity_state: dict[date, VolumeLiquidityStateOutput] | None = None
     # V2 §2C credit/funding — None in pure-v1 mode (no v2 config),
     # populated by build_credit_funding_axis_series when feature_store has
-    # the credit_funding seam lit (implementation phase).
+    # the credit_funding seam lit.
     credit_funding: dict[date, CreditFundingOutput] | None = None
     # V2 §2C credit/funding PROXY label — None in pure-v1 mode; populated by
     # build_credit_funding_proxy_axis_series on the TLT-vs-HYG/LQD
@@ -84,7 +84,7 @@ class AxisSeriesBundle:
     monetary_pressure_state: dict[date, MonetaryPressureV2Output] | None = None
     # V2 §2B inflation/growth — None in pure-v1 mode (no v2 config), populated
     # by build_inflation_growth_axis_series when feature_store.inflation_growth is
-    # lit AND context.config.inflation_growth is non-None (implementation phase).
+    # lit AND context.config.inflation_growth is non-None.
     inflation_growth: dict[date, InflationGrowthOutput] | None = None
 
 

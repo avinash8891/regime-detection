@@ -316,6 +316,8 @@ def _compact_timeline_report(outputs: list[RegimeOutput]) -> list[dict[str, Any]
 
 
 def _json_safe_value(value: Any) -> Any:
+    if isinstance(value, float):
+        return value if math.isfinite(value) else None
     if hasattr(value, "model_dump"):
         fields = getattr(type(value), "model_fields", None)
         if fields is not None:
@@ -713,6 +715,7 @@ def _build_json_report(
 
 def _write_json_report(path: Path, report: dict[str, Any]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
+    payload = json.dumps(report, indent=2, sort_keys=True, allow_nan=False) + "\n"
     path.write_text(
-        json.dumps(report, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+        payload, encoding="utf-8"
     )

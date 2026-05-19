@@ -1,16 +1,50 @@
 from __future__ import annotations
 
 import json
+import math
 from pathlib import Path
 from types import SimpleNamespace
 
 import pandas as pd
+
+from scripts import profile_engine_reporting
 
 from conftest import (
     load_profile_engine_module,
 )
 
 profile_engine = load_profile_engine_module()
+
+
+def test_profile_json_safe_value_converts_nonfinite_floats_to_null() -> None:
+    payload = profile_engine_reporting._json_safe_value(
+        {
+            "cold_start": float("nan"),
+            "positive_inf": float("inf"),
+            "negative_inf": float("-inf"),
+            "nested": [{"ok": 1.25, "missing": float("nan")}],
+        }
+    )
+
+    assert payload == {
+        "cold_start": None,
+        "positive_inf": None,
+        "negative_inf": None,
+        "nested": [{"ok": 1.25, "missing": None}],
+    }
+
+
+def test_profile_json_writer_rejects_nonfinite_values(tmp_path: Path) -> None:
+    report_path = tmp_path / "profile.json"
+
+    try:
+        profile_engine._write_json_report(report_path, {"bad": math.nan})
+    except ValueError as exc:
+        assert "Out of range float values" in str(exc)
+    else:
+        raise AssertionError("_write_json_report accepted non-finite JSON")
+
+    assert not report_path.exists()
 
 
 def test_profile_json_report_emits_machine_readable_sections(tmp_path: Path) -> None:

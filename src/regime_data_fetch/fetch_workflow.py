@@ -38,7 +38,7 @@ V2_CROSS_ASSET_SYMBOLS = [
     "USO",
     "UUP",
     # Bloomberg Commodity Index substitute per documented implementation decision; consumed
-    # by v2 §2B `commodity_return_63d` feature in implementation phase.
+    # by v2 §2B `commodity_return_63d` feature.
     "DBC",
 ]
 V2_EXTRA_SYMBOLS = ["KRE"] + V2_SECTOR_SYMBOLS + V2_CROSS_ASSET_SYMBOLS
@@ -61,7 +61,7 @@ V2_FRED_SERIES = {
     "fedfunds": "DFF",
     "ioer_legacy": "IOER",
     # GDPNow nowcast (Atlanta Fed). Free on FRED at series_id GDPNOW.
-    # Not consumed by any v2 §2B rule predicate as of implementation phase ship; ingested
+    # Not consumed by any v2 §2B rule predicate; ingested
     # here for the future-amendment slice that would use it as additional
     # recession_scare / recovery_growth evidence. Listed early in the slice
     # cadence so it lands in archived inputs before any spec amendment.

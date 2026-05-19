@@ -23,7 +23,7 @@ Implementation choices that resolve ambiguities:
   Pinned in the shared ``regime_detection.volatility_state.wilders_atr``
   helper so the future labels slice reuses one implementation.
 - **gap_frequency_20d window inclusion**: 20 gap observations ending at
-  ``t`` inclusive (consistent with implementation phase ``efficiency_ratio_20d``'s
+  ``t`` inclusive (consistent with ``efficiency_ratio_20d``'s
   rolling-N convention).
 - **intraday_range_percentile_252d**: ``Series.rolling(252).rank(pct=True)``
   with default ``ascending=True`` so a rising intraday range maps to a
@@ -47,8 +47,8 @@ from regime_detection.volatility_state import realized_vol, wilders_atr
 class VolatilityV2Features:
     """v2 §1C — per-session continuous volatility features.
 
-    implementation phase fields: atr_ratio, gap_frequency_20d, intraday_range_percentile_252d.
-    implementation phase adds the two realized-vol windows used by the `rising_vol` rule
+    Fields: atr_ratio, gap_frequency_20d, intraday_range_percentile_252d,
+    plus the two realized-vol windows used by the `rising_vol` rule
     (v2 §1C line 148): a short-window realised vol (default 10d) and a
     long-window realised vol (default 63d), both annualised via the shared
     ``regime_detection.volatility_state.realized_vol`` helper.
@@ -63,7 +63,7 @@ class VolatilityV2Features:
     # only scalars.
     gap_frequency_percentile_252d: pd.Series
     intraday_range_percentile_252d: pd.Series
-    # v2 §1C line 148 — `rising_vol` rule inputs (implementation phase).
+    # v2 §1C line 148 — `rising_vol` rule inputs.
     realized_vol_short: pd.Series
     realized_vol_long: pd.Series
     # v2 §1C `vol_crush` rule input (documented implementation decision). 21-session
@@ -159,7 +159,7 @@ def _intraday_range_percentile(
 
     The rolling rank is computed with the default ``ascending=True`` so a
     rising intraday range maps to a rising percentile (1.0 == current
-    value is the maximum within the window). Mirrors implementation phase's pattern
+    value is the maximum within the window). Mirrors the pattern
     in ``network_fragility.py``.
     """
     high = high.astype(float)
@@ -237,10 +237,10 @@ def compute_volatility_v2_features(
         lookback=config.intraday_range_lookback_days,
     )
 
-    # v2 §1C line 148 — `rising_vol` rule inputs (implementation phase). Computed via
+    # v2 §1C line 148 — `rising_vol` rule inputs. Computed via
     # the shared ``regime_detection.volatility_state.realized_vol`` helper
-    # so v1 (implementation phase, realized_vol_21d) and v2 (implementation phase, rv_10d/rv_63d)
-    # consume one annualisation path. When no rules_config is supplied,
+    # so v1 (realized_vol_21d) and v2 (rv_10d/rv_63d) consume one
+    # annualisation path. When no rules_config is supplied,
     # default to spec windows so callers that read the feature seam without
     # explicit rule configuration still get a complete struct.
     if rules_config is not None:
@@ -315,7 +315,7 @@ def compute_volatility_v2_features(
 
 
 # ---------------------------------------------------------------------------
-# implementation phase — v2 §1C `rising_vol` rule + precedence wrapper.
+# v2 §1C `rising_vol` rule + precedence wrapper.
 #
 # Rule (v2 §1C lines 146-148, verbatim):
 #     ATR_ratio > 1.15
@@ -348,7 +348,7 @@ def evaluate_rising_vol(
     The all-inputs-must-be-present contract is recorded in the
     documented implementation decision — spec §1C is silent on
     partial-NaN behavior so the conservative choice is "any NaN
-    falsifies the rule" (matches implementation phase recovery cold-start).
+    falsifies the rule" (matches recovery cold-start).
     """
     if dt not in features.atr_ratio.index:
         return False

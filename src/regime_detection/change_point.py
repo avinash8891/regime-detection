@@ -1,4 +1,4 @@
-"""v2 §6.3 BOCPD Change-Point Detection (implementation phase, evidence-only).
+"""v2 §6.3 BOCPD Change-Point Detection (evidence-only).
 
 Library reuse: ``bayesian_changepoint_detection.online_changepoint_detection``
 (documented implementation decision) — Adams-MacKay 2007 algorithm. No hand-rolled BOCPD;

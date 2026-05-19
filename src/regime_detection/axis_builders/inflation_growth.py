@@ -39,7 +39,7 @@ def build_inflation_growth_axis_series(
     feature_store: FeatureStore,
     credit_funding_active_labels_by_date: dict[date, str] | None = None,
 ) -> dict[date, InflationGrowthOutput] | None:
-    """V2 §2B inflation/growth axis classifier (implementation phase).
+    """V2 §2B inflation/growth axis classifier.
 
     Pipeline:
 

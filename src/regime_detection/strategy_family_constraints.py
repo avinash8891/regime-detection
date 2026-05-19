@@ -1,4 +1,4 @@
-"""v2 §5.2 Strategy Family Constraints resolver (implementation phase).
+"""v2 §5.2 Strategy Family Constraints resolver.
 
 Pins V2 spec §5.2 (docs/regime_engine_v2_spec.md lines 2570-2652). The
 resolver implements the override-on-default inheritance contract: each
