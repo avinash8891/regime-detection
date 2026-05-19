@@ -1249,12 +1249,13 @@ the slice/commit that resolved it. Entries are append-only.
           — specifically: window length for the change, and window
           length / placement for the mean/std normalizer.
 
-    Until §2A is amended, the v1 `MonetaryPressureOutput` placeholder
-    (`label="unknown"`, `evidence={"reason":
-    "v2_classifier_not_yet_implemented"}`,
-    `data_quality.status="insufficient_history"`) remains on
-    `RegimeOutput.structural_causal_state.monetary_pressure`, identical
-    to the slice-1-foundation shim. The V1 frozen-replay fixtures
+    §2A is implemented. The V1 `MonetaryPressureOutput` on
+    `RegimeOutput.structural_causal_state.monetary_pressure` remains
+    for backward compatibility (V1 wire shape). The V2 classifier
+    output is `MonetaryPressureV2Output` on
+    `RegimeOutput.monetary_pressure_state` with real labels
+    (tightening_pressure, easing_pressure, rate_shock, neutral_monetary)
+    from ~2021 when SOFR/IORB data is available. The V1 frozen-replay fixtures
     (which use the separate `RegimeOutputV1Frozen` shim with
     `LabelReasonOutputV1Frozen` for `monetary_pressure`) are
     unaffected.
@@ -3777,8 +3778,8 @@ cohort_routing:
 
   euphoria_specialist:
     trend_direction.active_label == "euphoria"
-    # Note: euphoria label is deferred until sentiment_score data ships
-    # (Ambiguity Log #32). Until then this rule is silent.
+    # euphoria label is implemented (sentiment_score ships via AAII fetcher;
+    # Ambiguity Log #32 resolved).
 
   bear_stress_specialist:
     trend_direction.active_label == "bear"

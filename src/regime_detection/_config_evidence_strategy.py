@@ -26,12 +26,6 @@ class TransitionScoreConfig(StrictBaseModel):
     bands: dict[str, tuple[float, float]]
 
 
-class EventCalendarV2Config(StrictBaseModel):
-    """Event calendar v2 configuration (v2 spec §2D). Stub."""
-
-    enabled: bool = False
-
-
 class HMMConfig(StrictBaseModel):
     """Hidden Markov Model regime probability configuration (v2 spec §6.1)."""
 

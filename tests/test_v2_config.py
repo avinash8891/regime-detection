@@ -240,7 +240,6 @@ def test_v1_yaml_still_loads_with_v1_config_version() -> None:
     assert cfg.monetary_pressure_v2 is None
     assert cfg.inflation_growth is None
     assert cfg.credit_funding is None
-    assert cfg.event_calendar_v2 is None
     assert cfg.hmm is None
     assert cfg.vol_crush is None
     assert cfg.no_flip_flop is None

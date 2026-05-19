@@ -49,7 +49,6 @@ from regime_detection._config_evidence_strategy import (
     CohortRoutingConfig,
     CohortRoutingRule,
     CohortRoutingRulePredicate,
-    EventCalendarV2Config,
     FamilyOverride,
     HMMConfig,
     NoFlipFlopConfig,
@@ -72,7 +71,6 @@ __all__ = [
     "ETFProxyConfig",
     "EarningsSeasonConfig",
     "EventCalendarConfig",
-    "EventCalendarV2Config",
     "ExpiryRulesConfig",
     "FamilyOverride",
     "HMMConfig",
@@ -138,7 +136,6 @@ class RegimeConfig(StrictBaseModel):
     news_sentiment: NewsSentimentConfig | None = None
     inflation_growth: InflationGrowthConfig | None = None
     credit_funding: CreditFundingConfig | None = None
-    event_calendar_v2: EventCalendarV2Config | None = None
     hmm: HMMConfig | None = None
     # v2 §6.2 GMM clustering evidence layer.
     clustering: ClusteringConfig | None = None

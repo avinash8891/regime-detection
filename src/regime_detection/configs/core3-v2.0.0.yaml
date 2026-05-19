@@ -42,7 +42,7 @@ hysteresis:
 # ---------------------------------------------------------------------------
 # V2 sub-configs (per docs/regime_engine_v2_spec.md).
 #
-# event_calendar_v2 is intentionally omitted (§2D stub, not yet implemented).
+# §2D event calendar is fully implemented via _V2_TYPE_TO_LABEL and _WINDOWS.
 # ---------------------------------------------------------------------------
 
 # v2 §1B per-label asymmetric hysteresis for trend_character.
