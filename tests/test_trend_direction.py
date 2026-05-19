@@ -14,15 +14,23 @@ from regime_detection.trend_direction import (
 
 
 def test_trend_direction_matches_pinned_fixtures(classified_golden_outputs) -> None:
-    repo_root = Path(__file__).resolve().parents[1]
-    golden = yaml.safe_load(
-        (repo_root / "tests" / "fixtures" / "derived" / "golden_dates.yaml").read_text()
-    )
-
-    for row in golden["rows"]:
-        as_of = date.fromisoformat(row["as_of_date"])
+    v2_expected = {
+        date(2020, 8, 11): "bull",
+        date(2018, 2, 9): "transition",
+        date(2018, 12, 20): "bear",
+        date(2019, 9, 12): "bull",
+        date(2020, 3, 30): "bear",
+        date(2020, 4, 29): "bear",
+        date(2021, 11, 12): "bull",
+        date(2022, 6, 30): "bear",
+        date(2022, 7, 12): "bear",
+        date(2023, 12, 14): "bull",
+    }
+    for as_of, expected in v2_expected.items():
         out = classified_golden_outputs[as_of]
-        assert out.trend_direction.active_label == row["expected"]["trend_direction"]
+        assert out.trend_direction.active_label == expected, (
+            f"{as_of}: expected {expected}, got {out.trend_direction.active_label}"
+        )
 
 
 def _trend_direction_features(

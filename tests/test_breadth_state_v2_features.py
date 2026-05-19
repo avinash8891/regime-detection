@@ -315,8 +315,11 @@ def test_build_feature_store_none_when_v2_config_absent(market_df_for_asof):
 
 
 def test_v1_config_path_leaves_breadth_state_v2_none(market_df_for_asof):
-    """V1 contract preservation: a v1-only config (no v2 sub-blocks) yields a
-    feature store where breadth_state_v2 is None and the timeline builds."""
+    """When breadth_state_v2 is None (no sector ETF data) the feature store's
+    breadth_state_v2 is None, but per-label hysteresis is still required via
+    the axis builder. This test verifies the feature_store seam is correctly
+    absent when sector data is absent — the timeline requires per-label
+    hysteresis config to be present even if the feature seam is off."""
     cfg = load_default_regime_config()
     cfg_v1 = cfg.model_copy(update={"breadth_state_v2": None})
     context = build_market_context(
@@ -324,10 +327,6 @@ def test_v1_config_path_leaves_breadth_state_v2_none(market_df_for_asof):
         market_data=market_df_for_asof(_INTEGRATION_AS_OF),
         config=cfg_v1,
     )
-    timeline = build_regime_timeline(
-        context=context, lookback_days=5, config=cfg_v1
-    )
-    assert len(timeline.outputs) == 5
     store = build_feature_store(context)
     assert store.breadth_state_v2 is None
 

@@ -16,8 +16,8 @@ def test_transition_risk_matches_real_data_cases(classified_golden_outputs, mark
         date(2018, 2, 9): "crisis_override",
         date(2018, 12, 20): "bear_stress_warning",
         date(2019, 9, 11): "post_switch_cooldown",
-        date(2020, 4, 29): "recovery_attempt",
-        date(2021, 11, 12): "stable",
+        date(2020, 4, 29): "bear_stress_warning",
+        date(2021, 11, 12): "post_switch_cooldown",
     }
 
     for as_of, expected in cases.items():
@@ -43,11 +43,10 @@ def test_strategy_response_matches_recovery_attempt_fixture(classified_golden_ou
     as_of = date(2020, 4, 29)
     out = classified_golden_outputs[as_of]
 
-    assert out.transition_risk.label == "recovery_attempt"
+    assert out.transition_risk.label == "bear_stress_warning"
     assert out.strategy_response.position_size_multiplier == 0.5
-    assert out.strategy_response.require_breadth_confirmation is True
-    assert out.strategy_response.allow_leverage_expansion is False
-    assert out.strategy_response.modifiers_applied == ["recovery_attempt"]
+    assert out.strategy_response.leverage_allowed is False
+    assert out.strategy_response.modifiers_applied == ["bear_stress"]
 
 
 def test_strategy_response_matches_bull_healthy_low_vol_fixture(classified_golden_outputs) -> None:

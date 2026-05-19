@@ -19,6 +19,7 @@ from regime_detection.models import (
     ChangePointOutput,
     ClusterOutput,
     DataQuality,
+    HmmOutput,
     MonetaryPressureEvidencePayload,
     MonetaryPressureOutput,
     NetworkFragilityOutput,
@@ -45,6 +46,10 @@ class _AlignedV2Evidence(NamedTuple):
     cluster_id_aligned: pd.Series | None
     cluster_distance_aligned: pd.Series | None
     cluster_model_version: str | None
+    hmm_top_state_aligned: pd.Series | None
+    hmm_top_state_prob_aligned: pd.Series | None
+    hmm_n_states: int | None
+    hmm_model_version: str | None
 
 
 def _v2_classifier_seam_absent_data_quality() -> DataQuality:
@@ -155,6 +160,7 @@ def _align_v2_evidence_for_selected_days(
     *,
     feature_store: FeatureStore,
     selected_days: list[date],
+    hmm_model_version: str | None = None,
 ) -> _AlignedV2Evidence:
     # v2 §6.2 GMM clustering evidence — bulk-reindex BEFORE the per-day
     # loop (matches the `_build_transition_score_inputs_by_date` pattern).
@@ -188,6 +194,20 @@ def _align_v2_evidence_for_selected_days(
         cluster_distance_aligned = None
         cluster_model_version = None
 
+    hmm_features = feature_store.hmm
+    if hmm_features is not None:
+        hmm_top_state_aligned = hmm_features.state_probabilities.idxmax(axis=1).reindex(
+            session_index
+        )
+        hmm_top_state_prob_aligned = hmm_features.top_state_prob.reindex(session_index)
+        hmm_n_states = hmm_features.n_states
+        hmm_model_version = hmm_model_version
+    else:
+        hmm_top_state_aligned = None
+        hmm_top_state_prob_aligned = None
+        hmm_n_states = None
+        hmm_model_version = None
+
     return _AlignedV2Evidence(
         cp_score_aligned=cp_score_aligned,
         cp_days_since_aligned=cp_days_since_aligned,
@@ -195,7 +215,29 @@ def _align_v2_evidence_for_selected_days(
         cluster_id_aligned=cluster_id_aligned,
         cluster_distance_aligned=cluster_distance_aligned,
         cluster_model_version=cluster_model_version,
+        hmm_top_state_aligned=hmm_top_state_aligned,
+        hmm_top_state_prob_aligned=hmm_top_state_prob_aligned,
+        hmm_n_states=hmm_n_states,
+        hmm_model_version=hmm_model_version,
     )
+
+
+def _hmm_state_persistence_days(
+    top_state_series: pd.Series, current_index: int
+) -> int | None:
+    """Count consecutive sessions the top state has been unchanged up to current_index."""
+    if current_index < 0 or current_index >= len(top_state_series):
+        return None
+    current_state = top_state_series.iloc[current_index]
+    if pd.isna(current_state):
+        return None
+    days = 1
+    for i in range(current_index - 1, -1, -1):
+        prev = top_state_series.iloc[i]
+        if pd.isna(prev) or int(prev) != int(current_state):
+            break
+        days += 1
+    return days
 
 
 def _build_timeline_output_for_day(
@@ -300,6 +342,27 @@ def _build_timeline_output_for_day(
                 distance_to_centroid=float(dist_val),
                 model_version=aligned_v2_evidence.cluster_model_version,
             )
+
+    hmm_output: HmmOutput | None = None
+    if (
+        aligned_v2_evidence.hmm_top_state_aligned is not None
+        and aligned_v2_evidence.hmm_top_state_prob_aligned is not None
+        and aligned_v2_evidence.hmm_n_states is not None
+    ):
+        hmm_state_val = aligned_v2_evidence.hmm_top_state_aligned.iloc[selected_day_index]
+        hmm_prob_val = aligned_v2_evidence.hmm_top_state_prob_aligned.iloc[selected_day_index]
+        if hmm_state_val is not None and not pd.isna(hmm_state_val) and not pd.isna(hmm_prob_val):
+            persistence = _hmm_state_persistence_days(
+                aligned_v2_evidence.hmm_top_state_aligned, selected_day_index
+            )
+            hmm_output = HmmOutput(
+                top_state=int(hmm_state_val),
+                top_state_prob=float(hmm_prob_val),
+                n_states=aligned_v2_evidence.hmm_n_states,
+                state_persistence_days=persistence,
+                model_version=aligned_v2_evidence.hmm_model_version or "hmm_unknown",
+            )
+
     agent_routing = None
     strategy_family_constraints = None
     cohort_routing_config = working_context.config.cohort_routing
@@ -356,6 +419,7 @@ def _build_timeline_output_for_day(
         credit_funding_effective_state=credit_funding_effective_output,
         inflation_growth_state=inflation_growth_output,
         monetary_pressure_state=monetary_pressure_output,
+        hmm=hmm_output,
         cluster=cluster_output,
         change_point=change_point_output,
         agent_routing=agent_routing,
@@ -422,9 +486,11 @@ def build_regime_timeline(
 
     selected_days = list(working_context.sessions[-lookback_days:])
 
+    hmm_config = working_context.config.hmm
     aligned_v2_evidence = _align_v2_evidence_for_selected_days(
         feature_store=feature_store,
         selected_days=selected_days,
+        hmm_model_version=hmm_config.model_version if hmm_config is not None else None,
     )
     network_fragility_by_date = _resolve_network_fragility_by_date(
         bundle_entry=axis_bundle.network_fragility,

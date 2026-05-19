@@ -12,6 +12,8 @@ DataQualityStatus = Literal["ok", "degraded", "insufficient_data", "insufficient
 ClassificationStatus = Literal[
     "classified",
     "no_rule_fired",
+    "no_rule_fired_hysteresis",
+    "no_rule_fired_warmup",
     "data_unavailable",
     "stale_data",
     "insufficient_history",
@@ -125,6 +127,8 @@ def derive_classification_status(
     active_label: str,
     data_quality: DataQuality,
     evidence: EvidencePayload | None = None,
+    raw_label: str | None = None,
+    stable_label: str | None = None,
 ) -> tuple[ClassificationStatus, str | None]:
     """Disambiguate legacy ``unknown`` labels from data-quality failures.
 
@@ -148,7 +152,40 @@ def derive_classification_status(
         return "insufficient_history", reason or "insufficient_history"
     if data_quality.status == "insufficient_data":
         return "data_unavailable", reason or "insufficient_data"
+    if raw_label not in {None, "unknown"} or stable_label not in {None, "unknown"}:
+        return "no_rule_fired_hysteresis", "hysteresis_held_unknown"
+    if _evidence_has_missing_rule_feature(evidence):
+        return "no_rule_fired_warmup", reason or "required_rule_feature_is_nan"
     return "no_rule_fired", reason or "no_rule_fired"
+
+
+def _evidence_has_missing_rule_feature(evidence: EvidencePayload | None) -> bool:
+    if evidence is None:
+        return False
+    return _has_missing_rule_evidence(evidence)
+
+
+def _has_missing_rule_evidence(value: Any) -> bool:
+    if isinstance(value, EvidencePayload):
+        value = value.root
+    elif isinstance(value, BaseModel):
+        value = value.model_dump()
+    if not isinstance(value, dict):
+        return False
+    rule_evidence = value.get("rule_evidence")
+    if isinstance(rule_evidence, dict) and _contains_none(rule_evidence):
+        return True
+    return any(_has_missing_rule_evidence(item) for item in value.values())
+
+
+def _contains_none(value: Any) -> bool:
+    if value is None:
+        return True
+    if isinstance(value, dict):
+        return any(_contains_none(item) for item in value.values())
+    if isinstance(value, (list, tuple)):
+        return any(_contains_none(item) for item in value)
+    return False
 
 
 class AxisOutput(BaseModel):
@@ -173,6 +210,8 @@ class AxisOutput(BaseModel):
         if self.classification_status is None:
             status, reason = derive_classification_status(
                 active_label=self.active_label,
+                raw_label=self.raw_label,
+                stable_label=self.stable_label,
                 data_quality=self.data_quality,
                 evidence=self.evidence,
             )
@@ -239,6 +278,8 @@ class MonetaryPressureOutput(BaseModel):
         if self.classification_status is None:
             status, reason = derive_classification_status(
                 active_label=self.label,
+                raw_label=self.label,
+                stable_label=self.label,
                 data_quality=self.data_quality,
                 evidence=self.evidence,
             )
@@ -348,6 +389,8 @@ class VolumeLiquidityOutput(BaseModel):
         if self.classification_status is None:
             status, reason = derive_classification_status(
                 active_label=self.label,
+                raw_label=self.label,
+                stable_label=self.label,
                 data_quality=self.data_quality,
                 evidence=self.evidence,
             )
@@ -386,15 +429,45 @@ class VolumeLiquidityStateOutput(AxisOutput):
 class ClusterOutput(BaseModel):
     """v2 §6.2 clustering output. Diagnostic evidence; per-day
     cluster assignment + Mahalanobis distance to the assigned-cluster
-    centroid. ``mapped_label`` is omitted until the operator-curated
-    ``cluster_label_map.yaml`` ships (spec line 2842 + V2 §10).
+    centroid. ``mapped_label`` is populated when an operator-curated
+    ``cluster_label_map.yaml`` is loaded (spec line 2842 + V2 §10);
+    None when the map is absent or still in candidate state.
     """
 
     model_config = ConfigDict(extra="forbid")
 
-    cluster_id: int  # raw 0..n_clusters-1; NOT an economic label
+    cluster_id: int
     distance_to_centroid: float
     model_version: str
+    mapped_label: str | None = None
+
+    def model_dump(self, *args: Any, **kwargs: Any) -> dict[str, Any]:
+        kwargs.setdefault("exclude_none", True)
+        return super().model_dump(*args, **kwargs)
+
+    def model_dump_json(self, *args: Any, **kwargs: Any) -> str:
+        kwargs.setdefault("exclude_none", True)
+        return super().model_dump_json(*args, **kwargs)
+
+
+class HmmOutput(BaseModel):
+    """v2 §6.1 HMM evidence output.
+
+    Surfaces the Gaussian HMM state assignment for downstream consumers.
+    ``mapped_label`` is populated when an operator-curated
+    ``hmm_state_label_map.yaml`` is loaded (§6.1 + §10); None otherwise.
+    ``state_persistence_days`` counts consecutive sessions the top state
+    has remained unchanged.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    top_state: int
+    top_state_prob: float
+    n_states: int
+    state_persistence_days: int | None = None
+    model_version: str
+    mapped_label: str | None = None
 
     def model_dump(self, *args: Any, **kwargs: Any) -> dict[str, Any]:
         kwargs.setdefault("exclude_none", True)
@@ -628,7 +701,8 @@ class RegimeOutput(BaseModel):
     volume_liquidity_state: VolumeLiquidityStateOutput | None = None  # v2 §1E
     monetary_pressure_state: MonetaryPressureV2Output | None = None  # v2 §2A
     change_point: ChangePointOutput | None = None  # v2 §4.6
-    cluster: ClusterOutput | None = None  # v2 §6.2 — diagnostic evidence
+    hmm: HmmOutput | None = None  # v2 §6.1 — evidence
+    cluster: ClusterOutput | None = None  # v2 §6.2 — evidence
     agent_routing: "AgentRouting | None" = None  # v2 §5.1
     strategy_family_constraints: dict[str, StrategyFamilyConstraint] | None = None  # v2 §5.2
 

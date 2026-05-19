@@ -47,6 +47,7 @@ class HMMConfig(StrictBaseModel):
         default=(42, 101, 202, 303, 404, 505, 606, 707, 808, 909),
         min_length=1,
     )
+    model_version: str = "hmm_4state_v1.0"
 
 
 class ClusteringConfig(StrictBaseModel):

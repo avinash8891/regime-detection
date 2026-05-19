@@ -3325,6 +3325,20 @@ events:
     importance: "medium"
 ```
 
+**Wire output shape** (nested under `structural_causal_state.event_calendar`):
+```json
+{
+  "raw_label": "fed_week",
+  "stable_label": "fed_week",
+  "active_label": "fed_week",
+  "evidence": {
+    "all_matching_events": ["fed_week", "expiry_week"],
+    "selected_via_precedence": "fed_week"
+  }
+}
+```
+The §2D labels extend the V1 `EventCalendarOutput` model. No separate output struct — the label set grows but the shape is unchanged.
+
 ---
 
 ## 3. Layer 3 V2 — Network Fragility (Full Implementation)
@@ -3680,7 +3694,7 @@ Transition score is **evidence**, not the regime. Output structure:
 {
   "transition_risk": {
     "label": "bull_fragile_warning",
-    "transition_score": 0.62,
+    "score": 0.62,
     "score_interpretation": "transition_warning",
     "score_components": {
       "volatility_acceleration": 0.45,
@@ -4032,8 +4046,7 @@ Mapping is decided by the operator after inspecting fitted state means and persi
 #### Constraint
 HMM state is **never** the final regime label. Evidence flows into:
 - `transition_score` (via `hmm_probability_shift_score`)
-- `volatility_state.evidence`
-- `trend_direction.evidence`
+- `RegimeOutput.hmm` (standalone evidence output with `top_state`, `top_state_prob`, `n_states`, `state_persistence_days`, `model_version`)
 
 #### Training
 - Fit on at least 5 years of data
