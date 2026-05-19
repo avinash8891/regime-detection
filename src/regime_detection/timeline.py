@@ -240,6 +240,23 @@ def _hmm_state_persistence_days(
     return days
 
 
+def _enrich_with_hmm_evidence(
+    output: AxisOutput,
+    aligned: _AlignedV2Evidence,
+    day_index: int,
+) -> AxisOutput:
+    if aligned.hmm_top_state_prob_aligned is None or aligned.hmm_top_state_aligned is None:
+        return output
+    prob = aligned.hmm_top_state_prob_aligned.iloc[day_index]
+    state = aligned.hmm_top_state_aligned.iloc[day_index]
+    if pd.isna(prob) or pd.isna(state):
+        return output
+    enriched = dict(output.evidence.root)
+    enriched["hmm_top_state"] = int(state)
+    enriched["hmm_top_state_prob"] = float(prob)
+    return output.model_copy(update={"evidence": enriched})
+
+
 def _build_timeline_output_for_day(
     *,
     day: date,
@@ -250,9 +267,15 @@ def _build_timeline_output_for_day(
     network_fragility_by_date: dict[date, NetworkFragilityOutput],
     aligned_v2_evidence: _AlignedV2Evidence,
 ) -> RegimeOutput:
-    trend_direction_output = axis_bundle.trend_direction.outputs_by_date[day]
+    trend_direction_output = _enrich_with_hmm_evidence(
+        axis_bundle.trend_direction.outputs_by_date[day],
+        aligned_v2_evidence, selected_day_index,
+    )
     trend_character_output = axis_bundle.trend_character.outputs_by_date[day]
-    volatility_output = axis_bundle.volatility_state.outputs_by_date[day]
+    volatility_output = _enrich_with_hmm_evidence(
+        axis_bundle.volatility_state.outputs_by_date[day],
+        aligned_v2_evidence, selected_day_index,
+    )
     breadth_output = cast(
         BreadthStateOutput, axis_bundle.breadth_state.outputs_by_date[day]
     )

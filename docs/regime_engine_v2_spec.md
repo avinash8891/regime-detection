@@ -4047,6 +4047,8 @@ Mapping is decided by the operator after inspecting fitted state means and persi
 HMM state is **never** the final regime label. Evidence flows into:
 - `transition_score` (via `hmm_probability_shift_score`)
 - `RegimeOutput.hmm` (standalone evidence output with `top_state`, `top_state_prob`, `n_states`, `state_persistence_days`, `model_version`)
+- `volatility_state.evidence` (enriched with `hmm_top_state` and `hmm_top_state_prob` per session)
+- `trend_direction.evidence` (enriched with `hmm_top_state` and `hmm_top_state_prob` per session)
 
 #### Training
 - Fit on at least 5 years of data
