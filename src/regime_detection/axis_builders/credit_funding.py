@@ -250,6 +250,25 @@ def _build_credit_funding_for_spread_source(
             continue
 
         rule_inputs = rule_inputs_by_date[dt]
+        if pd.isna(rule_inputs.hy_spread_percentile_504d):
+            reason = "hy_spread_percentile_504d_warmup"
+            raw_labels.append("unknown")
+            per_day_data_quality.append(
+                DataQuality(
+                    status="insufficient_history",
+                    freshness_days=None,
+                    completeness=None,
+                    reason=reason,
+                )
+            )
+            per_day_evidence.append(
+                {
+                    "reason": reason,
+                    "spread_source": evidence_spread_source,
+                    "bias_warning_code": bias_warning_code,
+                }
+            )
+            continue
         label = evaluate_credit_funding_rules(
             inputs=rule_inputs,
             config=cf_config.rules,

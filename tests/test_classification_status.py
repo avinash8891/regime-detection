@@ -87,6 +87,26 @@ def test_existing_no_rule_status_is_refined_to_missing_feature() -> None:
     assert out.reporting_label == "no_rule_fired_missing_feature"
 
 
+def test_non_binding_missing_rule_feature_stays_no_rule_fired() -> None:
+    out = AxisOutput(
+        raw_label="unknown",
+        stable_label="unknown",
+        active_label="unknown",
+        evidence={
+            "rule_evidence": {
+                "hy_spread_percentile_504d": 0.60,
+                "broad_usd_index_zscore_21d": float("nan"),
+                "inflation_surprise_zscore": None,
+            }
+        },
+        data_quality=DataQuality(status="ok", freshness_days=0, completeness=1.0),
+    )
+
+    assert out.classification_status == "no_rule_fired"
+    assert out.classification_reason == "no_rule_fired"
+    assert out.reporting_label == "no_rule_fired"
+
+
 def test_unknown_with_stale_data_quality_is_stale_data() -> None:
     out = CreditFundingOutput(
         raw_label="unknown",

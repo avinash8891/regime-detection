@@ -387,6 +387,65 @@ def test_credit_funding_proxy_builds_when_oas_series_are_absent() -> None:
     assert effective.evidence["source_used"] == "proxy_fallback"
 
 
+def test_real_oas_percentile_warmup_is_insufficient_history_not_missing_feature() -> None:
+    context = _build_full_synthetic_context()
+    store = build_feature_store(
+        context,
+        network_fragility_config=context.config.network_fragility,
+        monetary_pressure_v2_config=context.config.monetary_pressure_v2,
+        credit_funding_config=context.config.credit_funding,
+    )
+    cf = store.credit_funding
+    assert cf is not None
+
+    # Simulate the real FRED OAS truncation class: raw OAS has enough recent
+    # observations to pass the generic completeness floor, but the derived
+    # 504d percentile is still NaN on the current session.
+    hy_oas = cf.hy_oas_63d.copy()
+    ig_oas = cf.ig_oas_63d.copy()
+    hy_oas.iloc[:-400] = np.nan
+    ig_oas.iloc[:-400] = np.nan
+    hy_percentile = pd.Series(np.nan, index=hy_oas.index, dtype=float)
+    warmed_store = store.model_copy(
+        update={
+            "credit_funding": CreditFundingFeatures(
+                hy_oas_63d=hy_oas,
+                ig_oas_63d=ig_oas,
+                hy_oas_percentile_504d=hy_percentile,
+                hy_oas_slope_21d=cf.hy_oas_slope_21d,
+                ig_oas_slope_21d=cf.ig_oas_slope_21d,
+                hy_tr_differential_63d=cf.hy_tr_differential_63d,
+                ig_tr_differential_63d=cf.ig_tr_differential_63d,
+                hy_tr_differential_percentile_504d=cf.hy_tr_differential_percentile_504d,
+                hy_tr_differential_slope_21d=cf.hy_tr_differential_slope_21d,
+                ig_tr_differential_slope_21d=cf.ig_tr_differential_slope_21d,
+                kre_spy_ratio=cf.kre_spy_ratio,
+                kre_spy_slope_63d=cf.kre_spy_slope_63d,
+                nfci_daily_carried=cf.nfci_daily_carried,
+                sofr_iorb_spread=cf.sofr_iorb_spread,
+                sofr_iorb_slope_21d=cf.sofr_iorb_slope_21d,
+                broad_usd_index_zscore_21d=cf.broad_usd_index_zscore_21d,
+                spy_21d_return=cf.spy_21d_return,
+                tlt_21d_return=cf.tlt_21d_return,
+                bias_warnings=cf.bias_warnings,
+            )
+        }
+    )
+
+    real = build_credit_funding_axis_series(context, warmed_store)
+    proxy = build_credit_funding_proxy_axis_series(context, warmed_store)
+    assert real is not None
+    assert proxy is not None
+    day = context.sessions[-1]
+    assert real[day].classification_status == "insufficient_history"
+    assert real[day].classification_reason == "hy_spread_percentile_504d_warmup"
+    assert real[day].reporting_label == "insufficient_history"
+
+    effective = resolve_credit_funding_effective_output(oas=real[day], proxy=proxy[day])
+    assert effective is not None
+    assert effective.evidence["source_used"] == "proxy_fallback"
+
+
 def test_unknown_when_hyg_stale_more_than_5_sessions() -> None:
     """§2C line 2123: HYG stale > 5 sessions → unknown gate trip."""
     context = _build_full_synthetic_context(hyg_truncate_sessions=10)

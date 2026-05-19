@@ -443,6 +443,7 @@ def _build_network_fragility_feature(state: _FeatureStoreBuildState) -> None:
         dispersion_percentile_lookback_days=config.dispersion_percentile_lookback_days,
         min_universe_size=config.min_universe_size,
         min_window_completeness=config.min_window_completeness,
+        universe=config.universe,
     )
 
 
@@ -529,6 +530,7 @@ def _build_monetary_feature(state: _FeatureStoreBuildState) -> None:
             session_index=_as_datetime_index(state.spy_close.index),
             smoothing_window_sessions=state.central_bank_text_config.smoothing_window_sessions,
             same_date_aggregation=state.central_bank_text_config.same_date_aggregation,
+            max_release_age_days=state.central_bank_text_config.max_release_age_days,
         )
     state.monetary = compute_monetary_pressure_features(
         dgs2=state.context.macro_series[_FRED_DGS2_KEY],

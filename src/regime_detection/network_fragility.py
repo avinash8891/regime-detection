@@ -62,6 +62,7 @@ def _assemble_returns_matrix(
     sector_etf_closes: dict[str, pd.Series],
     cross_asset_closes: dict[str, pd.Series],
     spy_close: pd.Series,
+    universe: tuple[str, ...] | list[str] | None = None,
 ) -> pd.DataFrame:
     """Align all available closes onto the SPY index in universe order,
     return percentage changes. Missing symbols become all-NaN columns so the
@@ -70,7 +71,8 @@ def _assemble_returns_matrix(
     columns: list[str] = []
     series_map: dict[str, pd.Series] = {}
 
-    for symbol in NETWORK_FRAGILITY_UNIVERSE:
+    effective_universe = tuple(universe) if universe is not None else NETWORK_FRAGILITY_UNIVERSE
+    for symbol in effective_universe:
         if symbol == INDEX_SYMBOL:
             series = spy_close
         elif symbol in SECTOR_ETFS:
@@ -198,6 +200,7 @@ def compute_features(
     dispersion_percentile_lookback_days: int = 252,
     min_universe_size: int = 20,
     min_window_completeness: float = 0.9,
+    universe: tuple[str, ...] | list[str] | None = None,
 ) -> NetworkFragilityFeatures:
     """Compute v2 §3.2 features. See module docstring for contract.
 
@@ -209,6 +212,7 @@ def compute_features(
         sector_etf_closes=sector_etf_closes,
         cross_asset_closes=cross_asset_closes,
         spy_close=spy_close,
+        universe=universe,
     )
 
     avg_corr, largest_share, eff_rank, absorption = _per_session_corr_features(

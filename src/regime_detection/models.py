@@ -21,6 +21,11 @@ ClassificationStatus = Literal[
     "not_wired",
 ]
 
+_NON_BINDING_MISSING_RULE_FEATURES = {
+    "broad_usd_index_zscore_21d",
+    "inflation_surprise_zscore",
+}
+
 
 class EvidencePayload(RootModel[dict[str, Any]]):
     """Dict-compatible named payload for unversioned regime evidence."""
@@ -194,6 +199,8 @@ def _collect_missing_leaf_keys(value: Any, features: set[str], prefix: str = "")
     if isinstance(value, dict):
         for key, item in value.items():
             child_prefix = f"{prefix}.{key}" if prefix else str(key)
+            if child_prefix in _NON_BINDING_MISSING_RULE_FEATURES:
+                continue
             _collect_missing_leaf_keys(item, features, child_prefix)
         return
     if isinstance(value, (list, tuple)):

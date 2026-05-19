@@ -372,6 +372,14 @@ def build_raw_outputs(
             }
         )
 
+    if volatility_state_v2_features is not None:
+        iv_rv = volatility_state_v2_features.iv_rv_spread
+        for idx, dt in enumerate(ret1.index):
+            if labels[idx] != "unknown" and iv_rv is not None and dt in iv_rv.index:
+                val = iv_rv.loc[dt]
+                if not pd.isna(val):
+                    evidence[idx]["iv_rv_spread"] = _ev_float(val)
+
     if (
         volatility_state_v2_features is not None
         and volatility_state_v2_rules is not None
