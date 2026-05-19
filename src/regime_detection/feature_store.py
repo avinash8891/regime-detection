@@ -379,6 +379,17 @@ def _build_trend_direction_v2_feature(state: _FeatureStoreBuildState) -> None:
 
 
 def _build_trend_character_feature(state: _FeatureStoreBuildState) -> None:
+    tc_v2 = state.context.config.trend_character_v2
+    extra_kwargs: dict[str, object] = {}
+    if tc_v2 is not None:
+        extra_kwargs = {
+            "bb_width_period": tc_v2.bb_width_period,
+            "bb_width_multiplier": tc_v2.bb_width_multiplier,
+            "bb_width_expanding_lookback": tc_v2.bb_width_expanding_lookback,
+            "followthrough_lookback_sessions": tc_v2.followthrough_lookback_sessions,
+            "followthrough_window_count": tc_v2.followthrough_window_count,
+            "followthrough_hold_sessions": tc_v2.followthrough_hold_sessions,
+        }
     state.trend_character = compute_trend_character_features(
         close=state.spy_close,
         high=_series_column(state.spy_ohlcv, "high"),
@@ -388,6 +399,7 @@ def _build_trend_character_feature(state: _FeatureStoreBuildState) -> None:
             if "volume" in state.spy_ohlcv.columns
             else None
         ),
+        **extra_kwargs,
     )
 
 

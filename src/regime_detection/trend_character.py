@@ -232,6 +232,12 @@ def compute_features(
     high: pd.Series,
     low: pd.Series,
     volume: pd.Series | None = None,
+    bb_width_period: int = _DEFAULT_BB_WIDTH_PERIOD,
+    bb_width_multiplier: float = _DEFAULT_BB_WIDTH_MULTIPLIER,
+    bb_width_expanding_lookback: int = _DEFAULT_BB_WIDTH_EXPANDING_LOOKBACK,
+    followthrough_lookback_sessions: int = _DEFAULT_FOLLOWTHROUGH_LOOKBACK_SESSIONS,
+    followthrough_window_count: int = _DEFAULT_FOLLOWTHROUGH_WINDOW_COUNT,
+    followthrough_hold_sessions: int = _DEFAULT_FOLLOWTHROUGH_HOLD_SESSIONS,
 ) -> TrendCharacterFeatures:
     sma_50 = simple_moving_average(close, window=50)
     return_10d = period_return(close, periods=10)
@@ -242,14 +248,23 @@ def compute_features(
 
     midpoint_excursion_20d = _compute_midpoint_excursion_20d(close)
     breakout_20d_or_50d = _compute_breakout_20d_or_50d(close)
-    bb_width_expanding = _compute_bb_width_expanding(close)
+    bb_width_expanding = _compute_bb_width_expanding(
+        close,
+        period=bb_width_period,
+        multiplier=bb_width_multiplier,
+        lookback=bb_width_expanding_lookback,
+    )
     if volume is None:
-        # Volume not threaded through — fall back to an all-False mask. The
-        # breakout_expansion rule cannot fire without volume confirmation.
         volume_above_20d_average = pd.Series(False, index=close.index)
     else:
         volume_above_20d_average = _compute_volume_above_20d_average(volume)
-    followthrough_rate = _compute_followthrough_rate(close, breakout_20d_or_50d)
+    followthrough_rate = _compute_followthrough_rate(
+        close,
+        breakout_20d_or_50d,
+        lookback_sessions=followthrough_lookback_sessions,
+        window_count=followthrough_window_count,
+        hold_sessions=followthrough_hold_sessions,
+    )
 
     return TrendCharacterFeatures(
         close=close,

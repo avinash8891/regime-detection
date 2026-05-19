@@ -214,8 +214,6 @@ def score_text(body_text: str) -> CentralBankTextScore:
 # ---------------------------------------------------------------------------
 
 
-_REQUIRED_FOMC_COLUMNS: tuple[str, ...] = ("release_timestamp", "body_text")
-_REQUIRED_POWELL_COLUMNS: tuple[str, ...] = ("publication_timestamp", "body_text")
 
 
 def score_release_frame(

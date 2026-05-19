@@ -22,16 +22,24 @@ AxisName = Literal[
 
 
 class HysteresisConfig(StrictBaseModel):
+    """Legacy V1 flat hysteresis block.
+
+    Per-label hysteresis is now the mandatory path (ADR 0010). These
+    fields are retained only for YAML backward-compatibility with
+    existing config files that declare the hysteresis block. No axis
+    builder reads them — all axes use deescalation_days_by_label from
+    their respective V2 config sections.
+    """
+
     trend_direction_escalation_days: int = Field(default=1, ge=1)
-    trend_direction_deescalation_days: int = Field(ge=0)
+    trend_direction_deescalation_days: int = Field(default=3, ge=0)
     trend_character_escalation_days: int = Field(default=1, ge=1)
-    trend_character_deescalation_days: int = Field(ge=0)
+    trend_character_deescalation_days: int = Field(default=3, ge=0)
     volatility_escalation_days: int = Field(default=1, ge=1)
-    volatility_deescalation_days: int = Field(ge=0)
+    volatility_deescalation_days: int = Field(default=2, ge=0)
     breadth_escalation_days: int = Field(default=1, ge=1)
-    breadth_deescalation_days: int = Field(ge=0)
-    composite_deescalation_days: int = Field(ge=0)
-    # event_calendar has no hysteresis: calendar windows are deterministic.
+    breadth_deescalation_days: int = Field(default=2, ge=0)
+    composite_deescalation_days: int = Field(default=3, ge=0)
 
 
 class DataQualityConfig(StrictBaseModel):
