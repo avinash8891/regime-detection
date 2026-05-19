@@ -60,8 +60,6 @@ _DEFAULT_RANGE_BOUND_ADX_THRESHOLD = 20.0
 @dataclass(frozen=True)
 class TrendCharacterFeatures:
     close: pd.Series
-    high: pd.Series
-    low: pd.Series
     sma_50: pd.Series
     return_10d: pd.Series
     return_21d: pd.Series
@@ -268,8 +266,6 @@ def compute_features(
 
     return TrendCharacterFeatures(
         close=close,
-        high=high,
-        low=low,
         sma_50=sma_50,
         return_10d=return_10d,
         return_21d=return_21d,

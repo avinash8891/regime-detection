@@ -38,8 +38,6 @@ def _trend_character_features(
     idx = pd.DatetimeIndex([pd.Timestamp("2024-01-02")])
     return TrendCharacterFeatures(
         close=pd.Series([close], index=idx),
-        high=pd.Series([close + 1.0], index=idx),
-        low=pd.Series([close - 1.0], index=idx),
         sma_50=pd.Series([sma_50], index=idx),
         return_10d=pd.Series([return_10d], index=idx),
         return_21d=pd.Series([return_21d], index=idx),
