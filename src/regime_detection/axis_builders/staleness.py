@@ -10,14 +10,16 @@ def _calendar_staleness_days_series(
 ) -> pd.Series:
     if series is None:
         return pd.Series(_STALENESS_SENTINEL, index=session_index, dtype="int64")
-    aligned = series.reindex(session_index)
+    valid_dates = pd.DatetimeIndex(series.dropna().index).sort_values()
+    if valid_dates.empty:
+        return pd.Series(_STALENESS_SENTINEL, index=session_index, dtype="int64")
+
+    sessions = pd.DatetimeIndex(session_index)
+    source_positions = valid_dates.searchsorted(sessions, side="right") - 1
     last_valid_date = pd.Series(pd.NaT, index=session_index, dtype="datetime64[ns]")
-    valid = aligned.notna()
-    last_valid_date.loc[valid] = session_index[valid]
-    last_valid_date = last_valid_date.ffill()
-    delta_days = (
-        pd.Series(session_index, index=session_index) - last_valid_date
-    ).dt.days
+    has_observation = source_positions >= 0
+    last_valid_date.loc[has_observation] = valid_dates[source_positions[has_observation]]
+    delta_days = (pd.Series(sessions, index=session_index) - last_valid_date).dt.days
     return delta_days.fillna(_STALENESS_SENTINEL).astype("int64")
 
 

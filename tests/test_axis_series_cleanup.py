@@ -50,3 +50,15 @@ def test_axis_series_staleness_helpers_use_named_sentinel() -> None:
     assert axis_series._STALENESS_SENTINEL == 10**9
     assert calendar.tolist() == [axis_series._STALENESS_SENTINEL] * 3
     assert trading.tolist() == [axis_series._STALENESS_SENTINEL] * 3
+
+
+def test_calendar_staleness_counts_non_session_source_dates() -> None:
+    idx = pd.to_datetime(["2025-10-31", "2025-11-03", "2025-11-04"])
+    series = pd.Series(
+        [1.0, 2.0],
+        index=pd.to_datetime(["2025-10-01", "2025-11-01"]),
+    )
+
+    calendar = axis_series._calendar_staleness_days_series(series, idx)
+
+    assert calendar.tolist() == [30, 2, 3]

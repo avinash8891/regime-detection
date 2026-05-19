@@ -85,7 +85,7 @@ def build_market_context(
     )
     reindexed_sector_etf_closes = _reindex_optional_close_dict(sector_etf_closes, spy_ohlcv.index)
     reindexed_cross_asset_closes = _reindex_optional_close_dict(cross_asset_closes, spy_ohlcv.index)
-    reindexed_macro_series = _reindex_optional_close_dict(macro_series, spy_ohlcv.index)
+    reindexed_macro_series = _reindex_optional_macro_dict(macro_series, spy_ohlcv.index)
     reindexed_implied_vol_30d = (
         None if implied_vol_30d is None else implied_vol_30d.reindex(spy_ohlcv.index)
     )
@@ -122,6 +122,44 @@ def _reindex_optional_close_dict(
     return out
 
 
+def _reindex_optional_macro_dict(
+    series_dict: dict[str, pd.Series] | None,
+    target_index: pd.Index,
+) -> dict[str, pd.Series] | None:
+    if series_dict is None:
+        return None
+    out: dict[str, pd.Series] = {}
+    for key, series in series_dict.items():
+        out[key] = _map_calendar_series_to_sessions(series, target_index)
+    return out
+
+
+def _map_calendar_series_to_sessions(
+    series: pd.Series,
+    target_index: pd.Index,
+) -> pd.Series:
+    aligned = pd.Series(index=target_index, dtype=series.dtype)
+    valid = series.dropna().sort_index()
+    if valid.empty:
+        return aligned
+
+    target = pd.DatetimeIndex(target_index)
+    source_dates = pd.DatetimeIndex(valid.index)
+    positions = target.searchsorted(source_dates, side="left")
+    in_range = positions < len(target)
+    if not in_range.any():
+        return aligned
+
+    mapped = pd.Series(
+        valid.iloc[in_range].to_numpy(),
+        index=target[positions[in_range]],
+        dtype=series.dtype,
+    )
+    mapped = mapped.groupby(level=0).last()
+    aligned.loc[mapped.index] = mapped
+    return aligned
+
+
 def slice_context_to_recent_sessions(*, context: MarketContext, required_sessions: int) -> MarketContext:
     if required_sessions >= len(context.sessions):
         return context
@@ -142,7 +180,7 @@ def slice_context_to_recent_sessions(*, context: MarketContext, required_session
         normalized_event_calendar=context.normalized_event_calendar,
         sector_etf_closes=_reindex_optional_close_dict(context.sector_etf_closes, spy_ohlcv.index),
         cross_asset_closes=_reindex_optional_close_dict(context.cross_asset_closes, spy_ohlcv.index),
-        macro_series=_reindex_optional_close_dict(context.macro_series, spy_ohlcv.index),
+        macro_series=_reindex_optional_macro_dict(context.macro_series, spy_ohlcv.index),
         # PIT seams: pass through as-is. Intervals carry their own start/end
         # dates and constituent_ohlcv frames carry per-ticker date columns;
         # downstream readers handle date-bounded queries themselves. Dropping
@@ -206,7 +244,7 @@ def slice_context_to_end_date(*, context: MarketContext, end_date: date) -> Mark
         normalized_event_calendar=context.normalized_event_calendar,
         sector_etf_closes=_reindex_optional_close_dict(context.sector_etf_closes, spy_ohlcv.index),
         cross_asset_closes=_reindex_optional_close_dict(context.cross_asset_closes, spy_ohlcv.index),
-        macro_series=_reindex_optional_close_dict(context.macro_series, spy_ohlcv.index),
+        macro_series=_reindex_optional_macro_dict(context.macro_series, spy_ohlcv.index),
         # PIT seams: pass through as-is. See slice_context_to_recent_sessions
         # for rationale — dropping them here silently disables §1D PIT breadth.
         pit_constituent_intervals=context.pit_constituent_intervals,
