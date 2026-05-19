@@ -1,5 +1,5 @@
-generated_at_utc: '2026-05-19T11:08:02+00:00'
-generated_by_commit: aa16e019a76338d4ee1e8b18897360864565148e
+generated_at_utc: '2026-05-19T11:20:00+00:00'
+generated_by_commit: d3fe4b1502fb2094671676c2c97e350e4fcef96e
 raw_file_sha256:
   SPY.csv: efa06aba545dea29dcc523bb8b50ad6a334892e49babee5769466fa8c2c0ef33
   RSP.csv: 6aa3f27a796ffad78f17d114fbe02e806a5488e2a07cdf61166344c15ed7d2c2
@@ -313,7 +313,7 @@ rows:
   intent_date: '2019-06-28'
   as_of_date: '2019-09-12'
   delta_calendar_days: 76
-  notes: "Bull market normal conditions; \xA71B range_bound catches the tight oscillation"
+  notes: Bull market normal conditions; range_bound catches tight oscillation
   expected:
     trend_direction: bull
     trend_character: range_bound
@@ -414,7 +414,7 @@ rows:
   intent_date: '2020-03-30'
   as_of_date: '2020-03-30'
   delta_calendar_days: 0
-  notes: COVID crash episode; pick nearest crisis_vol day with bear direction
+  notes: COVID crash episode
   expected:
     trend_direction: bear
     trend_character: trending
@@ -619,7 +619,7 @@ rows:
   intent_date: '2021-11-15'
   as_of_date: '2021-11-01'
   delta_calendar_days: 14
-  notes: Late-2021 bull / low vol with weak breadth (ETF-proxy rules)
+  notes: Late-2021 bull / low vol with weak breadth
   expected:
     trend_direction: bull
     trend_character: trending
@@ -822,7 +822,7 @@ rows:
   intent_date: '2022-07-12'
   as_of_date: '2022-07-06'
   delta_calendar_days: 6
-  notes: 2022 bear market; stress warning (mid-2022 episode)
+  notes: 2022 bear market; stress warning
   expected:
     trend_direction: bear
     trend_character: trending

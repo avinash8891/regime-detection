@@ -27,8 +27,130 @@ if str(SRC_DIR) not in sys.path:
 if str(SCRIPT_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPT_DIR))
 
-from fixture_axis_evaluators import INTENTS  # noqa: E402
 from regime_detection.engine import RegimeEngine  # noqa: E402
+
+INTENTS: list[dict[str, Any]] = [
+    {
+        "intent_id": "summer2020_bull_trending_lowvol",
+        "intent_date": "2020-08-11",
+        "intent": {
+            "trend_direction": "bull",
+            "trend_character": "trending",
+            "volatility_state": "low_vol",
+            "breadth_state": "neutral_breadth",
+        },
+        "search_window_trading_days": 120,
+        "notes": "Summer 2020 bull with low vol and neutral breadth",
+    },
+    {
+        "intent_id": "volmageddon_crisis",
+        "intent_date": "2018-02-09",
+        "intent": {
+            "trend_character": "transition",
+            "volatility_state": "crisis_vol",
+            "transition_risk": "crisis_override",
+        },
+        "search_window_trading_days": 10,
+        "notes": "Volmageddon episode; crisis_vol day",
+    },
+    {
+        "intent_id": "dec2018_bear_stress",
+        "intent_date": "2018-12-20",
+        "intent": {
+            "trend_direction": "bear",
+            "trend_character": "trending",
+            "volatility_state": "high_vol",
+            "breadth_state": "weak_breadth",
+            "transition_risk": "bear_stress_warning",
+        },
+        "search_window_trading_days": 10,
+        "notes": "Late-2018 selloff; stress warning",
+    },
+    {
+        "intent_id": "mid2019_bull_normal",
+        "intent_date": "2019-06-28",
+        "intent": {
+            "trend_direction": "bull",
+            "trend_character": "range_bound",
+            "volatility_state": "normal_vol",
+            "breadth_state": "healthy_breadth",
+        },
+        "search_window_trading_days": 60,
+        "notes": "Bull market normal conditions; range_bound catches tight oscillation",
+    },
+    {
+        "intent_id": "covid_crash_crisis",
+        "intent_date": "2020-03-30",
+        "intent": {
+            "trend_direction": "bear",
+            "volatility_state": "crisis_vol",
+            "breadth_state": "weak_breadth",
+            "transition_risk": "crisis_override",
+        },
+        "search_window_trading_days": 10,
+        "notes": "COVID crash episode",
+    },
+    {
+        "intent_id": "covid_recovery_attempt",
+        "intent_date": "2020-04-17",
+        "intent": {
+            "trend_character": "recovery_attempt",
+            "volatility_state": "high_vol",
+        },
+        "search_window_trading_days": 15,
+        "notes": "Post-crash recovery attempt",
+    },
+    {
+        "intent_id": "late2021_bull_lowvol",
+        "intent_date": "2021-11-15",
+        "intent": {
+            "trend_direction": "bull",
+            "trend_character": "trending",
+            "volatility_state": "low_vol",
+            "breadth_state": "weak_breadth",
+        },
+        "search_window_trading_days": 20,
+        "notes": "Late-2021 bull / low vol with weak breadth",
+    },
+    {
+        "intent_id": "jun2022_bear_crisis",
+        "intent_date": "2022-06-29",
+        "intent": {
+            "trend_direction": "bear",
+            "trend_character": "trending",
+            "volatility_state": "crisis_vol",
+            "breadth_state": "weak_breadth",
+            "transition_risk": "crisis_override",
+        },
+        "search_window_trading_days": 10,
+        "notes": "2022 drawdown; crisis-vol episode",
+    },
+    {
+        "intent_id": "jul2022_bear_stress",
+        "intent_date": "2022-07-12",
+        "intent": {
+            "trend_direction": "bear",
+            "trend_character": "trending",
+            "volatility_state": "high_vol",
+            "breadth_state": "weak_breadth",
+            "transition_risk": "bear_stress_warning",
+        },
+        "search_window_trading_days": 10,
+        "notes": "2022 bear market; stress warning",
+    },
+    {
+        "intent_id": "early2024_bull_lowvol",
+        "intent_date": "2023-12-19",
+        "intent": {
+            "trend_direction": "bull",
+            "trend_character": "trending",
+            "volatility_state": "low_vol",
+            "breadth_state": "healthy_breadth",
+        },
+        "search_window_trading_days": 10,
+        "notes": "Early 2024 bull / low vol / healthy breadth",
+    },
+]
 
 RAW_DIR = REPO_ROOT / "tests" / "fixtures" / "raw"
 DERIVED_PATH = REPO_ROOT / "tests" / "fixtures" / "derived" / "golden_dates.yaml"
