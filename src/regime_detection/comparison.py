@@ -12,8 +12,7 @@ strategy metrics). Foundation scaffolding for the v2 §9.1 gate:
 >   - lower false-switch rate than V1
 
 ``compute_v1_v2_diff`` and ``evaluate_v2_gate`` are pure functions
-consumed by the walk-forward runner (``--engine-profile both``) and
-shadow A/B (``scripts/run_v1_v2_diff_report.py``).
+consumed by the walk-forward runner (``--engine-profile both``).
 """
 from __future__ import annotations
 

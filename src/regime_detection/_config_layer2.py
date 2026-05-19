@@ -136,6 +136,9 @@ class InflationGrowthRulesConfig(StrictBaseModel):
     pmi_recovery_threshold: float = Field(default=50.0, gt=0.0)
     # §2B line 2250 — disinflation "pmi > 45".
     pmi_disinflation_threshold: float = Field(default=45.0, gt=0.0)
+    # 3m CPI acceleration threshold for inflation_shock rapid-onset limb.
+    # Fires when trailing-3m CPI change exceeds this AND treasury yields rising.
+    cpi_3m_acceleration_threshold: float = Field(default=0.02, gt=0.0)
     # §2B line 2242 — inflation_shock "commodity_return_63d > 0.15".
     commodity_return_threshold: float = Field(default=0.15, gt=0.0)
     # §2B line 2256 — recession_scare "spy_21d_return < -0.05".

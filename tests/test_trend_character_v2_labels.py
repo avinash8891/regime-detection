@@ -359,12 +359,8 @@ def _synthetic_features(
 ) -> TrendCharacterFeatures:
     if sma_50 is None:
         sma_50 = close.rolling(5, min_periods=1).mean()
-    high = close * 1.001
-    low = close * 0.999
     return TrendCharacterFeatures(
         close=close,
-        high=high,
-        low=low,
         sma_50=sma_50,
         return_10d=return_10d,
         return_21d=return_21d,

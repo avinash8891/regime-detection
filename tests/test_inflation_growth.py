@@ -57,6 +57,7 @@ def _default_rules() -> InflationGrowthRulesConfig:
 
 def _rule_inputs(**overrides) -> InflationGrowthRuleInputs:
     defaults: dict[str, object] = dict(
+        cpi_3m_change_pct=0.01,
         cpi_6m_change_pct=0.02,
         cpi_6m_change_pct_lag_21=0.02,
         cpi_6m_change_pct_slope_21d=0.0,
@@ -191,14 +192,13 @@ def test_commodity_return_63d_hand_pinned() -> None:
     assert feats.commodity_return_63d.iloc[100] == pytest.approx(expected)
 
 
-def test_cyclical_defensive_ratio_hand_pinned() -> None:
-    """ratio = (XLY + XLI) / (XLP + XLU) = (150+100)/(70+60) = 250/130 ≈ 1.923."""
+def test_cyclical_defensive_slope_flat_when_ratio_constant() -> None:
+    """Constant sector prices → ratio = (XLY+XLI)/(XLP+XLU) is flat → slope ≈ 0."""
     idx = _bdate_index(periods=100)
     xly = pd.Series(150.0, index=idx, dtype=float)
     xli = pd.Series(100.0, index=idx, dtype=float)
     xlp = pd.Series(70.0, index=idx, dtype=float)
     xlu = pd.Series(60.0, index=idx, dtype=float)
-    # Filler.
     cpi = pd.Series(300.0, index=idx, dtype=float)
     pmi = pd.Series(51.0, index=idx, dtype=float)
     dgs10 = pd.Series(4.0, index=idx, dtype=float)
@@ -219,7 +219,7 @@ def test_cyclical_defensive_ratio_hand_pinned() -> None:
         xlu_close=xlu,
         config=_default_rules(),
     )
-    assert feats.cyclical_defensive_ratio.iloc[50] == pytest.approx(250.0 / 130.0)
+    assert feats.cyclical_defensive_slope_21d.iloc[50] == pytest.approx(0.0, abs=1e-10)
 
 
 def test_build_rule_inputs_by_date_matches_single_day_builder() -> None:

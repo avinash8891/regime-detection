@@ -129,6 +129,9 @@ class NetworkFragilityRuleInputs:
     effective_rank_percentile_504d: float
     dispersion_ratio_percentile_252d: float
 
+    # §3.2 absorption ratio — top-3 eigenvalue concentration.
+    absorption_ratio_top3: float
+
     # §3.5 rising_fragility slopes (positive => rising) over trailing 21d.
     avg_pairwise_corr_slope_21d: float
     largest_eigenvalue_share_slope_21d: float
@@ -217,6 +220,9 @@ def build_rule_inputs_for_date(
         ),
         dispersion_ratio_percentile_252d=float(
             features.dispersion_ratio_percentile_252d.loc[dt]
+        ),
+        absorption_ratio_top3=float(
+            features.absorption_ratio_top3.loc[dt]
         ),
         avg_pairwise_corr_slope_21d=_trailing_slope(
             features.avg_pairwise_corr_63d, dt, _SPEC_SLOPE_WINDOW_DAYS
@@ -318,6 +324,9 @@ def build_rule_inputs_by_date(
             ),
             dispersion_ratio_percentile_252d=float(
                 features.dispersion_ratio_percentile_252d.loc[dt]
+            ),
+            absorption_ratio_top3=float(
+                features.absorption_ratio_top3.loc[dt]
             ),
             avg_pairwise_corr_slope_21d=float(avg_corr_slope.loc[dt]),
             largest_eigenvalue_share_slope_21d=float(largest_eig_slope.loc[dt]),
@@ -422,11 +431,12 @@ def evaluate_correlation_concentration(
     inputs: NetworkFragilityRuleInputs,
     config: NetworkFragilityRulesConfig,
 ) -> bool:
-    """v2 §3.5 lines 637–642.
+    """v2 §3.5 lines 637–642 + absorption_ratio_top3 extension.
 
     `avg_pairwise_corr_percentile_504d > 0.75
      OR largest_eigenvalue_share_percentile_504d > 0.75
-     OR effective_rank_percentile_504d < 0.25`
+     OR effective_rank_percentile_504d < 0.25
+     OR absorption_ratio_top3 > 0.90`
     """
     cond_corr = (
         not np.isnan(inputs.avg_pairwise_corr_percentile_504d)
@@ -443,7 +453,12 @@ def evaluate_correlation_concentration(
         and inputs.effective_rank_percentile_504d
         < config.concentration_effective_rank_percentile_max
     )
-    return bool(cond_corr or cond_eig or cond_rank)
+    cond_absorption = (
+        not np.isnan(inputs.absorption_ratio_top3)
+        and inputs.absorption_ratio_top3
+        > config.concentration_absorption_ratio_min
+    )
+    return bool(cond_corr or cond_eig or cond_rank or cond_absorption)
 
 
 def evaluate_correlation_to_one(

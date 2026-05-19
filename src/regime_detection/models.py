@@ -266,12 +266,6 @@ class EventCalendarOutput(BaseModel):
     evidence: EventCalendarEvidencePayload
 
 
-class LabelReasonOutput(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    label: str
-    reason: str
-
 
 class NetworkFragilityOutput(AxisOutput):
     """Layer 3 network fragility classifier output (v2 spec §3).

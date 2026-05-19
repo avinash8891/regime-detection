@@ -138,9 +138,12 @@ def load_sector_etf_closes(
     `(date, symbol, close)` (and optionally OHLCV — extra columns are ignored).
     Returns one date-indexed Series per symbol.
     """
-    return _load_long_form_closes(
+    result = _load_long_form_closes(
         source, group_col="symbol", value_col="close", universe=universe,
     )
+    if not result:
+        LOGGER.warning("load_sector_etf_closes returned 0 symbols from source")
+    return result
 
 
 def load_cross_asset_closes(
@@ -154,9 +157,12 @@ def load_cross_asset_closes(
     public function so callers can express their intent explicitly and so
     each side can grow its own validation later without affecting the other.
     """
-    return _load_long_form_closes(
+    result = _load_long_form_closes(
         source, group_col="symbol", value_col="close", universe=universe,
     )
+    if not result:
+        LOGGER.warning("load_cross_asset_closes returned 0 symbols from source")
+    return result
 
 
 def load_macro_series(
@@ -201,6 +207,8 @@ def load_macro_series(
                 name=series_key,
             )
 
+    if not out:
+        LOGGER.warning("load_macro_series returned 0 series from source")
     return out
 
 

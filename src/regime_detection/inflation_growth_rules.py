@@ -48,26 +48,42 @@ def evaluate_inflation_shock(
     inputs: InflationGrowthRuleInputs,
     config: InflationGrowthRulesConfig,
 ) -> bool:
-    """v2 §2B lines 2550-2555 — `inflation_shock` two-limb OR rule."""
+    """v2 §2B lines 2550-2555 — `inflation_shock` three-limb OR rule.
+
+    Limb 1: surprise z-score (single-signal).
+    Limb 2: commodity + yield + equity composite.
+    Limb 3: rapid 3m CPI acceleration with rising yields — catches
+    inflation onset before the 6m window absorbs it.
+    """
     if not _any_nan(inputs.inflation_surprise_zscore) and (
         inputs.inflation_surprise_zscore
         > config.inflation_surprise_zscore_threshold
     ):
         return True
 
-    if _any_nan(
+    if not _any_nan(
         inputs.commodity_return_63d,
         inputs.treasury_10y_yield_slope_21d,
         inputs.spy_21d_return,
         inputs.tlt_21d_return,
-    ):
-        return False
-    return bool(
+    ) and bool(
         inputs.commodity_return_63d > config.commodity_return_threshold
         and inputs.treasury_10y_yield_slope_21d > 0.0
         and inputs.spy_21d_return < 0.0
         and inputs.tlt_21d_return < 0.0
-    )
+    ):
+        return True
+
+    if not _any_nan(
+        inputs.cpi_3m_change_pct,
+        inputs.treasury_10y_yield_slope_21d,
+    ) and bool(
+        inputs.cpi_3m_change_pct > config.cpi_3m_acceleration_threshold
+        and inputs.treasury_10y_yield_slope_21d > 0.0
+    ):
+        return True
+
+    return False
 
 
 def evaluate_disinflation(
