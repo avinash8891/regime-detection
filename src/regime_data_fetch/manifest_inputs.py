@@ -152,10 +152,7 @@ MANIFEST_INPUT_SPECS: tuple[ManifestInputSpec, ...] = (
         cli_flag="--event-calendar",
         artifact_name="event_calendar_us",
         is_required=True,
-        # Each runner supplies its own default (typically a YAML config
-        # under ``configs/events/``); the manifest router still resolves
-        # the canonical parquet artifact when ``--manifest`` is provided.
-        default_relpath=None,
+        default_relpath=("event_calendar", "us_events.yaml"),
     ),
     # Optional inputs. Each carries a canonical default relpath under
     # ``data_root`` so runners that bypass the manifest still locate the file.

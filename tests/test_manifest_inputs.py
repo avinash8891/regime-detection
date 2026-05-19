@@ -52,8 +52,17 @@ OHLCV_PLACEHOLDER_NAME = "daily_ohlcv_762"
 # round-trip until their fetchers and resolver fields land together.
 KNOWN_TODO_PLACEHOLDER_NAMES = frozenset(
     {
-        "cleveland_fed_cpi_nowcast",
         "sp500_eps_weekly_history",
+    }
+)
+# Audit-only provenance artifacts tracked in the manifest but not consumed
+# as runner inputs. They are materialized for audit/reproducibility but do
+# not need an ARTIFACT_BY_FIELD resolver mapping.
+AUDIT_ONLY_ARTIFACT_NAMES = frozenset(
+    {
+        "event_candidates",
+        "event_validations",
+        "event_quarantine",
     }
 )
 
@@ -337,6 +346,8 @@ def test_committed_manifest_materializes_from_fresh_workspace() -> None:
             and artifact.sha256 == EMPTY_SHA256
         ):
             pass  # documented TODO placeholder; fetcher + resolver land together
+        elif artifact.name in AUDIT_ONLY_ARTIFACT_NAMES:
+            pass  # provenance-only; materialized for audit, not a runner input
         else:
             pytest.fail(
                 f"manifest artifact {artifact.name!r} is not known to the "
