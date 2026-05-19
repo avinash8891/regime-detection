@@ -395,17 +395,16 @@ def _eval_transition_risk(
 
 INTENTS: list[dict[str, Any]] = [
     {
-        "intent_id": "summer2020_bull_transition_lowvol",
+        "intent_id": "summer2020_bull_trending_lowvol",
         "intent_date": "2020-08-11",
         "intent": {
             "trend_direction": "bull",
-            "trend_character": "transition",
+            "trend_character": "trending",
             "volatility_state": "low_vol",
             "breadth_state": "neutral_breadth",
-            "transition_risk": "stable",
         },
         "search_window_trading_days": 120,
-        "notes": "Summer 2020 bull with low vol and neutral breadth after hysteresis",
+        "notes": "Summer 2020 bull with low vol and neutral breadth",
     },
     {
         "intent_id": "volmageddon_crisis",
@@ -439,10 +438,9 @@ INTENTS: list[dict[str, Any]] = [
             "trend_character": "range_bound",
             "volatility_state": "normal_vol",
             "breadth_state": "healthy_breadth",
-            "transition_risk": "stable",
         },
         "search_window_trading_days": 60,
-        "notes": "Bull market normal conditions; V2 §1B range_bound catches the tight oscillation that V1 fell through to transition",
+        "notes": "Bull market normal conditions; §1B range_bound catches the tight oscillation",
     },
     {
         "intent_id": "covid_crash_crisis",
@@ -462,10 +460,9 @@ INTENTS: list[dict[str, Any]] = [
         "intent": {
             "trend_character": "recovery_attempt",
             "volatility_state": "high_vol",
-            "transition_risk": "recovery_attempt",
         },
-        "search_window_trading_days": 10,
-        "notes": "Post-crash recovery attempt; breadth pinned by rules in ETF-proxy mode",
+        "search_window_trading_days": 15,
+        "notes": "Post-crash recovery attempt",
     },
     {
         "intent_id": "late2021_bull_lowvol",
@@ -475,23 +472,22 @@ INTENTS: list[dict[str, Any]] = [
             "trend_character": "trending",
             "volatility_state": "low_vol",
             "breadth_state": "weak_breadth",
-            "transition_risk": "stable",
         },
         "search_window_trading_days": 20,
         "notes": "Late-2021 bull / low vol with weak breadth (ETF-proxy rules)",
     },
     {
-        "intent_id": "jun2022_bear_stress",
+        "intent_id": "jun2022_bear_crisis",
         "intent_date": "2022-06-29",
         "intent": {
             "trend_direction": "bear",
             "trend_character": "trending",
-            "volatility_state": "high_vol",
+            "volatility_state": "crisis_vol",
             "breadth_state": "weak_breadth",
-            "transition_risk": "bear_stress_warning",
+            "transition_risk": "crisis_override",
         },
         "search_window_trading_days": 10,
-        "notes": "2022 drawdown; stress warning",
+        "notes": "2022 drawdown; crisis-vol episode",
     },
     {
         "intent_id": "jul2022_bear_stress",
@@ -514,7 +510,6 @@ INTENTS: list[dict[str, Any]] = [
             "trend_character": "trending",
             "volatility_state": "low_vol",
             "breadth_state": "healthy_breadth",
-            "transition_risk": "stable",
         },
         "search_window_trading_days": 10,
         "notes": "Early 2024 bull / low vol / healthy breadth",

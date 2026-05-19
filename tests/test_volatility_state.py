@@ -10,22 +10,15 @@ from regime_detection.volatility_state import _RISK_RANK, VolatilityFeatures, ra
 
 
 def test_volatility_state_matches_pinned_fixtures(classified_golden_outputs) -> None:
-    v2_expected = {
-        date(2020, 8, 11): "low_vol",
-        date(2018, 2, 9): "crisis_vol",
-        date(2018, 12, 20): "high_vol",
-        date(2019, 9, 12): "normal_vol",
-        date(2020, 3, 30): "crisis_vol",
-        date(2020, 4, 29): "high_vol",
-        date(2021, 11, 12): "low_vol",
-        date(2022, 6, 30): "crisis_vol",
-        date(2022, 7, 12): "high_vol",
-        date(2023, 12, 14): "low_vol",
-    }
-    for as_of, expected in v2_expected.items():
+    repo_root = Path(__file__).resolve().parents[1]
+    golden = yaml.safe_load(
+        (repo_root / "tests" / "fixtures" / "derived" / "golden_dates.yaml").read_text()
+    )
+    for row in golden["rows"]:
+        as_of = date.fromisoformat(row["as_of_date"])
         out = classified_golden_outputs[as_of]
-        assert out.volatility_state.active_label == expected, (
-            f"{as_of}: expected {expected}, got {out.volatility_state.active_label}"
+        assert out.volatility_state.active_label == row["expected"]["volatility_state"], (
+            f"{as_of}: expected {row['expected']['volatility_state']}, got {out.volatility_state.active_label}"
         )
 
 

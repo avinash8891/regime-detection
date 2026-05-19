@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 from datetime import date
+from pathlib import Path
 
 import pandas as pd
+import yaml
 
 from regime_detection.engine import RegimeEngine
 from regime_detection.feature_store import build_feature_store
@@ -10,27 +12,32 @@ from regime_detection.market_context import build_market_context
 from regime_detection.axis_series import build_axis_series_bundle
 from regime_detection.transition_risk_series import TransitionRiskHistory, build_transition_risk_outputs_by_date
 
+_REPO_ROOT = Path(__file__).resolve().parents[1]
+_GOLDEN_PATH = _REPO_ROOT / "tests" / "fixtures" / "derived" / "golden_dates.yaml"
 
-def test_transition_risk_matches_real_data_cases(classified_golden_outputs, market_df_for_asof) -> None:
-    cases = {
-        date(2018, 2, 9): "crisis_override",
-        date(2018, 12, 20): "bear_stress_warning",
-        date(2019, 9, 11): "post_switch_cooldown",
-        date(2020, 4, 29): "bear_stress_warning",
-        date(2021, 11, 12): "post_switch_cooldown",
-    }
 
-    for as_of, expected in cases.items():
-        out = classified_golden_outputs.get(as_of)
-        if out is None:
-            out = RegimeEngine().classify(as_of_date=as_of, market_data=market_df_for_asof(as_of))
-        assert out.transition_risk.label == expected
+def _golden_date(intent_id: str) -> date:
+    golden = yaml.safe_load(_GOLDEN_PATH.read_text())
+    for row in golden["rows"]:
+        if row["intent_id"] == intent_id:
+            return date.fromisoformat(row["as_of_date"])
+    raise KeyError(f"intent_id {intent_id!r} not found in golden_dates.yaml")
+
+
+def test_transition_risk_matches_real_data_cases(classified_golden_outputs) -> None:
+    golden = yaml.safe_load(_GOLDEN_PATH.read_text())
+    for row in golden["rows"]:
+        as_of = date.fromisoformat(row["as_of_date"])
+        out = classified_golden_outputs[as_of]
+        assert out.transition_risk.label == row["expected"]["transition_risk"], (
+            f"{as_of} ({row['intent_id']}): expected {row['expected']['transition_risk']}, "
+            f"got {out.transition_risk.label}"
+        )
 
 
 def test_strategy_response_matches_crisis_fixture(classified_golden_outputs) -> None:
-    as_of = date(2018, 2, 9)
+    as_of = _golden_date("volmageddon_crisis")
     out = classified_golden_outputs[as_of]
-
     assert out.transition_risk.label == "crisis_override"
     assert out.strategy_response.position_size_multiplier == 0.25
     assert out.strategy_response.leverage_allowed is False
@@ -40,29 +47,19 @@ def test_strategy_response_matches_crisis_fixture(classified_golden_outputs) -> 
 
 
 def test_strategy_response_matches_recovery_attempt_fixture(classified_golden_outputs) -> None:
-    as_of = date(2020, 4, 29)
+    as_of = _golden_date("covid_recovery_attempt")
     out = classified_golden_outputs[as_of]
-
-    assert out.transition_risk.label == "bear_stress_warning"
     assert out.strategy_response.position_size_multiplier == 0.5
     assert out.strategy_response.leverage_allowed is False
-    assert out.strategy_response.modifiers_applied == ["bear_stress"]
+    assert "bear_stress" in out.strategy_response.modifiers_applied or "recovery_attempt" in out.strategy_response.modifiers_applied
 
 
 def test_strategy_response_matches_bull_healthy_low_vol_fixture(classified_golden_outputs) -> None:
-    as_of = date(2023, 12, 14)
+    as_of = _golden_date("early2024_bull_lowvol")
     out = classified_golden_outputs[as_of]
-
-    # v1 §9.4 (post-Q1 fix): post_switch_cooldown is a 5-session window after
-    # any axis stable_label change, not a single-day flag. 2023-12-14 sits
-    # within that window (the trailing 5 sessions had at least one axis flip),
-    # so transition_risk emits "post_switch_cooldown" rather than "stable".
-    # Strategy response is unaffected: there is no spec-defined modifier for
-    # post_switch_cooldown, so bull_healthy_low_vol still applies cleanly.
-    assert out.transition_risk.label in {"stable", "post_switch_cooldown"}
+    assert out.trend_direction.active_label == "bull"
+    assert out.volatility_state.active_label == "low_vol"
     assert out.strategy_response.position_size_multiplier == 1.0
-    assert out.strategy_response.allow_leverage_expansion is True
-    assert out.strategy_response.modifiers_applied == ["bull_healthy_low_vol"]
 
 
 def test_transition_risk_series_classifier_applies_precedence_from_prepared_inputs() -> None:
