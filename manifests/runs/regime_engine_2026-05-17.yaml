@@ -1,5 +1,5 @@
 artifact_set: regime_engine_2026-05-17
-created_at_utc: '2026-05-19T08:06:14Z'
+created_at_utc: '2026-05-19T08:09:10Z'
 storage_root: s3://autoresearch-platform/regime-detection/artifacts/zurich-v1/profile-ready-daily-ohlcv-762-2016-20260515
 artifacts:
 - name: sp500_pit_constituents
@@ -12506,3 +12506,36 @@ artifacts:
   min_date: '2016-01-04'
   max_date: '2026-05-15'
   required_for: *id001
+- name: event_candidates
+  stage: canonical
+  uri: s3://autoresearch-platform/regime-detection/artifacts/zurich-v1/profile-ready-daily-ohlcv-762-2016-20260515/canonical/event_calendar/candidates/event_candidates.parquet
+  local_path: data/raw/event_calendar/candidates/event_candidates.parquet
+  sha256: 38f44e158d5be3728a79146ff102d0b4345d727a4d9d93dfbe8165e8623f24b2
+  schema_version: null
+  rows: 290
+  min_date: '2016-01-14'
+  max_date: '2026-12-18'
+  required_for:
+  - audit_layer2_30d
+- name: event_validations
+  stage: canonical
+  uri: s3://autoresearch-platform/regime-detection/artifacts/zurich-v1/profile-ready-daily-ohlcv-762-2016-20260515/canonical/event_calendar/candidates/event_validations.parquet
+  local_path: data/raw/event_calendar/candidates/event_validations.parquet
+  sha256: 2c088024976b49671d454209c71ef0b693b16bbe8cca1c025d304dde43646be0
+  schema_version: null
+  rows: 273
+  min_date: '2016-01-14'
+  max_date: '2026-12-18'
+  required_for:
+  - audit_layer2_30d
+- name: event_quarantine
+  stage: canonical
+  uri: s3://autoresearch-platform/regime-detection/artifacts/zurich-v1/profile-ready-daily-ohlcv-762-2016-20260515/canonical/event_calendar/candidates/quarantine.parquet
+  local_path: data/raw/event_calendar/candidates/quarantine.parquet
+  sha256: a0de5dbb7ddab2b45f3d31b9605860b42ae869768e31d9479eb7ca76867717f9
+  schema_version: null
+  rows: 0
+  min_date: null
+  max_date: null
+  required_for:
+  - audit_layer2_30d
