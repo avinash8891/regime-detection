@@ -4,10 +4,12 @@ from typing import TYPE_CHECKING
 
 import pandas as pd
 
-from regime_detection.hysteresis import apply_per_label_asymmetric_hysteresis
+from regime_detection.hysteresis import (
+    apply_asymmetric_hysteresis,
+    apply_per_label_asymmetric_hysteresis,
+)
 from regime_detection.trend_direction import (
     _RISK_RANK as TREND_DIRECTION_RISK_RANK,
-    apply_hysteresis as apply_trend_direction_hysteresis,
     build_raw_outputs as build_trend_direction_raw_outputs,
 )
 
@@ -40,11 +42,16 @@ def build_trend_direction_axis_series(
         trend_direction_v2_features=trend_v2_features,
         trend_direction_v2_rules=trend_v2_rules,
     )
+    is_v2 = context.config.config_version != "core3-v1.0.0"
     td_v2_deesc = (
         trend_v2_config.deescalation_days_by_label
         if trend_v2_config is not None
         else None
     )
+    if is_v2 and td_v2_deesc is None:
+        raise RuntimeError(
+            "trend_direction_v2.deescalation_days_by_label is required in V2 config"
+        )
     if td_v2_deesc is not None:
         stable_labels, active_labels = apply_per_label_asymmetric_hysteresis(
             raw_labels=raw_labels,
@@ -52,20 +59,16 @@ def build_trend_direction_axis_series(
             deescalation_days_by_label=td_v2_deesc,
             default_deescalation_days=trend_v2_config.default_deescalation_days,
         )
+        deescalation_days = trend_v2_config.default_deescalation_days
     else:
-        stable_labels, active_labels = apply_trend_direction_hysteresis(
-            dates=close_index,
+        stable_labels, active_labels = apply_asymmetric_hysteresis(
             raw_labels=raw_labels,
+            risk_rank=TREND_DIRECTION_RISK_RANK,
             escalation_days=context.config.hysteresis.trend_direction_escalation_days,
             deescalation_days=context.config.hysteresis.trend_direction_deescalation_days,
         )
+        deescalation_days = context.config.hysteresis.trend_direction_deescalation_days
     from regime_detection.axis_series import _build_axis_outputs
-
-    deescalation_days = (
-        trend_v2_config.default_deescalation_days
-        if td_v2_deesc is not None
-        else context.config.hysteresis.trend_direction_deescalation_days
-    )
     return _build_axis_outputs(
         dates=[ts.date() for ts in close_index],
         raw_labels=raw_labels,

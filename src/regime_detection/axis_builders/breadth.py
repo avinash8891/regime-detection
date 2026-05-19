@@ -79,11 +79,16 @@ def build_breadth_axis_series(
         )
 
     v2_config = context.config.breadth_state_v2
+    is_v2 = context.config.config_version != "core3-v1.0.0"
     breadth_deesc = (
         v2_config.deescalation_days_by_label
         if v2_config is not None
         else None
     )
+    if is_v2 and breadth_deesc is None:
+        raise RuntimeError(
+            "breadth_state_v2.deescalation_days_by_label is required in V2 config"
+        )
     if breadth_deesc is not None:
         stable_labels, active_labels = apply_per_label_asymmetric_hysteresis(
             raw_labels=raw_labels,

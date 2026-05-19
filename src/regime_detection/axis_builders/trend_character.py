@@ -34,6 +34,11 @@ def build_trend_character_axis_series(
         allow_v2_labels=context.config.config_version != "core3-v1.0.0",
     )
     tc_v2_config = context.config.trend_character_v2
+    is_v2 = context.config.config_version != "core3-v1.0.0"
+    if is_v2 and tc_v2_config is None:
+        raise RuntimeError(
+            "trend_character_v2 is required in V2 config"
+        )
     if tc_v2_config is not None:
         stable_labels, active_labels = apply_per_label_asymmetric_hysteresis(
             raw_labels=raw_labels,
@@ -41,6 +46,7 @@ def build_trend_character_axis_series(
             deescalation_days_by_label=tc_v2_config.deescalation_days_by_label,
             default_deescalation_days=tc_v2_config.default_deescalation_days,
         )
+        deescalation_days = tc_v2_config.default_deescalation_days
     else:
         stable_labels, active_labels = apply_asymmetric_hysteresis(
             raw_labels=raw_labels,
@@ -48,13 +54,8 @@ def build_trend_character_axis_series(
             escalation_days=context.config.hysteresis.trend_character_escalation_days,
             deescalation_days=context.config.hysteresis.trend_character_deescalation_days,
         )
+        deescalation_days = context.config.hysteresis.trend_character_deescalation_days
     from regime_detection.axis_series import _build_axis_outputs
-
-    deescalation_days = (
-        tc_v2_config.default_deescalation_days
-        if tc_v2_config is not None
-        else context.config.hysteresis.trend_character_deescalation_days
-    )
     return _build_axis_outputs(
         dates=[ts.date() for ts in close_index],
         raw_labels=raw_labels,
