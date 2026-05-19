@@ -45,6 +45,7 @@ from regime_detection.fragility_universe import SECTOR_ETFS  # noqa: E402
 from regime_detection.loaders import (  # noqa: E402
     load_central_bank_text_score,
     load_cpi_vintages_first_release,
+    load_event_calendar,
     load_news_sentiment_series,
 )
 from regime_detection.market_context import build_market_context  # noqa: E402
@@ -270,6 +271,8 @@ def main() -> int:
     news_sentiment_parquet = (
         data_root / "news_sentiment" / "sf_fed_news_sentiment.parquet"
     )
+    event_calendar_path = data_root / "event_calendar" / "us_events.yaml"
+    aaii_sentiment_parquet = data_root / "sentiment" / "aaii_sentiment.parquet"
     verification_dir = REPO_ROOT / "docs" / "verification"
     verification_dir.mkdir(parents=True, exist_ok=True)
 
@@ -412,11 +415,30 @@ def main() -> int:
     else:
         print(f"news_sentiment: skipped (no {news_sentiment_parquet.name})")
 
+    event_calendar_df = None
+    if event_calendar_path.exists():
+        event_calendar_df = load_event_calendar(event_calendar_path)
+        print(f"event_calendar: {len(event_calendar_df)} rows from {event_calendar_path.name}")
+    else:
+        print(f"event_calendar: skipped (no {event_calendar_path.name})")
+
+    aaii_sentiment = None
+    if aaii_sentiment_parquet.exists():
+        aaii_sentiment = pd.read_parquet(aaii_sentiment_parquet)
+        print(f"aaii_sentiment: {len(aaii_sentiment)} rows")
+    else:
+        print(f"aaii_sentiment: skipped (no {aaii_sentiment_parquet.name})")
+
+    implied_vol_30d = macro_series.get("implied_vol_30d")
+
     # Rebuild context with full V2 inputs + PIT seams.
     context = build_market_context(
         end_date=end_date,
         market_data=market_data,
         config=config,
+        event_calendar=event_calendar_df,
+        aaii_sentiment=aaii_sentiment,
+        implied_vol_30d=implied_vol_30d,
         sector_etf_closes=sector_etf_closes,
         cross_asset_closes=cross_asset_closes,
         macro_series=macro_series,
