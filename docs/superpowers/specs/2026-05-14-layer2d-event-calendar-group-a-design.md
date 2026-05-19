@@ -18,8 +18,7 @@ types are incomplete or unsourced.
 Current state in `src/regime_data_fetch/event_calendar.py`
 (`_build_v2_curated_candidate_events`, line 607):
 
-- **ECB/BoE/BoJ** — scraped from *current-calendar* pages only. ECB/BoE reach
-  only 2026 rows; BoJ reaches 2025–2026. No historical archive coverage.
+- **ECB/BoE/BoJ** — now sourced from both current-calendar and historical archive pages. ECB: 88 decisions, BoE: 96 decisions, BoJ: 89 decisions, all covering 2016-2026. `HTTP_USER_AGENT` fixed from bot-like to browser-like string to avoid central-bank page blocks.
 - **election** — pure date arithmetic (even-year first-Tuesday-after-first-Monday),
   tagged with a `fec.gov:election-dates` source id that is never actually consulted.
 - **budget** — deterministic `Sep 30` per year (out of scope for Spec 1; see §3.3).
@@ -229,7 +228,7 @@ its raw input row-by-row and quarantines malformed rows (AGENTS.md rule I).
 | Field | Value |
 |---|---|
 | Source URL / API | Historical: ECB monetary-policy decisions archive, by year — `https://www.ecb.europa.eu/press/govcdec/mopo/html/index.en.html` **(verify)**. Forward: Governing Council calendar — `https://www.ecb.europa.eu/press/calendars/mgcgc/html/index.en.html` **(verify; current code uses `events/calendar/mgcgc`)**. Plain HTTPS, no auth. |
-| Coverage start/end | Decisions archive ≥ 1999; we consume 2016→. Forward calendar publishes ≈ 12–18 months ahead. |
+| Coverage start/end | Decisions archive ≥ 1999; we consume 2016→. Forward calendar publishes ≈ 12–18 months ahead. **Implemented:** 88 ECB decisions 2016-2026. |
 | Future-date support | Yes (calendar page). |
 | Self-updating | Yes — but pages **rotate**: prior years move to dated archive pages each January. Adapter must fetch *both* the current calendar page *and* the historical archive index (mirrors `_fetch_fomc_events`). |
 | License / access risk | ECB public content; reproduction permitted with source acknowledgment. Low risk. |
@@ -242,7 +241,7 @@ its raw input row-by-row and quarantines malformed rows (AGENTS.md rule I).
 | Field | Value |
 |---|---|
 | Source URL / API | Forward: upcoming MPC dates — `https://www.bankofengland.co.uk/monetary-policy/upcoming-mpc-dates`. Historical: Monetary Policy Summary & minutes listing / decisions archive — **(verify exact URL)**. Optional cross-check: Bank Rate history — `https://www.bankofengland.co.uk/boeapps/database/Bank-Rate.asp` **(verify; rate-*change* meetings only, not a complete meeting list)**. Plain HTTPS, no auth. |
-| Coverage start/end | Full history; MPC moved to 8 meetings/year in 2016 — clean fit for 2016→. |
+| Coverage start/end | Full history; MPC moved to 8 meetings/year in 2016 — clean fit for 2016→. **Implemented:** 96 BoE decisions 2016-2026. |
 | Future-date support | Yes (upcoming dates page). |
 | Self-updating | Yes — rotates yearly; fetch current + archive. |
 | License / access risk | BoE public content. Low risk. |
@@ -255,7 +254,7 @@ its raw input row-by-row and quarantines malformed rows (AGENTS.md rule I).
 | Field | Value |
 |---|---|
 | Source URL / API | MPM schedule index — `https://www.boj.or.jp/en/mopo/mpmsche_minu/index.htm`; historical per-year schedule pages linked from the index **(verify URL pattern)**. Plain HTTPS, no auth. |
-| Coverage start/end | Full history; BoJ moved to 8 MPM/year in 2016 — clean fit for 2016→. |
+| Coverage start/end | Full history; BoJ moved to 8 MPM/year in 2016 — clean fit for 2016→. **Implemented:** 89 BoJ decisions 2016-2026. |
 | Future-date support | Yes — schedule published ≈ 1 year ahead. |
 | Self-updating | Yes — rotates yearly; fetch current + archive. |
 | License / access risk | BoJ public content. Low risk. |

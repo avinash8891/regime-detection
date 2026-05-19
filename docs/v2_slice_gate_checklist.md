@@ -27,7 +27,7 @@ A slice = one of the ten units listed in v2 spec §8 (Network Fragility, Layer 1
 - [ ] New feature dataclass lives in the axis module (e.g., `network_fragility.py`), not in `feature_store.py`.
 - [ ] `feature_store.py` is extended with `Optional[X] = None` and only computes when the corresponding `MarketContext` data input is present.
 - [ ] Any new live-axis builder follows the current axis-series pattern: compute the slice-specific feature object in its home module, expose the axis output through `AxisSeriesResult` or the established per-axis output mapping, and wire it from `axis_series.py`/`engine.classify` only when the slice's required `MarketContext` inputs are present.
-- [ ] Hysteresis routed through the appropriate helper: `apply_asymmetric_hysteresis` (configurable escalation, single-int de-escalation, v1 axes) or `apply_per_label_asymmetric_hysteresis` (per-label de-escalation, v2 §3.7).
+- [ ] Hysteresis routed through `apply_per_label_asymmetric_hysteresis` with `deescalation_days_by_label` from the axis V2 config section. Per-label hysteresis is mandatory for all 9 label axes (ADR 0010); missing config raises `RuntimeError`. Both V1 and V2 configs ship per-label blocks. The old flat `apply_asymmetric_hysteresis` is no longer used for any axis.
 
 ### 5. Tests
 

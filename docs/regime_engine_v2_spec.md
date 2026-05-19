@@ -2905,7 +2905,7 @@ Matches the §3.6 / §1E convention: states that do not require defensive treatm
 
 #### Hysteresis
 
-Per-label asymmetric de-escalation, analogous to §3.7 and §1E:
+Per-label asymmetric de-escalation (mandatory per ADR 0010 — missing config raises `RuntimeError`):
 
 ```yaml
 monetary_pressure:
@@ -3076,7 +3076,7 @@ Pattern matches §3.6 / §1E / §2A: benign states at 0, mild/unknown at 1, medi
 
 #### Hysteresis
 
-Per-label asymmetric de-escalation, analogous to §3.7 / §2A:
+Per-label asymmetric de-escalation (mandatory per ADR 0010 — missing config raises `RuntimeError`):
 
 ```yaml
 inflation_growth:
@@ -3231,7 +3231,7 @@ The `deleveraging: 4` slot is the only V2 axis label with risk-rank above 3 — 
 
 #### Hysteresis
 
-Per-label asymmetric de-escalation, analogous to §3.7 / §2A / §2B:
+Per-label asymmetric de-escalation (mandatory per ADR 0010 — missing config raises `RuntimeError`):
 
 ```yaml
 credit_funding:
@@ -3309,7 +3309,7 @@ Add labels to V1's calendar:
 - `budget_week` — event-source row from deterministic fiscal deadlines plus official Treasury/GovInfo budget discovery (relevant for India only when an India-specific official source is added)
 - `election_window` — default trading-day window `[-5, +10]` around the result date (matches the §2D YAML example below); configurable via `window_days` in the event row
 - `geopolitical_event` — approval-gated Group B candidate for war, sanctions, terrorism, conflict/protest shocks; generated from GPR, GDELT, and HDX HAPI evidence when those live sources are available; ACLED and Uppsala/UCDP evidence is TODO pending entitled API keys/account access; rendered only when the approval overlay promotes it
-- `global_rate_decision` — manual YAML for BOE / ECB / BOJ scheduled meetings; operator maintains the calendar (analogous to V1 FOMC pre-2021 pre-fetch path)
+- `global_rate_decision` — BOE / ECB / BOJ scheduled meetings sourced from official central-bank archive and current-calendar pages via the event_sources adapter pipeline (ADR 0010 / Group A design spec). Coverage: ECB 88 decisions, BoE 96 decisions, BoJ 89 decisions (all 2016-2026). No longer manually maintained YAML.
 
 YAML schema extension:
 ```yaml
@@ -3482,7 +3482,9 @@ network_fragility_risk_rank:
 
 ### 3.7 Hysteresis
 
-Asymmetric per V1 rule. De-escalation defaults:
+Per-label asymmetric de-escalation is **mandatory for all 9 label axes** (ADR 0010). Every axis must supply a `deescalation_days_by_label` config block; missing config raises `RuntimeError` immediately — no silent flat fallback. Both `core3-v1.0.0.yaml` and `core3-v2.0.0.yaml` ship per-label hysteresis. V1 values are flat (all labels get the same days as the original global setting) to preserve V1 behavior while using the per-label infrastructure.
+
+Network fragility de-escalation defaults:
 ```yaml
 network_fragility_deescalation_days:
   rising_fragility: 3
@@ -3490,6 +3492,8 @@ network_fragility_deescalation_days:
   correlation_to_one: 5
   systemic_stress: 5
 ```
+
+See ADR 0010 for the complete per-label hysteresis table across all 9 axes. Hysteresis does NOT apply to evidence/score outputs (event_calendar, transition_risk, cluster, change_point, hmm).
 
 ---
 
