@@ -105,7 +105,11 @@ def compute_change_point_features(
     if len(clean) < config.training_window_days:
         return None
 
-    train_series = clean.tail(config.training_window_days)
+    max_window = getattr(config, "max_bocpd_window", None)
+    if max_window is not None and len(clean) > max_window:
+        train_series = clean.tail(max_window)
+    else:
+        train_series = clean
     # Round trailing window to a deterministic precision so 1-ULP
     # upstream noise (pandas rolling std accumulator path) does not
     # propagate into the BOCPD posterior. The ~1e-12 epsilon is far

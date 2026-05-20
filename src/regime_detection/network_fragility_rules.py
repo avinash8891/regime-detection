@@ -98,6 +98,7 @@ NETWORK_FRAGILITY_RISK_RANK: dict[NetworkFragilityLabel, int] = {
 # §2C classifier consumes nothing from this module).
 CreditFundingLabel = Literal[
     "credit_calm",
+    "credit_recovery",
     "spread_widening",
     "credit_stress",
     "funding_squeeze",
@@ -353,21 +354,30 @@ def evaluate_diversified_normal(
 
     `0.25 <= avg_pairwise_corr_percentile_504d <= 0.75
      AND effective_rank stable (21d std < 5% of mean)`
+
+    Relaxed inner band: when correlation is clearly mid-range (0.30-0.60),
+    rank stability is not required — factor rotation in moderate-correlation
+    regimes is normal market behavior, not fragility.
     """
-    if _any_nan(
-        inputs.avg_pairwise_corr_percentile_504d,
-        inputs.effective_rank_stability_21d,
-    ):
+    if np.isnan(inputs.avg_pairwise_corr_percentile_504d):
         return False
     in_band = (
         config.diversified_normal_percentile_lo
         <= inputs.avg_pairwise_corr_percentile_504d
         <= config.diversified_normal_percentile_hi
     )
-    stable = (
+    if not in_band:
+        return False
+    if not np.isnan(inputs.effective_rank_stability_21d) and (
         inputs.effective_rank_stability_21d < config.effective_rank_stability_threshold
-    )
-    return bool(in_band and stable)
+    ):
+        return True
+    if getattr(config, "diversified_normal_relaxed_inner_band", False):
+        inner_lo = getattr(config, "diversified_normal_inner_band_lo", 0.30)
+        inner_hi = getattr(config, "diversified_normal_inner_band_hi", 0.60)
+        if inner_lo <= inputs.avg_pairwise_corr_percentile_504d <= inner_hi:
+            return True
+    return False
 
 
 def evaluate_stock_picker_dispersion(

@@ -91,6 +91,12 @@ class NetworkFragilityRulesConfig(StrictBaseModel):
     corr_to_one_drawdown_max: float
     # systemic_stress — v2 §3.5 lines 653–656
     systemic_stress_vix_percentile_min: float = Field(ge=0.0, le=1.0)
+    # When True, diversified_normal fires on correlation in the inner band
+    # (0.30-0.60) without requiring rank stability. Rank instability in
+    # moderate-correlation regimes means factor rotation, not fragility.
+    diversified_normal_relaxed_inner_band: bool = Field(default=True)
+    diversified_normal_inner_band_lo: float = Field(default=0.30, ge=0.0, le=1.0)
+    diversified_normal_inner_band_hi: float = Field(default=0.60, ge=0.0, le=1.0)
 
 
 class NetworkFragilityConfig(StrictBaseModel):

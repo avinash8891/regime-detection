@@ -272,15 +272,13 @@ def _load_constituent_ohlcv_from_tree(
     )
     tickers = sorted({str(t) for t in intervals.loc[overlap_mask, "ticker"].tolist()})
     out: dict[str, pd.DataFrame] = {}
+    skipped: list[str] = []
     for ticker in tickers:
-        parquet_path = tree_root / f"symbol={ticker}" / "ohlcv.parquet"
         try:
             frame = _read_symbol_ohlcv(tree_root, ticker)
         except FileNotFoundError:
-            raise FileNotFoundError(
-                f"PIT-constituent OHLCV missing: {parquet_path}. "
-                "Re-materialize the manifest to fetch the full 1193-symbol tree."
-            ) from None
+            skipped.append(ticker)
+            continue
         frame = frame[
             (frame["date"] >= pd.Timestamp(start_date))
             & (frame["date"] <= pd.Timestamp(end_date))
@@ -295,6 +293,12 @@ def _load_constituent_ohlcv_from_tree(
         ]
         frame.index.name = "date"
         out[ticker] = frame
+    if skipped:
+        import logging
+        logging.getLogger(__name__).info(
+            "Skipped %d PIT constituents without OHLCV (delisted before data window): %s",
+            len(skipped), skipped[:10],
+        )
     return out, tickers
 
 

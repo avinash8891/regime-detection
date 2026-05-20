@@ -98,6 +98,7 @@ def _build_synthetic_context(
     eps_truncate_calendar_days: int | None = None,
     nowcast_truncate_calendar_days: int | None = None,
     include_cpi_first_release: bool = False,
+    pmi_base_value: float = 51.0,
 ):
     """Build a full MarketContext with §2B inputs."""
     idx = _bdate_index(periods=_TRAINING_SESSIONS)
@@ -181,7 +182,7 @@ def _build_synthetic_context(
 
     pmi = pd.Series(np.nan, index=idx, dtype=float)
     pmi_release_positions = list(range(0, n, 21))
-    pmi.iloc[pmi_release_positions] = 51.0
+    pmi.iloc[pmi_release_positions] = pmi_base_value
     if pmi_truncate_calendar_days is not None:
         cutoff = idx[-1] - pd.Timedelta(days=pmi_truncate_calendar_days)
         pmi.loc[pmi.index > cutoff] = np.nan
@@ -678,13 +679,13 @@ def test_eps_freshness_gate_permits_earnings_expansion_when_fresh() -> None:
 
     Setup: EPS series truncated only 5 calendar days before the last session
     (well within the 35d freshness window). EPS value (0.03) exceeds
-    eps_revision_expansion_threshold (0.02).  The session should NOT be blocked
-    by the staleness gate, so the last session must carry an earnings_expansion
-    label (given no higher-precedence rule fires in this neutral macro context).
+    eps_revision_expansion_threshold (0.02).  PMI is set below the disinflation
+    threshold (45) to ensure no higher-precedence rule fires.
     """
     context = _build_synthetic_context(
         include_nowcast_and_eps_revision=True,
         eps_truncate_calendar_days=5,
+        pmi_base_value=44.0,
     )
     _, outputs = _build_store_and_outputs(context)
     assert outputs is not None

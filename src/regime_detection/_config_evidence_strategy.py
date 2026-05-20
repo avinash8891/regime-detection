@@ -76,6 +76,9 @@ class ChangePointConfig(StrictBaseModel):
     score_window_days: int = Field(default=5, ge=1)
     break_threshold: float = Field(default=0.5, gt=0.0, lt=1.0)
     training_window_days: int = Field(default=1260, ge=100)  # 5y, matches HMM/GMM
+    # Cap BOCPD input length. The library is O(n²); 3000 sessions covers
+    # 2014-2026 with full warmup while keeping runtime reasonable.
+    max_bocpd_window: int = Field(default=3000, ge=1260)
     # StudentT prior hyperparameters (Adams-MacKay defaults — conservative).
     student_t_alpha: float = Field(default=0.1, gt=0.0)
     student_t_beta: float = Field(default=0.01, gt=0.0)

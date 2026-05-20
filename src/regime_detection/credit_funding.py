@@ -86,6 +86,7 @@ CreditFundingLabel = Literal[
 # signals coincide (spec line 2102).
 CREDIT_FUNDING_RISK_RANK: dict[CreditFundingLabel, int] = {
     "credit_calm": 0,
+    "credit_recovery": 0,
     "unknown": 1,
     "spread_widening": 1,
     "credit_stress": 2,
@@ -605,21 +606,50 @@ def evaluate_credit_calm(
 
 def evaluate_spread_widening(
     inputs: CreditFundingRuleInputs,
-    config: CreditFundingRulesConfig,  # noqa: ARG001 (uniform signature; no thresholds)
+    config: CreditFundingRulesConfig,
 ) -> bool:
     """v2 §2C lines 2069-2071.
 
     ``hy_spread_slope_21d > 0 AND ig_spread_slope_21d > 0``
     (strict positive slope on BOTH HY and IG legs).
+
+    Extended path: HY slope > 0 alone (IG not required). Captures
+    early-stage widening and divergent credit moves where HY leads.
     """
-    if _any_nan(
-        inputs.hy_spread_slope_21d,
-        inputs.ig_spread_slope_21d,
-    ):
+    if _any_nan(inputs.hy_spread_slope_21d):
         return False
-    return bool(
+    if not np.isnan(inputs.ig_spread_slope_21d) and (
         inputs.hy_spread_slope_21d > 0.0
         and inputs.ig_spread_slope_21d > 0.0
+    ):
+        return True
+    if getattr(config, "spread_widening_hy_only", False) and (
+        inputs.hy_spread_slope_21d > 0.0
+    ):
+        return True
+    return False
+
+
+def evaluate_credit_recovery(
+    inputs: CreditFundingRuleInputs,
+    config: CreditFundingRulesConfig,
+) -> bool:
+    """Elevated spreads (percentile 0.50-0.80) that are narrowing (slope < 0).
+
+    Economically: credit conditions are improving from stressed levels.
+    Distinct from credit_calm (percentile < 0.50) and spread_widening (slope > 0).
+    """
+    if _any_nan(
+        inputs.hy_spread_percentile_504d,
+        inputs.hy_spread_slope_21d,
+    ):
+        return False
+    calm_max = getattr(config, "hy_percentile_calm_max", 0.50)
+    stress_min = getattr(config, "hy_percentile_stress_min", 0.80)
+    return bool(
+        inputs.hy_spread_percentile_504d >= calm_max
+        and inputs.hy_spread_percentile_504d < stress_min
+        and inputs.hy_spread_slope_21d < 0.0
     )
 
 
@@ -712,6 +742,8 @@ def evaluate_rules(
         return "credit_stress"
     if evaluate_spread_widening(inputs, config):
         return "spread_widening"
+    if evaluate_credit_recovery(inputs, config):
+        return "credit_recovery"
     if evaluate_credit_calm(inputs, config):
         return "credit_calm"
     return "unknown"

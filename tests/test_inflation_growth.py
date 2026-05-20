@@ -393,9 +393,27 @@ def test_goldilocks_fires_under_drift_pmi_spy_creditcalm() -> None:
     assert evaluate_rules(inputs=inputs, config=rules) == "goldilocks"
 
 
-def test_goldilocks_short_circuits_when_credit_funding_unbuilt() -> None:
-    """§2B line 2316: cross-axis short-circuit when §2C is unbuilt."""
+def test_goldilocks_fires_when_credit_unavailable_with_fallback() -> None:
+    """With allow_credit_independent_fallback=True (default), goldilocks fires
+    when credit_funding is None and other conditions are met."""
     rules = _default_rules()
+    inputs = _rule_inputs(
+        cpi_6m_change_pct=0.020,
+        cpi_6m_change_pct_lag_21=0.022,
+        pmi_manufacturing=52.0,
+        spy_21d_return=0.03,
+        credit_funding_active_label=None,
+    )
+    assert evaluate_goldilocks(inputs, rules) is True
+    assert evaluate_rules(inputs=inputs, config=rules) == "goldilocks"
+
+
+def test_goldilocks_short_circuits_when_credit_funding_unbuilt_no_fallback() -> None:
+    """§2B line 2316: cross-axis short-circuit when §2C is unbuilt and
+    fallback is disabled."""
+    rules = _default_rules().model_copy(
+        update={"allow_credit_independent_fallback": False}
+    )
     inputs = _rule_inputs(
         cpi_6m_change_pct=0.020,
         cpi_6m_change_pct_lag_21=0.022,
@@ -492,14 +510,38 @@ def test_recession_scare_fires() -> None:
     assert evaluate_rules(inputs=inputs, config=rules) == "recession_scare"
 
 
-def test_recession_scare_short_circuits_when_credit_funding_unbuilt() -> None:
-    """§2B line 2316: cross-axis short-circuit when §2C is unbuilt."""
+def test_recession_scare_fires_when_credit_unavailable_with_stricter_threshold() -> None:
+    """With allow_credit_independent_fallback=True, recession_scare fires
+    without credit confirmation but uses the stricter SPY threshold (-7%)."""
     rules = _default_rules()
     inputs = _rule_inputs(
         treasury_10y_yield_slope_21d=-0.01,
         cyclical_defensive_slope_21d=-0.002,
         credit_funding_active_label=None,
-        spy_21d_return=-0.07,
+        spy_21d_return=-0.08,
+    )
+    assert evaluate_recession_scare(inputs, rules) is True
+
+    mild_drop = _rule_inputs(
+        treasury_10y_yield_slope_21d=-0.01,
+        cyclical_defensive_slope_21d=-0.002,
+        credit_funding_active_label=None,
+        spy_21d_return=-0.06,
+    )
+    assert evaluate_recession_scare(mild_drop, rules) is False
+
+
+def test_recession_scare_short_circuits_when_credit_funding_unbuilt_no_fallback() -> None:
+    """§2B line 2316: cross-axis short-circuit when §2C is unbuilt and
+    fallback is disabled."""
+    rules = _default_rules().model_copy(
+        update={"allow_credit_independent_fallback": False}
+    )
+    inputs = _rule_inputs(
+        treasury_10y_yield_slope_21d=-0.01,
+        cyclical_defensive_slope_21d=-0.002,
+        credit_funding_active_label=None,
+        spy_21d_return=-0.08,
     )
     assert evaluate_recession_scare(inputs, rules) is False
 
@@ -521,8 +563,27 @@ def test_recovery_growth_fires() -> None:
     assert evaluate_rules(inputs=inputs, config=rules) == "recovery_growth"
 
 
-def test_recovery_growth_short_circuits_when_credit_funding_unbuilt() -> None:
+def test_recovery_growth_fires_when_credit_unavailable_with_fallback() -> None:
+    """With allow_credit_independent_fallback=True (default), recovery_growth fires
+    when credit_funding is None and growth conditions are met."""
     rules = _default_rules()
+    inputs = _rule_inputs(
+        pmi_manufacturing_slope_21d=0.05,
+        pmi_manufacturing=53.0,
+        cyclical_defensive_slope_21d=0.001,
+        credit_funding_active_label=None,
+        cpi_6m_change_pct=0.02,
+        cpi_6m_change_pct_lag_21=0.035,
+        cpi_6m_change_pct_slope_21d=0.001,
+        spy_21d_return=-0.01,
+    )
+    assert evaluate_recovery_growth(inputs, rules) is True
+
+
+def test_recovery_growth_short_circuits_when_credit_funding_unbuilt_no_fallback() -> None:
+    rules = _default_rules().model_copy(
+        update={"allow_credit_independent_fallback": False}
+    )
     inputs = _rule_inputs(
         pmi_manufacturing_slope_21d=0.05,
         pmi_manufacturing=53.0,
@@ -551,6 +612,61 @@ def test_earnings_labels_falsify_in_neutral_band() -> None:
     # Exactly on the threshold also falsifies (strict >).
     on_threshold = _rule_inputs(aggregate_forward_eps_revision_direction_4w=0.02)
     assert evaluate_earnings_expansion(on_threshold, rules) is False
+
+
+def test_goldilocks_fires_on_benign_cpi_ceiling() -> None:
+    """When CPI is below the benign ceiling (4%), goldilocks fires even if
+    CPI drift and slope are positive (mild reflation scenario)."""
+    rules = _default_rules()
+    inputs = _rule_inputs(
+        cpi_6m_change_pct=0.035,
+        cpi_6m_change_pct_lag_21=0.020,
+        cpi_6m_change_pct_slope_21d=0.001,
+        pmi_manufacturing=52.0,
+        spy_21d_return=0.03,
+        credit_funding_active_label="credit_calm",
+    )
+    assert evaluate_goldilocks(inputs, rules) is True
+
+
+def test_goldilocks_rejects_high_cpi_above_ceiling() -> None:
+    """CPI above the benign ceiling (4%) with positive drift/slope fails."""
+    rules = _default_rules()
+    inputs = _rule_inputs(
+        cpi_6m_change_pct=0.05,
+        cpi_6m_change_pct_lag_21=0.035,
+        cpi_6m_change_pct_slope_21d=0.001,
+        pmi_manufacturing=52.0,
+        spy_21d_return=0.03,
+        credit_funding_active_label="credit_calm",
+    )
+    assert evaluate_goldilocks(inputs, rules) is False
+
+
+def test_disinflation_fires_without_yield_confirmation() -> None:
+    """With disinflation_yield_independent=True, disinflation fires on
+    cpi_slope < 0 + PMI > 45, even if yields are rising."""
+    rules = _default_rules()
+    inputs = _rule_inputs(
+        cpi_6m_change_pct_slope_21d=-0.0005,
+        treasury_10y_yield_slope_21d=0.01,
+        pmi_manufacturing=47.0,
+        credit_funding_active_label="spread_widening",
+    )
+    assert evaluate_disinflation(inputs, rules) is True
+
+
+def test_disinflation_requires_yield_when_flag_off() -> None:
+    """With disinflation_yield_independent=False, rising yields block disinflation."""
+    rules = _default_rules().model_copy(
+        update={"disinflation_yield_independent": False}
+    )
+    inputs = _rule_inputs(
+        cpi_6m_change_pct_slope_21d=-0.0005,
+        treasury_10y_yield_slope_21d=0.01,
+        pmi_manufacturing=47.0,
+    )
+    assert evaluate_disinflation(inputs, rules) is False
 
 
 def test_earnings_expansion_fires_above_threshold() -> None:

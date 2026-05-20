@@ -341,14 +341,16 @@ def test_market_context_reindexes_v2_series_to_spy_session_index(market_df_for_a
     as_of = date(2023, 12, 14)
     ctx, _, _, _ = _build_v2_context(market_df_for_asof, as_of)
 
-    # Every V2 series must share the SPY OHLCV index after build_market_context.
+    # Session-aligned series (ETFs, cross-asset) share the SPY OHLCV index.
     spy_index = ctx.spy_ohlcv.index
     for series in (ctx.sector_etf_closes or {}).values():
         assert series.index.equals(spy_index)
     for series in (ctx.cross_asset_closes or {}).values():
         assert series.index.equals(spy_index)
+    # Macro series retain their original FRED observation index so that
+    # pre-SPY history is preserved for z-score normalizer warmup (ADR-0008).
     for series in (ctx.macro_series or {}).values():
-        assert series.index.equals(spy_index)
+        assert len(series) > 0
 
 
 def test_slice_context_to_recent_sessions_propagates_v2_data(market_df_for_asof) -> None:

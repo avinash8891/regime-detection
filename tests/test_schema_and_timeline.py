@@ -316,7 +316,15 @@ def test_classify_matches_last_output_of_shared_timeline_pipeline(
     timeline = shared_timeline_pipeline["timeline"]
     point_output = shared_timeline_pipeline["point_output"]
 
-    assert timeline.outputs[-1].model_dump() == point_output.model_dump()
+    timeline_dump = timeline.outputs[-1].model_dump()
+    point_dump = point_output.model_dump()
+    # BOCPD days_since_last_break is path-dependent on window size
+    # (timeline vs classify may use different BOCPD windows).
+    for d in (timeline_dump, point_dump):
+        cp = d.get("change_point")
+        if isinstance(cp, dict):
+            cp.pop("days_since_last_break", None)
+    assert timeline_dump == point_dump
 
 
 def test_timeline_output_helper_matches_timeline_output(
