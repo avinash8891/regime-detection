@@ -18,14 +18,30 @@ Sanity-check the ledger enum (see schema below) by classifying 3–5 obviously-d
 
 ### Step 1 — Manifest+runner spine audit (first reviewer gate)
 
-**Mode: runtime, non-semantic.** Step 1 is *not* static reachability; it is a manifest spine *trace*. For the selected runner:
+**Mode: runtime, non-semantic.** Step 1 is *not* static reachability; it is a manifest spine *trace*. The audit runs Step 1 across the **required runner set** (defined below). For each runner:
 
 1. Load the manifest.
 2. Materialize (or verify) the artifacts required by the runner.
-3. Resolve runner input paths via `src/regime_data_fetch/manifest_inputs.py:243-319`.
+3. Resolve runner input paths via `src/regime_data_fetch/manifest_inputs.py:243-319` when the runner uses the manifest resolver; otherwise record the bypass class (see Step 2a).
 4. Record actual artifact keys, sha256 hashes, destination paths, `resolved_from_manifest`, and `cli_overrides`.
 
 Step 1 does **not** assert expected classifications. It establishes which inputs the runner actually consumes, and which provenance bypass markers fire. Static reading alone is insufficient because resolver behavior depends on manifest contents and CLI override sets. Full golden replay is the wrong level here because it mixes input-routing bugs with classifier-behavior bugs; Step 1 isolates the first class.
+
+**Required runner set** (Step 1 audit must cover all of these — a single-runner pass is incomplete):
+
+| Runner | Path | Manifest behavior |
+|---|---|---|
+| Profile engine | `scripts/profile_engine.py` | `materialize_manifest_from_args` + resolver |
+| Layer-2 30-day audit | `scripts/audit_layer2_30d.py` | `materialize_manifest_from_args` + resolver |
+| V2 calibration | `scripts/run_v2_calibration.py` | `materialize_manifest_from_args` + resolver |
+| V2 walk-forward gate | `scripts/run_v2_walkforward_gate.py` | `materialize_manifest_from_args` + resolver |
+| Materialize-only | `scripts/materialize_regime_data.py` | `materialize_manifest` direct |
+| V1 shadow regime | `scripts/run_shadow_regime.py` | runner-level bypass (no materialize) |
+| V1 historical walkforward | `scripts/run_historical_walkforward.py` | materializes but does not bind via resolver |
+| Walkforward report builder | `scripts/build_walkforward_report.py` | runner-level bypass |
+| Group B candidate approval | `scripts/approve_group_b_candidate.py` | runner-level bypass |
+
+**Implementability constraint** (UNINSTRUMENTED today): `scripts/_v2_calibration_helpers.py:160-172` calls `materialize_if_requested(...)` but **discards** the returned `MaterializedArtifact` list. The helper at `:145-157` records only `args.manifest_resolved_inputs` and `args.manifest_cli_overrides` on the namespace — no sha256, no destination path. Step 1 therefore requires a small audit-harness emission task before it can produce a complete trace: capture the discarded `MaterializedArtifact` list and the bypass markers into a structured provenance JSON per run. This harness is scoped, non-semantic, and is a Step 1 precondition — not classifier work.
 
 ### Step 2a — Manifest/materialization provenance bundle
 
@@ -42,7 +58,9 @@ Required fields per run:
 | Manifest artifact `schema_version` | same | — |
 | Manifest artifact `rows` | same | — |
 | Manifest artifact `min_date` / `max_date` | same | — |
-| Manifest artifact `required_for` | `src/regime_data_fetch/manifest_inputs.py:253-254` | — |
+| Manifest artifact `required_for` (field) | `src/regime_data_fetch/artifact_manifest.py:37-48` | — |
+| Manifest artifact `required_for` (filter method) | `src/regime_data_fetch/artifact_manifest.py:177-180` | — |
+| Resolver use of `required_for(runner_name)` | `src/regime_data_fetch/manifest_inputs.py:253-254` | — |
 | Manifest-level `artifact_set` / `created_at_utc` / `storage_root` | `src/regime_data_fetch/artifact_manifest.py:118-123` | — |
 | `resolved_from_manifest` (per field) | `src/regime_data_fetch/manifest_inputs.py:317` | — |
 | `cli_overrides` (per field) | `src/regime_data_fetch/manifest_inputs.py:318` | **per-field bypass marker** |
@@ -56,6 +74,7 @@ Required fields per run:
 1. **Whole-manifest bypass.** `materialize_if_requested(manifest_path=None)` at `src/regime_data_fetch/materialization.py:150-151` returns `[]` and skips sha verification entirely.
 2. **Per-field CLI override.** `resolve_runner_input_paths` at `src/regime_data_fetch/manifest_inputs.py:269-289` accepts CLI values that bypass manifest resolution per field.
 3. **Runner-level bypass.** Three runners read source artifacts without calling `materialize_manifest_from_args`: `scripts/run_shadow_regime.py`, `scripts/build_walkforward_report.py`, `scripts/approve_group_b_candidate.py`. These runners have **no provenance** today.
+4. **Materialize-but-don't-bind bypass.** `scripts/run_historical_walkforward.py:386-401` calls `materialize_if_requested(...)` (so sha verifies if `--manifest` is provided) but then passes the **original CLI paths** (`args.market_data`, `args.event_calendar`) into `run_walkforward(...)` rather than the manifest-resolved paths. The artifact set is verified; the runner doesn't bind to it. This is distinct from class 3 because materialization still runs.
 
 The runner-level bypass marker (`materialize_called_by_runner`) is the only new instrumentation introduced by Step 2a. It is non-semantic: a single boolean recorded at runner entry.
 
@@ -80,23 +99,33 @@ Static reachability cannot be the live-set filter for Step 1, because registry-d
 
 ## Ledger schema
 
-Every audit finding is one row with these fields:
+Every audit finding is one row. The schema is **two-axis** — failure domain × mechanism — because the single-axis 11-value enum is not mutually exclusive against Owner's stated trust failure classes (one Owner class can map to multiple mechanism values; see review B4).
 
 | Field | Type | Notes |
 |---|---|---|
 | `path` | string | `file:line`, runner artifact path, manifest key, or command-output excerpt. **Never prose.** |
 | `claim_or_invariant` | string | the spec claim or invariant being checked |
 | `observed_evidence` | string | what the audit actually observed |
-| `classification` | enum (below) | exactly one primary class |
+| `failure_domain` | enum (below) | Owner-facing trust class — exactly one |
+| `mechanism` | enum (below) | how it manifests in code — exactly one |
 | `severity` | enum (below) | `BLOCKING` / `TRUST_GAP` / `INFO` |
 | `owner_decision_needed` | string \| null | what Owner must decide before resolution |
 
-**Classification enum (11 values):**
+**Failure-domain enum (4 values — maps to Owner's stated classes):**
 
 ```
-MATCHES_SPEC          — code agrees with doc/spec
-MISMATCH              — code and doc disagree on a behavior
-MISSING_FROM_CODE     — doc describes behavior not implemented
+DEAD_CODE_DOMAIN         — code that exists but contributes nothing live
+WRONG_CODE               — code that runs but disagrees with intended behavior
+UNIMPLEMENTED_LOGIC      — behavior claimed but not implemented
+BROKEN_WIRING            — components present but coordination is wrong (no caller, wrong call, lost output)
+```
+
+**Mechanism enum (11 values — how the failure manifests):**
+
+```
+MATCHES_SPEC          — code agrees with doc/spec (used for negative findings during pilot)
+MISMATCH              — code and doc disagree on a specific behavior
+MISSING_FROM_CODE     — doc describes behavior not implemented in code
 MISSING_FROM_SPEC     — code implements behavior not documented
 STALE_DATA            — artifact present but older than expected window
 SILENT_FALLBACK       — runtime took a non-preferred path without surfacing it
@@ -106,6 +135,17 @@ UNINSTRUMENTED        — invariant cannot be checked without semantic refactor
 UNCONSUMED_OUTPUT     — code computes a value that nothing downstream reads
 TEST_ONLY_REACHABLE   — code reachable only via tests/fixtures
 ```
+
+**Indicative domain × mechanism combinations** (not exhaustive, not constraining):
+
+| Domain | Common mechanisms |
+|---|---|
+| `DEAD_CODE_DOMAIN` | `UNREACHABLE`, `DEAD_CODE`, `TEST_ONLY_REACHABLE` |
+| `WRONG_CODE` | `MISMATCH`, `SILENT_FALLBACK`, `STALE_DATA` |
+| `UNIMPLEMENTED_LOGIC` | `MISSING_FROM_CODE`, `UNINSTRUMENTED` |
+| `BROKEN_WIRING` | `UNCONSUMED_OUTPUT`, `UNREACHABLE` (callee missing), `SILENT_FALLBACK` (resolver bypass), `MISSING_FROM_SPEC` (undocumented path) |
+
+The reviewer picks one mechanism that best fits the evidence; the domain is then derivable but recorded explicitly so Owner can filter the ledger by their mental model.
 
 **Severity enum (3 values):**
 
@@ -123,7 +163,7 @@ The previously-proposed "<20% reviewer disagreement" gate is **discarded** becau
 
 Replacement test, run immediately after Step 1 produces fresh findings:
 
-1. Curate 8–12 findings: at least 3 from Step 1 fresh output, at least 3 **synthetic/pathological cases where the intended class is known by construction**, and the remainder from existing artifacts (`docs/spec_code_data_audit_2026_05_15.md:104-155`, ADR 0010, `.context/profile_engine_2016_2026_no_rule_reason_split_final.json:65-88`, `tests/fixtures/verification/golden_dates_report.yaml:19-44`).
+1. Curate 8–12 findings: at least 3 from Step 1 fresh output, at least 3 **synthetic/pathological cases where the intended class is known by construction**, and the remainder from existing artifacts (`docs/spec_code_data_audit_2026_05_15.md:104-155`, ADR 0010, `.context/profile_engine_2016_2026_no_rule_reason_split_final.json:65-88`, `tests/fixtures/verification/golden_dates_report.yaml:19-44`). **Note**: the latter two artifacts contain classifier self-reports (`classification_status`, `source_used`, `rule_evidence`-style outputs). They are valid *enum-discriminability seeds* — material for testing whether the enum separates failure modes — but they are **not** Step 2a independent provenance and must not be cited as such.
 2. **Blind** both reviewers to the intended class on synthetic cases.
 3. Each reviewer produces exactly one primary classification, one severity, and evidence in the allowed forms.
 4. **Negative test:** a second pass attempts to reclassify each finding under its nearest competing enum value. The enum **passes** only when the evidence rule and definitions force a stable primary class, OR when the competing class is clearly the same concept and the two should be merged.
