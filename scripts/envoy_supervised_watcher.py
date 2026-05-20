@@ -172,7 +172,7 @@ def agent_command(participant: str, prompt: str) -> list[str]:
     if participant == "Codex":
         return ["codex", "exec", "--sandbox", "read-only", prompt]
     if participant == "Claude":
-        return ["claude", "--print", prompt]
+        return ["claude", "--print", "--model", "sonnet", prompt]
     raise ValueError(f"unsupported autonomous participant {participant!r}")
 
 

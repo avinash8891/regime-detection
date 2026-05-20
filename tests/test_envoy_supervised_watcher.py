@@ -187,6 +187,8 @@ def test_agent_command_uses_bounded_noninteractive_cli() -> None:
     assert watcher.agent_command("Claude", "prompt") == [
         "claude",
         "--print",
+        "--model",
+        "sonnet",
         "prompt",
     ]
 
