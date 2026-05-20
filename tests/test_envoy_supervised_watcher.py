@@ -122,6 +122,80 @@ def test_plan_actions_honors_explicit_first_responder() -> None:
     assert [action.participant for action in actions] == ["Claude", "Codex"]
 
 
+def test_plan_actions_honors_direct_addressee_before_other_mentions() -> None:
+    watcher = _load_module()
+    history = {
+        "messages": [
+            {
+                "cursor": 11,
+                "sender_name": "Owner",
+                "body": "Claude: respond to Codex's latest message.",
+            },
+        ]
+    }
+
+    actions = watcher.plan_actions(
+        history=history,
+        last_cursor=10,
+        participants=("Codex", "Claude"),
+    )
+
+    assert [action.participant for action in actions] == ["Claude"]
+
+
+def test_plan_actions_continues_active_debate_without_explicit_mention() -> None:
+    watcher = _load_module()
+    history = {
+        "messages": [
+            {
+                "cursor": 6,
+                "sender_name": "Owner",
+                "body": "Codex and Claude: continue the debate.",
+            },
+            {
+                "cursor": 7,
+                "sender_name": "Claude",
+                "body": "I agree with the framework and propose one addition.",
+            },
+            {
+                "cursor": 8,
+                "sender_name": "Codex",
+                "body": "I agree with that addition and would ratify it.",
+            },
+        ]
+    }
+
+    actions = watcher.plan_actions(
+        history=history,
+        last_cursor=7,
+        participants=("Codex", "Claude"),
+    )
+
+    assert [action.participant for action in actions] == ["Claude"]
+    assert actions[0].cursor == 8
+
+
+def test_plan_actions_does_not_handoff_agent_monologue_without_active_debate() -> None:
+    watcher = _load_module()
+    history = {
+        "messages": [
+            {
+                "cursor": 8,
+                "sender_name": "Codex",
+                "body": "I agree with that addition and would ratify it.",
+            },
+        ]
+    }
+
+    actions = watcher.plan_actions(
+        history=history,
+        last_cursor=7,
+        participants=("Codex", "Claude"),
+    )
+
+    assert actions == []
+
+
 def test_cursor_state_round_trips(tmp_path: Path) -> None:
     watcher = _load_module()
     state_path = tmp_path / "watcher-state.json"

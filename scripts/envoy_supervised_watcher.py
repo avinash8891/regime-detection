@@ -70,6 +70,9 @@ def _mentions_participant(body: str, participant: Participant) -> bool:
 
 def _participants_for_message(body: str, participants: tuple[Participant, ...]) -> tuple[Participant, ...]:
     mentioned = [participant for participant in participants if _mentions_participant(body, participant)]
+    for participant in mentioned:
+        if re.match(rf"^\s*{re.escape(participant.name)}\s*:", body, flags=re.IGNORECASE):
+            return (participant,)
     first_responder: Participant | None = None
     for participant in mentioned:
         pattern = rf"\b{re.escape(participant.name)}\b\s+should\s+respond\b.*\bfirst\b"
@@ -79,6 +82,42 @@ def _participants_for_message(body: str, participants: tuple[Participant, ...]) 
     if first_responder is None:
         return tuple(mentioned)
     return tuple([first_responder, *[participant for participant in mentioned if participant != first_responder]])
+
+
+def _is_debate_seed(body: str, participants: tuple[Participant, ...]) -> bool:
+    mentioned_count = sum(1 for participant in participants if _mentions_participant(body, participant))
+    if mentioned_count < 2:
+        return False
+    return re.search(r"\b(debate|respond|continue|discuss)\b", body, flags=re.IGNORECASE) is not None
+
+
+def _active_debate_participants(
+    *,
+    messages: list[dict[str, Any]],
+    current_index: int,
+    participants: tuple[Participant, ...],
+) -> tuple[Participant, ...]:
+    for message in reversed(messages[:current_index]):
+        if message.get("is_system_event") or message.get("kind") == "system" or message.get("message_kind") == "system":
+            continue
+        body = str(message.get("body", ""))
+        sender_name = str(message.get("sender_name", ""))
+        if sender_name.casefold() == "owner" and _is_debate_seed(body, participants):
+            return tuple(participant for participant in participants if _mentions_participant(body, participant))
+    return ()
+
+
+def _next_debate_participant(
+    *,
+    sender_name: str,
+    active_participants: tuple[Participant, ...],
+) -> Participant | None:
+    if len(active_participants) < 2:
+        return None
+    for index, participant in enumerate(active_participants):
+        if sender_name.casefold() == participant.name.casefold():
+            return active_participants[(index + 1) % len(active_participants)]
+    return None
 
 
 def _prompt_for_action(*, participant: Participant, space_id: str, cursor: int, sender_name: str) -> str:
@@ -99,7 +138,7 @@ def plan_actions(
     parsed_participants = _coerce_participants(participants)
     actions: list[Action] = []
     messages = history.get("messages", [])
-    for message in messages:
+    for index, message in enumerate(messages):
         cursor = int(message.get("cursor", 0))
         if cursor <= last_cursor:
             continue
@@ -109,7 +148,18 @@ def plan_actions(
         body = str(message.get("body", ""))
         sender_name = str(message.get("sender_name", ""))
         message_id = str(message.get("id") or message.get("message_id") or "")
-        for participant in _participants_for_message(body, parsed_participants):
+        message_participants = _participants_for_message(body, parsed_participants)
+        if not message_participants:
+            next_participant = _next_debate_participant(
+                sender_name=sender_name,
+                active_participants=_active_debate_participants(
+                    messages=messages,
+                    current_index=index,
+                    participants=parsed_participants,
+                ),
+            )
+            message_participants = (next_participant,) if next_participant is not None else ()
+        for participant in message_participants:
             if sender_name.casefold() == participant.name.casefold():
                 continue
             actions.append(
