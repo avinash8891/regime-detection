@@ -318,6 +318,7 @@ InflationGrowthLabel = Literal[
     "inflation_shock",
     "disinflation",
     "recession_scare",
+    "risk_off_mild",
     "recovery_growth",
     "earnings_expansion",
     "earnings_contraction",
@@ -345,6 +346,7 @@ class InflationGrowthOutput(AxisOutput):
 
 CreditFundingLabel = Literal[
     "credit_calm",
+    "credit_recovery",
     "spread_widening",
     "credit_stress",
     "funding_squeeze",

@@ -143,6 +143,9 @@ class InflationGrowthRulesConfig(StrictBaseModel):
     commodity_return_threshold: float = Field(default=0.15, gt=0.0)
     # §2B line 2256 — recession_scare "spy_21d_return < -0.05".
     spy_recession_threshold: float = Field(default=-0.05, lt=0.0)
+    # Relaxed SPY threshold when credit IS confirmed stressed. With credit
+    # confirmation, a milder equity decline (-3%) is a valid recession signal.
+    spy_recession_credit_confirmed_threshold: float = Field(default=-0.03, lt=0.0)
     # §2B lines 2197-2198 — CPI 3m / 6m percent-change lookbacks.
     cpi_lookback_3m_sessions: int = Field(default=63, ge=20)
     cpi_lookback_6m_sessions: int = Field(default=126, ge=20)
@@ -184,6 +187,19 @@ class InflationGrowthRulesConfig(StrictBaseModel):
     # False or when the vintage seam is absent, the existing revised
     # CPIAUCSL path is preserved unchanged. Default True per spec contract.
     use_first_release_cpi_when_available: bool = Field(default=True)
+    # Goldilocks benign-CPI ceiling: when cpi_6m_change_pct is below this
+    # level, CPI is treated as benign regardless of drift/slope direction.
+    # 4% annualized is the upper bound of "manageable" inflation.
+    cpi_goldilocks_benign_ceiling: float = Field(default=0.04, gt=0.0)
+    # When True, disinflation fires on cpi_slope < 0 alone (PMI > 45 still
+    # required) without requiring yield_slope < 0 confirmation.
+    disinflation_yield_independent: bool = Field(default=True)
+    # When True, goldilocks / recession_scare / recovery_growth can fire
+    # with strengthened non-credit conditions when credit_funding is
+    # unavailable (None). Prevents the cross-axis coverage cliff.
+    allow_credit_independent_fallback: bool = Field(default=True)
+    # Strengthened SPY threshold for recession_scare when credit is unavailable.
+    spy_recession_credit_independent_threshold: float = Field(default=-0.07, lt=0.0)
 
 
 class InflationGrowthConfig(StrictBaseModel):
@@ -235,6 +251,10 @@ class CreditFundingRulesConfig(StrictBaseModel):
     realized_vol_percentile_threshold: float = Field(default=0.75, ge=0.0, le=1.0)
     # §2C line 2087 — deleveraging "avg_pairwise_corr_percentile_504d > 0.75".
     correlation_percentile_threshold: float = Field(default=0.75, ge=0.0, le=1.0)
+    # When True, spread_widening fires when HY slope > 0 alone (IG slope
+    # not required). HY leads IG in credit stress; requiring both misses
+    # early-stage widening and divergent credit moves.
+    spread_widening_hy_only: bool = Field(default=True)
     # §2C line 2038 — 504d percentile lookback ("scale-invariant predicate").
     hy_percentile_504d_lookback: int = Field(default=504, ge=20)
     # §2C line 2041/2059 — 21d OLS slope window.

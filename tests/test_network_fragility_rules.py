@@ -109,10 +109,19 @@ def test_diversified_normal_excludes_percentile_above_75():
     assert evaluate_diversified_normal(inputs, cfg) is False
 
 
-def test_diversified_normal_excludes_unstable_effective_rank():
+def test_diversified_normal_excludes_unstable_effective_rank_outside_inner_band():
+    """Unstable rank blocks diversified_normal when corr is outside the
+    relaxed inner band (0.30-0.60)."""
+    cfg = _default_rules_config()
+    inputs = _inputs(avg_corr_pct=0.65, eff_rank_stability=0.10)
+    assert evaluate_diversified_normal(inputs, cfg) is False
+
+
+def test_diversified_normal_allows_unstable_rank_in_inner_band():
+    """Rank instability is ok when corr is clearly mid-range (0.30-0.60)."""
     cfg = _default_rules_config()
     inputs = _inputs(avg_corr_pct=0.50, eff_rank_stability=0.10)
-    assert evaluate_diversified_normal(inputs, cfg) is False
+    assert evaluate_diversified_normal(inputs, cfg) is True
 
 
 def test_stock_picker_dispersion_fires_on_low_corr_high_dispersion():

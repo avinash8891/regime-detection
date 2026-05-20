@@ -57,6 +57,7 @@ InflationGrowthLabel = Literal[
     "inflation_shock",
     "disinflation",
     "recession_scare",
+    "risk_off_mild",
     "recovery_growth",
     "earnings_expansion",
     "earnings_contraction",
@@ -64,13 +65,13 @@ InflationGrowthLabel = Literal[
 ]
 
 
-# v2 §2B lines 2274-2284 verbatim.
 INFLATION_GROWTH_RISK_RANK: dict[InflationGrowthLabel, int] = {
     "goldilocks": 0,
     "recovery_growth": 0,
     "earnings_expansion": 0,
     "unknown": 1,
     "disinflation": 1,
+    "risk_off_mild": 2,
     "earnings_contraction": 2,
     "recession_scare": 3,
     "inflation_shock": 3,
@@ -586,5 +587,6 @@ from regime_detection.inflation_growth_rules import (  # noqa: E402
     evaluate_inflation_shock as evaluate_inflation_shock,
     evaluate_recession_scare as evaluate_recession_scare,
     evaluate_recovery_growth as evaluate_recovery_growth,
+    evaluate_risk_off_mild as evaluate_risk_off_mild,
     evaluate_rules as evaluate_rules,
 )

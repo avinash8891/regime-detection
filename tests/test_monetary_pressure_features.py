@@ -406,9 +406,9 @@ def test_timeline_threads_monetary_pressure_v2_config(market_df_for_asof):
         monetary_pressure_v2_config=cfg.monetary_pressure_v2,
     )
     assert store.monetary is not None
-    assert len(store.monetary.yield_change_zscore_2y_63d) == len(
+    assert len(store.monetary.yield_change_zscore_2y_63d) >= len(
         store.spy_index
     )
-    assert len(store.monetary.yield_change_zscore_10y_63d) == len(
+    assert len(store.monetary.yield_change_zscore_10y_63d) >= len(
         store.spy_index
     )

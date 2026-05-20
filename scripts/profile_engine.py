@@ -279,7 +279,7 @@ def _load_constituent_ohlcv_from_tree(
         except FileNotFoundError:
             raise FileNotFoundError(
                 f"PIT-constituent OHLCV missing: {parquet_path}. "
-                "Re-materialize the manifest to fetch the full 1193-symbol tree."
+                "Re-materialize the manifest to fetch the full symbol tree."
             ) from None
         frame = frame[
             (frame["date"] >= pd.Timestamp(start_date))

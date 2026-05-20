@@ -1,15 +1,12 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import date
 from typing import Any, Literal
 
 import numpy as np
 import pandas as pd
 
 from regime_detection._rolling_stats import period_return, simple_moving_average
-from regime_detection.hysteresis import apply_asymmetric_hysteresis
-from regime_detection.models import AxisOutput, DataQuality
 
 
 # V2 §1B (documented implementation decision) extends the V1 5-label set with
@@ -433,5 +430,4 @@ def build_raw_outputs(
         )
 
     return list(labels), evidence
-
 

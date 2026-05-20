@@ -113,6 +113,9 @@ network_fragility:
     corr_to_one_realized_vol_percentile_min: 0.80     # §3.5 line 647
     corr_to_one_drawdown_max: 0.0                     # §3.5 line 648 ("drawdown_21d < 0")
     systemic_stress_vix_percentile_min: 0.80          # §3.5 line 655
+    diversified_normal_relaxed_inner_band: true        # rank instability ok in mid-corr
+    diversified_normal_inner_band_lo: 0.30
+    diversified_normal_inner_band_hi: 0.60
 
 # v2 §1A — Layer 1 V2 Trend Direction (implementation phase features + implementation phase
 # `recovery` label). Remaining new labels (`euphoria`, `breakout_expansion`,
@@ -366,6 +369,7 @@ credit_funding:
     # All defaults match spec verbatim (§2C lines 2064-2088). v2 §9.1
     # calibration may retune.
     hy_percentile_calm_max: 0.50              # §2C line 2066
+    spread_widening_hy_only: false            # require both HY AND IG slopes per §2C
     hy_percentile_stress_min: 0.80            # §2C line 2074
     spy_drop_threshold: -0.05                 # §2C lines 2075/2083
     broad_usd_zscore_funding_threshold: 1.5   # §2C line 2078
@@ -386,6 +390,7 @@ credit_funding:
     funding_squeeze: 5
     credit_stress: 3
     spread_widening: 3
+    credit_recovery: 0
     credit_calm: 0
     unknown: 2
   default_deescalation_days: 0
@@ -412,6 +417,7 @@ inflation_growth:
     cpi_3m_acceleration_threshold: 0.02             # 3m CPI rapid-onset limb
     commodity_return_threshold: 0.15               # §2B line 2242
     spy_recession_threshold: -0.05                 # §2B line 2256
+    spy_recession_credit_confirmed_threshold: -0.03  # relaxed when credit IS stressed
     cpi_lookback_3m_sessions: 63                   # §2B line 2197 (~3 months)
     cpi_lookback_6m_sessions: 126                  # §2B line 2198 (~6 months)
     cpi_slope_lookback_sessions: 21                # §2B line 2235
@@ -428,6 +434,10 @@ inflation_growth:
     # documented implementation decision — earnings_expansion / earnings_contraction thresholds:
     eps_revision_expansion_threshold: 0.02         # §2B line 2605
     eps_revision_contraction_threshold: -0.02      # §2B line 2609
+    cpi_goldilocks_benign_ceiling: 0.04            # CPI below 4% annualized = benign
+    disinflation_yield_independent: true           # CPI slope alone suffices
+    allow_credit_independent_fallback: true         # fire goldilocks/recession/recovery when credit unavailable
+    spy_recession_credit_independent_threshold: -0.07  # stricter SPY gate without credit confirmation
     # §2A lines 2587-2593 — first-release vs latest-revision CPI for replay.
     # Source-data audit (the source-data audit). When True and
     # MarketContext.cpi_first_release is supplied (from the CPIAUCSL vintages
@@ -440,6 +450,7 @@ inflation_growth:
   deescalation_days_by_label:
     inflation_shock: 5
     recession_scare: 5
+    risk_off_mild: 3
     earnings_contraction: 3
     disinflation: 3
     goldilocks: 0
