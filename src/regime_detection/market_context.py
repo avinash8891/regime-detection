@@ -100,7 +100,7 @@ def build_market_context(
         normalized_event_calendar=normalized_event_calendar,
         sector_etf_closes=reindexed_sector_etf_closes,
         cross_asset_closes=reindexed_cross_asset_closes,
-        macro_series=macro_series,
+        macro_series=_reindex_macro_to_sessions(macro_series, spy_ohlcv.index),
         pit_constituent_intervals=pit_constituent_intervals,
         constituent_ohlcv=constituent_ohlcv,
         aaii_sentiment=aaii_sentiment,
@@ -109,6 +109,26 @@ def build_market_context(
         cpi_first_release=cpi_first_release,
         news_sentiment=news_sentiment,
     )
+
+
+def _reindex_macro_to_sessions(
+    macro_series: dict[str, pd.Series] | None,
+    spy_index: pd.DatetimeIndex,
+) -> dict[str, pd.Series] | None:
+    """Extend macro series index to include SPY sessions without clipping.
+
+    Adds NYSE-only dates (e.g., Columbus Day) to each macro series' index
+    so downstream lookups via `.get(dt)` find the date in the index (even
+    if the value is NaN). Does NOT forward-fill — staleness detection
+    relies on NaN gaps to identify stale/truncated sources.
+    """
+    if macro_series is None:
+        return None
+    out: dict[str, pd.Series] = {}
+    for key, series in macro_series.items():
+        combined_index = series.index.union(spy_index).sort_values()
+        out[key] = series.reindex(combined_index)
+    return out
 
 
 def _reindex_optional_close_dict(

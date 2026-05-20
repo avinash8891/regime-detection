@@ -369,7 +369,7 @@ credit_funding:
     # All defaults match spec verbatim (§2C lines 2064-2088). v2 §9.1
     # calibration may retune.
     hy_percentile_calm_max: 0.50              # §2C line 2066
-    spread_widening_hy_only: true             # HY slope alone suffices
+    spread_widening_hy_only: false            # require both HY AND IG slopes per §2C
     hy_percentile_stress_min: 0.80            # §2C line 2074
     spy_drop_threshold: -0.05                 # §2C lines 2075/2083
     broad_usd_zscore_funding_threshold: 1.5   # §2C line 2078
@@ -511,7 +511,6 @@ change_point:
   score_window_days: 5
   break_threshold: 0.5
   training_window_days: 1260
-  max_bocpd_window: 3000
   student_t_alpha: 0.1
   student_t_beta: 0.01
   student_t_kappa: 1.0
