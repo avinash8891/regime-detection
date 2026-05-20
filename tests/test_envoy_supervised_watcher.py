@@ -101,6 +101,27 @@ def test_plan_actions_ignores_system_events() -> None:
     assert actions == []
 
 
+def test_plan_actions_honors_explicit_first_responder() -> None:
+    watcher = _load_module()
+    history = {
+        "messages": [
+            {
+                "cursor": 6,
+                "sender_name": "Owner",
+                "body": "Codex and Claude: continue. Claude should respond to Codex first, then Codex.",
+            },
+        ]
+    }
+
+    actions = watcher.plan_actions(
+        history=history,
+        last_cursor=5,
+        participants=("Codex", "Claude"),
+    )
+
+    assert [action.participant for action in actions] == ["Claude", "Codex"]
+
+
 def test_cursor_state_round_trips(tmp_path: Path) -> None:
     watcher = _load_module()
     state_path = tmp_path / "watcher-state.json"
@@ -126,3 +147,104 @@ def test_parse_envoy_json_output_accepts_json_lines() -> None:
         {"cursor": 3, "body": "first"},
         {"cursor": 4, "body": "second"},
     ]
+
+
+def test_build_agent_prompt_includes_history_and_instruction_to_return_only_message() -> None:
+    watcher = _load_module()
+    action = watcher.Action(
+        participant="Claude",
+        profile="claude",
+        cursor=5,
+        message_id="msg_5",
+        sender_name="Codex",
+        prompt="manual prompt",
+    )
+    history = {
+        "messages": [
+            {"cursor": 4, "sender_name": "Claude", "body": "Initial position."},
+            {"cursor": 5, "sender_name": "Codex", "body": "Claude, your response?"},
+        ]
+    }
+
+    prompt = watcher.build_agent_prompt(action=action, history=history, space_id="room_123")
+
+    assert "Envoy space: room_123" in prompt
+    assert "[4] Claude: Initial position." in prompt
+    assert "[5] Codex: Claude, your response?" in prompt
+    assert "Return only the message body" in prompt
+
+
+def test_agent_command_uses_bounded_noninteractive_cli() -> None:
+    watcher = _load_module()
+
+    assert watcher.agent_command("Codex", "prompt") == [
+        "codex",
+        "exec",
+        "--sandbox",
+        "read-only",
+        "prompt",
+    ]
+    assert watcher.agent_command("Claude", "prompt") == [
+        "claude",
+        "--print",
+        "prompt",
+    ]
+
+
+def test_post_agent_response_sends_as_participant_profile() -> None:
+    watcher = _load_module()
+    calls: list[list[str]] = []
+
+    def fake_runner(args: list[str]) -> dict[str, str]:
+        calls.append(args)
+        return {"message_id": "msg_response"}
+
+    result = watcher.post_agent_response(
+        profile="codex",
+        space_id="room_123",
+        body="Codex response",
+        envoy_runner=fake_runner,
+    )
+
+    assert result == {"message_id": "msg_response"}
+    assert calls == [
+        [
+            "envoy",
+            "--profile",
+            "codex",
+            "--json",
+            "send",
+            "--space",
+            "room_123",
+            "Codex response",
+        ]
+    ]
+
+
+def test_actions_for_mode_processes_one_autonomous_turn_per_snapshot() -> None:
+    watcher = _load_module()
+    actions = [
+        watcher.Action("Claude", "claude", 6, "msg_6", "Owner", "prompt claude"),
+        watcher.Action("Codex", "codex", 6, "msg_6", "Owner", "prompt codex"),
+    ]
+
+    assert watcher.actions_for_mode(actions, mode="supervised") == actions
+    assert watcher.actions_for_mode(actions, mode="autonomous") == [actions[0]]
+
+
+def test_next_cursor_for_autonomous_advances_only_processed_action() -> None:
+    watcher = _load_module()
+    action = watcher.Action("Codex", "codex", 3, "msg_3", "Owner", "prompt")
+
+    assert watcher.next_cursor_for_cycle(
+        mode="autonomous",
+        latest_cursor=6,
+        last_cursor=0,
+        processed_actions=[action],
+    ) == 3
+    assert watcher.next_cursor_for_cycle(
+        mode="supervised",
+        latest_cursor=6,
+        last_cursor=0,
+        processed_actions=[action],
+    ) == 6

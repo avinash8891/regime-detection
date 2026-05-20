@@ -11,6 +11,7 @@ from typing import Any, NamedTuple
 
 
 DEFAULT_PARTICIPANTS = ("Codex:codex", "Claude:claude")
+SUPPORTED_AGENT_COMMANDS = {"Codex", "Claude"}
 
 
 class Participant(NamedTuple):
@@ -67,6 +68,19 @@ def _mentions_participant(body: str, participant: Participant) -> bool:
     return re.search(rf"\b{re.escape(participant.name)}\b", body, flags=re.IGNORECASE) is not None
 
 
+def _participants_for_message(body: str, participants: tuple[Participant, ...]) -> tuple[Participant, ...]:
+    mentioned = [participant for participant in participants if _mentions_participant(body, participant)]
+    first_responder: Participant | None = None
+    for participant in mentioned:
+        pattern = rf"\b{re.escape(participant.name)}\b\s+should\s+respond\b.*\bfirst\b"
+        if re.search(pattern, body, flags=re.IGNORECASE | re.DOTALL):
+            first_responder = participant
+            break
+    if first_responder is None:
+        return tuple(mentioned)
+    return tuple([first_responder, *[participant for participant in mentioned if participant != first_responder]])
+
+
 def _prompt_for_action(*, participant: Participant, space_id: str, cursor: int, sender_name: str) -> str:
     return (
         f"Read Envoy space {space_id} using profile {participant.profile}. "
@@ -95,10 +109,8 @@ def plan_actions(
         body = str(message.get("body", ""))
         sender_name = str(message.get("sender_name", ""))
         message_id = str(message.get("id") or message.get("message_id") or "")
-        for participant in parsed_participants:
+        for participant in _participants_for_message(body, parsed_participants):
             if sender_name.casefold() == participant.name.casefold():
-                continue
-            if not _mentions_participant(body, participant):
                 continue
             actions.append(
                 Action(
@@ -127,6 +139,80 @@ def parse_envoy_json_output(output: str) -> dict[str, Any] | list[Any]:
     except json.JSONDecodeError:
         records = [json.loads(line) for line in stripped.splitlines() if line.strip()]
         return records
+
+
+def _history_excerpt(history: dict[str, Any], *, limit: int = 12) -> str:
+    messages = history.get("messages", [])[-limit:]
+    lines: list[str] = []
+    for message in messages:
+        if message.get("is_system_event") or message.get("kind") == "system" or message.get("message_kind") == "system":
+            continue
+        cursor = int(message.get("cursor", 0))
+        sender = str(message.get("sender_name") or "unknown")
+        body = str(message.get("body", "")).strip()
+        lines.append(f"[{cursor}] {sender}: {body}")
+    return "\n".join(lines)
+
+
+def build_agent_prompt(*, action: Action, history: dict[str, Any], space_id: str) -> str:
+    return (
+        f"You are {action.participant} participating in an Envoy shared space.\n"
+        f"Envoy space: {space_id}\n"
+        f"Action cursor: {action.cursor}\n"
+        f"Sender: {action.sender_name or 'unknown sender'}\n\n"
+        "Recent visible Envoy history:\n"
+        f"{_history_excerpt(history)}\n\n"
+        "If the latest addressed message is actionable for you, write the response you want posted to Envoy. "
+        "If nothing is actionable, return exactly: NO_ACTION\n"
+        "Return only the message body. Do not include markdown fences, command transcripts, or explanations outside the Envoy message."
+    )
+
+
+def agent_command(participant: str, prompt: str) -> list[str]:
+    if participant == "Codex":
+        return ["codex", "exec", "--sandbox", "read-only", prompt]
+    if participant == "Claude":
+        return ["claude", "--print", prompt]
+    raise ValueError(f"unsupported autonomous participant {participant!r}")
+
+
+def generate_agent_response(*, participant: str, prompt: str) -> str:
+    result = subprocess.run(agent_command(participant, prompt), check=False, capture_output=True, text=True)
+    if result.returncode != 0:
+        raise RuntimeError(result.stderr.strip() or result.stdout.strip() or f"{participant} exited {result.returncode}")
+    return result.stdout.strip()
+
+
+def post_agent_response(
+    *,
+    profile: str,
+    space_id: str,
+    body: str,
+    envoy_runner=None,
+) -> dict[str, Any] | list[Any]:
+    if envoy_runner is None:
+        envoy_runner = _run_envoy_json
+    return envoy_runner(["envoy", "--profile", profile, "--json", "send", "--space", space_id, body])
+
+
+def actions_for_mode(actions: list[Action], *, mode: str) -> list[Action]:
+    if mode == "autonomous":
+        return actions[:1]
+    return actions
+
+
+def next_cursor_for_cycle(
+    *,
+    mode: str,
+    latest_cursor: int,
+    last_cursor: int,
+    processed_actions: list[Action],
+) -> int:
+    if mode == "autonomous" and processed_actions:
+        return max(action.cursor for action in processed_actions)
+    if latest_cursor > last_cursor:
+        return latest_cursor
+    return last_cursor
 
 
 def _run_envoy_json(args: list[str]) -> dict[str, Any] | list[Any]:
@@ -195,6 +281,12 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--space", required=True, help="Envoy space id to watch.")
     parser.add_argument("--profile", default="owner", help="Profile used to inspect the space.")
     parser.add_argument(
+        "--mode",
+        choices=("supervised", "autonomous"),
+        default="supervised",
+        help="supervised prints prompts; autonomous invokes supported local agent CLIs and posts their responses.",
+    )
+    parser.add_argument(
         "--participant",
         action="append",
         default=list(DEFAULT_PARTICIPANTS),
@@ -203,6 +295,7 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--state-path", type=Path, default=None, help="Path for last-cursor watcher state.")
     parser.add_argument("--history-limit", type=int, default=50)
     parser.add_argument("--iterations", type=int, default=10, help="Maximum watch cycles before exit.")
+    parser.add_argument("--max-agent-turns", type=int, default=6, help="Maximum autonomous agent responses before exit.")
     parser.add_argument("--watch-timeout", type=int, default=30, help="Seconds to wait for Envoy events per cycle.")
     parser.add_argument("--poll-interval", type=float, default=1.0, help="Seconds to sleep after each cycle.")
     return parser.parse_args()
@@ -215,9 +308,11 @@ def main() -> int:
     last_cursor = read_last_cursor(state_path)
 
     print(f"Watching Envoy space {args.space} as profile {args.profile}.")
+    print(f"Mode: {args.mode}")
     print(f"State file: {state_path}")
     print(f"Starting after cursor {last_cursor}. Press Ctrl+C to stop.")
 
+    agent_turns = 0
     for _ in range(args.iterations):
         inbox_count = len(read_inbox(profile=args.profile, space_id=args.space))
         task_count = len(read_tasks(profile=args.profile, space_id=args.space))
@@ -232,20 +327,52 @@ def main() -> int:
 
         if actions:
             print(f"\nNew actionable Envoy state: inbox={inbox_count}, tasks={task_count}")
-            for action in actions:
+            processed_actions: list[Action] = []
+            for action in actions_for_mode(actions, mode=args.mode):
                 print(f"\n[{action.participant}] cursor={action.cursor} sender={action.sender_name}")
-                print(action.prompt)
+                if args.mode == "supervised":
+                    print(action.prompt)
+                    processed_actions.append(action)
+                    continue
+
+                if action.participant not in SUPPORTED_AGENT_COMMANDS:
+                    print(f"Skipping unsupported autonomous participant {action.participant!r}.")
+                    processed_actions.append(action)
+                    continue
+                if agent_turns >= args.max_agent_turns:
+                    print(f"Autonomous turn limit reached ({args.max_agent_turns}); skipping remaining actions.")
+                    continue
+
+                agent_prompt = build_agent_prompt(action=action, history=history, space_id=args.space)
+                response = generate_agent_response(participant=action.participant, prompt=agent_prompt)
+                if response == "NO_ACTION":
+                    print(f"{action.participant} returned NO_ACTION.")
+                    processed_actions.append(action)
+                    continue
+                post_agent_response(profile=action.profile, space_id=args.space, body=response)
+                agent_turns += 1
+                processed_actions.append(action)
+                print(f"Posted {action.participant} response via profile {action.profile}.")
         elif latest_cursor > last_cursor:
             print(f"\nObserved Envoy updates through cursor {latest_cursor}; no addressed action needed.")
+            processed_actions = []
 
-        if latest_cursor > last_cursor:
-            write_last_cursor(state_path, latest_cursor)
-            last_cursor = latest_cursor
+        next_cursor = next_cursor_for_cycle(
+            mode=args.mode,
+            latest_cursor=latest_cursor,
+            last_cursor=last_cursor,
+            processed_actions=processed_actions if actions else [],
+        )
+        if next_cursor > last_cursor:
+            write_last_cursor(state_path, next_cursor)
+            last_cursor = next_cursor
 
         wait_for_events(profile=args.profile, space_id=args.space, timeout=args.watch_timeout)
         time.sleep(args.poll_interval)
+        if args.mode == "autonomous" and agent_turns >= args.max_agent_turns:
+            break
 
-    print(f"Watcher stopped after {args.iterations} iterations at cursor {last_cursor}.")
+    print(f"Watcher stopped after {args.iterations} iterations at cursor {last_cursor}; agent_turns={agent_turns}.")
     return 0
 
 
