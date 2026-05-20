@@ -1,7 +1,7 @@
 # ADR 0011 — Inflation/Growth Rule Coverage Fix
 
-**Status:** Accepted  
-**Date:** 2026-05-20  
+**Status:** Accepted
+**Date:** 2026-05-20
 **Context:** v2 §2B inflation_growth axis was classifying ~51% of sessions as
 "unknown" (no_rule_fired / no_rule_fired_missing_feature), creating a massive
 coverage gap in the regime timeline.
