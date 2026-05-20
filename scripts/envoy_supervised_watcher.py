@@ -89,6 +89,8 @@ def plan_actions(
         cursor = int(message.get("cursor", 0))
         if cursor <= last_cursor:
             continue
+        if message.get("is_system_event") or message.get("kind") == "system" or message.get("message_kind") == "system":
+            continue
 
         body = str(message.get("body", ""))
         sender_name = str(message.get("sender_name", ""))
@@ -116,13 +118,22 @@ def plan_actions(
     return actions
 
 
+def parse_envoy_json_output(output: str) -> dict[str, Any] | list[Any]:
+    stripped = output.strip()
+    if not stripped:
+        return {}
+    try:
+        return json.loads(stripped)
+    except json.JSONDecodeError:
+        records = [json.loads(line) for line in stripped.splitlines() if line.strip()]
+        return records
+
+
 def _run_envoy_json(args: list[str]) -> dict[str, Any] | list[Any]:
     result = subprocess.run(args, check=False, capture_output=True, text=True)
     if result.returncode != 0:
         raise RuntimeError(result.stderr.strip() or result.stdout.strip() or f"{args[0]} exited {result.returncode}")
-    if not result.stdout.strip():
-        return {}
-    return json.loads(result.stdout)
+    return parse_envoy_json_output(result.stdout)
 
 
 def read_history(*, profile: str, space_id: str, limit: int) -> dict[str, Any]:

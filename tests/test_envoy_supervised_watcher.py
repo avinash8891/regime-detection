@@ -72,6 +72,35 @@ def test_plan_actions_ignores_messages_from_same_participant() -> None:
     assert actions[0].cursor == 5
 
 
+def test_plan_actions_ignores_system_events() -> None:
+    watcher = _load_module()
+    history = {
+        "messages": [
+            {
+                "cursor": 1,
+                "sender_name": "",
+                "is_system_event": True,
+                "kind": "system",
+                "body": "Codex joined the room",
+            },
+            {
+                "cursor": 2,
+                "sender_name": "",
+                "message_kind": "system",
+                "body": "Claude joined the room",
+            },
+        ]
+    }
+
+    actions = watcher.plan_actions(
+        history=history,
+        last_cursor=0,
+        participants=("Codex", "Claude"),
+    )
+
+    assert actions == []
+
+
 def test_cursor_state_round_trips(tmp_path: Path) -> None:
     watcher = _load_module()
     state_path = tmp_path / "watcher-state.json"
@@ -82,3 +111,18 @@ def test_cursor_state_round_trips(tmp_path: Path) -> None:
 
     assert json.loads(state_path.read_text(encoding="utf-8")) == {"last_cursor": 12}
     assert watcher.read_last_cursor(state_path) == 12
+
+
+def test_parse_envoy_json_output_accepts_json_lines() -> None:
+    watcher = _load_module()
+    output = "\n".join(
+        [
+            json.dumps({"cursor": 3, "body": "first"}),
+            json.dumps({"cursor": 4, "body": "second"}),
+        ]
+    )
+
+    assert watcher.parse_envoy_json_output(output) == [
+        {"cursor": 3, "body": "first"},
+        {"cursor": 4, "body": "second"},
+    ]
