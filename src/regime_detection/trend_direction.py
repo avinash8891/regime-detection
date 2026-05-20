@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import date
 from typing import TYPE_CHECKING, Any, Literal
 
 import numpy as np
@@ -9,7 +8,6 @@ import pandas as pd
 
 from regime_detection._rolling_stats import period_return, simple_moving_average
 from regime_detection.hysteresis import apply_asymmetric_hysteresis
-from regime_detection.models import AxisOutput, DataQuality
 
 if TYPE_CHECKING:  # avoid runtime cycle: trend_direction_v2 → config → ...
     from regime_detection.config import TrendDirectionV2RulesConfig
@@ -256,5 +254,4 @@ def apply_hysteresis(
         escalation_days=escalation_days,
         deescalation_days=deescalation_days,
     )
-
 

@@ -1,14 +1,10 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import date
 from typing import TYPE_CHECKING, Any, Literal
 
 import numpy as np
 import pandas as pd
-
-from regime_detection.hysteresis import apply_asymmetric_hysteresis
-from regime_detection.models import AxisOutput, DataQuality
 
 if TYPE_CHECKING:  # avoid runtime cycle: volatility_state_v2 → config → ...
     from regime_detection.config import VolatilityV2RulesConfig
@@ -408,5 +404,4 @@ def build_raw_outputs(
             labels[idx] = v2_label
 
     return list(labels), evidence
-
 
