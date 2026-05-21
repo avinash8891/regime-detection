@@ -20,7 +20,7 @@ artifacts:
   stage: canonical
   uri: canonical/macro/fred_macro_series.parquet
   local_path: data/raw/macro/fred_macro_series.parquet
-  sha256: 386b5b045556c8d4ae15e6c40cfe823cf675074e0fd3aa8cba16bb01c609a8e3
+  sha256: ee87f84e482ac04ddb903fd45d55705d7dd8f2a2c0e44ad2d861bc1eea034e48
   schema_version: null
   rows: 31249
   min_date: '2010-01-01'
