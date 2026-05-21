@@ -271,12 +271,20 @@ def _load_constituent_ohlcv_from_tree(
         intervals["end_date"].isna() | (intervals["end_date"] >= start_date)
     )
     tickers = sorted({str(t) for t in intervals.loc[overlap_mask, "ticker"].tolist()})
+    # Earliest OHLCV date in the tree — tickers that exited before this
+    # are legitimately absent (acquired/delisted before data coverage).
+    _OHLCV_COVERAGE_START = dt.date(2016, 1, 4)
     out: dict[str, pd.DataFrame] = {}
     for ticker in tickers:
         parquet_path = tree_root / f"symbol={ticker}" / "ohlcv.parquet"
         try:
             frame = _read_symbol_ohlcv(tree_root, ticker)
         except FileNotFoundError:
+            ticker_exit = intervals.loc[
+                intervals["ticker"] == ticker, "end_date"
+            ].max()
+            if pd.notna(ticker_exit) and ticker_exit < _OHLCV_COVERAGE_START:
+                continue
             raise FileNotFoundError(
                 f"PIT-constituent OHLCV missing: {parquet_path}. "
                 "Re-materialize the manifest to fetch the full symbol tree."

@@ -393,16 +393,21 @@ def test_build_regime_timeline_uses_context_config_when_config_arg_omitted(
     """Direct callers must not silently disable v2 seams by omitting config."""
     end_date = date(2023, 12, 14)
     engine = RegimeEngine()
+    cfg = engine.config.model_copy(update={
+        "change_point": engine.config.change_point.model_copy(
+            update={"training_window_days": 500}
+        ),
+    })
     context = build_market_context(
         end_date=end_date,
         market_data=market_df_for_asof(end_date),
-        config=engine.config,
+        config=cfg,
     )
 
     timeline = build_regime_timeline(context=context, lookback_days=3)
 
-    assert timeline.config_version == engine.config.config_version
-    assert timeline.outputs[-1].config_version == engine.config.config_version
+    assert timeline.config_version == cfg.config_version
+    assert timeline.outputs[-1].config_version == cfg.config_version
     assert timeline.outputs[-1].change_point is not None
 
 
@@ -415,7 +420,7 @@ def test_build_regime_timeline_uses_context_config_when_config_arg_omitted(
         ),
         (
             {"hmm": None, "clustering": None},
-            1260 + 21 + 7 - 1,
+            2705 + 21 + 7 - 1,
         ),
         (
             {"change_point": None, "clustering": None},
@@ -427,7 +432,7 @@ def test_build_regime_timeline_uses_context_config_when_config_arg_omitted(
         ),
         (
             {},
-            1260 + 63 + 7 - 1 + 5,
+            2705 + 21 + 7 - 1 + 5,
         ),
     ],
 )
@@ -439,7 +444,7 @@ def test_timeline_required_sessions_preserves_v2_window_math(
 
     assert (
         _resolve_timeline_required_sessions(
-            available_sessions=2_000,
+            available_sessions=5_000,
             lookback_days=7,
             config=cfg,
         )

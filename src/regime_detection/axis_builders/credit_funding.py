@@ -449,7 +449,16 @@ def resolve_credit_funding_effective_output(
             agreement_status="oas_only",
         )
 
-    chosen = oas if oas is not None else proxy
+    # Neither OAS nor proxy produced a classified label. Prefer the proxy
+    # output when it evaluated rules but none fired (no_rule_fired) — this
+    # is more honest than forwarding the OAS stale_data status, which
+    # misrepresents a rule gap as a data problem.
+    if proxy is not None and proxy.classification_status in (
+        "no_rule_fired", "no_rule_fired_hysteresis", "no_rule_fired_missing_feature",
+    ):
+        chosen = proxy
+    else:
+        chosen = oas if oas is not None else proxy
     assert chosen is not None
     return _with_effective_credit_evidence(
         chosen=chosen,

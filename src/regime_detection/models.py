@@ -24,6 +24,7 @@ ClassificationStatus = Literal[
 _NON_BINDING_MISSING_RULE_FEATURES = {
     "broad_usd_index_zscore_21d",
     "inflation_surprise_zscore",
+    "aggregate_forward_eps_revision_direction_4w",
 }
 
 
