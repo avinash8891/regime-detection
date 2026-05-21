@@ -1,6 +1,6 @@
 # Regime-Detection Trust Audit — Design
 
-**Status**: draft pending Owner sign-off on open items (α)/(γ).
+**Status**: ready for Owner sign-off. Open items (α), (β), (γ) all resolved. Enum smoke test PASS (Task F, cursor [49]).
 **Source**: consensus reached in Envoy room `room_1779305260690cfc3lp`, cursors [19]–[30].
 **Reviewers**: Claude (proposer), Codex (reviewer).
 
@@ -220,13 +220,15 @@ These materials make the §Validity gate's synthetic-case construction Owner-anc
 
 **Answer:** yes, three classes of bypass exist (documented in Step 2a). The provenance bundle now includes three explicit bypass markers (`manifest_path_provided`, `materialize_called_by_runner`, per-field `cli_overrides`). No further Owner decision required for this item.
 
-### (γ) Historical-manifest scope
+### (γ) Historical-manifest scope — **resolved by Owner via Task G**
 
 **Question:** should Step 1 also run against pinned historical manifests (e.g., snapshots in `.context/profile_engine_*.json`) to catch silent regressions in loader/resolver behavior, or audit today's manifest only?
 
-`<TBD — Owner>`
+**Answer (Owner, Task G, cursor [43]):** **B — today + pinned historical.** Trust crisis spans past runs as well as current state; need silent-loader-regression detection.
 
-Today-only is faster and answers "is the current state correct." Historical replay also catches "did the loader behavior change silently between runs," which directly maps to the trust-crisis framing of "data fetched not matching what docs claim."
+**Designated baseline snapshot:** `.context/profile_engine_2016_2026_no_rule_reason_split_final.json`. Additional baselines may be added by Owner before Step 1 begins.
+
+**Scope implication:** §Step 1 runs against both the current manifest and at least one pinned historical baseline. Each run records its own provenance bundle per §Step 2a. Step 2b golden-run differential replay uses the historical baseline as one of its pinned dates. If a Step 1 run against the historical baseline shows different `resolved_from_manifest` / `cli_overrides` / loader-branch selection than today's run for the same logical artifact, that is a `BROKEN_WIRING × SILENT_FALLBACK` finding at minimum severity `TRUST_GAP`.
 
 ## Out of scope (deferred)
 
