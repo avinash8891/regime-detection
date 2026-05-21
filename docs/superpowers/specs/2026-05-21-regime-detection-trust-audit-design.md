@@ -43,6 +43,15 @@ Step 1 does **not** assert expected classifications. It establishes which inputs
 
 **Implementability constraint** (UNINSTRUMENTED today): `scripts/_v2_calibration_helpers.py:160-172` calls `materialize_if_requested(...)` but **discards** the returned `MaterializedArtifact` list. The helper at `:145-157` records only `args.manifest_resolved_inputs` and `args.manifest_cli_overrides` on the namespace — no sha256, no destination path. Step 1 therefore requires a small audit-harness emission task before it can produce a complete trace: capture the discarded `MaterializedArtifact` list and the bypass markers into a structured provenance JSON per run. This harness is scoped, non-semantic, and is a Step 1 precondition — not classifier work.
 
+**Cross-worktree scope.** Step 1 records cross-worktree provenance because a pass in one local worktree does not prove that a sibling checkout's runner consumes the same code or data path. The current local inventory is:
+
+- `/Users/avinashvankadaru/conductor/repos/regime-detection` (`git rev-parse HEAD`: `a85ad6701d773615a509d7b5056ee12e4936c3cb`)
+- `/Users/avinashvankadaru/conductor/workspaces/regime-detection/manila-v2` (`git rev-parse HEAD`: `b42e4cfbcee6998f138143d20e4009cbc99fa9c2`)
+
+The requested shell inventory command, `ls -d /Users/avinashvankadaru/conductor/workspaces/regime-detection-*`, produced `zsh:1: no matches found: /Users/avinashvankadaru/conductor/workspaces/regime-detection-*`; `git worktree list --porcelain` is therefore the authoritative local worktree inventory for this run. If additional conductor worktrees matching `/Users/avinashvankadaru/conductor/workspaces/regime-detection-*` exist in a future environment, they are automatically in scope and must be enumerated in the same provenance bundle.
+
+Detection method: for each in-scope worktree, Step 1 records `git rev-parse HEAD` plus file-content `sha256` for every tracked source file under `src/regime_detection/` and `src/regime_data_fetch/`. Differences across worktrees in the same logical file are recorded as `BROKEN_WIRING × MISMATCH` findings with both source paths cited. Example drift already present locally: `/Users/avinashvankadaru/conductor/repos/regime-detection/src/regime_detection/config.py:13-170` defines V2 config classes inline, while `/Users/avinashvankadaru/conductor/workspaces/regime-detection/manila-v2/src/regime_detection/config.py:12-56` imports split config modules and `/Users/avinashvankadaru/conductor/workspaces/regime-detection/manila-v2/src/regime_detection/_config_layer2.py:205-233` contains the Inflation/Growth config that has no same-path counterpart in the main checkout. Default policy: any divergence in `src/regime_detection/*` is `BLOCKING` pending Owner classification of intentional experiment versus accidental drift.
+
 ### Step 2a — Manifest/materialization provenance bundle
 
 **Non-semantic provenance only.** This step does *not* emit new classifier explanations or predicate IDs. It emits fields that exist outside the classifier path today.
@@ -75,6 +84,7 @@ Required fields per run:
 2. **Per-field CLI override.** `resolve_runner_input_paths` at `src/regime_data_fetch/manifest_inputs.py:269-289` accepts CLI values that bypass manifest resolution per field.
 3. **Runner-level bypass.** Three runners read source artifacts without calling `materialize_manifest_from_args`: `scripts/run_shadow_regime.py`, `scripts/build_walkforward_report.py`, `scripts/approve_group_b_candidate.py`. These runners have **no provenance** today.
 4. **Materialize-but-don't-bind bypass.** `scripts/run_historical_walkforward.py:386-401` calls `materialize_if_requested(...)` (so sha verifies if `--manifest` is provided) but then passes the **original CLI paths** (`args.market_data`, `args.event_calendar`) into `run_walkforward(...)` rather than the manifest-resolved paths. The artifact set is verified; the runner doesn't bind to it. This is distinct from class 3 because materialization still runs.
+5. **Cross-worktree divergence.** The same logical feature has been shipped to multiple conductor worktrees with no visible merge point. The local drift example above shows config schema code split in `manila-v2` while the main checkout retains the older inline layout; Step 1 in one worktree cannot prove correctness for runs originating in any other worktree.
 
 The runner-level bypass marker (`materialize_called_by_runner`) is the only new instrumentation introduced by Step 2a. It is non-semantic: a single boolean recorded at runner entry.
 
