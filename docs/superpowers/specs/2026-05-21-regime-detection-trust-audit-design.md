@@ -169,24 +169,40 @@ Replacement test, run immediately after Step 1 produces fresh findings:
 4. **Negative test:** a second pass attempts to reclassify each finding under its nearest competing enum value. The enum **passes** only when the evidence rule and definitions force a stable primary class, OR when the competing class is clearly the same concept and the two should be merged.
 5. Failure mode = merge or rename; do not add new classes without an Owner-supplied pathological case requiring one.
 
-**Constraint on synthetic case construction (open item α below):** at least one synthetic case must come from Owner's stated trust failures verbatim, not from AI-reviewer reconstruction.
+**Constraint on synthetic case construction:** the §Open items (α) section now provides three Owner-anchored mechanisms (stale-comments, intentionally-None-but-unwired, three-way divergence) plus five named sites. At least one synthetic case in the validity gate must be drawn verbatim from those mechanisms or sites — not reconstructed by AI reviewers.
 
 ## Open items — Owner-blocking
 
 These must be answered before Step 1 begins.
 
-### (α) Owner-supplied canonical trust-failure cases
+### (α) Canonical trust-failure cases
 
-Owner must supply ≥3 canonical trust-failure cases in their own words. Examples of shape:
+Drawn from cross-session pattern analysis (sessions `3e3cf8a3`, `68022971`, `b683bcf0`) and the four parallel worktrees (`manila-v2`, `provo`, `san-diego`, `nicosia`, `vaduz`, `zurich-v1`). Three recurring mechanisms, each evidenced in multiple sessions, plus five named feature sites currently labeled shipped but with unfinished work.
 
-- *"Source X expected on axis Y; found loader silently fell back to Z."*
-- *"Doc claims threshold A; code uses B."*
-- *"Module M exists, has tests, but no runner calls it."*
-- *"Output field F is computed but nothing downstream reads it."*
+**Mechanism 1 — Stale comments labeling shipped features as "deferred".**
+Comments became the de-facto source of truth and never got updated as code shipped.
+- Example: `src/regime_detection/_config_layer2.py:20-34` lists `broad_usd`, `yield_change_zscore`, and label set as deferred. All three are fully implemented in `src/regime_detection/monetary_pressure.py:164-242`.
+- Domain × mechanism: `WRONG_CODE × MISMATCH`.
 
-`<TBD — Owner>`
+**Mechanism 2 — Config stubs marked "intentionally None" but never wired by consumer code.**
+The config field exists; the YAML omits it deliberately ("intentionally omitted"); the consumer code never reads `config.<field>` and uses a hardcoded default in production.
+- Example: `TrendCharacterV2Config` defined with per-label hysteresis fields; YAML intentionally omits the section; consumer code never read `config.trend_character_v2` until session `3e3cf8a3` fixed the wiring. Pre-fix, production silently used hardcoded defaults.
+- Domain × mechanism: `UNIMPLEMENTED_LOGIC × UNCONSUMED_OUTPUT`.
 
-These cases anchor the synthetic-case construction in the validity gate. Without them, the adversarial discriminability test confirms only that the enum is internally consistent against AI-reviewer mental models.
+**Mechanism 3 — Three-way doc / code / config divergence on implementation status.**
+The same feature reads as "shipped" in one source, "stub" in the second, and "disabled" in the third. No single source of truth.
+- Example: §2D Event Calendar V2. Spec describes full implementation; config YAML says "stub, not yet implemented"; code has `EventCalendarV2Config(enabled=False)`.
+- Domain × mechanism: `BROKEN_WIRING × MISMATCH`.
+
+**Five named sites currently labeled shipped but with unfinished work** (each is a synthetic seed for the §Validity gate test):
+
+1. **§2D Event Calendar V2** — Group A done; Group B approval-gated; YAML omits; consumer logic partially wired.
+2. **`trend_character_v2` per-label hysteresis** — config class existed, YAML omitted, consumer never read it; fixed in session `3e3cf8a3` on `2026-05-19`. Pre-fix behavior is the trust-failure case.
+3. **`vol_crush` rule in §1C** — spec defines; code marks deferred pending implied-vol ingestion; nothing fires; status not surfaced in user-facing run reports.
+4. **GMM cluster label mapping** — `docs/verification/cluster_label_map.candidate.yaml` ships with operator-review placeholders that were never filled.
+5. **HMM state label mapping** — `docs/verification/hmm_state_label_map.candidate.yaml` same pattern; manual review per spec §6.2 never completed.
+
+These materials make the §Validity gate's synthetic-case construction Owner-anchored rather than AI-reconstructed: at least one synthetic case in the validity gate must be drawn verbatim from this list.
 
 ### (β) Bypass-path proof  — **resolved during spec authorship**
 
