@@ -204,15 +204,15 @@ def test_default_yaml_loads_deescalation_days_by_label_per_v2_spec_3_7():
     cfg = load_default_regime_config()
     assert cfg.network_fragility is not None
     deesc = cfg.network_fragility.deescalation_days_by_label
-    # v2 spec §3.7 lines 675–679 verbatim PLUS Implementation Ambiguity Log
-    # entry #8: `unknown` is treated as a high-risk hold (5d) so a single-day
-    # quality flicker does NOT fast-track de-escalation through unknown.
+    # `unknown` is absence of signal, not a sticky regime. It must not delay
+    # recovery into a valid classified label; high-risk labels still use their
+    # own hold periods when they are the stable label being left.
     assert deesc == {
         "rising_fragility": 3,
         "correlation_concentration": 3,
         "correlation_to_one": 5,
         "systemic_stress": 5,
-        "unknown": 5,
+        "unknown": 0,
     }
     # Default for labels NOT listed (diversified_normal, stock_picker_dispersion)
     # is exposed explicitly per Implementation Ambiguity Log entry #6.
@@ -683,9 +683,9 @@ def test_axis_bundle_threads_credit_funding_into_network_fragility_systemic_stre
 
 def test_unknown_flicker_does_not_fast_track_deescalation_through_correlation_to_one():
     """I2(b): a single-day `unknown` flicker in the middle of a stable
-    `correlation_to_one` run must NOT cause fast de-escalation. With
-    `unknown: 5` in deescalation_days_by_label, the stable label holds at
-    `correlation_to_one` on the day after the flicker."""
+    `correlation_to_one` run must NOT cause fast de-escalation. The hold comes
+    from the stable label being left (`correlation_to_one: 5`), not from
+    `unknown` itself."""
     from regime_detection.hysteresis import apply_per_label_asymmetric_hysteresis
 
     cfg = load_default_regime_config().network_fragility
@@ -703,3 +703,20 @@ def test_unknown_flicker_does_not_fast_track_deescalation_through_correlation_to
     # The single-day unknown must not flip stable away from correlation_to_one.
     assert stable[10] == "correlation_to_one"
     assert stable[11] == "correlation_to_one"
+
+
+def test_unknown_does_not_delay_recovery_into_classified_network_label():
+    from regime_detection.hysteresis import apply_per_label_asymmetric_hysteresis
+
+    cfg = load_default_regime_config().network_fragility
+    raws: list[NetworkFragilityLabel] = ["unknown", "diversified_normal"]
+
+    stable, active = apply_per_label_asymmetric_hysteresis(
+        raw_labels=raws,
+        risk_rank=NETWORK_FRAGILITY_RISK_RANK,
+        deescalation_days_by_label=cfg.deescalation_days_by_label,
+        default_deescalation_days=cfg.default_deescalation_days,
+    )
+
+    assert stable == ["unknown", "diversified_normal"]
+    assert active == ["unknown", "diversified_normal"]

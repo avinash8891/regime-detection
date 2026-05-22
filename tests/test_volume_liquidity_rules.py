@@ -332,4 +332,4 @@ def test_default_yaml_loads_volume_liquidity_config_with_spec_defaults():
     deesc = cfg.volume_liquidity_state.deescalation_days_by_label
     assert deesc["panic_volume"] == 3
     assert deesc["normal_volume"] == 0
-    assert deesc["unknown"] == 2
+    assert deesc["unknown"] == 0

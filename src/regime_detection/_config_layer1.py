@@ -5,6 +5,13 @@ from pydantic import Field
 from regime_detection._config_core import StrictBaseModel
 
 
+class AxisHysteresisConfig(StrictBaseModel):
+    """Axis-level per-label hysteresis config shared by V1-origin and V2 axes."""
+
+    deescalation_days_by_label: dict[str, int]
+    default_deescalation_days: int = Field(default=0, ge=0)
+
+
 class TrendDirectionV2RulesConfig(StrictBaseModel):
     """v2 §1A trend-direction rule thresholds.
 
@@ -325,4 +332,3 @@ class TrendCharacterV2Config(StrictBaseModel):
 
     # v2 §1B line 129 — range_bound ADX(14) threshold.
     range_bound_adx_threshold: float = Field(default=20.0, gt=0.0)
-

@@ -21,6 +21,7 @@ from regime_detection._config_core import (
     StrictBaseModel,
 )
 from regime_detection._config_layer1 import (
+    AxisHysteresisConfig,
     BreadthV2Config,
     TrendCharacterV2Config,
     TrendDirectionV2Config,
@@ -57,6 +58,7 @@ from regime_detection._config_evidence_strategy import (
 
 __all__ = [
     "BreadthV2Config",
+    "AxisHysteresisConfig",
     "CentralBankTextConfig",
     "ChangePointConfig",
     "ClusteringConfig",
@@ -108,6 +110,13 @@ class RegimeConfig(StrictBaseModel):
     expiry_rules: ExpiryRulesConfig
     earnings_seasons: list[EarningsSeasonConfig]
     data_quality: DataQualityConfig
+
+    # Axis-level hysteresis. These neutral sections are used regardless of
+    # whether the raw labels came from V1 rules or V2 feature overrides.
+    trend_direction: AxisHysteresisConfig
+    trend_character: AxisHysteresisConfig
+    volatility_state: AxisHysteresisConfig
+    breadth_state: AxisHysteresisConfig
 
     # V2 optional sub-configs (default None so V2 slices can land independently).
     network_fragility: NetworkFragilityConfig | None = None

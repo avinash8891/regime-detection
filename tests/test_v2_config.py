@@ -53,15 +53,15 @@ V2_NETWORK_FRAGILITY_UNIVERSE = [
 ]
 
 # V2 spec §3.7 — per-label asymmetric hysteresis deescalation days.
-# `unknown: 5` added per Implementation Ambiguity Log entry #8: treat
-# `unknown` as a high-risk hold so single-day quality flickers cannot
-# fast-track de-escalation through the lower-risk band.
+# `unknown: 0` keeps absence-of-signal from delaying recovery into a valid
+# classified label. Flickers from high-risk labels are still held by the
+# high-risk label's own deescalation threshold.
 V2_NETWORK_FRAGILITY_DEESCALATION_DAYS = {
     "rising_fragility": 3,
     "correlation_concentration": 3,
     "correlation_to_one": 5,
     "systemic_stress": 5,
-    "unknown": 5,
+    "unknown": 0,
 }
 
 # V2 spec §3.5 — rule-engine thresholds (Slice 1.3). Each value cites a
@@ -119,6 +119,19 @@ def test_v2_default_config_has_v2_section_3_7_deescalation_days() -> None:
         cfg.network_fragility.deescalation_days_by_label
         == V2_NETWORK_FRAGILITY_DEESCALATION_DAYS
     )
+
+
+def test_layer1_axis_hysteresis_lives_on_axis_sections_not_v2_feature_configs() -> None:
+    cfg = load_default_regime_config()
+
+    assert cfg.trend_direction.deescalation_days_by_label["bear"] == 5
+    assert cfg.trend_direction.deescalation_days_by_label["unknown"] == 0
+    assert cfg.trend_character.deescalation_days_by_label["range_bound"] == 3
+    assert cfg.trend_character.deescalation_days_by_label["unknown"] == 0
+    assert cfg.volatility_state.deescalation_days_by_label["crisis_vol"] == 5
+    assert cfg.volatility_state.deescalation_days_by_label["unknown"] == 0
+    assert cfg.breadth_state.deescalation_days_by_label["divergent_fragile"] == 5
+    assert cfg.breadth_state.deescalation_days_by_label["unknown"] == 0
 
 
 def test_v2_default_config_has_v2_section_3_2_lookback_windows() -> None:
@@ -227,13 +240,10 @@ def test_v1_yaml_still_loads_with_v1_config_version() -> None:
     cfg = load_regime_config(_v1_yaml_path())
     assert cfg.config_version == "core3-v1.0.0"
     # L1 axes require per-label hysteresis in both V1 and V2.
-    assert cfg.trend_direction_v2 is not None
-    assert cfg.trend_direction_v2.deescalation_days_by_label is not None
-    assert cfg.volatility_state_v2 is not None
-    assert cfg.volatility_state_v2.deescalation_days_by_label is not None
-    assert cfg.breadth_state_v2 is not None
-    assert cfg.breadth_state_v2.deescalation_days_by_label is not None
-    assert cfg.trend_character_v2 is not None
+    assert cfg.trend_direction.deescalation_days_by_label["bear"] == 3
+    assert cfg.volatility_state.deescalation_days_by_label["crisis_vol"] == 2
+    assert cfg.breadth_state.deescalation_days_by_label["weak_breadth"] == 2
+    assert cfg.trend_character.deescalation_days_by_label["trending"] == 3
     # V2-only sub-configs must remain None for the V1 yaml.
     assert cfg.network_fragility is None
     assert cfg.transition_score is None

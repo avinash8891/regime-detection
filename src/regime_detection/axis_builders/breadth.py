@@ -73,16 +73,12 @@ def build_breadth_axis_series(
             nh_nl_threshold=v2_config.nh_nl_ratio_narrowing_threshold,
         )
 
-    v2_config = context.config.breadth_state_v2
-    if v2_config is None or v2_config.deescalation_days_by_label is None:
-        raise RuntimeError(
-            "breadth_state_v2.deescalation_days_by_label is required"
-        )
+    hysteresis_config = context.config.breadth_state
     stable_labels, active_labels = apply_per_label_asymmetric_hysteresis(
         raw_labels=raw_labels,
         risk_rank=BREADTH_RISK_RANK,
-        deescalation_days_by_label=v2_config.deescalation_days_by_label,
-        default_deescalation_days=v2_config.default_deescalation_days,
+        deescalation_days_by_label=hysteresis_config.deescalation_days_by_label,
+        default_deescalation_days=hysteresis_config.default_deescalation_days,
     )
     outputs_by_date: dict[date, BreadthStateOutput] = {}
     stable_by_date: dict[date, str] = {}
@@ -143,7 +139,7 @@ def build_breadth_axis_series(
                         "proxy": "RSP/SPY",
                         "rule_evidence": evidence,
                         "risk_rank": BREADTH_RISK_RANK,
-                        "deescalation_days": v2_config.default_deescalation_days,
+                        "deescalation_days": hysteresis_config.default_deescalation_days,
                     },
                     data_quality=data_quality,
                 )

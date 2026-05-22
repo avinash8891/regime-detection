@@ -28,6 +28,47 @@ earnings_seasons:
 data_quality:
   max_freshness_days: 3
   min_completeness: 0.90
+# Axis-level hysteresis used by the profile/timeline path regardless of
+# whether raw labels came from V1 rules or V2 feature overrides.
+trend_direction:
+  deescalation_days_by_label:
+    bear: 5
+    transition: 3
+    recovery: 3
+    sideways: 2
+    bull: 0
+    euphoria: 3
+    unknown: 0
+  default_deescalation_days: 3
+trend_character:
+  deescalation_days_by_label:
+    breakout_expansion: 3
+    recovery_attempt: 3
+    trending: 0
+    range_bound: 3
+    chop: 0
+    transition: 2
+    unknown: 0
+  default_deescalation_days: 0
+volatility_state:
+  deescalation_days_by_label:
+    crisis_vol: 5
+    vol_crush: 3
+    high_vol: 3
+    rising_vol: 2
+    low_vol: 0
+    normal_vol: 0
+    unknown: 0
+  default_deescalation_days: 2
+breadth_state:
+  deescalation_days_by_label:
+    divergent_fragile: 5
+    weak_breadth: 3
+    narrowing_breadth: 3
+    broadening_breadth: 0
+    healthy_breadth: 0
+    unknown: 0
+  default_deescalation_days: 2
 # ---------------------------------------------------------------------------
 # V2 sub-configs (per docs/regime_engine_v2_spec.md).
 #
@@ -43,7 +84,7 @@ trend_character_v2:
     range_bound: 3
     chop: 0
     transition: 2
-    unknown: 2
+    unknown: 0
   default_deescalation_days: 0
 
 network_fragility:
@@ -86,13 +127,10 @@ network_fragility:
     correlation_concentration: 3
     correlation_to_one: 5
     systemic_stress: 5
-    # v2 documented implementation decision (implementation cleanup): an `unknown`
-    # raw label has risk_rank=2, lower than correlation_to_one (3). Without an
-    # explicit hold, a single-day flicker through `unknown` (e.g. a quality
-    # gap on day N) would fast-track de-escalation through the lower-risk
-    # band. Treat `unknown` as a high-risk hold equal to `correlation_to_one`
-    # (5d) so flicker doesn't silently relax the axis.
-    unknown: 5
+    # `unknown` is absence of signal, not a sticky regime. Do not delay
+    # recovery into a valid classified label; classified high-risk labels
+    # still hold via the threshold on the stable label being left.
+    unknown: 0
   # v2 §3.7 default for labels NOT listed above (diversified_normal,
   # stock_picker_dispersion). 0 = immediate de-escalation; calibration §9.1
   # may retune. See documented implementation decision.
@@ -141,7 +179,7 @@ trend_direction_v2:
     sideways: 2
     bull: 0
     euphoria: 3
-    unknown: 3
+    unknown: 0
   default_deescalation_days: 3
 
 # v2 §1C — Layer 1 V2 Volatility features (implementation phase + 2.6 + ADR 0005).
@@ -175,7 +213,7 @@ volatility_state_v2:
     rising_vol: 2
     low_vol: 0
     normal_vol: 0
-    unknown: 3
+    unknown: 0
   default_deescalation_days: 2
 
 # v2 §1D — Layer 1 V2 Breadth features.
@@ -197,7 +235,7 @@ breadth_state_v2:
     narrowing_breadth: 3
     broadening_breadth: 0
     healthy_breadth: 0
-    unknown: 3
+    unknown: 0
   default_deescalation_days: 2
 
 # v2 §1E — Layer 1 V2 Volume / Liquidity features (implementation phase, evidence-only).
@@ -225,13 +263,12 @@ volume_liquidity_state:
   # §1E is silent on hysteresis days. Pinned per documented implementation decision:
   #   panic_volume = 3 (high-risk hold, analogous to §3.7 correlation_to_one).
   #   normal_volume = 0 (immediate de-escalation; lowest risk_rank).
-  #   unknown = 2 (modest hold so a single-day NaN flicker doesn't strand
-  #     the axis at the data-quality fallback).
+  #   unknown = 0 (absence-of-signal clears immediately on recovery).
   #   liquidity_gap_behavior = 2 (same rank as `unknown`).
   deescalation_days_by_label:
     panic_volume: 3
     normal_volume: 0
-    unknown: 2
+    unknown: 0
     liquidity_gap_behavior: 2
   default_deescalation_days: 0
 
@@ -392,7 +429,9 @@ credit_funding:
     spread_widening: 3
     credit_recovery: 0
     credit_calm: 0
-    unknown: 2
+    # Absence of signal must not hold back the TLT/OAS effective recovery once
+    # a valid credit/funding rule fires.
+    unknown: 0
   default_deescalation_days: 0
   # §2C lines 2123-2124 — unknown-gate staleness thresholds.
   nfci_stale_days: 14
@@ -456,7 +495,8 @@ inflation_growth:
     goldilocks: 0
     recovery_growth: 0
     earnings_expansion: 0
-    unknown: 2
+    # Absence of signal must not delay recovery into a valid macro label.
+    unknown: 0
   default_deescalation_days: 0
   # §2B lines 2309-2311 — unknown-gate staleness thresholds.
   cpi_stale_calendar_days: 60

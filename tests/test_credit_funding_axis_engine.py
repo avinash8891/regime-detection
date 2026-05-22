@@ -597,6 +597,20 @@ def test_credit_calm_deescalates_immediately() -> None:
     assert stable[5] == "spread_widening"
 
 
+def test_unknown_does_not_delay_recovery_into_classified_credit_label() -> None:
+    deesc = load_default_regime_config().credit_funding.deescalation_days_by_label
+    raws = ["unknown", "spread_widening"]
+    stable, active = apply_per_label_asymmetric_hysteresis(
+        raw_labels=raws,
+        risk_rank=CREDIT_FUNDING_RISK_RANK,
+        deescalation_days_by_label=deesc,
+        default_deescalation_days=0,
+    )
+
+    assert stable == ["unknown", "spread_widening"]
+    assert active == ["unknown", "spread_widening"]
+
+
 # --- Group E — Wire integration (3 tests) ------------------------------------
 
 
