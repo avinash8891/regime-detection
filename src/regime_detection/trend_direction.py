@@ -7,8 +7,6 @@ import numpy as np
 import pandas as pd
 
 from regime_detection._rolling_stats import period_return, simple_moving_average
-from regime_detection.hysteresis import apply_asymmetric_hysteresis
-
 if TYPE_CHECKING:  # avoid runtime cycle: trend_direction_v2 → config → ...
     from regime_detection.config import TrendDirectionV2RulesConfig
     from regime_detection.trend_direction_v2 import TrendDirectionV2Features
@@ -237,21 +235,4 @@ def build_raw_outputs(
             labels[idx] = v2_label
 
     return list(labels), evidence
-
-
-def apply_hysteresis(
-    *,
-    dates: pd.DatetimeIndex,
-    raw_labels: list[TrendDirectionLabel],
-    escalation_days: int = 1,
-    deescalation_days: int,
-) -> tuple[list[TrendDirectionLabel], list[TrendDirectionLabel]]:
-    if len(dates) != len(raw_labels):
-        raise ValueError("dates/raw_labels length mismatch")
-    return apply_asymmetric_hysteresis(
-        raw_labels=raw_labels,
-        risk_rank=_RISK_RANK,
-        escalation_days=escalation_days,
-        deescalation_days=deescalation_days,
-    )
 

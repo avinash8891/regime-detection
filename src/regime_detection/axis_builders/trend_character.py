@@ -31,6 +31,7 @@ def build_trend_character_axis_series(
         raise RuntimeError(
             "trend_character_v2 is required"
         )
+    hysteresis_config = context.config.trend_character
     raw_labels, raw_evidence = build_trend_character_raw_outputs(
         features,
         allow_v2_labels=context.config.config_version != "core3-v1.0.0",
@@ -42,10 +43,10 @@ def build_trend_character_axis_series(
     stable_labels, active_labels = apply_per_label_asymmetric_hysteresis(
         raw_labels=raw_labels,
         risk_rank=TREND_CHARACTER_RISK_RANK,
-        deescalation_days_by_label=tc_v2_config.deescalation_days_by_label,
-        default_deescalation_days=tc_v2_config.default_deescalation_days,
+        deescalation_days_by_label=hysteresis_config.deescalation_days_by_label,
+        default_deescalation_days=hysteresis_config.default_deescalation_days,
     )
-    deescalation_days = tc_v2_config.default_deescalation_days
+    deescalation_days = hysteresis_config.default_deescalation_days
     from regime_detection.axis_series import _build_axis_outputs
     return _build_axis_outputs(
         dates=[ts.date() for ts in close_index],

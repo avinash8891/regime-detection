@@ -28,15 +28,7 @@ earnings_seasons:
 data_quality:
   max_freshness_days: 3
   min_completeness: 0.90
-trend_direction_v2:
-  efficiency_ratio_lookback_days: 20
-  hurst_lookback_days: 250
-  slope_lookback_days: 20
-  sma_short_period: 50
-  sma_long_period: 200
-  return_short_period: 63
-  return_long_period: 126
-  drawdown_lookback_days: 252
+trend_direction:
   deescalation_days_by_label:
     bear: 3
     transition: 3
@@ -44,13 +36,7 @@ trend_direction_v2:
     bull: 3
     unknown: 3
   default_deescalation_days: 3
-
-volatility_state_v2:
-  atr_short_period: 14
-  atr_long_period: 50
-  gap_frequency_lookback_days: 20
-  gap_threshold_pct: 0.005
-  intraday_range_lookback_days: 252
+volatility_state:
   deescalation_days_by_label:
     crisis_vol: 2
     high_vol: 2
@@ -60,16 +46,13 @@ volatility_state_v2:
     vol_crush: 2
     unknown: 2
   default_deescalation_days: 2
-
-breadth_state_v2:
-  sector_breadth_lookback_days: 21
+breadth_state:
   deescalation_days_by_label:
     weak_breadth: 2
     healthy_breadth: 2
     unknown: 2
   default_deescalation_days: 2
-
-trend_character_v2:
+trend_character:
   deescalation_days_by_label:
     breakout_expansion: 3
     recovery_attempt: 3
@@ -79,3 +62,24 @@ trend_character_v2:
     transition: 3
     unknown: 3
   default_deescalation_days: 3
+trend_direction_v2:
+  efficiency_ratio_lookback_days: 20
+  hurst_lookback_days: 250
+  slope_lookback_days: 20
+  sma_short_period: 50
+  sma_long_period: 200
+  return_short_period: 63
+  return_long_period: 126
+  drawdown_lookback_days: 252
+
+volatility_state_v2:
+  atr_short_period: 14
+  atr_long_period: 50
+  gap_frequency_lookback_days: 20
+  gap_threshold_pct: 0.005
+  intraday_range_lookback_days: 252
+
+breadth_state_v2:
+  sector_breadth_lookback_days: 21
+
+trend_character_v2: {}

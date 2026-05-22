@@ -513,16 +513,14 @@ the slice/commit that resolved it. Entries are append-only.
    Resolved by Slice 1.4 cleanup.
 
 8. **§3.7 line 675 — `unknown` flicker risk.**
-   `unknown` carries `risk_rank=2` (§3.6 line 668), lower than
-   `correlation_to_one=3` and `systemic_stress=3`. With `unknown` defaulting
-   to `default_deescalation_days=0` (entry #6), a single-day data-quality
-   flicker through `unknown` while stable is `correlation_to_one` would
-   immediately fast-track de-escalation to `unknown`.
-   Resolution: pin `deescalation_days_by_label.unknown = 5` (equal to
-   `correlation_to_one`) in the v2 yaml so single-day flickers cannot relax
-   the axis. Exposed `NetworkFragilityConfig.default_deescalation_days` so
-   the §9.1 calibration can re-tune both the listed and default cohorts
-   without code changes.
+   `unknown` is absence of signal rather than a market regime. The
+   de-escalation threshold is keyed on the stable label being left, so
+   `correlation_to_one -> unknown` is still protected by
+   `correlation_to_one: 5`; `unknown` itself should not delay recovery into a
+   valid classified label. Resolution: pin
+   `deescalation_days_by_label.unknown = 0` in the v2 yaml. Exposed
+   `NetworkFragilityConfig.default_deescalation_days` so the §9.1 calibration
+   can re-tune both the listed and default cohorts without code changes.
    Resolved by Slice 1.4 cleanup.
 
 9. **V1↔V2 axis date alignment (`axis_series.py` v2 classifier).**
@@ -1050,11 +1048,9 @@ the slice/commit that resolved it. Entries are append-only.
         de-escalation).
       - `normal_volume = 0` (risk_rank 0, lowest — immediate
         de-escalation matches §3.7 `diversified_normal` pattern).
-      - `unknown = 2` (risk_rank 1, modest hold so a single-day NaN
-        flicker through `unknown` does not strand the axis at the
-        data-quality fallback — same intent as Implementation
-        Ambiguity Log entry #8 for network_fragility, scaled down to
-        match `unknown`'s lower §1E risk_rank).
+      - `unknown = 0` because absence-of-signal must clear immediately
+        once a valid volume/liquidity rule fires. Transient drops from
+        panic_volume remain protected by the stable label's own hold.
       - `liquidity_gap_behavior = 2` (risk_rank 2, deferred — pinned
         so the future slice that flips the rule needs no config edit).
     All four defaults live on `VolumeLiquidityConfig` in
@@ -1445,7 +1441,7 @@ the slice/commit that resolved it. Entries are append-only.
           uses the same asymmetric convention).
       (e) **Per-label asymmetric hysteresis**
           `{rate_shock: 5, tightening_pressure: 3, easing_pressure: 2,
-          neutral_monetary: 0, unknown: 2}` with
+          neutral_monetary: 0, unknown: 0}` with
           `default_deescalation_days: 0`. Pattern matches §3.7
           (5-day hold for high-risk labels, 3-day for medium) and
           §1E (Ambiguity Log entry #41 for the volume axis).
@@ -1549,7 +1545,7 @@ the slice/commit that resolved it. Entries are append-only.
     - **Hysteresis** per-label asymmetric days
       `{inflation_shock: 5, recession_scare: 5, earnings_contraction: 3,
       disinflation: 3, goldilocks/recovery_growth/earnings_expansion: 0,
-      unknown: 2}`, `default_deescalation_days: 0`. Pattern matches §3.7
+      unknown: 0}`, `default_deescalation_days: 0`. Pattern matches §3.7
       / §2A.
     - **Unknown gate** — staleness-based (`cpi > 60d`, `pmi > 45d`,
       `dgs10 > 5 sessions`) plus `assess_series_input_quality`.
@@ -1652,7 +1648,7 @@ the slice/commit that resolved it. Entries are append-only.
       strictly more selective than any single-axis high-risk label.
     - **Hysteresis** `{deleveraging: 5, funding_squeeze: 5,
       credit_stress: 3, spread_widening: 3, credit_calm: 0,
-      unknown: 2}`, `default_deescalation_days: 0`. Pattern matches
+      unknown: 0}`, `default_deescalation_days: 0`. Pattern matches
       §3.7 / §2A / §2B.
     - **Unknown gate** — staleness-based on HYG/LQD/TLT (> 5
       sessions), NFCI (> 14 days = 2× weekly cycle), SOFR/IORB
@@ -2307,7 +2303,7 @@ the slice/commit that resolved it. Entries are append-only.
     placeholders, matching the §1B / §3.7 5-day / 3-day / 0-day
     pattern):
     `{breakout_expansion: 3, recovery_attempt: 3, trending: 0,
-    range_bound: 3, chop: 0, transition: 2, unknown: 2}`.
+    range_bound: 3, chop: 0, transition: 2, unknown: 0}`.
     `breakout_expansion` holds 3 days post-event (matches the 5-day
     followthrough_rate definition's coherence window from Log #47).
     `range_bound` holds 3 days to avoid flickering on single-day
@@ -3089,7 +3085,7 @@ inflation_growth:
     goldilocks: 0
     recovery_growth: 0
     earnings_expansion: 0
-    unknown: 2                     # match slice 2.7 / §2A unknown hold
+    unknown: 0                     # absence-of-signal clears immediately on recovery
   default_deescalation_days: 0
 ```
 
@@ -3242,7 +3238,7 @@ credit_funding:
     credit_stress: 3
     spread_widening: 3
     credit_calm: 0
-    unknown: 2
+    unknown: 0
   default_deescalation_days: 0
 ```
 
@@ -3497,7 +3493,7 @@ network_fragility_risk_rank:
 
 ### 3.7 Hysteresis
 
-Per-label asymmetric de-escalation is **mandatory for all 9 label axes** (ADR 0010). Every axis must supply a `deescalation_days_by_label` config block; missing config raises `RuntimeError` immediately — no silent flat fallback. Both `core3-v1.0.0.yaml` and `core3-v2.0.0.yaml` ship per-label hysteresis. V1 values are flat (all labels get the same days as the original global setting) to preserve V1 behavior while using the per-label infrastructure.
+Per-label asymmetric de-escalation is **mandatory for all 9 label axes** (ADR 0010). Every axis must supply a `deescalation_days_by_label` config block; missing config raises immediately — no silent flat fallback. Both `core3-v1.0.0.yaml` and `core3-v2.0.0.yaml` ship per-label hysteresis. Layer-1 hysteresis lives under neutral axis-level sections (`trend_direction`, `trend_character`, `volatility_state`, `breadth_state`) so V1-origin raw labels are not coupled to V2 feature/rule config sections. Those V2 feature/rule sections intentionally reject hysteresis keys; calibration must edit the neutral axis sections or validation fails.
 
 Network fragility de-escalation defaults:
 ```yaml
@@ -3506,7 +3502,13 @@ network_fragility_deescalation_days:
   correlation_concentration: 3
   correlation_to_one: 5
   systemic_stress: 5
+  unknown: 0
 ```
+
+`unknown` is absence of signal, not a sticky regime. It clears immediately
+once a valid classified label appears. Data-quality flickers away from
+high-risk classified states are still held by the threshold of the stable
+label being left, for example `correlation_to_one: 5`.
 
 See ADR 0010 for the complete per-label hysteresis table across all 9 axes. Hysteresis does NOT apply to evidence/score outputs (event_calendar, transition_risk, cluster, change_point, hmm).
 

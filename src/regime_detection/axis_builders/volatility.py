@@ -38,17 +38,14 @@ def build_volatility_axis_series(
         volatility_state_v2_features=vol_v2_features,
         volatility_state_v2_rules=vol_v2_rules,
     )
-    if vol_v2_config is None or vol_v2_config.deescalation_days_by_label is None:
-        raise RuntimeError(
-            "volatility_state_v2.deescalation_days_by_label is required"
-        )
+    hysteresis_config = context.config.volatility_state
     stable_labels, active_labels = apply_per_label_asymmetric_hysteresis(
         raw_labels=raw_labels,
         risk_rank=VOLATILITY_RISK_RANK,
-        deescalation_days_by_label=vol_v2_config.deescalation_days_by_label,
-        default_deescalation_days=vol_v2_config.default_deescalation_days,
+        deescalation_days_by_label=hysteresis_config.deescalation_days_by_label,
+        default_deescalation_days=hysteresis_config.default_deescalation_days,
     )
-    deescalation_days = vol_v2_config.default_deescalation_days
+    deescalation_days = hysteresis_config.default_deescalation_days
     from regime_detection.axis_series import _build_axis_outputs
     return _build_axis_outputs(
         dates=[ts.date() for ts in close_index],

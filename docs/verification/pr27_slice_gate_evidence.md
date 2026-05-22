@@ -66,7 +66,7 @@ Mapped to v2 spec §8 rows. 23 `feat(slice-*)` / `feat(calibration)` /
 
 - ✅ New feature dataclasses live in per-axis modules (verified by file layout: `breadth_state.py`, `volume_liquidity.py`, `inflation_growth.py`, `credit_funding.py`, `monetary_pressure.py`).
 - ✅ `feature_store.py` uses `Optional[X] = None` pattern (slice-2.7 + slice-2.8b commits explicit).
-- ✅ Hysteresis wired through `apply_asymmetric_hysteresis` / `apply_per_label_asymmetric_hysteresis` per slice nature.
+- ✅ Hysteresis wired through `apply_per_label_asymmetric_hysteresis` at axis level.
 
 ### 5. Tests
 

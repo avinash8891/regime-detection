@@ -183,6 +183,9 @@ def build_axis_series_bundle(
         feature_store,
         breadth_active_labels_by_date=breadth_state.active_labels_by_date,
         volatility_active_labels_by_date=volatility_state.active_labels_by_date,
+        # Downstream rules consume the effective credit state, not raw OAS.
+        # Raw OAS can be stale before the OAS history starts while TLT proxy
+        # fallback is classified and explicitly recorded in the effective seam.
         credit_funding_active_labels_by_date=(
             {day: out.active_label for day, out in credit_funding_effective.items()}
             if credit_funding_effective is not None
@@ -196,6 +199,8 @@ def build_axis_series_bundle(
     inflation_growth = build_inflation_growth_axis_series(
         context,
         feature_store,
+        # Keep inflation/growth aligned with network fragility: credit is stale
+        # only when the effective OAS/proxy selection cannot classify the date.
         credit_funding_active_labels_by_date=(
             {day: out.active_label for day, out in credit_funding_effective.items()}
             if credit_funding_effective is not None

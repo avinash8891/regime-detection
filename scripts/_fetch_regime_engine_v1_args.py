@@ -208,7 +208,10 @@ def build_fetch_arg_parser(
     parser.add_argument(
         "--pmi-history-dir",
         default=None,
-        help="Optional manual Investing PMI history directory. Omit for live DBnomics/TradingEconomics PMI ingestion.",
+        help=(
+            "Optional operator-pasted Investing PMI history directory for historical backfill. "
+            "Omit for live DBnomics/TradingEconomics latest PMI ingestion."
+        ),
     )
     parser.add_argument(
         "--investing-archive-root",

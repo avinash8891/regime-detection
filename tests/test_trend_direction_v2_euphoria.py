@@ -25,9 +25,10 @@ from regime_detection.config import (
     TrendDirectionV2Config,
     TrendDirectionV2RulesConfig,
 )
+from regime_detection.hysteresis import apply_per_label_asymmetric_hysteresis
 from regime_detection.trend_direction import (
+    _RISK_RANK,
     TrendDirectionFeatures,
-    apply_hysteresis,
     build_raw_outputs as build_trend_direction_raw_outputs,
 )
 from regime_detection.trend_direction_v2 import (
@@ -427,12 +428,11 @@ def test_build_raw_outputs_records_euphoria_override_rule(
 
 
 def test_hysteresis_accepts_euphoria_trend_label() -> None:
-    dates = pd.DatetimeIndex([pd.Timestamp("2024-03-14"), pd.Timestamp("2024-03-15")])
-
-    stable, active = apply_hysteresis(
-        dates=dates,
+    stable, active = apply_per_label_asymmetric_hysteresis(
         raw_labels=["bull", "euphoria"],
-        deescalation_days=3,
+        risk_rank=_RISK_RANK,
+        deescalation_days_by_label={"bull": 0, "euphoria": 3},
+        default_deescalation_days=0,
     )
 
     assert stable == ["bull", "euphoria"]

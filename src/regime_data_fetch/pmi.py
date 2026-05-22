@@ -27,9 +27,12 @@ TRADINGECONOMICS_URLS = {
 }
 MANUAL_PMI_SOURCE_URLS = {
     "manufacturing": "https://in.investing.com/economic-calendar/ism-manufacturing-pmi-173",
-    "services": "https://in.investing.com/economic-calendar/ism-non-manufacturing-pmi-176",
+    "services": "https://www.investing.com/economic-calendar/united-states-ism-non-manufacturing-pmi-176",
 }
 DEFAULT_MANUAL_PMI_HISTORY_DIR = Path(__file__).resolve().parents[2] / "data" / "manual_inputs" / "pmi"
+OPERATOR_PASTED_SOURCE_NOTE = (
+    "Operator copied Investing.com historical PMI release-history tables into repo-local TSV files."
+)
 LOGGER = logging.getLogger(__name__)
 
 _DBNOMICS_ROW_RE = re.compile(r"(?P<period>\d{4}-\d{2})\s+(?P<value>-?\d+(?:\.\d+)?)", re.IGNORECASE)
@@ -386,6 +389,8 @@ def run_manual_pmi_history_import(
                 "as_of_date": as_of_date.isoformat(),
                 "history_dir": str(history_dir),
                 "source_mode": "manual_investing_history",
+                "source_note": OPERATOR_PASTED_SOURCE_NOTE,
+                "source_urls": MANUAL_PMI_SOURCE_URLS,
             },
         )
         if store
@@ -417,8 +422,11 @@ def run_manual_pmi_history_import(
                     start_date=min(row.period for row in history_rows if row.series_name == series_name),
                     end_date=max(row.period for row in history_rows if row.series_name == series_name),
                     timezone="America/New_York",
-                    license_note="Manual Investing PMI release-history table supplied for backtest-aligned periods",
-                    notes=f"Manual Investing PMI history table for {series_name}",
+                    license_note=(
+                        "Operator-pasted Investing.com PMI release-history table "
+                        "supplied for backtest-aligned periods"
+                    ),
+                    notes=f"{OPERATOR_PASTED_SOURCE_NOTE} Series: {series_name}",
                 )
 
         latest_df = pd.DataFrame(
@@ -459,6 +467,8 @@ def run_manual_pmi_history_import(
             "as_of_date": as_of_date.isoformat(),
             "selected_source": "manual_investing_history",
             "history_source": "manual_investing_history",
+            "source_note": OPERATOR_PASTED_SOURCE_NOTE,
+            "source_urls": MANUAL_PMI_SOURCE_URLS,
             "attempts": [{"source": "manual_investing_history", "status": "success"}],
             "counts": {
                 "rows": int(len(latest_df)),

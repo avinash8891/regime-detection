@@ -78,10 +78,8 @@ def test_default_config_is_packaged_and_loadable() -> None:
 
     cfg = load_default_regime_config()
     assert cfg.config_version == "core3-v2.0.0"
-    assert cfg.trend_direction_v2 is not None
-    assert cfg.trend_direction_v2.deescalation_days_by_label is not None
-    assert cfg.volatility_state_v2 is not None
-    assert cfg.volatility_state_v2.deescalation_days_by_label is not None
+    assert cfg.trend_direction.deescalation_days_by_label
+    assert cfg.volatility_state.deescalation_days_by_label
 
 
 def test_classify_emits_regime_output_shape(market_df_for_asof) -> None:

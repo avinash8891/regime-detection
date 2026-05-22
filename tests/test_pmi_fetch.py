@@ -10,6 +10,8 @@ import pandas as pd
 
 from regime_data_fetch.pmi import (
     DEFAULT_MANUAL_PMI_HISTORY_DIR,
+    MANUAL_PMI_SOURCE_URLS,
+    OPERATOR_PASTED_SOURCE_NOTE,
     PMIFetchError,
     PMIFetchBundle,
     PMIObservation,
@@ -416,11 +418,17 @@ def test_run_pmi_fetch_records_raw_pages_and_outputs_in_sqlite(tmp_path: Path) -
 
 def test_load_manual_pmi_history_covers_backtest_aligned_window() -> None:
     rows = load_manual_pmi_history(history_dir=DEFAULT_MANUAL_PMI_HISTORY_DIR)
+    by_series = {
+        series_name: [row for row in rows if row.series_name == series_name]
+        for series_name in {"manufacturing", "services"}
+    }
 
-    assert rows[0].period == "2016-01"
+    assert rows[0].period == "2009-12"
     assert rows[-1].period == "2026-04"
-    assert len(rows) == 248
+    assert len(rows) == 394
     assert {row.series_name for row in rows} == {"manufacturing", "services"}
+    assert by_series["manufacturing"][0].release_timestamp.date().isoformat() == "2010-01-04"
+    assert by_series["services"][0].release_timestamp.date().isoformat() == "2010-01-06"
 
 
 def test_run_pmi_fetch_uses_manual_history_dir_and_records_sqlite(tmp_path: Path) -> None:
@@ -436,8 +444,10 @@ def test_run_pmi_fetch_uses_manual_history_dir_and_records_sqlite(tmp_path: Path
     report = json.loads(report_path.read_text())
     assert report["selected_source"] == "manual_investing_history"
     assert report["history_source"] == "manual_investing_history"
+    assert report["source_note"] == OPERATOR_PASTED_SOURCE_NOTE
+    assert report["source_urls"] == MANUAL_PMI_SOURCE_URLS
     assert report["counts"]["rows"] == 2
-    assert report["counts"]["history_rows"] == 248
+    assert report["counts"]["history_rows"] == 394
     assert report["paths"]["manual_pmi_manufacturing_tsv"] == {
         "path": str(DEFAULT_MANUAL_PMI_HISTORY_DIR / "ism_manufacturing_pmi.tsv"),
         "local_path": "data/manual_inputs/pmi/ism_manufacturing_pmi.tsv",
@@ -449,9 +459,13 @@ def test_run_pmi_fetch_uses_manual_history_dir_and_records_sqlite(tmp_path: Path
     assert latest_df["source"].tolist() == ["investing_manual", "investing_manual"]
 
     history_df = pd.read_parquet(tmp_path / "pmi" / "us_ism_pmi_history.parquet")
-    assert history_df["period"].min() == "2016-01"
+    assert history_df["period"].min() == "2009-12"
     assert history_df["period"].max() == "2026-04"
-    assert len(history_df) == 248
+    assert len(history_df) == 394
+    assert (
+        history_df.groupby("series_name")["period"].min().to_dict()
+        == {"manufacturing": "2009-12", "services": "2009-12"}
+    )
 
     with sqlite3.connect(acquisition_db) as conn:
         fetch_runs = conn.execute("SELECT fetch_type, status FROM fetch_runs").fetchall()

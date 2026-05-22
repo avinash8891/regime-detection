@@ -39,17 +39,14 @@ def build_trend_direction_axis_series(
         trend_direction_v2_features=trend_v2_features,
         trend_direction_v2_rules=trend_v2_rules,
     )
-    if trend_v2_config is None or trend_v2_config.deescalation_days_by_label is None:
-        raise RuntimeError(
-            "trend_direction_v2.deescalation_days_by_label is required"
-        )
+    hysteresis_config = context.config.trend_direction
     stable_labels, active_labels = apply_per_label_asymmetric_hysteresis(
         raw_labels=raw_labels,
         risk_rank=TREND_DIRECTION_RISK_RANK,
-        deescalation_days_by_label=trend_v2_config.deescalation_days_by_label,
-        default_deescalation_days=trend_v2_config.default_deescalation_days,
+        deescalation_days_by_label=hysteresis_config.deescalation_days_by_label,
+        default_deescalation_days=hysteresis_config.default_deescalation_days,
     )
-    deescalation_days = trend_v2_config.default_deescalation_days
+    deescalation_days = hysteresis_config.default_deescalation_days
     from regime_detection.axis_series import _build_axis_outputs
     return _build_axis_outputs(
         dates=[ts.date() for ts in close_index],

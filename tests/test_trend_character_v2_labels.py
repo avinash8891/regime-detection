@@ -13,7 +13,7 @@ from datetime import date
 import numpy as np
 import pandas as pd
 
-from regime_detection.hysteresis import apply_asymmetric_hysteresis
+from regime_detection.hysteresis import apply_per_label_asymmetric_hysteresis
 from regime_detection.trend_character import (
     _RISK_RANK,
     TrendCharacterFeatures,
@@ -532,10 +532,11 @@ def test_hysteresis_with_new_labels_respects_precedence() -> None:
         "breakout_expansion",
         "breakout_expansion",
     ]
-    stable, active = apply_asymmetric_hysteresis(
+    stable, active = apply_per_label_asymmetric_hysteresis(
         raw_labels=raws,
         risk_rank=_RISK_RANK,
-        deescalation_days=3,
+        deescalation_days_by_label={"transition": 3, "breakout_expansion": 3},
+        default_deescalation_days=0,
     )
     assert stable[2] == "transition"
     assert active[2] == "transition"

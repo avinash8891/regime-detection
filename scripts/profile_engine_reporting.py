@@ -47,6 +47,11 @@ REPORTING_SUMMARY_FIELDS = [
     "inflation_growth_state",
     "monetary_pressure_state",
 ]
+EFFECTIVE_REPORTING_SUMMARY_FIELDS = [
+    field_name
+    for field_name in REPORTING_SUMMARY_FIELDS
+    if field_name not in {"credit_funding_state", "credit_funding_state_proxy"}
+]
 EPS_REVISION_STALE_DAYS = 35
 
 
@@ -396,9 +401,11 @@ def _full_timeline_report(outputs: list[RegimeOutput]) -> list[dict[str, Any]]:
     return [_json_safe_value(output) for output in outputs]
 
 
-def _label_summary_report(outputs: list[RegimeOutput]) -> dict[str, dict[str, dict[str, int]]]:
+def _label_summary_for_fields(
+    outputs: list[RegimeOutput], field_names: list[str]
+) -> dict[str, dict[str, dict[str, int]]]:
     summary: dict[str, dict[str, dict[str, int]]] = {}
-    for field_name in REPORTING_SUMMARY_FIELDS:
+    for field_name in field_names:
         active_counts: Counter[str] = Counter()
         reported_counts: Counter[str] = Counter()
         status_counts: Counter[str] = Counter()
@@ -421,6 +428,20 @@ def _label_summary_report(outputs: list[RegimeOutput]) -> dict[str, dict[str, di
             "status": _counter_dict(status_counts),
         }
     return summary
+
+
+def _label_summary_report(outputs: list[RegimeOutput]) -> dict[str, dict[str, dict[str, int]]]:
+    return _label_summary_for_fields(outputs, REPORTING_SUMMARY_FIELDS)
+
+
+def _effective_label_summary_report(
+    outputs: list[RegimeOutput],
+) -> dict[str, dict[str, dict[str, int]]]:
+    # Raw OAS credit/funding stays in label_summary for diagnostics, but stale
+    # data rollups must use credit_funding_effective_state. The effective seam
+    # records whether OAS, proxy_fallback, or proxy_only fed downstream rules,
+    # so historical TLT proxy coverage is not reported as stale raw OAS data.
+    return _label_summary_for_fields(outputs, EFFECTIVE_REPORTING_SUMMARY_FIELDS)
 
 
 def _trailing_v2_status(out: RegimeOutput) -> list[str]:
@@ -759,6 +780,7 @@ def _build_json_report(
         },
         "timeline": _compact_timeline_report(timeline.outputs),
         "label_summary": _label_summary_report(timeline.outputs),
+        "effective_label_summary": _effective_label_summary_report(timeline.outputs),
         "feature_metrics": _feature_metric_summary_report(
             feature_store, inputs.selected_dates
         ),

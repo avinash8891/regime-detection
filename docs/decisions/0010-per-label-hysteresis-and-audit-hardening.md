@@ -23,9 +23,9 @@ A forensic audit of the regime-detection engine revealed several classes of issu
 
 ### D1: Per-label hysteresis is mandatory for all 9 label axes
 
-All axes now use `apply_per_label_asymmetric_hysteresis` with `deescalation_days_by_label` from their V2 config section. High-risk labels are sticky (crisis_vol=5d, bear=5d, divergent_fragile=5d), low-risk labels transition fast (normal_vol=0d, bull=0d, healthy_breadth=0d). Missing config raises `RuntimeError` immediately — no silent flat fallback.
+All axes now use `apply_per_label_asymmetric_hysteresis` with `deescalation_days_by_label` from the axis-level config section. High-risk labels are sticky (crisis_vol=5d, bear=5d, divergent_fragile=5d), low-risk labels transition fast (normal_vol=0d, bull=0d, healthy_breadth=0d). Missing config raises immediately — no silent flat fallback.
 
-Both `core3-v1.0.0.yaml` and `core3-v2.0.0.yaml` ship per-label hysteresis. V1 values are flat (all labels get the same days as the original global setting) to preserve V1 behavior while using the per-label infrastructure.
+Both `core3-v1.0.0.yaml` and `core3-v2.0.0.yaml` ship per-label hysteresis under neutral axis names (`trend_direction`, `trend_character`, `volatility_state`, `breadth_state`, etc.). V2 feature/rule sections such as `trend_direction_v2` do not own hysteresis for V1-origin raw labels.
 
 ### D2: Event calendar is an S3 artifact, not git-tracked config
 
@@ -51,11 +51,17 @@ Event_calendar (precedence-based), transition_risk (continuous score), cluster (
 | trend_character | breakout_expansion, trending, range_bound, chop, transition, recovery_attempt | breakout_expansion=3d | trending=0d, chop=0d |
 | volatility | crisis_vol, vol_crush, high_vol, rising_vol, low_vol, normal_vol | crisis_vol=5d | normal_vol=0d, low_vol=0d |
 | breadth | divergent_fragile, weak_breadth, narrowing_breadth, broadening_breadth, healthy_breadth | divergent_fragile=5d | healthy_breadth=0d |
-| network_fragility | systemic_stress, correlation_to_one, correlation_concentration, rising_fragility, ... | systemic_stress=5d | diversified_normal=0d |
+| network_fragility | systemic_stress, correlation_to_one, correlation_concentration, rising_fragility, ... | systemic_stress=5d | diversified_normal=0d, unknown=0d |
 | volume_liquidity | panic_volume, liquidity_gap_behavior, normal_volume | panic_volume=3d | normal_volume=0d |
 | monetary_pressure | rate_shock, tightening_pressure, easing_pressure, neutral_monetary | rate_shock=5d | neutral_monetary=0d |
-| inflation_growth | inflation_shock, recession_scare, disinflation, goldilocks, ... | inflation_shock=5d | goldilocks=0d |
-| credit_funding | deleveraging, funding_squeeze, credit_stress, spread_widening, credit_calm | deleveraging=5d | credit_calm=0d |
+| inflation_growth | inflation_shock, recession_scare, disinflation, goldilocks, ... | inflation_shock=5d | goldilocks=0d, unknown=0d |
+| credit_funding | deleveraging, funding_squeeze, credit_stress, spread_widening, credit_calm | deleveraging=5d | credit_calm=0d, unknown=0d |
+
+`unknown` is absence of signal rather than a market regime. It must not hold
+back recovery into a valid classified label. Transient drops from high-risk
+classified labels remain debounced by the high-risk label's own threshold
+because the per-label algorithm keys de-escalation on the stable label being
+left.
 
 ## Outputs WITHOUT hysteresis (by design)
 

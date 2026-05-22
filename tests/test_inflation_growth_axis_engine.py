@@ -445,6 +445,20 @@ def test_goldilocks_deescalates_immediately() -> None:
     assert stable[5] == "inflation_shock"
 
 
+def test_unknown_does_not_delay_recovery_into_classified_inflation_label() -> None:
+    deesc = load_default_regime_config().inflation_growth.deescalation_days_by_label
+    raws = ["unknown", "disinflation"]
+    stable, active = apply_per_label_asymmetric_hysteresis(
+        raw_labels=raws,
+        risk_rank=INFLATION_GROWTH_RISK_RANK,
+        deescalation_days_by_label=deesc,
+        default_deescalation_days=0,
+    )
+
+    assert stable == ["unknown", "disinflation"]
+    assert active == ["unknown", "disinflation"]
+
+
 # --- Group E — End-to-end wire integration (1 test) --------------------------
 
 
