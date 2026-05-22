@@ -26,6 +26,7 @@ from regime_detection.loaders import (
     load_cpi_nowcast_series,
     load_macro_series as load_fred_macro_series,
 )
+from regime_detection.comparison import axis_reporting_label
 
 
 logger = logging.getLogger(__name__)
@@ -76,22 +77,6 @@ def apply_manifest_input_defaults(
             continue
         if getattr(args, spec.field, None) is None:
             setattr(args, spec.field, data_root.joinpath(*spec.default_relpath))
-
-
-def axis_reporting_label(output: Any | None, *, default: str | None = None) -> str | None:
-    if output is None:
-        return default
-    reporting_label = getattr(output, "reporting_label", None)
-    if reporting_label is not None:
-        return str(reporting_label)
-    classification_status = getattr(output, "classification_status", "classified")
-    if classification_status != "classified":
-        return str(classification_status)
-    active_label = getattr(output, "active_label", None)
-    if active_label is not None:
-        return str(active_label)
-    label = getattr(output, "label", default)
-    return None if label is None else str(label)
 
 
 def axis_reporting_label_not_wired(output: Any | None) -> str:

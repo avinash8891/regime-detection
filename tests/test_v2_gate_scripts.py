@@ -6,7 +6,9 @@ from pathlib import Path
 import pandas as pd
 import pytest
 
+from regime_detection import comparison
 from regime_detection.models import AxisOutput, DataQuality
+from scripts import _v2_calibration_helpers
 from scripts import run_v2_shadow_ab_gate, run_v2_walkforward_gate
 
 pytestmark = [pytest.mark.slow, pytest.mark.v2_gate]
@@ -23,6 +25,29 @@ def test_gate_reporting_label_uses_granular_status() -> None:
 
     assert run_v2_walkforward_gate._reporting_label(output) == "no_rule_fired"
     assert run_v2_shadow_ab_gate._reporting_label(output) == "no_rule_fired"
+
+
+def test_gate_scripts_use_comparison_reporting_label_source() -> None:
+    assert _v2_calibration_helpers.axis_reporting_label is comparison.axis_reporting_label
+    assert run_v2_walkforward_gate._reporting_label is comparison.axis_reporting_label
+    assert run_v2_shadow_ab_gate._reporting_label is comparison.axis_reporting_label
+
+
+def test_walkforward_gate_markdown_uses_comparison_gate_metric_names() -> None:
+    markdown = run_v2_walkforward_gate._build_markdown(
+        start_date=pd.Timestamp("2026-05-12").date(),
+        end_date=pd.Timestamp("2026-05-12").date(),
+        sessions=[pd.Timestamp("2026-05-12").date()],
+        v1_metrics=run_v2_walkforward_gate._session_metrics_empty(),
+        v2_metrics=run_v2_walkforward_gate._session_metrics_empty(),
+        v2_axes=run_v2_walkforward_gate._axis_activation_empty(),
+        v1_errors=0,
+        v2_errors=0,
+        engine_version="regime-engine-v-test",
+    )
+
+    for metric_name in comparison.V2_GATE_METRIC_NAMES:
+        assert f"- {metric_name}" in markdown
 
 
 @pytest.mark.parametrize(

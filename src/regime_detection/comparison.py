@@ -37,6 +37,9 @@ class GateMetric(str, Enum):
     LOWER_FALSE_SWITCH_RATE = "lower_false_switch_rate"
 
 
+V2_GATE_METRIC_NAMES: tuple[str, ...] = tuple(metric.name for metric in GateMetric)
+
+
 @dataclass(frozen=True)
 class StrategyMetrics:
     """Downstream strategy metrics fed into the v2 §9.1 gate.
@@ -150,14 +153,22 @@ _V2_OPTIONAL_TOP_LEVEL_FIELDS: tuple[str, ...] = (
 )
 
 
-def _reporting_label(output: object) -> str:
+def axis_reporting_label(
+    output: object | None, *, default: str | None = None
+) -> str | None:
+    if output is None:
+        return default
     reporting = getattr(output, "reporting_label", None)
     if reporting is not None:
         return str(reporting)
     classification_status = getattr(output, "classification_status", "classified")
     if classification_status != "classified":
         return str(classification_status)
-    return str(getattr(output, "active_label"))
+    active_label = getattr(output, "active_label", None)
+    if active_label is not None:
+        return str(active_label)
+    label = getattr(output, "label", default)
+    return None if label is None else str(label)
 
 
 def compute_v1_v2_diff(
@@ -191,8 +202,8 @@ def compute_v1_v2_diff(
                 f"v2={v2_out.as_of_date.isoformat()}"
         )
         for axis in _V1_AXES_TO_COMPARE:
-            v1_label = _reporting_label(getattr(v1_out, axis))
-            v2_label = _reporting_label(getattr(v2_out, axis))
+            v1_label = axis_reporting_label(getattr(v1_out, axis))
+            v2_label = axis_reporting_label(getattr(v2_out, axis))
             if v1_label != v2_label:
                 diffs.append(
                     AxisLabelDiff(
@@ -202,8 +213,8 @@ def compute_v1_v2_diff(
                         v2_active_label=v2_label,
                     )
                 )
-        v1_network_label = _reporting_label(v1_out.network_fragility)
-        v2_network_label = _reporting_label(v2_out.network_fragility)
+        v1_network_label = axis_reporting_label(v1_out.network_fragility)
+        v2_network_label = axis_reporting_label(v2_out.network_fragility)
         if v1_network_label != v2_network_label:
             diffs.append(
                 AxisLabelDiff(

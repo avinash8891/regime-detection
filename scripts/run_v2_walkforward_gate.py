@@ -32,6 +32,7 @@ sys.path.insert(0, str(SRC_DIR))
 sys.path.insert(0, str(REPO_ROOT / "scripts"))
 
 from regime_detection.calendar import nyse_calendar  # noqa: E402
+from regime_detection.comparison import V2_GATE_METRIC_NAMES  # noqa: E402
 from regime_detection.config import load_default_regime_config  # noqa: E402
 from regime_detection.engine import RegimeEngine  # noqa: E402
 from regime_detection.fragility_universe import SECTOR_ETFS  # noqa: E402
@@ -303,10 +304,7 @@ def _build_markdown(
         "",
         "Per the spec, AT LEAST ONE of:",
         "",
-        "- LOWER_DRAWDOWN",
-        "- HIGHER_SHARPE",
-        "- EARLIER_CRISIS_DETECTION",
-        "- LOWER_FALSE_SWITCH_RATE",
+        *(f"- {name}" for name in V2_GATE_METRIC_NAMES),
         "",
         "must show v2 improvement. Note: this script ships the per-session wire",
         "comparison; the strategy-PnL metrics (drawdown/sharpe/false-switch) are",
