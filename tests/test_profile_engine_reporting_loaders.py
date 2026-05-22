@@ -47,6 +47,45 @@ def test_profile_json_writer_rejects_nonfinite_values(tmp_path: Path) -> None:
     assert not report_path.exists()
 
 
+def test_effective_label_summary_uses_credit_funding_effective_state_for_proxy_fallback() -> None:
+    output = SimpleNamespace(
+        credit_funding_state=SimpleNamespace(
+            active_label="unknown",
+            classification_status="stale_data",
+            classification_reason="hy_oas_stale_1000000000d,ig_oas_stale_1000000000d",
+            evidence={"spread_source": "ice_bofa_oas"},
+            data_quality={"status": "stale_data"},
+        ),
+        credit_funding_state_proxy=SimpleNamespace(
+            active_label="credit_calm",
+            classification_status="classified",
+            classification_reason=None,
+            evidence={"spread_source": "tlt_total_return_differential"},
+            data_quality={"status": "ok"},
+        ),
+        credit_funding_effective_state=SimpleNamespace(
+            active_label="credit_calm",
+            classification_status="classified",
+            classification_reason=None,
+            evidence={"source_used": "proxy_fallback"},
+            data_quality={"status": "ok"},
+        ),
+        inflation_growth_state=SimpleNamespace(
+            active_label="unknown",
+            classification_status="stale_data",
+            classification_reason="latest_observation_too_old",
+            evidence={"reason": "latest_observation_too_old"},
+            data_quality={"status": "stale_data"},
+        ),
+    )
+
+    summary = profile_engine_reporting._effective_label_summary_report([output])
+
+    assert "credit_funding_state" not in summary
+    assert summary["credit_funding_effective_state"]["status"] == {"classified": 1}
+    assert summary["inflation_growth_state"]["status"] == {"stale_data": 1}
+
+
 def test_profile_json_report_emits_machine_readable_sections(tmp_path: Path) -> None:
     def axis(label: str) -> SimpleNamespace:
         return SimpleNamespace(
