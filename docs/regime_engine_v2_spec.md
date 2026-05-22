@@ -3493,7 +3493,7 @@ network_fragility_risk_rank:
 
 ### 3.7 Hysteresis
 
-Per-label asymmetric de-escalation is **mandatory for all 9 label axes** (ADR 0010). Every axis must supply a `deescalation_days_by_label` config block; missing config raises immediately — no silent flat fallback. Both `core3-v1.0.0.yaml` and `core3-v2.0.0.yaml` ship per-label hysteresis. Layer-1 hysteresis lives under neutral axis-level sections (`trend_direction`, `trend_character`, `volatility_state`, `breadth_state`) so V1-origin raw labels are not coupled to V2 feature/rule config sections.
+Per-label asymmetric de-escalation is **mandatory for all 9 label axes** (ADR 0010). Every axis must supply a `deescalation_days_by_label` config block; missing config raises immediately — no silent flat fallback. Both `core3-v1.0.0.yaml` and `core3-v2.0.0.yaml` ship per-label hysteresis. Layer-1 hysteresis lives under neutral axis-level sections (`trend_direction`, `trend_character`, `volatility_state`, `breadth_state`) so V1-origin raw labels are not coupled to V2 feature/rule config sections. Those V2 feature/rule sections intentionally reject hysteresis keys; calibration must edit the neutral axis sections or validation fails.
 
 Network fragility de-escalation defaults:
 ```yaml

@@ -134,6 +134,32 @@ def test_layer1_axis_hysteresis_lives_on_axis_sections_not_v2_feature_configs() 
     assert cfg.breadth_state.deescalation_days_by_label["unknown"] == 0
 
 
+@pytest.mark.parametrize(
+    "section",
+    [
+        "trend_direction_v2",
+        "trend_character_v2",
+        "volatility_state_v2",
+        "breadth_state_v2",
+    ],
+)
+def test_layer1_v2_configs_reject_dead_hysteresis_knobs(
+    tmp_path: Path, section: str
+) -> None:
+    pkg_file = importlib.resources.files("regime_detection").joinpath(
+        "configs/core3-v2.0.0.yaml"
+    )
+    data = yaml.safe_load(pkg_file.read_text(encoding="utf-8"))
+    data[section]["deescalation_days_by_label"] = {"unknown": 9}
+    data[section]["default_deescalation_days"] = 9
+
+    bad_yaml = tmp_path / f"core3-v2.0.0-dead-{section}-hysteresis.yaml"
+    bad_yaml.write_text(yaml.safe_dump(data), encoding="utf-8")
+
+    with pytest.raises(ValidationError):
+        load_regime_config(bad_yaml)
+
+
 def test_v2_default_config_has_v2_section_3_2_lookback_windows() -> None:
     """v2 §3.2 — all six implementation lookback / completeness defaults
     must live in the config block so calibration (v2 §9.1) can tune them."""

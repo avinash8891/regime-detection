@@ -80,10 +80,6 @@ class TrendDirectionV2Config(StrictBaseModel):
         )
     )
 
-    deescalation_days_by_label: dict[str, int] | None = None
-    default_deescalation_days: int = Field(default=3, ge=0)
-
-
 class VolatilityV2RulesConfig(StrictBaseModel):
     """v2 §1C `rising_vol` and `vol_crush` rule thresholds.
 
@@ -169,10 +165,6 @@ class VolatilityV2Config(StrictBaseModel):
             realized_vol_long_period=63,             # v2 §1C line 148
         )
     )
-
-    deescalation_days_by_label: dict[str, int] | None = None
-    default_deescalation_days: int = Field(default=2, ge=0)
-
 
 class VolumeLiquidityV2Config(StrictBaseModel):
     """v2 §1E — Layer 1 V2 Volume / Liquidity feature config.
@@ -277,31 +269,14 @@ class BreadthV2Config(StrictBaseModel):
     # v2 §1D line 280 — narrowing_breadth nh_nl_ratio threshold (< 0.4 fires).
     nh_nl_ratio_narrowing_threshold: float = Field(default=0.4, gt=0.0, lt=1.0)
 
-    deescalation_days_by_label: dict[str, int] | None = None
-    default_deescalation_days: int = Field(default=2, ge=0)
-
-
 class TrendCharacterV2Config(StrictBaseModel):
     """v2 §1B trend-character V2 axis configuration.
 
     Extends the existing V1 trend_character classifier with two new labels —
-    ``breakout_expansion`` and ``range_bound`` — plus per-label asymmetric
-    hysteresis days. All threshold defaults track the spec lines cited inline.
+    ``breakout_expansion`` and ``range_bound``. All threshold defaults track
+    the spec lines cited inline. Axis hysteresis lives on
+    ``RegimeConfig.trend_character``, not in this V2 feature/rule config.
     """
-
-    deescalation_days_by_label: dict[str, int] = Field(
-        default_factory=lambda: {
-            "breakout_expansion": 3,
-            "recovery_attempt": 3,
-            "trending": 0,
-            "range_bound": 3,
-            "chop": 0,
-            "transition": 2,
-            "unknown": 2,
-        }
-    )
-    # Default for labels not in `deescalation_days_by_label`.
-    default_deescalation_days: int = Field(default=0, ge=0)
 
     # v2 §1B line 90 + documented implementation decision. Must be in (0, 1] (a fraction).
     followthrough_rate_threshold: float = Field(default=0.60, gt=0.0, le=1.0)
