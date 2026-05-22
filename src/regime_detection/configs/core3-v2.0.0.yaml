@@ -489,12 +489,25 @@ hmm:
   standardize_inputs: true
   covariance_type: full
   min_covar: 0.001
+  # Full 10-seed sweep restored — compute_hmm_features parallelizes the
+  # per-checkpoint seed sweep across CPU cores (joblib loky backend, BLAS
+  # pinned to one thread per worker), so the wall-clock cost is dominated
+  # by max(per-seed-time) rather than sum. tol pinned to the hmmlearn
+  # default keeps EM fixed-point selection byte-identical to the legacy
+  # sequential implementation.
   random_seeds: [42, 101, 202, 303, 404, 505, 606, 707, 808, 909]
+  tol: 0.01
 
 # v2 §6.2 K-Means/GMM Clustering — diagnostic evidence layer.
 clustering:
   n_clusters: 8
   training_window_days: 1260       # 5y, matches HMM training window
+  # Refit cadence in NYSE sessions: 21 mirrors HMM (§6.1). Legacy code
+  # refit every session (cadence=1); that was ~20x more work AND introduced
+  # label permutations on adjacent k-means initializations. The checkpoint
+  # cadence is both faster and more stable; the last partial segment is
+  # always included so the most-recent session gets a fresh fit.
+  retrain_cadence_days: 21
   random_state: 42
   covariance_type: full
   model_version: "gmm_8cluster_v1.0"
@@ -510,7 +523,7 @@ change_point:
   hazard_lambda: 250.0
   score_window_days: 5
   break_threshold: 0.5
-  training_window_days: 1260
+  training_window_days: 2705
   student_t_alpha: 0.1
   student_t_beta: 0.01
   student_t_kappa: 1.0

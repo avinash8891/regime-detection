@@ -1,7 +1,29 @@
+# ruff: noqa: E402
+# Imports are intentionally split: thread-cap env vars must be set BEFORE
+# numpy/pandas/sklearn import to take effect on BLAS thread pools — see the
+# block below. Suppress E402 file-wide for this conftest.
 from __future__ import annotations
 
-import importlib.util
 import os
+
+# IMPORTANT: cap numerical-library thread fanout BEFORE numpy/pandas/sklearn
+# import. Under pytest-xdist with ``-n auto`` (8 worker processes here),
+# leaving BLAS/OpenMP at default would let each worker spawn 8+ threads, for
+# 64+ contending threads on 8 cores. This causes massive CPU stall on heavy
+# numerical tests (verified via cProfile: 17.86s of time.sleep in joblib loky
+# IPC for a single classify_window call). Test outputs are unaffected — same
+# computations, just no parallel fanout inside the per-worker process.
+for _envkey in (
+    "OMP_NUM_THREADS",
+    "MKL_NUM_THREADS",
+    "OPENBLAS_NUM_THREADS",
+    "VECLIB_MAXIMUM_THREADS",
+    "NUMEXPR_NUM_THREADS",
+    "LOKY_MAX_CPU_COUNT",
+):
+    os.environ.setdefault(_envkey, "1")
+
+import importlib.util
 import pickle
 import sys
 import time
@@ -27,6 +49,35 @@ def pytest_configure() -> None:
         sys.path.insert(0, str(_REPO_ROOT))
     if str(_REPO_ROOT / "src") not in sys.path:
         sys.path.insert(0, str(_REPO_ROOT / "src"))
+
+    # Force joblib.Parallel to run in-process (n_jobs=1, threading backend)
+    # for the pytest session. Under pytest-xdist (8 workers here), each
+    # worker would otherwise spawn its own loky process pool inside
+    # hmm_state.compute_hmm_features — 8 × 8 = 64 contending procs on 8
+    # cores. cProfile confirms the cost: 17.86s of time.sleep in loky IPC
+    # for one classify_window call. The seed sweep is deterministic, so
+    # output is byte-identical regardless of n_jobs (HMM seeds are picked
+    # by log-likelihood comparison after independent fits — order is
+    # commutative). xdist already provides the right granularity of
+    # parallelism (test-level); nested process parallelism inside each
+    # test pessimizes.
+    import joblib
+
+    _original_parallel_init = joblib.Parallel.__init__
+
+    def _force_inprocess_parallel(self, *args, **kwargs):  # type: ignore[no-untyped-def]
+        # Run the HMM seed sweep (and any other joblib.Parallel call) fully
+        # in-process. xdist already provides test-level parallelism across
+        # 8 worker procs; nesting a loky subprocess pool inside each worker
+        # caused 17.86s of time.sleep in IPC per classify_window call
+        # (verified via cProfile). n_jobs=1 + threading eliminates IPC and
+        # leaves serial HMM compute, which empirically beats threaded-fanout
+        # under the BLAS thread cap above.
+        kwargs["n_jobs"] = 1
+        kwargs["backend"] = "threading"
+        return _original_parallel_init(self, *args, **kwargs)
+
+    joblib.Parallel.__init__ = _force_inprocess_parallel  # type: ignore[method-assign]
 
 
 _PROFILE_ENGINE_SHA = "0" * 64
@@ -298,6 +349,85 @@ def walkforward_2023_dec_template(tmp_path_factory: pytest.TempPathFactory) -> P
         end_date=date(2023, 12, 14),
     )
     return cache_dir
+
+
+def _build_real_v2_classify_window_2026_05_13(
+    v2_market_df_for_asof,
+    v2_close_series_by_symbol: dict[str, pd.Series],
+):
+    """Compute classify_window once for the real V2 fixture at 2026-05-13
+    with the canonical sector + cross-asset closes (no macro). The two
+    integration tests asserting on this exact engine state (one via
+    ``classify_window``, one via ``classify`` which delegates to
+    ``classify_window(lookback_days=1).outputs[-1]`` — see
+    ``test_classify_delegates_to_classify_window_with_single_day_lookback``)
+    can share this result. Now economical because the joblib in-process
+    monkeypatch in ``pytest_configure`` cut the build cost from ~90s to
+    ~37s — small enough that the cross-worker setup-wait pays off.
+    """
+    from regime_detection.engine import RegimeEngine
+    from regime_detection.fragility_universe import (
+        CROSS_ASSET_SYMBOLS,
+        SECTOR_ETFS,
+    )
+
+    as_of = date(2026, 5, 13)
+    return RegimeEngine().classify_window(
+        end_date=as_of,
+        market_data=v2_market_df_for_asof(as_of),
+        lookback_days=1,
+        sector_etf_closes={s: v2_close_series_by_symbol[s] for s in SECTOR_ETFS},
+        cross_asset_closes={
+            s: v2_close_series_by_symbol[s] for s in CROSS_ASSET_SYMBOLS
+        },
+    )
+
+
+@pytest.fixture(scope="session")
+def real_v2_classify_window_2026_05_13(
+    v2_market_df_for_asof,
+    v2_close_series_by_symbol,
+    tmp_path_factory: pytest.TempPathFactory,
+    worker_id: str,
+):
+    """Session-scoped, cross-worker pickle-cached classify_window result for
+    the real V2 fixture at as_of=2026-05-13 with sector + cross-asset
+    closes (no macro). See ``_build_real_v2_classify_window_2026_05_13``.
+    """
+    if worker_id == "master":
+        return _build_real_v2_classify_window_2026_05_13(
+            v2_market_df_for_asof, v2_close_series_by_symbol
+        )
+
+    shared_dir = tmp_path_factory.getbasetemp().parent
+    cache_path = shared_dir / "real_v2_classify_window_2026_05_13.pkl"
+    lock_path = shared_dir / "real_v2_classify_window_2026_05_13.lock"
+
+    if cache_path.exists():
+        return pickle.loads(cache_path.read_bytes())
+
+    try:
+        fd = os.open(lock_path, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+        os.close(fd)
+        result = _build_real_v2_classify_window_2026_05_13(
+            v2_market_df_for_asof, v2_close_series_by_symbol
+        )
+        tmp = cache_path.with_suffix(".pkl.tmp")
+        tmp.write_bytes(pickle.dumps(result))
+        tmp.replace(cache_path)
+        return result
+    except FileExistsError:
+        pass
+
+    deadline = time.monotonic() + 300.0
+    while time.monotonic() < deadline:
+        if cache_path.exists():
+            return pickle.loads(cache_path.read_bytes())
+        time.sleep(0.2)
+    raise RuntimeError(
+        "real_v2_classify_window_2026_05_13 build timed out waiting on "
+        f"peer worker; cache_path={cache_path}"
+    )
 
 
 @pytest.fixture(scope="session")

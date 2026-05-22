@@ -112,12 +112,25 @@ def compute_clustering_features(
     cluster_id_series = pd.Series(pd.NA, index=frame.index, dtype="Int64")
     distance_series = pd.Series(float("nan"), index=frame.index, dtype="float64")
     successful_fit = False
-    for train_end_pos in range(n_train - 1, len(frame)):
+    cadence = max(1, config.retrain_cadence_days)
+    train_end_positions = list(range(n_train - 1, len(frame), cadence))
+    if not train_end_positions or train_end_positions[-1] != len(frame) - 1:
+        train_end_positions.append(len(frame) - 1)
+    for offset, train_end_pos in enumerate(train_end_positions):
         train = frame.iloc[train_end_pos - n_train + 1 : train_end_pos + 1].to_numpy(
             dtype=float
         )
         if not np.any(train.std(axis=0) > 0.0):
             continue
+        next_train_end_pos = (
+            train_end_positions[offset + 1]
+            if offset + 1 < len(train_end_positions)
+            else len(frame)
+        )
+        # Segment is [train_end_pos, next_train_end_pos): all sessions
+        # scored by this checkpoint's freshly-fit GMM. PIT-safe because
+        # session train_end_pos is the last row in the training window.
+        segment_frame = frame.iloc[train_end_pos:next_train_end_pos]
         model = GaussianMixture(
             n_components=config.n_clusters,
             covariance_type=config.covariance_type,
@@ -127,9 +140,8 @@ def compute_clustering_features(
         )
         try:
             model.fit(train)
-            row = frame.iloc[[train_end_pos]]
-            row_X = row.to_numpy(dtype=float)
-            proba = model.predict_proba(row_X)
+            segment_X = segment_frame.to_numpy(dtype=float)
+            proba = model.predict_proba(segment_X)
         except Exception as exc:  # noqa: BLE001
             _LOGGER.warning(
                 "GaussianMixture PIT fit/predict skipped for %s: %s",
@@ -137,18 +149,19 @@ def compute_clustering_features(
                 exc,
             )
             continue
-        cluster_id = int(proba.argmax(axis=1)[0])
-        diff = row_X - model.means_[cluster_id]
+        ids = proba.argmax(axis=1)
+        means_for_rows = model.means_[ids]
+        diff = segment_X - means_for_rows
         if config.covariance_type == "full":
-            precision = model.precisions_[cluster_id]
-            quad = np.einsum("ij,jk,ik->i", diff, precision, diff)
-            distance = float(np.sqrt(np.clip(quad, 0.0, None))[0])
+            precisions_for_rows = model.precisions_[ids]
+            quad = np.einsum("ij,ijk,ik->i", diff, precisions_for_rows, diff)
+            distances = np.sqrt(np.clip(quad, 0.0, None))
         else:
-            distance = float(np.linalg.norm(diff, axis=1)[0])
-        idx = frame.index[train_end_pos]
-        proba_frame.loc[idx, :] = proba[0]
-        cluster_id_series.loc[idx] = cluster_id
-        distance_series.loc[idx] = distance
+            distances = np.linalg.norm(diff, axis=1)
+        idx = segment_frame.index
+        proba_frame.loc[idx, :] = proba
+        cluster_id_series.loc[idx] = ids.astype("int64")
+        distance_series.loc[idx] = distances
         successful_fit = True
     if not successful_fit:
         return None

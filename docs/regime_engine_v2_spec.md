@@ -4053,8 +4053,31 @@ HMM state is **never** the final regime label. Evidence flows into:
 
 #### Training
 - Fit on at least 5 years of data
-- Refit quarterly on rolling 5-year window
+- Refit periodically on rolling 5-year window — the shipped engine uses
+  `hmm.retrain_cadence_days: 21` (≈ monthly NYSE cadence) as a tighter,
+  PIT-safe operationalization of the quarterly-refit spec intent. The
+  cadence governs in-call refits inside a single `classify_window`
+  invocation; the operator-side quarterly drift check below remains on its
+  own schedule.
 - Compare new model parameters to prior version; alert when **state-mean parameter drift** exceeds 20%.
+
+##### Multi-seed sweep and parallelization
+
+The fit at each refit checkpoint runs a sweep over `hmm.random_seeds`
+(V2 ship default: 10 seeds) and selects the seed with the highest final
+log-likelihood among monotonic EM trajectories. This stabilizes hmmlearn
+against EM local optima on mixed-scale market features and was a
+calibration outcome, not a hyperparameter.
+
+The shipped engine parallelizes the per-checkpoint seed sweep across CPU
+cores (`joblib` loky backend, one process per seed, BLAS pinned to one
+thread per worker). The parallel and sequential paths produce
+**numerically identical output up to floating-point rounding from BLAS
+reduction order** (typical max-abs-diff ≈ 1e-12 on standardized inputs;
+correlation = 1.000000 against the sequential reference). When the
+module-level `GaussianHMM` symbol is monkeypatched (typically by tests),
+the implementation falls back to in-process serial execution so the patch
+takes effect; this is the only path where parallelism is disabled.
 
 Drift operational definition:
 
@@ -4106,9 +4129,39 @@ Discover empirical clusters of market days for diagnostic purposes.
 - Like the HMM (§6.1), cluster index → economic label mapping is **manual and config-versioned**. Never auto-map.
 
 For multi-session output, cluster assignment is point-in-time. Session `t` uses
-a GMM fit on data available through `t`; final-date clusters must not be
-backfilled into earlier emitted rows. Raw cluster IDs remain diagnostic and
+a GMM fit trained on data available **strictly through some checkpoint `t' ≤ t`**;
+no future data (sessions `> t`) may enter the fit. Final-date clusters must not
+be backfilled into earlier emitted rows. Raw cluster IDs remain diagnostic and
 operator-mapped per V2 §10.
+
+##### Refit cadence
+
+The GMM is **refit periodically** on the trailing `training_window_days`-row
+window, mirroring the HMM's quarterly-refit pattern in §6.1. Between checkpoints,
+the most recent PIT-safe fit is reused for `predict_proba` on the intervening
+sessions. The V2 ship default is `retrain_cadence_days: 21` (≈ monthly NYSE
+cadence) — chosen to:
+
+1. Preserve the PIT discipline above (every fit's training window ends at
+   `t' ≤ t`, so no future leakage into any emitted session).
+2. Match the cadence the HMM evidence layer (§6.1) actually runs at in the
+   shipped engine — the two evidence layers should refit on the same schedule
+   so consumers see consistent staleness across HMM and GMM outputs.
+3. Avoid the **label-permutation pathology** of per-session refits
+   (`cadence=1`): adjacent 1260-row windows differ by 1 row (99.92% overlap),
+   so the underlying clusters are physically near-identical, but the integer
+   `cluster_id` permutes randomly between adjacent fits because k-means
+   initialization is non-deterministic on near-identical data. Per-session
+   refits therefore produce a `cluster_id` series that flips daily across
+   physically identical clusters, which downstream operator mappings cannot
+   consume. The checkpoint cadence eliminates this noise within each block.
+4. Cut wall-clock by ~20× vs the per-session refit, freeing budget for HMM
+   parallelization and downstream consumers.
+
+The cadence is implementation-configurable (`clustering.retrain_cadence_days`
+in the engine YAML); `1` is supported for audit/regression purposes but is
+not the V2 ship default. The last partial segment is always included so the
+most-recent emitted session is scored by a fresh fit.
 
 #### Constraint
 Clusters must be **manually mapped** to economic labels after inspection. Never auto-label. Mapping is config-versioned.

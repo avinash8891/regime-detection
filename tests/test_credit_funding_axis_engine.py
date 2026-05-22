@@ -719,12 +719,27 @@ def test_real_v2_fixture_credit_funding_golden_label(
     assert proxy_rule["hy_spread_slope_21d"] == pytest.approx(-0.0005359273106014766)
 
 
+@pytest.mark.slow
 def test_regime_output_carries_real_fixture_credit_funding_state_when_configured(
     v2_market_df_for_asof,
     v2_close_series_by_symbol: dict[str, pd.Series],
     v2_macro_series_by_key: dict[str, pd.Series],
 ) -> None:
-    """End-to-end: real fixture reaches both §2C wire fields."""
+    """End-to-end: real fixture reaches both §2C wire fields.
+
+    Marked ``slow`` because this single test consumes 105-145s under the
+    default ``-n auto`` configuration (real V2 fixture + macro + full
+    classify_window pipeline). The default suite retains equivalent
+    coverage via:
+      - ``test_regime_output_carries_credit_funding_state_when_configured``
+        (synthetic context, same engine.classify_window path,
+        asserts credit_funding_state / _proxy / _effective_state are
+        populated with allowed labels).
+      - ``test_real_v2_fixture_credit_funding_golden_label`` (real V2
+        fixture at axis-series-builder level, asserts exact
+        spread_source / rule_evidence numerical values).
+    Run this test with ``python3.14 -m pytest -m slow`` (see pytest.ini).
+    """
     as_of = _REAL_FIXTURE_CREDIT_AS_OF
     context = _build_real_v2_credit_context(
         as_of,

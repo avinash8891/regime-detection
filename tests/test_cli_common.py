@@ -5,7 +5,41 @@ from pathlib import Path
 
 import pytest
 
-from regime_data_fetch.cli_common import load_operator_env_files
+from regime_data_fetch.cli_common import (
+    OPERATOR_ENV_FILE_LIST_VAR,
+    OPERATOR_ENV_POINTER_FILE_VAR,
+    OPERATOR_ENV_POINTER_VARS,
+    load_operator_env_files,
+)
+
+
+@pytest.fixture(autouse=True)
+def _isolate_operator_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Hermetic isolation for cli_common tests.
+
+    Without this fixture, these tests were order-dependent: any earlier
+    test on the same xdist worker that ran (directly or via subprocess
+    fallback path) ``load_operator_env_files`` against the developer's
+    home pointer ``~/.config/regime-detection/operator.env`` would have
+    left ``REGIME_HDX_ENV`` / ``REGIME_INVESTING_ENV`` /
+    ``REGIME_TINYFISH_ENV`` set in ``os.environ``. The original tests
+    only delenv'd the vars they personally expected, missing the leaked
+    ones, so assertions like ``loaded == [pointer_file, tinyfish_env]``
+    failed when the function additionally followed those leaked
+    pointers.
+
+    Surfaced when experimenting with ``--dist=loadfile`` (different
+    worker grouping → different chance of contamination) — bug existed
+    before; the default ``--dist=load`` happened to mask it. Importing
+    ``OPERATOR_ENV_POINTER_VARS`` from production keeps this fixture
+    correct when new provider pointers are added.
+    """
+    for key in (
+        OPERATOR_ENV_POINTER_FILE_VAR,
+        OPERATOR_ENV_FILE_LIST_VAR,
+        *OPERATOR_ENV_POINTER_VARS,
+    ):
+        monkeypatch.delenv(key, raising=False)
 
 
 def test_load_operator_env_files_loads_repo_pointer_targets(
@@ -24,11 +58,11 @@ def test_load_operator_env_files_loads_repo_pointer_targets(
         f"REGIME_ENV_FILES={alpaca_env}:{fred_env}\n",
         encoding="utf-8",
     )
+    # _isolate_operator_env clears the REGIME_* pointers. Still clear the
+    # downstream API-key vars these tests assert on, since load_env_file
+    # mutates os.environ directly (outside monkeypatch's tracking) and
+    # earlier tests may have set them.
     for key in (
-        "REGIME_OPERATOR_ENV_FILE",
-        "REGIME_ENV_FILES",
-        "REGIME_ALPACA_ENV",
-        "REGIME_FRED_ENV",
         "ALPACA_API_KEY_ID",
         "ALPACA_API_SECRET_KEY",
         "FRED_API_KEY",
@@ -50,13 +84,7 @@ def test_load_operator_env_files_supports_named_provider_pointers(
     pointer_file = tmp_path / ".regime-operator.env"
     tinyfish_env.write_text("TINYFISH_API_KEY=tinyfish-key\n", encoding="utf-8")
     pointer_file.write_text(f"REGIME_TINYFISH_ENV={tinyfish_env}\n", encoding="utf-8")
-    for key in (
-        "REGIME_OPERATOR_ENV_FILE",
-        "REGIME_ENV_FILES",
-        "REGIME_TINYFISH_ENV",
-        "TINYFISH_API_KEY",
-    ):
-        monkeypatch.delenv(key, raising=False)
+    monkeypatch.delenv("TINYFISH_API_KEY", raising=False)
 
     loaded = load_operator_env_files(repo_root=tmp_path)
 
@@ -65,10 +93,9 @@ def test_load_operator_env_files_supports_named_provider_pointers(
 
 
 def test_load_operator_env_files_requires_explicit_pointer_to_exist(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path,
 ) -> None:
     missing = tmp_path / "missing.env"
-    monkeypatch.delenv("REGIME_OPERATOR_ENV_FILE", raising=False)
 
     with pytest.raises(SystemExit, match="operator env pointer file not found"):
         load_operator_env_files(repo_root=tmp_path, explicit_path=missing)

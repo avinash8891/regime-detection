@@ -422,6 +422,7 @@ def test_profile_json_report_emits_layer1_sentiment_metric_summary(
         pit_constituent_intervals=pd.DataFrame({"ticker": ["AAPL"]}),
         constituent_tickers=["AAPL"],
         constituent_ohlcv={"AAPL": pd.DataFrame({"close": [1.0]})},
+        load_timings={"load_market_data": 0.01, "_total": 0.02},
     )
     output = SimpleNamespace(
         as_of_date=pd.Timestamp("2026-05-15").date(),

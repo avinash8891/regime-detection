@@ -187,6 +187,39 @@ def _stage_report(
     return rows
 
 
+def _data_loading_report(load_timings: dict[str, float]) -> dict[str, Any]:
+    """Render the per-stage breakdown captured by ``_load_profile_inputs``.
+
+    ``load_timings`` includes a synthetic ``_total`` key representing the
+    full wall-clock window measured around the stage block; the per-stage
+    rows are reported as a percentage of that total so a slow unmetered
+    gap (e.g. inter-stage glue) shows up as a residual.
+    """
+    total = load_timings.get("_total", 0.0)
+    measured_sum = sum(v for k, v in load_timings.items() if k != "_total")
+    rows: list[dict[str, Any]] = []
+    for stage_name, seconds in sorted(
+        ((k, v) for k, v in load_timings.items() if k != "_total"),
+        key=lambda kv: kv[1],
+        reverse=True,
+    ):
+        pct = (seconds / total * 100.0) if total > 0 else 0.0
+        rows.append(
+            {
+                "stage_name": stage_name,
+                "wall_clock_seconds": seconds,
+                "percent_of_total": pct,
+            }
+        )
+    residual = total - measured_sum
+    return {
+        "total_seconds": total,
+        "measured_sum_seconds": measured_sum,
+        "unmetered_residual_seconds": residual,
+        "stages": rows,
+    }
+
+
 def _compact_timeline_rows(outputs: list[RegimeOutput]) -> list[str]:
     rows = [
         "as_of_date | trend_direction | volatility_state | transition_risk | activated_v2_seams"
@@ -721,6 +754,7 @@ def _build_json_report(
                 "total_seconds": per_day_emission_total,
                 "avg_ms_per_day": per_day_avg_ms,
             },
+            "data_loading": _data_loading_report(inputs.load_timings),
             "bottom_line_total_wall_clock_seconds": total_wall_clock,
         },
         "timeline": _compact_timeline_report(timeline.outputs),

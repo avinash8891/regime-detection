@@ -444,21 +444,15 @@ def test_engine_classify_window_emits_network_fragility_labels_on_full_universe(
 
 
 def test_engine_classify_window_emits_real_fixture_network_fragility_label(
-    v2_market_df_for_asof,
-    v2_close_series_by_symbol,
+    real_v2_classify_window_2026_05_13,
 ):
     """Top-level engine entrypoint over tracked real OHLCV: protects the
-    RegimeEngine → MarketContext → FeatureStore → AxisSeriesBundle seam."""
+    RegimeEngine → MarketContext → FeatureStore → AxisSeriesBundle seam.
+
+    Uses the cross-worker cached classify_window (see conftest).
+    """
     as_of = date(2026, 5, 13)
-    timeline = RegimeEngine().classify_window(
-        end_date=as_of,
-        market_data=v2_market_df_for_asof(as_of),
-        lookback_days=1,
-        sector_etf_closes={s: v2_close_series_by_symbol[s] for s in SECTOR_ETFS},
-        cross_asset_closes={
-            s: v2_close_series_by_symbol[s] for s in CROSS_ASSET_SYMBOLS
-        },
-    )
+    timeline = real_v2_classify_window_2026_05_13
 
     by_date = {out.as_of_date: out for out in timeline.outputs}
     network_fragility = by_date[as_of].network_fragility

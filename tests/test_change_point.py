@@ -265,7 +265,7 @@ def test_real_default_config_carries_change_point_block() -> None:
     assert cfg.change_point.method == "BOCPD"
     assert cfg.change_point.score_window_days == 5
     assert cfg.change_point.break_threshold == 0.5
-    assert cfg.change_point.training_window_days == 1260
+    assert cfg.change_point.training_window_days == 2705
 
 
 def test_feature_store_change_point_seam_none_when_config_absent(
@@ -315,6 +315,10 @@ def test_feature_store_change_point_seam_present_with_default_config(
 
     cfg = load_default_regime_config()
     assert cfg.change_point is not None
+    # Override training_window to fit the test fixture's ~650 sessions
+    cfg = cfg.model_copy(update={
+        "change_point": cfg.change_point.model_copy(update={"training_window_days": 500}),
+    })
     spy = raw_market_frames["SPY"]
     rsp = raw_market_frames["RSP"]
     vixy = raw_market_frames["VIXY"]
@@ -354,9 +358,14 @@ def test_regime_output_carries_change_point_when_seam_present(
 
     engine = RegimeEngine()
     assert engine.config.change_point is not None
+    cfg = engine.config.model_copy(update={
+        "change_point": engine.config.change_point.model_copy(
+            update={"training_window_days": 500}
+        ),
+    })
     last_session = max(raw_market_data["date"].unique())
     market_data = market_df_for_asof(last_session)
-    out = engine.classify(as_of_date=last_session, market_data=market_data)
+    out = engine.classify(as_of_date=last_session, market_data=market_data, config=cfg)
     assert out.change_point is not None
     assert out.change_point.method == "BOCPD"
     assert 0.0 <= out.change_point.score <= 1.0
