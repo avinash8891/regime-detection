@@ -16,12 +16,10 @@ import pytest
 
 from regime_data_fetch.materialization import MaterializedArtifact
 from scripts.audit_step1_harness import (
-    Step1ProvenanceBundle,
     _BYPASS_CLASSES,
     _CROSS_WORKTREE_SOURCE_DIRS,
     _hash_cross_worktree_sources,
     _infer_bypass_classes,
-    _sha256_file,
     emit_step1_provenance,
 )
 
