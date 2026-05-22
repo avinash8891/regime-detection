@@ -194,19 +194,17 @@ def test_timeline_emits_network_fragility_unknown_in_pure_v1_mode(
 
 
 def test_timeline_pulls_network_fragility_from_axis_bundle_when_sector_data_present(
-    v2_market_df_for_asof,
-    v2_close_series_by_symbol,
+    real_v2_classify_window_2026_05_13,
 ) -> None:
     """When sector data is passed through, timeline.py reads from the
-    AxisSeriesBundle entry (slice-1 hand-off seam)."""
-    out = RegimeEngine().classify(
-        as_of_date=_REAL_V2_AS_OF,
-        market_data=v2_market_df_for_asof(_REAL_V2_AS_OF),
-        sector_etf_closes={s: v2_close_series_by_symbol[s] for s in SECTOR_ETFS},
-        cross_asset_closes={
-            s: v2_close_series_by_symbol[s] for s in CROSS_ASSET_SYMBOLS
-        },
-    )
+    AxisSeriesBundle entry (slice-1 hand-off seam). ``classify(as_of, ...)``
+    is equivalent to ``classify_window(end_date=as_of,
+    lookback_days=1, ...).outputs[-1]`` per
+    ``test_classify_delegates_to_classify_window_with_single_day_lookback``;
+    we use the cross-worker cached timeline (see conftest).
+    """
+    out = real_v2_classify_window_2026_05_13.outputs[-1]
+    assert out.as_of_date == _REAL_V2_AS_OF
 
     assert (
         "v2_classifier_not_yet_implemented"

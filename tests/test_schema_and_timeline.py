@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import os
+import pickle
+import time
 from datetime import date
 
 from pathlib import Path
@@ -46,8 +49,7 @@ from regime_detection.transition_risk_series import (
 from regime_detection.versioning import engine_version
 
 
-@pytest.fixture(scope="session")
-def shared_timeline_pipeline(market_df_for_asof):
+def _build_shared_timeline_pipeline(market_df_for_asof):
     end_date = date(2023, 12, 14)
     engine = RegimeEngine()
     market_data = market_df_for_asof(end_date)
@@ -85,6 +87,53 @@ def shared_timeline_pipeline(market_df_for_asof):
         "timeline": timeline,
         "point_output": point_output,
     }
+
+
+@pytest.fixture(scope="session")
+def shared_timeline_pipeline(market_df_for_asof, tmp_path_factory, worker_id):
+    """Session-scoped, but ALSO shared across pytest-xdist workers via a
+    disk pickle cache. Without this cross-worker cache, each worker
+    independently rebuilds the ~80s timeline pipeline (build_market_context +
+    build_feature_store + build_regime_timeline + engine.classify), and the
+    duplicate work dominates wall-clock. Same pattern as
+    ``classified_golden_outputs`` in conftest.py.
+
+    PIT correctness: the pipeline inputs (market_df_for_asof at 2023-12-14
+    plus default engine config) are immutable across the session. Tests
+    consume the outputs read-only (``model_dump``, ``equals``, attribute
+    reads). The pickle round-trip preserves pydantic-model and pandas-frame
+    equality, which is what every consumer asserts on.
+    """
+    if worker_id == "master":
+        return _build_shared_timeline_pipeline(market_df_for_asof)
+
+    shared_dir = tmp_path_factory.getbasetemp().parent
+    cache_path = shared_dir / "shared_timeline_pipeline.pkl"
+    lock_path = shared_dir / "shared_timeline_pipeline.lock"
+
+    if cache_path.exists():
+        return pickle.loads(cache_path.read_bytes())
+
+    try:
+        fd = os.open(lock_path, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+        os.close(fd)
+        result = _build_shared_timeline_pipeline(market_df_for_asof)
+        tmp = cache_path.with_suffix(".pkl.tmp")
+        tmp.write_bytes(pickle.dumps(result))
+        tmp.replace(cache_path)
+        return result
+    except FileExistsError:
+        pass
+
+    deadline = time.monotonic() + 300.0
+    while time.monotonic() < deadline:
+        if cache_path.exists():
+            return pickle.loads(cache_path.read_bytes())
+        time.sleep(0.2)
+    raise RuntimeError(
+        "shared_timeline_pipeline build timed out waiting on peer worker; "
+        f"cache_path={cache_path}"
+    )
 
 
 def test_core3_v1_regime_output_keeps_legacy_placeholder_wire_shapes(
