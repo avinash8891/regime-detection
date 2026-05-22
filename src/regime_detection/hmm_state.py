@@ -21,6 +21,7 @@ per-classify gate.
 from __future__ import annotations
 
 import logging
+import os
 from dataclasses import dataclass
 from typing import Any
 
@@ -28,6 +29,7 @@ import numpy as np
 import pandas as pd
 from hmmlearn.base import ConvergenceMonitor
 from hmmlearn.hmm import GaussianHMM
+from joblib import Parallel, delayed
 
 from regime_detection.config import HMMConfig
 
@@ -74,6 +76,62 @@ class HMMFeatures:
     n_states: int
     selected_seed: int
     log_likelihood: float
+
+
+def _fit_single_seed(
+    *,
+    fit_frame: np.ndarray,
+    predict_frame: np.ndarray,
+    seed: int,
+    n_states: int,
+    covariance_type: str,
+    min_covar: float,
+    tol: float,
+) -> dict[str, Any]:
+    """Fit one GaussianHMM seed and return its posterior + diagnostics.
+
+    Runs at module scope so joblib's loky backend can pickle it; mirrors the
+    semantics of the prior inline seed loop (StrictConvergenceMonitor, NaN /
+    non_monotonic propagation) so parallelization is output-preserving.
+    """
+    # Pin BLAS to one thread per worker — without this the 16 workers each
+    # spawn 16 OpenBLAS threads and oversubscribe the box, defeating the
+    # parallel speedup. setdefault so an operator can still override.
+    os.environ.setdefault("OPENBLAS_NUM_THREADS", "1")
+    os.environ.setdefault("MKL_NUM_THREADS", "1")
+    os.environ.setdefault("OMP_NUM_THREADS", "1")
+    model = GaussianHMM(
+        n_components=n_states,
+        covariance_type=covariance_type,
+        min_covar=min_covar,
+        n_iter=200,
+        tol=tol,
+        random_state=seed,
+    )
+    model.monitor_ = _StrictConvergenceMonitor(
+        tol=model.monitor_.tol,
+        n_iter=model.monitor_.n_iter,
+        verbose=model.monitor_.verbose,
+    )
+    model.fit(fit_frame)
+    history = list(model.monitor_.history)
+    final_log_likelihood = float(history[-1]) if history else float("-inf")
+    previous_log_likelihood = float(history[-2]) if len(history) >= 2 else None
+    delta = (
+        final_log_likelihood - previous_log_likelihood
+        if previous_log_likelihood is not None
+        else None
+    )
+    non_monotonic = bool(getattr(model.monitor_, "non_monotonic", False))
+    posterior = None if non_monotonic else model.predict_proba(predict_frame)
+    return {
+        "posterior": posterior,
+        "seed": seed,
+        "log_likelihood": final_log_likelihood,
+        "previous_log_likelihood": previous_log_likelihood,
+        "delta": delta,
+        "non_monotonic": non_monotonic,
+    }
 
 
 def compute_hmm_features(
@@ -129,13 +187,22 @@ def compute_hmm_features(
     )
     latest_fit: dict[str, Any] | None = None
     all_skipped: list[tuple[int, int, float | None, float | None, float | None]] = []
+    # joblib's loky workers re-import this module — they always see the
+    # real hmmlearn.GaussianHMM, even when a test monkeypatches the
+    # module-level symbol. When the symbol has been swapped (typically by
+    # pytest), drop to in-process serial execution so the patch takes
+    # effect; otherwise dispatch the seed sweep across processes.
+    is_patched = getattr(GaussianHMM, "__module__", "") != "hmmlearn.hmm"
+    n_workers = 1 if is_patched else min(len(config.random_seeds), os.cpu_count() or 1)
     try:
         train_end_positions = list(
             range(n_train - 1, len(frame), max(1, config.retrain_cadence_days))
         )
         if train_end_positions[-1] != len(frame) - 1:
             train_end_positions.append(len(frame) - 1)
-        for offset, train_end_pos in enumerate(train_end_positions):
+        backend = "threading" if is_patched else "loky"
+        with Parallel(n_jobs=n_workers, backend=backend, batch_size=1) as parallel:
+          for offset, train_end_pos in enumerate(train_end_positions):
             train_frame = frame.iloc[train_end_pos - n_train + 1 : train_end_pos + 1]
             next_train_end_pos = (
                 train_end_positions[offset + 1]
@@ -149,53 +216,32 @@ def compute_hmm_features(
                 standardize_inputs=config.standardize_inputs,
             )
             best: dict[str, Any] | None = None
-            # TODO(simplify, owner=regime-maintainers): the retrain loop now runs this full seed sweep
-            # (`len(random_seeds)` fits × n_iter=200) at every checkpoint —
-            # dominant cost in classify_window. Warm-start from the previous
-            # checkpoint's startprob/transmat/means/covars and drop n_iter for
-            # follow-on retrains; cuts ~5-10x. Requires spec sign-off because
-            # warm-start changes calibration math.
-            for seed in config.random_seeds:
-                model = GaussianHMM(
-                    n_components=config.n_states,
+            seed_results = parallel(
+                delayed(_fit_single_seed)(
+                    fit_frame=fit_frame,
+                    predict_frame=predict_frame,
+                    seed=int(seed),
+                    n_states=config.n_states,
                     covariance_type=config.covariance_type,
                     min_covar=config.min_covar,
-                    n_iter=200,
-                    random_state=seed,
+                    tol=config.tol,
                 )
-                model.monitor_ = _StrictConvergenceMonitor(
-                    tol=model.monitor_.tol,
-                    n_iter=model.monitor_.n_iter,
-                    verbose=model.monitor_.verbose,
-                )
-                model.fit(fit_frame)
-                history = list(model.monitor_.history)
-                final_log_likelihood = float(history[-1]) if history else float("-inf")
-                previous_log_likelihood = float(history[-2]) if len(history) >= 2 else None
-                delta = (
-                    final_log_likelihood - previous_log_likelihood
-                    if previous_log_likelihood is not None
-                    else None
-                )
-                if getattr(model.monitor_, "non_monotonic", False):
+                for seed in config.random_seeds
+            )
+            for result in seed_results:
+                if result["non_monotonic"]:
                     all_skipped.append(
                         (
                             train_end_pos,
-                            seed,
-                            final_log_likelihood,
-                            previous_log_likelihood,
-                            delta,
+                            result["seed"],
+                            result["log_likelihood"],
+                            result["previous_log_likelihood"],
+                            result["delta"],
                         )
                     )
                     continue
-                posterior = model.predict_proba(predict_frame)
-                candidate = {
-                    "posterior": posterior,
-                    "seed": seed,
-                    "log_likelihood": final_log_likelihood,
-                }
-                if best is None or final_log_likelihood > best["log_likelihood"]:
-                    best = candidate
+                if best is None or result["log_likelihood"] > best["log_likelihood"]:
+                    best = result
             if best is None:
                 continue
             state_prob_frame.loc[segment_frame.index, :] = best["posterior"]

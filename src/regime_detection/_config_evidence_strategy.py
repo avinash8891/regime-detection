@@ -43,6 +43,12 @@ class HMMConfig(StrictBaseModel):
         default=(42, 101, 202, 303, 404, 505, 606, 707, 808, 909),
         min_length=1,
     )
+    # EM convergence tolerance for hmmlearn.GaussianHMM. Pinned to the
+    # hmmlearn default so EM converges to the same fixed point as the
+    # legacy sequential implementation — wall-clock is reduced via the
+    # per-checkpoint seed-sweep parallelization in compute_hmm_features
+    # rather than by relaxing convergence.
+    tol: float = Field(default=0.01, gt=0.0)
     model_version: str = "hmm_4state_v1.0"
     state_label_map: dict[int, str] | None = None
 
@@ -57,6 +63,14 @@ class ClusteringConfig(StrictBaseModel):
 
     n_clusters: int = Field(default=8, ge=2)
     training_window_days: int = Field(default=1260, ge=100)
+    # Retrain cadence in sessions: GMM is refit at every cadence step over
+    # the training window, then the latest fit's predictions are written
+    # forward to the next checkpoint. Mirrors the HMM design (§6.1). The
+    # legacy per-session refit (cadence=1) is supported but ~20x slower
+    # without improving label stability — adjacent k-means initializations
+    # routinely permute labels, so the checkpoint cadence is also the
+    # more stable assignment regime.
+    retrain_cadence_days: int = Field(default=21, ge=1)
     random_state: int = Field(default=42, ge=0)
     covariance_type: Literal["full", "tied", "diag", "spherical"] = "full"
     model_version: str = Field(default="gmm_8cluster_v1.0")

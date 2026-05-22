@@ -5,15 +5,18 @@ from __future__ import annotations
 import argparse
 import contextlib
 import datetime as dt
+import logging
 import signal
 import sys
 import time
 from collections import defaultdict
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
 import pandas as pd
+
+logger = logging.getLogger(__name__)
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 SRC_ROOT = REPO_ROOT / "src"
@@ -136,6 +139,7 @@ class ProfileInputBundle:
     pit_constituent_intervals: pd.DataFrame
     constituent_ohlcv: dict[str, pd.DataFrame]
     constituent_tickers: list[str]
+    load_timings: dict[str, float] = field(default_factory=dict)
 
 
 class RunTimeout(RuntimeError):
@@ -309,16 +313,21 @@ def _load_constituent_ohlcv_from_tree(
 def _load_profile_inputs(
     args: argparse.Namespace, *, config: Any
 ) -> ProfileInputBundle:
-    market_data = load_market_data(args.daily_dir)
+    load_timer = StageTimer(timeout_seconds=0)
+    overall_start = time.perf_counter()
+
+    with load_timer.measure("load_market_data"):
+        market_data = load_market_data(args.daily_dir)
     if market_data.empty:
         raise ValueError(f"market_data is empty from {args.daily_dir}")
     end_date = max(market_data["date"])
 
-    bootstrap_context = build_market_context(
-        end_date=end_date,
-        market_data=market_data,
-        config=config,
-    )
+    with load_timer.measure("build_market_context_bootstrap"):
+        bootstrap_context = build_market_context(
+            end_date=end_date,
+            market_data=market_data,
+            config=config,
+        )
     spy_index = bootstrap_context.spy_ohlcv.index
     required_sessions = _build_required_sessions(
         config,
@@ -332,37 +341,51 @@ def _load_profile_inputs(
     # Load the union of sector ETFs and cross-asset symbols in one pass to avoid
     # reading files for symbols that appear in both lists (XLY, XLI, XLP, XLU).
     all_close_symbols = list(dict.fromkeys([*SECTOR_ETFS, *cross_asset_symbols]))
-    all_closes = load_close_dict(args.daily_dir, all_close_symbols, spy_index)
+    with load_timer.measure("load_close_dict_sector_and_cross_asset"):
+        all_closes = load_close_dict(args.daily_dir, all_close_symbols, spy_index)
     sector_etf_closes = {s: all_closes[s] for s in SECTOR_ETFS if s in all_closes}
     cross_asset_closes = {s: all_closes[s] for s in cross_asset_symbols if s in all_closes}
-    macro_series = load_macro_series(
-        args.macro_parquet,
-        args.pmi_path if args.pmi_path is not None and args.pmi_path.exists() else None,
-        cpi_nowcast_parquet=args.cpi_nowcast_parquet,
-        eps_weekly_history_parquet=args.aggregate_forward_eps_weekly_history_parquet,
-    )
+    with load_timer.measure("load_macro_series"):
+        macro_series = load_macro_series(
+            args.macro_parquet,
+            args.pmi_path if args.pmi_path is not None and args.pmi_path.exists() else None,
+            cpi_nowcast_parquet=args.cpi_nowcast_parquet,
+            eps_weekly_history_parquet=args.aggregate_forward_eps_weekly_history_parquet,
+        )
     if args.disable_aggregate_forward_eps_revision:
         # EPS revision is intentionally operator-disabled until the weekly S&P
         # snapshot accumulator has reliable fresh coverage. Keep the macro key
         # absent so earnings_expansion / earnings_contraction stay silent via
         # existing NaN-falsifies behavior.
         macro_series.pop("aggregate_forward_eps_revision", None)
-    event_calendar = _load_optional_event_calendar(args.event_calendar)
-    aaii_sentiment = _load_optional_aaii_sentiment(args.aaii_sentiment_parquet)
-    news_sentiment = _load_optional_news_sentiment(args.news_sentiment_parquet)
+    with load_timer.measure("load_event_calendar"):
+        event_calendar = _load_optional_event_calendar(args.event_calendar)
+    with load_timer.measure("load_aaii_sentiment"):
+        aaii_sentiment = _load_optional_aaii_sentiment(args.aaii_sentiment_parquet)
+    with load_timer.measure("load_news_sentiment"):
+        news_sentiment = _load_optional_news_sentiment(args.news_sentiment_parquet)
     implied_vol_30d = macro_series.get("implied_vol_30d")
-    central_bank_text_releases = _load_optional_central_bank_text_releases(
-        fomc_path=args.fomc_minutes_parquet,
-        powell_path=args.powell_speeches_parquet,
-    )
-    cpi_first_release = _load_optional_cpi_first_release(args.cpi_vintages_parquet)
-    pit_constituent_intervals = read_pit_intervals(args.pit_parquet)
-    constituent_ohlcv, constituent_tickers = _load_constituent_ohlcv_from_tree(
-        args.constituent_tree,
-        pit_constituent_intervals,
-        start_date=working_start_date,
-        end_date=end_date,
-    )
+    with load_timer.measure("load_central_bank_text_releases"):
+        central_bank_text_releases = _load_optional_central_bank_text_releases(
+            fomc_path=args.fomc_minutes_parquet,
+            powell_path=args.powell_speeches_parquet,
+        )
+    with load_timer.measure("load_cpi_first_release"):
+        cpi_first_release = _load_optional_cpi_first_release(args.cpi_vintages_parquet)
+    with load_timer.measure("read_pit_intervals"):
+        pit_constituent_intervals = read_pit_intervals(args.pit_parquet)
+    with load_timer.measure("load_constituent_ohlcv_from_tree"):
+        constituent_ohlcv, constituent_tickers = _load_constituent_ohlcv_from_tree(
+            args.constituent_tree,
+            pit_constituent_intervals,
+            start_date=working_start_date,
+            end_date=end_date,
+        )
+
+    load_timings = dict(load_timer.totals)
+    total_load_seconds = time.perf_counter() - overall_start
+    load_timings["_total"] = total_load_seconds
+    _emit_load_timing_summary(load_timings)
 
     return ProfileInputBundle(
         market_data=market_data,
@@ -382,7 +405,28 @@ def _load_profile_inputs(
         pit_constituent_intervals=pit_constituent_intervals,
         constituent_ohlcv=constituent_ohlcv,
         constituent_tickers=constituent_tickers,
+        load_timings=load_timings,
     )
+
+
+def _emit_load_timing_summary(load_timings: dict[str, float]) -> None:
+    """Log per-stage data-loading durations to stderr so profiling runs can
+    identify the slowest unmetered stage between iterations. Sorted descending
+    so the dominant cost is always the first row."""
+    total = load_timings.get("_total", sum(
+        v for k, v in load_timings.items() if k != "_total"
+    ))
+    rows = sorted(
+        ((k, v) for k, v in load_timings.items() if k != "_total"),
+        key=lambda kv: kv[1],
+        reverse=True,
+    )
+    lines = ["[_load_profile_inputs] per-stage wall clock:"]
+    for name, elapsed in rows:
+        pct = (elapsed / total * 100.0) if total > 0 else 0.0
+        lines.append(f"  {name:<44s} {elapsed:8.3f}s  ({pct:5.1f}%)")
+    lines.append(f"  {'_total':<44s} {total:8.3f}s")
+    logger.info("\n".join(lines))
 
 
 def _parse_args() -> argparse.Namespace:
@@ -503,6 +547,12 @@ def _emit_manifest_resolution_failure(
 
 def main() -> int:
     args = _parse_args()
+    if not logging.getLogger().handlers:
+        logging.basicConfig(
+            level=logging.INFO,
+            format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+            stream=sys.stderr,
+        )
     load_operator_env_files(repo_root=REPO_ROOT, explicit_path=args.operator_env_file)
     try:
         materialize_manifest_from_args(
