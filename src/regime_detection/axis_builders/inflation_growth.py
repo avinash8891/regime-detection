@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import replace
 from datetime import date
 
 import pandas as pd
@@ -19,7 +20,6 @@ from regime_detection.inflation_growth import (
     DGS10_KEY,
     INFLATION_GROWTH_RISK_RANK,
     InflationGrowthLabel,
-    InflationGrowthRuleInputs,
     PMI_KEY,
     build_rule_inputs_by_date as build_inflation_growth_rule_inputs_by_date,
     evaluate_rules as evaluate_inflation_growth_rules,
@@ -196,21 +196,9 @@ def build_inflation_growth_axis_series(
             and nowcast_staleness_days > ig_config.nowcast_stale_calendar_days
         )
         if nowcast_stale:
-            rule_inputs = InflationGrowthRuleInputs(
-                cpi_3m_change_pct=rule_inputs.cpi_3m_change_pct,
-                cpi_6m_change_pct=rule_inputs.cpi_6m_change_pct,
-                cpi_6m_change_pct_lag_21=rule_inputs.cpi_6m_change_pct_lag_21,
-                cpi_6m_change_pct_slope_21d=rule_inputs.cpi_6m_change_pct_slope_21d,
+            rule_inputs = replace(
+                rule_inputs,
                 inflation_surprise_zscore=float("nan"),
-                aggregate_forward_eps_revision_direction_4w=rule_inputs.aggregate_forward_eps_revision_direction_4w,
-                pmi_manufacturing=rule_inputs.pmi_manufacturing,
-                pmi_manufacturing_slope_21d=rule_inputs.pmi_manufacturing_slope_21d,
-                commodity_return_63d=rule_inputs.commodity_return_63d,
-                treasury_10y_yield_slope_21d=rule_inputs.treasury_10y_yield_slope_21d,
-                cyclical_defensive_slope_21d=rule_inputs.cyclical_defensive_slope_21d,
-                spy_21d_return=rule_inputs.spy_21d_return,
-                tlt_21d_return=rule_inputs.tlt_21d_return,
-                credit_funding_active_label=rule_inputs.credit_funding_active_label,
             )
 
         # EPS staleness gate — mirror of the NFCI gate in credit_funding.py:154.
@@ -222,21 +210,9 @@ def build_inflation_growth_axis_series(
         eps_staleness_days = int(eps_staleness_by_date.loc[dt])
         eps_stale = eps_staleness_days > ig_config.eps_revision_stale_calendar_days
         if eps_stale:
-            rule_inputs = InflationGrowthRuleInputs(
-                cpi_3m_change_pct=rule_inputs.cpi_3m_change_pct,
-                cpi_6m_change_pct=rule_inputs.cpi_6m_change_pct,
-                cpi_6m_change_pct_lag_21=rule_inputs.cpi_6m_change_pct_lag_21,
-                cpi_6m_change_pct_slope_21d=rule_inputs.cpi_6m_change_pct_slope_21d,
-                inflation_surprise_zscore=rule_inputs.inflation_surprise_zscore,
+            rule_inputs = replace(
+                rule_inputs,
                 aggregate_forward_eps_revision_direction_4w=float("nan"),
-                pmi_manufacturing=rule_inputs.pmi_manufacturing,
-                pmi_manufacturing_slope_21d=rule_inputs.pmi_manufacturing_slope_21d,
-                commodity_return_63d=rule_inputs.commodity_return_63d,
-                treasury_10y_yield_slope_21d=rule_inputs.treasury_10y_yield_slope_21d,
-                cyclical_defensive_slope_21d=rule_inputs.cyclical_defensive_slope_21d,
-                spy_21d_return=rule_inputs.spy_21d_return,
-                tlt_21d_return=rule_inputs.tlt_21d_return,
-                credit_funding_active_label=rule_inputs.credit_funding_active_label,
             )
 
         label = evaluate_inflation_growth_rules(

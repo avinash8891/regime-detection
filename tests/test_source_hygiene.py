@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import ast
 import re
 from pathlib import Path
 
@@ -29,3 +30,17 @@ def test_source_comments_do_not_embed_task_or_audit_references() -> None:
 
 def test_axis_builders_do_not_use_common_typing_escape_hatch() -> None:
     assert not Path("src/regime_detection/axis_builders/common.py").exists()
+
+
+def test_inflation_growth_axis_builder_does_not_reconstruct_rule_inputs() -> None:
+    path = Path("src/regime_detection/axis_builders/inflation_growth.py")
+    tree = ast.parse(path.read_text())
+
+    constructors = [
+        node.lineno
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Call)
+        and getattr(node.func, "id", "") == "InflationGrowthRuleInputs"
+    ]
+
+    assert constructors == []
