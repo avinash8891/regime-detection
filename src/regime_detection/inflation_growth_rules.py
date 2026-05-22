@@ -224,6 +224,61 @@ def evaluate_risk_off_mild(
     return growth_deterioration
 
 
+def _credit_not_crisis(inputs: InflationGrowthRuleInputs) -> bool:
+    """True when credit is absent, calm, recovering, or mildly widening —
+    any state short of outright stress / squeeze / deleveraging."""
+    return inputs.credit_funding_active_label not in {
+        "credit_stress",
+        "funding_squeeze",
+        "deleveraging",
+    }
+
+
+def evaluate_reflation(
+    inputs: InflationGrowthRuleInputs,
+    config: InflationGrowthRulesConfig,
+) -> bool:
+    """Rising CPI + economic expansion + equities positive + credit not in crisis.
+
+    Captures the "normal growth with mild inflation pressure" regime that
+    falls between goldilocks (requires credit_calm) and recession_scare
+    (requires equity decline).
+    """
+    if _any_nan(
+        inputs.cpi_6m_change_pct_slope_21d,
+        inputs.pmi_manufacturing,
+        inputs.spy_21d_return,
+    ):
+        return False
+    return bool(
+        inputs.cpi_6m_change_pct_slope_21d > 0.0
+        and inputs.pmi_manufacturing > config.pmi_goldilocks_threshold
+        and inputs.spy_21d_return > 0.0
+        and _credit_not_crisis(inputs)
+    )
+
+
+def evaluate_stagflation_lite(
+    inputs: InflationGrowthRuleInputs,
+    config: InflationGrowthRulesConfig,
+) -> bool:
+    """Rising CPI + contracting manufacturing (PMI ≤ 50).
+
+    Captures the early-warning macro regime where inflation persists while
+    the real economy weakens. Distinct from recession_scare (requires equity
+    decline + credit stress) and from reflation (requires PMI > 50).
+    """
+    if _any_nan(
+        inputs.cpi_6m_change_pct_slope_21d,
+        inputs.pmi_manufacturing,
+    ):
+        return False
+    return bool(
+        inputs.cpi_6m_change_pct_slope_21d > 0.0
+        and inputs.pmi_manufacturing <= config.pmi_goldilocks_threshold
+    )
+
+
 def evaluate_earnings_expansion(
     inputs: InflationGrowthRuleInputs,
     config: InflationGrowthRulesConfig,
@@ -268,6 +323,10 @@ def evaluate_rules(
         return "goldilocks"
     if evaluate_recovery_growth(inputs, config):
         return "recovery_growth"
+    if evaluate_reflation(inputs, config):
+        return "reflation"
+    if evaluate_stagflation_lite(inputs, config):
+        return "stagflation_lite"
     if evaluate_earnings_contraction(inputs, config):
         return "earnings_contraction"
     if evaluate_earnings_expansion(inputs, config):

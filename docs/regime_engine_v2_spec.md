@@ -324,6 +324,11 @@ PIT constituent breadth begins here, not in V1. V2 must define and validate the 
 
 ETF proxy breadth from V1 remains available as fallback evidence, but V2 PIT breadth must not silently fall back to biased current constituents.
 
+#### Stocks Above 50DMA
+```python
+pct_above_50dma = mean(member.close > member.sma_50)
+```
+
 #### Stocks Above 200DMA
 ```python
 pct_above_200dma = mean(member.close > member.sma_200)
@@ -335,7 +340,7 @@ ad_line[t] = ad_line[t-1] + (advances[t] - declines[t])
 ad_line_slope_20d = (ad_line[t] - ad_line[t-20]) / 20
 ```
 
-#### New Highs / New Lows Ratio (52-week)
+#### New Highs / New Lows Ratio (252-session)
 ```python
 nh_nl_ratio = new_52w_highs / max(new_52w_highs + new_52w_lows, 1)
 ```
@@ -2258,8 +2263,9 @@ the slice/commit that resolved it. Entries are append-only.
     labels); adding the 2 V2 labels requires a precedence pin.
 
     Resolution: pin the full V2 §1B precedence as
-    `breakout_expansion > recovery_attempt > trending > range_bound >
-    chop > transition > unknown`. Rationale:
+    `breakout_expansion > recovery_attempt > trending > mild_trend >
+    range_bound > chop > volatile_chop > transition > unknown`.
+    Rationale:
 
     - **`breakout_expansion` outranks everything** including
       `recovery_attempt`: a 4-condition strict breakout (close above
@@ -2273,6 +2279,16 @@ the slice/commit that resolved it. Entries are append-only.
     - **`recovery_attempt` outranks `trending`** preserves the V1
       ordering (V1 §1B picks recovery_attempt first when both fire;
       keep V1-compat unless a spec amendment says otherwise).
+
+    - **`mild_trend` slots after `trending`**: ADX >= 20 indicates
+      directional structure, but |ret21| < 0.05 (the `trending`
+      magnitude gate) means price progress is moderate. This is the
+      single most common equity market state (~44% of sessions in
+      2017-2026 backtest) and was previously collapsed into
+      `transition`, making that catch-all label useless for downstream
+      routing. `mild_trend` shares risk-rank 0 with `trending` (both
+      are directional signals). Hysteresis: 0 (immediate de-escalation,
+      same as `trending`). Audit D3 finding.
 
     - **`trending` outranks `range_bound`**: a high-ADX directional
       move that ALSO satisfies range_bound's `abs(return_63d) < 0.05`
@@ -2289,11 +2305,19 @@ the slice/commit that resolved it. Entries are append-only.
       and `abs(ret21)` predicates don't capture). When both fire,
       prefer the more specific label.
 
-    - Tail order (`chop > transition > unknown`) is preserved from V1.
+    - **`volatile_chop` slots after `chop`**: ADX < 20 (no directional
+      conviction) but |ret10| >= 0.03 OR |ret21| >= 0.05 — short-term
+      returns too large for the calm `chop` thresholds. These are
+      whipsaw sessions (153/2287 = 6.7% in backtest) that were
+      previously collapsed into `transition`. Risk-rank 1 alongside
+      chop. Hysteresis: 0. Audit D3 residual finding.
+
+    - Tail order (`transition > unknown`) is preserved from V1.
 
     Risk-rank extension:
-    `{trending: 0, breakout_expansion: 0, recovery_attempt: 1,
-    range_bound: 1, chop: 1, transition: 2, unknown: 2}`.
+    `{trending: 0, breakout_expansion: 0, mild_trend: 0,
+    recovery_attempt: 1, range_bound: 1, chop: 1, volatile_chop: 1,
+    transition: 2, unknown: 2}`.
     Rationale: `breakout_expansion` is a benign / opportunity signal
     (risk-rank 0 alongside trending — both indicate directional flow).
     `range_bound` is risk-rank 1 alongside chop (low-directional-
@@ -2303,7 +2327,8 @@ the slice/commit that resolved it. Entries are append-only.
     placeholders, matching the §1B / §3.7 5-day / 3-day / 0-day
     pattern):
     `{breakout_expansion: 3, recovery_attempt: 3, trending: 0,
-    range_bound: 3, chop: 0, transition: 2, unknown: 0}`.
+    mild_trend: 0, range_bound: 3, chop: 0, volatile_chop: 0,
+    transition: 2, unknown: 0}`.
     `breakout_expansion` holds 3 days post-event (matches the 5-day
     followthrough_rate definition's coherence window from Log #47).
     `range_bound` holds 3 days to avoid flickering on single-day
@@ -2941,7 +2966,10 @@ goldilocks
 inflation_shock
 disinflation
 recession_scare
+risk_off_mild
 recovery_growth
+reflation
+stagflation_lite
 earnings_expansion
 earnings_contraction
 unknown
@@ -2949,7 +2977,7 @@ unknown
 
 #### Precedence
 ```text
-inflation_shock > recession_scare > disinflation > goldilocks > recovery_growth > earnings_contraction > earnings_expansion > unknown
+inflation_shock > recession_scare > risk_off_mild > disinflation > goldilocks > recovery_growth > reflation > stagflation_lite > earnings_contraction > earnings_expansion > unknown
 ```
 
 #### Features (operational definitions)
@@ -3018,10 +3046,11 @@ cyclical_defensive_slope_21d = ols_slope(cyclical_defensive_ratio, window=21)
 ```text
 goldilocks:
   (abs(cpi_6m_change_pct[t] - cpi_6m_change_pct[t-21]) <= 0.005      # "stable" = <50bps drift over 21d
-   OR cpi_6m_change_pct 21d slope <= 0)                              # OR "falling"
+   OR cpi_6m_change_pct 21d slope <= 0                               # OR "falling"
+   OR cpi_6m_change_pct < cpi_goldilocks_benign_ceiling)             # OR ADR 0011 Fix 2: <4% annualized benign
   AND pmi_manufacturing > 50
   AND spy_21d_return > 0                                             # "equities rising"
-  AND credit_funding.active_label == "credit_calm"                   # cross-ref §2C
+  AND credit_funding.active_label == "credit_calm"                   # cross-ref §2C; relaxed by ADR 0011 Fix 3 when credit unbuilt
 
 inflation_shock:
   (inflation_surprise_zscore > +1.5)                                  # "positive AND large"
@@ -3029,22 +3058,44 @@ inflation_shock:
       AND treasury_10y_yield_slope_21d > 0
       AND spy_21d_return < 0
       AND tlt_21d_return < 0)                                         # "equities AND bonds both weak"
+  OR (cpi_3m_change_pct > cpi_3m_acceleration_threshold
+      AND treasury_10y_yield_slope_21d > 0)                           # ADR 0012 Fix A: rapid-onset (default threshold 0.02)
 
 disinflation:
   cpi_6m_change_pct 21d slope < 0
-  AND treasury_10y_yield_slope_21d < 0
+  AND treasury_10y_yield_slope_21d < 0                                # ADR 0011 Fix 1: optional when disinflation_yield_independent=true (default)
   AND pmi_manufacturing > 45
 
 recession_scare:
   treasury_10y_yield_slope_21d < 0
   AND cyclical_defensive_slope_21d < 0
-  AND credit_funding.active_label in {spread_widening, credit_stress}
-  AND spy_21d_return < -0.05                                          # "equities weak"
+  AND credit_funding.active_label in {spread_widening, credit_stress}  # ADR 0011 Fix 3: when credit unbuilt, uses spy_recession_credit_independent_threshold (default -0.07) without credit clause
+  AND spy_21d_return < -0.05                                          # "equities weak" — applies on both credit-confirmed and credit-unbuilt branches (ADR 0012 R2 tightened the prior code-side -0.03 relaxation back to spec)
+  # Known coverage gap (ADR 0011 Remaining Gaps + ADR 0012 R2): the
+  # spread_widening + mild equity decline scenario (SPY between 0% and
+  # -5% during credit stress, ~338 sessions) stays unresolved until a
+  # future ADR introduces a `credit_watch` label.
 
 recovery_growth:
   pmi_manufacturing_slope_21d > 0 AND pmi_manufacturing > 50
   AND cyclical_defensive_slope_21d > 0
-  AND credit_funding.active_label == "credit_calm"
+  AND credit_funding.active_label == "credit_calm"                    # ADR 0011 Fix 3: when credit unbuilt, fires without the credit_calm gate (allow_credit_independent_fallback default true)
+
+reflation:
+  cpi_6m_change_pct_slope_21d > 0                               # CPI rising
+  AND pmi_manufacturing > 50                                     # expansion
+  AND spy_21d_return > 0                                         # equities positive
+  AND credit_funding.active_label NOT IN {credit_stress, funding_squeeze, deleveraging}
+  # Captures "normal growth with mild inflation pressure" — the regime between
+  # goldilocks (requires credit_calm + stable/falling CPI) and recession_scare
+  # (requires equity decline). Audit D1 finding: 352/2287 sessions (15.4%).
+
+stagflation_lite:
+  cpi_6m_change_pct_slope_21d > 0                               # CPI rising
+  AND pmi_manufacturing <= 50                                    # manufacturing contracting
+  # Early-warning macro regime: inflation persists while real economy weakens.
+  # Distinct from recession_scare (requires equity decline + credit stress)
+  # and from reflation (requires PMI > 50). Audit D1 residual: 257/2287 (11.2%).
 
 earnings_expansion:
   aggregate_forward_eps_revision_direction_4w > +0.02     # strict
@@ -3062,14 +3113,17 @@ inflation_growth_risk_rank:
   goldilocks: 0
   recovery_growth: 0
   earnings_expansion: 0
+  reflation: 1
   unknown: 1
   disinflation: 1
+  stagflation_lite: 2
+  risk_off_mild: 2
   earnings_contraction: 2
   recession_scare: 3
   inflation_shock: 3
 ```
 
-Pattern matches §3.6 / §1E / §2A: benign states at 0, mild/unknown at 1, medium severity at 2, high-risk states at 3.
+Pattern matches §3.6 / §1E / §2A: benign states at 0, mild/unknown at 1, medium severity at 2, high-risk states at 3. `reflation` is rank 1 — rising inflation with growth is a transitional regime, not fully benign. `stagflation_lite` is rank 2 — inflation + contracting manufacturing is a deteriorating macro state.
 
 #### Hysteresis
 
@@ -3080,8 +3134,11 @@ inflation_growth:
   deescalation_days_by_label:
     inflation_shock: 5             # high-risk hold
     recession_scare: 5
+    risk_off_mild: 3
     earnings_contraction: 3
     disinflation: 3
+    stagflation_lite: 3
+    reflation: 0
     goldilocks: 0
     recovery_growth: 0
     earnings_expansion: 0
@@ -3100,6 +3157,8 @@ inflation_growth:
 #### Cross-Axis Short-Circuit
 
 Rules referencing `credit_funding.active_label` (`goldilocks`, `recession_scare`, `recovery_growth`) short-circuit the cross-axis predicate to `False` when the §2C axis is unbuilt (slice-4 deferral). Precedence walker then falls through to the next-rank rule. Mirrors slice 1.3's systemic_stress / credit_funding=None pattern (Ambiguity Log #1.3 inline TODO).
+
+**ADR 0011 Fix 3 override (default):** When `allow_credit_independent_fallback=true` (default), the short-circuit-to-False contract above is replaced. `goldilocks` and `recovery_growth` instead fire on their non-credit conditions alone; `recession_scare` requires `spy_21d_return < spy_recession_credit_independent_threshold` (default -0.07, stricter than the credit-confirmed -0.05) in lieu of the credit clause. See `docs/decisions/0011-inflation-growth-rule-coverage-fix.md` Fix 3.
 
 `earnings_expansion` / `earnings_contraction` consume `aggregate_forward_eps_revision_direction_4w`, which is built by the `regime_data_fetch.aggregate_eps` weekly-snapshot accumulator (`sp500_eps_weekly_history.parquet`). The series is all-NaN until > 4 weekly fetches have accumulated; the two labels stay silent during that cold-start and unlock organically once the accumulator fills. No external feed dependency — the accumulator builds the weekly series from the existing free S&P workbook fetch.
 
@@ -3439,9 +3498,12 @@ systemic_stress > correlation_to_one > correlation_concentration > rising_fragil
 
 `diversified_normal`:
 ```text
-0.25 <= avg_pairwise_corr_percentile_504d <= 0.75
+0.0 <= avg_pairwise_corr_percentile_504d <= 0.75
 AND effective_rank stable (21d std < 5% of mean)
 ```
+Note: lower bound lowered from 0.25 to 0.0. Sub-25th-percentile correlation
+is *more* diversified, not less — the original floor excluded the calmest
+261 sessions in a 2287-session backtest (audit D2).
 
 `stock_picker_dispersion`:
 ```text

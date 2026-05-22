@@ -52,7 +52,7 @@ def build_strategy_response(
 
     if (
         trend_direction_active == "bull"
-        and trend_character_active in {"trending", "transition"}
+        and trend_character_active in {"trending", "mild_trend", "transition"}
         and volatility_state_active in {"low_vol", "normal_vol"}
         and breadth_state_active == "healthy_breadth"
     ):
@@ -70,7 +70,7 @@ def build_strategy_response(
         allow_leverage_expansion = False
         modifiers.append("recovery_attempt")
 
-    if trend_character_active == "chop" and volatility_state_active != "crisis_vol":
+    if trend_character_active in {"chop", "volatile_chop"} and volatility_state_active != "crisis_vol":
         allow_trend_following = False
         allow_mean_reversion = True
         position_size_multiplier = 0.75

@@ -46,12 +46,12 @@ INTENTS: list[dict[str, Any]] = [
         "intent_id": "volmageddon_crisis",
         "intent_date": "2018-02-09",
         "intent": {
-            "trend_character": "transition",
+            "trend_character": "trending",
             "volatility_state": "crisis_vol",
             "transition_risk": "crisis_override",
         },
         "search_window_trading_days": 10,
-        "notes": "Volmageddon episode; crisis_vol day",
+        "notes": "Volmageddon episode; crisis_vol day with strong bearish trend",
     },
     {
         "intent_id": "dec2018_bear_stress",
@@ -117,7 +117,7 @@ INTENTS: list[dict[str, Any]] = [
         "intent_date": "2022-06-29",
         "intent": {
             "trend_direction": "bear",
-            "trend_character": "trending",
+            "trend_character": "range_bound",
             "volatility_state": "crisis_vol",
             "breadth_state": "weak_breadth",
             "transition_risk": "crisis_override",

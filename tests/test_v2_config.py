@@ -68,7 +68,7 @@ V2_NETWORK_FRAGILITY_DEESCALATION_DAYS = {
 # spec line verbatim. Used as a valid fixture for NetworkFragilityConfig
 # construction in unit tests.
 V2_NETWORK_FRAGILITY_RULES_KWARGS = dict(
-    diversified_normal_percentile_lo=0.25,
+    diversified_normal_percentile_lo=0.0,
     diversified_normal_percentile_hi=0.75,
     effective_rank_stability_threshold=0.05,
     stock_picker_percentile_max=0.30,

@@ -9,16 +9,17 @@ import pandas as pd
 from regime_detection._rolling_stats import period_return, simple_moving_average
 
 
-# V2 §1B (documented implementation decision) extends the V1 5-label set with
-# `breakout_expansion` and `range_bound`. Members ordered by precedence:
-# breakout_expansion > recovery_attempt > trending > range_bound > chop >
-# transition > unknown.
+# V2 §1B (documented implementation decision) extends the V1 5-label set.
+# Precedence: breakout_expansion > recovery_attempt > trending > mild_trend >
+# range_bound > chop > volatile_chop > transition > unknown.
 TrendCharacterLabel = Literal[
     "breakout_expansion",
     "trending",
+    "mild_trend",
     "recovery_attempt",
     "range_bound",
     "chop",
+    "volatile_chop",
     "transition",
     "unknown",
 ]
@@ -31,9 +32,11 @@ TrendCharacterLabel = Literal[
 _RISK_RANK: dict[TrendCharacterLabel, int] = {
     "trending": 0,
     "breakout_expansion": 0,
+    "mild_trend": 0,
     "recovery_attempt": 1,
     "range_bound": 1,
     "chop": 1,
+    "volatile_chop": 1,
     "transition": 2,
     "unknown": 2,
 }
@@ -295,7 +298,9 @@ def raw_label_for_day(
     # V1 labels (preserved verbatim).
     recovery_attempt = bool((prior_dd <= -0.10) and (close > sma50) and (ret10 >= 0.05))
     trending = bool((adx >= 20) and (abs(ret21) >= 0.05))
+    mild_trend = bool((adx >= 20) and (abs(ret21) < 0.05))
     chop = bool((adx < 20) and (abs(ret10) < 0.03) and (abs(ret21) < 0.05))
+    volatile_chop = bool(allow_v2_labels and (adx < 20) and not chop and not recovery_attempt)
 
     # V2 §1B labels. Cold-start: any NaN input falsifies the rule.
     midpoint_ex = f.midpoint_excursion_20d.loc[dt]
@@ -330,10 +335,14 @@ def raw_label_for_day(
         label = "recovery_attempt"
     elif trending:
         label = "trending"
+    elif mild_trend:
+        label = "mild_trend"
     elif range_bound:
         label = "range_bound"
     elif chop:
         label = "chop"
+    elif volatile_chop:
+        label = "volatile_chop"
     else:
         label = "transition"
 
@@ -344,7 +353,9 @@ def raw_label_for_day(
         "prior_63d_drawdown": _ev_float(prior_dd),
         "recovery_attempt": recovery_attempt,
         "trending": trending,
+        "mild_trend": mild_trend,
         "chop": chop,
+        "volatile_chop": volatile_chop,
         "range_bound": range_bound,
         "breakout_expansion": breakout_expansion,
     }
@@ -376,7 +387,9 @@ def build_raw_outputs(
 
     recovery_attempt = valid & prior_dd.le(-0.10) & close.gt(sma50) & ret10.ge(0.05)
     trending = valid & adx.ge(20) & ret21.abs().ge(0.05)
+    mild_trend = valid & adx.ge(20) & ret21.abs().lt(0.05)
     chop = valid & adx.lt(20) & ret10.abs().lt(0.03) & ret21.abs().lt(0.05)
+    volatile_chop = valid & adx.lt(20) & ~chop & ~recovery_attempt
 
     breakout_expansion = (
         valid
@@ -397,15 +410,18 @@ def build_raw_outputs(
     if not allow_v2_labels:
         breakout_expansion = breakout_expansion & False
         range_bound = range_bound & False
+        volatile_chop = volatile_chop & False
 
     transition = valid & ~(
-        breakout_expansion | recovery_attempt | trending | range_bound | chop
+        breakout_expansion | recovery_attempt | trending | mild_trend | range_bound | chop | volatile_chop
     )
 
     labels = np.full(len(close), "unknown", dtype=object)
     labels[transition.to_numpy()] = "transition"
+    labels[volatile_chop.to_numpy()] = "volatile_chop"
     labels[chop.to_numpy()] = "chop"
     labels[range_bound.to_numpy()] = "range_bound"
+    labels[mild_trend.to_numpy()] = "mild_trend"
     labels[trending.to_numpy()] = "trending"
     labels[recovery_attempt.to_numpy()] = "recovery_attempt"
     labels[breakout_expansion.to_numpy()] = "breakout_expansion"
@@ -423,7 +439,9 @@ def build_raw_outputs(
                 "prior_63d_drawdown": _ev_float(prior_dd.iat[idx]),
                 "recovery_attempt": bool(recovery_attempt.iat[idx]),
                 "trending": bool(trending.iat[idx]),
+                "mild_trend": bool(mild_trend.iat[idx]),
                 "chop": bool(chop.iat[idx]),
+                "volatile_chop": bool(volatile_chop.iat[idx]),
                 "range_bound": bool(range_bound.iat[idx]),
                 "breakout_expansion": bool(breakout_expansion.iat[idx]),
             }

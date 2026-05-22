@@ -57,8 +57,10 @@ trend_character:
     breakout_expansion: 3
     recovery_attempt: 3
     trending: 3
+    mild_trend: 3
     range_bound: 3
     chop: 3
+    volatile_chop: 3
     transition: 3
     unknown: 3
   default_deescalation_days: 3

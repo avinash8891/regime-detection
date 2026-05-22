@@ -25,7 +25,12 @@ class TransitionScoreConfig(StrictBaseModel):
     # V2 §4.4 interpretation bands: stable / weakening / transition_warning / high.
     bands: dict[str, tuple[float, float]]
 
-    cooldown_window_days: int = Field(default=3, ge=0)
+    # ADR 0013 R1 (ratified) — post-axis-switch cooldown window in NYSE sessions.
+    # Default 5 matches v1 §9.4 ("days 0–5 inclusive") and the hardcoded value
+    # in `transition_risk.classify_transition_risk` (the non-series path). The
+    # prior default of 3 was an unintentional regression that silently shortened
+    # the cooldown window on the series path; see ADR 0013 for the audit trail.
+    cooldown_window_days: int = Field(default=5, ge=0)
 
 
 class HMMConfig(StrictBaseModel):
@@ -49,6 +54,12 @@ class HMMConfig(StrictBaseModel):
     # per-checkpoint seed-sweep parallelization in compute_hmm_features
     # rather than by relaxing convergence.
     tol: float = Field(default=0.01, gt=0.0)
+    # ADR 0013 R2 (ratified) — V2 ship default is 4-state HMM
+    # (calm_bull / trending_bull / choppy_normal / stress_crash). Spec §6.1
+    # line 4074 explicitly authorizes "Optionally 4 states (split bull into
+    # trending vs euphoric) once 3-state version validates". The validation
+    # work is recorded in tests/test_hmm_state.py + the committed label maps
+    # at docs/verification/hmm_state_label_map.yaml.
     model_version: str = "hmm_4state_v1.0"
     state_label_map: dict[int, str] | None = None
 
@@ -56,9 +67,10 @@ class HMMConfig(StrictBaseModel):
 class ClusteringConfig(StrictBaseModel):
     """v2 §6.2 K-Means/GMM clustering configuration.
 
-    GMM is the V2 ship default; K-Means support deferred per spec line
-    2835. Mapping cluster_id → economic_label is operator-side
-    (cluster_label_map.yaml per spec line 2842); not part of this slice.
+    GMM is the V2 ship default; K-Means is documented as an acceptable
+    fallback only (spec §6.2 line 4173). Mapping cluster_id →
+    economic_label is operator-side via cluster_label_map.yaml
+    (spec §6.2 line 4215); not part of this slice.
     """
 
     n_clusters: int = Field(default=8, ge=2)
@@ -86,11 +98,18 @@ class ChangePointConfig(StrictBaseModel):
     Break = posterior >= 0.5 threshold.
     """
 
-    hazard_lambda: float = Field(default=250.0, gt=0.0)  # spec line 2872: 1/250 → lambda=250
+    hazard_lambda: float = Field(default=250.0, gt=0.0)  # spec §6.3 line 4245: 1/250 → lambda=250
+    # Score = 5-session rolling max of posterior P(change-point at t).
     score_window_days: int = Field(default=5, ge=1)
+    # A break occurs when posterior >= break_threshold (default 0.5).
     break_threshold: float = Field(default=0.5, gt=0.0, lt=1.0)
     training_window_days: int = Field(default=1260, ge=100)  # 5y, matches HMM/GMM
-    # StudentT prior hyperparameters (Adams-MacKay defaults — conservative).
+    # ADR 0013 R3 (ratified) — StudentT conjugate-prior hyperparameters for
+    # the BOCPD Gaussian-with-unknown-mean-and-variance observation likelihood
+    # (Adams & MacKay 2007 §3.2). Passed unchanged to
+    # `bayesian_changepoint_detection`. Spec §6.3 cites the algorithm but
+    # does not pin numeric priors; ADR 0013 ratifies these as the library
+    # defaults so calibration §9.1 has an explicit baseline.
     student_t_alpha: float = Field(default=0.1, gt=0.0)
     student_t_beta: float = Field(default=0.01, gt=0.0)
     student_t_kappa: float = Field(default=1.0, gt=0.0)

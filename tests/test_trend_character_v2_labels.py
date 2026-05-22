@@ -28,9 +28,11 @@ _V1_LABELS = {"trending", "recovery_attempt", "chop", "transition", "unknown"}
 _V2_LABEL_SET = {
     "breakout_expansion",
     "trending",
+    "mild_trend",
     "recovery_attempt",
     "range_bound",
     "chop",
+    "volatile_chop",
     "transition",
     "unknown",
 }
@@ -471,6 +473,8 @@ def test_risk_rank_includes_new_labels() -> None:
     # Log #67: breakout_expansion rank 0, range_bound rank 1.
     assert _RISK_RANK["breakout_expansion"] == 0
     assert _RISK_RANK["range_bound"] == 1
+    assert _RISK_RANK["mild_trend"] == 0
+    assert _RISK_RANK["volatile_chop"] == 1
     # V1 ordering preserved.
     assert _RISK_RANK["trending"] == 0
     assert _RISK_RANK["recovery_attempt"] == 1

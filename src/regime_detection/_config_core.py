@@ -66,30 +66,30 @@ class NetworkFragilityRulesConfig(StrictBaseModel):
     """v2 §3.5 rule-engine thresholds.
 
     Each threshold is cited verbatim to its line in
-    docs/regime_engine_v2_spec.md §3.5 (lines 617–657). The
+    docs/regime_engine_v2_spec.md §3.5 (lines 3479–3524). The
     ``effective_rank_stability_threshold`` (0.05) encodes the spec-text
-    "21d std < 5% of mean" inside the diversified_normal rule (line 620).
+    "21d std < 5% of mean" inside the diversified_normal rule (line 3484).
     """
 
-    # diversified_normal — v2 §3.5 line 619
+    # diversified_normal — v2 §3.5 line 3483
     diversified_normal_percentile_lo: float = Field(ge=0.0, le=1.0)
     diversified_normal_percentile_hi: float = Field(ge=0.0, le=1.0)
-    # diversified_normal — v2 §3.5 line 620
+    # diversified_normal — v2 §3.5 line 3484
     effective_rank_stability_threshold: float = Field(gt=0.0, le=1.0)
-    # stock_picker_dispersion — v2 §3.5 lines 625–626
+    # stock_picker_dispersion — v2 §3.5 lines 3492–3494
     stock_picker_percentile_max: float = Field(ge=0.0, le=1.0)
     stock_picker_dispersion_percentile_min: float = Field(ge=0.0, le=1.0)
-    # correlation_concentration — v2 §3.5 lines 639–641
+    # correlation_concentration — v2 §3.5 lines 3506–3508
     concentration_corr_percentile_min: float = Field(ge=0.0, le=1.0)
     concentration_largest_eig_percentile_min: float = Field(ge=0.0, le=1.0)
     concentration_effective_rank_percentile_max: float = Field(ge=0.0, le=1.0)
     # absorption_ratio_top3 > threshold → top-3 eigenvalue dominance.
     concentration_absorption_ratio_min: float = Field(default=0.90, ge=0.0, le=1.0)
-    # correlation_to_one — v2 §3.5 lines 646–648
+    # correlation_to_one — v2 §3.5 lines 3513–3515
     corr_to_one_corr_percentile_min: float = Field(ge=0.0, le=1.0)
     corr_to_one_realized_vol_percentile_min: float = Field(ge=0.0, le=1.0)
     corr_to_one_drawdown_max: float
-    # systemic_stress — v2 §3.5 lines 653–656
+    # systemic_stress — v2 §3.5 lines 3520–3523
     systemic_stress_vix_percentile_min: float = Field(ge=0.0, le=1.0)
     # When True, diversified_normal fires on correlation in the inner band
     # (0.30-0.60) without requiring rank stability. Rank instability in

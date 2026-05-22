@@ -282,7 +282,7 @@ class NetworkFragilityOutput(AxisOutput):
 
 
 class MonetaryPressureOutput(BaseModel):
-    """V1 structural-causal-state monetary pressure placeholder (v2 spec §2A).
+    """V1 structural-causal-state monetary pressure backward-compatible struct (v2 spec §2A).
 
     This is the backward-compatible V1 struct surfaced on
     ``StructuralCausalState.monetary_pressure``. The V2 monetary-pressure
@@ -321,6 +321,8 @@ InflationGrowthLabel = Literal[
     "recession_scare",
     "risk_off_mild",
     "recovery_growth",
+    "reflation",
+    "stagflation_lite",
     "earnings_expansion",
     "earnings_contraction",
     "unknown",
@@ -385,7 +387,7 @@ class MonetaryPressureV2Output(AxisOutput):
 
     Three-tier label triple per the v2 axis pattern (raw/stable/active);
     ``evidence`` carries the per-day scalar rule inputs; ``data_quality``
-    follows the §2.8 NaN cold-start contract.
+    follows the V1 §2.7 NaN cold-start contract.
     """
 
     model_config = ConfigDict(extra="forbid")
@@ -458,7 +460,8 @@ class ClusterOutput(BaseModel):
     """v2 §6.2 clustering output. Diagnostic evidence; per-day
     cluster assignment + Mahalanobis distance to the assigned-cluster
     centroid. ``mapped_label`` is populated when an operator-curated
-    ``cluster_label_map.yaml`` is loaded (spec line 2842 + V2 §10);
+    ``cluster_label_map.yaml`` is loaded (v2 §6.2 mapping artifact at
+    spec line 4233 + V2 §10 at spec line 4359);
     None when the map is absent or still in candidate state.
     """
 

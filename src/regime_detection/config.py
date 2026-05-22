@@ -127,13 +127,14 @@ class RegimeConfig(StrictBaseModel):
     # v2 §1E axis classifier configuration.
     volume_liquidity_state: VolumeLiquidityConfig | None = None
     transition_score: TransitionScoreConfig | None = None
-    # v2 §1B trend-character V2 axis configuration.
+    # v2 §1A trend-character V2 axis configuration.
     trend_character_v2: TrendCharacterV2Config | None = None
     monetary_pressure_v2: MonetaryPressureV2FeaturesConfig | None = None
     # v2 §2A axis classifier configuration.
     monetary_pressure_state: MonetaryPressureV2Config | None = None
     # v2 §2A central-bank-text evidence config (deterministic-lexicon
-    # substitute for the spec's "LLM classifier" phrasing).
+    # substitute for the spec's "LLM classifier" phrasing; spec Ambiguity
+    # Log #72 at spec line 2569 ratifies the substitution).
     central_bank_text: CentralBankTextConfig | None = None
     # v2 §1A SF Fed news sentiment evidence config. Evidence only —
     # never read by the `euphoria` rule.
@@ -145,9 +146,9 @@ class RegimeConfig(StrictBaseModel):
     clustering: ClusteringConfig | None = None
     # v2 §6.3 BOCPD change-point evidence layer.
     change_point: ChangePointConfig | None = None
-    no_flip_flop: NoFlipFlopConfig | None = None
+    no_flip_flop: NoFlipFlopConfig | None = None  # v2 §5.4
     cohort_routing: CohortRoutingConfig | None = None  # v2 §5.1
-    strategy_family_constraints: StrategyFamilyConstraintsConfig | None = None
+    strategy_family_constraints: StrategyFamilyConstraintsConfig | None = None  # v2 §5.2
 
 
 def load_regime_config(path: str | Path) -> RegimeConfig:

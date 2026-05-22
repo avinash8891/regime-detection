@@ -23,7 +23,7 @@ rows:
   as_of_date: '2018-02-08'
   expected:
     trend_direction: transition
-    trend_character: transition
+    trend_character: trending
     volatility_state: crisis_vol
     breadth_state: weak_breadth
     transition_risk: crisis_override
@@ -77,7 +77,7 @@ rows:
   as_of_date: '2022-06-15'
   expected:
     trend_direction: bear
-    trend_character: trending
+    trend_character: range_bound
     volatility_state: crisis_vol
     breadth_state: weak_breadth
     transition_risk: crisis_override

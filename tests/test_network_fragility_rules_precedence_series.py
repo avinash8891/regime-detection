@@ -240,9 +240,11 @@ def test_diversified_normal_when_only_it_matches():
 
 def test_unknown_when_no_rule_matches():
     cfg = _default_rules_config()
-    # Pick a feature profile that satisfies no rule.
+    # Pick a feature profile that satisfies no rule: correlation in
+    # diversified_normal band but rank unstable AND outside relaxed inner band.
     inputs = _inputs(
-        avg_corr_pct=0.20,            # below diversified_normal band
+        avg_corr_pct=0.65,            # in band [0.0, 0.75] but outside inner [0.30, 0.60]
+        eff_rank_stability=0.10,      # unstable (> 0.05 threshold)
         dispersion_pct=0.40,          # below stock_picker dispersion
         avg_corr_slope=-0.001,        # negative slope
         largest_eig_slope=-0.001,

@@ -486,6 +486,55 @@ def test_inflation_shock_single_signal_limb_silent_below_threshold() -> None:
     assert evaluate_inflation_shock(inputs, rules) is False
 
 
+def test_inflation_shock_rapid_onset_limb_fires() -> None:
+    """ADR 0012 ratifies a third inflation_shock limb: a sharp 3-month CPI
+    acceleration combined with rising treasury yields. Fires when
+    `cpi_3m_change_pct > cpi_3m_acceleration_threshold (default 0.02) AND
+    treasury_10y_yield_slope_21d > 0` even with benign single-signal and
+    composite inputs."""
+    rules = _default_rules()
+    inputs = _rule_inputs(
+        cpi_3m_change_pct=0.03,           # > 0.02 default threshold
+        treasury_10y_yield_slope_21d=0.01,  # strictly rising
+        # all OTHER limbs benign
+        inflation_surprise_zscore=float("nan"),
+        commodity_return_63d=0.0,
+        spy_21d_return=0.01,
+        tlt_21d_return=0.0,
+    )
+    assert evaluate_inflation_shock(inputs, rules) is True
+
+
+def test_inflation_shock_rapid_onset_limb_silent_at_threshold() -> None:
+    """ADR 0012: strict `>` — `cpi_3m_change_pct` exactly at the threshold
+    does NOT fire the rapid-onset limb."""
+    rules = _default_rules()
+    inputs = _rule_inputs(
+        cpi_3m_change_pct=0.02,            # exactly at threshold
+        treasury_10y_yield_slope_21d=0.01,
+        inflation_surprise_zscore=float("nan"),
+        commodity_return_63d=0.0,
+        spy_21d_return=0.01,
+        tlt_21d_return=0.0,
+    )
+    assert evaluate_inflation_shock(inputs, rules) is False
+
+
+def test_inflation_shock_rapid_onset_limb_silent_when_yields_flat() -> None:
+    """ADR 0012: rapid-onset limb requires yields strictly rising. Flat or
+    falling yields suppress the limb even when CPI is accelerating sharply."""
+    rules = _default_rules()
+    inputs = _rule_inputs(
+        cpi_3m_change_pct=0.05,            # well above threshold
+        treasury_10y_yield_slope_21d=0.0,  # NOT rising
+        inflation_surprise_zscore=float("nan"),
+        commodity_return_63d=0.0,
+        spy_21d_return=0.01,
+        tlt_21d_return=0.0,
+    )
+    assert evaluate_inflation_shock(inputs, rules) is False
+
+
 def test_disinflation_fires() -> None:
     rules = _default_rules()
     inputs = _rule_inputs(
