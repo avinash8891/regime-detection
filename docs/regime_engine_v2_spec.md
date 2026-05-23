@@ -4185,6 +4185,14 @@ V2 §8 slice 10 (PRISM rule integration) does not ship in the initial V2 release
 
 These are **evidence layers**, not final regime labels. Outputs feed into transition_score and other classifiers as additional input. **Never used as standalone label.**
 
+Evidence-layer registry:
+
+| Evidence layer | Code module | Public output | Model / method | Transition-score use |
+| --- | --- | --- | --- | --- |
+| `hmm` | `src/regime_detection/hmm_state.py` | `RegimeOutput.hmm` | Gaussian HMM | `model_instability_score` via top-state probability shift; also enriches `trend_direction.evidence` and `volatility_state.evidence` |
+| `cluster` / `clustering` / `GMM` | `src/regime_detection/clustering.py` | `RegimeOutput.cluster` | GMM by default (`gmm_8cluster_v1.0`); K-Means only as fallback | `model_instability_score` via `cluster_id[t] != cluster_id[t-5]` |
+| `change_point` | `src/regime_detection/change_point.py` | `RegimeOutput.change_point` | BOCPD | `model_instability_score` via `change_point.score` |
+
 ### 6.1 HMM (Hidden Markov Model)
 
 #### Purpose
