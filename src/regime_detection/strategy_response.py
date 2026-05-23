@@ -13,9 +13,9 @@ def _apply_event_calendar_modifiers(
     prefer_cash_or_hedges: bool | None,
     modifiers: list[str],
     event_calendar_labels: tuple[str, ...],
-    strategy_event_modifiers_config: StrategyEventModifiersConfig | None,
+    event_modifier_config: StrategyEventModifiersConfig | None,
 ) -> tuple[float, bool, bool | None, bool, bool | None]:
-    if strategy_event_modifiers_config is None or not event_calendar_labels:
+    if event_modifier_config is None or not event_calendar_labels:
         return (
             position_size_multiplier,
             leverage_allowed,
@@ -25,7 +25,7 @@ def _apply_event_calendar_modifiers(
         )
 
     active_event_labels = set(event_calendar_labels)
-    for rule_name, rule in strategy_event_modifiers_config.rules.items():
+    for rule_name, rule in event_modifier_config.rules.items():
         if not active_event_labels.intersection(rule.labels):
             continue
         if rule.position_size_cap is not None:
@@ -41,7 +41,7 @@ def _apply_event_calendar_modifiers(
             require_confirmation_for_new_longs = rule.require_confirmation_for_new_longs
         if rule.prefer_cash_or_hedges is not None:
             prefer_cash_or_hedges = rule.prefer_cash_or_hedges
-        modifiers.append(f"event_calendar:{rule_name}")
+        modifiers.append(rule_name)
     return (
         position_size_multiplier,
         leverage_allowed,
@@ -59,7 +59,7 @@ def build_strategy_response(
     breadth_state_active: str,
     transition_risk_state: str,
     event_calendar_labels: tuple[str, ...] = (),
-    strategy_event_modifiers_config: StrategyEventModifiersConfig | None = None,
+    event_modifier_config: StrategyEventModifiersConfig | None = None,
 ) -> StrategyResponse:
     if (
         transition_risk_state == "insufficient_data"
@@ -80,7 +80,7 @@ def build_strategy_response(
             prefer_cash_or_hedges=None,
             modifiers=modifiers,
             event_calendar_labels=event_calendar_labels,
-            strategy_event_modifiers_config=strategy_event_modifiers_config,
+            event_modifier_config=event_modifier_config,
         )
         return StrategyResponse(
             position_size_multiplier=position_size_multiplier,
@@ -213,7 +213,7 @@ def build_strategy_response(
         prefer_cash_or_hedges=prefer_cash_or_hedges,
         modifiers=modifiers,
         event_calendar_labels=event_calendar_labels,
-        strategy_event_modifiers_config=strategy_event_modifiers_config,
+        event_modifier_config=event_modifier_config,
     )
 
     return StrategyResponse(

@@ -541,7 +541,7 @@ def _build_timeline_output_for_day(
             breadth_state_active=breadth_output.active_label,
             transition_risk_state=transition_output.state,
             event_calendar_labels=event_output.matching_labels,
-            strategy_event_modifiers_config=working_context.config.strategy_event_modifiers,
+            event_modifier_config=working_context.config.strategy_event_modifiers,
         ),
         volume_liquidity_state=volume_liquidity_output,
         credit_funding_state=credit_funding_output,

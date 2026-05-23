@@ -513,10 +513,7 @@ def test_timeline_passes_event_calendar_matching_labels_to_strategy_response(
     )
     spy.assert_called_once()
     assert spy.call_args.kwargs["event_calendar_labels"] == event_output.matching_labels
-    assert (
-        spy.call_args.kwargs["strategy_event_modifiers_config"]
-        is engine.config.strategy_event_modifiers
-    )
+    assert spy.call_args.kwargs["event_modifier_config"] is engine.config.strategy_event_modifiers
 
 
 def test_transition_risk_history_precomputes_axis_switch_and_prior_bear_flags() -> None:

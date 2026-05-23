@@ -98,7 +98,7 @@ def test_strategy_response_macro_event_rule_caps_healthy_bull_response() -> None
         breadth_state_active="healthy_breadth",
         transition_risk_state="stable",
         event_calendar_labels=("cpi_week",),
-        strategy_event_modifiers_config=RegimeEngine().config.strategy_event_modifiers,
+        event_modifier_config=RegimeEngine().config.strategy_event_modifiers,
     )
 
     assert response.position_size_multiplier == 0.75
@@ -107,7 +107,7 @@ def test_strategy_response_macro_event_rule_caps_healthy_bull_response() -> None
     assert response.leverage_allowed is True
     assert response.modifiers_applied == [
         "bull_healthy_low_vol",
-        "event_calendar:macro_event_window",
+        "macro_event_window",
     ]
 
 
@@ -119,7 +119,7 @@ def test_strategy_response_policy_event_rule_caps_high_transition_risk_response(
         breadth_state_active="healthy_breadth",
         transition_risk_state="high_transition_risk",
         event_calendar_labels=("geopolitical_event",),
-        strategy_event_modifiers_config=RegimeEngine().config.strategy_event_modifiers,
+        event_modifier_config=RegimeEngine().config.strategy_event_modifiers,
     )
 
     assert response.position_size_multiplier == 0.5
@@ -130,7 +130,7 @@ def test_strategy_response_policy_event_rule_caps_high_transition_risk_response(
     assert response.modifiers_applied == [
         "bull_healthy_low_vol",
         "high_transition_risk",
-        "event_calendar:policy_or_event_risk_window",
+        "policy_or_event_risk_window",
     ]
 
 
@@ -142,7 +142,7 @@ def test_strategy_response_multiple_event_rules_apply_in_config_order() -> None:
         breadth_state_active="healthy_breadth",
         transition_risk_state="stable",
         event_calendar_labels=("fed_week", "budget_week"),
-        strategy_event_modifiers_config=RegimeEngine().config.strategy_event_modifiers,
+        event_modifier_config=RegimeEngine().config.strategy_event_modifiers,
     )
 
     assert response.position_size_multiplier == 0.5
@@ -152,8 +152,8 @@ def test_strategy_response_multiple_event_rules_apply_in_config_order() -> None:
     assert response.prefer_cash_or_hedges is True
     assert response.modifiers_applied == [
         "bull_healthy_low_vol",
-        "event_calendar:macro_event_window",
-        "event_calendar:policy_or_event_risk_window",
+        "macro_event_window",
+        "policy_or_event_risk_window",
     ]
 
 
@@ -169,7 +169,7 @@ def test_strategy_response_nonmatching_event_label_leaves_response_unchanged() -
     response = build_strategy_response(
         **kwargs,
         event_calendar_labels=("earnings_season",),
-        strategy_event_modifiers_config=RegimeEngine().config.strategy_event_modifiers,
+        event_modifier_config=RegimeEngine().config.strategy_event_modifiers,
     )
 
     assert response == baseline
@@ -183,7 +183,7 @@ def test_strategy_response_event_rule_applies_to_unknown_guard_response() -> Non
         breadth_state_active="healthy_breadth",
         transition_risk_state="insufficient_data",
         event_calendar_labels=("geopolitical_event",),
-        strategy_event_modifiers_config=RegimeEngine().config.strategy_event_modifiers,
+        event_modifier_config=RegimeEngine().config.strategy_event_modifiers,
     )
 
     assert response.position_size_multiplier == 0.5
@@ -191,7 +191,7 @@ def test_strategy_response_event_rule_applies_to_unknown_guard_response() -> Non
     assert response.require_confirmation_for_new_longs is True
     assert response.prefer_cash_or_hedges is True
     assert response.modifiers_applied == [
-        "event_calendar:policy_or_event_risk_window",
+        "policy_or_event_risk_window",
     ]
 
 
