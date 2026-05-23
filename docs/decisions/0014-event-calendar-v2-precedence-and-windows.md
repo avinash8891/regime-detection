@@ -72,13 +72,18 @@ Ratify the following per-type trading-day windows:
 | Label | Window | Source |
 |---|---|---|
 | `election_window` | `[-5, +10]` | V2 §2D line 3366 (already spec-pinned) |
-| `geopolitical_event` | `(0, 0)` | This ADR — overlay-promoted point shock; firing day = event date |
+| `geopolitical_event` | `(0, 0)` | This ADR — manual no-window fallback only; generated approved rows can override with row-level `window_days` |
 | `budget_week` | `(0, 0)` | This ADR — fires on the deadline day only; budget runup behavior is out of scope |
 | `global_rate_decision` | `(0, 0)` | This ADR — **known asymmetry vs `fed_week (-2, +2)`** (see "Open question" below) |
 
 The known asymmetry between `fed_week` and `global_rate_decision` is
 recorded as Open Question O1 below. The ADR ratifies `(0, 0)` as the
 **provisional** default pending calibration work.
+
+For `geopolitical_event`, this table is not the GPR persistence policy. It is
+only the fallback for approved rows that do not carry `window_days`. GPR-derived
+candidates can suggest `(0, 0)`, `(-1, 3)`, or `(-2, 5)`; once approved and
+rendered, the row-level value takes precedence over this default.
 
 ### R3 — Extend ADR 0002 §52 90-day publication-date default to V2 scheduled types
 

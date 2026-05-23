@@ -45,12 +45,13 @@ _V2_TYPE_TO_LABEL: dict[str, EventCalendarLabel] = {
     "BOE_decision": "global_rate_decision",
     "BOJ_decision": "global_rate_decision",
 }
-# Per-type trading-day windows around each event date. V1 entries
+# Default trading-day windows around each event date. V1 entries
 # (fed/cpi/nfp) inherited verbatim from V1 §7.2 lines 757-759. V2 entries
-# pinned by ADR 0014 R2:
+# pinned by ADR 0014 R2. Row-level ``window_days`` always takes precedence
+# over these defaults.
 #   - election_window [-5, +10] per spec §2D line 3366.
-#   - geopolitical_event (0, 0) — overlay-promoted point shock, no fixed
-#     pre/post window (spec §2D line 3367; overlay sets the firing day).
+#   - geopolitical_event (0, 0) — manual no-window fallback only. Generated
+#     approved candidates may carry GPR-derived row-level ``window_days``.
 #   - budget_week (0, 0) — fires on the deterministic deadline day only;
 #     budget runup behavior is not in spec §2D.
 #   - global_rate_decision (0, 0) — known asymmetry vs fed_week (-2, +2);
@@ -77,6 +78,13 @@ _FORWARD_EVENT_WARNING_DAYS = 90
 # plus the largest realistic trailing_sessions caller-value, converted to
 # calendar days with a 2x safety margin for weekend/holiday slack.
 _SESSION_PADDING_DAYS = 40
+
+
+def _window_offsets_for_row(*, label: EventCalendarLabel, row: object) -> tuple[int, int]:
+    row_window = getattr(row, "window_days", None)
+    if isinstance(row_window, (list, tuple)) and len(row_window) == 2:
+        return int(row_window[0]), int(row_window[1])
+    return _WINDOWS[label]
 
 
 def classify_event_calendar(
@@ -182,10 +190,7 @@ def compute_event_calendar_outputs(
         if event_idx is None:
             continue
         publication_date = row.publication_date
-        start_offset, end_offset = _WINDOWS[label]
-        row_window = getattr(row, "window_days", None)
-        if isinstance(row_window, (list, tuple)) and len(row_window) == 2:
-            start_offset, end_offset = int(row_window[0]), int(row_window[1])
+        start_offset, end_offset = _window_offsets_for_row(label=label, row=row)
         start_idx = max(0, event_idx + start_offset)
         end_idx = min(len(global_sessions) - 1, event_idx + end_offset)
         bit = label_bits[label]

@@ -339,8 +339,10 @@ This is the step Group A never needed. Pinned design, with thresholds as confirm
    evidence sets candidate subtype (`gpr_acts_spike`, `gpr_threats_spike`, or
    `gpr_headline_spike`), confidence, importance, suggested event `window_days`
    (`(0, 0)`, `(-1, 3)`, or `(-2, 5)`), and review snippets. This is
-   quantitative review evidence, not a promotion rule; the operator can still
-   override `importance` via the overlay's optional `importance`.
+   quantitative review evidence, not a promotion rule. If approved, the rendered
+   row's `window_days` takes precedence over the event-calendar static
+   `geopolitical_event` fallback; the operator can still override `importance`
+   via the overlay's optional `importance`.
 5. **Output.** A `geopolitical_event` candidate, `requires_manual_review=true`,
    `is_future_scheduled=false`, into `event_candidates.parquet`. **Never
    auto-promoted** — overlay only.

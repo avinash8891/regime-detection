@@ -330,6 +330,73 @@ def test_event_calendar_v2_election_uses_default_trading_day_window() -> None:
     assert before_out.primary_label != "election_window"
 
 
+def test_approved_geopolitical_event_uses_row_window_days() -> None:
+    cfg = load_default_regime_config()
+    events = pd.DataFrame(
+        [
+            {
+                "date": date(2022, 2, 24),
+                "market": "GLOBAL",
+                "type": "geopolitical_event",
+                "importance": "high",
+                "publication_date": date(2022, 2, 1),
+                "approved_label": "geopolitical_event",
+                "window_days": [-2, 5],
+            }
+        ]
+    )
+
+    pre_event = classify_event_calendar(
+        as_of_date=date(2022, 2, 22),
+        event_calendar=events,
+        config=cfg,
+    )
+    post_event = classify_event_calendar(
+        as_of_date=date(2022, 3, 3),
+        event_calendar=events,
+        config=cfg,
+    )
+
+    assert pre_event.primary_label == "geopolitical_event"
+    assert post_event.primary_label == "geopolitical_event"
+
+
+def test_approved_geopolitical_event_without_row_window_is_point_shock() -> None:
+    cfg = load_default_regime_config()
+    events = pd.DataFrame(
+        [
+            {
+                "date": date(2022, 2, 24),
+                "market": "GLOBAL",
+                "type": "geopolitical_event",
+                "importance": "high",
+                "publication_date": date(2022, 2, 1),
+                "approved_label": "geopolitical_event",
+            }
+        ]
+    )
+
+    pre_event = classify_event_calendar(
+        as_of_date=date(2022, 2, 23),
+        event_calendar=events,
+        config=cfg,
+    )
+    event_day = classify_event_calendar(
+        as_of_date=date(2022, 2, 24),
+        event_calendar=events,
+        config=cfg,
+    )
+    post_event = classify_event_calendar(
+        as_of_date=date(2022, 2, 25),
+        event_calendar=events,
+        config=cfg,
+    )
+
+    assert pre_event.primary_label == "normal_calendar"
+    assert event_day.primary_label == "geopolitical_event"
+    assert post_event.primary_label == "normal_calendar"
+
+
 def test_event_calendar_v2_precedence_and_labels() -> None:
     cfg = load_default_regime_config()
     events = pd.DataFrame(
