@@ -5,7 +5,8 @@ Library reuse: ``bayesian_changepoint_detection.online_changepoint_detection``
 ~70 lines of glue.
 
 Observation series: realized_vol_21d (#63).
-Score formula: 5-session rolling max of posterior P(change-point at t) (#64).
+Score formula: 5-session rolling max of the recent short-run BOCPD posterior
+mass (#64 adapted to the realized_vol_21d observation horizon).
 Break: posterior >= ``break_threshold`` (#65).
 
 Per V2 §10 + spec §6.3 (L4252) this is EVIDENCE only.
@@ -18,13 +19,12 @@ uses the single configured ``transition_score.weights`` table for all
 available components.
 
 Implementation note on indexing into the algorithm's posterior matrix
-``R``: in this library ``R[1, t]`` carries the per-session change-point
-posterior. Adams-MacKay's renormalization step folds the hazard mass back
-into row 0 such that ``R[0, t]`` collapses to ~hazard at every session;
-the data-conditioned "a change just happened" signal lives in
-``R[1, t]`` (P(run_length=1 at time t) = P(change-point at t-1)). The
-spec description "P(run_length=0)" maps to this row in the
-``bayesian-changepoint-detection`` implementation.
+``R``: with a constant hazard function, row ``R[0, t]`` collapses to the
+configured hazard and is not data-conditioned. Because the observation is
+``realized_vol_21d``, a market break enters the input as a rolling-window
+ramp; the data-conditioned break signal spreads over short run lengths
+rather than only row ``R[1, t]``. The emitted posterior therefore sums
+``R[1:recent_run_length_window_days + 1, t]``.
 """
 
 from __future__ import annotations
@@ -52,7 +52,7 @@ _LOGGER = logging.getLogger(__name__)
 class ChangePointFeatures:
     """v2 §6.3 — per-session BOCPD posterior + derived series."""
 
-    posterior_changepoint_prob: pd.Series  # raw BOCPD per-session changepoint posterior
+    posterior_changepoint_prob: pd.Series  # recent short-run BOCPD posterior mass
     score: pd.Series  # 5-session rolling max of posterior (spec L2135-2150)
     days_since_last_break: pd.Series  # nullable Int64; sessions since last break (spec L2152-2164)
     method: str  # "BOCPD"
@@ -181,8 +181,8 @@ def _bocpd_posterior_changepoint_prob(
     - ``constant_hazard(lam, r)``, passed via ``functools.partial``
     - ``StudentT(alpha, beta, kappa, mu)`` observation likelihood
 
-    See the module docstring for why row 1 of ``R`` carries the per-session
-    change-point posterior in this library.
+    See the module docstring for why the emitted posterior sums short
+    run-length rows instead of reading ``R[0]`` or ``R[1]`` directly.
     """
     R, _maxes = _online_changepoint_detection(
         data,
@@ -195,7 +195,8 @@ def _bocpd_posterior_changepoint_prob(
         ),
     )
     n = len(data)
-    return np.asarray(R[1, 1 : n + 1], dtype=float)
+    window = min(config.recent_run_length_window_days, n)
+    return np.asarray(R[1 : window + 1, 1 : n + 1].sum(axis=0), dtype=float)
 
 
 def _rolling_max_changepoint_prob(posterior: pd.Series, window: int) -> pd.Series:

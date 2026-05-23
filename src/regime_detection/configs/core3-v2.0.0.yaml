@@ -529,6 +529,7 @@ clustering:
 change_point:
   hazard_lambda: 250.0
   score_window_days: 5
+  recent_run_length_window_days: 21
   break_threshold: 0.5
   training_window_days: 2705
   student_t_alpha: 0.1

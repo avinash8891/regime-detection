@@ -236,8 +236,13 @@ class ChangePointConfig(StrictBaseModel):
     """
 
     hazard_lambda: float = Field(default=250.0, gt=0.0)  # spec §6.3 line 4263: 1/250 → lambda=250
-    # Score = 5-session rolling max of posterior P(change-point at t).
+    # Score = 5-session rolling max of recent short-run posterior mass.
     score_window_days: int = Field(default=5, ge=1)
+    # realized_vol_21d is already a 21-session rolling statistic; abrupt
+    # market breaks appear as BOCPD probability mass over short run lengths
+    # rather than only R[1]. Sum rows 1..21 as the data-conditioned
+    # "new regime started recently" posterior.
+    recent_run_length_window_days: int = Field(default=21, ge=1)
     # A break occurs when posterior >= break_threshold (default 0.5).
     break_threshold: float = Field(default=0.5, gt=0.0, lt=1.0)
     # 2705 non-null realized-vol observations matches the runtime YAML and
