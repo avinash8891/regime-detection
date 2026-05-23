@@ -140,6 +140,7 @@ def test_transition_risk_evidence_preserves_dict_access_and_dump_shape() -> None
             "days_since_axis_switch": None,
             "axis_switch_count": 0,
             "recent_axis_switch_count": 0,
+            "macro_event_labels": [],
         },
         score=0.10,
         score_components={"trend_break": 0.10},
@@ -153,6 +154,7 @@ def test_transition_risk_evidence_preserves_dict_access_and_dump_shape() -> None
         "days_since_axis_switch": None,
         "axis_switch_count": 0,
         "recent_axis_switch_count": 0,
+        "macro_event_labels": [],
     }
     assert output.evidence["triggered_rules"] == []
     assert output.evidence.get("stable_changed_today") is False
@@ -271,6 +273,56 @@ def test_transition_risk_series_matches_direct_score_composer() -> None:
     assert outputs[session].score == expected.score
     assert outputs[session].score_components == expected.components
     assert outputs[session].state == "weakening"
+
+
+def test_transition_risk_evidence_preserves_macro_event_matching_labels() -> None:
+    cfg = load_default_regime_config().transition_score
+    assert cfg is not None
+    session = date(2024, 1, 9)
+    score_inputs = TransitionScoreInputs(
+        realized_vol_short=10.0,
+        realized_vol_long=10.0,
+        pct_above_50dma=0.80,
+        avg_pairwise_corr_percentile_504d=0.0,
+        drawdown_252d=0.0,
+        event_calendar_labels=("earnings_season", "fed_week", "expiry_week", "cpi_week"),
+        spy_close=100.0,
+        spy_sma_50=100.0,
+        largest_eigenvalue_share_percentile_504d=0.0,
+        effective_rank_percentile_504d=1.0,
+        absorption_ratio_top3=0.50,
+        credit_funding_label="credit_calm",
+        volume_liquidity_label="normal_volume",
+        volume_zscore_20d=1.0,
+        gap_frequency_percentile_252d=0.0,
+        intraday_range_percentile_252d=0.0,
+        hmm_top_state_prob_now=0.50,
+        hmm_top_state_prob_5d_ago=0.50,
+        change_point_score=0.0,
+        cluster_id_now=1,
+        cluster_id_5d_ago=1,
+    )
+
+    outputs = build_transition_risk_outputs_by_date(
+        sessions=[session],
+        trend_direction_active_by_date={session: "bull"},
+        trend_character_active_by_date={session: "trending"},
+        volatility_state_active_by_date={session: "normal_vol"},
+        breadth_state_active_by_date={session: "healthy_breadth"},
+        close_by_date={session: 100.0},
+        sma_50_by_date={session: 100.0},
+        history=TransitionRiskHistory(
+            stable_changed_by_date={session: False},
+            days_since_axis_switch_by_date={session: None},
+            axis_switch_count_by_date={session: 0},
+            recent_axis_switch_count_by_date={session: 0},
+            prior_bear_by_date={session: False},
+        ),
+        transition_score_inputs_by_date={session: score_inputs},
+        transition_score_config=cfg,
+    )
+
+    assert outputs[session].evidence.macro_event_labels == ["fed_week", "cpi_week"]
 
 
 def test_transition_score_inputs_event_calendar_labels_are_closed_type() -> None:

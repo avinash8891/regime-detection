@@ -89,6 +89,7 @@ class TransitionRiskEvidencePayload(BaseModel):
     days_since_axis_switch: int | None
     axis_switch_count: int
     recent_axis_switch_count: int
+    macro_event_labels: list[str] = Field(default_factory=list)
 
     def get(self, key: str, default: Any = None) -> Any:
         return self.model_dump().get(key, default)

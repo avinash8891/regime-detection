@@ -102,6 +102,20 @@ def test_macro_event_uses_any_matching_event_calendar_label(
 
     assert out.components is not None
     assert out.components["macro_event"] == pytest.approx(1.0)
+    assert out.macro_event_labels == ("global_rate_decision",)
+
+
+def test_macro_event_audit_ignores_non_scoring_calendar_labels(
+    transition_score_config: TransitionScoreConfig,
+) -> None:
+    out = _compose(
+        transition_score_config,
+        event_calendar_labels=("earnings_season", "fed_week", "expiry_week", "cpi_week"),
+    )
+
+    assert out.components is not None
+    assert out.components["macro_event"] == pytest.approx(1.0)
+    assert out.macro_event_labels == ("fed_week", "cpi_week")
 
 
 def test_compute_transition_score_reweights_available_components(

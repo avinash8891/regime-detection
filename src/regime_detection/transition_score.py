@@ -47,6 +47,7 @@ class ComposedTransitionScore:
     components: dict[str, float] | None
     missing_components: tuple[str, ...] = ()
     component_weight_coverage: float = 0.0
+    macro_event_labels: tuple[str, ...] = ()
 
 
 def _clip(x: float, lo: float, hi: float) -> float:
@@ -75,6 +76,10 @@ def _label_score(label: str | None, scores: dict[str, float | None]) -> float | 
     if label not in scores:
         raise ValueError(f"unknown transition-risk label score input: {label!r}")
     return scores[label]
+
+
+def _macro_event_labels(event_calendar_labels: tuple[str, ...]) -> tuple[str, ...]:
+    return tuple(label for label in event_calendar_labels if label in EVENT_SET)
 
 
 def compute_transition_score(
@@ -218,7 +223,8 @@ def compose_transition_score_for_session(
         intraday_stress,
     )
 
-    macro_event = 1.0 if any(label in EVENT_SET for label in event_calendar_labels) else 0.0
+    macro_event_labels = _macro_event_labels(event_calendar_labels)
+    macro_event = 1.0 if macro_event_labels else 0.0
 
     hmm_shift = None
     hmm_now = _optional_number(hmm_top_state_prob_now)
@@ -255,6 +261,7 @@ def compose_transition_score_for_session(
             components=None,
             missing_components=missing,
             component_weight_coverage=coverage,
+            macro_event_labels=macro_event_labels,
         )
     return ComposedTransitionScore(
         score=score,
@@ -262,4 +269,5 @@ def compose_transition_score_for_session(
         components=components,
         missing_components=missing,
         component_weight_coverage=coverage,
+        macro_event_labels=macro_event_labels,
     )

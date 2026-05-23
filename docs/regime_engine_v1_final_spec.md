@@ -799,12 +799,16 @@ Precedence:
 fed_week > cpi_week > nfp_week > expiry_week > earnings_season > normal_calendar > unknown
 ```
 
-If multiple event windows match, `raw_label`, `stable_label`, and `active_label` use this precedence. Evidence must preserve all matches:
+If multiple event windows match, `primary_label` uses this precedence and
+`matching_labels` preserves all matches:
 
 ```json
 {
-  "all_matching_events": ["fed_week", "earnings_season"],
-  "selected_via_precedence": "fed_week"
+  "primary_label": "fed_week",
+  "matching_labels": ["fed_week", "earnings_season"],
+  "evidence": {
+    "selection_method": "precedence"
+  }
 }
 ```
 
@@ -1153,12 +1157,10 @@ Modifier:
   },
   "structural_causal_state": {
     "event_calendar": {
-      "raw_label": "normal_calendar",
-      "stable_label": "normal_calendar",
-      "active_label": "normal_calendar",
+      "primary_label": "normal_calendar",
+      "matching_labels": ["normal_calendar"],
       "evidence": {
-        "all_matching_events": [],
-        "selected_via_precedence": "normal_calendar"
+        "selection_method": "precedence"
       }
     },
     "monetary_pressure": {

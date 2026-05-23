@@ -75,6 +75,7 @@ def compose_transition_risk_output(
             days_since_axis_switch=flags.days_since_axis_switch,
             axis_switch_count=flags.axis_switch_count,
             recent_axis_switch_count=flags.recent_axis_switch_count,
+            macro_event_labels=list(score.macro_event_labels),
         ),
         data_quality=data_quality,
     )

@@ -211,6 +211,7 @@ def test_runtime_evidence_fields_use_named_payloads() -> None:
         "days_since_axis_switch": None,
         "axis_switch_count": 0,
         "recent_axis_switch_count": 0,
+        "macro_event_labels": [],
     }
 
 

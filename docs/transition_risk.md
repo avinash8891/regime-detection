@@ -84,6 +84,10 @@ Examples:
   252-day drawdown.
 - `correlation_fragility` rises when assets move together, eigenvalue
   concentration rises, effective rank falls, or top-3 absorption is high.
+- `macro_event` is `1.0` when any label in `event_calendar.matching_labels`
+  is a scoring macro-event label; non-scoring event labels remain visible in
+  `structural_causal_state.event_calendar.matching_labels` but do not raise
+  this component.
 - `model_instability` rises when HMM probability shifts, change-point score
   rises, or cluster ID changes.
 
@@ -211,6 +215,11 @@ Strategy consumes only `transition_risk.state`.
 Audit and reporting should show the score, components, drivers, rules, data
 quality, and switch-count evidence. Downstream code should not rebuild
 transition-risk decisions from component scores.
+
+`transition_risk.evidence.macro_event_labels` lists the subset of
+`event_calendar.matching_labels` that actually contributed to the
+`macro_event` component. This preserves overlap detail without making
+transition logic depend on `event_calendar.primary_label`.
 
 `primary_drivers` lists the components with values at or above
 `overrides.primary_driver_min` (default `0.35`), ranked by component value,
