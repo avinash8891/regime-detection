@@ -10,7 +10,12 @@ import pandas as pd
 
 from regime_data_fetch.acquisition_store import AcquisitionStore
 from regime_data_fetch.alpaca_daily import fetch_daily_bars_alpaca, verify_min_start_date
+from regime_data_fetch.daily_bars_provider import (
+    DAILY_BARS_PROVIDERS,
+    fetch_daily_bars_with_provider,
+)
 from regime_data_fetch.fred import fetch_fred_series_json, parse_fred_series_json
+from regime_data_fetch.yahoo_chart_daily import fetch_daily_bars_yahoo_chart
 
 V2_V1_SHARED_ANCHORS = ["SPY", "RSP"]
 V2_SECTOR_SYMBOLS = [
@@ -218,15 +223,19 @@ def run_market_fetch(
     vix_symbol: str,
     allow_vix_proxy: bool,
     verbose: bool,
+    daily_bars_provider: str = "alpaca",
     acquisition_db_path: Path | None = None,
     artifact_store_root: str | Path | None = None,
 ) -> Path:
     if end < start:
         raise SystemExit("--end must be >= --start")
 
-    for key in ("ALPACA_API_KEY_ID", "ALPACA_API_SECRET_KEY"):
-        if not os.environ.get(key, "").strip():
-            raise SystemExit(f"Missing required env var: {key}")
+    if daily_bars_provider not in DAILY_BARS_PROVIDERS:
+        raise SystemExit("--daily-bars-provider must be alpaca|yahoo-chart|alpaca-yahoo-fallback")
+    if daily_bars_provider in {"alpaca", "alpaca-yahoo-fallback"}:
+        for key in ("ALPACA_API_KEY_ID", "ALPACA_API_SECRET_KEY"):
+            if not os.environ.get(key, "").strip():
+                raise SystemExit(f"Missing required env var: {key}")
 
     out_dir.mkdir(parents=True, exist_ok=True)
 
@@ -246,6 +255,7 @@ def run_market_fetch(
                 "end": end.isoformat(),
                 "adjustment": adjustment,
                 "alpaca_feed": alpaca_feed,
+                "daily_bars_provider": daily_bars_provider,
                 "vix_symbol": vix_symbol,
                 "allow_vix_proxy": allow_vix_proxy,
                 "symbols_requested": len(all_symbols),
@@ -256,13 +266,16 @@ def run_market_fetch(
     )
 
     try:
-        bars = fetch_daily_bars_alpaca(
+        bars = fetch_daily_bars_with_provider(
+            provider=daily_bars_provider,
             symbols=all_symbols,
             start_date=start,
             end_date=end,
             adjustment=adjustment,
             feed=alpaca_feed,
             verbose=verbose,
+            alpaca_fetcher=fetch_daily_bars_alpaca,
+            yahoo_fetcher=fetch_daily_bars_yahoo_chart,
         )
         df = bars.df
 
@@ -274,6 +287,7 @@ def run_market_fetch(
                     "end": end.isoformat(),
                     "adjustment": adjustment,
                     "alpaca_feed": alpaca_feed,
+                    "daily_bars_provider": daily_bars_provider,
                     "vix_symbol": vix_symbol,
                     "allow_vix_proxy": allow_vix_proxy,
                 },
@@ -295,7 +309,7 @@ def run_market_fetch(
             }
             store.record_text_artifact(
                 run_id=fetch_run.run_id,
-                source_name="alpaca:daily_bars",
+                source_name=f"{daily_bars_provider}:daily_bars",
                 artifact_kind="json",
                 source_identifier=f"daily_bars:{scope}:{start.isoformat()}:{end.isoformat()}:{adjustment}:{alpaca_feed or 'default'}",
                 content_text=json.dumps(payload, separators=(",", ":")),
@@ -303,8 +317,8 @@ def run_market_fetch(
                 end_date=end.isoformat(),
                 timezone="UTC",
                 adjustment_policy=adjustment,
-                license_note="Alpaca market data response normalized at fetch boundary",
-                notes="Daily bars fetch result persisted from the Alpaca fetch boundary",
+                license_note=f"{daily_bars_provider} market data response normalized at fetch boundary",
+                notes=f"Daily bars fetch result persisted from the {daily_bars_provider} fetch boundary",
             )
 
         have_vix = bool(not df.empty and (df["symbol"] == vix_symbol).any())
@@ -340,6 +354,7 @@ def run_market_fetch(
             "counts": {
                 "rows": int(len(df)),
                 "merged_rows": int(len(merged_df)),
+                "symbols_requested_for_daily_bars": len(all_symbols),
                 "symbols_requested_for_alpaca": len(all_symbols),
                 "symbols_returned": int(df["symbol"].nunique()) if not df.empty else 0,
                 "merged_symbols": int(merged_df["symbol"].nunique()) if not merged_df.empty else 0,
@@ -347,7 +362,7 @@ def run_market_fetch(
             },
             "min_date_checks": checks,
             "vix": {
-                "source": "alpaca",
+                "source": daily_bars_provider,
                 "symbol": vix_symbol,
                 "rows": int((df["symbol"] == vix_symbol).sum()),
             },
@@ -364,12 +379,12 @@ def run_market_fetch(
         if store and fetch_run:
             store.record_output(
                 run_id=fetch_run.run_id,
-                output_kind="alpaca_daily_ohlcv_parquet",
+                output_kind=f"{daily_bars_provider}_daily_ohlcv_parquet",
                 path=parquet_dir / "_metadata" if (parquet_dir / "_metadata").exists() else next(parquet_dir.rglob("*.parquet")),
                 row_count=len(merged_df),
                 min_date=min(merged_df["date"]).isoformat() if not merged_df.empty else None,
                 max_date=max(merged_df["date"]).isoformat() if not merged_df.empty else None,
-                notes="Partitioned Alpaca daily OHLCV parquet output",
+                notes=f"Partitioned {daily_bars_provider} daily OHLCV parquet output",
             )
             store.record_output(
                 run_id=fetch_run.run_id,

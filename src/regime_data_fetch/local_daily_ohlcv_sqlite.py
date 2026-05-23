@@ -11,12 +11,17 @@ import pandas as pd
 
 from regime_data_fetch.acquisition_store import AcquisitionStore
 from regime_data_fetch.alpaca_daily import DailyBarsFetchResult, fetch_daily_bars_alpaca
+from regime_data_fetch.daily_bars_provider import (
+    DAILY_BARS_PROVIDERS,
+    fetch_daily_bars_with_provider,
+)
 from regime_data_fetch.universe import (
     FIXED_UNIVERSE_LOCAL_PATH,
     FIXED_UNIVERSE_SYMBOL_COUNT,
     FIXED_UNIVERSE_TREE_NAME,
     load_symbols_from_daily_ohlcv_tree,
 )
+from regime_data_fetch.yahoo_chart_daily import fetch_daily_bars_yahoo_chart
 
 
 EXPECTED_COLUMNS = ["date", "open", "high", "low", "close", "volume", "adjusted_close"]
@@ -33,6 +38,7 @@ def run_alpaca_constituent_daily_ohlcv_fetch(
     acquisition_db_path: Path,
     artifact_store_root: str | Path | None = None,
     bars_fetcher: Callable[..., DailyBarsFetchResult] | None = None,
+    daily_bars_provider: str = "alpaca",
     allow_missing_symbols: bool = False,
     fixed_universe_symbols: list[str] | None = None,
     fixed_universe_dir: Path | None = None,
@@ -43,8 +49,9 @@ def run_alpaca_constituent_daily_ohlcv_fetch(
     if end < start:
         raise SystemExit("--end must be >= --start")
 
-    effective_fetcher = bars_fetcher or fetch_daily_bars_alpaca
-    if bars_fetcher is None:
+    if daily_bars_provider not in DAILY_BARS_PROVIDERS:
+        raise SystemExit("--daily-bars-provider must be alpaca|yahoo-chart|alpaca-yahoo-fallback")
+    if bars_fetcher is None and daily_bars_provider in {"alpaca", "alpaca-yahoo-fallback"}:
         for key in ("ALPACA_API_KEY_ID", "ALPACA_API_SECRET_KEY"):
             if not os.environ.get(key, "").strip():
                 raise SystemExit(f"Missing required env var: {key}")
@@ -76,24 +83,39 @@ def run_alpaca_constituent_daily_ohlcv_fetch(
             "end": end.isoformat(),
             "adjustment": adjustment,
             "alpaca_feed": alpaca_feed,
+            "daily_bars_provider": daily_bars_provider,
             "allow_missing_symbols": allow_missing_symbols,
         },
     )
     try:
-        bars = effective_fetcher(
-            symbols=symbols,
-            start_date=start,
-            end_date=end,
-            adjustment=adjustment,
-            feed=alpaca_feed,
-            verbose=verbose,
-        )
+        if bars_fetcher is not None:
+            bars = bars_fetcher(
+                symbols=symbols,
+                start_date=start,
+                end_date=end,
+                adjustment=adjustment,
+                feed=alpaca_feed,
+                verbose=verbose,
+            )
+        else:
+            bars = fetch_daily_bars_with_provider(
+                provider=daily_bars_provider,
+                symbols=symbols,
+                start_date=start,
+                end_date=end,
+                adjustment=adjustment,
+                feed=alpaca_feed,
+                verbose=verbose,
+                alpaca_fetcher=fetch_daily_bars_alpaca,
+                yahoo_fetcher=fetch_daily_bars_yahoo_chart,
+            )
         if bars.df.empty:
-            raise RuntimeError("Alpaca returned no constituent OHLCV rows")
+            raise RuntimeError(f"{daily_bars_provider} returned no constituent OHLCV rows")
         if bars.missing_symbols and not allow_missing_symbols:
             sample = ", ".join(bars.missing_symbols[:20])
             raise RuntimeError(
-                f"Alpaca returned no bars for {len(bars.missing_symbols)} constituent symbols: {sample}"
+                f"{daily_bars_provider} returned no bars for "
+                f"{len(bars.missing_symbols)} constituent symbols: {sample}"
             )
 
         written_files = _write_daily_ohlcv_symbol_tree(bars.df, tree_root=tree_root)
@@ -122,7 +144,7 @@ def run_alpaca_constituent_daily_ohlcv_fetch(
             artifact_store_root=artifact_store_root,
         )
         report = {
-            "source": "alpaca:daily_bars",
+            "source": f"{daily_bars_provider}:daily_bars",
             "pit_parquet_path": str(pit_parquet_path),
             "universe_source": universe_source,
             "requested": {
