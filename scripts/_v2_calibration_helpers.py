@@ -165,14 +165,24 @@ def positive_int(value: str) -> int:
 
 
 def load_market_data(daily_ohlcv_dir: Path) -> pd.DataFrame:
-    """Load v1-shape (SPY/RSP/VIXY) long-format market DataFrame.
+    """Load v1-shape (SPY/RSP/VIX) long-format market DataFrame.
 
     Mirrors ``scripts/run_v2_calibration.py::_load_market_data``.
     """
-    df = _read_daily_ohlcv(daily_ohlcv_dir, symbols=["SPY", "RSP", "VIXY"])
+    required_symbols = ["SPY", "RSP", "VIX"]
+    df = _read_daily_ohlcv(daily_ohlcv_dir, symbols=required_symbols)
     keep = ["date", "symbol", "open", "high", "low", "close", "volume"]
     out = df[keep].copy()
-    out["date"] = pd.to_datetime(out["date"]).dt.date
+    out["date"] = pd.to_datetime(out["date"])
+    max_dates = out.groupby("symbol")["date"].max()
+    missing = sorted(set(required_symbols) - set(max_dates.index))
+    if missing:
+        raise FileNotFoundError(
+            f"daily OHLCV missing required market symbols: {missing}"
+        )
+    common_end = max_dates.loc[required_symbols].min()
+    out = out[out["date"] <= common_end].copy()
+    out["date"] = out["date"].dt.date
     return out.sort_values(["date", "symbol"]).reset_index(drop=True)
 
 
