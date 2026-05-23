@@ -210,7 +210,12 @@ Transition produces:
 - `transition_risk.evidence`
 - `transition_risk.data_quality`
 
-Strategy consumes only `transition_risk.state`.
+Strategy consumes `transition_risk.state` for the base posture and
+`structural_causal_state.event_calendar.matching_labels` for config-driven
+event modifiers. Event modifiers are overlays declared in
+`strategy_event_modifiers`, not hardcoded event-specific strategy branches.
+They are de-risking overlays only; config validation rejects actions that
+would loosen leverage, leverage expansion, confirmation, or cash/hedge guards.
 
 Audit and reporting should show the score, components, drivers, rules, data
 quality, and switch-count evidence. Downstream code should not rebuild
@@ -219,7 +224,7 @@ transition-risk decisions from component scores.
 `transition_risk.evidence.macro_event_labels` lists the subset of
 `event_calendar.matching_labels` that actually contributed to the
 `macro_event` component. This preserves overlap detail without making
-transition logic depend on `event_calendar.primary_label`.
+transition logic depend on the compact display label.
 
 `primary_drivers` lists the components with values at or above
 `overrides.primary_driver_min` (default `0.35`), ranked by component value,

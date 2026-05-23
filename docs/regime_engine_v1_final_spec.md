@@ -284,7 +284,7 @@ hysteresis:
   composite_deescalation_days: 3
 ```
 
-> The event_calendar axis intentionally has **no hysteresis**. Calendar windows are themselves deterministic (`as_of_date` is inside an event window or it is not), so a debounce knob is meaningless. `raw_label`, `stable_label`, and `active_label` are equal for event_calendar by construction.
+> The event_calendar output intentionally has **no hysteresis**. Calendar windows are themselves deterministic (`as_of_date` is inside an event window or it is not), so a debounce knob is meaningless. The current wire shape exposes `primary_label` for compact display/precedence and `matching_labels` for all overlapping event windows. It does not construct the usual hysteresis label triple for the calendar output.
 
 ### 2.11 No Confidence Field in V1
 
@@ -799,8 +799,9 @@ Precedence:
 fed_week > cpi_week > nfp_week > expiry_week > earnings_season > normal_calendar > unknown
 ```
 
-If multiple event windows match, `primary_label` uses this precedence and
-`matching_labels` preserves all matches:
+If multiple event windows match, `primary_label` uses this precedence for
+compact display and `matching_labels` preserves all matches for downstream
+logic that cares about event membership:
 
 ```json
 {
@@ -982,7 +983,10 @@ Apply modifiers in increasing priority order, layered on `default_neutral`. High
 ### 10.4 Scenario Modifiers
 
 Strategy response consumes the V2-owned `transition_risk.state` when transition
-risk is present.
+risk is present. V1 strategy behavior remains unchanged unless V2 config is
+active. With V2 config active, event-window strategy adjustments consume
+`event_calendar.matching_labels` through `strategy_event_modifiers`; they do
+not branch on the compact display label.
 
 `crisis` — when `transition_risk.state = crisis`:
 ```json

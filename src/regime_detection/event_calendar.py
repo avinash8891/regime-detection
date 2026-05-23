@@ -5,31 +5,20 @@ from bisect import bisect_left, bisect_right
 from functools import lru_cache
 import logging
 from datetime import date, timedelta
-from typing import Literal
 
 import pandas as pd
 
 from regime_detection.calendar import nyse_calendar
 from regime_detection.config import RegimeConfig
+from regime_detection.event_calendar_labels import (
+    EVENT_CALENDAR_LABELS,
+    EventCalendarLabel,
+)
 from regime_detection.loaders import load_event_calendar
 from regime_detection.models import EventCalendarOutput
 
 
 LOGGER = logging.getLogger(__name__)
-
-EventCalendarLabel = Literal[
-    "geopolitical_event",
-    "election_window",
-    "fed_week",
-    "global_rate_decision",
-    "budget_week",
-    "cpi_week",
-    "nfp_week",
-    "expiry_week",
-    "earnings_season",
-    "normal_calendar",
-    "unknown",
-]
 
 # ADR 0014 R1 — event-calendar precedence (V1 + V2 unified ordering).
 # V1 sub-sequence (`fed_week > cpi_week > nfp_week > expiry_week >
@@ -41,19 +30,7 @@ EventCalendarLabel = Literal[
 # meetings outrank CPI/NFP releases as cross-axis macro events), and
 # `budget_week` between `global_rate_decision` and `cpi_week`. See
 # docs/decisions/0014-event-calendar-v2-precedence-and-windows.md.
-_PRECEDENCE: list[EventCalendarLabel] = [
-    "geopolitical_event",
-    "election_window",
-    "fed_week",
-    "global_rate_decision",
-    "budget_week",
-    "cpi_week",
-    "nfp_week",
-    "expiry_week",
-    "earnings_season",
-    "normal_calendar",
-    "unknown",
-]
+_PRECEDENCE: list[EventCalendarLabel] = list(EVENT_CALENDAR_LABELS)
 _TYPE_TO_LABEL: dict[str, EventCalendarLabel] = {
     "FOMC": "fed_week",
     "CPI": "cpi_week",

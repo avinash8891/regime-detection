@@ -90,6 +90,111 @@ def test_strategy_response_de_risks_high_transition_risk_final_state() -> None:
     assert response.modifiers_applied == ["bull_healthy_low_vol", "high_transition_risk"]
 
 
+def test_strategy_response_macro_event_rule_caps_healthy_bull_response() -> None:
+    response = build_strategy_response(
+        trend_direction_active="bull",
+        trend_character_active="trending",
+        volatility_state_active="normal_vol",
+        breadth_state_active="healthy_breadth",
+        transition_risk_state="stable",
+        event_calendar_labels=("cpi_week",),
+        strategy_event_modifiers_config=RegimeEngine().config.strategy_event_modifiers,
+    )
+
+    assert response.position_size_multiplier == 0.75
+    assert response.allow_leverage_expansion is False
+    assert response.require_confirmation_for_new_longs is True
+    assert response.leverage_allowed is True
+    assert response.modifiers_applied == [
+        "bull_healthy_low_vol",
+        "event_calendar:macro_event_window",
+    ]
+
+
+def test_strategy_response_policy_event_rule_caps_high_transition_risk_response() -> None:
+    response = build_strategy_response(
+        trend_direction_active="bull",
+        trend_character_active="trending",
+        volatility_state_active="normal_vol",
+        breadth_state_active="healthy_breadth",
+        transition_risk_state="high_transition_risk",
+        event_calendar_labels=("geopolitical_event",),
+        strategy_event_modifiers_config=RegimeEngine().config.strategy_event_modifiers,
+    )
+
+    assert response.position_size_multiplier == 0.5
+    assert response.leverage_allowed is False
+    assert response.allow_leverage_expansion is False
+    assert response.require_confirmation_for_new_longs is True
+    assert response.prefer_cash_or_hedges is True
+    assert response.modifiers_applied == [
+        "bull_healthy_low_vol",
+        "high_transition_risk",
+        "event_calendar:policy_or_event_risk_window",
+    ]
+
+
+def test_strategy_response_multiple_event_rules_apply_in_config_order() -> None:
+    response = build_strategy_response(
+        trend_direction_active="bull",
+        trend_character_active="trending",
+        volatility_state_active="normal_vol",
+        breadth_state_active="healthy_breadth",
+        transition_risk_state="stable",
+        event_calendar_labels=("fed_week", "budget_week"),
+        strategy_event_modifiers_config=RegimeEngine().config.strategy_event_modifiers,
+    )
+
+    assert response.position_size_multiplier == 0.5
+    assert response.leverage_allowed is False
+    assert response.allow_leverage_expansion is False
+    assert response.require_confirmation_for_new_longs is True
+    assert response.prefer_cash_or_hedges is True
+    assert response.modifiers_applied == [
+        "bull_healthy_low_vol",
+        "event_calendar:macro_event_window",
+        "event_calendar:policy_or_event_risk_window",
+    ]
+
+
+def test_strategy_response_nonmatching_event_label_leaves_response_unchanged() -> None:
+    kwargs = {
+        "trend_direction_active": "bull",
+        "trend_character_active": "trending",
+        "volatility_state_active": "normal_vol",
+        "breadth_state_active": "healthy_breadth",
+        "transition_risk_state": "stable",
+    }
+    baseline = build_strategy_response(**kwargs)
+    response = build_strategy_response(
+        **kwargs,
+        event_calendar_labels=("earnings_season",),
+        strategy_event_modifiers_config=RegimeEngine().config.strategy_event_modifiers,
+    )
+
+    assert response == baseline
+
+
+def test_strategy_response_event_rule_applies_to_unknown_guard_response() -> None:
+    response = build_strategy_response(
+        trend_direction_active="unknown",
+        trend_character_active="trending",
+        volatility_state_active="normal_vol",
+        breadth_state_active="healthy_breadth",
+        transition_risk_state="insufficient_data",
+        event_calendar_labels=("geopolitical_event",),
+        strategy_event_modifiers_config=RegimeEngine().config.strategy_event_modifiers,
+    )
+
+    assert response.position_size_multiplier == 0.5
+    assert response.leverage_allowed is False
+    assert response.require_confirmation_for_new_longs is True
+    assert response.prefer_cash_or_hedges is True
+    assert response.modifiers_applied == [
+        "event_calendar:policy_or_event_risk_window",
+    ]
+
+
 def test_transition_risk_series_classifier_applies_precedence_from_prepared_inputs() -> None:
     sessions = [
         date(2024, 1, 2),

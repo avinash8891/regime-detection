@@ -3863,7 +3863,9 @@ Output structure:
 `primary_drivers`, `triggered_rules`, `evidence`, and `data_quality` explain why
 that state was selected.
 
-Downstream decision code must consume only `transition_risk.state`. Reporting,
+Downstream transition-risk decision code consumes `transition_risk.state`.
+Strategy response consumes `transition_risk.state` for base posture and
+`event_calendar.matching_labels` for config-driven event modifiers. Reporting,
 shadow A/B gates, historical walk-forward summaries, and fixture verification
 must carry the explanatory fields for audit: `score`, `score_components`,
 `primary_drivers`, `triggered_rules`, `data_quality.status`,
@@ -3986,6 +3988,41 @@ blocked_strategy_modes:
 ```
 
 The starter routing rules + blocked-strategy-modes table are V2 §9.1 walk-forward calibration placeholders (same pattern as §1A `0.60` threshold). Operator refines after walk-forward evidence reveals false-positive / false-negative rates per cohort.
+
+#### Strategy Event Modifiers
+
+Strategy event modifiers are config-driven overlays layered after the base
+posture selected from `transition_risk.state`. They consume
+`structural_causal_state.event_calendar.matching_labels`, not
+the compact `primary_label`, so overlapping event windows can apply without
+discarding non-primary labels. The modifiers are not hardcoded event-specific
+strategy branches; deployments tune label sets and overlay fields through
+`strategy_event_modifiers` config.
+
+Default overlays:
+
+```yaml
+strategy_event_modifiers:
+  rules:
+    macro_event_window:
+      labels: [fed_week, cpi_week, nfp_week, global_rate_decision]
+      position_size_cap: 0.75
+      allow_leverage_expansion: false
+      require_confirmation_for_new_longs: true
+
+    policy_or_event_risk_window:
+      labels: [budget_week, election_window, geopolitical_event]
+      position_size_cap: 0.50
+      leverage_allowed: false
+      prefer_cash_or_hedges: true
+      require_confirmation_for_new_longs: true
+```
+
+If multiple modifiers match the same date, each matching overlay is applied in
+configured order. Event modifiers are de-risking overlays only: position-size
+caps use the stricter value, and config validation rejects boolean actions
+that would loosen leverage, leverage expansion, confirmation, or cash/hedge
+guards.
 
 ### 5.2 Strategy-Family Constraints
 

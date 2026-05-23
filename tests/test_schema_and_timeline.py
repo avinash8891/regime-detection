@@ -8,12 +8,14 @@ from datetime import date
 from pathlib import Path
 from typing import get_type_hints
 
+import pandas as pd
 import pytest
 
 from regime_detection.axis_series import build_axis_series_bundle
 from regime_detection.engine import RegimeEngine
 from regime_detection.feature_store import build_feature_store
 from regime_detection.config import load_default_regime_config
+from regime_detection.fragility_universe import CROSS_ASSET_SYMBOLS, SECTOR_ETFS
 from regime_detection.market_context import (
     build_market_context,
     slice_context_to_recent_sessions,
@@ -31,6 +33,7 @@ from regime_detection.models import (
     VolumeLiquidityEvidencePayload,
     VolumeLiquidityOutput,
 )
+from regime_detection.strategy_response import build_strategy_response
 from regime_detection.timeline import (
     ENGINE_MINIMUM_HISTORY,
     _enrich_with_hmm_evidence,
@@ -41,6 +44,20 @@ from regime_detection.transition_risk_series import (
     build_transition_risk_history,
     build_transition_risk_series,
 )
+
+
+def _constituent_ohlcv_from_close_series(series: pd.Series) -> pd.DataFrame:
+    adjusted_close = series.astype(float).copy()
+    return pd.DataFrame(
+        {
+            "open": adjusted_close,
+            "high": adjusted_close,
+            "low": adjusted_close,
+            "close": adjusted_close,
+            "volume": pd.Series(1_000_000, index=adjusted_close.index, dtype="int64"),
+            "adjusted_close": adjusted_close,
+        }
+    )
 
 
 def _build_shared_timeline_pipeline(market_df_for_asof):
@@ -442,6 +459,64 @@ def test_classify_delegates_to_classify_window_with_single_day_lookback(
     assert spy.call_args.kwargs["end_date"] == as_of
     assert spy.call_args.kwargs["lookback_days"] == 1
     assert spy.call_args.kwargs["event_calendar"] is event_calendar_df
+
+
+def test_timeline_passes_event_calendar_matching_labels_to_strategy_response(
+    mocker, v2_market_df_for_asof, v2_close_series_by_symbol, event_calendar_df
+) -> None:
+    engine = RegimeEngine()
+    as_of = date(2026, 5, 13)
+    event_calendar = event_calendar_df.copy()
+    event_calendar.loc[[0, 1], "date"] = as_of
+    event_calendar.loc[[0, 1], "publication_date"] = date(2026, 1, 1)
+    spy = mocker.patch(
+        "regime_detection.timeline.build_strategy_response",
+        wraps=build_strategy_response,
+    )
+
+    out = engine.classify(
+        as_of_date=as_of,
+        market_data=v2_market_df_for_asof(as_of),
+        event_calendar=event_calendar,
+        sector_etf_closes={
+            symbol: v2_close_series_by_symbol[symbol] for symbol in SECTOR_ETFS
+        },
+        cross_asset_closes={
+            symbol: v2_close_series_by_symbol[symbol]
+            for symbol in CROSS_ASSET_SYMBOLS
+        },
+        pit_constituent_intervals=pd.DataFrame(
+            {
+                "ticker": list(SECTOR_ETFS),
+                "start_date": [date(2019, 1, 2)] * len(SECTOR_ETFS),
+                "end_date": [None] * len(SECTOR_ETFS),
+                "source": ["test_fixture"] * len(SECTOR_ETFS),
+                "source_url": ["test_fixture"] * len(SECTOR_ETFS),
+                "bias_warning": ["test_fixture"] * len(SECTOR_ETFS),
+            }
+        ),
+        constituent_ohlcv={
+            symbol: _constituent_ohlcv_from_close_series(
+                v2_close_series_by_symbol[symbol]
+            )
+            for symbol in SECTOR_ETFS
+        },
+    )
+
+    event_output = out.structural_causal_state.event_calendar
+    assert event_output.primary_label == "cpi_week"
+    assert event_output.matching_labels == (
+        "cpi_week",
+        "nfp_week",
+        "expiry_week",
+        "earnings_season",
+    )
+    spy.assert_called_once()
+    assert spy.call_args.kwargs["event_calendar_labels"] == event_output.matching_labels
+    assert (
+        spy.call_args.kwargs["strategy_event_modifiers_config"]
+        is engine.config.strategy_event_modifiers
+    )
 
 
 def test_transition_risk_history_precomputes_axis_switch_and_prior_bear_flags() -> None:

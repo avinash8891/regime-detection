@@ -2,13 +2,16 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import date
-from typing import Literal
 
 import numpy as np
 import pandas as pd
 
 from regime_detection.axis_series import AxisSeriesBundle
 from regime_detection.config import TransitionScoreConfig
+from regime_detection.event_calendar_labels import (
+    EVENT_CALENDAR_LABEL_SET,
+    EventCalendarLabel,
+)
 from regime_detection.feature_store import FeatureStore
 from regime_detection.market_context import MarketContext
 from regime_detection.models import EventCalendarOutput, TransitionRiskOutput
@@ -18,32 +21,7 @@ from regime_detection.transition_risk import (
 )
 from regime_detection.transition_score import compose_transition_score_for_session
 
-EventCalendarLabel = Literal[
-    "geopolitical_event",
-    "election_window",
-    "fed_week",
-    "global_rate_decision",
-    "budget_week",
-    "cpi_week",
-    "nfp_week",
-    "expiry_week",
-    "earnings_season",
-    "normal_calendar",
-]
-EVENT_CALENDAR_LABELS: frozenset[EventCalendarLabel] = frozenset(
-    (
-        "geopolitical_event",
-        "election_window",
-        "fed_week",
-        "global_rate_decision",
-        "budget_week",
-        "cpi_week",
-        "nfp_week",
-        "expiry_week",
-        "earnings_season",
-        "normal_calendar",
-    )
-)
+EVENT_CALENDAR_LABELS = EVENT_CALENDAR_LABEL_SET
 
 
 @dataclass(frozen=True)

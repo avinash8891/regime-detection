@@ -5,6 +5,7 @@ from typing import Literal
 from pydantic import Field, model_validator
 
 from regime_detection._config_core import AxisName, StrictBaseModel
+from regime_detection.event_calendar_labels import EventCalendarLabel
 
 
 class TransitionComponentScales(StrictBaseModel):
@@ -324,3 +325,51 @@ class StrategyFamilyConstraintsConfig(StrictBaseModel):
     default_neutral: dict[str, FamilyOverride]
     # First key = cohort name, second key = family name.
     overrides: dict[str, dict[str, FamilyOverride]]
+
+
+class StrategyEventModifierRule(StrictBaseModel):
+    """v2 strategy modifiers keyed by active event-calendar labels."""
+
+    labels: tuple[EventCalendarLabel, ...] = Field(min_length=1)
+    position_size_cap: float | None = Field(default=None, gt=0.0, le=1.0)
+    leverage_allowed: bool | None = None
+    allow_leverage_expansion: bool | None = None
+    require_confirmation_for_new_longs: bool | None = None
+    prefer_cash_or_hedges: bool | None = None
+
+    @model_validator(mode="after")
+    def _validate_action_fields(self) -> "StrategyEventModifierRule":
+        if not any(
+            action is not None
+            for action in (
+                self.position_size_cap,
+                self.leverage_allowed,
+                self.allow_leverage_expansion,
+                self.require_confirmation_for_new_longs,
+                self.prefer_cash_or_hedges,
+            )
+        ):
+            raise ValueError(
+                "strategy event modifier rule must set at least one action field"
+            )
+        loosening_actions = []
+        if self.leverage_allowed is True:
+            loosening_actions.append("leverage_allowed=True")
+        if self.allow_leverage_expansion is True:
+            loosening_actions.append("allow_leverage_expansion=True")
+        if self.require_confirmation_for_new_longs is False:
+            loosening_actions.append("require_confirmation_for_new_longs=False")
+        if self.prefer_cash_or_hedges is False:
+            loosening_actions.append("prefer_cash_or_hedges=False")
+        if loosening_actions:
+            raise ValueError(
+                "strategy event modifier rule cannot loosen risk controls: "
+                f"{loosening_actions}"
+            )
+        return self
+
+
+class StrategyEventModifiersConfig(StrictBaseModel):
+    """v2 strategy event-calendar modifier rule set."""
+
+    rules: dict[str, StrategyEventModifierRule] = Field(min_length=1)

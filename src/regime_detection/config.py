@@ -53,6 +53,8 @@ from regime_detection._config_evidence_strategy import (
     HMMConfig,
     NoFlipFlopConfig,
     StrategyFamilyConstraintsConfig,
+    StrategyEventModifierRule,
+    StrategyEventModifiersConfig,
     TransitionScoreConfig,
 )
 
@@ -86,6 +88,8 @@ __all__ = [
     "NoFlipFlopConfig",
     "RegimeConfig",
     "StrategyFamilyConstraintsConfig",
+    "StrategyEventModifierRule",
+    "StrategyEventModifiersConfig",
     "TransitionScoreConfig",
     "TrendCharacterV2Config",
     "TrendDirectionV2Config",
@@ -149,6 +153,7 @@ class RegimeConfig(StrictBaseModel):
     no_flip_flop: NoFlipFlopConfig | None = None  # v2 §5.4
     cohort_routing: CohortRoutingConfig | None = None  # v2 §5.1
     strategy_family_constraints: StrategyFamilyConstraintsConfig | None = None  # v2 §5.2
+    strategy_event_modifiers: StrategyEventModifiersConfig | None = None
 
 
 def load_regime_config(path: str | Path) -> RegimeConfig:

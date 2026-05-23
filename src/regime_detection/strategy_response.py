@@ -1,6 +1,54 @@
 from __future__ import annotations
 
+from regime_detection.config import StrategyEventModifiersConfig
 from regime_detection.models import StrategyResponse
+
+
+def _apply_event_calendar_modifiers(
+    *,
+    position_size_multiplier: float,
+    leverage_allowed: bool,
+    allow_leverage_expansion: bool | None,
+    require_confirmation_for_new_longs: bool,
+    prefer_cash_or_hedges: bool | None,
+    modifiers: list[str],
+    event_calendar_labels: tuple[str, ...],
+    strategy_event_modifiers_config: StrategyEventModifiersConfig | None,
+) -> tuple[float, bool, bool | None, bool, bool | None]:
+    if strategy_event_modifiers_config is None or not event_calendar_labels:
+        return (
+            position_size_multiplier,
+            leverage_allowed,
+            allow_leverage_expansion,
+            require_confirmation_for_new_longs,
+            prefer_cash_or_hedges,
+        )
+
+    active_event_labels = set(event_calendar_labels)
+    for rule_name, rule in strategy_event_modifiers_config.rules.items():
+        if not active_event_labels.intersection(rule.labels):
+            continue
+        if rule.position_size_cap is not None:
+            position_size_multiplier = min(
+                position_size_multiplier,
+                rule.position_size_cap,
+            )
+        if rule.leverage_allowed is not None:
+            leverage_allowed = rule.leverage_allowed
+        if rule.allow_leverage_expansion is not None:
+            allow_leverage_expansion = rule.allow_leverage_expansion
+        if rule.require_confirmation_for_new_longs is not None:
+            require_confirmation_for_new_longs = rule.require_confirmation_for_new_longs
+        if rule.prefer_cash_or_hedges is not None:
+            prefer_cash_or_hedges = rule.prefer_cash_or_hedges
+        modifiers.append(f"event_calendar:{rule_name}")
+    return (
+        position_size_multiplier,
+        leverage_allowed,
+        allow_leverage_expansion,
+        require_confirmation_for_new_longs,
+        prefer_cash_or_hedges,
+    )
 
 
 def build_strategy_response(
@@ -10,24 +58,45 @@ def build_strategy_response(
     volatility_state_active: str,
     breadth_state_active: str,
     transition_risk_state: str,
+    event_calendar_labels: tuple[str, ...] = (),
+    strategy_event_modifiers_config: StrategyEventModifiersConfig | None = None,
 ) -> StrategyResponse:
     if (
         transition_risk_state == "insufficient_data"
         or "unknown" in {trend_direction_active, trend_character_active, volatility_state_active, breadth_state_active}
     ):
-        return StrategyResponse(
+        modifiers: list[str] = []
+        (
+            position_size_multiplier,
+            leverage_allowed,
+            allow_leverage_expansion,
+            require_confirmation_for_new_longs,
+            prefer_cash_or_hedges,
+        ) = _apply_event_calendar_modifiers(
             position_size_multiplier=0.75,
+            leverage_allowed=False,
+            allow_leverage_expansion=None,
+            require_confirmation_for_new_longs=True,
+            prefer_cash_or_hedges=None,
+            modifiers=modifiers,
+            event_calendar_labels=event_calendar_labels,
+            strategy_event_modifiers_config=strategy_event_modifiers_config,
+        )
+        return StrategyResponse(
+            position_size_multiplier=position_size_multiplier,
             allow_trend_following=True,
             allow_mean_reversion=True,
-            leverage_allowed=False,
+            leverage_allowed=leverage_allowed,
             allow_buy_dip=True,
             allow_breakout=True,
             allow_shorts=True,
-            require_confirmation_for_new_longs=True,
+            require_confirmation_for_new_longs=require_confirmation_for_new_longs,
             require_confirmation_for_shorts=True,
             log_for_review=True,
             reason="unknown_or_unmapped_regime",
-            modifiers_applied=[],
+            modifiers_applied=modifiers,
+            prefer_cash_or_hedges=prefer_cash_or_hedges,
+            allow_leverage_expansion=allow_leverage_expansion,
         )
 
     position_size_multiplier = 1.0
@@ -129,6 +198,23 @@ def build_strategy_response(
         prefer_cash_or_hedges = True
         allow_buy_dip = False
         modifiers.append("crisis")
+
+    (
+        position_size_multiplier,
+        leverage_allowed,
+        allow_leverage_expansion,
+        require_confirmation_for_new_longs,
+        prefer_cash_or_hedges,
+    ) = _apply_event_calendar_modifiers(
+        position_size_multiplier=position_size_multiplier,
+        leverage_allowed=leverage_allowed,
+        allow_leverage_expansion=allow_leverage_expansion,
+        require_confirmation_for_new_longs=require_confirmation_for_new_longs,
+        prefer_cash_or_hedges=prefer_cash_or_hedges,
+        modifiers=modifiers,
+        event_calendar_labels=event_calendar_labels,
+        strategy_event_modifiers_config=strategy_event_modifiers_config,
+    )
 
     return StrategyResponse(
         position_size_multiplier=position_size_multiplier,

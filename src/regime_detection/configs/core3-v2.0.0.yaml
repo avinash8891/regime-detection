@@ -540,6 +540,20 @@ change_point:
 no_flip_flop:
   window_trading_days: 15
 
+strategy_event_modifiers:
+  rules:
+    macro_event_window:
+      labels: [fed_week, cpi_week, nfp_week, global_rate_decision]
+      position_size_cap: 0.75
+      allow_leverage_expansion: false
+      require_confirmation_for_new_longs: true
+    policy_or_event_risk_window:
+      labels: [budget_week, election_window, geopolitical_event]
+      position_size_cap: 0.50
+      leverage_allowed: false
+      prefer_cash_or_hedges: true
+      require_confirmation_for_new_longs: true
+
 # v2 §5.1 Agent Cohort Routing (implementation phase, documented implementation decision calibration placeholder).
 cohort_routing:
   routing_rules:
