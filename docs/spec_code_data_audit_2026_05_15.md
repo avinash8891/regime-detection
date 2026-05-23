@@ -84,7 +84,7 @@ implementation diffs are in Section 3.
 | Metric | Spec data | Fetch | Code | Verdict |
 |---|---|---|---|---|
 | `budget_week`, `election_window`, `global_rate_decision` | Deterministic / official adapters + candidate parquet | ✅ Sep-30 budget, BOE/ECB/BOJ pages | `event_calendar.py` + `macro_event_score` in §4.2 | OK |
-| `geopolitical_event` | GPR + GDELT + HDX HAPI; ACLED/UCDP pending API keys | ⚠ partial — ACLED/UCDP TODO | overlay-only, never auto-promoted (spec-aligned) | OK as designed |
+| `geopolitical_event` | GPR + GDELT 2.0; ACLED/UCDP pending API keys | ⚠ partial — ACLED/UCDP TODO | overlay-only, never auto-promoted (spec-aligned); HDX monthly/admin aggregates excluded from candidate generation | OK as designed |
 
 ### 1.10 V2 §3 network fragility
 

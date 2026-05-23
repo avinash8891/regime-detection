@@ -16,8 +16,6 @@ from regime_data_fetch.event_sources.gpr_gdelt_fetchers import (
     ConflictFetcher,
     GDELT_DAILY_EXPORT_URL_TEMPLATE,
     GPR_DAILY_URL,
-    HDX_HAPI_CONFLICT_EVENTS_URL,
-    HDX_HAPI_SOURCE_ID,
     SourceFetchStatus,
     UCDP_GED_CANDIDATE_URL,
     UCDP_SOURCE_ID,
@@ -28,7 +26,6 @@ from regime_data_fetch.event_sources.gpr_gdelt_fetchers import (
     fetch_gdelt_daily_export as _fetch_gdelt_daily_export,
     fetch_gpr_daily as _fetch_gpr_daily,
     fetch_gpr_monthly as _fetch_gpr_monthly,
-    fetch_hdx_hapi_conflict_events as _fetch_hdx_hapi_conflict_events,
     fetch_optional_conflict_rows as _fetch_optional_conflict_rows,
     fetch_ucdp_events as _fetch_ucdp_events,
     is_empty_payload as _is_empty_payload,
@@ -36,7 +33,6 @@ from regime_data_fetch.event_sources.gpr_gdelt_fetchers import (
 )
 from regime_data_fetch.event_sources.gpr_gdelt_conflict_parsers import (
     parse_acled_events,
-    parse_hdx_hapi_conflict_events,
     parse_ucdp_events,
 )
 from regime_data_fetch.event_sources.models import EventCandidate, ValidationResult
@@ -51,7 +47,7 @@ GDELT_SQLDATE_IDX = 1
 GDELT_EVENT_ROOT_CODE_IDX = 28
 GDELT_QUAD_CLASS_IDX = 29
 GDELT_NUM_MENTIONS_IDX = 31
-GDELT_SOURCE_URL_IDX = 56
+GDELT_SOURCE_URL_IDX = 60
 
 
 def _nearby_validations(
@@ -648,21 +644,6 @@ class UCDPSignalGenerator(_ConflictSignalGenerator):
         super().__init__(
             fetcher=ucdp_fetcher or _fetch_ucdp_events,
             parser=parse_ucdp_events,
-        )
-
-
-class HDXHAPISignalGenerator(_ConflictSignalGenerator):
-    source_id = HDX_HAPI_SOURCE_ID
-    event_subtype = "hdx_hapi_monthly_conflict"
-    source_identifier = "hdx_hapi_conflict_events"
-    source_url = HDX_HAPI_CONFLICT_EVENTS_URL
-
-    def __init__(
-        self, *, hdx_hapi_fetcher: ConflictFetcher | None = None
-    ) -> None:
-        super().__init__(
-            fetcher=hdx_hapi_fetcher or _fetch_hdx_hapi_conflict_events,
-            parser=parse_hdx_hapi_conflict_events,
         )
 
 

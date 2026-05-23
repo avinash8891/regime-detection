@@ -4,7 +4,7 @@
 
 **Goal:** Use the richer daily Caldara-Iacoviello GPR workbook fields to generate better approval-gated geopolitical candidates without auto-promoting geopolitical events.
 
-**Architecture:** `GPRSignalGenerator` is the Group B GPR/AI-GPR source entry point and remains separate from GDELT, ACLED, UCDP, and HDX generators. Expand `parse_gpr_table` to retain headline, acts, threats, moving averages, article count, and optional event text; score spikes from headline/acts/threats and encode the result into candidate subtype, importance, confidence, and review evidence. The event-calendar renderer remains unchanged: `geopolitical_event` rows still reach `us_events.yaml` only through the approval overlay.
+**Architecture:** `GPRSignalGenerator` is the Group B GPR/AI-GPR source entry point and remains separate from GDELT, ACLED, and UCDP generators. Expand `parse_gpr_table` to retain headline, acts, threats, moving averages, article count, and optional event text; score spikes from headline/acts/threats and encode the result into candidate subtype, importance, confidence, and review evidence. The event-calendar renderer remains unchanged: `geopolitical_event` rows still reach `us_events.yaml` only through the approval overlay. HDX HAPI monthly/admin aggregates are excluded from event candidate generation.
 
 **Tech Stack:** Python, pandas, existing `EventCandidate` dataclass, existing RTK/pytest test harness.
 
@@ -247,7 +247,7 @@ Expected: no stale statement that says only headline GPR is retained.
 Run:
 
 ```bash
-rtk pytest tests/test_event_source_group_b.py tests/test_event_source_group_b_conflict_budget.py::test_gpr_gdelt_generator_includes_hdx_conflict_candidates -q; echo "EXIT:$?"
+rtk pytest tests/test_event_source_group_b.py tests/test_event_source_group_b_conflict_budget.py::test_generator_includes_acled_and_ucdp_candidate_sources -q; echo "EXIT:$?"
 ```
 
 Expected: `EXIT:0`.

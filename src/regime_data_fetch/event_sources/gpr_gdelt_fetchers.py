@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import base64
 import datetime as dt
 import json
 import logging
@@ -18,17 +17,14 @@ LOGGER = logging.getLogger(__name__)
 
 ACLED_SOURCE_ID = "acled:events"
 UCDP_SOURCE_ID = "ucdp:ged-candidate"
-HDX_HAPI_SOURCE_ID = "hdx-hapi:conflict-events"
 GPR_DAILY_URL = "https://www.matteoiacoviello.com/gpr_files/data_gpr_daily_recent.xls"
+GDELT_V2_MASTERFILELIST_URL = "http://data.gdeltproject.org/gdeltv2/masterfilelist.txt"
 GDELT_DAILY_EXPORT_URL_TEMPLATE = (
-    "http://data.gdeltproject.org/events/{date:%Y%m%d}.export.CSV.zip"
+    "http://data.gdeltproject.org/gdeltv2/{date:%Y%m%d}*.export.CSV.zip"
 )
 ACLED_READ_URL = "https://acleddata.com/api/acled/read"
 ACLED_TOKEN_URL = "https://acleddata.com/oauth/token"
 UCDP_GED_CANDIDATE_URL = "https://ucdpapi.pcr.uu.se/api/gedevents/26.0.3"
-HDX_HAPI_CONFLICT_EVENTS_URL = (
-    "https://hapi.humdata.org/api/v2/coordination-context/conflict-events"
-)
 GPR_MONTHLY_URL = "https://www.matteoiacoviello.com/gpr_files/data_gpr_export.xls"
 AI_GPR_DAILY_URL = "https://www.matteoiacoviello.com/ai_gpr_files/ai_gpr_data_daily.csv"
 AI_GPR_EVENTTYPE_MONTHLY_URL = (
@@ -83,12 +79,24 @@ def fetch_ai_gpr_country_monthly() -> str:
 
 
 def fetch_gdelt_daily_export(day: dt.date) -> bytes:
-    request = Request(
-        GDELT_DAILY_EXPORT_URL_TEMPLATE.format(date=day),
-        headers={"User-Agent": HTTP_USER_AGENT},
+    master_list = _http_text(GDELT_V2_MASTERFILELIST_URL, headers={})
+    export_urls = tuple(
+        _gdelt_v2_export_urls_for_day(master_list=master_list, day=day)
     )
-    with urlopen(request, timeout=30) as response:
-        return response.read()
+    return b"".join(_http_bytes(url) for url in export_urls)
+
+
+def _gdelt_v2_export_urls_for_day(*, master_list: str, day: dt.date) -> list[str]:
+    day_prefix = f"/gdeltv2/{day:%Y%m%d}"
+    urls: list[str] = []
+    for line in master_list.splitlines():
+        parts = line.split()
+        if len(parts) != 3:
+            continue
+        url = parts[2]
+        if day_prefix in url and url.endswith(".export.CSV.zip"):
+            urls.append(url)
+    return urls
 
 
 def fetch_acled_events(start_year: int, end_year: int) -> str | None:
@@ -137,27 +145,6 @@ def fetch_ucdp_events(start_year: int, end_year: int) -> str | None:
         extra_params={
             "StartDate": f"{start_year}-01-01",
             "EndDate": f"{end_year}-12-31",
-        },
-    )
-
-
-def fetch_hdx_hapi_conflict_events(start_year: int, end_year: int) -> str | None:
-    app_identifier = _hdx_hapi_app_identifier()
-    if app_identifier is None:
-        LOGGER.error(
-            "HDX HAPI app identifier unavailable; set HDX_HAPI_APP_IDENTIFIER "
-            "or HDX_HAPI_APP_NAME and HDX_HAPI_APP_EMAIL to fetch conflict events"
-        )
-        return None
-    return _fetch_paged_json(
-        HDX_HAPI_CONFLICT_EVENTS_URL,
-        headers={},
-        result_key="data",
-        extra_params={
-            "output_format": "json",
-            "app_identifier": app_identifier,
-            "start_date": f"{start_year}-01-01",
-            "end_date": f"{end_year}-12-31",
         },
     )
 
@@ -300,18 +287,6 @@ def _acled_access_token() -> str | None:
     return str(payload["access_token"])
 
 
-def _hdx_hapi_app_identifier() -> str | None:
-    for env_var in ("HDX_HAPI_APP_IDENTIFIER", "HDX_APP_IDENTIFIER"):
-        value = os.environ.get(env_var, "").strip()
-        if value:
-            return value
-    app_name = os.environ.get("HDX_HAPI_APP_NAME", "").strip()
-    app_email = os.environ.get("HDX_HAPI_APP_EMAIL", "").strip()
-    if not app_name or not app_email:
-        return None
-    return base64.b64encode(f"{app_name}:{app_email}".encode("utf-8")).decode("ascii")
-
-
 def _fetch_paged_json(
     base_url: str,
     *,
@@ -370,3 +345,9 @@ def _http_text(url: str, *, headers: dict[str, str]) -> str:
     )
     with urlopen(request, timeout=30) as response:
         return response.read().decode("utf-8", errors="replace")
+
+
+def _http_bytes(url: str) -> bytes:
+    request = Request(url, headers={"User-Agent": HTTP_USER_AGENT})
+    with urlopen(request, timeout=30) as response:
+        return response.read()

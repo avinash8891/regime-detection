@@ -63,37 +63,6 @@ def parse_ucdp_events(
     return [_summary_row(row, prefix="UCDP") for _, row in sorted(totals.items())]
 
 
-def parse_hdx_hapi_conflict_events(
-    payload: str | bytes, *, source_url: str
-) -> list[dict[str, object]]:
-    records = _json_records(payload, container_keys=("data",))
-    rows: list[dict[str, object]] = []
-    for record in records:
-        period_start = _parse_date(record.get("reference_period_start"))
-        if period_start is None:
-            continue
-        event_type = str(record.get("event_type") or "conflict_events")
-        location = str(
-            record.get("location_name") or record.get("location_code") or "unknown"
-        )
-        rows.append(
-            {
-                "date": period_start,
-                "event_count": _parse_positive_int(
-                    str(record.get("events", "0")), default=0
-                ),
-                "fatalities": _parse_positive_int(
-                    str(record.get("fatalities", "0")), default=0
-                ),
-                "dominant_theme": f"HDX HAPI monthly {event_type}: {location}",
-                "source_url": source_url,
-            }
-        )
-    return [
-        row for row in rows if int(row["event_count"]) > 0 or int(row["fatalities"]) > 0
-    ]
-
-
 def _parse_positive_int(value: str, *, default: int) -> int:
     try:
         parsed = int(value)

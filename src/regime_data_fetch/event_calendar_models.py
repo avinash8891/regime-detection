@@ -46,7 +46,6 @@ EventSource = Literal[
     "gpr:caldara-iacoviello",
     "acled:events",
     "ucdp:ged-candidate",
-    "hdx-hapi:conflict-events",
 ]
 EVENT_MARKETS = frozenset(cast(tuple[EventMarket, ...], ("US", "GLOBAL")))
 EVENT_TYPES = frozenset(cast(tuple[EventType, ...], get_args(EventType)))

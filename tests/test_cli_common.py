@@ -21,12 +21,11 @@ def _isolate_operator_env(monkeypatch: pytest.MonkeyPatch) -> None:
     test on the same xdist worker that ran (directly or via subprocess
     fallback path) ``load_operator_env_files`` against the developer's
     home pointer ``~/.config/regime-detection/operator.env`` would have
-    left ``REGIME_HDX_ENV`` / ``REGIME_INVESTING_ENV`` /
-    ``REGIME_TINYFISH_ENV`` set in ``os.environ``. The original tests
-    only delenv'd the vars they personally expected, missing the leaked
-    ones, so assertions like ``loaded == [pointer_file, tinyfish_env]``
-    failed when the function additionally followed those leaked
-    pointers.
+    left provider env pointers such as ``REGIME_INVESTING_ENV`` /
+    ``REGIME_TINYFISH_ENV`` set in ``os.environ``. The original tests only
+    delenv'd the vars they personally expected, missing the leaked ones, so
+    assertions like ``loaded == [pointer_file, tinyfish_env]`` failed when
+    the function additionally followed those leaked pointers.
 
     Surfaced when experimenting with ``--dist=loadfile`` (different
     worker grouping → different chance of contamination) — bug existed

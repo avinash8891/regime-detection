@@ -243,13 +243,13 @@ def test_gpr_gdelt_generator_flags_real_geopolitical_spike_date() -> None:
 
 
 def test_parse_gdelt_event_export_counts_material_conflict_rows() -> None:
-    conflict = [""] * 58
+    conflict = [""] * 61
     conflict[1] = "20220224"
     conflict[28] = "19"
     conflict[29] = "4"
     conflict[31] = "12"
-    conflict[56] = "https://example.test/ukraine-invasion"
-    cooperation = [""] * 58
+    conflict[60] = "https://example.test/ukraine-invasion"
+    cooperation = [""] * 61
     cooperation[1] = "20220224"
     cooperation[28] = "05"
     cooperation[29] = "1"
@@ -258,7 +258,7 @@ def test_parse_gdelt_event_export_counts_material_conflict_rows() -> None:
 
     rows = parse_gdelt_event_export(
         payload,
-        source_url="https://data.gdeltproject.org/events/20220224.export.CSV.zip",
+        source_url="http://data.gdeltproject.org/gdeltv2/20220224000000.export.CSV.zip",
     )
 
     assert rows == [
@@ -272,23 +272,23 @@ def test_parse_gdelt_event_export_counts_material_conflict_rows() -> None:
 
 
 def test_parse_gdelt_event_export_filters_to_expected_export_date() -> None:
-    current = [""] * 58
+    current = [""] * 61
     current[1] = "20220224"
     current[28] = "19"
     current[29] = "4"
     current[31] = "12"
-    current[56] = "https://example.test/current"
-    stale = [""] * 58
+    current[60] = "https://example.test/current"
+    stale = [""] * 61
     stale[1] = "20210224"
     stale[28] = "19"
     stale[29] = "4"
     stale[31] = "99"
-    stale[56] = "https://example.test/stale"
+    stale[60] = "https://example.test/stale"
     payload = ("\t".join(stale) + "\n" + "\t".join(current) + "\n").encode()
 
     rows = parse_gdelt_event_export(
         payload,
-        source_url="https://data.gdeltproject.org/events/20220224.export.CSV.zip",
+        source_url="http://data.gdeltproject.org/gdeltv2/20220224000000.export.CSV.zip",
         expected_date=dt.date(2022, 2, 24),
     )
 
@@ -308,12 +308,12 @@ def test_gpr_generator_fetches_gdelt_daily_exports_for_spike_dates() -> None:
 """
 
     def gdelt_daily_fetcher(day: dt.date) -> bytes:
-        row = [""] * 58
+        row = [""] * 61
         row[1] = day.strftime("%Y%m%d")
         row[28] = "19"
         row[29] = "4"
         row[31] = "8"
-        row[56] = f"https://example.test/gdelt/{day:%Y%m%d}"
+        row[60] = f"https://example.test/gdelt/{day:%Y%m%d}"
         buffer = io.BytesIO()
         with zipfile.ZipFile(buffer, "w") as zf:
             zf.writestr(f"{day:%Y%m%d}.export.CSV", "\t".join(row) + "\n")
