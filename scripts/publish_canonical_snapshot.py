@@ -140,9 +140,19 @@ def _canonicalize_parquet_bytes(source: Path) -> bytes:
             names=table.column_names,
         )
     if table.num_rows > 0:
-        sort_keys = [(name, "ascending") for name in table.column_names]
+        sort_keys = [
+            (field.name, "ascending")
+            for field in table.schema
+            if _is_sortable_arrow_type(field.type)
+        ]
+        if not sort_keys:
+            return _write_canonical_parquet_bytes(table)
         indices = pc.sort_indices(table, sort_keys=sort_keys)
         table = table.take(indices)
+    return _write_canonical_parquet_bytes(table)
+
+
+def _write_canonical_parquet_bytes(table: Any) -> bytes:
     buf = io.BytesIO()
     pq.write_table(
         table,
@@ -152,6 +162,17 @@ def _canonicalize_parquet_bytes(source: Path) -> bytes:
         use_deprecated_int96_timestamps=False,
     )
     return buf.getvalue()
+
+
+def _is_sortable_arrow_type(arrow_type: Any) -> bool:
+    return not (
+        pat.is_list(arrow_type)
+        or pat.is_large_list(arrow_type)
+        or pat.is_fixed_size_list(arrow_type)
+        or pat.is_struct(arrow_type)
+        or pat.is_map(arrow_type)
+        or pat.is_union(arrow_type)
+    )
 
 
 def _parquet_row_count(payload: bytes) -> int:

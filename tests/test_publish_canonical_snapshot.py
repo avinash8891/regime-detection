@@ -425,3 +425,22 @@ def test_canonicalize_is_a_fixed_point_for_datetime_float_parquet(tmp_path: Path
         f"sha2={hashlib.sha256(pass2).hexdigest()[:12]} "
         f"sha3={hashlib.sha256(pass3).hexdigest()[:12]}"
     )
+
+
+def test_canonicalize_supports_parquet_with_list_column(tmp_path: Path):
+    path = tmp_path / "event_candidates.parquet"
+    table = pa.Table.from_pydict(
+        {
+            "date": ["2026-01-01", "2026-01-02"],
+            "event_type": ["FOMC", "election"],
+            "window_days": [[-5, 5], [-10, 10]],
+        }
+    )
+    pq.write_table(table, path)
+
+    canonical = pcs._canonicalize_parquet_bytes(path)
+    path.write_bytes(canonical)
+    second_pass = pcs._canonicalize_parquet_bytes(path)
+
+    assert canonical == second_pass
+    assert pq.read_table(path).column_names == ["date", "event_type", "window_days"]
