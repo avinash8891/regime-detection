@@ -3742,12 +3742,12 @@ Final-state selection:
 
 ```text
 missing required score inputs            -> runtime error
-score cold-start / NaN components         -> insufficient_data
 volatility_state.active_label = crisis_vol -> crisis
 bear stress rule                          -> bear_stress
 fragile bull rule                         -> fragile_bull
 recovery rule                             -> recovery_attempt
 sideways stress / event / cooldown watch  -> watch
+score cold-start / NaN components         -> insufficient_data
 weakening score band                      -> weakening
 transition_warning score band             -> transition_warning
 high score band                           -> high_transition_risk
@@ -3765,6 +3765,13 @@ AND volatility_state.active_label = high_vol
 AND breadth_state.active_label in [weak_breadth, divergent_fragile]
 -> watch, with triggered_rules containing sideways_stress
 ```
+
+`fragile_bull` remains a hard override because the old V1/V2 behavior had a
+direct `bull_fragile` warning and no current score-only replacement is clearly
+better. `insufficient_data` sits below concrete warning/watch rules: unknown
+axis data should not erase an explicit emergency, stress, recovery, event, or
+cooldown signal. It still beats ordinary score-band states when no concrete
+rule is active.
 
 Final `transition_risk.state` changes are debounced by
 `transition_score.state_confirmation_days`. Immediate states use `1`

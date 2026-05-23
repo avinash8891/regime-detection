@@ -96,12 +96,13 @@ def _select_transition_state(
     # not as a separate public final state.
     if flags.sideways_stress:
         return "watch"
-    if flags.insufficient_data:
-        return "insufficient_data"
+    # Concrete watch evidence is still useful when another axis is unknown.
     if flags.event_transition_watch:
         return "watch"
     if flags.post_switch_cooldown and score_state == "stable":
         return "watch"
+    if flags.insufficient_data:
+        return "insufficient_data"
     return score_state
 
 

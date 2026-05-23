@@ -97,6 +97,28 @@ def test_transition_risk_crisis_override_wins_over_insufficient_axis_data() -> N
     assert output.triggered_rules == ["crisis", "insufficient_data"]
 
 
+def test_transition_risk_watch_rules_win_over_insufficient_axis_data() -> None:
+    score = ComposedTransitionScore(
+        score=0.10,
+        interpretation="stable",
+        components={"trend_break": 0.10},
+    )
+
+    event_watch = compose_transition_risk_output(
+        score=score,
+        flags=_flags(event_transition_watch=True, insufficient_data=True),
+    )
+    cooldown_watch = compose_transition_risk_output(
+        score=score,
+        flags=_flags(post_switch_cooldown=True, insufficient_data=True),
+    )
+
+    assert event_watch.state == "watch"
+    assert event_watch.triggered_rules == ["event_transition_watch", "insufficient_data"]
+    assert cooldown_watch.state == "watch"
+    assert cooldown_watch.triggered_rules == ["post_switch_cooldown", "insufficient_data"]
+
+
 def test_transition_risk_missing_score_becomes_insufficient_data() -> None:
     output = compose_transition_risk_output(
         score=ComposedTransitionScore(score=None, interpretation=None, components=None),
