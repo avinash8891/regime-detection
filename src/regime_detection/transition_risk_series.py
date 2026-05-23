@@ -381,7 +381,9 @@ def build_transition_risk_outputs_by_date(
     )
     volatility_crisis = volatility_state_active.eq("crisis_vol")
     volatility_high_or_crisis = volatility_state_active.isin(["high_vol", "crisis_vol"])
-    breadth_stressed = breadth_state_active.isin(["weak_breadth", "divergent_fragile", "unknown"])
+    breadth_stressed = breadth_state_active.isin(
+        ["weak_breadth", "narrowing_breadth", "divergent_fragile", "unknown"]
+    )
     post_switch_cooldown = days_since_axis_switch.notna() & days_since_axis_switch.le(cooldown_window_days) & ~volatility_crisis
     insufficient_data = (
         trend_direction_active.eq("unknown")
@@ -475,7 +477,8 @@ def build_transition_risk_outputs_by_date(
         sideways_stress = (
             trend_direction_arr[i] == "sideways"
             and volatility_state_arr[i] == "high_vol"
-            and breadth_state_arr[i] in {"weak_breadth", "divergent_fragile"}
+            and breadth_state_arr[i]
+            in {"weak_breadth", "narrowing_breadth", "divergent_fragile"}
         )
         event_transition_watch = bool(
             macro_elevated

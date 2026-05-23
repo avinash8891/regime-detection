@@ -30,6 +30,58 @@ def _golden_date(intent_id: str) -> date:
     raise KeyError(f"intent_id {intent_id!r} not found in golden_dates.yaml")
 
 
+def _single_transition_output(
+    *,
+    trend_direction: str,
+    trend_character: str,
+    volatility_state: str,
+    breadth_state: str,
+):
+    session = date(2024, 1, 2)
+    return build_transition_risk_outputs_by_date(
+        sessions=[session],
+        trend_direction_active_by_date={session: trend_direction},
+        trend_character_active_by_date={session: trend_character},
+        volatility_state_active_by_date={session: volatility_state},
+        breadth_state_active_by_date={session: breadth_state},
+        close_by_date={session: 100.0},
+        sma_50_by_date={session: 100.0},
+        history=TransitionRiskHistory(
+            stable_changed_by_date={session: False},
+            days_since_axis_switch_by_date={session: None},
+            axis_switch_count_by_date={session: 0},
+            recent_axis_switch_count_by_date={session: 0},
+            prior_bear_by_date={session: False},
+        ),
+        transition_score_inputs_by_date={
+            session: TransitionScoreInputs(
+                realized_vol_short=10.0,
+                realized_vol_long=10.0,
+                pct_above_50dma=0.50,
+                avg_pairwise_corr_percentile_504d=0.0,
+                largest_eigenvalue_share_percentile_504d=0.0,
+                effective_rank_percentile_504d=1.0,
+                absorption_ratio_top3=0.50,
+                drawdown_252d=0.0,
+                spy_close=100.0,
+                spy_sma_50=100.0,
+                event_calendar_labels=("normal_calendar",),
+                credit_funding_label="credit_calm",
+                volume_liquidity_label="normal_volume",
+                volume_zscore_20d=1.0,
+                gap_frequency_percentile_252d=0.0,
+                intraday_range_percentile_252d=0.0,
+                hmm_top_state_prob_now=0.50,
+                hmm_top_state_prob_5d_ago=0.50,
+                change_point_score=0.0,
+                cluster_id_now=1,
+                cluster_id_5d_ago=1,
+            )
+        },
+        transition_score_config=RegimeEngine().config.transition_score,
+    )[session]
+
+
 def test_transition_risk_golden_fixture_without_v2_score_inputs_fails_loudly(
     market_df_for_asof,
     event_calendar_df,
@@ -441,6 +493,30 @@ def test_transition_risk_series_maps_sideways_stress_to_watch() -> None:
 
     assert outputs[session].state == "watch"
     assert outputs[session].triggered_rules == ["sideways_stress"]
+
+
+def test_transition_risk_series_treats_narrowing_breadth_as_bear_stress() -> None:
+    output = _single_transition_output(
+        trend_direction="bear",
+        trend_character="trending",
+        volatility_state="high_vol",
+        breadth_state="narrowing_breadth",
+    )
+
+    assert output.state == "bear_stress"
+    assert output.triggered_rules == ["bear_stress"]
+
+
+def test_transition_risk_series_treats_narrowing_breadth_as_sideways_stress() -> None:
+    output = _single_transition_output(
+        trend_direction="sideways",
+        trend_character="chop",
+        volatility_state="high_vol",
+        breadth_state="narrowing_breadth",
+    )
+
+    assert output.state == "watch"
+    assert output.triggered_rules == ["sideways_stress"]
 
 
 def test_transition_risk_series_fails_fast_on_price_index_misalignment(market_df_for_asof) -> None:

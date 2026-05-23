@@ -3803,7 +3803,7 @@ separate final state:
 ```text
 trend_direction.active_label = sideways
 AND volatility_state.active_label = high_vol
-AND breadth_state.active_label in [weak_breadth, divergent_fragile]
+AND breadth_state.active_label in [weak_breadth, narrowing_breadth, divergent_fragile]
 -> watch, with triggered_rules containing sideways_stress
 ```
 

@@ -149,10 +149,10 @@ config without code changes.
 | # | Rule | Final state | Trigger condition |
 |---|---|---|---|
 | 1 | `crisis` | `crisis` | `volatility_state.active_label == "crisis_vol"`. Single-axis override — fires unconditionally. |
-| 2 | `bear_stress` | `bear_stress` | `trend_direction.active_label == "bear"` AND `volatility_state.active_label ∈ {high_vol, crisis_vol}` AND (`breadth_state.active_label ∈ {weak_breadth, divergent_fragile, unknown}` OR `credit_stress ≥ overrides.credit_stress` (default `0.70`)). |
+| 2 | `bear_stress` | `bear_stress` | `trend_direction.active_label == "bear"` AND `volatility_state.active_label ∈ {high_vol, crisis_vol}` AND (`breadth_state.active_label ∈ {weak_breadth, narrowing_breadth, divergent_fragile, unknown}` OR `credit_stress ≥ overrides.credit_stress` (default `0.70`)). |
 | 3 | `fragile_bull` | `fragile_bull` | `trend_direction.active_label == "bull"` AND (`breadth_state.active_label == "divergent_fragile"` OR `correlation_fragility ≥ overrides.correlation_fragility` (default `0.70`) OR `credit_stress ≥ overrides.credit_stress`). |
 | 4 | `recovery_attempt` | `recovery_attempt` | `trend_character.active_label == "recovery_attempt"` **OR** (`prior_bear` AND `close > sma_50` AND `breadth_state.active_label ∈ {recovery_breadth, healthy_breadth}`). OR-composed: either signal alone fires the rule. |
-| 5 | `sideways_stress` | `watch` | `trend_direction.active_label == "sideways"` AND `volatility_state.active_label == "high_vol"` AND `breadth_state.active_label ∈ {weak_breadth, divergent_fragile}`. |
+| 5 | `sideways_stress` | `watch` | `trend_direction.active_label == "sideways"` AND `volatility_state.active_label == "high_vol"` AND `breadth_state.active_label ∈ {weak_breadth, narrowing_breadth, divergent_fragile}`. |
 | 6 | `event_transition_watch` | `watch` | `macro_event ≥ overrides.macro_event_min` (default `1.0`) AND `score ≥ overrides.score_elevated_min` (default `0.35`) AND `macro_event` is the dominant component (≥ every other component). |
 | 7 | `post_switch_cooldown` | `watch` | Within `cooldown_window_days` of an axis switch (default 5 NYSE sessions) AND not in `crisis_vol`. Applied **only when the score-derived state is `stable`**. |
 | 8 | `insufficient_data` | `insufficient_data` | Any of `trend_direction`, `trend_character`, `volatility_state`, `breadth_state` active label is `unknown`. |
