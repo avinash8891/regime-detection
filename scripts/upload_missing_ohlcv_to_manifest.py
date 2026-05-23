@@ -1,8 +1,8 @@
-"""Upload 107 missing PIT-constituent OHLCV parquets to S3 and add manifest entries.
+"""Upload missing PIT-constituent OHLCV parquets to S3 and add manifest entries.
 
 Reads each symbol parquet from the repaired local tree, canonicalizes it,
-uploads to S3 under the manifest's storage_root, then appends entries to both
-the merged manifest and the OHLCV-only manifest.
+uploads to S3 under the merged runtime manifest's storage_root, then appends
+entries to the merged manifest.
 
 Run once; idempotent on re-run (skips symbols already in the manifest).
 """
@@ -30,12 +30,6 @@ LOGGER = logging.getLogger("upload_missing_ohlcv")
 
 _DEFAULT_SOURCE_TREE = _REPO_ROOT / ".context" / "daily_ohlcv_2016_20260515_repaired"
 _MERGED_MANIFEST = _REPO_ROOT / "manifests" / "runs" / "regime_engine_2026-05-17.yaml"
-_OHLCV_MANIFEST = (
-    _REPO_ROOT
-    / "manifests"
-    / "runs"
-    / "profile_ready_daily_ohlcv_762_2016_20260515.yaml"
-)
 _PARQUET_COMPRESSION = "snappy"
 _PARQUET_COERCE_TIMESTAMPS = "us"
 
@@ -130,7 +124,12 @@ def _build_artifact_entry(symbol: str, canon: bytes, sha: str) -> dict:
         entry["min_date"] = min_d
     if max_d:
         entry["max_date"] = max_d
-    entry["required_for"] = ["profile_engine", "v2_calibration", "historical_walkforward", "audit_layer2_30d"]
+    entry["required_for"] = [
+        "profile_engine",
+        "v2_calibration",
+        "historical_walkforward",
+        "audit_layer2_30d",
+    ]
     return entry
 
 
@@ -158,13 +157,11 @@ def main(argv: list[str] | None = None) -> int:
 
     yaml = _make_yaml()
     merged = _load_manifest(_MERGED_MANIFEST, yaml)
-    ohlcv = _load_manifest(_OHLCV_MANIFEST, yaml)
 
     storage_root: str = merged["storage_root"]
     store = None if args.dry_run else build_artifact_store(storage_root)
 
     merged_symbols = _manifest_symbol_set(merged)
-    ohlcv_symbols = _manifest_symbol_set(ohlcv)
 
     source_tree = args.source_tree
     if not source_tree.exists():
@@ -187,8 +184,7 @@ def main(argv: list[str] | None = None) -> int:
             continue
 
         in_merged = symbol in merged_symbols
-        in_ohlcv = symbol in ohlcv_symbols
-        if in_merged and in_ohlcv:
+        if in_merged:
             skipped += 1
             continue
 
@@ -220,15 +216,14 @@ def main(argv: list[str] | None = None) -> int:
             idx = _insertion_index(merged["artifacts"], symbol)
             merged["artifacts"].insert(idx, entry)
 
-        if not in_ohlcv:
-            ohlcv_entry = {k: v for k, v in entry.items()}
-            ohlcv_entry["required_for"] = ["profile_engine", "v2_calibration", "historical_walkforward", "audit_layer2_30d"]
-            idx2 = _insertion_index(ohlcv["artifacts"], symbol)
-            ohlcv["artifacts"].insert(idx2, ohlcv_entry)
-
-        LOGGER.info("  sha=%s rows=%s min=%s max=%s %s",
-                    sha[:12], entry["rows"], entry.get("min_date"), entry.get("max_date"),
-                    "DRY-RUN" if args.dry_run else "uploaded")
+        LOGGER.info(
+            "  sha=%s rows=%s min=%s max=%s %s",
+            sha[:12],
+            entry["rows"],
+            entry.get("min_date"),
+            entry.get("max_date"),
+            "DRY-RUN" if args.dry_run else "uploaded",
+        )
         uploaded += 1
 
     LOGGER.info("done: uploaded=%d skipped=%d errors=%d", uploaded, skipped, len(errors))
@@ -238,8 +233,7 @@ def main(argv: list[str] | None = None) -> int:
 
     if not args.dry_run and uploaded > 0:
         _dump_manifest(merged, yaml, _MERGED_MANIFEST)
-        _dump_manifest(ohlcv, yaml, _OHLCV_MANIFEST)
-        LOGGER.info("manifests rewritten (%d new entries each)", uploaded)
+        LOGGER.info("manifest rewritten (%d new entries)", uploaded)
 
     return 0
 

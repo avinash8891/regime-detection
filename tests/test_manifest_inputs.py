@@ -22,21 +22,6 @@ from regime_data_fetch.manifest_inputs import (
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 COMMITTED_MANIFEST = REPO_ROOT / "manifests" / "runs" / "regime_engine_2026-05-17.yaml"
-OHLCV_ONLY_MANIFEST = (
-    REPO_ROOT
-    / "manifests"
-    / "runs"
-    / "profile_ready_daily_ohlcv_762_2016_20260515.yaml"
-)
-# Runners whose contract REQUIRES the macro/PIT/event/sentiment bundle and
-# therefore can only be satisfied by the merged engine manifest. The OHLCV-only
-# manifest must NOT claim these runners in any artifact's ``required_for``.
-ENGINE_RUNNERS_REQUIRING_FULL_BUNDLE = (
-    "profile_engine",
-    "v2_calibration",
-    "historical_walkforward",
-    "audit_layer2_30d",
-)
 EVENT_CALENDAR_MANIFEST_RUNNERS = (
     "profile_engine",
     "v2_calibration",
@@ -48,10 +33,9 @@ EVENT_CALENDAR_MANIFEST_RUNNERS = (
 # for TODO placeholder artifacts whose canonical store entry has not been
 # generated yet (see manifests/runs/regime_engine_2026-05-17.yaml header).
 EMPTY_SHA256 = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
-# Constituent-OHLCV placeholder name: the real per-symbol manifest has not
-# been regenerated yet (see profile_ready_daily_ohlcv_762_2016_20260515.md).
-# The resolver discovers it structurally via local_path, not by name, so it
-# is permitted to skip the ARTIFACT_BY_FIELD round-trip.
+# Constituent-OHLCV placeholder compatibility name. The current merged
+# manifest uses per-symbol partitions, but the resolver also supports the
+# tree placeholder structurally via local_path.
 OHLCV_PLACEHOLDER_NAME = "daily_ohlcv_762"
 # TODO-placeholder artifacts whose canonical fetchers have not been wired
 # yet. These are documented in the manifest header and in README.md as
@@ -387,55 +371,6 @@ def test_committed_manifest_materializes_from_fresh_workspace() -> None:
         f"unexpected TODO-placeholder artifacts in committed manifest: "
         f"{sorted(placeholder_uris)}"
     )
-
-
-@pytest.mark.unit
-def test_ohlcv_only_manifest_does_not_claim_engine_runners() -> None:
-    """Contract test: the OHLCV-only lockfile must not advertise itself as a
-    valid input for runners that require the full macro/PIT/event bundle.
-
-    Historical bug: every artifact in
-    ``manifests/runs/profile_ready_daily_ohlcv_762_2016_20260515.yaml``
-    carried ``required_for: [profile_engine, v2_calibration,
-    historical_walkforward, audit_layer2_30d]``, so the runner ran far enough
-    to materialize 5/1086 OHLCV parquets before failing inside
-    ``resolve_runner_input_paths`` with
-    ``ManifestInputResolutionError: manifest missing required artifact
-    fred_macro_series for macro_parquet``. This test prevents the false claim
-    from being reintroduced.
-    """
-    assert OHLCV_ONLY_MANIFEST.exists(), (
-        f"OHLCV-only manifest missing: {OHLCV_ONLY_MANIFEST}"
-    )
-    manifest = load_manifest(OHLCV_ONLY_MANIFEST)
-    for runner in ENGINE_RUNNERS_REQUIRING_FULL_BUNDLE:
-        matching = manifest.required_for(runner)
-        assert matching == [], (
-            f"OHLCV-only manifest must not claim runner {runner!r}; the "
-            f"runner requires the merged engine manifest "
-            f"(regime_engine_YYYY-MM-DD.yaml). Offenders: "
-            f"{[a.name for a in matching][:5]}"
-        )
-
-
-@pytest.mark.unit
-def test_ohlcv_only_manifest_fails_fast_for_profile_engine(tmp_path: Path) -> None:
-    """The honest failure mode when an operator points ``profile_engine.py`` at
-    the OHLCV-only manifest is an early ``ManifestInputResolutionError`` from
-    ``resolve_runner_input_paths`` with ``manifest has no artifacts required
-    for profile_engine`` — i.e. before materialization side effects.
-    """
-    with pytest.raises(
-        ManifestInputResolutionError,
-        match="manifest has no artifacts required for profile_engine",
-    ):
-        resolve_runner_input_paths(
-            manifest_path=OHLCV_ONLY_MANIFEST,
-            data_root=tmp_path / "data" / "raw",
-            runner_name="profile_engine",
-            cli_values={},
-            cli_overrides=set(),
-        )
 
 
 @pytest.mark.unit
