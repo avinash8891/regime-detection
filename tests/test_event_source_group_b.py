@@ -18,9 +18,11 @@ from regime_data_fetch.event_sources.approvals import (
 from regime_data_fetch.event_sources.deterministic_budget import (
     DeterministicBudgetAdapter,
 )
-from regime_data_fetch.event_sources.validators_gpr_gdelt import GPRGDELTSignalGenerator
 from regime_data_fetch.event_sources.validators_gpr_gdelt import (
     ACLED_SOURCE_ID,
+    ACLEDSignalGenerator,
+    GDELTSignalGenerator,
+    GPRSignalGenerator,
     detect_gpr_spikes,
     parse_ai_gpr_context,
     parse_gdelt_event_export,
@@ -167,17 +169,27 @@ def test_gpr_gdelt_generator_flags_real_geopolitical_spike_date() -> None:
     gdelt_csv = """date,event_count,dominant_theme,source_url
 2022-02-24,1200,Russia invasion of Ukraine,https://example.test/gdelt/20220224
 """
-    generator = GPRGDELTSignalGenerator(
+    gpr = GPRSignalGenerator(
         gpr_fetcher=lambda: gpr_csv,
-        gdelt_fetcher=lambda: gdelt_csv,
         min_history_days=3,
         stddev_threshold=2.0,
     )
-
-    candidates = generator.generate(
-        start_year=2022, end_year=2022, store=None, run_id=None
+    gdelt = GDELTSignalGenerator(
+        gdelt_fetcher=lambda: gdelt_csv,
+        merge_window_days=2,
     )
-    validations = generator.validate(candidates, store=None, run_id=None)
+
+    candidates = sorted(
+        [
+            *gpr.generate(start_year=2022, end_year=2022, store=None, run_id=None),
+            *gdelt.generate(start_year=2022, end_year=2022, store=None, run_id=None),
+        ],
+        key=lambda candidate: (candidate.date, candidate.source_id),
+    )
+    validations = [
+        *gpr.validate(candidates, store=None, run_id=None),
+        *gdelt.validate(candidates, store=None, run_id=None),
+    ]
 
     assert [
         (
@@ -307,28 +319,37 @@ def test_gpr_generator_fetches_gdelt_daily_exports_for_spike_dates() -> None:
             zf.writestr(f"{day:%Y%m%d}.export.CSV", "\t".join(row) + "\n")
         return buffer.getvalue()
 
-    generator = GPRGDELTSignalGenerator(
+    gpr = GPRSignalGenerator(
         gpr_fetcher=lambda: gpr_csv,
-        gdelt_daily_fetcher=gdelt_daily_fetcher,
         min_history_days=3,
         stddev_threshold=2.0,
         merge_window_days=0,
     )
-
-    candidates = generator.generate(
-        start_year=2022, end_year=2022, store=None, run_id=None
+    gdelt = GDELTSignalGenerator(
+        gdelt_daily_fetcher=gdelt_daily_fetcher,
+        merge_window_days=0,
     )
-    validations = generator.validate(candidates, store=None, run_id=None)
+
+    candidates = sorted(
+        gpr.generate(start_year=2022, end_year=2022, store=None, run_id=None),
+        key=lambda candidate: (candidate.date, candidate.source_id),
+    )
+    validations = [
+        *gpr.validate(candidates, store=None, run_id=None),
+        *gdelt.validate(candidates, store=None, run_id=None),
+    ]
+    candidates = sorted(
+        [
+            *candidates,
+            *gdelt.generate(start_year=2022, end_year=2022, store=None, run_id=None),
+        ],
+        key=lambda candidate: (candidate.date, candidate.source_id),
+    )
 
     assert [
         (candidate.date, candidate.source_id, candidate.raw_snippet)
         for candidate in candidates
     ] == [
-        (
-            dt.date(2022, 2, 24),
-            "gdelt:events-v2",
-            "GDELT geopolitical event volume: 8.",
-        ),
         (
             dt.date(2022, 2, 24),
             "gpr:caldara-iacoviello",
@@ -342,11 +363,6 @@ def test_gpr_generator_fetches_gdelt_daily_exports_for_spike_dates() -> None:
         for validation in validations
     } == {
         (("geopolitical_event", dt.date(2022, 2, 24)), "gdelt:events-v2", "confirm"),
-        (
-            ("geopolitical_event", dt.date(2022, 2, 24)),
-            "gpr:caldara-iacoviello",
-            "confirm",
-        ),
     }
 
 
@@ -354,12 +370,8 @@ def test_gpr_gdelt_generator_records_source_status_for_fetch_failures() -> None:
     def failing_gpr_fetcher() -> str:
         raise TimeoutError("gpr timed out")
 
-    generator = GPRGDELTSignalGenerator(
+    generator = GPRSignalGenerator(
         gpr_fetcher=failing_gpr_fetcher,
-        gdelt_fetcher=lambda: "date,event_count,dominant_theme,source_url\n",
-        acled_fetcher=lambda _start_year, _end_year: None,
-        ucdp_fetcher=lambda _start_year, _end_year: None,
-        hdx_hapi_fetcher=lambda _start_year, _end_year: None,
         min_history_days=3,
         stddev_threshold=2.0,
     )
@@ -374,59 +386,30 @@ def test_gpr_gdelt_generator_records_source_status_for_fetch_failures() -> None:
         generator.last_source_statuses["gpr:caldara-iacoviello"].error
         == "gpr timed out"
     )
-    assert generator.last_source_statuses["gdelt:events-v2"].status == "empty"
     assert generator.last_run_status == "partial"
 
 
-def test_gpr_gdelt_generator_records_direct_gdelt_fetch_failure() -> None:
-    gpr_csv = """date,gpr
-2022-02-20,100
-2022-02-21,101
-2022-02-22,99
-2022-02-23,101
-2022-02-24,500
-2022-02-25,120
-"""
-
+def test_gdelt_generator_records_direct_gdelt_fetch_failure() -> None:
     def failing_gdelt_fetcher() -> str:
         raise TimeoutError("gdelt timed out")
 
-    generator = GPRGDELTSignalGenerator(
-        gpr_fetcher=lambda: gpr_csv,
-        gdelt_fetcher=failing_gdelt_fetcher,
-        acled_fetcher=lambda _start_year, _end_year: None,
-        ucdp_fetcher=lambda _start_year, _end_year: None,
-        hdx_hapi_fetcher=lambda _start_year, _end_year: None,
-        min_history_days=3,
-        stddev_threshold=2.0,
-    )
+    generator = GDELTSignalGenerator(gdelt_fetcher=failing_gdelt_fetcher)
 
     candidates = generator.generate(
         start_year=2022, end_year=2022, store=None, run_id=None
     )
 
-    assert [(candidate.date, candidate.source_id) for candidate in candidates] == [
-        (dt.date(2022, 2, 24), "gpr:caldara-iacoviello")
-    ]
-    assert generator.last_source_statuses["gpr:caldara-iacoviello"].status == "ok"
+    assert candidates == []
     assert generator.last_source_statuses["gdelt:events-v2"].status == "failed"
     assert generator.last_source_statuses["gdelt:events-v2"].error == "gdelt timed out"
     assert generator.last_run_status == "partial"
 
 
-def test_gpr_gdelt_generator_records_optional_conflict_fetch_failure() -> None:
+def test_acled_generator_records_optional_conflict_fetch_failure() -> None:
     def failing_acled_fetcher(_start_year: int, _end_year: int) -> str:
         raise TimeoutError("acled timed out")
 
-    generator = GPRGDELTSignalGenerator(
-        gpr_fetcher=lambda: "date,gpr\n2022-02-24,100\n",
-        gdelt_fetcher=lambda: "date,event_count,dominant_theme,source_url\n",
-        acled_fetcher=failing_acled_fetcher,
-        ucdp_fetcher=lambda _start_year, _end_year: None,
-        hdx_hapi_fetcher=lambda _start_year, _end_year: None,
-        min_history_days=3,
-        stddev_threshold=2.0,
-    )
+    generator = ACLEDSignalGenerator(acled_fetcher=failing_acled_fetcher)
 
     candidates = generator.generate(
         start_year=2022, end_year=2022, store=None, run_id=None
@@ -441,15 +424,9 @@ def test_gpr_gdelt_generator_records_optional_conflict_fetch_failure() -> None:
     assert generator.last_run_status == "partial"
 
 
-def test_gpr_gdelt_generator_records_optional_conflict_parse_failure() -> None:
-    generator = GPRGDELTSignalGenerator(
-        gpr_fetcher=lambda: "date,gpr\n2022-02-24,100\n",
-        gdelt_fetcher=lambda: "date,event_count,dominant_theme,source_url\n",
+def test_acled_generator_records_optional_conflict_parse_failure() -> None:
+    generator = ACLEDSignalGenerator(
         acled_fetcher=lambda _start_year, _end_year: '{"data": [',
-        ucdp_fetcher=lambda _start_year, _end_year: None,
-        hdx_hapi_fetcher=lambda _start_year, _end_year: None,
-        min_history_days=3,
-        stddev_threshold=2.0,
     )
 
     candidates = generator.generate(
@@ -572,9 +549,8 @@ def test_gpr_candidate_marks_threat_dominant_spikes() -> None:
 2022-02-23,101,100,101,100,100,100
 2022-02-24,500,120,710,180,130,850
 """
-    generator = GPRGDELTSignalGenerator(
+    generator = GPRSignalGenerator(
         gpr_fetcher=lambda: gpr_csv,
-        gdelt_fetcher=lambda: "date,event_count,dominant_theme,source_url\n",
         min_history_days=3,
         stddev_threshold=2.0,
     )
@@ -613,9 +589,8 @@ def test_gpr_candidate_sets_persistence_window_days() -> None:
 2022-02-23,101,100,101,100,100,100
 2022-02-24,500,700,125,220,150,900
 """
-    generator = GPRGDELTSignalGenerator(
+    generator = GPRSignalGenerator(
         gpr_fetcher=lambda: gpr_csv,
-        gdelt_fetcher=lambda: "date,event_count,dominant_theme,source_url\n",
         min_history_days=3,
         stddev_threshold=2.0,
     )
@@ -690,9 +665,8 @@ def test_gpr_candidate_includes_monthly_and_ai_gpr_context() -> None:
     ai_country = """Date,GPR_AI,Russia_all,Ukraine_all,USA_all
 2022-02-01,220,300,260,70
 """
-    generator = GPRGDELTSignalGenerator(
+    generator = GPRSignalGenerator(
         gpr_fetcher=lambda: gpr_csv,
-        gdelt_fetcher=lambda: "date,event_count,dominant_theme,source_url\n",
         gpr_monthly_fetcher=lambda: monthly_country,
         ai_gpr_daily_fetcher=lambda: ai_daily,
         ai_gpr_eventtype_monthly_fetcher=lambda: ai_event_type,
@@ -718,7 +692,7 @@ def test_gpr_candidate_includes_monthly_and_ai_gpr_context() -> None:
     )
 
 
-def test_gpr_gdelt_generator_records_partial_daily_gdelt_failure() -> None:
+def test_gdelt_generator_records_partial_daily_gdelt_failure() -> None:
     gpr_csv = """date,gpr
 2022-02-20,100
 2022-02-21,101
@@ -731,26 +705,27 @@ def test_gpr_gdelt_generator_records_partial_daily_gdelt_failure() -> None:
     def failing_gdelt_daily_fetcher(_day: dt.date) -> bytes:
         raise TimeoutError("gdelt timed out")
 
-    generator = GPRGDELTSignalGenerator(
+    gpr = GPRSignalGenerator(
         gpr_fetcher=lambda: gpr_csv,
-        gdelt_daily_fetcher=failing_gdelt_daily_fetcher,
-        acled_fetcher=lambda _start_year, _end_year: None,
-        ucdp_fetcher=lambda _start_year, _end_year: None,
-        hdx_hapi_fetcher=lambda _start_year, _end_year: None,
         min_history_days=3,
         stddev_threshold=2.0,
         merge_window_days=0,
     )
+    gdelt = GDELTSignalGenerator(
+        gdelt_daily_fetcher=failing_gdelt_daily_fetcher,
+        merge_window_days=0,
+    )
 
-    candidates = generator.generate(
+    candidates = gpr.generate(
         start_year=2022, end_year=2022, store=None, run_id=None
     )
+    validations = gdelt.validate(candidates, store=None, run_id=None)
 
     assert [(candidate.date, candidate.source_id) for candidate in candidates] == [
         (dt.date(2022, 2, 24), "gpr:caldara-iacoviello")
     ]
-    assert generator.last_source_statuses["gpr:caldara-iacoviello"].status == "ok"
-    assert generator.last_source_statuses["gdelt:events-v2"].status == "partial"
-    assert generator.last_source_statuses["gdelt:events-v2"].failed_fetches == 1
-    assert generator.last_source_statuses["gdelt:events-v2"].empty_payload is False
-    assert generator.last_run_status == "partial"
+    assert validations == []
+    assert gpr.last_source_statuses["gpr:caldara-iacoviello"].status == "ok"
+    assert gdelt.last_source_statuses["gdelt:events-v2"].status == "partial"
+    assert gdelt.last_source_statuses["gdelt:events-v2"].failed_fetches == 1
+    assert gdelt.last_source_statuses["gdelt:events-v2"].empty_payload is False

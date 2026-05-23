@@ -52,7 +52,11 @@ def build_v2_curated_candidate_events(
     from regime_data_fetch.event_sources.official_ecb import OfficialECBAdapter
     from regime_data_fetch.event_sources.orchestrator import EventSourceOrchestrator
     from regime_data_fetch.event_sources.validators_gpr_gdelt import (
-        GPRGDELTSignalGenerator,
+        ACLEDSignalGenerator,
+        GDELTSignalGenerator,
+        GPRSignalGenerator,
+        HDXHAPISignalGenerator,
+        UCDPSignalGenerator,
     )
     from regime_data_fetch.event_sources.validators_hf_central_bank import (
         HFCentralBankValidator,
@@ -83,9 +87,22 @@ def build_v2_curated_candidate_events(
     group_b_generators = []
     group_b_validators = []
     if live_group_b_sources:
-        gpr_gdelt = GPRGDELTSignalGenerator()
-        group_b_generators.extend([BudgetOfficialDiscoveryGenerator(), gpr_gdelt])
-        group_b_validators.extend([gpr_gdelt, TinyFishValidator()])
+        gpr = GPRSignalGenerator()
+        gdelt = GDELTSignalGenerator()
+        acled = ACLEDSignalGenerator()
+        ucdp = UCDPSignalGenerator()
+        hdx = HDXHAPISignalGenerator()
+        group_b_generators.extend(
+            [
+                BudgetOfficialDiscoveryGenerator(),
+                gpr,
+                gdelt,
+                acled,
+                ucdp,
+                hdx,
+            ]
+        )
+        group_b_validators.extend([gpr, gdelt, acled, ucdp, hdx, TinyFishValidator()])
 
     approval_overlay = load_approval_overlay(
         repo_root / "configs" / "events" / "group_b_approvals.yaml"

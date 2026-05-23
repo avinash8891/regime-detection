@@ -4,7 +4,7 @@
 
 **Goal:** Use the richer daily Caldara-Iacoviello GPR workbook fields to generate better approval-gated geopolitical candidates without auto-promoting geopolitical events.
 
-**Architecture:** Keep `GPRGDELTSignalGenerator` as the single Group B geopolitical source entry point. Expand `parse_gpr_table` to retain headline, acts, threats, moving averages, article count, and optional event text; score spikes from headline/acts/threats and encode the result into candidate subtype, importance, confidence, and review evidence. The event-calendar renderer remains unchanged: `geopolitical_event` rows still reach `us_events.yaml` only through the approval overlay.
+**Architecture:** `GPRSignalGenerator` is the Group B GPR/AI-GPR source entry point and remains separate from GDELT, ACLED, UCDP, and HDX generators. Expand `parse_gpr_table` to retain headline, acts, threats, moving averages, article count, and optional event text; score spikes from headline/acts/threats and encode the result into candidate subtype, importance, confidence, and review evidence. The event-calendar renderer remains unchanged: `geopolitical_event` rows still reach `us_events.yaml` only through the approval overlay.
 
 **Tech Stack:** Python, pandas, existing `EventCandidate` dataclass, existing RTK/pytest test harness.
 
@@ -271,4 +271,3 @@ git diff -- src/regime_data_fetch/event_sources/validators_gpr_gdelt.py src/regi
 ```
 
 Expected: only `validators_gpr_gdelt.py` changed among those source files; no change to promotion logic.
-

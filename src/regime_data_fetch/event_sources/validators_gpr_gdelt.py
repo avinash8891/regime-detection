@@ -54,9 +54,33 @@ GDELT_NUM_MENTIONS_IDX = 31
 GDELT_SOURCE_URL_IDX = 56
 
 
-class GPRGDELTSignalGenerator:
-    source_id = "gpr-gdelt:geopolitical-signals"
-    validator_id = "gpr-gdelt:cross-source"
+def _nearby_validations(
+    *,
+    candidates: list[EventCandidate],
+    source_id: str,
+    dates: set[dt.date],
+    window_days: int,
+) -> list[ValidationResult]:
+    validations: list[ValidationResult] = []
+    for candidate in candidates:
+        if candidate.event_type != "geopolitical_event" or candidate.source_id == source_id:
+            continue
+        if _has_nearby(candidate.date, dates, window_days):
+            validations.append(
+                ValidationResult(
+                    (candidate.event_type, candidate.date),
+                    source_id,
+                    "confirm",
+                    candidate.source_url,
+                    f"{source_id} corroborated nearby geopolitical signal",
+                )
+            )
+    return validations
+
+
+class GPRSignalGenerator:
+    source_id = GPR_SOURCE_ID
+    validator_id = GPR_SOURCE_ID
 
     def __init__(
         self,
@@ -66,11 +90,6 @@ class GPRGDELTSignalGenerator:
         ai_gpr_daily_fetcher: Callable[[], str | bytes] | None = None,
         ai_gpr_eventtype_monthly_fetcher: Callable[[], str | bytes] | None = None,
         ai_gpr_country_monthly_fetcher: Callable[[], str | bytes] | None = None,
-        gdelt_fetcher: Callable[[], str | bytes] | None = None,
-        gdelt_daily_fetcher: Callable[[dt.date], bytes] | None = None,
-        acled_fetcher: ConflictFetcher | None = None,
-        ucdp_fetcher: ConflictFetcher | None = None,
-        hdx_hapi_fetcher: ConflictFetcher | None = None,
         min_history_days: int = 252,
         stddev_threshold: float = 3.0,
         merge_window_days: int = 2,
@@ -104,11 +123,6 @@ class GPRGDELTSignalGenerator:
             if gpr_fetcher is None
             else None
         )
-        self.gdelt_fetcher = gdelt_fetcher
-        self.gdelt_daily_fetcher = gdelt_daily_fetcher or _fetch_gdelt_daily_export
-        self.acled_fetcher = acled_fetcher or _fetch_acled_events
-        self.ucdp_fetcher = ucdp_fetcher or _fetch_ucdp_events
-        self.hdx_hapi_fetcher = hdx_hapi_fetcher or _fetch_hdx_hapi_conflict_events
         self.min_history_days = min_history_days
         self.stddev_threshold = stddev_threshold
         self.merge_window_days = merge_window_days
@@ -126,7 +140,6 @@ class GPRGDELTSignalGenerator:
     ) -> list[EventCandidate]:
         self.last_source_statuses = {}
         self.last_run_status = "ok"
-        candidates: list[EventCandidate] = []
         gpr_spikes = [
             row
             for row in self._fetch_gpr_spikes(store=store, run_id=run_id)
@@ -135,63 +148,10 @@ class GPRGDELTSignalGenerator:
         gpr_context = self._fetch_gpr_context(
             gpr_spikes, store=store, run_id=run_id
         )
-        gdelt_spikes = self._fetch_gdelt_spikes(gpr_spikes, store=store, run_id=run_id)
-        acled_events = self._fetch_acled_event_rows(
-            start_year, end_year, store=store, run_id=run_id
-        )
-        ucdp_events = self._fetch_ucdp_event_rows(
-            start_year, end_year, store=store, run_id=run_id
-        )
-        hdx_events = self._fetch_hdx_hapi_event_rows(
-            start_year, end_year, store=store, run_id=run_id
-        )
         self._last_source_dates = {
             GPR_SOURCE_ID: {row["date"] for row in gpr_spikes},
             AI_GPR_SOURCE_ID: set(gpr_context.get("ai_gpr_dates", set())),
-            GDELT_SOURCE_ID: {row["date"] for row in gdelt_spikes},
-            ACLED_SOURCE_ID: {row["date"] for row in acled_events},
-            UCDP_SOURCE_ID: {row["date"] for row in ucdp_events},
-            HDX_HAPI_SOURCE_ID: {row["date"] for row in hdx_events},
         }
-
-        for row in hdx_events:
-            if start_year <= row["date"].year <= end_year:
-                candidates.append(
-                    _signal_candidate(
-                        row,
-                        source_id=HDX_HAPI_SOURCE_ID,
-                        event_subtype="hdx_hapi_monthly_conflict",
-                    )
-                )
-        for row in acled_events:
-            if start_year <= row["date"].year <= end_year:
-                candidates.append(
-                    _signal_candidate(
-                        row,
-                        source_id=ACLED_SOURCE_ID,
-                        event_subtype="acled_conflict_event",
-                    )
-                )
-        for row in gdelt_spikes:
-            if start_year <= row["date"].year <= end_year:
-                candidates.append(_gdelt_candidate(row))
-        for row in gpr_spikes:
-            if start_year <= row["date"].year <= end_year:
-                anchor = _anchor_date(
-                    row["date"],
-                    self._last_source_dates[GDELT_SOURCE_ID],
-                    self.merge_window_days,
-                )
-                candidates.append(_gpr_candidate(row, anchor, gpr_context))
-        for row in ucdp_events:
-            if start_year <= row["date"].year <= end_year:
-                candidates.append(
-                    _signal_candidate(
-                        row,
-                        source_id=UCDP_SOURCE_ID,
-                        event_subtype="ucdp_organized_violence",
-                    )
-                )
         self.last_run_status = (
             "partial"
             if any(
@@ -201,7 +161,11 @@ class GPRGDELTSignalGenerator:
             else "ok"
         )
         return sorted(
-            candidates, key=lambda candidate: (candidate.date, candidate.source_id)
+            (
+                _gpr_candidate(row, row["date"], gpr_context)
+                for row in gpr_spikes
+            ),
+            key=lambda candidate: (candidate.date, candidate.source_id),
         )
 
     def validate(
@@ -213,23 +177,15 @@ class GPRGDELTSignalGenerator:
     ) -> list[ValidationResult]:
         del store, run_id
         validations: list[ValidationResult] = []
-        for candidate in candidates:
-            if candidate.event_type != "geopolitical_event":
-                continue
-            key = (candidate.event_type, candidate.date)
-            for source_id, dates in sorted(self._last_source_dates.items()):
-                if source_id == candidate.source_id:
-                    continue
-                if _has_nearby(candidate.date, dates, self.merge_window_days):
-                    validations.append(
-                        ValidationResult(
-                            key,
-                            source_id,
-                            "confirm",
-                            candidate.source_url,
-                            f"{source_id} corroborated nearby geopolitical signal",
-                        )
-                    )
+        for source_id, dates in sorted(self._last_source_dates.items()):
+            validations.extend(
+                _nearby_validations(
+                    candidates=candidates,
+                    source_id=source_id,
+                    dates=dates,
+                    window_days=self.merge_window_days,
+                )
+            )
         return validations
 
     def _fetch_gpr_spikes(
@@ -245,10 +201,7 @@ class GPRGDELTSignalGenerator:
                 min_history_days=self.min_history_days,
                 stddev_threshold=self.stddev_threshold,
             )
-        except (
-            OSError,
-            ValueError,
-        ) as exc:  # pragma: no cover - exercised via integration degradation
+        except (OSError, ValueError) as exc:
             LOGGER.error(
                 "GPR fetch/parse failed; geopolitical GPR candidates skipped: %s", exc
             )
@@ -394,17 +347,97 @@ class GPRGDELTSignalGenerator:
             )
         return context
 
-    def _fetch_gdelt_spikes(
+    def _record_source_status(
         self,
-        gpr_spikes: list[dict[str, object]],
+        source_id: str,
+        status: str,
+        *,
+        rows: int = 0,
+        error: str | None = None,
+        attempted_fetches: int = 0,
+        failed_fetches: int = 0,
+        empty_payload: bool = False,
+    ) -> None:
+        self.last_source_statuses[source_id] = SourceFetchStatus(
+            source_id=source_id,
+            status=status,
+            rows=rows,
+            error=error,
+            attempted_fetches=attempted_fetches,
+            failed_fetches=failed_fetches,
+            empty_payload=empty_payload,
+        )
+
+
+
+class GDELTSignalGenerator:
+    source_id = GDELT_SOURCE_ID
+    validator_id = GDELT_SOURCE_ID
+
+    def __init__(
+        self,
+        *,
+        gdelt_fetcher: Callable[[], str | bytes] | None = None,
+        gdelt_daily_fetcher: Callable[[dt.date], bytes] | None = None,
+        merge_window_days: int = 2,
+    ) -> None:
+        self.gdelt_fetcher = gdelt_fetcher
+        self.gdelt_daily_fetcher = gdelt_daily_fetcher or _fetch_gdelt_daily_export
+        self.merge_window_days = merge_window_days
+        self._last_source_dates: set[dt.date] = set()
+        self.last_source_statuses: dict[str, SourceFetchStatus] = {}
+        self.last_run_status = "not_run"
+
+    def generate(
+        self,
+        *,
+        start_year: int,
+        end_year: int,
+        store: AcquisitionStore | None,
+        run_id: int | None,
+    ) -> list[EventCandidate]:
+        self.last_source_statuses = {}
+        self.last_run_status = "ok"
+        rows = self._fetch_gdelt_spikes(store=store, run_id=run_id)
+        rows = [row for row in rows if start_year <= row["date"].year <= end_year]
+        self._last_source_dates = {row["date"] for row in rows}
+        self.last_run_status = (
+            "partial"
+            if any(
+                status.status in {"failed", "partial"}
+                for status in self.last_source_statuses.values()
+            )
+            else "ok"
+        )
+        return sorted((_gdelt_candidate(row) for row in rows), key=lambda item: item.date)
+
+    def validate(
+        self,
+        candidates: list[EventCandidate],
         *,
         store: AcquisitionStore | None,
         run_id: int | None,
+    ) -> list[ValidationResult]:
+        if not self._last_source_dates:
+            rows = self._fetch_gdelt_daily_candidate_windows(
+                candidates, store=store, run_id=run_id
+            )
+            self._last_source_dates = {row["date"] for row in rows}
+        return _nearby_validations(
+            candidates=candidates,
+            source_id=GDELT_SOURCE_ID,
+            dates=self._last_source_dates,
+            window_days=self.merge_window_days,
+        )
+
+    def _fetch_gdelt_spikes(
+        self, *, store: AcquisitionStore | None, run_id: int | None
     ) -> list[dict[str, object]]:
         if self.gdelt_fetcher is None:
-            return self._fetch_gdelt_daily_spike_windows(
-                gpr_spikes, store=store, run_id=run_id
+            self._record_source_status(
+                GDELT_SOURCE_ID, "skipped", attempted_fetches=0
             )
+            return []
         try:
             payload = self.gdelt_fetcher()
             _record_payload(
@@ -416,10 +449,7 @@ class GPRGDELTSignalGenerator:
                 "GDELT geopolitical volume sample",
             )
             rows = parse_gdelt_volume_table(payload)
-        except (
-            OSError,
-            ValueError,
-        ) as exc:  # pragma: no cover - exercised via integration degradation
+        except (OSError, ValueError) as exc:
             LOGGER.error(
                 "GDELT fetch/parse failed; geopolitical GDELT candidates skipped: %s",
                 exc,
@@ -441,9 +471,9 @@ class GPRGDELTSignalGenerator:
         )
         return rows
 
-    def _fetch_gdelt_daily_spike_windows(
+    def _fetch_gdelt_daily_candidate_windows(
         self,
-        gpr_spikes: list[dict[str, object]],
+        candidates: list[EventCandidate],
         *,
         store: AcquisitionStore | None,
         run_id: int | None,
@@ -451,8 +481,9 @@ class GPRGDELTSignalGenerator:
         dates = sorted(
             {
                 day
-                for row in gpr_spikes
-                for day in _window_dates(row["date"], self.merge_window_days)
+                for candidate in candidates
+                if candidate.event_type == "geopolitical_event"
+                for day in _window_dates(candidate.date, self.merge_window_days)
             }
         )
         rows: list[dict[str, object]] = []
@@ -461,9 +492,7 @@ class GPRGDELTSignalGenerator:
         for day in dates:
             try:
                 payload = self.gdelt_daily_fetcher(day)
-            except (
-                OSError
-            ) as exc:  # pragma: no cover - exercised via integration degradation
+            except OSError as exc:
                 LOGGER.error(
                     "GDELT daily export fetch failed for %s; date skipped: %s",
                     day.isoformat(),
@@ -521,71 +550,120 @@ class GPRGDELTSignalGenerator:
             empty_payload=empty_payload,
         )
 
-    def _fetch_acled_event_rows(
+
+class _ConflictSignalGenerator:
+    source_id = ""
+    event_subtype = ""
+    source_identifier = ""
+    source_url = ""
+
+    def __init__(
         self,
+        *,
+        fetcher: ConflictFetcher,
+        parser: Callable[..., list[dict[str, object]]],
+        merge_window_days: int = 2,
+    ) -> None:
+        self.fetcher = fetcher
+        self.parser = parser
+        self.merge_window_days = merge_window_days
+        self._last_source_dates: set[dt.date] = set()
+        self.last_source_statuses: dict[str, SourceFetchStatus] = {}
+        self.last_run_status = "not_run"
+
+    def generate(
+        self,
+        *,
         start_year: int,
         end_year: int,
-        *,
         store: AcquisitionStore | None,
         run_id: int | None,
-    ) -> list[dict[str, object]]:
+    ) -> list[EventCandidate]:
+        self.last_source_statuses = {}
+        self.last_run_status = "ok"
         outcome = _fetch_optional_conflict_rows(
-            self.acled_fetcher,
+            self.fetcher,
             start_year,
             end_year,
             store=store,
             run_id=run_id,
-            source_id=ACLED_SOURCE_ID,
-            source_identifier="acled_events",
-            source_url=ACLED_READ_URL,
+            source_id=self.source_id,
+            source_identifier=self.source_identifier,
+            source_url=self.source_url,
+            parser=self.parser,
+        )
+        self.last_source_statuses[self.source_id] = outcome.status
+        self._last_source_dates = {row["date"] for row in outcome.rows}
+        self.last_run_status = (
+            "partial" if outcome.status.status in {"failed", "partial"} else "ok"
+        )
+        return sorted(
+            (
+                _signal_candidate(
+                    row,
+                    source_id=self.source_id,
+                    event_subtype=self.event_subtype,
+                )
+                for row in outcome.rows
+            ),
+            key=lambda item: item.date,
+        )
+
+    def validate(
+        self,
+        candidates: list[EventCandidate],
+        *,
+        store: AcquisitionStore | None,
+        run_id: int | None,
+    ) -> list[ValidationResult]:
+        del store, run_id
+        return _nearby_validations(
+            candidates=candidates,
+            source_id=self.source_id,
+            dates=self._last_source_dates,
+            window_days=self.merge_window_days,
+        )
+
+
+class ACLEDSignalGenerator(_ConflictSignalGenerator):
+    source_id = ACLED_SOURCE_ID
+    event_subtype = "acled_conflict_event"
+    source_identifier = "acled_events"
+    source_url = ACLED_READ_URL
+
+    def __init__(self, *, acled_fetcher: ConflictFetcher | None = None) -> None:
+        super().__init__(
+            fetcher=acled_fetcher or _fetch_acled_events,
             parser=parse_acled_events,
         )
-        self.last_source_statuses[ACLED_SOURCE_ID] = outcome.status
-        return outcome.rows
 
-    def _fetch_ucdp_event_rows(
-        self,
-        start_year: int,
-        end_year: int,
-        *,
-        store: AcquisitionStore | None,
-        run_id: int | None,
-    ) -> list[dict[str, object]]:
-        outcome = _fetch_optional_conflict_rows(
-            self.ucdp_fetcher,
-            start_year,
-            end_year,
-            store=store,
-            run_id=run_id,
-            source_id=UCDP_SOURCE_ID,
-            source_identifier="ucdp_ged_candidate",
-            source_url=UCDP_GED_CANDIDATE_URL,
+
+class UCDPSignalGenerator(_ConflictSignalGenerator):
+    source_id = UCDP_SOURCE_ID
+    event_subtype = "ucdp_organized_violence"
+    source_identifier = "ucdp_ged_candidate"
+    source_url = UCDP_GED_CANDIDATE_URL
+
+    def __init__(self, *, ucdp_fetcher: ConflictFetcher | None = None) -> None:
+        super().__init__(
+            fetcher=ucdp_fetcher or _fetch_ucdp_events,
             parser=parse_ucdp_events,
         )
-        self.last_source_statuses[UCDP_SOURCE_ID] = outcome.status
-        return outcome.rows
 
-    def _fetch_hdx_hapi_event_rows(
-        self,
-        start_year: int,
-        end_year: int,
-        *,
-        store: AcquisitionStore | None,
-        run_id: int | None,
-    ) -> list[dict[str, object]]:
-        outcome = _fetch_optional_conflict_rows(
-            self.hdx_hapi_fetcher,
-            start_year,
-            end_year,
-            store=store,
-            run_id=run_id,
-            source_id=HDX_HAPI_SOURCE_ID,
-            source_identifier="hdx_hapi_conflict_events",
-            source_url=HDX_HAPI_CONFLICT_EVENTS_URL,
+
+class HDXHAPISignalGenerator(_ConflictSignalGenerator):
+    source_id = HDX_HAPI_SOURCE_ID
+    event_subtype = "hdx_hapi_monthly_conflict"
+    source_identifier = "hdx_hapi_conflict_events"
+    source_url = HDX_HAPI_CONFLICT_EVENTS_URL
+
+    def __init__(
+        self, *, hdx_hapi_fetcher: ConflictFetcher | None = None
+    ) -> None:
+        super().__init__(
+            fetcher=hdx_hapi_fetcher or _fetch_hdx_hapi_conflict_events,
             parser=parse_hdx_hapi_conflict_events,
         )
-        self.last_source_statuses[HDX_HAPI_SOURCE_ID] = outcome.status
-        return outcome.rows
 
 
 def parse_gpr_table(payload: str | bytes) -> pd.DataFrame:

@@ -107,7 +107,7 @@ src/regime_data_fetch/event_sources/
   deterministic_budget.py        # PrimaryAdapter — formula FY-end deadline (auto-promote)
   budget_official_discovery.py   # CandidateGenerator — debt-ceiling/shutdown/CR via TinyFish+official sources
   validators_tinyfish.py         # TinyFish Search/Extract — confirms candidates, finds moved URLs
-  validators_gpr_gdelt.py        # CandidateGenerator+Validator — GPR/GDELT geopolitical candidates
+  validators_gpr_gdelt.py        # Source-specific CandidateGenerator+Validator classes — GPR/AI-GPR, GDELT, ACLED, UCDP, HDX
   approvals.py                   # load/validate group_b_approvals.yaml; CLI append helper
 ```
 
@@ -278,7 +278,7 @@ quarantines malformed rows (rule I).
 | Test fixture | `tests/fixtures/event_sources/budget_congress_cr.json`, `budget_treasury_debt_limit.html` (captured real responses, redacted). |
 | Failure behavior | A source unreachable → log + degrade (fewer confirmations → more rows fall to manual review, which is safe). All official sources down → budget discovery contributes nothing this run; `deterministic_budget.py` still produces `fy_deadline` rows, so the run is not failed by this alone. |
 
-### 6.3 `validators_gpr_gdelt.py` — `source_id: gpr:caldara-iacoviello`, `gdelt:events-v2`
+### 6.3 `validators_gpr_gdelt.py` — separate geopolitical source generators
 
 | Field | Value |
 |---|---|
@@ -287,7 +287,7 @@ quarantines malformed rows (rule I).
 | Future-date support | **None** — geopolitical events are unscheduled by nature. |
 | Self-updating | GPR: monthly maintainer republish (static snapshot between). GDELT: continuous. |
 | License / access risk | GPR: free for research, cite the paper. GDELT: open event exports. ACLED and Uppsala/UCDP require entitled credentials/tokens and remain TODO for live raw-event pulls; HDX HAPI requires an app identifier and is transformed from ACLED into monthly/admin aggregates. Cache available pulls as `AcquisitionStore` artifacts for reproducibility. |
-| Role | `CandidateGenerator` (spike/event/aggregate → `requires_manual_review=true`) **+** `SecondaryValidator` (nearby independent source dates corroborate one another → `confirm`). GPR evidence never auto-promotes a `geopolitical_event`; rendering still requires the approval overlay. |
+| Role | One source-specific `CandidateGenerator`/`SecondaryValidator` per source: `GPRSignalGenerator`, `GDELTSignalGenerator`, `ACLEDSignalGenerator`, `UCDPSignalGenerator`, and `HDXHAPISignalGenerator`. Nearby independent source dates corroborate one another through each source's own `validate` method. GPR evidence never auto-promotes a `geopolitical_event`; rendering still requires the approval overlay. |
 | Parser fields | GPR daily parser retains `GPRD`, `GPRD_ACT`, `GPRD_THREAT`, `GPRD_MA7`, `GPRD_MA30`, `N10D`, and optional `event` text. The detector still requires a headline `GPRD` spike before emitting a candidate, then uses acts/threats/persistence/article-count evidence to set candidate subtype, confidence, importance, suggested `window_days`, and review snippets. Monthly GPR adds top `GPRC_*` country context for the candidate month. AI-GPR adds same-day `GPR_AI`, top monthly event type, and top monthly country/role context. GDELT daily export: `SQLDATE`, `EventRootCode`, `QuadClass`, `NumMentions`, `SOURCEURL` → per-day `event_count`, `raw_title`, `raw_snippet`, `source_url`. ACLED: `event_date`, `event_type`, `country`, `fatalities`. UCDP: `date_start`, `country`, `best` / death fields, `source_article`. HDX HAPI: `reference_period_start`, `event_type`, `events`, `fatalities`, `location_name`. |
 | Test fixture | Inline fixture rows in `tests/test_event_source_group_b.py` cover GPR spike detection, injected GDELT volume CSV, real-shaped GDELT daily export ZIP/TSV parsing, and ACLED/UCDP/HDX JSON parsing/generator wiring. |
 | Failure behavior | Source unreachable → log + degrade; that source contributes no candidates/verdicts. A geopolitical run with *zero* generated candidates is **not** a failed run (there may simply be no shocks in range) — but it is reported explicitly. |
@@ -322,18 +322,17 @@ This is the step Group A never needed. Pinned design, with thresholds as confirm
    acts, threats, moving-average persistence, article count, optional event
    text, monthly country GPR, and AI-GPR context only enrich the emitted candidate.
    For each requested-year GPR spike
-   date, the generator fetches GDELT daily Event export ZIPs for the spike
-   window and flags material conflict/protest volume rows from the raw export.
-   HDX HAPI adds extra aggregate candidate rows for the requested years when
+   date, the separate GDELT source can fetch daily Event export ZIPs during
+   validation and flag material conflict/protest volume rows from the raw export.
+   HDX HAPI adds separate aggregate candidate rows for the requested years when
    `HDX_HAPI_APP_IDENTIFIER` is configured, or when both `HDX_HAPI_APP_NAME`
    and `HDX_HAPI_APP_EMAIL` are configured. TODO: ACLED and Uppsala/UCDP raw-event
    rows remain pending entitled API keys/account access; missing credentials or
    denied access degrade to skipped sources.
-2. **Merge / dedup.** Spike days from GPR and GDELT within a small window of
-   each other (Confirm item #6 — default ±2 calendar days) collapse to a single
-   candidate keyed `(geopolitical_event, anchor_date)`. The anchor date is the
-   GPR spike day if present, else the GDELT peak day. `source_count` reflects how
-   many independent sources flagged it.
+2. **Corroborate / dedup.** GPR, GDELT, ACLED, UCDP, and HDX emit separate
+   candidates. The orchestrator groups candidates by `(event_type, date)` and
+   source-specific validators add nearby-source `confirm` verdicts. `source_count`
+   reflects how many independent sources flagged or confirmed the date.
 3. **Enrich.** `validators_tinyfish.py` retrieves coverage for the anchor date →
    fills `raw_title`/`raw_snippet` and adds a `confirm` verdict.
 4. **GPR evidence enrichment.** GPR acts/threats/persistence/article-count

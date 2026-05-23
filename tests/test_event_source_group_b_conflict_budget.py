@@ -36,8 +36,12 @@ from regime_data_fetch.event_sources.gpr_gdelt_fetchers import (
     fetch_acled_events as _fetch_acled_events,
     fetch_hdx_hapi_conflict_events as _fetch_hdx_hapi_conflict_events,
 )
-from regime_data_fetch.event_sources.validators_gpr_gdelt import GPRGDELTSignalGenerator
 from regime_data_fetch.event_sources.validators_gpr_gdelt import (
+    ACLEDSignalGenerator,
+    GDELTSignalGenerator,
+    GPRSignalGenerator,
+    HDXHAPISignalGenerator,
+    UCDPSignalGenerator,
     parse_acled_events,
     parse_hdx_hapi_conflict_events,
     parse_ucdp_events,
@@ -330,18 +334,29 @@ def test_generator_includes_acled_ucdp_and_hdx_candidate_sources() -> None:
     acled_json = """{"status": 200, "data": [{"event_date": "2022-02-24", "event_type": "Battles", "country": "Ukraine", "fatalities": "42"}]}"""
     ucdp_json = """{"Result": [{"date_start": "2022-02-24", "country": "Ukraine", "best": 10}]}"""
     hdx_json = """{"data": [{"event_type": "political_violence", "events": 17, "fatalities": 91, "reference_period_start": "2022-02-01", "reference_period_end": "2022-02-28", "location_name": "Ukraine"}]}"""
-    generator = GPRGDELTSignalGenerator(
-        gpr_fetcher=lambda: gpr_csv,
-        gdelt_fetcher=lambda: gdelt_csv,
-        acled_fetcher=lambda start_year, end_year: acled_json,
-        ucdp_fetcher=lambda start_year, end_year: ucdp_json,
-        hdx_hapi_fetcher=lambda start_year, end_year: hdx_json,
-        min_history_days=3,
-        stddev_threshold=2.0,
-    )
+    generators = [
+        GPRSignalGenerator(
+            gpr_fetcher=lambda: gpr_csv,
+            min_history_days=3,
+            stddev_threshold=2.0,
+        ),
+        GDELTSignalGenerator(gdelt_fetcher=lambda: gdelt_csv),
+        ACLEDSignalGenerator(acled_fetcher=lambda start_year, end_year: acled_json),
+        UCDPSignalGenerator(ucdp_fetcher=lambda start_year, end_year: ucdp_json),
+        HDXHAPISignalGenerator(
+            hdx_hapi_fetcher=lambda start_year, end_year: hdx_json
+        ),
+    ]
 
-    candidates = generator.generate(
-        start_year=2022, end_year=2022, store=None, run_id=None
+    candidates = sorted(
+        [
+            candidate
+            for generator in generators
+            for candidate in generator.generate(
+                start_year=2022, end_year=2022, store=None, run_id=None
+            )
+        ],
+        key=lambda candidate: (candidate.date, candidate.source_id),
     )
 
     assert [

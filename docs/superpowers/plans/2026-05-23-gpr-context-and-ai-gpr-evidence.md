@@ -4,7 +4,7 @@
 
 **Goal:** Complete the GPR geopolitical evidence slice by adding persistence-derived review windows, monthly country context, AI-GPR context, and source-provided qualitative snippets while preserving approval-gated `geopolitical_event` promotion.
 
-**Architecture:** Keep `GPRGDELTSignalGenerator` as the single geopolitical candidate generator. Add optional fetchers/parsers for monthly GPR export and AI-GPR CSVs, derive context keyed by month, and enrich only the existing GPR candidate fields (`raw_title`, `raw_snippet`, `event_subtype`, `confidence`, `importance`, `window_days`). Do not change the Group B promotion rules or event-calendar classifier.
+**Architecture:** Keep GPR/AI-GPR source logic separate from GDELT, ACLED, UCDP, and HDX source logic. `GPRSignalGenerator` owns GPR daily spikes plus optional monthly GPR and AI-GPR context; each other geopolitical source owns its own candidates and confirmations. Do not change the Group B promotion rules or event-calendar classifier.
 
 **Tech Stack:** Python, pandas, stdlib URL fetchers, existing `EventCandidate` and `SourceFetchStatus`, RTK/pytest.
 
@@ -37,4 +37,3 @@
   - add monthly country and AI-GPR context to `raw_snippet`
 - [ ] Update docs to state what is implemented and what remains out of scope.
 - [ ] Run focused Group B tests, event-calendar approval tests, ruff, and diff check.
-
