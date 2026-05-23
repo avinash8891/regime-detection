@@ -445,7 +445,7 @@ def run_walkforward(
 
 
 def _parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Run historical walk-forward classification for V1.")
+    parser = argparse.ArgumentParser(description="Run historical walk-forward classification.")
     parser.add_argument("--market-data", required=True, type=Path, help="Path to parquet/csv market data.")
     parser.add_argument("--output-root", required=True, type=Path, help="Directory for walk-forward artifacts.")
     parser.add_argument("--start-date", required=True, type=date.fromisoformat)

@@ -10,10 +10,12 @@ Per ``docs/v2_slice_gate_checklist.md`` item 7: zero unexpected wire
 diffs in v1 fields; v2 enrichments match expectations. v1-field
 disagreements (trend_direction / trend_character / volatility_state /
 breadth_state / transition_risk.state) should be ZERO. v2-NEW field
-activations (transition_risk.score, agent_routing, change_point,
-credit_funding_state, inflation_growth_state, cluster) are EXPECTED to
-differ — those are wins, not regressions. The markdown surfaces both
-tables separately so reviewers can see the distinction at a glance.
+activations (transition_risk.score, transition_risk score-component presence,
+transition_risk primary drivers, transition_risk triggered rules,
+transition_risk data quality, agent_routing, change_point,
+credit_funding_state, inflation_growth_state, cluster) are EXPECTED to differ —
+those are wins, not regressions. The markdown surfaces both tables separately so
+reviewers can see the distinction at a glance.
 """
 
 from __future__ import annotations

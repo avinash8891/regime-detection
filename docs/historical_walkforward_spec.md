@@ -185,7 +185,9 @@ The final historical walk-forward report should contain:
 3. data source and archive policy;
 4. golden-date results;
 5. label-distribution tables and charts;
-6. transition and false-switch summaries;
+6. transition and false-switch summaries, including transition-risk score,
+   primary drivers, triggered rules, data-quality status, and axis-switch
+   counts;
 7. strategy-vs-baseline comparison table;
 8. incidents, anomalies, and reruns;
 9. explicit conclusion: `pass` or `fail`.

@@ -3826,6 +3826,13 @@ Output structure:
 `primary_drivers`, `triggered_rules`, `evidence`, and `data_quality` explain why
 that state was selected.
 
+Downstream decision code must consume only `transition_risk.state`. Reporting,
+shadow A/B gates, historical walk-forward summaries, and fixture verification
+must carry the explanatory fields for audit: `score`, `score_components`,
+`primary_drivers`, `triggered_rules`, `data_quality.status`,
+`evidence.axis_switch_count`, and `evidence.recent_axis_switch_count`. Do not
+rebuild transition-risk decisions from component scores outside this layer.
+
 ### 4.6 Change-Point Detection
 
 Implementation: **BOCPD (Bayesian Online Change Point Detection, Adams & MacKay 2007)**. Online streaming algorithm matches V2's `classify_window` evaluation pattern; native probability output feeds `transition_score` as evidence rather than as a hard label (per V2 §10 evidence-not-label discipline). See §6.3 for the full method contract.
