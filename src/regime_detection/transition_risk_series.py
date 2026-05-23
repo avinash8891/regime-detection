@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from datetime import date
 from typing import Literal
 
+import numpy as np
 import pandas as pd
 
 from regime_detection.axis_series import AxisSeriesBundle
@@ -249,24 +250,25 @@ def _build_transition_score_inputs_by_date(
     dd252 = drawdown_252d.reindex(session_index).to_numpy(dtype=float, na_value=float("nan"))
     close_values = close.reindex(session_index).to_numpy(dtype=float, na_value=float("nan"))
     sma50_values = sma_50.reindex(session_index).to_numpy(dtype=float, na_value=float("nan"))
+    nan_float = np.full(len(sessions), np.nan, dtype=float)
     volume_z = (
         volume_zscore_20d.reindex(session_index).to_numpy(dtype=float, na_value=float("nan"))
         if volume_zscore_20d is not None
-        else [float("nan")] * len(sessions)
+        else nan_float
     )
     gap_pct = (
         gap_frequency_percentile_252d.reindex(session_index).to_numpy(
             dtype=float, na_value=float("nan")
         )
         if gap_frequency_percentile_252d is not None
-        else [float("nan")] * len(sessions)
+        else nan_float
     )
     intraday_pct = (
         intraday_range_percentile_252d.reindex(session_index).to_numpy(
             dtype=float, na_value=float("nan")
         )
         if intraday_range_percentile_252d is not None
-        else [float("nan")] * len(sessions)
+        else nan_float
     )
 
     # v2 §6.1 — bulk-reindex both `top_state_prob[t]` and
@@ -281,8 +283,8 @@ def _build_transition_score_inputs_by_date(
             dtype=float, na_value=float("nan")
         )
     else:
-        hmm_now = [float("nan")] * len(sessions)
-        hmm_5d_ago = [float("nan")] * len(sessions)
+        hmm_now = nan_float
+        hmm_5d_ago = nan_float
 
     # documented implementation decision — change_point.score (5-session rolling max of
     # BOCPD posterior P(run_length=0); already ∈ [0,1] by construction).
@@ -291,14 +293,15 @@ def _build_transition_score_inputs_by_date(
             dtype=float, na_value=float("nan")
         )
     else:
-        cp = [float("nan")] * len(sessions)
+        cp = nan_float
 
     if cluster_id is not None:
         cluster_now = cluster_id.reindex(session_index).to_numpy()
         cluster_5d_ago = cluster_id.shift(5).reindex(session_index).to_numpy()
     else:
-        cluster_now = [pd.NA] * len(sessions)
-        cluster_5d_ago = [pd.NA] * len(sessions)
+        nan_cluster = np.full(len(sessions), pd.NA, dtype=object)
+        cluster_now = nan_cluster
+        cluster_5d_ago = nan_cluster
 
     out: dict[date, TransitionScoreInputs] = {}
     for i, day in enumerate(sessions):
@@ -404,8 +407,23 @@ def build_transition_risk_outputs_by_date(
         | breadth_state_active.eq("unknown")
     )
 
+    # Materialize each Series as a numpy array once. The downstream loop
+    # then indexes by integer position, avoiding O(n) repeated label lookups
+    # via .loc[day] across n sessions. Mirrors the bulk-reindex pattern
+    # already applied to the score inputs in
+    # _build_transition_score_inputs_by_date.
+    trend_direction_arr = trend_direction_active.to_numpy()
+    volatility_state_arr = volatility_state_active.to_numpy()
+    breadth_state_arr = breadth_state_active.to_numpy()
+    recovery_attempt_arr = recovery_attempt.to_numpy(dtype=bool)
+    volatility_crisis_arr = volatility_crisis.to_numpy(dtype=bool)
+    volatility_high_or_crisis_arr = volatility_high_or_crisis.to_numpy(dtype=bool)
+    breadth_stressed_arr = breadth_stressed.to_numpy(dtype=bool)
+    post_switch_cooldown_arr = post_switch_cooldown.to_numpy(dtype=bool)
+    insufficient_data_arr = insufficient_data.to_numpy(dtype=bool)
+
     raw_outputs: dict[date, TransitionRiskOutput] = {}
-    for day in sessions:
+    for i, day in enumerate(sessions):
         switch_days = history.days_since_axis_switch_by_date[day]
         inputs = transition_score_inputs_by_date[day]
         composed = compose_transition_score_for_session(
@@ -447,16 +465,16 @@ def build_transition_risk_outputs_by_date(
             composed.score is not None and composed.score >= overrides.score_elevated_min
         )
         # Absolute old-behavior emergency override: crisis_vol alone is enough.
-        crisis = bool(volatility_crisis.loc[day])
+        crisis = bool(volatility_crisis_arr[i])
         bear_stress = (
-            trend_direction_active.loc[day] == "bear"
-            and bool(volatility_high_or_crisis.loc[day])
-            and (bool(breadth_stressed.loc[day]) or credit_stressed)
+            trend_direction_arr[i] == "bear"
+            and bool(volatility_high_or_crisis_arr[i])
+            and (bool(breadth_stressed_arr[i]) or credit_stressed)
         )
         fragile_bull = (
-            trend_direction_active.loc[day] == "bull"
+            trend_direction_arr[i] == "bull"
             and (
-                breadth_state_active.loc[day] == "divergent_fragile"
+                breadth_state_arr[i] == "divergent_fragile"
                 or correlation_stressed
                 or credit_stressed
             )
@@ -464,9 +482,9 @@ def build_transition_risk_outputs_by_date(
         # Preserve the old V2 sideways-stress shape, mapped to watch instead of
         # a separate final state.
         sideways_stress = (
-            trend_direction_active.loc[day] == "sideways"
-            and volatility_state_active.loc[day] == "high_vol"
-            and breadth_state_active.loc[day] in {"weak_breadth", "divergent_fragile"}
+            trend_direction_arr[i] == "sideways"
+            and volatility_state_arr[i] == "high_vol"
+            and breadth_state_arr[i] in {"weak_breadth", "divergent_fragile"}
         )
         event_transition_watch = bool(
             macro_elevated
@@ -481,11 +499,11 @@ def build_transition_risk_outputs_by_date(
                 crisis=crisis,
                 bear_stress=bear_stress,
                 fragile_bull=fragile_bull,
-                recovery_attempt=bool(recovery_attempt.loc[day]),
+                recovery_attempt=bool(recovery_attempt_arr[i]),
                 sideways_stress=sideways_stress,
                 event_transition_watch=event_transition_watch,
-                post_switch_cooldown=bool(post_switch_cooldown.loc[day]),
-                insufficient_data=bool(insufficient_data.loc[day]),
+                post_switch_cooldown=bool(post_switch_cooldown_arr[i]),
+                insufficient_data=bool(insufficient_data_arr[i]),
                 stable_changed_today=history.stable_changed_by_date[day],
                 days_since_axis_switch=switch_days,
                 axis_switch_count=history.axis_switch_count_by_date[day],
