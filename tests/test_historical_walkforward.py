@@ -6,6 +6,7 @@ import sqlite3
 import sys
 from datetime import date
 from pathlib import Path
+from types import SimpleNamespace
 
 import pandas as pd
 import pytest
@@ -21,6 +22,23 @@ def _load_runner_module():
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)  # type: ignore[attr-defined]
     return mod
+
+
+def test_historical_summary_cells_include_event_calendar_primary_and_matching_labels() -> None:
+    mod = _load_runner_module()
+    output = SimpleNamespace(
+        structural_causal_state=SimpleNamespace(
+            event_calendar=SimpleNamespace(
+                primary_label="fed_week",
+                matching_labels=("fed_week", "cpi_week", "expiry_week"),
+            )
+        )
+    )
+
+    assert mod._event_calendar_summary_cells(output) == {
+        "event_calendar_primary_label": "fed_week",
+        "event_calendar_matching_labels": '["fed_week", "cpi_week", "expiry_week"]',
+    }
 
 
 def test_historical_walkforward_runner_writes_expected_artifacts(
@@ -61,6 +79,8 @@ def test_historical_walkforward_runner_writes_expected_artifacts(
     assert summary_path.exists()
     summary_df = pd.read_csv(summary_path)
     assert {
+        "event_calendar_primary_label",
+        "event_calendar_matching_labels",
         "transition_risk_score",
         "transition_risk_primary_drivers",
         "transition_risk_triggered_rules",

@@ -267,6 +267,14 @@ def _json_cell(value: Any) -> str | None:
     return json.dumps(value, sort_keys=True)
 
 
+def _event_calendar_summary_cells(output: Any) -> dict[str, Any]:
+    event_calendar = output.structural_causal_state.event_calendar
+    return {
+        "event_calendar_primary_label": event_calendar.primary_label,
+        "event_calendar_matching_labels": _json_cell(list(event_calendar.matching_labels)),
+    }
+
+
 def _build_report_markdown(summary_df: pd.DataFrame, *, start_date: date, end_date: date) -> str:
     lines = [
         "# Historical Walk-Forward Report",
@@ -370,6 +378,7 @@ def run_walkforward(
                         "trend_character_active": output.trend_character.active_label,
                         "volatility_state_active": output.volatility_state.active_label,
                         "breadth_state_active": output.breadth_state.active_label,
+                        **_event_calendar_summary_cells(output),
                         "transition_risk_state": output.transition_risk.state,
                         "transition_risk_score": output.transition_risk.score,
                         "transition_risk_primary_drivers": _json_cell(
@@ -411,6 +420,8 @@ def run_walkforward(
                         "trend_character_active": None,
                         "volatility_state_active": None,
                         "breadth_state_active": None,
+                        "event_calendar_primary_label": None,
+                        "event_calendar_matching_labels": None,
                         "transition_risk_state": None,
                         "transition_risk_score": None,
                         "transition_risk_primary_drivers": None,

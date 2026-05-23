@@ -153,7 +153,8 @@ def test_profile_json_report_emits_machine_readable_sections(tmp_path: Path) -> 
         breadth_state=axis("broadening_breadth"),
         structural_causal_state=SimpleNamespace(
             event_calendar=SimpleNamespace(
-                active_label="normal_calendar",
+                primary_label="fed_week",
+                matching_labels=("fed_week", "expiry_week"),
                 evidence={"days_to_event": 4},
             ),
             monetary_pressure=SimpleNamespace(
@@ -261,8 +262,14 @@ def test_profile_json_report_emits_machine_readable_sections(tmp_path: Path) -> 
                     "axis_switch_count": 1,
                     "recent_axis_switch_count": 2,
                 },
+                "event_calendar": {
+                    "primary_label": "fed_week",
+                    "matching_labels": ["fed_week", "expiry_week"],
+                },
             },
             "as_of_date": "2026-05-15",
+            "event_calendar_primary_label": "fed_week",
+            "event_calendar_matching_labels": ["fed_week", "expiry_week"],
             "transition_risk": "stable",
             "trend_direction": "uptrend",
             "volatility_state": "low_vol",
@@ -283,6 +290,8 @@ def test_profile_json_report_emits_machine_readable_sections(tmp_path: Path) -> 
     assert status_fields["transition_risk.primary_drivers"] == "present"
     assert status_fields["transition_risk.triggered_rules"] == "present"
     assert status_fields["transition_risk.data_quality"] == "present"
+    assert status_fields["event_calendar.primary_label"] == "present"
+    assert status_fields["event_calendar.matching_labels"] == "present"
     assert status_fields["agent_routing"] == "present"
     assert status_fields["strategy_family_constraints"] == "present"
     full_output = payload["full_timeline"][0]
@@ -567,6 +576,13 @@ def _make_minimal_output() -> SimpleNamespace:
             triggered_rules=[],
             evidence={},
             data_quality={"status": "ok"},
+        ),
+        structural_causal_state=SimpleNamespace(
+            event_calendar=SimpleNamespace(
+                primary_label="normal_calendar",
+                matching_labels=("normal_calendar",),
+                evidence={},
+            )
         ),
         network_fragility=None,
         volume_liquidity_state=None,
