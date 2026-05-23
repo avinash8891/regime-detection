@@ -474,6 +474,16 @@ class GDELTSignalGenerator:
         store: AcquisitionStore | None,
         run_id: int | None,
     ) -> list[dict[str, object]]:
+        # TODO(gpr-gdelt-backlog): keep the approved event calendar simple.
+        # Add a separate geopolitical_risk_signals artifact/table keyed by a
+        # signal id, with one row per GPR spike/signal date: headline GPR,
+        # ACT/THREAT components, MA7/MA30 persistence, article count,
+        # dominant_component, confidence, suggested_window_days, monthly
+        # country context, and AI-GPR context. Approval overlays should
+        # reference that signal id as evidence_candidate_id instead of
+        # duplicating rich GPR fields in us_events.yaml. Final approved
+        # geopolitical_event rows should remain ordinary event rows with date,
+        # type, window_days, approved_label, and notes.
         dates = sorted(
             {
                 day
@@ -972,6 +982,11 @@ def parse_gdelt_event_export(
     source_url: str,
     expected_date: dt.date | None = None,
 ) -> list[dict[str, object]]:
+    # TODO(gdelt-relevance): GDELT 2.0 exports are broad, noisy volume
+    # corroboration. Use them after a GPR signal anchor exists: filter or score
+    # rows by same-day/near-day window, CAMEO severity, actor/country relevance
+    # from monthly GPR or AI-GPR context, mention/article volume, and top source
+    # URLs. GDELT-only volume must not create or promote a geopolitical_event.
     text = _decode_gdelt_export(payload)
     totals: dict[dt.date, dict[str, object]] = {}
     for line in text.splitlines():
