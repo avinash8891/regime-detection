@@ -11,11 +11,10 @@ The HMM is evidence-only per V2 §10 (spec lines 4378-4385): state indices
 are raw ``0``..``n-1`` integers, never auto-mapped to economic labels.
 Operator mapping is deferred — see ADR 0013 (docs/decisions/0013-evidence-strategy-governance-closeouts.md) and docs/verification/hmm_state_label_map.yaml.
 
-Per V2 engine statelessness, ``compute_hmm_features`` re-fits ONCE per
-``classify_window`` call on the trailing ``training_window_days`` rows.
-The yaml ``hmm.retrain_cadence_days`` field is an ops/dev concern (when
-to refresh persisted parameters in a long-running deployment), not a
-per-classify gate.
+For multi-session output, ``compute_hmm_features`` refits at PIT-safe
+checkpoints separated by ``hmm.retrain_cadence_days``. Each checkpoint
+trains on the trailing ``training_window_days`` rows ending at that
+checkpoint, then scores the segment until the next checkpoint.
 """
 
 from __future__ import annotations
@@ -146,10 +145,10 @@ def compute_hmm_features(
     """Fit ``hmmlearn.GaussianHMM`` and return aligned posterior features.
 
     Aligns the five inputs to their common (intersected, non-NaN) index,
-    fits ONE ``GaussianHMM`` on the trailing ``training_window_days``
-    rows, then ``predict_proba`` over the full aligned index. Sessions
-    with any NaN input are masked to NaN in the output (cold-start +
-    missing-data safe).
+    fits PIT-safe ``GaussianHMM`` checkpoints on trailing
+    ``training_window_days`` rows, then ``predict_proba`` for each
+    checkpoint's forward segment. Sessions with any NaN input are masked
+    to NaN in the output (cold-start + missing-data safe).
 
     Returns ``None`` when:
       - any required input is ``None``

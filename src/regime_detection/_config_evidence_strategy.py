@@ -240,7 +240,9 @@ class ChangePointConfig(StrictBaseModel):
     score_window_days: int = Field(default=5, ge=1)
     # A break occurs when posterior >= break_threshold (default 0.5).
     break_threshold: float = Field(default=0.5, gt=0.0, lt=1.0)
-    training_window_days: int = Field(default=1260, ge=100)  # 5y, matches HMM/GMM
+    # 2705 non-null realized-vol observations matches the runtime YAML and
+    # gives 2016+ historical replay a strict pre-window warmup from SPY history.
+    training_window_days: int = Field(default=2705, ge=100)
     # ADR 0013 R3 (ratified) — StudentT conjugate-prior hyperparameters for
     # the BOCPD Gaussian-with-unknown-mean-and-variance observation likelihood
     # (Adams & MacKay 2007 §3.2). Passed unchanged to

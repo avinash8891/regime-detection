@@ -303,6 +303,8 @@ def test_bocpd_adapter_calls_expected_dependency_api(
 
 
 def test_real_default_config_carries_change_point_block() -> None:
+    assert ChangePointConfig().training_window_days == 2705
+
     cfg = load_default_regime_config()
     assert cfg.change_point is not None
     assert cfg.change_point.hazard_lambda == 250.0
