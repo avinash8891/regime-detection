@@ -222,27 +222,43 @@ def test_compose_transition_score_exposes_only_present_components(
         assert not math.isnan(value)
 
 
+@pytest.mark.parametrize(
+    "missing_field",
+    [
+        "hmm_top_state_prob_now",
+        "hmm_top_state_prob_5d_ago",
+        "change_point_score",
+        "cluster_id_now",
+        "cluster_id_5d_ago",
+    ],
+)
+def test_compose_transition_score_requires_model_evidence_layer_inputs(
+    transition_score_config: TransitionScoreConfig,
+    missing_field: str,
+) -> None:
+    with pytest.raises(ValueError, match=f"transition_score missing required model evidence: {missing_field}"):
+        _compose(transition_score_config, **{missing_field: None})
+
+
 def test_compose_transition_score_returns_insufficient_when_many_components_missing(
     transition_score_config: TransitionScoreConfig,
 ) -> None:
     out = _compose(
         transition_score_config,
+        drawdown_252d=None,
+        spy_close=None,
+        spy_sma_50=None,
         credit_funding_label=None,
         volume_liquidity_label=None,
         volume_zscore_20d=None,
         gap_frequency_percentile_252d=None,
         intraday_range_percentile_252d=None,
-        hmm_top_state_prob_now=None,
-        hmm_top_state_prob_5d_ago=None,
-        change_point_score=None,
-        cluster_id_now=None,
-        cluster_id_5d_ago=None,
     )
 
     assert out == ComposedTransitionScore(
         score=None,
         interpretation=None,
         components=None,
-        missing_components=("credit_stress", "liquidity_stress", "model_instability"),
-        component_weight_coverage=pytest.approx(0.70),
+        missing_components=("trend_break", "credit_stress", "liquidity_stress"),
+        component_weight_coverage=pytest.approx(0.60),
     )

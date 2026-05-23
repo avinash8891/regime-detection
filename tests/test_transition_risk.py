@@ -211,6 +211,7 @@ def test_build_transition_score_inputs_returns_typed_optional_hmm_and_change_poi
             index=index,
         ),
         change_point_score=pd.Series([0.20] * len(sessions), index=index),
+        cluster_id=pd.Series([1, 1, 1, 1, 1, 2, 2, 2], index=index),
     )
 
     first_day = sessions[0]
@@ -219,8 +220,12 @@ def test_build_transition_score_inputs_returns_typed_optional_hmm_and_change_poi
     assert inputs_by_date[first_day].hmm_top_state_prob_now == pytest.approx(0.10)
     assert pd.isna(inputs_by_date[first_day].hmm_top_state_prob_5d_ago)
     assert inputs_by_date[first_day].change_point_score == pytest.approx(0.20)
+    assert inputs_by_date[first_day].cluster_id_now == 1
+    assert inputs_by_date[first_day].cluster_id_5d_ago is None
     assert inputs_by_date[shifted_day].hmm_top_state_prob_now == pytest.approx(0.65)
     assert inputs_by_date[shifted_day].hmm_top_state_prob_5d_ago == pytest.approx(0.10)
+    assert inputs_by_date[shifted_day].cluster_id_now == 2
+    assert inputs_by_date[shifted_day].cluster_id_5d_ago == 1
 
 
 def test_transition_risk_series_matches_direct_score_composer() -> None:
@@ -237,6 +242,8 @@ def test_transition_risk_series_matches_direct_score_composer() -> None:
         hmm_top_state_prob_now=0.70,
         hmm_top_state_prob_5d_ago=0.30,
         change_point_score=0.50,
+        cluster_id_now=1,
+        cluster_id_5d_ago=1,
     )
 
     outputs = build_transition_risk_outputs_by_date(
@@ -267,6 +274,8 @@ def test_transition_risk_series_matches_direct_score_composer() -> None:
         hmm_top_state_prob_now=score_inputs.hmm_top_state_prob_now,
         hmm_top_state_prob_5d_ago=score_inputs.hmm_top_state_prob_5d_ago,
         change_point_score=score_inputs.change_point_score,
+        cluster_id_now=score_inputs.cluster_id_now,
+        cluster_id_5d_ago=score_inputs.cluster_id_5d_ago,
         config=cfg,
     )
 
@@ -371,7 +380,11 @@ def test_transition_risk_state_debounces_soft_state_changes() -> None:
                 event_calendar_labels=("normal_calendar",),
                 credit_funding_label="credit_stress",
                 volume_liquidity_label="liquidity_gap_behavior",
+                hmm_top_state_prob_now=0.50,
+                hmm_top_state_prob_5d_ago=0.50,
                 change_point_score=0.0,
+                cluster_id_now=1,
+                cluster_id_5d_ago=1,
             ),
             sessions[1]: TransitionScoreInputs(
                 realized_vol_short=15.0,
@@ -382,7 +395,11 @@ def test_transition_risk_state_debounces_soft_state_changes() -> None:
                 event_calendar_labels=("normal_calendar",),
                 credit_funding_label="credit_stress",
                 volume_liquidity_label="liquidity_gap_behavior",
+                hmm_top_state_prob_now=0.50,
+                hmm_top_state_prob_5d_ago=0.50,
                 change_point_score=0.0,
+                cluster_id_now=1,
+                cluster_id_5d_ago=1,
             ),
             sessions[2]: TransitionScoreInputs(
                 realized_vol_short=15.0,
@@ -393,7 +410,11 @@ def test_transition_risk_state_debounces_soft_state_changes() -> None:
                 event_calendar_labels=("normal_calendar",),
                 credit_funding_label="credit_stress",
                 volume_liquidity_label="liquidity_gap_behavior",
+                hmm_top_state_prob_now=0.50,
+                hmm_top_state_prob_5d_ago=0.50,
                 change_point_score=0.0,
+                cluster_id_now=1,
+                cluster_id_5d_ago=1,
             ),
         },
         transition_score_config=cfg,

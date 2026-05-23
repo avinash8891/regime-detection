@@ -609,13 +609,13 @@ def build_regime_timeline(
     axis_bundle = build_axis_series_bundle(
         context=working_context, feature_store=feature_store
     )
+    selected_days = list(working_context.sessions[-lookback_days:])
     transition_risk = build_transition_risk_series(
         context=working_context,
         feature_store=feature_store,
         axis_bundle=axis_bundle,
+        output_sessions=selected_days,
     )
-
-    selected_days = list(working_context.sessions[-lookback_days:])
 
     hmm_config = working_context.config.hmm
     aligned_v2_evidence = _align_v2_evidence_for_selected_days(

@@ -9,6 +9,8 @@ labels (operator-side mapping per V2 §10 + spec line 2837).
 
 from __future__ import annotations
 
+from datetime import date
+
 import numpy as np
 import pandas as pd
 import pytest
@@ -320,25 +322,39 @@ def test_real_default_config_carries_clustering_block() -> None:
     assert cfg.clustering.random_state == 42
 
 
-def test_regime_output_omits_cluster_field_when_clustering_seam_none(
-    raw_market_data: pd.DataFrame,
-    market_df_for_asof,
-    synthetic_v2_kwargs_for_market_data,
+def test_regime_output_fails_when_clustering_seam_none(
+    v2_classify_kwargs_for_asof,
 ) -> None:
-    """A config without clustering omits RegimeOutput.cluster."""
+    """A config without clustering fails because model evidence is mandatory."""
     from regime_detection.engine import RegimeEngine
 
     base = load_default_regime_config()
-    config = base.model_copy(update={"clustering": None})
-    engine = RegimeEngine()
-    last_session = max(raw_market_data["date"].unique())
-    market_data = market_df_for_asof(last_session)
-    out = engine.classify(
-        as_of_date=last_session,
-        market_data=market_data,
-        config=config,
-        **synthetic_v2_kwargs_for_market_data(market_data),
+    assert base.hmm is not None
+    assert base.change_point is not None
+    config = base.model_copy(
+        update={
+            "hmm": base.hmm.model_copy(
+                update={
+                    "n_states": 2,
+                    "training_window_days": 100,
+                    "covariance_type": "diag",
+                    "model_version": "hmm_test_2state",
+                }
+            ),
+            "change_point": base.change_point.model_copy(
+                update={"training_window_days": 100}
+            ),
+            "clustering": None,
+        }
     )
-    assert out.cluster is None
-    dumped = out.model_dump()
-    assert "cluster" not in dumped
+    engine = RegimeEngine()
+    last_session = date(2026, 5, 13)
+    with pytest.raises(
+        ValueError,
+        match="transition_score missing required model evidence: cluster_id_now",
+    ):
+        engine.classify(
+            as_of_date=last_session,
+            config=config,
+            **v2_classify_kwargs_for_asof(last_session),
+        )

@@ -3569,8 +3569,6 @@ credit_funding_state
 volume_liquidity_state
 monetary_pressure_state
 inflation_growth_state
-hmm
-change_point
 ```
 
 Missing optional inputs do not create parallel logic. The composer omits missing
@@ -3580,6 +3578,18 @@ transition-score infrastructure raises a runtime error. If the infrastructure
 exists but the score cannot be computed because the current session has
 cold-start/NaN components or insufficient configured component weight coverage,
 the final transition-risk state becomes `insufficient_data`.
+
+Mandatory model-evidence inputs:
+
+```text
+hmm
+cluster
+change_point
+```
+
+These three inputs jointly produce `model_instability_score`. They are not
+renormalized away: once `transition_score` is enabled, a missing HMM
+probability, cluster id, or change-point score raises a runtime error.
 
 Final states:
 
@@ -3703,8 +3713,8 @@ score = max(
 )
 ```
 
-Missing HMM, change-point, or cluster evidence is omitted from
-`model_instability_score`; it is not fabricated.
+Missing HMM, change-point, or cluster evidence raises a runtime error. The
+engine must not fabricate or silently omit model-instability evidence.
 
 ### 4.3 Weights
 
@@ -4183,7 +4193,11 @@ V2 §8 slice 10 (PRISM rule integration) does not ship in the initial V2 release
 
 ## 6. Probabilistic Models
 
-These are **evidence layers**, not final regime labels. Outputs feed into transition_score and other classifiers as additional input. **Never used as standalone label.**
+These are **mandatory evidence layers**, not final regime labels. Outputs feed
+into transition_score as model-instability evidence. They are **never used as
+standalone labels**, but once `transition_score` is enabled, missing HMM,
+cluster/GMM, or change-point evidence is a hard data-quality failure, not an
+optional omitted component.
 
 Evidence-layer registry:
 

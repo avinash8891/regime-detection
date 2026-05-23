@@ -68,8 +68,10 @@ def build_transition_risk_series(
     context: MarketContext,
     feature_store: FeatureStore,
     axis_bundle: AxisSeriesBundle,
+    output_sessions: list[date] | None = None,
 ) -> dict[date, TransitionRiskOutput]:
     sessions = list(context.sessions)
+    scored_sessions = sessions if output_sessions is None else list(output_sessions)
     session_index = pd.to_datetime(sessions)
     close_series = _strict_lookup_by_sessions(
         series=context.spy_ohlcv["close"],
@@ -159,7 +161,7 @@ def build_transition_risk_series(
     )
 
     return build_transition_risk_outputs_by_date(
-        sessions=sessions,
+        sessions=scored_sessions,
         trend_direction_active_by_date=axis_bundle.trend_direction.active_labels_by_date,
         trend_character_active_by_date=axis_bundle.trend_character.active_labels_by_date,
         volatility_state_active_by_date=axis_bundle.volatility_state.active_labels_by_date,
