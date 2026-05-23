@@ -298,8 +298,8 @@ def _synthetic_market_data(index: pd.DatetimeIndex, seed: int = _SEED) -> pd.Dat
     close = (1.0 + returns).cumprod() * 400.0
     rows: list[dict[str, object]] = []
     for i, ts in enumerate(index):
-        for symbol in ("SPY", "RSP", "VIXY"):
-            mult = {"SPY": 1.0, "RSP": 0.5, "VIXY": 0.05}[symbol]
+        for symbol in ("SPY", "RSP", "VIX"):
+            mult = {"SPY": 1.0, "RSP": 0.5, "VIX": 0.05}[symbol]
             rows.append(
                 {
                     "date": ts.date(),

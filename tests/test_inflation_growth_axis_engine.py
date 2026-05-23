@@ -142,7 +142,7 @@ def _build_synthetic_context(
         market_rows.append(
             {
                 "date": ts.date(),
-                "symbol": "VIXY",
+                "symbol": "VIX",
                 "open": 20.0,
                 "high": 20.5,
                 "low": 19.5,
