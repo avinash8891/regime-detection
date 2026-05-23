@@ -112,7 +112,7 @@ artifacts:
   stage: canonical
   uri: s3://autoresearch-platform/regime-detection/artifacts/zurich-v1/profile-ready-daily-ohlcv-762-2016-20260515/canonical/event_calendar/us_events.yaml
   local_path: data/raw/event_calendar/us_events.yaml
-  sha256: 871b415245d5754cb37d8e17e328ad59bcaa3791c2b898c3943161fe2d282ed9
+  sha256: 4917e11e14430cd1a54f6cb9d372e06b2394c83e12ee7282a54fc6039709b004
   schema_version: null
   rows: null
   min_date: null
