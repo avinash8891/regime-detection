@@ -68,4 +68,9 @@ deltas as a precondition to the strategy gate.
 | monetary_pressure_v2 (non-unknown) | 0 | 0.0% |
 | volume_liquidity_state (non-unknown) | 314 | 100.0% |
 | agent_routing != default | 314 | 100.0% |
-| change_point >= 0.5 | 0 | 0.0% |
+| change_point >= 0.5 | 73 | 23.2% |
+
+Note: the change-point activation row was regenerated after the BOCPD
+posterior mapping fix. Current runtime emits recent short-run posterior mass
+over the 21-session realized-volatility horizon; see
+`docs/verification/change_point_bocpd_recalculation_2026_05_23.md`.

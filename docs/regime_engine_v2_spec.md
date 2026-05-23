@@ -2121,12 +2121,16 @@ the slice/commit that resolved it. Entries are append-only.
     Resolved by Slice 8.
 
 64. **§6.3 line 2880 — `score` field formula.**
-    Spec output JSON shows `score: 0.78` but no formula. BOCPD emits
-    a per-session posterior P(run_length=0 at t) = P(change-point at
-    t given data up to t). Three operational choices: (A) raw
-    per-session probability; (B) max over a trailing N-day window;
-    (C) sum/integral over a trailing window. Resolution: option (B)
-    with N=5: `score[t] = max(posterior_changepoint_prob[t-4..t])`.
+    Spec output JSON shows `score: 0.78` but no formula. The
+    `bayesian_changepoint_detection` posterior matrix row
+    `R[0, t]` collapses to the configured hazard under a constant
+    hazard function, so it is not the data-conditioned break signal.
+    Because the BOCPD observation is `realized_vol_21d`, abrupt market
+    breaks enter the model as a 21-session rolling-window ramp and
+    posterior mass spreads over short run lengths. Resolution:
+    `posterior_changepoint_prob[t] = sum(R[1:22, t])` by default
+    (`ChangePointConfig.recent_run_length_window_days = 21`), and
+    `score[t] = max(posterior_changepoint_prob[t-4..t])`.
     Rationale: matches the §4.2 line 2396 `model_instability_score`
     5-day-lag convention — both transition-evidence components share
     a 5-NYSE-session memory horizon so they're comparable as
@@ -2138,8 +2142,9 @@ the slice/commit that resolved it. Entries are append-only.
     Resolved by Slice 8.
 
 65. **§6.3 line 2881 — `days_since_last_break` operational definition.**
-    Spec leaves "break" undefined. BOCPD's natural threshold question
-    is "at what posterior probability do we call a session a break".
+    Spec leaves "break" undefined. BOCPD's operational threshold
+    question is "at what recent short-run posterior mass do we call a
+    session a break".
     Resolution: a break occurs at session t when
     `posterior_changepoint_prob[t] >= break_threshold` (default 0.5;
     `ChangePointConfig.break_threshold` for calibration tuning).
@@ -3886,7 +3891,7 @@ rebuild transition-risk decisions from component scores outside this layer.
 
 ### 4.6 Change-Point Detection
 
-Implementation: **BOCPD (Bayesian Online Change Point Detection, Adams & MacKay 2007)**. Online streaming algorithm matches V2's `classify_window` evaluation pattern; native probability output feeds `transition_score` as evidence rather than as a hard label (per V2 §10 evidence-not-label discipline). See §6.3 for the full method contract.
+Implementation: **BOCPD (Bayesian Online Change Point Detection, Adams & MacKay 2007)**. Online streaming algorithm matches V2's `classify_window` evaluation pattern; recent short-run posterior mass feeds `transition_score` as evidence rather than as a hard label (per V2 §10 evidence-not-label discipline). See §6.3 for the full method contract.
 
 Output:
 ```json
@@ -4417,7 +4422,7 @@ Detect statistical break points in returns or volatility series.
 
 **BOCPD (Bayesian Online Change Point Detection, Adams & MacKay 2007).** Pinned alongside §4.6. Rationale:
 - Online streaming evaluation matches V2's `classify_window` pattern (no batch re-run on every classify call required, unlike PELT)
-- Native probability output ("posterior probability that a change-point occurred at session t") satisfies V2 §10's evidence-not-label discipline
+- Native probability output satisfies V2 §10's evidence-not-label discipline. Runtime maps the library posterior matrix to recent short-run posterior mass, `sum(R[1:recent_run_length_window_days + 1, t])`, because the input observation is `realized_vol_21d` and breaks spread over short run lengths rather than only `R[1, t]`.
 - Standard implementation available via the `bayesian_changepoint_detection` PyPI library (corrects an earlier reference to `ruptures` in Ambiguity Log #53; `ruptures` ships only offline algorithms — Binseg, PELT, Dynp, Window, BottomUp — and has no `online` module. See Ambiguity Log #62 for the library substitution. The algorithm choice (BOCPD), hazard rate default, and output schema are unchanged.)
 - Hazard-rate hyperparameter is the only tuning knob; V2 ship default = `1/250` (one expected change-point per trading year, calibration placeholder for V2 §9.1)
 

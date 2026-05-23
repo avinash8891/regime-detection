@@ -231,7 +231,7 @@ class ChangePointConfig(StrictBaseModel):
 
     Library: bayesian-changepoint-detection.
     Observation series: realized_vol_21d.
-    Score = 5-session rolling max of posterior P(run_length=0).
+    Score = 5-session rolling max of recent short-run posterior mass.
     Break = posterior >= 0.5 threshold.
     """
 

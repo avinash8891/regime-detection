@@ -514,8 +514,8 @@ class HmmOutput(BaseModel):
 class ChangePointOutput(BaseModel):
     """v2 §4.6 + §6.3 BOCPD change-point detection output (evidence-only).
 
-    score: 5-session rolling max of BOCPD posterior P(run_length=0).
-    days_since_last_break: int sessions since last posterior >= break_threshold.
+    score: 5-session rolling max of recent short-run BOCPD posterior mass.
+    days_since_last_break: int sessions since last posterior mass >= break_threshold.
         None when no break has occurred in the trailing BOCPD window
         (cold-start) — omitted from the JSON wire via exclude_none.
     method: pinned to ``"BOCPD"`` (Adams-MacKay 2007).
