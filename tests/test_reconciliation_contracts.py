@@ -3,8 +3,31 @@ from __future__ import annotations
 from datetime import date
 
 import pandas as pd
+import pytest
 
 from regime_detection.trend_character import compute_features
+
+
+def _vix_data_from_market_data(market_data: pd.DataFrame) -> pd.DataFrame:
+    vixy = market_data[market_data["symbol"] == "VIXY"].copy()
+    return vixy[["date", "close"]]
+
+
+def _reconciliation_fixture_config():
+    from regime_detection.engine import RegimeEngine
+
+    engine = RegimeEngine()
+    cfg = engine.config
+    assert cfg.hmm is not None
+    assert cfg.clustering is not None
+    assert cfg.change_point is not None
+    return cfg.model_copy(
+        update={
+            "hmm": cfg.hmm.model_copy(update={"training_window_days": 252}),
+            "clustering": cfg.clustering.model_copy(update={"training_window_days": 252}),
+            "change_point": cfg.change_point.model_copy(update={"training_window_days": 252}),
+        }
+    )
 
 
 def test_classify_uses_vix_data_when_vix_proxy_missing_from_market_data(
@@ -29,9 +52,47 @@ def test_classify_uses_vix_data_when_vix_proxy_missing_from_market_data(
         as_of_date=as_of,
         market_data=market_df,
         vix_data=vix_df,
+        config=_reconciliation_fixture_config(),
         **synthetic_v2_kwargs_for_market_data(market_df),
     )
     assert out.volatility_state.evidence["rule_evidence"]["vix_percentile_252d"] is not None
+
+
+def test_market_context_requires_true_vix_in_market_data(market_df_for_asof) -> None:
+    as_of = date(2023, 12, 14)
+    market_df = market_df_for_asof(as_of)
+
+    from regime_detection.engine import RegimeEngine
+    from regime_detection.market_context import build_market_context
+
+    with pytest.raises(ValueError, match="market_data missing required symbol for V1: VIX"):
+        build_market_context(
+            end_date=as_of,
+            market_data=market_df,
+            config=RegimeEngine().config,
+        )
+
+
+def test_market_context_uses_true_vix_not_vixy_proxy(market_df_for_asof) -> None:
+    as_of = date(2023, 12, 14)
+    market_df = market_df_for_asof(as_of)
+    vix_rows = market_df[market_df["symbol"] == "VIXY"].copy()
+    vix_rows["symbol"] = "VIX"
+    vix_rows["close"] = vix_rows["close"] + 1000.0
+    market_df = pd.concat([market_df, vix_rows], ignore_index=True)
+
+    from regime_detection.engine import RegimeEngine
+    from regime_detection.market_context import build_market_context
+
+    context = build_market_context(
+        end_date=as_of,
+        market_data=market_df,
+        config=RegimeEngine().config,
+    )
+
+    expected = vix_rows.sort_values("date").iloc[-1]["close"]
+    assert context.vix_proxy_close is not None
+    assert context.vix_proxy_close.iloc[-1] == expected
 
 
 def test_trend_character_adx_cold_start_stays_nan(raw_market_frames) -> None:
@@ -63,6 +124,8 @@ def test_breadth_data_quality_does_not_block_pit_breadth_when_rsp_gaps(
     out = RegimeEngine().classify(
         as_of_date=as_of,
         market_data=market_df,
+        vix_data=_vix_data_from_market_data(market_df),
+        config=_reconciliation_fixture_config(),
         **synthetic_v2_kwargs_for_market_data(market_df),
     )
 
@@ -85,6 +148,8 @@ def test_trend_direction_data_quality_insufficient_data_can_override_non_unknown
     out = RegimeEngine().classify(
         as_of_date=as_of,
         market_data=market_df,
+        vix_data=_vix_data_from_market_data(market_df),
+        config=_reconciliation_fixture_config(),
         **synthetic_v2_kwargs_for_market_data(market_df),
     )
 
@@ -108,6 +173,8 @@ def test_trend_direction_data_quality_stale_data_overrides_insufficient_history(
     out = RegimeEngine().classify(
         as_of_date=as_of,
         market_data=market_df,
+        vix_data=_vix_data_from_market_data(market_df),
+        config=_reconciliation_fixture_config(),
         **synthetic_v2_kwargs_for_market_data(market_df),
     )
 

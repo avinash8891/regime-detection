@@ -19,7 +19,10 @@ from regime_detection.transition_risk import (
     TransitionRuleFlags,
     compose_transition_risk_output,
 )
-from regime_detection.transition_score import compose_transition_score_for_session
+from regime_detection.transition_score import (
+    ComposedTransitionScore,
+    compose_transition_score_for_session,
+)
 
 EVENT_CALENDAR_LABELS = EVENT_CALENDAR_LABEL_SET
 
@@ -406,34 +409,42 @@ def build_transition_risk_outputs_by_date(
     for i, day in enumerate(sessions):
         switch_days = history.days_since_axis_switch_by_date[day]
         inputs = transition_score_inputs_by_date[day]
-        composed = compose_transition_score_for_session(
-            realized_vol_short=inputs.realized_vol_short,
-            realized_vol_long=inputs.realized_vol_long,
-            pct_above_50dma=inputs.pct_above_50dma,
-            avg_pairwise_corr_percentile_504d=(
-                inputs.avg_pairwise_corr_percentile_504d
-            ),
-            drawdown_252d=inputs.drawdown_252d,
-            event_calendar_labels=inputs.event_calendar_labels,
-            spy_close=inputs.spy_close,
-            spy_sma_50=inputs.spy_sma_50,
-            largest_eigenvalue_share_percentile_504d=(
-                inputs.largest_eigenvalue_share_percentile_504d
-            ),
-            effective_rank_percentile_504d=inputs.effective_rank_percentile_504d,
-            absorption_ratio_top3=inputs.absorption_ratio_top3,
-            credit_funding_label=inputs.credit_funding_label,
-            volume_liquidity_label=inputs.volume_liquidity_label,
-            volume_zscore_20d=inputs.volume_zscore_20d,
-            gap_frequency_percentile_252d=inputs.gap_frequency_percentile_252d,
-            intraday_range_percentile_252d=inputs.intraday_range_percentile_252d,
-            hmm_top_state_prob_now=inputs.hmm_top_state_prob_now,
-            hmm_top_state_prob_5d_ago=inputs.hmm_top_state_prob_5d_ago,
-            change_point_score=inputs.change_point_score,
-            cluster_id_now=inputs.cluster_id_now,
-            cluster_id_5d_ago=inputs.cluster_id_5d_ago,
-            config=transition_score_config,
-        )
+        if bool(insufficient_data_arr[i]):
+            composed = ComposedTransitionScore(
+                score=None,
+                interpretation=None,
+                components=None,
+                missing_components=("axis_data_quality",),
+            )
+        else:
+            composed = compose_transition_score_for_session(
+                realized_vol_short=inputs.realized_vol_short,
+                realized_vol_long=inputs.realized_vol_long,
+                pct_above_50dma=inputs.pct_above_50dma,
+                avg_pairwise_corr_percentile_504d=(
+                    inputs.avg_pairwise_corr_percentile_504d
+                ),
+                drawdown_252d=inputs.drawdown_252d,
+                event_calendar_labels=inputs.event_calendar_labels,
+                spy_close=inputs.spy_close,
+                spy_sma_50=inputs.spy_sma_50,
+                largest_eigenvalue_share_percentile_504d=(
+                    inputs.largest_eigenvalue_share_percentile_504d
+                ),
+                effective_rank_percentile_504d=inputs.effective_rank_percentile_504d,
+                absorption_ratio_top3=inputs.absorption_ratio_top3,
+                credit_funding_label=inputs.credit_funding_label,
+                volume_liquidity_label=inputs.volume_liquidity_label,
+                volume_zscore_20d=inputs.volume_zscore_20d,
+                gap_frequency_percentile_252d=inputs.gap_frequency_percentile_252d,
+                intraday_range_percentile_252d=inputs.intraday_range_percentile_252d,
+                hmm_top_state_prob_now=inputs.hmm_top_state_prob_now,
+                hmm_top_state_prob_5d_ago=inputs.hmm_top_state_prob_5d_ago,
+                change_point_score=inputs.change_point_score,
+                cluster_id_now=inputs.cluster_id_now,
+                cluster_id_5d_ago=inputs.cluster_id_5d_ago,
+                config=transition_score_config,
+            )
         components = composed.components or {}
         overrides = transition_score_config.overrides
         credit_stressed = components.get("credit_stress", 0.0) >= overrides.credit_stress

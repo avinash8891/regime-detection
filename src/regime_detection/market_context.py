@@ -326,7 +326,7 @@ def _resolve_vix_proxy_close(
     market_data: pd.DataFrame,
     vix_data: pd.DataFrame | None,
     as_of_date: date,
-) -> pd.Series | None:
+) -> pd.Series:
     if vix_data is not None:
         if "date" not in vix_data.columns or "close" not in vix_data.columns:
             raise ValueError("vix_data must contain date and close columns")
@@ -338,9 +338,4 @@ def _resolve_vix_proxy_close(
         out = pd.Series(s["close"].to_numpy(), index=pd.to_datetime(s["date"]))
         out.name = "close"
         return out
-    for symbol in ["VIXY", "VIX", "^VIX"]:
-        try:
-            return _symbol_close_series(market_data, symbol=symbol, as_of_date=as_of_date)
-        except ValueError:
-            continue
-    return None
+    return _symbol_close_series(market_data, symbol="VIX", as_of_date=as_of_date)
