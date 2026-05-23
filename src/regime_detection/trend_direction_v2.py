@@ -85,6 +85,9 @@ class TrendDirectionV2Features:
     # (Shapiro, Sudhof, Wilson 2020). Smoothed onto the SPY session index.
     # EVIDENCE ONLY — never read by the `euphoria` rule predicate. See audit
     # follow-up: the source-data audit "news sentiment".
+    # TODO(sentiment-calibration): decide, with walk-forward evidence, whether
+    # news_sentiment_score or sentiment_concordance should become a configured
+    # euphoria confidence gate or remain reporting-only evidence.
     news_sentiment_score: pd.Series | None = None
     # Derived concordance flag — True when AAII and news sentiment agree on
     # sign (both positive or both negative), False when they diverge, NaN

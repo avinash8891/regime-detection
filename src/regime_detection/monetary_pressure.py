@@ -105,6 +105,9 @@ class MonetaryPressureV2Features:
     # [-1, +1]. Evidence-only — never consumed by §2A rule predicates.
     # None when no central-bank-text release frame was supplied to
     # build_feature_store (V1 byte-identity preserved). See source-data verification.
+    # TODO(monetary-calibration): decide, with calibration evidence, whether
+    # central_bank_text_score should become a configured confirmation gate for
+    # tightening/easing labels or remain reporting-only monetary evidence.
     central_bank_text_score: pd.Series | None = None
 
     @property
