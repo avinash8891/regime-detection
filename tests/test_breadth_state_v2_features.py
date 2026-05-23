@@ -331,7 +331,10 @@ def test_v1_config_path_leaves_breadth_state_v2_none(market_df_for_asof):
     assert store.breadth_state_v2 is None
 
 
-def test_timeline_threads_breadth_state_v2_config(market_df_for_asof):
+def test_timeline_threads_breadth_state_v2_config(
+    market_df_for_asof,
+    synthetic_v2_kwargs_for_market_data,
+):
     """End-to-end wire test (AGENTS rule A): build_regime_timeline must accept
     a v2 breadth config and surface breadth_state_v2 features through the
     feature_store path."""
@@ -344,17 +347,16 @@ def test_timeline_threads_breadth_state_v2_config(market_df_for_asof):
     )
     from regime_detection.timeline import ENGINE_MINIMUM_HISTORY
 
-    bootstrap = build_market_context(
-        end_date=_INTEGRATION_AS_OF,
-        market_data=market_df_for_asof(_INTEGRATION_AS_OF),
-        config=cfg,
-    )
-    sector_closes = _sector_etf_closes_aligned_to_spy(bootstrap.spy_ohlcv.index)
+    market_data = market_df_for_asof(_INTEGRATION_AS_OF)
+    kwargs = synthetic_v2_kwargs_for_market_data(market_data)
     context = build_market_context(
         end_date=_INTEGRATION_AS_OF,
-        market_data=market_df_for_asof(_INTEGRATION_AS_OF),
+        market_data=market_data,
         config=cfg,
-        sector_etf_closes=sector_closes,
+        sector_etf_closes=kwargs["sector_etf_closes"],
+        cross_asset_closes=kwargs["cross_asset_closes"],
+        pit_constituent_intervals=kwargs["pit_constituent_intervals"],
+        constituent_ohlcv=kwargs["constituent_ohlcv"],
     )
     required = min(len(context.sessions), ENGINE_MINIMUM_HISTORY)
     working = slice_context_to_recent_sessions(

@@ -466,6 +466,26 @@ def test_regime_output_carries_inflation_growth_state_when_configured() -> None:
     """End-to-end: classify_window populates RegimeOutput.inflation_growth_state."""
     context = _build_synthetic_context()
     engine = RegimeEngine()
+    pit_intervals = pd.DataFrame(
+        {
+            "ticker": list(context.sector_etf_closes),
+            "start_date": [context.sessions[0]] * len(context.sector_etf_closes),
+            "end_date": [None] * len(context.sector_etf_closes),
+        }
+    )
+    constituent_ohlcv = {
+        symbol: pd.DataFrame(
+            {
+                "open": series,
+                "high": series,
+                "low": series,
+                "close": series,
+                "volume": pd.Series(1_000_000, index=series.index),
+                "adjusted_close": series,
+            }
+        )
+        for symbol, series in context.sector_etf_closes.items()
+    }
     timeline = engine.classify_window(
         end_date=context.end_date,
         market_data=pd.DataFrame(
@@ -499,6 +519,8 @@ def test_regime_output_carries_inflation_growth_state_when_configured() -> None:
         sector_etf_closes=context.sector_etf_closes,
         cross_asset_closes=context.cross_asset_closes,
         macro_series=context.macro_series,
+        pit_constituent_intervals=pit_intervals,
+        constituent_ohlcv=constituent_ohlcv,
     )
     out = timeline.outputs[-1]
     assert out.inflation_growth_state is not None

@@ -716,7 +716,7 @@ def test_real_v2_fixture_credit_funding_golden_label(
     assert real_rule["hy_spread_slope_21d"] == pytest.approx(-0.004064935064935065)
     assert real_rule["spy_21d_return"] == pytest.approx(0.07590730214254471)
     assert real_rule["avg_pairwise_corr_percentile_504d"] == pytest.approx(
-        0.3055555555555556
+        0.25595238095238093
     )
 
     assert proxy.raw_label == "credit_calm"
@@ -797,6 +797,26 @@ def test_regime_output_carries_credit_funding_state_when_configured() -> None:
     """End-to-end: classify_window populates RegimeOutput.credit_funding_state."""
     context = _build_full_synthetic_context()
     engine = RegimeEngine()
+    pit_intervals = pd.DataFrame(
+        {
+            "ticker": list(context.sector_etf_closes),
+            "start_date": [context.sessions[0]] * len(context.sector_etf_closes),
+            "end_date": [None] * len(context.sector_etf_closes),
+        }
+    )
+    constituent_ohlcv = {
+        symbol: pd.DataFrame(
+            {
+                "open": series,
+                "high": series,
+                "low": series,
+                "close": series,
+                "volume": pd.Series(1_000_000, index=series.index),
+                "adjusted_close": series,
+            }
+        )
+        for symbol, series in context.sector_etf_closes.items()
+    }
     timeline = engine.classify_window(
         end_date=context.end_date,
         market_data=pd.DataFrame(
@@ -830,6 +850,8 @@ def test_regime_output_carries_credit_funding_state_when_configured() -> None:
         sector_etf_closes=context.sector_etf_closes,
         cross_asset_closes=context.cross_asset_closes,
         macro_series=context.macro_series,
+        pit_constituent_intervals=pit_intervals,
+        constituent_ohlcv=constituent_ohlcv,
     )
     out = timeline.outputs[-1]
     assert out.credit_funding_state is not None

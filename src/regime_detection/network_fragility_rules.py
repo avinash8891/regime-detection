@@ -417,7 +417,7 @@ def evaluate_rising_fragility(
      AND largest_eigenvalue_share rising over 21d
      AND breadth_state.active_label in [weak_breadth, narrowing_breadth, divergent_fragile]`
 
-    Note: v2 §3.5 line 3519 references `narrowing_breadth` (Ambiguity Log #3). The
+    Note: v2 §3.5 line 3519 references `narrowing_breadth` (implementation decision). The
     ``BreadthLabel`` enum includes `narrowing_breadth` alongside
     `weak_breadth` and `divergent_fragile`, so the accepted_breadth
     set matches the spec text verbatim.
@@ -531,7 +531,7 @@ def evaluate_systemic_stress(
     if not evaluate_correlation_to_one(inputs, config):
         return False
     accepted_credit: set[CreditFundingLabel] = {"credit_stress", "deleveraging"}
-    # v2 §3.5 line 3541: accepted breadth set matches spec verbatim (Ambiguity Log #3).
+    # v2 §3.5 line 3541: accepted breadth set matches spec verbatim (implementation decision).
     accepted_breadth: set[BreadthLabel] = {"weak_breadth", "narrowing_breadth"}
     return bool(
         credit_funding_label in accepted_credit

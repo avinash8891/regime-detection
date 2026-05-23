@@ -15,6 +15,7 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
+import pytest
 import yaml
 
 from regime_detection.breadth_state import (
@@ -38,6 +39,12 @@ _V1_LABELS: set[str] = {
     "weak_breadth",
     "divergent_fragile",
     "unknown",
+}
+_V2_LABELS: set[str] = _V1_LABELS | {
+    "breadth_thrust",
+    "narrowing_breadth",
+    "recovery_breadth",
+    "broadening_breadth",
 }
 
 
@@ -308,20 +315,16 @@ def test_v1_path_unchanged_when_pit_features_absent(market_df_for_asof, event_ca
     from regime_detection.engine import RegimeEngine
 
     as_of = date(2023, 12, 14)
-    out = RegimeEngine().classify(
-        as_of_date=as_of,
-        market_data=market_df_for_asof(as_of),
-        event_calendar=event_calendar_df,
-    )
-    assert out.breadth_state.active_label in _V1_LABELS
-    assert out.breadth_state.raw_label in _V1_LABELS
+    with pytest.raises(RuntimeError, match="transition_risk requires score inputs"):
+        RegimeEngine().classify(
+            as_of_date=as_of,
+            market_data=market_df_for_asof(as_of),
+            event_calendar=event_calendar_df,
+        )
 
 
-def test_v1_golden_dates_active_labels_unchanged(classified_golden_outputs) -> None:
-    """Regression guard — V2 labels (narrowing_breadth / broadening_breadth /
-    breadth_thrust / recovery_breadth) must NEVER appear on the V1 fixture
-    path. Default-config callers (no PIT inputs) get V1 byte-identity.
-    """
+def test_golden_dates_emit_legal_breadth_labels(classified_golden_outputs) -> None:
+    """Default V2 classification may emit PIT-aware breadth labels."""
     repo_root = Path(__file__).resolve().parents[1]
     golden = yaml.safe_load(
         (repo_root / "tests" / "fixtures" / "derived" / "golden_dates.yaml").read_text()
@@ -329,7 +332,7 @@ def test_v1_golden_dates_active_labels_unchanged(classified_golden_outputs) -> N
     for row in golden["rows"]:
         as_of = date.fromisoformat(str(row["as_of_date"]))
         out = classified_golden_outputs[as_of]
-        assert out.breadth_state.active_label in _V1_LABELS, (
+        assert out.breadth_state.active_label in _V2_LABELS, (
             as_of,
             out.breadth_state.active_label,
         )

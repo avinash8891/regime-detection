@@ -30,21 +30,21 @@ class MarketContext(BaseModel):
     implied_vol_30d: pd.Series | None = None  # v2 §1C vol_crush seam — FRED VIXCLS/100 (ADR 0005)
     # v2 §2A central-bank-text evidence seam — deterministic-lexicon score
     # over FOMC minutes + Powell speech body_text per release. See
-    # Ambiguity Log #72 and docs/spec_code_data_audit_2026_05_15.md §3.1
+    # implementation decision and verification notes §3.1
     # (M1). Always evidence-only — never consumed by §2A rule predicates.
     central_bank_text_releases: pd.DataFrame | None = None
     # v2 §2A first-release CPI seam for historical replay (Ambiguity
-    # Log #73 / spec lines 2956-2957). Series keyed by RELEASE DATE (not
+    # decision note / spec lines 2956-2957). Series keyed by RELEASE DATE (not
     # reference date) of the value-as-of-release. See
-    # docs/spec_code_data_audit_2026_05_15.md §3.2 (M2). When None, the
+    # verification notes §3.2 (M2). When None, the
     # existing latest-revision CPIAUCSL path is preserved unchanged.
     cpi_first_release: pd.Series | None = None
     # v2 §1A SF Fed Daily News Sentiment Index — evidence-only second
     # sentiment voice alongside the AAII bull-bear 8w-MA `sentiment_score`.
     # NOT consumed by the `euphoria` rule predicate; surfaces on
     # TrendDirectionV2Features.news_sentiment_score for evidence dicts and
-    # the calibration summary. See Ambiguity Log #74 and
-    # docs/spec_code_data_audit_2026_05_15.md §4.1 (Post-M1/M2 follow-up).
+    # the calibration summary. See implementation decision and
+    # verification notes §4.1 (Post-M1/M2 follow-up).
     news_sentiment: pd.Series | None = None
 
 

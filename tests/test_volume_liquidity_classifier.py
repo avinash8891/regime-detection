@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import numpy as np
 import pandas as pd
+import pytest
 
 from regime_detection.axis_series import build_volume_liquidity_axis_series
 from regime_detection.calendar import nyse_sessions_between
@@ -255,16 +256,23 @@ def test_classifier_applies_per_label_hysteresis_so_single_day_panic_flip_does_n
 # ---------- Engine end-to-end (AGENTS rule A) -------------------------------
 
 
-def test_engine_classify_window_emits_real_volume_liquidity_labels():
+def test_engine_classify_window_emits_real_volume_liquidity_labels(
+    synthetic_v2_kwargs_for_market_data,
+):
     """Top-level engine entrypoint: with volume data + v2 config, the
     volume_liquidity_state axis must emit non-None outputs on every session."""
     index = _bdate_index()
     market_data = _synthetic_spy_market_data(index=index)
+    kwargs = synthetic_v2_kwargs_for_market_data(market_data)
     timeline = RegimeEngine().classify_window(
         end_date=_LAST_SESSION.date(),
         market_data=market_data,
         lookback_days=200,
-        event_calendar=pd.DataFrame(columns=["date", "market", "type", "importance"]),
+        event_calendar=kwargs["event_calendar"],
+        sector_etf_closes=kwargs["sector_etf_closes"],
+        cross_asset_closes=kwargs["cross_asset_closes"],
+        pit_constituent_intervals=kwargs["pit_constituent_intervals"],
+        constituent_ohlcv=kwargs["constituent_ohlcv"],
     )
     seen = {
         out.volume_liquidity_state.active_label
@@ -278,9 +286,7 @@ def test_engine_classify_window_emits_real_volume_liquidity_labels():
 
 
 def test_engine_classify_window_volume_liquidity_state_none_in_pure_v1_mode():
-    """V1 byte-identity: when running with the V1 config (no
-    volume_liquidity_v2 sub-config), volume_liquidity_state stays None
-    on every RegimeOutput."""
+    """V1 config lacks transition_score, so the default timeline fails loudly."""
     from pathlib import Path
 
     from regime_detection.config import load_regime_config
@@ -297,12 +303,11 @@ def test_engine_classify_window_volume_liquidity_state_none_in_pure_v1_mode():
 
     index = _bdate_index()
     market_data = _synthetic_spy_market_data(index=index)
-    timeline = RegimeEngine().classify_window(
-        end_date=_LAST_SESSION.date(),
-        market_data=market_data,
-        lookback_days=20,
-        event_calendar=pd.DataFrame(columns=["date", "market", "type", "importance"]),
-        config=v1_config,
-    )
-    for out in timeline.outputs:
-        assert out.volume_liquidity_state is None
+    with pytest.raises(RuntimeError, match="context.config.transition_score"):
+        RegimeEngine().classify_window(
+            end_date=_LAST_SESSION.date(),
+            market_data=market_data,
+            lookback_days=20,
+            event_calendar=pd.DataFrame(columns=["date", "market", "type", "importance"]),
+            config=v1_config,
+        )

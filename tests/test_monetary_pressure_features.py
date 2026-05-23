@@ -347,8 +347,7 @@ def test_build_feature_store_graceful_degradation_no_macro(
 
 
 def test_v1_config_path_leaves_monetary_none(market_df_for_asof):
-    """V1 contract: config without monetary_pressure_v2 → monetary is None,
-    v1 outputs unchanged, timeline builds without raising."""
+    """Transition-score configs fail loudly when required score inputs are absent."""
     cfg = load_default_regime_config()
     cfg_v1 = cfg.model_copy(update={"monetary_pressure_v2": None})
     context = build_market_context(
@@ -358,19 +357,21 @@ def test_v1_config_path_leaves_monetary_none(market_df_for_asof):
     )
     store = build_feature_store(context)
     assert store.monetary is None
-    timeline = build_regime_timeline(
-        context=context, lookback_days=5, config=cfg_v1
-    )
-    assert len(timeline.outputs) == 5
+    with pytest.raises(RuntimeError, match="transition_risk requires score inputs"):
+        build_regime_timeline(context=context, lookback_days=5, config=cfg_v1)
 
 
-def test_timeline_threads_monetary_pressure_v2_config(market_df_for_asof):
+def test_timeline_threads_monetary_pressure_v2_config(
+    market_df_for_asof,
+    synthetic_v2_kwargs_for_market_data,
+):
     """End-to-end wire test (AGENTS rule A): build_regime_timeline must
     accept the v2 config and surface monetary features via the same
     feature_store path used by the engine."""
     cfg = load_default_regime_config()
     assert cfg.monetary_pressure_v2 is not None
     market_data = market_df_for_asof(_INTEGRATION_AS_OF)
+    kwargs = synthetic_v2_kwargs_for_market_data(market_data)
 
     # First pass: build a context without macro to size the synthetic series.
     context_no_macro = build_market_context(
@@ -384,6 +385,10 @@ def test_timeline_threads_monetary_pressure_v2_config(market_df_for_asof):
         market_data=market_data,
         config=cfg,
         macro_series=macro,
+        sector_etf_closes=kwargs["sector_etf_closes"],
+        cross_asset_closes=kwargs["cross_asset_closes"],
+        pit_constituent_intervals=kwargs["pit_constituent_intervals"],
+        constituent_ohlcv=kwargs["constituent_ohlcv"],
     )
 
     timeline = build_regime_timeline(

@@ -371,7 +371,9 @@ def test_build_raw_outputs_emits_recovery_on_synthetic_rebound(
 # ---------- End-to-end engine wire test (AGENTS rule A) ---------------------
 
 
-def test_end_to_end_engine_emits_recovery_on_synthetic_series() -> None:
+def test_end_to_end_engine_emits_recovery_on_synthetic_series(
+    synthetic_v2_kwargs_for_market_data,
+) -> None:
     """Wire-first AGENTS rule A: build_regime_timeline with the v2 default
     config and a SPY-like rebound series must emit at least one session
     whose ``trend_direction`` raw_label is `recovery`.
@@ -400,11 +402,16 @@ def test_end_to_end_engine_emits_recovery_on_synthetic_series() -> None:
 
     engine = RegimeEngine()
     end_dt = close_series.index[-1].date()
+    kwargs = synthetic_v2_kwargs_for_market_data(full_df)
     timeline = engine.classify_window(
         end_date=end_dt,
         market_data=full_df,
         lookback_days=120,
-        event_calendar=pd.DataFrame(columns=["date", "market", "type", "importance"]),
+        event_calendar=kwargs["event_calendar"],
+        sector_etf_closes=kwargs["sector_etf_closes"],
+        cross_asset_closes=kwargs["cross_asset_closes"],
+        pit_constituent_intervals=kwargs["pit_constituent_intervals"],
+        constituent_ohlcv=kwargs["constituent_ohlcv"],
     )
 
     raw_labels = [out.trend_direction.raw_label for out in timeline.outputs]

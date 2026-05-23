@@ -16,6 +16,7 @@ from dataclasses import replace
 
 import numpy as np
 import pandas as pd
+import pytest
 
 from regime_detection.axis_series import build_monetary_pressure_axis_series
 from regime_detection.calendar import nyse_sessions_between
@@ -392,7 +393,9 @@ def test_classifier_emits_central_bank_text_score_as_evidence_only():
     assert sample.evidence["rule_evidence"]["central_bank_text_score"] == 0.25
 
 
-def test_engine_classify_window_populates_monetary_pressure_state():
+def test_engine_classify_window_populates_monetary_pressure_state(
+    synthetic_v2_kwargs_for_market_data,
+):
     """Top-level engine + monetary_pressure_state config → axis output populated."""
     index = _bdate_index()
     market_data = _synthetic_market_data(index)
@@ -400,11 +403,16 @@ def test_engine_classify_window_populates_monetary_pressure_state():
     dgs10 = _yield_series(index=index, base=4.2, seed=_SEED + 2)
     usd = _usd_series(index=index, base=100.0, seed=_SEED + 3)
     macro = {"2y_yield": dgs2, "10y_yield": dgs10, "broad_usd_index": usd}
+    kwargs = synthetic_v2_kwargs_for_market_data(market_data)
     timeline = RegimeEngine().classify_window(
         end_date=_LAST_SESSION.date(),
         market_data=market_data,
         lookback_days=50,
-        event_calendar=pd.DataFrame(columns=["date", "market", "type", "importance"]),
+        event_calendar=kwargs["event_calendar"],
+        sector_etf_closes=kwargs["sector_etf_closes"],
+        cross_asset_closes=kwargs["cross_asset_closes"],
+        pit_constituent_intervals=kwargs["pit_constituent_intervals"],
+        constituent_ohlcv=kwargs["constituent_ohlcv"],
         macro_series=macro,
     )
     populated = [
@@ -429,7 +437,7 @@ def test_engine_classify_window_populates_monetary_pressure_state():
 
 
 def test_engine_classify_window_monetary_pressure_state_none_in_pure_v1_mode():
-    """V1 byte-identity: V1 config (no monetary_pressure_state) → field None."""
+    """V1 config lacks transition_score, so the default timeline fails loudly."""
     from pathlib import Path
     from regime_detection.config import load_regime_config
 
@@ -444,15 +452,14 @@ def test_engine_classify_window_monetary_pressure_state_none_in_pure_v1_mode():
     assert v1_config.monetary_pressure_state is None
     index = _bdate_index(periods=400)
     market_data = _synthetic_market_data(index)
-    timeline = RegimeEngine().classify_window(
-        end_date=_LAST_SESSION.date(),
-        market_data=market_data,
-        lookback_days=20,
-        event_calendar=pd.DataFrame(columns=["date", "market", "type", "importance"]),
-        config=v1_config,
-    )
-    for out in timeline.outputs:
-        assert out.monetary_pressure_state is None
+    with pytest.raises(RuntimeError, match="context.config.transition_score"):
+        RegimeEngine().classify_window(
+            end_date=_LAST_SESSION.date(),
+            market_data=market_data,
+            lookback_days=20,
+            event_calendar=pd.DataFrame(columns=["date", "market", "type", "importance"]),
+            config=v1_config,
+        )
 
 
 # =============================================================================

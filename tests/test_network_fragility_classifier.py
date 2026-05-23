@@ -420,6 +420,26 @@ def test_engine_classify_window_emits_network_fragility_labels_on_full_universe(
     )
     sector_closes = {s: context.sector_etf_closes[s] for s in SECTOR_ETFS}
     cross_asset_closes = {s: context.cross_asset_closes[s] for s in CROSS_ASSET_SYMBOLS}
+    pit_intervals = pd.DataFrame(
+        {
+            "ticker": list(SECTOR_ETFS),
+            "start_date": [_bdate_index()[0].date()] * len(SECTOR_ETFS),
+            "end_date": [None] * len(SECTOR_ETFS),
+        }
+    )
+    constituent_ohlcv = {
+        symbol: pd.DataFrame(
+            {
+                "open": series,
+                "high": series,
+                "low": series,
+                "close": series,
+                "volume": pd.Series(1_000_000, index=series.index),
+                "adjusted_close": series,
+            }
+        )
+        for symbol, series in sector_closes.items()
+    }
 
     # ENGINE_MINIMUM_HISTORY (320) + lookback_days − 1 = working sessions kept
     # by slice_context_to_recent_sessions. We need that working window to
@@ -432,6 +452,8 @@ def test_engine_classify_window_emits_network_fragility_labels_on_full_universe(
         event_calendar=pd.DataFrame(columns=["date", "market", "type", "importance"]),
         sector_etf_closes=sector_closes,
         cross_asset_closes=cross_asset_closes,
+        pit_constituent_intervals=pit_intervals,
+        constituent_ohlcv=constituent_ohlcv,
     )
 
     labels = {out.network_fragility.active_label for out in timeline.outputs}
@@ -466,21 +488,17 @@ def test_engine_classify_window_emits_real_fixture_network_fragility_label(
 
 
 def test_engine_classify_window_forces_unknown_when_universe_data_missing():
-    """Quality gating end-to-end: when sector ETF data is absent, the v2
-    fallback in timeline._resolve_network_fragility_by_date emits 'unknown'
-    placeholders (preserves pure-v1 mode)."""
+    """Default V2 timeline fails loudly when required universe data is absent."""
     market_data = _market_data_from_prices(
         _synthetic_universe_prices(index=_bdate_index())
     )
-    timeline = RegimeEngine().classify_window(
-        end_date=_LAST_SESSION.date(),
-        market_data=market_data,
-        lookback_days=20,
-        event_calendar=pd.DataFrame(columns=["date", "market", "type", "importance"]),
-    )
-    for out in timeline.outputs:
-        assert out.network_fragility.active_label == "unknown"
-        assert out.network_fragility.raw_label == "unknown"
+    with pytest.raises(RuntimeError, match="transition_risk requires score inputs"):
+        RegimeEngine().classify_window(
+            end_date=_LAST_SESSION.date(),
+            market_data=market_data,
+            lookback_days=20,
+            event_calendar=pd.DataFrame(columns=["date", "market", "type", "importance"]),
+        )
 
 
 # ---------- Slice-1 cleanup: I1 + I2 regression tests ------------------------

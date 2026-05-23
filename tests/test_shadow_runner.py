@@ -10,6 +10,8 @@ from pathlib import Path
 import pandas as pd
 import pytest
 
+from regime_detection.fragility_universe import SECTOR_ETFS
+
 
 def _load_runner_module():
     repo_root = Path(__file__).resolve().parents[1]
@@ -21,22 +23,35 @@ def _load_runner_module():
     return mod
 
 
+def _write_sector_pit_intervals(path: Path) -> Path:
+    rows = [
+        {"ticker": symbol, "start_date": "2019-01-02", "end_date": ""}
+        for symbol in SECTOR_ETFS
+    ]
+    pd.DataFrame(rows).to_csv(path, index=False)
+    return path
+
+
 def test_shadow_runner_writes_expected_artifacts_and_ledger(tmp_path: Path) -> None:
     repo_root = Path(__file__).resolve().parents[1]
-    market_data_path = repo_root / "tests" / "fixtures" / "raw" / "market_data.parquet"
+    v2_daily_path = repo_root / "tests" / "fixtures" / "raw" / "v2" / "daily_ohlcv.csv"
+    market_data_path = v2_daily_path
     event_calendar_path = repo_root / "tests" / "fixtures" / "events" / "us_events.yaml"
     out_root = tmp_path / "shadow_run"
+    pit_path = _write_sector_pit_intervals(tmp_path / "pit.csv")
 
     mod = _load_runner_module()
     result = mod.run_shadow(
-        as_of_date=date(2023, 12, 14),
+        as_of_date=date(2026, 5, 13),
         market_data_path=market_data_path,
         event_calendar_path=event_calendar_path,
         output_root=out_root,
+        v2_daily_ohlcv_path=v2_daily_path,
+        pit_constituent_intervals_path=pit_path,
     )
 
     assert result["status"] == "success"
-    assert result["as_of_date"] == "2023-12-14"
+    assert result["as_of_date"] == "2026-05-13"
 
     db_path = out_root / "regime_shadow.db"
     assert db_path.exists()
@@ -50,28 +65,28 @@ def test_shadow_runner_writes_expected_artifacts_and_ledger(tmp_path: Path) -> N
 
     assert rows == [
         (
-            "2023-12-14",
+            "2026-05-13",
             "success",
-            str(out_root / "outputs" / "2023-12-14.json"),
-            str(out_root / "input_archives" / "2023-12-14"),
+            str(out_root / "outputs" / "2026-05-13.json"),
+            str(out_root / "input_archives" / "2026-05-13"),
         )
     ]
     assert replay_tables == [("incidents",), ("replay_checks",)]
 
-    output_path = out_root / "outputs" / "2023-12-14.json"
+    output_path = out_root / "outputs" / "2026-05-13.json"
     payload = json.loads(output_path.read_text())
-    assert payload["as_of_date"] == "2023-12-14"
+    assert payload["as_of_date"] == "2026-05-13"
     assert payload["engine_version"].startswith("regime-engine-v")
     from regime_detection.config import load_default_regime_config
 
     assert payload["config_version"] == load_default_regime_config().config_version
 
-    archive_market = out_root / "input_archives" / "2023-12-14" / "market_data.parquet"
+    archive_market = out_root / "input_archives" / "2026-05-13" / "market_data.parquet"
     archived_df = pd.read_parquet(archive_market)
     archived_df["date"] = pd.to_datetime(archived_df["date"]).dt.date
-    assert archived_df["date"].max() == date(2023, 12, 14)
+    assert archived_df["date"].max() == date(2026, 5, 13)
 
-    checksums_path = out_root / "input_archives" / "2023-12-14" / "checksums.json"
+    checksums_path = out_root / "input_archives" / "2026-05-13" / "checksums.json"
     checksums = json.loads(checksums_path.read_text())
     assert "market_data.parquet" in checksums
     assert "events.yaml" in checksums
@@ -79,22 +94,24 @@ def test_shadow_runner_writes_expected_artifacts_and_ledger(tmp_path: Path) -> N
 
 def test_shadow_runner_archives_inputs_and_inserts_in_progress_before_classify(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     repo_root = Path(__file__).resolve().parents[1]
-    market_data_path = repo_root / "tests" / "fixtures" / "raw" / "market_data.parquet"
+    v2_daily_path = repo_root / "tests" / "fixtures" / "raw" / "v2" / "daily_ohlcv.csv"
+    market_data_path = v2_daily_path
     event_calendar_path = repo_root / "tests" / "fixtures" / "events" / "us_events.yaml"
     out_root = tmp_path / "shadow_run"
+    pit_path = _write_sector_pit_intervals(tmp_path / "pit.csv")
 
     mod = _load_runner_module()
     real_classify = mod.RegimeEngine.classify
 
     def _checked_classify(self, *, as_of_date, market_data, event_calendar, **kwargs):
-        archive_dir = out_root / "input_archives" / "2023-12-14"
+        archive_dir = out_root / "input_archives" / "2026-05-13"
         assert (archive_dir / "market_data.parquet").exists()
         assert (archive_dir / "events.yaml").exists()
         assert (archive_dir / "checksums.json").exists()
         with sqlite3.connect(out_root / "regime_shadow.db") as conn:
             row = conn.execute(
                 "SELECT status, input_archive_path FROM runs WHERE as_of_date = ?",
-                ("2023-12-14",),
+                ("2026-05-13",),
             ).fetchone()
         assert row == ("in_progress", str(archive_dir))
         return real_classify(
@@ -108,10 +125,12 @@ def test_shadow_runner_archives_inputs_and_inserts_in_progress_before_classify(t
     monkeypatch.setattr(mod.RegimeEngine, "classify", _checked_classify)
 
     result = mod.run_shadow(
-        as_of_date=date(2023, 12, 14),
+        as_of_date=date(2026, 5, 13),
         market_data_path=market_data_path,
         event_calendar_path=event_calendar_path,
         output_root=out_root,
+        v2_daily_ohlcv_path=v2_daily_path,
+        pit_constituent_intervals_path=pit_path,
     )
 
     assert result["status"] == "success"
@@ -119,9 +138,11 @@ def test_shadow_runner_archives_inputs_and_inserts_in_progress_before_classify(t
 
 def test_shadow_runner_records_failures_without_silent_skip(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     repo_root = Path(__file__).resolve().parents[1]
-    market_data_path = repo_root / "tests" / "fixtures" / "raw" / "market_data.parquet"
+    v2_daily_path = repo_root / "tests" / "fixtures" / "raw" / "v2" / "daily_ohlcv.csv"
+    market_data_path = v2_daily_path
     event_calendar_path = repo_root / "tests" / "fixtures" / "events" / "us_events.yaml"
     out_root = tmp_path / "shadow_run"
+    pit_path = _write_sector_pit_intervals(tmp_path / "pit.csv")
 
     mod = _load_runner_module()
 
@@ -131,10 +152,12 @@ def test_shadow_runner_records_failures_without_silent_skip(tmp_path: Path, monk
     monkeypatch.setattr(mod.RegimeEngine, "classify", _boom)
 
     result = mod.run_shadow(
-        as_of_date=date(2023, 12, 14),
+        as_of_date=date(2026, 5, 13),
         market_data_path=market_data_path,
         event_calendar_path=event_calendar_path,
         output_root=out_root,
+        v2_daily_ohlcv_path=v2_daily_path,
+        pit_constituent_intervals_path=pit_path,
     )
 
     assert result["status"] == "failure"
@@ -145,32 +168,38 @@ def test_shadow_runner_records_failures_without_silent_skip(tmp_path: Path, monk
             "SELECT as_of_date, status, failure_reason FROM runs"
         ).fetchall()
 
-    assert rows == [("2023-12-14", "failure", "forced classify failure")]
-    assert (out_root / "input_archives" / "2023-12-14" / "market_data.parquet").exists()
-    assert not (out_root / "outputs" / "2023-12-14.json").exists()
+    assert rows == [("2026-05-13", "failure", "forced classify failure")]
+    assert (out_root / "input_archives" / "2026-05-13" / "market_data.parquet").exists()
+    assert not (out_root / "outputs" / "2026-05-13.json").exists()
 
 
 def test_shadow_runner_rejects_duplicate_versioned_run_and_non_trading_day(tmp_path: Path) -> None:
     repo_root = Path(__file__).resolve().parents[1]
-    market_data_path = repo_root / "tests" / "fixtures" / "raw" / "market_data.parquet"
+    v2_daily_path = repo_root / "tests" / "fixtures" / "raw" / "v2" / "daily_ohlcv.csv"
+    market_data_path = v2_daily_path
     event_calendar_path = repo_root / "tests" / "fixtures" / "events" / "us_events.yaml"
     out_root = tmp_path / "shadow_run"
+    pit_path = _write_sector_pit_intervals(tmp_path / "pit.csv")
 
     mod = _load_runner_module()
     first = mod.run_shadow(
-        as_of_date=date(2023, 12, 14),
+        as_of_date=date(2026, 5, 13),
         market_data_path=market_data_path,
         event_calendar_path=event_calendar_path,
         output_root=out_root,
+        v2_daily_ohlcv_path=v2_daily_path,
+        pit_constituent_intervals_path=pit_path,
     )
     assert first["status"] == "success"
 
     with pytest.raises(sqlite3.IntegrityError):
         mod.run_shadow(
-            as_of_date=date(2023, 12, 14),
+            as_of_date=date(2026, 5, 13),
             market_data_path=market_data_path,
             event_calendar_path=event_calendar_path,
             output_root=out_root,
+            v2_daily_ohlcv_path=v2_daily_path,
+            pit_constituent_intervals_path=pit_path,
         )
 
     with pytest.raises(ValueError, match="NYSE trading day"):

@@ -534,7 +534,7 @@ def test_v1_default_config_path_only_v1_or_v2_labels_on_golden_dates(
 
 def test_v1_frozen_replay_roundtrip_still_passes(
     market_df_for_asof,
-    event_calendar_df,
+    synthetic_v2_kwargs_for_market_data,
 ) -> None:
     """Importing RegimeEngine and classifying a golden date should still
     yield a label in the 7-label V2 set. We do NOT modify the on-disk V1
@@ -544,10 +544,11 @@ def test_v1_frozen_replay_roundtrip_still_passes(
 
     engine = RegimeEngine()
     as_of = date(2023, 12, 14)
+    market_data = market_df_for_asof(as_of)
     out = engine.classify(
         as_of_date=as_of,
-        market_data=market_df_for_asof(as_of),
-        event_calendar=event_calendar_df,
+        market_data=market_data,
+        **synthetic_v2_kwargs_for_market_data(market_data),
     )
     assert out.trend_character.active_label in _V2_LABEL_SET
 

@@ -22,7 +22,7 @@ Precedence (V2 §2B spec line 2980):
     goldilocks > recovery_growth > reflation > stagflation_lite >
     earnings_contraction > earnings_expansion > unknown
 
-Per Ambiguity Log #48: DBC ETF substitutes for the Bloomberg Commodity
+Per implementation decision: DBC ETF substitutes for the Bloomberg Commodity
 Index (paid feed unavailable). The classifier emits a bias-warning row
 with code ``commodity_proxy_dbc_substitute``.
 
@@ -113,7 +113,7 @@ REQUIRED_MACRO_KEYS: tuple[str, ...] = (CPI_KEY, PMI_KEY, DGS10_KEY)
 
 
 # ---------------------------------------------------------------------------
-# Bias-warning constants (Ambiguity Log #48 — DBC substitute for the
+# Bias-warning constants (implementation decision — DBC substitute for the
 # paid Bloomberg Commodity Index).
 # ---------------------------------------------------------------------------
 
@@ -134,7 +134,7 @@ INFLATION_SURPRISE_NOWCAST_BIAS_SOURCE_URL = (
     "https://www.clevelandfed.org/indicators-and-data/inflation-nowcasting"
 )
 
-# Ambiguity Log #73 — `value_first_release` provenance row. Emitted
+# implementation decision — `value_first_release` provenance row. Emitted
 # only when the historical-replay first-release CPI substitution is in
 # effect.
 FIRST_RELEASE_CPI_PROVENANCE_CODE = "cpi_first_release_vintage_replay"
@@ -287,7 +287,7 @@ def compute_inflation_growth_features(
     """
     spy_index = spy_close.index
 
-    # Ambiguity Log #73 — first-release vs latest-revision CPI for
+    # implementation decision — first-release vs latest-revision CPI for
     # historical replay. When the vintage seam is supplied
     # AND the config flag enables the substitution, replace the
     # latest-revision `cpi_all_items` with the release-date-keyed
@@ -346,7 +346,7 @@ def compute_inflation_growth_features(
         pmi_manufacturing_series, window=config.pmi_slope_lookback_sessions
     ).rename("pmi_manufacturing_slope_21d")
 
-    # Aggregate forward EPS revision (Ambiguity Log #48). When the weekly
+    # Aggregate forward EPS revision (implementation decision). When the weekly
     # revision series from the EPS accumulator is supplied, forward-fill
     # it onto the SPY session index. `reindex(method="ffill")` carries
     # each weekly value forward even when its observation_date is not
@@ -422,7 +422,7 @@ def compute_inflation_growth_features(
                 "source_url": INFLATION_SURPRISE_NOWCAST_BIAS_SOURCE_URL,
             }
         )
-    # Ambiguity Log #73 — first-release CPI provenance row.
+    # implementation decision — first-release CPI provenance row.
     # Surfaces in the feature store output so replay consumers can audit
     # which CPI vintage powered each `as_of_date`.
     if cpi_first_release is not None and use_first_release_cpi_when_available:

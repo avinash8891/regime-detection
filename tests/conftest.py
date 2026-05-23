@@ -41,6 +41,7 @@ sys.path.insert(0, str(_REPO_ROOT))
 sys.path.insert(0, str(_REPO_ROOT / "src"))
 
 from regime_detection.engine import RegimeEngine  # noqa: E402
+from regime_detection.fragility_universe import CROSS_ASSET_SYMBOLS, SECTOR_ETFS  # noqa: E402
 from regime_detection.loaders import load_event_calendar  # noqa: E402
 
 
@@ -198,6 +199,40 @@ def _load_v2_fred_macro() -> pd.DataFrame:
     return df[keep].sort_values(["date", "logical_name"]).reset_index(drop=True)
 
 
+def _constituent_ohlcv_from_close_series(series: pd.Series) -> pd.DataFrame:
+    adjusted_close = series.astype(float).copy()
+    return pd.DataFrame(
+        {
+            "open": adjusted_close,
+            "high": adjusted_close,
+            "low": adjusted_close,
+            "close": adjusted_close,
+            "volume": pd.Series(1_000_000, index=adjusted_close.index, dtype="int64"),
+            "adjusted_close": adjusted_close,
+        }
+    )
+
+
+def _close_series_from_market_data(market_data: pd.DataFrame, symbol: str) -> pd.Series:
+    frame = market_data[market_data["symbol"] == symbol].copy()
+    if frame.empty:
+        raise RuntimeError(f"market_data missing {symbol} rows for synthetic V2 inputs")
+    frame = frame.sort_values("date")
+    return pd.Series(
+        frame["close"].astype(float).to_numpy(),
+        index=pd.to_datetime(frame["date"]),
+        name=symbol,
+    )
+
+
+def _scaled_close_series(base: pd.Series, *, scale: float, name: str) -> pd.Series:
+    return pd.Series(
+        base.astype(float).to_numpy() * scale,
+        index=base.index,
+        name=name,
+    )
+
+
 @pytest.fixture(scope="session")
 def raw_market_data() -> pd.DataFrame:
     return _load_market_data().copy()
@@ -249,6 +284,47 @@ def v2_close_series_by_symbol(v2_daily_ohlcv: pd.DataFrame) -> dict[str, pd.Seri
 
 
 @pytest.fixture(scope="session")
+def v2_sector_etf_closes(
+    v2_close_series_by_symbol: dict[str, pd.Series],
+) -> dict[str, pd.Series]:
+    missing = sorted(set(SECTOR_ETFS).difference(v2_close_series_by_symbol))
+    if missing:
+        raise RuntimeError(f"V2 daily OHLCV fixture missing sector ETFs: {missing}")
+    return {symbol: v2_close_series_by_symbol[symbol] for symbol in SECTOR_ETFS}
+
+
+@pytest.fixture(scope="session")
+def v2_cross_asset_closes(
+    v2_close_series_by_symbol: dict[str, pd.Series],
+) -> dict[str, pd.Series]:
+    missing = sorted(set(CROSS_ASSET_SYMBOLS).difference(v2_close_series_by_symbol))
+    if missing:
+        raise RuntimeError(f"V2 daily OHLCV fixture missing cross-asset symbols: {missing}")
+    return {symbol: v2_close_series_by_symbol[symbol] for symbol in CROSS_ASSET_SYMBOLS}
+
+
+@pytest.fixture(scope="session")
+def v2_pit_constituent_intervals() -> pd.DataFrame:
+    return pd.DataFrame(
+        {
+            "ticker": list(SECTOR_ETFS),
+            "start_date": [date(2019, 1, 2)] * len(SECTOR_ETFS),
+            "end_date": [None] * len(SECTOR_ETFS),
+        }
+    )
+
+
+@pytest.fixture(scope="session")
+def v2_constituent_ohlcv_by_symbol(
+    v2_sector_etf_closes: dict[str, pd.Series],
+) -> dict[str, pd.DataFrame]:
+    return {
+        symbol: _constituent_ohlcv_from_close_series(series)
+        for symbol, series in v2_sector_etf_closes.items()
+    }
+
+
+@pytest.fixture(scope="session")
 def v2_macro_series_by_key() -> dict[str, pd.Series]:
     macro = _load_v2_fred_macro()
     series_by_key: dict[str, pd.Series] = {}
@@ -265,6 +341,66 @@ def v2_macro_series_by_key() -> dict[str, pd.Series]:
 
 
 @pytest.fixture(scope="session")
+def v2_classify_kwargs_for_asof(
+    v2_market_df_for_asof,
+    event_calendar_df: pd.DataFrame,
+    v2_sector_etf_closes: dict[str, pd.Series],
+    v2_cross_asset_closes: dict[str, pd.Series],
+    v2_macro_series_by_key: dict[str, pd.Series],
+    v2_pit_constituent_intervals: pd.DataFrame,
+    v2_constituent_ohlcv_by_symbol: dict[str, pd.DataFrame],
+):
+    def _build(as_of: date) -> dict[str, object]:
+        return {
+            "market_data": v2_market_df_for_asof(as_of),
+            "event_calendar": event_calendar_df,
+            "sector_etf_closes": v2_sector_etf_closes,
+            "cross_asset_closes": v2_cross_asset_closes,
+            "macro_series": v2_macro_series_by_key,
+            "pit_constituent_intervals": v2_pit_constituent_intervals,
+            "constituent_ohlcv": v2_constituent_ohlcv_by_symbol,
+        }
+
+    return _build
+
+
+@pytest.fixture(scope="session")
+def synthetic_v2_kwargs_for_market_data(event_calendar_df: pd.DataFrame):
+    def _build(market_data: pd.DataFrame) -> dict[str, object]:
+        base = _close_series_from_market_data(market_data, "SPY")
+        sector_closes = {
+            symbol: _scaled_close_series(base, scale=1.0 + i * 0.01, name=symbol)
+            for i, symbol in enumerate(SECTOR_ETFS)
+        }
+        cross_asset_closes = {
+            symbol: _scaled_close_series(base, scale=0.8 + i * 0.015, name=symbol)
+            for i, symbol in enumerate(CROSS_ASSET_SYMBOLS)
+        }
+        first_day = base.index.min().date()
+        pit_intervals = pd.DataFrame(
+            {
+                "ticker": list(SECTOR_ETFS),
+                "start_date": [first_day] * len(SECTOR_ETFS),
+                "end_date": [None] * len(SECTOR_ETFS),
+            }
+        )
+        constituent_ohlcv = {
+            symbol: _constituent_ohlcv_from_close_series(series)
+            for symbol, series in sector_closes.items()
+        }
+        return {
+            "event_calendar": event_calendar_df,
+            "sector_etf_closes": sector_closes,
+            "cross_asset_closes": cross_asset_closes,
+            "macro_series": None,
+            "pit_constituent_intervals": pit_intervals,
+            "constituent_ohlcv": constituent_ohlcv,
+        }
+
+    return _build
+
+
+@pytest.fixture(scope="session")
 def event_calendar_df() -> pd.DataFrame:
     return load_event_calendar(_EVENT_CALENDAR_PATH).copy()
 
@@ -278,6 +414,7 @@ def golden_rows() -> list[dict[str, object]]:
 def _classify_all_golden_rows(
     golden_rows: list[dict[str, object]],
     market_df_for_asof,
+    synthetic_v2_kwargs_for_market_data,
 ) -> dict[date, object]:
     """Classify every golden date in ONE classify_window pass.
 
@@ -286,12 +423,10 @@ def _classify_all_golden_rows(
     cost ~10 times. classify_window emits a per-day timeline from a single
     pipeline run; we slice the requested golden dates out of its outputs.
 
-    PIT correctness: classify_window's per-day emission is V1 §2.2
-    stateless-replay compliant — each emitted day's classifier state is
-    computed using only data on or before that day. The trainable V2
-    seams (HMM/GMM/BOCPD) are NOT exercised here because this fixture
-    passes no V2 kwargs (no sector/cross-asset/macro/PIT inputs), so the
-    PIT-leak masking added in commit 19e395d is moot for this path.
+    PIT correctness: classify_window's per-day emission is stateless-replay
+    compliant — each emitted day's classifier state is computed using only
+    data on or before that day. The default V2 config requires transition
+    score inputs, so this fixture supplies the canonical V2 fixture bundle.
     """
     engine = RegimeEngine()
     golden_dates = sorted(
@@ -305,11 +440,18 @@ def _classify_all_golden_rows(
     # comfortably cover earliest..end inclusive plus engine min-history.
     span_days = (end - earliest).days
     lookback_sessions = max(1, int(span_days / 365.25 * 252) + 30)
+    market_data = market_df_for_asof(end)
+    kwargs = synthetic_v2_kwargs_for_market_data(market_data)
     timeline = engine.classify_window(
         end_date=end,
-        market_data=market_df_for_asof(end),
+        market_data=market_data,
         lookback_days=lookback_sessions,
-        event_calendar=load_event_calendar(_EVENT_CALENDAR_PATH),
+        event_calendar=kwargs["event_calendar"],
+        sector_etf_closes=kwargs["sector_etf_closes"],
+        cross_asset_closes=kwargs["cross_asset_closes"],
+        macro_series=kwargs["macro_series"],
+        pit_constituent_intervals=kwargs["pit_constituent_intervals"],
+        constituent_ohlcv=kwargs["constituent_ohlcv"],
     )
     by_date = {out.as_of_date: out for out in timeline.outputs}
     missing = [d for d in golden_dates if d not in by_date]
@@ -361,10 +503,14 @@ def walkforward_2023_dec_template(tmp_path_factory: pytest.TempPathFactory) -> P
 
 def _build_real_v2_classify_window_2026_05_13(
     v2_market_df_for_asof,
-    v2_close_series_by_symbol: dict[str, pd.Series],
+    v2_sector_etf_closes: dict[str, pd.Series],
+    v2_cross_asset_closes: dict[str, pd.Series],
+    v2_macro_series_by_key: dict[str, pd.Series],
+    v2_pit_constituent_intervals: pd.DataFrame,
+    v2_constituent_ohlcv_by_symbol: dict[str, pd.DataFrame],
 ):
     """Compute classify_window once for the real V2 fixture at 2026-05-13
-    with the canonical sector + cross-asset closes (no macro). The two
+    with the canonical full V2 fixture bundle. The two
     integration tests asserting on this exact engine state (one via
     ``classify_window``, one via ``classify`` which delegates to
     ``classify_window(lookback_days=1).outputs[-1]`` — see
@@ -373,29 +519,28 @@ def _build_real_v2_classify_window_2026_05_13(
     monkeypatch in ``pytest_configure`` cut the build cost from ~90s to
     ~37s — small enough that the cross-worker setup-wait pays off.
     """
-    from regime_detection.engine import RegimeEngine
-    from regime_detection.fragility_universe import (
-        CROSS_ASSET_SYMBOLS,
-        SECTOR_ETFS,
-    )
-
     as_of = date(2026, 5, 13)
     return RegimeEngine().classify_window(
         end_date=as_of,
         market_data=v2_market_df_for_asof(as_of),
         lookback_days=1,
         event_calendar=load_event_calendar(_EVENT_CALENDAR_PATH),
-        sector_etf_closes={s: v2_close_series_by_symbol[s] for s in SECTOR_ETFS},
-        cross_asset_closes={
-            s: v2_close_series_by_symbol[s] for s in CROSS_ASSET_SYMBOLS
-        },
+        sector_etf_closes=v2_sector_etf_closes,
+        cross_asset_closes=v2_cross_asset_closes,
+        macro_series=v2_macro_series_by_key,
+        pit_constituent_intervals=v2_pit_constituent_intervals,
+        constituent_ohlcv=v2_constituent_ohlcv_by_symbol,
     )
 
 
 @pytest.fixture(scope="session")
 def real_v2_classify_window_2026_05_13(
     v2_market_df_for_asof,
-    v2_close_series_by_symbol,
+    v2_sector_etf_closes,
+    v2_cross_asset_closes,
+    v2_macro_series_by_key,
+    v2_pit_constituent_intervals,
+    v2_constituent_ohlcv_by_symbol,
     tmp_path_factory: pytest.TempPathFactory,
     worker_id: str,
 ):
@@ -405,7 +550,12 @@ def real_v2_classify_window_2026_05_13(
     """
     if worker_id == "master":
         return _build_real_v2_classify_window_2026_05_13(
-            v2_market_df_for_asof, v2_close_series_by_symbol
+            v2_market_df_for_asof,
+            v2_sector_etf_closes,
+            v2_cross_asset_closes,
+            v2_macro_series_by_key,
+            v2_pit_constituent_intervals,
+            v2_constituent_ohlcv_by_symbol,
         )
 
     shared_dir = tmp_path_factory.getbasetemp().parent
@@ -419,7 +569,12 @@ def real_v2_classify_window_2026_05_13(
         fd = os.open(lock_path, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
         os.close(fd)
         result = _build_real_v2_classify_window_2026_05_13(
-            v2_market_df_for_asof, v2_close_series_by_symbol
+            v2_market_df_for_asof,
+            v2_sector_etf_closes,
+            v2_cross_asset_closes,
+            v2_macro_series_by_key,
+            v2_pit_constituent_intervals,
+            v2_constituent_ohlcv_by_symbol,
         )
         tmp = cache_path.with_suffix(".pkl.tmp")
         tmp.write_bytes(pickle.dumps(result))
@@ -444,6 +599,7 @@ def classified_golden_outputs(
     tmp_path_factory: pytest.TempPathFactory,
     golden_rows: list[dict[str, object]],
     market_df_for_asof,
+    synthetic_v2_kwargs_for_market_data,
     worker_id: str,
 ) -> dict[date, object]:
     """Session-scoped fixture, shared across pytest-xdist workers via a disk
@@ -452,7 +608,11 @@ def classified_golden_outputs(
     other workers poll for the pickle to land. This eliminates the per-worker
     rebuild cost (~81s × N workers) that previously dominated wall-clock."""
     if worker_id == "master":
-        return _classify_all_golden_rows(golden_rows, market_df_for_asof)
+        return _classify_all_golden_rows(
+            golden_rows,
+            market_df_for_asof,
+            synthetic_v2_kwargs_for_market_data,
+        )
 
     shared_dir = tmp_path_factory.getbasetemp().parent
     cache_path = shared_dir / "classified_golden_outputs.pkl"
@@ -465,7 +625,11 @@ def classified_golden_outputs(
         # O_CREAT | O_EXCL: atomic single-winner election across workers.
         fd = os.open(lock_path, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
         os.close(fd)
-        outputs = _classify_all_golden_rows(golden_rows, market_df_for_asof)
+        outputs = _classify_all_golden_rows(
+            golden_rows,
+            market_df_for_asof,
+            synthetic_v2_kwargs_for_market_data,
+        )
         tmp_path = cache_path.with_suffix(".pkl.tmp")
         tmp_path.write_bytes(pickle.dumps(outputs))
         tmp_path.replace(cache_path)

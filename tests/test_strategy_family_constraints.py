@@ -236,7 +236,7 @@ def test_regime_output_carries_strategy_family_constraints_when_configured(
 def test_regime_output_omits_strategy_family_constraints_when_config_absent(
     market_df_for_asof,
     golden_rows: list[dict[str, object]],
-    event_calendar_df,
+    synthetic_v2_kwargs_for_market_data,
 ) -> None:
     base = load_default_regime_config().model_dump()
     base["strategy_family_constraints"] = None
@@ -245,11 +245,12 @@ def test_regime_output_omits_strategy_family_constraints_when_config_absent(
 
     engine = RegimeEngine()
     as_of = date.fromisoformat(str(golden_rows[0]["as_of_date"]))
+    market_data = market_df_for_asof(as_of)
     out = engine.classify(
         as_of_date=as_of,
-        market_data=market_df_for_asof(as_of),
+        market_data=market_data,
         config=no_sfc,
-        event_calendar=event_calendar_df,
+        **synthetic_v2_kwargs_for_market_data(market_data),
     )
     assert out.strategy_family_constraints is None
     assert "strategy_family_constraints" not in out.model_dump()

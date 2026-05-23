@@ -59,7 +59,7 @@ def _build_credit_funding_for_spread_source(
     # Resolve the spread-source-specific series + bias-warning code. The
     # §2C rule schema is scale-invariant (percentile + slope only), so the
     # identical pipeline runs on either the real-OAS metric or the
-    # TLT-proxy metric (ADR 0007 / Ambiguity Log #71) — two parallel outputs,
+    # TLT-proxy metric (ADR 0007 / implementation decision) — two parallel outputs,
     # never blended into one series or one label.
     if spread_source == "oas":
         hy_spread_63d = features.hy_oas_63d
@@ -323,7 +323,7 @@ def build_credit_funding_proxy_axis_series(
     feature_store: FeatureStore,
 ) -> dict[date, CreditFundingOutput] | None:
     """TLT-vs-HYG/LQD proxy §2C labels → ``RegimeOutput.credit_funding_state_proxy``
-    (ADR 0007 / Ambiguity Log #71). Same scale-invariant rule schema, parallel run on
+    (ADR 0007 / implementation decision). Same scale-invariant rule schema, parallel run on
     the proxy series — never blended with the real-OAS labels."""
     return _build_credit_funding_for_spread_source(
         context, feature_store, spread_source="proxy"

@@ -98,39 +98,37 @@ def test_default_config_is_packaged_and_loadable() -> None:
     assert cfg.volatility_state.deescalation_days_by_label
 
 
-def test_classify_emits_regime_output_shape(market_df_for_asof, event_calendar_df) -> None:
+def test_classify_emits_regime_output_shape(v2_classify_kwargs_for_asof) -> None:
     as_of = date(2026, 5, 5)
     assert is_nyse_trading_day(as_of)
     engine = RegimeEngine()
-    df = market_df_for_asof(as_of)
-    out = engine.classify(as_of_date=as_of, market_data=df, event_calendar=event_calendar_df)
+    out = engine.classify(as_of_date=as_of, **v2_classify_kwargs_for_asof(as_of))
     assert out.engine_version == engine_version()
     assert out.config_version == engine.config.config_version
     assert out.as_of_date == as_of
     assert out.market == "SPY"
 
 
-def test_classify_accepts_timestamp_as_of_date(market_df_for_asof, event_calendar_df) -> None:
+def test_classify_accepts_timestamp_as_of_date(v2_classify_kwargs_for_asof) -> None:
     engine = RegimeEngine()
-    df = market_df_for_asof(date(2026, 5, 5))
     # Common caller input: pandas Timestamp. Must be accepted and normalized.
     out = engine.classify(
         as_of_date=pd.Timestamp("2026-05-05", tz="America/New_York"),
-        market_data=df,
-        event_calendar=event_calendar_df,
+        **v2_classify_kwargs_for_asof(date(2026, 5, 5)),
     )
     assert out.as_of_date == date(2026, 5, 5)
 
 
-def test_classify_accepts_market_data_with_string_dates(market_df_for_asof, event_calendar_df) -> None:
+def test_classify_accepts_market_data_with_string_dates(v2_classify_kwargs_for_asof) -> None:
     engine = RegimeEngine()
-    df = market_df_for_asof(date(2026, 5, 5)).copy()
+    kwargs = v2_classify_kwargs_for_asof(date(2026, 5, 5))
+    df = kwargs["market_data"].copy()
     df["date"] = pd.to_datetime(df["date"]).dt.strftime("%Y-%m-%d")
+    kwargs["market_data"] = df
 
     out = engine.classify(
         as_of_date=date(2026, 5, 5),
-        market_data=df,
-        event_calendar=event_calendar_df,
+        **kwargs,
     )
 
     assert out.as_of_date == date(2026, 5, 5)

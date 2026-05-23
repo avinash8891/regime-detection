@@ -180,19 +180,14 @@ def test_timeline_emits_network_fragility_unknown_in_pure_v1_mode(
     market_df_for_asof,
     event_calendar_df,
 ) -> None:
-    """Regression: without V2 data, network_fragility still emits the v2
-    'unknown' placeholder shape locked in Phase C."""
+    """Default V2 timeline fails loudly when required V2 inputs are absent."""
     as_of = date(2023, 12, 14)
-    out = RegimeEngine().classify(
-        as_of_date=as_of,
-        market_data=market_df_for_asof(as_of),
-        event_calendar=event_calendar_df,
-    )
-
-    assert out.network_fragility.raw_label == "unknown"
-    assert out.network_fragility.stable_label == "unknown"
-    assert out.network_fragility.active_label == "unknown"
-    assert out.network_fragility.mode == "sector_cross_asset_24"
+    with pytest.raises(RuntimeError, match="transition_risk requires score inputs"):
+        RegimeEngine().classify(
+            as_of_date=as_of,
+            market_data=market_df_for_asof(as_of),
+            event_calendar=event_calendar_df,
+        )
 
 
 def test_timeline_pulls_network_fragility_from_axis_bundle_when_sector_data_present(

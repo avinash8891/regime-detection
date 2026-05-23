@@ -353,7 +353,7 @@ def test_feature_store_change_point_seam_present_with_default_config(
 def test_regime_output_carries_change_point_when_seam_present(
     raw_market_data: pd.DataFrame,
     market_df_for_asof,
-    event_calendar_df,
+    synthetic_v2_kwargs_for_market_data,
 ) -> None:
     from regime_detection.engine import RegimeEngine
 
@@ -370,7 +370,7 @@ def test_regime_output_carries_change_point_when_seam_present(
         as_of_date=last_session,
         market_data=market_data,
         config=cfg,
-        event_calendar=event_calendar_df,
+        **synthetic_v2_kwargs_for_market_data(market_data),
     )
     assert out.change_point is not None
     assert out.change_point.method == "BOCPD"

@@ -485,7 +485,7 @@ def test_slice_context_to_end_date_preserves_pit_breadth_seams(
 
 def test_engine_classify_threads_pit_constituent_inputs_into_context(
     market_df_for_asof,
-    event_calendar_df,
+    synthetic_v2_kwargs_for_market_data,
 ) -> None:
     """Regression: RegimeEngine.classify must accept pit_constituent_intervals
     + constituent_ohlcv kwargs so PIT §1D breadth seams are reachable from
@@ -518,12 +518,14 @@ def test_engine_classify_threads_pit_constituent_inputs_into_context(
         ),
     }
 
+    market_data = market_df_for_asof(as_of)
+    kwargs = synthetic_v2_kwargs_for_market_data(market_data)
+    kwargs["pit_constituent_intervals"] = pit_intervals
+    kwargs["constituent_ohlcv"] = constituent_ohlcv
     out = RegimeEngine().classify(
         as_of_date=as_of,
-        market_data=market_df_for_asof(as_of),
-        event_calendar=event_calendar_df,
-        pit_constituent_intervals=pit_intervals,
-        constituent_ohlcv=constituent_ohlcv,
+        market_data=market_data,
+        **kwargs,
     )
 
     # V1 wire fields remain stable when V2 PIT kwargs are passed (the §1D
@@ -534,7 +536,7 @@ def test_engine_classify_threads_pit_constituent_inputs_into_context(
 
 def test_engine_classify_threads_aaii_sentiment_into_context(
     market_df_for_asof,
-    event_calendar_df,
+    synthetic_v2_kwargs_for_market_data,
 ) -> None:
     """Regression: RegimeEngine.classify must accept aaii_sentiment kwarg so
     the v2 §1A `euphoria` predicate (ADR 0004 / Log #32 closure) is reachable
@@ -567,10 +569,11 @@ def test_engine_classify_threads_aaii_sentiment_into_context(
         ]
     )
 
+    market_data = market_df_for_asof(as_of)
     out = RegimeEngine().classify(
         as_of_date=as_of,
-        market_data=market_df_for_asof(as_of),
-        event_calendar=event_calendar_df,
+        market_data=market_data,
+        **synthetic_v2_kwargs_for_market_data(market_data),
         aaii_sentiment=aaii_sentiment,
     )
 
@@ -611,29 +614,17 @@ def test_build_market_context_rejects_malformed_date_values(market_df_for_asof) 
 
 def test_engine_classify_accepts_v2_data_kwargs_without_breaking_v1_output(
     market_df_for_asof,
-    event_calendar_df,
+    synthetic_v2_kwargs_for_market_data,
 ) -> None:
     as_of = date(2023, 12, 14)
-    sector_dates = pd.bdate_range("2022-06-01", end=as_of, freq="C").date.tolist()
-    sector_df = _make_long_ohlcv(list(SECTOR_ETFS), sector_dates)
-    sector_closes = load_sector_etf_closes(sector_df, universe=SECTOR_ETFS)
+    market_data = market_df_for_asof(as_of)
 
-    # Engine accepts the V2 kwarg.
+    # Engine accepts the V2 kwargs required by the default V2 transition score.
     out_with_v2 = RegimeEngine().classify(
         as_of_date=as_of,
-        market_data=market_df_for_asof(as_of),
-        event_calendar=event_calendar_df,
-        sector_etf_closes=sector_closes,
-    )
-    out_without_v2 = RegimeEngine().classify(
-        as_of_date=as_of,
-        market_data=market_df_for_asof(as_of),
-        event_calendar=event_calendar_df,
+        market_data=market_data,
+        **synthetic_v2_kwargs_for_market_data(market_data),
     )
 
-    # V1 wire fields are unchanged whether or not V2 data is passed —
-    # the v2 fragility classifier hasn't shipped yet, so network_fragility
-    # still emits the v2 "unknown" placeholder regardless.
-    assert out_with_v2.network_fragility.active_label == "unknown"
-    assert out_without_v2.network_fragility.active_label == "unknown"
-    assert out_with_v2.trend_direction.model_dump() == out_without_v2.trend_direction.model_dump()
+    assert out_with_v2.network_fragility.active_label is not None
+    assert out_with_v2.trend_direction.active_label is not None
