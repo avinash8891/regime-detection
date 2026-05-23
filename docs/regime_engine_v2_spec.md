@@ -3297,16 +3297,17 @@ events:
 **Wire output shape** (nested under `structural_causal_state.event_calendar`):
 ```json
 {
-  "raw_label": "fed_week",
-  "stable_label": "fed_week",
-  "active_label": "fed_week",
+  "primary_label": "fed_week",
+  "matching_labels": ["fed_week", "expiry_week"],
   "evidence": {
-    "all_matching_events": ["fed_week", "expiry_week"],
-    "selected_via_precedence": "fed_week"
+    "selection_method": "precedence"
   }
 }
 ```
-The §2D labels extend the V1 `EventCalendarOutput` model. No separate output struct — the label set grows but the shape is unchanged.
+The event calendar is deterministic schedule/window evidence, not a hysteresis
+axis: it does not expose `raw_label`, `stable_label`, or `active_label`.
+Downstream logic consumes `matching_labels`; display/reporting can use
+`primary_label` as the compact precedence-selected label.
 
 ---
 
@@ -3551,7 +3552,7 @@ trend_direction.active_label
 trend_character.active_label
 volatility_state.active_label
 breadth_state.active_label
-event_calendar.active_label
+event_calendar.matching_labels
 SPY close
 SPY 50-day moving average
 stable-label switch history
@@ -3615,7 +3616,11 @@ transition_score = weighted_sum([
 
 ### 4.2 Component Score Definitions
 
-Each component produces a 0.0–1.0 score.
+Each component produces a 0.0–1.0 score. The numeric scales below are the
+canonical defaults; they live in
+`TransitionScoreConfig.scales` (`TransitionComponentScales`) and can be
+recalibrated per-deployment without code changes. See
+`docs/transition_risk.md` §2 for the operational scale table.
 
 `volatility_acceleration_score`:
 ```python
@@ -3675,12 +3680,15 @@ score = max(
 
 `macro_event_score`:
 ```python
-score = 1.0 if event_calendar.label in [
+score = 1.0 if any(label in event_calendar.matching_labels for label in [
     "fed_week", "cpi_week", "nfp_week",
     # V2 §2D additions:
     "budget_week", "election_window", "global_rate_decision",
-] else 0.0
+]) else 0.0
 ```
+
+The transition-risk audit surface also records the matching labels that drove
+this component in `transition_risk.evidence.macro_event_labels`.
 
 `geopolitical_event` is treated separately (high-impact ad-hoc — not part of the routine `macro_event_score`; expected to manifest through `correlation_to_one` / `deleveraging` / `crisis_vol` labels rather than through scheduled-event scoring). Its candidate evidence is generated from GPR, GDELT, and HDX HAPI when available; ACLED and Uppsala/UCDP evidence is TODO pending entitled API keys/account access. Source corroboration is not promotion; a human approval overlay remains mandatory.
 
@@ -3715,6 +3723,19 @@ transition_score:
     model_instability: 0.08
   minimum_component_weight_coverage: 0.75
 ```
+
+`TransitionScoreConfig` exposes three additional sub-configs whose defaults
+preserve the historical inline behavior:
+
+- `transition_score.scales` (`TransitionComponentScales`) — per-component
+  normalization scales used by §4.2.
+- `transition_score.overrides` (`TransitionOverrideThresholds`) — numeric
+  gates for the hard-override rules in §4.5 (`credit_stress`,
+  `correlation_fragility`, `macro_event_min`, `score_elevated_min`) and
+  the `primary_drivers` inclusion floor (`primary_driver_min`, default
+  `0.35`).
+- `transition_score.initial_active_state` — optional seed for the
+  final-state debounce (see §4.5).
 
 If too much evidence is missing, `compose_transition_score_for_session` returns
 `score=None`, `components=None`, and the final transition-risk state becomes
@@ -3776,6 +3797,14 @@ axis data should not erase an explicit emergency, stress, recovery, event, or
 cooldown signal. It still beats ordinary score-band states when no concrete
 rule is active.
 
+The precise trigger condition for every hard-override rule
+(`bear_stress`, `fragile_bull`, `recovery_attempt`, `sideways_stress`,
+`event_transition_watch`, `post_switch_cooldown`) — including the
+component-score and active-label predicates and the
+`TransitionScoreConfig.overrides.*` thresholds that gate them — is
+tabulated in `docs/transition_risk.md` §4. The spec defines the
+intent; that doc defines the implementation surface.
+
 Final `transition_risk.state` changes are debounced by
 `transition_score.state_confirmation_days`. Immediate states use `1`
 confirmation day (`crisis`, `bear_stress`, `insufficient_data`, `watch`,
@@ -3784,6 +3813,14 @@ confirmation day (`crisis`, `bear_stress`, `insufficient_data`, `watch`,
 `recovery_attempt`). While a state change is pending, the public state remains
 at the prior active state and `state_confirmation_pending` is appended to
 `triggered_rules`.
+
+By default the **first session** in a run is accepted immediately —
+backfill jobs have no prior session to seed the debounce. Live-streaming
+deployments can set `transition_score.initial_active_state: stable` (or
+any other state present in `state_confirmation_days`) to seed the
+debounce so the first session must also clear its confirmation window
+before promoting. This is opt-in because enabling it perturbs historical
+backfill output for one session per run.
 
 History evidence records both the number of axes that changed on the current
 session and the rolling recent axis-switch count. These fields are exposed as
