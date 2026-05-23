@@ -361,7 +361,12 @@ def test_generator_includes_acled_ucdp_and_hdx_candidate_sources() -> None:
         ),
         (dt.date(2022, 2, 24), "acled:events", "acled_conflict_event", True),
         (dt.date(2022, 2, 24), "gdelt:events-v2", "gdelt_volume_spike", True),
-        (dt.date(2022, 2, 24), "gpr:caldara-iacoviello", "gpr_spike", True),
+        (
+            dt.date(2022, 2, 24),
+            "gpr:caldara-iacoviello",
+            "gpr_headline_spike",
+            True,
+        ),
         (dt.date(2022, 2, 24), "ucdp:ged-candidate", "ucdp_organized_violence", True),
     ]
 

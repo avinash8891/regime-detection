@@ -443,11 +443,35 @@ def parse_gpr_table(payload: str | bytes) -> pd.DataFrame:
     )
     if date_column is None or value_column is None:
         raise ValueError("GPR table must contain date and gpr/GPRD columns")
-    out = df[[date_column, value_column]].rename(
-        columns={date_column: "date", value_column: "gpr"}
+    optional_columns = {
+        "gpr_act": lower_columns.get("gpr_act") or lower_columns.get("gprd_act"),
+        "gpr_threat": lower_columns.get("gpr_threat")
+        or lower_columns.get("gprd_threat"),
+        "gpr_ma7": lower_columns.get("gpr_ma7") or lower_columns.get("gprd_ma7"),
+        "gpr_ma30": lower_columns.get("gpr_ma30") or lower_columns.get("gprd_ma30"),
+        "article_count": lower_columns.get("n10d")
+        or lower_columns.get("article_count")
+        or lower_columns.get("articles"),
+        "event": lower_columns.get("event"),
+    }
+    out = pd.DataFrame(
+        {
+            "date": _parse_gpr_dates(df[date_column]),
+            "gpr": pd.to_numeric(df[value_column], errors="coerce"),
+        }
     )
-    out["date"] = pd.to_datetime(out["date"]).dt.date
-    out["gpr"] = pd.to_numeric(out["gpr"], errors="coerce")
+    for output_column, source_column in optional_columns.items():
+        if output_column == "event":
+            if source_column is None:
+                out[output_column] = ""
+            else:
+                out[output_column] = df[source_column].fillna("").astype(str)
+            continue
+        out[output_column] = (
+            pd.to_numeric(df[source_column], errors="coerce")
+            if source_column is not None
+            else pd.NA
+        )
     return out.dropna(subset=["gpr"]).sort_values("date").reset_index(drop=True)
 
 
@@ -472,8 +496,63 @@ def detect_gpr_spikes(
         threshold = float(mean) + stddev_threshold * float(std)
         value = float(row["gpr"])
         if value > threshold:
-            rows.append({"date": row["date"], "value": value, "threshold": threshold})
+            act_value = _optional_float(row.get("gpr_act"))
+            threat_value = _optional_float(row.get("gpr_threat"))
+            ma7 = _optional_float(row.get("gpr_ma7"))
+            ma30 = _optional_float(row.get("gpr_ma30"))
+            article_count = _optional_float(row.get("article_count"))
+            components = ["headline"]
+            if act_value is not None and act_value > threshold:
+                components.append("acts")
+            if threat_value is not None and threat_value > threshold:
+                components.append("threats")
+            if ma7 is not None and ma7 > threshold:
+                components.append("persistent_7d")
+            if ma30 is not None and ma30 > threshold:
+                components.append("persistent_30d")
+            dominant_component = "headline"
+            component_values = {
+                "acts": act_value,
+                "threats": threat_value,
+            }
+            valid_components = {
+                name: component_value
+                for name, component_value in component_values.items()
+                if component_value is not None and component_value > threshold
+            }
+            if valid_components:
+                dominant_component = max(valid_components, key=valid_components.__getitem__)
+            rows.append(
+                {
+                    "date": row["date"],
+                    "value": value,
+                    "threshold": threshold,
+                    "act_value": act_value,
+                    "threat_value": threat_value,
+                    "ma7": ma7,
+                    "ma30": ma30,
+                    "article_count": article_count,
+                    "event": str(row.get("event", "")),
+                    "spike_components": tuple(components),
+                    "dominant_component": dominant_component,
+                }
+            )
     return rows
+
+
+def _parse_gpr_dates(series: pd.Series) -> pd.Series:
+    text = series.astype(str).str.strip()
+    compact = text.str.fullmatch(r"\d{8}")
+    parsed = pd.to_datetime(series, errors="coerce")
+    if compact.any():
+        parsed.loc[compact] = pd.to_datetime(text.loc[compact], format="%Y%m%d")
+    return parsed.dt.date
+
+
+def _optional_float(value: object) -> float | None:
+    if pd.isna(value):
+        return None
+    return float(value)
 
 
 def parse_gdelt_volume_table(payload: str | bytes) -> list[dict[str, object]]:
@@ -570,20 +649,75 @@ def _source_url_or_export_url(value: str, export_url: str) -> str:
 
 
 def _gpr_candidate(row: dict[str, object], anchor_date: dt.date) -> EventCandidate:
+    dominant_component = str(row.get("dominant_component", "headline"))
+    components = tuple(row.get("spike_components", ("headline",)))
+    article_count = _optional_float(row.get("article_count"))
+    has_directional_component = bool({"acts", "threats"}.intersection(components))
+    importance = (
+        "high"
+        if len(components) >= 3
+        or (article_count is not None and article_count >= 500)
+        else "medium"
+    )
+    confidence = (
+        "high"
+        if has_directional_component
+        and article_count is not None
+        and article_count >= 500
+        else "medium"
+    )
+    event_text = str(row.get("event", "")).strip()
+    raw_title = (
+        event_text
+        if event_text
+        else f"GPR {_component_title(dominant_component)} geopolitical risk spike"
+    )
     return EventCandidate(
         date=anchor_date,
         event_type="geopolitical_event",
         market="GLOBAL",
-        importance="medium",
+        importance=importance,
         source_id=GPR_SOURCE_ID,
         source_url=GPR_DAILY_URL,
-        raw_title="GPR geopolitical risk spike",
-        raw_snippet=f"GPR daily value {row['value']:.2f} exceeded trailing threshold {row['threshold']:.2f}.",
+        raw_title=raw_title,
+        raw_snippet=_gpr_snippet(row, components, article_count),
         is_future_scheduled=False,
-        confidence="medium",
+        confidence=confidence,
         requires_manual_review=True,
-        event_subtype="gpr_spike",
+        event_subtype=f"gpr_{dominant_component}_spike",
     )
+
+
+def _component_title(component: str) -> str:
+    return {
+        "acts": "acts-driven",
+        "threats": "threats-driven",
+        "headline": "headline",
+    }.get(component, "headline")
+
+
+def _gpr_snippet(
+    row: dict[str, object],
+    components: tuple[object, ...],
+    article_count: float | None,
+) -> str:
+    parts = [
+        f"GPR daily value {row['value']:.2f} exceeded trailing threshold {row['threshold']:.2f}",
+        f"components={','.join(str(component) for component in components)}",
+    ]
+    optional_parts = (
+        ("acts", row.get("act_value")),
+        ("threats", row.get("threat_value")),
+        ("ma7", row.get("ma7")),
+        ("ma30", row.get("ma30")),
+    )
+    for label, value in optional_parts:
+        number = _optional_float(value)
+        if number is not None:
+            parts.append(f"{label}={number:.2f}")
+    if article_count is not None:
+        parts.append(f"articles={article_count:.0f}")
+    return "; ".join(parts) + "."
 
 
 def _gdelt_candidate(row: dict[str, object]) -> EventCandidate:

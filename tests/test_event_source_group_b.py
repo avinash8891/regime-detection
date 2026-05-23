@@ -21,6 +21,7 @@ from regime_data_fetch.event_sources.deterministic_budget import (
 from regime_data_fetch.event_sources.validators_gpr_gdelt import GPRGDELTSignalGenerator
 from regime_data_fetch.event_sources.validators_gpr_gdelt import (
     ACLED_SOURCE_ID,
+    detect_gpr_spikes,
     parse_gdelt_event_export,
     parse_gpr_table,
 )
@@ -153,13 +154,13 @@ approvals:
 
 
 def test_gpr_gdelt_generator_flags_real_geopolitical_spike_date() -> None:
-    gpr_csv = """date,gpr
-2022-02-20,100
-2022-02-21,101
-2022-02-22,99
-2022-02-23,101
-2022-02-24,500
-2022-02-25,120
+    gpr_csv = """date,gpr,gpr_act,gpr_threat,gpr_ma7,gpr_ma30,N10D
+2022-02-20,100,100,100,100,100,100
+2022-02-21,101,100,101,100,100,100
+2022-02-22,99,99,100,100,100,100
+2022-02-23,101,100,101,100,100,100
+2022-02-24,500,700,125,220,150,900
+2022-02-25,120,110,115,150,125,200
 """
     gdelt_csv = """date,event_count,dominant_theme,source_url
 2022-02-24,1200,Russia invasion of Ukraine,https://example.test/gdelt/20220224
@@ -177,14 +178,43 @@ def test_gpr_gdelt_generator_flags_real_geopolitical_spike_date() -> None:
     validations = generator.validate(candidates, store=None, run_id=None)
 
     assert [
-        (candidate.date, candidate.event_type, candidate.source_id)
+        (
+            candidate.date,
+            candidate.event_type,
+            candidate.source_id,
+            candidate.event_subtype,
+            candidate.importance,
+            candidate.confidence,
+            candidate.raw_title,
+        )
         for candidate in candidates
     ] == [
-        (dt.date(2022, 2, 24), "geopolitical_event", "gdelt:events-v2"),
-        (dt.date(2022, 2, 24), "geopolitical_event", "gpr:caldara-iacoviello"),
+        (
+            dt.date(2022, 2, 24),
+            "geopolitical_event",
+            "gdelt:events-v2",
+            "gdelt_volume_spike",
+            "medium",
+            "medium",
+            "Russia invasion of Ukraine",
+        ),
+        (
+            dt.date(2022, 2, 24),
+            "geopolitical_event",
+            "gpr:caldara-iacoviello",
+            "gpr_acts_spike",
+            "high",
+            "high",
+            "GPR acts-driven geopolitical risk spike",
+        ),
     ]
     assert all(candidate.requires_manual_review for candidate in candidates)
-    assert all(candidate.confidence == "medium" for candidate in candidates)
+    gpr_candidate = candidates[1]
+    assert gpr_candidate.raw_snippet == (
+        "GPR daily value 500.00 exceeded trailing threshold 102.22; "
+        "components=headline,acts,threats,persistent_7d,persistent_30d; "
+        "acts=700.00; threats=125.00; ma7=220.00; ma30=150.00; articles=900."
+    )
     assert {
         (validation.candidate_key, validation.validator_id, validation.verdict)
         for validation in validations
@@ -254,13 +284,13 @@ def test_parse_gdelt_event_export_filters_to_expected_export_date() -> None:
 
 
 def test_gpr_generator_fetches_gdelt_daily_exports_for_spike_dates() -> None:
-    gpr_csv = """date,gpr
-2022-02-20,100
-2022-02-21,101
-2022-02-22,99
-2022-02-23,101
-2022-02-24,500
-2022-02-25,120
+    gpr_csv = """date,gpr,gpr_act,gpr_threat,gpr_ma7,gpr_ma30,N10D
+2022-02-20,100,100,100,100,100,100
+2022-02-21,101,100,101,100,100,100
+2022-02-22,99,99,100,100,100,100
+2022-02-23,101,100,101,100,100,100
+2022-02-24,500,700,125,220,150,900
+2022-02-25,120,110,115,150,125,200
 """
 
     def gdelt_daily_fetcher(day: dt.date) -> bytes:
@@ -300,7 +330,9 @@ def test_gpr_generator_fetches_gdelt_daily_exports_for_spike_dates() -> None:
         (
             dt.date(2022, 2, 24),
             "gpr:caldara-iacoviello",
-            "GPR daily value 500.00 exceeded trailing threshold 102.22.",
+            "GPR daily value 500.00 exceeded trailing threshold 102.22; "
+            "components=headline,acts,threats,persistent_7d,persistent_30d; "
+            "acts=700.00; threats=125.00; ma7=220.00; ma30=150.00; articles=900.",
         ),
     ]
     assert {
@@ -450,9 +482,125 @@ def test_parse_gpr_table_logs_excel_parse_failure_before_csv_fallback(
     frame = parse_gpr_table(b"date,gpr\n2026-05-01,123\n")
 
     assert frame.to_dict(orient="records") == [
-        {"date": dt.date(2026, 5, 1), "gpr": 123}
+        {
+            "date": dt.date(2026, 5, 1),
+            "gpr": 123,
+            "gpr_act": None,
+            "gpr_threat": None,
+            "gpr_ma7": None,
+            "gpr_ma30": None,
+            "article_count": None,
+            "event": "",
+        }
     ]
     assert "GPR Excel parse failed; falling back to CSV parser" in caplog.text
+
+
+def test_parse_gpr_table_keeps_daily_components() -> None:
+    payload = """DAY,N10D,GPRD,GPRD_ACT,GPRD_THREAT,date,GPRD_MA30,GPRD_MA7,event
+20220223,300,100,90,110,2022-02-23,95,98,
+20220224,900,500,650,420,2022-02-24,130,180,Russia invasion of Ukraine
+"""
+
+    frame = parse_gpr_table(payload)
+
+    assert frame.to_dict(orient="records") == [
+        {
+            "date": dt.date(2022, 2, 23),
+            "gpr": 100,
+            "gpr_act": 90,
+            "gpr_threat": 110,
+            "gpr_ma7": 98,
+            "gpr_ma30": 95,
+            "article_count": 300,
+            "event": "",
+        },
+        {
+            "date": dt.date(2022, 2, 24),
+            "gpr": 500,
+            "gpr_act": 650,
+            "gpr_threat": 420,
+            "gpr_ma7": 180,
+            "gpr_ma30": 130,
+            "article_count": 900,
+            "event": "Russia invasion of Ukraine",
+        },
+    ]
+
+
+def test_detect_gpr_spikes_classifies_acts_and_threats() -> None:
+    frame = parse_gpr_table("""date,gpr,gpr_act,gpr_threat,gpr_ma7,gpr_ma30,N10D
+2022-02-20,100,100,100,100,100,100
+2022-02-21,101,100,101,100,100,100
+2022-02-22,99,99,100,100,100,100
+2022-02-23,101,100,101,100,100,100
+2022-02-24,500,700,125,220,150,900
+""")
+
+    rows = detect_gpr_spikes(frame, min_history_days=3, stddev_threshold=2.0)
+
+    assert rows == [
+        {
+            "date": dt.date(2022, 2, 24),
+            "value": 500.0,
+            "threshold": pytest.approx(102.21895141649746),
+            "act_value": 700.0,
+            "threat_value": 125.0,
+            "ma7": 220.0,
+            "ma30": 150.0,
+            "article_count": 900.0,
+            "event": "",
+            "spike_components": (
+                "headline",
+                "acts",
+                "threats",
+                "persistent_7d",
+                "persistent_30d",
+            ),
+            "dominant_component": "acts",
+        }
+    ]
+
+
+def test_gpr_candidate_marks_threat_dominant_spikes() -> None:
+    gpr_csv = """date,gpr,gpr_act,gpr_threat,gpr_ma7,gpr_ma30,N10D
+2022-02-20,100,100,100,100,100,100
+2022-02-21,101,100,101,100,100,100
+2022-02-22,99,99,100,100,100,100
+2022-02-23,101,100,101,100,100,100
+2022-02-24,500,120,710,180,130,850
+"""
+    generator = GPRGDELTSignalGenerator(
+        gpr_fetcher=lambda: gpr_csv,
+        gdelt_fetcher=lambda: "date,event_count,dominant_theme,source_url\n",
+        min_history_days=3,
+        stddev_threshold=2.0,
+    )
+
+    candidates = generator.generate(
+        start_year=2022, end_year=2022, store=None, run_id=None
+    )
+
+    assert [
+        (
+            candidate.date,
+            candidate.source_id,
+            candidate.event_subtype,
+            candidate.importance,
+            candidate.confidence,
+            candidate.raw_title,
+        )
+        for candidate in candidates
+    ] == [
+        (
+            dt.date(2022, 2, 24),
+            "gpr:caldara-iacoviello",
+            "gpr_threats_spike",
+            "high",
+            "high",
+            "GPR threats-driven geopolitical risk spike",
+        )
+    ]
 
 
 def test_gpr_gdelt_generator_records_partial_daily_gdelt_failure() -> None:
