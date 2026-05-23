@@ -439,13 +439,30 @@ def _classify_all_golden_rows(
     # NYSE has ~252 sessions per calendar year. Upper-bound lookback to
     # comfortably cover earliest..end inclusive plus engine min-history.
     span_days = (end - earliest).days
-    lookback_sessions = max(1, int(span_days / 365.25 * 252) + 30)
+    lookback_sessions = max(1, int(span_days / 365.25 * 252) + 220)
     market_data = market_df_for_asof(end)
     kwargs = synthetic_v2_kwargs_for_market_data(market_data)
+    assert engine.config.hmm is not None
+    assert engine.config.clustering is not None
+    assert engine.config.change_point is not None
+    config = engine.config.model_copy(
+        update={
+            "hmm": engine.config.hmm.model_copy(
+                update={"training_window_days": 252}
+            ),
+            "clustering": engine.config.clustering.model_copy(
+                update={"training_window_days": 252}
+            ),
+            "change_point": engine.config.change_point.model_copy(
+                update={"training_window_days": 500}
+            ),
+        }
+    )
     timeline = engine.classify_window(
         end_date=end,
         market_data=market_data,
         lookback_days=lookback_sessions,
+        config=config,
         event_calendar=kwargs["event_calendar"],
         sector_etf_closes=kwargs["sector_etf_closes"],
         cross_asset_closes=kwargs["cross_asset_closes"],
