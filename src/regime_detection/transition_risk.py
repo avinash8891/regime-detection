@@ -29,7 +29,7 @@ def classify_transition_risk(
     )
     # v2 §4.0 named warning extension. Captures stressed-but-not-bear regimes
     # (banking-crisis, election-uncertainty, macro-shock) that V1 emits as
-    # `stable`. Spec line 3145 explicitly forbids backporting to V1, so the
+    # `stable`. V2 §4.0 explicitly forbids backporting to V1, so the
     # rule is gated by `allow_v2_warnings` (off by default — V1 byte-identity
     # preserved).
     sideways_stress_warning = bool(
@@ -48,10 +48,10 @@ def classify_transition_risk(
         and close > sma_50
         and breadth_state_active in {"recovery_breadth", "healthy_breadth"}
     )
-    # v1 §9.4 post_switch_cooldown is a 5-session WINDOW after any axis stable_label
+    # v1 §9.4 post_switch_cooldown is a 6-session window after any axis stable_label
     # changes, not a single-day flag. `days_since_axis_switch <= 5` covers the full
-    # window (0 on switch day through 5 inclusive). Crisis_override breaks cooldown
-    # in the precedence walker below.
+    # window (0 on switch day through 5 inclusive, six sessions total).
+    # Crisis_override breaks cooldown in the precedence walker below.
     post_switch_cooldown = bool(
         days_since_axis_switch is not None and days_since_axis_switch <= 5
     )

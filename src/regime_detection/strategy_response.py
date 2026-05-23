@@ -86,10 +86,11 @@ def build_strategy_response(
 
     if transition_risk_label == "sideways_stress_warning":
         # v2 §4.0 — sideways_stress is a defensive modifier for stressed-but-not-bear
-        # regimes (banking-crisis, election-uncertainty, macro-shock). Sits between
-        # bull_fragile (mid-conviction defensive) and bear_stress (full defensive).
-        # Pattern (Apr 2025 Treasury vol episode, NY Fed Banking System Vulnerability
-        # 2025 Update): trend=sideways AND vol=high AND breadth=weak/divergent_fragile.
+        # regimes (banking-crisis, election-uncertainty, macro-shock per spec §4.0).
+        # Sits between bull_fragile (mid-conviction defensive) and bear_stress (full
+        # defensive) in the strategy_response precedence order at spec §4.0 line 3621.
+        # Pattern: trend=sideways AND vol=high AND breadth in {weak_breadth,
+        # divergent_fragile} (spec §4.0 lines 3587-3589).
         position_size_multiplier = 0.5
         allow_breakout = False
         allow_leverage_expansion = False

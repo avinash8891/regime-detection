@@ -1,14 +1,14 @@
 """v2 §2C Credit/Funding axis — feature compute + per-day rule materialisation.
 
-Implements the 5-label axis classifier from spec lines 2005-2130:
+Implements the 5-label axis classifier from spec §2C (lines 3169-3358):
 
-  Labels (§2C lines 2007-2015):
+  Labels (§2C lines 3173-3178):
     credit_calm, spread_widening, credit_stress, funding_squeeze, deleveraging, unknown
 
-  Precedence (§2C line 2019):
+  Precedence (§2C line 3183):
     deleveraging > funding_squeeze > credit_stress > spread_widening > credit_calm > unknown
 
-Credit-spread metrics — two parallel sources (documented implementation decision):
+Credit-spread metrics — two parallel sources (ADR 0007; Ambiguity Log #49 + #71):
 
   §2C carries two distinct credit-spread metrics:
 
@@ -19,7 +19,7 @@ Credit-spread metrics — two parallel sources (documented implementation decisi
      ``hy_oas`` / ``ig_bbb_oas`` (set by ``V2_FRED_SERIES`` in
      ``regime_data_fetch.fetch_workflow``) feed the ``hy_oas`` / ``ig_oas``
      params of ``compute_credit_funding_features``. FRED exposes only a
-     trailing ~3-year window of these series (start 2023-05-19 — documented implementation decision),
+     trailing ~3-year window of these series (start 2023-05-15 — Ambiguity Log #71),
      so the real-OAS label (``credit_funding_state``) is ``unknown``
      before ~2023.
 
@@ -49,8 +49,8 @@ Inputs:
 The module also defines:
   - ``CreditFundingFeatures`` dataclass (the per-session feature seam)
   - ``CreditFundingRuleInputs`` dataclass (per-day scalars consumed by predicates)
-  - rule predicates ``evaluate_*`` + ``evaluate_rules`` walker (§2C lines 2064-2088)
-  - ``CREDIT_FUNDING_RISK_RANK`` + ``CreditFundingLabel`` enum (§2C lines 2092-2099)
+  - rule predicates ``evaluate_*`` + ``evaluate_rules`` walker (§2C lines 3249-3271)
+  - ``CREDIT_FUNDING_RISK_RANK`` + ``CreditFundingLabel`` enum (§2C lines 3277-3283)
 """
 from __future__ import annotations
 
@@ -68,7 +68,7 @@ from regime_detection.config import (
 
 
 # ---------------------------------------------------------------------------
-# Spec labels (§2C lines 2007-2015) + risk rank (§2C lines 2092-2099).
+# Spec labels (§2C lines 3173-3178) + risk rank (§2C lines 3277-3283).
 # ---------------------------------------------------------------------------
 
 CreditFundingLabel = Literal[
@@ -81,9 +81,9 @@ CreditFundingLabel = Literal[
 ]
 
 
-# v2 §2C lines 2092-2099 verbatim. ``deleveraging: 4`` is the ONLY V2 axis label
+# v2 §2C lines 3277-3283 verbatim. ``deleveraging: 4`` is the ONLY V2 axis label
 # with risk_rank>3 — reflects that the rule fires only when five distinct stress
-# signals coincide (spec line 2102).
+# signals coincide (spec line 3286).
 CREDIT_FUNDING_RISK_RANK: dict[CreditFundingLabel, int] = {
     "credit_calm": 0,
     "credit_recovery": 0,
@@ -150,7 +150,7 @@ _BIAS_FEATURE_NAMES: tuple[str, ...] = (
 )
 
 # Proxy provenance — the TLT-vs-HYG/LQD total-return-differential metric
-# (documented implementation decision). Distinct from the real-OAS source code above; the
+# (ADR 0007; Ambiguity Log #49 + #71). Distinct from the real-OAS source code above; the
 # proxy is a similar measure that exists because FRED's ICE BofA OAS
 # series lack pre-2023 history.
 CREDIT_SPREAD_PROXY_BIAS_WARNING_CODE = "credit_spread_proxy_total_return_differential"
@@ -239,8 +239,8 @@ class CreditFundingFeatures:
 # Rolling helpers — `_rolling_ols_slope` lives here because the per-§2C
 # slope helper differs from `network_fragility_rules._trailing_slope`
 # (vectorised rolling form vs per-day scalar). The z-score helper is
-# shared with §2A — imported from `_rolling_stats` (one home, AGENTS
-# rule B).
+# shared with §2A — imported from `_rolling_stats` (single home for
+# shared helpers).
 # ---------------------------------------------------------------------------
 
 
@@ -274,7 +274,7 @@ def _rolling_ols_slope(series: pd.Series, *, window: int) -> pd.Series:
 
 
 # ---------------------------------------------------------------------------
-# Feature compute (§2C lines 2031-2060).
+# Feature compute (§2C lines 3208-3243).
 # ---------------------------------------------------------------------------
 
 
@@ -331,8 +331,8 @@ def compute_credit_funding_features(
     usd_change_window = config.broad_usd_change_window_days
     usd_norm_window = config.broad_usd_normalizer_window_days
 
-    # §2C lines 2032-2035 — authoritative ICE BofA OAS. Rising OAS =
-    # wider spread (matches the §2C line 2033 sign convention by construction).
+    # §2C lines 3211-3212 — authoritative ICE BofA OAS. Rising OAS =
+    # wider spread (matches the §2C line 3210 sign convention by construction).
     hy_oas_63d = (
         hy_oas.reindex(spy_index).astype(float).ffill().rename("hy_oas_63d")
     )
@@ -340,13 +340,13 @@ def compute_credit_funding_features(
         ig_oas.reindex(spy_index).astype(float).ffill().rename("ig_oas_63d")
     )
 
-    # §2C line 2038: 504d percentile (pct=True).
+    # §2C line 3221: 504d percentile (pct=True).
     hy_oas_percentile_504d = (
         hy_oas_63d.rolling(pct_window).rank(pct=True)
         .rename("hy_oas_percentile_504d")
     )
 
-    # §2C lines 2041-2042: 21d OLS slope.
+    # §2C lines 3222-3223: 21d OLS slope.
     hy_oas_slope_21d = _rolling_ols_slope(
         hy_oas_63d, window=slope_21d
     ).rename("hy_oas_slope_21d")
@@ -354,9 +354,9 @@ def compute_credit_funding_features(
         ig_oas_63d, window=slope_21d
     ).rename("ig_oas_slope_21d")
 
-    # §2C proxy metric (documented implementation decision) — TLT-vs-HYG/LQD total-return
+    # §2C proxy metric (ADR 0007; Ambiguity Log #49 + #71) — TLT-vs-HYG/LQD total-return
     # differential. Rising = Treasury outperforming credit = widening
-    # spreads (matches the §2C line 2033 sign convention). A SEPARATE
+    # spreads (matches the §2C line 3215 sign convention). A SEPARATE
     # parallel metric — never blended with the real-OAS series above.
     total_return_window = config.total_return_lookback_days
     hyg_tr = (hyg / hyg.shift(total_return_window)) - 1.0
@@ -375,24 +375,24 @@ def compute_credit_funding_features(
         ig_tr_differential_63d, window=slope_21d
     ).rename("ig_tr_differential_slope_21d")
 
-    # §2C lines 2045-2046: bank-index relative strength.
+    # §2C lines 3229-3230: bank-index relative strength.
     kre_spy_ratio = (kre / spy.where(spy > 0)).rename("kre_spy_ratio")
     kre_spy_slope_63d = _rolling_ols_slope(
         kre_spy_ratio, window=slope_63d
     ).rename("kre_spy_slope_63d")
 
-    # §2C line 2049: NFCI weekly → daily via forward-fill (last-known-value).
+    # §2C lines 3232-3233: NFCI weekly → daily via forward-fill (last-known-value).
     nfci_daily_carried = nfci_w.ffill().rename("nfci_daily_carried")
 
-    # §2C lines 2052-2055: broad-USD-index 21d-change z-score.
+    # §2C lines 3235-3238: broad-USD-index 21d-change z-score.
     broad_usd_index_zscore_21d = _change_zscore(
         usd,
         change_window=usd_change_window,
         normalizer_window=usd_norm_window,
     ).rename("broad_usd_index_zscore_21d")
 
-    # §2C lines 2058-2059: SOFR-IORB spread + 21d slope.
-    # Splice priority for pre-SOFR/IORB eras (documented implementation decision):
+    # §2C lines 3242-3243: SOFR-IORB spread + 21d slope.
+    # Splice priority for pre-SOFR/IORB eras (ADR 0009):
     #   SOFR-IORB (Jul 2021+) > SOFR-IOER (Apr 2018 - Jul 2021) > FEDFUNDS-IOER (Oct 2008+)
     # When fedfunds/ioer_legacy are supplied, NaN gaps in SOFR-IORB are filled,
     # eliminating spurious credit_funding "unknown" for 2016-2021 sessions.
@@ -413,7 +413,7 @@ def compute_credit_funding_features(
     ).rename("sofr_iorb_slope_21d")
 
     # SPY / TLT 21d returns (consumed by §2C credit_stress / funding_squeeze /
-    # deleveraging rules — spec lines 2075/2080/2083/2084).
+    # deleveraging rules — spec lines 3259/3264/3267-3268).
     spy_21d_return = ((spy / spy.shift(spy_window)) - 1.0).rename("spy_21d_return")
     tlt_21d_return = ((tlt / tlt.shift(tlt_window)) - 1.0).rename("tlt_21d_return")
 
@@ -521,7 +521,7 @@ def build_rule_inputs_for_date(
 
     The spread triple is passed explicitly (source-neutral) so the same
     builder serves both the real-OAS run (pass ``features.hy_oas_*``) and
-    the proxy run (pass ``features.hy_tr_differential_*``) — documented implementation decision.
+    the proxy run (pass ``features.hy_tr_differential_*``) — ADR 0007; Ambiguity Log #49 + #71.
     """
     return CreditFundingRuleInputs(
         hy_spread_percentile_504d=_scalar_at(hy_spread_percentile_504d, dt),
@@ -551,7 +551,7 @@ def build_rule_inputs_by_date(
 ) -> dict[pd.Timestamp, CreditFundingRuleInputs]:
     """Per-date rule inputs. The spread triple is source-neutral — pass
     ``features.hy_oas_*`` for the real-OAS run or ``features.hy_tr_differential_*``
-    for the proxy run (documented implementation decision)."""
+    for the proxy run (ADR 0007; Ambiguity Log #49 + #71)."""
     index = hy_spread_percentile_504d.index
     outputs: dict[pd.Timestamp, CreditFundingRuleInputs] = {}
     for dt in index:
@@ -576,7 +576,7 @@ def build_rule_inputs_by_date(
 
 
 # ---------------------------------------------------------------------------
-# Rule predicates (§2C lines 2064-2088).
+# Rule predicates (§2C lines 3249-3271).
 # ---------------------------------------------------------------------------
 
 
@@ -588,7 +588,7 @@ def evaluate_credit_calm(
     inputs: CreditFundingRuleInputs,
     config: CreditFundingRulesConfig,
 ) -> bool:
-    """v2 §2C lines 2065-2067.
+    """v2 §2C lines 3249-3251.
 
     ``hy_spread_percentile_504d < 0.50
        AND hy_spread_slope_21d <= 0`` (non-rising slope).
@@ -608,7 +608,7 @@ def evaluate_spread_widening(
     inputs: CreditFundingRuleInputs,
     config: CreditFundingRulesConfig,
 ) -> bool:
-    """v2 §2C lines 2069-2071.
+    """v2 §2C lines 3253-3255.
 
     ``hy_spread_slope_21d > 0 AND ig_spread_slope_21d > 0``
     (strict positive slope on BOTH HY and IG legs).
@@ -657,7 +657,7 @@ def evaluate_credit_stress(
     inputs: CreditFundingRuleInputs,
     config: CreditFundingRulesConfig,
 ) -> bool:
-    """v2 §2C lines 2073-2075.
+    """v2 §2C lines 3257-3259.
 
     ``hy_spread_percentile_504d > 0.80 AND spy_21d_return < -0.05``.
     """
@@ -676,7 +676,7 @@ def evaluate_funding_squeeze(
     inputs: CreditFundingRuleInputs,
     config: CreditFundingRulesConfig,
 ) -> bool:
-    """v2 §2C lines 2077-2080.
+    """v2 §2C lines 3261-3264.
 
     ``broad_usd_index_zscore_21d > +1.5 AND sofr_iorb_slope_21d > 0
        AND spy_21d_return < 0``.
@@ -698,7 +698,7 @@ def evaluate_deleveraging(
     inputs: CreditFundingRuleInputs,
     config: CreditFundingRulesConfig,
 ) -> bool:
-    """v2 §2C lines 2082-2087 — 5-condition composite.
+    """v2 §2C lines 3266-3271 — 5-condition composite.
 
     ``spy_21d_return < -0.05 AND tlt_21d_return < 0
        AND broad_usd_index_zscore_21d > 0
@@ -732,7 +732,7 @@ def evaluate_rules(
 ) -> CreditFundingLabel:
     """Walk v2 §2C precedence and return the first matching label.
 
-    Falls through to ``unknown`` when no rule fires (§2C line 2019 tail).
+    Falls through to ``unknown`` when no rule fires (§2C line 3183 tail).
     """
     if evaluate_deleveraging(inputs, config):
         return "deleveraging"

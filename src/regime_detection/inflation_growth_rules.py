@@ -31,7 +31,7 @@ def evaluate_goldilocks(
     inputs: InflationGrowthRuleInputs,
     config: InflationGrowthRulesConfig,
 ) -> bool:
-    """v2 §2B lines 2233-2238."""
+    """v2 §2B lines 3047-3053 — `goldilocks` rule."""
     if not _credit_is_calm(inputs, config):
         return False
     if _any_nan(
@@ -64,7 +64,7 @@ def evaluate_inflation_shock(
     inputs: InflationGrowthRuleInputs,
     config: InflationGrowthRulesConfig,
 ) -> bool:
-    """v2 §2B lines 2550-2555 — `inflation_shock` three-limb OR rule.
+    """v2 §2B lines 3055-3062 — `inflation_shock` three-limb OR rule.
 
     Limb 1: surprise z-score (single-signal).
     Limb 2: commodity + yield + equity composite.
@@ -106,7 +106,7 @@ def evaluate_disinflation(
     inputs: InflationGrowthRuleInputs,
     config: InflationGrowthRulesConfig,
 ) -> bool:
-    """v2 §2B lines 2247-2250."""
+    """v2 §2B lines 3064-3067 — `disinflation` rule."""
     if _any_nan(inputs.cpi_6m_change_pct_slope_21d, inputs.pmi_manufacturing):
         return False
     if inputs.pmi_manufacturing <= config.pmi_disinflation_threshold:
@@ -138,7 +138,7 @@ def evaluate_recession_scare(
     inputs: InflationGrowthRuleInputs,
     config: InflationGrowthRulesConfig,
 ) -> bool:
-    """v2 §2B lines 2252-2256."""
+    """v2 §2B lines 3069-3077 — `recession_scare` rule."""
     if _any_nan(
         inputs.treasury_10y_yield_slope_21d,
         inputs.cyclical_defensive_slope_21d,
@@ -175,7 +175,7 @@ def evaluate_recovery_growth(
     inputs: InflationGrowthRuleInputs,
     config: InflationGrowthRulesConfig,
 ) -> bool:
-    """v2 §2B lines 2258-2261."""
+    """v2 §2B lines 3079-3082 — `recovery_growth` rule."""
     if not _credit_is_calm(inputs, config):
         return False
     if _any_nan(
@@ -283,7 +283,7 @@ def evaluate_earnings_expansion(
     inputs: InflationGrowthRuleInputs,
     config: InflationGrowthRulesConfig,
 ) -> bool:
-    """v2 §2B line 2605 — strict positive aggregate forward-EPS revision."""
+    """v2 §2B lines 3100-3102 — strict positive aggregate forward-EPS revision."""
     if _any_nan(inputs.aggregate_forward_eps_revision_direction_4w):
         return False
     return bool(
@@ -296,7 +296,7 @@ def evaluate_earnings_contraction(
     inputs: InflationGrowthRuleInputs,
     config: InflationGrowthRulesConfig,
 ) -> bool:
-    """v2 §2B line 2609 — strict negative aggregate forward-EPS revision."""
+    """v2 §2B lines 3104-3106 — strict negative aggregate forward-EPS revision."""
     if _any_nan(inputs.aggregate_forward_eps_revision_direction_4w):
         return False
     return bool(

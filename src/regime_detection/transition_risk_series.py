@@ -153,9 +153,9 @@ def build_transition_risk_series(
         transition_score_inputs_by_date=transition_score_inputs_by_date,
         transition_score_config=transition_score_config,
         # v2 §4.0 — sideways_stress_warning is a V2-only named warning
-        # extension. Spec line 3145 forbids backporting to V1, so the rule
-        # only fires when the active config_version is NOT the V1 frozen
-        # tag. V1 byte-identity preserved when this is False.
+        # extension. V2 spec §4.0 (L3592) forbids backporting to V1, so
+        # the rule only fires when the active config_version is NOT the V1
+        # frozen tag. V1 byte-identity preserved when this is False.
         v2_warnings_enabled=context.config.config_version != "core3-v1.0.0",
         cooldown_window_days=(
             transition_score_config.cooldown_window_days
@@ -181,9 +181,8 @@ def _build_transition_score_inputs_by_date(
 
     Reindexes each input series ONCE against the session DatetimeIndex
     then iterates over numpy arrays — avoids the per-session ``.loc[ts]``
-    lookup pattern that was the bottleneck eliminated in commit 75ebb63
-    (data_quality perf refactor). Missing index entries surface as NaN
-    through ``.reindex`` and propagate to the
+    lookup pattern. Missing index entries surface as NaN through
+    ``.reindex`` and propagate to the
     ``compose_transition_score_for_session`` cold-start guard.
     """
     session_index = pd.DatetimeIndex([pd.Timestamp(d) for d in sessions])
@@ -277,10 +276,10 @@ def build_transition_risk_outputs_by_date(
         & volatility_state_active.isin(["high_vol", "crisis_vol"])
         & breadth_state_active.isin(["weak_breadth", "divergent_fragile", "unknown"])
     )
-    # v2 §4.0 named warning extension. Spec line 3145 forbids backporting to
-    # V1; the `v2_warnings_enabled` flag is only True when the active
-    # config_version is NOT the V1 frozen tag. V1 byte-identity preserved
-    # when False (the rule never fires regardless of input).
+    # v2 §4.0 named warning extension. V2 spec §4.0 (L3592) forbids
+    # backporting to V1; the `v2_warnings_enabled` flag is only True when
+    # the active config_version is NOT the V1 frozen tag. V1 byte-identity
+    # preserved when False (the rule never fires regardless of input).
     if v2_warnings_enabled:
         sideways_stress_warning = (
             trend_direction_active.eq("sideways")
@@ -295,10 +294,10 @@ def build_transition_risk_outputs_by_date(
         & close.gt(sma_50)
         & breadth_state_active.isin(["recovery_breadth", "healthy_breadth"])
     )
-    # v1 §9.4: cooldown is a 5-session window after a switch (days 0..5 inclusive),
-    # not a single-day flag. `days_since_axis_switch <= 5` already covers the full
-    # window because `days_since_axis_switch_by_date` increments daily after a switch.
-    # crisis_override still breaks cooldown.
+    # v1 §9.4: cooldown is a 6-session window after a switch (days 0..5 inclusive),
+    # not a single-day flag. `days_since_axis_switch <= cooldown_window_days` (default 5)
+    # covers the full window because `days_since_axis_switch_by_date` increments daily
+    # after a switch. crisis_override still breaks cooldown.
     post_switch_cooldown = days_since_axis_switch.notna() & days_since_axis_switch.le(cooldown_window_days) & ~crisis_override
     any_unknown = (
         trend_direction_active.eq("unknown")

@@ -2,14 +2,14 @@
 
 Reuses existing FeatureStore seams as inputs (``return_1d``,
 ``realized_vol_21d``, ``drawdown_63d``, ``volume_zscore_20d``,
-``avg_pairwise_corr_63d``). Fits a Gaussian HMM per spec line 2740 via
+``avg_pairwise_corr_63d``). Fits a Gaussian HMM per V2 §6.1 (spec line 4076) via
 ``hmmlearn.GaussianHMM`` — no hand-rolled Baum-Welch. Emits
 ``top_state_prob`` (permutation-invariant) for consumption by the
 ``transition_score`` §4.2 ``hmm_probability_shift_score`` 6th component.
 
-The HMM is evidence-only per V2 §10 / spec line 2780-2783: state indices
+The HMM is evidence-only per V2 §10 (spec lines 4378-4385): state indices
 are raw ``0``..``n-1`` integers, never auto-mapped to economic labels.
-Operator mapping is deferred — see documented implementation notes.
+Operator mapping is deferred — see ADR 0013 (docs/decisions/0013-evidence-strategy-governance-closeouts.md) and docs/verification/hmm_state_label_map.yaml.
 
 Per V2 engine statelessness, ``compute_hmm_features`` re-fits ONCE per
 ``classify_window`` call on the trailing ``training_window_days`` rows.
@@ -67,7 +67,7 @@ class HMMFeatures:
         top_state_prob: max-of-posterior per session, NaN on dropped rows.
         state_probabilities: ``(n_sessions × n_states)`` posterior frame
             with columns labeled ``0``..``n_states-1`` (no economic
-            mapping — V2 §10 ABSOLUTE RULE).
+            mapping — V2 §10 no-auto-label rule).
         n_states: configured number of hidden states.
     """
 
@@ -155,14 +155,14 @@ def compute_hmm_features(
       - any required input is ``None``
       - the joined non-NaN inputs have fewer than ``training_window_days``
         rows
-      - the HMM fit fails (e.g. singular covariance, non-convergence) —
-        per AGENTS error policy, return None (evidence absent) rather
-        than crash the whole classify call.
+      - the HMM fit fails (e.g. singular covariance, non-convergence):
+        return None (evidence absent) rather than crash the whole
+        classify call (fail-open seam).
 
     Permutation invariance: ``top_state_prob = posterior.max(axis=1)``
     is invariant to state-index permutation. The
     ``state_probabilities`` frame has integer column labels
-    ``0``..``n_states-1`` (no economic mapping per V2 §10).
+    ``0``..``n_states-1`` (no economic mapping per V2 §10 no-auto-label rule).
     """
     inputs: dict[str, pd.Series | None] = {
         "return_1d": return_1d,

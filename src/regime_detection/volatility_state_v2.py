@@ -5,17 +5,17 @@ Pure pandas/numpy implementation of the §1C continuous features and the
 
 Features (all per-session series aligned to the input close index):
 
-- ``atr_ratio``                       v2 §1C lines 140–143 (ATR_14 / ATR_50, Wilder)
-- ``gap_frequency_20d``               v2 §1C lines 176–181
-- ``intraday_range_percentile_252d``  v2 §1C lines 183–187
+- ``atr_ratio``                       v2 §1C lines 247-249 (ATR_14 / ATR_50, Wilder)
+- ``gap_frequency_20d``               v2 §1C lines 297-301 (implementation decision #16)
+- ``intraday_range_percentile_252d``  v2 §1C lines 304-306 (implementation decision #17)
 
 Optional external-data features:
 
-- ``iv_rv_spread`` (§1C lines 151–155) — computed when FRED VIXCLS-derived
+- ``iv_rv_spread`` (§1C lines 257-259) — computed when FRED VIXCLS-derived
   ``implied_vol_30d`` is supplied.
-- ``vol_crush`` (§1C lines 157–174) — computed when both implied-vol and
+- ``vol_crush`` (§1C lines 266-287) — computed when both implied-vol and
   event-window inputs are supplied; otherwise the predicate falsifies per
-  v2 §10 "do not invent missing inputs".
+  v2 §10 no-hallucination rule.
 
 Implementation choices that resolve ambiguities:
 
@@ -29,7 +29,7 @@ Implementation choices that resolve ambiguities:
   with default ``ascending=True`` so a rising intraday range maps to a
   rising percentile (1.0 = current value is the highest in the window).
 - **gap_threshold = 0.005**: pinned single US default; the spec note
-  "configurable per market" (§1C line 181) is honored by the config knob
+  "configurable per market" (§1C line 301, implementation decision #18) is honored by the config knob
   ``VolatilityV2Config.gap_threshold_pct`` rather than per-market
   branching (V2 universe is US-only).
 """
@@ -49,28 +49,28 @@ class VolatilityV2Features:
 
     Fields: atr_ratio, gap_frequency_20d, intraday_range_percentile_252d,
     plus the two realized-vol windows used by the `rising_vol` rule
-    (v2 §1C line 148): a short-window realised vol (default 10d) and a
+    (v2 §1C lines 251-252): a short-window realised vol (default 10d) and a
     long-window realised vol (default 63d), both annualised via the shared
     ``regime_detection.volatility_state.realized_vol`` helper.
     """
 
     atr_ratio: pd.Series
     gap_frequency_20d: pd.Series
-    # v2 §1E line 278 / documented implementation decision — 252d percentile rank of
+    # v2 §1E line 417 / engine-pinned implementation decision — 252d percentile rank of
     # `gap_frequency_20d`. Consumed by the §1E `liquidity_gap_behavior`
     # rule. Computed here (rather than at the rule layer) so the percentile
     # shares the volatility seam's session index and the rule layer reads
     # only scalars.
     gap_frequency_percentile_252d: pd.Series
     intraday_range_percentile_252d: pd.Series
-    # v2 §1C line 148 — `rising_vol` rule inputs.
+    # v2 §1C lines 251-252 — `rising_vol` rule inputs.
     realized_vol_short: pd.Series
     realized_vol_long: pd.Series
-    # v2 §1C `vol_crush` rule input (documented implementation decision). 21-session
+    # v2 §1C `vol_crush` rule input (engine-pinned implementation decision). 21-session
     # realized vol — the mid window for `realized_vol_10d < realized_vol_21d
     # * 0.75`. Always computable from close; never None.
     realized_vol_21d: pd.Series
-    # v2 §1C IV features (documented implementation decision). Optional — populated
+    # v2 §1C IV features (engine-pinned implementation decision). Optional — populated
     # only when `implied_vol_30d` (FRED VIXCLS / 100) is supplied to
     # `compute_volatility_v2_features`. When None, `vol_crush` falsifies
     # (V1 byte-identity preserved).
@@ -108,7 +108,7 @@ def _atr_ratio(
     short_period: int,
     long_period: int,
 ) -> pd.Series:
-    """v2 §1C lines 140–143: ATR_short / ATR_long (Wilder).
+    """v2 §1C lines 247-249: ATR_short / ATR_long (Wilder).
 
     NaN until ``t >= long_period - 1`` (long ATR cold-start) and when the
     long ATR is zero (constant-OHLC series → 0/0 = NaN by definition).
@@ -125,7 +125,7 @@ def _gap_frequency(
     lookback: int,
     threshold_pct: float,
 ) -> pd.Series:
-    """v2 §1C lines 176–181.
+    """v2 §1C lines 297-301 (implementation decision #16).
 
         gap[t] = abs(open[t] - close[t-1]) / close[t-1]
         gap_frequency_20d[t] = count(gap[i] > threshold for i in [t-N+1..t]) / N
@@ -152,7 +152,7 @@ def _intraday_range_percentile(
     close: pd.Series,
     lookback: int,
 ) -> pd.Series:
-    """v2 §1C lines 183–187.
+    """v2 §1C lines 304-306 (implementation decision #17).
 
         intraday_range[t]                  = (high[t] - low[t]) / close[t]
         intraday_range_percentile_252d[t]  = rolling(252).rank(pct=True) on the series
@@ -221,7 +221,7 @@ def compute_volatility_v2_features(
         lookback=config.gap_frequency_lookback_days,
         threshold_pct=config.gap_threshold_pct,
     )
-    # v2 §1E line 278 — 252d percentile rank of `gap_frequency_20d`. Same
+    # v2 §1E line 417 — 252d percentile rank of `gap_frequency_20d`. Same
     # rolling-rank shape as `intraday_range_percentile_252d` below and the
     # §1D `nh_nl_ratio` percentile pattern. Implements the documented input contract by computing
     # the previously-missing percentile input for `liquidity_gap_behavior`.
@@ -237,7 +237,7 @@ def compute_volatility_v2_features(
         lookback=config.intraday_range_lookback_days,
     )
 
-    # v2 §1C line 148 — `rising_vol` rule inputs. Computed via
+    # v2 §1C lines 251-252 — `rising_vol` rule inputs. Computed via
     # the shared ``regime_detection.volatility_state.realized_vol`` helper
     # so v1 (realized_vol_21d) and v2 (rv_10d/rv_63d) consume one
     # annualisation path. When no rules_config is supplied,
@@ -247,9 +247,9 @@ def compute_volatility_v2_features(
         rv_short_window = rules_config.realized_vol_short_period
         rv_long_window = rules_config.realized_vol_long_period
     else:
-        # Spec defaults — v2 §1C line 148 (realized_vol_10d / realized_vol_63d).
+        # Spec defaults — v2 §1C lines 251-252 (realized_vol_10d / realized_vol_63d).
         # Hardcoded fallback values intentionally match VolatilityV2RulesConfig
-        # defaults; both citations point at v2 §1C line 148.
+        # defaults; both citations point at v2 §1C lines 251-252.
         rv_short_window = 10
         rv_long_window = 63
     rv_short = realized_vol(close, window=rv_short_window).rename(
@@ -317,14 +317,14 @@ def compute_volatility_v2_features(
 # ---------------------------------------------------------------------------
 # v2 §1C `rising_vol` rule + precedence wrapper.
 #
-# Rule (v2 §1C lines 146-148, verbatim):
+# Rule (v2 §1C lines 250-254, verbatim):
 #     ATR_ratio > 1.15
 #     OR realized_vol_10d > realized_vol_63d * 1.25
 #
-# Precedence (v2 §1C line 191):
+# Precedence (v2 §1C line 311):
 #     crisis_vol > vol_crush > high_vol > rising_vol > low_vol > normal_vol > unknown
 #
-# `vol_crush` is wired via documented implementation decision using FRED VIXCLS-derived
+# `vol_crush` is wired via engine-pinned implementation decision using FRED VIXCLS-derived
 # implied_vol_30d plus event_window_just_passed.
 # ---------------------------------------------------------------------------
 
@@ -335,18 +335,18 @@ def evaluate_rising_vol(
     dt: pd.Timestamp,
     rules_config: VolatilityV2RulesConfig,
 ) -> bool:
-    """v2 §1C lines 146-148 `rising_vol` predicate at a single session.
+    """v2 §1C lines 250-254 `rising_vol` predicate at a single session.
 
     Returns False when ANY of the three inputs is NaN — strict cold-start
     contract (no silent "partial-input → True" substitution). Both limbs
     use strict ``>`` per spec text:
 
-    * line 147 — ``atr_ratio > atr_ratio_threshold`` (1.15)
-    * line 148 — ``realized_vol_short > realized_vol_long * realized_vol_ratio_threshold`` (1.25)
+    * line 251 — ``atr_ratio > atr_ratio_threshold`` (1.15)
+    * line 252 — ``realized_vol_short > realized_vol_long * realized_vol_ratio_threshold`` (1.25)
     * Combined: ATR limb OR realised-vol limb.
 
     The all-inputs-must-be-present contract is recorded in the
-    documented implementation decision — spec §1C is silent on
+    engine-pinned implementation decision — spec §1C is silent on
     partial-NaN behavior so the conservative choice is "any NaN
     falsifies the rule" (matches recovery cold-start).
     """
@@ -357,12 +357,12 @@ def evaluate_rising_vol(
     rv_long = features.realized_vol_long.loc[dt]
 
     # Strict cold-start: any missing input falsifies the rule
-    # (documented implementation decision — partial-NaN handling).
+    # (engine-pinned implementation decision — partial-NaN handling).
     if any(pd.isna(x) for x in (atr, rv_short, rv_long)):
         return False
 
-    atr_limb = bool(atr > rules_config.atr_ratio_threshold)            # line 147
-    rv_limb = bool(rv_short > rv_long * rules_config.realized_vol_ratio_threshold)  # line 148
+    atr_limb = bool(atr > rules_config.atr_ratio_threshold)            # line 251
+    rv_limb = bool(rv_short > rv_long * rules_config.realized_vol_ratio_threshold)  # line 252
     return atr_limb or rv_limb
 
 
@@ -372,7 +372,7 @@ def evaluate_vol_crush(
     dt: pd.Timestamp,
     rules_config: VolatilityV2RulesConfig,
 ) -> bool:
-    """v2 §1C `vol_crush` predicate at a single session (documented implementation decision).
+    """v2 §1C `vol_crush` predicate at a single session (engine-pinned implementation decision).
 
     Rule (spec §1C):
       realized_vol_short < realized_vol_21d * vol_crush_realized_vol_ratio_threshold
@@ -419,8 +419,8 @@ def evaluate_vol_crush(
     return rv_collapsed and iv_falling_sharply and event_just_passed
 
 
-# v2 §1C line 191 ranking (lower index = higher precedence).
-# `vol_crush` (index 1) was reserved-but-inert before documented implementation decision
+# v2 §1C line 311 ranking (lower index = higher precedence).
+# `vol_crush` (index 1) was reserved-but-inert before engine-pinned implementation decision
 # closure; it is now wired to a real predicate.
 _V2_VOLATILITY_PRECEDENCE: tuple[str, ...] = (
     "crisis_vol",
@@ -442,7 +442,7 @@ def evaluate_v2_volatility_label(
 ) -> str | None:
     """Apply v2 §1C volatility precedence on top of a v1 raw label.
 
-    Returns the winning v2 label per the §1C line 191 ordering, or
+    Returns the winning v2 label per the §1C line 311 ordering, or
     ``None`` when no v2 rule fires and the caller should keep ``v1_label``.
 
     Precedence (line 191): ``crisis_vol > vol_crush > high_vol >

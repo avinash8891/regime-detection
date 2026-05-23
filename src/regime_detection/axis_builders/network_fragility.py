@@ -90,7 +90,7 @@ def build_network_fragility_axis_series(
         else pd.Series(float("nan"), index=spy_close.index)
     )
 
-    # Required-input check (v2 §2.8 data quality).
+    # Required-input check (v2 data-quality contract via assess_series_input_quality).
     # The percentile features are derived and are structurally NaN until
     # the 504d / 252d windows fill — the rules themselves return False on
     # NaN inputs (falling through to "unknown" per v2 §3.3), so we gate
@@ -104,7 +104,7 @@ def build_network_fragility_axis_series(
         spy_close,
     ]
     # The 63d correlation window is the longest mandatory raw-input
-    # lookback (v2 §3.2 line 554-558). The 504d percentile / 21d slope
+    # lookback (v2 §3.2). The 504d percentile / 21d slope
     # NaN-ness is handled inside the rule predicates per spec.
     required_trading_days = network_fragility_config.correlation_lookback_days
     max_freshness_days = context.config.data_quality.max_freshness_days

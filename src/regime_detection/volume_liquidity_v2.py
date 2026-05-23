@@ -5,8 +5,8 @@ Scope-restricted feature module: ships only the volume z-score feature. The
 that §1E references already live in
 ``regime_detection.volatility_state_v2`` and are consumed
 from that seam by the §1E axis classifier — they are NOT
-recomputed here. See documented implementation decision for the
-feature-store layout decision.
+recomputed here. The §1E feature-placement decision is documented here
+for the feature-store layout decision.
 
 The §1E labels (``normal_volume``, ``panic_volume``,
 ``liquidity_gap_behavior``), rule engine, risk-rank table, and per-label
@@ -15,7 +15,7 @@ hysteresis live in ``regime_detection.volume_liquidity_rules`` and
 
 Feature shipped here:
 
-- ``volume_zscore_20d``  v2 §1E line 256
+- ``volume_zscore_20d``  v2 §1E line 395
   ``(volume[t] - rolling_mean(volume, 20)[t]) / rolling_std(volume, 20)[t]``.
 
 Implementation choices that resolve ambiguities:
@@ -25,7 +25,8 @@ Implementation choices that resolve ambiguities:
   (``Series.rolling(N).std()``) and the standard convention for
   z-scores on financial time series. Pinned via
   ``VolumeLiquidityV2Config.volume_zscore_ddof`` so future calibration
-  (§9.1) can flip without code changes. See documented implementation decision.
+  (§9.1) can flip without code changes. See the documented ddof decision
+  (§1E `volume_zscore_20d` ddof choice).
 - **Constant-volume cold-start**: ``rolling_std == 0`` ⇒ ``0 / 0 = NaN``
   (masked, not infinity). Constant series have no z-score by
   definition; surfacing NaN matches the V1 cold-start contract
@@ -49,11 +50,11 @@ class VolumeLiquidityV2Features:
 
     NOTE: §1E also names ``gap_frequency_20d`` and
     ``intraday_range_percentile_252d`` in its feature list (lines
-    257–258), but those are already computed in
+    396-397), but those are already computed in
     ``regime_detection.volatility_state_v2.VolatilityV2Features``.
     The §1E axis classifier reads them from the
     ``FeatureStore.volatility_state_v2`` seam rather than recomputing
-    them here. See documented implementation notes.
+    them here.
     """
 
     volume_zscore_20d: pd.Series
@@ -74,7 +75,7 @@ def _volume_zscore(
     lookback: int,
     ddof: int,
 ) -> pd.Series:
-    """v2 §1E line 256: ``(volume[t] - rolling_mean) / rolling_std``.
+    """v2 §1E line 395: ``(volume[t] - rolling_mean) / rolling_std``.
 
     ``min_periods=lookback`` so the first non-NaN value lands at
     ``t = lookback - 1``. Constant-volume windows produce a zero std

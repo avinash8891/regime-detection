@@ -8,7 +8,7 @@ PIT feed.
 
 Features shipped here:
 
-- ``sector_breadth``  v2 §1D lines 228–229
+- ``sector_breadth``  v2 §1D lines 353–354
   ``% of {XLB, XLC, XLE, XLF, XLI, XLK, XLP, XLRE, XLU, XLV, XLY} with
   return_21d > 0``. Denominator is the spec-fixed 11 (count of US GICS
   sector ETFs).
@@ -17,12 +17,12 @@ Features shipped here:
   Same positive-return test, but denominator is the count of sectors with valid
   21d returns on that session. This does NOT replace the strict spec feature.
 
-- ``pct_above_200dma`` (§1D lines 207–210) — `mean(member.close > member.sma_200)`.
-- ``ad_line`` / ``ad_line_slope_20d`` (§1D lines 213–216).
-- ``nh_nl_ratio`` (§1D lines 218–221).
-- ``upvol_downvol_ratio`` (§1D lines 223–226).
-- ``breadth_thrust`` (§1D lines 231–237).
-- All new V2 breadth labels (§1D lines 239–246).
+- ``pct_above_200dma`` (§1D lines 332–334) — `mean(member.close > member.sma_200)`.
+- ``ad_line`` / ``ad_line_slope_20d`` (§1D lines 337–340).
+- ``nh_nl_ratio`` (§1D lines 343–345).
+- ``upvol_downvol_ratio`` (§1D lines 348–350).
+- ``breadth_thrust`` (§1D lines 356–368).
+- All new V2 breadth labels (§1D lines 378–385).
 
 Implementation choices that resolve ambiguities:
 
@@ -35,9 +35,9 @@ Implementation choices that resolve ambiguities:
   counted in the numerator (spec text "with return_21d > 0").
 - **Missing-sector policy**: if any of the 11 sector closes are absent from
   ``sector_etf_closes``, every output session is NaN (do NOT fall back to a
-  partial-denominator mean). Rationale: §1D line 229 explicitly writes
+  partial-denominator mean). Rationale: §1D line 354 explicitly writes
   "divided by 11"; silently rebasing the denominator would change the
-  feature's semantics. See documented implementation decision.
+  feature's semantics. See implementation decision #27.
 - **Available-sector proxy**: exposed separately for historical backtests
   where newer sector ETFs such as XLC did not yet exist. It carries count and
   missing-symbol evidence so consumers cannot mistake it for the strict feature.
@@ -61,7 +61,7 @@ from regime_shared.pit_provenance import (
 )
 
 
-# PIT feature names in spec order (v2 §1D lines 207-237).
+# PIT feature names in spec order (v2 §1D lines 328-368).
 _PIT_FEATURE_NAMES: tuple[str, ...] = (
     "pct_above_50dma",
     "pct_above_200dma",
@@ -72,10 +72,10 @@ _PIT_FEATURE_NAMES: tuple[str, ...] = (
     "breadth_thrust",
 )
 
-# breadth_thrust 10-session rolling mean window (v2 §1D line 231-237).
+# breadth_thrust 10-session rolling mean window (v2 §1D line 360).
 _BREADTH_THRUST_WINDOW = 10
 
-# ad_line_slope_20d lookback (v2 §1D line 216).
+# ad_line_slope_20d lookback (v2 §1D line 340).
 _AD_LINE_SLOPE_LOOKBACK = 20
 
 
@@ -412,7 +412,7 @@ def _compute_pit_features(
         dtype=bool,
     )
 
-    # Per-ticker daily direction sign on adjusted_close (documented implementation decision):
+    # Per-ticker daily direction sign on adjusted_close (implementation decision #56):
     # +1 advance, -1 decline, 0 unchanged. Diff produces NaN at t=0 → mapped
     # to NaN (no prior close → excluded from advance / decline counts).
     diff_frame = adj_close_frame.diff()
@@ -501,7 +501,7 @@ def _compute_pct_above_sma(
     """v2 §1D pct_above_{N}dma — strict ``>`` against the per-ticker SMA.
 
     NaN-SMA tickers are excluded from BOTH numerator AND denominator
-    (documented implementation decision); zero-denominator → NaN.
+    (implementation decision #58); zero-denominator → NaN.
     """
     sma_frame = adj_close_frame.rolling(sma_window, min_periods=sma_window).mean()
     # A ticker is "valid" at session D if it's a member AND has a defined SMA
@@ -526,7 +526,7 @@ def _compute_ad_line(
     decline_mask: pd.DataFrame,
     membership_mask: pd.DataFrame,
 ) -> tuple[pd.Series, pd.Series]:
-    """v2 §1D ad_line / ad_line_slope_20d (documented implementation decision).
+    """v2 §1D ad_line / ad_line_slope_20d (implementation decision #56 direction; #57 t=0 anchor).
 
     ad_line[0] = 0 anchor; ad_line[t] = ad_line[t-1] + (advances - declines)
     where advances/declines count PIT members with strict direction.
@@ -534,7 +534,7 @@ def _compute_ad_line(
     advances = (advance_mask & membership_mask).sum(axis=1).astype(float)
     declines = (decline_mask & membership_mask).sum(axis=1).astype(float)
     delta = advances - declines
-    # Anchor at 0 on the first session (documented implementation decision).
+    # Anchor at 0 on the first session (implementation decision #57).
     delta.iloc[0] = 0.0
     ad_line = delta.cumsum()
     ad_line.name = "ad_line"
@@ -585,7 +585,7 @@ def _compute_upvol_downvol_ratio(
     membership_mask: pd.DataFrame,
     volume_frame: pd.DataFrame,
 ) -> pd.Series:
-    """v2 §1D upvol_downvol_ratio (documented implementation decision).
+    """v2 §1D upvol_downvol_ratio (implementation decision #56 direction; §1D line 350 raw volume).
 
     Direction uses adjusted_close (strict ``>`` / ``<``); volume is RAW
     shares from constituent_ohlcv[ticker]['volume'].
@@ -610,7 +610,7 @@ def _compute_breadth_thrust(
 
     ``pct_advancing = advances / max(advances + declines + unchanged, 1)``
     where the denominator counts PIT members with a valid prior close
-    (documented implementation decision).
+    (implementation decision #56).
     """
     advances = (advance_mask & membership_mask).sum(axis=1).astype(float)
     declines = (decline_mask & membership_mask).sum(axis=1).astype(float)

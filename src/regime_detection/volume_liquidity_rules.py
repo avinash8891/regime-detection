@@ -3,24 +3,24 @@
 Pure scalar rule layer over the v2 §1E features:
 - ``volume_zscore_20d`` from ``FeatureStore.volume_liquidity_v2``.
 - ``return_1d`` from V1 ``VolatilityFeatures.return_1d``
-  (single source of truth — see documented implementation decision).
+  (single source of truth).
 - ``gap_frequency_percentile_252d`` + ``intraday_range_percentile_252d``
   from the §1C ``volatility_state_v2`` seam for ``liquidity_gap_behavior``
-  (see documented implementation decision).
+  (feature placement decision).
 
 Spec references (docs/regime_engine_v2_spec.md):
-    §1E lines 260-266  Labels
-    §1E lines 268-286  Rules
-    §1E lines 288-294  Risk Rank
-    §1E line  282      Precedence implicit:
+    §1E lines 399-405  Labels
+    §1E lines 407-424  Rules
+    §1E lines 426-433  Risk Rank
+    §1E line  423      Precedence implicit ("otherwise"):
                        panic_volume > liquidity_gap_behavior > normal_volume > unknown
 
 The three rules are evaluated in precedence order; the first match wins.
 If none match (or any required input is NaN), the label falls through to
 ``unknown`` (data-quality gate, mirrors the §3.3 convention).
 
-This module ships ``panic_volume`` (§1E lines 270-274), ``normal_volume``
-(§1E line 282), and ``liquidity_gap_behavior`` (§1E lines 276-280) live.
+This module ships ``panic_volume`` (§1E lines 409-413), ``normal_volume``
+(§1E lines 421-423), and ``liquidity_gap_behavior`` (§1E lines 415-419) live.
 The 252d percentile of ``gap_frequency_20d`` comes from
 ``regime_detection.volatility_state_v2.gap_frequency_percentile_252d``.
 
@@ -38,7 +38,7 @@ import numpy as np
 from regime_detection.config import VolumeLiquidityRulesConfig
 
 
-# v2 §1E lines 260-266 labels (full Literal).
+# v2 §1E lines 399-405 labels (full Literal).
 VolumeLiquidityLabel = Literal[
     "normal_volume",
     "panic_volume",
@@ -47,7 +47,7 @@ VolumeLiquidityLabel = Literal[
 ]
 
 
-# v2 §1E lines 288-294 — risk rank, verbatim from spec. Drives per-label
+# v2 §1E lines 426-433 — risk rank, verbatim from spec. Drives per-label
 # asymmetric hysteresis. Pinned constant (NOT a tunable).
 VOLUME_LIQUIDITY_RISK_RANK: dict[VolumeLiquidityLabel, int] = {
     "normal_volume": 0,
@@ -57,7 +57,7 @@ VOLUME_LIQUIDITY_RISK_RANK: dict[VolumeLiquidityLabel, int] = {
 }
 
 
-# Precedence implicit from §1E line 282 "otherwise" — higher-risk rules win
+# Precedence implicit from §1E line 423 "otherwise" — higher-risk rules win
 # first, with `unknown` reserved as the data-quality fallback at the bottom.
 RULE_PRECEDENCE: tuple[VolumeLiquidityLabel, ...] = (
     "panic_volume",
@@ -74,13 +74,13 @@ class VolumeLiquidityRuleInputs:
     consumes the two percentile fields from ``volatility_state_v2``.
     """
 
-    # §1E line 272 / 256 — z-score of today's volume vs trailing 20d.
+    # §1E line 411 / 395 — z-score of today's volume vs trailing 20d.
     volume_zscore_20d: float
-    # §1E line 273 — today's SPY total return.
+    # §1E line 412 — today's SPY total return.
     return_1d: float
-    # §1E line 278 — 252d percentile of `gap_frequency_20d`.
+    # §1E line 417 — 252d percentile of `gap_frequency_20d`.
     gap_frequency_percentile_252d: float
-    # §1E line 279 — 252d percentile of intraday range.
+    # §1E line 418 — 252d percentile of intraday range.
     intraday_range_percentile_252d: float
 
 
@@ -92,7 +92,7 @@ def evaluate_panic_volume(
     inputs: VolumeLiquidityRuleInputs,
     config: VolumeLiquidityRulesConfig,
 ) -> bool:
-    """v2 §1E lines 270-274.
+    """v2 §1E lines 409-413.
 
     ``volume_zscore_20d > panic_volume_zscore_threshold (2.0)``
     AND ``return_1d < panic_volume_return_threshold (-0.02)``.
@@ -113,7 +113,7 @@ def evaluate_liquidity_gap_behavior(
     inputs: VolumeLiquidityRuleInputs,
     config: VolumeLiquidityRulesConfig,
 ) -> bool:
-    """v2 §1E lines 276-280 — `liquidity_gap_behavior` predicate.
+    """v2 §1E lines 415-419 — `liquidity_gap_behavior` predicate.
 
     Spec text:
         gap_frequency_20d percentile_252d > 0.75
@@ -125,7 +125,7 @@ def evaluate_liquidity_gap_behavior(
     `VolumeLiquidityRulesConfig.liquidity_gap_*_percentile_threshold`
     so the V2 §9.1 walk-forward calibration may retune.
 
-    Implements the documented input contract — the 252d percentile of `gap_frequency_20d` now
+    Implements the feature-placement decision: the 252d percentile of `gap_frequency_20d` now
     ships from `regime_detection.volatility_state_v2` (in the same
     commit that flipped this predicate from `return False`), so both
     rule inputs are available at evaluation time.
@@ -146,7 +146,7 @@ def evaluate_normal_volume(
     inputs: VolumeLiquidityRuleInputs,
     config: VolumeLiquidityRulesConfig,
 ) -> bool:
-    """v2 §1E line 282 — "otherwise".
+    """v2 §1E lines 421-423 — "otherwise".
 
     True iff NEITHER ``panic_volume`` NOR ``liquidity_gap_behavior``
     fires, AND the required inputs are not NaN (so we can actually

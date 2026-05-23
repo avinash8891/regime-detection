@@ -88,7 +88,9 @@ from regime_detection.monetary_pressure import (
     compute_monetary_pressure_features,
 )
 from regime_detection.inflation_growth import (
+    AGG_FORWARD_EPS_REVISION_KEY as _IG_AGG_FORWARD_EPS_REVISION_KEY,
     CPI_KEY as _IG_CPI_KEY,
+    CPI_NOWCAST_KEY as _IG_CPI_NOWCAST_KEY,
     DBC_KEY as _IG_DBC_KEY,
     DGS10_KEY as _IG_DGS10_KEY,
     InflationGrowthFeatures,
@@ -166,6 +168,10 @@ class _FeatureStoreBuildState:
     volume_liquidity_v2: VolumeLiquidityV2Features | None = None
     monetary: MonetaryPressureV2Features | None = None
     realized_vol_21d: pd.Series | None = None
+    # SPY-derived 63d trailing drawdown — spec §6.1 line 4059 input shared
+    # by HMM (_build_hmm_feature) and clustering (_build_clustering_feature).
+    # Memoized here so both consumers read the same series (cf. realized_vol_21d).
+    drawdown_63d: pd.Series | None = None
     hmm: HMMFeatures | None = None
     clustering: ClusteringFeatures | None = None
     credit_funding: CreditFundingFeatures | None = None
@@ -217,9 +223,16 @@ class FeatureStore(BaseModel):
     volatility_state_v2: VolatilityV2Features | None = None
 
     # V2 §1D seam — populated when a BreadthV2Config is threaded through AND
-    # context.sector_etf_closes is non-None with all 11 sector symbols
-    # present. Otherwise None (graceful degradation — V2 §1D PIT pipeline is
-    # not yet ingested for related features; sector ETF feed is optional).
+    # context.sector_etf_closes is non-None AND at least one symbol from
+    # SECTOR_ETFS is present (any-of-1, not all-of-11). Authorization for
+    # the any-of-1 gate lives in breadth_state_v2 module docstring L28-43:
+    # the compute function emits two outputs — strict `sector_breadth_21d`
+    # (NaN when any of 11 sectors missing, per §1D line 229 "divided by 11")
+    # AND `available_sector_breadth_21d` proxy (uses available sectors,
+    # exposes count + missing-symbol evidence). The proxy is computable
+    # whenever at least one sector exists, so the seam admits any-of-1.
+    # Otherwise None — V2 §1D PIT pipeline is not yet ingested for related
+    # features; sector ETF feed is optional.
     breadth_state_v2: BreadthV2Features | None = None
 
     # V2 §1E seam — populated when a VolumeLiquidityV2Config is threaded
@@ -227,23 +240,25 @@ class FeatureStore(BaseModel):
     # volume rides on MarketContext.spy_ohlcv["volume"] on the V1+V2 path
     # so this is only None when the config is absent (v1-only callers) or
     # when the volume column is missing. Exposes ONLY volume_zscore_20d;
-    # gap_frequency_20d and intraday_range_percentile_252d (also §1E
-    # features per spec lines 257–258) live on volatility_state_v2.
+    # gap_frequency_20d and intraday_range_percentile_252d (defined under
+    # §1C at spec L299/L306 and re-surfaced in the §1E feature list at
+    # spec L394-L397) live on volatility_state_v2.
     volume_liquidity_v2: VolumeLiquidityV2Features | None = None
 
     # V2 §2A monetary-pressure feature seam — populated when a
     # MonetaryPressureV2FeaturesConfig is threaded through AND
     # MarketContext.macro_series carries both DGS2 and DGS10 (spec
-    # source contract §2A lines 887–889). Includes broad_usd_index_zscore_63d
+    # source contract §2A L2841-L2844). Includes broad_usd_index_zscore_63d
     # and 21d-variant features feeding the §2A axis classifier.
     monetary: MonetaryPressureV2Features | None = None
 
     # V2 §6.1 HMM evidence seam — populated when ``context.config.hmm``
-    # is non-None AND all five upstream feature seams are lit (volatility
-    # return_1d, volume_liquidity_v2.volume_zscore_20d,
-    # network_fragility.avg_pairwise_corr_63d, plus the SPY-derived
-    # realized_vol_21d and drawdown_63d). Otherwise None — V1 byte-identity
-    # preserved on the 5-component transition_score path.
+    # is non-None AND the two V2 upstream seams gate locally:
+    # volume_liquidity_v2 and network_fragility. The remaining three
+    # inputs (volatility.return_1d, SPY-derived realized_vol_21d, and
+    # drawdown_63d computed inline) ride the V1 path and are required
+    # rather than optional. Otherwise None — V1 byte-identity preserved
+    # on the 5-component transition_score path.
     hmm: HMMFeatures | None = None
 
     # v2 §6.2 GMM clustering evidence seam — populated when
@@ -257,12 +272,12 @@ class FeatureStore(BaseModel):
     clustering: ClusteringFeatures | None = None
 
     # v2 §6.3 BOCPD change-point evidence seam — populated when
-    # ``context.config.change_point`` is non-None AND the trailing
-    # ``training_window_days`` of realized_vol_21d (SPY-derived) is
-    # available. The observation series rides the SPY-close V1 path, so
-    # this seam only goes None when the config is absent (v1-only callers)
-    # or when SPY history is too short for the spec-pinned 5y window.
-    # Consumed by the transition_score 7-component weight table when present.
+    # ``context.config.change_point`` is non-None. The observation series
+    # (SPY-derived realized_vol_21d) rides the V1 path; trailing-window
+    # adequacy is enforced inside compute_change_point_features rather
+    # than at this gate, so this seam only goes None when the config is
+    # absent (v1-only callers). Consumed by the transition_score
+    # 7-component weight table when present.
     change_point: ChangePointFeatures | None = None
 
     # V2 §2C credit/funding seam — populated when a CreditFundingConfig
@@ -292,8 +307,9 @@ def _build_sentiment_score_series(
     ``publication_date`` (or ``date`` if no separate publication column) is
     on or before each session — V1 §2.2 stateless-replay rule, never
     consult a future-dated reading. Returns ``None`` when no AAII frame
-    is supplied (lets the euphoria predicate falsify per V2 §10 "do not
-    invent a sentiment proxy" / documented implementation decision lineage).
+    is supplied (lets the euphoria predicate falsify per the V2 §10
+    absolute "do not invent" rule at spec L4364 and the documented
+    implementation decision lineage in ADR 0004 Q1+Q4).
 
     Cold-start (ADR 0004 Q5): a session with no AAII row at or before it
     receives NaN; the euphoria predicate then falsifies on that session
@@ -557,6 +573,20 @@ def _build_realized_vol_21d_feature(state: _FeatureStoreBuildState) -> None:
     )
 
 
+def _build_drawdown_63d_feature(state: _FeatureStoreBuildState) -> None:
+    # Spec §6.1 line 4059: 63d trailing-peak drawdown. Single shared
+    # computation matches the realized_vol_21d pattern (one helper, two
+    # consumers — HMM and clustering).
+    state.drawdown_63d = (
+        compute_trailing_drawdown(state.spy_close, 63)
+        if (
+            state.context.config.hmm is not None
+            or state.context.config.clustering is not None
+        )
+        else None
+    )
+
+
 def _build_hmm_feature(state: _FeatureStoreBuildState) -> None:
     volume_liquidity_v2 = state.volume_liquidity_v2
     network_fragility = state.network_fragility
@@ -571,7 +601,7 @@ def _build_hmm_feature(state: _FeatureStoreBuildState) -> None:
     state.hmm = compute_hmm_features(
         return_1d=volatility.return_1d,
         realized_vol_21d=state.realized_vol_21d,
-        drawdown_63d=compute_trailing_drawdown(state.spy_close, 63),
+        drawdown_63d=state.drawdown_63d,
         volume_zscore_20d=volume_liquidity_v2.volume_zscore_20d,
         avg_pairwise_corr_63d=network_fragility.avg_pairwise_corr_63d,
         config=state.context.config.hmm,
@@ -596,7 +626,7 @@ def _build_clustering_feature(state: _FeatureStoreBuildState) -> None:
         return_21d=trend_character.return_21d,
         return_63d=trend_direction_v2.return_63d,
         realized_vol_21d=state.realized_vol_21d,
-        drawdown_63d=compute_trailing_drawdown(state.spy_close, 63),
+        drawdown_63d=state.drawdown_63d,
         adx_14=trend_character.adx_14,
         avg_pairwise_corr_63d=network_fragility.avg_pairwise_corr_63d,
         pct_above_50dma=breadth_state_v2.pct_above_50dma,
@@ -655,9 +685,9 @@ def _build_inflation_growth_feature(state: _FeatureStoreBuildState) -> None:
         xlp_close=state.context.cross_asset_closes[_IG_XLP_KEY],
         xlu_close=state.context.cross_asset_closes[_IG_XLU_KEY],
         config=state.inflation_growth_config.rules,
-        cpi_nowcast=state.context.macro_series.get("cpi_nowcast"),
+        cpi_nowcast=state.context.macro_series.get(_IG_CPI_NOWCAST_KEY),
         aggregate_forward_eps_revision=state.context.macro_series.get(
-            "aggregate_forward_eps_revision"
+            _IG_AGG_FORWARD_EPS_REVISION_KEY
         ),
         cpi_first_release=state.context.cpi_first_release,
         use_first_release_cpi_when_available=(
@@ -691,6 +721,7 @@ _FEATURE_STORE_BUILDERS: tuple[_FeatureStoreBuilder, ...] = (
     _FeatureStoreBuilder("volume_liquidity_v2", _build_volume_liquidity_v2_feature),
     _FeatureStoreBuilder("monetary", _build_monetary_feature),
     _FeatureStoreBuilder("realized_vol_21d", _build_realized_vol_21d_feature),
+    _FeatureStoreBuilder("drawdown_63d", _build_drawdown_63d_feature),
     _FeatureStoreBuilder("hmm", _build_hmm_feature),
     _FeatureStoreBuilder("clustering", _build_clustering_feature),
     _FeatureStoreBuilder("credit_funding", _build_credit_funding_feature),

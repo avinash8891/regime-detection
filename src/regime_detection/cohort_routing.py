@@ -1,12 +1,12 @@
 """v2 §5.1 Agent Cohort Routing precedence walker.
 
-Pins docs/regime_engine_v2_spec.md §5.1 (lines 2478-2566) per documented implementation notes
-#53. The walker traverses ``COHORTS`` top-to-bottom and returns the first
+Pins docs/regime_engine_v2_spec.md §5.1 per Ambiguity Log #53. The walker
+traverses ``COHORTS`` top-to-bottom and returns the first
 matching cohort's routing decision. ``default_neutral`` is the universal
 fallback and always matches when no specialist does.
 
-A predicate referencing an axis whose active label is ``None`` (e.g. the
-§2A monetary_pressure classifier is not shipped yet) returns ``False``
+A predicate referencing an axis whose active label is ``None`` (e.g. an
+axis whose feature inputs are absent at this session) returns ``False``
 silently — those specialists stay dormant until their inputs land.
 """
 from __future__ import annotations
@@ -46,9 +46,9 @@ def evaluate_cohort_routing(
 ) -> AgentRouting:
     """Walk §5.1 precedence top-to-bottom; return the first matching cohort.
 
-    ``default_neutral`` always matches as the universal fallback (§5.1 line
-    2552). The ``fallback_cohort`` field is always ``default_neutral``
-    regardless of which specialist fires.
+    ``default_neutral`` always matches as the universal fallback (§5.1).
+    The ``fallback_cohort`` field is always ``default_neutral`` regardless
+    of which specialist fires.
     """
     inputs: dict[str, str | None] = {
         "trend_direction": trend_direction_active,

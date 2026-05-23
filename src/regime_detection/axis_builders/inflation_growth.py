@@ -48,21 +48,22 @@ def build_inflation_growth_axis_series(
          If the seam is None (no v2 config / required inputs absent) return
          None — the timeline leaves ``RegimeOutput.inflation_growth_state``
          as None.
-      2. Per session, run the §2B unknown gate (spec lines 2308-2312):
+      2. Per session, run the §2B Unknown Gate (spec ~lines 3151-3155):
          - CPI series stale > 60 calendar days
          - PMI series stale > 45 calendar days
          - DGS10 stale > 5 sessions
          - ``assess_series_input_quality`` fails on any required series
       3. Cross-thread the §2C credit_funding.active_label for the session;
-         None falls through to the §2B cross-axis short-circuit (spec lines
-         2314-2316) which falsifies goldilocks / recession_scare /
+         None falls through to the §2B Cross-Axis Short-Circuit (spec
+         ~lines 3157-3161) which falsifies goldilocks / recession_scare /
          recovery_growth.
       4. Materialize per-day scalar rule inputs and evaluate §2B precedence
-         (inflation_shock > recession_scare > disinflation > goldilocks >
-         recovery_growth > earnings_contraction > earnings_expansion >
-         unknown). Optional nowcast/EPS inputs falsify via NaN until their
-         source series are present.
-      5. Apply per-label asymmetric hysteresis (§2B lines 2287-2303).
+         (inflation_shock > recession_scare > risk_off_mild > disinflation >
+         goldilocks > recovery_growth > reflation > stagflation_lite >
+         earnings_contraction > earnings_expansion > unknown). Optional
+         nowcast/EPS inputs falsify via NaN until their source series are
+         present.
+      5. Apply per-label asymmetric hysteresis (§2B Hysteresis, ~spec lines 3128-3144).
       6. Emit one InflationGrowthOutput per session.
     """
     features = feature_store.inflation_growth
@@ -128,7 +129,7 @@ def build_inflation_growth_axis_series(
     for day in context.sessions:
         dt = pd.Timestamp(day)
 
-        # §2B unknown gate (spec lines 2308-2311). Run BEFORE the generic
+        # §2B Unknown Gate (spec ~lines 3151-3155). Run BEFORE the generic
         # quality assessment so the §2B-specific staleness messages reach
         # evidence.
         cpi_staleness_days = int(cpi_staleness_by_date.loc[dt])
@@ -178,7 +179,7 @@ def build_inflation_growth_axis_series(
 
         # Cross-axis dependency — None signals the §2C axis is unbuilt,
         # falsifying the goldilocks / recession_scare / recovery_growth
-        # predicates per spec lines 2314-2316.
+        # predicates per §2B Cross-Axis Short-Circuit (spec ~lines 3157-3161).
         credit_funding_active_label: str | None = None
         if credit_funding_active_labels_by_date is not None:
             if day not in credit_funding_active_labels_by_date:
@@ -201,7 +202,8 @@ def build_inflation_growth_axis_series(
                 inflation_surprise_zscore=float("nan"),
             )
 
-        # EPS staleness gate — mirror of the NFCI gate in credit_funding.py:154.
+        # EPS staleness gate — same pattern as the staleness-based unknown
+        # gates elsewhere in this module.
         # When the aggregate_forward_eps_revision series has no non-NaN value
         # within eps_revision_stale_calendar_days of this session, treat the
         # EPS direction signal as NaN so earnings_expansion /

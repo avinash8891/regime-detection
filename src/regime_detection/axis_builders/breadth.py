@@ -44,9 +44,10 @@ def build_breadth_axis_series(
     # V2 §1D extension (documented implementation decision): when the PIT seam is
     # lit AND ALL four required PIT features are non-None, evaluate the
     # narrowing_breadth and broadening_breadth predicates per session and
-    # apply the spec §1D line 284 precedence walk. When the PIT seam is
+    # apply the §1D precedence walk (spec line 385). When the PIT seam is
     # unlit (default-config callers, no PIT inputs), V2 rules silently do
-    # NOT fire — V1 byte-identity is preserved (see Hard Constraint #1).
+    # NOT fire — V1 byte-identity is preserved (AGENTS.md V1 archive
+    # replay rule; tests/test_v1_frozen_replay.py).
     v2_features = feature_store.breadth_state_v2
     v2_config = context.config.breadth_state_v2
     v2_active = (

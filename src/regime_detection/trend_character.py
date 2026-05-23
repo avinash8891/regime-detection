@@ -9,7 +9,7 @@ import pandas as pd
 from regime_detection._rolling_stats import period_return, simple_moving_average
 
 
-# V2 §1B (documented implementation decision) extends the V1 5-label set.
+# V2 §1A Trend Character (implementation decision #67 pin) extends the V1 5-label set.
 # Precedence: breakout_expansion > recovery_attempt > trending > mild_trend >
 # range_bound > chop > volatile_chop > transition > unknown.
 TrendCharacterLabel = Literal[
@@ -25,10 +25,10 @@ TrendCharacterLabel = Literal[
 ]
 
 
-# Per documented implementation decision. breakout_expansion shares rank 0 with trending (both are
-# "high-conviction directional" labels). range_bound shares rank 1 with
-# recovery_attempt/chop (mid risk — calm but live regimes). transition/unknown
-# remain at rank 2 (catch-all / cold-start).
+# Per implementation decision #67 risk-rank extension. breakout_expansion shares rank 0
+# with trending (both are "high-conviction directional" labels). range_bound
+# shares rank 1 with recovery_attempt/chop (mid risk — calm but live regimes).
+# transition/unknown remain at rank 2 (catch-all / cold-start).
 _RISK_RANK: dict[TrendCharacterLabel, int] = {
     "trending": 0,
     "breakout_expansion": 0,
@@ -42,9 +42,10 @@ _RISK_RANK: dict[TrendCharacterLabel, int] = {
 }
 
 
-# Spec-pinned constants (documented implementation decision). Mirrored by yaml defaults in
-# TrendCharacterV2Config. The classifier reads these defaults when no v2
-# config is threaded through; yaml may retune via §9.1 walk-forward.
+# Spec-pinned constants (implementation decision #46/#47 + §1A formulas at spec lines
+# 130-157, 175-179). Mirrored by yaml defaults in TrendCharacterV2Config.
+# The classifier reads these defaults when no v2 config is threaded through;
+# yaml may retune via §9.1 walk-forward.
 _DEFAULT_FOLLOWTHROUGH_RATE_THRESHOLD = 0.60
 _DEFAULT_FOLLOWTHROUGH_LOOKBACK_SESSIONS = 504
 _DEFAULT_FOLLOWTHROUGH_WINDOW_COUNT = 20
@@ -65,7 +66,7 @@ class TrendCharacterFeatures:
     return_21d: pd.Series
     prior_63d_drawdown: pd.Series
     adx_14: pd.Series
-    # V2 §1B (documented implementation decision).
+    # V2 §1A Trend Character inputs (implementation decision #46/#47/#67).
     return_63d: pd.Series
     midpoint_excursion_20d: pd.Series
     breakout_20d_or_50d: pd.Series
@@ -102,7 +103,7 @@ def _compute_adx_14(*, high: pd.Series, low: pd.Series, close: pd.Series) -> pd.
 
 
 def _compute_midpoint_excursion_20d(close: pd.Series) -> pd.Series:
-    """v2 §1B lines 132-138:
+    """v2 §1A lines 175-176:
         midpoint_20d[t] = (max(close[t-19..t]) + min(close[t-19..t])) / 2
         excursion[t]    = max(|close[i] - midpoint_20d[t]| / midpoint_20d[t])
                           for i in t-19..t
@@ -122,7 +123,7 @@ def _compute_midpoint_excursion_20d(close: pd.Series) -> pd.Series:
 
 
 def _compute_breakout_20d_or_50d(close: pd.Series) -> pd.Series:
-    """Strict, prior-window-exclusive breakout flag (spec line 97-99)."""
+    """Strict, prior-window-exclusive breakout flag (v2 §1A lines 137-140)."""
     prior_max_20 = close.shift(1).rolling(20).max()
     prior_max_50 = close.shift(1).rolling(50).max()
     flag = (close > prior_max_20) | (close > prior_max_50)
@@ -139,7 +140,7 @@ def _compute_bb_width_expanding(
     lookback: int = _DEFAULT_BB_WIDTH_EXPANDING_LOOKBACK,
 ) -> pd.Series:
     """Textbook BB width: 2 * multiplier * std(close[t-period+1..t], ddof=0).
-    For multiplier=2 this equals 4 * std (spec line 102)."""
+    For multiplier=2 this equals 4 * std (v2 §1A line 143)."""
     std = close.rolling(period).std(ddof=0)
     bb_width = 2.0 * multiplier * std
     return bb_width > bb_width.shift(lookback)
@@ -158,7 +159,7 @@ def _compute_followthrough_rate(
     window_count: int = _DEFAULT_FOLLOWTHROUGH_WINDOW_COUNT,
     hold_sessions: int = _DEFAULT_FOLLOWTHROUGH_HOLD_SESSIONS,
 ) -> pd.Series:
-    """v2 §1B lines 110-116 + documented implementation decision.
+    """v2 §1A lines 151-157 + implementation decision #47 followthrough_rate pin.
 
     Walk backwards through history collecting up to `window_count` past
     sessions where breakout_20d_or_50d fired. For each, "held" iff every
@@ -298,7 +299,7 @@ def raw_label_for_day(
     # V1 labels (preserved verbatim).
     recovery_attempt = bool((prior_dd <= -0.10) and (close > sma50) and (ret10 >= 0.05))
     trending = bool((adx >= 20) and (abs(ret21) >= 0.05))
-    mild_trend = bool((adx >= 20) and (abs(ret21) < 0.05))
+    mild_trend = bool(allow_v2_labels and (adx >= 20) and (abs(ret21) < 0.05))
     chop = bool((adx < 20) and (abs(ret10) < 0.03) and (abs(ret21) < 0.05))
     volatile_chop = bool(allow_v2_labels and (adx < 20) and not chop and not recovery_attempt)
 
@@ -326,9 +327,9 @@ def raw_label_for_day(
         and adx < _DEFAULT_RANGE_BOUND_ADX_THRESHOLD
     )
 
-    # Precedence (documented implementation decision):
-    # breakout_expansion > recovery_attempt > trending > range_bound > chop >
-    # transition > unknown.
+    # Precedence (implementation decision #67 pin):
+    # breakout_expansion > recovery_attempt > trending > mild_trend >
+    # range_bound > chop > volatile_chop > transition > unknown.
     if breakout_expansion:
         label: TrendCharacterLabel = "breakout_expansion"
     elif recovery_attempt:
@@ -409,6 +410,7 @@ def build_raw_outputs(
     )
     if not allow_v2_labels:
         breakout_expansion = breakout_expansion & False
+        mild_trend = mild_trend & False
         range_bound = range_bound & False
         volatile_chop = volatile_chop & False
 
@@ -448,4 +450,3 @@ def build_raw_outputs(
         )
 
     return list(labels), evidence
-

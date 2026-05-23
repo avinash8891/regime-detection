@@ -1,3 +1,23 @@
+"""Per-series input-quality assessment helpers.
+
+Authoritative anchor: ``docs/regime_engine_v2_spec.md`` line 542
+("§2.8 data-quality helper —
+pure-quality vs label-aware paths"). Numeric thresholds for the
+completeness gate live in ADR 0015 (see
+``docs/decisions/0015-data-quality-completeness-gate.md``); the spec
+itself is silent on them.
+
+Status precedence inside :func:`assess_series_input_quality` (ADR 0015 R2):
+
+  insufficient_history  > stale_data > insufficient_data
+  > raw_label == "unknown" (V1 short-circuit, opt-out via
+                            skip_raw_label_short_circuit)
+  > degraded > ok
+
+`insufficient_history`, `stale_data`, and `insufficient_data` all force
+the calling classifier's output to ``unknown`` via
+:func:`quality_forces_unknown`. `degraded` and `ok` pass through.
+"""
 from __future__ import annotations
 
 from datetime import date
@@ -7,9 +27,17 @@ import pandas as pd
 from regime_detection.models import DataQuality
 
 
-# spec §2.8: completeness < 0.70 → label=unknown, reason=insufficient_data.
-# The 0.70 floor is a spec constant, not a function of min_completeness.
+# ADR 0015 R1: hard completeness floor below which the helper emits
+# ``status="insufficient_data"`` regardless of the caller's softer
+# ``min_completeness`` knob. The 0.70 value is a v2 engine convention,
+# not a spec constant — see docs/decisions/0015-data-quality-completeness-gate.md
+# for ratification and the two-tier gate semantics.
 INSUFFICIENT_COMPLETENESS_FLOOR = 0.70
+
+# Sentinel returned by ``_freshness_days`` when the input window has no
+# valid observation. Guaranteed to exceed any realistic
+# ``max_freshness_days`` so the staleness gate trips deterministically.
+_NO_VALID_OBSERVATION_FRESHNESS_DAYS = 10**9
 
 
 def assess_series_input_quality(
@@ -111,5 +139,5 @@ def _window_to_asof(*, series: pd.Series, as_of_date: pd.Timestamp, required_tra
 def _freshness_days(*, window: pd.Series, as_of_date_normalized: pd.Timestamp) -> int:
     last_valid = window.last_valid_index()
     if last_valid is None:
-        return 10**9
+        return _NO_VALID_OBSERVATION_FRESHNESS_DAYS
     return int((as_of_date_normalized - pd.Timestamp(last_valid).normalize()).days)

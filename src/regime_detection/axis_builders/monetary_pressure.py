@@ -46,7 +46,7 @@ def build_monetary_pressure_axis_series(
     context: MarketContext,
     feature_store: FeatureStore,
 ) -> dict[date, MonetaryPressureV2Output] | None:
-    """V2 §2A monetary pressure axis classifier (documented implementation decision)."""
+    """V2 §2A monetary pressure axis classifier (Ambiguity Log #46)."""
     features = feature_store.monetary
     if features is None:
         return None

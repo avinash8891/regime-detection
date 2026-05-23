@@ -6,16 +6,21 @@ Library reuse: ``sklearn.mixture.GaussianMixture`` provides fit +
 FeatureStore wiring. NO hand-rolled EM / k-means++ / covariance
 regularization.
 
-K-Means is documented in the spec (line 2835) as an "acceptable fallback
-when GMM convergence is unstable". GMM is the only path shipped; K-Means
-fallback is a future option for a follow-up slice.
+K-Means is documented in the spec (§6.2 line 4191) as an "acceptable
+fallback when GMM convergence is unstable". GMM is the only path shipped;
+K-Means fallback is a future option for a follow-up slice.
 
 Cluster IDs are raw integers ``0..n_clusters-1``; mapping to economic
-labels is operator-side per V2 §10 + spec line 2837 (``cluster_label_map.yaml``).
-Never auto-map.
+labels is operator-side per V2 §10 (line 4378) + the
+``cluster_label_map.yaml`` artifact at spec §6.2 line 4233. Never auto-map.
 
-Per V2 engine statelessness, ``compute_clustering_features`` re-fits ONCE
-per ``classify_window`` call on the trailing ``training_window_days`` rows.
+Per V2 §6.2 refit cadence (spec line 4201), ``compute_clustering_features``
+re-fits the GMM at every ``retrain_cadence_days`` checkpoint across the
+joined frame; each checkpoint scores the
+``[train_end_pos, next_train_end_pos)`` segment with a freshly-fit model
+trained on the trailing ``training_window_days`` rows. PIT-safe by
+construction: every fit's training window ends at ``t' <= t`` for every
+emitted session ``t``.
 """
 
 from __future__ import annotations
@@ -41,8 +46,16 @@ class ClusteringFeatures:
     Attributes:
         cluster_id: nullable-int per session (raw 0..n_clusters-1; NaN on
             sessions dropped by the join-non-NaN mask).
-        distance_to_centroid: Mahalanobis distance to the *assigned*
-            cluster centroid per session, NaN on dropped sessions.
+        distance_to_centroid: distance to the *assigned* cluster centroid
+            per session, NaN on dropped sessions. Formula depends on
+            ``ClusteringConfig.covariance_type``: Mahalanobis (via
+            ``precisions_``) when ``covariance_type == "full"`` (the
+            shipped default — makes the metric scale-invariant in the
+            cluster's principal axes); Euclidean otherwise (`diag`,
+            `tied`, `spherical` — ``precisions_`` shapes don't admit the
+            per-cluster quadratic form). Spec §6.2 is silent on the
+            formula; the default is chosen so the metric carries the
+            most information.
         cluster_probabilities: ``(n_sessions × n_clusters)`` posterior
             frame with integer column labels ``0..n_clusters-1`` (no
             economic mapping — V2 §10 ABSOLUTE RULE).
@@ -135,8 +148,8 @@ def compute_clustering_features(
             n_components=config.n_clusters,
             covariance_type=config.covariance_type,
             random_state=config.random_state,
-            max_iter=200,
-            reg_covar=1e-6,
+            max_iter=config.max_iter,
+            reg_covar=config.reg_covar,
         )
         try:
             model.fit(train)

@@ -16,7 +16,8 @@ if TYPE_CHECKING:
     from regime_detection.market_context import MarketContext
 
 
-# V1 trend-character warm-up follows the existing 63-session ADX/range gate.
+# 63-session warm-up matches the longest required window — V1
+# prior_63d_drawdown and V2 range_bound return_63d.
 TREND_CHARACTER_REQUIRED_TRADING_DAYS = 63
 
 

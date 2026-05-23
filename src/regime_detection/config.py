@@ -133,8 +133,8 @@ class RegimeConfig(StrictBaseModel):
     # v2 §2A axis classifier configuration.
     monetary_pressure_state: MonetaryPressureV2Config | None = None
     # v2 §2A central-bank-text evidence config (deterministic-lexicon
-    # substitute for the spec's "LLM classifier" phrasing; spec Ambiguity
-    # Log #72 at spec line 2569 ratifies the substitution).
+    # substitute for the spec's "LLM classifier" phrasing; spec line 2569
+    # ratifies the substitution).
     central_bank_text: CentralBankTextConfig | None = None
     # v2 §1A SF Fed news sentiment evidence config. Evidence only —
     # never read by the `euphoria` rule.

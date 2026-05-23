@@ -8,11 +8,14 @@ Observation series: realized_vol_21d (#63).
 Score formula: 5-session rolling max of posterior P(change-point at t) (#64).
 Break: posterior >= ``break_threshold`` (#65).
 
-Per V2 §10 + spec §6.3 line 2887 this is EVIDENCE only.
+Per V2 §10 + spec §6.3 (L4252) this is EVIDENCE only.
 ``RegimeOutput.change_point`` is populated when the config is present and
-inputs are sufficient. The ``transition_score`` consumer is V2.1
-spec-amendment work (spec §4.2 doesn't yet declare a
-``change_point_score`` component).
+inputs are sufficient. The ``transition_score`` consumer is now wired
+via the §4.3 4-table weight system (spec L2166):
+when the change_point seam is lit, ``compose_transition_score_for_session``
+selects ``weights_with_change_point`` (6 components) or
+``weights_with_hmm_with_change_point`` (7 components) depending on
+whether the HMM seam is also lit.
 
 Implementation note on indexing into the algorithm's posterior matrix
 ``R``: in this library ``R[1, t]`` carries the per-session change-point
@@ -20,7 +23,7 @@ posterior. Adams-MacKay's renormalization step folds the hazard mass back
 into row 0 such that ``R[0, t]`` collapses to ~hazard at every session;
 the data-conditioned "a change just happened" signal lives in
 ``R[1, t]`` (P(run_length=1 at time t) = P(change-point at t-1)). The
-spec/Ambiguity-Log description "P(run_length=0)" maps to this row in the
+spec description "P(run_length=0)" maps to this row in the
 ``bayesian-changepoint-detection`` implementation.
 """
 
@@ -50,8 +53,8 @@ class ChangePointFeatures:
     """v2 §6.3 — per-session BOCPD posterior + derived series."""
 
     posterior_changepoint_prob: pd.Series  # raw BOCPD per-session changepoint posterior
-    score: pd.Series  # 5-session rolling max of posterior (documented implementation decision)
-    days_since_last_break: pd.Series  # nullable Int64; sessions since last break (documented implementation decision)
+    score: pd.Series  # 5-session rolling max of posterior (spec L2135-2150)
+    days_since_last_break: pd.Series  # nullable Int64; sessions since last break (spec L2152-2164)
     method: str  # "BOCPD"
 
 
@@ -82,7 +85,7 @@ def compute_change_point_features(
     2. **In-window rows where no break has yet occurred in trailing
        history** (cold-start within the BOCPD window). ``posterior`` and
        ``score`` are real numbers; ``days_since_last_break`` is ``pd.NA``
-       per documented implementation decision / V1 §2.7 cold-start contract. The timeline
+       per spec L2152-L2164 / V1 §2.7 cold-start contract. The timeline
        consumer maps ``pd.NA`` → ``None`` for the wire field while
        preserving the real ``score`` value. This is the load-bearing
        path — quiet markets with no detected breaks still emit a valid
@@ -193,14 +196,14 @@ def _bocpd_posterior_changepoint_prob(
 
 
 def _rolling_max_changepoint_prob(posterior: pd.Series, window: int) -> pd.Series:
-    """5-session rolling max per documented implementation decision."""
+    """5-session rolling max per spec L2135-L2150."""
     return posterior.rolling(window=window, min_periods=1).max()
 
 
 def _days_since_last_break(
     posterior: pd.Series, threshold: float
 ) -> pd.Series:
-    """Sessions since last posterior crossing per documented implementation decision.
+    """Sessions since last posterior crossing per spec L2152-L2164.
 
     ``pd.NA`` when no break has occurred in available history.
     """

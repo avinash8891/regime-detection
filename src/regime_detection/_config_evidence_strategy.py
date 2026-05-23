@@ -68,9 +68,9 @@ class ClusteringConfig(StrictBaseModel):
     """v2 §6.2 K-Means/GMM clustering configuration.
 
     GMM is the V2 ship default; K-Means is documented as an acceptable
-    fallback only (spec §6.2 line 4173). Mapping cluster_id →
+    fallback only (spec §6.2 line 4191). Mapping cluster_id →
     economic_label is operator-side via cluster_label_map.yaml
-    (spec §6.2 line 4215); not part of this slice.
+    (spec §6.2 line 4233); not part of this slice.
     """
 
     n_clusters: int = Field(default=8, ge=2)
@@ -84,7 +84,21 @@ class ClusteringConfig(StrictBaseModel):
     # more stable assignment regime.
     retrain_cadence_days: int = Field(default=21, ge=1)
     random_state: int = Field(default=42, ge=0)
+    # `full` is the V2 ship default — required for the Mahalanobis
+    # ``distance_to_centroid`` formula in ClusteringFeatures (uses
+    # sklearn's per-cluster ``precisions_`` shape). Setting `tied` /
+    # `diag` / `spherical` silently swaps the formula to Euclidean
+    # (see ClusteringFeatures.distance_to_centroid docstring).
     covariance_type: Literal["full", "tied", "diag", "spherical"] = "full"
+    # sklearn GaussianMixture EM iteration cap. sklearn's default is 100;
+    # V2 ships 200 to give the V2 §6.2 covariance-`full` fit more
+    # iterations before triggering the fail-open `precisions_` singularity
+    # path (`reg_covar` below is the other half of that contract).
+    max_iter: int = Field(default=200, ge=1)
+    # Diagonal load applied to each covariance matrix before inversion.
+    # Equal to sklearn's documented default (1e-6) — pinned explicitly so
+    # behavior survives sklearn minor-version drift in the default value.
+    reg_covar: float = Field(default=1e-6, gt=0.0)
     model_version: str = Field(default="gmm_8cluster_v1.0")
     cluster_label_map: dict[int, str] | None = None
 
@@ -98,7 +112,7 @@ class ChangePointConfig(StrictBaseModel):
     Break = posterior >= 0.5 threshold.
     """
 
-    hazard_lambda: float = Field(default=250.0, gt=0.0)  # spec §6.3 line 4245: 1/250 → lambda=250
+    hazard_lambda: float = Field(default=250.0, gt=0.0)  # spec §6.3 line 4263: 1/250 → lambda=250
     # Score = 5-session rolling max of posterior P(change-point at t).
     score_window_days: int = Field(default=5, ge=1)
     # A break occurs when posterior >= break_threshold (default 0.5).
