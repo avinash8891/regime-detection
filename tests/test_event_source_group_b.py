@@ -22,7 +22,9 @@ from regime_data_fetch.event_sources.validators_gpr_gdelt import GPRGDELTSignalG
 from regime_data_fetch.event_sources.validators_gpr_gdelt import (
     ACLED_SOURCE_ID,
     detect_gpr_spikes,
+    parse_ai_gpr_context,
     parse_gdelt_event_export,
+    parse_gpr_monthly_country_context,
     parse_gpr_table,
 )
 
@@ -601,6 +603,119 @@ def test_gpr_candidate_marks_threat_dominant_spikes() -> None:
             "GPR threats-driven geopolitical risk spike",
         )
     ]
+
+
+def test_gpr_candidate_sets_persistence_window_days() -> None:
+    gpr_csv = """date,gpr,gpr_act,gpr_threat,gpr_ma7,gpr_ma30,N10D
+2022-02-20,100,100,100,100,100,100
+2022-02-21,101,100,101,100,100,100
+2022-02-22,99,99,100,100,100,100
+2022-02-23,101,100,101,100,100,100
+2022-02-24,500,700,125,220,150,900
+"""
+    generator = GPRGDELTSignalGenerator(
+        gpr_fetcher=lambda: gpr_csv,
+        gdelt_fetcher=lambda: "date,event_count,dominant_theme,source_url\n",
+        min_history_days=3,
+        stddev_threshold=2.0,
+    )
+
+    candidates = generator.generate(
+        start_year=2022, end_year=2022, store=None, run_id=None
+    )
+
+    assert [(candidate.source_id, candidate.window_days) for candidate in candidates] == [
+        ("gpr:caldara-iacoviello", (-2, 5))
+    ]
+
+
+def test_parse_gpr_monthly_country_context_returns_top_country_codes() -> None:
+    payload = """month,GPRC_RUS,GPRC_UKR,GPRC_USA,GPRC_CHN
+2022-02-01,320,280,20,110
+2022-03-01,10,15,25,30
+"""
+
+    context = parse_gpr_monthly_country_context(
+        payload, candidate_dates=[dt.date(2022, 2, 24)]
+    )
+
+    assert context == {
+        dt.date(2022, 2, 24): "monthly_country_gpr=RUS:320.00,UKR:280.00,CHN:110.00"
+    }
+
+
+def test_parse_ai_gpr_context_combines_daily_event_type_and_country_role() -> None:
+    daily = """Date,GPR_AI,GPR_AER,GPR_OIL
+2022-02-24,475.5,350.0,20
+"""
+    event_type = """Date,GPR_AI,military_conflict,diplomatic_tension,sanctions
+2022-02-01,220,175,40,90
+"""
+    country = """Date,GPR_AI,Russia_all,Russia_initiator,Ukraine_all,Ukraine_respondent,USA_all
+2022-02-01,220,300,180,260,210,70
+"""
+
+    context = parse_ai_gpr_context(
+        daily,
+        event_type,
+        country,
+        candidate_dates=[dt.date(2022, 2, 24)],
+    )
+
+    assert context == {
+        dt.date(2022, 2, 24): (
+            "ai_gpr_daily=475.50; ai_gpr_event_type=military_conflict:175.00; "
+            "ai_gpr_country=Russia_all:300.00,Ukraine_all:260.00,Ukraine_respondent:210.00"
+        )
+    }
+
+
+def test_gpr_candidate_includes_monthly_and_ai_gpr_context() -> None:
+    gpr_csv = """date,gpr,gpr_act,gpr_threat,gpr_ma7,gpr_ma30,N10D,event
+2022-02-20,100,100,100,100,100,100,
+2022-02-21,101,100,101,100,100,100,
+2022-02-22,99,99,100,100,100,100,
+2022-02-23,101,100,101,100,100,100,
+2022-02-24,500,700,125,220,150,900,Russia invasion of Ukraine
+"""
+    monthly_country = """month,GPRC_RUS,GPRC_UKR,GPRC_USA
+2022-02-01,320,280,20
+"""
+    ai_daily = """Date,GPR_AI,GPR_AER
+2022-02-24,475.5,350.0
+"""
+    ai_event_type = """Date,GPR_AI,military_conflict,sanctions
+2022-02-01,220,175,90
+"""
+    ai_country = """Date,GPR_AI,Russia_all,Ukraine_all,USA_all
+2022-02-01,220,300,260,70
+"""
+    generator = GPRGDELTSignalGenerator(
+        gpr_fetcher=lambda: gpr_csv,
+        gdelt_fetcher=lambda: "date,event_count,dominant_theme,source_url\n",
+        gpr_monthly_fetcher=lambda: monthly_country,
+        ai_gpr_daily_fetcher=lambda: ai_daily,
+        ai_gpr_eventtype_monthly_fetcher=lambda: ai_event_type,
+        ai_gpr_country_monthly_fetcher=lambda: ai_country,
+        min_history_days=3,
+        stddev_threshold=2.0,
+    )
+
+    candidates = generator.generate(
+        start_year=2022, end_year=2022, store=None, run_id=None
+    )
+
+    assert len(candidates) == 1
+    candidate = candidates[0]
+    assert candidate.raw_title == "Russia invasion of Ukraine"
+    assert "monthly_country_gpr=RUS:320.00,UKR:280.00,USA:20.00" in str(
+        candidate.raw_snippet
+    )
+    assert "ai_gpr_daily=475.50" in str(candidate.raw_snippet)
+    assert "ai_gpr_event_type=military_conflict:175.00" in str(candidate.raw_snippet)
+    assert "ai_gpr_country=Russia_all:300.00,Ukraine_all:260.00,USA_all:70.00" in str(
+        candidate.raw_snippet
+    )
 
 
 def test_gpr_gdelt_generator_records_partial_daily_gdelt_failure() -> None:

@@ -22,8 +22,12 @@ from regime_data_fetch.event_sources.gpr_gdelt_fetchers import (
     UCDP_GED_CANDIDATE_URL,
     UCDP_SOURCE_ID,
     fetch_acled_events as _fetch_acled_events,
+    fetch_ai_gpr_country_monthly as _fetch_ai_gpr_country_monthly,
+    fetch_ai_gpr_daily as _fetch_ai_gpr_daily,
+    fetch_ai_gpr_eventtype_monthly as _fetch_ai_gpr_eventtype_monthly,
     fetch_gdelt_daily_export as _fetch_gdelt_daily_export,
     fetch_gpr_daily as _fetch_gpr_daily,
+    fetch_gpr_monthly as _fetch_gpr_monthly,
     fetch_hdx_hapi_conflict_events as _fetch_hdx_hapi_conflict_events,
     fetch_optional_conflict_rows as _fetch_optional_conflict_rows,
     fetch_ucdp_events as _fetch_ucdp_events,
@@ -39,6 +43,8 @@ from regime_data_fetch.event_sources.models import EventCandidate, ValidationRes
 
 LOGGER = logging.getLogger(__name__)
 GPR_SOURCE_ID = "gpr:caldara-iacoviello"
+GPR_MONTHLY_SOURCE_ID = "gpr:caldara-iacoviello-monthly"
+AI_GPR_SOURCE_ID = "ai-gpr:iacoviello-tong"
 GDELT_SOURCE_ID = "gdelt:events-v2"
 GDELT_EVENT_ROOT_CODES = {"14", "18", "19", "20"}
 GDELT_SQLDATE_IDX = 1
@@ -56,6 +62,10 @@ class GPRGDELTSignalGenerator:
         self,
         *,
         gpr_fetcher: Callable[[], str | bytes] | None = None,
+        gpr_monthly_fetcher: Callable[[], str | bytes] | None = None,
+        ai_gpr_daily_fetcher: Callable[[], str | bytes] | None = None,
+        ai_gpr_eventtype_monthly_fetcher: Callable[[], str | bytes] | None = None,
+        ai_gpr_country_monthly_fetcher: Callable[[], str | bytes] | None = None,
         gdelt_fetcher: Callable[[], str | bytes] | None = None,
         gdelt_daily_fetcher: Callable[[dt.date], bytes] | None = None,
         acled_fetcher: ConflictFetcher | None = None,
@@ -66,6 +76,34 @@ class GPRGDELTSignalGenerator:
         merge_window_days: int = 2,
     ) -> None:
         self.gpr_fetcher = gpr_fetcher or _fetch_gpr_daily
+        self.gpr_monthly_fetcher = (
+            gpr_monthly_fetcher
+            if gpr_monthly_fetcher is not None
+            else _fetch_gpr_monthly
+            if gpr_fetcher is None
+            else None
+        )
+        self.ai_gpr_daily_fetcher = (
+            ai_gpr_daily_fetcher
+            if ai_gpr_daily_fetcher is not None
+            else _fetch_ai_gpr_daily
+            if gpr_fetcher is None
+            else None
+        )
+        self.ai_gpr_eventtype_monthly_fetcher = (
+            ai_gpr_eventtype_monthly_fetcher
+            if ai_gpr_eventtype_monthly_fetcher is not None
+            else _fetch_ai_gpr_eventtype_monthly
+            if gpr_fetcher is None
+            else None
+        )
+        self.ai_gpr_country_monthly_fetcher = (
+            ai_gpr_country_monthly_fetcher
+            if ai_gpr_country_monthly_fetcher is not None
+            else _fetch_ai_gpr_country_monthly
+            if gpr_fetcher is None
+            else None
+        )
         self.gdelt_fetcher = gdelt_fetcher
         self.gdelt_daily_fetcher = gdelt_daily_fetcher or _fetch_gdelt_daily_export
         self.acled_fetcher = acled_fetcher or _fetch_acled_events
@@ -94,6 +132,9 @@ class GPRGDELTSignalGenerator:
             for row in self._fetch_gpr_spikes(store=store, run_id=run_id)
             if start_year <= row["date"].year <= end_year
         ]
+        gpr_context = self._fetch_gpr_context(
+            gpr_spikes, store=store, run_id=run_id
+        )
         gdelt_spikes = self._fetch_gdelt_spikes(gpr_spikes, store=store, run_id=run_id)
         acled_events = self._fetch_acled_event_rows(
             start_year, end_year, store=store, run_id=run_id
@@ -106,6 +147,7 @@ class GPRGDELTSignalGenerator:
         )
         self._last_source_dates = {
             GPR_SOURCE_ID: {row["date"] for row in gpr_spikes},
+            AI_GPR_SOURCE_ID: set(gpr_context.get("ai_gpr_dates", set())),
             GDELT_SOURCE_ID: {row["date"] for row in gdelt_spikes},
             ACLED_SOURCE_ID: {row["date"] for row in acled_events},
             UCDP_SOURCE_ID: {row["date"] for row in ucdp_events},
@@ -140,7 +182,7 @@ class GPRGDELTSignalGenerator:
                     self._last_source_dates[GDELT_SOURCE_ID],
                     self.merge_window_days,
                 )
-                candidates.append(_gpr_candidate(row, anchor))
+                candidates.append(_gpr_candidate(row, anchor, gpr_context))
         for row in ucdp_events:
             if start_year <= row["date"].year <= end_year:
                 candidates.append(
@@ -226,6 +268,131 @@ class GPRGDELTSignalGenerator:
             empty_payload=_is_empty_payload(payload),
         )
         return rows
+
+    def _fetch_gpr_context(
+        self,
+        gpr_spikes: list[dict[str, object]],
+        *,
+        store: AcquisitionStore | None,
+        run_id: int | None,
+    ) -> dict[str, object]:
+        candidate_dates = [row["date"] for row in gpr_spikes]
+        context: dict[str, object] = {
+            "monthly_country": {},
+            "ai_gpr": {},
+            "ai_gpr_dates": set(),
+        }
+        if not candidate_dates:
+            self._record_source_status(
+                GPR_MONTHLY_SOURCE_ID, "empty", rows=0, attempted_fetches=0
+            )
+            self._record_source_status(
+                AI_GPR_SOURCE_ID, "empty", rows=0, attempted_fetches=0
+            )
+            return context
+        if self.gpr_monthly_fetcher is not None:
+            try:
+                payload = self.gpr_monthly_fetcher()
+                _record_payload(
+                    store,
+                    run_id,
+                    GPR_MONTHLY_SOURCE_ID,
+                    "gpr_monthly_country",
+                    payload,
+                    "GPR monthly country context",
+                )
+                monthly_country = parse_gpr_monthly_country_context(
+                    payload, candidate_dates=candidate_dates
+                )
+                context["monthly_country"] = monthly_country
+                self._record_source_status(
+                    GPR_MONTHLY_SOURCE_ID,
+                    "ok" if monthly_country else "empty",
+                    rows=len(monthly_country),
+                    attempted_fetches=1,
+                    empty_payload=_is_empty_payload(payload),
+                )
+            except (OSError, ValueError) as exc:
+                LOGGER.error(
+                    "GPR monthly context fetch/parse failed; context skipped: %s", exc
+                )
+                self._record_source_status(
+                    GPR_MONTHLY_SOURCE_ID,
+                    "failed",
+                    error=str(exc),
+                    attempted_fetches=1,
+                    failed_fetches=1,
+                )
+        else:
+            self._record_source_status(
+                GPR_MONTHLY_SOURCE_ID, "skipped", attempted_fetches=0
+            )
+
+        if (
+            self.ai_gpr_daily_fetcher is None
+            or self.ai_gpr_eventtype_monthly_fetcher is None
+            or self.ai_gpr_country_monthly_fetcher is None
+        ):
+            self._record_source_status(
+                AI_GPR_SOURCE_ID, "skipped", attempted_fetches=0
+            )
+            return context
+        try:
+            daily_payload = self.ai_gpr_daily_fetcher()
+            eventtype_payload = self.ai_gpr_eventtype_monthly_fetcher()
+            country_payload = self.ai_gpr_country_monthly_fetcher()
+            _record_payload(
+                store,
+                run_id,
+                AI_GPR_SOURCE_ID,
+                "ai_gpr_daily",
+                daily_payload,
+                "AI-GPR daily context",
+            )
+            _record_payload(
+                store,
+                run_id,
+                AI_GPR_SOURCE_ID,
+                "ai_gpr_eventtype_monthly",
+                eventtype_payload,
+                "AI-GPR monthly event-type context",
+            )
+            _record_payload(
+                store,
+                run_id,
+                AI_GPR_SOURCE_ID,
+                "ai_gpr_country_monthly",
+                country_payload,
+                "AI-GPR monthly country context",
+            )
+            ai_context = parse_ai_gpr_context(
+                daily_payload,
+                eventtype_payload,
+                country_payload,
+                candidate_dates=candidate_dates,
+            )
+            context["ai_gpr"] = ai_context
+            context["ai_gpr_dates"] = set(ai_context)
+            self._record_source_status(
+                AI_GPR_SOURCE_ID,
+                "ok" if ai_context else "empty",
+                rows=len(ai_context),
+                attempted_fetches=3,
+                empty_payload=all(
+                    _is_empty_payload(payload)
+                    for payload in (daily_payload, eventtype_payload, country_payload)
+                ),
+            )
+        except (OSError, ValueError) as exc:
+            LOGGER.error("AI-GPR context fetch/parse failed; context skipped: %s", exc)
+            self._record_source_status(
+                AI_GPR_SOURCE_ID,
+                "failed",
+                error=str(exc),
+                attempted_fetches=3,
+                failed_fetches=1,
+            )
+        return context
 
     def _fetch_gdelt_spikes(
         self,
@@ -475,6 +642,118 @@ def parse_gpr_table(payload: str | bytes) -> pd.DataFrame:
     return out.dropna(subset=["gpr"]).sort_values("date").reset_index(drop=True)
 
 
+def parse_gpr_monthly_country_context(
+    payload: str | bytes,
+    *,
+    candidate_dates: list[dt.date],
+    top_n: int = 3,
+) -> dict[dt.date, str]:
+    df = _read_csv_or_excel(payload)
+    lower_columns = {str(column).strip().lower(): column for column in df.columns}
+    month_column = lower_columns.get("month") or lower_columns.get("date")
+    if month_column is None:
+        raise ValueError("GPR monthly table must contain month/date column")
+    df = df.copy()
+    df["_month"] = pd.to_datetime(df[month_column], errors="coerce").dt.to_period("M")
+    country_columns = [
+        column
+        for column in df.columns
+        if str(column).upper().startswith("GPRC_")
+        and not str(column).upper().startswith("GPRHC_")
+    ]
+    if not country_columns:
+        raise ValueError("GPR monthly table must contain GPRC_* country columns")
+    context: dict[dt.date, str] = {}
+    for candidate_date in candidate_dates:
+        month = pd.Period(candidate_date, freq="M")
+        rows = df[df["_month"] == month]
+        if rows.empty:
+            continue
+        record = rows.iloc[-1]
+        country_values: list[tuple[str, float]] = []
+        for column in country_columns:
+            value = _optional_float(record.get(column))
+            if value is None or value <= 0:
+                continue
+            country_values.append((str(column).upper().removeprefix("GPRC_"), value))
+        country_values.sort(key=lambda item: item[1], reverse=True)
+        if country_values:
+            context[candidate_date] = "monthly_country_gpr=" + ",".join(
+                f"{code}:{value:.2f}" for code, value in country_values[:top_n]
+            )
+    return context
+
+
+def parse_ai_gpr_context(
+    daily_payload: str | bytes,
+    eventtype_monthly_payload: str | bytes,
+    country_monthly_payload: str | bytes,
+    *,
+    candidate_dates: list[dt.date],
+    top_n: int = 3,
+) -> dict[dt.date, str]:
+    daily = _read_csv_or_excel(daily_payload)
+    eventtype = _read_csv_or_excel(eventtype_monthly_payload)
+    country = _read_csv_or_excel(country_monthly_payload)
+    daily_date_column = _column_by_lower(daily, "date")
+    eventtype_date_column = _column_by_lower(eventtype, "date")
+    country_date_column = _column_by_lower(country, "date")
+    daily_ai_column = _column_by_lower(daily, "gpr_ai")
+    if (
+        daily_date_column is None
+        or eventtype_date_column is None
+        or country_date_column is None
+    ):
+        raise ValueError("AI-GPR tables must contain Date columns")
+    daily = daily.copy()
+    eventtype = eventtype.copy()
+    country = country.copy()
+    daily["_date"] = pd.to_datetime(daily[daily_date_column], errors="coerce").dt.date
+    eventtype["_month"] = pd.to_datetime(
+        eventtype[eventtype_date_column], errors="coerce"
+    ).dt.to_period("M")
+    country["_month"] = pd.to_datetime(
+        country[country_date_column], errors="coerce"
+    ).dt.to_period("M")
+
+    context: dict[dt.date, str] = {}
+    for candidate_date in candidate_dates:
+        parts: list[str] = []
+        daily_row = daily[daily["_date"] == candidate_date]
+        if not daily_row.empty:
+            ai_value = _optional_float(daily_row.iloc[-1].get(daily_ai_column))
+            if ai_value is not None:
+                parts.append(f"ai_gpr_daily={ai_value:.2f}")
+        month = pd.Period(candidate_date, freq="M")
+        eventtype_row = eventtype[eventtype["_month"] == month]
+        if not eventtype_row.empty:
+            event_values = _top_numeric_columns(
+                eventtype_row.iloc[-1],
+                exclude={"Date", "GPR_AI", "_month"},
+                top_n=1,
+            )
+            if event_values:
+                name, value = event_values[0]
+                parts.append(f"ai_gpr_event_type={name}:{value:.2f}")
+        country_row = country[country["_month"] == month]
+        if not country_row.empty:
+            country_values = _top_numeric_columns(
+                country_row.iloc[-1],
+                exclude={"Date", "GPR_AI", "_month"},
+                top_n=top_n,
+            )
+            if country_values:
+                parts.append(
+                    "ai_gpr_country="
+                    + ",".join(
+                        f"{name}:{value:.2f}" for name, value in country_values
+                    )
+                )
+        if parts:
+            context[candidate_date] = "; ".join(parts)
+    return context
+
+
 def detect_gpr_spikes(
     df: pd.DataFrame, *, min_history_days: int, stddev_threshold: float
 ) -> list[dict[str, object]]:
@@ -552,7 +831,44 @@ def _parse_gpr_dates(series: pd.Series) -> pd.Series:
 def _optional_float(value: object) -> float | None:
     if pd.isna(value):
         return None
-    return float(value)
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _read_csv_or_excel(payload: str | bytes) -> pd.DataFrame:
+    if isinstance(payload, bytes):
+        try:
+            return pd.read_excel(io.BytesIO(payload))
+        except ValueError:
+            return pd.read_csv(io.BytesIO(payload))
+    return pd.read_csv(io.StringIO(payload))
+
+
+def _column_by_lower(df: pd.DataFrame, name: str) -> object | None:
+    lower_columns = {str(column).strip().lower(): column for column in df.columns}
+    return lower_columns.get(name)
+
+
+def _top_numeric_columns(
+    record: pd.Series,
+    *,
+    exclude: set[str],
+    top_n: int,
+) -> list[tuple[str, float]]:
+    values: list[tuple[str, float]] = []
+    exclude_lower = {item.lower() for item in exclude}
+    for column, raw_value in record.items():
+        column_name = str(column)
+        if column_name.lower() in exclude_lower or column_name.startswith("_"):
+            continue
+        value = _optional_float(raw_value)
+        if value is None or value <= 0:
+            continue
+        values.append((column_name, value))
+    values.sort(key=lambda item: item[1], reverse=True)
+    return values[:top_n]
 
 
 def parse_gdelt_volume_table(payload: str | bytes) -> list[dict[str, object]]:
@@ -648,7 +964,11 @@ def _source_url_or_export_url(value: str, export_url: str) -> str:
     return candidate if candidate.startswith(("http://", "https://")) else export_url
 
 
-def _gpr_candidate(row: dict[str, object], anchor_date: dt.date) -> EventCandidate:
+def _gpr_candidate(
+    row: dict[str, object],
+    anchor_date: dt.date,
+    context: dict[str, object] | None = None,
+) -> EventCandidate:
     dominant_component = str(row.get("dominant_component", "headline"))
     components = tuple(row.get("spike_components", ("headline",)))
     article_count = _optional_float(row.get("article_count"))
@@ -680,10 +1000,11 @@ def _gpr_candidate(row: dict[str, object], anchor_date: dt.date) -> EventCandida
         source_id=GPR_SOURCE_ID,
         source_url=GPR_DAILY_URL,
         raw_title=raw_title,
-        raw_snippet=_gpr_snippet(row, components, article_count),
+        raw_snippet=_gpr_snippet(row, components, article_count, context),
         is_future_scheduled=False,
         confidence=confidence,
         requires_manual_review=True,
+        window_days=_gpr_window_days(components),
         event_subtype=f"gpr_{dominant_component}_spike",
     )
 
@@ -700,6 +1021,7 @@ def _gpr_snippet(
     row: dict[str, object],
     components: tuple[object, ...],
     article_count: float | None,
+    context: dict[str, object] | None,
 ) -> str:
     parts = [
         f"GPR daily value {row['value']:.2f} exceeded trailing threshold {row['threshold']:.2f}",
@@ -717,7 +1039,24 @@ def _gpr_snippet(
             parts.append(f"{label}={number:.2f}")
     if article_count is not None:
         parts.append(f"articles={article_count:.0f}")
+    candidate_date = row.get("date")
+    if isinstance(candidate_date, dt.date) and context is not None:
+        monthly_country = context.get("monthly_country", {})
+        ai_gpr = context.get("ai_gpr", {})
+        if isinstance(monthly_country, dict) and candidate_date in monthly_country:
+            parts.append(str(monthly_country[candidate_date]))
+        if isinstance(ai_gpr, dict) and candidate_date in ai_gpr:
+            parts.append(str(ai_gpr[candidate_date]))
     return "; ".join(parts) + "."
+
+
+def _gpr_window_days(components: tuple[object, ...]) -> tuple[int, int]:
+    component_names = {str(component) for component in components}
+    if "persistent_30d" in component_names:
+        return (-2, 5)
+    if "persistent_7d" in component_names:
+        return (-1, 3)
+    return (0, 0)
 
 
 def _gdelt_candidate(row: dict[str, object]) -> EventCandidate:

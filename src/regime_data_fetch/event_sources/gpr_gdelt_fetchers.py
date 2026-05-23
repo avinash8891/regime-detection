@@ -29,6 +29,14 @@ UCDP_GED_CANDIDATE_URL = "https://ucdpapi.pcr.uu.se/api/gedevents/26.0.3"
 HDX_HAPI_CONFLICT_EVENTS_URL = (
     "https://hapi.humdata.org/api/v2/coordination-context/conflict-events"
 )
+GPR_MONTHLY_URL = "https://www.matteoiacoviello.com/gpr_files/data_gpr_export.xls"
+AI_GPR_DAILY_URL = "https://www.matteoiacoviello.com/ai_gpr_files/ai_gpr_data_daily.csv"
+AI_GPR_EVENTTYPE_MONTHLY_URL = (
+    "https://www.matteoiacoviello.com/ai_gpr_files/ai_gpr_eventtype_monthly.csv"
+)
+AI_GPR_COUNTRY_MONTHLY_URL = (
+    "https://www.matteoiacoviello.com/ai_gpr_files/ai_gpr_country_monthly.csv"
+)
 CONFLICT_API_PAGE_SIZE = 1000
 ConflictFetcher = Callable[[int, int], str | bytes | None]
 
@@ -54,6 +62,24 @@ def fetch_gpr_daily() -> bytes:
     request = Request(GPR_DAILY_URL, headers={"User-Agent": HTTP_USER_AGENT})
     with urlopen(request, timeout=30) as response:
         return response.read()
+
+
+def fetch_gpr_monthly() -> bytes:
+    request = Request(GPR_MONTHLY_URL, headers={"User-Agent": HTTP_USER_AGENT})
+    with urlopen(request, timeout=30) as response:
+        return response.read()
+
+
+def fetch_ai_gpr_daily() -> str:
+    return _http_text(AI_GPR_DAILY_URL, headers={})
+
+
+def fetch_ai_gpr_eventtype_monthly() -> str:
+    return _http_text(AI_GPR_EVENTTYPE_MONTHLY_URL, headers={})
+
+
+def fetch_ai_gpr_country_monthly() -> str:
+    return _http_text(AI_GPR_COUNTRY_MONTHLY_URL, headers={})
 
 
 def fetch_gdelt_daily_export(day: dt.date) -> bytes:
