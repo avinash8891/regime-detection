@@ -189,6 +189,161 @@ def test_publish_updates_manifest_on_sha_change(manifest_setup):
     assert b["sha256"] == original_manifest["artifacts"][1]["sha256"]
 
 
+def test_publish_patches_only_changed_artifact_blocks_for_all_artifacts(tmp_path: Path):
+    data_root = tmp_path / "data" / "raw"
+    changed_path = data_root / "macro" / "changed.parquet"
+    unchanged_path = data_root / "macro" / "unchanged.parquet"
+    config_path = tmp_path / "configs" / "events.yaml"
+
+    _write_parquet(
+        changed_path,
+        pd.DataFrame(
+            {
+                "date": ["2024-01-01"],
+                "series_id": ["OLD"],
+                "value": [1.0],
+            }
+        ),
+    )
+    _write_parquet(
+        unchanged_path,
+        pd.DataFrame(
+            {
+                "date": ["2024-02-01"],
+                "series_id": ["UNCHANGED"],
+                "value": [2.0],
+            }
+        ),
+    )
+    changed_canon = pcs._canonicalize_parquet_bytes(changed_path)
+    unchanged_canon = pcs._canonicalize_parquet_bytes(unchanged_path)
+    changed_path.write_bytes(changed_canon)
+    unchanged_path.write_bytes(unchanged_canon)
+    config_path.parent.mkdir(parents=True)
+    config_path.write_text("events:\n  - date: '2024-01-01'\n")
+
+    manifest_path = tmp_path / "manifest.yaml"
+    unchanged_block = f"""- name: unchanged_artifact
+  stage: canonical
+  uri: canonical/macro/unchanged.parquet
+  local_path: data/raw/macro/unchanged.parquet
+  sha256: {hashlib.sha256(unchanged_canon).hexdigest()}
+  schema_version:
+  rows:
+  min_date: '2024-02-01'
+  max_date: '2024-02-01'
+  required_for:
+  - profile_engine"""
+    yaml_block = f"""- name: event_calendar
+  stage: canonical
+  uri: canonical/events.yaml
+  local_path: {config_path.relative_to(tmp_path).as_posix()}
+  sha256: {hashlib.sha256(config_path.read_bytes()).hexdigest()}
+  schema_version: null
+  rows: null
+  min_date: null
+  max_date: null
+  required_for:
+  - profile_engine"""
+    manifest_path.write_text(
+        f"""artifact_set: test_publish
+created_at_utc: '2026-05-17T00:00:00Z'
+storage_root: {tmp_path / "store"}
+artifacts:
+- name: changed_artifact
+  stage: canonical
+  uri: canonical/macro/changed.parquet
+  local_path: data/raw/macro/changed.parquet
+  sha256: {'0' * 64}
+  schema_version: null
+  rows: null
+  min_date: '1900-01-01'
+  max_date: '1900-01-01'
+  required_for:
+  - profile_engine
+{unchanged_block}
+{yaml_block}
+"""
+    )
+
+    _write_parquet(
+        changed_path,
+        pd.DataFrame(
+            {
+                "date": ["2024-01-01", "2024-01-02"],
+                "series_id": ["NEW", "NEW"],
+                "value": [1.0, 2.0],
+            }
+        ),
+    )
+
+    rc = _run_main(
+        [
+            "--manifest",
+            str(manifest_path),
+            "--data-root",
+            str(data_root),
+            "--skip-upload",
+        ]
+    )
+    assert rc == 0
+
+    manifest_text = manifest_path.read_text()
+    assert unchanged_block in manifest_text
+    assert yaml_block in manifest_text
+
+    import yaml
+
+    updated = yaml.safe_load(manifest_text)
+    changed = next(a for a in updated["artifacts"] if a["name"] == "changed_artifact")
+    assert changed["sha256"] == _sha256_file(changed_path)
+    assert changed["rows"] == 2
+    assert str(changed["min_date"]) == "2024-01-01"
+    assert str(changed["max_date"]) == "2024-01-02"
+
+
+def test_publish_non_parquet_artifact_updates_only_sha256(tmp_path: Path):
+    config_path = tmp_path / "configs" / "events.yaml"
+    config_path.parent.mkdir(parents=True)
+    config_path.write_text("events:\n  - date: '2024-01-01'\n")
+    manifest_path = tmp_path / "manifest.yaml"
+    manifest_path.write_text(
+        f"""artifact_set: test_publish
+created_at_utc: '2026-05-17T00:00:00Z'
+storage_root: {tmp_path / "store"}
+artifacts:
+- name: event_calendar
+  stage: canonical
+  uri: canonical/events.yaml
+  local_path: {config_path.as_posix()}
+  sha256: {'0' * 64}
+  schema_version:
+  rows:
+  min_date:
+  max_date:
+  required_for:
+  - profile_engine
+"""
+    )
+
+    rc = _run_main(
+        [
+            "--manifest",
+            str(manifest_path),
+            "--data-root",
+            str(tmp_path / "data" / "raw"),
+            "--skip-upload",
+            "--only",
+            "event_calendar",
+        ]
+    )
+    assert rc == 0
+
+    manifest_text = manifest_path.read_text()
+    assert f"  sha256: {hashlib.sha256(config_path.read_bytes()).hexdigest()}" in manifest_text
+    assert "  schema_version:\n  rows:\n  min_date:\n  max_date:\n" in manifest_text
+
+
 def test_dry_run_does_not_mutate_anything(manifest_setup):
     manifest_path, data_root, _, paths = manifest_setup
     manifest_before = manifest_path.read_text()
