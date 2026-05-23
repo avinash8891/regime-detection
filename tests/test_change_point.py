@@ -90,7 +90,7 @@ def test_compute_change_point_features_succeeds_on_synthetic_two_regime_data() -
     series = _synthetic_two_regime_realized_vol(
         n_sessions=1500, shift_index=shift_index, seed=0
     )
-    cfg = _default_change_point_config(training_window_days=1500)
+    cfg = _default_change_point_config(training_window_days=100)
     result = compute_change_point_features(realized_vol_21d=series, config=cfg)
     assert result is not None
     assert isinstance(result, ChangePointFeatures)
@@ -106,11 +106,55 @@ def test_compute_change_point_features_succeeds_on_synthetic_two_regime_data() -
     )
 
 
+def test_change_point_masks_rows_before_strict_pit_warmup() -> None:
+    series = _synthetic_two_regime_realized_vol(
+        n_sessions=140, shift_index=110, seed=1
+    )
+    cfg = _default_change_point_config(training_window_days=100)
+
+    result = compute_change_point_features(realized_vol_21d=series, config=cfg)
+
+    assert result is not None
+    assert result.posterior_changepoint_prob.iloc[:99].isna().all()
+    assert result.score.iloc[:99].isna().all()
+    assert result.days_since_last_break.iloc[:99].isna().all()
+    assert result.posterior_changepoint_prob.iloc[99:].notna().all()
+    assert result.score.iloc[99:].notna().all()
+
+
+def test_change_point_historical_scores_do_not_change_when_future_rows_append() -> None:
+    base = _synthetic_two_regime_realized_vol(
+        n_sessions=160, shift_index=120, seed=2
+    )
+    future = _synthetic_two_regime_realized_vol(
+        n_sessions=40, shift_index=20, seed=3
+    )
+    future.index = pd.bdate_range(base.index[-1] + pd.offsets.BDay(), periods=40)
+    extended = pd.concat([base, future])
+    cfg = _default_change_point_config(training_window_days=100)
+    historical_date = base.index[130]
+
+    base_result = compute_change_point_features(realized_vol_21d=base, config=cfg)
+    extended_result = compute_change_point_features(
+        realized_vol_21d=extended, config=cfg
+    )
+
+    assert base_result is not None
+    assert extended_result is not None
+    assert pd.notna(base_result.score.loc[historical_date])
+    assert extended_result.score.loc[historical_date] == pytest.approx(
+        base_result.score.loc[historical_date]
+    )
+    assert extended_result.posterior_changepoint_prob.loc[
+        historical_date
+    ] == pytest.approx(base_result.posterior_changepoint_prob.loc[historical_date])
+
+
 def test_score_is_5_session_rolling_max_of_posterior() -> None:
     series = _synthetic_two_regime_realized_vol(
         n_sessions=1500, shift_index=750, seed=0
     )
-    cfg = _default_change_point_config(training_window_days=1500)
+    cfg = _default_change_point_config(training_window_days=100)
     result = compute_change_point_features(realized_vol_21d=series, config=cfg)
     assert result is not None
     posterior = result.posterior_changepoint_prob

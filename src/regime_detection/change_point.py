@@ -63,9 +63,8 @@ def compute_change_point_features(
     realized_vol_21d: pd.Series | None,
     config: ChangePointConfig,
 ) -> ChangePointFeatures | None:
-    """Run BOCPD on the trailing ``training_window_days`` of
-    ``realized_vol_21d`` and return a per-session evidence triple aligned
-    to the input index.
+    """Run BOCPD over as-of ``realized_vol_21d`` history and return a
+    per-session evidence triple aligned to the input index.
 
     Returns ``None`` when:
       - ``realized_vol_21d`` is ``None``,
@@ -74,13 +73,19 @@ def compute_change_point_features(
         BOCPD's Student-T predictive would be singular),
       - ``bayesian_changepoint_detection`` raises (numerical instability).
 
+    BOCPD is evaluated forward over the caller-provided history, so the
+    posterior at session ``t`` depends only on observations ``<= t``.
+    The first ``training_window_days - 1`` non-null observations are masked
+    to NaN: they are available to seed the online posterior, but they do
+    not satisfy the configured strict PIT warm-up gate for emitted evidence.
+
     Two distinct NaN regimes in the output series:
 
-    1. **Pre-training-window rows** (sessions that precede the trailing
-       ``training_window_days`` start). All three series (posterior,
-       score, days_since_last_break) are NaN / ``pd.NA``. The timeline
-       consumer filters these out before emitting ``RegimeOutput.
-       change_point`` so the wire is None there.
+    1. **Pre-training-window rows** (the first
+       ``training_window_days - 1`` non-null observations). All three
+       series (posterior, score, days_since_last_break) are NaN /
+       ``pd.NA``. The timeline consumer filters these out before emitting
+       ``RegimeOutput.change_point`` so the wire is None there.
 
     2. **In-window rows where no break has yet occurred in trailing
        history** (cold-start within the BOCPD window). ``posterior`` and
@@ -91,15 +96,11 @@ def compute_change_point_features(
        path — quiet markets with no detected breaks still emit a valid
        low-score evidence row.
 
-    Determinism note: callers that pass extra trailing history beyond
-    ``training_window_days`` can introduce 1-ULP differences in the input
-    series upstream (pandas rolling std's accumulator depends on the
-    starting buffer position). To preserve byte-identical output across
-    lookback values, this function pinches the input to exactly the
-    trailing ``training_window_days`` values BEFORE BOCPD reads them; if
-    the source series had ULP-level noise farther back, the trailing
-    window itself is identical (verified empirically: the 1260
-    spy_close values are byte-equal across slicings).
+    Determinism note: the observation series is rounded before BOCPD reads
+    it so 1-ULP upstream noise (pandas rolling std accumulator path) does
+    not propagate into the posterior. Appending future rows cannot change
+    already-emitted historical scores because the online recursion is
+    forward-only.
     """
     if realized_vol_21d is None:
         return None
@@ -108,7 +109,7 @@ def compute_change_point_features(
     if len(clean) < config.training_window_days:
         return None
 
-    train_series = clean.tail(config.training_window_days)
+    train_series = clean
     # Round trailing window to a deterministic precision so 1-ULP
     # upstream noise (pandas rolling std accumulator path) does not
     # propagate into the BOCPD posterior. The ~1e-12 epsilon is far
@@ -142,11 +143,13 @@ def compute_change_point_features(
         )
         return None
 
-    posterior_aligned = pd.Series(
+    posterior_series = pd.Series(
         posterior_arr,
         index=train_series.index,
         name="posterior_changepoint_prob",
-    ).reindex(realized_vol_21d.index)
+    )
+    posterior_series.iloc[: config.training_window_days - 1] = np.nan
+    posterior_aligned = posterior_series.reindex(realized_vol_21d.index)
 
     score_aligned = _rolling_max_changepoint_prob(
         posterior_aligned, window=config.score_window_days
