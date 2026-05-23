@@ -7,6 +7,49 @@ from pydantic import Field, model_validator
 from regime_detection._config_core import AxisName, StrictBaseModel
 
 
+class TransitionComponentScales(StrictBaseModel):
+    """Normalization scales for the §4.2 component-score formulas.
+
+    Each component is a clipped, normalized 0..1 stress signal. The scales
+    here used to live as inline literals in
+    ``transition_score.compose_transition_score_for_session``; promoting them
+    to config lets a deployment recalibrate stress sensitivity without code
+    changes. Defaults match the historical literals exactly so existing
+    runs are byte-identical.
+    """
+
+    # vol_acc = clip((rv_short / rv_long - 1) / vol_acc_full_stress_ratio,
+    #                0, 1). A full-stress ratio of 0.5 means short-window
+    # realized vol must run 50% above long-window for vol_acc to saturate.
+    vol_acc_full_stress_ratio: float = Field(default=0.5, gt=0.0, le=1.0)
+
+    # breadth_det = clip((breadth_zero_stress_pct - pct_above_50dma) /
+    #                    breadth_full_stress_range, 0, 1).
+    # Defaults: zero stress at 50% above 50dma; full stress at 20% (drop of 30 pts).
+    breadth_zero_stress_pct: float = Field(default=0.50, gt=0.0, lt=1.0)
+    breadth_full_stress_range: float = Field(default=0.30, gt=0.0, le=1.0)
+
+    # trend_drawdown = clip(-drawdown_252d / drawdown_full_stress, 0, 1).
+    # Default 0.15 → a 15% 252d drawdown saturates the component.
+    drawdown_full_stress: float = Field(default=0.15, gt=0.0, le=1.0)
+
+    # ma_break = clip((sma_50 - close) / sma_50 / ma_break_full_stress, 0, 1).
+    # Default 0.05 → SPY 5% below its 50-DMA saturates ma_break.
+    ma_break_full_stress: float = Field(default=0.05, gt=0.0, le=1.0)
+
+    # absorption_stress = clip((absorption_ratio_top3 - absorption_floor) /
+    #                          absorption_range, 0, 1).
+    # Defaults: floor 0.70, range 0.25 → linear ramp from 0.70 to 0.95.
+    absorption_floor: float = Field(default=0.70, ge=0.0, lt=1.0)
+    absorption_range: float = Field(default=0.25, gt=0.0, le=1.0)
+
+    # volume_stress = clip((volume_zscore_20d - volume_zscore_floor) /
+    #                      volume_zscore_range, 0, 1).
+    # Defaults: floor z=1.0, range 2.0 → linear ramp from z=1 to z=3.
+    volume_zscore_floor: float = Field(default=1.0)
+    volume_zscore_range: float = Field(default=2.0, gt=0.0)
+
+
 class TransitionOverrideThresholds(StrictBaseModel):
     """Numeric thresholds gating the named hard-override rules.
 
@@ -61,6 +104,22 @@ class TransitionScoreConfig(StrictBaseModel):
         default_factory=TransitionOverrideThresholds
     )
 
+    # Component-score normalization scales. Default values match the
+    # historical inline literals in compose_transition_score_for_session so
+    # adding this field does not perturb existing scores or fixtures.
+    scales: TransitionComponentScales = Field(
+        default_factory=TransitionComponentScales
+    )
+
+    # Optional seed for the public-state debounce. When None (default), the
+    # first session's raw state is accepted immediately — matching the
+    # historical behavior and existing golden fixtures. When set, the
+    # debounce starts with this state, so any first-session promotion to a
+    # non-matching state must clear its configured confirmation window
+    # before becoming public. Useful for live streaming, where there is no
+    # warm-up history to bootstrap from.
+    initial_active_state: str | None = None
+
     @model_validator(mode="after")
     def _validate_bands_monotonic(self) -> "TransitionScoreConfig":
         # Required band labels in ascending order; interpret_transition_score
@@ -85,6 +144,13 @@ class TransitionScoreConfig(StrictBaseModel):
                 raise ValueError(
                     "transition_score.bands lower bounds must be strictly increasing in order "
                     f"{required}; got {prev}={prev_lo}, {nxt}={nxt_lo}"
+                )
+        if self.initial_active_state is not None:
+            if self.initial_active_state not in self.state_confirmation_days:
+                raise ValueError(
+                    "transition_score.initial_active_state must appear in "
+                    f"state_confirmation_days; got {self.initial_active_state!r}, "
+                    f"known states: {sorted(self.state_confirmation_days)}"
                 )
         return self
 

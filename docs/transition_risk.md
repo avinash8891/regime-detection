@@ -87,6 +87,22 @@ Examples:
 - `model_instability` rises when HMM probability shifts, change-point score
   rises, or cluster ID changes.
 
+Each component is normalized to `0.0`–`1.0` using a clipped linear ramp.
+The ramp parameters live in `TransitionScoreConfig.scales`
+(`TransitionComponentScales`); defaults preserve the historical scoring:
+
+| Component | Formula (under default scales) |
+| --- | --- |
+| `volatility_acceleration` | `clip((rv_short/rv_long - 1) / 0.5, 0, 1)` |
+| `breadth_deterioration` | `clip((0.50 - pct_above_50dma) / 0.30, 0, 1)` |
+| `trend_break` (drawdown) | `clip(-drawdown_252d / 0.15, 0, 1)` |
+| `trend_break` (MA break) | `clip((sma_50 - close)/sma_50 / 0.05, 0, 1)` |
+| `correlation_fragility` (absorption) | `clip((absorption_ratio_top3 - 0.70) / 0.25, 0, 1)` |
+| `liquidity_stress` (z-score) | `clip((volume_zscore_20d - 1.0) / 2.0, 0, 1)` |
+
+Deployments can recalibrate sensitivity by overriding `scales` in YAML
+without code changes.
+
 ## 3. Compute Weighted Transition Score
 
 The component scores are combined using configured weights:
@@ -168,6 +184,15 @@ engine can de-risk immediately, while non-stable promotions (`weakening`,
 `recovery_attempt`) require two consecutive prints so a single noisy session
 cannot drive a regime change. This favours fast de-escalation over fast
 escalation and is the intended trade-off.
+
+By default, the **first session in a run** is accepted immediately —
+backfill jobs have no prior session to bootstrap the debounce from. For
+live streaming (where the engine should treat the first session like any
+other), set `transition_score.initial_active_state: stable` in the YAML
+config. The debounce then seeds with that state, so the first session must
+clear its configured confirmation window before promoting to a different
+state. This is an opt-in because enabling it changes historical backfill
+output for one session per run and requires golden-fixture refresh.
 
 ## Final Output
 

@@ -147,6 +147,7 @@ def compose_transition_score_for_session(
     cluster_id_now: int | None = None,
     cluster_id_5d_ago: int | None = None,
 ) -> ComposedTransitionScore:
+    scales = config.scales
     rv_short = _optional_number(realized_vol_short)
     rv_long = _optional_number(realized_vol_long)
     pct_above_50 = _optional_number(pct_above_50dma)
@@ -155,32 +156,59 @@ def compose_transition_score_for_session(
 
     vol_acc = None
     if rv_short is not None and rv_long not in {None, 0.0}:
-        vol_acc = _clip((rv_short / rv_long - 1.0) / 0.5, 0.0, 1.0)
+        vol_acc = _clip(
+            (rv_short / rv_long - 1.0) / scales.vol_acc_full_stress_ratio,
+            0.0,
+            1.0,
+        )
 
     breadth_det = None
     if pct_above_50 is not None:
-        breadth_det = _clip((0.50 - pct_above_50) / 0.30, 0.0, 1.0)
+        breadth_det = _clip(
+            (scales.breadth_zero_stress_pct - pct_above_50)
+            / scales.breadth_full_stress_range,
+            0.0,
+            1.0,
+        )
 
-    trend_drawdown = None if dd_252 is None else _clip(-dd_252 / 0.15, 0.0, 1.0)
+    trend_drawdown = (
+        None if dd_252 is None else _clip(-dd_252 / scales.drawdown_full_stress, 0.0, 1.0)
+    )
     ma_break = None
     close = _optional_number(spy_close)
     sma_50 = _optional_number(spy_sma_50)
     if close is not None and sma_50 not in {None, 0.0}:
-        ma_break = _clip((sma_50 - close) / sma_50 / 0.05, 0.0, 1.0)
+        ma_break = _clip(
+            (sma_50 - close) / sma_50 / scales.ma_break_full_stress, 0.0, 1.0
+        )
     trend_break = _max_present(trend_drawdown, ma_break)
 
     largest_pct = _optional_number(largest_eigenvalue_share_percentile_504d)
     effective_rank_pct = _optional_number(effective_rank_percentile_504d)
     absorption = _optional_number(absorption_ratio_top3)
     effective_rank_stress = None if effective_rank_pct is None else 1.0 - effective_rank_pct
-    absorption_stress = None if absorption is None else _clip((absorption - 0.70) / 0.25, 0.0, 1.0)
+    absorption_stress = (
+        None
+        if absorption is None
+        else _clip(
+            (absorption - scales.absorption_floor) / scales.absorption_range, 0.0, 1.0
+        )
+    )
     correlation_fragility = _max_present(corr_pct, largest_pct, effective_rank_stress, absorption_stress)
 
     credit_stress = _label_score(credit_funding_label, _CREDIT_LABEL_SCORE)
 
     liquidity_label_stress = _label_score(volume_liquidity_label, _LIQUIDITY_LABEL_SCORE)
     volume_z = _optional_number(volume_zscore_20d)
-    volume_stress = None if volume_z is None else _clip((volume_z - 1.0) / 2.0, 0.0, 1.0)
+    volume_stress = (
+        None
+        if volume_z is None
+        else _clip(
+            (volume_z - scales.volume_zscore_floor) / scales.volume_zscore_range,
+            0.0,
+            1.0,
+        )
+    )
     gap_stress = _optional_number(gap_frequency_percentile_252d)
     intraday_stress = _optional_number(intraday_range_percentile_252d)
     liquidity_stress = _max_present(

@@ -17,11 +17,19 @@ from datetime import date, timedelta
 import pytest
 from pydantic import ValidationError
 
+import pandas as pd
+
 from regime_detection._config_evidence_strategy import (
+    TransitionComponentScales,
     TransitionOverrideThresholds,
     TransitionScoreConfig,
 )
 from regime_detection.config import load_default_regime_config
+from regime_detection.models import (
+    DataQuality,
+    TransitionRiskEvidencePayload,
+    TransitionRiskOutput,
+)
 from regime_detection.transition_risk import (
     TransitionRuleFlags,
     compose_transition_risk_output,
@@ -29,9 +37,14 @@ from regime_detection.transition_risk import (
 from regime_detection.transition_risk_series import (
     TransitionRiskHistory,
     TransitionScoreInputs,
+    _apply_transition_state_debounce,
+    _optional_float,
     build_transition_risk_outputs_by_date,
 )
-from regime_detection.transition_score import ComposedTransitionScore
+from regime_detection.transition_score import (
+    ComposedTransitionScore,
+    compose_transition_score_for_session,
+)
 
 pytestmark = pytest.mark.unit
 
@@ -244,3 +257,185 @@ def test_default_config_omits_overrides_block_and_uses_defaults() -> None:
     # must still load and expose the historical defaults.
     config = _default_transition_score_config()
     assert config.overrides == TransitionOverrideThresholds()
+
+
+# --- Code 10: _optional_float must accept pd.NA without raising -------------
+
+
+def test_optional_float_returns_none_for_pd_na() -> None:
+    # Regression: float(pd.NA) raises TypeError; the helper must short-circuit
+    # via pd.isna BEFORE attempting the cast.
+    assert _optional_float(pd.NA) is None
+    assert _optional_float(float("nan")) is None
+    assert _optional_float(None) is None
+    assert _optional_float(1.5) == 1.5
+
+
+# --- Code 2: TransitionComponentScales preserves byte-identical scoring ------
+
+
+def test_default_scales_match_historical_inline_literals() -> None:
+    scales = TransitionComponentScales()
+    assert scales.vol_acc_full_stress_ratio == 0.5
+    assert scales.breadth_zero_stress_pct == 0.50
+    assert scales.breadth_full_stress_range == 0.30
+    assert scales.drawdown_full_stress == 0.15
+    assert scales.ma_break_full_stress == 0.05
+    assert scales.absorption_floor == 0.70
+    assert scales.absorption_range == 0.25
+    assert scales.volume_zscore_floor == 1.0
+    assert scales.volume_zscore_range == 2.0
+
+
+def test_default_config_omits_scales_block_and_uses_defaults() -> None:
+    config = _default_transition_score_config()
+    assert config.scales == TransitionComponentScales()
+
+
+def test_compose_score_is_byte_identical_under_default_scales() -> None:
+    # Pinned numeric outputs reproduced under the default scales. These were
+    # computed by hand from the §4.2 formulas with the historical literals,
+    # then confirmed by running compose_transition_score_for_session.
+    config = _default_transition_score_config()
+    composed = compose_transition_score_for_session(
+        realized_vol_short=0.30,
+        realized_vol_long=0.20,
+        pct_above_50dma=0.30,
+        avg_pairwise_corr_percentile_504d=0.80,
+        drawdown_252d=-0.10,
+        event_calendar_labels=("fed_week",),
+        spy_close=400.0,
+        spy_sma_50=420.0,
+        absorption_ratio_top3=0.90,
+        volume_zscore_20d=2.0,
+        config=config,
+    )
+    assert composed.score is not None
+    components = composed.components or {}
+    assert components["volatility_acceleration"] == pytest.approx(1.0)
+    assert components["breadth_deterioration"] == pytest.approx(0.6666666666666667)
+    assert components["trend_break"] == pytest.approx(0.9523809523809523)
+    assert components["correlation_fragility"] == pytest.approx(0.80)
+    assert components["liquidity_stress"] == pytest.approx(0.5)
+
+
+def test_scales_are_tunable_via_config() -> None:
+    # Tightening drawdown_full_stress halves the input needed for full
+    # trend_drawdown saturation, so a smaller drawdown now saturates.
+    base = _default_transition_score_config()
+    tighter = base.model_copy(
+        update={
+            "scales": TransitionComponentScales(drawdown_full_stress=0.05)
+        }
+    )
+
+    # 5% drawdown under tighter scales saturates trend_drawdown.
+    # Provide credit_funding_label + volume_liquidity_label so the
+    # configured weight coverage clears minimum_component_weight_coverage
+    # (default 0.75) and the score is computed instead of returning None.
+    kwargs = dict(
+        realized_vol_short=0.20,
+        realized_vol_long=0.20,
+        pct_above_50dma=0.80,
+        avg_pairwise_corr_percentile_504d=0.10,
+        drawdown_252d=-0.05,
+        event_calendar_labels=("normal_calendar",),
+        credit_funding_label="credit_calm",
+        volume_liquidity_label="normal_volume",
+    )
+    composed = compose_transition_score_for_session(config=tighter, **kwargs)
+    components = composed.components or {}
+    assert components["trend_break"] == pytest.approx(1.0)
+
+    # Same input under default scales is well below saturation
+    # (5%/15% = 0.333…).
+    composed_default = compose_transition_score_for_session(config=base, **kwargs)
+    default_components = composed_default.components or {}
+    assert default_components["trend_break"] == pytest.approx(0.3333333333333333)
+
+
+# --- Code 6: initial_active_state opt-in seed --------------------------------
+
+
+def _raw(state: str) -> TransitionRiskOutput:
+    return TransitionRiskOutput(
+        state=state,
+        score=None,
+        score_components=None,
+        primary_drivers=[],
+        triggered_rules=[],
+        evidence=TransitionRiskEvidencePayload(
+            triggered_rules=[],
+            stable_changed_today=False,
+            days_since_axis_switch=None,
+            axis_switch_count=0,
+            recent_axis_switch_count=0,
+        ),
+        data_quality=DataQuality(status="ok"),
+    )
+
+
+def _confirmation_windows() -> dict[str, int]:
+    return _default_transition_score_config().state_confirmation_days
+
+
+def test_first_session_bypass_is_preserved_when_initial_active_state_unset() -> None:
+    # Default behavior: the first session's raw state is accepted immediately
+    # even when its confirmation window is > 1. This is the documented
+    # historical behavior and golden fixtures depend on it.
+    sessions = [date(2024, 1, 2), date(2024, 1, 3)]
+    raw = {sessions[0]: _raw("weakening"), sessions[1]: _raw("weakening")}
+    debounced = _apply_transition_state_debounce(
+        sessions=sessions, raw_outputs=raw, state_confirmation_days=_confirmation_windows()
+    )
+    assert debounced[sessions[0]].state == "weakening"
+    assert debounced[sessions[0]].triggered_rules == []
+
+
+def test_initial_active_state_seed_forces_first_session_confirmation() -> None:
+    # When seeded with 'stable', a first-session 'weakening' raw print must
+    # clear the 2-print confirmation window before becoming public. The
+    # first session reports the seeded state with state_confirmation_pending.
+    sessions = [date(2024, 1, 2), date(2024, 1, 3), date(2024, 1, 4)]
+    raw = {
+        sessions[0]: _raw("weakening"),
+        sessions[1]: _raw("weakening"),
+        sessions[2]: _raw("stable"),
+    }
+    debounced = _apply_transition_state_debounce(
+        sessions=sessions,
+        raw_outputs=raw,
+        state_confirmation_days=_confirmation_windows(),
+        initial_active_state="stable",
+    )
+    assert debounced[sessions[0]].state == "stable"
+    assert "state_confirmation_pending" in debounced[sessions[0]].triggered_rules
+    # Second 'weakening' confirms — promotes on day 2.
+    assert debounced[sessions[1]].state == "weakening"
+    # Day 3 stable confirms in 1 print.
+    assert debounced[sessions[2]].state == "stable"
+
+
+def test_initial_active_state_invalid_raises() -> None:
+    sessions = [date(2024, 1, 2)]
+    raw = {sessions[0]: _raw("stable")}
+    with pytest.raises(ValueError, match="initial_active_state"):
+        _apply_transition_state_debounce(
+            sessions=sessions,
+            raw_outputs=raw,
+            state_confirmation_days=_confirmation_windows(),
+            initial_active_state="not_a_real_state",
+        )
+
+
+def test_config_initial_active_state_unknown_state_rejected() -> None:
+    base = _default_transition_score_config().model_dump()
+    base["initial_active_state"] = "totally_made_up"
+    with pytest.raises(ValidationError, match="initial_active_state"):
+        TransitionScoreConfig(**base)
+
+
+def test_default_config_initial_active_state_is_none() -> None:
+    # The shipping YAML does not declare initial_active_state; default must
+    # remain None so backfill behavior is unchanged.
+    assert _default_transition_score_config().initial_active_state is None

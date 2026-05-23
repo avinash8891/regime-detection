@@ -195,6 +195,7 @@ def build_transition_risk_series(
         transition_score_config=transition_score_config,
         cooldown_window_days=transition_score_config.cooldown_window_days,
         state_confirmation_days=transition_score_config.state_confirmation_days,
+        initial_active_state=transition_score_config.initial_active_state,
     )
 
 
@@ -328,10 +329,12 @@ def _build_transition_score_inputs_by_date(
 
 
 def _optional_float(value: object) -> float | None:
-    parsed = float(value)
-    if pd.isna(parsed):
+    # Guard pd.NA first: float(pd.NA) raises TypeError because NAType is
+    # not a real number. Numpy NaN is fine — float(nan) returns nan and
+    # pd.isna(nan) is True. Mirrors _optional_int's pd.isna-first shape.
+    if pd.isna(value):
         return None
-    return parsed
+    return float(value)
 
 
 def _optional_int(value: object) -> int | None:
@@ -369,6 +372,7 @@ def build_transition_risk_outputs_by_date(
     transition_score_config: TransitionScoreConfig,
     cooldown_window_days: int = 5,
     state_confirmation_days: dict[str, int] | None = None,
+    initial_active_state: str | None = None,
 ) -> dict[date, TransitionRiskOutput]:
     index = pd.Index(sessions)
     trend_direction_active = pd.Series([trend_direction_active_by_date[day] for day in sessions], index=index)
@@ -494,6 +498,7 @@ def build_transition_risk_outputs_by_date(
         raw_outputs=raw_outputs,
         state_confirmation_days=state_confirmation_days
         or transition_score_config.state_confirmation_days,
+        initial_active_state=initial_active_state,
     )
 
 
@@ -502,9 +507,20 @@ def _apply_transition_state_debounce(
     sessions: list[date],
     raw_outputs: dict[date, TransitionRiskOutput],
     state_confirmation_days: dict[str, int],
+    initial_active_state: str | None = None,
 ) -> dict[date, TransitionRiskOutput]:
     outputs: dict[date, TransitionRiskOutput] = {}
-    active_state: str | None = None
+    # Default (initial_active_state=None) preserves the historical
+    # backfill behavior where the first session's raw state is accepted
+    # immediately. Setting initial_active_state seeds the debounce so that
+    # the first session must also clear its configured confirmation window
+    # — useful for live streaming, where no prior session can bootstrap.
+    if initial_active_state is not None and initial_active_state not in state_confirmation_days:
+        raise ValueError(
+            f"initial_active_state {initial_active_state!r} not present in "
+            f"state_confirmation_days {sorted(state_confirmation_days)}"
+        )
+    active_state: str | None = initial_active_state
     pending_state: str | None = None
     pending_count = 0
 
