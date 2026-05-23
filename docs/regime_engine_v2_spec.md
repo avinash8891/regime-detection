@@ -1734,10 +1734,11 @@ the slice/commit that resolved it. Entries are append-only.
     - `budget_week` = event-source candidate from deterministic fiscal
       deadlines plus official Treasury/GovInfo budget discovery.
     - `geopolitical_event` = approval-gated Group B candidate generated
-      from GPR daily-index spikes, GDELT daily Event export volume,
-      HDX HAPI conflict evidence, and TODO credential-gated
-      ACLED / Uppsala-UCDP conflict evidence once entitled API keys are present;
-      still overlay-only, never auto-promoted.
+      from GPR headline `GPRD` spikes enriched with `GPRD_ACT`, `GPRD_THREAT`,
+      `GPRD_MA7`, `GPRD_MA30`, `N10D`, and optional event text, plus GDELT
+      daily Event export volume, HDX HAPI conflict evidence, and TODO
+      credential-gated ACLED / Uppsala-UCDP conflict evidence once entitled API
+      keys are present; still overlay-only, never auto-promoted.
     - **§4.2 `macro_event_score` expansion** — set extended from
       `{fed_week, cpi_week, nfp_week}` to also include
       `{budget_week, election_window, global_rate_decision}`.
@@ -3277,7 +3278,7 @@ only place where raw OAS and proxy labels are resolved for downstream use.
 Add labels to V1's calendar:
 - `budget_week` — event-source row from deterministic fiscal deadlines plus official Treasury/GovInfo budget discovery (relevant for India only when an India-specific official source is added)
 - `election_window` — default trading-day window `[-5, +10]` around the result date (matches the §2D YAML example below); configurable via `window_days` in the event row
-- `geopolitical_event` — approval-gated Group B candidate for war, sanctions, terrorism, conflict/protest shocks; generated from GPR, GDELT, and HDX HAPI evidence when those live sources are available; ACLED and Uppsala/UCDP evidence is TODO pending entitled API keys/account access; rendered only when the approval overlay promotes it
+- `geopolitical_event` — approval-gated Group B candidate for war, sanctions, terrorism, conflict/protest shocks; generated from GPR quantitative evidence, GDELT, and HDX HAPI evidence when those live sources are available; ACLED and Uppsala/UCDP evidence is TODO pending entitled API keys/account access; GPR requires a headline `GPRD` spike before emitting a candidate, while acts/threats/persistence/article-count evidence sets subtype, confidence, importance, and review snippets; rendered only when the approval overlay promotes it
 - `global_rate_decision` — BOE / ECB / BOJ scheduled meetings sourced from official central-bank archive and current-calendar pages via the event_sources adapter pipeline (ADR 0010 / Group A design spec). Coverage: ECB 88 decisions, BoE 96 decisions, BoJ 89 decisions (all 2016-2026). No longer manually maintained YAML.
 
 YAML schema extension:
@@ -3690,7 +3691,7 @@ score = 1.0 if any(label in event_calendar.matching_labels for label in [
 The transition-risk audit surface also records the matching labels that drove
 this component in `transition_risk.evidence.macro_event_labels`.
 
-`geopolitical_event` is treated separately (high-impact ad-hoc — not part of the routine `macro_event_score`; expected to manifest through `correlation_to_one` / `deleveraging` / `crisis_vol` labels rather than through scheduled-event scoring). Its candidate evidence is generated from GPR, GDELT, and HDX HAPI when available; ACLED and Uppsala/UCDP evidence is TODO pending entitled API keys/account access. Source corroboration is not promotion; a human approval overlay remains mandatory.
+`geopolitical_event` is treated separately (high-impact ad-hoc — not part of the routine `macro_event_score`; expected to manifest through `correlation_to_one` / `deleveraging` / `crisis_vol` labels rather than through scheduled-event scoring). Its candidate evidence is generated from GPR quantitative spike evidence, GDELT, and HDX HAPI when available; ACLED and Uppsala/UCDP evidence is TODO pending entitled API keys/account access. GPR is not a qualitative event source and is not an automatic event-calendar renderer: the detector requires a headline `GPRD` spike before candidate emission, then uses `GPRD_ACT`, `GPRD_THREAT`, `GPRD_MA7`, `GPRD_MA30`, `N10D`, and optional event text only to set candidate subtype, confidence, importance, and review snippets. Source corroboration is not promotion; GPR never auto-promotes `geopolitical_event`; a human approval overlay remains mandatory.
 
 `model_instability_score`:
 ```python
