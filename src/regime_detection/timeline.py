@@ -145,7 +145,7 @@ def _resolve_timeline_required_sessions(
         # avg_pairwise_corr_63d) so the trailing slice gives the GaussianHMM
         # fit a full non-NaN training window.
         v2_min_history = max(v2_min_history, config.hmm.training_window_days + 63)
-        # transition_score.hmm_probability_shift needs top_state_prob[t-5].
+        # transition_score.model_instability needs top_state_prob[t-5].
         # Keep five extra warmed sessions ahead of the emitted window so the
         # first requested output can use the same PIT evidence as later rows.
         trailing_component_lookback = max(trailing_component_lookback, 5)
@@ -539,8 +539,7 @@ def _build_timeline_output_for_day(
             trend_character_active=trend_character_output.active_label,
             volatility_state_active=volatility_output.active_label,
             breadth_state_active=breadth_output.active_label,
-            transition_risk_label=transition_output.label,
-            event_calendar_active=event_output.active_label,
+            transition_risk_state=transition_output.state,
         ),
         volume_liquidity_state=volume_liquidity_output,
         credit_funding_state=credit_funding_output,

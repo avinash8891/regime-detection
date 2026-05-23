@@ -22,7 +22,7 @@ LABEL_COLUMNS = [
     "trend_character_active",
     "volatility_state_active",
     "breadth_state_active",
-    "transition_risk_label",
+    "transition_risk_state",
 ]
 
 HYSTERESIS_BY_COLUMN = {
@@ -30,7 +30,7 @@ HYSTERESIS_BY_COLUMN = {
     "trend_character_active": 3,
     "volatility_state_active": 2,
     "breadth_state_active": 2,
-    "transition_risk_label": 3,
+    "transition_risk_state": 3,
 }
 
 BETTER_DIRECTION = {
@@ -55,7 +55,7 @@ def _load_hysteresis_days() -> dict[str, int]:
         "trend_character_active": int(hysteresis.get("trend_character_deescalation_days", 3)),
         "volatility_state_active": int(hysteresis.get("volatility_deescalation_days", 2)),
         "breadth_state_active": int(hysteresis.get("breadth_deescalation_days", 2)),
-        "transition_risk_label": int(hysteresis.get("composite_deescalation_days", 3)),
+        "transition_risk_state": int(hysteresis.get("composite_deescalation_days", 3)),
     }
 
 

@@ -20,7 +20,10 @@ def test_breadth_state_matches_pinned_fixtures(classified_golden_outputs) -> Non
         assert out.breadth_state.active_label == row["expected"]["breadth_state"]
 
 
-def test_breadth_state_uses_written_etf_proxy_rules_not_invented_recovery_label(market_df_for_asof) -> None:
+def test_breadth_state_uses_written_etf_proxy_rules_not_invented_recovery_label(
+    market_df_for_asof,
+    event_calendar_df,
+) -> None:
     from regime_detection.engine import RegimeEngine
 
     as_of = date(2023, 12, 14)
@@ -33,7 +36,11 @@ def test_breadth_state_uses_written_etf_proxy_rules_not_invented_recovery_label(
     )
     market_data.loc[rsp_recent_idx, "close"] = market_data.loc[rsp_recent_idx, "close"] * 1.20
 
-    out = RegimeEngine().classify(as_of_date=as_of, market_data=market_data)
+    out = RegimeEngine().classify(
+        as_of_date=as_of,
+        market_data=market_data,
+        event_calendar=event_calendar_df,
+    )
 
     assert out.breadth_state.raw_label == "healthy_breadth"
     assert out.breadth_state.active_label == "healthy_breadth"

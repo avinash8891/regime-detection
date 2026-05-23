@@ -119,7 +119,10 @@ artifacts:
   max_date: null
   required_for:
   - profile_engine
+  - v2_calibration
+  - historical_walkforward
   - audit_layer2_30d
+  - shadow_regime
 - name: cleveland_fed_cpi_nowcast
   stage: canonical
   uri: canonical/cleveland_fed_nowcast/cpi_nowcast.parquet

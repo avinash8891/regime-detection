@@ -185,9 +185,8 @@ def _output(as_of_date: date, *, trend_label: str = "bull") -> RegimeOutput:
         breadth_state=_breadth("healthy"),
         structural_causal_state=StructuralCausalState(
             event_calendar=EventCalendarOutput(
-                raw_label="none",
-                stable_label="none",
-                active_label="none",
+                primary_label="normal_calendar",
+                matching_labels=("normal_calendar",),
                 evidence={},
             ),
             monetary_pressure=MonetaryPressureOutput(
@@ -204,12 +203,17 @@ def _output(as_of_date: date, *, trend_label: str = "bull") -> RegimeOutput:
             data_quality=_data_quality(),
         ),
         transition_risk=TransitionRiskOutput(
-            label="stable",
+            state="stable",
             evidence=TransitionRiskEvidencePayload(
-                warnings_active=[],
+                triggered_rules=[],
                 stable_changed_today=False,
                 days_since_axis_switch=None,
+                axis_switch_count=0,
+                recent_axis_switch_count=0,
             ),
+            score=0.10,
+            score_components={"trend_break": 0.10},
+            data_quality=_data_quality(),
         ),
         strategy_response=StrategyResponse(
             position_size_multiplier=1.0,

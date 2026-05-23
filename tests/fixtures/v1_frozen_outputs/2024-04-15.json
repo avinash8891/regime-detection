@@ -113,14 +113,12 @@
   },
   "structural_causal_state": {
     "event_calendar": {
-      "raw_label": "earnings_season",
-      "stable_label": "earnings_season",
-      "active_label": "earnings_season",
+      "primary_label": "earnings_season",
+      "matching_labels": [
+        "earnings_season"
+      ],
       "evidence": {
-        "all_matching_events": [
-          "earnings_season"
-        ],
-        "selected_via_precedence": "earnings_season"
+        "selection_method": "precedence"
       }
     },
     "monetary_pressure": {
@@ -135,11 +133,13 @@
   "transition_risk": {
     "label": "post_switch_cooldown",
     "evidence": {
-      "warnings_active": [
+      "triggered_rules": [
         "post_switch_cooldown"
       ],
       "stable_changed_today": true,
-      "days_since_axis_switch": 0
+      "days_since_axis_switch": 0,
+      "axis_switch_count": 0,
+      "recent_axis_switch_count": 0
     }
   },
   "strategy_response": {

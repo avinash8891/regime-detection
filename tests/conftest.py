@@ -41,6 +41,7 @@ sys.path.insert(0, str(_REPO_ROOT))
 sys.path.insert(0, str(_REPO_ROOT / "src"))
 
 from regime_detection.engine import RegimeEngine  # noqa: E402
+from regime_detection.loaders import load_event_calendar  # noqa: E402
 
 
 def pytest_configure() -> None:
@@ -154,6 +155,7 @@ _RAW_DIR = _FIXTURES_DIR / "raw"
 _MARKET_PARQUET_PATH = _RAW_DIR / "market_data.parquet"
 _V2_DAILY_OHLCV_PATH = _RAW_DIR / "v2" / "daily_ohlcv.csv"
 _V2_FRED_MACRO_PATH = _RAW_DIR / "v2" / "fred_macro_series.csv"
+_EVENT_CALENDAR_PATH = _FIXTURES_DIR / "events" / "us_events.yaml"
 _GOLDEN_DATES_PATH = _FIXTURES_DIR / "derived" / "golden_dates.yaml"
 _V2_MACRO_LOGICAL_NAMES = (
     "sofr",
@@ -263,6 +265,11 @@ def v2_macro_series_by_key() -> dict[str, pd.Series]:
 
 
 @pytest.fixture(scope="session")
+def event_calendar_df() -> pd.DataFrame:
+    return load_event_calendar(_EVENT_CALENDAR_PATH).copy()
+
+
+@pytest.fixture(scope="session")
 def golden_rows() -> list[dict[str, object]]:
     golden = yaml.safe_load(_GOLDEN_DATES_PATH.read_text())
     return list(golden["rows"])
@@ -302,6 +309,7 @@ def _classify_all_golden_rows(
         end_date=end,
         market_data=market_df_for_asof(end),
         lookback_days=lookback_sessions,
+        event_calendar=load_event_calendar(_EVENT_CALENDAR_PATH),
     )
     by_date = {out.as_of_date: out for out in timeline.outputs}
     missing = [d for d in golden_dates if d not in by_date]
@@ -376,6 +384,7 @@ def _build_real_v2_classify_window_2026_05_13(
         end_date=as_of,
         market_data=v2_market_df_for_asof(as_of),
         lookback_days=1,
+        event_calendar=load_event_calendar(_EVENT_CALENDAR_PATH),
         sector_etf_closes={s: v2_close_series_by_symbol[s] for s in SECTOR_ETFS},
         cross_asset_closes={
             s: v2_close_series_by_symbol[s] for s in CROSS_ASSET_SYMBOLS

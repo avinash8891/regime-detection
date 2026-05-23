@@ -90,8 +90,8 @@ class ScheduledEvent:
 
 @dataclass(frozen=True)
 class EventLabelResolution:
-    all_matching_events: list[str]
-    selected_via_precedence: str
+    matching_labels: tuple[str, ...]
+    primary_label: str
 
 
 @dataclass(frozen=True)

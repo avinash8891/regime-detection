@@ -738,6 +738,7 @@ def test_regime_output_carries_real_fixture_credit_funding_state_when_configured
     v2_market_df_for_asof,
     v2_close_series_by_symbol: dict[str, pd.Series],
     v2_macro_series_by_key: dict[str, pd.Series],
+    event_calendar_df,
 ) -> None:
     """End-to-end: real fixture reaches both §2C wire fields.
 
@@ -766,6 +767,7 @@ def test_regime_output_carries_real_fixture_credit_funding_state_when_configured
         end_date=as_of,
         market_data=v2_market_df_for_asof(as_of),
         lookback_days=1,
+        event_calendar=event_calendar_df,
         sector_etf_closes=context.sector_etf_closes,
         cross_asset_closes=context.cross_asset_closes,
         macro_series=v2_macro_series_by_key,
@@ -824,6 +826,7 @@ def test_regime_output_carries_credit_funding_state_when_configured() -> None:
             ]
         ),
         lookback_days=1,
+        event_calendar=pd.DataFrame(columns=["date", "market", "type", "importance"]),
         sector_etf_closes=context.sector_etf_closes,
         cross_asset_closes=context.cross_asset_closes,
         macro_series=context.macro_series,

@@ -39,6 +39,7 @@ from regime_detection.fragility_universe import SECTOR_ETFS  # noqa: E402
 from regime_detection.loaders import (  # noqa: E402
     load_central_bank_text_score,
     load_cpi_vintages_first_release,
+    load_event_calendar,
 )
 from regime_detection.market_context import build_market_context  # noqa: E402
 from regime_detection.models import ClassificationStatus  # noqa: E402
@@ -118,7 +119,7 @@ def _tally_output(metrics: dict[str, int], output: Any) -> None:
     """Tally wire-level signals from a single ``RegimeOutput`` into ``metrics``."""
     metrics["sessions_classified"] += 1
     tr = output.transition_risk
-    label = (tr.label or "").lower()
+    label = (tr.state or "").lower()
     if label == "crisis_override":
         metrics["crisis_override_fired"] += 1
     if label == "bear_stress":
@@ -186,6 +187,7 @@ def _classify_window(
     engine: RegimeEngine,
     sessions: list[dt.date],
     market_data: pd.DataFrame,
+    event_calendar: pd.DataFrame,
     v2_kwargs: dict[str, Any] | None,
     mode_label: str,
 ) -> tuple[dict[str, int], dict[str, int], int]:
@@ -204,6 +206,7 @@ def _classify_window(
         kwargs: dict[str, Any] = {
             "as_of_date": as_of_date,
             "market_data": market_slice,
+            "event_calendar": event_calendar,
         }
         if v2_kwargs:
             kwargs.update(v2_kwargs)
@@ -379,9 +382,12 @@ def main() -> int:
         raise SystemExit(f"daily_ohlcv directory not found at {daily_dir}")
     if not macro_parquet.exists():
         raise SystemExit(f"macro parquet not found at {macro_parquet}")
+    if not args.event_calendar.exists():
+        raise SystemExit(f"event_calendar file not found at {args.event_calendar}")
 
     logger.info("Loading market data...")
     market_data = load_market_data(daily_dir)
+    event_calendar = load_event_calendar(args.event_calendar)
 
     # Build a v1 bootstrap context to derive the SPY session index.
     config = load_default_regime_config()
@@ -461,6 +467,7 @@ def main() -> int:
         engine=engine,
         sessions=sessions,
         market_data=market_data,
+        event_calendar=event_calendar,
         v2_kwargs=None,
         mode_label="v1",
     )
@@ -470,6 +477,7 @@ def main() -> int:
         engine=engine,
         sessions=sessions,
         market_data=market_data,
+        event_calendar=event_calendar,
         v2_kwargs=v2_kwargs,
         mode_label="v2",
     )

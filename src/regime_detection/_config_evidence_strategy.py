@@ -8,29 +8,27 @@ from regime_detection._config_core import AxisName, StrictBaseModel
 
 
 class TransitionScoreConfig(StrictBaseModel):
-    """Composite transition risk score configuration (v2 spec §4.3 / §4.4)."""
+    """Transition-risk score and final-state band config (v2 spec §4.3 / §4.4)."""
 
-    # V2 §4.3 weights when HMM regime-probability shift is available.
-    weights_with_hmm: dict[str, float]
+    # Component weights for the full transition-pressure score. At runtime,
+    # unavailable optional components are omitted and the remaining weights are
+    # normalized, provided minimum_component_weight_coverage is still met.
+    weights: dict[str, float]
 
-    # V2 §4.3 weights when HMM is unavailable (5-component renormalization).
-    weights_without_hmm: dict[str, float]
+    minimum_component_weight_coverage: float = Field(default=0.75, gt=0.0, le=1.0)
 
-    # V2 §4.3 — weights when change_point evidence is available but HMM is not (6 components).
-    weights_with_change_point: dict[str, float]
-
-    # V2 §4.3 — weights when both HMM and change_point evidence are available (7 components).
-    weights_with_hmm_with_change_point: dict[str, float]
-
-    # V2 §4.4 interpretation bands: stable / weakening / transition_warning / high.
+    # V2 §4.4 score bands. These are interpreted first, then transition_risk
+    # combines the band with named rule overrides to select the final state.
     bands: dict[str, tuple[float, float]]
 
-    # ADR 0013 R1 (ratified) — post-axis-switch cooldown window in NYSE sessions.
-    # Default 5 matches v1 §9.4 ("days 0–5 inclusive") and the hardcoded value
-    # in `transition_risk.classify_transition_risk` (the non-series path). The
-    # prior default of 3 was an unintentional regression that silently shortened
-    # the cooldown window on the series path; see ADR 0013 for the audit trail.
+    # Post-axis-switch cooldown window in NYSE sessions. Default 5 means switch
+    # day through five sessions later; the transition-risk composer turns this
+    # into a watch state when the pressure score is otherwise stable.
     cooldown_window_days: int = Field(default=5, ge=0)
+
+    # Final-state debounce. Value is the number of consecutive raw prints
+    # required before the public transition_risk.state changes to that state.
+    state_confirmation_days: dict[str, int]
 
 
 class HMMConfig(StrictBaseModel):
@@ -202,4 +200,3 @@ class StrategyFamilyConstraintsConfig(StrictBaseModel):
     default_neutral: dict[str, FamilyOverride]
     # First key = cohort name, second key = family name.
     overrides: dict[str, dict[str, FamilyOverride]]
-

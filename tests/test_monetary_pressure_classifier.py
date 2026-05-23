@@ -404,6 +404,7 @@ def test_engine_classify_window_populates_monetary_pressure_state():
         end_date=_LAST_SESSION.date(),
         market_data=market_data,
         lookback_days=50,
+        event_calendar=pd.DataFrame(columns=["date", "market", "type", "importance"]),
         macro_series=macro,
     )
     populated = [
@@ -447,6 +448,7 @@ def test_engine_classify_window_monetary_pressure_state_none_in_pure_v1_mode():
         end_date=_LAST_SESSION.date(),
         market_data=market_data,
         lookback_days=20,
+        event_calendar=pd.DataFrame(columns=["date", "market", "type", "importance"]),
         config=v1_config,
     )
     for out in timeline.outputs:

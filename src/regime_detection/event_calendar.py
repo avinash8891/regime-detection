@@ -259,14 +259,13 @@ def compute_event_calendar_outputs(
     for idx, day in enumerate(sessions_tuple):
         mask = match_masks[idx]
         ordered = [label for label in _PRECEDENCE if mask & label_bits[label]]
-        selected = ordered[0] if ordered else "normal_calendar"
+        primary = ordered[0] if ordered else "normal_calendar"
+        matching = tuple(ordered) if ordered else ("normal_calendar",)
         outputs[day] = EventCalendarOutput(
-            raw_label=selected,
-            stable_label=selected,
-            active_label=selected,
+            primary_label=primary,
+            matching_labels=matching,
             evidence={
-                "all_matching_events": ordered,
-                "selected_via_precedence": selected,
+                "selection_method": "precedence",
             },
         )
     return outputs

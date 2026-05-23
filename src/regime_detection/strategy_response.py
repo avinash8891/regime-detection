@@ -9,12 +9,11 @@ def build_strategy_response(
     trend_character_active: str,
     volatility_state_active: str,
     breadth_state_active: str,
-    transition_risk_label: str,
-    event_calendar_active: str,
+    transition_risk_state: str,
 ) -> StrategyResponse:
     if (
-        transition_risk_label == "unknown"
-        or "unknown" in {trend_direction_active, trend_character_active, volatility_state_active, breadth_state_active, event_calendar_active}
+        transition_risk_state == "insufficient_data"
+        or "unknown" in {trend_direction_active, trend_character_active, volatility_state_active, breadth_state_active}
     ):
         return StrategyResponse(
             position_size_multiplier=0.75,
@@ -62,10 +61,11 @@ def build_strategy_response(
         allow_leverage_expansion = True
         modifiers.append("bull_healthy_low_vol")
 
-    if transition_risk_label == "recovery_attempt":
+    if transition_risk_state == "recovery_attempt":
         position_size_multiplier = 0.5
         allow_trend_following = True
         allow_buy_dip = True
+        leverage_allowed = False
         require_breadth_confirmation = True
         allow_leverage_expansion = False
         modifiers.append("recovery_attempt")
@@ -77,20 +77,36 @@ def build_strategy_response(
         take_profit_faster = True
         modifiers.append("sideways_chop")
 
-    if transition_risk_label == "bull_fragile_warning":
+    if transition_risk_state == "fragile_bull":
         position_size_multiplier = 0.5
         allow_buy_dip = False
         allow_leverage_expansion = False
         require_confirmation_for_new_longs = True
         modifiers.append("bull_fragile")
 
-    if transition_risk_label == "sideways_stress_warning":
-        # v2 §4.0 — sideways_stress is a defensive modifier for stressed-but-not-bear
-        # regimes (banking-crisis, election-uncertainty, macro-shock per spec §4.0).
-        # Sits between bull_fragile (mid-conviction defensive) and bear_stress (full
-        # defensive) in the strategy_response precedence order at spec §4.0 line 3621.
-        # Pattern: trend=sideways AND vol=high AND breadth in {weak_breadth,
-        # divergent_fragile} (spec §4.0 lines 3587-3589).
+    if transition_risk_state == "weakening":
+        position_size_multiplier = min(position_size_multiplier, 0.75)
+        allow_leverage_expansion = False
+        require_confirmation_for_new_longs = True
+        modifiers.append("transition_weakening")
+
+    if transition_risk_state == "transition_warning":
+        position_size_multiplier = min(position_size_multiplier, 0.75)
+        allow_leverage_expansion = False
+        require_confirmation_for_new_longs = True
+        take_profit_faster = True
+        modifiers.append("transition_warning")
+
+    if transition_risk_state == "high_transition_risk":
+        position_size_multiplier = min(position_size_multiplier, 0.5)
+        leverage_allowed = False
+        allow_buy_dip = False
+        allow_leverage_expansion = False
+        require_confirmation_for_new_longs = True
+        prefer_cash_or_hedges = True
+        modifiers.append("high_transition_risk")
+
+    if transition_risk_state == "watch":
         position_size_multiplier = 0.5
         allow_breakout = False
         allow_leverage_expansion = False
@@ -98,14 +114,14 @@ def build_strategy_response(
         require_confirmation_for_new_longs = True
         modifiers.append("sideways_stress")
 
-    if transition_risk_label == "bear_stress_warning":
+    if transition_risk_state == "bear_stress":
         allow_buy_dip = False
         position_size_multiplier = 0.5
         leverage_allowed = False
         require_confirmation_for_shorts = True
         modifiers.append("bear_stress")
 
-    if transition_risk_label == "crisis_override":
+    if transition_risk_state == "crisis":
         position_size_multiplier = 0.25
         leverage_allowed = False
         hard_max_loss_required = True

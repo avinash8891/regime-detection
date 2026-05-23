@@ -300,7 +300,7 @@ def test_build_raw_outputs_applies_v2_precedence_when_pit_features_present() -> 
 # ---------------------------------------------------------------------------
 
 
-def test_v1_path_unchanged_when_pit_features_absent(market_df_for_asof) -> None:
+def test_v1_path_unchanged_when_pit_features_absent(market_df_for_asof, event_calendar_df) -> None:
     """When the engine runs WITHOUT PIT inputs (default V1 fixture path), the
     classifier must emit one of the 5 V1 labels — never narrowing_breadth or
     broadening_breadth.
@@ -309,7 +309,9 @@ def test_v1_path_unchanged_when_pit_features_absent(market_df_for_asof) -> None:
 
     as_of = date(2023, 12, 14)
     out = RegimeEngine().classify(
-        as_of_date=as_of, market_data=market_df_for_asof(as_of)
+        as_of_date=as_of,
+        market_data=market_df_for_asof(as_of),
+        event_calendar=event_calendar_df,
     )
     assert out.breadth_state.active_label in _V1_LABELS
     assert out.breadth_state.raw_label in _V1_LABELS

@@ -28,6 +28,9 @@ if str(SCRIPT_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPT_DIR))
 
 from regime_detection.engine import RegimeEngine  # noqa: E402
+from regime_detection.loaders import load_event_calendar  # noqa: E402
+
+EVENT_CALENDAR_PATH = REPO_ROOT / "tests" / "fixtures" / "events" / "us_events.yaml"
 
 INTENTS: list[dict[str, Any]] = [
     {
@@ -228,6 +231,7 @@ def _classify_all_intents(
         end_date=end,
         market_data=market_data,
         lookback_days=lookback_sessions,
+        event_calendar=load_event_calendar(EVENT_CALENDAR_PATH),
     )
     return {out.as_of_date: out for out in timeline.outputs}
 
@@ -267,7 +271,7 @@ def _pick_fixture_date(
 
 def _get_axis_label(out: Any, axis: str) -> str:
     if axis == "transition_risk":
-        return out.transition_risk.label
+        return out.transition_risk.state
     attr = getattr(out, axis, None)
     if attr is not None and hasattr(attr, "active_label"):
         return attr.active_label

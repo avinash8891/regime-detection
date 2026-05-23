@@ -8,7 +8,7 @@ strategy metrics). Foundation scaffolding for the v2 §9.1 gate:
 >   - lower max drawdown than V1
 >   - higher Sharpe than V1
 >   - earlier crisis detection (lower lag in days from event to
->     crisis_override)
+>     transition_risk.state = crisis)
 >   - lower false-switch rate than V1
 
 ``compute_v1_v2_diff`` and ``evaluate_v2_gate`` are pure functions
@@ -48,7 +48,7 @@ class StrategyMetrics:
     backtest window (e.g. -0.18 for a 18% peak-to-trough drawdown).
     `sharpe` is annualized. `mean_crisis_detection_lag_days` is the
     average NYSE-trading-day lag between a crisis event date and the
-    engine raising `crisis_override` (lower is better). `false_switch_rate`
+    engine raising `transition_risk.state = crisis` (lower is better). `false_switch_rate`
     is in [0, 1] (lower is better).
 
     The engine itself never computes these — they come from the strategy
@@ -167,6 +167,9 @@ def axis_reporting_label(
     active_label = getattr(output, "active_label", None)
     if active_label is not None:
         return str(active_label)
+    state = getattr(output, "state", None)
+    if state is not None:
+        return str(state)
     label = getattr(output, "label", default)
     return None if label is None else str(label)
 

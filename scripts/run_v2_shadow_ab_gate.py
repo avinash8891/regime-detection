@@ -9,7 +9,7 @@ markdown disagreement report at
 Per ``docs/v2_slice_gate_checklist.md`` item 7: zero unexpected wire
 diffs in v1 fields; v2 enrichments match expectations. v1-field
 disagreements (trend_direction / trend_character / volatility_state /
-breadth_state / transition_risk.label) should be ZERO. v2-NEW field
+breadth_state / transition_risk.state) should be ZERO. v2-NEW field
 activations (transition_risk.score, agent_routing, change_point,
 credit_funding_state, inflation_growth_state, cluster) are EXPECTED to
 differ — those are wins, not regressions. The markdown surfaces both
@@ -40,6 +40,7 @@ from regime_detection.fragility_universe import SECTOR_ETFS  # noqa: E402
 from regime_detection.loaders import (  # noqa: E402
     load_central_bank_text_score,
     load_cpi_vintages_first_release,
+    load_event_calendar,
 )
 from regime_detection.market_context import build_market_context  # noqa: E402
 from regime_detection.versioning import engine_version as resolved_engine_version  # noqa: E402
@@ -69,7 +70,7 @@ V1_FIELDS: list[str] = [
     "trend_character",
     "volatility_state",
     "breadth_state",
-    "transition_risk_label",
+    "transition_risk_state",
 ]
 
 # v2 fields whose activation is EXPECTED to differ under v2-mode.
@@ -113,7 +114,7 @@ def _extract_v1_fields(output: Any) -> dict[str, Any]:
         "trend_character": output.trend_character.active_label,
         "volatility_state": output.volatility_state.active_label,
         "breadth_state": output.breadth_state.active_label,
-        "transition_risk_label": output.transition_risk.label,
+        "transition_risk_state": output.transition_risk.state,
     }
 
 
@@ -167,6 +168,7 @@ def _classify_per_session(
     engine: RegimeEngine,
     sessions: list[dt.date],
     market_data: pd.DataFrame,
+    event_calendar: pd.DataFrame,
     v2_kwargs: dict[str, Any] | None,
     mode_label: str,
 ) -> tuple[dict[dt.date, dict[str, Any]], dict[dt.date, dict[str, Any]], int]:
@@ -185,6 +187,7 @@ def _classify_per_session(
         kwargs: dict[str, Any] = {
             "as_of_date": as_of_date,
             "market_data": market_slice,
+            "event_calendar": event_calendar,
         }
         if v2_kwargs:
             kwargs.update(v2_kwargs)
@@ -378,9 +381,12 @@ def main() -> int:
         raise SystemExit(f"daily_ohlcv directory not found at {daily_dir}")
     if not macro_parquet.exists():
         raise SystemExit(f"macro parquet not found at {macro_parquet}")
+    if not args.event_calendar.exists():
+        raise SystemExit(f"event_calendar file not found at {args.event_calendar}")
 
     logger.info("Loading market data...")
     market_data = load_market_data(daily_dir)
+    event_calendar = load_event_calendar(args.event_calendar)
     end_date = market_data["date"].max()
 
     # Walk back through the NYSE calendar to get the most-recent N sessions.
@@ -462,6 +468,7 @@ def main() -> int:
         engine=engine,
         sessions=sessions,
         market_data=market_data,
+        event_calendar=event_calendar,
         v2_kwargs=None,
         mode_label="v1",
     )
@@ -471,6 +478,7 @@ def main() -> int:
         engine=engine,
         sessions=sessions,
         market_data=market_data,
+        event_calendar=event_calendar,
         v2_kwargs=v2_kwargs,
         mode_label="v2",
     )

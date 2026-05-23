@@ -235,18 +235,45 @@ def test_network_fragility_config_rejects_invalid_lookback_bounds() -> None:
         NetworkFragilityConfig(**bad)
 
 
-def test_v2_transition_score_weights_with_hmm_sum_to_1_0() -> None:
+def test_v2_transition_score_weights_sum_to_1_0() -> None:
     cfg = load_default_regime_config()
     assert cfg.transition_score is not None
-    total = sum(cfg.transition_score.weights_with_hmm.values())
+    total = sum(cfg.transition_score.weights.values())
     assert total == pytest.approx(1.0, abs=1e-9)
 
 
-def test_v2_transition_score_weights_without_hmm_sum_to_1_0() -> None:
+def test_v2_transition_score_config_uses_score_first_component_contract() -> None:
     cfg = load_default_regime_config()
     assert cfg.transition_score is not None
-    total = sum(cfg.transition_score.weights_without_hmm.values())
-    assert total == pytest.approx(1.0, abs=1e-9)
+    assert set(cfg.transition_score.weights) == {
+        "trend_break",
+        "volatility_acceleration",
+        "breadth_deterioration",
+        "correlation_fragility",
+        "credit_stress",
+        "liquidity_stress",
+        "macro_event",
+        "model_instability",
+    }
+    assert cfg.transition_score.minimum_component_weight_coverage == pytest.approx(0.75)
+    assert cfg.transition_score.bands == {
+        "stable": (0.0, 0.35),
+        "weakening": (0.35, 0.55),
+        "transition_warning": (0.55, 0.75),
+        "high": (0.75, 1.0),
+    }
+    assert cfg.transition_score.state_confirmation_days == {
+        "stable": 1,
+        "watch": 1,
+        "weakening": 2,
+        "transition_warning": 2,
+        "high_transition_risk": 2,
+        "fragile_bull": 2,
+        "recovery_attempt": 2,
+        "bear_stress": 1,
+        "crisis": 1,
+        "insufficient_data": 1,
+    }
 
 
 def test_v2_config_rejects_unknown_top_level_key(tmp_path: Path) -> None:

@@ -1,143 +1,137 @@
 from __future__ import annotations
 
-from datetime import date
+from dataclasses import dataclass
 
-import pandas as pd
+from regime_detection.models import (
+    DataQuality,
+    TransitionRiskEvidencePayload,
+    TransitionRiskOutput,
+    TransitionRiskState,
+)
+from regime_detection.transition_score import ComposedTransitionScore
 
-from regime_detection.models import TransitionRiskEvidencePayload, TransitionRiskOutput
+_SCORE_BAND_TO_STATE: dict[str, TransitionRiskState] = {
+    "stable": "stable",
+    "weakening": "weakening",
+    "transition_warning": "transition_warning",
+    "high": "high_transition_risk",
+}
+
+_DRIVER_THRESHOLD = 0.35
 
 
-def classify_transition_risk(
+@dataclass(frozen=True)
+class TransitionRuleFlags:
+    crisis: bool
+    bear_stress: bool
+    fragile_bull: bool
+    recovery_attempt: bool
+    sideways_stress: bool
+    event_transition_watch: bool
+    post_switch_cooldown: bool
+    insufficient_data: bool
+    stable_changed_today: bool
+    days_since_axis_switch: int | None
+    axis_switch_count: int
+    recent_axis_switch_count: int
+
+
+def compose_transition_risk_output(
     *,
-    as_of_date: date,
-    trend_direction_active: str,
-    prior_bear_in_last_60_sessions: bool,
-    trend_character_active: str,
-    volatility_state_active: str,
-    breadth_state_active: str,
-    stable_changed_today: bool,
-    days_since_axis_switch: int | None,
-    close: float | None,
-    sma_50: float | None,
-    allow_v2_warnings: bool = False,
+    score: ComposedTransitionScore,
+    flags: TransitionRuleFlags,
 ) -> TransitionRiskOutput:
-    crisis_override = volatility_state_active == "crisis_vol"
-    bear_stress_warning = (
-        trend_direction_active == "bear"
-        and volatility_state_active in {"high_vol", "crisis_vol"}
-        and breadth_state_active in {"weak_breadth", "divergent_fragile", "unknown"}
-    )
-    # v2 §4.0 named warning extension. Captures stressed-but-not-bear regimes
-    # (banking-crisis, election-uncertainty, macro-shock) that V1 emits as
-    # `stable`. V2 §4.0 explicitly forbids backporting to V1, so the
-    # rule is gated by `allow_v2_warnings` (off by default — V1 byte-identity
-    # preserved).
-    sideways_stress_warning = bool(
-        allow_v2_warnings
-        and trend_direction_active == "sideways"
-        and volatility_state_active == "high_vol"
-        and breadth_state_active in {"weak_breadth", "divergent_fragile"}
-    )
-    bull_fragile_warning = trend_direction_active == "bull" and breadth_state_active == "divergent_fragile"
-    recovery_attempt = trend_character_active == "recovery_attempt" or (
-        prior_bear_in_last_60_sessions
-        and close is not None
-        and sma_50 is not None
-        and not pd.isna(close)
-        and not pd.isna(sma_50)
-        and close > sma_50
-        and breadth_state_active in {"recovery_breadth", "healthy_breadth"}
-    )
-    # v1 §9.4 post_switch_cooldown is a 6-session window after any axis stable_label
-    # changes, not a single-day flag. `days_since_axis_switch <= 5` covers the full
-    # window (0 on switch day through 5 inclusive, six sessions total).
-    # Crisis_override breaks cooldown in the precedence walker below.
-    post_switch_cooldown = bool(
-        days_since_axis_switch is not None and days_since_axis_switch <= 5
-    )
-    any_unknown = any(
-        label == "unknown"
-        for label in [
-            trend_direction_active,
-            trend_character_active,
-            volatility_state_active,
-            breadth_state_active,
-        ]
-    )
-    return build_transition_risk_output_from_flags(
-        crisis_override=crisis_override,
-        bear_stress_warning=bear_stress_warning,
-        sideways_stress_warning=sideways_stress_warning,
-        bull_fragile_warning=bull_fragile_warning,
-        recovery_attempt=recovery_attempt,
-        post_switch_cooldown=post_switch_cooldown,
-        any_unknown=any_unknown,
-        stable_changed_today=stable_changed_today,
-        days_since_axis_switch=days_since_axis_switch,
-    )
-
-
-def build_transition_risk_output_from_flags(
-    *,
-    crisis_override: bool,
-    bear_stress_warning: bool,
-    bull_fragile_warning: bool,
-    recovery_attempt: bool,
-    post_switch_cooldown: bool,
-    any_unknown: bool,
-    stable_changed_today: bool,
-    days_since_axis_switch: int | None,
-    sideways_stress_warning: bool = False,
-) -> TransitionRiskOutput:
-    """Compose the transition_risk label from per-rule flags.
-
-    Precedence (highest first):
-      crisis_override > bear_stress_warning > sideways_stress_warning
-      > bull_fragile_warning > recovery_attempt > post_switch_cooldown
-      > unknown > stable
-
-    `sideways_stress_warning` (V2 §4.0) is inserted between bear_stress and
-    bull_fragile: it is compositional like bull_fragile but defensively
-    skewed (stressed-but-not-bear). When `sideways_stress_warning=False`
-    (the V1 default), the precedence collapses to the V1 ordering and
-    V1 byte-identity is preserved.
-    """
-    warnings_active: list[str] = []
-    if crisis_override:
-        warnings_active.append("crisis_override")
-    if bear_stress_warning:
-        warnings_active.append("bear_stress_warning")
-    if sideways_stress_warning:
-        warnings_active.append("sideways_stress_warning")
-    if bull_fragile_warning:
-        warnings_active.append("bull_fragile_warning")
-    if recovery_attempt:
-        warnings_active.append("recovery_attempt")
-    if post_switch_cooldown and not crisis_override:
-        warnings_active.append("post_switch_cooldown")
-
-    if crisis_override:
-        label = "crisis_override"
-    elif bear_stress_warning:
-        label = "bear_stress_warning"
-    elif sideways_stress_warning:
-        label = "sideways_stress_warning"
-    elif bull_fragile_warning:
-        label = "bull_fragile_warning"
-    elif recovery_attempt:
-        label = "recovery_attempt"
-    elif post_switch_cooldown and not crisis_override:
-        label = "post_switch_cooldown"
-    elif any_unknown:
-        label = "unknown"
+    if score.score is None or score.interpretation is None or score.components is None:
+        state = _select_transition_state(
+            score_state="insufficient_data",
+            flags=flags,
+        )
+        data_quality = DataQuality(
+            status="insufficient_history",
+            reason="transition_score_inputs_not_ready",
+        )
     else:
-        label = "stable"
+        state = _select_transition_state(
+            score_state=_SCORE_BAND_TO_STATE[score.interpretation],
+            flags=flags,
+        )
+        data_quality = DataQuality(status="ok")
 
+    triggered_rules = _triggered_rules(flags)
+    components = score.components if score.components is not None else None
+    primary_drivers = _primary_drivers(components)
     return TransitionRiskOutput(
-        label=label,
+        state=state,
+        score=score.score,
+        score_components=components,
+        primary_drivers=primary_drivers,
+        triggered_rules=triggered_rules,
         evidence=TransitionRiskEvidencePayload(
-            warnings_active=warnings_active,
-            stable_changed_today=stable_changed_today,
-            days_since_axis_switch=days_since_axis_switch,
+            triggered_rules=triggered_rules,
+            stable_changed_today=flags.stable_changed_today,
+            days_since_axis_switch=flags.days_since_axis_switch,
+            axis_switch_count=flags.axis_switch_count,
+            recent_axis_switch_count=flags.recent_axis_switch_count,
         ),
+        data_quality=data_quality,
     )
+
+
+def _select_transition_state(
+    *,
+    score_state: TransitionRiskState,
+    flags: TransitionRuleFlags,
+) -> TransitionRiskState:
+    # Preserve the old emergency override: crisis_vol must de-risk immediately,
+    # even if another axis is unknown or secondary stress evidence is absent.
+    if flags.crisis:
+        return "crisis"
+    if flags.bear_stress:
+        return "bear_stress"
+    if flags.fragile_bull:
+        return "fragile_bull"
+    if flags.recovery_attempt:
+        return "recovery_attempt"
+    # The old V2 sideways-stress warning is retained as a watch condition,
+    # not as a separate public final state.
+    if flags.sideways_stress:
+        return "watch"
+    if flags.insufficient_data:
+        return "insufficient_data"
+    if flags.event_transition_watch:
+        return "watch"
+    if flags.post_switch_cooldown and score_state == "stable":
+        return "watch"
+    return score_state
+
+
+def _triggered_rules(flags: TransitionRuleFlags) -> list[str]:
+    rules: list[str] = []
+    if flags.crisis:
+        rules.append("crisis")
+    if flags.bear_stress:
+        rules.append("bear_stress")
+    if flags.fragile_bull:
+        rules.append("fragile_bull")
+    if flags.recovery_attempt:
+        rules.append("recovery_attempt")
+    if flags.sideways_stress:
+        rules.append("sideways_stress")
+    if flags.event_transition_watch:
+        rules.append("event_transition_watch")
+    if flags.post_switch_cooldown:
+        rules.append("post_switch_cooldown")
+    if flags.insufficient_data:
+        rules.append("insufficient_data")
+    return rules
+
+
+def _primary_drivers(components: dict[str, float] | None) -> list[str]:
+    if components is None:
+        return []
+    ranked = sorted(
+        components.items(),
+        key=lambda item: item[1],
+        reverse=True,
+    )
+    return [name for name, value in ranked if value >= _DRIVER_THRESHOLD][:3]

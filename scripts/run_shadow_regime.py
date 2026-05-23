@@ -12,6 +12,8 @@ import pandas as pd
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
 sys.path.insert(0, str(REPO_ROOT / "src"))
 
 from regime_detection.calendar import require_nyse_trading_day
@@ -29,6 +31,8 @@ from regime_detection.shadow_storage import (
     write_archived_inputs,
 )
 from regime_detection.versioning import engine_version as resolved_engine_version
+from regime_data_fetch.materialization import materialize_if_requested
+from scripts._v2_calibration_helpers import apply_manifest_input_defaults
 
 
 def _normalize_market_data(path: Path) -> pd.DataFrame:
@@ -48,7 +52,15 @@ def _normalize_market_data(path: Path) -> pd.DataFrame:
 
 def _normalize_event_calendar(path: Path | None) -> pd.DataFrame | None:
     if path is None:
-        return None
+        raise ValueError(
+            "event_calendar_path is required for shadow runs; materialize the "
+            "manifest event_calendar artifact before running."
+        )
+    if not path.exists():
+        raise FileNotFoundError(
+            f"event_calendar_path does not exist: {path}. "
+            "Materialize the manifest event_calendar artifact before running."
+        )
     return load_event_calendar(path)
 
 
@@ -65,11 +77,11 @@ def run_shadow(
     config_path: Path | None = None,
 ) -> dict[str, Any]:
     require_nyse_trading_day(as_of_date)
+    event_df = _normalize_event_calendar(event_calendar_path)
     paths = ensure_shadow_layout(output_root)
     conn = open_shadow_db(paths["db"])
     try:
         market_data = _normalize_market_data(market_data_path)
-        event_df = _normalize_event_calendar(event_calendar_path)
         market_slice = market_data[market_data["date"] <= as_of_date].copy().reset_index(drop=True)
 
         engine = RegimeEngine(config_path=config_path)
@@ -144,13 +156,25 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--as-of-date", required=True, type=date.fromisoformat)
     parser.add_argument("--market-data", required=True, type=Path)
     parser.add_argument("--output-root", required=True, type=Path)
-    parser.add_argument("--event-calendar", type=Path, default=None)
     parser.add_argument("--config-path", type=Path, default=None)
-    return parser.parse_args()
+    parser.add_argument("--manifest", type=Path, default=None, help="Optional artifact manifest to materialize before running.")
+    parser.add_argument("--artifact-store", default=None, help="Optional artifact-store root override for --manifest.")
+    parser.add_argument("--data-root", type=Path, default=REPO_ROOT / "data" / "raw", help="Local data/raw root used for manifest materialization.")
+    args = parser.parse_args()
+    args.event_calendar = None
+    apply_manifest_input_defaults(args, args.data_root, fields=frozenset({"event_calendar"}))
+    return args
 
 
 def main() -> int:
     args = _parse_args()
+    materialize_if_requested(
+        manifest_path=args.manifest,
+        local_root=args.data_root,
+        repo_root=REPO_ROOT,
+        store_root=args.artifact_store,
+        required_for="shadow_regime",
+    )
     result = run_shadow(
         as_of_date=args.as_of_date,
         market_data_path=args.market_data,

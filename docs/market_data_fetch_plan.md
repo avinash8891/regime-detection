@@ -469,7 +469,7 @@ The hard data blockers from earlier V2 slices are now closed (see "Recently clos
 - **V2 §1A `sentiment_score`** — closed: AAII fetcher ships, `sentiment_score = bull_bear_spread_8w_ma`, `euphoria` fires (Ambiguity Log #32).
 - **V2 §1C implied vol** — closed: `implied_vol_30d = VIXCLS / 100` from FRED; `vol_crush` + `iv_rv_spread` ship (Ambiguity Log #19 / #20; ADR 0005).
 - **V2 §2C HY/IG OAS + parallel proxy** — closed: real ICE BofA OAS is sourced free from FRED (`BAMLH0A0HYM2` / `BAMLC0A4CBBB`) for 2023-05-15+; the TLT-vs-HYG/LQD total-return proxy remains as a separate `credit_funding_state_proxy` metric for longer directional history, and `credit_funding_effective_state` resolves the two labels for downstream rules (Ambiguity Log #49 + #71, ADR 0007).
-- **30-session profile evidence completeness** — closed by ADR 0008. Macro feature math now uses latest-known-as-of FRED alignment with freshness gates, HMM/GMM evidence is emitted point-in-time per warmed session, and profile/timeline materialization keeps five extra warmed sessions for `hmm_probability_shift[t-5]`.
+- **30-session profile evidence completeness** — closed by ADR 0008. Macro feature math now uses latest-known-as-of FRED alignment with freshness gates, HMM/GMM evidence is emitted point-in-time per warmed session, and profile/timeline materialization keeps five extra warmed sessions for `model_instability[t-5]`.
 ## 5. Explicit Hard Failures
 
 The fetch layer should fail loudly, not substitute silently, for these unsupported inputs:

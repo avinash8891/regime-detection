@@ -495,6 +495,7 @@ def test_regime_output_carries_inflation_growth_state_when_configured() -> None:
             ]
         ),
         lookback_days=1,
+        event_calendar=pd.DataFrame(columns=["date", "market", "type", "importance"]),
         sector_etf_closes=context.sector_etf_closes,
         cross_asset_closes=context.cross_asset_closes,
         macro_series=context.macro_series,

@@ -80,13 +80,15 @@ class VolumeLiquidityEvidencePayload(EvidencePayload):
 
 
 class TransitionRiskEvidencePayload(BaseModel):
-    """Dict-compatible typed evidence payload for transition-risk warnings."""
+    """Dict-compatible typed evidence payload for transition-risk decisions."""
 
     model_config = ConfigDict(extra="forbid")
 
-    warnings_active: list[str]
+    triggered_rules: list[str]
     stable_changed_today: bool
     days_since_axis_switch: int | None
+    axis_switch_count: int
+    recent_axis_switch_count: int
 
     def get(self, key: str, default: Any = None) -> Any:
         return self.model_dump().get(key, default)
@@ -261,9 +263,8 @@ class BreadthStateOutput(AxisOutput):
 class EventCalendarOutput(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    raw_label: str
-    stable_label: str
-    active_label: str
+    primary_label: str
+    matching_labels: tuple[str, ...]
     evidence: EventCalendarEvidencePayload
 
 
@@ -541,43 +542,52 @@ class StructuralCausalState(BaseModel):
     monetary_pressure: MonetaryPressureOutput
 
 
-TransitionScoreInterpretation = Literal[
-    "stable", "weakening", "transition_warning", "high"
+TransitionRiskState = Literal[
+    "stable",
+    "watch",
+    "weakening",
+    "transition_warning",
+    "high_transition_risk",
+    "crisis",
+    "bear_stress",
+    "fragile_bull",
+    "recovery_attempt",
+    "insufficient_data",
 ]
 
 
 class TransitionRiskOutput(BaseModel):
     """Layer 4 transition risk output.
 
-    V1 emits `label` + `evidence` (named warnings per v1 §9). V2 §4 adds a
-    continuous composite `score`, its interpretation, and per-component
-    breakdown via the transition-score composer.
+    `state` is the final transition-risk decision selected from data quality,
+    component score, and hard-rule overrides. The score and explanation fields
+    explain the decision; there is no separate legacy label path.
     """
 
     model_config = ConfigDict(extra="forbid")
 
-    label: str
+    state: TransitionRiskState
     evidence: TransitionRiskEvidencePayload
-
-    # V2 §4.5 transition score augments (does not replace) V1 named warnings.
     score: float | None = Field(default=None, ge=0.0, le=1.0)
-    score_interpretation: TransitionScoreInterpretation | None = None
     score_components: dict[str, float] | None = None
+    primary_drivers: list[str] = Field(default_factory=list)
+    triggered_rules: list[str] = Field(default_factory=list)
+    data_quality: DataQuality
 
     # Symmetry with AxisOutput: surface a normalized classification status so
     # downstream audit/report tooling can distinguish "classified" from
     # "insufficient_history" cold-start rows without re-deriving from label.
-    # When `label == "unknown"` (any upstream axis carried `unknown`) we mark
-    # the row `insufficient_history`; everything else is `classified`.
-    # The V1 wire projection in `_strip_classification_metadata` removes this
-    # field when emitting the V1-frozen byte-identical shape.
+    # When state is insufficient_data we mark the row as insufficient_history;
+    # everything else is classified.
     classification_status: ClassificationStatus | None = None
 
     @model_validator(mode="after")
     def _populate_classification_status(self) -> "TransitionRiskOutput":
         if self.classification_status is None:
             self.classification_status = (
-                "insufficient_history" if self.label == "unknown" else "classified"
+                "insufficient_history"
+                if self.state == "insufficient_data"
+                else "classified"
             )
         return self
 

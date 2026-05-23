@@ -31,7 +31,7 @@
 | metric | v1 | v2 | delta |
 |---|---|---|---|
 | sessions classified | 314 | 314 | 0 |
-| sessions with crisis_override fired | 37 | 37 | 0 |
+| sessions with transition_risk.state = crisis | 37 | 37 | 0 |
 | sessions with bear_stress fired | 0 | 0 | 0 |
 | sessions with bull_fragile fired | 0 | 0 | 0 |
 | sessions with recovery_attempt | 0 | 0 | 0 |
@@ -69,4 +69,3 @@ deltas as a precondition to the strategy gate.
 | volume_liquidity_state (non-unknown) | 314 | 100.0% |
 | agent_routing != default | 314 | 100.0% |
 | change_point >= 0.5 | 0 | 0.0% |
-

@@ -5,7 +5,7 @@ Reuses existing FeatureStore seams as inputs (``return_1d``,
 ``avg_pairwise_corr_63d``). Fits a Gaussian HMM per V2 §6.1 (spec line 4076) via
 ``hmmlearn.GaussianHMM`` — no hand-rolled Baum-Welch. Emits
 ``top_state_prob`` (permutation-invariant) for consumption by the
-``transition_score`` §4.2 ``hmm_probability_shift_score`` 6th component.
+``transition_score`` §4.2 ``model_instability`` component.
 
 The HMM is evidence-only per V2 §10 (spec lines 4378-4385): state indices
 are raw ``0``..``n-1`` integers, never auto-mapped to economic labels.

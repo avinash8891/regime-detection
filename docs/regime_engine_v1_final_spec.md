@@ -714,7 +714,7 @@ breadth_risk_rank:
 
 - Event calendar: required.
 - Monetary pressure: not implemented in V1.
-- Inflation/growth, credit/funding: **not implemented in V1**. Output `"label": "unknown", "reason": "not_implemented_v1"`.
+- Inflation/growth, credit/funding: **not implemented in V1**. Output `"state": "unknown", "reason": "not_implemented_v1"`.
 
 ### 7.2 Event Calendar
 
@@ -854,12 +854,12 @@ V1 implementation must not compute monetary pressure. It always emits:
 
 ```json
 {
-  "label": "unknown",
+  "state": "unknown",
   "reason": "not_implemented_v1"
 }
 ```
 
-The rules above are retained as historical context for the V2 monetary/liquidity design and must not be wired into V1 transition risk.
+The rules above are retained as historical context for the V2 monetary/liquidity design and must not be wired into V1.
 
 ---
 
@@ -872,7 +872,7 @@ Not implemented. Breadth state serves as V1 fragility proxy.
 ```json
 {
   "network_fragility": {
-    "label": "not_implemented_v1",
+    "state": "not_implemented_v1",
     "reason": "breadth_state_used_as_v1_fragility_proxy"
   }
 }
@@ -886,79 +886,24 @@ Network fragility is fully specified in `regime_engine_v2_spec.md` (Section 3).
 
 ## 9. Layer 4 — Transition Risk
 
-### 9.1 V1 Scope
+V1 no longer defines an active transition-risk classifier.
 
-No weighted score. Named warnings only.
-
-### 9.2 Labels
-
-```text
-stable
-bull_fragile_warning
-bear_stress_warning
-recovery_attempt
-crisis_override
-post_switch_cooldown
-unknown
-```
-
-### 9.3 Precedence
+The earlier V1 named-warning design has been superseded by the V2 score-first
+transition-risk model in `regime_engine_v2_spec.md` §4. Current engine outputs
+must use the V2 shape:
 
 ```text
-crisis_override > bear_stress_warning > bull_fragile_warning > recovery_attempt > post_switch_cooldown > unknown > stable
+transition_risk.state
+transition_risk.score
+transition_risk.score_components
+transition_risk.primary_drivers
+transition_risk.triggered_rules
+transition_risk.data_quality
 ```
 
-> When no warning condition fires, the engine checks whether any input axis label is `"unknown"`. If so, `transition_risk` emits `"unknown"` rather than `"stable"` — an axis in cold-start or data-quality failure means the composite assessment is itself uncertain. `"stable"` is only emitted when no warning fires **and** all axis labels are known.
-
-### 9.4 Rules
-
-`crisis_override`:
-```text
-volatility_state.active_label = crisis_vol
-```
-> V1 emergency override is `crisis_vol` only. Do not reference `crash_condition` — that label does not exist in V1.
-
-`bear_stress_warning`:
-```text
-trend_direction.active_label = bear
-AND volatility_state.active_label in [high_vol, crisis_vol]
-AND breadth_state.active_label in [weak_breadth, divergent_fragile, unknown]
-```
-
-`bull_fragile_warning`:
-```text
-trend_direction.active_label = bull
-AND breadth_state.active_label = divergent_fragile
-```
-(No `severity` field. Severity is implicit in the strategy response's `position_size_multiplier`.)
-
-`recovery_attempt`:
-```text
-trend_character.active_label = recovery_attempt
-OR (
-  trend_direction.stable_label was bear at any point in the PRIOR 60 NYSE trading days
-    (excluding as_of_date — the lookback is shifted by 1 session)
-  AND close > SMA_50
-  AND breadth_state.active_label in [recovery_breadth, healthy_breadth]
-)
-```
-
-> Note: in V1 ETF-proxy breadth mode, `recovery_breadth` is unreachable (§6.4 lists it as a label, but only §6.7 PIT formulas can produce it). The clause therefore reduces to `breadth_state.active_label = healthy_breadth` in V1.
-
-`post_switch_cooldown`:
-```text
-days_since_axis_switch <= 5
-```
-Where `days_since_axis_switch` is the count of NYSE trading days since the most recent axis `stable_label` change (0 on the switch day, 1 the next session, …, 5 on the fifth session after). The label fires across the entire 6-session window (days 0–5 inclusive). When no axis has switched in the trailing 60 sessions, `days_since_axis_switch` is `None` and the rule does not fire.
-
-Emergency override (`crisis_vol`) breaks cooldown.
-
-`stable`:
-```text
-no warning condition active AND no post_switch_cooldown
-```
-
-`confirmed_switch` is **not** a separate label. Any axis `stable_label` changing today is a confirmed switch and triggers `post_switch_cooldown`.
+V1 still defines the base axes and event-calendar fields that V2 transition
+risk consumes. It does not define transition-risk labels, precedence, warning
+rules, score weights, history windows, or final-state debouncing.
 
 ---
 
@@ -1030,9 +975,12 @@ crisis > bear_stress > bull_fragile > sideways_chop > recovery_attempt > bull_he
 
 Apply modifiers in increasing priority order, layered on `default_neutral`. Highest-priority match wins on conflicting fields.
 
-### 10.4 V1 Scenario Modifiers
+### 10.4 Scenario Modifiers
 
-`crisis` — when `transition_risk.label = crisis_override`:
+Strategy response consumes the V2-owned `transition_risk.state` when transition
+risk is present.
+
+`crisis` — when `transition_risk.state = crisis`:
 ```json
 {
   "position_size_multiplier": 0.25,
@@ -1044,7 +992,7 @@ Apply modifiers in increasing priority order, layered on `default_neutral`. High
 }
 ```
 
-`bear_stress` — when `transition_risk.label = bear_stress_warning`:
+`bear_stress` — when `transition_risk.state = bear_stress`:
 ```json
 {
   "allow_buy_dip": false,
@@ -1054,7 +1002,7 @@ Apply modifiers in increasing priority order, layered on `default_neutral`. High
 }
 ```
 
-`bull_fragile` — when `transition_risk.label = bull_fragile_warning`:
+`bull_fragile` — when `transition_risk.state = fragile_bull`:
 ```json
 {
   "position_size_multiplier": 0.5,
@@ -1075,7 +1023,7 @@ Apply modifiers in increasing priority order, layered on `default_neutral`. High
 ```
 > Note: this does not erase direction. A bull + chop market is still `direction=bull, character=chop`.
 
-`recovery_attempt` — when `transition_risk.label = recovery_attempt`:
+`recovery_attempt` — when `transition_risk.state = recovery_attempt`:
 ```json
 {
   "position_size_multiplier": 0.5,
@@ -1109,8 +1057,8 @@ Modifier:
 
 > **V1 wire contract.** This canonical shape is what the engine emits when `config_version == "core3-v1.0.0"`. Byte-identity is enforced by `tests/test_v1_frozen_replay.py` against archived JSON fixtures under `tests/fixtures/v1_frozen_outputs/`. The Python `RegimeOutput` Pydantic model holds the V2-extended internal shape (see §11.1 below) but coerces to the V1 wire shape via `_rewrite_legacy_v1_wire_shapes()` in `models.py` whenever `config_version` matches the V1 string. The two extensions where coercion is load-bearing:
 >
-> - `structural_causal_state.monetary_pressure` is rewritten to `{"label": "unknown", "reason": "not_implemented_v1"}`.
-> - `network_fragility` is rewritten to `{"label": "not_implemented_v1", "reason": "breadth_state_used_as_v1_fragility_proxy"}`.
+> - `structural_causal_state.monetary_pressure` is rewritten to `{"state": "unknown", "reason": "not_implemented_v1"}`.
+> - `network_fragility` is rewritten to `{"state": "not_implemented_v1", "reason": "breadth_state_used_as_v1_fragility_proxy"}`.
 >
 > When `config_version != "core3-v1.0.0"` (V2 mode), the live richer shapes are emitted instead and additional V2-only top-level fields appear — see §11.1.
 
@@ -1214,19 +1162,13 @@ Modifier:
       }
     },
     "monetary_pressure": {
-      "label": "unknown",
+      "state": "unknown",
       "reason": "not_implemented_v1"
     }
   },
   "network_fragility": {
-    "label": "not_implemented_v1",
+    "state": "not_implemented_v1",
     "reason": "breadth_state_used_as_v1_fragility_proxy"
-  },
-  "transition_risk": {
-    "label": "stable",
-    "evidence": {
-      "warnings_active": []
-    }
   },
   "strategy_response": {
     "position_size_multiplier": 0.75,
@@ -1254,7 +1196,7 @@ When the engine runs under a V2 config, the wire shape extends in two ways:
 "structural_causal_state": {
   "event_calendar": { /* unchanged from V1 */ },
   "monetary_pressure": {
-    "label": "unknown",
+    "state": "unknown",
     "evidence": {},
     "data_quality": { "status": "insufficient_history", ... }
   }
@@ -1284,7 +1226,8 @@ agent_routing                  v2 §5.1
 strategy_family_constraints    v2 §5.2
 ```
 
-`transition_risk` may also gain `score`, `score_interpretation`, and `score_components` per V2 §4. These additions are detailed in `regime_engine_v2_spec.md`.
+`transition_risk` is specified entirely by V2 §4. V1 does not define an active
+transition-risk algorithm or legacy transition-risk label set.
 
 The V1 wire shape in §11 remains the canonical V1 contract; V2 fields strictly extend, never mutate, the V1 base. V1 byte-identity is mechanically enforced by `tests/test_v1_frozen_replay.py`.
 
@@ -1305,7 +1248,7 @@ Slice order:
 5. **Volatility State** — same pattern.
 6. **Breadth State** — ETF proxy mode only (RSP/SPY). PIT breadth is out of scope for V1.
 7. **Event Calendar** — YAML/CSV parser + NYSE trading-day window rules + overlap evidence.
-8. **Transition Risk** — composes prior slices, no own features.
+8. **Transition Risk** — removed from the V1 active contract; implemented by V2 §4.
 9. **Strategy Response** — composes prior slices, no own features.
 
 Each slice must pass its assigned golden date before the next slice begins.
@@ -1334,18 +1277,18 @@ tests/fixtures/raw/*.csv linguist-generated=true
 tests/fixtures/raw/*.csv -diff
 ```
 
-| as_of_date | Expected trend_direction | Expected character | Expected volatility | Expected breadth | Expected transition_risk |
-|---|---|---|---|---|---|
-| 2017-06-01 | bull | trending | low_vol | healthy_breadth | stable |
-| 2018-02-05 (Volmageddon) | bull | transition | crisis_vol | **pin during fixture verification** | crisis_override |
-| 2018-12-24 | bear | trending | high_vol | weak_breadth | bear_stress_warning |
-| 2019-09-13 | bull | trending | normal_vol | healthy_breadth | stable |
-| 2020-03-16 (COVID crash) | bear | transition | crisis_vol | weak_breadth | crisis_override |
-| 2020-04-10 | bear | recovery_attempt | high_vol | recovery_breadth | recovery_attempt |
-| 2021-11-15 | bull | trending | low_vol | healthy_breadth | stable |
-| 2022-06-13 | bear | trending | high_vol | weak_breadth | bear_stress_warning |
-| 2022-10-12 | bear | trending | high_vol | weak_breadth | bear_stress_warning |
-| 2024-01-16 | bull | trending | low_vol | healthy_breadth | stable |
+| as_of_date | Expected trend_direction | Expected character | Expected volatility | Expected breadth |
+|---|---|---|---|---|
+| 2017-06-01 | bull | trending | low_vol | healthy_breadth |
+| 2018-02-05 (Volmageddon) | bull | transition | crisis_vol | **pin during fixture verification** |
+| 2018-12-24 | bear | trending | high_vol | weak_breadth |
+| 2019-09-13 | bull | trending | normal_vol | healthy_breadth |
+| 2020-03-16 (COVID crash) | bear | transition | crisis_vol | weak_breadth |
+| 2020-04-10 | bear | recovery_attempt | high_vol | recovery_breadth |
+| 2021-11-15 | bull | trending | low_vol | healthy_breadth |
+| 2022-06-13 | bear | trending | high_vol | weak_breadth |
+| 2022-10-12 | bear | trending | high_vol | weak_breadth |
+| 2024-01-16 | bull | trending | low_vol | healthy_breadth |
 
 These are hand-labeled expectations pending Slice 2 verification. The deterministic rule predicates win over intuition. If a slice can't pass its assigned date after verification, the bug is either the spec or the implementation — investigate before moving on. Do not relax expectations to make tests pass.
 
@@ -1462,8 +1405,8 @@ V1 implementation contract:
 10. Breadth has a neutral_breadth label covering 0.45–0.55 to close the
     gap between weak and healthy.
 
-11. transition_risk has no confirmed_switch label. Any axis stable_label
-    change today triggers post_switch_cooldown.
+11. transition_risk is V2-owned. Do not add V1 transition-risk labels,
+    precedence rules, score weights, history windows, or debounce rules.
 
 12. V1 emergency override is crisis_vol only. Do not reference
     crash_condition — that label does not exist in V1.
@@ -1481,10 +1424,10 @@ V1 implementation contract:
 16. Precedence orderings and risk_rank tables are hardcoded in code,
     not config.
 
-17. Do NOT implement: HMM, GMM, eigenvalues, graph models, macro
-    inference, credit/inflation models, weighted transition score,
-    Hurst, efficiency ratio, ORCA/SRR, severity fields, crash_condition,
-    PIT breadth, monetary_pressure, or sideways_stress_warning.
+17. Do NOT implement in V1: HMM, GMM, eigenvalues, graph models, macro
+    inference, credit/inflation models, transition risk, Hurst, efficiency
+    ratio, ORCA/SRR, severity fields, crash_condition, PIT breadth, or
+    monetary_pressure.
 
 18. V1 source code must not scaffold V2. Add a CI/pre-commit grep check
     blocking HMM libraries, macro fetchers, correlation/eigenvalue modules

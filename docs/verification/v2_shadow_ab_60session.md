@@ -46,7 +46,7 @@ regression.
 | trend_character | 0 |
 | volatility_state | 0 |
 | breadth_state | 0 |
-| transition_risk_label | 0 |
+| transition_risk_state | 0 |
 
 ### trend_direction — most recent disagreement examples
 
@@ -64,7 +64,7 @@ _(none)_
 
 _(none)_
 
-### transition_risk_label — most recent disagreement examples
+### transition_risk_state — most recent disagreement examples
 
 _(none)_
 

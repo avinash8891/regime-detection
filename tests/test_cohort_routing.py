@@ -345,6 +345,7 @@ def test_regime_output_emits_agent_routing_when_cohort_routing_configured(
 def test_regime_output_omits_agent_routing_when_cohort_routing_absent_from_config(
     market_df_for_asof,
     golden_rows: list[dict[str, object]],
+    event_calendar_df,
 ) -> None:
     """V1 byte-identity preservation: a RegimeConfig with cohort_routing=None
     must produce ``RegimeOutput.agent_routing is None`` and the JSON dump
@@ -360,6 +361,7 @@ def test_regime_output_omits_agent_routing_when_cohort_routing_absent_from_confi
         as_of_date=as_of,
         market_data=market_df_for_asof(as_of),
         config=no_routing_config,
+        event_calendar=event_calendar_df,
     )
     assert out.agent_routing is None
     assert "agent_routing" not in out.model_dump()

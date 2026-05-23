@@ -323,6 +323,7 @@ def test_real_default_config_carries_clustering_block() -> None:
 def test_regime_output_omits_cluster_field_when_clustering_seam_none(
     raw_market_data: pd.DataFrame,
     market_df_for_asof,
+    event_calendar_df,
 ) -> None:
     """Default classify() (no PIT inputs) → clustering seam None → RegimeOutput.cluster None and omitted from JSON dump."""
     from regime_detection.engine import RegimeEngine
@@ -330,7 +331,11 @@ def test_regime_output_omits_cluster_field_when_clustering_seam_none(
     engine = RegimeEngine()
     last_session = max(raw_market_data["date"].unique())
     market_data = market_df_for_asof(last_session)
-    out = engine.classify(as_of_date=last_session, market_data=market_data)
+    out = engine.classify(
+        as_of_date=last_session,
+        market_data=market_data,
+        event_calendar=event_calendar_df,
+    )
     assert out.cluster is None
     dumped = out.model_dump()
     assert "cluster" not in dumped

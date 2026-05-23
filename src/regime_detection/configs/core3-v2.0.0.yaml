@@ -243,41 +243,36 @@ volume_liquidity_state:
   default_deescalation_days: 0
 
 transition_score:
-  weights_with_hmm:
-    volatility_acceleration: 0.20
-    breadth_deterioration: 0.20
-    correlation_concentration: 0.20
-    trend_break: 0.20
-    macro_event: 0.10
-    hmm_probability_shift: 0.10
-  weights_without_hmm:
-    volatility_acceleration: 0.225
-    breadth_deterioration: 0.225
-    correlation_concentration: 0.225
-    trend_break: 0.225
-    macro_event: 0.10
-  # documented implementation decision — change_point evidence wired into transition_score.
-  weights_with_change_point:
-    volatility_acceleration: 0.20
-    breadth_deterioration: 0.20
-    correlation_concentration: 0.20
-    trend_break: 0.20
-    macro_event: 0.10
-    change_point: 0.10
-  weights_with_hmm_with_change_point:
-    volatility_acceleration: 0.175
-    breadth_deterioration: 0.175
-    correlation_concentration: 0.175
-    trend_break: 0.175
-    macro_event: 0.10
-    hmm_probability_shift: 0.10
-    change_point: 0.10
+  weights:
+    trend_break: 0.18
+    volatility_acceleration: 0.16
+    breadth_deterioration: 0.16
+    correlation_fragility: 0.14
+    credit_stress: 0.12
+    liquidity_stress: 0.10
+    macro_event: 0.06
+    model_instability: 0.08
+  minimum_component_weight_coverage: 0.75
+  # Score bands are base transition-pressure states. The transition-risk
+  # composer combines them with named rule overrides; top-band `high` becomes
+  # final state `high_transition_risk` unless a specific stress rule wins.
   bands:
     stable: [0.00, 0.35]
     weakening: [0.35, 0.55]
     transition_warning: [0.55, 0.75]
     high: [0.75, 1.00]
-  cooldown_window_days: 5  # ADR 0013 R1: matches v1 §9.4 post_switch_cooldown window
+  cooldown_window_days: 5  # ADR 0013 R1: axis-switch watch window
+  state_confirmation_days:
+    stable: 1
+    watch: 1
+    weakening: 2
+    transition_warning: 2
+    high_transition_risk: 2
+    fragile_bull: 2
+    recovery_attempt: 2
+    bear_stress: 1
+    crisis: 1
+    insufficient_data: 1
 
 # v2 §2A — Layer 2A Monetary/Liquidity V2. Feature seam (implementation phase) AND
 # axis classifier are both shipped. Five z-score features per §2A line 896

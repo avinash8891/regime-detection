@@ -37,6 +37,13 @@ ENGINE_RUNNERS_REQUIRING_FULL_BUNDLE = (
     "historical_walkforward",
     "audit_layer2_30d",
 )
+EVENT_CALENDAR_MANIFEST_RUNNERS = (
+    "profile_engine",
+    "v2_calibration",
+    "historical_walkforward",
+    "audit_layer2_30d",
+    "shadow_regime",
+)
 # SHA-256 of the empty string; used in the committed manifest as a sentinel
 # for TODO placeholder artifacts whose canonical store entry has not been
 # generated yet (see manifests/runs/regime_engine_2026-05-17.yaml header).
@@ -117,6 +124,18 @@ def _write_manifest(tmp_path: Path, artifacts: list[dict]) -> Path:
         )
     )
     return path
+
+
+def test_committed_manifest_routes_event_calendar_to_all_runtime_runners() -> None:
+    manifest = load_manifest(COMMITTED_MANIFEST)
+    event_artifacts = [
+        artifact
+        for artifact in manifest.artifacts
+        if artifact.name == "event_calendar_us"
+    ]
+
+    assert len(event_artifacts) == 1
+    assert set(event_artifacts[0].required_for) >= set(EVENT_CALENDAR_MANIFEST_RUNNERS)
 
 
 def test_resolve_runner_input_paths_uses_manifest_artifact_names(tmp_path: Path) -> None:

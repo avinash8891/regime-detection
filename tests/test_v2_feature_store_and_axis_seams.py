@@ -178,6 +178,7 @@ def test_axis_bundle_network_fragility_present_with_real_v2_universe(
 
 def test_timeline_emits_network_fragility_unknown_in_pure_v1_mode(
     market_df_for_asof,
+    event_calendar_df,
 ) -> None:
     """Regression: without V2 data, network_fragility still emits the v2
     'unknown' placeholder shape locked in Phase C."""
@@ -185,6 +186,7 @@ def test_timeline_emits_network_fragility_unknown_in_pure_v1_mode(
     out = RegimeEngine().classify(
         as_of_date=as_of,
         market_data=market_df_for_asof(as_of),
+        event_calendar=event_calendar_df,
     )
 
     assert out.network_fragility.raw_label == "unknown"

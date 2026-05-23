@@ -6,6 +6,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pandas as pd
+import pytest
 
 from scripts import profile_engine_reporting
 
@@ -162,7 +163,7 @@ def test_profile_json_report_emits_machine_readable_sections(tmp_path: Path) -> 
             ),
         ),
         transition_risk=SimpleNamespace(
-            label="low", score=0.2, score_components={"breadth": 0.2}
+            state="stable", score=0.2, score_components={"breadth": 0.2}
         ),
         network_fragility=axis("correlation_concentration"),
         volume_liquidity_state=None,
@@ -244,7 +245,7 @@ def test_profile_json_report_emits_machine_readable_sections(tmp_path: Path) -> 
                 "transition_score": 0.2,
             },
             "as_of_date": "2026-05-15",
-            "transition_risk": "low",
+            "transition_risk": "stable",
             "trend_direction": "uptrend",
             "volatility_state": "low_vol",
         }
@@ -342,7 +343,7 @@ def test_profile_json_report_uses_loaded_bundle_values_for_input_status(
         volatility_state=SimpleNamespace(
             active_label="low_vol", classification_status="classified"
         ),
-        transition_risk=SimpleNamespace(label="low", score=None, score_components=None),
+        transition_risk=SimpleNamespace(state="stable", score=None, score_components=None),
         network_fragility=None,
         volume_liquidity_state=None,
         credit_funding_state=None,
@@ -416,12 +417,34 @@ def test_profile_engine_loads_event_calendar_when_present(tmp_path: Path) -> Non
         )
     )
 
-    actual = profile_engine._load_optional_event_calendar(yaml_path)
+    actual = profile_engine._load_event_calendar(
+        yaml_path,
+        allow_missing_event_calendar=False,
+    )
 
     assert actual is not None
     assert len(actual) == 1
     assert actual.loc[0, "type"] == "CPI"
     assert actual.loc[0, "window_days"] == [-1, 1]
+
+
+def test_profile_engine_requires_event_calendar_when_missing(tmp_path: Path) -> None:
+    with pytest.raises(FileNotFoundError, match="event_calendar"):
+        profile_engine._load_event_calendar(
+            tmp_path / "missing-events.yaml",
+            allow_missing_event_calendar=False,
+        )
+
+
+def test_profile_engine_allows_missing_event_calendar_for_debug(
+    tmp_path: Path,
+) -> None:
+    actual = profile_engine._load_event_calendar(
+        tmp_path / "missing-events.yaml",
+        allow_missing_event_calendar=True,
+    )
+
+    assert actual is None
 
 
 def test_profile_engine_loads_news_sentiment_when_present(tmp_path: Path) -> None:
@@ -504,7 +527,7 @@ def _make_minimal_output() -> SimpleNamespace:
         volatility_state=SimpleNamespace(
             active_label="low_vol", classification_status="classified"
         ),
-        transition_risk=SimpleNamespace(label="low", score=None, score_components=None),
+        transition_risk=SimpleNamespace(state="stable", score=None, score_components=None),
         network_fragility=None,
         volume_liquidity_state=None,
         credit_funding_state=None,

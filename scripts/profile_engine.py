@@ -88,7 +88,6 @@ DEFAULT_PIT_PARQUET = (
     REPO_ROOT / "data" / "raw" / "pit_constituents" / "sp500_ticker_intervals.parquet"
 )
 DEFAULT_PMI_PATH = default_pmi_path(REPO_ROOT / "data" / "raw")
-DEFAULT_EVENT_CALENDAR = REPO_ROOT / "configs" / "events" / "us_events.yaml"
 DEFAULT_RUN_TIMEOUT_SECONDS = 300
 
 @dataclass(init=False)
@@ -216,8 +215,18 @@ def _load_optional_aaii_sentiment(path: Path | None) -> pd.DataFrame | None:
     return frame
 
 
-def _load_optional_event_calendar(path: Path) -> pd.DataFrame | None:
+def _load_event_calendar(
+    path: Path,
+    *,
+    allow_missing_event_calendar: bool,
+) -> pd.DataFrame | None:
     if not path.exists():
+        if not allow_missing_event_calendar:
+            raise FileNotFoundError(
+                f"event_calendar file not found at {path}; "
+                "materialize the manifest event_calendar artifact, pass --event-calendar, "
+                "or use --allow-missing-event-calendar for debug-only profiling."
+            )
         return None
     return load_event_calendar(path)
 
@@ -359,7 +368,10 @@ def _load_profile_inputs(
         # existing NaN-falsifies behavior.
         macro_series.pop("aggregate_forward_eps_revision", None)
     with load_timer.measure("load_event_calendar"):
-        event_calendar = _load_optional_event_calendar(args.event_calendar)
+        event_calendar = _load_event_calendar(
+            args.event_calendar,
+            allow_missing_event_calendar=args.allow_missing_event_calendar,
+        )
     with load_timer.measure("load_aaii_sentiment"):
         aaii_sentiment = _load_optional_aaii_sentiment(args.aaii_sentiment_parquet)
     with load_timer.measure("load_news_sentiment"):
@@ -437,7 +449,15 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--config-path", type=Path, default=DEFAULT_CONFIG_PATH)
     parser.add_argument("--daily-dir", type=Path, default=None)
     parser.add_argument("--constituent-tree", type=Path, default=None)
-    parser.add_argument("--event-calendar", type=Path, default=DEFAULT_EVENT_CALENDAR)
+    parser.add_argument("--event-calendar", type=Path, default=None)
+    parser.add_argument(
+        "--allow-missing-event-calendar",
+        action="store_true",
+        help=(
+            "Debug-only: run without scheduled event-calendar rows. "
+            "Deterministic expiry/earnings labels still compute."
+        ),
+    )
     # Optional manifest-routed inputs are declared once in
     # MANIFEST_INPUT_SPECS (regime_data_fetch.manifest_inputs); the
     # helper below registers them all so the per-runner argparse list

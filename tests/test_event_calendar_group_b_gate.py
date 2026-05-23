@@ -68,9 +68,8 @@ def test_event_calendar_renders_approved_geopolitical_event() -> None:
         config=cfg,
     )
 
-    assert out.active_label == "geopolitical_event"
-    assert out.evidence["selected_via_precedence"] == "geopolitical_event"
-    assert set(out.evidence["all_matching_events"]) >= {
+    assert out.primary_label == "geopolitical_event"
+    assert set(out.matching_labels) >= {
         "geopolitical_event",
         "election_window",
         "budget_week",
@@ -104,5 +103,5 @@ def test_event_calendar_does_not_render_unapproved_geopolitical_event() -> None:
         config=cfg,
     )
 
-    assert out.active_label == "election_window"
-    assert "geopolitical_event" not in out.evidence["all_matching_events"]
+    assert out.primary_label == "election_window"
+    assert "geopolitical_event" not in out.matching_labels

@@ -277,7 +277,7 @@ def _compact_timeline_rows(outputs: list[RegimeOutput]) -> list[str]:
             f"{out.as_of_date.isoformat()} | "
             f"{_reporting_label(out.trend_direction)} | "
             f"{_reporting_label(out.volatility_state)} | "
-            f"{out.transition_risk.label} | "
+            f"{out.transition_risk.state} | "
             f"{seam_text}"
         )
     return rows
@@ -349,7 +349,7 @@ def _compact_timeline_report(outputs: list[RegimeOutput]) -> list[dict[str, Any]
                 "as_of_date": out.as_of_date.isoformat(),
                 "trend_direction": _reporting_label(out.trend_direction),
                 "volatility_state": _reporting_label(out.volatility_state),
-                "transition_risk": out.transition_risk.label,
+                "transition_risk": out.transition_risk.state,
                 "activated_v2_seams": seams,
             }
         )

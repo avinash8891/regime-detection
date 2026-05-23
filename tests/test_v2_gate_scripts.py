@@ -270,7 +270,7 @@ def test_shadow_ab_gate_main_runs_against_committed_v2_fixtures(
     markdown = output_path.read_text()
     assert "- Window: 2026-05-13" in markdown
     assert "| trend_direction | 0 |" in markdown
-    assert "| transition_risk_label | 0 |" in markdown
+    assert "| transition_risk_state | 0 |" in markdown
     assert "| credit_funding_state | 1 |" in markdown
     assert "| credit_funding_effective_state | 1 |" in markdown
     assert "| network_fragility | 1 |" in markdown

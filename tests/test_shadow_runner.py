@@ -3,6 +3,7 @@ from __future__ import annotations
 import importlib.util
 import json
 import sqlite3
+import sys
 from datetime import date
 from pathlib import Path
 
@@ -152,12 +153,14 @@ def test_shadow_runner_records_failures_without_silent_skip(tmp_path: Path, monk
 def test_shadow_runner_rejects_duplicate_versioned_run_and_non_trading_day(tmp_path: Path) -> None:
     repo_root = Path(__file__).resolve().parents[1]
     market_data_path = repo_root / "tests" / "fixtures" / "raw" / "market_data.parquet"
+    event_calendar_path = repo_root / "tests" / "fixtures" / "events" / "us_events.yaml"
     out_root = tmp_path / "shadow_run"
 
     mod = _load_runner_module()
     first = mod.run_shadow(
         as_of_date=date(2023, 12, 14),
         market_data_path=market_data_path,
+        event_calendar_path=event_calendar_path,
         output_root=out_root,
     )
     assert first["status"] == "success"
@@ -166,6 +169,7 @@ def test_shadow_runner_rejects_duplicate_versioned_run_and_non_trading_day(tmp_p
         mod.run_shadow(
             as_of_date=date(2023, 12, 14),
             market_data_path=market_data_path,
+            event_calendar_path=event_calendar_path,
             output_root=out_root,
         )
 
@@ -173,5 +177,50 @@ def test_shadow_runner_rejects_duplicate_versioned_run_and_non_trading_day(tmp_p
         mod.run_shadow(
             as_of_date=date(2023, 12, 16),
             market_data_path=market_data_path,
+            event_calendar_path=event_calendar_path,
             output_root=tmp_path / "weekend_shadow",
         )
+
+
+def test_shadow_runner_requires_event_calendar_unless_cli_resolves_manifest_default(
+    tmp_path: Path,
+) -> None:
+    repo_root = Path(__file__).resolve().parents[1]
+    market_data_path = repo_root / "tests" / "fixtures" / "raw" / "market_data.parquet"
+    out_root = tmp_path / "shadow_run"
+    mod = _load_runner_module()
+
+    with pytest.raises(ValueError, match="event_calendar_path is required"):
+        mod.run_shadow(
+            as_of_date=date(2023, 12, 14),
+            market_data_path=market_data_path,
+            output_root=out_root,
+        )
+    assert not out_root.exists()
+
+
+def test_shadow_runner_cli_defaults_event_calendar_to_manifest_data_root(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    mod = _load_runner_module()
+    data_root = tmp_path / "data" / "raw"
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "run_shadow_regime.py",
+            "--as-of-date",
+            "2023-12-14",
+            "--market-data",
+            str(tmp_path / "market.parquet"),
+            "--output-root",
+            str(tmp_path / "out"),
+            "--data-root",
+            str(data_root),
+        ],
+    )
+
+    args = mod._parse_args()
+
+    assert args.event_calendar == data_root / "event_calendar" / "us_events.yaml"

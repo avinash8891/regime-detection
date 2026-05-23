@@ -437,6 +437,7 @@ def test_end_to_end_engine_emits_rising_vol_on_synthetic_series() -> None:
         end_date=end_dt,
         market_data=full_df,
         lookback_days=120,
+        event_calendar=pd.DataFrame(columns=["date", "market", "type", "importance"]),
     )
 
     raw_labels = [out.volatility_state.raw_label for out in timeline.outputs]

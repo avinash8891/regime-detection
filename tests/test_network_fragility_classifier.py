@@ -429,6 +429,7 @@ def test_engine_classify_window_emits_network_fragility_labels_on_full_universe(
         end_date=_LAST_SESSION.date(),
         market_data=market_data,
         lookback_days=600,
+        event_calendar=pd.DataFrame(columns=["date", "market", "type", "importance"]),
         sector_etf_closes=sector_closes,
         cross_asset_closes=cross_asset_closes,
     )
@@ -475,6 +476,7 @@ def test_engine_classify_window_forces_unknown_when_universe_data_missing():
         end_date=_LAST_SESSION.date(),
         market_data=market_data,
         lookback_days=20,
+        event_calendar=pd.DataFrame(columns=["date", "market", "type", "importance"]),
     )
     for out in timeline.outputs:
         assert out.network_fragility.active_label == "unknown"

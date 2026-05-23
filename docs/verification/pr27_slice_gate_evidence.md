@@ -59,7 +59,7 @@ Mapped to v2 spec §8 rows. 23 `feat(slice-*)` / `feat(calibration)` /
 ### 3. Models
 
 - ✅ V1 byte-identity: `tests/test_v1_frozen_replay.py` covers V1 wire schema; PR makes no V1 type narrowings. Validated by:
-  - Shadow A/B v1-field disagreement counts all **0** (`docs/verification/v2_shadow_ab_60session.md` lines 22–28: `trend_direction`, `trend_character`, `volatility_state`, `breadth_state`, `transition_risk_label` — all zero diffs across 60 sessions).
+  - Shadow A/B v1-field disagreement counts all **0** (`docs/verification/v2_shadow_ab_60session.md` lines 22–28: `trend_direction`, `trend_character`, `volatility_state`, `breadth_state`, `transition_risk_state` — all zero diffs across 60 sessions).
 - ✅ Optional `RegimeOutput` fields default `None`.
 
 ### 4. Feature store + axis_series
@@ -101,7 +101,7 @@ Per-axis activation rates from the walkforward (lines 41–52):
 | trend_character | 0 ✅ |
 | volatility_state | 0 ✅ |
 | breadth_state | 0 ✅ |
-| transition_risk_label | 0 ✅ |
+| transition_risk_state | 0 ✅ |
 
 V2 activations match expectations for the activation-rate caveat above
 (see #6 follow-up).

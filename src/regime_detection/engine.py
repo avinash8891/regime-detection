@@ -17,6 +17,17 @@ def _ignore_legacy_breadth_data(breadth_data: pd.DataFrame | None) -> None:
     _ = breadth_data
 
 
+def _require_event_calendar(event_calendar: pd.DataFrame | None) -> pd.DataFrame:
+    if event_calendar is None:
+        raise ValueError(
+            "event_calendar is required for RegimeEngine classification. "
+            "Pass the manifest event_calendar DataFrame from the runner/caller."
+        )
+    if not isinstance(event_calendar, pd.DataFrame):
+        raise TypeError("event_calendar must be a pandas DataFrame when passed to RegimeEngine.")
+    return event_calendar
+
+
 class RegimeEngine:
     def __init__(self, config_path: str | Path | None = None) -> None:
         if config_path is None:
@@ -95,8 +106,7 @@ class RegimeEngine:
         _ignore_legacy_breadth_data(breadth_data)
         end_date = as_date(end_date)
         require_nyse_trading_day(end_date)
-        if event_calendar is not None and not isinstance(event_calendar, pd.DataFrame):
-            raise TypeError("event_calendar must be a pandas DataFrame when passed to RegimeEngine.")
+        event_calendar = _require_event_calendar(event_calendar)
         cfg = config if config is not None else self._config
         context = build_market_context(
             end_date=end_date,

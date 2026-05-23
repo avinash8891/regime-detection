@@ -106,27 +106,20 @@ governance gaps are closed in one pass.
 
 ## Behavior impact
 
-- **R1 (real change):** any session with `days_since_axis_switch == 4` or
-  `5` previously did NOT emit `post_switch_cooldown` on the series path
-  (the engine-output path used by profile/report runners). After R1, those
-  sessions now emit the warning. This brings the series path into
-  agreement with the legacy `classify_transition_risk` classifier and with
-  v1 §9.4. Expected magnitude: 2 of every 6 sessions following an axis
-  switch will newly carry the warning. Profile re-run required to capture
-  the exact count.
+- **R1 (superseded by final-state refactor):** `cooldown_window_days`
+  remains the source of truth for recent-switch detection, but the transition
+  risk layer no longer emits a standalone `post_switch_cooldown` label.
+  Cooldown is now a triggered rule that can produce final state `watch` when
+  the pressure score is otherwise stable.
 - **R2, R3, R4 (no change):** annotation only.
 
 ## Test plan / follow-ups
 
-1. **Backfill a series-path cooldown test** asserting
-   `cooldown_window_days=5` causes `post_switch_cooldown` to fire on days
-   0–5 inclusive. Mirror the structure of
-   `tests/test_transition_risk.py::test_classify_transition_risk_post_switch_cooldown_is_inclusive_through_day_five`
-   but invoke `build_transition_risk_history`.
-2. **Plumb the config knob through `transition_risk.classify_transition_risk`**
-   so both paths read the same source of truth. Currently the legacy path
-   hardcodes `<= 5` and the series path reads the knob; both happen to
-   yield 5 after R1, but a single source is the durable fix.
+1. **Backfill a final-state cooldown test** asserting
+   `cooldown_window_days=5` records `post_switch_cooldown` in
+   `triggered_rules` and emits `watch` only when the score band is stable.
+2. **Delete legacy classifier references** from any remaining tests/docs as
+   part of the transition-risk final-state cleanup.
 3. **Re-run the regime-detection profile** to capture the R1 coverage
    delta on `post_switch_cooldown` firings (days 4–5).
 4. **Amend spec §6.1 line 4106 example JSON** to mention that 4-state is

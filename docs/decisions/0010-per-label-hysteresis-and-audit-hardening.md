@@ -41,7 +41,11 @@ The US government shutdown prevented BLS from collecting CPI data for October 20
 
 ### D5: Hysteresis does not apply to evidence/score outputs
 
-Event_calendar (precedence-based), transition_risk (continuous score), cluster (raw GMM assignment), change_point (posterior probability), and hmm (state probabilities) are NOT label axes and do NOT use hysteresis. Hysteresis applies only to the 9 axes that produce a raw→stable→active label triple.
+Event_calendar (precedence-based), transition_risk (final state from named
+rules plus continuous score), cluster (raw GMM assignment), change_point
+(posterior probability), and hmm (state probabilities) are NOT label axes and
+do NOT use hysteresis. Hysteresis applies only to the 9 axes that produce a
+raw→stable→active label triple.
 
 ## Axes with per-label hysteresis (all 9)
 
@@ -68,7 +72,7 @@ left.
 | Output | Why |
 |--------|-----|
 | event_calendar | Precedence-based: highest-priority event wins per session |
-| transition_risk | Continuous composite score (0.0-1.0) with band interpretation |
+| transition_risk | Final state selected from named warnings plus continuous score band; no raw→stable→active hysteresis |
 | cluster | Raw GMM cluster_id — evidence, not a regime label |
 | change_point | BOCPD posterior probability — evidence, not a regime label |
 | hmm | HMM state probabilities — evidence, not a regime label |

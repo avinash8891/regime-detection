@@ -46,8 +46,24 @@ def test_market_data_contract_requires_spy(market_df_for_asof) -> None:
     df = market_df_for_asof(as_of)
     df = df[df["symbol"] != "SPY"].copy()
     with pytest.raises(ValueError) as excinfo:
-        engine.classify(as_of_date=as_of, market_data=df)
+        engine.classify(as_of_date=as_of, market_data=df, event_calendar=pd.DataFrame())
     assert "must contain SPY" in str(excinfo.value)
+
+
+def test_engine_requires_event_calendar(market_df_for_asof) -> None:
+    engine = RegimeEngine()
+    as_of = date(2026, 5, 5)
+    df = market_df_for_asof(as_of)
+
+    with pytest.raises(ValueError, match="event_calendar is required"):
+        engine.classify(as_of_date=as_of, market_data=df)
+
+    with pytest.raises(ValueError, match="event_calendar is required"):
+        engine.classify_window(
+            end_date=as_of,
+            market_data=df,
+            lookback_days=1,
+        )
 
 
 def test_regime_config_forbids_unknown_keys() -> None:
@@ -82,32 +98,40 @@ def test_default_config_is_packaged_and_loadable() -> None:
     assert cfg.volatility_state.deescalation_days_by_label
 
 
-def test_classify_emits_regime_output_shape(market_df_for_asof) -> None:
+def test_classify_emits_regime_output_shape(market_df_for_asof, event_calendar_df) -> None:
     as_of = date(2026, 5, 5)
     assert is_nyse_trading_day(as_of)
     engine = RegimeEngine()
     df = market_df_for_asof(as_of)
-    out = engine.classify(as_of_date=as_of, market_data=df)
+    out = engine.classify(as_of_date=as_of, market_data=df, event_calendar=event_calendar_df)
     assert out.engine_version == engine_version()
     assert out.config_version == engine.config.config_version
     assert out.as_of_date == as_of
     assert out.market == "SPY"
 
 
-def test_classify_accepts_timestamp_as_of_date(market_df_for_asof) -> None:
+def test_classify_accepts_timestamp_as_of_date(market_df_for_asof, event_calendar_df) -> None:
     engine = RegimeEngine()
     df = market_df_for_asof(date(2026, 5, 5))
     # Common caller input: pandas Timestamp. Must be accepted and normalized.
-    out = engine.classify(as_of_date=pd.Timestamp("2026-05-05", tz="America/New_York"), market_data=df)
+    out = engine.classify(
+        as_of_date=pd.Timestamp("2026-05-05", tz="America/New_York"),
+        market_data=df,
+        event_calendar=event_calendar_df,
+    )
     assert out.as_of_date == date(2026, 5, 5)
 
 
-def test_classify_accepts_market_data_with_string_dates(market_df_for_asof) -> None:
+def test_classify_accepts_market_data_with_string_dates(market_df_for_asof, event_calendar_df) -> None:
     engine = RegimeEngine()
     df = market_df_for_asof(date(2026, 5, 5)).copy()
     df["date"] = pd.to_datetime(df["date"]).dt.strftime("%Y-%m-%d")
 
-    out = engine.classify(as_of_date=date(2026, 5, 5), market_data=df)
+    out = engine.classify(
+        as_of_date=date(2026, 5, 5),
+        market_data=df,
+        event_calendar=event_calendar_df,
+    )
 
     assert out.as_of_date == date(2026, 5, 5)
 

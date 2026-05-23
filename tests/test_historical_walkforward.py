@@ -3,6 +3,7 @@ from __future__ import annotations
 import importlib.util
 import json
 import sqlite3
+import sys
 from datetime import date
 from pathlib import Path
 
@@ -72,11 +73,15 @@ def test_historical_walkforward_runner_records_failures_without_silent_skip(tmp_
 
     out_root = tmp_path / "walkforward"
     mod = _load_runner_module()
+    event_calendar_path = repo_root / "tests" / "fixtures" / "events" / "us_events.yaml"
+    config_path = repo_root / "src" / "regime_detection" / "configs" / "core3-v1.0.0.yaml"
     result = mod.run_walkforward(
         market_data_path=broken_path,
         output_root=out_root,
         start_date=date(2023, 12, 13),
         end_date=date(2023, 12, 14),
+        event_calendar_path=event_calendar_path,
+        config_path=config_path,
     )
 
     assert result["session_count"] == 2
@@ -93,3 +98,50 @@ def test_historical_walkforward_runner_records_failures_without_silent_skip(tmp_
     assert rows[1][0] == "2023-12-14"
     assert rows[1][1] == "failure"
     assert "SPY row" in rows[1][2]
+
+
+def test_historical_walkforward_requires_event_calendar_unless_explicitly_allowed(
+    tmp_path: Path,
+) -> None:
+    repo_root = Path(__file__).resolve().parents[1]
+    market_path = repo_root / "tests" / "fixtures" / "raw" / "market_data.parquet"
+    out_root = tmp_path / "walkforward"
+    mod = _load_runner_module()
+
+    with pytest.raises(ValueError, match="event_calendar_path is required"):
+        mod.run_walkforward(
+            market_data_path=market_path,
+            output_root=out_root,
+            start_date=date(2023, 12, 13),
+            end_date=date(2023, 12, 14),
+        )
+    assert not out_root.exists()
+
+
+def test_historical_walkforward_cli_defaults_event_calendar_to_manifest_data_root(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    mod = _load_runner_module()
+    data_root = tmp_path / "data" / "raw"
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "run_historical_walkforward.py",
+            "--market-data",
+            str(tmp_path / "market.parquet"),
+            "--output-root",
+            str(tmp_path / "out"),
+            "--start-date",
+            "2023-12-13",
+            "--end-date",
+            "2023-12-14",
+            "--data-root",
+            str(data_root),
+        ],
+    )
+
+    args = mod._parse_args()
+
+    assert args.event_calendar == data_root / "event_calendar" / "us_events.yaml"

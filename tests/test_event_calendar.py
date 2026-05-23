@@ -264,9 +264,11 @@ def test_event_calendar_uses_publication_date_and_precedence() -> None:
         config=cfg,
     )
 
-    assert out.active_label == "fed_week"
-    assert out.evidence["selected_via_precedence"] == "fed_week"
-    assert set(out.evidence["all_matching_events"]) >= {"fed_week", "cpi_week", "expiry_week", "earnings_season"}
+    assert out.primary_label == "fed_week"
+    assert set(out.matching_labels) >= {"fed_week", "cpi_week", "expiry_week", "earnings_season"}
+    assert not hasattr(out, "raw_label")
+    assert not hasattr(out, "stable_label")
+    assert not hasattr(out, "active_label")
 
 
 def test_event_calendar_blocks_unpublished_future_scheduled_event() -> None:
@@ -289,9 +291,9 @@ def test_event_calendar_blocks_unpublished_future_scheduled_event() -> None:
         config=cfg,
     )
 
-    assert out.active_label == "expiry_week"
-    assert out.evidence["all_matching_events"] == ["expiry_week", "earnings_season"]
-    assert "fed_week" not in out.evidence["all_matching_events"]
+    assert out.primary_label == "expiry_week"
+    assert out.matching_labels == ("expiry_week", "earnings_season")
+    assert "fed_week" not in out.matching_labels
 
 
 def test_event_calendar_v2_election_uses_default_trading_day_window() -> None:
@@ -323,9 +325,9 @@ def test_event_calendar_v2_election_uses_default_trading_day_window() -> None:
         config=cfg,
     )
 
-    assert start_out.active_label == "election_window"
-    assert end_out.active_label == "election_window"
-    assert before_out.active_label != "election_window"
+    assert start_out.primary_label == "election_window"
+    assert end_out.primary_label == "election_window"
+    assert before_out.primary_label != "election_window"
 
 
 def test_event_calendar_v2_precedence_and_labels() -> None:
@@ -363,13 +365,46 @@ def test_event_calendar_v2_precedence_and_labels() -> None:
         config=cfg,
     )
 
-    assert out.active_label == "geopolitical_event"
-    assert out.evidence["selected_via_precedence"] == "geopolitical_event"
-    assert set(out.evidence["all_matching_events"]) >= {
+    assert out.primary_label == "geopolitical_event"
+    assert set(out.matching_labels) >= {
         "geopolitical_event",
         "election_window",
         "budget_week",
     }
+
+
+def test_event_calendar_outputs_primary_and_matching_labels_for_overlaps() -> None:
+    cfg = load_default_regime_config()
+    events = pd.DataFrame(
+        [
+            {
+                "date": date(2026, 6, 17),
+                "market": "US",
+                "type": "FOMC",
+                "importance": "high",
+                "publication_date": date(2026, 1, 1),
+            },
+            {
+                "date": date(2026, 6, 17),
+                "market": "GLOBAL",
+                "type": "ECB_decision",
+                "importance": "high",
+                "publication_date": date(2026, 1, 1),
+            },
+        ]
+    )
+
+    out = classify_event_calendar(
+        as_of_date=date(2026, 6, 17),
+        event_calendar=events,
+        config=cfg,
+    )
+
+    assert out.primary_label == "fed_week"
+    assert out.matching_labels == ("fed_week", "global_rate_decision", "expiry_week")
+    assert not hasattr(out, "raw_label")
+    assert not hasattr(out, "stable_label")
+    assert not hasattr(out, "active_label")
 
 
 def test_event_calendar_v1_config_ignores_v2_event_labels() -> None:
@@ -414,8 +449,8 @@ def test_event_calendar_v1_config_ignores_v2_event_labels() -> None:
         config=cfg,
     )
 
-    assert out.active_label == "normal_calendar"
-    assert out.evidence["all_matching_events"] == []
+    assert out.primary_label == "normal_calendar"
+    assert out.matching_labels == ("normal_calendar",)
 
 
 def test_budget_week_fires_when_fiscal_year_deadline_falls_on_weekend() -> None:
@@ -444,8 +479,8 @@ def test_budget_week_fires_when_fiscal_year_deadline_falls_on_weekend() -> None:
     )
 
     assert candidate.date == date(2017, 9, 29)
-    assert out.active_label == "budget_week"
-    assert out.evidence["all_matching_events"] == ["budget_week"]
+    assert out.primary_label == "budget_week"
+    assert out.matching_labels == ("budget_week",)
 
 
 def test_build_event_calendar_series_matches_point_classifier(market_df_for_asof) -> None:

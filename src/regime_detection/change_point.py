@@ -13,9 +13,9 @@ Per V2 §10 + spec §6.3 (L4252) this is EVIDENCE only.
 inputs are sufficient. The ``transition_score`` consumer is now wired
 via the §4.3 4-table weight system (spec L2166):
 when the change_point seam is lit, ``compose_transition_score_for_session``
-selects ``weights_with_change_point`` (6 components) or
-``weights_with_hmm_with_change_point`` (7 components) depending on
-whether the HMM seam is also lit.
+folds it into the ``model_instability`` component. Dynamic weighting then
+uses the single configured ``transition_score.weights`` table for all
+available components.
 
 Implementation note on indexing into the algorithm's posterior matrix
 ``R``: in this library ``R[1, t]`` carries the per-session change-point

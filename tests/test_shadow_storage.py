@@ -202,7 +202,7 @@ def test_replay_check_and_incident_insertions_are_durable(tmp_path: Path) -> Non
             check_timestamp="2026-05-17T05:20:00+00:00",
             original_run_id=run_id,
             matches=False,
-            diff={"transition_risk_label": {"stored": "calm", "replayed": "risk"}},
+            diff={"transition_risk_state": {"stored": "calm", "replayed": "risk"}},
         )
         insert_incident(
             conn=conn,
@@ -231,7 +231,7 @@ def test_replay_check_and_incident_insertions_are_durable(tmp_path: Path) -> Non
             run_id,
             0,
             json.dumps(
-                {"transition_risk_label": {"stored": "calm", "replayed": "risk"}},
+                {"transition_risk_state": {"stored": "calm", "replayed": "risk"}},
                 sort_keys=True,
             ),
         )

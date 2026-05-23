@@ -485,6 +485,7 @@ def test_slice_context_to_end_date_preserves_pit_breadth_seams(
 
 def test_engine_classify_threads_pit_constituent_inputs_into_context(
     market_df_for_asof,
+    event_calendar_df,
 ) -> None:
     """Regression: RegimeEngine.classify must accept pit_constituent_intervals
     + constituent_ohlcv kwargs so PIT §1D breadth seams are reachable from
@@ -520,6 +521,7 @@ def test_engine_classify_threads_pit_constituent_inputs_into_context(
     out = RegimeEngine().classify(
         as_of_date=as_of,
         market_data=market_df_for_asof(as_of),
+        event_calendar=event_calendar_df,
         pit_constituent_intervals=pit_intervals,
         constituent_ohlcv=constituent_ohlcv,
     )
@@ -532,6 +534,7 @@ def test_engine_classify_threads_pit_constituent_inputs_into_context(
 
 def test_engine_classify_threads_aaii_sentiment_into_context(
     market_df_for_asof,
+    event_calendar_df,
 ) -> None:
     """Regression: RegimeEngine.classify must accept aaii_sentiment kwarg so
     the v2 §1A `euphoria` predicate (ADR 0004 / Log #32 closure) is reachable
@@ -567,6 +570,7 @@ def test_engine_classify_threads_aaii_sentiment_into_context(
     out = RegimeEngine().classify(
         as_of_date=as_of,
         market_data=market_df_for_asof(as_of),
+        event_calendar=event_calendar_df,
         aaii_sentiment=aaii_sentiment,
     )
 
@@ -598,13 +602,17 @@ def test_build_market_context_rejects_malformed_date_values(market_df_for_asof) 
         RegimeEngine().classify(
             as_of_date=as_of,
             market_data=corrupted,
+            event_calendar=pd.DataFrame(columns=["date", "market", "type", "importance"]),
         )
 
 
 # ---------- Engine threading -------------------------------------------------
 
 
-def test_engine_classify_accepts_v2_data_kwargs_without_breaking_v1_output(market_df_for_asof) -> None:
+def test_engine_classify_accepts_v2_data_kwargs_without_breaking_v1_output(
+    market_df_for_asof,
+    event_calendar_df,
+) -> None:
     as_of = date(2023, 12, 14)
     sector_dates = pd.bdate_range("2022-06-01", end=as_of, freq="C").date.tolist()
     sector_df = _make_long_ohlcv(list(SECTOR_ETFS), sector_dates)
@@ -614,11 +622,13 @@ def test_engine_classify_accepts_v2_data_kwargs_without_breaking_v1_output(marke
     out_with_v2 = RegimeEngine().classify(
         as_of_date=as_of,
         market_data=market_df_for_asof(as_of),
+        event_calendar=event_calendar_df,
         sector_etf_closes=sector_closes,
     )
     out_without_v2 = RegimeEngine().classify(
         as_of_date=as_of,
         market_data=market_df_for_asof(as_of),
+        event_calendar=event_calendar_df,
     )
 
     # V1 wire fields are unchanged whether or not V2 data is passed —

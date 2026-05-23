@@ -93,7 +93,7 @@ def test_shadow_replay_check_records_mismatch_with_diff(
 
     output_path = out_root / "outputs" / "2023-12-14.json"
     payload = json.loads(output_path.read_text())
-    payload["transition_risk_label"] = "tampered_transition_risk"
+    payload["transition_risk_state"] = "tampered_transition_risk"
     output_path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 
     result = replay_mod.run_replay_check(
@@ -103,7 +103,7 @@ def test_shadow_replay_check_records_mismatch_with_diff(
 
     assert result["matches"] is False
     assert result["diff"] is not None
-    assert result["diff"]["transition_risk_label"]["stored"] == "tampered_transition_risk"
+    assert result["diff"]["transition_risk_state"]["stored"] == "tampered_transition_risk"
 
     with sqlite3.connect(out_root / "regime_shadow.db") as conn:
         row = conn.execute(
@@ -113,7 +113,7 @@ def test_shadow_replay_check_records_mismatch_with_diff(
     assert row is not None
     assert row[0] == 0
     diff = json.loads(row[1])
-    assert diff["transition_risk_label"]["replayed"] != diff["transition_risk_label"]["stored"]
+    assert diff["transition_risk_state"]["replayed"] != diff["transition_risk_state"]["stored"]
 
 
 def test_shadow_replay_check_uses_only_archived_inputs(

@@ -264,6 +264,7 @@ def test_engine_classify_window_emits_real_volume_liquidity_labels():
         end_date=_LAST_SESSION.date(),
         market_data=market_data,
         lookback_days=200,
+        event_calendar=pd.DataFrame(columns=["date", "market", "type", "importance"]),
     )
     seen = {
         out.volume_liquidity_state.active_label
@@ -300,6 +301,7 @@ def test_engine_classify_window_volume_liquidity_state_none_in_pure_v1_mode():
         end_date=_LAST_SESSION.date(),
         market_data=market_data,
         lookback_days=20,
+        event_calendar=pd.DataFrame(columns=["date", "market", "type", "importance"]),
         config=v1_config,
     )
     for out in timeline.outputs:
