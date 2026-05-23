@@ -239,6 +239,34 @@ def _write_output_json(output_path: Path, payload_json: str) -> None:
     output_path.write_text(payload_json + "\n", encoding="utf-8")
 
 
+def _transition_data_quality_status(transition_risk: Any) -> str | None:
+    data_quality = getattr(transition_risk, "data_quality", None)
+    if data_quality is None:
+        return None
+    if isinstance(data_quality, dict):
+        status = data_quality.get("status")
+    else:
+        status = getattr(data_quality, "status", None)
+    return None if status is None else str(status)
+
+
+def _transition_evidence_value(transition_risk: Any, key: str) -> Any:
+    evidence = getattr(transition_risk, "evidence", None)
+    if evidence is None:
+        return None
+    if isinstance(evidence, dict):
+        return evidence.get(key)
+    if hasattr(evidence, "get"):
+        return evidence.get(key)
+    return getattr(evidence, key, None)
+
+
+def _json_cell(value: Any) -> str | None:
+    if value is None:
+        return None
+    return json.dumps(value, sort_keys=True)
+
+
 def _build_report_markdown(summary_df: pd.DataFrame, *, start_date: date, end_date: date) -> str:
     lines = [
         "# Historical Walk-Forward Report",
@@ -343,6 +371,22 @@ def run_walkforward(
                         "volatility_state_active": output.volatility_state.active_label,
                         "breadth_state_active": output.breadth_state.active_label,
                         "transition_risk_state": output.transition_risk.state,
+                        "transition_risk_score": output.transition_risk.score,
+                        "transition_risk_primary_drivers": _json_cell(
+                            output.transition_risk.primary_drivers
+                        ),
+                        "transition_risk_triggered_rules": _json_cell(
+                            output.transition_risk.triggered_rules
+                        ),
+                        "transition_risk_data_quality_status": _transition_data_quality_status(
+                            output.transition_risk
+                        ),
+                        "transition_risk_axis_switch_count": _transition_evidence_value(
+                            output.transition_risk, "axis_switch_count"
+                        ),
+                        "transition_risk_recent_axis_switch_count": _transition_evidence_value(
+                            output.transition_risk, "recent_axis_switch_count"
+                        ),
                     }
                 )
             except Exception as exc:
@@ -368,6 +412,12 @@ def run_walkforward(
                         "volatility_state_active": None,
                         "breadth_state_active": None,
                         "transition_risk_state": None,
+                        "transition_risk_score": None,
+                        "transition_risk_primary_drivers": None,
+                        "transition_risk_triggered_rules": None,
+                        "transition_risk_data_quality_status": None,
+                        "transition_risk_axis_switch_count": None,
+                        "transition_risk_recent_axis_switch_count": None,
                     }
                 )
 

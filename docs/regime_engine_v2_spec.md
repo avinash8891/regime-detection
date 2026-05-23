@@ -3572,8 +3572,11 @@ change_point
 
 Missing optional inputs do not create parallel logic. The composer omits missing
 optional components and renormalizes the remaining configured weights only if
-`minimum_component_weight_coverage` is satisfied. Missing required inputs fail
-loudly as `insufficient_data`.
+`minimum_component_weight_coverage` is satisfied. Missing required
+transition-score infrastructure raises a runtime error. If the infrastructure
+exists but the score cannot be computed because the current session has
+cold-start/NaN components or insufficient configured component weight coverage,
+the final transition-risk state becomes `insufficient_data`.
 
 Final states:
 

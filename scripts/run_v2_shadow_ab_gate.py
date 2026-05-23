@@ -76,6 +76,10 @@ V1_FIELDS: list[str] = [
 # v2 fields whose activation is EXPECTED to differ under v2-mode.
 V2_FIELDS: list[str] = [
     "transition_risk_score",
+    "transition_risk_score_components_present",
+    "transition_risk_primary_drivers",
+    "transition_risk_triggered_rules",
+    "transition_risk_data_quality",
     "agent_routing",
     "change_point",
     "credit_funding_state",
@@ -119,8 +123,24 @@ def _extract_v1_fields(output: Any) -> dict[str, Any]:
 
 
 def _extract_v2_fields(output: Any) -> dict[str, Any]:
+    transition_risk = output.transition_risk
+    data_quality = getattr(transition_risk, "data_quality", None)
+    if isinstance(data_quality, dict):
+        transition_data_quality = data_quality.get("status")
+    else:
+        transition_data_quality = getattr(data_quality, "status", None)
     return {
-        "transition_risk_score": output.transition_risk.score,
+        "transition_risk_score": transition_risk.score,
+        "transition_risk_score_components_present": bool(
+            getattr(transition_risk, "score_components", None)
+        ),
+        "transition_risk_primary_drivers": list(
+            getattr(transition_risk, "primary_drivers", []) or []
+        ),
+        "transition_risk_triggered_rules": list(
+            getattr(transition_risk, "triggered_rules", []) or []
+        ),
+        "transition_risk_data_quality": transition_data_quality,
         "agent_routing": (
             output.agent_routing.active_cohort
             if output.agent_routing is not None

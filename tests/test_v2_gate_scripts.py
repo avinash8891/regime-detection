@@ -144,7 +144,19 @@ def test_shadow_ab_classify_per_session_continues_after_runtime_error() -> None:
         trend_character = trend_direction
         volatility_state = trend_direction
         breadth_state = trend_direction
-        transition_risk = type("TransitionRisk", (), {"label": "none", "score": None})()
+        transition_risk = type(
+            "TransitionRisk",
+            (),
+            {
+                "state": "stable",
+                "score": None,
+                "score_components": None,
+                "primary_drivers": [],
+                "triggered_rules": [],
+                "data_quality": DataQuality(status="ok", freshness_days=0, completeness=1.0),
+                "evidence": {},
+            },
+        )()
         agent_routing = None
         change_point = None
         credit_funding_state = None
@@ -172,6 +184,40 @@ def test_shadow_ab_classify_per_session_continues_after_runtime_error() -> None:
     assert errors == 1
     assert list(v1_records) == [sessions[1]]
     assert list(v2_records) == [sessions[1]]
+    assert v2_records[sessions[1]]["transition_risk_primary_drivers"] == []
+    assert v2_records[sessions[1]]["transition_risk_triggered_rules"] == []
+
+
+def test_walkforward_gate_tallies_rich_transition_risk_fields() -> None:
+    output = type(
+        "Output",
+        (),
+        {
+            "transition_risk": type(
+                "TransitionRisk",
+                (),
+                {
+                    "state": "fragile_bull",
+                    "score_components": {"model_instability": 0.25},
+                    "triggered_rules": ["fragile_bull", "state_confirmation_pending"],
+                },
+            )(),
+            "agent_routing": None,
+            "change_point": None,
+            "credit_funding_state": None,
+            "credit_funding_effective_state": None,
+            "inflation_growth_state": None,
+            "cluster": None,
+        },
+    )()
+    metrics = run_v2_walkforward_gate._session_metrics_empty()
+
+    run_v2_walkforward_gate._tally_output(metrics, output)
+
+    assert metrics["fragile_bull_fired"] == 1
+    assert metrics["score_components_dict"] == 1
+    assert metrics["model_instability_evidence_on_score"] == 1
+    assert metrics["state_confirmation_pending"] == 1
 
 
 def test_shadow_ab_classify_per_session_propagates_programmer_errors() -> None:
@@ -271,6 +317,9 @@ def test_shadow_ab_gate_main_runs_against_committed_v2_fixtures(
     assert "- Window: 2026-05-13" in markdown
     assert "| trend_direction | 0 |" in markdown
     assert "| transition_risk_state | 0 |" in markdown
+    assert "| transition_risk_primary_drivers | 1 |" in markdown
+    assert "| transition_risk_triggered_rules | 1 |" in markdown
+    assert "| transition_risk_data_quality | 1 |" in markdown
     assert "| credit_funding_state | 1 |" in markdown
     assert "| credit_funding_effective_state | 1 |" in markdown
     assert "| network_fragility | 1 |" in markdown

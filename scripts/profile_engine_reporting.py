@@ -272,6 +272,12 @@ def _compact_timeline_rows(outputs: list[RegimeOutput]) -> list[str]:
             seams.append(f"change_point={out.change_point.score:.4f}")
         if out.transition_risk.score is not None:
             seams.append(f"transition_score={out.transition_risk.score:.4f}")
+        transition_rules = getattr(out.transition_risk, "triggered_rules", None)
+        if transition_rules:
+            seams.append(f"transition_rules={','.join(transition_rules)}")
+        transition_drivers = getattr(out.transition_risk, "primary_drivers", None)
+        if transition_drivers:
+            seams.append(f"transition_drivers={','.join(transition_drivers)}")
         seam_text = ", ".join(seams) if seams else "-"
         rows.append(
             f"{out.as_of_date.isoformat()} | "
@@ -281,6 +287,41 @@ def _compact_timeline_rows(outputs: list[RegimeOutput]) -> list[str]:
             f"{seam_text}"
         )
     return rows
+
+
+def _transition_data_quality_status(transition_risk: Any) -> str | None:
+    data_quality = getattr(transition_risk, "data_quality", None)
+    if data_quality is None:
+        return None
+    if isinstance(data_quality, dict):
+        status = data_quality.get("status")
+    else:
+        status = getattr(data_quality, "status", None)
+    return None if status is None else str(status)
+
+
+def _transition_evidence_value(transition_risk: Any, key: str) -> Any:
+    evidence = getattr(transition_risk, "evidence", None)
+    if evidence is None:
+        return None
+    if isinstance(evidence, dict):
+        return evidence.get(key)
+    if hasattr(evidence, "get"):
+        return evidence.get(key)
+    return getattr(evidence, key, None)
+
+
+def _transition_risk_seam(transition_risk: Any) -> dict[str, Any]:
+    return {
+        "score": getattr(transition_risk, "score", None),
+        "primary_drivers": list(getattr(transition_risk, "primary_drivers", []) or []),
+        "triggered_rules": list(getattr(transition_risk, "triggered_rules", []) or []),
+        "data_quality_status": _transition_data_quality_status(transition_risk),
+        "axis_switch_count": _transition_evidence_value(transition_risk, "axis_switch_count"),
+        "recent_axis_switch_count": _transition_evidence_value(
+            transition_risk, "recent_axis_switch_count"
+        ),
+    }
 
 
 def _compact_timeline_report(outputs: list[RegimeOutput]) -> list[dict[str, Any]]:
@@ -344,6 +385,7 @@ def _compact_timeline_report(outputs: list[RegimeOutput]) -> list[dict[str, Any]
             seams["hmm"] = hmm.top_state_prob
         if out.transition_risk.score is not None:
             seams["transition_score"] = out.transition_risk.score
+        seams["transition_risk"] = _transition_risk_seam(out.transition_risk)
         rows.append(
             {
                 "as_of_date": out.as_of_date.isoformat(),
@@ -471,6 +513,9 @@ def _trailing_v2_status(out: RegimeOutput) -> list[str]:
     add("hmm", getattr(out, "hmm", None))
     add("transition_risk.score", out.transition_risk.score)
     add("transition_risk.score_components", out.transition_risk.score_components)
+    add("transition_risk.primary_drivers", getattr(out.transition_risk, "primary_drivers", None))
+    add("transition_risk.triggered_rules", getattr(out.transition_risk, "triggered_rules", None))
+    add("transition_risk.data_quality", getattr(out.transition_risk, "data_quality", None))
     add("agent_routing", getattr(out, "agent_routing", None))
     add("strategy_family_constraints", getattr(out, "strategy_family_constraints", None))
     return rows
@@ -509,6 +554,9 @@ def _trailing_v2_status_report(out: RegimeOutput) -> list[dict[str, Any]]:
     add("hmm", getattr(out, "hmm", None))
     add("transition_risk.score", out.transition_risk.score)
     add("transition_risk.score_components", out.transition_risk.score_components)
+    add("transition_risk.primary_drivers", getattr(out.transition_risk, "primary_drivers", None))
+    add("transition_risk.triggered_rules", getattr(out.transition_risk, "triggered_rules", None))
+    add("transition_risk.data_quality", getattr(out.transition_risk, "data_quality", None))
     add("agent_routing", getattr(out, "agent_routing", None))
     add("strategy_family_constraints", getattr(out, "strategy_family_constraints", None))
     return rows

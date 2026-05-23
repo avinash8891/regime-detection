@@ -59,6 +59,15 @@ def test_historical_walkforward_runner_writes_expected_artifacts(
     summary_path = out_root / "reports" / "walkforward_summary.csv"
     assert report_path.exists()
     assert summary_path.exists()
+    summary_df = pd.read_csv(summary_path)
+    assert {
+        "transition_risk_score",
+        "transition_risk_primary_drivers",
+        "transition_risk_triggered_rules",
+        "transition_risk_data_quality_status",
+        "transition_risk_axis_switch_count",
+        "transition_risk_recent_axis_switch_count",
+    }.issubset(summary_df.columns)
 
 
 def test_historical_walkforward_runner_records_failures_without_silent_skip(tmp_path: Path) -> None:

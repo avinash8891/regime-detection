@@ -361,9 +361,14 @@ def generate_report(
             attr = getattr(out, axis, None)
             if attr is not None and hasattr(attr, "evidence"):
                 evidence[axis] = _serialize_obj(dict(attr.evidence))
-        evidence["transition_risk"] = _serialize_obj(
-            dict(out.transition_risk.evidence)
-        )
+        evidence["transition_risk"] = {
+            "evidence": _serialize_obj(dict(out.transition_risk.evidence)),
+            "score": out.transition_risk.score,
+            "score_components": _serialize_obj(out.transition_risk.score_components),
+            "primary_drivers": _serialize_obj(out.transition_risk.primary_drivers),
+            "triggered_rules": _serialize_obj(out.transition_risk.triggered_rules),
+            "data_quality": _serialize_obj(out.transition_risk.data_quality),
+        }
 
         report_rows.append(
             {

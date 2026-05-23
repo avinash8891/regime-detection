@@ -100,14 +100,20 @@ def _resolve_default_window(daily_dir: Path) -> tuple[dt.date, dt.date]:
 def _session_metrics_empty() -> dict[str, int]:
     return {
         "sessions_classified": 0,
-        "crisis_override_fired": 0,
+        "crisis_fired": 0,
         "bear_stress_fired": 0,
-        "bull_fragile_fired": 0,
+        "fragile_bull_fired": 0,
         "recovery_attempt_fired": 0,
+        "watch_fired": 0,
+        "weakening_fired": 0,
+        "transition_warning_fired": 0,
+        "high_transition_risk_fired": 0,
+        "insufficient_data_fired": 0,
+        "state_confirmation_pending": 0,
         "score_components_dict": 0,
         "agent_routing_field": 0,
         "change_point_score": 0,
-        "hmm_evidence_on_score": 0,
+        "model_instability_evidence_on_score": 0,
         "credit_funding_state": 0,
         "credit_funding_effective_state": 0,
         "inflation_growth_state": 0,
@@ -120,18 +126,30 @@ def _tally_output(metrics: dict[str, int], output: Any) -> None:
     metrics["sessions_classified"] += 1
     tr = output.transition_risk
     label = (tr.state or "").lower()
-    if label == "crisis_override":
-        metrics["crisis_override_fired"] += 1
+    if label == "crisis":
+        metrics["crisis_fired"] += 1
     if label == "bear_stress":
         metrics["bear_stress_fired"] += 1
-    if label == "bull_fragile":
-        metrics["bull_fragile_fired"] += 1
+    if label == "fragile_bull":
+        metrics["fragile_bull_fired"] += 1
     if label == "recovery_attempt":
         metrics["recovery_attempt_fired"] += 1
+    if label == "watch":
+        metrics["watch_fired"] += 1
+    if label == "weakening":
+        metrics["weakening_fired"] += 1
+    if label == "transition_warning":
+        metrics["transition_warning_fired"] += 1
+    if label == "high_transition_risk":
+        metrics["high_transition_risk_fired"] += 1
+    if label == "insufficient_data":
+        metrics["insufficient_data_fired"] += 1
+    if "state_confirmation_pending" in (getattr(tr, "triggered_rules", None) or []):
+        metrics["state_confirmation_pending"] += 1
     if tr.score_components:
         metrics["score_components_dict"] += 1
-        if "hmm" in tr.score_components:
-            metrics["hmm_evidence_on_score"] += 1
+        if "model_instability" in tr.score_components:
+            metrics["model_instability_evidence_on_score"] += 1
     if output.agent_routing is not None:
         metrics["agent_routing_field"] += 1
     if output.change_point is not None and output.change_point.score is not None:
@@ -254,14 +272,23 @@ def _build_markdown(
 
     metric_rows = [
         _row("sessions classified", "sessions_classified"),
-        _row("sessions with crisis_override fired", "crisis_override_fired"),
+        _row("sessions with crisis fired", "crisis_fired"),
         _row("sessions with bear_stress fired", "bear_stress_fired"),
-        _row("sessions with bull_fragile fired", "bull_fragile_fired"),
+        _row("sessions with fragile_bull fired", "fragile_bull_fired"),
         _row("sessions with recovery_attempt", "recovery_attempt_fired"),
+        _row("sessions with watch", "watch_fired"),
+        _row("sessions with weakening", "weakening_fired"),
+        _row("sessions with transition_warning", "transition_warning_fired"),
+        _row("sessions with high_transition_risk", "high_transition_risk_fired"),
+        _row("sessions with insufficient_data", "insufficient_data_fired"),
+        _row("sessions with state_confirmation_pending", "state_confirmation_pending"),
         _row("sessions with score_components dict", "score_components_dict"),
         _row("sessions with agent_routing field", "agent_routing_field"),
         _row("sessions with change_point.score", "change_point_score"),
-        _row("sessions with hmm evidence on score", "hmm_evidence_on_score"),
+        _row(
+            "sessions with model_instability evidence on score",
+            "model_instability_evidence_on_score",
+        ),
         _row("sessions with credit_funding_state", "credit_funding_state"),
         _row(
             "sessions with credit_funding_effective_state",
