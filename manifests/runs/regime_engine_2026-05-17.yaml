@@ -10221,10 +10221,10 @@ artifacts:
   stage: canonical
   uri: canonical/daily_ohlcv_762/symbol=SPY/ohlcv.parquet
   local_path: data/raw/daily_ohlcv_762/symbol=SPY/ohlcv.parquet
-  sha256: 180ae603304239483d43e6c817d0ada84bcb66051d18e6eb7492167b7ea5fa52
+  sha256: 9a9ca459c6907216c298293c868ffc1f699a9c6b8b615600711995aab4326044
   schema_version: null
-  rows: null
-  min_date: '2013-12-31'
+  rows: 5332
+  min_date: '2005-03-07'
   max_date: '2026-05-15'
   required_for: *id001
 - name: daily_ohlcv_762_SRCL
