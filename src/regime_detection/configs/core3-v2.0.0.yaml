@@ -231,12 +231,13 @@ volume_liquidity_state:
     liquidity_gap_frequency_percentile_threshold: 0.75    # v2 §1E line 278
     liquidity_gap_intraday_range_percentile_threshold: 0.75  # v2 §1E line 279
   # §1E is silent on hysteresis days. Pinned per documented implementation decision:
-  #   panic_volume = 3 (high-risk hold, analogous to §3.7 correlation_to_one).
+  #   panic_volume = 2 (calibrated on 2016-01-04..2026-05-15 walk-forward;
+  #     preserves churn reduction while avoiding excessive panic overhang).
   #   normal_volume = 0 (immediate de-escalation; lowest risk_rank).
   #   unknown = 0 (absence-of-signal clears immediately on recovery).
   #   liquidity_gap_behavior = 2 (same rank as `unknown`).
   deescalation_days_by_label:
-    panic_volume: 3
+    panic_volume: 2
     normal_volume: 0
     unknown: 0
     liquidity_gap_behavior: 2

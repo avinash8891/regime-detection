@@ -1047,10 +1047,12 @@ the slice/commit that resolved it. Entries are append-only.
     `systemic_stress=5`, `rising_fragility=3` — high-risk labels hold
     multi-day; low-risk labels release immediately). Resolution: pin
     defaults by §1E-risk-rank analogy:
-      - `panic_volume = 3` (risk_rank 3, analogous to §3.7
-        `correlation_to_one`/`rising_fragility` holds — a single-day
-        normal_volume flicker after a panic must not fast-track
-        de-escalation).
+      - `panic_volume = 3` initial pin (risk_rank 3, analogous to §3.7
+        `correlation_to_one`/`rising_fragility` holds).
+        Status update — 2016-01-04..2026-05-15 walk-forward calibration
+        retuned this to `panic_volume = 2`: active panic days fall from
+        115 to 70 while preserving essentially the same state-churn
+        reduction as the initial pin.
       - `normal_volume = 0` (risk_rank 0, lowest — immediate
         de-escalation matches §3.7 `diversified_normal` pattern).
       - `unknown = 0` because absence-of-signal must clear immediately

@@ -225,15 +225,17 @@ class VolumeLiquidityConfig(StrictBaseModel):
     Holds the rule thresholds and per-label hysteresis days for the
     new ``volume_liquidity_state`` axis. The §1E spec is silent on
     hysteresis; defaults are pinned by risk_rank analogy with §3.7
-    (panic_volume=3 like correlation_to_one; normal_volume=0; unknown=2).
+    (panic_volume=2 after 2016-2026 walk-forward calibration; normal_volume=0;
+    unknown=0).
     """
 
     rules: VolumeLiquidityRulesConfig
 
-    # Per-label hysteresis: panic_volume=3 (high-risk hold, analogous to §3.7
-    # correlation_to_one=3-5), normal_volume=0 (immediate de-escalation),
-    # unknown=2 (modest hold to absorb single-day NaN flickers without
-    # stranding the axis), liquidity_gap_behavior=2 (same rank as unknown).
+    # Per-label hysteresis: panic_volume=2 (high-risk hold retuned by the
+    # 2016-2026 volume/liquidity walk-forward calibration),
+    # normal_volume=0 (immediate de-escalation),
+    # unknown=0 (absence-of-signal clears immediately on recovery),
+    # liquidity_gap_behavior=2.
     deescalation_days_by_label: dict[str, int]
 
     # Default for labels NOT in `deescalation_days_by_label`.

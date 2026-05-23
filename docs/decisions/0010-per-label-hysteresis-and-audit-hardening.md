@@ -56,7 +56,7 @@ raw→stable→active label triple.
 | volatility | crisis_vol, vol_crush, high_vol, rising_vol, low_vol, normal_vol | crisis_vol=5d | normal_vol=0d, low_vol=0d |
 | breadth | divergent_fragile, weak_breadth, narrowing_breadth, broadening_breadth, healthy_breadth | divergent_fragile=5d | healthy_breadth=0d |
 | network_fragility | systemic_stress, correlation_to_one, correlation_concentration, rising_fragility, ... | systemic_stress=5d | diversified_normal=0d, unknown=0d |
-| volume_liquidity | panic_volume, liquidity_gap_behavior, normal_volume | panic_volume=3d | normal_volume=0d |
+| volume_liquidity | panic_volume, liquidity_gap_behavior, normal_volume | panic_volume=2d | normal_volume=0d |
 | monetary_pressure | rate_shock, tightening_pressure, easing_pressure, neutral_monetary | rate_shock=5d | neutral_monetary=0d |
 | inflation_growth | inflation_shock, recession_scare, disinflation, goldilocks, ... | inflation_shock=5d | goldilocks=0d, unknown=0d |
 | credit_funding | deleveraging, funding_squeeze, credit_stress, spread_widening, credit_calm | deleveraging=5d | credit_calm=0d, unknown=0d |

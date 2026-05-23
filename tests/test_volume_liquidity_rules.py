@@ -328,8 +328,8 @@ def test_default_yaml_loads_volume_liquidity_config_with_spec_defaults():
         rules.liquidity_gap_intraday_range_percentile_threshold,
         _SPEC_LIQGAP_RANGE_PCTL_THRESHOLD,
     )
-    # Ambiguity Log #41 — pinned hysteresis days.
+    # Ambiguity Log #41 + 2016-2026 walk-forward calibration.
     deesc = cfg.volume_liquidity_state.deescalation_days_by_label
-    assert deesc["panic_volume"] == 3
+    assert deesc["panic_volume"] == 2
     assert deesc["normal_volume"] == 0
     assert deesc["unknown"] == 0
