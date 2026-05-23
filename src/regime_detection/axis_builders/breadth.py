@@ -33,6 +33,19 @@ _PIT_BREADTH_LABELS = {
 BREADTH_REQUIRED_TRADING_DAYS = 50
 
 
+def _derive_breadth_active_label_source(
+    *,
+    raw: str,
+    stable: str,
+    active: str,
+) -> str:
+    if active != raw:
+        return "hysteresis_from_prior_state"
+    if active in _PIT_BREADTH_LABELS:
+        return "pit_constituent"
+    return "etf_proxy"
+
+
 def build_breadth_axis_series(
     context: MarketContext, feature_store: FeatureStore
 ) -> AxisSeriesResult:
@@ -97,13 +110,23 @@ def build_breadth_axis_series(
             if {raw, stable, active} & _PIT_BREADTH_LABELS
             else "etf_proxy"
         )
+        active_label_source = _derive_breadth_active_label_source(
+            raw=raw,
+            stable=stable,
+            active=active,
+        )
         if raw == "unknown":
             output = BreadthStateOutput(
                 mode=mode,
                 raw_label="unknown",
                 stable_label="unknown",
                 active_label="unknown",
-                evidence={"reason": "insufficient_history", "proxy": "RSP/SPY"},
+                evidence={
+                    "reason": "insufficient_history",
+                    "proxy": "RSP/SPY",
+                    "row_provenance_mode": mode,
+                    "active_label_source": active_label_source,
+                },
                 data_quality=DataQuality(
                     status="insufficient_history",
                     freshness_days=None,
@@ -127,7 +150,12 @@ def build_breadth_axis_series(
                     raw_label="unknown",
                     stable_label="unknown",
                     active_label="unknown",
-                    evidence={"reason": data_quality.reason, "proxy": "RSP/SPY"},
+                    evidence={
+                        "reason": data_quality.reason,
+                        "proxy": "RSP/SPY",
+                        "row_provenance_mode": mode,
+                        "active_label_source": active_label_source,
+                    },
                     data_quality=data_quality,
                 )
             else:
@@ -141,6 +169,8 @@ def build_breadth_axis_series(
                         "rule_evidence": evidence,
                         "risk_rank": BREADTH_RISK_RANK,
                         "deescalation_days": hysteresis_config.default_deescalation_days,
+                        "row_provenance_mode": mode,
+                        "active_label_source": active_label_source,
                     },
                     data_quality=data_quality,
                 )
