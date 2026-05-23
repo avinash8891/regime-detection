@@ -2,9 +2,34 @@ from __future__ import annotations
 
 from typing import Literal
 
-from pydantic import Field
+from pydantic import Field, model_validator
 
 from regime_detection._config_core import AxisName, StrictBaseModel
+
+
+class TransitionOverrideThresholds(StrictBaseModel):
+    """Numeric thresholds gating the named hard-override rules.
+
+    These values used to live as inline literals inside
+    ``transition_risk_series.build_transition_risk_outputs_by_date``. Promoting
+    them to config makes the override ladder fully tunable and auditable; see
+    ``docs/transition_risk.md`` §4 for what each one gates.
+    """
+
+    # Component-score thresholds that promote a stress signal into a hard
+    # override (e.g. fragile_bull fires for a bull regime when credit OR
+    # correlation are sufficiently elevated, independent of the weighted score).
+    credit_stress: float = Field(default=0.70, ge=0.0, le=1.0)
+    correlation_fragility: float = Field(default=0.70, ge=0.0, le=1.0)
+
+    # Combined gate for event_transition_watch: macro_event must clear
+    # macro_event_min AND the weighted score must be ≥ score_elevated_min AND
+    # macro_event must be the dominant component.
+    macro_event_min: float = Field(default=1.0, ge=0.0, le=1.0)
+    score_elevated_min: float = Field(default=0.35, ge=0.0, le=1.0)
+
+    # Component-value floor for inclusion in transition_risk.primary_drivers.
+    primary_driver_min: float = Field(default=0.35, ge=0.0, le=1.0)
 
 
 class TransitionScoreConfig(StrictBaseModel):
@@ -29,6 +54,39 @@ class TransitionScoreConfig(StrictBaseModel):
     # Final-state debounce. Value is the number of consecutive raw prints
     # required before the public transition_risk.state changes to that state.
     state_confirmation_days: dict[str, int]
+
+    # Override thresholds. Default values preserve the historical inline
+    # literals so existing configs / golden fixtures remain byte-identical.
+    overrides: TransitionOverrideThresholds = Field(
+        default_factory=TransitionOverrideThresholds
+    )
+
+    @model_validator(mode="after")
+    def _validate_bands_monotonic(self) -> "TransitionScoreConfig":
+        # Required band labels in ascending order; interpret_transition_score
+        # in transition_score.py depends on this exact set.
+        required = ("stable", "weakening", "transition_warning", "high")
+        missing = [name for name in required if name not in self.bands]
+        if missing:
+            raise ValueError(
+                f"transition_score.bands missing required entries: {missing}"
+            )
+        for name in required:
+            lo, hi = self.bands[name]
+            if lo < 0.0 or hi > 1.0 or lo >= hi:
+                raise ValueError(
+                    f"transition_score.bands[{name!r}] must satisfy 0.0 <= lo < hi <= 1.0, "
+                    f"got [{lo}, {hi}]"
+                )
+        for prev, nxt in zip(required, required[1:], strict=False):
+            prev_lo = self.bands[prev][0]
+            nxt_lo = self.bands[nxt][0]
+            if nxt_lo <= prev_lo:
+                raise ValueError(
+                    "transition_score.bands lower bounds must be strictly increasing in order "
+                    f"{required}; got {prev}={prev_lo}, {nxt}={nxt_lo}"
+                )
+        return self
 
 
 class HMMConfig(StrictBaseModel):

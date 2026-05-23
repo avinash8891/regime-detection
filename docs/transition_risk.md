@@ -19,10 +19,16 @@ It also uses market and history inputs:
 
 - SPY close
 - SPY 50-day moving average
-- whether stable axis labels changed recently
-- how many axes switched today
-- how many axes switched recently
-- whether `trend_direction.stable_label` was bear in the prior 60 sessions
+- whether stable axis labels changed today (`stable_changed_today`)
+- how many axes switched today (`axis_switch_count`)
+- rolling 5-session sum of axis switches (`recent_axis_switch_count`)
+- sessions since the most recent axis switch within the last 60 NYSE
+  sessions (`days_since_axis_switch`; `None` if no switch in that window)
+- whether `trend_direction.stable_label` was bear at any point in the prior
+  60 NYSE sessions, **excluding today**. The implementation shifts the bear
+  series by one session before the rolling lookback so the
+  `recovery_attempt` rule cannot fire while today's stable label is still
+  bear (transition-window hysteresis lag).
 
 And V2 score evidence:
 
@@ -110,23 +116,27 @@ Score bands:
 ## 4. Apply Hard Overrides
 
 The weighted score gives the normal transition-pressure level, but some market
-patterns override it.
+patterns override it. Override precedence is evaluated **before** the
+`insufficient_data` check, so an emergency rule like `crisis` fires even when
+another axis is `unknown`. The score catches gradual deterioration; hard
+overrides preserve emergency and well-known market patterns that should not be
+diluted by calm components.
 
-Current override precedence:
+Numeric thresholds below are the defaults in
+`TransitionScoreConfig.overrides`; deployments can tune them in the YAML
+config without code changes.
 
-1. `crisis`
-2. `bear_stress`
-3. `fragile_bull`
-4. `recovery_attempt`
-5. `sideways_stress` -> public state `watch`
-6. `event_transition_watch` -> `watch`
-7. `post_switch_cooldown` -> `watch` only if the score state is otherwise
-   stable
-8. `insufficient_data`
-9. score-derived state
-
-The score catches gradual deterioration. Hard overrides preserve emergency and
-well-known market patterns that should not be diluted by calm components.
+| # | Rule | Final state | Trigger condition |
+|---|---|---|---|
+| 1 | `crisis` | `crisis` | `volatility_state.active_label == "crisis_vol"`. Single-axis override — fires unconditionally. |
+| 2 | `bear_stress` | `bear_stress` | `trend_direction.active_label == "bear"` AND `volatility_state.active_label ∈ {high_vol, crisis_vol}` AND (`breadth_state.active_label ∈ {weak_breadth, divergent_fragile, unknown}` OR `credit_stress ≥ overrides.credit_stress` (default `0.70`)). |
+| 3 | `fragile_bull` | `fragile_bull` | `trend_direction.active_label == "bull"` AND (`breadth_state.active_label == "divergent_fragile"` OR `correlation_fragility ≥ overrides.correlation_fragility` (default `0.70`) OR `credit_stress ≥ overrides.credit_stress`). |
+| 4 | `recovery_attempt` | `recovery_attempt` | `trend_character.active_label == "recovery_attempt"` **OR** (`prior_bear` AND `close > sma_50` AND `breadth_state.active_label ∈ {recovery_breadth, healthy_breadth}`). OR-composed: either signal alone fires the rule. |
+| 5 | `sideways_stress` | `watch` | `trend_direction.active_label == "sideways"` AND `volatility_state.active_label == "high_vol"` AND `breadth_state.active_label ∈ {weak_breadth, divergent_fragile}`. |
+| 6 | `event_transition_watch` | `watch` | `macro_event ≥ overrides.macro_event_min` (default `1.0`) AND `score ≥ overrides.score_elevated_min` (default `0.35`) AND `macro_event` is the dominant component (≥ every other component). |
+| 7 | `post_switch_cooldown` | `watch` | Within `cooldown_window_days` of an axis switch (default 5 NYSE sessions) AND not in `crisis_vol`. Applied **only when the score-derived state is `stable`**. |
+| 8 | `insufficient_data` | `insufficient_data` | Any of `trend_direction`, `trend_character`, `volatility_state`, `breadth_state` active label is `unknown`. |
+| 9 | _none_ | score-derived | Score-band-to-state mapping from §3. |
 
 ## 5. Debounce Final State
 
@@ -151,6 +161,14 @@ If a new state has not persisted long enough, the public state stays at the
 prior active state and `state_confirmation_pending` is added to
 `triggered_rules`.
 
+The confirmation windows are **deliberately asymmetric**: `stable` and the
+emergency rules (`crisis`, `bear_stress`) confirm in a single print so the
+engine can de-risk immediately, while non-stable promotions (`weakening`,
+`transition_warning`, `high_transition_risk`, `fragile_bull`,
+`recovery_attempt`) require two consecutive prints so a single noisy session
+cannot drive a regime change. This favours fast de-escalation over fast
+escalation and is the intended trade-off.
+
 ## Final Output
 
 Transition produces:
@@ -168,3 +186,7 @@ Strategy consumes only `transition_risk.state`.
 Audit and reporting should show the score, components, drivers, rules, data
 quality, and switch-count evidence. Downstream code should not rebuild
 transition-risk decisions from component scores.
+
+`primary_drivers` lists the components with values at or above
+`overrides.primary_driver_min` (default `0.35`), ranked by component value,
+capped at 3 entries.

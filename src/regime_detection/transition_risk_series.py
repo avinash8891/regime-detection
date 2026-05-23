@@ -433,10 +433,15 @@ def build_transition_risk_outputs_by_date(
             config=transition_score_config,
         )
         components = composed.components or {}
-        credit_stressed = components.get("credit_stress", 0.0) >= 0.70
-        correlation_stressed = components.get("correlation_fragility", 0.0) >= 0.70
-        macro_elevated = components.get("macro_event", 0.0) >= 1.0
-        score_elevated = composed.score is not None and composed.score >= 0.35
+        overrides = transition_score_config.overrides
+        credit_stressed = components.get("credit_stress", 0.0) >= overrides.credit_stress
+        correlation_stressed = (
+            components.get("correlation_fragility", 0.0) >= overrides.correlation_fragility
+        )
+        macro_elevated = components.get("macro_event", 0.0) >= overrides.macro_event_min
+        score_elevated = (
+            composed.score is not None and composed.score >= overrides.score_elevated_min
+        )
         # Absolute old-behavior emergency override: crisis_vol alone is enough.
         crisis = bool(volatility_crisis.loc[day])
         bear_stress = (
@@ -467,6 +472,7 @@ def build_transition_risk_outputs_by_date(
         )
         output = compose_transition_risk_output(
             score=composed,
+            primary_driver_min=overrides.primary_driver_min,
             flags=TransitionRuleFlags(
                 crisis=crisis,
                 bear_stress=bear_stress,

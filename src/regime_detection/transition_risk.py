@@ -17,7 +17,10 @@ _SCORE_BAND_TO_STATE: dict[str, TransitionRiskState] = {
     "high": "high_transition_risk",
 }
 
-_DRIVER_THRESHOLD = 0.35
+# Backwards-compatible default for callers that don't pass an explicit
+# driver threshold; production callers thread the value from
+# TransitionScoreConfig.overrides.primary_driver_min instead.
+_DEFAULT_DRIVER_THRESHOLD = 0.35
 
 
 @dataclass(frozen=True)
@@ -40,6 +43,7 @@ def compose_transition_risk_output(
     *,
     score: ComposedTransitionScore,
     flags: TransitionRuleFlags,
+    primary_driver_min: float = _DEFAULT_DRIVER_THRESHOLD,
 ) -> TransitionRiskOutput:
     if score.score is None or score.interpretation is None or score.components is None:
         state = _select_transition_state(
@@ -58,12 +62,11 @@ def compose_transition_risk_output(
         data_quality = DataQuality(status="ok")
 
     triggered_rules = _triggered_rules(flags)
-    components = score.components if score.components is not None else None
-    primary_drivers = _primary_drivers(components)
+    primary_drivers = _primary_drivers(score.components, threshold=primary_driver_min)
     return TransitionRiskOutput(
         state=state,
         score=score.score,
-        score_components=components,
+        score_components=score.components,
         primary_drivers=primary_drivers,
         triggered_rules=triggered_rules,
         evidence=TransitionRiskEvidencePayload(
@@ -127,7 +130,11 @@ def _triggered_rules(flags: TransitionRuleFlags) -> list[str]:
     return rules
 
 
-def _primary_drivers(components: dict[str, float] | None) -> list[str]:
+def _primary_drivers(
+    components: dict[str, float] | None,
+    *,
+    threshold: float,
+) -> list[str]:
     if components is None:
         return []
     ranked = sorted(
@@ -135,4 +142,4 @@ def _primary_drivers(components: dict[str, float] | None) -> list[str]:
         key=lambda item: item[1],
         reverse=True,
     )
-    return [name for name, value in ranked if value >= _DRIVER_THRESHOLD][:3]
+    return [name for name, value in ranked if value >= threshold][:3]
