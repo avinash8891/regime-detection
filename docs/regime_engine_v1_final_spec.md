@@ -1265,7 +1265,7 @@ When the engine runs under a V2 config, the wire shape extends in two ways:
   "active_label": "diversified_normal",
   "evidence": { /* §3.5 rule inputs */ },
   "data_quality": { ... },
-  "mode": "sector_cross_asset_22"
+  "mode": "sector_cross_asset_24"
 }
 ```
 

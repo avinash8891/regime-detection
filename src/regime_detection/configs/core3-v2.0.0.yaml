@@ -82,11 +82,11 @@ breadth_state:
 trend_character_v2: {}
 
 network_fragility:
-  # v2 spec §3.1 — 22 assets: 11 sector ETFs + SPY (broad-market index) +
-  # 10 cross-asset proxies. SPY's close flows through MarketContext.spy_ohlcv
+  # v2 spec §3.1 — 24 assets: 11 sector ETFs + SPY (broad-market index) +
+  # 12 cross-asset proxies. SPY's close flows through MarketContext.spy_ohlcv
   # on the V1 path; the engine still treats it as part of the universe when
-  # building the correlation matrix. KRE is v2 §2C credit/funding territory,
-  # not §3.1 — moved out of this universe.
+  # building the correlation matrix. DBC/IEF were added together after A/B
+  # testing; KRE remains v2 §2C credit/funding territory, not §3.1.
   universe:
     - XLB
     - XLC
@@ -105,10 +105,12 @@ network_fragility:
     - EFA
     - EEM
     - TLT
+    - IEF
     - GLD
     - HYG
     - LQD
     - USO
+    - DBC
     - UUP
   correlation_lookback_days: 63                   # v2 §3.2 line 554-558 ("63d corr")
   percentile_lookback_days: 504                   # v2 §3.2 line 563-566 (504d percentile)

@@ -29,14 +29,14 @@ from regime_detection.market_context import (
 # ---------- universe constants -----------------------------------------------
 
 
-def test_network_fragility_universe_is_22_symbols_per_v2_section_3_1() -> None:
-    """v2 spec §3.1 ships 11 sector_etfs + 11 cross_asset_etfs (incl. SPY)
-    = 22 assets. SPY is the index; the engine reads SPY's close from
+def test_network_fragility_universe_is_24_symbols_per_v2_section_3_1() -> None:
+    """v2 spec §3.1 ships 11 sector_etfs + 13 cross_asset_etfs (incl. SPY)
+    = 24 assets. SPY is the index; the engine reads SPY's close from
     context.spy_ohlcv rather than from cross_asset_closes."""
-    assert len(NETWORK_FRAGILITY_UNIVERSE) == 22
-    assert len(set(NETWORK_FRAGILITY_UNIVERSE)) == 22  # no duplicates
+    assert len(NETWORK_FRAGILITY_UNIVERSE) == 24
+    assert len(set(NETWORK_FRAGILITY_UNIVERSE)) == 24  # no duplicates
     assert len(SECTOR_ETFS) == 11
-    assert len(CROSS_ASSET_SYMBOLS) == 10  # 11 cross_asset_etfs minus SPY (the index)
+    assert len(CROSS_ASSET_SYMBOLS) == 12  # 13 cross_asset_etfs minus SPY (the index)
     assert INDEX_SYMBOL == "SPY"
     assert "SPY" in NETWORK_FRAGILITY_UNIVERSE  # v2 §3.1 line 537
     assert "KRE" not in NETWORK_FRAGILITY_UNIVERSE  # KRE is slice 4 credit/funding
@@ -44,7 +44,8 @@ def test_network_fragility_universe_is_22_symbols_per_v2_section_3_1() -> None:
     # Spec-exact set, per v2 §3.1 lines 524-547.
     assert set(NETWORK_FRAGILITY_UNIVERSE) == {
         "XLB", "XLC", "XLE", "XLF", "XLI", "XLK", "XLP", "XLRE", "XLU", "XLV", "XLY",
-        "SPY", "QQQ", "IWM", "EFA", "EEM", "TLT", "GLD", "HYG", "LQD", "USO", "UUP",
+        "SPY", "QQQ", "IWM", "EFA", "EEM", "TLT", "IEF", "GLD", "HYG", "LQD",
+        "USO", "DBC", "UUP",
     }
 
 

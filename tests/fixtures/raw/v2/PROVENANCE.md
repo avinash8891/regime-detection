@@ -6,9 +6,9 @@ Source: repo-local raw parquet files under `data/raw/daily_ohlcv/symbol=*/aec4c8
 
 Derived file: `tests/fixtures/raw/v2/daily_ohlcv.csv`.
 
-Rows: 46,275. Symbols: 25. Date span: 2019-01-02 through 2026-05-13.
+Rows: 49,977. Symbols: 27. Date span: 2019-01-02 through 2026-05-13.
 
-Included symbols: `SPY`, `RSP`, `VIXY`, all V2 network-fragility sector ETFs (`XLB`, `XLC`, `XLE`, `XLF`, `XLI`, `XLK`, `XLP`, `XLRE`, `XLU`, `XLV`, `XLY`), all V2 network-fragility cross-asset ETFs (`QQQ`, `IWM`, `EFA`, `EEM`, `TLT`, `GLD`, `HYG`, `LQD`, `USO`, `UUP`), and `KRE` for the V2 credit/funding axis.
+Included symbols: `SPY`, `RSP`, `VIXY`, all V2 network-fragility sector ETFs (`XLB`, `XLC`, `XLE`, `XLF`, `XLI`, `XLK`, `XLP`, `XLRE`, `XLU`, `XLV`, `XLY`), all V2 network-fragility cross-asset ETFs (`QQQ`, `IWM`, `EFA`, `EEM`, `TLT`, `IEF`, `GLD`, `HYG`, `LQD`, `USO`, `DBC`, `UUP`), and `KRE` for the V2 credit/funding axis.
 
 Columns retained: `date`, `symbol`, `open`, `high`, `low`, `close`, `volume`.
 

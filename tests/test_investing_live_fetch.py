@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import base64
+import inspect
 import json
 import sqlite3
 import sys
@@ -18,6 +19,7 @@ from regime_data_fetch.investing_live import (
     SOURCE_CALENDAR_URL,
     SOURCE_EARNINGS_URL,
     _request_json,
+    capture_investing_live_archive,
     capture_investing_earnings_loaded_page,
     _validate_token_not_expired,
     run_investing_live_fetch,
@@ -251,6 +253,17 @@ def test_run_investing_live_fetch_materializes_archive_and_records_outputs(
         assert conn.execute(
             "SELECT count(*) FROM artifact_records WHERE source_name='investing.com'"
         ).fetchone() == (3,)
+
+
+def test_capture_investing_live_archive_uses_browser_config_object() -> None:
+    params = inspect.signature(capture_investing_live_archive).parameters
+
+    assert "earnings_browser_config" in params
+    assert "earnings_browser_user_data_dir" not in params
+    assert "earnings_browser_executable" not in params
+    assert "earnings_browser_headless" not in params
+    assert "earnings_browser_timeout_ms" not in params
+    assert "earnings_page_capturer" not in params
 
 
 def test_run_investing_live_fetch_fails_loudly_without_earnings_token(

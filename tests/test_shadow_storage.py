@@ -163,6 +163,24 @@ def test_run_row_success_and_failure_updates_are_durable(tmp_path: Path) -> None
     ]
 
 
+def test_fetch_run_row_rejects_partial_identity_tuple(tmp_path: Path) -> None:
+    db_path = tmp_path / "regime_shadow.db"
+
+    with open_shadow_db(db_path) as conn:
+        with pytest.raises(ValueError, match="engine_version and config_version"):
+            fetch_run_row(
+                conn=conn,
+                as_of_date=date(2023, 12, 14),
+                engine_version="regime-engine-test",
+            )
+        with pytest.raises(ValueError, match="engine_version and config_version"):
+            fetch_run_row(
+                conn=conn,
+                as_of_date=date(2023, 12, 14),
+                config_version="core3-v2.0.0",
+            )
+
+
 def test_replay_check_and_incident_insertions_are_durable(tmp_path: Path) -> None:
     db_path = tmp_path / "regime_shadow.db"
 

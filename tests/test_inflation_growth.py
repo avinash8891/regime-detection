@@ -31,8 +31,10 @@ from regime_detection.inflation_growth import (
     evaluate_goldilocks,
     evaluate_inflation_shock,
     evaluate_recession_scare,
+    evaluate_reflation,
     evaluate_recovery_growth,
     evaluate_rules,
+    evaluate_stagflation_lite,
 )
 
 
@@ -661,6 +663,57 @@ def test_earnings_labels_falsify_in_neutral_band() -> None:
     # Exactly on the threshold also falsifies (strict >).
     on_threshold = _rule_inputs(aggregate_forward_eps_revision_direction_4w=0.02)
     assert evaluate_earnings_expansion(on_threshold, rules) is False
+
+
+def test_reflation_fires_and_dispatches_before_earnings_labels() -> None:
+    rules = _default_rules()
+    inputs = _rule_inputs(
+        cpi_6m_change_pct=0.05,
+        cpi_6m_change_pct_lag_21=0.03,
+        cpi_6m_change_pct_slope_21d=0.001,
+        pmi_manufacturing=52.0,
+        spy_21d_return=0.02,
+        credit_funding_active_label="spread_widening",
+        aggregate_forward_eps_revision_direction_4w=0.05,
+    )
+
+    assert evaluate_goldilocks(inputs, rules) is False
+    assert evaluate_reflation(inputs, rules) is True
+    assert evaluate_rules(inputs=inputs, config=rules) == "reflation"
+
+
+def test_reflation_rejects_credit_crisis() -> None:
+    rules = _default_rules()
+    inputs = _rule_inputs(
+        cpi_6m_change_pct_slope_21d=0.001,
+        pmi_manufacturing=52.0,
+        spy_21d_return=0.02,
+        credit_funding_active_label="credit_stress",
+    )
+
+    assert evaluate_reflation(inputs, rules) is False
+
+
+def test_stagflation_lite_fires_and_dispatches_before_earnings_labels() -> None:
+    rules = _default_rules()
+    inputs = _rule_inputs(
+        cpi_6m_change_pct_slope_21d=0.001,
+        pmi_manufacturing=49.0,
+        aggregate_forward_eps_revision_direction_4w=-0.05,
+    )
+
+    assert evaluate_stagflation_lite(inputs, rules) is True
+    assert evaluate_rules(inputs=inputs, config=rules) == "stagflation_lite"
+
+
+def test_stagflation_lite_rejects_expanding_manufacturing() -> None:
+    rules = _default_rules()
+    inputs = _rule_inputs(
+        cpi_6m_change_pct_slope_21d=0.001,
+        pmi_manufacturing=52.0,
+    )
+
+    assert evaluate_stagflation_lite(inputs, rules) is False
 
 
 def test_goldilocks_fires_on_benign_cpi_ceiling() -> None:

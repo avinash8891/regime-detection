@@ -24,8 +24,8 @@ from regime_detection.config import (
 )
 
 
-# V2 spec §3.1 — canonical 22-asset network fragility universe (11 sector
-# ETFs + SPY broad-market index + 10 cross-asset proxies). KRE belongs to
+# V2 spec §3.1 — canonical 24-asset network fragility universe (11 sector
+# ETFs + SPY broad-market index + 12 cross-asset proxies). KRE belongs to
 # v2 §2C credit/funding, not §3.1.
 V2_NETWORK_FRAGILITY_UNIVERSE = [
     "XLB",
@@ -45,10 +45,12 @@ V2_NETWORK_FRAGILITY_UNIVERSE = [
     "EFA",
     "EEM",
     "TLT",
+    "IEF",
     "GLD",
     "HYG",
     "LQD",
     "USO",
+    "DBC",
     "UUP",
 ]
 
@@ -105,11 +107,11 @@ def test_v2_default_config_loads_and_has_correct_version() -> None:
     assert cfg.config_version == "core3-v2.0.0"
 
 
-def test_v2_default_config_has_22_etf_network_fragility_universe() -> None:
+def test_v2_default_config_has_24_etf_network_fragility_universe() -> None:
     cfg = load_default_regime_config()
     assert cfg.network_fragility is not None
     assert cfg.network_fragility.universe == V2_NETWORK_FRAGILITY_UNIVERSE
-    assert len(cfg.network_fragility.universe) == 22
+    assert len(cfg.network_fragility.universe) == 24
 
 
 def test_v2_default_config_has_v2_section_3_7_deescalation_days() -> None:
@@ -270,6 +272,10 @@ def test_v1_yaml_still_loads_with_v1_config_version() -> None:
     assert cfg.volatility_state.deescalation_days_by_label["crisis_vol"] == 2
     assert cfg.breadth_state.deescalation_days_by_label["weak_breadth"] == 2
     assert cfg.trend_character.deescalation_days_by_label["trending"] == 3
+    assert not (
+        set(cfg.trend_character.deescalation_days_by_label)
+        & {"breakout_expansion", "mild_trend", "range_bound", "volatile_chop"}
+    )
     # V2-only sub-configs must remain None for the V1 yaml.
     assert cfg.network_fragility is None
     assert cfg.transition_score is None

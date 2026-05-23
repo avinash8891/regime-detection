@@ -94,6 +94,31 @@ def test_v1_rule_path_does_not_emit_range_bound_on_tight_oscillation() -> None:
     assert label == "chop", (label, ev)
 
 
+def test_v1_rule_path_does_not_emit_mild_trend() -> None:
+    idx = _trading_index(80)
+    f = TrendCharacterFeatures(
+        close=pd.Series(100.0, index=idx),
+        sma_50=pd.Series(99.0, index=idx),
+        return_10d=pd.Series(0.01, index=idx),
+        return_21d=pd.Series(0.01, index=idx),
+        prior_63d_drawdown=pd.Series(0.0, index=idx),
+        adx_14=pd.Series(25.0, index=idx),
+        return_63d=pd.Series(0.01, index=idx),
+        midpoint_excursion_20d=pd.Series(0.01, index=idx),
+        breakout_20d_or_50d=pd.Series(False, index=idx),
+        bb_width_expanding=pd.Series(False, index=idx),
+        volume_above_20d_average=pd.Series(False, index=idx),
+        followthrough_rate=pd.Series(float("nan"), index=idx),
+    )
+
+    label, ev = raw_label_for_day(f, idx[-1], allow_v2_labels=False)
+    labels, _ = build_raw_outputs(f, allow_v2_labels=False)
+
+    assert label == "transition", (label, ev)
+    assert labels[-1] == "transition"
+    assert set(labels).issubset(_V1_LABELS)
+
+
 def test_range_bound_fails_on_midpoint_excursion_over_5pct() -> None:
     # Tight cluster except for one spike at t-5 to 110 (excursion > 0.05).
     idx = _trading_index(220)

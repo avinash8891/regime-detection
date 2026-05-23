@@ -2972,10 +2972,10 @@ artifacts:
   stage: canonical
   uri: canonical/daily_ohlcv_762/symbol=DBC/ohlcv.parquet
   local_path: data/raw/daily_ohlcv_762/symbol=DBC/ohlcv.parquet
-  sha256: 6608160448dabbf69ba7e0ed9913bcabaa222b79974af60492a9e6fd8af3835e
+  sha256: a66af2a29e6154e3e2c3c57826979ab7a4c6100c432979f5090cf2a7e37509c7
   schema_version:
-  rows:
-  min_date: '2016-01-04'
+  rows: 4117
+  min_date: '2009-12-31'
   max_date: '2026-05-15'
   required_for: *id001
 - name: daily_ohlcv_762_DBRG
@@ -5352,10 +5352,10 @@ artifacts:
   stage: canonical
   uri: canonical/daily_ohlcv_762/symbol=IEF/ohlcv.parquet
   local_path: data/raw/daily_ohlcv_762/symbol=IEF/ohlcv.parquet
-  sha256: 61e710576ada3b6a6a5f7195953a6b18ce04d2f4c0baead0ca33d543259bd556
+  sha256: 4a113206f2d6e4f83c07bc934c9e437ce8085485299d7bc9041d33bf81b07392
   schema_version:
-  rows:
-  min_date: '2016-01-04'
+  rows: 4117
+  min_date: '2009-12-31'
   max_date: '2026-05-15'
   required_for: *id001
 - name: daily_ohlcv_762_IEP

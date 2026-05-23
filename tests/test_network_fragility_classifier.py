@@ -326,19 +326,19 @@ def test_real_v2_ohlcv_fixture_network_fragility_golden_labels(
             date(2022, 6, 16),
             "correlation_to_one",
             "avg_pairwise_corr_percentile_504d",
-            0.996031746031746,
+            0.998015873015873,
         ),
         (
             date(2024, 1, 3),
             "diversified_normal",
             "dispersion_ratio_percentile_252d",
-            0.9206349206349206,
+            0.9246031746031746,
         ),
         (
             date(2026, 5, 13),
             "correlation_concentration",
             "largest_eigenvalue_share_percentile_504d",
-            0.8591269841269841,
+            0.8630952380952381,
         ),
     ]
     for day, expected_label, evidence_key, expected_value in golden_rows:
@@ -440,7 +440,7 @@ def test_engine_classify_window_emits_network_fragility_labels_on_full_universe(
     for out in timeline.outputs:
         assert isinstance(out.network_fragility, NetworkFragilityOutput)
         # mode must remain pinned to the v2 §3.1 closed-universe identifier.
-        assert out.network_fragility.mode == "sector_cross_asset_22"
+        assert out.network_fragility.mode == "sector_cross_asset_24"
 
 
 def test_engine_classify_window_emits_real_fixture_network_fragility_label(
@@ -461,7 +461,7 @@ def test_engine_classify_window_emits_real_fixture_network_fragility_label(
     assert network_fragility.active_label == "correlation_concentration"
     assert network_fragility.evidence["rule_evidence"][
         "largest_eigenvalue_share_percentile_504d"
-    ] == pytest.approx(0.8591269841269841)
+    ] == pytest.approx(0.8630952380952381)
 
 
 def test_engine_classify_window_forces_unknown_when_universe_data_missing():
@@ -564,6 +564,9 @@ def test_classifier_emits_systemic_stress_when_credit_funding_confirms_it():
     )
 
     vol = store.volatility
+    spy_ohlcv = context.spy_ohlcv.copy()
+    spy_ohlcv["close"] = np.linspace(100.0, 90.0, len(spy_ohlcv))
+    context = context.model_copy(update={"spy_ohlcv": spy_ohlcv})
     stressed_volatility = VolatilityFeatures(
         close=vol.close,
         return_1d=vol.return_1d,

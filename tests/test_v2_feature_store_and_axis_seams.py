@@ -77,7 +77,7 @@ def test_feature_store_populates_network_fragility_with_real_v2_universe(
     assert isinstance(store.network_fragility, NetworkFragilityFeatures)
     assert store.network_fragility.largest_eigenvalue_share_percentile_504d.loc[
         pd.Timestamp(_REAL_V2_AS_OF)
-    ] == pytest.approx(0.8591269841269841)
+    ] == pytest.approx(0.8630952380952381)
 
 
 # ---------- axis classifier stub --------------------------------------------
@@ -130,7 +130,7 @@ def test_network_fragility_classifier_returns_real_fixture_outputs(
         assert output.raw_label in allowed_labels
         assert output.stable_label in allowed_labels
         assert output.active_label in allowed_labels
-        assert output.mode == "sector_cross_asset_22"
+        assert output.mode == "sector_cross_asset_24"
     assert result[_REAL_V2_AS_OF].active_label == "correlation_concentration"
 
 
@@ -190,7 +190,7 @@ def test_timeline_emits_network_fragility_unknown_in_pure_v1_mode(
     assert out.network_fragility.raw_label == "unknown"
     assert out.network_fragility.stable_label == "unknown"
     assert out.network_fragility.active_label == "unknown"
-    assert out.network_fragility.mode == "sector_cross_asset_22"
+    assert out.network_fragility.mode == "sector_cross_asset_24"
 
 
 def test_timeline_pulls_network_fragility_from_axis_bundle_when_sector_data_present(
@@ -210,8 +210,8 @@ def test_timeline_pulls_network_fragility_from_axis_bundle_when_sector_data_pres
         "v2_classifier_not_yet_implemented"
         not in out.network_fragility.evidence.get("reason", "")
     )
-    assert out.network_fragility.mode == "sector_cross_asset_22"
+    assert out.network_fragility.mode == "sector_cross_asset_24"
     assert out.network_fragility.active_label == "correlation_concentration"
     assert out.network_fragility.evidence["rule_evidence"][
         "largest_eigenvalue_share_percentile_504d"
-    ] == pytest.approx(0.8591269841269841)
+    ] == pytest.approx(0.8630952380952381)

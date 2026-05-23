@@ -29,6 +29,7 @@ from typing import Any, Iterable
 
 import pyarrow.compute as pc
 import pyarrow.parquet as pq
+import pyarrow.types as pat
 
 # Allow running as a script without installing the package.
 _REPO_ROOT = Path(__file__).resolve().parent.parent
@@ -125,8 +126,18 @@ def _canonicalize_parquet_bytes(source: Path) -> bytes:
     compression, coerce_timestamps='us', no int96 timestamps. The function
     is a fixed point: canonicalize(canonicalize(x)) == canonicalize(x).
     """
-    table = pq.read_table(source)
+    table = pq.ParquetFile(source).read()
     table = table.replace_schema_metadata(None)
+    if any(pat.is_dictionary(field.type) for field in table.schema):
+        table = table.from_arrays(
+            [
+                column.combine_chunks().dictionary_decode()
+                if pat.is_dictionary(field.type)
+                else column
+                for field, column in zip(table.schema, table.itercolumns(), strict=True)
+            ],
+            names=table.column_names,
+        )
     if table.num_rows > 0:
         sort_keys = [(name, "ascending") for name in table.column_names]
         indices = pc.sort_indices(table, sort_keys=sort_keys)

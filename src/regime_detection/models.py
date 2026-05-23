@@ -278,7 +278,7 @@ class NetworkFragilityOutput(AxisOutput):
 
     model_config = ConfigDict(extra="forbid")
 
-    mode: Literal["sector_cross_asset_22"] = "sector_cross_asset_22"
+    mode: Literal["sector_cross_asset_24"] = "sector_cross_asset_24"
 
 
 class MonetaryPressureOutput(BaseModel):

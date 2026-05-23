@@ -90,7 +90,7 @@ implementation diffs are in Section 3.
 
 | Metric | Spec data | Fetch | Code | Verdict |
 |---|---|---|---|---|
-| 22-asset universe (11 sectors + SPY + 10 cross-asset) | sector + cross-asset ETFs | ✅ | `fragility_universe.py` constants match exactly | OK |
+| 24-asset universe (11 sectors + SPY + 12 cross-asset) | sector + cross-asset ETFs | ✅ | `fragility_universe.py` constants match exactly | OK |
 | `avg_pairwise_corr_63d`, `*_percentile_504d`, `largest_eigenvalue_share`, `effective_rank` (natural log), `absorption_ratio_top3`, `dispersion_ratio` | returns matrix from universe | ✅ | `network_fragility.py` | OK |
 
 ### 1.11 V2 §4 / §5 / §6

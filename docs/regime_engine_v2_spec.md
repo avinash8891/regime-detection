@@ -1926,7 +1926,7 @@ the slice/commit that resolved it. Entries are append-only.
     With this amendment all §1, §2, §4, §5, §6 spec-blocked items are
     formally resolved at the spec level. The remaining open V2 work is
     code (the unblocked code slices) plus data sourcing (sentiment_score,
-    options IV, weekly EPS revisions, true PIT vendor data, IEF/BIL).
+    options IV, weekly EPS revisions, true PIT vendor data, BIL).
 
     Resolved by spec-amendment commit (this doc-only change).
 
@@ -3422,14 +3422,20 @@ fragility_universe_us:
     - EFA    # Developed ex-US
     - EEM    # Emerging markets
     - TLT    # Long Treasuries
+    - IEF    # Intermediate Treasuries
     - GLD    # Gold
     - HYG    # High yield bonds
     - LQD    # Investment grade bonds
     - USO    # Oil
+    - DBC    # Broad commodities
     - UUP    # Dollar
 ```
 
-22 assets total. Above the 20-asset preferred floor.
+24 assets total. Above the 20-asset preferred floor. DBC and IEF were added
+together after the 2016-01-04 to 2026-05-15 A/B review: IEF alone changed
+COVID active-label hysteresis too much, while the paired DBC+IEF variant kept
+COVID systemic-stress counts aligned with baseline and reduced rule-fallthrough
+unknowns.
 
 ### 3.2 Features
 
@@ -3499,11 +3505,20 @@ systemic_stress > correlation_to_one > correlation_concentration > rising_fragil
 `diversified_normal`:
 ```text
 0.0 <= avg_pairwise_corr_percentile_504d <= 0.75
-AND effective_rank stable (21d std < 5% of mean)
+AND (
+  effective_rank stable (21d std < 5% of mean)
+  OR 0.30 <= avg_pairwise_corr_percentile_504d <= 0.60
+)
 ```
 Note: lower bound lowered from 0.25 to 0.0. Sub-25th-percentile correlation
 is *more* diversified, not less — the original floor excluded the calmest
 261 sessions in a 2287-session backtest (audit D2).
+
+The mid-correlation inner band (`0.30–0.60`) is an ADR 0017 coverage
+amendment: moderate correlation by itself is not fragility, and requiring
+effective-rank stability inside that band over-labeled ordinary factor
+rotation as `unknown`. The stability requirement still applies outside the
+inner band.
 
 `stock_picker_dispersion`:
 ```text
@@ -3524,7 +3539,13 @@ AND breadth_state.active_label in [weak_breadth, narrowing_breadth, divergent_fr
 avg_pairwise_corr_percentile_504d > 0.75
 OR largest_eigenvalue_share_percentile_504d > 0.75
 OR effective_rank_percentile_504d < 0.25
+OR absorption_ratio_top3 > 0.90
 ```
+
+The `absorption_ratio_top3` limb is an ADR 0017 concentration amendment:
+top-3 eigenvalue dominance is a direct concentration signal, even when the
+single largest eigenvalue and effective-rank percentile do not independently
+cross their thresholds.
 
 `correlation_to_one`:
 ```text
@@ -4381,7 +4402,7 @@ V2 implementation contract:
 5. HMM, GMM, and change-point are evidence layers. Never the final
    regime label. They feed transition_score and evidence dicts only.
 
-6. Network fragility universe is the 22 ETFs in Section 3.1. Do not
+6. Network fragility universe is the 24 ETFs in Section 3.1. Do not
    substitute, add, or remove without an explicit config update.
 
 7. Macro release timestamp handling is mandatory. Use point-in-time

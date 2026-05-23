@@ -44,3 +44,30 @@ def test_inflation_growth_axis_builder_does_not_reconstruct_rule_inputs() -> Non
     ]
 
     assert constructors == []
+
+
+def test_timeline_day_builder_stays_below_spaghetti_threshold() -> None:
+    path = Path("src/regime_detection/timeline.py")
+    tree = ast.parse(path.read_text())
+
+    functions = {
+        node.name: node
+        for node in ast.walk(tree)
+        if isinstance(node, ast.FunctionDef)
+    }
+    day_builder = functions["_build_timeline_output_for_day"]
+
+    assert day_builder.end_lineno - day_builder.lineno + 1 <= 180
+
+
+def test_market_context_has_single_sliced_context_constructor() -> None:
+    path = Path("src/regime_detection/market_context.py")
+    tree = ast.parse(path.read_text())
+
+    constructors = [
+        node.lineno
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Call) and getattr(node.func, "id", "") == "MarketContext"
+    ]
+
+    assert len(constructors) <= 2

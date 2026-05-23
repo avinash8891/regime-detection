@@ -9,6 +9,7 @@ from regime_data_fetch.artifact_store import (
     ArtifactStore,
     LocalArtifactStore,
     StoredArtifact,
+    sha256_file,
 )
 
 _STORE_ROOT_URI = "file:///tmp/regime-data"
@@ -281,6 +282,63 @@ def test_acquisition_store_uploads_raw_and_output_artifacts_to_configured_store(
             / "aaii_sentiment.parquet"
         ).as_uri()
     )
+
+
+def test_record_file_artifact_without_blob_storage_does_not_read_entire_file(
+    tmp_path: Path, monkeypatch
+) -> None:
+    store = AcquisitionStore(tmp_path / "acquisition.db")
+    run = store.start_fetch_run(fetch_type="daily_ohlcv", params={"source": "local"})
+    source = tmp_path / "large.parquet"
+    source.write_bytes(b"large parquet payload")
+
+    original_read_bytes = Path.read_bytes
+
+    def fail_read_bytes(path: Path) -> bytes:
+        if path == source:
+            raise AssertionError("record_file_artifact must stream-hash the file")
+        return original_read_bytes(path)
+
+    monkeypatch.setattr(Path, "read_bytes", fail_read_bytes)
+
+    recorded = store.record_file_artifact(
+        run_id=run.run_id,
+        source_name="polygon",
+        artifact_kind="parquet",
+        source_identifier="SPY",
+        file_path=source,
+        store_bytes=False,
+    )
+
+    assert recorded.content_sha256 == sha256_file(source)
+
+
+def test_record_output_hashes_file_without_reading_entire_payload(
+    tmp_path: Path, monkeypatch
+) -> None:
+    store = AcquisitionStore(tmp_path / "acquisition.db")
+    run = store.start_fetch_run(fetch_type="daily_ohlcv", params={"source": "local"})
+    output = tmp_path / "canonical.parquet"
+    output.write_bytes(b"canonical parquet payload")
+
+    original_read_bytes = Path.read_bytes
+
+    def fail_read_bytes(path: Path) -> bytes:
+        if path == output:
+            raise AssertionError("record_output must stream-hash the file")
+        return original_read_bytes(path)
+
+    monkeypatch.setattr(Path, "read_bytes", fail_read_bytes)
+
+    recorded = store.record_output(
+        run_id=run.run_id,
+        output_kind="daily_ohlcv",
+        path=output,
+        row_count=1,
+    )
+
+    assert recorded is not None
+    assert recorded.content_sha256 == sha256_file(output)
 
 
 def test_acquisition_store_adds_context_to_artifact_store_failures(
