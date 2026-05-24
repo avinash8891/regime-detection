@@ -3749,9 +3749,9 @@ artifacts:
   stage: canonical
   uri: canonical/daily_ohlcv_762/symbol=EEM/ohlcv.parquet
   local_path: data/raw/daily_ohlcv_762/symbol=EEM/ohlcv.parquet
-  sha256: 7d6ce47c52d0fb0a4dba2926bb5ac13df985f140f4033f410275a34e6d28cda6
+  sha256: 68a57c358f2afe8660cc81a3079a8ab55fb7589cdb08e4e202640e19a5db1cac
   schema_version: null
-  rows: 4117
+  rows: 4118
   min_date: '2009-12-31'
   max_date: '2026-05-15'
   required_for: *id001
@@ -3759,9 +3759,9 @@ artifacts:
   stage: canonical
   uri: canonical/daily_ohlcv_762/symbol=EFA/ohlcv.parquet
   local_path: data/raw/daily_ohlcv_762/symbol=EFA/ohlcv.parquet
-  sha256: 85fa1abaa6635a0e3f98947500ef6bede99b1c91fe42c5b9467ec0b3f1765bb8
+  sha256: 040b799341a87a32ef472c27d40c09cda368b70cece396af0c43a8112e391798
   schema_version: null
-  rows: 4117
+  rows: 4118
   min_date: '2009-12-31'
   max_date: '2026-05-15'
   required_for: *id001
@@ -4887,9 +4887,9 @@ artifacts:
   stage: canonical
   uri: canonical/daily_ohlcv_762/symbol=GLD/ohlcv.parquet
   local_path: data/raw/daily_ohlcv_762/symbol=GLD/ohlcv.parquet
-  sha256: bdeddf778775830970f91a6a8b1153ec5786ad7ddf083af5cfdadaf8f601009b
+  sha256: 3a54af46620261ef60ff7818956e918148989b21da1768de5cff6ebd55daa01c
   schema_version: null
-  rows: 4117
+  rows: 4118
   min_date: '2009-12-31'
   max_date: '2026-05-15'
   required_for: *id001
@@ -5969,9 +5969,9 @@ artifacts:
   stage: canonical
   uri: canonical/daily_ohlcv_762/symbol=IWM/ohlcv.parquet
   local_path: data/raw/daily_ohlcv_762/symbol=IWM/ohlcv.parquet
-  sha256: f2e5f29f1507bafbdad13fa2300e75bb2d067b14d3468fbb171d83b67b3d3dea
+  sha256: 3509fccc8f333d1cdab4b75fa180290a88865abde97f7fb7ca0fa95a322ecc15
   schema_version: null
-  rows: 4117
+  rows: 4118
   min_date: '2009-12-31'
   max_date: '2026-05-15'
   required_for: *id001
@@ -9049,9 +9049,9 @@ artifacts:
   stage: canonical
   uri: canonical/daily_ohlcv_762/symbol=QQQ/ohlcv.parquet
   local_path: data/raw/daily_ohlcv_762/symbol=QQQ/ohlcv.parquet
-  sha256: 5df12a45ad9e47c04ea6d1da9777a28ae8a6862d2d2e7a5e09b534b2700d34cc
+  sha256: 69bd15aefe9dfe4dcf3b0ce78ee639bb499e6cc417794b86f8ed1969ceecb8a3
   schema_version: null
-  rows: 4117
+  rows: 4118
   min_date: '2009-12-31'
   max_date: '2026-05-15'
   required_for: *id001
@@ -11405,9 +11405,9 @@ artifacts:
   stage: canonical
   uri: canonical/daily_ohlcv_762/symbol=USO/ohlcv.parquet
   local_path: data/raw/daily_ohlcv_762/symbol=USO/ohlcv.parquet
-  sha256: a1342dca858b65f807b17c7f1c4f0046494a998dc6d7cda67a96d477e72cd491
+  sha256: 4c5effcc1ca46a4c145b93329abf5bf7dde069a8b432974e0a0ddd9aabb4fa09
   schema_version: null
-  rows: 4117
+  rows: 4118
   min_date: '2009-12-31'
   max_date: '2026-05-15'
   required_for: *id001
@@ -11429,9 +11429,9 @@ artifacts:
   stage: canonical
   uri: canonical/daily_ohlcv_762/symbol=UUP/ohlcv.parquet
   local_path: data/raw/daily_ohlcv_762/symbol=UUP/ohlcv.parquet
-  sha256: 2423fc083d6f8595af71186feae983a2cf54e565c6c37baf2c8199ca547ebcb4
+  sha256: ae9be2a35d0c68f764b6a7ca241b6ea599306a65871fab08f7a0acbfaaef40f2
   schema_version: null
-  rows: 4117
+  rows: 4118
   min_date: '2009-12-31'
   max_date: '2026-05-15'
   required_for: *id001
@@ -12247,9 +12247,9 @@ artifacts:
   stage: canonical
   uri: canonical/daily_ohlcv_762/symbol=XLB/ohlcv.parquet
   local_path: data/raw/daily_ohlcv_762/symbol=XLB/ohlcv.parquet
-  sha256: b42266a2399461d10106dc292a16ac0f4942121a5d754b335d86e2cb3a1895d1
+  sha256: 67beb10ebeb9cd38cfcc52d2fae15993bdc5eedcbc123ae63931e51b4308a90f
   schema_version: null
-  rows: 4117
+  rows: 4118
   min_date: '2009-12-31'
   max_date: '2026-05-15'
   required_for: *id001
@@ -12267,9 +12267,9 @@ artifacts:
   stage: canonical
   uri: canonical/daily_ohlcv_762/symbol=XLE/ohlcv.parquet
   local_path: data/raw/daily_ohlcv_762/symbol=XLE/ohlcv.parquet
-  sha256: f32afbf4412d7f46aeb8e7d5eb91284547d4bb41ee48ad4c838e3f735390c1d3
+  sha256: 299f29d965b2809f72dca3026239a1b1747b9fa6e21f35aee1798181297f2532
   schema_version: null
-  rows: 4117
+  rows: 4118
   min_date: '2009-12-31'
   max_date: '2026-05-15'
   required_for: *id001
@@ -12277,9 +12277,9 @@ artifacts:
   stage: canonical
   uri: canonical/daily_ohlcv_762/symbol=XLF/ohlcv.parquet
   local_path: data/raw/daily_ohlcv_762/symbol=XLF/ohlcv.parquet
-  sha256: 85115ba6b9154f7cb53bd5a6786ae3136d889aa1ce9664eb183f05a4280b09f7
+  sha256: 2c112106063f63b465e2548e7f37a629c93b44fbdfb6294526a1b43a93bf88ba
   schema_version: null
-  rows: 4117
+  rows: 4118
   min_date: '2009-12-31'
   max_date: '2026-05-15'
   required_for: *id001
@@ -12297,9 +12297,9 @@ artifacts:
   stage: canonical
   uri: canonical/daily_ohlcv_762/symbol=XLK/ohlcv.parquet
   local_path: data/raw/daily_ohlcv_762/symbol=XLK/ohlcv.parquet
-  sha256: ec1a04e5e4155ddfc7f2ca767001026ce56dd5ceea660800b5db098cd682b957
+  sha256: e5f8f4e6c39bd1f0a96857b6b8f8bf50067f567b6dcd088761b430bf76489141
   schema_version: null
-  rows: 4117
+  rows: 4118
   min_date: '2009-12-31'
   max_date: '2026-05-15'
   required_for: *id001
@@ -12327,9 +12327,9 @@ artifacts:
   stage: canonical
   uri: canonical/daily_ohlcv_762/symbol=XLRE/ohlcv.parquet
   local_path: data/raw/daily_ohlcv_762/symbol=XLRE/ohlcv.parquet
-  sha256: e2c5c15059d984712cfa20adf9a5535a0e42e7135705f73f9f31c317e2d956dc
+  sha256: 51abee497fb7f12b89ae97912a03d7923ed38d16d40b5ccc817b22ecddc64af2
   schema_version: null
-  rows: 2665
+  rows: 2666
   min_date: '2015-10-08'
   max_date: '2026-05-15'
   required_for: *id001
@@ -12347,9 +12347,9 @@ artifacts:
   stage: canonical
   uri: canonical/daily_ohlcv_762/symbol=XLV/ohlcv.parquet
   local_path: data/raw/daily_ohlcv_762/symbol=XLV/ohlcv.parquet
-  sha256: f5b2e16518f87a44bb08c705ce1a6fff6df050369369e415f28527b6a7e82a23
+  sha256: 9cf47d53f7f0a6290cd1aad89965c77ad526aa3619418c6164ca8b9b1e91b380
   schema_version: null
-  rows: 4117
+  rows: 4118
   min_date: '2009-12-31'
   max_date: '2026-05-15'
   required_for: *id001

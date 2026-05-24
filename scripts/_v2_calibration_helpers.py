@@ -212,6 +212,13 @@ def load_market_data(daily_ohlcv_dir: Path) -> pd.DataFrame:
         )
     common_end = max_dates.loc[required_symbols].min()
     out = out[out["date"] <= common_end].copy()
+    _require_daily_ohlcv_calendar_coverage(
+        out,
+        symbols=required_symbols,
+        expected_index=pd.DatetimeIndex(
+            out.loc[out["symbol"] == "SPY", "date"].sort_values().unique()
+        ),
+    )
     out["date"] = out["date"].dt.date
     return out.sort_values(["date", "symbol"]).reset_index(drop=True)
 
@@ -231,8 +238,49 @@ def load_close_dict(
         sub = df[df["symbol"] == sym].sort_values("date").set_index("date")
         if sub.empty:
             continue
-        out[sym] = sub["close"].astype(float).reindex(spy_index).rename(sym)
+        aligned = sub["close"].astype(float).reindex(spy_index).rename(sym)
+        _require_close_series_calendar_coverage(aligned)
+        out[sym] = aligned
     return out
+
+
+def _require_daily_ohlcv_calendar_coverage(
+    frame: pd.DataFrame,
+    *,
+    symbols: list[str],
+    expected_index: pd.DatetimeIndex,
+) -> None:
+    for symbol in symbols:
+        symbol_dates = pd.DatetimeIndex(
+            frame.loc[frame["symbol"] == symbol, "date"].sort_values().unique()
+        )
+        expected = expected_index[
+            (expected_index >= symbol_dates.min()) & (expected_index <= symbol_dates.max())
+        ]
+        missing = expected.difference(symbol_dates)
+        if not missing.empty:
+            _raise_daily_ohlcv_calendar_gap(symbol, missing)
+
+
+def _require_close_series_calendar_coverage(series: pd.Series) -> None:
+    observed = pd.DatetimeIndex(series.index[series.notna()])
+    if observed.empty:
+        return
+    in_coverage_range = (series.index >= observed.min()) & (series.index <= observed.max())
+    missing = pd.DatetimeIndex(series.index[in_coverage_range & series.isna()])
+    if not missing.empty:
+        _raise_daily_ohlcv_calendar_gap(str(series.name), missing)
+
+
+def _raise_daily_ohlcv_calendar_gap(
+    symbol: str,
+    missing: pd.DatetimeIndex,
+) -> None:
+    examples = ", ".join(ts.strftime("%Y-%m-%d") for ts in missing[:5])
+    raise ValueError(
+        "daily OHLCV calendar coverage gap: "
+        f"symbol={symbol} missing {len(missing)} session row(s); examples: {examples}"
+    )
 
 
 def _read_daily_ohlcv(
