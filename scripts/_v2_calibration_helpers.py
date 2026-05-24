@@ -255,14 +255,19 @@ def _read_daily_ohlcv(
             frame = pd.read_parquet(symbol_file)
             if "symbol" not in frame.columns:
                 frame = frame.assign(symbol=symbol)
+            else:
+                frame["symbol"] = frame["symbol"].fillna(symbol)
             frames.append(frame)
     else:
         for parquet_file in sorted(daily_ohlcv_dir.rglob("*.parquet")):
             frame = pd.read_parquet(parquet_file)
-            if "symbol" not in frame.columns:
-                parent = parquet_file.parent.name
-                if parent.startswith("symbol="):
-                    frame = frame.assign(symbol=parent.removeprefix("symbol="))
+            parent = parquet_file.parent.name
+            if parent.startswith("symbol="):
+                partition_symbol = parent.removeprefix("symbol=")
+                if "symbol" not in frame.columns:
+                    frame = frame.assign(symbol=partition_symbol)
+                else:
+                    frame["symbol"] = frame["symbol"].fillna(partition_symbol)
             frames.append(frame)
     if not frames:
         raise FileNotFoundError(f"no parquet OHLCV files found under {daily_ohlcv_dir}")

@@ -209,6 +209,17 @@ def _pct_change_lookback(series: pd.Series, lookback: int) -> pd.Series:
     return (series - base) / base.where(base != 0)
 
 
+def _cpi_with_first_release_fallback(
+    *,
+    latest_cpi: pd.Series,
+    first_release_cpi: pd.Series,
+    session_index: pd.DatetimeIndex,
+) -> pd.Series:
+    latest = latest_cpi.reindex(session_index).astype(float).ffill()
+    first_release = first_release_cpi.reindex(session_index).astype(float).ffill()
+    return first_release.combine_first(latest).rename(latest_cpi.name)
+
+
 def compute_inflation_surprise_zscore(
     *,
     cpi_all_items: pd.Series,
@@ -288,13 +299,15 @@ def compute_inflation_growth_features(
     spy_index = spy_close.index
 
     # implementation decision — first-release vs latest-revision CPI for
-    # historical replay. When the vintage seam is supplied
-    # AND the config flag enables the substitution, replace the
-    # latest-revision `cpi_all_items` with the release-date-keyed
-    # first-release Series. Both series live on the same SPY calendar
-    # after the standard reindex/ffill.
+    # historical replay. When the vintage seam is supplied and enabled, use
+    # first-release CPI where it exists, but preserve latest-revision history
+    # before vintage coverage begins.
     if cpi_first_release is not None and use_first_release_cpi_when_available:
-        cpi_source = cpi_first_release
+        cpi_source = _cpi_with_first_release_fallback(
+            latest_cpi=cpi_all_items,
+            first_release_cpi=cpi_first_release,
+            session_index=spy_index,
+        )
     else:
         cpi_source = cpi_all_items
 

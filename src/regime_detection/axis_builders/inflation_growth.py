@@ -35,6 +35,19 @@ _EPS_REVISION_MACRO_KEY = "aggregate_forward_eps_revision"
 _CPI_NOWCAST_MACRO_KEY = "cpi_nowcast"
 
 
+def _cpi_staleness_source(
+    latest_cpi: pd.Series | None,
+    first_release_cpi: pd.Series | None,
+    *,
+    use_first_release: bool,
+) -> pd.Series | None:
+    if first_release_cpi is None or not use_first_release:
+        return latest_cpi
+    if latest_cpi is None:
+        return first_release_cpi
+    return pd.concat([latest_cpi, first_release_cpi]).sort_index()
+
+
 def build_inflation_growth_axis_series(
     context: MarketContext,
     feature_store: FeatureStore,
@@ -76,11 +89,10 @@ def build_inflation_growth_axis_series(
     spy_close = context.spy_ohlcv["close"]
     macro_series = context.macro_series or {}
     cpi_series = macro_series.get(CPI_KEY)
-    cpi_staleness_series = (
-        context.cpi_first_release
-        if context.cpi_first_release is not None
-        and ig_config.rules.use_first_release_cpi_when_available
-        else cpi_series
+    cpi_staleness_series = _cpi_staleness_source(
+        cpi_series,
+        context.cpi_first_release,
+        use_first_release=ig_config.rules.use_first_release_cpi_when_available,
     )
     pmi_series = macro_series.get(PMI_KEY)
     dgs10_series = macro_series.get(DGS10_KEY)

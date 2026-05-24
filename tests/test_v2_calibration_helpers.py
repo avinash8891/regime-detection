@@ -6,6 +6,7 @@ import pandas as pd
 
 from scripts._v2_calibration_helpers import (
     default_pmi_path,
+    load_close_dict,
     load_macro_series,
     load_market_data,
 )
@@ -70,6 +71,46 @@ def test_load_market_data_clips_to_common_required_symbol_date(
 
     assert market_data["date"].max() == pd.Timestamp("2026-05-15").date()
     assert set(market_data["symbol"]) == {"SPY", "RSP", "VIX"}
+
+
+def test_load_close_dict_uses_partition_symbol_when_symbol_column_is_null(
+    tmp_path: Path,
+) -> None:
+    daily_dir = tmp_path / "daily_ohlcv_762"
+    symbol_dir = daily_dir / "symbol=XLY"
+    symbol_dir.mkdir(parents=True)
+    pd.DataFrame(
+        [
+            {
+                "date": "2026-05-14",
+                "open": 1.0,
+                "high": 2.0,
+                "low": 0.5,
+                "close": 1.5,
+                "volume": 100,
+                "adjusted_close": 1.5,
+                "symbol": None,
+            },
+            {
+                "date": "2026-05-15",
+                "open": 2.0,
+                "high": 3.0,
+                "low": 1.5,
+                "close": 2.5,
+                "volume": 200,
+                "adjusted_close": 2.5,
+                "symbol": None,
+            },
+        ]
+    ).to_parquet(symbol_dir / "ohlcv.parquet", index=False)
+
+    closes = load_close_dict(
+        daily_dir,
+        ["XLY"],
+        pd.DatetimeIndex([pd.Timestamp("2026-05-14"), pd.Timestamp("2026-05-15")]),
+    )
+
+    assert list(closes["XLY"]) == [1.5, 2.5]
 
 
 def test_load_macro_series_merges_pmi_history_with_latest_parquet(
