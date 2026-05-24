@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import importlib.util
+import logging
 import sys
 from pathlib import Path
 
@@ -372,8 +373,6 @@ def test_dry_run_does_not_mutate_anything(manifest_setup):
 
 
 def test_check_mode_returns_nonzero_on_drift(manifest_setup, caplog):
-    import logging
-
     manifest_path, data_root, _, paths = manifest_setup
 
     new_df = pd.DataFrame(
@@ -400,8 +399,6 @@ def test_check_mode_returns_nonzero_on_drift(manifest_setup, caplog):
 def test_check_mode_detects_store_drift_when_local_matches_manifest(
     manifest_setup, caplog
 ):
-    import logging
-
     manifest_path, data_root, original_manifest, paths = manifest_setup
     artifact = original_manifest["artifacts"][0]
 

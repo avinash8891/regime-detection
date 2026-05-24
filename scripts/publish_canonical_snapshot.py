@@ -39,6 +39,7 @@ if str(_REPO_ROOT / "src") not in sys.path:
 
 from regime_data_fetch.artifact_store import (  # noqa: E402
     ArtifactStore,
+    LocalArtifactStore,
     build_artifact_store,
     sha256_bytes,
     sha256_file,
@@ -213,12 +214,27 @@ def _parquet_date_range(payload: bytes) -> tuple[str | None, str | None]:
 class ArtifactReport:
     name: str
     local_path: str
-    status: str  # MATCH, MISSING, CANONICALIZE_WOULD_CHANGE_SHA, WOULD_UPLOAD,
-                 # UPDATED, UPLOADED, STORE_DRIFT, STORE_MISSING
+    # Local-tree status. One of:
+    #   MATCH, DRIFT, MISSING, READ_ERROR,
+    #   CANONICALIZE_WOULD_CHANGE_SHA, WOULD_UPLOAD,  (dry-run)
+    #   UPDATED, UPLOADED                              (publish)
+    local_status: str
     old_sha: str
     new_sha: str | None = None
+    # Store-side status (only populated by run_check when a store is supplied):
+    #   MATCH, DRIFT, MISSING, UNVERIFIABLE
+    store_status: str | None = None
+    store_sha: str | None = None
     note: str = ""
     manifest_updates: dict[str, object] | None = None
+
+    @property
+    def is_issue(self) -> bool:
+        if self.local_status not in {"MATCH", "UPDATED", "UPLOADED"}:
+            return True
+        if self.store_status is not None and self.store_status != "MATCH":
+            return True
+        return False
 
 
 def _resolve_local_path(data_root: Path, artifact: dict[str, Any]) -> Path:
@@ -245,10 +261,6 @@ def _is_parquet(path: Path) -> bool:
     return path.suffix.lower() == ".parquet"
 
 
-def _is_yaml(path: Path) -> bool:
-    return path.suffix.lower() in {".yaml", ".yml"}
-
-
 def _filter_artifacts(
     artifacts: Iterable[dict[str, Any]], only: list[str] | None
 ) -> list[dict[str, Any]]:
@@ -262,6 +274,67 @@ def _filter_artifacts(
 # Mode handlers
 
 
+def _check_local(
+    artifact: dict[str, Any], local: Path
+) -> tuple[str, str | None, str | None]:
+    """Return ``(status, new_sha, note)`` for a local-tree check.
+
+    ``new_sha`` for parquet artifacts is the *canonicalized* hash, matching
+    what ``publish``/``put_bytes`` would have stored — keep this in sync with
+    the store's digest scheme so local and store checks compare like with like.
+    """
+    old_sha = str(artifact["sha256"])
+    if not local.exists():
+        return "MISSING", None, None
+    if _is_parquet(local):
+        try:
+            canon = _canonicalize_parquet_bytes(local)
+        except Exception as exc:  # pragma: no cover - defensive
+            return "READ_ERROR", None, str(exc)
+        new_sha = sha256_bytes(canon)
+    else:
+        new_sha = sha256_file(local)
+    return ("MATCH" if new_sha == old_sha else "DRIFT"), new_sha, None
+
+
+def _check_store(
+    artifact: dict[str, Any],
+    store: ArtifactStore,
+    *,
+    local: Path,
+    local_sha: str | None,
+) -> tuple[str, str | None]:
+    """Return ``(store_status, store_sha)`` for a store-side check.
+
+    Reuses ``local_sha`` when the store is a ``LocalArtifactStore`` whose
+    backing file is the same path the local check already hashed — avoids
+    hashing the same file twice in the common dev case (store root inside
+    the local data tree).
+    """
+    old_sha = str(artifact["sha256"])
+    uri = str(artifact["uri"])
+    if (
+        local_sha is not None
+        and isinstance(store, LocalArtifactStore)
+        and local.exists()
+        and _local_store_path_for(store, uri) == local.resolve()
+    ):
+        return ("MATCH" if local_sha == old_sha else "DRIFT"), local_sha
+    stored = store.stat_file(uri)
+    if stored is None:
+        return "MISSING", None
+    if stored.sha256 is None:
+        return "UNVERIFIABLE", None
+    return ("MATCH" if stored.sha256 == old_sha else "DRIFT"), stored.sha256
+
+
+def _local_store_path_for(store: LocalArtifactStore, uri: str) -> Path | None:
+    try:
+        return (store.root / store._relative_key(uri)).resolve()
+    except Exception:  # pragma: no cover - defensive
+        return None
+
+
 def run_check(
     payload: Any,
     data_root: Path,
@@ -270,46 +343,29 @@ def run_check(
     store: ArtifactStore | None = None,
 ) -> tuple[int, list[ArtifactReport]]:
     reports: list[ArtifactReport] = []
-    drift = 0
     for artifact in _filter_artifacts(payload["artifacts"], only):
         local = _resolve_local_path(data_root, artifact)
-        old_sha = str(artifact["sha256"])
-        new_sha: str | None = None
-        if not local.exists():
-            status = "MISSING"
-        elif _is_parquet(local):
-            try:
-                canon = _canonicalize_parquet_bytes(local)
-            except Exception as exc:  # pragma: no cover - defensive
-                reports.append(
-                    ArtifactReport(
-                        artifact["name"],
-                        str(local),
-                        "READ_ERROR",
-                        old_sha,
-                        note=str(exc),
-                    )
-                )
-                drift += 1
-                continue
-            new_sha = sha256_bytes(canon)
-            status = "MATCH" if new_sha == old_sha else "DRIFT"
-        else:
-            new_sha = sha256_file(local)
-            status = "MATCH" if new_sha == old_sha else "DRIFT"
+        local_status, new_sha, note = _check_local(artifact, local)
+        store_status: str | None = None
+        store_sha: str | None = None
         if store is not None:
-            stored = store.stat_file(str(artifact["uri"]))
-            if stored is None:
-                status = "STORE_MISSING"
-            elif stored.sha256 != old_sha:
-                status = "STORE_DRIFT"
-                new_sha = stored.sha256
-        if status != "MATCH":
-            drift += 1
+            store_status, store_sha = _check_store(
+                artifact, store, local=local, local_sha=new_sha
+            )
         reports.append(
-            ArtifactReport(artifact["name"], str(local), status, old_sha, new_sha)
+            ArtifactReport(
+                name=artifact["name"],
+                local_path=str(local),
+                local_status=local_status,
+                old_sha=str(artifact["sha256"]),
+                new_sha=new_sha,
+                store_status=store_status,
+                store_sha=store_sha,
+                note=note or "",
+            )
         )
-    return (0 if drift == 0 else 1), reports
+    exit_code = 0 if all(not r.is_issue for r in reports) else 1
+    return exit_code, reports
 
 
 def run_dry_run(
@@ -566,12 +622,28 @@ def _build_arg_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def _format_report(reports: list[ArtifactReport], *, limit: int | None = None) -> str:
+def _format_report(
+    reports: list[ArtifactReport],
+    *,
+    limit: int | None = None,
+    side: str = "local",
+) -> str:
+    """Render a report list. ``side`` picks which check to surface.
+
+    ``side='local'`` shows ``local_status`` + ``new_sha``; ``side='store'``
+    shows ``store_status`` + ``store_sha``. Status strings are prefixed with
+    the side so the rendered output is unambiguous when both checks ran.
+    """
     lines: list[str] = []
     for r in reports[:limit] if limit else reports:
-        new = r.new_sha[:12] if r.new_sha else "-"
+        if side == "store":
+            status = f"STORE_{r.store_status or '-'}"
+            new = r.store_sha[:12] if r.store_sha else "-"
+        else:
+            status = r.local_status
+            new = r.new_sha[:12] if r.new_sha else "-"
         lines.append(
-            f"  {r.status:<32} {r.name:<40} old={r.old_sha[:12]} new={new}"
+            f"  {status:<32} {r.name:<40} old={r.old_sha[:12]} new={new}"
             + (f"  ({r.note})" if r.note else "")
         )
     return "\n".join(lines)
@@ -592,38 +664,60 @@ def main(argv: list[str] | None = None) -> int:
     if args.check:
         store = build_artifact_store(str(payload["storage_root"]))
         exit_code, reports = run_check(payload, data_root, args.only, store=store)
-        drift = [r for r in reports if r.status == "DRIFT"]
-        store_drift = [r for r in reports if r.status == "STORE_DRIFT"]
-        store_missing = [r for r in reports if r.status == "STORE_MISSING"]
-        missing = [r for r in reports if r.status == "MISSING"]
-        matched = [r for r in reports if r.status == "MATCH"]
+
+        def _local(status: str) -> list[ArtifactReport]:
+            return [r for r in reports if r.local_status == status]
+
+        def _store(status: str) -> list[ArtifactReport]:
+            return [r for r in reports if r.store_status == status]
+
+        local_match = _local("MATCH")
+        local_drift = _local("DRIFT")
+        local_missing = _local("MISSING")
+        store_match = _store("MATCH")
+        store_drift = _store("DRIFT")
+        store_missing = _store("MISSING")
+        store_unverifiable = _store("UNVERIFIABLE")
         LOGGER.info(
-            "check: %d checked, %d MATCH, %d DRIFT, %d STORE_DRIFT, %d STORE_MISSING, %d MISSING",
+            "check: %d checked | local: %d MATCH, %d DRIFT, %d MISSING | "
+            "store: %d MATCH, %d DRIFT, %d MISSING, %d UNVERIFIABLE",
             len(reports),
-            len(matched),
-            len(drift),
+            len(local_match),
+            len(local_drift),
+            len(local_missing),
+            len(store_match),
             len(store_drift),
             len(store_missing),
-            len(missing),
+            len(store_unverifiable),
         )
-        if drift:
-            LOGGER.info("DRIFT:")
-            LOGGER.info(_format_report(drift))
-        if store_drift:
-            LOGGER.info("STORE_DRIFT:")
-            LOGGER.info(_format_report(store_drift))
-        if store_missing:
-            LOGGER.info("STORE_MISSING:")
-            LOGGER.info(_format_report(store_missing))
+        for label, bucket in (
+            ("DRIFT", local_drift),
+            ("MISSING", local_missing),
+        ):
+            if bucket:
+                LOGGER.info("LOCAL %s:", label)
+                LOGGER.info(_format_report(bucket, side="local"))
+        for label, bucket in (
+            ("DRIFT", store_drift),
+            ("MISSING", store_missing),
+            ("UNVERIFIABLE", store_unverifiable),
+        ):
+            if bucket:
+                LOGGER.info("STORE_%s:", label)
+                LOGGER.info(_format_report(bucket, side="store"))
         return exit_code
 
     if args.dry_run:
         reports = run_dry_run(payload, data_root, args.only)
         from collections import Counter
 
-        status_counts = Counter(r.status for r in reports)
+        status_counts = Counter(r.local_status for r in reports)
         LOGGER.info("dry-run summary: %s", dict(status_counts))
-        non_match = [r for r in reports if r.status != "MATCH" and r.status != "MISSING"]
+        non_match = [
+            r
+            for r in reports
+            if r.local_status != "MATCH" and r.local_status != "MISSING"
+        ]
         if non_match:
             LOGGER.info("changes preview:")
             LOGGER.info(_format_report(non_match))
@@ -637,7 +731,7 @@ def main(argv: list[str] | None = None) -> int:
     reports = run_publish(
         payload, data_root, args.only, skip_upload=args.skip_upload, store=store
     )
-    changed = [r for r in reports if r.status in {"UPDATED", "UPLOADED"}]
+    changed = [r for r in reports if r.local_status in {"UPDATED", "UPLOADED"}]
     LOGGER.info("publish: %d processed, %d changed", len(reports), len(changed))
     if changed:
         LOGGER.info(_format_report(changed))

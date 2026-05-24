@@ -29,10 +29,15 @@ class StoredArtifact:
     ``file://`` URIs and S3 stores emit ``s3://`` URIs. Store methods still
     accept relative keys for callers that address artifacts within a configured
     store root.
+
+    ``sha256`` is ``None`` when the backend cannot verify content integrity
+    (e.g. an S3 object uploaded without our ``sha256`` user-metadata header,
+    such that the ETag would not be a usable md5). Callers must treat ``None``
+    as "unverifiable" rather than as a mismatch.
     """
 
     uri: str
-    sha256: str
+    sha256: str | None
     size_bytes: int
 
 
@@ -65,6 +70,14 @@ class ArtifactStore:
         raise NotImplementedError
 
     def stat_file(self, uri: str) -> StoredArtifact | None:
+        """Return persisted metadata for ``uri`` or ``None`` if absent.
+
+        Implementations must populate ``sha256`` with the same digest scheme
+        used for ``put_*`` (raw bytes for non-parquet, canonicalized bytes for
+        parquet artifacts that were stored via ``publish_canonical_snapshot``).
+        Return ``StoredArtifact(sha256=None, ...)`` when the backend has the
+        object but cannot vouch for its content hash.
+        """
         raise NotImplementedError
 
 
@@ -323,7 +336,7 @@ class S3ArtifactStore(ArtifactStore):
         existing_sha, existing_size = existing
         return StoredArtifact(
             uri=self._uri_for_key(relative_key),
-            sha256=existing_sha or "",
+            sha256=existing_sha,
             size_bytes=existing_size,
         )
 
