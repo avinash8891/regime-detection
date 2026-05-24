@@ -742,6 +742,31 @@ def test_canonicalize_is_a_fixed_point_for_datetime_float_parquet(tmp_path: Path
     )
 
 
+def test_canonicalize_is_a_fixed_point_for_daily_ohlcv_parquet(tmp_path: Path):
+    path = tmp_path / "ohlcv.parquet"
+    df = pd.DataFrame(
+        {
+            "date": ["2016-01-04", "2015-12-31"],
+            "symbol": ["AAPL", "AAPL"],
+            "open": [102.61, 107.01],
+            "high": [105.37, 107.03],
+            "low": [102.00, 104.82],
+            "close": [105.35, 105.26],
+            "volume": [67649400, 40912300],
+            "adjusted_close": [23.9469, 23.9264],
+        }
+    )
+    _write_parquet(path, df)
+
+    pass1 = pcs._canonicalize_parquet_bytes(path)
+    path.write_bytes(pass1)
+    pass2 = pcs._canonicalize_parquet_bytes(path)
+    path.write_bytes(pass2)
+    pass3 = pcs._canonicalize_parquet_bytes(path)
+
+    assert pass1 == pass2 == pass3
+
+
 def test_canonicalize_supports_parquet_with_list_column(tmp_path: Path):
     path = tmp_path / "event_candidates.parquet"
     table = pa.Table.from_pydict(

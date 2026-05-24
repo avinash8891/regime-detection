@@ -27,7 +27,7 @@ import sys
 from collections import Counter
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Iterable
+from typing import Any, Callable, Iterable
 
 import pandas as pd
 import pyarrow.compute as pc
@@ -41,10 +41,14 @@ if str(_REPO_ROOT / "src") not in sys.path:
 
 from regime_data_fetch.artifact_store import (  # noqa: E402
     ArtifactStore,
-    LocalArtifactStore,
     build_artifact_store,
     sha256_bytes,
     sha256_file,
+)
+from regime_data_fetch.daily_ohlcv_contract import (  # noqa: E402
+    daily_ohlcv_artifact_name,
+    parse_daily_ohlcv_artifact_name,
+    require_symbol_partition_table,
 )
 
 
@@ -71,7 +75,6 @@ DATE_COLUMN_CANDIDATES: tuple[str, ...] = (
 _PARQUET_COMPRESSION = "snappy"
 _PARQUET_COERCE_TIMESTAMPS = "us"
 
-_DAILY_OHLCV_ARTIFACT_RE = re.compile(r"^daily_ohlcv_762_(?P<symbol>.+)$")
 _DAILY_OHLCV_REQUIRED_COLUMNS: tuple[str, ...] = (
     "date",
     "open",
@@ -143,6 +146,16 @@ def _canonicalize_parquet_bytes(source: Path) -> bytes:
     compression, coerce_timestamps='us', no int96 timestamps. The function
     is a fixed point: canonicalize(canonicalize(x)) == canonicalize(x).
     """
+    payload = _canonicalize_parquet_source(source)
+    for _ in range(3):
+        next_payload = _canonicalize_parquet_source(io.BytesIO(payload))
+        if next_payload == payload:
+            return payload
+        payload = next_payload
+    raise RuntimeError(f"parquet canonicalization did not converge: {source}")
+
+
+def _canonicalize_parquet_source(source: Any) -> bytes:
     table = pq.ParquetFile(source).read()
     table = table.replace_schema_metadata(None)
     if any(pat.is_dictionary(field.type) for field in table.schema):
@@ -234,10 +247,7 @@ def _validate_daily_ohlcv_symbol_contract(
 
 
 def _daily_ohlcv_symbol(artifact: dict[str, Any]) -> str | None:
-    match = _DAILY_OHLCV_ARTIFACT_RE.match(str(artifact.get("name", "")))
-    if match is None:
-        return None
-    return match.group("symbol")
+    return parse_daily_ohlcv_artifact_name(str(artifact.get("name", "")))
 
 
 def _validate_daily_ohlcv_contract(
@@ -257,17 +267,10 @@ def _validate_daily_ohlcv_contract(
         raise ValueError(
             f"{artifact['name']} missing required daily OHLCV column(s): {missing_columns}"
         )
+    require_symbol_partition_table(
+        table, expected_symbol=expected_symbol, source=artifact["name"]
+    )
     frame = table.select(list(_DAILY_OHLCV_REQUIRED_COLUMNS)).to_pandas()
-    symbols = table.column("symbol").to_pandas()
-    if symbols.isna().any():
-        raise ValueError(
-            f"{artifact['name']} has null symbol row(s); expected {expected_symbol}"
-        )
-    observed = sorted({str(value) for value in symbols.unique()})
-    if observed != [expected_symbol]:
-        raise ValueError(
-            f"{artifact['name']} symbol mismatch: expected {expected_symbol}, observed {observed}"
-        )
     dates = pd.to_datetime(frame["date"], errors="coerce").dt.normalize()
     if dates.isna().any():
         raise ValueError(f"{artifact['name']} has unparsable/null date row(s)")
@@ -354,7 +357,7 @@ def _daily_ohlcv_spy_sessions(
             artifact
             for artifact in artifacts
             if isinstance(artifact, dict)
-            and artifact.get("name") == "daily_ohlcv_762_SPY"
+            and artifact.get("name") == daily_ohlcv_artifact_name("SPY")
         ),
         None,
     )
@@ -396,9 +399,15 @@ class ArtifactReport:
 
     @property
     def is_issue(self) -> bool:
+        # UNVERIFIABLE means the store has the object but cannot vouch for
+        # its digest (e.g. S3 object missing the sha256 user-metadata header).
+        # The local check has already verified content integrity against the
+        # manifest, so a missing store digest is logged as a warning rather
+        # than failing the run. Real store mismatches (DRIFT/MISSING) still
+        # count as issues.
         if self.local_status not in {"MATCH", "UPDATED", "UPLOADED"}:
             return True
-        if self.store_status is not None and self.store_status != "MATCH":
+        if self.store_status in {"DRIFT", "MISSING"}:
             return True
         if self.semantic_status not in {None, "SEMANTIC_OK"}:
             return True
@@ -474,33 +483,22 @@ def _check_store(
 ) -> tuple[str, str | None]:
     """Return ``(store_status, store_sha)`` for a store-side check.
 
-    Reuses ``local_sha`` when the store is a ``LocalArtifactStore`` whose
-    backing file is the same path the local check already hashed — avoids
-    hashing the same file twice in the common dev case (store root inside
-    the local data tree).
+    Passes the local path/sha as a hint to ``stat_file`` so a local-store
+    backend whose object resolves to the same file the caller already hashed
+    can skip the second hash. Backends that can't prove equality (e.g. S3)
+    ignore the hint.
     """
     old_sha = str(artifact["sha256"])
-    uri = str(artifact["uri"])
-    if (
-        local_sha is not None
-        and isinstance(store, LocalArtifactStore)
-        and local.exists()
-        and _local_store_path_for(store, uri) == local.resolve()
-    ):
-        return ("MATCH" if local_sha == old_sha else "DRIFT"), local_sha
-    stored = store.stat_file(uri)
+    stored = store.stat_file(
+        str(artifact["uri"]),
+        known_path=local if local.exists() else None,
+        known_sha=local_sha,
+    )
     if stored is None:
         return "MISSING", None
     if stored.sha256 is None:
         return "UNVERIFIABLE", None
     return ("MATCH" if stored.sha256 == old_sha else "DRIFT"), stored.sha256
-
-
-def _local_store_path_for(store: LocalArtifactStore, uri: str) -> Path | None:
-    try:
-        return (store.root / store._relative_key(uri)).resolve()
-    except Exception:  # pragma: no cover - defensive
-        return None
 
 
 def run_check(
@@ -800,34 +798,49 @@ def _build_arg_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def _format_report(
+def _format_report_lines(
     reports: list[ArtifactReport],
     *,
-    limit: int | None = None,
-    side: str = "local",
+    limit: int | None,
+    pick: Callable[[ArtifactReport], tuple[str, str | None]],
 ) -> str:
-    """Render a report list. ``side`` picks which check to surface.
-
-    ``side='local'`` shows ``local_status`` + ``new_sha``; ``side='store'``
-    shows ``store_status`` + ``store_sha``. Status strings are prefixed with
-    the side so the rendered output is unambiguous when both checks ran.
+    """Render a report list. ``pick`` extracts the ``(status, sha)`` pair to
+    surface for each report; the three thin wrappers below cover the three
+    sides the script actually uses (local / store / semantic).
     """
     lines: list[str] = []
     for r in reports[:limit] if limit else reports:
-        if side == "store":
-            status = f"STORE_{r.store_status or '-'}"
-            new = r.store_sha[:12] if r.store_sha else "-"
-        elif side == "semantic":
-            status = r.semantic_status or "-"
-            new = r.new_sha[:12] if r.new_sha else "-"
-        else:
-            status = r.local_status
-            new = r.new_sha[:12] if r.new_sha else "-"
+        status, new_sha = pick(r)
+        new = new_sha[:12] if new_sha else "-"
         lines.append(
             f"  {status:<32} {r.name:<40} old={r.old_sha[:12]} new={new}"
             + (f"  ({r.note})" if r.note else "")
         )
     return "\n".join(lines)
+
+
+def _format_local_report(reports: list[ArtifactReport], *, limit: int | None = None) -> str:
+    return _format_report_lines(
+        reports, limit=limit, pick=lambda r: (r.local_status, r.new_sha)
+    )
+
+
+def _format_store_report(reports: list[ArtifactReport], *, limit: int | None = None) -> str:
+    return _format_report_lines(
+        reports,
+        limit=limit,
+        pick=lambda r: (f"STORE_{r.store_status or '-'}", r.store_sha),
+    )
+
+
+def _format_semantic_report(
+    reports: list[ArtifactReport], *, limit: int | None = None
+) -> str:
+    return _format_report_lines(
+        reports,
+        limit=limit,
+        pick=lambda r: (r.semantic_status or "-", r.new_sha),
+    )
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -882,7 +895,7 @@ def main(argv: list[str] | None = None) -> int:
         ):
             if bucket:
                 LOGGER.info("LOCAL %s:", label)
-                LOGGER.info(_format_report(bucket, side="local"))
+                LOGGER.info(_format_local_report(bucket))
         for label, bucket in (
             ("DRIFT", store_drift),
             ("MISSING", store_missing),
@@ -890,10 +903,10 @@ def main(argv: list[str] | None = None) -> int:
         ):
             if bucket:
                 LOGGER.info("STORE %s:", label)
-                LOGGER.info(_format_report(bucket, side="store"))
+                LOGGER.info(_format_store_report(bucket))
         if semantic_invalid:
             LOGGER.info("SEMANTIC INVALID:")
-            LOGGER.info(_format_report(semantic_invalid, side="semantic"))
+            LOGGER.info(_format_semantic_report(semantic_invalid))
         return exit_code
 
     if args.dry_run:
@@ -907,7 +920,7 @@ def main(argv: list[str] | None = None) -> int:
         ]
         if non_match:
             LOGGER.info("changes preview:")
-            LOGGER.info(_format_report(non_match))
+            LOGGER.info(_format_local_report(non_match))
         return 0
 
     # publish mode
@@ -921,7 +934,7 @@ def main(argv: list[str] | None = None) -> int:
     changed = [r for r in reports if r.local_status in {"UPDATED", "UPLOADED"}]
     LOGGER.info("publish: %d processed, %d changed", len(reports), len(changed))
     if changed:
-        LOGGER.info(_format_report(changed))
+        LOGGER.info(_format_local_report(changed))
         del ruamel_instance
         updates_by_name = {
             report.name: report.manifest_updates

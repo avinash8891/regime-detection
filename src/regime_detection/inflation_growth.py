@@ -215,6 +215,19 @@ def _cpi_with_first_release_fallback(
     first_release_cpi: pd.Series,
     session_index: pd.DatetimeIndex,
 ) -> pd.Series:
+    """Produce the daily CPI **value** series used by feature math.
+
+    Both vintages are reindexed onto ``session_index`` and forward-filled,
+    then first-release values take precedence wherever they exist. Earlier
+    history (before first-release coverage begins) falls back to latest-
+    revision values so cold-start lookbacks don't NaN out.
+
+    Note: this is the value-series path. The matching staleness/release-
+    timestamp logic lives in ``axis_builders.inflation_growth.
+    _cpi_staleness_source`` — that one preserves the union of observation
+    *timestamps* without reindexing, because what it feeds only cares about
+    the index, not the values.
+    """
     latest = latest_cpi.reindex(session_index).astype(float).ffill()
     first_release = first_release_cpi.reindex(session_index).astype(float).ffill()
     return first_release.combine_first(latest).rename(latest_cpi.name)

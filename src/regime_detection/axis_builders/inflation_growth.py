@@ -41,6 +41,15 @@ def _cpi_staleness_source(
     *,
     use_first_release: bool,
 ) -> pd.Series | None:
+    """Produce the CPI **release-timestamp** source for staleness checks.
+
+    Returns the union of observation timestamps across both vintages (so the
+    "calendar days since most recent CPI release" measurement sees every
+    release, not just one vintage). Values are irrelevant — only the index
+    matters here; that's why this does *not* reindex to a session calendar
+    or ffill, unlike the value-series helper in
+    ``regime_detection.inflation_growth._cpi_with_first_release_fallback``.
+    """
     if first_release_cpi is None or not use_first_release:
         return latest_cpi
     if latest_cpi is None:

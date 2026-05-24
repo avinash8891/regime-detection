@@ -69,7 +69,13 @@ class ArtifactStore:
     ) -> Path:
         raise NotImplementedError
 
-    def stat_file(self, uri: str) -> StoredArtifact | None:
+    def stat_file(
+        self,
+        uri: str,
+        *,
+        known_path: Path | None = None,
+        known_sha: str | None = None,
+    ) -> StoredArtifact | None:
         """Return persisted metadata for ``uri`` or ``None`` if absent.
 
         Implementations must populate ``sha256`` with the same digest scheme
@@ -77,6 +83,13 @@ class ArtifactStore:
         parquet artifacts that were stored via ``publish_canonical_snapshot``).
         Return ``StoredArtifact(sha256=None, ...)`` when the backend has the
         object but cannot vouch for its content hash.
+
+        ``known_path`` / ``known_sha`` are an optional caller-supplied hint:
+        when the implementation can prove the backing object is the same file
+        the caller has already hashed, it may reuse ``known_sha`` instead of
+        re-hashing. Implementations that cannot prove equality (e.g. S3) must
+        ignore the hint. Lets local-store users skip a redundant hash without
+        callers having to reach into store internals.
         """
         raise NotImplementedError
 
@@ -176,14 +189,29 @@ class LocalArtifactStore(ArtifactStore):
             raise
         return destination_path
 
-    def stat_file(self, uri: str) -> StoredArtifact | None:
+    def stat_file(
+        self,
+        uri: str,
+        *,
+        known_path: Path | None = None,
+        known_sha: str | None = None,
+    ) -> StoredArtifact | None:
         relative_key = self._relative_key(uri)
         source = self.root / relative_key
         if not source.exists():
             return None
+        if (
+            known_path is not None
+            and known_sha is not None
+            and known_path.exists()
+            and known_path.resolve() == source.resolve()
+        ):
+            digest = known_sha
+        else:
+            digest = sha256_file(source)
         return StoredArtifact(
             uri=self._uri_for_key(relative_key),
-            sha256=sha256_file(source),
+            sha256=digest,
             size_bytes=source.stat().st_size,
         )
 
@@ -325,7 +353,16 @@ class S3ArtifactStore(ArtifactStore):
             raise
         return destination_path
 
-    def stat_file(self, uri: str) -> StoredArtifact | None:
+    def stat_file(
+        self,
+        uri: str,
+        *,
+        known_path: Path | None = None,
+        known_sha: str | None = None,
+    ) -> StoredArtifact | None:
+        # S3 cannot verify that a local file is the same bytes as the remote
+        # object, so the known_path/known_sha hints are intentionally ignored.
+        del known_path, known_sha
         relative_key = self._relative_key(uri)
         object_key = _join_s3_key(self.prefix, relative_key)
         existing = _s3_existing_artifact(

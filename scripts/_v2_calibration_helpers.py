@@ -14,6 +14,7 @@ from typing import Any
 
 import pandas as pd
 
+from regime_data_fetch.daily_ohlcv_contract import require_symbol_partition_frame
 from regime_data_fetch.materialization import materialize_if_requested
 from regime_data_fetch.manifest_inputs import (
     MANIFEST_INPUT_FLAGS,
@@ -251,35 +252,43 @@ def _require_daily_ohlcv_calendar_coverage(
     expected_index: pd.DatetimeIndex,
 ) -> None:
     for symbol in symbols:
-        symbol_dates = pd.DatetimeIndex(
+        observed = pd.DatetimeIndex(
             frame.loc[frame["symbol"] == symbol, "date"].sort_values().unique()
         )
-        expected = expected_index[
-            (expected_index >= symbol_dates.min()) & (expected_index <= symbol_dates.max())
-        ]
-        missing = expected.difference(symbol_dates)
-        if not missing.empty:
-            _raise_daily_ohlcv_calendar_gap(symbol, missing)
+        _require_calendar_gap_free(label=symbol, observed=observed, expected=expected_index)
 
 
 def _require_close_series_calendar_coverage(series: pd.Series) -> None:
     observed = pd.DatetimeIndex(series.index[series.notna()])
     if observed.empty:
         return
-    in_coverage_range = (series.index >= observed.min()) & (series.index <= observed.max())
-    missing = pd.DatetimeIndex(series.index[in_coverage_range & series.isna()])
-    if not missing.empty:
-        _raise_daily_ohlcv_calendar_gap(str(series.name), missing)
+    expected = pd.DatetimeIndex(series.index)
+    _require_calendar_gap_free(
+        label=str(series.name) if series.name is not None else "<unnamed>",
+        observed=observed,
+        expected=expected,
+    )
 
 
-def _raise_daily_ohlcv_calendar_gap(
-    symbol: str,
-    missing: pd.DatetimeIndex,
+def _require_calendar_gap_free(
+    *,
+    label: str,
+    observed: pd.DatetimeIndex,
+    expected: pd.DatetimeIndex,
 ) -> None:
+    """Raise ``ValueError`` if ``expected``, restricted to ``observed``'s
+    min..max range, contains any date missing from ``observed``.
+    """
+    if len(observed) == 0:
+        return
+    in_range = expected[(expected >= observed.min()) & (expected <= observed.max())]
+    missing = in_range.difference(observed)
+    if missing.empty:
+        return
     examples = ", ".join(ts.strftime("%Y-%m-%d") for ts in missing[:5])
     raise ValueError(
         "daily OHLCV calendar coverage gap: "
-        f"symbol={symbol} missing {len(missing)} session row(s); examples: {examples}"
+        f"symbol={label} missing {len(missing)} session row(s); examples: {examples}"
     )
 
 
@@ -301,10 +310,8 @@ def _read_daily_ohlcv(
             if symbol_file is None:
                 continue
             frame = pd.read_parquet(symbol_file)
-            _require_symbol_column_matches_partition(
-                frame,
-                expected_symbol=symbol,
-                parquet_path=symbol_file,
+            require_symbol_partition_frame(
+                frame, expected_symbol=symbol, source=symbol_file
             )
             frames.append(frame)
     else:
@@ -313,39 +320,13 @@ def _read_daily_ohlcv(
             parent = parquet_file.parent.name
             if parent.startswith("symbol="):
                 partition_symbol = parent.removeprefix("symbol=")
-                _require_symbol_column_matches_partition(
-                    frame,
-                    expected_symbol=partition_symbol,
-                    parquet_path=parquet_file,
+                require_symbol_partition_frame(
+                    frame, expected_symbol=partition_symbol, source=parquet_file
                 )
             frames.append(frame)
     if not frames:
         raise FileNotFoundError(f"no parquet OHLCV files found under {daily_ohlcv_dir}")
     return pd.concat(frames, ignore_index=True)
-
-
-def _require_symbol_column_matches_partition(
-    frame: pd.DataFrame,
-    *,
-    expected_symbol: str,
-    parquet_path: Path,
-) -> None:
-    if "symbol" not in frame.columns:
-        raise ValueError(
-            "daily OHLCV symbol contract violation: "
-            f"{parquet_path} missing symbol column; expected {expected_symbol}"
-        )
-    if frame["symbol"].isna().any():
-        raise ValueError(
-            "daily OHLCV symbol contract violation: "
-            f"{parquet_path} has null symbol row(s); expected {expected_symbol}"
-        )
-    observed = sorted({str(value) for value in frame["symbol"].unique()})
-    if observed != [expected_symbol]:
-        raise ValueError(
-            "daily OHLCV symbol contract violation: "
-            f"{parquet_path} expected {expected_symbol}, observed {observed}"
-        )
 
 
 def load_macro_series(

@@ -53,8 +53,12 @@ def build_per_label_axis_outputs(
         strict=True,
     ):
         if quality_forces_unknown(dq):
-            stable = raw
-            active = raw
+            # Force the canonical sentinel rather than trusting that the upstream
+            # classifier already emitted raw=="unknown" — keeps this builder the
+            # single point of truth for the DQ→unknown contract instead of a
+            # silent dependency on every classifier doing the same check.
+            stable = "unknown"
+            active = "unknown"
         outputs[day] = output_factory(
             raw_label=raw,
             stable_label=stable,
