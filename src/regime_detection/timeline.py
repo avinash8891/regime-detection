@@ -156,6 +156,20 @@ def _resolve_timeline_required_sessions(
         v2_min_history = max(
             v2_min_history, config.clustering.training_window_days + 63
         )
+    if config.monetary_pressure_v2 is not None:
+        mp_config = config.monetary_pressure_v2
+        monetary_change_window = max(
+            mp_config.yield_change_lookback_days,
+            mp_config.rate_shock_lookback_days,
+            mp_config.broad_usd_lookback_days,
+        )
+        # Monetary-pressure z-scores use a rolling normalizer over N-session
+        # changes. Keep enough pre-window sessions so the first emitted day can
+        # classify from real z-scores instead of cold-start NaNs.
+        v2_min_history = max(
+            v2_min_history,
+            mp_config.zscore_normalizer_window_days + monetary_change_window,
+        )
     return min(
         available_sessions,
         v2_min_history + lookback_days - 1 + trailing_component_lookback,

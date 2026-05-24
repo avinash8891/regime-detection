@@ -283,8 +283,9 @@ transition_score:
 # v2 §2A — Layer 2A Monetary/Liquidity V2. Feature seam (implementation phase) AND
 # axis classifier are both shipped. Five z-score features per §2A line 896
 # and documented implementation decision (a): yield_change_zscore_{2y,10y}_63d on FRED
-# DGS2/DGS10, broad_usd_index_zscore_63d on DTWEXBGS, and the 21d-variant
-# yield_change_zscore_21d_{2y,10y}. Source contract: §2A lines 887–889.
+# DGS2/DGS10, broad_usd_index_zscore_63d on required DTWEXBGS, and the
+# 21d-variant yield_change_zscore_21d_{2y,10y}. Source contract: §2A
+# lines 887–889.
 # The §2A label set, precedence, risk-rank, and per-label hysteresis were
 # pinned by documented implementation decision (b–e) and are consumed by
 # MonetaryPressureV2SeriesClassifier (axis_series.py) — entries #44/#45/#46

@@ -30,6 +30,12 @@ def _reconciliation_fixture_config():
     )
 
 
+def _synthetic_kwargs_without_config(synthetic_v2_kwargs_for_market_data, market_data):
+    kwargs = synthetic_v2_kwargs_for_market_data(market_data)
+    kwargs.pop("config", None)
+    return kwargs
+
+
 def test_classify_uses_vix_data_when_vix_proxy_missing_from_market_data(
     raw_market_frames,
     market_df_for_asof,
@@ -53,7 +59,7 @@ def test_classify_uses_vix_data_when_vix_proxy_missing_from_market_data(
         market_data=market_df,
         vix_data=vix_df,
         config=_reconciliation_fixture_config(),
-        **synthetic_v2_kwargs_for_market_data(market_df),
+        **_synthetic_kwargs_without_config(synthetic_v2_kwargs_for_market_data, market_df),
     )
     assert out.volatility_state.evidence["rule_evidence"]["vix_percentile_252d"] is not None
 
@@ -61,6 +67,7 @@ def test_classify_uses_vix_data_when_vix_proxy_missing_from_market_data(
 def test_market_context_requires_true_vix_in_market_data(market_df_for_asof) -> None:
     as_of = date(2023, 12, 14)
     market_df = market_df_for_asof(as_of)
+    market_df = market_df[market_df["symbol"] != "VIX"].copy()
 
     from regime_detection.engine import RegimeEngine
     from regime_detection.market_context import build_market_context
@@ -76,10 +83,8 @@ def test_market_context_requires_true_vix_in_market_data(market_df_for_asof) -> 
 def test_market_context_uses_true_vix_not_vixy_proxy(market_df_for_asof) -> None:
     as_of = date(2023, 12, 14)
     market_df = market_df_for_asof(as_of)
-    vix_rows = market_df[market_df["symbol"] == "VIXY"].copy()
-    vix_rows["symbol"] = "VIX"
-    vix_rows["close"] = vix_rows["close"] + 1000.0
-    market_df = pd.concat([market_df, vix_rows], ignore_index=True)
+    vix_mask = market_df["symbol"] == "VIX"
+    market_df.loc[vix_mask, "close"] = market_df.loc[vix_mask, "close"] + 1000.0
 
     from regime_detection.engine import RegimeEngine
     from regime_detection.market_context import build_market_context
@@ -90,7 +95,7 @@ def test_market_context_uses_true_vix_not_vixy_proxy(market_df_for_asof) -> None
         config=RegimeEngine().config,
     )
 
-    expected = vix_rows.sort_values("date").iloc[-1]["close"]
+    expected = market_df[vix_mask].sort_values("date").iloc[-1]["close"]
     assert context.vix_proxy_close is not None
     assert context.vix_proxy_close.iloc[-1] == expected
 
@@ -126,11 +131,12 @@ def test_breadth_data_quality_does_not_block_pit_breadth_when_rsp_gaps(
         market_data=market_df,
         vix_data=_vix_data_from_market_data(market_df),
         config=_reconciliation_fixture_config(),
-        **synthetic_v2_kwargs_for_market_data(market_df),
+        **_synthetic_kwargs_without_config(synthetic_v2_kwargs_for_market_data, market_df),
     )
 
-    assert out.breadth_state.active_label is not None
-    assert out.breadth_state.data_quality.status == "degraded"
+    assert out.breadth_state.active_label == "unknown"
+    assert out.breadth_state.data_quality.status == "insufficient_history"
+    assert out.breadth_state.data_quality.reason == "required_feature_is_nan"
 
 
 def test_trend_direction_data_quality_insufficient_data_can_override_non_unknown_label(
@@ -150,7 +156,7 @@ def test_trend_direction_data_quality_insufficient_data_can_override_non_unknown
         market_data=market_df,
         vix_data=_vix_data_from_market_data(market_df),
         config=_reconciliation_fixture_config(),
-        **synthetic_v2_kwargs_for_market_data(market_df),
+        **_synthetic_kwargs_without_config(synthetic_v2_kwargs_for_market_data, market_df),
     )
 
     assert out.trend_direction.active_label == "unknown"
@@ -175,7 +181,7 @@ def test_trend_direction_data_quality_stale_data_overrides_insufficient_history(
         market_data=market_df,
         vix_data=_vix_data_from_market_data(market_df),
         config=_reconciliation_fixture_config(),
-        **synthetic_v2_kwargs_for_market_data(market_df),
+        **_synthetic_kwargs_without_config(synthetic_v2_kwargs_for_market_data, market_df),
     )
 
     assert out.trend_direction.active_label == "unknown"

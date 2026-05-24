@@ -20,9 +20,9 @@ artifacts:
   stage: canonical
   uri: canonical/macro/fred_macro_series.parquet
   local_path: data/raw/macro/fred_macro_series.parquet
-  sha256: d2975a29f2a8e054dd77341a2a0d0370d0537ba59730890bb45406bb6c94fb95
+  sha256: 246d3ab759d4312ef7fa99ccbaeada76230be8b9425150c6f5ff016190af8356
   schema_version: null
-  rows: 33524
+  rows: 34954
   min_date: '2008-10-09'
   max_date: '2026-05-19'
   required_for:
@@ -10221,9 +10221,9 @@ artifacts:
   stage: canonical
   uri: canonical/daily_ohlcv_762/symbol=SPY/ohlcv.parquet
   local_path: data/raw/daily_ohlcv_762/symbol=SPY/ohlcv.parquet
-  sha256: 9a9ca459c6907216c298293c868ffc1f699a9c6b8b615600711995aab4326044
+  sha256: 79c586e83cf4c26042ccff1b126a9693b138fd833ca7d6b66eab07d45524dc63
   schema_version: null
-  rows: 5332
+  rows: 5333
   min_date: '2005-03-07'
   max_date: '2026-05-15'
   required_for: *id001
@@ -11569,6 +11569,20 @@ artifacts:
   min_date: '2009-12-31'
   max_date: '2026-05-15'
   required_for: *id001
+- name: daily_ohlcv_762_VIX
+  stage: canonical
+  uri: canonical/daily_ohlcv_762/symbol=VIX/ohlcv.parquet
+  local_path: data/raw/daily_ohlcv_762/symbol=VIX/ohlcv.parquet
+  sha256: 145be32e40b3890d5793ea7e58e412e9deb4086cd43d8a45c78733544308da4d
+  schema_version: null
+  rows: 4122
+  min_date: '2010-01-04'
+  max_date: '2026-05-22'
+  required_for:
+  - profile_engine
+  - v2_calibration
+  - historical_walkforward
+  - audit_layer2_30d
 - name: daily_ohlcv_762_VIXY
   stage: canonical
   uri: canonical/daily_ohlcv_762/symbol=VIXY/ohlcv.parquet

@@ -119,9 +119,9 @@ in `data/raw/fomc_minutes/fomc_minutes.parquet`. Powell speeches verified
 `body_text` columns.
 
 **Code state:** no module in `src/regime_detection/` reads FOMC text or
-Powell text. `monetary_pressure.py` produces only the four yield-and-USD
-z-score features; its `RuleInputs` and `Features` dataclasses have no
-text-derived field.
+Powell text. `monetary_pressure.py` requires DGS2, DGS10, and DTWEXBGS
+for the yield-and-USD z-score features. Central-bank text, when supplied,
+is evidence-only and is not consumed by the rule predicates.
 
 **Implementation decision:** the spec's "LLM classifier" phrasing
 conflicts with V1 §2.2 stateless replay (same inputs → identical

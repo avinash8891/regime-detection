@@ -60,6 +60,30 @@ def _constituent_ohlcv_from_close_series(series: pd.Series) -> pd.DataFrame:
     )
 
 
+def _fast_v2_test_config():
+    engine = RegimeEngine()
+    assert engine.config.hmm is not None
+    assert engine.config.clustering is not None
+    assert engine.config.change_point is not None
+    return engine.config.model_copy(
+        update={
+            "hmm": engine.config.hmm.model_copy(
+                update={
+                    "n_states": 2,
+                    "training_window_days": 100,
+                    "random_seeds": (42,),
+                }
+            ),
+            "clustering": engine.config.clustering.model_copy(
+                update={"training_window_days": 100}
+            ),
+            "change_point": engine.config.change_point.model_copy(
+                update={"training_window_days": 100}
+            ),
+        }
+    )
+
+
 def _build_shared_timeline_pipeline(market_df_for_asof):
     end_date = date(2023, 12, 14)
     engine = RegimeEngine()
@@ -388,6 +412,15 @@ def test_build_regime_timeline_uses_context_config_when_config_arg_omitted(
     [
         (
             {"change_point": None, "hmm": None, "clustering": None},
+            1260 + 63 + 7 - 1,
+        ),
+        (
+            {
+                "change_point": None,
+                "hmm": None,
+                "clustering": None,
+                "monetary_pressure_v2": None,
+            },
             ENGINE_MINIMUM_HISTORY + 7 - 1,
         ),
         (
@@ -473,10 +506,12 @@ def test_timeline_passes_event_calendar_matching_labels_to_strategy_response(
         "regime_detection.timeline.build_strategy_response",
         wraps=build_strategy_response,
     )
+    config = _fast_v2_test_config()
 
     out = engine.classify(
         as_of_date=as_of,
         market_data=v2_market_df_for_asof(as_of),
+        config=config,
         event_calendar=event_calendar,
         sector_etf_closes={
             symbol: v2_close_series_by_symbol[symbol] for symbol in SECTOR_ETFS
@@ -513,7 +548,7 @@ def test_timeline_passes_event_calendar_matching_labels_to_strategy_response(
     )
     spy.assert_called_once()
     assert spy.call_args.kwargs["event_calendar_labels"] == event_output.matching_labels
-    assert spy.call_args.kwargs["event_modifier_config"] is engine.config.strategy_event_modifiers
+    assert spy.call_args.kwargs["event_modifier_config"] is config.strategy_event_modifiers
 
 
 def test_transition_risk_history_precomputes_axis_switch_and_prior_bear_flags() -> None:

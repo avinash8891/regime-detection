@@ -161,7 +161,7 @@ def compute_monetary_pressure_features(
     *,
     dgs2: pd.Series,
     dgs10: pd.Series,
-    broad_usd_index: pd.Series | None = None,
+    broad_usd_index: pd.Series,
     central_bank_text_score: pd.Series | None = None,
     config: MonetaryPressureV2FeaturesConfig,
 ) -> MonetaryPressureV2Features:
@@ -174,14 +174,13 @@ def compute_monetary_pressure_features(
     dgs10
         FRED ``DGS10`` (10y constant-maturity Treasury yield) series.
     broad_usd_index
-        FRED broad USD index level (e.g. ``DTWEXBGS``). When ``None``,
-        the ``broad_usd_index_zscore_63d`` output is an all-NaN series
-        aligned to the dgs2 index (implementation decision(a) graceful fallback
-        when the USD seam is absent).
+        Required FRED broad USD index level (e.g. ``DTWEXBGS``).
     config
         ``MonetaryPressureV2FeaturesConfig`` — supplies all four window
         lengths (yield 63d, normalizer 1260d, rate-shock 21d, broad-USD 63d).
     """
+    if broad_usd_index is None:
+        raise ValueError("broad_usd_index is required for monetary pressure features")
     z_2y = _yield_change_zscore(
         yield_series=dgs2,
         lookback=config.yield_change_lookback_days,
@@ -206,19 +205,12 @@ def compute_monetary_pressure_features(
         normalizer_window=config.zscore_normalizer_window_days,
         output_name="yield_change_zscore_21d_10y",
     )
-    if broad_usd_index is None:
-        usd_z = pd.Series(
-            float("nan"),
-            index=dgs2.index,
-            name="broad_usd_index_zscore_63d",
-        )
-    else:
-        usd_z = _rolling_change_zscore(
-            _carry_forward_observations(broad_usd_index),
-            change_window=config.broad_usd_lookback_days,
-            normalizer_window=config.zscore_normalizer_window_days,
-            output_name="broad_usd_index_zscore_63d",
-        )
+    usd_z = _rolling_change_zscore(
+        _carry_forward_observations(broad_usd_index),
+        change_window=config.broad_usd_lookback_days,
+        normalizer_window=config.zscore_normalizer_window_days,
+        output_name="broad_usd_index_zscore_63d",
+    )
     # v2 §2A central-bank-text seam (source-data verification). Pure pass-through onto
     # the features dataclass — the rule engine never reads this field.
     # Reindexed to the yield series' DatetimeIndex so downstream

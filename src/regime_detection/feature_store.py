@@ -247,9 +247,9 @@ class FeatureStore(BaseModel):
 
     # V2 §2A monetary-pressure feature seam — populated when a
     # MonetaryPressureV2FeaturesConfig is threaded through AND
-    # MarketContext.macro_series carries both DGS2 and DGS10 (spec
-    # source contract §2A L2841-L2844). Includes broad_usd_index_zscore_63d
-    # and 21d-variant features feeding the §2A axis classifier.
+    # MarketContext.macro_series carries DGS2, DGS10, and broad_usd_index
+    # (FRED DTWEXBGS). Includes broad_usd_index_zscore_63d and 21d-variant
+    # features feeding the §2A axis classifier.
     monetary: MonetaryPressureV2Features | None = None
 
     # V2 §6.1 HMM evidence seam — populated when ``context.config.hmm``
@@ -535,10 +535,11 @@ def _build_monetary_feature(state: _FeatureStoreBuildState) -> None:
         or state.context.macro_series is None
         or _FRED_DGS2_KEY not in state.context.macro_series
         or _IG_DGS10_KEY not in state.context.macro_series
+        or "broad_usd_index" not in state.context.macro_series
     ):
         state.monetary = None
         return
-    broad_usd_series = state.context.macro_series.get("broad_usd_index")
+    broad_usd_series = state.context.macro_series["broad_usd_index"]
     cb_text_score_series: pd.Series | None = None
     if (
         state.central_bank_text_config is not None

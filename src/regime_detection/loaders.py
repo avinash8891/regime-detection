@@ -197,8 +197,11 @@ def load_macro_series(
         for key, sub in logical_df.groupby("logical_name"):
             sub = sub.sort_values("date")
             series_key = str(key)
+            values = sub["value"].astype(float)
+            if series_key == "implied_vol_30d":
+                values = values / 100.0
             out[series_key] = pd.Series(
-                sub["value"].astype(float).to_numpy(),
+                values.to_numpy(),
                 index=parse_datetime_index(
                     sub["date"],
                     field_name="date",

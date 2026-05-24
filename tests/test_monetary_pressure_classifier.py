@@ -131,16 +131,17 @@ def test_compute_monetary_pressure_features_cold_start_is_nan():
     assert not pd.isna(feats.yield_change_zscore_21d_2y.iloc[first_valid_21])
 
 
-def test_compute_monetary_pressure_features_broad_usd_none_returns_nan_series():
+def test_compute_monetary_pressure_features_requires_broad_usd():
     idx = _bdate_index()
     dgs2 = _yield_series(index=idx, base=4.5, seed=_SEED + 1)
     dgs10 = _yield_series(index=idx, base=4.2, seed=_SEED + 2)
-    feats = compute_monetary_pressure_features(
-        dgs2=dgs2, dgs10=dgs10, broad_usd_index=None, config=_features_config()
-    )
-    # broad_usd_index_zscore_63d must be a Series aligned to dgs2 index, all NaN.
-    assert feats.broad_usd_index_zscore_63d.index.equals(idx)
-    assert feats.broad_usd_index_zscore_63d.isna().all()
+    with pytest.raises(ValueError, match="broad_usd_index is required"):
+        compute_monetary_pressure_features(
+            dgs2=dgs2,
+            dgs10=dgs10,
+            broad_usd_index=None,
+            config=_features_config(),
+        )
 
 
 # =============================================================================
@@ -308,7 +309,7 @@ def _synthetic_market_data(index: pd.DatetimeIndex, seed: int = _SEED) -> pd.Dat
                     "high": float(close[i]) * mult * 1.005,
                     "low": float(close[i]) * mult * 0.995,
                     "close": float(close[i]) * mult,
-                    "volume": 1_000_000.0,
+                    "volume": 1_000_000.0 + float((i % 23) * 10_000),
                 }
             )
     return pd.DataFrame(rows)
@@ -354,6 +355,29 @@ def test_classifier_returns_none_when_feature_store_monetary_seam_is_none():
     assert bare_store.monetary is None
     out = build_monetary_pressure_axis_series(context, bare_store)
     assert out is None
+
+
+def test_feature_store_requires_broad_usd_for_monetary_pressure() -> None:
+    """Monetary pressure requires all §2A macro inputs: DGS2, DGS10, DTWEXBGS."""
+    index = _bdate_index()
+    market_data = _synthetic_market_data(index)
+    macro = {
+        "2y_yield": _yield_series(index=index, base=4.5, seed=_SEED + 1),
+        "10y_yield": _yield_series(index=index, base=4.2, seed=_SEED + 2),
+    }
+    context = build_market_context(
+        end_date=_LAST_SESSION.date(),
+        market_data=market_data,
+        config=RegimeEngine().config,
+        macro_series=macro,
+    )
+
+    store = build_feature_store(
+        context,
+        monetary_pressure_v2_config=context.config.monetary_pressure_v2,
+    )
+
+    assert store.monetary is None
 
 
 def test_classifier_emits_outputs_when_seam_lit():
@@ -408,6 +432,7 @@ def test_engine_classify_window_populates_monetary_pressure_state(
         end_date=_LAST_SESSION.date(),
         market_data=market_data,
         lookback_days=50,
+        config=kwargs["config"],
         event_calendar=kwargs["event_calendar"],
         sector_etf_closes=kwargs["sector_etf_closes"],
         cross_asset_closes=kwargs["cross_asset_closes"],

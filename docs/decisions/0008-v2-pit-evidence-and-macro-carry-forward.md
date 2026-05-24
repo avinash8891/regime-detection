@@ -48,6 +48,11 @@ The 30-session regime profile exposed three classes of missing evidence:
    monetary features recover, the active label should move immediately to the
    rule-derived label rather than holding a stale quality-gap label.
 
+6. **Monetary requires the full §2A source contract.** DGS2, DGS10, and
+   DTWEXBGS (`broad_usd_index`) must all be present before the monetary feature
+   seam is populated. A missing USD index disables monetary pressure rather than
+   producing a partial yield-only classification.
+
 ## Consequences
 
 - Multi-day profiles should show populated `monetary_pressure_state`,
@@ -59,4 +64,3 @@ The 30-session regime profile exposed three classes of missing evidence:
   or fit on the configured retrain cadence, but it must preserve the same
   no-lookahead contract.
 - Existing V1 behavior remains unchanged when V2 seams/config blocks are absent.
-

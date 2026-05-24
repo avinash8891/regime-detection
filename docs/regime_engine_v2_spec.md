@@ -1334,7 +1334,7 @@ the slice/commit that resolved it. Entries are append-only.
 
     File / function location:
     `src/regime_detection/monetary_pressure.py` —
-    `compute_monetary_pressure_features(*, dgs2, dgs10, config) -> MonetaryPressureV2Features`.
+    `compute_monetary_pressure_features(*, dgs2, dgs10, broad_usd_index, config) -> MonetaryPressureV2Features`.
     Mirrors slice 2.1/2.2/2.3/2.4 shape (typed frozen dataclass +
     pure function). Wired through `FeatureStore.monetary` and
     `build_regime_timeline`.
@@ -2764,6 +2764,10 @@ US V2 source contract:
 - `2y yield` = FRED `DGS2`
 - `10y yield` = FRED `DGS10`
 - `broad_usd_index` = FRED `DTWEXBGS`
+
+All three macro series are required for `monetary_pressure_state`. Missing
+`broad_usd_index` disables the monetary feature seam instead of emitting a
+partial DGS2/DGS10-only classification.
 
 V1's draft absolute bps thresholds were deferred because they are rate-era dependent. V2 must adapt to rate era.
 

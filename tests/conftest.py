@@ -176,6 +176,10 @@ def _load_market_data() -> pd.DataFrame:
         parts = [pd.read_csv(_RAW_DIR / f"{symbol}.csv") for symbol in ("SPY", "RSP", "VIXY")]
         df = pd.concat(parts, ignore_index=True)
     df = df.copy()
+    if "VIX" not in set(df["symbol"]) and "VIXY" in set(df["symbol"]):
+        vix = df[df["symbol"] == "VIXY"].copy()
+        vix["symbol"] = "VIX"
+        df = pd.concat([df, vix], ignore_index=True)
     df["date"] = pd.to_datetime(df["date"]).dt.date
     keep = ["date", "symbol", "open", "high", "low", "close", "volume"]
     return df[keep].sort_values(["date", "symbol"]).reset_index(drop=True)
@@ -233,6 +237,17 @@ def _scaled_close_series(base: pd.Series, *, scale: float, name: str) -> pd.Seri
     )
 
 
+def _synthetic_close_series(
+    base: pd.Series, *, scale: float, phase: int, name: str
+) -> pd.Series:
+    values = base.astype(float).to_numpy()
+    # Tiny deterministic symbol-specific variation keeps synthetic V2
+    # fixtures from becoming perfectly collinear, which makes HMM/GMM
+    # evidence degenerate while preserving the broad SPY-like shape.
+    wobble = [1.0 + 0.002 * (((i + phase) % 11) - 5) for i in range(len(values))]
+    return pd.Series(values * scale * wobble, index=base.index, name=name)
+
+
 @pytest.fixture(scope="session")
 def raw_market_data() -> pd.DataFrame:
     return _load_market_data().copy()
@@ -241,7 +256,7 @@ def raw_market_data() -> pd.DataFrame:
 @pytest.fixture(scope="session")
 def raw_market_frames(raw_market_data: pd.DataFrame) -> dict[str, pd.DataFrame]:
     frames: dict[str, pd.DataFrame] = {}
-    for symbol in ("SPY", "RSP", "VIXY"):
+    for symbol in ("SPY", "RSP", "VIX", "VIXY"):
         frames[symbol] = raw_market_data[raw_market_data["symbol"] == symbol].copy().reset_index(drop=True)
     return frames
 
@@ -262,10 +277,15 @@ def v2_daily_ohlcv() -> pd.DataFrame:
 @pytest.fixture(scope="session")
 def v2_market_df_for_asof(v2_daily_ohlcv: pd.DataFrame):
     def _build(as_of: date) -> pd.DataFrame:
-        return v2_daily_ohlcv[
+        out = v2_daily_ohlcv[
             (v2_daily_ohlcv["date"] <= as_of)
-            & (v2_daily_ohlcv["symbol"].isin({"SPY", "RSP", "VIXY"}))
+            & (v2_daily_ohlcv["symbol"].isin({"SPY", "RSP", "VIX", "VIXY"}))
         ].copy().reset_index(drop=True)
+        if "VIX" not in set(out["symbol"]) and "VIXY" in set(out["symbol"]):
+            vix = out[out["symbol"] == "VIXY"].copy()
+            vix["symbol"] = "VIX"
+            out = pd.concat([out, vix], ignore_index=True)
+        return out.sort_values(["date", "symbol"]).reset_index(drop=True)
 
     return _build
 
@@ -367,13 +387,44 @@ def v2_classify_kwargs_for_asof(
 @pytest.fixture(scope="session")
 def synthetic_v2_kwargs_for_market_data(event_calendar_df: pd.DataFrame):
     def _build(market_data: pd.DataFrame) -> dict[str, object]:
+        engine = RegimeEngine()
+        assert engine.config.hmm is not None
+        assert engine.config.clustering is not None
+        assert engine.config.change_point is not None
+        config = engine.config.model_copy(
+            update={
+                "hmm": engine.config.hmm.model_copy(
+                    update={
+                        "n_states": 2,
+                        "training_window_days": 100,
+                        "random_seeds": (42,),
+                    }
+                ),
+                "clustering": engine.config.clustering.model_copy(
+                    update={"training_window_days": 100}
+                ),
+                "change_point": engine.config.change_point.model_copy(
+                    update={"training_window_days": 100}
+                ),
+            }
+        )
         base = _close_series_from_market_data(market_data, "SPY")
         sector_closes = {
-            symbol: _scaled_close_series(base, scale=1.0 + i * 0.01, name=symbol)
+            symbol: _synthetic_close_series(
+                base,
+                scale=1.0 + i * 0.01,
+                phase=i,
+                name=symbol,
+            )
             for i, symbol in enumerate(SECTOR_ETFS)
         }
         cross_asset_closes = {
-            symbol: _scaled_close_series(base, scale=0.8 + i * 0.015, name=symbol)
+            symbol: _synthetic_close_series(
+                base,
+                scale=0.8 + i * 0.015,
+                phase=i + 3,
+                name=symbol,
+            )
             for i, symbol in enumerate(CROSS_ASSET_SYMBOLS)
         }
         first_day = base.index.min().date()
@@ -389,6 +440,7 @@ def synthetic_v2_kwargs_for_market_data(event_calendar_df: pd.DataFrame):
             for symbol, series in sector_closes.items()
         }
         return {
+            "config": config,
             "event_calendar": event_calendar_df,
             "sector_etf_closes": sector_closes,
             "cross_asset_closes": cross_asset_closes,
@@ -442,27 +494,11 @@ def _classify_all_golden_rows(
     lookback_sessions = max(1, int(span_days / 365.25 * 252) + 220)
     market_data = market_df_for_asof(end)
     kwargs = synthetic_v2_kwargs_for_market_data(market_data)
-    assert engine.config.hmm is not None
-    assert engine.config.clustering is not None
-    assert engine.config.change_point is not None
-    config = engine.config.model_copy(
-        update={
-            "hmm": engine.config.hmm.model_copy(
-                update={"training_window_days": 252}
-            ),
-            "clustering": engine.config.clustering.model_copy(
-                update={"training_window_days": 252}
-            ),
-            "change_point": engine.config.change_point.model_copy(
-                update={"training_window_days": 500}
-            ),
-        }
-    )
     timeline = engine.classify_window(
         end_date=end,
         market_data=market_data,
         lookback_days=lookback_sessions,
-        config=config,
+        config=kwargs["config"],
         event_calendar=kwargs["event_calendar"],
         sector_etf_closes=kwargs["sector_etf_closes"],
         cross_asset_closes=kwargs["cross_asset_closes"],

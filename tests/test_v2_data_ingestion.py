@@ -184,6 +184,29 @@ def test_load_macro_series_uses_logical_name_as_sole_key() -> None:
     assert out["2y_yield"].iloc[0] == 4.0
 
 
+def test_load_macro_series_converts_implied_vol_30d_to_decimal_units() -> None:
+    df = pd.DataFrame(
+        [
+            {
+                "date": pd.Timestamp(date(2024, 1, 2)),
+                "series_id": "VIXCLS",
+                "value": 20.0,
+                "logical_name": "implied_vol_30d",
+            },
+            {
+                "date": pd.Timestamp(date(2024, 1, 3)),
+                "series_id": "VIXCLS",
+                "value": 19.5,
+                "logical_name": "implied_vol_30d",
+            },
+        ]
+    )
+
+    out = load_macro_series(df)
+
+    assert out["implied_vol_30d"].tolist() == [0.20, 0.195]
+
+
 def test_load_macro_series_rejects_missing_series_id() -> None:
     df = _make_long_macro(["DGS2"], [date(2024, 1, 2)])
 
@@ -520,8 +543,13 @@ def test_engine_classify_threads_pit_constituent_inputs_into_context(
 
     market_data = market_df_for_asof(as_of)
     kwargs = synthetic_v2_kwargs_for_market_data(market_data)
-    kwargs["pit_constituent_intervals"] = pit_intervals
-    kwargs["constituent_ohlcv"] = constituent_ohlcv
+    kwargs["pit_constituent_intervals"] = pd.concat(
+        [kwargs["pit_constituent_intervals"], pit_intervals], ignore_index=True
+    )
+    kwargs["constituent_ohlcv"] = {
+        **kwargs["constituent_ohlcv"],
+        **constituent_ohlcv,
+    }
     out = RegimeEngine().classify(
         as_of_date=as_of,
         market_data=market_data,
