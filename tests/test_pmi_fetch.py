@@ -69,7 +69,9 @@ def test_parse_tradingeconomics_html_extracts_services_observation() -> None:
 
 
 def test_release_timestamp_for_period_uses_next_month_business_day() -> None:
-    manufacturing_ts = release_timestamp_for_period(series_name="manufacturing", period="2026-03")
+    manufacturing_ts = release_timestamp_for_period(
+        series_name="manufacturing", period="2026-03"
+    )
     services_ts = release_timestamp_for_period(series_name="services", period="2026-03")
 
     assert manufacturing_ts.isoformat() == "2026-04-01T10:00:00-04:00"
@@ -82,7 +84,9 @@ def test_choose_latest_available_respects_release_timestamp() -> None:
             series_name="manufacturing",
             period="2026-03",
             value=52.7,
-            release_timestamp=release_timestamp_for_period(series_name="manufacturing", period="2026-03"),
+            release_timestamp=release_timestamp_for_period(
+                series_name="manufacturing", period="2026-03"
+            ),
             source="dbnomics",
             source_url="https://db.nomics.world/ISM/pmi/pm?tab=table",
         ),
@@ -90,7 +94,9 @@ def test_choose_latest_available_respects_release_timestamp() -> None:
             series_name="manufacturing",
             period="2026-04",
             value=53.1,
-            release_timestamp=release_timestamp_for_period(series_name="manufacturing", period="2026-04"),
+            release_timestamp=release_timestamp_for_period(
+                series_name="manufacturing", period="2026-04"
+            ),
             source="dbnomics",
             source_url="https://db.nomics.world/ISM/pmi/pm?tab=table",
         ),
@@ -98,7 +104,9 @@ def test_choose_latest_available_respects_release_timestamp() -> None:
 
     chosen = choose_latest_available(
         observations=observations,
-        as_of_timestamp=dt.datetime(2026, 4, 30, 16, 0, tzinfo=observations[0].release_timestamp.tzinfo),
+        as_of_timestamp=dt.datetime(
+            2026, 4, 30, 16, 0, tzinfo=observations[0].release_timestamp.tzinfo
+        ),
     )
     assert chosen.period == "2026-03"
 
@@ -113,7 +121,9 @@ def test_run_pmi_fetch_falls_back_to_backup(monkeypatch, tmp_path: Path) -> None
                 series_name="manufacturing",
                 period="2026-04",
                 value=52.7,
-                release_timestamp=release_timestamp_for_period(series_name="manufacturing", period="2026-04"),
+                release_timestamp=release_timestamp_for_period(
+                    series_name="manufacturing", period="2026-04"
+                ),
                 source="tradingeconomics",
                 source_url="https://tradingeconomics.com/united-states/business-confidence",
             ),
@@ -121,7 +131,9 @@ def test_run_pmi_fetch_falls_back_to_backup(monkeypatch, tmp_path: Path) -> None
                 series_name="services",
                 period="2026-04",
                 value=53.6,
-                release_timestamp=release_timestamp_for_period(series_name="services", period="2026-04"),
+                release_timestamp=release_timestamp_for_period(
+                    series_name="services", period="2026-04"
+                ),
                 source="tradingeconomics",
                 source_url="https://tradingeconomics.com/united-states/non-manufacturing-pmi",
             ),
@@ -281,7 +293,9 @@ def test_run_pmi_fetch_falls_back_when_primary_data_is_stale(tmp_path: Path) -> 
                 series_name="manufacturing",
                 period="2025-12",
                 value=10.3,
-                release_timestamp=release_timestamp_for_period(series_name="manufacturing", period="2025-12"),
+                release_timestamp=release_timestamp_for_period(
+                    series_name="manufacturing", period="2025-12"
+                ),
                 source="dbnomics",
                 source_url="https://db.nomics.world/ISM/pmi/pm?tab=table",
             ),
@@ -289,7 +303,9 @@ def test_run_pmi_fetch_falls_back_when_primary_data_is_stale(tmp_path: Path) -> 
                 series_name="services",
                 period="2025-08",
                 value=52.0,
-                release_timestamp=release_timestamp_for_period(series_name="services", period="2025-08"),
+                release_timestamp=release_timestamp_for_period(
+                    series_name="services", period="2025-08"
+                ),
                 source="dbnomics",
                 source_url="https://db.nomics.world/ISM/nm-pmi/pm?tab=table",
             ),
@@ -302,7 +318,9 @@ def test_run_pmi_fetch_falls_back_when_primary_data_is_stale(tmp_path: Path) -> 
                 series_name="manufacturing",
                 period="2026-04",
                 value=52.7,
-                release_timestamp=release_timestamp_for_period(series_name="manufacturing", period="2026-04"),
+                release_timestamp=release_timestamp_for_period(
+                    series_name="manufacturing", period="2026-04"
+                ),
                 source="tradingeconomics",
                 source_url="https://tradingeconomics.com/united-states/business-confidence",
             ),
@@ -310,7 +328,9 @@ def test_run_pmi_fetch_falls_back_when_primary_data_is_stale(tmp_path: Path) -> 
                 series_name="services",
                 period="2026-04",
                 value=53.6,
-                release_timestamp=release_timestamp_for_period(series_name="services", period="2026-04"),
+                release_timestamp=release_timestamp_for_period(
+                    series_name="services", period="2026-04"
+                ),
                 source="tradingeconomics",
                 source_url="https://tradingeconomics.com/united-states/non-manufacturing-pmi",
             ),
@@ -374,7 +394,9 @@ def test_run_pmi_fetch_records_raw_pages_and_outputs_in_sqlite(tmp_path: Path) -
                     series_name="manufacturing",
                     period="2026-04",
                     value=52.7,
-                    release_timestamp=release_timestamp_for_period(series_name="manufacturing", period="2026-04"),
+                    release_timestamp=release_timestamp_for_period(
+                        series_name="manufacturing", period="2026-04"
+                    ),
                     source="dbnomics",
                     source_url="https://db.nomics.world/ISM/pmi/pm?tab=table",
                 ),
@@ -382,7 +404,9 @@ def test_run_pmi_fetch_records_raw_pages_and_outputs_in_sqlite(tmp_path: Path) -
                     series_name="services",
                     period="2026-04",
                     value=53.6,
-                    release_timestamp=release_timestamp_for_period(series_name="services", period="2026-04"),
+                    release_timestamp=release_timestamp_for_period(
+                        series_name="services", period="2026-04"
+                    ),
                     source="dbnomics",
                     source_url="https://db.nomics.world/ISM/nm-pmi/pm?tab=table",
                 ),
@@ -401,11 +425,15 @@ def test_run_pmi_fetch_records_raw_pages_and_outputs_in_sqlite(tmp_path: Path) -
     assert report["paths"]["acquisition_db"] == str(acquisition_db)
 
     with sqlite3.connect(acquisition_db) as conn:
-        fetch_runs = conn.execute("SELECT fetch_type, status FROM fetch_runs").fetchall()
+        fetch_runs = conn.execute(
+            "SELECT fetch_type, status FROM fetch_runs"
+        ).fetchall()
         artifacts = conn.execute(
             "SELECT source_name, artifact_kind, count(*) FROM artifacts GROUP BY source_name, artifact_kind ORDER BY source_name, artifact_kind"
         ).fetchall()
-        outputs = conn.execute("SELECT output_kind FROM derived_outputs ORDER BY output_id").fetchall()
+        outputs = conn.execute(
+            "SELECT output_kind FROM derived_outputs ORDER BY output_id"
+        ).fetchall()
 
     assert fetch_runs == [("pmi", "ok")]
     assert artifacts == [("dbnomics:pmi", "html", 2)]
@@ -427,11 +455,16 @@ def test_load_manual_pmi_history_covers_backtest_aligned_window() -> None:
     assert rows[-1].period == "2026-04"
     assert len(rows) == 394
     assert {row.series_name for row in rows} == {"manufacturing", "services"}
-    assert by_series["manufacturing"][0].release_timestamp.date().isoformat() == "2010-01-04"
+    assert (
+        by_series["manufacturing"][0].release_timestamp.date().isoformat()
+        == "2010-01-04"
+    )
     assert by_series["services"][0].release_timestamp.date().isoformat() == "2010-01-06"
 
 
-def test_run_pmi_fetch_uses_manual_history_dir_and_records_sqlite(tmp_path: Path) -> None:
+def test_run_pmi_fetch_uses_manual_history_dir_and_records_sqlite(
+    tmp_path: Path,
+) -> None:
     acquisition_db = tmp_path / "acquisition.db"
 
     report_path = run_pmi_fetch(
@@ -462,17 +495,21 @@ def test_run_pmi_fetch_uses_manual_history_dir_and_records_sqlite(tmp_path: Path
     assert history_df["period"].min() == "2009-12"
     assert history_df["period"].max() == "2026-04"
     assert len(history_df) == 394
-    assert (
-        history_df.groupby("series_name")["period"].min().to_dict()
-        == {"manufacturing": "2009-12", "services": "2009-12"}
-    )
+    assert history_df.groupby("series_name")["period"].min().to_dict() == {
+        "manufacturing": "2009-12",
+        "services": "2009-12",
+    }
 
     with sqlite3.connect(acquisition_db) as conn:
-        fetch_runs = conn.execute("SELECT fetch_type, status FROM fetch_runs").fetchall()
+        fetch_runs = conn.execute(
+            "SELECT fetch_type, status FROM fetch_runs"
+        ).fetchall()
         artifacts = conn.execute(
             "SELECT source_name, artifact_kind, count(*) FROM artifacts GROUP BY source_name, artifact_kind ORDER BY source_name, artifact_kind"
         ).fetchall()
-        outputs = conn.execute("SELECT output_kind FROM derived_outputs ORDER BY output_id").fetchall()
+        outputs = conn.execute(
+            "SELECT output_kind FROM derived_outputs ORDER BY output_id"
+        ).fetchall()
 
     assert fetch_runs == [("pmi", "ok")]
     assert artifacts == [("investing:pmi", "tsv", 2)]

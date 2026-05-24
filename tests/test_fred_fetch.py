@@ -39,7 +39,9 @@ def _http_error(url: str, code: int) -> urllib.error.HTTPError:
     )
 
 
-def test_parse_fred_series_json_preserves_realtime_dates_and_null_observations() -> None:
+def test_parse_fred_series_json_preserves_realtime_dates_and_null_observations() -> (
+    None
+):
     payload = (_FRED_FIXTURE_DIR / "dgs10_observations.json").read_text()
 
     frame = fred.parse_fred_series_json(payload, series_id="DGS10")

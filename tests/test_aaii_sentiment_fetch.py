@@ -34,7 +34,9 @@ class _FixedDate(dt.date):
         return cls(2026, 1, 3)
 
 
-def test_run_sentiment_fetch_records_canonical_artifact_ledger(monkeypatch, tmp_path: Path) -> None:
+def test_run_sentiment_fetch_records_canonical_artifact_ledger(
+    monkeypatch, tmp_path: Path
+) -> None:
     out_dir = tmp_path / "data" / "raw"
     sentiment_dir = out_dir / "sentiment"
     sentiment_dir.mkdir(parents=True)
@@ -53,7 +55,9 @@ def test_run_sentiment_fetch_records_canonical_artifact_ledger(monkeypatch, tmp_
     existing.to_parquet(sentiment_dir / "aaii_sentiment.parquet", index=False)
     acquisition_db = tmp_path / "acquisition.db"
 
-    def fake_fetch_latest_rows(url: str, after_date, *, timeout: int = 30) -> pd.DataFrame:
+    def fake_fetch_latest_rows(
+        url: str, after_date, *, timeout: int = 30
+    ) -> pd.DataFrame:
         assert url == "https://example.test/aaii"
         assert after_date.isoformat() == "2026-05-01"
         return pd.DataFrame(
@@ -81,18 +85,30 @@ def test_run_sentiment_fetch_records_canonical_artifact_ledger(monkeypatch, tmp_
     assert report["paths"]["acquisition_db"] == str(acquisition_db)
 
     with sqlite3.connect(acquisition_db) as conn:
-        fetch_runs = conn.execute("SELECT fetch_type, status FROM fetch_runs").fetchall()
+        fetch_runs = conn.execute(
+            "SELECT fetch_type, status FROM fetch_runs"
+        ).fetchall()
         artifact_records = conn.execute(
             "SELECT name, stage, source_name, artifact_kind, row_count, min_date, max_date FROM artifact_records"
         ).fetchall()
         checkpoints = conn.execute(
             "SELECT source_name, cursor_key, cursor_value FROM source_checkpoints"
         ).fetchall()
-        outputs = conn.execute("SELECT output_kind FROM derived_outputs ORDER BY output_id").fetchall()
+        outputs = conn.execute(
+            "SELECT output_kind FROM derived_outputs ORDER BY output_id"
+        ).fetchall()
 
     assert fetch_runs == [("sentiment", "ok")]
     assert artifact_records == [
-        ("aaii_sentiment", "canonical", "aaii", "parquet", 2, "2026-05-01", "2026-05-08")
+        (
+            "aaii_sentiment",
+            "canonical",
+            "aaii",
+            "parquet",
+            2,
+            "2026-05-01",
+            "2026-05-08",
+        )
     ]
     assert checkpoints == [("aaii", "survey_week", "2026-05-08")]
     assert outputs == [
@@ -295,7 +311,9 @@ def test_fetch_latest_rows_wraps_urlerror_with_operator_context(
 
     monkeypatch.setattr(aaii_sentiment.urllib.request, "urlopen", fake_urlopen)
 
-    with pytest.raises(RuntimeError, match="Failed to fetch AAII sentiment page") as excinfo:
+    with pytest.raises(
+        RuntimeError, match="Failed to fetch AAII sentiment page"
+    ) as excinfo:
         aaii_sentiment.fetch_latest_rows(
             "https://example.test/aaii",
             after_date=dt.date(2026, 1, 1),

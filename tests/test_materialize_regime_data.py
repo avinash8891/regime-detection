@@ -362,9 +362,7 @@ def test_materialize_manifest_handles_workspace_portable_uris(
     local_source = local_root / "canonical" / "macro" / "fred_macro_series.parquet"
     local_source.parent.mkdir(parents=True)
     local_source.write_bytes(b"macro")
-    sentiment_source = (
-        local_root / "canonical" / "sentiment" / "aaii_sentiment.parquet"
-    )
+    sentiment_source = local_root / "canonical" / "sentiment" / "aaii_sentiment.parquet"
     sentiment_source.parent.mkdir(parents=True)
     sentiment_source.write_bytes(b"sentiment")
 

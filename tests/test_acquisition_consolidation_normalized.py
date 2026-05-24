@@ -70,9 +70,7 @@ def test_import_normalized_output_loads_event_calendar_yaml(tmp_path) -> None:
     assert table == EVENT_CALENDAR_ROWS_TABLE
     assert conn.execute(
         "SELECT run_id, event_date, event_type, source FROM event_calendar_rows"
-    ).fetchall() == [
-        (7, "2026-01-28", "FOMC", "federalreserve.gov:fomccalendars")
-    ]
+    ).fetchall() == [(7, "2026-01-28", "FOMC", "federalreserve.gov:fomccalendars")]
 
 
 def test_import_normalized_output_returns_none_for_unknown_kind(tmp_path) -> None:
@@ -345,7 +343,9 @@ def test_import_normalized_output_loads_usd_index_parquet(tmp_path) -> None:
     ]
 
 
-def test_import_normalized_output_loads_aggregate_eps_snapshot_parquet(tmp_path) -> None:
+def test_import_normalized_output_loads_aggregate_eps_snapshot_parquet(
+    tmp_path,
+) -> None:
     path = tmp_path / "sp500_eps_snapshots.parquet"
     pd.DataFrame(
         [
@@ -438,7 +438,9 @@ def test_import_normalized_output_loads_aggregate_eps_wayback_parquet(tmp_path) 
     ]
 
 
-def test_import_normalized_output_loads_alpaca_partitioned_symbol_parquet(tmp_path) -> None:
+def test_import_normalized_output_loads_alpaca_partitioned_symbol_parquet(
+    tmp_path,
+) -> None:
     path = tmp_path / "symbol=SPY" / "ohlcv.parquet"
     path.parent.mkdir()
     pd.DataFrame(
