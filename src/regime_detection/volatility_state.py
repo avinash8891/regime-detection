@@ -11,9 +11,9 @@ if TYPE_CHECKING:  # avoid runtime cycle: volatility_state_v2 → config → ...
     from regime_detection.volatility_state_v2 import VolatilityV2Features
 
 
-# v2 §1C line 191 precedence:
+# v2 §1C line 311 precedence:
 #   crisis_vol > vol_crush > high_vol > rising_vol > low_vol > normal_vol > unknown
-# `rising_vol` added per v2 §1C lines 146-148;
+# `rising_vol` added per v2 §1C lines 250-254;
 # `vol_crush` added per ADR 0005 using FRED VIXCLS as
 # implied_vol_30d plus the event-window seam.
 VolatilityLabel = Literal[
@@ -51,7 +51,7 @@ def realized_vol(
         ddof: delta degrees-of-freedom for ``Series.std``. Pinned default
             ``1`` (sample std) matches pandas/numpy convention for
             financial time series; v2 §1C is silent so the convention is
-            recorded in the documented implementation notes.
+            recorded here as the engine pin.
 
     Returns a date-indexed ``pd.Series`` aligned to ``close.index``; NaN
     until ``t >= window`` (cold-start: pandas ``rolling.std`` requires
@@ -76,8 +76,8 @@ def wilders_atr(
 
     Shared helper for v1 volatility classifiers and v2 §1C features
     (atr_ratio = ATR_14 / ATR_50). Wilder's smoothing is the standard
-    estimator referenced by v2 §1C line 142 (Implementation Ambiguity
-    Log entry for "ATR estimator choice").
+    estimator referenced by v2 §1C lines 247-249 (implementation decision #15
+    pins classical Wilder recursive smoothing).
 
     NOTE: a separate ``_wilder_ewm`` helper lives in
     ``regime_detection.trend_character`` for the v1 ADX cold-start
@@ -88,7 +88,7 @@ def wilders_atr(
     implementations intentionally coexist (v1 ADX cold-start values are
     frozen; V2 §1C ATR ratio uses the more faithful textbook form). A
     future cleanup may unify them after V2 walk-forward validation per
-    v2 §9.1. See documented implementation decision.
+    v2 §9.1.
 
     Algorithm:
         TR[t] = max(
@@ -147,7 +147,7 @@ def wilders_atr(
     return pd.Series(out, index=close.index, name=f"atr_{period}")
 
 
-# v2 §1C line 191 precedence:
+# v2 §1C line 311 precedence:
 #   crisis_vol > vol_crush > high_vol > rising_vol > low_vol >
 #   normal_vol > unknown.
 # V1 risk-rank contract is frozen in replay fixtures; crisis_vol remains 3.
@@ -380,7 +380,7 @@ def build_raw_outputs(
         volatility_state_v2_features is not None
         and volatility_state_v2_rules is not None
     ):
-        # v2 §1C line 191 precedence — applied per-day on top of v1.
+        # v2 §1C line 311 precedence — applied per-day on top of v1.
         # Localize import to avoid a runtime cycle with volatility_state_v2.
         from regime_detection.volatility_state_v2 import (
             evaluate_v2_volatility_label,

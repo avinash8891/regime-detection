@@ -8,7 +8,10 @@ from pathlib import Path
 import pandas as pd
 import pytest
 
-from regime_detection.axis_builders.breadth import build_breadth_axis_series
+from regime_detection.axis_builders.breadth import (
+    _derive_breadth_active_label_source,
+    build_breadth_axis_series,
+)
 from regime_detection.axis_builders.credit_funding import (
     build_credit_funding_axis_series,
 )
@@ -39,6 +42,32 @@ from regime_detection.market_context import build_market_context
 
 _REPO_ROOT = Path(__file__).resolve().parents[1]
 _REAL_V2_AS_OF = date(2026, 5, 13)
+
+
+@pytest.mark.parametrize(
+    ("raw", "stable", "active", "expected"),
+    [
+        ("weak_breadth", "weak_breadth", "weak_breadth", "etf_proxy"),
+        ("narrowing_breadth", "narrowing_breadth", "narrowing_breadth", "pit_constituent"),
+        (
+            "narrowing_breadth",
+            "weak_breadth",
+            "weak_breadth",
+            "hysteresis_from_prior_state",
+        ),
+    ],
+)
+def test_breadth_active_label_source_separates_pit_from_hysteresis(
+    raw: str,
+    stable: str,
+    active: str,
+    expected: str,
+) -> None:
+    assert _derive_breadth_active_label_source(
+        raw=raw,
+        stable=stable,
+        active=active,
+    ) == expected
 
 
 def _load_test_helper_module(name: str, filename: str):
@@ -123,6 +152,8 @@ def test_breadth_builder_keeps_etf_proxy_when_pit_inputs_are_missing(
     output = result.outputs_by_date[_REAL_V2_AS_OF]
     assert output.mode == "etf_proxy"
     assert output.evidence["proxy"] == "RSP/SPY"
+    assert output.evidence["row_provenance_mode"] == "etf_proxy"
+    assert output.evidence["active_label_source"] == "etf_proxy"
 
 
 def test_volume_liquidity_builder_returns_none_when_feature_seam_is_missing(

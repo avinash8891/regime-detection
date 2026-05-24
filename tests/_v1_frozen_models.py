@@ -1,8 +1,8 @@
 """Frozen V1 wire-shape models (snapshot at Phase B / commit 482e44b).
 
-These classes mirror src/regime_detection/models.py at the V1 wire contract.
-They exist solely as a regression anchor: any captured V1 JSON output must
-continue to parse cleanly through these shapes. Do not modify.
+These classes mirror the intentionally pinned V1 fixture contract used by the
+current test suite. The event-calendar subtree is allowed to evolve with
+explicit fixture migrations because calendar state is now multi-label.
 """
 from __future__ import annotations
 
@@ -45,9 +45,8 @@ class BreadthStateOutputV1Frozen(AxisOutputV1Frozen):
 class EventCalendarOutputV1Frozen(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    raw_label: str
-    stable_label: str
-    active_label: str
+    primary_label: str
+    matching_labels: tuple[str, ...]
     evidence: dict[str, Any]
 
 

@@ -240,6 +240,15 @@ def _fit_summary_clustering(feature_store: Any) -> dict[str, Any]:
 _RUNNER_NAME = "v2_calibration"
 
 
+def _load_required_event_calendar(path: Path) -> pd.DataFrame:
+    if not path.exists():
+        raise FileNotFoundError(
+            f"event_calendar file not found at {path}; "
+            "materialize the manifest event_calendar artifact or pass --event-calendar."
+        )
+    return load_event_calendar(path)
+
+
 def _parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="V2 calibration artifact runner.")
     register_manifest_input_args(parser)
@@ -410,12 +419,8 @@ def main() -> int:
     else:
         print(f"news_sentiment: skipped (no {news_sentiment_parquet.name})")
 
-    event_calendar_df = None
-    if event_calendar_path.exists():
-        event_calendar_df = load_event_calendar(event_calendar_path)
-        print(f"event_calendar: {len(event_calendar_df)} rows from {event_calendar_path.name}")
-    else:
-        print(f"event_calendar: skipped (no {event_calendar_path.name})")
+    event_calendar_df = _load_required_event_calendar(event_calendar_path)
+    print(f"event_calendar: {len(event_calendar_df)} rows from {event_calendar_path.name}")
 
     aaii_sentiment = None
     if aaii_sentiment_parquet.exists():

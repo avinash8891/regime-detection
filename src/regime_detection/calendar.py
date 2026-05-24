@@ -9,6 +9,12 @@ import pandas_market_calendars as mcal
 from zoneinfo import ZoneInfo
 
 
+# ±-window for nyse_neighbors: 10 calendar days comfortably covers the
+# longest NYSE closure stretch (weekend + multi-day holiday, e.g. Christmas
+# + NYD ≈ 5 days). Tighter values risk failing on edge cases.
+NYSE_NEIGHBOR_WINDOW_DAYS = 10
+
+
 @dataclass(frozen=True)
 class TradingDayNeighbors:
     prev_trading_day: date
@@ -60,8 +66,8 @@ def nyse_neighbors(d: date) -> TradingDayNeighbors:
 
     # Get a small window around the target date and pick nearest trading days.
     as_ts = pd.Timestamp(d)
-    start = (as_ts - pd.Timedelta(days=10)).date()
-    end = (as_ts + pd.Timedelta(days=10)).date()
+    start = (as_ts - pd.Timedelta(days=NYSE_NEIGHBOR_WINDOW_DAYS)).date()
+    end = (as_ts + pd.Timedelta(days=NYSE_NEIGHBOR_WINDOW_DAYS)).date()
     sessions = pd.DatetimeIndex(nyse_sessions_between(start, end))
     if sessions.empty:
         raise RuntimeError("NYSE calendar returned empty schedule window")

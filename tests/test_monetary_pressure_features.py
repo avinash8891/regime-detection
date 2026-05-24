@@ -8,11 +8,9 @@ values.
 Spec references:
     docs/regime_engine_v2_spec.md §2A (lines 985–1016 of the source
     file; the spec-pinned formula is at line 999 / spec body line 896).
-    Slice 4.1 scope: yield_change_zscore_2y_63d and
-    yield_change_zscore_10y_63d only. USD-index z-score, 21d-variant
-    z-scores, label set, precedence, risk-rank, hysteresis, and the
-    axis classifier are deferred (Implementation Ambiguity Log entries
-    #44 and #45).
+    Slice 4.1 scope now includes the required USD-index z-score seam.
+    Label set, precedence, risk-rank, hysteresis, and the axis classifier
+    are covered in the classifier tests.
 """
 from __future__ import annotations
 
@@ -75,6 +73,13 @@ def _fred_like_yield_series(*, n: int, seed: int, base: float) -> pd.Series:
     return pd.Series(levels, index=_index_n(n), name="yield")
 
 
+def _fred_like_usd_series(*, n: int, seed: int, base: float = 120.0) -> pd.Series:
+    rng = np.random.default_rng(seed=seed)
+    innovations = rng.normal(loc=0.0, scale=0.15, size=n)
+    levels = np.cumsum(innovations) + base
+    return pd.Series(levels, index=_index_n(n), name="broad_usd_index")
+
+
 # =============================================================================
 # yield_change_63d boundary tests
 # =============================================================================
@@ -99,6 +104,9 @@ def test_constant_yield_change_zscore_is_nan(v2_monetary_config):
     out = compute_monetary_pressure_features(
         dgs2=constant_yield,
         dgs10=constant_yield_10,
+        broad_usd_index=pd.Series(
+            np.full(n, 120.0), index=_index_n(n), name="broad_usd_index"
+        ),
         config=v2_monetary_config,
     )
     # Once warmed up, both z-scores remain NaN because std == 0.
@@ -143,8 +151,12 @@ def test_first_valid_index_matches_spec_defaults(v2_monetary_config):
     # Use a stochastic series so std > 0 once the normalizer warms up.
     dgs2 = _fred_like_yield_series(n=n, seed=20260512, base=4.50)
     dgs10 = _fred_like_yield_series(n=n, seed=20260513, base=4.20)
+    usd = _fred_like_usd_series(n=n, seed=20260523)
     out = compute_monetary_pressure_features(
-        dgs2=dgs2, dgs10=dgs10, config=v2_monetary_config
+        dgs2=dgs2,
+        dgs10=dgs10,
+        broad_usd_index=usd,
+        config=v2_monetary_config,
     )
     # Strictly NaN before _FIRST_VALID_T.
     assert out.yield_change_zscore_2y_63d.iloc[:_FIRST_VALID_T].isna().all()
@@ -167,8 +179,12 @@ def test_zscore_hand_computed_at_specific_t(v2_monetary_config):
     n = 1500
     dgs2 = _fred_like_yield_series(n=n, seed=20260514, base=4.75)
     dgs10 = _fred_like_yield_series(n=n, seed=20260515, base=4.10)
+    usd = _fred_like_usd_series(n=n, seed=20260524)
     out = compute_monetary_pressure_features(
-        dgs2=dgs2, dgs10=dgs10, config=v2_monetary_config
+        dgs2=dgs2,
+        dgs10=dgs10,
+        broad_usd_index=usd,
+        config=v2_monetary_config,
     )
 
     t = 1400
@@ -195,10 +211,14 @@ def test_nan_in_dgs2_does_not_propagate_to_dgs10(v2_monetary_config):
     n = _FIRST_VALID_T + 100
     dgs2 = _fred_like_yield_series(n=n, seed=20260516, base=4.50)
     dgs10 = _fred_like_yield_series(n=n, seed=20260517, base=4.10)
+    usd = _fred_like_usd_series(n=n, seed=20260525)
 
     # Baseline (no NaN injection): record DGS10 z-score at last index.
     baseline = compute_monetary_pressure_features(
-        dgs2=dgs2, dgs10=dgs10, config=v2_monetary_config
+        dgs2=dgs2,
+        dgs10=dgs10,
+        broad_usd_index=usd,
+        config=v2_monetary_config,
     )
     baseline_dgs10_last = baseline.yield_change_zscore_10y_63d.iloc[-1]
     assert not math.isnan(baseline_dgs10_last)
@@ -208,7 +228,10 @@ def test_nan_in_dgs2_does_not_propagate_to_dgs10(v2_monetary_config):
     dgs2_dirty.iloc[500:510] = np.nan
 
     perturbed = compute_monetary_pressure_features(
-        dgs2=dgs2_dirty, dgs10=dgs10, config=v2_monetary_config
+        dgs2=dgs2_dirty,
+        dgs10=dgs10,
+        broad_usd_index=usd,
+        config=v2_monetary_config,
     )
     # DGS10 z-score at the last index is byte-identical to baseline.
     assert perturbed.yield_change_zscore_10y_63d.iloc[-1] == pytest.approx(
@@ -260,8 +283,12 @@ def test_features_align_to_input_index(v2_monetary_config):
     n = _FIRST_VALID_T + 50
     dgs2 = _fred_like_yield_series(n=n, seed=20260518, base=4.50)
     dgs10 = _fred_like_yield_series(n=n, seed=20260519, base=4.10)
+    usd = _fred_like_usd_series(n=n, seed=20260526)
     out = compute_monetary_pressure_features(
-        dgs2=dgs2, dgs10=dgs10, config=v2_monetary_config
+        dgs2=dgs2,
+        dgs10=dgs10,
+        broad_usd_index=usd,
+        config=v2_monetary_config,
     )
     assert isinstance(out, MonetaryPressureV2Features)
     frame = out.to_frame()
@@ -281,18 +308,24 @@ _INTEGRATION_AS_OF = date(2023, 12, 14)
 def _macro_series_for_spy_index(
     spy_index: pd.DatetimeIndex,
 ) -> dict[str, pd.Series]:
-    """Build a deterministic DGS2/DGS10 macro_series aligned to a SPY
-    index. Realistic FRED yield scale (2y around 4.5%, 10y around 4.0%).
+    """Build deterministic DGS2/DGS10/DTWEXBGS macro_series aligned to SPY.
+
+    Realistic FRED yield scale (2y around 4.5%, 10y around 4.0%).
     """
     n = len(spy_index)
     rng = np.random.default_rng(seed=20260520)
     innovations_2y = rng.normal(loc=0.0, scale=0.03, size=n)
     innovations_10y = rng.normal(loc=0.0, scale=0.025, size=n)
+    innovations_usd = rng.normal(loc=0.0, scale=0.15, size=n)
     dgs2_levels = np.clip(np.cumsum(innovations_2y) + 4.50, 0.1, None)
     dgs10_levels = np.clip(np.cumsum(innovations_10y) + 4.00, 0.1, None)
+    usd_levels = np.cumsum(innovations_usd) + 120.0
     return {
         "2y_yield": pd.Series(dgs2_levels, index=spy_index, name="2y_yield"),
         "10y_yield": pd.Series(dgs10_levels, index=spy_index, name="10y_yield"),
+        "broad_usd_index": pd.Series(
+            usd_levels, index=spy_index, name="broad_usd_index"
+        ),
     }
 
 
@@ -347,8 +380,7 @@ def test_build_feature_store_graceful_degradation_no_macro(
 
 
 def test_v1_config_path_leaves_monetary_none(market_df_for_asof):
-    """V1 contract: config without monetary_pressure_v2 → monetary is None,
-    v1 outputs unchanged, timeline builds without raising."""
+    """Transition-score configs fail loudly when required score inputs are absent."""
     cfg = load_default_regime_config()
     cfg_v1 = cfg.model_copy(update={"monetary_pressure_v2": None})
     context = build_market_context(
@@ -358,19 +390,21 @@ def test_v1_config_path_leaves_monetary_none(market_df_for_asof):
     )
     store = build_feature_store(context)
     assert store.monetary is None
-    timeline = build_regime_timeline(
-        context=context, lookback_days=5, config=cfg_v1
-    )
-    assert len(timeline.outputs) == 5
+    with pytest.raises(RuntimeError, match="transition_risk requires score inputs"):
+        build_regime_timeline(context=context, lookback_days=5, config=cfg_v1)
 
 
-def test_timeline_threads_monetary_pressure_v2_config(market_df_for_asof):
+def test_timeline_threads_monetary_pressure_v2_config(
+    market_df_for_asof,
+    synthetic_v2_kwargs_for_market_data,
+):
     """End-to-end wire test (AGENTS rule A): build_regime_timeline must
     accept the v2 config and surface monetary features via the same
     feature_store path used by the engine."""
-    cfg = load_default_regime_config()
-    assert cfg.monetary_pressure_v2 is not None
     market_data = market_df_for_asof(_INTEGRATION_AS_OF)
+    kwargs = synthetic_v2_kwargs_for_market_data(market_data)
+    cfg = kwargs["config"]
+    assert cfg.monetary_pressure_v2 is not None
 
     # First pass: build a context without macro to size the synthetic series.
     context_no_macro = build_market_context(
@@ -384,6 +418,10 @@ def test_timeline_threads_monetary_pressure_v2_config(market_df_for_asof):
         market_data=market_data,
         config=cfg,
         macro_series=macro,
+        sector_etf_closes=kwargs["sector_etf_closes"],
+        cross_asset_closes=kwargs["cross_asset_closes"],
+        pit_constituent_intervals=kwargs["pit_constituent_intervals"],
+        constituent_ohlcv=kwargs["constituent_ohlcv"],
     )
 
     timeline = build_regime_timeline(

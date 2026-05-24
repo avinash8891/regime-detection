@@ -324,6 +324,11 @@ PIT constituent breadth begins here, not in V1. V2 must define and validate the 
 
 ETF proxy breadth from V1 remains available as fallback evidence, but V2 PIT breadth must not silently fall back to biased current constituents.
 
+#### Stocks Above 50DMA
+```python
+pct_above_50dma = mean(member.close > member.sma_50)
+```
+
 #### Stocks Above 200DMA
 ```python
 pct_above_200dma = mean(member.close > member.sma_200)
@@ -335,7 +340,7 @@ ad_line[t] = ad_line[t-1] + (advances[t] - declines[t])
 ad_line_slope_20d = (ad_line[t] - ad_line[t-20]) / 20
 ```
 
-#### New Highs / New Lows Ratio (52-week)
+#### New Highs / New Lows Ratio (252-session)
 ```python
 nh_nl_ratio = new_52w_highs / max(new_52w_highs + new_52w_lows, 1)
 ```
@@ -1042,10 +1047,12 @@ the slice/commit that resolved it. Entries are append-only.
     `systemic_stress=5`, `rising_fragility=3` — high-risk labels hold
     multi-day; low-risk labels release immediately). Resolution: pin
     defaults by §1E-risk-rank analogy:
-      - `panic_volume = 3` (risk_rank 3, analogous to §3.7
-        `correlation_to_one`/`rising_fragility` holds — a single-day
-        normal_volume flicker after a panic must not fast-track
-        de-escalation).
+      - `panic_volume = 3` initial pin (risk_rank 3, analogous to §3.7
+        `correlation_to_one`/`rising_fragility` holds).
+        Status update — 2016-01-04..2026-05-15 walk-forward calibration
+        retuned this to `panic_volume = 2`: active panic days fall from
+        115 to 70 while preserving essentially the same state-churn
+        reduction as the initial pin.
       - `normal_volume = 0` (risk_rank 0, lowest — immediate
         de-escalation matches §3.7 `diversified_normal` pattern).
       - `unknown = 0` because absence-of-signal must clear immediately
@@ -1093,7 +1100,7 @@ the slice/commit that resolved it. Entries are append-only.
       defers all PIT pct_above_*dma features per entry #21 and v2
       §1D lines 198–205 ("V2 PIT breadth must not silently fall back
       to biased current constituents").
-    - `correlation_concentration_score` (§4.2 line 1249): AVAILABLE.
+    - `correlation_fragility_score` (§4.2 line 1249): AVAILABLE.
       `avg_pairwise_corr_percentile_504d` exposed on
       `FeatureStore.network_fragility` since Slice 1.2.
     - `trend_break_score` (§4.2 line 1255): AVAILABLE.
@@ -1103,12 +1110,12 @@ the slice/commit that resolved it. Entries are append-only.
       `regime_detection.event_calendar.classify_event_calendar`
       already emits the spec-named labels `fed_week`, `cpi_week`,
       and `nfp_week`.
-    - `hmm_probability_shift_score` (§4.2 line 1265): BLOCKED.
+    - `model_instability_score` (§4.2 line 1265): BLOCKED.
       HMM module per v2 §6.1 is unscoped; v2 §8 places HMM at
       slice 6, after Layer 4.
 
     Two components are BLOCKED (`breadth_deterioration` and
-    `hmm_probability_shift`). The §4.3 weight tables do not enumerate
+    `model_instability`). The §4.3 weight tables do not enumerate
     a "Without HMM AND Without breadth_deterioration" row. Per v2 §10
     ABSOLUTE RULE (line 1244, "when the spec is ambiguous or silent,
     stop and ask; do not invent"), and per the V2 Slice Promotion
@@ -1120,18 +1127,13 @@ the slice/commit that resolved it. Entries are append-only.
     `trend_break`, `macro_event`) to sum to 1.0 would be a spec
     invention.
 
-    Resolution (Slice 3): defer Layer 4 V2 transition score until either
-    (a) PIT constituent membership ingestion lands (unblocks
-    `pct_above_50dma`, then ship the §4.3 "Without HMM" row
-    verbatim over the five non-HMM components), or (b) HMM ships
-    (entry deferred to v2 §8 slice 6, after which the §4.3 "With
-    HMM" row applies if PIT membership has also landed). Until
-    then, the v1 `transition_risk` named-warning path remains
-    authoritative (per §4.5 "V1 warning labels remain
-    authoritative; the score adds gradation").
+    Resolution (current): Layer 4 V2 transition risk is now the
+    authoritative transition-risk implementation. It uses the single
+    §4.3 dynamic-weight table, omits unavailable optional components,
+    fails loudly when required inputs are missing, and no longer falls
+    back to a V1 named-warning path.
 
-    Status update (post Slice 8 change-point): both unblocking paths
-    have since landed and the entry is fully resolved.
+    Status update (post Slice 8 change-point): the entry is fully resolved.
 
     - PIT constituent membership now ships through the engine
       end-to-end (`market_context.py` accepts
@@ -1139,31 +1141,22 @@ the slice/commit that resolved it. Entries are append-only.
       `breadth_state_v2._compute_pit_features` materialises
       `pct_above_50dma`), unblocking `breadth_deterioration_score`.
     - HMM shipped in Slice 6 (`regime_detection.hmm_state`),
-      unblocking `hmm_probability_shift_score`.
+      unblocking `model_instability_score`.
     - Change-point shipped in Slice 8
-      (`regime_detection.change_point`), adding a 7th component
-      and a third weight row.
+      (`regime_detection.change_point`), adding another input to
+      `model_instability_score`.
 
-    `configs/core3-v2.0.0.yaml` now publishes THREE weight tables
+    `configs/core3-v2.0.0.yaml` now publishes one dynamic weight table
     consumed by `regime_detection.transition_score`:
 
-    - `weights_without_hmm` — 5-component fallback (V1 byte-identity
-      path when HMM seam returns None or is disabled).
-    - `weights_with_hmm` — 5-component-plus-HMM, used when the HMM
-      seam is lit.
-    - `weights_with_hmm_with_change_point` — 6-component-plus-
-      change_point, used when both HMM and change-point seams are
-      lit (per Log #66 for the `change_point_score` 7th-component
-      addition to §4.2).
+    - `transition_score.weights` — one configured component-weight table.
 
-    `regime_detection.transition_score.compute_transition_score`
-    selects among the three tables based on which seams returned
-    non-None evidence on the as-of date. HMM evidence must be
-    point-in-time for the emitted session: `top_state_prob[t]` and
-    `top_state_prob[t-5]` both come from models trained only on data
-    available through their respective sessions. When neither HMM nor
-    change-point is lit, the without-HMM 5-component path runs and
-    V1 byte-identity is preserved.
+    `regime_detection.transition_score.compute_transition_score` omits
+    unavailable optional components and renormalizes the present weights after
+    the minimum coverage gate passes. HMM evidence must be point-in-time for
+    the emitted session: `top_state_prob[t]` and `top_state_prob[t-5]` both
+    come from models trained only on data available through their respective
+    sessions.
 
     Resolved by Slices 3 + 6 + 8 + Slice 2.8c (PIT) combined.
 
@@ -1341,7 +1334,7 @@ the slice/commit that resolved it. Entries are append-only.
 
     File / function location:
     `src/regime_detection/monetary_pressure.py` —
-    `compute_monetary_pressure_features(*, dgs2, dgs10, config) -> MonetaryPressureV2Features`.
+    `compute_monetary_pressure_features(*, dgs2, dgs10, broad_usd_index, config) -> MonetaryPressureV2Features`.
     Mirrors slice 2.1/2.2/2.3/2.4 shape (typed frozen dataclass +
     pure function). Wired through `FeatureStore.monetary` and
     `build_regime_timeline`.
@@ -1743,10 +1736,12 @@ the slice/commit that resolved it. Entries are append-only.
     - `budget_week` = event-source candidate from deterministic fiscal
       deadlines plus official Treasury/GovInfo budget discovery.
     - `geopolitical_event` = approval-gated Group B candidate generated
-      from GPR daily-index spikes, GDELT daily Event export volume,
-      HDX HAPI conflict evidence, and TODO credential-gated
-      ACLED / Uppsala-UCDP conflict evidence once entitled API keys are present;
-      still overlay-only, never auto-promoted.
+      from GPR headline `GPRD` spikes enriched with `GPRD_ACT`, `GPRD_THREAT`,
+      `GPRD_MA7`, `GPRD_MA30`, `N10D`, and optional event text, plus GDELT
+      daily Event export volume and TODO credential-gated ACLED /
+      Uppsala-UCDP conflict evidence once entitled API keys are present; still
+      overlay-only, never auto-promoted. HDX HAPI monthly/admin aggregates are
+      intentionally excluded from event candidate generation.
     - **§4.2 `macro_event_score` expansion** — set extended from
       `{fed_week, cpi_week, nfp_week}` to also include
       `{budget_week, election_window, global_rate_decision}`.
@@ -1785,7 +1780,7 @@ the slice/commit that resolved it. Entries are append-only.
       boundary belongs to the next band: `[0.00, 0.35)` →
       `stable`, `[0.35, 0.55)` → `weakening`, `[0.55, 0.75)` →
       `transition_warning`, `[0.75, 1.00]` → `high transition risk`.
-      Also pinned the `score_interpretation` Literal short-name set
+      Also pinned the `score band` Literal short-name set
       `{"stable", "weakening", "transition_warning", "high"}` to
       match the §4.5 JSON example (which uses `"high"` not
       `"high_transition_risk"`).
@@ -1921,7 +1916,7 @@ the slice/commit that resolved it. Entries are append-only.
     With this amendment all §1, §2, §4, §5, §6 spec-blocked items are
     formally resolved at the spec level. The remaining open V2 work is
     code (the unblocked code slices) plus data sourcing (sentiment_score,
-    options IV, weekly EPS revisions, true PIT vendor data, IEF/BIL).
+    options IV, weekly EPS revisions, true PIT vendor data, BIL).
 
     Resolved by spec-amendment commit (this doc-only change).
 
@@ -2128,13 +2123,17 @@ the slice/commit that resolved it. Entries are append-only.
     Resolved by Slice 8.
 
 64. **§6.3 line 2880 — `score` field formula.**
-    Spec output JSON shows `score: 0.78` but no formula. BOCPD emits
-    a per-session posterior P(run_length=0 at t) = P(change-point at
-    t given data up to t). Three operational choices: (A) raw
-    per-session probability; (B) max over a trailing N-day window;
-    (C) sum/integral over a trailing window. Resolution: option (B)
-    with N=5: `score[t] = max(posterior_changepoint_prob[t-4..t])`.
-    Rationale: matches the §4.2 line 2396 `hmm_probability_shift_score`
+    Spec output JSON shows `score: 0.78` but no formula. The
+    `bayesian_changepoint_detection` posterior matrix row
+    `R[0, t]` collapses to the configured hazard under a constant
+    hazard function, so it is not the data-conditioned break signal.
+    Because the BOCPD observation is `realized_vol_21d`, abrupt market
+    breaks enter the model as a 21-session rolling-window ramp and
+    posterior mass spreads over short run lengths. Resolution:
+    `posterior_changepoint_prob[t] = sum(R[1:22, t])` by default
+    (`ChangePointConfig.recent_run_length_window_days = 21`), and
+    `score[t] = max(posterior_changepoint_prob[t-4..t])`.
+    Rationale: matches the §4.2 line 2396 `model_instability_score`
     5-day-lag convention — both transition-evidence components share
     a 5-NYSE-session memory horizon so they're comparable as
     weighted-sum inputs (even though change_point doesn't yet enter
@@ -2145,8 +2144,9 @@ the slice/commit that resolved it. Entries are append-only.
     Resolved by Slice 8.
 
 65. **§6.3 line 2881 — `days_since_last_break` operational definition.**
-    Spec leaves "break" undefined. BOCPD's natural threshold question
-    is "at what posterior probability do we call a session a break".
+    Spec leaves "break" undefined. BOCPD's operational threshold
+    question is "at what recent short-run posterior mass do we call a
+    session a break".
     Resolution: a break occurs at session t when
     `posterior_changepoint_prob[t] >= break_threshold` (default 0.5;
     `ChangePointConfig.break_threshold` for calibration tuning).
@@ -2158,95 +2158,22 @@ the slice/commit that resolved it. Entries are append-only.
     `regime_detection.change_point._days_since_last_break`.
     Resolved by Slice 8.
 
-66. **§4.2 transition_score — `change_point_score` 7th component
-    formula + 4-table weight system.**
-    Spec §4.6 line 2472 says change-point evidence "Feeds
-    transition_score" but §4.2 has no `change_point_score` component
-    formula and §4.3 has no weight table for it. Slice 8 shipped the
-    evidence layer (`ChangePointOutput.score` per Log #64) without
-    the transition_score consumer because the weight table was
-    unpinned. Resolution: pin the formula and 4-table weight system.
+66. **§4.2 transition_score — change-point evidence belongs inside
+    `model_instability_score`.**
+    Change-point evidence feeds transition pressure, but it is no
+    longer a standalone score-table branch. Resolution: HMM probability
+    shift, BOCPD `change_point.score`, and cluster-id instability are
+    combined by `max(...)` into `model_instability_score`.
 
-    Formula:
-    ```python
-    change_point_score = float(change_point.score)
-    # No clip — score is already in [0, 1] by construction
-    # (5-session rolling max of a posterior probability per Log #64).
-    ```
-
-    Weight tables — 4-table system gated on (HMM seam lit, CP seam lit):
-
-    Without HMM, without change_point (5 components — current):
-    ```yaml
-    weights_without_hmm:
-      volatility_acceleration: 0.225
-      breadth_deterioration:   0.225
-      correlation_concentration: 0.225
-      trend_break:             0.225
-      macro_event:             0.10
-    ```
-
-    With HMM, without change_point (6 components — current):
-    ```yaml
-    weights_with_hmm:
-      volatility_acceleration: 0.20
-      breadth_deterioration:   0.20
-      correlation_concentration: 0.20
-      trend_break:             0.20
-      macro_event:             0.10
-      hmm_probability_shift:   0.10
-    ```
-
-    Without HMM, with change_point (6 components — NEW):
-    ```yaml
-    weights_with_change_point:
-      volatility_acceleration: 0.20
-      breadth_deterioration:   0.20
-      correlation_concentration: 0.20
-      trend_break:             0.20
-      macro_event:             0.10
-      change_point:            0.10
-    ```
-
-    With HMM, with change_point (7 components — NEW, full V2 evidence):
-    ```yaml
-    weights_with_hmm_with_change_point:
-      volatility_acceleration: 0.175
-      breadth_deterioration:   0.175
-      correlation_concentration: 0.175
-      trend_break:             0.175
-      macro_event:             0.10
-      hmm_probability_shift:   0.10
-      change_point:            0.10
-    ```
-
-    Rationale: keep the secondary-evidence components (macro_event,
-    hmm_probability_shift, change_point) at the same 0.10 weight to
-    reflect parity between calendar-time evidence, latent-state
-    evidence, and structural-break evidence. Renormalize the four
-    primary deterministic components downward proportionally as
-    additional evidence layers come online (4 × 0.225 = 0.90 → 4 ×
-    0.20 = 0.80 → 4 × 0.175 = 0.70). All weights are V2 §9.1
-    walk-forward calibration placeholders.
-
-    Composer behavior (`compose_transition_score_for_session`):
-    select the weight table by inspecting which evidence-component
-    inputs were passed:
-    - hmm_top_state_prob_now/_5d_ago present + change_point_score
-      present → `weights_with_hmm_with_change_point` (7 components)
-    - hmm_* present only → `weights_with_hmm` (6 components, current)
-    - change_point_score present only → `weights_with_change_point`
-      (6 components, NEW)
-    - neither → `weights_without_hmm` (5 components, current)
-
-    All four cases compute a normalized score in [0, 1]; the bands
-    interpretation (§4.4) applies identically. V1 byte-identity
-    preserved by the "neither present → current weights_without_hmm
-    path" branch — the same code path that has shipped since slice 3.
+    The composer uses one configured `transition_score.weights` table.
+    Components with unavailable evidence are omitted and present
+    weights are renormalized when their configured weight coverage is
+    at least `minimum_component_weight_coverage`. If coverage is too
+    low, the composed score is absent and the final transition-risk
+    state is `insufficient_data`.
 
     Pinned in `regime_detection.transition_score.compute_transition_score`
-    + the yaml weights tables in `core3-v2.0.0.yaml`. Resolved by the
-    transition_score change-point wire-in slice.
+    and `core3-v2.0.0.yaml`.
 
 67. **§1B Trend Character — precedence with the 2 new V2 labels
     (`breakout_expansion`, `range_bound`).**
@@ -2258,8 +2185,9 @@ the slice/commit that resolved it. Entries are append-only.
     labels); adding the 2 V2 labels requires a precedence pin.
 
     Resolution: pin the full V2 §1B precedence as
-    `breakout_expansion > recovery_attempt > trending > range_bound >
-    chop > transition > unknown`. Rationale:
+    `breakout_expansion > recovery_attempt > trending > mild_trend >
+    range_bound > chop > volatile_chop > transition > unknown`.
+    Rationale:
 
     - **`breakout_expansion` outranks everything** including
       `recovery_attempt`: a 4-condition strict breakout (close above
@@ -2273,6 +2201,16 @@ the slice/commit that resolved it. Entries are append-only.
     - **`recovery_attempt` outranks `trending`** preserves the V1
       ordering (V1 §1B picks recovery_attempt first when both fire;
       keep V1-compat unless a spec amendment says otherwise).
+
+    - **`mild_trend` slots after `trending`**: ADX >= 20 indicates
+      directional structure, but |ret21| < 0.05 (the `trending`
+      magnitude gate) means price progress is moderate. This is the
+      single most common equity market state (~44% of sessions in
+      2017-2026 backtest) and was previously collapsed into
+      `transition`, making that catch-all label useless for downstream
+      routing. `mild_trend` shares risk-rank 0 with `trending` (both
+      are directional signals). Hysteresis: 0 (immediate de-escalation,
+      same as `trending`). Audit D3 finding.
 
     - **`trending` outranks `range_bound`**: a high-ADX directional
       move that ALSO satisfies range_bound's `abs(return_63d) < 0.05`
@@ -2289,11 +2227,19 @@ the slice/commit that resolved it. Entries are append-only.
       and `abs(ret21)` predicates don't capture). When both fire,
       prefer the more specific label.
 
-    - Tail order (`chop > transition > unknown`) is preserved from V1.
+    - **`volatile_chop` slots after `chop`**: ADX < 20 (no directional
+      conviction) but |ret10| >= 0.03 OR |ret21| >= 0.05 — short-term
+      returns too large for the calm `chop` thresholds. These are
+      whipsaw sessions (153/2287 = 6.7% in backtest) that were
+      previously collapsed into `transition`. Risk-rank 1 alongside
+      chop. Hysteresis: 0. Audit D3 residual finding.
+
+    - Tail order (`transition > unknown`) is preserved from V1.
 
     Risk-rank extension:
-    `{trending: 0, breakout_expansion: 0, recovery_attempt: 1,
-    range_bound: 1, chop: 1, transition: 2, unknown: 2}`.
+    `{trending: 0, breakout_expansion: 0, mild_trend: 0,
+    recovery_attempt: 1, range_bound: 1, chop: 1, volatile_chop: 1,
+    transition: 2, unknown: 2}`.
     Rationale: `breakout_expansion` is a benign / opportunity signal
     (risk-rank 0 alongside trending — both indicate directional flow).
     `range_bound` is risk-rank 1 alongside chop (low-directional-
@@ -2303,7 +2249,8 @@ the slice/commit that resolved it. Entries are append-only.
     placeholders, matching the §1B / §3.7 5-day / 3-day / 0-day
     pattern):
     `{breakout_expansion: 3, recovery_attempt: 3, trending: 0,
-    range_bound: 3, chop: 0, transition: 2, unknown: 0}`.
+    mild_trend: 0, range_bound: 3, chop: 0, volatile_chop: 0,
+    transition: 2, unknown: 0}`.
     `breakout_expansion` holds 3 days post-event (matches the 5-day
     followthrough_rate definition's coherence window from Log #47).
     `range_bound` holds 3 days to avoid flickering on single-day
@@ -2335,7 +2282,7 @@ the slice/commit that resolved it. Entries are append-only.
     is already strict by spec.
 
     Rationale for N=5: matches the §1B Bollinger band-width expanding
-    lookback (Log #47) and the §4.2 `hmm_probability_shift_score`
+    lookback (Log #47) and the §4.2 `model_instability_score`
     5-NYSE-session memory horizon. A coherent 5-session memory window
     across all "change over time" V2 predicates keeps the cross-axis
     timeframes aligned and simplifies operator interpretation. NaN
@@ -2792,7 +2739,7 @@ the slice/commit that resolved it. Entries are append-only.
         A final-date model may not backfill earlier rows, and warmed rows
         must not be blanked solely because a final-date fit would leak.
 
-    (d) `hmm_probability_shift[t]` requires both `top_state_prob[t]` and
+    (d) `model_instability[t]` requires both `top_state_prob[t]` and
         `top_state_prob[t-5]`. Runners must materialize five extra warmed
         sessions before the emitted window when HMM is enabled.
 
@@ -2817,6 +2764,10 @@ US V2 source contract:
 - `2y yield` = FRED `DGS2`
 - `10y yield` = FRED `DGS10`
 - `broad_usd_index` = FRED `DTWEXBGS`
+
+All three macro series are required for `monetary_pressure_state`. Missing
+`broad_usd_index` disables the monetary feature seam instead of emitting a
+partial DGS2/DGS10-only classification.
 
 V1's draft absolute bps thresholds were deferred because they are rate-era dependent. V2 must adapt to rate era.
 
@@ -2941,7 +2892,10 @@ goldilocks
 inflation_shock
 disinflation
 recession_scare
+risk_off_mild
 recovery_growth
+reflation
+stagflation_lite
 earnings_expansion
 earnings_contraction
 unknown
@@ -2949,7 +2903,7 @@ unknown
 
 #### Precedence
 ```text
-inflation_shock > recession_scare > disinflation > goldilocks > recovery_growth > earnings_contraction > earnings_expansion > unknown
+inflation_shock > recession_scare > risk_off_mild > disinflation > goldilocks > recovery_growth > reflation > stagflation_lite > earnings_contraction > earnings_expansion > unknown
 ```
 
 #### Features (operational definitions)
@@ -3018,10 +2972,11 @@ cyclical_defensive_slope_21d = ols_slope(cyclical_defensive_ratio, window=21)
 ```text
 goldilocks:
   (abs(cpi_6m_change_pct[t] - cpi_6m_change_pct[t-21]) <= 0.005      # "stable" = <50bps drift over 21d
-   OR cpi_6m_change_pct 21d slope <= 0)                              # OR "falling"
+   OR cpi_6m_change_pct 21d slope <= 0                               # OR "falling"
+   OR cpi_6m_change_pct < cpi_goldilocks_benign_ceiling)             # OR ADR 0011 Fix 2: <4% annualized benign
   AND pmi_manufacturing > 50
   AND spy_21d_return > 0                                             # "equities rising"
-  AND credit_funding.active_label == "credit_calm"                   # cross-ref §2C
+  AND credit_funding.active_label == "credit_calm"                   # cross-ref §2C; relaxed by ADR 0011 Fix 3 when credit unbuilt
 
 inflation_shock:
   (inflation_surprise_zscore > +1.5)                                  # "positive AND large"
@@ -3029,22 +2984,44 @@ inflation_shock:
       AND treasury_10y_yield_slope_21d > 0
       AND spy_21d_return < 0
       AND tlt_21d_return < 0)                                         # "equities AND bonds both weak"
+  OR (cpi_3m_change_pct > cpi_3m_acceleration_threshold
+      AND treasury_10y_yield_slope_21d > 0)                           # ADR 0012 Fix A: rapid-onset (default threshold 0.02)
 
 disinflation:
   cpi_6m_change_pct 21d slope < 0
-  AND treasury_10y_yield_slope_21d < 0
+  AND treasury_10y_yield_slope_21d < 0                                # ADR 0011 Fix 1: optional when disinflation_yield_independent=true (default)
   AND pmi_manufacturing > 45
 
 recession_scare:
   treasury_10y_yield_slope_21d < 0
   AND cyclical_defensive_slope_21d < 0
-  AND credit_funding.active_label in {spread_widening, credit_stress}
-  AND spy_21d_return < -0.05                                          # "equities weak"
+  AND credit_funding.active_label in {spread_widening, credit_stress}  # ADR 0011 Fix 3: when credit unbuilt, uses spy_recession_credit_independent_threshold (default -0.07) without credit clause
+  AND spy_21d_return < -0.05                                          # "equities weak" — applies on both credit-confirmed and credit-unbuilt branches (ADR 0012 R2 tightened the prior code-side -0.03 relaxation back to spec)
+  # Known coverage gap (ADR 0011 Remaining Gaps + ADR 0012 R2): the
+  # spread_widening + mild equity decline scenario (SPY between 0% and
+  # -5% during credit stress, ~338 sessions) stays unresolved until a
+  # future ADR introduces a `credit_watch` label.
 
 recovery_growth:
   pmi_manufacturing_slope_21d > 0 AND pmi_manufacturing > 50
   AND cyclical_defensive_slope_21d > 0
-  AND credit_funding.active_label == "credit_calm"
+  AND credit_funding.active_label == "credit_calm"                    # ADR 0011 Fix 3: when credit unbuilt, fires without the credit_calm gate (allow_credit_independent_fallback default true)
+
+reflation:
+  cpi_6m_change_pct_slope_21d > 0                               # CPI rising
+  AND pmi_manufacturing > 50                                     # expansion
+  AND spy_21d_return > 0                                         # equities positive
+  AND credit_funding.active_label NOT IN {credit_stress, funding_squeeze, deleveraging}
+  # Captures "normal growth with mild inflation pressure" — the regime between
+  # goldilocks (requires credit_calm + stable/falling CPI) and recession_scare
+  # (requires equity decline). Audit D1 finding: 352/2287 sessions (15.4%).
+
+stagflation_lite:
+  cpi_6m_change_pct_slope_21d > 0                               # CPI rising
+  AND pmi_manufacturing <= 50                                    # manufacturing contracting
+  # Early-warning macro regime: inflation persists while real economy weakens.
+  # Distinct from recession_scare (requires equity decline + credit stress)
+  # and from reflation (requires PMI > 50). Audit D1 residual: 257/2287 (11.2%).
 
 earnings_expansion:
   aggregate_forward_eps_revision_direction_4w > +0.02     # strict
@@ -3062,14 +3039,17 @@ inflation_growth_risk_rank:
   goldilocks: 0
   recovery_growth: 0
   earnings_expansion: 0
+  reflation: 1
   unknown: 1
   disinflation: 1
+  stagflation_lite: 2
+  risk_off_mild: 2
   earnings_contraction: 2
   recession_scare: 3
   inflation_shock: 3
 ```
 
-Pattern matches §3.6 / §1E / §2A: benign states at 0, mild/unknown at 1, medium severity at 2, high-risk states at 3.
+Pattern matches §3.6 / §1E / §2A: benign states at 0, mild/unknown at 1, medium severity at 2, high-risk states at 3. `reflation` is rank 1 — rising inflation with growth is a transitional regime, not fully benign. `stagflation_lite` is rank 2 — inflation + contracting manufacturing is a deteriorating macro state.
 
 #### Hysteresis
 
@@ -3080,8 +3060,11 @@ inflation_growth:
   deescalation_days_by_label:
     inflation_shock: 5             # high-risk hold
     recession_scare: 5
+    risk_off_mild: 3
     earnings_contraction: 3
     disinflation: 3
+    stagflation_lite: 3
+    reflation: 0
     goldilocks: 0
     recovery_growth: 0
     earnings_expansion: 0
@@ -3100,6 +3083,8 @@ inflation_growth:
 #### Cross-Axis Short-Circuit
 
 Rules referencing `credit_funding.active_label` (`goldilocks`, `recession_scare`, `recovery_growth`) short-circuit the cross-axis predicate to `False` when the §2C axis is unbuilt (slice-4 deferral). Precedence walker then falls through to the next-rank rule. Mirrors slice 1.3's systemic_stress / credit_funding=None pattern (Ambiguity Log #1.3 inline TODO).
+
+**ADR 0011 Fix 3 override (default):** When `allow_credit_independent_fallback=true` (default), the short-circuit-to-False contract above is replaced. `goldilocks` and `recovery_growth` instead fire on their non-credit conditions alone; `recession_scare` requires `spy_21d_return < spy_recession_credit_independent_threshold` (default -0.07, stricter than the credit-confirmed -0.05) in lieu of the credit clause. See `docs/decisions/0011-inflation-growth-rule-coverage-fix.md` Fix 3.
 
 `earnings_expansion` / `earnings_contraction` consume `aggregate_forward_eps_revision_direction_4w`, which is built by the `regime_data_fetch.aggregate_eps` weekly-snapshot accumulator (`sp500_eps_weekly_history.parquet`). The series is all-NaN until > 4 weekly fetches have accumulated; the two labels stay silent during that cold-start and unlock organically once the accumulator fills. No external feed dependency — the accumulator builds the weekly series from the existing free S&P workbook fetch.
 
@@ -3305,7 +3290,7 @@ only place where raw OAS and proxy labels are resolved for downstream use.
 Add labels to V1's calendar:
 - `budget_week` — event-source row from deterministic fiscal deadlines plus official Treasury/GovInfo budget discovery (relevant for India only when an India-specific official source is added)
 - `election_window` — default trading-day window `[-5, +10]` around the result date (matches the §2D YAML example below); configurable via `window_days` in the event row
-- `geopolitical_event` — approval-gated Group B candidate for war, sanctions, terrorism, conflict/protest shocks; generated from GPR, GDELT, and HDX HAPI evidence when those live sources are available; ACLED and Uppsala/UCDP evidence is TODO pending entitled API keys/account access; rendered only when the approval overlay promotes it
+- `geopolitical_event` — approval-gated Group B candidate for war, sanctions, terrorism, conflict/protest shocks; generated from GPR quantitative evidence, AI-GPR context, and GDELT evidence when those live sources are available; ACLED and Uppsala/UCDP evidence is TODO pending entitled API keys/account access; GPR requires a headline `GPRD` spike before emitting a candidate, while acts/threats/persistence/article-count/monthly-country/AI-GPR evidence sets subtype, confidence, importance, suggested `window_days`, and review snippets; rendered only when the approval overlay promotes it; row-level `window_days` overrides the static `(0, 0)` manual fallback; HDX HAPI monthly/admin aggregates are not candidate sources
 - `global_rate_decision` — BOE / ECB / BOJ scheduled meetings sourced from official central-bank archive and current-calendar pages via the event_sources adapter pipeline (ADR 0010 / Group A design spec). Coverage: ECB 88 decisions, BoE 96 decisions, BoJ 89 decisions (all 2016-2026). No longer manually maintained YAML.
 
 YAML schema extension:
@@ -3325,16 +3310,17 @@ events:
 **Wire output shape** (nested under `structural_causal_state.event_calendar`):
 ```json
 {
-  "raw_label": "fed_week",
-  "stable_label": "fed_week",
-  "active_label": "fed_week",
+  "primary_label": "fed_week",
+  "matching_labels": ["fed_week", "expiry_week"],
   "evidence": {
-    "all_matching_events": ["fed_week", "expiry_week"],
-    "selected_via_precedence": "fed_week"
+    "selection_method": "precedence"
   }
 }
 ```
-The §2D labels extend the V1 `EventCalendarOutput` model. No separate output struct — the label set grows but the shape is unchanged.
+The event calendar is deterministic schedule/window evidence, not a hysteresis
+axis: it does not expose `raw_label`, `stable_label`, or `active_label`.
+Downstream logic consumes `matching_labels`; display/reporting can use
+`primary_label` as the compact precedence-selected label.
 
 ---
 
@@ -3363,14 +3349,20 @@ fragility_universe_us:
     - EFA    # Developed ex-US
     - EEM    # Emerging markets
     - TLT    # Long Treasuries
+    - IEF    # Intermediate Treasuries
     - GLD    # Gold
     - HYG    # High yield bonds
     - LQD    # Investment grade bonds
     - USO    # Oil
+    - DBC    # Broad commodities
     - UUP    # Dollar
 ```
 
-22 assets total. Above the 20-asset preferred floor.
+24 assets total. Above the 20-asset preferred floor. DBC and IEF were added
+together after the 2016-01-04 to 2026-05-15 A/B review: IEF alone changed
+COVID active-label hysteresis too much, while the paired DBC+IEF variant kept
+COVID systemic-stress counts aligned with baseline and reduced rule-fallthrough
+unknowns.
 
 ### 3.2 Features
 
@@ -3439,9 +3431,21 @@ systemic_stress > correlation_to_one > correlation_concentration > rising_fragil
 
 `diversified_normal`:
 ```text
-0.25 <= avg_pairwise_corr_percentile_504d <= 0.75
-AND effective_rank stable (21d std < 5% of mean)
+0.0 <= avg_pairwise_corr_percentile_504d <= 0.75
+AND (
+  effective_rank stable (21d std < 5% of mean)
+  OR 0.30 <= avg_pairwise_corr_percentile_504d <= 0.60
+)
 ```
+Note: lower bound lowered from 0.25 to 0.0. Sub-25th-percentile correlation
+is *more* diversified, not less — the original floor excluded the calmest
+261 sessions in a 2287-session backtest (audit D2).
+
+The mid-correlation inner band (`0.30–0.60`) is an ADR 0017 coverage
+amendment: moderate correlation by itself is not fragility, and requiring
+effective-rank stability inside that band over-labeled ordinary factor
+rotation as `unknown`. The stability requirement still applies outside the
+inner band.
 
 `stock_picker_dispersion`:
 ```text
@@ -3462,7 +3466,13 @@ AND breadth_state.active_label in [weak_breadth, narrowing_breadth, divergent_fr
 avg_pairwise_corr_percentile_504d > 0.75
 OR largest_eigenvalue_share_percentile_504d > 0.75
 OR effective_rank_percentile_504d < 0.25
+OR absorption_ratio_top3 > 0.90
 ```
+
+The `absorption_ratio_top3` limb is an ADR 0017 concentration amendment:
+top-3 eigenvalue dominance is a direct concentration signal, even when the
+single largest eigenvalue and effective-rank percentile do not independently
+cross their thresholds.
 
 `correlation_to_one`:
 ```text
@@ -3485,7 +3495,7 @@ network_fragility_risk_rank:
   diversified_normal: 0
   stock_picker_dispersion: 1
   rising_fragility: 2
-  correlation_concentration: 2
+  correlation_fragility: 2
   correlation_to_one: 3
   systemic_stress: 3
   unknown: 2
@@ -3499,7 +3509,7 @@ Network fragility de-escalation defaults:
 ```yaml
 network_fragility_deescalation_days:
   rising_fragility: 3
-  correlation_concentration: 3
+  correlation_fragility: 3
   correlation_to_one: 5
   systemic_stress: 5
   unknown: 0
@@ -3510,74 +3520,130 @@ once a valid classified label appears. Data-quality flickers away from
 high-risk classified states are still held by the threshold of the stable
 label being left, for example `correlation_to_one: 5`.
 
-See ADR 0010 for the complete per-label hysteresis table across all 9 axes. Hysteresis does NOT apply to evidence/score outputs (event_calendar, transition_risk, cluster, change_point, hmm).
+See ADR 0010 for the complete per-label hysteresis table across all 9 axes. Axis hysteresis does not apply to evidence-only outputs (`event_calendar`, `cluster`, `change_point`, `hmm`). `transition_risk` has its own final-state debounce in §4.5.
 
 ---
 
-## 4. Layer 4 V2 — Transition Score
+## 4. Layer 4 V2 — Transition Risk And Score
 
-### 4.0 Named Warning Extensions
+### 4.0 Scope and Ownership
 
-V2 adds named warnings only when they capture a failure mode V1 cannot represent with its deterministic V1 labels.
+V2 owns `transition_risk` end to end. V1 no longer defines an active
+transition-risk classifier.
 
-`sideways_stress_warning`:
-```text
-trend_direction.active_label = sideways
-AND volatility_state.active_label = high_vol
-AND breadth_state.active_label in [weak_breadth, divergent_fragile]
-```
-
-This captures banking-crisis, election-uncertainty, and macro-shock environments that are stressed but have not committed to V1 `bear`. V1 intentionally emits `stable` for this pattern unless another V1 warning fires; do not backport this warning to V1.
-
-**V2 transition_risk precedence (with sideways_stress_warning inserted):**
+Transition risk is not a legacy label with a sidecar score. It is a score-first
+composer:
 
 ```text
-crisis_override > bear_stress_warning > sideways_stress_warning
-> bull_fragile_warning > recovery_attempt > post_switch_cooldown
-> unknown > stable
+required inputs
+  -> normalized component scores
+  -> dynamically weighted transition-pressure score
+  -> hard rule overrides
+  -> final-state debouncing
+  -> transition_risk.state
 ```
 
-`sideways_stress_warning` slots between `bear_stress_warning` and `bull_fragile_warning`: it is a compositional warning like `bull_fragile_warning` but defensively skewed (stressed-but-not-bear is more dangerous than fragile-but-trending). When `bear_stress_warning` already fires (full defensive posture), it takes precedence.
-
-**V2 gating:** the rule is enabled when `config_version != "core3-v1.0.0"`. Under V1 config the rule is silent and V1 byte-identity is preserved (enforced by `tests/test_v1_frozen_replay.py`).
-
-**Strategy response modifier (V2 §10.4 extension):**
-
-```json
-"sideways_stress": {
-  "position_size_multiplier": 0.5,
-  "allow_breakout": false,
-  "allow_leverage_expansion": false,
-  "take_profit_faster": true,
-  "require_confirmation_for_new_longs": true
-}
-```
-
-V2 strategy_response scenario precedence (with sideways_stress inserted between bull_fragile and bear_stress in apply order — same defensive ordering as transition_risk):
+The public output shape is:
 
 ```text
-crisis > bear_stress > sideways_stress > bull_fragile > sideways_chop
-> recovery_attempt > bull_healthy_low_vol > default_neutral
+transition_risk.state
+transition_risk.score
+transition_risk.score_components
+transition_risk.primary_drivers
+transition_risk.triggered_rules
+transition_risk.data_quality
+```
+
+`state` is the only final decision. `score`, `score_components`,
+`primary_drivers`, and `triggered_rules` explain why that state was selected;
+they are not alternate labels.
+
+Required base inputs are:
+
+```text
+trend_direction.active_label
+trend_character.active_label
+volatility_state.active_label
+breadth_state.active_label
+event_calendar.matching_labels
+SPY close
+SPY 50-day moving average
+stable-label switch history
+prior-60-session bear history
+```
+
+Optional V2 inputs add score components when present and valid:
+
+```text
+network_fragility
+credit_funding_state
+volume_liquidity_state
+monetary_pressure_state
+inflation_growth_state
+```
+
+Missing optional inputs do not create parallel logic. The composer omits missing
+optional components and renormalizes the remaining configured weights only if
+`minimum_component_weight_coverage` is satisfied. Missing required
+transition-score infrastructure raises a runtime error. If the infrastructure
+exists but the score cannot be computed because the current session has
+cold-start/NaN components or insufficient configured component weight coverage,
+the final transition-risk state becomes `insufficient_data`.
+
+Mandatory model-evidence inputs:
+
+```text
+hmm
+cluster
+change_point
+```
+
+These three inputs jointly produce `model_instability_score`. They are not
+renormalized away: once `transition_score` is enabled, a missing HMM
+probability, cluster id, or change-point score raises a runtime error.
+
+Final states:
+
+```text
+stable
+watch
+weakening
+transition_warning
+high_transition_risk
+crisis
+bear_stress
+fragile_bull
+recovery_attempt
+insufficient_data
 ```
 
 ### 4.1 Composition
 
-V2 adds a continuous transition score that **augments** V1's named warnings, not replaces them.
+V2 composes a final transition-risk state from hard-rule overrides plus a
+continuous transition score. The hard-rule evidence is preserved as
+`triggered_rules`; `state` is the final state selected after score-band
+classification, hard overrides, and debounce.
 
 ```python
 transition_score = weighted_sum([
+    trend_break_score,
     volatility_acceleration_score,
     breadth_deterioration_score,
-    correlation_concentration_score,
-    trend_break_score,
+    correlation_fragility_score,
+    credit_stress_score,
+    liquidity_stress_score,
     macro_event_score,
-    hmm_probability_shift_score
+    model_instability_score
 ])
 ```
 
 ### 4.2 Component Score Definitions
 
-Each component produces a 0.0–1.0 score.
+Each component produces a 0.0–1.0 score. The numeric scales below are the
+canonical defaults; they live in
+`TransitionScoreConfig.scales` (`TransitionComponentScales`) and can be
+recalibrated per-deployment without code changes. See
+`docs/transition_risk.md` §2 for the operational scale table.
 
 `volatility_acceleration_score`:
 ```python
@@ -3590,9 +3656,14 @@ score = clip((ratio - 1.0) / 0.5, 0, 1)  # 0 at ratio=1.0, 1 at ratio=1.5
 score = clip((0.50 - pct_above_50dma) / 0.30, 0, 1)  # 0 at 50% breadth, 1 at 20%
 ```
 
-`correlation_concentration_score`:
+`correlation_fragility_score`:
 ```python
-score = avg_pairwise_corr_percentile_504d  # already 0-1
+score = max(
+    avg_pairwise_corr_percentile_504d,
+    largest_eigenvalue_share_percentile_504d,
+    1.0 - effective_rank_percentile_504d,
+    clip((absorption_ratio_top3 - 0.70) / 0.25, 0, 1),
+)
 ```
 
 `trend_break_score`:
@@ -3601,81 +3672,97 @@ score = avg_pairwise_corr_percentile_504d  # already 0-1
 # in `FeatureStore.trend_direction_v2.drawdown_252d` (per Ambiguity Log #13).
 # Values are <= 0; 0 at fresh 252d high, negative below.
 distance_from_high = drawdown_252d            # negative (alias retained for spec readability)
-score = clip(-distance_from_high / 0.15, 0, 1)  # 0 at top, 1 at -15%
+drawdown_stress = clip(-distance_from_high / 0.15, 0, 1)  # 0 at top, 1 at -15%
+ma_break_stress = clip((spy_sma_50 - spy_close) / spy_sma_50 / 0.05, 0, 1)
+score = max(drawdown_stress, ma_break_stress)
+```
+
+`credit_stress_score`:
+```python
+score = {
+    "credit_calm": 0.00,
+    "credit_recovery": 0.20,
+    "spread_widening": 0.45,
+    "credit_stress": 0.75,
+    "funding_squeeze": 0.90,
+    "deleveraging": 1.00,
+    "unknown": None,
+}[credit_funding.active_label]
+```
+
+`liquidity_stress_score`:
+```python
+score = max(
+    {"normal_volume": 0.00, "liquidity_gap_behavior": 0.70,
+     "panic_volume": 1.00, "unknown": None}[volume_liquidity.active_label],
+    clip((volume_zscore_20d - 1.0) / 2.0, 0, 1),
+    gap_frequency_percentile_252d,
+    intraday_range_percentile_252d,
+)
 ```
 
 `macro_event_score`:
 ```python
-score = 1.0 if event_calendar.label in [
+score = 1.0 if any(label in event_calendar.matching_labels for label in [
     "fed_week", "cpi_week", "nfp_week",
     # V2 §2D additions:
     "budget_week", "election_window", "global_rate_decision",
-] else 0.0
+]) else 0.0
 ```
 
-`geopolitical_event` is treated separately (high-impact ad-hoc — not part of the routine `macro_event_score`; expected to manifest through `correlation_to_one` / `deleveraging` / `crisis_vol` labels rather than through scheduled-event scoring). Its candidate evidence is generated from GPR, GDELT, and HDX HAPI when available; ACLED and Uppsala/UCDP evidence is TODO pending entitled API keys/account access. Source corroboration is not promotion; a human approval overlay remains mandatory.
+The transition-risk audit surface also records the matching labels that drove
+this component in `transition_risk.evidence.macro_event_labels`.
 
-`hmm_probability_shift_score`:
+`geopolitical_event` is treated separately (high-impact ad-hoc — not part of the routine `macro_event_score`; expected to manifest through `correlation_to_one` / `deleveraging` / `crisis_vol` labels rather than through scheduled-event scoring). Its candidate evidence is generated from GPR quantitative spike evidence, AI-GPR context, and GDELT when available; ACLED and Uppsala/UCDP evidence is TODO pending entitled API keys/account access. HDX HAPI monthly/admin aggregates are intentionally excluded because they do not provide daily shock dates. GPR is not a qualitative event source and is not an automatic event-calendar renderer: the detector requires a headline `GPRD` spike before candidate emission, then uses `GPRD_ACT`, `GPRD_THREAT`, `GPRD_MA7`, `GPRD_MA30`, `N10D`, optional event text, monthly country GPR, and AI-GPR daily/event-type/country context only to set candidate subtype, confidence, importance, suggested `window_days`, and review snippets. Source corroboration is not promotion; GPR never auto-promotes `geopolitical_event`; a human approval overlay remains mandatory.
+
+`model_instability_score`:
 ```python
-score = abs(hmm.top_state_prob[t] - hmm.top_state_prob[t-5])
+score = max(
+    abs(hmm.top_state_prob[t] - hmm.top_state_prob[t-5]),
+    change_point.score,
+    1.0 if cluster_id[t] != cluster_id[t-5] else 0.0,
+)
 ```
 
-`top_state_prob[t]` and `top_state_prob[t-5]` must both be point-in-time
-values from HMM fits trained no later than their respective sessions. A runner
-that emits a 30-session window must keep at least five extra warmed sessions
-before the first emitted row so this component can be present from day 1.
+Missing HMM, change-point, or cluster evidence raises a runtime error. The
+engine must not fabricate or silently omit model-instability evidence.
 
 ### 4.3 Weights
 
-**With HMM (full V2):**
-```yaml
-volatility_acceleration: 0.20
-breadth_deterioration: 0.20
-correlation_concentration: 0.20
-trend_break: 0.20
-macro_event: 0.10
-hmm_probability_shift: 0.10
-```
-
-**Without HMM (V2 partial — if HMM not yet shipped):**
-```yaml
-volatility_acceleration: 0.225
-breadth_deterioration: 0.225
-correlation_concentration: 0.225
-trend_break: 0.225
-macro_event: 0.10
-```
-
-**With change_point evidence (Ambiguity Log #66):** when the §4.6 / §6.3
-change_point evidence layer is lit alongside the 5 deterministic
-components, the composer selects from two additional weight tables:
+One explicit weight table is configured. Missing components are omitted and the
+remaining present weights are re-normalized, provided the present component
+weight coverage meets `minimum_component_weight_coverage`.
 
 ```yaml
-# 6 components — change_point lit, HMM unlit
-weights_with_change_point:
-  volatility_acceleration: 0.20
-  breadth_deterioration:   0.20
-  correlation_concentration: 0.20
-  trend_break:             0.20
-  macro_event:             0.10
-  change_point:            0.10
-
-# 7 components — both HMM and change_point lit (full V2 evidence)
-weights_with_hmm_with_change_point:
-  volatility_acceleration: 0.175
-  breadth_deterioration:   0.175
-  correlation_concentration: 0.175
-  trend_break:             0.175
-  macro_event:             0.10
-  hmm_probability_shift:   0.10
-  change_point:            0.10
+transition_score:
+  weights:
+    trend_break: 0.18
+    volatility_acceleration: 0.16
+    breadth_deterioration: 0.16
+    correlation_fragility: 0.14
+    credit_stress: 0.12
+    liquidity_stress: 0.10
+    macro_event: 0.06
+    model_instability: 0.08
+  minimum_component_weight_coverage: 0.75
 ```
 
-The composer (`compose_transition_score_for_session`) selects one of
-the four weight tables per session by inspecting which evidence
-components are non-None and non-NaN. See Ambiguity Log #66 for the
-full 4-table gating rationale and the parity-at-0.10 design for
-secondary-evidence components.
+`TransitionScoreConfig` exposes three additional sub-configs whose defaults
+preserve the historical inline behavior:
+
+- `transition_score.scales` (`TransitionComponentScales`) — per-component
+  normalization scales used by §4.2.
+- `transition_score.overrides` (`TransitionOverrideThresholds`) — numeric
+  gates for the hard-override rules in §4.5 (`credit_stress`,
+  `correlation_fragility`, `macro_event_min`, `score_elevated_min`) and
+  the `primary_drivers` inclusion floor (`primary_driver_min`, default
+  `0.35`).
+- `transition_score.initial_active_state` — optional seed for the
+  final-state debounce (see §4.5).
+
+If too much evidence is missing, `compose_transition_score_for_session` returns
+`score=None`, `components=None`, and the final transition-risk state becomes
+`insufficient_data`.
 
 ### 4.4 Score Interpretation
 
@@ -3688,35 +3775,129 @@ Boundaries are half-open: the upper boundary belongs to the next band. Exactly `
 [0.75, 1.00]  →  high transition risk
 ```
 
-`score_interpretation` Literal: `{"stable", "weakening", "transition_warning", "high"}` (the JSON example at §4.5 uses `"high"` as the short name for the top band; pin that name to keep the JSON contract consistent).
+`score band` Literal: `{"stable", "weakening", "transition_warning", "high"}` (the JSON example at §4.5 uses `"high"` as the short name for the top band; pin that name to keep the JSON contract consistent).
 
-### 4.5 Integration with V1 Warnings
+### 4.5 Final-State Integration
 
-Transition score is **evidence**, not the regime. Output structure:
+Transition score contributes to the final transition-risk state. Hard override
+rules remain authoritative when they encode actionable cross-axis patterns;
+score bands otherwise become the final pressure state. Missing required score
+inputs fail the run at the transition-risk layer instead of falling back to a
+legacy rule-only decision.
+
+Final-state selection:
+
+```text
+missing required score inputs            -> runtime error
+volatility_state.active_label = crisis_vol -> crisis
+bear stress rule                          -> bear_stress
+fragile bull rule                         -> fragile_bull
+recovery rule                             -> recovery_attempt
+sideways stress / event / cooldown watch  -> watch
+score cold-start / NaN components         -> insufficient_data
+weakening score band                      -> weakening
+transition_warning score band             -> transition_warning
+high score band                           -> high_transition_risk
+```
+
+The crisis rule is deliberately absolute to preserve the old V1 emergency
+override: `crisis_vol` de-risks immediately even when breadth, credit, or
+liquidity evidence has not confirmed the stress yet. Sideways stress is also
+preserved from the old V2 warning design, but it maps to `watch` rather than a
+separate final state:
+
+```text
+trend_direction.active_label = sideways
+AND volatility_state.active_label = high_vol
+AND breadth_state.active_label in [weak_breadth, narrowing_breadth, divergent_fragile]
+-> watch, with triggered_rules containing sideways_stress
+```
+
+`fragile_bull` remains a hard override because the old V1/V2 behavior had a
+direct `bull_fragile` warning and no current score-only replacement is clearly
+better. `insufficient_data` sits below concrete warning/watch rules: unknown
+axis data should not erase an explicit emergency, stress, recovery, event, or
+cooldown signal. It still beats ordinary score-band states when no concrete
+rule is active.
+
+The precise trigger condition for every hard-override rule
+(`bear_stress`, `fragile_bull`, `recovery_attempt`, `sideways_stress`,
+`event_transition_watch`, `post_switch_cooldown`) — including the
+component-score and active-label predicates and the
+`TransitionScoreConfig.overrides.*` thresholds that gate them — is
+tabulated in `docs/transition_risk.md` §4. The spec defines the
+intent; that doc defines the implementation surface.
+
+Final `transition_risk.state` changes are debounced by
+`transition_score.state_confirmation_days`. Immediate states use `1`
+confirmation day (`crisis`, `bear_stress`, `insufficient_data`, `watch`,
+`stable`); softer risk transitions default to `2` consecutive raw prints
+(`weakening`, `transition_warning`, `high_transition_risk`, `fragile_bull`,
+`recovery_attempt`). While a state change is pending, the public state remains
+at the prior active state and `state_confirmation_pending` is appended to
+`triggered_rules`.
+
+By default the **first session** in a run is accepted immediately —
+backfill jobs have no prior session to seed the debounce. Live-streaming
+deployments can set `transition_score.initial_active_state: stable` (or
+any other state present in `state_confirmation_days`) to seed the
+debounce so the first session must also clear its confirmation window
+before promoting. This is opt-in because enabling it perturbs historical
+backfill output for one session per run.
+
+History evidence records both the number of axes that changed on the current
+session and the rolling recent axis-switch count. These fields are exposed as
+`axis_switch_count` and `recent_axis_switch_count` in
+`transition_risk.evidence`.
+
+Output structure:
 ```json
 {
   "transition_risk": {
-    "label": "bull_fragile_warning",
+    "state": "transition_warning",
     "score": 0.62,
-    "score_interpretation": "transition_warning",
     "score_components": {
       "volatility_acceleration": 0.45,
       "breadth_deterioration": 0.71,
-      "correlation_concentration": 0.68,
+      "correlation_fragility": 0.68,
       "trend_break": 0.20,
       "macro_event": 1.0,
-      "hmm_probability_shift": 0.30
+      "model_instability": 0.30
     },
-    "evidence": {}
+    "primary_drivers": [
+      "breadth_deterioration",
+      "correlation_fragility",
+      "volatility_acceleration"
+    ],
+    "triggered_rules": [],
+    "evidence": {
+      "triggered_rules": [],
+      "stable_changed_today": false,
+      "days_since_axis_switch": null,
+      "axis_switch_count": 0,
+      "recent_axis_switch_count": 0
+    },
+    "data_quality": {"status": "ok"}
   }
 }
 ```
 
-V1 warning labels (`bull_fragile_warning`, `bear_stress_warning`, `crisis_override`, etc.) remain authoritative. The score adds gradation.
+`state` is the single downstream decision. `score`, `score_components`,
+`primary_drivers`, `triggered_rules`, `evidence`, and `data_quality` explain why
+that state was selected.
+
+Downstream transition-risk decision code consumes `transition_risk.state`.
+Strategy response consumes `transition_risk.state` for base posture and
+`event_calendar.matching_labels` for config-driven event modifiers. Reporting,
+shadow A/B gates, historical walk-forward summaries, and fixture verification
+must carry the explanatory fields for audit: `score`, `score_components`,
+`primary_drivers`, `triggered_rules`, `data_quality.status`,
+`evidence.axis_switch_count`, and `evidence.recent_axis_switch_count`. Do not
+rebuild transition-risk decisions from component scores outside this layer.
 
 ### 4.6 Change-Point Detection
 
-Implementation: **BOCPD (Bayesian Online Change Point Detection, Adams & MacKay 2007)**. Online streaming algorithm matches V2's `classify_window` evaluation pattern; native probability output feeds `transition_score` as evidence rather than as a hard label (per V2 §10 evidence-not-label discipline). See §6.3 for the full method contract.
+Implementation: **BOCPD (Bayesian Online Change Point Detection, Adams & MacKay 2007)**. Online streaming algorithm matches V2's `classify_window` evaluation pattern; recent short-run posterior mass feeds `transition_score` as evidence rather than as a hard label (per V2 §10 evidence-not-label discipline). See §6.3 for the full method contract.
 
 Output:
 ```json
@@ -3729,7 +3910,11 @@ Output:
 }
 ```
 
-Feeds `transition_score` as additional evidence. **Status: shipped in initial V2** (Slice 8) — wired through `RegimeOutput.change_point` and consumed by the `compose_transition_score_for_session` 4-table weight-selection logic per §4.3 (Ambiguity Log #66). When the change_point seam is lit, the composer selects either `weights_with_change_point` (5+1 = 6 components) or `weights_with_hmm_with_change_point` (5+2 = 7 components) depending on whether the HMM seam is also lit. The earlier "ships in V2.1" note in this section is superseded by the §4.3 4-table system.
+Feeds `transition_score.model_instability_score` as additional evidence.
+**Status: shipped in initial V2** (Slice 8) — wired through
+`RegimeOutput.change_point` and consumed by the single dynamic-weight system in
+§4.3. There are no separate HMM/no-HMM weight tables; available configured
+components are renormalized after the minimum coverage gate passes.
 
 ---
 
@@ -3826,6 +4011,41 @@ blocked_strategy_modes:
 ```
 
 The starter routing rules + blocked-strategy-modes table are V2 §9.1 walk-forward calibration placeholders (same pattern as §1A `0.60` threshold). Operator refines after walk-forward evidence reveals false-positive / false-negative rates per cohort.
+
+#### Strategy Event Modifiers
+
+Strategy event modifiers are config-driven overlays layered after the base
+posture selected from `transition_risk.state`. They consume
+`structural_causal_state.event_calendar.matching_labels`, not
+the compact `primary_label`, so overlapping event windows can apply without
+discarding non-primary labels. The modifiers are not hardcoded event-specific
+strategy branches; deployments tune label sets and overlay fields through
+`strategy_event_modifiers` config.
+
+Default overlays:
+
+```yaml
+strategy_event_modifiers:
+  rules:
+    macro_event_window:
+      labels: [fed_week, cpi_week, nfp_week, global_rate_decision]
+      position_size_cap: 0.75
+      allow_leverage_expansion: false
+      require_confirmation_for_new_longs: true
+
+    policy_or_event_risk_window:
+      labels: [budget_week, election_window, geopolitical_event]
+      position_size_cap: 0.50
+      leverage_allowed: false
+      prefer_cash_or_hedges: true
+      require_confirmation_for_new_longs: true
+```
+
+If multiple modifiers match the same date, each matching overlay is applied in
+configured order. Event modifiers are de-risking overlays only: position-size
+caps use the stricter value, and config validation rejects boolean actions
+that would loosen leverage, leverage expansion, confirmation, or cash/hedge
+guards.
 
 ### 5.2 Strategy-Family Constraints
 
@@ -3935,7 +4155,7 @@ Asymmetric-cost framing (same pattern as §1A 0.60 threshold): false-positive (e
 
 > **Scope:** §5.4 is a **downstream strategy contract**, not regime-engine logic. The engine emits the upstream regime labels (`tightening_pressure` from §2A, `fed_week` from §2D, `rising_vol` from §1C); the timing-control rules below describe how a position-management layer should compose them into trade-frequency limits. The `NoFlipFlopConfig` Pydantic block exists in `config.py` so the yaml can carry `window_trading_days`, but the engine does not consume it — the value is exposed through `RegimeConfig.no_flip_flop` for the strategy layer to read.
 
-Beyond V1's `post_switch_cooldown`:
+Beyond transition risk's axis-switch watch window:
 - `tightening_pressure` + `fed_week` + `rising_vol` → `no_flip_flop_window = 15 trading days`
 - Minimum holding period for reversal trades = 15 trading days during this window
 
@@ -3943,7 +4163,7 @@ Beyond V1's `post_switch_cooldown`:
 {
   "timing_controls": {
     "no_flip_flop_window_days": 15,
-    "post_switch_cooldown_days": 5,
+    "axis_switch_watch_window_days": 5,
     "minimum_holding_period_days": 15
   }
 }
@@ -3984,7 +4204,19 @@ V2 §8 slice 10 (PRISM rule integration) does not ship in the initial V2 release
 
 ## 6. Probabilistic Models
 
-These are **evidence layers**, not final regime labels. Outputs feed into transition_score and other classifiers as additional input. **Never used as standalone label.**
+These are **mandatory evidence layers**, not final regime labels. Outputs feed
+into transition_score as model-instability evidence. They are **never used as
+standalone labels**, but once `transition_score` is enabled, missing HMM,
+cluster/GMM, or change-point evidence is a hard data-quality failure, not an
+optional omitted component.
+
+Evidence-layer registry:
+
+| Evidence layer | Code module | Public output | Model / method | Transition-score use |
+| --- | --- | --- | --- | --- |
+| `hmm` | `src/regime_detection/hmm_state.py` | `RegimeOutput.hmm` | Gaussian HMM | `model_instability_score` via top-state probability shift; also enriches `trend_direction.evidence` and `volatility_state.evidence` |
+| `cluster` / `clustering` / `GMM` | `src/regime_detection/clustering.py` | `RegimeOutput.cluster` | GMM by default (`gmm_8cluster_v1.0`); K-Means only as fallback | `model_instability_score` via `cluster_id[t] != cluster_id[t-5]` |
+| `change_point` | `src/regime_detection/change_point.py` | `RegimeOutput.change_point` | BOCPD | `model_instability_score` via `change_point.score` |
 
 ### 6.1 HMM (Hidden Markov Model)
 
@@ -4048,7 +4280,7 @@ Mapping is decided by the operator after inspecting fitted state means and persi
 
 #### Constraint
 HMM state is **never** the final regime label. Evidence flows into:
-- `transition_score` (via `hmm_probability_shift_score`)
+- `transition_score` (via `model_instability_score`)
 - `RegimeOutput.hmm` (standalone evidence output with `top_state`, `top_state_prob`, `n_states`, `state_persistence_days`, `model_version`)
 - `volatility_state.evidence` (enriched with `hmm_top_state` and `hmm_top_state_prob` per session)
 - `trend_direction.evidence` (enriched with `hmm_top_state` and `hmm_top_state_prob` per session)
@@ -4196,7 +4428,7 @@ Detect statistical break points in returns or volatility series.
 
 **BOCPD (Bayesian Online Change Point Detection, Adams & MacKay 2007).** Pinned alongside §4.6. Rationale:
 - Online streaming evaluation matches V2's `classify_window` pattern (no batch re-run on every classify call required, unlike PELT)
-- Native probability output ("posterior probability that a change-point occurred at session t") satisfies V2 §10's evidence-not-label discipline
+- Native probability output satisfies V2 §10's evidence-not-label discipline. Runtime maps the library posterior matrix to recent short-run posterior mass, `sum(R[1:recent_run_length_window_days + 1, t])`, because the input observation is `realized_vol_21d` and breaks spread over short run lengths rather than only `R[1, t]`.
 - Standard implementation available via the `bayesian_changepoint_detection` PyPI library (corrects an earlier reference to `ruptures` in Ambiguity Log #53; `ruptures` ships only offline algorithms — Binseg, PELT, Dynp, Window, BottomUp — and has no `online` module. See Ambiguity Log #62 for the library substitution. The algorithm choice (BOCPD), hazard rate default, and output schema are unchanged.)
 - Hazard-rate hyperparameter is the only tuning knob; V2 ship default = `1/250` (one expected change-point per trading year, calibration placeholder for V2 §9.1)
 
@@ -4237,7 +4469,7 @@ V2 slices, in priority order. Each slice ships end-to-end before the next begins
 
 1. **Layer 3 Network Fragility** — highest immediate value, uses existing data infrastructure (sector ETFs are already in your screeners)
 2. **Layer 1 V2 incremental features** — efficiency ratio, ATR ratio, gap frequency, breadth thrust, % above 200DMA. Adds to existing classifiers without changing V1 contracts.
-3. **Layer 4 V2 transition score** — composes Layer 1 V2 + Layer 3 V2; can ship without HMM using the renormalized weights
+3. **Layer 4 V2 transition risk and score** — owns the final transition-risk state; composes Layer 1 V2, Layer 3 V2, optional macro/credit/liquidity/model evidence, hard overrides, and final-state debouncing
 4. **Layer 2C Credit/Funding** — depends on credit data sourcing (HYG, LQD, NFCI)
 5. **Layer 2B Inflation/Growth** — depends on macro data sourcing (PMI, CPI, earnings revisions)
 6. **HMM module** — runs in parallel to deterministic classifiers, slots into transition_score
@@ -4257,7 +4489,7 @@ Each slice must pass its own golden test set before commit.
 Every V2 component must demonstrate, in walk-forward backtest, **at least one** of:
 - Lower max drawdown than V1
 - Higher Sharpe than V1
-- Earlier crisis detection (lower lag in days from event to crisis_override)
+- Earlier crisis detection (lower lag in days from event to `transition_risk.state = crisis`)
 - Lower false-switch rate than V1
 
 V2 components that don't beat V1 on at least one metric **must not ship**. Log the failure, document why, move on.
@@ -4287,7 +4519,7 @@ Add dates that exercise V2-specific behavior:
 | 2020-08-15 | tests stock_picker_dispersion (post-COVID rally narrowing) |
 | 2021-01-27 (GameStop) | tests dispersion + volume anomalies |
 | 2022-09-26 (UK gilt crisis) | tests cross-asset deleveraging |
-| 2023-03-13 (SVB) | tests V1 false-negative gap: sideways + high_vol + weak_breadth should fire V2 sideways_stress_warning and Layer 2C credit_stress |
+| 2023-03-13 (SVB) | tests stressed sideways markets through V2 transition score, `watch` / higher-risk final states, and Layer 2C credit_stress |
 | 2024-08-05 (Yen carry unwind) | tests correlation_to_one + funding_squeeze |
 
 These build on the V1 golden test set; do not replace it.
@@ -4319,7 +4551,7 @@ V2 implementation contract:
 5. HMM, GMM, and change-point are evidence layers. Never the final
    regime label. They feed transition_score and evidence dicts only.
 
-6. Network fragility universe is the 22 ETFs in Section 3.1. Do not
+6. Network fragility universe is the 24 ETFs in Section 3.1. Do not
    substitute, add, or remove without an explicit config update.
 
 7. Macro release timestamp handling is mandatory. Use point-in-time
@@ -4359,7 +4591,7 @@ Forbidden V2 inventions in addition to V1 list:
 | Inflation / Growth | (not in V1) | V2 §2B |
 | Credit / Funding | (not in V1) | V2 §2C |
 | Network Fragility | V1 §8 (stub) | V2 §3 (full) |
-| Transition Risk | V1 §9 (named warnings) | V2 §4 (score + warnings) |
+| Transition Risk | V1 §9 (not active; V2-owned) | V2 §4 (score-first final state) |
 | Strategy Response | V1 §10 (modifiers) | V2 §5 (cohorts + family constraints) |
 | HMM | (not in V1) | V2 §6.1 |
 | K-Means / GMM | (not in V1) | V2 §6.2 |

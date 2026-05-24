@@ -11,6 +11,7 @@ from regime_data_fetch.artifact_store import (
     StoredArtifact,
     build_artifact_store,
     sha256_bytes,
+    sha256_file,
 )
 from regime_data_fetch.acquisition_schema import init_acquisition_schema
 
@@ -152,13 +153,6 @@ class AcquisitionStore:
             notes=notes,
         )
 
-    # TODO(simplify, owner=regime-maintainers): record_file_artifact + record_output read the full file
-    # into RAM (`path.read_bytes()`) just to sha256 it and feed _store_raw_artifact.
-    # For the 762-parquet daily_ohlcv_762 import (store_bytes=False), each
-    # parquet can be 10s of MB — peak RSS scales with file size for no reason.
-    # Switch to streaming sha256_file + accept an already-hashed payload path
-    # in _store_raw_artifact; only read_bytes when artifact_store + store_bytes
-    # actually need the blob in memory.
     def record_file_artifact(
         self,
         *,
@@ -177,8 +171,11 @@ class AcquisitionStore:
         notes: str | None = None,
         store_bytes: bool = True,
     ) -> RecordedArtifact:
-        payload = file_path.read_bytes()
-        sha256 = sha256_bytes(payload)
+        payload = file_path.read_bytes() if store_bytes else None
+        sha256 = sha256_bytes(payload) if payload is not None else sha256_file(file_path)
+        content_size_bytes = (
+            len(payload) if payload is not None else file_path.stat().st_size
+        )
         artifact_id = self._insert_artifact_metadata(
             run_id=run_id,
             source_name=source_name,
@@ -195,23 +192,45 @@ class AcquisitionStore:
             license_note=license_note,
             notes=notes,
             local_path=str(file_path),
-            content_size_bytes=len(payload),
+            content_size_bytes=content_size_bytes,
             content_encoding="binary",
-            content_bytes=payload if store_bytes else None,
+            content_bytes=payload,
         )
-        return self._record_raw_artifact_payload(
+        artifact_record = (
+            self._store_raw_artifact(
+                run_id=run_id,
+                source_name=source_name,
+                artifact_kind=artifact_kind,
+                source_identifier=source_identifier,
+                payload=payload,
+                content_sha256=sha256,
+                effective_date=effective_date,
+                start_date=start_date,
+                end_date=end_date,
+                local_path=str(file_path),
+                notes=notes,
+            )
+            if payload is not None
+            else self._store_raw_file_artifact(
+                run_id=run_id,
+                source_name=source_name,
+                artifact_kind=artifact_kind,
+                source_identifier=source_identifier,
+                file_path=file_path,
+                content_sha256=sha256,
+                size_bytes=content_size_bytes,
+                effective_date=effective_date,
+                start_date=start_date,
+                end_date=end_date,
+                notes=notes,
+            )
+        )
+        return RecordedArtifact(
             artifact_id=artifact_id,
-            run_id=run_id,
-            source_name=source_name,
-            artifact_kind=artifact_kind,
-            source_identifier=source_identifier,
-            payload=payload,
             content_sha256=sha256,
-            effective_date=effective_date,
-            start_date=start_date,
-            end_date=end_date,
-            local_path=str(file_path),
-            notes=notes,
+            artifact_record_id=artifact_record.artifact_record_id
+            if artifact_record
+            else None,
         )
 
     def record_output(
@@ -229,8 +248,8 @@ class AcquisitionStore:
         record_artifact: bool = True,
         notes: str | None = None,
     ) -> ArtifactRecord | None:
-        payload = path.read_bytes()
-        content_sha256 = sha256_bytes(payload)
+        content_sha256 = sha256_file(path)
+        size_bytes = path.stat().st_size
         self._insert_derived_output(
             run_id=run_id,
             output_kind=output_kind,
@@ -265,7 +284,7 @@ class AcquisitionStore:
             uri=stored.uri if stored else key,
             local_path=str(path),
             content_sha256=stored.sha256 if stored else content_sha256,
-            size_bytes=stored.size_bytes if stored else len(payload),
+            size_bytes=stored.size_bytes if stored else size_bytes,
             source_name=source_name,
             artifact_kind=artifact_kind or output_kind,
             row_count=row_count,
@@ -679,6 +698,52 @@ class AcquisitionStore:
             local_path=local_path or key,
             content_sha256=stored.sha256 if stored else content_sha256,
             size_bytes=stored.size_bytes if stored else len(payload),
+            source_name=source_name,
+            artifact_kind=artifact_kind,
+            min_date=start_date or effective_date,
+            max_date=end_date or effective_date,
+            notes=notes,
+        )
+
+    def _store_raw_file_artifact(
+        self,
+        *,
+        run_id: int,
+        source_name: str,
+        artifact_kind: str,
+        source_identifier: str,
+        file_path: Path,
+        content_sha256: str,
+        size_bytes: int,
+        effective_date: str | None,
+        start_date: str | None,
+        end_date: str | None,
+        notes: str | None = None,
+    ) -> ArtifactRecord | None:
+        suffix = _artifact_suffix(artifact_kind=artifact_kind, local_path=str(file_path))
+        key = str(
+            Path("raw_capture")
+            / _safe_path_part(source_name)
+            / f"run_id={run_id}"
+            / f"{_safe_path_part(source_identifier)}-{content_sha256[:12]}{suffix}"
+        )
+        stored = (
+            self._put_file_artifact(
+                file_path,
+                key,
+                context=f"raw artifact {source_name}/{artifact_kind} for run_id={run_id}",
+            )
+            if self.artifact_store is not None
+            else None
+        )
+        return self.record_artifact_record(
+            run_id=run_id,
+            name=f"{source_name}_{artifact_kind}",
+            stage="raw_capture",
+            uri=stored.uri if stored else key,
+            local_path=str(file_path),
+            content_sha256=stored.sha256 if stored else content_sha256,
+            size_bytes=stored.size_bytes if stored else size_bytes,
             source_name=source_name,
             artifact_kind=artifact_kind,
             min_date=start_date or effective_date,

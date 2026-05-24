@@ -7,6 +7,7 @@ from pathlib import Path
 import pytest
 
 from regime_data_fetch.event_calendar import GroupABuildResult
+from regime_data_fetch.event_calendar_models import EVENT_SOURCES
 from regime_data_fetch.event_calendar_reporting import (
     build_group_b_report,
 )
@@ -34,14 +35,61 @@ from regime_data_fetch.event_sources.validators_tinyfish import TinyFishValidato
 from regime_data_fetch.event_sources.gpr_gdelt_fetchers import (
     _fetch_paged_json,
     fetch_acled_events as _fetch_acled_events,
-    fetch_hdx_hapi_conflict_events as _fetch_hdx_hapi_conflict_events,
+    fetch_gdelt_daily_export,
 )
-from regime_data_fetch.event_sources.validators_gpr_gdelt import GPRGDELTSignalGenerator
 from regime_data_fetch.event_sources.validators_gpr_gdelt import (
+    ACLEDSignalGenerator,
+    GDELTSignalGenerator,
+    GPRSignalGenerator,
+    UCDPSignalGenerator,
     parse_acled_events,
-    parse_hdx_hapi_conflict_events,
     parse_ucdp_events,
 )
+
+
+def test_hdx_hapi_monthly_aggregates_are_not_event_sources() -> None:
+    assert "hdx-hapi:conflict-events" not in EVENT_SOURCES
+
+
+def test_gdelt_daily_export_fetcher_uses_gdelt_v2_master_file_list(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    urls = [
+        "http://data.gdeltproject.org/gdeltv2/20220224000000.export.CSV.zip",
+        "http://data.gdeltproject.org/gdeltv2/20220224001500.export.CSV.zip",
+    ]
+
+    def fake_http_text(url: str, *, headers: dict[str, str]) -> str:
+        del headers
+        assert url == "http://data.gdeltproject.org/gdeltv2/masterfilelist.txt"
+        return "\n".join(
+            [
+                f"10 abc {urls[0]}",
+                "11 def http://data.gdeltproject.org/gdeltv2/20220224000000.mentions.CSV.zip",
+                f"12 ghi {urls[1]}",
+                "13 jkl http://data.gdeltproject.org/gdeltv2/20220225000000.export.CSV.zip",
+            ]
+        )
+
+    def fake_http_bytes(url: str) -> bytes:
+        assert url in urls
+        return f"payload-from-{url.rsplit('/', 1)[1]}\n".encode()
+
+    monkeypatch.setattr(
+        "regime_data_fetch.event_sources.gpr_gdelt_fetchers._http_text",
+        fake_http_text,
+    )
+    monkeypatch.setattr(
+        "regime_data_fetch.event_sources.gpr_gdelt_fetchers._http_bytes",
+        fake_http_bytes,
+    )
+
+    payload = fetch_gdelt_daily_export(dt.date(2022, 2, 24))
+
+    assert payload == (
+        b"payload-from-20220224000000.export.CSV.zip\n"
+        b"payload-from-20220224001500.export.CSV.zip\n"
+    )
 
 
 def _build_group_b_report(result: GroupABuildResult) -> dict[str, object]:
@@ -166,97 +214,6 @@ def test_parse_ucdp_events_aggregates_candidate_events_by_day() -> None:
     ]
 
 
-def test_parse_hdx_hapi_conflict_events_emits_monthly_admin_evidence() -> None:
-    payload = """
-{
-  "data": [
-    {
-      "event_type": "political_violence",
-      "events": 17,
-      "fatalities": 91,
-      "reference_period_start": "2022-02-01",
-      "reference_period_end": "2022-02-28",
-      "location_name": "Ukraine"
-    }
-  ]
-}
-"""
-
-    rows = parse_hdx_hapi_conflict_events(
-        payload,
-        source_url="https://hapi.humdata.org/api/v2/coordination-context/conflict-events",
-    )
-
-    assert rows == [
-        {
-            "date": dt.date(2022, 2, 1),
-            "event_count": 17,
-            "fatalities": 91,
-            "dominant_theme": "HDX HAPI monthly political_violence: Ukraine",
-            "source_url": "https://hapi.humdata.org/api/v2/coordination-context/conflict-events",
-        }
-    ]
-
-
-def test_hdx_hapi_fetcher_uses_generated_app_identifier_and_supported_date_filters(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    monkeypatch.delenv("HDX_HAPI_APP_IDENTIFIER", raising=False)
-    monkeypatch.setenv("HDX_HAPI_APP_NAME", "regime-detection-test")
-    monkeypatch.setenv("HDX_HAPI_APP_EMAIL", "regime-detection@example.invalid")
-    captured: dict[str, object] = {}
-
-    def fake_fetch_paged_json(
-        base_url: str,
-        *,
-        headers: dict[str, str],
-        result_key: str,
-        extra_params: dict[str, str],
-    ) -> str:
-        captured.update(
-            base_url=base_url,
-            headers=headers,
-            result_key=result_key,
-            extra_params=extra_params,
-        )
-        return '{"data": []}'
-
-    monkeypatch.setattr(
-        "regime_data_fetch.event_sources.gpr_gdelt_fetchers._fetch_paged_json",
-        fake_fetch_paged_json,
-    )
-
-    payload = _fetch_hdx_hapi_conflict_events(2022, 2023)
-
-    assert payload == '{"data": []}'
-    assert captured["result_key"] == "data"
-    extra_params = captured["extra_params"]
-    assert isinstance(extra_params, dict)
-    assert extra_params["start_date"] == "2022-01-01"
-    assert extra_params["end_date"] == "2023-12-31"
-    assert "reference_period_start" not in extra_params
-    assert "reference_period_end" not in extra_params
-    assert (
-        extra_params["app_identifier"]
-        == "cmVnaW1lLWRldGVjdGlvbi10ZXN0OnJlZ2ltZS1kZXRlY3Rpb25AZXhhbXBsZS5pbnZhbGlk"
-    )
-
-
-def test_hdx_hapi_fetcher_returns_none_and_logs_without_app_identifier(
-    caplog: pytest.LogCaptureFixture,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    for key in (
-        "HDX_HAPI_APP_IDENTIFIER",
-        "HDX_APP_IDENTIFIER",
-        "HDX_HAPI_APP_NAME",
-        "HDX_HAPI_APP_EMAIL",
-    ):
-        monkeypatch.delenv(key, raising=False)
-    assert _fetch_hdx_hapi_conflict_events(2022, 2022) is None
-    assert "HDX HAPI app identifier unavailable" in caplog.text
-
-
 def test_conflict_pager_continues_without_total_count_until_short_page(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -315,7 +272,7 @@ def test_conflict_pager_fails_loudly_on_short_page_before_total_count(
         )
 
 
-def test_generator_includes_acled_ucdp_and_hdx_candidate_sources() -> None:
+def test_generator_includes_acled_and_ucdp_candidate_sources() -> None:
     gpr_csv = """date,gpr
 2022-02-20,100
 2022-02-21,101
@@ -329,19 +286,26 @@ def test_generator_includes_acled_ucdp_and_hdx_candidate_sources() -> None:
 """
     acled_json = """{"status": 200, "data": [{"event_date": "2022-02-24", "event_type": "Battles", "country": "Ukraine", "fatalities": "42"}]}"""
     ucdp_json = """{"Result": [{"date_start": "2022-02-24", "country": "Ukraine", "best": 10}]}"""
-    hdx_json = """{"data": [{"event_type": "political_violence", "events": 17, "fatalities": 91, "reference_period_start": "2022-02-01", "reference_period_end": "2022-02-28", "location_name": "Ukraine"}]}"""
-    generator = GPRGDELTSignalGenerator(
-        gpr_fetcher=lambda: gpr_csv,
-        gdelt_fetcher=lambda: gdelt_csv,
-        acled_fetcher=lambda start_year, end_year: acled_json,
-        ucdp_fetcher=lambda start_year, end_year: ucdp_json,
-        hdx_hapi_fetcher=lambda start_year, end_year: hdx_json,
-        min_history_days=3,
-        stddev_threshold=2.0,
-    )
+    generators = [
+        GPRSignalGenerator(
+            gpr_fetcher=lambda: gpr_csv,
+            min_history_days=3,
+            stddev_threshold=2.0,
+        ),
+        GDELTSignalGenerator(gdelt_fetcher=lambda: gdelt_csv),
+        ACLEDSignalGenerator(acled_fetcher=lambda start_year, end_year: acled_json),
+        UCDPSignalGenerator(ucdp_fetcher=lambda start_year, end_year: ucdp_json),
+    ]
 
-    candidates = generator.generate(
-        start_year=2022, end_year=2022, store=None, run_id=None
+    candidates = sorted(
+        [
+            candidate
+            for generator in generators
+            for candidate in generator.generate(
+                start_year=2022, end_year=2022, store=None, run_id=None
+            )
+        ],
+        key=lambda candidate: (candidate.date, candidate.source_id),
     )
 
     assert [
@@ -353,15 +317,14 @@ def test_generator_includes_acled_ucdp_and_hdx_candidate_sources() -> None:
         )
         for candidate in candidates
     ] == [
-        (
-            dt.date(2022, 2, 1),
-            "hdx-hapi:conflict-events",
-            "hdx_hapi_monthly_conflict",
-            True,
-        ),
         (dt.date(2022, 2, 24), "acled:events", "acled_conflict_event", True),
         (dt.date(2022, 2, 24), "gdelt:events-v2", "gdelt_volume_spike", True),
-        (dt.date(2022, 2, 24), "gpr:caldara-iacoviello", "gpr_spike", True),
+        (
+            dt.date(2022, 2, 24),
+            "gpr:caldara-iacoviello",
+            "gpr_headline_spike",
+            True,
+        ),
         (dt.date(2022, 2, 24), "ucdp:ged-candidate", "ucdp_organized_violence", True),
     ]
 

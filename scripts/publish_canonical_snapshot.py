@@ -22,6 +22,7 @@ import argparse
 import io
 import logging
 import os
+import re
 import sys
 from dataclasses import dataclass
 from pathlib import Path
@@ -29,6 +30,7 @@ from typing import Any, Iterable
 
 import pyarrow.compute as pc
 import pyarrow.parquet as pq
+import pyarrow.types as pat
 
 # Allow running as a script without installing the package.
 _REPO_ROOT = Path(__file__).resolve().parent.parent
@@ -125,12 +127,32 @@ def _canonicalize_parquet_bytes(source: Path) -> bytes:
     compression, coerce_timestamps='us', no int96 timestamps. The function
     is a fixed point: canonicalize(canonicalize(x)) == canonicalize(x).
     """
-    table = pq.read_table(source)
+    table = pq.ParquetFile(source).read()
     table = table.replace_schema_metadata(None)
+    if any(pat.is_dictionary(field.type) for field in table.schema):
+        table = table.from_arrays(
+            [
+                column.combine_chunks().dictionary_decode()
+                if pat.is_dictionary(field.type)
+                else column
+                for field, column in zip(table.schema, table.itercolumns(), strict=True)
+            ],
+            names=table.column_names,
+        )
     if table.num_rows > 0:
-        sort_keys = [(name, "ascending") for name in table.column_names]
+        sort_keys = [
+            (field.name, "ascending")
+            for field in table.schema
+            if _is_sortable_arrow_type(field.type)
+        ]
+        if not sort_keys:
+            return _write_canonical_parquet_bytes(table)
         indices = pc.sort_indices(table, sort_keys=sort_keys)
         table = table.take(indices)
+    return _write_canonical_parquet_bytes(table)
+
+
+def _write_canonical_parquet_bytes(table: Any) -> bytes:
     buf = io.BytesIO()
     pq.write_table(
         table,
@@ -140,6 +162,17 @@ def _canonicalize_parquet_bytes(source: Path) -> bytes:
         use_deprecated_int96_timestamps=False,
     )
     return buf.getvalue()
+
+
+def _is_sortable_arrow_type(arrow_type: Any) -> bool:
+    return not (
+        pat.is_list(arrow_type)
+        or pat.is_large_list(arrow_type)
+        or pat.is_fixed_size_list(arrow_type)
+        or pat.is_struct(arrow_type)
+        or pat.is_map(arrow_type)
+        or pat.is_union(arrow_type)
+    )
 
 
 def _parquet_row_count(payload: bytes) -> int:
@@ -185,6 +218,7 @@ class ArtifactReport:
     old_sha: str
     new_sha: str | None = None
     note: str = ""
+    manifest_updates: dict[str, object] | None = None
 
 
 def _resolve_local_path(data_root: Path, artifact: dict[str, Any]) -> Path:
@@ -351,20 +385,150 @@ def run_publish(
             store.put_file(local, key, overwrite=True)
 
         # Update artifact in place to preserve YAML anchors / structure.
+        manifest_updates: dict[str, object] = {"sha256": new_sha}
         artifact["sha256"] = new_sha
         if _is_parquet(local):
             assert canon is not None
-            artifact["rows"] = _parquet_row_count(canon)
+            rows = _parquet_row_count(canon)
+            artifact["rows"] = rows
+            manifest_updates["rows"] = rows
             min_d, max_d = _parquet_date_range(canon)
             if min_d is not None:
                 artifact["min_date"] = min_d
+                manifest_updates["min_date"] = min_d
             if max_d is not None:
                 artifact["max_date"] = max_d
+                manifest_updates["max_date"] = max_d
         status = "UPDATED" if skip_upload or store is None else "UPLOADED"
         reports.append(
-            ArtifactReport(artifact["name"], str(local), status, old_sha, new_sha)
+            ArtifactReport(
+                artifact["name"],
+                str(local),
+                status,
+                old_sha,
+                new_sha,
+                manifest_updates=manifest_updates,
+            )
         )
     return reports
+
+
+# ---------------------------------------------------------------------------
+# Targeted manifest patching
+
+
+_ARTIFACT_NAME_RE = re.compile(r"^(?P<indent>\s*)-\s+name:\s+(?P<name>.+?)\s*$")
+
+
+def _patch_manifest_artifact_metadata(
+    *,
+    manifest_path: Path,
+    updates_by_name: dict[str, dict[str, object]],
+) -> None:
+    """Patch changed artifact scalar metadata without round-tripping YAML.
+
+    The run manifests contain thousands of artifact entries and YAML anchors.
+    A full YAML dump can rewrite unrelated ``null`` / blank-null spellings and
+    anchors. This patcher limits writes to scalar fields inside artifact blocks
+    that actually changed.
+    """
+    if not updates_by_name:
+        return
+
+    original = manifest_path.read_text()
+    lines = original.splitlines(keepends=True)
+    spans = _artifact_block_spans(lines)
+    missing = set(updates_by_name) - set(spans)
+    if missing:
+        names = ", ".join(sorted(missing))
+        raise RuntimeError(f"Manifest missing artifact block(s): {names}")
+
+    patched = lines[:]
+    for name, updates in updates_by_name.items():
+        start, end = spans[name]
+        _patch_artifact_block_lines(patched, start=start, end=end, updates=updates)
+
+    rendered = "".join(patched)
+    if rendered == original:
+        return
+    tmp = manifest_path.with_suffix(manifest_path.suffix + ".tmp")
+    tmp.write_text(rendered)
+    os.replace(tmp, manifest_path)
+
+
+def _artifact_block_spans(lines: list[str]) -> dict[str, tuple[int, int]]:
+    spans: dict[str, tuple[int, int]] = {}
+    current_name: str | None = None
+    current_start: int | None = None
+    current_indent: str | None = None
+
+    for index, line in enumerate(lines):
+        match = _ARTIFACT_NAME_RE.match(line.rstrip("\n"))
+        if match is None:
+            continue
+        indent = match.group("indent")
+        if current_name is not None and current_start is not None and indent == current_indent:
+            spans[current_name] = (current_start, index)
+        current_name = _parse_yaml_scalar(match.group("name"))
+        current_start = index
+        current_indent = indent
+
+    if current_name is not None and current_start is not None:
+        spans[current_name] = (current_start, len(lines))
+    return spans
+
+
+def _patch_artifact_block_lines(
+    lines: list[str],
+    *,
+    start: int,
+    end: int,
+    updates: dict[str, object],
+) -> None:
+    remaining = dict(updates)
+    for index in range(start + 1, end):
+        key, current_value = _split_yaml_key_value(lines[index])
+        if key not in remaining:
+            continue
+        value = remaining.pop(key)
+        newline = "\n" if lines[index].endswith("\n") else ""
+        prefix = lines[index].split(":", 1)[0]
+        lines[index] = f"{prefix}: {_format_yaml_scalar(value, current_value)}{newline}"
+    if remaining:
+        keys = ", ".join(sorted(remaining))
+        artifact_name = lines[start].strip()
+        raise RuntimeError(f"Manifest artifact block {artifact_name!r} missing field(s): {keys}")
+
+
+def _split_yaml_key_value(line: str) -> tuple[str | None, str]:
+    stripped_newline = line.rstrip("\n")
+    if ":" not in stripped_newline:
+        return None, ""
+    key_part, value_part = stripped_newline.split(":", 1)
+    key = key_part.strip()
+    if not key or key.startswith("- "):
+        return None, ""
+    return key, value_part.strip()
+
+
+def _parse_yaml_scalar(raw: str) -> str:
+    value = raw.strip()
+    if len(value) >= 2 and value[0] == value[-1] and value[0] in {"'", '"'}:
+        return value[1:-1]
+    return value
+
+
+def _format_yaml_scalar(value: object, current_value: str) -> str:
+    if value is None:
+        return "" if current_value == "" else "null"
+    if isinstance(value, int):
+        return str(value)
+    rendered = str(value)
+    if current_value.startswith("'") and current_value.endswith("'"):
+        return "'" + rendered.replace("'", "''") + "'"
+    if current_value.startswith('"') and current_value.endswith('"'):
+        return '"' + rendered.replace('"', '\\"') + '"'
+    return rendered
 
 
 # ---------------------------------------------------------------------------
@@ -458,7 +622,16 @@ def main(argv: list[str] | None = None) -> int:
     LOGGER.info("publish: %d processed, %d changed", len(reports), len(changed))
     if changed:
         LOGGER.info(_format_report(changed))
-        _dump_manifest_atomically(payload, ruamel_instance, manifest_path)
+        del ruamel_instance
+        updates_by_name = {
+            report.name: report.manifest_updates
+            for report in changed
+            if report.manifest_updates is not None
+        }
+        _patch_manifest_artifact_metadata(
+            manifest_path=manifest_path,
+            updates_by_name=updates_by_name,
+        )
         LOGGER.info("manifest rewritten: %s", manifest_path)
     else:
         LOGGER.info("no changes; manifest left untouched")

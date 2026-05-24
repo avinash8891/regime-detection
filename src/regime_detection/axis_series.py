@@ -80,7 +80,7 @@ class AxisSeriesBundle:
     credit_funding_effective: dict[date, CreditFundingOutput] | None = None
     # V2 §2A monetary pressure — None in pure-v1 mode (no v2 config), populated
     # by build_monetary_pressure_axis_series when feature_store.monetary is lit
-    # AND context.config.monetary_pressure_state is non-None (documented implementation decision).
+    # AND context.config.monetary_pressure_state is non-None.
     monetary_pressure_state: dict[date, MonetaryPressureV2Output] | None = None
     # V2 §2B inflation/growth — None in pure-v1 mode (no v2 config), populated
     # by build_inflation_growth_axis_series when feature_store.inflation_growth is

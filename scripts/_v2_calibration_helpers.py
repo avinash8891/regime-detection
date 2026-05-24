@@ -26,6 +26,7 @@ from regime_detection.loaders import (
     load_cpi_nowcast_series,
     load_macro_series as load_fred_macro_series,
 )
+from regime_detection.comparison import axis_reporting_label
 
 
 logger = logging.getLogger(__name__)
@@ -35,6 +36,36 @@ def default_pmi_path(data_root: Path) -> Path:
     spec = get_manifest_input_spec("pmi_path")
     assert spec.default_relpath is not None
     return data_root.joinpath(*spec.default_relpath)
+
+
+def synthetic_pit_intervals_from_sector_closes(
+    sector_etf_closes: dict[str, pd.Series],
+) -> pd.DataFrame:
+    return pd.DataFrame(
+        {
+            "ticker": list(sector_etf_closes),
+            "start_date": [series.index.min().date() for series in sector_etf_closes.values()],
+            "end_date": [None] * len(sector_etf_closes),
+        }
+    )
+
+
+def constituent_ohlcv_from_sector_closes(
+    sector_etf_closes: dict[str, pd.Series],
+) -> dict[str, pd.DataFrame]:
+    return {
+        symbol: pd.DataFrame(
+            {
+                "open": series.astype(float),
+                "high": series.astype(float),
+                "low": series.astype(float),
+                "close": series.astype(float),
+                "volume": pd.Series(1_000_000, index=series.index, dtype="int64"),
+                "adjusted_close": series.astype(float),
+            }
+        )
+        for symbol, series in sector_etf_closes.items()
+    }
 
 
 def register_manifest_input_args(
@@ -76,22 +107,6 @@ def apply_manifest_input_defaults(
             continue
         if getattr(args, spec.field, None) is None:
             setattr(args, spec.field, data_root.joinpath(*spec.default_relpath))
-
-
-def axis_reporting_label(output: Any | None, *, default: str | None = None) -> str | None:
-    if output is None:
-        return default
-    reporting_label = getattr(output, "reporting_label", None)
-    if reporting_label is not None:
-        return str(reporting_label)
-    classification_status = getattr(output, "classification_status", "classified")
-    if classification_status != "classified":
-        return str(classification_status)
-    active_label = getattr(output, "active_label", None)
-    if active_label is not None:
-        return str(active_label)
-    label = getattr(output, "label", default)
-    return None if label is None else str(label)
 
 
 def axis_reporting_label_not_wired(output: Any | None) -> str:
@@ -180,14 +195,24 @@ def positive_int(value: str) -> int:
 
 
 def load_market_data(daily_ohlcv_dir: Path) -> pd.DataFrame:
-    """Load v1-shape (SPY/RSP/VIXY) long-format market DataFrame.
+    """Load v1-shape (SPY/RSP/VIX) long-format market DataFrame.
 
     Mirrors ``scripts/run_v2_calibration.py::_load_market_data``.
     """
-    df = _read_daily_ohlcv(daily_ohlcv_dir, symbols=["SPY", "RSP", "VIXY"])
+    required_symbols = ["SPY", "RSP", "VIX"]
+    df = _read_daily_ohlcv(daily_ohlcv_dir, symbols=required_symbols)
     keep = ["date", "symbol", "open", "high", "low", "close", "volume"]
     out = df[keep].copy()
-    out["date"] = pd.to_datetime(out["date"]).dt.date
+    out["date"] = pd.to_datetime(out["date"])
+    max_dates = out.groupby("symbol")["date"].max()
+    missing = sorted(set(required_symbols) - set(max_dates.index))
+    if missing:
+        raise FileNotFoundError(
+            f"daily OHLCV missing required market symbols: {missing}"
+        )
+    common_end = max_dates.loc[required_symbols].min()
+    out = out[out["date"] <= common_end].copy()
+    out["date"] = out["date"].dt.date
     return out.sort_values(["date", "symbol"]).reset_index(drop=True)
 
 

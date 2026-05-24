@@ -227,10 +227,13 @@ def _data_loading_report(load_timings: dict[str, float]) -> dict[str, Any]:
 
 def _compact_timeline_rows(outputs: list[RegimeOutput]) -> list[str]:
     rows = [
-        "as_of_date | trend_direction | volatility_state | transition_risk | activated_v2_seams"
+        "as_of_date | trend_direction | volatility_state | event_calendar_primary | event_calendar_matching | transition_risk | activated_v2_seams"
     ]
     for out in outputs:
         seams: list[str] = []
+        event_calendar = _event_calendar_output(out)
+        event_primary = _event_calendar_primary_label(event_calendar)
+        event_matching = _event_calendar_matching_labels(event_calendar)
         network_fragility_label = _reporting_label(out.network_fragility)
         if (
             network_fragility_label is not None
@@ -272,21 +275,97 @@ def _compact_timeline_rows(outputs: list[RegimeOutput]) -> list[str]:
             seams.append(f"change_point={out.change_point.score:.4f}")
         if out.transition_risk.score is not None:
             seams.append(f"transition_score={out.transition_risk.score:.4f}")
+        transition_rules = getattr(out.transition_risk, "triggered_rules", None)
+        if transition_rules:
+            seams.append(f"transition_rules={','.join(transition_rules)}")
+        transition_drivers = getattr(out.transition_risk, "primary_drivers", None)
+        if transition_drivers:
+            seams.append(f"transition_drivers={','.join(transition_drivers)}")
         seam_text = ", ".join(seams) if seams else "-"
         rows.append(
             f"{out.as_of_date.isoformat()} | "
             f"{_reporting_label(out.trend_direction)} | "
             f"{_reporting_label(out.volatility_state)} | "
-            f"{out.transition_risk.label} | "
+            f"{event_primary or 'missing'} | "
+            f"{','.join(event_matching) if event_matching else 'missing'} | "
+            f"{out.transition_risk.state} | "
             f"{seam_text}"
         )
     return rows
+
+
+def _event_calendar_output(out: Any) -> Any:
+    structural = getattr(out, "structural_causal_state", None)
+    if structural is None:
+        return None
+    return getattr(structural, "event_calendar", None)
+
+
+def _event_calendar_primary_label(event_calendar: Any) -> str | None:
+    if event_calendar is None:
+        return None
+    value = getattr(event_calendar, "primary_label", None)
+    return None if value is None else str(value)
+
+
+def _event_calendar_matching_labels(event_calendar: Any) -> list[str]:
+    if event_calendar is None:
+        return []
+    values = getattr(event_calendar, "matching_labels", None)
+    if values is None:
+        return []
+    return [str(value) for value in values]
+
+
+def _event_calendar_seam(event_calendar: Any) -> dict[str, Any]:
+    return {
+        "primary_label": _event_calendar_primary_label(event_calendar),
+        "matching_labels": _event_calendar_matching_labels(event_calendar),
+    }
+
+
+def _transition_data_quality_status(transition_risk: Any) -> str | None:
+    data_quality = getattr(transition_risk, "data_quality", None)
+    if data_quality is None:
+        return None
+    if isinstance(data_quality, dict):
+        status = data_quality.get("status")
+    else:
+        status = getattr(data_quality, "status", None)
+    return None if status is None else str(status)
+
+
+def _transition_evidence_value(transition_risk: Any, key: str) -> Any:
+    evidence = getattr(transition_risk, "evidence", None)
+    if evidence is None:
+        return None
+    if isinstance(evidence, dict):
+        return evidence.get(key)
+    if hasattr(evidence, "get"):
+        return evidence.get(key)
+    return getattr(evidence, key, None)
+
+
+def _transition_risk_seam(transition_risk: Any) -> dict[str, Any]:
+    return {
+        "score": getattr(transition_risk, "score", None),
+        "primary_drivers": list(getattr(transition_risk, "primary_drivers", []) or []),
+        "triggered_rules": list(getattr(transition_risk, "triggered_rules", []) or []),
+        "data_quality_status": _transition_data_quality_status(transition_risk),
+        "axis_switch_count": _transition_evidence_value(transition_risk, "axis_switch_count"),
+        "recent_axis_switch_count": _transition_evidence_value(
+            transition_risk, "recent_axis_switch_count"
+        ),
+    }
 
 
 def _compact_timeline_report(outputs: list[RegimeOutput]) -> list[dict[str, Any]]:
     rows: list[dict[str, Any]] = []
     for out in outputs:
         seams: dict[str, Any] = {}
+        event_calendar = _event_calendar_output(out)
+        event_primary = _event_calendar_primary_label(event_calendar)
+        event_matching = _event_calendar_matching_labels(event_calendar)
         network_fragility_label = _reporting_label(out.network_fragility)
         network_fragility_status = getattr(
             out.network_fragility, "classification_status", "classified"
@@ -344,12 +423,16 @@ def _compact_timeline_report(outputs: list[RegimeOutput]) -> list[dict[str, Any]
             seams["hmm"] = hmm.top_state_prob
         if out.transition_risk.score is not None:
             seams["transition_score"] = out.transition_risk.score
+        seams["transition_risk"] = _transition_risk_seam(out.transition_risk)
+        seams["event_calendar"] = _event_calendar_seam(event_calendar)
         rows.append(
             {
                 "as_of_date": out.as_of_date.isoformat(),
                 "trend_direction": _reporting_label(out.trend_direction),
                 "volatility_state": _reporting_label(out.volatility_state),
-                "transition_risk": out.transition_risk.label,
+                "event_calendar_primary_label": event_primary,
+                "event_calendar_matching_labels": event_matching,
+                "transition_risk": out.transition_risk.state,
                 "activated_v2_seams": seams,
             }
         )
@@ -406,23 +489,33 @@ def _label_summary_for_fields(
 ) -> dict[str, dict[str, dict[str, int]]]:
     summary: dict[str, dict[str, dict[str, int]]] = {}
     for field_name in field_names:
+        raw_counts: Counter[str] = Counter()
+        stable_counts: Counter[str] = Counter()
         active_counts: Counter[str] = Counter()
         reported_counts: Counter[str] = Counter()
         status_counts: Counter[str] = Counter()
         for output in outputs:
             value = getattr(output, field_name, None)
             if value is None:
+                raw_counts["missing"] += 1
+                stable_counts["missing"] += 1
                 active_counts["missing"] += 1
                 reported_counts["missing"] += 1
                 status_counts["missing"] += 1
                 continue
+            raw_label = getattr(value, "raw_label", None)
+            stable_label = getattr(value, "stable_label", None)
             active_label = getattr(value, "active_label", getattr(value, "label", None))
+            raw_counts[str(raw_label or "missing")] += 1
+            stable_counts[str(stable_label or "missing")] += 1
             active_counts[str(active_label or "missing")] += 1
             reported_counts[str(_reporting_label(value) or "missing")] += 1
             status_counts[
                 str(getattr(value, "classification_status", "classified") or "missing")
             ] += 1
         summary[field_name] = {
+            "raw": _counter_dict(raw_counts),
+            "stable": _counter_dict(stable_counts),
             "active": _counter_dict(active_counts),
             "reported": _counter_dict(reported_counts),
             "status": _counter_dict(status_counts),
@@ -469,8 +562,14 @@ def _trailing_v2_status(out: RegimeOutput) -> list[str]:
     add("cluster", out.cluster)
     add("change_point", out.change_point)
     add("hmm", getattr(out, "hmm", None))
+    event_calendar = _event_calendar_output(out)
+    add("event_calendar.primary_label", _event_calendar_primary_label(event_calendar))
+    add("event_calendar.matching_labels", _event_calendar_matching_labels(event_calendar))
     add("transition_risk.score", out.transition_risk.score)
     add("transition_risk.score_components", out.transition_risk.score_components)
+    add("transition_risk.primary_drivers", getattr(out.transition_risk, "primary_drivers", None))
+    add("transition_risk.triggered_rules", getattr(out.transition_risk, "triggered_rules", None))
+    add("transition_risk.data_quality", getattr(out.transition_risk, "data_quality", None))
     add("agent_routing", getattr(out, "agent_routing", None))
     add("strategy_family_constraints", getattr(out, "strategy_family_constraints", None))
     return rows
@@ -507,8 +606,14 @@ def _trailing_v2_status_report(out: RegimeOutput) -> list[dict[str, Any]]:
     add("cluster", out.cluster)
     add("change_point", out.change_point)
     add("hmm", getattr(out, "hmm", None))
+    event_calendar = _event_calendar_output(out)
+    add("event_calendar.primary_label", _event_calendar_primary_label(event_calendar))
+    add("event_calendar.matching_labels", _event_calendar_matching_labels(event_calendar))
     add("transition_risk.score", out.transition_risk.score)
     add("transition_risk.score_components", out.transition_risk.score_components)
+    add("transition_risk.primary_drivers", getattr(out.transition_risk, "primary_drivers", None))
+    add("transition_risk.triggered_rules", getattr(out.transition_risk, "triggered_rules", None))
+    add("transition_risk.data_quality", getattr(out.transition_risk, "data_quality", None))
     add("agent_routing", getattr(out, "agent_routing", None))
     add("strategy_family_constraints", getattr(out, "strategy_family_constraints", None))
     return rows

@@ -28,6 +28,9 @@ if str(SCRIPT_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPT_DIR))
 
 from regime_detection.engine import RegimeEngine  # noqa: E402
+from regime_detection.loaders import load_event_calendar  # noqa: E402
+
+EVENT_CALENDAR_PATH = REPO_ROOT / "tests" / "fixtures" / "events" / "us_events.yaml"
 
 INTENTS: list[dict[str, Any]] = [
     {
@@ -46,12 +49,12 @@ INTENTS: list[dict[str, Any]] = [
         "intent_id": "volmageddon_crisis",
         "intent_date": "2018-02-09",
         "intent": {
-            "trend_character": "transition",
+            "trend_character": "trending",
             "volatility_state": "crisis_vol",
-            "transition_risk": "crisis_override",
+            "transition_risk": "crisis",
         },
         "search_window_trading_days": 10,
-        "notes": "Volmageddon episode; crisis_vol day",
+        "notes": "Volmageddon episode; crisis_vol day with strong bearish trend",
     },
     {
         "intent_id": "dec2018_bear_stress",
@@ -61,7 +64,7 @@ INTENTS: list[dict[str, Any]] = [
             "trend_character": "trending",
             "volatility_state": "high_vol",
             "breadth_state": "weak_breadth",
-            "transition_risk": "bear_stress_warning",
+            "transition_risk": "bear_stress",
         },
         "search_window_trading_days": 10,
         "notes": "Late-2018 selloff; stress warning",
@@ -85,7 +88,7 @@ INTENTS: list[dict[str, Any]] = [
             "trend_direction": "bear",
             "volatility_state": "crisis_vol",
             "breadth_state": "weak_breadth",
-            "transition_risk": "crisis_override",
+            "transition_risk": "crisis",
         },
         "search_window_trading_days": 10,
         "notes": "COVID crash episode",
@@ -117,10 +120,10 @@ INTENTS: list[dict[str, Any]] = [
         "intent_date": "2022-06-29",
         "intent": {
             "trend_direction": "bear",
-            "trend_character": "trending",
+            "trend_character": "range_bound",
             "volatility_state": "crisis_vol",
             "breadth_state": "weak_breadth",
-            "transition_risk": "crisis_override",
+            "transition_risk": "crisis",
         },
         "search_window_trading_days": 10,
         "notes": "2022 drawdown; crisis-vol episode",
@@ -133,7 +136,7 @@ INTENTS: list[dict[str, Any]] = [
             "trend_character": "trending",
             "volatility_state": "high_vol",
             "breadth_state": "weak_breadth",
-            "transition_risk": "bear_stress_warning",
+            "transition_risk": "bear_stress",
         },
         "search_window_trading_days": 10,
         "notes": "2022 bear market; stress warning",
@@ -188,7 +191,9 @@ def _load_market_data() -> pd.DataFrame:
     spy["symbol"] = "SPY"
     rsp["symbol"] = "RSP"
     vixy["symbol"] = "VIXY"
-    return pd.concat([spy, rsp, vixy], ignore_index=True)
+    vix = vixy.copy()
+    vix["symbol"] = "VIX"
+    return pd.concat([spy, rsp, vix, vixy], ignore_index=True)
 
 
 def _serialize_scalar(x: Any) -> Any:
@@ -228,6 +233,7 @@ def _classify_all_intents(
         end_date=end,
         market_data=market_data,
         lookback_days=lookback_sessions,
+        event_calendar=load_event_calendar(EVENT_CALENDAR_PATH),
     )
     return {out.as_of_date: out for out in timeline.outputs}
 
@@ -267,7 +273,7 @@ def _pick_fixture_date(
 
 def _get_axis_label(out: Any, axis: str) -> str:
     if axis == "transition_risk":
-        return out.transition_risk.label
+        return out.transition_risk.state
     attr = getattr(out, axis, None)
     if attr is not None and hasattr(attr, "active_label"):
         return attr.active_label
@@ -357,9 +363,14 @@ def generate_report(
             attr = getattr(out, axis, None)
             if attr is not None and hasattr(attr, "evidence"):
                 evidence[axis] = _serialize_obj(dict(attr.evidence))
-        evidence["transition_risk"] = _serialize_obj(
-            dict(out.transition_risk.evidence)
-        )
+        evidence["transition_risk"] = {
+            "evidence": _serialize_obj(dict(out.transition_risk.evidence)),
+            "score": out.transition_risk.score,
+            "score_components": _serialize_obj(out.transition_risk.score_components),
+            "primary_drivers": _serialize_obj(out.transition_risk.primary_drivers),
+            "triggered_rules": _serialize_obj(out.transition_risk.triggered_rules),
+            "data_quality": _serialize_obj(out.transition_risk.data_quality),
+        }
 
         report_rows.append(
             {

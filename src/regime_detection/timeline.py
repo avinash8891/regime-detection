@@ -22,8 +22,6 @@ from regime_detection.models import (
     ClusterOutput,
     DataQuality,
     HmmOutput,
-    MonetaryPressureEvidencePayload,
-    MonetaryPressureOutput,
     NetworkFragilityOutput,
     RegimeOutput,
     RegimeTimeline,
@@ -64,8 +62,7 @@ def _v2_classifier_seam_absent_data_quality() -> DataQuality:
     is missing — every V2 axis builder is shipped and produces real
     classifications when its inputs are present. The historical reason
     string ``v2_classifier_not_yet_implemented`` is preserved in the JSON
-    contract for back-compat (see docs/regime_engine_v2_spec.md:1254 and
-    test assertions in test_schema_and_timeline.py).
+    contract for back-compat (asserted in tests/test_schema_and_timeline.py).
 
     Mirrors V1 §2.7 NaN cold-start contract (status=insufficient_history,
     reason=required_feature_is_nan, freshness/completeness null).
@@ -76,15 +73,6 @@ def _v2_classifier_seam_absent_data_quality() -> DataQuality:
         completeness=None,
         reason="required_feature_is_nan",
     )
-
-
-def _plain_evidence_dict(evidence: object) -> dict[str, object]:
-    root = getattr(evidence, "root", None)
-    if isinstance(root, dict):
-        return root
-    if isinstance(evidence, dict):
-        return evidence
-    raise TypeError(f"Expected evidence payload dict, got {type(evidence).__name__}")
 
 
 def _resolve_network_fragility_by_date(
@@ -130,8 +118,9 @@ def _resolve_timeline_required_sessions(
     # seam (e.g. change_point) but keeping another (e.g. HMM) would slice
     # the context down below HMM's training_window_days and the HMM seam
     # would silently return None for insufficient history.
-    # Keeps V1 byte-identity for callers that omit all three configs
-    # (max() collapses to ENGINE_MINIMUM_HISTORY).
+    # Preserves V1's slicing window for callers that omit all three v2 configs
+    # (change_point, hmm, clustering): max() collapses to ENGINE_MINIMUM_HISTORY,
+    # matching what the V1 engine path uses.
     v2_min_history = ENGINE_MINIMUM_HISTORY
     trailing_component_lookback = 0
     if config.change_point is not None:
@@ -145,7 +134,7 @@ def _resolve_timeline_required_sessions(
         # avg_pairwise_corr_63d) so the trailing slice gives the GaussianHMM
         # fit a full non-NaN training window.
         v2_min_history = max(v2_min_history, config.hmm.training_window_days + 63)
-        # transition_score.hmm_probability_shift needs top_state_prob[t-5].
+        # transition_score.model_instability needs top_state_prob[t-5].
         # Keep five extra warmed sessions ahead of the emitted window so the
         # first requested output can use the same PIT evidence as later rows.
         trailing_component_lookback = max(trailing_component_lookback, 5)
@@ -155,6 +144,20 @@ def _resolve_timeline_required_sessions(
         # the GaussianMixture fit a full non-NaN training window.
         v2_min_history = max(
             v2_min_history, config.clustering.training_window_days + 63
+        )
+    if config.monetary_pressure_v2 is not None:
+        mp_config = config.monetary_pressure_v2
+        monetary_change_window = max(
+            mp_config.yield_change_lookback_days,
+            mp_config.rate_shock_lookback_days,
+            mp_config.broad_usd_lookback_days,
+        )
+        # Monetary-pressure z-scores use a rolling normalizer over N-session
+        # changes. Keep enough pre-window sessions so the first emitted day can
+        # classify from real z-scores instead of cold-start NaNs.
+        v2_min_history = max(
+            v2_min_history,
+            mp_config.zscore_normalizer_window_days + monetary_change_window,
         )
     return min(
         available_sessions,
@@ -281,6 +284,129 @@ def _enrich_with_hmm_evidence(
     return output.model_copy(update={"evidence": AxisEvidencePayload(root=enriched)})
 
 
+def _build_change_point_output(
+    *,
+    aligned: _AlignedV2Evidence,
+    selected_day_index: int,
+) -> ChangePointOutput | None:
+    if (
+        aligned.cp_score_aligned is None
+        or aligned.cp_days_since_aligned is None
+        or aligned.cp_method is None
+    ):
+        return None
+    score_val = aligned.cp_score_aligned.iloc[selected_day_index]
+    if score_val is None or pd.isna(score_val):
+        return None
+    days_val = aligned.cp_days_since_aligned.iloc[selected_day_index]
+    days_since_int = None if days_val is None or pd.isna(days_val) else int(days_val)
+    return ChangePointOutput(
+        score=float(score_val),
+        days_since_last_break=days_since_int,
+        method=aligned.cp_method,
+    )
+
+
+def _build_cluster_output(
+    *,
+    aligned: _AlignedV2Evidence,
+    working_context: MarketContext,
+    selected_day_index: int,
+) -> ClusterOutput | None:
+    if (
+        aligned.cluster_id_aligned is None
+        or aligned.cluster_distance_aligned is None
+        or aligned.cluster_model_version is None
+    ):
+        return None
+    cid_val = aligned.cluster_id_aligned.iloc[selected_day_index]
+    dist_val = aligned.cluster_distance_aligned.iloc[selected_day_index]
+    if cid_val is None or pd.isna(cid_val) or pd.isna(dist_val):
+        return None
+
+    clustering_config = working_context.config.clustering
+    cluster_label_map = (
+        clustering_config.cluster_label_map
+        if clustering_config is not None
+        else None
+    )
+    validated_cluster_label: str | None = None
+    if cluster_label_map is not None and clustering_config is not None:
+        map_covers_clusters = set(cluster_label_map.keys()) == set(
+            range(clustering_config.n_clusters)
+        )
+        version_matches = aligned.cluster_model_version == clustering_config.model_version
+        if map_covers_clusters and version_matches:
+            validated_cluster_label = cluster_label_map.get(int(cid_val))
+        elif selected_day_index == 0:
+            _LOGGER.warning(
+                "cluster_label_map skipped: map keys %s do not cover "
+                "n_clusters=%d or model_version mismatch (map=%s, fit=%s)",
+                sorted(cluster_label_map.keys()),
+                clustering_config.n_clusters,
+                clustering_config.model_version,
+                aligned.cluster_model_version,
+            )
+    return ClusterOutput(
+        cluster_id=int(cid_val),
+        distance_to_centroid=float(dist_val),
+        model_version=aligned.cluster_model_version,
+        mapped_label=validated_cluster_label,
+    )
+
+
+def _build_hmm_output(
+    *,
+    aligned: _AlignedV2Evidence,
+    working_context: MarketContext,
+    selected_day_index: int,
+    day: date,
+) -> HmmOutput | None:
+    if (
+        aligned.hmm_top_state_aligned is None
+        or aligned.hmm_top_state_prob_aligned is None
+        or aligned.hmm_n_states is None
+    ):
+        return None
+    hmm_state_val = aligned.hmm_top_state_aligned.iloc[selected_day_index]
+    hmm_prob_val = aligned.hmm_top_state_prob_aligned.iloc[selected_day_index]
+    if hmm_state_val is None or pd.isna(hmm_state_val) or pd.isna(hmm_prob_val):
+        return None
+
+    persistence = (
+        _hmm_state_persistence_days(aligned.hmm_top_state_full, pd.Timestamp(day))
+        if aligned.hmm_top_state_full is not None
+        else None
+    )
+    hmm_config = working_context.config.hmm
+    hmm_label_map = hmm_config.state_label_map if hmm_config is not None else None
+    validated_hmm_label: str | None = None
+    if hmm_label_map is not None and hmm_config is not None:
+        map_covers_states = set(hmm_label_map.keys()) == set(range(hmm_config.n_states))
+        version_matches = (
+            (aligned.hmm_model_version or "hmm_unknown") == hmm_config.model_version
+        )
+        if map_covers_states and version_matches:
+            validated_hmm_label = hmm_label_map.get(int(hmm_state_val))
+        elif selected_day_index == 0:
+            _LOGGER.warning(
+                "state_label_map skipped: map keys %s do not cover "
+                "n_states=%d or model_version mismatch (map=%s, fit=%s)",
+                sorted(hmm_label_map.keys()),
+                hmm_config.n_states,
+                hmm_config.model_version,
+                aligned.hmm_model_version,
+            )
+    return HmmOutput(
+        top_state=int(hmm_state_val),
+        top_state_prob=float(hmm_prob_val),
+        n_states=aligned.hmm_n_states,
+        state_persistence_days=persistence,
+        model_version=aligned.hmm_model_version or "hmm_unknown",
+        mapped_label=validated_hmm_label,
+    )
+
+
 def _build_timeline_output_for_day(
     *,
     day: date,
@@ -331,139 +457,34 @@ def _build_timeline_output_for_day(
         if axis_bundle.monetary_pressure_state is not None
         else None
     )
-    monetary_pressure = (
-        MonetaryPressureOutput(
-            label=monetary_pressure_output.active_label,
-            evidence=MonetaryPressureEvidencePayload(
-                root=_plain_evidence_dict(monetary_pressure_output.evidence)
-            ),
-            data_quality=monetary_pressure_output.data_quality,
+    if (
+        working_context.config.monetary_pressure_state is not None
+        and monetary_pressure_output is None
+    ):
+        raise RuntimeError(
+            "monetary_pressure_state is configured but unavailable; "
+            "supply macro_series keys 2y_yield, 10y_yield, and broad_usd_index"
         )
-        if monetary_pressure_output is not None
-        else MonetaryPressureOutput(
-            label="unknown",
-            evidence=MonetaryPressureEvidencePayload(
-                root={"reason": "v2_classifier_not_yet_implemented"}
-            ),
-            data_quality=_v2_classifier_seam_absent_data_quality(),
-        )
-    )
     inflation_growth_output = (
         axis_bundle.inflation_growth.get(day)
         if axis_bundle.inflation_growth is not None
         else None
     )
-    change_point_output: ChangePointOutput | None = None
-    if (
-        aligned_v2_evidence.cp_score_aligned is not None
-        and aligned_v2_evidence.cp_days_since_aligned is not None
-        and aligned_v2_evidence.cp_method is not None
-    ):
-        score_val = aligned_v2_evidence.cp_score_aligned.iloc[selected_day_index]
-        if score_val is not None and not pd.isna(score_val):
-            days_val = aligned_v2_evidence.cp_days_since_aligned.iloc[
-                selected_day_index
-            ]
-            days_since_int: int | None
-            if days_val is None or pd.isna(days_val):
-                days_since_int = None
-            else:
-                days_since_int = int(days_val)
-            change_point_output = ChangePointOutput(
-                score=float(score_val),
-                days_since_last_break=days_since_int,
-                method=aligned_v2_evidence.cp_method,
-            )
-
-    cluster_output: ClusterOutput | None = None
-    if (
-        aligned_v2_evidence.cluster_id_aligned is not None
-        and aligned_v2_evidence.cluster_distance_aligned is not None
-        and aligned_v2_evidence.cluster_model_version is not None
-    ):
-        cid_val = aligned_v2_evidence.cluster_id_aligned.iloc[selected_day_index]
-        dist_val = aligned_v2_evidence.cluster_distance_aligned.iloc[selected_day_index]
-        if cid_val is not None and not pd.isna(cid_val) and not pd.isna(dist_val):
-            clustering_config = working_context.config.clustering
-            cluster_label_map = (
-                clustering_config.cluster_label_map
-                if clustering_config is not None
-                else None
-            )
-            validated_cluster_label: str | None = None
-            if cluster_label_map is not None and clustering_config is not None:
-                map_covers_clusters = set(cluster_label_map.keys()) == set(
-                    range(clustering_config.n_clusters)
-                )
-                version_matches = (
-                    aligned_v2_evidence.cluster_model_version
-                    == clustering_config.model_version
-                )
-                if map_covers_clusters and version_matches:
-                    validated_cluster_label = cluster_label_map.get(int(cid_val))
-                elif selected_day_index == 0:
-                    _LOGGER.warning(
-                        "cluster_label_map skipped: map keys %s do not cover "
-                        "n_clusters=%d or model_version mismatch (map=%s, fit=%s)",
-                        sorted(cluster_label_map.keys()),
-                        clustering_config.n_clusters,
-                        clustering_config.model_version,
-                        aligned_v2_evidence.cluster_model_version,
-                    )
-            cluster_output = ClusterOutput(
-                cluster_id=int(cid_val),
-                distance_to_centroid=float(dist_val),
-                model_version=aligned_v2_evidence.cluster_model_version,
-                mapped_label=validated_cluster_label,
-            )
-
-    hmm_output: HmmOutput | None = None
-    if (
-        aligned_v2_evidence.hmm_top_state_aligned is not None
-        and aligned_v2_evidence.hmm_top_state_prob_aligned is not None
-        and aligned_v2_evidence.hmm_n_states is not None
-    ):
-        hmm_state_val = aligned_v2_evidence.hmm_top_state_aligned.iloc[selected_day_index]
-        hmm_prob_val = aligned_v2_evidence.hmm_top_state_prob_aligned.iloc[selected_day_index]
-        if hmm_state_val is not None and not pd.isna(hmm_state_val) and not pd.isna(hmm_prob_val):
-            persistence = _hmm_state_persistence_days(
-                aligned_v2_evidence.hmm_top_state_full,
-                pd.Timestamp(day),
-            ) if aligned_v2_evidence.hmm_top_state_full is not None else None
-            hmm_config = working_context.config.hmm
-            hmm_label_map = (
-                hmm_config.state_label_map
-                if hmm_config is not None
-                else None
-            )
-            validated_hmm_label: str | None = None
-            if hmm_label_map is not None and hmm_config is not None:
-                map_covers_states = set(hmm_label_map.keys()) == set(
-                    range(hmm_config.n_states)
-                )
-                version_matches = (
-                    (aligned_v2_evidence.hmm_model_version or "hmm_unknown")
-                    == hmm_config.model_version
-                )
-                if map_covers_states and version_matches:
-                    validated_hmm_label = hmm_label_map.get(int(hmm_state_val))
-                elif selected_day_index == 0:
-                    _LOGGER.warning(
-                        "state_label_map skipped: map keys %s do not cover "
-                        "n_states=%d or model_version mismatch (map=%s, fit=%s)",
-                        sorted(hmm_label_map.keys()),
-                        hmm_config.n_states,
-                        hmm_config.model_version,
-                        aligned_v2_evidence.hmm_model_version,
-                    )
-            hmm_output = HmmOutput(
-                top_state=int(hmm_state_val),
-                top_state_prob=float(hmm_prob_val),
-                n_states=aligned_v2_evidence.hmm_n_states,
-                state_persistence_days=persistence,
-                model_version=aligned_v2_evidence.hmm_model_version or "hmm_unknown",
-                mapped_label=validated_hmm_label,
-            )
+    change_point_output = _build_change_point_output(
+        aligned=aligned_v2_evidence,
+        selected_day_index=selected_day_index,
+    )
+    cluster_output = _build_cluster_output(
+        aligned=aligned_v2_evidence,
+        working_context=working_context,
+        selected_day_index=selected_day_index,
+    )
+    hmm_output = _build_hmm_output(
+        aligned=aligned_v2_evidence,
+        working_context=working_context,
+        selected_day_index=selected_day_index,
+        day=day,
+    )
 
     agent_routing = None
     strategy_family_constraints = None
@@ -503,7 +524,6 @@ def _build_timeline_output_for_day(
         breadth_state=breadth_output,
         structural_causal_state=StructuralCausalState(
             event_calendar=event_output,
-            monetary_pressure=monetary_pressure,
         ),
         network_fragility=network_fragility_output,
         transition_risk=transition_output,
@@ -512,8 +532,9 @@ def _build_timeline_output_for_day(
             trend_character_active=trend_character_output.active_label,
             volatility_state_active=volatility_output.active_label,
             breadth_state_active=breadth_output.active_label,
-            transition_risk_label=transition_output.label,
-            event_calendar_active=event_output.active_label,
+            transition_risk_state=transition_output.state,
+            event_calendar_labels=event_output.matching_labels,
+            event_modifier_config=working_context.config.strategy_event_modifiers,
         ),
         volume_liquidity_state=volume_liquidity_output,
         credit_funding_state=credit_funding_output,
@@ -581,13 +602,13 @@ def build_regime_timeline(
     axis_bundle = build_axis_series_bundle(
         context=working_context, feature_store=feature_store
     )
+    selected_days = list(working_context.sessions[-lookback_days:])
     transition_risk = build_transition_risk_series(
         context=working_context,
         feature_store=feature_store,
         axis_bundle=axis_bundle,
+        output_sessions=selected_days,
     )
-
-    selected_days = list(working_context.sessions[-lookback_days:])
 
     hmm_config = working_context.config.hmm
     aligned_v2_evidence = _align_v2_evidence_for_selected_days(

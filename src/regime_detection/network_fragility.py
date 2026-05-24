@@ -1,7 +1,8 @@
 """v2 §3.2 Network Fragility feature compute.
 
-Pure numpy/pandas implementation of the six features specified at
-docs/regime_engine_v2_spec.md §3.2 (lines 552–596):
+Pure numpy/pandas implementation of the features specified at
+docs/regime_engine_v2_spec.md §3.2 (lines 3434–3479) — five base features
+plus four derived rolling percentiles:
 
 - avg_pairwise_corr_63d            (mean of off-diagonal of 63d corr matrix)
 - avg_pairwise_corr_percentile_504d

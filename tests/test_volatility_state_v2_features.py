@@ -436,7 +436,10 @@ def test_build_feature_store_none_when_config_absent(market_df_for_asof):
     assert store.volatility_state_v2 is None
 
 
-def test_timeline_threads_volatility_state_v2_config(market_df_for_asof):
+def test_timeline_threads_volatility_state_v2_config(
+    market_df_for_asof,
+    synthetic_v2_kwargs_for_market_data,
+):
     """End-to-end wire test: build_regime_timeline must accept v2 config and
     surface volatility_state_v2 features via the same feature_store path used
     by the engine. This locks in that future classifier wiring will have
@@ -450,10 +453,18 @@ def test_timeline_threads_volatility_state_v2_config(market_df_for_asof):
     )
     from regime_detection.timeline import ENGINE_MINIMUM_HISTORY
 
+    market_data = market_df_for_asof(_INTEGRATION_AS_OF)
+    kwargs = synthetic_v2_kwargs_for_market_data(market_data)
+    cfg = kwargs["config"]
     context = build_market_context(
         end_date=_INTEGRATION_AS_OF,
-        market_data=market_df_for_asof(_INTEGRATION_AS_OF),
+        market_data=market_data,
         config=cfg,
+        macro_series=kwargs["macro_series"],
+        sector_etf_closes=kwargs["sector_etf_closes"],
+        cross_asset_closes=kwargs["cross_asset_closes"],
+        pit_constituent_intervals=kwargs["pit_constituent_intervals"],
+        constituent_ohlcv=kwargs["constituent_ohlcv"],
     )
     required = min(len(context.sessions), ENGINE_MINIMUM_HISTORY)
     working = slice_context_to_recent_sessions(
@@ -483,7 +494,9 @@ def test_v1_config_path_leaves_volatility_state_v2_none(market_df_for_asof):
     timeline cannot build without the config — this test only verifies the
     feature_store seam is correctly absent."""
     cfg = load_default_regime_config()
-    cfg_v1 = cfg.model_copy(update={"volatility_state_v2": None})
+    cfg_v1 = cfg.model_copy(
+        update={"volatility_state_v2": None, "volume_liquidity_state": None}
+    )
     context = build_market_context(
         end_date=_INTEGRATION_AS_OF,
         market_data=market_df_for_asof(_INTEGRATION_AS_OF),

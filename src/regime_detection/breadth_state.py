@@ -10,8 +10,8 @@ from regime_detection.data_quality import assess_series_input_quality
 from regime_detection.models import DataQuality
 
 
-# V2 §1D (documented implementation decision) extends the V1 5-label set
-# with four PIT-derived labels. Members ordered by precedence (spec line 284):
+# V2 §1D (ADR 0003 / decisions 69, 70) extends the V1 5-label set with four
+# PIT-derived labels. Members ordered by precedence (spec line 385):
 #   breadth_thrust > divergent_fragile > narrowing_breadth > recovery_breadth >
 #   broadening_breadth > weak_breadth > healthy_breadth > neutral_breadth >
 #   unknown.
@@ -35,11 +35,11 @@ BreadthLabel = Literal[
 # at mid-severity (rank 2, same as weak_breadth). divergent_fragile remains the
 # highest-risk V1 label at rank 3.
 _RISK_RANK: dict[BreadthLabel, int] = {
-    "breadth_thrust": 0,        # bullish initiation (documented implementation decision)
+    "breadth_thrust": 0,        # bullish initiation (ADR 0003 / decision 69)
     "healthy_breadth": 0,
     "broadening_breadth": 0,    # V2 recovery confirmation
     "neutral_breadth": 1,
-    "recovery_breadth": 1,      # mid-recovery (documented implementation decision)
+    "recovery_breadth": 1,      # mid-recovery (ADR 0003 / decision 70)
     "weak_breadth": 2,
     "narrowing_breadth": 2,     # V2 deterioration — mid-severity
     "divergent_fragile": 3,
@@ -223,10 +223,10 @@ def resolve_v2_raw_outputs(
 
 
 # ---------------------------------------------------------------------------
-# V2 §1D rule predicates (documented implementation decision). The two predicates that
+# V2 §1D rule predicates (ADR 0003 / decision 69, #70). The two predicates that
 # ship today read the PIT-aware features from FeatureStore.breadth_state_v2
-# and gate on strict 5-session rate-of-change (documented implementation decision pin: "rising"/"falling"
-# = strict change over `label_rate_of_change_lookback_sessions` sessions).
+# and gate on strict 5-session rate-of-change ("rising"/"falling" = strict
+# change over `label_rate_of_change_lookback_sessions` sessions).
 #
 # Inputs at `t` AND at `t - lookback_sessions` must both be non-NaN; any NaN
 # endpoint short-circuits the predicate to False (no V2 label fires on the
@@ -261,14 +261,14 @@ def _evaluate_narrowing_breadth(
     lookback_sessions: int,
     nh_nl_threshold: float,
 ) -> bool:
-    """v2 §1D line 280 — narrowing_breadth predicate.
+    """v2 §1D line 381 — narrowing_breadth predicate.
 
     Fires iff:
       pct_above_50dma is FALLING over `lookback_sessions` (strict decrease)
       AND pct_above_200dma is FALLING over `lookback_sessions`
       AND nh_nl_ratio at `dt` < nh_nl_threshold (default 0.4).
 
-    "Falling" = strict 5-session decrease per documented implementation decision.
+    "Falling" = strict 5-session decrease per ADR 0003.
     """
     pct50_pts = _lookback_endpoint_values(
         pct_above_50dma, dt=dt, lookback_sessions=lookback_sessions
@@ -300,13 +300,13 @@ def _evaluate_broadening_breadth(
     dt: pd.Timestamp,
     lookback_sessions: int,
 ) -> bool:
-    """v2 §1D line 279 — broadening_breadth predicate.
+    """v2 §1D line 379 — broadening_breadth predicate.
 
     Fires iff:
       nh_nl_ratio is RISING over `lookback_sessions` (strict increase)
       AND ad_line_slope_20d at `dt` > 0 (strictly positive).
 
-    "Rising" = strict 5-session increase per documented implementation decision.
+    "Rising" = strict 5-session increase per ADR 0003.
     """
     nh_nl_pts = _lookback_endpoint_values(
         nh_nl_ratio, dt=dt, lookback_sessions=lookback_sessions
@@ -330,17 +330,17 @@ def _evaluate_recovery_breadth(
     dt: pd.Timestamp,
     lookback_sessions: int,
 ) -> bool:
-    """v2 §1D documented implementation decision — `recovery_breadth` predicate.
+    """v2 §1D line 380 — `recovery_breadth` predicate (ADR 0003 / decision 70).
 
     Fires iff:
       nh_nl_ratio is RISING over `lookback_sessions` (strict increase)
       AND ad_line_slope_20d at `dt` <= 0 (not yet strictly positive).
 
-    "Rising" = strict 5-session increase per documented implementation decision.
+    "Rising" = strict 5-session increase per ADR 0003.
 
     Disjoint from `broadening_breadth` by construction: the slope conjuncts
     `<= 0` (recovery) and `> 0` (broadening) partition the real line at zero.
-    Recovery sits above broadening in the §1D precedence (line 284) so the
+    Recovery sits above broadening in the §1D precedence (line 385) so the
     earlier turning-point signal surfaces before the lagging cumulative-AD
     confirmation.
     """
@@ -360,7 +360,7 @@ def _evaluate_recovery_breadth(
 
 
 # Zweig-style `breadth_thrust` LABEL thresholds — spec-fixed, NOT configurable
-# (documented implementation decision pin). Values match the V2 §1D Breadth Thrust block.
+# (ADR 0003 / decision 69). Values match the V2 §1D Breadth Thrust block (spec lines 366-368).
 _BREADTH_THRUST_LOW_THRESHOLD = 0.40
 _BREADTH_THRUST_HIGH_THRESHOLD = 0.615
 _BREADTH_THRUST_LOOKBACK_SESSIONS = 10
@@ -371,7 +371,7 @@ def _evaluate_breadth_thrust(
     *,
     dt: pd.Timestamp,
 ) -> bool:
-    """v2 §1D documented implementation decision — `breadth_thrust` LABEL predicate.
+    """v2 §1D lines 366-368 — `breadth_thrust` LABEL predicate (ADR 0003 / decision 69).
 
     Fires at session t iff:
       EXISTS b in [t-10, t-1] with breadth_thrust_feature[b] < 0.40

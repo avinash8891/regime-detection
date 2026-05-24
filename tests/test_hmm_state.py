@@ -8,6 +8,8 @@ score 6th component.
 
 from __future__ import annotations
 
+from datetime import date
+
 import numpy as np
 import pandas as pd
 import pytest
@@ -305,7 +307,7 @@ def test_hmm_uses_real_default_config_n_states() -> None:
 
 
 def test_feature_store_hmm_seam_lit_when_all_inputs_present(
-    classified_golden_outputs: dict,
+    golden_rows: list[dict[str, object]],
 ) -> None:
     """Sanity wire-in: the engine's golden-date classify path must light the
     HMM seam — verified indirectly by inspecting one classify call's
@@ -316,7 +318,7 @@ def test_feature_store_hmm_seam_lit_when_all_inputs_present(
 
     # Use the latest golden date — that is far enough out to have >= 1260
     # sessions of trailing history under the bundled fixture.
-    latest = max(classified_golden_outputs.keys())
+    latest = max(date.fromisoformat(str(row["as_of_date"])) for row in golden_rows)
     engine = RegimeEngine()
     # Pull the matching market_data slice from the fixture (re-load via
     # conftest helpers is heavy; instead read the parquet directly).
@@ -369,8 +371,8 @@ def test_feature_store_hmm_seam_none_when_hmm_config_absent(
     # Use the last available date in the fixture.
     spy = raw_market_frames["SPY"]
     rsp = raw_market_frames["RSP"]
-    vixy = raw_market_frames["VIXY"]
-    raw = pd.concat([spy, rsp, vixy], ignore_index=True)
+    vix = raw_market_frames["VIX"]
+    raw = pd.concat([spy, rsp, vix], ignore_index=True)
     raw["date"] = pd.to_datetime(raw["date"]).dt.date
 
     last_session = max(d for d in raw["date"].unique())

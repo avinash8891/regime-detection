@@ -9,6 +9,8 @@ labels (operator-side mapping per V2 §10 + spec line 2837).
 
 from __future__ import annotations
 
+from datetime import date
+
 import numpy as np
 import pandas as pd
 import pytest
@@ -235,8 +237,8 @@ def test_feature_store_clustering_seam_none_when_config_absent(
     cfg = load_default_regime_config().model_copy(update={"clustering": None})
     spy = raw_market_frames["SPY"]
     rsp = raw_market_frames["RSP"]
-    vixy = raw_market_frames["VIXY"]
-    raw = pd.concat([spy, rsp, vixy], ignore_index=True)
+    vix = raw_market_frames["VIX"]
+    raw = pd.concat([spy, rsp, vix], ignore_index=True)
     raw["date"] = pd.to_datetime(raw["date"]).dt.date
     last_session = max(d for d in raw["date"].unique())
     while True:
@@ -276,8 +278,8 @@ def test_feature_store_clustering_seam_none_when_pct_above_50dma_absent(
     assert cfg.clustering is not None
     spy = raw_market_frames["SPY"]
     rsp = raw_market_frames["RSP"]
-    vixy = raw_market_frames["VIXY"]
-    raw = pd.concat([spy, rsp, vixy], ignore_index=True)
+    vix = raw_market_frames["VIX"]
+    raw = pd.concat([spy, rsp, vix], ignore_index=True)
     raw["date"] = pd.to_datetime(raw["date"]).dt.date
     last_session = max(d for d in raw["date"].unique())
     while True:
@@ -320,17 +322,41 @@ def test_real_default_config_carries_clustering_block() -> None:
     assert cfg.clustering.random_state == 42
 
 
-def test_regime_output_omits_cluster_field_when_clustering_seam_none(
-    raw_market_data: pd.DataFrame,
-    market_df_for_asof,
+def test_regime_output_degrades_when_clustering_seam_none(
+    v2_classify_kwargs_for_asof,
 ) -> None:
-    """Default classify() (no PIT inputs) → clustering seam None → RegimeOutput.cluster None and omitted from JSON dump."""
+    """A config without clustering still scores from the remaining model evidence."""
     from regime_detection.engine import RegimeEngine
 
+    base = load_default_regime_config()
+    assert base.hmm is not None
+    assert base.change_point is not None
+    config = base.model_copy(
+        update={
+            "hmm": base.hmm.model_copy(
+                update={
+                    "n_states": 2,
+                    "training_window_days": 100,
+                    "covariance_type": "diag",
+                    "model_version": "hmm_test_2state",
+                }
+            ),
+            "change_point": base.change_point.model_copy(
+                update={"training_window_days": 100}
+            ),
+            "clustering": None,
+        }
+    )
     engine = RegimeEngine()
-    last_session = max(raw_market_data["date"].unique())
-    market_data = market_df_for_asof(last_session)
-    out = engine.classify(as_of_date=last_session, market_data=market_data)
+    last_session = date(2026, 5, 13)
+    kwargs = v2_classify_kwargs_for_asof(last_session)
+    kwargs["config"] = config
+
+    out = engine.classify(
+        as_of_date=last_session,
+        **kwargs,
+    )
+
     assert out.cluster is None
-    dumped = out.model_dump()
-    assert "cluster" not in dumped
+    assert out.transition_risk.score is not None
+    assert "model_instability" in (out.transition_risk.score_components or {})

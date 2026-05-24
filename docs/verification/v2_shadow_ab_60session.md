@@ -46,7 +46,7 @@ regression.
 | trend_character | 0 |
 | volatility_state | 0 |
 | breadth_state | 0 |
-| transition_risk_label | 0 |
+| transition_risk_state | 0 |
 
 ### trend_direction — most recent disagreement examples
 
@@ -64,7 +64,7 @@ _(none)_
 
 _(none)_
 
-### transition_risk_label — most recent disagreement examples
+### transition_risk_state — most recent disagreement examples
 
 _(none)_
 
@@ -79,7 +79,7 @@ wins, not regressions.
 |---|---|
 | transition_risk_score | 0 |
 | agent_routing | 0 |
-| change_point | 0 |
+| change_point | 19 |
 | credit_funding_state | 60 |
 | inflation_growth_state | 60 |
 | cluster | 0 |
@@ -97,7 +97,18 @@ _(none)_
 
 ### change_point — most recent activation examples
 
-_(none)_
+Regenerated after the BOCPD posterior mapping fix. Current runtime emits
+recent short-run posterior mass over the 21-session realized-volatility
+horizon; see
+`docs/verification/change_point_bocpd_recalculation_2026_05_23.md`.
+
+| session | v1-mode | v2-mode |
+|---|---|---|
+| 2026-04-13 | `None` | `score=0.995480` |
+| 2026-04-14 | `None` | `score=0.995480` |
+| 2026-04-15 | `None` | `score=0.995480` |
+| 2026-04-16 | `None` | `score=0.995480` |
+| 2026-04-17 | `None` | `score=0.995480` |
 
 ### credit_funding_state — most recent activation examples
 
@@ -146,4 +157,3 @@ _(none)_
 | 2026-05-06 | `'unknown'` | `'correlation_concentration'` |
 | 2026-05-07 | `'unknown'` | `'correlation_concentration'` |
 | 2026-05-08 | `'unknown'` | `'correlation_concentration'` |
-

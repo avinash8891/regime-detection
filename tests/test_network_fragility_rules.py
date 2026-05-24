@@ -70,7 +70,7 @@ def test_default_yaml_loads_rules_block_with_spec_thresholds():
     assert cfg.network_fragility is not None
     rules = cfg.network_fragility.rules
     # v2 §3.5 verbatim thresholds.
-    assert rules.diversified_normal_percentile_lo == 0.25
+    assert rules.diversified_normal_percentile_lo == 0.0
     assert rules.diversified_normal_percentile_hi == 0.75
     assert rules.effective_rank_stability_threshold == 0.05
     assert rules.stock_picker_percentile_max == 0.30

@@ -12,6 +12,7 @@ from conftest import (
     load_profile_engine_module,
     write_profile_engine_manifest as _write_profile_manifest,
 )
+from scripts import profile_engine_reporting
 
 profile_engine = load_profile_engine_module()
 
@@ -42,6 +43,7 @@ def test_profile_parse_args_defaults_pmi_to_materialized_data_root(
 
     assert args.pmi_path == data_root / "pmi" / "us_ism_pmi_history.parquet"
     assert args.daily_dir == data_root / "daily_ohlcv_762"
+    assert args.event_calendar == data_root / "event_calendar" / "us_events.yaml"
 
 
 def test_profile_parse_args_can_disable_eps_revision(
@@ -428,7 +430,7 @@ def test_profile_json_report_emits_layer1_sentiment_metric_summary(
         as_of_date=pd.Timestamp("2026-05-15").date(),
         trend_direction=SimpleNamespace(active_label="bull"),
         volatility_state=SimpleNamespace(active_label="normal_vol"),
-        transition_risk=SimpleNamespace(label="low", score=None, score_components=None),
+        transition_risk=SimpleNamespace(state="stable", score=None, score_components=None),
         network_fragility=None,
         volume_liquidity_state=None,
         credit_funding_state=None,
@@ -537,6 +539,44 @@ def test_profile_reporting_label_uses_granular_status_for_unknown() -> None:
     assert profile_engine._reporting_label(output) == "no_rule_fired"
 
 
+def test_profile_label_summary_includes_raw_stable_active_counts() -> None:
+    outputs = [
+        SimpleNamespace(
+            volume_liquidity_state=SimpleNamespace(
+                raw_label="normal_volume",
+                stable_label="liquidity_gap_behavior",
+                active_label="liquidity_gap_behavior",
+                classification_status="classified",
+            )
+        ),
+        SimpleNamespace(
+            volume_liquidity_state=SimpleNamespace(
+                raw_label="panic_volume",
+                stable_label="panic_volume",
+                active_label="panic_volume",
+                classification_status="classified",
+            )
+        ),
+    ]
+
+    summary = profile_engine_reporting._label_summary_for_fields(
+        outputs, ["volume_liquidity_state"]
+    )
+
+    assert summary["volume_liquidity_state"]["raw"] == {
+        "normal_volume": 1,
+        "panic_volume": 1,
+    }
+    assert summary["volume_liquidity_state"]["stable"] == {
+        "liquidity_gap_behavior": 1,
+        "panic_volume": 1,
+    }
+    assert summary["volume_liquidity_state"]["active"] == {
+        "liquidity_gap_behavior": 1,
+        "panic_volume": 1,
+    }
+
+
 def test_profile_trailing_status_reports_no_rule_fired_not_unknown() -> None:
     output = SimpleNamespace(
         network_fragility=None,
@@ -551,7 +591,7 @@ def test_profile_trailing_status_reports_no_rule_fired_not_unknown() -> None:
         monetary_pressure_state=None,
         cluster=None,
         change_point=None,
-        transition_risk=SimpleNamespace(score=None, score_components=None),
+        transition_risk=SimpleNamespace(state="stable", score=None, score_components=None),
     )
 
     rows = profile_engine._trailing_v2_status(output)

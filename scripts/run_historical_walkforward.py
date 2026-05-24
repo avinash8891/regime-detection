@@ -15,6 +15,8 @@ import yaml
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
 sys.path.insert(0, str(REPO_ROOT / "src"))
 
 from regime_detection.calendar import nyse_calendar  # noqa: E402
@@ -23,6 +25,17 @@ from regime_detection.loaders import load_event_calendar  # noqa: E402
 from regime_detection.shadow_storage import event_rows_for_yaml  # noqa: E402
 from regime_detection.versioning import engine_version as resolved_engine_version  # noqa: E402
 from regime_data_fetch.materialization import materialize_if_requested  # noqa: E402
+from scripts.run_shadow_regime import (  # noqa: E402
+    _close_series_by_symbol,
+    _constituent_ohlcv_from_daily,
+    _default_pit_intervals_from_daily,
+    _load_pit_intervals,
+    _load_v2_daily_ohlcv,
+)
+from regime_detection.fragility_universe import CROSS_ASSET_SYMBOLS, SECTOR_ETFS  # noqa: E402
+from scripts._v2_calibration_helpers import (  # noqa: E402
+    apply_manifest_input_defaults,
+)
 
 
 RUNS_SCHEMA = """
@@ -69,8 +82,24 @@ def _normalize_market_data(path: Path) -> pd.DataFrame:
     return out[keep].sort_values(["date", "symbol"]).reset_index(drop=True)
 
 
-def _normalize_event_calendar(path: Path | None) -> pd.DataFrame | None:
+def _normalize_event_calendar(
+    path: Path | None, *, allow_missing_event_calendar: bool = False
+) -> pd.DataFrame | None:
     if path is None:
+        if not allow_missing_event_calendar:
+            raise ValueError(
+                "event_calendar_path is required for historical walk-forward runs; "
+                "materialize the manifest event_calendar artifact or use "
+                "--allow-missing-event-calendar for debug-only runs."
+            )
+        return None
+    if not path.exists():
+        if not allow_missing_event_calendar:
+            raise FileNotFoundError(
+                f"event_calendar_path does not exist: {path}. "
+                "Materialize the manifest event_calendar artifact or use "
+                "--allow-missing-event-calendar for debug-only runs."
+            )
         return None
     return load_event_calendar(path)
 
@@ -218,6 +247,42 @@ def _write_output_json(output_path: Path, payload_json: str) -> None:
     output_path.write_text(payload_json + "\n", encoding="utf-8")
 
 
+def _transition_data_quality_status(transition_risk: Any) -> str | None:
+    data_quality = getattr(transition_risk, "data_quality", None)
+    if data_quality is None:
+        return None
+    if isinstance(data_quality, dict):
+        status = data_quality.get("status")
+    else:
+        status = getattr(data_quality, "status", None)
+    return None if status is None else str(status)
+
+
+def _transition_evidence_value(transition_risk: Any, key: str) -> Any:
+    evidence = getattr(transition_risk, "evidence", None)
+    if evidence is None:
+        return None
+    if isinstance(evidence, dict):
+        return evidence.get(key)
+    if hasattr(evidence, "get"):
+        return evidence.get(key)
+    return getattr(evidence, key, None)
+
+
+def _json_cell(value: Any) -> str | None:
+    if value is None:
+        return None
+    return json.dumps(value, sort_keys=True)
+
+
+def _event_calendar_summary_cells(output: Any) -> dict[str, Any]:
+    event_calendar = output.structural_causal_state.event_calendar
+    return {
+        "event_calendar_primary_label": event_calendar.primary_label,
+        "event_calendar_matching_labels": _json_cell(list(event_calendar.matching_labels)),
+    }
+
+
 def _build_report_markdown(summary_df: pd.DataFrame, *, start_date: date, end_date: date) -> str:
     lines = [
         "# Historical Walk-Forward Report",
@@ -240,7 +305,7 @@ def _build_report_markdown(summary_df: pd.DataFrame, *, start_date: date, end_da
             "trend_character_active",
             "volatility_state_active",
             "breadth_state_active",
-            "transition_risk_label",
+            "transition_risk_state",
         ]:
             counts = success_df[col].value_counts().to_dict()
             lines.extend(["", f"## {col}", "", "```json", json.dumps(counts, indent=2, sort_keys=True), "```"])
@@ -255,21 +320,29 @@ def run_walkforward(
     end_date: date,
     event_calendar_path: Path | None = None,
     config_path: Path | None = None,
+    v2_daily_ohlcv_path: Path | None = None,
+    pit_constituent_intervals_path: Path | None = None,
+    allow_missing_event_calendar: bool = False,
 ) -> dict[str, Any]:
+    market_data = _normalize_market_data(market_data_path)
+    event_df = _normalize_event_calendar(
+        event_calendar_path,
+        allow_missing_event_calendar=allow_missing_event_calendar,
+    )
+    v2_daily = _load_v2_daily_ohlcv(v2_daily_ohlcv_path)
+    pit_intervals = _load_pit_intervals(pit_constituent_intervals_path)
+    sessions = _sessions_between(start_date, end_date)
+    engine = RegimeEngine(config_path=config_path)
+    if not sessions:
+        raise ValueError(
+            f"No NYSE trading sessions found in requested window: {start_date.isoformat()}..{end_date.isoformat()}"
+        )
+    engine_version = resolved_engine_version()
+    config_version = engine.config.config_version
+
     paths = _ensure_layout(output_root)
     conn = _open_db(paths["db"])
     try:
-        market_data = _normalize_market_data(market_data_path)
-        event_df = _normalize_event_calendar(event_calendar_path)
-        sessions = _sessions_between(start_date, end_date)
-        engine = RegimeEngine(config_path=config_path)
-        if not sessions:
-            raise ValueError(
-                f"No NYSE trading sessions found in requested window: {start_date.isoformat()}..{end_date.isoformat()}"
-            )
-        engine_version = resolved_engine_version()
-        config_version = engine.config.config_version
-
         summary_rows: list[dict[str, Any]] = []
         for as_of_date in sessions:
             run_timestamp = _utc_iso_now()
@@ -290,10 +363,24 @@ def run_walkforward(
             )
 
             try:
+                v2_kwargs: dict[str, Any] = {}
+                if v2_daily is not None:
+                    v2_slice = v2_daily[v2_daily["date"] <= as_of_date].copy().reset_index(drop=True)
+                    session_pit_intervals = pit_intervals
+                    if session_pit_intervals is None:
+                        session_pit_intervals = _default_pit_intervals_from_daily(v2_slice)
+                    v2_kwargs["sector_etf_closes"] = _close_series_by_symbol(v2_slice, SECTOR_ETFS)
+                    v2_kwargs["cross_asset_closes"] = _close_series_by_symbol(v2_slice, CROSS_ASSET_SYMBOLS)
+                    v2_kwargs["pit_constituent_intervals"] = session_pit_intervals
+                    v2_kwargs["constituent_ohlcv"] = _constituent_ohlcv_from_daily(
+                        v2_slice,
+                        session_pit_intervals,
+                    )
                 output = engine.classify(
                     as_of_date=as_of_date,
                     market_data=market_slice,
                     event_calendar=event_df,
+                    **v2_kwargs,
                 )
                 output_path = paths["outputs"] / f"{as_of_date.isoformat()}.json"
                 _write_output_json(output_path, output.model_dump_json(indent=2))
@@ -317,7 +404,24 @@ def run_walkforward(
                         "trend_character_active": output.trend_character.active_label,
                         "volatility_state_active": output.volatility_state.active_label,
                         "breadth_state_active": output.breadth_state.active_label,
-                        "transition_risk_label": output.transition_risk.label,
+                        **_event_calendar_summary_cells(output),
+                        "transition_risk_state": output.transition_risk.state,
+                        "transition_risk_score": output.transition_risk.score,
+                        "transition_risk_primary_drivers": _json_cell(
+                            output.transition_risk.primary_drivers
+                        ),
+                        "transition_risk_triggered_rules": _json_cell(
+                            output.transition_risk.triggered_rules
+                        ),
+                        "transition_risk_data_quality_status": _transition_data_quality_status(
+                            output.transition_risk
+                        ),
+                        "transition_risk_axis_switch_count": _transition_evidence_value(
+                            output.transition_risk, "axis_switch_count"
+                        ),
+                        "transition_risk_recent_axis_switch_count": _transition_evidence_value(
+                            output.transition_risk, "recent_axis_switch_count"
+                        ),
                     }
                 )
             except Exception as exc:
@@ -342,7 +446,15 @@ def run_walkforward(
                         "trend_character_active": None,
                         "volatility_state_active": None,
                         "breadth_state_active": None,
-                        "transition_risk_label": None,
+                        "event_calendar_primary_label": None,
+                        "event_calendar_matching_labels": None,
+                        "transition_risk_state": None,
+                        "transition_risk_score": None,
+                        "transition_risk_primary_drivers": None,
+                        "transition_risk_triggered_rules": None,
+                        "transition_risk_data_quality_status": None,
+                        "transition_risk_axis_switch_count": None,
+                        "transition_risk_recent_axis_switch_count": None,
                     }
                 )
 
@@ -370,17 +482,29 @@ def run_walkforward(
 
 
 def _parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Run historical walk-forward classification for V1.")
+    parser = argparse.ArgumentParser(description="Run historical walk-forward classification.")
     parser.add_argument("--market-data", required=True, type=Path, help="Path to parquet/csv market data.")
     parser.add_argument("--output-root", required=True, type=Path, help="Directory for walk-forward artifacts.")
     parser.add_argument("--start-date", required=True, type=date.fromisoformat)
     parser.add_argument("--end-date", required=True, type=date.fromisoformat)
-    parser.add_argument("--event-calendar", type=Path, default=None)
+    parser.add_argument(
+        "--allow-missing-event-calendar",
+        action="store_true",
+        help=(
+            "Debug-only: run without scheduled event-calendar rows. "
+            "Deterministic expiry/earnings labels still compute."
+        ),
+    )
     parser.add_argument("--config-path", type=Path, default=None)
+    parser.add_argument("--v2-daily-ohlcv", type=Path, default=None)
+    parser.add_argument("--pit-constituent-intervals", type=Path, default=None)
     parser.add_argument("--manifest", type=Path, default=None, help="Optional artifact manifest to materialize before running.")
     parser.add_argument("--artifact-store", default=None, help="Optional artifact-store root override for --manifest.")
     parser.add_argument("--data-root", type=Path, default=REPO_ROOT / "data" / "raw", help="Local data/raw root used for manifest materialization.")
-    return parser.parse_args()
+    args = parser.parse_args()
+    args.event_calendar = None
+    apply_manifest_input_defaults(args, args.data_root, fields=frozenset({"event_calendar"}))
+    return args
 
 
 def main() -> int:
@@ -399,6 +523,9 @@ def main() -> int:
         end_date=args.end_date,
         event_calendar_path=args.event_calendar,
         config_path=args.config_path,
+        v2_daily_ohlcv_path=args.v2_daily_ohlcv,
+        pit_constituent_intervals_path=args.pit_constituent_intervals,
+        allow_missing_event_calendar=args.allow_missing_event_calendar,
     )
     print(json.dumps(result, indent=2, sort_keys=True))
     return 0

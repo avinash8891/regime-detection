@@ -245,11 +245,11 @@ def resolve_event_label(
     ordered_matches = [label for label in EVENT_PRECEDENCE if label in matching_events]
     if not ordered_matches:
         return EventLabelResolution(
-            all_matching_events=[], selected_via_precedence="normal_calendar"
+            matching_labels=("normal_calendar",), primary_label="normal_calendar"
         )
     return EventLabelResolution(
-        all_matching_events=ordered_matches,
-        selected_via_precedence=ordered_matches[0],
+        matching_labels=tuple(ordered_matches),
+        primary_label=ordered_matches[0],
     )
 
 

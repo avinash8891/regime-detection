@@ -221,7 +221,10 @@ def test_build_feature_store_none_when_config_absent(market_df_for_asof):
     assert store.volume_liquidity_v2 is None
 
 
-def test_timeline_threads_volume_liquidity_v2_config(market_df_for_asof):
+def test_timeline_threads_volume_liquidity_v2_config(
+    market_df_for_asof,
+    synthetic_v2_kwargs_for_market_data,
+):
     """End-to-end wire test (AGENTS rule A): build_regime_timeline must
     accept the v2 config and surface volume_liquidity_v2 features via
     the same feature_store path used by the engine. This locks in
@@ -235,10 +238,18 @@ def test_timeline_threads_volume_liquidity_v2_config(market_df_for_asof):
     )
     from regime_detection.timeline import ENGINE_MINIMUM_HISTORY
 
+    market_data = market_df_for_asof(_INTEGRATION_AS_OF)
+    kwargs = synthetic_v2_kwargs_for_market_data(market_data)
+    cfg = kwargs["config"]
     context = build_market_context(
         end_date=_INTEGRATION_AS_OF,
-        market_data=market_df_for_asof(_INTEGRATION_AS_OF),
+        market_data=market_data,
         config=cfg,
+        macro_series=kwargs["macro_series"],
+        sector_etf_closes=kwargs["sector_etf_closes"],
+        cross_asset_closes=kwargs["cross_asset_closes"],
+        pit_constituent_intervals=kwargs["pit_constituent_intervals"],
+        constituent_ohlcv=kwargs["constituent_ohlcv"],
     )
     required = min(len(context.sessions), ENGINE_MINIMUM_HISTORY)
     working = slice_context_to_recent_sessions(
@@ -264,9 +275,7 @@ def test_timeline_threads_volume_liquidity_v2_config(market_df_for_asof):
 
 
 def test_v1_config_path_leaves_volume_liquidity_v2_none(market_df_for_asof):
-    """V1 contract preservation: loading a v1-only config (no v2 sub-blocks)
-    yields a feature store where volume_liquidity_v2 is None and the
-    timeline builds without raising."""
+    """Transition-score configs fail loudly when required score inputs are absent."""
     cfg = load_default_regime_config()
     cfg_v1 = cfg.model_copy(update={"volume_liquidity_v2": None})
     context = build_market_context(
@@ -274,9 +283,7 @@ def test_v1_config_path_leaves_volume_liquidity_v2_none(market_df_for_asof):
         market_data=market_df_for_asof(_INTEGRATION_AS_OF),
         config=cfg_v1,
     )
-    timeline = build_regime_timeline(
-        context=context, lookback_days=5, config=cfg_v1
-    )
-    assert len(timeline.outputs) == 5
+    with pytest.raises(RuntimeError, match="transition_risk requires score inputs"):
+        build_regime_timeline(context=context, lookback_days=5, config=cfg_v1)
     store = build_feature_store(context)
     assert store.volume_liquidity_v2 is None

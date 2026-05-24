@@ -41,7 +41,11 @@ The US government shutdown prevented BLS from collecting CPI data for October 20
 
 ### D5: Hysteresis does not apply to evidence/score outputs
 
-Event_calendar (precedence-based), transition_risk (continuous score), cluster (raw GMM assignment), change_point (posterior probability), and hmm (state probabilities) are NOT label axes and do NOT use hysteresis. Hysteresis applies only to the 9 axes that produce a raw→stable→active label triple.
+Event_calendar (precedence-based), transition_risk (final state from named
+rules plus continuous score), cluster (raw GMM assignment), change_point
+(posterior probability), and hmm (state probabilities) are NOT label axes and
+do NOT use hysteresis. Hysteresis applies only to the 9 axes that produce a
+raw→stable→active label triple.
 
 ## Axes with per-label hysteresis (all 9)
 
@@ -52,7 +56,7 @@ Event_calendar (precedence-based), transition_risk (continuous score), cluster (
 | volatility | crisis_vol, vol_crush, high_vol, rising_vol, low_vol, normal_vol | crisis_vol=5d | normal_vol=0d, low_vol=0d |
 | breadth | divergent_fragile, weak_breadth, narrowing_breadth, broadening_breadth, healthy_breadth | divergent_fragile=5d | healthy_breadth=0d |
 | network_fragility | systemic_stress, correlation_to_one, correlation_concentration, rising_fragility, ... | systemic_stress=5d | diversified_normal=0d, unknown=0d |
-| volume_liquidity | panic_volume, liquidity_gap_behavior, normal_volume | panic_volume=3d | normal_volume=0d |
+| volume_liquidity | panic_volume, liquidity_gap_behavior, normal_volume | panic_volume=2d | normal_volume=0d |
 | monetary_pressure | rate_shock, tightening_pressure, easing_pressure, neutral_monetary | rate_shock=5d | neutral_monetary=0d |
 | inflation_growth | inflation_shock, recession_scare, disinflation, goldilocks, ... | inflation_shock=5d | goldilocks=0d, unknown=0d |
 | credit_funding | deleveraging, funding_squeeze, credit_stress, spread_widening, credit_calm | deleveraging=5d | credit_calm=0d, unknown=0d |
@@ -68,7 +72,7 @@ left.
 | Output | Why |
 |--------|-----|
 | event_calendar | Precedence-based: highest-priority event wins per session |
-| transition_risk | Continuous composite score (0.0-1.0) with band interpretation |
+| transition_risk | Final state selected from named warnings plus continuous score band; no raw→stable→active hysteresis |
 | cluster | Raw GMM cluster_id — evidence, not a regime label |
 | change_point | BOCPD posterior probability — evidence, not a regime label |
 | hmm | HMM state probabilities — evidence, not a regime label |

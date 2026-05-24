@@ -50,7 +50,7 @@ def test_build_walkforward_report_fails_without_required_gates(
     assert payload["session_count"] == 3
     assert payload["success_count"] == 3
     assert payload["missing_sessions"] == []
-    assert payload["label_distributions"]["transition_risk_label"]
+    assert payload["label_distributions"]["transition_risk_state"]
 
 
 def test_build_walkforward_report_passes_with_golden_and_baseline_inputs(

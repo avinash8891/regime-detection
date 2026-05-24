@@ -45,8 +45,10 @@ trend_character:
     breakout_expansion: 3
     recovery_attempt: 3
     trending: 0
+    mild_trend: 0
     range_bound: 3
     chop: 0
+    volatile_chop: 0
     transition: 2
     unknown: 0
   default_deescalation_days: 0
@@ -80,11 +82,11 @@ breadth_state:
 trend_character_v2: {}
 
 network_fragility:
-  # v2 spec §3.1 — 22 assets: 11 sector ETFs + SPY (broad-market index) +
-  # 10 cross-asset proxies. SPY's close flows through MarketContext.spy_ohlcv
+  # v2 spec §3.1 — 24 assets: 11 sector ETFs + SPY (broad-market index) +
+  # 12 cross-asset proxies. SPY's close flows through MarketContext.spy_ohlcv
   # on the V1 path; the engine still treats it as part of the universe when
-  # building the correlation matrix. KRE is v2 §2C credit/funding territory,
-  # not §3.1 — moved out of this universe.
+  # building the correlation matrix. DBC/IEF were added together after A/B
+  # testing; KRE remains v2 §2C credit/funding territory, not §3.1.
   universe:
     - XLB
     - XLC
@@ -103,10 +105,12 @@ network_fragility:
     - EFA
     - EEM
     - TLT
+    - IEF
     - GLD
     - HYG
     - LQD
     - USO
+    - DBC
     - UUP
   correlation_lookback_days: 63                   # v2 §3.2 line 554-558 ("63d corr")
   percentile_lookback_days: 504                   # v2 §3.2 line 563-566 (504d percentile)
@@ -130,7 +134,7 @@ network_fragility:
   # v2 §3.4–§3.5 rule-engine thresholds (implementation phase). Every value cites its
   # spec line in docs/regime_engine_v2_spec.md.
   rules:
-    diversified_normal_percentile_lo: 0.25            # §3.5 line 619
+    diversified_normal_percentile_lo: 0.0              # §3.5 line 619 (lowered from 0.25: sub-25th-pctile correlation is more diversified, not less)
     diversified_normal_percentile_hi: 0.75            # §3.5 line 619
     effective_rank_stability_threshold: 0.05          # §3.5 line 620 ("21d std < 5% of mean")
     stock_picker_percentile_max: 0.30                 # §3.5 line 625
@@ -147,11 +151,11 @@ network_fragility:
     diversified_normal_inner_band_lo: 0.30
     diversified_normal_inner_band_hi: 0.60
 
-# v2 §1A — Layer 1 V2 Trend Direction (implementation phase features + implementation phase
-# `recovery` label). Remaining new labels (`euphoria`, `breakout_expansion`,
-# `range_bound`) are deferred — see documented implementation notes entries
-# #32–#34 (sentiment_score / followthrough_rate / oscillation-range
-# ambiguities).
+# v2 §1A — Layer 1 V2 Trend Direction (implementation phase features +
+# `recovery` and `euphoria` labels). `recovery` is live; `euphoria` is
+# predicate-complete but falsifies when AAII sentiment_score is absent
+# (V2 §10 no-proxy rule). `breakout_expansion` and `range_bound` are
+# implemented in trend_character (§1B), not §1A.
 trend_direction_v2:
   efficiency_ratio_lookback_days: 20    # v2 §1A line 66
   hurst_lookback_days: 250              # v2 §1A line 79
@@ -222,64 +226,66 @@ volume_liquidity_v2:
 # volatility_state_v2 (documented implementation decision).
 volume_liquidity_state:
   rules:
+    # TODO(calibration): Do not retune these thresholds opportunistically.
+    # Future full-axis walk-forward calibration must freeze manifest/config,
+    # predeclare metrics and train/validation/test windows, evaluate all
+    # configurable axes plus transition_score out-of-sample, and leave
+    # spec-pinned thresholds unchanged unless results show stable improvement.
     panic_volume_zscore_threshold: 2.0                    # v2 §1E line 272
     panic_volume_return_threshold: -0.02                  # v2 §1E line 273
     liquidity_gap_frequency_percentile_threshold: 0.75    # v2 §1E line 278
     liquidity_gap_intraday_range_percentile_threshold: 0.75  # v2 §1E line 279
   # §1E is silent on hysteresis days. Pinned per documented implementation decision:
-  #   panic_volume = 3 (high-risk hold, analogous to §3.7 correlation_to_one).
+  #   panic_volume = 2 (calibrated on 2016-01-04..2026-05-15 walk-forward;
+  #     preserves churn reduction while avoiding excessive panic overhang).
   #   normal_volume = 0 (immediate de-escalation; lowest risk_rank).
   #   unknown = 0 (absence-of-signal clears immediately on recovery).
   #   liquidity_gap_behavior = 2 (same rank as `unknown`).
   deescalation_days_by_label:
-    panic_volume: 3
+    panic_volume: 2
     normal_volume: 0
     unknown: 0
     liquidity_gap_behavior: 2
   default_deescalation_days: 0
 
 transition_score:
-  weights_with_hmm:
-    volatility_acceleration: 0.20
-    breadth_deterioration: 0.20
-    correlation_concentration: 0.20
-    trend_break: 0.20
-    macro_event: 0.10
-    hmm_probability_shift: 0.10
-  weights_without_hmm:
-    volatility_acceleration: 0.225
-    breadth_deterioration: 0.225
-    correlation_concentration: 0.225
-    trend_break: 0.225
-    macro_event: 0.10
-  # documented implementation decision — change_point evidence wired into transition_score.
-  weights_with_change_point:
-    volatility_acceleration: 0.20
-    breadth_deterioration: 0.20
-    correlation_concentration: 0.20
-    trend_break: 0.20
-    macro_event: 0.10
-    change_point: 0.10
-  weights_with_hmm_with_change_point:
-    volatility_acceleration: 0.175
-    breadth_deterioration: 0.175
-    correlation_concentration: 0.175
-    trend_break: 0.175
-    macro_event: 0.10
-    hmm_probability_shift: 0.10
-    change_point: 0.10
+  weights:
+    trend_break: 0.18
+    volatility_acceleration: 0.16
+    breadth_deterioration: 0.16
+    correlation_fragility: 0.14
+    credit_stress: 0.12
+    liquidity_stress: 0.10
+    macro_event: 0.06
+    model_instability: 0.08
+  minimum_component_weight_coverage: 0.75
+  # Score bands are base transition-pressure states. The transition-risk
+  # composer combines them with named rule overrides; top-band `high` becomes
+  # final state `high_transition_risk` unless a specific stress rule wins.
   bands:
     stable: [0.00, 0.35]
     weakening: [0.35, 0.55]
     transition_warning: [0.55, 0.75]
     high: [0.75, 1.00]
-  cooldown_window_days: 3
+  cooldown_window_days: 5  # ADR 0013 R1: axis-switch watch window
+  state_confirmation_days:
+    stable: 1
+    watch: 1
+    weakening: 2
+    transition_warning: 2
+    high_transition_risk: 2
+    fragile_bull: 2
+    recovery_attempt: 2
+    bear_stress: 1
+    crisis: 1
+    insufficient_data: 1
 
 # v2 §2A — Layer 2A Monetary/Liquidity V2. Feature seam (implementation phase) AND
 # axis classifier are both shipped. Five z-score features per §2A line 896
 # and documented implementation decision (a): yield_change_zscore_{2y,10y}_63d on FRED
-# DGS2/DGS10, broad_usd_index_zscore_63d on DTWEXBGS, and the 21d-variant
-# yield_change_zscore_21d_{2y,10y}. Source contract: §2A lines 887–889.
+# DGS2/DGS10, broad_usd_index_zscore_63d on required DTWEXBGS, and the
+# 21d-variant yield_change_zscore_21d_{2y,10y}. Source contract: §2A
+# lines 887–889.
 # The §2A label set, precedence, risk-rank, and per-label hysteresis were
 # pinned by documented implementation decision (b–e) and are consumed by
 # MonetaryPressureV2SeriesClassifier (axis_series.py) — entries #44/#45/#46
@@ -422,7 +428,7 @@ inflation_growth:
     cpi_3m_acceleration_threshold: 0.02             # 3m CPI rapid-onset limb
     commodity_return_threshold: 0.15               # §2B line 2242
     spy_recession_threshold: -0.05                 # §2B line 2256
-    spy_recession_credit_confirmed_threshold: -0.03  # relaxed when credit IS stressed
+    spy_recession_credit_confirmed_threshold: -0.05  # ADR 0012 R2: matches spec §2B; mild-decline gap deferred to future credit_watch ADR
     cpi_lookback_3m_sessions: 63                   # §2B line 2197 (~3 months)
     cpi_lookback_6m_sessions: 126                  # §2B line 2198 (~6 months)
     cpi_slope_lookback_sessions: 21                # §2B line 2235
@@ -458,6 +464,8 @@ inflation_growth:
     risk_off_mild: 3
     earnings_contraction: 3
     disinflation: 3
+    stagflation_lite: 3
+    reflation: 0
     goldilocks: 0
     recovery_growth: 0
     earnings_expansion: 0
@@ -528,6 +536,7 @@ clustering:
 change_point:
   hazard_lambda: 250.0
   score_window_days: 5
+  recent_run_length_window_days: 21
   break_threshold: 0.5
   training_window_days: 2705
   student_t_alpha: 0.1
@@ -538,6 +547,20 @@ change_point:
 
 no_flip_flop:
   window_trading_days: 15
+
+strategy_event_modifiers:
+  rules:
+    macro_event_window:
+      labels: [fed_week, cpi_week, nfp_week, global_rate_decision]
+      position_size_cap: 0.75
+      allow_leverage_expansion: false
+      require_confirmation_for_new_longs: true
+    policy_or_event_risk_window:
+      labels: [budget_week, election_window, geopolitical_event]
+      position_size_cap: 0.50
+      leverage_allowed: false
+      prefer_cash_or_hedges: true
+      require_confirmation_for_new_longs: true
 
 # v2 §5.1 Agent Cohort Routing (implementation phase, documented implementation decision calibration placeholder).
 cohort_routing:

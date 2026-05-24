@@ -49,13 +49,12 @@ from scripts.profile_engine import (
     DEFAULT_CONFIG_PATH,
     DEFAULT_CONSTITUENT_TREE,
     DEFAULT_DAILY_DIR,
-    DEFAULT_EVENT_CALENDAR,
     _build_required_sessions,
     _load_constituent_ohlcv_from_tree,
     _load_optional_aaii_sentiment,
     _load_optional_central_bank_text_releases,
     _load_optional_cpi_first_release,
-    _load_optional_event_calendar,
+    _load_event_calendar,
     _load_optional_news_sentiment,
 )
 
@@ -325,7 +324,10 @@ def _build_current_layer2_state(
         sector_etf_closes=sector_etf_closes,
         cross_asset_closes=cross_asset_closes,
         macro_series=macro_series,
-        event_calendar=_load_optional_event_calendar(args.event_calendar),
+        event_calendar=_load_event_calendar(
+            args.event_calendar,
+            allow_missing_event_calendar=args.allow_missing_event_calendar,
+        ),
         aaii_sentiment=_load_optional_aaii_sentiment(args.aaii_sentiment_parquet),
         implied_vol_30d=macro_series.get("implied_vol_30d"),
         central_bank_text_releases=_load_optional_central_bank_text_releases(
@@ -375,7 +377,15 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--config-path", type=Path, default=DEFAULT_CONFIG_PATH)
     parser.add_argument("--daily-dir", type=Path, default=None)
     parser.add_argument("--constituent-tree", type=Path, default=None)
-    parser.add_argument("--event-calendar", type=Path, default=DEFAULT_EVENT_CALENDAR)
+    parser.add_argument("--event-calendar", type=Path, default=None)
+    parser.add_argument(
+        "--allow-missing-event-calendar",
+        action="store_true",
+        help=(
+            "Debug-only: run without scheduled event-calendar rows. "
+            "Deterministic expiry/earnings labels still compute."
+        ),
+    )
     # Optional manifest-routed inputs come from MANIFEST_INPUT_SPECS.
     register_manifest_input_args(parser, include_required_paths=False)
     parser.add_argument("--macro-parquet", type=Path, default=None)

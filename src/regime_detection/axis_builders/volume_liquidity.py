@@ -74,6 +74,8 @@ def build_volume_liquidity_axis_series(
         volume_zscore_series,
         return_1d_series,
     ]
+    if gap_freq_pct_series is not None and intraday_pct_series is not None:
+        required_inputs.extend([gap_freq_pct_series, intraday_pct_series])
     required_trading_days = VOLUME_LIQUIDITY_REQUIRED_TRADING_DAYS
     max_freshness_days = context.config.data_quality.max_freshness_days
     min_completeness = context.config.data_quality.min_completeness

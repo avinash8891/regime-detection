@@ -9,11 +9,13 @@ markdown disagreement report at
 Per ``docs/v2_slice_gate_checklist.md`` item 7: zero unexpected wire
 diffs in v1 fields; v2 enrichments match expectations. v1-field
 disagreements (trend_direction / trend_character / volatility_state /
-breadth_state / transition_risk.label) should be ZERO. v2-NEW field
-activations (transition_risk.score, agent_routing, change_point,
-credit_funding_state, inflation_growth_state, cluster) are EXPECTED to
-differ — those are wins, not regressions. The markdown surfaces both
-tables separately so reviewers can see the distinction at a glance.
+breadth_state / transition_risk.state) should be ZERO. v2-NEW field
+activations (transition_risk.score, transition_risk score-component presence,
+transition_risk primary drivers, transition_risk triggered rules,
+transition_risk data quality, agent_routing, change_point,
+credit_funding_state, inflation_growth_state, cluster) are EXPECTED to differ —
+those are wins, not regressions. The markdown surfaces both tables separately so
+reviewers can see the distinction at a glance.
 """
 
 from __future__ import annotations
@@ -34,12 +36,13 @@ sys.path.insert(0, str(SRC_DIR))
 sys.path.insert(0, str(REPO_ROOT / "scripts"))
 
 from regime_detection.calendar import nyse_calendar  # noqa: E402
-from regime_detection.config import load_default_regime_config  # noqa: E402
+from regime_detection.config import load_default_regime_config, load_regime_config  # noqa: E402
 from regime_detection.engine import RegimeEngine  # noqa: E402
 from regime_detection.fragility_universe import SECTOR_ETFS  # noqa: E402
 from regime_detection.loaders import (  # noqa: E402
     load_central_bank_text_score,
     load_cpi_vintages_first_release,
+    load_event_calendar,
 )
 from regime_detection.market_context import build_market_context  # noqa: E402
 from regime_detection.versioning import engine_version as resolved_engine_version  # noqa: E402
@@ -51,12 +54,14 @@ from _v2_calibration_helpers import (  # noqa: E402
     apply_manifest_input_defaults,
     apply_manifest_input_paths,
     axis_reporting_label as _reporting_label,
+    constituent_ohlcv_from_sector_closes,
     load_close_dict,
     load_macro_series,
     load_market_data,
     manifest_input_overrides,
     materialize_manifest_from_args,
     register_manifest_input_args,
+    synthetic_pit_intervals_from_sector_closes,
 )
 
 
@@ -69,12 +74,16 @@ V1_FIELDS: list[str] = [
     "trend_character",
     "volatility_state",
     "breadth_state",
-    "transition_risk_label",
+    "transition_risk_state",
 ]
 
 # v2 fields whose activation is EXPECTED to differ under v2-mode.
 V2_FIELDS: list[str] = [
     "transition_risk_score",
+    "transition_risk_score_components_present",
+    "transition_risk_primary_drivers",
+    "transition_risk_triggered_rules",
+    "transition_risk_data_quality",
     "agent_routing",
     "change_point",
     "credit_funding_state",
@@ -113,13 +122,29 @@ def _extract_v1_fields(output: Any) -> dict[str, Any]:
         "trend_character": output.trend_character.active_label,
         "volatility_state": output.volatility_state.active_label,
         "breadth_state": output.breadth_state.active_label,
-        "transition_risk_label": output.transition_risk.label,
+        "transition_risk_state": output.transition_risk.state,
     }
 
 
 def _extract_v2_fields(output: Any) -> dict[str, Any]:
+    transition_risk = output.transition_risk
+    data_quality = getattr(transition_risk, "data_quality", None)
+    if isinstance(data_quality, dict):
+        transition_data_quality = data_quality.get("status")
+    else:
+        transition_data_quality = getattr(data_quality, "status", None)
     return {
-        "transition_risk_score": output.transition_risk.score,
+        "transition_risk_score": transition_risk.score,
+        "transition_risk_score_components_present": bool(
+            getattr(transition_risk, "score_components", None)
+        ),
+        "transition_risk_primary_drivers": list(
+            getattr(transition_risk, "primary_drivers", []) or []
+        ),
+        "transition_risk_triggered_rules": list(
+            getattr(transition_risk, "triggered_rules", []) or []
+        ),
+        "transition_risk_data_quality": transition_data_quality,
         "agent_routing": (
             output.agent_routing.active_cohort
             if output.agent_routing is not None
@@ -167,6 +192,7 @@ def _classify_per_session(
     engine: RegimeEngine,
     sessions: list[dt.date],
     market_data: pd.DataFrame,
+    event_calendar: pd.DataFrame,
     v2_kwargs: dict[str, Any] | None,
     mode_label: str,
 ) -> tuple[dict[dt.date, dict[str, Any]], dict[dt.date, dict[str, Any]], int]:
@@ -185,6 +211,7 @@ def _classify_per_session(
         kwargs: dict[str, Any] = {
             "as_of_date": as_of_date,
             "market_data": market_slice,
+            "event_calendar": event_calendar,
         }
         if v2_kwargs:
             kwargs.update(v2_kwargs)
@@ -332,6 +359,8 @@ def _parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--daily-dir", type=Path, default=None)
     parser.add_argument("--macro-parquet", type=Path, default=None)
+    parser.add_argument("--event-calendar", dest="event_calendar", type=Path, default=None)
+    parser.add_argument("--config-path", type=Path, default=None)
     # Optional manifest-routed inputs come from MANIFEST_INPUT_SPECS.
     register_manifest_input_args(parser, include_required_paths=False)
     parser.add_argument("--n-sessions", type=int, default=60)
@@ -378,9 +407,12 @@ def main() -> int:
         raise SystemExit(f"daily_ohlcv directory not found at {daily_dir}")
     if not macro_parquet.exists():
         raise SystemExit(f"macro parquet not found at {macro_parquet}")
+    if not args.event_calendar.exists():
+        raise SystemExit(f"event_calendar file not found at {args.event_calendar}")
 
     logger.info("Loading market data...")
     market_data = load_market_data(daily_dir)
+    event_calendar = load_event_calendar(args.event_calendar)
     end_date = market_data["date"].max()
 
     # Walk back through the NYSE calendar to get the most-recent N sessions.
@@ -406,7 +438,7 @@ def main() -> int:
     )
 
     # Build bootstrap context to derive SPY session index.
-    config = load_default_regime_config()
+    config = load_regime_config(args.config_path) if args.config_path else load_default_regime_config()
     bootstrap_context = build_market_context(
         end_date=end_date,
         market_data=market_data,
@@ -448,13 +480,15 @@ def main() -> int:
         "sector_etf_closes": sector_etf_closes,
         "cross_asset_closes": cross_asset_closes,
         "macro_series": macro_series,
+        "pit_constituent_intervals": synthetic_pit_intervals_from_sector_closes(sector_etf_closes),
+        "constituent_ohlcv": constituent_ohlcv_from_sector_closes(sector_etf_closes),
         "central_bank_text_releases": (
             central_bank_text_releases if not central_bank_text_releases.empty else None
         ),
         "cpi_first_release": cpi_first_release,
     }
 
-    engine = RegimeEngine()
+    engine = RegimeEngine(config_path=args.config_path)
     engine_version = resolved_engine_version()
 
     logger.info("Running v1-mode (no V2 kwargs)...")
@@ -462,6 +496,7 @@ def main() -> int:
         engine=engine,
         sessions=sessions,
         market_data=market_data,
+        event_calendar=event_calendar,
         v2_kwargs=None,
         mode_label="v1",
     )
@@ -471,6 +506,7 @@ def main() -> int:
         engine=engine,
         sessions=sessions,
         market_data=market_data,
+        event_calendar=event_calendar,
         v2_kwargs=v2_kwargs,
         mode_label="v2",
     )

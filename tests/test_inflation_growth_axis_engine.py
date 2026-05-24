@@ -142,7 +142,7 @@ def _build_synthetic_context(
         market_rows.append(
             {
                 "date": ts.date(),
-                "symbol": "VIXY",
+                "symbol": "VIX",
                 "open": 20.0,
                 "high": 20.5,
                 "low": 19.5,
@@ -151,6 +151,10 @@ def _build_synthetic_context(
             }
         )
     market_data = pd.DataFrame(market_rows)
+    spy_mask = market_data["symbol"] == "SPY"
+    market_data.loc[spy_mask, "volume"] = range(
+        1_000_000, 1_000_000 + int(spy_mask.sum())
+    )
 
     sector_etf_closes = {s: universe_prices[s] for s in SECTOR_ETFS}
     cross_asset_closes: dict[str, pd.Series] = {
@@ -232,6 +236,33 @@ def _build_synthetic_context(
         )
 
     config = RegimeEngine().config
+    assert config.hmm is not None
+    assert config.clustering is not None
+    assert config.change_point is not None
+    assert config.network_fragility is not None
+    config = config.model_copy(
+        update={
+            "network_fragility": config.network_fragility.model_copy(
+                update={
+                    "percentile_lookback_days": 100,
+                    "dispersion_percentile_lookback_days": 100,
+                }
+            ),
+            "hmm": config.hmm.model_copy(
+                update={
+                    "n_states": 2,
+                    "training_window_days": 100,
+                    "random_seeds": (42, 7, 13),
+                }
+            ),
+            "clustering": config.clustering.model_copy(
+                update={"training_window_days": 100}
+            ),
+            "change_point": config.change_point.model_copy(
+                update={"training_window_days": 100}
+            ),
+        }
+    )
     context = build_market_context(
         end_date=idx[-1].date(),
         market_data=market_data,
@@ -403,6 +434,9 @@ def test_feature_store_seam_none_when_dbc_missing() -> None:
             ]
         ),
         config=context.config,
+        vix_data=pd.DataFrame(
+            {"date": [ts.date() for ts in context.spy_ohlcv.index], "close": 20.0}
+        ),
         sector_etf_closes=context.sector_etf_closes,
         cross_asset_closes=stripped,
         macro_series=context.macro_series,
@@ -466,6 +500,26 @@ def test_regime_output_carries_inflation_growth_state_when_configured() -> None:
     """End-to-end: classify_window populates RegimeOutput.inflation_growth_state."""
     context = _build_synthetic_context()
     engine = RegimeEngine()
+    pit_intervals = pd.DataFrame(
+        {
+            "ticker": list(context.sector_etf_closes),
+            "start_date": [context.sessions[0]] * len(context.sector_etf_closes),
+            "end_date": [None] * len(context.sector_etf_closes),
+        }
+    )
+    constituent_ohlcv = {
+        symbol: pd.DataFrame(
+            {
+                "open": series,
+                "high": series,
+                "low": series,
+                "close": series,
+                "volume": pd.Series(1_000_000, index=series.index),
+                "adjusted_close": series,
+            }
+        )
+        for symbol, series in context.sector_etf_closes.items()
+    }
     timeline = engine.classify_window(
         end_date=context.end_date,
         market_data=pd.DataFrame(
@@ -495,9 +549,16 @@ def test_regime_output_carries_inflation_growth_state_when_configured() -> None:
             ]
         ),
         lookback_days=1,
+        config=context.config,
+        vix_data=pd.DataFrame(
+            {"date": [ts.date() for ts in context.spy_ohlcv.index], "close": 20.0}
+        ),
+        event_calendar=pd.DataFrame(columns=["date", "market", "type", "importance"]),
         sector_etf_closes=context.sector_etf_closes,
         cross_asset_closes=context.cross_asset_closes,
         macro_series=context.macro_series,
+        pit_constituent_intervals=pit_intervals,
+        constituent_ohlcv=constituent_ohlcv,
     )
     out = timeline.outputs[-1]
     assert out.inflation_growth_state is not None

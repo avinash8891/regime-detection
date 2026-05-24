@@ -113,14 +113,12 @@
   },
   "structural_causal_state": {
     "event_calendar": {
-      "raw_label": "expiry_week",
-      "stable_label": "expiry_week",
-      "active_label": "expiry_week",
+      "primary_label": "expiry_week",
+      "matching_labels": [
+        "expiry_week"
+      ],
       "evidence": {
-        "all_matching_events": [
-          "expiry_week"
-        ],
-        "selected_via_precedence": "expiry_week"
+        "selection_method": "precedence"
       }
     },
     "monetary_pressure": {
@@ -135,9 +133,11 @@
   "transition_risk": {
     "label": "stable",
     "evidence": {
-      "warnings_active": [],
+      "triggered_rules": [],
       "stable_changed_today": false,
-      "days_since_axis_switch": 2
+      "days_since_axis_switch": 2,
+      "axis_switch_count": 0,
+      "recent_axis_switch_count": 0
     }
   },
   "strategy_response": {

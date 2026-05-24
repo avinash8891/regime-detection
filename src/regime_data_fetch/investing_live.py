@@ -12,6 +12,7 @@ import urllib.parse
 import urllib.request
 from collections.abc import Callable
 from collections.abc import Iterable
+from dataclasses import dataclass
 from pathlib import Path
 
 from regime_data_fetch.investing_earnings_browser import (
@@ -80,6 +81,15 @@ PageFetcher = Callable[[str], str]
 EarningsPageCapturer = Callable[[Path], Path]
 
 
+@dataclass(frozen=True)
+class EarningsBrowserConfig:
+    user_data_dir: Path | None = None
+    executable_path: Path | None = None
+    headless: bool | None = None
+    timeout_ms: int | None = None
+    page_capturer: EarningsPageCapturer | None = None
+
+
 def capture_investing_earnings_loaded_page(
     *,
     output_path: Path,
@@ -124,6 +134,13 @@ def run_investing_live_fetch(
     earnings_page_capturer: EarningsPageCapturer | None = None,
 ) -> Path:
     archive_root = out_dir / "investing_live_archive"
+    earnings_browser_config = EarningsBrowserConfig(
+        user_data_dir=earnings_browser_user_data_dir,
+        executable_path=earnings_browser_executable,
+        headless=earnings_browser_headless,
+        timeout_ms=earnings_browser_timeout_ms,
+        page_capturer=earnings_page_capturer,
+    )
     capture_investing_live_archive(
         archive_root=archive_root,
         start=start,
@@ -135,11 +152,7 @@ def run_investing_live_fetch(
         earnings_access_token=earnings_access_token,
         earnings_loaded_page_path=earnings_loaded_page_path,
         earnings_browser_capture=earnings_browser_capture,
-        earnings_browser_user_data_dir=earnings_browser_user_data_dir,
-        earnings_browser_executable=earnings_browser_executable,
-        earnings_browser_headless=earnings_browser_headless,
-        earnings_browser_timeout_ms=earnings_browser_timeout_ms,
-        earnings_page_capturer=earnings_page_capturer,
+        earnings_browser_config=earnings_browser_config,
     )
     return run_local_investing_archive_import(
         out_dir=out_dir,
@@ -161,11 +174,7 @@ def capture_investing_live_archive(
     earnings_access_token: str | None = None,
     earnings_loaded_page_path: Path | None = None,
     earnings_browser_capture: bool = True,
-    earnings_browser_user_data_dir: Path | None = None,
-    earnings_browser_executable: Path | None = None,
-    earnings_browser_headless: bool | None = None,
-    earnings_browser_timeout_ms: int | None = None,
-    earnings_page_capturer: EarningsPageCapturer | None = None,
+    earnings_browser_config: EarningsBrowserConfig | None = None,
 ) -> None:
     if end < start:
         raise ValueError("end must be >= start")
@@ -183,6 +192,7 @@ def capture_investing_live_archive(
     calendar_page = page_fetcher(SOURCE_CALENDAR_URL) if page_fetcher else ""
     earnings_page = page_fetcher(SOURCE_EARNINGS_URL) if page_fetcher else ""
     captured_access_token = None
+    browser_config = earnings_browser_config or EarningsBrowserConfig()
     countries = (
         _country_map_from_page(calendar_page, key="eventAndHolidayCountries")
         if calendar_page
@@ -200,8 +210,8 @@ def capture_investing_live_archive(
             / "browser_pages"
             / "investing_earnings_calendar_loaded_page.html"
         )
-        if earnings_page_capturer is not None:
-            earnings_loaded_page_path = earnings_page_capturer(capture_path)
+        if browser_config.page_capturer is not None:
+            earnings_loaded_page_path = browser_config.page_capturer(capture_path)
             captured_html = earnings_loaded_page_path.read_text(errors="replace")
             captured_access_token = _access_token_from_page(captured_html)
             _validate_token_not_expired(captured_access_token)
@@ -211,10 +221,10 @@ def capture_investing_live_archive(
         else:
             captured_page = _capture_investing_earnings_page_with_token(
                 output_path=capture_path,
-                user_data_dir=earnings_browser_user_data_dir,
-                executable_path=earnings_browser_executable,
-                headless=earnings_browser_headless,
-                timeout_ms=earnings_browser_timeout_ms,
+                user_data_dir=browser_config.user_data_dir,
+                executable_path=browser_config.executable_path,
+                headless=browser_config.headless,
+                timeout_ms=browser_config.timeout_ms,
             )
             earnings_loaded_page_path = captured_page.path
             captured_access_token = captured_page.access_token

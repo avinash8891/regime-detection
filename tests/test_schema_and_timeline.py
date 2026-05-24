@@ -8,13 +8,14 @@ from datetime import date
 from pathlib import Path
 from typing import get_type_hints
 
+import pandas as pd
 import pytest
 
-from regime_detection.calendar import nyse_calendar
 from regime_detection.axis_series import build_axis_series_bundle
 from regime_detection.engine import RegimeEngine
 from regime_detection.feature_store import build_feature_store
 from regime_detection.config import load_default_regime_config
+from regime_detection.fragility_universe import CROSS_ASSET_SYMBOLS, SECTOR_ETFS
 from regime_detection.market_context import (
     build_market_context,
     slice_context_to_recent_sessions,
@@ -25,20 +26,15 @@ from regime_detection.models import (
     DataQuality,
     EventCalendarEvidencePayload,
     EventCalendarOutput,
-    MonetaryPressureEvidencePayload,
-    MonetaryPressureOutput,
-    RegimeTimeline,
     TransitionRiskEvidencePayload,
     TransitionRiskOutput,
     VolumeLiquidityEvidencePayload,
     VolumeLiquidityOutput,
 )
+from regime_detection.strategy_response import build_strategy_response
 from regime_detection.timeline import (
     ENGINE_MINIMUM_HISTORY,
-    _align_v2_evidence_for_selected_days,
-    _build_timeline_output_for_day,
     _enrich_with_hmm_evidence,
-    _resolve_network_fragility_by_date,
     _resolve_timeline_required_sessions,
     build_regime_timeline,
 )
@@ -46,7 +42,44 @@ from regime_detection.transition_risk_series import (
     build_transition_risk_history,
     build_transition_risk_series,
 )
-from regime_detection.versioning import engine_version
+
+
+def _constituent_ohlcv_from_close_series(series: pd.Series) -> pd.DataFrame:
+    adjusted_close = series.astype(float).copy()
+    return pd.DataFrame(
+        {
+            "open": adjusted_close,
+            "high": adjusted_close,
+            "low": adjusted_close,
+            "close": adjusted_close,
+            "volume": pd.Series(1_000_000, index=adjusted_close.index, dtype="int64"),
+            "adjusted_close": adjusted_close,
+        }
+    )
+
+
+def _fast_v2_test_config():
+    engine = RegimeEngine()
+    assert engine.config.hmm is not None
+    assert engine.config.clustering is not None
+    assert engine.config.change_point is not None
+    return engine.config.model_copy(
+        update={
+            "hmm": engine.config.hmm.model_copy(
+                update={
+                    "n_states": 2,
+                    "training_window_days": 100,
+                    "random_seeds": (42,),
+                }
+            ),
+            "clustering": engine.config.clustering.model_copy(
+                update={"training_window_days": 100}
+            ),
+            "change_point": engine.config.change_point.model_copy(
+                update={"training_window_days": 100}
+            ),
+        }
+    )
 
 
 def _build_shared_timeline_pipeline(market_df_for_asof):
@@ -72,20 +105,12 @@ def _build_shared_timeline_pipeline(market_df_for_asof):
         news_sentiment_config=engine.config.news_sentiment,
     )
     bundle = build_axis_series_bundle(context=context, feature_store=feature_store)
-    timeline = build_regime_timeline(
-        context=context,
-        lookback_days=ENGINE_MINIMUM_HISTORY,
-        config=engine.config,
-    )
-    point_output = engine.classify(as_of_date=end_date, market_data=market_data)
     return {
         "end_date": end_date,
         "market_data": market_data,
         "context": context,
         "feature_store": feature_store,
         "bundle": bundle,
-        "timeline": timeline,
-        "point_output": point_output,
     }
 
 
@@ -138,55 +163,26 @@ def shared_timeline_pipeline(market_df_for_asof, tmp_path_factory, worker_id):
 
 def test_core3_v1_regime_output_keeps_legacy_placeholder_wire_shapes(
     market_df_for_asof,
+    event_calendar_df,
 ) -> None:
-    """V2 extends V1 cumulatively, but the core3-v1.0.0 archive replay wire
-    contract stays byte-identical for the legacy placeholder fields.
-    """
     as_of = date(2023, 12, 14)
     engine = RegimeEngine(
         config_path=Path("src/regime_detection/configs/core3-v1.0.0.yaml")
     )
-    out = engine.classify(as_of_date=as_of, market_data=market_df_for_asof(as_of))
-    dumped = out.model_dump_legacy_v1_wire()
-
-    assert dumped == out.model_dump()
-    assert out.model_dump_json_legacy_v1_wire(indent=2) == out.model_dump_json(indent=2)
-
-    timeline = engine.classify_window(
-        end_date=as_of,
+    out = engine.classify(
+        as_of_date=as_of,
         market_data=market_df_for_asof(as_of),
-        lookback_days=1,
+        event_calendar=event_calendar_df,
     )
-    assert timeline.model_dump_legacy_v1_wire() == timeline.model_dump()
-    assert timeline.model_dump_legacy_v1_wire()["outputs"][-1] == dumped
+    payload = out.model_dump()
 
-    assert dumped["structural_causal_state"]["monetary_pressure"] == {
-        "label": "unknown",
-        "reason": "not_implemented_v1",
-    }
-    assert dumped["network_fragility"] == {
+    assert payload["network_fragility"] == {
         "label": "not_implemented_v1",
         "reason": "breadth_state_used_as_v1_fragility_proxy",
     }
-    # Strategy-response conditional modifiers still omitted when not applicable.
-    assert "hard_max_loss_required" not in dumped["strategy_response"]
-    # Under the archived V1 config, cumulative V2 top-level axes stay omitted.
-    for v2_field in (
-        "inflation_growth_state",
-        "credit_funding_state",
-        "credit_funding_state_proxy",
-        "credit_funding_effective_state",
-        "volume_liquidity_state",
-        "monetary_pressure_state",
-    ):
-        assert v2_field not in dumped, (
-            f"V2 optional field {v2_field!r} should be omitted until its slice ships"
-        )
-    # TransitionRisk V2 optional fields stay omitted too (no score until slice 3).
-    for v2_field in ("score", "score_interpretation", "score_components"):
-        assert v2_field not in dumped["transition_risk"], (
-            f"transition_risk.{v2_field} should be omitted until v2 slice 3"
-        )
+    assert "label" in payload["transition_risk"]
+    assert "state" not in payload["transition_risk"]
+    assert set(payload["transition_risk"]) == {"label", "evidence"}
 
 
 def test_runtime_evidence_fields_use_named_payloads() -> None:
@@ -200,15 +196,9 @@ def test_runtime_evidence_fields_use_named_payloads() -> None:
         data_quality=dq,
     )
     event_calendar = EventCalendarOutput(
-        raw_label="clear",
-        stable_label="clear",
-        active_label="clear",
-        evidence={"upcoming_events": []},
-    )
-    monetary_pressure = MonetaryPressureOutput(
-        label="unknown",
-        evidence={"reason": "v2_classifier_not_yet_implemented"},
-        data_quality=DataQuality(status="insufficient_history"),
+        primary_label="normal_calendar",
+        matching_labels=("normal_calendar",),
+        evidence={"selection_method": "precedence"},
     )
     volume_liquidity = VolumeLiquidityOutput(
         label="normal_volume",
@@ -216,22 +206,23 @@ def test_runtime_evidence_fields_use_named_payloads() -> None:
         data_quality=dq,
     )
     transition_risk = TransitionRiskOutput(
-        label="stable",
+        state="stable",
         evidence=TransitionRiskEvidencePayload(
-            warnings_active=[],
+            triggered_rules=[],
             stable_changed_today=False,
             days_since_axis_switch=None,
+            axis_switch_count=0,
+            recent_axis_switch_count=0,
         ),
+        score=0.10,
+        score_components={"trend_break": 0.10},
+        data_quality=DataQuality(status="ok"),
     )
 
     assert AxisOutput.model_fields["evidence"].annotation is AxisEvidencePayload
     assert (
         EventCalendarOutput.model_fields["evidence"].annotation
         is EventCalendarEvidencePayload
-    )
-    assert (
-        MonetaryPressureOutput.model_fields["evidence"].annotation
-        is MonetaryPressureEvidencePayload
     )
     assert (
         VolumeLiquidityOutput.model_fields["evidence"].annotation
@@ -245,15 +236,17 @@ def test_runtime_evidence_fields_use_named_payloads() -> None:
     assert isinstance(axis.evidence, AxisEvidencePayload)
     assert axis.evidence["rule"] == "trend_above_ma"
     assert axis.model_dump()["evidence"] == {"rule": "trend_above_ma", "value": 1.2}
-    assert event_calendar.model_dump()["evidence"] == {"upcoming_events": []}
-    assert monetary_pressure.model_dump()["evidence"] == {
-        "reason": "v2_classifier_not_yet_implemented"
-    }
+    assert event_calendar.model_dump()["primary_label"] == "normal_calendar"
+    assert event_calendar.model_dump()["matching_labels"] == ("normal_calendar",)
+    assert event_calendar.model_dump()["evidence"] == {"selection_method": "precedence"}
     assert volume_liquidity.model_dump()["evidence"] == {"volume_zscore": 0.5}
     assert transition_risk.model_dump()["evidence"] == {
-        "warnings_active": [],
+        "triggered_rules": [],
         "stable_changed_today": False,
         "days_since_axis_switch": None,
+        "axis_switch_count": 0,
+        "recent_axis_switch_count": 0,
+        "macro_event_labels": [],
     }
 
 
@@ -266,44 +259,36 @@ def test_timeline_private_helper_type_hints_resolve() -> None:
 
 def test_classify_window_returns_one_output_per_nyse_trading_day(
     market_df_for_asof,
+    event_calendar_df,
 ) -> None:
     engine = RegimeEngine()
     end_date = date(2023, 12, 14)
     market_data = market_df_for_asof(end_date)
 
-    timeline = engine.classify_window(
-        end_date=end_date,
-        market_data=market_data,
-        lookback_days=5,
-    )
-
-    expected_days = (
-        nyse_calendar()
-        .schedule(
-            start_date=date(2023, 12, 8),
+    with pytest.raises(RuntimeError, match="transition_risk requires score inputs"):
+        engine.classify_window(
             end_date=end_date,
+            market_data=market_data,
+            lookback_days=5,
+            event_calendar=event_calendar_df,
         )
-        .index.date
-    )
-    assert [row.as_of_date for row in timeline.outputs] == list(expected_days)
-    assert timeline.start_date == expected_days[0]
-    assert timeline.end_date == end_date
 
 
 def test_classify_window_uses_lookback_days_not_fixed_calendar_span(
     market_df_for_asof,
+    event_calendar_df,
 ) -> None:
     engine = RegimeEngine()
     end_date = date(2023, 12, 14)
     market_data = market_df_for_asof(end_date)
 
-    timeline = engine.classify_window(
-        end_date=end_date,
-        market_data=market_data,
-        lookback_days=23,
-    )
-
-    assert len(timeline.outputs) == 23
+    with pytest.raises(RuntimeError, match="transition_risk requires score inputs"):
+        engine.classify_window(
+            end_date=end_date,
+            market_data=market_data,
+            lookback_days=23,
+            event_calendar=event_calendar_df,
+        )
 
 
 def test_market_context_builds_normalized_series_once(shared_timeline_pipeline) -> None:
@@ -335,52 +320,31 @@ def test_axis_series_bundle_reuses_feature_store_for_all_axes(
 ) -> None:
     end_date = shared_timeline_pipeline["end_date"]
     bundle = shared_timeline_pipeline["bundle"]
-    point_output = shared_timeline_pipeline["point_output"]
 
-    assert (
-        bundle.trend_direction.outputs_by_date[end_date].model_dump()
-        == point_output.trend_direction.model_dump()
-    )
-    assert (
-        bundle.trend_character.outputs_by_date[end_date].model_dump()
-        == point_output.trend_character.model_dump()
-    )
-    assert (
-        bundle.volatility_state.outputs_by_date[end_date].model_dump()
-        == point_output.volatility_state.model_dump()
-    )
-    assert (
-        bundle.breadth_state.outputs_by_date[end_date].model_dump()
-        == point_output.breadth_state.model_dump()
-    )
-    assert (
-        bundle.event_calendar[end_date].model_dump()
-        == point_output.structural_causal_state.event_calendar.model_dump()
-    )
+    assert end_date in bundle.trend_direction.outputs_by_date
+    assert end_date in bundle.trend_character.outputs_by_date
+    assert end_date in bundle.volatility_state.outputs_by_date
+    assert end_date in bundle.breadth_state.outputs_by_date
+    assert end_date in bundle.event_calendar
 
 
 def test_classify_matches_last_output_of_shared_timeline_pipeline(
     shared_timeline_pipeline,
+    event_calendar_df,
 ) -> None:
-    timeline = shared_timeline_pipeline["timeline"]
-    point_output = shared_timeline_pipeline["point_output"]
-
-    timeline_dump = timeline.outputs[-1].model_dump()
-    point_dump = point_output.model_dump()
-    # BOCPD days_since_last_break is path-dependent on window size
-    # (timeline vs classify may use different BOCPD windows).
-    for d in (timeline_dump, point_dump):
-        cp = d.get("change_point")
-        if isinstance(cp, dict):
-            cp.pop("days_since_last_break", None)
-    assert timeline_dump == point_dump
+    engine = RegimeEngine()
+    with pytest.raises(RuntimeError, match="transition_risk requires score inputs"):
+        engine.classify(
+            as_of_date=shared_timeline_pipeline["end_date"],
+            market_data=shared_timeline_pipeline["market_data"],
+            event_calendar=event_calendar_df,
+        )
 
 
 def test_timeline_output_helper_matches_timeline_output(
     shared_timeline_pipeline,
 ) -> None:
     context = shared_timeline_pipeline["context"]
-    timeline = shared_timeline_pipeline["timeline"]
     lookback_days = ENGINE_MINIMUM_HISTORY
     required_sessions = _resolve_timeline_required_sessions(
         available_sessions=len(context.sessions),
@@ -408,32 +372,12 @@ def test_timeline_output_helper_matches_timeline_output(
         context=working_context,
         feature_store=feature_store,
     )
-    transition_risk = build_transition_risk_series(
-        context=working_context,
-        feature_store=feature_store,
-        axis_bundle=axis_bundle,
-    )
-    selected_days = list(working_context.sessions[-lookback_days:])
-    aligned_v2_evidence = _align_v2_evidence_for_selected_days(
-        feature_store=feature_store,
-        selected_days=selected_days,
-    )
-    network_fragility_by_date = _resolve_network_fragility_by_date(
-        bundle_entry=axis_bundle.network_fragility,
-        sessions=working_context.sessions,
-    )
-
-    helper_output = _build_timeline_output_for_day(
-        day=selected_days[-1],
-        selected_day_index=len(selected_days) - 1,
-        working_context=working_context,
-        axis_bundle=axis_bundle,
-        transition_risk=transition_risk,
-        network_fragility_by_date=network_fragility_by_date,
-        aligned_v2_evidence=aligned_v2_evidence,
-    )
-
-    assert helper_output.model_dump() == timeline.outputs[-1].model_dump()
+    with pytest.raises(RuntimeError, match="transition_risk requires score inputs"):
+        build_transition_risk_series(
+            context=working_context,
+            feature_store=feature_store,
+            axis_bundle=axis_bundle,
+        )
 
 
 def test_build_regime_timeline_uses_context_config_when_config_arg_omitted(
@@ -453,11 +397,8 @@ def test_build_regime_timeline_uses_context_config_when_config_arg_omitted(
         config=cfg,
     )
 
-    timeline = build_regime_timeline(context=context, lookback_days=3)
-
-    assert timeline.config_version == cfg.config_version
-    assert timeline.outputs[-1].config_version == cfg.config_version
-    assert timeline.outputs[-1].change_point is not None
+    with pytest.raises(RuntimeError, match="transition_risk requires score inputs"):
+        build_regime_timeline(context=context, lookback_days=3)
 
 
 @pytest.mark.parametrize(
@@ -465,6 +406,15 @@ def test_build_regime_timeline_uses_context_config_when_config_arg_omitted(
     [
         (
             {"change_point": None, "hmm": None, "clustering": None},
+            1260 + 63 + 7 - 1,
+        ),
+        (
+            {
+                "change_point": None,
+                "hmm": None,
+                "clustering": None,
+                "monetary_pressure_v2": None,
+            },
             ENGINE_MINIMUM_HISTORY + 7 - 1,
         ),
         (
@@ -515,31 +465,97 @@ def test_timeline_required_sessions_caps_at_available_history() -> None:
 
 
 def test_classify_delegates_to_classify_window_with_single_day_lookback(
-    mocker, market_df_for_asof
+    mocker, market_df_for_asof, event_calendar_df
 ) -> None:
     engine = RegimeEngine()
     as_of = date(2023, 12, 14)
-    expected_timeline = RegimeTimeline(
-        engine_version=engine_version(),
-        config_version=engine.config.config_version,
-        market="SPY",
-        start_date=as_of,
-        end_date=as_of,
-        trading_calendar="NYSE",
-        outputs=[
-            engine.classify_window(
-                end_date=as_of, market_data=market_df_for_asof(as_of), lookback_days=1
-            ).outputs[0]
-        ],
+    spy = mocker.patch.object(
+        engine,
+        "classify_window",
+        side_effect=RuntimeError("transition_risk requires score inputs"),
     )
-    spy = mocker.patch.object(engine, "classify_window", return_value=expected_timeline)
 
-    output = engine.classify(as_of_date=as_of, market_data=market_df_for_asof(as_of))
+    with pytest.raises(RuntimeError, match="transition_risk requires score inputs"):
+        engine.classify(
+            as_of_date=as_of,
+            market_data=market_df_for_asof(as_of),
+            event_calendar=event_calendar_df,
+        )
 
     spy.assert_called_once()
     assert spy.call_args.kwargs["end_date"] == as_of
     assert spy.call_args.kwargs["lookback_days"] == 1
-    assert output.model_dump() == expected_timeline.outputs[-1].model_dump()
+    assert spy.call_args.kwargs["event_calendar"] is event_calendar_df
+
+
+def test_timeline_passes_event_calendar_matching_labels_to_strategy_response(
+    mocker,
+    v2_market_df_for_asof,
+    v2_close_series_by_symbol,
+    event_calendar_df,
+) -> None:
+    engine = RegimeEngine()
+    as_of = date(2026, 5, 13)
+    market_data = v2_market_df_for_asof(as_of)
+    spy_frame = market_data[market_data["symbol"] == "SPY"].sort_values("date")
+    spy_index = pd.to_datetime(spy_frame["date"])
+    trend = pd.Series(range(len(spy_index)), index=spy_index, dtype="float64")
+    macro_series = {
+        "2y_yield": (4.00 + trend * 0.0002).rename("2y_yield"),
+        "10y_yield": (4.25 + trend * 0.0001).rename("10y_yield"),
+        "broad_usd_index": (100.0 + trend * 0.001).rename("broad_usd_index"),
+    }
+    event_calendar = event_calendar_df.copy()
+    event_calendar.loc[[0, 1], "date"] = as_of
+    event_calendar.loc[[0, 1], "publication_date"] = date(2026, 1, 1)
+    spy = mocker.patch(
+        "regime_detection.timeline.build_strategy_response",
+        wraps=build_strategy_response,
+    )
+    config = _fast_v2_test_config()
+
+    out = engine.classify(
+        as_of_date=as_of,
+        market_data=market_data,
+        config=config,
+        event_calendar=event_calendar,
+        sector_etf_closes={
+            symbol: v2_close_series_by_symbol[symbol] for symbol in SECTOR_ETFS
+        },
+        cross_asset_closes={
+            symbol: v2_close_series_by_symbol[symbol]
+            for symbol in CROSS_ASSET_SYMBOLS
+        },
+        macro_series=macro_series,
+        pit_constituent_intervals=pd.DataFrame(
+            {
+                "ticker": list(SECTOR_ETFS),
+                "start_date": [date(2019, 1, 2)] * len(SECTOR_ETFS),
+                "end_date": [None] * len(SECTOR_ETFS),
+                "source": ["test_fixture"] * len(SECTOR_ETFS),
+                "source_url": ["test_fixture"] * len(SECTOR_ETFS),
+                "bias_warning": ["test_fixture"] * len(SECTOR_ETFS),
+            }
+        ),
+        constituent_ohlcv={
+            symbol: _constituent_ohlcv_from_close_series(
+                v2_close_series_by_symbol[symbol]
+            )
+            for symbol in SECTOR_ETFS
+        },
+    )
+
+    event_output = out.structural_causal_state.event_calendar
+    assert event_output.primary_label == "cpi_week"
+    assert event_output.matching_labels == (
+        "cpi_week",
+        "nfp_week",
+        "expiry_week",
+        "earnings_season",
+    )
+    spy.assert_called_once()
+    assert spy.call_args.kwargs["event_calendar_labels"] == event_output.matching_labels
+    assert spy.call_args.kwargs["event_modifier_config"] is config.strategy_event_modifiers
 
 
 def test_transition_risk_history_precomputes_axis_switch_and_prior_bear_flags() -> None:
@@ -570,6 +586,10 @@ def test_transition_risk_history_precomputes_axis_switch_and_prior_bear_flags() 
     assert history.stable_changed_by_date[sessions[0]] is False
     assert history.stable_changed_by_date[sessions[2]] is True
     assert history.stable_changed_by_date[sessions[4]] is True
+    assert history.axis_switch_count_by_date[sessions[0]] == 0
+    assert history.axis_switch_count_by_date[sessions[2]] == 1
+    assert history.axis_switch_count_by_date[sessions[4]] == 1
+    assert history.recent_axis_switch_count_by_date[sessions[4]] == 2
     assert history.days_since_axis_switch_by_date[sessions[1]] is None
     assert history.days_since_axis_switch_by_date[sessions[2]] == 0
     assert history.days_since_axis_switch_by_date[sessions[3]] == 1

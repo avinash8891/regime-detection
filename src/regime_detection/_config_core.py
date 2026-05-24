@@ -66,30 +66,30 @@ class NetworkFragilityRulesConfig(StrictBaseModel):
     """v2 §3.5 rule-engine thresholds.
 
     Each threshold is cited verbatim to its line in
-    docs/regime_engine_v2_spec.md §3.5 (lines 617–657). The
+    docs/regime_engine_v2_spec.md §3.5 (lines 3497–3542). The
     ``effective_rank_stability_threshold`` (0.05) encodes the spec-text
-    "21d std < 5% of mean" inside the diversified_normal rule (line 620).
+    "21d std < 5% of mean" inside the diversified_normal rule (line 3502).
     """
 
-    # diversified_normal — v2 §3.5 line 619
+    # diversified_normal — v2 §3.5 line 3501
     diversified_normal_percentile_lo: float = Field(ge=0.0, le=1.0)
     diversified_normal_percentile_hi: float = Field(ge=0.0, le=1.0)
-    # diversified_normal — v2 §3.5 line 620
+    # diversified_normal — v2 §3.5 line 3502
     effective_rank_stability_threshold: float = Field(gt=0.0, le=1.0)
-    # stock_picker_dispersion — v2 §3.5 lines 625–626
+    # stock_picker_dispersion — v2 §3.5 lines 3510–3512
     stock_picker_percentile_max: float = Field(ge=0.0, le=1.0)
     stock_picker_dispersion_percentile_min: float = Field(ge=0.0, le=1.0)
-    # correlation_concentration — v2 §3.5 lines 639–641
+    # correlation_concentration — v2 §3.5 lines 3524–3526
     concentration_corr_percentile_min: float = Field(ge=0.0, le=1.0)
     concentration_largest_eig_percentile_min: float = Field(ge=0.0, le=1.0)
     concentration_effective_rank_percentile_max: float = Field(ge=0.0, le=1.0)
     # absorption_ratio_top3 > threshold → top-3 eigenvalue dominance.
     concentration_absorption_ratio_min: float = Field(default=0.90, ge=0.0, le=1.0)
-    # correlation_to_one — v2 §3.5 lines 646–648
+    # correlation_to_one — v2 §3.5 lines 3531–3533
     corr_to_one_corr_percentile_min: float = Field(ge=0.0, le=1.0)
     corr_to_one_realized_vol_percentile_min: float = Field(ge=0.0, le=1.0)
     corr_to_one_drawdown_max: float
-    # systemic_stress — v2 §3.5 lines 653–656
+    # systemic_stress — v2 §3.5 lines 3538–3541
     systemic_stress_vix_percentile_min: float = Field(ge=0.0, le=1.0)
     # When True, diversified_normal fires on correlation in the inner band
     # (0.30-0.60) without requiring rank stability. Rank instability in
@@ -102,7 +102,7 @@ class NetworkFragilityRulesConfig(StrictBaseModel):
 class NetworkFragilityConfig(StrictBaseModel):
     """Network fragility axis configuration (v2 spec §3)."""
 
-    # V2 §3.1 calls for >= 20 ETFs; default yaml ships the 22-ETF universe.
+    # V2 §3.1 calls for >= 20 ETFs; default yaml ships the 24-ETF universe.
     universe: list[str] = Field(min_length=20)
 
     # V2 §3.2: "Average Pairwise Correlation (63d)".
@@ -133,5 +133,4 @@ class NetworkFragilityConfig(StrictBaseModel):
 
     # V2 §3.4–§3.5 rule engine thresholds.
     rules: NetworkFragilityRulesConfig
-
 

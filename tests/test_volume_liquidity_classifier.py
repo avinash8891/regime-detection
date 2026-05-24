@@ -87,6 +87,17 @@ def _synthetic_spy_market_data(
         rows.append(
             {
                 "date": ts.date(),
+                "symbol": "VIX",
+                "open": 20.0,
+                "high": 20.5,
+                "low": 19.5,
+                "close": 20.0,
+                "volume": 100_000.0,
+            }
+        )
+        rows.append(
+            {
+                "date": ts.date(),
                 "symbol": "VIXY",
                 "open": 20.0,
                 "high": 20.5,
@@ -232,8 +243,55 @@ def test_classifier_forces_unknown_when_volume_zscore_is_all_nan():
         assert out[day].active_label == "unknown"
 
 
+def test_classifier_forces_unknown_when_liquidity_gap_percentile_inputs_are_nan():
+    """The live liquidity_gap_behavior predicate consumes both volatility-v2
+    percentile inputs, so an initialized volatility seam with missing
+    percentile values must fail the input-quality gate instead of silently
+    falling through to normal_volume.
+    """
+    index = _bdate_index()
+    market_data = _synthetic_spy_market_data(index=index)
+    config = RegimeEngine().config
+    vix_data = (
+        market_data.loc[market_data["symbol"] == "VIXY", ["date", "close"]]
+        .copy()
+        .reset_index(drop=True)
+    )
+    context = build_market_context(
+        end_date=_LAST_SESSION.date(),
+        market_data=market_data,
+        config=config,
+        vix_data=vix_data,
+    )
+    store = build_feature_store(
+        context,
+        volume_liquidity_v2_config=context.config.volume_liquidity_v2,
+        volatility_state_v2_config=context.config.volatility_state_v2,
+    )
+    volatility_v2 = store.volatility_state_v2
+    assert volatility_v2 is not None
+    nan_series = pd.Series(np.nan, index=volatility_v2.gap_frequency_percentile_252d.index)
+    broken_volatility_v2 = volatility_v2.__class__(
+        **{
+            **volatility_v2.__dict__,
+            "gap_frequency_percentile_252d": nan_series,
+            "intraday_range_percentile_252d": nan_series,
+        }
+    )
+    broken_store = store.model_copy(update={"volatility_state_v2": broken_volatility_v2})
+
+    out = build_volume_liquidity_axis_series(context, broken_store)
+    last_100 = list(context.sessions)[-100:]
+    for day in last_100:
+        assert out[day].raw_label == "unknown"
+        assert out[day].stable_label == "unknown"
+        assert out[day].active_label == "unknown"
+        assert out[day].data_quality.status == "stale_data"
+
+
 def test_classifier_applies_per_label_hysteresis_so_single_day_panic_flip_does_not_propagate():
-    """Per Ambiguity Log #41: panic_volume de-escalation requires 3 days.
+    """Per Ambiguity Log #41 plus 2016-2026 calibration: panic_volume
+    de-escalation requires 2 days.
     A single one-off raw=normal_volume in a run of panic_volume must NOT
     flip the stable label."""
     from regime_detection.hysteresis import apply_per_label_asymmetric_hysteresis
@@ -255,15 +313,52 @@ def test_classifier_applies_per_label_hysteresis_so_single_day_panic_flip_does_n
 # ---------- Engine end-to-end (AGENTS rule A) -------------------------------
 
 
-def test_engine_classify_window_emits_real_volume_liquidity_labels():
+def test_engine_classify_window_emits_real_volume_liquidity_labels(
+    synthetic_v2_kwargs_for_market_data,
+):
     """Top-level engine entrypoint: with volume data + v2 config, the
     volume_liquidity_state axis must emit non-None outputs on every session."""
     index = _bdate_index()
     market_data = _synthetic_spy_market_data(index=index)
-    timeline = RegimeEngine().classify_window(
+    kwargs = synthetic_v2_kwargs_for_market_data(market_data)
+    engine = RegimeEngine()
+    assert engine.config.hmm is not None
+    assert engine.config.clustering is not None
+    assert engine.config.change_point is not None
+    config = engine.config.model_copy(
+        update={
+            "hmm": engine.config.hmm.model_copy(
+                update={
+                    "n_states": 2,
+                    "training_window_days": 100,
+                    "covariance_type": "diag",
+                    "model_version": "hmm_test_2state",
+                }
+            ),
+            "clustering": engine.config.clustering.model_copy(
+                update={
+                    "n_clusters": 2,
+                    "training_window_days": 100,
+                    "covariance_type": "diag",
+                    "model_version": "gmm_test_2cluster",
+                }
+            ),
+            "change_point": engine.config.change_point.model_copy(
+                update={"training_window_days": 100}
+            ),
+        }
+    )
+    timeline = engine.classify_window(
         end_date=_LAST_SESSION.date(),
         market_data=market_data,
         lookback_days=200,
+        config=config,
+        event_calendar=kwargs["event_calendar"],
+        sector_etf_closes=kwargs["sector_etf_closes"],
+        cross_asset_closes=kwargs["cross_asset_closes"],
+        macro_series=kwargs["macro_series"],
+        pit_constituent_intervals=kwargs["pit_constituent_intervals"],
+        constituent_ohlcv=kwargs["constituent_ohlcv"],
     )
     seen = {
         out.volume_liquidity_state.active_label
@@ -277,9 +372,7 @@ def test_engine_classify_window_emits_real_volume_liquidity_labels():
 
 
 def test_engine_classify_window_volume_liquidity_state_none_in_pure_v1_mode():
-    """V1 byte-identity: when running with the V1 config (no
-    volume_liquidity_v2 sub-config), volume_liquidity_state stays None
-    on every RegimeOutput."""
+    """V1 config omits volume-liquidity V2 outputs without aborting."""
     from pathlib import Path
 
     from regime_detection.config import load_regime_config
@@ -300,7 +393,9 @@ def test_engine_classify_window_volume_liquidity_state_none_in_pure_v1_mode():
         end_date=_LAST_SESSION.date(),
         market_data=market_data,
         lookback_days=20,
+        event_calendar=pd.DataFrame(columns=["date", "market", "type", "importance"]),
         config=v1_config,
     )
-    for out in timeline.outputs:
-        assert out.volume_liquidity_state is None
+
+    assert timeline.outputs
+    assert {out.volume_liquidity_state for out in timeline.outputs} == {None}

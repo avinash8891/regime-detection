@@ -16,7 +16,6 @@ import pytest
 
 from regime_detection.config import (
     FamilyOverride,
-    RegimeConfig,
     StrategyFamilyConstraintsConfig,
     load_default_regime_config,
 )
@@ -236,18 +235,19 @@ def test_regime_output_carries_strategy_family_constraints_when_configured(
 def test_regime_output_omits_strategy_family_constraints_when_config_absent(
     market_df_for_asof,
     golden_rows: list[dict[str, object]],
+    synthetic_v2_kwargs_for_market_data,
 ) -> None:
-    base = load_default_regime_config().model_dump()
-    base["strategy_family_constraints"] = None
-    no_sfc = RegimeConfig.model_validate(base)
-    assert no_sfc.strategy_family_constraints is None
-
     engine = RegimeEngine()
     as_of = date.fromisoformat(str(golden_rows[0]["as_of_date"]))
+    market_data = market_df_for_asof(as_of)
+    kwargs = synthetic_v2_kwargs_for_market_data(market_data)
+    no_sfc = kwargs["config"].model_copy(update={"strategy_family_constraints": None})
+    assert no_sfc.strategy_family_constraints is None
+    kwargs["config"] = no_sfc
     out = engine.classify(
         as_of_date=as_of,
-        market_data=market_df_for_asof(as_of),
-        config=no_sfc,
+        market_data=market_data,
+        **kwargs,
     )
     assert out.strategy_family_constraints is None
     assert "strategy_family_constraints" not in out.model_dump()

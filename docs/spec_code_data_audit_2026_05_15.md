@@ -84,13 +84,13 @@ implementation diffs are in Section 3.
 | Metric | Spec data | Fetch | Code | Verdict |
 |---|---|---|---|---|
 | `budget_week`, `election_window`, `global_rate_decision` | Deterministic / official adapters + candidate parquet | ✅ Sep-30 budget, BOE/ECB/BOJ pages | `event_calendar.py` + `macro_event_score` in §4.2 | OK |
-| `geopolitical_event` | GPR + GDELT + HDX HAPI; ACLED/UCDP pending API keys | ⚠ partial — ACLED/UCDP TODO | overlay-only, never auto-promoted (spec-aligned) | OK as designed |
+| `geopolitical_event` | GPR + GDELT 2.0; ACLED/UCDP pending API keys | ⚠ partial — ACLED/UCDP TODO | overlay-only, never auto-promoted (spec-aligned); HDX monthly/admin aggregates excluded from candidate generation | OK as designed |
 
 ### 1.10 V2 §3 network fragility
 
 | Metric | Spec data | Fetch | Code | Verdict |
 |---|---|---|---|---|
-| 22-asset universe (11 sectors + SPY + 10 cross-asset) | sector + cross-asset ETFs | ✅ | `fragility_universe.py` constants match exactly | OK |
+| 24-asset universe (11 sectors + SPY + 12 cross-asset) | sector + cross-asset ETFs | ✅ | `fragility_universe.py` constants match exactly | OK |
 | `avg_pairwise_corr_63d`, `*_percentile_504d`, `largest_eigenvalue_share`, `effective_rank` (natural log), `absorption_ratio_top3`, `dispersion_ratio` | returns matrix from universe | ✅ | `network_fragility.py` | OK |
 
 ### 1.11 V2 §4 / §5 / §6
@@ -119,9 +119,9 @@ in `data/raw/fomc_minutes/fomc_minutes.parquet`. Powell speeches verified
 `body_text` columns.
 
 **Code state:** no module in `src/regime_detection/` reads FOMC text or
-Powell text. `monetary_pressure.py` produces only the four yield-and-USD
-z-score features; its `RuleInputs` and `Features` dataclasses have no
-text-derived field.
+Powell text. `monetary_pressure.py` requires DGS2, DGS10, and DTWEXBGS
+for the yield-and-USD z-score features. Central-bank text, when supplied,
+is evidence-only and is not consumed by the rule predicates.
 
 **Implementation decision:** the spec's "LLM classifier" phrasing
 conflicts with V1 §2.2 stateless replay (same inputs → identical

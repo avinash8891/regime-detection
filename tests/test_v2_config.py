@@ -24,8 +24,8 @@ from regime_detection.config import (
 )
 
 
-# V2 spec §3.1 — canonical 22-asset network fragility universe (11 sector
-# ETFs + SPY broad-market index + 10 cross-asset proxies). KRE belongs to
+# V2 spec §3.1 — canonical 24-asset network fragility universe (11 sector
+# ETFs + SPY broad-market index + 12 cross-asset proxies). KRE belongs to
 # v2 §2C credit/funding, not §3.1.
 V2_NETWORK_FRAGILITY_UNIVERSE = [
     "XLB",
@@ -45,10 +45,12 @@ V2_NETWORK_FRAGILITY_UNIVERSE = [
     "EFA",
     "EEM",
     "TLT",
+    "IEF",
     "GLD",
     "HYG",
     "LQD",
     "USO",
+    "DBC",
     "UUP",
 ]
 
@@ -68,7 +70,7 @@ V2_NETWORK_FRAGILITY_DEESCALATION_DAYS = {
 # spec line verbatim. Used as a valid fixture for NetworkFragilityConfig
 # construction in unit tests.
 V2_NETWORK_FRAGILITY_RULES_KWARGS = dict(
-    diversified_normal_percentile_lo=0.25,
+    diversified_normal_percentile_lo=0.0,
     diversified_normal_percentile_hi=0.75,
     effective_rank_stability_threshold=0.05,
     stock_picker_percentile_max=0.30,
@@ -105,11 +107,11 @@ def test_v2_default_config_loads_and_has_correct_version() -> None:
     assert cfg.config_version == "core3-v2.0.0"
 
 
-def test_v2_default_config_has_22_etf_network_fragility_universe() -> None:
+def test_v2_default_config_has_24_etf_network_fragility_universe() -> None:
     cfg = load_default_regime_config()
     assert cfg.network_fragility is not None
     assert cfg.network_fragility.universe == V2_NETWORK_FRAGILITY_UNIVERSE
-    assert len(cfg.network_fragility.universe) == 22
+    assert len(cfg.network_fragility.universe) == 24
 
 
 def test_v2_default_config_has_v2_section_3_7_deescalation_days() -> None:
@@ -233,18 +235,74 @@ def test_network_fragility_config_rejects_invalid_lookback_bounds() -> None:
         NetworkFragilityConfig(**bad)
 
 
-def test_v2_transition_score_weights_with_hmm_sum_to_1_0() -> None:
+def test_v2_transition_score_weights_sum_to_1_0() -> None:
     cfg = load_default_regime_config()
     assert cfg.transition_score is not None
-    total = sum(cfg.transition_score.weights_with_hmm.values())
+    total = sum(cfg.transition_score.weights.values())
     assert total == pytest.approx(1.0, abs=1e-9)
 
 
-def test_v2_transition_score_weights_without_hmm_sum_to_1_0() -> None:
+def test_v2_transition_score_config_uses_score_first_component_contract() -> None:
     cfg = load_default_regime_config()
     assert cfg.transition_score is not None
-    total = sum(cfg.transition_score.weights_without_hmm.values())
-    assert total == pytest.approx(1.0, abs=1e-9)
+    assert set(cfg.transition_score.weights) == {
+        "trend_break",
+        "volatility_acceleration",
+        "breadth_deterioration",
+        "correlation_fragility",
+        "credit_stress",
+        "liquidity_stress",
+        "macro_event",
+        "model_instability",
+    }
+    assert cfg.transition_score.minimum_component_weight_coverage == pytest.approx(0.75)
+    assert cfg.transition_score.bands == {
+        "stable": (0.0, 0.35),
+        "weakening": (0.35, 0.55),
+        "transition_warning": (0.55, 0.75),
+        "high": (0.75, 1.0),
+    }
+    assert cfg.transition_score.state_confirmation_days == {
+        "stable": 1,
+        "watch": 1,
+        "weakening": 2,
+        "transition_warning": 2,
+        "high_transition_risk": 2,
+        "fragile_bull": 2,
+        "recovery_attempt": 2,
+        "bear_stress": 1,
+        "crisis": 1,
+        "insufficient_data": 1,
+    }
+
+
+def test_v2_default_config_loads_strategy_event_modifiers() -> None:
+    cfg = load_default_regime_config()
+
+    assert cfg.strategy_event_modifiers is not None
+    rules = cfg.strategy_event_modifiers.rules
+    assert set(rules) == {"macro_event_window", "policy_or_event_risk_window"}
+
+    macro = rules["macro_event_window"]
+    assert macro.labels == (
+        "fed_week",
+        "cpi_week",
+        "nfp_week",
+        "global_rate_decision",
+    )
+    assert macro.position_size_cap == pytest.approx(0.75)
+    assert macro.allow_leverage_expansion is False
+    assert macro.require_confirmation_for_new_longs is True
+    assert macro.leverage_allowed is None
+    assert macro.prefer_cash_or_hedges is None
+
+    policy = rules["policy_or_event_risk_window"]
+    assert policy.labels == ("budget_week", "election_window", "geopolitical_event")
+    assert policy.position_size_cap == pytest.approx(0.50)
+    assert policy.leverage_allowed is False
+    assert policy.prefer_cash_or_hedges is True
+    assert policy.require_confirmation_for_new_longs is True
+    assert policy.allow_leverage_expansion is None
 
 
 def test_v2_config_rejects_unknown_top_level_key(tmp_path: Path) -> None:
@@ -262,6 +320,25 @@ def test_v2_config_rejects_unknown_top_level_key(tmp_path: Path) -> None:
         load_regime_config(bad_yaml)
 
 
+def test_v2_config_rejects_volume_liquidity_without_volatility_v2(
+    tmp_path: Path,
+) -> None:
+    pkg_file = importlib.resources.files("regime_detection").joinpath(
+        "configs/core3-v2.0.0.yaml"
+    )
+    data = yaml.safe_load(pkg_file.read_text(encoding="utf-8"))
+    data["volatility_state_v2"] = None
+
+    bad_yaml = tmp_path / "core3-v2.0.0-without-volatility-v2.yaml"
+    bad_yaml.write_text(yaml.safe_dump(data), encoding="utf-8")
+
+    with pytest.raises(
+        ValidationError,
+        match="volume_liquidity_state requires volatility_state_v2",
+    ):
+        load_regime_config(bad_yaml)
+
+
 def test_v1_yaml_still_loads_with_v1_config_version() -> None:
     cfg = load_regime_config(_v1_yaml_path())
     assert cfg.config_version == "core3-v1.0.0"
@@ -270,6 +347,10 @@ def test_v1_yaml_still_loads_with_v1_config_version() -> None:
     assert cfg.volatility_state.deescalation_days_by_label["crisis_vol"] == 2
     assert cfg.breadth_state.deescalation_days_by_label["weak_breadth"] == 2
     assert cfg.trend_character.deescalation_days_by_label["trending"] == 3
+    assert not (
+        set(cfg.trend_character.deescalation_days_by_label)
+        & {"breakout_expansion", "mild_trend", "range_bound", "volatile_chop"}
+    )
     # V2-only sub-configs must remain None for the V1 yaml.
     assert cfg.network_fragility is None
     assert cfg.transition_score is None
@@ -280,6 +361,54 @@ def test_v1_yaml_still_loads_with_v1_config_version() -> None:
     assert cfg.no_flip_flop is None
     assert cfg.cohort_routing is None
     assert cfg.strategy_family_constraints is None
+    assert cfg.strategy_event_modifiers is None
+
+
+def test_strategy_event_modifier_config_rejects_unknown_label() -> None:
+    from regime_detection.config import StrategyEventModifierRule
+
+    with pytest.raises(ValidationError, match="labels"):
+        StrategyEventModifierRule(
+            labels=("fomc_surprise",),
+            position_size_cap=0.75,
+        )
+
+
+def test_strategy_event_modifier_config_uses_runtime_event_label_source() -> None:
+    from regime_detection.config import StrategyEventModifierRule
+    from regime_detection.event_calendar_labels import EVENT_CALENDAR_LABELS
+
+    rule = StrategyEventModifierRule(
+        labels=EVENT_CALENDAR_LABELS,
+        position_size_cap=0.75,
+    )
+
+    assert rule.labels == EVENT_CALENDAR_LABELS
+
+
+def test_strategy_event_modifier_config_rejects_rule_with_no_action_fields() -> None:
+    from regime_detection.config import StrategyEventModifierRule
+
+    with pytest.raises(ValidationError, match="at least one action"):
+        StrategyEventModifierRule(labels=("fed_week",))
+
+
+@pytest.mark.parametrize(
+    "weakening_action",
+    [
+        {"leverage_allowed": True},
+        {"allow_leverage_expansion": True},
+        {"require_confirmation_for_new_longs": False},
+        {"prefer_cash_or_hedges": False},
+    ],
+)
+def test_strategy_event_modifier_config_rejects_risk_loosening_actions(
+    weakening_action: dict[str, bool],
+) -> None:
+    from regime_detection.config import StrategyEventModifierRule
+
+    with pytest.raises(ValidationError, match="cannot loosen"):
+        StrategyEventModifierRule(labels=("fed_week",), **weakening_action)
 
 
 def test_load_default_regime_config_dispatches_on_package_version() -> None:

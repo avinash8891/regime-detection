@@ -187,8 +187,8 @@ def test_resolve_event_label_uses_precedence_over_earnings_season() -> None:
     resolution = resolve_event_label(as_of_date=dt.date(2026, 1, 28), scheduled_events=events)
 
     assert resolution == EventLabelResolution(
-        all_matching_events=["fed_week", "earnings_season"],
-        selected_via_precedence="fed_week",
+        matching_labels=("fed_week", "earnings_season"),
+        primary_label="fed_week",
     )
 
 
@@ -207,8 +207,8 @@ def test_resolve_event_label_matches_cpi_week_trading_day_window() -> None:
     resolution = resolve_event_label(as_of_date=dt.date(2026, 2, 13), scheduled_events=events)
 
     assert resolution == EventLabelResolution(
-        all_matching_events=["cpi_week", "earnings_season"],
-        selected_via_precedence="cpi_week",
+        matching_labels=("cpi_week", "earnings_season"),
+        primary_label="cpi_week",
     )
 
 
@@ -227,8 +227,8 @@ def test_resolve_event_label_matches_election_window_default() -> None:
     resolution = resolve_event_label(as_of_date=dt.date(2026, 10, 27), scheduled_events=events)
 
     assert resolution == EventLabelResolution(
-        all_matching_events=["election_window", "earnings_season"],
-        selected_via_precedence="election_window",
+        matching_labels=("election_window", "earnings_season"),
+        primary_label="election_window",
     )
 
 
@@ -255,8 +255,8 @@ def test_resolve_event_label_geopolitical_outranks_election() -> None:
     resolution = resolve_event_label(as_of_date=dt.date(2026, 11, 3), scheduled_events=events)
 
     assert resolution == EventLabelResolution(
-        all_matching_events=["geopolitical_event", "election_window", "earnings_season"],
-        selected_via_precedence="geopolitical_event",
+        matching_labels=("geopolitical_event", "election_window", "earnings_season"),
+        primary_label="geopolitical_event",
     )
 
 
@@ -264,8 +264,8 @@ def test_resolve_event_label_selects_expiry_week_when_no_higher_priority_event_m
     resolution = resolve_event_label(as_of_date=dt.date(2026, 6, 17), scheduled_events=[])
 
     assert resolution == EventLabelResolution(
-        all_matching_events=["expiry_week"],
-        selected_via_precedence="expiry_week",
+        matching_labels=("expiry_week",),
+        primary_label="expiry_week",
     )
 
 
@@ -273,8 +273,8 @@ def test_resolve_event_label_selects_earnings_season_when_only_rule_matches() ->
     resolution = resolve_event_label(as_of_date=dt.date(2026, 1, 20), scheduled_events=[])
 
     assert resolution == EventLabelResolution(
-        all_matching_events=["earnings_season"],
-        selected_via_precedence="earnings_season",
+        matching_labels=("earnings_season",),
+        primary_label="earnings_season",
     )
 
 
@@ -282,6 +282,6 @@ def test_resolve_event_label_returns_normal_calendar_when_no_event_matches() -> 
     resolution = resolve_event_label(as_of_date=dt.date(2026, 2, 24), scheduled_events=[])
 
     assert resolution == EventLabelResolution(
-        all_matching_events=[],
-        selected_via_precedence="normal_calendar",
+        matching_labels=("normal_calendar",),
+        primary_label="normal_calendar",
     )

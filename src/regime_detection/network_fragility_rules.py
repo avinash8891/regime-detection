@@ -4,10 +4,10 @@ Pure scalar rule layer over the features produced by
 ``regime_detection.network_fragility.compute_features``.
 
 Spec references (docs/regime_engine_v2_spec.md):
-    §3.3 Labels        (line 600–608)
-    §3.4 Precedence    (line 610–613)
-    §3.5 Rules         (line 615–657)
-    §3.6 Risk Rank     (line 659–669)
+    §3.3 Labels        (lines 3481–3490)
+    §3.4 Precedence    (lines 3492–3495)
+    §3.5 Rules         (lines 3497–3542)
+    §3.6 Risk Rank     (lines 3544–3554)
 
 The six rules are evaluated in §3.4 precedence order; the first match wins.
 If none match, the label falls through to ``unknown`` (consistent with §3.3
@@ -76,7 +76,7 @@ RULE_PRECEDENCE: tuple[NetworkFragilityLabel, ...] = (
 )
 
 
-# v2 §3.6 lines 661–668: risk rank for asymmetric hysteresis. Verbatim from
+# v2 §3.6 lines 3544–3554: risk rank for asymmetric hysteresis. Verbatim from
 # the spec (NOT a tunable). `systemic_stress` shares rank 3 with
 # `correlation_to_one`, and `rising_fragility` shares rank 2 with
 # `correlation_concentration`. `unknown` is mid-rank (2) so it neither
@@ -107,8 +107,8 @@ CreditFundingLabel = Literal[
 ]
 
 
-# Window lengths fixed by spec text in §3.5 ("rising over 21d", "21d std",
-# "drawdown_21d"). These are spec constants, not tunables.
+# Window lengths fixed by spec text in §3.5 (lines 3497–3542: "rising over
+# 21d", "21d std", "drawdown_21d"). These are spec constants, not tunables.
 _SPEC_SLOPE_WINDOW_DAYS = 21
 _SPEC_STABILITY_WINDOW_DAYS = 21
 _SPEC_DRAWDOWN_WINDOW_DAYS = 21
@@ -350,10 +350,12 @@ def evaluate_diversified_normal(
     inputs: NetworkFragilityRuleInputs,
     config: NetworkFragilityRulesConfig,
 ) -> bool:
-    """v2 §3.5 lines 617–621.
+    """v2 §3.5 lines 3499–3503.
 
-    `0.25 <= avg_pairwise_corr_percentile_504d <= 0.75
+    `0.0 <= avg_pairwise_corr_percentile_504d <= 0.75
      AND effective_rank stable (21d std < 5% of mean)`
+    (Lower bound amended from 0.25 to 0.0 per spec §3.5 lines 3504–3506,
+    audit D2 — sub-25th-percentile correlation is more diversified, not less.)
 
     Relaxed inner band: when correlation is clearly mid-range (0.30-0.60),
     rank stability is not required — factor rotation in moderate-correlation
@@ -385,7 +387,7 @@ def evaluate_stock_picker_dispersion(
     config: NetworkFragilityRulesConfig,
     volatility_label: VolatilityLabel,
 ) -> bool:
-    """v2 §3.5 lines 623–628.
+    """v2 §3.5 lines 3508–3513.
 
     `avg_pairwise_corr_percentile_504d < 0.30
      AND dispersion_ratio percentile_252d > 0.70
@@ -409,13 +411,13 @@ def evaluate_rising_fragility(
     config: NetworkFragilityRulesConfig,  # noqa: ARG001 (kept for uniform signature)
     breadth_label: BreadthLabel,
 ) -> bool:
-    """v2 §3.5 lines 630–635.
+    """v2 §3.5 lines 3515–3520.
 
     `avg_pairwise_corr rising over 21d (positive slope)
      AND largest_eigenvalue_share rising over 21d
      AND breadth_state.active_label in [weak_breadth, narrowing_breadth, divergent_fragile]`
 
-    Note: v2 §3.5 line 634 references `narrowing_breadth`. The
+    Note: v2 §3.5 line 3519 references `narrowing_breadth` (implementation decision). The
     ``BreadthLabel`` enum includes `narrowing_breadth` alongside
     `weak_breadth` and `divergent_fragile`, so the accepted_breadth
     set matches the spec text verbatim.
@@ -441,7 +443,7 @@ def evaluate_correlation_concentration(
     inputs: NetworkFragilityRuleInputs,
     config: NetworkFragilityRulesConfig,
 ) -> bool:
-    """v2 §3.5 lines 637–642 + absorption_ratio_top3 extension.
+    """v2 §3.5 lines 3522–3527 + absorption_ratio_top3 extension.
 
     `avg_pairwise_corr_percentile_504d > 0.75
      OR largest_eigenvalue_share_percentile_504d > 0.75
@@ -475,7 +477,7 @@ def evaluate_correlation_to_one(
     inputs: NetworkFragilityRuleInputs,
     config: NetworkFragilityRulesConfig,
 ) -> bool:
-    """v2 §3.5 lines 644–649.
+    """v2 §3.5 lines 3529–3534.
 
     `avg_pairwise_corr_percentile_504d > 0.90
      AND realized_vol_percentile_252d > 0.80
@@ -502,7 +504,7 @@ def evaluate_systemic_stress(
     breadth_label: BreadthLabel,
     credit_funding_label: CreditFundingLabel | None,
 ) -> bool:
-    """v2 §3.5 lines 651–657.
+    """v2 §3.5 lines 3536–3542.
 
     `correlation_to_one
      AND credit_funding.active_label in [credit_stress, deleveraging]
@@ -529,7 +531,7 @@ def evaluate_systemic_stress(
     if not evaluate_correlation_to_one(inputs, config):
         return False
     accepted_credit: set[CreditFundingLabel] = {"credit_stress", "deleveraging"}
-    # v2 §3.5 line 656: accepted breadth set matches spec verbatim.
+    # v2 §3.5 line 3541: accepted breadth set matches spec verbatim (implementation decision).
     accepted_breadth: set[BreadthLabel] = {"weak_breadth", "narrowing_breadth"}
     return bool(
         credit_funding_label in accepted_credit

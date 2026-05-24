@@ -1,0 +1,31 @@
+{
+  "chart": {
+    "result": [
+      {
+        "meta": {
+          "currency": "USD",
+          "symbol": "SPY",
+          "exchangeTimezoneName": "America/New_York"
+        },
+        "timestamp": [1110205800, 1110292200],
+        "indicators": {
+          "quote": [
+            {
+              "open": [121.1299972534, 121.0899963379],
+              "high": [122.1600036621, 122.1299972534],
+              "low": [120.9800033569, 120.8799972534],
+              "close": [121.7200012207, 121.0800018311],
+              "volume": [55748000, 45771000]
+            }
+          ],
+          "adjclose": [
+            {
+              "adjclose": [82.875, 82.4389]
+            }
+          ]
+        }
+      }
+    ],
+    "error": null
+  }
+}

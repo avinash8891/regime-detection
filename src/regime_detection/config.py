@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import Literal
 
 import yaml
+from pydantic import model_validator
 
 from regime_detection import __version__
 
@@ -53,6 +54,8 @@ from regime_detection._config_evidence_strategy import (
     HMMConfig,
     NoFlipFlopConfig,
     StrategyFamilyConstraintsConfig,
+    StrategyEventModifierRule,
+    StrategyEventModifiersConfig,
     TransitionScoreConfig,
 )
 
@@ -86,6 +89,8 @@ __all__ = [
     "NoFlipFlopConfig",
     "RegimeConfig",
     "StrategyFamilyConstraintsConfig",
+    "StrategyEventModifierRule",
+    "StrategyEventModifiersConfig",
     "TransitionScoreConfig",
     "TrendCharacterV2Config",
     "TrendDirectionV2Config",
@@ -127,13 +132,14 @@ class RegimeConfig(StrictBaseModel):
     # v2 §1E axis classifier configuration.
     volume_liquidity_state: VolumeLiquidityConfig | None = None
     transition_score: TransitionScoreConfig | None = None
-    # v2 §1B trend-character V2 axis configuration.
+    # v2 §1A trend-character V2 axis configuration.
     trend_character_v2: TrendCharacterV2Config | None = None
     monetary_pressure_v2: MonetaryPressureV2FeaturesConfig | None = None
     # v2 §2A axis classifier configuration.
     monetary_pressure_state: MonetaryPressureV2Config | None = None
     # v2 §2A central-bank-text evidence config (deterministic-lexicon
-    # substitute for the spec's "LLM classifier" phrasing).
+    # substitute for the spec's "LLM classifier" phrasing; spec line 2569
+    # ratifies the substitution).
     central_bank_text: CentralBankTextConfig | None = None
     # v2 §1A SF Fed news sentiment evidence config. Evidence only —
     # never read by the `euphoria` rule.
@@ -145,9 +151,23 @@ class RegimeConfig(StrictBaseModel):
     clustering: ClusteringConfig | None = None
     # v2 §6.3 BOCPD change-point evidence layer.
     change_point: ChangePointConfig | None = None
-    no_flip_flop: NoFlipFlopConfig | None = None
+    no_flip_flop: NoFlipFlopConfig | None = None  # v2 §5.4
     cohort_routing: CohortRoutingConfig | None = None  # v2 §5.1
-    strategy_family_constraints: StrategyFamilyConstraintsConfig | None = None
+    strategy_family_constraints: StrategyFamilyConstraintsConfig | None = None  # v2 §5.2
+    strategy_event_modifiers: StrategyEventModifiersConfig | None = None
+
+    @model_validator(mode="after")
+    def _validate_v2_cross_section_dependencies(self) -> "RegimeConfig":
+        if (
+            self.config_version == "core3-v2.0.0"
+            and self.volume_liquidity_state is not None
+            and self.volatility_state_v2 is None
+        ):
+            raise ValueError(
+                "volume_liquidity_state requires volatility_state_v2 because "
+                "liquidity_gap_behavior consumes volatility-v2 gap/range percentiles"
+            )
+        return self
 
 
 def load_regime_config(path: str | Path) -> RegimeConfig:

@@ -1,0 +1,751 @@
+config_version: core3-v2.0.0
+market: US
+trading_calendar: NYSE
+breadth_mode: etf_proxy
+etf_proxy:
+  cap_weight_index: SPY
+  equal_weight_proxy: RSP
+event_calendar:
+  market: US
+expiry_rules:
+  monthly_options:
+    rule: third_friday_of_month
+    window_trading_days:
+    - -2
+    - 0
+    label: expiry_week
+earnings_seasons:
+- quarter: Q1
+  start_rule: second_monday_of_january
+  end_offset_days: 35
+- quarter: Q2
+  start_rule: second_monday_of_april
+  end_offset_days: 35
+- quarter: Q3
+  start_rule: second_monday_of_july
+  end_offset_days: 35
+- quarter: Q4
+  start_rule: second_monday_of_october
+  end_offset_days: 35
+data_quality:
+  max_freshness_days: 3
+  min_completeness: 0.9
+trend_direction:
+  deescalation_days_by_label:
+    bear: 5
+    transition: 3
+    recovery: 3
+    sideways: 2
+    bull: 0
+    euphoria: 3
+    unknown: 0
+  default_deescalation_days: 3
+trend_character:
+  deescalation_days_by_label:
+    breakout_expansion: 3
+    recovery_attempt: 3
+    trending: 0
+    mild_trend: 0
+    range_bound: 3
+    chop: 0
+    volatile_chop: 0
+    transition: 2
+    unknown: 0
+  default_deescalation_days: 0
+volatility_state:
+  deescalation_days_by_label:
+    crisis_vol: 5
+    vol_crush: 3
+    high_vol: 3
+    rising_vol: 2
+    low_vol: 0
+    normal_vol: 0
+    unknown: 0
+  default_deescalation_days: 2
+breadth_state:
+  deescalation_days_by_label:
+    divergent_fragile: 5
+    weak_breadth: 3
+    narrowing_breadth: 3
+    broadening_breadth: 0
+    healthy_breadth: 0
+    unknown: 0
+  default_deescalation_days: 2
+network_fragility:
+  universe:
+  - XLB
+  - XLC
+  - XLE
+  - XLF
+  - XLI
+  - XLK
+  - XLP
+  - XLRE
+  - XLU
+  - XLV
+  - XLY
+  - SPY
+  - QQQ
+  - IWM
+  - EFA
+  - EEM
+  - TLT
+  - IEF
+  - GLD
+  - HYG
+  - LQD
+  - USO
+  - DBC
+  - UUP
+  correlation_lookback_days: 63
+  percentile_lookback_days: 504
+  realized_vol_lookback_days: 21
+  dispersion_percentile_lookback_days: 252
+  min_universe_size: 20
+  min_window_completeness: 0.9
+  deescalation_days_by_label:
+    rising_fragility: 3
+    correlation_concentration: 3
+    correlation_to_one: 5
+    systemic_stress: 5
+    unknown: 0
+  default_deescalation_days: 0
+  rules:
+    diversified_normal_percentile_lo: 0.0
+    diversified_normal_percentile_hi: 0.75
+    effective_rank_stability_threshold: 0.05
+    stock_picker_percentile_max: 0.3
+    stock_picker_dispersion_percentile_min: 0.7
+    concentration_corr_percentile_min: 0.75
+    concentration_largest_eig_percentile_min: 0.75
+    concentration_effective_rank_percentile_max: 0.25
+    concentration_absorption_ratio_min: 0.9
+    corr_to_one_corr_percentile_min: 0.9
+    corr_to_one_realized_vol_percentile_min: 0.8
+    corr_to_one_drawdown_max: 0.0
+    systemic_stress_vix_percentile_min: 0.8
+    diversified_normal_relaxed_inner_band: true
+    diversified_normal_inner_band_lo: 0.3
+    diversified_normal_inner_band_hi: 0.6
+trend_direction_v2:
+  efficiency_ratio_lookback_days: 20
+  hurst_lookback_days: 250
+  slope_lookback_days: 20
+  sma_short_period: 50
+  sma_long_period: 200
+  return_short_period: 63
+  return_long_period: 126
+  drawdown_lookback_days: 252
+  rules:
+    recovery_drawdown_threshold: -0.15
+    recovery_return_threshold: 0.1
+    euphoria_return_126d_threshold: 0.2
+    euphoria_sentiment_threshold: 20.0
+    euphoria_vol_rising_lookback_sessions: 5
+volatility_state_v2:
+  atr_short_period: 14
+  atr_long_period: 50
+  gap_frequency_lookback_days: 20
+  gap_threshold_pct: 0.005
+  intraday_range_lookback_days: 252
+  rules:
+    atr_ratio_threshold: 1.15
+    realized_vol_ratio_threshold: 1.25
+    realized_vol_short_period: 10
+    realized_vol_long_period: 63
+    vol_crush_realized_vol_mid_period: 21
+    vol_crush_realized_vol_ratio_threshold: 0.75
+    vol_crush_implied_vol_change_threshold: -0.2
+    vol_crush_implied_vol_change_lookback_sessions: 5
+    vol_crush_event_window_trailing_sessions: 3
+breadth_state_v2:
+  sector_breadth_lookback_days: 21
+  sma_lookback_50: 50
+  sma_lookback_200: 200
+  nh_nl_lookback_sessions: 252
+  label_rate_of_change_lookback_sessions: 5
+  nh_nl_ratio_narrowing_threshold: 0.4
+volume_liquidity_v2:
+  volume_zscore_lookback_days: 20
+  volume_zscore_ddof: 1
+volume_liquidity_state:
+  rules:
+    panic_volume_zscore_threshold: 2.0
+    panic_volume_return_threshold: -0.02
+    liquidity_gap_frequency_percentile_threshold: 0.75
+    liquidity_gap_intraday_range_percentile_threshold: 0.75
+  deescalation_days_by_label:
+    panic_volume: 2
+    normal_volume: 0
+    unknown: 0
+    liquidity_gap_behavior: 2
+  default_deescalation_days: 0
+transition_score:
+  weights:
+    trend_break: 0.18
+    volatility_acceleration: 0.16
+    breadth_deterioration: 0.16
+    correlation_fragility: 0.14
+    credit_stress: 0.12
+    liquidity_stress: 0.1
+    macro_event: 0.06
+    model_instability: 0.08
+  minimum_component_weight_coverage: 0.75
+  bands:
+    stable:
+    - 0.0
+    - 0.35
+    weakening:
+    - 0.35
+    - 0.55
+    transition_warning:
+    - 0.55
+    - 0.75
+    high:
+    - 0.75
+    - 1.0
+  cooldown_window_days: 5
+  state_confirmation_days:
+    stable: 1
+    watch: 1
+    weakening: 2
+    transition_warning: 2
+    high_transition_risk: 2
+    fragile_bull: 2
+    recovery_attempt: 2
+    bear_stress: 1
+    crisis: 1
+    insufficient_data: 1
+  overrides:
+    credit_stress: 0.7
+    correlation_fragility: 0.7
+    macro_event_min: 1.0
+    score_elevated_min: 0.35
+    primary_driver_min: 0.35
+  scales:
+    vol_acc_full_stress_ratio: 0.5
+    breadth_zero_stress_pct: 0.5
+    breadth_full_stress_range: 0.3
+    drawdown_full_stress: 0.15
+    ma_break_full_stress: 0.05
+    absorption_floor: 0.7
+    absorption_range: 0.25
+    volume_zscore_floor: 1.0
+    volume_zscore_range: 2.0
+  initial_active_state: null
+trend_character_v2:
+  followthrough_rate_threshold: 0.6
+  followthrough_lookback_sessions: 504
+  followthrough_window_count: 20
+  followthrough_hold_sessions: 5
+  bb_width_expanding_lookback: 5
+  bb_width_period: 20
+  bb_width_multiplier: 2.0
+  range_bound_return_63d_threshold: 0.05
+  range_bound_midpoint_excursion_threshold: 0.05
+  range_bound_adx_threshold: 20.0
+monetary_pressure_v2: null
+monetary_pressure_state: null
+central_bank_text:
+  smoothing_window_sessions: 30
+  max_release_age_days: 365
+  same_date_aggregation: pick_longer
+news_sentiment:
+  smoothing_window_sessions: 21
+inflation_growth:
+  series_ids: {}
+  rules:
+    cpi_drift_threshold: 0.005
+    pmi_goldilocks_threshold: 50.0
+    pmi_recovery_threshold: 50.0
+    pmi_disinflation_threshold: 45.0
+    cpi_3m_acceleration_threshold: 0.02
+    commodity_return_threshold: 0.15
+    spy_recession_threshold: -0.05
+    spy_recession_credit_confirmed_threshold: -0.05
+    cpi_lookback_3m_sessions: 63
+    cpi_lookback_6m_sessions: 126
+    cpi_slope_lookback_sessions: 21
+    pmi_slope_lookback_sessions: 21
+    commodity_return_lookback_sessions: 63
+    treasury_slope_lookback_sessions: 21
+    cyclical_defensive_slope_lookback_sessions: 21
+    spy_return_lookback_sessions: 21
+    tlt_return_lookback_sessions: 21
+    inflation_surprise_zscore_threshold: 1.5
+    inflation_surprise_normalizer_window_sessions: 1260
+    inflation_surprise_realized_rate_lookback_sessions: 21
+    eps_revision_expansion_threshold: 0.02
+    eps_revision_contraction_threshold: -0.02
+    use_first_release_cpi_when_available: true
+    cpi_goldilocks_benign_ceiling: 0.04
+    disinflation_yield_independent: true
+    allow_credit_independent_fallback: true
+    spy_recession_credit_independent_threshold: -0.07
+  deescalation_days_by_label:
+    inflation_shock: 5
+    recession_scare: 5
+    risk_off_mild: 3
+    earnings_contraction: 3
+    disinflation: 3
+    stagflation_lite: 3
+    reflation: 0
+    goldilocks: 0
+    recovery_growth: 0
+    earnings_expansion: 0
+    unknown: 0
+  default_deescalation_days: 0
+  cpi_stale_calendar_days: 60
+  pmi_stale_calendar_days: 45
+  dgs10_stale_sessions: 5
+  eps_revision_stale_calendar_days: 35
+  nowcast_stale_calendar_days: 60
+credit_funding:
+  rules:
+    hy_percentile_calm_max: 0.5
+    hy_percentile_stress_min: 0.8
+    spy_drop_threshold: -0.05
+    broad_usd_zscore_funding_threshold: 1.5
+    broad_usd_zscore_deleveraging_threshold: 0.0
+    realized_vol_percentile_threshold: 0.75
+    correlation_percentile_threshold: 0.75
+    spread_widening_hy_only: false
+    hy_percentile_504d_lookback: 504
+    slope_21d_lookback: 21
+    slope_63d_lookback: 63
+    total_return_lookback_days: 63
+    spy_return_lookback_days: 21
+    tlt_return_lookback_days: 21
+    broad_usd_change_window_days: 21
+    broad_usd_normalizer_window_days: 1260
+  deescalation_days_by_label:
+    deleveraging: 5
+    funding_squeeze: 5
+    credit_stress: 3
+    spread_widening: 3
+    credit_recovery: 0
+    credit_calm: 0
+    unknown: 0
+  default_deescalation_days: 0
+  nfci_stale_days: 14
+  etf_stale_sessions: 5
+hmm:
+  n_states: 4
+  training_window_days: 100
+  retrain_cadence_days: 21
+  random_state: 42
+  covariance_type: full
+  min_covar: 0.001
+  standardize_inputs: true
+  random_seeds:
+  - 42
+  - 7
+  - 13
+  tol: 0.01
+  model_version: hmm_4state_v1.0
+  state_label_map: null
+clustering:
+  n_clusters: 8
+  training_window_days: 100
+  retrain_cadence_days: 21
+  random_state: 42
+  covariance_type: full
+  max_iter: 200
+  reg_covar: 1.0e-06
+  model_version: gmm_8cluster_v1.0
+  cluster_label_map: null
+change_point:
+  hazard_lambda: 250.0
+  score_window_days: 5
+  recent_run_length_window_days: 21
+  break_threshold: 0.5
+  training_window_days: 100
+  student_t_alpha: 0.1
+  student_t_beta: 0.01
+  student_t_kappa: 1.0
+  student_t_mu: 0.0
+  method: BOCPD
+no_flip_flop:
+  window_trading_days: 15
+cohort_routing:
+  routing_rules:
+    crisis_specialist:
+      any_of:
+      - axis: network_fragility
+        values:
+        - correlation_to_one
+        - systemic_stress
+      - axis: volatility_state
+        values:
+        - crisis_vol
+      all_of: []
+    euphoria_specialist:
+      any_of: []
+      all_of:
+      - axis: trend_direction
+        values:
+        - euphoria
+    bear_stress_specialist:
+      any_of: []
+      all_of:
+      - axis: trend_direction
+        values:
+        - bear
+      - axis: breadth_state
+        values:
+        - weak_breadth
+        - divergent_fragile
+        - narrowing_breadth
+    tightening_specialist:
+      any_of: []
+      all_of:
+      - axis: monetary_pressure
+        values:
+        - tightening_pressure
+        - rate_shock
+    easing_specialist:
+      any_of: []
+      all_of:
+      - axis: monetary_pressure
+        values:
+        - easing_pressure
+    recovery_specialist:
+      any_of: []
+      all_of:
+      - axis: trend_direction
+        values:
+        - recovery
+    chop_mean_reversion_specialist:
+      any_of: []
+      all_of:
+      - axis: trend_character
+        values:
+        - range_bound
+      - axis: volatility_state
+        values:
+        - normal_vol
+        - low_vol
+    bull_low_vol_specialist:
+      any_of: []
+      all_of:
+      - axis: trend_direction
+        values:
+        - bull
+      - axis: volatility_state
+        values:
+        - low_vol
+        - normal_vol
+  blocked_strategy_modes:
+    crisis_specialist:
+    - short_vol
+    - leveraged_long
+    - breakout
+    euphoria_specialist:
+    - mean_reversion
+    bear_stress_specialist:
+    - short_vol
+    - breakout
+    - leveraged_long
+    tightening_specialist: []
+    easing_specialist: []
+    recovery_specialist:
+    - short_vol
+    chop_mean_reversion_specialist:
+    - trend_following
+    - breakout
+    bull_low_vol_specialist: []
+    default_neutral: []
+strategy_family_constraints:
+  default_neutral:
+    trend_following:
+      allowed: true
+      max_lookback_days: 50
+      max_holding_days: null
+      max_position_pct: null
+      min_adx: 20
+      require_breadth_confirmation: false
+      require_volume_confirmation: null
+      event_window_only: null
+      reason: null
+    mean_reversion:
+      allowed: true
+      max_lookback_days: null
+      max_holding_days: 5
+      max_position_pct: null
+      min_adx: null
+      require_breadth_confirmation: null
+      require_volume_confirmation: true
+      event_window_only: null
+      reason: null
+    breakout:
+      allowed: false
+      max_lookback_days: null
+      max_holding_days: null
+      max_position_pct: null
+      min_adx: null
+      require_breadth_confirmation: null
+      require_volume_confirmation: null
+      event_window_only: null
+      reason: false_breakout_rate_high_in_chop
+    short_vol:
+      allowed: false
+      max_lookback_days: null
+      max_holding_days: null
+      max_position_pct: null
+      min_adx: null
+      require_breadth_confirmation: null
+      require_volume_confirmation: null
+      event_window_only: null
+      reason: rising_fragility_or_crisis
+    long_vol:
+      allowed: true
+      max_lookback_days: null
+      max_holding_days: null
+      max_position_pct: null
+      min_adx: null
+      require_breadth_confirmation: null
+      require_volume_confirmation: null
+      event_window_only: true
+      reason: null
+  overrides:
+    crisis_specialist:
+      trend_following:
+        allowed: false
+        max_lookback_days: null
+        max_holding_days: null
+        max_position_pct: null
+        min_adx: null
+        require_breadth_confirmation: null
+        require_volume_confirmation: null
+        event_window_only: null
+        reason: false_signals_in_chop
+      mean_reversion:
+        allowed: false
+        max_lookback_days: null
+        max_holding_days: null
+        max_position_pct: null
+        min_adx: null
+        require_breadth_confirmation: null
+        require_volume_confirmation: null
+        event_window_only: null
+        reason: knife_catching
+      breakout:
+        allowed: false
+        max_lookback_days: null
+        max_holding_days: null
+        max_position_pct: null
+        min_adx: null
+        require_breadth_confirmation: null
+        require_volume_confirmation: null
+        event_window_only: null
+        reason: false_breakout_rate_high
+      short_vol:
+        allowed: false
+        max_lookback_days: null
+        max_holding_days: null
+        max_position_pct: null
+        min_adx: null
+        require_breadth_confirmation: null
+        require_volume_confirmation: null
+        event_window_only: null
+        reason: vol_can_keep_expanding
+      long_vol:
+        allowed: true
+        max_lookback_days: null
+        max_holding_days: null
+        max_position_pct: null
+        min_adx: null
+        require_breadth_confirmation: null
+        require_volume_confirmation: null
+        event_window_only: false
+        reason: null
+    euphoria_specialist:
+      mean_reversion:
+        allowed: false
+        max_lookback_days: null
+        max_holding_days: null
+        max_position_pct: null
+        min_adx: null
+        require_breadth_confirmation: null
+        require_volume_confirmation: null
+        event_window_only: null
+        reason: do_not_fade_strength
+    bear_stress_specialist:
+      trend_following:
+        allowed: false
+        max_lookback_days: null
+        max_holding_days: null
+        max_position_pct: null
+        min_adx: null
+        require_breadth_confirmation: null
+        require_volume_confirmation: null
+        event_window_only: null
+        reason: directional_in_stressed_chop
+      breakout:
+        allowed: false
+        max_lookback_days: null
+        max_holding_days: null
+        max_position_pct: null
+        min_adx: null
+        require_breadth_confirmation: null
+        require_volume_confirmation: null
+        event_window_only: null
+        reason: false_breakout_rate_high
+      short_vol:
+        allowed: false
+        max_lookback_days: null
+        max_holding_days: null
+        max_position_pct: null
+        min_adx: null
+        require_breadth_confirmation: null
+        require_volume_confirmation: null
+        event_window_only: null
+        reason: stress_can_persist
+      long_vol:
+        allowed: true
+        max_lookback_days: null
+        max_holding_days: null
+        max_position_pct: null
+        min_adx: null
+        require_breadth_confirmation: null
+        require_volume_confirmation: null
+        event_window_only: false
+        reason: null
+    tightening_specialist:
+      trend_following:
+        allowed: true
+        max_lookback_days: 50
+        max_holding_days: null
+        max_position_pct: null
+        min_adx: null
+        require_breadth_confirmation: true
+        require_volume_confirmation: null
+        event_window_only: null
+        reason: null
+      breakout:
+        allowed: true
+        max_lookback_days: null
+        max_holding_days: null
+        max_position_pct: null
+        min_adx: null
+        require_breadth_confirmation: null
+        require_volume_confirmation: true
+        event_window_only: null
+        reason: null
+      long_vol:
+        allowed: true
+        max_lookback_days: null
+        max_holding_days: null
+        max_position_pct: null
+        min_adx: null
+        require_breadth_confirmation: null
+        require_volume_confirmation: null
+        event_window_only: true
+        reason: null
+    easing_specialist: {}
+    recovery_specialist:
+      short_vol:
+        allowed: false
+        max_lookback_days: null
+        max_holding_days: null
+        max_position_pct: null
+        min_adx: null
+        require_breadth_confirmation: null
+        require_volume_confirmation: null
+        event_window_only: null
+        reason: recovery_can_relapse
+    chop_mean_reversion_specialist:
+      trend_following:
+        allowed: false
+        max_lookback_days: null
+        max_holding_days: null
+        max_position_pct: null
+        min_adx: null
+        require_breadth_confirmation: null
+        require_volume_confirmation: null
+        event_window_only: null
+        reason: chop_kills_trend
+      breakout:
+        allowed: false
+        max_lookback_days: null
+        max_holding_days: null
+        max_position_pct: null
+        min_adx: null
+        require_breadth_confirmation: null
+        require_volume_confirmation: null
+        event_window_only: null
+        reason: false_breakouts_dominant
+      mean_reversion:
+        allowed: true
+        max_lookback_days: null
+        max_holding_days: 10
+        max_position_pct: null
+        min_adx: null
+        require_breadth_confirmation: null
+        require_volume_confirmation: false
+        event_window_only: null
+        reason: null
+    bull_low_vol_specialist:
+      trend_following:
+        allowed: true
+        max_lookback_days: 200
+        max_holding_days: null
+        max_position_pct: null
+        min_adx: 15
+        require_breadth_confirmation: null
+        require_volume_confirmation: null
+        event_window_only: null
+        reason: null
+      mean_reversion:
+        allowed: true
+        max_lookback_days: null
+        max_holding_days: 10
+        max_position_pct: null
+        min_adx: null
+        require_breadth_confirmation: null
+        require_volume_confirmation: null
+        event_window_only: null
+        reason: null
+      breakout:
+        allowed: true
+        max_lookback_days: null
+        max_holding_days: null
+        max_position_pct: null
+        min_adx: null
+        require_breadth_confirmation: null
+        require_volume_confirmation: null
+        event_window_only: null
+        reason: null
+      short_vol:
+        allowed: true
+        max_lookback_days: null
+        max_holding_days: null
+        max_position_pct: 0.25
+        min_adx: null
+        require_breadth_confirmation: null
+        require_volume_confirmation: null
+        event_window_only: null
+        reason: null
+strategy_event_modifiers:
+  rules:
+    macro_event_window:
+      labels:
+      - fed_week
+      - cpi_week
+      - nfp_week
+      - global_rate_decision
+      position_size_cap: 0.75
+      leverage_allowed: null
+      allow_leverage_expansion: false
+      require_confirmation_for_new_longs: true
+      prefer_cash_or_hedges: null
+    policy_or_event_risk_window:
+      labels:
+      - budget_week
+      - election_window
+      - geopolitical_event
+      position_size_cap: 0.5
+      leverage_allowed: false
+      allow_leverage_expansion: null
+      require_confirmation_for_new_longs: true
+      prefer_cash_or_hedges: true

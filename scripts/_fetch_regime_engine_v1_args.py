@@ -45,6 +45,16 @@ def build_fetch_arg_parser(
         help="Alpaca data feed: sip|iex|otc. Omit to use SDK default.",
     )
     parser.add_argument(
+        "--daily-bars-provider",
+        choices=("alpaca", "yahoo-chart", "alpaca-yahoo-fallback"),
+        default="alpaca",
+        help=(
+            "Daily OHLCV provider for market and constituent refreshes. "
+            "Default alpaca; yahoo-chart uses Yahoo Finance /v8/finance/chart; "
+            "alpaca-yahoo-fallback tries Alpaca first, then Yahoo chart."
+        ),
+    )
+    parser.add_argument(
         "--fred-api-key", default=None, help="Optional FRED API key for macro fetches."
     )
     parser.add_argument(

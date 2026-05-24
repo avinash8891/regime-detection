@@ -163,6 +163,24 @@ def test_run_row_success_and_failure_updates_are_durable(tmp_path: Path) -> None
     ]
 
 
+def test_fetch_run_row_rejects_partial_identity_tuple(tmp_path: Path) -> None:
+    db_path = tmp_path / "regime_shadow.db"
+
+    with open_shadow_db(db_path) as conn:
+        with pytest.raises(ValueError, match="engine_version and config_version"):
+            fetch_run_row(
+                conn=conn,
+                as_of_date=date(2023, 12, 14),
+                engine_version="regime-engine-test",
+            )
+        with pytest.raises(ValueError, match="engine_version and config_version"):
+            fetch_run_row(
+                conn=conn,
+                as_of_date=date(2023, 12, 14),
+                config_version="core3-v2.0.0",
+            )
+
+
 def test_replay_check_and_incident_insertions_are_durable(tmp_path: Path) -> None:
     db_path = tmp_path / "regime_shadow.db"
 
@@ -184,7 +202,7 @@ def test_replay_check_and_incident_insertions_are_durable(tmp_path: Path) -> Non
             check_timestamp="2026-05-17T05:20:00+00:00",
             original_run_id=run_id,
             matches=False,
-            diff={"transition_risk_label": {"stored": "calm", "replayed": "risk"}},
+            diff={"transition_risk_state": {"stored": "calm", "replayed": "risk"}},
         )
         insert_incident(
             conn=conn,
@@ -213,7 +231,7 @@ def test_replay_check_and_incident_insertions_are_durable(tmp_path: Path) -> Non
             run_id,
             0,
             json.dumps(
-                {"transition_risk_label": {"stored": "calm", "replayed": "risk"}},
+                {"transition_risk_state": {"stored": "calm", "replayed": "risk"}},
                 sort_keys=True,
             ),
         )

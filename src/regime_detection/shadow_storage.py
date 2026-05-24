@@ -1,9 +1,20 @@
+"""SQLite-backed shadow-runner storage helpers.
+
+Authoritative spec: ``docs/shadow_runner_spec.md`` (§§1-7). The schemas
+and write contract here are a verbatim implementation; the regime engine
+spec at ``docs/regime_engine_v2_spec.md`` L28 and L33 explicitly
+delegates qualification storage details to that file. All write
+operations are keyed on the canonical identity tuple
+``(as_of_date, engine_version, config_version)`` per shadow_runner_spec
+§3 L93.
+"""
 from __future__ import annotations
 
 import hashlib
 import json
 import sqlite3
 from datetime import date, datetime, timezone
+from enum import Enum
 from pathlib import Path
 from typing import Any
 
@@ -11,6 +22,20 @@ import pandas as pd
 import yaml
 
 from regime_detection.loaders import load_event_calendar
+
+
+# SHA-256 read-chunk size for sha256_file. Performance-only knob;
+# SHA-256 output is identical regardless of chunk size.
+_HASH_CHUNK_BYTES = 1024 * 1024
+
+
+class RunStatus(str, Enum):
+    """Status enum for the runs table. Tokens are pinned by spec
+    shadow_runner_spec.md §5 L115-119."""
+
+    IN_PROGRESS = "in_progress"
+    SUCCESS = "success"
+    FAILURE = "failure"
 
 
 RUNS_SCHEMA = """
@@ -57,7 +82,7 @@ def utc_iso_now() -> str:
 def sha256_file(path: Path) -> str:
     h = hashlib.sha256()
     with path.open("rb") as f:
-        for chunk in iter(lambda: f.read(1024 * 1024), b""):
+        for chunk in iter(lambda: f.read(_HASH_CHUNK_BYTES), b""):
             h.update(chunk)
     return h.hexdigest()
 
@@ -161,7 +186,7 @@ def insert_run_row(
             as_of_date.isoformat(),
             engine_version,
             config_version,
-            "in_progress",
+            RunStatus.IN_PROGRESS.value,
             None,
             str(archive_dir),
             None,
@@ -186,7 +211,7 @@ def update_run_row_success(
         WHERE as_of_date = ? AND engine_version = ? AND config_version = ?
         """,
         (
-            "success",
+            RunStatus.SUCCESS.value,
             str(output_path),
             sha256_file(output_path),
             as_of_date.isoformat(),
@@ -212,7 +237,7 @@ def update_run_row_failure(
         WHERE as_of_date = ? AND engine_version = ? AND config_version = ?
         """,
         (
-            "failure",
+            RunStatus.FAILURE.value,
             failure_reason,
             as_of_date.isoformat(),
             engine_version,
@@ -242,16 +267,46 @@ def fetch_run_row(
     *,
     conn: sqlite3.Connection,
     as_of_date: date,
+    engine_version: str | None = None,
+    config_version: str | None = None,
 ) -> sqlite3.Row | None:
+    """Fetch a runs row by the canonical identity tuple.
+
+    The runs table is keyed on ``(as_of_date, engine_version,
+    config_version)`` per shadow_runner_spec.md §3 L93. When only
+    ``as_of_date`` is supplied (legacy callers), returns the most
+    recently inserted row for that date — deterministic across the
+    qualification-breaking restart case where multiple rows can share
+    one ``as_of_date``. Pass ``engine_version`` and ``config_version``
+    explicitly to query the exact frozen-version row.
+    """
     conn.row_factory = sqlite3.Row
-    row = conn.execute(
-        """
-        SELECT run_id, as_of_date, status, engine_version, config_version, input_archive_path, output_path
-        FROM runs
-        WHERE as_of_date = ?
-        """,
-        (as_of_date.isoformat(),),
-    ).fetchone()
+    if (engine_version is None) != (config_version is None):
+        raise ValueError(
+            "engine_version and config_version must be supplied together"
+        )
+    if engine_version is not None and config_version is not None:
+        row = conn.execute(
+            """
+            SELECT run_id, as_of_date, status, engine_version, config_version,
+                   input_archive_path, output_path
+            FROM runs
+            WHERE as_of_date = ? AND engine_version = ? AND config_version = ?
+            """,
+            (as_of_date.isoformat(), engine_version, config_version),
+        ).fetchone()
+    else:
+        row = conn.execute(
+            """
+            SELECT run_id, as_of_date, status, engine_version, config_version,
+                   input_archive_path, output_path
+            FROM runs
+            WHERE as_of_date = ?
+            ORDER BY run_id DESC
+            LIMIT 1
+            """,
+            (as_of_date.isoformat(),),
+        ).fetchone()
     conn.row_factory = None
     return row
 

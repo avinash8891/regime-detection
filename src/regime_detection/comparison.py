@@ -8,7 +8,7 @@ strategy metrics). Foundation scaffolding for the v2 §9.1 gate:
 >   - lower max drawdown than V1
 >   - higher Sharpe than V1
 >   - earlier crisis detection (lower lag in days from event to
->     crisis_override)
+>     transition_risk.state = crisis)
 >   - lower false-switch rate than V1
 
 ``compute_v1_v2_diff`` and ``evaluate_v2_gate`` are pure functions
@@ -37,6 +37,9 @@ class GateMetric(str, Enum):
     LOWER_FALSE_SWITCH_RATE = "lower_false_switch_rate"
 
 
+V2_GATE_METRIC_NAMES: tuple[str, ...] = tuple(metric.name for metric in GateMetric)
+
+
 @dataclass(frozen=True)
 class StrategyMetrics:
     """Downstream strategy metrics fed into the v2 §9.1 gate.
@@ -45,7 +48,7 @@ class StrategyMetrics:
     backtest window (e.g. -0.18 for a 18% peak-to-trough drawdown).
     `sharpe` is annualized. `mean_crisis_detection_lag_days` is the
     average NYSE-trading-day lag between a crisis event date and the
-    engine raising `crisis_override` (lower is better). `false_switch_rate`
+    engine raising `transition_risk.state = crisis` (lower is better). `false_switch_rate`
     is in [0, 1] (lower is better).
 
     The engine itself never computes these — they come from the strategy
@@ -150,14 +153,25 @@ _V2_OPTIONAL_TOP_LEVEL_FIELDS: tuple[str, ...] = (
 )
 
 
-def _reporting_label(output: object) -> str:
+def axis_reporting_label(
+    output: object | None, *, default: str | None = None
+) -> str | None:
+    if output is None:
+        return default
     reporting = getattr(output, "reporting_label", None)
     if reporting is not None:
         return str(reporting)
     classification_status = getattr(output, "classification_status", "classified")
     if classification_status != "classified":
         return str(classification_status)
-    return str(getattr(output, "active_label"))
+    active_label = getattr(output, "active_label", None)
+    if active_label is not None:
+        return str(active_label)
+    state = getattr(output, "state", None)
+    if state is not None:
+        return str(state)
+    label = getattr(output, "label", default)
+    return None if label is None else str(label)
 
 
 def compute_v1_v2_diff(
@@ -191,8 +205,8 @@ def compute_v1_v2_diff(
                 f"v2={v2_out.as_of_date.isoformat()}"
         )
         for axis in _V1_AXES_TO_COMPARE:
-            v1_label = _reporting_label(getattr(v1_out, axis))
-            v2_label = _reporting_label(getattr(v2_out, axis))
+            v1_label = axis_reporting_label(getattr(v1_out, axis))
+            v2_label = axis_reporting_label(getattr(v2_out, axis))
             if v1_label != v2_label:
                 diffs.append(
                     AxisLabelDiff(
@@ -202,8 +216,8 @@ def compute_v1_v2_diff(
                         v2_active_label=v2_label,
                     )
                 )
-        v1_network_label = _reporting_label(v1_out.network_fragility)
-        v2_network_label = _reporting_label(v2_out.network_fragility)
+        v1_network_label = axis_reporting_label(v1_out.network_fragility)
+        v2_network_label = axis_reporting_label(v2_out.network_fragility)
         if v1_network_label != v2_network_label:
             diffs.append(
                 AxisLabelDiff(

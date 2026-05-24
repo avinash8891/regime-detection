@@ -197,8 +197,11 @@ def load_macro_series(
         for key, sub in logical_df.groupby("logical_name"):
             sub = sub.sort_values("date")
             series_key = str(key)
+            values = sub["value"].astype(float)
+            if series_key == "implied_vol_30d":
+                values = values / 100.0
             out[series_key] = pd.Series(
-                sub["value"].astype(float).to_numpy(),
+                values.to_numpy(),
                 index=parse_datetime_index(
                     sub["date"],
                     field_name="date",
@@ -280,7 +283,7 @@ def load_central_bank_text_score(
     supplied, returns the empty frame (the engine then sees all-NaN
     daily series and the §2A evidence column is silent).
 
-    Per V2 §2A line 2585 the score feeds ``monetary_pressure.evidence``
+    Per V2 §2A line 2950 the score feeds ``monetary_pressure.evidence``
     only — this loader has no awareness of rule predicates.
     """
     from regime_detection.central_bank_text import (
@@ -360,9 +363,10 @@ def load_cpi_vintages_first_release(
 ) -> pd.Series:
     """Load the first-release CPI series from a FRED vintages parquet.
 
-    Spec: V2 §2A lines 2587-2593 — "Original release values are
-    point-in-time-correct; revised values are not. The engine must use
-    original values for historical replay."
+    Spec: V2 §2A line 2956 (cross-ref L2672) — "Original release values
+    are point-in-time-correct;
+    revised values are not. The engine must use original values for
+    historical replay."
 
     Source schema: long-form ``cpi_all_items_vintages.parquet`` written
     by ``regime_data_fetch.fred`` with realtime params. Each row has at
@@ -465,6 +469,11 @@ def _validate_event_df(df: pd.DataFrame, *, market: str) -> pd.DataFrame:
     for idx, row in out.iterrows():
         if pd.isna(row["publication_date"]):
             if row["type"] in _SCHEDULED_TYPES:
+                # ADR 0002 §52 + ADR 0014 R3: scheduled events default
+                # publication_date to date - 90 calendar days when not
+                # supplied. ADR 0002 §52 authorizes this for FOMC/CPI/NFP;
+                # ADR 0014 R3 extends it to V2 scheduled types
+                # (ECB/BOE/BOJ/election/budget/global_rate_decision).
                 out.at[idx, "publication_date"] = row["date"] - timedelta(days=90)
             else:
                 out.at[idx, "publication_date"] = row["date"]

@@ -4,13 +4,19 @@ from datetime import date
 from pathlib import Path
 
 import pandas as pd
+import pytest
 import yaml
 
 from regime_detection.engine import RegimeEngine
 from regime_detection.feature_store import build_feature_store
 from regime_detection.market_context import build_market_context
 from regime_detection.axis_series import build_axis_series_bundle
-from regime_detection.transition_risk_series import TransitionRiskHistory, build_transition_risk_outputs_by_date
+from regime_detection.transition_risk_series import (
+    TransitionRiskHistory,
+    TransitionScoreInputs,
+    build_transition_risk_outputs_by_date,
+)
+from regime_detection.strategy_response import build_strategy_response
 
 _REPO_ROOT = Path(__file__).resolve().parents[1]
 _GOLDEN_PATH = _REPO_ROOT / "tests" / "fixtures" / "derived" / "golden_dates.yaml"
@@ -24,42 +30,221 @@ def _golden_date(intent_id: str) -> date:
     raise KeyError(f"intent_id {intent_id!r} not found in golden_dates.yaml")
 
 
-def test_transition_risk_matches_real_data_cases(classified_golden_outputs) -> None:
-    golden = yaml.safe_load(_GOLDEN_PATH.read_text())
-    for row in golden["rows"]:
-        as_of = date.fromisoformat(row["as_of_date"])
-        out = classified_golden_outputs[as_of]
-        assert out.transition_risk.label == row["expected"]["transition_risk"], (
-            f"{as_of} ({row['intent_id']}): expected {row['expected']['transition_risk']}, "
-            f"got {out.transition_risk.label}"
+def _single_transition_output(
+    *,
+    trend_direction: str,
+    trend_character: str,
+    volatility_state: str,
+    breadth_state: str,
+):
+    session = date(2024, 1, 2)
+    return build_transition_risk_outputs_by_date(
+        sessions=[session],
+        trend_direction_active_by_date={session: trend_direction},
+        trend_character_active_by_date={session: trend_character},
+        volatility_state_active_by_date={session: volatility_state},
+        breadth_state_active_by_date={session: breadth_state},
+        close_by_date={session: 100.0},
+        sma_50_by_date={session: 100.0},
+        history=TransitionRiskHistory(
+            stable_changed_by_date={session: False},
+            days_since_axis_switch_by_date={session: None},
+            axis_switch_count_by_date={session: 0},
+            recent_axis_switch_count_by_date={session: 0},
+            prior_bear_by_date={session: False},
+        ),
+        transition_score_inputs_by_date={
+            session: TransitionScoreInputs(
+                realized_vol_short=10.0,
+                realized_vol_long=10.0,
+                pct_above_50dma=0.50,
+                avg_pairwise_corr_percentile_504d=0.0,
+                largest_eigenvalue_share_percentile_504d=0.0,
+                effective_rank_percentile_504d=1.0,
+                absorption_ratio_top3=0.50,
+                drawdown_252d=0.0,
+                spy_close=100.0,
+                spy_sma_50=100.0,
+                event_calendar_labels=("normal_calendar",),
+                credit_funding_label="credit_calm",
+                volume_liquidity_label="normal_volume",
+                volume_zscore_20d=1.0,
+                gap_frequency_percentile_252d=0.0,
+                intraday_range_percentile_252d=0.0,
+                hmm_top_state_prob_now=0.50,
+                hmm_top_state_prob_5d_ago=0.50,
+                change_point_score=0.0,
+                cluster_id_now=1,
+                cluster_id_5d_ago=1,
+            )
+        },
+        transition_score_config=RegimeEngine().config.transition_score,
+    )[session]
+
+
+def test_transition_risk_golden_fixture_without_v2_score_inputs_fails_loudly(
+    market_df_for_asof,
+    event_calendar_df,
+) -> None:
+    as_of = _golden_date("early2024_bull_lowvol")
+    engine = RegimeEngine()
+    with pytest.raises(RuntimeError, match="transition_risk requires score inputs"):
+        engine.classify(
+            as_of_date=as_of,
+            market_data=market_df_for_asof(as_of),
+            event_calendar=event_calendar_df,
         )
 
 
-def test_strategy_response_matches_crisis_fixture(classified_golden_outputs) -> None:
-    as_of = _golden_date("volmageddon_crisis")
-    out = classified_golden_outputs[as_of]
-    assert out.transition_risk.label == "crisis_override"
-    assert out.strategy_response.position_size_multiplier == 0.25
-    assert out.strategy_response.leverage_allowed is False
-    assert out.strategy_response.allow_buy_dip is False
-    assert out.strategy_response.hard_max_loss_required is True
-    assert out.strategy_response.modifiers_applied == ["crisis"]
+def test_strategy_response_de_risks_crisis_final_state() -> None:
+    response = build_strategy_response(
+        trend_direction_active="bear",
+        trend_character_active="transition",
+        volatility_state_active="crisis_vol",
+        breadth_state_active="weak_breadth",
+        transition_risk_state="crisis",
+            )
+
+    assert response.position_size_multiplier == 0.25
+    assert response.leverage_allowed is False
+    assert response.allow_buy_dip is False
+    assert response.hard_max_loss_required is True
+    assert response.modifiers_applied == ["crisis"]
 
 
-def test_strategy_response_matches_recovery_attempt_fixture(classified_golden_outputs) -> None:
-    as_of = _golden_date("covid_recovery_attempt")
-    out = classified_golden_outputs[as_of]
-    assert out.strategy_response.position_size_multiplier == 0.5
-    assert out.strategy_response.leverage_allowed is False
-    assert "bear_stress" in out.strategy_response.modifiers_applied or "recovery_attempt" in out.strategy_response.modifiers_applied
+def test_strategy_response_handles_recovery_attempt_final_state() -> None:
+    response = build_strategy_response(
+        trend_direction_active="sideways",
+        trend_character_active="recovery_attempt",
+        volatility_state_active="normal_vol",
+        breadth_state_active="recovery_breadth",
+        transition_risk_state="recovery_attempt",
+            )
+
+    assert response.position_size_multiplier == 0.5
+    assert response.leverage_allowed is False
+    assert "recovery_attempt" in response.modifiers_applied
 
 
-def test_strategy_response_matches_bull_healthy_low_vol_fixture(classified_golden_outputs) -> None:
-    as_of = _golden_date("early2024_bull_lowvol")
-    out = classified_golden_outputs[as_of]
-    assert out.trend_direction.active_label == "bull"
-    assert out.volatility_state.active_label == "low_vol"
-    assert out.strategy_response.position_size_multiplier == 1.0
+def test_strategy_response_de_risks_high_transition_risk_final_state() -> None:
+    response = build_strategy_response(
+        trend_direction_active="bull",
+        trend_character_active="trending",
+        volatility_state_active="normal_vol",
+        breadth_state_active="healthy_breadth",
+        transition_risk_state="high_transition_risk",
+            )
+
+    assert response.position_size_multiplier == 0.5
+    assert response.leverage_allowed is False
+    assert response.allow_buy_dip is False
+    assert response.prefer_cash_or_hedges is True
+    assert response.modifiers_applied == ["bull_healthy_low_vol", "high_transition_risk"]
+
+
+def test_strategy_response_macro_event_rule_caps_healthy_bull_response() -> None:
+    response = build_strategy_response(
+        trend_direction_active="bull",
+        trend_character_active="trending",
+        volatility_state_active="normal_vol",
+        breadth_state_active="healthy_breadth",
+        transition_risk_state="stable",
+        event_calendar_labels=("cpi_week",),
+        event_modifier_config=RegimeEngine().config.strategy_event_modifiers,
+    )
+
+    assert response.position_size_multiplier == 0.75
+    assert response.allow_leverage_expansion is False
+    assert response.require_confirmation_for_new_longs is True
+    assert response.leverage_allowed is True
+    assert response.modifiers_applied == [
+        "bull_healthy_low_vol",
+        "macro_event_window",
+    ]
+
+
+def test_strategy_response_policy_event_rule_caps_high_transition_risk_response() -> None:
+    response = build_strategy_response(
+        trend_direction_active="bull",
+        trend_character_active="trending",
+        volatility_state_active="normal_vol",
+        breadth_state_active="healthy_breadth",
+        transition_risk_state="high_transition_risk",
+        event_calendar_labels=("geopolitical_event",),
+        event_modifier_config=RegimeEngine().config.strategy_event_modifiers,
+    )
+
+    assert response.position_size_multiplier == 0.5
+    assert response.leverage_allowed is False
+    assert response.allow_leverage_expansion is False
+    assert response.require_confirmation_for_new_longs is True
+    assert response.prefer_cash_or_hedges is True
+    assert response.modifiers_applied == [
+        "bull_healthy_low_vol",
+        "high_transition_risk",
+        "policy_or_event_risk_window",
+    ]
+
+
+def test_strategy_response_multiple_event_rules_apply_in_config_order() -> None:
+    response = build_strategy_response(
+        trend_direction_active="bull",
+        trend_character_active="trending",
+        volatility_state_active="normal_vol",
+        breadth_state_active="healthy_breadth",
+        transition_risk_state="stable",
+        event_calendar_labels=("fed_week", "budget_week"),
+        event_modifier_config=RegimeEngine().config.strategy_event_modifiers,
+    )
+
+    assert response.position_size_multiplier == 0.5
+    assert response.leverage_allowed is False
+    assert response.allow_leverage_expansion is False
+    assert response.require_confirmation_for_new_longs is True
+    assert response.prefer_cash_or_hedges is True
+    assert response.modifiers_applied == [
+        "bull_healthy_low_vol",
+        "macro_event_window",
+        "policy_or_event_risk_window",
+    ]
+
+
+def test_strategy_response_nonmatching_event_label_leaves_response_unchanged() -> None:
+    kwargs = {
+        "trend_direction_active": "bull",
+        "trend_character_active": "trending",
+        "volatility_state_active": "normal_vol",
+        "breadth_state_active": "healthy_breadth",
+        "transition_risk_state": "stable",
+    }
+    baseline = build_strategy_response(**kwargs)
+    response = build_strategy_response(
+        **kwargs,
+        event_calendar_labels=("earnings_season",),
+        event_modifier_config=RegimeEngine().config.strategy_event_modifiers,
+    )
+
+    assert response == baseline
+
+
+def test_strategy_response_event_rule_applies_to_unknown_guard_response() -> None:
+    response = build_strategy_response(
+        trend_direction_active="unknown",
+        trend_character_active="trending",
+        volatility_state_active="normal_vol",
+        breadth_state_active="healthy_breadth",
+        transition_risk_state="insufficient_data",
+        event_calendar_labels=("geopolitical_event",),
+        event_modifier_config=RegimeEngine().config.strategy_event_modifiers,
+    )
+
+    assert response.position_size_multiplier == 0.5
+    assert response.leverage_allowed is False
+    assert response.require_confirmation_for_new_longs is True
+    assert response.prefer_cash_or_hedges is True
+    assert response.modifiers_applied == [
+        "policy_or_event_risk_window",
+    ]
 
 
 def test_transition_risk_series_classifier_applies_precedence_from_prepared_inputs() -> None:
@@ -90,7 +275,7 @@ def test_transition_risk_series_classifier_applies_precedence_from_prepared_inpu
             sessions[5]: "trending",
         },
         volatility_state_active_by_date={
-            sessions[0]: "crisis_vol",
+            sessions[0]: "normal_vol",
             sessions[1]: "high_vol",
             sessions[2]: "normal_vol",
             sessions[3]: "low_vol",
@@ -138,6 +323,22 @@ def test_transition_risk_series_classifier_applies_precedence_from_prepared_inpu
                 sessions[4]: 0,
                 sessions[5]: None,
             },
+            axis_switch_count_by_date={
+                sessions[0]: 1,
+                sessions[1]: 0,
+                sessions[2]: 1,
+                sessions[3]: 0,
+                sessions[4]: 1,
+                sessions[5]: 0,
+            },
+            recent_axis_switch_count_by_date={
+                sessions[0]: 1,
+                sessions[1]: 1,
+                sessions[2]: 2,
+                sessions[3]: 2,
+                sessions[4]: 3,
+                sessions[5]: 2,
+            },
             prior_bear_by_date={
                 sessions[0]: False,
                 sessions[1]: True,
@@ -147,16 +348,175 @@ def test_transition_risk_series_classifier_applies_precedence_from_prepared_inpu
                 sessions[5]: False,
             },
         ),
+        transition_score_inputs_by_date={
+            session: TransitionScoreInputs(
+                realized_vol_short=10.0,
+                realized_vol_long=10.0,
+                pct_above_50dma=0.50,
+                avg_pairwise_corr_percentile_504d=0.0,
+                largest_eigenvalue_share_percentile_504d=0.0,
+                effective_rank_percentile_504d=1.0,
+                absorption_ratio_top3=0.50,
+                drawdown_252d=0.0,
+                spy_close=100.0,
+                spy_sma_50=100.0,
+                event_calendar_labels=("normal_calendar",),
+                credit_funding_label="credit_calm",
+                volume_liquidity_label="normal_volume",
+                volume_zscore_20d=1.0,
+                gap_frequency_percentile_252d=0.0,
+                intraday_range_percentile_252d=0.0,
+                hmm_top_state_prob_now=0.50,
+                hmm_top_state_prob_5d_ago=0.50,
+                change_point_score=0.0,
+                cluster_id_now=1,
+                cluster_id_5d_ago=1,
+            )
+            for session in sessions
+        },
+        transition_score_config=RegimeEngine().config.transition_score,
     )
 
-    assert outputs[sessions[0]].label == "crisis_override"
-    assert outputs[sessions[1]].label == "bear_stress_warning"
-    assert outputs[sessions[2]].label == "bull_fragile_warning"
-    assert outputs[sessions[3]].label == "recovery_attempt"
-    assert outputs[sessions[4]].label == "recovery_attempt"
-    assert outputs[sessions[5]].label == "unknown"
-    assert outputs[sessions[0]].evidence["warnings_active"] == ["crisis_override"]
-    assert outputs[sessions[4]].evidence["warnings_active"] == ["recovery_attempt", "post_switch_cooldown"]
+    assert outputs[sessions[0]].state == "watch"
+    assert outputs[sessions[1]].state == "bear_stress"
+    assert outputs[sessions[2]].state == "bear_stress"
+    assert outputs[sessions[2]].triggered_rules == [
+        "fragile_bull",
+        "post_switch_cooldown",
+        "state_confirmation_pending",
+    ]
+    assert outputs[sessions[3]].state == "bear_stress"
+    assert outputs[sessions[3]].triggered_rules == [
+        "recovery_attempt",
+        "post_switch_cooldown",
+        "state_confirmation_pending",
+    ]
+    assert outputs[sessions[4]].state == "recovery_attempt"
+    assert outputs[sessions[5]].state == "insufficient_data"
+    assert outputs[sessions[0]].evidence["triggered_rules"] == ["post_switch_cooldown"]
+    assert outputs[sessions[4]].evidence["triggered_rules"] == ["recovery_attempt", "post_switch_cooldown"]
+
+
+def test_transition_risk_series_restores_absolute_crisis_override() -> None:
+    session = date(2024, 1, 2)
+    outputs = build_transition_risk_outputs_by_date(
+        sessions=[session],
+        trend_direction_active_by_date={session: "bull"},
+        trend_character_active_by_date={session: "trending"},
+        volatility_state_active_by_date={session: "crisis_vol"},
+        breadth_state_active_by_date={session: "healthy_breadth"},
+        close_by_date={session: 100.0},
+        sma_50_by_date={session: 100.0},
+        history=TransitionRiskHistory(
+            stable_changed_by_date={session: False},
+            days_since_axis_switch_by_date={session: None},
+            axis_switch_count_by_date={session: 0},
+            recent_axis_switch_count_by_date={session: 0},
+            prior_bear_by_date={session: False},
+        ),
+        transition_score_inputs_by_date={
+            session: TransitionScoreInputs(
+                realized_vol_short=10.0,
+                realized_vol_long=10.0,
+                pct_above_50dma=0.50,
+                avg_pairwise_corr_percentile_504d=0.0,
+                largest_eigenvalue_share_percentile_504d=0.0,
+                effective_rank_percentile_504d=1.0,
+                absorption_ratio_top3=0.50,
+                drawdown_252d=0.0,
+                spy_close=100.0,
+                spy_sma_50=100.0,
+                event_calendar_labels=("normal_calendar",),
+                credit_funding_label="credit_calm",
+                volume_liquidity_label="normal_volume",
+                volume_zscore_20d=1.0,
+                gap_frequency_percentile_252d=0.0,
+                intraday_range_percentile_252d=0.0,
+                hmm_top_state_prob_now=0.50,
+                hmm_top_state_prob_5d_ago=0.50,
+                change_point_score=0.0,
+                cluster_id_now=1,
+                cluster_id_5d_ago=1,
+            )
+        },
+        transition_score_config=RegimeEngine().config.transition_score,
+    )
+
+    assert outputs[session].state == "crisis"
+    assert outputs[session].triggered_rules == ["crisis"]
+
+
+def test_transition_risk_series_maps_sideways_stress_to_watch() -> None:
+    session = date(2024, 1, 2)
+    outputs = build_transition_risk_outputs_by_date(
+        sessions=[session],
+        trend_direction_active_by_date={session: "sideways"},
+        trend_character_active_by_date={session: "chop"},
+        volatility_state_active_by_date={session: "high_vol"},
+        breadth_state_active_by_date={session: "weak_breadth"},
+        close_by_date={session: 100.0},
+        sma_50_by_date={session: 100.0},
+        history=TransitionRiskHistory(
+            stable_changed_by_date={session: False},
+            days_since_axis_switch_by_date={session: None},
+            axis_switch_count_by_date={session: 0},
+            recent_axis_switch_count_by_date={session: 0},
+            prior_bear_by_date={session: False},
+        ),
+        transition_score_inputs_by_date={
+            session: TransitionScoreInputs(
+                realized_vol_short=10.0,
+                realized_vol_long=10.0,
+                pct_above_50dma=0.50,
+                avg_pairwise_corr_percentile_504d=0.0,
+                largest_eigenvalue_share_percentile_504d=0.0,
+                effective_rank_percentile_504d=1.0,
+                absorption_ratio_top3=0.50,
+                drawdown_252d=0.0,
+                spy_close=100.0,
+                spy_sma_50=100.0,
+                event_calendar_labels=("normal_calendar",),
+                credit_funding_label="credit_calm",
+                volume_liquidity_label="normal_volume",
+                volume_zscore_20d=1.0,
+                gap_frequency_percentile_252d=0.0,
+                intraday_range_percentile_252d=0.0,
+                hmm_top_state_prob_now=0.50,
+                hmm_top_state_prob_5d_ago=0.50,
+                change_point_score=0.0,
+                cluster_id_now=1,
+                cluster_id_5d_ago=1,
+            )
+        },
+        transition_score_config=RegimeEngine().config.transition_score,
+    )
+
+    assert outputs[session].state == "watch"
+    assert outputs[session].triggered_rules == ["sideways_stress"]
+
+
+def test_transition_risk_series_treats_narrowing_breadth_as_bear_stress() -> None:
+    output = _single_transition_output(
+        trend_direction="bear",
+        trend_character="trending",
+        volatility_state="high_vol",
+        breadth_state="narrowing_breadth",
+    )
+
+    assert output.state == "bear_stress"
+    assert output.triggered_rules == ["bear_stress"]
+
+
+def test_transition_risk_series_treats_narrowing_breadth_as_sideways_stress() -> None:
+    output = _single_transition_output(
+        trend_direction="sideways",
+        trend_character="chop",
+        volatility_state="high_vol",
+        breadth_state="narrowing_breadth",
+    )
+
+    assert output.state == "watch"
+    assert output.triggered_rules == ["sideways_stress"]
 
 
 def test_transition_risk_series_fails_fast_on_price_index_misalignment(market_df_for_asof) -> None:

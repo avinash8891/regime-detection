@@ -1,6 +1,6 @@
 """v2 §5.2 Strategy Family Constraints resolver.
 
-Pins V2 spec §5.2 (docs/regime_engine_v2_spec.md lines 2570-2652). The
+Pins V2 spec §5.2 (docs/regime_engine_v2_spec.md). The
 resolver implements the override-on-default inheritance contract: each
 cohort declares only the field-level deltas vs ``default_neutral``; the
 unspecified families and unspecified fields inherit the baseline.
@@ -15,7 +15,7 @@ from regime_detection.config import (
 from regime_detection.models import StrategyFamilyConstraint
 
 
-# v2 §5.2 lines 2574 + 2613-2649 — the five strategy families the engine
+# v2 §5.2 (spec lines 3899-3921) — the five strategy families the engine
 # constrains. One home (AGENTS rule B) so test files and downstream
 # consumers import the same tuple rather than hardcoding strings.
 STRATEGY_FAMILIES: tuple[str, ...] = (

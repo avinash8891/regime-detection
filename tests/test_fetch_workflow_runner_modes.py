@@ -363,6 +363,49 @@ def test_fetch_all_dispatches_only_unattended_modes(
     assert kwargs_by_mode["events"]["include_v2_curated_candidates"] is True
 
 
+def test_daily_ohlcv_constituents_can_use_yahoo_chart_provider(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    captured: dict[str, object] = {}
+
+    def fake_fetch(**kwargs):
+        captured.update(kwargs)
+        path = tmp_path / "daily-ohlcv.json"
+        path.write_text(json.dumps({"paths": {}}))
+        return path
+
+    monkeypatch.setattr(
+        fetch_script,
+        "run_alpaca_constituent_daily_ohlcv_fetch",
+        fake_fetch,
+    )
+    monkeypatch.setattr(
+        "sys.argv",
+        [
+            "fetch_regime_engine_v1_data.py",
+            "--fetch",
+            "daily-ohlcv-constituents-alpaca",
+            "--scope",
+            "v2",
+            "--out-dir",
+            str(tmp_path / "data" / "raw"),
+            "--acquisition-db",
+            str(tmp_path / "data" / "raw" / "acquisition.db"),
+            "--universe-json",
+            str(tmp_path / "symbols.json"),
+            "--constituent-universe-expected-count",
+            "1",
+            "--daily-bars-provider",
+            "alpaca-yahoo-fallback",
+        ],
+    )
+    (tmp_path / "symbols.json").write_text(json.dumps(["SPY"]))
+
+    assert fetch_script.main() == 0
+    assert captured["daily_bars_provider"] == "alpaca-yahoo-fallback"
+
+
 def test_emit_manifest_uses_all_runner_use_cases_by_default(
     tmp_path: Path,
     monkeypatch,

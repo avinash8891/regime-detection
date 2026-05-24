@@ -195,11 +195,11 @@ def test_dispersion_ratio_against_hand_computed_realized_vols(small_4asset_retur
 
 
 def test_compute_features_emits_nan_when_universe_below_min_size(nyse_index_100):
-    """If only 19 of 22 symbols survive the completeness filter,
+    """If only 19 of 24 symbols survive the completeness filter,
     all features must be NaN (data quality layer flags unknown downstream)."""
-    # Build full universe but corrupt 3 symbols with all-NaN in the window.
+    # Build full universe but corrupt 5 symbols with all-NaN in the window.
     prices = _make_full_universe_prices(nyse_index_100, seed=42)
-    drop_symbols = ["UUP", "USO", "LQD"]
+    drop_symbols = ["UUP", "USO", "DBC", "IEF", "LQD"]
     prices.loc[prices.index[-63:], drop_symbols] = np.nan
 
     out = compute_features(**_full_universe_kwargs(prices))

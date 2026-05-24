@@ -1,7 +1,7 @@
 """v2 §2B Inflation / Growth axis — feature compute + rule materialisation.
 
-Implements the 8-label axis classifier from spec lines 2174-2326. Optional
-nowcast and EPS-revision source series are consumed when present and
+Implements the 11-label axis classifier from V2 §2B (spec lines 2961-3170).
+Optional nowcast and EPS-revision source series are consumed when present and
 otherwise falsify via NaN:
 
   - ``earnings_expansion`` / ``earnings_contraction`` need the weekly
@@ -12,15 +12,17 @@ otherwise falsify via NaN:
     substitution when ``cpi_nowcast`` is wired; the composite-shock limb
     remains active.
 
-Labels (§2B lines 2177-2186):
+Labels (V2 §2B spec lines 2965-2975):
     goldilocks, inflation_shock, disinflation, recession_scare,
-    recovery_growth, earnings_expansion, earnings_contraction, unknown
+    risk_off_mild, recovery_growth, reflation, stagflation_lite,
+    earnings_expansion, earnings_contraction, unknown
 
-Precedence (§2B line 2190):
-    inflation_shock > recession_scare > disinflation > goldilocks >
-    recovery_growth > earnings_contraction > earnings_expansion > unknown
+Precedence (V2 §2B spec line 2980):
+    inflation_shock > recession_scare > risk_off_mild > disinflation >
+    goldilocks > recovery_growth > reflation > stagflation_lite >
+    earnings_contraction > earnings_expansion > unknown
 
-Per documented implementation decision: DBC ETF substitutes for the Bloomberg Commodity
+Per implementation decision: DBC ETF substitutes for the Bloomberg Commodity
 Index (paid feed unavailable). The classifier emits a bias-warning row
 with code ``commodity_proxy_dbc_substitute``.
 
@@ -49,7 +51,7 @@ from regime_detection.credit_funding import _rolling_ols_slope
 
 
 # ---------------------------------------------------------------------------
-# Spec labels (§2B lines 2177-2186) + risk rank (§2B lines 2274-2284).
+# Spec labels (V2 §2B spec lines 2965-2975) + risk rank (V2 §2B spec lines 3109-3124).
 # ---------------------------------------------------------------------------
 
 InflationGrowthLabel = Literal[
@@ -59,6 +61,8 @@ InflationGrowthLabel = Literal[
     "recession_scare",
     "risk_off_mild",
     "recovery_growth",
+    "reflation",
+    "stagflation_lite",
     "earnings_expansion",
     "earnings_contraction",
     "unknown",
@@ -69,8 +73,10 @@ INFLATION_GROWTH_RISK_RANK: dict[InflationGrowthLabel, int] = {
     "goldilocks": 0,
     "recovery_growth": 0,
     "earnings_expansion": 0,
+    "reflation": 1,
     "unknown": 1,
     "disinflation": 1,
+    "stagflation_lite": 2,
     "risk_off_mild": 2,
     "earnings_contraction": 2,
     "recession_scare": 3,
@@ -92,6 +98,8 @@ XLY_KEY = "XLY"
 XLI_KEY = "XLI"
 XLP_KEY = "XLP"
 XLU_KEY = "XLU"
+CPI_NOWCAST_KEY = "cpi_nowcast"
+AGG_FORWARD_EPS_REVISION_KEY = "aggregate_forward_eps_revision"
 
 REQUIRED_CROSS_ASSET_KEYS: tuple[str, ...] = (
     DBC_KEY,
@@ -105,7 +113,7 @@ REQUIRED_MACRO_KEYS: tuple[str, ...] = (CPI_KEY, PMI_KEY, DGS10_KEY)
 
 
 # ---------------------------------------------------------------------------
-# Bias-warning constants (§2B documented implementation decision — DBC substitute for the
+# Bias-warning constants (implementation decision — DBC substitute for the
 # paid Bloomberg Commodity Index).
 # ---------------------------------------------------------------------------
 
@@ -126,9 +134,9 @@ INFLATION_SURPRISE_NOWCAST_BIAS_SOURCE_URL = (
     "https://www.clevelandfed.org/indicators-and-data/inflation-nowcasting"
 )
 
-# v2 §2A lines 2587-2593 — `value_first_release` provenance row. Emitted
+# implementation decision — `value_first_release` provenance row. Emitted
 # only when the historical-replay first-release CPI substitution is in
-# effect (source-data audit / the source-data audit).
+# effect.
 FIRST_RELEASE_CPI_PROVENANCE_CODE = "cpi_first_release_vintage_replay"
 FIRST_RELEASE_CPI_PROVENANCE_SOURCE = "fred_cpiaucsl_realtime_vintages"
 FIRST_RELEASE_CPI_PROVENANCE_SOURCE_URL = (
@@ -192,7 +200,7 @@ class InflationGrowthFeatures:
 
 
 # ---------------------------------------------------------------------------
-# Feature compute (§2B lines 2193-2228).
+# Feature compute (V2 §2B spec lines 2983-3042).
 # ---------------------------------------------------------------------------
 
 
@@ -279,8 +287,8 @@ def compute_inflation_growth_features(
     """
     spy_index = spy_close.index
 
-    # v2 §2A lines 2587-2593 — first-release vs latest-revision CPI for
-    # historical replay (source-data audit). When the vintage seam is supplied
+    # implementation decision — first-release vs latest-revision CPI for
+    # historical replay. When the vintage seam is supplied
     # AND the config flag enables the substitution, replace the
     # latest-revision `cpi_all_items` with the release-date-keyed
     # first-release Series. Both series live on the same SPY calendar
@@ -303,19 +311,19 @@ def compute_inflation_growth_features(
     xlp = xlp_close.reindex(spy_index).astype(float)
     xlu = xlu_close.reindex(spy_index).astype(float)
 
-    # CPI trend (§2B lines 2197-2198).
+    # CPI trend (V2 §2B spec lines 2987-2988).
     cpi_3m_change_pct = _pct_change_lookback(
         cpi, config.cpi_lookback_3m_sessions
     ).rename("cpi_3m_change_pct")
     cpi_6m_change_pct = _pct_change_lookback(
         cpi, config.cpi_lookback_6m_sessions
     ).rename("cpi_6m_change_pct")
-    # §2B line 2235 — 21d OLS slope of cpi_6m_change_pct.
+    # V2 §2B spec lines 3049 / 3065 — 21d OLS slope of cpi_6m_change_pct (rule operand).
     cpi_6m_change_pct_slope_21d = _rolling_ols_slope(
         cpi_6m_change_pct, window=config.cpi_slope_lookback_sessions
     ).rename("cpi_6m_change_pct_slope_21d")
 
-    # Inflation surprise (documented implementation decision). When `cpi_nowcast`
+    # Inflation surprise (ADR 0006). When `cpi_nowcast`
     # (the Cleveland Fed inflation nowcast) is supplied, compute the real
     # z-score; otherwise emit an all-NaN series so the rule engine
     # naturally falsifies the `inflation_shock` single-signal limb.
@@ -332,13 +340,13 @@ def compute_inflation_growth_features(
             np.nan, index=spy_index, name="inflation_surprise_zscore", dtype=float
         )
 
-    # PMI (§2B lines 2208-2209). 21d slope on the forward-filled daily series.
+    # PMI (V2 §2B spec lines 3013-3017). 21d slope on the forward-filled daily series.
     pmi_manufacturing_series = pmi.rename("pmi_manufacturing")
     pmi_manufacturing_slope_21d = _rolling_ols_slope(
         pmi_manufacturing_series, window=config.pmi_slope_lookback_sessions
     ).rename("pmi_manufacturing_slope_21d")
 
-    # Aggregate forward EPS revision (documented implementation decision). When the weekly
+    # Aggregate forward EPS revision (implementation decision). When the weekly
     # revision series from the EPS accumulator is supplied, forward-fill
     # it onto the SPY session index. `reindex(method="ffill")` carries
     # each weekly value forward even when its observation_date is not
@@ -365,17 +373,17 @@ def compute_inflation_growth_features(
             dtype=float,
         )
 
-    # Commodity return (§2B line 2220) — DBC 63d total return.
+    # Commodity return (V2 §2B spec line 3034) — DBC 63d total return.
     commodity_return_63d = (
         (dbc / dbc.shift(config.commodity_return_lookback_sessions)) - 1.0
     ).rename("commodity_return_63d")
 
-    # Treasury yield slope (§2B line 2223).
+    # Treasury yield slope (V2 §2B spec line 3037).
     treasury_10y_yield_slope_21d = _rolling_ols_slope(
         dgs10_s, window=config.treasury_slope_lookback_sessions
     ).rename("treasury_10y_yield_slope_21d")
 
-    # Cyclical vs defensive (§2B lines 2225-2227).
+    # Cyclical vs defensive (V2 §2B spec lines 3039-3041).
     cyclical_sum = xly + xli
     defensive_sum = xlp + xlu
     cyclical_defensive_ratio = (
@@ -386,7 +394,7 @@ def compute_inflation_growth_features(
         window=config.cyclical_defensive_slope_lookback_sessions,
     ).rename("cyclical_defensive_slope_21d")
 
-    # SPY / TLT 21d returns (§2B lines 2237 / 2245).
+    # SPY / TLT 21d returns (V2 §2B rule operands — spec lines 3052 / 3060).
     spy_21d_return = (
         (spy / spy.shift(config.spy_return_lookback_sessions)) - 1.0
     ).rename("spy_21d_return")
@@ -414,7 +422,7 @@ def compute_inflation_growth_features(
                 "source_url": INFLATION_SURPRISE_NOWCAST_BIAS_SOURCE_URL,
             }
         )
-    # v2 §2A lines 2587-2593 — first-release CPI provenance row (source-data audit).
+    # implementation decision — first-release CPI provenance row.
     # Surfaces in the feature store output so replay consumers can audit
     # which CPI vintage powered each `as_of_date`.
     if cpi_first_release is not None and use_first_release_cpi_when_available:
@@ -457,7 +465,7 @@ class InflationGrowthRuleInputs:
 
     ``credit_funding_active_label`` carries the cross-axis dependency from
     §2C; ``None`` signals the §2C axis is unbuilt (cross-axis short-circuit
-    per spec lines 2314-2316).
+    per V2 §2B "Cross-Axis Short-Circuit" subsection ~spec line 3159).
     """
 
     cpi_3m_change_pct: float
@@ -586,7 +594,9 @@ from regime_detection.inflation_growth_rules import (  # noqa: E402
     evaluate_goldilocks as evaluate_goldilocks,
     evaluate_inflation_shock as evaluate_inflation_shock,
     evaluate_recession_scare as evaluate_recession_scare,
+    evaluate_reflation as evaluate_reflation,
     evaluate_recovery_growth as evaluate_recovery_growth,
     evaluate_risk_off_mild as evaluate_risk_off_mild,
+    evaluate_stagflation_lite as evaluate_stagflation_lite,
     evaluate_rules as evaluate_rules,
 )

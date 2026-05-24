@@ -90,8 +90,8 @@ def _synthetic_universe_prices(
 
 
 def _market_data_from_prices(prices: pd.DataFrame) -> pd.DataFrame:
-    """Long-form market_data for V1 ingestion. SPY + RSP + VIXY rows synthesized
-    from SPY (RSP/VIXY shape only matters for the V1 ingestion contract — they
+    """Long-form market_data for V1 ingestion. SPY + RSP + VIX rows synthesized
+    from SPY (RSP/VIX shape only matters for the V1 ingestion contract — they
     do not drive the network_fragility test). RSP rides SPY (the breadth axis
     uses RSP/SPY ratio; for these tests we just need a valid context)."""
     rows: list[dict[str, object]] = []
@@ -122,7 +122,7 @@ def _market_data_from_prices(prices: pd.DataFrame) -> pd.DataFrame:
         rows.append(
             {
                 "date": ts.date(),
-                "symbol": "VIXY",
+                "symbol": "VIX",
                 "open": 20.0,
                 "high": 20.5,
                 "low": 19.5,
@@ -130,11 +130,56 @@ def _market_data_from_prices(prices: pd.DataFrame) -> pd.DataFrame:
                 "volume": 100_000,
             }
         )
-    return pd.DataFrame(rows)
+    market_data = pd.DataFrame(rows)
+    spy_mask = market_data["symbol"] == "SPY"
+    market_data.loc[spy_mask, "volume"] = range(
+        1_000_000, 1_000_000 + int(spy_mask.sum())
+    )
+    return market_data
+
+
+def _network_fixture_config():
+    cfg = RegimeEngine().config
+    assert cfg.hmm is not None
+    assert cfg.clustering is not None
+    assert cfg.change_point is not None
+    assert cfg.network_fragility is not None
+    return cfg.model_copy(
+        update={
+            "network_fragility": cfg.network_fragility.model_copy(
+                update={
+                    "percentile_lookback_days": 100,
+                    "dispersion_percentile_lookback_days": 100,
+                }
+            ),
+            "hmm": cfg.hmm.model_copy(
+                update={
+                    "n_states": 2,
+                    "training_window_days": 100,
+                    "random_seeds": (42, 7, 13),
+                }
+            ),
+            "clustering": cfg.clustering.model_copy(
+                update={"training_window_days": 100}
+            ),
+            "change_point": cfg.change_point.model_copy(
+                update={"training_window_days": 100}
+            ),
+        }
+    )
+
+
+def _macro_series_for_index(index: pd.DatetimeIndex) -> dict[str, pd.Series]:
+    trend = pd.Series(range(len(index)), index=index, dtype="float64")
+    return {
+        "2y_yield": (4.00 + trend * 0.0002).rename("2y_yield"),
+        "10y_yield": (4.25 + trend * 0.0001).rename("10y_yield"),
+        "broad_usd_index": (100.0 + trend * 0.001).rename("broad_usd_index"),
+    }
 
 
 def _build_context_with_full_universe(*, end_session: pd.Timestamp = _LAST_SESSION):
-    """Build a MarketContext with SPY+RSP+VIXY in market_data AND sector/cross-asset
+    """Build a MarketContext with SPY+RSP+VIX in market_data AND sector/cross-asset
     closes for every symbol in NETWORK_FRAGILITY_UNIVERSE (so feature_store
     materializes a non-NaN network_fragility seam)."""
     index = _bdate_index(end=end_session)
@@ -146,11 +191,12 @@ def _build_context_with_full_universe(*, end_session: pd.Timestamp = _LAST_SESSI
         s: prices[s] for s in CROSS_ASSET_SYMBOLS
     }
 
-    config = RegimeEngine().config
+    config = _network_fixture_config()
     context = build_market_context(
         end_date=end_session.date(),
         market_data=market_data,
         config=config,
+        macro_series=_macro_series_for_index(index),
         sector_etf_closes=sector_etf_closes,
         cross_asset_closes=cross_asset_closes,
     )
@@ -326,19 +372,19 @@ def test_real_v2_ohlcv_fixture_network_fragility_golden_labels(
             date(2022, 6, 16),
             "correlation_to_one",
             "avg_pairwise_corr_percentile_504d",
-            0.996031746031746,
+            0.998015873015873,
         ),
         (
             date(2024, 1, 3),
             "diversified_normal",
             "dispersion_ratio_percentile_252d",
-            0.9206349206349206,
+            0.9246031746031746,
         ),
         (
             date(2026, 5, 13),
             "correlation_concentration",
             "largest_eigenvalue_share_percentile_504d",
-            0.8591269841269841,
+            0.8630952380952381,
         ),
     ]
     for day, expected_label, evidence_key, expected_value in golden_rows:
@@ -420,6 +466,26 @@ def test_engine_classify_window_emits_network_fragility_labels_on_full_universe(
     )
     sector_closes = {s: context.sector_etf_closes[s] for s in SECTOR_ETFS}
     cross_asset_closes = {s: context.cross_asset_closes[s] for s in CROSS_ASSET_SYMBOLS}
+    pit_intervals = pd.DataFrame(
+        {
+            "ticker": list(SECTOR_ETFS),
+            "start_date": [_bdate_index()[0].date()] * len(SECTOR_ETFS),
+            "end_date": [None] * len(SECTOR_ETFS),
+        }
+    )
+    constituent_ohlcv = {
+        symbol: pd.DataFrame(
+            {
+                "open": series,
+                "high": series,
+                "low": series,
+                "close": series,
+                "volume": pd.Series(1_000_000, index=series.index),
+                "adjusted_close": series,
+            }
+        )
+        for symbol, series in sector_closes.items()
+    }
 
     # ENGINE_MINIMUM_HISTORY (320) + lookback_days − 1 = working sessions kept
     # by slice_context_to_recent_sessions. We need that working window to
@@ -429,8 +495,13 @@ def test_engine_classify_window_emits_network_fragility_labels_on_full_universe(
         end_date=_LAST_SESSION.date(),
         market_data=market_data,
         lookback_days=600,
+        config=context.config,
+        event_calendar=pd.DataFrame(columns=["date", "market", "type", "importance"]),
         sector_etf_closes=sector_closes,
         cross_asset_closes=cross_asset_closes,
+        macro_series=context.macro_series,
+        pit_constituent_intervals=pit_intervals,
+        constituent_ohlcv=constituent_ohlcv,
     )
 
     labels = {out.network_fragility.active_label for out in timeline.outputs}
@@ -440,7 +511,7 @@ def test_engine_classify_window_emits_network_fragility_labels_on_full_universe(
     for out in timeline.outputs:
         assert isinstance(out.network_fragility, NetworkFragilityOutput)
         # mode must remain pinned to the v2 §3.1 closed-universe identifier.
-        assert out.network_fragility.mode == "sector_cross_asset_22"
+        assert out.network_fragility.mode == "sector_cross_asset_24"
 
 
 def test_engine_classify_window_emits_real_fixture_network_fragility_label(
@@ -461,24 +532,23 @@ def test_engine_classify_window_emits_real_fixture_network_fragility_label(
     assert network_fragility.active_label == "correlation_concentration"
     assert network_fragility.evidence["rule_evidence"][
         "largest_eigenvalue_share_percentile_504d"
-    ] == pytest.approx(0.8591269841269841)
+    ] == pytest.approx(0.8630952380952381)
 
 
 def test_engine_classify_window_forces_unknown_when_universe_data_missing():
-    """Quality gating end-to-end: when sector ETF data is absent, the v2
-    fallback in timeline._resolve_network_fragility_by_date emits 'unknown'
-    placeholders (preserves pure-v1 mode)."""
+    """Default V2 timeline fails loudly when required universe data is absent."""
     market_data = _market_data_from_prices(
         _synthetic_universe_prices(index=_bdate_index())
     )
-    timeline = RegimeEngine().classify_window(
-        end_date=_LAST_SESSION.date(),
-        market_data=market_data,
-        lookback_days=20,
-    )
-    for out in timeline.outputs:
-        assert out.network_fragility.active_label == "unknown"
-        assert out.network_fragility.raw_label == "unknown"
+    with pytest.raises(RuntimeError, match="transition_risk requires score inputs"):
+        RegimeEngine().classify_window(
+            end_date=_LAST_SESSION.date(),
+            market_data=market_data,
+            lookback_days=20,
+            config=_network_fixture_config(),
+            macro_series=_macro_series_for_index(_bdate_index()),
+            event_calendar=pd.DataFrame(columns=["date", "market", "type", "importance"]),
+        )
 
 
 # ---------- Slice-1 cleanup: I1 + I2 regression tests ------------------------
@@ -564,6 +634,9 @@ def test_classifier_emits_systemic_stress_when_credit_funding_confirms_it():
     )
 
     vol = store.volatility
+    spy_ohlcv = context.spy_ohlcv.copy()
+    spy_ohlcv["close"] = np.linspace(100.0, 90.0, len(spy_ohlcv))
+    context = context.model_copy(update={"spy_ohlcv": spy_ohlcv})
     stressed_volatility = VolatilityFeatures(
         close=vol.close,
         return_1d=vol.return_1d,

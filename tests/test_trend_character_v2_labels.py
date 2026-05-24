@@ -28,9 +28,11 @@ _V1_LABELS = {"trending", "recovery_attempt", "chop", "transition", "unknown"}
 _V2_LABEL_SET = {
     "breakout_expansion",
     "trending",
+    "mild_trend",
     "recovery_attempt",
     "range_bound",
     "chop",
+    "volatile_chop",
     "transition",
     "unknown",
 }
@@ -90,6 +92,31 @@ def test_v1_rule_path_does_not_emit_range_bound_on_tight_oscillation() -> None:
     label, ev = raw_label_for_day(f, idx[-1], allow_v2_labels=False)
 
     assert label == "chop", (label, ev)
+
+
+def test_v1_rule_path_does_not_emit_mild_trend() -> None:
+    idx = _trading_index(80)
+    f = TrendCharacterFeatures(
+        close=pd.Series(100.0, index=idx),
+        sma_50=pd.Series(99.0, index=idx),
+        return_10d=pd.Series(0.01, index=idx),
+        return_21d=pd.Series(0.01, index=idx),
+        prior_63d_drawdown=pd.Series(0.0, index=idx),
+        adx_14=pd.Series(25.0, index=idx),
+        return_63d=pd.Series(0.01, index=idx),
+        midpoint_excursion_20d=pd.Series(0.01, index=idx),
+        breakout_20d_or_50d=pd.Series(False, index=idx),
+        bb_width_expanding=pd.Series(False, index=idx),
+        volume_above_20d_average=pd.Series(False, index=idx),
+        followthrough_rate=pd.Series(float("nan"), index=idx),
+    )
+
+    label, ev = raw_label_for_day(f, idx[-1], allow_v2_labels=False)
+    labels, _ = build_raw_outputs(f, allow_v2_labels=False)
+
+    assert label == "transition", (label, ev)
+    assert labels[-1] == "transition"
+    assert set(labels).issubset(_V1_LABELS)
 
 
 def test_range_bound_fails_on_midpoint_excursion_over_5pct() -> None:
@@ -471,6 +498,8 @@ def test_risk_rank_includes_new_labels() -> None:
     # Log #67: breakout_expansion rank 0, range_bound rank 1.
     assert _RISK_RANK["breakout_expansion"] == 0
     assert _RISK_RANK["range_bound"] == 1
+    assert _RISK_RANK["mild_trend"] == 0
+    assert _RISK_RANK["volatile_chop"] == 1
     # V1 ordering preserved.
     assert _RISK_RANK["trending"] == 0
     assert _RISK_RANK["recovery_attempt"] == 1
@@ -505,6 +534,7 @@ def test_v1_default_config_path_only_v1_or_v2_labels_on_golden_dates(
 
 def test_v1_frozen_replay_roundtrip_still_passes(
     market_df_for_asof,
+    synthetic_v2_kwargs_for_market_data,
 ) -> None:
     """Importing RegimeEngine and classifying a golden date should still
     yield a label in the 7-label V2 set. We do NOT modify the on-disk V1
@@ -514,7 +544,12 @@ def test_v1_frozen_replay_roundtrip_still_passes(
 
     engine = RegimeEngine()
     as_of = date(2023, 12, 14)
-    out = engine.classify(as_of_date=as_of, market_data=market_df_for_asof(as_of))
+    market_data = market_df_for_asof(as_of)
+    out = engine.classify(
+        as_of_date=as_of,
+        market_data=market_data,
+        **synthetic_v2_kwargs_for_market_data(market_data),
+    )
     assert out.trend_character.active_label in _V2_LABEL_SET
 
 

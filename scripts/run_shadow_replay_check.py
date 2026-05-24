@@ -13,8 +13,10 @@ import pandas as pd
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO_ROOT / "src"))
+sys.path.insert(0, str(REPO_ROOT / "scripts"))
 
 from regime_detection.engine import RegimeEngine
+from regime_detection.fragility_universe import CROSS_ASSET_SYMBOLS, SECTOR_ETFS
 from regime_detection.shadow_storage import (
     fetch_run_row,
     insert_replay_check,
@@ -23,6 +25,26 @@ from regime_detection.shadow_storage import (
     open_shadow_db,
     utc_iso_now,
 )
+from _v2_calibration_helpers import (
+    constituent_ohlcv_from_sector_closes,
+    synthetic_pit_intervals_from_sector_closes,
+)
+
+
+def _close_series_by_symbol(
+    frame: pd.DataFrame, symbols: tuple[str, ...]
+) -> dict[str, pd.Series]:
+    present = set(frame["symbol"].unique())
+    if not set(symbols).issubset(present):
+        return {}
+    return {
+        symbol: pd.Series(
+            frame[frame["symbol"] == symbol].sort_values("date")["close"].astype(float).to_numpy(),
+            index=pd.to_datetime(frame[frame["symbol"] == symbol].sort_values("date")["date"]),
+            name=symbol,
+        )
+        for symbol in symbols
+    }
 
 
 def _jsonable(value: Any) -> Any:
@@ -79,10 +101,23 @@ def run_replay_check(
             archived_events = None
 
         engine = RegimeEngine(config_path=config_path)
+        sector_etf_closes = _close_series_by_symbol(market_data, SECTOR_ETFS)
+        cross_asset_closes = _close_series_by_symbol(market_data, CROSS_ASSET_SYMBOLS)
+        v2_kwargs: dict[str, Any] = {}
+        if sector_etf_closes and cross_asset_closes:
+            v2_kwargs["sector_etf_closes"] = sector_etf_closes
+            v2_kwargs["cross_asset_closes"] = cross_asset_closes
+            v2_kwargs["pit_constituent_intervals"] = (
+                synthetic_pit_intervals_from_sector_closes(sector_etf_closes)
+            )
+            v2_kwargs["constituent_ohlcv"] = constituent_ohlcv_from_sector_closes(
+                sector_etf_closes
+            )
         replayed_output = engine.classify(
             as_of_date=as_of_date,
             market_data=market_data,
             event_calendar=archived_events,
+            **v2_kwargs,
         )
 
         replayed_payload = json.loads(replayed_output.model_dump_json(indent=2))

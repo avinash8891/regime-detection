@@ -1,9 +1,7 @@
-"""v2 §4 — Transition Score evidence composer.
+"""Transition-pressure score composer.
 
-Implements all 6 deterministic + HMM-probability-shift component scores
-defined in v2 §4.2, the §4.3 weighted composite (4 weight tables for all
-hmm/change-point presence combinations), and the §4.4 half-open
-interpretation bands.
+Computes normalized component scores, dynamically reweights available
+components, and returns a single 0..1 pressure score with component evidence.
 """
 
 from __future__ import annotations
@@ -13,87 +11,113 @@ from dataclasses import dataclass
 
 from regime_detection.config import TransitionScoreConfig
 
-
 EVENT_SET: frozenset[str] = frozenset(
     {
-        "fed_week",            # v2 §4.2 + V1
-        "cpi_week",            # v2 §4.2 + V1
-        "nfp_week",            # v2 §4.2 + V1
-        "budget_week",         # v2 §2D additions
-        "election_window",     # v2 §2D additions
-        "global_rate_decision",  # v2 §2D additions
+        "fed_week",
+        "cpi_week",
+        "nfp_week",
+        "budget_week",
+        "election_window",
+        "global_rate_decision",
     }
 )
+
+_CREDIT_LABEL_SCORE: dict[str, float | None] = {
+    "credit_calm": 0.0,
+    "credit_recovery": 0.20,
+    "spread_widening": 0.45,
+    "credit_stress": 0.75,
+    "funding_squeeze": 0.90,
+    "deleveraging": 1.0,
+    "unknown": None,
+}
+
+_LIQUIDITY_LABEL_SCORE: dict[str, float | None] = {
+    "normal_volume": 0.0,
+    "liquidity_gap_behavior": 0.70,
+    "panic_volume": 1.0,
+    "unknown": None,
+}
 
 
 @dataclass(frozen=True)
 class ComposedTransitionScore:
-    """Composed transition-score evidence for a single session.
-
-    All three fields are ``None`` together on NaN cold-start propagation
-    (see ``compose_transition_score_for_session``).
-    """
-
     score: float | None
     interpretation: str | None
     components: dict[str, float] | None
+    missing_components: tuple[str, ...] = ()
+    component_weight_coverage: float = 0.0
+    macro_event_labels: tuple[str, ...] = ()
 
 
 def _clip(x: float, lo: float, hi: float) -> float:
     return max(lo, min(hi, x))
 
 
+def _optional_number(value: float | int | None) -> float | None:
+    if value is None:
+        return None
+    parsed = float(value)
+    if math.isnan(parsed):
+        return None
+    return parsed
+
+
+def _max_present(*values: float | None) -> float | None:
+    present = [value for value in values if value is not None]
+    if not present:
+        return None
+    return max(present)
+
+
+def _label_score(label: str | None, scores: dict[str, float | None]) -> float | None:
+    if label is None:
+        return None
+    if label not in scores:
+        raise ValueError(f"unknown transition-risk label score input: {label!r}")
+    return scores[label]
+
+
+def _macro_event_labels(event_calendar_labels: tuple[str, ...]) -> tuple[str, ...]:
+    return tuple(label for label in event_calendar_labels if label in EVENT_SET)
+
+
 def compute_transition_score(
     *,
-    volatility_acceleration_score: float,
-    breadth_deterioration_score: float,
-    correlation_concentration_score: float,
-    trend_break_score: float,
-    macro_event_score: float,
+    components: dict[str, float | None],
     weights: dict[str, float],
-    hmm_probability_shift_score: float | None = None,
-    change_point_score: float | None = None,
-) -> float:
-    """v2 §4.3 weighted composite (documented implementation decision 4-table system).
+    minimum_component_weight_coverage: float,
+) -> tuple[float | None, dict[str, float] | None, tuple[str, ...], float]:
+    unknown_keys = sorted(set(components) - set(weights))
+    if unknown_keys:
+        raise ValueError(f"components missing configured weights: {unknown_keys}")
 
-    The ``weights`` dict drives both the keys composed and the per-key
-    weights. Valid keys are the canonical 7 components:
-    ``volatility_acceleration``, ``breadth_deterioration``,
-    ``correlation_concentration``, ``trend_break``, ``macro_event``,
-    ``hmm_probability_shift``, ``change_point``. Unknown keys raise
-    ``ValueError``. Any optional component referenced by ``weights`` must
-    have a non-None value supplied.
-    """
-    values: dict[str, float | None] = {
-        "volatility_acceleration": volatility_acceleration_score,
-        "breadth_deterioration": breadth_deterioration_score,
-        "correlation_concentration": correlation_concentration_score,
-        "trend_break": trend_break_score,
-        "macro_event": macro_event_score,
-        "hmm_probability_shift": hmm_probability_shift_score,
-        "change_point": change_point_score,
+    missing = tuple(key for key in weights if components.get(key) is None)
+    present_weight = sum(weight for key, weight in weights.items() if components.get(key) is not None)
+    total_weight = sum(weights.values())
+    if total_weight <= 0.0:
+        raise ValueError("transition score weights must sum to a positive value")
+    coverage = present_weight / total_weight
+    if coverage < minimum_component_weight_coverage:
+        return None, None, missing, coverage
+
+    present_components = {
+        key: float(value)
+        for key, value in components.items()
+        if value is not None and key in weights
     }
-    for key in weights:
-        if key not in values:
-            raise ValueError(
-                f"Unknown component in weights: {key!r}. "
-                f"Valid components: {sorted(values.keys())}"
-            )
-        if values[key] is None:
-            raise ValueError(
-                f"Weight references {key!r} but no value was provided"
-            )
-    return sum(weight * float(values[key]) for key, weight in weights.items())
+    score = sum(
+        present_components[key] * weights[key] / present_weight
+        for key in present_components
+    )
+    return _clip(score, 0.0, 1.0), present_components, missing, coverage
 
 
 def interpret_transition_score(
     score: float, bands: dict[str, tuple[float, float]]
 ) -> str:
-    """v2 §4.4 half-open band lookup; top band (``high``) is closed at 1.0."""
     if score < 0.0 or score > 1.0:
-        raise ValueError(
-            f"transition_score must be in [0.0, 1.0], got {score!r}"
-        )
+        raise ValueError(f"transition_score must be in [0.0, 1.0], got {score!r}")
     if score < bands["weakening"][0]:
         return "stable"
     if score < bands["transition_warning"][0]:
@@ -110,110 +134,140 @@ def compose_transition_score_for_session(
     pct_above_50dma: float,
     avg_pairwise_corr_percentile_504d: float,
     drawdown_252d: float,
-    event_calendar_label: str,
+    event_calendar_labels: tuple[str, ...],
     config: TransitionScoreConfig,
+    spy_close: float | None = None,
+    spy_sma_50: float | None = None,
+    largest_eigenvalue_share_percentile_504d: float | None = None,
+    effective_rank_percentile_504d: float | None = None,
+    absorption_ratio_top3: float | None = None,
+    credit_funding_label: str | None = None,
+    volume_liquidity_label: str | None = None,
+    volume_zscore_20d: float | None = None,
+    gap_frequency_percentile_252d: float | None = None,
+    intraday_range_percentile_252d: float | None = None,
     hmm_top_state_prob_now: float | None = None,
     hmm_top_state_prob_5d_ago: float | None = None,
     change_point_score: float | None = None,
+    cluster_id_now: int | None = None,
+    cluster_id_5d_ago: int | None = None,
 ) -> ComposedTransitionScore:
-    """Compose a single session's transition score from v2 §4.2 inputs.
+    scales = config.scales
+    rv_short = _optional_number(realized_vol_short)
+    rv_long = _optional_number(realized_vol_long)
+    pct_above_50 = _optional_number(pct_above_50dma)
+    corr_pct = _optional_number(avg_pairwise_corr_percentile_504d)
+    dd_252 = _optional_number(drawdown_252d)
 
-    Returns ``ComposedTransitionScore(None, None, None)`` if any numeric
-    input is NaN (V1 §2.7 cold-start propagation) or if
-    ``realized_vol_long == 0.0`` (ratio undefined → treat as NaN
-    propagation; avoids ZeroDivisionError on cold-start when both
-    realised-vol windows are still warming up).
-    """
-    numeric_inputs = (
-        float(realized_vol_short),
-        float(realized_vol_long),
-        float(pct_above_50dma),
-        float(avg_pairwise_corr_percentile_504d),
-        float(drawdown_252d),
-    )
-    if any(math.isnan(v) for v in numeric_inputs):
-        return ComposedTransitionScore(score=None, interpretation=None, components=None)
-
-    rv_short, rv_long, pct_above_50, corr_pct, dd_252 = numeric_inputs
-
-    # Cold-start guard: rv_long == 0.0 → ratio undefined; propagate as NaN.
-    if rv_long == 0.0:
-        return ComposedTransitionScore(score=None, interpretation=None, components=None)
-
-    # --- v2 §4.2 component formulas (literal thresholds per spec) --------
-    ratio = rv_short / rv_long
-    vol_acc = _clip((ratio - 1.0) / 0.5, 0.0, 1.0)              # v2 §4.2
-    breadth_det = _clip((0.50 - pct_above_50) / 0.30, 0.0, 1.0)  # v2 §4.2
-    corr_conc = corr_pct                                          # v2 §4.2 pass-through
-    trend_break = _clip(-dd_252 / 0.15, 0.0, 1.0)                # v2 §4.2
-    macro_event = 1.0 if event_calendar_label in EVENT_SET else 0.0  # v2 §4.2
-
-    components: dict[str, float] = {
-        "volatility_acceleration": vol_acc,
-        "breadth_deterioration": breadth_det,
-        "correlation_concentration": corr_conc,
-        "trend_break": trend_break,
-        "macro_event": macro_event,
-    }
-
-    # v2 §4.2 line 2396 + §6.1 — 6th component when both HMM
-    # probabilities are present and non-NaN. Permutation-invariant
-    # |top_state_prob[t] - top_state_prob[t-5]|, defensively clipped to
-    # [0, 1] (the formula is already in-range by construction since
-    # probabilities ∈ [0, 1]).
-    hmm_shift: float | None = None
-    if (
-        hmm_top_state_prob_now is not None
-        and hmm_top_state_prob_5d_ago is not None
-        and not math.isnan(float(hmm_top_state_prob_now))
-        and not math.isnan(float(hmm_top_state_prob_5d_ago))
-    ):
-        hmm_shift = _clip(
-            abs(float(hmm_top_state_prob_now) - float(hmm_top_state_prob_5d_ago)),
+    vol_acc = None
+    if rv_short is not None and rv_long not in {None, 0.0}:
+        vol_acc = _clip(
+            (rv_short / rv_long - 1.0) / scales.vol_acc_full_stress_ratio,
             0.0,
             1.0,
         )
 
-    # documented implementation decision — 7th component change_point_score wired in.
-    # `change_point.score` is already a posterior probability ∈ [0, 1] by
-    # construction (5-session rolling max per documented implementation decision); no clip needed but
-    # we defensively clip to absorb any FP edge case at the seam.
-    cp_score: float | None = None
-    if change_point_score is not None and not math.isnan(float(change_point_score)):
-        cp_score = _clip(float(change_point_score), 0.0, 1.0)
+    breadth_det = None
+    if pct_above_50 is not None:
+        breadth_det = _clip(
+            (scales.breadth_zero_stress_pct - pct_above_50)
+            / scales.breadth_full_stress_range,
+            0.0,
+            1.0,
+        )
 
-    # documented implementation decision — 4-table weight selection gated on (hmm_present, cp_present).
-    if hmm_shift is not None and cp_score is not None:
-        weights = config.weights_with_hmm_with_change_point
-    elif hmm_shift is not None:
-        weights = config.weights_with_hmm
-    elif cp_score is not None:
-        weights = config.weights_with_change_point
-    else:
-        weights = config.weights_without_hmm
-
-    # Build components dict to mirror the selected weight table (no
-    # spurious keys whose weight wasn't selected).
-    if "hmm_probability_shift" in weights:
-        components["hmm_probability_shift"] = hmm_shift  # type: ignore[assignment]
-    if "change_point" in weights:
-        components["change_point"] = cp_score  # type: ignore[assignment]
-
-    score = compute_transition_score(
-        volatility_acceleration_score=vol_acc,
-        breadth_deterioration_score=breadth_det,
-        correlation_concentration_score=corr_conc,
-        trend_break_score=trend_break,
-        macro_event_score=macro_event,
-        weights=weights,
-        hmm_probability_shift_score=hmm_shift,
-        change_point_score=cp_score,
+    trend_drawdown = (
+        None if dd_252 is None else _clip(-dd_252 / scales.drawdown_full_stress, 0.0, 1.0)
     )
-    # Composite is a weighted average of [0,1] values with non-negative
-    # weights summing to 1.0; defensive clip to absorb FP noise so the
-    # §4.4 [0.0, 1.0] precondition never trips on a 1.0 + eps.
-    score = _clip(score, 0.0, 1.0)
-    interpretation = interpret_transition_score(score, config.bands)
+    ma_break = None
+    close = _optional_number(spy_close)
+    sma_50 = _optional_number(spy_sma_50)
+    if close is not None and sma_50 not in {None, 0.0}:
+        ma_break = _clip(
+            (sma_50 - close) / sma_50 / scales.ma_break_full_stress, 0.0, 1.0
+        )
+    trend_break = _max_present(trend_drawdown, ma_break)
+
+    largest_pct = _optional_number(largest_eigenvalue_share_percentile_504d)
+    effective_rank_pct = _optional_number(effective_rank_percentile_504d)
+    absorption = _optional_number(absorption_ratio_top3)
+    effective_rank_stress = None if effective_rank_pct is None else 1.0 - effective_rank_pct
+    absorption_stress = (
+        None
+        if absorption is None
+        else _clip(
+            (absorption - scales.absorption_floor) / scales.absorption_range, 0.0, 1.0
+        )
+    )
+    correlation_fragility = _max_present(corr_pct, largest_pct, effective_rank_stress, absorption_stress)
+
+    credit_stress = _label_score(credit_funding_label, _CREDIT_LABEL_SCORE)
+
+    liquidity_label_stress = _label_score(volume_liquidity_label, _LIQUIDITY_LABEL_SCORE)
+    volume_z = _optional_number(volume_zscore_20d)
+    volume_stress = (
+        None
+        if volume_z is None
+        else _clip(
+            (volume_z - scales.volume_zscore_floor) / scales.volume_zscore_range,
+            0.0,
+            1.0,
+        )
+    )
+    gap_stress = _optional_number(gap_frequency_percentile_252d)
+    intraday_stress = _optional_number(intraday_range_percentile_252d)
+    liquidity_stress = _max_present(
+        liquidity_label_stress,
+        volume_stress,
+        gap_stress,
+        intraday_stress,
+    )
+
+    macro_event_labels = _macro_event_labels(event_calendar_labels)
+    macro_event = 1.0 if macro_event_labels else 0.0
+
+    hmm_shift = None
+    hmm_now = _optional_number(hmm_top_state_prob_now)
+    hmm_5d = _optional_number(hmm_top_state_prob_5d_ago)
+    if hmm_now is not None and hmm_5d is not None:
+        hmm_shift = _clip(abs(hmm_now - hmm_5d), 0.0, 1.0)
+    cp_score = _optional_number(change_point_score)
+    if cp_score is not None:
+        cp_score = _clip(cp_score, 0.0, 1.0)
+    cluster_shift = None
+    if cluster_id_now is not None and cluster_id_5d_ago is not None:
+        cluster_shift = 0.0 if int(cluster_id_now) == int(cluster_id_5d_ago) else 1.0
+    model_instability = _max_present(hmm_shift, cp_score, cluster_shift)
+
+    raw_components: dict[str, float | None] = {
+        "trend_break": trend_break,
+        "volatility_acceleration": vol_acc,
+        "breadth_deterioration": breadth_det,
+        "correlation_fragility": correlation_fragility,
+        "credit_stress": credit_stress,
+        "liquidity_stress": liquidity_stress,
+        "macro_event": macro_event,
+        "model_instability": model_instability,
+    }
+    score, components, missing, coverage = compute_transition_score(
+        components=raw_components,
+        weights=config.weights,
+        minimum_component_weight_coverage=config.minimum_component_weight_coverage,
+    )
+    if score is None or components is None:
+        return ComposedTransitionScore(
+            score=None,
+            interpretation=None,
+            components=None,
+            missing_components=missing,
+            component_weight_coverage=coverage,
+            macro_event_labels=macro_event_labels,
+        )
     return ComposedTransitionScore(
-        score=score, interpretation=interpretation, components=components
+        score=score,
+        interpretation=interpret_transition_score(score, config.bands),
+        components=components,
+        missing_components=missing,
+        component_weight_coverage=coverage,
+        macro_event_labels=macro_event_labels,
     )

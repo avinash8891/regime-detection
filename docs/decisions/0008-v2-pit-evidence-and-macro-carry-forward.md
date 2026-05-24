@@ -39,7 +39,7 @@ The 30-session regime profile exposed three classes of missing evidence:
    reuse a final-date fit for earlier sessions and must not blank warmed rows
    solely because the final-date fit would leak.
 
-4. **`hmm_probability_shift[t]` needs five pre-window warmed sessions.** Runners
+4. **`model_instability[t]` needs five pre-window warmed sessions.** Runners
    that request an N-session emitted window must materialize enough additional
    history for `top_state_prob[t-5]` on the first emitted session.
 
@@ -48,10 +48,15 @@ The 30-session regime profile exposed three classes of missing evidence:
    monetary features recover, the active label should move immediately to the
    rule-derived label rather than holding a stale quality-gap label.
 
+6. **Monetary requires the full §2A source contract.** DGS2, DGS10, and
+   DTWEXBGS (`broad_usd_index`) must all be present before the monetary feature
+   seam is populated. A missing USD index disables monetary pressure rather than
+   producing a partial yield-only classification.
+
 ## Consequences
 
 - Multi-day profiles should show populated `monetary_pressure_state`,
-  `credit_funding_state`, `cluster`, and `hmm_probability_shift` when their
+  `credit_funding_state`, `cluster`, and `model_instability` when their
   sources are present and fresh.
 - FRED publication gaps no longer poison long rolling windows.
 - HMM/GMM runtime is higher than final-fit masking because point-in-time evidence
@@ -59,4 +64,3 @@ The 30-session regime profile exposed three classes of missing evidence:
   or fit on the configured retrain cadence, but it must preserve the same
   no-lookahead contract.
 - Existing V1 behavior remains unchanged when V2 seams/config blocks are absent.
-

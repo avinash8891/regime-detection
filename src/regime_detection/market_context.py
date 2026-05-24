@@ -26,24 +26,25 @@ class MarketContext(BaseModel):
     macro_series: dict[str, pd.Series] | None = None  # v2 §2A/§2B/§2C FRED series
     pit_constituent_intervals: pd.DataFrame | None = None  # v2 §1D PIT breadth seam
     constituent_ohlcv: Annotated[dict[str, pd.DataFrame] | None, SkipValidation] = None  # v2 §1D PIT breadth seam
-    aaii_sentiment: pd.DataFrame | None = None  # v2 §1A euphoria sentiment seam (documented implementation decision)
-    implied_vol_30d: pd.Series | None = None  # v2 §1C vol_crush seam — FRED VIXCLS/100 (documented implementation decision)
+    aaii_sentiment: pd.DataFrame | None = None  # v2 §1A euphoria sentiment seam (ADR 0004)
+    implied_vol_30d: pd.Series | None = None  # v2 §1C vol_crush seam — FRED VIXCLS/100 (ADR 0005)
     # v2 §2A central-bank-text evidence seam — deterministic-lexicon score
     # over FOMC minutes + Powell speech body_text per release. See
-    # the source-data audit). Always evidence-
-    # only — never consumed by §2A rule predicates.
+    # implementation decision and verification notes §3.1
+    # (M1). Always evidence-only — never consumed by §2A rule predicates.
     central_bank_text_releases: pd.DataFrame | None = None
-    # v2 §2A first-release CPI seam for historical replay (spec lines
-    # 2587-2593). Series keyed by RELEASE DATE (not reference date) of
-    # the value-as-of-release. See the source-data audit
-    # §3.2 (M2). When None, the existing latest-revision CPIAUCSL path is
-    # preserved unchanged.
+    # v2 §2A first-release CPI seam for historical replay (Ambiguity
+    # decision note / spec lines 2956-2957). Series keyed by RELEASE DATE (not
+    # reference date) of the value-as-of-release. See
+    # verification notes §3.2 (M2). When None, the
+    # existing latest-revision CPIAUCSL path is preserved unchanged.
     cpi_first_release: pd.Series | None = None
     # v2 §1A SF Fed Daily News Sentiment Index — evidence-only second
     # sentiment voice alongside the AAII bull-bear 8w-MA `sentiment_score`.
     # NOT consumed by the `euphoria` rule predicate; surfaces on
     # TrendDirectionV2Features.news_sentiment_score for evidence dicts and
-    # the calibration summary. See audit post-#12 follow-up.
+    # the calibration summary. See implementation decision and
+    # verification notes §4.1 (Post-M1/M2 follow-up).
     news_sentiment: pd.Series | None = None
 
 
@@ -149,39 +150,10 @@ def slice_context_to_recent_sessions(*, context: MarketContext, required_session
     keep_sessions = list(context.sessions[-required_sessions:])
     start_ts = pd.Timestamp(keep_sessions[0])
     spy_ohlcv = context.spy_ohlcv.loc[start_ts:]
-    rsp_close = context.rsp_close.reindex(spy_ohlcv.index)
-    vix_proxy_close = None
-    if context.vix_proxy_close is not None:
-        vix_proxy_close = context.vix_proxy_close.reindex(spy_ohlcv.index)
-    return MarketContext(
+    return _with_sliced_session_data(
+        context=context,
         end_date=context.end_date,
-        config=context.config,
-        sessions=tuple(spy_ohlcv.index.date),
         spy_ohlcv=spy_ohlcv,
-        rsp_close=rsp_close,
-        vix_proxy_close=vix_proxy_close,
-        normalized_event_calendar=context.normalized_event_calendar,
-        sector_etf_closes=_reindex_optional_close_dict(context.sector_etf_closes, spy_ohlcv.index),
-        cross_asset_closes=_reindex_optional_close_dict(context.cross_asset_closes, spy_ohlcv.index),
-        macro_series=context.macro_series,
-        pit_constituent_intervals=context.pit_constituent_intervals,
-        constituent_ohlcv=context.constituent_ohlcv,
-        aaii_sentiment=context.aaii_sentiment,
-        implied_vol_30d=(
-            None
-            if context.implied_vol_30d is None
-            else context.implied_vol_30d.reindex(spy_ohlcv.index)
-        ),
-        # §2A central-bank-text seam: pass through as-is (release frame
-        # carries its own release_date column; feature_store aligns to
-        # the sliced spy session index downstream).
-        central_bank_text_releases=context.central_bank_text_releases,
-        # §2A first-release CPI seam: pass through as-is — keyed by
-        # release date, not session, so downstream forward-fill handles
-        # alignment.
-        cpi_first_release=context.cpi_first_release,
-        # §1A SF Fed news sentiment evidence (audit post-#12 follow-up).
-        news_sentiment=context.news_sentiment,
     )
 
 
@@ -203,6 +175,19 @@ def slice_context_to_end_date(*, context: MarketContext, end_date: date) -> Mark
 
     end_ts = pd.Timestamp(end_date)
     spy_ohlcv = context.spy_ohlcv.loc[:end_ts]
+    return _with_sliced_session_data(
+        context=context,
+        end_date=end_date,
+        spy_ohlcv=spy_ohlcv,
+    )
+
+
+def _with_sliced_session_data(
+    *,
+    context: MarketContext,
+    end_date: date,
+    spy_ohlcv: pd.DataFrame,
+) -> MarketContext:
     rsp_close = context.rsp_close.reindex(spy_ohlcv.index)
     vix_proxy_close = None
     if context.vix_proxy_close is not None:
@@ -220,20 +205,14 @@ def slice_context_to_end_date(*, context: MarketContext, end_date: date) -> Mark
         macro_series=context.macro_series,
         pit_constituent_intervals=context.pit_constituent_intervals,
         constituent_ohlcv=context.constituent_ohlcv,
-        # §1A euphoria sentiment seam: pass through as-is (see
-        # slice_context_to_recent_sessions for rationale).
         aaii_sentiment=context.aaii_sentiment,
-        # §1C vol_crush seam: session-aligned, reindex to the sliced index.
         implied_vol_30d=(
             None
             if context.implied_vol_30d is None
             else context.implied_vol_30d.reindex(spy_ohlcv.index)
         ),
-        # §2A central-bank-text seam (source-data audit).
         central_bank_text_releases=context.central_bank_text_releases,
-        # §2A first-release CPI seam (source-data audit).
         cpi_first_release=context.cpi_first_release,
-        # §1A SF Fed news sentiment evidence (audit post-#12 follow-up).
         news_sentiment=context.news_sentiment,
     )
 
@@ -347,7 +326,7 @@ def _resolve_vix_proxy_close(
     market_data: pd.DataFrame,
     vix_data: pd.DataFrame | None,
     as_of_date: date,
-) -> pd.Series | None:
+) -> pd.Series:
     if vix_data is not None:
         if "date" not in vix_data.columns or "close" not in vix_data.columns:
             raise ValueError("vix_data must contain date and close columns")
@@ -359,9 +338,4 @@ def _resolve_vix_proxy_close(
         out = pd.Series(s["close"].to_numpy(), index=pd.to_datetime(s["date"]))
         out.name = "close"
         return out
-    for symbol in ["VIXY", "VIX", "^VIX"]:
-        try:
-            return _symbol_close_series(market_data, symbol=symbol, as_of_date=as_of_date)
-        except ValueError:
-            continue
-    return None
+    return _symbol_close_series(market_data, symbol="VIX", as_of_date=as_of_date)

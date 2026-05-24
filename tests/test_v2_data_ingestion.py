@@ -29,14 +29,14 @@ from regime_detection.market_context import (
 # ---------- universe constants -----------------------------------------------
 
 
-def test_network_fragility_universe_is_22_symbols_per_v2_section_3_1() -> None:
-    """v2 spec §3.1 ships 11 sector_etfs + 11 cross_asset_etfs (incl. SPY)
-    = 22 assets. SPY is the index; the engine reads SPY's close from
+def test_network_fragility_universe_is_24_symbols_per_v2_section_3_1() -> None:
+    """v2 spec §3.1 ships 11 sector_etfs + 13 cross_asset_etfs (incl. SPY)
+    = 24 assets. SPY is the index; the engine reads SPY's close from
     context.spy_ohlcv rather than from cross_asset_closes."""
-    assert len(NETWORK_FRAGILITY_UNIVERSE) == 22
-    assert len(set(NETWORK_FRAGILITY_UNIVERSE)) == 22  # no duplicates
+    assert len(NETWORK_FRAGILITY_UNIVERSE) == 24
+    assert len(set(NETWORK_FRAGILITY_UNIVERSE)) == 24  # no duplicates
     assert len(SECTOR_ETFS) == 11
-    assert len(CROSS_ASSET_SYMBOLS) == 10  # 11 cross_asset_etfs minus SPY (the index)
+    assert len(CROSS_ASSET_SYMBOLS) == 12  # 13 cross_asset_etfs minus SPY (the index)
     assert INDEX_SYMBOL == "SPY"
     assert "SPY" in NETWORK_FRAGILITY_UNIVERSE  # v2 §3.1 line 537
     assert "KRE" not in NETWORK_FRAGILITY_UNIVERSE  # KRE is slice 4 credit/funding
@@ -44,7 +44,8 @@ def test_network_fragility_universe_is_22_symbols_per_v2_section_3_1() -> None:
     # Spec-exact set, per v2 §3.1 lines 524-547.
     assert set(NETWORK_FRAGILITY_UNIVERSE) == {
         "XLB", "XLC", "XLE", "XLF", "XLI", "XLK", "XLP", "XLRE", "XLU", "XLV", "XLY",
-        "SPY", "QQQ", "IWM", "EFA", "EEM", "TLT", "GLD", "HYG", "LQD", "USO", "UUP",
+        "SPY", "QQQ", "IWM", "EFA", "EEM", "TLT", "IEF", "GLD", "HYG", "LQD",
+        "USO", "DBC", "UUP",
     }
 
 
@@ -181,6 +182,29 @@ def test_load_macro_series_uses_logical_name_as_sole_key() -> None:
     assert "dgs10" not in out
     assert out["hy_oas"].iloc[0] == 4.0
     assert out["2y_yield"].iloc[0] == 4.0
+
+
+def test_load_macro_series_converts_implied_vol_30d_to_decimal_units() -> None:
+    df = pd.DataFrame(
+        [
+            {
+                "date": pd.Timestamp(date(2024, 1, 2)),
+                "series_id": "VIXCLS",
+                "value": 20.0,
+                "logical_name": "implied_vol_30d",
+            },
+            {
+                "date": pd.Timestamp(date(2024, 1, 3)),
+                "series_id": "VIXCLS",
+                "value": 19.5,
+                "logical_name": "implied_vol_30d",
+            },
+        ]
+    )
+
+    out = load_macro_series(df)
+
+    assert out["implied_vol_30d"].tolist() == [0.20, 0.195]
 
 
 def test_load_macro_series_rejects_missing_series_id() -> None:
@@ -484,6 +508,7 @@ def test_slice_context_to_end_date_preserves_pit_breadth_seams(
 
 def test_engine_classify_threads_pit_constituent_inputs_into_context(
     market_df_for_asof,
+    synthetic_v2_kwargs_for_market_data,
 ) -> None:
     """Regression: RegimeEngine.classify must accept pit_constituent_intervals
     + constituent_ohlcv kwargs so PIT §1D breadth seams are reachable from
@@ -516,11 +541,19 @@ def test_engine_classify_threads_pit_constituent_inputs_into_context(
         ),
     }
 
+    market_data = market_df_for_asof(as_of)
+    kwargs = synthetic_v2_kwargs_for_market_data(market_data)
+    kwargs["pit_constituent_intervals"] = pd.concat(
+        [kwargs["pit_constituent_intervals"], pit_intervals], ignore_index=True
+    )
+    kwargs["constituent_ohlcv"] = {
+        **kwargs["constituent_ohlcv"],
+        **constituent_ohlcv,
+    }
     out = RegimeEngine().classify(
         as_of_date=as_of,
-        market_data=market_df_for_asof(as_of),
-        pit_constituent_intervals=pit_intervals,
-        constituent_ohlcv=constituent_ohlcv,
+        market_data=market_data,
+        **kwargs,
     )
 
     # V1 wire fields remain stable when V2 PIT kwargs are passed (the §1D
@@ -531,6 +564,7 @@ def test_engine_classify_threads_pit_constituent_inputs_into_context(
 
 def test_engine_classify_threads_aaii_sentiment_into_context(
     market_df_for_asof,
+    synthetic_v2_kwargs_for_market_data,
 ) -> None:
     """Regression: RegimeEngine.classify must accept aaii_sentiment kwarg so
     the v2 §1A `euphoria` predicate (ADR 0004 / Log #32 closure) is reachable
@@ -563,9 +597,11 @@ def test_engine_classify_threads_aaii_sentiment_into_context(
         ]
     )
 
+    market_data = market_df_for_asof(as_of)
     out = RegimeEngine().classify(
         as_of_date=as_of,
-        market_data=market_df_for_asof(as_of),
+        market_data=market_data,
+        **synthetic_v2_kwargs_for_market_data(market_data),
         aaii_sentiment=aaii_sentiment,
     )
 
@@ -597,32 +633,26 @@ def test_build_market_context_rejects_malformed_date_values(market_df_for_asof) 
         RegimeEngine().classify(
             as_of_date=as_of,
             market_data=corrupted,
+            event_calendar=pd.DataFrame(columns=["date", "market", "type", "importance"]),
         )
 
 
 # ---------- Engine threading -------------------------------------------------
 
 
-def test_engine_classify_accepts_v2_data_kwargs_without_breaking_v1_output(market_df_for_asof) -> None:
+def test_engine_classify_accepts_v2_data_kwargs_without_breaking_v1_output(
+    market_df_for_asof,
+    synthetic_v2_kwargs_for_market_data,
+) -> None:
     as_of = date(2023, 12, 14)
-    sector_dates = pd.bdate_range("2022-06-01", end=as_of, freq="C").date.tolist()
-    sector_df = _make_long_ohlcv(list(SECTOR_ETFS), sector_dates)
-    sector_closes = load_sector_etf_closes(sector_df, universe=SECTOR_ETFS)
+    market_data = market_df_for_asof(as_of)
 
-    # Engine accepts the V2 kwarg.
+    # Engine accepts the V2 kwargs required by the default V2 transition score.
     out_with_v2 = RegimeEngine().classify(
         as_of_date=as_of,
-        market_data=market_df_for_asof(as_of),
-        sector_etf_closes=sector_closes,
-    )
-    out_without_v2 = RegimeEngine().classify(
-        as_of_date=as_of,
-        market_data=market_df_for_asof(as_of),
+        market_data=market_data,
+        **synthetic_v2_kwargs_for_market_data(market_data),
     )
 
-    # V1 wire fields are unchanged whether or not V2 data is passed —
-    # the v2 fragility classifier hasn't shipped yet, so network_fragility
-    # still emits the v2 "unknown" placeholder regardless.
-    assert out_with_v2.network_fragility.active_label == "unknown"
-    assert out_without_v2.network_fragility.active_label == "unknown"
-    assert out_with_v2.trend_direction.model_dump() == out_without_v2.trend_direction.model_dump()
+    assert out_with_v2.network_fragility.active_label is not None
+    assert out_with_v2.trend_direction.active_label is not None

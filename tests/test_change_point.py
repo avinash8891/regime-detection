@@ -42,6 +42,7 @@ def _default_change_point_config(
         student_t_beta=0.01,
         student_t_kappa=1.0,
         student_t_mu=0.0,
+        recent_run_length_window_days=21,
         method="BOCPD",
     )
 
@@ -90,7 +91,7 @@ def test_compute_change_point_features_succeeds_on_synthetic_two_regime_data() -
     series = _synthetic_two_regime_realized_vol(
         n_sessions=1500, shift_index=shift_index, seed=0
     )
-    cfg = _default_change_point_config(training_window_days=1500)
+    cfg = _default_change_point_config(training_window_days=100)
     result = compute_change_point_features(realized_vol_21d=series, config=cfg)
     assert result is not None
     assert isinstance(result, ChangePointFeatures)
@@ -106,11 +107,75 @@ def test_compute_change_point_features_succeeds_on_synthetic_two_regime_data() -
     )
 
 
+def test_change_point_masks_rows_before_strict_pit_warmup() -> None:
+    series = _synthetic_two_regime_realized_vol(
+        n_sessions=140, shift_index=110, seed=1
+    )
+    cfg = _default_change_point_config(training_window_days=100)
+
+    result = compute_change_point_features(realized_vol_21d=series, config=cfg)
+
+    assert result is not None
+    assert result.posterior_changepoint_prob.iloc[:99].isna().all()
+    assert result.score.iloc[:99].isna().all()
+    assert result.days_since_last_break.iloc[:99].isna().all()
+    assert result.posterior_changepoint_prob.iloc[99:].notna().all()
+    assert result.score.iloc[99:].notna().all()
+
+
+def test_change_point_historical_scores_do_not_change_when_future_rows_append() -> None:
+    base = _synthetic_two_regime_realized_vol(
+        n_sessions=160, shift_index=120, seed=2
+    )
+    future = _synthetic_two_regime_realized_vol(
+        n_sessions=40, shift_index=20, seed=3
+    )
+    future.index = pd.bdate_range(base.index[-1] + pd.offsets.BDay(), periods=40)
+    extended = pd.concat([base, future])
+    cfg = _default_change_point_config(training_window_days=100)
+    historical_date = base.index[130]
+
+    base_result = compute_change_point_features(realized_vol_21d=base, config=cfg)
+    extended_result = compute_change_point_features(
+        realized_vol_21d=extended, config=cfg
+    )
+
+    assert base_result is not None
+    assert extended_result is not None
+    assert pd.notna(base_result.score.loc[historical_date])
+    assert extended_result.score.loc[historical_date] == pytest.approx(
+        base_result.score.loc[historical_date]
+    )
+    assert extended_result.posterior_changepoint_prob.loc[
+        historical_date
+    ] == pytest.approx(base_result.posterior_changepoint_prob.loc[historical_date])
+
+
+def test_change_point_detects_gradual_21_session_volatility_ramp() -> None:
+    index = pd.bdate_range("2020-01-02", periods=300)
+    values = np.concatenate(
+        [
+            np.full(140, 0.10),
+            np.linspace(0.10, 0.70, 21),
+            np.full(139, 0.70),
+        ]
+    )
+    series = pd.Series(values, index=index, name="realized_vol_21d")
+    cfg = _default_change_point_config(training_window_days=100)
+
+    result = compute_change_point_features(realized_vol_21d=series, config=cfg)
+
+    assert result is not None
+    ramp_window = result.posterior_changepoint_prob.iloc[140:170].dropna()
+    assert ramp_window.max() >= cfg.break_threshold
+    assert result.days_since_last_break.iloc[140:170].notna().any()
+
+
 def test_score_is_5_session_rolling_max_of_posterior() -> None:
     series = _synthetic_two_regime_realized_vol(
         n_sessions=1500, shift_index=750, seed=0
     )
-    cfg = _default_change_point_config(training_window_days=1500)
+    cfg = _default_change_point_config(training_window_days=100)
     result = compute_change_point_features(realized_vol_21d=series, config=cfg)
     assert result is not None
     posterior = result.posterior_changepoint_prob
@@ -219,8 +284,10 @@ def test_bocpd_adapter_calls_expected_dependency_api(
         calls["data"] = data.copy()
         calls["hazard_func"] = hazard_func
         calls["observation_likelihood"] = observation_likelihood
-        R = np.zeros((2, len(data) + 1), dtype=float)
+        R = np.zeros((5, len(data) + 1), dtype=float)
         R[1, 1:] = np.array([0.1, 0.2, 0.7], dtype=float)
+        R[2, 1:] = np.array([0.3, 0.1, 0.1], dtype=float)
+        R[3, 1:] = np.array([0.4, 0.0, 0.1], dtype=float)
         return R, np.arange(len(data))
 
     monkeypatch.setattr(change_point, "_StudentT", FakeStudentT)
@@ -239,7 +306,7 @@ def test_bocpd_adapter_calls_expected_dependency_api(
         config=cfg,
     )
 
-    np.testing.assert_allclose(posterior, np.array([0.1, 0.2, 0.7]))
+    np.testing.assert_allclose(posterior, np.array([0.8, 0.3, 0.9]))
     np.testing.assert_allclose(calls["data"], data)
     assert calls["student_t"] == {
         "alpha": cfg.student_t_alpha,
@@ -259,6 +326,9 @@ def test_bocpd_adapter_calls_expected_dependency_api(
 
 
 def test_real_default_config_carries_change_point_block() -> None:
+    assert ChangePointConfig().training_window_days == 2705
+    assert ChangePointConfig().recent_run_length_window_days == 21
+
     cfg = load_default_regime_config()
     assert cfg.change_point is not None
     assert cfg.change_point.hazard_lambda == 250.0
@@ -266,6 +336,7 @@ def test_real_default_config_carries_change_point_block() -> None:
     assert cfg.change_point.score_window_days == 5
     assert cfg.change_point.break_threshold == 0.5
     assert cfg.change_point.training_window_days == 2705
+    assert cfg.change_point.recent_run_length_window_days == 21
 
 
 def test_feature_store_change_point_seam_none_when_config_absent(
@@ -278,8 +349,8 @@ def test_feature_store_change_point_seam_none_when_config_absent(
     cfg = load_default_regime_config().model_copy(update={"change_point": None})
     spy = raw_market_frames["SPY"]
     rsp = raw_market_frames["RSP"]
-    vixy = raw_market_frames["VIXY"]
-    raw = pd.concat([spy, rsp, vixy], ignore_index=True)
+    vix = raw_market_frames["VIX"]
+    raw = pd.concat([spy, rsp, vix], ignore_index=True)
     raw["date"] = pd.to_datetime(raw["date"]).dt.date
     last_session = max(d for d in raw["date"].unique())
     while True:
@@ -321,8 +392,8 @@ def test_feature_store_change_point_seam_present_with_default_config(
     })
     spy = raw_market_frames["SPY"]
     rsp = raw_market_frames["RSP"]
-    vixy = raw_market_frames["VIXY"]
-    raw = pd.concat([spy, rsp, vixy], ignore_index=True)
+    vix = raw_market_frames["VIX"]
+    raw = pd.concat([spy, rsp, vix], ignore_index=True)
     raw["date"] = pd.to_datetime(raw["date"]).dt.date
     last_session = max(d for d in raw["date"].unique())
     while True:
@@ -353,6 +424,7 @@ def test_feature_store_change_point_seam_present_with_default_config(
 def test_regime_output_carries_change_point_when_seam_present(
     raw_market_data: pd.DataFrame,
     market_df_for_asof,
+    synthetic_v2_kwargs_for_market_data,
 ) -> None:
     from regime_detection.engine import RegimeEngine
 
@@ -365,7 +437,13 @@ def test_regime_output_carries_change_point_when_seam_present(
     })
     last_session = max(raw_market_data["date"].unique())
     market_data = market_df_for_asof(last_session)
-    out = engine.classify(as_of_date=last_session, market_data=market_data, config=cfg)
+    kwargs = synthetic_v2_kwargs_for_market_data(market_data)
+    kwargs["config"] = cfg
+    out = engine.classify(
+        as_of_date=last_session,
+        market_data=market_data,
+        **kwargs,
+    )
     assert out.change_point is not None
     assert out.change_point.method == "BOCPD"
     assert 0.0 <= out.change_point.score <= 1.0

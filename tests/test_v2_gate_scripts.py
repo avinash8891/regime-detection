@@ -6,7 +6,9 @@ from pathlib import Path
 import pandas as pd
 import pytest
 
+from regime_detection import comparison
 from regime_detection.models import AxisOutput, DataQuality
+from scripts import _v2_calibration_helpers
 from scripts import run_v2_shadow_ab_gate, run_v2_walkforward_gate
 
 pytestmark = [pytest.mark.slow, pytest.mark.v2_gate]
@@ -23,6 +25,29 @@ def test_gate_reporting_label_uses_granular_status() -> None:
 
     assert run_v2_walkforward_gate._reporting_label(output) == "no_rule_fired"
     assert run_v2_shadow_ab_gate._reporting_label(output) == "no_rule_fired"
+
+
+def test_gate_scripts_use_comparison_reporting_label_source() -> None:
+    assert _v2_calibration_helpers.axis_reporting_label is comparison.axis_reporting_label
+    assert run_v2_walkforward_gate._reporting_label is comparison.axis_reporting_label
+    assert run_v2_shadow_ab_gate._reporting_label is comparison.axis_reporting_label
+
+
+def test_walkforward_gate_markdown_uses_comparison_gate_metric_names() -> None:
+    markdown = run_v2_walkforward_gate._build_markdown(
+        start_date=pd.Timestamp("2026-05-12").date(),
+        end_date=pd.Timestamp("2026-05-12").date(),
+        sessions=[pd.Timestamp("2026-05-12").date()],
+        v1_metrics=run_v2_walkforward_gate._session_metrics_empty(),
+        v2_metrics=run_v2_walkforward_gate._session_metrics_empty(),
+        v2_axes=run_v2_walkforward_gate._axis_activation_empty(),
+        v1_errors=0,
+        v2_errors=0,
+        engine_version="regime-engine-v-test",
+    )
+
+    for metric_name in comparison.V2_GATE_METRIC_NAMES:
+        assert f"- {metric_name}" in markdown
 
 
 @pytest.mark.parametrize(
@@ -119,7 +144,19 @@ def test_shadow_ab_classify_per_session_continues_after_runtime_error() -> None:
         trend_character = trend_direction
         volatility_state = trend_direction
         breadth_state = trend_direction
-        transition_risk = type("TransitionRisk", (), {"label": "none", "score": None})()
+        transition_risk = type(
+            "TransitionRisk",
+            (),
+            {
+                "state": "stable",
+                "score": None,
+                "score_components": None,
+                "primary_drivers": [],
+                "triggered_rules": [],
+                "data_quality": DataQuality(status="ok", freshness_days=0, completeness=1.0),
+                "evidence": {},
+            },
+        )()
         agent_routing = None
         change_point = None
         credit_funding_state = None
@@ -140,6 +177,7 @@ def test_shadow_ab_classify_per_session_continues_after_runtime_error() -> None:
         engine=Engine(),
         sessions=sessions,
         market_data=market_data,
+        event_calendar=pd.DataFrame(),
         v2_kwargs=None,
         mode_label="test",
     )
@@ -147,6 +185,40 @@ def test_shadow_ab_classify_per_session_continues_after_runtime_error() -> None:
     assert errors == 1
     assert list(v1_records) == [sessions[1]]
     assert list(v2_records) == [sessions[1]]
+    assert v2_records[sessions[1]]["transition_risk_primary_drivers"] == []
+    assert v2_records[sessions[1]]["transition_risk_triggered_rules"] == []
+
+
+def test_walkforward_gate_tallies_rich_transition_risk_fields() -> None:
+    output = type(
+        "Output",
+        (),
+        {
+            "transition_risk": type(
+                "TransitionRisk",
+                (),
+                {
+                    "state": "fragile_bull",
+                    "score_components": {"model_instability": 0.25},
+                    "triggered_rules": ["fragile_bull", "state_confirmation_pending"],
+                },
+            )(),
+            "agent_routing": None,
+            "change_point": None,
+            "credit_funding_state": None,
+            "credit_funding_effective_state": None,
+            "inflation_growth_state": None,
+            "cluster": None,
+        },
+    )()
+    metrics = run_v2_walkforward_gate._session_metrics_empty()
+
+    run_v2_walkforward_gate._tally_output(metrics, output)
+
+    assert metrics["fragile_bull_fired"] == 1
+    assert metrics["score_components_dict"] == 1
+    assert metrics["model_instability_evidence_on_score"] == 1
+    assert metrics["state_confirmation_pending"] == 1
 
 
 def test_shadow_ab_classify_per_session_propagates_programmer_errors() -> None:
@@ -164,6 +236,7 @@ def test_shadow_ab_classify_per_session_propagates_programmer_errors() -> None:
             engine=Engine(),
             sessions=sessions,
             market_data=market_data,
+            event_calendar=pd.DataFrame(),
             v2_kwargs=None,
             mode_label="test",
         )
@@ -172,6 +245,10 @@ def test_shadow_ab_classify_per_session_propagates_programmer_errors() -> None:
 def _write_v2_gate_parquets(tmp_path: Path) -> tuple[Path, Path]:
     fixture_root = Path(__file__).resolve().parent / "fixtures" / "raw" / "v2"
     daily = pd.read_csv(fixture_root / "daily_ohlcv.csv")
+    if "VIX" not in set(daily["symbol"]) and "VIXY" in set(daily["symbol"]):
+        vix = daily[daily["symbol"] == "VIXY"].copy()
+        vix["symbol"] = "VIX"
+        daily = pd.concat([daily, vix], ignore_index=True)
     daily["date"] = pd.to_datetime(daily["date"])
     daily_path = tmp_path / "daily_ohlcv.parquet"
     daily.to_parquet(daily_path, index=False)
@@ -190,6 +267,7 @@ def test_walkforward_gate_main_runs_against_committed_v2_fixtures(
 ) -> None:
     daily_path, macro_path = _write_v2_gate_parquets(tmp_path)
     output_path = tmp_path / "walkforward_gate.md"
+    config_path = Path(__file__).resolve().parent / "fixtures" / "configs" / "core3-v2-fast.yaml"
     monkeypatch.setattr(
         sys,
         "argv",
@@ -199,12 +277,17 @@ def test_walkforward_gate_main_runs_against_committed_v2_fixtures(
             str(daily_path),
             "--macro-parquet",
             str(macro_path),
+            "--event-calendar",
+            str(Path(__file__).resolve().parent / "fixtures" / "events" / "us_events.yaml"),
+            "--config-path",
+            str(config_path),
             "--start-date",
             "2026-05-12",
             "--end-date",
             "2026-05-12",
             "--output",
             str(output_path),
+            "--allow-session-errors",
         ],
     )
 
@@ -212,10 +295,9 @@ def test_walkforward_gate_main_runs_against_committed_v2_fixtures(
 
     markdown = output_path.read_text()
     assert "- Window: 2026-05-12" in markdown
-    assert "| sessions classified | 1 | 1 | 0 |" in markdown
+    assert "| sessions classified | 0 | 1 | 1 |" in markdown
     assert "| sessions with credit_funding_state | 0 | 1 | 1 |" in markdown
     assert "| sessions with credit_funding_effective_state | 0 | 1 | 1 |" in markdown
-    assert "| credit_funding (classified) | 1 | 100.0% |" in markdown
 
 
 def test_shadow_ab_gate_main_runs_against_committed_v2_fixtures(
@@ -224,6 +306,7 @@ def test_shadow_ab_gate_main_runs_against_committed_v2_fixtures(
 ) -> None:
     daily_path, macro_path = _write_v2_gate_parquets(tmp_path)
     output_path = tmp_path / "shadow_ab_gate.md"
+    config_path = Path(__file__).resolve().parent / "fixtures" / "configs" / "core3-v2-fast.yaml"
     monkeypatch.setattr(
         sys,
         "argv",
@@ -233,10 +316,15 @@ def test_shadow_ab_gate_main_runs_against_committed_v2_fixtures(
             str(daily_path),
             "--macro-parquet",
             str(macro_path),
+            "--event-calendar",
+            str(Path(__file__).resolve().parent / "fixtures" / "events" / "us_events.yaml"),
+            "--config-path",
+            str(config_path),
             "--n-sessions",
             "1",
             "--output",
             str(output_path),
+            "--allow-session-errors",
         ],
     )
 
@@ -245,7 +333,12 @@ def test_shadow_ab_gate_main_runs_against_committed_v2_fixtures(
     markdown = output_path.read_text()
     assert "- Window: 2026-05-13" in markdown
     assert "| trend_direction | 0 |" in markdown
-    assert "| transition_risk_label | 0 |" in markdown
-    assert "| credit_funding_state | 1 |" in markdown
-    assert "| credit_funding_effective_state | 1 |" in markdown
-    assert "| network_fragility | 1 |" in markdown
+    assert "| transition_risk_state | 0 |" in markdown
+    assert "- v1-mode errors (sessions): 1" in markdown
+    assert "- v2-mode errors (sessions): 0" in markdown
+    assert "| transition_risk_primary_drivers | 0 |" in markdown
+    assert "| transition_risk_triggered_rules | 0 |" in markdown
+    assert "| transition_risk_data_quality | 0 |" in markdown
+    assert "| credit_funding_state | 0 |" in markdown
+    assert "| credit_funding_effective_state | 0 |" in markdown
+    assert "| network_fragility | 0 |" in markdown

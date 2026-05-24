@@ -140,7 +140,7 @@ def _build_full_synthetic_context(
         market_rows.append(
             {
                 "date": ts.date(),
-                "symbol": "VIXY",
+                "symbol": "VIX",
                 "open": 20.0,
                 "high": 20.5,
                 "low": 19.5,
@@ -149,6 +149,10 @@ def _build_full_synthetic_context(
             }
         )
     market_data = pd.DataFrame(market_rows)
+    spy_mask = market_data["symbol"] == "SPY"
+    market_data.loc[spy_mask, "volume"] = range(
+        1_000_000, 1_000_000 + int(spy_mask.sum())
+    )
 
     sector_etf_closes = {s: universe_prices[s] for s in SECTOR_ETFS}
     # Add KRE on cross_asset_closes alongside the §3.1 cross-asset symbols.
@@ -221,6 +225,33 @@ def _build_full_synthetic_context(
         macro_series["ioer_legacy"] = ioer_legacy
 
     config = RegimeEngine().config
+    assert config.hmm is not None
+    assert config.clustering is not None
+    assert config.change_point is not None
+    assert config.network_fragility is not None
+    config = config.model_copy(
+        update={
+            "network_fragility": config.network_fragility.model_copy(
+                update={
+                    "percentile_lookback_days": 100,
+                    "dispersion_percentile_lookback_days": 100,
+                }
+            ),
+            "hmm": config.hmm.model_copy(
+                update={
+                    "n_states": 2,
+                    "training_window_days": 100,
+                    "random_seeds": (42, 7, 13),
+                }
+            ),
+            "clustering": config.clustering.model_copy(
+                update={"training_window_days": 100}
+            ),
+            "change_point": config.change_point.model_copy(
+                update={"training_window_days": 100}
+            ),
+        }
+    )
     context = build_market_context(
         end_date=idx[-1].date(),
         market_data=market_data,
@@ -652,6 +683,9 @@ def test_feature_store_credit_funding_seam_none_without_kre_in_cross_asset_close
             ]
         ),
         config=context.config,
+        vix_data=pd.DataFrame(
+            {"date": [ts.date() for ts in context.spy_ohlcv.index], "close": 20.0}
+        ),
         sector_etf_closes=context.sector_etf_closes,
         cross_asset_closes=stripped,
         macro_series=context.macro_series,
@@ -716,7 +750,7 @@ def test_real_v2_fixture_credit_funding_golden_label(
     assert real_rule["hy_spread_slope_21d"] == pytest.approx(-0.004064935064935065)
     assert real_rule["spy_21d_return"] == pytest.approx(0.07590730214254471)
     assert real_rule["avg_pairwise_corr_percentile_504d"] == pytest.approx(
-        0.3055555555555556
+        0.25595238095238093
     )
 
     assert proxy.raw_label == "credit_calm"
@@ -738,6 +772,9 @@ def test_regime_output_carries_real_fixture_credit_funding_state_when_configured
     v2_market_df_for_asof,
     v2_close_series_by_symbol: dict[str, pd.Series],
     v2_macro_series_by_key: dict[str, pd.Series],
+    v2_pit_constituent_intervals: pd.DataFrame,
+    v2_constituent_ohlcv_by_symbol: dict[str, pd.DataFrame],
+    event_calendar_df,
 ) -> None:
     """End-to-end: real fixture reaches both §2C wire fields.
 
@@ -762,13 +799,36 @@ def test_regime_output_carries_real_fixture_credit_funding_state_when_configured
         v2_macro_series_by_key,
     )
     engine = RegimeEngine()
+    assert engine.config.hmm is not None
+    assert engine.config.clustering is not None
+    assert engine.config.change_point is not None
+    config = engine.config.model_copy(
+        update={
+            "hmm": engine.config.hmm.model_copy(
+                update={
+                    "training_window_days": 100,
+                    "random_seeds": (42, 7, 13),
+                }
+            ),
+            "clustering": engine.config.clustering.model_copy(
+                update={"training_window_days": 100}
+            ),
+            "change_point": engine.config.change_point.model_copy(
+                update={"training_window_days": 100}
+            ),
+        }
+    )
     timeline = engine.classify_window(
         end_date=as_of,
         market_data=v2_market_df_for_asof(as_of),
         lookback_days=1,
+        config=config,
+        event_calendar=event_calendar_df,
         sector_etf_closes=context.sector_etf_closes,
         cross_asset_closes=context.cross_asset_closes,
         macro_series=v2_macro_series_by_key,
+        pit_constituent_intervals=v2_pit_constituent_intervals,
+        constituent_ohlcv=v2_constituent_ohlcv_by_symbol,
     )
     out = timeline.outputs[-1]
     assert out.as_of_date == as_of
@@ -795,6 +855,26 @@ def test_regime_output_carries_credit_funding_state_when_configured() -> None:
     """End-to-end: classify_window populates RegimeOutput.credit_funding_state."""
     context = _build_full_synthetic_context()
     engine = RegimeEngine()
+    pit_intervals = pd.DataFrame(
+        {
+            "ticker": list(context.sector_etf_closes),
+            "start_date": [context.sessions[0]] * len(context.sector_etf_closes),
+            "end_date": [None] * len(context.sector_etf_closes),
+        }
+    )
+    constituent_ohlcv = {
+        symbol: pd.DataFrame(
+            {
+                "open": series,
+                "high": series,
+                "low": series,
+                "close": series,
+                "volume": pd.Series(1_000_000, index=series.index),
+                "adjusted_close": series,
+            }
+        )
+        for symbol, series in context.sector_etf_closes.items()
+    }
     timeline = engine.classify_window(
         end_date=context.end_date,
         market_data=pd.DataFrame(
@@ -824,9 +904,16 @@ def test_regime_output_carries_credit_funding_state_when_configured() -> None:
             ]
         ),
         lookback_days=1,
+        config=context.config,
+        vix_data=pd.DataFrame(
+            {"date": [ts.date() for ts in context.spy_ohlcv.index], "close": 20.0}
+        ),
+        event_calendar=pd.DataFrame(columns=["date", "market", "type", "importance"]),
         sector_etf_closes=context.sector_etf_closes,
         cross_asset_closes=context.cross_asset_closes,
         macro_series=context.macro_series,
+        pit_constituent_intervals=pit_intervals,
+        constituent_ohlcv=constituent_ohlcv,
     )
     out = timeline.outputs[-1]
     assert out.credit_funding_state is not None
@@ -903,6 +990,9 @@ def test_feature_store_routes_fedfunds_ioer_legacy_to_splice() -> None:
             ]
         ),
         config=base_context.config,
+        vix_data=pd.DataFrame(
+            {"date": [ts.date() for ts in idx], "close": 20.0}
+        ),
         sector_etf_closes=base_context.sector_etf_closes,
         cross_asset_closes=base_context.cross_asset_closes,
         macro_series=patched_macro,

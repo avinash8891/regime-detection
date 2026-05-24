@@ -59,7 +59,7 @@ Mapped to v2 spec §8 rows. 23 `feat(slice-*)` / `feat(calibration)` /
 ### 3. Models
 
 - ✅ V1 byte-identity: `tests/test_v1_frozen_replay.py` covers V1 wire schema; PR makes no V1 type narrowings. Validated by:
-  - Shadow A/B v1-field disagreement counts all **0** (`docs/verification/v2_shadow_ab_60session.md` lines 22–28: `trend_direction`, `trend_character`, `volatility_state`, `breadth_state`, `transition_risk_label` — all zero diffs across 60 sessions).
+  - Shadow A/B v1-field disagreement counts all **0** (`docs/verification/v2_shadow_ab_60session.md` lines 22–28: `trend_direction`, `trend_character`, `volatility_state`, `breadth_state`, `transition_risk_state` — all zero diffs across 60 sessions).
 - ✅ Optional `RegimeOutput` fields default `None`.
 
 ### 4. Feature store + axis_series
@@ -87,13 +87,19 @@ Per-axis activation rates from the walkforward (lines 41–52):
 | agent_routing != default | 100.0% ✅ |
 | inflation_growth | 1.3% ⚠️ (label-deferral expected per Log #48) |
 | monetary_pressure_v2 | 0.0% 🔍 follow-up |
-| change_point >= 0.5 | 0.0% 🔍 follow-up |
+| change_point >= 0.5 | 23.2% ✅ |
 
-🔍 **Follow-up**: investigate `engine.classify` activation gap for `transition_risk_score`, `agent_routing` (in shadow A/B), `change_point`, `cluster`, `volume_liquidity_state` (these light up in `build_feature_store` but read zero in per-day output). Likely `classify()`-vs-`classify_window()` config-threading gap in `timeline.build_regime_timeline`. **Tracked as the #3 next-action item in the V2 backlog.**
+Change-point activation was regenerated after the BOCPD posterior mapping fix;
+see `docs/verification/change_point_bocpd_recalculation_2026_05_23.md`.
+
+🔍 **Follow-up**: investigate remaining activation gaps for
+`transition_risk_score`, `agent_routing` (in shadow A/B), `cluster`,
+`volume_liquidity_state`, and `monetary_pressure_v2`. **Tracked as the #3
+next-action item in the V2 backlog.**
 
 ### 7. §9.3 60-session shadow A/B
 
-**✅ shipped (wire diff zero) + ⚠️ partial (activation gap above).** Evidence: `docs/verification/v2_shadow_ab_60session.md` (60 sessions, both engines 0 errors).
+**✅ shipped (wire diff zero) + ⚠️ partial (remaining activation gaps above).** Evidence: `docs/verification/v2_shadow_ab_60session.md` (60 sessions, both engines 0 errors).
 
 | v1 wire field | disagreement count |
 |---|---|
@@ -101,7 +107,7 @@ Per-axis activation rates from the walkforward (lines 41–52):
 | trend_character | 0 ✅ |
 | volatility_state | 0 ✅ |
 | breadth_state | 0 ✅ |
-| transition_risk_label | 0 ✅ |
+| transition_risk_state | 0 ✅ |
 
 V2 activations match expectations for the activation-rate caveat above
 (see #6 follow-up).

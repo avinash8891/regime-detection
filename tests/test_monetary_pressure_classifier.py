@@ -16,6 +16,7 @@ from dataclasses import replace
 
 import numpy as np
 import pandas as pd
+import pytest
 
 from regime_detection.axis_series import build_monetary_pressure_axis_series
 from regime_detection.calendar import nyse_sessions_between
@@ -130,16 +131,17 @@ def test_compute_monetary_pressure_features_cold_start_is_nan():
     assert not pd.isna(feats.yield_change_zscore_21d_2y.iloc[first_valid_21])
 
 
-def test_compute_monetary_pressure_features_broad_usd_none_returns_nan_series():
+def test_compute_monetary_pressure_features_requires_broad_usd():
     idx = _bdate_index()
     dgs2 = _yield_series(index=idx, base=4.5, seed=_SEED + 1)
     dgs10 = _yield_series(index=idx, base=4.2, seed=_SEED + 2)
-    feats = compute_monetary_pressure_features(
-        dgs2=dgs2, dgs10=dgs10, broad_usd_index=None, config=_features_config()
-    )
-    # broad_usd_index_zscore_63d must be a Series aligned to dgs2 index, all NaN.
-    assert feats.broad_usd_index_zscore_63d.index.equals(idx)
-    assert feats.broad_usd_index_zscore_63d.isna().all()
+    with pytest.raises(ValueError, match="broad_usd_index is required"):
+        compute_monetary_pressure_features(
+            dgs2=dgs2,
+            dgs10=dgs10,
+            broad_usd_index=None,
+            config=_features_config(),
+        )
 
 
 # =============================================================================
@@ -297,8 +299,8 @@ def _synthetic_market_data(index: pd.DatetimeIndex, seed: int = _SEED) -> pd.Dat
     close = (1.0 + returns).cumprod() * 400.0
     rows: list[dict[str, object]] = []
     for i, ts in enumerate(index):
-        for symbol in ("SPY", "RSP", "VIXY"):
-            mult = {"SPY": 1.0, "RSP": 0.5, "VIXY": 0.05}[symbol]
+        for symbol in ("SPY", "RSP", "VIX"):
+            mult = {"SPY": 1.0, "RSP": 0.5, "VIX": 0.05}[symbol]
             rows.append(
                 {
                     "date": ts.date(),
@@ -307,7 +309,7 @@ def _synthetic_market_data(index: pd.DatetimeIndex, seed: int = _SEED) -> pd.Dat
                     "high": float(close[i]) * mult * 1.005,
                     "low": float(close[i]) * mult * 0.995,
                     "close": float(close[i]) * mult,
-                    "volume": 1_000_000.0,
+                    "volume": 1_000_000.0 + float((i % 23) * 10_000),
                 }
             )
     return pd.DataFrame(rows)
@@ -355,6 +357,29 @@ def test_classifier_returns_none_when_feature_store_monetary_seam_is_none():
     assert out is None
 
 
+def test_feature_store_requires_broad_usd_for_monetary_pressure() -> None:
+    """Monetary pressure requires all §2A macro inputs: DGS2, DGS10, DTWEXBGS."""
+    index = _bdate_index()
+    market_data = _synthetic_market_data(index)
+    macro = {
+        "2y_yield": _yield_series(index=index, base=4.5, seed=_SEED + 1),
+        "10y_yield": _yield_series(index=index, base=4.2, seed=_SEED + 2),
+    }
+    context = build_market_context(
+        end_date=_LAST_SESSION.date(),
+        market_data=market_data,
+        config=RegimeEngine().config,
+        macro_series=macro,
+    )
+
+    store = build_feature_store(
+        context,
+        monetary_pressure_v2_config=context.config.monetary_pressure_v2,
+    )
+
+    assert store.monetary is None
+
+
 def test_classifier_emits_outputs_when_seam_lit():
     context = _build_context_with_macro()
     store = build_feature_store(
@@ -392,7 +417,9 @@ def test_classifier_emits_central_bank_text_score_as_evidence_only():
     assert sample.evidence["rule_evidence"]["central_bank_text_score"] == 0.25
 
 
-def test_engine_classify_window_populates_monetary_pressure_state():
+def test_engine_classify_window_populates_monetary_pressure_state(
+    synthetic_v2_kwargs_for_market_data,
+):
     """Top-level engine + monetary_pressure_state config → axis output populated."""
     index = _bdate_index()
     market_data = _synthetic_market_data(index)
@@ -400,10 +427,17 @@ def test_engine_classify_window_populates_monetary_pressure_state():
     dgs10 = _yield_series(index=index, base=4.2, seed=_SEED + 2)
     usd = _usd_series(index=index, base=100.0, seed=_SEED + 3)
     macro = {"2y_yield": dgs2, "10y_yield": dgs10, "broad_usd_index": usd}
+    kwargs = synthetic_v2_kwargs_for_market_data(market_data)
     timeline = RegimeEngine().classify_window(
         end_date=_LAST_SESSION.date(),
         market_data=market_data,
         lookback_days=50,
+        config=kwargs["config"],
+        event_calendar=kwargs["event_calendar"],
+        sector_etf_closes=kwargs["sector_etf_closes"],
+        cross_asset_closes=kwargs["cross_asset_closes"],
+        pit_constituent_intervals=kwargs["pit_constituent_intervals"],
+        constituent_ohlcv=kwargs["constituent_ohlcv"],
         macro_series=macro,
     )
     populated = [
@@ -413,22 +447,35 @@ def test_engine_classify_window_populates_monetary_pressure_state():
     allowed = set(MONETARY_PRESSURE_V2_RISK_RANK.keys())
     for out in populated:
         assert out.monetary_pressure_state.active_label in allowed
-        assert (
-            out.structural_causal_state.monetary_pressure.label
-            == out.monetary_pressure_state.active_label
-        )
-        assert (
-            out.structural_causal_state.monetary_pressure.evidence
-            == out.monetary_pressure_state.evidence
-        )
-        assert (
-            out.structural_causal_state.monetary_pressure.data_quality
-            == out.monetary_pressure_state.data_quality
+        assert "monetary_pressure" not in out.structural_causal_state.model_dump()
+
+
+def test_engine_classify_window_raises_when_monetary_pressure_state_is_absent(
+    synthetic_v2_kwargs_for_market_data,
+):
+    """V2 monetary-pressure config without source macro data is a hard failure."""
+    index = _bdate_index()
+    market_data = _synthetic_market_data(index)
+    kwargs = synthetic_v2_kwargs_for_market_data(market_data)
+    kwargs["macro_series"] = None
+
+    with pytest.raises(RuntimeError, match="monetary_pressure_state"):
+        RegimeEngine().classify_window(
+            end_date=_LAST_SESSION.date(),
+            market_data=market_data,
+            lookback_days=50,
+            config=kwargs["config"],
+            event_calendar=kwargs["event_calendar"],
+            sector_etf_closes=kwargs["sector_etf_closes"],
+            cross_asset_closes=kwargs["cross_asset_closes"],
+            pit_constituent_intervals=kwargs["pit_constituent_intervals"],
+            constituent_ohlcv=kwargs["constituent_ohlcv"],
+            macro_series=kwargs["macro_series"],
         )
 
 
 def test_engine_classify_window_monetary_pressure_state_none_in_pure_v1_mode():
-    """V1 byte-identity: V1 config (no monetary_pressure_state) → field None."""
+    """V1 config omits the monetary-pressure V2 output without aborting."""
     from pathlib import Path
     from regime_detection.config import load_regime_config
 
@@ -447,10 +494,12 @@ def test_engine_classify_window_monetary_pressure_state_none_in_pure_v1_mode():
         end_date=_LAST_SESSION.date(),
         market_data=market_data,
         lookback_days=20,
+        event_calendar=pd.DataFrame(columns=["date", "market", "type", "importance"]),
         config=v1_config,
     )
-    for out in timeline.outputs:
-        assert out.monetary_pressure_state is None
+
+    assert timeline.outputs
+    assert {out.monetary_pressure_state for out in timeline.outputs} == {None}
 
 
 # =============================================================================

@@ -6,6 +6,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pandas as pd
+import pytest
 
 from scripts import profile_engine_reporting
 
@@ -152,7 +153,8 @@ def test_profile_json_report_emits_machine_readable_sections(tmp_path: Path) -> 
         breadth_state=axis("broadening_breadth"),
         structural_causal_state=SimpleNamespace(
             event_calendar=SimpleNamespace(
-                active_label="normal_calendar",
+                primary_label="fed_week",
+                matching_labels=("fed_week", "expiry_week"),
                 evidence={"days_to_event": 4},
             ),
             monetary_pressure=SimpleNamespace(
@@ -162,7 +164,17 @@ def test_profile_json_report_emits_machine_readable_sections(tmp_path: Path) -> 
             ),
         ),
         transition_risk=SimpleNamespace(
-            label="low", score=0.2, score_components={"breadth": 0.2}
+            state="stable",
+            score=0.2,
+            score_components={"breadth": 0.2},
+            primary_drivers=["breadth"],
+            triggered_rules=["post_switch_cooldown"],
+            evidence={
+                "triggered_rules": ["post_switch_cooldown"],
+                "axis_switch_count": 1,
+                "recent_axis_switch_count": 2,
+            },
+            data_quality={"status": "ok"},
         ),
         network_fragility=axis("correlation_concentration"),
         volume_liquidity_state=None,
@@ -242,25 +254,48 @@ def test_profile_json_report_emits_machine_readable_sections(tmp_path: Path) -> 
                     "classification_status": "classified",
                 },
                 "transition_score": 0.2,
+                "transition_risk": {
+                    "score": 0.2,
+                    "primary_drivers": ["breadth"],
+                    "triggered_rules": ["post_switch_cooldown"],
+                    "data_quality_status": "ok",
+                    "axis_switch_count": 1,
+                    "recent_axis_switch_count": 2,
+                },
+                "event_calendar": {
+                    "primary_label": "fed_week",
+                    "matching_labels": ["fed_week", "expiry_week"],
+                },
             },
             "as_of_date": "2026-05-15",
-            "transition_risk": "low",
+            "event_calendar_primary_label": "fed_week",
+            "event_calendar_matching_labels": ["fed_week", "expiry_week"],
+            "transition_risk": "stable",
             "trend_direction": "uptrend",
             "volatility_state": "low_vol",
         }
     ]
     assert payload["label_summary"]["inflation_growth_state"] == {
         "active": {"unknown": 1},
+        "raw": {"missing": 1},
         "reported": {"stale_data": 1},
+        "stable": {"missing": 1},
         "status": {"stale_data": 1},
     }
     assert payload["label_summary"]["credit_funding_state_proxy"] == {
         "active": {"unknown": 1},
+        "raw": {"missing": 1},
         "reported": {"no_rule_fired": 1},
+        "stable": {"missing": 1},
         "status": {"no_rule_fired": 1},
     }
     status_fields = {s["field"]: s["status"] for s in payload["trailing_v2_field_status"]}
     assert status_fields["transition_risk.score_components"] == "present"
+    assert status_fields["transition_risk.primary_drivers"] == "present"
+    assert status_fields["transition_risk.triggered_rules"] == "present"
+    assert status_fields["transition_risk.data_quality"] == "present"
+    assert status_fields["event_calendar.primary_label"] == "present"
+    assert status_fields["event_calendar.matching_labels"] == "present"
     assert status_fields["agent_routing"] == "present"
     assert status_fields["strategy_family_constraints"] == "present"
     full_output = payload["full_timeline"][0]
@@ -279,6 +314,9 @@ def test_profile_json_report_emits_machine_readable_sections(tmp_path: Path) -> 
         "no_rule_fired"
     )
     assert full_output["transition_risk"]["score_components"] == {"breadth": 0.2}
+    assert full_output["transition_risk"]["primary_drivers"] == ["breadth"]
+    assert full_output["transition_risk"]["triggered_rules"] == ["post_switch_cooldown"]
+    assert full_output["transition_risk"]["data_quality"] == {"status": "ok"}
     assert full_output["cluster"] == {
         "cluster_id": 3,
         "distance_to_centroid": 1.75,
@@ -342,7 +380,15 @@ def test_profile_json_report_uses_loaded_bundle_values_for_input_status(
         volatility_state=SimpleNamespace(
             active_label="low_vol", classification_status="classified"
         ),
-        transition_risk=SimpleNamespace(label="low", score=None, score_components=None),
+        transition_risk=SimpleNamespace(
+            state="stable",
+            score=None,
+            score_components=None,
+            primary_drivers=[],
+            triggered_rules=[],
+            evidence={},
+            data_quality={"status": "ok"},
+        ),
         network_fragility=None,
         volume_liquidity_state=None,
         credit_funding_state=None,
@@ -416,12 +462,34 @@ def test_profile_engine_loads_event_calendar_when_present(tmp_path: Path) -> Non
         )
     )
 
-    actual = profile_engine._load_optional_event_calendar(yaml_path)
+    actual = profile_engine._load_event_calendar(
+        yaml_path,
+        allow_missing_event_calendar=False,
+    )
 
     assert actual is not None
     assert len(actual) == 1
     assert actual.loc[0, "type"] == "CPI"
     assert actual.loc[0, "window_days"] == [-1, 1]
+
+
+def test_profile_engine_requires_event_calendar_when_missing(tmp_path: Path) -> None:
+    with pytest.raises(FileNotFoundError, match="event_calendar"):
+        profile_engine._load_event_calendar(
+            tmp_path / "missing-events.yaml",
+            allow_missing_event_calendar=False,
+        )
+
+
+def test_profile_engine_allows_missing_event_calendar_for_debug(
+    tmp_path: Path,
+) -> None:
+    actual = profile_engine._load_event_calendar(
+        tmp_path / "missing-events.yaml",
+        allow_missing_event_calendar=True,
+    )
+
+    assert actual is None
 
 
 def test_profile_engine_loads_news_sentiment_when_present(tmp_path: Path) -> None:
@@ -504,7 +572,22 @@ def _make_minimal_output() -> SimpleNamespace:
         volatility_state=SimpleNamespace(
             active_label="low_vol", classification_status="classified"
         ),
-        transition_risk=SimpleNamespace(label="low", score=None, score_components=None),
+        transition_risk=SimpleNamespace(
+            state="stable",
+            score=None,
+            score_components=None,
+            primary_drivers=[],
+            triggered_rules=[],
+            evidence={},
+            data_quality={"status": "ok"},
+        ),
+        structural_causal_state=SimpleNamespace(
+            event_calendar=SimpleNamespace(
+                primary_label="normal_calendar",
+                matching_labels=("normal_calendar",),
+                evidence={},
+            )
+        ),
         network_fragility=None,
         volume_liquidity_state=None,
         credit_funding_state=None,

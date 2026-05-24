@@ -31,7 +31,7 @@ def evaluate_goldilocks(
     inputs: InflationGrowthRuleInputs,
     config: InflationGrowthRulesConfig,
 ) -> bool:
-    """v2 §2B lines 2233-2238."""
+    """v2 §2B lines 3047-3053 — `goldilocks` rule."""
     if not _credit_is_calm(inputs, config):
         return False
     if _any_nan(
@@ -64,7 +64,7 @@ def evaluate_inflation_shock(
     inputs: InflationGrowthRuleInputs,
     config: InflationGrowthRulesConfig,
 ) -> bool:
-    """v2 §2B lines 2550-2555 — `inflation_shock` three-limb OR rule.
+    """v2 §2B lines 3055-3062 — `inflation_shock` three-limb OR rule.
 
     Limb 1: surprise z-score (single-signal).
     Limb 2: commodity + yield + equity composite.
@@ -106,7 +106,7 @@ def evaluate_disinflation(
     inputs: InflationGrowthRuleInputs,
     config: InflationGrowthRulesConfig,
 ) -> bool:
-    """v2 §2B lines 2247-2250."""
+    """v2 §2B lines 3064-3067 — `disinflation` rule."""
     if _any_nan(inputs.cpi_6m_change_pct_slope_21d, inputs.pmi_manufacturing):
         return False
     if inputs.pmi_manufacturing <= config.pmi_disinflation_threshold:
@@ -138,7 +138,7 @@ def evaluate_recession_scare(
     inputs: InflationGrowthRuleInputs,
     config: InflationGrowthRulesConfig,
 ) -> bool:
-    """v2 §2B lines 2252-2256."""
+    """v2 §2B lines 3069-3077 — `recession_scare` rule."""
     if _any_nan(
         inputs.treasury_10y_yield_slope_21d,
         inputs.cyclical_defensive_slope_21d,
@@ -175,7 +175,7 @@ def evaluate_recovery_growth(
     inputs: InflationGrowthRuleInputs,
     config: InflationGrowthRulesConfig,
 ) -> bool:
-    """v2 §2B lines 2258-2261."""
+    """v2 §2B lines 3079-3082 — `recovery_growth` rule."""
     if not _credit_is_calm(inputs, config):
         return False
     if _any_nan(
@@ -224,11 +224,66 @@ def evaluate_risk_off_mild(
     return growth_deterioration
 
 
+def _credit_not_crisis(inputs: InflationGrowthRuleInputs) -> bool:
+    """True when credit is absent, calm, recovering, or mildly widening —
+    any state short of outright stress / squeeze / deleveraging."""
+    return inputs.credit_funding_active_label not in {
+        "credit_stress",
+        "funding_squeeze",
+        "deleveraging",
+    }
+
+
+def evaluate_reflation(
+    inputs: InflationGrowthRuleInputs,
+    config: InflationGrowthRulesConfig,
+) -> bool:
+    """Rising CPI + economic expansion + equities positive + credit not in crisis.
+
+    Captures the "normal growth with mild inflation pressure" regime that
+    falls between goldilocks (requires credit_calm) and recession_scare
+    (requires equity decline).
+    """
+    if _any_nan(
+        inputs.cpi_6m_change_pct_slope_21d,
+        inputs.pmi_manufacturing,
+        inputs.spy_21d_return,
+    ):
+        return False
+    return bool(
+        inputs.cpi_6m_change_pct_slope_21d > 0.0
+        and inputs.pmi_manufacturing > config.pmi_goldilocks_threshold
+        and inputs.spy_21d_return > 0.0
+        and _credit_not_crisis(inputs)
+    )
+
+
+def evaluate_stagflation_lite(
+    inputs: InflationGrowthRuleInputs,
+    config: InflationGrowthRulesConfig,
+) -> bool:
+    """Rising CPI + contracting manufacturing (PMI ≤ 50).
+
+    Captures the early-warning macro regime where inflation persists while
+    the real economy weakens. Distinct from recession_scare (requires equity
+    decline + credit stress) and from reflation (requires PMI > 50).
+    """
+    if _any_nan(
+        inputs.cpi_6m_change_pct_slope_21d,
+        inputs.pmi_manufacturing,
+    ):
+        return False
+    return bool(
+        inputs.cpi_6m_change_pct_slope_21d > 0.0
+        and inputs.pmi_manufacturing <= config.pmi_goldilocks_threshold
+    )
+
+
 def evaluate_earnings_expansion(
     inputs: InflationGrowthRuleInputs,
     config: InflationGrowthRulesConfig,
 ) -> bool:
-    """v2 §2B line 2605 — strict positive aggregate forward-EPS revision."""
+    """v2 §2B lines 3100-3102 — strict positive aggregate forward-EPS revision."""
     if _any_nan(inputs.aggregate_forward_eps_revision_direction_4w):
         return False
     return bool(
@@ -241,7 +296,7 @@ def evaluate_earnings_contraction(
     inputs: InflationGrowthRuleInputs,
     config: InflationGrowthRulesConfig,
 ) -> bool:
-    """v2 §2B line 2609 — strict negative aggregate forward-EPS revision."""
+    """v2 §2B lines 3104-3106 — strict negative aggregate forward-EPS revision."""
     if _any_nan(inputs.aggregate_forward_eps_revision_direction_4w):
         return False
     return bool(
@@ -268,6 +323,10 @@ def evaluate_rules(
         return "goldilocks"
     if evaluate_recovery_growth(inputs, config):
         return "recovery_growth"
+    if evaluate_reflation(inputs, config):
+        return "reflation"
+    if evaluate_stagflation_lite(inputs, config):
+        return "stagflation_lite"
     if evaluate_earnings_contraction(inputs, config):
         return "earnings_contraction"
     if evaluate_earnings_expansion(inputs, config):

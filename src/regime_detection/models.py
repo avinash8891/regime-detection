@@ -71,22 +71,21 @@ class EventCalendarEvidencePayload(EvidencePayload):
     """Dict-compatible payload for event-calendar rule evidence."""
 
 
-class MonetaryPressureEvidencePayload(EvidencePayload):
-    """Dict-compatible payload for monetary-pressure V2 rule evidence."""
-
-
 class VolumeLiquidityEvidencePayload(EvidencePayload):
     """Dict-compatible payload for volume/liquidity V2 rule evidence."""
 
 
 class TransitionRiskEvidencePayload(BaseModel):
-    """Dict-compatible typed evidence payload for transition-risk warnings."""
+    """Dict-compatible typed evidence payload for transition-risk decisions."""
 
     model_config = ConfigDict(extra="forbid")
 
-    warnings_active: list[str]
+    triggered_rules: list[str]
     stable_changed_today: bool
     days_since_axis_switch: int | None
+    axis_switch_count: int
+    recent_axis_switch_count: int
+    macro_event_labels: list[str] = Field(default_factory=list)
 
     def get(self, key: str, default: Any = None) -> Any:
         return self.model_dump().get(key, default)
@@ -261,9 +260,8 @@ class BreadthStateOutput(AxisOutput):
 class EventCalendarOutput(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    raw_label: str
-    stable_label: str
-    active_label: str
+    primary_label: str
+    matching_labels: tuple[str, ...]
     evidence: EventCalendarEvidencePayload
 
 
@@ -278,40 +276,7 @@ class NetworkFragilityOutput(AxisOutput):
 
     model_config = ConfigDict(extra="forbid")
 
-    mode: Literal["sector_cross_asset_22"] = "sector_cross_asset_22"
-
-
-class MonetaryPressureOutput(BaseModel):
-    """V1 structural-causal-state monetary pressure placeholder (v2 spec §2A).
-
-    This is the backward-compatible V1 struct surfaced on
-    ``StructuralCausalState.monetary_pressure``. The V2 monetary-pressure
-    classifier is ``MonetaryPressureV2Output``, emitted on
-    ``RegimeOutput.monetary_pressure_state`` with real labels from ~2021
-    when SOFR/IORB data is available.
-    """
-
-    model_config = ConfigDict(extra="forbid")
-
-    label: str
-    evidence: MonetaryPressureEvidencePayload
-    data_quality: DataQuality
-    classification_status: ClassificationStatus | None = None
-    classification_reason: str | None = None
-
-    @model_validator(mode="after")
-    def _populate_classification_metadata(self) -> "MonetaryPressureOutput":
-        if self.classification_status in {None, "no_rule_fired"}:
-            status, reason = derive_classification_status(
-                active_label=self.label,
-                raw_label=self.label,
-                stable_label=self.label,
-                data_quality=self.data_quality,
-                evidence=self.evidence,
-            )
-            self.classification_status = status
-            self.classification_reason = reason
-        return self
+    mode: Literal["sector_cross_asset_24"] = "sector_cross_asset_24"
 
 
 InflationGrowthLabel = Literal[
@@ -321,6 +286,8 @@ InflationGrowthLabel = Literal[
     "recession_scare",
     "risk_off_mild",
     "recovery_growth",
+    "reflation",
+    "stagflation_lite",
     "earnings_expansion",
     "earnings_contraction",
     "unknown",
@@ -385,7 +352,7 @@ class MonetaryPressureV2Output(AxisOutput):
 
     Three-tier label triple per the v2 axis pattern (raw/stable/active);
     ``evidence`` carries the per-day scalar rule inputs; ``data_quality``
-    follows the §2.8 NaN cold-start contract.
+    follows the V1 §2.7 NaN cold-start contract.
     """
 
     model_config = ConfigDict(extra="forbid")
@@ -458,7 +425,8 @@ class ClusterOutput(BaseModel):
     """v2 §6.2 clustering output. Diagnostic evidence; per-day
     cluster assignment + Mahalanobis distance to the assigned-cluster
     centroid. ``mapped_label`` is populated when an operator-curated
-    ``cluster_label_map.yaml`` is loaded (spec line 2842 + V2 §10);
+    ``cluster_label_map.yaml`` is loaded (v2 §6.2 mapping artifact at
+    spec line 4233 + V2 §10 at spec line 4359);
     None when the map is absent or still in candidate state.
     """
 
@@ -509,8 +477,8 @@ class HmmOutput(BaseModel):
 class ChangePointOutput(BaseModel):
     """v2 §4.6 + §6.3 BOCPD change-point detection output (evidence-only).
 
-    score: 5-session rolling max of BOCPD posterior P(run_length=0).
-    days_since_last_break: int sessions since last posterior >= break_threshold.
+    score: 5-session rolling max of recent short-run BOCPD posterior mass.
+    days_since_last_break: int sessions since last posterior mass >= break_threshold.
         None when no break has occurred in the trailing BOCPD window
         (cold-start) — omitted from the JSON wire via exclude_none.
     method: pinned to ``"BOCPD"`` (Adams-MacKay 2007).
@@ -535,46 +503,54 @@ class StructuralCausalState(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     event_calendar: EventCalendarOutput
-    monetary_pressure: MonetaryPressureOutput
 
 
-TransitionScoreInterpretation = Literal[
-    "stable", "weakening", "transition_warning", "high"
+TransitionRiskState = Literal[
+    "stable",
+    "watch",
+    "weakening",
+    "transition_warning",
+    "high_transition_risk",
+    "crisis",
+    "bear_stress",
+    "fragile_bull",
+    "recovery_attempt",
+    "insufficient_data",
 ]
 
 
 class TransitionRiskOutput(BaseModel):
     """Layer 4 transition risk output.
 
-    V1 emits `label` + `evidence` (named warnings per v1 §9). V2 §4 adds a
-    continuous composite `score`, its interpretation, and per-component
-    breakdown via the transition-score composer.
+    `state` is the final transition-risk decision selected from data quality,
+    component score, and hard-rule overrides. The score and explanation fields
+    explain the decision; there is no separate legacy label path.
     """
 
     model_config = ConfigDict(extra="forbid")
 
-    label: str
+    state: TransitionRiskState
     evidence: TransitionRiskEvidencePayload
-
-    # V2 §4.5 transition score augments (does not replace) V1 named warnings.
     score: float | None = Field(default=None, ge=0.0, le=1.0)
-    score_interpretation: TransitionScoreInterpretation | None = None
     score_components: dict[str, float] | None = None
+    primary_drivers: list[str] = Field(default_factory=list)
+    triggered_rules: list[str] = Field(default_factory=list)
+    data_quality: DataQuality
 
     # Symmetry with AxisOutput: surface a normalized classification status so
     # downstream audit/report tooling can distinguish "classified" from
     # "insufficient_history" cold-start rows without re-deriving from label.
-    # When `label == "unknown"` (any upstream axis carried `unknown`) we mark
-    # the row `insufficient_history`; everything else is `classified`.
-    # The V1 wire projection in `_strip_classification_metadata` removes this
-    # field when emitting the V1-frozen byte-identical shape.
+    # When state is insufficient_data we mark the row as insufficient_history;
+    # everything else is classified.
     classification_status: ClassificationStatus | None = None
 
     @model_validator(mode="after")
     def _populate_classification_status(self) -> "TransitionRiskOutput":
         if self.classification_status is None:
             self.classification_status = (
-                "insufficient_history" if self.label == "unknown" else "classified"
+                "insufficient_history"
+                if self.state == "insufficient_data"
+                else "classified"
             )
         return self
 
@@ -679,17 +655,22 @@ def _project_legacy_v1_wire_shapes(payload: dict[str, Any]) -> dict[str, Any]:
 
     _strip_classification_metadata(payload)
 
-    structural = payload.get("structural_causal_state")
-    if isinstance(structural, dict):
-        structural["monetary_pressure"] = {
-            "label": "unknown",
-            "reason": "not_implemented_v1",
-        }
     payload["network_fragility"] = {
         "label": "not_implemented_v1",
         "reason": "breadth_state_used_as_v1_fragility_proxy",
     }
+    _project_legacy_v1_transition_risk(payload)
     return payload
+
+
+def _project_legacy_v1_transition_risk(payload: dict[str, Any]) -> None:
+    transition_risk = payload.get("transition_risk")
+    if not isinstance(transition_risk, dict):
+        return
+
+    label = transition_risk.get("label", transition_risk.get("state"))
+    evidence = transition_risk.get("evidence", {})
+    payload["transition_risk"] = {"label": label, "evidence": evidence}
 
 
 def _strip_classification_metadata(value: Any) -> None:

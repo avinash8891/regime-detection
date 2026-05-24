@@ -103,14 +103,13 @@ That approved profile-ready manifest is the portable data contract for the 30d
 operator run. The committed lockfile at
 `manifests/runs/regime_engine_2026-05-17.yaml` is the **only valid
 `--manifest` argument for `profile_engine.py`, `run_v2_walkforward_gate.py`,
-and the `audit_layer2_30d` / `historical_walkforward` runners**. The sibling
-`manifests/runs/profile_ready_daily_ohlcv_762_2016_20260515.yaml` is an
-OHLCV-only lockfile retained for universe enumeration and ad-hoc per-symbol
-re-materialization; passing it to the engine runners is a contract error and
-will fail fast at manifest resolution. The merged manifest enumerates every
-input the runners read — the fixed 762-symbol OHLCV tree root, macro, PMI, PIT
-constituents, CPI vintages, FOMC/Powell text inputs, the US event calendar,
-and the Layer 1 sentiment extensions (`aaii_sentiment`,
+and the `audit_layer2_30d` / `historical_walkforward` runners**. The same
+merged manifest is also the source for universe enumeration and ad-hoc
+per-symbol OHLCV re-materialization; do not use a separate OHLCV
+manifest. It enumerates every input the runners read — the fixed 762-symbol
+OHLCV tree root, macro, PMI, PIT constituents, CPI vintages, FOMC/Powell text
+inputs, the US event calendar, and the Layer 1 sentiment extensions
+(`aaii_sentiment`,
 `sf_fed_news_sentiment`). A relative `storage_root` in that manifest is
 anchored to the manifest file's parent directory by
 `regime_data_fetch.materialization._resolve_store_root`, so the same lockfile
@@ -151,7 +150,7 @@ Operator caveats for the 2026-05-17 cut:
   that registry, so adding a new manifest input is a single-entry edit and
   cannot drift away from any runner.
 
-The approved constituent OHLCV lockfile currently points at
+The approved runtime manifest currently points OHLCV artifacts at
 `s3://autoresearch-platform/regime-detection/artifacts/zurich-v1/profile-ready-daily-ohlcv-762-2016-20260515/canonical/daily_ohlcv_762/`.
 It pins 1193 canonical symbol files through SHA-256 metadata and intentionally
 keeps raw data out of Git.
