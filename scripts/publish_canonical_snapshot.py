@@ -24,6 +24,7 @@ import logging
 import os
 import re
 import sys
+from collections import Counter
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Iterable
@@ -703,14 +704,12 @@ def main(argv: list[str] | None = None) -> int:
             ("UNVERIFIABLE", store_unverifiable),
         ):
             if bucket:
-                LOGGER.info("STORE_%s:", label)
+                LOGGER.info("STORE %s:", label)
                 LOGGER.info(_format_report(bucket, side="store"))
         return exit_code
 
     if args.dry_run:
         reports = run_dry_run(payload, data_root, args.only)
-        from collections import Counter
-
         status_counts = Counter(r.local_status for r in reports)
         LOGGER.info("dry-run summary: %s", dict(status_counts))
         non_match = [
