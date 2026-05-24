@@ -2,10 +2,12 @@ from __future__ import annotations
 
 import datetime as dt
 import json
+import sqlite3
 from pathlib import Path
 
 import pytest
 
+from regime_data_fetch.acquisition_store import AcquisitionStore
 from regime_data_fetch.event_calendar import GroupABuildResult
 from regime_data_fetch.event_calendar_models import EVENT_SOURCES
 from regime_data_fetch.event_calendar_reporting import (
@@ -36,6 +38,7 @@ from regime_data_fetch.event_sources.gpr_gdelt_fetchers import (
     _fetch_paged_json,
     fetch_acled_events as _fetch_acled_events,
     fetch_gdelt_daily_export,
+    fetch_optional_conflict_rows,
 )
 from regime_data_fetch.event_sources.validators_gpr_gdelt import (
     ACLEDSignalGenerator,
@@ -270,6 +273,117 @@ def test_conflict_pager_fails_loudly_on_short_page_before_total_count(
             result_key="data",
             extra_params={"app_identifier": "fixture"},
         )
+
+
+def test_optional_conflict_fetch_records_payload_and_filters_years(
+    tmp_path: Path,
+) -> None:
+    store = AcquisitionStore(tmp_path / "acquisition.db")
+    fetch_run = store.start_fetch_run(
+        fetch_type="group_b_conflict_fixture",
+        params={"start_year": 2022, "end_year": 2022},
+    )
+
+    def fake_fetcher(start_year: int, end_year: int) -> bytes:
+        assert (start_year, end_year) == (2022, 2022)
+        return b'{"data": "redacted-conflict-payload"}'
+
+    def parser(payload: str | bytes, *, source_url: str) -> list[dict[str, object]]:
+        assert payload == b'{"data": "redacted-conflict-payload"}'
+        assert source_url == "https://example.test/conflict"
+        return [
+            {
+                "date": dt.date(2021, 12, 31),
+                "event_count": 9,
+                "source_url": source_url,
+            },
+            {
+                "date": dt.date(2022, 2, 24),
+                "event_count": 42,
+                "source_url": source_url,
+            },
+            {
+                "date": dt.date(2023, 1, 1),
+                "event_count": 7,
+                "source_url": source_url,
+            },
+        ]
+
+    outcome = fetch_optional_conflict_rows(
+        fake_fetcher,
+        2022,
+        2022,
+        store=store,
+        run_id=fetch_run.run_id,
+        source_id="acled:events",
+        source_identifier="acled_fixture_2022",
+        source_url="https://example.test/conflict",
+        parser=parser,
+    )
+
+    assert outcome.rows == [
+        {
+            "date": dt.date(2022, 2, 24),
+            "event_count": 42,
+            "source_url": "https://example.test/conflict",
+        }
+    ]
+    assert outcome.status.source_id == "acled:events"
+    assert outcome.status.status == "ok"
+    assert outcome.status.rows == 1
+    assert outcome.status.attempted_fetches == 1
+    assert outcome.status.failed_fetches == 0
+    assert outcome.status.empty_payload is False
+
+    with sqlite3.connect(store.db_path) as conn:
+        artifacts = conn.execute(
+            """
+            SELECT source_name, artifact_kind, source_identifier, timezone,
+                   calendar_assumption, notes, content_text
+            FROM artifacts
+            """
+        ).fetchall()
+
+    assert artifacts == [
+        (
+            "acled:events",
+            "text",
+            "acled_fixture_2022",
+            "UTC",
+            "calendar day geopolitical signal",
+            "acled:events geopolitical event data",
+            '{"data": "redacted-conflict-payload"}',
+        )
+    ]
+
+
+def test_optional_conflict_fetch_marks_empty_parse_failure() -> None:
+    def fake_fetcher(_start_year: int, _end_year: int) -> str:
+        return "  "
+
+    def parser(_payload: str | bytes, *, source_url: str) -> list[dict[str, object]]:
+        assert source_url == "https://example.test/ucdp"
+        raise ValueError("empty fixture cannot be parsed")
+
+    outcome = fetch_optional_conflict_rows(
+        fake_fetcher,
+        2022,
+        2022,
+        store=None,
+        run_id=None,
+        source_id="ucdp:ged-candidate",
+        source_identifier="ucdp_empty_fixture",
+        source_url="https://example.test/ucdp",
+        parser=parser,
+    )
+
+    assert outcome.rows == []
+    assert outcome.status.source_id == "ucdp:ged-candidate"
+    assert outcome.status.status == "failed"
+    assert outcome.status.error == "empty fixture cannot be parsed"
+    assert outcome.status.attempted_fetches == 1
+    assert outcome.status.failed_fetches == 1
+    assert outcome.status.empty_payload is True
 
 
 def test_generator_includes_acled_and_ucdp_candidate_sources() -> None:

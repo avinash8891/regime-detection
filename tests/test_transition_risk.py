@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import date
+from types import SimpleNamespace
 from typing import get_type_hints
 
 import pandas as pd
@@ -8,7 +9,10 @@ import pytest
 from pydantic import ValidationError
 
 from regime_detection.config import load_default_regime_config
+from regime_detection.market_context import MarketContext
 from regime_detection.models import EventCalendarOutput, TransitionRiskOutput
+from regime_detection.axis_series import AxisSeriesBundle, AxisSeriesResult
+from regime_detection.feature_store import FeatureStore
 from regime_detection.transition_risk import (
     TransitionRuleFlags,
     compose_transition_risk_output,
@@ -19,6 +23,7 @@ from regime_detection.transition_risk_series import (
     TransitionScoreInputs,
     _build_transition_score_inputs_by_date,
     build_transition_risk_outputs_by_date,
+    build_transition_risk_series,
     build_transition_risk_history,
 )
 from regime_detection.transition_score import (
@@ -444,6 +449,126 @@ def test_transition_risk_state_debounces_soft_state_changes() -> None:
     )
 
     assert outputs[sessions[0]].state == "stable"
+    assert outputs[sessions[1]].state == "stable"
+    assert outputs[sessions[1]].triggered_rules == ["state_confirmation_pending"]
+    assert outputs[sessions[2]].state == "high_transition_risk"
+
+
+def _axis_result(sessions: list[date], label: str) -> AxisSeriesResult:
+    return AxisSeriesResult(
+        outputs_by_date={},
+        stable_labels_by_date={day: label for day in sessions},
+        active_labels_by_date={day: label for day in sessions},
+    )
+
+
+def _event_calendar(sessions: list[date]) -> dict[date, EventCalendarOutput]:
+    return {
+        day: EventCalendarOutput(
+            primary_label="normal_calendar",
+            matching_labels=("normal_calendar",),
+            evidence={},
+        )
+        for day in sessions
+    }
+
+
+def test_v1_transition_risk_fallback_preserves_flag_only_stable_state() -> None:
+    sessions = [date(2024, 1, 2), date(2024, 1, 3)]
+    index = pd.DatetimeIndex([pd.Timestamp(day) for day in sessions])
+    config = load_default_regime_config().model_copy(update={"transition_score": None})
+    context = MarketContext.model_construct(
+        end_date=sessions[-1],
+        config=config,
+        sessions=tuple(sessions),
+        spy_ohlcv=pd.DataFrame({"close": [100.0, 101.0]}, index=index),
+    )
+    feature_store = FeatureStore.model_construct(
+        spy_index=index,
+        sma_50=pd.Series([99.0, 100.0], index=index),
+    )
+    axis_bundle = AxisSeriesBundle(
+        trend_direction=_axis_result(sessions, "bull"),
+        trend_character=_axis_result(sessions, "trending"),
+        volatility_state=_axis_result(sessions, "low_vol"),
+        breadth_state=_axis_result(sessions, "healthy_breadth"),
+        event_calendar=_event_calendar(sessions),
+    )
+
+    outputs = build_transition_risk_series(
+        context=context,
+        feature_store=feature_store,
+        axis_bundle=axis_bundle,
+    )
+
+    assert outputs[sessions[-1]].state == "stable"
+    assert outputs[sessions[-1]].score is None
+    assert outputs[sessions[-1]].score_components is None
+    assert outputs[sessions[-1]].classification_status == "classified"
+
+
+def test_transition_risk_output_sessions_debounce_uses_full_session_history() -> None:
+    sessions = [date(2024, 1, 2), date(2024, 1, 3), date(2024, 1, 4)]
+    index = pd.DatetimeIndex([pd.Timestamp(day) for day in sessions])
+    config = load_default_regime_config()
+    context = MarketContext.model_construct(
+        end_date=sessions[-1],
+        config=config,
+        sessions=tuple(sessions),
+        spy_ohlcv=pd.DataFrame({"close": [100.0, 99.0, 98.0]}, index=index),
+    )
+    feature_store = FeatureStore.model_construct(
+        spy_index=index,
+        sma_50=pd.Series([100.0, 100.0, 100.0], index=index),
+        volatility_state_v2=SimpleNamespace(
+            realized_vol_short=pd.Series([10.0, 15.0, 15.0], index=index),
+            realized_vol_long=pd.Series([10.0, 10.0, 10.0], index=index),
+            gap_frequency_percentile_252d=pd.Series([0.0, 0.0, 0.0], index=index),
+            intraday_range_percentile_252d=pd.Series([0.0, 0.0, 0.0], index=index),
+        ),
+        breadth_state_v2=SimpleNamespace(
+            pct_above_50dma=pd.Series([0.5, 0.2, 0.2], index=index),
+        ),
+        network_fragility=SimpleNamespace(
+            avg_pairwise_corr_percentile_504d=pd.Series([0.0, 1.0, 1.0], index=index),
+            largest_eigenvalue_share_percentile_504d=pd.Series([0.0, 0.0, 0.0], index=index),
+            effective_rank_percentile_504d=pd.Series([0.0, 0.0, 0.0], index=index),
+            absorption_ratio_top3=pd.Series([0.0, 0.0, 0.0], index=index),
+        ),
+        trend_direction_v2=SimpleNamespace(
+            drawdown_252d=pd.Series([0.0, -0.15, -0.15], index=index),
+        ),
+        volume_liquidity_v2=None,
+        hmm=None,
+        change_point=None,
+        clustering=None,
+    )
+    classified_credit_stress = SimpleNamespace(
+        active_label="credit_stress",
+        classification_status="classified",
+    )
+    classified_liquidity_gap = SimpleNamespace(
+        active_label="liquidity_gap_behavior",
+        classification_status="classified",
+    )
+    axis_bundle = AxisSeriesBundle(
+        trend_direction=_axis_result(sessions, "sideways"),
+        trend_character=_axis_result(sessions, "trending"),
+        volatility_state=_axis_result(sessions, "normal_vol"),
+        breadth_state=_axis_result(sessions, "healthy_breadth"),
+        event_calendar=_event_calendar(sessions),
+        credit_funding_effective={day: classified_credit_stress for day in sessions},
+        volume_liquidity_state={day: classified_liquidity_gap for day in sessions},
+    )
+
+    outputs = build_transition_risk_series(
+        context=context,
+        feature_store=feature_store,
+        axis_bundle=axis_bundle,
+        output_sessions=sessions[1:],
+    )
+
+    assert list(outputs) == sessions[1:]
     assert outputs[sessions[1]].state == "stable"
     assert outputs[sessions[1]].triggered_rules == ["state_confirmation_pending"]
     assert outputs[sessions[2]].state == "high_transition_risk"

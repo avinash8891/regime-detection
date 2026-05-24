@@ -90,6 +90,55 @@ def test_run_local_daily_ohlcv_sqlite_import_records_rows_and_artifacts(
     ]
 
 
+def test_run_local_daily_ohlcv_sqlite_import_rejects_bad_source_schema(
+    tmp_path: Path,
+) -> None:
+    source_dir = tmp_path / FIXED_UNIVERSE_TREE_NAME
+    symbol_dir = source_dir / "symbol=AAPL"
+    symbol_dir.mkdir(parents=True)
+    parquet_path = symbol_dir / "part-0.parquet"
+    pd.DataFrame(
+        [
+            {
+                "date": "2026-05-05",
+                "open": 100.0,
+                "high": 101.0,
+                "low": 99.0,
+                "close": 100.5,
+                "volume": 1000,
+            }
+        ]
+    ).to_parquet(parquet_path, index=False)
+    acquisition_db = tmp_path / "acquisition.db"
+
+    try:
+        run_local_daily_ohlcv_sqlite_import(
+            out_dir=tmp_path,
+            source_dir=source_dir,
+            acquisition_db_path=acquisition_db,
+        )
+    except RuntimeError as exc:
+        assert "Unexpected OHLCV parquet columns" in str(exc)
+        assert str(parquet_path) in str(exc)
+        assert "adjusted_close" not in str(exc)
+    else:
+        raise AssertionError("Expected malformed OHLCV parquet to fail loudly")
+
+    with sqlite3.connect(acquisition_db) as conn:
+        fetch_runs = conn.execute(
+            "SELECT fetch_type, status, notes FROM fetch_runs"
+        ).fetchall()
+        artifacts = conn.execute("SELECT count(*) FROM artifacts").fetchone()[0]
+        outputs = conn.execute("SELECT count(*) FROM derived_outputs").fetchone()[0]
+
+    assert len(fetch_runs) == 1
+    assert fetch_runs[0][0] == "daily_ohlcv_local_sqlite"
+    assert fetch_runs[0][1] == "failed"
+    assert "Unexpected OHLCV parquet columns" in fetch_runs[0][2]
+    assert artifacts == 0
+    assert outputs == 0
+
+
 def test_run_alpaca_constituent_daily_ohlcv_fetch_materializes_profile_tree_and_sqlite(
     tmp_path: Path,
 ) -> None:

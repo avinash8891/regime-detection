@@ -20,7 +20,9 @@ from regime_data_fetch.aggregate_eps import (
     EPSWaybackSnapshot,
     append_weekly_eps_snapshot,
     compute_eps_revision_direction_4w,
+    download_spglobal_eps_workbook,
     fetch_wayback_cdx,
+    fetch_wayback_snapshot_bytes,
     parse_wayback_cdx_json,
     parse_sp500_eps_workbook,
     run_aggregate_eps_auto_fetch,
@@ -36,7 +38,23 @@ from regime_data_fetch.aggregate_eps_models import (
 FIXTURES = Path("tests/fixtures/raw/eps")
 
 
-def _eps_snapshot(observation_date: dt.date, forward_eps: float) -> AggregateEPSSnapshot:
+class _BytesResponse:
+    def __init__(self, payload: bytes) -> None:
+        self._payload = payload
+
+    def __enter__(self) -> "_BytesResponse":
+        return self
+
+    def __exit__(self, *_args: object) -> None:
+        return None
+
+    def read(self) -> bytes:
+        return self._payload
+
+
+def _eps_snapshot(
+    observation_date: dt.date, forward_eps: float
+) -> AggregateEPSSnapshot:
     """Build a realistic AggregateEPSSnapshot with the two fields the
     weekly accumulator consumes populated; the rest left at None (the
     accumulator only reads observation_date / observation_label /
@@ -114,7 +132,9 @@ def test_parse_sp500_eps_workbook_extracts_current_and_historical_snapshots() ->
     assert parsed.current_snapshot.forward_estimate_value == 310.24
     assert parsed.current_snapshot.estimate_2025e == 265.41
     assert parsed.current_snapshot.estimate_2026e == 310.24
-    assert parsed.current_snapshot.change_vs_prior_observation_2026e == 0.02362412564339467
+    assert (
+        parsed.current_snapshot.change_vs_prior_observation_2026e == 0.02362412564339467
+    )
     assert len(parsed.historical_snapshots) == 7
     assert parsed.historical_snapshots[0].observation_date == dt.date(2024, 3, 31)
     assert parsed.historical_snapshots[-1].observation_date == dt.date(2025, 9, 30)
@@ -133,13 +153,21 @@ def test_run_aggregate_eps_fetch_writes_parquet_and_report(tmp_path: Path) -> No
     assert report["current_snapshot"]["forward_estimate_label"] == "2026E"
     assert report["current_snapshot"]["forward_estimate_value"] == 310.24
     assert report["current_snapshot"]["estimate_2026e"] == 310.24
-    assert report["current_snapshot"]["change_vs_prior_observation_2026e"] == 0.02362412564339467
-    assert report["limitations"]["aggregate_forward_eps_revision_direction_4w_available"] is False
+    assert (
+        report["current_snapshot"]["change_vs_prior_observation_2026e"]
+        == 0.02362412564339467
+    )
+    assert (
+        report["limitations"]["aggregate_forward_eps_revision_direction_4w_available"]
+        is False
+    )
     assert report["paths"]["aggregate_eps_parquet"] == str(
         tmp_path / "aggregate_forward_eps" / "sp500_eps_snapshots.parquet"
     )
 
-    df = pd.read_parquet(tmp_path / "aggregate_forward_eps" / "sp500_eps_snapshots.parquet")
+    df = pd.read_parquet(
+        tmp_path / "aggregate_forward_eps" / "sp500_eps_snapshots.parquet"
+    )
     assert list(df.columns) == [
         "workbook_as_of_date",
         "observation_date",
@@ -192,14 +220,18 @@ def test_aggregate_eps_report_helper_matches_fetch_report(tmp_path: Path) -> Non
             compute_eps_revision_direction_4w(weekly_history).notna().any()
         ),
         parquet_path=tmp_path / "aggregate_forward_eps" / "sp500_eps_snapshots.parquet",
-        weekly_history_path=tmp_path / "aggregate_forward_eps" / WEEKLY_HISTORY_FILENAME,
+        weekly_history_path=tmp_path
+        / "aggregate_forward_eps"
+        / WEEKLY_HISTORY_FILENAME,
         acquisition_db_path=None,
     )
 
     assert report == expected
 
 
-def test_run_aggregate_eps_fetch_records_manual_workbook_in_sqlite(tmp_path: Path) -> None:
+def test_run_aggregate_eps_fetch_records_manual_workbook_in_sqlite(
+    tmp_path: Path,
+) -> None:
     acquisition_db = tmp_path / "acquisition.db"
 
     report_path = run_aggregate_eps_fetch(
@@ -212,12 +244,18 @@ def test_run_aggregate_eps_fetch_records_manual_workbook_in_sqlite(tmp_path: Pat
     assert report["paths"]["acquisition_db"] == str(acquisition_db)
 
     with sqlite3.connect(acquisition_db) as conn:
-        fetch_runs = conn.execute("SELECT fetch_type, status FROM fetch_runs").fetchall()
+        fetch_runs = conn.execute(
+            "SELECT fetch_type, status FROM fetch_runs"
+        ).fetchall()
         artifacts = conn.execute(
             "SELECT source_name, artifact_kind, source_identifier, local_path, content_size_bytes, content_encoding FROM artifacts"
         ).fetchall()
-        blob_sizes = conn.execute("SELECT length(content_bytes) FROM artifact_blobs").fetchall()
-        outputs = conn.execute("SELECT output_kind FROM derived_outputs ORDER BY output_id").fetchall()
+        blob_sizes = conn.execute(
+            "SELECT length(content_bytes) FROM artifact_blobs"
+        ).fetchall()
+        outputs = conn.execute(
+            "SELECT output_kind FROM derived_outputs ORDER BY output_id"
+        ).fetchall()
 
     assert fetch_runs == [("aggregate_eps", "ok")]
     assert artifacts == [
@@ -255,11 +293,15 @@ def test_run_aggregate_eps_auto_fetch_uses_browser_fallback_after_direct_downloa
     )
 
     report = json.loads(report_path.read_text())
-    assert report["source_path"] == str(tmp_path / "spglobal_eps" / "sp-500-eps-est.xlsx")
+    assert report["source_path"] == str(
+        tmp_path / "spglobal_eps" / "sp-500-eps-est.xlsx"
+    )
     assert report["counts"]["current_snapshots"] == 1
 
 
-def test_run_aggregate_eps_auto_fetch_has_no_disable_fallback_mode(tmp_path: Path) -> None:
+def test_run_aggregate_eps_auto_fetch_has_no_disable_fallback_mode(
+    tmp_path: Path,
+) -> None:
     workbook_bytes = (FIXTURES / "sp500_eps_est_fixture.xlsx").read_bytes()
     calls: list[str] = []
 
@@ -283,7 +325,139 @@ def test_run_aggregate_eps_auto_fetch_has_no_disable_fallback_mode(tmp_path: Pat
     assert calls == ["direct", "browser"]
 
 
-def test_parse_sp500_eps_workbook_raises_when_expected_sheet_is_missing(tmp_path: Path) -> None:
+def test_download_spglobal_eps_workbook_writes_payload_and_sends_browser_headers(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    payload = (FIXTURES / "sp500_eps_est_fixture.xlsx").read_bytes()
+    captured = {}
+
+    def fake_urlopen(req, *, timeout: int):
+        captured["url"] = req.full_url
+        captured["timeout"] = timeout
+        captured["user_agent"] = req.headers["User-agent"]
+        captured["accept"] = req.headers["Accept"]
+        return _BytesResponse(payload)
+
+    monkeypatch.setattr(
+        "regime_data_fetch.aggregate_eps.urllib.request.urlopen",
+        fake_urlopen,
+    )
+    out_path = tmp_path / "spglobal_eps" / "sp-500-eps-est.xlsx"
+
+    returned = download_spglobal_eps_workbook(
+        out_path=out_path,
+        source_url="https://example.test/sp-500-eps-est.xlsx",
+        timeout_seconds=13,
+    )
+
+    assert returned == out_path
+    assert out_path.read_bytes() == payload
+    assert captured["url"] == "https://example.test/sp-500-eps-est.xlsx"
+    assert captured["timeout"] == 13
+    assert "Chrome/126.0.0.0" in captured["user_agent"]
+    assert (
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        in captured["accept"]
+    )
+
+
+def test_download_spglobal_eps_workbook_403_raises_operator_instructions(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    def fake_urlopen(req, *, timeout: int):
+        raise urllib.error.HTTPError(
+            url=req.full_url,
+            code=403,
+            msg="Forbidden",
+            hdrs=None,
+            fp=None,
+        )
+
+    monkeypatch.setattr(
+        "regime_data_fetch.aggregate_eps.urllib.request.urlopen",
+        fake_urlopen,
+    )
+
+    with pytest.raises(
+        AggregateEPSFetchError, match="Akamai bot mitigation"
+    ) as excinfo:
+        download_spglobal_eps_workbook(
+            out_path=tmp_path / "spglobal_eps" / "sp-500-eps-est.xlsx",
+            source_url="https://example.test/sp-500-eps-est.xlsx",
+        )
+
+    message = str(excinfo.value)
+    assert "copy it to data/raw/spglobal_eps/sp-500-eps-est.xlsx" in message
+    assert "re-run --fetch eps-spglobal-auto" in message
+    assert isinstance(excinfo.value.__cause__, urllib.error.HTTPError)
+
+
+@pytest.mark.parametrize(
+    ("exc", "match"),
+    [
+        (
+            urllib.error.HTTPError(
+                url="https://example.test/sp-500-eps-est.xlsx",
+                code=404,
+                msg="Not Found",
+                hdrs=None,
+                fp=None,
+            ),
+            "Failed to download S&P EPS workbook",
+        ),
+        (
+            urllib.error.URLError("connection reset"),
+            "Failed to download S&P EPS workbook",
+        ),
+    ],
+)
+def test_download_spglobal_eps_workbook_wraps_non_403_network_errors(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    exc: Exception,
+    match: str,
+) -> None:
+    def fake_urlopen(_req, *, timeout: int):
+        raise exc
+
+    monkeypatch.setattr(
+        "regime_data_fetch.aggregate_eps.urllib.request.urlopen",
+        fake_urlopen,
+    )
+
+    with pytest.raises(AggregateEPSFetchError, match=match) as excinfo:
+        download_spglobal_eps_workbook(
+            out_path=tmp_path / "spglobal_eps" / "sp-500-eps-est.xlsx",
+            source_url="https://example.test/sp-500-eps-est.xlsx",
+        )
+
+    assert excinfo.value.__cause__ is exc
+
+
+def test_download_spglobal_eps_workbook_rejects_empty_payload(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.setattr(
+        "regime_data_fetch.aggregate_eps.urllib.request.urlopen",
+        lambda _req, *, timeout: _BytesResponse(b""),
+    )
+    out_path = tmp_path / "spglobal_eps" / "sp-500-eps-est.xlsx"
+
+    with pytest.raises(AggregateEPSFetchError, match="returned empty payload"):
+        download_spglobal_eps_workbook(
+            out_path=out_path,
+            source_url="https://example.test/sp-500-eps-est.xlsx",
+        )
+
+    assert not out_path.exists()
+
+
+def test_parse_sp500_eps_workbook_raises_when_expected_sheet_is_missing(
+    tmp_path: Path,
+) -> None:
     bad_path = tmp_path / "bad.xlsx"
     wb = Workbook()
     wb.active.title = "Sheet1"
@@ -297,7 +471,9 @@ def test_parse_sp500_eps_workbook_raises_when_expected_sheet_is_missing(tmp_path
         raise AssertionError("Expected AggregateEPSFetchError")
 
 
-def test_parse_sp500_eps_workbook_supports_legacy_xls_layout(monkeypatch, tmp_path: Path) -> None:
+def test_parse_sp500_eps_workbook_supports_legacy_xls_layout(
+    monkeypatch, tmp_path: Path
+) -> None:
     legacy_path = tmp_path / "SP500eps.xls"
     legacy_path.write_text("placeholder")
 
@@ -319,7 +495,9 @@ def test_parse_sp500_eps_workbook_supports_legacy_xls_layout(monkeypatch, tmp_pa
         ]
     )
 
-    monkeypatch.setattr("regime_data_fetch.aggregate_eps.pd.read_excel", lambda *args, **kwargs: frame)
+    monkeypatch.setattr(
+        "regime_data_fetch.aggregate_eps.pd.read_excel", lambda *args, **kwargs: frame
+    )
 
     parsed = parse_sp500_eps_workbook(legacy_path)
 
@@ -341,7 +519,10 @@ def test_parse_wayback_cdx_json_extracts_successful_workbook_snapshots() -> None
     ]
     """
 
-    rows = parse_wayback_cdx_json(cdx_json, target_url="https://www.spglobal.com/spdji/en/documents/additional-material/sp-500-eps-est.xlsx")
+    rows = parse_wayback_cdx_json(
+        cdx_json,
+        target_url="https://www.spglobal.com/spdji/en/documents/additional-material/sp-500-eps-est.xlsx",
+    )
 
     assert rows == [
         EPSWaybackSnapshot(
@@ -357,7 +538,9 @@ def test_parse_wayback_cdx_json_extracts_successful_workbook_snapshots() -> None
     ]
 
 
-def test_fetch_wayback_cdx_retries_transient_http_errors(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_fetch_wayback_cdx_retries_transient_http_errors(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     calls = {"count": 0}
 
     class _Response:
@@ -386,7 +569,9 @@ def test_fetch_wayback_cdx_retries_transient_http_errors(monkeypatch: pytest.Mon
         "regime_data_fetch.aggregate_eps.urllib.request.urlopen",
         fake_urlopen,
     )
-    monkeypatch.setattr("regime_data_fetch.aggregate_eps.time.sleep", lambda *_args: None)
+    monkeypatch.setattr(
+        "regime_data_fetch.aggregate_eps.time.sleep", lambda *_args: None
+    )
 
     payload = fetch_wayback_cdx(max_attempts=2, backoff_seconds=0)
 
@@ -394,7 +579,87 @@ def test_fetch_wayback_cdx_retries_transient_http_errors(monkeypatch: pytest.Mon
     assert payload == '[["timestamp","original","statuscode","mimetype"]]'
 
 
-def test_run_wayback_aggregate_eps_fetch_builds_timeline_from_snapshots(tmp_path: Path) -> None:
+def test_fetch_wayback_cdx_raises_after_repeated_url_errors(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    sleeps: list[float] = []
+
+    def fake_urlopen(*_args: object, **_kwargs: object):
+        raise urllib.error.URLError("Wayback unavailable")
+
+    monkeypatch.setattr(
+        "regime_data_fetch.aggregate_eps.urllib.request.urlopen",
+        fake_urlopen,
+    )
+    monkeypatch.setattr("regime_data_fetch.aggregate_eps.time.sleep", sleeps.append)
+
+    with pytest.raises(
+        AggregateEPSFetchError, match="Wayback CDX fetch failed after 3 attempts"
+    ) as excinfo:
+        fetch_wayback_cdx(max_attempts=3, backoff_seconds=2.0)
+
+    assert sleeps == [2.0, 4.0]
+    assert isinstance(excinfo.value.__cause__, urllib.error.URLError)
+
+
+def test_fetch_wayback_cdx_does_not_retry_non_transient_http_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls = {"count": 0}
+
+    def fake_urlopen(req, *, timeout: int):
+        calls["count"] += 1
+        raise urllib.error.HTTPError(
+            url=req.full_url,
+            code=404,
+            msg="Not Found",
+            hdrs=None,
+            fp=None,
+        )
+
+    monkeypatch.setattr(
+        "regime_data_fetch.aggregate_eps.urllib.request.urlopen",
+        fake_urlopen,
+    )
+
+    with pytest.raises(urllib.error.HTTPError):
+        fetch_wayback_cdx(max_attempts=3, backoff_seconds=0)
+
+    assert calls["count"] == 1
+
+
+def test_fetch_wayback_snapshot_bytes_reads_archive_url(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured = {}
+    snapshot = EPSWaybackSnapshot(
+        timestamp="20200110123456",
+        archive_url="https://web.archive.org/web/20200110123456if_/https://www.spglobal.com/spdji/en/documents/additional-material/sp-500-eps-est.xlsx",
+        snapshot_date=dt.date(2020, 1, 10),
+    )
+
+    def fake_urlopen(req, *, timeout: int):
+        captured["url"] = req.full_url
+        captured["timeout"] = timeout
+        captured["user_agent"] = req.headers["User-agent"]
+        return _BytesResponse(b"xlsx-bytes")
+
+    monkeypatch.setattr(
+        "regime_data_fetch.aggregate_eps.urllib.request.urlopen",
+        fake_urlopen,
+    )
+
+    assert fetch_wayback_snapshot_bytes(snapshot) == b"xlsx-bytes"
+    assert captured == {
+        "url": snapshot.archive_url,
+        "timeout": 60,
+        "user_agent": "Mozilla/5.0",
+    }
+
+
+def test_run_wayback_aggregate_eps_fetch_builds_timeline_from_snapshots(
+    tmp_path: Path,
+) -> None:
     workbook_bytes = (FIXTURES / "sp500_eps_est_fixture.xlsx").read_bytes()
 
     def fake_cdx_fetcher() -> str:
@@ -424,19 +689,27 @@ def test_run_wayback_aggregate_eps_fetch_builds_timeline_from_snapshots(tmp_path
     assert report["timeline_preview"][0]["forward_estimate_value"] == 310.24
     assert report["timeline_preview"][0]["estimate_2026e"] == 310.24
     assert report["paths"]["timeline_parquet"] == str(
-        tmp_path / "aggregate_forward_eps_wayback" / "sp500_eps_wayback_timeline.parquet"
+        tmp_path
+        / "aggregate_forward_eps_wayback"
+        / "sp500_eps_wayback_timeline.parquet"
     )
-    assert (tmp_path / "aggregate_forward_eps_wayback" / "snapshots" / "20200110123456.xlsx").exists()
-    assert (tmp_path / "aggregate_forward_eps_wayback" / "snapshots" / "20200214101010.xlsx").exists()
+    assert (
+        tmp_path / "aggregate_forward_eps_wayback" / "snapshots" / "20200110123456.xlsx"
+    ).exists()
+    assert (
+        tmp_path / "aggregate_forward_eps_wayback" / "snapshots" / "20200214101010.xlsx"
+    ).exists()
     assert report["counts"]["weekly_history_rows"] == 1
     assert report["paths"]["aggregate_eps_weekly_history_parquet"] == str(
         tmp_path / "aggregate_forward_eps" / WEEKLY_HISTORY_FILENAME
     )
-    assert (
-        tmp_path / "aggregate_forward_eps" / WEEKLY_HISTORY_FILENAME
-    ).exists()
+    assert (tmp_path / "aggregate_forward_eps" / WEEKLY_HISTORY_FILENAME).exists()
 
-    df = pd.read_parquet(tmp_path / "aggregate_forward_eps_wayback" / "sp500_eps_wayback_timeline.parquet")
+    df = pd.read_parquet(
+        tmp_path
+        / "aggregate_forward_eps_wayback"
+        / "sp500_eps_wayback_timeline.parquet"
+    )
     assert list(df.columns) == [
         "snapshot_date",
         "timestamp",
@@ -463,7 +736,9 @@ def test_run_wayback_aggregate_eps_fetch_builds_timeline_from_snapshots(tmp_path
     assert list(df["estimate_2026e"]) == [310.24, 310.24]
 
 
-def test_run_wayback_aggregate_eps_fetch_respects_bounds_and_writes_status_artifacts(tmp_path: Path) -> None:
+def test_run_wayback_aggregate_eps_fetch_respects_bounds_and_writes_status_artifacts(
+    tmp_path: Path,
+) -> None:
     workbook_bytes = (FIXTURES / "sp500_eps_est_fixture.xlsx").read_bytes()
 
     def fake_cdx_fetcher() -> str:
@@ -502,7 +777,9 @@ def test_run_wayback_aggregate_eps_fetch_respects_bounds_and_writes_status_artif
     assert report["counts"]["snapshots_failed"] == 0
     assert report["counts"]["timeline_rows"] == 1
 
-    index_path = tmp_path / "aggregate_forward_eps_wayback" / "wayback_snapshot_index.json"
+    index_path = (
+        tmp_path / "aggregate_forward_eps_wayback" / "wayback_snapshot_index.json"
+    )
     status_path = tmp_path / "aggregate_forward_eps_wayback" / "snapshot_status.jsonl"
     assert index_path.exists()
     assert status_path.exists()
@@ -515,7 +792,9 @@ def test_run_wayback_aggregate_eps_fetch_respects_bounds_and_writes_status_artif
     assert statuses[0]["snapshot_date"] == "2020-02-14"
 
 
-def test_run_wayback_aggregate_eps_fetch_records_sqlite_artifacts_and_outputs(tmp_path: Path) -> None:
+def test_run_wayback_aggregate_eps_fetch_records_sqlite_artifacts_and_outputs(
+    tmp_path: Path,
+) -> None:
     workbook_bytes = (FIXTURES / "sp500_eps_est_fixture.xlsx").read_bytes()
     acquisition_db = tmp_path / "acquisition.db"
 
@@ -542,7 +821,9 @@ def test_run_wayback_aggregate_eps_fetch_records_sqlite_artifacts_and_outputs(tm
     assert report["paths"]["acquisition_db"] == str(acquisition_db)
 
     with sqlite3.connect(acquisition_db) as conn:
-        fetch_runs = conn.execute("SELECT fetch_type, status FROM fetch_runs").fetchall()
+        fetch_runs = conn.execute(
+            "SELECT fetch_type, status FROM fetch_runs"
+        ).fetchall()
         artifacts = conn.execute(
             "SELECT source_name, artifact_kind, count(*) FROM artifacts GROUP BY source_name, artifact_kind ORDER BY source_name, artifact_kind"
         ).fetchall()
@@ -562,6 +843,57 @@ def test_run_wayback_aggregate_eps_fetch_records_sqlite_artifacts_and_outputs(tm
         ("aggregate_eps_weekly_history",),
         ("aggregate_eps_wayback_report",),
     ]
+
+
+def test_run_wayback_aggregate_eps_fetch_records_failed_status_when_all_snapshots_fail(
+    tmp_path: Path,
+) -> None:
+    acquisition_db = tmp_path / "acquisition.db"
+
+    def fake_cdx_fetcher() -> str:
+        return """
+        [
+          ["timestamp","original","statuscode","mimetype"],
+          ["20200110123456","https://www.spglobal.com/spdji/en/documents/additional-material/sp-500-eps-est.xlsx","200","application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"]
+        ]
+        """
+
+    def failing_snapshot_fetcher(snapshot: EPSWaybackSnapshot) -> bytes:
+        raise urllib.error.URLError(f"archive missing for {snapshot.timestamp}")
+
+    with pytest.raises(
+        AggregateEPSFetchError,
+        match="Wayback EPS backfill produced no parsed timeline rows",
+    ):
+        run_wayback_aggregate_eps_fetch(
+            out_dir=tmp_path,
+            acquisition_db_path=acquisition_db,
+            cdx_fetcher=fake_cdx_fetcher,
+            snapshot_fetcher=failing_snapshot_fetcher,
+        )
+
+    status_path = tmp_path / "aggregate_forward_eps_wayback" / "snapshot_status.jsonl"
+    statuses = [json.loads(line) for line in status_path.read_text().splitlines()]
+    assert statuses == [
+        {
+            "snapshot_date": "2020-01-10",
+            "timestamp": "20200110123456",
+            "archive_url": "https://web.archive.org/web/20200110123456if_/https://www.spglobal.com/spdji/en/documents/additional-material/sp-500-eps-est.xlsx",
+            "status": "failed",
+            "detail": "URLError: <urlopen error archive missing for 20200110123456>",
+        }
+    ]
+    with sqlite3.connect(acquisition_db) as conn:
+        fetch_runs = conn.execute(
+            "SELECT fetch_type, status, notes FROM fetch_runs"
+        ).fetchall()
+        outputs = conn.execute("SELECT output_kind FROM derived_outputs").fetchall()
+
+    assert len(fetch_runs) == 1
+    assert fetch_runs[0][0] == "aggregate_eps_wayback"
+    assert fetch_runs[0][1] == "failed"
+    assert "Wayback EPS backfill produced no parsed timeline rows" in fetch_runs[0][2]
+    assert outputs == []
 
 
 # ---------------------------------------------------------------------------
@@ -691,9 +1023,7 @@ def test_run_aggregate_eps_fetch_accumulates_weekly_history(tmp_path: Path) -> N
     report = json.loads(report_path.read_text())
     assert report["counts"]["weekly_history_rows"] == 1
     assert (
-        report["limitations"][
-            "aggregate_forward_eps_revision_direction_4w_available"
-        ]
+        report["limitations"]["aggregate_forward_eps_revision_direction_4w_available"]
         is False
     )
     weekly_path = tmp_path / "aggregate_forward_eps" / WEEKLY_HISTORY_FILENAME
