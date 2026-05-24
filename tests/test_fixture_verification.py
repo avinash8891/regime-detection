@@ -3,10 +3,13 @@ from __future__ import annotations
 from datetime import date
 from pathlib import Path
 from types import SimpleNamespace
+from typing import get_args
 
 import pandas as pd
 import pytest
 import yaml
+
+from regime_detection.models import TransitionRiskState
 
 
 def test_fixture_verification_legacy_path_fails_loudly_without_v2_transition_inputs() -> None:
@@ -112,3 +115,33 @@ def test_fixture_verification_report_includes_rich_transition_evidence(monkeypat
         "triggered_rules": ["post_switch_cooldown"],
         "data_quality": {"status": "ok"},
     }
+
+
+def test_fixture_transition_risk_expectations_use_current_state_names() -> None:
+    repo_root = Path(__file__).resolve().parents[1]
+    derived_path = repo_root / "tests" / "fixtures" / "derived" / "golden_dates.yaml"
+    doc = yaml.safe_load(derived_path.read_text())
+    valid_states = set(get_args(TransitionRiskState))
+
+    import importlib.util
+
+    script_path = repo_root / "scripts" / "verify_fixtures.py"
+    spec = importlib.util.spec_from_file_location("verify_fixtures", script_path)
+    assert spec and spec.loader
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)  # type: ignore[attr-defined]
+
+    labels: list[str] = []
+    labels.extend(
+        row["expected"]["transition_risk"]
+        for row in doc.get("rows", [])
+        if "transition_risk" in row.get("expected", {})
+    )
+    labels.extend(
+        item["intent"]["transition_risk"]
+        for item in mod.INTENTS
+        if "transition_risk" in item.get("intent", {})
+    )
+
+    assert labels
+    assert sorted(set(labels) - valid_states) == []

@@ -347,6 +347,29 @@ def test_transition_score_inputs_event_calendar_labels_are_closed_type() -> None
         )
 
 
+def test_transition_score_missing_optional_model_evidence_degrades_component() -> None:
+    cfg = load_default_regime_config().transition_score
+    assert cfg is not None
+
+    score = compose_transition_score_for_session(
+        realized_vol_short=12.0,
+        realized_vol_long=10.0,
+        pct_above_50dma=0.45,
+        avg_pairwise_corr_percentile_504d=0.60,
+        drawdown_252d=-0.10,
+        event_calendar_labels=("normal_calendar",),
+        credit_funding_label="credit_calm",
+        volume_liquidity_label="normal_volume",
+        config=cfg,
+    )
+
+    assert score.score is not None
+    assert score.components is not None
+    assert "model_instability" not in score.components
+    assert score.missing_components == ("model_instability",)
+    assert score.component_weight_coverage == pytest.approx(0.92)
+
+
 def test_transition_risk_state_debounces_soft_state_changes() -> None:
     cfg = load_default_regime_config().transition_score
     assert cfg is not None

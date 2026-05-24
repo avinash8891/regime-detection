@@ -169,12 +169,20 @@ def test_core3_v1_regime_output_keeps_legacy_placeholder_wire_shapes(
     engine = RegimeEngine(
         config_path=Path("src/regime_detection/configs/core3-v1.0.0.yaml")
     )
-    with pytest.raises(RuntimeError, match="context.config.transition_score"):
-        engine.classify(
-            as_of_date=as_of,
-            market_data=market_df_for_asof(as_of),
-            event_calendar=event_calendar_df,
-        )
+    out = engine.classify(
+        as_of_date=as_of,
+        market_data=market_df_for_asof(as_of),
+        event_calendar=event_calendar_df,
+    )
+    payload = out.model_dump()
+
+    assert payload["network_fragility"] == {
+        "label": "not_implemented_v1",
+        "reason": "breadth_state_used_as_v1_fragility_proxy",
+    }
+    assert "label" in payload["transition_risk"]
+    assert "state" not in payload["transition_risk"]
+    assert set(payload["transition_risk"]) == {"label", "evidence"}
 
 
 def test_runtime_evidence_fields_use_named_payloads() -> None:

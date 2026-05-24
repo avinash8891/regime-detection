@@ -475,7 +475,7 @@ def test_engine_classify_window_raises_when_monetary_pressure_state_is_absent(
 
 
 def test_engine_classify_window_monetary_pressure_state_none_in_pure_v1_mode():
-    """V1 config lacks transition_score, so the default timeline fails loudly."""
+    """V1 config omits the monetary-pressure V2 output without aborting."""
     from pathlib import Path
     from regime_detection.config import load_regime_config
 
@@ -490,14 +490,16 @@ def test_engine_classify_window_monetary_pressure_state_none_in_pure_v1_mode():
     assert v1_config.monetary_pressure_state is None
     index = _bdate_index(periods=400)
     market_data = _synthetic_market_data(index)
-    with pytest.raises(RuntimeError, match="context.config.transition_score"):
-        RegimeEngine().classify_window(
-            end_date=_LAST_SESSION.date(),
-            market_data=market_data,
-            lookback_days=20,
-            event_calendar=pd.DataFrame(columns=["date", "market", "type", "importance"]),
-            config=v1_config,
-        )
+    timeline = RegimeEngine().classify_window(
+        end_date=_LAST_SESSION.date(),
+        market_data=market_data,
+        lookback_days=20,
+        event_calendar=pd.DataFrame(columns=["date", "market", "type", "importance"]),
+        config=v1_config,
+    )
+
+    assert timeline.outputs
+    assert {out.monetary_pressure_state for out in timeline.outputs} == {None}
 
 
 # =============================================================================

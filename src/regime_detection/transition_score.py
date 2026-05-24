@@ -226,17 +226,6 @@ def compose_transition_score_for_session(
     macro_event_labels = _macro_event_labels(event_calendar_labels)
     macro_event = 1.0 if macro_event_labels else 0.0
 
-    required_model_evidence = {
-        "hmm_top_state_prob_now": hmm_top_state_prob_now,
-        "hmm_top_state_prob_5d_ago": hmm_top_state_prob_5d_ago,
-        "change_point_score": change_point_score,
-        "cluster_id_now": cluster_id_now,
-        "cluster_id_5d_ago": cluster_id_5d_ago,
-    }
-    for name, value in required_model_evidence.items():
-        if value is None:
-            raise ValueError(f"transition_score missing required model evidence: {name}")
-
     hmm_shift = None
     hmm_now = _optional_number(hmm_top_state_prob_now)
     hmm_5d = _optional_number(hmm_top_state_prob_5d_ago)

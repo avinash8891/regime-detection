@@ -15,7 +15,7 @@ rows:
     trend_character: trending
     volatility_state: low_vol
     breadth_state: neutral_breadth
-    transition_risk: post_switch_cooldown
+    transition_risk: watch
   predicate_evaluations:
     trend_direction:
       rule_evidence:
@@ -118,7 +118,7 @@ rows:
     trend_character: transition
     volatility_state: crisis_vol
     breadth_state: weak_breadth
-    transition_risk: crisis_override
+    transition_risk: crisis
   predicate_evaluations:
     trend_direction:
       rule_evidence:
@@ -206,7 +206,7 @@ rows:
       deescalation_days: 2
     transition_risk:
       triggered_rules:
-      - crisis_override
+      - crisis
       stable_changed_today: true
       days_since_axis_switch: 0
       axis_switch_count: 0
@@ -221,7 +221,7 @@ rows:
     trend_character: trending
     volatility_state: high_vol
     breadth_state: weak_breadth
-    transition_risk: bear_stress_warning
+    transition_risk: bear_stress
   predicate_evaluations:
     trend_direction:
       rule_evidence:
@@ -309,7 +309,7 @@ rows:
       deescalation_days: 2
     transition_risk:
       triggered_rules:
-      - bear_stress_warning
+      - bear_stress
       - post_switch_cooldown
       stable_changed_today: true
       days_since_axis_switch: 0
@@ -325,7 +325,7 @@ rows:
     trend_character: range_bound
     volatility_state: normal_vol
     breadth_state: healthy_breadth
-    transition_risk: post_switch_cooldown
+    transition_risk: watch
   predicate_evaluations:
     trend_direction:
       rule_evidence:
@@ -428,7 +428,7 @@ rows:
     trend_character: trending
     volatility_state: crisis_vol
     breadth_state: weak_breadth
-    transition_risk: crisis_override
+    transition_risk: crisis
   predicate_evaluations:
     trend_direction:
       rule_evidence:
@@ -516,8 +516,8 @@ rows:
       deescalation_days: 2
     transition_risk:
       triggered_rules:
-      - crisis_override
-      - bear_stress_warning
+      - crisis
+      - bear_stress
       stable_changed_today: true
       days_since_axis_switch: 0
       axis_switch_count: 0
@@ -532,7 +532,7 @@ rows:
     trend_character: recovery_attempt
     volatility_state: high_vol
     breadth_state: weak_breadth
-    transition_risk: bear_stress_warning
+    transition_risk: bear_stress
   predicate_evaluations:
     trend_direction:
       rule_evidence:
@@ -620,7 +620,7 @@ rows:
       deescalation_days: 2
     transition_risk:
       triggered_rules:
-      - bear_stress_warning
+      - bear_stress
       - recovery_attempt
       - post_switch_cooldown
       stable_changed_today: true
@@ -637,7 +637,7 @@ rows:
     trend_character: trending
     volatility_state: low_vol
     breadth_state: weak_breadth
-    transition_risk: post_switch_cooldown
+    transition_risk: watch
   predicate_evaluations:
     trend_direction:
       rule_evidence:
@@ -740,7 +740,7 @@ rows:
     trend_character: trending
     volatility_state: crisis_vol
     breadth_state: weak_breadth
-    transition_risk: crisis_override
+    transition_risk: crisis
   predicate_evaluations:
     trend_direction:
       rule_evidence:
@@ -828,8 +828,8 @@ rows:
       deescalation_days: 2
     transition_risk:
       triggered_rules:
-      - crisis_override
-      - bear_stress_warning
+      - crisis
+      - bear_stress
       stable_changed_today: true
       days_since_axis_switch: 0
       axis_switch_count: 0
@@ -844,7 +844,7 @@ rows:
     trend_character: trending
     volatility_state: high_vol
     breadth_state: weak_breadth
-    transition_risk: bear_stress_warning
+    transition_risk: bear_stress
   predicate_evaluations:
     trend_direction:
       rule_evidence:
@@ -932,7 +932,7 @@ rows:
       deescalation_days: 2
     transition_risk:
       triggered_rules:
-      - bear_stress_warning
+      - bear_stress
       - post_switch_cooldown
       stable_changed_today: true
       days_since_axis_switch: 0
@@ -948,7 +948,7 @@ rows:
     trend_character: trending
     volatility_state: low_vol
     breadth_state: healthy_breadth
-    transition_risk: post_switch_cooldown
+    transition_risk: watch
   predicate_evaluations:
     trend_direction:
       rule_evidence:

@@ -232,12 +232,15 @@ def test_compose_transition_score_exposes_only_present_components(
         "cluster_id_5d_ago",
     ],
 )
-def test_compose_transition_score_requires_model_evidence_layer_inputs(
+def test_compose_transition_score_accepts_partial_model_evidence_layer_inputs(
     transition_score_config: TransitionScoreConfig,
     missing_field: str,
 ) -> None:
-    with pytest.raises(ValueError, match=f"transition_score missing required model evidence: {missing_field}"):
-        _compose(transition_score_config, **{missing_field: None})
+    out = _compose(transition_score_config, **{missing_field: None})
+
+    assert out.score is not None
+    assert out.components is not None
+    assert out.components["model_instability"] == pytest.approx(0.0)
 
 
 def test_compose_transition_score_returns_insufficient_when_many_components_missing(

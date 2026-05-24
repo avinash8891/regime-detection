@@ -17,7 +17,7 @@ rows:
     trend_character: trending
     volatility_state: low_vol
     breadth_state: neutral_breadth
-    transition_risk: post_switch_cooldown
+    transition_risk: watch
 - intent_id: volmageddon_crisis
   intent_date: '2018-02-09'
   as_of_date: '2018-02-08'
@@ -26,7 +26,7 @@ rows:
     trend_character: trending
     volatility_state: crisis_vol
     breadth_state: weak_breadth
-    transition_risk: crisis_override
+    transition_risk: crisis
 - intent_id: dec2018_bear_stress
   intent_date: '2018-12-20'
   as_of_date: '2018-12-11'
@@ -35,7 +35,7 @@ rows:
     trend_character: trending
     volatility_state: high_vol
     breadth_state: weak_breadth
-    transition_risk: bear_stress_warning
+    transition_risk: bear_stress
 - intent_id: mid2019_bull_normal
   intent_date: '2019-06-28'
   as_of_date: '2019-09-12'
@@ -44,7 +44,7 @@ rows:
     trend_character: range_bound
     volatility_state: normal_vol
     breadth_state: healthy_breadth
-    transition_risk: post_switch_cooldown
+    transition_risk: watch
 - intent_id: covid_crash_crisis
   intent_date: '2020-03-30'
   as_of_date: '2020-03-30'
@@ -53,7 +53,7 @@ rows:
     trend_character: trending
     volatility_state: crisis_vol
     breadth_state: weak_breadth
-    transition_risk: crisis_override
+    transition_risk: crisis
 - intent_id: covid_recovery_attempt
   intent_date: '2020-04-17'
   as_of_date: '2020-04-17'
@@ -62,7 +62,7 @@ rows:
     trend_character: recovery_attempt
     volatility_state: high_vol
     breadth_state: weak_breadth
-    transition_risk: bear_stress_warning
+    transition_risk: bear_stress
 - intent_id: late2021_bull_lowvol
   intent_date: '2021-11-15'
   as_of_date: '2021-11-01'
@@ -71,7 +71,7 @@ rows:
     trend_character: trending
     volatility_state: low_vol
     breadth_state: weak_breadth
-    transition_risk: post_switch_cooldown
+    transition_risk: watch
 - intent_id: jun2022_bear_crisis
   intent_date: '2022-06-29'
   as_of_date: '2022-06-15'
@@ -80,7 +80,7 @@ rows:
     trend_character: range_bound
     volatility_state: crisis_vol
     breadth_state: weak_breadth
-    transition_risk: crisis_override
+    transition_risk: crisis
 - intent_id: jul2022_bear_stress
   intent_date: '2022-07-12'
   as_of_date: '2022-07-06'
@@ -89,7 +89,7 @@ rows:
     trend_character: trending
     volatility_state: high_vol
     breadth_state: weak_breadth
-    transition_risk: bear_stress_warning
+    transition_risk: bear_stress
 - intent_id: early2024_bull_lowvol
   intent_date: '2023-12-19'
   as_of_date: '2023-12-05'
@@ -98,4 +98,4 @@ rows:
     trend_character: trending
     volatility_state: low_vol
     breadth_state: healthy_breadth
-    transition_risk: post_switch_cooldown
+    transition_risk: watch

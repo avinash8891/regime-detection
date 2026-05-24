@@ -7,7 +7,7 @@ import numpy as np
 import pandas as pd
 
 from regime_detection.axis_series import AxisSeriesBundle
-from regime_detection.config import TransitionScoreConfig
+from regime_detection.config import TransitionScoreConfig, load_default_regime_config
 from regime_detection.event_calendar_labels import (
     EVENT_CALENDAR_LABEL_SET,
     EventCalendarLabel,
@@ -99,6 +99,36 @@ def build_transition_risk_series(
     network_fragility = feature_store.network_fragility
     trend_v2 = feature_store.trend_direction_v2
     transition_score_config = context.config.transition_score
+    if transition_score_config is None:
+        transition_score_config = _legacy_transition_score_config()
+        transition_score_inputs_by_date = _build_legacy_transition_score_inputs_by_date(
+            sessions=sessions,
+            event_calendar=axis_bundle.event_calendar,
+            close=close_series,
+            sma_50=sma_50_series,
+        )
+        return build_transition_risk_outputs_by_date(
+            sessions=scored_sessions,
+            trend_direction_active_by_date=axis_bundle.trend_direction.active_labels_by_date,
+            trend_character_active_by_date=axis_bundle.trend_character.active_labels_by_date,
+            volatility_state_active_by_date=axis_bundle.volatility_state.active_labels_by_date,
+            breadth_state_active_by_date=axis_bundle.breadth_state.active_labels_by_date,
+            close_by_date={
+                day: float(value)
+                for day, value in zip(sessions, close_series.to_numpy(), strict=True)
+            },
+            sma_50_by_date={
+                day: None if pd.isna(value) else float(value)
+                for day, value in zip(sessions, sma_50_series.to_numpy(), strict=True)
+            },
+            history=history,
+            transition_score_inputs_by_date=transition_score_inputs_by_date,
+            transition_score_config=transition_score_config,
+            cooldown_window_days=transition_score_config.cooldown_window_days,
+            state_confirmation_days=transition_score_config.state_confirmation_days,
+            initial_active_state=transition_score_config.initial_active_state,
+        )
+
     missing = []
     if volatility_v2 is None:
         missing.append("feature_store.volatility_state_v2")
@@ -110,8 +140,6 @@ def build_transition_risk_series(
         missing.append("feature_store.network_fragility")
     if trend_v2 is None:
         missing.append("feature_store.trend_direction_v2")
-    if transition_score_config is None:
-        missing.append("context.config.transition_score")
     if missing:
         raise RuntimeError(
             "transition_risk requires score inputs; missing: "
@@ -181,6 +209,39 @@ def build_transition_risk_series(
         state_confirmation_days=transition_score_config.state_confirmation_days,
         initial_active_state=transition_score_config.initial_active_state,
     )
+
+
+def _legacy_transition_score_config() -> TransitionScoreConfig:
+    config = load_default_regime_config().transition_score
+    if config is None:
+        raise RuntimeError("legacy transition_risk fallback requires default transition_score config")
+    return config
+
+
+def _build_legacy_transition_score_inputs_by_date(
+    *,
+    sessions: list[date],
+    event_calendar: dict[date, EventCalendarOutput],
+    close: pd.Series,
+    sma_50: pd.Series,
+) -> dict[date, TransitionScoreInputs]:
+    session_index = pd.DatetimeIndex([pd.Timestamp(d) for d in sessions])
+    close_values = close.reindex(session_index).to_numpy(dtype=float, na_value=float("nan"))
+    sma50_values = sma_50.reindex(session_index).to_numpy(dtype=float, na_value=float("nan"))
+
+    return {
+        day: TransitionScoreInputs(
+            realized_vol_short=float("nan"),
+            realized_vol_long=float("nan"),
+            pct_above_50dma=float("nan"),
+            avg_pairwise_corr_percentile_504d=float("nan"),
+            drawdown_252d=float("nan"),
+            event_calendar_labels=event_calendar[day].matching_labels,
+            spy_close=_optional_float(close_values[i]),
+            spy_sma_50=_optional_float(sma50_values[i]),
+        )
+        for i, day in enumerate(sessions)
+    }
 
 
 def _build_transition_score_inputs_by_date(

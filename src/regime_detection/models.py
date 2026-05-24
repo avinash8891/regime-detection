@@ -659,7 +659,18 @@ def _project_legacy_v1_wire_shapes(payload: dict[str, Any]) -> dict[str, Any]:
         "label": "not_implemented_v1",
         "reason": "breadth_state_used_as_v1_fragility_proxy",
     }
+    _project_legacy_v1_transition_risk(payload)
     return payload
+
+
+def _project_legacy_v1_transition_risk(payload: dict[str, Any]) -> None:
+    transition_risk = payload.get("transition_risk")
+    if not isinstance(transition_risk, dict):
+        return
+
+    label = transition_risk.get("label", transition_risk.get("state"))
+    evidence = transition_risk.get("evidence", {})
+    payload["transition_risk"] = {"label": label, "evidence": evidence}
 
 
 def _strip_classification_metadata(value: Any) -> None:

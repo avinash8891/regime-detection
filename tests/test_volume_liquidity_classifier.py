@@ -12,7 +12,6 @@ from __future__ import annotations
 
 import numpy as np
 import pandas as pd
-import pytest
 
 from regime_detection.axis_series import build_volume_liquidity_axis_series
 from regime_detection.calendar import nyse_sessions_between
@@ -373,7 +372,7 @@ def test_engine_classify_window_emits_real_volume_liquidity_labels(
 
 
 def test_engine_classify_window_volume_liquidity_state_none_in_pure_v1_mode():
-    """V1 config lacks transition_score, so the default timeline fails loudly."""
+    """V1 config omits volume-liquidity V2 outputs without aborting."""
     from pathlib import Path
 
     from regime_detection.config import load_regime_config
@@ -390,11 +389,13 @@ def test_engine_classify_window_volume_liquidity_state_none_in_pure_v1_mode():
 
     index = _bdate_index()
     market_data = _synthetic_spy_market_data(index=index)
-    with pytest.raises(RuntimeError, match="context.config.transition_score"):
-        RegimeEngine().classify_window(
-            end_date=_LAST_SESSION.date(),
-            market_data=market_data,
-            lookback_days=20,
-            event_calendar=pd.DataFrame(columns=["date", "market", "type", "importance"]),
-            config=v1_config,
-        )
+    timeline = RegimeEngine().classify_window(
+        end_date=_LAST_SESSION.date(),
+        market_data=market_data,
+        lookback_days=20,
+        event_calendar=pd.DataFrame(columns=["date", "market", "type", "importance"]),
+        config=v1_config,
+    )
+
+    assert timeline.outputs
+    assert {out.volume_liquidity_state for out in timeline.outputs} == {None}
