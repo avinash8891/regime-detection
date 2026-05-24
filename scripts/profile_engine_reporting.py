@@ -489,23 +489,33 @@ def _label_summary_for_fields(
 ) -> dict[str, dict[str, dict[str, int]]]:
     summary: dict[str, dict[str, dict[str, int]]] = {}
     for field_name in field_names:
+        raw_counts: Counter[str] = Counter()
+        stable_counts: Counter[str] = Counter()
         active_counts: Counter[str] = Counter()
         reported_counts: Counter[str] = Counter()
         status_counts: Counter[str] = Counter()
         for output in outputs:
             value = getattr(output, field_name, None)
             if value is None:
+                raw_counts["missing"] += 1
+                stable_counts["missing"] += 1
                 active_counts["missing"] += 1
                 reported_counts["missing"] += 1
                 status_counts["missing"] += 1
                 continue
+            raw_label = getattr(value, "raw_label", None)
+            stable_label = getattr(value, "stable_label", None)
             active_label = getattr(value, "active_label", getattr(value, "label", None))
+            raw_counts[str(raw_label or "missing")] += 1
+            stable_counts[str(stable_label or "missing")] += 1
             active_counts[str(active_label or "missing")] += 1
             reported_counts[str(_reporting_label(value) or "missing")] += 1
             status_counts[
                 str(getattr(value, "classification_status", "classified") or "missing")
             ] += 1
         summary[field_name] = {
+            "raw": _counter_dict(raw_counts),
+            "stable": _counter_dict(stable_counts),
             "active": _counter_dict(active_counts),
             "reported": _counter_dict(reported_counts),
             "status": _counter_dict(status_counts),

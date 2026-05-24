@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import Literal
 
 import yaml
+from pydantic import model_validator
 
 from regime_detection import __version__
 
@@ -154,6 +155,19 @@ class RegimeConfig(StrictBaseModel):
     cohort_routing: CohortRoutingConfig | None = None  # v2 §5.1
     strategy_family_constraints: StrategyFamilyConstraintsConfig | None = None  # v2 §5.2
     strategy_event_modifiers: StrategyEventModifiersConfig | None = None
+
+    @model_validator(mode="after")
+    def _validate_v2_cross_section_dependencies(self) -> "RegimeConfig":
+        if (
+            self.config_version == "core3-v2.0.0"
+            and self.volume_liquidity_state is not None
+            and self.volatility_state_v2 is None
+        ):
+            raise ValueError(
+                "volume_liquidity_state requires volatility_state_v2 because "
+                "liquidity_gap_behavior consumes volatility-v2 gap/range percentiles"
+            )
+        return self
 
 
 def load_regime_config(path: str | Path) -> RegimeConfig:

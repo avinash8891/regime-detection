@@ -320,6 +320,25 @@ def test_v2_config_rejects_unknown_top_level_key(tmp_path: Path) -> None:
         load_regime_config(bad_yaml)
 
 
+def test_v2_config_rejects_volume_liquidity_without_volatility_v2(
+    tmp_path: Path,
+) -> None:
+    pkg_file = importlib.resources.files("regime_detection").joinpath(
+        "configs/core3-v2.0.0.yaml"
+    )
+    data = yaml.safe_load(pkg_file.read_text(encoding="utf-8"))
+    data["volatility_state_v2"] = None
+
+    bad_yaml = tmp_path / "core3-v2.0.0-without-volatility-v2.yaml"
+    bad_yaml.write_text(yaml.safe_dump(data), encoding="utf-8")
+
+    with pytest.raises(
+        ValidationError,
+        match="volume_liquidity_state requires volatility_state_v2",
+    ):
+        load_regime_config(bad_yaml)
+
+
 def test_v1_yaml_still_loads_with_v1_config_version() -> None:
     cfg = load_regime_config(_v1_yaml_path())
     assert cfg.config_version == "core3-v1.0.0"

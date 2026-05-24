@@ -12,6 +12,7 @@ from conftest import (
     load_profile_engine_module,
     write_profile_engine_manifest as _write_profile_manifest,
 )
+from scripts import profile_engine_reporting
 
 profile_engine = load_profile_engine_module()
 
@@ -536,6 +537,44 @@ def test_profile_reporting_label_uses_granular_status_for_unknown() -> None:
     )
 
     assert profile_engine._reporting_label(output) == "no_rule_fired"
+
+
+def test_profile_label_summary_includes_raw_stable_active_counts() -> None:
+    outputs = [
+        SimpleNamespace(
+            volume_liquidity_state=SimpleNamespace(
+                raw_label="normal_volume",
+                stable_label="liquidity_gap_behavior",
+                active_label="liquidity_gap_behavior",
+                classification_status="classified",
+            )
+        ),
+        SimpleNamespace(
+            volume_liquidity_state=SimpleNamespace(
+                raw_label="panic_volume",
+                stable_label="panic_volume",
+                active_label="panic_volume",
+                classification_status="classified",
+            )
+        ),
+    ]
+
+    summary = profile_engine_reporting._label_summary_for_fields(
+        outputs, ["volume_liquidity_state"]
+    )
+
+    assert summary["volume_liquidity_state"]["raw"] == {
+        "normal_volume": 1,
+        "panic_volume": 1,
+    }
+    assert summary["volume_liquidity_state"]["stable"] == {
+        "liquidity_gap_behavior": 1,
+        "panic_volume": 1,
+    }
+    assert summary["volume_liquidity_state"]["active"] == {
+        "liquidity_gap_behavior": 1,
+        "panic_volume": 1,
+    }
 
 
 def test_profile_trailing_status_reports_no_rule_fired_not_unknown() -> None:
