@@ -140,7 +140,9 @@ def test_fetch_daily_bars_yahoo_chart_sends_browser_headers_and_timeout() -> Non
     ]
 
 
-def test_fetch_daily_bars_yahoo_chart_marks_empty_chart_result_as_missing_symbol() -> None:
+def test_fetch_daily_bars_yahoo_chart_marks_empty_chart_result_as_missing_symbol() -> (
+    None
+):
     payload = {"chart": {"result": [], "error": None}}
 
     def fake_urlopen(_request, timeout: float):
@@ -186,7 +188,9 @@ def test_fetch_daily_bars_yahoo_chart_marks_missing_quotes_as_missing_symbol() -
     assert result.df.empty
 
 
-def test_fetch_daily_bars_yahoo_chart_marks_all_invalid_rows_as_missing_symbol() -> None:
+def test_fetch_daily_bars_yahoo_chart_marks_all_invalid_rows_as_missing_symbol() -> (
+    None
+):
     payload = {
         "chart": {
             "result": [
@@ -229,7 +233,9 @@ def test_fetch_daily_bars_yahoo_chart_marks_all_invalid_rows_as_missing_symbol()
     assert result.df.empty
 
 
-def test_fetch_daily_bars_yahoo_chart_uses_utc_when_exchange_timezone_is_missing_or_unknown() -> None:
+def test_fetch_daily_bars_yahoo_chart_uses_utc_when_exchange_timezone_is_missing_or_unknown() -> (
+    None
+):
     timestamps = [
         int(dt.datetime(2026, 1, 2, 0, 30, tzinfo=dt.timezone.utc).timestamp())
     ]
@@ -338,7 +344,9 @@ def test_fetch_daily_bars_yahoo_chart_raises_on_yahoo_error_payload() -> None:
         )
 
 
-def test_fetch_daily_bars_yahoo_chart_skips_null_rows_and_dates_outside_request() -> None:
+def test_fetch_daily_bars_yahoo_chart_skips_null_rows_and_dates_outside_request() -> (
+    None
+):
     timestamps = [
         int(dt.datetime(2026, 1, 1, 14, tzinfo=dt.timezone.utc).timestamp()),
         int(dt.datetime(2026, 1, 2, 14, tzinfo=dt.timezone.utc).timestamp()),
@@ -392,7 +400,9 @@ def test_fetch_daily_bars_yahoo_chart_skips_null_rows_and_dates_outside_request(
     ]
 
 
-def test_fetch_daily_bars_yahoo_chart_rejects_unsupported_adjustment_and_bad_date_range() -> None:
+def test_fetch_daily_bars_yahoo_chart_rejects_unsupported_adjustment_and_bad_date_range() -> (
+    None
+):
     with pytest.raises(ValueError, match="supports only adjustment='raw'"):
         fetch_daily_bars_yahoo_chart(
             symbols=["SPY"],
