@@ -59,15 +59,15 @@ def fetch_daily_bars_alpaca(
     Note: Alpaca does not provide a separate adjusted_close column. We always
     include adjusted_close = close so downstream schema stays stable.
     """
-    from alpaca.data.requests import StockBarsRequest
-    from alpaca.data.timeframe import TimeFrame
-    from alpaca.data.enums import Adjustment
-    from alpaca.data.enums import DataFeed
-
     if adjustment not in {"raw", "split", "dividend", "all"}:
         raise ValueError(f"Unknown adjustment: {adjustment!r}")
     if feed is not None and feed not in {"sip", "iex", "otc"}:
         raise ValueError(f"Unknown Alpaca feed: {feed!r} (expected sip|iex|otc)")
+
+    from alpaca.data.requests import StockBarsRequest
+    from alpaca.data.timeframe import TimeFrame
+    from alpaca.data.enums import Adjustment
+    from alpaca.data.enums import DataFeed
 
     start_dt = _dt.datetime.combine(start_date, _dt.time.min, tzinfo=_dt.timezone.utc)
     # inclusive end date: request through end-of-day UTC
