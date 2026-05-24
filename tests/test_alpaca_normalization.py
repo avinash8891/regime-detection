@@ -8,7 +8,47 @@ import types
 import pandas as pd
 import pytest
 
-from regime_data_fetch.alpaca_daily import fetch_daily_bars_alpaca, verify_min_start_date
+from regime_data_fetch.alpaca_daily import (
+    fetch_daily_bars_alpaca,
+    verify_min_start_date,
+)
+
+
+class _FakeAdjustment:
+    def __init__(self, value: str) -> None:
+        self.value = value
+
+
+class _FakeDataFeed:
+    def __init__(self, value: str) -> None:
+        self.value = value
+
+
+class _FakeTimeFrame:
+    Day = "day"
+
+
+class _FakeStockBarsRequest:
+    def __init__(self, **kwargs: object) -> None:
+        self.__dict__.update(kwargs)
+
+
+def _install_fake_alpaca_modules(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setitem(
+        sys.modules,
+        "alpaca.data.requests",
+        types.SimpleNamespace(StockBarsRequest=_FakeStockBarsRequest),
+    )
+    monkeypatch.setitem(
+        sys.modules,
+        "alpaca.data.timeframe",
+        types.SimpleNamespace(TimeFrame=_FakeTimeFrame),
+    )
+    monkeypatch.setitem(
+        sys.modules,
+        "alpaca.data.enums",
+        types.SimpleNamespace(Adjustment=_FakeAdjustment, DataFeed=_FakeDataFeed),
+    )
 
 
 def test_verify_min_start_date_ok() -> None:
@@ -19,14 +59,18 @@ def test_verify_min_start_date_ok() -> None:
             {"date": dt.date(2016, 1, 4), "symbol": "RSP"},
         ]
     )
-    min_date, ok = verify_min_start_date(df, symbol="SPY", required_start=dt.date(2015, 1, 1))
+    min_date, ok = verify_min_start_date(
+        df, symbol="SPY", required_start=dt.date(2015, 1, 1)
+    )
     assert min_date == dt.date(2015, 1, 2)
     assert ok is True
 
 
 def test_verify_min_start_date_missing() -> None:
     df = pd.DataFrame([{"date": dt.date(2016, 1, 4), "symbol": "RSP"}])
-    min_date, ok = verify_min_start_date(df, symbol="SPY", required_start=dt.date(2015, 1, 1))
+    min_date, ok = verify_min_start_date(
+        df, symbol="SPY", required_start=dt.date(2015, 1, 1)
+    )
     assert min_date is None
     assert ok is False
 
@@ -54,21 +98,6 @@ def test_fetch_daily_bars_verbose_logs_structured_progress(
     caplog: pytest.LogCaptureFixture,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    class FakeAdjustment:
-        def __init__(self, value: str) -> None:
-            self.value = value
-
-    class FakeDataFeed:
-        def __init__(self, value: str) -> None:
-            self.value = value
-
-    class FakeTimeFrame:
-        Day = "day"
-
-    class FakeStockBarsRequest:
-        def __init__(self, **kwargs: object) -> None:
-            self.__dict__.update(kwargs)
-
     class FakeBar:
         timestamp = dt.datetime(2026, 5, 15, tzinfo=dt.timezone.utc)
         open = 100.0
@@ -84,26 +113,14 @@ def test_fetch_daily_bars_verbose_logs_structured_progress(
         }
 
     class FakeClient:
-        def get_stock_bars(self, request: FakeStockBarsRequest) -> FakeResponse:
+        def get_stock_bars(self, request: _FakeStockBarsRequest) -> FakeResponse:
             assert request.symbol_or_symbols == ["BRK.B", "SPY"]
             return FakeResponse()
 
-    monkeypatch.setitem(
-        sys.modules,
-        "alpaca.data.requests",
-        types.SimpleNamespace(StockBarsRequest=FakeStockBarsRequest),
+    _install_fake_alpaca_modules(monkeypatch)
+    monkeypatch.setattr(
+        "regime_data_fetch.alpaca_daily._get_alpaca_client", lambda: FakeClient()
     )
-    monkeypatch.setitem(
-        sys.modules,
-        "alpaca.data.timeframe",
-        types.SimpleNamespace(TimeFrame=FakeTimeFrame),
-    )
-    monkeypatch.setitem(
-        sys.modules,
-        "alpaca.data.enums",
-        types.SimpleNamespace(Adjustment=FakeAdjustment, DataFeed=FakeDataFeed),
-    )
-    monkeypatch.setattr("regime_data_fetch.alpaca_daily._get_alpaca_client", lambda: FakeClient())
 
     caplog.set_level(logging.INFO, logger="regime_data_fetch.alpaca_daily")
     result = fetch_daily_bars_alpaca(
@@ -133,3 +150,130 @@ def test_fetch_daily_bars_verbose_logs_structured_progress(
     assert request_record.total_symbol_count == 2
     assert complete_record.returned_symbol_count == 2
     assert complete_record.cumulative_frame_count == 2
+
+
+def test_fetch_daily_bars_builds_batched_requests_and_marks_missing_symbols(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class FakeBar:
+        def __init__(self, timestamp: dt.datetime, close: float) -> None:
+            self.timestamp = timestamp
+            self.open = close - 1
+            self.high = close + 1
+            self.low = close - 2
+            self.close = close
+            self.volume = 1000
+
+    requests: list[_FakeStockBarsRequest] = []
+
+    class FakeResponse:
+        def __init__(self, data: dict[str, list[FakeBar]]) -> None:
+            self.data = data
+
+    class FakeClient:
+        def get_stock_bars(self, request: _FakeStockBarsRequest) -> FakeResponse:
+            requests.append(request)
+            if request.symbol_or_symbols == ["BRK.B", "MISSING"]:
+                return FakeResponse(
+                    {
+                        "BRK.B": [
+                            FakeBar(dt.datetime(2026, 5, 15, 20, 0), 100.5),
+                        ]
+                    }
+                )
+            if request.symbol_or_symbols == ["SPY"]:
+                return FakeResponse(
+                    {
+                        "SPY": [
+                            FakeBar(
+                                dt.datetime(2026, 5, 16, 20, 0, tzinfo=dt.timezone.utc),
+                                501.25,
+                            ),
+                        ]
+                    }
+                )
+            raise AssertionError(f"unexpected batch: {request.symbol_or_symbols}")
+
+    _install_fake_alpaca_modules(monkeypatch)
+    monkeypatch.setattr(
+        "regime_data_fetch.alpaca_daily._get_alpaca_client", lambda: FakeClient()
+    )
+
+    result = fetch_daily_bars_alpaca(
+        symbols=["BRK-B", "MISSING", "SPY", "MISSING"],
+        start_date=dt.date(2026, 5, 15),
+        end_date=dt.date(2026, 5, 16),
+        adjustment="split",
+        feed="iex",
+        batch_size=2,
+    )
+
+    assert [
+        (
+            request.symbol_or_symbols,
+            request.timeframe,
+            request.start,
+            request.end,
+            request.adjustment.value,
+            request.feed.value,
+        )
+        for request in requests
+    ] == [
+        (
+            ["BRK.B", "MISSING"],
+            "day",
+            dt.datetime(2026, 5, 15, 0, 0, tzinfo=dt.timezone.utc),
+            dt.datetime(2026, 5, 16, 23, 59, 59, 999999, tzinfo=dt.timezone.utc),
+            "split",
+            "iex",
+        ),
+        (
+            ["SPY"],
+            "day",
+            dt.datetime(2026, 5, 15, 0, 0, tzinfo=dt.timezone.utc),
+            dt.datetime(2026, 5, 16, 23, 59, 59, 999999, tzinfo=dt.timezone.utc),
+            "split",
+            "iex",
+        ),
+    ]
+    assert result.missing_symbols == ["MISSING"]
+    assert result.df.to_dict(orient="records") == [
+        {
+            "date": dt.date(2026, 5, 15),
+            "symbol": "BRK-B",
+            "open": 99.5,
+            "high": 101.5,
+            "low": 98.5,
+            "close": 100.5,
+            "volume": 1000,
+            "adjusted_close": 100.5,
+        },
+        {
+            "date": dt.date(2026, 5, 16),
+            "symbol": "SPY",
+            "open": 500.25,
+            "high": 502.25,
+            "low": 499.25,
+            "close": 501.25,
+            "volume": 1000,
+            "adjusted_close": 501.25,
+        },
+    ]
+
+
+def test_fetch_daily_bars_rejects_unknown_adjustment_and_feed() -> None:
+    with pytest.raises(ValueError, match="Unknown adjustment: 'reverse'"):
+        fetch_daily_bars_alpaca(
+            symbols=["SPY"],
+            start_date=dt.date(2026, 5, 15),
+            end_date=dt.date(2026, 5, 16),
+            adjustment="reverse",
+        )
+
+    with pytest.raises(ValueError, match="Unknown Alpaca feed: 'crypto'"):
+        fetch_daily_bars_alpaca(
+            symbols=["SPY"],
+            start_date=dt.date(2026, 5, 15),
+            end_date=dt.date(2026, 5, 16),
+            feed="crypto",
+        )
