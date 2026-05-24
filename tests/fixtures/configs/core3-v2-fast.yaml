@@ -244,23 +244,8 @@ trend_character_v2:
   range_bound_return_63d_threshold: 0.05
   range_bound_midpoint_excursion_threshold: 0.05
   range_bound_adx_threshold: 20.0
-monetary_pressure_v2:
-  yield_change_lookback_days: 63
-  zscore_normalizer_window_days: 1260
-  rate_shock_lookback_days: 21
-  broad_usd_lookback_days: 63
-monetary_pressure_state:
-  rules:
-    tightening_pressure_zscore_threshold: 1.5
-    easing_pressure_zscore_threshold: -1.5
-    rate_shock_zscore_threshold: 2.0
-  deescalation_days_by_label:
-    rate_shock: 5
-    tightening_pressure: 3
-    easing_pressure: 2
-    neutral_monetary: 0
-    unknown: 0
-  default_deescalation_days: 0
+monetary_pressure_v2: null
+monetary_pressure_state: null
 central_bank_text:
   smoothing_window_sessions: 30
   max_release_age_days: 365

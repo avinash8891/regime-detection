@@ -149,6 +149,10 @@ def _build_full_synthetic_context(
             }
         )
     market_data = pd.DataFrame(market_rows)
+    spy_mask = market_data["symbol"] == "SPY"
+    market_data.loc[spy_mask, "volume"] = range(
+        1_000_000, 1_000_000 + int(spy_mask.sum())
+    )
 
     sector_etf_closes = {s: universe_prices[s] for s in SECTOR_ETFS}
     # Add KRE on cross_asset_closes alongside the §3.1 cross-asset symbols.
@@ -221,6 +225,33 @@ def _build_full_synthetic_context(
         macro_series["ioer_legacy"] = ioer_legacy
 
     config = RegimeEngine().config
+    assert config.hmm is not None
+    assert config.clustering is not None
+    assert config.change_point is not None
+    assert config.network_fragility is not None
+    config = config.model_copy(
+        update={
+            "network_fragility": config.network_fragility.model_copy(
+                update={
+                    "percentile_lookback_days": 100,
+                    "dispersion_percentile_lookback_days": 100,
+                }
+            ),
+            "hmm": config.hmm.model_copy(
+                update={
+                    "n_states": 2,
+                    "training_window_days": 100,
+                    "random_seeds": (42, 7, 13),
+                }
+            ),
+            "clustering": config.clustering.model_copy(
+                update={"training_window_days": 100}
+            ),
+            "change_point": config.change_point.model_copy(
+                update={"training_window_days": 100}
+            ),
+        }
+    )
     context = build_market_context(
         end_date=idx[-1].date(),
         market_data=market_data,
@@ -652,6 +683,9 @@ def test_feature_store_credit_funding_seam_none_without_kre_in_cross_asset_close
             ]
         ),
         config=context.config,
+        vix_data=pd.DataFrame(
+            {"date": [ts.date() for ts in context.spy_ohlcv.index], "close": 20.0}
+        ),
         sector_etf_closes=context.sector_etf_closes,
         cross_asset_closes=stripped,
         macro_series=context.macro_series,
@@ -870,6 +904,10 @@ def test_regime_output_carries_credit_funding_state_when_configured() -> None:
             ]
         ),
         lookback_days=1,
+        config=context.config,
+        vix_data=pd.DataFrame(
+            {"date": [ts.date() for ts in context.spy_ohlcv.index], "close": 20.0}
+        ),
         event_calendar=pd.DataFrame(columns=["date", "market", "type", "importance"]),
         sector_etf_closes=context.sector_etf_closes,
         cross_asset_closes=context.cross_asset_closes,
@@ -952,6 +990,9 @@ def test_feature_store_routes_fedfunds_ioer_legacy_to_splice() -> None:
             ]
         ),
         config=base_context.config,
+        vix_data=pd.DataFrame(
+            {"date": [ts.date() for ts in idx], "close": 20.0}
+        ),
         sector_etf_closes=base_context.sector_etf_closes,
         cross_asset_closes=base_context.cross_asset_closes,
         macro_series=patched_macro,

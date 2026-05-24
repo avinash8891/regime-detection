@@ -371,8 +371,8 @@ def test_feature_store_hmm_seam_none_when_hmm_config_absent(
     # Use the last available date in the fixture.
     spy = raw_market_frames["SPY"]
     rsp = raw_market_frames["RSP"]
-    vixy = raw_market_frames["VIXY"]
-    raw = pd.concat([spy, rsp, vixy], ignore_index=True)
+    vix = raw_market_frames["VIX"]
+    raw = pd.concat([spy, rsp, vix], ignore_index=True)
     raw["date"] = pd.to_datetime(raw["date"]).dt.date
 
     last_session = max(d for d in raw["date"].unique())

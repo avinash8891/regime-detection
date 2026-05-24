@@ -33,7 +33,6 @@ from pydantic import ValidationError
 from regime_detection.breadth_state import BreadthLabel  # noqa: F401
 from regime_detection.config import (
     CohortRoutingConfig,
-    RegimeConfig,
     load_default_regime_config,
 )
 from regime_detection.cohort_routing import COHORTS, evaluate_cohort_routing
@@ -350,19 +349,17 @@ def test_regime_output_omits_agent_routing_when_cohort_routing_absent_from_confi
     """V1 byte-identity preservation: a RegimeConfig with cohort_routing=None
     must produce ``RegimeOutput.agent_routing is None`` and the JSON dump
     must omit the field (exclude_none=True)."""
-    base = load_default_regime_config().model_dump()
-    base["cohort_routing"] = None
-    no_routing_config = RegimeConfig.model_validate(base)
-    assert no_routing_config.cohort_routing is None
-
     engine = RegimeEngine()
     as_of = date.fromisoformat(str(golden_rows[0]["as_of_date"]))
     market_data = market_df_for_asof(as_of)
+    kwargs = synthetic_v2_kwargs_for_market_data(market_data)
+    no_routing_config = kwargs["config"].model_copy(update={"cohort_routing": None})
+    assert no_routing_config.cohort_routing is None
+    kwargs["config"] = no_routing_config
     out = engine.classify(
         as_of_date=as_of,
         market_data=market_data,
-        config=no_routing_config,
-        **synthetic_v2_kwargs_for_market_data(market_data),
+        **kwargs,
     )
     assert out.agent_routing is None
     assert "agent_routing" not in out.model_dump()

@@ -392,13 +392,20 @@ def test_end_to_end_engine_emits_recovery_on_synthetic_series(
             "high": close_series.values,
             "low": close_series.values,
             "close": close_series.values,
-            "volume": 100_000_000,
-        }
-    )
+                "volume": range(100_000_000, 100_000_000 + len(close_series.index)),
+            }
+        )
     # Add RSP rows (equal-weight proxy) so v1 breadth doesn't fail. Mirror SPY.
     rsp_df = market_df.copy()
     rsp_df["symbol"] = "RSP"
-    full_df = pd.concat([market_df, rsp_df], ignore_index=True)
+    vix_df = market_df.copy()
+    vix_df["symbol"] = "VIX"
+    vix_values = np.linspace(30.0, 10.0, len(vix_df))
+    vix_df["open"] = vix_values
+    vix_df["high"] = vix_values * 1.01
+    vix_df["low"] = vix_values * 0.99
+    vix_df["close"] = vix_values
+    full_df = pd.concat([market_df, rsp_df, vix_df], ignore_index=True)
 
     engine = RegimeEngine()
     end_dt = close_series.index[-1].date()
@@ -407,9 +414,11 @@ def test_end_to_end_engine_emits_recovery_on_synthetic_series(
         end_date=end_dt,
         market_data=full_df,
         lookback_days=120,
+        config=kwargs["config"],
         event_calendar=kwargs["event_calendar"],
         sector_etf_closes=kwargs["sector_etf_closes"],
         cross_asset_closes=kwargs["cross_asset_closes"],
+        macro_series=kwargs["macro_series"],
         pit_constituent_intervals=kwargs["pit_constituent_intervals"],
         constituent_ohlcv=kwargs["constituent_ohlcv"],
     )

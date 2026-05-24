@@ -277,12 +277,16 @@ def test_profile_json_report_emits_machine_readable_sections(tmp_path: Path) -> 
     ]
     assert payload["label_summary"]["inflation_growth_state"] == {
         "active": {"unknown": 1},
+        "raw": {"missing": 1},
         "reported": {"stale_data": 1},
+        "stable": {"missing": 1},
         "status": {"stale_data": 1},
     }
     assert payload["label_summary"]["credit_funding_state_proxy"] == {
         "active": {"unknown": 1},
+        "raw": {"missing": 1},
         "reported": {"no_rule_fired": 1},
+        "stable": {"missing": 1},
         "status": {"no_rule_fired": 1},
     }
     status_fields = {s["field"]: s["status"] for s in payload["trailing_v2_field_status"]}

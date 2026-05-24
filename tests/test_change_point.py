@@ -349,8 +349,8 @@ def test_feature_store_change_point_seam_none_when_config_absent(
     cfg = load_default_regime_config().model_copy(update={"change_point": None})
     spy = raw_market_frames["SPY"]
     rsp = raw_market_frames["RSP"]
-    vixy = raw_market_frames["VIXY"]
-    raw = pd.concat([spy, rsp, vixy], ignore_index=True)
+    vix = raw_market_frames["VIX"]
+    raw = pd.concat([spy, rsp, vix], ignore_index=True)
     raw["date"] = pd.to_datetime(raw["date"]).dt.date
     last_session = max(d for d in raw["date"].unique())
     while True:
@@ -392,8 +392,8 @@ def test_feature_store_change_point_seam_present_with_default_config(
     })
     spy = raw_market_frames["SPY"]
     rsp = raw_market_frames["RSP"]
-    vixy = raw_market_frames["VIXY"]
-    raw = pd.concat([spy, rsp, vixy], ignore_index=True)
+    vix = raw_market_frames["VIX"]
+    raw = pd.concat([spy, rsp, vix], ignore_index=True)
     raw["date"] = pd.to_datetime(raw["date"]).dt.date
     last_session = max(d for d in raw["date"].unique())
     while True:
@@ -437,11 +437,12 @@ def test_regime_output_carries_change_point_when_seam_present(
     })
     last_session = max(raw_market_data["date"].unique())
     market_data = market_df_for_asof(last_session)
+    kwargs = synthetic_v2_kwargs_for_market_data(market_data)
+    kwargs["config"] = cfg
     out = engine.classify(
         as_of_date=last_session,
         market_data=market_data,
-        config=cfg,
-        **synthetic_v2_kwargs_for_market_data(market_data),
+        **kwargs,
     )
     assert out.change_point is not None
     assert out.change_point.method == "BOCPD"

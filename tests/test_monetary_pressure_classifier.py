@@ -447,17 +447,30 @@ def test_engine_classify_window_populates_monetary_pressure_state(
     allowed = set(MONETARY_PRESSURE_V2_RISK_RANK.keys())
     for out in populated:
         assert out.monetary_pressure_state.active_label in allowed
-        assert (
-            out.structural_causal_state.monetary_pressure.label
-            == out.monetary_pressure_state.active_label
-        )
-        assert (
-            out.structural_causal_state.monetary_pressure.evidence
-            == out.monetary_pressure_state.evidence
-        )
-        assert (
-            out.structural_causal_state.monetary_pressure.data_quality
-            == out.monetary_pressure_state.data_quality
+        assert "monetary_pressure" not in out.structural_causal_state.model_dump()
+
+
+def test_engine_classify_window_raises_when_monetary_pressure_state_is_absent(
+    synthetic_v2_kwargs_for_market_data,
+):
+    """V2 monetary-pressure config without source macro data is a hard failure."""
+    index = _bdate_index()
+    market_data = _synthetic_market_data(index)
+    kwargs = synthetic_v2_kwargs_for_market_data(market_data)
+    kwargs["macro_series"] = None
+
+    with pytest.raises(RuntimeError, match="monetary_pressure_state"):
+        RegimeEngine().classify_window(
+            end_date=_LAST_SESSION.date(),
+            market_data=market_data,
+            lookback_days=50,
+            config=kwargs["config"],
+            event_calendar=kwargs["event_calendar"],
+            sector_etf_closes=kwargs["sector_etf_closes"],
+            cross_asset_closes=kwargs["cross_asset_closes"],
+            pit_constituent_intervals=kwargs["pit_constituent_intervals"],
+            constituent_ohlcv=kwargs["constituent_ohlcv"],
+            macro_series=kwargs["macro_series"],
         )
 
 

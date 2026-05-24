@@ -675,7 +675,8 @@ def test_run_macro_fetch_records_raw_fred_json_in_sqlite(
     ]
 
 
-def test_run_macro_fetch_requires_fred_api_key(tmp_path: Path) -> None:
+def test_run_macro_fetch_requires_fred_api_key(monkeypatch, tmp_path: Path) -> None:
+    monkeypatch.delenv("FRED_API_KEY", raising=False)
     try:
         run_macro_fetch(
             out_dir=tmp_path,

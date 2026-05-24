@@ -37,6 +37,7 @@ def test_shadow_runner_writes_expected_artifacts_and_ledger(tmp_path: Path) -> N
     v2_daily_path = repo_root / "tests" / "fixtures" / "raw" / "v2" / "daily_ohlcv.csv"
     market_data_path = v2_daily_path
     event_calendar_path = repo_root / "tests" / "fixtures" / "events" / "us_events.yaml"
+    config_path = repo_root / "tests" / "fixtures" / "configs" / "core3-v2-fast.yaml"
     out_root = tmp_path / "shadow_run"
     pit_path = _write_sector_pit_intervals(tmp_path / "pit.csv")
 
@@ -45,6 +46,7 @@ def test_shadow_runner_writes_expected_artifacts_and_ledger(tmp_path: Path) -> N
         as_of_date=date(2026, 5, 13),
         market_data_path=market_data_path,
         event_calendar_path=event_calendar_path,
+        config_path=config_path,
         output_root=out_root,
         v2_daily_ohlcv_path=v2_daily_path,
         pit_constituent_intervals_path=pit_path,
@@ -97,6 +99,7 @@ def test_shadow_runner_archives_inputs_and_inserts_in_progress_before_classify(t
     v2_daily_path = repo_root / "tests" / "fixtures" / "raw" / "v2" / "daily_ohlcv.csv"
     market_data_path = v2_daily_path
     event_calendar_path = repo_root / "tests" / "fixtures" / "events" / "us_events.yaml"
+    config_path = repo_root / "tests" / "fixtures" / "configs" / "core3-v2-fast.yaml"
     out_root = tmp_path / "shadow_run"
     pit_path = _write_sector_pit_intervals(tmp_path / "pit.csv")
 
@@ -128,6 +131,7 @@ def test_shadow_runner_archives_inputs_and_inserts_in_progress_before_classify(t
         as_of_date=date(2026, 5, 13),
         market_data_path=market_data_path,
         event_calendar_path=event_calendar_path,
+        config_path=config_path,
         output_root=out_root,
         v2_daily_ohlcv_path=v2_daily_path,
         pit_constituent_intervals_path=pit_path,
@@ -141,6 +145,7 @@ def test_shadow_runner_records_failures_without_silent_skip(tmp_path: Path, monk
     v2_daily_path = repo_root / "tests" / "fixtures" / "raw" / "v2" / "daily_ohlcv.csv"
     market_data_path = v2_daily_path
     event_calendar_path = repo_root / "tests" / "fixtures" / "events" / "us_events.yaml"
+    config_path = repo_root / "tests" / "fixtures" / "configs" / "core3-v2-fast.yaml"
     out_root = tmp_path / "shadow_run"
     pit_path = _write_sector_pit_intervals(tmp_path / "pit.csv")
 
@@ -155,6 +160,7 @@ def test_shadow_runner_records_failures_without_silent_skip(tmp_path: Path, monk
         as_of_date=date(2026, 5, 13),
         market_data_path=market_data_path,
         event_calendar_path=event_calendar_path,
+        config_path=config_path,
         output_root=out_root,
         v2_daily_ohlcv_path=v2_daily_path,
         pit_constituent_intervals_path=pit_path,
@@ -178,6 +184,7 @@ def test_shadow_runner_rejects_duplicate_versioned_run_and_non_trading_day(tmp_p
     v2_daily_path = repo_root / "tests" / "fixtures" / "raw" / "v2" / "daily_ohlcv.csv"
     market_data_path = v2_daily_path
     event_calendar_path = repo_root / "tests" / "fixtures" / "events" / "us_events.yaml"
+    config_path = repo_root / "tests" / "fixtures" / "configs" / "core3-v2-fast.yaml"
     out_root = tmp_path / "shadow_run"
     pit_path = _write_sector_pit_intervals(tmp_path / "pit.csv")
 
@@ -186,6 +193,7 @@ def test_shadow_runner_rejects_duplicate_versioned_run_and_non_trading_day(tmp_p
         as_of_date=date(2026, 5, 13),
         market_data_path=market_data_path,
         event_calendar_path=event_calendar_path,
+        config_path=config_path,
         output_root=out_root,
         v2_daily_ohlcv_path=v2_daily_path,
         pit_constituent_intervals_path=pit_path,
@@ -197,6 +205,7 @@ def test_shadow_runner_rejects_duplicate_versioned_run_and_non_trading_day(tmp_p
             as_of_date=date(2026, 5, 13),
             market_data_path=market_data_path,
             event_calendar_path=event_calendar_path,
+            config_path=config_path,
             output_root=out_root,
             v2_daily_ohlcv_path=v2_daily_path,
             pit_constituent_intervals_path=pit_path,

@@ -168,6 +168,30 @@ _V2_MACRO_LOGICAL_NAMES = (
 )
 
 
+def _fast_v2_test_config():
+    engine = RegimeEngine()
+    assert engine.config.hmm is not None
+    assert engine.config.clustering is not None
+    assert engine.config.change_point is not None
+    return engine.config.model_copy(
+        update={
+            "hmm": engine.config.hmm.model_copy(
+                update={
+                    "n_states": 2,
+                    "training_window_days": 100,
+                    "random_seeds": (42, 7, 13),
+                }
+            ),
+            "clustering": engine.config.clustering.model_copy(
+                update={"training_window_days": 100}
+            ),
+            "change_point": engine.config.change_point.model_copy(
+                update={"training_window_days": 100}
+            ),
+        }
+    )
+
+
 @lru_cache(maxsize=1)
 def _load_market_data() -> pd.DataFrame:
     if _MARKET_PARQUET_PATH.exists():
@@ -357,6 +381,10 @@ def v2_macro_series_by_key() -> dict[str, pd.Series]:
             index=frame["date"],
             name=logical_name,
         )
+    broad_usd = series_by_key["broad_usd_index"]
+    trend = pd.Series(range(len(broad_usd.index)), index=broad_usd.index, dtype="float64")
+    series_by_key["2y_yield"] = (4.00 + trend * 0.0002).rename("2y_yield")
+    series_by_key["10y_yield"] = (4.25 + trend * 0.0001).rename("10y_yield")
     return series_by_key
 
 
@@ -372,6 +400,7 @@ def v2_classify_kwargs_for_asof(
 ):
     def _build(as_of: date) -> dict[str, object]:
         return {
+            "config": _fast_v2_test_config(),
             "market_data": v2_market_df_for_asof(as_of),
             "event_calendar": event_calendar_df,
             "sector_etf_closes": v2_sector_etf_closes,
@@ -387,25 +416,16 @@ def v2_classify_kwargs_for_asof(
 @pytest.fixture(scope="session")
 def synthetic_v2_kwargs_for_market_data(event_calendar_df: pd.DataFrame):
     def _build(market_data: pd.DataFrame) -> dict[str, object]:
-        engine = RegimeEngine()
-        assert engine.config.hmm is not None
-        assert engine.config.clustering is not None
-        assert engine.config.change_point is not None
-        config = engine.config.model_copy(
+        config = _fast_v2_test_config()
+        assert config.network_fragility is not None
+        config = config.model_copy(
             update={
-                "hmm": engine.config.hmm.model_copy(
+                "network_fragility": config.network_fragility.model_copy(
                     update={
-                        "n_states": 2,
-                        "training_window_days": 100,
-                        "random_seeds": (42, 7, 13),
+                        "percentile_lookback_days": 100,
+                        "dispersion_percentile_lookback_days": 100,
                     }
-                ),
-                "clustering": engine.config.clustering.model_copy(
-                    update={"training_window_days": 100}
-                ),
-                "change_point": engine.config.change_point.model_copy(
-                    update={"training_window_days": 100}
-                ),
+                )
             }
         )
         base = _close_series_from_market_data(market_data, "SPY")
@@ -427,6 +447,12 @@ def synthetic_v2_kwargs_for_market_data(event_calendar_df: pd.DataFrame):
             )
             for i, symbol in enumerate(CROSS_ASSET_SYMBOLS)
         }
+        trend = pd.Series(range(len(base.index)), index=base.index, dtype="float64")
+        macro_series = {
+            "2y_yield": (4.00 + trend * 0.0002).rename("2y_yield"),
+            "10y_yield": (4.25 + trend * 0.0001).rename("10y_yield"),
+            "broad_usd_index": (100.0 + trend * 0.001).rename("broad_usd_index"),
+        }
         first_day = base.index.min().date()
         pit_intervals = pd.DataFrame(
             {
@@ -444,7 +470,7 @@ def synthetic_v2_kwargs_for_market_data(event_calendar_df: pd.DataFrame):
             "event_calendar": event_calendar_df,
             "sector_etf_closes": sector_closes,
             "cross_asset_closes": cross_asset_closes,
-            "macro_series": None,
+            "macro_series": macro_series,
             "pit_constituent_intervals": pit_intervals,
             "constituent_ohlcv": constituent_ohlcv,
         }
@@ -582,6 +608,7 @@ def _build_real_v2_classify_window_2026_05_13(
         end_date=as_of,
         market_data=v2_market_df_for_asof(as_of),
         lookback_days=1,
+        config=_fast_v2_test_config(),
         event_calendar=load_event_calendar(_EVENT_CALENDAR_PATH),
         sector_etf_closes=v2_sector_etf_closes,
         cross_asset_closes=v2_cross_asset_closes,

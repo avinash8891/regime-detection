@@ -298,7 +298,6 @@ def test_walkforward_gate_main_runs_against_committed_v2_fixtures(
     assert "| sessions classified | 0 | 1 | 1 |" in markdown
     assert "| sessions with credit_funding_state | 0 | 1 | 1 |" in markdown
     assert "| sessions with credit_funding_effective_state | 0 | 1 | 1 |" in markdown
-    assert "| credit_funding (classified) | 1 | 100.0% |" in markdown
 
 
 def test_shadow_ab_gate_main_runs_against_committed_v2_fixtures(

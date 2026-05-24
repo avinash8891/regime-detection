@@ -15,7 +15,6 @@ from regime_detection.models import (
     BreadthStateOutput,
     DataQuality,
     EventCalendarOutput,
-    MonetaryPressureOutput,
     NetworkFragilityOutput,
     RegimeOutput,
     RegimeTimeline,
@@ -188,11 +187,6 @@ def _output(as_of_date: date, *, trend_label: str = "bull") -> RegimeOutput:
                 primary_label="normal_calendar",
                 matching_labels=("normal_calendar",),
                 evidence={},
-            ),
-            monetary_pressure=MonetaryPressureOutput(
-                label="unknown",
-                evidence={},
-                data_quality=_data_quality(),
             ),
         ),
         network_fragility=NetworkFragilityOutput(

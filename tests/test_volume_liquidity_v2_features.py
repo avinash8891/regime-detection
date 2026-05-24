@@ -240,10 +240,12 @@ def test_timeline_threads_volume_liquidity_v2_config(
 
     market_data = market_df_for_asof(_INTEGRATION_AS_OF)
     kwargs = synthetic_v2_kwargs_for_market_data(market_data)
+    cfg = kwargs["config"]
     context = build_market_context(
         end_date=_INTEGRATION_AS_OF,
         market_data=market_data,
         config=cfg,
+        macro_series=kwargs["macro_series"],
         sector_etf_closes=kwargs["sector_etf_closes"],
         cross_asset_closes=kwargs["cross_asset_closes"],
         pit_constituent_intervals=kwargs["pit_constituent_intervals"],

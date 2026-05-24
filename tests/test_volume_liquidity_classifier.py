@@ -357,6 +357,7 @@ def test_engine_classify_window_emits_real_volume_liquidity_labels(
         event_calendar=kwargs["event_calendar"],
         sector_etf_closes=kwargs["sector_etf_closes"],
         cross_asset_closes=kwargs["cross_asset_closes"],
+        macro_series=kwargs["macro_series"],
         pit_constituent_intervals=kwargs["pit_constituent_intervals"],
         constituent_ohlcv=kwargs["constituent_ohlcv"],
     )

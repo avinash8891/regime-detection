@@ -307,6 +307,11 @@ def test_compose_score_is_byte_identical_under_default_scales() -> None:
         spy_sma_50=420.0,
         absorption_ratio_top3=0.90,
         volume_zscore_20d=2.0,
+        hmm_top_state_prob_now=0.50,
+        hmm_top_state_prob_5d_ago=0.50,
+        change_point_score=0.0,
+        cluster_id_now=1,
+        cluster_id_5d_ago=1,
         config=config,
     )
     assert composed.score is not None
@@ -341,6 +346,11 @@ def test_scales_are_tunable_via_config() -> None:
         event_calendar_labels=("normal_calendar",),
         credit_funding_label="credit_calm",
         volume_liquidity_label="normal_volume",
+        hmm_top_state_prob_now=0.50,
+        hmm_top_state_prob_5d_ago=0.50,
+        change_point_score=0.0,
+        cluster_id_now=1,
+        cluster_id_5d_ago=1,
     )
     composed = compose_transition_score_for_session(config=tighter, **kwargs)
     components = composed.components or {}

@@ -26,8 +26,6 @@ from regime_detection.models import (
     DataQuality,
     EventCalendarEvidencePayload,
     EventCalendarOutput,
-    MonetaryPressureEvidencePayload,
-    MonetaryPressureOutput,
     TransitionRiskEvidencePayload,
     TransitionRiskOutput,
     VolumeLiquidityEvidencePayload,
@@ -194,11 +192,6 @@ def test_runtime_evidence_fields_use_named_payloads() -> None:
         matching_labels=("normal_calendar",),
         evidence={"selection_method": "precedence"},
     )
-    monetary_pressure = MonetaryPressureOutput(
-        label="unknown",
-        evidence={"reason": "v2_classifier_not_yet_implemented"},
-        data_quality=DataQuality(status="insufficient_history"),
-    )
     volume_liquidity = VolumeLiquidityOutput(
         label="normal_volume",
         evidence={"volume_zscore": 0.5},
@@ -224,10 +217,6 @@ def test_runtime_evidence_fields_use_named_payloads() -> None:
         is EventCalendarEvidencePayload
     )
     assert (
-        MonetaryPressureOutput.model_fields["evidence"].annotation
-        is MonetaryPressureEvidencePayload
-    )
-    assert (
         VolumeLiquidityOutput.model_fields["evidence"].annotation
         is VolumeLiquidityEvidencePayload
     )
@@ -242,9 +231,6 @@ def test_runtime_evidence_fields_use_named_payloads() -> None:
     assert event_calendar.model_dump()["primary_label"] == "normal_calendar"
     assert event_calendar.model_dump()["matching_labels"] == ("normal_calendar",)
     assert event_calendar.model_dump()["evidence"] == {"selection_method": "precedence"}
-    assert monetary_pressure.model_dump()["evidence"] == {
-        "reason": "v2_classifier_not_yet_implemented"
-    }
     assert volume_liquidity.model_dump()["evidence"] == {"volume_zscore": 0.5}
     assert transition_risk.model_dump()["evidence"] == {
         "triggered_rules": [],
@@ -495,10 +481,22 @@ def test_classify_delegates_to_classify_window_with_single_day_lookback(
 
 
 def test_timeline_passes_event_calendar_matching_labels_to_strategy_response(
-    mocker, v2_market_df_for_asof, v2_close_series_by_symbol, event_calendar_df
+    mocker,
+    v2_market_df_for_asof,
+    v2_close_series_by_symbol,
+    event_calendar_df,
 ) -> None:
     engine = RegimeEngine()
     as_of = date(2026, 5, 13)
+    market_data = v2_market_df_for_asof(as_of)
+    spy_frame = market_data[market_data["symbol"] == "SPY"].sort_values("date")
+    spy_index = pd.to_datetime(spy_frame["date"])
+    trend = pd.Series(range(len(spy_index)), index=spy_index, dtype="float64")
+    macro_series = {
+        "2y_yield": (4.00 + trend * 0.0002).rename("2y_yield"),
+        "10y_yield": (4.25 + trend * 0.0001).rename("10y_yield"),
+        "broad_usd_index": (100.0 + trend * 0.001).rename("broad_usd_index"),
+    }
     event_calendar = event_calendar_df.copy()
     event_calendar.loc[[0, 1], "date"] = as_of
     event_calendar.loc[[0, 1], "publication_date"] = date(2026, 1, 1)
@@ -510,7 +508,7 @@ def test_timeline_passes_event_calendar_matching_labels_to_strategy_response(
 
     out = engine.classify(
         as_of_date=as_of,
-        market_data=v2_market_df_for_asof(as_of),
+        market_data=market_data,
         config=config,
         event_calendar=event_calendar,
         sector_etf_closes={
@@ -520,6 +518,7 @@ def test_timeline_passes_event_calendar_matching_labels_to_strategy_response(
             symbol: v2_close_series_by_symbol[symbol]
             for symbol in CROSS_ASSET_SYMBOLS
         },
+        macro_series=macro_series,
         pit_constituent_intervals=pd.DataFrame(
             {
                 "ticker": list(SECTOR_ETFS),

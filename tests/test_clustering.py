@@ -237,8 +237,8 @@ def test_feature_store_clustering_seam_none_when_config_absent(
     cfg = load_default_regime_config().model_copy(update={"clustering": None})
     spy = raw_market_frames["SPY"]
     rsp = raw_market_frames["RSP"]
-    vixy = raw_market_frames["VIXY"]
-    raw = pd.concat([spy, rsp, vixy], ignore_index=True)
+    vix = raw_market_frames["VIX"]
+    raw = pd.concat([spy, rsp, vix], ignore_index=True)
     raw["date"] = pd.to_datetime(raw["date"]).dt.date
     last_session = max(d for d in raw["date"].unique())
     while True:
@@ -278,8 +278,8 @@ def test_feature_store_clustering_seam_none_when_pct_above_50dma_absent(
     assert cfg.clustering is not None
     spy = raw_market_frames["SPY"]
     rsp = raw_market_frames["RSP"]
-    vixy = raw_market_frames["VIXY"]
-    raw = pd.concat([spy, rsp, vixy], ignore_index=True)
+    vix = raw_market_frames["VIX"]
+    raw = pd.concat([spy, rsp, vix], ignore_index=True)
     raw["date"] = pd.to_datetime(raw["date"]).dt.date
     last_session = max(d for d in raw["date"].unique())
     while True:
@@ -353,8 +353,9 @@ def test_regime_output_fails_when_clustering_seam_none(
         ValueError,
         match="transition_score missing required model evidence: cluster_id_now",
     ):
+        kwargs = v2_classify_kwargs_for_asof(last_session)
+        kwargs["config"] = config
         engine.classify(
             as_of_date=last_session,
-            config=config,
-            **v2_classify_kwargs_for_asof(last_session),
+            **kwargs,
         )

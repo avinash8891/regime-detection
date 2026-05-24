@@ -191,7 +191,9 @@ def _load_market_data() -> pd.DataFrame:
     spy["symbol"] = "SPY"
     rsp["symbol"] = "RSP"
     vixy["symbol"] = "VIXY"
-    return pd.concat([spy, rsp, vixy], ignore_index=True)
+    vix = vixy.copy()
+    vix["symbol"] = "VIX"
+    return pd.concat([spy, rsp, vix, vixy], ignore_index=True)
 
 
 def _serialize_scalar(x: Any) -> Any:

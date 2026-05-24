@@ -71,10 +71,6 @@ class EventCalendarEvidencePayload(EvidencePayload):
     """Dict-compatible payload for event-calendar rule evidence."""
 
 
-class MonetaryPressureEvidencePayload(EvidencePayload):
-    """Dict-compatible payload for monetary-pressure V2 rule evidence."""
-
-
 class VolumeLiquidityEvidencePayload(EvidencePayload):
     """Dict-compatible payload for volume/liquidity V2 rule evidence."""
 
@@ -281,39 +277,6 @@ class NetworkFragilityOutput(AxisOutput):
     model_config = ConfigDict(extra="forbid")
 
     mode: Literal["sector_cross_asset_24"] = "sector_cross_asset_24"
-
-
-class MonetaryPressureOutput(BaseModel):
-    """V1 structural-causal-state monetary pressure backward-compatible struct (v2 spec §2A).
-
-    This is the backward-compatible V1 struct surfaced on
-    ``StructuralCausalState.monetary_pressure``. The V2 monetary-pressure
-    classifier is ``MonetaryPressureV2Output``, emitted on
-    ``RegimeOutput.monetary_pressure_state`` with real labels from ~2021
-    when SOFR/IORB data is available.
-    """
-
-    model_config = ConfigDict(extra="forbid")
-
-    label: str
-    evidence: MonetaryPressureEvidencePayload
-    data_quality: DataQuality
-    classification_status: ClassificationStatus | None = None
-    classification_reason: str | None = None
-
-    @model_validator(mode="after")
-    def _populate_classification_metadata(self) -> "MonetaryPressureOutput":
-        if self.classification_status in {None, "no_rule_fired"}:
-            status, reason = derive_classification_status(
-                active_label=self.label,
-                raw_label=self.label,
-                stable_label=self.label,
-                data_quality=self.data_quality,
-                evidence=self.evidence,
-            )
-            self.classification_status = status
-            self.classification_reason = reason
-        return self
 
 
 InflationGrowthLabel = Literal[
@@ -540,7 +503,6 @@ class StructuralCausalState(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     event_calendar: EventCalendarOutput
-    monetary_pressure: MonetaryPressureOutput
 
 
 TransitionRiskState = Literal[
@@ -693,12 +655,6 @@ def _project_legacy_v1_wire_shapes(payload: dict[str, Any]) -> dict[str, Any]:
 
     _strip_classification_metadata(payload)
 
-    structural = payload.get("structural_causal_state")
-    if isinstance(structural, dict):
-        structural["monetary_pressure"] = {
-            "label": "unknown",
-            "reason": "not_implemented_v1",
-        }
     payload["network_fragility"] = {
         "label": "not_implemented_v1",
         "reason": "breadth_state_used_as_v1_fragility_proxy",

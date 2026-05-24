@@ -22,8 +22,6 @@ from regime_detection.models import (
     ClusterOutput,
     DataQuality,
     HmmOutput,
-    MonetaryPressureEvidencePayload,
-    MonetaryPressureOutput,
     NetworkFragilityOutput,
     RegimeOutput,
     RegimeTimeline,
@@ -75,15 +73,6 @@ def _v2_classifier_seam_absent_data_quality() -> DataQuality:
         completeness=None,
         reason="required_feature_is_nan",
     )
-
-
-def _plain_evidence_dict(evidence: object) -> dict[str, object]:
-    root = getattr(evidence, "root", None)
-    if isinstance(root, dict):
-        return root
-    if isinstance(evidence, dict):
-        return evidence
-    raise TypeError(f"Expected evidence payload dict, got {type(evidence).__name__}")
 
 
 def _resolve_network_fragility_by_date(
@@ -468,23 +457,14 @@ def _build_timeline_output_for_day(
         if axis_bundle.monetary_pressure_state is not None
         else None
     )
-    monetary_pressure = (
-        MonetaryPressureOutput(
-            label=monetary_pressure_output.active_label,
-            evidence=MonetaryPressureEvidencePayload(
-                root=_plain_evidence_dict(monetary_pressure_output.evidence)
-            ),
-            data_quality=monetary_pressure_output.data_quality,
+    if (
+        working_context.config.monetary_pressure_state is not None
+        and monetary_pressure_output is None
+    ):
+        raise RuntimeError(
+            "monetary_pressure_state is configured but unavailable; "
+            "supply macro_series keys 2y_yield, 10y_yield, and broad_usd_index"
         )
-        if monetary_pressure_output is not None
-        else MonetaryPressureOutput(
-            label="unknown",
-            evidence=MonetaryPressureEvidencePayload(
-                root={"reason": "v2_classifier_not_yet_implemented"}
-            ),
-            data_quality=_v2_classifier_seam_absent_data_quality(),
-        )
-    )
     inflation_growth_output = (
         axis_bundle.inflation_growth.get(day)
         if axis_bundle.inflation_growth is not None
@@ -544,7 +524,6 @@ def _build_timeline_output_for_day(
         breadth_state=breadth_output,
         structural_causal_state=StructuralCausalState(
             event_calendar=event_output,
-            monetary_pressure=monetary_pressure,
         ),
         network_fragility=network_fragility_output,
         transition_risk=transition_output,

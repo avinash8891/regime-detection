@@ -455,10 +455,12 @@ def test_timeline_threads_volatility_state_v2_config(
 
     market_data = market_df_for_asof(_INTEGRATION_AS_OF)
     kwargs = synthetic_v2_kwargs_for_market_data(market_data)
+    cfg = kwargs["config"]
     context = build_market_context(
         end_date=_INTEGRATION_AS_OF,
         market_data=market_data,
         config=cfg,
+        macro_series=kwargs["macro_series"],
         sector_etf_closes=kwargs["sector_etf_closes"],
         cross_asset_closes=kwargs["cross_asset_closes"],
         pit_constituent_intervals=kwargs["pit_constituent_intervals"],
@@ -492,7 +494,9 @@ def test_v1_config_path_leaves_volatility_state_v2_none(market_df_for_asof):
     timeline cannot build without the config — this test only verifies the
     feature_store seam is correctly absent."""
     cfg = load_default_regime_config()
-    cfg_v1 = cfg.model_copy(update={"volatility_state_v2": None})
+    cfg_v1 = cfg.model_copy(
+        update={"volatility_state_v2": None, "volume_liquidity_state": None}
+    )
     context = build_market_context(
         end_date=_INTEGRATION_AS_OF,
         market_data=market_df_for_asof(_INTEGRATION_AS_OF),
