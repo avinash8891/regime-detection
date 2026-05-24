@@ -4,6 +4,7 @@ from collections.abc import Mapping, Sequence
 from datetime import date
 from typing import Protocol, TypeVar
 
+from regime_detection.data_quality import quality_forces_unknown
 from regime_detection.hysteresis import apply_per_label_asymmetric_hysteresis
 from regime_detection.models import DataQuality
 
@@ -51,6 +52,9 @@ def build_per_label_axis_outputs(
         evidence,
         strict=True,
     ):
+        if quality_forces_unknown(dq):
+            stable = raw
+            active = raw
         outputs[day] = output_factory(
             raw_label=raw,
             stable_label=stable,

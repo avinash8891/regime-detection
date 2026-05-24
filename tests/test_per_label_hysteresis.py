@@ -1,8 +1,12 @@
 from __future__ import annotations
 
+from datetime import date
+
 import pytest
 
+from regime_detection.axis_builders.per_label import build_per_label_axis_outputs
 from regime_detection.hysteresis import apply_per_label_asymmetric_hysteresis
+from regime_detection.models import AxisOutput, DataQuality
 from regime_detection.network_fragility_rules import NETWORK_FRAGILITY_RISK_RANK
 
 
@@ -187,3 +191,33 @@ def test_raises_on_empty_raw_labels() -> None:
             risk_rank=NETWORK_FRAGILITY_RANK,
             deescalation_days_by_label=NETWORK_FRAGILITY_DEESCALATION_DAYS,
         )
+
+
+def test_bad_data_quality_forces_unknown_after_hysteresis() -> None:
+    sessions = [date(2024, 1, 2), date(2024, 1, 3)]
+
+    outputs = build_per_label_axis_outputs(
+        sessions=sessions,
+        raw_labels=["spread_widening", "unknown"],
+        risk_rank={"unknown": 2, "credit_calm": 0, "spread_widening": 2},
+        deescalation_days_by_label={"spread_widening": 5},
+        default_deescalation_days=0,
+        data_quality=[
+            DataQuality(status="ok", freshness_days=0, completeness=1.0),
+            DataQuality(
+                status="insufficient_history",
+                reason="hy_spread_percentile_504d_warmup",
+            ),
+        ],
+        evidence=[
+            {"rule_evidence": {"hy_spread_percentile_504d": 0.75}},
+            {"reason": "hy_spread_percentile_504d_warmup"},
+        ],
+        output_factory=AxisOutput,
+    )
+
+    out = outputs[sessions[1]]
+    assert out.raw_label == "unknown"
+    assert out.stable_label == "unknown"
+    assert out.active_label == "unknown"
+    assert out.classification_status == "insufficient_history"
