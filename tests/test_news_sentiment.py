@@ -21,14 +21,24 @@ from __future__ import annotations
 
 import io
 import json
+import sqlite3
+import urllib.error
+from contextlib import closing
 from pathlib import Path
 
 import numpy as np
 import pandas as pd
+import pytest
 
 
 from regime_data_fetch.artifact_export import emit_manifest_for_report_paths
-from regime_data_fetch.sf_fed_news_sentiment import run_sf_fed_news_sentiment_fetch
+from regime_data_fetch import sf_fed_news_sentiment
+from regime_data_fetch.sf_fed_news_sentiment import (
+    SFFedNewsSentimentFetchError,
+    fetch_workbook_bytes,
+    parse_workbook,
+    run_sf_fed_news_sentiment_fetch,
+)
 from regime_detection.config import NewsSentimentConfig, TrendDirectionV2Config
 from regime_detection.loaders import load_news_sentiment_series
 from regime_detection.trend_direction_v2 import compute_trend_v2_features
@@ -58,6 +68,43 @@ def _trend_config() -> TrendDirectionV2Config:
         return_long_period=126,
         drawdown_lookback_days=252,
     )
+
+
+class _BytesResponse:
+    def __init__(self, payload: bytes) -> None:
+        self._payload = payload
+
+    def __enter__(self) -> "_BytesResponse":
+        return self
+
+    def __exit__(self, *_exc: object) -> None:
+        return None
+
+    def read(self) -> bytes:
+        return self._payload
+
+
+def _news_sentiment_workbook_bytes(
+    *,
+    data_sheet_name: str = "Data",
+    include_methodology: bool = True,
+    rows: list[dict[str, object]] | None = None,
+) -> bytes:
+    workbook = io.BytesIO()
+    if rows is None:
+        rows = [
+            {"Date": pd.Timestamp("2026-05-14"), "News Sentiment": 0.1},
+            {"Date": pd.Timestamp("2026-05-15"), "News Sentiment": -0.2},
+        ]
+    with pd.ExcelWriter(workbook, engine="openpyxl") as writer:
+        if include_methodology:
+            pd.DataFrame({"note": ["fixture"]}).to_excel(
+                writer,
+                sheet_name="Methodology",
+                index=False,
+            )
+        pd.DataFrame(rows).to_excel(writer, sheet_name=data_sheet_name, index=False)
+    return workbook.getvalue()
 
 
 def test_load_news_sentiment_series_reads_long_form_parquet_shape() -> None:
@@ -204,23 +251,9 @@ def test_news_sentiment_config_rejects_zero_window() -> None:
 def test_sf_fed_fetch_report_exposes_parquet_under_paths_for_manifest(
     tmp_path: Path,
 ) -> None:
-    workbook = io.BytesIO()
-    with pd.ExcelWriter(workbook, engine="openpyxl") as writer:
-        pd.DataFrame({"note": ["fixture"]}).to_excel(
-            writer,
-            sheet_name="Methodology",
-            index=False,
-        )
-        pd.DataFrame(
-            {
-                "Date": [pd.Timestamp("2026-05-14"), pd.Timestamp("2026-05-15")],
-                "News Sentiment": [0.1, -0.2],
-            }
-        ).to_excel(writer, sheet_name="Data", index=False)
-
     report_path = run_sf_fed_news_sentiment_fetch(
         out_dir=tmp_path,
-        workbook_bytes=workbook.getvalue(),
+        workbook_bytes=_news_sentiment_workbook_bytes(),
         acquisition_db_path=None,
     )
 
@@ -241,3 +274,157 @@ def test_sf_fed_fetch_report_exposes_parquet_under_paths_for_manifest(
     assert [artifact.local_path for artifact in manifest.artifacts] == [
         "data/raw/news_sentiment/sf_fed_news_sentiment.parquet"
     ]
+
+
+def test_parse_workbook_falls_back_to_second_sheet_when_data_sheet_is_renamed() -> None:
+    frame = parse_workbook(
+        _news_sentiment_workbook_bytes(data_sheet_name="Daily News Sentiment")
+    )
+
+    assert frame.to_dict(orient="records") == [
+        {
+            "date": pd.Timestamp("2026-05-14"),
+            "news_sentiment": 0.1,
+            "source": "frbsf:daily_news_sentiment",
+            "source_url": sf_fed_news_sentiment.SF_FED_NEWS_SENTIMENT_URL,
+        },
+        {
+            "date": pd.Timestamp("2026-05-15"),
+            "news_sentiment": -0.2,
+            "source": "frbsf:daily_news_sentiment",
+            "source_url": sf_fed_news_sentiment.SF_FED_NEWS_SENTIMENT_URL,
+        },
+    ]
+
+
+def test_parse_workbook_single_sheet_shape_failure_is_loud() -> None:
+    workbook = io.BytesIO()
+    with pd.ExcelWriter(workbook, engine="openpyxl") as writer:
+        pd.DataFrame({"Date": [pd.Timestamp("2026-05-14")]}).to_excel(
+            writer,
+            sheet_name="OnlySheet",
+            index=False,
+        )
+
+    with pytest.raises(SFFedNewsSentimentFetchError, match="unexpected shape"):
+        parse_workbook(workbook.getvalue())
+
+
+def test_fetch_workbook_bytes_wraps_urlerror_with_source_url(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured = {}
+
+    def fake_urlopen(req, *, timeout: int):
+        captured["url"] = req.full_url
+        captured["timeout"] = timeout
+        captured["user_agent"] = req.headers["User-agent"]
+        raise urllib.error.URLError("network unreachable")
+
+    monkeypatch.setattr(sf_fed_news_sentiment.urllib.request, "urlopen", fake_urlopen)
+
+    with pytest.raises(SFFedNewsSentimentFetchError, match="failed to download") as excinfo:
+        fetch_workbook_bytes(timeout=19)
+
+    assert captured == {
+        "url": sf_fed_news_sentiment.SF_FED_NEWS_SENTIMENT_URL,
+        "timeout": 19,
+        "user_agent": "regime-detection-fetch/1.0",
+    }
+    assert isinstance(excinfo.value.__cause__, urllib.error.URLError)
+    assert "network unreachable" in str(excinfo.value)
+
+
+def test_run_sf_fed_fetch_reads_operator_staged_workbook_and_records_artifact_ledger(
+    tmp_path: Path,
+) -> None:
+    workbook_path = tmp_path / "manual" / "news_sentiment_data.xlsx"
+    workbook_path.parent.mkdir()
+    workbook_path.write_bytes(_news_sentiment_workbook_bytes())
+    acquisition_db = tmp_path / "acquisition.db"
+
+    report_path = run_sf_fed_news_sentiment_fetch(
+        out_dir=tmp_path,
+        workbook_path=workbook_path,
+        acquisition_db_path=acquisition_db,
+    )
+
+    report = json.loads(report_path.read_text())
+    assert report["rows"] == 2
+    assert report["min_date"] == "2026-05-14"
+    assert report["max_date"] == "2026-05-15"
+    assert not (tmp_path / "news_sentiment" / "sf_fed_news_sentiment.xlsx").exists()
+    with closing(sqlite3.connect(acquisition_db)) as conn:
+        fetch_runs = conn.execute("SELECT fetch_type, status FROM fetch_runs").fetchall()
+        artifacts = conn.execute(
+            "SELECT source_name, artifact_kind, source_identifier, start_date, end_date FROM artifacts"
+        ).fetchall()
+        outputs = conn.execute(
+            "SELECT output_kind, row_count, min_date, max_date FROM derived_outputs ORDER BY output_id"
+        ).fetchall()
+        lineage_count = conn.execute("SELECT count(*) FROM artifact_lineage").fetchone()[0]
+
+    assert fetch_runs == [("sf_fed_news_sentiment", "ok")]
+    assert artifacts == [
+        (
+            "frbsf:daily_news_sentiment",
+            "xlsx",
+            sf_fed_news_sentiment.SF_FED_NEWS_SENTIMENT_URL,
+            "2026-05-14",
+            "2026-05-15",
+        )
+    ]
+    assert outputs == [
+        ("sf_fed_news_sentiment_parquet", 2, "2026-05-14", "2026-05-15"),
+        ("sf_fed_news_sentiment_report", 2, "2026-05-14", "2026-05-15"),
+    ]
+    assert lineage_count == 1
+
+
+def test_run_sf_fed_fetch_live_download_writes_raw_workbook(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    payload = _news_sentiment_workbook_bytes()
+
+    def fake_urlopen(req, *, timeout: int):
+        assert req.full_url == sf_fed_news_sentiment.SF_FED_NEWS_SENTIMENT_URL
+        assert timeout == 11
+        return _BytesResponse(payload)
+
+    monkeypatch.setattr(sf_fed_news_sentiment.urllib.request, "urlopen", fake_urlopen)
+
+    report_path = run_sf_fed_news_sentiment_fetch(out_dir=tmp_path, timeout=11)
+
+    report = json.loads(report_path.read_text())
+    raw_path = tmp_path / "news_sentiment" / "sf_fed_news_sentiment.xlsx"
+    parquet_path = tmp_path / "news_sentiment" / "sf_fed_news_sentiment.parquet"
+    assert raw_path.read_bytes() == payload
+    assert report["paths"]["news_sentiment_parquet"] == str(parquet_path)
+    assert pd.read_parquet(parquet_path)["news_sentiment"].tolist() == [0.1, -0.2]
+
+
+def test_run_sf_fed_fetch_marks_acquisition_run_failed_on_bad_workbook(
+    tmp_path: Path,
+) -> None:
+    acquisition_db = tmp_path / "acquisition.db"
+
+    with pytest.raises(SFFedNewsSentimentFetchError, match="unexpected shape"):
+        run_sf_fed_news_sentiment_fetch(
+            out_dir=tmp_path,
+            workbook_bytes=_news_sentiment_workbook_bytes(
+                include_methodology=False,
+                rows=[{"Date": pd.Timestamp("2026-05-14")}],
+            ),
+            acquisition_db_path=acquisition_db,
+        )
+
+    with closing(sqlite3.connect(acquisition_db)) as conn:
+        fetch_runs = conn.execute(
+            "SELECT fetch_type, status, notes FROM fetch_runs"
+        ).fetchall()
+
+    assert len(fetch_runs) == 1
+    assert fetch_runs[0][0] == "sf_fed_news_sentiment"
+    assert fetch_runs[0][1] == "failed"
+    assert "unexpected shape" in fetch_runs[0][2]
