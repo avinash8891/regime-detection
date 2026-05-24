@@ -226,6 +226,11 @@ volume_liquidity_v2:
 # volatility_state_v2 (documented implementation decision).
 volume_liquidity_state:
   rules:
+    # TODO(calibration): Do not retune these thresholds opportunistically.
+    # Future full-axis walk-forward calibration must freeze manifest/config,
+    # predeclare metrics and train/validation/test windows, evaluate all
+    # configurable axes plus transition_score out-of-sample, and leave
+    # spec-pinned thresholds unchanged unless results show stable improvement.
     panic_volume_zscore_threshold: 2.0                    # v2 §1E line 272
     panic_volume_return_threshold: -0.02                  # v2 §1E line 273
     liquidity_gap_frequency_percentile_threshold: 0.75    # v2 §1E line 278
