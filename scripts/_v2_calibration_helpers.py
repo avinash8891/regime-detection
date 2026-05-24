@@ -301,14 +301,11 @@ def _read_daily_ohlcv(
             if symbol_file is None:
                 continue
             frame = pd.read_parquet(symbol_file)
-            if "symbol" not in frame.columns:
-                frame = frame.assign(symbol=symbol)
-            else:
-                _require_symbol_column_matches_partition(
-                    frame,
-                    expected_symbol=symbol,
-                    parquet_path=symbol_file,
-                )
+            _require_symbol_column_matches_partition(
+                frame,
+                expected_symbol=symbol,
+                parquet_path=symbol_file,
+            )
             frames.append(frame)
     else:
         for parquet_file in sorted(daily_ohlcv_dir.rglob("*.parquet")):
@@ -316,14 +313,11 @@ def _read_daily_ohlcv(
             parent = parquet_file.parent.name
             if parent.startswith("symbol="):
                 partition_symbol = parent.removeprefix("symbol=")
-                if "symbol" not in frame.columns:
-                    frame = frame.assign(symbol=partition_symbol)
-                else:
-                    _require_symbol_column_matches_partition(
-                        frame,
-                        expected_symbol=partition_symbol,
-                        parquet_path=parquet_file,
-                    )
+                _require_symbol_column_matches_partition(
+                    frame,
+                    expected_symbol=partition_symbol,
+                    parquet_path=parquet_file,
+                )
             frames.append(frame)
     if not frames:
         raise FileNotFoundError(f"no parquet OHLCV files found under {daily_ohlcv_dir}")
@@ -336,6 +330,11 @@ def _require_symbol_column_matches_partition(
     expected_symbol: str,
     parquet_path: Path,
 ) -> None:
+    if "symbol" not in frame.columns:
+        raise ValueError(
+            "daily OHLCV symbol contract violation: "
+            f"{parquet_path} missing symbol column; expected {expected_symbol}"
+        )
     if frame["symbol"].isna().any():
         raise ValueError(
             "daily OHLCV symbol contract violation: "

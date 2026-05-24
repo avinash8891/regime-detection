@@ -10,12 +10,14 @@ import pytest
 from regime_data_fetch.constituent_ohlcv_tree import materialize_constituent_ohlcv_tree
 
 
-def _write_ohlcv(path: Path, close: float = 100.0) -> None:
+def _write_ohlcv(path: Path, close: float = 100.0, symbol: str | None = None) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
+    symbol = symbol or path.parent.name.removeprefix("symbol=")
     pd.DataFrame(
         [
             {
                 "date": "2026-05-01",
+                "symbol": symbol,
                 "open": close - 1,
                 "high": close + 1,
                 "low": close - 2,
@@ -120,3 +122,37 @@ def test_materialize_constituent_ohlcv_tree_can_record_missing_symbols(
     assert result.missing_symbols == ("MSFT",)
     report = json.loads(result.report_path.read_text())
     assert report["missing_symbols"] == ["MSFT"]
+
+
+def test_materialize_constituent_ohlcv_tree_rejects_source_without_symbol(
+    tmp_path: Path,
+) -> None:
+    source = tmp_path / "source"
+    path = source / "symbol=AAPL" / "part.parquet"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    pd.DataFrame(
+        [
+            {
+                "date": "2026-05-01",
+                "open": 99.0,
+                "high": 101.0,
+                "low": 98.0,
+                "close": 100.0,
+                "volume": 1000,
+                "adjusted_close": 100.0,
+            }
+        ]
+    ).to_parquet(path, index=False)
+    pit = tmp_path / "pit.parquet"
+    pd.DataFrame(
+        [{"ticker": "AAPL", "start_date": "2026-01-01", "end_date": None}]
+    ).to_parquet(pit, index=False)
+
+    with pytest.raises(ValueError, match="missing required columns: \\['symbol'\\]"):
+        materialize_constituent_ohlcv_tree(
+            source_tree=source,
+            output_tree=tmp_path / "daily_ohlcv_762",
+            pit_parquet_path=pit,
+            start_date=dt.date(2026, 5, 1),
+            end_date=dt.date(2026, 5, 2),
+        )

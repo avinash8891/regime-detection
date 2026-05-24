@@ -421,9 +421,6 @@ def _write_daily_ohlcv_symbol_tree(frame: pd.DataFrame, *, tree_root: Path) -> l
             )
             existing = existing.copy()
             existing["date"] = pd.to_datetime(existing["date"]).dt.date.astype(str)
-            if "symbol" not in existing.columns:
-                existing["symbol"] = str(symbol)
-                existing = existing[SYMBOL_TREE_COLUMNS]
             outgoing = pd.concat([existing, outgoing], ignore_index=True)
         outgoing = (
             outgoing.sort_values("date")
@@ -457,8 +454,6 @@ def _validate_symbol_tree_frame(
     expected_symbol: str,
 ) -> None:
     got = list(frame.columns)
-    if got == EXPECTED_COLUMNS:
-        return
     if got != SYMBOL_TREE_COLUMNS:
         raise RuntimeError(f"Unexpected OHLCV parquet columns in {parquet_path}: {got!r}")
     if frame["symbol"].isna().any():

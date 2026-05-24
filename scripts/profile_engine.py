@@ -190,11 +190,31 @@ def _read_symbol_ohlcv(tree_root: Path, symbol: str) -> pd.DataFrame:
             raise FileNotFoundError(parquet_path)
         source = symbol_dir
     frame = pd.read_parquet(source)
-    required_cols = ["date", "open", "high", "low", "close", "volume", "adjusted_close"]
+    if "symbol" not in frame.columns:
+        raise ValueError(f"{source} missing symbol column; expected {symbol}")
+    if frame["symbol"].isna().any():
+        raise ValueError(f"{source} has null symbol row(s); expected {symbol}")
+    observed = sorted({str(value) for value in frame["symbol"].unique()})
+    if observed != [symbol]:
+        raise ValueError(
+            f"{source} symbol mismatch: expected {symbol}, observed {observed}"
+        )
+    required_cols = [
+        "date",
+        "symbol",
+        "open",
+        "high",
+        "low",
+        "close",
+        "volume",
+        "adjusted_close",
+    ]
     missing = [col for col in required_cols if col not in frame.columns]
     if missing:
         raise ValueError(f"{source} missing required columns: {missing}")
-    frame = frame[required_cols].copy()
+    frame = frame[
+        ["date", "open", "high", "low", "close", "volume", "adjusted_close"]
+    ].copy()
     frame["date"] = pd.to_datetime(frame["date"]).dt.normalize()
     frame = frame.sort_values("date").reset_index(drop=True)
     return frame

@@ -508,7 +508,7 @@ def test_profile_json_report_emits_layer1_sentiment_metric_summary(
     assert metrics["sentiment_concordance"]["last_value"] == 1.0
 
 
-def test_read_symbol_ohlcv_accepts_partitioned_parquet_file_name(
+def test_read_symbol_ohlcv_rejects_missing_symbol_column(
     tmp_path: Path,
 ) -> None:
     symbol_dir = tmp_path / "daily_ohlcv" / "symbol=AAPL"
@@ -527,14 +527,11 @@ def test_read_symbol_ohlcv_accepts_partitioned_parquet_file_name(
         ]
     ).to_parquet(symbol_dir / "hash-0.parquet", index=False)
 
-    frame = profile_engine._read_symbol_ohlcv(tmp_path / "daily_ohlcv", "AAPL")
-
-    assert frame[["date", "close"]].to_dict(orient="records") == [
-        {"date": pd.Timestamp("2026-05-15"), "close": 10.5}
-    ]
+    with pytest.raises(ValueError, match="missing symbol column"):
+        profile_engine._read_symbol_ohlcv(tmp_path / "daily_ohlcv", "AAPL")
 
 
-def test_load_constituent_ohlcv_accepts_partitioned_parquet_file_name(
+def test_read_symbol_ohlcv_accepts_partitioned_parquet_file_name_with_symbol(
     tmp_path: Path,
 ) -> None:
     symbol_dir = tmp_path / "daily_ohlcv" / "symbol=AAPL"
@@ -543,6 +540,69 @@ def test_load_constituent_ohlcv_accepts_partitioned_parquet_file_name(
         [
             {
                 "date": "2026-05-15",
+                "symbol": "AAPL",
+                "open": 10.0,
+                "high": 11.0,
+                "low": 9.0,
+                "close": 10.5,
+                "volume": 100,
+                "adjusted_close": 10.5,
+            }
+        ]
+    ).to_parquet(symbol_dir / "hash-0.parquet", index=False)
+
+    frame = profile_engine._read_symbol_ohlcv(tmp_path / "daily_ohlcv", "AAPL")
+
+    assert frame[["date", "close"]].to_dict(orient="records") == [
+        {"date": pd.Timestamp("2026-05-15"), "close": 10.5}
+    ]
+
+
+def test_load_constituent_ohlcv_rejects_missing_symbol_column(
+    tmp_path: Path,
+) -> None:
+    symbol_dir = tmp_path / "daily_ohlcv" / "symbol=AAPL"
+    symbol_dir.mkdir(parents=True)
+    pd.DataFrame(
+        [
+            {
+                "date": "2026-05-15",
+                "open": 10.0,
+                "high": 11.0,
+                "low": 9.0,
+                "close": 10.5,
+                "volume": 100,
+                "adjusted_close": 10.5,
+            }
+        ]
+    ).to_parquet(symbol_dir / "hash-0.parquet", index=False)
+    intervals = pd.DataFrame(
+        {
+            "ticker": ["AAPL"],
+            "start_date": [pd.Timestamp("2020-01-01").date()],
+            "end_date": [None],
+        }
+    )
+
+    with pytest.raises(ValueError, match="missing symbol column"):
+        profile_engine._load_constituent_ohlcv_from_tree(
+            tmp_path / "daily_ohlcv",
+            intervals,
+            start_date=pd.Timestamp("2026-05-01").date(),
+            end_date=pd.Timestamp("2026-05-31").date(),
+        )
+
+
+def test_load_constituent_ohlcv_accepts_partitioned_parquet_file_name_with_symbol(
+    tmp_path: Path,
+) -> None:
+    symbol_dir = tmp_path / "daily_ohlcv" / "symbol=AAPL"
+    symbol_dir.mkdir(parents=True)
+    pd.DataFrame(
+        [
+            {
+                "date": "2026-05-15",
+                "symbol": "AAPL",
                 "open": 10.0,
                 "high": 11.0,
                 "low": 9.0,
@@ -578,6 +638,7 @@ def test_load_constituent_ohlcv_rejects_internal_session_gap(tmp_path: Path) -> 
         [
             {
                 "date": "2026-05-14",
+                "symbol": "AAPL",
                 "open": 10.0,
                 "high": 11.0,
                 "low": 9.0,
@@ -587,6 +648,7 @@ def test_load_constituent_ohlcv_rejects_internal_session_gap(tmp_path: Path) -> 
             },
             {
                 "date": "2026-05-18",
+                "symbol": "AAPL",
                 "open": 10.0,
                 "high": 11.0,
                 "low": 9.0,

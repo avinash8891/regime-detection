@@ -13,6 +13,7 @@ import pandas as pd
 
 EXPECTED_OHLCV_COLUMNS = [
     "date",
+    "symbol",
     "open",
     "high",
     "low",
@@ -20,7 +21,7 @@ EXPECTED_OHLCV_COLUMNS = [
     "volume",
     "adjusted_close",
 ]
-OUTPUT_OHLCV_COLUMNS = ["date", "symbol", *EXPECTED_OHLCV_COLUMNS[1:]]
+OUTPUT_OHLCV_COLUMNS = EXPECTED_OHLCV_COLUMNS
 
 
 @dataclass(frozen=True)
@@ -92,7 +93,6 @@ def materialize_constituent_ohlcv_tree(
             parquet_path = symbol_dir / "ohlcv.parquet"
             outgoing = frame[EXPECTED_OHLCV_COLUMNS].copy()
             outgoing["symbol"] = symbol
-            outgoing = outgoing[OUTPUT_OHLCV_COLUMNS]
             outgoing.to_parquet(parquet_path, index=False)
             file_sha = _sha256_file(parquet_path)
             file_entries.append(
@@ -208,6 +208,13 @@ def _read_symbol_ohlcv(tree_root: Path, symbol: str) -> tuple[pd.DataFrame, Path
     missing = [col for col in EXPECTED_OHLCV_COLUMNS if col not in frame.columns]
     if missing:
         raise ValueError(f"{source_path} missing required columns: {missing}")
+    if frame["symbol"].isna().any():
+        raise ValueError(f"{source_path} has null symbol row(s); expected {symbol}")
+    observed = sorted({str(value) for value in frame["symbol"].unique()})
+    if observed != [symbol]:
+        raise ValueError(
+            f"{source_path} symbol mismatch: expected {symbol}, observed {observed}"
+        )
     out = frame[EXPECTED_OHLCV_COLUMNS].copy()
     out["date"] = pd.to_datetime(out["date"]).dt.date.astype(str)
     out = out.sort_values("date").drop_duplicates(subset=["date"], keep="last")
