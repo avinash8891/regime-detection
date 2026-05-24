@@ -297,6 +297,41 @@ def test_parse_gdelt_event_export_filters_to_expected_export_date() -> None:
     ]
 
 
+def test_parse_gdelt_event_export_counts_concatenated_zip_archives() -> None:
+    first = [""] * 61
+    first[1] = "20220224"
+    first[28] = "19"
+    first[29] = "4"
+    first[31] = "7"
+    first[60] = "https://example.test/first"
+    second = [""] * 61
+    second[1] = "20220224"
+    second[28] = "19"
+    second[29] = "4"
+    second[31] = "11"
+    second[60] = "https://example.test/second"
+
+    payload = b""
+    for name, row in (
+        ("20220224000000.export.CSV", first),
+        ("20220224001500.export.CSV", second),
+    ):
+        buffer = io.BytesIO()
+        with zipfile.ZipFile(buffer, "w") as zf:
+            zf.writestr(name, "\t".join(row) + "\n")
+        payload += buffer.getvalue()
+
+    rows = parse_gdelt_event_export(
+        payload,
+        source_url="http://data.gdeltproject.org/gdeltv2/20220224.export.CSV.zip",
+        expected_date=dt.date(2022, 2, 24),
+    )
+
+    assert [(row["date"], row["event_count"]) for row in rows] == [
+        (dt.date(2022, 2, 24), 18)
+    ]
+
+
 def test_gpr_generator_fetches_gdelt_daily_exports_for_spike_dates() -> None:
     gpr_csv = """date,gpr,gpr_act,gpr_threat,gpr_ma7,gpr_ma30,N10D
 2022-02-20,100,100,100,100,100,100

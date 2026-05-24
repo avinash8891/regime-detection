@@ -1027,10 +1027,31 @@ def _decode_gdelt_export(payload: str | bytes) -> str:
     if isinstance(payload, str):
         return payload
     if payload[:2] == b"PK":
-        with zipfile.ZipFile(io.BytesIO(payload)) as archive:
-            first_name = archive.namelist()[0]
-            return archive.read(first_name).decode("utf-8", errors="replace")
+        return "\n".join(
+            _decode_gdelt_zip_archive(archive_payload)
+            for archive_payload in _split_concatenated_zip_archives(payload)
+        )
     return payload.decode("utf-8", errors="replace")
+
+
+def _decode_gdelt_zip_archive(payload: bytes) -> str:
+    with zipfile.ZipFile(io.BytesIO(payload)) as archive:
+        first_name = archive.namelist()[0]
+        return archive.read(first_name).decode("utf-8", errors="replace")
+
+
+def _split_concatenated_zip_archives(payload: bytes) -> list[bytes]:
+    chunks: list[bytes] = []
+    start = 0
+    while start < len(payload):
+        end_record = payload.find(b"PK\x05\x06", start)
+        if end_record == -1 or end_record + 22 > len(payload):
+            return [payload] if not chunks else chunks
+        comment_length = int.from_bytes(payload[end_record + 20 : end_record + 22], "little")
+        end = end_record + 22 + comment_length
+        chunks.append(payload[start:end])
+        start = end
+    return chunks
 
 
 def _source_url_or_export_url(value: str, export_url: str) -> str:

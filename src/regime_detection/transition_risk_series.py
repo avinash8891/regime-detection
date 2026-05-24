@@ -74,7 +74,7 @@ def build_transition_risk_series(
     output_sessions: list[date] | None = None,
 ) -> dict[date, TransitionRiskOutput]:
     sessions = list(context.sessions)
-    scored_sessions = sessions if output_sessions is None else list(output_sessions)
+    requested_output_sessions = None if output_sessions is None else list(output_sessions)
     session_index = pd.to_datetime(sessions)
     close_series = _strict_lookup_by_sessions(
         series=context.spy_ohlcv["close"],
@@ -100,15 +100,15 @@ def build_transition_risk_series(
     trend_v2 = feature_store.trend_direction_v2
     transition_score_config = context.config.transition_score
     if transition_score_config is None:
-        transition_score_config = _legacy_transition_score_config()
+        legacy_selection_config = _legacy_transition_score_config()
         transition_score_inputs_by_date = _build_legacy_transition_score_inputs_by_date(
             sessions=sessions,
             event_calendar=axis_bundle.event_calendar,
             close=close_series,
             sma_50=sma_50_series,
         )
-        return build_transition_risk_outputs_by_date(
-            sessions=scored_sessions,
+        outputs = build_transition_risk_outputs_by_date(
+            sessions=sessions,
             trend_direction_active_by_date=axis_bundle.trend_direction.active_labels_by_date,
             trend_character_active_by_date=axis_bundle.trend_character.active_labels_by_date,
             volatility_state_active_by_date=axis_bundle.volatility_state.active_labels_by_date,
@@ -123,10 +123,14 @@ def build_transition_risk_series(
             },
             history=history,
             transition_score_inputs_by_date=transition_score_inputs_by_date,
-            transition_score_config=transition_score_config,
-            cooldown_window_days=transition_score_config.cooldown_window_days,
-            state_confirmation_days=transition_score_config.state_confirmation_days,
-            initial_active_state=transition_score_config.initial_active_state,
+            transition_score_config=None,
+            cooldown_window_days=legacy_selection_config.cooldown_window_days,
+            state_confirmation_days=legacy_selection_config.state_confirmation_days,
+            initial_active_state=legacy_selection_config.initial_active_state,
+        )
+        return _filter_transition_risk_outputs(
+            outputs=outputs,
+            output_sessions=requested_output_sessions,
         )
 
     missing = []
@@ -191,8 +195,8 @@ def build_transition_risk_series(
         ),
     )
 
-    return build_transition_risk_outputs_by_date(
-        sessions=scored_sessions,
+    outputs = build_transition_risk_outputs_by_date(
+        sessions=sessions,
         trend_direction_active_by_date=axis_bundle.trend_direction.active_labels_by_date,
         trend_character_active_by_date=axis_bundle.trend_character.active_labels_by_date,
         volatility_state_active_by_date=axis_bundle.volatility_state.active_labels_by_date,
@@ -209,6 +213,20 @@ def build_transition_risk_series(
         state_confirmation_days=transition_score_config.state_confirmation_days,
         initial_active_state=transition_score_config.initial_active_state,
     )
+    return _filter_transition_risk_outputs(
+        outputs=outputs,
+        output_sessions=requested_output_sessions,
+    )
+
+
+def _filter_transition_risk_outputs(
+    *,
+    outputs: dict[date, TransitionRiskOutput],
+    output_sessions: list[date] | None,
+) -> dict[date, TransitionRiskOutput]:
+    if output_sessions is None:
+        return outputs
+    return {day: outputs[day] for day in output_sessions}
 
 
 def _legacy_transition_score_config() -> TransitionScoreConfig:
@@ -416,7 +434,7 @@ def build_transition_risk_outputs_by_date(
     sma_50_by_date: dict[date, float | None],
     history: TransitionRiskHistory,
     transition_score_inputs_by_date: dict[date, TransitionScoreInputs],
-    transition_score_config: TransitionScoreConfig,
+    transition_score_config: TransitionScoreConfig | None,
     cooldown_window_days: int = 5,
     state_confirmation_days: dict[str, int] | None = None,
     initial_active_state: str | None = None,
@@ -468,11 +486,19 @@ def build_transition_risk_outputs_by_date(
     post_switch_cooldown_arr = post_switch_cooldown.to_numpy(dtype=bool)
     insufficient_data_arr = insufficient_data.to_numpy(dtype=bool)
 
+    selection_config = transition_score_config or _legacy_transition_score_config()
     raw_outputs: dict[date, TransitionRiskOutput] = {}
     for i, day in enumerate(sessions):
         switch_days = history.days_since_axis_switch_by_date[day]
         inputs = transition_score_inputs_by_date[day]
-        if bool(insufficient_data_arr[i]):
+        if transition_score_config is None:
+            composed = ComposedTransitionScore(
+                score=0.0,
+                interpretation="stable",
+                components={},
+                macro_event_labels=inputs.event_calendar_labels,
+            )
+        elif bool(insufficient_data_arr[i]):
             composed = ComposedTransitionScore(
                 score=None,
                 interpretation=None,
@@ -509,7 +535,7 @@ def build_transition_risk_outputs_by_date(
                 config=transition_score_config,
             )
         components = composed.components or {}
-        overrides = transition_score_config.overrides
+        overrides = selection_config.overrides
         credit_stressed = components.get("credit_stress", 0.0) >= overrides.credit_stress
         correlation_stressed = (
             components.get("correlation_fragility", 0.0) >= overrides.correlation_fragility
@@ -565,12 +591,20 @@ def build_transition_risk_outputs_by_date(
                 recent_axis_switch_count=history.recent_axis_switch_count_by_date[day],
             ),
         )
+        if transition_score_config is None:
+            output = output.model_copy(
+                update={
+                    "score": None,
+                    "score_components": None,
+                    "primary_drivers": [],
+                }
+            )
         raw_outputs[day] = output
     return _apply_transition_state_debounce(
         sessions=sessions,
         raw_outputs=raw_outputs,
         state_confirmation_days=state_confirmation_days
-        or transition_score_config.state_confirmation_days,
+        or selection_config.state_confirmation_days,
         initial_active_state=initial_active_state,
     )
 
