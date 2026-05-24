@@ -10,9 +10,8 @@ from the shipping default config.
 
 from __future__ import annotations
 
-import copy
 import logging
-from datetime import date, timedelta
+from datetime import date
 
 import pytest
 from pydantic import ValidationError

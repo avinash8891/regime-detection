@@ -38,6 +38,36 @@ def default_pmi_path(data_root: Path) -> Path:
     return data_root.joinpath(*spec.default_relpath)
 
 
+def synthetic_pit_intervals_from_sector_closes(
+    sector_etf_closes: dict[str, pd.Series],
+) -> pd.DataFrame:
+    return pd.DataFrame(
+        {
+            "ticker": list(sector_etf_closes),
+            "start_date": [series.index.min().date() for series in sector_etf_closes.values()],
+            "end_date": [None] * len(sector_etf_closes),
+        }
+    )
+
+
+def constituent_ohlcv_from_sector_closes(
+    sector_etf_closes: dict[str, pd.Series],
+) -> dict[str, pd.DataFrame]:
+    return {
+        symbol: pd.DataFrame(
+            {
+                "open": series.astype(float),
+                "high": series.astype(float),
+                "low": series.astype(float),
+                "close": series.astype(float),
+                "volume": pd.Series(1_000_000, index=series.index, dtype="int64"),
+                "adjusted_close": series.astype(float),
+            }
+        )
+        for symbol, series in sector_etf_closes.items()
+    }
+
+
 def register_manifest_input_args(
     parser: argparse.ArgumentParser,
     *,

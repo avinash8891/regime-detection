@@ -103,7 +103,8 @@ def test_historical_walkforward_runner_records_failures_without_silent_skip(tmp_
     out_root = tmp_path / "walkforward"
     mod = _load_runner_module()
     event_calendar_path = repo_root / "tests" / "fixtures" / "events" / "us_events.yaml"
-    config_path = repo_root / "src" / "regime_detection" / "configs" / "core3-v1.0.0.yaml"
+    v2_daily_path = repo_root / "tests" / "fixtures" / "raw" / "v2" / "daily_ohlcv.csv"
+    config_path = repo_root / "tests" / "fixtures" / "configs" / "core3-v2-fast.yaml"
     result = mod.run_walkforward(
         market_data_path=broken_path,
         output_root=out_root,
@@ -111,6 +112,7 @@ def test_historical_walkforward_runner_records_failures_without_silent_skip(tmp_
         end_date=date(2023, 12, 14),
         event_calendar_path=event_calendar_path,
         config_path=config_path,
+        v2_daily_ohlcv_path=v2_daily_path,
     )
 
     assert result["session_count"] == 2

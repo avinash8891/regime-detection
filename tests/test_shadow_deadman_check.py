@@ -25,11 +25,15 @@ def _run_shadow(out_root: Path, as_of_date: date) -> None:
     repo_root = Path(__file__).resolve().parents[1]
     market_data_path = repo_root / "tests" / "fixtures" / "raw" / "market_data.parquet"
     event_calendar_path = repo_root / "tests" / "fixtures" / "events" / "us_events.yaml"
+    v2_daily_path = repo_root / "tests" / "fixtures" / "raw" / "v2" / "daily_ohlcv.csv"
+    config_path = repo_root / "tests" / "fixtures" / "configs" / "core3-v2-fast.yaml"
     result = runner.run_shadow(
         as_of_date=as_of_date,
         market_data_path=market_data_path,
         event_calendar_path=event_calendar_path,
         output_root=out_root,
+        config_path=config_path,
+        v2_daily_ohlcv_path=v2_daily_path,
     )
     assert result["status"] == "success"
 

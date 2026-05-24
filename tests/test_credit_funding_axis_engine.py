@@ -738,6 +738,8 @@ def test_regime_output_carries_real_fixture_credit_funding_state_when_configured
     v2_market_df_for_asof,
     v2_close_series_by_symbol: dict[str, pd.Series],
     v2_macro_series_by_key: dict[str, pd.Series],
+    v2_pit_constituent_intervals: pd.DataFrame,
+    v2_constituent_ohlcv_by_symbol: dict[str, pd.DataFrame],
     event_calendar_df,
 ) -> None:
     """End-to-end: real fixture reaches both §2C wire fields.
@@ -763,14 +765,36 @@ def test_regime_output_carries_real_fixture_credit_funding_state_when_configured
         v2_macro_series_by_key,
     )
     engine = RegimeEngine()
+    assert engine.config.hmm is not None
+    assert engine.config.clustering is not None
+    assert engine.config.change_point is not None
+    config = engine.config.model_copy(
+        update={
+            "hmm": engine.config.hmm.model_copy(
+                update={
+                    "training_window_days": 100,
+                    "random_seeds": (42, 7, 13),
+                }
+            ),
+            "clustering": engine.config.clustering.model_copy(
+                update={"training_window_days": 100}
+            ),
+            "change_point": engine.config.change_point.model_copy(
+                update={"training_window_days": 100}
+            ),
+        }
+    )
     timeline = engine.classify_window(
         end_date=as_of,
         market_data=v2_market_df_for_asof(as_of),
         lookback_days=1,
+        config=config,
         event_calendar=event_calendar_df,
         sector_etf_closes=context.sector_etf_closes,
         cross_asset_closes=context.cross_asset_closes,
         macro_series=v2_macro_series_by_key,
+        pit_constituent_intervals=v2_pit_constituent_intervals,
+        constituent_ohlcv=v2_constituent_ohlcv_by_symbol,
     )
     out = timeline.outputs[-1]
     assert out.as_of_date == as_of

@@ -131,6 +131,21 @@ def _constituent_ohlcv_from_daily(
     return result
 
 
+def _default_pit_intervals_from_daily(daily_ohlcv: pd.DataFrame) -> pd.DataFrame:
+    start_dates = (
+        daily_ohlcv[daily_ohlcv["symbol"].isin(SECTOR_ETFS)]
+        .groupby("symbol")["date"]
+        .min()
+    )
+    return pd.DataFrame(
+        {
+            "ticker": list(start_dates.index),
+            "start_date": list(start_dates.values),
+            "end_date": [None] * len(start_dates),
+        }
+    )
+
+
 def _write_output_json(output_path: Path, payload_json: str) -> None:
     output_path.write_text(payload_json + "\n", encoding="utf-8")
 
@@ -161,6 +176,8 @@ def run_shadow(
         pit_intervals = _load_pit_intervals(pit_constituent_intervals_path)
         v2_kwargs: dict[str, Any] = {}
         if v2_slice is not None:
+            if pit_intervals is None:
+                pit_intervals = _default_pit_intervals_from_daily(v2_slice)
             v2_kwargs["sector_etf_closes"] = _close_series_by_symbol(v2_slice, SECTOR_ETFS)
             v2_kwargs["cross_asset_closes"] = _close_series_by_symbol(v2_slice, CROSS_ASSET_SYMBOLS)
             v2_kwargs["pit_constituent_intervals"] = pit_intervals

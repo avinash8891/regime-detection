@@ -25,6 +25,14 @@ from regime_detection.loaders import load_event_calendar  # noqa: E402
 from regime_detection.shadow_storage import event_rows_for_yaml  # noqa: E402
 from regime_detection.versioning import engine_version as resolved_engine_version  # noqa: E402
 from regime_data_fetch.materialization import materialize_if_requested  # noqa: E402
+from scripts.run_shadow_regime import (  # noqa: E402
+    _close_series_by_symbol,
+    _constituent_ohlcv_from_daily,
+    _default_pit_intervals_from_daily,
+    _load_pit_intervals,
+    _load_v2_daily_ohlcv,
+)
+from regime_detection.fragility_universe import CROSS_ASSET_SYMBOLS, SECTOR_ETFS  # noqa: E402
 from scripts._v2_calibration_helpers import (  # noqa: E402
     apply_manifest_input_defaults,
 )
@@ -312,6 +320,8 @@ def run_walkforward(
     end_date: date,
     event_calendar_path: Path | None = None,
     config_path: Path | None = None,
+    v2_daily_ohlcv_path: Path | None = None,
+    pit_constituent_intervals_path: Path | None = None,
     allow_missing_event_calendar: bool = False,
 ) -> dict[str, Any]:
     market_data = _normalize_market_data(market_data_path)
@@ -319,6 +329,8 @@ def run_walkforward(
         event_calendar_path,
         allow_missing_event_calendar=allow_missing_event_calendar,
     )
+    v2_daily = _load_v2_daily_ohlcv(v2_daily_ohlcv_path)
+    pit_intervals = _load_pit_intervals(pit_constituent_intervals_path)
     sessions = _sessions_between(start_date, end_date)
     engine = RegimeEngine(config_path=config_path)
     if not sessions:
@@ -351,10 +363,24 @@ def run_walkforward(
             )
 
             try:
+                v2_kwargs: dict[str, Any] = {}
+                if v2_daily is not None:
+                    v2_slice = v2_daily[v2_daily["date"] <= as_of_date].copy().reset_index(drop=True)
+                    session_pit_intervals = pit_intervals
+                    if session_pit_intervals is None:
+                        session_pit_intervals = _default_pit_intervals_from_daily(v2_slice)
+                    v2_kwargs["sector_etf_closes"] = _close_series_by_symbol(v2_slice, SECTOR_ETFS)
+                    v2_kwargs["cross_asset_closes"] = _close_series_by_symbol(v2_slice, CROSS_ASSET_SYMBOLS)
+                    v2_kwargs["pit_constituent_intervals"] = session_pit_intervals
+                    v2_kwargs["constituent_ohlcv"] = _constituent_ohlcv_from_daily(
+                        v2_slice,
+                        session_pit_intervals,
+                    )
                 output = engine.classify(
                     as_of_date=as_of_date,
                     market_data=market_slice,
                     event_calendar=event_df,
+                    **v2_kwargs,
                 )
                 output_path = paths["outputs"] / f"{as_of_date.isoformat()}.json"
                 _write_output_json(output_path, output.model_dump_json(indent=2))
@@ -470,6 +496,8 @@ def _parse_args() -> argparse.Namespace:
         ),
     )
     parser.add_argument("--config-path", type=Path, default=None)
+    parser.add_argument("--v2-daily-ohlcv", type=Path, default=None)
+    parser.add_argument("--pit-constituent-intervals", type=Path, default=None)
     parser.add_argument("--manifest", type=Path, default=None, help="Optional artifact manifest to materialize before running.")
     parser.add_argument("--artifact-store", default=None, help="Optional artifact-store root override for --manifest.")
     parser.add_argument("--data-root", type=Path, default=REPO_ROOT / "data" / "raw", help="Local data/raw root used for manifest materialization.")
@@ -495,6 +523,8 @@ def main() -> int:
         end_date=args.end_date,
         event_calendar_path=args.event_calendar,
         config_path=args.config_path,
+        v2_daily_ohlcv_path=args.v2_daily_ohlcv,
+        pit_constituent_intervals_path=args.pit_constituent_intervals,
         allow_missing_event_calendar=args.allow_missing_event_calendar,
     )
     print(json.dumps(result, indent=2, sort_keys=True))

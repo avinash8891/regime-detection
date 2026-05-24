@@ -545,11 +545,16 @@ def walkforward_2023_dec_template(tmp_path_factory: pytest.TempPathFactory) -> P
         "run_historical_walkforward", "scripts/run_historical_walkforward.py"
     )
     market_data_path = _REPO_ROOT / "tests" / "fixtures" / "raw" / "market_data.parquet"
+    v2_daily_path = _REPO_ROOT / "tests" / "fixtures" / "raw" / "v2" / "daily_ohlcv.csv"
+    config_path = _REPO_ROOT / "tests" / "fixtures" / "configs" / "core3-v2-fast.yaml"
     runner.run_walkforward(
         market_data_path=market_data_path,
         output_root=cache_dir,
         start_date=date(2023, 12, 12),
         end_date=date(2023, 12, 14),
+        event_calendar_path=_EVENT_CALENDAR_PATH,
+        config_path=config_path,
+        v2_daily_ohlcv_path=v2_daily_path,
     )
     return cache_dir
 

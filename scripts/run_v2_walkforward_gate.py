@@ -33,7 +33,7 @@ sys.path.insert(0, str(REPO_ROOT / "scripts"))
 
 from regime_detection.calendar import nyse_calendar  # noqa: E402
 from regime_detection.comparison import V2_GATE_METRIC_NAMES  # noqa: E402
-from regime_detection.config import load_default_regime_config  # noqa: E402
+from regime_detection.config import load_default_regime_config, load_regime_config  # noqa: E402
 from regime_detection.engine import RegimeEngine  # noqa: E402
 from regime_detection.fragility_universe import SECTOR_ETFS  # noqa: E402
 from regime_detection.loaders import (  # noqa: E402
@@ -52,12 +52,14 @@ from _v2_calibration_helpers import (  # noqa: E402
     apply_manifest_input_defaults,
     apply_manifest_input_paths,
     axis_reporting_label as _reporting_label,
+    constituent_ohlcv_from_sector_closes,
     load_close_dict,
     load_macro_series,
     load_market_data,
     manifest_input_overrides,
     materialize_manifest_from_args,
     register_manifest_input_args,
+    synthetic_pit_intervals_from_sector_closes,
 )
 
 
@@ -356,6 +358,8 @@ def _parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--daily-dir", type=Path, default=None)
     parser.add_argument("--macro-parquet", type=Path, default=None)
+    parser.add_argument("--event-calendar", dest="event_calendar", type=Path, default=None)
+    parser.add_argument("--config-path", type=Path, default=None)
     # Optional manifest-routed inputs come from MANIFEST_INPUT_SPECS.
     register_manifest_input_args(parser, include_required_paths=False)
     parser.add_argument("--start-date", type=dt.date.fromisoformat, default=None)
@@ -417,7 +421,7 @@ def main() -> int:
     event_calendar = load_event_calendar(args.event_calendar)
 
     # Build a v1 bootstrap context to derive the SPY session index.
-    config = load_default_regime_config()
+    config = load_regime_config(args.config_path) if args.config_path else load_default_regime_config()
     bootstrap_context = build_market_context(
         end_date=market_data["date"].max(),
         market_data=market_data,
@@ -464,6 +468,8 @@ def main() -> int:
         "sector_etf_closes": sector_etf_closes,
         "cross_asset_closes": cross_asset_closes,
         "macro_series": macro_series,
+        "pit_constituent_intervals": synthetic_pit_intervals_from_sector_closes(sector_etf_closes),
+        "constituent_ohlcv": constituent_ohlcv_from_sector_closes(sector_etf_closes),
         "central_bank_text_releases": (
             central_bank_text_releases if not central_bank_text_releases.empty else None
         ),
@@ -486,7 +492,7 @@ def main() -> int:
         len(sessions),
     )
 
-    engine = RegimeEngine()
+    engine = RegimeEngine(config_path=args.config_path)
     engine_version = resolved_engine_version()
 
     logger.info("Running v1-mode walk-forward (no V2 kwargs)...")
