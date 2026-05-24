@@ -110,7 +110,7 @@ def test_load_market_data_rejects_required_symbol_calendar_gap(
         raise AssertionError("expected required symbol calendar gap to fail")
 
 
-def test_load_close_dict_uses_partition_symbol_when_symbol_column_is_null(
+def test_load_close_dict_rejects_null_symbol_column_in_partition_file(
     tmp_path: Path,
 ) -> None:
     daily_dir = tmp_path / "daily_ohlcv_762"
@@ -141,13 +141,53 @@ def test_load_close_dict_uses_partition_symbol_when_symbol_column_is_null(
         ]
     ).to_parquet(symbol_dir / "ohlcv.parquet", index=False)
 
-    closes = load_close_dict(
-        daily_dir,
-        ["XLY"],
-        pd.DatetimeIndex([pd.Timestamp("2026-05-14"), pd.Timestamp("2026-05-15")]),
-    )
+    try:
+        load_close_dict(
+            daily_dir,
+            ["XLY"],
+            pd.DatetimeIndex([pd.Timestamp("2026-05-14"), pd.Timestamp("2026-05-15")]),
+        )
+    except ValueError as exc:
+        assert "daily OHLCV symbol contract violation" in str(exc)
+        assert "XLY" in str(exc)
+        assert "null" in str(exc)
+    else:
+        raise AssertionError("expected null symbol column to fail")
 
-    assert list(closes["XLY"]) == [1.5, 2.5]
+
+def test_load_close_dict_rejects_mismatched_symbol_column_in_partition_file(
+    tmp_path: Path,
+) -> None:
+    daily_dir = tmp_path / "daily_ohlcv_762"
+    symbol_dir = daily_dir / "symbol=XLY"
+    symbol_dir.mkdir(parents=True)
+    pd.DataFrame(
+        [
+            {
+                "date": "2026-05-14",
+                "open": 1.0,
+                "high": 2.0,
+                "low": 0.5,
+                "close": 1.5,
+                "volume": 100,
+                "adjusted_close": 1.5,
+                "symbol": "XLU",
+            }
+        ]
+    ).to_parquet(symbol_dir / "ohlcv.parquet", index=False)
+
+    try:
+        load_close_dict(
+            daily_dir,
+            ["XLY"],
+            pd.DatetimeIndex([pd.Timestamp("2026-05-14")]),
+        )
+    except ValueError as exc:
+        assert "daily OHLCV symbol contract violation" in str(exc)
+        assert "expected XLY" in str(exc)
+        assert "XLU" in str(exc)
+    else:
+        raise AssertionError("expected mismatched symbol column to fail")
 
 
 def test_load_close_dict_rejects_calendar_gap_between_start_and_end(

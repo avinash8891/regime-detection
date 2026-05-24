@@ -69,6 +69,8 @@ DATE_COLUMN_CANDIDATES: tuple[str, ...] = (
 _PARQUET_COMPRESSION = "snappy"
 _PARQUET_COERCE_TIMESTAMPS = "us"
 
+_DAILY_OHLCV_ARTIFACT_RE = re.compile(r"^daily_ohlcv_762_(?P<symbol>.+)$")
+
 
 # ---------------------------------------------------------------------------
 # YAML I/O with anchor preservation
@@ -205,6 +207,32 @@ def _parquet_date_range(payload: bytes) -> tuple[str | None, str | None]:
                 values = sorted(str(v) for v in non_null.tolist())
                 return values[0], values[-1]
     return None, None
+
+
+def _validate_daily_ohlcv_symbol_contract(
+    *,
+    artifact: dict[str, Any],
+    payload: bytes,
+) -> None:
+    match = _DAILY_OHLCV_ARTIFACT_RE.match(str(artifact.get("name", "")))
+    if match is None:
+        return
+    expected_symbol = match.group("symbol")
+    table = pq.read_table(io.BytesIO(payload), columns=["symbol"])
+    if "symbol" not in table.column_names:
+        raise ValueError(
+            f"{artifact['name']} missing symbol column; expected {expected_symbol}"
+        )
+    symbols = table.column("symbol").to_pandas()
+    if symbols.isna().any():
+        raise ValueError(
+            f"{artifact['name']} has null symbol row(s); expected {expected_symbol}"
+        )
+    observed = sorted({str(value) for value in symbols.unique()})
+    if observed != [expected_symbol]:
+        raise ValueError(
+            f"{artifact['name']} symbol mismatch: expected {expected_symbol}, observed {observed}"
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -427,6 +455,7 @@ def run_publish(
 
         if _is_parquet(local):
             canon = _canonicalize_parquet_bytes(local)
+            _validate_daily_ohlcv_symbol_contract(artifact=artifact, payload=canon)
             new_sha = sha256_bytes(canon)
             disk_sha = sha256_file(local)
             if disk_sha != new_sha:

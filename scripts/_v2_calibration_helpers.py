@@ -304,7 +304,11 @@ def _read_daily_ohlcv(
             if "symbol" not in frame.columns:
                 frame = frame.assign(symbol=symbol)
             else:
-                frame["symbol"] = frame["symbol"].fillna(symbol)
+                _require_symbol_column_matches_partition(
+                    frame,
+                    expected_symbol=symbol,
+                    parquet_path=symbol_file,
+                )
             frames.append(frame)
     else:
         for parquet_file in sorted(daily_ohlcv_dir.rglob("*.parquet")):
@@ -315,11 +319,34 @@ def _read_daily_ohlcv(
                 if "symbol" not in frame.columns:
                     frame = frame.assign(symbol=partition_symbol)
                 else:
-                    frame["symbol"] = frame["symbol"].fillna(partition_symbol)
+                    _require_symbol_column_matches_partition(
+                        frame,
+                        expected_symbol=partition_symbol,
+                        parquet_path=parquet_file,
+                    )
             frames.append(frame)
     if not frames:
         raise FileNotFoundError(f"no parquet OHLCV files found under {daily_ohlcv_dir}")
     return pd.concat(frames, ignore_index=True)
+
+
+def _require_symbol_column_matches_partition(
+    frame: pd.DataFrame,
+    *,
+    expected_symbol: str,
+    parquet_path: Path,
+) -> None:
+    if frame["symbol"].isna().any():
+        raise ValueError(
+            "daily OHLCV symbol contract violation: "
+            f"{parquet_path} has null symbol row(s); expected {expected_symbol}"
+        )
+    observed = sorted({str(value) for value in frame["symbol"].unique()})
+    if observed != [expected_symbol]:
+        raise ValueError(
+            "daily OHLCV symbol contract violation: "
+            f"{parquet_path} expected {expected_symbol}, observed {observed}"
+        )
 
 
 def load_macro_series(

@@ -190,6 +190,110 @@ def test_publish_updates_manifest_on_sha_change(manifest_setup):
     assert b["sha256"] == original_manifest["artifacts"][1]["sha256"]
 
 
+def test_publish_rejects_daily_ohlcv_null_symbol_column(tmp_path: Path):
+    data_root = tmp_path / "data" / "raw"
+    local_path = data_root / "daily_ohlcv_762" / "symbol=XLY" / "ohlcv.parquet"
+    _write_parquet(
+        local_path,
+        pd.DataFrame(
+            [
+                {
+                    "date": "2026-05-15",
+                    "open": 1.0,
+                    "high": 2.0,
+                    "low": 0.5,
+                    "close": 1.5,
+                    "volume": 100,
+                    "adjusted_close": 1.5,
+                    "symbol": None,
+                }
+            ]
+        ),
+    )
+    manifest_path = tmp_path / "manifest.yaml"
+    manifest_path.write_text(
+        f"""artifact_set: test_publish
+created_at_utc: '2026-05-17T00:00:00Z'
+storage_root: {tmp_path / "store"}
+artifacts:
+- name: daily_ohlcv_762_XLY
+  stage: canonical
+  uri: canonical/daily_ohlcv_762/symbol=XLY/ohlcv.parquet
+  local_path: data/raw/daily_ohlcv_762/symbol=XLY/ohlcv.parquet
+  sha256: {'0' * 64}
+  schema_version: null
+  rows: null
+  min_date: null
+  max_date: null
+  required_for:
+  - profile_engine
+"""
+    )
+
+    with pytest.raises(ValueError, match="daily_ohlcv_762_XLY.*null symbol"):
+        _run_main(
+            [
+                "--manifest",
+                str(manifest_path),
+                "--data-root",
+                str(data_root),
+                "--skip-upload",
+            ]
+        )
+
+
+def test_publish_rejects_daily_ohlcv_mismatched_symbol_column(tmp_path: Path):
+    data_root = tmp_path / "data" / "raw"
+    local_path = data_root / "daily_ohlcv_762" / "symbol=XLY" / "ohlcv.parquet"
+    _write_parquet(
+        local_path,
+        pd.DataFrame(
+            [
+                {
+                    "date": "2026-05-15",
+                    "open": 1.0,
+                    "high": 2.0,
+                    "low": 0.5,
+                    "close": 1.5,
+                    "volume": 100,
+                    "adjusted_close": 1.5,
+                    "symbol": "XLU",
+                }
+            ]
+        ),
+    )
+    manifest_path = tmp_path / "manifest.yaml"
+    manifest_path.write_text(
+        f"""artifact_set: test_publish
+created_at_utc: '2026-05-17T00:00:00Z'
+storage_root: {tmp_path / "store"}
+artifacts:
+- name: daily_ohlcv_762_XLY
+  stage: canonical
+  uri: canonical/daily_ohlcv_762/symbol=XLY/ohlcv.parquet
+  local_path: data/raw/daily_ohlcv_762/symbol=XLY/ohlcv.parquet
+  sha256: {'0' * 64}
+  schema_version: null
+  rows: null
+  min_date: null
+  max_date: null
+  required_for:
+  - profile_engine
+"""
+    )
+
+    with pytest.raises(ValueError, match="daily_ohlcv_762_XLY.*expected XLY.*XLU"):
+        _run_main(
+            [
+                "--manifest",
+                str(manifest_path),
+                "--data-root",
+                str(data_root),
+                "--skip-upload",
+            ]
+        )
+
+
 def test_publish_patches_only_changed_artifact_blocks_for_all_artifacts(tmp_path: Path):
     data_root = tmp_path / "data" / "raw"
     changed_path = data_root / "macro" / "changed.parquet"
