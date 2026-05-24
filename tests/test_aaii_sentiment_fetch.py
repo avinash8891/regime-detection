@@ -101,6 +101,101 @@ def test_run_sentiment_fetch_records_canonical_artifact_ledger(monkeypatch, tmp_
     ]
 
 
+def test_run_sentiment_fetch_records_seed_artifact_lineage_when_seed_exists(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    out_dir = tmp_path / "data" / "raw"
+    sentiment_dir = out_dir / "sentiment"
+    sentiment_dir.mkdir(parents=True)
+    seed_path = sentiment_dir / "aaii_sentiment_historical.cfb"
+    seed_path.write_bytes(b"redacted-aaii-cfb-seed")
+    pd.DataFrame(
+        [
+            {
+                "date": pd.Timestamp("2026-05-01"),
+                "bullish": 0.40,
+                "neutral": 0.30,
+                "bearish": 0.30,
+                "bull_bear_spread": 0.10,
+                "bull_bear_spread_8w_ma": 0.10,
+            }
+        ]
+    ).to_parquet(sentiment_dir / "aaii_sentiment.parquet", index=False)
+    acquisition_db = tmp_path / "acquisition.db"
+
+    def fake_fetch_latest_rows(
+        url: str, after_date: dt.date, *, timeout: int = 30
+    ) -> pd.DataFrame:
+        assert url == "https://example.test/aaii"
+        assert after_date == dt.date(2026, 5, 1)
+        assert timeout == 30
+        return pd.DataFrame(
+            [
+                {
+                    "date": pd.Timestamp("2026-05-08"),
+                    "bullish": 0.45,
+                    "neutral": 0.25,
+                    "bearish": 0.30,
+                }
+            ]
+        )
+
+    monkeypatch.setattr(aaii_sentiment, "fetch_latest_rows", fake_fetch_latest_rows)
+
+    aaii_sentiment.run_sentiment_fetch(
+        out_dir=out_dir,
+        url="https://example.test/aaii",
+        acquisition_db_path=acquisition_db,
+    )
+
+    with sqlite3.connect(acquisition_db) as conn:
+        records = conn.execute(
+            """
+            SELECT artifact_record_id, name, stage, source_name, artifact_kind,
+                   row_count, min_date, max_date, local_path, size_bytes
+            FROM artifact_records
+            ORDER BY artifact_record_id
+            """
+        ).fetchall()
+        lineage = conn.execute(
+            """
+            SELECT output_artifact_record_id, input_artifact_record_id, transform_name
+            FROM artifact_lineage
+            """
+        ).fetchall()
+
+    raw = records[0]
+    canonical = records[1]
+    assert raw[1:] == (
+        "aaii_cfb",
+        "raw_capture",
+        "aaii",
+        "cfb",
+        None,
+        "2026-05-01",
+        "2026-05-08",
+        str(seed_path),
+        len(b"redacted-aaii-cfb-seed"),
+    )
+    assert canonical[1:8] == (
+        "aaii_sentiment",
+        "canonical",
+        "aaii",
+        "parquet",
+        2,
+        "2026-05-01",
+        "2026-05-08",
+    )
+    assert lineage == [
+        (
+            canonical[0],
+            raw[0],
+            "normalize_aaii_sentiment",
+        )
+    ]
+
+
 def test_run_sentiment_fetch_can_skip_missing_seed_for_unattended_all(
     tmp_path: Path,
 ) -> None:
