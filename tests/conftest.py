@@ -397,7 +397,7 @@ def synthetic_v2_kwargs_for_market_data(event_calendar_df: pd.DataFrame):
                     update={
                         "n_states": 2,
                         "training_window_days": 100,
-                        "random_seeds": (42,),
+                        "random_seeds": (42, 7, 13),
                     }
                 ),
                 "clustering": engine.config.clustering.model_copy(

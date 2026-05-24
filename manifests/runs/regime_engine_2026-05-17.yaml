@@ -34,7 +34,7 @@ artifacts:
   stage: canonical
   uri: canonical/pmi/us_ism_pmi_history.parquet
   local_path: data/raw/pmi/us_ism_pmi_history.parquet
-  sha256: 46f1f987f6fd9f8142e7245f75ee7cc95f779d8a98e6faf845c1840e9c4becf0
+  sha256: 02ef5d2df814ab274e54beac6fadb72b9c3d766aad082e63d73dedbcf5fa582f
   schema_version: null
   rows: 394
   min_date: '2009-12-01'
