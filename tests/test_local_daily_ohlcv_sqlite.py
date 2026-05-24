@@ -224,6 +224,15 @@ def test_run_alpaca_constituent_daily_ohlcv_fetch_materializes_profile_tree_and_
         / "symbol=MSFT"
         / "ohlcv.parquet"
     ).exists()
+    aapl_tree = pd.read_parquet(
+        tmp_path
+        / "data"
+        / "raw"
+        / FIXED_UNIVERSE_TREE_NAME
+        / "symbol=AAPL"
+        / "ohlcv.parquet"
+    )
+    assert aapl_tree["symbol"].to_list() == ["AAPL"]
 
     with sqlite3.connect(acquisition_db) as conn:
         ohlcv_rows = conn.execute(
@@ -367,8 +376,8 @@ def test_run_alpaca_constituent_daily_ohlcv_fetch_merges_incremental_rows(
     )
 
     merged = pd.read_parquet(symbol_dir / "ohlcv.parquet").sort_values("date")
-    assert merged[["date", "close"]].to_dict(orient="records") == [
-        {"date": "2026-05-04", "close": 99.5},
-        {"date": "2026-05-05", "close": 100.7},
-        {"date": "2026-05-06", "close": 101.5},
+    assert merged[["date", "symbol", "close"]].to_dict(orient="records") == [
+        {"date": "2026-05-04", "symbol": "AAPL", "close": 99.5},
+        {"date": "2026-05-05", "symbol": "AAPL", "close": 100.7},
+        {"date": "2026-05-06", "symbol": "AAPL", "close": 101.5},
     ]

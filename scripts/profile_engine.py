@@ -279,6 +279,7 @@ def _load_constituent_ohlcv_from_tree(
     intervals: pd.DataFrame,
     start_date: dt.date,
     end_date: dt.date,
+    expected_sessions: pd.DatetimeIndex | None = None,
 ) -> tuple[dict[str, pd.DataFrame], list[str]]:
     overlap_mask = (intervals["start_date"] <= end_date) & (
         intervals["end_date"].isna() | (intervals["end_date"] >= start_date)
@@ -308,6 +309,12 @@ def _load_constituent_ohlcv_from_tree(
         ].copy()
         if frame.empty:
             continue
+        if expected_sessions is not None:
+            _require_constituent_calendar_coverage(
+                ticker,
+                frame["date"],
+                expected_sessions=expected_sessions,
+            )
         for col in ("open", "high", "low", "close", "adjusted_close"):
             frame[col] = frame[col].astype("float64")
         frame["volume"] = frame["volume"].astype("int64")
@@ -317,6 +324,28 @@ def _load_constituent_ohlcv_from_tree(
         frame.index.name = "date"
         out[ticker] = frame
     return out, tickers
+
+
+def _require_constituent_calendar_coverage(
+    ticker: str,
+    dates: pd.Series,
+    *,
+    expected_sessions: pd.DatetimeIndex,
+) -> None:
+    observed = pd.DatetimeIndex(pd.to_datetime(dates).dt.normalize().sort_values().unique())
+    if observed.empty:
+        return
+    expected = expected_sessions[
+        (expected_sessions >= observed.min()) & (expected_sessions <= observed.max())
+    ]
+    missing = expected.difference(observed)
+    if missing.empty:
+        return
+    examples = ", ".join(ts.strftime("%Y-%m-%d") for ts in missing[:5])
+    raise ValueError(
+        "daily OHLCV calendar coverage gap: "
+        f"symbol={ticker} missing {len(missing)} session row(s); examples: {examples}"
+    )
 
 
 def _load_profile_inputs(
@@ -392,6 +421,7 @@ def _load_profile_inputs(
             pit_constituent_intervals,
             start_date=working_start_date,
             end_date=end_date,
+            expected_sessions=spy_index,
         )
 
     load_timings = dict(load_timer.totals)
@@ -439,6 +469,77 @@ def _emit_load_timing_summary(load_timings: dict[str, float]) -> None:
         lines.append(f"  {name:<44s} {elapsed:8.3f}s  ({pct:5.1f}%)")
     lines.append(f"  {'_total':<44s} {total:8.3f}s")
     logger.info("\n".join(lines))
+
+
+def _optional_input_coverage_lines(inputs: ProfileInputBundle) -> list[str]:
+    lines: list[str] = []
+    for name in sorted(inputs.macro_series):
+        lines.append(
+            _coverage_line(
+                f"macro_series.{name}",
+                inputs.macro_series[name],
+                run_end=inputs.end_date,
+            )
+        )
+    for name, value in (
+        ("event_calendar", inputs.event_calendar),
+        ("aaii_sentiment", inputs.aaii_sentiment),
+        ("news_sentiment", inputs.news_sentiment),
+        ("implied_vol_30d", inputs.implied_vol_30d),
+        ("central_bank_text_releases", inputs.central_bank_text_releases),
+        ("cpi_first_release", inputs.cpi_first_release),
+    ):
+        lines.append(_coverage_line(name, value, run_end=inputs.end_date))
+    return lines
+
+
+def _coverage_line(name: str, value: Any, *, run_end: dt.date) -> str:
+    if value is None:
+        return f"{name}: NONE"
+    dates = _extract_coverage_dates(value)
+    row_count = _coverage_row_count(value)
+    if row_count == 0 or dates.empty:
+        return f"{name}: EMPTY"
+    first = dates.min().date()
+    latest = dates.max().date()
+    age_days = (run_end - latest).days
+    return (
+        f"{name}: rows={row_count} first={first.isoformat()} "
+        f"latest={latest.isoformat()} age_days={age_days}"
+    )
+
+
+def _coverage_row_count(value: Any) -> int:
+    if isinstance(value, pd.Series | pd.DataFrame):
+        return int(len(value))
+    if isinstance(value, dict):
+        return len(value)
+    return 1
+
+
+def _extract_coverage_dates(value: Any) -> pd.DatetimeIndex:
+    if isinstance(value, pd.Series):
+        if isinstance(value.index, pd.DatetimeIndex):
+            parsed = pd.to_datetime(value.index, errors="coerce")
+        else:
+            parsed = pd.to_datetime(value.dropna(), errors="coerce")
+        return pd.DatetimeIndex(parsed.dropna()).normalize()
+    if isinstance(value, pd.DataFrame):
+        for column in (
+            "date",
+            "release_date",
+            "publication_date",
+            "meeting_end_date",
+            "speech_date",
+            "period",
+        ):
+            if column in value.columns:
+                parsed = pd.to_datetime(value[column], errors="coerce").dropna()
+                return pd.DatetimeIndex(parsed).normalize()
+        if isinstance(value.index, pd.DatetimeIndex):
+            parsed = pd.to_datetime(value.index, errors="coerce")
+            return pd.DatetimeIndex(parsed.dropna()).normalize()
+    return pd.DatetimeIndex([])
 
 
 def _parse_args() -> argparse.Namespace:
@@ -772,6 +873,11 @@ def main() -> int:
         print(_input_status(name, input_values[name]))
     print(f"pit_overlap_tickers_requested={len(inputs.constituent_tickers)}")
     print(f"constituent_tickers_loaded={len(inputs.constituent_ohlcv)}")
+    print()
+
+    print("Optional input coverage")
+    for line in _optional_input_coverage_lines(inputs):
+        print(line)
     print()
 
     print("Timing table")

@@ -500,6 +500,180 @@ def test_check_mode_returns_nonzero_on_drift(manifest_setup, caplog):
     assert "DRIFT" in combined
 
 
+def test_check_mode_rejects_daily_ohlcv_null_symbol_column(tmp_path: Path, caplog):
+    data_root = tmp_path / "data" / "raw"
+    local_path = data_root / "daily_ohlcv_762" / "symbol=XLY" / "ohlcv.parquet"
+    _write_parquet(
+        local_path,
+        pd.DataFrame(
+            [
+                {
+                    "date": "2026-05-15",
+                    "open": 1.0,
+                    "high": 2.0,
+                    "low": 0.5,
+                    "close": 1.5,
+                    "volume": 100,
+                    "adjusted_close": 1.5,
+                    "symbol": None,
+                }
+            ]
+        ),
+    )
+    manifest_path = tmp_path / "manifest.yaml"
+    manifest_path.write_text(
+        f"""artifact_set: test_publish
+created_at_utc: '2026-05-17T00:00:00Z'
+storage_root: {tmp_path / "store"}
+artifacts:
+- name: daily_ohlcv_762_XLY
+  stage: canonical
+  uri: canonical/daily_ohlcv_762/symbol=XLY/ohlcv.parquet
+  local_path: data/raw/daily_ohlcv_762/symbol=XLY/ohlcv.parquet
+  sha256: {'0' * 64}
+  schema_version: null
+  rows: 1
+  min_date: '2026-05-15'
+  max_date: '2026-05-15'
+  required_for:
+  - profile_engine
+"""
+    )
+
+    with caplog.at_level(logging.INFO, logger="publish_canonical_snapshot"):
+        rc = _run_main(
+            [
+                "--manifest",
+                str(manifest_path),
+                "--data-root",
+                str(data_root),
+                "--check",
+                "--only",
+                "daily_ohlcv_762_XLY",
+            ]
+        )
+
+    assert rc == 1
+    combined = "\n".join(rec.message for rec in caplog.records)
+    assert "SEMANTIC_INVALID" in combined
+    assert "null symbol" in combined
+
+
+def test_check_mode_rejects_daily_ohlcv_internal_calendar_gap(
+    tmp_path: Path, caplog
+):
+    data_root = tmp_path / "data" / "raw"
+    spy_path = data_root / "daily_ohlcv_762" / "symbol=SPY" / "ohlcv.parquet"
+    xly_path = data_root / "daily_ohlcv_762" / "symbol=XLY" / "ohlcv.parquet"
+    rows = {
+        "open": 1.0,
+        "high": 2.0,
+        "low": 0.5,
+        "close": 1.5,
+        "volume": 100,
+        "adjusted_close": 1.5,
+    }
+    _write_parquet(
+        spy_path,
+        pd.DataFrame(
+            [
+                {"date": "2026-05-14", "symbol": "SPY", **rows},
+                {"date": "2026-05-15", "symbol": "SPY", **rows},
+                {"date": "2026-05-18", "symbol": "SPY", **rows},
+            ]
+        ),
+    )
+    _write_parquet(
+        xly_path,
+        pd.DataFrame(
+            [
+                {"date": "2026-05-14", "symbol": "XLY", **rows},
+                {"date": "2026-05-18", "symbol": "XLY", **rows},
+            ]
+        ),
+    )
+    manifest_path = tmp_path / "manifest.yaml"
+    manifest_path.write_text(
+        f"""artifact_set: test_publish
+created_at_utc: '2026-05-17T00:00:00Z'
+storage_root: {tmp_path / "store"}
+artifacts:
+- name: daily_ohlcv_762_SPY
+  stage: canonical
+  uri: canonical/daily_ohlcv_762/symbol=SPY/ohlcv.parquet
+  local_path: data/raw/daily_ohlcv_762/symbol=SPY/ohlcv.parquet
+  sha256: {hashlib.sha256(pcs._canonicalize_parquet_bytes(spy_path)).hexdigest()}
+  schema_version: null
+  rows: 3
+  min_date: '2026-05-14'
+  max_date: '2026-05-18'
+  required_for:
+  - profile_engine
+- name: daily_ohlcv_762_XLY
+  stage: canonical
+  uri: canonical/daily_ohlcv_762/symbol=XLY/ohlcv.parquet
+  local_path: data/raw/daily_ohlcv_762/symbol=XLY/ohlcv.parquet
+  sha256: {hashlib.sha256(pcs._canonicalize_parquet_bytes(xly_path)).hexdigest()}
+  schema_version: null
+  rows: 2
+  min_date: '2026-05-14'
+  max_date: '2026-05-18'
+  required_for:
+  - profile_engine
+"""
+    )
+
+    with caplog.at_level(logging.INFO, logger="publish_canonical_snapshot"):
+        rc = _run_main(
+            [
+                "--manifest",
+                str(manifest_path),
+                "--data-root",
+                str(data_root),
+                "--check",
+                "--only",
+                "daily_ohlcv_762_XLY",
+            ]
+        )
+
+    assert rc == 1
+    combined = "\n".join(rec.message for rec in caplog.records)
+    assert "SEMANTIC_INVALID" in combined
+    assert "calendar coverage gap" in combined
+    assert "2026-05-15" in combined
+
+
+def test_check_mode_rejects_manifest_row_and_date_metadata_mismatch(
+    manifest_setup, caplog
+):
+    manifest_path, data_root, _, _ = manifest_setup
+
+    payload, _ = pcs._load_manifest_payload(manifest_path)
+    rc, reports = pcs.run_check(
+        payload,
+        data_root,
+        ["fred_macro_series"],
+        store=None,
+    )
+    assert rc == 0
+    assert reports[0].semantic_status == "SEMANTIC_OK"
+
+    manifest_text = manifest_path.read_text().replace("rows: 3", "rows: 99", 1)
+    manifest_path.write_text(manifest_text)
+    payload, _ = pcs._load_manifest_payload(manifest_path)
+    caplog.clear()
+
+    rc, reports = pcs.run_check(
+        payload,
+        data_root,
+        ["fred_macro_series"],
+        store=None,
+    )
+    assert rc == 1
+    assert reports[0].semantic_status == "SEMANTIC_INVALID"
+    assert "manifest rows=99 but parquet rows=3" in reports[0].note
+
+
 def test_check_mode_detects_store_drift_when_local_matches_manifest(
     manifest_setup, caplog
 ):

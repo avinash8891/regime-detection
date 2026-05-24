@@ -24,7 +24,16 @@ from regime_data_fetch.universe import (
 from regime_data_fetch.yahoo_chart_daily import fetch_daily_bars_yahoo_chart
 
 
-EXPECTED_COLUMNS = ["date", "open", "high", "low", "close", "volume", "adjusted_close"]
+EXPECTED_COLUMNS = [
+    "date",
+    "open",
+    "high",
+    "low",
+    "close",
+    "volume",
+    "adjusted_close",
+]
+SYMBOL_TREE_COLUMNS = ["date", "symbol", *EXPECTED_COLUMNS[1:]]
 
 
 def run_alpaca_constituent_daily_ohlcv_fetch(
@@ -229,7 +238,11 @@ def run_local_daily_ohlcv_sqlite_import(
             for parquet_path in parquet_files:
                 symbol = _infer_symbol_from_path(parquet_path)
                 frame = pd.read_parquet(parquet_path)
-                _validate_ohlcv_frame(frame=frame, parquet_path=parquet_path)
+                _validate_symbol_tree_frame(
+                    frame=frame,
+                    parquet_path=parquet_path,
+                    expected_symbol=symbol,
+                )
                 normalized = frame.copy()
                 normalized["date"] = pd.to_datetime(normalized["date"]).dt.date.astype(str)
                 rows = [
@@ -386,9 +399,9 @@ def _resolve_constituent_symbols(
 
 
 def _write_daily_ohlcv_symbol_tree(frame: pd.DataFrame, *, tree_root: Path) -> list[Path]:
-    _validate_ohlcv_frame(frame=frame[EXPECTED_COLUMNS], parquet_path=tree_root)
     if "symbol" not in frame.columns:
         raise RuntimeError("Alpaca constituent OHLCV frame missing symbol column")
+    _validate_ohlcv_frame(frame=frame[EXPECTED_COLUMNS], parquet_path=tree_root)
     tree_root.mkdir(parents=True, exist_ok=True)
     written: list[Path] = []
     normalized = frame.copy()
@@ -397,12 +410,20 @@ def _write_daily_ohlcv_symbol_tree(frame: pd.DataFrame, *, tree_root: Path) -> l
         symbol_dir = tree_root / f"symbol={symbol}"
         symbol_dir.mkdir(parents=True, exist_ok=True)
         parquet_path = symbol_dir / "ohlcv.parquet"
-        outgoing = symbol_frame[EXPECTED_COLUMNS].copy()
+        outgoing = symbol_frame[SYMBOL_TREE_COLUMNS].copy()
+        outgoing["symbol"] = str(symbol)
         if parquet_path.exists():
             existing = pd.read_parquet(parquet_path)
-            _validate_ohlcv_frame(frame=existing, parquet_path=parquet_path)
+            _validate_symbol_tree_frame(
+                frame=existing,
+                parquet_path=parquet_path,
+                expected_symbol=str(symbol),
+            )
             existing = existing.copy()
             existing["date"] = pd.to_datetime(existing["date"]).dt.date.astype(str)
+            if "symbol" not in existing.columns:
+                existing["symbol"] = str(symbol)
+                existing = existing[SYMBOL_TREE_COLUMNS]
             outgoing = pd.concat([existing, outgoing], ignore_index=True)
         outgoing = (
             outgoing.sort_values("date")
@@ -427,3 +448,23 @@ def _validate_ohlcv_frame(*, frame: pd.DataFrame, parquet_path: Path) -> None:
     got = list(frame.columns)
     if got != EXPECTED_COLUMNS:
         raise RuntimeError(f"Unexpected OHLCV parquet columns in {parquet_path}: {got!r}")
+
+
+def _validate_symbol_tree_frame(
+    *,
+    frame: pd.DataFrame,
+    parquet_path: Path,
+    expected_symbol: str,
+) -> None:
+    got = list(frame.columns)
+    if got == EXPECTED_COLUMNS:
+        return
+    if got != SYMBOL_TREE_COLUMNS:
+        raise RuntimeError(f"Unexpected OHLCV parquet columns in {parquet_path}: {got!r}")
+    if frame["symbol"].isna().any():
+        raise RuntimeError(f"Unexpected null symbol in {parquet_path}")
+    observed = sorted({str(value) for value in frame["symbol"].unique()})
+    if observed != [expected_symbol]:
+        raise RuntimeError(
+            f"Unexpected symbol values in {parquet_path}: expected {expected_symbol}, got {observed!r}"
+        )

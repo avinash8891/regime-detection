@@ -55,6 +55,10 @@ def test_materialize_constituent_ohlcv_tree_writes_canonical_tree_and_manifest(
     assert result.missing_symbols == ()
     assert (tmp_path / "daily_ohlcv_762" / "symbol=AAPL" / "ohlcv.parquet").exists()
     assert (tmp_path / "daily_ohlcv_762" / "symbol=MSFT" / "ohlcv.parquet").exists()
+    aapl = pd.read_parquet(
+        tmp_path / "daily_ohlcv_762" / "symbol=AAPL" / "ohlcv.parquet"
+    )
+    assert aapl["symbol"].to_list() == ["AAPL"]
     manifest = json.loads(result.manifest_path.read_text())
     assert manifest["requested_symbols"] == 2
     assert manifest["written_symbols"] == 2

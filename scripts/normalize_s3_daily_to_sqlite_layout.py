@@ -8,7 +8,7 @@ Source layout (per S3 sync):
 
 Target layout (for run_local_daily_ohlcv_sqlite_import):
     data/raw/daily_ohlcv_762/symbol=SYMBOL/*.parquet
-    EXPECTED_COLUMNS = ["date", "open", "high", "low", "close", "volume", "adjusted_close"]
+    EXPECTED_COLUMNS = ["date", "symbol", "open", "high", "low", "close", "volume", "adjusted_close"]
 
 Provenance: the source S3 data was fetched from Alpaca with split-adjustment
 applied (verified by spot-check: AAPL 2024-01-02 close $185.24 reflects the
@@ -32,6 +32,7 @@ def normalize_one(src_path: Path, symbol: str) -> pd.DataFrame:
     df = df.reset_index()
     timestamp_col = "timestamp" if "timestamp" in df.columns else df.columns[0]
     df["date"] = pd.to_datetime(df[timestamp_col]).dt.tz_localize(None).dt.normalize().dt.date.astype(str)
+    df["symbol"] = symbol
     df = df.rename(columns={
         "Open": "open",
         "High": "high",
@@ -41,7 +42,7 @@ def normalize_one(src_path: Path, symbol: str) -> pd.DataFrame:
     })
     df["adjusted_close"] = df["close"].astype(float)
     df["volume"] = df["volume"].astype("int64")
-    keep = ["date", "open", "high", "low", "close", "volume", "adjusted_close"]
+    keep = ["date", "symbol", "open", "high", "low", "close", "volume", "adjusted_close"]
     df = df[keep].sort_values("date").reset_index(drop=True)
     return df
 

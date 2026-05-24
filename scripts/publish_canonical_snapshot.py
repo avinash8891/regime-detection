@@ -29,6 +29,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Iterable
 
+import pandas as pd
 import pyarrow.compute as pc
 import pyarrow.parquet as pq
 import pyarrow.types as pat
@@ -56,6 +57,7 @@ DEFAULT_DATA_ROOT = Path("data/raw")
 DATE_COLUMN_CANDIDATES: tuple[str, ...] = (
     "date",
     "period",
+    "observation_date",
     "release_date",
     "start_date",
     "meeting_end_date",
@@ -70,6 +72,16 @@ _PARQUET_COMPRESSION = "snappy"
 _PARQUET_COERCE_TIMESTAMPS = "us"
 
 _DAILY_OHLCV_ARTIFACT_RE = re.compile(r"^daily_ohlcv_762_(?P<symbol>.+)$")
+_DAILY_OHLCV_REQUIRED_COLUMNS: tuple[str, ...] = (
+    "date",
+    "open",
+    "high",
+    "low",
+    "close",
+    "volume",
+    "adjusted_close",
+    "symbol",
+)
 
 
 # ---------------------------------------------------------------------------
@@ -214,15 +226,38 @@ def _validate_daily_ohlcv_symbol_contract(
     artifact: dict[str, Any],
     payload: bytes,
 ) -> None:
+    _validate_daily_ohlcv_contract(
+        artifact=artifact,
+        payload=payload,
+        expected_sessions=None,
+    )
+
+
+def _daily_ohlcv_symbol(artifact: dict[str, Any]) -> str | None:
     match = _DAILY_OHLCV_ARTIFACT_RE.match(str(artifact.get("name", "")))
     if match is None:
+        return None
+    return match.group("symbol")
+
+
+def _validate_daily_ohlcv_contract(
+    *,
+    artifact: dict[str, Any],
+    payload: bytes,
+    expected_sessions: pd.DatetimeIndex | None,
+) -> None:
+    expected_symbol = _daily_ohlcv_symbol(artifact)
+    if expected_symbol is None:
         return
-    expected_symbol = match.group("symbol")
-    table = pq.read_table(io.BytesIO(payload), columns=["symbol"])
-    if "symbol" not in table.column_names:
+    table = pq.read_table(io.BytesIO(payload))
+    missing_columns = [
+        col for col in _DAILY_OHLCV_REQUIRED_COLUMNS if col not in table.column_names
+    ]
+    if missing_columns:
         raise ValueError(
-            f"{artifact['name']} missing symbol column; expected {expected_symbol}"
+            f"{artifact['name']} missing required daily OHLCV column(s): {missing_columns}"
         )
+    frame = table.select(list(_DAILY_OHLCV_REQUIRED_COLUMNS)).to_pandas()
     symbols = table.column("symbol").to_pandas()
     if symbols.isna().any():
         raise ValueError(
@@ -233,6 +268,107 @@ def _validate_daily_ohlcv_symbol_contract(
         raise ValueError(
             f"{artifact['name']} symbol mismatch: expected {expected_symbol}, observed {observed}"
         )
+    dates = pd.to_datetime(frame["date"], errors="coerce").dt.normalize()
+    if dates.isna().any():
+        raise ValueError(f"{artifact['name']} has unparsable/null date row(s)")
+    duplicate_dates = dates[dates.duplicated()].dt.strftime("%Y-%m-%d").unique()
+    if len(duplicate_dates) > 0:
+        examples = ", ".join(sorted(duplicate_dates)[:5])
+        raise ValueError(
+            f"{artifact['name']} has duplicate date row(s); examples: {examples}"
+        )
+    value_columns = ["open", "high", "low", "close", "volume", "adjusted_close"]
+    null_value_columns = [col for col in value_columns if frame[col].isna().any()]
+    if null_value_columns:
+        raise ValueError(
+            f"{artifact['name']} has null OHLCV value column(s): {null_value_columns}"
+        )
+    if expected_sessions is None or dates.empty:
+        return
+    symbol_dates = pd.DatetimeIndex(dates.sort_values().unique())
+    expected = expected_sessions[
+        (expected_sessions >= symbol_dates.min()) & (expected_sessions <= symbol_dates.max())
+    ]
+    missing = expected.difference(symbol_dates)
+    if not missing.empty:
+        examples = ", ".join(ts.strftime("%Y-%m-%d") for ts in missing[:5])
+        raise ValueError(
+            "daily OHLCV calendar coverage gap: "
+            f"symbol={expected_symbol} missing {len(missing)} session row(s); "
+            f"examples: {examples}"
+        )
+
+
+def _validate_parquet_manifest_metadata(
+    *,
+    artifact: dict[str, Any],
+    payload: bytes,
+) -> None:
+    expected_rows = artifact.get("rows")
+    actual_rows = _parquet_row_count(payload)
+    if expected_rows is not None and int(expected_rows) != actual_rows:
+        raise ValueError(
+            f"{artifact['name']} manifest rows={expected_rows} but parquet rows={actual_rows}"
+        )
+    actual_min, actual_max = _parquet_date_range(payload)
+    expected_min = artifact.get("min_date")
+    expected_max = artifact.get("max_date")
+    if expected_min is not None and actual_min != str(expected_min):
+        raise ValueError(
+            f"{artifact['name']} manifest min_date={expected_min} but parquet min_date={actual_min}"
+        )
+    if expected_max is not None and actual_max != str(expected_max):
+        raise ValueError(
+            f"{artifact['name']} manifest max_date={expected_max} but parquet max_date={actual_max}"
+        )
+
+
+def _semantic_check_artifact(
+    *,
+    artifact: dict[str, Any],
+    local: Path,
+    expected_sessions: pd.DatetimeIndex | None,
+) -> tuple[str | None, str]:
+    if not local.exists() or not _is_parquet(local):
+        return None, ""
+    try:
+        payload = _canonicalize_parquet_bytes(local)
+        _validate_parquet_manifest_metadata(artifact=artifact, payload=payload)
+        _validate_daily_ohlcv_contract(
+            artifact=artifact,
+            payload=payload,
+            expected_sessions=expected_sessions,
+        )
+    except Exception as exc:
+        return "SEMANTIC_INVALID", str(exc)
+    return "SEMANTIC_OK", ""
+
+
+def _daily_ohlcv_spy_sessions(
+    payload: Any,
+    data_root: Path,
+) -> pd.DatetimeIndex | None:
+    artifacts = payload.get("artifacts", []) if isinstance(payload, dict) else []
+    spy_artifact = next(
+        (
+            artifact
+            for artifact in artifacts
+            if isinstance(artifact, dict)
+            and artifact.get("name") == "daily_ohlcv_762_SPY"
+        ),
+        None,
+    )
+    if spy_artifact is None:
+        return None
+    spy_path = _resolve_local_path(data_root, spy_artifact)
+    if not spy_path.exists():
+        return None
+    table = pq.ParquetFile(spy_path).read(columns=["date"])
+    dates = pd.to_datetime(table.column("date").to_pandas(), errors="coerce")
+    dates = dates.dropna().dt.normalize()
+    if dates.empty:
+        return None
+    return pd.DatetimeIndex(sorted(dates.unique()))
 
 
 # ---------------------------------------------------------------------------
@@ -254,6 +390,7 @@ class ArtifactReport:
     #   MATCH, DRIFT, MISSING, UNVERIFIABLE
     store_status: str | None = None
     store_sha: str | None = None
+    semantic_status: str | None = None
     note: str = ""
     manifest_updates: dict[str, object] | None = None
 
@@ -262,6 +399,8 @@ class ArtifactReport:
         if self.local_status not in {"MATCH", "UPDATED", "UPLOADED"}:
             return True
         if self.store_status is not None and self.store_status != "MATCH":
+            return True
+        if self.semantic_status not in {None, "SEMANTIC_OK"}:
             return True
         return False
 
@@ -372,9 +511,17 @@ def run_check(
     store: ArtifactStore | None = None,
 ) -> tuple[int, list[ArtifactReport]]:
     reports: list[ArtifactReport] = []
+    spy_sessions = _daily_ohlcv_spy_sessions(payload, data_root)
     for artifact in _filter_artifacts(payload["artifacts"], only):
         local = _resolve_local_path(data_root, artifact)
         local_status, new_sha, note = _check_local(artifact, local)
+        semantic_status, semantic_note = _semantic_check_artifact(
+            artifact=artifact,
+            local=local,
+            expected_sessions=spy_sessions,
+        )
+        if semantic_note:
+            note = "; ".join(part for part in (note, semantic_note) if part)
         store_status: str | None = None
         store_sha: str | None = None
         if store is not None:
@@ -390,6 +537,7 @@ def run_check(
                 new_sha=new_sha,
                 store_status=store_status,
                 store_sha=store_sha,
+                semantic_status=semantic_status,
                 note=note or "",
             )
         )
@@ -669,6 +817,9 @@ def _format_report(
         if side == "store":
             status = f"STORE_{r.store_status or '-'}"
             new = r.store_sha[:12] if r.store_sha else "-"
+        elif side == "semantic":
+            status = r.semantic_status or "-"
+            new = r.new_sha[:12] if r.new_sha else "-"
         else:
             status = r.local_status
             new = r.new_sha[:12] if r.new_sha else "-"
@@ -708,9 +859,13 @@ def main(argv: list[str] | None = None) -> int:
         store_drift = _store("DRIFT")
         store_missing = _store("MISSING")
         store_unverifiable = _store("UNVERIFIABLE")
+        semantic_invalid = [
+            r for r in reports if r.semantic_status == "SEMANTIC_INVALID"
+        ]
         LOGGER.info(
             "check: %d checked | local: %d MATCH, %d DRIFT, %d MISSING | "
-            "store: %d MATCH, %d DRIFT, %d MISSING, %d UNVERIFIABLE",
+            "store: %d MATCH, %d DRIFT, %d MISSING, %d UNVERIFIABLE | "
+            "semantic: %d INVALID",
             len(reports),
             len(local_match),
             len(local_drift),
@@ -719,6 +874,7 @@ def main(argv: list[str] | None = None) -> int:
             len(store_drift),
             len(store_missing),
             len(store_unverifiable),
+            len(semantic_invalid),
         )
         for label, bucket in (
             ("DRIFT", local_drift),
@@ -735,6 +891,9 @@ def main(argv: list[str] | None = None) -> int:
             if bucket:
                 LOGGER.info("STORE %s:", label)
                 LOGGER.info(_format_report(bucket, side="store"))
+        if semantic_invalid:
+            LOGGER.info("SEMANTIC INVALID:")
+            LOGGER.info(_format_report(semantic_invalid, side="semantic"))
         return exit_code
 
     if args.dry_run:

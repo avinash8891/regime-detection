@@ -20,6 +20,7 @@ EXPECTED_OHLCV_COLUMNS = [
     "volume",
     "adjusted_close",
 ]
+OUTPUT_OHLCV_COLUMNS = ["date", "symbol", *EXPECTED_OHLCV_COLUMNS[1:]]
 
 
 @dataclass(frozen=True)
@@ -90,6 +91,8 @@ def materialize_constituent_ohlcv_tree(
             symbol_dir.mkdir(parents=True, exist_ok=True)
             parquet_path = symbol_dir / "ohlcv.parquet"
             outgoing = frame[EXPECTED_OHLCV_COLUMNS].copy()
+            outgoing["symbol"] = symbol
+            outgoing = outgoing[OUTPUT_OHLCV_COLUMNS]
             outgoing.to_parquet(parquet_path, index=False)
             file_sha = _sha256_file(parquet_path)
             file_entries.append(

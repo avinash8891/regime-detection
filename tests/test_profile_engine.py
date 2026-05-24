@@ -385,6 +385,46 @@ def test_profile_verification_warns_when_eps_revision_source_is_stale() -> None:
     ) in issues
 
 
+def test_optional_input_coverage_lines_report_freshness() -> None:
+    inputs = SimpleNamespace(
+        end_date=pd.Timestamp("2026-05-15").date(),
+        macro_series={
+            "pmi_manufacturing": pd.Series(
+                [49.0, 50.1],
+                index=pd.DatetimeIndex(["2026-04-01", "2026-05-01"]),
+                name="pmi_manufacturing",
+            ),
+            "cpi_nowcast": pd.Series(dtype="float64"),
+        },
+        event_calendar=pd.DataFrame({"date": [pd.Timestamp("2026-05-14")]}),
+        aaii_sentiment=None,
+        news_sentiment=pd.Series(
+            [0.2], index=pd.DatetimeIndex(["2026-05-12"]), name="news"
+        ),
+        implied_vol_30d=None,
+        central_bank_text_releases=pd.DataFrame(
+            {"release_date": [pd.Timestamp("2026-05-01")]}
+        ),
+        cpi_first_release=pd.Series(
+            [3.0], index=pd.DatetimeIndex(["2026-04-10"]), name="cpi"
+        ),
+    )
+
+    lines = profile_engine._optional_input_coverage_lines(inputs)
+
+    assert (
+        "macro_series.pmi_manufacturing: rows=2 first=2026-04-01 "
+        "latest=2026-05-01 age_days=14"
+    ) in lines
+    assert "macro_series.cpi_nowcast: EMPTY" in lines
+    assert "aaii_sentiment: NONE" in lines
+    assert "news_sentiment: rows=1 first=2026-05-12 latest=2026-05-12 age_days=3" in lines
+    assert (
+        "central_bank_text_releases: rows=1 first=2026-05-01 "
+        "latest=2026-05-01 age_days=14"
+    ) in lines
+
+
 def test_profile_json_report_emits_layer1_sentiment_metric_summary(
     tmp_path: Path,
 ) -> None:
@@ -529,6 +569,51 @@ def test_load_constituent_ohlcv_accepts_partitioned_parquet_file_name(
 
     assert tickers == ["AAPL"]
     assert loaded["AAPL"]["close"].to_list() == [10.5]
+
+
+def test_load_constituent_ohlcv_rejects_internal_session_gap(tmp_path: Path) -> None:
+    symbol_dir = tmp_path / "daily_ohlcv" / "symbol=AAPL"
+    symbol_dir.mkdir(parents=True)
+    pd.DataFrame(
+        [
+            {
+                "date": "2026-05-14",
+                "open": 10.0,
+                "high": 11.0,
+                "low": 9.0,
+                "close": 10.5,
+                "volume": 100,
+                "adjusted_close": 10.5,
+            },
+            {
+                "date": "2026-05-18",
+                "open": 10.0,
+                "high": 11.0,
+                "low": 9.0,
+                "close": 10.5,
+                "volume": 100,
+                "adjusted_close": 10.5,
+            },
+        ]
+    ).to_parquet(symbol_dir / "ohlcv.parquet", index=False)
+    intervals = pd.DataFrame(
+        {
+            "ticker": ["AAPL"],
+            "start_date": [pd.Timestamp("2020-01-01").date()],
+            "end_date": [None],
+        }
+    )
+
+    with pytest.raises(ValueError, match="daily OHLCV calendar coverage gap"):
+        profile_engine._load_constituent_ohlcv_from_tree(
+            tmp_path / "daily_ohlcv",
+            intervals,
+            start_date=pd.Timestamp("2026-05-14").date(),
+            end_date=pd.Timestamp("2026-05-18").date(),
+            expected_sessions=pd.DatetimeIndex(
+                ["2026-05-14", "2026-05-15", "2026-05-18"]
+            ),
+        )
 
 
 def test_profile_reporting_label_uses_granular_status_for_unknown() -> None:
