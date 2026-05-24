@@ -12,6 +12,7 @@ from regime_data_fetch.artifact_manifest import (
     strip_data_raw_prefix,
 )
 from regime_data_fetch.artifact_store import build_artifact_store
+from regime_data_fetch.artifact_store import sha256_file
 
 # Sentinel SHA for documented placeholder entries (empty-string digest).
 # These are not fetchable artifacts; the OHLCV tree they represent is
@@ -58,8 +59,12 @@ def materialize_manifest(
     ) as tmp_dir:
         staging_root = Path(tmp_dir)
         staged: list[tuple[ManifestArtifact, Path, Path]] = []
+        materialized: list[tuple[ManifestArtifact, Path]] = []
         for index, artifact in enumerate(artifacts):
             destination = destination_for(artifact, local_root, repo_root=repo_root)
+            if destination.exists() and sha256_file(destination) == artifact.sha256:
+                materialized.append((artifact, destination))
+                continue
             staged_path = staging_root / "staged" / str(index) / destination.name
             store.get_file(
                 artifact.uri,
@@ -83,6 +88,7 @@ def materialize_manifest(
                     destination.replace(backup_path)
                 staged_path.replace(destination)
                 promoted.append((destination, backup_path))
+                materialized.append((_artifact, destination))
         except Exception:
             for destination, backup_path in reversed(promoted):
                 if destination.exists():
@@ -98,7 +104,7 @@ def materialize_manifest(
             destination=destination,
             sha256=artifact.sha256,
         )
-        for artifact, destination, _staged_path in staged
+        for artifact, destination in materialized
     ]
 
 

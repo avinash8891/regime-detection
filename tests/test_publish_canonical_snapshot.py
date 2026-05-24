@@ -397,6 +397,46 @@ def test_check_mode_returns_nonzero_on_drift(manifest_setup, caplog):
     assert "DRIFT" in combined
 
 
+def test_check_mode_detects_store_drift_when_local_matches_manifest(
+    manifest_setup, caplog
+):
+    import logging
+
+    manifest_path, data_root, original_manifest, paths = manifest_setup
+    artifact = original_manifest["artifacts"][0]
+
+    new_df = pd.DataFrame(
+        {"date": ["2099-01-01"], "series_id": ["REMOTE"], "value": [99.0]}
+    )
+    store_source = paths["a_path"].with_name("store_latest.parquet")
+    _write_parquet(store_source, new_df)
+    store_latest = pcs._canonicalize_parquet_bytes(store_source)
+    store = pcs.build_artifact_store(original_manifest["storage_root"])
+    store.put_bytes(store_latest, artifact["uri"], overwrite=True)
+
+    assert _sha256_file(paths["a_path"]) == artifact["sha256"]
+
+    with caplog.at_level(logging.INFO, logger="publish_canonical_snapshot"):
+        rc = _run_main(
+            [
+                "--manifest",
+                str(manifest_path),
+                "--data-root",
+                str(data_root),
+                "--check",
+                "--only",
+                "fred_macro_series",
+            ]
+        )
+
+    assert rc == 1
+    combined = "\n".join(rec.message for rec in caplog.records)
+    assert "fred_macro_series" in combined
+    assert "STORE_DRIFT" in combined
+    assert artifact["sha256"][:12] in combined
+    assert hashlib.sha256(store_latest).hexdigest()[:12] in combined
+
+
 def test_canonicalize_is_a_fixed_point_for_datetime_float_parquet(tmp_path: Path):
     """Regression: pandas <-> pyarrow round-trip embedded metadata that made
     canon(canon(x)) != canon(x) for parquets with datetime + float columns.

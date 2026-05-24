@@ -214,7 +214,7 @@ class ArtifactReport:
     name: str
     local_path: str
     status: str  # MATCH, MISSING, CANONICALIZE_WOULD_CHANGE_SHA, WOULD_UPLOAD,
-                 # UPDATED, UPLOADED, UNCHANGED_AFTER_CANONICALIZE
+                 # UPDATED, UPLOADED, STORE_DRIFT, STORE_MISSING
     old_sha: str
     new_sha: str | None = None
     note: str = ""
@@ -263,19 +263,21 @@ def _filter_artifacts(
 
 
 def run_check(
-    payload: Any, data_root: Path, only: list[str] | None
+    payload: Any,
+    data_root: Path,
+    only: list[str] | None,
+    *,
+    store: ArtifactStore | None = None,
 ) -> tuple[int, list[ArtifactReport]]:
     reports: list[ArtifactReport] = []
     drift = 0
     for artifact in _filter_artifacts(payload["artifacts"], only):
         local = _resolve_local_path(data_root, artifact)
         old_sha = str(artifact["sha256"])
+        new_sha: str | None = None
         if not local.exists():
-            reports.append(
-                ArtifactReport(artifact["name"], str(local), "MISSING", old_sha)
-            )
-            continue
-        if _is_parquet(local):
+            status = "MISSING"
+        elif _is_parquet(local):
             try:
                 canon = _canonicalize_parquet_bytes(local)
             except Exception as exc:  # pragma: no cover - defensive
@@ -291,12 +293,18 @@ def run_check(
                 drift += 1
                 continue
             new_sha = sha256_bytes(canon)
-        elif _is_yaml(local):
-            new_sha = sha256_file(local)
+            status = "MATCH" if new_sha == old_sha else "DRIFT"
         else:
             new_sha = sha256_file(local)
-        status = "MATCH" if new_sha == old_sha else "DRIFT"
-        if status == "DRIFT":
+            status = "MATCH" if new_sha == old_sha else "DRIFT"
+        if store is not None:
+            stored = store.stat_file(str(artifact["uri"]))
+            if stored is None:
+                status = "STORE_MISSING"
+            elif stored.sha256 != old_sha:
+                status = "STORE_DRIFT"
+                new_sha = stored.sha256
+        if status != "MATCH":
             drift += 1
         reports.append(
             ArtifactReport(artifact["name"], str(local), status, old_sha, new_sha)
@@ -582,20 +590,31 @@ def main(argv: list[str] | None = None) -> int:
         return 2
 
     if args.check:
-        exit_code, reports = run_check(payload, data_root, args.only)
+        store = build_artifact_store(str(payload["storage_root"]))
+        exit_code, reports = run_check(payload, data_root, args.only, store=store)
         drift = [r for r in reports if r.status == "DRIFT"]
+        store_drift = [r for r in reports if r.status == "STORE_DRIFT"]
+        store_missing = [r for r in reports if r.status == "STORE_MISSING"]
         missing = [r for r in reports if r.status == "MISSING"]
         matched = [r for r in reports if r.status == "MATCH"]
         LOGGER.info(
-            "check: %d checked, %d MATCH, %d DRIFT, %d MISSING",
+            "check: %d checked, %d MATCH, %d DRIFT, %d STORE_DRIFT, %d STORE_MISSING, %d MISSING",
             len(reports),
             len(matched),
             len(drift),
+            len(store_drift),
+            len(store_missing),
             len(missing),
         )
         if drift:
             LOGGER.info("DRIFT:")
             LOGGER.info(_format_report(drift))
+        if store_drift:
+            LOGGER.info("STORE_DRIFT:")
+            LOGGER.info(_format_report(store_drift))
+        if store_missing:
+            LOGGER.info("STORE_MISSING:")
+            LOGGER.info(_format_report(store_missing))
         return exit_code
 
     if args.dry_run:

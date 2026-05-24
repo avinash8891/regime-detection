@@ -64,6 +64,9 @@ class ArtifactStore:
     ) -> Path:
         raise NotImplementedError
 
+    def stat_file(self, uri: str) -> StoredArtifact | None:
+        raise NotImplementedError
+
 
 class LocalArtifactStore(ArtifactStore):
     def __init__(self, root: Path) -> None:
@@ -159,6 +162,17 @@ class LocalArtifactStore(ArtifactStore):
             tmp_path.unlink(missing_ok=True)
             raise
         return destination_path
+
+    def stat_file(self, uri: str) -> StoredArtifact | None:
+        relative_key = self._relative_key(uri)
+        source = self.root / relative_key
+        if not source.exists():
+            return None
+        return StoredArtifact(
+            uri=self._uri_for_key(relative_key),
+            sha256=sha256_file(source),
+            size_bytes=source.stat().st_size,
+        )
 
     def _relative_key(self, key_or_uri: str) -> str:
         return _normalize_local_key(key_or_uri, self._root_resolved)
@@ -297,6 +311,21 @@ class S3ArtifactStore(ArtifactStore):
             tmp_path.unlink(missing_ok=True)
             raise
         return destination_path
+
+    def stat_file(self, uri: str) -> StoredArtifact | None:
+        relative_key = self._relative_key(uri)
+        object_key = _join_s3_key(self.prefix, relative_key)
+        existing = _s3_existing_artifact(
+            self.client, bucket=self.bucket, object_key=object_key
+        )
+        if existing is None:
+            return None
+        existing_sha, existing_size = existing
+        return StoredArtifact(
+            uri=self._uri_for_key(relative_key),
+            sha256=existing_sha or "",
+            size_bytes=existing_size,
+        )
 
     def _relative_key(self, key_or_uri: str) -> str:
         return _normalize_s3_key(
