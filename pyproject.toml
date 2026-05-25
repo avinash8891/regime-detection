@@ -32,6 +32,11 @@ s3 = [
 browser = [
   "playwright>=1.50,<2",
 ]
+data-sources = [
+  "alpaca-py>=0.43,<1",
+  "datasets>=4,<5",
+  "ruamel.yaml>=0.18,<0.19",
+]
 audit = [
   "pip-audit==2.10.0",
   "pydeps==3.0.6",
@@ -79,6 +84,7 @@ optional_dependencies_dev_groups = [
   "dev",
   "audit",
 ]
+package_module_name_map = { "alpaca-py" = ["alpaca"], "ruamel.yaml" = ["ruamel"] }
 
 [tool.setuptools]
 package-dir = {"" = "src"}
