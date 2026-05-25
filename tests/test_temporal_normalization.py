@@ -50,7 +50,9 @@ def test_parse_datetime_index_outputs_nyse_timestamps_accepted_by_as_date() -> N
     ]
 
 
-def test_parse_datetime_index_normalizes_mixed_timezone_values_deterministically() -> None:
+def test_parse_datetime_index_normalizes_mixed_timezone_values_deterministically() -> (
+    None
+):
     index = parse_datetime_index(
         [
             pd.Timestamp("2024-03-12 00:30:00", tz="UTC"),

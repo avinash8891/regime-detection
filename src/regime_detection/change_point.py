@@ -54,7 +54,9 @@ class ChangePointFeatures:
 
     posterior_changepoint_prob: pd.Series  # recent short-run BOCPD posterior mass
     score: pd.Series  # 5-session rolling max of posterior (spec L2135-2150)
-    days_since_last_break: pd.Series  # nullable Int64; sessions since last break (spec L2152-2164)
+    days_since_last_break: (
+        pd.Series
+    )  # nullable Int64; sessions since last break (spec L2152-2164)
     method: str  # "BOCPD"
 
 
@@ -129,7 +131,7 @@ def compute_change_point_features(
     # values, which drives the Student-T predictive near-singular and
     # triggers the bare-except branch below (also returning None). Both
     # paths preserve fail-open semantics.
-    _STD_FLOOR = 10 ** -_ROUND_DECIMALS
+    _STD_FLOOR = 10**-_ROUND_DECIMALS
     if not (data.std() > _STD_FLOOR):
         return None
 
@@ -204,9 +206,7 @@ def _rolling_max_changepoint_prob(posterior: pd.Series, window: int) -> pd.Serie
     return posterior.rolling(window=window, min_periods=1).max()
 
 
-def _days_since_last_break(
-    posterior: pd.Series, threshold: float
-) -> pd.Series:
+def _days_since_last_break(posterior: pd.Series, threshold: float) -> pd.Series:
     """Sessions since last posterior crossing per spec L2152-L2164.
 
     ``pd.NA`` when no break has occurred in available history.

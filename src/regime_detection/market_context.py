@@ -6,7 +6,11 @@ import pandas as pd
 from pydantic import BaseModel, ConfigDict, SkipValidation
 from typing import Annotated
 
-from regime_detection.calendar import as_date, nyse_sessions_between, require_nyse_trading_day
+from regime_detection.calendar import (
+    as_date,
+    nyse_sessions_between,
+    require_nyse_trading_day,
+)
 from regime_detection.config import RegimeConfig
 from regime_detection.loaders import load_event_calendar
 
@@ -25,9 +29,15 @@ class MarketContext(BaseModel):
     cross_asset_closes: dict[str, pd.Series] | None = None  # v2 §3.1
     macro_series: dict[str, pd.Series] | None = None  # v2 §2A/§2B/§2C FRED series
     pit_constituent_intervals: pd.DataFrame | None = None  # v2 §1D PIT breadth seam
-    constituent_ohlcv: Annotated[dict[str, pd.DataFrame] | None, SkipValidation] = None  # v2 §1D PIT breadth seam
-    aaii_sentiment: pd.DataFrame | None = None  # v2 §1A euphoria sentiment seam (ADR 0004)
-    implied_vol_30d: pd.Series | None = None  # v2 §1C vol_crush seam — FRED VIXCLS/100 (ADR 0005)
+    constituent_ohlcv: Annotated[dict[str, pd.DataFrame] | None, SkipValidation] = (
+        None  # v2 §1D PIT breadth seam
+    )
+    aaii_sentiment: pd.DataFrame | None = (
+        None  # v2 §1A euphoria sentiment seam (ADR 0004)
+    )
+    implied_vol_30d: pd.Series | None = (
+        None  # v2 §1C vol_crush seam — FRED VIXCLS/100 (ADR 0005)
+    )
     # v2 §2A central-bank-text evidence seam — deterministic-lexicon score
     # over FOMC minutes + Powell speech body_text per release. See
     # implementation decision and verification notes §3.1
@@ -71,11 +81,17 @@ def build_market_context(
     normalized_market_data = _normalize_market_data_for_runtime(market_data)
     cap_weight_symbol = config.etf_proxy.cap_weight_index
     equal_weight_symbol = config.etf_proxy.equal_weight_proxy
-    _require_market_data_contract(normalized_market_data, as_of_date=end_date, cap_weight_symbol=cap_weight_symbol)
+    _require_market_data_contract(
+        normalized_market_data, as_of_date=end_date, cap_weight_symbol=cap_weight_symbol
+    )
     _require_constituent_ohlcv_contract(constituent_ohlcv)
 
-    spy_ohlcv = _spy_ohlcv_frame(normalized_market_data, as_of_date=end_date, symbol=cap_weight_symbol)
-    rsp_close = _symbol_close_series(normalized_market_data, symbol=equal_weight_symbol, as_of_date=end_date)
+    spy_ohlcv = _spy_ohlcv_frame(
+        normalized_market_data, as_of_date=end_date, symbol=cap_weight_symbol
+    )
+    rsp_close = _symbol_close_series(
+        normalized_market_data, symbol=equal_weight_symbol, as_of_date=end_date
+    )
     vix_proxy_close = _resolve_vix_proxy_close(
         market_data=normalized_market_data,
         vix_data=vix_data,
@@ -86,8 +102,12 @@ def build_market_context(
         if event_calendar is None
         else load_event_calendar(event_calendar, market=config.event_calendar.market)
     )
-    reindexed_sector_etf_closes = _reindex_optional_close_dict(sector_etf_closes, spy_ohlcv.index)
-    reindexed_cross_asset_closes = _reindex_optional_close_dict(cross_asset_closes, spy_ohlcv.index)
+    reindexed_sector_etf_closes = _reindex_optional_close_dict(
+        sector_etf_closes, spy_ohlcv.index
+    )
+    reindexed_cross_asset_closes = _reindex_optional_close_dict(
+        cross_asset_closes, spy_ohlcv.index
+    )
     reindexed_implied_vol_30d = (
         None if implied_vol_30d is None else implied_vol_30d.reindex(spy_ohlcv.index)
     )
@@ -144,7 +164,9 @@ def _reindex_optional_close_dict(
     return out
 
 
-def slice_context_to_recent_sessions(*, context: MarketContext, required_sessions: int) -> MarketContext:
+def slice_context_to_recent_sessions(
+    *, context: MarketContext, required_sessions: int
+) -> MarketContext:
     if required_sessions >= len(context.sessions):
         return context
     keep_sessions = list(context.sessions[-required_sessions:])
@@ -157,7 +179,9 @@ def slice_context_to_recent_sessions(*, context: MarketContext, required_session
     )
 
 
-def slice_context_to_end_date(*, context: MarketContext, end_date: date) -> MarketContext:
+def slice_context_to_end_date(
+    *, context: MarketContext, end_date: date
+) -> MarketContext:
     end_date = as_date(end_date)
     require_nyse_trading_day(end_date)
     if end_date > context.end_date:
@@ -200,8 +224,12 @@ def _with_sliced_session_data(
         rsp_close=rsp_close,
         vix_proxy_close=vix_proxy_close,
         normalized_event_calendar=context.normalized_event_calendar,
-        sector_etf_closes=_reindex_optional_close_dict(context.sector_etf_closes, spy_ohlcv.index),
-        cross_asset_closes=_reindex_optional_close_dict(context.cross_asset_closes, spy_ohlcv.index),
+        sector_etf_closes=_reindex_optional_close_dict(
+            context.sector_etf_closes, spy_ohlcv.index
+        ),
+        cross_asset_closes=_reindex_optional_close_dict(
+            context.cross_asset_closes, spy_ohlcv.index
+        ),
         macro_series=context.macro_series,
         pit_constituent_intervals=context.pit_constituent_intervals,
         constituent_ohlcv=context.constituent_ohlcv,
@@ -232,9 +260,7 @@ def _normalize_market_data_for_runtime(df: pd.DataFrame) -> pd.DataFrame:
     try:
         out["date"] = pd.to_datetime(out["date"])
     except (ValueError, TypeError) as exc:
-        raise ValueError(
-            f"market_data contains malformed date values: {exc}"
-        ) from exc
+        raise ValueError(f"market_data contains malformed date values: {exc}") from exc
     return out
 
 
@@ -253,11 +279,17 @@ def _require_market_data_contract(
         # Belt-and-braces: even though _normalize_market_data_for_runtime raises
         # on coercion errors, defend against callers that bypass the normalizer
         # and pass NaT-containing frames in directly.
-        raise ValueError("market_data contains null date values; reject at the ingestion boundary")
+        raise ValueError(
+            "market_data contains null date values; reject at the ingestion boundary"
+        )
     dates = df["date"].dt.date
-    has_cap_weight_asof = ((df["symbol"] == cap_weight_symbol) & (dates == as_of_date)).any()
+    has_cap_weight_asof = (
+        (df["symbol"] == cap_weight_symbol) & (dates == as_of_date)
+    ).any()
     if not bool(has_cap_weight_asof):
-        raise ValueError(f"market_data must include {cap_weight_symbol} row for as_of_date={as_of_date.isoformat()}")
+        raise ValueError(
+            f"market_data must include {cap_weight_symbol} row for as_of_date={as_of_date.isoformat()}"
+        )
     uniq_dates = sorted({d for d in dates.dropna().unique()})
     if uniq_dates:
         start = min(uniq_dates)
@@ -302,7 +334,9 @@ def _require_constituent_ohlcv_contract(
             )
 
 
-def _spy_ohlcv_frame(df: pd.DataFrame, *, as_of_date: date, symbol: str = "SPY") -> pd.DataFrame:
+def _spy_ohlcv_frame(
+    df: pd.DataFrame, *, as_of_date: date, symbol: str = "SPY"
+) -> pd.DataFrame:
     s = df[df["symbol"] == symbol].copy()
     s = s.sort_values("date")
     s = s[s["date"].dt.date <= as_of_date]
@@ -310,7 +344,9 @@ def _spy_ohlcv_frame(df: pd.DataFrame, *, as_of_date: date, symbol: str = "SPY")
     return s[["open", "high", "low", "close", "volume"]]
 
 
-def _symbol_close_series(df: pd.DataFrame, *, symbol: str, as_of_date: date) -> pd.Series:
+def _symbol_close_series(
+    df: pd.DataFrame, *, symbol: str, as_of_date: date
+) -> pd.Series:
     s = df[df["symbol"] == symbol].copy()
     if s.empty:
         raise ValueError(f"market_data missing required symbol for V1: {symbol}")

@@ -38,7 +38,6 @@ from regime_detection.inflation_growth import (
     goldilocks_limb_evidence,
 )
 
-
 # --- Synthetic fixtures ------------------------------------------------------
 
 _TRAINING_SESSIONS = 650
@@ -520,7 +519,7 @@ def test_inflation_shock_rapid_onset_limb_fires() -> None:
     composite inputs."""
     rules = _default_rules()
     inputs = _rule_inputs(
-        cpi_3m_change_pct=0.03,           # > 0.02 default threshold
+        cpi_3m_change_pct=0.03,  # > 0.02 default threshold
         treasury_10y_yield_slope_21d=0.01,  # strictly rising
         # all OTHER limbs benign
         inflation_surprise_zscore=float("nan"),
@@ -536,7 +535,7 @@ def test_inflation_shock_rapid_onset_limb_silent_at_threshold() -> None:
     does NOT fire the rapid-onset limb."""
     rules = _default_rules()
     inputs = _rule_inputs(
-        cpi_3m_change_pct=0.02,            # exactly at threshold
+        cpi_3m_change_pct=0.02,  # exactly at threshold
         treasury_10y_yield_slope_21d=0.01,
         inflation_surprise_zscore=float("nan"),
         commodity_return_63d=0.0,
@@ -551,7 +550,7 @@ def test_inflation_shock_rapid_onset_limb_silent_when_yields_flat() -> None:
     falling yields suppress the limb even when CPI is accelerating sharply."""
     rules = _default_rules()
     inputs = _rule_inputs(
-        cpi_3m_change_pct=0.05,            # well above threshold
+        cpi_3m_change_pct=0.05,  # well above threshold
         treasury_10y_yield_slope_21d=0.0,  # NOT rising
         inflation_surprise_zscore=float("nan"),
         commodity_return_63d=0.0,
@@ -585,7 +584,9 @@ def test_recession_scare_fires() -> None:
     assert evaluate_rules(inputs=inputs, config=rules) == "recession_scare"
 
 
-def test_recession_scare_fires_when_credit_unavailable_with_stricter_threshold() -> None:
+def test_recession_scare_fires_when_credit_unavailable_with_stricter_threshold() -> (
+    None
+):
     """With allow_credit_independent_fallback=True, recession_scare fires
     without credit confirmation but uses the stricter SPY threshold (-7%)."""
     rules = _default_rules()
@@ -606,7 +607,9 @@ def test_recession_scare_fires_when_credit_unavailable_with_stricter_threshold()
     assert evaluate_recession_scare(mild_drop, rules) is False
 
 
-def test_recession_scare_short_circuits_when_credit_funding_unbuilt_no_fallback() -> None:
+def test_recession_scare_short_circuits_when_credit_funding_unbuilt_no_fallback() -> (
+    None
+):
     """§2B line 2316: cross-axis short-circuit when §2C is unbuilt and
     fallback is disabled."""
     rules = _default_rules().model_copy(
@@ -655,7 +658,9 @@ def test_recovery_growth_fires_when_credit_unavailable_with_fallback() -> None:
     assert evaluate_recovery_growth(inputs, rules) is True
 
 
-def test_recovery_growth_short_circuits_when_credit_funding_unbuilt_no_fallback() -> None:
+def test_recovery_growth_short_circuits_when_credit_funding_unbuilt_no_fallback() -> (
+    None
+):
     rules = _default_rules().model_copy(
         update={"allow_credit_independent_fallback": False}
     )

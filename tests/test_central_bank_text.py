@@ -10,6 +10,7 @@ Per CLAUDE.md testing rules:
 - Test the integration path (loader → feature_store → MonetaryPressureV2
   Features.central_bank_text_score), not just the unit.
 """
+
 from __future__ import annotations
 
 import datetime as dt
@@ -27,7 +28,6 @@ from regime_detection.central_bank_text import (
     to_daily_score_series,
 )
 from regime_detection.loaders import load_central_bank_text_score
-
 
 # Real FOMC-style phrasing. These are intentionally faithful to actual
 # FOMC minutes wording so the lexicon test reflects production semantics.
@@ -100,8 +100,14 @@ def test_lexicons_have_no_overlapping_terms() -> None:
 def test_score_release_frame_returns_one_row_per_release() -> None:
     fomc_releases = pd.DataFrame(
         [
-            {"release_timestamp": "2024-01-31 14:00:00", "body_text": _HAWKISH_FOMC_BODY},
-            {"release_timestamp": "2024-03-20 14:00:00", "body_text": _DOVISH_FOMC_BODY},
+            {
+                "release_timestamp": "2024-01-31 14:00:00",
+                "body_text": _HAWKISH_FOMC_BODY,
+            },
+            {
+                "release_timestamp": "2024-03-20 14:00:00",
+                "body_text": _DOVISH_FOMC_BODY,
+            },
         ]
     )
     out = score_release_frame(
@@ -313,7 +319,10 @@ def test_same_date_aggregation_unknown_strategy_raises() -> None:
 def test_load_central_bank_text_score_integrates_fomc_and_powell_frames() -> None:
     fomc_df = pd.DataFrame(
         [
-            {"release_timestamp": "2024-01-31 14:00:00", "body_text": _HAWKISH_FOMC_BODY},
+            {
+                "release_timestamp": "2024-01-31 14:00:00",
+                "body_text": _HAWKISH_FOMC_BODY,
+            },
         ]
     )
     powell_df = pd.DataFrame(
@@ -336,7 +345,10 @@ def test_load_central_bank_text_score_empty_inputs_returns_empty_frame() -> None
 def test_load_central_bank_text_score_respects_max_release_age() -> None:
     fomc_df = pd.DataFrame(
         [
-            {"release_timestamp": "2020-01-31", "body_text": _HAWKISH_FOMC_BODY},  # too old
+            {
+                "release_timestamp": "2020-01-31",
+                "body_text": _HAWKISH_FOMC_BODY,
+            },  # too old
             {"release_timestamp": "2024-01-31", "body_text": _DOVISH_FOMC_BODY},
         ]
     )

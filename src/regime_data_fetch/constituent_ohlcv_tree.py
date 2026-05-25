@@ -10,7 +10,6 @@ from pathlib import Path
 
 import pandas as pd
 
-
 EXPECTED_OHLCV_COLUMNS = [
     "date",
     "symbol",
@@ -76,7 +75,8 @@ def materialize_constituent_ohlcv_tree(
 
     if missing and not allow_missing_symbols:
         raise FileNotFoundError(
-            "Missing constituent OHLCV symbols in source tree: " + ", ".join(missing[:50])
+            "Missing constituent OHLCV symbols in source tree: "
+            + ", ".join(missing[:50])
         )
     if not frames:
         raise ValueError("No constituent OHLCV files were available to materialize")
@@ -128,7 +128,10 @@ def materialize_constituent_ohlcv_tree(
         staging.replace(output_tree)
         final_manifest_path = output_tree / "MANIFEST.sha256.json"
 
-        final_report_path = report_path or output_tree.parent / f"{output_tree.name}_materialization_report.json"
+        final_report_path = (
+            report_path
+            or output_tree.parent / f"{output_tree.name}_materialization_report.json"
+        )
         final_report_path.parent.mkdir(parents=True, exist_ok=True)
         report = {
             "source": "local:constituent_ohlcv_tree_materialization",

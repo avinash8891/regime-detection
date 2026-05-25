@@ -37,7 +37,9 @@ def test_assess_series_input_quality_returns_stale_data_status() -> None:
     assert dq.reason == "stale_data"
 
 
-def test_assess_series_input_quality_returns_degraded_above_insufficient_floor() -> None:
+def test_assess_series_input_quality_returns_degraded_above_insufficient_floor() -> (
+    None
+):
     series = _series([1.0, 2.0, 3.0, 4.0, None])
 
     dq = assess_series_input_quality(
@@ -123,7 +125,9 @@ def test_freshness_counts_trading_sessions_not_calendar_days_after_holiday() -> 
 
 def test_quality_forces_unknown_only_for_terminal_bad_quality_statuses() -> None:
     assert quality_forces_unknown(
-        DataQuality(status="insufficient_history", freshness_days=None, completeness=None)
+        DataQuality(
+            status="insufficient_history", freshness_days=None, completeness=None
+        )
     )
     assert quality_forces_unknown(
         DataQuality(status="insufficient_data", freshness_days=0, completeness=0.5)

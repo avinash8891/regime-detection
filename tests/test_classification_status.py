@@ -1,4 +1,9 @@
-from regime_detection.models import AxisOutput, CreditFundingOutput, DataQuality, VolumeLiquidityOutput
+from regime_detection.models import (
+    AxisOutput,
+    CreditFundingOutput,
+    DataQuality,
+    VolumeLiquidityOutput,
+)
 
 
 def test_unknown_with_ok_data_quality_is_no_rule_fired() -> None:
@@ -29,7 +34,9 @@ def test_unknown_held_by_hysteresis_reports_no_rule_fired_hysteresis() -> None:
     assert out.reporting_label == "no_rule_fired_hysteresis"
 
 
-def test_unknown_with_missing_rule_feature_reports_no_rule_fired_missing_feature() -> None:
+def test_unknown_with_missing_rule_feature_reports_no_rule_fired_missing_feature() -> (
+    None
+):
     out = AxisOutput(
         raw_label="unknown",
         stable_label="unknown",
@@ -43,7 +50,9 @@ def test_unknown_with_missing_rule_feature_reports_no_rule_fired_missing_feature
     assert out.reporting_label == "no_rule_fired_missing_feature"
 
 
-def test_wrapped_evidence_with_missing_rule_feature_reports_no_rule_fired_missing_feature() -> None:
+def test_wrapped_evidence_with_missing_rule_feature_reports_no_rule_fired_missing_feature() -> (
+    None
+):
     out = AxisOutput(
         raw_label="unknown",
         stable_label="unknown",

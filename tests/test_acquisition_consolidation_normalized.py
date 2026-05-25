@@ -115,33 +115,34 @@ def test_import_normalized_output_loads_fred_macro_parquet(tmp_path) -> None:
     )
 
     assert table == MACRO_ROWS_TABLE
-    assert conn.execute(
-        """
+    assert (
+        conn.execute("""
         SELECT run_id, dataset_kind, date, series_id, value, realtime_start, realtime_end, logical_name
         FROM macro_rows ORDER BY date
-        """
-    ).fetchall() == [
-        (
-            7,
-            "series",
-            "2026-05-18",
-            "DGS10",
-            4.45,
-            "2026-05-20",
-            "2026-05-20",
-            "ten_year_treasury_yield",
-        ),
-        (
-            7,
-            "series",
-            "2026-05-19",
-            "DGS10",
-            None,
-            "2026-05-20",
-            "2026-05-20",
-            "ten_year_treasury_yield",
-        ),
-    ]
+        """).fetchall()
+        == [
+            (
+                7,
+                "series",
+                "2026-05-18",
+                "DGS10",
+                4.45,
+                "2026-05-20",
+                "2026-05-20",
+                "ten_year_treasury_yield",
+            ),
+            (
+                7,
+                "series",
+                "2026-05-19",
+                "DGS10",
+                None,
+                "2026-05-20",
+                "2026-05-20",
+                "ten_year_treasury_yield",
+            ),
+        ]
+    )
 
 
 def test_import_normalized_output_loads_cpi_vintage_macro_parquet(tmp_path) -> None:
@@ -380,13 +381,11 @@ def test_import_normalized_output_loads_aggregate_eps_snapshot_parquet(
     )
 
     assert table == AGGREGATE_EPS_SNAPSHOT_ROWS_TABLE
-    assert conn.execute(
-        """
+    assert conn.execute("""
         SELECT workbook_as_of_date, observation_date, forward_estimate_label,
                forward_estimate_value, public_files_discontinued
         FROM aggregate_eps_snapshot_rows
-        """
-    ).fetchall() == [("2026-05-16", "2026-05-16", "2026E", 275.5, 1)]
+        """).fetchall() == [("2026-05-16", "2026-05-16", "2026E", 275.5, 1)]
 
 
 def test_import_normalized_output_loads_aggregate_eps_wayback_parquet(tmp_path) -> None:
@@ -427,15 +426,14 @@ def test_import_normalized_output_loads_aggregate_eps_wayback_parquet(tmp_path) 
     )
 
     assert table == AGGREGATE_EPS_WAYBACK_ROWS_TABLE
-    assert conn.execute(
-        """
+    assert (
+        conn.execute("""
         SELECT snapshot_date, timestamp, workbook_as_of_date,
                forward_estimate_value, public_files_discontinued, source
         FROM aggregate_eps_wayback_rows
-        """
-    ).fetchall() == [
-        ("2026-05-17", "20260517010203", "2026-05-16", 275.5, 0, "wayback_machine")
-    ]
+        """).fetchall()
+        == [("2026-05-17", "20260517010203", "2026-05-16", 275.5, 0, "wayback_machine")]
+    )
 
 
 def test_import_normalized_output_loads_alpaca_partitioned_symbol_parquet(

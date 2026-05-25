@@ -47,6 +47,7 @@ the central-banking literature (Romer & Romer, Apel & Blix-Grimaldi,
 Bennani & Neuenkirch lexicons). The output is an evidence-grade signal
 to surface in the engine's monetary axis, not a primary rule input.
 """
+
 from __future__ import annotations
 
 import re
@@ -54,8 +55,6 @@ from dataclasses import dataclass
 from typing import Literal
 
 import pandas as pd
-
-
 
 # ---------------------------------------------------------------------------
 # Lexicons.
@@ -218,8 +217,6 @@ def score_text(body_text: str) -> CentralBankTextScore:
 # ---------------------------------------------------------------------------
 
 
-
-
 def score_release_frame(
     df: pd.DataFrame,
     *,
@@ -250,9 +247,7 @@ def score_release_frame(
             f"central_bank_text source missing required date column: {date_column}"
         )
     if "body_text" not in df.columns:
-        raise ValueError(
-            "central_bank_text source missing required column: body_text"
-        )
+        raise ValueError("central_bank_text source missing required column: body_text")
     out_rows: list[dict[str, object]] = []
     for _, row in df.iterrows():
         score = score_text(row["body_text"])
@@ -359,9 +354,16 @@ def _aggregate_same_date_rows(
                 continue
             weights = valid["total_tokens"].astype(float)
             if (weights <= 0).all():
-                out.append({"release_date": release_date, "net_score": float(valid["net_score"].mean())})
+                out.append(
+                    {
+                        "release_date": release_date,
+                        "net_score": float(valid["net_score"].mean()),
+                    }
+                )
                 continue
-            weighted = (valid["net_score"].astype(float) * weights).sum() / weights.sum()
+            weighted = (
+                valid["net_score"].astype(float) * weights
+            ).sum() / weights.sum()
             out.append({"release_date": release_date, "net_score": float(weighted)})
         return pd.DataFrame(out)
     raise ValueError(
@@ -434,8 +436,6 @@ def to_daily_score_series(
     # waiting the full ``smoothing_window_sessions`` (matches AAII's
     # min_periods=1 ffill semantic).
     if smoothing_window_sessions > 1:
-        daily = daily.rolling(
-            smoothing_window_sessions, min_periods=1
-        ).mean()
+        daily = daily.rolling(smoothing_window_sessions, min_periods=1).mean()
     daily.name = "central_bank_text_score"
     return daily

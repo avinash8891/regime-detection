@@ -1,4 +1,5 @@
 """Shared rolling-statistics helpers for cross-axis formulas."""
+
 from __future__ import annotations
 
 import pandas as pd

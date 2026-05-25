@@ -4,7 +4,6 @@ import ast
 import re
 from pathlib import Path
 
-
 SOURCE_ROOTS = (Path("src/regime_detection"), Path("src/regime_data_fetch"))
 SOURCE_SUFFIXES = {".py", ".yaml"}
 FORBIDDEN_SOURCE_PATTERNS = re.compile(
@@ -51,9 +50,7 @@ def test_timeline_day_builder_stays_below_spaghetti_threshold() -> None:
     tree = ast.parse(path.read_text())
 
     functions = {
-        node.name: node
-        for node in ast.walk(tree)
-        if isinstance(node, ast.FunctionDef)
+        node.name: node for node in ast.walk(tree) if isinstance(node, ast.FunctionDef)
     }
     day_builder = functions["_build_timeline_output_for_day"]
 
@@ -67,7 +64,8 @@ def test_market_context_has_single_sliced_context_constructor() -> None:
     constructors = [
         node.lineno
         for node in ast.walk(tree)
-        if isinstance(node, ast.Call) and getattr(node.func, "id", "") == "MarketContext"
+        if isinstance(node, ast.Call)
+        and getattr(node.func, "id", "") == "MarketContext"
     ]
 
     assert len(constructors) <= 2

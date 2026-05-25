@@ -16,6 +16,7 @@ Previously each caller maintained its own near-duplicate of these checks;
 keeping them here prevents drift between the publish-time validator and
 the calibration loader.
 """
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -42,7 +43,7 @@ def parse_daily_ohlcv_artifact_name(name: str) -> str | None:
     """
     if not name.startswith(DAILY_OHLCV_ARTIFACT_PREFIX):
         return None
-    symbol = name[len(DAILY_OHLCV_ARTIFACT_PREFIX):]
+    symbol = name[len(DAILY_OHLCV_ARTIFACT_PREFIX) :]
     return symbol or None
 
 
@@ -54,10 +55,14 @@ def require_symbol_partition_frame(
 ) -> None:
     """Validate ``frame`` matches the daily-OHLCV partition contract."""
     if "symbol" not in frame.columns:
-        raise ValueError(_contract_msg(source, expected_symbol, "missing symbol column"))
+        raise ValueError(
+            _contract_msg(source, expected_symbol, "missing symbol column")
+        )
     column = frame["symbol"]
     if column.isna().any():
-        raise ValueError(_contract_msg(source, expected_symbol, "has null symbol row(s)"))
+        raise ValueError(
+            _contract_msg(source, expected_symbol, "has null symbol row(s)")
+        )
     observed = sorted({str(value) for value in column.unique()})
     if observed != [expected_symbol]:
         raise ValueError(
@@ -74,10 +79,14 @@ def require_symbol_partition_table(
 ) -> None:
     """Validate a pyarrow ``table`` matches the daily-OHLCV partition contract."""
     if "symbol" not in table.column_names:
-        raise ValueError(_contract_msg(source, expected_symbol, "missing symbol column"))
+        raise ValueError(
+            _contract_msg(source, expected_symbol, "missing symbol column")
+        )
     column = table.column("symbol").to_pandas()
     if column.isna().any():
-        raise ValueError(_contract_msg(source, expected_symbol, "has null symbol row(s)"))
+        raise ValueError(
+            _contract_msg(source, expected_symbol, "has null symbol row(s)")
+        )
     observed = sorted({str(value) for value in column.unique()})
     if observed != [expected_symbol]:
         raise ValueError(

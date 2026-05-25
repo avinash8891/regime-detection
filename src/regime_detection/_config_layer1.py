@@ -77,9 +77,10 @@ class TrendDirectionV2Config(StrictBaseModel):
     rules: TrendDirectionV2RulesConfig = Field(
         default_factory=lambda: TrendDirectionV2RulesConfig(
             recovery_drawdown_threshold=-0.15,  # v2 §1A line 195
-            recovery_return_threshold=0.10,     # v2 §1A line 196
+            recovery_return_threshold=0.10,  # v2 §1A line 196
         )
     )
+
 
 class VolatilityV2RulesConfig(StrictBaseModel):
     """v2 §1C `rising_vol` and `vol_crush` rule thresholds.
@@ -160,12 +161,13 @@ class VolatilityV2Config(StrictBaseModel):
     # omits the sub-block.
     rules: VolatilityV2RulesConfig = Field(
         default_factory=lambda: VolatilityV2RulesConfig(
-            atr_ratio_threshold=1.15,                # v2 §1C line 253
-            realized_vol_ratio_threshold=1.25,       # v2 §1C line 254
-            realized_vol_short_period=10,            # v2 §1C line 254
-            realized_vol_long_period=63,             # v2 §1C line 254
+            atr_ratio_threshold=1.15,  # v2 §1C line 253
+            realized_vol_ratio_threshold=1.25,  # v2 §1C line 254
+            realized_vol_short_period=10,  # v2 §1C line 254
+            realized_vol_long_period=63,  # v2 §1C line 254
         )
     )
+
 
 class VolumeLiquidityV2Config(StrictBaseModel):
     """v2 §1E — Layer 1 V2 Volume / Liquidity feature config.
@@ -226,9 +228,7 @@ class VolumeLiquidityRulesConfig(StrictBaseModel):
     cold_start_liquidity_gap_frequency_20d_min: float = Field(
         ge=0.0, le=1.0, default=0.30
     )
-    cold_start_liquidity_gap_intraday_range_min: float = Field(
-        gt=0.0, default=0.04
-    )
+    cold_start_liquidity_gap_intraday_range_min: float = Field(gt=0.0, default=0.04)
 
 
 class VolumeLiquidityConfig(StrictBaseModel):
@@ -283,6 +283,7 @@ class BreadthV2Config(StrictBaseModel):
 
     # v2 §1D line 381 — narrowing_breadth nh_nl_ratio threshold (< 0.4 fires).
     nh_nl_ratio_narrowing_threshold: float = Field(default=0.4, gt=0.0, lt=1.0)
+
 
 class TrendCharacterV2Config(StrictBaseModel):
     """v2 §1A trend-character V2 axis configuration.

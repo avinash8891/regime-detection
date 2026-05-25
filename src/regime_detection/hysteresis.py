@@ -6,7 +6,6 @@ from typing import TypeVar
 from regime_detection.data_quality import quality_forces_unknown
 from regime_detection.models import DataQuality
 
-
 TLabel = TypeVar("TLabel", bound=str)
 
 
@@ -42,7 +41,9 @@ def apply_per_label_asymmetric_hysteresis(
     for raw in raw_labels:
         raw_rank = risk_rank[raw]
         stable_rank = risk_rank[stable_label]
-        threshold = deescalation_days_by_label.get(stable_label, default_deescalation_days)
+        threshold = deescalation_days_by_label.get(
+            stable_label, default_deescalation_days
+        )
 
         if raw_rank > stable_rank:
             stable_label = raw

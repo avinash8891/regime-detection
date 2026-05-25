@@ -53,7 +53,9 @@ def _calendar_staleness_days_series(
     source_positions = valid_dates.searchsorted(sessions, side="right") - 1
     last_valid_date = pd.Series(pd.NaT, index=session_index, dtype="datetime64[ns]")
     has_observation = source_positions >= 0
-    last_valid_date.loc[has_observation] = valid_dates[source_positions[has_observation]]
+    last_valid_date.loc[has_observation] = valid_dates[
+        source_positions[has_observation]
+    ]
     delta_days = (pd.Series(sessions, index=session_index) - last_valid_date).dt.days
     return delta_days.fillna(_STALENESS_SENTINEL).astype("int64")
 

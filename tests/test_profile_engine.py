@@ -89,9 +89,7 @@ def test_profile_manifest_resolution_replaces_default_input_paths(
     )
     args = profile_engine._parse_args()
 
-    profile_engine._apply_manifest_input_paths(
-        args, runner_name="profile_engine"
-    )
+    profile_engine._apply_manifest_input_paths(args, runner_name="profile_engine")
 
     assert args.daily_dir == data_root / "daily_ohlcv_762"
     assert args.pmi_path == data_root / "pmi" / "us_ism_pmi_history.parquet"
@@ -126,9 +124,7 @@ def test_profile_manifest_resolution_keeps_explicit_cli_override(
     )
     args = profile_engine._parse_args()
 
-    profile_engine._apply_manifest_input_paths(
-        args, runner_name="profile_engine"
-    )
+    profile_engine._apply_manifest_input_paths(args, runner_name="profile_engine")
 
     assert args.news_sentiment_parquet == override_path
     assert args.event_calendar == tmp_path / "manual" / "events.yaml"
@@ -311,7 +307,10 @@ def test_profile_verification_flags_missing_layer1_sentiment_extensions() -> Non
         inputs=inputs,
     )
 
-    assert "trend_direction.sentiment_score missing; missing inputs: aaii_sentiment" in issues
+    assert (
+        "trend_direction.sentiment_score missing; missing inputs: aaii_sentiment"
+        in issues
+    )
     assert (
         "trend_direction.news_sentiment_score missing; missing inputs: news_sentiment"
         in issues
@@ -418,7 +417,9 @@ def test_optional_input_coverage_lines_report_freshness() -> None:
     ) in lines
     assert "macro_series.cpi_nowcast: EMPTY" in lines
     assert "aaii_sentiment: NONE" in lines
-    assert "news_sentiment: rows=1 first=2026-05-12 latest=2026-05-12 age_days=3" in lines
+    assert (
+        "news_sentiment: rows=1 first=2026-05-12 latest=2026-05-12 age_days=3" in lines
+    )
     assert (
         "central_bank_text_releases: rows=1 first=2026-05-01 "
         "latest=2026-05-01 age_days=14"
@@ -470,7 +471,9 @@ def test_profile_json_report_emits_layer1_sentiment_metric_summary(
         as_of_date=pd.Timestamp("2026-05-15").date(),
         trend_direction=SimpleNamespace(active_label="bull"),
         volatility_state=SimpleNamespace(active_label="normal_vol"),
-        transition_risk=SimpleNamespace(state="stable", score=None, score_components=None),
+        transition_risk=SimpleNamespace(
+            state="stable", score=None, score_components=None
+        ),
         network_fragility=None,
         volume_liquidity_state=None,
         credit_funding_state=None,
@@ -848,7 +851,9 @@ def test_profile_trailing_status_reports_no_rule_fired_not_unknown() -> None:
         monetary_pressure_state=None,
         cluster=None,
         change_point=None,
-        transition_risk=SimpleNamespace(state="stable", score=None, score_components=None),
+        transition_risk=SimpleNamespace(
+            state="stable", score=None, score_components=None
+        ),
     )
 
     rows = profile_engine._trailing_v2_status(output)

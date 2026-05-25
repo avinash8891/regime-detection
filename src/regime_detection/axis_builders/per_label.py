@@ -8,7 +8,6 @@ from regime_detection.data_quality import quality_forces_unknown
 from regime_detection.hysteresis import apply_data_quality_aware_hysteresis
 from regime_detection.models import DataQuality
 
-
 AxisOutputT = TypeVar("AxisOutputT")
 
 

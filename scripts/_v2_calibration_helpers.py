@@ -29,7 +29,6 @@ from regime_detection.loaders import (
 )
 from regime_detection.comparison import axis_reporting_label
 
-
 logger = logging.getLogger(__name__)
 
 
@@ -45,7 +44,9 @@ def synthetic_pit_intervals_from_sector_closes(
     return pd.DataFrame(
         {
             "ticker": list(sector_etf_closes),
-            "start_date": [series.index.min().date() for series in sector_etf_closes.values()],
+            "start_date": [
+                series.index.min().date() for series in sector_etf_closes.values()
+            ],
             "end_date": [None] * len(sector_etf_closes),
         }
     )
@@ -162,7 +163,9 @@ def apply_manifest_input_paths(
         manifest_path=args.manifest,
         data_root=args.data_root,
         runner_name=runner_name,
-        cli_values={field: getattr(args, field, None) for field in MANIFEST_INPUT_FLAGS},
+        cli_values={
+            field: getattr(args, field, None) for field in MANIFEST_INPUT_FLAGS
+        },
         cli_overrides=args.manifest_input_overrides,
         repo_root=repo_root,
         **({"required_fields": required_fields} if required_fields is not None else {}),
@@ -255,7 +258,9 @@ def _require_daily_ohlcv_calendar_coverage(
         observed = pd.DatetimeIndex(
             frame.loc[frame["symbol"] == symbol, "date"].sort_values().unique()
         )
-        _require_calendar_gap_free(label=symbol, observed=observed, expected=expected_index)
+        _require_calendar_gap_free(
+            label=symbol, observed=observed, expected=expected_index
+        )
 
 
 def _require_close_series_calendar_coverage(series: pd.Series) -> None:
@@ -368,10 +373,7 @@ def load_macro_series(
             "scripts/fetch_regime_engine_v1_data.py --fetch macro",
             cpi_nowcast_parquet,
         )
-    if (
-        eps_weekly_history_parquet is not None
-        and eps_weekly_history_parquet.exists()
-    ):
+    if eps_weekly_history_parquet is not None and eps_weekly_history_parquet.exists():
         series_dict["aggregate_forward_eps_revision"] = (
             load_aggregate_forward_eps_revision_series(eps_weekly_history_parquet)
         )
@@ -416,9 +418,7 @@ def _load_pmi_manufacturing_series(pmi_path: Path) -> pd.Series | None:
         .dt.tz_localize(None)
         .dt.normalize()
     )
-    pmi_df = pmi_df.drop_duplicates(
-        subset=["release_date_local"], keep="last"
-    )
+    pmi_df = pmi_df.drop_duplicates(subset=["release_date_local"], keep="last")
     return (
         pmi_df.set_index("release_date_local")["value"]
         .astype(float)

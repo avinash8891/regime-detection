@@ -236,9 +236,9 @@ def test_load_close_dict_rejects_calendar_gap_between_start_and_end(
     pd.DataFrame(
         [
             {
-                    "date": date,
-                    "symbol": "XLY",
-                    "open": 1.0,
+                "date": date,
+                "symbol": "XLY",
+                "open": 1.0,
                 "high": 2.0,
                 "low": 0.5,
                 "close": 1.5,

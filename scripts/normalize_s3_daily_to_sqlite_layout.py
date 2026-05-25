@@ -16,6 +16,7 @@ applied (verified by spot-check: AAPL 2024-01-02 close $185.24 reflects the
 adjusted_close; we satisfy this by aliasing adjusted_close := close. The
 source_file column records the S3 provenance string for audit.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -31,26 +32,54 @@ def normalize_one(src_path: Path, symbol: str) -> pd.DataFrame:
     # The repo's SQLite store wants `date` as ISO yyyy-mm-dd TEXT — normalize.
     df = df.reset_index()
     timestamp_col = "timestamp" if "timestamp" in df.columns else df.columns[0]
-    df["date"] = pd.to_datetime(df[timestamp_col]).dt.tz_localize(None).dt.normalize().dt.date.astype(str)
+    df["date"] = (
+        pd.to_datetime(df[timestamp_col])
+        .dt.tz_localize(None)
+        .dt.normalize()
+        .dt.date.astype(str)
+    )
     df["symbol"] = symbol
-    df = df.rename(columns={
-        "Open": "open",
-        "High": "high",
-        "Low": "low",
-        "Close": "close",
-        "Volume": "volume",
-    })
+    df = df.rename(
+        columns={
+            "Open": "open",
+            "High": "high",
+            "Low": "low",
+            "Close": "close",
+            "Volume": "volume",
+        }
+    )
     df["adjusted_close"] = df["close"].astype(float)
     df["volume"] = df["volume"].astype("int64")
-    keep = ["date", "symbol", "open", "high", "low", "close", "volume", "adjusted_close"]
+    keep = [
+        "date",
+        "symbol",
+        "open",
+        "high",
+        "low",
+        "close",
+        "volume",
+        "adjusted_close",
+    ]
     df = df[keep].sort_values("date").reset_index(drop=True)
     return df
 
 
 def main() -> int:
-    ap = argparse.ArgumentParser(description="Normalize S3 daily/SYMBOL/YYYY.parquet → repo symbol=XYZ layout.")
-    ap.add_argument("--src", required=True, type=Path, help="Source directory (data/raw/s3_daily_762)")
-    ap.add_argument("--dst", required=True, type=Path, help="Destination (e.g. data/raw/daily_ohlcv_762)")
+    ap = argparse.ArgumentParser(
+        description="Normalize S3 daily/SYMBOL/YYYY.parquet → repo symbol=XYZ layout."
+    )
+    ap.add_argument(
+        "--src",
+        required=True,
+        type=Path,
+        help="Source directory (data/raw/s3_daily_762)",
+    )
+    ap.add_argument(
+        "--dst",
+        required=True,
+        type=Path,
+        help="Destination (e.g. data/raw/daily_ohlcv_762)",
+    )
     args = ap.parse_args()
 
     args.dst.mkdir(parents=True, exist_ok=True)
@@ -65,7 +94,12 @@ def main() -> int:
             continue
         # Concatenate all years into a single parquet under the symbol partition.
         frames = [normalize_one(p, symbol) for p in year_files]
-        combined = pd.concat(frames, ignore_index=True).drop_duplicates("date").sort_values("date").reset_index(drop=True)
+        combined = (
+            pd.concat(frames, ignore_index=True)
+            .drop_duplicates("date")
+            .sort_values("date")
+            .reset_index(drop=True)
+        )
         combined.to_parquet(sym_dst / "ohlcv.parquet", index=False)
         if (i + 1) % 100 == 0:
             print(f"  {i+1}/{len(symbols)} done")

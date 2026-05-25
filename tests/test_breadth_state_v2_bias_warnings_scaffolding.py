@@ -9,6 +9,7 @@ Spec refs:
     docs/regime_engine_v2_spec.md §1D PIT breadth bias-warning seam.
     Implementation Ambiguity Log #54–#59.
 """
+
 from __future__ import annotations
 
 import numpy as np
@@ -22,7 +23,6 @@ from regime_detection.breadth_state_v2 import (
 )
 from regime_detection.config import BreadthV2Config
 from regime_detection.fragility_universe import SECTOR_ETFS
-
 
 # -----------------------------------------------------------------------------
 # Helpers
@@ -121,9 +121,7 @@ def test_compute_breadth_v2_features_emits_available_sector_proxy_warning() -> N
     assert out.bias_warnings["warning_code"].tolist() == [
         "available_sector_breadth_proxy"
     ]
-    assert out.bias_warnings["feature_name"].tolist() == [
-        "available_sector_breadth"
-    ]
+    assert out.bias_warnings["feature_name"].tolist() == ["available_sector_breadth"]
 
 
 # -----------------------------------------------------------------------------

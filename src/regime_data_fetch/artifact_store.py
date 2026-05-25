@@ -420,9 +420,7 @@ class S3ArtifactStore(ArtifactStore):
         )
 
     def _relative_key(self, key_or_uri: str) -> str:
-        return _normalize_s3_key(
-            key_or_uri, bucket=self.bucket, prefix=self.prefix
-        )
+        return _normalize_s3_key(key_or_uri, bucket=self.bucket, prefix=self.prefix)
 
     def _uri_for_key(self, relative_key: str) -> str:
         object_key = _join_s3_key(self.prefix, relative_key)
@@ -455,9 +453,7 @@ def _normalize_local_key(key: str, root: Path) -> str:
                     return _normalize_relative_key(str(Path(*tail)))
             except ValueError:
                 pass
-        raise ValueError(
-            f"file artifact URI must stay within the store root: {key}"
-        )
+        raise ValueError(f"file artifact URI must stay within the store root: {key}")
     if parsed.scheme:
         raise ValueError(f"unsupported local artifact URI scheme: {parsed.scheme}")
     return _normalize_relative_key(key)

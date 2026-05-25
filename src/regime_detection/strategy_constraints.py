@@ -8,7 +8,6 @@ from regime_detection.models import (
 )
 from regime_detection.strategy_family_constraints import STRATEGY_FAMILIES
 
-
 _STRATEGY_RESPONSE_ALLOW_FIELD: dict[str, str] = {
     "trend_following": "allow_trend_following",
     "mean_reversion": "allow_mean_reversion",

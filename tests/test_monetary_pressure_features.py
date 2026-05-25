@@ -12,6 +12,7 @@ Spec references:
     Label set, precedence, risk-rank, hysteresis, and the axis classifier
     are covered in the classifier tests.
 """
+
 from __future__ import annotations
 
 import math
@@ -94,13 +95,9 @@ def test_constant_yield_change_zscore_is_nan(v2_monetary_config):
     contract.
     """
     n = _FIRST_VALID_T + 10
-    constant_yield = pd.Series(
-        np.full(n, 4.50), index=_index_n(n), name="yield"
-    )
+    constant_yield = pd.Series(np.full(n, 4.50), index=_index_n(n), name="yield")
     # Build a second flat series for the DGS10 slot.
-    constant_yield_10 = pd.Series(
-        np.full(n, 4.20), index=_index_n(n), name="yield"
-    )
+    constant_yield_10 = pd.Series(np.full(n, 4.20), index=_index_n(n), name="yield")
     out = compute_monetary_pressure_features(
         dgs2=constant_yield,
         dgs10=constant_yield_10,
@@ -194,9 +191,7 @@ def test_zscore_hand_computed_at_specific_t(v2_monetary_config):
     window = change.iloc[t - _NORMALIZER_WINDOW + 1 : t + 1]
     assert len(window) == _NORMALIZER_WINDOW
     expected = (change.iloc[t] - window.mean()) / window.std(ddof=1)
-    assert out.yield_change_zscore_2y_63d.iloc[t] == pytest.approx(
-        expected, rel=1e-12
-    )
+    assert out.yield_change_zscore_2y_63d.iloc[t] == pytest.approx(expected, rel=1e-12)
 
 
 # =============================================================================
@@ -329,9 +324,7 @@ def _macro_series_for_spy_index(
     }
 
 
-def test_build_feature_store_populates_monetary(
-    market_df_for_asof, v2_monetary_config
-):
+def test_build_feature_store_populates_monetary(market_df_for_asof, v2_monetary_config):
     cfg = load_default_regime_config()
     market_data = market_df_for_asof(_INTEGRATION_AS_OF)
     # Build the context once with no macro_series so we can size the
@@ -373,9 +366,7 @@ def test_build_feature_store_graceful_degradation_no_macro(
         config=cfg,
     )
     assert context.macro_series is None
-    store = build_feature_store(
-        context, monetary_pressure_v2_config=v2_monetary_config
-    )
+    store = build_feature_store(context, monetary_pressure_v2_config=v2_monetary_config)
     assert store.monetary is None
 
 
@@ -424,9 +415,7 @@ def test_timeline_threads_monetary_pressure_v2_config(
         constituent_ohlcv=kwargs["constituent_ohlcv"],
     )
 
-    timeline = build_regime_timeline(
-        context=context, lookback_days=5, config=cfg
-    )
+    timeline = build_regime_timeline(context=context, lookback_days=5, config=cfg)
     assert len(timeline.outputs) == 5
 
     # And the feature_store seam carries the monetary features.
@@ -444,9 +433,5 @@ def test_timeline_threads_monetary_pressure_v2_config(
         monetary_pressure_v2_config=cfg.monetary_pressure_v2,
     )
     assert store.monetary is not None
-    assert len(store.monetary.yield_change_zscore_2y_63d) >= len(
-        store.spy_index
-    )
-    assert len(store.monetary.yield_change_zscore_10y_63d) >= len(
-        store.spy_index
-    )
+    assert len(store.monetary.yield_change_zscore_2y_63d) >= len(store.spy_index)
+    assert len(store.monetary.yield_change_zscore_10y_63d) >= len(store.spy_index)

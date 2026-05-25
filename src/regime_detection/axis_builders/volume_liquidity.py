@@ -20,7 +20,6 @@ from regime_detection.volume_liquidity_rules import (
     evaluate_rules_with_evidence as evaluate_volume_liquidity_rules_with_evidence,
 )
 
-
 # V2 §1E volume/liquidity gate follows the existing 20d z-score cold start.
 VOLUME_LIQUIDITY_REQUIRED_TRADING_DAYS = 20
 

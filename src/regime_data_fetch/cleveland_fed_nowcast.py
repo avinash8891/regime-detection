@@ -43,6 +43,7 @@ Unit: the feed publishes month-over-month inflation in *percent*;
 z-score expects. Parse failures raise ``ClevelandFedNowcastError`` loudly
 rather than producing a silently-wrong series.
 """
+
 from __future__ import annotations
 
 import datetime as dt
@@ -136,8 +137,7 @@ def parse_cleveland_fed_nowcast_json(
         ) from exc
     if not isinstance(payload, list) or not payload:
         raise ClevelandFedNowcastError(
-            "Cleveland Fed nowcast feed was not a non-empty list of chart "
-            "objects"
+            "Cleveland Fed nowcast feed was not a non-empty list of chart " "objects"
         )
 
     rows: list[dict[str, object]] = []
@@ -185,15 +185,16 @@ def parse_cleveland_fed_nowcast_json(
             ) from exc
         rows.append(
             {
-                "date": _parse_category_date(obj, chart_idx=idx, point_idx=last_idx, target_month=target_month),
+                "date": _parse_category_date(
+                    obj, chart_idx=idx, point_idx=last_idx, target_month=target_month
+                ),
                 "cpi_nowcast": settled * value_scale,
             }
         )
 
     if not rows:
         raise ClevelandFedNowcastError(
-            f"Cleveland Fed nowcast feed held no usable {series_name!r} "
-            f"vintages"
+            f"Cleveland Fed nowcast feed held no usable {series_name!r} " f"vintages"
         )
     df = pd.DataFrame(rows)
     df = (
@@ -217,7 +218,9 @@ def _parse_category_date(
             f"Cleveland Fed nowcast feed: chart object {chart_idx} has no category labels for point-in-time dates"
         )
     first_category = categories[0]
-    if not isinstance(first_category, dict) or not isinstance(first_category.get("category"), list):
+    if not isinstance(first_category, dict) or not isinstance(
+        first_category.get("category"), list
+    ):
         raise ClevelandFedNowcastError(
             f"Cleveland Fed nowcast feed: chart object {chart_idx} has malformed category labels"
         )
@@ -386,8 +389,18 @@ def run_cleveland_fed_nowcast_fetch(
     nowcast_dir.mkdir(parents=True, exist_ok=True)
     json_path = out_dir / MANUAL_REL_PATH
     out_path = nowcast_dir / CPI_NOWCAST_PARQUET
-    store = AcquisitionStore(acquisition_db_path, artifact_store_root=artifact_store_root) if acquisition_db_path else None
-    fetch_run = store.start_fetch_run(fetch_type="cleveland_fed_nowcast", params={"source_url": source_url}) if store else None
+    store = (
+        AcquisitionStore(acquisition_db_path, artifact_store_root=artifact_store_root)
+        if acquisition_db_path
+        else None
+    )
+    fetch_run = (
+        store.start_fetch_run(
+            fetch_type="cleveland_fed_nowcast", params={"source_url": source_url}
+        )
+        if store
+        else None
+    )
 
     try:
         try:
@@ -468,5 +481,7 @@ def run_cleveland_fed_nowcast_fetch(
         return report_path
     except Exception as exc:
         if store and fetch_run:
-            store.finish_fetch_run(run_id=fetch_run.run_id, status="failed", notes=str(exc))
+            store.finish_fetch_run(
+                run_id=fetch_run.run_id, status="failed", notes=str(exc)
+            )
         raise

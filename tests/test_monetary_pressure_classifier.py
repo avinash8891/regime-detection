@@ -43,7 +43,6 @@ from regime_detection.monetary_pressure import (
     evaluate_rules,
 )
 
-
 _TRAINING_SESSIONS = 1400  # > 1260 normalizer + 63 cold-start
 _LAST_SESSION = pd.Timestamp("2025-04-30")
 _SEED = 20260514
@@ -417,7 +416,9 @@ def test_classifier_emits_central_bank_text_score_as_evidence_only():
         monetary_pressure_v2_config=context.config.monetary_pressure_v2,
     )
     assert store.monetary is not None
-    score = pd.Series(0.25, index=context.spy_ohlcv.index, name="central_bank_text_score")
+    score = pd.Series(
+        0.25, index=context.spy_ohlcv.index, name="central_bank_text_score"
+    )
     store = store.model_copy(
         update={"monetary": replace(store.monetary, central_bank_text_score=score)}
     )

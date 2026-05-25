@@ -12,7 +12,6 @@ import pandas as pd
 from regime_data_fetch.acquisition_store import AcquisitionStore
 from regime_shared.pit_provenance import BIAS_WARNING, SOURCE_NAME, SOURCE_URL
 
-
 # Community-maintained S&P 500 ticker-membership CSV on GitHub. This is an
 # APPROXIMATION of point-in-time S&P 500 membership and is the best free source
 # we have today: it may miss short-lived additions/removals, delisted tickers
@@ -51,25 +50,35 @@ class PITConstituentInterval:
     bias_warning: str
 
 
-def parse_sp500_ticker_start_end_csv(csv_text: str, *, source_url: str) -> list[PITConstituentInterval]:
+def parse_sp500_ticker_start_end_csv(
+    csv_text: str, *, source_url: str
+) -> list[PITConstituentInterval]:
     rows: list[PITConstituentInterval] = []
     reader = csv.DictReader(csv_text.splitlines())
     required = ["ticker", "start_date", "end_date"]
     if reader.fieldnames != required:
-        raise PITConstituentFetchError(f"Unexpected PIT CSV columns: {reader.fieldnames!r}")
+        raise PITConstituentFetchError(
+            f"Unexpected PIT CSV columns: {reader.fieldnames!r}"
+        )
 
     for idx, raw in enumerate(reader, start=2):
         ticker = (raw.get("ticker") or "").strip()
         if not ticker:
             raise PITConstituentFetchError(f"Row {idx}: missing ticker")
 
-        start_date = _parse_date(raw.get("start_date"), field="start_date", row_number=idx)
-        end_date = _parse_optional_date(raw.get("end_date"), field="end_date", row_number=idx)
+        start_date = _parse_date(
+            raw.get("start_date"), field="start_date", row_number=idx
+        )
+        end_date = _parse_optional_date(
+            raw.get("end_date"), field="end_date", row_number=idx
+        )
         corrected_end_date = SOURCE_END_DATE_CORRECTIONS.get(ticker)
         if end_date is None and corrected_end_date is not None:
             end_date = corrected_end_date
         if end_date and end_date < start_date:
-            raise PITConstituentFetchError(f"Row {idx}: end_date before start_date for {ticker}")
+            raise PITConstituentFetchError(
+                f"Row {idx}: end_date before start_date for {ticker}"
+            )
 
         rows.append(
             PITConstituentInterval(
@@ -101,7 +110,11 @@ def run_pit_constituents_fetch(
     artifact_store_root: str | Path | None = None,
 ) -> Path:
     out_dir.mkdir(parents=True, exist_ok=True)
-    store = AcquisitionStore(acquisition_db_path, artifact_store_root=artifact_store_root) if acquisition_db_path else None
+    store = (
+        AcquisitionStore(acquisition_db_path, artifact_store_root=artifact_store_root)
+        if acquisition_db_path
+        else None
+    )
     fetch_run = (
         store.start_fetch_run(
             fetch_type="pit_constituents",
@@ -161,11 +174,17 @@ def run_pit_constituents_fetch(
             "date_range": {
                 "min_start_date": str(df["start_date"].min()) if not df.empty else None,
                 "max_start_date": str(df["start_date"].max()) if not df.empty else None,
-                "max_end_date": str(df["end_date"].dropna().max()) if not df["end_date"].dropna().empty else None,
+                "max_end_date": (
+                    str(df["end_date"].dropna().max())
+                    if not df["end_date"].dropna().empty
+                    else None
+                ),
             },
             "paths": {
                 "pit_constituents_parquet": str(parquet_path),
-                "acquisition_db": str(acquisition_db_path) if acquisition_db_path else None,
+                "acquisition_db": (
+                    str(acquisition_db_path) if acquisition_db_path else None
+                ),
             },
         }
         report_path = out_dir / "pit_constituents_fetch_report.json"
@@ -178,7 +197,11 @@ def run_pit_constituents_fetch(
                 path=parquet_path,
                 row_count=len(df),
                 min_date=str(df["start_date"].min()) if not df.empty else None,
-                max_date=str(df["end_date"].dropna().max()) if not df["end_date"].dropna().empty else None,
+                max_date=(
+                    str(df["end_date"].dropna().max())
+                    if not df["end_date"].dropna().empty
+                    else None
+                ),
                 notes="PIT constituent interval parquet output",
             )
             store.record_output(
@@ -187,14 +210,20 @@ def run_pit_constituents_fetch(
                 path=report_path,
                 row_count=len(df),
                 min_date=str(df["start_date"].min()) if not df.empty else None,
-                max_date=str(df["end_date"].dropna().max()) if not df["end_date"].dropna().empty else None,
+                max_date=(
+                    str(df["end_date"].dropna().max())
+                    if not df["end_date"].dropna().empty
+                    else None
+                ),
                 notes="PIT constituent fetch report",
             )
             store.finish_fetch_run(run_id=fetch_run.run_id, status="ok")
         return report_path
     except Exception as exc:
         if store and fetch_run:
-            store.finish_fetch_run(run_id=fetch_run.run_id, status="failed", notes=str(exc))
+            store.finish_fetch_run(
+                run_id=fetch_run.run_id, status="failed", notes=str(exc)
+            )
         raise
 
 
@@ -259,10 +288,14 @@ def _parse_date(value: str | None, *, field: str, row_number: int) -> dt.date:
     try:
         return dt.date.fromisoformat(raw)
     except ValueError as exc:
-        raise PITConstituentFetchError(f"Row {row_number}: invalid {field} {raw!r}") from exc
+        raise PITConstituentFetchError(
+            f"Row {row_number}: invalid {field} {raw!r}"
+        ) from exc
 
 
-def _parse_optional_date(value: str | None, *, field: str, row_number: int) -> dt.date | None:
+def _parse_optional_date(
+    value: str | None, *, field: str, row_number: int
+) -> dt.date | None:
     raw = (value or "").strip()
     if not raw:
         return None

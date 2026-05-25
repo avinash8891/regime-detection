@@ -8,6 +8,7 @@ operations are keyed on the canonical identity tuple
 ``(as_of_date, engine_version, config_version)`` per shadow_runner_spec
 §3 L93.
 """
+
 from __future__ import annotations
 
 import hashlib
@@ -22,7 +23,6 @@ import pandas as pd
 import yaml
 
 from regime_detection.loaders import load_event_calendar
-
 
 # SHA-256 read-chunk size for sha256_file. Performance-only knob;
 # SHA-256 output is identical regardless of chunk size.
@@ -282,9 +282,7 @@ def fetch_run_row(
     """
     conn.row_factory = sqlite3.Row
     if (engine_version is None) != (config_version is None):
-        raise ValueError(
-            "engine_version and config_version must be supplied together"
-        )
+        raise ValueError("engine_version and config_version must be supplied together")
     if engine_version is not None and config_version is not None:
         row = conn.execute(
             """

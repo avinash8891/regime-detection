@@ -93,7 +93,9 @@ def compute_transition_score(
         raise ValueError(f"components missing configured weights: {unknown_keys}")
 
     missing = tuple(key for key in weights if components.get(key) is None)
-    present_weight = sum(weight for key, weight in weights.items() if components.get(key) is not None)
+    present_weight = sum(
+        weight for key, weight in weights.items() if components.get(key) is not None
+    )
     total_weight = sum(weights.values())
     if total_weight <= 0.0:
         raise ValueError("transition score weights must sum to a positive value")
@@ -177,7 +179,9 @@ def compose_transition_score_for_session(
         )
 
     trend_drawdown = (
-        None if dd_252 is None else _clip(-dd_252 / scales.drawdown_full_stress, 0.0, 1.0)
+        None
+        if dd_252 is None
+        else _clip(-dd_252 / scales.drawdown_full_stress, 0.0, 1.0)
     )
     ma_break = None
     close = _optional_number(spy_close)
@@ -191,7 +195,9 @@ def compose_transition_score_for_session(
     largest_pct = _optional_number(largest_eigenvalue_share_percentile_504d)
     effective_rank_pct = _optional_number(effective_rank_percentile_504d)
     absorption = _optional_number(absorption_ratio_top3)
-    effective_rank_stress = None if effective_rank_pct is None else 1.0 - effective_rank_pct
+    effective_rank_stress = (
+        None if effective_rank_pct is None else 1.0 - effective_rank_pct
+    )
     absorption_stress = (
         None
         if absorption is None
@@ -199,11 +205,15 @@ def compose_transition_score_for_session(
             (absorption - scales.absorption_floor) / scales.absorption_range, 0.0, 1.0
         )
     )
-    correlation_fragility = _max_present(corr_pct, largest_pct, effective_rank_stress, absorption_stress)
+    correlation_fragility = _max_present(
+        corr_pct, largest_pct, effective_rank_stress, absorption_stress
+    )
 
     credit_stress = _label_score(credit_funding_label, _CREDIT_LABEL_SCORE)
 
-    liquidity_label_stress = _label_score(volume_liquidity_label, _LIQUIDITY_LABEL_SCORE)
+    liquidity_label_stress = _label_score(
+        volume_liquidity_label, _LIQUIDITY_LABEL_SCORE
+    )
     volume_z = _optional_number(volume_zscore_20d)
     volume_stress = (
         None

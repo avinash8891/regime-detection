@@ -86,11 +86,7 @@ def fetch_daily_bars_with_provider(
         feed=feed,
         verbose=verbose,
     )
-    frames = [
-        frame
-        for frame in (alpaca_result.df, yahoo_result.df)
-        if not frame.empty
-    ]
+    frames = [frame for frame in (alpaca_result.df, yahoo_result.df) if not frame.empty]
     if frames:
         combined = (
             pd.concat(frames, ignore_index=True)

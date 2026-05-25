@@ -24,7 +24,6 @@ from regime_detection.models import (
     TransitionRiskOutput,
 )
 
-
 # ---------- evaluate_v2_gate (v2 §9.1) --------------------------------------
 
 
@@ -272,7 +271,9 @@ def test_compute_v1_v2_diff_detects_axis_label_disagreement() -> None:
     # mutation via model_copy.
     mutated_outputs = list(timeline_b.outputs)
     bad = mutated_outputs[0].model_copy(deep=True)
-    bad.trend_direction = bad.trend_direction.model_copy(update={"active_label": "bear"})
+    bad.trend_direction = bad.trend_direction.model_copy(
+        update={"active_label": "bear"}
+    )
     mutated_outputs[0] = bad
     timeline_b_mut = timeline_b.model_copy(update={"outputs": mutated_outputs})
 
@@ -280,7 +281,9 @@ def test_compute_v1_v2_diff_detects_axis_label_disagreement() -> None:
 
     matches = [d for d in diff.label_diffs if d.axis == "trend_direction"]
     assert len(matches) == 1
-    assert matches[0].v1_active_label == timeline_a.outputs[0].trend_direction.active_label
+    assert (
+        matches[0].v1_active_label == timeline_a.outputs[0].trend_direction.active_label
+    )
     assert matches[0].v2_active_label == "bear"
 
 

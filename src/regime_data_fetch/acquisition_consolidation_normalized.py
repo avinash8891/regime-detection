@@ -35,8 +35,7 @@ _NORMALIZED_TABLES = (
 
 
 def _ensure_normalized_tables(conn: sqlite3.Connection) -> None:
-    conn.executescript(
-        """
+    conn.executescript("""
         CREATE TABLE IF NOT EXISTS event_calendar_rows (
             run_id INTEGER NOT NULL REFERENCES fetch_runs(run_id) ON DELETE CASCADE,
             event_date TEXT NOT NULL,
@@ -197,8 +196,7 @@ def _ensure_normalized_tables(conn: sqlite3.Connection) -> None:
         );
         CREATE INDEX IF NOT EXISTS idx_alpaca_market_rows_date
             ON alpaca_market_rows (date);
-        """
-    )
+        """)
 
 
 def _import_normalized_output(
@@ -212,16 +210,24 @@ def _import_normalized_output(
         _import_event_calendar_rows(dst_conn=dst_conn, run_id=run_id, path=path)
         return EVENT_CALENDAR_ROWS_TABLE
     if output_kind == "fred_macro_parquet":
-        _import_macro_rows(dst_conn=dst_conn, run_id=run_id, path=path, dataset_kind="series")
+        _import_macro_rows(
+            dst_conn=dst_conn, run_id=run_id, path=path, dataset_kind="series"
+        )
         return MACRO_ROWS_TABLE
     if output_kind == "fred_cpi_vintages_parquet":
-        _import_macro_rows(dst_conn=dst_conn, run_id=run_id, path=path, dataset_kind="cpi_vintages")
+        _import_macro_rows(
+            dst_conn=dst_conn, run_id=run_id, path=path, dataset_kind="cpi_vintages"
+        )
         return MACRO_ROWS_TABLE
     if output_kind == "pmi_parquet":
-        _import_pmi_rows(dst_conn=dst_conn, run_id=run_id, path=path, dataset_kind="latest")
+        _import_pmi_rows(
+            dst_conn=dst_conn, run_id=run_id, path=path, dataset_kind="latest"
+        )
         return PMI_ROWS_TABLE
     if output_kind == "pmi_history_parquet":
-        _import_pmi_rows(dst_conn=dst_conn, run_id=run_id, path=path, dataset_kind="history")
+        _import_pmi_rows(
+            dst_conn=dst_conn, run_id=run_id, path=path, dataset_kind="history"
+        )
         return PMI_ROWS_TABLE
     if output_kind == "pit_constituents_parquet":
         _import_pit_rows(dst_conn=dst_conn, run_id=run_id, path=path)
@@ -247,7 +253,9 @@ def _import_normalized_output(
     return None
 
 
-def _import_event_calendar_rows(*, dst_conn: sqlite3.Connection, run_id: int, path: Path) -> None:
+def _import_event_calendar_rows(
+    *, dst_conn: sqlite3.Connection, run_id: int, path: Path
+) -> None:
     payload = _read_yaml_events(path)
     rows = [
         (
@@ -383,7 +391,9 @@ def _import_fomc_rows(*, dst_conn: sqlite3.Connection, run_id: int, path: Path) 
     )
 
 
-def _import_powell_rows(*, dst_conn: sqlite3.Connection, run_id: int, path: Path) -> None:
+def _import_powell_rows(
+    *, dst_conn: sqlite3.Connection, run_id: int, path: Path
+) -> None:
     frame = _read_parquet(path)
     rows = [
         (
@@ -410,7 +420,9 @@ def _import_powell_rows(*, dst_conn: sqlite3.Connection, run_id: int, path: Path
     )
 
 
-def _import_usd_index_rows(*, dst_conn: sqlite3.Connection, run_id: int, path: Path) -> None:
+def _import_usd_index_rows(
+    *, dst_conn: sqlite3.Connection, run_id: int, path: Path
+) -> None:
     frame = _read_parquet(path)
     rows = [
         (
@@ -437,7 +449,9 @@ def _import_usd_index_rows(*, dst_conn: sqlite3.Connection, run_id: int, path: P
     )
 
 
-def _import_aggregate_eps_snapshot_rows(*, dst_conn: sqlite3.Connection, run_id: int, path: Path) -> None:
+def _import_aggregate_eps_snapshot_rows(
+    *, dst_conn: sqlite3.Connection, run_id: int, path: Path
+) -> None:
     frame = _read_parquet(path)
     rows = [
         (
@@ -480,7 +494,9 @@ def _import_aggregate_eps_snapshot_rows(*, dst_conn: sqlite3.Connection, run_id:
     )
 
 
-def _import_aggregate_eps_wayback_rows(*, dst_conn: sqlite3.Connection, run_id: int, path: Path) -> None:
+def _import_aggregate_eps_wayback_rows(
+    *, dst_conn: sqlite3.Connection, run_id: int, path: Path
+) -> None:
     frame = _read_parquet(path)
     rows = [
         (
@@ -523,7 +539,9 @@ def _import_aggregate_eps_wayback_rows(*, dst_conn: sqlite3.Connection, run_id: 
     )
 
 
-def _import_alpaca_market_rows(*, dst_conn: sqlite3.Connection, run_id: int, path: Path) -> None:
+def _import_alpaca_market_rows(
+    *, dst_conn: sqlite3.Connection, run_id: int, path: Path
+) -> None:
     frame = _read_parquet(path)
     symbol = _infer_symbol_from_output_path(path)
     rows = [
@@ -553,13 +571,17 @@ def _import_alpaca_market_rows(*, dst_conn: sqlite3.Connection, run_id: int, pat
 
 def _read_parquet(path: Path) -> pd.DataFrame:
     if not path.exists():
-        raise FileNotFoundError(f"Missing derived output parquet during consolidation: {path}")
+        raise FileNotFoundError(
+            f"Missing derived output parquet during consolidation: {path}"
+        )
     return pd.read_parquet(path)
 
 
 def _read_yaml_events(path: Path) -> list[dict[str, object]]:
     if not path.exists():
-        raise FileNotFoundError(f"Missing derived output YAML during consolidation: {path}")
+        raise FileNotFoundError(
+            f"Missing derived output YAML during consolidation: {path}"
+        )
     payload = yaml.safe_load(path.read_text())
     if not isinstance(payload, dict) or not isinstance(payload.get("events"), list):
         raise RuntimeError(f"Unexpected event calendar YAML shape: {path}")

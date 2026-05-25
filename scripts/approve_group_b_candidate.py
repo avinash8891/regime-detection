@@ -21,12 +21,21 @@ def _utc_today() -> dt.date:
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Approve a pending Group B event candidate.")
+    parser = argparse.ArgumentParser(
+        description="Approve a pending Group B event candidate."
+    )
     parser.add_argument("--candidate-id", required=True)
     parser.add_argument("--approver", required=True)
     parser.add_argument("--notes", default=None)
-    parser.add_argument("--candidates", default=str(REPO_ROOT / "data/raw/event_calendar/candidates/event_candidates.parquet"))
-    parser.add_argument("--overlay", default=str(REPO_ROOT / "configs/events/group_b_approvals.yaml"))
+    parser.add_argument(
+        "--candidates",
+        default=str(
+            REPO_ROOT / "data/raw/event_calendar/candidates/event_candidates.parquet"
+        ),
+    )
+    parser.add_argument(
+        "--overlay", default=str(REPO_ROOT / "configs/events/group_b_approvals.yaml")
+    )
     args = parser.parse_args()
 
     candidates = pd.read_parquet(Path(args.candidates))
@@ -35,10 +44,21 @@ def main() -> int:
         raise SystemExit(f"candidate_id not found: {args.candidate_id}")
     row = matches.iloc[0]
     if row["event_type"] not in {"geopolitical_event", "budget"}:
-        raise SystemExit(f"candidate_id is not a Group B candidate: {args.candidate_id}")
-    if str(row.get("promotion_outcome", "")) != "withhold" or bool(row.get("requires_manual_review")) is not True:
-        raise SystemExit(f"candidate_id is not pending manual review: {args.candidate_id}")
-    source_count = int(row["source_count"]) if "source_count" in row and pd.notna(row["source_count"]) else 1
+        raise SystemExit(
+            f"candidate_id is not a Group B candidate: {args.candidate_id}"
+        )
+    if (
+        str(row.get("promotion_outcome", "")) != "withhold"
+        or bool(row.get("requires_manual_review")) is not True
+    ):
+        raise SystemExit(
+            f"candidate_id is not pending manual review: {args.candidate_id}"
+        )
+    source_count = (
+        int(row["source_count"])
+        if "source_count" in row and pd.notna(row["source_count"])
+        else 1
+    )
     append_approval_record(
         Path(args.overlay),
         event_type=str(row["event_type"]),

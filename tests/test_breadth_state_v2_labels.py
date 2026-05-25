@@ -8,6 +8,7 @@ trend-character slice. PIT features are constructed as synthetic
 ``pd.Series`` aligned to a SPY-shape NYSE business-day calendar; the V1
 RSP/SPY proxy features ride the existing engine fixture path.
 """
+
 from __future__ import annotations
 
 from datetime import date
@@ -31,7 +32,6 @@ from regime_detection.breadth_state import (
 )
 from regime_detection.config import BreadthV2Config
 from regime_detection.models import BreadthStateOutput, DataQuality
-
 
 _V1_LABELS: set[str] = {
     "healthy_breadth",
@@ -208,7 +208,10 @@ def _resolve_v2_label(
         return "divergent_fragile"
     if narrowing_fires:
         return "narrowing_breadth"
-    if v1_raw in {"weak_breadth", "healthy_breadth", "neutral_breadth", "unknown"} and broadening_fires:
+    if (
+        v1_raw in {"weak_breadth", "healthy_breadth", "neutral_breadth", "unknown"}
+        and broadening_fires
+    ):
         return "broadening_breadth"
     return v1_raw
 
@@ -307,7 +310,9 @@ def test_build_raw_outputs_applies_v2_precedence_when_pit_features_present() -> 
 # ---------------------------------------------------------------------------
 
 
-def test_v1_path_unchanged_when_pit_features_absent(market_df_for_asof, event_calendar_df) -> None:
+def test_v1_path_unchanged_when_pit_features_absent(
+    market_df_for_asof, event_calendar_df
+) -> None:
     """When the engine runs WITHOUT PIT inputs (default V1 fixture path), the
     classifier must emit one of the 5 V1 labels — never narrowing_breadth or
     broadening_breadth.
@@ -346,7 +351,7 @@ def test_golden_dates_emit_legal_breadth_labels(classified_golden_outputs) -> No
 def test_breadth_v2_config_defaults_match_spec() -> None:
     cfg = BreadthV2Config()
     assert cfg.label_rate_of_change_lookback_sessions == 5  # Ambiguity Log #68
-    assert cfg.nh_nl_ratio_narrowing_threshold == 0.4       # spec §1D line 280
+    assert cfg.nh_nl_ratio_narrowing_threshold == 0.4  # spec §1D line 280
 
 
 def test_risk_rank_contains_new_v2_labels() -> None:
@@ -393,8 +398,8 @@ def test_breadth_thrust_fires_on_low_then_high_within_10_sessions() -> None:
     n = 30
     idx = _trading_index(n)
     feature = pd.Series(np.full(n, 0.50), index=idx)
-    feature.iloc[-5] = 0.35          # b = t-4: below 0.40 ✓
-    feature.iloc[-1] = 0.70          # t: above 0.615 ✓
+    feature.iloc[-5] = 0.35  # b = t-4: below 0.40 ✓
+    feature.iloc[-1] = 0.70  # t: above 0.615 ✓
     dt = idx[-1]
     assert _evaluate_breadth_thrust(feature, dt=dt) is True
 
@@ -404,7 +409,7 @@ def test_breadth_thrust_fails_when_no_low_in_trailing_10() -> None:
     n = 30
     idx = _trading_index(n)
     feature = pd.Series(np.full(n, 0.50), index=idx)
-    feature.iloc[-1] = 0.70          # high today ✓, but no <0.40 anywhere ✗
+    feature.iloc[-1] = 0.70  # high today ✓, but no <0.40 anywhere ✗
     dt = idx[-1]
     assert _evaluate_breadth_thrust(feature, dt=dt) is False
 
@@ -414,9 +419,9 @@ def test_breadth_thrust_fails_when_high_not_at_t() -> None:
     n = 30
     idx = _trading_index(n)
     feature = pd.Series(np.full(n, 0.50), index=idx)
-    feature.iloc[-5] = 0.35          # low at b=t-4 ✓
-    feature.iloc[-3] = 0.70          # high at b=t-2 (not at t) ✗
-    feature.iloc[-1] = 0.55          # t at 0.55 (not > 0.615) ✗
+    feature.iloc[-5] = 0.35  # low at b=t-4 ✓
+    feature.iloc[-3] = 0.70  # high at b=t-2 (not at t) ✗
+    feature.iloc[-1] = 0.55  # t at 0.55 (not > 0.615) ✗
     dt = idx[-1]
     assert _evaluate_breadth_thrust(feature, dt=dt) is False
 
@@ -427,8 +432,8 @@ def test_breadth_thrust_strict_inequalities_at_thresholds() -> None:
     n = 30
     idx = _trading_index(n)
     feature = pd.Series(np.full(n, 0.50), index=idx)
-    feature.iloc[-5] = 0.40          # b exactly at threshold (not <) ✗
-    feature.iloc[-1] = 0.615         # t exactly at threshold (not >) ✗
+    feature.iloc[-5] = 0.40  # b exactly at threshold (not <) ✗
+    feature.iloc[-1] = 0.615  # t exactly at threshold (not >) ✗
     dt = idx[-1]
     assert _evaluate_breadth_thrust(feature, dt=dt) is False
 
@@ -438,8 +443,8 @@ def test_breadth_thrust_fails_when_low_outside_10_session_window() -> None:
     n = 30
     idx = _trading_index(n)
     feature = pd.Series(np.full(n, 0.50), index=idx)
-    feature.iloc[-12] = 0.35         # b = t-11: outside the 10-session window
-    feature.iloc[-1] = 0.70          # t: high
+    feature.iloc[-12] = 0.35  # b = t-11: outside the 10-session window
+    feature.iloc[-1] = 0.70  # t: high
     dt = idx[-1]
     assert _evaluate_breadth_thrust(feature, dt=dt) is False
 
@@ -479,7 +484,7 @@ def test_recovery_breadth_fires_on_rising_nh_nl_and_negative_slope() -> None:
     n = 30
     idx = _trading_index(n)
     nh_nl = pd.Series(np.linspace(0.30, 0.45, n), index=idx)  # strictly rising
-    ad_slope = _const(-1.5, n, idx)                            # strictly negative
+    ad_slope = _const(-1.5, n, idx)  # strictly negative
     dt = idx[-1]
     assert (
         _evaluate_recovery_breadth(
@@ -532,7 +537,7 @@ def test_recovery_breadth_fails_when_slope_strictly_positive() -> None:
 def test_recovery_breadth_fails_when_nh_nl_not_rising() -> None:
     n = 30
     idx = _trading_index(n)
-    nh_nl = _const(0.40, n, idx)   # flat, not rising
+    nh_nl = _const(0.40, n, idx)  # flat, not rising
     ad_slope = _const(-1.0, n, idx)
     dt = idx[-1]
     assert (

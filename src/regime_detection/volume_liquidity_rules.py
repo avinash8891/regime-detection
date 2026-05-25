@@ -28,6 +28,7 @@ All numeric thresholds are config-driven via
 ``VolumeLiquidityRulesConfig``; this module is magic-number free per
 CLAUDE.md Constants rule.
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -36,7 +37,6 @@ from typing import Literal
 import numpy as np
 
 from regime_detection.config import VolumeLiquidityRulesConfig
-
 
 # v2 §1E lines 399-405 labels (full Literal).
 VolumeLiquidityLabel = Literal[
@@ -123,8 +123,7 @@ def liquidity_gap_rule_path(
     if _is_nan(inputs.gap_frequency_20d) or _is_nan(inputs.intraday_range):
         return None
     if (
-        inputs.gap_frequency_20d
-        >= config.cold_start_liquidity_gap_frequency_20d_min
+        inputs.gap_frequency_20d >= config.cold_start_liquidity_gap_frequency_20d_min
         and inputs.intraday_range >= config.cold_start_liquidity_gap_intraday_range_min
     ):
         return "cold_start_fallback"
@@ -240,7 +239,11 @@ def evaluate_rules_with_evidence(
                     label="normal_volume",
                     rule_path="standard",
                 )
-    reason = "insufficient_gap_history" if _gap_history_unavailable(inputs) else "no_rule_fired"
+    reason = (
+        "insufficient_gap_history"
+        if _gap_history_unavailable(inputs)
+        else "no_rule_fired"
+    )
     return VolumeLiquidityRuleEvaluation(
         label="unknown",
         rule_path="none",

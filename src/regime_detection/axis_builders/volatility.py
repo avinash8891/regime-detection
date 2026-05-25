@@ -39,6 +39,7 @@ def build_volatility_axis_series(
     )
     hysteresis_config = context.config.volatility_state
     from regime_detection.axis_series import _build_axis_outputs
+
     return _build_axis_outputs(
         dates=[ts.date() for ts in close_index],
         raw_labels=raw_labels,

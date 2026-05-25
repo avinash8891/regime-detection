@@ -9,6 +9,7 @@ A predicate referencing an axis whose active label is ``None`` (e.g. an
 axis whose feature inputs are absent at this session) returns ``False``
 silently — those specialists stay dormant until their inputs land.
 """
+
 from __future__ import annotations
 
 from regime_detection.config import (
@@ -17,7 +18,6 @@ from regime_detection.config import (
     CohortRoutingRulePredicate,
 )
 from regime_detection.models import AgentRouting
-
 
 COHORTS: tuple[str, ...] = (
     "data_outage_specialist",
@@ -84,7 +84,9 @@ def evaluate_cohort_routing(
             return AgentRouting(
                 active_cohort=cohort,
                 fallback_cohort=_FALLBACK,
-                blocked_strategy_modes=list(config.blocked_strategy_modes.get(cohort, ())),
+                blocked_strategy_modes=list(
+                    config.blocked_strategy_modes.get(cohort, ())
+                ),
             )
     return AgentRouting(
         active_cohort=_FALLBACK,

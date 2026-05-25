@@ -237,7 +237,9 @@ def _build_credit_funding_for_spread_source(
                 if ig_oas_staleness_days > max_freshness_days:
                     reason_parts.append(f"ig_oas_stale_{ig_oas_staleness_days}d")
             if funding_spread_stale:
-                reason_parts.append(f"funding_spread_stale_{funding_spread_staleness_days}d")
+                reason_parts.append(
+                    f"funding_spread_stale_{funding_spread_staleness_days}d"
+                )
             if nfci_stale:
                 reason_parts.append(f"nfci_stale_{nfci_staleness_days}d")
             gate_reason = ",".join(reason_parts)
@@ -480,7 +482,9 @@ def resolve_credit_funding_effective_output(
     # is more honest than forwarding the OAS stale_data status, which
     # misrepresents a rule gap as a data problem.
     if proxy is not None and proxy.classification_status in (
-        "no_rule_fired", "no_rule_fired_hysteresis", "no_rule_fired_missing_feature",
+        "no_rule_fired",
+        "no_rule_fired_hysteresis",
+        "no_rule_fired_missing_feature",
     ):
         chosen = proxy
     else:

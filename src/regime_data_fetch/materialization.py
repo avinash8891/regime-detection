@@ -36,7 +36,9 @@ def materialize_manifest(
     required_for: str | None = None,
 ) -> list[MaterializedArtifact]:
     manifest = load_manifest(manifest_path)
-    artifacts = manifest.required_for(required_for) if required_for else manifest.artifacts
+    artifacts = (
+        manifest.required_for(required_for) if required_for else manifest.artifacts
+    )
     if required_for and not artifacts:
         raise ValueError(f"manifest has no artifacts required for {required_for}")
     # Skip documented placeholder entries (empty-string sha sentinel). These
@@ -152,7 +154,9 @@ def _resolve_store_root(
     return str((manifest_path.resolve().parent / candidate_path).resolve())
 
 
-def destination_for(artifact: ManifestArtifact, local_root: Path, *, repo_root: Path | None = None) -> Path:
+def destination_for(
+    artifact: ManifestArtifact, local_root: Path, *, repo_root: Path | None = None
+) -> Path:
     local_path = Path(artifact.local_path)
     if local_path.parts[: len(DATA_RAW_PREFIX)] == DATA_RAW_PREFIX:
         return local_root / strip_data_raw_prefix(local_path)

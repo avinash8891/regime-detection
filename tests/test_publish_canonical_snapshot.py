@@ -224,8 +224,7 @@ def test_publish_rejects_daily_ohlcv_null_symbol_column(tmp_path: Path):
         ),
     )
     manifest_path = tmp_path / "manifest.yaml"
-    manifest_path.write_text(
-        f"""artifact_set: test_publish
+    manifest_path.write_text(f"""artifact_set: test_publish
 created_at_utc: '2026-05-17T00:00:00Z'
 storage_root: {tmp_path / "store"}
 artifacts:
@@ -240,8 +239,7 @@ artifacts:
   max_date: null
   required_for:
   - profile_engine
-"""
-    )
+""")
 
     with pytest.raises(ValueError, match="daily_ohlcv_762_XLY.*null symbol"):
         _run_main(
@@ -276,8 +274,7 @@ def test_publish_rejects_daily_ohlcv_mismatched_symbol_column(tmp_path: Path):
         ),
     )
     manifest_path = tmp_path / "manifest.yaml"
-    manifest_path.write_text(
-        f"""artifact_set: test_publish
+    manifest_path.write_text(f"""artifact_set: test_publish
 created_at_utc: '2026-05-17T00:00:00Z'
 storage_root: {tmp_path / "store"}
 artifacts:
@@ -292,8 +289,7 @@ artifacts:
   max_date: null
   required_for:
   - profile_engine
-"""
-    )
+""")
 
     with pytest.raises(ValueError, match="daily_ohlcv_762_XLY.*expected XLY.*XLU"):
         _run_main(
@@ -363,8 +359,7 @@ def test_publish_patches_only_changed_artifact_blocks_for_all_artifacts(tmp_path
   max_date: null
   required_for:
   - profile_engine"""
-    manifest_path.write_text(
-        f"""artifact_set: test_publish
+    manifest_path.write_text(f"""artifact_set: test_publish
 created_at_utc: '2026-05-17T00:00:00Z'
 storage_root: {tmp_path / "store"}
 artifacts:
@@ -381,8 +376,7 @@ artifacts:
   - profile_engine
 {unchanged_block}
 {yaml_block}
-"""
-    )
+""")
 
     _write_parquet(
         changed_path,
@@ -425,8 +419,7 @@ def test_publish_non_parquet_artifact_updates_only_sha256(tmp_path: Path):
     config_path.parent.mkdir(parents=True)
     config_path.write_text("events:\n  - date: '2024-01-01'\n")
     manifest_path = tmp_path / "manifest.yaml"
-    manifest_path.write_text(
-        f"""artifact_set: test_publish
+    manifest_path.write_text(f"""artifact_set: test_publish
 created_at_utc: '2026-05-17T00:00:00Z'
 storage_root: {tmp_path / "store"}
 artifacts:
@@ -441,8 +434,7 @@ artifacts:
   max_date:
   required_for:
   - profile_engine
-"""
-    )
+""")
 
     rc = _run_main(
         [
@@ -458,7 +450,10 @@ artifacts:
     assert rc == 0
 
     manifest_text = manifest_path.read_text()
-    assert f"  sha256: {hashlib.sha256(config_path.read_bytes()).hexdigest()}" in manifest_text
+    assert (
+        f"  sha256: {hashlib.sha256(config_path.read_bytes()).hexdigest()}"
+        in manifest_text
+    )
     assert "  schema_version:\n  rows:\n  min_date:\n  max_date:\n" in manifest_text
 
 
@@ -468,9 +463,7 @@ def test_dry_run_does_not_mutate_anything(manifest_setup):
     a_bytes_before = paths["a_path"].read_bytes()
 
     # Mutate disk so dry-run has something to report.
-    new_df = pd.DataFrame(
-        {"date": ["2024-01-01"], "series_id": ["X"], "value": [1.0]}
-    )
+    new_df = pd.DataFrame({"date": ["2024-01-01"], "series_id": ["X"], "value": [1.0]})
     _write_parquet(paths["a_path"], new_df)
     a_bytes_mutated = paths["a_path"].read_bytes()
 
@@ -534,8 +527,7 @@ def test_check_mode_rejects_daily_ohlcv_null_symbol_column(tmp_path: Path, caplo
         ),
     )
     manifest_path = tmp_path / "manifest.yaml"
-    manifest_path.write_text(
-        f"""artifact_set: test_publish
+    manifest_path.write_text(f"""artifact_set: test_publish
 created_at_utc: '2026-05-17T00:00:00Z'
 storage_root: {tmp_path / "store"}
 artifacts:
@@ -550,8 +542,7 @@ artifacts:
   max_date: '2026-05-15'
   required_for:
   - profile_engine
-"""
-    )
+""")
 
     with caplog.at_level(logging.INFO, logger="publish_canonical_snapshot"):
         rc = _run_main(
@@ -572,9 +563,7 @@ artifacts:
     assert "null symbol" in combined
 
 
-def test_check_mode_rejects_daily_ohlcv_internal_calendar_gap(
-    tmp_path: Path, caplog
-):
+def test_check_mode_rejects_daily_ohlcv_internal_calendar_gap(tmp_path: Path, caplog):
     data_root = tmp_path / "data" / "raw"
     spy_path = data_root / "daily_ohlcv_762" / "symbol=SPY" / "ohlcv.parquet"
     xly_path = data_root / "daily_ohlcv_762" / "symbol=XLY" / "ohlcv.parquet"
@@ -606,8 +595,7 @@ def test_check_mode_rejects_daily_ohlcv_internal_calendar_gap(
         ),
     )
     manifest_path = tmp_path / "manifest.yaml"
-    manifest_path.write_text(
-        f"""artifact_set: test_publish
+    manifest_path.write_text(f"""artifact_set: test_publish
 created_at_utc: '2026-05-17T00:00:00Z'
 storage_root: {tmp_path / "store"}
 artifacts:
@@ -633,8 +621,7 @@ artifacts:
   max_date: '2026-05-18'
   required_for:
   - profile_engine
-"""
-    )
+""")
 
     with caplog.at_level(logging.INFO, logger="publish_canonical_snapshot"):
         rc = _run_main(
@@ -714,7 +701,9 @@ def test_check_mode_bounds_daily_ohlcv_gaps_to_pit_active_interval(
                 "stage": "canonical",
                 "uri": "canonical/pit_constituents/sp500_ticker_intervals.parquet",
                 "local_path": "data/raw/pit_constituents/sp500_ticker_intervals.parquet",
-                "sha256": hashlib.sha256(pcs._canonicalize_parquet_bytes(pit_path)).hexdigest(),
+                "sha256": hashlib.sha256(
+                    pcs._canonicalize_parquet_bytes(pit_path)
+                ).hexdigest(),
                 "schema_version": None,
                 "rows": 1,
                 "min_date": None,
@@ -726,7 +715,9 @@ def test_check_mode_bounds_daily_ohlcv_gaps_to_pit_active_interval(
                 "stage": "canonical",
                 "uri": "canonical/daily_ohlcv_762/symbol=SPY/ohlcv.parquet",
                 "local_path": "data/raw/daily_ohlcv_762/symbol=SPY/ohlcv.parquet",
-                "sha256": hashlib.sha256(pcs._canonicalize_parquet_bytes(spy_path)).hexdigest(),
+                "sha256": hashlib.sha256(
+                    pcs._canonicalize_parquet_bytes(spy_path)
+                ).hexdigest(),
                 "schema_version": None,
                 "rows": 4,
                 "min_date": "2026-05-14",
@@ -751,7 +742,9 @@ def test_check_mode_bounds_daily_ohlcv_gaps_to_pit_active_interval(
             ]
         ),
     )
-    artifact["sha256"] = hashlib.sha256(pcs._canonicalize_parquet_bytes(xyz_path)).hexdigest()
+    artifact["sha256"] = hashlib.sha256(
+        pcs._canonicalize_parquet_bytes(xyz_path)
+    ).hexdigest()
     artifact["rows"] = 2
 
     rc, reports = pcs.run_check(payload, data_root, ["daily_ohlcv_762_XYZ"], store=None)

@@ -25,6 +25,7 @@ Per-session window:
 Universe order is enforced from `fragility_universe.NETWORK_FRAGILITY_UNIVERSE`.
 SPY is sourced from `spy_close` (v1 path) — not `cross_asset_closes`.
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -38,7 +39,6 @@ from regime_detection.fragility_universe import (
     NETWORK_FRAGILITY_UNIVERSE,
     SECTOR_ETFS,
 )
-
 
 _TRADING_DAYS_PER_YEAR = 252
 
@@ -72,7 +72,9 @@ def _assemble_returns_matrix(
     columns: list[str] = []
     series_map: dict[str, pd.Series] = {}
 
-    effective_universe = tuple(universe) if universe is not None else NETWORK_FRAGILITY_UNIVERSE
+    effective_universe = (
+        tuple(universe) if universe is not None else NETWORK_FRAGILITY_UNIVERSE
+    )
     for symbol in effective_universe:
         if symbol == INDEX_SYMBOL:
             series = spy_close

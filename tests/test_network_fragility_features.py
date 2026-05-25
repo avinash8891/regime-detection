@@ -4,6 +4,7 @@ Per ~/.claude/CLAUDE.md: realistic v2 production symbols (XLB, XLK, SPY, TLT
 etc) — NO toy a/b/c names. Math is verified against numpy/pandas baselines
 or hand-computed eigen-decompositions.
 """
+
 from __future__ import annotations
 
 import numpy as np
@@ -21,7 +22,6 @@ from regime_detection.network_fragility import (
     _positive_correlation_eigenvalues,
     compute_features,
 )
-
 
 # ---------- Shared fixtures ----------------------------------------------------
 
@@ -90,7 +90,9 @@ def test_avg_pairwise_corr_63d_against_pandas_corr_baseline(small_4asset_returns
     iu = np.triu_indices_from(corr, k=1)
     expected = corr[iu].mean()
 
-    assert out.avg_pairwise_corr_63d.loc[target_dt] == pytest.approx(expected, abs=1e-12)
+    assert out.avg_pairwise_corr_63d.loc[target_dt] == pytest.approx(
+        expected, abs=1e-12
+    )
 
 
 def test_largest_eigenvalue_share_against_numpy_linalg(nyse_index_100):
@@ -176,7 +178,9 @@ def test_absorption_ratio_top3_against_hand_computed_eigenvalues(small_4asset_re
     eigs = np.sort(np.linalg.eigvalsh(corr))[::-1]
     expected = eigs[:3].sum() / eigs.sum()
 
-    assert out.absorption_ratio_top3.loc[target_dt] == pytest.approx(expected, abs=1e-12)
+    assert out.absorption_ratio_top3.loc[target_dt] == pytest.approx(
+        expected, abs=1e-12
+    )
 
 
 def test_positive_correlation_eigenvalues_clip_tiny_negative_numerical_noise() -> None:
@@ -240,7 +244,9 @@ def test_compute_features_drops_columns_below_completeness_threshold(nyse_index_
     iu = np.triu_indices_from(corr, k=1)
     expected = corr[iu].mean()
 
-    assert out.avg_pairwise_corr_63d.loc[target_dt] == pytest.approx(expected, abs=1e-10)
+    assert out.avg_pairwise_corr_63d.loc[target_dt] == pytest.approx(
+        expected, abs=1e-10
+    )
 
 
 def test_compute_features_percentile_504d_against_rolling_rank(small_4asset_returns):

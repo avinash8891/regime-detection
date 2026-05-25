@@ -12,7 +12,9 @@ from regime_data_fetch.event_sources.approvals import load_approval_overlay
 
 
 def _load_script_module():
-    path = Path(__file__).resolve().parents[1] / "scripts" / "approve_group_b_candidate.py"
+    path = (
+        Path(__file__).resolve().parents[1] / "scripts" / "approve_group_b_candidate.py"
+    )
     spec = importlib.util.spec_from_file_location("approve_group_b_candidate", path)
     assert spec is not None and spec.loader is not None
     module = importlib.util.module_from_spec(spec)
@@ -42,7 +44,9 @@ def _argv(tmp_path: Path, candidate_id: str) -> list[str]:
     ]
 
 
-def test_approve_group_b_candidate_rejects_non_pending_candidate(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_approve_group_b_candidate_rejects_non_pending_candidate(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     _write_candidates(
         tmp_path / "candidates.parquet",
         [
@@ -63,7 +67,9 @@ def test_approve_group_b_candidate_rejects_non_pending_candidate(tmp_path: Path,
         approve_group_b_candidate.main()
 
 
-def test_approve_group_b_candidate_uses_utc_approved_date(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_approve_group_b_candidate_uses_utc_approved_date(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     _write_candidates(
         tmp_path / "candidates.parquet",
         [
@@ -79,7 +85,9 @@ def test_approve_group_b_candidate_uses_utc_approved_date(tmp_path: Path, monkey
         ],
     )
     monkeypatch.setattr(sys, "argv", _argv(tmp_path, "def456"))
-    monkeypatch.setattr(approve_group_b_candidate, "_utc_today", lambda: dt.date(2026, 5, 15))
+    monkeypatch.setattr(
+        approve_group_b_candidate, "_utc_today", lambda: dt.date(2026, 5, 15)
+    )
 
     assert approve_group_b_candidate.main() == 0
 

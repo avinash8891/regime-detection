@@ -10,8 +10,12 @@ from regime_detection._rolling_stats import (
 )
 
 
-def test_rolling_change_zscore_returns_nan_until_full_change_and_normalizer_windows() -> None:
-    series = pd.Series([1.0, 2.0, 4.0, 7.0], index=pd.bdate_range("2024-01-02", periods=4))
+def test_rolling_change_zscore_returns_nan_until_full_change_and_normalizer_windows() -> (
+    None
+):
+    series = pd.Series(
+        [1.0, 2.0, 4.0, 7.0], index=pd.bdate_range("2024-01-02", periods=4)
+    )
 
     out = rolling_change_zscore(
         series,
@@ -39,7 +43,9 @@ def test_rolling_change_zscore_masks_zero_variance_windows_to_nan() -> None:
     assert out.isna().all()
 
 
-def test_rolling_change_zscore_computes_change_zscore_against_rolling_change_distribution() -> None:
+def test_rolling_change_zscore_computes_change_zscore_against_rolling_change_distribution() -> (
+    None
+):
     series = pd.Series(
         [10.0, 11.0, 13.0, 16.0, 20.0],
         index=pd.bdate_range("2024-01-02", periods=5),
@@ -72,7 +78,9 @@ def test_simple_moving_average_matches_inline_strict_rolling_mean() -> None:
     )
 
     out = simple_moving_average(close, window=3, output_name="sma_3")
-    expected = close.astype(float).rolling(window=3, min_periods=3).mean().rename("sma_3")
+    expected = (
+        close.astype(float).rolling(window=3, min_periods=3).mean().rename("sma_3")
+    )
 
     pd.testing.assert_series_equal(out, expected, check_exact=True)
 
@@ -85,7 +93,9 @@ def test_period_return_matches_inline_shift_return() -> None:
     )
 
     out = period_return(close, periods=2, output_name="return_2d")
-    expected = (close.astype(float) / close.astype(float).shift(2) - 1.0).rename("return_2d")
+    expected = (close.astype(float) / close.astype(float).shift(2) - 1.0).rename(
+        "return_2d"
+    )
 
     pd.testing.assert_series_equal(out, expected, check_exact=True)
 

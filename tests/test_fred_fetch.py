@@ -11,7 +11,6 @@ import pytest
 
 from regime_data_fetch import fred
 
-
 _FRED_FIXTURE_DIR = Path(__file__).resolve().parent / "fixtures" / "raw" / "fred"
 
 

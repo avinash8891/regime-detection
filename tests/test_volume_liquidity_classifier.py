@@ -27,7 +27,6 @@ from regime_detection.volume_liquidity_rules import (
     VolumeLiquidityLabel,
 )
 
-
 _TRAINING_SESSIONS = 700
 _LAST_SESSION = pd.Timestamp("2025-04-30")
 _SEED = 20260514
@@ -274,7 +273,9 @@ def test_classifier_forces_unknown_when_liquidity_gap_percentile_inputs_are_nan(
     )
     volatility_v2 = store.volatility_state_v2
     assert volatility_v2 is not None
-    nan_series = pd.Series(np.nan, index=volatility_v2.gap_frequency_percentile_252d.index)
+    nan_series = pd.Series(
+        np.nan, index=volatility_v2.gap_frequency_percentile_252d.index
+    )
     broken_volatility_v2 = volatility_v2.__class__(
         **{
             **volatility_v2.__dict__,
@@ -282,7 +283,9 @@ def test_classifier_forces_unknown_when_liquidity_gap_percentile_inputs_are_nan(
             "intraday_range_percentile_252d": nan_series,
         }
     )
-    broken_store = store.model_copy(update={"volatility_state_v2": broken_volatility_v2})
+    broken_store = store.model_copy(
+        update={"volatility_state_v2": broken_volatility_v2}
+    )
 
     out = build_volume_liquidity_axis_series(context, broken_store)
     last_100 = list(context.sessions)[-100:]

@@ -41,7 +41,6 @@ from regime_detection.inflation_growth import (
 )
 from regime_detection.market_context import build_market_context
 
-
 # --- Synthetic fixtures ------------------------------------------------------
 
 _TRAINING_SESSIONS = 650
@@ -326,13 +325,17 @@ def test_cpi_staleness_falls_back_to_latest_history_before_vintage_coverage() ->
     _, outputs = _build_store_and_outputs(context)
 
     assert outputs is not None
-    pre_vintage_day = next(day for day in context.sessions if pd.Timestamp(day) < first_valid)
+    pre_vintage_day = next(
+        day for day in context.sessions if pd.Timestamp(day) < first_valid
+    )
     out = outputs[pre_vintage_day]
     assert out.data_quality.status != "stale_data"
     assert "cpi_stale" not in (out.data_quality.reason or "")
 
 
-def test_first_release_cpi_falls_back_to_latest_history_before_vintage_coverage() -> None:
+def test_first_release_cpi_falls_back_to_latest_history_before_vintage_coverage() -> (
+    None
+):
     idx = _bdate_index(periods=220)
     latest_cpi = pd.Series(
         np.linspace(250.0, 260.0, len(idx)),

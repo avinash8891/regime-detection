@@ -489,11 +489,13 @@ def test_build_regime_timeline_uses_context_config_when_config_arg_omitted(
     """Direct callers must not silently disable v2 seams by omitting config."""
     end_date = date(2023, 12, 14)
     engine = RegimeEngine()
-    cfg = engine.config.model_copy(update={
-        "change_point": engine.config.change_point.model_copy(
-            update={"training_window_days": 500}
-        ),
-    })
+    cfg = engine.config.model_copy(
+        update={
+            "change_point": engine.config.change_point.model_copy(
+                update={"training_window_days": 500}
+            ),
+        }
+    )
     context = build_market_context(
         end_date=end_date,
         market_data=market_df_for_asof(end_date),
@@ -626,8 +628,7 @@ def test_timeline_passes_event_calendar_matching_labels_to_strategy_response(
             symbol: v2_close_series_by_symbol[symbol] for symbol in SECTOR_ETFS
         },
         cross_asset_closes={
-            symbol: v2_close_series_by_symbol[symbol]
-            for symbol in CROSS_ASSET_SYMBOLS
+            symbol: v2_close_series_by_symbol[symbol] for symbol in CROSS_ASSET_SYMBOLS
         },
         macro_series=macro_series,
         pit_constituent_intervals=pd.DataFrame(
@@ -658,23 +659,25 @@ def test_timeline_passes_event_calendar_matching_labels_to_strategy_response(
     )
     spy.assert_called_once()
     assert spy.call_args.kwargs["event_calendar_labels"] == event_output.matching_labels
-    assert spy.call_args.kwargs["event_modifier_config"] is config.strategy_event_modifiers
+    assert (
+        spy.call_args.kwargs["event_modifier_config"] is config.strategy_event_modifiers
+    )
     assert out.effective_strategy_constraints is not None
     assert out.strategy_family_constraints is not None
     breakout = out.effective_strategy_constraints["breakout"]
     assert "strategy_response" in breakout.sources
     assert "strategy_family_constraints" in breakout.sources
-    if out.agent_routing is not None and "breakout" in out.agent_routing.blocked_strategy_modes:
+    if (
+        out.agent_routing is not None
+        and "breakout" in out.agent_routing.blocked_strategy_modes
+    ):
         assert "agent_routing" in breakout.sources
-    assert (
-        breakout.allowed
-        is (
-            out.strategy_response.allow_breakout
-            and out.strategy_family_constraints["breakout"].allowed
-            and (
-                out.agent_routing is None
-                or "breakout" not in out.agent_routing.blocked_strategy_modes
-            )
+    assert breakout.allowed is (
+        out.strategy_response.allow_breakout
+        and out.strategy_family_constraints["breakout"].allowed
+        and (
+            out.agent_routing is None
+            or "breakout" not in out.agent_routing.blocked_strategy_modes
         )
     )
 

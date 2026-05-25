@@ -119,9 +119,15 @@ def test_transition_risk_watch_rules_win_over_insufficient_axis_data() -> None:
     )
 
     assert event_watch.state == "watch"
-    assert event_watch.triggered_rules == ["event_transition_watch", "insufficient_data"]
+    assert event_watch.triggered_rules == [
+        "event_transition_watch",
+        "insufficient_data",
+    ]
     assert cooldown_watch.state == "watch"
-    assert cooldown_watch.triggered_rules == ["post_switch_cooldown", "insufficient_data"]
+    assert cooldown_watch.triggered_rules == [
+        "post_switch_cooldown",
+        "insufficient_data",
+    ]
 
 
 def test_transition_risk_missing_score_becomes_insufficient_data() -> None:
@@ -187,7 +193,9 @@ def test_transition_risk_evidence_rejects_unknown_keys(bad_key: str) -> None:
         )
 
 
-def test_build_transition_score_inputs_returns_typed_optional_hmm_and_change_point_values() -> None:
+def test_build_transition_score_inputs_returns_typed_optional_hmm_and_change_point_values() -> (
+    None
+):
     sessions = [date(2024, 1, day) for day in range(2, 10)]
     index = pd.DatetimeIndex(sessions)
 
@@ -196,8 +204,12 @@ def test_build_transition_score_inputs_returns_typed_optional_hmm_and_change_poi
         realized_vol_short=pd.Series([12.0] * len(sessions), index=index),
         realized_vol_long=pd.Series([10.0] * len(sessions), index=index),
         pct_above_50dma=pd.Series([0.45] * len(sessions), index=index),
-        avg_pairwise_corr_percentile_504d=pd.Series([0.60] * len(sessions), index=index),
-        largest_eigenvalue_share_percentile_504d=pd.Series([0.50] * len(sessions), index=index),
+        avg_pairwise_corr_percentile_504d=pd.Series(
+            [0.60] * len(sessions), index=index
+        ),
+        largest_eigenvalue_share_percentile_504d=pd.Series(
+            [0.50] * len(sessions), index=index
+        ),
         effective_rank_percentile_504d=pd.Series([0.50] * len(sessions), index=index),
         absorption_ratio_top3=pd.Series([0.50] * len(sessions), index=index),
         drawdown_252d=pd.Series([-0.10] * len(sessions), index=index),
@@ -299,7 +311,12 @@ def test_transition_risk_evidence_preserves_macro_event_matching_labels() -> Non
         pct_above_50dma=0.80,
         avg_pairwise_corr_percentile_504d=0.0,
         drawdown_252d=0.0,
-        event_calendar_labels=("earnings_season", "fed_week", "expiry_week", "cpi_week"),
+        event_calendar_labels=(
+            "earnings_season",
+            "fed_week",
+            "expiry_week",
+            "cpi_week",
+        ),
         spy_close=100.0,
         spy_sma_50=100.0,
         largest_eigenvalue_share_percentile_504d=0.0,
@@ -340,7 +357,10 @@ def test_transition_risk_evidence_preserves_macro_event_matching_labels() -> Non
 
 
 def test_transition_score_inputs_event_calendar_labels_are_closed_type() -> None:
-    assert get_type_hints(TransitionScoreInputs)["event_calendar_labels"] == tuple[EventCalendarLabel, ...]
+    assert (
+        get_type_hints(TransitionScoreInputs)["event_calendar_labels"]
+        == tuple[EventCalendarLabel, ...]
+    )
     with pytest.raises(ValueError, match="unknown event_calendar_labels"):
         TransitionScoreInputs(
             realized_vol_short=12.0,
@@ -531,7 +551,9 @@ def test_transition_risk_output_sessions_debounce_uses_full_session_history() ->
         ),
         network_fragility=SimpleNamespace(
             avg_pairwise_corr_percentile_504d=pd.Series([0.0, 1.0, 1.0], index=index),
-            largest_eigenvalue_share_percentile_504d=pd.Series([0.0, 0.0, 0.0], index=index),
+            largest_eigenvalue_share_percentile_504d=pd.Series(
+                [0.0, 0.0, 0.0], index=index
+            ),
             effective_rank_percentile_504d=pd.Series([0.0, 0.0, 0.0], index=index),
             absorption_ratio_top3=pd.Series([0.0, 0.0, 0.0], index=index),
         ),

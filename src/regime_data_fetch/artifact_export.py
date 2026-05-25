@@ -88,7 +88,10 @@ def emit_manifest_for_report_paths(
         raise ValueError("no existing artifact files found in report paths")
     manifest = ArtifactManifest(
         artifact_set=artifact_set,
-        created_at_utc=dt.datetime.now(dt.timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z"),
+        created_at_utc=dt.datetime.now(dt.timezone.utc)
+        .replace(microsecond=0)
+        .isoformat()
+        .replace("+00:00", "Z"),
         storage_root=artifact_store_root,
         artifacts=artifacts,
     )
@@ -103,11 +106,15 @@ def _load_report_payload(report_path: Path) -> dict[str, object] | None:
         raise ValueError(f"manifest report path must be JSON: {report_path}")
     payload = json.loads(report_path.read_text())
     if not isinstance(payload, dict):
-        raise ValueError(f"manifest report payload must be a JSON object: {report_path}")
+        raise ValueError(
+            f"manifest report payload must be a JSON object: {report_path}"
+        )
     return payload
 
 
-def _iter_existing_report_files(payload: dict[str, object]) -> Iterable[tuple[str, Path, str | None]]:
+def _iter_existing_report_files(
+    payload: dict[str, object],
+) -> Iterable[tuple[str, Path, str | None]]:
     paths = payload.get("paths", {})
     if not isinstance(paths, dict):
         return
@@ -122,10 +129,14 @@ def _iter_existing_report_files(payload: dict[str, object]) -> Iterable[tuple[st
             yield name, path, local_path_override
         elif path.exists() and path.is_dir():
             for child in sorted(item for item in path.rglob("*") if item.is_file()):
-                child_name = f"{name}_{child.relative_to(path).as_posix().replace('/', '_')}"
+                child_name = (
+                    f"{name}_{child.relative_to(path).as_posix().replace('/', '_')}"
+                )
                 child_local_path = None
                 if local_path_override is not None:
-                    child_local_path = str(Path(local_path_override) / child.relative_to(path))
+                    child_local_path = str(
+                        Path(local_path_override) / child.relative_to(path)
+                    )
                 yield child_name, child, child_local_path
 
 
@@ -194,7 +205,11 @@ def _daily_ohlcv_artifact_name(local_path: str) -> str | None:
     if file_parts == ("ohlcv.parquet",):
         return f"constituent_ohlcv_{symbol}"
     suffix = _artifact_name_suffix(file_parts)
-    return f"constituent_ohlcv_{symbol}_{suffix}" if suffix else f"constituent_ohlcv_{symbol}"
+    return (
+        f"constituent_ohlcv_{symbol}_{suffix}"
+        if suffix
+        else f"constituent_ohlcv_{symbol}"
+    )
 
 
 def _artifact_name_suffix(parts: tuple[str, ...]) -> str:
@@ -204,5 +219,7 @@ def _artifact_name_suffix(parts: tuple[str, ...]) -> str:
 def _normalize_manifest_local_path(local_path: str) -> str:
     normalized = Path(local_path)
     if normalized.is_absolute() or normalized == Path("..") or ".." in normalized.parts:
-        raise ValueError(f"manifest local_path must be relative within the repo: {local_path}")
+        raise ValueError(
+            f"manifest local_path must be relative within the repo: {local_path}"
+        )
     return str(normalized)

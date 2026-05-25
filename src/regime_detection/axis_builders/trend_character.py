@@ -28,9 +28,7 @@ def build_trend_character_axis_series(
     features = feature_store.trend_character
     tc_v2_config = context.config.trend_character_v2
     if tc_v2_config is None:
-        raise RuntimeError(
-            "trend_character_v2 is required"
-        )
+        raise RuntimeError("trend_character_v2 is required")
     hysteresis_config = context.config.trend_character
     raw_labels, raw_evidence = build_trend_character_raw_outputs(
         features,
@@ -41,6 +39,7 @@ def build_trend_character_axis_series(
         range_bound_adx_threshold=tc_v2_config.range_bound_adx_threshold,
     )
     from regime_detection.axis_series import _build_axis_outputs
+
     return _build_axis_outputs(
         dates=[ts.date() for ts in close_index],
         raw_labels=raw_labels,

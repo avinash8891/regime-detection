@@ -7,7 +7,6 @@ import pandas as pd
 
 import regime_detection.axis_series as axis_series
 
-
 _MOVED_AXIS_BUILDER_NAMES = (
     "build_trend_direction_axis_series",
     "build_trend_character_axis_series",

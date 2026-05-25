@@ -33,6 +33,7 @@ Implementation choices that resolve ambiguities:
   ``VolatilityV2Config.gap_threshold_pct`` rather than per-market
   branching (V2 universe is US-only).
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -97,9 +98,7 @@ class VolatilityV2Features:
         )
 
     def to_frame(self) -> pd.DataFrame:
-        return pd.DataFrame(
-            {name: getattr(self, name) for name in self.feature_names}
-        )
+        return pd.DataFrame({name: getattr(self, name) for name in self.feature_names})
 
 
 def _atr_ratio(
@@ -234,7 +233,10 @@ def compute_volatility_v2_features(
     # §1D `nh_nl_ratio` percentile pattern. Implements the documented input contract by computing
     # the previously-missing percentile input for `liquidity_gap_behavior`.
     gap_freq_pct = (
-        gap_freq.rolling(config.intraday_range_lookback_days, min_periods=config.intraday_range_lookback_days)
+        gap_freq.rolling(
+            config.intraday_range_lookback_days,
+            min_periods=config.intraday_range_lookback_days,
+        )
         .rank(pct=True)
         .rename("gap_frequency_percentile_252d")
     )
@@ -263,12 +265,8 @@ def compute_volatility_v2_features(
         # defaults; both citations point at v2 §1C lines 251-252.
         rv_short_window = 10
         rv_long_window = 63
-    rv_short = realized_vol(close, window=rv_short_window).rename(
-        "realized_vol_short"
-    )
-    rv_long = realized_vol(close, window=rv_long_window).rename(
-        "realized_vol_long"
-    )
+    rv_short = realized_vol(close, window=rv_short_window).rename("realized_vol_short")
+    rv_long = realized_vol(close, window=rv_long_window).rename("realized_vol_long")
 
     # v2 §1C `vol_crush` rule input (ADR 0005). The 21-session mid window
     # for `realized_vol_10d < realized_vol_21d * 0.75`.
@@ -373,8 +371,10 @@ def evaluate_rising_vol(
     if any(pd.isna(x) for x in (atr, rv_short, rv_long)):
         return False
 
-    atr_limb = bool(atr > rules_config.atr_ratio_threshold)            # line 251
-    rv_limb = bool(rv_short > rv_long * rules_config.realized_vol_ratio_threshold)  # line 252
+    atr_limb = bool(atr > rules_config.atr_ratio_threshold)  # line 251
+    rv_limb = bool(
+        rv_short > rv_long * rules_config.realized_vol_ratio_threshold
+    )  # line 252
     return atr_limb or rv_limb
 
 

@@ -68,7 +68,9 @@ def test_build_axis_series_bundle_emits_session_keyed_outputs_for_core_axes(
     assert set(bundle.event_calendar) == expected_dates
 
 
-def test_core_axis_output_builder_freezes_hysteresis_state_across_short_data_gaps() -> None:
+def test_core_axis_output_builder_freezes_hysteresis_state_across_short_data_gaps() -> (
+    None
+):
     dates = [
         date(2024, 1, 2),
         date(2024, 1, 3),

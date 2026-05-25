@@ -13,7 +13,6 @@ import yaml
 
 from regime_detection.calendar import nyse_calendar
 
-
 REPO_ROOT = Path(__file__).resolve().parents[1]
 CONFIG_PATH = REPO_ROOT / "src" / "regime_detection" / "configs" / "core3-v1.0.0.yaml"
 
@@ -51,9 +50,15 @@ def _load_hysteresis_days() -> dict[str, int]:
     data = yaml.safe_load(CONFIG_PATH.read_text())
     hysteresis = data.get("hysteresis", {})
     return {
-        "trend_direction_active": int(hysteresis.get("trend_direction_deescalation_days", 3)),
-        "trend_character_active": int(hysteresis.get("trend_character_deescalation_days", 3)),
-        "volatility_state_active": int(hysteresis.get("volatility_deescalation_days", 2)),
+        "trend_direction_active": int(
+            hysteresis.get("trend_direction_deescalation_days", 3)
+        ),
+        "trend_character_active": int(
+            hysteresis.get("trend_character_deescalation_days", 3)
+        ),
+        "volatility_state_active": int(
+            hysteresis.get("volatility_deescalation_days", 2)
+        ),
         "breadth_state_active": int(hysteresis.get("breadth_deescalation_days", 2)),
         "transition_risk_state": int(hysteresis.get("composite_deescalation_days", 3)),
     }
@@ -98,7 +103,10 @@ def _label_distribution(success_df: pd.DataFrame) -> dict[str, dict[str, int]]:
     out: dict[str, dict[str, int]] = {}
     for col in LABEL_COLUMNS:
         if col in success_df.columns:
-            out[col] = {str(k): int(v) for k, v in success_df[col].value_counts(dropna=False).to_dict().items()}
+            out[col] = {
+                str(k): int(v)
+                for k, v in success_df[col].value_counts(dropna=False).to_dict().items()
+            }
     return out
 
 
@@ -154,7 +162,9 @@ def _unknown_stretch(series: pd.Series) -> int:
     return max_len
 
 
-def _series_summaries(success_df: pd.DataFrame, hysteresis_days: dict[str, int]) -> dict[str, dict[str, Any]]:
+def _series_summaries(
+    success_df: pd.DataFrame, hysteresis_days: dict[str, int]
+) -> dict[str, dict[str, Any]]:
     out: dict[str, dict[str, Any]] = {}
     for col in LABEL_COLUMNS:
         if col not in success_df.columns:
@@ -166,7 +176,9 @@ def _series_summaries(success_df: pd.DataFrame, hysteresis_days: dict[str, int])
             "longest_runs": _longest_runs(series),
             "switch_count": switch_count,
             "false_switch_count": false_switch_count,
-            "false_switch_rate": 0.0 if switch_count == 0 else false_switch_count / switch_count,
+            "false_switch_rate": (
+                0.0 if switch_count == 0 else false_switch_count / switch_count
+            ),
             "max_unknown_stretch": _unknown_stretch(series),
         }
     return out
@@ -211,7 +223,8 @@ def _baseline_comparison(payload: dict[str, Any] | None) -> dict[str, Any] | Non
         "comparisons": comparisons,
         "improved_metrics": sorted(improved_metrics),
         "materially_worse_metrics": sorted(materially_worse_metrics),
-        "all_metrics_materially_worse": bool(comparisons) and len(materially_worse_metrics) == len(comparisons),
+        "all_metrics_materially_worse": bool(comparisons)
+        and len(materially_worse_metrics) == len(comparisons),
     }
 
 
@@ -258,14 +271,50 @@ def _build_markdown(analysis: dict[str, Any]) -> str:
 
     lines.extend(["", "## Label Distributions", ""])
     for key, value in analysis["label_distributions"].items():
-        lines.extend([f"### {key}", "", "```json", json.dumps(value, indent=2, sort_keys=True), "```", ""])
+        lines.extend(
+            [
+                f"### {key}",
+                "",
+                "```json",
+                json.dumps(value, indent=2, sort_keys=True),
+                "```",
+                "",
+            ]
+        )
 
     lines.extend(["## Series Summaries", ""])
     for key, value in analysis["series_summaries"].items():
-        lines.extend([f"### {key}", "", "```json", json.dumps(value, indent=2, sort_keys=True), "```", ""])
+        lines.extend(
+            [
+                f"### {key}",
+                "",
+                "```json",
+                json.dumps(value, indent=2, sort_keys=True),
+                "```",
+                "",
+            ]
+        )
 
-    lines.extend(["## Golden Results", "", "```json", json.dumps(analysis["golden_results"], indent=2, sort_keys=True), "```", ""])
-    lines.extend(["## Baseline Comparison", "", "```json", json.dumps(analysis["baseline_comparison"], indent=2, sort_keys=True), "```", ""])
+    lines.extend(
+        [
+            "## Golden Results",
+            "",
+            "```json",
+            json.dumps(analysis["golden_results"], indent=2, sort_keys=True),
+            "```",
+            "",
+        ]
+    )
+    lines.extend(
+        [
+            "## Baseline Comparison",
+            "",
+            "```json",
+            json.dumps(analysis["baseline_comparison"], indent=2, sort_keys=True),
+            "```",
+            "",
+        ]
+    )
     return "\n".join(lines).rstrip() + "\n"
 
 
@@ -282,7 +331,9 @@ def build_walkforward_report(
     hysteresis_days = _load_hysteresis_days()
 
     golden_results = _load_optional_json(golden_results_path)
-    baseline_comparison = _baseline_comparison(_load_optional_json(baseline_metrics_path))
+    baseline_comparison = _baseline_comparison(
+        _load_optional_json(baseline_metrics_path)
+    )
     failure_reasons = _failure_reasons(
         summary_df=summary_df,
         missing_sessions=missing_sessions,
@@ -297,26 +348,43 @@ def build_walkforward_report(
         "failure_count": int(summary_df["status"].eq("failure").sum()),
         "missing_sessions": missing_sessions,
         "failure_reasons": failure_reasons,
-        "engine_version": str(runs_df["engine_version"].dropna().iloc[0]) if not runs_df.empty else None,
-        "config_version": str(runs_df["config_version"].dropna().iloc[0]) if not runs_df.empty else None,
+        "engine_version": (
+            str(runs_df["engine_version"].dropna().iloc[0])
+            if not runs_df.empty
+            else None
+        ),
+        "config_version": (
+            str(runs_df["config_version"].dropna().iloc[0])
+            if not runs_df.empty
+            else None
+        ),
         "label_distributions": _label_distribution(success_df),
         "series_summaries": _series_summaries(success_df, hysteresis_days),
-        "golden_results": golden_results or {"all_passed": False, "reason": "not_provided"},
+        "golden_results": golden_results
+        or {"all_passed": False, "reason": "not_provided"},
         "baseline_comparison": baseline_comparison
-        or {"all_metrics_materially_worse": False, "reason": "not_provided", "improved_metrics": []},
+        or {
+            "all_metrics_materially_worse": False,
+            "reason": "not_provided",
+            "improved_metrics": [],
+        },
     }
 
     reports_dir = output_root / "reports"
     reports_dir.mkdir(parents=True, exist_ok=True)
     analysis_path = reports_dir / "walkforward_analysis.json"
-    analysis_path.write_text(json.dumps(analysis, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    analysis_path.write_text(
+        json.dumps(analysis, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+    )
     report_path = reports_dir / "walkforward_report.md"
     report_path.write_text(_build_markdown(analysis), encoding="utf-8")
     return analysis
 
 
 def _parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Build a walk-forward qualification report from archived artifacts.")
+    parser = argparse.ArgumentParser(
+        description="Build a walk-forward qualification report from archived artifacts."
+    )
     parser.add_argument("--output-root", required=True, type=Path)
     parser.add_argument("--golden-results", type=Path, default=None)
     parser.add_argument("--baseline-metrics", type=Path, default=None)

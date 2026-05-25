@@ -61,10 +61,12 @@ def build_strategy_response(
     event_calendar_labels: tuple[str, ...] = (),
     event_modifier_config: StrategyEventModifiersConfig | None = None,
 ) -> StrategyResponse:
-    if (
-        transition_risk_state == "insufficient_data"
-        or "unknown" in {trend_direction_active, trend_character_active, volatility_state_active, breadth_state_active}
-    ):
+    if transition_risk_state == "insufficient_data" or "unknown" in {
+        trend_direction_active,
+        trend_character_active,
+        volatility_state_active,
+        breadth_state_active,
+    }:
         modifiers: list[str] = []
         (
             position_size_multiplier,
@@ -139,7 +141,10 @@ def build_strategy_response(
         allow_leverage_expansion = False
         modifiers.append("recovery_attempt")
 
-    if trend_character_active in {"chop", "volatile_chop"} and volatility_state_active != "crisis_vol":
+    if (
+        trend_character_active in {"chop", "volatile_chop"}
+        and volatility_state_active != "crisis_vol"
+    ):
         allow_trend_following = False
         allow_mean_reversion = True
         position_size_multiplier = 0.75

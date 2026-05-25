@@ -4,7 +4,6 @@ import datetime as dt
 import os
 from pathlib import Path
 
-
 OPERATOR_ENV_POINTER_FILE = ".regime-operator.env"
 HOME_OPERATOR_ENV_POINTER_FILE = Path(".config") / "regime-detection" / "operator.env"
 OPERATOR_ENV_FILE_LIST_VAR = "REGIME_ENV_FILES"

@@ -6,7 +6,11 @@ from pathlib import Path
 import pandas as pd
 
 from regime_detection.calendar import as_date, require_nyse_trading_day
-from regime_detection.config import RegimeConfig, load_default_regime_config, load_regime_config
+from regime_detection.config import (
+    RegimeConfig,
+    load_default_regime_config,
+    load_regime_config,
+)
 from regime_detection.market_context import build_market_context
 from regime_detection.models import RegimeOutput, RegimeTimeline
 from regime_detection.timeline import build_regime_timeline
@@ -24,7 +28,9 @@ def _require_event_calendar(event_calendar: pd.DataFrame | None) -> pd.DataFrame
             "Pass the manifest event_calendar DataFrame from the runner/caller."
         )
     if not isinstance(event_calendar, pd.DataFrame):
-        raise TypeError("event_calendar must be a pandas DataFrame when passed to RegimeEngine.")
+        raise TypeError(
+            "event_calendar must be a pandas DataFrame when passed to RegimeEngine."
+        )
     return event_calendar
 
 

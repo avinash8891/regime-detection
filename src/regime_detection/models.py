@@ -8,8 +8,9 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, RootModel, model_validator
 
-
-DataQualityStatus = Literal["ok", "degraded", "insufficient_data", "insufficient_history", "stale_data"]
+DataQualityStatus = Literal[
+    "ok", "degraded", "insufficient_data", "insufficient_history", "stale_data"
+]
 ClassificationStatus = Literal[
     "classified",
     "no_rule_fired",
@@ -194,7 +195,9 @@ def _collect_missing_rule_features(value: Any, features: set[str]) -> None:
         _collect_missing_rule_features(item, features)
 
 
-def _collect_missing_leaf_keys(value: Any, features: set[str], prefix: str = "") -> None:
+def _collect_missing_leaf_keys(
+    value: Any, features: set[str], prefix: str = ""
+) -> None:
     if isinstance(value, dict):
         for key, item in value.items():
             child_prefix = f"{prefix}.{key}" if prefix else str(key)
@@ -262,7 +265,6 @@ class EventCalendarOutput(BaseModel):
     primary_label: str
     matching_labels: tuple[str, ...]
     evidence: EventCalendarEvidencePayload
-
 
 
 class NetworkFragilityOutput(AxisOutput):
@@ -683,7 +685,9 @@ class AgentRouting(BaseModel):
 _V1_CONFIG_VERSION = "core3-v1.0.0"
 
 
-def _dump_json_payload(payload: dict[str, Any], *, indent: int | None, ensure_ascii: bool) -> str:
+def _dump_json_payload(
+    payload: dict[str, Any], *, indent: int | None, ensure_ascii: bool
+) -> str:
     json_kwargs: dict[str, Any] = {
         "ensure_ascii": ensure_ascii,
     }
@@ -751,14 +755,18 @@ class RegimeOutput(BaseModel):
     inflation_growth_state: InflationGrowthOutput | None = None  # v2 §2B
     credit_funding_state: CreditFundingOutput | None = None  # v2 §2C
     credit_funding_state_proxy: CreditFundingOutput | None = None  # v2 §2C proxy
-    credit_funding_effective_state: CreditFundingOutput | None = None  # v2 §2C downstream OAS/proxy resolver
+    credit_funding_effective_state: CreditFundingOutput | None = (
+        None  # v2 §2C downstream OAS/proxy resolver
+    )
     volume_liquidity_state: VolumeLiquidityStateOutput | None = None  # v2 §1E
     monetary_pressure_state: MonetaryPressureV2Output | None = None  # v2 §2A
     change_point: ChangePointOutput | None = None  # v2 §4.6
     hmm: HmmOutput | None = None  # v2 §6.1 — evidence
     cluster: ClusterOutput | None = None  # v2 §6.2 — diagnostic evidence
     agent_routing: "AgentRouting | None" = None  # v2 §5.1
-    strategy_family_constraints: dict[str, StrategyFamilyConstraint] | None = None  # v2 §5.2
+    strategy_family_constraints: dict[str, StrategyFamilyConstraint] | None = (
+        None  # v2 §5.2
+    )
     effective_strategy_constraints: dict[str, EffectiveStrategyConstraint] | None = None
 
     def model_dump_legacy_v1_wire(self, *args: Any, **kwargs: Any) -> dict[str, Any]:

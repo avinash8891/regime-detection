@@ -24,7 +24,6 @@ from regime_detection.config import (
     load_default_regime_config,
 )
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -108,9 +107,7 @@ def test_compute_change_point_features_succeeds_on_synthetic_two_regime_data() -
 
 
 def test_change_point_masks_rows_before_strict_pit_warmup() -> None:
-    series = _synthetic_two_regime_realized_vol(
-        n_sessions=140, shift_index=110, seed=1
-    )
+    series = _synthetic_two_regime_realized_vol(n_sessions=140, shift_index=110, seed=1)
     cfg = _default_change_point_config(training_window_days=100)
 
     result = compute_change_point_features(realized_vol_21d=series, config=cfg)
@@ -124,12 +121,8 @@ def test_change_point_masks_rows_before_strict_pit_warmup() -> None:
 
 
 def test_change_point_historical_scores_do_not_change_when_future_rows_append() -> None:
-    base = _synthetic_two_regime_realized_vol(
-        n_sessions=160, shift_index=120, seed=2
-    )
-    future = _synthetic_two_regime_realized_vol(
-        n_sessions=40, shift_index=20, seed=3
-    )
+    base = _synthetic_two_regime_realized_vol(n_sessions=160, shift_index=120, seed=2)
+    future = _synthetic_two_regime_realized_vol(n_sessions=40, shift_index=20, seed=3)
     future.index = pd.bdate_range(base.index[-1] + pd.offsets.BDay(), periods=40)
     extended = pd.concat([base, future])
     cfg = _default_change_point_config(training_window_days=100)
@@ -240,7 +233,9 @@ def test_compute_change_point_features_returns_none_on_numeric_instability(
     )
     cfg = _default_change_point_config(training_window_days=1260)
 
-    def raise_floating_point_error(*, data: np.ndarray, config: ChangePointConfig) -> np.ndarray:
+    def raise_floating_point_error(
+        *, data: np.ndarray, config: ChangePointConfig
+    ) -> np.ndarray:
         del data, config
         raise FloatingPointError("singular predictive")
 
@@ -387,9 +382,13 @@ def test_feature_store_change_point_seam_present_with_default_config(
     cfg = load_default_regime_config()
     assert cfg.change_point is not None
     # Override training_window to fit the test fixture's ~650 sessions
-    cfg = cfg.model_copy(update={
-        "change_point": cfg.change_point.model_copy(update={"training_window_days": 500}),
-    })
+    cfg = cfg.model_copy(
+        update={
+            "change_point": cfg.change_point.model_copy(
+                update={"training_window_days": 500}
+            ),
+        }
+    )
     spy = raw_market_frames["SPY"]
     rsp = raw_market_frames["RSP"]
     vix = raw_market_frames["VIX"]
@@ -430,11 +429,13 @@ def test_regime_output_carries_change_point_when_seam_present(
 
     engine = RegimeEngine()
     assert engine.config.change_point is not None
-    cfg = engine.config.model_copy(update={
-        "change_point": engine.config.change_point.model_copy(
-            update={"training_window_days": 500}
-        ),
-    })
+    cfg = engine.config.model_copy(
+        update={
+            "change_point": engine.config.change_point.model_copy(
+                update={"training_window_days": 500}
+            ),
+        }
+    )
     last_session = max(raw_market_data["date"].unique())
     market_data = market_df_for_asof(last_session)
     kwargs = synthetic_v2_kwargs_for_market_data(market_data)

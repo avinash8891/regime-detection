@@ -224,7 +224,9 @@ class InflationGrowthConfig(StrictBaseModel):
     """
 
     series_ids: dict[str, str] = Field(default_factory=dict)
-    rules: InflationGrowthRulesConfig = Field(default_factory=InflationGrowthRulesConfig)
+    rules: InflationGrowthRulesConfig = Field(
+        default_factory=InflationGrowthRulesConfig
+    )
     # §2B lines 3132-3146 — per-label asymmetric hysteresis days.
     deescalation_days_by_label: dict[str, int]
     default_deescalation_days: int = Field(default=0, ge=0)

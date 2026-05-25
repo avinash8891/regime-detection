@@ -27,24 +27,20 @@ def test_open_shadow_db_creates_durable_shadow_tables(tmp_path: Path) -> None:
     db_path.parent.mkdir()
 
     with open_shadow_db(db_path) as conn:
-        table_names = conn.execute(
-            """
+        table_names = conn.execute("""
             SELECT name
             FROM sqlite_master
             WHERE type = 'table' AND name IN ('runs', 'replay_checks', 'incidents')
             ORDER BY name
-            """
-        ).fetchall()
+            """).fetchall()
 
     with sqlite3.connect(db_path) as conn:
-        durable_table_names = conn.execute(
-            """
+        durable_table_names = conn.execute("""
             SELECT name
             FROM sqlite_master
             WHERE type = 'table' AND name IN ('runs', 'replay_checks', 'incidents')
             ORDER BY name
-            """
-        ).fetchall()
+            """).fetchall()
 
     assert table_names == [("incidents",), ("replay_checks",), ("runs",)]
     assert durable_table_names == table_names
@@ -137,13 +133,11 @@ def test_run_row_success_and_failure_updates_are_durable(tmp_path: Path) -> None
         )
 
     with sqlite3.connect(db_path) as conn:
-        rows = conn.execute(
-            """
+        rows = conn.execute("""
             SELECT as_of_date, status, failure_reason, output_path, output_sha256
             FROM runs
             ORDER BY as_of_date
-            """
-        ).fetchall()
+            """).fetchall()
 
     assert rows == [
         (
@@ -213,18 +207,14 @@ def test_replay_check_and_incident_insertions_are_durable(tmp_path: Path) -> Non
         )
 
     with sqlite3.connect(db_path) as conn:
-        replay_rows = conn.execute(
-            """
+        replay_rows = conn.execute("""
             SELECT original_run_id, matches, diff
             FROM replay_checks
-            """
-        ).fetchall()
-        incident_rows = conn.execute(
-            """
+            """).fetchall()
+        incident_rows = conn.execute("""
             SELECT incident_date, description, resolution, breaks_qualification
             FROM incidents
-            """
-        ).fetchall()
+            """).fetchall()
 
     assert replay_rows == [
         (
@@ -236,13 +226,13 @@ def test_replay_check_and_incident_insertions_are_durable(tmp_path: Path) -> Non
             ),
         )
     ]
-    assert incident_rows == [
-        ("2023-12-15", "Replay mismatch for 2023-12-14", None, 1)
-    ]
+    assert incident_rows == [("2023-12-15", "Replay mismatch for 2023-12-14", None, 1)]
 
 
 def test_load_archived_market_data_missing_archive_path_raises(tmp_path: Path) -> None:
-    missing_market_archive = tmp_path / "input_archives" / "missing" / "market_data.parquet"
+    missing_market_archive = (
+        tmp_path / "input_archives" / "missing" / "market_data.parquet"
+    )
 
     with pytest.raises(FileNotFoundError):
         load_archived_market_data(missing_market_archive)

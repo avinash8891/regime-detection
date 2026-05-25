@@ -24,8 +24,12 @@ def _reconciliation_fixture_config():
     return cfg.model_copy(
         update={
             "hmm": cfg.hmm.model_copy(update={"training_window_days": 252}),
-            "clustering": cfg.clustering.model_copy(update={"training_window_days": 252}),
-            "change_point": cfg.change_point.model_copy(update={"training_window_days": 252}),
+            "clustering": cfg.clustering.model_copy(
+                update={"training_window_days": 252}
+            ),
+            "change_point": cfg.change_point.model_copy(
+                update={"training_window_days": 252}
+            ),
         }
     )
 
@@ -59,9 +63,14 @@ def test_classify_uses_vix_data_when_vix_proxy_missing_from_market_data(
         market_data=market_df,
         vix_data=vix_df,
         config=_reconciliation_fixture_config(),
-        **_synthetic_kwargs_without_config(synthetic_v2_kwargs_for_market_data, market_df),
+        **_synthetic_kwargs_without_config(
+            synthetic_v2_kwargs_for_market_data, market_df
+        ),
     )
-    assert out.volatility_state.evidence["rule_evidence"]["vix_percentile_252d"] is not None
+    assert (
+        out.volatility_state.evidence["rule_evidence"]["vix_percentile_252d"]
+        is not None
+    )
 
 
 def test_market_context_requires_true_vix_in_market_data(market_df_for_asof) -> None:
@@ -72,7 +81,9 @@ def test_market_context_requires_true_vix_in_market_data(market_df_for_asof) -> 
     from regime_detection.engine import RegimeEngine
     from regime_detection.market_context import build_market_context
 
-    with pytest.raises(ValueError, match="market_data missing required symbol for V1: VIX"):
+    with pytest.raises(
+        ValueError, match="market_data missing required symbol for V1: VIX"
+    ):
         build_market_context(
             end_date=as_of,
             market_data=market_df,
@@ -131,7 +142,9 @@ def test_breadth_data_quality_does_not_block_pit_breadth_when_rsp_gaps(
         market_data=market_df,
         vix_data=_vix_data_from_market_data(market_df),
         config=_reconciliation_fixture_config(),
-        **_synthetic_kwargs_without_config(synthetic_v2_kwargs_for_market_data, market_df),
+        **_synthetic_kwargs_without_config(
+            synthetic_v2_kwargs_for_market_data, market_df
+        ),
     )
 
     assert out.breadth_state.active_label == "broadening_breadth"
@@ -156,7 +169,9 @@ def test_trend_direction_data_quality_insufficient_data_can_override_non_unknown
         market_data=market_df,
         vix_data=_vix_data_from_market_data(market_df),
         config=_reconciliation_fixture_config(),
-        **_synthetic_kwargs_without_config(synthetic_v2_kwargs_for_market_data, market_df),
+        **_synthetic_kwargs_without_config(
+            synthetic_v2_kwargs_for_market_data, market_df
+        ),
     )
 
     assert out.trend_direction.active_label == "unknown"
@@ -181,7 +196,9 @@ def test_trend_direction_data_quality_stale_data_overrides_insufficient_history(
         market_data=market_df,
         vix_data=_vix_data_from_market_data(market_df),
         config=_reconciliation_fixture_config(),
-        **_synthetic_kwargs_without_config(synthetic_v2_kwargs_for_market_data, market_df),
+        **_synthetic_kwargs_without_config(
+            synthetic_v2_kwargs_for_market_data, market_df
+        ),
     )
 
     assert out.trend_direction.active_label == "unknown"

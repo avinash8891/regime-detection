@@ -36,6 +36,7 @@ Module invariant:
     drawdown window) and the strict-positive slope comparator are module
     constants per v2 §3.5.
 """
+
 from __future__ import annotations
 
 import warnings
@@ -50,7 +51,6 @@ from regime_detection.breadth_state import BreadthLabel
 from regime_detection.config import NetworkFragilityRulesConfig
 from regime_detection.network_fragility import NetworkFragilityFeatures
 from regime_detection.volatility_state import VolatilityLabel
-
 
 # v2 §3.3 labels.
 NetworkFragilityLabel = Literal[
@@ -237,9 +237,7 @@ def build_rule_inputs_for_date(
         dispersion_ratio_percentile_252d=float(
             features.dispersion_ratio_percentile_252d.loc[dt]
         ),
-        absorption_ratio_top3=float(
-            features.absorption_ratio_top3.loc[dt]
-        ),
+        absorption_ratio_top3=float(features.absorption_ratio_top3.loc[dt]),
         avg_pairwise_corr_slope_21d=_trailing_slope(
             features.avg_pairwise_corr_63d, dt, _SPEC_SLOPE_WINDOW_DAYS
         ),
@@ -250,9 +248,11 @@ def build_rule_inputs_for_date(
             features.effective_rank, dt, _SPEC_STABILITY_WINDOW_DAYS
         ),
         realized_vol_percentile_252d=float(realized_vol_percentile_252d.loc[dt]),
-        realized_vol_21d=float(realized_vol_21d.loc[dt])
-        if realized_vol_21d is not None and dt in realized_vol_21d.index
-        else float("nan"),
+        realized_vol_21d=(
+            float(realized_vol_21d.loc[dt])
+            if realized_vol_21d is not None and dt in realized_vol_21d.index
+            else float("nan")
+        ),
         drawdown_21d=_trailing_drawdown(spy_close, dt, _SPEC_DRAWDOWN_WINDOW_DAYS),
         vix_percentile_252d=float(vix_percentile_252d.loc[dt]),
     )
@@ -274,9 +274,7 @@ def _rolling_ols_slope_series(series: pd.Series, window: int) -> pd.Series:
         valid_windows = windows[valid]
         y_sum = valid_windows.sum(axis=1)
         xy_sum = valid_windows @ x
-        out[window - 1 :][valid] = (
-            window * xy_sum - x_sum * y_sum
-        ) / denom
+        out[window - 1 :][valid] = (window * xy_sum - x_sum * y_sum) / denom
     return pd.Series(out, index=series.index)
 
 
@@ -326,7 +324,9 @@ def build_rule_inputs_by_date(
     eff_rank_stability = _rolling_stability_series(
         features.effective_rank, _SPEC_STABILITY_WINDOW_DAYS
     )
-    drawdown = _rolling_drawdown_series(spy_close.reindex(index), _SPEC_DRAWDOWN_WINDOW_DAYS)
+    drawdown = _rolling_drawdown_series(
+        spy_close.reindex(index), _SPEC_DRAWDOWN_WINDOW_DAYS
+    )
     realized_vol = realized_vol_percentile_252d.reindex(index)
     realized_vol_raw = (
         realized_vol_21d.reindex(index)
@@ -352,9 +352,7 @@ def build_rule_inputs_by_date(
             dispersion_ratio_percentile_252d=float(
                 features.dispersion_ratio_percentile_252d.loc[dt]
             ),
-            absorption_ratio_top3=float(
-                features.absorption_ratio_top3.loc[dt]
-            ),
+            absorption_ratio_top3=float(features.absorption_ratio_top3.loc[dt]),
             avg_pairwise_corr_slope_21d=float(avg_corr_slope.loc[dt]),
             largest_eigenvalue_share_slope_21d=float(largest_eig_slope.loc[dt]),
             effective_rank_stability_21d=float(eff_rank_stability.loc[dt]),
@@ -552,8 +550,7 @@ def evaluate_correlation_concentration(
     )
     cond_absorption = (
         not np.isnan(inputs.absorption_ratio_top3)
-        and inputs.absorption_ratio_top3
-        > config.concentration_absorption_ratio_min
+        and inputs.absorption_ratio_top3 > config.concentration_absorption_ratio_min
     )
     return bool(cond_corr or cond_eig or cond_rank or cond_absorption)
 

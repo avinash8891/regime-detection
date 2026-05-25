@@ -10,7 +10,9 @@ from regime_data_fetch.aggregate_eps_models import (
 )
 
 
-def parse_wayback_cdx_json(cdx_json: str, *, target_url: str) -> list[EPSWaybackSnapshot]:
+def parse_wayback_cdx_json(
+    cdx_json: str, *, target_url: str
+) -> list[EPSWaybackSnapshot]:
     try:
         rows = json.loads(cdx_json)
     except json.JSONDecodeError as exc:
@@ -42,7 +44,9 @@ def parse_wayback_cdx_json(cdx_json: str, *, target_url: str) -> list[EPSWayback
         )
 
     if not snapshots:
-        raise AggregateEPSFetchError("Wayback CDX response contained no usable workbook snapshots")
+        raise AggregateEPSFetchError(
+            "Wayback CDX response contained no usable workbook snapshots"
+        )
     return snapshots
 
 

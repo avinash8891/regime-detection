@@ -24,7 +24,9 @@ def _permissive_response() -> StrategyResponse:
     )
 
 
-def test_effective_constraints_block_breakout_when_family_constraint_blocks_it() -> None:
+def test_effective_constraints_block_breakout_when_family_constraint_blocks_it() -> (
+    None
+):
     resolved = resolve_effective_strategy_constraints(
         strategy_response=_permissive_response(),
         agent_routing=AgentRouting(
@@ -54,7 +56,9 @@ def test_effective_constraints_block_breakout_when_family_constraint_blocks_it()
     assert breakout.leverage_allowed is True
 
 
-def test_effective_constraints_block_agent_routed_modes_even_without_family_constraint() -> None:
+def test_effective_constraints_block_agent_routed_modes_even_without_family_constraint() -> (
+    None
+):
     resolved = resolve_effective_strategy_constraints(
         strategy_response=_permissive_response(),
         agent_routing=AgentRouting(

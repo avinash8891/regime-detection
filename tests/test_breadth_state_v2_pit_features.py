@@ -19,6 +19,7 @@ Spec pins exercised:
 Real S&P 500 tickers only (no toy names). Hand-computed expected values on
 every assertion (no ``is not None`` placeholders).
 """
+
 from __future__ import annotations
 
 import numpy as np
@@ -32,7 +33,6 @@ from regime_detection.breadth_state_v2 import (
 )
 from regime_detection.config import BreadthV2Config
 from regime_detection.fragility_universe import SECTOR_ETFS
-
 
 # ---------------------------------------------------------------------------
 # Constants — imported directly from pit_constituents to enforce that the
@@ -138,9 +138,7 @@ def _make_pit_intervals(rows: list[tuple[str, str, str | None]]) -> pd.DataFrame
     )
 
 
-def _make_sector_closes(
-    n: int, start: str = "2023-01-02"
-) -> dict[str, pd.Series]:
+def _make_sector_closes(n: int, start: str = "2023-01-02") -> dict[str, pd.Series]:
     """Build a non-pathological all-11 sector ETF close fixture.
 
     Each sector follows a slightly different monotone-rising path so that
@@ -259,8 +257,8 @@ def test_pct_above_50dma_two_tickers_one_above_one_below(v2_breadth_config):
     """
     n = 60
     closes = _make_sector_closes(n=n)
-    rising = [100.0 + i for i in range(n)]      # 100, 101, ..., 159
-    falling = [200.0 - i for i in range(n)]     # 200, 199, ..., 141
+    rising = [100.0 + i for i in range(n)]  # 100, 101, ..., 159
+    falling = [200.0 - i for i in range(n)]  # 200, 199, ..., 141
     ohlcv = {
         AAPL: _make_ohlcv_frame(rising, [1000] * n),
         MSFT: _make_ohlcv_frame(falling, [1000] * n),
@@ -455,9 +453,9 @@ def test_ad_line_strict_inequality_unchanged_days_count_as_neither(
     """
     n = 30
     closes = _make_sector_closes(n=n)
-    aapl = [100.0] + [101.0] * (n - 1)   # advances once at t=1, then flat
-    msft = [100.0] + [99.0] * (n - 1)    # declines once at t=1, then flat
-    ibm = [100.0] * n                     # always unchanged
+    aapl = [100.0] + [101.0] * (n - 1)  # advances once at t=1, then flat
+    msft = [100.0] + [99.0] * (n - 1)  # declines once at t=1, then flat
+    ibm = [100.0] * n  # always unchanged
     ohlcv = {
         AAPL: _make_ohlcv_frame(aapl, [1000] * n),
         MSFT: _make_ohlcv_frame(msft, [1000] * n),

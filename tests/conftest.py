@@ -41,7 +41,10 @@ sys.path.insert(0, str(_REPO_ROOT))
 sys.path.insert(0, str(_REPO_ROOT / "src"))
 
 from regime_detection.engine import RegimeEngine  # noqa: E402
-from regime_detection.fragility_universe import CROSS_ASSET_SYMBOLS, SECTOR_ETFS  # noqa: E402
+from regime_detection.fragility_universe import (
+    CROSS_ASSET_SYMBOLS,
+    SECTOR_ETFS,
+)  # noqa: E402
 from regime_detection.loaders import load_event_calendar  # noqa: E402
 
 
@@ -197,7 +200,9 @@ def _load_market_data() -> pd.DataFrame:
     if _MARKET_PARQUET_PATH.exists():
         df = pd.read_parquet(_MARKET_PARQUET_PATH)
     else:
-        parts = [pd.read_csv(_RAW_DIR / f"{symbol}.csv") for symbol in ("SPY", "RSP", "VIXY")]
+        parts = [
+            pd.read_csv(_RAW_DIR / f"{symbol}.csv") for symbol in ("SPY", "RSP", "VIXY")
+        ]
         df = pd.concat(parts, ignore_index=True)
     df = df.copy()
     if "VIX" not in set(df["symbol"]) and "VIXY" in set(df["symbol"]):
@@ -281,14 +286,22 @@ def raw_market_data() -> pd.DataFrame:
 def raw_market_frames(raw_market_data: pd.DataFrame) -> dict[str, pd.DataFrame]:
     frames: dict[str, pd.DataFrame] = {}
     for symbol in ("SPY", "RSP", "VIX", "VIXY"):
-        frames[symbol] = raw_market_data[raw_market_data["symbol"] == symbol].copy().reset_index(drop=True)
+        frames[symbol] = (
+            raw_market_data[raw_market_data["symbol"] == symbol]
+            .copy()
+            .reset_index(drop=True)
+        )
     return frames
 
 
 @pytest.fixture(scope="session")
 def market_df_for_asof(raw_market_data: pd.DataFrame):
     def _build(as_of: date) -> pd.DataFrame:
-        return raw_market_data[raw_market_data["date"] <= as_of].copy().reset_index(drop=True)
+        return (
+            raw_market_data[raw_market_data["date"] <= as_of]
+            .copy()
+            .reset_index(drop=True)
+        )
 
     return _build
 
@@ -301,10 +314,14 @@ def v2_daily_ohlcv() -> pd.DataFrame:
 @pytest.fixture(scope="session")
 def v2_market_df_for_asof(v2_daily_ohlcv: pd.DataFrame):
     def _build(as_of: date) -> pd.DataFrame:
-        out = v2_daily_ohlcv[
-            (v2_daily_ohlcv["date"] <= as_of)
-            & (v2_daily_ohlcv["symbol"].isin({"SPY", "RSP", "VIX", "VIXY"}))
-        ].copy().reset_index(drop=True)
+        out = (
+            v2_daily_ohlcv[
+                (v2_daily_ohlcv["date"] <= as_of)
+                & (v2_daily_ohlcv["symbol"].isin({"SPY", "RSP", "VIX", "VIXY"}))
+            ]
+            .copy()
+            .reset_index(drop=True)
+        )
         if "VIX" not in set(out["symbol"]) and "VIXY" in set(out["symbol"]):
             vix = out[out["symbol"] == "VIXY"].copy()
             vix["symbol"] = "VIX"
@@ -343,7 +360,9 @@ def v2_cross_asset_closes(
 ) -> dict[str, pd.Series]:
     missing = sorted(set(CROSS_ASSET_SYMBOLS).difference(v2_close_series_by_symbol))
     if missing:
-        raise RuntimeError(f"V2 daily OHLCV fixture missing cross-asset symbols: {missing}")
+        raise RuntimeError(
+            f"V2 daily OHLCV fixture missing cross-asset symbols: {missing}"
+        )
     return {symbol: v2_close_series_by_symbol[symbol] for symbol in CROSS_ASSET_SYMBOLS}
 
 
@@ -382,7 +401,9 @@ def v2_macro_series_by_key() -> dict[str, pd.Series]:
             name=logical_name,
         )
     broad_usd = series_by_key["broad_usd_index"]
-    trend = pd.Series(range(len(broad_usd.index)), index=broad_usd.index, dtype="float64")
+    trend = pd.Series(
+        range(len(broad_usd.index)), index=broad_usd.index, dtype="float64"
+    )
     series_by_key["2y_yield"] = (4.00 + trend * 0.0002).rename("2y_yield")
     series_by_key["10y_yield"] = (4.25 + trend * 0.0001).rename("10y_yield")
     return series_by_key

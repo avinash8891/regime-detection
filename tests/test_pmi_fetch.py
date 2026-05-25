@@ -23,7 +23,6 @@ from regime_data_fetch.pmi import (
     run_pmi_fetch,
 )
 
-
 FIXTURES = Path("tests/fixtures/raw/pmi")
 
 

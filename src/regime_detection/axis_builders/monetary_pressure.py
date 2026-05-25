@@ -79,9 +79,7 @@ def build_monetary_pressure_axis_series(
         features.yield_change_zscore_21d_2y,
         features.yield_change_zscore_21d_10y,
     ]
-    required_trading_days = _monetary_pressure_required_trading_days(
-        v2_features_config
-    )
+    required_trading_days = _monetary_pressure_required_trading_days(v2_features_config)
     max_freshness_days = context.config.data_quality.max_freshness_days
     min_completeness = context.config.data_quality.min_completeness
 

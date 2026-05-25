@@ -14,6 +14,7 @@ Spec references (docs/regime_engine_v2_spec.md §1A lines 159–172):
 Per AGENTS.md rules G/L: realistic SPY-like inputs, no toy names, use
 production Pydantic config.
 """
+
 from __future__ import annotations
 
 
@@ -38,7 +39,6 @@ from regime_detection.trend_direction_v2 import (
     evaluate_v2_trend_label,
 )
 from regime_detection.volatility_state import realized_vol
-
 
 # v2 §1A line 162 — exact spec thresholds.
 _SPEC_RETURN_126D_THRESHOLD = 0.20
@@ -124,12 +124,12 @@ def test_evaluate_euphoria_fires_when_all_four_conjuncts_satisfied(
     dt = pd.Timestamp("2024-03-15")
     features, close = _euphoria_inputs_at(
         dt=dt,
-        close_t=520.0,            # close > SMA_200 (520 > 450) ✓
+        close_t=520.0,  # close > SMA_200 (520 > 450) ✓
         sma_200=450.0,
-        return_126d=0.30,         # return_126d > 0.20 ✓
-        realized_vol_21d_now=0.18,    # rising: 0.18 > 0.15 ✓
+        return_126d=0.30,  # return_126d > 0.20 ✓
+        realized_vol_21d_now=0.18,  # rising: 0.18 > 0.15 ✓
         realized_vol_21d_5d_ago=0.15,
-        sentiment_score=25.0,     # sentiment >= +20 ✓
+        sentiment_score=25.0,  # sentiment >= +20 ✓
     )
     assert (
         evaluate_euphoria(features, close, dt=dt, rules_config=euphoria_rules) is True
@@ -143,7 +143,7 @@ def test_evaluate_euphoria_fails_when_close_at_or_below_sma_200(
     dt = pd.Timestamp("2024-03-15")
     features, close = _euphoria_inputs_at(
         dt=dt,
-        close_t=450.0,            # close == SMA_200 → strict `>` falsifies
+        close_t=450.0,  # close == SMA_200 → strict `>` falsifies
         sma_200=450.0,
         return_126d=0.30,
         realized_vol_21d_now=0.18,
@@ -164,7 +164,7 @@ def test_evaluate_euphoria_fails_when_return_126d_at_or_below_threshold(
         dt=dt,
         close_t=520.0,
         sma_200=450.0,
-        return_126d=0.20,         # exactly at threshold → strict `>` falsifies
+        return_126d=0.20,  # exactly at threshold → strict `>` falsifies
         realized_vol_21d_now=0.18,
         realized_vol_21d_5d_ago=0.15,
         sentiment_score=25.0,
@@ -184,7 +184,7 @@ def test_evaluate_euphoria_fails_when_vol_not_rising_over_5_sessions(
         close_t=520.0,
         sma_200=450.0,
         return_126d=0.30,
-        realized_vol_21d_now=0.15,    # not rising: 0.15 == 0.15
+        realized_vol_21d_now=0.15,  # not rising: 0.15 == 0.15
         realized_vol_21d_5d_ago=0.15,
         sentiment_score=25.0,
     )
@@ -205,7 +205,7 @@ def test_evaluate_euphoria_fails_when_sentiment_below_threshold(
         return_126d=0.30,
         realized_vol_21d_now=0.18,
         realized_vol_21d_5d_ago=0.15,
-        sentiment_score=19.99,        # below +20 → falsifies
+        sentiment_score=19.99,  # below +20 → falsifies
     )
     assert (
         evaluate_euphoria(features, close, dt=dt, rules_config=euphoria_rules) is False
@@ -309,7 +309,7 @@ def test_evaluate_v2_trend_label_returns_euphoria_when_predicate_fires(
         sentiment_score=25.0,
     )
     result = evaluate_v2_trend_label(
-        v1_label="bull",      # bull would normally win; euphoria outranks
+        v1_label="bull",  # bull would normally win; euphoria outranks
         features=features,
         close=close,
         dt=dt,
@@ -338,12 +338,12 @@ def test_evaluate_v2_trend_label_euphoria_outranks_recovery_when_both_fire(
         sentiment_score=25.0,
     )
     # Patch features to also satisfy recovery.
-    features.sma_50.loc[dt] = 400.0     # close > sma_50 (520 > 400) ✓
+    features.sma_50.loc[dt] = 400.0  # close > sma_50 (520 > 400) ✓
     features.return_63d.loc[dt] = 0.15  # return_63d > 0.10 ✓
     features.drawdown_252d.loc[dt] = -0.20  # drawdown <= -0.15 ✓
 
     result = evaluate_v2_trend_label(
-        v1_label="bear",       # bear would normally hold without recovery override
+        v1_label="bear",  # bear would normally hold without recovery override
         features=features,
         close=close,
         dt=dt,
@@ -461,9 +461,7 @@ def test_build_sentiment_score_series_forward_fills_from_publication_date() -> N
     )
     sessions = pd.bdate_range(start="2024-03-08", end="2024-03-15", freq="B")
 
-    score = _build_sentiment_score_series(
-        aaii_sentiment=aaii, session_index=sessions
-    )
+    score = _build_sentiment_score_series(aaii_sentiment=aaii, session_index=sessions)
 
     assert score is not None
     # Sessions 03-08, 03-11, 03-12, 03-13: pre-03-14 publication →
@@ -492,9 +490,7 @@ def test_build_sentiment_score_series_cold_start_returns_nan_before_first_row() 
     )
     sessions = pd.bdate_range(start="2024-03-01", end="2024-03-15", freq="B")
 
-    score = _build_sentiment_score_series(
-        aaii_sentiment=aaii, session_index=sessions
-    )
+    score = _build_sentiment_score_series(aaii_sentiment=aaii, session_index=sessions)
 
     assert score is not None
     # Sessions before 03-14 have no preceding AAII row → NaN.

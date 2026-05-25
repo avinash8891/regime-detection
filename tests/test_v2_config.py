@@ -23,7 +23,6 @@ from regime_detection.config import (
     load_regime_config,
 )
 
-
 # V2 spec §3.1 — canonical 24-asset network fragility universe (11 sector
 # ETFs + SPY broad-market index + 12 cross-asset proxies). KRE belongs to
 # v2 §2C credit/funding, not §3.1.
@@ -202,9 +201,13 @@ def test_v2_default_config_has_v2_section_3_2_lookback_windows() -> None:
     cfg = load_default_regime_config()
     assert cfg.network_fragility is not None
     nf = cfg.network_fragility
-    assert nf.correlation_lookback_days == V2_NETWORK_FRAGILITY_CORRELATION_LOOKBACK_DAYS
+    assert (
+        nf.correlation_lookback_days == V2_NETWORK_FRAGILITY_CORRELATION_LOOKBACK_DAYS
+    )
     assert nf.percentile_lookback_days == V2_NETWORK_FRAGILITY_PERCENTILE_LOOKBACK_DAYS
-    assert nf.realized_vol_lookback_days == V2_NETWORK_FRAGILITY_REALIZED_VOL_LOOKBACK_DAYS
+    assert (
+        nf.realized_vol_lookback_days == V2_NETWORK_FRAGILITY_REALIZED_VOL_LOOKBACK_DAYS
+    )
     assert (
         nf.dispersion_percentile_lookback_days
         == V2_NETWORK_FRAGILITY_DISPERSION_PERCENTILE_LOOKBACK_DAYS
@@ -456,8 +459,14 @@ def test_load_default_regime_config_dispatches_on_package_version() -> None:
 
 
 def test_default_config_resource_dispatch_parses_version_major() -> None:
-    assert _default_config_resource_name_for_version("1.9.9") == "configs/core3-v1.0.0.yaml"
-    assert _default_config_resource_name_for_version("2.0.0rc1") == "configs/core3-v2.0.0.yaml"
+    assert (
+        _default_config_resource_name_for_version("1.9.9")
+        == "configs/core3-v1.0.0.yaml"
+    )
+    assert (
+        _default_config_resource_name_for_version("2.0.0rc1")
+        == "configs/core3-v2.0.0.yaml"
+    )
 
 
 def test_default_config_resource_dispatch_rejects_unsupported_major() -> None:

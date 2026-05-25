@@ -35,15 +35,17 @@ MONTHS = {
     "november": 11,
     "december": 12,
 }
-ANCHOR_RE = re.compile(r"<a\s+[^>]*href=[\"']([^\"']+)[\"'][^>]*>(.*?)</a>", re.IGNORECASE | re.DOTALL)
+ANCHOR_RE = re.compile(
+    r"<a\s+[^>]*href=[\"']([^\"']+)[\"'][^>]*>(.*?)</a>", re.IGNORECASE | re.DOTALL
+)
 DATE_PARENS_RE = re.compile(r"\((\d{1,2})/(\d{1,2})/(\d{2,4})\)")
 MONTH_DATE_RE = re.compile(
-    r"\b("
-    + "|".join(MONTHS)
-    + r")\s+(\d{1,2}),\s+(\d{4})\b",
+    r"\b(" + "|".join(MONTHS) + r")\s+(\d{1,2}),\s+(\d{4})\b",
     re.IGNORECASE,
 )
-CR_TITLE_RE = re.compile(r"\b(CONTINUING APPROPRIATIONS[A-Z\s,-]*\d{4})\b", re.IGNORECASE)
+CR_TITLE_RE = re.compile(
+    r"\b(CONTINUING APPROPRIATIONS[A-Z\s,-]*\d{4})\b", re.IGNORECASE
+)
 
 
 class BudgetOfficialDiscoveryGenerator:
@@ -82,7 +84,10 @@ class BudgetOfficialDiscoveryGenerator:
                 )
             )
         except Exception as exc:  # pragma: no cover - external degradation path
-            LOGGER.error("official budget discovery failed; non-deterministic budget candidates skipped: %s", exc)
+            LOGGER.error(
+                "official budget discovery failed; non-deterministic budget candidates skipped: %s",
+                exc,
+            )
             return []
         _record_payload(store, run_id, payload)
         candidates = [
@@ -93,20 +98,28 @@ class BudgetOfficialDiscoveryGenerator:
         return candidates
 
 
-def parse_budget_official_records(payload: str | list[dict[str, Any]]) -> list[dict[str, Any]]:
+def parse_budget_official_records(
+    payload: str | list[dict[str, Any]],
+) -> list[dict[str, Any]]:
     raw_records = json.loads(payload) if isinstance(payload, str) else payload
     if not isinstance(raw_records, list):
         raise ValueError("budget official discovery payload must be a list")
     records: list[dict[str, Any]] = []
     for idx, raw in enumerate(raw_records, start=1):
         if not isinstance(raw, dict):
-            raise ValueError(f"budget official discovery record {idx} must be a mapping")
+            raise ValueError(
+                f"budget official discovery record {idx} must be a mapping"
+            )
         event_subtype = str(raw.get("event_subtype", ""))
         if event_subtype not in VALID_SUBTYPES:
-            raise ValueError(f"budget official discovery record {idx} has invalid event_subtype: {event_subtype}")
+            raise ValueError(
+                f"budget official discovery record {idx} has invalid event_subtype: {event_subtype}"
+            )
         source_id = str(raw.get("source_id", ""))
         if not source_id:
-            raise ValueError(f"budget official discovery record {idx} missing source_id")
+            raise ValueError(
+                f"budget official discovery record {idx} missing source_id"
+            )
         records.append(
             {
                 "date": dt.date.fromisoformat(str(raw["date"])),
@@ -137,10 +150,14 @@ def _candidate(record: dict[str, Any], as_of_date: dt.date) -> EventCandidate:
     )
 
 
-def _record_payload(store: AcquisitionStore | None, run_id: int | None, payload: object) -> None:
+def _record_payload(
+    store: AcquisitionStore | None, run_id: int | None, payload: object
+) -> None:
     if store is None or run_id is None:
         return
-    content = payload if isinstance(payload, str) else json.dumps(payload, sort_keys=True)
+    content = (
+        payload if isinstance(payload, str) else json.dumps(payload, sort_keys=True)
+    )
     store.record_text_artifact(
         run_id=run_id,
         source_name=SOURCE_ID,
@@ -169,18 +186,31 @@ def fetch_official_budget_records(
 
     try:
         treasury_html = fetcher(TREASURY_DEBT_LIMIT_URL)
-        records.extend(extract_treasury_debt_limit_records(treasury_html, source_url=TREASURY_DEBT_LIMIT_URL))
+        records.extend(
+            extract_treasury_debt_limit_records(
+                treasury_html, source_url=TREASURY_DEBT_LIMIT_URL
+            )
+        )
     except Exception as exc:  # pragma: no cover - external degradation path
-        LOGGER.error("Treasury debt-limit discovery failed; debt-ceiling candidates skipped: %s", exc)
+        LOGGER.error(
+            "Treasury debt-limit discovery failed; debt-ceiling candidates skipped: %s",
+            exc,
+        )
 
-    urls = list(govinfo_public_law_urls) if govinfo_public_law_urls is not None else list(
-        iter_govinfo_public_law_urls(
-            start_year=start_year,
-            end_year=effective_end_year,
-            max_public_law_number=max_govinfo_public_law_number,
+    urls = (
+        list(govinfo_public_law_urls)
+        if govinfo_public_law_urls is not None
+        else list(
+            iter_govinfo_public_law_urls(
+                start_year=start_year,
+                end_year=effective_end_year,
+                max_public_law_number=max_govinfo_public_law_number,
+            )
         )
     )
-    records.extend(_fetch_govinfo_cr_records(urls, fetcher=fetcher, max_workers=max_workers))
+    records.extend(
+        _fetch_govinfo_cr_records(urls, fetcher=fetcher, max_workers=max_workers)
+    )
 
     return _dedupe_records(records)
 
@@ -196,10 +226,14 @@ def iter_govinfo_public_law_urls(
     if max_public_law_number < 1:
         raise ValueError("max_public_law_number must be >= 1")
     urls: list[str] = []
-    for congress in range(_congress_for_year(start_year), _congress_for_year(end_year) + 1):
+    for congress in range(
+        _congress_for_year(start_year), _congress_for_year(end_year) + 1
+    ):
         for public_law_number in range(1, max_public_law_number + 1):
             package_id = f"PLAW-{congress}publ{public_law_number}"
-            urls.append(f"https://www.govinfo.gov/content/pkg/{package_id}/html/{package_id}.htm")
+            urls.append(
+                f"https://www.govinfo.gov/content/pkg/{package_id}/html/{package_id}.htm"
+            )
     return urls
 
 
@@ -233,13 +267,18 @@ def _fetch_govinfo_cr_records(
     return records
 
 
-def extract_treasury_debt_limit_records(index_html: str, *, source_url: str) -> list[dict[str, Any]]:
+def extract_treasury_debt_limit_records(
+    index_html: str, *, source_url: str
+) -> list[dict[str, Any]]:
     records: list[dict[str, Any]] = []
     for match in ANCHOR_RE.finditer(index_html):
         href = html.unescape(match.group(1))
         title = _plain_text(match.group(2))
         normalized_title = title.lower()
-        if "debt limit" not in normalized_title and "disp ending" not in normalized_title:
+        if (
+            "debt limit" not in normalized_title
+            and "disp ending" not in normalized_title
+        ):
             continue
 
         event_date = _parse_disp_ending_date(title) or _parse_parenthesized_date(title)
@@ -247,7 +286,9 @@ def extract_treasury_debt_limit_records(index_html: str, *, source_url: str) -> 
             continue
 
         if "disp ending" in normalized_title:
-            snippet = f"Treasury debt-limit DISP period ending {event_date.isoformat()}."
+            snippet = (
+                f"Treasury debt-limit DISP period ending {event_date.isoformat()}."
+            )
         else:
             snippet = f"Treasury debt-limit notice dated {event_date.isoformat()}."
         records.append(
@@ -263,7 +304,9 @@ def extract_treasury_debt_limit_records(index_html: str, *, source_url: str) -> 
     return _dedupe_records(records)
 
 
-def extract_govinfo_cr_records(public_law_text: str, *, source_url: str) -> list[dict[str, Any]]:
+def extract_govinfo_cr_records(
+    public_law_text: str, *, source_url: str
+) -> list[dict[str, Any]]:
     plain = _plain_text(public_law_text)
     if "CONTINUING APPROPRIATIONS" not in plain.upper():
         return []
@@ -283,7 +326,9 @@ def extract_govinfo_cr_records(public_law_text: str, *, source_url: str) -> list
 
 
 def _fetch_text(url: str) -> str:
-    request = urllib.request.Request(url, headers={"User-Agent": "regime-detection-event-calendar/1.0"})
+    request = urllib.request.Request(
+        url, headers={"User-Agent": "regime-detection-event-calendar/1.0"}
+    )
     with urllib.request.urlopen(request, timeout=30) as response:
         return response.read().decode("utf-8", "replace")
 
@@ -312,7 +357,9 @@ def _parse_disp_ending_date(value: str) -> dt.date | None:
 
 
 def _parse_cr_expiration_date(value: str) -> dt.date | None:
-    explicit_note = re.search(r"Expiration date[^A-Za-z]+([A-Za-z]+\s+\d{1,2},\s+\d{4})", value, re.IGNORECASE)
+    explicit_note = re.search(
+        r"Expiration date[^A-Za-z]+([A-Za-z]+\s+\d{1,2},\s+\d{4})", value, re.IGNORECASE
+    )
     if explicit_note:
         return _parse_month_date(explicit_note.group(1))
     section_106_amendment = re.search(
@@ -344,7 +391,12 @@ def _dedupe_records(records: list[dict[str, Any]]) -> list[dict[str, Any]]:
     seen: set[tuple[str, str, str, str | None]] = set()
     deduped: list[dict[str, Any]] = []
     for record in records:
-        key = (str(record["date"]), str(record["event_subtype"]), str(record["source_id"]), record.get("source_url"))
+        key = (
+            str(record["date"]),
+            str(record["event_subtype"]),
+            str(record["source_id"]),
+            record.get("source_url"),
+        )
         if key in seen:
             continue
         seen.add(key)

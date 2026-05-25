@@ -77,7 +77,11 @@ def fetch_text_result(url: str, *, timeout: int = 30) -> FetchTextResult:
             return FetchTextResult(text=response.read().decode("utf-8"))
     except URLError as exc:
         reason = getattr(exc, "reason", exc)
-        LOGGER.error("event source fetch failed for %s; skipping source for this run: %s", url, exc)
+        LOGGER.error(
+            "event source fetch failed for %s; skipping source for this run: %s",
+            url,
+            exc,
+        )
         return FetchTextResult(text=None, error=str(reason))
 
 

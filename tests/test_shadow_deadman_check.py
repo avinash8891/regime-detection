@@ -39,7 +39,9 @@ def _run_shadow(out_root: Path, as_of_date: date) -> None:
 
 
 def test_deadman_check_passes_when_previous_session_has_run(tmp_path: Path) -> None:
-    monitor = _load_module("run_shadow_deadman_check", "scripts/run_shadow_deadman_check.py")
+    monitor = _load_module(
+        "run_shadow_deadman_check", "scripts/run_shadow_deadman_check.py"
+    )
     out_root = tmp_path / "shadow_run"
     _run_shadow(out_root, date(2023, 12, 14))
 
@@ -53,12 +55,18 @@ def test_deadman_check_passes_when_previous_session_has_run(tmp_path: Path) -> N
     assert result["alert"] is None
 
     with sqlite3.connect(out_root / "regime_shadow.db") as conn:
-        incidents = conn.execute("SELECT incident_date, description FROM incidents").fetchall()
+        incidents = conn.execute(
+            "SELECT incident_date, description FROM incidents"
+        ).fetchall()
     assert incidents == []
 
 
-def test_deadman_check_alerts_and_records_incident_when_previous_session_missing(tmp_path: Path) -> None:
-    monitor = _load_module("run_shadow_deadman_check", "scripts/run_shadow_deadman_check.py")
+def test_deadman_check_alerts_and_records_incident_when_previous_session_missing(
+    tmp_path: Path,
+) -> None:
+    monitor = _load_module(
+        "run_shadow_deadman_check", "scripts/run_shadow_deadman_check.py"
+    )
     out_root = tmp_path / "shadow_run"
 
     result = monitor.run_deadman_check(
@@ -84,7 +92,9 @@ def test_deadman_check_alerts_and_records_incident_when_previous_session_missing
 
 
 def test_deadman_check_uses_previous_friday_for_weekend_check(tmp_path: Path) -> None:
-    monitor = _load_module("run_shadow_deadman_check", "scripts/run_shadow_deadman_check.py")
+    monitor = _load_module(
+        "run_shadow_deadman_check", "scripts/run_shadow_deadman_check.py"
+    )
     out_root = tmp_path / "shadow_run"
     _run_shadow(out_root, date(2023, 12, 15))
 

@@ -106,7 +106,10 @@ class NetworkFragilityRulesConfig(StrictBaseModel):
     def _validate_cold_start_fallbacks(self) -> "NetworkFragilityRulesConfig":
         if not self.cold_start_corr_to_one_enabled:
             return self
-        if self.cold_start_corr_to_one_avg_corr_min < self.corr_to_one_corr_percentile_min:
+        if (
+            self.cold_start_corr_to_one_avg_corr_min
+            < self.corr_to_one_corr_percentile_min
+        ):
             raise ValueError(
                 "cold_start_corr_to_one_avg_corr_min cannot be below "
                 "corr_to_one_corr_percentile_min"

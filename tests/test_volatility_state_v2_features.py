@@ -9,6 +9,7 @@ Spec references:
     Slice scope: features only (no rising_vol/vol_crush labels yet); IV/RV
     and vol_crush features deferred (require options data). See §8 line 1181.
 """
+
 from __future__ import annotations
 
 import math
@@ -31,7 +32,6 @@ from regime_detection.volatility_state_v2 import (
     VolatilityV2Features,
     compute_volatility_v2_features,
 )
-
 
 # ---------- Shared fixtures ---------------------------------------------------
 
@@ -124,9 +124,7 @@ def test_wilders_atr_rejects_bad_period():
 # =============================================================================
 
 
-def test_atr_ratio_nan_before_long_lookback(
-    spy_like_ohlc_1000, v2_volatility_config
-):
+def test_atr_ratio_nan_before_long_lookback(spy_like_ohlc_1000, v2_volatility_config):
     out = compute_volatility_v2_features(
         open_=spy_like_ohlc_1000["open"],
         high=spy_like_ohlc_1000["high"],
@@ -302,9 +300,7 @@ def test_gap_frequency_boundary_exactly_at_threshold_not_counted(
     np.testing.assert_allclose(valid.to_numpy(), 0.0, atol=1e-12)
 
 
-def test_gap_frequency_nan_before_lookback(
-    spy_like_ohlc_1000, v2_volatility_config
-):
+def test_gap_frequency_nan_before_lookback(spy_like_ohlc_1000, v2_volatility_config):
     out = compute_volatility_v2_features(
         open_=spy_like_ohlc_1000["open"],
         high=spy_like_ohlc_1000["high"],
@@ -358,9 +354,7 @@ def test_intraday_range_percentile_rises_with_range(v2_volatility_config):
         open_=open_, high=high, low=low, close=close, config=v2_volatility_config
     )
     # Last value is the max within its 252d window → percentile == 1.0.
-    assert out.intraday_range_percentile_252d.iloc[-1] == pytest.approx(
-        1.0, abs=1e-12
-    )
+    assert out.intraday_range_percentile_252d.iloc[-1] == pytest.approx(1.0, abs=1e-12)
 
 
 def test_intraday_range_percentile_nan_before_lookback(
@@ -482,9 +476,7 @@ def test_timeline_threads_volatility_state_v2_config(
     # build_regime_timeline must propagate the v2 config without raising
     # (no v1 contract drift — RegimeTimeline doesn't expose the v2 features
     # yet; slice 2.2 only ships compute + seam).
-    timeline = build_regime_timeline(
-        context=context, lookback_days=5, config=cfg
-    )
+    timeline = build_regime_timeline(context=context, lookback_days=5, config=cfg)
     assert len(timeline.outputs) == 5
 
 

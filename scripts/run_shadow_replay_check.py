@@ -10,7 +10,6 @@ from typing import Any
 
 import pandas as pd
 
-
 REPO_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO_ROOT / "src"))
 sys.path.insert(0, str(REPO_ROOT / "scripts"))
@@ -39,8 +38,13 @@ def _close_series_by_symbol(
         return {}
     return {
         symbol: pd.Series(
-            frame[frame["symbol"] == symbol].sort_values("date")["close"].astype(float).to_numpy(),
-            index=pd.to_datetime(frame[frame["symbol"] == symbol].sort_values("date")["date"]),
+            frame[frame["symbol"] == symbol]
+            .sort_values("date")["close"]
+            .astype(float)
+            .to_numpy(),
+            index=pd.to_datetime(
+                frame[frame["symbol"] == symbol].sort_values("date")["date"]
+            ),
             name=symbol,
         )
         for symbol in symbols
@@ -84,11 +88,17 @@ def run_replay_check(
     try:
         run_row = fetch_run_row(conn=conn, as_of_date=as_of_date)
         if run_row is None:
-            raise ValueError(f"No shadow run found for as_of_date={as_of_date.isoformat()}")
+            raise ValueError(
+                f"No shadow run found for as_of_date={as_of_date.isoformat()}"
+            )
         if run_row["status"] != "success":
-            raise ValueError(f"Shadow run for {as_of_date.isoformat()} is not successful: {run_row['status']}")
+            raise ValueError(
+                f"Shadow run for {as_of_date.isoformat()} is not successful: {run_row['status']}"
+            )
         if run_row["output_path"] is None:
-            raise ValueError(f"Shadow run for {as_of_date.isoformat()} has no output_path")
+            raise ValueError(
+                f"Shadow run for {as_of_date.isoformat()} has no output_path"
+            )
 
         archive_dir = Path(run_row["input_archive_path"])
         market_path = archive_dir / "market_data.parquet"
@@ -121,7 +131,9 @@ def run_replay_check(
         )
 
         replayed_payload = json.loads(replayed_output.model_dump_json(indent=2))
-        stored_payload = json.loads(Path(run_row["output_path"]).read_text(encoding="utf-8"))
+        stored_payload = json.loads(
+            Path(run_row["output_path"]).read_text(encoding="utf-8")
+        )
         diff = _diff_values(replayed_payload, stored_payload)
         matches = diff is None
 
@@ -143,7 +155,9 @@ def run_replay_check(
 
 
 def _parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Replay a stored shadow run from archived inputs and record the result.")
+    parser = argparse.ArgumentParser(
+        description="Replay a stored shadow run from archived inputs and record the result."
+    )
     parser.add_argument("--output-root", required=True, type=Path)
     parser.add_argument("--as-of-date", required=True, type=date.fromisoformat)
     parser.add_argument("--config-path", type=Path, default=None)

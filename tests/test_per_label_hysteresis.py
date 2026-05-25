@@ -9,7 +9,6 @@ from regime_detection.hysteresis import apply_per_label_asymmetric_hysteresis
 from regime_detection.models import AxisOutput, DataQuality
 from regime_detection.network_fragility_rules import NETWORK_FRAGILITY_RISK_RANK
 
-
 # Use the canonical risk-rank constant (v2 §3.6) — never re-state it locally.
 # A prior local fixture used `systemic_stress: 4` which silently diverged from
 # the spec (systemic_stress: 3, tied with correlation_to_one); see

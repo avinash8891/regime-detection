@@ -51,7 +51,6 @@ from regime_detection.network_fragility_rules import (
     NetworkFragilityLabel,
 )
 
-
 # ---------- Synthetic full-universe fixtures ---------------------------------
 
 # v2 §3.2 requires 504d percentile history; +21d for trailing windows.
@@ -507,9 +506,9 @@ def test_engine_classify_window_emits_network_fragility_labels_on_full_universe(
     )
 
     labels = {out.network_fragility.active_label for out in timeline.outputs}
-    assert labels - {"unknown"}, (
-        f"engine emitted only unknown network_fragility labels: {labels}"
-    )
+    assert labels - {
+        "unknown"
+    }, f"engine emitted only unknown network_fragility labels: {labels}"
     for out in timeline.outputs:
         assert isinstance(out.network_fragility, NetworkFragilityOutput)
         # mode must remain pinned to the v2 §3.1 closed-universe identifier.
@@ -549,7 +548,9 @@ def test_engine_classify_window_forces_unknown_when_universe_data_missing():
             lookback_days=20,
             config=_network_fixture_config(),
             macro_series=_macro_series_for_index(_bdate_index()),
-            event_calendar=pd.DataFrame(columns=["date", "market", "type", "importance"]),
+            event_calendar=pd.DataFrame(
+                columns=["date", "market", "type", "importance"]
+            ),
         )
 
 
@@ -730,7 +731,9 @@ def test_classifier_emits_unconfirmed_systemic_stress_when_credit_funding_unavai
     final = out[context.sessions[-1]]
     assert final.raw_label == "systemic_stress"
     assert final.active_label == "systemic_stress"
-    assert final.evidence["rule_evidence"]["rule_reason"] == "credit_funding_unavailable"
+    assert (
+        final.evidence["rule_evidence"]["rule_reason"] == "credit_funding_unavailable"
+    )
 
 
 def test_axis_bundle_threads_credit_funding_into_network_fragility_systemic_stress():

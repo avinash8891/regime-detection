@@ -73,8 +73,7 @@ class PrimaryAdapter(Protocol):
         end_year: int,
         store: AcquisitionStore | None,
         run_id: int | None,
-    ) -> list[EventCandidate]:
-        ...
+    ) -> list[EventCandidate]: ...
 
 
 class CandidateGenerator(Protocol):
@@ -87,8 +86,7 @@ class CandidateGenerator(Protocol):
         end_year: int,
         store: AcquisitionStore | None,
         run_id: int | None,
-    ) -> list[EventCandidate]:
-        ...
+    ) -> list[EventCandidate]: ...
 
 
 class SecondaryValidator(Protocol):
@@ -100,8 +98,7 @@ class SecondaryValidator(Protocol):
         *,
         store: AcquisitionStore | None,
         run_id: int | None,
-    ) -> list[ValidationResult]:
-        ...
+    ) -> list[ValidationResult]: ...
 
 
 class AmbiguityResolver(Protocol):
@@ -109,5 +106,4 @@ class AmbiguityResolver(Protocol):
         self,
         candidate_key: tuple[str, dt.date],
         conflicting: list[EventCandidate],
-    ) -> EventCandidate | None:
-        ...
+    ) -> EventCandidate | None: ...

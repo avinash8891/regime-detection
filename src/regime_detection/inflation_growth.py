@@ -37,6 +37,7 @@ Inputs:
   - ``tlt_close`` via ``MarketContext.cross_asset_closes["TLT"]``.
   - Sector ETF closes (XLY/XLI/XLP/XLU) via ``MarketContext.cross_asset_closes``.
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -48,7 +49,6 @@ import pandas as pd
 from regime_detection.breadth_state_v2 import make_bias_warnings_frame
 from regime_detection.config import InflationGrowthRulesConfig
 from regime_detection.credit_funding import _rolling_ols_slope
-
 
 # ---------------------------------------------------------------------------
 # Spec labels (V2 §2B spec lines 2965-2975) + risk rank (V2 §2B spec lines 3109-3124).
@@ -82,7 +82,6 @@ INFLATION_GROWTH_RISK_RANK: dict[InflationGrowthLabel, int] = {
     "recession_scare": 3,
     "inflation_shock": 3,
 }
-
 
 
 # ---------------------------------------------------------------------------
@@ -128,7 +127,9 @@ _BIAS_FEATURE_NAMES: tuple[str, ...] = ("commodity_return_63d",)
 # inflation nowcast (a free, model-derived current-period CPI rate estimate).
 # The bias-warning row flags the surprise as MODEL-relative, not
 # survey-relative — emitted only when `cpi_nowcast` is actually wired.
-INFLATION_SURPRISE_NOWCAST_BIAS_WARNING_CODE = "inflation_surprise_cleveland_fed_nowcast"
+INFLATION_SURPRISE_NOWCAST_BIAS_WARNING_CODE = (
+    "inflation_surprise_cleveland_fed_nowcast"
+)
 INFLATION_SURPRISE_NOWCAST_BIAS_SOURCE = "cleveland_fed_inflation_nowcast"
 INFLATION_SURPRISE_NOWCAST_BIAS_SOURCE_URL = (
     "https://www.clevelandfed.org/indicators-and-data/inflation-nowcasting"
@@ -139,9 +140,7 @@ INFLATION_SURPRISE_NOWCAST_BIAS_SOURCE_URL = (
 # effect.
 FIRST_RELEASE_CPI_PROVENANCE_CODE = "cpi_first_release_vintage_replay"
 FIRST_RELEASE_CPI_PROVENANCE_SOURCE = "fred_cpiaucsl_realtime_vintages"
-FIRST_RELEASE_CPI_PROVENANCE_SOURCE_URL = (
-    "https://fred.stlouisfed.org/series/CPIAUCSL"
-)
+FIRST_RELEASE_CPI_PROVENANCE_SOURCE_URL = "https://fred.stlouisfed.org/series/CPIAUCSL"
 
 
 # ---------------------------------------------------------------------------
@@ -194,9 +193,7 @@ class InflationGrowthFeatures:
         )
 
     def to_frame(self) -> pd.DataFrame:
-        return pd.DataFrame(
-            {name: getattr(self, name) for name in self.feature_names}
-        )
+        return pd.DataFrame({name: getattr(self, name) for name in self.feature_names})
 
 
 # ---------------------------------------------------------------------------
@@ -386,11 +383,9 @@ def compute_inflation_growth_features(
             pd.to_datetime(eps_revision_sorted.index)
         )
         eps_revision_sorted = eps_revision_sorted.dropna().sort_index()
-        aggregate_forward_eps_revision_direction_4w = (
-            eps_revision_sorted.reindex(spy_index, method="ffill").rename(
-                "aggregate_forward_eps_revision_direction_4w"
-            )
-        )
+        aggregate_forward_eps_revision_direction_4w = eps_revision_sorted.reindex(
+            spy_index, method="ffill"
+        ).rename("aggregate_forward_eps_revision_direction_4w")
     else:
         aggregate_forward_eps_revision_direction_4w = pd.Series(
             np.nan,
@@ -452,7 +447,11 @@ def compute_inflation_growth_features(
     # Surfaces in the feature store output so replay consumers can audit
     # which CPI vintage powered each `as_of_date`.
     if cpi_first_release is not None and use_first_release_cpi_when_available:
-        for feat in ("cpi_3m_change_pct", "cpi_6m_change_pct", "inflation_surprise_zscore"):
+        for feat in (
+            "cpi_3m_change_pct",
+            "cpi_6m_change_pct",
+            "inflation_surprise_zscore",
+        ):
             bias_rows.append(
                 {
                     "warning_code": FIRST_RELEASE_CPI_PROVENANCE_CODE,

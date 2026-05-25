@@ -41,7 +41,6 @@ from regime_detection.credit_funding import (
     evaluate_spread_widening,
 )
 
-
 # --- Synthetic fixtures ------------------------------------------------------
 
 _TRAINING_SESSIONS = 650  # > 504 + 63 cold-start
@@ -727,7 +726,9 @@ def _pre_sofr_index() -> pd.DatetimeIndex:
     return pd.bdate_range(end="2017-12-29", periods=650)
 
 
-def _make_pre_sofr_features(*, fedfunds: pd.Series | None, ioer_legacy: pd.Series | None):
+def _make_pre_sofr_features(
+    *, fedfunds: pd.Series | None, ioer_legacy: pd.Series | None
+):
     """Build CreditFundingFeatures over a pre-SOFR index with the splice inputs."""
     idx = _pre_sofr_index()
     rng = np.random.default_rng(_SEED)
@@ -765,7 +766,9 @@ def test_sofr_iorb_splice_fills_pre_sofr_era_when_fedfunds_ioer_supplied() -> No
     Without this, the axis builder emits stale_data for 67% of full history.
     """
     idx = _pre_sofr_index()
-    fedfunds = pd.Series(0.41, index=idx, dtype=float, name="fedfunds")  # ~2017 FEDFUNDS
+    fedfunds = pd.Series(
+        0.41, index=idx, dtype=float, name="fedfunds"
+    )  # ~2017 FEDFUNDS
     ioer_legacy = pd.Series(0.40, index=idx, dtype=float, name="ioer_legacy")
 
     features = _make_pre_sofr_features(fedfunds=fedfunds, ioer_legacy=ioer_legacy)

@@ -21,9 +21,8 @@ def _credit_is_calm(
 ) -> bool:
     if inputs.credit_funding_active_label == "credit_calm":
         return True
-    if (
-        inputs.credit_funding_active_label is None
-        and getattr(config, "allow_credit_independent_fallback", False)
+    if inputs.credit_funding_active_label is None and getattr(
+        config, "allow_credit_independent_fallback", False
     ):
         return True
     return False
@@ -116,8 +115,7 @@ def evaluate_inflation_shock(
     inflation onset before the 6m window absorbs it.
     """
     if not _any_nan(inputs.inflation_surprise_zscore) and (
-        inputs.inflation_surprise_zscore
-        > config.inflation_surprise_zscore_threshold
+        inputs.inflation_surprise_zscore > config.inflation_surprise_zscore_threshold
     ):
         return True
 
@@ -170,9 +168,8 @@ def _credit_is_stressed(
 ) -> bool:
     if inputs.credit_funding_active_label in {"spread_widening", "credit_stress"}:
         return True
-    if (
-        inputs.credit_funding_active_label is None
-        and getattr(config, "allow_credit_independent_fallback", False)
+    if inputs.credit_funding_active_label is None and getattr(
+        config, "allow_credit_independent_fallback", False
     ):
         return True
     return False
@@ -191,7 +188,8 @@ def evaluate_recession_scare(
         return False
     if inputs.credit_funding_active_label in {"spread_widening", "credit_stress"}:
         threshold = getattr(
-            config, "spy_recession_credit_confirmed_threshold",
+            config,
+            "spy_recession_credit_confirmed_threshold",
             config.spy_recession_threshold,
         )
         return bool(
@@ -199,12 +197,12 @@ def evaluate_recession_scare(
             and inputs.cyclical_defensive_slope_21d < 0.0
             and inputs.spy_21d_return < threshold
         )
-    if (
-        inputs.credit_funding_active_label is None
-        and getattr(config, "allow_credit_independent_fallback", False)
+    if inputs.credit_funding_active_label is None and getattr(
+        config, "allow_credit_independent_fallback", False
     ):
         threshold = getattr(
-            config, "spy_recession_credit_independent_threshold",
+            config,
+            "spy_recession_credit_independent_threshold",
             config.spy_recession_threshold,
         )
         return bool(
@@ -253,18 +251,26 @@ def evaluate_risk_off_mild(
     if _any_nan(inputs.spy_21d_return):
         return False
     threshold = getattr(
-        config, "spy_recession_credit_confirmed_threshold",
+        config,
+        "spy_recession_credit_confirmed_threshold",
         config.spy_recession_threshold,
     )
     if not (inputs.spy_21d_return < 0.0 and inputs.spy_21d_return >= threshold):
         return False
     growth_deterioration = False
     if not np.isnan(inputs.cyclical_defensive_slope_21d):
-        growth_deterioration = growth_deterioration or inputs.cyclical_defensive_slope_21d < 0.0
+        growth_deterioration = (
+            growth_deterioration or inputs.cyclical_defensive_slope_21d < 0.0
+        )
     if not np.isnan(inputs.treasury_10y_yield_slope_21d):
-        growth_deterioration = growth_deterioration or inputs.treasury_10y_yield_slope_21d < 0.0
+        growth_deterioration = (
+            growth_deterioration or inputs.treasury_10y_yield_slope_21d < 0.0
+        )
     if not np.isnan(inputs.pmi_manufacturing):
-        growth_deterioration = growth_deterioration or inputs.pmi_manufacturing < config.pmi_goldilocks_threshold
+        growth_deterioration = (
+            growth_deterioration
+            or inputs.pmi_manufacturing < config.pmi_goldilocks_threshold
+        )
     return growth_deterioration
 
 

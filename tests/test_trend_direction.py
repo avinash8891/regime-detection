@@ -21,9 +21,9 @@ def test_trend_direction_matches_pinned_fixtures(classified_golden_outputs) -> N
     for row in golden["rows"]:
         as_of = date.fromisoformat(row["as_of_date"])
         out = classified_golden_outputs[as_of]
-        assert out.trend_direction.active_label == row["expected"]["trend_direction"], (
-            f"{as_of}: expected {row['expected']['trend_direction']}, got {out.trend_direction.active_label}"
-        )
+        assert (
+            out.trend_direction.active_label == row["expected"]["trend_direction"]
+        ), f"{as_of}: expected {row['expected']['trend_direction']}, got {out.trend_direction.active_label}"
 
 
 def _trend_direction_features(
@@ -71,29 +71,51 @@ def test_trend_direction_rolling_features_match_legacy_inline_formulas() -> None
 def test_trend_direction_raw_label_thresholds_for_v1_labels() -> None:
     dt = pd.Timestamp("2024-01-02")
 
-    assert raw_label_for_day(
-        _trend_direction_features(close=105.0, sma_50=102.0, sma_200=100.0, return_63d=0.08),
-        dt,
-    )[0] == "bull"
-    assert raw_label_for_day(
-        _trend_direction_features(close=95.0, sma_50=98.0, sma_200=100.0, return_63d=-0.08),
-        dt,
-    )[0] == "bear"
-    assert raw_label_for_day(
-        _trend_direction_features(close=101.0, sma_50=99.0, sma_200=100.0, return_63d=0.04),
-        dt,
-    )[0] == "sideways"
-    assert raw_label_for_day(
-        _trend_direction_features(close=110.0, sma_50=95.0, sma_200=100.0, return_63d=0.07),
-        dt,
-    )[0] == "transition"
+    assert (
+        raw_label_for_day(
+            _trend_direction_features(
+                close=105.0, sma_50=102.0, sma_200=100.0, return_63d=0.08
+            ),
+            dt,
+        )[0]
+        == "bull"
+    )
+    assert (
+        raw_label_for_day(
+            _trend_direction_features(
+                close=95.0, sma_50=98.0, sma_200=100.0, return_63d=-0.08
+            ),
+            dt,
+        )[0]
+        == "bear"
+    )
+    assert (
+        raw_label_for_day(
+            _trend_direction_features(
+                close=101.0, sma_50=99.0, sma_200=100.0, return_63d=0.04
+            ),
+            dt,
+        )[0]
+        == "sideways"
+    )
+    assert (
+        raw_label_for_day(
+            _trend_direction_features(
+                close=110.0, sma_50=95.0, sma_200=100.0, return_63d=0.07
+            ),
+            dt,
+        )[0]
+        == "transition"
+    )
 
 
 def test_trend_direction_raw_label_unknown_when_required_feature_is_nan() -> None:
     dt = pd.Timestamp("2024-01-02")
 
     label, evidence = raw_label_for_day(
-        _trend_direction_features(close=105.0, sma_50=float("nan"), sma_200=100.0, return_63d=0.08),
+        _trend_direction_features(
+            close=105.0, sma_50=float("nan"), sma_200=100.0, return_63d=0.08
+        ),
         dt,
     )
 

@@ -7,12 +7,16 @@ Per ~/.claude/CLAUDE.md and AGENTS rule A:
 - Integration test invokes the rule engine end-to-end over a real
   NetworkFragilityFeatures series.
 """
+
 from __future__ import annotations
 
 
 import pytest
 
-from regime_detection.config import NetworkFragilityRulesConfig, load_default_regime_config
+from regime_detection.config import (
+    NetworkFragilityRulesConfig,
+    load_default_regime_config,
+)
 from regime_detection.network_fragility_rules import (
     NetworkFragilityRuleInputs,
     correlation_to_one_rule_path,
@@ -25,7 +29,6 @@ from regime_detection.network_fragility_rules import (
     evaluate_stock_picker_dispersion,
     evaluate_systemic_stress,
 )
-
 
 # ---------- Helpers -----------------------------------------------------------
 
@@ -177,9 +180,7 @@ def test_stock_picker_dispersion_blocked_when_corr_above_threshold():
 def test_rising_fragility_fires_on_positive_slopes_and_weak_breadth():
     cfg = _default_rules_config()
     inputs = _inputs(avg_corr_slope=0.001, largest_eig_slope=0.0005)
-    assert (
-        evaluate_rising_fragility(inputs, cfg, breadth_label="weak_breadth") is True
-    )
+    assert evaluate_rising_fragility(inputs, cfg, breadth_label="weak_breadth") is True
 
 
 def test_rising_fragility_fires_on_divergent_fragile_breadth():
@@ -208,17 +209,14 @@ def test_rising_fragility_blocked_by_healthy_breadth():
     cfg = _default_rules_config()
     inputs = _inputs(avg_corr_slope=0.001, largest_eig_slope=0.0005)
     assert (
-        evaluate_rising_fragility(inputs, cfg, breadth_label="healthy_breadth")
-        is False
+        evaluate_rising_fragility(inputs, cfg, breadth_label="healthy_breadth") is False
     )
 
 
 def test_rising_fragility_blocked_by_flat_slope():
     cfg = _default_rules_config()
     inputs = _inputs(avg_corr_slope=0.0, largest_eig_slope=0.0005)
-    assert (
-        evaluate_rising_fragility(inputs, cfg, breadth_label="weak_breadth") is False
-    )
+    assert evaluate_rising_fragility(inputs, cfg, breadth_label="weak_breadth") is False
 
 
 def test_correlation_concentration_fires_when_corr_percentile_above_75():

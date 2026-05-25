@@ -153,7 +153,9 @@ class RegimeConfig(StrictBaseModel):
     change_point: ChangePointConfig | None = None
     no_flip_flop: NoFlipFlopConfig | None = None  # v2 §5.4
     cohort_routing: CohortRoutingConfig | None = None  # v2 §5.1
-    strategy_family_constraints: StrategyFamilyConstraintsConfig | None = None  # v2 §5.2
+    strategy_family_constraints: StrategyFamilyConstraintsConfig | None = (
+        None  # v2 §5.2
+    )
     strategy_event_modifiers: StrategyEventModifiersConfig | None = None
 
     @model_validator(mode="after")

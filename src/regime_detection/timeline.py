@@ -36,7 +36,6 @@ from regime_detection.strategy_response import build_strategy_response
 from regime_detection.transition_risk_series import build_transition_risk_series
 from regime_detection.versioning import engine_version
 
-
 _LOGGER = logging.getLogger(__name__)
 
 ENGINE_MINIMUM_HISTORY = 320
@@ -273,7 +272,10 @@ def _enrich_with_hmm_evidence(
     aligned: _AlignedV2Evidence,
     day_index: int,
 ) -> AxisOutput:
-    if aligned.hmm_top_state_prob_aligned is None or aligned.hmm_top_state_aligned is None:
+    if (
+        aligned.hmm_top_state_prob_aligned is None
+        or aligned.hmm_top_state_aligned is None
+    ):
         return output
     prob = aligned.hmm_top_state_prob_aligned.iloc[day_index]
     state = aligned.hmm_top_state_aligned.iloc[day_index]
@@ -327,9 +329,7 @@ def _build_cluster_output(
 
     clustering_config = working_context.config.clustering
     cluster_label_map = (
-        clustering_config.cluster_label_map
-        if clustering_config is not None
-        else None
+        clustering_config.cluster_label_map if clustering_config is not None else None
     )
     validated_cluster_label: str | None = None
     cluster_mapping_status = "map_absent"
@@ -342,7 +342,9 @@ def _build_cluster_output(
         map_covers_clusters = set(cluster_label_map.keys()) == set(
             range(clustering_config.n_clusters)
         )
-        version_matches = aligned.cluster_model_version == clustering_config.model_version
+        version_matches = (
+            aligned.cluster_model_version == clustering_config.model_version
+        )
         if map_covers_clusters and version_matches:
             validated_cluster_label = cluster_label_map.get(int(cid_val))
             cluster_mapping_status = "mapped"
@@ -408,8 +410,8 @@ def _build_hmm_output(
     elif hmm_label_map is not None and hmm_config is not None:
         map_covers_states = set(hmm_label_map.keys()) == set(range(hmm_config.n_states))
         version_matches = (
-            (aligned.hmm_model_version or "hmm_unknown") == hmm_config.model_version
-        )
+            aligned.hmm_model_version or "hmm_unknown"
+        ) == hmm_config.model_version
         if map_covers_states and version_matches:
             validated_hmm_label = hmm_label_map.get(int(hmm_state_val))
             hmm_mapping_status = "mapped"
@@ -454,12 +456,14 @@ def _build_timeline_output_for_day(
 ) -> RegimeOutput:
     trend_direction_output = _enrich_with_hmm_evidence(
         axis_bundle.trend_direction.outputs_by_date[day],
-        aligned_v2_evidence, selected_day_index,
+        aligned_v2_evidence,
+        selected_day_index,
     )
     trend_character_output = axis_bundle.trend_character.outputs_by_date[day]
     volatility_output = _enrich_with_hmm_evidence(
         axis_bundle.volatility_state.outputs_by_date[day],
-        aligned_v2_evidence, selected_day_index,
+        aligned_v2_evidence,
+        selected_day_index,
     )
     breadth_output = cast(
         BreadthStateOutput, axis_bundle.breadth_state.outputs_by_date[day]

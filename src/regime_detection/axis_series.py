@@ -10,19 +10,31 @@ from regime_detection.axis_builders.credit_funding import (
     resolve_credit_funding_effective_output as resolve_credit_funding_effective_output,
     resolve_credit_funding_effective_series,
 )
-from regime_detection.axis_builders.inflation_growth import build_inflation_growth_axis_series
-from regime_detection.axis_builders.monetary_pressure import build_monetary_pressure_axis_series
-from regime_detection.axis_builders.network_fragility import build_network_fragility_axis_series
+from regime_detection.axis_builders.inflation_growth import (
+    build_inflation_growth_axis_series,
+)
+from regime_detection.axis_builders.monetary_pressure import (
+    build_monetary_pressure_axis_series,
+)
+from regime_detection.axis_builders.network_fragility import (
+    build_network_fragility_axis_series,
+)
 from regime_detection.axis_builders.staleness import (
     _STALENESS_SENTINEL as _STALENESS_SENTINEL,
     _calendar_staleness_days_series as _calendar_staleness_days_series,
     _trading_staleness_series as _trading_staleness_series,
     staleness_for_source as staleness_for_source,
 )
-from regime_detection.axis_builders.trend_character import build_trend_character_axis_series
-from regime_detection.axis_builders.trend_direction import build_trend_direction_axis_series
+from regime_detection.axis_builders.trend_character import (
+    build_trend_character_axis_series,
+)
+from regime_detection.axis_builders.trend_direction import (
+    build_trend_direction_axis_series,
+)
 from regime_detection.axis_builders.volatility import build_volatility_axis_series
-from regime_detection.axis_builders.volume_liquidity import build_volume_liquidity_axis_series
+from regime_detection.axis_builders.volume_liquidity import (
+    build_volume_liquidity_axis_series,
+)
 from regime_detection.data_quality import (
     assess_series_input_quality,
     quality_forces_unknown,
@@ -145,7 +157,6 @@ def build_event_calendar_series(
         normalized_event_calendar=context.normalized_event_calendar,
         config=context.config,
     )
-
 
 
 def _build_axis_outputs(

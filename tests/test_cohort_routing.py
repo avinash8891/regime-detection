@@ -43,7 +43,6 @@ from regime_detection.trend_character import TrendCharacterLabel  # noqa: F401
 from regime_detection.trend_direction import TrendDirectionLabel  # noqa: F401
 from regime_detection.volatility_state import VolatilityLabel  # noqa: F401
 
-
 logger = logging.getLogger(__name__)
 
 
@@ -60,21 +59,21 @@ def _cohort_config() -> CohortRoutingConfig:
     yaml-shape regression surfaces at this single seam rather than 17 places.
     """
     cfg = load_default_regime_config().cohort_routing
-    assert isinstance(cfg, CohortRoutingConfig), (
-        "default V2 config must ship a cohort_routing block typed as CohortRoutingConfig"
-    )
+    assert isinstance(
+        cfg, CohortRoutingConfig
+    ), "default V2 config must ship a cohort_routing block typed as CohortRoutingConfig"
     return cfg
 
 
 # Benign labelset: every axis at its lowest-risk real label. No specialist
 # rule matches against this — used to isolate which axis a test varies.
 _BENIGN: dict[str, str] = {
-    "trend_direction_active": "sideways",          # TrendDirectionLabel (real)
-    "trend_character_active": "trending",          # TrendCharacterLabel (real)
-    "volatility_state_active": "normal_vol",       # VolatilityLabel (real)
-    "breadth_state_active": "healthy_breadth",     # BreadthLabel (real)
+    "trend_direction_active": "sideways",  # TrendDirectionLabel (real)
+    "trend_character_active": "trending",  # TrendCharacterLabel (real)
+    "volatility_state_active": "normal_vol",  # VolatilityLabel (real)
+    "breadth_state_active": "healthy_breadth",  # BreadthLabel (real)
     "network_fragility_active": "diversified_normal",  # NetworkFragilityLabel
-    "monetary_pressure_active": None,              # §2A classifier not shipped
+    "monetary_pressure_active": None,  # §2A classifier not shipped
 }
 
 
@@ -257,7 +256,9 @@ def test_tightening_specialist_silent_when_monetary_pressure_is_none() -> None:
 
 
 @pytest.mark.unit
-def test_tightening_specialist_fires_when_monetary_pressure_is_tightening_pressure() -> None:
+def test_tightening_specialist_fires_when_monetary_pressure_is_tightening_pressure() -> (
+    None
+):
     """§5.1 lines 2530-2531: when the future §2A classifier emits
     'tightening_pressure', the predicate must fire."""
     out = _route(monetary_pressure_active="tightening_pressure")
@@ -271,14 +272,19 @@ def test_tightening_specialist_fires_when_monetary_pressure_is_tightening_pressu
 
 
 @pytest.mark.unit
-def test_evaluate_cohort_routing_returns_agent_routing_with_fallback_default_neutral() -> None:
+def test_evaluate_cohort_routing_returns_agent_routing_with_fallback_default_neutral() -> (
+    None
+):
     """``fallback_cohort`` is always 'default_neutral' regardless of which
     specialist fires (spec §5.1: default_neutral is the universal fallback)."""
     for overrides in (
-        {"network_fragility_active": "correlation_to_one"},      # crisis
-        {"trend_direction_active": "bull", "volatility_state_active": "low_vol"},  # bull_low_vol
-        {"trend_direction_active": "recovery"},                  # recovery
-        {},                                                       # default_neutral
+        {"network_fragility_active": "correlation_to_one"},  # crisis
+        {
+            "trend_direction_active": "bull",
+            "volatility_state_active": "low_vol",
+        },  # bull_low_vol
+        {"trend_direction_active": "recovery"},  # recovery
+        {},  # default_neutral
     ):
         out = _route(**overrides)  # type: ignore[arg-type]
         assert isinstance(out, AgentRouting)
@@ -348,9 +354,9 @@ def test_regime_output_emits_agent_routing_when_cohort_routing_configured(
     9 spec-pinned cohort names."""
     assert classified_golden_outputs, "golden outputs fixture must be non-empty"
     for as_of, out in classified_golden_outputs.items():
-        assert out.agent_routing is not None, (
-            f"agent_routing missing for {as_of}; default config carries cohort_routing"
-        )
+        assert (
+            out.agent_routing is not None
+        ), f"agent_routing missing for {as_of}; default config carries cohort_routing"
         assert out.agent_routing.active_cohort in COHORTS
         assert out.agent_routing.fallback_cohort == "default_neutral"
 

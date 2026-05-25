@@ -172,7 +172,9 @@ class AcquisitionStore:
         store_bytes: bool = True,
     ) -> RecordedArtifact:
         payload = file_path.read_bytes() if store_bytes else None
-        sha256 = sha256_bytes(payload) if payload is not None else sha256_file(file_path)
+        sha256 = (
+            sha256_bytes(payload) if payload is not None else sha256_file(file_path)
+        )
         content_size_bytes = (
             len(payload) if payload is not None else file_path.stat().st_size
         )
@@ -228,9 +230,9 @@ class AcquisitionStore:
         return RecordedArtifact(
             artifact_id=artifact_id,
             content_sha256=sha256,
-            artifact_record_id=artifact_record.artifact_record_id
-            if artifact_record
-            else None,
+            artifact_record_id=(
+                artifact_record.artifact_record_id if artifact_record else None
+            ),
         )
 
     def record_output(
@@ -654,9 +656,9 @@ class AcquisitionStore:
         return RecordedArtifact(
             artifact_id=artifact_id,
             content_sha256=content_sha256,
-            artifact_record_id=artifact_record.artifact_record_id
-            if artifact_record
-            else None,
+            artifact_record_id=(
+                artifact_record.artifact_record_id if artifact_record else None
+            ),
         )
 
     def _store_raw_artifact(
@@ -720,7 +722,9 @@ class AcquisitionStore:
         end_date: str | None,
         notes: str | None = None,
     ) -> ArtifactRecord | None:
-        suffix = _artifact_suffix(artifact_kind=artifact_kind, local_path=str(file_path))
+        suffix = _artifact_suffix(
+            artifact_kind=artifact_kind, local_path=str(file_path)
+        )
         key = str(
             Path("raw_capture")
             / _safe_path_part(source_name)

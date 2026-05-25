@@ -14,7 +14,9 @@ def _single_match(root: Path, pattern: str, *, required: bool = True) -> Path | 
     matches = sorted(root.glob(pattern))
     if not matches:
         if required:
-            raise SystemExit(f"Missing Investing.com archive file matching {root / pattern}")
+            raise SystemExit(
+                f"Missing Investing.com archive file matching {root / pattern}"
+            )
         return None
     if len(matches) > 1:
         return matches[-1]
@@ -23,15 +25,37 @@ def _single_match(root: Path, pattern: str, *, required: bool = True) -> Path | 
 
 def _archive_paths(archive_root: Path) -> dict[str, Path | None]:
     return {
-        "economic_events": _single_match(archive_root, "investing_calendar_structured_*/investing_economic_events_*.csv"),
-        "holidays": _single_match(archive_root, "investing_calendar_structured_*/investing_holidays_*.csv"),
-        "calendar_combined": _single_match(archive_root, "investing_calendar_structured_*/investing_calendar_combined_*.jsonl"),
-        "calendar_fetch_report": _single_match(archive_root, "investing_calendar_structured_*/fetch_report.json"),
-        "earnings": _single_match(archive_root, "investing_earnings_*/investing_earnings_*.csv"),
-        "earnings_jsonl": _single_match(archive_root, "investing_earnings_*/investing_earnings_*.jsonl"),
-        "earnings_quarantine": _single_match(archive_root, "investing_earnings_*/quarantine_earnings_fetch_errors.jsonl", required=False),
-        "earnings_fetch_report": _single_match(archive_root, "investing_earnings_*/fetch_report.json"),
-        "earnings_raw_instruments": _single_match(archive_root, "investing_earnings_*/raw_instruments", required=False),
+        "economic_events": _single_match(
+            archive_root,
+            "investing_calendar_structured_*/investing_economic_events_*.csv",
+        ),
+        "holidays": _single_match(
+            archive_root, "investing_calendar_structured_*/investing_holidays_*.csv"
+        ),
+        "calendar_combined": _single_match(
+            archive_root,
+            "investing_calendar_structured_*/investing_calendar_combined_*.jsonl",
+        ),
+        "calendar_fetch_report": _single_match(
+            archive_root, "investing_calendar_structured_*/fetch_report.json"
+        ),
+        "earnings": _single_match(
+            archive_root, "investing_earnings_*/investing_earnings_*.csv"
+        ),
+        "earnings_jsonl": _single_match(
+            archive_root, "investing_earnings_*/investing_earnings_*.jsonl"
+        ),
+        "earnings_quarantine": _single_match(
+            archive_root,
+            "investing_earnings_*/quarantine_earnings_fetch_errors.jsonl",
+            required=False,
+        ),
+        "earnings_fetch_report": _single_match(
+            archive_root, "investing_earnings_*/fetch_report.json"
+        ),
+        "earnings_raw_instruments": _single_match(
+            archive_root, "investing_earnings_*/raw_instruments", required=False
+        ),
     }
 
 
@@ -50,7 +74,9 @@ def run_local_investing_archive_import(
     raw_archive_dir = investing_dir / "raw_archive"
     raw_archive_dir.mkdir(parents=True, exist_ok=True)
 
-    copied_raw_files = _copy_archive_files(archive_root=archive_root, raw_archive_dir=raw_archive_dir)
+    copied_raw_files = _copy_archive_files(
+        archive_root=archive_root, raw_archive_dir=raw_archive_dir
+    )
     economic_events = _read_csv(archive_paths["economic_events"])
     holidays = _read_csv(archive_paths["holidays"])
     earnings = _read_csv(archive_paths["earnings"])
@@ -66,7 +92,9 @@ def run_local_investing_archive_import(
     holidays.to_parquet(holidays_path, index=False)
     earnings.to_parquet(earnings_path, index=False)
 
-    store = AcquisitionStore(acquisition_db_path, artifact_store_root=artifact_store_root)
+    store = AcquisitionStore(
+        acquisition_db_path, artifact_store_root=artifact_store_root
+    )
     fetch_run = store.start_fetch_run(
         fetch_type="investing_archive_local",
         params={"archive_root": str(archive_root)},
@@ -83,8 +111,12 @@ def run_local_investing_archive_import(
                     artifact_kind=file_path.suffix.lower().lstrip(".") or "file",
                     source_identifier=rel,
                     file_path=file_path,
-                    start_date=_start_for_raw_rel(rel, economic_min, holiday_min, earnings_min),
-                    end_date=_end_for_raw_rel(rel, economic_max, holiday_max, earnings_max),
+                    start_date=_start_for_raw_rel(
+                        rel, economic_min, holiday_min, earnings_min
+                    ),
+                    end_date=_end_for_raw_rel(
+                        rel, economic_max, holiday_max, earnings_max
+                    ),
                     timezone="UTC",
                     license_note="Archived Investing.com calendar and earnings export from Provo worktree",
                     notes="Local archived capture imported into the regime data acquisition store",
@@ -131,7 +163,11 @@ def run_local_investing_archive_import(
         ]
 
         first_raw_record_id = next(
-            (record.artifact_record_id for record in raw_records if record.artifact_record_id is not None),
+            (
+                record.artifact_record_id
+                for record in raw_records
+                if record.artifact_record_id is not None
+            ),
             None,
         )
         if first_raw_record_id is not None:
@@ -212,8 +248,14 @@ def _copy_archive_files(*, archive_root: Path, raw_archive_dir: Path) -> list[Pa
         copied.append(dst)
     raw_instruments = archive_paths["earnings_raw_instruments"]
     if raw_instruments is not None and raw_instruments.exists():
-        for src in sorted(path for path in raw_instruments.rglob("*") if path.is_file()):
-            dst = raw_archive_dir / raw_instruments.relative_to(archive_root) / src.relative_to(raw_instruments)
+        for src in sorted(
+            path for path in raw_instruments.rglob("*") if path.is_file()
+        ):
+            dst = (
+                raw_archive_dir
+                / raw_instruments.relative_to(archive_root)
+                / src.relative_to(raw_instruments)
+            )
             dst.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(src, dst)
             copied.append(dst)
@@ -255,7 +297,12 @@ def _redact_access_token_html(html: str) -> str:
     )
 
 
-def _start_for_raw_rel(rel: str, economic_min: str | None, holiday_min: str | None, earnings_min: str | None) -> str | None:
+def _start_for_raw_rel(
+    rel: str,
+    economic_min: str | None,
+    holiday_min: str | None,
+    earnings_min: str | None,
+) -> str | None:
     if "investing_economic_events_" in rel:
         return economic_min
     if "investing_holidays_" in rel:
@@ -265,7 +312,12 @@ def _start_for_raw_rel(rel: str, economic_min: str | None, holiday_min: str | No
     return None
 
 
-def _end_for_raw_rel(rel: str, economic_max: str | None, holiday_max: str | None, earnings_max: str | None) -> str | None:
+def _end_for_raw_rel(
+    rel: str,
+    economic_max: str | None,
+    holiday_max: str | None,
+    earnings_max: str | None,
+) -> str | None:
     if "investing_economic_events_" in rel:
         return economic_max
     if "investing_holidays_" in rel:

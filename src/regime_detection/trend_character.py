@@ -8,7 +8,6 @@ import pandas as pd
 
 from regime_detection._rolling_stats import period_return, simple_moving_average
 
-
 # V2 §1A Trend Character (implementation decision #67 pin) extends the V1 5-label set.
 # Precedence: breakout_expansion > recovery_attempt > trending > mild_trend >
 # range_bound > chop > volatile_chop > transition > unknown.
@@ -85,12 +84,16 @@ def _wilder_ewm(series: pd.Series, n: int) -> pd.Series:
 
 def _compute_adx_14(*, high: pd.Series, low: pd.Series, close: pd.Series) -> pd.Series:
     prev_close = close.shift(1)
-    tr = pd.concat([(high - low), (high - prev_close).abs(), (low - prev_close).abs()], axis=1).max(axis=1)
+    tr = pd.concat(
+        [(high - low), (high - prev_close).abs(), (low - prev_close).abs()], axis=1
+    ).max(axis=1)
 
     up = high.diff()
     down = -low.diff()
     plus_dm = pd.Series(np.where((up > down) & (up > 0), up, 0.0), index=close.index)
-    minus_dm = pd.Series(np.where((down > up) & (down > 0), down, 0.0), index=close.index)
+    minus_dm = pd.Series(
+        np.where((down > up) & (down > 0), down, 0.0), index=close.index
+    )
 
     n = 14
     atr = _wilder_ewm(tr, n)
@@ -104,9 +107,9 @@ def _compute_adx_14(*, high: pd.Series, low: pd.Series, close: pd.Series) -> pd.
 
 def _compute_midpoint_excursion_20d(close: pd.Series) -> pd.Series:
     """v2 §1A lines 175-176:
-        midpoint_20d[t] = (max(close[t-19..t]) + min(close[t-19..t])) / 2
-        excursion[t]    = max(|close[i] - midpoint_20d[t]| / midpoint_20d[t])
-                          for i in t-19..t
+    midpoint_20d[t] = (max(close[t-19..t]) + min(close[t-19..t])) / 2
+    excursion[t]    = max(|close[i] - midpoint_20d[t]| / midpoint_20d[t])
+                      for i in t-19..t
     """
     window = 20
     rolling_max = close.rolling(window).max()
@@ -301,7 +304,9 @@ def raw_label_for_day(
     trending = bool((adx >= 20) and (abs(ret21) >= 0.05))
     mild_trend = bool(allow_v2_labels and (adx >= 20) and (abs(ret21) < 0.05))
     chop = bool((adx < 20) and (abs(ret10) < 0.03) and (abs(ret21) < 0.05))
-    volatile_chop = bool(allow_v2_labels and (adx < 20) and not chop and not recovery_attempt)
+    volatile_chop = bool(
+        allow_v2_labels and (adx < 20) and not chop and not recovery_attempt
+    )
 
     # V2 §1B labels. Cold-start: any NaN input falsifies the rule.
     midpoint_ex = f.midpoint_excursion_20d.loc[dt]
@@ -384,7 +389,14 @@ def build_raw_outputs(
     vol_above = f.volume_above_20d_average.fillna(False).astype(bool)
     ft_rate = f.followthrough_rate
 
-    valid = ~(close.isna() | sma50.isna() | ret10.isna() | ret21.isna() | prior_dd.isna() | adx.isna())
+    valid = ~(
+        close.isna()
+        | sma50.isna()
+        | ret10.isna()
+        | ret21.isna()
+        | prior_dd.isna()
+        | adx.isna()
+    )
 
     recovery_attempt = valid & prior_dd.le(-0.10) & close.gt(sma50) & ret10.ge(0.05)
     trending = valid & adx.ge(20) & ret21.abs().ge(0.05)
@@ -415,7 +427,13 @@ def build_raw_outputs(
         volatile_chop = volatile_chop & False
 
     transition = valid & ~(
-        breakout_expansion | recovery_attempt | trending | mild_trend | range_bound | chop | volatile_chop
+        breakout_expansion
+        | recovery_attempt
+        | trending
+        | mild_trend
+        | range_bound
+        | chop
+        | volatile_chop
     )
 
     labels = np.full(len(close), "unknown", dtype=object)

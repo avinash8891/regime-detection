@@ -13,7 +13,9 @@ def _store_uri(root: Path, key: str) -> str:
     return (root.resolve() / key).as_uri()
 
 
-def test_emit_manifest_for_report_paths_uploads_existing_report_outputs(tmp_path: Path) -> None:
+def test_emit_manifest_for_report_paths_uploads_existing_report_outputs(
+    tmp_path: Path,
+) -> None:
     out_dir = tmp_path / "data" / "raw"
     macro = out_dir / "macro" / "fred_macro_series.parquet"
     report = out_dir / "macro_fetch_report.json"
@@ -49,16 +51,22 @@ def test_emit_manifest_for_report_paths_uploads_existing_report_outputs(tmp_path
     )
     assert loaded.artifacts[0].local_path == "data/raw/macro/fred_macro_series.parquet"
     assert loaded.artifacts[0].required_for == ("v2_calibration",)
-    assert (store_root / "canonical" / "macro" / "fred_macro_series.parquet").read_bytes() == b"macro"
+    assert (
+        store_root / "canonical" / "macro" / "fred_macro_series.parquet"
+    ).read_bytes() == b"macro"
 
 
-def test_emit_manifest_for_report_paths_expands_partitioned_parquet_directories(tmp_path: Path) -> None:
+def test_emit_manifest_for_report_paths_expands_partitioned_parquet_directories(
+    tmp_path: Path,
+) -> None:
     out_dir = tmp_path / "data" / "raw"
     part = out_dir / "daily_ohlcv" / "symbol=SPY" / "part.parquet"
     part.parent.mkdir(parents=True)
     part.write_bytes(b"spy")
     report = out_dir / "fetch_report.json"
-    report.write_text(json.dumps({"paths": {"daily_ohlcv_parquet": str(out_dir / "daily_ohlcv")}}))
+    report.write_text(
+        json.dumps({"paths": {"daily_ohlcv_parquet": str(out_dir / "daily_ohlcv")}})
+    )
 
     manifest = emit_manifest_for_report_paths(
         report_paths=[report],
@@ -72,7 +80,9 @@ def test_emit_manifest_for_report_paths_expands_partitioned_parquet_directories(
     assert [artifact.local_path for artifact in manifest.artifacts] == [
         "data/raw/daily_ohlcv/symbol=SPY/part.parquet"
     ]
-    assert (tmp_path / "store" / "canonical" / "daily_ohlcv" / "symbol=SPY" / "part.parquet").read_bytes() == b"spy"
+    assert (
+        tmp_path / "store" / "canonical" / "daily_ohlcv" / "symbol=SPY" / "part.parquet"
+    ).read_bytes() == b"spy"
 
 
 def test_emit_manifest_for_report_paths_allows_multi_file_symbol_partitions(
@@ -135,10 +145,15 @@ def test_emit_manifest_for_report_paths_allows_multi_file_symbol_partitions(
         "constituent_ohlcv_SPY_part_0_parquet",
         "constituent_ohlcv_SPY_part_1_parquet",
     ]
-    assert resolved.daily_dir == tmp_path / "materialized" / "data" / "raw" / "daily_ohlcv_762"
+    assert (
+        resolved.daily_dir
+        == tmp_path / "materialized" / "data" / "raw" / "daily_ohlcv_762"
+    )
 
 
-def test_emit_manifest_for_report_paths_fails_when_no_files_found(tmp_path: Path) -> None:
+def test_emit_manifest_for_report_paths_fails_when_no_files_found(
+    tmp_path: Path,
+) -> None:
     out_dir = tmp_path / "data" / "raw"
     out_dir.mkdir(parents=True)
     report = out_dir / "fetch_report.json"
@@ -157,7 +172,9 @@ def test_emit_manifest_for_report_paths_fails_when_no_files_found(tmp_path: Path
         )
 
 
-def test_emit_manifest_for_report_paths_fails_for_missing_report_path(tmp_path: Path) -> None:
+def test_emit_manifest_for_report_paths_fails_for_missing_report_path(
+    tmp_path: Path,
+) -> None:
     out_dir = tmp_path / "data" / "raw"
     out_dir.mkdir(parents=True)
 
@@ -174,7 +191,9 @@ def test_emit_manifest_for_report_paths_fails_for_missing_report_path(tmp_path: 
         )
 
 
-def test_emit_manifest_for_report_paths_fails_for_non_json_report_path(tmp_path: Path) -> None:
+def test_emit_manifest_for_report_paths_fails_for_non_json_report_path(
+    tmp_path: Path,
+) -> None:
     out_dir = tmp_path / "data" / "raw"
     out_dir.mkdir(parents=True)
     report = out_dir / "report.txt"
@@ -253,7 +272,9 @@ def test_emit_manifest_for_report_paths_allows_explicit_non_materializable_repor
     assert [artifact.name for artifact in manifest.artifacts] == ["fred_macro_series"]
 
 
-def test_emit_manifest_for_report_paths_skips_acquisition_db_metadata(tmp_path: Path) -> None:
+def test_emit_manifest_for_report_paths_skips_acquisition_db_metadata(
+    tmp_path: Path,
+) -> None:
     out_dir = tmp_path / "data" / "raw"
     out_dir.mkdir(parents=True)
     acquisition_db = out_dir / "acquisition.db"
@@ -274,7 +295,9 @@ def test_emit_manifest_for_report_paths_skips_acquisition_db_metadata(tmp_path: 
         )
 
 
-def test_emit_manifest_for_report_paths_skips_files_outside_out_dir(tmp_path: Path) -> None:
+def test_emit_manifest_for_report_paths_skips_files_outside_out_dir(
+    tmp_path: Path,
+) -> None:
     out_dir = tmp_path / "data" / "raw"
     out_dir.mkdir(parents=True)
     outside = tmp_path / "elsewhere" / "acquisition.db"
@@ -296,7 +319,9 @@ def test_emit_manifest_for_report_paths_skips_files_outside_out_dir(tmp_path: Pa
         )
 
 
-def test_emit_manifest_for_report_paths_exports_repo_relative_event_config(tmp_path: Path) -> None:
+def test_emit_manifest_for_report_paths_exports_repo_relative_event_config(
+    tmp_path: Path,
+) -> None:
     repo_root = tmp_path / "repo"
     out_dir = repo_root / "data" / "raw"
     event_config = repo_root / "configs" / "events" / "us_events.yaml"
@@ -325,7 +350,9 @@ def test_emit_manifest_for_report_paths_exports_repo_relative_event_config(tmp_p
     ).read_text() == "events: []\n"
 
 
-def test_emit_manifest_for_report_paths_honors_explicit_materialized_local_path(tmp_path: Path) -> None:
+def test_emit_manifest_for_report_paths_honors_explicit_materialized_local_path(
+    tmp_path: Path,
+) -> None:
     source_root = tmp_path / "archive" / "daily_ohlcv_762"
     source_file = source_root / "symbol=SPY" / "ohlcv.parquet"
     source_file.parent.mkdir(parents=True)
@@ -358,8 +385,17 @@ def test_emit_manifest_for_report_paths_honors_explicit_materialized_local_path(
     assert [artifact.local_path for artifact in manifest.artifacts] == [
         "data/raw/daily_ohlcv_762/symbol=SPY/ohlcv.parquet"
     ]
-    assert [artifact.name for artifact in manifest.artifacts] == ["constituent_ohlcv_SPY"]
-    assert (tmp_path / "store" / "canonical" / "daily_ohlcv_762" / "symbol=SPY" / "ohlcv.parquet").read_bytes() == b"spy-762"
+    assert [artifact.name for artifact in manifest.artifacts] == [
+        "constituent_ohlcv_SPY"
+    ]
+    assert (
+        tmp_path
+        / "store"
+        / "canonical"
+        / "daily_ohlcv_762"
+        / "symbol=SPY"
+        / "ohlcv.parquet"
+    ).read_bytes() == b"spy-762"
 
 
 def test_emit_manifest_for_report_paths_exports_sf_fed_news_sentiment_report(
@@ -395,7 +431,11 @@ def test_emit_manifest_for_report_paths_exports_sf_fed_news_sentiment_report(
         f"data/raw/news_sentiment/{SF_FED_NEWS_SENTIMENT_PARQUET}"
     )
     assert (
-        tmp_path / "store" / "canonical" / "news_sentiment" / SF_FED_NEWS_SENTIMENT_PARQUET
+        tmp_path
+        / "store"
+        / "canonical"
+        / "news_sentiment"
+        / SF_FED_NEWS_SENTIMENT_PARQUET
     ).read_bytes() == b"sf-fed-news"
 
 
@@ -444,8 +484,35 @@ def test_emitted_manifest_resolves_profile_runner_inputs(tmp_path: Path) -> None
         cli_overrides=set(),
     )
 
-    assert resolved.daily_dir == tmp_path / "materialized" / "data" / "raw" / "daily_ohlcv_762"
+    assert (
+        resolved.daily_dir
+        == tmp_path / "materialized" / "data" / "raw" / "daily_ohlcv_762"
+    )
     assert resolved.constituent_tree == resolved.daily_dir
-    assert resolved.macro_parquet == tmp_path / "materialized" / "data" / "raw" / "macro" / "fred_macro_series.parquet"
-    assert resolved.pit_parquet == tmp_path / "materialized" / "data" / "raw" / "pit_constituents" / "sp500_ticker_intervals.parquet"
-    assert resolved.event_calendar == tmp_path / "materialized" / "data" / "raw" / "event_calendar" / "us_events.yaml"
+    assert (
+        resolved.macro_parquet
+        == tmp_path
+        / "materialized"
+        / "data"
+        / "raw"
+        / "macro"
+        / "fred_macro_series.parquet"
+    )
+    assert (
+        resolved.pit_parquet
+        == tmp_path
+        / "materialized"
+        / "data"
+        / "raw"
+        / "pit_constituents"
+        / "sp500_ticker_intervals.parquet"
+    )
+    assert (
+        resolved.event_calendar
+        == tmp_path
+        / "materialized"
+        / "data"
+        / "raw"
+        / "event_calendar"
+        / "us_events.yaml"
+    )

@@ -114,7 +114,9 @@ class OfficialBOEAdapter:
                     error=message,
                     bytes_read=len(payload.encode("utf-8")),
                 )
-            page_candidates = parse_boe_news_api_results(results_html, as_of_date=self.as_of_date)
+            page_candidates = parse_boe_news_api_results(
+                results_html, as_of_date=self.as_of_date
+            )
             candidates.extend(page_candidates)
             if (
                 page_candidates

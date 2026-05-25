@@ -13,9 +13,10 @@ import pandas as pd
 
 from regime_data_fetch.acquisition_store import AcquisitionStore
 
-
 LISTING_URL = "https://www.federalreserve.gov/monetarypolicy/fomccalendars.htm"
-HISTORICAL_YEAR_INDEX_URL = "https://www.federalreserve.gov/monetarypolicy/fomc_historical_year.htm"
+HISTORICAL_YEAR_INDEX_URL = (
+    "https://www.federalreserve.gov/monetarypolicy/fomc_historical_year.htm"
+)
 SOURCE_NAME = "federalreserve.gov"
 BASE_URL = "https://www.federalreserve.gov"
 
@@ -24,13 +25,16 @@ _LISTING_ENTRY_RE = re.compile(
     r'<div class="[^"]*fomc-meeting__date[^"]*">(?P<meeting_days>[^<]+)</div>\s*'
     r'.*?<a href="(?P<pdf_path>/monetarypolicy/files/fomcminutes(?P<meeting_end>\d{8})\.pdf)">PDF</a>\s*\|\s*'
     r'<a href="(?P<html_path>/monetarypolicy/fomcminutes\d{8}\.htm)">HTML</a>\s*'
-    r'<br>\s*\(Released (?P<release_date>[A-Za-z]+ \d{1,2}, \d{4})\)',
+    r"<br>\s*\(Released (?P<release_date>[A-Za-z]+ \d{1,2}, \d{4})\)",
     flags=re.DOTALL,
 )
-_HISTORICAL_YEAR_RE = re.compile(r'href="(?P<path>/monetarypolicy/fomchistorical(?P<year>\d{4})\.htm)"', flags=re.IGNORECASE)
+_HISTORICAL_YEAR_RE = re.compile(
+    r'href="(?P<path>/monetarypolicy/fomchistorical(?P<year>\d{4})\.htm)"',
+    flags=re.IGNORECASE,
+)
 _HISTORICAL_ENTRY_RE = re.compile(
-    r'<h5[^>]*>(?P<heading>[^<]+)</h5>.*?'
-    r'Minutes \(Released (?P<release_date>[A-Za-z]+ \d{1,2}, \d{4})\):\s*<br\s*/?>\s*'
+    r"<h5[^>]*>(?P<heading>[^<]+)</h5>.*?"
+    r"Minutes \(Released (?P<release_date>[A-Za-z]+ \d{1,2}, \d{4})\):\s*<br\s*/?>\s*"
     r'<a href="(?P<html_path>/monetarypolicy/fomcminutes(?P<meeting_end>\d{8})\.htm)">HTML</a>\s*\|\s*'
     r'<a href="(?P<pdf_path>/monetarypolicy/files/fomcminutes\d{8}\.pdf)">[^<]*PDF</a>',
     flags=re.DOTALL | re.IGNORECASE,
@@ -39,9 +43,16 @@ _TITLE_RE = re.compile(
     r"<(?:h3|h1[^>]*)>\s*(?P<title>Minutes of the Federal Open Market Committee)\s*</(?:h3|h1)>",
     flags=re.IGNORECASE,
 )
-_MEETING_DATE_RE = re.compile(r"<p>\s*<strong>(?P<meeting_date_text>[^<]+)</strong>(?:<br\s*/?>)?", flags=re.IGNORECASE)
-_ARTICLE_RE = re.compile(r'<div id="article"[^>]*>(?P<body>.*?)</div>', flags=re.DOTALL | re.IGNORECASE)
-_LEGACY_ARTICLE_RE = re.compile(r'<div id="leftText">(?P<body>.*?)</div>\s*</div>', flags=re.DOTALL | re.IGNORECASE)
+_MEETING_DATE_RE = re.compile(
+    r"<p>\s*<strong>(?P<meeting_date_text>[^<]+)</strong>(?:<br\s*/?>)?",
+    flags=re.IGNORECASE,
+)
+_ARTICLE_RE = re.compile(
+    r'<div id="article"[^>]*>(?P<body>.*?)</div>', flags=re.DOTALL | re.IGNORECASE
+)
+_LEGACY_ARTICLE_RE = re.compile(
+    r'<div id="leftText">(?P<body>.*?)</div>\s*</div>', flags=re.DOTALL | re.IGNORECASE
+)
 
 
 class FOMCMinutesFetchError(RuntimeError):
@@ -71,7 +82,9 @@ class FOMCMinutesArticle:
 def parse_fomc_minutes_listing(html: str) -> list[FOMCMinutesListingEntry]:
     entries: list[FOMCMinutesListingEntry] = []
     for match in _LISTING_ENTRY_RE.finditer(html):
-        meeting_end_date = dt.datetime.strptime(match.group("meeting_end"), "%Y%m%d").date()
+        meeting_end_date = dt.datetime.strptime(
+            match.group("meeting_end"), "%Y%m%d"
+        ).date()
         release_date = _parse_release_date_text(match.group("release_date"))
         entries.append(
             FOMCMinutesListingEntry(
@@ -83,7 +96,9 @@ def parse_fomc_minutes_listing(html: str) -> list[FOMCMinutesListingEntry]:
         )
 
     if not entries:
-        raise FOMCMinutesFetchError("FOMC calendars page did not contain parseable minutes entries")
+        raise FOMCMinutesFetchError(
+            "FOMC calendars page did not contain parseable minutes entries"
+        )
     return entries
 
 
@@ -100,14 +115,18 @@ def parse_fomc_historical_year_index(html: str) -> list[str]:
         seen.add(url)
         urls.append(url)
     if not urls:
-        raise FOMCMinutesFetchError("FOMC historical year index did not contain pre-2021 year pages")
+        raise FOMCMinutesFetchError(
+            "FOMC historical year index did not contain pre-2021 year pages"
+        )
     return urls
 
 
 def parse_fomc_minutes_historical_listing(html: str) -> list[FOMCMinutesListingEntry]:
     entries: list[FOMCMinutesListingEntry] = []
     for match in _HISTORICAL_ENTRY_RE.finditer(html):
-        meeting_end_date = dt.datetime.strptime(match.group("meeting_end"), "%Y%m%d").date()
+        meeting_end_date = dt.datetime.strptime(
+            match.group("meeting_end"), "%Y%m%d"
+        ).date()
         release_date = _parse_release_date_text(match.group("release_date"))
         entries.append(
             FOMCMinutesListingEntry(
@@ -121,10 +140,19 @@ def parse_fomc_minutes_historical_listing(html: str) -> list[FOMCMinutesListingE
 
 
 def fetch_release_timestamp(release_date: dt.date) -> dt.datetime:
-    return dt.datetime(release_date.year, release_date.month, release_date.day, 14, 0, tzinfo=ZoneInfo("America/New_York"))
+    return dt.datetime(
+        release_date.year,
+        release_date.month,
+        release_date.day,
+        14,
+        0,
+        tzinfo=ZoneInfo("America/New_York"),
+    )
 
 
-def parse_fomc_minutes_article(html: str, *, source_url: str, release_timestamp: dt.datetime) -> FOMCMinutesArticle:
+def parse_fomc_minutes_article(
+    html: str, *, source_url: str, release_timestamp: dt.datetime
+) -> FOMCMinutesArticle:
     title_match = _TITLE_RE.search(html)
     if not title_match:
         raise FOMCMinutesFetchError("FOMC minutes page missing title")
@@ -182,7 +210,11 @@ def run_fomc_minutes_fetch(
     artifact_store_root: str | Path | None = None,
 ) -> Path:
     out_dir.mkdir(parents=True, exist_ok=True)
-    store = AcquisitionStore(acquisition_db_path, artifact_store_root=artifact_store_root) if acquisition_db_path else None
+    store = (
+        AcquisitionStore(acquisition_db_path, artifact_store_root=artifact_store_root)
+        if acquisition_db_path
+        else None
+    )
     fetch_run = (
         store.start_fetch_run(
             fetch_type="fomc_minutes",
@@ -241,7 +273,11 @@ def run_fomc_minutes_fetch(
         deduped_entries: dict[dt.date, FOMCMinutesListingEntry] = {}
         for entry in entries:
             deduped_entries[entry.meeting_end_date] = entry
-        entries = sorted(deduped_entries.values(), key=lambda item: item.meeting_end_date, reverse=True)
+        entries = sorted(
+            deduped_entries.values(),
+            key=lambda item: item.meeting_end_date,
+            reverse=True,
+        )
 
         rows: list[FOMCMinutesArticle] = []
         for entry in entries:
@@ -296,14 +332,24 @@ def run_fomc_minutes_fetch(
                 "meeting_dates": int(df["meeting_end_date"].nunique()),
             },
             "date_range": {
-                "min_meeting_end_date": str(df["meeting_end_date"].min()) if not df.empty else None,
-                "max_meeting_end_date": str(df["meeting_end_date"].max()) if not df.empty else None,
-                "min_release_timestamp": str(df["release_timestamp"].min()) if not df.empty else None,
-                "max_release_timestamp": str(df["release_timestamp"].max()) if not df.empty else None,
+                "min_meeting_end_date": (
+                    str(df["meeting_end_date"].min()) if not df.empty else None
+                ),
+                "max_meeting_end_date": (
+                    str(df["meeting_end_date"].max()) if not df.empty else None
+                ),
+                "min_release_timestamp": (
+                    str(df["release_timestamp"].min()) if not df.empty else None
+                ),
+                "max_release_timestamp": (
+                    str(df["release_timestamp"].max()) if not df.empty else None
+                ),
             },
             "paths": {
                 "fomc_minutes_parquet": str(parquet_path),
-                "acquisition_db": str(acquisition_db_path) if acquisition_db_path else None,
+                "acquisition_db": (
+                    str(acquisition_db_path) if acquisition_db_path else None
+                ),
             },
         }
         report_path = out_dir / "fomc_minutes_fetch_report.json"
@@ -332,7 +378,9 @@ def run_fomc_minutes_fetch(
         return report_path
     except Exception as exc:
         if store and fetch_run:
-            store.finish_fetch_run(run_id=fetch_run.run_id, status="failed", notes=str(exc))
+            store.finish_fetch_run(
+                run_id=fetch_run.run_id, status="failed", notes=str(exc)
+            )
         raise
 
 

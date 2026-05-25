@@ -51,7 +51,6 @@ from regime_data_fetch.daily_ohlcv_contract import (  # noqa: E402
     require_symbol_partition_table,
 )
 
-
 LOGGER = logging.getLogger("publish_canonical_snapshot")
 
 DEFAULT_MANIFEST = Path("manifests/runs/regime_engine_2026-05-17.yaml")
@@ -117,12 +116,16 @@ def _load_manifest_payload(path: Path) -> tuple[Any, Any | None]:
         return payload, y
     import yaml  # type: ignore[import-untyped]
 
-    LOGGER.warning("ruamel.yaml unavailable; falling back to yaml.safe_dump (anchors will expand)")
+    LOGGER.warning(
+        "ruamel.yaml unavailable; falling back to yaml.safe_dump (anchors will expand)"
+    )
     payload = yaml.safe_load(path.read_text())
     return payload, None
 
 
-def _dump_manifest_atomically(payload: Any, ruamel_instance: Any | None, path: Path) -> None:
+def _dump_manifest_atomically(
+    payload: Any, ruamel_instance: Any | None, path: Path
+) -> None:
     tmp = path.with_suffix(path.suffix + ".tmp")
     if ruamel_instance is not None:
         with tmp.open("w") as handle:
@@ -161,9 +164,11 @@ def _canonicalize_parquet_source(source: Any) -> bytes:
     if any(pat.is_dictionary(field.type) for field in table.schema):
         table = table.from_arrays(
             [
-                column.combine_chunks().dictionary_decode()
-                if pat.is_dictionary(field.type)
-                else column
+                (
+                    column.combine_chunks().dictionary_decode()
+                    if pat.is_dictionary(field.type)
+                    else column
+                )
                 for field, column in zip(table.schema, table.itercolumns(), strict=True)
             ],
             names=table.column_names,
@@ -255,10 +260,9 @@ def _validate_daily_ohlcv_contract(
     artifact: dict[str, Any],
     payload: bytes,
     expected_sessions: pd.DatetimeIndex | None,
-    active_intervals_by_symbol: dict[
-        str, list[tuple[pd.Timestamp, pd.Timestamp | None]]
-    ]
-    | None = None,
+    active_intervals_by_symbol: (
+        dict[str, list[tuple[pd.Timestamp, pd.Timestamp | None]]] | None
+    ) = None,
 ) -> None:
     expected_symbol = _daily_ohlcv_symbol(artifact)
     if expected_symbol is None:
@@ -316,10 +320,9 @@ def _expected_symbol_sessions(
     symbol: str,
     symbol_dates: pd.DatetimeIndex,
     expected_sessions: pd.DatetimeIndex,
-    active_intervals_by_symbol: dict[
-        str, list[tuple[pd.Timestamp, pd.Timestamp | None]]
-    ]
-    | None,
+    active_intervals_by_symbol: (
+        dict[str, list[tuple[pd.Timestamp, pd.Timestamp | None]]] | None
+    ),
 ) -> pd.DatetimeIndex:
     if active_intervals_by_symbol is None:
         return expected_sessions[
@@ -374,10 +377,9 @@ def _semantic_check_artifact(
     artifact: dict[str, Any],
     local: Path,
     expected_sessions: pd.DatetimeIndex | None,
-    active_intervals_by_symbol: dict[
-        str, list[tuple[pd.Timestamp, pd.Timestamp | None]]
-    ]
-    | None,
+    active_intervals_by_symbol: (
+        dict[str, list[tuple[pd.Timestamp, pd.Timestamp | None]]] | None
+    ),
 ) -> tuple[str | None, str]:
     if not local.exists() or not _is_parquet(local):
         return None, ""
@@ -789,7 +791,11 @@ def _artifact_block_spans(lines: list[str]) -> dict[str, tuple[int, int]]:
         if match is None:
             continue
         indent = match.group("indent")
-        if current_name is not None and current_start is not None and indent == current_indent:
+        if (
+            current_name is not None
+            and current_start is not None
+            and indent == current_indent
+        ):
             spans[current_name] = (current_start, index)
         current_name = _parse_yaml_scalar(match.group("name"))
         current_start = index
@@ -819,7 +825,9 @@ def _patch_artifact_block_lines(
     if remaining:
         keys = ", ".join(sorted(remaining))
         artifact_name = lines[start].strip()
-        raise RuntimeError(f"Manifest artifact block {artifact_name!r} missing field(s): {keys}")
+        raise RuntimeError(
+            f"Manifest artifact block {artifact_name!r} missing field(s): {keys}"
+        )
 
 
 def _split_yaml_key_value(line: str) -> tuple[str | None, str]:
@@ -901,13 +909,17 @@ def _format_report_lines(
     return "\n".join(lines)
 
 
-def _format_local_report(reports: list[ArtifactReport], *, limit: int | None = None) -> str:
+def _format_local_report(
+    reports: list[ArtifactReport], *, limit: int | None = None
+) -> str:
     return _format_report_lines(
         reports, limit=limit, pick=lambda r: (r.local_status, r.new_sha)
     )
 
 
-def _format_store_report(reports: list[ArtifactReport], *, limit: int | None = None) -> str:
+def _format_store_report(
+    reports: list[ArtifactReport], *, limit: int | None = None
+) -> str:
     return _format_report_lines(
         reports,
         limit=limit,
@@ -929,8 +941,14 @@ def main(argv: list[str] | None = None) -> int:
     logging.basicConfig(level=logging.INFO, format="%(message)s")
     args = _build_arg_parser().parse_args(argv)
 
-    manifest_path = args.manifest if args.manifest.is_absolute() else (_REPO_ROOT / args.manifest)
-    data_root = args.data_root if args.data_root.is_absolute() else (_REPO_ROOT / args.data_root)
+    manifest_path = (
+        args.manifest if args.manifest.is_absolute() else (_REPO_ROOT / args.manifest)
+    )
+    data_root = (
+        args.data_root
+        if args.data_root.is_absolute()
+        else (_REPO_ROOT / args.data_root)
+    )
 
     payload, ruamel_instance = _load_manifest_payload(manifest_path)
     if not isinstance(payload, dict) or "artifacts" not in payload:

@@ -55,5 +55,7 @@ def _previous_nyse_session(value: dt.date) -> dt.date:
         end_date=value,
     )
     if schedule.empty:
-        raise RuntimeError(f"NYSE calendar returned no sessions before {value.isoformat()}")
+        raise RuntimeError(
+            f"NYSE calendar returned no sessions before {value.isoformat()}"
+        )
     return schedule.index[-1].date()

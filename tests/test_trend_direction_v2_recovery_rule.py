@@ -11,6 +11,7 @@ Spec references (docs/regime_engine_v2_spec.md):
 Per ~/.claude/CLAUDE.md and AGENTS.md G/L: realistic SPY-like price series,
 no toy a/b/c names, use the real production Pydantic config.
 """
+
 from __future__ import annotations
 
 from datetime import date
@@ -37,7 +38,6 @@ from regime_detection.trend_direction_v2 import (
     evaluate_recovery,
     evaluate_v2_trend_label,
 )
-
 
 # v2 §1A line 116-117 — exact spec thresholds.
 _SPEC_DRAWDOWN_THRESHOLD = -0.15
@@ -105,7 +105,9 @@ def test_recovery_all_three_conditions_true_returns_true(recovery_rules) -> None
     features, close = _scalar_features_at(
         dt=dt, close_t=290.0, sma_50=280.0, return_63d=0.20, drawdown_252d=-0.18
     )
-    assert evaluate_recovery(features, close, dt=dt, rules_config=recovery_rules) is True
+    assert (
+        evaluate_recovery(features, close, dt=dt, rules_config=recovery_rules) is True
+    )
 
 
 def test_recovery_drawdown_exactly_threshold_is_true(recovery_rules) -> None:
@@ -114,7 +116,9 @@ def test_recovery_drawdown_exactly_threshold_is_true(recovery_rules) -> None:
     features, close = _scalar_features_at(
         dt=dt, close_t=290.0, sma_50=280.0, return_63d=0.20, drawdown_252d=-0.15
     )
-    assert evaluate_recovery(features, close, dt=dt, rules_config=recovery_rules) is True
+    assert (
+        evaluate_recovery(features, close, dt=dt, rules_config=recovery_rules) is True
+    )
 
 
 def test_recovery_drawdown_just_above_threshold_is_false(recovery_rules) -> None:
@@ -122,7 +126,9 @@ def test_recovery_drawdown_just_above_threshold_is_false(recovery_rules) -> None
     features, close = _scalar_features_at(
         dt=dt, close_t=290.0, sma_50=280.0, return_63d=0.20, drawdown_252d=-0.14
     )
-    assert evaluate_recovery(features, close, dt=dt, rules_config=recovery_rules) is False
+    assert (
+        evaluate_recovery(features, close, dt=dt, rules_config=recovery_rules) is False
+    )
 
 
 def test_recovery_return_exactly_threshold_is_false(recovery_rules) -> None:
@@ -131,7 +137,9 @@ def test_recovery_return_exactly_threshold_is_false(recovery_rules) -> None:
     features, close = _scalar_features_at(
         dt=dt, close_t=290.0, sma_50=280.0, return_63d=0.10, drawdown_252d=-0.20
     )
-    assert evaluate_recovery(features, close, dt=dt, rules_config=recovery_rules) is False
+    assert (
+        evaluate_recovery(features, close, dt=dt, rules_config=recovery_rules) is False
+    )
 
 
 def test_recovery_return_just_above_threshold_is_true(recovery_rules) -> None:
@@ -139,7 +147,9 @@ def test_recovery_return_just_above_threshold_is_true(recovery_rules) -> None:
     features, close = _scalar_features_at(
         dt=dt, close_t=290.0, sma_50=280.0, return_63d=0.10001, drawdown_252d=-0.20
     )
-    assert evaluate_recovery(features, close, dt=dt, rules_config=recovery_rules) is True
+    assert (
+        evaluate_recovery(features, close, dt=dt, rules_config=recovery_rules) is True
+    )
 
 
 def test_recovery_close_equals_sma50_is_false(recovery_rules) -> None:
@@ -148,7 +158,9 @@ def test_recovery_close_equals_sma50_is_false(recovery_rules) -> None:
     features, close = _scalar_features_at(
         dt=dt, close_t=280.0, sma_50=280.0, return_63d=0.20, drawdown_252d=-0.20
     )
-    assert evaluate_recovery(features, close, dt=dt, rules_config=recovery_rules) is False
+    assert (
+        evaluate_recovery(features, close, dt=dt, rules_config=recovery_rules) is False
+    )
 
 
 def test_recovery_close_just_above_sma50_is_true(recovery_rules) -> None:
@@ -156,7 +168,9 @@ def test_recovery_close_just_above_sma50_is_true(recovery_rules) -> None:
     features, close = _scalar_features_at(
         dt=dt, close_t=280.0 * 1.001, sma_50=280.0, return_63d=0.20, drawdown_252d=-0.20
     )
-    assert evaluate_recovery(features, close, dt=dt, rules_config=recovery_rules) is True
+    assert (
+        evaluate_recovery(features, close, dt=dt, rules_config=recovery_rules) is True
+    )
 
 
 @pytest.mark.parametrize(
@@ -175,7 +189,9 @@ def test_recovery_nan_input_returns_false(recovery_rules, field) -> None:
     }
     args[field] = float("nan")
     features, close = _scalar_features_at(**args)
-    assert evaluate_recovery(features, close, dt=dt, rules_config=recovery_rules) is False
+    assert (
+        evaluate_recovery(features, close, dt=dt, rules_config=recovery_rules) is False
+    )
 
 
 # ---------- Precedence tests on `evaluate_v2_trend_label` --------------------
@@ -200,7 +216,9 @@ def test_precedence_bull_outranks_recovery_when_both_match(recovery_rules) -> No
 
 
 @pytest.mark.parametrize("v1_label", ["bear", "sideways", "transition", "unknown"])
-def test_precedence_recovery_overrides_lower_v1_labels(recovery_rules, v1_label) -> None:
+def test_precedence_recovery_overrides_lower_v1_labels(
+    recovery_rules, v1_label
+) -> None:
     """v2 §1A line 132-134: recovery > bear > sideways > transition > unknown."""
     dt = pd.Timestamp("2020-04-29")
     features, close = _scalar_features_at(
@@ -325,9 +343,9 @@ def test_build_raw_outputs_emits_recovery_on_synthetic_rebound(
         trend_direction_v2_rules=recovery_rules,
     )
     # At least one session emits `recovery`.
-    assert "recovery" in labels, (
-        f"expected recovery in labels; got distinct: {sorted(set(labels))}"
-    )
+    assert (
+        "recovery" in labels
+    ), f"expected recovery in labels; got distinct: {sorted(set(labels))}"
 
     # Sanity: every recovery day has the three rule inputs satisfied.
     for idx, label in enumerate(labels):
@@ -392,9 +410,9 @@ def test_end_to_end_engine_emits_recovery_on_synthetic_series(
             "high": close_series.values,
             "low": close_series.values,
             "close": close_series.values,
-                "volume": range(100_000_000, 100_000_000 + len(close_series.index)),
-            }
-        )
+            "volume": range(100_000_000, 100_000_000 + len(close_series.index)),
+        }
+    )
     # Add RSP rows (equal-weight proxy) so v1 breadth doesn't fail. Mirror SPY.
     rsp_df = market_df.copy()
     rsp_df["symbol"] = "RSP"
@@ -424,9 +442,9 @@ def test_end_to_end_engine_emits_recovery_on_synthetic_series(
     )
 
     raw_labels = [out.trend_direction.raw_label for out in timeline.outputs]
-    assert "recovery" in raw_labels, (
-        f"expected recovery in end-to-end raw_labels; got distinct: {sorted(set(raw_labels))}"
-    )
+    assert (
+        "recovery" in raw_labels
+    ), f"expected recovery in end-to-end raw_labels; got distinct: {sorted(set(raw_labels))}"
 
 
 # ---------- Config tests -----------------------------------------------------

@@ -39,7 +39,6 @@ from regime_detection.feature_store import build_feature_store
 from regime_detection.fragility_universe import CROSS_ASSET_SYMBOLS, SECTOR_ETFS
 from regime_detection.market_context import build_market_context
 
-
 _REPO_ROOT = Path(__file__).resolve().parents[1]
 _REAL_V2_AS_OF = date(2026, 5, 13)
 
@@ -48,7 +47,12 @@ _REAL_V2_AS_OF = date(2026, 5, 13)
     ("raw", "stable", "active", "expected"),
     [
         ("weak_breadth", "weak_breadth", "weak_breadth", "etf_proxy"),
-        ("narrowing_breadth", "narrowing_breadth", "narrowing_breadth", "pit_constituent"),
+        (
+            "narrowing_breadth",
+            "narrowing_breadth",
+            "narrowing_breadth",
+            "pit_constituent",
+        ),
         (
             "narrowing_breadth",
             "weak_breadth",
@@ -63,17 +67,24 @@ def test_breadth_active_label_source_separates_pit_from_hysteresis(
     active: str,
     expected: str,
 ) -> None:
-    assert _derive_breadth_active_label_source(
-        raw=raw,
-        stable=stable,
-        active=active,
-    ) == expected
+    assert (
+        _derive_breadth_active_label_source(
+            raw=raw,
+            stable=stable,
+            active=active,
+        )
+        == expected
+    )
 
 
 def test_axis_builders_do_not_use_empty_string_raw_label_quality_sentinel() -> None:
-    for path in (_REPO_ROOT / "src" / "regime_detection" / "axis_builders").glob("*.py"):
+    for path in (_REPO_ROOT / "src" / "regime_detection" / "axis_builders").glob(
+        "*.py"
+    ):
         source = path.read_text()
-        assert 'raw_label=""' not in source, f"{path.name} uses empty-string raw_label sentinel"
+        assert (
+            'raw_label=""' not in source
+        ), f"{path.name} uses empty-string raw_label sentinel"
 
 
 def _load_test_helper_module(name: str, filename: str):
@@ -148,7 +159,9 @@ def test_breadth_builder_keeps_etf_proxy_when_pit_inputs_are_missing(
         end_date=_REAL_V2_AS_OF,
         market_data=v2_market_df_for_asof(_REAL_V2_AS_OF),
         config=RegimeEngine().config,
-        sector_etf_closes={symbol: v2_close_series_by_symbol[symbol] for symbol in SECTOR_ETFS},
+        sector_etf_closes={
+            symbol: v2_close_series_by_symbol[symbol] for symbol in SECTOR_ETFS
+        },
     )
     store = build_feature_store(
         context,
@@ -186,7 +199,9 @@ def test_monetary_pressure_builder_forces_unknown_when_yield_input_is_missing() 
         monetary_pressure_v2_config=context.config.monetary_pressure_v2,
     )
     assert store.monetary is not None
-    nan_series = pd.Series(float("nan"), index=store.monetary.yield_change_zscore_2y_63d.index)
+    nan_series = pd.Series(
+        float("nan"), index=store.monetary.yield_change_zscore_2y_63d.index
+    )
     broken_store = store.model_copy(
         update={
             "monetary": replace(
@@ -237,7 +252,9 @@ def test_network_fragility_builder_raises_when_supplied_axis_labels_miss_session
         end_date=_REAL_V2_AS_OF,
         market_data=v2_market_df_for_asof(_REAL_V2_AS_OF),
         config=RegimeEngine().config,
-        sector_etf_closes={symbol: v2_close_series_by_symbol[symbol] for symbol in SECTOR_ETFS},
+        sector_etf_closes={
+            symbol: v2_close_series_by_symbol[symbol] for symbol in SECTOR_ETFS
+        },
         cross_asset_closes={
             symbol: v2_close_series_by_symbol[symbol] for symbol in CROSS_ASSET_SYMBOLS
         },

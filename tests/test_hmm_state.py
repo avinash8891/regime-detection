@@ -20,15 +20,12 @@ from regime_detection.hmm_state import (
     compute_hmm_features,
 )
 
-
 # ---------------------------------------------------------------------------
 # Helpers — synthetic but deterministic inputs that mimic the 5 spec seams.
 # ---------------------------------------------------------------------------
 
 
-def _synthetic_inputs(
-    n_sessions: int = 1500, *, seed: int = 0
-) -> dict[str, pd.Series]:
+def _synthetic_inputs(n_sessions: int = 1500, *, seed: int = 0) -> dict[str, pd.Series]:
     """Build five synthetic series with two distinct regime patterns.
 
     First half ~calm (low vol, positive drift), second half ~volatile (high
@@ -57,15 +54,11 @@ def _synthetic_inputs(
     # volume z-score
     base_vol = rng.normal(loc=0.0, scale=1.0, size=n_sessions)
     base_vol[half:] += 1.5  # elevated in regime 2
-    volume_zscore_20d = pd.Series(
-        base_vol, index=index, name="volume_zscore_20d"
-    )
+    volume_zscore_20d = pd.Series(base_vol, index=index, name="volume_zscore_20d")
 
     # avg pairwise correlation: low in calm regime, high in volatile regime
     corr_calm = rng.normal(loc=0.30, scale=0.05, size=half).clip(0.0, 0.95)
-    corr_vol = rng.normal(loc=0.65, scale=0.05, size=n_sessions - half).clip(
-        0.0, 0.95
-    )
+    corr_vol = rng.normal(loc=0.65, scale=0.05, size=n_sessions - half).clip(0.0, 0.95)
     avg_pairwise_corr_63d = pd.Series(
         np.concatenate([corr_calm, corr_vol]),
         index=index,
@@ -331,8 +324,7 @@ def test_feature_store_hmm_seam_lit_when_all_inputs_present(
         raw = pd.read_parquet(market_parquet)
     else:
         parts = [
-            pd.read_csv(raw_dir / f"{symbol}.csv")
-            for symbol in ("SPY", "RSP", "VIXY")
+            pd.read_csv(raw_dir / f"{symbol}.csv") for symbol in ("SPY", "RSP", "VIXY")
         ]
         raw = pd.concat(parts, ignore_index=True)
     raw["date"] = pd.to_datetime(raw["date"]).dt.date
@@ -354,7 +346,10 @@ def test_feature_store_hmm_seam_lit_when_all_inputs_present(
     # network_fragility is None in this fixture (no sector ETFs), so HMM
     # seam should be None — accept either outcome but assert behavior is
     # gated on input availability per the predicate.
-    if feature_store.network_fragility is None or feature_store.volume_liquidity_v2 is None:
+    if (
+        feature_store.network_fragility is None
+        or feature_store.volume_liquidity_v2 is None
+    ):
         assert feature_store.hmm is None
     else:
         assert feature_store.hmm is not None

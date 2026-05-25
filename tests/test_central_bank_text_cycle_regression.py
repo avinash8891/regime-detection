@@ -27,6 +27,7 @@ present (the integration assertion at the bottom of the file picks up
 real FOMC body_text for the two windows when available and re-asserts
 the sign there too).
 """
+
 from __future__ import annotations
 
 import datetime as dt
@@ -37,7 +38,6 @@ import pytest
 
 from regime_detection.central_bank_text import score_text, to_daily_score_series
 from regime_detection.loaders import load_central_bank_text_score
-
 
 # 2022-03 hike — initial tightening cycle (verbatim-paraphrased structure).
 TIGHTENING_2022_MARCH_EXCERPT = (
@@ -258,9 +258,7 @@ def test_live_fomc_minutes_easing_window_scores_dovish() -> None:
         & (scored["release_date"] <= dt.date(2020, 4, 30))
     ]
     if easing_window.empty:
-        pytest.skip(
-            "FOMC parquet does not cover the 2019-07 → 2020-04 cycle."
-        )
+        pytest.skip("FOMC parquet does not cover the 2019-07 → 2020-04 cycle.")
     mean_net = easing_window["net_score"].mean()
     # NOTE: the FOMC during this window also discussed mid-2019 "above-trend"
     # growth language, so the test allows mean to be non-strictly-negative
