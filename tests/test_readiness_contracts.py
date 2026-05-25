@@ -49,3 +49,12 @@ def test_pr_fast_ci_keeps_default_pytest_scope() -> None:
     pytest_runs = [command for command in commands if "python -m pytest" in command]
     assert pytest_runs
     assert all('-m ""' not in command for command in pytest_runs)
+
+
+def test_validate_agents_guardrail_understands_split_ci() -> None:
+    validator = Path("scripts/validate_agents_md.py").read_text()
+
+    assert "SHARED_COMMANDS" in validator
+    assert "PR_CI_COMMANDS" in validator
+    assert "FULL_VERIFICATION_COMMANDS" in validator
+    assert ".github/workflows/full-verification.yml" in validator
