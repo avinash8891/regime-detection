@@ -67,6 +67,15 @@ optional_dependencies_dev_groups = ["dev", "audit"]
 [tool.deptry.package_module_name_map]
 "regime-detection" = "regime_detection|regime_data_fetch"
 
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+line-ending = "lf"
+
 [tool.ruff.lint.per-file-ignores]
 "scripts/approve_group_b_candidate.py" = ["E402"]
 "scripts/audit_layer2_30d.py" = ["E402"]
