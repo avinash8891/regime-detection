@@ -9,12 +9,16 @@ description = "Regime detection engine (V1+V2 unified)"
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
-  "numpy",
-  "pandas",
+  "numpy==2.3.0",
+  "pandas==2.3.0",
   "pydantic>=2,<3",
-  "pandas_market_calendars",
-  "pyyaml",
+  "pandas_market_calendars==5.1.1",
+  "pyarrow==23.0.0",
+  "pyyaml==6.0.2",
+  "openpyxl==3.1.5",
+  "xlrd==2.0.2",
   "hmmlearn>=0.3,<0.4",
+  "opentelemetry-api==1.36.0",
   # Adapter in regime_detection.change_point uses
   # online_changepoint_detection(data, hazard_func, observation_likelihood),
   # constant_hazard(lam, r), and StudentT(alpha, beta, kappa, mu).
@@ -32,8 +36,11 @@ audit = [
   "pip-audit",
   "pydeps",
   "vulture",
+  "radon",
+  "deptry",
 ]
 dev = [
+  "black",
   "pytest",
   "pytest-cov",
   "pytest-mock",
@@ -41,9 +48,36 @@ dev = [
   "hypothesis",
   "ruff",
   "pyright",
-  "pyarrow",
-  "xlrd",
-  "openpyxl",
+]
+
+[tool.black]
+line-length = 88
+target-version = ["py311"]
+
+[tool.pyright]
+typeCheckingMode = "strict"
+include = [
+  "src/regime_detection/observability.py",
+]
+
+[tool.radon]
+cc_min = "B"
+exclude = "tests/*,.venv/*,venv/*"
+
+[tool.deptry]
+extend_exclude = [
+  "tests",
+]
+known_first_party = [
+  "regime_detection",
+  "regime_data_fetch",
+  "regime_shared",
+  "_fetch_regime_engine_v1_args",
+  "_v2_calibration_helpers",
+]
+optional_dependencies_dev_groups = [
+  "dev",
+  "audit",
 ]
 
 [tool.setuptools]

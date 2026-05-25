@@ -1,0 +1,17 @@
+{
+  "threshold": 1,
+  "minLines": 20,
+  "minTokens": 120,
+  "reporters": ["consoleFull"],
+  "ignore": [
+    "data/**",
+    "docs/**",
+    "tests/fixtures/**",
+    "**/__pycache__/**"
+  ],
+  "pattern": [
+    "src/**/*.py",
+    "scripts/**/*.py",
+    "tests/**/*.py"
+  ]
+}

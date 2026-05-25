@@ -61,7 +61,17 @@ jobs:
           python -m pip install --upgrade pip
           pip install -e ".[dev]"
           python -m ruff check .
+          python -m black --check src tests scripts
+          python -m radon cc src/regime_detection/observability.py -s -n B
+          npx jscpd --threshold 1 --min-lines 20 --min-tokens 120 \
+            src/regime_detection/observability.py \
+            src/regime_detection/loaders.py \
+            scripts/profile_engine.py \
+            tests/test_observability.py \
+            tests/test_profile_engine_reporting_loaders.py
+          python -m deptry . --ignore DEP003
           python -m pyright \
+            src/regime_detection/observability.py \
             src/regime_detection/config.py \
             src/regime_detection/transition_risk.py \
             src/regime_detection/feature_store.py \
