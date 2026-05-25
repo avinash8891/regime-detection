@@ -53,12 +53,16 @@ def _inputs(
     return_1d: float = 0.0,
     gap_frequency_percentile_252d: float = 0.0,
     intraday_range_percentile_252d: float = 0.0,
+    gap_frequency_20d: float = 0.0,
+    intraday_range: float = 0.0,
 ) -> VolumeLiquidityRuleInputs:
     return VolumeLiquidityRuleInputs(
         volume_zscore_20d=volume_zscore_20d,
         return_1d=return_1d,
         gap_frequency_percentile_252d=gap_frequency_percentile_252d,
         intraday_range_percentile_252d=intraday_range_percentile_252d,
+        gap_frequency_20d=gap_frequency_20d,
+        intraday_range=intraday_range,
     )
 
 
@@ -181,6 +185,25 @@ def test_liquidity_gap_behavior_returns_false_on_nan_inputs(volume_liquidity_rul
         intraday_range_percentile_252d=float("nan"),
     )
     assert evaluate_liquidity_gap_behavior(inputs, volume_liquidity_rules) is False
+
+
+def test_liquidity_gap_behavior_uses_cold_start_fallback_when_percentiles_warm_up(
+    volume_liquidity_rules,
+):
+    inputs = _inputs(
+        gap_frequency_percentile_252d=float("nan"),
+        intraday_range_percentile_252d=float("nan"),
+        gap_frequency_20d=0.35,
+        intraday_range=0.045,
+    )
+
+    assert evaluate_liquidity_gap_behavior(inputs, volume_liquidity_rules) is True
+    evaluation = evaluate_rules_with_evidence(
+        inputs=inputs,
+        config=volume_liquidity_rules,
+    )
+    assert evaluation.label == "liquidity_gap_behavior"
+    assert evaluation.rule_path == "cold_start_fallback"
 
 
 # ---------- normal_volume = !panic AND !liquidity_gap (§1E line 282) ---------

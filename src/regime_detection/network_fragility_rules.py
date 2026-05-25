@@ -18,8 +18,8 @@ Cross-axis inputs:
     - ``volatility_label`` from V1 ``VolatilityLabel`` (regime_detection.volatility_state)
     - ``credit_funding_label`` from V2 §2C credit/funding axis.
       When ``credit_funding_label is None`` but the systemic market-stress
-      conditions are otherwise present, precedence emits
-      ``systemic_stress_unconfirmed`` instead of silently downgrading.
+      conditions are otherwise present, precedence fails closed by emitting
+      ``systemic_stress`` with ``reason="credit_funding_unavailable"``.
 
 Slope detection for ``rising_fragility``:
     OLS slope of the trailing 21d window of the feature vs a unit trading-day
@@ -69,7 +69,6 @@ NetworkFragilityLabel = Literal[
 #          > rising_fragility > stock_picker_dispersion > diversified_normal > unknown
 RULE_PRECEDENCE: tuple[NetworkFragilityLabel, ...] = (
     "systemic_stress",
-    "systemic_stress_unconfirmed",
     "correlation_to_one",
     "correlation_concentration",
     "rising_fragility",
@@ -585,14 +584,14 @@ def evaluate_systemic_stress(
      AND VIX_percentile_252d > 0.80
      AND breadth_state.active_label in [weak_breadth, narrowing_breadth]`
 
-    Short-circuit: when ``credit_funding_label is None`` (credit/funding
-    seam not lit) this rule is False. Precedence then falls through to
-    ``correlation_to_one``.
+    When ``credit_funding_label is None`` (credit/funding seam not lit), fail
+    closed: systemic market gates still emit systemic_stress, with evidence
+    carrying ``reason="credit_funding_unavailable"``.
     """
-    if credit_funding_label is None:
-        return False
     if systemic_stress_rule_path(inputs, config, breadth_label) is None:
         return False
+    if credit_funding_label is None:
+        return True
     accepted_credit: set[CreditFundingLabel] = {"credit_stress", "deleveraging"}
     return bool(credit_funding_label in accepted_credit)
 
@@ -664,10 +663,17 @@ def evaluate_rules_with_evidence(
         if label == "systemic_stress":
             path = systemic_stress_rule_path(inputs, config, breadth_label)
             accepted_credit: set[CreditFundingLabel] = {"credit_stress", "deleveraging"}
-            if path is not None and credit_funding_label in accepted_credit:
+            if path is not None and (
+                credit_funding_label is None or credit_funding_label in accepted_credit
+            ):
                 return NetworkFragilityRuleEvaluation(
                     label="systemic_stress",
                     rule_path=path,
+                    reason=(
+                        "credit_funding_unavailable"
+                        if credit_funding_label is None
+                        else None
+                    ),
                 )
         elif label == "systemic_stress_unconfirmed":
             path = systemic_stress_rule_path(inputs, config, breadth_label)

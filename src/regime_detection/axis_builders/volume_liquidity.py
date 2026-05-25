@@ -65,9 +65,13 @@ def build_volume_liquidity_axis_series(
     # and fall through per V1 §2.7 cold-start semantics.
     volatility_v2 = feature_store.volatility_state_v2
     gap_freq_pct_series: pd.Series | None = None
+    gap_freq_series: pd.Series | None = None
+    intraday_range_series: pd.Series | None = None
     intraday_pct_series: pd.Series | None = None
     if volatility_v2 is not None:
+        gap_freq_series = volatility_v2.gap_frequency_20d
         gap_freq_pct_series = volatility_v2.gap_frequency_percentile_252d
+        intraday_range_series = volatility_v2.intraday_range
         intraday_pct_series = volatility_v2.intraday_range_percentile_252d
 
     required_inputs: list[pd.Series] = [
@@ -119,6 +123,16 @@ def build_volume_liquidity_axis_series(
             if gap_freq_pct_series is not None and dt in gap_freq_pct_series.index
             else float("nan")
         )
+        gap_freq_20d = (
+            float(gap_freq_series.loc[dt])
+            if gap_freq_series is not None and dt in gap_freq_series.index
+            else float("nan")
+        )
+        intraday_range = (
+            float(intraday_range_series.loc[dt])
+            if intraday_range_series is not None and dt in intraday_range_series.index
+            else float("nan")
+        )
         intraday_pct = (
             float(intraday_pct_series.loc[dt])
             if intraday_pct_series is not None and dt in intraday_pct_series.index
@@ -130,6 +144,8 @@ def build_volume_liquidity_axis_series(
             return_1d=return_1d,
             gap_frequency_percentile_252d=gap_freq_pct,
             intraday_range_percentile_252d=intraday_pct,
+            gap_frequency_20d=gap_freq_20d,
+            intraday_range=intraday_range,
         )
         rule_evaluation = evaluate_volume_liquidity_rules_with_evidence(
             inputs=inputs,
@@ -143,7 +159,9 @@ def build_volume_liquidity_axis_series(
                 "rule_evidence": {
                     "volume_zscore_20d": float(f"{volume_zscore_20d:.8g}"),
                     "return_1d": float(f"{return_1d:.8g}"),
+                    "gap_frequency_20d": float(f"{gap_freq_20d:.8g}"),
                     "gap_frequency_percentile_252d": float(f"{gap_freq_pct:.8g}"),
+                    "intraday_range": float(f"{intraday_range:.8g}"),
                     "intraday_range_percentile_252d": float(f"{intraday_pct:.8g}"),
                 },
                 "rule_path": rule_evaluation.rule_path,

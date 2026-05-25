@@ -428,7 +428,7 @@ def test_classifier_emits_central_bank_text_score_as_evidence_only():
     sample = next(
         output for output in out.values() if "rule_evidence" in output.evidence
     )
-    assert sample.evidence["rule_evidence"]["central_bank_text_score"] == 0.25
+    assert "central_bank_text_score" not in sample.evidence["rule_evidence"]
     assert sample.evidence["central_bank_text_evidence"] == {
         "score": 0.25,
         "classifier_type": "lexicon",

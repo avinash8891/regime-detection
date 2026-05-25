@@ -31,9 +31,8 @@ from regime_detection.data_quality import (
 from regime_detection.axis_builders.per_label import build_per_label_axis_outputs
 from regime_detection.feature_store import FeatureStore
 from regime_detection.axis_builders.staleness import (
-    _calendar_staleness_days_series,
     _safe_float,
-    _trading_staleness_series,
+    staleness_for_source,
 )
 from regime_detection.market_context import MarketContext
 from regime_detection.models import (
@@ -120,33 +119,49 @@ def _build_credit_funding_for_spread_source(
 
     nfci_carried = features.nfci_daily_carried
     session_index = spy_close.index
-    hyg_staleness_by_date = _trading_staleness_series(hyg_close, session_index)
-    lqd_staleness_by_date = _trading_staleness_series(lqd_close, session_index)
-    tlt_staleness_by_date = _trading_staleness_series(tlt_close, session_index)
-    hy_oas_staleness_by_date = _calendar_staleness_days_series(
-        hy_oas_series, session_index
+    hyg_staleness_by_date = staleness_for_source(
+        source_name=HYG_KEY, series=hyg_close, session_index=session_index
     )
-    ig_oas_staleness_by_date = _calendar_staleness_days_series(
-        ig_oas_series, session_index
+    lqd_staleness_by_date = staleness_for_source(
+        source_name=LQD_KEY, series=lqd_close, session_index=session_index
     )
-    nfci_staleness_by_date = _calendar_staleness_days_series(nfci_series, session_index)
+    tlt_staleness_by_date = staleness_for_source(
+        source_name=TLT_KEY, series=tlt_close, session_index=session_index
+    )
+    hy_oas_staleness_by_date = staleness_for_source(
+        source_name=HY_OAS_KEY, series=hy_oas_series, session_index=session_index
+    )
+    ig_oas_staleness_by_date = staleness_for_source(
+        source_name=IG_OAS_KEY, series=ig_oas_series, session_index=session_index
+    )
+    nfci_staleness_by_date = staleness_for_source(
+        source_name=NFCI_KEY, series=nfci_series, session_index=session_index
+    )
     # Compute staleness from the raw SOFR and FEDFUNDS inputs rather than the
     # already-spliced sofr_iorb_spread. The derived spread is forward-filled in
     # compute_credit_funding_features, so it is always non-NaN and would never
     # detect a real data outage. Taking np.minimum of both raw series preserves
     # ADR 0009: a session covered by the FEDFUNDS-IOER proxy reads its staleness
     # from FEDFUNDS (fresh), not from SOFR (sentinel/stale).
-    _sofr_staleness = _calendar_staleness_days_series(
-        macro_series.get(SOFR_KEY), session_index
+    _sofr_staleness = staleness_for_source(
+        source_name=SOFR_KEY,
+        series=macro_series.get(SOFR_KEY),
+        session_index=session_index,
     )
-    _iorb_staleness = _calendar_staleness_days_series(
-        macro_series.get(IORB_KEY), session_index
+    _iorb_staleness = staleness_for_source(
+        source_name=IORB_KEY,
+        series=macro_series.get(IORB_KEY),
+        session_index=session_index,
     )
-    _fedfunds_staleness = _calendar_staleness_days_series(
-        macro_series.get(FEDFUNDS_KEY), session_index
+    _fedfunds_staleness = staleness_for_source(
+        source_name=FEDFUNDS_KEY,
+        series=macro_series.get(FEDFUNDS_KEY),
+        session_index=session_index,
     )
-    _ioer_legacy_staleness = _calendar_staleness_days_series(
-        macro_series.get(IOER_LEGACY_KEY), session_index
+    _ioer_legacy_staleness = staleness_for_source(
+        source_name=IOER_LEGACY_KEY,
+        series=macro_series.get(IOER_LEGACY_KEY),
+        session_index=session_index,
     )
     sofr_iorb_pair_staleness = np.maximum(
         _sofr_staleness.to_numpy(), _iorb_staleness.to_numpy()

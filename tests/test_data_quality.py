@@ -74,6 +74,26 @@ def test_assess_series_input_quality_multiple_inputs_uses_worst_quality() -> Non
     assert dq.reason == "insufficient_data"
 
 
+def test_assess_series_input_quality_ignores_future_dated_observations() -> None:
+    series = pd.Series(
+        [1.0],
+        index=pd.DatetimeIndex([pd.Timestamp("2024-01-10")]),
+        dtype="float64",
+    )
+
+    dq = assess_series_input_quality(
+        as_of_date=date(2024, 1, 8),
+        required_inputs=[series],
+        required_trading_days=1,
+        raw_label=None,
+        max_freshness_days=3,
+        min_completeness=0.95,
+    )
+
+    assert dq.status == "insufficient_history"
+    assert dq.freshness_days is None
+
+
 def test_quality_forces_unknown_only_for_terminal_bad_quality_statuses() -> None:
     assert quality_forces_unknown(
         DataQuality(status="insufficient_history", freshness_days=None, completeness=None)

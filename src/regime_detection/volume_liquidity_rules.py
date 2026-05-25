@@ -82,6 +82,9 @@ class VolumeLiquidityRuleInputs:
     gap_frequency_percentile_252d: float
     # §1E line 418 — 252d percentile of intraday range.
     intraday_range_percentile_252d: float
+    # Raw §1E inputs used only while percentile history is warming up.
+    gap_frequency_20d: float = float("nan")
+    intraday_range: float = float("nan")
 
 
 @dataclass(frozen=True)
@@ -99,6 +102,33 @@ def _gap_history_unavailable(inputs: VolumeLiquidityRuleInputs) -> bool:
     return _is_nan(inputs.gap_frequency_percentile_252d) or _is_nan(
         inputs.intraday_range_percentile_252d
     )
+
+
+def liquidity_gap_rule_path(
+    inputs: VolumeLiquidityRuleInputs,
+    config: VolumeLiquidityRulesConfig,
+) -> str | None:
+    if (
+        not _gap_history_unavailable(inputs)
+        and inputs.gap_frequency_percentile_252d
+        > config.liquidity_gap_frequency_percentile_threshold
+        and inputs.intraday_range_percentile_252d
+        > config.liquidity_gap_intraday_range_percentile_threshold
+    ):
+        return "percentile"
+    if not config.cold_start_liquidity_gap_enabled:
+        return None
+    if not _gap_history_unavailable(inputs):
+        return None
+    if _is_nan(inputs.gap_frequency_20d) or _is_nan(inputs.intraday_range):
+        return None
+    if (
+        inputs.gap_frequency_20d
+        >= config.cold_start_liquidity_gap_frequency_20d_min
+        and inputs.intraday_range >= config.cold_start_liquidity_gap_intraday_range_min
+    ):
+        return "cold_start_fallback"
+    return None
 
 
 def evaluate_panic_volume(
@@ -143,16 +173,7 @@ def evaluate_liquidity_gap_behavior(
     commit that flipped this predicate from `return False`), so both
     rule inputs are available at evaluation time.
     """
-    if _is_nan(inputs.gap_frequency_percentile_252d) or _is_nan(
-        inputs.intraday_range_percentile_252d
-    ):
-        return False
-    return bool(
-        inputs.gap_frequency_percentile_252d
-        > config.liquidity_gap_frequency_percentile_threshold
-        and inputs.intraday_range_percentile_252d
-        > config.liquidity_gap_intraday_range_percentile_threshold
-    )
+    return liquidity_gap_rule_path(inputs, config) is not None
 
 
 def evaluate_normal_volume(
@@ -207,10 +228,11 @@ def evaluate_rules_with_evidence(
                     rule_path="standard",
                 )
         elif label == "liquidity_gap_behavior":
-            if evaluate_liquidity_gap_behavior(inputs, config):
+            path = liquidity_gap_rule_path(inputs, config)
+            if path is not None:
                 return VolumeLiquidityRuleEvaluation(
                     label="liquidity_gap_behavior",
-                    rule_path="percentile",
+                    rule_path=path,
                 )
         elif label == "normal_volume":
             if evaluate_normal_volume(inputs, config):

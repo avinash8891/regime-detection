@@ -1,8 +1,43 @@
 from __future__ import annotations
 
+from typing import Literal
+
 import pandas as pd
 
 _STALENESS_SENTINEL = 10**9
+StalenessClock = Literal["calendar", "trading"]
+
+STALENESS_CLOCK_BY_SOURCE: dict[str, StalenessClock] = {
+    "cpi_all_items": "calendar",
+    "pmi_manufacturing": "calendar",
+    "10y_yield": "trading",
+    "cpi_nowcast": "calendar",
+    "aggregate_forward_eps_revision": "calendar",
+    "HYG": "trading",
+    "LQD": "trading",
+    "TLT": "trading",
+    "hy_oas": "calendar",
+    "ig_bbb_oas": "calendar",
+    "nfci": "calendar",
+    "sofr": "calendar",
+    "iorb": "calendar",
+    "fedfunds": "calendar",
+    "ioer_legacy": "calendar",
+}
+
+
+def staleness_for_source(
+    *,
+    source_name: str,
+    series: pd.Series | None,
+    session_index: pd.Index,
+) -> pd.Series:
+    clock = STALENESS_CLOCK_BY_SOURCE[source_name]
+    if clock == "calendar":
+        return _calendar_staleness_days_series(series, session_index)
+    if clock == "trading":
+        return _trading_staleness_series(series, session_index)
+    raise ValueError(f"unknown staleness clock for source {source_name!r}: {clock!r}")
 
 
 def _calendar_staleness_days_series(

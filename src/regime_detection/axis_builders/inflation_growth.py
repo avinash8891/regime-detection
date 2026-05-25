@@ -12,8 +12,7 @@ from regime_detection.data_quality import (
 from regime_detection.axis_builders.per_label import build_per_label_axis_outputs
 from regime_detection.feature_store import FeatureStore
 from regime_detection.axis_builders.staleness import (
-    _calendar_staleness_days_series,
-    _trading_staleness_series,
+    staleness_for_source,
 )
 from regime_detection.inflation_growth import (
     CPI_KEY,
@@ -125,16 +124,24 @@ def build_inflation_growth_axis_series(
     per_day_data_quality: list[DataQuality] = []
     per_day_evidence: list[dict[str, object]] = []
     session_index = spy_close.index
-    cpi_staleness_by_date = _calendar_staleness_days_series(
-        cpi_staleness_series, session_index
+    cpi_staleness_by_date = staleness_for_source(
+        source_name=CPI_KEY, series=cpi_staleness_series, session_index=session_index
     )
-    pmi_staleness_by_date = _calendar_staleness_days_series(pmi_series, session_index)
-    dgs10_staleness_by_date = _trading_staleness_series(dgs10_series, session_index)
-    nowcast_staleness_by_date = _calendar_staleness_days_series(
-        nowcast_series, session_index
+    pmi_staleness_by_date = staleness_for_source(
+        source_name=PMI_KEY, series=pmi_series, session_index=session_index
     )
-    eps_staleness_by_date = _calendar_staleness_days_series(
-        eps_revision_series, session_index
+    dgs10_staleness_by_date = staleness_for_source(
+        source_name=DGS10_KEY, series=dgs10_series, session_index=session_index
+    )
+    nowcast_staleness_by_date = staleness_for_source(
+        source_name=_CPI_NOWCAST_MACRO_KEY,
+        series=nowcast_series,
+        session_index=session_index,
+    )
+    eps_staleness_by_date = staleness_for_source(
+        source_name=_EPS_REVISION_MACRO_KEY,
+        series=eps_revision_series,
+        session_index=session_index,
     )
     credit_funding_labels_by_ts: dict[pd.Timestamp, str | None] | None = None
     if credit_funding_active_labels_by_date is not None:

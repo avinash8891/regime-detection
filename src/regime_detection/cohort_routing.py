@@ -66,7 +66,7 @@ def evaluate_cohort_routing(
         "network_fragility": network_fragility_active,
         "monetary_pressure": monetary_pressure_active,
     }
-    if all(inputs[axis] == "unknown" for axis in _UNKNOWN_SENSITIVE_AXES):
+    if any(inputs[axis] == "unknown" for axis in _UNKNOWN_SENSITIVE_AXES):
         return AgentRouting(
             active_cohort="data_outage_specialist",
             fallback_cohort=_FALLBACK,

@@ -187,7 +187,9 @@ def test_classifier_evidence_reports_live_liquidity_gap_inputs():
     assert set(rule_evidence) == {
         "volume_zscore_20d",
         "return_1d",
+        "gap_frequency_20d",
         "gap_frequency_percentile_252d",
+        "intraday_range",
         "intraday_range_percentile_252d",
     }
     assert isinstance(rule_evidence["gap_frequency_percentile_252d"], float)

@@ -126,9 +126,6 @@ def build_monetary_pressure_axis_series(
         if features.central_bank_text_score is not None:
             cb_val = features.central_bank_text_score.get(dt)
             score = float(cb_val) if pd.notna(cb_val) else None
-            per_day_evidence[-1]["rule_evidence"]["central_bank_text_score"] = (
-                score
-            )
             per_day_evidence[-1]["central_bank_text_evidence"] = {
                 "score": score,
                 **CENTRAL_BANK_TEXT_EVIDENCE_QUALITY,

@@ -219,6 +219,17 @@ class VolumeLiquidityRulesConfig(StrictBaseModel):
         ge=0.0, le=1.0, default=0.75
     )
 
+    # Cold-start fallback: when 252-session percentile history is still
+    # unavailable, severe raw gap/range levels can still identify liquidity
+    # stress rather than forcing the severe label dead for a full year.
+    cold_start_liquidity_gap_enabled: bool = Field(default=True)
+    cold_start_liquidity_gap_frequency_20d_min: float = Field(
+        ge=0.0, le=1.0, default=0.30
+    )
+    cold_start_liquidity_gap_intraday_range_min: float = Field(
+        gt=0.0, default=0.04
+    )
+
 
 class VolumeLiquidityConfig(StrictBaseModel):
     """v2 §1E volume/liquidity axis classifier configuration.

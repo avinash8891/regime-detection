@@ -50,6 +50,25 @@ def test_parse_datetime_index_outputs_nyse_timestamps_accepted_by_as_date() -> N
     ]
 
 
+def test_parse_datetime_index_normalizes_mixed_timezone_values_deterministically() -> None:
+    index = parse_datetime_index(
+        [
+            pd.Timestamp("2024-03-12 00:30:00", tz="UTC"),
+            pd.Timestamp("2024-03-12"),
+            pd.Timestamp("2024-03-12 09:30:00", tz="America/New_York"),
+        ],
+        field_name="date",
+        context="mixed timezone source",
+    )
+
+    assert index.tz is None
+    assert index.tolist() == [
+        pd.Timestamp("2024-03-11"),
+        pd.Timestamp("2024-03-12"),
+        pd.Timestamp("2024-03-12"),
+    ]
+
+
 def test_parse_datetime_index_handles_dst_boundary_as_nyse_session_date() -> None:
     index = parse_datetime_index(
         ["2024-03-08", "2024-03-11"],

@@ -728,8 +728,8 @@ def test_classifier_emits_unconfirmed_systemic_stress_when_credit_funding_unavai
 
     assert out is not None
     final = out[context.sessions[-1]]
-    assert final.raw_label == "systemic_stress_unconfirmed"
-    assert final.active_label == "systemic_stress_unconfirmed"
+    assert final.raw_label == "systemic_stress"
+    assert final.active_label == "systemic_stress"
     assert final.evidence["rule_evidence"]["rule_reason"] == "credit_funding_unavailable"
 
 

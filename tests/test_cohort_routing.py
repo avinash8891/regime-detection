@@ -221,6 +221,14 @@ def test_data_outage_specialist_when_all_core_axes_unknown() -> None:
     assert out.blocked_strategy_modes == ["short_vol", "leveraged_long", "breakout"]
 
 
+@pytest.mark.unit
+def test_data_outage_specialist_when_any_core_axis_unknown() -> None:
+    """A missing core risk axis must fail closed before specialist matching."""
+    out = _route(network_fragility_active="unknown")
+    assert out.active_cohort == "data_outage_specialist"
+    assert out.blocked_strategy_modes == ["short_vol", "leveraged_long", "breakout"]
+
+
 # ===========================================================================
 # Group B — Silent specialists (deferred-label predicates)
 # ===========================================================================
