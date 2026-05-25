@@ -29,6 +29,8 @@ Three structural issues in the §2B rule predicates prevented classification:
 
 ### Fix 1: Yield-independent disinflation (`disinflation_yield_independent: true`)
 
+Yield-independent disinflation is the default production policy.
+
 Disinflation fires when `cpi_6m_change_pct_slope_21d < 0 AND PMI > 45`,
 without requiring `yield_slope < 0`. Rationale: CPI is the primary inflation
 measure. Yields often lag by weeks/months during disinflationary transitions.

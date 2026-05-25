@@ -62,6 +62,7 @@ V2_NETWORK_FRAGILITY_DEESCALATION_DAYS = {
     "rising_fragility": 3,
     "correlation_concentration": 3,
     "correlation_to_one": 5,
+    "systemic_stress_unconfirmed": 5,
     "systemic_stress": 5,
     "unknown": 0,
 }
@@ -153,6 +154,20 @@ def test_v2_default_config_declares_unknown_freeze_windows() -> None:
     assert cfg.credit_funding.max_unknown_freeze_days == 2
     assert cfg.inflation_growth is not None
     assert cfg.inflation_growth.max_unknown_freeze_days == 2
+
+
+def test_disinflation_yield_independent_policy_is_explicit_in_config_and_docs() -> None:
+    """ADR 0011 is the authority for yield-independent disinflation."""
+    cfg = load_default_regime_config()
+
+    assert cfg.inflation_growth is not None
+    assert cfg.inflation_growth.rules.disinflation_yield_independent is True
+
+    spec = Path("docs/regime_engine_v2_spec.md").read_text()
+    adr = Path("docs/decisions/0011-inflation-growth-rule-coverage-fix.md").read_text()
+    authority = "Yield-independent disinflation is the default production policy"
+    assert authority in spec
+    assert authority in adr
 
 
 @pytest.mark.parametrize(

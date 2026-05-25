@@ -127,7 +127,9 @@ class CentralBankTextConfig(StrictBaseModel):
 class InflationGrowthRulesConfig(StrictBaseModel):
     """v2 §2B inflation/growth rule thresholds.
 
-    Defaults match the spec verbatim (§2B lines 3046-3107).
+    Defaults match the normative spec plus ratified ADR overrides
+    (ADR 0011, ADR 0012) where those documents supersede the original
+    predicate text.
     """
 
     # §2B line 3048 — goldilocks "abs drift over 21d <= 0.005" (50bps).

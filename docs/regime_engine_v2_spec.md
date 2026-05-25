@@ -2991,6 +2991,9 @@ disinflation:
   cpi_6m_change_pct 21d slope < 0
   AND treasury_10y_yield_slope_21d < 0                                # ADR 0011 Fix 1: optional when disinflation_yield_independent=true (default)
   AND pmi_manufacturing > 45
+  # Yield-independent disinflation is the default production policy:
+  # ADR 0011 ratified disinflation_yield_independent=true, making the
+  # Treasury-yield slope optional confirmation rather than a binding predicate.
 
 recession_scare:
   treasury_10y_yield_slope_21d < 0
