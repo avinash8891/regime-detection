@@ -5,7 +5,7 @@ from datetime import date
 from typing import Protocol, TypeVar
 
 from regime_detection.data_quality import quality_forces_unknown
-from regime_detection.hysteresis import apply_per_label_asymmetric_hysteresis
+from regime_detection.hysteresis import apply_data_quality_aware_hysteresis
 from regime_detection.models import DataQuality
 
 
@@ -31,28 +31,35 @@ def build_per_label_axis_outputs(
     risk_rank: Mapping[str, int],
     deescalation_days_by_label: Mapping[str, int],
     default_deescalation_days: int,
+    max_unknown_freeze_days: int = 0,
     data_quality: Sequence[DataQuality],
     evidence: Sequence[dict[str, object]],
     output_factory: AxisOutputFactory[AxisOutputT],
 ) -> dict[date, AxisOutputT]:
-    stable_labels, active_labels = apply_per_label_asymmetric_hysteresis(
+    stable_labels, active_labels, frozen_labels = apply_data_quality_aware_hysteresis(
         raw_labels=list(raw_labels),
         risk_rank=dict(risk_rank),
         deescalation_days_by_label=dict(deescalation_days_by_label),
+        data_quality=data_quality,
         default_deescalation_days=default_deescalation_days,
+        max_unknown_freeze_days=max_unknown_freeze_days,
     )
 
     outputs: dict[date, AxisOutputT] = {}
-    for day, raw, stable, active, dq, day_evidence in zip(
+    for day, raw, stable, active, is_frozen, dq, day_evidence in zip(
         sessions,
         raw_labels,
         stable_labels,
         active_labels,
+        frozen_labels,
         data_quality,
         evidence,
         strict=True,
     ):
-        if quality_forces_unknown(dq):
+        day_evidence = dict(day_evidence)
+        if is_frozen:
+            day_evidence["data_quality_freeze"] = True
+        elif quality_forces_unknown(dq):
             # Force the canonical sentinel rather than trusting that the upstream
             # classifier already emitted raw=="unknown" — keeps this builder the
             # single point of truth for the DQ→unknown contract instead of a

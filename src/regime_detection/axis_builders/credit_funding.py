@@ -302,6 +302,7 @@ def _build_credit_funding_for_spread_source(
         risk_rank=CREDIT_FUNDING_RISK_RANK,
         deescalation_days_by_label=cf_config.deescalation_days_by_label,
         default_deescalation_days=cf_config.default_deescalation_days,
+        max_unknown_freeze_days=cf_config.max_unknown_freeze_days,
         data_quality=per_day_data_quality,
         evidence=per_day_evidence,
         output_factory=CreditFundingOutput,

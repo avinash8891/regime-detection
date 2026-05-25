@@ -40,6 +40,7 @@ trend_direction:
     euphoria: 3
     unknown: 0
   default_deescalation_days: 3
+  max_unknown_freeze_days: 2
 trend_character:
   deescalation_days_by_label:
     breakout_expansion: 3
@@ -52,6 +53,7 @@ trend_character:
     transition: 2
     unknown: 0
   default_deescalation_days: 0
+  max_unknown_freeze_days: 2
 volatility_state:
   deescalation_days_by_label:
     crisis_vol: 5
@@ -62,6 +64,7 @@ volatility_state:
     normal_vol: 0
     unknown: 0
   default_deescalation_days: 2
+  max_unknown_freeze_days: 2
 breadth_state:
   deescalation_days_by_label:
     divergent_fragile: 5
@@ -71,6 +74,7 @@ breadth_state:
     healthy_breadth: 0
     unknown: 0
   default_deescalation_days: 2
+  max_unknown_freeze_days: 2
 # ---------------------------------------------------------------------------
 # V2 sub-configs (per docs/regime_engine_v2_spec.md).
 #
@@ -131,6 +135,7 @@ network_fragility:
   # stock_picker_dispersion). 0 = immediate de-escalation; calibration §9.1
   # may retune. See documented implementation decision.
   default_deescalation_days: 0
+  max_unknown_freeze_days: 2
   # v2 §3.4–§3.5 rule-engine thresholds (implementation phase). Every value cites its
   # spec line in docs/regime_engine_v2_spec.md.
   rules:
@@ -247,6 +252,7 @@ volume_liquidity_state:
     unknown: 0
     liquidity_gap_behavior: 2
   default_deescalation_days: 0
+  max_unknown_freeze_days: 2
 
 transition_score:
   weights:
@@ -313,6 +319,7 @@ monetary_pressure_state:
     # stale unknown label active via hysteresis.
     unknown: 0
   default_deescalation_days: 0
+  max_unknown_freeze_days: 2
 
 # v2 §2A lines 2578-2586 — central-bank-text classifier feeding
 # monetary_pressure.evidence. Source-data audit (the source-data audit
@@ -405,6 +412,7 @@ credit_funding:
     # a valid credit/funding rule fires.
     unknown: 0
   default_deescalation_days: 0
+  max_unknown_freeze_days: 2
   # §2C lines 2123-2124 — unknown-gate staleness thresholds.
   nfci_stale_days: 14
   etf_stale_sessions: 5
@@ -472,6 +480,7 @@ inflation_growth:
     # Absence of signal must not delay recovery into a valid macro label.
     unknown: 0
   default_deescalation_days: 0
+  max_unknown_freeze_days: 2
   # §2B lines 2309-2311 — unknown-gate staleness thresholds.
   cpi_stale_calendar_days: 60
   pmi_stale_calendar_days: 45

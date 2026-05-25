@@ -130,7 +130,7 @@ class NetworkFragilityConfig(StrictBaseModel):
     # unknown). 0 = immediate de-escalation, consistent with their low §3.6
     # risk rank. Exposed as config so it can be retuned in v2 §9.1 calibration.
     default_deescalation_days: int = Field(default=0, ge=0)
+    max_unknown_freeze_days: int = Field(default=0, ge=0)
 
     # V2 §3.4–§3.5 rule engine thresholds.
     rules: NetworkFragilityRulesConfig
-

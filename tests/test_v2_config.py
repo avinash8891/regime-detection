@@ -136,6 +136,25 @@ def test_layer1_axis_hysteresis_lives_on_axis_sections_not_v2_feature_configs() 
     assert cfg.breadth_state.deescalation_days_by_label["unknown"] == 0
 
 
+def test_v2_default_config_declares_unknown_freeze_windows() -> None:
+    cfg = load_default_regime_config()
+
+    assert cfg.trend_direction.max_unknown_freeze_days == 2
+    assert cfg.trend_character.max_unknown_freeze_days == 2
+    assert cfg.volatility_state.max_unknown_freeze_days == 2
+    assert cfg.breadth_state.max_unknown_freeze_days == 2
+    assert cfg.network_fragility is not None
+    assert cfg.network_fragility.max_unknown_freeze_days == 2
+    assert cfg.volume_liquidity_state is not None
+    assert cfg.volume_liquidity_state.max_unknown_freeze_days == 2
+    assert cfg.monetary_pressure_state is not None
+    assert cfg.monetary_pressure_state.max_unknown_freeze_days == 2
+    assert cfg.credit_funding is not None
+    assert cfg.credit_funding.max_unknown_freeze_days == 2
+    assert cfg.inflation_growth is not None
+    assert cfg.inflation_growth.max_unknown_freeze_days == 2
+
+
 @pytest.mark.parametrize(
     "section",
     [

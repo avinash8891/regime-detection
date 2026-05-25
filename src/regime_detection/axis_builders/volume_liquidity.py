@@ -155,6 +155,7 @@ def build_volume_liquidity_axis_series(
         risk_rank=VOLUME_LIQUIDITY_RISK_RANK,
         deescalation_days_by_label=volume_liquidity_config.deescalation_days_by_label,
         default_deescalation_days=volume_liquidity_config.default_deescalation_days,
+        max_unknown_freeze_days=volume_liquidity_config.max_unknown_freeze_days,
         data_quality=per_day_data_quality,
         evidence=per_day_evidence,
         output_factory=_volume_liquidity_output,

@@ -10,6 +10,7 @@ class AxisHysteresisConfig(StrictBaseModel):
 
     deescalation_days_by_label: dict[str, int]
     default_deescalation_days: int = Field(default=0, ge=0)
+    max_unknown_freeze_days: int = Field(default=0, ge=0)
 
 
 class TrendDirectionV2RulesConfig(StrictBaseModel):
@@ -240,6 +241,7 @@ class VolumeLiquidityConfig(StrictBaseModel):
 
     # Default for labels NOT in `deescalation_days_by_label`.
     default_deescalation_days: int = Field(ge=0, default=0)
+    max_unknown_freeze_days: int = Field(default=0, ge=0)
 
 
 class BreadthV2Config(StrictBaseModel):

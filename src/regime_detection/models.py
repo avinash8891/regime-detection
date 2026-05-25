@@ -142,9 +142,6 @@ def derive_classification_status(
     adds the semantic reason a label was emitted, so reports can distinguish
     "data was unavailable" from "data was usable but no rule matched".
     """
-    if active_label != "unknown":
-        return "classified", None
-
     evidence_reason = None
     if evidence is not None:
         raw_reason = evidence.get("reason")
@@ -158,6 +155,8 @@ def derive_classification_status(
         return "insufficient_history", reason or "insufficient_history"
     if data_quality.status == "insufficient_data":
         return "data_unavailable", reason or "insufficient_data"
+    if active_label != "unknown":
+        return "classified", None
     if raw_label not in {None, "unknown"} or stable_label not in {None, "unknown"}:
         return "no_rule_fired_hysteresis", "hysteresis_held_unknown"
     missing_rule_features = _missing_rule_features(evidence)

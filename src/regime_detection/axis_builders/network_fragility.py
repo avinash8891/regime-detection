@@ -211,6 +211,7 @@ def build_network_fragility_axis_series(
         risk_rank=NETWORK_FRAGILITY_RISK_RANK,
         deescalation_days_by_label=network_fragility_config.deescalation_days_by_label,
         default_deescalation_days=network_fragility_config.default_deescalation_days,
+        max_unknown_freeze_days=network_fragility_config.max_unknown_freeze_days,
         data_quality=per_day_data_quality,
         evidence=per_day_evidence,
         output_factory=NetworkFragilityOutput,

@@ -118,6 +118,7 @@ def build_monetary_pressure_axis_series(
         risk_rank=MONETARY_PRESSURE_V2_RISK_RANK,
         deescalation_days_by_label=mp_config.deescalation_days_by_label,
         default_deescalation_days=mp_config.default_deescalation_days,
+        max_unknown_freeze_days=mp_config.max_unknown_freeze_days,
         data_quality=per_day_data_quality,
         evidence=per_day_evidence,
         output_factory=_monetary_pressure_output,

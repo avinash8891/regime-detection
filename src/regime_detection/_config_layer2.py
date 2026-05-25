@@ -67,6 +67,7 @@ class MonetaryPressureV2Config(StrictBaseModel):
     deescalation_days_by_label: dict[str, int]
     # Default for labels NOT listed.
     default_deescalation_days: int = Field(default=0, ge=0)
+    max_unknown_freeze_days: int = Field(default=0, ge=0)
 
 
 class NewsSentimentConfig(StrictBaseModel):
@@ -225,6 +226,7 @@ class InflationGrowthConfig(StrictBaseModel):
     # §2B lines 3132-3146 — per-label asymmetric hysteresis days.
     deescalation_days_by_label: dict[str, int]
     default_deescalation_days: int = Field(default=0, ge=0)
+    max_unknown_freeze_days: int = Field(default=0, ge=0)
     # §2B line 3152 — "CPI stale > 60 calendar days" (2× monthly cycle).
     cpi_stale_calendar_days: int = Field(default=60, ge=1)
     # §2B line 3153 — "PMI stale > 45 calendar days" (1.5× monthly cycle).
@@ -300,8 +302,8 @@ class CreditFundingConfig(StrictBaseModel):
     deescalation_days_by_label: dict[str, int]
     # Labels not listed take this default.
     default_deescalation_days: int = Field(default=0, ge=0)
+    max_unknown_freeze_days: int = Field(default=0, ge=0)
     # §2C line 3308 — NFCI weekly: "stale > 14 days (2× weekly release cycle)".
     nfci_stale_days: int = Field(default=14, ge=1)
     # §2C line 3307 — HYG/LQD/TLT stale > 5 sessions.
     etf_stale_sessions: int = Field(default=5, ge=1)
-

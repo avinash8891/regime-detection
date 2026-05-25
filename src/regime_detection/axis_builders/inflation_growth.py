@@ -270,6 +270,7 @@ def build_inflation_growth_axis_series(
         risk_rank=INFLATION_GROWTH_RISK_RANK,
         deescalation_days_by_label=ig_config.deescalation_days_by_label,
         default_deescalation_days=ig_config.default_deescalation_days,
+        max_unknown_freeze_days=ig_config.max_unknown_freeze_days,
         data_quality=per_day_data_quality,
         evidence=per_day_evidence,
         output_factory=InflationGrowthOutput,
