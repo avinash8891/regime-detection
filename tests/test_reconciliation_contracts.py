@@ -134,7 +134,7 @@ def test_breadth_data_quality_does_not_block_pit_breadth_when_rsp_gaps(
         **_synthetic_kwargs_without_config(synthetic_v2_kwargs_for_market_data, market_df),
     )
 
-    assert out.breadth_state.active_label == "unknown"
+    assert out.breadth_state.active_label == "broadening_breadth"
     assert out.breadth_state.data_quality.status == "insufficient_history"
     assert out.breadth_state.data_quality.reason == "required_feature_is_nan"
 

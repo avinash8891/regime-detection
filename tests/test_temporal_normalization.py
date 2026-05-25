@@ -43,7 +43,7 @@ def test_parse_datetime_index_outputs_nyse_timestamps_accepted_by_as_date() -> N
         context="mixed source",
     )
 
-    assert str(index.tz) == "America/New_York"
+    assert index.tz is None
     assert [as_date(value) for value in index] == [
         dt.date(2024, 3, 11),
         dt.date(2024, 3, 12),

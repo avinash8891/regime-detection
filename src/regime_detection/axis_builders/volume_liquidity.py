@@ -146,9 +146,9 @@ def build_volume_liquidity_axis_series(
                     "return_1d": float(f"{return_1d:.8g}"),
                     "gap_frequency_percentile_252d": float(f"{gap_freq_pct:.8g}"),
                     "intraday_range_percentile_252d": float(f"{intraday_pct:.8g}"),
-                    "rule_path": rule_evaluation.rule_path,
-                    "rule_reason": rule_evaluation.reason,
                 },
+                "rule_path": rule_evaluation.rule_path,
+                "rule_reason": rule_evaluation.reason,
             }
         )
 

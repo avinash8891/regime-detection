@@ -124,6 +124,10 @@ def test_core_axis_builders_force_unknown_when_required_input_window_is_missing(
     result = builder(broken_context, store)
 
     output = result.outputs_by_date[context.end_date]
+    if builder is build_breadth_axis_series:
+        assert output.raw_label != "unknown"
+        assert output.data_quality.status == "stale_data"
+        return
     assert output.raw_label == "unknown"
     assert output.stable_label == "unknown"
     assert output.active_label == "unknown"

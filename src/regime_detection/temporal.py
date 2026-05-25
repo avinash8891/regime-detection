@@ -1,8 +1,6 @@
 from __future__ import annotations
 
 from collections.abc import Iterable
-from zoneinfo import ZoneInfo
-
 import pandas as pd
 
 
@@ -61,12 +59,18 @@ def parse_datetime_index(
     field_name: str,
     context: str,
 ) -> pd.DatetimeIndex:
-    """Parse a date-like column into NYSE-local tz-aware session timestamps."""
+    """Parse a date-like column into a normalized NYSE session index.
+
+    Naive date-like values are interpreted as already being NYSE session dates.
+    Timezone-aware values are converted to America/New_York before dropping
+    timezone metadata, so the returned index stays comparable with the engine's
+    existing tz-naive session indexes while remaining accepted by
+    ``calendar.as_date`` as a session-date timestamp.
+    """
 
     raw = pd.Series(values)
     missing = raw.isna()
     parsed_values: list[pd.Timestamp | pd.NaT] = []
-    ny_tz = ZoneInfo("America/New_York")
     for value in raw:
         if pd.isna(value):
             parsed_values.append(pd.NaT)
@@ -79,9 +83,11 @@ def parse_datetime_index(
         if pd.isna(timestamp):
             parsed_values.append(pd.NaT)
         elif timestamp.tzinfo is None:
-            parsed_values.append(timestamp.tz_localize(ny_tz))
+            parsed_values.append(timestamp.normalize())
         else:
-            parsed_values.append(timestamp.tz_convert(ny_tz))
+            parsed_values.append(
+                timestamp.tz_convert("America/New_York").tz_localize(None).normalize()
+            )
 
     parsed = pd.Series(parsed_values)
     bad = parsed.isna() & ~missing

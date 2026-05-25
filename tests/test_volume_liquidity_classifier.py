@@ -182,7 +182,7 @@ def test_classifier_evidence_reports_live_liquidity_gap_inputs():
 
     last_day = context.sessions[-1]
     evidence = out[last_day].evidence
-    assert set(evidence) == {"rule_evidence"}
+    assert set(evidence) == {"rule_evidence", "rule_path", "rule_reason"}
     rule_evidence = evidence["rule_evidence"]
     assert set(rule_evidence) == {
         "volume_zscore_20d",
@@ -199,7 +199,9 @@ def test_classifier_emits_normal_volume_after_warmup():
     label across the post-warmup window (most days are normal)."""
     context, _ = _build_context_with_volume()
     store = build_feature_store(
-        context, volume_liquidity_v2_config=context.config.volume_liquidity_v2
+        context,
+        volume_liquidity_v2_config=context.config.volume_liquidity_v2,
+        volatility_state_v2_config=context.config.volatility_state_v2,
     )
     out = build_volume_liquidity_axis_series(context, store)
 

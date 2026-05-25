@@ -83,6 +83,7 @@ def test_precedence_ordering_is_spec_3_4():
     # v2 §3.4 line 612.
     assert RULE_PRECEDENCE == (
         "systemic_stress",
+        "systemic_stress_unconfirmed",
         "correlation_to_one",
         "correlation_concentration",
         "rising_fragility",
@@ -109,7 +110,7 @@ def test_systemic_stress_beats_correlation_to_one():
     assert label == "systemic_stress"
 
 
-def test_systemic_stress_falls_through_to_correlation_to_one_when_credit_funding_absent():
+def test_systemic_stress_unconfirmed_beats_correlation_to_one_when_credit_funding_absent():
     cfg = _default_rules_config()
     inputs = _inputs(
         avg_corr_pct=0.95,
@@ -124,7 +125,7 @@ def test_systemic_stress_falls_through_to_correlation_to_one_when_credit_funding
         volatility_label="high_vol",
         credit_funding_label=None,
     )
-    assert label == "correlation_to_one"
+    assert label == "systemic_stress_unconfirmed"
 
 
 def test_correlation_to_one_beats_correlation_concentration():
