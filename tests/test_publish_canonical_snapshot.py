@@ -46,6 +46,19 @@ def _sha256_file(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
+def _daily_ohlcv_row(date: str, symbol: str) -> dict[str, object]:
+    return {
+        "date": date,
+        "symbol": symbol,
+        "open": 1.0,
+        "high": 2.0,
+        "low": 0.5,
+        "close": 1.5,
+        "volume": 100,
+        "adjusted_close": 1.5,
+    }
+
+
 @pytest.fixture
 def manifest_setup(tmp_path: Path) -> tuple[Path, Path, dict, dict]:
     """Build a 2-artifact manifest backed by canonical parquet bytes on disk."""
@@ -641,6 +654,112 @@ artifacts:
     assert "SEMANTIC_INVALID" in combined
     assert "calendar coverage gap" in combined
     assert "2026-05-15" in combined
+
+
+def test_check_mode_bounds_daily_ohlcv_gaps_to_pit_active_interval(
+    tmp_path: Path,
+):
+    data_root = tmp_path / "data" / "raw"
+    spy_path = data_root / "daily_ohlcv_762" / "symbol=SPY" / "ohlcv.parquet"
+    xyz_path = data_root / "daily_ohlcv_762" / "symbol=XYZ" / "ohlcv.parquet"
+    pit_path = data_root / "pit_constituents" / "sp500_ticker_intervals.parquet"
+    sessions = ["2026-05-14", "2026-05-15", "2026-05-18", "2026-05-19"]
+    _write_parquet(
+        spy_path,
+        pd.DataFrame([_daily_ohlcv_row(day, "SPY") for day in sessions]),
+    )
+    _write_parquet(
+        xyz_path,
+        pd.DataFrame(
+            [
+                _daily_ohlcv_row("2026-05-14", "XYZ"),
+                _daily_ohlcv_row("2026-05-18", "XYZ"),
+                _daily_ohlcv_row("2026-05-19", "XYZ"),
+            ]
+        ),
+    )
+    _write_parquet(
+        pit_path,
+        pd.DataFrame(
+            [
+                {
+                    "ticker": "XYZ",
+                    "start_date": "2026-05-18",
+                    "end_date": None,
+                    "source": "test",
+                    "source_url": "test",
+                    "bias_warning": "test",
+                }
+            ]
+        ),
+    )
+    artifact = {
+        "name": "daily_ohlcv_762_XYZ",
+        "stage": "canonical",
+        "uri": "canonical/daily_ohlcv_762/symbol=XYZ/ohlcv.parquet",
+        "local_path": "data/raw/daily_ohlcv_762/symbol=XYZ/ohlcv.parquet",
+        "sha256": hashlib.sha256(pcs._canonicalize_parquet_bytes(xyz_path)).hexdigest(),
+        "schema_version": None,
+        "rows": 3,
+        "min_date": "2026-05-14",
+        "max_date": "2026-05-19",
+        "required_for": ["profile_engine"],
+    }
+    payload = {
+        "artifact_set": "test_publish",
+        "storage_root": str(tmp_path / "store"),
+        "artifacts": [
+            {
+                "name": "sp500_pit_constituents",
+                "stage": "canonical",
+                "uri": "canonical/pit_constituents/sp500_ticker_intervals.parquet",
+                "local_path": "data/raw/pit_constituents/sp500_ticker_intervals.parquet",
+                "sha256": hashlib.sha256(pcs._canonicalize_parquet_bytes(pit_path)).hexdigest(),
+                "schema_version": None,
+                "rows": 1,
+                "min_date": None,
+                "max_date": None,
+                "required_for": ["profile_engine"],
+            },
+            {
+                "name": "daily_ohlcv_762_SPY",
+                "stage": "canonical",
+                "uri": "canonical/daily_ohlcv_762/symbol=SPY/ohlcv.parquet",
+                "local_path": "data/raw/daily_ohlcv_762/symbol=SPY/ohlcv.parquet",
+                "sha256": hashlib.sha256(pcs._canonicalize_parquet_bytes(spy_path)).hexdigest(),
+                "schema_version": None,
+                "rows": 4,
+                "min_date": "2026-05-14",
+                "max_date": "2026-05-19",
+                "required_for": ["profile_engine"],
+            },
+            artifact,
+        ],
+    }
+
+    rc, reports = pcs.run_check(payload, data_root, ["daily_ohlcv_762_XYZ"], store=None)
+
+    assert rc == 0
+    assert reports[0].semantic_status == "SEMANTIC_OK"
+
+    _write_parquet(
+        xyz_path,
+        pd.DataFrame(
+            [
+                _daily_ohlcv_row("2026-05-14", "XYZ"),
+                _daily_ohlcv_row("2026-05-19", "XYZ"),
+            ]
+        ),
+    )
+    artifact["sha256"] = hashlib.sha256(pcs._canonicalize_parquet_bytes(xyz_path)).hexdigest()
+    artifact["rows"] = 2
+
+    rc, reports = pcs.run_check(payload, data_root, ["daily_ohlcv_762_XYZ"], store=None)
+
+    assert rc == 1
+    assert reports[0].semantic_status == "SEMANTIC_INVALID"
+    assert "2026-05-18" in reports[0].note
+    assert "2026-05-15" not in reports[0].note
 
 
 def test_check_mode_rejects_manifest_row_and_date_metadata_mismatch(

@@ -58,16 +58,21 @@ def materialize_manifest(
     # neither staged nor promoted, so a mid-run failure on a different artifact
     # cannot corrupt them. Atomicity contract: every artifact in ``to_fetch``
     # promotes together or none of them do.
-    already_ok: list[tuple[ManifestArtifact, Path]] = []
-    to_fetch: list[tuple[ManifestArtifact, Path]] = []
-    for artifact in artifacts:
-        destination = destination_for(artifact, local_root, repo_root=repo_root)
-        if destination.exists() and sha256_file(destination) == artifact.sha256:
-            already_ok.append((artifact, destination))
-        else:
-            to_fetch.append((artifact, destination))
-
-    promoted_pairs: list[tuple[ManifestArtifact, Path]] = []
+    #
+    # The returned list preserves input ``artifacts`` order regardless of the
+    # already-ok / to-fetch split — downstream consumers (e.g.
+    # ``scripts/audit_step1_harness.py``) serialize the result to JSON for
+    # run provenance, and unstable ordering would produce non-reproducible
+    # diffs across runs that differ only in cache state.
+    ordered_destinations: list[tuple[ManifestArtifact, Path]] = [
+        (artifact, destination_for(artifact, local_root, repo_root=repo_root))
+        for artifact in artifacts
+    ]
+    to_fetch: list[tuple[ManifestArtifact, Path]] = [
+        (artifact, destination)
+        for artifact, destination in ordered_destinations
+        if not (destination.exists() and sha256_file(destination) == artifact.sha256)
+    ]
     staging_parent = local_root.parent
     staging_parent.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(
@@ -100,7 +105,6 @@ def materialize_manifest(
                     destination.replace(backup_path)
                 staged_path.replace(destination)
                 promoted.append((destination, backup_path))
-                promoted_pairs.append((artifact, destination))
         except Exception:
             for destination, backup_path in reversed(promoted):
                 if destination.exists():
@@ -116,7 +120,7 @@ def materialize_manifest(
             destination=destination,
             sha256=artifact.sha256,
         )
-        for artifact, destination in (already_ok + promoted_pairs)
+        for artifact, destination in ordered_destinations
     ]
 
 

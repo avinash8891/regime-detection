@@ -255,6 +255,10 @@ def _validate_daily_ohlcv_contract(
     artifact: dict[str, Any],
     payload: bytes,
     expected_sessions: pd.DatetimeIndex | None,
+    active_intervals_by_symbol: dict[
+        str, list[tuple[pd.Timestamp, pd.Timestamp | None]]
+    ]
+    | None = None,
 ) -> None:
     expected_symbol = _daily_ohlcv_symbol(artifact)
     if expected_symbol is None:
@@ -289,9 +293,14 @@ def _validate_daily_ohlcv_contract(
     if expected_sessions is None or dates.empty:
         return
     symbol_dates = pd.DatetimeIndex(dates.sort_values().unique())
-    expected = expected_sessions[
-        (expected_sessions >= symbol_dates.min()) & (expected_sessions <= symbol_dates.max())
-    ]
+    expected = _expected_symbol_sessions(
+        symbol=expected_symbol,
+        symbol_dates=symbol_dates,
+        expected_sessions=expected_sessions,
+        active_intervals_by_symbol=active_intervals_by_symbol,
+    )
+    if expected.empty:
+        return
     missing = expected.difference(symbol_dates)
     if not missing.empty:
         examples = ", ".join(ts.strftime("%Y-%m-%d") for ts in missing[:5])
@@ -300,6 +309,40 @@ def _validate_daily_ohlcv_contract(
             f"symbol={expected_symbol} missing {len(missing)} session row(s); "
             f"examples: {examples}"
         )
+
+
+def _expected_symbol_sessions(
+    *,
+    symbol: str,
+    symbol_dates: pd.DatetimeIndex,
+    expected_sessions: pd.DatetimeIndex,
+    active_intervals_by_symbol: dict[
+        str, list[tuple[pd.Timestamp, pd.Timestamp | None]]
+    ]
+    | None,
+) -> pd.DatetimeIndex:
+    if active_intervals_by_symbol is None:
+        return expected_sessions[
+            (expected_sessions >= symbol_dates.min())
+            & (expected_sessions <= symbol_dates.max())
+        ]
+    intervals = active_intervals_by_symbol.get(symbol)
+    if not intervals:
+        return pd.DatetimeIndex([])
+    active_sessions: list[pd.Timestamp] = []
+    for start, end in intervals:
+        # PIT end dates are effective-removal dates in the upstream source.
+        # Treat them as exclusive so an acquisition/removal day without a final
+        # quote does not become a false calendar gap.
+        interval_sessions = expected_sessions[
+            (expected_sessions >= start)
+            & (expected_sessions >= symbol_dates.min())
+            & (expected_sessions <= symbol_dates.max())
+        ]
+        if end is not None:
+            interval_sessions = interval_sessions[interval_sessions < end]
+        active_sessions.extend(interval_sessions)
+    return pd.DatetimeIndex(sorted(set(active_sessions)))
 
 
 def _validate_parquet_manifest_metadata(
@@ -331,6 +374,10 @@ def _semantic_check_artifact(
     artifact: dict[str, Any],
     local: Path,
     expected_sessions: pd.DatetimeIndex | None,
+    active_intervals_by_symbol: dict[
+        str, list[tuple[pd.Timestamp, pd.Timestamp | None]]
+    ]
+    | None,
 ) -> tuple[str | None, str]:
     if not local.exists() or not _is_parquet(local):
         return None, ""
@@ -341,6 +388,7 @@ def _semantic_check_artifact(
             artifact=artifact,
             payload=payload,
             expected_sessions=expected_sessions,
+            active_intervals_by_symbol=active_intervals_by_symbol,
         )
     except Exception as exc:
         return "SEMANTIC_INVALID", str(exc)
@@ -372,6 +420,42 @@ def _daily_ohlcv_spy_sessions(
     if dates.empty:
         return None
     return pd.DatetimeIndex(sorted(dates.unique()))
+
+
+def _daily_ohlcv_pit_active_intervals(
+    payload: Any,
+    data_root: Path,
+) -> dict[str, list[tuple[pd.Timestamp, pd.Timestamp | None]]] | None:
+    artifacts = payload.get("artifacts", []) if isinstance(payload, dict) else []
+    pit_artifact = next(
+        (
+            artifact
+            for artifact in artifacts
+            if isinstance(artifact, dict)
+            and artifact.get("name") == "sp500_pit_constituents"
+        ),
+        None,
+    )
+    if pit_artifact is None:
+        return None
+    pit_path = _resolve_local_path(data_root, pit_artifact)
+    if not pit_path.exists():
+        return None
+    frame = pd.read_parquet(pit_path)
+    required = {"ticker", "start_date", "end_date"}
+    missing = required.difference(frame.columns)
+    if missing:
+        raise ValueError(f"sp500_pit_constituents missing column(s): {sorted(missing)}")
+    intervals: dict[str, list[tuple[pd.Timestamp, pd.Timestamp | None]]] = {}
+    for row in frame.itertuples(index=False):
+        ticker = str(getattr(row, "ticker")).strip().upper()
+        if not ticker:
+            continue
+        start = pd.Timestamp(getattr(row, "start_date")).normalize()
+        raw_end = getattr(row, "end_date")
+        end = None if pd.isna(raw_end) else pd.Timestamp(raw_end).normalize()
+        intervals.setdefault(ticker, []).append((start, end))
+    return intervals
 
 
 # ---------------------------------------------------------------------------
@@ -483,22 +567,18 @@ def _check_store(
 ) -> tuple[str, str | None]:
     """Return ``(store_status, store_sha)`` for a store-side check.
 
-    Passes the local path/sha as a hint to ``stat_file`` so a local-store
-    backend whose object resolves to the same file the caller already hashed
-    can skip the second hash. Backends that can't prove equality (e.g. S3)
-    ignore the hint.
+    Delegates to ``store.check_file`` which does the sha comparison and
+    returns a typed verdict (MATCH/DRIFT/MISSING/UNVERIFIABLE). Passes the
+    local path/sha as a hint so a local-store backend whose object resolves
+    to the same file the caller already hashed can skip the second hash.
     """
-    old_sha = str(artifact["sha256"])
-    stored = store.stat_file(
+    result = store.check_file(
         str(artifact["uri"]),
+        expected_sha256=str(artifact["sha256"]),
         known_path=local if local.exists() else None,
         known_sha=local_sha,
     )
-    if stored is None:
-        return "MISSING", None
-    if stored.sha256 is None:
-        return "UNVERIFIABLE", None
-    return ("MATCH" if stored.sha256 == old_sha else "DRIFT"), stored.sha256
+    return result.status.name, result.observed_sha
 
 
 def run_check(
@@ -510,6 +590,7 @@ def run_check(
 ) -> tuple[int, list[ArtifactReport]]:
     reports: list[ArtifactReport] = []
     spy_sessions = _daily_ohlcv_spy_sessions(payload, data_root)
+    active_intervals_by_symbol = _daily_ohlcv_pit_active_intervals(payload, data_root)
     for artifact in _filter_artifacts(payload["artifacts"], only):
         local = _resolve_local_path(data_root, artifact)
         local_status, new_sha, note = _check_local(artifact, local)
@@ -517,6 +598,7 @@ def run_check(
             artifact=artifact,
             local=local,
             expected_sessions=spy_sessions,
+            active_intervals_by_symbol=active_intervals_by_symbol,
         )
         if semantic_note:
             note = "; ".join(part for part in (note, semantic_note) if part)

@@ -745,9 +745,9 @@ artifacts:
   stage: canonical
   uri: canonical/daily_ohlcv_762/symbol=AMCR/ohlcv.parquet
   local_path: data/raw/daily_ohlcv_762/symbol=AMCR/ohlcv.parquet
-  sha256: 4a87cc4eecccf897c0291ea9aff3adb9f86176b94e205f242c9f93d0bca44ccf
+  sha256: 60062fec63e958ac1f941a75f95b7e0e71c06a000594386f52eb26b6c7803043
   schema_version: null
-  rows: 2657
+  rows: 2659
   min_date: '2012-05-15'
   max_date: '2026-05-15'
   required_for: *id001
@@ -883,9 +883,9 @@ artifacts:
   stage: canonical
   uri: canonical/daily_ohlcv_762/symbol=ANDV/ohlcv.parquet
   local_path: data/raw/daily_ohlcv_762/symbol=ANDV/ohlcv.parquet
-  sha256: cda6b1122ad1c9ecb309b49179656feaf6a249778dc00ce15883fd75abf424a2
+  sha256: a239e5c653e9b36f959e7345d3ee542fc5e3e73e4b6b6843e4d2976179741aa2
   schema_version: null
-  rows: 1805
+  rows: 2202
   min_date: '2009-12-31'
   max_date: '2018-09-28'
   required_for:
@@ -1041,9 +1041,9 @@ artifacts:
   stage: canonical
   uri: canonical/daily_ohlcv_762/symbol=APTV/ohlcv.parquet
   local_path: data/raw/daily_ohlcv_762/symbol=APTV/ohlcv.parquet
-  sha256: 034e366eade8c948acb256a417e66500e0935f05908ebb81464effdfcac9c070
+  sha256: 4e9fc585565b76d1d1ea336eb851d34e003b2afda6475b4be98b2f45520a794e
   schema_version: null
-  rows: 3169
+  rows: 3643
   min_date: '2011-11-17'
   max_date: '2026-05-15'
   required_for: *id001
@@ -4645,9 +4645,9 @@ artifacts:
   stage: canonical
   uri: canonical/daily_ohlcv_762/symbol=FTI/ohlcv.parquet
   local_path: data/raw/daily_ohlcv_762/symbol=FTI/ohlcv.parquet
-  sha256: 786633c016b648868f2a13e1e8c732b8868df84e3ebe27d8204cb9f32d116472
+  sha256: 069c8edcfee3c8398a1ffce55a86e882c9b66d7a4e354632310846f9b644fa16
   schema_version: null
-  rows: 3857
+  rows: 4118
   min_date: '2009-12-31'
   max_date: '2026-05-15'
   required_for: *id001
@@ -11165,9 +11165,9 @@ artifacts:
   stage: canonical
   uri: canonical/daily_ohlcv_762/symbol=UAA/ohlcv.parquet
   local_path: data/raw/daily_ohlcv_762/symbol=UAA/ohlcv.parquet
-  sha256: 9bdd5470a7f6c4837dcbab474d7a9d6fb56ada8c448ca4a1f111482366a55acb
+  sha256: fc67777c51fb03f577a94511a3c67b6bc149f4bea73c18d2f80b94960975e83e
   schema_version: null
-  rows: 4052
+  rows: 4118
   min_date: '2009-12-31'
   max_date: '2026-05-15'
   required_for: *id001
