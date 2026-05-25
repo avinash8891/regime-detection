@@ -334,6 +334,10 @@ def _load_constituent_ohlcv_from_tree(
                 ticker,
                 frame["date"],
                 expected_sessions=expected_sessions,
+                active_intervals=_constituent_active_intervals(
+                    intervals,
+                    ticker=ticker,
+                ),
             )
         for col in ("open", "high", "low", "close", "adjusted_close"):
             frame[col] = frame[col].astype("float64")
@@ -351,13 +355,16 @@ def _require_constituent_calendar_coverage(
     dates: pd.Series,
     *,
     expected_sessions: pd.DatetimeIndex,
+    active_intervals: list[tuple[pd.Timestamp, pd.Timestamp | None]] | None = None,
 ) -> None:
     observed = pd.DatetimeIndex(pd.to_datetime(dates).dt.normalize().sort_values().unique())
     if observed.empty:
         return
-    expected = expected_sessions[
-        (expected_sessions >= observed.min()) & (expected_sessions <= observed.max())
-    ]
+    expected = _expected_constituent_sessions(
+        observed=observed,
+        expected_sessions=expected_sessions,
+        active_intervals=active_intervals,
+    )
     missing = expected.difference(observed)
     if missing.empty:
         return
@@ -366,6 +373,42 @@ def _require_constituent_calendar_coverage(
         "daily OHLCV calendar coverage gap: "
         f"symbol={ticker} missing {len(missing)} session row(s); examples: {examples}"
     )
+
+
+def _constituent_active_intervals(
+    intervals: pd.DataFrame, *, ticker: str
+) -> list[tuple[pd.Timestamp, pd.Timestamp | None]]:
+    ticker_rows = intervals.loc[intervals["ticker"] == ticker]
+    out: list[tuple[pd.Timestamp, pd.Timestamp | None]] = []
+    for row in ticker_rows.itertuples(index=False):
+        start = pd.Timestamp(getattr(row, "start_date")).normalize()
+        raw_end = getattr(row, "end_date")
+        end = None if pd.isna(raw_end) else pd.Timestamp(raw_end).normalize()
+        out.append((start, end))
+    return out
+
+
+def _expected_constituent_sessions(
+    *,
+    observed: pd.DatetimeIndex,
+    expected_sessions: pd.DatetimeIndex,
+    active_intervals: list[tuple[pd.Timestamp, pd.Timestamp | None]] | None,
+) -> pd.DatetimeIndex:
+    if active_intervals is None:
+        return expected_sessions[
+            (expected_sessions >= observed.min()) & (expected_sessions <= observed.max())
+        ]
+    active_sessions: list[pd.Timestamp] = []
+    for start, end in active_intervals:
+        interval_sessions = expected_sessions[
+            (expected_sessions >= start)
+            & (expected_sessions >= observed.min())
+            & (expected_sessions <= observed.max())
+        ]
+        if end is not None:
+            interval_sessions = interval_sessions[interval_sessions < end]
+        active_sessions.extend(interval_sessions)
+    return pd.DatetimeIndex(sorted(set(active_sessions)))
 
 
 def _load_profile_inputs(

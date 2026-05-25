@@ -678,6 +678,116 @@ def test_load_constituent_ohlcv_rejects_internal_session_gap(tmp_path: Path) -> 
         )
 
 
+def test_load_constituent_ohlcv_calendar_check_is_bounded_to_pit_interval(
+    tmp_path: Path,
+) -> None:
+    symbol_dir = tmp_path / "daily_ohlcv" / "symbol=AMCR"
+    symbol_dir.mkdir(parents=True)
+    pd.DataFrame(
+        [
+            {
+                "date": "2019-06-10",
+                "symbol": "AMCR",
+                "open": 10.0,
+                "high": 11.0,
+                "low": 9.0,
+                "close": 10.5,
+                "volume": 100,
+                "adjusted_close": 10.5,
+            },
+            {
+                "date": "2019-06-11",
+                "symbol": "AMCR",
+                "open": 10.0,
+                "high": 11.0,
+                "low": 9.0,
+                "close": 10.5,
+                "volume": 100,
+                "adjusted_close": 10.5,
+            },
+        ]
+    ).to_parquet(symbol_dir / "ohlcv.parquet", index=False)
+    intervals = pd.DataFrame(
+        {
+            "ticker": ["AMCR"],
+            "start_date": [pd.Timestamp("2019-06-10").date()],
+            "end_date": [None],
+        }
+    )
+
+    loaded, tickers = profile_engine._load_constituent_ohlcv_from_tree(
+        tmp_path / "daily_ohlcv",
+        intervals,
+        start_date=pd.Timestamp("2016-01-04").date(),
+        end_date=pd.Timestamp("2019-06-11").date(),
+        expected_sessions=pd.DatetimeIndex(
+            ["2016-01-04", "2016-01-05", "2019-06-10", "2019-06-11"]
+        ),
+    )
+
+    assert tickers == ["AMCR"]
+    assert loaded["AMCR"]["close"].to_list() == [10.5, 10.5]
+
+
+def test_load_constituent_ohlcv_ignores_pre_pit_calendar_gaps(tmp_path: Path) -> None:
+    symbol_dir = tmp_path / "daily_ohlcv" / "symbol=AMCR"
+    symbol_dir.mkdir(parents=True)
+    pd.DataFrame(
+        [
+            {
+                "date": "2016-01-04",
+                "symbol": "AMCR",
+                "open": 10.0,
+                "high": 11.0,
+                "low": 9.0,
+                "close": 10.5,
+                "volume": 100,
+                "adjusted_close": 10.5,
+            },
+            {
+                "date": "2019-06-10",
+                "symbol": "AMCR",
+                "open": 10.0,
+                "high": 11.0,
+                "low": 9.0,
+                "close": 10.5,
+                "volume": 100,
+                "adjusted_close": 10.5,
+            },
+            {
+                "date": "2019-06-11",
+                "symbol": "AMCR",
+                "open": 10.0,
+                "high": 11.0,
+                "low": 9.0,
+                "close": 10.5,
+                "volume": 100,
+                "adjusted_close": 10.5,
+            },
+        ]
+    ).to_parquet(symbol_dir / "ohlcv.parquet", index=False)
+    intervals = pd.DataFrame(
+        {
+            "ticker": ["AMCR"],
+            "start_date": [pd.Timestamp("2019-06-10").date()],
+            "end_date": [None],
+        }
+    )
+
+    loaded, tickers = profile_engine._load_constituent_ohlcv_from_tree(
+        tmp_path / "daily_ohlcv",
+        intervals,
+        start_date=pd.Timestamp("2016-01-04").date(),
+        end_date=pd.Timestamp("2019-06-11").date(),
+        expected_sessions=pd.DatetimeIndex(
+            ["2016-01-04", "2016-01-05", "2019-06-10", "2019-06-11"]
+        ),
+    )
+
+    assert tickers == ["AMCR"]
+    assert loaded["AMCR"]["close"].to_list() == [10.5, 10.5, 10.5]
+
+
 def test_profile_reporting_label_uses_granular_status_for_unknown() -> None:
     output = SimpleNamespace(
         active_label="unknown", classification_status="no_rule_fired"

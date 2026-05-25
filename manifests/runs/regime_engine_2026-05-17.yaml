@@ -6,9 +6,9 @@ artifacts:
   stage: canonical
   uri: canonical/pit_constituents/sp500_ticker_intervals.parquet
   local_path: data/raw/pit_constituents/sp500_ticker_intervals.parquet
-  sha256: 2ed514e4acb16ea01b532babbb7b9883be728fc6868f387113ab27b1ab25de50
+  sha256: 30f34acdd1530d73f2a6b2be3ecab74b76fcb375f257b07d716826351646002a
   schema_version: null
-  rows: 1246
+  rows: 1243
   min_date: '1996-01-02'
   max_date: '2026-01-14'
   required_for:
@@ -2655,20 +2655,6 @@ artifacts:
   min_date: '2009-12-31'
   max_date: '2026-05-15'
   required_for: *id001
-- name: daily_ohlcv_762_COL
-  stage: canonical
-  uri: canonical/daily_ohlcv_762/symbol=COL/ohlcv.parquet
-  local_path: data/raw/daily_ohlcv_762/symbol=COL/ohlcv.parquet
-  sha256: cfaff0a2d3713c425668e10972da20edea7cdbf4819f69bc475100a36413d0a2
-  schema_version: null
-  rows: 1572
-  min_date: '2012-08-02'
-  max_date: '2018-11-26'
-  required_for:
-  - profile_engine
-  - v2_calibration
-  - historical_walkforward
-  - audit_layer2_30d
 - name: daily_ohlcv_762_COMP
   stage: canonical
   uri: canonical/daily_ohlcv_762/symbol=COMP/ohlcv.parquet
@@ -7713,20 +7699,6 @@ artifacts:
   min_date: '2009-12-31'
   max_date: '2026-05-15'
   required_for: *id001
-- name: daily_ohlcv_762_NFX
-  stage: canonical
-  uri: canonical/daily_ohlcv_762/symbol=NFX/ohlcv.parquet
-  local_path: data/raw/daily_ohlcv_762/symbol=NFX/ohlcv.parquet
-  sha256: 75611f320ddc37696b921d6e2347aff61b400b0589b364ded022d649ff44ad83
-  schema_version: null
-  rows: 2294
-  min_date: '2009-12-31'
-  max_date: '2019-02-13'
-  required_for:
-  - profile_engine
-  - v2_calibration
-  - historical_walkforward
-  - audit_layer2_30d
 - name: daily_ohlcv_762_NGG
   stage: canonical
   uri: canonical/daily_ohlcv_762/symbol=NGG/ohlcv.parquet
@@ -10637,20 +10609,6 @@ artifacts:
   min_date: '2009-12-31'
   max_date: '2026-05-15'
   required_for: *id001
-- name: daily_ohlcv_762_TGNA
-  stage: canonical
-  uri: canonical/daily_ohlcv_762/symbol=TGNA/ohlcv.parquet
-  local_path: data/raw/daily_ohlcv_762/symbol=TGNA/ohlcv.parquet
-  sha256: 5adce59e1194571cde198ce2948d113d6e2881da38b938621c808d2252fad48e
-  schema_version: null
-  rows: 4078
-  min_date: '2009-12-31'
-  max_date: '2026-03-20'
-  required_for:
-  - profile_engine
-  - v2_calibration
-  - historical_walkforward
-  - audit_layer2_30d
 - name: daily_ohlcv_762_TGT
   stage: canonical
   uri: canonical/daily_ohlcv_762/symbol=TGT/ohlcv.parquet
