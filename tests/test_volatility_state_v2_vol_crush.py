@@ -15,6 +15,7 @@ Spec references (docs/regime_engine_v2_spec.md §1C):
 Per AGENTS.md rules G/L: realistic SPY-like inputs, no toy names, the
 real production Pydantic config.
 """
+
 from __future__ import annotations
 
 from datetime import date
@@ -29,7 +30,6 @@ from regime_detection.volatility_state_v2 import (
     evaluate_v2_volatility_label,
     evaluate_vol_crush,
 )
-
 
 # ADR 0005 — pinned vol_crush thresholds.
 _SPEC_RV_RATIO = 0.75
@@ -82,6 +82,7 @@ def _vol_crush_features_at(
         atr_ratio=nan.copy(),
         gap_frequency_20d=nan.copy(),
         gap_frequency_percentile_252d=nan.copy(),
+        intraday_range=nan.copy(),
         intraday_range_percentile_252d=nan.copy(),
         realized_vol_short=pd.Series([realized_vol_short], index=idx),
         realized_vol_long=nan.copy(),
@@ -102,7 +103,7 @@ def test_vol_crush_fires_when_all_three_conjuncts_satisfied(
     dt = pd.Timestamp("2024-02-05")
     features = _vol_crush_features_at(
         dt=dt,
-        realized_vol_short=0.10,   # 0.10 < 0.20 * 0.75 = 0.15 ✓
+        realized_vol_short=0.10,  # 0.10 < 0.20 * 0.75 = 0.15 ✓
         realized_vol_21d=0.20,
         implied_vol_5d_change=-0.30,  # -0.30 <= -0.20 ✓
         event_window_just_passed=True,
@@ -116,7 +117,7 @@ def test_vol_crush_false_when_realized_vol_not_collapsed(
     dt = pd.Timestamp("2024-02-05")
     features = _vol_crush_features_at(
         dt=dt,
-        realized_vol_short=0.16,   # 0.16 NOT < 0.20 * 0.75 = 0.15
+        realized_vol_short=0.16,  # 0.16 NOT < 0.20 * 0.75 = 0.15
         realized_vol_21d=0.20,
         implied_vol_5d_change=-0.30,
         event_window_just_passed=True,
@@ -177,7 +178,7 @@ def test_vol_crush_false_when_iv_features_absent(
         dt=dt,
         realized_vol_short=0.10,
         realized_vol_21d=0.20,
-        implied_vol_5d_change=None,   # IV feature not wired
+        implied_vol_5d_change=None,  # IV feature not wired
         event_window_just_passed=True,
     )
     assert evaluate_vol_crush(features, dt=dt, rules_config=vol_crush_rules) is False

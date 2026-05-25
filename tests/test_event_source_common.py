@@ -21,7 +21,9 @@ class _Response:
         return self.payload
 
 
-def test_fetch_text_result_distinguishes_network_failure_from_empty_page(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_fetch_text_result_distinguishes_network_failure_from_empty_page(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     def fake_urlopen(*_args: object, **_kwargs: object) -> _Response:
         raise URLError("timeout")
 
@@ -34,7 +36,9 @@ def test_fetch_text_result_distinguishes_network_failure_from_empty_page(monkeyp
     assert result.error == "timeout"
 
 
-def test_fetch_text_result_accepts_valid_empty_page(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_fetch_text_result_accepts_valid_empty_page(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     monkeypatch.setattr(_common, "urlopen", lambda *_args, **_kwargs: _Response(b""))
 
     result = _common.fetch_text_result("https://example.test/source")
@@ -44,8 +48,12 @@ def test_fetch_text_result_accepts_valid_empty_page(monkeypatch: pytest.MonkeyPa
     assert result.error is None
 
 
-def test_fetch_text_result_raises_on_invalid_utf8(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(_common, "urlopen", lambda *_args, **_kwargs: _Response(b"\xff"))
+def test_fetch_text_result_raises_on_invalid_utf8(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        _common, "urlopen", lambda *_args, **_kwargs: _Response(b"\xff")
+    )
 
     with pytest.raises(UnicodeDecodeError):
         _common.fetch_text_result("https://example.test/source")

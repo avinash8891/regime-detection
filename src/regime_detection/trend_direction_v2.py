@@ -29,6 +29,7 @@ Spec-resolved ambiguities (see implementation decision entries in
   ``_trailing_drawdown`` convention in ``network_fragility_rules.py``.
   decision #13 pin.
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -39,7 +40,6 @@ import pandas as pd
 from regime_detection._rolling_stats import period_return, simple_moving_average
 from regime_detection.config import TrendDirectionV2Config, TrendDirectionV2RulesConfig
 from regime_detection.volatility_state import realized_vol
-
 
 # Spec-fixed constants (not configurable — v2 §1A lines 105-107 define the
 # directional-move and path-length sums over the same N=lookback window).
@@ -119,9 +119,7 @@ class TrendDirectionV2Features:
         it is Optional and routinely None when no AAII feed is wired. Use
         ``getattr(features, "sentiment_score")`` for direct access.
         """
-        return pd.DataFrame(
-            {name: getattr(self, name) for name in self.feature_names}
-        )
+        return pd.DataFrame({name: getattr(self, name) for name in self.feature_names})
 
 
 def _efficiency_ratio(close: pd.Series, lookback: int) -> pd.Series:
@@ -314,9 +312,7 @@ def compute_trend_v2_features(
     )
 
 
-def _compute_sentiment_concordance(
-    *, aaii: pd.Series, news: pd.Series
-) -> pd.Series:
+def _compute_sentiment_concordance(*, aaii: pd.Series, news: pd.Series) -> pd.Series:
     """Pointwise concordance between AAII bull-bear and SF Fed news sentiment.
 
     Returns a per-session float Series:
@@ -407,8 +403,8 @@ def evaluate_recovery(
         return False
 
     drawdown_ok = bool(drawdown <= rules_config.recovery_drawdown_threshold)  # line 195
-    return_ok = bool(return_63d > rules_config.recovery_return_threshold)     # line 196
-    above_sma = bool(close_t > sma_50)                                         # line 197
+    return_ok = bool(return_63d > rules_config.recovery_return_threshold)  # line 196
+    above_sma = bool(close_t > sma_50)  # line 197
     return drawdown_ok and return_ok and above_sma
 
 
@@ -484,10 +480,14 @@ def evaluate_euphoria(
     ):
         return False
 
-    close_above_sma = bool(close_t > sma_200_t)                                  # line 202
-    return_ok = bool(return_126d_t > rules_config.euphoria_return_126d_threshold)  # line 203
-    vol_rising = bool(vol_t > vol_back)                                          # line 204
-    sentiment_ok = bool(sentiment_t >= rules_config.euphoria_sentiment_threshold)  # line 205
+    close_above_sma = bool(close_t > sma_200_t)  # line 202
+    return_ok = bool(
+        return_126d_t > rules_config.euphoria_return_126d_threshold
+    )  # line 203
+    vol_rising = bool(vol_t > vol_back)  # line 204
+    sentiment_ok = bool(
+        sentiment_t >= rules_config.euphoria_sentiment_threshold
+    )  # line 205
     return close_above_sma and return_ok and vol_rising and sentiment_ok
 
 

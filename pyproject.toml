@@ -9,21 +9,20 @@ description = "Regime detection engine (V1+V2 unified)"
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
-  "numpy",
-  "pandas",
-  "pydantic>=2,<3",
-  "pandas_market_calendars",
-  "pyyaml",
-  "alpaca-py>=0.43,<1",
-  "hmmlearn>=0.3,<0.4",
-  "joblib>=1.5,<2",
-  "openpyxl>=3.1,<4",
-  "scikit-learn>=1.8,<2",
-  "xlrd>=2,<3",
+  "numpy==2.3.0",
+  "pandas==2.3.0",
+  "pydantic==2.13.4",
+  "pandas_market_calendars==5.1.1",
+  "pyarrow==23.0.0",
+  "pyyaml==6.0.2",
+  "openpyxl==3.1.5",
+  "xlrd==2.0.2",
+  "hmmlearn==0.3.3",
+  "opentelemetry-api==1.36.0",
   # Adapter in regime_detection.change_point uses
   # online_changepoint_detection(data, hazard_func, observation_likelihood),
   # constant_hazard(lam, r), and StudentT(alpha, beta, kappa, mu).
-  "bayesian-changepoint-detection>=0.2.dev1",
+  "bayesian-changepoint-detection==0.2.dev1",
 ]
 
 [project.optional-dependencies]
@@ -33,22 +32,59 @@ s3 = [
 browser = [
   "playwright>=1.50,<2",
 ]
+data-sources = [
+  "alpaca-py>=0.43,<1",
+  "datasets>=4,<5",
+  "ruamel.yaml>=0.18,<0.19",
+]
 audit = [
-  "pip-audit",
-  "pydeps",
-  "vulture",
+  "pip-audit==2.10.0",
+  "pydeps==3.0.6",
+  "vulture==2.16",
+  "radon==6.0.1",
+  "deptry==0.25.1",
 ]
 dev = [
-  "pytest",
-  "pytest-cov",
-  "pytest-mock",
-  "pytest-xdist",
-  "hypothesis",
-  "deptry",
-  "ruff",
-  "pyright",
-  "pyarrow",
+  "black==26.5.1",
+  "pytest==9.0.3",
+  "pytest-cov==7.1.0",
+  "pytest-mock==3.15.1",
+  "pytest-xdist==3.8.0",
+  "hypothesis==6.152.9",
+  "ruff==0.15.14",
+  "pyright==1.1.409",
 ]
+
+[tool.black]
+line-length = 88
+target-version = ["py311"]
+
+[tool.pyright]
+typeCheckingMode = "strict"
+include = [
+  "src/regime_detection/observability.py",
+]
+
+[tool.radon]
+cc_min = "B"
+exclude = "tests/*,.venv/*,venv/*"
+
+[tool.deptry]
+extend_exclude = [
+  "tests",
+]
+known_first_party = [
+  "regime_detection",
+  "regime_data_fetch",
+  "regime_shared",
+  "_fetch_regime_engine_v1_args",
+  "_v2_calibration_helpers",
+]
+optional_dependencies_dev_groups = [
+  "dev",
+  "audit",
+]
+package_module_name_map = { "alpaca-py" = ["alpaca"], "ruamel.yaml" = ["ruamel"] }
 
 [tool.setuptools]
 package-dir = {"" = "src"}
@@ -60,19 +96,16 @@ where = ["src"]
 [tool.setuptools.package-data]
 regime_detection = ["configs/*.yaml"]
 
-[tool.deptry]
-known_first_party = ["regime_detection", "regime_data_fetch"]
-optional_dependencies_dev_groups = ["dev", "audit"]
-
-[tool.deptry.package_module_name_map]
-"regime-detection" = ["regime_detection", "regime_data_fetch"]
-
 [tool.ruff.lint.per-file-ignores]
 "scripts/approve_group_b_candidate.py" = ["E402"]
 "scripts/audit_layer2_30d.py" = ["E402"]
 "scripts/consolidate_regime_acquisition.py" = ["E402"]
 "scripts/fetch_aaii_sentiment.py" = ["E402"]
 "scripts/materialize_regime_data.py" = ["E402"]
+"scripts/run_historical_walkforward.py" = ["E402"]
 "scripts/run_shadow_deadman_check.py" = ["E402"]
 "scripts/run_shadow_regime.py" = ["E402"]
 "scripts/run_shadow_replay_check.py" = ["E402"]
+"scripts/run_v2_shadow_ab_gate.py" = ["E402"]
+"scripts/run_v2_walkforward_gate.py" = ["E402"]
+"scripts/upload_missing_ohlcv_to_manifest.py" = ["E402"]

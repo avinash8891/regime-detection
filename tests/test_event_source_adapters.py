@@ -308,8 +308,12 @@ def test_ecb_adapter_reports_archive_layout_drift_in_status() -> None:
     candidates = adapter.fetch(start_year=2026, end_year=2026, store=None, run_id=None)
 
     assert candidates == []
-    assert adapter.last_source_statuses[ARCHIVE_INDEX_URL].status == "parser_layout_drift"
-    assert "data-snippets" in (adapter.last_source_statuses[ARCHIVE_INDEX_URL].error or "")
+    assert (
+        adapter.last_source_statuses[ARCHIVE_INDEX_URL].status == "parser_layout_drift"
+    )
+    assert "data-snippets" in (
+        adapter.last_source_statuses[ARCHIVE_INDEX_URL].error or ""
+    )
     assert adapter.last_run_status == "partial"
 
 

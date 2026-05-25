@@ -7,22 +7,28 @@ Per ~/.claude/CLAUDE.md and AGENTS rule A:
 - Integration test invokes the rule engine end-to-end over a real
   NetworkFragilityFeatures series.
 """
+
 from __future__ import annotations
 
 
 import pytest
 
-from regime_detection.config import NetworkFragilityRulesConfig, load_default_regime_config
+from regime_detection.config import (
+    NetworkFragilityRulesConfig,
+    load_default_regime_config,
+)
 from regime_detection.network_fragility_rules import (
     NetworkFragilityRuleInputs,
+    correlation_to_one_rule_path,
     evaluate_correlation_concentration,
     evaluate_correlation_to_one,
     evaluate_diversified_normal,
     evaluate_rising_fragility,
+    evaluate_rules,
+    evaluate_rules_with_evidence,
     evaluate_stock_picker_dispersion,
     evaluate_systemic_stress,
 )
-
 
 # ---------- Helpers -----------------------------------------------------------
 
@@ -36,12 +42,15 @@ def _inputs(
     avg_corr_pct: float = 0.50,
     largest_eig_pct: float = 0.50,
     eff_rank_pct: float = 0.50,
+    avg_corr: float = 0.50,
+    largest_eig: float = 0.35,
     dispersion_pct: float = 0.50,
     absorption_ratio: float = 0.50,
     avg_corr_slope: float = 0.0,
     largest_eig_slope: float = 0.0,
     eff_rank_stability: float = 0.02,
     realized_vol_pct: float = 0.50,
+    realized_vol_21d: float = 0.12,
     drawdown_21d: float = 0.0,
     vix_pct: float = 0.50,
 ) -> NetworkFragilityRuleInputs:
@@ -51,12 +60,15 @@ def _inputs(
         avg_pairwise_corr_percentile_504d=avg_corr_pct,
         largest_eigenvalue_share_percentile_504d=largest_eig_pct,
         effective_rank_percentile_504d=eff_rank_pct,
+        avg_pairwise_corr_63d=avg_corr,
+        largest_eigenvalue_share=largest_eig,
         dispersion_ratio_percentile_252d=dispersion_pct,
         absorption_ratio_top3=absorption_ratio,
         avg_pairwise_corr_slope_21d=avg_corr_slope,
         largest_eigenvalue_share_slope_21d=largest_eig_slope,
         effective_rank_stability_21d=eff_rank_stability,
         realized_vol_percentile_252d=realized_vol_pct,
+        realized_vol_21d=realized_vol_21d,
         drawdown_21d=drawdown_21d,
         vix_percentile_252d=vix_pct,
     )
@@ -81,6 +93,10 @@ def test_default_yaml_loads_rules_block_with_spec_thresholds():
     assert rules.corr_to_one_corr_percentile_min == 0.90
     assert rules.corr_to_one_realized_vol_percentile_min == 0.80
     assert rules.corr_to_one_drawdown_max == 0.0
+    assert rules.cold_start_corr_to_one_enabled is True
+    assert rules.cold_start_corr_to_one_avg_corr_min == 0.90
+    assert rules.cold_start_corr_to_one_largest_eig_min == 0.75
+    assert rules.cold_start_corr_to_one_realized_vol_min == 0.25
     assert rules.systemic_stress_vix_percentile_min == 0.80
 
 
@@ -90,6 +106,16 @@ def test_rules_config_rejects_unknown_keys():
     cfg = load_default_regime_config()
     base = cfg.network_fragility.rules.model_dump()
     base["unexpected_threshold"] = 0.5
+    with pytest.raises(ValidationError):
+        NetworkFragilityRulesConfig.model_validate(base)
+
+
+def test_rules_config_rejects_loose_correlation_to_one_cold_start_thresholds():
+    from pydantic import ValidationError
+
+    cfg = load_default_regime_config()
+    base = cfg.network_fragility.rules.model_dump()
+    base["cold_start_corr_to_one_avg_corr_min"] = 0.80
     with pytest.raises(ValidationError):
         NetworkFragilityRulesConfig.model_validate(base)
 
@@ -154,9 +180,7 @@ def test_stock_picker_dispersion_blocked_when_corr_above_threshold():
 def test_rising_fragility_fires_on_positive_slopes_and_weak_breadth():
     cfg = _default_rules_config()
     inputs = _inputs(avg_corr_slope=0.001, largest_eig_slope=0.0005)
-    assert (
-        evaluate_rising_fragility(inputs, cfg, breadth_label="weak_breadth") is True
-    )
+    assert evaluate_rising_fragility(inputs, cfg, breadth_label="weak_breadth") is True
 
 
 def test_rising_fragility_fires_on_divergent_fragile_breadth():
@@ -185,17 +209,14 @@ def test_rising_fragility_blocked_by_healthy_breadth():
     cfg = _default_rules_config()
     inputs = _inputs(avg_corr_slope=0.001, largest_eig_slope=0.0005)
     assert (
-        evaluate_rising_fragility(inputs, cfg, breadth_label="healthy_breadth")
-        is False
+        evaluate_rising_fragility(inputs, cfg, breadth_label="healthy_breadth") is False
     )
 
 
 def test_rising_fragility_blocked_by_flat_slope():
     cfg = _default_rules_config()
     inputs = _inputs(avg_corr_slope=0.0, largest_eig_slope=0.0005)
-    assert (
-        evaluate_rising_fragility(inputs, cfg, breadth_label="weak_breadth") is False
-    )
+    assert evaluate_rising_fragility(inputs, cfg, breadth_label="weak_breadth") is False
 
 
 def test_correlation_concentration_fires_when_corr_percentile_above_75():
@@ -240,7 +261,7 @@ def test_correlation_to_one_blocked_by_low_realized_vol_percentile():
     assert evaluate_correlation_to_one(inputs, cfg) is False
 
 
-def test_systemic_stress_short_circuits_to_false_when_credit_funding_label_absent():
+def test_systemic_stress_fails_closed_when_credit_funding_label_absent():
     cfg = _default_rules_config()
     inputs = _inputs(
         avg_corr_pct=0.95,
@@ -255,7 +276,39 @@ def test_systemic_stress_short_circuits_to_false_when_credit_funding_label_absen
             breadth_label="weak_breadth",
             credit_funding_label=None,
         )
-        is False
+        is True
+    )
+
+
+def test_evaluate_rules_emits_systemic_stress_when_credit_unavailable():
+    cfg = _default_rules_config()
+    inputs = _inputs(
+        avg_corr_pct=0.95,
+        realized_vol_pct=0.85,
+        drawdown_21d=-0.04,
+        vix_pct=0.90,
+    )
+
+    evaluation = evaluate_rules_with_evidence(
+        inputs=inputs,
+        config=cfg,
+        breadth_label="weak_breadth",
+        volatility_label="normal_vol",
+        credit_funding_label=None,
+    )
+
+    assert evaluation.label == "systemic_stress"
+    assert evaluation.rule_path == "percentile"
+    assert evaluation.reason == "credit_funding_unavailable"
+    assert (
+        evaluate_rules(
+            inputs=inputs,
+            config=cfg,
+            breadth_label="weak_breadth",
+            volatility_label="normal_vol",
+            credit_funding_label=None,
+        )
+        == "systemic_stress"
     )
 
 
@@ -353,6 +406,67 @@ def test_correlation_to_one_excludes_realized_vol_pct_exactly_at_threshold():
     cfg = _default_rules_config()
     inputs = _inputs(avg_corr_pct=0.95, realized_vol_pct=0.80, drawdown_21d=-0.04)
     assert evaluate_correlation_to_one(inputs, cfg) is False
+
+
+def test_correlation_to_one_uses_explicit_cold_start_fallback_when_percentiles_warm_up():
+    """Severe raw correlation/eigen/vol evidence must not be hidden solely
+    because percentile history is still warming up."""
+    cfg = _default_rules_config()
+    inputs = _inputs(
+        avg_corr_pct=float("nan"),
+        largest_eig_pct=float("nan"),
+        avg_corr=0.92,
+        largest_eig=0.78,
+        realized_vol_pct=float("nan"),
+        realized_vol_21d=0.34,
+        drawdown_21d=-0.04,
+    )
+
+    assert evaluate_correlation_to_one(inputs, cfg) is True
+    assert correlation_to_one_rule_path(inputs, cfg) == "cold_start_fallback"
+    assert (
+        evaluate_rules(
+            inputs=inputs,
+            config=cfg,
+            breadth_label="healthy_breadth",
+            volatility_label="normal_vol",
+        )
+        == "correlation_to_one"
+    )
+
+
+def test_systemic_stress_uses_correlation_to_one_cold_start_fallback():
+    cfg = _default_rules_config()
+    inputs = _inputs(
+        avg_corr_pct=float("nan"),
+        largest_eig_pct=float("nan"),
+        avg_corr=0.92,
+        largest_eig=0.78,
+        realized_vol_pct=float("nan"),
+        realized_vol_21d=0.34,
+        drawdown_21d=-0.04,
+        vix_pct=0.90,
+    )
+
+    assert correlation_to_one_rule_path(inputs, cfg) == "cold_start_fallback"
+    assert (
+        evaluate_systemic_stress(
+            inputs,
+            cfg,
+            breadth_label="weak_breadth",
+            credit_funding_label="credit_stress",
+        )
+        is True
+    )
+    evaluation = evaluate_rules_with_evidence(
+        inputs=inputs,
+        config=cfg,
+        breadth_label="weak_breadth",
+        volatility_label="normal_vol",
+        credit_funding_label="credit_stress",
+    )
+    assert evaluation.label == "systemic_stress"
+    assert evaluation.rule_path == "cold_start_fallback"
 
 
 def test_systemic_stress_blocked_by_nan_vix_percentile():

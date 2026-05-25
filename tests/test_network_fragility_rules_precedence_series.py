@@ -7,6 +7,7 @@ Per ~/.claude/CLAUDE.md and AGENTS rule A:
 - Integration test invokes the rule engine end-to-end over a real
   NetworkFragilityFeatures series.
 """
+
 from __future__ import annotations
 
 import math
@@ -15,7 +16,10 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from regime_detection.config import NetworkFragilityRulesConfig, load_default_regime_config
+from regime_detection.config import (
+    NetworkFragilityRulesConfig,
+    load_default_regime_config,
+)
 from regime_detection.network_fragility import (
     NetworkFragilityFeatures,
     compute_features,
@@ -31,7 +35,6 @@ from regime_detection.network_fragility_rules import (
     evaluate_stock_picker_dispersion,
 )
 
-
 # ---------- Helpers -----------------------------------------------------------
 
 
@@ -44,12 +47,15 @@ def _inputs(
     avg_corr_pct: float = 0.50,
     largest_eig_pct: float = 0.50,
     eff_rank_pct: float = 0.50,
+    avg_corr: float = 0.50,
+    largest_eig: float = 0.35,
     dispersion_pct: float = 0.50,
     absorption_ratio: float = 0.50,
     avg_corr_slope: float = 0.0,
     largest_eig_slope: float = 0.0,
     eff_rank_stability: float = 0.02,
     realized_vol_pct: float = 0.50,
+    realized_vol_21d: float = 0.12,
     drawdown_21d: float = 0.0,
     vix_pct: float = 0.50,
 ) -> NetworkFragilityRuleInputs:
@@ -59,12 +65,15 @@ def _inputs(
         avg_pairwise_corr_percentile_504d=avg_corr_pct,
         largest_eigenvalue_share_percentile_504d=largest_eig_pct,
         effective_rank_percentile_504d=eff_rank_pct,
+        avg_pairwise_corr_63d=avg_corr,
+        largest_eigenvalue_share=largest_eig,
         dispersion_ratio_percentile_252d=dispersion_pct,
         absorption_ratio_top3=absorption_ratio,
         avg_pairwise_corr_slope_21d=avg_corr_slope,
         largest_eigenvalue_share_slope_21d=largest_eig_slope,
         effective_rank_stability_21d=eff_rank_stability,
         realized_vol_percentile_252d=realized_vol_pct,
+        realized_vol_21d=realized_vol_21d,
         drawdown_21d=drawdown_21d,
         vix_percentile_252d=vix_pct,
     )
@@ -103,7 +112,7 @@ def test_systemic_stress_beats_correlation_to_one():
     assert label == "systemic_stress"
 
 
-def test_systemic_stress_falls_through_to_correlation_to_one_when_credit_funding_absent():
+def test_systemic_stress_beats_correlation_to_one_when_credit_funding_absent():
     cfg = _default_rules_config()
     inputs = _inputs(
         avg_corr_pct=0.95,
@@ -118,7 +127,7 @@ def test_systemic_stress_falls_through_to_correlation_to_one_when_credit_funding
         volatility_label="high_vol",
         credit_funding_label=None,
     )
-    assert label == "correlation_to_one"
+    assert label == "systemic_stress"
 
 
 def test_correlation_to_one_beats_correlation_concentration():
@@ -143,10 +152,10 @@ def test_correlation_to_one_beats_correlation_concentration():
 def test_correlation_concentration_beats_rising_fragility():
     cfg = _default_rules_config()
     inputs = _inputs(
-        avg_corr_pct=0.80,                 # triggers concentration
-        avg_corr_slope=0.001,              # would trigger rising_fragility
+        avg_corr_pct=0.80,  # triggers concentration
+        avg_corr_slope=0.001,  # would trigger rising_fragility
         largest_eig_slope=0.001,
-        realized_vol_pct=0.50,             # NOT triggering corr_to_one (need 0.80)
+        realized_vol_pct=0.50,  # NOT triggering corr_to_one (need 0.80)
     )
     label = evaluate_rules(
         inputs=inputs,
@@ -227,7 +236,7 @@ def test_diversified_normal_when_only_it_matches():
     inputs = _inputs(
         avg_corr_pct=0.50,
         eff_rank_stability=0.01,
-        dispersion_pct=0.40,    # under stock_picker dispersion threshold
+        dispersion_pct=0.40,  # under stock_picker dispersion threshold
     )
     label = evaluate_rules(
         inputs=inputs,
@@ -243,13 +252,13 @@ def test_unknown_when_no_rule_matches():
     # Pick a feature profile that satisfies no rule: correlation in
     # diversified_normal band but rank unstable AND outside relaxed inner band.
     inputs = _inputs(
-        avg_corr_pct=0.65,            # in band [0.0, 0.75] but outside inner [0.30, 0.60]
-        eff_rank_stability=0.10,      # unstable (> 0.05 threshold)
-        dispersion_pct=0.40,          # below stock_picker dispersion
-        avg_corr_slope=-0.001,        # negative slope
+        avg_corr_pct=0.65,  # in band [0.0, 0.75] but outside inner [0.30, 0.60]
+        eff_rank_stability=0.10,  # unstable (> 0.05 threshold)
+        dispersion_pct=0.40,  # below stock_picker dispersion
+        avg_corr_slope=-0.001,  # negative slope
         largest_eig_slope=-0.001,
         largest_eig_pct=0.40,
-        eff_rank_pct=0.50,            # not below 0.25
+        eff_rank_pct=0.50,  # not below 0.25
     )
     label = evaluate_rules(
         inputs=inputs,
@@ -409,9 +418,7 @@ def test_rising_fragility_blocked_when_nan_in_trailing_21d_corr_window():
         vix_percentile_252d=flat_pct,
     )
     assert math.isnan(inputs.avg_pairwise_corr_slope_21d)
-    assert (
-        evaluate_rising_fragility(inputs, cfg, breadth_label="weak_breadth") is False
-    )
+    assert evaluate_rising_fragility(inputs, cfg, breadth_label="weak_breadth") is False
 
 
 # ---------- Integration over a multi-day features series ---------------------
@@ -429,18 +436,22 @@ def test_evaluate_rules_over_multi_day_series_labels_flip_when_thresholds_cross(
 
     # avg_corr_pct: 0.50 for days 0..29, 0.80 for 30..39, 0.95 for 40..49.
     avg_corr_pct = pd.Series(
-        np.concatenate([
-            np.full(30, 0.50),
-            np.full(10, 0.80),
-            np.full(10, 0.95),
-        ]),
+        np.concatenate(
+            [
+                np.full(30, 0.50),
+                np.full(10, 0.80),
+                np.full(10, 0.95),
+            ]
+        ),
         index=index,
     )
     realized_vol_pct = pd.Series(
-        np.concatenate([
-            np.full(40, 0.50),
-            np.full(10, 0.85),   # crosses corr_to_one threshold (>0.80)
-        ]),
+        np.concatenate(
+            [
+                np.full(40, 0.50),
+                np.full(10, 0.85),  # crosses corr_to_one threshold (>0.80)
+            ]
+        ),
         index=index,
     )
     flat_50 = pd.Series(0.50, index=index)

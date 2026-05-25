@@ -9,12 +9,16 @@ from pathlib import Path
 
 import pandas as pd
 
-
 REPO_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO_ROOT / "src"))
 
 from regime_detection.calendar import nyse_calendar
-from regime_detection.shadow_storage import ensure_shadow_layout, fetch_run_row, insert_incident, open_shadow_db
+from regime_detection.shadow_storage import (
+    ensure_shadow_layout,
+    fetch_run_row,
+    insert_incident,
+    open_shadow_db,
+)
 
 
 def _previous_nyse_session(check_date: date) -> date:
@@ -24,7 +28,9 @@ def _previous_nyse_session(check_date: date) -> date:
     sessions = schedule.index.date
     previous = [session for session in sessions if session < check_date]
     if not previous:
-        raise ValueError(f"Unable to determine previous NYSE session before {check_date.isoformat()}")
+        raise ValueError(
+            f"Unable to determine previous NYSE session before {check_date.isoformat()}"
+        )
     return previous[-1]
 
 
@@ -65,7 +71,9 @@ def run_deadman_check(
 
 
 def _parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Check that the previous NYSE session produced a shadow run row.")
+    parser = argparse.ArgumentParser(
+        description="Check that the previous NYSE session produced a shadow run row."
+    )
     parser.add_argument("--output-root", required=True, type=Path)
     parser.add_argument("--check-date", required=True, type=date.fromisoformat)
     return parser.parse_args()

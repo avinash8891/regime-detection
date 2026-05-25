@@ -17,7 +17,6 @@ from regime_detection.event_calendar_labels import (
 from regime_detection.loaders import load_event_calendar
 from regime_detection.models import EventCalendarOutput
 
-
 LOGGER = logging.getLogger(__name__)
 
 # ADR 0014 R1 — event-calendar precedence (V1 + V2 unified ordering).
@@ -80,7 +79,9 @@ _FORWARD_EVENT_WARNING_DAYS = 90
 _SESSION_PADDING_DAYS = 40
 
 
-def _window_offsets_for_row(*, label: EventCalendarLabel, row: object) -> tuple[int, int]:
+def _window_offsets_for_row(
+    *, label: EventCalendarLabel, row: object
+) -> tuple[int, int]:
     row_window = getattr(row, "window_days", None)
     if isinstance(row_window, (list, tuple)) and len(row_window) == 2:
         return int(row_window[0]), int(row_window[1])
@@ -101,7 +102,10 @@ def classify_event_calendar(
     """
     normalized = _normalized_events(event_calendar, market=config.event_calendar.market)
     if not normalized.empty:
-        if (normalized["date"] - as_of_date > timedelta(days=_FORWARD_EVENT_WARNING_DAYS)).any():
+        if (
+            normalized["date"] - as_of_date
+            > timedelta(days=_FORWARD_EVENT_WARNING_DAYS)
+        ).any():
             LOGGER.warning(
                 "Event calendar contains row more than %d calendar days after as_of_date=%s",
                 _FORWARD_EVENT_WARNING_DAYS,
@@ -162,12 +166,8 @@ def compute_event_calendar_outputs(
     global_start = date(first_session.year, 1, 1)
     global_end = date(last_session.year, 12, 31)
     if event_rows:
-        min_event_day = min(
-            min(row.publication_date, row.date) for row in event_rows
-        )
-        max_event_day = max(
-            max(row.publication_date, row.date) for row in event_rows
-        )
+        min_event_day = min(min(row.publication_date, row.date) for row in event_rows)
+        max_event_day = max(max(row.publication_date, row.date) for row in event_rows)
         global_start = min(global_start, date(min_event_day.year, 1, 1))
         global_end = max(global_end, date(max_event_day.year, 12, 31))
     global_sessions = _sessions_between(global_start, global_end)
@@ -264,7 +264,9 @@ def _label_for_event_type(
     return _V2_TYPE_TO_LABEL.get(event_type)
 
 
-def _normalized_events(event_calendar: pd.DataFrame | None, *, market: str) -> pd.DataFrame:
+def _normalized_events(
+    event_calendar: pd.DataFrame | None, *, market: str
+) -> pd.DataFrame:
     if event_calendar is None:
         return pd.DataFrame(
             columns=[
@@ -316,10 +318,7 @@ def compute_event_window_just_passed(
     result = pd.Series(False, index=index, dtype=bool)
     if not session_tuple:
         return result
-    if (
-        normalized_event_calendar is None
-        or normalized_event_calendar.empty
-    ):
+    if normalized_event_calendar is None or normalized_event_calendar.empty:
         return result
 
     event_rows = list(normalized_event_calendar.itertuples(index=False))
@@ -369,13 +368,17 @@ def compute_event_window_just_passed(
 
 def _third_friday_of_month(*, year: int, month: int) -> date:
     month_weeks = calendar.monthcalendar(year, month)
-    friday_days = [week[calendar.FRIDAY] for week in month_weeks if week[calendar.FRIDAY] != 0]
+    friday_days = [
+        week[calendar.FRIDAY] for week in month_weeks if week[calendar.FRIDAY] != 0
+    ]
     return date(year, month, friday_days[2])
 
 
 @lru_cache(maxsize=None)
 def _sessions_between(start_date: date, end_date: date) -> tuple[date, ...]:
-    return tuple(nyse_calendar().schedule(start_date=start_date, end_date=end_date).index.date)
+    return tuple(
+        nyse_calendar().schedule(start_date=start_date, end_date=end_date).index.date
+    )
 
 
 def _second_weekday_of_month(*, year: int, month: int, weekday: int) -> date:

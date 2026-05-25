@@ -23,7 +23,6 @@ from regime_detection.config import (
     load_regime_config,
 )
 
-
 # V2 spec §3.1 — canonical 24-asset network fragility universe (11 sector
 # ETFs + SPY broad-market index + 12 cross-asset proxies). KRE belongs to
 # v2 §2C credit/funding, not §3.1.
@@ -62,6 +61,7 @@ V2_NETWORK_FRAGILITY_DEESCALATION_DAYS = {
     "rising_fragility": 3,
     "correlation_concentration": 3,
     "correlation_to_one": 5,
+    "systemic_stress_unconfirmed": 5,
     "systemic_stress": 5,
     "unknown": 0,
 }
@@ -136,6 +136,39 @@ def test_layer1_axis_hysteresis_lives_on_axis_sections_not_v2_feature_configs() 
     assert cfg.breadth_state.deescalation_days_by_label["unknown"] == 0
 
 
+def test_v2_default_config_declares_unknown_freeze_windows() -> None:
+    cfg = load_default_regime_config()
+
+    assert cfg.trend_direction.max_unknown_freeze_days == 2
+    assert cfg.trend_character.max_unknown_freeze_days == 2
+    assert cfg.volatility_state.max_unknown_freeze_days == 2
+    assert cfg.breadth_state.max_unknown_freeze_days == 2
+    assert cfg.network_fragility is not None
+    assert cfg.network_fragility.max_unknown_freeze_days == 2
+    assert cfg.volume_liquidity_state is not None
+    assert cfg.volume_liquidity_state.max_unknown_freeze_days == 2
+    assert cfg.monetary_pressure_state is not None
+    assert cfg.monetary_pressure_state.max_unknown_freeze_days == 2
+    assert cfg.credit_funding is not None
+    assert cfg.credit_funding.max_unknown_freeze_days == 2
+    assert cfg.inflation_growth is not None
+    assert cfg.inflation_growth.max_unknown_freeze_days == 2
+
+
+def test_disinflation_yield_independent_policy_is_explicit_in_config_and_docs() -> None:
+    """ADR 0011 is the authority for yield-independent disinflation."""
+    cfg = load_default_regime_config()
+
+    assert cfg.inflation_growth is not None
+    assert cfg.inflation_growth.rules.disinflation_yield_independent is True
+
+    spec = Path("docs/regime_engine_v2_spec.md").read_text()
+    adr = Path("docs/decisions/0011-inflation-growth-rule-coverage-fix.md").read_text()
+    authority = "Yield-independent disinflation is the default production policy"
+    assert authority in spec
+    assert authority in adr
+
+
 @pytest.mark.parametrize(
     "section",
     [
@@ -168,9 +201,13 @@ def test_v2_default_config_has_v2_section_3_2_lookback_windows() -> None:
     cfg = load_default_regime_config()
     assert cfg.network_fragility is not None
     nf = cfg.network_fragility
-    assert nf.correlation_lookback_days == V2_NETWORK_FRAGILITY_CORRELATION_LOOKBACK_DAYS
+    assert (
+        nf.correlation_lookback_days == V2_NETWORK_FRAGILITY_CORRELATION_LOOKBACK_DAYS
+    )
     assert nf.percentile_lookback_days == V2_NETWORK_FRAGILITY_PERCENTILE_LOOKBACK_DAYS
-    assert nf.realized_vol_lookback_days == V2_NETWORK_FRAGILITY_REALIZED_VOL_LOOKBACK_DAYS
+    assert (
+        nf.realized_vol_lookback_days == V2_NETWORK_FRAGILITY_REALIZED_VOL_LOOKBACK_DAYS
+    )
     assert (
         nf.dispersion_percentile_lookback_days
         == V2_NETWORK_FRAGILITY_DISPERSION_PERCENTILE_LOOKBACK_DAYS
@@ -422,8 +459,14 @@ def test_load_default_regime_config_dispatches_on_package_version() -> None:
 
 
 def test_default_config_resource_dispatch_parses_version_major() -> None:
-    assert _default_config_resource_name_for_version("1.9.9") == "configs/core3-v1.0.0.yaml"
-    assert _default_config_resource_name_for_version("2.0.0rc1") == "configs/core3-v2.0.0.yaml"
+    assert (
+        _default_config_resource_name_for_version("1.9.9")
+        == "configs/core3-v1.0.0.yaml"
+    )
+    assert (
+        _default_config_resource_name_for_version("2.0.0rc1")
+        == "configs/core3-v2.0.0.yaml"
+    )
 
 
 def test_default_config_resource_dispatch_rejects_unsupported_major() -> None:

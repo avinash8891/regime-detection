@@ -7,6 +7,7 @@ import numpy as np
 import pandas as pd
 
 from regime_detection._rolling_stats import period_return, simple_moving_average
+
 if TYPE_CHECKING:  # avoid runtime cycle: trend_direction_v2 → config → ...
     from regime_detection.config import TrendDirectionV2RulesConfig
     from regime_detection.trend_direction_v2 import TrendDirectionV2Features
@@ -63,7 +64,9 @@ def compute_features(close: pd.Series) -> TrendDirectionFeatures:
     sma_50 = simple_moving_average(close, window=50)
     sma_200 = simple_moving_average(close, window=200)
     return_63d = period_return(close, periods=63)
-    return TrendDirectionFeatures(close=close, sma_50=sma_50, sma_200=sma_200, return_63d=return_63d)
+    return TrendDirectionFeatures(
+        close=close, sma_50=sma_50, sma_200=sma_200, return_63d=return_63d
+    )
 
 
 def raw_label_for_day(
@@ -87,8 +90,7 @@ def raw_label_for_day(
     ret63 = f.return_63d.loc[dt]
 
     v2_args_present = (
-        trend_direction_v2_features is not None
-        and trend_direction_v2_rules is not None
+        trend_direction_v2_features is not None and trend_direction_v2_rules is not None
     )
     v1_inputs_nan = any(pd.isna(x) for x in [close, sma50, sma200, ret63])
 
@@ -263,7 +265,9 @@ def build_raw_outputs(
             # so recovery/euphoria can override unknown per spec §1A line 239
             # precedence — matches per-day `raw_label_for_day` behavior.
             if labels[idx] != "unknown":
-                evidence[idx].update(_v2_evidence_for_day(trend_direction_v2_features, dt))
+                evidence[idx].update(
+                    _v2_evidence_for_day(trend_direction_v2_features, dt)
+                )
             v1_label = str(labels[idx])
             v2_label = evaluate_v2_trend_label(
                 v1_label=v1_label,
@@ -282,4 +286,3 @@ def build_raw_outputs(
             labels[idx] = v2_label
 
     return list(labels), evidence
-

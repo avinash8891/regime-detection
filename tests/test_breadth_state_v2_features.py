@@ -7,6 +7,7 @@ Spec references:
     docs/regime_engine_v2_spec.md §1D (lines 196–247).
     Sector breadth plus optional PIT-derived features / labels.
 """
+
 from __future__ import annotations
 
 from datetime import date
@@ -28,7 +29,6 @@ from regime_detection.feature_store import build_feature_store
 from regime_detection.fragility_universe import SECTOR_ETFS
 from regime_detection.market_context import build_market_context
 from regime_detection.timeline import build_regime_timeline
-
 
 # ---------- Shared fixtures ---------------------------------------------------
 
@@ -76,9 +76,7 @@ def _sector_closes(
 
 
 def test_sector_breadth_all_positive_is_one(v2_breadth_config):
-    closes = _sector_closes(
-        n=60, return_signs={s: +1 for s in SECTOR_ETFS}
-    )
+    closes = _sector_closes(n=60, return_signs={s: +1 for s in SECTOR_ETFS})
     out = compute_breadth_v2_features(
         sector_etf_closes=closes, config=v2_breadth_config
     )
@@ -88,9 +86,7 @@ def test_sector_breadth_all_positive_is_one(v2_breadth_config):
 
 
 def test_sector_breadth_all_negative_is_zero(v2_breadth_config):
-    closes = _sector_closes(
-        n=60, return_signs={s: -1 for s in SECTOR_ETFS}
-    )
+    closes = _sector_closes(n=60, return_signs={s: -1 for s in SECTOR_ETFS})
     out = compute_breadth_v2_features(
         sector_etf_closes=closes, config=v2_breadth_config
     )
@@ -121,9 +117,7 @@ def test_sector_breadth_five_positive_six_nonpositive(v2_breadth_config):
 def test_sector_breadth_boundary_exactly_zero_not_counted(v2_breadth_config):
     """All 11 sectors with return_21d == 0.0 → breadth = 0.0
     (strictly `> 0` rule from §1D line 229)."""
-    closes = _sector_closes(
-        n=60, return_signs={s: 0 for s in SECTOR_ETFS}
-    )
+    closes = _sector_closes(n=60, return_signs={s: 0 for s in SECTOR_ETFS})
     out = compute_breadth_v2_features(
         sector_etf_closes=closes, config=v2_breadth_config
     )
@@ -179,9 +173,7 @@ def test_sector_breadth_hand_computed_30d_synthetic(v2_breadth_config):
 
 def test_sector_breadth_nan_before_lookback(v2_breadth_config):
     """For t < lookback the 21d return is NaN → sector_breadth NaN."""
-    closes = _sector_closes(
-        n=40, return_signs={s: +1 for s in SECTOR_ETFS}
-    )
+    closes = _sector_closes(n=40, return_signs={s: +1 for s in SECTOR_ETFS})
     out = compute_breadth_v2_features(
         sector_etf_closes=closes, config=v2_breadth_config
     )
@@ -194,9 +186,7 @@ def test_sector_breadth_missing_sector_yields_all_nan(v2_breadth_config):
     """Ambiguity Log entry #27: missing a single sector → entire output is NaN
     (we do NOT rebase the denominator for the strict feature). The separate
     available-sector proxy still computes using the present sectors."""
-    closes = _sector_closes(
-        n=60, return_signs={s: +1 for s in SECTOR_ETFS}
-    )
+    closes = _sector_closes(n=60, return_signs={s: +1 for s in SECTOR_ETFS})
     # Drop XLRE (the youngest US sector ETF, often absent before 2015).
     del closes["XLRE"]
     out = compute_breadth_v2_features(
@@ -212,9 +202,7 @@ def test_sector_breadth_missing_sector_yields_all_nan(v2_breadth_config):
 
 
 def test_sector_breadth_aligns_to_input_index(v2_breadth_config):
-    closes = _sector_closes(
-        n=60, return_signs={s: +1 for s in SECTOR_ETFS}
-    )
+    closes = _sector_closes(n=60, return_signs={s: +1 for s in SECTOR_ETFS})
     out = compute_breadth_v2_features(
         sector_etf_closes=closes, config=v2_breadth_config
     )
@@ -238,7 +226,9 @@ def test_sector_breadth_aligns_to_input_index(v2_breadth_config):
 _INTEGRATION_AS_OF = date(2023, 12, 14)
 
 
-def _sector_etf_closes_aligned_to_spy(spy_index: pd.DatetimeIndex) -> dict[str, pd.Series]:
+def _sector_etf_closes_aligned_to_spy(
+    spy_index: pd.DatetimeIndex,
+) -> dict[str, pd.Series]:
     """Synthetic per-sector close series aligned to the SPY index. Uses a
     deterministic-but-varied multiplier per sector so each sector has a
     distinct return path (no pathological all-tied series)."""
@@ -269,9 +259,7 @@ def test_build_feature_store_populates_breadth_state_v2(
         config=cfg,
         sector_etf_closes=sector_closes,
     )
-    store = build_feature_store(
-        context, breadth_state_v2_config=v2_breadth_config
-    )
+    store = build_feature_store(context, breadth_state_v2_config=v2_breadth_config)
     assert store.breadth_state_v2 is not None
     assert isinstance(store.breadth_state_v2, BreadthV2Features)
     assert (store.breadth_state_v2.sector_breadth.index == store.spy_index).all()
@@ -289,9 +277,7 @@ def test_build_feature_store_graceful_when_sector_data_absent(
         market_data=market_df_for_asof(_INTEGRATION_AS_OF),
         config=cfg,
     )
-    store = build_feature_store(
-        context, breadth_state_v2_config=v2_breadth_config
-    )
+    store = build_feature_store(context, breadth_state_v2_config=v2_breadth_config)
     assert store.breadth_state_v2 is None
 
 
@@ -376,7 +362,5 @@ def test_timeline_threads_breadth_state_v2_config(
 
     # build_regime_timeline must propagate the v2 config without raising
     # (slice 2.3 ships compute + seam only; no new outputs on RegimeTimeline).
-    timeline = build_regime_timeline(
-        context=context, lookback_days=5, config=cfg
-    )
+    timeline = build_regime_timeline(context=context, lookback_days=5, config=cfg)
     assert len(timeline.outputs) == 5

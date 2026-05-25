@@ -1,20 +1,28 @@
 from __future__ import annotations
 
 import logging
+import time
 from datetime import timedelta
 from pathlib import Path
 
 import pandas as pd
 import yaml
+from opentelemetry.trace import use_span
 
+from regime_detection.observability import (
+    capture_exception,
+    record_timing,
+    start_span,
+    tracer,
+)
 from regime_detection.temporal import (
     parse_date_series,
     parse_datetime_index,
     parse_datetime_series,
 )
 
-
 LOGGER = logging.getLogger(__name__)
+_TRACER = tracer(__name__)
 
 _SCHEDULED_TYPES = {
     "FOMC",
@@ -44,20 +52,46 @@ def load_event_calendar(
     *,
     market: str = "US",
 ) -> pd.DataFrame:
-    if isinstance(source, pd.DataFrame):
-        return _validate_event_df(source, market=market)
+    start_time = time.perf_counter()
+    span = start_span(
+        _TRACER,
+        "load_event_calendar",
+        attributes={"market": market, "source_type": type(source).__name__},
+    )
+    with use_span(span, end_on_exit=True):
+        try:
+            if isinstance(source, pd.DataFrame):
+                frame = _validate_event_df(source, market=market)
+                span.set_attribute("rows", len(frame))
+                return frame
 
-    path = Path(source)
-    if path.suffix.lower() in {".yaml", ".yml"}:
-        loaded = yaml.safe_load(path.read_text())
-        if isinstance(loaded, dict):
-            rows = loaded.get("events", [])
-        else:
-            rows = loaded
-        return _validate_event_df(pd.DataFrame(rows or []), market=market)
-    if path.suffix.lower() == ".csv":
-        return _validate_event_df(pd.read_csv(path), market=market)
-    raise ValueError(f"Unsupported event calendar source: {source}")
+            path = Path(source)
+            span.set_attribute("source_path", str(path))
+            if path.suffix.lower() in {".yaml", ".yml"}:
+                loaded = yaml.safe_load(path.read_text())
+                if isinstance(loaded, dict):
+                    rows = loaded.get("events", [])
+                else:
+                    rows = loaded
+                frame = _validate_event_df(pd.DataFrame(rows or []), market=market)
+                span.set_attribute("rows", len(frame))
+                return frame
+            if path.suffix.lower() == ".csv":
+                frame = _validate_event_df(pd.read_csv(path), market=market)
+                span.set_attribute("rows", len(frame))
+                return frame
+            raise ValueError(f"Unsupported event calendar source: {source}")
+        except Exception as error:
+            capture_exception(
+                error,
+                logger=LOGGER,
+                component="load_event_calendar",
+                extra={"market": market},
+            )
+            span.record_exception(error)
+            raise
+        finally:
+            record_timing("load_event_calendar", start_time)
 
 
 def _read_source(source: str | Path | pd.DataFrame) -> pd.DataFrame:
@@ -139,7 +173,10 @@ def load_sector_etf_closes(
     Returns one date-indexed Series per symbol.
     """
     result = _load_long_form_closes(
-        source, group_col="symbol", value_col="close", universe=universe,
+        source,
+        group_col="symbol",
+        value_col="close",
+        universe=universe,
     )
     if not result:
         LOGGER.warning("load_sector_etf_closes returned 0 symbols from source")
@@ -158,7 +195,10 @@ def load_cross_asset_closes(
     each side can grow its own validation later without affecting the other.
     """
     result = _load_long_form_closes(
-        source, group_col="symbol", value_col="close", universe=universe,
+        source,
+        group_col="symbol",
+        value_col="close",
+        universe=universe,
     )
     if not result:
         LOGGER.warning("load_cross_asset_closes returned 0 symbols from source")
@@ -180,7 +220,10 @@ def load_macro_series(
     Each series appears exactly once — no duplicate aliases.
     """
     out = _load_long_form_closes(
-        source, group_col="series_id", value_col="value", universe=series_ids,
+        source,
+        group_col="series_id",
+        value_col="value",
+        universe=series_ids,
     )
     out = {key: series.rename(key) for key, series in out.items()}
     df = _read_source(source)
@@ -257,9 +300,7 @@ def load_aggregate_forward_eps_revision_series(
     from regime_data_fetch.aggregate_eps import compute_eps_revision_direction_4w
 
     df = _read_source(source)
-    missing = sorted(
-        {"observation_date", "forward_estimate_value"} - set(df.columns)
-    )
+    missing = sorted({"observation_date", "forward_estimate_value"} - set(df.columns))
     if missing:
         raise ValueError(
             f"aggregate forward EPS source missing required columns: {missing}"
@@ -298,12 +339,12 @@ def load_central_bank_text_score(
         # ``release_timestamp`` (datetime). The score scaffold treats it
         # as the release date.
         date_column = (
-            "release_timestamp"
-            if "release_timestamp" in df.columns
-            else "release_date"
+            "release_timestamp" if "release_timestamp" in df.columns else "release_date"
         )
         frames.append(
-            score_release_frame(df, date_column=date_column, source_label="fomc_minutes")
+            score_release_frame(
+                df, date_column=date_column, source_label="fomc_minutes"
+            )
         )
     if powell_speeches_source is not None:
         df = _read_source(powell_speeches_source)
@@ -315,13 +356,18 @@ def load_central_bank_text_score(
             else "publication_date"
         )
         frames.append(
-            score_release_frame(df, date_column=date_column, source_label="powell_speech")
+            score_release_frame(
+                df, date_column=date_column, source_label="powell_speech"
+            )
         )
     combined = combine_release_frames(*frames)
     if combined.empty:
         return combined
     if max_release_age_days is not None and as_of_date is not None:
-        cutoff = pd.Timestamp(as_of_date).date() - pd.Timedelta(days=max_release_age_days).to_pytimedelta()
+        cutoff = (
+            pd.Timestamp(as_of_date).date()
+            - pd.Timedelta(days=max_release_age_days).to_pytimedelta()
+        )
         combined = combined[combined["release_date"] >= cutoff].reset_index(drop=True)
     return combined
 
@@ -345,9 +391,7 @@ def load_news_sentiment_series(
     required = {"date", "news_sentiment"}
     missing = sorted(required - set(df.columns))
     if missing:
-        raise ValueError(
-            f"news_sentiment source missing required columns: {missing}"
-        )
+        raise ValueError(f"news_sentiment source missing required columns: {missing}")
     df = df.sort_values("date")
     return pd.Series(
         df["news_sentiment"].astype(float).to_numpy(),
@@ -393,9 +437,7 @@ def load_cpi_vintages_first_release(
     required = {"date", "value", "realtime_start"}
     missing = sorted(required - set(df.columns))
     if missing:
-        raise ValueError(
-            f"cpi_vintages source missing required columns: {missing}"
-        )
+        raise ValueError(f"cpi_vintages source missing required columns: {missing}")
     if df.empty:
         return pd.Series([], dtype=float, name="cpi_first_release")
     work = df.copy()
@@ -442,7 +484,9 @@ def _validate_event_df(df: pd.DataFrame, *, market: str) -> pd.DataFrame:
     out["type"] = out["type"].astype(str)
     bad_types = sorted(set(out["type"]) - _ALLOWED_TYPES)
     if bad_types:
-        raise ValueError(f"event_calendar contains unsupported types for V1: {bad_types}")
+        raise ValueError(
+            f"event_calendar contains unsupported types for V1: {bad_types}"
+        )
 
     out["date"] = parse_date_series(
         out["date"], field_name="date", context="event_calendar"
@@ -478,9 +522,21 @@ def _validate_event_df(df: pd.DataFrame, *, market: str) -> pd.DataFrame:
             else:
                 out.at[idx, "publication_date"] = row["date"]
 
-    return out[["date", "market", "type", "importance", "publication_date", "window_days", "approved_label"]].sort_values(
-        ["date", "type"]
-    ).reset_index(drop=True)
+    return (
+        out[
+            [
+                "date",
+                "market",
+                "type",
+                "importance",
+                "publication_date",
+                "window_days",
+                "approved_label",
+            ]
+        ]
+        .sort_values(["date", "type"])
+        .reset_index(drop=True)
+    )
 
 
 def _parse_window_days(value: object) -> list[int] | None:
@@ -491,7 +547,9 @@ def _parse_window_days(value: object) -> list[int] | None:
     else:
         parsed = value
     if not isinstance(parsed, (list, tuple)) or len(parsed) != 2:
-        raise ValueError(f"event_calendar window_days must be a two-item list: {value!r}")
+        raise ValueError(
+            f"event_calendar window_days must be a two-item list: {value!r}"
+        )
     try:
         return [int(parsed[0]), int(parsed[1])]
     except (TypeError, ValueError) as exc:

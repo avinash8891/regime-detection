@@ -66,7 +66,9 @@ def load_yahoo_usd_index_csv(csv_path: Path) -> YahooUsdIndexLoadResult:
                 continue
             parsed = _parse_yahoo_usd_index_row(raw_row, row_number=row_number)
             if parsed.date in seen_dates:
-                raise ValueError(f"Duplicate USD index row for {parsed.date.isoformat()} at CSV line {row_number}")
+                raise ValueError(
+                    f"Duplicate USD index row for {parsed.date.isoformat()} at CSV line {row_number}"
+                )
             seen_dates.add(parsed.date)
             rows.append(parsed)
 
@@ -106,7 +108,11 @@ def run_local_usd_index_import(
 ) -> Path:
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    store = AcquisitionStore(acquisition_db_path, artifact_store_root=artifact_store_root) if acquisition_db_path else None
+    store = (
+        AcquisitionStore(acquisition_db_path, artifact_store_root=artifact_store_root)
+        if acquisition_db_path
+        else None
+    )
     fetch_run = (
         store.start_fetch_run(
             fetch_type="usd_index_local",
@@ -145,7 +151,10 @@ def run_local_usd_index_import(
         quarantine_path = usd_index_dir / "nyicdx_quarantine.jsonl"
         if load_result.quarantined_rows:
             quarantine_path.write_text(
-                "".join(json.dumps(row, sort_keys=True) + "\n" for row in load_result.quarantined_rows)
+                "".join(
+                    json.dumps(row, sort_keys=True) + "\n"
+                    for row in load_result.quarantined_rows
+                )
             )
 
         report = {
@@ -164,8 +173,12 @@ def run_local_usd_index_import(
             },
             "paths": {
                 "parquet": str(parquet_path),
-                "quarantine": str(quarantine_path) if load_result.quarantined_rows else None,
-                "acquisition_db": str(acquisition_db_path) if acquisition_db_path else None,
+                "quarantine": (
+                    str(quarantine_path) if load_result.quarantined_rows else None
+                ),
+                "acquisition_db": (
+                    str(acquisition_db_path) if acquisition_db_path else None
+                ),
             },
             "notes": [
                 "Optional local Yahoo Finance ^NYICDX import.",
@@ -207,11 +220,15 @@ def run_local_usd_index_import(
         return report_path
     except Exception as exc:
         if store and fetch_run:
-            store.finish_fetch_run(run_id=fetch_run.run_id, status="failed", notes=str(exc))
+            store.finish_fetch_run(
+                run_id=fetch_run.run_id, status="failed", notes=str(exc)
+            )
         raise
 
 
-def _parse_yahoo_usd_index_row(raw_row: dict[str, str], *, row_number: int) -> YahooUsdIndexRow:
+def _parse_yahoo_usd_index_row(
+    raw_row: dict[str, str], *, row_number: int
+) -> YahooUsdIndexRow:
     try:
         return YahooUsdIndexRow(
             date=dt.date.fromisoformat(raw_row["Date"]),
@@ -223,7 +240,9 @@ def _parse_yahoo_usd_index_row(raw_row: dict[str, str], *, row_number: int) -> Y
             volume=int(raw_row["Volume"]),
         )
     except (KeyError, TypeError, ValueError) as exc:
-        raise ValueError(f"Invalid Yahoo USD index row at CSV line {row_number}: {raw_row!r}") from exc
+        raise ValueError(
+            f"Invalid Yahoo USD index row at CSV line {row_number}: {raw_row!r}"
+        ) from exc
 
 
 def _is_blank_price_row(raw_row: dict[str, str]) -> bool:

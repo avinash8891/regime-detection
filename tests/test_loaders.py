@@ -73,5 +73,7 @@ def test_load_event_calendar_rejects_missing_required_columns() -> None:
         }
     )
 
-    with pytest.raises(ValueError, match=r"event_calendar missing required columns.*importance"):
+    with pytest.raises(
+        ValueError, match=r"event_calendar missing required columns.*importance"
+    ):
         load_event_calendar(source)

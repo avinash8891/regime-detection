@@ -10,8 +10,10 @@ import pytest
 import yaml
 
 from scripts import audit_layer2_30d
-from scripts.audit_layer2_30d import build_label_rule_summary, build_wiring_presence_rows
-
+from scripts.audit_layer2_30d import (
+    build_label_rule_summary,
+    build_wiring_presence_rows,
+)
 
 SHA = "0" * 64
 

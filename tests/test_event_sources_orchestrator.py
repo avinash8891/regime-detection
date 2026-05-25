@@ -5,7 +5,11 @@ import datetime as dt
 import pytest
 
 from regime_data_fetch.event_calendar import _render_events_yaml
-from regime_data_fetch.event_sources.models import ApprovalRecord, EventCandidate, ValidationResult
+from regime_data_fetch.event_sources.models import (
+    ApprovalRecord,
+    EventCandidate,
+    ValidationResult,
+)
 from regime_data_fetch.event_sources.orchestrator import (
     EventSourceOrchestrator,
     build_candidate_id,
@@ -41,7 +45,9 @@ class _Generator:
     def __init__(self, candidates: list[EventCandidate]) -> None:
         self.candidates = candidates
 
-    def generate(self, *, start_year: int, end_year: int, store, run_id) -> list[EventCandidate]:
+    def generate(
+        self, *, start_year: int, end_year: int, store, run_id
+    ) -> list[EventCandidate]:
         del start_year, end_year, store, run_id
         return self.candidates
 
@@ -52,12 +58,16 @@ class _Adapter:
     def __init__(self, candidates: list[EventCandidate]) -> None:
         self.candidates = candidates
 
-    def fetch(self, *, start_year: int, end_year: int, store, run_id) -> list[EventCandidate]:
+    def fetch(
+        self, *, start_year: int, end_year: int, store, run_id
+    ) -> list[EventCandidate]:
         del start_year, end_year, store, run_id
         return self.candidates
 
 
-def test_triangulation_promotes_official_primary_with_unknown_validator_at_medium() -> None:
+def test_triangulation_promotes_official_primary_with_unknown_validator_at_medium() -> (
+    None
+):
     candidate = _candidate(dt.date(2026, 6, 11))
     orchestrator = EventSourceOrchestrator(primary_adapters=[], validators=[])
 
@@ -70,7 +80,7 @@ def test_triangulation_promotes_official_primary_with_unknown_validator_at_mediu
     assert decisions[0].source_count == 1
     assert decisions[0].requires_manual_review is False
     assert _render_events_yaml(rendered) == (
-        'events:\n'
+        "events:\n"
         '  - date: "2026-06-11"\n'
         '    release_timestamp_et: "2026-06-11T00:00:00-05:00"\n'
         '    market: "GLOBAL"\n'
@@ -116,25 +126,42 @@ def test_quarantine_rate_above_one_percent_stops_run() -> None:
     orchestrator = EventSourceOrchestrator(primary_adapters=[], validators=[])
 
     with pytest.raises(RuntimeError, match="quarantine rate"):
-        orchestrator.enforce_quarantine_threshold(candidates, orchestrator.triangulate(candidates, validations))
+        orchestrator.enforce_quarantine_threshold(
+            candidates, orchestrator.triangulate(candidates, validations)
+        )
 
 
-def test_group_b_geopolitical_candidate_is_stamped_but_withheld_without_overlay() -> None:
+def test_group_b_geopolitical_candidate_is_stamped_but_withheld_without_overlay() -> (
+    None
+):
     candidate = _candidate(
         dt.date(2022, 2, 24),
         event_type="geopolitical_event",
         source_id="gpr:caldara-iacoviello",
     )
     candidate = EventCandidate(
-        **{**candidate.__dict__, "market": "GLOBAL", "requires_manual_review": True, "raw_title": "Russia invasion of Ukraine"}
+        **{
+            **candidate.__dict__,
+            "market": "GLOBAL",
+            "requires_manual_review": True,
+            "raw_title": "Russia invasion of Ukraine",
+        }
     )
-    orchestrator = EventSourceOrchestrator(primary_adapters=[], candidate_generators=[_Generator([candidate])], validators=[])
+    orchestrator = EventSourceOrchestrator(
+        primary_adapters=[],
+        candidate_generators=[_Generator([candidate])],
+        validators=[],
+    )
 
-    candidates, validations, decisions, rendered = orchestrator.run(start_year=2022, end_year=2022, store=None, run_id=None)
+    candidates, validations, decisions, rendered = orchestrator.run(
+        start_year=2022, end_year=2022, store=None, run_id=None
+    )
 
     assert validations == []
     assert len(candidates) == 1
-    assert candidates[0].candidate_id == build_candidate_id("geopolitical_event", dt.date(2022, 2, 24), ["gpr:caldara-iacoviello"])
+    assert candidates[0].candidate_id == build_candidate_id(
+        "geopolitical_event", dt.date(2022, 2, 24), ["gpr:caldara-iacoviello"]
+    )
     assert decisions[0].outcome == "withhold"
     assert decisions[0].requires_manual_review is True
     assert rendered == []
@@ -142,9 +169,16 @@ def test_group_b_geopolitical_candidate_is_stamped_but_withheld_without_overlay(
 
 def test_group_b_overlay_approved_geopolitical_candidate_renders() -> None:
     event_date = dt.date(2022, 2, 24)
-    candidate = _candidate(event_date, event_type="geopolitical_event", source_id="gpr:caldara-iacoviello")
+    candidate = _candidate(
+        event_date, event_type="geopolitical_event", source_id="gpr:caldara-iacoviello"
+    )
     candidate = EventCandidate(
-        **{**candidate.__dict__, "market": "GLOBAL", "requires_manual_review": True, "raw_title": "Russia invasion of Ukraine"}
+        **{
+            **candidate.__dict__,
+            "market": "GLOBAL",
+            "requires_manual_review": True,
+            "raw_title": "Russia invasion of Ukraine",
+        }
     )
     approval = ApprovalRecord(
         event_type="geopolitical_event",
@@ -152,7 +186,9 @@ def test_group_b_overlay_approved_geopolitical_candidate_renders() -> None:
         approved_label="geopolitical_event",
         approver="avinash",
         approved_at=dt.date(2026, 5, 14),
-        evidence_candidate_id=build_candidate_id("geopolitical_event", event_date, ["gpr:caldara-iacoviello"]),
+        evidence_candidate_id=build_candidate_id(
+            "geopolitical_event", event_date, ["gpr:caldara-iacoviello"]
+        ),
         evidence_source_count=1,
         importance="high",
         window_days=(0, 0),
@@ -165,18 +201,25 @@ def test_group_b_overlay_approved_geopolitical_candidate_renders() -> None:
         approval_overlay=[approval],
     )
 
-    candidates, _, decisions, rendered = orchestrator.run(start_year=2022, end_year=2022, store=None, run_id=None)
+    candidates, _, decisions, rendered = orchestrator.run(
+        start_year=2022, end_year=2022, store=None, run_id=None
+    )
 
     assert candidates[0].candidate_id == approval.evidence_candidate_id
     assert decisions[0].outcome == "promote"
     assert decisions[0].requires_manual_review is False
-    assert [(event.date, event.type, event.importance, event.window_days) for event in rendered] == [
-        (event_date, "geopolitical_event", "high", (0, 0))
-    ]
+    assert [
+        (event.date, event.type, event.importance, event.window_days)
+        for event in rendered
+    ] == [(event_date, "geopolitical_event", "high", (0, 0))]
 
 
 def test_group_b_deterministic_budget_candidate_auto_promotes() -> None:
-    candidate = _candidate(dt.date(2026, 9, 30), event_type="budget", source_id="usa.gov:federal-budget-process")
+    candidate = _candidate(
+        dt.date(2026, 9, 30),
+        event_type="budget",
+        source_id="usa.gov:federal-budget-process",
+    )
     candidate = EventCandidate(
         **{
             **candidate.__dict__,
@@ -187,11 +230,17 @@ def test_group_b_deterministic_budget_candidate_auto_promotes() -> None:
             "raw_title": "US federal fiscal year deadline",
         }
     )
-    orchestrator = EventSourceOrchestrator(primary_adapters=[_Adapter([candidate])], validators=[])
+    orchestrator = EventSourceOrchestrator(
+        primary_adapters=[_Adapter([candidate])], validators=[]
+    )
 
-    candidates, _, decisions, rendered = orchestrator.run(start_year=2026, end_year=2026, store=None, run_id=None)
+    candidates, _, decisions, rendered = orchestrator.run(
+        start_year=2026, end_year=2026, store=None, run_id=None
+    )
 
-    assert candidates[0].candidate_id == build_candidate_id("budget", dt.date(2026, 9, 30), ["usa.gov:federal-budget-process"])
+    assert candidates[0].candidate_id == build_candidate_id(
+        "budget", dt.date(2026, 9, 30), ["usa.gov:federal-budget-process"]
+    )
     assert decisions[0].outcome == "promote"
     assert decisions[0].final_confidence == "high"
     assert [(event.date, event.type, event.source) for event in rendered] == [

@@ -4,13 +4,13 @@ These classes mirror the intentionally pinned V1 fixture contract used by the
 current test suite. The event-calendar subtree is allowed to evolve with
 explicit fixture migrations because calendar state is now multi-label.
 """
+
 from __future__ import annotations
 
 from datetime import date
 from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
-
 
 DataQualityStatusV1Frozen = Literal[
     "ok", "degraded", "insufficient_data", "insufficient_history", "stale_data"

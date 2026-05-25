@@ -11,7 +11,10 @@ import pytest
 from regime_detection.config import load_default_regime_config, load_regime_config
 from regime_detection.axis_series import build_event_calendar_series
 from regime_detection.event_calendar import classify_event_calendar
-from regime_detection.market_context import build_market_context, slice_context_to_recent_sessions
+from regime_detection.market_context import (
+    build_market_context,
+    slice_context_to_recent_sessions,
+)
 from regime_detection.loaders import load_event_calendar
 from regime_data_fetch.event_calendar import (
     EventCalendarFetchError,
@@ -24,9 +27,14 @@ from regime_data_fetch.event_calendar_reporting import (
     build_group_a_report,
     build_group_b_report,
 )
-from regime_data_fetch.event_sources.models import EventCandidate, PromotionDecision, ValidationResult
-from regime_data_fetch.event_sources.deterministic_budget import DeterministicBudgetAdapter
-
+from regime_data_fetch.event_sources.models import (
+    EventCandidate,
+    PromotionDecision,
+    ValidationResult,
+)
+from regime_data_fetch.event_sources.deterministic_budget import (
+    DeterministicBudgetAdapter,
+)
 
 FOMC_FIXTURES = Path("tests/fixtures/raw/fomc")
 
@@ -39,7 +47,9 @@ def test_url_text_fetcher_raises_and_logs_url_errors(
         del args, kwargs
         raise URLError("fixture timeout")
 
-    monkeypatch.setattr("regime_data_fetch.event_calendar_group_a.urlopen", failing_urlopen)
+    monkeypatch.setattr(
+        "regime_data_fetch.event_calendar_group_a.urlopen", failing_urlopen
+    )
 
     with caplog.at_level("ERROR", logger="regime_data_fetch.event_calendar"):
         with pytest.raises(EventCalendarFetchError, match="fixture timeout"):
@@ -57,7 +67,9 @@ def _empty_hf_central_bank_parquet_bytes(tmp_path: Path) -> bytes:
     return parquet_path.read_bytes()
 
 
-def test_event_calendar_reporting_builds_candidate_records_and_group_reports(tmp_path: Path) -> None:
+def test_event_calendar_reporting_builds_candidate_records_and_group_reports(
+    tmp_path: Path,
+) -> None:
     ecb_candidate = EventCandidate(
         date=dt.date(2026, 4, 30),
         event_type="ECB_decision",
@@ -140,9 +152,24 @@ def test_event_calendar_reporting_builds_candidate_records_and_group_reports(tmp
     assert records.quarantine == [records.candidates[0]]
 
     output_paths = {
-        "candidates": tmp_path / "data" / "raw" / "event_calendar" / "candidates" / "event_candidates.parquet",
-        "validations": tmp_path / "data" / "raw" / "event_calendar" / "candidates" / "event_validations.parquet",
-        "quarantine": tmp_path / "data" / "raw" / "event_calendar" / "candidates" / "quarantine.parquet",
+        "candidates": tmp_path
+        / "data"
+        / "raw"
+        / "event_calendar"
+        / "candidates"
+        / "event_candidates.parquet",
+        "validations": tmp_path
+        / "data"
+        / "raw"
+        / "event_calendar"
+        / "candidates"
+        / "event_validations.parquet",
+        "quarantine": tmp_path
+        / "data"
+        / "raw"
+        / "event_calendar"
+        / "candidates"
+        / "quarantine.parquet",
     }
     group_a_report = build_group_a_report(
         candidates=[ecb_candidate, budget_candidate],
@@ -158,7 +185,10 @@ def test_event_calendar_reporting_builds_candidate_records_and_group_reports(tmp
 
     assert group_a_report["candidates"] == {"ECB_decision": 1}
     assert group_a_report["quarantined"] == {"ECB_decision": 1}
-    assert group_a_report["paths"]["candidates"] == "data/raw/event_calendar/candidates/event_candidates.parquet"
+    assert (
+        group_a_report["paths"]["candidates"]
+        == "data/raw/event_calendar/candidates/event_candidates.parquet"
+    )
     assert group_b_report["candidates"] == {"budget": 1}
     assert group_b_report["promoted"] == {"budget": 1}
 
@@ -265,7 +295,12 @@ def test_event_calendar_uses_publication_date_and_precedence() -> None:
     )
 
     assert out.primary_label == "fed_week"
-    assert set(out.matching_labels) >= {"fed_week", "cpi_week", "expiry_week", "earnings_season"}
+    assert set(out.matching_labels) >= {
+        "fed_week",
+        "cpi_week",
+        "expiry_week",
+        "earnings_season",
+    }
     assert not hasattr(out, "raw_label")
     assert not hasattr(out, "stable_label")
     assert not hasattr(out, "active_label")
@@ -550,7 +585,9 @@ def test_budget_week_fires_when_fiscal_year_deadline_falls_on_weekend() -> None:
     assert out.matching_labels == ("budget_week",)
 
 
-def test_build_event_calendar_series_matches_point_classifier(market_df_for_asof) -> None:
+def test_build_event_calendar_series_matches_point_classifier(
+    market_df_for_asof,
+) -> None:
     cfg = load_default_regime_config()
     end_date = date(2024, 1, 17)
     events = pd.DataFrame(
@@ -620,7 +657,9 @@ def test_validate_fomc_listing_integrity_detects_missing_structured_dates() -> N
     parsed_entries = [
         ScheduledEvent(
             date=dt.date(2023, 3, 22),
-            release_timestamp_et=dt.datetime(2023, 4, 12, 14, 0, tzinfo=dt.timezone.utc),
+            release_timestamp_et=dt.datetime(
+                2023, 4, 12, 14, 0, tzinfo=dt.timezone.utc
+            ),
             market="US",
             type="FOMC",
             importance="high",
@@ -629,7 +668,9 @@ def test_validate_fomc_listing_integrity_detects_missing_structured_dates() -> N
     ]
 
     try:
-        validate_fomc_listing_integrity(html=html, parsed_entries=parsed_entries, min_year=2023)
+        validate_fomc_listing_integrity(
+            html=html, parsed_entries=parsed_entries, min_year=2023
+        )
     except EventCalendarFetchError as exc:
         assert "mismatch" in str(exc).lower()
         assert "2023-02-01" in str(exc)

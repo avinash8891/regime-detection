@@ -13,7 +13,6 @@ from regime_data_fetch.pit_constituents import (
     run_pit_constituents_fetch,
 )
 
-
 FIXTURES = Path("tests/fixtures/raw/pit")
 
 
@@ -35,7 +34,9 @@ def test_parse_sp500_ticker_start_end_csv_extracts_intervals() -> None:
     assert rows[-1].source == "fja05680/sp500"
 
 
-def test_parse_sp500_ticker_start_end_csv_applies_known_open_interval_corrections() -> None:
+def test_parse_sp500_ticker_start_end_csv_applies_known_open_interval_corrections() -> (
+    None
+):
     csv_text = "\n".join(
         [
             "ticker,start_date,end_date",
@@ -70,9 +71,13 @@ def test_run_pit_constituents_fetch_writes_parquet_and_report(tmp_path: Path) ->
     assert report["counts"]["rows"] == 12
     assert report["counts"]["open_intervals"] == 4
     assert report["bias_warning"] == "survivorship_biased_constituent_universe"
-    assert report["paths"]["pit_constituents_parquet"] == str(tmp_path / "pit_constituents" / "sp500_ticker_intervals.parquet")
+    assert report["paths"]["pit_constituents_parquet"] == str(
+        tmp_path / "pit_constituents" / "sp500_ticker_intervals.parquet"
+    )
 
-    df = pd.read_parquet(tmp_path / "pit_constituents" / "sp500_ticker_intervals.parquet")
+    df = pd.read_parquet(
+        tmp_path / "pit_constituents" / "sp500_ticker_intervals.parquet"
+    )
     assert list(df.columns) == [
         "ticker",
         "start_date",
@@ -100,7 +105,9 @@ def test_run_pit_constituents_fetch_raises_on_invalid_csv(tmp_path: Path) -> Non
         raise AssertionError("Expected PITConstituentFetchError")
 
 
-def test_run_pit_constituents_fetch_records_raw_csv_and_outputs_in_sqlite(tmp_path: Path) -> None:
+def test_run_pit_constituents_fetch_records_raw_csv_and_outputs_in_sqlite(
+    tmp_path: Path,
+) -> None:
     acquisition_db = tmp_path / "acquisition.db"
     csv_text = "\n".join(
         [
@@ -120,11 +127,15 @@ def test_run_pit_constituents_fetch_records_raw_csv_and_outputs_in_sqlite(tmp_pa
     assert report["paths"]["acquisition_db"] == str(acquisition_db)
 
     with sqlite3.connect(acquisition_db) as conn:
-        fetch_runs = conn.execute("SELECT fetch_type, status FROM fetch_runs").fetchall()
+        fetch_runs = conn.execute(
+            "SELECT fetch_type, status FROM fetch_runs"
+        ).fetchall()
         artifacts = conn.execute(
             "SELECT source_name, artifact_kind, count(*) FROM artifacts GROUP BY source_name, artifact_kind"
         ).fetchall()
-        outputs = conn.execute("SELECT output_kind FROM derived_outputs ORDER BY output_id").fetchall()
+        outputs = conn.execute(
+            "SELECT output_kind FROM derived_outputs ORDER BY output_id"
+        ).fetchall()
 
     assert fetch_runs == [("pit_constituents", "ok")]
     assert artifacts == [("github_raw:sp500_ticker_start_end", "csv", 1)]

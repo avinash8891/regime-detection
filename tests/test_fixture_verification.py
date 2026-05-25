@@ -12,7 +12,9 @@ import yaml
 from regime_detection.models import TransitionRiskState
 
 
-def test_fixture_verification_legacy_path_fails_loudly_without_v2_transition_inputs() -> None:
+def test_fixture_verification_legacy_path_fails_loudly_without_v2_transition_inputs() -> (
+    None
+):
     """
     Hard gate for Slice 2:
     - golden_dates.yaml is hand-labeled (never engine-generated)
@@ -45,7 +47,9 @@ def test_fixture_verification_legacy_path_fails_loudly_without_v2_transition_inp
         )
 
 
-def test_fixture_verification_report_includes_rich_transition_evidence(monkeypatch) -> None:
+def test_fixture_verification_report_includes_rich_transition_evidence(
+    monkeypatch,
+) -> None:
     repo_root = Path(__file__).resolve().parents[1]
 
     import importlib.util
@@ -92,9 +96,19 @@ def test_fixture_verification_report_includes_rich_transition_evidence(monkeypat
             }
         ],
     )
-    monkeypatch.setattr(mod, "_load_hand_labeled_expectations", lambda: {"transition_rich_evidence": {"transition_risk": "watch"}})
-    monkeypatch.setattr(mod, "_load_market_data", lambda: pd.DataFrame({"date": [pd.Timestamp(session)]}))
-    monkeypatch.setattr(mod, "_classify_all_intents", lambda _market_data: {session: output})
+    monkeypatch.setattr(
+        mod,
+        "_load_hand_labeled_expectations",
+        lambda: {"transition_rich_evidence": {"transition_risk": "watch"}},
+    )
+    monkeypatch.setattr(
+        mod,
+        "_load_market_data",
+        lambda: pd.DataFrame({"date": [pd.Timestamp(session)]}),
+    )
+    monkeypatch.setattr(
+        mod, "_classify_all_intents", lambda _market_data: {session: output}
+    )
     monkeypatch.setattr(mod, "_sha256_file", lambda _path: "sha256")
 
     report = mod.generate_report(

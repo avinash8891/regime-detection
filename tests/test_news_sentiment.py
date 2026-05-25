@@ -323,7 +323,9 @@ def test_fetch_workbook_bytes_wraps_urlerror_with_source_url(
 
     monkeypatch.setattr(sf_fed_news_sentiment.urllib.request, "urlopen", fake_urlopen)
 
-    with pytest.raises(SFFedNewsSentimentFetchError, match="failed to download") as excinfo:
+    with pytest.raises(
+        SFFedNewsSentimentFetchError, match="failed to download"
+    ) as excinfo:
         fetch_workbook_bytes(timeout=19)
 
     assert captured == {
@@ -355,14 +357,18 @@ def test_run_sf_fed_fetch_reads_operator_staged_workbook_and_records_artifact_le
     assert report["max_date"] == "2026-05-15"
     assert not (tmp_path / "news_sentiment" / "sf_fed_news_sentiment.xlsx").exists()
     with closing(sqlite3.connect(acquisition_db)) as conn:
-        fetch_runs = conn.execute("SELECT fetch_type, status FROM fetch_runs").fetchall()
+        fetch_runs = conn.execute(
+            "SELECT fetch_type, status FROM fetch_runs"
+        ).fetchall()
         artifacts = conn.execute(
             "SELECT source_name, artifact_kind, source_identifier, start_date, end_date FROM artifacts"
         ).fetchall()
         outputs = conn.execute(
             "SELECT output_kind, row_count, min_date, max_date FROM derived_outputs ORDER BY output_id"
         ).fetchall()
-        lineage_count = conn.execute("SELECT count(*) FROM artifact_lineage").fetchone()[0]
+        lineage_count = conn.execute(
+            "SELECT count(*) FROM artifact_lineage"
+        ).fetchone()[0]
 
     assert fetch_runs == [("sf_fed_news_sentiment", "ok")]
     assert artifacts == [

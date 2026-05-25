@@ -26,7 +26,9 @@ def test_consolidate_acquisition_dbs_requires_explicit_sources(tmp_path: Path) -
     assert not target.exists()
 
 
-def test_consolidate_acquisition_dbs_merges_runs_artifacts_outputs_and_ohlcv(tmp_path: Path) -> None:
+def test_consolidate_acquisition_dbs_merges_runs_artifacts_outputs_and_ohlcv(
+    tmp_path: Path,
+) -> None:
     src1 = tmp_path / "src1.db"
     src2 = tmp_path / "src2.db"
     _build_source_db_one(src1)
@@ -60,12 +62,24 @@ def test_consolidate_acquisition_dbs_merges_runs_artifacts_outputs_and_ohlcv(tmp
     }
 
     with sqlite3.connect(target) as conn:
-        fetch_runs = conn.execute("SELECT fetch_type, status, params_json, notes FROM fetch_runs ORDER BY run_id").fetchall()
-        artifacts = conn.execute("SELECT source_name, artifact_kind, notes FROM artifacts ORDER BY artifact_id").fetchall()
-        outputs = conn.execute("SELECT output_kind, notes FROM derived_outputs ORDER BY output_kind").fetchall()
-        ohlcv = conn.execute(f"SELECT symbol, date, close FROM {DAILY_OHLCV_ROWS_TABLE}").fetchall()
-        events = conn.execute("SELECT event_date, event_type FROM event_calendar_rows").fetchall()
-        pmi = conn.execute("SELECT dataset_kind, series_name, period, value FROM pmi_rows").fetchall()
+        fetch_runs = conn.execute(
+            "SELECT fetch_type, status, params_json, notes FROM fetch_runs ORDER BY run_id"
+        ).fetchall()
+        artifacts = conn.execute(
+            "SELECT source_name, artifact_kind, notes FROM artifacts ORDER BY artifact_id"
+        ).fetchall()
+        outputs = conn.execute(
+            "SELECT output_kind, notes FROM derived_outputs ORDER BY output_kind"
+        ).fetchall()
+        ohlcv = conn.execute(
+            f"SELECT symbol, date, close FROM {DAILY_OHLCV_ROWS_TABLE}"
+        ).fetchall()
+        events = conn.execute(
+            "SELECT event_date, event_type FROM event_calendar_rows"
+        ).fetchall()
+        pmi = conn.execute(
+            "SELECT dataset_kind, series_name, period, value FROM pmi_rows"
+        ).fetchall()
 
     assert len(fetch_runs) == 2
     assert '"consolidated_from_label": "one"' in fetch_runs[0][2]
@@ -82,7 +96,9 @@ def test_augment_params_json_logs_unparseable_json_without_raw_payload(
     caplog: pytest.LogCaptureFixture,
 ) -> None:
     raw_payload = '{"api_key": "secret-token"'
-    caplog.set_level(logging.WARNING, logger="regime_data_fetch.acquisition_consolidation")
+    caplog.set_level(
+        logging.WARNING, logger="regime_data_fetch.acquisition_consolidation"
+    )
 
     augmented = acquisition_consolidation._augment_params_json(
         raw_payload,
@@ -117,7 +133,12 @@ def _build_source_db_one(path: Path) -> None:
         "    importance: high\n"
         "    source: bls\n"
     )
-    store.record_output(run_id=run.run_id, output_kind="event_calendar_yaml", path=event_yaml, row_count=1)
+    store.record_output(
+        run_id=run.run_id,
+        output_kind="event_calendar_yaml",
+        path=event_yaml,
+        row_count=1,
+    )
     pmi_parquet = path.parent / "pmi.parquet"
     pd.DataFrame(
         [
@@ -131,7 +152,12 @@ def _build_source_db_one(path: Path) -> None:
             }
         ]
     ).to_parquet(pmi_parquet, index=False)
-    store.record_output(run_id=run.run_id, output_kind="pmi_history_parquet", path=pmi_parquet, row_count=1)
+    store.record_output(
+        run_id=run.run_id,
+        output_kind="pmi_history_parquet",
+        path=pmi_parquet,
+        row_count=1,
+    )
     store.finish_fetch_run(run_id=run.run_id, status="ok", notes="done-one")
 
 
@@ -154,12 +180,24 @@ def _build_source_db_two(path: Path) -> None:
                 symbol, date, open, high, low, close, volume, adjusted_close, source_file
             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
-            ("SPY", "2026-05-05", 560.0, 566.0, 559.0, 565.0, 100, 565.0, "/tmp/x.parquet"),
+            (
+                "SPY",
+                "2026-05-05",
+                560.0,
+                566.0,
+                559.0,
+                565.0,
+                100,
+                565.0,
+                "/tmp/x.parquet",
+            ),
         )
         conn.commit()
     output = path.parent / "two.json"
     output.write_text("{}")
-    store.record_output(run_id=run.run_id, output_kind="report_two", path=output, row_count=1)
+    store.record_output(
+        run_id=run.run_id, output_kind="report_two", path=output, row_count=1
+    )
     store.finish_fetch_run(run_id=run.run_id, status="ok", notes="done-two")
 
 

@@ -8,6 +8,7 @@ Spec references:
     docs/regime_engine_v2_spec.md §1A (lines 61–135).
     Slice scope: features only, no classifier. See §8 line 1181.
 """
+
 from __future__ import annotations
 
 import math
@@ -25,7 +26,6 @@ from regime_detection.trend_direction_v2 import (
     TrendDirectionV2Features,
     compute_trend_v2_features,
 )
-
 
 # ---------- Shared fixtures ---------------------------------------------------
 
@@ -115,9 +115,7 @@ def test_efficiency_ratio_hand_computed_value(v2_trend_config):
 
     t = 20
     directional = abs(close.iloc[t] - close.iloc[t - 20])
-    path = sum(
-        abs(close.iloc[i] - close.iloc[i - 1]) for i in range(t - 19, t + 1)
-    )
+    path = sum(abs(close.iloc[i] - close.iloc[i - 1]) for i in range(t - 19, t + 1))
     expected = directional / path
     assert out.efficiency_ratio_20d.iloc[t] == pytest.approx(expected, abs=1e-12)
 
@@ -190,9 +188,7 @@ def test_slope_sma_200_nan_before_required_history(
     assert not math.isnan(out.slope_sma_200.iloc[219])
 
 
-def test_slope_sma_50_positive_on_rising_series(
-    monotonic_rising_1000, v2_trend_config
-):
+def test_slope_sma_50_positive_on_rising_series(monotonic_rising_1000, v2_trend_config):
     out = compute_trend_v2_features(monotonic_rising_1000, config=v2_trend_config)
     slope = out.slope_sma_50.dropna()
     assert (slope > 0).all()
@@ -256,9 +252,9 @@ def test_trend_direction_v2_returns_match_legacy_inline_formulas(
     )
     pd.testing.assert_series_equal(
         out.return_126d,
-        (
-            spy_like_random_walk_1000 / spy_like_random_walk_1000.shift(126) - 1.0
-        ).rename("return_126d"),
+        (spy_like_random_walk_1000 / spy_like_random_walk_1000.shift(126) - 1.0).rename(
+            "return_126d"
+        ),
         check_exact=True,
     )
 

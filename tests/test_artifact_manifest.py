@@ -58,9 +58,7 @@ def test_manifest_rejects_duplicate_local_paths() -> None:
         storage_root="file:///tmp/regime-data",
         artifacts=[
             _artifact(name="macro", uri=_file_uri("canonical/macro.parquet")),
-            _artifact(
-                name="macro_copy", uri=_file_uri("canonical/macro-copy.parquet")
-            ),
+            _artifact(name="macro_copy", uri=_file_uri("canonical/macro-copy.parquet")),
         ],
     )
 
@@ -153,9 +151,7 @@ def test_manifest_required_artifacts_for_use_case() -> None:
         created_at_utc="2026-05-15T12:00:00Z",
         storage_root="file:///tmp/regime-data",
         artifacts=[
-            _artifact(
-                name="macro", required_for=["profile_engine", "v2_calibration"]
-            ),
+            _artifact(name="macro", required_for=["profile_engine", "v2_calibration"]),
             _artifact(
                 name="aaii",
                 uri=_file_uri("canonical/sentiment/aaii_sentiment.parquet"),

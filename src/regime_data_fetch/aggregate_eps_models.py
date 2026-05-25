@@ -45,12 +45,16 @@ class AggregateEPSSnapshot:
         pe_by_label: Mapping[EPSHorizonLabel, float | None] | None = None,
         pe_2025e: float | None = None,
         pe_2026e: float | None = None,
-        change_vs_prior_observation_by_label: Mapping[EPSHorizonLabel, float | None] | None = None,
+        change_vs_prior_observation_by_label: (
+            Mapping[EPSHorizonLabel, float | None] | None
+        ) = None,
         change_vs_prior_observation_2025e: float | None = None,
         change_vs_prior_observation_q4_2025e: float | None = None,
         change_vs_prior_observation_2026e: float | None = None,
         change_vs_prior_observation_price: float | None = None,
-        change_vs_prior_observation_pe_by_label: Mapping[EPSHorizonLabel, float | None] | None = None,
+        change_vs_prior_observation_pe_by_label: (
+            Mapping[EPSHorizonLabel, float | None] | None
+        ) = None,
         change_vs_prior_observation_pe_2025e: float | None = None,
         change_vs_prior_observation_pe_2026e: float | None = None,
     ) -> None:

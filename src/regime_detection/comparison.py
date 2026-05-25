@@ -14,6 +14,7 @@ strategy metrics). Foundation scaffolding for the v2 §9.1 gate:
 ``compute_v1_v2_diff`` and ``evaluate_v2_gate`` are pure functions
 consumed by the walk-forward runner (``--engine-profile both``).
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -21,7 +22,6 @@ from datetime import date
 from enum import Enum
 
 from regime_detection.models import RegimeTimeline
-
 
 # ---------------------------------------------------------------------------
 # Performance gate (v2 §9.1)
@@ -203,7 +203,7 @@ def compute_v1_v2_diff(
                 "RegimeTimeline date misalignment: "
                 f"v1={v1_out.as_of_date.isoformat()} "
                 f"v2={v2_out.as_of_date.isoformat()}"
-        )
+            )
         for axis in _V1_AXES_TO_COMPARE:
             v1_label = axis_reporting_label(getattr(v1_out, axis))
             v2_label = axis_reporting_label(getattr(v2_out, axis))

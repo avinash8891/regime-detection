@@ -5,7 +5,14 @@ import re
 from collections.abc import Callable
 
 from regime_data_fetch.acquisition_store import AcquisitionStore
-from regime_data_fetch.event_sources._common import BOJ_BASE_URL, MONTHS, FetchTextResult, absolute_url, fetch_text_result, strip_tags
+from regime_data_fetch.event_sources._common import (
+    BOJ_BASE_URL,
+    MONTHS,
+    FetchTextResult,
+    absolute_url,
+    fetch_text_result,
+    strip_tags,
+)
 from regime_data_fetch.event_sources.models import EventCandidate
 
 SOURCE_ID = "boj.or.jp:monetary-policy-meetings"
@@ -36,7 +43,10 @@ class OfficialBOJAdapter:
         run_id: int | None,
     ) -> list[EventCandidate]:
         candidates: list[EventCandidate] = []
-        for url, notes in [(CURRENT_URL, "BoJ current MPM schedule"), (PAST_URL, "BoJ past MPM schedule")]:
+        for url, notes in [
+            (CURRENT_URL, "BoJ current MPM schedule"),
+            (PAST_URL, "BoJ past MPM schedule"),
+        ]:
             html = self._fetch_text(url)
             _record_html(store, run_id, url, html, notes)
             candidates.extend(parse_boj_mpm_dates(html, as_of_date=self.as_of_date))
@@ -55,8 +65,12 @@ def parse_boj_mpm_dates(html: str, *, as_of_date: dt.date) -> list[EventCandidat
         r"<h2[^>]*(?:id=\"p(?P<idyear>20\d{2})\")?[^>]*>\s*(?P<year>20\d{2})\s*</h2>(?P<section>.*?)(?=<h2[^>]*>\s*20\d{2}\s*</h2>|<h2[^>]*id=\"p20\d{2}\"|$)",
         flags=re.IGNORECASE | re.DOTALL,
     )
-    row_pattern = re.compile(r"<tr[^>]*>(?P<row>.*?)</tr>", flags=re.IGNORECASE | re.DOTALL)
-    cell_pattern = re.compile(r"<td[^>]*>(?P<cell>.*?)</td>", flags=re.IGNORECASE | re.DOTALL)
+    row_pattern = re.compile(
+        r"<tr[^>]*>(?P<row>.*?)</tr>", flags=re.IGNORECASE | re.DOTALL
+    )
+    cell_pattern = re.compile(
+        r"<td[^>]*>(?P<cell>.*?)</td>", flags=re.IGNORECASE | re.DOTALL
+    )
     href_pattern = re.compile(r"href=\"(?P<href>[^\"]+)\"", flags=re.IGNORECASE)
     for section_match in section_pattern.finditer(html):
         year = int(section_match.group("year"))
@@ -77,7 +91,10 @@ def parse_boj_mpm_dates(html: str, *, as_of_date: dt.date) -> list[EventCandidat
                     market="GLOBAL",
                     importance="high",
                     source_id=SOURCE_ID,
-                    source_url=absolute_url(BOJ_BASE_URL, href_match.group("href") if href_match else CURRENT_URL),
+                    source_url=absolute_url(
+                        BOJ_BASE_URL,
+                        href_match.group("href") if href_match else CURRENT_URL,
+                    ),
                     raw_title="Bank of Japan Monetary Policy Meeting",
                     raw_snippet=cell_text,
                     is_future_scheduled=event_date > as_of_date,
@@ -105,7 +122,9 @@ def _parse_mpm_date(text: str, year: int) -> dt.date | None:
     return dt.date(year, MONTHS[month_name], day)
 
 
-def _parse_legacy_inline_dates(html: str, *, as_of_date: dt.date) -> list[EventCandidate]:
+def _parse_legacy_inline_dates(
+    html: str, *, as_of_date: dt.date
+) -> list[EventCandidate]:
     text = strip_tags(html)
     pattern = re.compile(
         r"(?P<month>Jan\.?|January|Feb\.?|February|Mar\.?|March|Apr\.?|April|May|June|July|Aug\.?|August|Sep\.?|Sept\.?|September|Oct\.?|October|Nov\.?|November|Dec\.?|December)\s+"
@@ -137,12 +156,22 @@ def _parse_legacy_inline_dates(html: str, *, as_of_date: dt.date) -> list[EventC
     return candidates
 
 
-def _dedupe(candidates: list[EventCandidate], *, start_year: int, end_year: int) -> list[EventCandidate]:
-    deduped = {(candidate.event_type, candidate.date): candidate for candidate in candidates if start_year <= candidate.date.year <= end_year}
-    return [deduped[key] for key in sorted(deduped, key=lambda item: (item[1], item[0]))]
+def _dedupe(
+    candidates: list[EventCandidate], *, start_year: int, end_year: int
+) -> list[EventCandidate]:
+    deduped = {
+        (candidate.event_type, candidate.date): candidate
+        for candidate in candidates
+        if start_year <= candidate.date.year <= end_year
+    }
+    return [
+        deduped[key] for key in sorted(deduped, key=lambda item: (item[1], item[0]))
+    ]
 
 
-def _record_html(store: AcquisitionStore | None, run_id: int | None, url: str, html: str, notes: str) -> None:
+def _record_html(
+    store: AcquisitionStore | None, run_id: int | None, url: str, html: str, notes: str
+) -> None:
     if store is None or run_id is None:
         return
     store.record_text_artifact(

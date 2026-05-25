@@ -60,7 +60,6 @@ from regime_data_fetch.universe import (
     load_symbols_from_pit_constituents_parquet,
 )
 
-
 FetchModeCategory = Literal["unattended", "operator-assisted"]
 UNATTENDED: FetchModeCategory = "unattended"
 OPERATOR_ASSISTED: FetchModeCategory = "operator-assisted"
@@ -230,12 +229,16 @@ def _invoke_constituent_daily_ohlcv_fetch(context: FetchModeInvocation) -> Path:
         acquisition_db_path=context.acquisition_db_path,
         artifact_store_root=context.acquisition_artifact_store_root,
         allow_missing_symbols=args.allow_missing_constituent_symbols,
-        fixed_universe_symbols=_load_json_symbol_list(Path(args.universe_json))
-        if args.universe_json
-        else None,
-        fixed_universe_dir=Path(args.constituent_universe_dir)
-        if args.constituent_universe_dir
-        else None,
+        fixed_universe_symbols=(
+            _load_json_symbol_list(Path(args.universe_json))
+            if args.universe_json
+            else None
+        ),
+        fixed_universe_dir=(
+            Path(args.constituent_universe_dir)
+            if args.constituent_universe_dir
+            else None
+        ),
         allow_pit_universe=args.allow_pit_constituent_universe,
         expected_universe_count=args.constituent_universe_expected_count,
         verbose=args.verbose,
@@ -446,12 +449,16 @@ def main() -> int:
             out_dir=out_dir,
             acquisition_db_path=acquisition_db_path,
             artifact_store_root=acquisition_artifact_store_root,
-            browser_user_data_dir=Path(args.eps_browser_user_data_dir)
-            if args.eps_browser_user_data_dir
-            else None,
-            browser_executable=Path(args.eps_browser_executable)
-            if args.eps_browser_executable
-            else None,
+            browser_user_data_dir=(
+                Path(args.eps_browser_user_data_dir)
+                if args.eps_browser_user_data_dir
+                else None
+            ),
+            browser_executable=(
+                Path(args.eps_browser_executable)
+                if args.eps_browser_executable
+                else None
+            ),
             browser_headless=args.eps_browser_headless,
             browser_timeout_ms=args.eps_browser_timeout_ms,
         )
@@ -463,9 +470,9 @@ def main() -> int:
         eps_wayback_report = run_wayback_aggregate_eps_fetch(
             out_dir=out_dir,
             max_snapshots=args.eps_wayback_max_snapshots,
-            from_date=parse_date(args.eps_wayback_from)
-            if args.eps_wayback_from
-            else None,
+            from_date=(
+                parse_date(args.eps_wayback_from) if args.eps_wayback_from else None
+            ),
             to_date=parse_date(args.eps_wayback_to) if args.eps_wayback_to else None,
             stop_after_first_success=args.eps_wayback_stop_after_first_success,
             acquisition_db_path=acquisition_db_path,
@@ -517,16 +524,22 @@ def main() -> int:
             end=end,
             acquisition_db_path=Path(args.acquisition_db),
             artifact_store_root=acquisition_artifact_store_root,
-            earnings_loaded_page_path=Path(args.investing_earnings_loaded_page)
-            if args.investing_earnings_loaded_page
-            else None,
+            earnings_loaded_page_path=(
+                Path(args.investing_earnings_loaded_page)
+                if args.investing_earnings_loaded_page
+                else None
+            ),
             earnings_browser_capture=args.investing_earnings_browser_capture,
-            earnings_browser_user_data_dir=Path(args.investing_browser_user_data_dir)
-            if args.investing_browser_user_data_dir
-            else None,
-            earnings_browser_executable=Path(args.investing_browser_executable)
-            if args.investing_browser_executable
-            else None,
+            earnings_browser_user_data_dir=(
+                Path(args.investing_browser_user_data_dir)
+                if args.investing_browser_user_data_dir
+                else None
+            ),
+            earnings_browser_executable=(
+                Path(args.investing_browser_executable)
+                if args.investing_browser_executable
+                else None
+            ),
             earnings_browser_headless=args.investing_browser_headless,
             earnings_browser_timeout_ms=args.investing_browser_timeout_ms,
         )

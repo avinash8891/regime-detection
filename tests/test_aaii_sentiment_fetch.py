@@ -166,20 +166,16 @@ def test_run_sentiment_fetch_records_seed_artifact_lineage_when_seed_exists(
     )
 
     with sqlite3.connect(acquisition_db) as conn:
-        records = conn.execute(
-            """
+        records = conn.execute("""
             SELECT artifact_record_id, name, stage, source_name, artifact_kind,
                    row_count, min_date, max_date, local_path, size_bytes
             FROM artifact_records
             ORDER BY artifact_record_id
-            """
-        ).fetchall()
-        lineage = conn.execute(
-            """
+            """).fetchall()
+        lineage = conn.execute("""
             SELECT output_artifact_record_id, input_artifact_record_id, transform_name
             FROM artifact_lineage
-            """
-        ).fetchall()
+            """).fetchall()
 
     raw = records[0]
     canonical = records[1]

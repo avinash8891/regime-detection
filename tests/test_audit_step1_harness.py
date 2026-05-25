@@ -23,7 +23,6 @@ from scripts.audit_step1_harness import (
     emit_step1_provenance,
 )
 
-
 # Production identifiers from the spec's §Required runner set — not toy names.
 PROFILE_ENGINE = "profile_engine"
 AUDIT_LAYER2_30D = "audit_layer2_30d"
@@ -147,7 +146,9 @@ def test_materialize_but_dont_bind_recorded_explicitly(tmp_path: Path) -> None:
     emit_step1_provenance(
         runner_name=RUN_HISTORICAL_WALKFORWARD,
         manifest_path=tmp_path / "manifest.yaml",
-        materialized_artifacts=[_make_materialized_artifact("market_data", "c" * 64, tmp_path)],
+        materialized_artifacts=[
+            _make_materialized_artifact("market_data", "c" * 64, tmp_path)
+        ],
         resolved_from_manifest=[],
         cli_overrides=[],
         materialize_called_by_runner=True,
@@ -170,7 +171,9 @@ def test_cross_worktree_hash_stable_across_calls(tmp_path: Path) -> None:
     fake_root = tmp_path
     src = fake_root / "src" / "regime_detection"
     src.mkdir(parents=True)
-    (src / "engine.py").write_text("from __future__ import annotations\n\n# real module\n")
+    (src / "engine.py").write_text(
+        "from __future__ import annotations\n\n# real module\n"
+    )
     (src / "feature_store.py").write_text("from __future__ import annotations\n")
 
     first = _hash_cross_worktree_sources(fake_root)
@@ -255,11 +258,14 @@ def test_source_dirs_match_spec() -> None:
 @pytest.mark.unit
 def test_infer_bypass_classes_combinations() -> None:
     """All inference paths produce the documented bypass class set."""
-    assert _infer_bypass_classes(
-        manifest_path=Path("/m.yaml"),
-        materialize_called_by_runner=True,
-        cli_overrides=[],
-    ) == []
+    assert (
+        _infer_bypass_classes(
+            manifest_path=Path("/m.yaml"),
+            materialize_called_by_runner=True,
+            cli_overrides=[],
+        )
+        == []
+    )
     assert "whole_manifest_bypass" in _infer_bypass_classes(
         manifest_path=None,
         materialize_called_by_runner=True,

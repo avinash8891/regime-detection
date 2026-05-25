@@ -9,7 +9,6 @@ from dataclasses import dataclass
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
-
 US_EASTERN = ZoneInfo("America/New_York")
 MONTH_NAME_RE = r"(?:Jan\.?|January|Feb\.?|February|Mar\.?|March|Apr\.?|April|May|Jun\.?|June|Jul\.?|July|Aug\.?|August|Sep\.?|Sept\.?|September|Oct\.?|October|Nov\.?|November|Dec\.?|December)"
 _MODERN_ROW_RE = re.compile(
@@ -54,11 +53,15 @@ def build_bls_schedule_year_urls(*, start_year: int, end_year: int) -> list[str]
     return urls
 
 
-def parse_bls_schedule_page(html: str, *, source_url: str, default_year: int) -> list[BLSReleaseDate]:
+def parse_bls_schedule_page(
+    html: str, *, source_url: str, default_year: int
+) -> list[BLSReleaseDate]:
     normalized = _normalize_html_text(html)
     releases: list[BLSReleaseDate] = []
     releases.extend(_parse_modern_rows(normalized, source_url=source_url))
-    releases.extend(_parse_legacy_rows(normalized, source_url=source_url, default_year=default_year))
+    releases.extend(
+        _parse_legacy_rows(normalized, source_url=source_url, default_year=default_year)
+    )
     deduped: dict[tuple[dt.date, str], BLSReleaseDate] = {}
     for release in releases:
         deduped[(release.date, release.type)] = release
@@ -161,7 +164,9 @@ def _fetch_page_text_with_tinyfish(*, url: str, api_key: str) -> str:
 def _extract_year_from_schedule_url(url: str) -> int:
     match = re.search(r"/schedule/(?P<year>\d{4})/", url)
     if not match:
-        raise BLSScheduleFetchError(f"Could not determine BLS schedule year from URL: {url}")
+        raise BLSScheduleFetchError(
+            f"Could not determine BLS schedule year from URL: {url}"
+        )
     return int(match.group("year"))
 
 
@@ -191,7 +196,9 @@ def _parse_modern_rows(normalized: str, *, source_url: str) -> list[BLSReleaseDa
     return releases
 
 
-def _parse_legacy_rows(normalized: str, *, source_url: str, default_year: int) -> list[BLSReleaseDate]:
+def _parse_legacy_rows(
+    normalized: str, *, source_url: str, default_year: int
+) -> list[BLSReleaseDate]:
     releases: list[BLSReleaseDate] = []
     for pattern, release_type in ((_LEGACY_CPI_RE, "CPI"), (_LEGACY_NFP_RE, "NFP")):
         for match in pattern.finditer(normalized):
@@ -245,7 +252,9 @@ def _parse_month_day_year(*, month_text: str, day_text: str, year_text: str) -> 
             return dt.datetime.strptime(normalized, fmt).date()
         except ValueError:
             continue
-    raise BLSScheduleFetchError(f"Unsupported BLS month/day/year token: {month_text!r} {day_text!r} {year_text!r}")
+    raise BLSScheduleFetchError(
+        f"Unsupported BLS month/day/year token: {month_text!r} {day_text!r} {year_text!r}"
+    )
 
 
 def _parse_release_timestamp(*, release_date: dt.date, time_text: str) -> dt.datetime:

@@ -10,6 +10,7 @@ Spec refs:
     docs/regime_engine_v2_spec.md §1D PIT breadth seam.
     Implementation Ambiguity Log #54–#59 (PIT breadth resolutions).
 """
+
 from __future__ import annotations
 
 from datetime import date
@@ -139,7 +140,9 @@ def _make_long_ohlcv(symbols, dates) -> pd.DataFrame:
     return pd.DataFrame(rows)
 
 
-def test_build_market_context_plumbs_pit_constituent_intervals(market_df_for_asof) -> None:
+def test_build_market_context_plumbs_pit_constituent_intervals(
+    market_df_for_asof,
+) -> None:
     as_of = date(2023, 12, 14)
     intervals = _aapl_pit_intervals_df()
 

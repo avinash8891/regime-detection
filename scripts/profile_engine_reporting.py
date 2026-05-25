@@ -352,7 +352,9 @@ def _transition_risk_seam(transition_risk: Any) -> dict[str, Any]:
         "primary_drivers": list(getattr(transition_risk, "primary_drivers", []) or []),
         "triggered_rules": list(getattr(transition_risk, "triggered_rules", []) or []),
         "data_quality_status": _transition_data_quality_status(transition_risk),
-        "axis_switch_count": _transition_evidence_value(transition_risk, "axis_switch_count"),
+        "axis_switch_count": _transition_evidence_value(
+            transition_risk, "axis_switch_count"
+        ),
         "recent_axis_switch_count": _transition_evidence_value(
             transition_risk, "recent_axis_switch_count"
         ),
@@ -386,8 +388,7 @@ def _compact_timeline_report(outputs: list[RegimeOutput]) -> list[dict[str, Any]
             # below the rule's window. Mirrors AxisOutput.reporting_label.
             seams["network_fragility"] = {
                 "reported": network_fragility_label or "not_wired",
-                "classification_status": network_fragility_status
-                or "not_wired",
+                "classification_status": network_fragility_status or "not_wired",
             }
         if out.volume_liquidity_state is not None:
             seams["volume_liquidity_state"] = _reporting_label(
@@ -523,7 +524,9 @@ def _label_summary_for_fields(
     return summary
 
 
-def _label_summary_report(outputs: list[RegimeOutput]) -> dict[str, dict[str, dict[str, int]]]:
+def _label_summary_report(
+    outputs: list[RegimeOutput],
+) -> dict[str, dict[str, dict[str, int]]]:
     return _label_summary_for_fields(outputs, REPORTING_SUMMARY_FIELDS)
 
 
@@ -564,14 +567,28 @@ def _trailing_v2_status(out: RegimeOutput) -> list[str]:
     add("hmm", getattr(out, "hmm", None))
     event_calendar = _event_calendar_output(out)
     add("event_calendar.primary_label", _event_calendar_primary_label(event_calendar))
-    add("event_calendar.matching_labels", _event_calendar_matching_labels(event_calendar))
+    add(
+        "event_calendar.matching_labels",
+        _event_calendar_matching_labels(event_calendar),
+    )
     add("transition_risk.score", out.transition_risk.score)
     add("transition_risk.score_components", out.transition_risk.score_components)
-    add("transition_risk.primary_drivers", getattr(out.transition_risk, "primary_drivers", None))
-    add("transition_risk.triggered_rules", getattr(out.transition_risk, "triggered_rules", None))
-    add("transition_risk.data_quality", getattr(out.transition_risk, "data_quality", None))
+    add(
+        "transition_risk.primary_drivers",
+        getattr(out.transition_risk, "primary_drivers", None),
+    )
+    add(
+        "transition_risk.triggered_rules",
+        getattr(out.transition_risk, "triggered_rules", None),
+    )
+    add(
+        "transition_risk.data_quality",
+        getattr(out.transition_risk, "data_quality", None),
+    )
     add("agent_routing", getattr(out, "agent_routing", None))
-    add("strategy_family_constraints", getattr(out, "strategy_family_constraints", None))
+    add(
+        "strategy_family_constraints", getattr(out, "strategy_family_constraints", None)
+    )
     return rows
 
 
@@ -608,14 +625,28 @@ def _trailing_v2_status_report(out: RegimeOutput) -> list[dict[str, Any]]:
     add("hmm", getattr(out, "hmm", None))
     event_calendar = _event_calendar_output(out)
     add("event_calendar.primary_label", _event_calendar_primary_label(event_calendar))
-    add("event_calendar.matching_labels", _event_calendar_matching_labels(event_calendar))
+    add(
+        "event_calendar.matching_labels",
+        _event_calendar_matching_labels(event_calendar),
+    )
     add("transition_risk.score", out.transition_risk.score)
     add("transition_risk.score_components", out.transition_risk.score_components)
-    add("transition_risk.primary_drivers", getattr(out.transition_risk, "primary_drivers", None))
-    add("transition_risk.triggered_rules", getattr(out.transition_risk, "triggered_rules", None))
-    add("transition_risk.data_quality", getattr(out.transition_risk, "data_quality", None))
+    add(
+        "transition_risk.primary_drivers",
+        getattr(out.transition_risk, "primary_drivers", None),
+    )
+    add(
+        "transition_risk.triggered_rules",
+        getattr(out.transition_risk, "triggered_rules", None),
+    )
+    add(
+        "transition_risk.data_quality",
+        getattr(out.transition_risk, "data_quality", None),
+    )
     add("agent_routing", getattr(out, "agent_routing", None))
-    add("strategy_family_constraints", getattr(out, "strategy_family_constraints", None))
+    add(
+        "strategy_family_constraints", getattr(out, "strategy_family_constraints", None)
+    )
     return rows
 
 
@@ -725,7 +756,9 @@ def _path_text(path: Path | None, *, present: bool = True) -> str | None:
     return str(path)
 
 
-def _eps_revision_source_report(args: argparse.Namespace, inputs: ProfileInputBundle) -> str | None:
+def _eps_revision_source_report(
+    args: argparse.Namespace, inputs: ProfileInputBundle
+) -> str | None:
     if getattr(args, "disable_aggregate_forward_eps_revision", False):
         return "disabled_by_operator"
     return _path_text(
@@ -811,9 +844,7 @@ def _build_json_report(
                 getattr(args, "cpi_nowcast_parquet", None),
                 present="cpi_nowcast" in inputs.macro_series,
             ),
-            "aggregate_forward_eps_revision": _eps_revision_source_report(
-                args, inputs
-            ),
+            "aggregate_forward_eps_revision": _eps_revision_source_report(args, inputs),
             "pit": str(args.pit_parquet),
         },
         "window": {
@@ -898,6 +929,4 @@ def _build_json_report(
 def _write_json_report(path: Path, report: dict[str, Any]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     payload = json.dumps(report, indent=2, sort_keys=True, allow_nan=False) + "\n"
-    path.write_text(
-        payload, encoding="utf-8"
-    )
+    path.write_text(payload, encoding="utf-8")

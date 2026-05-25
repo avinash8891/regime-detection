@@ -74,9 +74,7 @@ class ScheduledEvent:
         if self.type not in EVENT_TYPES:
             raise ValueError(f"unknown scheduled event type: {self.type}")
         if self.importance not in EVENT_IMPORTANCES:
-            raise ValueError(
-                f"unknown scheduled event importance: {self.importance}"
-            )
+            raise ValueError(f"unknown scheduled event importance: {self.importance}")
         if self.source not in EVENT_SOURCES:
             raise ValueError(f"unknown scheduled event source: {self.source}")
         if self.window_days is not None:

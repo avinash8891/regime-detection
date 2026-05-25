@@ -12,8 +12,7 @@ from regime_detection.data_quality import (
 from regime_detection.axis_builders.per_label import build_per_label_axis_outputs
 from regime_detection.feature_store import FeatureStore
 from regime_detection.axis_builders.staleness import (
-    _calendar_staleness_days_series,
-    _trading_staleness_series,
+    staleness_for_source,
 )
 from regime_detection.inflation_growth import (
     CPI_KEY,
@@ -23,6 +22,7 @@ from regime_detection.inflation_growth import (
     PMI_KEY,
     build_rule_inputs_by_date as build_inflation_growth_rule_inputs_by_date,
     evaluate_rules as evaluate_inflation_growth_rules,
+    goldilocks_limb_evidence,
 )
 
 from regime_detection.market_context import MarketContext
@@ -33,6 +33,28 @@ from regime_detection.models import (
 
 _EPS_REVISION_MACRO_KEY = "aggregate_forward_eps_revision"
 _CPI_NOWCAST_MACRO_KEY = "cpi_nowcast"
+
+
+def _cpi_staleness_source(
+    latest_cpi: pd.Series | None,
+    first_release_cpi: pd.Series | None,
+    *,
+    use_first_release: bool,
+) -> pd.Series | None:
+    """Produce the CPI **release-timestamp** source for staleness checks.
+
+    Returns the union of observation timestamps across both vintages (so the
+    "calendar days since most recent CPI release" measurement sees every
+    release, not just one vintage). Values are irrelevant — only the index
+    matters here; that's why this does *not* reindex to a session calendar
+    or ffill, unlike the value-series helper in
+    ``regime_detection.inflation_growth._cpi_with_first_release_fallback``.
+    """
+    if first_release_cpi is None or not use_first_release:
+        return latest_cpi
+    if latest_cpi is None:
+        return first_release_cpi
+    return pd.concat([latest_cpi, first_release_cpi]).sort_index()
 
 
 def build_inflation_growth_axis_series(
@@ -76,11 +98,10 @@ def build_inflation_growth_axis_series(
     spy_close = context.spy_ohlcv["close"]
     macro_series = context.macro_series or {}
     cpi_series = macro_series.get(CPI_KEY)
-    cpi_staleness_series = (
-        context.cpi_first_release
-        if context.cpi_first_release is not None
-        and ig_config.rules.use_first_release_cpi_when_available
-        else cpi_series
+    cpi_staleness_series = _cpi_staleness_source(
+        cpi_series,
+        context.cpi_first_release,
+        use_first_release=ig_config.rules.use_first_release_cpi_when_available,
     )
     pmi_series = macro_series.get(PMI_KEY)
     dgs10_series = macro_series.get(DGS10_KEY)
@@ -103,16 +124,24 @@ def build_inflation_growth_axis_series(
     per_day_data_quality: list[DataQuality] = []
     per_day_evidence: list[dict[str, object]] = []
     session_index = spy_close.index
-    cpi_staleness_by_date = _calendar_staleness_days_series(
-        cpi_staleness_series, session_index
+    cpi_staleness_by_date = staleness_for_source(
+        source_name=CPI_KEY, series=cpi_staleness_series, session_index=session_index
     )
-    pmi_staleness_by_date = _calendar_staleness_days_series(pmi_series, session_index)
-    dgs10_staleness_by_date = _trading_staleness_series(dgs10_series, session_index)
-    nowcast_staleness_by_date = _calendar_staleness_days_series(
-        nowcast_series, session_index
+    pmi_staleness_by_date = staleness_for_source(
+        source_name=PMI_KEY, series=pmi_series, session_index=session_index
     )
-    eps_staleness_by_date = _calendar_staleness_days_series(
-        eps_revision_series, session_index
+    dgs10_staleness_by_date = staleness_for_source(
+        source_name=DGS10_KEY, series=dgs10_series, session_index=session_index
+    )
+    nowcast_staleness_by_date = staleness_for_source(
+        source_name=_CPI_NOWCAST_MACRO_KEY,
+        series=nowcast_series,
+        session_index=session_index,
+    )
+    eps_staleness_by_date = staleness_for_source(
+        source_name=_EPS_REVISION_MACRO_KEY,
+        series=eps_revision_series,
+        session_index=session_index,
     )
     credit_funding_labels_by_ts: dict[pd.Timestamp, str | None] | None = None
     if credit_funding_active_labels_by_date is not None:
@@ -164,10 +193,9 @@ def build_inflation_growth_axis_series(
             as_of_date=day,
             required_inputs=required_inputs,
             required_trading_days=required_trading_days,
-            raw_label="",
+            raw_label=None,
             max_freshness_days=max_freshness_days,
             min_completeness=min_completeness,
-            skip_raw_label_short_circuit=True,
         )
         if quality_forces_unknown(day_quality):
             raw_labels.append("unknown")
@@ -238,6 +266,9 @@ def build_inflation_growth_axis_series(
                     "spy_21d_return": rule_inputs.spy_21d_return,
                     "tlt_21d_return": rule_inputs.tlt_21d_return,
                 },
+                "goldilocks_limb_evidence": goldilocks_limb_evidence(
+                    rule_inputs, ig_config.rules
+                ).as_evidence(),
                 "credit_funding_active_label": credit_funding_active_label,
                 "bias_warning_code": "commodity_proxy_dbc_substitute",
             }
@@ -249,6 +280,7 @@ def build_inflation_growth_axis_series(
         risk_rank=INFLATION_GROWTH_RISK_RANK,
         deescalation_days_by_label=ig_config.deescalation_days_by_label,
         default_deescalation_days=ig_config.default_deescalation_days,
+        max_unknown_freeze_days=ig_config.max_unknown_freeze_days,
         data_quality=per_day_data_quality,
         evidence=per_day_evidence,
         output_factory=InflationGrowthOutput,

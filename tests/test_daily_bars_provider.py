@@ -55,7 +55,9 @@ def test_alpaca_yahoo_fallback_fetches_missing_symbols_from_yahoo_only() -> None
     assert result.df["symbol"].tolist() == ["AAPL", "SPY"]
 
 
-def test_alpaca_yahoo_fallback_fetches_all_symbols_from_yahoo_when_alpaca_fails() -> None:
+def test_alpaca_yahoo_fallback_fetches_all_symbols_from_yahoo_when_alpaca_fails() -> (
+    None
+):
     calls: list[tuple[str, list[str]]] = []
 
     def alpaca_fetcher(**kwargs) -> DailyBarsFetchResult:

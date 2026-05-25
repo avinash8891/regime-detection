@@ -23,7 +23,9 @@ def build_fetch_arg_parser(
     parser.add_argument(
         "--out-dir", default="data/raw", help="Output directory for Parquet + reports."
     )
-    parser.add_argument("--start", default="2015-01-01", help="Start date (YYYY-MM-DD).")
+    parser.add_argument(
+        "--start", default="2015-01-01", help="Start date (YYYY-MM-DD)."
+    )
     parser.add_argument(
         "--end", default=dt.date.today().isoformat(), help="End date (YYYY-MM-DD)."
     )

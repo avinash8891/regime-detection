@@ -127,7 +127,14 @@ def test_walkforward_gate_subprocess_materializes_manifest_defaults(
         (
             "scripts/run_v2_walkforward_gate.py",
             "v2_calibration",
-            ["--output", "out.md", "--start-date", "2026-05-15", "--end-date", "2026-05-15"],
+            [
+                "--output",
+                "out.md",
+                "--start-date",
+                "2026-05-15",
+                "--end-date",
+                "2026-05-15",
+            ],
         ),
         (
             "scripts/run_v2_shadow_ab_gate.py",

@@ -10,7 +10,6 @@ from typing import Any
 
 import pandas as pd
 
-
 REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
@@ -71,7 +70,9 @@ def _load_v2_daily_ohlcv(path: Path | None) -> pd.DataFrame | None:
     return _normalize_market_data(path)
 
 
-def _close_series_by_symbol(frame: pd.DataFrame, symbols: tuple[str, ...]) -> dict[str, pd.Series]:
+def _close_series_by_symbol(
+    frame: pd.DataFrame, symbols: tuple[str, ...]
+) -> dict[str, pd.Series]:
     present = set(frame["symbol"].unique())
     missing = sorted(set(symbols) - present)
     if missing:
@@ -97,7 +98,9 @@ def _load_pit_intervals(path: Path | None) -> pd.DataFrame | None:
     required = {"ticker", "start_date", "end_date"}
     missing = sorted(required - set(frame.columns))
     if missing:
-        raise ValueError(f"pit_constituent_intervals missing required columns: {missing}")
+        raise ValueError(
+            f"pit_constituent_intervals missing required columns: {missing}"
+        )
     out = frame.copy()
     out["start_date"] = pd.to_datetime(out["start_date"]).dt.date
     out["end_date"] = pd.to_datetime(out["end_date"], errors="coerce").dt.date
@@ -166,7 +169,9 @@ def run_shadow(
     conn = open_shadow_db(paths["db"])
     try:
         market_data = _normalize_market_data(market_data_path)
-        market_slice = market_data[market_data["date"] <= as_of_date].copy().reset_index(drop=True)
+        market_slice = (
+            market_data[market_data["date"] <= as_of_date].copy().reset_index(drop=True)
+        )
         v2_daily = _load_v2_daily_ohlcv(v2_daily_ohlcv_path)
         v2_slice = (
             None
@@ -178,8 +183,12 @@ def run_shadow(
         if v2_slice is not None:
             if pit_intervals is None:
                 pit_intervals = _default_pit_intervals_from_daily(v2_slice)
-            v2_kwargs["sector_etf_closes"] = _close_series_by_symbol(v2_slice, SECTOR_ETFS)
-            v2_kwargs["cross_asset_closes"] = _close_series_by_symbol(v2_slice, CROSS_ASSET_SYMBOLS)
+            v2_kwargs["sector_etf_closes"] = _close_series_by_symbol(
+                v2_slice, SECTOR_ETFS
+            )
+            v2_kwargs["cross_asset_closes"] = _close_series_by_symbol(
+                v2_slice, CROSS_ASSET_SYMBOLS
+            )
             v2_kwargs["pit_constituent_intervals"] = pit_intervals
             v2_kwargs["constituent_ohlcv"] = _constituent_ohlcv_from_daily(
                 v2_slice,
@@ -255,19 +264,37 @@ def run_shadow(
 
 
 def _parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Run the V1 forward shadow classification for one NYSE session.")
+    parser = argparse.ArgumentParser(
+        description="Run the V1 forward shadow classification for one NYSE session."
+    )
     parser.add_argument("--as-of-date", required=True, type=date.fromisoformat)
     parser.add_argument("--market-data", required=True, type=Path)
     parser.add_argument("--output-root", required=True, type=Path)
     parser.add_argument("--config-path", type=Path, default=None)
     parser.add_argument("--v2-daily-ohlcv", type=Path, default=None)
     parser.add_argument("--pit-constituent-intervals", type=Path, default=None)
-    parser.add_argument("--manifest", type=Path, default=None, help="Optional artifact manifest to materialize before running.")
-    parser.add_argument("--artifact-store", default=None, help="Optional artifact-store root override for --manifest.")
-    parser.add_argument("--data-root", type=Path, default=REPO_ROOT / "data" / "raw", help="Local data/raw root used for manifest materialization.")
+    parser.add_argument(
+        "--manifest",
+        type=Path,
+        default=None,
+        help="Optional artifact manifest to materialize before running.",
+    )
+    parser.add_argument(
+        "--artifact-store",
+        default=None,
+        help="Optional artifact-store root override for --manifest.",
+    )
+    parser.add_argument(
+        "--data-root",
+        type=Path,
+        default=REPO_ROOT / "data" / "raw",
+        help="Local data/raw root used for manifest materialization.",
+    )
     args = parser.parse_args()
     args.event_calendar = None
-    apply_manifest_input_defaults(args, args.data_root, fields=frozenset({"event_calendar"}))
+    apply_manifest_input_defaults(
+        args, args.data_root, fields=frozenset({"event_calendar"})
+    )
     return args
 
 

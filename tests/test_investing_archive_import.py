@@ -6,10 +6,15 @@ from pathlib import Path
 
 import pandas as pd
 
-from regime_data_fetch.investing_archive import _single_match, run_local_investing_archive_import
+from regime_data_fetch.investing_archive import (
+    _single_match,
+    run_local_investing_archive_import,
+)
 
 
-def test_run_local_investing_archive_import_records_raw_and_canonical_artifacts(tmp_path: Path) -> None:
+def test_run_local_investing_archive_import_records_raw_and_canonical_artifacts(
+    tmp_path: Path,
+) -> None:
     archive_root = tmp_path / "archive"
     _write_archive_fixture(archive_root)
     out_dir = tmp_path / "data" / "raw"
@@ -29,9 +34,16 @@ def test_run_local_investing_archive_import_records_raw_and_canonical_artifacts(
         "earnings_rows": 2,
         "raw_files": 9,
     }
-    assert report["date_range"]["economic_events"] == {"min_date": "2016-01-01", "max_date": "2016-01-02"}
-    assert report["paths"]["raw_archive"]["local_path"] == "data/raw/investing/raw_archive"
-    assert pd.read_parquet(out_dir / "investing" / "economic_events.parquet").shape[0] == 2
+    assert report["date_range"]["economic_events"] == {
+        "min_date": "2016-01-01",
+        "max_date": "2016-01-02",
+    }
+    assert (
+        report["paths"]["raw_archive"]["local_path"] == "data/raw/investing/raw_archive"
+    )
+    assert (
+        pd.read_parquet(out_dir / "investing" / "economic_events.parquet").shape[0] == 2
+    )
     assert pd.read_parquet(out_dir / "investing" / "holidays.parquet").shape[0] == 1
     assert pd.read_parquet(out_dir / "investing" / "earnings.parquet").shape[0] == 2
 
@@ -39,14 +51,12 @@ def test_run_local_investing_archive_import_records_raw_and_canonical_artifacts(
         assert conn.execute("SELECT fetch_type, status FROM fetch_runs").fetchall() == [
             ("investing_archive_local", "ok")
         ]
-        sources = conn.execute(
-            """
+        sources = conn.execute("""
             SELECT source_name, artifact_kind, count(*)
             FROM artifact_records
             GROUP BY source_name, artifact_kind
             ORDER BY source_name, artifact_kind
-            """
-        ).fetchall()
+            """).fetchall()
         assert ("investing.com", "parquet", 3) in sources
         assert ("investing.com:archive", "csv", 3) in sources
         assert ("investing.com:archive", "json", 3) in sources
@@ -55,10 +65,17 @@ def test_run_local_investing_archive_import_records_raw_and_canonical_artifacts(
             "SELECT output_kind, row_count, min_date, max_date FROM derived_outputs ORDER BY output_kind"
         ).fetchall()
         assert ("investing_earnings_parquet", 2, "2016-01-04", "2016-01-05") in outputs
-        assert ("investing_archive_import_report", 5, "2016-01-01", "2016-01-05") in outputs
+        assert (
+            "investing_archive_import_report",
+            5,
+            "2016-01-01",
+            "2016-01-05",
+        ) in outputs
 
 
-def test_run_local_investing_archive_import_allows_empty_windows(tmp_path: Path) -> None:
+def test_run_local_investing_archive_import_allows_empty_windows(
+    tmp_path: Path,
+) -> None:
     archive_root = tmp_path / "archive"
     _write_archive_fixture(archive_root)
     calendar = archive_root / "investing_calendar_structured_2016_2026"
@@ -87,17 +104,17 @@ def test_run_local_investing_archive_import_allows_empty_windows(tmp_path: Path)
     assert report["counts"]["holiday_rows"] == 0
     assert report["counts"]["earnings_rows"] == 0
     with sqlite3.connect(db_path) as conn:
-        assert conn.execute(
-            """
+        assert conn.execute("""
             SELECT row_count, min_date, max_date
             FROM derived_outputs
             WHERE output_kind='investing_archive_import_report'
-            """
-        ).fetchone() == (0, None, None)
+            """).fetchone() == (0, None, None)
         assert conn.execute("SELECT status FROM fetch_runs").fetchone() == ("ok",)
 
 
-def test_run_local_investing_archive_import_redacts_loaded_earnings_page(tmp_path: Path) -> None:
+def test_run_local_investing_archive_import_redacts_loaded_earnings_page(
+    tmp_path: Path,
+) -> None:
     archive_root = tmp_path / "archive"
     _write_archive_fixture(archive_root)
     browser_page = (
@@ -158,7 +175,10 @@ def test_single_match_uses_latest_archive_capture(tmp_path: Path) -> None:
     first_file.write_text("{}")
     second_file.write_text("{}")
 
-    assert _single_match(tmp_path, "investing_calendar_structured_*/fetch_report.json") == second_file
+    assert (
+        _single_match(tmp_path, "investing_calendar_structured_*/fetch_report.json")
+        == second_file
+    )
 
 
 def _write_archive_fixture(root: Path) -> None:
@@ -198,6 +218,8 @@ def _write_archive_fixture(root: Path) -> None:
     (earnings / "investing_earnings_2016-01-01_2026-05-15.jsonl").write_text(
         '{"kind":"earnings"}\n'
     )
-    (earnings / "quarantine_earnings_fetch_errors.jsonl").write_text('{"error":"sample"}\n')
+    (earnings / "quarantine_earnings_fetch_errors.jsonl").write_text(
+        '{"error":"sample"}\n'
+    )
     (earnings / "fetch_report.json").write_text('{"ok": true}\n')
     (raw_instruments / "instruments_batch_0001.json").write_text('{"items":[]}\n')

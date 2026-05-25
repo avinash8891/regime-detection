@@ -54,7 +54,9 @@ class ChangePointFeatures:
 
     posterior_changepoint_prob: pd.Series  # recent short-run BOCPD posterior mass
     score: pd.Series  # 5-session rolling max of posterior (spec L2135-2150)
-    days_since_last_break: pd.Series  # nullable Int64; sessions since last break (spec L2152-2164)
+    days_since_last_break: (
+        pd.Series
+    )  # nullable Int64; sessions since last break (spec L2152-2164)
     method: str  # "BOCPD"
 
 
@@ -129,13 +131,13 @@ def compute_change_point_features(
     # values, which drives the Student-T predictive near-singular and
     # triggers the bare-except branch below (also returning None). Both
     # paths preserve fail-open semantics.
-    _STD_FLOOR = 10 ** -_ROUND_DECIMALS
+    _STD_FLOOR = 10**-_ROUND_DECIMALS
     if not (data.std() > _STD_FLOOR):
         return None
 
     try:
         posterior_arr = _bocpd_posterior_changepoint_prob(data=data, config=config)
-    except ArithmeticError as exc:
+    except (ArithmeticError, RuntimeError, ValueError) as exc:
         _LOGGER.warning(
             "BOCPD online_changepoint_detection failed; "
             "change_point seam returns None: %s",
@@ -195,8 +197,17 @@ def _bocpd_posterior_changepoint_prob(
         ),
     )
     n = len(data)
+    expected_shape = (n + 1, n + 1)
+    if R.shape != expected_shape:
+        raise RuntimeError(
+            "BOCPD posterior matrix shape changed: "
+            f"expected {expected_shape}, got {R.shape}"
+        )
     window = min(config.recent_run_length_window_days, n)
-    return np.asarray(R[1 : window + 1, 1 : n + 1].sum(axis=0), dtype=float)
+    posterior = np.asarray(R[1 : window + 1, 1 : n + 1].sum(axis=0), dtype=float)
+    if not np.isfinite(posterior).all():
+        raise FloatingPointError("BOCPD posterior contains non-finite values")
+    return posterior
 
 
 def _rolling_max_changepoint_prob(posterior: pd.Series, window: int) -> pd.Series:
@@ -204,9 +215,7 @@ def _rolling_max_changepoint_prob(posterior: pd.Series, window: int) -> pd.Serie
     return posterior.rolling(window=window, min_periods=1).max()
 
 
-def _days_since_last_break(
-    posterior: pd.Series, threshold: float
-) -> pd.Series:
+def _days_since_last_break(posterior: pd.Series, threshold: float) -> pd.Series:
     """Sessions since last posterior crossing per spec L2152-L2164.
 
     ``pd.NA`` when no break has occurred in available history.
