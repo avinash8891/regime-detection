@@ -63,6 +63,10 @@ def _is_missing(value: object) -> bool:
     return bool(cast(Any, pd).isna(value))
 
 
+def _none_series(index: pd.Index) -> pd.Series:
+    return pd.Series([None] * len(index), index=index, dtype="object")
+
+
 def _numeric_value(value: object, *, field_name: str, context: str) -> float:
     if value is None or _is_missing(value) or isinstance(value, bool):
         raise ValueError(f"{context} contains non-numeric {field_name} values")
@@ -578,7 +582,7 @@ def _validate_event_df(df: pd.DataFrame, *, market: str) -> pd.DataFrame:
     )
     out.loc[:, "date"] = parsed_dates
     if "window_days" not in out.columns:
-        out.loc[:, "window_days"] = None
+        out.loc[:, "window_days"] = _none_series(out.index)
     else:
         out.loc[:, "window_days"] = pd.Series(
             [_parse_window_days(value) for value in _column_values(out, "window_days")],
@@ -593,9 +597,9 @@ def _validate_event_df(df: pd.DataFrame, *, market: str) -> pd.DataFrame:
             nullable=True,
         )
     else:
-        out.loc[:, "publication_date"] = None
+        out.loc[:, "publication_date"] = _none_series(out.index)
     if "approved_label" not in out.columns:
-        out.loc[:, "approved_label"] = None
+        out.loc[:, "approved_label"] = _none_series(out.index)
     else:
         approved = [
             None if _is_missing(value) else value
