@@ -19,6 +19,7 @@ dependencies = [
   "xlrd==2.0.2",
   "hmmlearn==0.3.3",
   "opentelemetry-api==1.36.0",
+  "sentry-sdk==2.60.0",
   # Adapter in regime_detection.change_point uses
   # online_changepoint_detection(data, hazard_func, observation_likelihood),
   # constant_hazard(lam, r), and StudentT(alpha, beta, kappa, mu).
@@ -64,6 +65,9 @@ target-version = ["py311"]
 typeCheckingMode = "strict"
 include = [
   "src/regime_detection/observability.py",
+  "src/regime_detection/loaders.py",
+  "scripts/detect_flaky_tests.py",
+  "scripts/validate_agents_md.py",
 ]
 
 [tool.radon]
@@ -98,7 +102,7 @@ where = ["src"]
 regime_detection = ["configs/*.yaml"]
 
 [tool.ruff]
-line-length = 100
+line-length = 88
 target-version = "py311"
 
 [tool.ruff.format]

@@ -1,0 +1,60 @@
+name: Full verification
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: full-verification-${{ github.workflow }}-${{ github.ref_name }}
+  cancel-in-progress: true
+
+jobs:
+  full-suite:
+    name: full suite
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+          cache-dependency-path: requirements-dev.txt
+
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements-dev.txt
+          pip install -e . --no-deps
+
+      - name: Ruff
+        run: python -m ruff check .
+
+      - name: Black
+        run: python -m black --check src tests scripts
+
+      - name: Validate AGENTS.md automation
+        run: python scripts/validate_agents_md.py
+
+      - name: Radon
+        run: python -m radon cc src/regime_detection/observability.py -s -n B
+
+      - name: jscpd
+        run: npx jscpd --config .jscpd.json
+
+      - name: Deptry
+        run: python -m deptry . --ignore DEP003
+
+      - name: Pyright
+        run: python -m pyright
+
+      - name: Pytest full suite
+        run: |
+          if [ -d tests ]; then
+            python -m pytest -q -m "" -n 8 --cov=src --cov-report=term-missing --cov-fail-under=80
+          else
+            echo "No tests directory yet; skipping pytest until V1 implementation begins."
+          fi

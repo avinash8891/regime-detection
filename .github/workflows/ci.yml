@@ -1,9 +1,7 @@
 name: CI
 
 on:
-  push:
   pull_request:
-  workflow_dispatch:
 
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.head_ref || github.ref_name }}
@@ -96,7 +94,7 @@ jobs:
       - name: Pytest full suite
         run: |
           if [ -d tests ]; then
-            python -m pytest -q -m "" -n 8 --cov=src --cov-report=term-missing --cov-fail-under=80
+            python -m pytest --cov=src --cov-report=term-missing --cov-fail-under=80
           else
             echo "No tests directory yet; skipping pytest until V1 implementation begins."
           fi

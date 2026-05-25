@@ -2,10 +2,12 @@ from __future__ import annotations
 
 import json
 import logging
+from types import SimpleNamespace
 
 import pandas as pd
 import pytest
 
+import regime_detection.observability as observability_module
 from regime_detection.loaders import load_event_calendar
 from regime_detection.observability import (
     TRACE_ID_HEADER,
@@ -79,6 +81,27 @@ def test_configure_error_tracking_uses_env(monkeypatch: pytest.MonkeyPatch) -> N
     monkeypatch.setenv("REGIME_ERROR_TRACKING_BACKEND", "sentry")
     monkeypatch.setenv("REGIME_ERROR_TRACKING_DSN", "https://dsn.example")
     monkeypatch.setenv("REGIME_OPERATOR_NAME", "operator-a")
+    monkeypatch.setenv("REGIME_ENVIRONMENT", "test")
+    monkeypatch.setenv("REGIME_RELEASE", "regime-detection@test")
+
+    sentry_init_calls: list[dict[str, object]] = []
+
+    class FakeLoggingIntegration:
+        def __init__(self, *, level: int, event_level: int) -> None:
+            self.level = level
+            self.event_level = event_level
+
+    fake_sentry = SimpleNamespace(
+        init=lambda **kwargs: sentry_init_calls.append(kwargs),
+        is_initialized=lambda: True,
+    )
+    monkeypatch.setattr(observability_module, "_SENTRY_SDK", fake_sentry, raising=False)
+    monkeypatch.setattr(
+        observability_module,
+        "_SENTRY_LOGGING_INTEGRATION",
+        FakeLoggingIntegration,
+        raising=False,
+    )
 
     config = configure_error_tracking()
 
@@ -86,6 +109,44 @@ def test_configure_error_tracking_uses_env(monkeypatch: pytest.MonkeyPatch) -> N
     assert config["backend"] == "sentry"
     assert config["dsn"] == "https://dsn.example"
     assert config["user_context_env"] == "operator-a"
+    assert config["initialized"] is True
+    assert sentry_init_calls[0]["dsn"] == "https://dsn.example"
+    assert sentry_init_calls[0]["environment"] == "test"
+    assert sentry_init_calls[0]["release"] == "regime-detection@test"
+
+
+def test_capture_exception_forwards_context_to_sentry(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    sentry_calls: list[tuple[str, object]] = []
+
+    fake_sentry = SimpleNamespace(
+        is_initialized=lambda: True,
+        set_tag=lambda key, value: sentry_calls.append(("tag", (key, value))),
+        set_user=lambda user: sentry_calls.append(("user", user)),
+        set_context=lambda key, value: sentry_calls.append(("context", (key, value))),
+        capture_exception=lambda error: sentry_calls.append(("exception", error)),
+    )
+    monkeypatch.setattr(observability_module, "_SENTRY_SDK", fake_sentry, raising=False)
+
+    start_trace("trace-sentry")
+    capture_exception(
+        RuntimeError("boom"),
+        component="profile_engine",
+        extra={"manifest": "manifests/runs/regime.yaml"},
+    )
+
+    assert ("tag", ("component", "profile_engine")) in sentry_calls
+    assert ("tag", ("trace_id", "trace-sentry")) in sentry_calls
+    assert ("user", {"username": "unknown"}) in sentry_calls
+    assert (
+        "context",
+        (
+            "regime_extra",
+            {"manifest": "manifests/runs/regime.yaml"},
+        ),
+    ) in sentry_calls
+    assert any(kind == "exception" for kind, _ in sentry_calls)
 
 
 def test_configure_deployment_observability_uses_env(

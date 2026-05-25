@@ -2,8 +2,10 @@ from __future__ import annotations
 
 import logging
 import time
-from datetime import timedelta
+from collections.abc import Callable, Sequence
+from datetime import date, timedelta
 from pathlib import Path
+from typing import Any, cast
 
 import pandas as pd
 import yaml
@@ -45,6 +47,63 @@ _V2_MANUAL_TYPES = {
     "BOJ_decision",
 }
 _ALLOWED_TYPES = _SCHEDULED_TYPES | _V2_MANUAL_TYPES | {"ad_hoc"}
+_PANDAS_READ_CSV = cast(Callable[[Path], pd.DataFrame], cast(Any, pd).read_csv)
+_PANDAS_READ_PARQUET = cast(Callable[[Path], pd.DataFrame], cast(Any, pd).read_parquet)
+
+
+def _read_csv_dataframe(path: Path) -> pd.DataFrame:
+    return _PANDAS_READ_CSV(path)
+
+
+def _column_values(frame: pd.DataFrame, column: str) -> list[object]:
+    return list(frame[column])
+
+
+def _is_missing(value: object) -> bool:
+    return bool(cast(Any, pd).isna(value))
+
+
+def _numeric_value(value: object, *, field_name: str, context: str) -> float:
+    if value is None or _is_missing(value) or isinstance(value, bool):
+        raise ValueError(f"{context} contains non-numeric {field_name} values")
+    try:
+        numeric_value = float(cast(Any, value))
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"{context} contains non-numeric {field_name} values") from exc
+    if _is_missing(numeric_value):
+        raise ValueError(f"{context} contains non-numeric {field_name} values")
+    return numeric_value
+
+
+def _dated_float_series(
+    rows: list[tuple[object, float]],
+    *,
+    context: str,
+    series_name: str,
+) -> pd.Series:
+    index = parse_datetime_index(
+        [raw_date for raw_date, _ in rows],
+        field_name="date",
+        context=context,
+    )
+    return pd.Series(
+        [numeric_value for _, numeric_value in rows],
+        index=index,
+        name=series_name,
+        dtype=float,
+    ).sort_index()
+
+
+def _rows_from_yaml_payload(loaded: object) -> list[object]:
+    if isinstance(loaded, dict):
+        payload = cast(dict[str, object], loaded)
+        rows = payload.get("events", [])
+        if isinstance(rows, list):
+            return list(cast(list[object], rows))
+        raise ValueError("event_calendar YAML `events` must be a list")
+    if isinstance(loaded, list):
+        return list(cast(list[object], loaded))
+    raise ValueError("event_calendar YAML must be a list or dict with `events`")
 
 
 def load_event_calendar(
@@ -69,15 +128,12 @@ def load_event_calendar(
             span.set_attribute("source_path", str(path))
             if path.suffix.lower() in {".yaml", ".yml"}:
                 loaded = yaml.safe_load(path.read_text())
-                if isinstance(loaded, dict):
-                    rows = loaded.get("events", [])
-                else:
-                    rows = loaded
+                rows = _rows_from_yaml_payload(loaded)
                 frame = _validate_event_df(pd.DataFrame(rows or []), market=market)
                 span.set_attribute("rows", len(frame))
                 return frame
             if path.suffix.lower() == ".csv":
-                frame = _validate_event_df(pd.read_csv(path), market=market)
+                frame = _validate_event_df(_read_csv_dataframe(path), market=market)
                 span.set_attribute("rows", len(frame))
                 return frame
             raise ValueError(f"Unsupported event calendar source: {source}")
@@ -101,9 +157,9 @@ def _read_source(source: str | Path | pd.DataFrame) -> pd.DataFrame:
         return source
     path = Path(source)
     if path.suffix.lower() == ".parquet" or path.is_dir():
-        return pd.read_parquet(path)
+        return _PANDAS_READ_PARQUET(path)
     if path.suffix.lower() == ".csv":
-        return pd.read_csv(path)
+        return _read_csv_dataframe(path)
     raise ValueError(f"Unsupported source: {source}")
 
 
@@ -127,37 +183,43 @@ def _load_long_form_closes(
     if missing:
         raise ValueError(f"Source missing required columns: {missing}")
 
+    group_values = _column_values(df, group_col)
+    date_values = _column_values(df, "date")
+    raw_value_values = _column_values(df, value_col)
+
     if universe is not None:
-        present = set(df[group_col].unique())
+        present = {str(value) for value in group_values if not _is_missing(value)}
         absent = [s for s in universe if s not in present]
         if absent:
             raise ValueError(f"Source missing required {group_col}s: {absent}")
-        df = df[df[group_col].isin(universe)].copy()
+        allowed_groups = set(universe)
+    else:
+        allowed_groups = None
+
+    grouped_rows: dict[str, list[tuple[object, float]]] = {}
+    for raw_group, raw_date, raw_value in zip(
+        group_values, date_values, raw_value_values, strict=True
+    ):
+        if _is_missing(raw_group):
+            continue
+        group_key = str(raw_group)
+        if allowed_groups is not None and group_key not in allowed_groups:
+            continue
+        context = f"Source for {group_col}={group_key!r}"
+        grouped_rows.setdefault(group_key, []).append(
+            (
+                raw_date,
+                _numeric_value(raw_value, field_name=value_col, context=context),
+            )
+        )
 
     out: dict[str, pd.Series] = {}
-    for key, sub in df.groupby(group_col):
-        sub = sub.sort_values("date")
-        index = parse_datetime_index(
-            sub["date"],
-            field_name="date",
-            context=f"Source for {group_col}={key!r}",
+    for group_key, rows in grouped_rows.items():
+        out[group_key] = _dated_float_series(
+            rows,
+            context=f"Source for {group_col}={group_key!r}",
+            series_name=value_col,
         )
-        try:
-            values = pd.to_numeric(sub[value_col], errors="raise").astype(float)
-        except (ValueError, TypeError) as exc:
-            raise ValueError(
-                f"Source contains non-numeric {value_col} values for {group_col}={key!r}"
-            ) from exc
-        if values.isna().any():
-            raise ValueError(
-                f"Source contains non-numeric {value_col} values for {group_col}={key!r}"
-            )
-        series = pd.Series(
-            values.to_numpy(),
-            index=index,
-            name=value_col,
-        )
-        out[str(key)] = series
     return out
 
 
@@ -219,38 +281,54 @@ def load_macro_series(
     present and non-null for a series, otherwise the FRED ``series_id``.
     Each series appears exactly once — no duplicate aliases.
     """
+    df = _read_source(source)
     out = _load_long_form_closes(
-        source,
+        df,
         group_col="series_id",
         value_col="value",
         universe=series_ids,
     )
     out = {key: series.rename(key) for key, series in out.items()}
-    df = _read_source(source)
-
-    if series_ids is not None:
-        df = df[df["series_id"].isin(series_ids)].copy()
 
     if "logical_name" in df.columns:
-        logical_df = df.dropna(subset=["logical_name"])
-        # For every series_id that has a logical_name, replace the series_id
-        # entry with a single logical_name entry — no duplicate aliases.
-        for sid in logical_df["series_id"].unique():
-            out.pop(str(sid), None)
-        for key, sub in logical_df.groupby("logical_name"):
-            sub = sub.sort_values("date")
-            series_key = str(key)
-            values = sub["value"].astype(float)
-            if series_key == "implied_vol_30d":
-                values = values / 100.0
-            out[series_key] = pd.Series(
-                values.to_numpy(),
-                index=parse_datetime_index(
-                    sub["date"],
-                    field_name="date",
-                    context=f"macro logical_name={series_key!r}",
-                ),
-                name=series_key,
+        allowed_series_ids = set(series_ids) if series_ids is not None else None
+        logical_name_values = _column_values(df, "logical_name")
+        series_id_values = _column_values(df, "series_id")
+        date_values = _column_values(df, "date")
+        raw_value_values = _column_values(df, "value")
+
+        logical_rows: dict[str, list[tuple[object, float]]] = {}
+        logical_series_ids: set[str] = set()
+        for raw_series_id, raw_logical_name, raw_date, raw_value in zip(
+            series_id_values,
+            logical_name_values,
+            date_values,
+            raw_value_values,
+            strict=True,
+        ):
+            if _is_missing(raw_logical_name):
+                continue
+            series_id = str(raw_series_id)
+            if allowed_series_ids is not None and series_id not in allowed_series_ids:
+                continue
+            logical_name = str(raw_logical_name)
+            value = _numeric_value(
+                raw_value,
+                field_name="value",
+                context=f"macro logical_name={logical_name!r}",
+            )
+            if logical_name == "implied_vol_30d":
+                value = value / 100.0
+            logical_series_ids.add(series_id)
+            logical_rows.setdefault(logical_name, []).append((raw_date, value))
+
+        for sid in logical_series_ids:
+            out.pop(sid, None)
+        for logical_name, rows in logical_rows.items():
+            out[logical_name] = _dated_float_series(
+                rows,
+                context=f"macro logical_name={logical_name!r}",
+                series_name=logical_name,
             )
 
     if not out:
@@ -441,11 +519,13 @@ def load_cpi_vintages_first_release(
     if df.empty:
         return pd.Series([], dtype=float, name="cpi_first_release")
     work = df.copy()
-    work["date"] = parse_datetime_series(
-        work["date"], field_name="date", context="cpi_vintages source"
+    work.loc[:, "date"] = parse_datetime_series(
+        _column_values(work, "date"),
+        field_name="date",
+        context="cpi_vintages source",
     )
-    work["realtime_start"] = parse_datetime_series(
-        work["realtime_start"],
+    work.loc[:, "realtime_start"] = parse_datetime_series(
+        _column_values(work, "realtime_start"),
         field_name="realtime_start",
         context="cpi_vintages source",
     )
@@ -479,48 +559,87 @@ def _validate_event_df(df: pd.DataFrame, *, market: str) -> pd.DataFrame:
     if missing:
         raise ValueError(f"event_calendar missing required columns: {missing}")
 
-    out = df.copy()
-    out = out[(out["market"] == market) | (out["market"] == "GLOBAL")].copy()
-    out["type"] = out["type"].astype(str)
-    bad_types = sorted(set(out["type"]) - _ALLOWED_TYPES)
+    market_values = _column_values(df, "market")
+    market_mask = [(value == market) or (value == "GLOBAL") for value in market_values]
+    out = df.loc[market_mask].copy()
+
+    type_values = [str(value) for value in _column_values(out, "type")]
+    out.loc[:, "type"] = pd.Series(type_values, index=out.index, dtype="object")
+    bad_types = sorted(set(type_values) - _ALLOWED_TYPES)
     if bad_types:
         raise ValueError(
             f"event_calendar contains unsupported types for V1: {bad_types}"
         )
 
-    out["date"] = parse_date_series(
-        out["date"], field_name="date", context="event_calendar"
+    parsed_dates = parse_date_series(
+        _column_values(out, "date"),
+        field_name="date",
+        context="event_calendar",
     )
+    out.loc[:, "date"] = parsed_dates
     if "window_days" not in out.columns:
-        out["window_days"] = None
+        out.loc[:, "window_days"] = None
     else:
-        out["window_days"] = out["window_days"].apply(_parse_window_days)
+        out.loc[:, "window_days"] = pd.Series(
+            [_parse_window_days(value) for value in _column_values(out, "window_days")],
+            index=out.index,
+            dtype="object",
+        )
     if "publication_date" in out.columns:
-        out["publication_date"] = parse_date_series(
-            out["publication_date"],
+        out.loc[:, "publication_date"] = parse_date_series(
+            _column_values(out, "publication_date"),
             field_name="publication_date",
             context="event_calendar",
             nullable=True,
         )
     else:
-        out["publication_date"] = None
+        out.loc[:, "publication_date"] = None
     if "approved_label" not in out.columns:
-        out["approved_label"] = None
+        out.loc[:, "approved_label"] = None
     else:
-        approved = out["approved_label"].where(out["approved_label"].notna(), None)
-        out["approved_label"] = approved.astype("object")
+        approved = [
+            None if _is_missing(value) else value
+            for value in _column_values(out, "approved_label")
+        ]
+        out.loc[:, "approved_label"] = pd.Series(
+            approved,
+            index=out.index,
+            dtype="object",
+        )
 
-    for idx, row in out.iterrows():
-        if pd.isna(row["publication_date"]):
-            if row["type"] in _SCHEDULED_TYPES:
+    normalized_publication_dates: list[date] = []
+    for event_type, event_date_value, publication_date_value in zip(
+        type_values,
+        list(parsed_dates),
+        _column_values(out, "publication_date"),
+        strict=True,
+    ):
+        if not isinstance(event_date_value, date):
+            raise ValueError("event_calendar contains malformed date values")
+        if publication_date_value is None or _is_missing(publication_date_value):
+            if event_type in _SCHEDULED_TYPES:
                 # ADR 0002 §52 + ADR 0014 R3: scheduled events default
                 # publication_date to date - 90 calendar days when not
                 # supplied. ADR 0002 §52 authorizes this for FOMC/CPI/NFP;
                 # ADR 0014 R3 extends it to V2 scheduled types
                 # (ECB/BOE/BOJ/election/budget/global_rate_decision).
-                out.at[idx, "publication_date"] = row["date"] - timedelta(days=90)
+                normalized_publication_dates.append(
+                    event_date_value - timedelta(days=90)
+                )
             else:
-                out.at[idx, "publication_date"] = row["date"]
+                normalized_publication_dates.append(event_date_value)
+            continue
+        if not isinstance(publication_date_value, date):
+            raise ValueError(
+                "event_calendar contains malformed publication_date values"
+            )
+        normalized_publication_dates.append(publication_date_value)
+
+    out.loc[:, "publication_date"] = pd.Series(
+        normalized_publication_dates,
+        index=out.index,
+        dtype="object",
+    )
 
     return (
         out[
@@ -540,19 +659,41 @@ def _validate_event_df(df: pd.DataFrame, *, market: str) -> pd.DataFrame:
 
 
 def _parse_window_days(value: object) -> list[int] | None:
-    if value is None or (isinstance(value, float) and pd.isna(value)):
+    if value is None or (isinstance(value, float) and _is_missing(value)):
         return None
     if isinstance(value, str):
         parsed = yaml.safe_load(value)
     else:
         parsed = value
-    if not isinstance(parsed, (list, tuple)) or len(parsed) != 2:
+    if not isinstance(parsed, (list, tuple)):
+        raise ValueError(
+            f"event_calendar window_days must be a two-item list: {value!r}"
+        )
+    parsed_sequence = cast(Sequence[object], parsed)
+    if len(parsed_sequence) != 2:
         raise ValueError(
             f"event_calendar window_days must be a two-item list: {value!r}"
         )
     try:
-        return [int(parsed[0]), int(parsed[1])]
+        return [
+            _window_day_int(parsed_sequence[0]),
+            _window_day_int(parsed_sequence[1]),
+        ]
     except (TypeError, ValueError) as exc:
         raise ValueError(
             f"event_calendar window_days entries must be integers: {value!r}"
         ) from exc
+
+
+def _window_day_int(value: object) -> int:
+    if isinstance(value, bool):
+        raise ValueError("window_days entries must be integers")
+    if isinstance(value, int):
+        return value
+    if isinstance(value, float):
+        if not value.is_integer():
+            raise ValueError("window_days entries must be integers")
+        return int(value)
+    if isinstance(value, str):
+        return int(value)
+    raise ValueError("window_days entries must be integers")
