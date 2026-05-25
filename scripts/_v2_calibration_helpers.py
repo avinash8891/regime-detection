@@ -14,6 +14,7 @@ from typing import Any
 
 import pandas as pd
 
+from regime_data_fetch.daily_ohlcv_contract import require_symbol_partition_frame
 from regime_data_fetch.materialization import materialize_if_requested
 from regime_data_fetch.manifest_inputs import (
     MANIFEST_INPUT_FLAGS,
@@ -27,7 +28,6 @@ from regime_detection.loaders import (
     load_macro_series as load_fred_macro_series,
 )
 from regime_detection.comparison import axis_reporting_label
-
 
 logger = logging.getLogger(__name__)
 
@@ -44,7 +44,9 @@ def synthetic_pit_intervals_from_sector_closes(
     return pd.DataFrame(
         {
             "ticker": list(sector_etf_closes),
-            "start_date": [series.index.min().date() for series in sector_etf_closes.values()],
+            "start_date": [
+                series.index.min().date() for series in sector_etf_closes.values()
+            ],
             "end_date": [None] * len(sector_etf_closes),
         }
     )
@@ -161,7 +163,9 @@ def apply_manifest_input_paths(
         manifest_path=args.manifest,
         data_root=args.data_root,
         runner_name=runner_name,
-        cli_values={field: getattr(args, field, None) for field in MANIFEST_INPUT_FLAGS},
+        cli_values={
+            field: getattr(args, field, None) for field in MANIFEST_INPUT_FLAGS
+        },
         cli_overrides=args.manifest_input_overrides,
         repo_root=repo_root,
         **({"required_fields": required_fields} if required_fields is not None else {}),
@@ -212,6 +216,13 @@ def load_market_data(daily_ohlcv_dir: Path) -> pd.DataFrame:
         )
     common_end = max_dates.loc[required_symbols].min()
     out = out[out["date"] <= common_end].copy()
+    _require_daily_ohlcv_calendar_coverage(
+        out,
+        symbols=required_symbols,
+        expected_index=pd.DatetimeIndex(
+            out.loc[out["symbol"] == "SPY", "date"].sort_values().unique()
+        ),
+    )
     out["date"] = out["date"].dt.date
     return out.sort_values(["date", "symbol"]).reset_index(drop=True)
 
@@ -231,8 +242,59 @@ def load_close_dict(
         sub = df[df["symbol"] == sym].sort_values("date").set_index("date")
         if sub.empty:
             continue
-        out[sym] = sub["close"].astype(float).reindex(spy_index).rename(sym)
+        aligned = sub["close"].astype(float).reindex(spy_index).rename(sym)
+        _require_close_series_calendar_coverage(aligned)
+        out[sym] = aligned
     return out
+
+
+def _require_daily_ohlcv_calendar_coverage(
+    frame: pd.DataFrame,
+    *,
+    symbols: list[str],
+    expected_index: pd.DatetimeIndex,
+) -> None:
+    for symbol in symbols:
+        observed = pd.DatetimeIndex(
+            frame.loc[frame["symbol"] == symbol, "date"].sort_values().unique()
+        )
+        _require_calendar_gap_free(
+            label=symbol, observed=observed, expected=expected_index
+        )
+
+
+def _require_close_series_calendar_coverage(series: pd.Series) -> None:
+    observed = pd.DatetimeIndex(series.index[series.notna()])
+    if observed.empty:
+        return
+    expected = pd.DatetimeIndex(series.index)
+    _require_calendar_gap_free(
+        label=str(series.name) if series.name is not None else "<unnamed>",
+        observed=observed,
+        expected=expected,
+    )
+
+
+def _require_calendar_gap_free(
+    *,
+    label: str,
+    observed: pd.DatetimeIndex,
+    expected: pd.DatetimeIndex,
+) -> None:
+    """Raise ``ValueError`` if ``expected``, restricted to ``observed``'s
+    min..max range, contains any date missing from ``observed``.
+    """
+    if len(observed) == 0:
+        return
+    in_range = expected[(expected >= observed.min()) & (expected <= observed.max())]
+    missing = in_range.difference(observed)
+    if missing.empty:
+        return
+    examples = ", ".join(ts.strftime("%Y-%m-%d") for ts in missing[:5])
+    raise ValueError(
+        "daily OHLCV calendar coverage gap: "
+        f"symbol={label} missing {len(missing)} session row(s); examples: {examples}"
+    )
 
 
 def _read_daily_ohlcv(
@@ -253,16 +315,19 @@ def _read_daily_ohlcv(
             if symbol_file is None:
                 continue
             frame = pd.read_parquet(symbol_file)
-            if "symbol" not in frame.columns:
-                frame = frame.assign(symbol=symbol)
+            require_symbol_partition_frame(
+                frame, expected_symbol=symbol, source=symbol_file
+            )
             frames.append(frame)
     else:
         for parquet_file in sorted(daily_ohlcv_dir.rglob("*.parquet")):
             frame = pd.read_parquet(parquet_file)
-            if "symbol" not in frame.columns:
-                parent = parquet_file.parent.name
-                if parent.startswith("symbol="):
-                    frame = frame.assign(symbol=parent.removeprefix("symbol="))
+            parent = parquet_file.parent.name
+            if parent.startswith("symbol="):
+                partition_symbol = parent.removeprefix("symbol=")
+                require_symbol_partition_frame(
+                    frame, expected_symbol=partition_symbol, source=parquet_file
+                )
             frames.append(frame)
     if not frames:
         raise FileNotFoundError(f"no parquet OHLCV files found under {daily_ohlcv_dir}")
@@ -308,10 +373,7 @@ def load_macro_series(
             "scripts/fetch_regime_engine_v1_data.py --fetch macro",
             cpi_nowcast_parquet,
         )
-    if (
-        eps_weekly_history_parquet is not None
-        and eps_weekly_history_parquet.exists()
-    ):
+    if eps_weekly_history_parquet is not None and eps_weekly_history_parquet.exists():
         series_dict["aggregate_forward_eps_revision"] = (
             load_aggregate_forward_eps_revision_series(eps_weekly_history_parquet)
         )
@@ -356,9 +418,7 @@ def _load_pmi_manufacturing_series(pmi_path: Path) -> pd.Series | None:
         .dt.tz_localize(None)
         .dt.normalize()
     )
-    pmi_df = pmi_df.drop_duplicates(
-        subset=["release_date_local"], keep="last"
-    )
+    pmi_df = pmi_df.drop_duplicates(subset=["release_date_local"], keep="last")
     return (
         pmi_df.set_index("release_date_local")["value"]
         .astype(float)

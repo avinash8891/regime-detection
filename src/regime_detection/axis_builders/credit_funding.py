@@ -22,7 +22,7 @@ from regime_detection.credit_funding import (
     SOFR_KEY,
     TLT_KEY,
     build_rule_inputs_by_date as build_credit_funding_rule_inputs_by_date,
-    evaluate_rules as evaluate_credit_funding_rules,
+    evaluate_rules_with_evidence as evaluate_credit_funding_rules_with_evidence,
 )
 from regime_detection.data_quality import (
     assess_series_input_quality,
@@ -31,9 +31,8 @@ from regime_detection.data_quality import (
 from regime_detection.axis_builders.per_label import build_per_label_axis_outputs
 from regime_detection.feature_store import FeatureStore
 from regime_detection.axis_builders.staleness import (
-    _calendar_staleness_days_series,
     _safe_float,
-    _trading_staleness_series,
+    staleness_for_source,
 )
 from regime_detection.market_context import MarketContext
 from regime_detection.models import (
@@ -81,11 +80,14 @@ def _build_credit_funding_for_spread_source(
     spy_close = context.spy_ohlcv["close"]
     volatility_features = feature_store.volatility
     realized_vol_pct = volatility_features.realized_vol_percentile_252d
+    realized_vol_21d = volatility_features.realized_vol_21d
     nf_features = feature_store.network_fragility
     if nf_features is None:
         avg_corr_pct_series = pd.Series(float("nan"), index=spy_close.index)
+        avg_corr_63d_series = pd.Series(float("nan"), index=spy_close.index)
     else:
         avg_corr_pct_series = nf_features.avg_pairwise_corr_percentile_504d
+        avg_corr_63d_series = nf_features.avg_pairwise_corr_63d
 
     # The credit_funding seam guarantees these series exist on the
     # SPY index when feature_store.credit_funding is non-None.
@@ -117,33 +119,49 @@ def _build_credit_funding_for_spread_source(
 
     nfci_carried = features.nfci_daily_carried
     session_index = spy_close.index
-    hyg_staleness_by_date = _trading_staleness_series(hyg_close, session_index)
-    lqd_staleness_by_date = _trading_staleness_series(lqd_close, session_index)
-    tlt_staleness_by_date = _trading_staleness_series(tlt_close, session_index)
-    hy_oas_staleness_by_date = _calendar_staleness_days_series(
-        hy_oas_series, session_index
+    hyg_staleness_by_date = staleness_for_source(
+        source_name=HYG_KEY, series=hyg_close, session_index=session_index
     )
-    ig_oas_staleness_by_date = _calendar_staleness_days_series(
-        ig_oas_series, session_index
+    lqd_staleness_by_date = staleness_for_source(
+        source_name=LQD_KEY, series=lqd_close, session_index=session_index
     )
-    nfci_staleness_by_date = _calendar_staleness_days_series(nfci_series, session_index)
+    tlt_staleness_by_date = staleness_for_source(
+        source_name=TLT_KEY, series=tlt_close, session_index=session_index
+    )
+    hy_oas_staleness_by_date = staleness_for_source(
+        source_name=HY_OAS_KEY, series=hy_oas_series, session_index=session_index
+    )
+    ig_oas_staleness_by_date = staleness_for_source(
+        source_name=IG_OAS_KEY, series=ig_oas_series, session_index=session_index
+    )
+    nfci_staleness_by_date = staleness_for_source(
+        source_name=NFCI_KEY, series=nfci_series, session_index=session_index
+    )
     # Compute staleness from the raw SOFR and FEDFUNDS inputs rather than the
     # already-spliced sofr_iorb_spread. The derived spread is forward-filled in
     # compute_credit_funding_features, so it is always non-NaN and would never
     # detect a real data outage. Taking np.minimum of both raw series preserves
     # ADR 0009: a session covered by the FEDFUNDS-IOER proxy reads its staleness
     # from FEDFUNDS (fresh), not from SOFR (sentinel/stale).
-    _sofr_staleness = _calendar_staleness_days_series(
-        macro_series.get(SOFR_KEY), session_index
+    _sofr_staleness = staleness_for_source(
+        source_name=SOFR_KEY,
+        series=macro_series.get(SOFR_KEY),
+        session_index=session_index,
     )
-    _iorb_staleness = _calendar_staleness_days_series(
-        macro_series.get(IORB_KEY), session_index
+    _iorb_staleness = staleness_for_source(
+        source_name=IORB_KEY,
+        series=macro_series.get(IORB_KEY),
+        session_index=session_index,
     )
-    _fedfunds_staleness = _calendar_staleness_days_series(
-        macro_series.get(FEDFUNDS_KEY), session_index
+    _fedfunds_staleness = staleness_for_source(
+        source_name=FEDFUNDS_KEY,
+        series=macro_series.get(FEDFUNDS_KEY),
+        session_index=session_index,
     )
-    _ioer_legacy_staleness = _calendar_staleness_days_series(
-        macro_series.get(IOER_LEGACY_KEY), session_index
+    _ioer_legacy_staleness = staleness_for_source(
+        source_name=IOER_LEGACY_KEY,
+        series=macro_series.get(IOER_LEGACY_KEY),
+        session_index=session_index,
     )
     sofr_iorb_pair_staleness = np.maximum(
         _sofr_staleness.to_numpy(), _iorb_staleness.to_numpy()
@@ -172,6 +190,8 @@ def _build_credit_funding_for_spread_source(
         ig_spread_slope_21d=ig_spread_slope_21d,
         realized_vol_21d_percentile_252d=realized_vol_pct,
         avg_pairwise_corr_percentile_504d=avg_corr_pct_series,
+        realized_vol_21d=realized_vol_21d,
+        avg_pairwise_corr_63d=avg_corr_63d_series,
     )
 
     for day in context.sessions:
@@ -217,7 +237,9 @@ def _build_credit_funding_for_spread_source(
                 if ig_oas_staleness_days > max_freshness_days:
                     reason_parts.append(f"ig_oas_stale_{ig_oas_staleness_days}d")
             if funding_spread_stale:
-                reason_parts.append(f"funding_spread_stale_{funding_spread_staleness_days}d")
+                reason_parts.append(
+                    f"funding_spread_stale_{funding_spread_staleness_days}d"
+                )
             if nfci_stale:
                 reason_parts.append(f"nfci_stale_{nfci_staleness_days}d")
             gate_reason = ",".join(reason_parts)
@@ -237,10 +259,9 @@ def _build_credit_funding_for_spread_source(
             as_of_date=day,
             required_inputs=required_inputs,
             required_trading_days=required_trading_days,
-            raw_label="",
+            raw_label=None,
             max_freshness_days=max_freshness_days,
             min_completeness=min_completeness,
-            skip_raw_label_short_circuit=True,
         )
         if quality_forces_unknown(day_quality):
             raw_labels.append("unknown")
@@ -270,10 +291,11 @@ def _build_credit_funding_for_spread_source(
                 }
             )
             continue
-        label = evaluate_credit_funding_rules(
+        rule_evaluation = evaluate_credit_funding_rules_with_evidence(
             inputs=rule_inputs,
             config=cf_config.rules,
         )
+        label = rule_evaluation.label
         raw_labels.append(label)
         per_day_data_quality.append(day_quality)
         per_day_evidence.append(
@@ -287,7 +309,11 @@ def _build_credit_funding_for_spread_source(
                     "spy_21d_return": rule_inputs.spy_21d_return,
                     "tlt_21d_return": rule_inputs.tlt_21d_return,
                     "realized_vol_21d_percentile_252d": rule_inputs.realized_vol_21d_percentile_252d,
+                    "realized_vol_21d": rule_inputs.realized_vol_21d,
                     "avg_pairwise_corr_percentile_504d": rule_inputs.avg_pairwise_corr_percentile_504d,
+                    "avg_pairwise_corr_63d": rule_inputs.avg_pairwise_corr_63d,
+                    "rule_path": rule_evaluation.rule_path,
+                    "rule_reason": rule_evaluation.reason,
                 },
                 "spread_source": evidence_spread_source,
                 "nfci_daily_carried": _safe_float(nfci_carried, dt),
@@ -302,6 +328,7 @@ def _build_credit_funding_for_spread_source(
         risk_rank=CREDIT_FUNDING_RISK_RANK,
         deescalation_days_by_label=cf_config.deescalation_days_by_label,
         default_deescalation_days=cf_config.default_deescalation_days,
+        max_unknown_freeze_days=cf_config.max_unknown_freeze_days,
         data_quality=per_day_data_quality,
         evidence=per_day_evidence,
         output_factory=CreditFundingOutput,
@@ -455,7 +482,9 @@ def resolve_credit_funding_effective_output(
     # is more honest than forwarding the OAS stale_data status, which
     # misrepresents a rule gap as a data problem.
     if proxy is not None and proxy.classification_status in (
-        "no_rule_fired", "no_rule_fired_hysteresis", "no_rule_fired_missing_feature",
+        "no_rule_fired",
+        "no_rule_fired_hysteresis",
+        "no_rule_fired_missing_feature",
     ):
         chosen = proxy
     else:

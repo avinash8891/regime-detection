@@ -10,9 +10,9 @@ from pathlib import Path
 
 import pandas as pd
 
-
 EXPECTED_OHLCV_COLUMNS = [
     "date",
+    "symbol",
     "open",
     "high",
     "low",
@@ -20,6 +20,7 @@ EXPECTED_OHLCV_COLUMNS = [
     "volume",
     "adjusted_close",
 ]
+OUTPUT_OHLCV_COLUMNS = EXPECTED_OHLCV_COLUMNS
 
 
 @dataclass(frozen=True)
@@ -74,7 +75,8 @@ def materialize_constituent_ohlcv_tree(
 
     if missing and not allow_missing_symbols:
         raise FileNotFoundError(
-            "Missing constituent OHLCV symbols in source tree: " + ", ".join(missing[:50])
+            "Missing constituent OHLCV symbols in source tree: "
+            + ", ".join(missing[:50])
         )
     if not frames:
         raise ValueError("No constituent OHLCV files were available to materialize")
@@ -90,6 +92,7 @@ def materialize_constituent_ohlcv_tree(
             symbol_dir.mkdir(parents=True, exist_ok=True)
             parquet_path = symbol_dir / "ohlcv.parquet"
             outgoing = frame[EXPECTED_OHLCV_COLUMNS].copy()
+            outgoing["symbol"] = symbol
             outgoing.to_parquet(parquet_path, index=False)
             file_sha = _sha256_file(parquet_path)
             file_entries.append(
@@ -125,7 +128,10 @@ def materialize_constituent_ohlcv_tree(
         staging.replace(output_tree)
         final_manifest_path = output_tree / "MANIFEST.sha256.json"
 
-        final_report_path = report_path or output_tree.parent / f"{output_tree.name}_materialization_report.json"
+        final_report_path = (
+            report_path
+            or output_tree.parent / f"{output_tree.name}_materialization_report.json"
+        )
         final_report_path.parent.mkdir(parents=True, exist_ok=True)
         report = {
             "source": "local:constituent_ohlcv_tree_materialization",
@@ -205,6 +211,13 @@ def _read_symbol_ohlcv(tree_root: Path, symbol: str) -> tuple[pd.DataFrame, Path
     missing = [col for col in EXPECTED_OHLCV_COLUMNS if col not in frame.columns]
     if missing:
         raise ValueError(f"{source_path} missing required columns: {missing}")
+    if frame["symbol"].isna().any():
+        raise ValueError(f"{source_path} has null symbol row(s); expected {symbol}")
+    observed = sorted({str(value) for value in frame["symbol"].unique()})
+    if observed != [symbol]:
+        raise ValueError(
+            f"{source_path} symbol mismatch: expected {symbol}, observed {observed}"
+        )
     out = frame[EXPECTED_OHLCV_COLUMNS].copy()
     out["date"] = pd.to_datetime(out["date"]).dt.date.astype(str)
     out = out.sort_values("date").drop_duplicates(subset=["date"], keep="last")

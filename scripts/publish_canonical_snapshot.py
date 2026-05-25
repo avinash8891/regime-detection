@@ -9,6 +9,7 @@ Modes:
     publish (default)  canonicalize on disk + upload changed bytes + rewrite manifest
     --dry-run          report what publish would do; touch nothing
     --check            in-memory recompute; exit 1 on any drift; touch nothing
+    --check-store      with --check, also verify artifacts in the manifest store
 
 The script reuses the project's ``LocalArtifactStore`` / ``S3ArtifactStore``
 (see ``src/regime_data_fetch/artifact_store.py``) for uploads so key
@@ -24,10 +25,12 @@ import logging
 import os
 import re
 import sys
+from collections import Counter
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Iterable
+from typing import Any, Callable, Iterable
 
+import pandas as pd
 import pyarrow.compute as pc
 import pyarrow.parquet as pq
 import pyarrow.types as pat
@@ -43,7 +46,11 @@ from regime_data_fetch.artifact_store import (  # noqa: E402
     sha256_bytes,
     sha256_file,
 )
-
+from regime_data_fetch.daily_ohlcv_contract import (  # noqa: E402
+    daily_ohlcv_artifact_name,
+    parse_daily_ohlcv_artifact_name,
+    require_symbol_partition_table,
+)
 
 LOGGER = logging.getLogger("publish_canonical_snapshot")
 
@@ -54,6 +61,7 @@ DEFAULT_DATA_ROOT = Path("data/raw")
 DATE_COLUMN_CANDIDATES: tuple[str, ...] = (
     "date",
     "period",
+    "observation_date",
     "release_date",
     "start_date",
     "meeting_end_date",
@@ -66,6 +74,17 @@ DATE_COLUMN_CANDIDATES: tuple[str, ...] = (
 # version in dev/CI to keep canonical bytes stable across machines.
 _PARQUET_COMPRESSION = "snappy"
 _PARQUET_COERCE_TIMESTAMPS = "us"
+
+_DAILY_OHLCV_REQUIRED_COLUMNS: tuple[str, ...] = (
+    "date",
+    "open",
+    "high",
+    "low",
+    "close",
+    "volume",
+    "adjusted_close",
+    "symbol",
+)
 
 
 # ---------------------------------------------------------------------------
@@ -98,12 +117,16 @@ def _load_manifest_payload(path: Path) -> tuple[Any, Any | None]:
         return payload, y
     import yaml  # type: ignore[import-untyped]
 
-    LOGGER.warning("ruamel.yaml unavailable; falling back to yaml.safe_dump (anchors will expand)")
+    LOGGER.warning(
+        "ruamel.yaml unavailable; falling back to yaml.safe_dump (anchors will expand)"
+    )
     payload = yaml.safe_load(path.read_text())
     return payload, None
 
 
-def _dump_manifest_atomically(payload: Any, ruamel_instance: Any | None, path: Path) -> None:
+def _dump_manifest_atomically(
+    payload: Any, ruamel_instance: Any | None, path: Path
+) -> None:
     tmp = path.with_suffix(path.suffix + ".tmp")
     if ruamel_instance is not None:
         with tmp.open("w") as handle:
@@ -127,14 +150,26 @@ def _canonicalize_parquet_bytes(source: Path) -> bytes:
     compression, coerce_timestamps='us', no int96 timestamps. The function
     is a fixed point: canonicalize(canonicalize(x)) == canonicalize(x).
     """
+    payload = _canonicalize_parquet_source(source)
+    for _ in range(3):
+        next_payload = _canonicalize_parquet_source(io.BytesIO(payload))
+        if next_payload == payload:
+            return payload
+        payload = next_payload
+    raise RuntimeError(f"parquet canonicalization did not converge: {source}")
+
+
+def _canonicalize_parquet_source(source: Any) -> bytes:
     table = pq.ParquetFile(source).read()
     table = table.replace_schema_metadata(None)
     if any(pat.is_dictionary(field.type) for field in table.schema):
         table = table.from_arrays(
             [
-                column.combine_chunks().dictionary_decode()
-                if pat.is_dictionary(field.type)
-                else column
+                (
+                    column.combine_chunks().dictionary_decode()
+                    if pat.is_dictionary(field.type)
+                    else column
+                )
                 for field, column in zip(table.schema, table.itercolumns(), strict=True)
             ],
             names=table.column_names,
@@ -205,6 +240,227 @@ def _parquet_date_range(payload: bytes) -> tuple[str | None, str | None]:
     return None, None
 
 
+def _validate_daily_ohlcv_symbol_contract(
+    *,
+    artifact: dict[str, Any],
+    payload: bytes,
+) -> None:
+    _validate_daily_ohlcv_contract(
+        artifact=artifact,
+        payload=payload,
+        expected_sessions=None,
+    )
+
+
+def _daily_ohlcv_symbol(artifact: dict[str, Any]) -> str | None:
+    return parse_daily_ohlcv_artifact_name(str(artifact.get("name", "")))
+
+
+def _validate_daily_ohlcv_contract(
+    *,
+    artifact: dict[str, Any],
+    payload: bytes,
+    expected_sessions: pd.DatetimeIndex | None,
+    active_intervals_by_symbol: (
+        dict[str, list[tuple[pd.Timestamp, pd.Timestamp | None]]] | None
+    ) = None,
+) -> None:
+    expected_symbol = _daily_ohlcv_symbol(artifact)
+    if expected_symbol is None:
+        return
+    table = pq.read_table(io.BytesIO(payload))
+    missing_columns = [
+        col for col in _DAILY_OHLCV_REQUIRED_COLUMNS if col not in table.column_names
+    ]
+    if missing_columns:
+        raise ValueError(
+            f"{artifact['name']} missing required daily OHLCV column(s): {missing_columns}"
+        )
+    require_symbol_partition_table(
+        table, expected_symbol=expected_symbol, source=artifact["name"]
+    )
+    frame = table.select(list(_DAILY_OHLCV_REQUIRED_COLUMNS)).to_pandas()
+    dates = pd.to_datetime(frame["date"], errors="coerce").dt.normalize()
+    if dates.isna().any():
+        raise ValueError(f"{artifact['name']} has unparsable/null date row(s)")
+    duplicate_dates = dates[dates.duplicated()].dt.strftime("%Y-%m-%d").unique()
+    if len(duplicate_dates) > 0:
+        examples = ", ".join(sorted(duplicate_dates)[:5])
+        raise ValueError(
+            f"{artifact['name']} has duplicate date row(s); examples: {examples}"
+        )
+    value_columns = ["open", "high", "low", "close", "volume", "adjusted_close"]
+    null_value_columns = [col for col in value_columns if frame[col].isna().any()]
+    if null_value_columns:
+        raise ValueError(
+            f"{artifact['name']} has null OHLCV value column(s): {null_value_columns}"
+        )
+    if expected_sessions is None or dates.empty:
+        return
+    symbol_dates = pd.DatetimeIndex(dates.sort_values().unique())
+    expected = _expected_symbol_sessions(
+        symbol=expected_symbol,
+        symbol_dates=symbol_dates,
+        expected_sessions=expected_sessions,
+        active_intervals_by_symbol=active_intervals_by_symbol,
+    )
+    if expected.empty:
+        return
+    missing = expected.difference(symbol_dates)
+    if not missing.empty:
+        examples = ", ".join(ts.strftime("%Y-%m-%d") for ts in missing[:5])
+        raise ValueError(
+            "daily OHLCV calendar coverage gap: "
+            f"symbol={expected_symbol} missing {len(missing)} session row(s); "
+            f"examples: {examples}"
+        )
+
+
+def _expected_symbol_sessions(
+    *,
+    symbol: str,
+    symbol_dates: pd.DatetimeIndex,
+    expected_sessions: pd.DatetimeIndex,
+    active_intervals_by_symbol: (
+        dict[str, list[tuple[pd.Timestamp, pd.Timestamp | None]]] | None
+    ),
+) -> pd.DatetimeIndex:
+    if active_intervals_by_symbol is None:
+        return expected_sessions[
+            (expected_sessions >= symbol_dates.min())
+            & (expected_sessions <= symbol_dates.max())
+        ]
+    intervals = active_intervals_by_symbol.get(symbol)
+    if not intervals:
+        return pd.DatetimeIndex([])
+    active_sessions: list[pd.Timestamp] = []
+    for start, end in intervals:
+        # PIT end dates are effective-removal dates in the upstream source.
+        # Treat them as exclusive so an acquisition/removal day without a final
+        # quote does not become a false calendar gap.
+        interval_sessions = expected_sessions[
+            (expected_sessions >= start)
+            & (expected_sessions >= symbol_dates.min())
+            & (expected_sessions <= symbol_dates.max())
+        ]
+        if end is not None:
+            interval_sessions = interval_sessions[interval_sessions < end]
+        active_sessions.extend(interval_sessions)
+    return pd.DatetimeIndex(sorted(set(active_sessions)))
+
+
+def _validate_parquet_manifest_metadata(
+    *,
+    artifact: dict[str, Any],
+    payload: bytes,
+) -> None:
+    expected_rows = artifact.get("rows")
+    actual_rows = _parquet_row_count(payload)
+    if expected_rows is not None and int(expected_rows) != actual_rows:
+        raise ValueError(
+            f"{artifact['name']} manifest rows={expected_rows} but parquet rows={actual_rows}"
+        )
+    actual_min, actual_max = _parquet_date_range(payload)
+    expected_min = artifact.get("min_date")
+    expected_max = artifact.get("max_date")
+    if expected_min is not None and actual_min != str(expected_min):
+        raise ValueError(
+            f"{artifact['name']} manifest min_date={expected_min} but parquet min_date={actual_min}"
+        )
+    if expected_max is not None and actual_max != str(expected_max):
+        raise ValueError(
+            f"{artifact['name']} manifest max_date={expected_max} but parquet max_date={actual_max}"
+        )
+
+
+def _semantic_check_artifact(
+    *,
+    artifact: dict[str, Any],
+    local: Path,
+    expected_sessions: pd.DatetimeIndex | None,
+    active_intervals_by_symbol: (
+        dict[str, list[tuple[pd.Timestamp, pd.Timestamp | None]]] | None
+    ),
+) -> tuple[str | None, str]:
+    if not local.exists() or not _is_parquet(local):
+        return None, ""
+    try:
+        payload = _canonicalize_parquet_bytes(local)
+        _validate_parquet_manifest_metadata(artifact=artifact, payload=payload)
+        _validate_daily_ohlcv_contract(
+            artifact=artifact,
+            payload=payload,
+            expected_sessions=expected_sessions,
+            active_intervals_by_symbol=active_intervals_by_symbol,
+        )
+    except Exception as exc:
+        return "SEMANTIC_INVALID", str(exc)
+    return "SEMANTIC_OK", ""
+
+
+def _daily_ohlcv_spy_sessions(
+    payload: Any,
+    data_root: Path,
+) -> pd.DatetimeIndex | None:
+    artifacts = payload.get("artifacts", []) if isinstance(payload, dict) else []
+    spy_artifact = next(
+        (
+            artifact
+            for artifact in artifacts
+            if isinstance(artifact, dict)
+            and artifact.get("name") == daily_ohlcv_artifact_name("SPY")
+        ),
+        None,
+    )
+    if spy_artifact is None:
+        return None
+    spy_path = _resolve_local_path(data_root, spy_artifact)
+    if not spy_path.exists():
+        return None
+    table = pq.ParquetFile(spy_path).read(columns=["date"])
+    dates = pd.to_datetime(table.column("date").to_pandas(), errors="coerce")
+    dates = dates.dropna().dt.normalize()
+    if dates.empty:
+        return None
+    return pd.DatetimeIndex(sorted(dates.unique()))
+
+
+def _daily_ohlcv_pit_active_intervals(
+    payload: Any,
+    data_root: Path,
+) -> dict[str, list[tuple[pd.Timestamp, pd.Timestamp | None]]] | None:
+    artifacts = payload.get("artifacts", []) if isinstance(payload, dict) else []
+    pit_artifact = next(
+        (
+            artifact
+            for artifact in artifacts
+            if isinstance(artifact, dict)
+            and artifact.get("name") == "sp500_pit_constituents"
+        ),
+        None,
+    )
+    if pit_artifact is None:
+        return None
+    pit_path = _resolve_local_path(data_root, pit_artifact)
+    if not pit_path.exists():
+        return None
+    frame = pd.read_parquet(pit_path)
+    required = {"ticker", "start_date", "end_date"}
+    missing = required.difference(frame.columns)
+    if missing:
+        raise ValueError(f"sp500_pit_constituents missing column(s): {sorted(missing)}")
+    intervals: dict[str, list[tuple[pd.Timestamp, pd.Timestamp | None]]] = {}
+    for row in frame.itertuples(index=False):
+        ticker = str(getattr(row, "ticker")).strip().upper()
+        if not ticker:
+            continue
+        start = pd.Timestamp(getattr(row, "start_date")).normalize()
+        raw_end = getattr(row, "end_date")
+        end = None if pd.isna(raw_end) else pd.Timestamp(raw_end).normalize()
+        intervals.setdefault(ticker, []).append((start, end))
+    return intervals
+
+
 # ---------------------------------------------------------------------------
 # Per-artifact processing
 
@@ -213,12 +469,36 @@ def _parquet_date_range(payload: bytes) -> tuple[str | None, str | None]:
 class ArtifactReport:
     name: str
     local_path: str
-    status: str  # MATCH, MISSING, CANONICALIZE_WOULD_CHANGE_SHA, WOULD_UPLOAD,
-                 # UPDATED, UPLOADED, UNCHANGED_AFTER_CANONICALIZE
+    # Local-tree status. One of:
+    #   MATCH, DRIFT, MISSING, READ_ERROR,
+    #   CANONICALIZE_WOULD_CHANGE_SHA, WOULD_UPLOAD,  (dry-run)
+    #   UPDATED, UPLOADED                              (publish)
+    local_status: str
     old_sha: str
     new_sha: str | None = None
+    # Store-side status (only populated by run_check when a store is supplied):
+    #   MATCH, DRIFT, MISSING, UNVERIFIABLE
+    store_status: str | None = None
+    store_sha: str | None = None
+    semantic_status: str | None = None
     note: str = ""
     manifest_updates: dict[str, object] | None = None
+
+    @property
+    def is_issue(self) -> bool:
+        # UNVERIFIABLE means the store has the object but cannot vouch for
+        # its digest (e.g. S3 object missing the sha256 user-metadata header).
+        # The local check has already verified content integrity against the
+        # manifest, so a missing store digest is logged as a warning rather
+        # than failing the run. Real store mismatches (DRIFT/MISSING) still
+        # count as issues.
+        if self.local_status not in {"MATCH", "UPDATED", "UPLOADED"}:
+            return True
+        if self.store_status in {"DRIFT", "MISSING"}:
+            return True
+        if self.semantic_status not in {None, "SEMANTIC_OK"}:
+            return True
+        return False
 
 
 def _resolve_local_path(data_root: Path, artifact: dict[str, Any]) -> Path:
@@ -245,10 +525,6 @@ def _is_parquet(path: Path) -> bool:
     return path.suffix.lower() == ".parquet"
 
 
-def _is_yaml(path: Path) -> bool:
-    return path.suffix.lower() in {".yaml", ".yml"}
-
-
 def _filter_artifacts(
     artifacts: Iterable[dict[str, Any]], only: list[str] | None
 ) -> list[dict[str, Any]]:
@@ -262,46 +538,94 @@ def _filter_artifacts(
 # Mode handlers
 
 
+def _check_local(
+    artifact: dict[str, Any], local: Path
+) -> tuple[str, str | None, str | None]:
+    """Return ``(status, new_sha, note)`` for a local-tree check.
+
+    ``new_sha`` for parquet artifacts is the *canonicalized* hash, matching
+    what ``publish``/``put_bytes`` would have stored — keep this in sync with
+    the store's digest scheme so local and store checks compare like with like.
+    """
+    old_sha = str(artifact["sha256"])
+    if not local.exists():
+        return "MISSING", None, None
+    if _is_parquet(local):
+        try:
+            canon = _canonicalize_parquet_bytes(local)
+        except Exception as exc:  # pragma: no cover - defensive
+            return "READ_ERROR", None, str(exc)
+        new_sha = sha256_bytes(canon)
+    else:
+        new_sha = sha256_file(local)
+    return ("MATCH" if new_sha == old_sha else "DRIFT"), new_sha, None
+
+
+def _check_store(
+    artifact: dict[str, Any],
+    store: ArtifactStore,
+    *,
+    local: Path,
+    local_sha: str | None,
+) -> tuple[str, str | None]:
+    """Return ``(store_status, store_sha)`` for a store-side check.
+
+    Delegates to ``store.check_file`` which does the sha comparison and
+    returns a typed verdict (MATCH/DRIFT/MISSING/UNVERIFIABLE). Passes the
+    local path/sha as a hint so a local-store backend whose object resolves
+    to the same file the caller already hashed can skip the second hash.
+    """
+    result = store.check_file(
+        str(artifact["uri"]),
+        expected_sha256=str(artifact["sha256"]),
+        known_path=local if local.exists() else None,
+        known_sha=local_sha,
+    )
+    return result.status.name, result.observed_sha
+
+
 def run_check(
-    payload: Any, data_root: Path, only: list[str] | None
+    payload: Any,
+    data_root: Path,
+    only: list[str] | None,
+    *,
+    store: ArtifactStore | None = None,
 ) -> tuple[int, list[ArtifactReport]]:
     reports: list[ArtifactReport] = []
-    drift = 0
+    spy_sessions = _daily_ohlcv_spy_sessions(payload, data_root)
+    active_intervals_by_symbol = _daily_ohlcv_pit_active_intervals(payload, data_root)
     for artifact in _filter_artifacts(payload["artifacts"], only):
         local = _resolve_local_path(data_root, artifact)
-        old_sha = str(artifact["sha256"])
-        if not local.exists():
-            reports.append(
-                ArtifactReport(artifact["name"], str(local), "MISSING", old_sha)
-            )
-            continue
-        if _is_parquet(local):
-            try:
-                canon = _canonicalize_parquet_bytes(local)
-            except Exception as exc:  # pragma: no cover - defensive
-                reports.append(
-                    ArtifactReport(
-                        artifact["name"],
-                        str(local),
-                        "READ_ERROR",
-                        old_sha,
-                        note=str(exc),
-                    )
-                )
-                drift += 1
-                continue
-            new_sha = sha256_bytes(canon)
-        elif _is_yaml(local):
-            new_sha = sha256_file(local)
-        else:
-            new_sha = sha256_file(local)
-        status = "MATCH" if new_sha == old_sha else "DRIFT"
-        if status == "DRIFT":
-            drift += 1
-        reports.append(
-            ArtifactReport(artifact["name"], str(local), status, old_sha, new_sha)
+        local_status, new_sha, note = _check_local(artifact, local)
+        semantic_status, semantic_note = _semantic_check_artifact(
+            artifact=artifact,
+            local=local,
+            expected_sessions=spy_sessions,
+            active_intervals_by_symbol=active_intervals_by_symbol,
         )
-    return (0 if drift == 0 else 1), reports
+        if semantic_note:
+            note = "; ".join(part for part in (note, semantic_note) if part)
+        store_status: str | None = None
+        store_sha: str | None = None
+        if store is not None:
+            store_status, store_sha = _check_store(
+                artifact, store, local=local, local_sha=new_sha
+            )
+        reports.append(
+            ArtifactReport(
+                name=artifact["name"],
+                local_path=str(local),
+                local_status=local_status,
+                old_sha=str(artifact["sha256"]),
+                new_sha=new_sha,
+                store_status=store_status,
+                store_sha=store_sha,
+                semantic_status=semantic_status,
+                note=note or "",
+            )
+        )
+    exit_code = 0 if all(not r.is_issue for r in reports) else 1
+    return exit_code, reports
 
 
 def run_dry_run(
@@ -362,6 +686,7 @@ def run_publish(
 
         if _is_parquet(local):
             canon = _canonicalize_parquet_bytes(local)
+            _validate_daily_ohlcv_symbol_contract(artifact=artifact, payload=canon)
             new_sha = sha256_bytes(canon)
             disk_sha = sha256_file(local)
             if disk_sha != new_sha:
@@ -467,7 +792,11 @@ def _artifact_block_spans(lines: list[str]) -> dict[str, tuple[int, int]]:
         if match is None:
             continue
         indent = match.group("indent")
-        if current_name is not None and current_start is not None and indent == current_indent:
+        if (
+            current_name is not None
+            and current_start is not None
+            and indent == current_indent
+        ):
             spans[current_name] = (current_start, index)
         current_name = _parse_yaml_scalar(match.group("name"))
         current_start = index
@@ -497,7 +826,9 @@ def _patch_artifact_block_lines(
     if remaining:
         keys = ", ".join(sorted(remaining))
         artifact_name = lines[start].strip()
-        raise RuntimeError(f"Manifest artifact block {artifact_name!r} missing field(s): {keys}")
+        raise RuntimeError(
+            f"Manifest artifact block {artifact_name!r} missing field(s): {keys}"
+        )
 
 
 def _split_yaml_key_value(line: str) -> tuple[str | None, str]:
@@ -545,6 +876,11 @@ def _build_arg_parser() -> argparse.ArgumentParser:
     mode.add_argument("--dry-run", action="store_true")
     mode.add_argument("--check", action="store_true")
     parser.add_argument(
+        "--check-store",
+        action="store_true",
+        help="check mode only: also verify manifest-store artifacts",
+    )
+    parser.add_argument(
         "--skip-upload",
         action="store_true",
         help="publish mode only: canonicalize + rewrite manifest, skip S3 upload",
@@ -558,23 +894,67 @@ def _build_arg_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def _format_report(reports: list[ArtifactReport], *, limit: int | None = None) -> str:
+def _format_report_lines(
+    reports: list[ArtifactReport],
+    *,
+    limit: int | None,
+    pick: Callable[[ArtifactReport], tuple[str, str | None]],
+) -> str:
+    """Render a report list. ``pick`` extracts the ``(status, sha)`` pair to
+    surface for each report; the three thin wrappers below cover the three
+    sides the script actually uses (local / store / semantic).
+    """
     lines: list[str] = []
     for r in reports[:limit] if limit else reports:
-        new = r.new_sha[:12] if r.new_sha else "-"
+        status, new_sha = pick(r)
+        new = new_sha[:12] if new_sha else "-"
         lines.append(
-            f"  {r.status:<32} {r.name:<40} old={r.old_sha[:12]} new={new}"
+            f"  {status:<32} {r.name:<40} old={r.old_sha[:12]} new={new}"
             + (f"  ({r.note})" if r.note else "")
         )
     return "\n".join(lines)
+
+
+def _format_local_report(
+    reports: list[ArtifactReport], *, limit: int | None = None
+) -> str:
+    return _format_report_lines(
+        reports, limit=limit, pick=lambda r: (r.local_status, r.new_sha)
+    )
+
+
+def _format_store_report(
+    reports: list[ArtifactReport], *, limit: int | None = None
+) -> str:
+    return _format_report_lines(
+        reports,
+        limit=limit,
+        pick=lambda r: (f"STORE_{r.store_status or '-'}", r.store_sha),
+    )
+
+
+def _format_semantic_report(
+    reports: list[ArtifactReport], *, limit: int | None = None
+) -> str:
+    return _format_report_lines(
+        reports,
+        limit=limit,
+        pick=lambda r: (r.semantic_status or "-", r.new_sha),
+    )
 
 
 def main(argv: list[str] | None = None) -> int:
     logging.basicConfig(level=logging.INFO, format="%(message)s")
     args = _build_arg_parser().parse_args(argv)
 
-    manifest_path = args.manifest if args.manifest.is_absolute() else (_REPO_ROOT / args.manifest)
-    data_root = args.data_root if args.data_root.is_absolute() else (_REPO_ROOT / args.data_root)
+    manifest_path = (
+        args.manifest if args.manifest.is_absolute() else (_REPO_ROOT / args.manifest)
+    )
+    data_root = (
+        args.data_root
+        if args.data_root.is_absolute()
+        else (_REPO_ROOT / args.data_root)
+    )
 
     payload, ruamel_instance = _load_manifest_payload(manifest_path)
     if not isinstance(payload, dict) or "artifacts" not in payload:
@@ -582,32 +962,75 @@ def main(argv: list[str] | None = None) -> int:
         return 2
 
     if args.check:
-        exit_code, reports = run_check(payload, data_root, args.only)
-        drift = [r for r in reports if r.status == "DRIFT"]
-        missing = [r for r in reports if r.status == "MISSING"]
-        matched = [r for r in reports if r.status == "MATCH"]
-        LOGGER.info(
-            "check: %d checked, %d MATCH, %d DRIFT, %d MISSING",
-            len(reports),
-            len(matched),
-            len(drift),
-            len(missing),
+        store = (
+            build_artifact_store(str(payload["storage_root"]))
+            if args.check_store
+            else None
         )
-        if drift:
-            LOGGER.info("DRIFT:")
-            LOGGER.info(_format_report(drift))
+        exit_code, reports = run_check(payload, data_root, args.only, store=store)
+
+        def _local(status: str) -> list[ArtifactReport]:
+            return [r for r in reports if r.local_status == status]
+
+        def _store(status: str) -> list[ArtifactReport]:
+            return [r for r in reports if r.store_status == status]
+
+        local_match = _local("MATCH")
+        local_drift = _local("DRIFT")
+        local_missing = _local("MISSING")
+        store_match = _store("MATCH")
+        store_drift = _store("DRIFT")
+        store_missing = _store("MISSING")
+        store_unverifiable = _store("UNVERIFIABLE")
+        semantic_invalid = [
+            r for r in reports if r.semantic_status == "SEMANTIC_INVALID"
+        ]
+        LOGGER.info(
+            "check: %d checked | local: %d MATCH, %d DRIFT, %d MISSING | "
+            "store: %d MATCH, %d DRIFT, %d MISSING, %d UNVERIFIABLE | "
+            "semantic: %d INVALID",
+            len(reports),
+            len(local_match),
+            len(local_drift),
+            len(local_missing),
+            len(store_match),
+            len(store_drift),
+            len(store_missing),
+            len(store_unverifiable),
+            len(semantic_invalid),
+        )
+        for label, bucket in (
+            ("DRIFT", local_drift),
+            ("MISSING", local_missing),
+        ):
+            if bucket:
+                LOGGER.info("LOCAL %s:", label)
+                LOGGER.info(_format_local_report(bucket))
+        for label, bucket in (
+            ("DRIFT", store_drift),
+            ("MISSING", store_missing),
+            ("UNVERIFIABLE", store_unverifiable),
+        ):
+            if bucket:
+                LOGGER.info("STORE %s:", label)
+                LOGGER.info(_format_store_report(bucket))
+        if semantic_invalid:
+            LOGGER.info("SEMANTIC INVALID:")
+            LOGGER.info(_format_semantic_report(semantic_invalid))
         return exit_code
 
     if args.dry_run:
         reports = run_dry_run(payload, data_root, args.only)
-        from collections import Counter
-
-        status_counts = Counter(r.status for r in reports)
+        status_counts = Counter(r.local_status for r in reports)
         LOGGER.info("dry-run summary: %s", dict(status_counts))
-        non_match = [r for r in reports if r.status != "MATCH" and r.status != "MISSING"]
+        non_match = [
+            r
+            for r in reports
+            if r.local_status != "MATCH" and r.local_status != "MISSING"
+        ]
         if non_match:
             LOGGER.info("changes preview:")
-            LOGGER.info(_format_report(non_match))
+            LOGGER.info(_format_local_report(non_match))
         return 0
 
     # publish mode
@@ -618,10 +1041,10 @@ def main(argv: list[str] | None = None) -> int:
     reports = run_publish(
         payload, data_root, args.only, skip_upload=args.skip_upload, store=store
     )
-    changed = [r for r in reports if r.status in {"UPDATED", "UPLOADED"}]
+    changed = [r for r in reports if r.local_status in {"UPDATED", "UPLOADED"}]
     LOGGER.info("publish: %d processed, %d changed", len(reports), len(changed))
     if changed:
-        LOGGER.info(_format_report(changed))
+        LOGGER.info(_format_local_report(changed))
         del ruamel_instance
         updates_by_name = {
             report.name: report.manifest_updates

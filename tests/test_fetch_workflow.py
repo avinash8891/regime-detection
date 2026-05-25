@@ -603,9 +603,9 @@ def test_run_macro_fetch_cleans_nan_vintages_from_existing_parquet(
     )
 
     result = pd.read_parquet(vintages_dir / "cpi_all_items_vintages.parquet")
-    assert result["value"].isna().sum() == 0, (
-        f"Expected 0 NaN in vintages after merge, got {result['value'].isna().sum()}"
-    )
+    assert (
+        result["value"].isna().sum() == 0
+    ), f"Expected 0 NaN in vintages after merge, got {result['value'].isna().sum()}"
     assert len(result) == 2
     assert set(result["date"].astype(str)) == {"2025-09-01", "2025-11-01"}
 

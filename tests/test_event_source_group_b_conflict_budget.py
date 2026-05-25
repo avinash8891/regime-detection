@@ -336,13 +336,11 @@ def test_optional_conflict_fetch_records_payload_and_filters_years(
     assert outcome.status.empty_payload is False
 
     with sqlite3.connect(store.db_path) as conn:
-        artifacts = conn.execute(
-            """
+        artifacts = conn.execute("""
             SELECT source_name, artifact_kind, source_identifier, timezone,
                    calendar_assumption, notes, content_text
             FROM artifacts
-            """
-        ).fetchall()
+            """).fetchall()
 
     assert artifacts == [
         (
@@ -718,8 +716,7 @@ def test_append_approval_record_rejects_duplicate_without_rewriting_overlay(
     tmp_path: Path,
 ) -> None:
     overlay_path = tmp_path / "group_b_approvals.yaml"
-    overlay_path.write_text(
-        """
+    overlay_path.write_text("""
 approvals:
   - event_type: geopolitical_event
     date: "2022-02-24"
@@ -728,8 +725,7 @@ approvals:
     approved_at: "2026-05-14"
     evidence_candidate_id: "abc123"
     evidence_source_count: 2
-"""
-    )
+""")
     original_text = overlay_path.read_text()
 
     with pytest.raises(ValueError, match="duplicate approval"):

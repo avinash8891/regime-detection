@@ -42,7 +42,6 @@ from regime_detection.inflation_growth import (
 )
 from regime_detection.market_context import build_market_context
 
-
 # --- Synthetic fixtures ------------------------------------------------------
 
 _TRAINING_SESSIONS = 650
@@ -327,6 +326,61 @@ def test_cpi_staleness_uses_first_release_when_enabled() -> None:
     assert "cpi_stale" not in (out.data_quality.reason or "")
 
 
+def test_cpi_staleness_falls_back_to_latest_history_before_vintage_coverage() -> None:
+    context = _build_synthetic_context(include_cpi_first_release=True)
+    assert context.cpi_first_release is not None
+    first_valid = pd.Timestamp(context.sessions[160])
+    context = context.model_copy(
+        update={"cpi_first_release": context.cpi_first_release.loc[first_valid:]}
+    )
+    _, outputs = _build_store_and_outputs(context)
+
+    assert outputs is not None
+    pre_vintage_day = next(
+        day for day in context.sessions if pd.Timestamp(day) < first_valid
+    )
+    out = outputs[pre_vintage_day]
+    assert out.data_quality.status != "stale_data"
+    assert "cpi_stale" not in (out.data_quality.reason or "")
+
+
+def test_first_release_cpi_falls_back_to_latest_history_before_vintage_coverage() -> (
+    None
+):
+    idx = _bdate_index(periods=220)
+    latest_cpi = pd.Series(
+        np.linspace(250.0, 260.0, len(idx)),
+        index=idx,
+        dtype=float,
+        name="cpi_all_items",
+    )
+    first_release = pd.Series(np.nan, index=idx, dtype=float, name="cpi_first_release")
+    first_release.iloc[160:] = latest_cpi.iloc[160:] - 0.25
+    linear = pd.Series(np.linspace(100.0, 120.0, len(idx)), index=idx, dtype=float)
+    flat_macro = pd.Series(50.0, index=idx, dtype=float)
+
+    features = compute_inflation_growth_features(
+        cpi_all_items=latest_cpi,
+        pmi_manufacturing=flat_macro,
+        dgs10=flat_macro,
+        dbc_close=linear,
+        spy_close=linear,
+        tlt_close=linear,
+        xly_close=linear,
+        xli_close=linear,
+        xlp_close=linear,
+        xlu_close=linear,
+        config=_default_rules(),
+        cpi_first_release=first_release,
+        use_first_release_cpi_when_available=True,
+    )
+
+    pre_vintage_day = idx[150]
+    post_vintage_day = idx[180]
+    assert not pd.isna(features.cpi_6m_change_pct.loc[pre_vintage_day])
+    assert not pd.isna(features.cpi_6m_change_pct.loc[post_vintage_day])
+
+
 def test_unknown_when_pmi_stale_more_than_45_days() -> None:
     """§2B line 2310: PMI stale > 45 days → unknown."""
     context = _build_synthetic_context(pmi_truncate_calendar_days=60)
@@ -403,6 +457,18 @@ def test_classifier_rule_evidence_includes_nowcast_and_eps_revision_inputs() -> 
     evidence = outputs[last_day].evidence["rule_evidence"]
     assert "inflation_surprise_zscore" in evidence
     assert "aggregate_forward_eps_revision_direction_4w" in evidence
+    goldilocks_evidence = outputs[last_day].evidence["goldilocks_limb_evidence"]
+    assert set(goldilocks_evidence) == {
+        "credit_is_calm",
+        "drift_ok",
+        "drift_margin",
+        "slope_ok",
+        "slope_margin",
+        "benign_ok",
+        "benign_margin",
+        "limb_count",
+    }
+    assert isinstance(goldilocks_evidence["limb_count"], int)
 
 
 def test_feature_store_seam_none_when_dbc_missing() -> None:

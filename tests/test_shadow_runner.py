@@ -94,7 +94,9 @@ def test_shadow_runner_writes_expected_artifacts_and_ledger(tmp_path: Path) -> N
     assert "events.yaml" in checksums
 
 
-def test_shadow_runner_archives_inputs_and_inserts_in_progress_before_classify(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_shadow_runner_archives_inputs_and_inserts_in_progress_before_classify(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     repo_root = Path(__file__).resolve().parents[1]
     v2_daily_path = repo_root / "tests" / "fixtures" / "raw" / "v2" / "daily_ohlcv.csv"
     market_data_path = v2_daily_path
@@ -140,7 +142,9 @@ def test_shadow_runner_archives_inputs_and_inserts_in_progress_before_classify(t
     assert result["status"] == "success"
 
 
-def test_shadow_runner_records_failures_without_silent_skip(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_shadow_runner_records_failures_without_silent_skip(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     repo_root = Path(__file__).resolve().parents[1]
     v2_daily_path = repo_root / "tests" / "fixtures" / "raw" / "v2" / "daily_ohlcv.csv"
     market_data_path = v2_daily_path
@@ -179,7 +183,9 @@ def test_shadow_runner_records_failures_without_silent_skip(tmp_path: Path, monk
     assert not (out_root / "outputs" / "2026-05-13.json").exists()
 
 
-def test_shadow_runner_rejects_duplicate_versioned_run_and_non_trading_day(tmp_path: Path) -> None:
+def test_shadow_runner_rejects_duplicate_versioned_run_and_non_trading_day(
+    tmp_path: Path,
+) -> None:
     repo_root = Path(__file__).resolve().parents[1]
     v2_daily_path = repo_root / "tests" / "fixtures" / "raw" / "v2" / "daily_ohlcv.csv"
     market_data_path = v2_daily_path

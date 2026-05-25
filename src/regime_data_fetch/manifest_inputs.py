@@ -326,9 +326,7 @@ def _constituent_tree_root(
     repo_root: Path | None,
 ) -> Path:
     constituent_artifacts = [
-        artifact
-        for artifact in artifacts
-        if _is_constituent_ohlcv_artifact(artifact)
+        artifact for artifact in artifacts if _is_constituent_ohlcv_artifact(artifact)
     ]
     if not constituent_artifacts:
         raise ManifestInputResolutionError(

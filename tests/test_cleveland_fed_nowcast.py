@@ -13,6 +13,7 @@ Per ~/.claude testing rules: real series key (`cpi_nowcast`), real module
 constants, realistic subcaptions / series names / month-over-month values,
 no mocks.
 """
+
 from __future__ import annotations
 
 import json
@@ -54,8 +55,13 @@ def _chart_obj(
     if labels is None:
         match = re.fullmatch(r"(?P<year>\d{4})-(?P<month>\d{1,2})", subcaption)
         assert match is not None
-        start = pd.Timestamp(year=int(match.group("year")), month=int(match.group("month")), day=1)
-        labels = [(start + pd.Timedelta(days=i)).strftime("%m/%d/%Y") for i in range(len(cpi_values))]
+        start = pd.Timestamp(
+            year=int(match.group("year")), month=int(match.group("month")), day=1
+        )
+        labels = [
+            (start + pd.Timedelta(days=i)).strftime("%m/%d/%Y")
+            for i in range(len(cpi_values))
+        ]
     dataset = [
         {
             "seriesname": "Core CPI Inflation",
@@ -81,9 +87,7 @@ def _chart_obj(
             "caption": "Inflation Nowcasting",
             "yaxisname": "Month-over-month percent change",
         },
-        "categories": [
-            {"category": [{"label": label} for label in labels]}
-        ],
+        "categories": [{"category": [{"label": label} for label in labels]}],
         "dataset": dataset,
     }
 
@@ -112,7 +116,9 @@ def _write_feed(tmp_path: Path, json_text: str = _FIXTURE_JSON) -> Path:
 # --- parse ------------------------------------------------------------------
 
 
-def test_parse_takes_last_nonempty_value_per_vintage_keyed_to_publication_date() -> None:
+def test_parse_takes_last_nonempty_value_per_vintage_keyed_to_publication_date() -> (
+    None
+):
     df = parse_cleveland_fed_nowcast_json(_FIXTURE_JSON)
     assert list(df.columns) == ["date", "cpi_nowcast"]
     assert len(df) == 3
@@ -223,7 +229,9 @@ def test_parse_raises_on_missing_series() -> None:
 
 def test_parse_raises_on_unparseable_value() -> None:
     with pytest.raises(ClevelandFedNowcastError, match="unparseable.*value"):
-        parse_cleveland_fed_nowcast_json(_feed_json([_chart_obj("2024-3", ["", "n/a"])]))
+        parse_cleveland_fed_nowcast_json(
+            _feed_json([_chart_obj("2024-3", ["", "n/a"])])
+        )
 
 
 def test_parse_raises_when_no_usable_vintages() -> None:
@@ -244,9 +252,7 @@ def test_download_writes_payload_from_file_url(tmp_path: Path) -> None:
     src = tmp_path / "feed_source.json"
     src.write_text(_FIXTURE_JSON)
     out_path = tmp_path / "downloaded.json"
-    download_cleveland_fed_nowcast_json(
-        out_path=out_path, source_url=src.as_uri()
-    )
+    download_cleveland_fed_nowcast_json(out_path=out_path, source_url=src.as_uri())
     assert out_path.read_text() == _FIXTURE_JSON
 
 

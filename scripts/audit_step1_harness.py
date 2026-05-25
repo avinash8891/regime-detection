@@ -76,7 +76,9 @@ class MaterializedArtifactRecord:
     sha256: str
 
     @classmethod
-    def from_materialized(cls, artifact: "MaterializedArtifact") -> "MaterializedArtifactRecord":
+    def from_materialized(
+        cls, artifact: "MaterializedArtifact"
+    ) -> "MaterializedArtifactRecord":
         return cls(
             name=artifact.name,
             destination=str(artifact.destination),
@@ -104,7 +106,9 @@ class Step1ProvenanceBundle:
     materialize_called_by_runner: bool
 
     # Per-artifact provenance (from MaterializedArtifact return)
-    materialized_artifacts: list[MaterializedArtifactRecord] = field(default_factory=list)
+    materialized_artifacts: list[MaterializedArtifactRecord] = field(
+        default_factory=list
+    )
 
     # Resolver-level provenance
     resolved_from_manifest: list[str] = field(default_factory=list)
@@ -121,7 +125,7 @@ def emit_step1_provenance(
     *,
     runner_name: str,
     manifest_path: Path | None,
-    materialized_artifacts: 'Sequence[MaterializedArtifact] | None',
+    materialized_artifacts: "Sequence[MaterializedArtifact] | None",
     resolved_from_manifest: Sequence[str] | None,
     cli_overrides: Sequence[str] | None,
     materialize_called_by_runner: bool,
@@ -149,19 +153,18 @@ def emit_step1_provenance(
         output_path.parent.mkdir(parents=True, exist_ok=True)
         output_path.write_text(json.dumps(asdict(bundle), indent=2, sort_keys=True))
         logger.info(
-            "step1_provenance_emitted", extra={"runner": runner_name, "output": str(output_path)}
+            "step1_provenance_emitted",
+            extra={"runner": runner_name, "output": str(output_path)},
         )
     except Exception:  # noqa: BLE001 — fail-open instrumentation per spec
-        logger.exception(
-            "step1_provenance_emit_failed", extra={"runner": runner_name}
-        )
+        logger.exception("step1_provenance_emit_failed", extra={"runner": runner_name})
 
 
 def _build_bundle(
     *,
     runner_name: str,
     manifest_path: Path | None,
-    materialized_artifacts: 'Sequence[MaterializedArtifact] | None',
+    materialized_artifacts: "Sequence[MaterializedArtifact] | None",
     resolved_from_manifest: Sequence[str] | None,
     cli_overrides: Sequence[str] | None,
     materialize_called_by_runner: bool,
@@ -301,7 +304,10 @@ if __name__ == "__main__":
     parser.add_argument("--resolved-from-manifest", nargs="*", default=[])
     parser.add_argument("--cli-overrides", nargs="*", default=[])
     parser.add_argument(
-        "--bypass-class", action="append", default=[], help="Explicit bypass class to record."
+        "--bypass-class",
+        action="append",
+        default=[],
+        help="Explicit bypass class to record.",
     )
     args = parser.parse_args()
 

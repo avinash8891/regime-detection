@@ -31,7 +31,6 @@ from typing import Any
 import pandas as pd
 import yaml
 
-
 REPO_ROOT = Path(__file__).resolve().parents[1]
 SRC_DIR = REPO_ROOT / "src"
 sys.path.insert(0, str(SRC_DIR))
@@ -420,7 +419,9 @@ def main() -> int:
         print(f"news_sentiment: skipped (no {news_sentiment_parquet.name})")
 
     event_calendar_df = _load_required_event_calendar(event_calendar_path)
-    print(f"event_calendar: {len(event_calendar_df)} rows from {event_calendar_path.name}")
+    print(
+        f"event_calendar: {len(event_calendar_df)} rows from {event_calendar_path.name}"
+    )
 
     aaii_sentiment = None
     if aaii_sentiment_parquet.exists():
@@ -489,9 +490,9 @@ def main() -> int:
             "version": "0.1-candidate",
             "fitted_at_utc": dt.datetime.now(dt.timezone.utc).isoformat(),
             "fitted_end_date": end_date.isoformat(),
-            "training_window_days": int(config.hmm.training_window_days)
-            if config.hmm
-            else None,
+            "training_window_days": (
+                int(config.hmm.training_window_days) if config.hmm else None
+            ),
             "random_state": int(config.hmm.random_state) if config.hmm else None,
             "summary": hmm_summary,
             "review_instructions": (
@@ -509,12 +510,14 @@ def main() -> int:
             "version": "0.1-candidate",
             "fitted_at_utc": dt.datetime.now(dt.timezone.utc).isoformat(),
             "fitted_end_date": end_date.isoformat(),
-            "training_window_days": int(config.clustering.training_window_days)
-            if config.clustering
-            else None,
-            "random_state": int(config.clustering.random_state)
-            if config.clustering
-            else None,
+            "training_window_days": (
+                int(config.clustering.training_window_days)
+                if config.clustering
+                else None
+            ),
+            "random_state": (
+                int(config.clustering.random_state) if config.clustering else None
+            ),
             "summary": cluster_summary,
             "review_instructions": (
                 "Per V2 §6.2 line 2842 + §10: inspect the per-cluster size and mean "

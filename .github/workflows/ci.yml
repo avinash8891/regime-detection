@@ -2,11 +2,16 @@ name: CI
 
 on:
   push:
-    branches: [main, v1-of-regime-detection]
   pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.head_ref || github.ref_name }}
+  cancel-in-progress: true
 
 jobs:
   checks:
+    name: checks (${{ github.event_name }})
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -56,72 +61,40 @@ jobs:
           bash -n scripts/cubic_review.sh
           bash -n scripts/codex_pr_review_toolkit.sh
 
-      - name: Python test discovery
+      - name: Install Python dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install -e ".[dev]"
-          python -m ruff check .
-          python -m pyright \
-            src/regime_detection/config.py \
-            src/regime_detection/transition_risk.py \
-            src/regime_detection/feature_store.py \
-            tests/test_feature_store_refactors.py \
-            scripts/fetch_regime_engine_v1_data.py
+          pip install -r requirements-dev.txt
+          pip install -e . --no-deps
+
+      - name: Ruff
+        run: python -m ruff check .
+
+      - name: Black
+        run: python -m black --check src tests scripts
+
+      - name: Radon
+        run: python -m radon cc src/regime_detection/observability.py -s -n B
+
+      - name: jscpd
+        run: |
+          npx jscpd --threshold 1 --min-lines 20 --min-tokens 120 \
+            src/regime_detection/observability.py \
+            src/regime_detection/loaders.py \
+            scripts/profile_engine.py \
+            tests/test_observability.py \
+            tests/test_profile_engine_reporting_loaders.py
+
+      - name: Deptry
+        run: python -m deptry . --ignore DEP003
+
+      - name: Pyright
+        run: python -m pyright
+
+      - name: Pytest full suite
+        run: |
           if [ -d tests ]; then
-            pytest -q --cov=src --cov-report=term-missing --cov-fail-under=80
+            python -m pytest -q -m "" -n 8 --cov=src --cov-report=term-missing --cov-fail-under=80
           else
             echo "No tests directory yet; skipping pytest until V1 implementation begins."
           fi
-
-  slow-v2-gate:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.11"
-
-      - name: Detect gate-relevant paths
-        id: gate_paths
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          if [[ "${{ github.event_name }}" == "pull_request" ]]; then
-            git fetch -q origin "${{ github.base_ref }}":"refs/remotes/origin/${{ github.base_ref }}"
-            range="origin/${{ github.base_ref }}...HEAD"
-            changed="$(git diff --name-only "$range")"
-          else
-            before="${{ github.event.before }}"
-            if [[ -n "$before" && "$before" != "0000000000000000000000000000000000000000" ]]; then
-              changed="$(git diff --name-only "$before...${{ github.sha }}")"
-            else
-              changed="$(git ls-files)"
-            fi
-          fi
-
-          printf '%s\n' "$changed"
-          gate_pattern='^(src/regime_detection/|src/regime_data_fetch/|scripts/|configs/|docs/regime_engine_v2_spec\.md|tests/test_v2_gate_scripts\.py|tests/fixtures/raw/v2/)'
-          if printf '%s\n' "$changed" | grep -Eq "$gate_pattern"; then
-            echo "run_gate=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "run_gate=false" >> "$GITHUB_OUTPUT"
-          fi
-
-      - name: Install dependencies
-        if: steps.gate_paths.outputs.run_gate == 'true'
-        run: |
-          python -m pip install --upgrade pip
-          pip install -e ".[dev]"
-
-      - name: Run slow and v2 gate tests
-        if: steps.gate_paths.outputs.run_gate == 'true'
-        run: |
-          python -m pytest -q -o addopts="" -m "slow or v2_gate"
-
-      - name: Skip slow and v2 gate tests
-        if: steps.gate_paths.outputs.run_gate != 'true'
-        run: echo "No engine/data/V2 config/script paths changed; slow/v2 gate suite skipped."

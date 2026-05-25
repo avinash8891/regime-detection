@@ -31,10 +31,10 @@ from regime_detection.models import (
 from regime_detection.strategy_family_constraints import (
     resolve_strategy_family_constraints,
 )
+from regime_detection.strategy_constraints import resolve_effective_strategy_constraints
 from regime_detection.strategy_response import build_strategy_response
 from regime_detection.transition_risk_series import build_transition_risk_series
 from regime_detection.versioning import engine_version
-
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -272,7 +272,10 @@ def _enrich_with_hmm_evidence(
     aligned: _AlignedV2Evidence,
     day_index: int,
 ) -> AxisOutput:
-    if aligned.hmm_top_state_prob_aligned is None or aligned.hmm_top_state_aligned is None:
+    if (
+        aligned.hmm_top_state_prob_aligned is None
+        or aligned.hmm_top_state_aligned is None
+    ):
         return output
     prob = aligned.hmm_top_state_prob_aligned.iloc[day_index]
     state = aligned.hmm_top_state_aligned.iloc[day_index]
@@ -326,32 +329,49 @@ def _build_cluster_output(
 
     clustering_config = working_context.config.clustering
     cluster_label_map = (
-        clustering_config.cluster_label_map
-        if clustering_config is not None
-        else None
+        clustering_config.cluster_label_map if clustering_config is not None else None
     )
     validated_cluster_label: str | None = None
-    if cluster_label_map is not None and clustering_config is not None:
+    cluster_mapping_status = "map_absent"
+    cluster_mapping_reason = "cluster_label_map_not_configured"
+    if clustering_config is not None and cluster_label_map is None:
+        if clustering_config.label_map_required_for_output:
+            cluster_mapping_status = "map_required_missing"
+            cluster_mapping_reason = "cluster_label_map_required_but_not_configured"
+    elif cluster_label_map is not None and clustering_config is not None:
         map_covers_clusters = set(cluster_label_map.keys()) == set(
             range(clustering_config.n_clusters)
         )
-        version_matches = aligned.cluster_model_version == clustering_config.model_version
+        version_matches = (
+            aligned.cluster_model_version == clustering_config.model_version
+        )
         if map_covers_clusters and version_matches:
             validated_cluster_label = cluster_label_map.get(int(cid_val))
-        elif selected_day_index == 0:
-            _LOGGER.warning(
-                "cluster_label_map skipped: map keys %s do not cover "
-                "n_clusters=%d or model_version mismatch (map=%s, fit=%s)",
-                sorted(cluster_label_map.keys()),
-                clustering_config.n_clusters,
-                clustering_config.model_version,
-                aligned.cluster_model_version,
-            )
+            cluster_mapping_status = "mapped"
+            cluster_mapping_reason = "cluster_label_map_valid"
+        elif not map_covers_clusters:
+            cluster_mapping_status = "map_invalid"
+            cluster_mapping_reason = "cluster_label_map_incomplete"
+        else:
+            cluster_mapping_status = "model_version_mismatch"
+            cluster_mapping_reason = "cluster_label_map_model_version_mismatch"
+        if not map_covers_clusters or not version_matches:
+            if selected_day_index == 0:
+                _LOGGER.warning(
+                    "cluster_label_map skipped: map keys %s do not cover "
+                    "n_clusters=%d or model_version mismatch (map=%s, fit=%s)",
+                    sorted(cluster_label_map.keys()),
+                    clustering_config.n_clusters,
+                    clustering_config.model_version,
+                    aligned.cluster_model_version,
+                )
     return ClusterOutput(
         cluster_id=int(cid_val),
         distance_to_centroid=float(dist_val),
         model_version=aligned.cluster_model_version,
         mapped_label=validated_cluster_label,
+        mapping_status=cluster_mapping_status,
+        mapping_reason=cluster_mapping_reason,
     )
 
 
@@ -381,22 +401,37 @@ def _build_hmm_output(
     hmm_config = working_context.config.hmm
     hmm_label_map = hmm_config.state_label_map if hmm_config is not None else None
     validated_hmm_label: str | None = None
-    if hmm_label_map is not None and hmm_config is not None:
+    hmm_mapping_status = "map_absent"
+    hmm_mapping_reason = "state_label_map_not_configured"
+    if hmm_config is not None and hmm_label_map is None:
+        if hmm_config.label_map_required_for_output:
+            hmm_mapping_status = "map_required_missing"
+            hmm_mapping_reason = "state_label_map_required_but_not_configured"
+    elif hmm_label_map is not None and hmm_config is not None:
         map_covers_states = set(hmm_label_map.keys()) == set(range(hmm_config.n_states))
         version_matches = (
-            (aligned.hmm_model_version or "hmm_unknown") == hmm_config.model_version
-        )
+            aligned.hmm_model_version or "hmm_unknown"
+        ) == hmm_config.model_version
         if map_covers_states and version_matches:
             validated_hmm_label = hmm_label_map.get(int(hmm_state_val))
-        elif selected_day_index == 0:
-            _LOGGER.warning(
-                "state_label_map skipped: map keys %s do not cover "
-                "n_states=%d or model_version mismatch (map=%s, fit=%s)",
-                sorted(hmm_label_map.keys()),
-                hmm_config.n_states,
-                hmm_config.model_version,
-                aligned.hmm_model_version,
-            )
+            hmm_mapping_status = "mapped"
+            hmm_mapping_reason = "state_label_map_valid"
+        elif not map_covers_states:
+            hmm_mapping_status = "map_invalid"
+            hmm_mapping_reason = "state_label_map_incomplete"
+        else:
+            hmm_mapping_status = "model_version_mismatch"
+            hmm_mapping_reason = "state_label_map_model_version_mismatch"
+        if not map_covers_states or not version_matches:
+            if selected_day_index == 0:
+                _LOGGER.warning(
+                    "state_label_map skipped: map keys %s do not cover "
+                    "n_states=%d or model_version mismatch (map=%s, fit=%s)",
+                    sorted(hmm_label_map.keys()),
+                    hmm_config.n_states,
+                    hmm_config.model_version,
+                    aligned.hmm_model_version,
+                )
     return HmmOutput(
         top_state=int(hmm_state_val),
         top_state_prob=float(hmm_prob_val),
@@ -404,6 +439,8 @@ def _build_hmm_output(
         state_persistence_days=persistence,
         model_version=aligned.hmm_model_version or "hmm_unknown",
         mapped_label=validated_hmm_label,
+        mapping_status=hmm_mapping_status,
+        mapping_reason=hmm_mapping_reason,
     )
 
 
@@ -419,12 +456,14 @@ def _build_timeline_output_for_day(
 ) -> RegimeOutput:
     trend_direction_output = _enrich_with_hmm_evidence(
         axis_bundle.trend_direction.outputs_by_date[day],
-        aligned_v2_evidence, selected_day_index,
+        aligned_v2_evidence,
+        selected_day_index,
     )
     trend_character_output = axis_bundle.trend_character.outputs_by_date[day]
     volatility_output = _enrich_with_hmm_evidence(
         axis_bundle.volatility_state.outputs_by_date[day],
-        aligned_v2_evidence, selected_day_index,
+        aligned_v2_evidence,
+        selected_day_index,
     )
     breadth_output = cast(
         BreadthStateOutput, axis_bundle.breadth_state.outputs_by_date[day]
@@ -488,6 +527,7 @@ def _build_timeline_output_for_day(
 
     agent_routing = None
     strategy_family_constraints = None
+    effective_strategy_constraints = None
     cohort_routing_config = working_context.config.cohort_routing
     if cohort_routing_config is not None:
         # v2 §2A monetary pressure axis — wire the active label through to
@@ -511,6 +551,21 @@ def _build_timeline_output_for_day(
                 active_cohort=agent_routing.active_cohort,
                 config=sfc_config,
             )
+    strategy_response = build_strategy_response(
+        trend_direction_active=trend_direction_output.active_label,
+        trend_character_active=trend_character_output.active_label,
+        volatility_state_active=volatility_output.active_label,
+        breadth_state_active=breadth_output.active_label,
+        transition_risk_state=transition_output.state,
+        event_calendar_labels=event_output.matching_labels,
+        event_modifier_config=working_context.config.strategy_event_modifiers,
+    )
+    if agent_routing is not None or strategy_family_constraints is not None:
+        effective_strategy_constraints = resolve_effective_strategy_constraints(
+            strategy_response=strategy_response,
+            agent_routing=agent_routing,
+            strategy_family_constraints=strategy_family_constraints,
+        )
     return RegimeOutput(
         engine_version=engine_version(),
         config_version=working_context.config.config_version,
@@ -527,15 +582,7 @@ def _build_timeline_output_for_day(
         ),
         network_fragility=network_fragility_output,
         transition_risk=transition_output,
-        strategy_response=build_strategy_response(
-            trend_direction_active=trend_direction_output.active_label,
-            trend_character_active=trend_character_output.active_label,
-            volatility_state_active=volatility_output.active_label,
-            breadth_state_active=breadth_output.active_label,
-            transition_risk_state=transition_output.state,
-            event_calendar_labels=event_output.matching_labels,
-            event_modifier_config=working_context.config.strategy_event_modifiers,
-        ),
+        strategy_response=strategy_response,
         volume_liquidity_state=volume_liquidity_output,
         credit_funding_state=credit_funding_output,
         credit_funding_state_proxy=credit_funding_proxy_output,
@@ -547,6 +594,7 @@ def _build_timeline_output_for_day(
         change_point=change_point_output,
         agent_routing=agent_routing,
         strategy_family_constraints=strategy_family_constraints,
+        effective_strategy_constraints=effective_strategy_constraints,
     )
 
 

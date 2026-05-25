@@ -52,28 +52,36 @@ def test_parse_bls_schedule_page_extracts_modern_cpi_and_nfp_rows() -> None:
     assert releases == [
         BLSReleaseDate(
             date=dt.date(2024, 1, 5),
-            release_timestamp_et=dt.datetime(2024, 1, 5, 8, 30, tzinfo=dt.timezone(dt.timedelta(hours=-5))),
+            release_timestamp_et=dt.datetime(
+                2024, 1, 5, 8, 30, tzinfo=dt.timezone(dt.timedelta(hours=-5))
+            ),
             type="NFP",
             source_url="https://www.bls.gov/schedule/2024/",
             reference_period="December 2023",
         ),
         BLSReleaseDate(
             date=dt.date(2024, 1, 11),
-            release_timestamp_et=dt.datetime(2024, 1, 11, 8, 30, tzinfo=dt.timezone(dt.timedelta(hours=-5))),
+            release_timestamp_et=dt.datetime(
+                2024, 1, 11, 8, 30, tzinfo=dt.timezone(dt.timedelta(hours=-5))
+            ),
             type="CPI",
             source_url="https://www.bls.gov/schedule/2024/",
             reference_period="December 2023",
         ),
         BLSReleaseDate(
             date=dt.date(2024, 2, 2),
-            release_timestamp_et=dt.datetime(2024, 2, 2, 8, 30, tzinfo=dt.timezone(dt.timedelta(hours=-5))),
+            release_timestamp_et=dt.datetime(
+                2024, 2, 2, 8, 30, tzinfo=dt.timezone(dt.timedelta(hours=-5))
+            ),
             type="NFP",
             source_url="https://www.bls.gov/schedule/2024/",
             reference_period="January 2024",
         ),
         BLSReleaseDate(
             date=dt.date(2024, 2, 13),
-            release_timestamp_et=dt.datetime(2024, 2, 13, 8, 30, tzinfo=dt.timezone(dt.timedelta(hours=-5))),
+            release_timestamp_et=dt.datetime(
+                2024, 2, 13, 8, 30, tzinfo=dt.timezone(dt.timedelta(hours=-5))
+            ),
             type="CPI",
             source_url="https://www.bls.gov/schedule/2024/",
             reference_period="January 2024",
@@ -99,28 +107,36 @@ def test_parse_bls_schedule_page_extracts_legacy_rows() -> None:
     assert releases == [
         BLSReleaseDate(
             date=dt.date(2001, 1, 17),
-            release_timestamp_et=dt.datetime(2001, 1, 17, 8, 30, tzinfo=dt.timezone(dt.timedelta(hours=-5))),
+            release_timestamp_et=dt.datetime(
+                2001, 1, 17, 8, 30, tzinfo=dt.timezone(dt.timedelta(hours=-5))
+            ),
             type="CPI",
             source_url="https://www.bls.gov/schedule/2001/home.htm",
             reference_period="December 2000",
         ),
         BLSReleaseDate(
             date=dt.date(2001, 2, 2),
-            release_timestamp_et=dt.datetime(2001, 2, 2, 8, 30, tzinfo=dt.timezone(dt.timedelta(hours=-5))),
+            release_timestamp_et=dt.datetime(
+                2001, 2, 2, 8, 30, tzinfo=dt.timezone(dt.timedelta(hours=-5))
+            ),
             type="NFP",
             source_url="https://www.bls.gov/schedule/2001/home.htm",
             reference_period="January 2001",
         ),
         BLSReleaseDate(
             date=dt.date(2001, 2, 21),
-            release_timestamp_et=dt.datetime(2001, 2, 21, 8, 30, tzinfo=dt.timezone(dt.timedelta(hours=-5))),
+            release_timestamp_et=dt.datetime(
+                2001, 2, 21, 8, 30, tzinfo=dt.timezone(dt.timedelta(hours=-5))
+            ),
             type="CPI",
             source_url="https://www.bls.gov/schedule/2001/home.htm",
             reference_period="January 2001",
         ),
         BLSReleaseDate(
             date=dt.date(2001, 3, 9),
-            release_timestamp_et=dt.datetime(2001, 3, 9, 8, 30, tzinfo=dt.timezone(dt.timedelta(hours=-5))),
+            release_timestamp_et=dt.datetime(
+                2001, 3, 9, 8, 30, tzinfo=dt.timezone(dt.timedelta(hours=-5))
+            ),
             type="NFP",
             source_url="https://www.bls.gov/schedule/2001/home.htm",
             reference_period="February 2001",
@@ -144,14 +160,18 @@ def test_parse_bls_schedule_page_supports_sept_abbreviation_in_legacy_rows() -> 
     assert releases == [
         BLSReleaseDate(
             date=dt.date(2000, 9, 1),
-            release_timestamp_et=dt.datetime(2000, 9, 1, 8, 30, tzinfo=dt.timezone(dt.timedelta(hours=-4))),
+            release_timestamp_et=dt.datetime(
+                2000, 9, 1, 8, 30, tzinfo=dt.timezone(dt.timedelta(hours=-4))
+            ),
             type="NFP",
             source_url="https://www.bls.gov/schedule/2000/home.htm",
             reference_period="August 2000",
         ),
         BLSReleaseDate(
             date=dt.date(2000, 9, 15),
-            release_timestamp_et=dt.datetime(2000, 9, 15, 8, 30, tzinfo=dt.timezone(dt.timedelta(hours=-4))),
+            release_timestamp_et=dt.datetime(
+                2000, 9, 15, 8, 30, tzinfo=dt.timezone(dt.timedelta(hours=-4))
+            ),
             type="CPI",
             source_url="https://www.bls.gov/schedule/2000/home.htm",
             reference_period="August 2000",
@@ -159,7 +179,9 @@ def test_parse_bls_schedule_page_supports_sept_abbreviation_in_legacy_rows() -> 
     ]
 
 
-def test_parse_bls_schedule_page_rolls_legacy_year_forward_for_january_release_of_december_period() -> None:
+def test_parse_bls_schedule_page_rolls_legacy_year_forward_for_january_release_of_december_period() -> (
+    None
+):
     html = """
     <h1>Schedule of Releases for 2000</h1>
     Consumer Price Index, December 2000 Jan. 17 8:30 am
@@ -174,7 +196,9 @@ def test_parse_bls_schedule_page_rolls_legacy_year_forward_for_january_release_o
     assert releases == [
         BLSReleaseDate(
             date=dt.date(2001, 1, 17),
-            release_timestamp_et=dt.datetime(2001, 1, 17, 8, 30, tzinfo=dt.timezone(dt.timedelta(hours=-5))),
+            release_timestamp_et=dt.datetime(
+                2001, 1, 17, 8, 30, tzinfo=dt.timezone(dt.timedelta(hours=-5))
+            ),
             type="CPI",
             source_url="https://www.bls.gov/schedule/2000/home.htm",
             reference_period="December 2000",
@@ -245,9 +269,17 @@ def test_fetch_bls_schedule_page_text_falls_back_to_tinyfish(monkeypatch) -> Non
         return FakeResponse(json.dumps(payload).encode())
 
     monkeypatch.setenv("TINYFISH_API_KEY", "test-key")
-    monkeypatch.setattr("regime_data_fetch.bls_schedule.urllib.request.urlopen", fake_urlopen)
+    monkeypatch.setattr(
+        "regime_data_fetch.bls_schedule.urllib.request.urlopen", fake_urlopen
+    )
 
     text = fetch_bls_schedule_page_text("https://www.bls.gov/schedule/2026/")
 
-    assert text == "Friday, January 09, 2026 08:30 AM Employment Situation for December 2025"
-    assert calls == ["https://www.bls.gov/schedule/2026/", "https://api.fetch.tinyfish.ai"]
+    assert (
+        text
+        == "Friday, January 09, 2026 08:30 AM Employment Situation for December 2025"
+    )
+    assert calls == [
+        "https://www.bls.gov/schedule/2026/",
+        "https://api.fetch.tinyfish.ai",
+    ]

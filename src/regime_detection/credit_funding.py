@@ -52,6 +52,7 @@ The module also defines:
   - rule predicates ``evaluate_*`` + ``evaluate_rules`` walker (§2C lines 3249-3271)
   - ``CREDIT_FUNDING_RISK_RANK`` + ``CreditFundingLabel`` enum (§2C lines 3277-3283)
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -65,7 +66,6 @@ from regime_detection.breadth_state_v2 import make_bias_warnings_frame
 from regime_detection.config import (
     CreditFundingRulesConfig,
 )
-
 
 # ---------------------------------------------------------------------------
 # Spec labels (§2C lines 3173-3178) + risk rank (§2C lines 3277-3283).
@@ -95,7 +95,6 @@ CREDIT_FUNDING_RISK_RANK: dict[CreditFundingLabel, int] = {
 }
 
 
-
 # ---------------------------------------------------------------------------
 # Required FRED / cross-asset symbol keys. Pinned here as single source of
 # truth so feature_store + classifier read one constant.
@@ -115,8 +114,8 @@ BROAD_USD_INDEX_KEY = "broad_usd_index"
 # ICE BofA Option-Adjusted Spread series — FRED-redistributed under ICE
 # license, free at the FRED endpoint. macro_series keys set by
 # `V2_FRED_SERIES` in `regime_data_fetch.fetch_workflow`.
-HY_OAS_KEY = "hy_oas"          # FRED BAMLH0A0HYM2 — ICE BofA US High Yield OAS
-IG_OAS_KEY = "ig_bbb_oas"      # FRED BAMLC0A4CBBB — ICE BofA BBB Corporate OAS
+HY_OAS_KEY = "hy_oas"  # FRED BAMLH0A0HYM2 — ICE BofA US High Yield OAS
+IG_OAS_KEY = "ig_bbb_oas"  # FRED BAMLC0A4CBBB — ICE BofA BBB Corporate OAS
 
 
 REQUIRED_CROSS_ASSET_KEYS: tuple[str, ...] = (HYG_KEY, LQD_KEY, TLT_KEY, KRE_KEY)
@@ -155,7 +154,9 @@ _BIAS_FEATURE_NAMES: tuple[str, ...] = (
 # series lack pre-2023 history.
 CREDIT_SPREAD_PROXY_BIAS_WARNING_CODE = "credit_spread_proxy_total_return_differential"
 CREDIT_SPREAD_PROXY_BIAS_SOURCE = "tlt_minus_hyg_lqd_total_return_differential"
-CREDIT_SPREAD_PROXY_BIAS_SOURCE_URL = "internal:tlt_minus_hyg_lqd_total_return_differential"
+CREDIT_SPREAD_PROXY_BIAS_SOURCE_URL = (
+    "internal:tlt_minus_hyg_lqd_total_return_differential"
+)
 
 # Pre-SOFR/IORB funding stress proxy — FEDFUNDS minus IOER, spliced into
 # sofr_iorb_spread for sessions before SOFR (Apr 2018) and IORB (Jul 2021)
@@ -230,9 +231,7 @@ class CreditFundingFeatures:
         )
 
     def to_frame(self) -> pd.DataFrame:
-        return pd.DataFrame(
-            {name: getattr(self, name) for name in self.feature_names}
-        )
+        return pd.DataFrame({name: getattr(self, name) for name in self.feature_names})
 
 
 # ---------------------------------------------------------------------------
@@ -262,7 +261,7 @@ def _rolling_ols_slope(series: pd.Series, *, window: int) -> pd.Series:
     x = np.arange(window, dtype=float)
     x_mean = x.mean()
     x_centered = x - x_mean
-    x_var = float((x_centered ** 2).sum())  # constant
+    x_var = float((x_centered**2).sum())  # constant
 
     def _slope(window_arr: np.ndarray) -> float:
         if np.isnan(window_arr).any():
@@ -333,26 +332,21 @@ def compute_credit_funding_features(
 
     # §2C lines 3211-3212 — authoritative ICE BofA OAS. Rising OAS =
     # wider spread (matches the §2C line 3210 sign convention by construction).
-    hy_oas_63d = (
-        hy_oas.reindex(spy_index).astype(float).ffill().rename("hy_oas_63d")
-    )
-    ig_oas_63d = (
-        ig_oas.reindex(spy_index).astype(float).ffill().rename("ig_oas_63d")
-    )
+    hy_oas_63d = hy_oas.reindex(spy_index).astype(float).ffill().rename("hy_oas_63d")
+    ig_oas_63d = ig_oas.reindex(spy_index).astype(float).ffill().rename("ig_oas_63d")
 
     # §2C line 3221: 504d percentile (pct=True).
     hy_oas_percentile_504d = (
-        hy_oas_63d.rolling(pct_window).rank(pct=True)
-        .rename("hy_oas_percentile_504d")
+        hy_oas_63d.rolling(pct_window).rank(pct=True).rename("hy_oas_percentile_504d")
     )
 
     # §2C lines 3222-3223: 21d OLS slope.
-    hy_oas_slope_21d = _rolling_ols_slope(
-        hy_oas_63d, window=slope_21d
-    ).rename("hy_oas_slope_21d")
-    ig_oas_slope_21d = _rolling_ols_slope(
-        ig_oas_63d, window=slope_21d
-    ).rename("ig_oas_slope_21d")
+    hy_oas_slope_21d = _rolling_ols_slope(hy_oas_63d, window=slope_21d).rename(
+        "hy_oas_slope_21d"
+    )
+    ig_oas_slope_21d = _rolling_ols_slope(ig_oas_63d, window=slope_21d).rename(
+        "ig_oas_slope_21d"
+    )
 
     # §2C proxy metric (ADR 0007; implementation decision + #71) — TLT-vs-HYG/LQD total-return
     # differential. Rising = Treasury outperforming credit = widening
@@ -365,7 +359,8 @@ def compute_credit_funding_features(
     hy_tr_differential_63d = (tlt_tr - hyg_tr).rename("hy_tr_differential_63d")
     ig_tr_differential_63d = (tlt_tr - lqd_tr).rename("ig_tr_differential_63d")
     hy_tr_differential_percentile_504d = (
-        hy_tr_differential_63d.rolling(pct_window).rank(pct=True)
+        hy_tr_differential_63d.rolling(pct_window)
+        .rank(pct=True)
         .rename("hy_tr_differential_percentile_504d")
     )
     hy_tr_differential_slope_21d = _rolling_ols_slope(
@@ -377,9 +372,9 @@ def compute_credit_funding_features(
 
     # §2C lines 3229-3230: bank-index relative strength.
     kre_spy_ratio = (kre / spy.where(spy > 0)).rename("kre_spy_ratio")
-    kre_spy_slope_63d = _rolling_ols_slope(
-        kre_spy_ratio, window=slope_63d
-    ).rename("kre_spy_slope_63d")
+    kre_spy_slope_63d = _rolling_ols_slope(kre_spy_ratio, window=slope_63d).rename(
+        "kre_spy_slope_63d"
+    )
 
     # §2C lines 3232-3233: NFCI weekly → daily via forward-fill (last-known-value).
     nfci_daily_carried = nfci_w.ffill().rename("nfci_daily_carried")
@@ -404,13 +399,15 @@ def compute_credit_funding_features(
         sofr_ioer = sofr_s - ioer_s
         fedfunds_ioer = fedfunds_s - ioer_s
         spliced = sofr_iorb_raw.fillna(sofr_ioer).fillna(fedfunds_ioer)
-        funding_spread_proxy_active = spliced.notna().sum() > sofr_iorb_raw.notna().sum()
+        funding_spread_proxy_active = (
+            spliced.notna().sum() > sofr_iorb_raw.notna().sum()
+        )
         sofr_iorb_spread = spliced.rename("sofr_iorb_spread")
     else:
         sofr_iorb_spread = sofr_iorb_raw.rename("sofr_iorb_spread")
-    sofr_iorb_slope_21d = _rolling_ols_slope(
-        sofr_iorb_spread, window=slope_21d
-    ).rename("sofr_iorb_slope_21d")
+    sofr_iorb_slope_21d = _rolling_ols_slope(sofr_iorb_spread, window=slope_21d).rename(
+        "sofr_iorb_slope_21d"
+    )
 
     # SPY / TLT 21d returns (consumed by §2C credit_stress / funding_squeeze /
     # deleveraging rules — spec lines 3259/3264/3267-3268).
@@ -495,7 +492,16 @@ class CreditFundingRuleInputs:
     spy_21d_return: float
     tlt_21d_return: float
     realized_vol_21d_percentile_252d: float
+    realized_vol_21d: float
     avg_pairwise_corr_percentile_504d: float
+    avg_pairwise_corr_63d: float
+
+
+@dataclass(frozen=True)
+class CreditFundingRuleEvaluation:
+    label: CreditFundingLabel
+    rule_path: str
+    reason: str | None = None
 
 
 def _scalar_at(series: pd.Series, dt: pd.Timestamp) -> float:
@@ -516,6 +522,8 @@ def build_rule_inputs_for_date(
     ig_spread_slope_21d: pd.Series,
     realized_vol_21d_percentile_252d: pd.Series,
     avg_pairwise_corr_percentile_504d: pd.Series,
+    realized_vol_21d: pd.Series | None = None,
+    avg_pairwise_corr_63d: pd.Series | None = None,
 ) -> CreditFundingRuleInputs:
     """Materialize the per-day scalar rule inputs at session ``dt``.
 
@@ -534,8 +542,18 @@ def build_rule_inputs_for_date(
         realized_vol_21d_percentile_252d=_scalar_at(
             realized_vol_21d_percentile_252d, dt
         ),
+        realized_vol_21d=(
+            _scalar_at(realized_vol_21d, dt)
+            if realized_vol_21d is not None
+            else float("nan")
+        ),
         avg_pairwise_corr_percentile_504d=_scalar_at(
             avg_pairwise_corr_percentile_504d, dt
+        ),
+        avg_pairwise_corr_63d=(
+            _scalar_at(avg_pairwise_corr_63d, dt)
+            if avg_pairwise_corr_63d is not None
+            else float("nan")
         ),
     )
 
@@ -548,6 +566,8 @@ def build_rule_inputs_by_date(
     ig_spread_slope_21d: pd.Series,
     realized_vol_21d_percentile_252d: pd.Series,
     avg_pairwise_corr_percentile_504d: pd.Series,
+    realized_vol_21d: pd.Series | None = None,
+    avg_pairwise_corr_63d: pd.Series | None = None,
 ) -> dict[pd.Timestamp, CreditFundingRuleInputs]:
     """Per-date rule inputs. The spread triple is source-neutral — pass
     ``features.hy_oas_*`` for the real-OAS run or ``features.hy_tr_differential_*``
@@ -568,8 +588,18 @@ def build_rule_inputs_by_date(
             realized_vol_21d_percentile_252d=_scalar_at(
                 realized_vol_21d_percentile_252d, dt
             ),
+            realized_vol_21d=(
+                _scalar_at(realized_vol_21d, dt)
+                if realized_vol_21d is not None
+                else float("nan")
+            ),
             avg_pairwise_corr_percentile_504d=_scalar_at(
                 avg_pairwise_corr_percentile_504d, dt
+            ),
+            avg_pairwise_corr_63d=(
+                _scalar_at(avg_pairwise_corr_63d, dt)
+                if avg_pairwise_corr_63d is not None
+                else float("nan")
             ),
         )
     return outputs
@@ -619,8 +649,7 @@ def evaluate_spread_widening(
     if _any_nan(inputs.hy_spread_slope_21d):
         return False
     if not np.isnan(inputs.ig_spread_slope_21d) and (
-        inputs.hy_spread_slope_21d > 0.0
-        and inputs.ig_spread_slope_21d > 0.0
+        inputs.hy_spread_slope_21d > 0.0 and inputs.ig_spread_slope_21d > 0.0
     ):
         return True
     if getattr(config, "spread_widening_hy_only", False) and (
@@ -694,17 +723,10 @@ def evaluate_funding_squeeze(
     )
 
 
-def evaluate_deleveraging(
+def _deleveraging_percentile_path(
     inputs: CreditFundingRuleInputs,
     config: CreditFundingRulesConfig,
 ) -> bool:
-    """v2 §2C lines 3266-3271 — 5-condition composite.
-
-    ``spy_21d_return < -0.05 AND tlt_21d_return < 0
-       AND broad_usd_index_zscore_21d > 0
-       AND realized_vol_21d_percentile_252d > 0.75
-       AND avg_pairwise_corr_percentile_504d > 0.75``.
-    """
     if _any_nan(
         inputs.spy_21d_return,
         inputs.tlt_21d_return,
@@ -725,6 +747,62 @@ def evaluate_deleveraging(
     )
 
 
+def _deleveraging_cold_start_path(
+    inputs: CreditFundingRuleInputs,
+    config: CreditFundingRulesConfig,
+) -> bool:
+    if not config.cold_start_deleveraging_enabled:
+        return False
+    if not (
+        np.isnan(inputs.realized_vol_21d_percentile_252d)
+        or np.isnan(inputs.avg_pairwise_corr_percentile_504d)
+    ):
+        return False
+    if _any_nan(
+        inputs.spy_21d_return,
+        inputs.tlt_21d_return,
+        inputs.broad_usd_index_zscore_21d,
+        inputs.realized_vol_21d,
+        inputs.avg_pairwise_corr_63d,
+    ):
+        return False
+    return bool(
+        inputs.spy_21d_return < config.spy_drop_threshold
+        and inputs.tlt_21d_return < 0.0
+        and inputs.broad_usd_index_zscore_21d
+        > config.broad_usd_zscore_deleveraging_threshold
+        and inputs.realized_vol_21d
+        >= config.cold_start_deleveraging_realized_vol_21d_min
+        and inputs.avg_pairwise_corr_63d
+        >= config.cold_start_deleveraging_avg_corr_63d_min
+    )
+
+
+def deleveraging_rule_path(
+    inputs: CreditFundingRuleInputs,
+    config: CreditFundingRulesConfig,
+) -> str | None:
+    if _deleveraging_percentile_path(inputs, config):
+        return "percentile"
+    if _deleveraging_cold_start_path(inputs, config):
+        return "cold_start_fallback"
+    return None
+
+
+def evaluate_deleveraging(
+    inputs: CreditFundingRuleInputs,
+    config: CreditFundingRulesConfig,
+) -> bool:
+    """v2 §2C lines 3266-3271 — 5-condition composite.
+
+    ``spy_21d_return < -0.05 AND tlt_21d_return < 0
+       AND broad_usd_index_zscore_21d > 0
+       AND realized_vol_21d_percentile_252d > 0.75
+       AND avg_pairwise_corr_percentile_504d > 0.75``.
+    """
+    return deleveraging_rule_path(inputs, config) is not None
+
+
 def evaluate_rules(
     *,
     inputs: CreditFundingRuleInputs,
@@ -734,16 +812,39 @@ def evaluate_rules(
 
     Falls through to ``unknown`` when no rule fires (§2C line 3183 tail).
     """
-    if evaluate_deleveraging(inputs, config):
-        return "deleveraging"
+    return evaluate_rules_with_evidence(inputs=inputs, config=config).label
+
+
+def evaluate_rules_with_evidence(
+    *,
+    inputs: CreditFundingRuleInputs,
+    config: CreditFundingRulesConfig,
+) -> CreditFundingRuleEvaluation:
+    """Walk v2 §2C precedence and return the label plus matched rule path."""
+    deleveraging_path = deleveraging_rule_path(inputs, config)
+    if deleveraging_path is not None:
+        return CreditFundingRuleEvaluation(
+            label="deleveraging",
+            rule_path=deleveraging_path,
+        )
     if evaluate_funding_squeeze(inputs, config):
-        return "funding_squeeze"
+        return CreditFundingRuleEvaluation(
+            label="funding_squeeze", rule_path="standard"
+        )
     if evaluate_credit_stress(inputs, config):
-        return "credit_stress"
+        return CreditFundingRuleEvaluation(label="credit_stress", rule_path="standard")
     if evaluate_spread_widening(inputs, config):
-        return "spread_widening"
+        return CreditFundingRuleEvaluation(
+            label="spread_widening", rule_path="standard"
+        )
     if evaluate_credit_recovery(inputs, config):
-        return "credit_recovery"
+        return CreditFundingRuleEvaluation(
+            label="credit_recovery", rule_path="standard"
+        )
     if evaluate_credit_calm(inputs, config):
-        return "credit_calm"
-    return "unknown"
+        return CreditFundingRuleEvaluation(label="credit_calm", rule_path="standard")
+    return CreditFundingRuleEvaluation(
+        label="unknown",
+        rule_path="none",
+        reason="no_rule_fired",
+    )

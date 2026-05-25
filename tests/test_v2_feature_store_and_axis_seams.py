@@ -18,7 +18,6 @@ from regime_detection.fragility_universe import (
 )
 from regime_detection.market_context import build_market_context
 
-
 _REAL_V2_AS_OF = date(2026, 5, 13)
 
 

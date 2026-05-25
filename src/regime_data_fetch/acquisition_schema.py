@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import sqlite3
 
-
 ACQUISITION_SCHEMA_SQL = """
 CREATE TABLE IF NOT EXISTS fetch_runs (
     run_id INTEGER PRIMARY KEY AUTOINCREMENT,

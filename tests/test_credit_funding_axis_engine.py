@@ -44,7 +44,6 @@ from regime_detection.fragility_universe import (
 from regime_detection.hysteresis import apply_per_label_asymmetric_hysteresis
 from regime_detection.market_context import build_market_context
 
-
 # --- Synthetic fixtures ------------------------------------------------------
 
 _TRAINING_SESSIONS = 650  # > 504 + 63 cold-start
@@ -934,9 +933,7 @@ def test_feature_store_routes_fedfunds_ioer_legacy_to_splice() -> None:
             ]
         ),
         config=base_context.config,
-        vix_data=pd.DataFrame(
-            {"date": [ts.date() for ts in idx], "close": 20.0}
-        ),
+        vix_data=pd.DataFrame({"date": [ts.date() for ts in idx], "close": 20.0}),
         sector_etf_closes=base_context.sector_etf_closes,
         cross_asset_closes=base_context.cross_asset_closes,
         macro_series=patched_macro,

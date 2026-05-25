@@ -17,7 +17,6 @@ from regime_data_fetch.pit_constituents import (  # noqa: E402  (under-test impo
     read_pit_intervals,
 )
 
-
 # Fixed PIT CSV: AAPL (closed), MSFT (open), IBM (closed).
 # Real S&P 500 historical tickers + plausible (hand-picked) interval bounds.
 _PIT_CSV = "\n".join(
@@ -133,7 +132,9 @@ def test_members_on_returns_frozenset(tmp_path: Path) -> None:
     assert isinstance(members, frozenset)
 
 
-def test_read_pit_intervals_patches_stale_open_intervals_on_read(tmp_path: Path) -> None:
+def test_read_pit_intervals_patches_stale_open_intervals_on_read(
+    tmp_path: Path,
+) -> None:
     """Stale S3 artifacts may have open intervals for tickers whose membership
     has since ended. read_pit_intervals must apply SOURCE_END_DATE_CORRECTIONS
     at read time so that members_on returns the corrected membership regardless
@@ -167,15 +168,15 @@ def test_read_pit_intervals_patches_stale_open_intervals_on_read(tmp_path: Path)
 
     for ticker, expected_end in SOURCE_END_DATE_CORRECTIONS.items():
         row = df[df["ticker"] == ticker].iloc[0]
-        assert row["end_date"] == expected_end, (
-            f"{ticker}: expected end_date {expected_end}, got {row['end_date']!r}"
-        )
+        assert (
+            row["end_date"] == expected_end
+        ), f"{ticker}: expected end_date {expected_end}, got {row['end_date']!r}"
         # Must not be treated as a current member after the correction date.
         future_date = dt.date(2026, 12, 31)
         members = members_on(df, future_date)
-        assert ticker not in members, (
-            f"{ticker} incorrectly appears as a current member on {future_date}"
-        )
+        assert (
+            ticker not in members
+        ), f"{ticker} incorrectly appears as a current member on {future_date}"
 
 
 def test_members_on_empty_df_returns_empty_frozenset() -> None:

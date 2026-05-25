@@ -5,6 +5,7 @@ Runs RegimeEngine.classify_window on the raw fixture CSVs and compares
 the engine's output labels against the INTENTS. No shadow reimplementation
 of classification logic — the engine IS the source of truth.
 """
+
 from __future__ import annotations
 
 import hashlib
@@ -222,9 +223,7 @@ def _classify_all_intents(
     market_data: pd.DataFrame,
 ) -> dict[date, Any]:
     engine = RegimeEngine()
-    intent_dates = sorted(
-        date.fromisoformat(item["intent_date"]) for item in INTENTS
-    )
+    intent_dates = sorted(date.fromisoformat(item["intent_date"]) for item in INTENTS)
     end = max(intent_dates)
     earliest = min(intent_dates)
     span_days = (end - earliest).days
@@ -262,9 +261,11 @@ def _pick_fixture_date(
         if match:
             return d
 
-    actual_labels = {
-        axis: _get_axis_label(by_date[base], axis) for axis in intent
-    } if base in by_date else None
+    actual_labels = (
+        {axis: _get_axis_label(by_date[base], axis) for axis in intent}
+        if base in by_date
+        else None
+    )
     raise SystemExit(
         f"No fixture candidate for intent={intent} near {intent_date}. "
         f"Actual at base={actual_labels}"
@@ -359,7 +360,12 @@ def generate_report(
         }
 
         evidence = {}
-        for axis in ["trend_direction", "trend_character", "volatility_state", "breadth_state"]:
+        for axis in [
+            "trend_direction",
+            "trend_character",
+            "volatility_state",
+            "breadth_state",
+        ]:
             attr = getattr(out, axis, None)
             if attr is not None and hasattr(attr, "evidence"):
                 evidence[axis] = _serialize_obj(dict(attr.evidence))

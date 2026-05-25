@@ -9,6 +9,7 @@ Spec references:
     Slice scope: features only (no rising_vol/vol_crush labels yet); IV/RV
     and vol_crush features deferred (require options data). See §8 line 1181.
 """
+
 from __future__ import annotations
 
 import math
@@ -31,7 +32,6 @@ from regime_detection.volatility_state_v2 import (
     VolatilityV2Features,
     compute_volatility_v2_features,
 )
-
 
 # ---------- Shared fixtures ---------------------------------------------------
 
@@ -124,9 +124,7 @@ def test_wilders_atr_rejects_bad_period():
 # =============================================================================
 
 
-def test_atr_ratio_nan_before_long_lookback(
-    spy_like_ohlc_1000, v2_volatility_config
-):
+def test_atr_ratio_nan_before_long_lookback(spy_like_ohlc_1000, v2_volatility_config):
     out = compute_volatility_v2_features(
         open_=spy_like_ohlc_1000["open"],
         high=spy_like_ohlc_1000["high"],
@@ -203,6 +201,73 @@ def test_atr_ratio_falling_vol_below_one(v2_volatility_config):
         config=v2_volatility_config,
     )
     assert out.atr_ratio.iloc[-1] < 1.0
+
+
+def test_compute_volatility_v2_features_coerces_non_datetime_index_and_aligns_optional_inputs(
+    v2_volatility_config,
+):
+    n = 300
+    dt_index = _index_n(n)
+    string_index = pd.Index(dt_index.strftime("%Y-%m-%d"))
+    close = pd.Series(np.linspace(100.0, 130.0, n), index=string_index)
+    open_ = close * 0.999
+    high = close * 1.01
+    low = close * 0.99
+    implied_vol_30d = pd.Series(np.linspace(0.25, 0.15, n), index=dt_index)
+    event_window_just_passed = pd.Series(
+        [True if i == n - 1 else np.nan for i in range(n)],
+        index=dt_index,
+    )
+
+    out = compute_volatility_v2_features(
+        open_=open_,
+        high=high,
+        low=low,
+        close=close,
+        config=v2_volatility_config,
+        implied_vol_30d=implied_vol_30d,
+        event_window_just_passed=event_window_just_passed,
+    )
+
+    assert isinstance(out.atr_ratio.index, pd.DatetimeIndex)
+    assert out.implied_vol_30d is not None
+    assert out.implied_vol_5d_change is not None
+    assert out.iv_rv_spread is not None
+    assert out.event_window_just_passed is not None
+    assert out.event_window_just_passed.dtype == bool
+    assert bool(out.event_window_just_passed.iloc[-1]) is True
+    assert bool(out.event_window_just_passed.iloc[0]) is False
+
+
+def test_compute_volatility_v2_features_uses_spec_default_windows_without_rules_config(
+    v2_volatility_config,
+):
+    n = 100
+    index = _index_n(n)
+    close = pd.Series(np.linspace(100.0, 120.0, n), index=index)
+    open_ = close * 0.999
+    high = close * 1.01
+    low = close * 0.99
+
+    out = compute_volatility_v2_features(
+        open_=open_,
+        high=high,
+        low=low,
+        close=close,
+        config=v2_volatility_config,
+        rules_config=None,
+    )
+
+    assert out.realized_vol_short.iloc[:10].isna().all()
+    assert not np.isnan(out.realized_vol_short.iloc[10])
+    assert out.realized_vol_long.iloc[:63].isna().all()
+    assert not np.isnan(out.realized_vol_long.iloc[63])
+    assert out.realized_vol_21d.iloc[:21].isna().all()
+    assert not np.isnan(out.realized_vol_21d.iloc[21])
+    assert out.implied_vol_30d is None
+    assert out.implied_vol_5d_change is None
+    assert out.iv_rv_spread is None
+    assert out.event_window_just_passed is None
 
 
 # =============================================================================
@@ -302,9 +367,7 @@ def test_gap_frequency_boundary_exactly_at_threshold_not_counted(
     np.testing.assert_allclose(valid.to_numpy(), 0.0, atol=1e-12)
 
 
-def test_gap_frequency_nan_before_lookback(
-    spy_like_ohlc_1000, v2_volatility_config
-):
+def test_gap_frequency_nan_before_lookback(spy_like_ohlc_1000, v2_volatility_config):
     out = compute_volatility_v2_features(
         open_=spy_like_ohlc_1000["open"],
         high=spy_like_ohlc_1000["high"],
@@ -358,9 +421,7 @@ def test_intraday_range_percentile_rises_with_range(v2_volatility_config):
         open_=open_, high=high, low=low, close=close, config=v2_volatility_config
     )
     # Last value is the max within its 252d window → percentile == 1.0.
-    assert out.intraday_range_percentile_252d.iloc[-1] == pytest.approx(
-        1.0, abs=1e-12
-    )
+    assert out.intraday_range_percentile_252d.iloc[-1] == pytest.approx(1.0, abs=1e-12)
 
 
 def test_intraday_range_percentile_nan_before_lookback(
@@ -482,9 +543,7 @@ def test_timeline_threads_volatility_state_v2_config(
     # build_regime_timeline must propagate the v2 config without raising
     # (no v1 contract drift — RegimeTimeline doesn't expose the v2 features
     # yet; slice 2.2 only ships compute + seam).
-    timeline = build_regime_timeline(
-        context=context, lookback_days=5, config=cfg
-    )
+    timeline = build_regime_timeline(context=context, lookback_days=5, config=cfg)
     assert len(timeline.outputs) == 5
 
 

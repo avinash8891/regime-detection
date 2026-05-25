@@ -9,7 +9,6 @@ import pandas as pd
 from regime_detection.data_quality import assess_series_input_quality
 from regime_detection.models import DataQuality
 
-
 # V2 §1D (ADR 0003 / decisions 69, 70) extends the V1 5-label set with four
 # PIT-derived labels. Members ordered by precedence (spec line 385):
 #   breadth_thrust > divergent_fragile > narrowing_breadth > recovery_breadth >
@@ -35,13 +34,13 @@ BreadthLabel = Literal[
 # at mid-severity (rank 2, same as weak_breadth). divergent_fragile remains the
 # highest-risk V1 label at rank 3.
 _RISK_RANK: dict[BreadthLabel, int] = {
-    "breadth_thrust": 0,        # bullish initiation (ADR 0003 / decision 69)
+    "breadth_thrust": 0,  # bullish initiation (ADR 0003 / decision 69)
     "healthy_breadth": 0,
-    "broadening_breadth": 0,    # V2 recovery confirmation
+    "broadening_breadth": 0,  # V2 recovery confirmation
     "neutral_breadth": 1,
-    "recovery_breadth": 1,      # mid-recovery (ADR 0003 / decision 70)
+    "recovery_breadth": 1,  # mid-recovery (ADR 0003 / decision 70)
     "weak_breadth": 2,
-    "narrowing_breadth": 2,     # V2 deterioration — mid-severity
+    "narrowing_breadth": 2,  # V2 deterioration — mid-severity
     "divergent_fragile": 3,
     "unknown": 2,
 }
@@ -65,7 +64,7 @@ def compute_features(*, spy_close: pd.Series, rsp_close: pd.Series) -> BreadthFe
     ratio = rsp_close / spy_close
     ratio_sma50 = ratio.rolling(50).mean()
     ratio_ret20 = ratio / ratio.shift(20) - 1
-    idx_dist = spy_close / spy_close.rolling(63, min_periods=50).max() - 1
+    idx_dist = spy_close / spy_close.rolling(63).max() - 1
     return BreadthFeatures(
         spy_close=spy_close,
         rsp_close=rsp_close,
@@ -76,7 +75,9 @@ def compute_features(*, spy_close: pd.Series, rsp_close: pd.Series) -> BreadthFe
     )
 
 
-def raw_label_for_day(f: BreadthFeatures, dt: pd.Timestamp) -> tuple[BreadthLabel, dict[str, Any]]:
+def raw_label_for_day(
+    f: BreadthFeatures, dt: pd.Timestamp
+) -> tuple[BreadthLabel, dict[str, Any]]:
     ratio = f.relative_breadth_ratio.loc[dt]
     ratio_sma = f.relative_breadth_sma50.loc[dt]
     ratio_ret20 = f.relative_breadth_return_20d.loc[dt]
@@ -85,7 +86,9 @@ def raw_label_for_day(f: BreadthFeatures, dt: pd.Timestamp) -> tuple[BreadthLabe
     if any(pd.isna(x) for x in [ratio, ratio_sma, ratio_ret20, idx_dist]):
         return "unknown", {"reason": "insufficient_history"}
 
-    divergent_fragile = bool((idx_dist >= -0.05) and (ratio < ratio_sma) and (ratio_ret20 <= -0.03))
+    divergent_fragile = bool(
+        (idx_dist >= -0.05) and (ratio < ratio_sma) and (ratio_ret20 <= -0.03)
+    )
     weak_breadth = bool((ratio < ratio_sma) and (ratio_ret20 < 0))
     healthy_breadth = bool((ratio > ratio_sma) and (ratio_ret20 >= 0))
 
@@ -110,14 +113,18 @@ def raw_label_for_day(f: BreadthFeatures, dt: pd.Timestamp) -> tuple[BreadthLabe
     }
 
 
-def build_raw_outputs(f: BreadthFeatures) -> tuple[list[BreadthLabel], list[dict[str, Any]]]:
+def build_raw_outputs(
+    f: BreadthFeatures,
+) -> tuple[list[BreadthLabel], list[dict[str, Any]]]:
     ratio = f.relative_breadth_ratio
     ratio_sma = f.relative_breadth_sma50
     ratio_ret20 = f.relative_breadth_return_20d
     idx_dist = f.index_distance_from_63d_high
 
     valid = ~(ratio.isna() | ratio_sma.isna() | ratio_ret20.isna() | idx_dist.isna())
-    divergent_fragile = valid & idx_dist.ge(-0.05) & ratio.lt(ratio_sma) & ratio_ret20.le(-0.03)
+    divergent_fragile = (
+        valid & idx_dist.ge(-0.05) & ratio.lt(ratio_sma) & ratio_ret20.le(-0.03)
+    )
     weak_breadth = valid & ratio.lt(ratio_sma) & ratio_ret20.lt(0)
     healthy_breadth = valid & ratio.gt(ratio_sma) & ratio_ret20.ge(0)
     neutral_breadth = valid & ~(divergent_fragile | weak_breadth | healthy_breadth)

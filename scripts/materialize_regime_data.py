@@ -5,23 +5,45 @@ import argparse
 import sys
 from pathlib import Path
 
-
 REPO_ROOT = Path(__file__).resolve().parents[1]
 SRC_DIR = REPO_ROOT / "src"
 if str(SRC_DIR) not in sys.path:
     sys.path.insert(0, str(SRC_DIR))
 
-from regime_data_fetch.cli_common import OPERATOR_ENV_POINTER_FILE, load_operator_env_files
+from regime_data_fetch.cli_common import (
+    OPERATOR_ENV_POINTER_FILE,
+    load_operator_env_files,
+)
 from regime_data_fetch.materialization import materialize_manifest
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="Materialize regime data artifacts from a manifest.")
-    parser.add_argument("--manifest", required=True, type=Path, help="Manifest YAML path.")
-    parser.add_argument("--local-root", required=True, type=Path, help="Local data/raw root to materialize into.")
-    parser.add_argument("--repo-root", default=REPO_ROOT, type=Path, help="Repo root for repo-relative manifest paths.")
-    parser.add_argument("--store-root", default=None, help="Override manifest storage_root.")
-    parser.add_argument("--required-for", default=None, help="Only materialize artifacts required for this use case.")
+    parser = argparse.ArgumentParser(
+        description="Materialize regime data artifacts from a manifest."
+    )
+    parser.add_argument(
+        "--manifest", required=True, type=Path, help="Manifest YAML path."
+    )
+    parser.add_argument(
+        "--local-root",
+        required=True,
+        type=Path,
+        help="Local data/raw root to materialize into.",
+    )
+    parser.add_argument(
+        "--repo-root",
+        default=REPO_ROOT,
+        type=Path,
+        help="Repo root for repo-relative manifest paths.",
+    )
+    parser.add_argument(
+        "--store-root", default=None, help="Override manifest storage_root."
+    )
+    parser.add_argument(
+        "--required-for",
+        default=None,
+        help="Only materialize artifacts required for this use case.",
+    )
     parser.add_argument(
         "--operator-env-file",
         default=None,

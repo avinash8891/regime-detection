@@ -58,7 +58,6 @@ from scripts.profile_engine import (
     _load_optional_news_sentiment,
 )
 
-
 LAYER2_FEATURES: dict[str, tuple[str, ...]] = {
     "monetary_pressure": (
         "yield_change_zscore_2y_63d",
@@ -302,7 +301,9 @@ def _build_current_layer2_state(
     all_close_symbols = list(dict.fromkeys([*SECTOR_ETFS, *CROSS_ASSET_SYMBOLS]))
     all_closes = load_close_dict(args.daily_dir, all_close_symbols, spy_index)
     sector_etf_closes = {s: all_closes[s] for s in SECTOR_ETFS if s in all_closes}
-    cross_asset_closes = {s: all_closes[s] for s in CROSS_ASSET_SYMBOLS if s in all_closes}
+    cross_asset_closes = {
+        s: all_closes[s] for s in CROSS_ASSET_SYMBOLS if s in all_closes
+    }
     macro_series = load_macro_series(
         args.macro_parquet,
         args.pmi_path if args.pmi_path is not None and args.pmi_path.exists() else None,
@@ -390,7 +391,9 @@ def _parse_args() -> argparse.Namespace:
     register_manifest_input_args(parser, include_required_paths=False)
     parser.add_argument("--macro-parquet", type=Path, default=None)
     parser.add_argument("--pit-parquet", type=Path, default=None)
-    add_manifest_args(parser, data_root_default=REPO_ROOT / "data" / "raw", action="audit")
+    add_manifest_args(
+        parser, data_root_default=REPO_ROOT / "data" / "raw", action="audit"
+    )
     parser.add_argument("--out-dir", type=Path, default=REPO_ROOT / ".context")
     parser.add_argument("--stamp", default=dt.date.today().strftime("%Y%m%d"))
     args = parser.parse_args()

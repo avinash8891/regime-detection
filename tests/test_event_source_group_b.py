@@ -106,8 +106,7 @@ def test_deterministic_budget_rolls_weekend_deadlines_to_previous_nyse_session()
 
 def test_load_approval_overlay_parses_valid_records(tmp_path: Path) -> None:
     overlay_path = tmp_path / "group_b_approvals.yaml"
-    overlay_path.write_text(
-        """
+    overlay_path.write_text("""
 approvals:
   - event_type: geopolitical_event
     date: "2022-02-24"
@@ -119,8 +118,7 @@ approvals:
     importance: high
     window_days: [0, 0]
     notes: "Russia invasion of Ukraine."
-"""
-    )
+""")
 
     approvals = load_approval_overlay(overlay_path)
 
@@ -133,8 +131,7 @@ approvals:
 
 def test_load_approval_overlay_rejects_duplicate_keys(tmp_path: Path) -> None:
     overlay_path = tmp_path / "group_b_approvals.yaml"
-    overlay_path.write_text(
-        """
+    overlay_path.write_text("""
 approvals:
   - event_type: geopolitical_event
     date: "2022-02-24"
@@ -150,8 +147,7 @@ approvals:
     approved_at: "2026-05-14"
     evidence_candidate_id: "def456"
     evidence_source_count: 2
-"""
-    )
+""")
 
     with pytest.raises(ValueError, match="duplicate approval"):
         load_approval_overlay(overlay_path)
@@ -634,9 +630,9 @@ def test_gpr_candidate_sets_persistence_window_days() -> None:
         start_year=2022, end_year=2022, store=None, run_id=None
     )
 
-    assert [(candidate.source_id, candidate.window_days) for candidate in candidates] == [
-        ("gpr:caldara-iacoviello", (-2, 5))
-    ]
+    assert [
+        (candidate.source_id, candidate.window_days) for candidate in candidates
+    ] == [("gpr:caldara-iacoviello", (-2, 5))]
 
 
 def test_parse_gpr_monthly_country_context_returns_top_country_codes() -> None:
@@ -751,9 +747,7 @@ def test_gdelt_generator_records_partial_daily_gdelt_failure() -> None:
         merge_window_days=0,
     )
 
-    candidates = gpr.generate(
-        start_year=2022, end_year=2022, store=None, run_id=None
-    )
+    candidates = gpr.generate(start_year=2022, end_year=2022, store=None, run_id=None)
     validations = gdelt.validate(candidates, store=None, run_id=None)
 
     assert [(candidate.date, candidate.source_id) for candidate in candidates] == [

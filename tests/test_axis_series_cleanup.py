@@ -7,7 +7,6 @@ import pandas as pd
 
 import regime_detection.axis_series as axis_series
 
-
 _MOVED_AXIS_BUILDER_NAMES = (
     "build_trend_direction_axis_series",
     "build_trend_character_axis_series",
@@ -62,3 +61,28 @@ def test_calendar_staleness_counts_non_session_source_dates() -> None:
     calendar = axis_series._calendar_staleness_days_series(series, idx)
 
     assert calendar.tolist() == [30, 2, 3]
+
+
+def test_calendar_staleness_never_uses_future_observations_as_fresh() -> None:
+    idx = pd.to_datetime(["2025-10-31", "2025-11-03"])
+    series = pd.Series([1.0], index=pd.to_datetime(["2025-11-01"]))
+
+    calendar = axis_series._calendar_staleness_days_series(series, idx)
+
+    assert calendar.tolist() == [axis_series._STALENESS_SENTINEL, 2]
+    assert all(value >= 0 for value in calendar)
+
+
+def test_staleness_policy_dispatches_declared_calendar_and_trading_clocks() -> None:
+    idx = pd.to_datetime(["2025-10-31", "2025-11-03", "2025-11-04"])
+    series = pd.Series(
+        [1.0, 2.0],
+        index=pd.to_datetime(["2025-10-01", "2025-11-03"]),
+    )
+
+    assert axis_series.staleness_for_source(
+        source_name="cpi_all_items", series=series, session_index=idx
+    ).tolist() == [30, 0, 1]
+    assert axis_series.staleness_for_source(
+        source_name="HYG", series=series, session_index=idx
+    ).tolist() == [axis_series._STALENESS_SENTINEL, 0, 1]

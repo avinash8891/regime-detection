@@ -12,6 +12,7 @@ Refactor target: src/regime_detection/data_quality.py per the perf plan
 last_valid_index, normalize as_of_date once). Business logic must remain
 byte-identical to the pre-refactor output captured below.
 """
+
 from __future__ import annotations
 
 from datetime import date
@@ -19,7 +20,6 @@ from datetime import date
 import pandas as pd
 
 from regime_detection.data_quality import assess_series_input_quality
-
 
 # Real V1 SPY OHLCV-derived window. These exact numbers were captured from
 # the pre-refactor implementation against
@@ -54,7 +54,9 @@ def test_assess_series_input_quality_recent_session_ok(raw_market_frames) -> Non
     assert dq.reason is None
 
 
-def test_assess_series_input_quality_cold_start_insufficient_history(raw_market_frames) -> None:
+def test_assess_series_input_quality_cold_start_insufficient_history(
+    raw_market_frames,
+) -> None:
     spy_close = _spy_close_series(raw_market_frames)
     cold_as_of = spy_close.index[10].date()
     dq = assess_series_input_quality(
@@ -71,7 +73,9 @@ def test_assess_series_input_quality_cold_start_insufficient_history(raw_market_
     assert dq.reason == "required_feature_is_nan"
 
 
-def test_assess_series_input_quality_raw_label_unknown_short_circuit(raw_market_frames) -> None:
+def test_assess_series_input_quality_raw_label_unknown_short_circuit(
+    raw_market_frames,
+) -> None:
     spy_close = _spy_close_series(raw_market_frames)
     as_of = date(2023, 12, 14)
     dq = assess_series_input_quality(
@@ -111,7 +115,29 @@ def test_assess_series_input_quality_skip_raw_label_short_circuit_passes_through
     assert dq.reason is None
 
 
-def test_assess_series_input_quality_unsorted_input_still_normalizes(raw_market_frames) -> None:
+def test_assess_series_input_quality_none_raw_label_is_pure_quality_mode(
+    raw_market_frames,
+) -> None:
+    spy_close = _spy_close_series(raw_market_frames)
+    as_of = date(2023, 12, 14)
+    dq = assess_series_input_quality(
+        as_of_date=as_of,
+        required_inputs=[spy_close],
+        required_trading_days=_SPY_REQUIRED_TRADING_DAYS,
+        raw_label=None,
+        max_freshness_days=_MAX_FRESHNESS_DAYS,
+        min_completeness=_MIN_COMPLETENESS,
+    )
+
+    assert dq.status == "ok"
+    assert dq.freshness_days == 0
+    assert dq.completeness == 1.0
+    assert dq.reason is None
+
+
+def test_assess_series_input_quality_unsorted_input_still_normalizes(
+    raw_market_frames,
+) -> None:
     # Defensive: legacy callers may pass an out-of-order or string-indexed
     # series. The function MUST still parse + sort internally to preserve
     # backward compatibility. This pins the slow-path fallback.

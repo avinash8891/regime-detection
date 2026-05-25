@@ -23,6 +23,7 @@ _log = logging.getLogger(__name__)
 # HTML table parser
 # ---------------------------------------------------------------------------
 
+
 class _TableParser(HTMLParser):
     """Extracts all <table> rows as lists of stripped cell strings."""
 
@@ -97,21 +98,35 @@ def _parse_html_table(html_text: str, after_date: dt.date) -> pd.DataFrame:
             continue
         if date <= after_date:
             continue
-        rows.append({"date": pd.Timestamp(date), "bullish": bull, "neutral": neut, "bearish": bear})
+        rows.append(
+            {
+                "date": pd.Timestamp(date),
+                "bullish": bull,
+                "neutral": neut,
+                "bearish": bear,
+            }
+        )
 
-    return pd.DataFrame(rows) if rows else pd.DataFrame(columns=["date", "bullish", "neutral", "bearish"])
+    return (
+        pd.DataFrame(rows)
+        if rows
+        else pd.DataFrame(columns=["date", "bullish", "neutral", "bearish"])
+    )
 
 
 # ---------------------------------------------------------------------------
 # Core functions
 # ---------------------------------------------------------------------------
 
+
 def parse_historical_cfb(path: Path) -> pd.DataFrame:
     """Parse the AAII historical XLS/CFB seed file into a clean weekly DataFrame."""
     try:
         import xlrd
     except ImportError as exc:
-        raise ImportError("xlrd is required to parse the AAII CFB seed file: pip install xlrd") from exc
+        raise ImportError(
+            "xlrd is required to parse the AAII CFB seed file: pip install xlrd"
+        ) from exc
 
     wb = xlrd.open_workbook(str(path))
     ws = wb.sheet_by_name("SENTIMENT")
@@ -136,9 +151,14 @@ def parse_historical_cfb(path: Path) -> pd.DataFrame:
     return _compute_derived(df)
 
 
-def fetch_latest_rows(url: str, after_date: dt.date, *, timeout: int = 30) -> pd.DataFrame:
+def fetch_latest_rows(
+    url: str, after_date: dt.date, *, timeout: int = 30
+) -> pd.DataFrame:
     """Scrape the AAII sentiment HTML table and return rows newer than after_date."""
-    req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0 (compatible; regime-engine-fetcher/2.0)"})
+    req = urllib.request.Request(
+        url,
+        headers={"User-Agent": "Mozilla/5.0 (compatible; regime-engine-fetcher/2.0)"},
+    )
     try:
         with urllib.request.urlopen(req, timeout=timeout) as resp:
             html_text = resp.read().decode("utf-8", errors="replace")
@@ -151,7 +171,9 @@ def fetch_latest_rows(url: str, after_date: dt.date, *, timeout: int = 30) -> pd
 def _compute_derived(df: pd.DataFrame) -> pd.DataFrame:
     df = df.sort_values("date").reset_index(drop=True)
     df["bull_bear_spread"] = df["bullish"] - df["bearish"]
-    df["bull_bear_spread_8w_ma"] = df["bull_bear_spread"].rolling(8, min_periods=1).mean()
+    df["bull_bear_spread_8w_ma"] = (
+        df["bull_bear_spread"].rolling(8, min_periods=1).mean()
+    )
     return df
 
 
@@ -165,7 +187,9 @@ def update_aaii_parquet(
     if out_path.exists():
         existing = pd.read_parquet(out_path)
         existing["date"] = pd.to_datetime(existing["date"])
-        _log.info("aaii_sentiment: loaded %d existing rows from %s", len(existing), out_path)
+        _log.info(
+            "aaii_sentiment: loaded %d existing rows from %s", len(existing), out_path
+        )
     else:
         seed_path = raw_dir / "sentiment" / AAII_SENTIMENT_SEED_CFB
         if not seed_path.exists():
@@ -177,7 +201,11 @@ def update_aaii_parquet(
         existing = parse_historical_cfb(seed_path)
 
     last_date = existing["date"].max().date()
-    _log.info("aaii_sentiment: last known date %s, fetching newer rows from %s", last_date, url)
+    _log.info(
+        "aaii_sentiment: last known date %s, fetching newer rows from %s",
+        last_date,
+        url,
+    )
 
     new_rows = fetch_latest_rows(url, after_date=last_date)
 
@@ -185,7 +213,11 @@ def update_aaii_parquet(
         _log.info("aaii_sentiment: no new rows after %s", last_date)
         combined = existing
     else:
-        _log.info("aaii_sentiment: appending %d new rows (up to %s)", len(new_rows), new_rows["date"].max().date())
+        _log.info(
+            "aaii_sentiment: appending %d new rows (up to %s)",
+            len(new_rows),
+            new_rows["date"].max().date(),
+        )
         combined = pd.concat([existing, new_rows], ignore_index=True)
         combined = (
             combined.drop_duplicates(subset=["date"])
@@ -193,7 +225,9 @@ def update_aaii_parquet(
             .reset_index(drop=True)
         )
         combined = _compute_derived(
-            combined.drop(columns=["bull_bear_spread", "bull_bear_spread_8w_ma"], errors="ignore")
+            combined.drop(
+                columns=["bull_bear_spread", "bull_bear_spread_8w_ma"], errors="ignore"
+            )
         )
 
     out_path.parent.mkdir(parents=True, exist_ok=True)
@@ -216,7 +250,11 @@ def run_sentiment_fetch(
     out_path = sentiment_dir / AAII_SENTIMENT_PARQUET
     seed_path = sentiment_dir / AAII_SENTIMENT_SEED_CFB
 
-    store = AcquisitionStore(acquisition_db_path, artifact_store_root=artifact_store_root) if acquisition_db_path else None
+    store = (
+        AcquisitionStore(acquisition_db_path, artifact_store_root=artifact_store_root)
+        if acquisition_db_path
+        else None
+    )
     fetch_run = (
         store.start_fetch_run(
             fetch_type="sentiment",
@@ -241,9 +279,9 @@ def run_sentiment_fetch(
                 "paths": {
                     "sentiment_parquet": str(out_path),
                     "seed_cfb": str(seed_path),
-                    "acquisition_db": str(acquisition_db_path)
-                    if acquisition_db_path
-                    else None,
+                    "acquisition_db": (
+                        str(acquisition_db_path) if acquisition_db_path else None
+                    ),
                 },
             }
             report_path = out_dir / "sentiment_fetch_report.json"
@@ -268,7 +306,9 @@ def run_sentiment_fetch(
             "max_date": str(df["date"].max().date()) if not df.empty else None,
             "paths": {
                 "sentiment_parquet": str(out_path),
-                "acquisition_db": str(acquisition_db_path) if acquisition_db_path else None,
+                "acquisition_db": (
+                    str(acquisition_db_path) if acquisition_db_path else None
+                ),
             },
         }
         report_path = out_dir / "sentiment_fetch_report.json"
@@ -327,5 +367,7 @@ def run_sentiment_fetch(
         return report_path
     except Exception as exc:
         if store and fetch_run:
-            store.finish_fetch_run(run_id=fetch_run.run_id, status="failed", notes=str(exc))
+            store.finish_fetch_run(
+                run_id=fetch_run.run_id, status="failed", notes=str(exc)
+            )
         raise

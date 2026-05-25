@@ -24,15 +24,12 @@ from regime_detection.clustering import (
     compute_clustering_features,
 )
 
-
 # ---------------------------------------------------------------------------
 # Helpers — synthetic but deterministic inputs that mimic the 7 spec seams.
 # ---------------------------------------------------------------------------
 
 
-def _synthetic_inputs(
-    n_sessions: int = 1500, *, seed: int = 0
-) -> dict[str, pd.Series]:
+def _synthetic_inputs(n_sessions: int = 1500, *, seed: int = 0) -> dict[str, pd.Series]:
     """Build seven synthetic series with two visible regimes."""
     rng = np.random.default_rng(seed)
     index = pd.bdate_range("2010-01-04", periods=n_sessions)
@@ -48,25 +45,19 @@ def _synthetic_inputs(
     return_21d = (price / price.shift(21) - 1.0).rename("return_21d")
     return_63d = (price / price.shift(63) - 1.0).rename("return_63d")
 
-    realized_vol_21d = (
-        return_1d.rolling(21).std() * np.sqrt(252)
-    ).rename("realized_vol_21d")
+    realized_vol_21d = (return_1d.rolling(21).std() * np.sqrt(252)).rename(
+        "realized_vol_21d"
+    )
 
     peak_63 = price.rolling(63, min_periods=63).max()
     drawdown_63d = (price / peak_63 - 1.0).rename("drawdown_63d")
 
     adx_calm = rng.normal(loc=18.0, scale=3.0, size=half).clip(0.0, 100.0)
-    adx_vol = rng.normal(loc=35.0, scale=5.0, size=n_sessions - half).clip(
-        0.0, 100.0
-    )
-    adx_14 = pd.Series(
-        np.concatenate([adx_calm, adx_vol]), index=index, name="adx_14"
-    )
+    adx_vol = rng.normal(loc=35.0, scale=5.0, size=n_sessions - half).clip(0.0, 100.0)
+    adx_14 = pd.Series(np.concatenate([adx_calm, adx_vol]), index=index, name="adx_14")
 
     corr_calm = rng.normal(loc=0.30, scale=0.05, size=half).clip(0.0, 0.95)
-    corr_vol = rng.normal(loc=0.65, scale=0.05, size=n_sessions - half).clip(
-        0.0, 0.95
-    )
+    corr_vol = rng.normal(loc=0.65, scale=0.05, size=n_sessions - half).clip(0.0, 0.95)
     avg_pairwise_corr_63d = pd.Series(
         np.concatenate([corr_calm, corr_vol]),
         index=index,
@@ -74,9 +65,7 @@ def _synthetic_inputs(
     )
 
     pct_calm = rng.normal(loc=0.70, scale=0.07, size=half).clip(0.0, 1.0)
-    pct_vol = rng.normal(loc=0.30, scale=0.10, size=n_sessions - half).clip(
-        0.0, 1.0
-    )
+    pct_vol = rng.normal(loc=0.30, scale=0.10, size=n_sessions - half).clip(0.0, 1.0)
     pct_above_50dma = pd.Series(
         np.concatenate([pct_calm, pct_vol]),
         index=index,

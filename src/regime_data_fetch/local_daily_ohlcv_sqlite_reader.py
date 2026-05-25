@@ -10,7 +10,6 @@ import pandas as pd
 
 from regime_data_fetch.local_daily_ohlcv_sqlite import EXPECTED_COLUMNS
 
-
 DAILY_OHLCV_ROWS_TABLE = "daily_ohlcv_rows"
 _REQUIRED_COLUMNS = frozenset(["symbol", "source_file", *EXPECTED_COLUMNS])
 _VALUE_COLUMNS = [c for c in EXPECTED_COLUMNS if c != "date"]

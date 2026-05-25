@@ -13,7 +13,9 @@ from regime_detection.loaders import load_event_calendar
 def _load_runner_module():
     repo_root = Path(__file__).resolve().parents[1]
     script_path = repo_root / "scripts" / "run_historical_walkforward.py"
-    spec = importlib.util.spec_from_file_location("run_historical_walkforward", script_path)
+    spec = importlib.util.spec_from_file_location(
+        "run_historical_walkforward", script_path
+    )
     assert spec and spec.loader
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)  # type: ignore[attr-defined]
@@ -45,7 +47,9 @@ def test_walkforward_archives_production_event_window_days(tmp_path: Path) -> No
     )
 
     archived = yaml.safe_load(events_path.read_text(encoding="utf-8"))
-    window_rows = [row for row in archived["events"] if row.get("window_days") == [-5, 10]]
+    window_rows = [
+        row for row in archived["events"] if row.get("window_days") == [-5, 10]
+    ]
     assert window_rows
     assert market_path.exists()
     assert json.loads(checksums_path.read_text(encoding="utf-8")) == {

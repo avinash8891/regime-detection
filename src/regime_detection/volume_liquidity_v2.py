@@ -35,6 +35,7 @@ Implementation choices that resolve ambiguities:
   (``min_periods=lookback``) — i.e. ``t = 19`` for the default
   ``volume_zscore_lookback_days = 20``.
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -64,9 +65,7 @@ class VolumeLiquidityV2Features:
         return ("volume_zscore_20d",)
 
     def to_frame(self) -> pd.DataFrame:
-        return pd.DataFrame(
-            {name: getattr(self, name) for name in self.feature_names}
-        )
+        return pd.DataFrame({name: getattr(self, name) for name in self.feature_names})
 
 
 def _volume_zscore(

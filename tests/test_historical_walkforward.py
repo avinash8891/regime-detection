@@ -17,14 +17,18 @@ pytestmark = pytest.mark.slow
 def _load_runner_module():
     repo_root = Path(__file__).resolve().parents[1]
     script_path = repo_root / "scripts" / "run_historical_walkforward.py"
-    spec = importlib.util.spec_from_file_location("run_historical_walkforward", script_path)
+    spec = importlib.util.spec_from_file_location(
+        "run_historical_walkforward", script_path
+    )
     assert spec and spec.loader
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)  # type: ignore[attr-defined]
     return mod
 
 
-def test_historical_summary_cells_include_event_calendar_primary_and_matching_labels() -> None:
+def test_historical_summary_cells_include_event_calendar_primary_and_matching_labels() -> (
+    None
+):
     mod = _load_runner_module()
     output = SimpleNamespace(
         structural_causal_state=SimpleNamespace(
@@ -90,13 +94,19 @@ def test_historical_walkforward_runner_writes_expected_artifacts(
     }.issubset(summary_df.columns)
 
 
-def test_historical_walkforward_runner_records_failures_without_silent_skip(tmp_path: Path) -> None:
+def test_historical_walkforward_runner_records_failures_without_silent_skip(
+    tmp_path: Path,
+) -> None:
     repo_root = Path(__file__).resolve().parents[1]
-    original = pd.read_parquet(repo_root / "tests" / "fixtures" / "raw" / "market_data.parquet")
+    original = pd.read_parquet(
+        repo_root / "tests" / "fixtures" / "raw" / "market_data.parquet"
+    )
     original["date"] = pd.to_datetime(original["date"]).dt.date
 
     broken = original.copy()
-    broken = broken[~((broken["symbol"] == "SPY") & (broken["date"] == date(2023, 12, 14)))]
+    broken = broken[
+        ~((broken["symbol"] == "SPY") & (broken["date"] == date(2023, 12, 14)))
+    ]
     broken_path = tmp_path / "broken_market_data.parquet"
     broken.to_parquet(broken_path, index=False)
 

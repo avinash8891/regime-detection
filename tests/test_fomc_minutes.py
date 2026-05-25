@@ -17,7 +17,6 @@ from regime_data_fetch.fomc_minutes import (
     run_fomc_minutes_fetch,
 )
 
-
 FIXTURES = Path("tests/fixtures/raw/fomc")
 
 
@@ -28,7 +27,10 @@ def test_parse_fomc_minutes_listing_extracts_entries() -> None:
 
     assert len(entries) == 2
     assert entries[0].meeting_end_date == dt.date(2026, 1, 28)
-    assert entries[0].html_url == "https://www.federalreserve.gov/monetarypolicy/fomcminutes20260128.htm"
+    assert (
+        entries[0].html_url
+        == "https://www.federalreserve.gov/monetarypolicy/fomcminutes20260128.htm"
+    )
     assert entries[0].release_date == dt.date(2026, 2, 18)
     assert entries[1].meeting_end_date == dt.date(2026, 3, 18)
 
@@ -117,7 +119,10 @@ def test_parse_fomc_minutes_article_extracts_title_and_body() -> None:
 
     assert article.title == "Minutes of the Federal Open Market Committee"
     assert article.meeting_date_text == "March 18–19, 2025"
-    assert "Participants reviewed recent developments in financial markets" in article.body_text
+    assert (
+        "Participants reviewed recent developments in financial markets"
+        in article.body_text
+    )
     assert article.source == "federalreserve.gov"
 
 
@@ -132,7 +137,9 @@ def test_parse_fomc_minutes_article_extracts_legacy_2011_shape() -> None:
 
     assert article.title == "Minutes of the Federal Open Market Committee"
     assert article.meeting_date_text == "January 25-26, 2011"
-    assert "Participants discussed inflation, labor market conditions" in article.body_text
+    assert (
+        "Participants discussed inflation, labor market conditions" in article.body_text
+    )
 
 
 def test_run_fomc_minutes_fetch_writes_parquet_and_report(tmp_path: Path) -> None:
@@ -152,7 +159,9 @@ def test_run_fomc_minutes_fetch_writes_parquet_and_report(tmp_path: Path) -> Non
         raise AssertionError(f"Unexpected historical URL: {url}")
 
     def fake_article_fetcher(url: str) -> str:
-        assert url.startswith("https://www.federalreserve.gov/monetarypolicy/fomcminutes")
+        assert url.startswith(
+            "https://www.federalreserve.gov/monetarypolicy/fomcminutes"
+        )
         return article_html
 
     report_path = run_fomc_minutes_fetch(
@@ -166,7 +175,9 @@ def test_run_fomc_minutes_fetch_writes_parquet_and_report(tmp_path: Path) -> Non
     report = json.loads(report_path.read_text())
     assert report["counts"]["rows"] == 4
     assert report["source"] == "federalreserve.gov"
-    assert report["paths"]["fomc_minutes_parquet"] == str(tmp_path / "fomc_minutes" / "fomc_minutes.parquet")
+    assert report["paths"]["fomc_minutes_parquet"] == str(
+        tmp_path / "fomc_minutes" / "fomc_minutes.parquet"
+    )
 
     df = pd.read_parquet(tmp_path / "fomc_minutes" / "fomc_minutes.parquet")
     assert list(df.columns) == [
@@ -213,7 +224,9 @@ def test_run_fomc_minutes_fetch_raises_on_missing_article(tmp_path: Path) -> Non
         raise AssertionError("Expected FOMCMinutesFetchError")
 
 
-def test_run_fomc_minutes_fetch_records_raw_html_and_outputs_in_sqlite(tmp_path: Path) -> None:
+def test_run_fomc_minutes_fetch_records_raw_html_and_outputs_in_sqlite(
+    tmp_path: Path,
+) -> None:
     listing_html = (FIXTURES / "fomc_calendars_snippet.html").read_text()
     historical_2019_html = (FIXTURES / "fomchistorical2019_snippet.html").read_text()
     article_html = (FIXTURES / "fomcminutes20250319_snippet.html").read_text()
@@ -228,7 +241,9 @@ def test_run_fomc_minutes_fetch_records_raw_html_and_outputs_in_sqlite(tmp_path:
         raise AssertionError(f"Unexpected historical URL: {url}")
 
     def fake_article_fetcher(url: str) -> str:
-        assert url.startswith("https://www.federalreserve.gov/monetarypolicy/fomcminutes")
+        assert url.startswith(
+            "https://www.federalreserve.gov/monetarypolicy/fomcminutes"
+        )
         return article_html
 
     report_path = run_fomc_minutes_fetch(
@@ -244,11 +259,15 @@ def test_run_fomc_minutes_fetch_records_raw_html_and_outputs_in_sqlite(tmp_path:
     assert report["paths"]["acquisition_db"] == str(acquisition_db)
 
     with sqlite3.connect(acquisition_db) as conn:
-        fetch_runs = conn.execute("SELECT fetch_type, status FROM fetch_runs").fetchall()
+        fetch_runs = conn.execute(
+            "SELECT fetch_type, status FROM fetch_runs"
+        ).fetchall()
         artifacts = conn.execute(
             "SELECT source_name, artifact_kind, count(*) FROM artifacts GROUP BY source_name, artifact_kind ORDER BY source_name, artifact_kind"
         ).fetchall()
-        outputs = conn.execute("SELECT output_kind FROM derived_outputs ORDER BY output_id").fetchall()
+        outputs = conn.execute(
+            "SELECT output_kind FROM derived_outputs ORDER BY output_id"
+        ).fetchall()
 
     assert fetch_runs == [("fomc_minutes", "ok")]
     assert artifacts == [

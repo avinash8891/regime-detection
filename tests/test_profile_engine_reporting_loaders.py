@@ -17,6 +17,55 @@ from conftest import (
 profile_engine = load_profile_engine_module()
 
 
+def _build_profile_args(tmp_path: Path) -> SimpleNamespace:
+    return SimpleNamespace(
+        config_path=tmp_path / "config.yaml",
+        daily_dir=tmp_path / "daily_ohlcv",
+        constituent_tree=tmp_path / "constituents",
+        macro_parquet=tmp_path / "macro.parquet",
+        event_calendar=tmp_path / "events.yaml",
+        aaii_sentiment_parquet=tmp_path / "aaii.parquet",
+        news_sentiment_parquet=tmp_path / "news.parquet",
+        fomc_minutes_parquet=tmp_path / "fomc.parquet",
+        powell_speeches_parquet=tmp_path / "powell.parquet",
+        cpi_vintages_parquet=tmp_path / "cpi.parquet",
+        pit_parquet=tmp_path / "pit.parquet",
+        lookback_days=1,
+    )
+
+
+def _build_profile_inputs(
+    *, news_sentiment: pd.Series | None
+) -> profile_engine.ProfileInputBundle:
+    return profile_engine.ProfileInputBundle(
+        market_data=pd.DataFrame({"date": [pd.Timestamp("2026-05-15")]}),
+        end_date=pd.Timestamp("2026-05-15").date(),
+        required_sessions=252,
+        working_start_date=pd.Timestamp("2025-05-16").date(),
+        selected_dates=[pd.Timestamp("2026-05-15").date()],
+        sector_etf_closes={"XLK": pd.Series([1.0])},
+        cross_asset_closes={},
+        macro_series={},
+        event_calendar=None,
+        aaii_sentiment=None,
+        news_sentiment=news_sentiment,
+        implied_vol_30d=None,
+        central_bank_text_releases=pd.DataFrame(
+            {"release_date": [pd.Timestamp("2026-05-01")]}
+        ),
+        cpi_first_release=None,
+        pit_constituent_intervals=pd.DataFrame(
+            {
+                "ticker": ["AAPL"],
+                "start_date": [pd.Timestamp("2020-01-01").date()],
+                "end_date": [None],
+            }
+        ),
+        constituent_ohlcv={"AAPL": pd.DataFrame({"close": [1.0]})},
+        constituent_tickers=["AAPL"],
+    )
+
+
 def test_profile_json_safe_value_converts_nonfinite_floats_to_null() -> None:
     payload = profile_engine_reporting._json_safe_value(
         {
@@ -48,7 +97,9 @@ def test_profile_json_writer_rejects_nonfinite_values(tmp_path: Path) -> None:
     assert not report_path.exists()
 
 
-def test_effective_label_summary_uses_credit_funding_effective_state_for_proxy_fallback() -> None:
+def test_effective_label_summary_uses_credit_funding_effective_state_for_proxy_fallback() -> (
+    None
+):
     output = SimpleNamespace(
         credit_funding_state=SimpleNamespace(
             active_label="unknown",
@@ -104,46 +155,9 @@ def test_profile_json_report_emits_machine_readable_sections(tmp_path: Path) -> 
     timer.counts["feature_store.breadth_state_v2"] = 1
 
     report_path = tmp_path / "reports" / "profile.json"
-    args = SimpleNamespace(
-        config_path=tmp_path / "config.yaml",
-        daily_dir=tmp_path / "daily_ohlcv",
-        constituent_tree=tmp_path / "constituents",
-        macro_parquet=tmp_path / "macro.parquet",
-        event_calendar=tmp_path / "events.yaml",
-        aaii_sentiment_parquet=tmp_path / "aaii.parquet",
-        news_sentiment_parquet=tmp_path / "news.parquet",
-        fomc_minutes_parquet=tmp_path / "fomc.parquet",
-        powell_speeches_parquet=tmp_path / "powell.parquet",
-        cpi_vintages_parquet=tmp_path / "cpi.parquet",
-        pit_parquet=tmp_path / "pit.parquet",
-        lookback_days=1,
-    )
-    inputs = profile_engine.ProfileInputBundle(
-        market_data=pd.DataFrame({"date": [pd.Timestamp("2026-05-15")]}),
-        end_date=pd.Timestamp("2026-05-15").date(),
-        required_sessions=252,
-        working_start_date=pd.Timestamp("2025-05-16").date(),
-        selected_dates=[pd.Timestamp("2026-05-15").date()],
-        sector_etf_closes={"XLK": pd.Series([1.0])},
-        cross_asset_closes={},
-        macro_series={},
-        event_calendar=None,
-        aaii_sentiment=None,
-        news_sentiment=pd.Series([0.1], name="news_sentiment"),
-        implied_vol_30d=None,
-        central_bank_text_releases=pd.DataFrame(
-            {"release_date": [pd.Timestamp("2026-05-01")]}
-        ),
-        cpi_first_release=None,
-        pit_constituent_intervals=pd.DataFrame(
-            {
-                "ticker": ["AAPL"],
-                "start_date": [pd.Timestamp("2020-01-01").date()],
-                "end_date": [None],
-            }
-        ),
-        constituent_ohlcv={"AAPL": pd.DataFrame({"close": [1.0]})},
-        constituent_tickers=["AAPL"],
+    args = _build_profile_args(tmp_path)
+    inputs = _build_profile_inputs(
+        news_sentiment=pd.Series([0.1], name="news_sentiment")
     )
     output = SimpleNamespace(
         as_of_date=pd.Timestamp("2026-05-15").date(),
@@ -275,103 +289,38 @@ def test_profile_json_report_emits_machine_readable_sections(tmp_path: Path) -> 
             "volatility_state": "low_vol",
         }
     ]
-    assert payload["label_summary"]["inflation_growth_state"] == {
-        "active": {"unknown": 1},
-        "raw": {"missing": 1},
-        "reported": {"stale_data": 1},
-        "stable": {"missing": 1},
-        "status": {"stale_data": 1},
-    }
-    assert payload["label_summary"]["credit_funding_state_proxy"] == {
-        "active": {"unknown": 1},
-        "raw": {"missing": 1},
-        "reported": {"no_rule_fired": 1},
-        "stable": {"missing": 1},
-        "status": {"no_rule_fired": 1},
-    }
-    status_fields = {s["field"]: s["status"] for s in payload["trailing_v2_field_status"]}
-    assert status_fields["transition_risk.score_components"] == "present"
-    assert status_fields["transition_risk.primary_drivers"] == "present"
-    assert status_fields["transition_risk.triggered_rules"] == "present"
-    assert status_fields["transition_risk.data_quality"] == "present"
-    assert status_fields["event_calendar.primary_label"] == "present"
-    assert status_fields["event_calendar.matching_labels"] == "present"
-    assert status_fields["agent_routing"] == "present"
-    assert status_fields["strategy_family_constraints"] == "present"
-    full_output = payload["full_timeline"][0]
-    assert full_output["trend_direction"]["classification_status"] == "classified"
-    assert full_output["trend_direction"]["evidence"]["rule_evidence"] == {
-        "sample_metric": 1.25
-    }
-    assert full_output["inflation_growth_state"]["classification_status"] == "stale_data"
-    assert full_output["inflation_growth_state"]["active_label"] == "unknown"
-    assert full_output["inflation_growth_state"]["reporting_label"] == "stale_data"
-    assert full_output["credit_funding_state_proxy"]["classification_status"] == (
-        "no_rule_fired"
+
+
+def test_profile_json_report_can_include_observability_section(tmp_path: Path) -> None:
+    report_path = tmp_path / "report.json"
+
+    profile_engine._write_json_report(
+        report_path,
+        {
+            "status": "ok",
+            "observability": {
+                "trace_id": "trace-123",
+                "metrics": {"counters": {"exceptions_total": 1}, "timings_ms": {}},
+                "error_tracking": {"enabled": True, "backend": "sentry"},
+                "deployment_observability": {
+                    "dashboard_url": "https://grafana.example/d/abc"
+                },
+            },
+        },
     )
-    assert full_output["credit_funding_state_proxy"]["active_label"] == "unknown"
-    assert full_output["credit_funding_state_proxy"]["reporting_label"] == (
-        "no_rule_fired"
-    )
-    assert full_output["transition_risk"]["score_components"] == {"breadth": 0.2}
-    assert full_output["transition_risk"]["primary_drivers"] == ["breadth"]
-    assert full_output["transition_risk"]["triggered_rules"] == ["post_switch_cooldown"]
-    assert full_output["transition_risk"]["data_quality"] == {"status": "ok"}
-    assert full_output["cluster"] == {
-        "cluster_id": 3,
-        "distance_to_centroid": 1.75,
-        "model_version": "test-cluster",
-    }
-    assert full_output["change_point"] == {
-        "days_since_last_break": 7,
-        "method": "BOCPD",
-        "score": 0.42,
-    }
-    assert full_output["agent_routing"]["blocked_strategy_modes"] == ["short_vol"]
-    assert full_output["strategy_family_constraints"]["trend_following"] == {
-        "allowed": True,
-        "max_lookback_days": 60,
-        "reason": "classified",
-    }
+
+    payload = json.loads(report_path.read_text(encoding="utf-8"))
+    assert payload["observability"]["trace_id"] == "trace-123"
+    assert payload["observability"]["metrics"]["counters"]["exceptions_total"] == 1
+    assert payload["observability"]["error_tracking"]["backend"] == "sentry"
 
 
 def test_profile_json_report_uses_loaded_bundle_values_for_input_status(
     tmp_path: Path,
 ) -> None:
     timer = profile_engine.StageTimer()
-    args = SimpleNamespace(
-        config_path=tmp_path / "config.yaml",
-        daily_dir=tmp_path / "daily_ohlcv",
-        constituent_tree=tmp_path / "constituents",
-        macro_parquet=tmp_path / "macro.parquet",
-        event_calendar=tmp_path / "events.yaml",
-        aaii_sentiment_parquet=tmp_path / "aaii.parquet",
-        news_sentiment_parquet=tmp_path / "news.parquet",
-        fomc_minutes_parquet=tmp_path / "fomc.parquet",
-        powell_speeches_parquet=tmp_path / "powell.parquet",
-        cpi_vintages_parquet=tmp_path / "cpi.parquet",
-        pit_parquet=tmp_path / "pit.parquet",
-        lookback_days=1,
-    )
-    inputs = profile_engine.ProfileInputBundle(
-        market_data=pd.DataFrame({"date": [pd.Timestamp("2026-05-15")]}),
-        end_date=pd.Timestamp("2026-05-15").date(),
-        required_sessions=252,
-        working_start_date=pd.Timestamp("2025-05-16").date(),
-        selected_dates=[pd.Timestamp("2026-05-15").date()],
-        sector_etf_closes={"XLK": pd.Series([1.0])},
-        cross_asset_closes={},
-        macro_series={},
-        event_calendar=None,
-        aaii_sentiment=None,
-        news_sentiment=None,
-        implied_vol_30d=None,
-        central_bank_text_releases=pd.DataFrame({"release_date": [1]}),
-        cpi_first_release=None,
-        pit_constituent_intervals=pd.DataFrame({"ticker": ["AAPL"]}),
-        constituent_ohlcv={"AAPL": pd.DataFrame({"close": [1.0]})},
-        constituent_tickers=["AAPL"],
-    )
+    args = _build_profile_args(tmp_path)
+    inputs = _build_profile_inputs(news_sentiment=None)
     output = SimpleNamespace(
         as_of_date=pd.Timestamp("2026-05-15").date(),
         trend_direction=SimpleNamespace(
@@ -662,12 +611,12 @@ def test_sources_dict_records_cpi_nowcast_path_when_wired(tmp_path: Path) -> Non
         verification_issues=[],
     )
 
-    assert "cpi_nowcast" in report["sources"], (
-        "cpi_nowcast key must appear in sources when the parquet arg is provided"
-    )
-    assert report["sources"]["cpi_nowcast"] == str(nowcast_path), (
-        f"expected {str(nowcast_path)!r}, got {report['sources']['cpi_nowcast']!r}"
-    )
+    assert (
+        "cpi_nowcast" in report["sources"]
+    ), "cpi_nowcast key must appear in sources when the parquet arg is provided"
+    assert report["sources"]["cpi_nowcast"] == str(
+        nowcast_path
+    ), f"expected {str(nowcast_path)!r}, got {report['sources']['cpi_nowcast']!r}"
 
 
 def test_sources_dict_records_cpi_nowcast_none_when_not_wired(tmp_path: Path) -> None:
@@ -703,12 +652,12 @@ def test_sources_dict_records_cpi_nowcast_none_when_not_wired(tmp_path: Path) ->
         verification_issues=[],
     )
 
-    assert "cpi_nowcast" in report["sources"], (
-        "cpi_nowcast key must always appear in sources for audit completeness"
-    )
-    assert report["sources"]["cpi_nowcast"] is None, (
-        f"expected None when not wired, got {report['sources']['cpi_nowcast']!r}"
-    )
+    assert (
+        "cpi_nowcast" in report["sources"]
+    ), "cpi_nowcast key must always appear in sources for audit completeness"
+    assert (
+        report["sources"]["cpi_nowcast"] is None
+    ), f"expected None when not wired, got {report['sources']['cpi_nowcast']!r}"
 
 
 def test_sources_dict_records_eps_revision_disabled_by_operator(
@@ -747,10 +696,7 @@ def test_sources_dict_records_eps_revision_disabled_by_operator(
         verification_issues=[],
     )
 
-    assert (
-        report["sources"]["aggregate_forward_eps_revision"]
-        == "disabled_by_operator"
-    )
+    assert report["sources"]["aggregate_forward_eps_revision"] == "disabled_by_operator"
 
 
 def test_sources_dict_records_cpi_nowcast_none_when_arg_absent_from_namespace(

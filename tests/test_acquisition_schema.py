@@ -4,7 +4,6 @@ import sqlite3
 
 from regime_data_fetch.acquisition_schema import init_acquisition_schema
 
-
 EXPECTED_SCHEMA_COLUMNS = {
     "fetch_runs": (
         "run_id",
@@ -101,16 +100,11 @@ def test_acquisition_schema_initializes_expected_tables_and_columns() -> None:
     with sqlite3.connect(":memory:") as conn:
         init_acquisition_schema(conn)
 
-        table_names = {
-            row[0]
-            for row in conn.execute(
-                """
+        table_names = {row[0] for row in conn.execute("""
                 SELECT name
                 FROM sqlite_master
                 WHERE type = 'table' AND name NOT LIKE 'sqlite_%'
-                """
-            )
-        }
+                """)}
         table_columns = {
             table_name: tuple(
                 row[1] for row in conn.execute(f"PRAGMA table_info({table_name})")

@@ -1,0 +1,9 @@
+[deptry]
+extend_exclude = [
+  "tests",
+]
+known_first_party = [
+  "regime_detection",
+  "regime_data_fetch",
+  "regime_shared",
+]

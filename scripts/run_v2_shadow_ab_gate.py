@@ -29,14 +29,16 @@ from typing import Any
 
 import pandas as pd
 
-
 REPO_ROOT = Path(__file__).resolve().parents[1]
 SRC_DIR = REPO_ROOT / "src"
 sys.path.insert(0, str(SRC_DIR))
 sys.path.insert(0, str(REPO_ROOT / "scripts"))
 
 from regime_detection.calendar import nyse_calendar  # noqa: E402
-from regime_detection.config import load_default_regime_config, load_regime_config  # noqa: E402
+from regime_detection.config import (
+    load_default_regime_config,
+    load_regime_config,
+)  # noqa: E402
 from regime_detection.engine import RegimeEngine  # noqa: E402
 from regime_detection.fragility_universe import SECTOR_ETFS  # noqa: E402
 from regime_detection.loaders import (  # noqa: E402
@@ -45,7 +47,9 @@ from regime_detection.loaders import (  # noqa: E402
     load_event_calendar,
 )
 from regime_detection.market_context import build_market_context  # noqa: E402
-from regime_detection.versioning import engine_version as resolved_engine_version  # noqa: E402
+from regime_detection.versioning import (
+    engine_version as resolved_engine_version,
+)  # noqa: E402
 from regime_data_fetch.universe import FIXED_UNIVERSE_TREE_NAME  # noqa: E402
 
 from _v2_calibration_helpers import (  # noqa: E402
@@ -63,7 +67,6 @@ from _v2_calibration_helpers import (  # noqa: E402
     register_manifest_input_args,
     synthetic_pit_intervals_from_sector_closes,
 )
-
 
 logger = logging.getLogger("v2_shadow_ab_gate")
 
@@ -204,9 +207,7 @@ def _classify_per_session(
         as_of_timestamp = pd.Timestamp(as_of_date)
         market_dates = pd.to_datetime(market_data["date"])
         market_slice = (
-            market_data[market_dates <= as_of_timestamp]
-            .copy()
-            .reset_index(drop=True)
+            market_data[market_dates <= as_of_timestamp].copy().reset_index(drop=True)
         )
         kwargs: dict[str, Any] = {
             "as_of_date": as_of_date,
@@ -359,7 +360,9 @@ def _parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--daily-dir", type=Path, default=None)
     parser.add_argument("--macro-parquet", type=Path, default=None)
-    parser.add_argument("--event-calendar", dest="event_calendar", type=Path, default=None)
+    parser.add_argument(
+        "--event-calendar", dest="event_calendar", type=Path, default=None
+    )
     parser.add_argument("--config-path", type=Path, default=None)
     # Optional manifest-routed inputs come from MANIFEST_INPUT_SPECS.
     register_manifest_input_args(parser, include_required_paths=False)
@@ -370,7 +373,9 @@ def _parse_args() -> argparse.Namespace:
         type=Path,
         default=REPO_ROOT / "docs" / "verification" / "v2_shadow_ab_60session.md",
     )
-    add_manifest_args(parser, data_root_default=REPO_ROOT / "data" / "raw", action="running")
+    add_manifest_args(
+        parser, data_root_default=REPO_ROOT / "data" / "raw", action="running"
+    )
     parser.add_argument(
         "--allow-session-errors",
         action="store_true",
@@ -438,7 +443,11 @@ def main() -> int:
     )
 
     # Build bootstrap context to derive SPY session index.
-    config = load_regime_config(args.config_path) if args.config_path else load_default_regime_config()
+    config = (
+        load_regime_config(args.config_path)
+        if args.config_path
+        else load_default_regime_config()
+    )
     bootstrap_context = build_market_context(
         end_date=end_date,
         market_data=market_data,
@@ -480,7 +489,9 @@ def main() -> int:
         "sector_etf_closes": sector_etf_closes,
         "cross_asset_closes": cross_asset_closes,
         "macro_series": macro_series,
-        "pit_constituent_intervals": synthetic_pit_intervals_from_sector_closes(sector_etf_closes),
+        "pit_constituent_intervals": synthetic_pit_intervals_from_sector_closes(
+            sector_etf_closes
+        ),
         "constituent_ohlcv": constituent_ohlcv_from_sector_closes(sector_etf_closes),
         "central_bank_text_releases": (
             central_bank_text_releases if not central_bank_text_releases.empty else None

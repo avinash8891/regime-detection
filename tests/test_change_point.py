@@ -24,7 +24,6 @@ from regime_detection.config import (
     load_default_regime_config,
 )
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -108,9 +107,7 @@ def test_compute_change_point_features_succeeds_on_synthetic_two_regime_data() -
 
 
 def test_change_point_masks_rows_before_strict_pit_warmup() -> None:
-    series = _synthetic_two_regime_realized_vol(
-        n_sessions=140, shift_index=110, seed=1
-    )
+    series = _synthetic_two_regime_realized_vol(n_sessions=140, shift_index=110, seed=1)
     cfg = _default_change_point_config(training_window_days=100)
 
     result = compute_change_point_features(realized_vol_21d=series, config=cfg)
@@ -124,12 +121,8 @@ def test_change_point_masks_rows_before_strict_pit_warmup() -> None:
 
 
 def test_change_point_historical_scores_do_not_change_when_future_rows_append() -> None:
-    base = _synthetic_two_regime_realized_vol(
-        n_sessions=160, shift_index=120, seed=2
-    )
-    future = _synthetic_two_regime_realized_vol(
-        n_sessions=40, shift_index=20, seed=3
-    )
+    base = _synthetic_two_regime_realized_vol(n_sessions=160, shift_index=120, seed=2)
+    future = _synthetic_two_regime_realized_vol(n_sessions=40, shift_index=20, seed=3)
     future.index = pd.bdate_range(base.index[-1] + pd.offsets.BDay(), periods=40)
     extended = pd.concat([base, future])
     cfg = _default_change_point_config(training_window_days=100)
@@ -240,7 +233,9 @@ def test_compute_change_point_features_returns_none_on_numeric_instability(
     )
     cfg = _default_change_point_config(training_window_days=1260)
 
-    def raise_floating_point_error(*, data: np.ndarray, config: ChangePointConfig) -> np.ndarray:
+    def raise_floating_point_error(
+        *, data: np.ndarray, config: ChangePointConfig
+    ) -> np.ndarray:
         del data, config
         raise FloatingPointError("singular predictive")
 
@@ -253,6 +248,85 @@ def test_compute_change_point_features_returns_none_on_numeric_instability(
     result = compute_change_point_features(realized_vol_21d=series, config=cfg)
 
     assert result is None
+
+
+def test_compute_change_point_features_returns_none_when_bocpd_dependency_changes_exception_type(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import regime_detection.change_point as change_point
+
+    series = _synthetic_two_regime_realized_vol(
+        n_sessions=1500, shift_index=750, seed=0
+    )
+    cfg = _default_change_point_config(training_window_days=1260)
+
+    def raise_value_error(*, data: np.ndarray, config: ChangePointConfig) -> np.ndarray:
+        del data, config
+        raise ValueError("dependency contract changed")
+
+    monkeypatch.setattr(
+        change_point,
+        "_bocpd_posterior_changepoint_prob",
+        raise_value_error,
+    )
+
+    result = compute_change_point_features(realized_vol_21d=series, config=cfg)
+
+    assert result is None
+
+
+def test_bocpd_adapter_rejects_unexpected_posterior_matrix_shape(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import regime_detection.change_point as change_point
+
+    def fake_online_changepoint_detection(
+        data: np.ndarray,
+        hazard_func,
+        observation_likelihood: object,
+    ) -> tuple[np.ndarray, np.ndarray]:
+        del hazard_func, observation_likelihood
+        return np.zeros((len(data), len(data)), dtype=float), np.arange(len(data))
+
+    monkeypatch.setattr(
+        change_point,
+        "_online_changepoint_detection",
+        fake_online_changepoint_detection,
+    )
+
+    cfg = _default_change_point_config()
+    data = np.array([0.11, 0.12, 0.25], dtype=float)
+
+    with pytest.raises(RuntimeError, match="BOCPD posterior matrix shape"):
+        change_point._bocpd_posterior_changepoint_prob(data=data, config=cfg)
+
+
+def test_bocpd_adapter_rejects_nonfinite_posterior_mass(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import regime_detection.change_point as change_point
+
+    def fake_online_changepoint_detection(
+        data: np.ndarray,
+        hazard_func,
+        observation_likelihood: object,
+    ) -> tuple[np.ndarray, np.ndarray]:
+        del hazard_func, observation_likelihood
+        R = np.zeros((len(data) + 1, len(data) + 1), dtype=float)
+        R[1, 1:] = np.array([0.1, np.nan, 0.2], dtype=float)
+        return R, np.arange(len(data))
+
+    monkeypatch.setattr(
+        change_point,
+        "_online_changepoint_detection",
+        fake_online_changepoint_detection,
+    )
+
+    cfg = _default_change_point_config()
+    data = np.array([0.11, 0.12, 0.25], dtype=float)
+
+    with pytest.raises(FloatingPointError, match="non-finite"):
+        change_point._bocpd_posterior_changepoint_prob(data=data, config=cfg)
 
 
 def test_bocpd_adapter_calls_expected_dependency_api(
@@ -284,7 +358,7 @@ def test_bocpd_adapter_calls_expected_dependency_api(
         calls["data"] = data.copy()
         calls["hazard_func"] = hazard_func
         calls["observation_likelihood"] = observation_likelihood
-        R = np.zeros((5, len(data) + 1), dtype=float)
+        R = np.zeros((len(data) + 1, len(data) + 1), dtype=float)
         R[1, 1:] = np.array([0.1, 0.2, 0.7], dtype=float)
         R[2, 1:] = np.array([0.3, 0.1, 0.1], dtype=float)
         R[3, 1:] = np.array([0.4, 0.0, 0.1], dtype=float)
@@ -387,9 +461,13 @@ def test_feature_store_change_point_seam_present_with_default_config(
     cfg = load_default_regime_config()
     assert cfg.change_point is not None
     # Override training_window to fit the test fixture's ~650 sessions
-    cfg = cfg.model_copy(update={
-        "change_point": cfg.change_point.model_copy(update={"training_window_days": 500}),
-    })
+    cfg = cfg.model_copy(
+        update={
+            "change_point": cfg.change_point.model_copy(
+                update={"training_window_days": 500}
+            ),
+        }
+    )
     spy = raw_market_frames["SPY"]
     rsp = raw_market_frames["RSP"]
     vix = raw_market_frames["VIX"]
@@ -430,11 +508,31 @@ def test_regime_output_carries_change_point_when_seam_present(
 
     engine = RegimeEngine()
     assert engine.config.change_point is not None
-    cfg = engine.config.model_copy(update={
-        "change_point": engine.config.change_point.model_copy(
-            update={"training_window_days": 500}
-        ),
-    })
+    cfg = engine.config.model_copy(
+        update={
+            "change_point": engine.config.change_point.model_copy(
+                update={"training_window_days": 100}
+            ),
+            "network_fragility": None,
+            "trend_direction_v2": None,
+            "volatility_state_v2": None,
+            "breadth_state_v2": None,
+            "volume_liquidity_v2": None,
+            "volume_liquidity_state": None,
+            "transition_score": None,
+            "monetary_pressure_v2": None,
+            "monetary_pressure_state": None,
+            "central_bank_text": None,
+            "news_sentiment": None,
+            "inflation_growth": None,
+            "credit_funding": None,
+            "hmm": None,
+            "clustering": None,
+            "cohort_routing": None,
+            "strategy_family_constraints": None,
+            "strategy_event_modifiers": None,
+        }
+    )
     last_session = max(raw_market_data["date"].unique())
     market_data = market_df_for_asof(last_session)
     kwargs = synthetic_v2_kwargs_for_market_data(market_data)

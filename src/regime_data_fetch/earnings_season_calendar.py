@@ -3,12 +3,13 @@ from __future__ import annotations
 import calendar
 import datetime as dt
 
-
 QUARTER_START_MONTHS = (1, 4, 7, 10)
 WINDOW_LENGTH_CALENDAR_DAYS = 35
 
 
-def compute_earnings_season_window(*, year: int, quarter_start_month: int) -> tuple[dt.date, dt.date]:
+def compute_earnings_season_window(
+    *, year: int, quarter_start_month: int
+) -> tuple[dt.date, dt.date]:
     if quarter_start_month not in QUARTER_START_MONTHS:
         raise ValueError(f"quarter_start_month must be one of {QUARTER_START_MONTHS}")
 
@@ -17,7 +18,9 @@ def compute_earnings_season_window(*, year: int, quarter_start_month: int) -> tu
     return start_date, end_date
 
 
-def build_earnings_season_windows(*, start_date: dt.date, end_date: dt.date) -> list[tuple[dt.date, dt.date]]:
+def build_earnings_season_windows(
+    *, start_date: dt.date, end_date: dt.date
+) -> list[tuple[dt.date, dt.date]]:
     if end_date < start_date:
         raise ValueError("end_date must be >= start_date")
 
@@ -26,7 +29,9 @@ def build_earnings_season_windows(*, start_date: dt.date, end_date: dt.date) -> 
     month = start_date.month
     while (year, month) <= (end_date.year, end_date.month):
         if month in QUARTER_START_MONTHS:
-            windows.append(compute_earnings_season_window(year=year, quarter_start_month=month))
+            windows.append(
+                compute_earnings_season_window(year=year, quarter_start_month=month)
+            )
         if month == 12:
             year += 1
             month = 1
@@ -43,7 +48,9 @@ def is_in_earnings_season(*, as_of_date: dt.date) -> bool:
     if start_date <= as_of_date <= end_date:
         return True
 
-    previous_year, previous_month = _previous_quarter_start(start_date.year, start_date.month)
+    previous_year, previous_month = _previous_quarter_start(
+        start_date.year, start_date.month
+    )
     previous_start, previous_end = compute_earnings_season_window(
         year=previous_year,
         quarter_start_month=previous_month,

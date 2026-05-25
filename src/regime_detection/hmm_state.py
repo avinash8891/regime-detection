@@ -55,7 +55,7 @@ class _StrictConvergenceMonitor(ConvergenceMonitor):
 
     @property
     def converged(self) -> bool:
-        return self.non_monotonic or super().converged
+        return False if self.non_monotonic else super().converged
 
 
 @dataclass(frozen=True)
@@ -201,50 +201,65 @@ def compute_hmm_features(
             train_end_positions.append(len(frame) - 1)
         backend = "threading" if is_patched else "loky"
         with Parallel(n_jobs=n_workers, backend=backend, batch_size=1) as parallel:
-          for offset, train_end_pos in enumerate(train_end_positions):
-            train_frame = frame.iloc[train_end_pos - n_train + 1 : train_end_pos + 1]
-            next_train_end_pos = (
-                train_end_positions[offset + 1]
-                if offset + 1 < len(train_end_positions)
-                else len(frame)
-            )
-            segment_frame = frame.iloc[train_end_pos:next_train_end_pos]
-            fit_frame, predict_frame = _prepare_hmm_frames(
-                train_frame=train_frame,
-                full_frame=segment_frame,
-                standardize_inputs=config.standardize_inputs,
-            )
-            best: dict[str, Any] | None = None
-            seed_results = parallel(
-                delayed(_fit_single_seed)(
-                    fit_frame=fit_frame,
-                    predict_frame=predict_frame,
-                    seed=int(seed),
-                    n_states=config.n_states,
-                    covariance_type=config.covariance_type,
-                    min_covar=config.min_covar,
-                    tol=config.tol,
+            for offset, train_end_pos in enumerate(train_end_positions):
+                train_frame = frame.iloc[
+                    train_end_pos - n_train + 1 : train_end_pos + 1
+                ]
+                next_train_end_pos = (
+                    train_end_positions[offset + 1]
+                    if offset + 1 < len(train_end_positions)
+                    else len(frame)
                 )
-                for seed in config.random_seeds
-            )
-            for result in seed_results:
-                if result["non_monotonic"]:
-                    all_skipped.append(
-                        (
+                segment_frame = frame.iloc[train_end_pos:next_train_end_pos]
+                fit_frame, predict_frame = _prepare_hmm_frames(
+                    train_frame=train_frame,
+                    full_frame=segment_frame,
+                    standardize_inputs=config.standardize_inputs,
+                )
+                best: dict[str, Any] | None = None
+                seed_results = parallel(
+                    delayed(_fit_single_seed)(
+                        fit_frame=fit_frame,
+                        predict_frame=predict_frame,
+                        seed=int(seed),
+                        n_states=config.n_states,
+                        covariance_type=config.covariance_type,
+                        min_covar=config.min_covar,
+                        tol=config.tol,
+                    )
+                    for seed in config.random_seeds
+                )
+                for result in seed_results:
+                    if result["non_monotonic"]:
+                        _LOGGER.warning(
+                            "GaussianHMM skipped non-monotonic seed: "
+                            "checkpoint=%s seed=%s log_likelihood=%s "
+                            "previous_log_likelihood=%s delta=%s",
                             train_end_pos,
                             result["seed"],
                             result["log_likelihood"],
                             result["previous_log_likelihood"],
                             result["delta"],
                         )
-                    )
+                        all_skipped.append(
+                            (
+                                train_end_pos,
+                                result["seed"],
+                                result["log_likelihood"],
+                                result["previous_log_likelihood"],
+                                result["delta"],
+                            )
+                        )
+                        continue
+                    if (
+                        best is None
+                        or result["log_likelihood"] > best["log_likelihood"]
+                    ):
+                        best = result
+                if best is None:
                     continue
-                if best is None or result["log_likelihood"] > best["log_likelihood"]:
-                    best = result
-            if best is None:
-                continue
-            state_prob_frame.loc[segment_frame.index, :] = best["posterior"]
-            latest_fit = best
+                state_prob_frame.loc[segment_frame.index, :] = best["posterior"]
+                latest_fit = best
     except Exception as exc:  # noqa: BLE001
         # Fail-open: degenerate inputs (singular covariance, etc.) should
         # not crash the engine — the seam goes None and downstream falls

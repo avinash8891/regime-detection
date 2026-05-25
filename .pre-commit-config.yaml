@@ -3,6 +3,13 @@ default_stages: [pre-commit]
 repos:
   - repo: local
     hooks:
+      - id: deptry
+        name: deptry
+        entry: python3 -m deptry src tests
+        language: system
+        pass_filenames: false
+        stages: [pre-push]
+
       - id: cubic-review
         name: cubic review
         entry: scripts/cubic_review.sh origin/main

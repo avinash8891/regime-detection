@@ -10,6 +10,7 @@ Per CLAUDE.md testing rules:
 - Test the integration path (loader → feature_store → MonetaryPressureV2
   Features.central_bank_text_score), not just the unit.
 """
+
 from __future__ import annotations
 
 import datetime as dt
@@ -27,7 +28,6 @@ from regime_detection.central_bank_text import (
     to_daily_score_series,
 )
 from regime_detection.loaders import load_central_bank_text_score
-
 
 # Real FOMC-style phrasing. These are intentionally faithful to actual
 # FOMC minutes wording so the lexicon test reflects production semantics.
@@ -100,8 +100,14 @@ def test_lexicons_have_no_overlapping_terms() -> None:
 def test_score_release_frame_returns_one_row_per_release() -> None:
     fomc_releases = pd.DataFrame(
         [
-            {"release_timestamp": "2024-01-31 14:00:00", "body_text": _HAWKISH_FOMC_BODY},
-            {"release_timestamp": "2024-03-20 14:00:00", "body_text": _DOVISH_FOMC_BODY},
+            {
+                "release_timestamp": "2024-01-31 14:00:00",
+                "body_text": _HAWKISH_FOMC_BODY,
+            },
+            {
+                "release_timestamp": "2024-03-20 14:00:00",
+                "body_text": _DOVISH_FOMC_BODY,
+            },
         ]
     )
     out = score_release_frame(
@@ -122,6 +128,43 @@ def test_score_release_frame_returns_one_row_per_release() -> None:
     assert out.iloc[1]["net_score"] < 0
 
 
+def test_score_release_frame_empty_input_returns_typed_empty_frame() -> None:
+    out = score_release_frame(
+        pd.DataFrame(columns=["release_timestamp", "body_text"]),
+        date_column="release_timestamp",
+        source_label="fomc_minutes",
+    )
+    assert out.empty
+    assert list(out.columns) == [
+        "release_date",
+        "hawkish_count",
+        "dovish_count",
+        "total_tokens",
+        "net_score",
+        "source",
+    ]
+
+
+def test_score_release_frame_missing_date_column_raises() -> None:
+    releases = pd.DataFrame([{"body_text": _HAWKISH_FOMC_BODY}])
+    with pytest.raises(ValueError, match="missing required date column"):
+        score_release_frame(
+            releases,
+            date_column="release_timestamp",
+            source_label="fomc_minutes",
+        )
+
+
+def test_score_release_frame_missing_body_text_column_raises() -> None:
+    releases = pd.DataFrame([{"release_timestamp": "2024-01-31"}])
+    with pytest.raises(ValueError, match="missing required column: body_text"):
+        score_release_frame(
+            releases,
+            date_column="release_timestamp",
+            source_label="fomc_minutes",
+        )
+
+
 def test_combine_release_frames_concatenates_and_sorts() -> None:
     fomc = pd.DataFrame(
         [{"release_timestamp": "2024-01-31", "body_text": _HAWKISH_FOMC_BODY}]
@@ -138,6 +181,19 @@ def test_combine_release_frames_concatenates_and_sorts() -> None:
     combined = combine_release_frames(fomc_scored, powell_scored)
     assert len(combined) == 2
     assert list(combined["source"]) == ["fomc_minutes", "powell_speech"]
+
+
+def test_combine_release_frames_ignores_none_and_empty_inputs() -> None:
+    out = combine_release_frames(None, pd.DataFrame(), pd.DataFrame())  # type: ignore[arg-type]
+    assert out.empty
+    assert list(out.columns) == [
+        "release_date",
+        "hawkish_count",
+        "dovish_count",
+        "total_tokens",
+        "net_score",
+        "source",
+    ]
 
 
 def test_to_daily_score_series_forward_fills_per_v1_replay_rule() -> None:
@@ -263,6 +319,72 @@ def test_same_date_aggregation_token_weighted_average() -> None:
     assert daily.loc["2024-02-01"] == pytest.approx(-0.5, abs=1e-9)
 
 
+def test_same_date_aggregation_token_weighted_average_falls_back_to_mean_for_zero_weights() -> (
+    None
+):
+    scored = pd.DataFrame(
+        [
+            {
+                "release_date": dt.date(2024, 2, 1),
+                "hawkish_count": 1,
+                "dovish_count": 0,
+                "total_tokens": 0,
+                "net_score": 1.0,
+                "source": "powell_speech",
+            },
+            {
+                "release_date": dt.date(2024, 2, 1),
+                "hawkish_count": 0,
+                "dovish_count": 1,
+                "total_tokens": 0,
+                "net_score": -0.5,
+                "source": "fomc_minutes",
+            },
+        ]
+    )
+    sessions = pd.date_range("2024-02-01", "2024-02-05", freq="B")
+    daily = to_daily_score_series(
+        scored,
+        session_index=sessions,
+        smoothing_window_sessions=1,
+        same_date_aggregation="token_weighted_average",
+    )
+    assert daily.loc["2024-02-01"] == pytest.approx(0.25, abs=1e-9)
+
+
+def test_same_date_aggregation_token_weighted_average_returns_nan_when_all_scores_nan() -> (
+    None
+):
+    scored = pd.DataFrame(
+        [
+            {
+                "release_date": dt.date(2024, 2, 1),
+                "hawkish_count": 0,
+                "dovish_count": 0,
+                "total_tokens": 100,
+                "net_score": np.nan,
+                "source": "powell_speech",
+            },
+            {
+                "release_date": dt.date(2024, 2, 1),
+                "hawkish_count": 0,
+                "dovish_count": 0,
+                "total_tokens": 200,
+                "net_score": np.nan,
+                "source": "fomc_minutes",
+            },
+        ]
+    )
+    sessions = pd.date_range("2024-02-01", "2024-02-05", freq="B")
+    daily = to_daily_score_series(
+        scored,
+        session_index=sessions,
+        smoothing_window_sessions=1,
+        same_date_aggregation="token_weighted_average",
+    )
+    assert np.isnan(daily.loc["2024-02-01"])
+
+
 def test_same_date_aggregation_fomc_priority_picks_fomc() -> None:
     """fomc_priority: FOMC minutes win even if Powell speech is longer."""
     # Inverted token counts: Powell longer but FOMC still wins.
@@ -313,7 +435,10 @@ def test_same_date_aggregation_unknown_strategy_raises() -> None:
 def test_load_central_bank_text_score_integrates_fomc_and_powell_frames() -> None:
     fomc_df = pd.DataFrame(
         [
-            {"release_timestamp": "2024-01-31 14:00:00", "body_text": _HAWKISH_FOMC_BODY},
+            {
+                "release_timestamp": "2024-01-31 14:00:00",
+                "body_text": _HAWKISH_FOMC_BODY,
+            },
         ]
     )
     powell_df = pd.DataFrame(
@@ -336,7 +461,10 @@ def test_load_central_bank_text_score_empty_inputs_returns_empty_frame() -> None
 def test_load_central_bank_text_score_respects_max_release_age() -> None:
     fomc_df = pd.DataFrame(
         [
-            {"release_timestamp": "2020-01-31", "body_text": _HAWKISH_FOMC_BODY},  # too old
+            {
+                "release_timestamp": "2020-01-31",
+                "body_text": _HAWKISH_FOMC_BODY,
+            },  # too old
             {"release_timestamp": "2024-01-31", "body_text": _DOVISH_FOMC_BODY},
         ]
     )
@@ -347,3 +475,59 @@ def test_load_central_bank_text_score_respects_max_release_age() -> None:
     )
     assert len(out) == 1
     assert out.iloc[0]["release_date"] == dt.date(2024, 1, 31)
+
+
+def test_to_daily_score_series_max_release_age_can_drop_all_releases() -> None:
+    scored = pd.DataFrame(
+        [
+            {
+                "release_date": dt.date(2020, 1, 31),
+                "hawkish_count": 1,
+                "dovish_count": 0,
+                "total_tokens": 100,
+                "net_score": 1.0,
+                "source": "fomc_minutes",
+            }
+        ]
+    )
+    sessions = pd.date_range("2024-12-30", "2024-12-31", freq="B")
+    daily = to_daily_score_series(
+        scored,
+        session_index=sessions,
+        smoothing_window_sessions=1,
+        max_release_age_days=365,
+    )
+    assert daily.isna().all()
+    assert daily.name == "central_bank_text_score"
+
+
+def test_to_daily_score_series_applies_trailing_smoothing_window() -> None:
+    scored = pd.DataFrame(
+        [
+            {
+                "release_date": dt.date(2024, 1, 31),
+                "hawkish_count": 2,
+                "dovish_count": 0,
+                "total_tokens": 100,
+                "net_score": 1.0,
+                "source": "fomc_minutes",
+            },
+            {
+                "release_date": dt.date(2024, 2, 1),
+                "hawkish_count": 0,
+                "dovish_count": 2,
+                "total_tokens": 100,
+                "net_score": -1.0,
+                "source": "powell_speech",
+            },
+        ]
+    )
+    sessions = pd.date_range("2024-01-31", "2024-02-02", freq="B")
+    daily = to_daily_score_series(
+        scored,
+        session_index=sessions,
+        smoothing_window_sessions=2,
+    )
+    assert daily.loc["2024-01-31"] == 1.0
+    assert daily.loc["2024-02-01"] == pytest.approx(0.0, abs=1e-9)
+    assert daily.loc["2024-02-02"] == -1.0

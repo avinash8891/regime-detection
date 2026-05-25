@@ -31,7 +31,9 @@ def load_approval_overlay(path: Path) -> list[ApprovalRecord]:
         approval = _parse_approval(raw, idx)
         key = (approval.event_type, approval.date)
         if key in seen:
-            raise ValueError(f"duplicate approval for {approval.event_type} on {approval.date.isoformat()}")
+            raise ValueError(
+                f"duplicate approval for {approval.event_type} on {approval.date.isoformat()}"
+            )
         seen.add(key)
         approvals.append(approval)
     return approvals
@@ -53,7 +55,9 @@ def append_approval_record(
     approvals = load_approval_overlay(path)
     key = (event_type, event_date)
     if any((approval.event_type, approval.date) == key for approval in approvals):
-        raise ValueError(f"duplicate approval for {event_type} on {event_date.isoformat()}")
+        raise ValueError(
+            f"duplicate approval for {event_type} on {event_date.isoformat()}"
+        )
     approval = ApprovalRecord(
         event_type=event_type,
         date=event_date,
@@ -86,20 +90,30 @@ def _parse_approval(raw: dict[str, Any], idx: int) -> ApprovalRecord:
         if field not in raw
     ]
     if missing:
-        raise ValueError(f"approval overlay entry {idx} missing required fields: {', '.join(missing)}")
+        raise ValueError(
+            f"approval overlay entry {idx} missing required fields: {', '.join(missing)}"
+        )
 
     event_type = str(raw["event_type"])
     if event_type not in GROUP_B_EVENT_TYPES:
-        raise ValueError(f"approval overlay entry {idx} has unknown event_type: {event_type}")
+        raise ValueError(
+            f"approval overlay entry {idx} has unknown event_type: {event_type}"
+        )
     approved_label = str(raw["approved_label"])
     if approved_label != event_type:
-        raise ValueError(f"approval overlay entry {idx} approved_label must match event_type")
+        raise ValueError(
+            f"approval overlay entry {idx} approved_label must match event_type"
+        )
 
     date = _parse_date(raw["date"], f"approval overlay entry {idx} date")
-    approved_at = _parse_date(raw["approved_at"], f"approval overlay entry {idx} approved_at")
+    approved_at = _parse_date(
+        raw["approved_at"], f"approval overlay entry {idx} approved_at"
+    )
     source_count = int(raw["evidence_source_count"])
     if source_count < 1:
-        raise ValueError(f"approval overlay entry {idx} evidence_source_count must be positive")
+        raise ValueError(
+            f"approval overlay entry {idx} evidence_source_count must be positive"
+        )
 
     return ApprovalRecord(
         event_type=event_type,
@@ -109,7 +123,9 @@ def _parse_approval(raw: dict[str, Any], idx: int) -> ApprovalRecord:
         approved_at=approved_at,
         evidence_candidate_id=str(raw["evidence_candidate_id"]),
         evidence_source_count=source_count,
-        importance=str(raw["importance"]) if raw.get("importance") is not None else None,
+        importance=(
+            str(raw["importance"]) if raw.get("importance") is not None else None
+        ),
         window_days=_parse_window_days(raw.get("window_days"), idx),
         notes=str(raw["notes"]) if raw.get("notes") is not None else None,
     )
@@ -126,7 +142,9 @@ def _parse_window_days(value: object, idx: int) -> tuple[int, int] | None:
     if value is None:
         return None
     if not isinstance(value, list) or len(value) != 2:
-        raise ValueError(f"approval overlay entry {idx} window_days must be a two-item list")
+        raise ValueError(
+            f"approval overlay entry {idx} window_days must be a two-item list"
+        )
     return (int(value[0]), int(value[1]))
 
 

@@ -88,7 +88,7 @@ def test_component_formulas_have_expected_boundaries(
         "credit_stress": pytest.approx(0.75),
         "liquidity_stress": pytest.approx(1.0),
         "macro_event": pytest.approx(1.0),
-        "model_instability": pytest.approx(1.0),
+        "model_instability": pytest.approx(0.70),
     }
 
 
@@ -110,7 +110,12 @@ def test_macro_event_audit_ignores_non_scoring_calendar_labels(
 ) -> None:
     out = _compose(
         transition_score_config,
-        event_calendar_labels=("earnings_season", "fed_week", "expiry_week", "cpi_week"),
+        event_calendar_labels=(
+            "earnings_season",
+            "fed_week",
+            "expiry_week",
+            "cpi_week",
+        ),
     )
 
     assert out.components is not None
@@ -139,7 +144,9 @@ def test_compute_transition_score_reweights_available_components(
         minimum_component_weight_coverage=transition_score_config.minimum_component_weight_coverage,
     )
 
-    present_weight = sum(weights[key] for key, value in components.items() if value is not None)
+    present_weight = sum(
+        weights[key] for key, value in components.items() if value is not None
+    )
     expected = sum(
         components[key] * weights[key] / present_weight
         for key, value in components.items()
@@ -215,9 +222,14 @@ def test_compose_transition_score_exposes_only_present_components(
 
     assert out.score is not None
     assert out.components is not None
-    assert set(out.components) == set(transition_score_config.weights) - {"credit_stress"}
+    assert set(out.components) == set(transition_score_config.weights) - {
+        "credit_stress"
+    }
     assert out.missing_components == ("credit_stress",)
-    assert out.component_weight_coverage >= transition_score_config.minimum_component_weight_coverage
+    assert (
+        out.component_weight_coverage
+        >= transition_score_config.minimum_component_weight_coverage
+    )
     for value in out.components.values():
         assert not math.isnan(value)
 

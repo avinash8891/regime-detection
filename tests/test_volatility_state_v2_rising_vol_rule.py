@@ -11,6 +11,7 @@ Spec references (docs/regime_engine_v2_spec.md):
 Per ~/.claude/CLAUDE.md and AGENTS.md G/L: realistic SPY-like price series,
 no toy a/b/c names, use the real production Pydantic config.
 """
+
 from __future__ import annotations
 
 from datetime import date
@@ -38,7 +39,6 @@ from regime_detection.volatility_state_v2 import (
     evaluate_rising_vol,
     evaluate_v2_volatility_label,
 )
-
 
 # v2 §1C line 147-148 — exact spec thresholds.
 _SPEC_ATR_RATIO_THRESHOLD = 1.15
@@ -86,6 +86,7 @@ def _scalar_v2_features_at(
         atr_ratio=pd.Series([atr_ratio], index=idx),
         gap_frequency_20d=nan.copy(),
         gap_frequency_percentile_252d=nan.copy(),
+        intraday_range=nan.copy(),
         intraday_range_percentile_252d=nan.copy(),
         realized_vol_short=pd.Series([realized_vol_short], index=idx),
         realized_vol_long=pd.Series([realized_vol_long], index=idx),
@@ -166,6 +167,17 @@ def test_rising_vol_nan_input_returns_false(rising_vol_rules, field) -> None:
     assert evaluate_rising_vol(features, dt=dt, rules_config=rising_vol_rules) is False
 
 
+def test_rising_vol_false_when_dt_missing_from_feature_index(rising_vol_rules) -> None:
+    dt = pd.Timestamp("2020-03-09")
+    features = _scalar_v2_features_at(
+        dt=pd.Timestamp("2020-03-10"),
+        atr_ratio=1.30,
+        realized_vol_short=0.40,
+        realized_vol_long=0.20,
+    )
+    assert evaluate_rising_vol(features, dt=dt, rules_config=rising_vol_rules) is False
+
+
 # ---------- Precedence tests on `evaluate_v2_volatility_label` --------------
 
 
@@ -227,6 +239,22 @@ def test_precedence_rising_vol_predicate_false_returns_none(rising_vol_rules) ->
             rules_config=rising_vol_rules,
         )
         is None
+    )
+
+
+def test_precedence_unknown_v1_label_treated_as_lowest_rank(rising_vol_rules) -> None:
+    dt = pd.Timestamp("2020-03-09")
+    features = _scalar_v2_features_at(
+        dt=dt, atr_ratio=1.30, realized_vol_short=0.40, realized_vol_long=0.20
+    )
+    assert (
+        evaluate_v2_volatility_label(
+            v1_label="custom_label",
+            features=features,
+            dt=dt,
+            rules_config=rising_vol_rules,
+        )
+        == "rising_vol"
     )
 
 
@@ -340,6 +368,7 @@ def _compute_v2_features_with_rv(
         atr_ratio=base.atr_ratio,
         gap_frequency_20d=base.gap_frequency_20d,
         gap_frequency_percentile_252d=base.gap_frequency_percentile_252d,
+        intraday_range=base.intraday_range,
         intraday_range_percentile_252d=base.intraday_range_percentile_252d,
         realized_vol_short=rv_short,
         realized_vol_long=rv_long,
@@ -379,9 +408,9 @@ def test_build_raw_outputs_emits_rising_vol_on_synthetic_expansion(
     # At least one session emits `rising_vol` (predicate must fire on the
     # synthetic volatility expansion AND the v1 label must rank below
     # rising_vol per §1C line 191).
-    assert "rising_vol" in labels, (
-        f"expected rising_vol in labels; got distinct: {sorted(set(labels))}"
-    )
+    assert (
+        "rising_vol" in labels
+    ), f"expected rising_vol in labels; got distinct: {sorted(set(labels))}"
 
     for idx, label in enumerate(labels):
         if label != "rising_vol":
@@ -426,9 +455,9 @@ def test_end_to_end_engine_emits_rising_vol_on_synthetic_series(
             "high": close_series.values,
             "low": close_series.values,
             "close": close_series.values,
-                "volume": range(100_000_000, 100_000_000 + len(close_series.index)),
-            }
-        )
+            "volume": range(100_000_000, 100_000_000 + len(close_series.index)),
+        }
+    )
     rsp_df = market_df.copy()
     rsp_df["symbol"] = "RSP"
     vix_df = market_df.copy()
@@ -457,9 +486,9 @@ def test_end_to_end_engine_emits_rising_vol_on_synthetic_series(
     )
 
     raw_labels = [out.volatility_state.raw_label for out in timeline.outputs]
-    assert "rising_vol" in raw_labels, (
-        f"expected rising_vol in end-to-end raw_labels; got distinct: {sorted(set(raw_labels))}"
-    )
+    assert (
+        "rising_vol" in raw_labels
+    ), f"expected rising_vol in end-to-end raw_labels; got distinct: {sorted(set(raw_labels))}"
 
 
 # ---------- Config tests -----------------------------------------------------
@@ -488,7 +517,9 @@ def test_rising_vol_rules_rejects_unknown_fields() -> None:
         )
 
 
-@pytest.mark.parametrize("field", ["atr_ratio_threshold", "realized_vol_ratio_threshold"])
+@pytest.mark.parametrize(
+    "field", ["atr_ratio_threshold", "realized_vol_ratio_threshold"]
+)
 def test_rising_vol_rules_thresholds_must_be_positive(field) -> None:
     from pydantic import ValidationError
 
@@ -503,7 +534,9 @@ def test_rising_vol_rules_thresholds_must_be_positive(field) -> None:
         VolatilityV2RulesConfig(**args)
 
 
-@pytest.mark.parametrize("field", ["realized_vol_short_period", "realized_vol_long_period"])
+@pytest.mark.parametrize(
+    "field", ["realized_vol_short_period", "realized_vol_long_period"]
+)
 def test_rising_vol_rules_periods_must_be_positive(field) -> None:
     from pydantic import ValidationError
 

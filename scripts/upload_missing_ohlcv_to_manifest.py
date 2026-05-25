@@ -23,7 +23,10 @@ _REPO_ROOT = Path(__file__).resolve().parent.parent
 if str(_REPO_ROOT / "src") not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT / "src"))
 
-from regime_data_fetch.artifact_store import build_artifact_store, sha256_bytes  # noqa: E402
+from regime_data_fetch.artifact_store import (
+    build_artifact_store,
+    sha256_bytes,
+)  # noqa: E402
 from regime_data_fetch.cli_common import load_operator_env_files  # noqa: E402
 
 LOGGER = logging.getLogger("upload_missing_ohlcv")
@@ -140,7 +143,7 @@ def _insertion_index(artifacts: list, symbol: str) -> int:
         name = a.get("name", "")
         if not name.startswith("daily_ohlcv_762_"):
             continue
-        existing_sym = name[len("daily_ohlcv_762_"):]
+        existing_sym = name[len("daily_ohlcv_762_") :]
         if existing_sym <= symbol:
             last = i
     return last + 1
@@ -169,8 +172,7 @@ def main(argv: list[str] | None = None) -> int:
         return 1
 
     candidate_dirs = sorted(
-        d for d in source_tree.iterdir()
-        if d.is_dir() and d.name.startswith("symbol=")
+        d for d in source_tree.iterdir() if d.is_dir() and d.name.startswith("symbol=")
     )
 
     uploaded = 0
@@ -226,7 +228,9 @@ def main(argv: list[str] | None = None) -> int:
         )
         uploaded += 1
 
-    LOGGER.info("done: uploaded=%d skipped=%d errors=%d", uploaded, skipped, len(errors))
+    LOGGER.info(
+        "done: uploaded=%d skipped=%d errors=%d", uploaded, skipped, len(errors)
+    )
     if errors:
         LOGGER.error("symbols with errors: %s", errors)
         return 1

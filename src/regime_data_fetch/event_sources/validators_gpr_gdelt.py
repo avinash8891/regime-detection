@@ -9,7 +9,9 @@ from collections.abc import Callable
 import pandas as pd
 
 from regime_data_fetch.acquisition_store import AcquisitionStore
-from regime_data_fetch.event_sources.gpr_gdelt_conflict_parsers import _parse_positive_int
+from regime_data_fetch.event_sources.gpr_gdelt_conflict_parsers import (
+    _parse_positive_int,
+)
 from regime_data_fetch.event_sources.gpr_gdelt_fetchers import (
     ACLED_READ_URL,
     ACLED_SOURCE_ID,
@@ -59,7 +61,10 @@ def _nearby_validations(
 ) -> list[ValidationResult]:
     validations: list[ValidationResult] = []
     for candidate in candidates:
-        if candidate.event_type != "geopolitical_event" or candidate.source_id == source_id:
+        if (
+            candidate.event_type != "geopolitical_event"
+            or candidate.source_id == source_id
+        ):
             continue
         if _has_nearby(candidate.date, dates, window_days):
             validations.append(
@@ -94,30 +99,22 @@ class GPRSignalGenerator:
         self.gpr_monthly_fetcher = (
             gpr_monthly_fetcher
             if gpr_monthly_fetcher is not None
-            else _fetch_gpr_monthly
-            if gpr_fetcher is None
-            else None
+            else _fetch_gpr_monthly if gpr_fetcher is None else None
         )
         self.ai_gpr_daily_fetcher = (
             ai_gpr_daily_fetcher
             if ai_gpr_daily_fetcher is not None
-            else _fetch_ai_gpr_daily
-            if gpr_fetcher is None
-            else None
+            else _fetch_ai_gpr_daily if gpr_fetcher is None else None
         )
         self.ai_gpr_eventtype_monthly_fetcher = (
             ai_gpr_eventtype_monthly_fetcher
             if ai_gpr_eventtype_monthly_fetcher is not None
-            else _fetch_ai_gpr_eventtype_monthly
-            if gpr_fetcher is None
-            else None
+            else _fetch_ai_gpr_eventtype_monthly if gpr_fetcher is None else None
         )
         self.ai_gpr_country_monthly_fetcher = (
             ai_gpr_country_monthly_fetcher
             if ai_gpr_country_monthly_fetcher is not None
-            else _fetch_ai_gpr_country_monthly
-            if gpr_fetcher is None
-            else None
+            else _fetch_ai_gpr_country_monthly if gpr_fetcher is None else None
         )
         self.min_history_days = min_history_days
         self.stddev_threshold = stddev_threshold
@@ -141,9 +138,7 @@ class GPRSignalGenerator:
             for row in self._fetch_gpr_spikes(store=store, run_id=run_id)
             if start_year <= row["date"].year <= end_year
         ]
-        gpr_context = self._fetch_gpr_context(
-            gpr_spikes, store=store, run_id=run_id
-        )
+        gpr_context = self._fetch_gpr_context(gpr_spikes, store=store, run_id=run_id)
         self._last_source_dates = {
             GPR_SOURCE_ID: {row["date"] for row in gpr_spikes},
             AI_GPR_SOURCE_ID: set(gpr_context.get("ai_gpr_dates", set())),
@@ -157,10 +152,7 @@ class GPRSignalGenerator:
             else "ok"
         )
         return sorted(
-            (
-                _gpr_candidate(row, row["date"], gpr_context)
-                for row in gpr_spikes
-            ),
+            (_gpr_candidate(row, row["date"], gpr_context) for row in gpr_spikes),
             key=lambda candidate: (candidate.date, candidate.source_id),
         )
 
@@ -282,9 +274,7 @@ class GPRSignalGenerator:
             or self.ai_gpr_eventtype_monthly_fetcher is None
             or self.ai_gpr_country_monthly_fetcher is None
         ):
-            self._record_source_status(
-                AI_GPR_SOURCE_ID, "skipped", attempted_fetches=0
-            )
+            self._record_source_status(AI_GPR_SOURCE_ID, "skipped", attempted_fetches=0)
             return context
         try:
             daily_payload = self.ai_gpr_daily_fetcher()
@@ -365,7 +355,6 @@ class GPRSignalGenerator:
         )
 
 
-
 class GDELTSignalGenerator:
     source_id = GDELT_SOURCE_ID
     validator_id = GDELT_SOURCE_ID
@@ -405,7 +394,9 @@ class GDELTSignalGenerator:
             )
             else "ok"
         )
-        return sorted((_gdelt_candidate(row) for row in rows), key=lambda item: item.date)
+        return sorted(
+            (_gdelt_candidate(row) for row in rows), key=lambda item: item.date
+        )
 
     def validate(
         self,
@@ -430,9 +421,7 @@ class GDELTSignalGenerator:
         self, *, store: AcquisitionStore | None, run_id: int | None
     ) -> list[dict[str, object]]:
         if self.gdelt_fetcher is None:
-            self._record_source_status(
-                GDELT_SOURCE_ID, "skipped", attempted_fetches=0
-            )
+            self._record_source_status(GDELT_SOURCE_ID, "skipped", attempted_fetches=0)
             return []
         try:
             payload = self.gdelt_fetcher()
@@ -814,9 +803,7 @@ def parse_ai_gpr_context(
             if country_values:
                 parts.append(
                     "ai_gpr_country="
-                    + ",".join(
-                        f"{name}:{value:.2f}" for name, value in country_values
-                    )
+                    + ",".join(f"{name}:{value:.2f}" for name, value in country_values)
                 )
         if parts:
             context[candidate_date] = "; ".join(parts)
@@ -869,7 +856,9 @@ def detect_gpr_spikes(
                 if component_value is not None and component_value > threshold
             }
             if valid_components:
-                dominant_component = max(valid_components, key=valid_components.__getitem__)
+                dominant_component = max(
+                    valid_components, key=valid_components.__getitem__
+                )
             rows.append(
                 {
                     "date": row["date"],
@@ -965,11 +954,11 @@ def parse_gdelt_volume_table(payload: str | bytes) -> list[dict[str, object]]:
             {
                 "date": dt.date.fromisoformat(str(record[date_column])),
                 "event_count": event_count,
-                "dominant_theme": str(
-                    record.get(theme_column, "geopolitical volume spike")
-                )
-                if theme_column
-                else "geopolitical volume spike",
+                "dominant_theme": (
+                    str(record.get(theme_column, "geopolitical volume spike"))
+                    if theme_column
+                    else "geopolitical volume spike"
+                ),
                 "source_url": str(record.get(url_column, "")) if url_column else None,
             }
         )
@@ -1047,7 +1036,9 @@ def _split_concatenated_zip_archives(payload: bytes) -> list[bytes]:
         end_record = payload.find(b"PK\x05\x06", start)
         if end_record == -1 or end_record + 22 > len(payload):
             return [payload] if not chunks else chunks
-        comment_length = int.from_bytes(payload[end_record + 20 : end_record + 22], "little")
+        comment_length = int.from_bytes(
+            payload[end_record + 20 : end_record + 22], "little"
+        )
         end = end_record + 22 + comment_length
         chunks.append(payload[start:end])
         start = end
@@ -1070,8 +1061,7 @@ def _gpr_candidate(
     has_directional_component = bool({"acts", "threats"}.intersection(components))
     importance = (
         "high"
-        if len(components) >= 3
-        or (article_count is not None and article_count >= 500)
+        if len(components) >= 3 or (article_count is not None and article_count >= 500)
         else "medium"
     )
     confidence = (

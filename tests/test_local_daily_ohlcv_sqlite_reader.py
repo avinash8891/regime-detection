@@ -15,7 +15,6 @@ from regime_data_fetch.local_daily_ohlcv_sqlite_reader import (
     read_constituent_ohlcv,
 )
 
-
 # AAPL session prices (hand-picked plausible values for 2024-01-02..2024-01-10).
 _AAPL_ROWS: list[tuple[str, float, float, float, float, int, float]] = [
     ("2024-01-02", 187.15, 188.44, 183.89, 185.64, 82488700, 185.40),
@@ -40,8 +39,7 @@ _MSFT_ROWS: list[tuple[str, float, float, float, float, int, float]] = [
 
 def _create_real_schema_db(db_path: Path) -> None:
     with sqlite3.connect(db_path) as conn:
-        conn.executescript(
-            f"""
+        conn.executescript(f"""
             CREATE TABLE IF NOT EXISTS {DAILY_OHLCV_ROWS_TABLE} (
                 symbol TEXT NOT NULL,
                 date TEXT NOT NULL,
@@ -56,8 +54,7 @@ def _create_real_schema_db(db_path: Path) -> None:
             );
             CREATE INDEX IF NOT EXISTS idx_daily_ohlcv_rows_date
                 ON {DAILY_OHLCV_ROWS_TABLE} (date);
-            """
-        )
+            """)
 
         def _rows_for(symbol: str, rows):
             return [
@@ -100,7 +97,14 @@ def test_read_constituent_ohlcv_dataframe_has_expected_columns(tmp_path: Path) -
     )
 
     df = result["AAPL"]
-    assert list(df.columns) == ["open", "high", "low", "close", "volume", "adjusted_close"]
+    assert list(df.columns) == [
+        "open",
+        "high",
+        "low",
+        "close",
+        "volume",
+        "adjusted_close",
+    ]
     # Sanity-check alignment with the writer's EXPECTED_COLUMNS (date is the index).
     assert list(df.columns) == [c for c in EXPECTED_COLUMNS if c != "date"]
 
@@ -174,11 +178,15 @@ def test_read_constituent_ohlcv_adjusted_close_is_float64(tmp_path: Path) -> Non
     assert result["AAPL"]["adjusted_close"].dtype == np.float64
 
 
-def test_read_constituent_ohlcv_raises_filenotfound_on_missing_db(tmp_path: Path) -> None:
+def test_read_constituent_ohlcv_raises_filenotfound_on_missing_db(
+    tmp_path: Path,
+) -> None:
     missing = tmp_path / "does_not_exist.db"
 
     with pytest.raises(FileNotFoundError):
-        read_constituent_ohlcv(missing, ["AAPL"], dt.date(2024, 1, 2), dt.date(2024, 1, 10))
+        read_constituent_ohlcv(
+            missing, ["AAPL"], dt.date(2024, 1, 2), dt.date(2024, 1, 10)
+        )
 
 
 def test_read_constituent_ohlcv_raises_on_wrong_schema(tmp_path: Path) -> None:

@@ -10,6 +10,7 @@ from regime_detection.loaders import (
     load_event_calendar,
     load_news_sentiment_series,
 )
+from regime_detection.calendar import as_date
 from regime_detection.temporal import parse_date_series, parse_datetime_index
 
 
@@ -33,6 +34,54 @@ def test_parse_datetime_index_rejects_missing_values() -> None:
             field_name="date",
             context="news_sentiment source",
         )
+
+
+def test_parse_datetime_index_outputs_nyse_timestamps_accepted_by_as_date() -> None:
+    index = parse_datetime_index(
+        ["2024-03-11", pd.Timestamp("2024-03-12 15:00:00", tz="UTC")],
+        field_name="date",
+        context="mixed source",
+    )
+
+    assert index.tz is None
+    assert [as_date(value) for value in index] == [
+        dt.date(2024, 3, 11),
+        dt.date(2024, 3, 12),
+    ]
+
+
+def test_parse_datetime_index_normalizes_mixed_timezone_values_deterministically() -> (
+    None
+):
+    index = parse_datetime_index(
+        [
+            pd.Timestamp("2024-03-12 00:30:00", tz="UTC"),
+            pd.Timestamp("2024-03-12"),
+            pd.Timestamp("2024-03-12 09:30:00", tz="America/New_York"),
+        ],
+        field_name="date",
+        context="mixed timezone source",
+    )
+
+    assert index.tz is None
+    assert index.tolist() == [
+        pd.Timestamp("2024-03-11"),
+        pd.Timestamp("2024-03-12"),
+        pd.Timestamp("2024-03-12"),
+    ]
+
+
+def test_parse_datetime_index_handles_dst_boundary_as_nyse_session_date() -> None:
+    index = parse_datetime_index(
+        ["2024-03-08", "2024-03-11"],
+        field_name="date",
+        context="dst source",
+    )
+
+    assert [as_date(value) for value in index] == [
+        dt.date(2024, 3, 8),
+        dt.date(2024, 3, 11),
+    ]
 
 
 def test_event_calendar_uses_shared_nullable_publication_date_parser() -> None:

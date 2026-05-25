@@ -8,7 +8,6 @@ import pandas as pd
 import pandas_market_calendars as mcal
 from zoneinfo import ZoneInfo
 
-
 # ±-window for nyse_neighbors: 10 calendar days comfortably covers the
 # longest NYSE closure stretch (weekend + multi-day holiday, e.g. Christmas
 # + NYD ≈ 5 days). Tighter values risk failing on edge cases.
@@ -26,25 +25,45 @@ def nyse_calendar() -> mcal.MarketCalendar:
 
 
 @lru_cache(maxsize=None)
+def _nyse_sessions_for_year(year: int) -> tuple[date, ...]:
+    return tuple(
+        nyse_calendar()
+        .schedule(start_date=date(year, 1, 1), end_date=date(year, 12, 31))
+        .index.date
+    )
+
+
+@lru_cache(maxsize=None)
 def nyse_sessions_between(start_date: date, end_date: date) -> tuple[date, ...]:
-    return tuple(nyse_calendar().schedule(start_date=start_date, end_date=end_date).index.date)
+    return tuple(
+        session
+        for year in range(start_date.year, end_date.year + 1)
+        for session in _nyse_sessions_for_year(year)
+        if start_date <= session <= end_date
+    )
 
 
 def _as_date(value: object) -> date:
+    if isinstance(value, pd.Timestamp):
+        if value.tzinfo is not None:
+            return value.tz_convert("America/New_York").date()
+        if value == value.normalize():
+            return value.date()
+        # tz-naive pandas Timestamps are ambiguous; require tz-aware or plain date.
+        raise TypeError(
+            "tz-naive pandas Timestamp is ambiguous; pass a date or a tz-aware Timestamp (America/New_York recommended)"
+        )
     if isinstance(value, datetime):
         if value.tzinfo is not None:
             # Interpret date-like inputs in US/Eastern for NYSE calendar alignment.
             return value.astimezone(ZoneInfo("America/New_York")).date()
         # tz-naive datetimes are ambiguous; require callers to provide either a plain date
         # or a timezone-aware datetime.
-        raise TypeError("tz-naive datetime is ambiguous; pass a date or a tz-aware datetime (America/New_York recommended)")
+        raise TypeError(
+            "tz-naive datetime is ambiguous; pass a date or a tz-aware datetime (America/New_York recommended)"
+        )
     if isinstance(value, date) and not isinstance(value, pd.Timestamp):
         return value
-    if isinstance(value, pd.Timestamp):
-        if value.tzinfo is not None:
-            return value.tz_convert("America/New_York").date()
-        # tz-naive pandas Timestamps are ambiguous; require tz-aware or plain date.
-        raise TypeError("tz-naive pandas Timestamp is ambiguous; pass a date or a tz-aware Timestamp (America/New_York recommended)")
     raise TypeError(f"Expected date-like value, got {type(value).__name__}")
 
 

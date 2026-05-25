@@ -38,7 +38,6 @@ from regime_data_fetch.aggregate_eps_workbook import (
     parse_sp500_eps_workbook as _parse_sp500_eps_workbook,
 )
 
-
 for _public_type in (
     AggregateEPSFetchError,
     AggregateEPSSnapshot,
@@ -154,7 +153,9 @@ def download_spglobal_eps_workbook_with_browser(
             page = context.new_page()
             try:
                 with page.expect_download(timeout=timeout_ms) as download_info:
-                    page.goto(source_url, wait_until="domcontentloaded", timeout=timeout_ms)
+                    page.goto(
+                        source_url, wait_until="domcontentloaded", timeout=timeout_ms
+                    )
                 download = download_info.value
                 download.save_as(out_path)
             except PlaywrightTimeoutError as exc:
@@ -280,9 +281,7 @@ def seed_weekly_history_from_wayback_timeline(
         existing = pd.read_parquet(history_path)
         # Existing accumulator rows win on collision — a live fetch row is
         # authoritative over a Wayback snapshot for the same date.
-        seeded = seeded[
-            ~seeded["observation_date"].isin(existing["observation_date"])
-        ]
+        seeded = seeded[~seeded["observation_date"].isin(existing["observation_date"])]
         combined = pd.concat([existing, seeded], ignore_index=True)
     else:
         combined = seeded
@@ -331,7 +330,11 @@ def run_aggregate_eps_fetch(
     artifact_store_root: str | Path | None = None,
 ) -> Path:
     out_dir.mkdir(parents=True, exist_ok=True)
-    store = AcquisitionStore(acquisition_db_path, artifact_store_root=artifact_store_root) if acquisition_db_path else None
+    store = (
+        AcquisitionStore(acquisition_db_path, artifact_store_root=artifact_store_root)
+        if acquisition_db_path
+        else None
+    )
     fetch_run = (
         store.start_fetch_run(
             fetch_type="aggregate_eps",
@@ -422,8 +425,12 @@ def run_aggregate_eps_fetch(
                 output_kind="aggregate_eps_parquet",
                 path=parquet_path,
                 row_count=len(df),
-                min_date=min(df["observation_date"]).isoformat() if not df.empty else None,
-                max_date=max(df["observation_date"]).isoformat() if not df.empty else None,
+                min_date=(
+                    min(df["observation_date"]).isoformat() if not df.empty else None
+                ),
+                max_date=(
+                    max(df["observation_date"]).isoformat() if not df.empty else None
+                ),
                 notes="Aggregate EPS workbook snapshots parquet",
             )
             store.record_output(
@@ -431,19 +438,27 @@ def run_aggregate_eps_fetch(
                 output_kind="aggregate_eps_report",
                 path=report_path,
                 row_count=len(df),
-                min_date=min(df["observation_date"]).isoformat() if not df.empty else None,
-                max_date=max(df["observation_date"]).isoformat() if not df.empty else None,
+                min_date=(
+                    min(df["observation_date"]).isoformat() if not df.empty else None
+                ),
+                max_date=(
+                    max(df["observation_date"]).isoformat() if not df.empty else None
+                ),
                 notes="Aggregate EPS fetch report",
             )
             store.finish_fetch_run(run_id=fetch_run.run_id, status="ok")
         return report_path
     except Exception as exc:
         if store and fetch_run:
-            store.finish_fetch_run(run_id=fetch_run.run_id, status="failed", notes=str(exc))
+            store.finish_fetch_run(
+                run_id=fetch_run.run_id, status="failed", notes=str(exc)
+            )
         raise
 
 
-def parse_wayback_cdx_json(cdx_json: str, *, target_url: str) -> list[EPSWaybackSnapshot]:
+def parse_wayback_cdx_json(
+    cdx_json: str, *, target_url: str
+) -> list[EPSWaybackSnapshot]:
     return _parse_wayback_cdx_json(cdx_json, target_url=target_url)
 
 
@@ -477,7 +492,9 @@ def fetch_wayback_cdx(
 
 
 def fetch_wayback_snapshot_bytes(snapshot: EPSWaybackSnapshot) -> bytes:
-    req = urllib.request.Request(snapshot.archive_url, headers={"User-Agent": "Mozilla/5.0"})
+    req = urllib.request.Request(
+        snapshot.archive_url, headers={"User-Agent": "Mozilla/5.0"}
+    )
     with urllib.request.urlopen(req, timeout=60) as response:
         return response.read()
 
@@ -495,7 +512,11 @@ def run_wayback_aggregate_eps_fetch(
     snapshot_fetcher=fetch_wayback_snapshot_bytes,
 ) -> Path:
     out_dir.mkdir(parents=True, exist_ok=True)
-    store = AcquisitionStore(acquisition_db_path, artifact_store_root=artifact_store_root) if acquisition_db_path else None
+    store = (
+        AcquisitionStore(acquisition_db_path, artifact_store_root=artifact_store_root)
+        if acquisition_db_path
+        else None
+    )
     fetch_run = (
         store.start_fetch_run(
             fetch_type="aggregate_eps_wayback",
@@ -628,9 +649,15 @@ def run_wayback_aggregate_eps_fetch(
                 continue
 
         if not timeline_rows:
-            raise AggregateEPSFetchError("Wayback EPS backfill produced no parsed timeline rows")
+            raise AggregateEPSFetchError(
+                "Wayback EPS backfill produced no parsed timeline rows"
+            )
 
-        timeline_df = pd.DataFrame(timeline_rows).sort_values(["snapshot_date", "timestamp"]).reset_index(drop=True)
+        timeline_df = (
+            pd.DataFrame(timeline_rows)
+            .sort_values(["snapshot_date", "timestamp"])
+            .reset_index(drop=True)
+        )
         timeline_path = wayback_dir / WAYBACK_TIMELINE_FILENAME
         timeline_df.to_parquet(timeline_path, index=False)
         weekly_history = seed_weekly_history_from_wayback_timeline(
@@ -643,9 +670,13 @@ def run_wayback_aggregate_eps_fetch(
 
         preview = timeline_df.head(10).copy()
         if "snapshot_date" in preview:
-            preview["snapshot_date"] = preview["snapshot_date"].map(lambda x: x.isoformat())
+            preview["snapshot_date"] = preview["snapshot_date"].map(
+                lambda x: x.isoformat()
+            )
         if "workbook_as_of_date" in preview:
-            preview["workbook_as_of_date"] = preview["workbook_as_of_date"].map(lambda x: x.isoformat())
+            preview["workbook_as_of_date"] = preview["workbook_as_of_date"].map(
+                lambda x: x.isoformat()
+            )
 
         report = {
             "as_of_utc": dt.datetime.now(dt.timezone.utc).isoformat(),
@@ -676,7 +707,9 @@ def run_wayback_aggregate_eps_fetch(
                 "snapshot_status_jsonl": str(status_path),
                 "timeline_parquet": str(timeline_path),
                 "aggregate_eps_weekly_history_parquet": str(weekly_history_path),
-                "acquisition_db": str(acquisition_db_path) if acquisition_db_path else None,
+                "acquisition_db": (
+                    str(acquisition_db_path) if acquisition_db_path else None
+                ),
             },
         }
         report_path = out_dir / "aggregate_eps_wayback_fetch_report.json"
@@ -688,8 +721,16 @@ def run_wayback_aggregate_eps_fetch(
                 output_kind="aggregate_eps_wayback_snapshot_index",
                 path=snapshot_index_path,
                 row_count=len(snapshots),
-                min_date=min(snapshot.snapshot_date for snapshot in snapshots).isoformat() if snapshots else None,
-                max_date=max(snapshot.snapshot_date for snapshot in snapshots).isoformat() if snapshots else None,
+                min_date=(
+                    min(snapshot.snapshot_date for snapshot in snapshots).isoformat()
+                    if snapshots
+                    else None
+                ),
+                max_date=(
+                    max(snapshot.snapshot_date for snapshot in snapshots).isoformat()
+                    if snapshots
+                    else None
+                ),
                 notes="Filtered Wayback EPS snapshot index",
             )
             store.record_output(
@@ -704,8 +745,16 @@ def run_wayback_aggregate_eps_fetch(
                 output_kind="aggregate_eps_wayback_timeline",
                 path=timeline_path,
                 row_count=len(timeline_df),
-                min_date=min(timeline_df["snapshot_date"]).isoformat() if not timeline_df.empty else None,
-                max_date=max(timeline_df["snapshot_date"]).isoformat() if not timeline_df.empty else None,
+                min_date=(
+                    min(timeline_df["snapshot_date"]).isoformat()
+                    if not timeline_df.empty
+                    else None
+                ),
+                max_date=(
+                    max(timeline_df["snapshot_date"]).isoformat()
+                    if not timeline_df.empty
+                    else None
+                ),
                 notes="Wayback EPS historical snapshot timeline parquet",
             )
             store.record_output(
@@ -713,8 +762,16 @@ def run_wayback_aggregate_eps_fetch(
                 output_kind="aggregate_eps_weekly_history",
                 path=weekly_history_path,
                 row_count=len(weekly_history),
-                min_date=min(weekly_history["observation_date"]).isoformat() if not weekly_history.empty else None,
-                max_date=max(weekly_history["observation_date"]).isoformat() if not weekly_history.empty else None,
+                min_date=(
+                    min(weekly_history["observation_date"]).isoformat()
+                    if not weekly_history.empty
+                    else None
+                ),
+                max_date=(
+                    max(weekly_history["observation_date"]).isoformat()
+                    if not weekly_history.empty
+                    else None
+                ),
                 notes="Aggregate EPS weekly accumulator seeded from Wayback timeline",
             )
             store.record_output(
@@ -722,13 +779,23 @@ def run_wayback_aggregate_eps_fetch(
                 output_kind="aggregate_eps_wayback_report",
                 path=report_path,
                 row_count=len(timeline_df),
-                min_date=min(timeline_df["snapshot_date"]).isoformat() if not timeline_df.empty else None,
-                max_date=max(timeline_df["snapshot_date"]).isoformat() if not timeline_df.empty else None,
+                min_date=(
+                    min(timeline_df["snapshot_date"]).isoformat()
+                    if not timeline_df.empty
+                    else None
+                ),
+                max_date=(
+                    max(timeline_df["snapshot_date"]).isoformat()
+                    if not timeline_df.empty
+                    else None
+                ),
                 notes="Wayback EPS fetch report",
             )
             store.finish_fetch_run(run_id=fetch_run.run_id, status="ok")
         return report_path
     except Exception as exc:
         if store and fetch_run:
-            store.finish_fetch_run(run_id=fetch_run.run_id, status="failed", notes=str(exc))
+            store.finish_fetch_run(
+                run_id=fetch_run.run_id, status="failed", notes=str(exc)
+            )
         raise

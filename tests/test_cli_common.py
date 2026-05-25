@@ -48,8 +48,7 @@ def test_load_operator_env_files_loads_repo_pointer_targets(
     fred_env = tmp_path / "signal-engine.env"
     pointer_file = tmp_path / ".regime-operator.env"
     alpaca_env.write_text(
-        "ALPACA_API_KEY_ID=alpaca-key\n"
-        "ALPACA_API_SECRET_KEY=alpaca-secret\n",
+        "ALPACA_API_KEY_ID=alpaca-key\n" "ALPACA_API_SECRET_KEY=alpaca-secret\n",
         encoding="utf-8",
     )
     fred_env.write_text("FRED_API_KEY=fred-key\n", encoding="utf-8")
