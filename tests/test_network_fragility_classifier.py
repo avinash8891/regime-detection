@@ -238,6 +238,7 @@ def test_network_fragility_risk_rank_matches_v2_spec_3_6():
         "rising_fragility": 2,
         "correlation_concentration": 2,
         "correlation_to_one": 3,
+        "systemic_stress_unconfirmed": 3,
         "systemic_stress": 3,
         "unknown": 2,
     }
@@ -257,6 +258,7 @@ def test_default_yaml_loads_deescalation_days_by_label_per_v2_spec_3_7():
         "rising_fragility": 3,
         "correlation_concentration": 3,
         "correlation_to_one": 5,
+        "systemic_stress_unconfirmed": 5,
         "systemic_stress": 5,
         "unknown": 0,
     }
@@ -668,6 +670,67 @@ def test_classifier_emits_systemic_stress_when_credit_funding_confirms_it():
     assert out is not None
     assert out[context.sessions[-1]].raw_label == "systemic_stress"
     assert out[context.sessions[-1]].active_label == "systemic_stress"
+
+
+def test_classifier_emits_unconfirmed_systemic_stress_when_credit_funding_unavailable():
+    """Missing §2C credit/funding must not silently downgrade otherwise
+    systemic market stress to correlation_to_one."""
+    context, _ = _build_context_with_full_universe()
+    store = build_feature_store(
+        context, network_fragility_config=context.config.network_fragility
+    )
+    nf = store.network_fragility
+    assert nf is not None
+
+    idx = nf.avg_pairwise_corr_63d.index
+    stressed_nf = NetworkFragilityFeatures(
+        avg_pairwise_corr_63d=pd.Series(0.60, index=idx),
+        avg_pairwise_corr_percentile_504d=pd.Series(0.95, index=idx),
+        largest_eigenvalue_share=pd.Series(0.60, index=idx),
+        largest_eigenvalue_share_percentile_504d=pd.Series(0.50, index=idx),
+        effective_rank=pd.Series(0.40, index=idx),
+        effective_rank_percentile_504d=pd.Series(0.50, index=idx),
+        absorption_ratio_top3=pd.Series(0.70, index=idx),
+        dispersion_ratio=pd.Series(0.30, index=idx),
+        dispersion_ratio_percentile_252d=pd.Series(0.50, index=idx),
+    )
+
+    vol = store.volatility
+    spy_ohlcv = context.spy_ohlcv.copy()
+    spy_ohlcv["close"] = np.linspace(100.0, 90.0, len(spy_ohlcv))
+    context = context.model_copy(update={"spy_ohlcv": spy_ohlcv})
+    stressed_volatility = VolatilityFeatures(
+        close=vol.close,
+        return_1d=vol.return_1d,
+        return_5d=vol.return_5d,
+        return_21d=pd.Series(-0.05, index=idx),
+        realized_vol_21d=pd.Series(0.30, index=idx),
+        realized_vol_percentile_252d=pd.Series(0.85, index=idx),
+        vix_percentile_252d=pd.Series(0.85, index=idx),
+    )
+    stressed_store = store.model_copy(
+        update={
+            "network_fragility": stressed_nf,
+            "volatility": stressed_volatility,
+        }
+    )
+
+    breadth = {day: "weak_breadth" for day in context.sessions}
+    volatility = {day: "normal_vol" for day in context.sessions}
+
+    out = build_network_fragility_axis_series(
+        context,
+        stressed_store,
+        breadth_active_labels_by_date=breadth,
+        volatility_active_labels_by_date=volatility,
+        credit_funding_active_labels_by_date=None,
+    )
+
+    assert out is not None
+    final = out[context.sessions[-1]]
+    assert final.raw_label == "systemic_stress_unconfirmed"
+    assert final.active_label == "systemic_stress_unconfirmed"
+    assert final.evidence["rule_evidence"]["rule_reason"] == "credit_funding_unavailable"
 
 
 def test_axis_bundle_threads_credit_funding_into_network_fragility_systemic_stress():

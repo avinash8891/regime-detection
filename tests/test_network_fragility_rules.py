@@ -21,6 +21,7 @@ from regime_detection.network_fragility_rules import (
     evaluate_diversified_normal,
     evaluate_rising_fragility,
     evaluate_rules,
+    evaluate_rules_with_evidence,
     evaluate_stock_picker_dispersion,
     evaluate_systemic_stress,
 )
@@ -278,6 +279,38 @@ def test_systemic_stress_short_circuits_to_false_when_credit_funding_label_absen
             credit_funding_label=None,
         )
         is False
+    )
+
+
+def test_evaluate_rules_emits_unconfirmed_systemic_stress_when_credit_unavailable():
+    cfg = _default_rules_config()
+    inputs = _inputs(
+        avg_corr_pct=0.95,
+        realized_vol_pct=0.85,
+        drawdown_21d=-0.04,
+        vix_pct=0.90,
+    )
+
+    evaluation = evaluate_rules_with_evidence(
+        inputs=inputs,
+        config=cfg,
+        breadth_label="weak_breadth",
+        volatility_label="normal_vol",
+        credit_funding_label=None,
+    )
+
+    assert evaluation.label == "systemic_stress_unconfirmed"
+    assert evaluation.rule_path == "percentile"
+    assert evaluation.reason == "credit_funding_unavailable"
+    assert (
+        evaluate_rules(
+            inputs=inputs,
+            config=cfg,
+            breadth_label="weak_breadth",
+            volatility_label="normal_vol",
+            credit_funding_label=None,
+        )
+        == "systemic_stress_unconfirmed"
     )
 
 

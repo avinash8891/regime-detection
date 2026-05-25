@@ -109,6 +109,14 @@ def test_crisis_specialist_fires_on_systemic_stress() -> None:
 
 
 @pytest.mark.unit
+def test_crisis_specialist_fires_on_unconfirmed_systemic_stress() -> None:
+    """Unconfirmed systemic stress is crisis-equivalent for safety routing."""
+    out = _route(network_fragility_active="systemic_stress_unconfirmed")
+    assert out.active_cohort == "crisis_specialist"
+    assert out.blocked_strategy_modes == ["short_vol", "leveraged_long", "breakout"]
+
+
+@pytest.mark.unit
 def test_crisis_specialist_fires_on_crisis_vol_alone() -> None:
     """§5.1 line 2519: ``OR volatility_state.active_label == 'crisis_vol'``
     — crisis_vol alone fires crisis even when network_fragility is benign."""

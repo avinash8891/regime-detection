@@ -126,6 +126,7 @@ network_fragility:
     rising_fragility: 3
     correlation_concentration: 3
     correlation_to_one: 5
+    systemic_stress_unconfirmed: 5
     systemic_stress: 5
     # `unknown` is absence of signal, not a sticky regime. Do not delay
     # recovery into a valid classified label; classified high-risk labels
@@ -583,7 +584,7 @@ cohort_routing:
   routing_rules:
     crisis_specialist:
       any_of:
-        - {axis: "network_fragility", values: ["correlation_to_one", "systemic_stress"]}
+        - {axis: "network_fragility", values: ["correlation_to_one", "systemic_stress_unconfirmed", "systemic_stress"]}
         - {axis: "volatility_state", values: ["crisis_vol"]}
     euphoria_specialist:
       all_of:

@@ -17,9 +17,9 @@ Cross-axis inputs:
     - ``breadth_label`` from V1 ``BreadthLabel`` (regime_detection.breadth_state)
     - ``volatility_label`` from V1 ``VolatilityLabel`` (regime_detection.volatility_state)
     - ``credit_funding_label`` from V2 §2C credit/funding axis.
-      When ``credit_funding_label is None`` the ``systemic_stress`` rule
-      short-circuits to ``False`` and precedence falls through to
-      ``correlation_to_one``.
+      When ``credit_funding_label is None`` but the systemic market-stress
+      conditions are otherwise present, precedence emits
+      ``systemic_stress_unconfirmed`` instead of silently downgrading.
 
 Slope detection for ``rising_fragility``:
     OLS slope of the trailing 21d window of the feature vs a unit trading-day
@@ -59,6 +59,7 @@ NetworkFragilityLabel = Literal[
     "rising_fragility",
     "correlation_concentration",
     "correlation_to_one",
+    "systemic_stress_unconfirmed",
     "systemic_stress",
     "unknown",
 ]
@@ -68,6 +69,7 @@ NetworkFragilityLabel = Literal[
 #          > rising_fragility > stock_picker_dispersion > diversified_normal > unknown
 RULE_PRECEDENCE: tuple[NetworkFragilityLabel, ...] = (
     "systemic_stress",
+    "systemic_stress_unconfirmed",
     "correlation_to_one",
     "correlation_concentration",
     "rising_fragility",
@@ -88,6 +90,7 @@ NETWORK_FRAGILITY_RISK_RANK: dict[NetworkFragilityLabel, int] = {
     "rising_fragility": 2,
     "correlation_concentration": 2,
     "correlation_to_one": 3,
+    "systemic_stress_unconfirmed": 3,
     "systemic_stress": 3,
     "unknown": 2,
 }
@@ -588,10 +591,19 @@ def evaluate_systemic_stress(
     """
     if credit_funding_label is None:
         return False
-    # Explicit NaN guard over ALL fields this rule relies on — mirrors the
-    # pattern in the other §3.5 rules and decouples correctness from
-    # `evaluate_correlation_to_one`'s transitive NaN handling. `vix_percentile_252d`
-    # is additionally guarded here because it is unique to systemic_stress.
+    if not _systemic_stress_market_conditions(inputs, config, breadth_label):
+        return False
+    accepted_credit: set[CreditFundingLabel] = {"credit_stress", "deleveraging"}
+    return bool(credit_funding_label in accepted_credit)
+
+
+def _systemic_stress_market_conditions(
+    inputs: NetworkFragilityRuleInputs,
+    config: NetworkFragilityRulesConfig,
+    breadth_label: BreadthLabel,
+) -> bool:
+    # Explicit NaN guard over ALL fields this rule relies on. `vix_percentile_252d`
+    # is additionally guarded here because it is unique to systemic stress.
     if _any_nan(
         inputs.avg_pairwise_corr_percentile_504d,
         inputs.realized_vol_percentile_252d,
@@ -601,13 +613,24 @@ def evaluate_systemic_stress(
         return False
     if not _correlation_to_one_percentile_path(inputs, config):
         return False
-    accepted_credit: set[CreditFundingLabel] = {"credit_stress", "deleveraging"}
     # v2 §3.5 line 3541: accepted breadth set matches spec verbatim (implementation decision).
     accepted_breadth: set[BreadthLabel] = {"weak_breadth", "narrowing_breadth"}
     return bool(
-        credit_funding_label in accepted_credit
-        and inputs.vix_percentile_252d > config.systemic_stress_vix_percentile_min
+        inputs.vix_percentile_252d > config.systemic_stress_vix_percentile_min
         and breadth_label in accepted_breadth
+    )
+
+
+def evaluate_systemic_stress_unconfirmed(
+    inputs: NetworkFragilityRuleInputs,
+    config: NetworkFragilityRulesConfig,
+    breadth_label: BreadthLabel,
+    credit_funding_label: CreditFundingLabel | None,
+) -> bool:
+    """Systemic market stress when credit/funding confirmation is unavailable."""
+    return bool(
+        credit_funding_label is None
+        and _systemic_stress_market_conditions(inputs, config, breadth_label)
     )
 
 
@@ -649,6 +672,15 @@ def evaluate_rules_with_evidence(
                 return NetworkFragilityRuleEvaluation(
                     label="systemic_stress",
                     rule_path="percentile",
+                )
+        elif label == "systemic_stress_unconfirmed":
+            if evaluate_systemic_stress_unconfirmed(
+                inputs, config, breadth_label, credit_funding_label
+            ):
+                return NetworkFragilityRuleEvaluation(
+                    label="systemic_stress_unconfirmed",
+                    rule_path="percentile",
+                    reason="credit_funding_unavailable",
                 )
         elif label == "correlation_to_one":
             path = correlation_to_one_rule_path(inputs, config)
