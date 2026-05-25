@@ -44,7 +44,7 @@ def build_flaky_report(history: dict[str, list[str]]) -> dict[str, Any]:
     for nodeid in sorted(history):
         statuses = sorted(set(history[nodeid]))
         runs = len(history[nodeid])
-        if "passed" in statuses and len(statuses) > 1:
+        if len(statuses) > 1:
             flaky_tests.append(
                 {
                     "nodeid": nodeid,
@@ -52,8 +52,7 @@ def build_flaky_report(history: dict[str, list[str]]) -> dict[str, Any]:
                     "runs": runs,
                 }
             )
-            continue
-        if statuses == ["failed"] or statuses == ["error"]:
+        if "passed" not in statuses:
             stable_failures.append(
                 {
                     "nodeid": nodeid,
@@ -61,6 +60,8 @@ def build_flaky_report(history: dict[str, list[str]]) -> dict[str, Any]:
                     "runs": runs,
                 }
             )
+            continue
+        if len(statuses) > 1:
             continue
         stable_tests += 1
 
@@ -101,7 +102,7 @@ def main() -> int:
     history = collect_test_history(args.reports)
     report = build_flaky_report(history)
     args.report.write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
-    return 1 if report["flaky_tests"] else 0
+    return 1 if report["flaky_tests"] or report["stable_failures"] else 0
 
 
 if __name__ == "__main__":

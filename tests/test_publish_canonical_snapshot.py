@@ -506,6 +506,29 @@ def test_check_mode_returns_nonzero_on_drift(manifest_setup, caplog):
     assert "DRIFT" in combined
 
 
+def test_check_mode_does_not_require_manifest_store_by_default(
+    manifest_setup, monkeypatch
+):
+    manifest_path, data_root, _, _ = manifest_setup
+
+    def fail_if_store_is_built(_storage_root: str):
+        raise AssertionError("default --check should not initialize manifest store")
+
+    monkeypatch.setattr(pcs, "build_artifact_store", fail_if_store_is_built)
+
+    rc = _run_main(
+        [
+            "--manifest",
+            str(manifest_path),
+            "--data-root",
+            str(data_root),
+            "--check",
+        ]
+    )
+
+    assert rc == 0
+
+
 def test_check_mode_rejects_daily_ohlcv_null_symbol_column(tmp_path: Path, caplog):
     data_root = tmp_path / "data" / "raw"
     local_path = data_root / "daily_ohlcv_762" / "symbol=XLY" / "ohlcv.parquet"
@@ -811,6 +834,7 @@ def test_check_mode_detects_store_drift_when_local_matches_manifest(
                 "--data-root",
                 str(data_root),
                 "--check",
+                "--check-store",
                 "--only",
                 "fred_macro_series",
             ]

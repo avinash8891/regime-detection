@@ -9,6 +9,7 @@ Modes:
     publish (default)  canonicalize on disk + upload changed bytes + rewrite manifest
     --dry-run          report what publish would do; touch nothing
     --check            in-memory recompute; exit 1 on any drift; touch nothing
+    --check-store      with --check, also verify artifacts in the manifest store
 
 The script reuses the project's ``LocalArtifactStore`` / ``S3ArtifactStore``
 (see ``src/regime_data_fetch/artifact_store.py``) for uploads so key
@@ -875,6 +876,11 @@ def _build_arg_parser() -> argparse.ArgumentParser:
     mode.add_argument("--dry-run", action="store_true")
     mode.add_argument("--check", action="store_true")
     parser.add_argument(
+        "--check-store",
+        action="store_true",
+        help="check mode only: also verify manifest-store artifacts",
+    )
+    parser.add_argument(
         "--skip-upload",
         action="store_true",
         help="publish mode only: canonicalize + rewrite manifest, skip S3 upload",
@@ -956,7 +962,11 @@ def main(argv: list[str] | None = None) -> int:
         return 2
 
     if args.check:
-        store = build_artifact_store(str(payload["storage_root"]))
+        store = (
+            build_artifact_store(str(payload["storage_root"]))
+            if args.check_store
+            else None
+        )
         exit_code, reports = run_check(payload, data_root, args.only, store=store)
 
         def _local(status: str) -> list[ArtifactReport]:

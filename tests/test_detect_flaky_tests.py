@@ -19,20 +19,33 @@ def _load_module(name: str, rel_path: str):
 
 def _write_junit_xml(path: Path, *, testcase_name: str, status: str) -> None:
     failure_block = ""
+    error_block = ""
+    skipped_block = ""
     if status == "failed":
         failure_block = '<failure message="boom">trace</failure>'
+    if status == "error":
+        error_block = '<error message="boom">trace</error>'
+    if status == "skipped":
+        skipped_block = '<skipped message="not today" />'
     path.write_text(
         (
             '<?xml version="1.0" encoding="utf-8"?>'
-            '<testsuite name="pytest" tests="1" failures="{failures}" errors="0" skipped="0">'
+            '<testsuite name="pytest" tests="1" failures="{failures}" '
+            'errors="{errors}" skipped="{skipped}">'
             '<testcase classname="tests.test_sample" name="{name}" time="0.01">'
             "{failure_block}"
+            "{error_block}"
+            "{skipped_block}"
             "</testcase>"
             "</testsuite>"
         ).format(
             failures="1" if status == "failed" else "0",
+            errors="1" if status == "error" else "0",
+            skipped="1" if status == "skipped" else "0",
             name=testcase_name,
             failure_block=failure_block,
+            error_block=error_block,
+            skipped_block=skipped_block,
         ),
         encoding="utf-8",
     )
@@ -88,3 +101,40 @@ def test_cli_writes_report_and_fails_when_flakes_detected(tmp_path: Path) -> Non
     payload = json.loads(report_path.read_text(encoding="utf-8"))
     assert payload["summary"]["flaky_test_count"] == 1
     assert payload["flaky_tests"][0]["nodeid"] == "tests.test_sample::test_flaky"
+
+
+def test_build_flaky_report_flags_mixed_non_pass_statuses() -> None:
+    detector = _load_module("detect_flaky_tests", "scripts/detect_flaky_tests.py")
+
+    report = detector.build_flaky_report(
+        {
+            "tests.test_sample::test_mixed_non_pass": ["failed", "skipped"],
+            "tests.test_sample::test_stable": ["passed", "passed"],
+        }
+    )
+
+    expected = {
+        "nodeid": "tests.test_sample::test_mixed_non_pass",
+        "statuses": ["failed", "skipped"],
+        "runs": 2,
+    }
+    assert report["flaky_tests"] == [expected]
+    assert report["stable_failures"] == [expected]
+    assert report["stable_tests"] == 1
+
+
+def test_build_flaky_report_counts_mixed_error_fail_as_stable_failure() -> None:
+    detector = _load_module("detect_flaky_tests", "scripts/detect_flaky_tests.py")
+
+    report = detector.build_flaky_report(
+        {"tests.test_sample::test_never_passed": ["failed", "error"]}
+    )
+
+    assert report["stable_failures"] == [
+        {
+            "nodeid": "tests.test_sample::test_never_passed",
+            "statuses": ["error", "failed"],
+            "runs": 2,
+        }
+    ]
+    assert report["summary"]["stable_failure_count"] == 1
