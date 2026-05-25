@@ -1,10 +1,13 @@
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, datetime, timezone
 
+import pandas as pd
 import pytest
 
+import regime_detection.calendar as calendar
 from regime_detection.calendar import (
+    as_date,
     is_nyse_trading_day,
     nyse_neighbors,
     nyse_sessions_between,
@@ -37,3 +40,45 @@ def test_require_nyse_trading_day_reports_nearest_neighbors_for_holiday() -> Non
     assert "2024-01-01" in message
     assert "Nearest prior trading day: 2023-12-29" in message
     assert "Nearest next trading day: 2024-01-02" in message
+
+
+def test_as_date_rejects_tz_naive_datetime() -> None:
+    with pytest.raises(TypeError, match="tz-naive datetime is ambiguous"):
+        as_date(datetime(2024, 1, 2, 12, 0, 0))
+
+
+def test_as_date_rejects_tz_naive_pandas_timestamp() -> None:
+    with pytest.raises(TypeError, match="tz-naive pandas Timestamp is ambiguous"):
+        as_date(pd.Timestamp("2024-01-02 12:00:00"))
+
+
+def test_as_date_rejects_non_date_like_value() -> None:
+    with pytest.raises(TypeError, match="Expected date-like value, got str"):
+        as_date("2024-01-02")
+
+
+def test_as_date_converts_tz_aware_datetime_to_new_york_date() -> None:
+    value = datetime(2024, 1, 2, 2, 30, tzinfo=timezone.utc)
+    assert as_date(value) == date(2024, 1, 1)
+
+
+def test_nyse_neighbors_raises_when_schedule_window_is_empty(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(calendar, "nyse_sessions_between", lambda start, end: ())
+
+    with pytest.raises(RuntimeError, match="empty schedule window"):
+        nyse_neighbors(date(2024, 1, 1))
+
+
+def test_nyse_neighbors_raises_when_neighbor_session_is_missing(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        calendar,
+        "nyse_sessions_between",
+        lambda start, end: (date(2024, 1, 1),),
+    )
+
+    with pytest.raises(RuntimeError, match="Unable to find NYSE neighbor sessions"):
+        nyse_neighbors(date(2024, 1, 1))

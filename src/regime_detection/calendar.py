@@ -35,8 +35,6 @@ def _as_date(value: object) -> date:
     if isinstance(value, pd.Timestamp):
         if value.tzinfo is not None:
             return value.tz_convert("America/New_York").date()
-        if value == value.normalize():
-            return value.date()
         # tz-naive pandas Timestamps are ambiguous; require tz-aware or plain date.
         raise TypeError(
             "tz-naive pandas Timestamp is ambiguous; pass a date or a tz-aware Timestamp (America/New_York recommended)"

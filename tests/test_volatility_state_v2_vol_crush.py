@@ -214,6 +214,20 @@ def test_vol_crush_false_on_nan_inputs(
     assert evaluate_vol_crush(features, dt=dt, rules_config=vol_crush_rules) is False
 
 
+def test_vol_crush_false_when_dt_missing_from_feature_indices(
+    vol_crush_rules: VolatilityV2RulesConfig,
+) -> None:
+    dt = pd.Timestamp("2024-02-05")
+    features = _vol_crush_features_at(
+        dt=pd.Timestamp("2024-02-06"),
+        realized_vol_short=0.10,
+        realized_vol_21d=0.20,
+        implied_vol_5d_change=-0.30,
+        event_window_just_passed=True,
+    )
+    assert evaluate_vol_crush(features, dt=dt, rules_config=vol_crush_rules) is False
+
+
 # ---------------------------------------------------------------------------
 # Group B — precedence: vol_crush vs rising_vol vs crisis_vol.
 # ---------------------------------------------------------------------------

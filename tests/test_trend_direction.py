@@ -6,11 +6,13 @@ from pathlib import Path
 import pandas as pd
 import yaml
 
+from regime_detection.config import load_default_regime_config
 from regime_detection.trend_direction import (
     TrendDirectionFeatures,
     compute_features,
     raw_label_for_day,
 )
+from regime_detection.trend_direction_v2 import TrendDirectionV2Features
 
 
 def test_trend_direction_matches_pinned_fixtures(classified_golden_outputs) -> None:
@@ -39,6 +41,44 @@ def _trend_direction_features(
         sma_50=pd.Series([sma_50], index=idx),
         sma_200=pd.Series([sma_200], index=idx),
         return_63d=pd.Series([return_63d], index=idx),
+    )
+
+
+def _trend_direction_v2_features(
+    *,
+    dt: pd.Timestamp,
+    return_63d: float,
+    return_126d: float,
+    drawdown_252d: float,
+    sma_50: float,
+    sma_200: float,
+    realized_vol_21d: float,
+    sentiment_score: float | None = None,
+    news_sentiment_score: float | None = None,
+    sentiment_concordance: float | None = None,
+) -> TrendDirectionV2Features:
+    idx = pd.DatetimeIndex([dt])
+    nan = pd.Series([float("nan")], index=idx)
+
+    def _optional(value: float | None, name: str) -> pd.Series | None:
+        if value is None:
+            return None
+        return pd.Series([value], index=idx, name=name)
+
+    return TrendDirectionV2Features(
+        efficiency_ratio_20d=nan.copy(),
+        hurst_250d=nan.copy(),
+        slope_sma_50=nan.copy(),
+        slope_sma_200=nan.copy(),
+        return_63d=pd.Series([return_63d], index=idx),
+        return_126d=pd.Series([return_126d], index=idx),
+        drawdown_252d=pd.Series([drawdown_252d], index=idx),
+        sma_50=pd.Series([sma_50], index=idx),
+        sma_200=pd.Series([sma_200], index=idx),
+        realized_vol_21d=pd.Series([realized_vol_21d], index=idx),
+        sentiment_score=_optional(sentiment_score, "sentiment_score"),
+        news_sentiment_score=_optional(news_sentiment_score, "news_sentiment_score"),
+        sentiment_concordance=_optional(sentiment_concordance, "sentiment_concordance"),
     )
 
 
@@ -121,3 +161,72 @@ def test_trend_direction_raw_label_unknown_when_required_feature_is_nan() -> Non
 
     assert label == "unknown"
     assert evidence == {"reason": "insufficient_history"}
+
+
+def test_trend_direction_raw_label_unknown_can_be_overridden_by_v2_recovery() -> None:
+    dt = pd.Timestamp("2024-01-02")
+    cfg = load_default_regime_config()
+    assert cfg.trend_direction_v2 is not None
+
+    label, evidence = raw_label_for_day(
+        _trend_direction_features(
+            close=290.0,
+            sma_50=float("nan"),
+            sma_200=250.0,
+            return_63d=0.12,
+        ),
+        dt,
+        trend_direction_v2_features=_trend_direction_v2_features(
+            dt=dt,
+            return_63d=0.20,
+            return_126d=0.05,
+            drawdown_252d=-0.20,
+            sma_50=280.0,
+            sma_200=260.0,
+            realized_vol_21d=0.10,
+        ),
+        trend_direction_v2_rules=cfg.trend_direction_v2.rules,
+    )
+
+    assert label == "recovery"
+    assert evidence["reason"] == "insufficient_history"
+    assert evidence["v2_override"] == {
+        "from": "unknown",
+        "to": "recovery",
+        "rule": "recovery",
+    }
+
+
+def test_trend_direction_raw_label_surfaces_optional_v2_evidence_fields() -> None:
+    dt = pd.Timestamp("2024-01-02")
+    cfg = load_default_regime_config()
+    assert cfg.trend_direction_v2 is not None
+
+    label, evidence = raw_label_for_day(
+        _trend_direction_features(
+            close=105.0,
+            sma_50=102.0,
+            sma_200=100.0,
+            return_63d=0.08,
+        ),
+        dt,
+        trend_direction_v2_features=_trend_direction_v2_features(
+            dt=dt,
+            return_63d=0.08,
+            return_126d=0.05,
+            drawdown_252d=-0.02,
+            sma_50=102.0,
+            sma_200=100.0,
+            realized_vol_21d=0.10,
+            sentiment_score=12.0,
+            news_sentiment_score=0.25,
+            sentiment_concordance=1.0,
+        ),
+        trend_direction_v2_rules=cfg.trend_direction_v2.rules,
+    )
+
+    assert label == "bull"
+    assert evidence["sentiment_score"] == 12.0
+    assert evidence["news_sentiment_score"] == 0.25
+    assert evidence["sentiment_concordance"] == 1.0
+    assert "v2_override" not in evidence
