@@ -5,6 +5,7 @@ from typing import cast
 
 import pandas as pd
 
+from regime_detection.central_bank_text import CENTRAL_BANK_TEXT_EVIDENCE_QUALITY
 from regime_detection.data_quality import (
     assess_series_input_quality,
     quality_forces_unknown,
@@ -108,9 +109,14 @@ def build_monetary_pressure_axis_series(
         )
         if features.central_bank_text_score is not None:
             cb_val = features.central_bank_text_score.get(dt)
+            score = float(cb_val) if pd.notna(cb_val) else None
             per_day_evidence[-1]["rule_evidence"]["central_bank_text_score"] = (
-                float(cb_val) if pd.notna(cb_val) else None
+                score
             )
+            per_day_evidence[-1]["central_bank_text_evidence"] = {
+                "score": score,
+                **CENTRAL_BANK_TEXT_EVIDENCE_QUALITY,
+            }
 
     return build_per_label_axis_outputs(
         sessions=context.sessions,

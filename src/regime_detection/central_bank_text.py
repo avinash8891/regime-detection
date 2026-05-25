@@ -159,6 +159,13 @@ _HAWKISH_PATTERN = _compile_lexicon(HAWKISH_TERMS)
 _DOVISH_PATTERN = _compile_lexicon(DOVISH_TERMS)
 _TOKEN_PATTERN = re.compile(r"\S+")
 
+CENTRAL_BANK_TEXT_EVIDENCE_QUALITY = {
+    "classifier_type": "lexicon",
+    "sentence_accuracy": 0.539,
+    "conditional_accuracy": 0.709,
+    "rule_consumption": False,
+}
+
 
 # ---------------------------------------------------------------------------
 # Per-release score dataclass.

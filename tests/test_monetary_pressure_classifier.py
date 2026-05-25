@@ -415,6 +415,25 @@ def test_classifier_emits_central_bank_text_score_as_evidence_only():
         output for output in out.values() if "rule_evidence" in output.evidence
     )
     assert sample.evidence["rule_evidence"]["central_bank_text_score"] == 0.25
+    assert sample.evidence["central_bank_text_evidence"] == {
+        "score": 0.25,
+        "classifier_type": "lexicon",
+        "sentence_accuracy": 0.539,
+        "conditional_accuracy": 0.709,
+        "rule_consumption": False,
+    }
+
+
+def test_rule_inputs_do_not_accept_central_bank_text_score() -> None:
+    with pytest.raises(TypeError):
+        MonetaryPressureRuleInputs(
+            zscore_2y_63d=0.0,
+            zscore_10y_63d=0.0,
+            broad_usd_zscore_63d=0.0,
+            zscore_21d_2y=0.0,
+            zscore_21d_10y=0.0,
+            central_bank_text_score=0.25,
+        )
 
 
 def test_engine_classify_window_populates_monetary_pressure_state(
