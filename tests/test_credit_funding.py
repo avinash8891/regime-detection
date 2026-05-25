@@ -32,6 +32,7 @@ from regime_detection.credit_funding import (
     build_rule_inputs_by_date,
     build_rule_inputs_for_date,
     compute_credit_funding_features,
+    deleveraging_rule_path,
     evaluate_credit_calm,
     evaluate_credit_stress,
     evaluate_deleveraging,
@@ -74,6 +75,23 @@ def _make_random_walk(
 
 def _default_rules() -> CreditFundingRulesConfig:
     return load_default_regime_config().credit_funding.rules
+
+
+def test_default_yaml_loads_credit_funding_cold_start_fallback_policy() -> None:
+    rules = _default_rules()
+
+    assert rules.cold_start_deleveraging_enabled is True
+    assert rules.cold_start_deleveraging_realized_vol_21d_min == 0.25
+    assert rules.cold_start_deleveraging_avg_corr_63d_min == 0.75
+
+
+def test_credit_rules_config_rejects_loose_deleveraging_fallback_corr() -> None:
+    from pydantic import ValidationError
+
+    base = _default_rules().model_dump()
+    base["cold_start_deleveraging_avg_corr_63d_min"] = 0.60
+    with pytest.raises(ValidationError):
+        CreditFundingRulesConfig.model_validate(base)
 
 
 # --- Group A — Feature compute (5 tests) -------------------------------------
@@ -584,7 +602,9 @@ def _rule_inputs(**overrides: float) -> CreditFundingRuleInputs:
         spy_21d_return=0.0,
         tlt_21d_return=0.0,
         realized_vol_21d_percentile_252d=0.50,
+        realized_vol_21d=0.12,
         avg_pairwise_corr_percentile_504d=0.50,
+        avg_pairwise_corr_63d=0.50,
     )
     defaults.update(overrides)
     return CreditFundingRuleInputs(**defaults)
@@ -650,6 +670,26 @@ def test_deleveraging_fires_on_5_condition_composite() -> None:
         avg_pairwise_corr_percentile_504d=0.85,
     )
     assert evaluate_deleveraging(inputs, rules) is True
+    assert deleveraging_rule_path(inputs, rules) == "percentile"
+    assert evaluate_rules(inputs=inputs, config=rules) == "deleveraging"
+
+
+def test_deleveraging_uses_cold_start_fallback_when_percentiles_warm_up() -> None:
+    """Severe SPY/TLT/USD/vol/correlation evidence should classify as
+    deleveraging when percentile gates are unavailable due to warmup."""
+    rules = _default_rules()
+    inputs = _rule_inputs(
+        spy_21d_return=-0.07,
+        tlt_21d_return=-0.01,
+        broad_usd_index_zscore_21d=0.5,
+        realized_vol_21d_percentile_252d=float("nan"),
+        realized_vol_21d=0.34,
+        avg_pairwise_corr_percentile_504d=float("nan"),
+        avg_pairwise_corr_63d=0.82,
+    )
+
+    assert evaluate_deleveraging(inputs, rules) is True
+    assert deleveraging_rule_path(inputs, rules) == "cold_start_fallback"
     assert evaluate_rules(inputs=inputs, config=rules) == "deleveraging"
 
 

@@ -128,6 +128,8 @@ class NetworkFragilityRuleInputs:
     avg_pairwise_corr_percentile_504d: float
     largest_eigenvalue_share_percentile_504d: float
     effective_rank_percentile_504d: float
+    avg_pairwise_corr_63d: float
+    largest_eigenvalue_share: float
     dispersion_ratio_percentile_252d: float
 
     # §3.2 absorption ratio — top-3 eigenvalue concentration.
@@ -142,8 +144,16 @@ class NetworkFragilityRuleInputs:
 
     # §3.5 correlation_to_one / systemic_stress cross-axis scalars.
     realized_vol_percentile_252d: float
+    realized_vol_21d: float
     drawdown_21d: float
     vix_percentile_252d: float
+
+
+@dataclass(frozen=True)
+class NetworkFragilityRuleEvaluation:
+    label: NetworkFragilityLabel
+    rule_path: str
+    reason: str | None = None
 
 
 def _trailing_slope(series: pd.Series, dt: pd.Timestamp, window: int) -> float:
@@ -203,6 +213,7 @@ def build_rule_inputs_for_date(
     spy_close: pd.Series,
     realized_vol_percentile_252d: pd.Series,
     vix_percentile_252d: pd.Series,
+    realized_vol_21d: pd.Series | None = None,
 ) -> NetworkFragilityRuleInputs:
     """Materialize per-day scalar inputs for the §3.5 rules.
 
@@ -219,6 +230,8 @@ def build_rule_inputs_for_date(
         effective_rank_percentile_504d=float(
             features.effective_rank_percentile_504d.loc[dt]
         ),
+        avg_pairwise_corr_63d=float(features.avg_pairwise_corr_63d.loc[dt]),
+        largest_eigenvalue_share=float(features.largest_eigenvalue_share.loc[dt]),
         dispersion_ratio_percentile_252d=float(
             features.dispersion_ratio_percentile_252d.loc[dt]
         ),
@@ -235,6 +248,9 @@ def build_rule_inputs_for_date(
             features.effective_rank, dt, _SPEC_STABILITY_WINDOW_DAYS
         ),
         realized_vol_percentile_252d=float(realized_vol_percentile_252d.loc[dt]),
+        realized_vol_21d=float(realized_vol_21d.loc[dt])
+        if realized_vol_21d is not None and dt in realized_vol_21d.index
+        else float("nan"),
         drawdown_21d=_trailing_drawdown(spy_close, dt, _SPEC_DRAWDOWN_WINDOW_DAYS),
         vix_percentile_252d=float(vix_percentile_252d.loc[dt]),
     )
@@ -296,6 +312,7 @@ def build_rule_inputs_by_date(
     spy_close: pd.Series,
     realized_vol_percentile_252d: pd.Series,
     vix_percentile_252d: pd.Series,
+    realized_vol_21d: pd.Series | None = None,
 ) -> dict[pd.Timestamp, NetworkFragilityRuleInputs]:
     index = features.avg_pairwise_corr_63d.index
     avg_corr_slope = _rolling_ols_slope_series(
@@ -309,6 +326,11 @@ def build_rule_inputs_by_date(
     )
     drawdown = _rolling_drawdown_series(spy_close.reindex(index), _SPEC_DRAWDOWN_WINDOW_DAYS)
     realized_vol = realized_vol_percentile_252d.reindex(index)
+    realized_vol_raw = (
+        realized_vol_21d.reindex(index)
+        if realized_vol_21d is not None
+        else pd.Series(float("nan"), index=index)
+    )
     vix_pct = vix_percentile_252d.reindex(index)
 
     outputs: dict[pd.Timestamp, NetworkFragilityRuleInputs] = {}
@@ -323,6 +345,8 @@ def build_rule_inputs_by_date(
             effective_rank_percentile_504d=float(
                 features.effective_rank_percentile_504d.loc[dt]
             ),
+            avg_pairwise_corr_63d=float(features.avg_pairwise_corr_63d.loc[dt]),
+            largest_eigenvalue_share=float(features.largest_eigenvalue_share.loc[dt]),
             dispersion_ratio_percentile_252d=float(
                 features.dispersion_ratio_percentile_252d.loc[dt]
             ),
@@ -333,6 +357,7 @@ def build_rule_inputs_by_date(
             largest_eigenvalue_share_slope_21d=float(largest_eig_slope.loc[dt]),
             effective_rank_stability_21d=float(eff_rank_stability.loc[dt]),
             realized_vol_percentile_252d=float(realized_vol.loc[dt]),
+            realized_vol_21d=float(realized_vol_raw.loc[dt]),
             drawdown_21d=float(drawdown.loc[dt]),
             vix_percentile_252d=float(vix_pct.loc[dt]),
         )
@@ -344,6 +369,64 @@ def build_rule_inputs_by_date(
 
 def _any_nan(*values: float) -> bool:
     return any(np.isnan(v) for v in values)
+
+
+def _correlation_to_one_percentile_path(
+    inputs: NetworkFragilityRuleInputs,
+    config: NetworkFragilityRulesConfig,
+) -> bool:
+    if _any_nan(
+        inputs.avg_pairwise_corr_percentile_504d,
+        inputs.realized_vol_percentile_252d,
+        inputs.drawdown_21d,
+    ):
+        return False
+    return bool(
+        inputs.avg_pairwise_corr_percentile_504d
+        > config.corr_to_one_corr_percentile_min
+        and inputs.realized_vol_percentile_252d
+        > config.corr_to_one_realized_vol_percentile_min
+        and inputs.drawdown_21d < config.corr_to_one_drawdown_max
+    )
+
+
+def _correlation_to_one_cold_start_path(
+    inputs: NetworkFragilityRuleInputs,
+    config: NetworkFragilityRulesConfig,
+) -> bool:
+    if not config.cold_start_corr_to_one_enabled:
+        return False
+    if not (
+        np.isnan(inputs.avg_pairwise_corr_percentile_504d)
+        or np.isnan(inputs.largest_eigenvalue_share_percentile_504d)
+        or np.isnan(inputs.realized_vol_percentile_252d)
+    ):
+        return False
+    if _any_nan(
+        inputs.avg_pairwise_corr_63d,
+        inputs.largest_eigenvalue_share,
+        inputs.realized_vol_21d,
+        inputs.drawdown_21d,
+    ):
+        return False
+    return bool(
+        inputs.avg_pairwise_corr_63d >= config.cold_start_corr_to_one_avg_corr_min
+        and inputs.largest_eigenvalue_share
+        >= config.cold_start_corr_to_one_largest_eig_min
+        and inputs.realized_vol_21d >= config.cold_start_corr_to_one_realized_vol_min
+        and inputs.drawdown_21d < config.corr_to_one_drawdown_max
+    )
+
+
+def correlation_to_one_rule_path(
+    inputs: NetworkFragilityRuleInputs,
+    config: NetworkFragilityRulesConfig,
+) -> str | None:
+    if _correlation_to_one_percentile_path(inputs, config):
+        return "percentile"
+    if _correlation_to_one_cold_start_path(inputs, config):
+        return "cold_start_fallback"
+    return None
 
 
 def evaluate_diversified_normal(
@@ -483,19 +566,7 @@ def evaluate_correlation_to_one(
      AND realized_vol_percentile_252d > 0.80
      AND drawdown_21d < 0`
     """
-    if _any_nan(
-        inputs.avg_pairwise_corr_percentile_504d,
-        inputs.realized_vol_percentile_252d,
-        inputs.drawdown_21d,
-    ):
-        return False
-    return bool(
-        inputs.avg_pairwise_corr_percentile_504d
-        > config.corr_to_one_corr_percentile_min
-        and inputs.realized_vol_percentile_252d
-        > config.corr_to_one_realized_vol_percentile_min
-        and inputs.drawdown_21d < config.corr_to_one_drawdown_max
-    )
+    return correlation_to_one_rule_path(inputs, config) is not None
 
 
 def evaluate_systemic_stress(
@@ -528,7 +599,7 @@ def evaluate_systemic_stress(
         inputs.vix_percentile_252d,
     ):
         return False
-    if not evaluate_correlation_to_one(inputs, config):
+    if not _correlation_to_one_percentile_path(inputs, config):
         return False
     accepted_credit: set[CreditFundingLabel] = {"credit_stress", "deleveraging"}
     # v2 §3.5 line 3541: accepted breadth set matches spec verbatim (implementation decision).
@@ -552,25 +623,66 @@ def evaluate_rules(
 
     Falls through to ``unknown`` (v2 §3.3) when no rule fires.
     """
+    return evaluate_rules_with_evidence(
+        inputs=inputs,
+        config=config,
+        breadth_label=breadth_label,
+        volatility_label=volatility_label,
+        credit_funding_label=credit_funding_label,
+    ).label
+
+
+def evaluate_rules_with_evidence(
+    *,
+    inputs: NetworkFragilityRuleInputs,
+    config: NetworkFragilityRulesConfig,
+    breadth_label: BreadthLabel,
+    volatility_label: VolatilityLabel,
+    credit_funding_label: CreditFundingLabel | None = None,
+) -> NetworkFragilityRuleEvaluation:
+    """Evaluate the rule precedence and report the matched rule path."""
     for label in RULE_PRECEDENCE:
         if label == "systemic_stress":
             if evaluate_systemic_stress(
                 inputs, config, breadth_label, credit_funding_label
             ):
-                return "systemic_stress"
+                return NetworkFragilityRuleEvaluation(
+                    label="systemic_stress",
+                    rule_path="percentile",
+                )
         elif label == "correlation_to_one":
-            if evaluate_correlation_to_one(inputs, config):
-                return "correlation_to_one"
+            path = correlation_to_one_rule_path(inputs, config)
+            if path is not None:
+                return NetworkFragilityRuleEvaluation(
+                    label="correlation_to_one",
+                    rule_path=path,
+                )
         elif label == "correlation_concentration":
             if evaluate_correlation_concentration(inputs, config):
-                return "correlation_concentration"
+                return NetworkFragilityRuleEvaluation(
+                    label="correlation_concentration",
+                    rule_path="percentile_or_absorption",
+                )
         elif label == "rising_fragility":
             if evaluate_rising_fragility(inputs, config, breadth_label):
-                return "rising_fragility"
+                return NetworkFragilityRuleEvaluation(
+                    label="rising_fragility",
+                    rule_path="slope",
+                )
         elif label == "stock_picker_dispersion":
             if evaluate_stock_picker_dispersion(inputs, config, volatility_label):
-                return "stock_picker_dispersion"
+                return NetworkFragilityRuleEvaluation(
+                    label="stock_picker_dispersion",
+                    rule_path="percentile",
+                )
         elif label == "diversified_normal":
             if evaluate_diversified_normal(inputs, config):
-                return "diversified_normal"
-    return "unknown"
+                return NetworkFragilityRuleEvaluation(
+                    label="diversified_normal",
+                    rule_path="percentile",
+                )
+    return NetworkFragilityRuleEvaluation(
+        label="unknown",
+        rule_path="none",
+        reason="no_rule_fired",
+    )

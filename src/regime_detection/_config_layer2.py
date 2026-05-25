@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Literal
 
-from pydantic import Field
+from pydantic import Field, model_validator
 
 from regime_detection._config_core import StrictBaseModel
 
@@ -264,6 +264,11 @@ class CreditFundingRulesConfig(StrictBaseModel):
     realized_vol_percentile_threshold: float = Field(default=0.75, ge=0.0, le=1.0)
     # §2C line 3271 — deleveraging "avg_pairwise_corr_percentile_504d > 0.75".
     correlation_percentile_threshold: float = Field(default=0.75, ge=0.0, le=1.0)
+    cold_start_deleveraging_enabled: bool = Field(default=True)
+    cold_start_deleveraging_realized_vol_21d_min: float = Field(default=0.25, gt=0.0)
+    cold_start_deleveraging_avg_corr_63d_min: float = Field(
+        default=0.75, ge=0.0, le=1.0
+    )
     # Opt-in calibration lever (default False matches spec §2C lines 3254-3255
     # which requires hy_oas_slope_21d > 0 AND ig_oas_slope_21d > 0). When True,
     # the rule also fires on HY slope > 0 alone — useful for catching
@@ -286,6 +291,20 @@ class CreditFundingRulesConfig(StrictBaseModel):
     broad_usd_change_window_days: int = Field(default=21, ge=5)
     # §2C lines 3237-3238 normalizer window (~5y trading days, same as §2A).
     broad_usd_normalizer_window_days: int = Field(default=1260, ge=100)
+
+    @model_validator(mode="after")
+    def _validate_cold_start_fallbacks(self) -> "CreditFundingRulesConfig":
+        if not self.cold_start_deleveraging_enabled:
+            return self
+        if (
+            self.cold_start_deleveraging_avg_corr_63d_min
+            < self.correlation_percentile_threshold
+        ):
+            raise ValueError(
+                "cold_start_deleveraging_avg_corr_63d_min cannot be below "
+                "correlation_percentile_threshold"
+            )
+        return self
 
 
 class CreditFundingConfig(StrictBaseModel):

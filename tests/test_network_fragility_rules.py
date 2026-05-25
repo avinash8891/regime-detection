@@ -15,10 +15,12 @@ import pytest
 from regime_detection.config import NetworkFragilityRulesConfig, load_default_regime_config
 from regime_detection.network_fragility_rules import (
     NetworkFragilityRuleInputs,
+    correlation_to_one_rule_path,
     evaluate_correlation_concentration,
     evaluate_correlation_to_one,
     evaluate_diversified_normal,
     evaluate_rising_fragility,
+    evaluate_rules,
     evaluate_stock_picker_dispersion,
     evaluate_systemic_stress,
 )
@@ -36,12 +38,15 @@ def _inputs(
     avg_corr_pct: float = 0.50,
     largest_eig_pct: float = 0.50,
     eff_rank_pct: float = 0.50,
+    avg_corr: float = 0.50,
+    largest_eig: float = 0.35,
     dispersion_pct: float = 0.50,
     absorption_ratio: float = 0.50,
     avg_corr_slope: float = 0.0,
     largest_eig_slope: float = 0.0,
     eff_rank_stability: float = 0.02,
     realized_vol_pct: float = 0.50,
+    realized_vol_21d: float = 0.12,
     drawdown_21d: float = 0.0,
     vix_pct: float = 0.50,
 ) -> NetworkFragilityRuleInputs:
@@ -51,12 +56,15 @@ def _inputs(
         avg_pairwise_corr_percentile_504d=avg_corr_pct,
         largest_eigenvalue_share_percentile_504d=largest_eig_pct,
         effective_rank_percentile_504d=eff_rank_pct,
+        avg_pairwise_corr_63d=avg_corr,
+        largest_eigenvalue_share=largest_eig,
         dispersion_ratio_percentile_252d=dispersion_pct,
         absorption_ratio_top3=absorption_ratio,
         avg_pairwise_corr_slope_21d=avg_corr_slope,
         largest_eigenvalue_share_slope_21d=largest_eig_slope,
         effective_rank_stability_21d=eff_rank_stability,
         realized_vol_percentile_252d=realized_vol_pct,
+        realized_vol_21d=realized_vol_21d,
         drawdown_21d=drawdown_21d,
         vix_percentile_252d=vix_pct,
     )
@@ -81,6 +89,10 @@ def test_default_yaml_loads_rules_block_with_spec_thresholds():
     assert rules.corr_to_one_corr_percentile_min == 0.90
     assert rules.corr_to_one_realized_vol_percentile_min == 0.80
     assert rules.corr_to_one_drawdown_max == 0.0
+    assert rules.cold_start_corr_to_one_enabled is True
+    assert rules.cold_start_corr_to_one_avg_corr_min == 0.90
+    assert rules.cold_start_corr_to_one_largest_eig_min == 0.75
+    assert rules.cold_start_corr_to_one_realized_vol_min == 0.25
     assert rules.systemic_stress_vix_percentile_min == 0.80
 
 
@@ -90,6 +102,16 @@ def test_rules_config_rejects_unknown_keys():
     cfg = load_default_regime_config()
     base = cfg.network_fragility.rules.model_dump()
     base["unexpected_threshold"] = 0.5
+    with pytest.raises(ValidationError):
+        NetworkFragilityRulesConfig.model_validate(base)
+
+
+def test_rules_config_rejects_loose_correlation_to_one_cold_start_thresholds():
+    from pydantic import ValidationError
+
+    cfg = load_default_regime_config()
+    base = cfg.network_fragility.rules.model_dump()
+    base["cold_start_corr_to_one_avg_corr_min"] = 0.80
     with pytest.raises(ValidationError):
         NetworkFragilityRulesConfig.model_validate(base)
 
@@ -353,6 +375,33 @@ def test_correlation_to_one_excludes_realized_vol_pct_exactly_at_threshold():
     cfg = _default_rules_config()
     inputs = _inputs(avg_corr_pct=0.95, realized_vol_pct=0.80, drawdown_21d=-0.04)
     assert evaluate_correlation_to_one(inputs, cfg) is False
+
+
+def test_correlation_to_one_uses_explicit_cold_start_fallback_when_percentiles_warm_up():
+    """Severe raw correlation/eigen/vol evidence must not be hidden solely
+    because percentile history is still warming up."""
+    cfg = _default_rules_config()
+    inputs = _inputs(
+        avg_corr_pct=float("nan"),
+        largest_eig_pct=float("nan"),
+        avg_corr=0.92,
+        largest_eig=0.78,
+        realized_vol_pct=float("nan"),
+        realized_vol_21d=0.34,
+        drawdown_21d=-0.04,
+    )
+
+    assert evaluate_correlation_to_one(inputs, cfg) is True
+    assert correlation_to_one_rule_path(inputs, cfg) == "cold_start_fallback"
+    assert (
+        evaluate_rules(
+            inputs=inputs,
+            config=cfg,
+            breadth_label="healthy_breadth",
+            volatility_label="normal_vol",
+        )
+        == "correlation_to_one"
+    )
 
 
 def test_systemic_stress_blocked_by_nan_vix_percentile():

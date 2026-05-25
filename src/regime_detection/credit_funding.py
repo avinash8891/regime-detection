@@ -495,7 +495,16 @@ class CreditFundingRuleInputs:
     spy_21d_return: float
     tlt_21d_return: float
     realized_vol_21d_percentile_252d: float
+    realized_vol_21d: float
     avg_pairwise_corr_percentile_504d: float
+    avg_pairwise_corr_63d: float
+
+
+@dataclass(frozen=True)
+class CreditFundingRuleEvaluation:
+    label: CreditFundingLabel
+    rule_path: str
+    reason: str | None = None
 
 
 def _scalar_at(series: pd.Series, dt: pd.Timestamp) -> float:
@@ -516,6 +525,8 @@ def build_rule_inputs_for_date(
     ig_spread_slope_21d: pd.Series,
     realized_vol_21d_percentile_252d: pd.Series,
     avg_pairwise_corr_percentile_504d: pd.Series,
+    realized_vol_21d: pd.Series | None = None,
+    avg_pairwise_corr_63d: pd.Series | None = None,
 ) -> CreditFundingRuleInputs:
     """Materialize the per-day scalar rule inputs at session ``dt``.
 
@@ -534,9 +545,15 @@ def build_rule_inputs_for_date(
         realized_vol_21d_percentile_252d=_scalar_at(
             realized_vol_21d_percentile_252d, dt
         ),
+        realized_vol_21d=_scalar_at(realized_vol_21d, dt)
+        if realized_vol_21d is not None
+        else float("nan"),
         avg_pairwise_corr_percentile_504d=_scalar_at(
             avg_pairwise_corr_percentile_504d, dt
         ),
+        avg_pairwise_corr_63d=_scalar_at(avg_pairwise_corr_63d, dt)
+        if avg_pairwise_corr_63d is not None
+        else float("nan"),
     )
 
 
@@ -548,6 +565,8 @@ def build_rule_inputs_by_date(
     ig_spread_slope_21d: pd.Series,
     realized_vol_21d_percentile_252d: pd.Series,
     avg_pairwise_corr_percentile_504d: pd.Series,
+    realized_vol_21d: pd.Series | None = None,
+    avg_pairwise_corr_63d: pd.Series | None = None,
 ) -> dict[pd.Timestamp, CreditFundingRuleInputs]:
     """Per-date rule inputs. The spread triple is source-neutral — pass
     ``features.hy_oas_*`` for the real-OAS run or ``features.hy_tr_differential_*``
@@ -568,9 +587,15 @@ def build_rule_inputs_by_date(
             realized_vol_21d_percentile_252d=_scalar_at(
                 realized_vol_21d_percentile_252d, dt
             ),
+            realized_vol_21d=_scalar_at(realized_vol_21d, dt)
+            if realized_vol_21d is not None
+            else float("nan"),
             avg_pairwise_corr_percentile_504d=_scalar_at(
                 avg_pairwise_corr_percentile_504d, dt
             ),
+            avg_pairwise_corr_63d=_scalar_at(avg_pairwise_corr_63d, dt)
+            if avg_pairwise_corr_63d is not None
+            else float("nan"),
         )
     return outputs
 
@@ -694,17 +719,10 @@ def evaluate_funding_squeeze(
     )
 
 
-def evaluate_deleveraging(
+def _deleveraging_percentile_path(
     inputs: CreditFundingRuleInputs,
     config: CreditFundingRulesConfig,
 ) -> bool:
-    """v2 §2C lines 3266-3271 — 5-condition composite.
-
-    ``spy_21d_return < -0.05 AND tlt_21d_return < 0
-       AND broad_usd_index_zscore_21d > 0
-       AND realized_vol_21d_percentile_252d > 0.75
-       AND avg_pairwise_corr_percentile_504d > 0.75``.
-    """
     if _any_nan(
         inputs.spy_21d_return,
         inputs.tlt_21d_return,
@@ -725,6 +743,62 @@ def evaluate_deleveraging(
     )
 
 
+def _deleveraging_cold_start_path(
+    inputs: CreditFundingRuleInputs,
+    config: CreditFundingRulesConfig,
+) -> bool:
+    if not config.cold_start_deleveraging_enabled:
+        return False
+    if not (
+        np.isnan(inputs.realized_vol_21d_percentile_252d)
+        or np.isnan(inputs.avg_pairwise_corr_percentile_504d)
+    ):
+        return False
+    if _any_nan(
+        inputs.spy_21d_return,
+        inputs.tlt_21d_return,
+        inputs.broad_usd_index_zscore_21d,
+        inputs.realized_vol_21d,
+        inputs.avg_pairwise_corr_63d,
+    ):
+        return False
+    return bool(
+        inputs.spy_21d_return < config.spy_drop_threshold
+        and inputs.tlt_21d_return < 0.0
+        and inputs.broad_usd_index_zscore_21d
+        > config.broad_usd_zscore_deleveraging_threshold
+        and inputs.realized_vol_21d
+        >= config.cold_start_deleveraging_realized_vol_21d_min
+        and inputs.avg_pairwise_corr_63d
+        >= config.cold_start_deleveraging_avg_corr_63d_min
+    )
+
+
+def deleveraging_rule_path(
+    inputs: CreditFundingRuleInputs,
+    config: CreditFundingRulesConfig,
+) -> str | None:
+    if _deleveraging_percentile_path(inputs, config):
+        return "percentile"
+    if _deleveraging_cold_start_path(inputs, config):
+        return "cold_start_fallback"
+    return None
+
+
+def evaluate_deleveraging(
+    inputs: CreditFundingRuleInputs,
+    config: CreditFundingRulesConfig,
+) -> bool:
+    """v2 §2C lines 3266-3271 — 5-condition composite.
+
+    ``spy_21d_return < -0.05 AND tlt_21d_return < 0
+       AND broad_usd_index_zscore_21d > 0
+       AND realized_vol_21d_percentile_252d > 0.75
+       AND avg_pairwise_corr_percentile_504d > 0.75``.
+    """
+    return deleveraging_rule_path(inputs, config) is not None
+
+
 def evaluate_rules(
     *,
     inputs: CreditFundingRuleInputs,
@@ -734,16 +808,33 @@ def evaluate_rules(
 
     Falls through to ``unknown`` when no rule fires (§2C line 3183 tail).
     """
-    if evaluate_deleveraging(inputs, config):
-        return "deleveraging"
+    return evaluate_rules_with_evidence(inputs=inputs, config=config).label
+
+
+def evaluate_rules_with_evidence(
+    *,
+    inputs: CreditFundingRuleInputs,
+    config: CreditFundingRulesConfig,
+) -> CreditFundingRuleEvaluation:
+    """Walk v2 §2C precedence and return the label plus matched rule path."""
+    deleveraging_path = deleveraging_rule_path(inputs, config)
+    if deleveraging_path is not None:
+        return CreditFundingRuleEvaluation(
+            label="deleveraging",
+            rule_path=deleveraging_path,
+        )
     if evaluate_funding_squeeze(inputs, config):
-        return "funding_squeeze"
+        return CreditFundingRuleEvaluation(label="funding_squeeze", rule_path="standard")
     if evaluate_credit_stress(inputs, config):
-        return "credit_stress"
+        return CreditFundingRuleEvaluation(label="credit_stress", rule_path="standard")
     if evaluate_spread_widening(inputs, config):
-        return "spread_widening"
+        return CreditFundingRuleEvaluation(label="spread_widening", rule_path="standard")
     if evaluate_credit_recovery(inputs, config):
-        return "credit_recovery"
+        return CreditFundingRuleEvaluation(label="credit_recovery", rule_path="standard")
     if evaluate_credit_calm(inputs, config):
-        return "credit_calm"
-    return "unknown"
+        return CreditFundingRuleEvaluation(label="credit_calm", rule_path="standard")
+    return CreditFundingRuleEvaluation(
+        label="unknown",
+        rule_path="none",
+        reason="no_rule_fired",
+    )

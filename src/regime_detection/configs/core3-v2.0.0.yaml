@@ -151,6 +151,10 @@ network_fragility:
     corr_to_one_corr_percentile_min: 0.90             # §3.5 line 646
     corr_to_one_realized_vol_percentile_min: 0.80     # §3.5 line 647
     corr_to_one_drawdown_max: 0.0                     # §3.5 line 648 ("drawdown_21d < 0")
+    cold_start_corr_to_one_enabled: true              # explicit warmup fallback; still requires severe raw corr/eigen/vol
+    cold_start_corr_to_one_avg_corr_min: 0.90
+    cold_start_corr_to_one_largest_eig_min: 0.75
+    cold_start_corr_to_one_realized_vol_min: 0.25
     systemic_stress_vix_percentile_min: 0.80          # §3.5 line 655
     diversified_normal_relaxed_inner_band: true        # rank instability ok in mid-corr
     diversified_normal_inner_band_lo: 0.30
@@ -392,6 +396,9 @@ credit_funding:
     broad_usd_zscore_deleveraging_threshold: 0.0  # §2C line 2085
     realized_vol_percentile_threshold: 0.75   # §2C line 2086
     correlation_percentile_threshold: 0.75    # §2C line 2087
+    cold_start_deleveraging_enabled: true      # explicit warmup fallback; still requires severe raw vol/correlation
+    cold_start_deleveraging_realized_vol_21d_min: 0.25
+    cold_start_deleveraging_avg_corr_63d_min: 0.75
     hy_percentile_504d_lookback: 504          # §2C line 2038
     slope_21d_lookback: 21                    # §2C lines 2041, 2059
     slope_63d_lookback: 63                    # §2C line 2046

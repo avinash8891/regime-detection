@@ -84,8 +84,21 @@ class VolumeLiquidityRuleInputs:
     intraday_range_percentile_252d: float
 
 
+@dataclass(frozen=True)
+class VolumeLiquidityRuleEvaluation:
+    label: VolumeLiquidityLabel
+    rule_path: str
+    reason: str | None = None
+
+
 def _is_nan(value: float) -> bool:
     return bool(np.isnan(value))
+
+
+def _gap_history_unavailable(inputs: VolumeLiquidityRuleInputs) -> bool:
+    return _is_nan(inputs.gap_frequency_percentile_252d) or _is_nan(
+        inputs.intraday_range_percentile_252d
+    )
 
 
 def evaluate_panic_volume(
@@ -153,7 +166,11 @@ def evaluate_normal_volume(
     assert the negation). A NaN input maps to False here and the
     precedence walker falls through to ``unknown``.
     """
-    if _is_nan(inputs.volume_zscore_20d) or _is_nan(inputs.return_1d):
+    if (
+        _is_nan(inputs.volume_zscore_20d)
+        or _is_nan(inputs.return_1d)
+        or _gap_history_unavailable(inputs)
+    ):
         return False
     if evaluate_panic_volume(inputs, config):
         return False
@@ -173,14 +190,37 @@ def evaluate_rules(
     data-quality path). Precedence:
         panic_volume > liquidity_gap_behavior > normal_volume > unknown
     """
+    return evaluate_rules_with_evidence(inputs=inputs, config=config).label
+
+
+def evaluate_rules_with_evidence(
+    *,
+    inputs: VolumeLiquidityRuleInputs,
+    config: VolumeLiquidityRulesConfig,
+) -> VolumeLiquidityRuleEvaluation:
+    """Walk §1E precedence and report why `unknown` was emitted."""
     for label in RULE_PRECEDENCE:
         if label == "panic_volume":
             if evaluate_panic_volume(inputs, config):
-                return "panic_volume"
+                return VolumeLiquidityRuleEvaluation(
+                    label="panic_volume",
+                    rule_path="standard",
+                )
         elif label == "liquidity_gap_behavior":
             if evaluate_liquidity_gap_behavior(inputs, config):
-                return "liquidity_gap_behavior"
+                return VolumeLiquidityRuleEvaluation(
+                    label="liquidity_gap_behavior",
+                    rule_path="percentile",
+                )
         elif label == "normal_volume":
             if evaluate_normal_volume(inputs, config):
-                return "normal_volume"
-    return "unknown"
+                return VolumeLiquidityRuleEvaluation(
+                    label="normal_volume",
+                    rule_path="standard",
+                )
+    reason = "insufficient_gap_history" if _gap_history_unavailable(inputs) else "no_rule_fired"
+    return VolumeLiquidityRuleEvaluation(
+        label="unknown",
+        rule_path="none",
+        reason=reason,
+    )

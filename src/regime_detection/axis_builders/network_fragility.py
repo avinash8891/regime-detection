@@ -19,7 +19,7 @@ from regime_detection.network_fragility_rules import (
     NETWORK_FRAGILITY_RISK_RANK,
     NetworkFragilityLabel,
     build_rule_inputs_by_date,
-    evaluate_rules,
+    evaluate_rules_with_evidence,
 )
 
 
@@ -118,6 +118,7 @@ def build_network_fragility_axis_series(
         spy_close=spy_close,
         realized_vol_percentile_252d=realized_vol_pct,
         vix_percentile_252d=vix_pct,
+        realized_vol_21d=volatility_features.realized_vol_21d,
     )
 
     for day in context.sessions:
@@ -179,13 +180,14 @@ def build_network_fragility_axis_series(
                 )
             credit_funding_label = credit_funding_active_labels_by_date[day]
 
-        label = evaluate_rules(
+        rule_evaluation = evaluate_rules_with_evidence(
             inputs=rule_inputs,
             config=network_fragility_config.rules,
             breadth_label=breadth_label,  # type: ignore[arg-type]
             volatility_label=volatility_label,  # type: ignore[arg-type]
             credit_funding_label=credit_funding_label,  # type: ignore[arg-type]
         )
+        label = rule_evaluation.label
         raw_labels.append(label)
         per_day_data_quality.append(day_quality)
         per_day_evidence.append(
@@ -194,10 +196,15 @@ def build_network_fragility_axis_series(
                     "avg_pairwise_corr_percentile_504d": rule_inputs.avg_pairwise_corr_percentile_504d,
                     "largest_eigenvalue_share_percentile_504d": rule_inputs.largest_eigenvalue_share_percentile_504d,
                     "effective_rank_percentile_504d": rule_inputs.effective_rank_percentile_504d,
+                    "avg_pairwise_corr_63d": rule_inputs.avg_pairwise_corr_63d,
+                    "largest_eigenvalue_share": rule_inputs.largest_eigenvalue_share,
                     "dispersion_ratio_percentile_252d": rule_inputs.dispersion_ratio_percentile_252d,
                     "realized_vol_percentile_252d": rule_inputs.realized_vol_percentile_252d,
+                    "realized_vol_21d": rule_inputs.realized_vol_21d,
                     "drawdown_21d": rule_inputs.drawdown_21d,
                     "vix_percentile_252d": rule_inputs.vix_percentile_252d,
+                    "rule_path": rule_evaluation.rule_path,
+                    "rule_reason": rule_evaluation.reason,
                 },
                 "breadth_active_label": breadth_label,
                 "volatility_active_label": volatility_label,

@@ -22,7 +22,7 @@ from regime_detection.credit_funding import (
     SOFR_KEY,
     TLT_KEY,
     build_rule_inputs_by_date as build_credit_funding_rule_inputs_by_date,
-    evaluate_rules as evaluate_credit_funding_rules,
+    evaluate_rules_with_evidence as evaluate_credit_funding_rules_with_evidence,
 )
 from regime_detection.data_quality import (
     assess_series_input_quality,
@@ -81,11 +81,14 @@ def _build_credit_funding_for_spread_source(
     spy_close = context.spy_ohlcv["close"]
     volatility_features = feature_store.volatility
     realized_vol_pct = volatility_features.realized_vol_percentile_252d
+    realized_vol_21d = volatility_features.realized_vol_21d
     nf_features = feature_store.network_fragility
     if nf_features is None:
         avg_corr_pct_series = pd.Series(float("nan"), index=spy_close.index)
+        avg_corr_63d_series = pd.Series(float("nan"), index=spy_close.index)
     else:
         avg_corr_pct_series = nf_features.avg_pairwise_corr_percentile_504d
+        avg_corr_63d_series = nf_features.avg_pairwise_corr_63d
 
     # The credit_funding seam guarantees these series exist on the
     # SPY index when feature_store.credit_funding is non-None.
@@ -172,6 +175,8 @@ def _build_credit_funding_for_spread_source(
         ig_spread_slope_21d=ig_spread_slope_21d,
         realized_vol_21d_percentile_252d=realized_vol_pct,
         avg_pairwise_corr_percentile_504d=avg_corr_pct_series,
+        realized_vol_21d=realized_vol_21d,
+        avg_pairwise_corr_63d=avg_corr_63d_series,
     )
 
     for day in context.sessions:
@@ -270,10 +275,11 @@ def _build_credit_funding_for_spread_source(
                 }
             )
             continue
-        label = evaluate_credit_funding_rules(
+        rule_evaluation = evaluate_credit_funding_rules_with_evidence(
             inputs=rule_inputs,
             config=cf_config.rules,
         )
+        label = rule_evaluation.label
         raw_labels.append(label)
         per_day_data_quality.append(day_quality)
         per_day_evidence.append(
@@ -287,7 +293,11 @@ def _build_credit_funding_for_spread_source(
                     "spy_21d_return": rule_inputs.spy_21d_return,
                     "tlt_21d_return": rule_inputs.tlt_21d_return,
                     "realized_vol_21d_percentile_252d": rule_inputs.realized_vol_21d_percentile_252d,
+                    "realized_vol_21d": rule_inputs.realized_vol_21d,
                     "avg_pairwise_corr_percentile_504d": rule_inputs.avg_pairwise_corr_percentile_504d,
+                    "avg_pairwise_corr_63d": rule_inputs.avg_pairwise_corr_63d,
+                    "rule_path": rule_evaluation.rule_path,
+                    "rule_reason": rule_evaluation.reason,
                 },
                 "spread_source": evidence_spread_source,
                 "nfci_daily_carried": _safe_float(nfci_carried, dt),

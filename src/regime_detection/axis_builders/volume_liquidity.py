@@ -17,7 +17,7 @@ from regime_detection.volume_liquidity_rules import (
     VOLUME_LIQUIDITY_RISK_RANK,
     VolumeLiquidityLabel,
     VolumeLiquidityRuleInputs,
-    evaluate_rules as evaluate_volume_liquidity_rules,
+    evaluate_rules_with_evidence as evaluate_volume_liquidity_rules_with_evidence,
 )
 
 
@@ -132,10 +132,11 @@ def build_volume_liquidity_axis_series(
             gap_frequency_percentile_252d=gap_freq_pct,
             intraday_range_percentile_252d=intraday_pct,
         )
-        label = evaluate_volume_liquidity_rules(
+        rule_evaluation = evaluate_volume_liquidity_rules_with_evidence(
             inputs=inputs,
             config=volume_liquidity_config.rules,
         )
+        label = rule_evaluation.label
         raw_labels.append(label)
         per_day_data_quality.append(day_quality)
         per_day_evidence.append(
@@ -145,6 +146,8 @@ def build_volume_liquidity_axis_series(
                     "return_1d": float(f"{return_1d:.8g}"),
                     "gap_frequency_percentile_252d": float(f"{gap_freq_pct:.8g}"),
                     "intraday_range_percentile_252d": float(f"{intraday_pct:.8g}"),
+                    "rule_path": rule_evaluation.rule_path,
+                    "rule_reason": rule_evaluation.reason,
                 },
             }
         )

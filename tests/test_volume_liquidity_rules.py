@@ -26,6 +26,7 @@ from regime_detection.volume_liquidity_rules import (
     evaluate_normal_volume,
     evaluate_panic_volume,
     evaluate_rules,
+    evaluate_rules_with_evidence,
 )
 
 
@@ -232,6 +233,32 @@ def test_evaluate_rules_returns_unknown_when_required_inputs_nan(
         config=volume_liquidity_rules,
     )
     assert label == "unknown"
+
+
+def test_evaluate_rules_returns_unknown_when_gap_history_is_unavailable(
+    volume_liquidity_rules,
+):
+    """Normal volume requires enough gap history to negate gap stress."""
+    label = evaluate_rules(
+        inputs=_inputs(
+            volume_zscore_20d=0.4,
+            return_1d=0.001,
+            gap_frequency_percentile_252d=float("nan"),
+            intraday_range_percentile_252d=0.50,
+        ),
+        config=volume_liquidity_rules,
+    )
+    assert label == "unknown"
+    evaluation = evaluate_rules_with_evidence(
+        inputs=_inputs(
+            volume_zscore_20d=0.4,
+            return_1d=0.001,
+            gap_frequency_percentile_252d=float("nan"),
+            intraday_range_percentile_252d=0.50,
+        ),
+        config=volume_liquidity_rules,
+    )
+    assert evaluation.reason == "insufficient_gap_history"
 
 
 def test_evaluate_rules_returns_liquidity_gap_behavior_when_inputs_fire(

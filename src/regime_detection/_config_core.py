@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
 class StrictBaseModel(BaseModel):
@@ -89,6 +89,10 @@ class NetworkFragilityRulesConfig(StrictBaseModel):
     corr_to_one_corr_percentile_min: float = Field(ge=0.0, le=1.0)
     corr_to_one_realized_vol_percentile_min: float = Field(ge=0.0, le=1.0)
     corr_to_one_drawdown_max: float
+    cold_start_corr_to_one_enabled: bool = Field(default=True)
+    cold_start_corr_to_one_avg_corr_min: float = Field(default=0.90, ge=0.0, le=1.0)
+    cold_start_corr_to_one_largest_eig_min: float = Field(default=0.75, ge=0.0, le=1.0)
+    cold_start_corr_to_one_realized_vol_min: float = Field(default=0.25, gt=0.0)
     # systemic_stress — v2 §3.5 lines 3538–3541
     systemic_stress_vix_percentile_min: float = Field(ge=0.0, le=1.0)
     # When True, diversified_normal fires on correlation in the inner band
@@ -97,6 +101,25 @@ class NetworkFragilityRulesConfig(StrictBaseModel):
     diversified_normal_relaxed_inner_band: bool = Field(default=True)
     diversified_normal_inner_band_lo: float = Field(default=0.30, ge=0.0, le=1.0)
     diversified_normal_inner_band_hi: float = Field(default=0.60, ge=0.0, le=1.0)
+
+    @model_validator(mode="after")
+    def _validate_cold_start_fallbacks(self) -> "NetworkFragilityRulesConfig":
+        if not self.cold_start_corr_to_one_enabled:
+            return self
+        if self.cold_start_corr_to_one_avg_corr_min < self.corr_to_one_corr_percentile_min:
+            raise ValueError(
+                "cold_start_corr_to_one_avg_corr_min cannot be below "
+                "corr_to_one_corr_percentile_min"
+            )
+        if (
+            self.cold_start_corr_to_one_largest_eig_min
+            < self.concentration_largest_eig_percentile_min
+        ):
+            raise ValueError(
+                "cold_start_corr_to_one_largest_eig_min cannot be below "
+                "concentration_largest_eig_percentile_min"
+            )
+        return self
 
 
 class NetworkFragilityConfig(StrictBaseModel):
