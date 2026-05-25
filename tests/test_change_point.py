@@ -250,6 +250,85 @@ def test_compute_change_point_features_returns_none_on_numeric_instability(
     assert result is None
 
 
+def test_compute_change_point_features_returns_none_when_bocpd_dependency_changes_exception_type(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import regime_detection.change_point as change_point
+
+    series = _synthetic_two_regime_realized_vol(
+        n_sessions=1500, shift_index=750, seed=0
+    )
+    cfg = _default_change_point_config(training_window_days=1260)
+
+    def raise_value_error(*, data: np.ndarray, config: ChangePointConfig) -> np.ndarray:
+        del data, config
+        raise ValueError("dependency contract changed")
+
+    monkeypatch.setattr(
+        change_point,
+        "_bocpd_posterior_changepoint_prob",
+        raise_value_error,
+    )
+
+    result = compute_change_point_features(realized_vol_21d=series, config=cfg)
+
+    assert result is None
+
+
+def test_bocpd_adapter_rejects_unexpected_posterior_matrix_shape(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import regime_detection.change_point as change_point
+
+    def fake_online_changepoint_detection(
+        data: np.ndarray,
+        hazard_func,
+        observation_likelihood: object,
+    ) -> tuple[np.ndarray, np.ndarray]:
+        del hazard_func, observation_likelihood
+        return np.zeros((len(data), len(data)), dtype=float), np.arange(len(data))
+
+    monkeypatch.setattr(
+        change_point,
+        "_online_changepoint_detection",
+        fake_online_changepoint_detection,
+    )
+
+    cfg = _default_change_point_config()
+    data = np.array([0.11, 0.12, 0.25], dtype=float)
+
+    with pytest.raises(RuntimeError, match="BOCPD posterior matrix shape"):
+        change_point._bocpd_posterior_changepoint_prob(data=data, config=cfg)
+
+
+def test_bocpd_adapter_rejects_nonfinite_posterior_mass(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import regime_detection.change_point as change_point
+
+    def fake_online_changepoint_detection(
+        data: np.ndarray,
+        hazard_func,
+        observation_likelihood: object,
+    ) -> tuple[np.ndarray, np.ndarray]:
+        del hazard_func, observation_likelihood
+        R = np.zeros((len(data) + 1, len(data) + 1), dtype=float)
+        R[1, 1:] = np.array([0.1, np.nan, 0.2], dtype=float)
+        return R, np.arange(len(data))
+
+    monkeypatch.setattr(
+        change_point,
+        "_online_changepoint_detection",
+        fake_online_changepoint_detection,
+    )
+
+    cfg = _default_change_point_config()
+    data = np.array([0.11, 0.12, 0.25], dtype=float)
+
+    with pytest.raises(FloatingPointError, match="non-finite"):
+        change_point._bocpd_posterior_changepoint_prob(data=data, config=cfg)
+
+
 def test_bocpd_adapter_calls_expected_dependency_api(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -279,7 +358,7 @@ def test_bocpd_adapter_calls_expected_dependency_api(
         calls["data"] = data.copy()
         calls["hazard_func"] = hazard_func
         calls["observation_likelihood"] = observation_likelihood
-        R = np.zeros((5, len(data) + 1), dtype=float)
+        R = np.zeros((len(data) + 1, len(data) + 1), dtype=float)
         R[1, 1:] = np.array([0.1, 0.2, 0.7], dtype=float)
         R[2, 1:] = np.array([0.3, 0.1, 0.1], dtype=float)
         R[3, 1:] = np.array([0.4, 0.0, 0.1], dtype=float)

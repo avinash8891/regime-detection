@@ -137,7 +137,7 @@ def compute_change_point_features(
 
     try:
         posterior_arr = _bocpd_posterior_changepoint_prob(data=data, config=config)
-    except ArithmeticError as exc:
+    except (ArithmeticError, RuntimeError, ValueError) as exc:
         _LOGGER.warning(
             "BOCPD online_changepoint_detection failed; "
             "change_point seam returns None: %s",
@@ -197,8 +197,17 @@ def _bocpd_posterior_changepoint_prob(
         ),
     )
     n = len(data)
+    expected_shape = (n + 1, n + 1)
+    if R.shape != expected_shape:
+        raise RuntimeError(
+            "BOCPD posterior matrix shape changed: "
+            f"expected {expected_shape}, got {R.shape}"
+        )
     window = min(config.recent_run_length_window_days, n)
-    return np.asarray(R[1 : window + 1, 1 : n + 1].sum(axis=0), dtype=float)
+    posterior = np.asarray(R[1 : window + 1, 1 : n + 1].sum(axis=0), dtype=float)
+    if not np.isfinite(posterior).all():
+        raise FloatingPointError("BOCPD posterior contains non-finite values")
+    return posterior
 
 
 def _rolling_max_changepoint_prob(posterior: pd.Series, window: int) -> pd.Series:
