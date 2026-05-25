@@ -55,6 +55,9 @@ dev = [
   "pyright==1.1.409",
 ]
 
+[project.entry-points.pytest11]
+santo_domingo_runtime_policy = "regime_detection.pytest_runtime_policy"
+
 [tool.black]
 line-length = 88
 target-version = ["py311"]

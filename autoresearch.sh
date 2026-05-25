@@ -25,9 +25,9 @@ printf '%s\n' "$output"
 
 real_seconds="$(printf '%s\n' "$output" | awk '/^real /{print $2; exit}')"
 summary_line="$(printf '%s\n' "$output" | grep -E '([0-9]+ failed|[0-9]+ passed|[0-9]+ skipped)' | tail -1)"
-passed_count="$(printf '%s\n' "$summary_line" | sed -nE 's/.*([0-9]+) passed.*/\1/p')"
-skipped_count="$(printf '%s\n' "$summary_line" | sed -nE 's/.*([0-9]+) skipped.*/\1/p')"
-failed_count="$(printf '%s\n' "$summary_line" | sed -nE 's/.*([0-9]+) failed.*/\1/p')"
+passed_count="$(printf '%s\n' "$summary_line" | sed -nE 's/(^|.*[^0-9])([0-9]+) passed.*/\2/p')"
+skipped_count="$(printf '%s\n' "$summary_line" | sed -nE 's/(^|.*[^0-9])([0-9]+) skipped.*/\2/p')"
+failed_count="$(printf '%s\n' "$summary_line" | sed -nE 's/(^|.*[^0-9])([0-9]+) failed.*/\2/p')"
 collected_count="$(printf '%s\n' "$output" | sed -nE 's/^collected ([0-9]+) items.*/\1/p' | tail -1)"
 slowest_seconds="$(printf '%s\n' "$output" | awk '/^[0-9]+\.[0-9]+s /{gsub(/s/,"",$1); print $1; exit}')"
 
