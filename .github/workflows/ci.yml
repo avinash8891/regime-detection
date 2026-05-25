@@ -76,13 +76,7 @@ jobs:
             tests/test_observability.py \
             tests/test_profile_engine_reporting_loaders.py
           python -m deptry . --ignore DEP003
-          python -m pyright \
-            src/regime_detection/observability.py \
-            src/regime_detection/config.py \
-            src/regime_detection/transition_risk.py \
-            src/regime_detection/feature_store.py \
-            tests/test_feature_store_refactors.py \
-            scripts/fetch_regime_engine_v1_data.py
+          python -m pyright
           if [ -d tests ]; then
             python -m pytest -q -o addopts="" --cov=src --cov-report=term-missing --cov-fail-under=80
           else
