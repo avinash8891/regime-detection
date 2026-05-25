@@ -55,6 +55,7 @@ dev = [
   "hypothesis==6.152.9",
   "ruff==0.15.14",
   "pyright==1.1.409",
+  "pandas-stubs==2.3.0.250703",
 ]
 
 [tool.black]
