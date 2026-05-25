@@ -11,18 +11,18 @@ requires-python = ">=3.11"
 dependencies = [
   "numpy==2.3.0",
   "pandas==2.3.0",
-  "pydantic>=2,<3",
+  "pydantic==2.13.4",
   "pandas_market_calendars==5.1.1",
   "pyarrow==23.0.0",
   "pyyaml==6.0.2",
   "openpyxl==3.1.5",
   "xlrd==2.0.2",
-  "hmmlearn>=0.3,<0.4",
+  "hmmlearn==0.3.3",
   "opentelemetry-api==1.36.0",
   # Adapter in regime_detection.change_point uses
   # online_changepoint_detection(data, hazard_func, observation_likelihood),
   # constant_hazard(lam, r), and StudentT(alpha, beta, kappa, mu).
-  "bayesian-changepoint-detection>=0.2.dev1",
+  "bayesian-changepoint-detection==0.2.dev1",
 ]
 
 [project.optional-dependencies]
@@ -33,21 +33,21 @@ browser = [
   "playwright>=1.50,<2",
 ]
 audit = [
-  "pip-audit",
-  "pydeps",
-  "vulture",
-  "radon",
-  "deptry",
+  "pip-audit==2.10.0",
+  "pydeps==3.0.6",
+  "vulture==2.16",
+  "radon==6.0.1",
+  "deptry==0.25.1",
 ]
 dev = [
-  "black",
-  "pytest",
-  "pytest-cov",
-  "pytest-mock",
-  "pytest-xdist",
-  "hypothesis",
-  "ruff",
-  "pyright",
+  "black==26.5.1",
+  "pytest==9.0.3",
+  "pytest-cov==7.1.0",
+  "pytest-mock==3.15.1",
+  "pytest-xdist==3.8.0",
+  "hypothesis==6.152.9",
+  "ruff==0.15.14",
+  "pyright==1.1.409",
 ]
 
 [tool.black]

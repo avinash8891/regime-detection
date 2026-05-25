@@ -9,7 +9,7 @@ Operating discipline for coding agents in this repository. Project-specific cont
 3. **Search before writing.** Grep the codebase for the concept before any new function >15 lines. Report findings.
 4. **Stop at each task boundary.** Commit with clear tag, push, wait for "continue." No auto-chaining.
 5. **Validate at every layer boundary**, including raw external inputs — one source-specific model per source before normalization.
-6. **Tests run and pass.** Paste actual test-runner output into the completion message.
+6. **Tests run and pass in GitHub Actions.** Full-suite verification belongs in CI, not local runs. Agents may run only cheap targeted local checks for debugging. Final verification reports the GitHub Actions run URL, result, and relevant test summary.
 7. **No scope creep.** The spec is authoritative. "While I was here" additions banned. "In blast radius" is not a license.
 8. **Single source of truth for persistent state.** No shadow copies, no cross-task intermediate stores. Raw inputs and final outputs OK.
 
@@ -55,6 +55,7 @@ Operating discipline for coding agents in this repository. Project-specific cont
 
 ## Hygiene
 
+- **Full-suite verification runs in GitHub Actions, not locally.** Do not run the full pytest suite on the workstation unless the user explicitly asks. Use targeted local checks only when needed to debug a narrow change, then report the GitHub Actions run URL and result as final verification.
 - **RTK rewrites `python3 -m pytest` → `rtk pytest` (failures-only mode).** "Pytest: No tests collected" means no failures were found — it is NOT evidence that tests ran or passed. Always append `; echo "EXIT:$?"` and treat exit 0 as pass, exit 5 as genuine no-collection. Never pipe with `| tail -N` when the exit code matters — that discards it silently.
 - `get_logger` must NOT set `propagate = False` — pytest caplog captures via the root logger; blocking propagation makes all `caplog` assertions return empty strings. No duplicate output risk in production (no root handler attached outside tests).
 - `PYTEST_CURRENT_TEST` is NOT set during pytest module import/collection — only during test execution. Module-level code cannot use it as an import guard. Use it only inside functions.
