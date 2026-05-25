@@ -17,6 +17,7 @@ import pytest
 from regime_detection.config import HMMConfig, load_default_regime_config
 from regime_detection.hmm_state import (
     HMMFeatures,
+    _StrictConvergenceMonitor,
     compute_hmm_features,
 )
 
@@ -210,6 +211,16 @@ def test_compute_hmm_features_returns_none_when_hmm_fit_is_non_monotonic(
     assert compute_hmm_features(config=cfg, **inputs) is None
 
 
+def test_strict_convergence_monitor_does_not_treat_non_monotonic_fit_as_converged() -> None:
+    monitor = _StrictConvergenceMonitor(tol=0.01, n_iter=200, verbose=False)
+
+    monitor.report(10.0)
+    monitor.report(9.0)
+
+    assert monitor.non_monotonic is True
+    assert monitor.converged is False
+
+
 def test_compute_hmm_features_uses_best_monotonic_seed_after_standardizing(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -269,6 +280,46 @@ def test_compute_hmm_features_uses_best_monotonic_seed_after_standardizing(
     assert all(item["min_covar"] == 0.123 for item in seen)
     assert abs(float(seen[0]["mean"])) < 1e-12
     assert float(seen[0]["std"]) == pytest.approx(1.0)
+
+
+def test_compute_hmm_features_logs_each_non_monotonic_seed(
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    inputs = _synthetic_inputs(n_sessions=1500)
+    cfg = _default_hmm_config().model_copy(update={"random_seeds": (42, 101)})
+
+    class FakeMonitor:
+        tol = 0.01
+        n_iter = 200
+        verbose = False
+
+    class FakeGaussianHMM:
+        def __init__(self, **kwargs) -> None:
+            self.random_state = kwargs["random_state"]
+            self.monitor_ = FakeMonitor()
+
+        def fit(self, _train):
+            if self.random_state == 42:
+                self.monitor_.report(10.0)
+                self.monitor_.report(9.0)
+            else:
+                self.monitor_.report(10.0)
+                self.monitor_.report(12.0)
+            return self
+
+        def predict_proba(self, frame):
+            return np.tile(np.array([[0.7, 0.1, 0.1, 0.1]]), (len(frame), 1))
+
+    monkeypatch.setattr("regime_detection.hmm_state.GaussianHMM", FakeGaussianHMM)
+
+    with caplog.at_level("WARNING", logger="regime_detection.hmm_state"):
+        result = compute_hmm_features(config=cfg, **inputs)
+
+    assert result is not None
+    assert result.selected_seed == 101
+    assert "GaussianHMM skipped non-monotonic seed" in caplog.text
+    assert "seed=42" in caplog.text
 
 
 def test_top_state_prob_is_at_least_one_over_n_states(

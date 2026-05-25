@@ -467,6 +467,7 @@ def _build_network_fragility_feature(state: _FeatureStoreBuildState) -> None:
         percentile_lookback_days=config.percentile_lookback_days,
         realized_vol_lookback_days=config.realized_vol_lookback_days,
         dispersion_percentile_lookback_days=config.dispersion_percentile_lookback_days,
+        dispersion_spy_vol_floor=config.dispersion_spy_vol_floor,
         min_universe_size=config.min_universe_size,
         min_window_completeness=config.min_window_completeness,
         universe=config.universe,

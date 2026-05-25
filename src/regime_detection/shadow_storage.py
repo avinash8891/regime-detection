@@ -100,7 +100,9 @@ def ensure_shadow_layout(output_root: Path) -> dict[str, Path]:
 
 
 def open_shadow_db(db_path: Path) -> sqlite3.Connection:
-    conn = sqlite3.connect(db_path)
+    conn = sqlite3.connect(db_path, timeout=30.0)
+    conn.execute("PRAGMA journal_mode=WAL")
+    conn.execute("PRAGMA busy_timeout=30000")
     conn.execute(RUNS_SCHEMA)
     conn.execute(REPLAY_CHECKS_SCHEMA)
     conn.execute(INCIDENTS_SCHEMA)

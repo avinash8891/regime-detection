@@ -511,8 +511,26 @@ def test_regime_output_carries_change_point_when_seam_present(
     cfg = engine.config.model_copy(
         update={
             "change_point": engine.config.change_point.model_copy(
-                update={"training_window_days": 500}
+                update={"training_window_days": 100}
             ),
+            "network_fragility": None,
+            "trend_direction_v2": None,
+            "volatility_state_v2": None,
+            "breadth_state_v2": None,
+            "volume_liquidity_v2": None,
+            "volume_liquidity_state": None,
+            "transition_score": None,
+            "monetary_pressure_v2": None,
+            "monetary_pressure_state": None,
+            "central_bank_text": None,
+            "news_sentiment": None,
+            "inflation_growth": None,
+            "credit_funding": None,
+            "hmm": None,
+            "clustering": None,
+            "cohort_routing": None,
+            "strategy_family_constraints": None,
+            "strategy_event_modifiers": None,
         }
     )
     last_session = max(raw_market_data["date"].unique())

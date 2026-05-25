@@ -55,7 +55,7 @@ class _StrictConvergenceMonitor(ConvergenceMonitor):
 
     @property
     def converged(self) -> bool:
-        return self.non_monotonic or super().converged
+        return False if self.non_monotonic else super().converged
 
 
 @dataclass(frozen=True)
@@ -231,6 +231,16 @@ def compute_hmm_features(
                 )
                 for result in seed_results:
                     if result["non_monotonic"]:
+                        _LOGGER.warning(
+                            "GaussianHMM skipped non-monotonic seed: "
+                            "checkpoint=%s seed=%s log_likelihood=%s "
+                            "previous_log_likelihood=%s delta=%s",
+                            train_end_pos,
+                            result["seed"],
+                            result["log_likelihood"],
+                            result["previous_log_likelihood"],
+                            result["delta"],
+                        )
                         all_skipped.append(
                             (
                                 train_end_pos,

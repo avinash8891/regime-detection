@@ -143,6 +143,10 @@ class NetworkFragilityConfig(StrictBaseModel):
     # V2 §3.2 dispersion_ratio_percentile_252d lookback.
     dispersion_percentile_lookback_days: int = Field(gt=0)
 
+    # Mask dispersion_ratio when SPY realised vol is too close to zero to be
+    # a stable denominator.
+    dispersion_spy_vol_floor: float = Field(default=1e-6, ge=0.0)
+
     min_universe_size: int = Field(ge=20)
 
     # Aligns with V1 data_quality min_completeness (0.90 default).

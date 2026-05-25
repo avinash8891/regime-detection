@@ -46,6 +46,17 @@ def test_open_shadow_db_creates_durable_shadow_tables(tmp_path: Path) -> None:
     assert durable_table_names == table_names
 
 
+def test_open_shadow_db_enables_wal_and_busy_timeout(tmp_path: Path) -> None:
+    db_path = tmp_path / "regime_shadow.db"
+
+    with open_shadow_db(db_path) as conn:
+        journal_mode = conn.execute("PRAGMA journal_mode").fetchone()[0]
+        busy_timeout = conn.execute("PRAGMA busy_timeout").fetchone()[0]
+
+    assert journal_mode == "wal"
+    assert busy_timeout == 30000
+
+
 def test_write_archived_inputs_persists_files_and_checksums(tmp_path: Path) -> None:
     archive_dir = tmp_path / "input_archives" / "2023-12-14"
     market_slice = pd.DataFrame(
