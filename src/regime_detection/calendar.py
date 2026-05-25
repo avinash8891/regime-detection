@@ -31,6 +31,11 @@ def nyse_sessions_between(start_date: date, end_date: date) -> tuple[date, ...]:
 
 
 def _as_date(value: object) -> date:
+    if isinstance(value, pd.Timestamp):
+        if value.tzinfo is not None:
+            return value.tz_convert("America/New_York").date()
+        # tz-naive pandas Timestamps are ambiguous; require tz-aware or plain date.
+        raise TypeError("tz-naive pandas Timestamp is ambiguous; pass a date or a tz-aware Timestamp (America/New_York recommended)")
     if isinstance(value, datetime):
         if value.tzinfo is not None:
             # Interpret date-like inputs in US/Eastern for NYSE calendar alignment.
@@ -40,11 +45,6 @@ def _as_date(value: object) -> date:
         raise TypeError("tz-naive datetime is ambiguous; pass a date or a tz-aware datetime (America/New_York recommended)")
     if isinstance(value, date) and not isinstance(value, pd.Timestamp):
         return value
-    if isinstance(value, pd.Timestamp):
-        if value.tzinfo is not None:
-            return value.tz_convert("America/New_York").date()
-        # tz-naive pandas Timestamps are ambiguous; require tz-aware or plain date.
-        raise TypeError("tz-naive pandas Timestamp is ambiguous; pass a date or a tz-aware Timestamp (America/New_York recommended)")
     raise TypeError(f"Expected date-like value, got {type(value).__name__}")
 
 

@@ -166,6 +166,17 @@ def test_rising_vol_nan_input_returns_false(rising_vol_rules, field) -> None:
     assert evaluate_rising_vol(features, dt=dt, rules_config=rising_vol_rules) is False
 
 
+def test_rising_vol_false_when_dt_missing_from_feature_index(rising_vol_rules) -> None:
+    dt = pd.Timestamp("2020-03-09")
+    features = _scalar_v2_features_at(
+        dt=pd.Timestamp("2020-03-10"),
+        atr_ratio=1.30,
+        realized_vol_short=0.40,
+        realized_vol_long=0.20,
+    )
+    assert evaluate_rising_vol(features, dt=dt, rules_config=rising_vol_rules) is False
+
+
 # ---------- Precedence tests on `evaluate_v2_volatility_label` --------------
 
 
@@ -227,6 +238,22 @@ def test_precedence_rising_vol_predicate_false_returns_none(rising_vol_rules) ->
             rules_config=rising_vol_rules,
         )
         is None
+    )
+
+
+def test_precedence_unknown_v1_label_treated_as_lowest_rank(rising_vol_rules) -> None:
+    dt = pd.Timestamp("2020-03-09")
+    features = _scalar_v2_features_at(
+        dt=dt, atr_ratio=1.30, realized_vol_short=0.40, realized_vol_long=0.20
+    )
+    assert (
+        evaluate_v2_volatility_label(
+            v1_label="custom_label",
+            features=features,
+            dt=dt,
+            rules_config=rising_vol_rules,
+        )
+        == "rising_vol"
     )
 
 
