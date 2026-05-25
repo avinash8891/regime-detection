@@ -211,7 +211,9 @@ def test_compute_hmm_features_returns_none_when_hmm_fit_is_non_monotonic(
     assert compute_hmm_features(config=cfg, **inputs) is None
 
 
-def test_strict_convergence_monitor_does_not_treat_non_monotonic_fit_as_converged() -> None:
+def test_strict_convergence_monitor_does_not_treat_non_monotonic_fit_as_converged() -> (
+    None
+):
     monitor = _StrictConvergenceMonitor(tol=0.01, n_iter=200, verbose=False)
 
     monitor.report(10.0)
