@@ -4131,6 +4131,26 @@ strategy_family_constraints:
 
 The override-on-default inheritance pattern keeps the ship surface small (one base constraint set + per-cohort deltas) and matches Pydantic's config-inheritance idiom that the rest of V2 uses. All thresholds (`max_lookback_days`, `max_holding_days`, `max_position_pct`, `min_adx`) are V2 §9.1 walk-forward calibration placeholders.
 
+#### Effective Strategy Constraints
+
+`strategy_response`, `agent_routing.blocked_strategy_modes`, and
+`strategy_family_constraints` are preserved as separate diagnostic surfaces,
+but downstream order/execution consumers should read
+`RegimeOutput.effective_strategy_constraints` as the canonical permission
+surface. The effective resolver is most-restrictive-wins:
+
+- a `strategy_response.allow_* = false` blocks the matching family/mode;
+- an active-cohort `blocked_strategy_modes` entry blocks the named family/mode;
+- a resolved §5.2 `StrategyFamilyConstraint.allowed = false` blocks that
+  family;
+- scalar risk controls such as `position_size_multiplier`,
+  `leverage_allowed`, confirmation flags, and family-level fields are carried
+  into the effective record so a consumer does not need to re-merge the three
+  legacy surfaces.
+
+The original fields remain in the wire output for auditability and backwards
+compatibility; the effective field defines the precedence contract.
+
 ### 5.3 Vol-Crush Exit Rules
 
 > **Scope:** §5.3 is a **downstream strategy contract**, not regime-engine logic. The engine's responsibility is to emit the `vol_crush` label correctly (per §1C); the rules below describe how a position-management layer should respond to that label. They are not implemented in `regime_detection`. They are documented here so the contract is in one place for the strategy layer that consumes engine outputs.

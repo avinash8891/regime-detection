@@ -620,6 +620,36 @@ class StrategyFamilyConstraint(BaseModel):
         return super().model_dump_json(*args, **kwargs)
 
 
+class EffectiveStrategyConstraint(BaseModel):
+    """Canonical per-family/mode strategy permission after all layers resolve."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    family: str
+    allowed: bool
+    sources: list[str]
+    blocking_reasons: list[str] = Field(default_factory=list)
+    position_size_multiplier: float
+    leverage_allowed: bool
+    require_confirmation_for_new_longs: bool
+    require_confirmation_for_shorts: bool
+    max_lookback_days: int | None = None
+    max_holding_days: int | None = None
+    max_position_pct: float | None = None
+    min_adx: int | None = None
+    require_breadth_confirmation: bool | None = None
+    require_volume_confirmation: bool | None = None
+    event_window_only: bool | None = None
+
+    def model_dump(self, *args: Any, **kwargs: Any) -> dict[str, Any]:
+        kwargs.setdefault("exclude_none", True)
+        return super().model_dump(*args, **kwargs)
+
+    def model_dump_json(self, *args: Any, **kwargs: Any) -> str:
+        kwargs.setdefault("exclude_none", True)
+        return super().model_dump_json(*args, **kwargs)
+
+
 class AgentRouting(BaseModel):
     """v2 §5.1 Agent Cohort Routing output.
 
@@ -713,6 +743,7 @@ class RegimeOutput(BaseModel):
     cluster: ClusterOutput | None = None  # v2 §6.2 — diagnostic evidence
     agent_routing: "AgentRouting | None" = None  # v2 §5.1
     strategy_family_constraints: dict[str, StrategyFamilyConstraint] | None = None  # v2 §5.2
+    effective_strategy_constraints: dict[str, EffectiveStrategyConstraint] | None = None
 
     def model_dump_legacy_v1_wire(self, *args: Any, **kwargs: Any) -> dict[str, Any]:
         """Compatibility projection for archived V1 wire-shape replay."""

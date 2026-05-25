@@ -31,6 +31,7 @@ from regime_detection.models import (
 from regime_detection.strategy_family_constraints import (
     resolve_strategy_family_constraints,
 )
+from regime_detection.strategy_constraints import resolve_effective_strategy_constraints
 from regime_detection.strategy_response import build_strategy_response
 from regime_detection.transition_risk_series import build_transition_risk_series
 from regime_detection.versioning import engine_version
@@ -488,6 +489,7 @@ def _build_timeline_output_for_day(
 
     agent_routing = None
     strategy_family_constraints = None
+    effective_strategy_constraints = None
     cohort_routing_config = working_context.config.cohort_routing
     if cohort_routing_config is not None:
         # v2 §2A monetary pressure axis — wire the active label through to
@@ -511,6 +513,21 @@ def _build_timeline_output_for_day(
                 active_cohort=agent_routing.active_cohort,
                 config=sfc_config,
             )
+    strategy_response = build_strategy_response(
+        trend_direction_active=trend_direction_output.active_label,
+        trend_character_active=trend_character_output.active_label,
+        volatility_state_active=volatility_output.active_label,
+        breadth_state_active=breadth_output.active_label,
+        transition_risk_state=transition_output.state,
+        event_calendar_labels=event_output.matching_labels,
+        event_modifier_config=working_context.config.strategy_event_modifiers,
+    )
+    if agent_routing is not None or strategy_family_constraints is not None:
+        effective_strategy_constraints = resolve_effective_strategy_constraints(
+            strategy_response=strategy_response,
+            agent_routing=agent_routing,
+            strategy_family_constraints=strategy_family_constraints,
+        )
     return RegimeOutput(
         engine_version=engine_version(),
         config_version=working_context.config.config_version,
@@ -527,15 +544,7 @@ def _build_timeline_output_for_day(
         ),
         network_fragility=network_fragility_output,
         transition_risk=transition_output,
-        strategy_response=build_strategy_response(
-            trend_direction_active=trend_direction_output.active_label,
-            trend_character_active=trend_character_output.active_label,
-            volatility_state_active=volatility_output.active_label,
-            breadth_state_active=breadth_output.active_label,
-            transition_risk_state=transition_output.state,
-            event_calendar_labels=event_output.matching_labels,
-            event_modifier_config=working_context.config.strategy_event_modifiers,
-        ),
+        strategy_response=strategy_response,
         volume_liquidity_state=volume_liquidity_output,
         credit_funding_state=credit_funding_output,
         credit_funding_state_proxy=credit_funding_proxy_output,
@@ -547,6 +556,7 @@ def _build_timeline_output_for_day(
         change_point=change_point_output,
         agent_routing=agent_routing,
         strategy_family_constraints=strategy_family_constraints,
+        effective_strategy_constraints=effective_strategy_constraints,
     )
 
 

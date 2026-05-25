@@ -556,6 +556,24 @@ def test_timeline_passes_event_calendar_matching_labels_to_strategy_response(
     spy.assert_called_once()
     assert spy.call_args.kwargs["event_calendar_labels"] == event_output.matching_labels
     assert spy.call_args.kwargs["event_modifier_config"] is config.strategy_event_modifiers
+    assert out.effective_strategy_constraints is not None
+    assert out.strategy_family_constraints is not None
+    breakout = out.effective_strategy_constraints["breakout"]
+    assert "strategy_response" in breakout.sources
+    assert "strategy_family_constraints" in breakout.sources
+    if out.agent_routing is not None and "breakout" in out.agent_routing.blocked_strategy_modes:
+        assert "agent_routing" in breakout.sources
+    assert (
+        breakout.allowed
+        is (
+            out.strategy_response.allow_breakout
+            and out.strategy_family_constraints["breakout"].allowed
+            and (
+                out.agent_routing is None
+                or "breakout" not in out.agent_routing.blocked_strategy_modes
+            )
+        )
+    )
 
 
 def test_transition_risk_history_precomputes_axis_switch_and_prior_bear_flags() -> None:
