@@ -82,6 +82,7 @@ def _vol_crush_features_at(
         atr_ratio=nan.copy(),
         gap_frequency_20d=nan.copy(),
         gap_frequency_percentile_252d=nan.copy(),
+        intraday_range=nan.copy(),
         intraday_range_percentile_252d=nan.copy(),
         realized_vol_short=pd.Series([realized_vol_short], index=idx),
         realized_vol_long=nan.copy(),

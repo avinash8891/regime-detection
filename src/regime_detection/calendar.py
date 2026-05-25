@@ -24,10 +24,22 @@ def nyse_calendar() -> mcal.MarketCalendar:
     return mcal.get_calendar("NYSE")
 
 
-@lru_cache(maxsize=1024)
+@lru_cache(maxsize=None)
+def _nyse_sessions_for_year(year: int) -> tuple[date, ...]:
+    return tuple(
+        nyse_calendar()
+        .schedule(start_date=date(year, 1, 1), end_date=date(year, 12, 31))
+        .index.date
+    )
+
+
+@lru_cache(maxsize=None)
 def nyse_sessions_between(start_date: date, end_date: date) -> tuple[date, ...]:
     return tuple(
-        nyse_calendar().schedule(start_date=start_date, end_date=end_date).index.date
+        session
+        for year in range(start_date.year, end_date.year + 1)
+        for session in _nyse_sessions_for_year(year)
+        if start_date <= session <= end_date
     )
 
 
@@ -35,6 +47,8 @@ def _as_date(value: object) -> date:
     if isinstance(value, pd.Timestamp):
         if value.tzinfo is not None:
             return value.tz_convert("America/New_York").date()
+        if value == value.normalize():
+            return value.date()
         # tz-naive pandas Timestamps are ambiguous; require tz-aware or plain date.
         raise TypeError(
             "tz-naive pandas Timestamp is ambiguous; pass a date or a tz-aware Timestamp (America/New_York recommended)"
