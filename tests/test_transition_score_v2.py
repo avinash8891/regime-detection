@@ -88,7 +88,7 @@ def test_component_formulas_have_expected_boundaries(
         "credit_stress": pytest.approx(0.75),
         "liquidity_stress": pytest.approx(1.0),
         "macro_event": pytest.approx(1.0),
-        "model_instability": pytest.approx(1.0),
+        "model_instability": pytest.approx(0.70),
     }
 
 

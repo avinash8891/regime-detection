@@ -234,10 +234,7 @@ def compose_transition_score_for_session(
     cp_score = _optional_number(change_point_score)
     if cp_score is not None:
         cp_score = _clip(cp_score, 0.0, 1.0)
-    cluster_shift = None
-    if cluster_id_now is not None and cluster_id_5d_ago is not None:
-        cluster_shift = 0.0 if int(cluster_id_now) == int(cluster_id_5d_ago) else 1.0
-    model_instability = _max_present(hmm_shift, cp_score, cluster_shift)
+    model_instability = _max_present(hmm_shift, cp_score)
 
     raw_components: dict[str, float | None] = {
         "trend_break": trend_break,

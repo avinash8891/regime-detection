@@ -24,6 +24,7 @@ from datetime import date
 
 import pandas as pd
 
+from regime_detection.calendar import nyse_sessions_between
 from regime_detection.models import DataQuality
 
 
@@ -137,4 +138,8 @@ def _freshness_days(*, window: pd.Series, as_of_date_normalized: pd.Timestamp) -
     last_valid = window.last_valid_index()
     if last_valid is None:
         return _NO_VALID_OBSERVATION_FRESHNESS_DAYS
-    return int((as_of_date_normalized - pd.Timestamp(last_valid).normalize()).days)
+    sessions = nyse_sessions_between(
+        pd.Timestamp(last_valid).date(),
+        as_of_date_normalized.date(),
+    )
+    return max(0, len(sessions) - 1)
