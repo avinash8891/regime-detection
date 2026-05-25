@@ -25,6 +25,27 @@ from regime_detection.market_context import (
     slice_context_to_recent_sessions,
 )
 
+
+@pytest.fixture(scope="module")
+def base_v2_market_and_kwargs_2023_12_14(
+    market_df_for_asof, synthetic_v2_kwargs_for_market_data
+):
+    as_of = date(2023, 12, 14)
+    market_data = market_df_for_asof(as_of)
+    kwargs = synthetic_v2_kwargs_for_market_data(market_data)
+    return as_of, market_data, kwargs
+
+
+@pytest.fixture(scope="module")
+def base_v2_output_2023_12_14(base_v2_market_and_kwargs_2023_12_14):
+    as_of, market_data, kwargs = base_v2_market_and_kwargs_2023_12_14
+    return RegimeEngine().classify(
+        as_of_date=as_of,
+        market_data=market_data,
+        **kwargs,
+    )
+
+
 # ---------- universe constants -----------------------------------------------
 
 
@@ -602,14 +623,13 @@ def test_engine_classify_threads_pit_constituent_inputs_into_context(
 
 
 def test_engine_classify_threads_aaii_sentiment_into_context(
-    market_df_for_asof,
-    synthetic_v2_kwargs_for_market_data,
+    base_v2_market_and_kwargs_2023_12_14,
 ) -> None:
     """Regression: RegimeEngine.classify must accept aaii_sentiment kwarg so
     the v2 §1A `euphoria` predicate (ADR 0004 / Log #32 closure) is reachable
     from the public engine entrypoint. AAII rows carry publication_date so
     the per-session forward-fill respects V1 §2.2 stateless-replay."""
-    as_of = date(2023, 12, 14)
+    as_of, market_data, kwargs = base_v2_market_and_kwargs_2023_12_14
 
     # Two weekly AAII rows, both with publication_date <= as_of, so the
     # session at as_of inherits the most recent one's bull_bear_spread_8w_ma.
@@ -636,11 +656,10 @@ def test_engine_classify_threads_aaii_sentiment_into_context(
         ]
     )
 
-    market_data = market_df_for_asof(as_of)
     out = RegimeEngine().classify(
         as_of_date=as_of,
         market_data=market_data,
-        **synthetic_v2_kwargs_for_market_data(market_data),
+        **kwargs,
         aaii_sentiment=aaii_sentiment,
     )
 
@@ -680,18 +699,9 @@ def test_build_market_context_rejects_malformed_date_values(market_df_for_asof) 
 
 
 def test_engine_classify_accepts_v2_data_kwargs_without_breaking_v1_output(
-    market_df_for_asof,
-    synthetic_v2_kwargs_for_market_data,
+    base_v2_output_2023_12_14,
 ) -> None:
-    as_of = date(2023, 12, 14)
-    market_data = market_df_for_asof(as_of)
-
-    # Engine accepts the V2 kwargs required by the default V2 transition score.
-    out_with_v2 = RegimeEngine().classify(
-        as_of_date=as_of,
-        market_data=market_data,
-        **synthetic_v2_kwargs_for_market_data(market_data),
-    )
+    out_with_v2 = base_v2_output_2023_12_14
 
     assert out_with_v2.network_fragility.active_label is not None
     assert out_with_v2.trend_direction.active_label is not None

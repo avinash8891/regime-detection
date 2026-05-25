@@ -13,6 +13,13 @@ from regime_detection.engine import RegimeEngine
 from regime_detection.versioning import engine_version
 
 
+@pytest.fixture(scope="module")
+def baseline_v2_output_2026_05_05(v2_classify_kwargs_for_asof):
+    as_of = date(2026, 5, 5)
+    engine = RegimeEngine()
+    return engine, engine.classify(as_of_date=as_of, **v2_classify_kwargs_for_asof(as_of))
+
+
 def test_engine_version_matches_spec_prefix() -> None:
     assert engine_version().startswith("regime-engine-v")
 
@@ -98,11 +105,10 @@ def test_default_config_is_packaged_and_loadable() -> None:
     assert cfg.volatility_state.deescalation_days_by_label
 
 
-def test_classify_emits_regime_output_shape(v2_classify_kwargs_for_asof) -> None:
+def test_classify_emits_regime_output_shape(baseline_v2_output_2026_05_05) -> None:
     as_of = date(2026, 5, 5)
     assert is_nyse_trading_day(as_of)
-    engine = RegimeEngine()
-    out = engine.classify(as_of_date=as_of, **v2_classify_kwargs_for_asof(as_of))
+    engine, out = baseline_v2_output_2026_05_05
     assert out.engine_version == engine_version()
     assert out.config_version == engine.config.config_version
     assert out.as_of_date == as_of

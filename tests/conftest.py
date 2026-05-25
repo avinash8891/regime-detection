@@ -770,7 +770,6 @@ def real_v2_classify_window_2026_05_12(
         f"peer worker; cache_path={cache_path}"
     )
 
-
 @pytest.fixture(scope="session")
 def classified_golden_outputs(
     tmp_path_factory: pytest.TempPathFactory,
