@@ -184,6 +184,7 @@ class HMMConfig(StrictBaseModel):
     # work is recorded in tests/test_hmm_state.py + the committed label maps
     # at docs/verification/hmm_state_label_map.yaml.
     model_version: str = "hmm_4state_v1.0"
+    label_map_required_for_output: bool = Field(default=False)
     state_label_map: dict[int, str] | None = None
 
 
@@ -223,6 +224,7 @@ class ClusteringConfig(StrictBaseModel):
     # behavior survives sklearn minor-version drift in the default value.
     reg_covar: float = Field(default=1e-6, gt=0.0)
     model_version: str = Field(default="gmm_8cluster_v1.0")
+    label_map_required_for_output: bool = Field(default=False)
     cluster_label_map: dict[int, str] | None = None
 
 

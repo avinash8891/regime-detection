@@ -17,6 +17,7 @@ from regime_detection.feature_store import build_feature_store
 from regime_detection.config import load_default_regime_config
 from regime_detection.fragility_universe import CROSS_ASSET_SYMBOLS, SECTOR_ETFS
 from regime_detection.market_context import (
+    MarketContext,
     build_market_context,
     slice_context_to_recent_sessions,
 )
@@ -34,6 +35,9 @@ from regime_detection.models import (
 from regime_detection.strategy_response import build_strategy_response
 from regime_detection.timeline import (
     ENGINE_MINIMUM_HISTORY,
+    _AlignedV2Evidence,
+    _build_cluster_output,
+    _build_hmm_output,
     _enrich_with_hmm_evidence,
     _resolve_timeline_required_sessions,
     build_regime_timeline,
@@ -42,6 +46,80 @@ from regime_detection.transition_risk_series import (
     build_transition_risk_history,
     build_transition_risk_series,
 )
+
+
+def _minimal_context_for_evidence_mapping() -> MarketContext:
+    day = date(2024, 1, 2)
+    idx = pd.DatetimeIndex([pd.Timestamp(day)])
+    return MarketContext(
+        end_date=day,
+        config=load_default_regime_config(),
+        sessions=(day,),
+        spy_ohlcv=pd.DataFrame({"close": [100.0]}, index=idx),
+        rsp_close=pd.Series([100.0], index=idx),
+        vix_proxy_close=None,
+    )
+
+
+def test_hmm_output_explains_absent_state_label_map() -> None:
+    day = date(2024, 1, 2)
+    idx = pd.DatetimeIndex([pd.Timestamp(day)])
+    aligned = _AlignedV2Evidence(
+        cp_score_aligned=None,
+        cp_days_since_aligned=None,
+        cp_method=None,
+        cluster_id_aligned=None,
+        cluster_distance_aligned=None,
+        cluster_model_version=None,
+        cluster_n_clusters=None,
+        hmm_top_state_aligned=pd.Series([1], index=idx),
+        hmm_top_state_prob_aligned=pd.Series([0.8], index=idx),
+        hmm_top_state_full=pd.Series([1], index=idx),
+        hmm_n_states=4,
+        hmm_model_version="hmm_4state_v1.0",
+    )
+
+    output = _build_hmm_output(
+        aligned=aligned,
+        working_context=_minimal_context_for_evidence_mapping(),
+        selected_day_index=0,
+        day=day,
+    )
+
+    assert output is not None
+    assert output.mapped_label is None
+    assert output.mapping_status == "map_absent"
+    assert output.mapping_reason == "state_label_map_not_configured"
+
+
+def test_cluster_output_explains_absent_cluster_label_map() -> None:
+    day = date(2024, 1, 2)
+    idx = pd.DatetimeIndex([pd.Timestamp(day)])
+    aligned = _AlignedV2Evidence(
+        cp_score_aligned=None,
+        cp_days_since_aligned=None,
+        cp_method=None,
+        cluster_id_aligned=pd.Series([2], index=idx),
+        cluster_distance_aligned=pd.Series([1.25], index=idx),
+        cluster_model_version="gmm_8cluster_v1.0",
+        cluster_n_clusters=8,
+        hmm_top_state_aligned=None,
+        hmm_top_state_prob_aligned=None,
+        hmm_top_state_full=None,
+        hmm_n_states=None,
+        hmm_model_version=None,
+    )
+
+    output = _build_cluster_output(
+        aligned=aligned,
+        working_context=_minimal_context_for_evidence_mapping(),
+        selected_day_index=0,
+    )
+
+    assert output is not None
+    assert output.mapped_label is None
+    assert output.mapping_status == "map_absent"
+    assert output.mapping_reason == "cluster_label_map_not_configured"
 
 
 def _constituent_ohlcv_from_close_series(series: pd.Series) -> pd.DataFrame:

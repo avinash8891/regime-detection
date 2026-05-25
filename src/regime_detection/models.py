@@ -435,6 +435,14 @@ class ClusterOutput(BaseModel):
     distance_to_centroid: float
     model_version: str
     mapped_label: str | None = None
+    mapping_status: Literal[
+        "mapped",
+        "map_absent",
+        "map_invalid",
+        "model_version_mismatch",
+        "map_required_missing",
+    ]
+    mapping_reason: str
 
     def model_dump(self, *args: Any, **kwargs: Any) -> dict[str, Any]:
         kwargs.setdefault("exclude_none", True)
@@ -463,6 +471,14 @@ class HmmOutput(BaseModel):
     state_persistence_days: int | None = None
     model_version: str
     mapped_label: str | None = None
+    mapping_status: Literal[
+        "mapped",
+        "map_absent",
+        "map_invalid",
+        "model_version_mismatch",
+        "map_required_missing",
+    ]
+    mapping_reason: str
 
     def model_dump(self, *args: Any, **kwargs: Any) -> dict[str, Any]:
         kwargs.setdefault("exclude_none", True)

@@ -528,6 +528,7 @@ hmm:
   # sequential implementation.
   random_seeds: [42, 101, 202, 303, 404, 505, 606, 707, 808, 909]
   tol: 0.01
+  label_map_required_for_output: false
 
 # v2 §6.2 K-Means/GMM Clustering — diagnostic evidence layer.
 clustering:
@@ -542,6 +543,7 @@ clustering:
   random_state: 42
   covariance_type: full
   model_version: "gmm_8cluster_v1.0"
+  label_map_required_for_output: false
 
 # v2 §6.3 + §4.6 Change-Point Detection (implementation phase, evidence-only).
 # Algorithm: BOCPD (Adams & MacKay 2007). Library:
