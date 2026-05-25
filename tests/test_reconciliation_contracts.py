@@ -37,7 +37,9 @@ def _reconciliation_fixture_config():
                     "random_seeds": (42, 7, 13),
                 }
             ),
-            "clustering": cfg.clustering.model_copy(update={"training_window_days": 100}),
+            "clustering": cfg.clustering.model_copy(
+                update={"training_window_days": 100}
+            ),
             "change_point": cfg.change_point.model_copy(
                 update={"training_window_days": 100}
             ),

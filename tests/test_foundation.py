@@ -17,7 +17,9 @@ from regime_detection.versioning import engine_version
 def baseline_v2_output_2026_05_05(v2_classify_kwargs_for_asof):
     as_of = date(2026, 5, 5)
     engine = RegimeEngine()
-    return engine, engine.classify(as_of_date=as_of, **v2_classify_kwargs_for_asof(as_of))
+    return engine, engine.classify(
+        as_of_date=as_of, **v2_classify_kwargs_for_asof(as_of)
+    )
 
 
 def test_engine_version_matches_spec_prefix() -> None:
