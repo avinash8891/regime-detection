@@ -13,6 +13,7 @@ jobs:
   checks:
     name: checks (${{ github.event_name }})
     runs-on: ubuntu-latest
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
         with:
@@ -78,7 +79,7 @@ jobs:
           python -m deptry . --ignore DEP003
           python -m pyright
           if [ -d tests ]; then
-            python -m pytest -q -o addopts="" --cov=src --cov-report=term-missing --cov-fail-under=80
+            python -m pytest -m "" --cov=src --cov-report=term-missing --cov-fail-under=80
           else
             echo "No tests directory yet; skipping pytest until V1 implementation begins."
           fi
