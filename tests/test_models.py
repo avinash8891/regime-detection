@@ -84,7 +84,9 @@ def _transition_risk(*, state: str = "stable") -> TransitionRiskOutput:
     )
 
 
-def _regime_output(*, config_version: str = "test", market: str = "SPY") -> RegimeOutput:
+def _regime_output(
+    *, config_version: str = "test", market: str = "SPY"
+) -> RegimeOutput:
     return RegimeOutput(
         engine_version="regime-engine-v-test",
         config_version=config_version,
@@ -182,8 +184,21 @@ def test_missing_rule_features_handles_none_basemodel_and_list_paths() -> None:
 
 
 def test_serializers_omit_none_fields_by_default() -> None:
-    cluster = ClusterOutput(cluster_id=3, distance_to_centroid=1.5, model_version="v1")
-    hmm = HmmOutput(top_state=1, top_state_prob=0.8, n_states=3, model_version="v2")
+    cluster = ClusterOutput(
+        cluster_id=3,
+        distance_to_centroid=1.5,
+        model_version="v1",
+        mapping_status="map_absent",
+        mapping_reason="cluster_label_map_not_configured",
+    )
+    hmm = HmmOutput(
+        top_state=1,
+        top_state_prob=0.8,
+        n_states=3,
+        model_version="v2",
+        mapping_status="map_absent",
+        mapping_reason="state_label_map_not_configured",
+    )
     change_point = ChangePointOutput(score=0.2, method="BOCPD")
     strategy = _strategy_response()
     family = StrategyFamilyConstraint(allowed=True)
@@ -192,6 +207,8 @@ def test_serializers_omit_none_fields_by_default() -> None:
         "cluster_id": 3,
         "distance_to_centroid": 1.5,
         "model_version": "v1",
+        "mapping_status": "map_absent",
+        "mapping_reason": "cluster_label_map_not_configured",
     }
     assert json.loads(cluster.model_dump_json()) == cluster.model_dump()
     assert hmm.model_dump() == {
@@ -199,6 +216,8 @@ def test_serializers_omit_none_fields_by_default() -> None:
         "top_state_prob": 0.8,
         "n_states": 3,
         "model_version": "v2",
+        "mapping_status": "map_absent",
+        "mapping_reason": "state_label_map_not_configured",
     }
     assert json.loads(hmm.model_dump_json()) == hmm.model_dump()
     assert change_point.model_dump() == {"score": 0.2, "method": "BOCPD"}
@@ -265,7 +284,9 @@ def test_regime_output_non_v1_dump_keeps_native_shape_and_json_mode() -> None:
     assert json.loads(compact) == payload
 
 
-def test_regime_timeline_dump_and_json_use_legacy_projection_and_compact_format() -> None:
+def test_regime_timeline_dump_and_json_use_legacy_projection_and_compact_format() -> (
+    None
+):
     output = _regime_output(config_version="core3-v1.0.0", market="SPÝ")
     timeline = RegimeTimeline(
         engine_version="regime-engine-v-test",

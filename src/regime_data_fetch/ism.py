@@ -4,8 +4,9 @@ import datetime as dt
 import re
 from zoneinfo import ZoneInfo
 
-
-_PMI_PATTERN = re.compile(r"(?P<label>[A-Za-z ]+PMI)\s+at\s+(?P<value>\d+(?:\.\d+)?)%", re.IGNORECASE)
+_PMI_PATTERN = re.compile(
+    r"(?P<label>[A-Za-z ]+PMI)\s+at\s+(?P<value>\d+(?:\.\d+)?)%", re.IGNORECASE
+)
 
 
 def extract_ism_pmi_value(html: str, *, label: str) -> float:
@@ -15,12 +16,16 @@ def extract_ism_pmi_value(html: str, *, label: str) -> float:
     raise ValueError(f"Could not find {label!r} in ISM page")
 
 
-def release_timestamp_for(*, year: int, month: int, business_day_index: int) -> dt.datetime:
+def release_timestamp_for(
+    *, year: int, month: int, business_day_index: int
+) -> dt.datetime:
     if business_day_index < 1:
         raise ValueError("business_day_index must be >= 1")
 
     ts = _nth_business_day(year=year, month=month, n=business_day_index)
-    return dt.datetime(ts.year, ts.month, ts.day, 10, 0, tzinfo=ZoneInfo("America/New_York"))
+    return dt.datetime(
+        ts.year, ts.month, ts.day, 10, 0, tzinfo=ZoneInfo("America/New_York")
+    )
 
 
 def _nth_business_day(*, year: int, month: int, n: int) -> dt.date:

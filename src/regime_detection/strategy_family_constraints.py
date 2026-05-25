@@ -14,7 +14,6 @@ from regime_detection.config import (
 )
 from regime_detection.models import StrategyFamilyConstraint
 
-
 # v2 §5.2 (spec lines 3899-3921) — the five strategy families the engine
 # constrains. One home (AGENTS rule B) so test files and downstream
 # consumers import the same tuple rather than hardcoding strings.

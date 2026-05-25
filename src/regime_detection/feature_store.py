@@ -8,7 +8,10 @@ import pandas as pd
 from pydantic import BaseModel, ConfigDict
 
 from regime_detection._rolling_stats import simple_moving_average
-from regime_detection.breadth_state import BreadthFeatures, compute_features as compute_breadth_features
+from regime_detection.breadth_state import (
+    BreadthFeatures,
+    compute_features as compute_breadth_features,
+)
 from regime_detection.breadth_state_v2 import (
     BreadthV2Features,
     compute_breadth_v2_features,
@@ -74,7 +77,10 @@ from regime_detection.clustering import (
 )
 from regime_detection.hmm_state import HMMFeatures, compute_hmm_features
 from regime_detection.volatility_state import realized_vol
-from regime_detection.volatility_state import VolatilityFeatures, compute_features as compute_volatility_features
+from regime_detection.volatility_state import (
+    VolatilityFeatures,
+    compute_features as compute_volatility_features,
+)
 from regime_detection.volatility_state_v2 import (
     VolatilityV2Features,
     compute_volatility_v2_features,
@@ -461,6 +467,7 @@ def _build_network_fragility_feature(state: _FeatureStoreBuildState) -> None:
         percentile_lookback_days=config.percentile_lookback_days,
         realized_vol_lookback_days=config.realized_vol_lookback_days,
         dispersion_percentile_lookback_days=config.dispersion_percentile_lookback_days,
+        dispersion_spy_vol_floor=config.dispersion_spy_vol_floor,
         min_universe_size=config.min_universe_size,
         min_window_completeness=config.min_window_completeness,
         universe=config.universe,
@@ -474,7 +481,9 @@ def _build_volatility_state_v2_feature(state: _FeatureStoreBuildState) -> None:
     event_window = (
         compute_event_window_just_passed(
             normalized_event_calendar=state.context.normalized_event_calendar,
-            sessions=tuple(ts.date() for ts in _as_datetime_index(state.spy_close.index)),
+            sessions=tuple(
+                ts.date() for ts in _as_datetime_index(state.spy_close.index)
+            ),
             trailing_sessions=(
                 state.volatility_state_v2_config.rules.vol_crush_event_window_trailing_sessions
             ),
@@ -769,8 +778,12 @@ def build_feature_store(
 
     return FeatureStore(
         spy_index=_as_datetime_index(spy_ohlcv.index),
-        trend_direction=_require_feature(build_state.trend_direction, "trend_direction"),
-        trend_character=_require_feature(build_state.trend_character, "trend_character"),
+        trend_direction=_require_feature(
+            build_state.trend_direction, "trend_direction"
+        ),
+        trend_character=_require_feature(
+            build_state.trend_character, "trend_character"
+        ),
         volatility=_require_feature(build_state.volatility, "volatility"),
         breadth=_require_feature(build_state.breadth, "breadth"),
         sma_50=_require_feature(build_state.sma_50, "sma_50"),

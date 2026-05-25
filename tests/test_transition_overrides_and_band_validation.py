@@ -328,9 +328,7 @@ def test_scales_are_tunable_via_config() -> None:
     # trend_drawdown saturation, so a smaller drawdown now saturates.
     base = _default_transition_score_config()
     tighter = base.model_copy(
-        update={
-            "scales": TransitionComponentScales(drawdown_full_stress=0.05)
-        }
+        update={"scales": TransitionComponentScales(drawdown_full_stress=0.05)}
     )
 
     # 5% drawdown under tighter scales saturates trend_drawdown.
@@ -395,7 +393,9 @@ def test_first_session_bypass_is_preserved_when_initial_active_state_unset() -> 
     sessions = [date(2024, 1, 2), date(2024, 1, 3)]
     raw = {sessions[0]: _raw("weakening"), sessions[1]: _raw("weakening")}
     debounced = _apply_transition_state_debounce(
-        sessions=sessions, raw_outputs=raw, state_confirmation_days=_confirmation_windows()
+        sessions=sessions,
+        raw_outputs=raw,
+        state_confirmation_days=_confirmation_windows(),
     )
     assert debounced[sessions[0]].state == "weakening"
     assert debounced[sessions[0]].triggered_rules == []

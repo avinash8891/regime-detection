@@ -38,7 +38,8 @@ class ElectionAdapter:
                     source_url=SOURCE_URL,
                     raw_title=f"{year} {election_kind(year)} federal general election",
                     raw_snippet="Computed under 2 U.S.C. §7: Tuesday after the first Monday in November.",
-                    is_future_scheduled=us_general_election_date(year) > self.as_of_date,
+                    is_future_scheduled=us_general_election_date(year)
+                    > self.as_of_date,
                     confidence="high",
                     requires_manual_review=False,
                     window_days=(-5, 10),
@@ -53,5 +54,7 @@ def election_kind(year: int) -> str:
 
 def us_general_election_date(year: int) -> dt.date:
     first_november = dt.date(year, 11, 1)
-    first_monday = first_november + dt.timedelta(days=(0 - first_november.weekday()) % 7)
+    first_monday = first_november + dt.timedelta(
+        days=(0 - first_november.weekday()) % 7
+    )
     return first_monday + dt.timedelta(days=1)

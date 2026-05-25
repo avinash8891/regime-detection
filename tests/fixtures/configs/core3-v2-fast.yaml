@@ -101,6 +101,7 @@ network_fragility:
   percentile_lookback_days: 504
   realized_vol_lookback_days: 21
   dispersion_percentile_lookback_days: 252
+  dispersion_spy_vol_floor: 1.0e-06
   min_universe_size: 20
   min_window_completeness: 0.9
   deescalation_days_by_label:

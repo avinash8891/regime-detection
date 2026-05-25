@@ -9,7 +9,10 @@ from pathlib import Path
 import pandas as pd
 
 from regime_data_fetch.acquisition_store import AcquisitionStore
-from regime_data_fetch.alpaca_daily import fetch_daily_bars_alpaca, verify_min_start_date
+from regime_data_fetch.alpaca_daily import (
+    fetch_daily_bars_alpaca,
+    verify_min_start_date,
+)
 from regime_data_fetch.daily_bars_provider import (
     DAILY_BARS_PROVIDERS,
     fetch_daily_bars_with_provider,
@@ -77,8 +80,8 @@ V2_FRED_SERIES = {
     # (documented implementation decision). `credit_funding` lists these in REQUIRED_MACRO_KEYS,
     # so the §2C seam does not build without them — there is no proxy
     # fallback path.
-    "hy_oas": "BAMLH0A0HYM2",       # ICE BofA US High Yield Index OAS
-    "ig_bbb_oas": "BAMLC0A4CBBB",   # ICE BofA BBB US Corporate Index OAS
+    "hy_oas": "BAMLH0A0HYM2",  # ICE BofA US High Yield Index OAS
+    "ig_bbb_oas": "BAMLC0A4CBBB",  # ICE BofA BBB US Corporate Index OAS
     # CBOE VIX — the model-free 30-day implied vol on SPX, free on FRED.
     # §1C `vol_crush` consumes it as `implied_vol_30d = VIXCLS / 100`
     # (decimal-annualized, to match realized_vol units). ADR 0005.
@@ -231,7 +234,9 @@ def run_market_fetch(
         raise SystemExit("--end must be >= --start")
 
     if daily_bars_provider not in DAILY_BARS_PROVIDERS:
-        raise SystemExit("--daily-bars-provider must be alpaca|yahoo-chart|alpaca-yahoo-fallback")
+        raise SystemExit(
+            "--daily-bars-provider must be alpaca|yahoo-chart|alpaca-yahoo-fallback"
+        )
     if daily_bars_provider in {"alpaca", "alpaca-yahoo-fallback"}:
         for key in ("ALPACA_API_KEY_ID", "ALPACA_API_SECRET_KEY"):
             if not os.environ.get(key, "").strip():
@@ -245,7 +250,11 @@ def run_market_fetch(
         vix_symbol=vix_symbol,
     )
 
-    store = AcquisitionStore(acquisition_db_path, artifact_store_root=artifact_store_root) if acquisition_db_path else None
+    store = (
+        AcquisitionStore(acquisition_db_path, artifact_store_root=artifact_store_root)
+        if acquisition_db_path
+        else None
+    )
     fetch_run = (
         store.start_fetch_run(
             fetch_type="market",
@@ -295,7 +304,11 @@ def run_market_fetch(
                 "missing_symbols": bars.missing_symbols,
                 "rows": [
                     {
-                        "date": row["date"].isoformat() if hasattr(row["date"], "isoformat") else str(row["date"]),
+                        "date": (
+                            row["date"].isoformat()
+                            if hasattr(row["date"], "isoformat")
+                            else str(row["date"])
+                        ),
                         "symbol": row["symbol"],
                         "open": row["open"],
                         "high": row["high"],
@@ -339,7 +352,9 @@ def run_market_fetch(
 
         checks: dict[str, dict[str, object]] = {}
         for symbol in V2_V1_SHARED_ANCHORS:
-            min_date, ok = verify_min_start_date(df, symbol=symbol, required_start=start)
+            min_date, ok = verify_min_start_date(
+                df, symbol=symbol, required_start=start
+            )
             checks[symbol] = {"min_date": str(min_date) if min_date else None, "ok": ok}
 
         report = {
@@ -357,7 +372,9 @@ def run_market_fetch(
                 "symbols_requested_for_daily_bars": len(all_symbols),
                 "symbols_requested_for_alpaca": len(all_symbols),
                 "symbols_returned": int(df["symbol"].nunique()) if not df.empty else 0,
-                "merged_symbols": int(merged_df["symbol"].nunique()) if not merged_df.empty else 0,
+                "merged_symbols": (
+                    int(merged_df["symbol"].nunique()) if not merged_df.empty else 0
+                ),
                 "missing_symbols": len(bars.missing_symbols),
             },
             "min_date_checks": checks,
@@ -370,7 +387,9 @@ def run_market_fetch(
             "paths": {
                 "daily_ohlcv_parquet": str(parquet_dir),
                 "event_calendar_template": str(event_template),
-                "acquisition_db": str(acquisition_db_path) if acquisition_db_path else None,
+                "acquisition_db": (
+                    str(acquisition_db_path) if acquisition_db_path else None
+                ),
             },
         }
         report_path = out_dir / "fetch_report.json"
@@ -380,10 +399,18 @@ def run_market_fetch(
             store.record_output(
                 run_id=fetch_run.run_id,
                 output_kind=f"{daily_bars_provider}_daily_ohlcv_parquet",
-                path=parquet_dir / "_metadata" if (parquet_dir / "_metadata").exists() else next(parquet_dir.rglob("*.parquet")),
+                path=(
+                    parquet_dir / "_metadata"
+                    if (parquet_dir / "_metadata").exists()
+                    else next(parquet_dir.rglob("*.parquet"))
+                ),
                 row_count=len(merged_df),
-                min_date=min(merged_df["date"]).isoformat() if not merged_df.empty else None,
-                max_date=max(merged_df["date"]).isoformat() if not merged_df.empty else None,
+                min_date=(
+                    min(merged_df["date"]).isoformat() if not merged_df.empty else None
+                ),
+                max_date=(
+                    max(merged_df["date"]).isoformat() if not merged_df.empty else None
+                ),
                 notes=f"Partitioned {daily_bars_provider} daily OHLCV parquet output",
             )
             store.record_output(
@@ -399,7 +426,9 @@ def run_market_fetch(
         return report_path
     except Exception as exc:
         if store and fetch_run:
-            store.finish_fetch_run(run_id=fetch_run.run_id, status="failed", notes=str(exc))
+            store.finish_fetch_run(
+                run_id=fetch_run.run_id, status="failed", notes=str(exc)
+            )
         raise
 
 
@@ -414,11 +443,19 @@ def run_macro_fetch(
     artifact_store_root: str | Path | None = None,
 ) -> Path:
     out_dir.mkdir(parents=True, exist_ok=True)
-    effective_fred_api_key = fred_api_key or os.environ.get("FRED_API_KEY", "").strip() or None
+    effective_fred_api_key = (
+        fred_api_key or os.environ.get("FRED_API_KEY", "").strip() or None
+    )
     if not effective_fred_api_key:
-        raise SystemExit("Missing required FRED API key: pass --fred-api-key or set FRED_API_KEY")
+        raise SystemExit(
+            "Missing required FRED API key: pass --fred-api-key or set FRED_API_KEY"
+        )
 
-    store = AcquisitionStore(acquisition_db_path, artifact_store_root=artifact_store_root) if acquisition_db_path else None
+    store = (
+        AcquisitionStore(acquisition_db_path, artifact_store_root=artifact_store_root)
+        if acquisition_db_path
+        else None
+    )
     fetch_run = (
         store.start_fetch_run(
             fetch_type="macro",
@@ -491,7 +528,9 @@ def run_macro_fetch(
                     license_note="FRED public API realtime observations response",
                     notes="Raw FRED realtime observations for CPI vintages",
                 )
-            vintages = parse_fred_series_json(raw_vintages_json, series_id=V2_FRED_SERIES["cpi_all_items"])
+            vintages = parse_fred_series_json(
+                raw_vintages_json, series_id=V2_FRED_SERIES["cpi_all_items"]
+            )
             vintages["logical_name"] = "cpi_all_items_vintages"
             vintages, dropped = _drop_null_fred_observations(vintages)
             dropped_null_observations += dropped
@@ -501,7 +540,13 @@ def run_macro_fetch(
             vintages = _merge_existing_rows(
                 existing_path=vintages_path,
                 new_frame=vintages,
-                key_columns=["logical_name", "series_id", "date", "realtime_start", "realtime_end"],
+                key_columns=[
+                    "logical_name",
+                    "series_id",
+                    "date",
+                    "realtime_start",
+                    "realtime_end",
+                ],
             )
             vintages, dropped = _drop_null_fred_observations(vintages)
             dropped_null_observations += dropped
@@ -540,7 +585,9 @@ def run_macro_fetch(
             "paths": {
                 "macro_parquet": str(macro_path),
                 "cpi_vintages_parquet": str(vintages_path) if vintages_path else None,
-                "acquisition_db": str(acquisition_db_path) if acquisition_db_path else None,
+                "acquisition_db": (
+                    str(acquisition_db_path) if acquisition_db_path else None
+                ),
             },
         }
         report_path = out_dir / "macro_fetch_report.json"
@@ -552,8 +599,12 @@ def run_macro_fetch(
                 output_kind="fred_macro_parquet",
                 path=macro_path,
                 row_count=len(macro_df),
-                min_date=min(macro_df["date"]).isoformat() if not macro_df.empty else None,
-                max_date=max(macro_df["date"]).isoformat() if not macro_df.empty else None,
+                min_date=(
+                    min(macro_df["date"]).isoformat() if not macro_df.empty else None
+                ),
+                max_date=(
+                    max(macro_df["date"]).isoformat() if not macro_df.empty else None
+                ),
                 notes="Unified FRED macro parquet",
             )
             if vintages_path is not None:
@@ -571,13 +622,19 @@ def run_macro_fetch(
                 output_kind="fred_macro_report",
                 path=report_path,
                 row_count=len(macro_df),
-                min_date=min(macro_df["date"]).isoformat() if not macro_df.empty else None,
-                max_date=max(macro_df["date"]).isoformat() if not macro_df.empty else None,
+                min_date=(
+                    min(macro_df["date"]).isoformat() if not macro_df.empty else None
+                ),
+                max_date=(
+                    max(macro_df["date"]).isoformat() if not macro_df.empty else None
+                ),
                 notes="Macro fetch report",
             )
             store.finish_fetch_run(run_id=fetch_run.run_id, status="ok")
         return report_path
     except Exception as exc:
         if store and fetch_run:
-            store.finish_fetch_run(run_id=fetch_run.run_id, status="failed", notes=str(exc))
+            store.finish_fetch_run(
+                run_id=fetch_run.run_id, status="failed", notes=str(exc)
+            )
         raise

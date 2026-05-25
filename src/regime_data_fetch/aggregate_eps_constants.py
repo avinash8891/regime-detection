@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from pathlib import Path
 
-
 SOURCE_NAME = "S&P Global aggregate forward EPS workbook"
 SOURCE_URL = "https://www.spglobal.com/spdji/en/documents/additional-material/sp-500-eps-est.xlsx"
 SHEET_NAME = "ESTIMATES&PEs"

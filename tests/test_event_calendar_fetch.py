@@ -14,7 +14,6 @@ from regime_data_fetch.event_calendar import (
     _validate_bls_events,
 )
 
-
 FOMC_FIXTURES = Path("tests/fixtures/raw/fomc")
 
 
@@ -28,7 +27,9 @@ def _empty_hf_central_bank_parquet_bytes(tmp_path: Path) -> bytes:
 
 def test_run_us_event_calendar_fetch_writes_yaml_and_report(tmp_path: Path) -> None:
     fomc_listing_html = (FOMC_FIXTURES / "fomc_calendars_snippet.html").read_text()
-    historical_2019_html = (FOMC_FIXTURES / "fomchistorical2019_snippet.html").read_text()
+    historical_2019_html = (
+        FOMC_FIXTURES / "fomchistorical2019_snippet.html"
+    ).read_text()
 
     def fake_fomc_listing_fetcher() -> str:
         return fomc_listing_html
@@ -79,7 +80,9 @@ def test_run_us_event_calendar_fetch_writes_yaml_and_report(tmp_path: Path) -> N
     assert 'source: "bls.gov:schedule:consumer-price-index"' in contents
 
 
-def test_run_us_event_calendar_fetch_adds_routine_layer_event_candidates(tmp_path: Path) -> None:
+def test_run_us_event_calendar_fetch_adds_routine_layer_event_candidates(
+    tmp_path: Path,
+) -> None:
     def fake_fomc_listing_fetcher() -> str:
         return (FOMC_FIXTURES / "fomc_calendars_snippet.html").read_text()
 
@@ -160,7 +163,9 @@ def test_run_us_event_calendar_fetch_adds_routine_layer_event_candidates(tmp_pat
     assert 'type: "BOJ_decision"' in contents
 
 
-def test_run_us_event_calendar_fetch_requires_as_of_date_when_replay_date_is_needed(tmp_path: Path) -> None:
+def test_run_us_event_calendar_fetch_requires_as_of_date_when_replay_date_is_needed(
+    tmp_path: Path,
+) -> None:
     with pytest.raises(ValueError, match="requires as_of_date"):
         run_us_event_calendar_fetch(
             repo_root=tmp_path,
@@ -174,7 +179,9 @@ def test_run_us_event_calendar_fetch_requires_as_of_date_when_replay_date_is_nee
         )
 
 
-def test_run_us_event_calendar_fetch_uses_supplied_as_of_date_for_v2_candidates(tmp_path: Path) -> None:
+def test_run_us_event_calendar_fetch_uses_supplied_as_of_date_for_v2_candidates(
+    tmp_path: Path,
+) -> None:
     def fake_fomc_listing_fetcher() -> str:
         return (FOMC_FIXTURES / "fomc_calendars_snippet.html").read_text()
 
@@ -211,13 +218,22 @@ def test_run_us_event_calendar_fetch_uses_supplied_as_of_date_for_v2_candidates(
         },
     )
 
-    candidates = pd.read_parquet(tmp_path / "data" / "raw" / "event_calendar" / "candidates" / "event_candidates.parquet")
+    candidates = pd.read_parquet(
+        tmp_path
+        / "data"
+        / "raw"
+        / "event_calendar"
+        / "candidates"
+        / "event_candidates.parquet"
+    )
     boe = candidates[candidates["event_type"] == "BOE_decision"].iloc[0]
     assert boe["date"] == "2026-02-05"
     assert bool(boe["is_future_scheduled"]) is True
 
 
-def test_run_us_event_calendar_fetch_sorts_events_by_release_timestamp(tmp_path: Path) -> None:
+def test_run_us_event_calendar_fetch_sorts_events_by_release_timestamp(
+    tmp_path: Path,
+) -> None:
     def fake_fomc_listing_fetcher() -> str:
         return (FOMC_FIXTURES / "fomc_calendars_snippet.html").read_text()
 
@@ -250,12 +266,16 @@ def test_run_us_event_calendar_fetch_sorts_events_by_release_timestamp(tmp_path:
         bls_end_year=2026,
     )
 
-    contents = (tmp_path / "configs" / "events" / "us_events.yaml").read_text().splitlines()
+    contents = (
+        (tmp_path / "configs" / "events" / "us_events.yaml").read_text().splitlines()
+    )
     first_event_type_line = next(line for line in contents if 'type: "' in line)
     assert first_event_type_line == '    type: "NFP"'
 
 
-def test_run_us_event_calendar_fetch_does_not_require_fred_api_key(tmp_path: Path) -> None:
+def test_run_us_event_calendar_fetch_does_not_require_fred_api_key(
+    tmp_path: Path,
+) -> None:
     def fake_fomc_listing_fetcher() -> str:
         return (FOMC_FIXTURES / "fomc_calendars_snippet.html").read_text()
 
@@ -289,7 +309,9 @@ def test_run_us_event_calendar_fetch_does_not_require_fred_api_key(tmp_path: Pat
     )
 
 
-def test_run_us_event_calendar_fetch_records_raw_artifacts_in_sqlite(tmp_path: Path) -> None:
+def test_run_us_event_calendar_fetch_records_raw_artifacts_in_sqlite(
+    tmp_path: Path,
+) -> None:
     acquisition_db = tmp_path / "acquisition.db"
 
     def fake_fomc_listing_fetcher() -> str:
@@ -331,19 +353,31 @@ def test_run_us_event_calendar_fetch_records_raw_artifacts_in_sqlite(tmp_path: P
     import sqlite3
 
     with sqlite3.connect(acquisition_db) as conn:
-        fetch_runs = conn.execute("SELECT fetch_type, status FROM fetch_runs").fetchall()
-        artifacts = conn.execute("SELECT source_name, artifact_kind, source_identifier FROM artifacts ORDER BY artifact_id").fetchall()
-        outputs = conn.execute("SELECT output_kind FROM derived_outputs ORDER BY output_id").fetchall()
+        fetch_runs = conn.execute(
+            "SELECT fetch_type, status FROM fetch_runs"
+        ).fetchall()
+        artifacts = conn.execute(
+            "SELECT source_name, artifact_kind, source_identifier FROM artifacts ORDER BY artifact_id"
+        ).fetchall()
+        outputs = conn.execute(
+            "SELECT output_kind FROM derived_outputs ORDER BY output_id"
+        ).fetchall()
 
     assert fetch_runs == [("events", "ok")]
     assert artifacts == [
-        ("federalreserve.gov:fomccalendars", "html", "https://www.federalreserve.gov/monetarypolicy/fomccalendars.htm"),
+        (
+            "federalreserve.gov:fomccalendars",
+            "html",
+            "https://www.federalreserve.gov/monetarypolicy/fomccalendars.htm",
+        ),
         ("bls.gov:schedule", "html", "https://www.bls.gov/schedule/2026/"),
     ]
     assert outputs == [("event_calendar_yaml",), ("event_calendar_report",)]
 
 
-def test_run_us_event_calendar_fetch_wires_group_a_candidate_artifacts(tmp_path: Path) -> None:
+def test_run_us_event_calendar_fetch_wires_group_a_candidate_artifacts(
+    tmp_path: Path,
+) -> None:
     acquisition_db = tmp_path / "acquisition.db"
 
     def fake_fomc_listing_fetcher() -> str:
@@ -416,7 +450,9 @@ def test_run_us_event_calendar_fetch_wires_group_a_candidate_artifacts(tmp_path:
         include_v2_curated_candidates=True,
         group_a_text_fetcher=group_a_text_fetcher,
         group_a_boe_news_fetcher=boe_news_fetcher,
-        group_a_hf_parquet_fetcher=lambda: _empty_hf_central_bank_parquet_bytes(tmp_path),
+        group_a_hf_parquet_fetcher=lambda: _empty_hf_central_bank_parquet_bytes(
+            tmp_path
+        ),
         as_of_date=dt.date(2026, 5, 14),
     )
 
@@ -426,9 +462,30 @@ def test_run_us_event_calendar_fetch_wires_group_a_candidate_artifacts(tmp_path:
     assert report["group_b"]["candidates"]["budget"] == 1
     assert report["group_b"]["promoted"]["budget"] == 1
 
-    candidate_path = tmp_path / "data" / "raw" / "event_calendar" / "candidates" / "event_candidates.parquet"
-    validation_path = tmp_path / "data" / "raw" / "event_calendar" / "candidates" / "event_validations.parquet"
-    quarantine_path = tmp_path / "data" / "raw" / "event_calendar" / "candidates" / "quarantine.parquet"
+    candidate_path = (
+        tmp_path
+        / "data"
+        / "raw"
+        / "event_calendar"
+        / "candidates"
+        / "event_candidates.parquet"
+    )
+    validation_path = (
+        tmp_path
+        / "data"
+        / "raw"
+        / "event_calendar"
+        / "candidates"
+        / "event_validations.parquet"
+    )
+    quarantine_path = (
+        tmp_path
+        / "data"
+        / "raw"
+        / "event_calendar"
+        / "candidates"
+        / "quarantine.parquet"
+    )
     assert candidate_path.exists()
     assert validation_path.exists()
     assert quarantine_path.exists()
@@ -448,7 +505,9 @@ def test_run_us_event_calendar_fetch_wires_group_a_candidate_artifacts(tmp_path:
     import sqlite3
 
     with sqlite3.connect(acquisition_db) as conn:
-        outputs = conn.execute("SELECT output_kind FROM derived_outputs ORDER BY output_id").fetchall()
+        outputs = conn.execute(
+            "SELECT output_kind FROM derived_outputs ORDER BY output_id"
+        ).fetchall()
 
     assert ("event_group_a_candidates",) in outputs
     assert ("event_group_a_validations",) in outputs
@@ -467,7 +526,14 @@ def test_validate_bls_events_allows_official_2025_lapse_cancellations() -> None:
             [
                 ScheduledEvent(
                     date=release_date,
-                    release_timestamp_et=dt.datetime(2025, month, min(month, 28), 8, 30, tzinfo=dt.timezone(dt.timedelta(hours=-5))),
+                    release_timestamp_et=dt.datetime(
+                        2025,
+                        month,
+                        min(month, 28),
+                        8,
+                        30,
+                        tzinfo=dt.timezone(dt.timedelta(hours=-5)),
+                    ),
                     market="US",
                     type="CPI",
                     importance="high",
@@ -475,7 +541,14 @@ def test_validate_bls_events_allows_official_2025_lapse_cancellations() -> None:
                 ),
                 ScheduledEvent(
                     date=release_date,
-                    release_timestamp_et=dt.datetime(2025, month, min(month, 28), 8, 30, tzinfo=dt.timezone(dt.timedelta(hours=-5))),
+                    release_timestamp_et=dt.datetime(
+                        2025,
+                        month,
+                        min(month, 28),
+                        8,
+                        30,
+                        tzinfo=dt.timezone(dt.timedelta(hours=-5)),
+                    ),
                     market="US",
                     type="NFP",
                     importance="high",
@@ -495,7 +568,14 @@ def test_validate_bls_events_rejects_unexplained_11_row_completed_year() -> None
             [
                 ScheduledEvent(
                     date=release_date,
-                    release_timestamp_et=dt.datetime(2024, month, min(month, 28), 8, 30, tzinfo=dt.timezone(dt.timedelta(hours=-5))),
+                    release_timestamp_et=dt.datetime(
+                        2024,
+                        month,
+                        min(month, 28),
+                        8,
+                        30,
+                        tzinfo=dt.timezone(dt.timedelta(hours=-5)),
+                    ),
                     market="US",
                     type="CPI",
                     importance="high",
@@ -503,7 +583,14 @@ def test_validate_bls_events_rejects_unexplained_11_row_completed_year() -> None
                 ),
                 ScheduledEvent(
                     date=release_date,
-                    release_timestamp_et=dt.datetime(2024, month, min(month, 28), 8, 30, tzinfo=dt.timezone(dt.timedelta(hours=-5))),
+                    release_timestamp_et=dt.datetime(
+                        2024,
+                        month,
+                        min(month, 28),
+                        8,
+                        30,
+                        tzinfo=dt.timezone(dt.timedelta(hours=-5)),
+                    ),
                     market="US",
                     type="NFP",
                     importance="high",
@@ -512,5 +599,8 @@ def test_validate_bls_events_rejects_unexplained_11_row_completed_year() -> None
             ]
         )
 
-    with pytest.raises(EventCalendarFetchError, match="BLS CPI year 2024 had 11 release dates; expected 12"):
+    with pytest.raises(
+        EventCalendarFetchError,
+        match="BLS CPI year 2024 had 11 release dates; expected 12",
+    ):
         _validate_bls_events(events=events, start_year=2024, end_year=2025)

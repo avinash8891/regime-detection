@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Literal
 
-from pydantic import Field
+from pydantic import Field, model_validator
 
 from regime_detection._config_core import StrictBaseModel
 
@@ -67,6 +67,7 @@ class MonetaryPressureV2Config(StrictBaseModel):
     deescalation_days_by_label: dict[str, int]
     # Default for labels NOT listed.
     default_deescalation_days: int = Field(default=0, ge=0)
+    max_unknown_freeze_days: int = Field(default=0, ge=0)
 
 
 class NewsSentimentConfig(StrictBaseModel):
@@ -126,7 +127,9 @@ class CentralBankTextConfig(StrictBaseModel):
 class InflationGrowthRulesConfig(StrictBaseModel):
     """v2 §2B inflation/growth rule thresholds.
 
-    Defaults match the spec verbatim (§2B lines 3046-3107).
+    Defaults match the normative spec plus ratified ADR overrides
+    (ADR 0011, ADR 0012) where those documents supersede the original
+    predicate text.
     """
 
     # §2B line 3048 — goldilocks "abs drift over 21d <= 0.005" (50bps).
@@ -221,10 +224,13 @@ class InflationGrowthConfig(StrictBaseModel):
     """
 
     series_ids: dict[str, str] = Field(default_factory=dict)
-    rules: InflationGrowthRulesConfig = Field(default_factory=InflationGrowthRulesConfig)
+    rules: InflationGrowthRulesConfig = Field(
+        default_factory=InflationGrowthRulesConfig
+    )
     # §2B lines 3132-3146 — per-label asymmetric hysteresis days.
     deescalation_days_by_label: dict[str, int]
     default_deescalation_days: int = Field(default=0, ge=0)
+    max_unknown_freeze_days: int = Field(default=0, ge=0)
     # §2B line 3152 — "CPI stale > 60 calendar days" (2× monthly cycle).
     cpi_stale_calendar_days: int = Field(default=60, ge=1)
     # §2B line 3153 — "PMI stale > 45 calendar days" (1.5× monthly cycle).
@@ -262,6 +268,11 @@ class CreditFundingRulesConfig(StrictBaseModel):
     realized_vol_percentile_threshold: float = Field(default=0.75, ge=0.0, le=1.0)
     # §2C line 3271 — deleveraging "avg_pairwise_corr_percentile_504d > 0.75".
     correlation_percentile_threshold: float = Field(default=0.75, ge=0.0, le=1.0)
+    cold_start_deleveraging_enabled: bool = Field(default=True)
+    cold_start_deleveraging_realized_vol_21d_min: float = Field(default=0.25, gt=0.0)
+    cold_start_deleveraging_avg_corr_63d_min: float = Field(
+        default=0.75, ge=0.0, le=1.0
+    )
     # Opt-in calibration lever (default False matches spec §2C lines 3254-3255
     # which requires hy_oas_slope_21d > 0 AND ig_oas_slope_21d > 0). When True,
     # the rule also fires on HY slope > 0 alone — useful for catching
@@ -285,6 +296,20 @@ class CreditFundingRulesConfig(StrictBaseModel):
     # §2C lines 3237-3238 normalizer window (~5y trading days, same as §2A).
     broad_usd_normalizer_window_days: int = Field(default=1260, ge=100)
 
+    @model_validator(mode="after")
+    def _validate_cold_start_fallbacks(self) -> "CreditFundingRulesConfig":
+        if not self.cold_start_deleveraging_enabled:
+            return self
+        if (
+            self.cold_start_deleveraging_avg_corr_63d_min
+            < self.correlation_percentile_threshold
+        ):
+            raise ValueError(
+                "cold_start_deleveraging_avg_corr_63d_min cannot be below "
+                "correlation_percentile_threshold"
+            )
+        return self
+
 
 class CreditFundingConfig(StrictBaseModel):
     """v2 §2C Credit/Funding axis configuration.
@@ -300,8 +325,8 @@ class CreditFundingConfig(StrictBaseModel):
     deescalation_days_by_label: dict[str, int]
     # Labels not listed take this default.
     default_deescalation_days: int = Field(default=0, ge=0)
+    max_unknown_freeze_days: int = Field(default=0, ge=0)
     # §2C line 3308 — NFCI weekly: "stale > 14 days (2× weekly release cycle)".
     nfci_stale_days: int = Field(default=14, ge=1)
     # §2C line 3307 — HYG/LQD/TLT stale > 5 sessions.
     etf_stale_sessions: int = Field(default=5, ge=1)
-

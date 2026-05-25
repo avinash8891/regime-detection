@@ -20,7 +20,9 @@ def _parse_date(value: str) -> dt.date:
     try:
         return dt.date.fromisoformat(value)
     except ValueError as exc:
-        raise argparse.ArgumentTypeError(f"expected YYYY-MM-DD date, got {value!r}") from exc
+        raise argparse.ArgumentTypeError(
+            f"expected YYYY-MM-DD date, got {value!r}"
+        ) from exc
 
 
 def _parse_args() -> argparse.Namespace:

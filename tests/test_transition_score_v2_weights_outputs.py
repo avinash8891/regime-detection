@@ -52,7 +52,7 @@ def test_model_instability_collapses_hmm_change_point_and_cluster_evidence(
     assert out.components["model_instability"] == pytest.approx(0.40)
 
 
-def test_cluster_change_can_drive_model_instability_to_one(
+def test_raw_cluster_id_change_does_not_drive_model_instability(
     transition_score_config: TransitionScoreConfig,
 ) -> None:
     out = compose_transition_score_for_session(
@@ -81,7 +81,7 @@ def test_cluster_change_can_drive_model_instability_to_one(
     )
 
     assert out.components is not None
-    assert out.components["model_instability"] == pytest.approx(1.0)
+    assert out.components["model_instability"] == pytest.approx(0.0)
 
 
 def test_build_transition_risk_outputs_surfaces_score_components_and_state(

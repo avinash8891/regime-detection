@@ -16,7 +16,6 @@ from regime_data_fetch.powell_speeches import (
     run_powell_speeches_fetch,
 )
 
-
 FIXTURES = Path("tests/fixtures/raw/powell")
 
 
@@ -37,7 +36,10 @@ def test_parse_powell_speech_year_page_filters_powell_only() -> None:
 
     assert len(rows) == 2
     assert rows[0].speech_date == dt.date(2026, 3, 21)
-    assert rows[0].speech_url == "https://www.federalreserve.gov/newsevents/speech/powell20260321a.htm"
+    assert (
+        rows[0].speech_url
+        == "https://www.federalreserve.gov/newsevents/speech/powell20260321a.htm"
+    )
     assert rows[1].speech_date == dt.date(2026, 1, 11)
 
 
@@ -84,7 +86,10 @@ def test_run_powell_speeches_fetch_writes_parquet_and_report(tmp_path: Path) -> 
     article_html = (FIXTURES / "powell_speech_detail_snippet.html").read_text()
     second_article_html = (
         article_html.replace("March 21, 2026", "January 11, 2026")
-        .replace("Acceptance Remarks", "Statement from Federal Reserve Chair Jerome H. Powell")
+        .replace(
+            "Acceptance Remarks",
+            "Statement from Federal Reserve Chair Jerome H. Powell",
+        )
         .replace(
             "At the American Society for Public Administration Annual Conference: Paul A. Volcker Public Integrity Award Ceremony (via pre-recorded video)",
             "Washington, D.C.",
@@ -116,7 +121,9 @@ def test_run_powell_speeches_fetch_writes_parquet_and_report(tmp_path: Path) -> 
     report = json.loads(report_path.read_text())
     assert report["counts"]["rows"] == 2
     assert report["source"] == "federalreserve.gov"
-    assert report["paths"]["powell_speeches_parquet"] == str(tmp_path / "powell_speeches" / "powell_speeches.parquet")
+    assert report["paths"]["powell_speeches_parquet"] == str(
+        tmp_path / "powell_speeches" / "powell_speeches.parquet"
+    )
 
     df = pd.read_parquet(tmp_path / "powell_speeches" / "powell_speeches.parquet")
     assert list(df.columns) == [
@@ -158,7 +165,9 @@ def test_run_powell_speeches_fetch_raises_on_missing_article(tmp_path: Path) -> 
         raise AssertionError("Expected PowellSpeechFetchError")
 
 
-def test_run_powell_speeches_fetch_raises_if_no_powell_rows_exist(tmp_path: Path) -> None:
+def test_run_powell_speeches_fetch_raises_if_no_powell_rows_exist(
+    tmp_path: Path,
+) -> None:
     def fake_index_fetcher() -> str:
         return (FIXTURES / "powell_speeches_index_snippet.html").read_text()
 
@@ -191,13 +200,18 @@ def test_run_powell_speeches_fetch_raises_if_no_powell_rows_exist(tmp_path: Path
         raise AssertionError("Expected PowellSpeechFetchError")
 
 
-def test_run_powell_speeches_fetch_records_raw_html_and_outputs_in_sqlite(tmp_path: Path) -> None:
+def test_run_powell_speeches_fetch_records_raw_html_and_outputs_in_sqlite(
+    tmp_path: Path,
+) -> None:
     index_html = (FIXTURES / "powell_speeches_index_snippet.html").read_text()
     year_html = (FIXTURES / "powell_2026_speeches_snippet.html").read_text()
     article_html = (FIXTURES / "powell_speech_detail_snippet.html").read_text()
     second_article_html = (
         article_html.replace("March 21, 2026", "January 11, 2026")
-        .replace("Acceptance Remarks", "Statement from Federal Reserve Chair Jerome H. Powell")
+        .replace(
+            "Acceptance Remarks",
+            "Statement from Federal Reserve Chair Jerome H. Powell",
+        )
         .replace(
             "At the American Society for Public Administration Annual Conference: Paul A. Volcker Public Integrity Award Ceremony (via pre-recorded video)",
             "Washington, D.C.",
@@ -224,11 +238,15 @@ def test_run_powell_speeches_fetch_records_raw_html_and_outputs_in_sqlite(tmp_pa
     assert report["paths"]["acquisition_db"] == str(acquisition_db)
 
     with sqlite3.connect(acquisition_db) as conn:
-        fetch_runs = conn.execute("SELECT fetch_type, status FROM fetch_runs").fetchall()
+        fetch_runs = conn.execute(
+            "SELECT fetch_type, status FROM fetch_runs"
+        ).fetchall()
         artifacts = conn.execute(
             "SELECT source_name, artifact_kind, count(*) FROM artifacts GROUP BY source_name, artifact_kind ORDER BY source_name, artifact_kind"
         ).fetchall()
-        outputs = conn.execute("SELECT output_kind FROM derived_outputs ORDER BY output_id").fetchall()
+        outputs = conn.execute(
+            "SELECT output_kind FROM derived_outputs ORDER BY output_id"
+        ).fetchall()
 
     assert fetch_runs == [("powell_speeches", "ok")]
     assert artifacts == [

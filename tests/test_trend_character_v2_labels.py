@@ -6,6 +6,7 @@ ordering pinned in Ambiguity Log #67.
 Real OHLCV-shape synthetic inputs; thresholds computed by hand against the
 spec lines cited inline.
 """
+
 from __future__ import annotations
 
 from datetime import date
@@ -22,7 +23,6 @@ from regime_detection.trend_character import (
     compute_features,
     raw_label_for_day,
 )
-
 
 _V1_LABELS = {"trending", "recovery_attempt", "chop", "transition", "unknown"}
 _V2_LABEL_SET = {
@@ -322,7 +322,7 @@ def test_breakout_expansion_fails_on_bb_width_contracting() -> None:
     last = n - 1
     # Inject volatility around t-10 (in the t-5 window range).
     for i in range(last - 14, last - 9):
-        close.iloc[i] += (10.0 if i % 2 == 0 else -10.0)
+        close.iloc[i] += 10.0 if i % 2 == 0 else -10.0
     # Stabilize the most recent 9 sessions.
     base_last = close.iloc[last - 9]
     for i in range(last - 8, last + 1):

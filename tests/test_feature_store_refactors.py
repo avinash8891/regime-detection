@@ -10,7 +10,9 @@ from regime_detection.config import NewsSentimentConfig, load_default_regime_con
 from regime_detection.feature_store import build_feature_store
 from regime_detection.fragility_universe import SECTOR_ETFS
 from regime_detection.market_context import build_market_context
-from regime_detection.trend_direction import compute_features as compute_trend_direction_features
+from regime_detection.trend_direction import (
+    compute_features as compute_trend_direction_features,
+)
 
 
 def _sector_etf_closes(index: pd.DatetimeIndex) -> dict[str, pd.Series]:
@@ -21,7 +23,9 @@ def _sector_etf_closes(index: pd.DatetimeIndex) -> dict[str, pd.Series]:
     return closes
 
 
-def test_build_news_sentiment_score_series_preserves_existing_alignment_and_smoothing() -> None:
+def test_build_news_sentiment_score_series_preserves_existing_alignment_and_smoothing() -> (
+    None
+):
     from regime_detection.feature_store import _build_news_sentiment_score_series
 
     sessions = pd.bdate_range(start="2024-03-04", end="2024-03-08", freq="B")
@@ -85,7 +89,9 @@ def test_feature_store_builder_registry_runs_builders_in_declared_order(
         build_state.sma_50 = pd.Series([1.0], name="sma_50")
 
     def volatility_builder(build_state: _FeatureStoreBuildState) -> None:
-        output_name = build_state.sma_50.name if build_state.sma_50 is not None else None
+        output_name = (
+            build_state.sma_50.name if build_state.sma_50 is not None else None
+        )
         calls.append(("volatility", output_name))
 
     _run_feature_store_builders(
@@ -128,7 +134,9 @@ def test_feature_store_build_state_uses_typed_intermediate_fields() -> None:
     }.issubset(state_fields)
 
 
-def test_default_feature_store_builder_registry_orders_trend_news_before_trend_v2() -> None:
+def test_default_feature_store_builder_registry_orders_trend_news_before_trend_v2() -> (
+    None
+):
     from regime_detection.feature_store import _FEATURE_STORE_BUILDERS, FeatureStore
 
     builder_names = tuple(builder.name for builder in _FEATURE_STORE_BUILDERS)
@@ -195,7 +203,9 @@ def test_feature_store_registry_preserves_trend_and_news_outputs(
     expected_trend = compute_trend_direction_features(spy_close)
     pd.testing.assert_series_equal(store.trend_direction.close, expected_trend.close)
     pd.testing.assert_series_equal(store.trend_direction.sma_50, expected_trend.sma_50)
-    pd.testing.assert_series_equal(store.trend_direction.sma_200, expected_trend.sma_200)
+    pd.testing.assert_series_equal(
+        store.trend_direction.sma_200, expected_trend.sma_200
+    )
     pd.testing.assert_series_equal(
         store.trend_direction.return_63d,
         expected_trend.return_63d,
@@ -228,7 +238,9 @@ def test_feature_store_reuses_realized_vol_21d_for_trainable_evidence_layers(
         end_date=as_of,
         market_data=market_df_for_asof(as_of),
         config=cfg,
-        sector_etf_closes=_sector_etf_closes(pd.DatetimeIndex(bootstrap.spy_ohlcv.index)),
+        sector_etf_closes=_sector_etf_closes(
+            pd.DatetimeIndex(bootstrap.spy_ohlcv.index)
+        ),
     )
 
     calls: list[int] = []
@@ -238,7 +250,9 @@ def test_feature_store_reuses_realized_vol_21d_for_trainable_evidence_layers(
             calls.append(window)
         return pd.Series(0.2, index=close.index, name="realized_vol_21d")
 
-    monkeypatch.setattr("regime_detection.feature_store.realized_vol", counting_realized_vol)
+    monkeypatch.setattr(
+        "regime_detection.feature_store.realized_vol", counting_realized_vol
+    )
     monkeypatch.setattr(
         "regime_detection.feature_store.compute_hmm_features", lambda **_: None
     )

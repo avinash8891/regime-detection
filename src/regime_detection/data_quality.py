@@ -18,14 +18,15 @@ Status precedence inside :func:`assess_series_input_quality` (ADR 0015 R2):
 the calling classifier's output to ``unknown`` via
 :func:`quality_forces_unknown`. `degraded` and `ok` pass through.
 """
+
 from __future__ import annotations
 
 from datetime import date
 
 import pandas as pd
 
+from regime_detection.calendar import nyse_sessions_between
 from regime_detection.models import DataQuality
-
 
 # ADR 0015 R1: hard completeness floor below which the helper emits
 # ``status="insufficient_data"`` regardless of the caller's softer
@@ -45,25 +46,24 @@ def assess_series_input_quality(
     as_of_date: date,
     required_inputs: list[pd.Series],
     required_trading_days: int,
-    raw_label: str,
+    raw_label: str | None,
     max_freshness_days: int,
     min_completeness: float,
     skip_raw_label_short_circuit: bool = False,
 ) -> DataQuality:
     """Assess quality of required input series at ``as_of_date``.
 
-    When ``skip_raw_label_short_circuit=True``, the ``raw_label == "unknown"``
-    branch is bypassed — callers who compute the raw label AFTER quality (e.g.
-    V2 NetworkFragilitySeriesClassifier) want a pure-quality assessment of the
-    inputs themselves; they then re-check with ``quality_forces_unknown`` and
-    map back to ``unknown`` if rules don't fire. Default keeps the V1 semantics
-    where a ``raw_label=='unknown'`` upstream signal forces an insufficient-
-    history status.
+    ``raw_label=None`` means pure-quality mode: callers who compute the raw
+    label after quality assessment want input status only. ``raw_label`` set to
+    ``"unknown"`` keeps V1 semantics where an upstream unknown signal forces an
+    insufficient-history status unless the legacy skip flag is explicitly set.
     """
     dt = pd.Timestamp(as_of_date)
     dt_normalized = dt.normalize()
     windows = [
-        _window_to_asof(series=series, as_of_date=dt, required_trading_days=required_trading_days)
+        _window_to_asof(
+            series=series, as_of_date=dt, required_trading_days=required_trading_days
+        )
         for series in required_inputs
     ]
     if any(len(window) < required_trading_days for window in windows):
@@ -76,7 +76,8 @@ def assess_series_input_quality(
 
     completeness = min(float(window.notna().mean()) for window in windows)
     freshness_days = max(
-        _freshness_days(window=window, as_of_date_normalized=dt_normalized) for window in windows
+        _freshness_days(window=window, as_of_date_normalized=dt_normalized)
+        for window in windows
     )
 
     if freshness_days > max_freshness_days:
@@ -119,7 +120,9 @@ def quality_forces_unknown(dq: DataQuality) -> bool:
     return dq.status in {"insufficient_data", "insufficient_history", "stale_data"}
 
 
-def _window_to_asof(*, series: pd.Series, as_of_date: pd.Timestamp, required_trading_days: int) -> pd.Series:
+def _window_to_asof(
+    *, series: pd.Series, as_of_date: pd.Timestamp, required_trading_days: int
+) -> pd.Series:
     idx = series.index
     if isinstance(idx, pd.DatetimeIndex) and idx.is_monotonic_increasing:
         # Hot path: avoid label slicing over the entire prefix on every call.
@@ -140,4 +143,8 @@ def _freshness_days(*, window: pd.Series, as_of_date_normalized: pd.Timestamp) -
     last_valid = window.last_valid_index()
     if last_valid is None:
         return _NO_VALID_OBSERVATION_FRESHNESS_DAYS
-    return int((as_of_date_normalized - pd.Timestamp(last_valid).normalize()).days)
+    sessions = nyse_sessions_between(
+        pd.Timestamp(last_valid).date(),
+        as_of_date_normalized.date(),
+    )
+    return max(0, len(sessions) - 1)

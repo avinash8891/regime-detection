@@ -34,7 +34,6 @@ from regime_data_fetch.aggregate_eps_models import (
     EPSHorizonLabel,
 )
 
-
 FIXTURES = Path("tests/fixtures/raw/eps")
 
 

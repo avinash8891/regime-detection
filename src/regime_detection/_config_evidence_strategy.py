@@ -108,9 +108,7 @@ class TransitionScoreConfig(StrictBaseModel):
     # Component-score normalization scales. Default values match the
     # historical inline literals in compose_transition_score_for_session so
     # adding this field does not perturb existing scores or fixtures.
-    scales: TransitionComponentScales = Field(
-        default_factory=TransitionComponentScales
-    )
+    scales: TransitionComponentScales = Field(default_factory=TransitionComponentScales)
 
     # Optional seed for the public-state debounce. When None (default), the
     # first session's raw state is accepted immediately — matching the
@@ -184,6 +182,7 @@ class HMMConfig(StrictBaseModel):
     # work is recorded in tests/test_hmm_state.py + the committed label maps
     # at docs/verification/hmm_state_label_map.yaml.
     model_version: str = "hmm_4state_v1.0"
+    label_map_required_for_output: bool = Field(default=False)
     state_label_map: dict[int, str] | None = None
 
 
@@ -223,6 +222,7 @@ class ClusteringConfig(StrictBaseModel):
     # behavior survives sklearn minor-version drift in the default value.
     reg_covar: float = Field(default=1e-6, gt=0.0)
     model_version: str = Field(default="gmm_8cluster_v1.0")
+    label_map_required_for_output: bool = Field(default=False)
     cluster_label_map: dict[int, str] | None = None
 
 
@@ -235,7 +235,9 @@ class ChangePointConfig(StrictBaseModel):
     Break = posterior >= 0.5 threshold.
     """
 
-    hazard_lambda: float = Field(default=250.0, gt=0.0)  # spec §6.3 line 4263: 1/250 → lambda=250
+    hazard_lambda: float = Field(
+        default=250.0, gt=0.0
+    )  # spec §6.3 line 4263: 1/250 → lambda=250
     # Score = 5-session rolling max of recent short-run posterior mass.
     score_window_days: int = Field(default=5, ge=1)
     # realized_vol_21d is already a 21-session rolling statistic; abrupt

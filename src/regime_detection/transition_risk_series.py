@@ -61,7 +61,11 @@ class TransitionScoreInputs:
     cluster_id_5d_ago: int | None = None
 
     def __post_init__(self) -> None:
-        bad = [label for label in self.event_calendar_labels if label not in EVENT_CALENDAR_LABELS]
+        bad = [
+            label
+            for label in self.event_calendar_labels
+            if label not in EVENT_CALENDAR_LABELS
+        ]
         if bad:
             raise ValueError(f"unknown event_calendar_labels: {bad}")
 
@@ -74,7 +78,9 @@ def build_transition_risk_series(
     output_sessions: list[date] | None = None,
 ) -> dict[date, TransitionRiskOutput]:
     sessions = list(context.sessions)
-    requested_output_sessions = None if output_sessions is None else list(output_sessions)
+    requested_output_sessions = (
+        None if output_sessions is None else list(output_sessions)
+    )
     session_index = pd.to_datetime(sessions)
     close_series = _strict_lookup_by_sessions(
         series=context.spy_ohlcv["close"],
@@ -146,8 +152,7 @@ def build_transition_risk_series(
         missing.append("feature_store.trend_direction_v2")
     if missing:
         raise RuntimeError(
-            "transition_risk requires score inputs; missing: "
-            + ", ".join(missing)
+            "transition_risk requires score inputs; missing: " + ", ".join(missing)
         )
 
     transition_score_inputs_by_date = _build_transition_score_inputs_by_date(
@@ -179,9 +184,7 @@ def build_transition_risk_series(
         gap_frequency_percentile_252d=volatility_v2.gap_frequency_percentile_252d,
         intraday_range_percentile_252d=volatility_v2.intraday_range_percentile_252d,
         hmm_top_state_prob=(
-            feature_store.hmm.top_state_prob
-            if feature_store.hmm is not None
-            else None
+            feature_store.hmm.top_state_prob if feature_store.hmm is not None else None
         ),
         change_point_score=(
             feature_store.change_point.score
@@ -201,7 +204,10 @@ def build_transition_risk_series(
         trend_character_active_by_date=axis_bundle.trend_character.active_labels_by_date,
         volatility_state_active_by_date=axis_bundle.volatility_state.active_labels_by_date,
         breadth_state_active_by_date=axis_bundle.breadth_state.active_labels_by_date,
-        close_by_date={day: float(value) for day, value in zip(sessions, close_series.to_numpy(), strict=True)},
+        close_by_date={
+            day: float(value)
+            for day, value in zip(sessions, close_series.to_numpy(), strict=True)
+        },
         sma_50_by_date={
             day: None if pd.isna(value) else float(value)
             for day, value in zip(sessions, sma_50_series.to_numpy(), strict=True)
@@ -232,7 +238,9 @@ def _filter_transition_risk_outputs(
 def _legacy_transition_score_config() -> TransitionScoreConfig:
     config = load_default_regime_config().transition_score
     if config is None:
-        raise RuntimeError("legacy transition_risk fallback requires default transition_score config")
+        raise RuntimeError(
+            "legacy transition_risk fallback requires default transition_score config"
+        )
     return config
 
 
@@ -244,8 +252,12 @@ def _build_legacy_transition_score_inputs_by_date(
     sma_50: pd.Series,
 ) -> dict[date, TransitionScoreInputs]:
     session_index = pd.DatetimeIndex([pd.Timestamp(d) for d in sessions])
-    close_values = close.reindex(session_index).to_numpy(dtype=float, na_value=float("nan"))
-    sma50_values = sma_50.reindex(session_index).to_numpy(dtype=float, na_value=float("nan"))
+    close_values = close.reindex(session_index).to_numpy(
+        dtype=float, na_value=float("nan")
+    )
+    sma50_values = sma_50.reindex(session_index).to_numpy(
+        dtype=float, na_value=float("nan")
+    )
 
     return {
         day: TransitionScoreInputs(
@@ -294,9 +306,15 @@ def _build_transition_score_inputs_by_date(
     ``compose_transition_score_for_session`` cold-start guard.
     """
     session_index = pd.DatetimeIndex([pd.Timestamp(d) for d in sessions])
-    rvs = realized_vol_short.reindex(session_index).to_numpy(dtype=float, na_value=float("nan"))
-    rvl = realized_vol_long.reindex(session_index).to_numpy(dtype=float, na_value=float("nan"))
-    pct50 = pct_above_50dma.reindex(session_index).to_numpy(dtype=float, na_value=float("nan"))
+    rvs = realized_vol_short.reindex(session_index).to_numpy(
+        dtype=float, na_value=float("nan")
+    )
+    rvl = realized_vol_long.reindex(session_index).to_numpy(
+        dtype=float, na_value=float("nan")
+    )
+    pct50 = pct_above_50dma.reindex(session_index).to_numpy(
+        dtype=float, na_value=float("nan")
+    )
     corr = avg_pairwise_corr_percentile_504d.reindex(session_index).to_numpy(
         dtype=float, na_value=float("nan")
     )
@@ -309,12 +327,20 @@ def _build_transition_score_inputs_by_date(
     absorption = absorption_ratio_top3.reindex(session_index).to_numpy(
         dtype=float, na_value=float("nan")
     )
-    dd252 = drawdown_252d.reindex(session_index).to_numpy(dtype=float, na_value=float("nan"))
-    close_values = close.reindex(session_index).to_numpy(dtype=float, na_value=float("nan"))
-    sma50_values = sma_50.reindex(session_index).to_numpy(dtype=float, na_value=float("nan"))
+    dd252 = drawdown_252d.reindex(session_index).to_numpy(
+        dtype=float, na_value=float("nan")
+    )
+    close_values = close.reindex(session_index).to_numpy(
+        dtype=float, na_value=float("nan")
+    )
+    sma50_values = sma_50.reindex(session_index).to_numpy(
+        dtype=float, na_value=float("nan")
+    )
     nan_float = np.full(len(sessions), np.nan, dtype=float)
     volume_z = (
-        volume_zscore_20d.reindex(session_index).to_numpy(dtype=float, na_value=float("nan"))
+        volume_zscore_20d.reindex(session_index).to_numpy(
+            dtype=float, na_value=float("nan")
+        )
         if volume_zscore_20d is not None
         else nan_float
     )
@@ -341,8 +367,10 @@ def _build_transition_score_inputs_by_date(
         hmm_now = hmm_top_state_prob.reindex(session_index).to_numpy(
             dtype=float, na_value=float("nan")
         )
-        hmm_5d_ago = hmm_top_state_prob.shift(5).reindex(session_index).to_numpy(
-            dtype=float, na_value=float("nan")
+        hmm_5d_ago = (
+            hmm_top_state_prob.shift(5)
+            .reindex(session_index)
+            .to_numpy(dtype=float, na_value=float("nan"))
         )
     else:
         hmm_now = nan_float
@@ -440,13 +468,27 @@ def build_transition_risk_outputs_by_date(
     initial_active_state: str | None = None,
 ) -> dict[date, TransitionRiskOutput]:
     index = pd.Index(sessions)
-    trend_direction_active = pd.Series([trend_direction_active_by_date[day] for day in sessions], index=index)
-    trend_character_active = pd.Series([trend_character_active_by_date[day] for day in sessions], index=index)
-    volatility_state_active = pd.Series([volatility_state_active_by_date[day] for day in sessions], index=index)
-    breadth_state_active = pd.Series([breadth_state_active_by_date[day] for day in sessions], index=index)
-    close = pd.Series([close_by_date[day] for day in sessions], index=index, dtype="float64")
-    sma_50 = pd.Series([sma_50_by_date[day] for day in sessions], index=index, dtype="float64")
-    prior_bear = pd.Series([history.prior_bear_by_date[day] for day in sessions], index=index, dtype="bool")
+    trend_direction_active = pd.Series(
+        [trend_direction_active_by_date[day] for day in sessions], index=index
+    )
+    trend_character_active = pd.Series(
+        [trend_character_active_by_date[day] for day in sessions], index=index
+    )
+    volatility_state_active = pd.Series(
+        [volatility_state_active_by_date[day] for day in sessions], index=index
+    )
+    breadth_state_active = pd.Series(
+        [breadth_state_active_by_date[day] for day in sessions], index=index
+    )
+    close = pd.Series(
+        [close_by_date[day] for day in sessions], index=index, dtype="float64"
+    )
+    sma_50 = pd.Series(
+        [sma_50_by_date[day] for day in sessions], index=index, dtype="float64"
+    )
+    prior_bear = pd.Series(
+        [history.prior_bear_by_date[day] for day in sessions], index=index, dtype="bool"
+    )
     days_since_axis_switch = pd.Series(
         [history.days_since_axis_switch_by_date[day] for day in sessions],
         index=index,
@@ -463,7 +505,11 @@ def build_transition_risk_outputs_by_date(
     breadth_stressed = breadth_state_active.isin(
         ["weak_breadth", "narrowing_breadth", "divergent_fragile", "unknown"]
     )
-    post_switch_cooldown = days_since_axis_switch.notna() & days_since_axis_switch.le(cooldown_window_days) & ~volatility_crisis
+    post_switch_cooldown = (
+        days_since_axis_switch.notna()
+        & days_since_axis_switch.le(cooldown_window_days)
+        & ~volatility_crisis
+    )
     insufficient_data = (
         trend_direction_active.eq("unknown")
         | trend_character_active.eq("unknown")
@@ -536,13 +582,17 @@ def build_transition_risk_outputs_by_date(
             )
         components = composed.components or {}
         overrides = selection_config.overrides
-        credit_stressed = components.get("credit_stress", 0.0) >= overrides.credit_stress
+        credit_stressed = (
+            components.get("credit_stress", 0.0) >= overrides.credit_stress
+        )
         correlation_stressed = (
-            components.get("correlation_fragility", 0.0) >= overrides.correlation_fragility
+            components.get("correlation_fragility", 0.0)
+            >= overrides.correlation_fragility
         )
         macro_elevated = components.get("macro_event", 0.0) >= overrides.macro_event_min
         score_elevated = (
-            composed.score is not None and composed.score >= overrides.score_elevated_min
+            composed.score is not None
+            and composed.score >= overrides.score_elevated_min
         )
         # Absolute old-behavior emergency override: crisis_vol alone is enough.
         crisis = bool(volatility_crisis_arr[i])
@@ -551,13 +601,10 @@ def build_transition_risk_outputs_by_date(
             and bool(volatility_high_or_crisis_arr[i])
             and (bool(breadth_stressed_arr[i]) or credit_stressed)
         )
-        fragile_bull = (
-            trend_direction_arr[i] == "bull"
-            and (
-                breadth_state_arr[i] == "divergent_fragile"
-                or correlation_stressed
-                or credit_stressed
-            )
+        fragile_bull = trend_direction_arr[i] == "bull" and (
+            breadth_state_arr[i] == "divergent_fragile"
+            or correlation_stressed
+            or credit_stressed
         )
         # Preserve the old V2 sideways-stress shape, mapped to watch instead of
         # a separate final state.
@@ -571,7 +618,10 @@ def build_transition_risk_outputs_by_date(
             macro_elevated
             and score_elevated
             and components.get("macro_event", 0.0)
-            >= max((value for key, value in components.items() if key != "macro_event"), default=0.0)
+            >= max(
+                (value for key, value in components.items() if key != "macro_event"),
+                default=0.0,
+            )
         )
         output = compose_transition_risk_output(
             score=composed,
@@ -622,7 +672,10 @@ def _apply_transition_state_debounce(
     # immediately. Setting initial_active_state seeds the debounce so that
     # the first session must also clear its configured confirmation window
     # — useful for live streaming, where no prior session can bootstrap.
-    if initial_active_state is not None and initial_active_state not in state_confirmation_days:
+    if (
+        initial_active_state is not None
+        and initial_active_state not in state_confirmation_days
+    ):
         raise ValueError(
             f"initial_active_state {initial_active_state!r} not present in "
             f"state_confirmation_days {sorted(state_confirmation_days)}"
@@ -668,9 +721,7 @@ def _apply_transition_state_debounce(
             update={
                 "state": active_state,
                 "triggered_rules": rules,
-                "evidence": raw.evidence.model_copy(
-                    update={"triggered_rules": rules}
-                ),
+                "evidence": raw.evidence.model_copy(update={"triggered_rules": rules}),
             }
         )
     return outputs
@@ -687,8 +738,12 @@ def build_transition_risk_history(
     index = pd.Index(sessions)
     stable_frame = pd.DataFrame(
         {
-            "trend_direction": [trend_direction_stable_by_date[day] for day in sessions],
-            "trend_character": [trend_character_stable_by_date[day] for day in sessions],
+            "trend_direction": [
+                trend_direction_stable_by_date[day] for day in sessions
+            ],
+            "trend_character": [
+                trend_character_stable_by_date[day] for day in sessions
+            ],
             "volatility": [volatility_stable_by_date[day] for day in sessions],
             "breadth": [breadth_stable_by_date[day] for day in sessions],
         },
@@ -709,7 +764,9 @@ def build_transition_risk_history(
         dtype="int64",
     )
     delta = position - last_switch_position
-    within_60_sessions = last_switch_position.ge(0) & last_switch_position.ge(position - 59)
+    within_60_sessions = last_switch_position.ge(0) & last_switch_position.ge(
+        position - 59
+    )
     days_since_axis_switch = delta.where(within_60_sessions)
 
     # v1 §9.4 recovery_attempt clause: "trend_direction.stable_label was bear
@@ -767,9 +824,15 @@ def _strict_lookup_by_sessions(
             f"{series_name} index is not exactly aligned to NYSE sessions used by transition-risk computation."
         ) from exc
     if (positions < 0).any():
-        missing_sessions = [session_index[idx].date().isoformat() for idx, pos in enumerate(positions) if pos < 0][:5]
+        missing_sessions = [
+            session_index[idx].date().isoformat()
+            for idx, pos in enumerate(positions)
+            if pos < 0
+        ][:5]
         raise ValueError(
             f"{series_name} index is not exactly aligned to NYSE sessions used by transition-risk computation. "
             f"Missing exact matches for sessions: {missing_sessions}"
         )
-    return pd.Series(source.to_numpy()[positions], index=session_index, name=source.name)
+    return pd.Series(
+        source.to_numpy()[positions], index=session_index, name=source.name
+    )

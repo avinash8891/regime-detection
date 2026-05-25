@@ -25,7 +25,6 @@ from regime_detection.market_context import (
     slice_context_to_recent_sessions,
 )
 
-
 # ---------- universe constants -----------------------------------------------
 
 
@@ -43,9 +42,30 @@ def test_network_fragility_universe_is_24_symbols_per_v2_section_3_1() -> None:
     assert "RSP" not in NETWORK_FRAGILITY_UNIVERSE  # RSP is V1 breadth proxy
     # Spec-exact set, per v2 §3.1 lines 524-547.
     assert set(NETWORK_FRAGILITY_UNIVERSE) == {
-        "XLB", "XLC", "XLE", "XLF", "XLI", "XLK", "XLP", "XLRE", "XLU", "XLV", "XLY",
-        "SPY", "QQQ", "IWM", "EFA", "EEM", "TLT", "IEF", "GLD", "HYG", "LQD",
-        "USO", "DBC", "UUP",
+        "XLB",
+        "XLC",
+        "XLE",
+        "XLF",
+        "XLI",
+        "XLK",
+        "XLP",
+        "XLRE",
+        "XLU",
+        "XLV",
+        "XLY",
+        "SPY",
+        "QQQ",
+        "IWM",
+        "EFA",
+        "EEM",
+        "TLT",
+        "IEF",
+        "GLD",
+        "HYG",
+        "LQD",
+        "USO",
+        "DBC",
+        "UUP",
     }
 
 
@@ -146,7 +166,9 @@ def test_load_macro_series_returns_series_id_when_no_logical_name() -> None:
     dates = [date(2024, 1, 2), date(2024, 1, 3)]
     df = _make_long_macro(["DGS2", "DGS10", "DTWEXBGS", "SOFR", "NFCI"], dates)
 
-    out = load_macro_series(df, series_ids=("DGS2", "DGS10", "DTWEXBGS", "SOFR", "NFCI"))
+    out = load_macro_series(
+        df, series_ids=("DGS2", "DGS10", "DTWEXBGS", "SOFR", "NFCI")
+    )
 
     # Without logical_name column, series_id is the canonical key — no aliases.
     assert {"DGS2", "DGS10", "DTWEXBGS", "SOFR", "NFCI"}.issubset(out)
@@ -175,7 +197,14 @@ def test_load_macro_series_uses_logical_name_as_sole_key() -> None:
     out = load_macro_series(df)
 
     # logical_name is the sole key — series_id and legacy aliases absent.
-    assert {"2y_yield", "10y_yield", "broad_usd_index", "hy_oas", "ig_bbb_oas", "cpi_all_items"}.issubset(out)
+    assert {
+        "2y_yield",
+        "10y_yield",
+        "broad_usd_index",
+        "hy_oas",
+        "ig_bbb_oas",
+        "cpi_all_items",
+    }.issubset(out)
     assert "DGS2" not in out
     assert "DGS10" not in out
     assert "dgs2" not in out
@@ -326,7 +355,11 @@ def _build_v2_context(market_df_for_asof, as_of: date) -> tuple:
     macro_df = _make_long_macro(
         ["DGS2", "DGS10", "DTWEXBGS"],
         sector_dates,
-        logical_names={"DGS2": "2y_yield", "DGS10": "10y_yield", "DTWEXBGS": "broad_usd_index"},
+        logical_names={
+            "DGS2": "2y_yield",
+            "DGS10": "10y_yield",
+            "DTWEXBGS": "broad_usd_index",
+        },
     )
 
     sector_closes = load_sector_etf_closes(sector_df, universe=SECTOR_ETFS)
@@ -349,7 +382,9 @@ def _build_v2_context(market_df_for_asof, as_of: date) -> tuple:
 
 def test_market_context_holds_v2_data_dicts(market_df_for_asof) -> None:
     as_of = date(2023, 12, 14)
-    ctx, sector_closes, cross_closes, macros = _build_v2_context(market_df_for_asof, as_of)
+    ctx, sector_closes, cross_closes, macros = _build_v2_context(
+        market_df_for_asof, as_of
+    )
 
     assert ctx.sector_etf_closes is not None
     assert set(ctx.sector_etf_closes.keys()) == set(SECTOR_ETFS)
@@ -361,7 +396,9 @@ def test_market_context_holds_v2_data_dicts(market_df_for_asof) -> None:
     assert "DGS10" not in ctx.macro_series
 
 
-def test_market_context_reindexes_v2_series_to_spy_session_index(market_df_for_asof) -> None:
+def test_market_context_reindexes_v2_series_to_spy_session_index(
+    market_df_for_asof,
+) -> None:
     as_of = date(2023, 12, 14)
     ctx, _, _, _ = _build_v2_context(market_df_for_asof, as_of)
 
@@ -377,7 +414,9 @@ def test_market_context_reindexes_v2_series_to_spy_session_index(market_df_for_a
         assert len(series) > 0
 
 
-def test_slice_context_to_recent_sessions_propagates_v2_data(market_df_for_asof) -> None:
+def test_slice_context_to_recent_sessions_propagates_v2_data(
+    market_df_for_asof,
+) -> None:
     as_of = date(2023, 12, 14)
     ctx, _, _, _ = _build_v2_context(market_df_for_asof, as_of)
 
@@ -625,15 +664,15 @@ def test_build_market_context_rejects_malformed_date_values(market_df_for_asof) 
     # will reject the whole frame at normalization time.
     bad_row = good_df.iloc[0].copy()
     bad_row["date"] = "not-a-date-at-all"
-    corrupted = pd.concat(
-        [good_df, pd.DataFrame([bad_row])], ignore_index=True
-    )
+    corrupted = pd.concat([good_df, pd.DataFrame([bad_row])], ignore_index=True)
 
     with pytest.raises(ValueError, match=r"malformed date"):
         RegimeEngine().classify(
             as_of_date=as_of,
             market_data=corrupted,
-            event_calendar=pd.DataFrame(columns=["date", "market", "type", "importance"]),
+            event_calendar=pd.DataFrame(
+                columns=["date", "market", "type", "importance"]
+            ),
         )
 
 

@@ -32,8 +32,7 @@ def test_acquisition_schema_helper_creates_tables_and_migrates_legacy_artifacts(
 
     db_path = tmp_path / "legacy.db"
     with sqlite3.connect(db_path) as conn:
-        conn.execute(
-            """
+        conn.execute("""
             CREATE TABLE artifacts (
                 artifact_id INTEGER PRIMARY KEY AUTOINCREMENT,
                 run_id INTEGER NOT NULL,
@@ -52,8 +51,7 @@ def test_acquisition_schema_helper_creates_tables_and_migrates_legacy_artifacts(
                 license_note TEXT,
                 notes TEXT
             )
-            """
-        )
+            """)
 
         init_acquisition_schema(conn)
 
@@ -206,13 +204,11 @@ def test_source_checkpoint_upserts_latest_successful_run(tmp_path: Path) -> None
         == "2026-05-15"
     )
     with sqlite3.connect(tmp_path / "acquisition.db") as conn:
-        row = conn.execute(
-            """
+        row = conn.execute("""
             SELECT successful_run_id
             FROM source_checkpoints
             WHERE source_name = 'fred' AND cursor_key = 'DGS10'
-            """
-        ).fetchone()
+            """).fetchone()
 
     assert row == (second.run_id,)
 

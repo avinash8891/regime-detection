@@ -10,6 +10,7 @@ Spec references:
     rule engine, risk-rank table, and hysteresis are covered by the
     volume-liquidity classifier/rule tests.
 """
+
 from __future__ import annotations
 
 import math
@@ -31,7 +32,6 @@ from regime_detection.volume_liquidity_v2 import (
     VolumeLiquidityV2Features,
     compute_volume_liquidity_v2_features,
 )
-
 
 # ---------- Shared fixtures ---------------------------------------------------
 
@@ -60,9 +60,7 @@ def spy_like_volume_1000() -> pd.Series:
     rng = np.random.default_rng(seed=20260512)
     n = 1000
     # Truncated normal-ish via abs() to keep volumes positive at SPY scale.
-    volume = np.abs(
-        rng.normal(loc=_SPY_VOLUME_MEAN, scale=_SPY_VOLUME_STD, size=n)
-    )
+    volume = np.abs(rng.normal(loc=_SPY_VOLUME_MEAN, scale=_SPY_VOLUME_STD, size=n))
     return pd.Series(volume, index=_index_n(n), name="volume")
 
 
@@ -108,9 +106,7 @@ def test_volume_zscore_hand_computed_25day_fixture(v2_volume_config):
     base[::2] -= 10_000_000.0
     base[24] = 130_000_000.0
     volume = pd.Series(base, index=index, name="volume")
-    out = compute_volume_liquidity_v2_features(
-        volume=volume, config=v2_volume_config
-    )
+    out = compute_volume_liquidity_v2_features(volume=volume, config=v2_volume_config)
     window = volume.iloc[5:25]  # 20 obs ending at t=24
     expected = (volume.iloc[24] - window.mean()) / window.std(ddof=1)
     assert out.volume_zscore_20d.iloc[24] == pytest.approx(expected, rel=1e-12)
@@ -129,9 +125,7 @@ def test_volume_zscore_spike_day_approx_plus_5_sigma(v2_volume_config):
     base = _SPY_VOLUME_MEAN + rng.normal(0, jitter_scale, size=n)
     base[20] = _SPY_VOLUME_MEAN + 5.0 * jitter_scale  # spike — but recompute
     volume = pd.Series(base, index=index, name="volume")
-    out = compute_volume_liquidity_v2_features(
-        volume=volume, config=v2_volume_config
-    )
+    out = compute_volume_liquidity_v2_features(volume=volume, config=v2_volume_config)
     # The window at t=20 covers t=1..t=20 inclusive.
     window = volume.iloc[1:21]
     expected = (volume.iloc[20] - window.mean()) / window.std(ddof=1)
@@ -157,9 +151,7 @@ def test_volume_zscore_boundary_below_2_sigma_panic_threshold(v2_volume_config):
     # Day 20: 1.5σ-ish spike above the mean.
     base[20] = _SPY_VOLUME_MEAN + 1.5 * jitter_scale
     volume = pd.Series(base, index=index, name="volume")
-    out = compute_volume_liquidity_v2_features(
-        volume=volume, config=v2_volume_config
-    )
+    out = compute_volume_liquidity_v2_features(volume=volume, config=v2_volume_config)
     z_at_t = out.volume_zscore_20d.iloc[20]
     assert z_at_t < 2.0
     assert z_at_t > 0.0
@@ -198,9 +190,7 @@ def test_build_feature_store_populates_volume_liquidity_v2(
         market_data=market_df_for_asof(_INTEGRATION_AS_OF),
         config=cfg,
     )
-    store = build_feature_store(
-        context, volume_liquidity_v2_config=v2_volume_config
-    )
+    store = build_feature_store(context, volume_liquidity_v2_config=v2_volume_config)
     assert store.volume_liquidity_v2 is not None
     assert isinstance(store.volume_liquidity_v2, VolumeLiquidityV2Features)
     series = store.volume_liquidity_v2.volume_zscore_20d
@@ -263,14 +253,10 @@ def test_timeline_threads_volume_liquidity_v2_config(
         volume_liquidity_v2_config=cfg.volume_liquidity_v2,
     )
     assert store.volume_liquidity_v2 is not None
-    assert len(store.volume_liquidity_v2.volume_zscore_20d) == len(
-        store.spy_index
-    )
+    assert len(store.volume_liquidity_v2.volume_zscore_20d) == len(store.spy_index)
 
     # build_regime_timeline must propagate the v2 config without raising.
-    timeline = build_regime_timeline(
-        context=context, lookback_days=5, config=cfg
-    )
+    timeline = build_regime_timeline(context=context, lookback_days=5, config=cfg)
     assert len(timeline.outputs) == 5
 
 

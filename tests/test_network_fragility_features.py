@@ -4,6 +4,7 @@ Per ~/.claude/CLAUDE.md: realistic v2 production symbols (XLB, XLK, SPY, TLT
 etc) — NO toy a/b/c names. Math is verified against numpy/pandas baselines
 or hand-computed eigen-decompositions.
 """
+
 from __future__ import annotations
 
 import numpy as np
@@ -18,9 +19,10 @@ from regime_detection.fragility_universe import (
 )
 from regime_detection.network_fragility import (
     NetworkFragilityFeatures,
+    _dispersion_ratio_series,
+    _positive_correlation_eigenvalues,
     compute_features,
 )
-
 
 # ---------- Shared fixtures ----------------------------------------------------
 
@@ -89,7 +91,9 @@ def test_avg_pairwise_corr_63d_against_pandas_corr_baseline(small_4asset_returns
     iu = np.triu_indices_from(corr, k=1)
     expected = corr[iu].mean()
 
-    assert out.avg_pairwise_corr_63d.loc[target_dt] == pytest.approx(expected, abs=1e-12)
+    assert out.avg_pairwise_corr_63d.loc[target_dt] == pytest.approx(
+        expected, abs=1e-12
+    )
 
 
 def test_largest_eigenvalue_share_against_numpy_linalg(nyse_index_100):
@@ -175,7 +179,16 @@ def test_absorption_ratio_top3_against_hand_computed_eigenvalues(small_4asset_re
     eigs = np.sort(np.linalg.eigvalsh(corr))[::-1]
     expected = eigs[:3].sum() / eigs.sum()
 
-    assert out.absorption_ratio_top3.loc[target_dt] == pytest.approx(expected, abs=1e-12)
+    assert out.absorption_ratio_top3.loc[target_dt] == pytest.approx(
+        expected, abs=1e-12
+    )
+
+
+def test_positive_correlation_eigenvalues_clip_tiny_negative_numerical_noise() -> None:
+    eigs = _positive_correlation_eigenvalues(np.array([-1e-12, 0.2, 0.8]))
+
+    assert eigs.tolist() == pytest.approx([0.0, 0.2, 0.8])
+    assert eigs.sum() == pytest.approx(1.0)
 
 
 def test_dispersion_ratio_against_hand_computed_realized_vols(small_4asset_returns):
@@ -194,6 +207,25 @@ def test_dispersion_ratio_against_hand_computed_realized_vols(small_4asset_retur
     assert out.dispersion_ratio.loc[target_dt] == pytest.approx(expected, abs=1e-12)
 
 
+def test_dispersion_ratio_masks_near_zero_spy_realized_vol(nyse_index_100) -> None:
+    returns = pd.DataFrame(
+        {
+            "SPY": np.full(len(nyse_index_100), 1e-10),
+            "XLB": np.linspace(-0.01, 0.01, len(nyse_index_100)),
+            "XLK": np.linspace(0.01, -0.01, len(nyse_index_100)),
+        },
+        index=nyse_index_100,
+    )
+
+    dispersion = _dispersion_ratio_series(
+        returns,
+        realized_vol_lookback_days=21,
+        spy_vol_floor=1e-6,
+    )
+
+    assert dispersion.dropna().empty
+
+
 def test_compute_features_emits_nan_when_universe_below_min_size(nyse_index_100):
     """If only 19 of 24 symbols survive the completeness filter,
     all features must be NaN (data quality layer flags unknown downstream)."""
@@ -209,6 +241,10 @@ def test_compute_features_emits_nan_when_universe_below_min_size(nyse_index_100)
     assert pd.isna(out.largest_eigenvalue_share.loc[target_dt])
     assert pd.isna(out.effective_rank.loc[target_dt])
     assert pd.isna(out.absorption_ratio_top3.loc[target_dt])
+    assert out.surviving_universe_size is not None
+    assert out.complete_observation_count is not None
+    assert out.surviving_universe_size.loc[target_dt] == 19
+    assert pd.isna(out.complete_observation_count.loc[target_dt])
 
 
 def test_compute_features_drops_columns_below_completeness_threshold(nyse_index_100):
@@ -232,7 +268,9 @@ def test_compute_features_drops_columns_below_completeness_threshold(nyse_index_
     iu = np.triu_indices_from(corr, k=1)
     expected = corr[iu].mean()
 
-    assert out.avg_pairwise_corr_63d.loc[target_dt] == pytest.approx(expected, abs=1e-10)
+    assert out.avg_pairwise_corr_63d.loc[target_dt] == pytest.approx(
+        expected, abs=1e-10
+    )
 
 
 def test_compute_features_percentile_504d_against_rolling_rank(small_4asset_returns):

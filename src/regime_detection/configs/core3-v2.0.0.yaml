@@ -40,6 +40,7 @@ trend_direction:
     euphoria: 3
     unknown: 0
   default_deescalation_days: 3
+  max_unknown_freeze_days: 2
 trend_character:
   deescalation_days_by_label:
     breakout_expansion: 3
@@ -52,6 +53,7 @@ trend_character:
     transition: 2
     unknown: 0
   default_deescalation_days: 0
+  max_unknown_freeze_days: 2
 volatility_state:
   deescalation_days_by_label:
     crisis_vol: 5
@@ -62,6 +64,7 @@ volatility_state:
     normal_vol: 0
     unknown: 0
   default_deescalation_days: 2
+  max_unknown_freeze_days: 2
 breadth_state:
   deescalation_days_by_label:
     divergent_fragile: 5
@@ -71,6 +74,7 @@ breadth_state:
     healthy_breadth: 0
     unknown: 0
   default_deescalation_days: 2
+  max_unknown_freeze_days: 2
 # ---------------------------------------------------------------------------
 # V2 sub-configs (per docs/regime_engine_v2_spec.md).
 #
@@ -116,12 +120,14 @@ network_fragility:
   percentile_lookback_days: 504                   # v2 §3.2 line 563-566 (504d percentile)
   realized_vol_lookback_days: 21                  # v2 §3.2 line 588-593 (21d realised vol)
   dispersion_percentile_lookback_days: 252        # v2 §3.2 dispersion percentile lookback (~1y)
+  dispersion_spy_vol_floor: 0.000001              # denominator floor for stable dispersion_ratio
   min_universe_size: 20                           # implementation default — calibration target (v2 §9.1)
   min_window_completeness: 0.90                   # implementation default — calibration target (v2 §9.1)
   deescalation_days_by_label:
     rising_fragility: 3
     correlation_concentration: 3
     correlation_to_one: 5
+    systemic_stress_unconfirmed: 5
     systemic_stress: 5
     # `unknown` is absence of signal, not a sticky regime. Do not delay
     # recovery into a valid classified label; classified high-risk labels
@@ -131,6 +137,7 @@ network_fragility:
   # stock_picker_dispersion). 0 = immediate de-escalation; calibration §9.1
   # may retune. See documented implementation decision.
   default_deescalation_days: 0
+  max_unknown_freeze_days: 2
   # v2 §3.4–§3.5 rule-engine thresholds (implementation phase). Every value cites its
   # spec line in docs/regime_engine_v2_spec.md.
   rules:
@@ -146,6 +153,10 @@ network_fragility:
     corr_to_one_corr_percentile_min: 0.90             # §3.5 line 646
     corr_to_one_realized_vol_percentile_min: 0.80     # §3.5 line 647
     corr_to_one_drawdown_max: 0.0                     # §3.5 line 648 ("drawdown_21d < 0")
+    cold_start_corr_to_one_enabled: true              # explicit warmup fallback; still requires severe raw corr/eigen/vol
+    cold_start_corr_to_one_avg_corr_min: 0.90
+    cold_start_corr_to_one_largest_eig_min: 0.75
+    cold_start_corr_to_one_realized_vol_min: 0.25
     systemic_stress_vix_percentile_min: 0.80          # §3.5 line 655
     diversified_normal_relaxed_inner_band: true        # rank instability ok in mid-corr
     diversified_normal_inner_band_lo: 0.30
@@ -247,6 +258,7 @@ volume_liquidity_state:
     unknown: 0
     liquidity_gap_behavior: 2
   default_deescalation_days: 0
+  max_unknown_freeze_days: 2
 
 transition_score:
   weights:
@@ -313,6 +325,7 @@ monetary_pressure_state:
     # stale unknown label active via hysteresis.
     unknown: 0
   default_deescalation_days: 0
+  max_unknown_freeze_days: 2
 
 # v2 §2A lines 2578-2586 — central-bank-text classifier feeding
 # monetary_pressure.evidence. Source-data audit (the source-data audit
@@ -385,6 +398,9 @@ credit_funding:
     broad_usd_zscore_deleveraging_threshold: 0.0  # §2C line 2085
     realized_vol_percentile_threshold: 0.75   # §2C line 2086
     correlation_percentile_threshold: 0.75    # §2C line 2087
+    cold_start_deleveraging_enabled: true      # explicit warmup fallback; still requires severe raw vol/correlation
+    cold_start_deleveraging_realized_vol_21d_min: 0.25
+    cold_start_deleveraging_avg_corr_63d_min: 0.75
     hy_percentile_504d_lookback: 504          # §2C line 2038
     slope_21d_lookback: 21                    # §2C lines 2041, 2059
     slope_63d_lookback: 63                    # §2C line 2046
@@ -405,6 +421,7 @@ credit_funding:
     # a valid credit/funding rule fires.
     unknown: 0
   default_deescalation_days: 0
+  max_unknown_freeze_days: 2
   # §2C lines 2123-2124 — unknown-gate staleness thresholds.
   nfci_stale_days: 14
   etf_stale_sessions: 5
@@ -472,6 +489,7 @@ inflation_growth:
     # Absence of signal must not delay recovery into a valid macro label.
     unknown: 0
   default_deescalation_days: 0
+  max_unknown_freeze_days: 2
   # §2B lines 2309-2311 — unknown-gate staleness thresholds.
   cpi_stale_calendar_days: 60
   pmi_stale_calendar_days: 45
@@ -511,6 +529,12 @@ hmm:
   # sequential implementation.
   random_seeds: [42, 101, 202, 303, 404, 505, 606, 707, 808, 909]
   tol: 0.01
+  label_map_required_for_output: true
+  state_label_map:
+    0: elevated_uncertainty
+    1: high_vol_stress
+    2: calm_trending
+    3: transient_spike
 
 # v2 §6.2 K-Means/GMM Clustering — diagnostic evidence layer.
 clustering:
@@ -525,6 +549,16 @@ clustering:
   random_state: 42
   covariance_type: full
   model_version: "gmm_8cluster_v1.0"
+  label_map_required_for_output: true
+  cluster_label_map:
+    0: post_crisis_transition
+    1: crisis_panic
+    2: tariff_shock
+    3: correction_chop
+    4: volatile_recovery
+    5: calm_trending_bull
+    6: steady_bull
+    7: high_vol_stress
 
 # v2 §6.3 + §4.6 Change-Point Detection (implementation phase, evidence-only).
 # Algorithm: BOCPD (Adams & MacKay 2007). Library:
@@ -567,7 +601,7 @@ cohort_routing:
   routing_rules:
     crisis_specialist:
       any_of:
-        - {axis: "network_fragility", values: ["correlation_to_one", "systemic_stress"]}
+        - {axis: "network_fragility", values: ["correlation_to_one", "systemic_stress_unconfirmed", "systemic_stress"]}
         - {axis: "volatility_state", values: ["crisis_vol"]}
     euphoria_specialist:
       all_of:
@@ -594,6 +628,7 @@ cohort_routing:
         - {axis: "trend_direction", values: ["bull"]}
         - {axis: "volatility_state", values: ["low_vol", "normal_vol"]}
   blocked_strategy_modes:
+    data_outage_specialist: ["short_vol", "leveraged_long", "breakout"]
     crisis_specialist:       ["short_vol", "leveraged_long", "breakout"]
     euphoria_specialist:     ["mean_reversion"]
     bear_stress_specialist:  ["short_vol", "breakout", "leveraged_long"]
