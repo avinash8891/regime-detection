@@ -45,44 +45,75 @@ class EventSourceOrchestrator:
         end_year: int,
         store: AcquisitionStore | None,
         run_id: int | None,
-    ) -> tuple[list[EventCandidate], list[ValidationResult], list[PromotionDecision], list[ScheduledEvent]]:
+    ) -> tuple[
+        list[EventCandidate],
+        list[ValidationResult],
+        list[PromotionDecision],
+        list[ScheduledEvent],
+    ]:
         candidates: list[EventCandidate] = []
         for adapter in self.primary_adapters:
-            candidates.extend(adapter.fetch(start_year=start_year, end_year=end_year, store=store, run_id=run_id))
+            candidates.extend(
+                adapter.fetch(
+                    start_year=start_year, end_year=end_year, store=store, run_id=run_id
+                )
+            )
         for generator in self.candidate_generators:
-            candidates.extend(generator.generate(start_year=start_year, end_year=end_year, store=store, run_id=run_id))
+            candidates.extend(
+                generator.generate(
+                    start_year=start_year, end_year=end_year, store=store, run_id=run_id
+                )
+            )
 
         validations: list[ValidationResult] = []
         for validator in self.validators:
-            validations.extend(validator.validate(candidates, store=store, run_id=run_id))
+            validations.extend(
+                validator.validate(candidates, store=store, run_id=run_id)
+            )
 
         candidates = stamp_candidate_ids(candidates, validations)
         decisions = self.triangulate(candidates, validations)
         self.enforce_quarantine_threshold(candidates, decisions)
-        return candidates, validations, decisions, render_events_from_candidates(candidates, decisions, self.approval_overlay)
+        return (
+            candidates,
+            validations,
+            decisions,
+            render_events_from_candidates(candidates, decisions, self.approval_overlay),
+        )
 
     def triangulate(
         self,
         candidates: list[EventCandidate],
         validations: list[ValidationResult],
     ) -> list[PromotionDecision]:
-        validations_by_key: dict[tuple[str, dt.date], list[ValidationResult]] = defaultdict(list)
+        validations_by_key: dict[tuple[str, dt.date], list[ValidationResult]] = (
+            defaultdict(list)
+        )
         for validation in validations:
             validations_by_key[validation.candidate_key].append(validation)
 
-        candidates_by_key: dict[tuple[str, dt.date], list[EventCandidate]] = defaultdict(list)
+        candidates_by_key: dict[tuple[str, dt.date], list[EventCandidate]] = (
+            defaultdict(list)
+        )
         for candidate in candidates:
             candidates_by_key[(candidate.event_type, candidate.date)].append(candidate)
 
-        approvals_by_key = {(approval.event_type, approval.date): approval for approval in self.approval_overlay}
+        approvals_by_key = {
+            (approval.event_type, approval.date): approval
+            for approval in self.approval_overlay
+        }
         decisions: list[PromotionDecision] = []
         for key in sorted(candidates_by_key, key=lambda item: (item[1], item[0])):
             keyed_candidates = candidates_by_key[key]
             keyed_validations = validations_by_key.get(key, [])
-            confirms = sum(validation.verdict == "confirm" for validation in keyed_validations)
+            confirms = sum(
+                validation.verdict == "confirm" for validation in keyed_validations
+            )
             candidate = keyed_candidates[0]
             source_count = len({item.source_id for item in keyed_candidates}) + confirms
-            if any(validation.verdict == "contradict" for validation in keyed_validations):
+            if any(
+                validation.verdict == "contradict" for validation in keyed_validations
+            ):
                 decisions.append(
                     PromotionDecision(
                         candidate_key=key,
@@ -96,7 +127,11 @@ class EventSourceOrchestrator:
                 continue
 
             if candidate.event_type in GROUP_B_EVENT_TYPES:
-                decisions.append(self._group_b_decision(key, candidate, source_count, approvals_by_key))
+                decisions.append(
+                    self._group_b_decision(
+                        key, candidate, source_count, approvals_by_key
+                    )
+                )
                 continue
 
             if candidate.source_id in DETERMINISTIC_SOURCE_IDS:
@@ -128,7 +163,10 @@ class EventSourceOrchestrator:
         source_count: int,
         approvals_by_key: dict[tuple[str, dt.date], ApprovalRecord],
     ) -> PromotionDecision:
-        if candidate.event_type == "budget" and candidate.event_subtype == "fy_deadline":
+        if (
+            candidate.event_type == "budget"
+            and candidate.event_subtype == "fy_deadline"
+        ):
             return PromotionDecision(
                 candidate_key=key,
                 outcome="promote",
@@ -180,18 +218,30 @@ class EventSourceOrchestrator:
             )
 
 
-def build_candidate_id(event_type: str, event_date: dt.date, source_ids: list[str]) -> str:
+def build_candidate_id(
+    event_type: str, event_date: dt.date, source_ids: list[str]
+) -> str:
     source_part = "|".join(sorted(set(source_ids)))
-    return hashlib.sha256(f"{event_type}|{event_date.isoformat()}|{source_part}".encode("utf-8")).hexdigest()[:16]
+    return hashlib.sha256(
+        f"{event_type}|{event_date.isoformat()}|{source_part}".encode("utf-8")
+    ).hexdigest()[:16]
 
 
-def stamp_candidate_ids(candidates: list[EventCandidate], validations: list[ValidationResult]) -> list[EventCandidate]:
-    confirming_validators_by_key: dict[tuple[str, dt.date], list[str]] = defaultdict(list)
+def stamp_candidate_ids(
+    candidates: list[EventCandidate], validations: list[ValidationResult]
+) -> list[EventCandidate]:
+    confirming_validators_by_key: dict[tuple[str, dt.date], list[str]] = defaultdict(
+        list
+    )
     for validation in validations:
         if validation.verdict == "confirm":
-            confirming_validators_by_key[validation.candidate_key].append(validation.validator_id)
+            confirming_validators_by_key[validation.candidate_key].append(
+                validation.validator_id
+            )
 
-    candidates_by_key: dict[tuple[str, dt.date], list[EventCandidate]] = defaultdict(list)
+    candidates_by_key: dict[tuple[str, dt.date], list[EventCandidate]] = defaultdict(
+        list
+    )
     for candidate in candidates:
         candidates_by_key[(candidate.event_type, candidate.date)].append(candidate)
 
@@ -199,11 +249,18 @@ def stamp_candidate_ids(candidates: list[EventCandidate], validations: list[Vali
         key: build_candidate_id(
             key[0],
             key[1],
-            [candidate.source_id for candidate in keyed_candidates] + confirming_validators_by_key.get(key, []),
+            [candidate.source_id for candidate in keyed_candidates]
+            + confirming_validators_by_key.get(key, []),
         )
         for key, keyed_candidates in candidates_by_key.items()
     }
-    return [replace(candidate, candidate_id=candidate_ids[(candidate.event_type, candidate.date)]) for candidate in candidates]
+    return [
+        replace(
+            candidate,
+            candidate_id=candidate_ids[(candidate.event_type, candidate.date)],
+        )
+        for candidate in candidates
+    ]
 
 
 def render_events_from_candidates(
@@ -211,8 +268,13 @@ def render_events_from_candidates(
     decisions: list[PromotionDecision],
     approval_overlay: list[ApprovalRecord] | None = None,
 ) -> list[ScheduledEvent]:
-    candidates_by_key = {(candidate.event_type, candidate.date): candidate for candidate in candidates}
-    approvals_by_key = {(approval.event_type, approval.date): approval for approval in approval_overlay or []}
+    candidates_by_key = {
+        (candidate.event_type, candidate.date): candidate for candidate in candidates
+    }
+    approvals_by_key = {
+        (approval.event_type, approval.date): approval
+        for approval in approval_overlay or []
+    }
     rendered: list[ScheduledEvent] = []
     for decision in decisions:
         if decision.outcome != "promote":
@@ -233,10 +295,20 @@ def render_events_from_candidates(
                 release_timestamp_et=release_timestamp_et,
                 market=candidate.market,
                 type=candidate.event_type,
-                importance=approval.importance if approval and approval.importance else candidate.importance,
+                importance=(
+                    approval.importance
+                    if approval and approval.importance
+                    else candidate.importance
+                ),
                 source=candidate.source_id,
-                window_days=approval.window_days if approval and approval.window_days is not None else candidate.window_days,
-                approved_label=approval.approved_label if approval is not None else None,
+                window_days=(
+                    approval.window_days
+                    if approval and approval.window_days is not None
+                    else candidate.window_days
+                ),
+                approved_label=(
+                    approval.approved_label if approval is not None else None
+                ),
             )
         )
     return sorted(rendered, key=lambda event: (event.release_timestamp_et, event.type))

@@ -12,6 +12,7 @@ Spec references (docs/regime_engine_v2_spec.md):
 Per ~/.claude/CLAUDE.md and AGENTS.md G/L: realistic SPY-like inputs,
 no toy a/b/c names, use the real production Pydantic config.
 """
+
 from __future__ import annotations
 
 import math
@@ -26,8 +27,8 @@ from regime_detection.volume_liquidity_rules import (
     evaluate_normal_volume,
     evaluate_panic_volume,
     evaluate_rules,
+    evaluate_rules_with_evidence,
 )
-
 
 # v2 §1E lines 272-273, 278-279 — exact spec thresholds.
 _SPEC_PANIC_ZSCORE_THRESHOLD = 2.0
@@ -52,12 +53,16 @@ def _inputs(
     return_1d: float = 0.0,
     gap_frequency_percentile_252d: float = 0.0,
     intraday_range_percentile_252d: float = 0.0,
+    gap_frequency_20d: float = 0.0,
+    intraday_range: float = 0.0,
 ) -> VolumeLiquidityRuleInputs:
     return VolumeLiquidityRuleInputs(
         volume_zscore_20d=volume_zscore_20d,
         return_1d=return_1d,
         gap_frequency_percentile_252d=gap_frequency_percentile_252d,
         intraday_range_percentile_252d=intraday_range_percentile_252d,
+        gap_frequency_20d=gap_frequency_20d,
+        intraday_range=intraday_range,
     )
 
 
@@ -78,54 +83,75 @@ def test_volume_liquidity_risk_rank_matches_v2_spec_1e():
 
 
 def test_panic_volume_fires_when_both_limbs_strictly_satisfied(volume_liquidity_rules):
-    assert evaluate_panic_volume(
-        _inputs(volume_zscore_20d=2.01, return_1d=-0.025),
-        volume_liquidity_rules,
-    ) is True
+    assert (
+        evaluate_panic_volume(
+            _inputs(volume_zscore_20d=2.01, return_1d=-0.025),
+            volume_liquidity_rules,
+        )
+        is True
+    )
 
 
 def test_panic_volume_false_when_zscore_exactly_at_threshold(volume_liquidity_rules):
     # Strict `>` per spec line 272 — zscore == 2.0 does NOT satisfy.
-    assert evaluate_panic_volume(
-        _inputs(volume_zscore_20d=2.0, return_1d=-0.025),
-        volume_liquidity_rules,
-    ) is False
+    assert (
+        evaluate_panic_volume(
+            _inputs(volume_zscore_20d=2.0, return_1d=-0.025),
+            volume_liquidity_rules,
+        )
+        is False
+    )
 
 
 def test_panic_volume_false_when_return_exactly_at_threshold(volume_liquidity_rules):
     # Strict `<` per spec line 273 — return_1d == -0.02 does NOT satisfy.
-    assert evaluate_panic_volume(
-        _inputs(volume_zscore_20d=2.5, return_1d=-0.02),
-        volume_liquidity_rules,
-    ) is False
+    assert (
+        evaluate_panic_volume(
+            _inputs(volume_zscore_20d=2.5, return_1d=-0.02),
+            volume_liquidity_rules,
+        )
+        is False
+    )
 
 
 def test_panic_volume_false_when_return_above_threshold(volume_liquidity_rules):
-    assert evaluate_panic_volume(
-        _inputs(volume_zscore_20d=2.5, return_1d=-0.019),
-        volume_liquidity_rules,
-    ) is False
+    assert (
+        evaluate_panic_volume(
+            _inputs(volume_zscore_20d=2.5, return_1d=-0.019),
+            volume_liquidity_rules,
+        )
+        is False
+    )
 
 
 def test_panic_volume_true_when_both_limbs_clearly_satisfied(volume_liquidity_rules):
-    assert evaluate_panic_volume(
-        _inputs(volume_zscore_20d=2.5, return_1d=-0.025),
-        volume_liquidity_rules,
-    ) is True
+    assert (
+        evaluate_panic_volume(
+            _inputs(volume_zscore_20d=2.5, return_1d=-0.025),
+            volume_liquidity_rules,
+        )
+        is True
+    )
 
 
 def test_panic_volume_false_when_zscore_is_nan(volume_liquidity_rules):
-    assert evaluate_panic_volume(
-        _inputs(volume_zscore_20d=float("nan"), return_1d=-0.025),
-        volume_liquidity_rules,
-    ) is False
+    assert (
+        evaluate_panic_volume(
+            _inputs(volume_zscore_20d=float("nan"), return_1d=-0.025),
+            volume_liquidity_rules,
+        )
+        is False
+    )
 
 
 def test_panic_volume_false_when_return_is_nan(volume_liquidity_rules):
-    assert evaluate_panic_volume(
-        _inputs(volume_zscore_20d=2.5, return_1d=float("nan")),
-        volume_liquidity_rules,
-    ) is False
+    assert (
+        evaluate_panic_volume(
+            _inputs(volume_zscore_20d=2.5, return_1d=float("nan")),
+            volume_liquidity_rules,
+        )
+        is False
+    )
 
 
 # ---------- liquidity_gap_behavior: live predicate (Log #40 closure)
@@ -182,10 +208,31 @@ def test_liquidity_gap_behavior_returns_false_on_nan_inputs(volume_liquidity_rul
     assert evaluate_liquidity_gap_behavior(inputs, volume_liquidity_rules) is False
 
 
+def test_liquidity_gap_behavior_uses_cold_start_fallback_when_percentiles_warm_up(
+    volume_liquidity_rules,
+):
+    inputs = _inputs(
+        gap_frequency_percentile_252d=float("nan"),
+        intraday_range_percentile_252d=float("nan"),
+        gap_frequency_20d=0.35,
+        intraday_range=0.045,
+    )
+
+    assert evaluate_liquidity_gap_behavior(inputs, volume_liquidity_rules) is True
+    evaluation = evaluate_rules_with_evidence(
+        inputs=inputs,
+        config=volume_liquidity_rules,
+    )
+    assert evaluation.label == "liquidity_gap_behavior"
+    assert evaluation.rule_path == "cold_start_fallback"
+
+
 # ---------- normal_volume = !panic AND !liquidity_gap (§1E line 282) ---------
 
 
-def test_normal_volume_true_when_neither_panic_nor_liquidity_gap(volume_liquidity_rules):
+def test_normal_volume_true_when_neither_panic_nor_liquidity_gap(
+    volume_liquidity_rules,
+):
     inputs = _inputs(volume_zscore_20d=0.5, return_1d=0.01)
     assert evaluate_normal_volume(inputs, volume_liquidity_rules) is True
 
@@ -232,6 +279,32 @@ def test_evaluate_rules_returns_unknown_when_required_inputs_nan(
         config=volume_liquidity_rules,
     )
     assert label == "unknown"
+
+
+def test_evaluate_rules_returns_unknown_when_gap_history_is_unavailable(
+    volume_liquidity_rules,
+):
+    """Normal volume requires enough gap history to negate gap stress."""
+    label = evaluate_rules(
+        inputs=_inputs(
+            volume_zscore_20d=0.4,
+            return_1d=0.001,
+            gap_frequency_percentile_252d=float("nan"),
+            intraday_range_percentile_252d=0.50,
+        ),
+        config=volume_liquidity_rules,
+    )
+    assert label == "unknown"
+    evaluation = evaluate_rules_with_evidence(
+        inputs=_inputs(
+            volume_zscore_20d=0.4,
+            return_1d=0.001,
+            gap_frequency_percentile_252d=float("nan"),
+            intraday_range_percentile_252d=0.50,
+        ),
+        config=volume_liquidity_rules,
+    )
+    assert evaluation.reason == "insufficient_gap_history"
 
 
 def test_evaluate_rules_returns_liquidity_gap_behavior_when_inputs_fire(
@@ -318,8 +391,12 @@ def test_default_yaml_loads_volume_liquidity_config_with_spec_defaults():
     cfg = load_default_regime_config()
     assert cfg.volume_liquidity_state is not None
     rules = cfg.volume_liquidity_state.rules
-    assert math.isclose(rules.panic_volume_zscore_threshold, _SPEC_PANIC_ZSCORE_THRESHOLD)
-    assert math.isclose(rules.panic_volume_return_threshold, _SPEC_PANIC_RETURN_THRESHOLD)
+    assert math.isclose(
+        rules.panic_volume_zscore_threshold, _SPEC_PANIC_ZSCORE_THRESHOLD
+    )
+    assert math.isclose(
+        rules.panic_volume_return_threshold, _SPEC_PANIC_RETURN_THRESHOLD
+    )
     assert math.isclose(
         rules.liquidity_gap_frequency_percentile_threshold,
         _SPEC_LIQGAP_FREQ_PCTL_THRESHOLD,

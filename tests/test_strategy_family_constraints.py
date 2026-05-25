@@ -26,7 +26,6 @@ from regime_detection.strategy_family_constraints import (
     resolve_strategy_family_constraints,
 )
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -34,9 +33,9 @@ from regime_detection.strategy_family_constraints import (
 
 def _real_config() -> StrategyFamilyConstraintsConfig:
     cfg = load_default_regime_config().strategy_family_constraints
-    assert isinstance(cfg, StrategyFamilyConstraintsConfig), (
-        "default V2 config must ship strategy_family_constraints"
-    )
+    assert isinstance(
+        cfg, StrategyFamilyConstraintsConfig
+    ), "default V2 config must ship strategy_family_constraints"
     return cfg
 
 
@@ -224,7 +223,9 @@ def test_regime_output_carries_strategy_family_constraints_when_configured(
     assert classified_golden_outputs
     for _as_of, out in classified_golden_outputs.items():
         assert out.strategy_family_constraints is not None
-        assert set(STRATEGY_FAMILIES).issubset(set(out.strategy_family_constraints.keys()))
+        assert set(STRATEGY_FAMILIES).issubset(
+            set(out.strategy_family_constraints.keys())
+        )
         for family in STRATEGY_FAMILIES:
             assert isinstance(
                 out.strategy_family_constraints[family], StrategyFamilyConstraint

@@ -28,7 +28,9 @@ def test_gate_reporting_label_uses_granular_status() -> None:
 
 
 def test_gate_scripts_use_comparison_reporting_label_source() -> None:
-    assert _v2_calibration_helpers.axis_reporting_label is comparison.axis_reporting_label
+    assert (
+        _v2_calibration_helpers.axis_reporting_label is comparison.axis_reporting_label
+    )
     assert run_v2_walkforward_gate._reporting_label is comparison.axis_reporting_label
     assert run_v2_shadow_ab_gate._reporting_label is comparison.axis_reporting_label
 
@@ -153,7 +155,9 @@ def test_shadow_ab_classify_per_session_continues_after_runtime_error() -> None:
                 "score_components": None,
                 "primary_drivers": [],
                 "triggered_rules": [],
-                "data_quality": DataQuality(status="ok", freshness_days=0, completeness=1.0),
+                "data_quality": DataQuality(
+                    status="ok", freshness_days=0, completeness=1.0
+                ),
                 "evidence": {},
             },
         )()
@@ -267,7 +271,9 @@ def test_walkforward_gate_main_runs_against_committed_v2_fixtures(
 ) -> None:
     daily_path, macro_path = _write_v2_gate_parquets(tmp_path)
     output_path = tmp_path / "walkforward_gate.md"
-    config_path = Path(__file__).resolve().parent / "fixtures" / "configs" / "core3-v2-fast.yaml"
+    config_path = (
+        Path(__file__).resolve().parent / "fixtures" / "configs" / "core3-v2-fast.yaml"
+    )
     monkeypatch.setattr(
         sys,
         "argv",
@@ -278,7 +284,12 @@ def test_walkforward_gate_main_runs_against_committed_v2_fixtures(
             "--macro-parquet",
             str(macro_path),
             "--event-calendar",
-            str(Path(__file__).resolve().parent / "fixtures" / "events" / "us_events.yaml"),
+            str(
+                Path(__file__).resolve().parent
+                / "fixtures"
+                / "events"
+                / "us_events.yaml"
+            ),
             "--config-path",
             str(config_path),
             "--start-date",
@@ -306,7 +317,9 @@ def test_shadow_ab_gate_main_runs_against_committed_v2_fixtures(
 ) -> None:
     daily_path, macro_path = _write_v2_gate_parquets(tmp_path)
     output_path = tmp_path / "shadow_ab_gate.md"
-    config_path = Path(__file__).resolve().parent / "fixtures" / "configs" / "core3-v2-fast.yaml"
+    config_path = (
+        Path(__file__).resolve().parent / "fixtures" / "configs" / "core3-v2-fast.yaml"
+    )
     monkeypatch.setattr(
         sys,
         "argv",
@@ -317,7 +330,12 @@ def test_shadow_ab_gate_main_runs_against_committed_v2_fixtures(
             "--macro-parquet",
             str(macro_path),
             "--event-calendar",
-            str(Path(__file__).resolve().parent / "fixtures" / "events" / "us_events.yaml"),
+            str(
+                Path(__file__).resolve().parent
+                / "fixtures"
+                / "events"
+                / "us_events.yaml"
+            ),
             "--config-path",
             str(config_path),
             "--n-sessions",

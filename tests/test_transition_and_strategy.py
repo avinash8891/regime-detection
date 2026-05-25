@@ -103,7 +103,7 @@ def test_strategy_response_de_risks_crisis_final_state() -> None:
         volatility_state_active="crisis_vol",
         breadth_state_active="weak_breadth",
         transition_risk_state="crisis",
-            )
+    )
 
     assert response.position_size_multiplier == 0.25
     assert response.leverage_allowed is False
@@ -119,7 +119,7 @@ def test_strategy_response_handles_recovery_attempt_final_state() -> None:
         volatility_state_active="normal_vol",
         breadth_state_active="recovery_breadth",
         transition_risk_state="recovery_attempt",
-            )
+    )
 
     assert response.position_size_multiplier == 0.5
     assert response.leverage_allowed is False
@@ -133,13 +133,16 @@ def test_strategy_response_de_risks_high_transition_risk_final_state() -> None:
         volatility_state_active="normal_vol",
         breadth_state_active="healthy_breadth",
         transition_risk_state="high_transition_risk",
-            )
+    )
 
     assert response.position_size_multiplier == 0.5
     assert response.leverage_allowed is False
     assert response.allow_buy_dip is False
     assert response.prefer_cash_or_hedges is True
-    assert response.modifiers_applied == ["bull_healthy_low_vol", "high_transition_risk"]
+    assert response.modifiers_applied == [
+        "bull_healthy_low_vol",
+        "high_transition_risk",
+    ]
 
 
 def test_strategy_response_macro_event_rule_caps_healthy_bull_response() -> None:
@@ -163,7 +166,9 @@ def test_strategy_response_macro_event_rule_caps_healthy_bull_response() -> None
     ]
 
 
-def test_strategy_response_policy_event_rule_caps_high_transition_risk_response() -> None:
+def test_strategy_response_policy_event_rule_caps_high_transition_risk_response() -> (
+    None
+):
     response = build_strategy_response(
         trend_direction_active="bull",
         trend_character_active="trending",
@@ -247,7 +252,9 @@ def test_strategy_response_event_rule_applies_to_unknown_guard_response() -> Non
     ]
 
 
-def test_transition_risk_series_classifier_applies_precedence_from_prepared_inputs() -> None:
+def test_transition_risk_series_classifier_applies_precedence_from_prepared_inputs() -> (
+    None
+):
     sessions = [
         date(2024, 1, 2),
         date(2024, 1, 3),
@@ -394,7 +401,10 @@ def test_transition_risk_series_classifier_applies_precedence_from_prepared_inpu
     assert outputs[sessions[4]].state == "recovery_attempt"
     assert outputs[sessions[5]].state == "insufficient_data"
     assert outputs[sessions[0]].evidence["triggered_rules"] == ["post_switch_cooldown"]
-    assert outputs[sessions[4]].evidence["triggered_rules"] == ["recovery_attempt", "post_switch_cooldown"]
+    assert outputs[sessions[4]].evidence["triggered_rules"] == [
+        "recovery_attempt",
+        "post_switch_cooldown",
+    ]
 
 
 def test_transition_risk_series_restores_absolute_crisis_override() -> None:
@@ -519,7 +529,9 @@ def test_transition_risk_series_treats_narrowing_breadth_as_sideways_stress() ->
     assert output.triggered_rules == ["sideways_stress"]
 
 
-def test_transition_risk_series_fails_fast_on_price_index_misalignment(market_df_for_asof) -> None:
+def test_transition_risk_series_fails_fast_on_price_index_misalignment(
+    market_df_for_asof,
+) -> None:
     as_of = date(2023, 12, 14)
     engine = RegimeEngine()
     context = build_market_context(
@@ -533,14 +545,16 @@ def test_transition_risk_series_fails_fast_on_price_index_misalignment(market_df
     misaligned_context = context.model_copy(
         update={
             "spy_ohlcv": context.spy_ohlcv.rename(
-                index=lambda ts: pd.Timestamp(ts).tz_localize("America/New_York") + pd.Timedelta(hours=12)
+                index=lambda ts: pd.Timestamp(ts).tz_localize("America/New_York")
+                + pd.Timedelta(hours=12)
             )
         }
     )
     misaligned_feature_store = feature_store.model_copy(
         update={
             "sma_50": feature_store.sma_50.rename(
-                index=lambda ts: pd.Timestamp(ts).tz_localize("America/New_York") + pd.Timedelta(hours=12)
+                index=lambda ts: pd.Timestamp(ts).tz_localize("America/New_York")
+                + pd.Timedelta(hours=12)
             )
         }
     )
@@ -556,4 +570,6 @@ def test_transition_risk_series_fails_fast_on_price_index_misalignment(market_df
     except ValueError as exc:
         assert "transition-risk" in str(exc)
     else:
-        raise AssertionError("Expected transition-risk strict series lookup to fail on misaligned indexes")
+        raise AssertionError(
+            "Expected transition-risk strict series lookup to fail on misaligned indexes"
+        )

@@ -31,7 +31,9 @@ def _prepare_walkforward_root(tmp_path: Path, template: Path) -> Path:
 def test_build_walkforward_report_fails_without_required_gates(
     tmp_path: Path, walkforward_2023_dec_template: Path
 ) -> None:
-    report_mod = _load_module("build_walkforward_report", "scripts/build_walkforward_report.py")
+    report_mod = _load_module(
+        "build_walkforward_report", "scripts/build_walkforward_report.py"
+    )
     out_root = _prepare_walkforward_root(tmp_path, walkforward_2023_dec_template)
 
     result = report_mod.build_walkforward_report(output_root=out_root)
@@ -56,7 +58,9 @@ def test_build_walkforward_report_fails_without_required_gates(
 def test_build_walkforward_report_passes_with_golden_and_baseline_inputs(
     tmp_path: Path, walkforward_2023_dec_template: Path
 ) -> None:
-    report_mod = _load_module("build_walkforward_report", "scripts/build_walkforward_report.py")
+    report_mod = _load_module(
+        "build_walkforward_report", "scripts/build_walkforward_report.py"
+    )
     out_root = _prepare_walkforward_root(tmp_path, walkforward_2023_dec_template)
 
     golden_path = tmp_path / "golden_results.json"
@@ -79,7 +83,10 @@ def test_build_walkforward_report_passes_with_golden_and_baseline_inputs(
         json.dumps(
             {
                 "metrics": {
-                    "max_drawdown": {"with_regime_gating": 0.12, "no_regime_baseline": 0.18},
+                    "max_drawdown": {
+                        "with_regime_gating": 0.12,
+                        "no_regime_baseline": 0.18,
+                    },
                     "sharpe": {"with_regime_gating": 1.10, "no_regime_baseline": 0.95},
                 }
             },
@@ -97,8 +104,13 @@ def test_build_walkforward_report_passes_with_golden_and_baseline_inputs(
 
     assert result["status"] == "pass"
     assert result["failure_reasons"] == []
-    assert result["baseline_comparison"]["improved_metrics"] == ["max_drawdown", "sharpe"]
+    assert result["baseline_comparison"]["improved_metrics"] == [
+        "max_drawdown",
+        "sharpe",
+    ]
 
-    payload = json.loads((out_root / "reports" / "walkforward_analysis.json").read_text())
+    payload = json.loads(
+        (out_root / "reports" / "walkforward_analysis.json").read_text()
+    )
     assert payload["golden_results"]["all_passed"] is True
     assert payload["baseline_comparison"]["all_metrics_materially_worse"] is False

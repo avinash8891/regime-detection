@@ -7,7 +7,6 @@ from typing import Any, Literal, cast
 
 import yaml
 
-
 ArtifactStage = Literal["raw_capture", "normalized", "canonical", "run_inputs"]
 VALID_STAGES: frozenset[ArtifactStage] = frozenset(
     ("raw_capture", "normalized", "canonical", "run_inputs")
@@ -74,12 +73,16 @@ class ManifestArtifact:
                 else None
             ),
             rows=int(payload["rows"]) if payload.get("rows") is not None else None,
-            min_date=str(payload["min_date"])
-            if payload.get("min_date") is not None
-            else None,
-            max_date=str(payload["max_date"])
-            if payload.get("max_date") is not None
-            else None,
+            min_date=(
+                str(payload["min_date"])
+                if payload.get("min_date") is not None
+                else None
+            ),
+            max_date=(
+                str(payload["max_date"])
+                if payload.get("max_date") is not None
+                else None
+            ),
             required_for=tuple(required_for),
         )
         artifact.validate()

@@ -33,9 +33,7 @@ VolatilityLabel = Literal[
 _TRADING_DAYS_PER_YEAR = 252
 
 
-def realized_vol(
-    close: pd.Series, window: int, *, ddof: int = 1
-) -> pd.Series:
+def realized_vol(close: pd.Series, window: int, *, ddof: int = 1) -> pd.Series:
     """Rolling annualised realised volatility of ``close`` log/pct returns.
 
     Shared helper for v1 volatility classifiers and the v2 §1C
@@ -189,14 +187,18 @@ class VolatilityFeatures:
     vix_percentile_252d: pd.Series | None
 
 
-def compute_features(*, close: pd.Series, vix_proxy_close: pd.Series | None) -> VolatilityFeatures:
+def compute_features(
+    *, close: pd.Series, vix_proxy_close: pd.Series | None
+) -> VolatilityFeatures:
     close = close.astype(float)
     vix_pct: pd.Series | None = None
     if vix_proxy_close is not None:
         vix_proxy_close = vix_proxy_close.astype(float)
         # Align VIX proxy series to the SPY trading-day index; missing dates become NaN.
         vix_proxy_close = vix_proxy_close.reindex(close.index)
-        vix_pct = vix_proxy_close.rolling(252, min_periods=252).apply(_pct_rank_last, raw=True)
+        vix_pct = vix_proxy_close.rolling(252, min_periods=252).apply(
+            _pct_rank_last, raw=True
+        )
 
     return_1d = close / close.shift(1) - 1
     return_5d = close / close.shift(5) - 1
@@ -206,7 +208,9 @@ def compute_features(*, close: pd.Series, vix_proxy_close: pd.Series | None) -> 
     # shared ``realized_vol`` helper — preserves the v1 byte-
     # identical output (window=21, ddof default — pandas .std() is ddof=1).
     realized_vol_21d = realized_vol(close, window=21)
-    realized_vol_percentile_252d = realized_vol_21d.rolling(252, min_periods=252).apply(_pct_rank_last, raw=True)
+    realized_vol_percentile_252d = realized_vol_21d.rolling(252, min_periods=252).apply(
+        _pct_rank_last, raw=True
+    )
 
     return VolatilityFeatures(
         close=close,
@@ -272,7 +276,11 @@ def raw_label_for_day(
     evidence: dict[str, Any] = {
         "realized_vol_21d": _ev_float(rv21),
         "realized_vol_percentile_252d": _ev_float(vol_pct),
-        "vix_percentile_252d": _ev_float(vix_pct) if (vix_pct is not None and not pd.isna(vix_pct)) else None,
+        "vix_percentile_252d": (
+            _ev_float(vix_pct)
+            if (vix_pct is not None and not pd.isna(vix_pct))
+            else None
+        ),
         "crisis_vol": crisis,
         "high_vol": high_vol,
         "low_vol": low_vol,
@@ -361,7 +369,11 @@ def build_raw_outputs(
             {
                 "realized_vol_21d": _ev_float(rv21.iat[idx]),
                 "realized_vol_percentile_252d": _ev_float(vol_pct.iat[idx]),
-                "vix_percentile_252d": _ev_float(vix_pct_series.iat[idx]) if bool(vix_present.iat[idx]) else None,
+                "vix_percentile_252d": (
+                    _ev_float(vix_pct_series.iat[idx])
+                    if bool(vix_present.iat[idx])
+                    else None
+                ),
                 "crisis_vol": bool(crisis.iat[idx]),
                 "high_vol": bool(high_vol.iat[idx]),
                 "low_vol": bool(low_vol.iat[idx]),
@@ -404,4 +416,3 @@ def build_raw_outputs(
             labels[idx] = v2_label
 
     return list(labels), evidence
-

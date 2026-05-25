@@ -13,7 +13,6 @@ from typing import Any
 import pandas as pd
 import yaml
 
-
 REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
@@ -23,7 +22,9 @@ from regime_detection.calendar import nyse_calendar  # noqa: E402
 from regime_detection.engine import RegimeEngine  # noqa: E402
 from regime_detection.loaders import load_event_calendar  # noqa: E402
 from regime_detection.shadow_storage import event_rows_for_yaml  # noqa: E402
-from regime_detection.versioning import engine_version as resolved_engine_version  # noqa: E402
+from regime_detection.versioning import (
+    engine_version as resolved_engine_version,
+)  # noqa: E402
 from regime_data_fetch.materialization import materialize_if_requested  # noqa: E402
 from scripts.run_shadow_regime import (  # noqa: E402
     _close_series_by_symbol,
@@ -32,11 +33,13 @@ from scripts.run_shadow_regime import (  # noqa: E402
     _load_pit_intervals,
     _load_v2_daily_ohlcv,
 )
-from regime_detection.fragility_universe import CROSS_ASSET_SYMBOLS, SECTOR_ETFS  # noqa: E402
+from regime_detection.fragility_universe import (
+    CROSS_ASSET_SYMBOLS,
+    SECTOR_ETFS,
+)  # noqa: E402
 from scripts._v2_calibration_helpers import (  # noqa: E402
     apply_manifest_input_defaults,
 )
-
 
 RUNS_SCHEMA = """
 CREATE TABLE IF NOT EXISTS runs (
@@ -279,11 +282,15 @@ def _event_calendar_summary_cells(output: Any) -> dict[str, Any]:
     event_calendar = output.structural_causal_state.event_calendar
     return {
         "event_calendar_primary_label": event_calendar.primary_label,
-        "event_calendar_matching_labels": _json_cell(list(event_calendar.matching_labels)),
+        "event_calendar_matching_labels": _json_cell(
+            list(event_calendar.matching_labels)
+        ),
     }
 
 
-def _build_report_markdown(summary_df: pd.DataFrame, *, start_date: date, end_date: date) -> str:
+def _build_report_markdown(
+    summary_df: pd.DataFrame, *, start_date: date, end_date: date
+) -> str:
     lines = [
         "# Historical Walk-Forward Report",
         "",
@@ -308,7 +315,16 @@ def _build_report_markdown(summary_df: pd.DataFrame, *, start_date: date, end_da
             "transition_risk_state",
         ]:
             counts = success_df[col].value_counts().to_dict()
-            lines.extend(["", f"## {col}", "", "```json", json.dumps(counts, indent=2, sort_keys=True), "```"])
+            lines.extend(
+                [
+                    "",
+                    f"## {col}",
+                    "",
+                    "```json",
+                    json.dumps(counts, indent=2, sort_keys=True),
+                    "```",
+                ]
+            )
     return "\n".join(lines) + "\n"
 
 
@@ -347,7 +363,11 @@ def run_walkforward(
         for as_of_date in sessions:
             run_timestamp = _utc_iso_now()
             archive_dir = paths["input_archives"] / as_of_date.isoformat()
-            market_slice = market_data[market_data["date"] <= as_of_date].copy().reset_index(drop=True)
+            market_slice = (
+                market_data[market_data["date"] <= as_of_date]
+                .copy()
+                .reset_index(drop=True)
+            )
             _write_archived_inputs(
                 archive_dir=archive_dir,
                 market_slice=market_slice,
@@ -365,12 +385,22 @@ def run_walkforward(
             try:
                 v2_kwargs: dict[str, Any] = {}
                 if v2_daily is not None:
-                    v2_slice = v2_daily[v2_daily["date"] <= as_of_date].copy().reset_index(drop=True)
+                    v2_slice = (
+                        v2_daily[v2_daily["date"] <= as_of_date]
+                        .copy()
+                        .reset_index(drop=True)
+                    )
                     session_pit_intervals = pit_intervals
                     if session_pit_intervals is None:
-                        session_pit_intervals = _default_pit_intervals_from_daily(v2_slice)
-                    v2_kwargs["sector_etf_closes"] = _close_series_by_symbol(v2_slice, SECTOR_ETFS)
-                    v2_kwargs["cross_asset_closes"] = _close_series_by_symbol(v2_slice, CROSS_ASSET_SYMBOLS)
+                        session_pit_intervals = _default_pit_intervals_from_daily(
+                            v2_slice
+                        )
+                    v2_kwargs["sector_etf_closes"] = _close_series_by_symbol(
+                        v2_slice, SECTOR_ETFS
+                    )
+                    v2_kwargs["cross_asset_closes"] = _close_series_by_symbol(
+                        v2_slice, CROSS_ASSET_SYMBOLS
+                    )
                     v2_kwargs["pit_constituent_intervals"] = session_pit_intervals
                     v2_kwargs["constituent_ohlcv"] = _constituent_ohlcv_from_daily(
                         v2_slice,
@@ -463,7 +493,9 @@ def run_walkforward(
         summary_df.to_csv(summary_path, index=False)
         report_path = paths["reports"] / "walkforward_report.md"
         report_path.write_text(
-            _build_report_markdown(summary_df, start_date=start_date, end_date=end_date),
+            _build_report_markdown(
+                summary_df, start_date=start_date, end_date=end_date
+            ),
             encoding="utf-8",
         )
 
@@ -482,9 +514,21 @@ def run_walkforward(
 
 
 def _parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Run historical walk-forward classification.")
-    parser.add_argument("--market-data", required=True, type=Path, help="Path to parquet/csv market data.")
-    parser.add_argument("--output-root", required=True, type=Path, help="Directory for walk-forward artifacts.")
+    parser = argparse.ArgumentParser(
+        description="Run historical walk-forward classification."
+    )
+    parser.add_argument(
+        "--market-data",
+        required=True,
+        type=Path,
+        help="Path to parquet/csv market data.",
+    )
+    parser.add_argument(
+        "--output-root",
+        required=True,
+        type=Path,
+        help="Directory for walk-forward artifacts.",
+    )
     parser.add_argument("--start-date", required=True, type=date.fromisoformat)
     parser.add_argument("--end-date", required=True, type=date.fromisoformat)
     parser.add_argument(
@@ -498,12 +542,28 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--config-path", type=Path, default=None)
     parser.add_argument("--v2-daily-ohlcv", type=Path, default=None)
     parser.add_argument("--pit-constituent-intervals", type=Path, default=None)
-    parser.add_argument("--manifest", type=Path, default=None, help="Optional artifact manifest to materialize before running.")
-    parser.add_argument("--artifact-store", default=None, help="Optional artifact-store root override for --manifest.")
-    parser.add_argument("--data-root", type=Path, default=REPO_ROOT / "data" / "raw", help="Local data/raw root used for manifest materialization.")
+    parser.add_argument(
+        "--manifest",
+        type=Path,
+        default=None,
+        help="Optional artifact manifest to materialize before running.",
+    )
+    parser.add_argument(
+        "--artifact-store",
+        default=None,
+        help="Optional artifact-store root override for --manifest.",
+    )
+    parser.add_argument(
+        "--data-root",
+        type=Path,
+        default=REPO_ROOT / "data" / "raw",
+        help="Local data/raw root used for manifest materialization.",
+    )
     args = parser.parse_args()
     args.event_calendar = None
-    apply_manifest_input_defaults(args, args.data_root, fields=frozenset({"event_calendar"}))
+    apply_manifest_input_defaults(
+        args, args.data_root, fields=frozenset({"event_calendar"})
+    )
     return args
 
 

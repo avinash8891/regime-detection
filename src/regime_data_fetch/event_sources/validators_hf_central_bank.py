@@ -48,7 +48,11 @@ class HFCentralBankValidator:
         store: AcquisitionStore | None,
         run_id: int | None,
     ) -> list[ValidationResult]:
-        central_bank_candidates = [candidate for candidate in candidates if candidate.event_type in _EVENT_BANKS]
+        central_bank_candidates = [
+            candidate
+            for candidate in candidates
+            if candidate.event_type in _EVENT_BANKS
+        ]
         if not central_bank_candidates:
             return []
         try:
@@ -71,7 +75,9 @@ class HFCentralBankValidator:
         frame = pd.read_parquet(BytesIO(parquet_bytes))
 
         if store is not None and run_id is not None:
-            artifact_path = Path("data/raw/event_calendar/hf_central_bank_documents_other.parquet")
+            artifact_path = Path(
+                "data/raw/event_calendar/hf_central_bank_documents_other.parquet"
+            )
             artifact_path.parent.mkdir(parents=True, exist_ok=True)
             artifact_path.write_bytes(parquet_bytes)
             store.record_file_artifact(
@@ -87,31 +93,49 @@ class HFCentralBankValidator:
                 store_bytes=False,
             )
 
-        return [self._validate_candidate(candidate, frame) for candidate in central_bank_candidates]
+        return [
+            self._validate_candidate(candidate, frame)
+            for candidate in central_bank_candidates
+        ]
 
-    def _validate_candidate(self, candidate: EventCandidate, frame: pd.DataFrame) -> ValidationResult:
+    def _validate_candidate(
+        self, candidate: EventCandidate, frame: pd.DataFrame
+    ) -> ValidationResult:
         bank_terms = _EVENT_BANKS[candidate.event_type]
-        bank_rows = frame[frame["central_bank"].fillna("").astype(str).str.lower().map(lambda value: any(term in value for term in bank_terms))]
+        bank_rows = frame[
+            frame["central_bank"]
+            .fillna("")
+            .astype(str)
+            .str.lower()
+            .map(lambda value: any(term in value for term in bank_terms))
+        ]
         if bank_rows.empty:
             return _unknown(candidate)
 
         decision_rows = bank_rows[
             bank_rows.apply(
-                lambda row: _is_decision_doc(str(row.get("doc_type", "")), str(row.get("title", ""))),
+                lambda row: _is_decision_doc(
+                    str(row.get("doc_type", "")), str(row.get("title", ""))
+                ),
                 axis=1,
             )
         ].copy()
         if decision_rows.empty:
             return _unknown(candidate)
 
-        decision_rows["parsed_date"] = pd.to_datetime(decision_rows["meeting_date"], errors="coerce").dt.date
+        decision_rows["parsed_date"] = pd.to_datetime(
+            decision_rows["meeting_date"], errors="coerce"
+        ).dt.date
         dated_rows = decision_rows.dropna(subset=["parsed_date"])
         if dated_rows.empty:
             return _unknown(candidate)
 
         window_start = candidate.date - dt.timedelta(days=self.confirmation_window_days)
         window_end = candidate.date + dt.timedelta(days=self.confirmation_window_days)
-        window_rows = dated_rows[(dated_rows["parsed_date"] >= window_start) & (dated_rows["parsed_date"] <= window_end)]
+        window_rows = dated_rows[
+            (dated_rows["parsed_date"] >= window_start)
+            & (dated_rows["parsed_date"] <= window_end)
+        ]
         same_day = window_rows[window_rows["parsed_date"] == candidate.date]
         if not same_day.empty:
             row = same_day.iloc[0]

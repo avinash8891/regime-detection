@@ -33,6 +33,7 @@ Implementation choices that resolve ambiguities:
   ``VolatilityV2Config.gap_threshold_pct`` rather than per-market
   branching (V2 universe is US-only).
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -47,7 +48,8 @@ from regime_detection.volatility_state import realized_vol, wilders_atr
 class VolatilityV2Features:
     """v2 §1C — per-session continuous volatility features.
 
-    Fields: atr_ratio, gap_frequency_20d, intraday_range_percentile_252d,
+    Fields: atr_ratio, gap_frequency_20d, intraday_range,
+    intraday_range_percentile_252d,
     plus the two realized-vol windows used by the `rising_vol` rule
     (v2 §1C lines 251-252): a short-window realised vol (default 10d) and a
     long-window realised vol (default 63d), both annualised via the shared
@@ -62,6 +64,7 @@ class VolatilityV2Features:
     # shares the volatility seam's session index and the rule layer reads
     # only scalars.
     gap_frequency_percentile_252d: pd.Series
+    intraday_range: pd.Series
     intraday_range_percentile_252d: pd.Series
     # v2 §1C lines 251-252 — `rising_vol` rule inputs.
     realized_vol_short: pd.Series
@@ -95,9 +98,7 @@ class VolatilityV2Features:
         )
 
     def to_frame(self) -> pd.DataFrame:
-        return pd.DataFrame(
-            {name: getattr(self, name) for name in self.feature_names}
-        )
+        return pd.DataFrame({name: getattr(self, name) for name in self.feature_names})
 
 
 def _atr_ratio(
@@ -145,11 +146,21 @@ def _gap_frequency(
     ).rename("gap_frequency_20d")
 
 
-def _intraday_range_percentile(
+def _intraday_range_series(
     *,
     high: pd.Series,
     low: pd.Series,
     close: pd.Series,
+) -> pd.Series:
+    high = high.astype(float)
+    low = low.astype(float)
+    close = close.astype(float)
+    return ((high - low) / close.where(close > 0)).rename("intraday_range")
+
+
+def _intraday_range_percentile(
+    *,
+    intraday_range: pd.Series,
     lookback: int,
 ) -> pd.Series:
     """v2 §1C lines 304-306 (implementation decision #17).
@@ -162,12 +173,8 @@ def _intraday_range_percentile(
     value is the maximum within the window). Mirrors the pattern
     in ``network_fragility.py``.
     """
-    high = high.astype(float)
-    low = low.astype(float)
-    close = close.astype(float)
-    intraday = (high - low) / close.where(close > 0)
     return (
-        intraday.rolling(window=lookback, min_periods=lookback).rank(pct=True)
+        intraday_range.rolling(window=lookback, min_periods=lookback).rank(pct=True)
     ).rename("intraday_range_percentile_252d")
 
 
@@ -226,14 +233,20 @@ def compute_volatility_v2_features(
     # §1D `nh_nl_ratio` percentile pattern. Implements the documented input contract by computing
     # the previously-missing percentile input for `liquidity_gap_behavior`.
     gap_freq_pct = (
-        gap_freq.rolling(config.intraday_range_lookback_days, min_periods=config.intraday_range_lookback_days)
+        gap_freq.rolling(
+            config.intraday_range_lookback_days,
+            min_periods=config.intraday_range_lookback_days,
+        )
         .rank(pct=True)
         .rename("gap_frequency_percentile_252d")
     )
-    intraday_pct = _intraday_range_percentile(
+    intraday_range = _intraday_range_series(
         high=high,
         low=low,
         close=close,
+    )
+    intraday_pct = _intraday_range_percentile(
+        intraday_range=intraday_range,
         lookback=config.intraday_range_lookback_days,
     )
 
@@ -252,12 +265,8 @@ def compute_volatility_v2_features(
         # defaults; both citations point at v2 §1C lines 251-252.
         rv_short_window = 10
         rv_long_window = 63
-    rv_short = realized_vol(close, window=rv_short_window).rename(
-        "realized_vol_short"
-    )
-    rv_long = realized_vol(close, window=rv_long_window).rename(
-        "realized_vol_long"
-    )
+    rv_short = realized_vol(close, window=rv_short_window).rename("realized_vol_short")
+    rv_long = realized_vol(close, window=rv_long_window).rename("realized_vol_long")
 
     # v2 §1C `vol_crush` rule input (ADR 0005). The 21-session mid window
     # for `realized_vol_10d < realized_vol_21d * 0.75`.
@@ -303,6 +312,7 @@ def compute_volatility_v2_features(
         atr_ratio=atr_ratio,
         gap_frequency_20d=gap_freq,
         gap_frequency_percentile_252d=gap_freq_pct,
+        intraday_range=intraday_range,
         intraday_range_percentile_252d=intraday_pct,
         realized_vol_short=rv_short,
         realized_vol_long=rv_long,
@@ -361,8 +371,10 @@ def evaluate_rising_vol(
     if any(pd.isna(x) for x in (atr, rv_short, rv_long)):
         return False
 
-    atr_limb = bool(atr > rules_config.atr_ratio_threshold)            # line 251
-    rv_limb = bool(rv_short > rv_long * rules_config.realized_vol_ratio_threshold)  # line 252
+    atr_limb = bool(atr > rules_config.atr_ratio_threshold)  # line 251
+    rv_limb = bool(
+        rv_short > rv_long * rules_config.realized_vol_ratio_threshold
+    )  # line 252
     return atr_limb or rv_limb
 
 

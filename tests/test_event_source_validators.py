@@ -8,7 +8,9 @@ import pandas as pd
 import pytest
 
 from regime_data_fetch.event_sources.models import EventCandidate
-from regime_data_fetch.event_sources.validators_hf_central_bank import HFCentralBankValidator
+from regime_data_fetch.event_sources.validators_hf_central_bank import (
+    HFCentralBankValidator,
+)
 
 
 def _candidate(event_date: dt.date, event_type: str) -> EventCandidate:
@@ -54,7 +56,9 @@ def test_hf_validator_confirms_contradicts_and_returns_unknown(tmp_path: Path) -
             },
         ]
     ).to_parquet(parquet_path, index=False)
-    validator = HFCentralBankValidator(parquet_fetcher=lambda: parquet_path.read_bytes())
+    validator = HFCentralBankValidator(
+        parquet_fetcher=lambda: parquet_path.read_bytes()
+    )
 
     results = validator.validate(
         [
@@ -66,7 +70,10 @@ def test_hf_validator_confirms_contradicts_and_returns_unknown(tmp_path: Path) -
         run_id=None,
     )
 
-    assert [(result.candidate_key, result.verdict, result.evidence_url) for result in results] == [
+    assert [
+        (result.candidate_key, result.verdict, result.evidence_url)
+        for result in results
+    ] == [
         (("ECB_decision", dt.date(2026, 6, 11)), "confirm", "https://hf.test/ecb"),
         (("BOE_decision", dt.date(2026, 3, 19)), "contradict", "https://hf.test/boe"),
         (("BOJ_decision", dt.date(2026, 6, 16)), "unknown", None),

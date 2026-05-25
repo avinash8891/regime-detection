@@ -45,6 +45,7 @@ input naturally falsifies the predicate and the precedence falls
 through to ``neutral_monetary``. The data-quality gate above
 ``evaluate_rules`` catches the cold-start case and maps to ``unknown``.
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -59,7 +60,6 @@ from regime_detection.config import (
     MonetaryPressureV2FeaturesConfig,
     MonetaryPressureV2RulesConfig,
 )
-
 
 # ---------------------------------------------------------------------------
 # Label set + risk rank (implementation decision(b)/(d)).
@@ -83,7 +83,6 @@ MONETARY_PRESSURE_V2_RISK_RANK: dict[MonetaryPressureV2Label, int] = {
     "tightening_pressure": 2,
     "rate_shock": 3,
 }
-
 
 
 @dataclass(frozen=True)
@@ -121,9 +120,7 @@ class MonetaryPressureV2Features:
         )
 
     def to_frame(self) -> pd.DataFrame:
-        return pd.DataFrame(
-            {name: getattr(self, name) for name in self.feature_names}
-        )
+        return pd.DataFrame({name: getattr(self, name) for name in self.feature_names})
 
 
 def _yield_change_zscore(

@@ -157,7 +157,9 @@ def _parse_yahoo_chart_payload(
 ) -> pd.DataFrame:
     chart = payload.get("chart")
     if not isinstance(chart, dict):
-        raise RuntimeError(f"Yahoo chart response missing chart object for {requested_symbol}")
+        raise RuntimeError(
+            f"Yahoo chart response missing chart object for {requested_symbol}"
+        )
     error = chart.get("error")
     if error:
         raise RuntimeError(f"Yahoo chart error for {requested_symbol}: {error}")
@@ -177,7 +179,11 @@ def _parse_yahoo_chart_payload(
     timezone = _exchange_timezone(timezone_name)
     rows: list[dict[str, object]] = []
     for row_index, epoch in enumerate(timestamps):
-        row_date = dt.datetime.fromtimestamp(epoch, tz=dt.timezone.utc).astimezone(timezone).date()
+        row_date = (
+            dt.datetime.fromtimestamp(epoch, tz=dt.timezone.utc)
+            .astimezone(timezone)
+            .date()
+        )
         if row_date < start_date or row_date > end_date:
             continue
         open_value = _value_at(quote_data, "open", row_index)

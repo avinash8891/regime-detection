@@ -17,6 +17,7 @@ from regime_detection.feature_store import build_feature_store
 from regime_detection.config import load_default_regime_config
 from regime_detection.fragility_universe import CROSS_ASSET_SYMBOLS, SECTOR_ETFS
 from regime_detection.market_context import (
+    MarketContext,
     build_market_context,
     slice_context_to_recent_sessions,
 )
@@ -34,6 +35,9 @@ from regime_detection.models import (
 from regime_detection.strategy_response import build_strategy_response
 from regime_detection.timeline import (
     ENGINE_MINIMUM_HISTORY,
+    _AlignedV2Evidence,
+    _build_cluster_output,
+    _build_hmm_output,
     _enrich_with_hmm_evidence,
     _resolve_timeline_required_sessions,
     build_regime_timeline,
@@ -42,6 +46,105 @@ from regime_detection.transition_risk_series import (
     build_transition_risk_history,
     build_transition_risk_series,
 )
+
+
+def _minimal_context_for_evidence_mapping() -> MarketContext:
+    day = date(2024, 1, 2)
+    idx = pd.DatetimeIndex([pd.Timestamp(day)])
+    return MarketContext(
+        end_date=day,
+        config=load_default_regime_config(),
+        sessions=(day,),
+        spy_ohlcv=pd.DataFrame({"close": [100.0]}, index=idx),
+        rsp_close=pd.Series([100.0], index=idx),
+        vix_proxy_close=None,
+    )
+
+
+def test_default_config_requires_and_carries_operator_label_maps() -> None:
+    cfg = load_default_regime_config()
+
+    assert cfg.hmm is not None
+    assert cfg.hmm.label_map_required_for_output is True
+    assert cfg.hmm.state_label_map == {
+        0: "elevated_uncertainty",
+        1: "high_vol_stress",
+        2: "calm_trending",
+        3: "transient_spike",
+    }
+    assert cfg.clustering is not None
+    assert cfg.clustering.label_map_required_for_output is True
+    assert cfg.clustering.cluster_label_map == {
+        0: "post_crisis_transition",
+        1: "crisis_panic",
+        2: "tariff_shock",
+        3: "correction_chop",
+        4: "volatile_recovery",
+        5: "calm_trending_bull",
+        6: "steady_bull",
+        7: "high_vol_stress",
+    }
+
+
+def test_hmm_output_uses_default_operator_state_label_map() -> None:
+    day = date(2024, 1, 2)
+    idx = pd.DatetimeIndex([pd.Timestamp(day)])
+    aligned = _AlignedV2Evidence(
+        cp_score_aligned=None,
+        cp_days_since_aligned=None,
+        cp_method=None,
+        cluster_id_aligned=None,
+        cluster_distance_aligned=None,
+        cluster_model_version=None,
+        cluster_n_clusters=None,
+        hmm_top_state_aligned=pd.Series([1], index=idx),
+        hmm_top_state_prob_aligned=pd.Series([0.8], index=idx),
+        hmm_top_state_full=pd.Series([1], index=idx),
+        hmm_n_states=4,
+        hmm_model_version="hmm_4state_v1.0",
+    )
+
+    output = _build_hmm_output(
+        aligned=aligned,
+        working_context=_minimal_context_for_evidence_mapping(),
+        selected_day_index=0,
+        day=day,
+    )
+
+    assert output is not None
+    assert output.mapped_label == "high_vol_stress"
+    assert output.mapping_status == "mapped"
+    assert output.mapping_reason == "state_label_map_valid"
+
+
+def test_cluster_output_uses_default_operator_cluster_label_map() -> None:
+    day = date(2024, 1, 2)
+    idx = pd.DatetimeIndex([pd.Timestamp(day)])
+    aligned = _AlignedV2Evidence(
+        cp_score_aligned=None,
+        cp_days_since_aligned=None,
+        cp_method=None,
+        cluster_id_aligned=pd.Series([2], index=idx),
+        cluster_distance_aligned=pd.Series([1.25], index=idx),
+        cluster_model_version="gmm_8cluster_v1.0",
+        cluster_n_clusters=8,
+        hmm_top_state_aligned=None,
+        hmm_top_state_prob_aligned=None,
+        hmm_top_state_full=None,
+        hmm_n_states=None,
+        hmm_model_version=None,
+    )
+
+    output = _build_cluster_output(
+        aligned=aligned,
+        working_context=_minimal_context_for_evidence_mapping(),
+        selected_day_index=0,
+    )
+
+    assert output is not None
+    assert output.mapped_label == "tariff_shock"
+    assert output.mapping_status == "mapped"
+    assert output.mapping_reason == "cluster_label_map_valid"
 
 
 def _constituent_ohlcv_from_close_series(series: pd.Series) -> pd.DataFrame:
@@ -386,11 +489,13 @@ def test_build_regime_timeline_uses_context_config_when_config_arg_omitted(
     """Direct callers must not silently disable v2 seams by omitting config."""
     end_date = date(2023, 12, 14)
     engine = RegimeEngine()
-    cfg = engine.config.model_copy(update={
-        "change_point": engine.config.change_point.model_copy(
-            update={"training_window_days": 500}
-        ),
-    })
+    cfg = engine.config.model_copy(
+        update={
+            "change_point": engine.config.change_point.model_copy(
+                update={"training_window_days": 500}
+            ),
+        }
+    )
     context = build_market_context(
         end_date=end_date,
         market_data=market_df_for_asof(end_date),
@@ -523,8 +628,7 @@ def test_timeline_passes_event_calendar_matching_labels_to_strategy_response(
             symbol: v2_close_series_by_symbol[symbol] for symbol in SECTOR_ETFS
         },
         cross_asset_closes={
-            symbol: v2_close_series_by_symbol[symbol]
-            for symbol in CROSS_ASSET_SYMBOLS
+            symbol: v2_close_series_by_symbol[symbol] for symbol in CROSS_ASSET_SYMBOLS
         },
         macro_series=macro_series,
         pit_constituent_intervals=pd.DataFrame(
@@ -555,7 +659,27 @@ def test_timeline_passes_event_calendar_matching_labels_to_strategy_response(
     )
     spy.assert_called_once()
     assert spy.call_args.kwargs["event_calendar_labels"] == event_output.matching_labels
-    assert spy.call_args.kwargs["event_modifier_config"] is config.strategy_event_modifiers
+    assert (
+        spy.call_args.kwargs["event_modifier_config"] is config.strategy_event_modifiers
+    )
+    assert out.effective_strategy_constraints is not None
+    assert out.strategy_family_constraints is not None
+    breakout = out.effective_strategy_constraints["breakout"]
+    assert "strategy_response" in breakout.sources
+    assert "strategy_family_constraints" in breakout.sources
+    if (
+        out.agent_routing is not None
+        and "breakout" in out.agent_routing.blocked_strategy_modes
+    ):
+        assert "agent_routing" in breakout.sources
+    assert breakout.allowed is (
+        out.strategy_response.allow_breakout
+        and out.strategy_family_constraints["breakout"].allowed
+        and (
+            out.agent_routing is None
+            or "breakout" not in out.agent_routing.blocked_strategy_modes
+        )
+    )
 
 
 def test_transition_risk_history_precomputes_axis_switch_and_prior_bear_flags() -> None:

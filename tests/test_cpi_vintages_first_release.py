@@ -8,6 +8,7 @@ that ``regime_data_fetch.fred`` writes when ``--include-cpi-vintages``
 is enabled. Test the integration path (loader → MarketContext →
 inflation_growth.compute_inflation_growth_features), not just the unit.
 """
+
 from __future__ import annotations
 
 import numpy as np

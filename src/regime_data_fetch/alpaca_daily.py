@@ -159,7 +159,16 @@ def fetch_daily_bars_alpaca(
         out = out.sort_values(["symbol", "date"], kind="stable").reset_index(drop=True)
     else:
         out = pd.DataFrame(
-            columns=["date", "symbol", "open", "high", "low", "close", "volume", "adjusted_close"]
+            columns=[
+                "date",
+                "symbol",
+                "open",
+                "high",
+                "low",
+                "close",
+                "volume",
+                "adjusted_close",
+            ]
         )
 
     # De-dup missing (can happen if empty per-batch) and preserve first-seen order.
@@ -190,5 +199,7 @@ def verify_min_start_date(
     #
     # We still report the concrete min_date so callers can validate precisely.
     tolerance_days = 7
-    ok = bool(min_date and min_date <= (required_start + _dt.timedelta(days=tolerance_days)))
+    ok = bool(
+        min_date and min_date <= (required_start + _dt.timedelta(days=tolerance_days))
+    )
     return min_date, ok

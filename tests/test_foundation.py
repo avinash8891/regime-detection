@@ -119,7 +119,9 @@ def test_classify_accepts_timestamp_as_of_date(v2_classify_kwargs_for_asof) -> N
     assert out.as_of_date == date(2026, 5, 5)
 
 
-def test_classify_accepts_market_data_with_string_dates(v2_classify_kwargs_for_asof) -> None:
+def test_classify_accepts_market_data_with_string_dates(
+    v2_classify_kwargs_for_asof,
+) -> None:
     engine = RegimeEngine()
     kwargs = v2_classify_kwargs_for_asof(date(2026, 5, 5))
     df = kwargs["market_data"].copy()
@@ -137,7 +139,9 @@ def test_classify_accepts_market_data_with_string_dates(v2_classify_kwargs_for_a
 def test_engine_rejects_path_based_event_calendar_input(market_df_for_asof) -> None:
     engine = RegimeEngine()
     df = market_df_for_asof(date(2023, 12, 14))
-    event_path = Path(__file__).resolve().parent / "fixtures" / "events" / "us_events.yaml"
+    event_path = (
+        Path(__file__).resolve().parent / "fixtures" / "events" / "us_events.yaml"
+    )
 
     with pytest.raises(TypeError, match="event_calendar must be a pandas DataFrame"):
         engine.classify(

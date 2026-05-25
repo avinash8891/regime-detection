@@ -20,11 +20,12 @@ from regime_data_fetch.aggregate_eps import (
     seed_weekly_history_from_wayback_timeline,
 )
 
-
 FIXTURES = Path("tests/fixtures/raw/eps")
 
 
-def _eps_snapshot(observation_date: dt.date, forward_eps: float) -> AggregateEPSSnapshot:
+def _eps_snapshot(
+    observation_date: dt.date, forward_eps: float
+) -> AggregateEPSSnapshot:
     """Build a realistic AggregateEPSSnapshot with the two fields the
     weekly accumulator consumes populated; the rest left at None (the
     accumulator only reads observation_date / observation_label /
@@ -110,9 +111,7 @@ def test_seed_weekly_history_creates_accumulator_from_timeline(
     assert set(combined["observation_label"]) == {"wayback_backfill"}
     assert set(combined["source"]) == {"wayback_machine"}
 
-    on_disk = pd.read_parquet(
-        tmp_path / EPS_DIR_NAME / WEEKLY_HISTORY_FILENAME
-    )
+    on_disk = pd.read_parquet(tmp_path / EPS_DIR_NAME / WEEKLY_HISTORY_FILENAME)
     assert len(on_disk) == 3
 
 

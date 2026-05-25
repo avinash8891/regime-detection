@@ -5,7 +5,6 @@ import datetime as dt
 
 import pandas_market_calendars as mcal
 
-
 _NYSE = mcal.get_calendar("NYSE")
 
 
@@ -20,7 +19,9 @@ def compute_monthly_options_expiry_anchor(*, year: int, month: int) -> dt.date:
 
     prior_trading_days = [value for value in trading_days if value < third_friday]
     if not prior_trading_days:
-        raise RuntimeError(f"No prior NYSE trading day found before third Friday {third_friday.isoformat()}")
+        raise RuntimeError(
+            f"No prior NYSE trading day found before third Friday {third_friday.isoformat()}"
+        )
     return prior_trading_days[-1]
 
 
@@ -36,7 +37,9 @@ def expand_trading_day_window(
     try:
         anchor_idx = trading_days.index(anchor_date)
     except ValueError as exc:
-        raise RuntimeError(f"Anchor date {anchor_date.isoformat()} is not an NYSE trading day") from exc
+        raise RuntimeError(
+            f"Anchor date {anchor_date.isoformat()} is not an NYSE trading day"
+        ) from exc
 
     window_start = anchor_idx - lookback_trading_days
     window_end = anchor_idx + lookahead_trading_days
@@ -47,7 +50,9 @@ def expand_trading_day_window(
     return trading_days[window_start : window_end + 1]
 
 
-def build_monthly_options_expiry_anchors(*, start_date: dt.date, end_date: dt.date) -> list[dt.date]:
+def build_monthly_options_expiry_anchors(
+    *, start_date: dt.date, end_date: dt.date
+) -> list[dt.date]:
     if end_date < start_date:
         raise ValueError("end_date must be >= start_date")
 
@@ -67,7 +72,9 @@ def build_monthly_options_expiry_anchors(*, start_date: dt.date, end_date: dt.da
 def _third_friday(*, year: int, month: int) -> dt.date:
     month_weeks = calendar.monthcalendar(year, month)
     friday_column = calendar.FRIDAY
-    friday_days = [week[friday_column] for week in month_weeks if week[friday_column] != 0]
+    friday_days = [
+        week[friday_column] for week in month_weeks if week[friday_column] != 0
+    ]
     return dt.date(year, month, friday_days[2])
 
 

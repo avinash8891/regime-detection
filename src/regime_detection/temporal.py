@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from collections.abc import Iterable
-
 import pandas as pd
 
 
@@ -60,8 +59,43 @@ def parse_datetime_index(
     field_name: str,
     context: str,
 ) -> pd.DatetimeIndex:
-    """Parse a date-like column into the engine's UTC-naive session index."""
+    """Parse a date-like column into a normalized NYSE session index.
 
-    return pd.DatetimeIndex(
-        parse_datetime_series(values, field_name=field_name, context=context)
-    )
+    Naive date-like values are interpreted as already being NYSE session dates.
+    Timezone-aware values are converted to America/New_York before dropping
+    timezone metadata, so the returned index stays comparable with the engine's
+    existing tz-naive session indexes while remaining accepted by
+    ``calendar.as_date`` as a session-date timestamp.
+    """
+
+    raw = pd.Series(values)
+    missing = raw.isna()
+    parsed_values: list[pd.Timestamp | pd.NaT] = []
+    for value in raw:
+        if pd.isna(value):
+            parsed_values.append(pd.NaT)
+            continue
+        try:
+            timestamp = pd.Timestamp(value)
+        except (TypeError, ValueError):
+            parsed_values.append(pd.NaT)
+            continue
+        if pd.isna(timestamp):
+            parsed_values.append(pd.NaT)
+        elif timestamp.tzinfo is None:
+            parsed_values.append(timestamp.normalize())
+        else:
+            parsed_values.append(
+                timestamp.tz_convert("America/New_York").tz_localize(None).normalize()
+            )
+
+    parsed = pd.Series(parsed_values)
+    bad = parsed.isna() & ~missing
+    if bad.any():
+        bad_values = sorted({str(value) for value in raw.loc[bad].tolist()})
+        raise ValueError(
+            f"{context} contains malformed {field_name} values: {bad_values}"
+        )
+    if missing.any():
+        raise ValueError(f"{context} contains missing {field_name} values")
+    return pd.DatetimeIndex(parsed_values)

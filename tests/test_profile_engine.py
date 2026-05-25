@@ -89,9 +89,7 @@ def test_profile_manifest_resolution_replaces_default_input_paths(
     )
     args = profile_engine._parse_args()
 
-    profile_engine._apply_manifest_input_paths(
-        args, runner_name="profile_engine"
-    )
+    profile_engine._apply_manifest_input_paths(args, runner_name="profile_engine")
 
     assert args.daily_dir == data_root / "daily_ohlcv_762"
     assert args.pmi_path == data_root / "pmi" / "us_ism_pmi_history.parquet"
@@ -126,9 +124,7 @@ def test_profile_manifest_resolution_keeps_explicit_cli_override(
     )
     args = profile_engine._parse_args()
 
-    profile_engine._apply_manifest_input_paths(
-        args, runner_name="profile_engine"
-    )
+    profile_engine._apply_manifest_input_paths(args, runner_name="profile_engine")
 
     assert args.news_sentiment_parquet == override_path
     assert args.event_calendar == tmp_path / "manual" / "events.yaml"
@@ -311,7 +307,10 @@ def test_profile_verification_flags_missing_layer1_sentiment_extensions() -> Non
         inputs=inputs,
     )
 
-    assert "trend_direction.sentiment_score missing; missing inputs: aaii_sentiment" in issues
+    assert (
+        "trend_direction.sentiment_score missing; missing inputs: aaii_sentiment"
+        in issues
+    )
     assert (
         "trend_direction.news_sentiment_score missing; missing inputs: news_sentiment"
         in issues
@@ -385,6 +384,48 @@ def test_profile_verification_warns_when_eps_revision_source_is_stale() -> None:
     ) in issues
 
 
+def test_optional_input_coverage_lines_report_freshness() -> None:
+    inputs = SimpleNamespace(
+        end_date=pd.Timestamp("2026-05-15").date(),
+        macro_series={
+            "pmi_manufacturing": pd.Series(
+                [49.0, 50.1],
+                index=pd.DatetimeIndex(["2026-04-01", "2026-05-01"]),
+                name="pmi_manufacturing",
+            ),
+            "cpi_nowcast": pd.Series(dtype="float64"),
+        },
+        event_calendar=pd.DataFrame({"date": [pd.Timestamp("2026-05-14")]}),
+        aaii_sentiment=None,
+        news_sentiment=pd.Series(
+            [0.2], index=pd.DatetimeIndex(["2026-05-12"]), name="news"
+        ),
+        implied_vol_30d=None,
+        central_bank_text_releases=pd.DataFrame(
+            {"release_date": [pd.Timestamp("2026-05-01")]}
+        ),
+        cpi_first_release=pd.Series(
+            [3.0], index=pd.DatetimeIndex(["2026-04-10"]), name="cpi"
+        ),
+    )
+
+    lines = profile_engine._optional_input_coverage_lines(inputs)
+
+    assert (
+        "macro_series.pmi_manufacturing: rows=2 first=2026-04-01 "
+        "latest=2026-05-01 age_days=14"
+    ) in lines
+    assert "macro_series.cpi_nowcast: EMPTY" in lines
+    assert "aaii_sentiment: NONE" in lines
+    assert (
+        "news_sentiment: rows=1 first=2026-05-12 latest=2026-05-12 age_days=3" in lines
+    )
+    assert (
+        "central_bank_text_releases: rows=1 first=2026-05-01 "
+        "latest=2026-05-01 age_days=14"
+    ) in lines
+
+
 def test_profile_json_report_emits_layer1_sentiment_metric_summary(
     tmp_path: Path,
 ) -> None:
@@ -430,7 +471,9 @@ def test_profile_json_report_emits_layer1_sentiment_metric_summary(
         as_of_date=pd.Timestamp("2026-05-15").date(),
         trend_direction=SimpleNamespace(active_label="bull"),
         volatility_state=SimpleNamespace(active_label="normal_vol"),
-        transition_risk=SimpleNamespace(state="stable", score=None, score_components=None),
+        transition_risk=SimpleNamespace(
+            state="stable", score=None, score_components=None
+        ),
         network_fragility=None,
         volume_liquidity_state=None,
         credit_funding_state=None,
@@ -468,7 +511,7 @@ def test_profile_json_report_emits_layer1_sentiment_metric_summary(
     assert metrics["sentiment_concordance"]["last_value"] == 1.0
 
 
-def test_read_symbol_ohlcv_accepts_partitioned_parquet_file_name(
+def test_read_symbol_ohlcv_rejects_missing_symbol_column(
     tmp_path: Path,
 ) -> None:
     symbol_dir = tmp_path / "daily_ohlcv" / "symbol=AAPL"
@@ -487,14 +530,11 @@ def test_read_symbol_ohlcv_accepts_partitioned_parquet_file_name(
         ]
     ).to_parquet(symbol_dir / "hash-0.parquet", index=False)
 
-    frame = profile_engine._read_symbol_ohlcv(tmp_path / "daily_ohlcv", "AAPL")
-
-    assert frame[["date", "close"]].to_dict(orient="records") == [
-        {"date": pd.Timestamp("2026-05-15"), "close": 10.5}
-    ]
+    with pytest.raises(ValueError, match="missing symbol column"):
+        profile_engine._read_symbol_ohlcv(tmp_path / "daily_ohlcv", "AAPL")
 
 
-def test_load_constituent_ohlcv_accepts_partitioned_parquet_file_name(
+def test_read_symbol_ohlcv_accepts_partitioned_parquet_file_name_with_symbol(
     tmp_path: Path,
 ) -> None:
     symbol_dir = tmp_path / "daily_ohlcv" / "symbol=AAPL"
@@ -503,6 +543,69 @@ def test_load_constituent_ohlcv_accepts_partitioned_parquet_file_name(
         [
             {
                 "date": "2026-05-15",
+                "symbol": "AAPL",
+                "open": 10.0,
+                "high": 11.0,
+                "low": 9.0,
+                "close": 10.5,
+                "volume": 100,
+                "adjusted_close": 10.5,
+            }
+        ]
+    ).to_parquet(symbol_dir / "hash-0.parquet", index=False)
+
+    frame = profile_engine._read_symbol_ohlcv(tmp_path / "daily_ohlcv", "AAPL")
+
+    assert frame[["date", "close"]].to_dict(orient="records") == [
+        {"date": pd.Timestamp("2026-05-15"), "close": 10.5}
+    ]
+
+
+def test_load_constituent_ohlcv_rejects_missing_symbol_column(
+    tmp_path: Path,
+) -> None:
+    symbol_dir = tmp_path / "daily_ohlcv" / "symbol=AAPL"
+    symbol_dir.mkdir(parents=True)
+    pd.DataFrame(
+        [
+            {
+                "date": "2026-05-15",
+                "open": 10.0,
+                "high": 11.0,
+                "low": 9.0,
+                "close": 10.5,
+                "volume": 100,
+                "adjusted_close": 10.5,
+            }
+        ]
+    ).to_parquet(symbol_dir / "hash-0.parquet", index=False)
+    intervals = pd.DataFrame(
+        {
+            "ticker": ["AAPL"],
+            "start_date": [pd.Timestamp("2020-01-01").date()],
+            "end_date": [None],
+        }
+    )
+
+    with pytest.raises(ValueError, match="missing symbol column"):
+        profile_engine._load_constituent_ohlcv_from_tree(
+            tmp_path / "daily_ohlcv",
+            intervals,
+            start_date=pd.Timestamp("2026-05-01").date(),
+            end_date=pd.Timestamp("2026-05-31").date(),
+        )
+
+
+def test_load_constituent_ohlcv_accepts_partitioned_parquet_file_name_with_symbol(
+    tmp_path: Path,
+) -> None:
+    symbol_dir = tmp_path / "daily_ohlcv" / "symbol=AAPL"
+    symbol_dir.mkdir(parents=True)
+    pd.DataFrame(
+        [
+            {
+                "date": "2026-05-15",
+                "symbol": "AAPL",
                 "open": 10.0,
                 "high": 11.0,
                 "low": 9.0,
@@ -529,6 +632,163 @@ def test_load_constituent_ohlcv_accepts_partitioned_parquet_file_name(
 
     assert tickers == ["AAPL"]
     assert loaded["AAPL"]["close"].to_list() == [10.5]
+
+
+def test_load_constituent_ohlcv_rejects_internal_session_gap(tmp_path: Path) -> None:
+    symbol_dir = tmp_path / "daily_ohlcv" / "symbol=AAPL"
+    symbol_dir.mkdir(parents=True)
+    pd.DataFrame(
+        [
+            {
+                "date": "2026-05-14",
+                "symbol": "AAPL",
+                "open": 10.0,
+                "high": 11.0,
+                "low": 9.0,
+                "close": 10.5,
+                "volume": 100,
+                "adjusted_close": 10.5,
+            },
+            {
+                "date": "2026-05-18",
+                "symbol": "AAPL",
+                "open": 10.0,
+                "high": 11.0,
+                "low": 9.0,
+                "close": 10.5,
+                "volume": 100,
+                "adjusted_close": 10.5,
+            },
+        ]
+    ).to_parquet(symbol_dir / "ohlcv.parquet", index=False)
+    intervals = pd.DataFrame(
+        {
+            "ticker": ["AAPL"],
+            "start_date": [pd.Timestamp("2020-01-01").date()],
+            "end_date": [None],
+        }
+    )
+
+    with pytest.raises(ValueError, match="daily OHLCV calendar coverage gap"):
+        profile_engine._load_constituent_ohlcv_from_tree(
+            tmp_path / "daily_ohlcv",
+            intervals,
+            start_date=pd.Timestamp("2026-05-14").date(),
+            end_date=pd.Timestamp("2026-05-18").date(),
+            expected_sessions=pd.DatetimeIndex(
+                ["2026-05-14", "2026-05-15", "2026-05-18"]
+            ),
+        )
+
+
+def test_load_constituent_ohlcv_calendar_check_is_bounded_to_pit_interval(
+    tmp_path: Path,
+) -> None:
+    symbol_dir = tmp_path / "daily_ohlcv" / "symbol=AMCR"
+    symbol_dir.mkdir(parents=True)
+    pd.DataFrame(
+        [
+            {
+                "date": "2019-06-10",
+                "symbol": "AMCR",
+                "open": 10.0,
+                "high": 11.0,
+                "low": 9.0,
+                "close": 10.5,
+                "volume": 100,
+                "adjusted_close": 10.5,
+            },
+            {
+                "date": "2019-06-11",
+                "symbol": "AMCR",
+                "open": 10.0,
+                "high": 11.0,
+                "low": 9.0,
+                "close": 10.5,
+                "volume": 100,
+                "adjusted_close": 10.5,
+            },
+        ]
+    ).to_parquet(symbol_dir / "ohlcv.parquet", index=False)
+    intervals = pd.DataFrame(
+        {
+            "ticker": ["AMCR"],
+            "start_date": [pd.Timestamp("2019-06-10").date()],
+            "end_date": [None],
+        }
+    )
+
+    loaded, tickers = profile_engine._load_constituent_ohlcv_from_tree(
+        tmp_path / "daily_ohlcv",
+        intervals,
+        start_date=pd.Timestamp("2016-01-04").date(),
+        end_date=pd.Timestamp("2019-06-11").date(),
+        expected_sessions=pd.DatetimeIndex(
+            ["2016-01-04", "2016-01-05", "2019-06-10", "2019-06-11"]
+        ),
+    )
+
+    assert tickers == ["AMCR"]
+    assert loaded["AMCR"]["close"].to_list() == [10.5, 10.5]
+
+
+def test_load_constituent_ohlcv_ignores_pre_pit_calendar_gaps(tmp_path: Path) -> None:
+    symbol_dir = tmp_path / "daily_ohlcv" / "symbol=AMCR"
+    symbol_dir.mkdir(parents=True)
+    pd.DataFrame(
+        [
+            {
+                "date": "2016-01-04",
+                "symbol": "AMCR",
+                "open": 10.0,
+                "high": 11.0,
+                "low": 9.0,
+                "close": 10.5,
+                "volume": 100,
+                "adjusted_close": 10.5,
+            },
+            {
+                "date": "2019-06-10",
+                "symbol": "AMCR",
+                "open": 10.0,
+                "high": 11.0,
+                "low": 9.0,
+                "close": 10.5,
+                "volume": 100,
+                "adjusted_close": 10.5,
+            },
+            {
+                "date": "2019-06-11",
+                "symbol": "AMCR",
+                "open": 10.0,
+                "high": 11.0,
+                "low": 9.0,
+                "close": 10.5,
+                "volume": 100,
+                "adjusted_close": 10.5,
+            },
+        ]
+    ).to_parquet(symbol_dir / "ohlcv.parquet", index=False)
+    intervals = pd.DataFrame(
+        {
+            "ticker": ["AMCR"],
+            "start_date": [pd.Timestamp("2019-06-10").date()],
+            "end_date": [None],
+        }
+    )
+
+    loaded, tickers = profile_engine._load_constituent_ohlcv_from_tree(
+        tmp_path / "daily_ohlcv",
+        intervals,
+        start_date=pd.Timestamp("2016-01-04").date(),
+        end_date=pd.Timestamp("2019-06-11").date(),
+        expected_sessions=pd.DatetimeIndex(
+            ["2016-01-04", "2016-01-05", "2019-06-10", "2019-06-11"]
+        ),
+    )
+
+    assert tickers == ["AMCR"]
+    assert loaded["AMCR"]["close"].to_list() == [10.5, 10.5, 10.5]
 
 
 def test_profile_reporting_label_uses_granular_status_for_unknown() -> None:
@@ -591,7 +851,9 @@ def test_profile_trailing_status_reports_no_rule_fired_not_unknown() -> None:
         monetary_pressure_state=None,
         cluster=None,
         change_point=None,
-        transition_risk=SimpleNamespace(state="stable", score=None, score_components=None),
+        transition_risk=SimpleNamespace(
+            state="stable", score=None, score_components=None
+        ),
     )
 
     rows = profile_engine._trailing_v2_status(output)

@@ -4,7 +4,10 @@ from pathlib import Path
 
 import pandas as pd
 
-from regime_data_fetch.universe import load_symbols_from_daily_ohlcv_tree, load_symbols_from_pit_constituents_parquet
+from regime_data_fetch.universe import (
+    load_symbols_from_daily_ohlcv_tree,
+    load_symbols_from_pit_constituents_parquet,
+)
 
 
 def test_load_symbols_from_pit_constituents_parquet(tmp_path: Path) -> None:

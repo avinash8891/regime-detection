@@ -6,6 +6,7 @@ import pandas as pd
 
 from scripts._v2_calibration_helpers import (
     default_pmi_path,
+    load_close_dict,
     load_macro_series,
     load_market_data,
 )
@@ -24,6 +25,7 @@ def test_load_market_data_uses_true_vix_symbol(tmp_path: Path) -> None:
             [
                 {
                     "date": "2026-05-15",
+                    "symbol": symbol,
                     "open": 1.0,
                     "high": 2.0,
                     "low": 0.5,
@@ -55,6 +57,7 @@ def test_load_market_data_clips_to_common_required_symbol_date(
             [
                 {
                     "date": date,
+                    "symbol": symbol,
                     "open": 1.0,
                     "high": 2.0,
                     "low": 0.5,
@@ -70,6 +73,200 @@ def test_load_market_data_clips_to_common_required_symbol_date(
 
     assert market_data["date"].max() == pd.Timestamp("2026-05-15").date()
     assert set(market_data["symbol"]) == {"SPY", "RSP", "VIX"}
+
+
+def test_load_market_data_rejects_required_symbol_calendar_gap(
+    tmp_path: Path,
+) -> None:
+    daily_dir = tmp_path / "daily_ohlcv_762"
+    rows_by_symbol = {
+        "SPY": ["2026-05-13", "2026-05-14", "2026-05-15"],
+        "RSP": ["2026-05-13", "2026-05-15"],
+        "VIX": ["2026-05-13", "2026-05-14", "2026-05-15"],
+    }
+    for symbol, dates in rows_by_symbol.items():
+        symbol_dir = daily_dir / f"symbol={symbol}"
+        symbol_dir.mkdir(parents=True)
+        pd.DataFrame(
+            [
+                {
+                    "date": date,
+                    "symbol": symbol,
+                    "open": 1.0,
+                    "high": 2.0,
+                    "low": 0.5,
+                    "close": 1.5,
+                    "volume": 100,
+                    "adjusted_close": 1.5,
+                }
+                for date in dates
+            ]
+        ).to_parquet(symbol_dir / "ohlcv.parquet", index=False)
+
+    try:
+        load_market_data(daily_dir)
+    except ValueError as exc:
+        assert "daily OHLCV calendar coverage gap" in str(exc)
+        assert "RSP" in str(exc)
+        assert "2026-05-14" in str(exc)
+    else:
+        raise AssertionError("expected required symbol calendar gap to fail")
+
+
+def test_load_close_dict_rejects_null_symbol_column_in_partition_file(
+    tmp_path: Path,
+) -> None:
+    daily_dir = tmp_path / "daily_ohlcv_762"
+    symbol_dir = daily_dir / "symbol=XLY"
+    symbol_dir.mkdir(parents=True)
+    pd.DataFrame(
+        [
+            {
+                "date": "2026-05-14",
+                "open": 1.0,
+                "high": 2.0,
+                "low": 0.5,
+                "close": 1.5,
+                "volume": 100,
+                "adjusted_close": 1.5,
+                "symbol": None,
+            },
+            {
+                "date": "2026-05-15",
+                "open": 2.0,
+                "high": 3.0,
+                "low": 1.5,
+                "close": 2.5,
+                "volume": 200,
+                "adjusted_close": 2.5,
+                "symbol": None,
+            },
+        ]
+    ).to_parquet(symbol_dir / "ohlcv.parquet", index=False)
+
+    try:
+        load_close_dict(
+            daily_dir,
+            ["XLY"],
+            pd.DatetimeIndex([pd.Timestamp("2026-05-14"), pd.Timestamp("2026-05-15")]),
+        )
+    except ValueError as exc:
+        assert "daily OHLCV symbol contract violation" in str(exc)
+        assert "XLY" in str(exc)
+        assert "null" in str(exc)
+    else:
+        raise AssertionError("expected null symbol column to fail")
+
+
+def test_load_close_dict_rejects_missing_symbol_column_in_partition_file(
+    tmp_path: Path,
+) -> None:
+    daily_dir = tmp_path / "daily_ohlcv_762"
+    symbol_dir = daily_dir / "symbol=XLY"
+    symbol_dir.mkdir(parents=True)
+    pd.DataFrame(
+        [
+            {
+                "date": "2026-05-14",
+                "open": 1.0,
+                "high": 2.0,
+                "low": 0.5,
+                "close": 1.5,
+                "volume": 100,
+                "adjusted_close": 1.5,
+            }
+        ]
+    ).to_parquet(symbol_dir / "ohlcv.parquet", index=False)
+
+    try:
+        load_close_dict(
+            daily_dir,
+            ["XLY"],
+            pd.DatetimeIndex([pd.Timestamp("2026-05-14")]),
+        )
+    except ValueError as exc:
+        assert "daily OHLCV symbol contract violation" in str(exc)
+        assert "missing symbol column" in str(exc)
+        assert "XLY" in str(exc)
+    else:
+        raise AssertionError("expected missing symbol column to fail")
+
+
+def test_load_close_dict_rejects_mismatched_symbol_column_in_partition_file(
+    tmp_path: Path,
+) -> None:
+    daily_dir = tmp_path / "daily_ohlcv_762"
+    symbol_dir = daily_dir / "symbol=XLY"
+    symbol_dir.mkdir(parents=True)
+    pd.DataFrame(
+        [
+            {
+                "date": "2026-05-14",
+                "open": 1.0,
+                "high": 2.0,
+                "low": 0.5,
+                "close": 1.5,
+                "volume": 100,
+                "adjusted_close": 1.5,
+                "symbol": "XLU",
+            }
+        ]
+    ).to_parquet(symbol_dir / "ohlcv.parquet", index=False)
+
+    try:
+        load_close_dict(
+            daily_dir,
+            ["XLY"],
+            pd.DatetimeIndex([pd.Timestamp("2026-05-14")]),
+        )
+    except ValueError as exc:
+        assert "daily OHLCV symbol contract violation" in str(exc)
+        assert "expected XLY" in str(exc)
+        assert "XLU" in str(exc)
+    else:
+        raise AssertionError("expected mismatched symbol column to fail")
+
+
+def test_load_close_dict_rejects_calendar_gap_between_start_and_end(
+    tmp_path: Path,
+) -> None:
+    daily_dir = tmp_path / "daily_ohlcv_762"
+    symbol_dir = daily_dir / "symbol=XLY"
+    symbol_dir.mkdir(parents=True)
+    pd.DataFrame(
+        [
+            {
+                "date": date,
+                "symbol": "XLY",
+                "open": 1.0,
+                "high": 2.0,
+                "low": 0.5,
+                "close": 1.5,
+                "volume": 100,
+                "adjusted_close": 1.5,
+            }
+            for date in ("2026-05-13", "2026-05-15")
+        ]
+    ).to_parquet(symbol_dir / "ohlcv.parquet", index=False)
+
+    try:
+        load_close_dict(
+            daily_dir,
+            ["XLY"],
+            pd.DatetimeIndex(
+                [
+                    pd.Timestamp("2026-05-13"),
+                    pd.Timestamp("2026-05-14"),
+                    pd.Timestamp("2026-05-15"),
+                ]
+            ),
+        )
+    except ValueError as exc:
+        assert "daily OHLCV calendar coverage gap" in str(exc)
+        assert "XLY" in str(exc)
+        assert "2026-05-14" in str(exc)
+    else:
+        raise AssertionError("expected close calendar gap to fail")
 
 
 def test_load_macro_series_merges_pmi_history_with_latest_parquet(

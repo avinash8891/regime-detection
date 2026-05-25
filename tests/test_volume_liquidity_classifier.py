@@ -27,7 +27,6 @@ from regime_detection.volume_liquidity_rules import (
     VolumeLiquidityLabel,
 )
 
-
 _TRAINING_SESSIONS = 700
 _LAST_SESSION = pd.Timestamp("2025-04-30")
 _SEED = 20260514
@@ -182,12 +181,14 @@ def test_classifier_evidence_reports_live_liquidity_gap_inputs():
 
     last_day = context.sessions[-1]
     evidence = out[last_day].evidence
-    assert set(evidence) == {"rule_evidence"}
+    assert set(evidence) == {"rule_evidence", "rule_path", "rule_reason"}
     rule_evidence = evidence["rule_evidence"]
     assert set(rule_evidence) == {
         "volume_zscore_20d",
         "return_1d",
+        "gap_frequency_20d",
         "gap_frequency_percentile_252d",
+        "intraday_range",
         "intraday_range_percentile_252d",
     }
     assert isinstance(rule_evidence["gap_frequency_percentile_252d"], float)
@@ -199,7 +200,9 @@ def test_classifier_emits_normal_volume_after_warmup():
     label across the post-warmup window (most days are normal)."""
     context, _ = _build_context_with_volume()
     store = build_feature_store(
-        context, volume_liquidity_v2_config=context.config.volume_liquidity_v2
+        context,
+        volume_liquidity_v2_config=context.config.volume_liquidity_v2,
+        volatility_state_v2_config=context.config.volatility_state_v2,
     )
     out = build_volume_liquidity_axis_series(context, store)
 
@@ -270,7 +273,9 @@ def test_classifier_forces_unknown_when_liquidity_gap_percentile_inputs_are_nan(
     )
     volatility_v2 = store.volatility_state_v2
     assert volatility_v2 is not None
-    nan_series = pd.Series(np.nan, index=volatility_v2.gap_frequency_percentile_252d.index)
+    nan_series = pd.Series(
+        np.nan, index=volatility_v2.gap_frequency_percentile_252d.index
+    )
     broken_volatility_v2 = volatility_v2.__class__(
         **{
             **volatility_v2.__dict__,
@@ -278,7 +283,9 @@ def test_classifier_forces_unknown_when_liquidity_gap_percentile_inputs_are_nan(
             "intraday_range_percentile_252d": nan_series,
         }
     )
-    broken_store = store.model_copy(update={"volatility_state_v2": broken_volatility_v2})
+    broken_store = store.model_copy(
+        update={"volatility_state_v2": broken_volatility_v2}
+    )
 
     out = build_volume_liquidity_axis_series(context, broken_store)
     last_100 = list(context.sessions)[-100:]

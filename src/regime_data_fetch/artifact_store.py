@@ -5,6 +5,7 @@ import importlib
 import shutil
 import tempfile
 from dataclasses import dataclass
+from enum import Enum
 from pathlib import Path
 from urllib.parse import urlparse
 
@@ -23,17 +24,56 @@ class ArtifactOverwriteError(ArtifactStoreError):
 
 @dataclass(frozen=True)
 class StoredArtifact:
-    """Persisted artifact metadata.
+    """Persisted artifact metadata returned by ``put_*`` operations.
 
     ``uri`` is a fully qualified backend URI: local stores emit absolute
     ``file://`` URIs and S3 stores emit ``s3://`` URIs. Store methods still
     accept relative keys for callers that address artifacts within a configured
     store root.
+
+    ``sha256`` is mandatory here: every put_* path computes the digest as it
+    writes, so callers can always trust the value. The "unverifiable" case
+    (object exists in the backend but its digest is unrecoverable) belongs to
+    :class:`StoreCheckResult`, not this type.
     """
 
     uri: str
     sha256: str
     size_bytes: int
+
+
+class StoreCheckStatus(str, Enum):
+    """Result classes for :meth:`ArtifactStore.check_file`.
+
+    ``MATCH``        store has the bytes and they hash to ``expected_sha256``.
+    ``DRIFT``        store has bytes but the digest differs.
+    ``MISSING``      backend has no object at the URI.
+    ``UNVERIFIABLE`` object exists but the backend cannot vouch for the digest
+                     (e.g. an S3 object uploaded without the ``sha256``
+                     user-metadata header — its ETag would not be a usable md5).
+                     The local check should be the source of truth in this case;
+                     ``UNVERIFIABLE`` is a warning, not a failure.
+    """
+
+    MATCH = "match"
+    DRIFT = "drift"
+    MISSING = "missing"
+    UNVERIFIABLE = "unverifiable"
+
+
+@dataclass(frozen=True)
+class StoreCheckResult:
+    """Outcome of comparing a manifest sha against what the store holds.
+
+    ``status`` is the discriminator. ``observed_sha`` is populated for
+    ``MATCH`` and ``DRIFT`` and is ``None`` otherwise — the type doesn't
+    encode that tighter at the class level, but the four-way enum + a single
+    optional field is much easier to read at call sites than a bare
+    ``(status_str, sha_or_none)`` tuple.
+    """
+
+    status: StoreCheckStatus
+    observed_sha: str | None = None
 
 
 def sha256_bytes(payload: bytes) -> str:
@@ -62,6 +102,33 @@ class ArtifactStore:
     def get_file(
         self, uri: str, destination_path: Path, *, expected_sha256: str
     ) -> Path:
+        raise NotImplementedError
+
+    def check_file(
+        self,
+        uri: str,
+        *,
+        expected_sha256: str,
+        known_path: Path | None = None,
+        known_sha: str | None = None,
+    ) -> StoreCheckResult:
+        """Compare ``expected_sha256`` to the digest of whatever the backend
+        currently holds at ``uri`` and return a typed verdict.
+
+        Backends must hash using the same scheme they use for ``put_*``
+        (raw bytes for non-parquet, canonicalized bytes for parquet artifacts
+        stored via ``publish_canonical_snapshot``). When the backend has the
+        object but cannot recover a verifiable digest, return
+        ``StoreCheckResult(status=UNVERIFIABLE)`` — *do not* return ``DRIFT``,
+        which would imply a verified mismatch.
+
+        ``known_path`` / ``known_sha`` are an optional caller-supplied hint:
+        when the implementation can prove the backing object is the same file
+        the caller has already hashed (e.g. a local-store root resolves to
+        the same on-disk path), it may reuse ``known_sha`` instead of
+        re-hashing. Implementations that cannot prove equality (e.g. S3) must
+        ignore the hint.
+        """
         raise NotImplementedError
 
 
@@ -159,6 +226,31 @@ class LocalArtifactStore(ArtifactStore):
             tmp_path.unlink(missing_ok=True)
             raise
         return destination_path
+
+    def check_file(
+        self,
+        uri: str,
+        *,
+        expected_sha256: str,
+        known_path: Path | None = None,
+        known_sha: str | None = None,
+    ) -> StoreCheckResult:
+        relative_key = self._relative_key(uri)
+        source = self.root / relative_key
+        if not source.exists():
+            return StoreCheckResult(status=StoreCheckStatus.MISSING)
+        if (
+            known_path is not None
+            and known_sha is not None
+            and known_path.exists()
+            and known_path.resolve() == source.resolve()
+        ):
+            digest = known_sha
+        else:
+            digest = sha256_file(source)
+        if digest == expected_sha256:
+            return StoreCheckResult(status=StoreCheckStatus.MATCH, observed_sha=digest)
+        return StoreCheckResult(status=StoreCheckStatus.DRIFT, observed_sha=digest)
 
     def _relative_key(self, key_or_uri: str) -> str:
         return _normalize_local_key(key_or_uri, self._root_resolved)
@@ -298,10 +390,37 @@ class S3ArtifactStore(ArtifactStore):
             raise
         return destination_path
 
-    def _relative_key(self, key_or_uri: str) -> str:
-        return _normalize_s3_key(
-            key_or_uri, bucket=self.bucket, prefix=self.prefix
+    def check_file(
+        self,
+        uri: str,
+        *,
+        expected_sha256: str,
+        known_path: Path | None = None,
+        known_sha: str | None = None,
+    ) -> StoreCheckResult:
+        # S3 cannot prove a local file is the same bytes as the remote
+        # object, so the known_path/known_sha hints are intentionally ignored.
+        del known_path, known_sha
+        relative_key = self._relative_key(uri)
+        object_key = _join_s3_key(self.prefix, relative_key)
+        existing = _s3_existing_artifact(
+            self.client, bucket=self.bucket, object_key=object_key
         )
+        if existing is None:
+            return StoreCheckResult(status=StoreCheckStatus.MISSING)
+        existing_sha, _existing_size = existing
+        if existing_sha is None:
+            return StoreCheckResult(status=StoreCheckStatus.UNVERIFIABLE)
+        if existing_sha == expected_sha256:
+            return StoreCheckResult(
+                status=StoreCheckStatus.MATCH, observed_sha=existing_sha
+            )
+        return StoreCheckResult(
+            status=StoreCheckStatus.DRIFT, observed_sha=existing_sha
+        )
+
+    def _relative_key(self, key_or_uri: str) -> str:
+        return _normalize_s3_key(key_or_uri, bucket=self.bucket, prefix=self.prefix)
 
     def _uri_for_key(self, relative_key: str) -> str:
         object_key = _join_s3_key(self.prefix, relative_key)
@@ -334,9 +453,7 @@ def _normalize_local_key(key: str, root: Path) -> str:
                     return _normalize_relative_key(str(Path(*tail)))
             except ValueError:
                 pass
-        raise ValueError(
-            f"file artifact URI must stay within the store root: {key}"
-        )
+        raise ValueError(f"file artifact URI must stay within the store root: {key}")
     if parsed.scheme:
         raise ValueError(f"unsupported local artifact URI scheme: {parsed.scheme}")
     return _normalize_relative_key(key)

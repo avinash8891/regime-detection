@@ -18,6 +18,7 @@ GLOBAL_RATE_URLS = {
     "boj": "https://www.boj.or.jp/en/mopo/mpmsche_minu/",
 }
 
+
 class UnsupportedGlobalRateSource(ValueError):
     pass
 
@@ -29,7 +30,9 @@ class GlobalRateDecisionEvent:
     source: str
 
 
-def parse_global_rate_decision_events(*, source_key: str, text: str) -> list[GlobalRateDecisionEvent]:
+def parse_global_rate_decision_events(
+    *, source_key: str, text: str
+) -> list[GlobalRateDecisionEvent]:
     if source_key == "ecb":
         return parse_ecb_decision_events(text)
     if source_key == "boj":
@@ -38,7 +41,9 @@ def parse_global_rate_decision_events(*, source_key: str, text: str) -> list[Glo
     normalized = re.sub(r"\s+", " ", normalized)
     if source_key == "boe":
         return parse_boe_decision_events(normalized)
-    raise UnsupportedGlobalRateSource(f"Unsupported global rate calendar source: {source_key}")
+    raise UnsupportedGlobalRateSource(
+        f"Unsupported global rate calendar source: {source_key}"
+    )
 
 
 def parse_ecb_decision_events(text: str) -> list[GlobalRateDecisionEvent]:
@@ -53,10 +58,17 @@ def parse_ecb_decision_events(text: str) -> list[GlobalRateDecisionEvent]:
             continue
         if "monetary policy meeting" not in description.lower():
             continue
-        if "day 2" not in description.lower() and "press conference" not in description.lower():
+        if (
+            "day 2" not in description.lower()
+            and "press conference" not in description.lower()
+        ):
             continue
         day, month, year = (int(part) for part in match.group("date").split("/"))
-        events.append(GlobalRateDecisionEvent(dt.date(year, month, day), "ECB_decision", SOURCE_ECB))
+        events.append(
+            GlobalRateDecisionEvent(
+                dt.date(year, month, day), "ECB_decision", SOURCE_ECB
+            )
+        )
     return _dedupe_events(events)
 
 
@@ -74,7 +86,11 @@ def parse_boe_decision_events(text: str) -> list[GlobalRateDecisionEvent]:
         flags=re.IGNORECASE,
     )
     for token in tokens:
-        year_match = re.search(r"\b(?P<year>20\d{2})\s+(?:confirmed|provisional)\s+dates\b", token, flags=re.IGNORECASE)
+        year_match = re.search(
+            r"\b(?P<year>20\d{2})\s+(?:confirmed|provisional)\s+dates\b",
+            token,
+            flags=re.IGNORECASE,
+        )
         if year_match:
             current_year = int(year_match.group("year"))
         if current_year is None:
@@ -96,8 +112,12 @@ def parse_boj_decision_events(text: str) -> list[GlobalRateDecisionEvent]:
         r"<h2[^>]*>\s*(?P<year>20\d{2})\s*</h2>(?P<section>.*?)(?=<h2[^>]*>\s*20\d{2}\s*</h2>|$)",
         flags=re.IGNORECASE | re.DOTALL,
     )
-    row_pattern = re.compile(r"<tr[^>]*>(?P<row>.*?)</tr>", flags=re.IGNORECASE | re.DOTALL)
-    cell_pattern = re.compile(r"<td[^>]*>(?P<cell>.*?)</td>", flags=re.IGNORECASE | re.DOTALL)
+    row_pattern = re.compile(
+        r"<tr[^>]*>(?P<row>.*?)</tr>", flags=re.IGNORECASE | re.DOTALL
+    )
+    cell_pattern = re.compile(
+        r"<td[^>]*>(?P<cell>.*?)</td>", flags=re.IGNORECASE | re.DOTALL
+    )
     table_date_pattern = re.compile(
         r"(?P<month>Jan\.?|January|Feb\.?|February|Mar\.?|March|Apr\.?|April|May|June|July|Aug\.?|August|Sep\.?|Sept\.?|September|Oct\.?|October|Nov\.?|November|Dec\.?|December)\s+"
         r"(?P<start>\d{1,2})(?:\s*\([^)]+\))?(?:\s*,\s*(?P<end>\d{1,2})(?:\s*\([^)]+\))?)?",
@@ -116,7 +136,11 @@ def parse_boj_decision_events(text: str) -> list[GlobalRateDecisionEvent]:
                 continue
             month = MONTHS[date_match.group("month").lower()]
             day = int(date_match.group("end") or date_match.group("start"))
-            events.append(GlobalRateDecisionEvent(dt.date(year, month, day), "BOJ_decision", SOURCE_BOJ))
+            events.append(
+                GlobalRateDecisionEvent(
+                    dt.date(year, month, day), "BOJ_decision", SOURCE_BOJ
+                )
+            )
 
     normalized = re.sub(r"<[^>]+>", " ", text)
     normalized = re.sub(r"\s+", " ", normalized)
@@ -134,8 +158,16 @@ def parse_boj_decision_events(text: str) -> list[GlobalRateDecisionEvent]:
 
 
 def global_rate_source_name(source_key: str) -> str:
-    return {"ecb": SOURCE_ECB, "boe": SOURCE_BOE, "boj": SOURCE_BOJ}.get(source_key, source_key)
+    return {"ecb": SOURCE_ECB, "boe": SOURCE_BOE, "boj": SOURCE_BOJ}.get(
+        source_key, source_key
+    )
 
 
-def _dedupe_events(events: list[GlobalRateDecisionEvent]) -> list[GlobalRateDecisionEvent]:
-    return list({(event.date, event.event_type, event.source): event for event in events}.values())
+def _dedupe_events(
+    events: list[GlobalRateDecisionEvent],
+) -> list[GlobalRateDecisionEvent]:
+    return list(
+        {
+            (event.date, event.event_type, event.source): event for event in events
+        }.values()
+    )

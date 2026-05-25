@@ -17,9 +17,8 @@ from regime_detection.volume_liquidity_rules import (
     VOLUME_LIQUIDITY_RISK_RANK,
     VolumeLiquidityLabel,
     VolumeLiquidityRuleInputs,
-    evaluate_rules as evaluate_volume_liquidity_rules,
+    evaluate_rules_with_evidence as evaluate_volume_liquidity_rules_with_evidence,
 )
-
 
 # V2 §1E volume/liquidity gate follows the existing 20d z-score cold start.
 VOLUME_LIQUIDITY_REQUIRED_TRADING_DAYS = 20
@@ -65,9 +64,13 @@ def build_volume_liquidity_axis_series(
     # and fall through per V1 §2.7 cold-start semantics.
     volatility_v2 = feature_store.volatility_state_v2
     gap_freq_pct_series: pd.Series | None = None
+    gap_freq_series: pd.Series | None = None
+    intraday_range_series: pd.Series | None = None
     intraday_pct_series: pd.Series | None = None
     if volatility_v2 is not None:
+        gap_freq_series = volatility_v2.gap_frequency_20d
         gap_freq_pct_series = volatility_v2.gap_frequency_percentile_252d
+        intraday_range_series = volatility_v2.intraday_range
         intraday_pct_series = volatility_v2.intraday_range_percentile_252d
 
     required_inputs: list[pd.Series] = [
@@ -91,10 +94,9 @@ def build_volume_liquidity_axis_series(
             as_of_date=day,
             required_inputs=required_inputs,
             required_trading_days=required_trading_days,
-            raw_label="",
+            raw_label=None,
             max_freshness_days=max_freshness_days,
             min_completeness=min_completeness,
-            skip_raw_label_short_circuit=True,
         )
 
         if quality_forces_unknown(day_quality):
@@ -120,6 +122,16 @@ def build_volume_liquidity_axis_series(
             if gap_freq_pct_series is not None and dt in gap_freq_pct_series.index
             else float("nan")
         )
+        gap_freq_20d = (
+            float(gap_freq_series.loc[dt])
+            if gap_freq_series is not None and dt in gap_freq_series.index
+            else float("nan")
+        )
+        intraday_range = (
+            float(intraday_range_series.loc[dt])
+            if intraday_range_series is not None and dt in intraday_range_series.index
+            else float("nan")
+        )
         intraday_pct = (
             float(intraday_pct_series.loc[dt])
             if intraday_pct_series is not None and dt in intraday_pct_series.index
@@ -131,11 +143,14 @@ def build_volume_liquidity_axis_series(
             return_1d=return_1d,
             gap_frequency_percentile_252d=gap_freq_pct,
             intraday_range_percentile_252d=intraday_pct,
+            gap_frequency_20d=gap_freq_20d,
+            intraday_range=intraday_range,
         )
-        label = evaluate_volume_liquidity_rules(
+        rule_evaluation = evaluate_volume_liquidity_rules_with_evidence(
             inputs=inputs,
             config=volume_liquidity_config.rules,
         )
+        label = rule_evaluation.label
         raw_labels.append(label)
         per_day_data_quality.append(day_quality)
         per_day_evidence.append(
@@ -143,9 +158,13 @@ def build_volume_liquidity_axis_series(
                 "rule_evidence": {
                     "volume_zscore_20d": float(f"{volume_zscore_20d:.8g}"),
                     "return_1d": float(f"{return_1d:.8g}"),
+                    "gap_frequency_20d": float(f"{gap_freq_20d:.8g}"),
                     "gap_frequency_percentile_252d": float(f"{gap_freq_pct:.8g}"),
+                    "intraday_range": float(f"{intraday_range:.8g}"),
                     "intraday_range_percentile_252d": float(f"{intraday_pct:.8g}"),
                 },
+                "rule_path": rule_evaluation.rule_path,
+                "rule_reason": rule_evaluation.reason,
             }
         )
 
@@ -155,6 +174,7 @@ def build_volume_liquidity_axis_series(
         risk_rank=VOLUME_LIQUIDITY_RISK_RANK,
         deescalation_days_by_label=volume_liquidity_config.deescalation_days_by_label,
         default_deescalation_days=volume_liquidity_config.default_deescalation_days,
+        max_unknown_freeze_days=volume_liquidity_config.max_unknown_freeze_days,
         data_quality=per_day_data_quality,
         evidence=per_day_evidence,
         output_factory=_volume_liquidity_output,

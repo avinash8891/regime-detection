@@ -17,18 +17,16 @@ import pytest
 from regime_detection.config import HMMConfig, load_default_regime_config
 from regime_detection.hmm_state import (
     HMMFeatures,
+    _StrictConvergenceMonitor,
     compute_hmm_features,
 )
-
 
 # ---------------------------------------------------------------------------
 # Helpers — synthetic but deterministic inputs that mimic the 5 spec seams.
 # ---------------------------------------------------------------------------
 
 
-def _synthetic_inputs(
-    n_sessions: int = 1500, *, seed: int = 0
-) -> dict[str, pd.Series]:
+def _synthetic_inputs(n_sessions: int = 1500, *, seed: int = 0) -> dict[str, pd.Series]:
     """Build five synthetic series with two distinct regime patterns.
 
     First half ~calm (low vol, positive drift), second half ~volatile (high
@@ -57,15 +55,11 @@ def _synthetic_inputs(
     # volume z-score
     base_vol = rng.normal(loc=0.0, scale=1.0, size=n_sessions)
     base_vol[half:] += 1.5  # elevated in regime 2
-    volume_zscore_20d = pd.Series(
-        base_vol, index=index, name="volume_zscore_20d"
-    )
+    volume_zscore_20d = pd.Series(base_vol, index=index, name="volume_zscore_20d")
 
     # avg pairwise correlation: low in calm regime, high in volatile regime
     corr_calm = rng.normal(loc=0.30, scale=0.05, size=half).clip(0.0, 0.95)
-    corr_vol = rng.normal(loc=0.65, scale=0.05, size=n_sessions - half).clip(
-        0.0, 0.95
-    )
+    corr_vol = rng.normal(loc=0.65, scale=0.05, size=n_sessions - half).clip(0.0, 0.95)
     avg_pairwise_corr_63d = pd.Series(
         np.concatenate([corr_calm, corr_vol]),
         index=index,
@@ -217,6 +211,18 @@ def test_compute_hmm_features_returns_none_when_hmm_fit_is_non_monotonic(
     assert compute_hmm_features(config=cfg, **inputs) is None
 
 
+def test_strict_convergence_monitor_does_not_treat_non_monotonic_fit_as_converged() -> (
+    None
+):
+    monitor = _StrictConvergenceMonitor(tol=0.01, n_iter=200, verbose=False)
+
+    monitor.report(10.0)
+    monitor.report(9.0)
+
+    assert monitor.non_monotonic is True
+    assert monitor.converged is False
+
+
 def test_compute_hmm_features_uses_best_monotonic_seed_after_standardizing(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -278,6 +284,46 @@ def test_compute_hmm_features_uses_best_monotonic_seed_after_standardizing(
     assert float(seen[0]["std"]) == pytest.approx(1.0)
 
 
+def test_compute_hmm_features_logs_each_non_monotonic_seed(
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    inputs = _synthetic_inputs(n_sessions=1500)
+    cfg = _default_hmm_config().model_copy(update={"random_seeds": (42, 101)})
+
+    class FakeMonitor:
+        tol = 0.01
+        n_iter = 200
+        verbose = False
+
+    class FakeGaussianHMM:
+        def __init__(self, **kwargs) -> None:
+            self.random_state = kwargs["random_state"]
+            self.monitor_ = FakeMonitor()
+
+        def fit(self, _train):
+            if self.random_state == 42:
+                self.monitor_.report(10.0)
+                self.monitor_.report(9.0)
+            else:
+                self.monitor_.report(10.0)
+                self.monitor_.report(12.0)
+            return self
+
+        def predict_proba(self, frame):
+            return np.tile(np.array([[0.7, 0.1, 0.1, 0.1]]), (len(frame), 1))
+
+    monkeypatch.setattr("regime_detection.hmm_state.GaussianHMM", FakeGaussianHMM)
+
+    with caplog.at_level("WARNING", logger="regime_detection.hmm_state"):
+        result = compute_hmm_features(config=cfg, **inputs)
+
+    assert result is not None
+    assert result.selected_seed == 101
+    assert "GaussianHMM skipped non-monotonic seed" in caplog.text
+    assert "seed=42" in caplog.text
+
+
 def test_top_state_prob_is_at_least_one_over_n_states(
     _computed_default_hmm: HMMFeatures,
 ) -> None:
@@ -331,8 +377,7 @@ def test_feature_store_hmm_seam_lit_when_all_inputs_present(
         raw = pd.read_parquet(market_parquet)
     else:
         parts = [
-            pd.read_csv(raw_dir / f"{symbol}.csv")
-            for symbol in ("SPY", "RSP", "VIXY")
+            pd.read_csv(raw_dir / f"{symbol}.csv") for symbol in ("SPY", "RSP", "VIXY")
         ]
         raw = pd.concat(parts, ignore_index=True)
     raw["date"] = pd.to_datetime(raw["date"]).dt.date
@@ -354,7 +399,10 @@ def test_feature_store_hmm_seam_lit_when_all_inputs_present(
     # network_fragility is None in this fixture (no sector ETFs), so HMM
     # seam should be None — accept either outcome but assert behavior is
     # gated on input availability per the predicate.
-    if feature_store.network_fragility is None or feature_store.volume_liquidity_v2 is None:
+    if (
+        feature_store.network_fragility is None
+        or feature_store.volume_liquidity_v2 is None
+    ):
         assert feature_store.hmm is None
     else:
         assert feature_store.hmm is not None

@@ -42,6 +42,7 @@ Implementation choices that resolve ambiguities:
   where newer sector ETFs such as XLC did not yet exist. It carries count and
   missing-symbol evidence so consumers cannot mistake it for the strict feature.
 """
+
 from __future__ import annotations
 
 from bisect import bisect_left, bisect_right
@@ -59,7 +60,6 @@ from regime_shared.pit_provenance import (
     SOURCE_NAME as _PIT_BIAS_SOURCE,
     SOURCE_URL as _PIT_BIAS_SOURCE_URL,
 )
-
 
 # PIT feature names in spec order (v2 §1D lines 328-368).
 _PIT_FEATURE_NAMES: tuple[str, ...] = (
@@ -120,9 +120,7 @@ class BreadthV2Features:
         return tuple(names)
 
     def to_frame(self) -> pd.DataFrame:
-        return pd.DataFrame(
-            {name: getattr(self, name) for name in self.feature_names}
-        )
+        return pd.DataFrame({name: getattr(self, name) for name in self.feature_names})
 
 
 _BIAS_WARNING_COLUMNS = ("warning_code", "feature_name", "source", "source_url")
@@ -150,7 +148,9 @@ def make_bias_warnings_frame(rows: Iterable[Mapping[str, str]]) -> pd.DataFrame:
             )
         materialized.append({k: row[k] for k in _BIAS_WARNING_COLUMNS})
     if not materialized:
-        return pd.DataFrame({col: pd.Series(dtype=object) for col in _BIAS_WARNING_COLUMNS})
+        return pd.DataFrame(
+            {col: pd.Series(dtype=object) for col in _BIAS_WARNING_COLUMNS}
+        )
     return pd.DataFrame(materialized, columns=list(_BIAS_WARNING_COLUMNS))
 
 
@@ -172,7 +172,9 @@ def _compute_sector_breadth_features(
 ) -> tuple[pd.Series, pd.Series, pd.Series, pd.Series, pd.Series]:
     returns_frame = pd.DataFrame(
         {
-            symbol: sector_etf_closes[symbol].astype(float).pct_change(
+            symbol: sector_etf_closes[symbol]
+            .astype(float)
+            .pct_change(
                 periods=lookback,
                 fill_method=None,
             )
@@ -184,23 +186,22 @@ def _compute_sector_breadth_features(
     valid_mask = returns_frame.notna()
     expected_universe_size = len(sector_universe)
 
-    sector_breadth = (
-        positive_mask.sum(axis=1).astype(float) / float(expected_universe_size)
+    sector_breadth = positive_mask.sum(axis=1).astype(float) / float(
+        expected_universe_size
     )
     sector_breadth = sector_breadth.where(~returns_frame.isna().any(axis=1))
     sector_breadth.name = "sector_breadth"
 
     available_sector_count = valid_mask.sum(axis=1).astype("int64")
     available_sector_count.name = "available_sector_count"
-    missing_sector_count = (
-        expected_universe_size - available_sector_count
-    ).astype("int64")
+    missing_sector_count = (expected_universe_size - available_sector_count).astype(
+        "int64"
+    )
     missing_sector_count.name = "missing_sector_count"
 
-    available_sector_breadth = (
-        positive_mask.sum(axis=1).astype(float)
-        / available_sector_count.where(available_sector_count > 0).astype(float)
-    )
+    available_sector_breadth = positive_mask.sum(axis=1).astype(
+        float
+    ) / available_sector_count.where(available_sector_count > 0).astype(float)
     available_sector_breadth = available_sector_breadth.where(
         available_sector_count > 0
     )
@@ -337,6 +338,7 @@ def _normalize_interval_dates(intervals: pd.DataFrame) -> pd.DataFrame:
     with ISO strings, so we normalize defensively before calling
     ``members_on`` (which compares to ``dt.date``).
     """
+
     def _to_date(value: object) -> dt.date | None:
         if value is None:
             return None
@@ -507,11 +509,7 @@ def _compute_pct_above_sma(
     # A ticker is "valid" at session D if it's a member AND has a defined SMA
     # AND has a defined close. (Defined close is implied by defined SMA but
     # we guard explicitly.)
-    valid_mask = (
-        membership_mask
-        & sma_frame.notna()
-        & adj_close_frame.notna()
-    )
+    valid_mask = membership_mask & sma_frame.notna() & adj_close_frame.notna()
     above_mask = valid_mask & (adj_close_frame > sma_frame)
     above_count = above_mask.sum(axis=1).astype(float)
     valid_count = valid_mask.sum(axis=1).astype(float)

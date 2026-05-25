@@ -34,6 +34,7 @@ Outputs:
 - ``docs/verification/lexicon_validation.md`` — human-readable report
 - ``docs/verification/lexicon_validation_confusion_matrix.csv`` — raw matrix
 """
+
 from __future__ import annotations
 
 import logging
@@ -49,14 +50,12 @@ from sklearn.metrics import (
     confusion_matrix,
 )
 
-
 # Make the regime_detection package importable when running directly.
 REPO_ROOT = Path(__file__).resolve().parents[1]
 SRC_DIR = REPO_ROOT / "src"
 sys.path.insert(0, str(SRC_DIR))
 
 from regime_detection.central_bank_text import score_text  # noqa: E402
-
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(message)s")
 LOG = logging.getLogger(__name__)
@@ -133,7 +132,9 @@ def score_document_pooled(df: pd.DataFrame) -> dict[str, object]:
     rows: list[dict[str, object]] = []
     for year, subset in df.groupby("year"):
         modal_label = int(subset["label"].mode().iloc[0])
-        pooled_text = " ".join(subset[subset["label"] == modal_label]["sentence"].tolist())
+        pooled_text = " ".join(
+            subset[subset["label"] == modal_label]["sentence"].tolist()
+        )
         score = score_text(pooled_text)
         rows.append(
             {
@@ -146,7 +147,9 @@ def score_document_pooled(df: pd.DataFrame) -> dict[str, object]:
                 "total_tokens": score.total_tokens,
                 "net_score": score.net_score,
                 "predicted_label": _map_net_score_to_label(score.net_score),
-                "predicted_label_name": _LABEL_NAMES[_map_net_score_to_label(score.net_score)],
+                "predicted_label_name": _LABEL_NAMES[
+                    _map_net_score_to_label(score.net_score)
+                ],
             }
         )
     out = pd.DataFrame(rows).sort_values("year").reset_index(drop=True)
@@ -307,9 +310,7 @@ def write_report(
 def main() -> int:
     LOG.info("loading gtfintechlab/fomc_communication ...")
     ds = load_dataset("gtfintechlab/fomc_communication")
-    df = pd.concat(
-        [ds["train"].to_pandas(), ds["test"].to_pandas()], ignore_index=True
-    )
+    df = pd.concat([ds["train"].to_pandas(), ds["test"].to_pandas()], ignore_index=True)
     LOG.info(
         "corpus loaded: %d sentences, years %d→%d",
         len(df),

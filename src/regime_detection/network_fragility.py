@@ -25,6 +25,7 @@ Per-session window:
 Universe order is enforced from `fragility_universe.NETWORK_FRAGILITY_UNIVERSE`.
 SPY is sourced from `spy_close` (v1 path) — not `cross_asset_closes`.
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -38,7 +39,6 @@ from regime_detection.fragility_universe import (
     NETWORK_FRAGILITY_UNIVERSE,
     SECTOR_ETFS,
 )
-
 
 _TRADING_DAYS_PER_YEAR = 252
 
@@ -56,6 +56,8 @@ class NetworkFragilityFeatures:
     absorption_ratio_top3: pd.Series
     dispersion_ratio: pd.Series
     dispersion_ratio_percentile_252d: pd.Series
+    surviving_universe_size: pd.Series | None = None
+    complete_observation_count: pd.Series | None = None
 
 
 def _assemble_returns_matrix(
@@ -72,7 +74,9 @@ def _assemble_returns_matrix(
     columns: list[str] = []
     series_map: dict[str, pd.Series] = {}
 
-    effective_universe = tuple(universe) if universe is not None else NETWORK_FRAGILITY_UNIVERSE
+    effective_universe = (
+        tuple(universe) if universe is not None else NETWORK_FRAGILITY_UNIVERSE
+    )
     for symbol in effective_universe:
         if symbol == INDEX_SYMBOL:
             series = spy_close
@@ -114,13 +118,18 @@ def _shannon_effective_rank(eigvals: np.ndarray) -> float:
     return float(np.exp(entropy))
 
 
+def _positive_correlation_eigenvalues(eigvals: np.ndarray) -> np.ndarray:
+    """Clip floating-point PSD noise from a correlation-matrix eigenspectrum."""
+    return np.clip(np.asarray(eigvals, dtype=float), 0.0, None)
+
+
 def _per_session_corr_features(
     returns: pd.DataFrame,
     *,
     correlation_lookback_days: int,
     min_universe_size: int,
     min_window_completeness: float,
-) -> tuple[pd.Series, pd.Series, pd.Series, pd.Series]:
+) -> tuple[pd.Series, pd.Series, pd.Series, pd.Series, pd.Series, pd.Series]:
     """Walk each session t with t >= correlation_lookback_days and emit the
     four corr/eigen features."""
     index = returns.index
@@ -129,6 +138,8 @@ def _per_session_corr_features(
     largest_share = np.full(n, np.nan)
     eff_rank = np.full(n, np.nan)
     absorption = np.full(n, np.nan)
+    surviving_universe_size = np.full(n, np.nan)
+    complete_observation_count = np.full(n, np.nan)
 
     arr = returns.to_numpy()
 
@@ -141,6 +152,7 @@ def _per_session_corr_features(
         not_null = ~np.isnan(window)
         completeness = not_null.mean(axis=0)
         keep_mask = completeness >= min_window_completeness
+        surviving_universe_size[t] = keep_mask.sum()
         if keep_mask.sum() < min_universe_size:
             continue
 
@@ -148,6 +160,7 @@ def _per_session_corr_features(
         # Drop rows with any NaN among surviving columns; correlation needs
         # complete observations.
         row_complete = ~np.isnan(sub).any(axis=1)
+        complete_observation_count[t] = row_complete.sum()
         sub = sub[row_complete, :]
         if sub.shape[0] < 2:
             continue
@@ -159,7 +172,7 @@ def _per_session_corr_features(
         iu = np.triu_indices_from(corr, k=1)
         avg_corr[t] = corr[iu].mean()
 
-        eigs = np.linalg.eigvalsh(corr)
+        eigs = _positive_correlation_eigenvalues(np.linalg.eigvalsh(corr))
         total = eigs.sum()
         if total > 0:
             largest_share[t] = eigs[-1] / total
@@ -171,6 +184,18 @@ def _per_session_corr_features(
         pd.Series(largest_share, index=index, name="largest_eigenvalue_share"),
         pd.Series(eff_rank, index=index, name="effective_rank"),
         pd.Series(absorption, index=index, name="absorption_ratio_top3"),
+        pd.Series(
+            surviving_universe_size,
+            index=index,
+            name="surviving_universe_size",
+            dtype="Float64",
+        ),
+        pd.Series(
+            complete_observation_count,
+            index=index,
+            name="complete_observation_count",
+            dtype="Float64",
+        ),
     )
 
 
@@ -178,6 +203,7 @@ def _dispersion_ratio_series(
     returns: pd.DataFrame,
     *,
     realized_vol_lookback_days: int,
+    spy_vol_floor: float = 1e-6,
     spy_column: str = INDEX_SYMBOL,
 ) -> pd.Series:
     """mean(per-symbol annualised realised vol) / SPY annualised realised vol."""
@@ -186,7 +212,7 @@ def _dispersion_ratio_series(
     )
     mean_vol = realised_vol.mean(axis=1, skipna=True)
     spy_vol = realised_vol[spy_column]
-    safe_spy = spy_vol.where(spy_vol > 0)
+    safe_spy = spy_vol.where(spy_vol >= spy_vol_floor)
     return mean_vol / safe_spy
 
 
@@ -199,6 +225,7 @@ def compute_features(
     percentile_lookback_days: int = 504,
     realized_vol_lookback_days: int = 21,
     dispersion_percentile_lookback_days: int = 252,
+    dispersion_spy_vol_floor: float = 1e-6,
     min_universe_size: int = 20,
     min_window_completeness: float = 0.9,
     universe: tuple[str, ...] | list[str] | None = None,
@@ -216,7 +243,14 @@ def compute_features(
         universe=universe,
     )
 
-    avg_corr, largest_share, eff_rank, absorption = _per_session_corr_features(
+    (
+        avg_corr,
+        largest_share,
+        eff_rank,
+        absorption,
+        surviving_universe_size,
+        complete_observation_count,
+    ) = _per_session_corr_features(
         returns,
         correlation_lookback_days=correlation_lookback_days,
         min_universe_size=min_universe_size,
@@ -228,7 +262,9 @@ def compute_features(
     eff_rank_pct = eff_rank.rolling(percentile_lookback_days).rank(pct=True)
 
     dispersion = _dispersion_ratio_series(
-        returns, realized_vol_lookback_days=realized_vol_lookback_days
+        returns,
+        realized_vol_lookback_days=realized_vol_lookback_days,
+        spy_vol_floor=dispersion_spy_vol_floor,
     )
     dispersion_pct = dispersion.rolling(dispersion_percentile_lookback_days).rank(
         pct=True
@@ -245,4 +281,6 @@ def compute_features(
         absorption_ratio_top3=absorption.reindex(spy_index),
         dispersion_ratio=dispersion.reindex(spy_index),
         dispersion_ratio_percentile_252d=dispersion_pct.reindex(spy_index),
+        surviving_universe_size=surviving_universe_size.reindex(spy_index),
+        complete_observation_count=complete_observation_count.reindex(spy_index),
     )

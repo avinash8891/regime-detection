@@ -122,7 +122,9 @@ def test_committed_manifest_routes_event_calendar_to_all_runtime_runners() -> No
     assert set(event_artifacts[0].required_for) >= set(EVENT_CALENDAR_MANIFEST_RUNNERS)
 
 
-def test_resolve_runner_input_paths_uses_manifest_artifact_names(tmp_path: Path) -> None:
+def test_resolve_runner_input_paths_uses_manifest_artifact_names(
+    tmp_path: Path,
+) -> None:
     manifest_path = _write_manifest(
         tmp_path,
         [
@@ -292,9 +294,9 @@ def test_committed_manifest_materializes_from_fresh_workspace() -> None:
        manifest, or that name belongs to the constituent-OHLCV partition
        contract documented in ``manifest_inputs._is_constituent_ohlcv_artifact``.
     """
-    assert COMMITTED_MANIFEST.exists(), (
-        f"committed manifest missing: {COMMITTED_MANIFEST}"
-    )
+    assert (
+        COMMITTED_MANIFEST.exists()
+    ), f"committed manifest missing: {COMMITTED_MANIFEST}"
     manifest = load_manifest(COMMITTED_MANIFEST)
 
     # (4) storage_root must be workspace-agnostic. Two shapes satisfy the
@@ -450,8 +452,12 @@ def test_manifest_input_spec_has_dataclass_field(spec) -> None:
     """Every spec must be backed by an attribute on either
     RequiredRunnerInputPaths or OptionalRunnerInputPaths — the resolver
     will fail to construct RunnerInputPaths otherwise."""
-    required_fields = {f.name for f in __import__("dataclasses").fields(RequiredRunnerInputPaths)}
-    optional_fields = {f.name for f in __import__("dataclasses").fields(OptionalRunnerInputPaths)}
+    required_fields = {
+        f.name for f in __import__("dataclasses").fields(RequiredRunnerInputPaths)
+    }
+    optional_fields = {
+        f.name for f in __import__("dataclasses").fields(OptionalRunnerInputPaths)
+    }
     if spec.is_required:
         assert spec.field in required_fields
     else:
@@ -489,17 +495,15 @@ def test_register_manifest_input_args_covers_every_optional_spec() -> None:
     parser = argparse.ArgumentParser()
     register_manifest_input_args(parser, include_required_paths=False)
     registered_flags = {
-        flag
-        for action in parser._actions
-        for flag in action.option_strings
+        flag for action in parser._actions for flag in action.option_strings
     }
     optional_flags = {
         spec.cli_flag for spec in MANIFEST_INPUT_SPECS if not spec.is_required
     }
     missing = optional_flags - registered_flags
-    assert not missing, (
-        f"register_manifest_input_args dropped optional flags: {sorted(missing)}"
-    )
+    assert (
+        not missing
+    ), f"register_manifest_input_args dropped optional flags: {sorted(missing)}"
 
 
 def test_apply_manifest_input_defaults_covers_every_spec_with_default_relpath(
@@ -522,6 +526,6 @@ def test_apply_manifest_input_defaults_covers_every_spec_with_default_relpath(
         if spec.default_relpath is None:
             continue
         expected = tmp_path.joinpath(*spec.default_relpath)
-        assert getattr(args, spec.field) == expected, (
-            f"apply_manifest_input_defaults skipped {spec.field}"
-        )
+        assert (
+            getattr(args, spec.field) == expected
+        ), f"apply_manifest_input_defaults skipped {spec.field}"

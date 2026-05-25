@@ -11,7 +11,7 @@ from regime_data_fetch.artifact_manifest import (
     load_manifest,
     strip_data_raw_prefix,
 )
-from regime_data_fetch.artifact_store import build_artifact_store
+from regime_data_fetch.artifact_store import build_artifact_store, sha256_file
 
 # Sentinel SHA for documented placeholder entries (empty-string digest).
 # These are not fetchable artifacts; the OHLCV tree they represent is
@@ -36,7 +36,9 @@ def materialize_manifest(
     required_for: str | None = None,
 ) -> list[MaterializedArtifact]:
     manifest = load_manifest(manifest_path)
-    artifacts = manifest.required_for(required_for) if required_for else manifest.artifacts
+    artifacts = (
+        manifest.required_for(required_for) if required_for else manifest.artifacts
+    )
     if required_for and not artifacts:
         raise ValueError(f"manifest has no artifacts required for {required_for}")
     # Skip documented placeholder entries (empty-string sha sentinel). These
@@ -51,6 +53,28 @@ def materialize_manifest(
         manifest_path=manifest_path,
     )
     store = build_artifact_store(effective_store_root)
+
+    # Partition up front so the staging/promotion loop reads from a single
+    # ``to_fetch`` list. Artifacts already present locally with a matching sha
+    # are not touched: their destination is included in the returned list, but
+    # neither staged nor promoted, so a mid-run failure on a different artifact
+    # cannot corrupt them. Atomicity contract: every artifact in ``to_fetch``
+    # promotes together or none of them do.
+    #
+    # The returned list preserves input ``artifacts`` order regardless of the
+    # already-ok / to-fetch split — downstream consumers (e.g.
+    # ``scripts/audit_step1_harness.py``) serialize the result to JSON for
+    # run provenance, and unstable ordering would produce non-reproducible
+    # diffs across runs that differ only in cache state.
+    ordered_destinations: list[tuple[ManifestArtifact, Path]] = [
+        (artifact, destination_for(artifact, local_root, repo_root=repo_root))
+        for artifact in artifacts
+    ]
+    to_fetch: list[tuple[ManifestArtifact, Path]] = [
+        (artifact, destination)
+        for artifact, destination in ordered_destinations
+        if not (destination.exists() and sha256_file(destination) == artifact.sha256)
+    ]
     staging_parent = local_root.parent
     staging_parent.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(
@@ -58,8 +82,7 @@ def materialize_manifest(
     ) as tmp_dir:
         staging_root = Path(tmp_dir)
         staged: list[tuple[ManifestArtifact, Path, Path]] = []
-        for index, artifact in enumerate(artifacts):
-            destination = destination_for(artifact, local_root, repo_root=repo_root)
+        for index, (artifact, destination) in enumerate(to_fetch):
             staged_path = staging_root / "staged" / str(index) / destination.name
             store.get_file(
                 artifact.uri,
@@ -71,10 +94,11 @@ def materialize_manifest(
         promoted: list[tuple[Path, Path | None]] = []
         backup_root = staging_root / "backups"
         try:
-            # Promote only after every artifact has passed checksum verification.
-            # Existing files move to the same temp tree first so a mid-run failure
-            # can roll back without leaving a mixed old/new manifest directory.
-            for index, (_artifact, destination, staged_path) in enumerate(staged):
+            # Promote only after every artifact in ``to_fetch`` has passed
+            # checksum verification. Existing files move to the same temp tree
+            # first so a mid-run failure can roll back without leaving a mixed
+            # old/new manifest directory.
+            for index, (artifact, destination, staged_path) in enumerate(staged):
                 destination.parent.mkdir(parents=True, exist_ok=True)
                 backup_path: Path | None = None
                 if destination.exists():
@@ -98,7 +122,7 @@ def materialize_manifest(
             destination=destination,
             sha256=artifact.sha256,
         )
-        for artifact, destination, _staged_path in staged
+        for artifact, destination in ordered_destinations
     ]
 
 
@@ -130,7 +154,9 @@ def _resolve_store_root(
     return str((manifest_path.resolve().parent / candidate_path).resolve())
 
 
-def destination_for(artifact: ManifestArtifact, local_root: Path, *, repo_root: Path | None = None) -> Path:
+def destination_for(
+    artifact: ManifestArtifact, local_root: Path, *, repo_root: Path | None = None
+) -> Path:
     local_path = Path(artifact.local_path)
     if local_path.parts[: len(DATA_RAW_PREFIX)] == DATA_RAW_PREFIX:
         return local_root / strip_data_raw_prefix(local_path)

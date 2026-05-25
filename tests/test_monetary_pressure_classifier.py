@@ -18,6 +18,9 @@ import numpy as np
 import pandas as pd
 import pytest
 
+from regime_detection.axis_builders.monetary_pressure import (
+    _monetary_pressure_required_trading_days,
+)
 from regime_detection.axis_series import build_monetary_pressure_axis_series
 from regime_detection.calendar import nyse_sessions_between
 from regime_detection.config import (
@@ -39,7 +42,6 @@ from regime_detection.monetary_pressure import (
     compute_monetary_pressure_features,
     evaluate_rules,
 )
-
 
 _TRAINING_SESSIONS = 1400  # > 1260 normalizer + 63 cold-start
 _LAST_SESSION = pd.Timestamp("2025-04-30")
@@ -85,6 +87,17 @@ def _usd_series(*, index: pd.DatetimeIndex, base: float, seed: int) -> pd.Series
     innovations = rng.normal(loc=0.0, scale=0.3, size=len(index))
     levels = np.cumsum(innovations) + base
     return pd.Series(levels, index=index, name="broad_usd_index")
+
+
+def test_classifier_required_history_matches_longest_feature_output_lookback() -> None:
+    config = MonetaryPressureV2FeaturesConfig(
+        yield_change_lookback_days=63,
+        zscore_normalizer_window_days=1260,
+        rate_shock_lookback_days=21,
+        broad_usd_lookback_days=84,
+    )
+
+    assert _monetary_pressure_required_trading_days(config) == 84
 
 
 # =============================================================================
@@ -403,7 +416,9 @@ def test_classifier_emits_central_bank_text_score_as_evidence_only():
         monetary_pressure_v2_config=context.config.monetary_pressure_v2,
     )
     assert store.monetary is not None
-    score = pd.Series(0.25, index=context.spy_ohlcv.index, name="central_bank_text_score")
+    score = pd.Series(
+        0.25, index=context.spy_ohlcv.index, name="central_bank_text_score"
+    )
     store = store.model_copy(
         update={"monetary": replace(store.monetary, central_bank_text_score=score)}
     )
@@ -414,7 +429,26 @@ def test_classifier_emits_central_bank_text_score_as_evidence_only():
     sample = next(
         output for output in out.values() if "rule_evidence" in output.evidence
     )
-    assert sample.evidence["rule_evidence"]["central_bank_text_score"] == 0.25
+    assert "central_bank_text_score" not in sample.evidence["rule_evidence"]
+    assert sample.evidence["central_bank_text_evidence"] == {
+        "score": 0.25,
+        "classifier_type": "lexicon",
+        "sentence_accuracy": 0.539,
+        "conditional_accuracy": 0.709,
+        "rule_consumption": False,
+    }
+
+
+def test_rule_inputs_do_not_accept_central_bank_text_score() -> None:
+    with pytest.raises(TypeError):
+        MonetaryPressureRuleInputs(
+            zscore_2y_63d=0.0,
+            zscore_10y_63d=0.0,
+            broad_usd_zscore_63d=0.0,
+            zscore_21d_2y=0.0,
+            zscore_21d_10y=0.0,
+            central_bank_text_score=0.25,
+        )
 
 
 def test_engine_classify_window_populates_monetary_pressure_state(

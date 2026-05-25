@@ -26,7 +26,9 @@ def _load_module(name: str, rel_path: str):
 def shadow_root_template(tmp_path_factory: pytest.TempPathFactory) -> Path:
     runner = _load_module("run_shadow_regime", "scripts/run_shadow_regime.py")
     repo_root = Path(__file__).resolve().parents[1]
-    market_data_path = repo_root / "tests" / "fixtures" / "raw" / "v2" / "daily_ohlcv.csv"
+    market_data_path = (
+        repo_root / "tests" / "fixtures" / "raw" / "v2" / "daily_ohlcv.csv"
+    )
     event_calendar_path = repo_root / "tests" / "fixtures" / "events" / "us_events.yaml"
     v2_daily_path = repo_root / "tests" / "fixtures" / "raw" / "v2" / "daily_ohlcv.csv"
     config_path = repo_root / "tests" / "fixtures" / "configs" / "core3-v2-fast.yaml"
@@ -65,9 +67,13 @@ def _prepare_shadow_root(tmp_path: Path, template: Path) -> Path:
 def test_shadow_replay_check_records_exact_match(
     tmp_path: Path, shadow_root_template: Path
 ) -> None:
-    replay_mod = _load_module("run_shadow_replay_check", "scripts/run_shadow_replay_check.py")
+    replay_mod = _load_module(
+        "run_shadow_replay_check", "scripts/run_shadow_replay_check.py"
+    )
     out_root = _prepare_shadow_root(tmp_path, shadow_root_template)
-    config_path = Path(__file__).resolve().parent / "fixtures" / "configs" / "core3-v2-fast.yaml"
+    config_path = (
+        Path(__file__).resolve().parent / "fixtures" / "configs" / "core3-v2-fast.yaml"
+    )
 
     result = replay_mod.run_replay_check(
         output_root=out_root,
@@ -94,14 +100,20 @@ def test_shadow_replay_check_records_exact_match(
 def test_shadow_replay_check_records_mismatch_with_diff(
     tmp_path: Path, shadow_root_template: Path
 ) -> None:
-    replay_mod = _load_module("run_shadow_replay_check", "scripts/run_shadow_replay_check.py")
+    replay_mod = _load_module(
+        "run_shadow_replay_check", "scripts/run_shadow_replay_check.py"
+    )
     out_root = _prepare_shadow_root(tmp_path, shadow_root_template)
-    config_path = Path(__file__).resolve().parent / "fixtures" / "configs" / "core3-v2-fast.yaml"
+    config_path = (
+        Path(__file__).resolve().parent / "fixtures" / "configs" / "core3-v2-fast.yaml"
+    )
 
     output_path = out_root / "outputs" / "2023-12-14.json"
     payload = json.loads(output_path.read_text())
     payload["transition_risk_state"] = "tampered_transition_risk"
-    output_path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    output_path.write_text(
+        json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+    )
 
     result = replay_mod.run_replay_check(
         output_root=out_root,
@@ -111,7 +123,9 @@ def test_shadow_replay_check_records_mismatch_with_diff(
 
     assert result["matches"] is False
     assert result["diff"] is not None
-    assert result["diff"]["transition_risk_state"]["stored"] == "tampered_transition_risk"
+    assert (
+        result["diff"]["transition_risk_state"]["stored"] == "tampered_transition_risk"
+    )
 
     with sqlite3.connect(out_root / "regime_shadow.db") as conn:
         row = conn.execute(
@@ -121,15 +135,22 @@ def test_shadow_replay_check_records_mismatch_with_diff(
     assert row is not None
     assert row[0] == 0
     diff = json.loads(row[1])
-    assert diff["transition_risk_state"]["replayed"] != diff["transition_risk_state"]["stored"]
+    assert (
+        diff["transition_risk_state"]["replayed"]
+        != diff["transition_risk_state"]["stored"]
+    )
 
 
 def test_shadow_replay_check_uses_only_archived_inputs(
     tmp_path: Path, shadow_root_template: Path
 ) -> None:
-    replay_mod = _load_module("run_shadow_replay_check", "scripts/run_shadow_replay_check.py")
+    replay_mod = _load_module(
+        "run_shadow_replay_check", "scripts/run_shadow_replay_check.py"
+    )
     out_root = _prepare_shadow_root(tmp_path, shadow_root_template)
-    config_path = Path(__file__).resolve().parent / "fixtures" / "configs" / "core3-v2-fast.yaml"
+    config_path = (
+        Path(__file__).resolve().parent / "fixtures" / "configs" / "core3-v2-fast.yaml"
+    )
 
     archive_dir = out_root / "input_archives" / "2023-12-14"
     market_archive = archive_dir / "market_data.parquet"

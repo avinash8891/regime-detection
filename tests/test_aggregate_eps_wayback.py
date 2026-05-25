@@ -16,7 +16,6 @@ from regime_data_fetch.aggregate_eps_models import (
     EPSWaybackSnapshot,
 )
 
-
 TARGET_URL = (
     "https://www.spglobal.com/spdji/en/documents/additional-material/"
     "sp-500-eps-est.xlsx"

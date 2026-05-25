@@ -87,7 +87,9 @@ def consolidate_acquisition_dbs(
 
     for source in selected_sources:
         if not source.db_path.exists():
-            raise FileNotFoundError(f"Missing acquisition db for consolidation: {source.db_path}")
+            raise FileNotFoundError(
+                f"Missing acquisition db for consolidation: {source.db_path}"
+            )
         counts = _import_one_source(target_db_path=target_db_path, source=source)
         total_daily_ohlcv_rows += counts.get(DAILY_OHLCV_ROWS_TABLE, 0)
         summary_sources.append(
@@ -112,8 +114,12 @@ def consolidate_acquisition_dbs(
             FOMC_MINUTES_ROWS_TABLE: _count_rows(conn, FOMC_MINUTES_ROWS_TABLE),
             POWELL_SPEECHES_ROWS_TABLE: _count_rows(conn, POWELL_SPEECHES_ROWS_TABLE),
             USD_INDEX_ROWS_TABLE: _count_rows(conn, USD_INDEX_ROWS_TABLE),
-            AGGREGATE_EPS_SNAPSHOT_ROWS_TABLE: _count_rows(conn, AGGREGATE_EPS_SNAPSHOT_ROWS_TABLE),
-            AGGREGATE_EPS_WAYBACK_ROWS_TABLE: _count_rows(conn, AGGREGATE_EPS_WAYBACK_ROWS_TABLE),
+            AGGREGATE_EPS_SNAPSHOT_ROWS_TABLE: _count_rows(
+                conn, AGGREGATE_EPS_SNAPSHOT_ROWS_TABLE
+            ),
+            AGGREGATE_EPS_WAYBACK_ROWS_TABLE: _count_rows(
+                conn, AGGREGATE_EPS_WAYBACK_ROWS_TABLE
+            ),
             ALPACA_MARKET_ROWS_TABLE: _count_rows(conn, ALPACA_MARKET_ROWS_TABLE),
         }
 
@@ -127,8 +133,13 @@ def consolidate_acquisition_dbs(
     return report
 
 
-def _import_one_source(*, target_db_path: Path, source: ConsolidationSource) -> dict[str, int]:
-    with sqlite3.connect(target_db_path) as dst_conn, sqlite3.connect(source.db_path) as src_conn:
+def _import_one_source(
+    *, target_db_path: Path, source: ConsolidationSource
+) -> dict[str, int]:
+    with (
+        sqlite3.connect(target_db_path) as dst_conn,
+        sqlite3.connect(source.db_path) as src_conn,
+    ):
         dst_conn.execute("PRAGMA foreign_keys = ON")
         src_conn.row_factory = sqlite3.Row
         fetch_run_id_map: dict[int, int] = {}
@@ -136,8 +147,14 @@ def _import_one_source(*, target_db_path: Path, source: ConsolidationSource) -> 
         normalized_counts = dict.fromkeys(_NORMALIZED_TABLES, 0)
 
         for row in src_conn.execute("SELECT * FROM fetch_runs ORDER BY run_id"):
-            params_json = _augment_params_json(row["params_json"], source_label=source.label, source_db_path=str(source.db_path))
-            notes = _merge_notes(row["notes"], f"imported_from={source.label}:{source.db_path}")
+            params_json = _augment_params_json(
+                row["params_json"],
+                source_label=source.label,
+                source_db_path=str(source.db_path),
+            )
+            notes = _merge_notes(
+                row["notes"], f"imported_from={source.label}:{source.db_path}"
+            )
             cursor = dst_conn.execute(
                 """
                 INSERT INTO fetch_runs (
@@ -162,7 +179,9 @@ def _import_one_source(*, target_db_path: Path, source: ConsolidationSource) -> 
 
         for row in src_conn.execute("SELECT * FROM artifacts ORDER BY artifact_id"):
             new_run_id = fetch_run_id_map[int(row["run_id"])]
-            notes = _merge_notes(row["notes"], f"imported_from={source.label}:{source.db_path}")
+            notes = _merge_notes(
+                row["notes"], f"imported_from={source.label}:{source.db_path}"
+            )
             cursor = dst_conn.execute(
                 """
                 INSERT INTO artifacts (
@@ -210,7 +229,9 @@ def _import_one_source(*, target_db_path: Path, source: ConsolidationSource) -> 
             artifact_id_map[int(row["artifact_id"])] = int(cursor.lastrowid)
 
         if _table_exists(src_conn, ARTIFACT_BLOBS_TABLE):
-            for row in src_conn.execute("SELECT * FROM artifact_blobs ORDER BY artifact_id"):
+            for row in src_conn.execute(
+                "SELECT * FROM artifact_blobs ORDER BY artifact_id"
+            ):
                 old_artifact_id = int(row["artifact_id"])
                 if old_artifact_id not in artifact_id_map:
                     continue
@@ -226,7 +247,9 @@ def _import_one_source(*, target_db_path: Path, source: ConsolidationSource) -> 
 
         for row in src_conn.execute("SELECT * FROM derived_outputs ORDER BY output_id"):
             new_run_id = fetch_run_id_map[int(row["run_id"])]
-            notes = _merge_notes(row["notes"], f"imported_from={source.label}:{source.db_path}")
+            notes = _merge_notes(
+                row["notes"], f"imported_from={source.label}:{source.db_path}"
+            )
             dst_conn.execute(
                 """
                 INSERT INTO derived_outputs (
@@ -332,7 +355,9 @@ def _merge_notes(existing: str | None, extra: str) -> str:
     return extra
 
 
-def _augment_params_json(params_json: str, *, source_label: str, source_db_path: str) -> str:
+def _augment_params_json(
+    params_json: str, *, source_label: str, source_db_path: str
+) -> str:
     try:
         payload = json.loads(params_json)
     except json.JSONDecodeError:

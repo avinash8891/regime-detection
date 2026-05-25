@@ -402,11 +402,11 @@ def run_us_event_calendar_fetch(
                 "event_calendar_yaml": format_report_path(
                     yaml_path, repo_root=repo_root
                 ),
-                "acquisition_db": format_report_path(
-                    acquisition_db_path, repo_root=repo_root
-                )
-                if acquisition_db_path
-                else None,
+                "acquisition_db": (
+                    format_report_path(acquisition_db_path, repo_root=repo_root)
+                    if acquisition_db_path
+                    else None
+                ),
             },
         }
         if group_a_result is not None:
@@ -430,12 +430,12 @@ def run_us_event_calendar_fetch(
                 output_kind="event_calendar_yaml",
                 path=yaml_path,
                 row_count=len(events),
-                min_date=min(event.date for event in events).isoformat()
-                if events
-                else None,
-                max_date=max(event.date for event in events).isoformat()
-                if events
-                else None,
+                min_date=(
+                    min(event.date for event in events).isoformat() if events else None
+                ),
+                max_date=(
+                    max(event.date for event in events).isoformat() if events else None
+                ),
                 notes="Generated scheduled US event calendar",
             )
             store.record_output(
@@ -443,12 +443,12 @@ def run_us_event_calendar_fetch(
                 output_kind="event_calendar_report",
                 path=report_path,
                 row_count=len(events),
-                min_date=min(event.date for event in events).isoformat()
-                if events
-                else None,
-                max_date=max(event.date for event in events).isoformat()
-                if events
-                else None,
+                min_date=(
+                    min(event.date for event in events).isoformat() if events else None
+                ),
+                max_date=(
+                    max(event.date for event in events).isoformat() if events else None
+                ),
                 notes="Event calendar fetch report",
             )
             store.finish_fetch_run(run_id=fetch_run.run_id, status="ok")

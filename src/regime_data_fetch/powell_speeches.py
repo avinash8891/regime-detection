@@ -13,12 +13,15 @@ import pandas as pd
 
 from regime_data_fetch.acquisition_store import AcquisitionStore
 
-
-INDEX_URL = "https://www.federalreserve.gov/newsevents/speeches.htm?speaker=Jerome+H.+Powell"
+INDEX_URL = (
+    "https://www.federalreserve.gov/newsevents/speeches.htm?speaker=Jerome+H.+Powell"
+)
 BASE_URL = "https://www.federalreserve.gov"
 SOURCE_NAME = "federalreserve.gov"
 
-_YEAR_PAGE_RE = re.compile(r'href="(?P<path>/newsevents/\d{4}-speeches\.htm)"', flags=re.IGNORECASE)
+_YEAR_PAGE_RE = re.compile(
+    r'href="(?P<path>/newsevents/\d{4}-speeches\.htm)"', flags=re.IGNORECASE
+)
 _YEAR_ROW_RE = re.compile(
     r"<time>(?P<date>\d{1,2}/\d{1,2}/\d{4})</time>\s*</div>\s*"
     r'<div class="col-xs-9 col-md-10 eventlist__event">\s*'
@@ -27,11 +30,23 @@ _YEAR_ROW_RE = re.compile(
     r"<p>(?P<location>.*?)</p>",
     flags=re.DOTALL | re.IGNORECASE,
 )
-_ARTICLE_TIME_RE = re.compile(r"<p class=['\"]article__time['\"]>(?P<date>[^<]+)</p>", flags=re.IGNORECASE)
-_ARTICLE_TITLE_RE = re.compile(r"<h3 class=['\"]title['\"]>\s*<em>(?P<title>.*?)</em>\s*</h3>", flags=re.IGNORECASE | re.DOTALL)
-_ARTICLE_SPEAKER_RE = re.compile(r'<p class="speaker">\s*(?P<speaker>.*?)</p>', flags=re.IGNORECASE | re.DOTALL)
-_ARTICLE_LOCATION_RE = re.compile(r"<p class=['\"]location['\"]>(?P<location>.*?)</p>", flags=re.IGNORECASE | re.DOTALL)
-_ARTICLE_RE = re.compile(r'<div id="article">(?P<body>.*?)</div>\s*</div>', flags=re.IGNORECASE | re.DOTALL)
+_ARTICLE_TIME_RE = re.compile(
+    r"<p class=['\"]article__time['\"]>(?P<date>[^<]+)</p>", flags=re.IGNORECASE
+)
+_ARTICLE_TITLE_RE = re.compile(
+    r"<h3 class=['\"]title['\"]>\s*<em>(?P<title>.*?)</em>\s*</h3>",
+    flags=re.IGNORECASE | re.DOTALL,
+)
+_ARTICLE_SPEAKER_RE = re.compile(
+    r'<p class="speaker">\s*(?P<speaker>.*?)</p>', flags=re.IGNORECASE | re.DOTALL
+)
+_ARTICLE_LOCATION_RE = re.compile(
+    r"<p class=['\"]location['\"]>(?P<location>.*?)</p>",
+    flags=re.IGNORECASE | re.DOTALL,
+)
+_ARTICLE_RE = re.compile(
+    r'<div id="article">(?P<body>.*?)</div>\s*</div>', flags=re.IGNORECASE | re.DOTALL
+)
 
 
 class PowellSpeechFetchError(RuntimeError):
@@ -67,7 +82,9 @@ def parse_powell_speeches_year_index(html: str) -> list[str]:
         seen.add(url)
         urls.append(url)
     if not urls:
-        raise PowellSpeechFetchError("Powell speeches index did not contain yearly archive links")
+        raise PowellSpeechFetchError(
+            "Powell speeches index did not contain yearly archive links"
+        )
     return urls
 
 
@@ -76,7 +93,9 @@ def parse_powell_speech_year_page(html: str) -> list[PowellSpeechListing]:
     for match in _YEAR_ROW_RE.finditer(html):
         rows.append(
             PowellSpeechListing(
-                speech_date=dt.datetime.strptime(match.group("date"), "%m/%d/%Y").date(),
+                speech_date=dt.datetime.strptime(
+                    match.group("date"), "%m/%d/%Y"
+                ).date(),
                 speech_url=BASE_URL + match.group("path"),
             )
         )
@@ -85,7 +104,12 @@ def parse_powell_speech_year_page(html: str) -> list[PowellSpeechListing]:
 
 def publication_timestamp_for_date(speech_date: dt.date) -> tuple[dt.datetime, str]:
     tz = ZoneInfo("America/New_York")
-    return dt.datetime(speech_date.year, speech_date.month, speech_date.day, 0, 0, tzinfo=tz), "date_only"
+    return (
+        dt.datetime(
+            speech_date.year, speech_date.month, speech_date.day, 0, 0, tzinfo=tz
+        ),
+        "date_only",
+    )
 
 
 def parse_powell_speech_article(
@@ -112,7 +136,9 @@ def parse_powell_speech_article(
     if not article_match:
         raise PowellSpeechFetchError("Powell speech page missing article body")
 
-    speech_date = dt.datetime.strptime(unescape(date_match.group("date")).strip(), "%B %d, %Y").date()
+    speech_date = dt.datetime.strptime(
+        unescape(date_match.group("date")).strip(), "%B %d, %Y"
+    ).date()
     body_text = _clean_html_text(article_match.group("body"))
     if not body_text:
         raise PowellSpeechFetchError("Powell speech page produced empty article body")
@@ -152,7 +178,11 @@ def run_powell_speeches_fetch(
     artifact_store_root: str | Path | None = None,
 ) -> Path:
     out_dir.mkdir(parents=True, exist_ok=True)
-    store = AcquisitionStore(acquisition_db_path, artifact_store_root=artifact_store_root) if acquisition_db_path else None
+    store = (
+        AcquisitionStore(acquisition_db_path, artifact_store_root=artifact_store_root)
+        if acquisition_db_path
+        else None
+    )
     fetch_run = (
         store.start_fetch_run(
             fetch_type="powell_speeches",
@@ -196,10 +226,14 @@ def run_powell_speeches_fetch(
                 listings[row.speech_date] = row
 
         if not listings:
-            raise PowellSpeechFetchError("No Powell speeches found in the yearly Federal Reserve archives")
+            raise PowellSpeechFetchError(
+                "No Powell speeches found in the yearly Federal Reserve archives"
+            )
 
         articles: list[PowellSpeechArticle] = []
-        for row in sorted(listings.values(), key=lambda item: item.speech_date, reverse=True):
+        for row in sorted(
+            listings.values(), key=lambda item: item.speech_date, reverse=True
+        ):
             ts, precision = publication_timestamp_for_date(row.speech_date)
             article_html = article_fetcher(row.speech_url)
             if store and fetch_run:
@@ -254,12 +288,18 @@ def run_powell_speeches_fetch(
                 "speech_dates": int(df["speech_date"].nunique()),
             },
             "date_range": {
-                "min_speech_date": str(df["speech_date"].min()) if not df.empty else None,
-                "max_speech_date": str(df["speech_date"].max()) if not df.empty else None,
+                "min_speech_date": (
+                    str(df["speech_date"].min()) if not df.empty else None
+                ),
+                "max_speech_date": (
+                    str(df["speech_date"].max()) if not df.empty else None
+                ),
             },
             "paths": {
                 "powell_speeches_parquet": str(parquet_path),
-                "acquisition_db": str(acquisition_db_path) if acquisition_db_path else None,
+                "acquisition_db": (
+                    str(acquisition_db_path) if acquisition_db_path else None
+                ),
             },
         }
         report_path = out_dir / "powell_speeches_fetch_report.json"
@@ -288,7 +328,9 @@ def run_powell_speeches_fetch(
         return report_path
     except Exception as exc:
         if store and fetch_run:
-            store.finish_fetch_run(run_id=fetch_run.run_id, status="failed", notes=str(exc))
+            store.finish_fetch_run(
+                run_id=fetch_run.run_id, status="failed", notes=str(exc)
+            )
         raise
 
 

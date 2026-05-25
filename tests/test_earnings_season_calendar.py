@@ -10,13 +10,17 @@ from regime_data_fetch.earnings_season_calendar import (
 
 
 def test_compute_earnings_season_window_uses_second_monday_anchor() -> None:
-    start_date, end_date = compute_earnings_season_window(year=2026, quarter_start_month=1)
+    start_date, end_date = compute_earnings_season_window(
+        year=2026, quarter_start_month=1
+    )
     assert start_date == dt.date(2026, 1, 12)
     assert end_date == dt.date(2026, 2, 16)
 
 
 def test_compute_earnings_season_window_for_april_quarter() -> None:
-    start_date, end_date = compute_earnings_season_window(year=2025, quarter_start_month=4)
+    start_date, end_date = compute_earnings_season_window(
+        year=2025, quarter_start_month=4
+    )
     assert start_date == dt.date(2025, 4, 14)
     assert end_date == dt.date(2025, 5, 19)
 

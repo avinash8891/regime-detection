@@ -30,6 +30,7 @@ This file ships TWO bodies of checks:
      publication-day-of-week jitter; tighter than the freshness gate
      to surface mid-history holes rather than tail staleness).
 """
+
 from __future__ import annotations
 
 import datetime as dt
@@ -41,9 +42,10 @@ import pytest
 
 from regime_detection.loaders import load_news_sentiment_series
 
-
 _REPO_ROOT = Path(__file__).resolve().parents[1]
-_NEWS_PARQUET = _REPO_ROOT / "data" / "raw" / "news_sentiment" / "sf_fed_news_sentiment.parquet"
+_NEWS_PARQUET = (
+    _REPO_ROOT / "data" / "raw" / "news_sentiment" / "sf_fed_news_sentiment.parquet"
+)
 _DAILY_OHLCV_DIR = _REPO_ROOT / "data" / "raw" / "daily_ohlcv"
 
 # Engine OHLCV floor — see `docs/regime_engine_v1_data_requirements.md`

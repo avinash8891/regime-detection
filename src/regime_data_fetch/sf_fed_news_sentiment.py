@@ -41,7 +41,6 @@ import pandas as pd
 
 from regime_data_fetch.acquisition_store import AcquisitionStore
 
-
 SF_FED_NEWS_SENTIMENT_URL = (
     "https://www.frbsf.org/wp-content/uploads/news_sentiment_data.xlsx"
 )

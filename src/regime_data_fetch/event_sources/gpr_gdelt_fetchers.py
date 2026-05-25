@@ -80,9 +80,7 @@ def fetch_ai_gpr_country_monthly() -> str:
 
 def fetch_gdelt_daily_export(day: dt.date) -> bytes:
     master_list = _http_text(GDELT_V2_MASTERFILELIST_URL, headers={})
-    export_urls = tuple(
-        _gdelt_v2_export_urls_for_day(master_list=master_list, day=day)
-    )
+    export_urls = tuple(_gdelt_v2_export_urls_for_day(master_list=master_list, day=day))
     return b"".join(_http_bytes(url) for url in export_urls)
 
 
@@ -340,9 +338,7 @@ def _payload_total_count(payload: object) -> int | None:
 
 
 def _http_text(url: str, *, headers: dict[str, str]) -> str:
-    request = Request(
-        url, headers={"User-Agent": HTTP_USER_AGENT, **headers}
-    )
+    request = Request(url, headers={"User-Agent": HTTP_USER_AGENT, **headers})
     with urlopen(request, timeout=30) as response:
         return response.read().decode("utf-8", errors="replace")
 
