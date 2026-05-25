@@ -47,8 +47,10 @@ from regime_detection.observability import (
     clear_trace,
     configure_deployment_observability,
     configure_error_tracking,
+    configure_product_analytics,
     current_trace_id,
     get_metrics_collector,
+    load_feature_flags,
     record_timing,
     start_trace,
 )
@@ -761,6 +763,8 @@ def main() -> int:
     logger.info("%s=%s", TRACE_ID_HEADER, trace_id)
     error_tracking = configure_error_tracking(logger=logger)
     deployment_observability = configure_deployment_observability(logger=logger)
+    product_analytics = configure_product_analytics(logger=logger)
+    feature_flags = load_feature_flags(logger=logger)
     overall_start = time.perf_counter()
     load_operator_env_files(repo_root=REPO_ROOT, explicit_path=args.operator_env_file)
     try:
@@ -928,6 +932,8 @@ def main() -> int:
         "metrics": get_metrics_collector().snapshot(),
         "error_tracking": error_tracking,
         "deployment_observability": deployment_observability,
+        "product_analytics": product_analytics,
+        "feature_flags": feature_flags,
     }
     if args.json_output is not None:
         _write_json_report(args.json_output, json_report)

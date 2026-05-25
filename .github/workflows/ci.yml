@@ -21,6 +21,11 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
+          cache: "pip"
+          cache-dependency-path: requirements-dev.txt
+
+      - name: Capture CI start time
+        run: echo "CI_START=$(date +%s)" >> "$GITHUB_ENV"
 
       - name: Git whitespace check
         shell: bash
@@ -73,17 +78,14 @@ jobs:
       - name: Black
         run: python -m black --check src tests scripts
 
+      - name: Validate AGENTS.md automation
+        run: python scripts/validate_agents_md.py
+
       - name: Radon
         run: python -m radon cc src/regime_detection/observability.py -s -n B
 
       - name: jscpd
-        run: |
-          npx jscpd --threshold 1 --min-lines 20 --min-tokens 120 \
-            src/regime_detection/observability.py \
-            src/regime_detection/loaders.py \
-            scripts/profile_engine.py \
-            tests/test_observability.py \
-            tests/test_profile_engine_reporting_loaders.py
+        run: npx jscpd --config .jscpd.json
 
       - name: Deptry
         run: python -m deptry . --ignore DEP003
@@ -98,3 +100,15 @@ jobs:
           else
             echo "No tests directory yet; skipping pytest until V1 implementation begins."
           fi
+
+      - name: Report CI duration
+        if: always()
+        run: |
+          end_ts="$(date +%s)"
+          elapsed="$((end_ts - CI_START))"
+          {
+            echo "## CI duration"
+            echo
+            echo "- Total seconds: ${elapsed}"
+            echo "- Pip cache: enabled via actions/setup-python"
+          } >> "$GITHUB_STEP_SUMMARY"

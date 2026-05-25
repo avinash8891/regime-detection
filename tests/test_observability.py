@@ -14,8 +14,10 @@ from regime_detection.observability import (
     clear_trace,
     configure_deployment_observability,
     configure_error_tracking,
+    configure_product_analytics,
     current_trace_id,
     get_metrics_collector,
+    load_feature_flags,
     start_trace,
 )
 
@@ -98,6 +100,33 @@ def test_configure_deployment_observability_uses_env(
     assert config["dashboard_url"] == "https://grafana.example/dash"
     assert config["deploy_log_url"] == "https://deploy.example/run/1"
     assert config["annotation_sink"] == "grafana"
+
+
+def test_configure_product_analytics_uses_env(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("REGIME_PRODUCT_ANALYTICS_ENABLED", "true")
+    monkeypatch.setenv("REGIME_PRODUCT_ANALYTICS_BACKEND", "posthog")
+    monkeypatch.setenv("REGIME_PRODUCT_ANALYTICS_PROJECT", "regime-prod")
+    monkeypatch.setenv("REGIME_PRODUCT_ANALYTICS_SAMPLE_RATE", "0.25")
+
+    config = configure_product_analytics()
+
+    assert config["enabled"] is True
+    assert config["backend"] == "posthog"
+    assert config["project"] == "regime-prod"
+    assert config["sample_rate"] == "0.25"
+
+
+def test_load_feature_flags_reads_prefixed_env_vars(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("REGIME_FEATURE_FLAG_SHADOW_MODE", "true")
+    monkeypatch.setenv("REGIME_FEATURE_FLAG_EXPERIMENTAL_RISK", "0")
+
+    flags = load_feature_flags()
+
+    assert flags == {"experimental_risk": False, "shadow_mode": True}
 
 
 def test_trace_header_constant_is_stable() -> None:

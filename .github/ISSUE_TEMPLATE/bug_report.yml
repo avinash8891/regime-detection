@@ -1,0 +1,63 @@
+name: Bug report
+description: Report a reproducible defect in the regime engine or data-fetch pipeline
+title: "[bug] "
+labels:
+  - bug
+body:
+  - type: textarea
+    id: summary
+    attributes:
+      label: Summary
+      description: What is broken?
+    validations:
+      required: true
+  - type: textarea
+    id: impact
+    attributes:
+      label: Impact
+      description: Which runtime, workflow, or regime output is affected?
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Reproduction
+      description: Exact commands, config, or input files needed to reproduce the issue
+      placeholder: |
+        1. Command:
+        2. Manifest/config:
+        3. Expected result:
+        4. Actual result:
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Evidence
+      description: Paste failing logs, test output, stack traces, or artifact paths
+    validations:
+      required: true
+  - type: dropdown
+    id: priority
+    attributes:
+      label: Priority
+      options:
+        - P0
+        - P1
+        - P2
+        - P3
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - engine
+        - data-fetch
+        - configs
+        - tests
+        - ci
+        - observability
+    validations:
+      required: true

@@ -133,6 +133,35 @@ def configure_deployment_observability(
     return config
 
 
+def configure_product_analytics(
+    *, logger: logging.Logger | None = None
+) -> dict[str, JsonValue]:
+    logger = logger or logging.getLogger(__name__)
+    config: dict[str, JsonValue] = {
+        "enabled": _env_flag("REGIME_PRODUCT_ANALYTICS_ENABLED"),
+        "backend": os.environ.get(
+            "REGIME_PRODUCT_ANALYTICS_BACKEND", "structured_logs"
+        ),
+        "project": os.environ.get("REGIME_PRODUCT_ANALYTICS_PROJECT", "").strip()
+        or None,
+        "sample_rate": os.environ.get("REGIME_PRODUCT_ANALYTICS_SAMPLE_RATE", "1.0"),
+    }
+    _json_log(logger, logging.INFO, "product_analytics_configured", **config)
+    return config
+
+
+def load_feature_flags(*, logger: logging.Logger | None = None) -> dict[str, bool]:
+    logger = logger or logging.getLogger(__name__)
+    prefix = "REGIME_FEATURE_FLAG_"
+    flags = {
+        name.removeprefix(prefix).lower(): _env_flag(name)
+        for name in sorted(os.environ)
+        if name.startswith(prefix)
+    }
+    _json_log(logger, logging.INFO, "feature_flags_loaded", flags=flags)
+    return flags
+
+
 def capture_exception(
     error: BaseException,
     *,
