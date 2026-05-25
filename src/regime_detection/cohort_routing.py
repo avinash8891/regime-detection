@@ -20,6 +20,7 @@ from regime_detection.models import AgentRouting
 
 
 COHORTS: tuple[str, ...] = (
+    "data_outage_specialist",
     "crisis_specialist",
     "euphoria_specialist",
     "bear_stress_specialist",
@@ -32,6 +33,13 @@ COHORTS: tuple[str, ...] = (
 )
 
 _FALLBACK = "default_neutral"
+_UNKNOWN_SENSITIVE_AXES: tuple[str, ...] = (
+    "trend_direction",
+    "trend_character",
+    "volatility_state",
+    "breadth_state",
+    "network_fragility",
+)
 
 
 def evaluate_cohort_routing(
@@ -58,6 +66,14 @@ def evaluate_cohort_routing(
         "network_fragility": network_fragility_active,
         "monetary_pressure": monetary_pressure_active,
     }
+    if all(inputs[axis] == "unknown" for axis in _UNKNOWN_SENSITIVE_AXES):
+        return AgentRouting(
+            active_cohort="data_outage_specialist",
+            fallback_cohort=_FALLBACK,
+            blocked_strategy_modes=list(
+                config.blocked_strategy_modes.get("data_outage_specialist", ())
+            ),
+        )
     for cohort in COHORTS:
         if cohort == _FALLBACK:
             break

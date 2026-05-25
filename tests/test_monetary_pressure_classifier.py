@@ -18,6 +18,9 @@ import numpy as np
 import pandas as pd
 import pytest
 
+from regime_detection.axis_builders.monetary_pressure import (
+    _monetary_pressure_required_trading_days,
+)
 from regime_detection.axis_series import build_monetary_pressure_axis_series
 from regime_detection.calendar import nyse_sessions_between
 from regime_detection.config import (
@@ -85,6 +88,17 @@ def _usd_series(*, index: pd.DatetimeIndex, base: float, seed: int) -> pd.Series
     innovations = rng.normal(loc=0.0, scale=0.3, size=len(index))
     levels = np.cumsum(innovations) + base
     return pd.Series(levels, index=index, name="broad_usd_index")
+
+
+def test_classifier_required_history_matches_longest_feature_output_lookback() -> None:
+    config = MonetaryPressureV2FeaturesConfig(
+        yield_change_lookback_days=63,
+        zscore_normalizer_window_days=1260,
+        rate_shock_lookback_days=21,
+        broad_usd_lookback_days=84,
+    )
+
+    assert _monetary_pressure_required_trading_days(config) == 84
 
 
 # =============================================================================

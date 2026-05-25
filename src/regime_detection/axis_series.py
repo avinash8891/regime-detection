@@ -28,6 +28,7 @@ from regime_detection.data_quality import (
 )
 from regime_detection.event_calendar import compute_event_calendar_outputs
 from regime_detection.feature_store import FeatureStore
+from regime_detection.hysteresis import apply_data_quality_aware_hysteresis
 from regime_detection.market_context import MarketContext
 from regime_detection.models import (
     AxisOutput,
@@ -88,6 +89,50 @@ class AxisSeriesBundle:
     inflation_growth: dict[date, InflationGrowthOutput] | None = None
 
 
+AXIS_BUILD_ORDER: tuple[str, ...] = (
+    "trend_direction",
+    "trend_character",
+    "volatility_state",
+    "breadth_state",
+    "event_calendar",
+    "credit_funding",
+    "credit_funding_proxy",
+    "credit_funding_effective",
+    "network_fragility",
+    "volume_liquidity_state",
+    "monetary_pressure_state",
+    "inflation_growth",
+)
+
+AXIS_DEPENDENCIES: dict[str, tuple[str, ...]] = {
+    "credit_funding_effective": ("credit_funding", "credit_funding_proxy"),
+    "network_fragility": (
+        "breadth_state",
+        "volatility_state",
+        "credit_funding_effective",
+    ),
+    "inflation_growth": ("credit_funding_effective",),
+}
+
+
+def _validate_axis_dependency_order(
+    build_order: tuple[str, ...],
+    dependencies: dict[str, tuple[str, ...]],
+) -> None:
+    positions = {name: idx for idx, name in enumerate(build_order)}
+    for axis, required_axes in dependencies.items():
+        if axis not in positions:
+            raise ValueError(f"axis build order missing declared axis {axis!r}")
+        for required in required_axes:
+            if required not in positions:
+                raise ValueError(
+                    f"axis build order dependency {axis!r}->{required!r} is undeclared"
+                )
+            if positions[required] >= positions[axis]:
+                raise ValueError(
+                    f"axis {axis!r} must build after dependency {required!r}"
+                )
+
 
 def build_event_calendar_series(
     context: MarketContext,
@@ -106,11 +151,11 @@ def _build_axis_outputs(
     *,
     dates: list[date] | tuple[date, ...],
     raw_labels: list[str],
-    stable_labels: list[str],
-    active_labels: list[str],
     raw_evidence: list[dict[str, object]],
     risk_rank: dict[str, int],
-    deescalation_days: int,
+    deescalation_days_by_label: dict[str, int],
+    default_deescalation_days: int,
+    max_unknown_freeze_days: int,
     required_inputs: list,
     required_trading_days: int,
     max_freshness_days: int,
@@ -120,10 +165,8 @@ def _build_axis_outputs(
     stable_by_date: dict[date, str] = {}
     active_by_date: dict[date, str] = {}
     input_by_date = list(required_inputs)
-    for day, raw, stable, active, evidence in zip(
-        dates, raw_labels, stable_labels, active_labels, raw_evidence, strict=True
-    ):
-        dq = assess_series_input_quality(
+    data_quality = [
+        assess_series_input_quality(
             as_of_date=day,
             required_inputs=input_by_date,
             required_trading_days=required_trading_days,
@@ -131,12 +174,35 @@ def _build_axis_outputs(
             max_freshness_days=max_freshness_days,
             min_completeness=min_completeness,
         )
+        for day, raw in zip(dates, raw_labels, strict=True)
+    ]
+    stable_labels, active_labels, frozen_labels = apply_data_quality_aware_hysteresis(
+        raw_labels=raw_labels,
+        risk_rank=risk_rank,
+        deescalation_days_by_label=deescalation_days_by_label,
+        data_quality=data_quality,
+        default_deescalation_days=default_deescalation_days,
+        max_unknown_freeze_days=max_unknown_freeze_days,
+    )
+    for day, raw, stable, active, evidence, dq, is_frozen in zip(
+        dates,
+        raw_labels,
+        stable_labels,
+        active_labels,
+        raw_evidence,
+        data_quality,
+        frozen_labels,
+        strict=True,
+    ):
         if quality_forces_unknown(dq):
+            evidence_payload = {"reason": dq.reason}
+            if is_frozen:
+                evidence_payload["data_quality_freeze"] = True
             output = AxisOutput(
                 raw_label="unknown",
-                stable_label="unknown",
-                active_label="unknown",
-                evidence={"reason": dq.reason},
+                stable_label=stable if is_frozen else "unknown",
+                active_label=active if is_frozen else "unknown",
+                evidence=evidence_payload,
                 data_quality=dq,
             )
         else:
@@ -147,7 +213,7 @@ def _build_axis_outputs(
                 evidence={
                     "rule_evidence": evidence,
                     "risk_rank": risk_rank,
-                    "deescalation_days": deescalation_days,
+                    "deescalation_days": default_deescalation_days,
                 },
                 data_quality=dq,
             )
@@ -164,6 +230,7 @@ def _build_axis_outputs(
 def build_axis_series_bundle(
     *, context: MarketContext, feature_store: FeatureStore
 ) -> AxisSeriesBundle:
+    _validate_axis_dependency_order(AXIS_BUILD_ORDER, AXIS_DEPENDENCIES)
     trend_direction = build_trend_direction_axis_series(context, feature_store)
     trend_character = build_trend_character_axis_series(context, feature_store)
     volatility_state = build_volatility_axis_series(context, feature_store)

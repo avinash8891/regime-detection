@@ -65,7 +65,7 @@ def compute_features(*, spy_close: pd.Series, rsp_close: pd.Series) -> BreadthFe
     ratio = rsp_close / spy_close
     ratio_sma50 = ratio.rolling(50).mean()
     ratio_ret20 = ratio / ratio.shift(20) - 1
-    idx_dist = spy_close / spy_close.rolling(63, min_periods=50).max() - 1
+    idx_dist = spy_close / spy_close.rolling(63).max() - 1
     return BreadthFeatures(
         spy_close=spy_close,
         rsp_close=rsp_close,

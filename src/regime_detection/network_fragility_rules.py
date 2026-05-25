@@ -591,34 +591,30 @@ def evaluate_systemic_stress(
     """
     if credit_funding_label is None:
         return False
-    if not _systemic_stress_market_conditions(inputs, config, breadth_label):
+    if systemic_stress_rule_path(inputs, config, breadth_label) is None:
         return False
     accepted_credit: set[CreditFundingLabel] = {"credit_stress", "deleveraging"}
     return bool(credit_funding_label in accepted_credit)
 
 
-def _systemic_stress_market_conditions(
+def systemic_stress_rule_path(
     inputs: NetworkFragilityRuleInputs,
     config: NetworkFragilityRulesConfig,
     breadth_label: BreadthLabel,
-) -> bool:
-    # Explicit NaN guard over ALL fields this rule relies on. `vix_percentile_252d`
-    # is additionally guarded here because it is unique to systemic stress.
-    if _any_nan(
-        inputs.avg_pairwise_corr_percentile_504d,
-        inputs.realized_vol_percentile_252d,
-        inputs.drawdown_21d,
-        inputs.vix_percentile_252d,
-    ):
-        return False
-    if not _correlation_to_one_percentile_path(inputs, config):
-        return False
+) -> str | None:
+    """Return the correlation-to-one path when systemic market gates also pass."""
+    if np.isnan(inputs.vix_percentile_252d):
+        return None
+    correlation_path = correlation_to_one_rule_path(inputs, config)
+    if correlation_path is None:
+        return None
     # v2 §3.5 line 3541: accepted breadth set matches spec verbatim (implementation decision).
     accepted_breadth: set[BreadthLabel] = {"weak_breadth", "narrowing_breadth"}
-    return bool(
-        inputs.vix_percentile_252d > config.systemic_stress_vix_percentile_min
-        and breadth_label in accepted_breadth
-    )
+    if inputs.vix_percentile_252d <= config.systemic_stress_vix_percentile_min:
+        return None
+    if breadth_label not in accepted_breadth:
+        return None
+    return correlation_path
 
 
 def evaluate_systemic_stress_unconfirmed(
@@ -630,7 +626,7 @@ def evaluate_systemic_stress_unconfirmed(
     """Systemic market stress when credit/funding confirmation is unavailable."""
     return bool(
         credit_funding_label is None
-        and _systemic_stress_market_conditions(inputs, config, breadth_label)
+        and systemic_stress_rule_path(inputs, config, breadth_label) is not None
     )
 
 
@@ -666,20 +662,19 @@ def evaluate_rules_with_evidence(
     """Evaluate the rule precedence and report the matched rule path."""
     for label in RULE_PRECEDENCE:
         if label == "systemic_stress":
-            if evaluate_systemic_stress(
-                inputs, config, breadth_label, credit_funding_label
-            ):
+            path = systemic_stress_rule_path(inputs, config, breadth_label)
+            accepted_credit: set[CreditFundingLabel] = {"credit_stress", "deleveraging"}
+            if path is not None and credit_funding_label in accepted_credit:
                 return NetworkFragilityRuleEvaluation(
                     label="systemic_stress",
-                    rule_path="percentile",
+                    rule_path=path,
                 )
         elif label == "systemic_stress_unconfirmed":
-            if evaluate_systemic_stress_unconfirmed(
-                inputs, config, breadth_label, credit_funding_label
-            ):
+            path = systemic_stress_rule_path(inputs, config, breadth_label)
+            if path is not None and credit_funding_label is None:
                 return NetworkFragilityRuleEvaluation(
                     label="systemic_stress_unconfirmed",
-                    rule_path="percentile",
+                    rule_path=path,
                     reason="credit_funding_unavailable",
                 )
         elif label == "correlation_to_one":

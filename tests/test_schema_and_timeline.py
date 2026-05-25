@@ -61,7 +61,32 @@ def _minimal_context_for_evidence_mapping() -> MarketContext:
     )
 
 
-def test_hmm_output_explains_absent_state_label_map() -> None:
+def test_default_config_requires_and_carries_operator_label_maps() -> None:
+    cfg = load_default_regime_config()
+
+    assert cfg.hmm is not None
+    assert cfg.hmm.label_map_required_for_output is True
+    assert cfg.hmm.state_label_map == {
+        0: "elevated_uncertainty",
+        1: "high_vol_stress",
+        2: "calm_trending",
+        3: "transient_spike",
+    }
+    assert cfg.clustering is not None
+    assert cfg.clustering.label_map_required_for_output is True
+    assert cfg.clustering.cluster_label_map == {
+        0: "post_crisis_transition",
+        1: "crisis_panic",
+        2: "tariff_shock",
+        3: "correction_chop",
+        4: "volatile_recovery",
+        5: "calm_trending_bull",
+        6: "steady_bull",
+        7: "high_vol_stress",
+    }
+
+
+def test_hmm_output_uses_default_operator_state_label_map() -> None:
     day = date(2024, 1, 2)
     idx = pd.DatetimeIndex([pd.Timestamp(day)])
     aligned = _AlignedV2Evidence(
@@ -87,12 +112,12 @@ def test_hmm_output_explains_absent_state_label_map() -> None:
     )
 
     assert output is not None
-    assert output.mapped_label is None
-    assert output.mapping_status == "map_absent"
-    assert output.mapping_reason == "state_label_map_not_configured"
+    assert output.mapped_label == "high_vol_stress"
+    assert output.mapping_status == "mapped"
+    assert output.mapping_reason == "state_label_map_valid"
 
 
-def test_cluster_output_explains_absent_cluster_label_map() -> None:
+def test_cluster_output_uses_default_operator_cluster_label_map() -> None:
     day = date(2024, 1, 2)
     idx = pd.DatetimeIndex([pd.Timestamp(day)])
     aligned = _AlignedV2Evidence(
@@ -117,9 +142,9 @@ def test_cluster_output_explains_absent_cluster_label_map() -> None:
     )
 
     assert output is not None
-    assert output.mapped_label is None
-    assert output.mapping_status == "map_absent"
-    assert output.mapping_reason == "cluster_label_map_not_configured"
+    assert output.mapped_label == "tariff_shock"
+    assert output.mapping_status == "mapped"
+    assert output.mapping_reason == "cluster_label_map_valid"
 
 
 def _constituent_ohlcv_from_close_series(series: pd.Series) -> pd.DataFrame:

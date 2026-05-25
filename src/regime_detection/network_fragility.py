@@ -114,6 +114,11 @@ def _shannon_effective_rank(eigvals: np.ndarray) -> float:
     return float(np.exp(entropy))
 
 
+def _positive_correlation_eigenvalues(eigvals: np.ndarray) -> np.ndarray:
+    """Clip floating-point PSD noise from a correlation-matrix eigenspectrum."""
+    return np.clip(np.asarray(eigvals, dtype=float), 0.0, None)
+
+
 def _per_session_corr_features(
     returns: pd.DataFrame,
     *,
@@ -159,7 +164,7 @@ def _per_session_corr_features(
         iu = np.triu_indices_from(corr, k=1)
         avg_corr[t] = corr[iu].mean()
 
-        eigs = np.linalg.eigvalsh(corr)
+        eigs = _positive_correlation_eigenvalues(np.linalg.eigvalsh(corr))
         total = eigs.sum()
         if total > 0:
             largest_share[t] = eigs[-1] / total

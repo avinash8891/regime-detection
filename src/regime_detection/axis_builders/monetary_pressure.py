@@ -22,8 +22,22 @@ from regime_detection.monetary_pressure import (
 )
 
 
-# V2 §2A feature series already encode their longer warm-ups as NaN.
-MONETARY_PRESSURE_REQUIRED_TRADING_DAYS = 1
+def _monetary_pressure_required_trading_days(
+    config: object,
+) -> int:
+    """Trailing feature-output sessions required by the §2A quality gate.
+
+    The z-score normalizer warmup is already represented by leading NaNs in
+    the computed feature series. This window checks that the post-warmup
+    feature outputs are continuously available over their longest lookback.
+    """
+    return int(
+        max(
+            getattr(config, "yield_change_lookback_days"),
+            getattr(config, "rate_shock_lookback_days"),
+            getattr(config, "broad_usd_lookback_days"),
+        )
+    )
 
 
 def _monetary_pressure_output(
@@ -65,6 +79,9 @@ def build_monetary_pressure_axis_series(
         features.yield_change_zscore_21d_2y,
         features.yield_change_zscore_21d_10y,
     ]
+    required_trading_days = _monetary_pressure_required_trading_days(
+        v2_features_config
+    )
     max_freshness_days = context.config.data_quality.max_freshness_days
     min_completeness = context.config.data_quality.min_completeness
 
@@ -78,11 +95,10 @@ def build_monetary_pressure_axis_series(
         day_quality = assess_series_input_quality(
             as_of_date=day,
             required_inputs=required_inputs,
-            required_trading_days=MONETARY_PRESSURE_REQUIRED_TRADING_DAYS,
-            raw_label="",
+            required_trading_days=required_trading_days,
+            raw_label=None,
             max_freshness_days=max_freshness_days,
             min_completeness=min_completeness,
-            skip_raw_label_short_circuit=True,
         )
         if quality_forces_unknown(day_quality):
             raw_labels.append("unknown")

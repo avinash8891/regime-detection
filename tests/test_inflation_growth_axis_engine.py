@@ -447,6 +447,18 @@ def test_classifier_rule_evidence_includes_nowcast_and_eps_revision_inputs() -> 
     evidence = outputs[last_day].evidence["rule_evidence"]
     assert "inflation_surprise_zscore" in evidence
     assert "aggregate_forward_eps_revision_direction_4w" in evidence
+    goldilocks_evidence = outputs[last_day].evidence["goldilocks_limb_evidence"]
+    assert set(goldilocks_evidence) == {
+        "credit_is_calm",
+        "drift_ok",
+        "drift_margin",
+        "slope_ok",
+        "slope_margin",
+        "benign_ok",
+        "benign_margin",
+        "limb_count",
+    }
+    assert isinstance(goldilocks_evidence["limb_count"], int)
 
 
 def test_feature_store_seam_none_when_dbc_missing() -> None:

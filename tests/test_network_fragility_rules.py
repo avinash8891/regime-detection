@@ -437,6 +437,40 @@ def test_correlation_to_one_uses_explicit_cold_start_fallback_when_percentiles_w
     )
 
 
+def test_systemic_stress_uses_correlation_to_one_cold_start_fallback():
+    cfg = _default_rules_config()
+    inputs = _inputs(
+        avg_corr_pct=float("nan"),
+        largest_eig_pct=float("nan"),
+        avg_corr=0.92,
+        largest_eig=0.78,
+        realized_vol_pct=float("nan"),
+        realized_vol_21d=0.34,
+        drawdown_21d=-0.04,
+        vix_pct=0.90,
+    )
+
+    assert correlation_to_one_rule_path(inputs, cfg) == "cold_start_fallback"
+    assert (
+        evaluate_systemic_stress(
+            inputs,
+            cfg,
+            breadth_label="weak_breadth",
+            credit_funding_label="credit_stress",
+        )
+        is True
+    )
+    evaluation = evaluate_rules_with_evidence(
+        inputs=inputs,
+        config=cfg,
+        breadth_label="weak_breadth",
+        volatility_label="normal_vol",
+        credit_funding_label="credit_stress",
+    )
+    assert evaluation.label == "systemic_stress"
+    assert evaluation.rule_path == "cold_start_fallback"
+
+
 def test_systemic_stress_blocked_by_nan_vix_percentile():
     """N-2 / I-2: explicit NaN guard on `vix_percentile_252d`. With ALL other
     fields valid AND credit_funding='credit_stress' (so the credit short-circuit

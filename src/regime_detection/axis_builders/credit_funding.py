@@ -242,10 +242,9 @@ def _build_credit_funding_for_spread_source(
             as_of_date=day,
             required_inputs=required_inputs,
             required_trading_days=required_trading_days,
-            raw_label="",
+            raw_label=None,
             max_freshness_days=max_freshness_days,
             min_completeness=min_completeness,
-            skip_raw_label_short_circuit=True,
         )
         if quality_forces_unknown(day_quality):
             raw_labels.append("unknown")

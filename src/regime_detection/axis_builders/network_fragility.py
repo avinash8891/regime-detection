@@ -35,10 +35,9 @@ def _assess_network_fragility_day_quality(
         as_of_date=day,
         required_inputs=required_inputs,
         required_trading_days=required_trading_days,
-        raw_label="",
+        raw_label=None,
         max_freshness_days=max_freshness_days,
         min_completeness=min_completeness,
-        skip_raw_label_short_circuit=True,
     )
 
 
@@ -128,8 +127,8 @@ def build_network_fragility_axis_series(
         # if cold-start clipping diverges. Reindex on the fly.
         # Pure-quality assessment: we compute the raw label AFTER quality
         # (rule engine, below) and re-check with quality_forces_unknown.
-        # `skip_raw_label_short_circuit=True` keeps the helper from
-        # collapsing to "insufficient_history" before we have a label.
+        # raw_label=None keeps the helper from collapsing to
+        # "insufficient_history" before we have a label.
         day_quality = _assess_network_fragility_day_quality(
             day=day,
             required_inputs=required_inputs,

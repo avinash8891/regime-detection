@@ -207,9 +207,8 @@ def test_default_neutral_when_no_specialist_matches() -> None:
 
 
 @pytest.mark.unit
-def test_default_neutral_when_all_axes_unknown() -> None:
-    """§5.1: silent specialists don't fire when their predicate labels are
-    absent. All-unknown axes must route to default_neutral."""
+def test_data_outage_specialist_when_all_core_axes_unknown() -> None:
+    """Unknown-heavy routing must fail closed rather than default_neutral."""
     out = _route(
         trend_direction_active="unknown",
         trend_character_active="unknown",
@@ -218,8 +217,8 @@ def test_default_neutral_when_all_axes_unknown() -> None:
         network_fragility_active="unknown",
         monetary_pressure_active=None,
     )
-    assert out.active_cohort == "default_neutral"
-    assert out.blocked_strategy_modes == []
+    assert out.active_cohort == "data_outage_specialist"
+    assert out.blocked_strategy_modes == ["short_vol", "leveraged_long", "breakout"]
 
 
 # ===========================================================================

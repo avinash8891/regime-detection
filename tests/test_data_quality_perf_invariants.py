@@ -111,6 +111,26 @@ def test_assess_series_input_quality_skip_raw_label_short_circuit_passes_through
     assert dq.reason is None
 
 
+def test_assess_series_input_quality_none_raw_label_is_pure_quality_mode(
+    raw_market_frames,
+) -> None:
+    spy_close = _spy_close_series(raw_market_frames)
+    as_of = date(2023, 12, 14)
+    dq = assess_series_input_quality(
+        as_of_date=as_of,
+        required_inputs=[spy_close],
+        required_trading_days=_SPY_REQUIRED_TRADING_DAYS,
+        raw_label=None,
+        max_freshness_days=_MAX_FRESHNESS_DAYS,
+        min_completeness=_MIN_COMPLETENESS,
+    )
+
+    assert dq.status == "ok"
+    assert dq.freshness_days == 0
+    assert dq.completeness == 1.0
+    assert dq.reason is None
+
+
 def test_assess_series_input_quality_unsorted_input_still_normalizes(raw_market_frames) -> None:
     # Defensive: legacy callers may pass an out-of-order or string-indexed
     # series. The function MUST still parse + sort internally to preserve

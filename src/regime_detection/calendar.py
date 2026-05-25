@@ -25,7 +25,7 @@ def nyse_calendar() -> mcal.MarketCalendar:
     return mcal.get_calendar("NYSE")
 
 
-@lru_cache(maxsize=None)
+@lru_cache(maxsize=1024)
 def nyse_sessions_between(start_date: date, end_date: date) -> tuple[date, ...]:
     return tuple(nyse_calendar().schedule(start_date=start_date, end_date=end_date).index.date)
 

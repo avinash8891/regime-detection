@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from dataclasses import asdict, dataclass
+
 import numpy as np
 
 from regime_detection.config import InflationGrowthRulesConfig
@@ -27,32 +29,74 @@ def _credit_is_calm(
     return False
 
 
+@dataclass(frozen=True)
+class GoldilocksLimbEvidence:
+    credit_is_calm: bool
+    drift_ok: bool
+    drift_margin: float | None
+    slope_ok: bool
+    slope_margin: float | None
+    benign_ok: bool
+    benign_margin: float | None
+    limb_count: int
+
+    def as_evidence(self) -> dict[str, object]:
+        return asdict(self)
+
+
+def goldilocks_limb_evidence(
+    inputs: InflationGrowthRuleInputs,
+    config: InflationGrowthRulesConfig,
+) -> GoldilocksLimbEvidence:
+    credit_is_calm = _credit_is_calm(inputs, config)
+
+    drift_margin: float | None = None
+    drift_ok = False
+    if not _any_nan(inputs.cpi_6m_change_pct, inputs.cpi_6m_change_pct_lag_21):
+        drift = abs(inputs.cpi_6m_change_pct - inputs.cpi_6m_change_pct_lag_21)
+        drift_margin = config.cpi_drift_threshold - drift
+        drift_ok = drift_margin >= 0.0
+
+    slope_margin: float | None = None
+    slope_ok = False
+    if not np.isnan(inputs.cpi_6m_change_pct_slope_21d):
+        slope_margin = 0.0 - inputs.cpi_6m_change_pct_slope_21d
+        slope_ok = slope_margin >= 0.0
+
+    benign_margin: float | None = None
+    benign_ok = False
+    ceiling = getattr(config, "cpi_goldilocks_benign_ceiling", None)
+    if ceiling is not None and not np.isnan(inputs.cpi_6m_change_pct):
+        benign_margin = ceiling - inputs.cpi_6m_change_pct
+        benign_ok = benign_margin > 0.0
+
+    limb_count = sum((drift_ok, slope_ok, benign_ok))
+    return GoldilocksLimbEvidence(
+        credit_is_calm=credit_is_calm,
+        drift_ok=drift_ok,
+        drift_margin=drift_margin,
+        slope_ok=slope_ok,
+        slope_margin=slope_margin,
+        benign_ok=benign_ok,
+        benign_margin=benign_margin,
+        limb_count=limb_count,
+    )
+
+
 def evaluate_goldilocks(
     inputs: InflationGrowthRuleInputs,
     config: InflationGrowthRulesConfig,
 ) -> bool:
     """v2 §2B lines 3047-3053 — `goldilocks` rule."""
-    if not _credit_is_calm(inputs, config):
+    limb_evidence = goldilocks_limb_evidence(inputs, config)
+    if not limb_evidence.credit_is_calm:
         return False
     if _any_nan(
         inputs.pmi_manufacturing,
         inputs.spy_21d_return,
     ):
         return False
-    drift_ok = False
-    if not _any_nan(inputs.cpi_6m_change_pct, inputs.cpi_6m_change_pct_lag_21):
-        drift_ok = (
-            abs(inputs.cpi_6m_change_pct - inputs.cpi_6m_change_pct_lag_21)
-            <= config.cpi_drift_threshold
-        )
-    slope_ok = False
-    if not np.isnan(inputs.cpi_6m_change_pct_slope_21d):
-        slope_ok = inputs.cpi_6m_change_pct_slope_21d <= 0.0
-    benign_ok = False
-    ceiling = getattr(config, "cpi_goldilocks_benign_ceiling", None)
-    if ceiling is not None and not np.isnan(inputs.cpi_6m_change_pct):
-        benign_ok = inputs.cpi_6m_change_pct < ceiling
-    if not (drift_ok or slope_ok or benign_ok):
+    if limb_evidence.limb_count == 0:
         return False
     return bool(
         inputs.pmi_manufacturing > config.pmi_goldilocks_threshold

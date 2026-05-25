@@ -18,6 +18,7 @@ from regime_detection.fragility_universe import (
 )
 from regime_detection.network_fragility import (
     NetworkFragilityFeatures,
+    _positive_correlation_eigenvalues,
     compute_features,
 )
 
@@ -176,6 +177,13 @@ def test_absorption_ratio_top3_against_hand_computed_eigenvalues(small_4asset_re
     expected = eigs[:3].sum() / eigs.sum()
 
     assert out.absorption_ratio_top3.loc[target_dt] == pytest.approx(expected, abs=1e-12)
+
+
+def test_positive_correlation_eigenvalues_clip_tiny_negative_numerical_noise() -> None:
+    eigs = _positive_correlation_eigenvalues(np.array([-1e-12, 0.2, 0.8]))
+
+    assert eigs.tolist() == pytest.approx([0.0, 0.2, 0.8])
+    assert eigs.sum() == pytest.approx(1.0)
 
 
 def test_dispersion_ratio_against_hand_computed_realized_vols(small_4asset_returns):

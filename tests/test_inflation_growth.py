@@ -35,6 +35,7 @@ from regime_detection.inflation_growth import (
     evaluate_recovery_growth,
     evaluate_rules,
     evaluate_stagflation_lite,
+    goldilocks_limb_evidence,
 )
 
 
@@ -393,6 +394,29 @@ def test_goldilocks_fires_under_drift_pmi_spy_creditcalm() -> None:
     )
     assert evaluate_goldilocks(inputs, rules) is True
     assert evaluate_rules(inputs=inputs, config=rules) == "goldilocks"
+
+
+def test_goldilocks_limb_evidence_reports_count_and_strengths() -> None:
+    rules = _default_rules()
+    inputs = _rule_inputs(
+        cpi_6m_change_pct=0.035,
+        cpi_6m_change_pct_lag_21=0.020,
+        cpi_6m_change_pct_slope_21d=-0.001,
+        pmi_manufacturing=52.0,
+        spy_21d_return=0.03,
+        credit_funding_active_label="credit_calm",
+    )
+
+    evidence = goldilocks_limb_evidence(inputs, rules)
+
+    assert evidence.credit_is_calm is True
+    assert evidence.drift_ok is False
+    assert evidence.slope_ok is True
+    assert evidence.benign_ok is True
+    assert evidence.limb_count == 2
+    assert evidence.drift_margin == pytest.approx(-0.010)
+    assert evidence.slope_margin == pytest.approx(0.001)
+    assert evidence.benign_margin == pytest.approx(0.005)
 
 
 def test_goldilocks_fires_when_credit_unavailable_with_fallback() -> None:

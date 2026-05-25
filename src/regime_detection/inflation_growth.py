@@ -625,4 +625,5 @@ from regime_detection.inflation_growth_rules import (  # noqa: E402
     evaluate_risk_off_mild as evaluate_risk_off_mild,
     evaluate_stagflation_lite as evaluate_stagflation_lite,
     evaluate_rules as evaluate_rules,
+    goldilocks_limb_evidence as goldilocks_limb_evidence,
 )

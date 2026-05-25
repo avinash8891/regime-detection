@@ -70,6 +70,12 @@ def test_breadth_active_label_source_separates_pit_from_hysteresis(
     ) == expected
 
 
+def test_axis_builders_do_not_use_empty_string_raw_label_quality_sentinel() -> None:
+    for path in (_REPO_ROOT / "src" / "regime_detection" / "axis_builders").glob("*.py"):
+        source = path.read_text()
+        assert 'raw_label=""' not in source, f"{path.name} uses empty-string raw_label sentinel"
+
+
 def _load_test_helper_module(name: str, filename: str):
     path = _REPO_ROOT / "tests" / filename
     spec = importlib.util.spec_from_file_location(name, path)

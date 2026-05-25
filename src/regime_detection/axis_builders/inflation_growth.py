@@ -23,6 +23,7 @@ from regime_detection.inflation_growth import (
     PMI_KEY,
     build_rule_inputs_by_date as build_inflation_growth_rule_inputs_by_date,
     evaluate_rules as evaluate_inflation_growth_rules,
+    goldilocks_limb_evidence,
 )
 
 from regime_detection.market_context import MarketContext
@@ -185,10 +186,9 @@ def build_inflation_growth_axis_series(
             as_of_date=day,
             required_inputs=required_inputs,
             required_trading_days=required_trading_days,
-            raw_label="",
+            raw_label=None,
             max_freshness_days=max_freshness_days,
             min_completeness=min_completeness,
-            skip_raw_label_short_circuit=True,
         )
         if quality_forces_unknown(day_quality):
             raw_labels.append("unknown")
@@ -259,6 +259,9 @@ def build_inflation_growth_axis_series(
                     "spy_21d_return": rule_inputs.spy_21d_return,
                     "tlt_21d_return": rule_inputs.tlt_21d_return,
                 },
+                "goldilocks_limb_evidence": goldilocks_limb_evidence(
+                    rule_inputs, ig_config.rules
+                ).as_evidence(),
                 "credit_funding_active_label": credit_funding_active_label,
                 "bias_warning_code": "commodity_proxy_dbc_substitute",
             }
