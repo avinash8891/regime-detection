@@ -61,6 +61,7 @@ jobs:
           python -m pip install --upgrade pip
           pip install -e ".[dev]"
           python -m ruff check .
+          python -m deptry src tests
           python -m pyright \
             src/regime_detection/config.py \
             src/regime_detection/transition_risk.py \

@@ -14,7 +14,12 @@ dependencies = [
   "pydantic>=2,<3",
   "pandas_market_calendars",
   "pyyaml",
+  "alpaca-py>=0.43,<1",
   "hmmlearn>=0.3,<0.4",
+  "joblib>=1.5,<2",
+  "openpyxl>=3.1,<4",
+  "scikit-learn>=1.8,<2",
+  "xlrd>=2,<3",
   # Adapter in regime_detection.change_point uses
   # online_changepoint_detection(data, hazard_func, observation_likelihood),
   # constant_hazard(lam, r), and StudentT(alpha, beta, kappa, mu).
@@ -39,11 +44,10 @@ dev = [
   "pytest-mock",
   "pytest-xdist",
   "hypothesis",
+  "deptry",
   "ruff",
   "pyright",
   "pyarrow",
-  "xlrd",
-  "openpyxl",
 ]
 
 [tool.setuptools]
@@ -55,6 +59,13 @@ where = ["src"]
 
 [tool.setuptools.package-data]
 regime_detection = ["configs/*.yaml"]
+
+[tool.deptry]
+known_first_party = ["regime_detection", "regime_data_fetch"]
+optional_dependencies_dev_groups = ["dev", "audit"]
+
+[tool.deptry.package_module_name_map]
+"regime-detection" = "regime_detection|regime_data_fetch"
 
 [tool.ruff.lint.per-file-ignores]
 "scripts/approve_group_b_candidate.py" = ["E402"]
