@@ -15,6 +15,7 @@ from dataclasses import replace
 
 import numpy as np
 import pandas as pd
+import pytest
 
 from regime_detection.axis_series import build_inflation_growth_axis_series
 from regime_detection.calendar import nyse_sessions_between
@@ -290,6 +291,16 @@ def _build_store_and_outputs(context, *, credit_funding_active_labels_by_date=No
     return store, outputs
 
 
+@pytest.fixture(scope="module")
+def default_inflation_growth_context():
+    return _build_synthetic_context()
+
+
+@pytest.fixture(scope="module")
+def default_inflation_growth_store_outputs(default_inflation_growth_context):
+    return _build_store_and_outputs(default_inflation_growth_context)
+
+
 def test_unknown_when_cpi_stale_more_than_60_days() -> None:
     """§2B line 2309: CPI stale > 60 days → unknown."""
     context = _build_synthetic_context(cpi_truncate_calendar_days=90)
@@ -392,18 +403,16 @@ def test_unknown_when_dgs10_stale_more_than_5_sessions() -> None:
     assert "dgs10_stale" in (out.data_quality.reason or "")
 
 
-def test_unknown_when_assess_series_input_quality_fails() -> None:
+def test_unknown_when_assess_series_input_quality_fails(
+    default_inflation_growth_context,
+    default_inflation_growth_store_outputs,
+) -> None:
     """§2B line 2312: assess_series_input_quality fails → unknown.
 
     Force this by mutating the features so the spy_21d_return series is all NaN.
     """
-    context = _build_synthetic_context()
-    store = build_feature_store(
-        context,
-        network_fragility_config=context.config.network_fragility,
-        credit_funding_config=context.config.credit_funding,
-        inflation_growth_config=context.config.inflation_growth,
-    )
+    context = default_inflation_growth_context
+    store, _ = default_inflation_growth_store_outputs
     ig = store.inflation_growth
     assert ig is not None
     nan_series = pd.Series(np.nan, index=ig.cpi_6m_change_pct.index)
@@ -429,13 +438,11 @@ def test_unknown_when_assess_series_input_quality_fails() -> None:
     assert outputs[last_day].raw_label == "unknown"
 
 
-def test_feature_store_seam_lit_with_all_inputs() -> None:
+def test_feature_store_seam_lit_with_all_inputs(
+    default_inflation_growth_store_outputs,
+) -> None:
     """All 9 §2B inputs present → feature_store.inflation_growth populated."""
-    context = _build_synthetic_context()
-    store = build_feature_store(
-        context,
-        inflation_growth_config=context.config.inflation_growth,
-    )
+    store, _ = default_inflation_growth_store_outputs
     assert store.inflation_growth is not None
     assert isinstance(store.inflation_growth, InflationGrowthFeatures)
 
@@ -562,9 +569,11 @@ def test_unknown_does_not_delay_recovery_into_classified_inflation_label() -> No
 # --- Group E — End-to-end wire integration (1 test) --------------------------
 
 
-def test_regime_output_carries_inflation_growth_state_when_configured() -> None:
+def test_regime_output_carries_inflation_growth_state_when_configured(
+    default_inflation_growth_context,
+) -> None:
     """End-to-end: classify_window populates RegimeOutput.inflation_growth_state."""
-    context = _build_synthetic_context()
+    context = default_inflation_growth_context
     engine = RegimeEngine()
     pit_intervals = pd.DataFrame(
         {

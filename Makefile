@@ -3,7 +3,7 @@ DATA_ROOT ?= data/raw
 OPERATOR_ENV_FILE ?=
 OPERATOR_ENV_ARG = $(if $(OPERATOR_ENV_FILE),--operator-env-file "$(OPERATOR_ENV_FILE)",)
 
-.PHONY: regime-data profile-30d
+.PHONY: regime-data profile-30d test-integration
 
 regime-data:
 	@if [ ! -f "$(MANIFEST)" ]; then \
@@ -24,3 +24,6 @@ profile-30d:
 	python3 scripts/profile_engine.py \
 		--manifest "$(MANIFEST)" \
 		--data-root "$(DATA_ROOT)" $(OPERATOR_ENV_ARG)
+
+test-integration:
+	PYTEST_ADDOPTS='' python3 -m pytest -m integration -q -n 0

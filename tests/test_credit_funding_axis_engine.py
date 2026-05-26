@@ -273,6 +273,16 @@ def _build_store_and_outputs(context):
     return store, build_credit_funding_axis_series(context, store)
 
 
+@pytest.fixture(scope="module")
+def default_credit_context():
+    return _build_full_synthetic_context()
+
+
+@pytest.fixture(scope="module")
+def default_credit_store_outputs(default_credit_context):
+    return _build_store_and_outputs(default_credit_context)
+
+
 def _build_real_v2_credit_context(
     as_of: date,
     v2_market_df_for_asof,
@@ -299,18 +309,15 @@ def _build_real_v2_credit_context(
     )
 
 
-def test_build_proxy_runs_parallel_to_build_with_proxy_bias_code() -> None:
+def test_build_proxy_runs_parallel_to_build_with_proxy_bias_code(
+    default_credit_context,
+    default_credit_store_outputs,
+) -> None:
     """build_proxy() runs the identical §2C rule schema on the TLT-proxy
     series, producing a parallel output keyed exactly like build() — but
     tagged with the proxy bias-warning code, never blended (Log #71)."""
-    context = _build_full_synthetic_context()
-    cfg = context.config
-    store = build_feature_store(
-        context,
-        network_fragility_config=cfg.network_fragility,
-        monetary_pressure_v2_config=cfg.monetary_pressure_v2,
-        credit_funding_config=cfg.credit_funding,
-    )
+    context = default_credit_context
+    store, _ = default_credit_store_outputs
     real = build_credit_funding_axis_series(context, store)
     proxy = build_credit_funding_proxy_axis_series(context, store)
 
@@ -417,16 +424,12 @@ def test_credit_funding_proxy_builds_when_oas_series_are_absent() -> None:
     assert effective.evidence["source_used"] == "proxy_fallback"
 
 
-def test_real_oas_percentile_warmup_is_insufficient_history_not_missing_feature() -> (
-    None
-):
-    context = _build_full_synthetic_context()
-    store = build_feature_store(
-        context,
-        network_fragility_config=context.config.network_fragility,
-        monetary_pressure_v2_config=context.config.monetary_pressure_v2,
-        credit_funding_config=context.config.credit_funding,
-    )
+def test_real_oas_percentile_warmup_is_insufficient_history_not_missing_feature(
+    default_credit_context,
+    default_credit_store_outputs,
+) -> None:
+    context = default_credit_context
+    store, _ = default_credit_store_outputs
     cf = store.credit_funding
     assert cf is not None
 
@@ -547,19 +550,18 @@ def test_unknown_when_legacy_ioer_component_is_stale() -> None:
     assert "funding_spread_stale" in (out.data_quality.reason or "")
 
 
-def test_unknown_when_assess_series_input_quality_fails() -> None:
+def test_unknown_when_assess_series_input_quality_fails(
+    default_credit_context,
+    default_credit_store_outputs,
+) -> None:
     """§2C line 2126: assess_series_input_quality fails → unknown.
 
     Forced by mutating the feature store so the spread-proxy series is all NaN
     (insufficient history) — staleness gate passes because the underlying ETF
     closes are intact, so the secondary quality gate must be what catches us.
     """
-    context = _build_full_synthetic_context()
-    store = build_feature_store(
-        context,
-        network_fragility_config=context.config.network_fragility,
-        credit_funding_config=context.config.credit_funding,
-    )
+    context = default_credit_context
+    store, _ = default_credit_store_outputs
     cf = store.credit_funding
     assert cf is not None
     nan_series = pd.Series(np.nan, index=cf.hy_oas_63d.index)
@@ -697,46 +699,26 @@ def test_feature_store_credit_funding_seam_none_without_kre_in_cross_asset_close
     assert store.credit_funding is None
 
 
-def test_feature_store_credit_funding_seam_lit_with_all_inputs() -> None:
+def test_feature_store_credit_funding_seam_lit_with_all_inputs(
+    default_credit_store_outputs,
+) -> None:
     """All 8 §2C inputs present → feature_store.credit_funding is populated."""
-    context = _build_full_synthetic_context()
-    store = build_feature_store(
-        context,
-        network_fragility_config=context.config.network_fragility,
-        credit_funding_config=context.config.credit_funding,
-    )
+    store, _ = default_credit_store_outputs
     assert store.credit_funding is not None
     assert isinstance(store.credit_funding, CreditFundingFeatures)
 
 
 def test_real_v2_fixture_credit_funding_golden_label(
-    v2_market_df_for_asof,
-    v2_close_series_by_symbol: dict[str, pd.Series],
-    v2_macro_series_by_key: dict[str, pd.Series],
+    real_v2_classify_window_2026_05_12,
 ) -> None:
     """Real V2 OHLCV + FRED fixture lights §2C and pins current labels."""
     as_of = _REAL_FIXTURE_CREDIT_AS_OF
-    context = _build_real_v2_credit_context(
-        as_of,
-        v2_market_df_for_asof,
-        v2_close_series_by_symbol,
-        v2_macro_series_by_key,
-    )
-    store = build_feature_store(
-        context,
-        network_fragility_config=context.config.network_fragility,
-        monetary_pressure_v2_config=context.config.monetary_pressure_v2,
-        credit_funding_config=context.config.credit_funding,
-    )
-    assert store.credit_funding is not None
-
-    real_outputs = build_credit_funding_axis_series(context, store)
-    proxy_outputs = build_credit_funding_proxy_axis_series(context, store)
-    assert real_outputs is not None
-    assert proxy_outputs is not None
-
-    real = real_outputs[as_of]
-    proxy = proxy_outputs[as_of]
+    out = real_v2_classify_window_2026_05_12.outputs[-1]
+    assert out.as_of_date == as_of
+    real = out.credit_funding_state
+    proxy = out.credit_funding_state_proxy
+    assert real is not None
+    assert proxy is not None
     assert real.raw_label == "credit_calm"
     assert real.stable_label == "credit_calm"
     assert real.active_label == "credit_calm"
@@ -770,12 +752,7 @@ def test_real_v2_fixture_credit_funding_golden_label(
 
 @pytest.mark.slow
 def test_regime_output_carries_real_fixture_credit_funding_state_when_configured(
-    v2_market_df_for_asof,
-    v2_close_series_by_symbol: dict[str, pd.Series],
-    v2_macro_series_by_key: dict[str, pd.Series],
-    v2_pit_constituent_intervals: pd.DataFrame,
-    v2_constituent_ohlcv_by_symbol: dict[str, pd.DataFrame],
-    event_calendar_df,
+    real_v2_classify_window_2026_05_12,
 ) -> None:
     """End-to-end: real fixture reaches both §2C wire fields.
 
@@ -793,44 +770,7 @@ def test_regime_output_carries_real_fixture_credit_funding_state_when_configured
     Run this test with ``python3.14 -m pytest -m slow`` (see pytest.ini).
     """
     as_of = _REAL_FIXTURE_CREDIT_AS_OF
-    context = _build_real_v2_credit_context(
-        as_of,
-        v2_market_df_for_asof,
-        v2_close_series_by_symbol,
-        v2_macro_series_by_key,
-    )
-    engine = RegimeEngine()
-    assert engine.config.hmm is not None
-    assert engine.config.clustering is not None
-    assert engine.config.change_point is not None
-    config = engine.config.model_copy(
-        update={
-            "hmm": engine.config.hmm.model_copy(
-                update={
-                    "training_window_days": 100,
-                    "random_seeds": (42, 7, 13),
-                }
-            ),
-            "clustering": engine.config.clustering.model_copy(
-                update={"training_window_days": 100}
-            ),
-            "change_point": engine.config.change_point.model_copy(
-                update={"training_window_days": 100}
-            ),
-        }
-    )
-    timeline = engine.classify_window(
-        end_date=as_of,
-        market_data=v2_market_df_for_asof(as_of),
-        lookback_days=1,
-        config=config,
-        event_calendar=event_calendar_df,
-        sector_etf_closes=context.sector_etf_closes,
-        cross_asset_closes=context.cross_asset_closes,
-        macro_series=v2_macro_series_by_key,
-        pit_constituent_intervals=v2_pit_constituent_intervals,
-        constituent_ohlcv=v2_constituent_ohlcv_by_symbol,
-    )
+    timeline = real_v2_classify_window_2026_05_12
     out = timeline.outputs[-1]
     assert out.as_of_date == as_of
     assert out.credit_funding_state is not None
@@ -852,9 +792,11 @@ def test_regime_output_carries_real_fixture_credit_funding_state_when_configured
     }
 
 
-def test_regime_output_carries_credit_funding_state_when_configured() -> None:
+def test_regime_output_carries_credit_funding_state_when_configured(
+    default_credit_context,
+) -> None:
     """End-to-end: classify_window populates RegimeOutput.credit_funding_state."""
-    context = _build_full_synthetic_context()
+    context = default_credit_context
     engine = RegimeEngine()
     pit_intervals = pd.DataFrame(
         {

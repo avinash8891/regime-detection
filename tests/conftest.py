@@ -606,7 +606,9 @@ def walkforward_2023_dec_template(tmp_path_factory: pytest.TempPathFactory) -> P
     return cache_dir
 
 
-def _build_real_v2_classify_window_2026_05_13(
+def _build_real_v2_classify_window(
+    *,
+    as_of: date,
     v2_market_df_for_asof,
     v2_sector_etf_closes: dict[str, pd.Series],
     v2_cross_asset_closes: dict[str, pd.Series],
@@ -624,7 +626,6 @@ def _build_real_v2_classify_window_2026_05_13(
     monkeypatch in ``pytest_configure`` cut the build cost from ~90s to
     ~37s — small enough that the cross-worker setup-wait pays off.
     """
-    as_of = date(2026, 5, 13)
     return RegimeEngine().classify_window(
         end_date=as_of,
         market_data=v2_market_df_for_asof(as_of),
@@ -652,16 +653,17 @@ def real_v2_classify_window_2026_05_13(
 ):
     """Session-scoped, cross-worker pickle-cached classify_window result for
     the real V2 fixture at as_of=2026-05-13 with sector + cross-asset
-    closes (no macro). See ``_build_real_v2_classify_window_2026_05_13``.
+    closes (no macro). See ``_build_real_v2_classify_window``.
     """
     if worker_id == "master":
-        return _build_real_v2_classify_window_2026_05_13(
-            v2_market_df_for_asof,
-            v2_sector_etf_closes,
-            v2_cross_asset_closes,
-            v2_macro_series_by_key,
-            v2_pit_constituent_intervals,
-            v2_constituent_ohlcv_by_symbol,
+        return _build_real_v2_classify_window(
+            as_of=date(2026, 5, 13),
+            v2_market_df_for_asof=v2_market_df_for_asof,
+            v2_sector_etf_closes=v2_sector_etf_closes,
+            v2_cross_asset_closes=v2_cross_asset_closes,
+            v2_macro_series_by_key=v2_macro_series_by_key,
+            v2_pit_constituent_intervals=v2_pit_constituent_intervals,
+            v2_constituent_ohlcv_by_symbol=v2_constituent_ohlcv_by_symbol,
         )
 
     shared_dir = tmp_path_factory.getbasetemp().parent
@@ -674,13 +676,14 @@ def real_v2_classify_window_2026_05_13(
     try:
         fd = os.open(lock_path, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
         os.close(fd)
-        result = _build_real_v2_classify_window_2026_05_13(
-            v2_market_df_for_asof,
-            v2_sector_etf_closes,
-            v2_cross_asset_closes,
-            v2_macro_series_by_key,
-            v2_pit_constituent_intervals,
-            v2_constituent_ohlcv_by_symbol,
+        result = _build_real_v2_classify_window(
+            as_of=date(2026, 5, 13),
+            v2_market_df_for_asof=v2_market_df_for_asof,
+            v2_sector_etf_closes=v2_sector_etf_closes,
+            v2_cross_asset_closes=v2_cross_asset_closes,
+            v2_macro_series_by_key=v2_macro_series_by_key,
+            v2_pit_constituent_intervals=v2_pit_constituent_intervals,
+            v2_constituent_ohlcv_by_symbol=v2_constituent_ohlcv_by_symbol,
         )
         tmp = cache_path.with_suffix(".pkl.tmp")
         tmp.write_bytes(pickle.dumps(result))
@@ -696,6 +699,74 @@ def real_v2_classify_window_2026_05_13(
         time.sleep(0.2)
     raise RuntimeError(
         "real_v2_classify_window_2026_05_13 build timed out waiting on "
+        f"peer worker; cache_path={cache_path}"
+    )
+
+
+@pytest.fixture(scope="session")
+def real_v2_classify_window_2026_05_12(
+    v2_market_df_for_asof,
+    v2_close_series_by_symbol,
+    v2_macro_series_by_key,
+    v2_pit_constituent_intervals,
+    v2_constituent_ohlcv_by_symbol,
+    tmp_path_factory: pytest.TempPathFactory,
+    worker_id: str,
+):
+    """Session-scoped, cross-worker pickle-cached classify_window result for
+    the real V2 fixture at as_of=2026-05-12 with the canonical full V2
+    fixture bundle."""
+    sector_etf_closes = {
+        symbol: v2_close_series_by_symbol[symbol] for symbol in SECTOR_ETFS
+    }
+    cross_asset_closes = {
+        symbol: v2_close_series_by_symbol[symbol]
+        for symbol in set(CROSS_ASSET_SYMBOLS) | {"KRE"}
+    }
+    if worker_id == "master":
+        return _build_real_v2_classify_window(
+            as_of=date(2026, 5, 12),
+            v2_market_df_for_asof=v2_market_df_for_asof,
+            v2_sector_etf_closes=sector_etf_closes,
+            v2_cross_asset_closes=cross_asset_closes,
+            v2_macro_series_by_key=v2_macro_series_by_key,
+            v2_pit_constituent_intervals=v2_pit_constituent_intervals,
+            v2_constituent_ohlcv_by_symbol=v2_constituent_ohlcv_by_symbol,
+        )
+
+    shared_dir = tmp_path_factory.getbasetemp().parent
+    cache_path = shared_dir / "real_v2_classify_window_2026_05_12.pkl"
+    lock_path = shared_dir / "real_v2_classify_window_2026_05_12.lock"
+
+    if cache_path.exists():
+        return pickle.loads(cache_path.read_bytes())
+
+    try:
+        fd = os.open(lock_path, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+        os.close(fd)
+        result = _build_real_v2_classify_window(
+            as_of=date(2026, 5, 12),
+            v2_market_df_for_asof=v2_market_df_for_asof,
+            v2_sector_etf_closes=sector_etf_closes,
+            v2_cross_asset_closes=cross_asset_closes,
+            v2_macro_series_by_key=v2_macro_series_by_key,
+            v2_pit_constituent_intervals=v2_pit_constituent_intervals,
+            v2_constituent_ohlcv_by_symbol=v2_constituent_ohlcv_by_symbol,
+        )
+        tmp = cache_path.with_suffix(".pkl.tmp")
+        tmp.write_bytes(pickle.dumps(result))
+        tmp.replace(cache_path)
+        return result
+    except FileExistsError:
+        pass
+
+    deadline = time.monotonic() + 300.0
+    while time.monotonic() < deadline:
+        if cache_path.exists():
+            return pickle.loads(cache_path.read_bytes())
+        time.sleep(0.2)
+    raise RuntimeError(
+        "real_v2_classify_window_2026_05_12 build timed out waiting on "
         f"peer worker; cache_path={cache_path}"
     )
 

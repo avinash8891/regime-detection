@@ -21,14 +21,27 @@ def _reconciliation_fixture_config():
     assert cfg.hmm is not None
     assert cfg.clustering is not None
     assert cfg.change_point is not None
+    assert cfg.network_fragility is not None
     return cfg.model_copy(
         update={
-            "hmm": cfg.hmm.model_copy(update={"training_window_days": 252}),
+            "network_fragility": cfg.network_fragility.model_copy(
+                update={
+                    "percentile_lookback_days": 100,
+                    "dispersion_percentile_lookback_days": 100,
+                }
+            ),
+            "hmm": cfg.hmm.model_copy(
+                update={
+                    "n_states": 2,
+                    "training_window_days": 100,
+                    "random_seeds": (42, 7, 13),
+                }
+            ),
             "clustering": cfg.clustering.model_copy(
-                update={"training_window_days": 252}
+                update={"training_window_days": 100}
             ),
             "change_point": cfg.change_point.model_copy(
-                update={"training_window_days": 252}
+                update={"training_window_days": 100}
             ),
         }
     )
