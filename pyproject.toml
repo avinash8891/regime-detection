@@ -19,6 +19,7 @@ dependencies = [
   "xlrd==2.0.2",
   "hmmlearn==0.3.3",
   "opentelemetry-api==1.36.0",
+  "sentry-sdk==2.60.0",
   # Adapter in regime_detection.change_point uses
   # online_changepoint_detection(data, hazard_func, observation_likelihood),
   # constant_hazard(lam, r), and StudentT(alpha, beta, kappa, mu).
@@ -49,10 +50,12 @@ dev = [
   "pytest==9.0.3",
   "pytest-cov==7.1.0",
   "pytest-mock==3.15.1",
+  "pytest-rerunfailures==16.1",
   "pytest-xdist==3.8.0",
   "hypothesis==6.152.9",
   "ruff==0.15.14",
   "pyright==1.1.409",
+  "pandas-stubs==2.3.0.250703",
 ]
 
 [project.entry-points.pytest11]
@@ -66,6 +69,9 @@ target-version = ["py311"]
 typeCheckingMode = "strict"
 include = [
   "src/regime_detection/observability.py",
+  "src/regime_detection/loaders.py",
+  "scripts/detect_flaky_tests.py",
+  "scripts/validate_agents_md.py",
 ]
 
 [tool.radon]
@@ -98,6 +104,15 @@ where = ["src"]
 
 [tool.setuptools.package-data]
 regime_detection = ["configs/*.yaml"]
+
+[tool.ruff]
+line-length = 88
+target-version = "py311"
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+line-ending = "lf"
 
 [tool.ruff.lint.per-file-ignores]
 "scripts/approve_group_b_candidate.py" = ["E402"]

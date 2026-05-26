@@ -1,0 +1,31 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": [
+    "config:recommended"
+  ],
+  "labels": [
+    "dependencies"
+  ],
+  "schedule": [
+    "before 6am on monday",
+    "before 6am on thursday"
+  ],
+  "minimumReleaseAge": "3 days",
+  "rangeStrategy": "pin",
+  "packageRules": [
+    {
+      "matchManagers": [
+        "pep621",
+        "pip_requirements",
+        "github-actions"
+      ],
+      "groupName": "weekly maintenance"
+    },
+    {
+      "matchDepTypes": [
+        "devDependencies"
+      ],
+      "automerge": false
+    }
+  ]
+}

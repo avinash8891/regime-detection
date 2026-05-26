@@ -3,6 +3,12 @@ default_stages: [pre-commit]
 repos:
   - repo: local
     hooks:
+      - id: black
+        name: black
+        entry: python3 -m black
+        language: system
+        types: [python]
+
       - id: deptry
         name: deptry
         entry: python3 -m deptry src tests

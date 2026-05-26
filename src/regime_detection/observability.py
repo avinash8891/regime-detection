@@ -7,11 +7,26 @@ import os
 import time
 import uuid
 from dataclasses import dataclass
-from typing import TypeAlias
+from importlib.metadata import PackageNotFoundError, version
+from typing import Any, TypeAlias, cast
 
 from opentelemetry import trace
 from opentelemetry.trace import Span, Tracer
 from opentelemetry.util.types import AttributeValue
+
+
+def _load_sentry_bindings() -> tuple[Any | None, type[Any] | None]:
+    try:
+        import sentry_sdk as sentry_sdk_module  # pyright: ignore[reportMissingImports]
+        from sentry_sdk.integrations.logging import (  # pyright: ignore[reportMissingImports]
+            LoggingIntegration as logging_integration,
+        )
+    except ImportError:  # pragma: no cover - exercised in runtime packaging
+        return None, None
+    return sentry_sdk_module, logging_integration
+
+
+_SENTRY_SDK, _SENTRY_LOGGING_INTEGRATION = _load_sentry_bindings()
 
 TRACE_ID_HEADER = "X-Trace-ID"
 JsonScalar: TypeAlias = bool | int | float | str | None
@@ -34,6 +49,54 @@ def _json_log(
 ) -> None:
     body = {"event": event, "trace_id": current_trace_id(), **payload}
     logger.log(level, json.dumps(body, sort_keys=True, default=str))
+
+
+def _env_float(name: str, default: float) -> float:
+    raw_value = os.environ.get(name)
+    if raw_value is None or not raw_value.strip():
+        return default
+    try:
+        value = float(raw_value)
+    except ValueError as exc:
+        raise ValueError(f"{name} must be a float between 0.0 and 1.0") from exc
+    if not 0.0 <= value <= 1.0:
+        raise ValueError(f"{name} must be between 0.0 and 1.0")
+    return value
+
+
+def _release_name() -> str:
+    explicit = os.environ.get("REGIME_RELEASE", "").strip()
+    if explicit:
+        return explicit
+    try:
+        return f"regime-detection@{version('regime-detection')}"
+    except PackageNotFoundError:
+        return "regime-detection@unknown"
+
+
+def _operator_name() -> str:
+    return os.environ.get("REGIME_OPERATOR_NAME", "").strip() or "unknown"
+
+
+def _before_send_sentry_event(
+    event: dict[str, object], _hint: dict[str, object]
+) -> dict[str, object]:
+    request_obj = event.get("request")
+    if isinstance(request_obj, dict):
+        request = cast(dict[str, Any], request_obj)
+        headers = request.get("headers")
+        if isinstance(headers, dict):
+            header_map = cast(dict[str, object], headers)
+            sanitized: dict[str, object] = {
+                key: (
+                    "[redacted]"
+                    if key.lower() in {"authorization", "cookie", "x-api-key"}
+                    else value
+                )
+                for key, value in header_map.items()
+            }
+            request["headers"] = sanitized
+    return event
 
 
 def current_trace_id() -> str | None:
@@ -108,13 +171,67 @@ def configure_error_tracking(
 ) -> dict[str, JsonValue]:
     logger = logger or logging.getLogger(__name__)
     enabled = _env_flag("REGIME_ERROR_TRACKING_ENABLED")
+    backend = os.environ.get("REGIME_ERROR_TRACKING_BACKEND", "structured_logs")
+    dsn = os.environ.get("REGIME_ERROR_TRACKING_DSN", "").strip() or None
+    environment = os.environ.get("REGIME_ENVIRONMENT", "").strip() or "development"
+    release = _release_name()
+    sample_rate = 1.0
+    traces_sample_rate = 0.0
+    user_context_env = _operator_name()
+    sentry_sdk = _SENTRY_SDK
+    logging_integration_cls = _SENTRY_LOGGING_INTEGRATION
+    should_initialize_sentry = (
+        enabled
+        and backend == "sentry"
+        and dsn is not None
+        and sentry_sdk is not None
+        and logging_integration_cls is not None
+    )
+    if should_initialize_sentry:
+        sample_rate = _env_float("REGIME_ERROR_TRACKING_SAMPLE_RATE", sample_rate)
+        traces_sample_rate = _env_float(
+            "REGIME_ERROR_TRACKING_TRACES_SAMPLE_RATE",
+            traces_sample_rate,
+        )
     config: dict[str, JsonValue] = {
         "enabled": enabled,
-        "backend": os.environ.get("REGIME_ERROR_TRACKING_BACKEND", "structured_logs"),
-        "dsn": os.environ.get("REGIME_ERROR_TRACKING_DSN", "").strip() or None,
+        "backend": backend,
+        "dsn": dsn,
+        "environment": environment,
+        "release": release,
+        "sample_rate": sample_rate,
+        "traces_sample_rate": traces_sample_rate,
         "breadcrumbs": True,
-        "user_context_env": os.environ.get("REGIME_OPERATOR_NAME", "").strip() or None,
+        "user_context_env": user_context_env,
+        "initialized": False,
     }
+    if should_initialize_sentry:
+        assert sentry_sdk is not None
+        assert logging_integration_cls is not None
+        logging_integration = logging_integration_cls(
+            level=logging.INFO,
+            event_level=logging.ERROR,
+        )
+        sentry_sdk.init(
+            dsn=dsn,
+            release=release,
+            environment=environment,
+            sample_rate=sample_rate,
+            traces_sample_rate=traces_sample_rate,
+            send_default_pii=False,
+            max_breadcrumbs=50,
+            attach_stacktrace=True,
+            include_local_variables=False,
+            enable_tracing=bool(traces_sample_rate > 0.0),
+            integrations=[logging_integration],
+            before_send=_before_send_sentry_event,
+        )
+        if hasattr(sentry_sdk, "set_user"):
+            sentry_sdk.set_user({"username": user_context_env})
+        trace_id = current_trace_id()
+        if trace_id and hasattr(sentry_sdk, "set_tag"):
+            sentry_sdk.set_tag("trace_id", trace_id)
+        config["initialized"] = True
     _json_log(logger, logging.INFO, "error_tracking_configured", **config)
     return config
 
@@ -131,6 +248,35 @@ def configure_deployment_observability(
     }
     _json_log(logger, logging.INFO, "deployment_observability_configured", **config)
     return config
+
+
+def configure_product_analytics(
+    *, logger: logging.Logger | None = None
+) -> dict[str, JsonValue]:
+    logger = logger or logging.getLogger(__name__)
+    config: dict[str, JsonValue] = {
+        "enabled": _env_flag("REGIME_PRODUCT_ANALYTICS_ENABLED"),
+        "backend": os.environ.get(
+            "REGIME_PRODUCT_ANALYTICS_BACKEND", "structured_logs"
+        ),
+        "project": os.environ.get("REGIME_PRODUCT_ANALYTICS_PROJECT", "").strip()
+        or None,
+        "sample_rate": os.environ.get("REGIME_PRODUCT_ANALYTICS_SAMPLE_RATE", "1.0"),
+    }
+    _json_log(logger, logging.INFO, "product_analytics_configured", **config)
+    return config
+
+
+def load_feature_flags(*, logger: logging.Logger | None = None) -> dict[str, bool]:
+    logger = logger or logging.getLogger(__name__)
+    prefix = "REGIME_FEATURE_FLAG_"
+    flags = {
+        name.removeprefix(prefix).lower(): _env_flag(name)
+        for name in sorted(os.environ)
+        if name.startswith(prefix)
+    }
+    _json_log(logger, logging.INFO, "feature_flags_loaded", flags=flags)
+    return flags
 
 
 def capture_exception(
@@ -150,6 +296,26 @@ def capture_exception(
         payload["extra"] = extra
     _json_log(logger, logging.ERROR, "captured_exception", **payload)
     get_metrics_collector().increment("exceptions_total")
+    if _SENTRY_SDK is not None and _SENTRY_SDK.is_initialized():
+        if hasattr(_SENTRY_SDK, "set_tag"):
+            _SENTRY_SDK.set_tag("component", component)
+        trace_id = current_trace_id()
+        if trace_id and hasattr(_SENTRY_SDK, "set_tag"):
+            _SENTRY_SDK.set_tag("trace_id", trace_id)
+        if hasattr(_SENTRY_SDK, "set_user"):
+            _SENTRY_SDK.set_user({"username": _operator_name()})
+        if extra and hasattr(_SENTRY_SDK, "set_context"):
+            _SENTRY_SDK.set_context("regime_extra", extra)
+        if hasattr(_SENTRY_SDK, "set_context"):
+            _SENTRY_SDK.set_context(
+                "regime_error",
+                {
+                    "component": component,
+                    "error_type": type(error).__name__,
+                    "message": str(error),
+                },
+            )
+        _SENTRY_SDK.capture_exception(error)
 
 
 def tracer(name: str) -> Tracer:

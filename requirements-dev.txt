@@ -22,6 +22,7 @@ mypy_extensions==1.1.0
 nodeenv==1.10.0
 packageurl-python==0.17.6
 packaging==26.2
+pandas-stubs==2.3.0.250703
 pathspec==1.1.1
 pip-api==0.0.34
 pip-requirements-parser==32.0.1
@@ -36,6 +37,7 @@ pyright==1.1.409
 pytest==9.0.3
 pytest-cov==7.1.0
 pytest-mock==3.15.1
+pytest-rerunfailures==16.1
 pytest-xdist==3.8.0
 pytokens==0.4.1
 radon==6.0.1

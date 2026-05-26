@@ -1,0 +1,40 @@
+name: Flaky test watch
+
+on:
+  schedule:
+    - cron: "0 6 * * 1-5"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  watch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+          cache-dependency-path: requirements-dev.txt
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements-dev.txt
+          pip install -e . --no-deps
+      - name: Run retry-backed smoke suite
+        run: |
+          mkdir -p artifacts
+          python -m pytest \
+            tests/test_observability.py \
+            tests/test_profile_engine_reporting_loaders.py \
+            --reruns 2 \
+            --reruns-delay 2 \
+            --junitxml=artifacts/flaky-tests.xml
+      - name: Upload flaky test report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: flaky-tests-junit
+          path: artifacts/flaky-tests.xml

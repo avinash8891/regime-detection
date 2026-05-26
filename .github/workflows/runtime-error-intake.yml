@@ -1,0 +1,54 @@
+name: Runtime error intake
+
+on:
+  repository_dispatch:
+    types: [runtime_error]
+  workflow_dispatch:
+    inputs:
+      title:
+        description: Issue title
+        required: true
+      component:
+        description: Failing component
+        required: true
+      trace_id:
+        description: Trace ID
+        required: false
+      details:
+        description: Error details
+        required: true
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  create-issue:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Create runtime issue
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const payload = context.eventName === "repository_dispatch"
+              ? context.payload.client_payload
+              : context.payload.inputs;
+            const title = payload.title || `Runtime error: ${payload.component}`;
+            const body = [
+              "## Runtime error",
+              "",
+              `- Component: ${payload.component}`,
+              `- Trace ID: ${payload.trace_id || "n/a"}`,
+              "",
+              "### Details",
+              "",
+              payload.details,
+            ].join("\n");
+
+            await github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title,
+              body,
+              labels: ["bug", "P1", "area:observability"],
+            });

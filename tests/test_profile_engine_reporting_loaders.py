@@ -302,6 +302,8 @@ def test_profile_json_report_can_include_observability_section(tmp_path: Path) -
                 "trace_id": "trace-123",
                 "metrics": {"counters": {"exceptions_total": 1}, "timings_ms": {}},
                 "error_tracking": {"enabled": True, "backend": "sentry"},
+                "product_analytics": {"enabled": True, "backend": "posthog"},
+                "feature_flags": {"shadow_mode": True},
                 "deployment_observability": {
                     "dashboard_url": "https://grafana.example/d/abc"
                 },
@@ -313,6 +315,8 @@ def test_profile_json_report_can_include_observability_section(tmp_path: Path) -
     assert payload["observability"]["trace_id"] == "trace-123"
     assert payload["observability"]["metrics"]["counters"]["exceptions_total"] == 1
     assert payload["observability"]["error_tracking"]["backend"] == "sentry"
+    assert payload["observability"]["product_analytics"]["backend"] == "posthog"
+    assert payload["observability"]["feature_flags"]["shadow_mode"] is True
 
 
 def test_profile_json_report_uses_loaded_bundle_values_for_input_status(

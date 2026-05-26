@@ -1,0 +1,39 @@
+- name: bug
+  color: "d73a4a"
+  description: Confirmed defect in code or data handling
+- name: feature
+  color: "0e8a16"
+  description: New capability or workflow improvement
+- name: chore
+  color: "cfd3d7"
+  description: Maintenance work with no user-visible behavior change
+- name: P0
+  color: "b60205"
+  description: Critical issue requiring immediate attention
+- name: P1
+  color: "d93f0b"
+  description: High-priority work for the current cycle
+- name: P2
+  color: "fbca04"
+  description: Important but not urgent
+- name: P3
+  color: "0e8a16"
+  description: Nice-to-have or backlog item
+- name: area:engine
+  color: "1d76db"
+  description: Regime engine core logic
+- name: area:data-fetch
+  color: "5319e7"
+  description: Data acquisition and normalization
+- name: area:configs
+  color: "0052cc"
+  description: Config models and YAML behavior
+- name: area:tests
+  color: "bfdadc"
+  description: Test coverage or fixtures
+- name: area:ci
+  color: "006b75"
+  description: CI, automation, or release pipelines
+- name: area:observability
+  color: "c2e0c6"
+  description: Tracing, metrics, and operational visibility

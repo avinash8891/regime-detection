@@ -77,3 +77,18 @@ def test_load_event_calendar_rejects_missing_required_columns() -> None:
         ValueError, match=r"event_calendar missing required columns.*importance"
     ):
         load_event_calendar(source)
+
+
+def test_load_event_calendar_ignores_missing_market_values() -> None:
+    source = pd.DataFrame(
+        {
+            "date": [date(2026, 1, 2), date(2026, 1, 3)],
+            "market": [pd.NA, "GLOBAL"],
+            "type": ["FOMC", "CPI"],
+            "importance": ["high", "high"],
+        }
+    )
+
+    loaded = load_event_calendar(source)
+
+    assert list(loaded["type"]) == ["CPI"]

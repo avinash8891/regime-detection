@@ -55,6 +55,11 @@ Operating discipline for coding agents in this repository. Project-specific cont
 
 ## Hygiene
 
+- **Canonical automation commands:** CI must keep these commands runnable and in sync with this file:
+  - `python -m black --check src tests scripts`
+  - `python -m ruff check .`
+  - `python -m pyright`
+  - `python -m pytest -q -m "" -n 8 --cov=src --cov-report=term-missing --cov-fail-under=80`
 - **Full-suite verification runs in GitHub Actions, not locally.** Do not run the full pytest suite on the workstation unless the user explicitly asks. Use targeted local checks only when needed to debug a narrow change, then report the GitHub Actions run URL and result as final verification.
 - **RTK rewrites `python3 -m pytest` → `rtk pytest` (failures-only mode).** "Pytest: No tests collected" means no failures were found — it is NOT evidence that tests ran or passed. Always append `; echo "EXIT:$?"` and treat exit 0 as pass, exit 5 as genuine no-collection. Never pipe with `| tail -N` when the exit code matters — that discards it silently.
 - `get_logger` must NOT set `propagate = False` — pytest caplog captures via the root logger; blocking propagation makes all `caplog` assertions return empty strings. No duplicate output risk in production (no root handler attached outside tests).
