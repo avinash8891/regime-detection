@@ -175,9 +175,24 @@ def configure_error_tracking(
     dsn = os.environ.get("REGIME_ERROR_TRACKING_DSN", "").strip() or None
     environment = os.environ.get("REGIME_ENVIRONMENT", "").strip() or "development"
     release = _release_name()
-    sample_rate = _env_float("REGIME_ERROR_TRACKING_SAMPLE_RATE", 1.0)
-    traces_sample_rate = _env_float("REGIME_ERROR_TRACKING_TRACES_SAMPLE_RATE", 0.0)
+    sample_rate = 1.0
+    traces_sample_rate = 0.0
     user_context_env = _operator_name()
+    sentry_sdk = _SENTRY_SDK
+    logging_integration_cls = _SENTRY_LOGGING_INTEGRATION
+    should_initialize_sentry = (
+        enabled
+        and backend == "sentry"
+        and dsn is not None
+        and sentry_sdk is not None
+        and logging_integration_cls is not None
+    )
+    if should_initialize_sentry:
+        sample_rate = _env_float("REGIME_ERROR_TRACKING_SAMPLE_RATE", sample_rate)
+        traces_sample_rate = _env_float(
+            "REGIME_ERROR_TRACKING_TRACES_SAMPLE_RATE",
+            traces_sample_rate,
+        )
     config: dict[str, JsonValue] = {
         "enabled": enabled,
         "backend": backend,
@@ -190,18 +205,14 @@ def configure_error_tracking(
         "user_context_env": user_context_env,
         "initialized": False,
     }
-    if (
-        enabled
-        and backend == "sentry"
-        and dsn is not None
-        and _SENTRY_SDK is not None
-        and _SENTRY_LOGGING_INTEGRATION is not None
-    ):
-        logging_integration = _SENTRY_LOGGING_INTEGRATION(
+    if should_initialize_sentry:
+        assert sentry_sdk is not None
+        assert logging_integration_cls is not None
+        logging_integration = logging_integration_cls(
             level=logging.INFO,
             event_level=logging.ERROR,
         )
-        _SENTRY_SDK.init(
+        sentry_sdk.init(
             dsn=dsn,
             release=release,
             environment=environment,
@@ -210,16 +221,16 @@ def configure_error_tracking(
             send_default_pii=False,
             max_breadcrumbs=50,
             attach_stacktrace=True,
-            include_local_variables=True,
+            include_local_variables=False,
             enable_tracing=bool(traces_sample_rate > 0.0),
             integrations=[logging_integration],
             before_send=_before_send_sentry_event,
         )
-        if hasattr(_SENTRY_SDK, "set_user"):
-            _SENTRY_SDK.set_user({"username": user_context_env})
+        if hasattr(sentry_sdk, "set_user"):
+            sentry_sdk.set_user({"username": user_context_env})
         trace_id = current_trace_id()
-        if trace_id and hasattr(_SENTRY_SDK, "set_tag"):
-            _SENTRY_SDK.set_tag("trace_id", trace_id)
+        if trace_id and hasattr(sentry_sdk, "set_tag"):
+            sentry_sdk.set_tag("trace_id", trace_id)
         config["initialized"] = True
     _json_log(logger, logging.INFO, "error_tracking_configured", **config)
     return config

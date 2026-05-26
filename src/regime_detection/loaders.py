@@ -67,6 +67,10 @@ def _none_series(index: pd.Index) -> pd.Series:
     return pd.Series([None] * len(index), index=index, dtype="object")
 
 
+def _matches_event_market(value: object, market: str) -> bool:
+    return not _is_missing(value) and value in {market, "GLOBAL"}
+
+
 def _numeric_value(value: object, *, field_name: str, context: str) -> float:
     if value is None or _is_missing(value) or isinstance(value, bool):
         raise ValueError(f"{context} contains non-numeric {field_name} values")
@@ -564,7 +568,7 @@ def _validate_event_df(df: pd.DataFrame, *, market: str) -> pd.DataFrame:
         raise ValueError(f"event_calendar missing required columns: {missing}")
 
     market_values = _column_values(df, "market")
-    market_mask = [(value == market) or (value == "GLOBAL") for value in market_values]
+    market_mask = [_matches_event_market(value, market) for value in market_values]
     out = df.loc[market_mask].copy()
 
     type_values = [str(value) for value in _column_values(out, "type")]

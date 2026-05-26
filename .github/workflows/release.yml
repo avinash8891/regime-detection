@@ -33,7 +33,7 @@ jobs:
           python -m black --check src tests scripts
           python -m ruff check .
           python -m pyright
-          python -m pytest -q --cov=src --cov-report=term-missing --cov-fail-under=80
+          python -m pytest -q -m "" --cov=src --cov-report=term-missing --cov-fail-under=80
       - name: Publish GitHub release
         uses: softprops/action-gh-release@v2
         with:

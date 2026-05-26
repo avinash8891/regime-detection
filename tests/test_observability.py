@@ -113,6 +113,22 @@ def test_configure_error_tracking_uses_env(monkeypatch: pytest.MonkeyPatch) -> N
     assert sentry_init_calls[0]["dsn"] == "https://dsn.example"
     assert sentry_init_calls[0]["environment"] == "test"
     assert sentry_init_calls[0]["release"] == "regime-detection@test"
+    assert sentry_init_calls[0]["include_local_variables"] is False
+
+
+def test_configure_error_tracking_ignores_bad_sentry_rates_when_inactive(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("REGIME_ERROR_TRACKING_ENABLED", "false")
+    monkeypatch.setenv("REGIME_ERROR_TRACKING_BACKEND", "structured_logs")
+    monkeypatch.setenv("REGIME_ERROR_TRACKING_SAMPLE_RATE", "not-a-float")
+    monkeypatch.setenv("REGIME_ERROR_TRACKING_TRACES_SAMPLE_RATE", "also-bad")
+
+    config = configure_error_tracking()
+
+    assert config["initialized"] is False
+    assert config["sample_rate"] == 1.0
+    assert config["traces_sample_rate"] == 0.0
 
 
 def test_capture_exception_forwards_context_to_sentry(
