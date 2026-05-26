@@ -20,10 +20,19 @@ lookback window.
 python3 scripts/profile_engine.py \
   --manifest manifests/runs/regime_engine_2026-05-17.yaml \
   --data-root data/raw \
-  --lookback-days 2705 \
+  --lookback-days 2607 \
   --run-timeout-seconds 0 \
   --json-output .context/profile_engine_2016_to_latest.json
 ```
+
+For the approved `regime_engine_2026-05-17.yaml` manifest, `2607` NYSE
+sessions is the exact emitted/profiled window from 2016-01-04 through the
+manifest's latest OHLCV date, 2026-05-15. This does **not** drop warmup data:
+the runner loads the manifest's earlier SPY/constituent history back to
+2009-12-31 and computes `working_window_start` from the configured V2 training
+windows before slicing the emitted `lookback-days` window. Use a larger
+lookback only when you intentionally want pre-2016 output rows included in the
+profile report.
 
 For the standard 30-session operator profile, use:
 
