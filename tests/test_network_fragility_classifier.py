@@ -65,7 +65,7 @@ _LAST_SESSION = pd.Timestamp("2025-04-30")
 _SEED = 20260513
 
 
-def test_valid_network_inputs_without_fragility_signal_emit_network_mixed() -> None:
+def test_low_correlation_low_dispersion_emits_decorrelated_calm() -> None:
     result = evaluate_rules_with_evidence(
         inputs=NetworkFragilityRuleInputs(
             avg_pairwise_corr_percentile_504d=0.20,
@@ -89,8 +89,64 @@ def test_valid_network_inputs_without_fragility_signal_emit_network_mixed() -> N
         credit_funding_label="credit_calm",
     )
 
-    assert result.label == "network_mixed"
-    assert result.rule_path == "valid_data_fallback"
+    assert result.label == "decorrelated_calm"
+    assert result.rule_path == "low_corr_low_dispersion"
+
+
+def test_upper_normal_unstable_correlation_emits_rotation_watch() -> None:
+    result = evaluate_rules_with_evidence(
+        inputs=NetworkFragilityRuleInputs(
+            avg_pairwise_corr_percentile_504d=0.65,
+            largest_eigenvalue_share_percentile_504d=0.40,
+            effective_rank_percentile_504d=0.50,
+            avg_pairwise_corr_63d=0.35,
+            largest_eigenvalue_share=0.20,
+            dispersion_ratio_percentile_252d=0.40,
+            absorption_ratio_top3=0.50,
+            avg_pairwise_corr_slope_21d=-0.001,
+            largest_eigenvalue_share_slope_21d=-0.001,
+            effective_rank_stability_21d=0.10,
+            realized_vol_percentile_252d=0.20,
+            realized_vol_21d=0.10,
+            drawdown_21d=0.0,
+            vix_percentile_252d=0.20,
+        ),
+        config=load_default_regime_config().network_fragility.rules,
+        breadth_label="healthy_breadth",
+        volatility_label="normal_vol",
+        credit_funding_label="credit_calm",
+    )
+
+    assert result.label == "rotation_watch"
+    assert result.rule_path == "upper_normal_unstable_rank"
+
+
+def test_low_correlation_high_dispersion_crisis_emits_idiosyncratic_crisis() -> None:
+    result = evaluate_rules_with_evidence(
+        inputs=NetworkFragilityRuleInputs(
+            avg_pairwise_corr_percentile_504d=0.20,
+            largest_eigenvalue_share_percentile_504d=0.40,
+            effective_rank_percentile_504d=0.50,
+            avg_pairwise_corr_63d=0.25,
+            largest_eigenvalue_share=0.20,
+            dispersion_ratio_percentile_252d=0.80,
+            absorption_ratio_top3=0.50,
+            avg_pairwise_corr_slope_21d=-0.001,
+            largest_eigenvalue_share_slope_21d=-0.001,
+            effective_rank_stability_21d=0.10,
+            realized_vol_percentile_252d=0.90,
+            realized_vol_21d=0.30,
+            drawdown_21d=-0.05,
+            vix_percentile_252d=0.90,
+        ),
+        config=load_default_regime_config().network_fragility.rules,
+        breadth_label="healthy_breadth",
+        volatility_label="crisis_vol",
+        credit_funding_label="credit_calm",
+    )
+
+    assert result.label == "idiosyncratic_crisis"
+    assert result.rule_path == "low_corr_high_dispersion_crisis"
 
 
 def _bdate_index(
@@ -269,7 +325,9 @@ def test_network_fragility_risk_rank_matches_v2_spec_3_6():
         "correlation_to_one": 3,
         "systemic_stress_unconfirmed": 3,
         "systemic_stress": 3,
-        "network_mixed": 0,
+        "decorrelated_calm": 0,
+        "rotation_watch": 1,
+        "idiosyncratic_crisis": 2,
         "unknown": 2,
     }
 
@@ -281,15 +339,17 @@ def test_default_yaml_loads_deescalation_days_by_label_per_v2_spec_3_7():
     cfg = load_default_regime_config()
     assert cfg.network_fragility is not None
     deesc = cfg.network_fragility.deescalation_days_by_label
-    # `unknown` is absence of signal, not a sticky regime. It must not delay
-    # recovery into a valid classified label; high-risk labels still use their
-    # own hold periods when they are the stable label being left.
+    # `unknown` is data-quality/unpartitioned-rule diagnostic, not a sticky
+    # regime. New valid-data labels define their own hold periods.
     assert deesc == {
         "rising_fragility": 3,
         "correlation_concentration": 3,
         "correlation_to_one": 5,
         "systemic_stress_unconfirmed": 5,
         "systemic_stress": 5,
+        "idiosyncratic_crisis": 3,
+        "rotation_watch": 0,
+        "decorrelated_calm": 0,
         "unknown": 0,
     }
     # Default for labels NOT listed (diversified_normal, stock_picker_dispersion)

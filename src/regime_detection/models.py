@@ -271,8 +271,7 @@ class NetworkFragilityOutput(AxisOutput):
     """Layer 3 network fragility classifier output (v2 spec §3).
 
     The v2 fragility classifier is implemented and wired. `unknown` is reserved
-    for data-quality failures; valid data with no dominant fragility signal
-    emits `network_mixed`.
+    for data-quality failures or an explicit unpartitioned-rule diagnostic.
     """
 
     model_config = ConfigDict(extra="forbid")
@@ -287,9 +286,12 @@ InflationGrowthLabel = Literal[
     "recession_scare",
     "risk_off_mild",
     "recovery_growth",
+    "recovery_growth_unconfirmed",
     "reflation",
+    "late_cycle_inflation_stress",
     "stagflation_lite",
-    "macro_mixed",
+    "contractionary_disinflation",
+    "macro_neutral",
     "earnings_expansion",
     "earnings_contraction",
     "unknown",
@@ -317,7 +319,7 @@ class InflationGrowthOutput(AxisOutput):
 CreditFundingLabel = Literal[
     "credit_calm",
     "credit_recovery",
-    "credit_mixed",
+    "credit_divergence",
     "spread_widening",
     "credit_stress",
     "funding_squeeze",

@@ -10,8 +10,8 @@ Spec references (docs/regime_engine_v2_spec.md):
     §3.6 Risk Rank     (lines 3544–3554)
 
 The six rules are evaluated in §3.4 precedence order; the first match wins.
-If none match and rule inputs are valid, the label falls through to
-``network_mixed``. ``unknown`` is reserved for data-quality failures.
+If none match, the label falls through to ``unknown`` with an
+``unpartitioned_rule_space`` diagnostic.
 
 Cross-axis inputs:
     - ``breadth_label`` from V1 ``BreadthLabel`` (regime_detection.breadth_state)
@@ -61,20 +61,25 @@ NetworkFragilityLabel = Literal[
     "correlation_to_one",
     "systemic_stress_unconfirmed",
     "systemic_stress",
-    "network_mixed",
+    "decorrelated_calm",
+    "rotation_watch",
+    "idiosyncratic_crisis",
     "unknown",
 ]
 
 
 # v2 §3.4: systemic_stress > correlation_to_one > correlation_concentration
-#          > rising_fragility > stock_picker_dispersion > diversified_normal
-#          > network_mixed > unknown
+#          > rising_fragility > idiosyncratic_crisis > stock_picker_dispersion
+#          > rotation_watch > decorrelated_calm > diversified_normal > unknown
 RULE_PRECEDENCE: tuple[NetworkFragilityLabel, ...] = (
     "systemic_stress",
     "correlation_to_one",
     "correlation_concentration",
     "rising_fragility",
+    "idiosyncratic_crisis",
     "stock_picker_dispersion",
+    "rotation_watch",
+    "decorrelated_calm",
     "diversified_normal",
 )
 
@@ -93,7 +98,9 @@ NETWORK_FRAGILITY_RISK_RANK: dict[NetworkFragilityLabel, int] = {
     "correlation_to_one": 3,
     "systemic_stress_unconfirmed": 3,
     "systemic_stress": 3,
-    "network_mixed": 0,
+    "decorrelated_calm": 0,
+    "rotation_watch": 1,
+    "idiosyncratic_crisis": 2,
     "unknown": 2,
 }
 
@@ -104,7 +111,7 @@ NETWORK_FRAGILITY_RISK_RANK: dict[NetworkFragilityLabel, int] = {
 CreditFundingLabel = Literal[
     "credit_calm",
     "credit_recovery",
-    "credit_mixed",
+    "credit_divergence",
     "spread_widening",
     "credit_stress",
     "funding_squeeze",
@@ -493,6 +500,62 @@ def evaluate_stock_picker_dispersion(
     )
 
 
+def evaluate_decorrelated_calm(
+    inputs: NetworkFragilityRuleInputs,
+    config: NetworkFragilityRulesConfig,
+) -> bool:
+    """Low correlation without high cross-sectional dispersion."""
+    if _any_nan(
+        inputs.avg_pairwise_corr_percentile_504d,
+        inputs.dispersion_ratio_percentile_252d,
+    ):
+        return False
+    return bool(
+        inputs.avg_pairwise_corr_percentile_504d < config.stock_picker_percentile_max
+        and inputs.dispersion_ratio_percentile_252d
+        <= config.stock_picker_dispersion_percentile_min
+    )
+
+
+def evaluate_idiosyncratic_crisis(
+    inputs: NetworkFragilityRuleInputs,
+    config: NetworkFragilityRulesConfig,
+    volatility_label: VolatilityLabel,
+) -> bool:
+    """Low-correlation/high-dispersion structure during crisis volatility."""
+    if _any_nan(
+        inputs.avg_pairwise_corr_percentile_504d,
+        inputs.dispersion_ratio_percentile_252d,
+    ):
+        return False
+    return bool(
+        inputs.avg_pairwise_corr_percentile_504d < config.stock_picker_percentile_max
+        and inputs.dispersion_ratio_percentile_252d
+        > config.stock_picker_dispersion_percentile_min
+        and volatility_label == "crisis_vol"
+    )
+
+
+def evaluate_rotation_watch(
+    inputs: NetworkFragilityRuleInputs,
+    config: NetworkFragilityRulesConfig,
+) -> bool:
+    """Upper-normal correlation with unstable effective-rank rotation."""
+    if _any_nan(
+        inputs.avg_pairwise_corr_percentile_504d,
+        inputs.effective_rank_stability_21d,
+    ):
+        return False
+    return bool(
+        inputs.avg_pairwise_corr_percentile_504d
+        > config.diversified_normal_inner_band_hi
+        and inputs.avg_pairwise_corr_percentile_504d
+        <= config.diversified_normal_percentile_hi
+        and inputs.effective_rank_stability_21d
+        >= config.effective_rank_stability_threshold
+    )
+
+
 def evaluate_rising_fragility(
     inputs: NetworkFragilityRuleInputs,
     config: NetworkFragilityRulesConfig,  # noqa: ARG001 (kept for uniform signature)
@@ -640,8 +703,8 @@ def evaluate_rules(
 ) -> NetworkFragilityLabel:
     """Walk the v2 §3.4 precedence and return the first matching label.
 
-    Falls through to ``network_mixed`` when valid data has no dominant
-    fragility signal. Data-quality failures still emit ``unknown`` upstream.
+    Falls through to ``unknown`` only when the rule space is not partitioned
+    for the supplied valid inputs.
     """
     return evaluate_rules_with_evidence(
         inputs=inputs,
@@ -704,11 +767,29 @@ def evaluate_rules_with_evidence(
                     label="rising_fragility",
                     rule_path="slope",
                 )
+        elif label == "idiosyncratic_crisis":
+            if evaluate_idiosyncratic_crisis(inputs, config, volatility_label):
+                return NetworkFragilityRuleEvaluation(
+                    label="idiosyncratic_crisis",
+                    rule_path="low_corr_high_dispersion_crisis",
+                )
         elif label == "stock_picker_dispersion":
             if evaluate_stock_picker_dispersion(inputs, config, volatility_label):
                 return NetworkFragilityRuleEvaluation(
                     label="stock_picker_dispersion",
                     rule_path="percentile",
+                )
+        elif label == "rotation_watch":
+            if evaluate_rotation_watch(inputs, config):
+                return NetworkFragilityRuleEvaluation(
+                    label="rotation_watch",
+                    rule_path="upper_normal_unstable_rank",
+                )
+        elif label == "decorrelated_calm":
+            if evaluate_decorrelated_calm(inputs, config):
+                return NetworkFragilityRuleEvaluation(
+                    label="decorrelated_calm",
+                    rule_path="low_corr_low_dispersion",
                 )
         elif label == "diversified_normal":
             if evaluate_diversified_normal(inputs, config):
@@ -717,7 +798,7 @@ def evaluate_rules_with_evidence(
                     rule_path="percentile",
                 )
     return NetworkFragilityRuleEvaluation(
-        label="network_mixed",
-        rule_path="valid_data_fallback",
-        reason="no_dominant_network_fragility_signal",
+        label="unknown",
+        rule_path="unpartitioned_rule_space",
+        reason="unpartitioned_network_fragility_rule_space",
     )

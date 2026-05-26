@@ -129,9 +129,11 @@ network_fragility:
     correlation_to_one: 5
     systemic_stress_unconfirmed: 5
     systemic_stress: 5
-    # `unknown` is data-quality failure, not a sticky regime. Valid mixed
-    # network states emit `network_mixed`; classified high-risk labels still
-    # hold via the threshold on the stable label being left.
+    idiosyncratic_crisis: 3
+    rotation_watch: 0
+    decorrelated_calm: 0
+    # `unknown` is data-quality failure or an explicit unpartitioned-rule
+    # diagnostic, not a sticky regime.
     unknown: 0
   # v2 §3.7 default for labels NOT listed above (diversified_normal,
   # stock_picker_dispersion). 0 = immediate de-escalation; calibration §9.1
@@ -417,9 +419,9 @@ credit_funding:
     spread_widening: 3
     credit_recovery: 0
     credit_calm: 0
-    credit_mixed: 0
-    # `unknown` is data-quality failure; valid mixed credit states emit
-    # `credit_mixed`.
+    credit_divergence: 0
+    # `unknown` is data-quality failure or an explicit unpartitioned-rule
+    # diagnostic.
     unknown: 0
   default_deescalation_days: 0
   max_unknown_freeze_days: 2
@@ -483,13 +485,16 @@ inflation_growth:
     earnings_contraction: 3
     disinflation: 3
     stagflation_lite: 3
-    macro_mixed: 0
+    contractionary_disinflation: 3
+    late_cycle_inflation_stress: 3
+    recovery_growth_unconfirmed: 0
+    macro_neutral: 0
     reflation: 0
     goldilocks: 0
     recovery_growth: 0
     earnings_expansion: 0
-    # `unknown` is data-quality failure; valid mixed macro states emit
-    # `macro_mixed`.
+    # `unknown` is data-quality failure or an explicit unpartitioned-rule
+    # diagnostic.
     unknown: 0
   default_deescalation_days: 0
   max_unknown_freeze_days: 2

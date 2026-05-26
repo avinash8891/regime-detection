@@ -81,8 +81,32 @@ def _default_rules() -> CreditFundingRulesConfig:
     return load_default_regime_config().credit_funding.rules
 
 
-def test_valid_credit_inputs_without_stress_or_calm_emit_credit_mixed() -> None:
-    """Valid inputs must map to a named credit state, not data-style unknown."""
+def test_low_spread_hy_only_widening_emits_credit_divergence() -> None:
+    """Low-spread HY-only widening is an explicit divergence state."""
+
+    result = evaluate_rules_with_evidence(
+        inputs=CreditFundingRuleInputs(
+            hy_spread_percentile_504d=0.37,
+            hy_spread_slope_21d=0.00007,
+            ig_spread_slope_21d=-0.001,
+            broad_usd_index_zscore_21d=-1.4,
+            sofr_iorb_slope_21d=-0.0005,
+            spy_21d_return=0.018,
+            tlt_21d_return=0.028,
+            realized_vol_21d_percentile_252d=0.13,
+            realized_vol_21d=0.10,
+            avg_pairwise_corr_percentile_504d=0.70,
+            avg_pairwise_corr_63d=0.36,
+        ),
+        config=_default_rules(),
+    )
+
+    assert result.label == "credit_divergence"
+    assert result.rule_path == "hy_only_low_spread"
+
+
+def test_elevated_hy_only_widening_emits_spread_widening() -> None:
+    """Elevated HY-led widening is deterioration even if IG lags."""
 
     result = evaluate_rules_with_evidence(
         inputs=CreditFundingRuleInputs(
@@ -101,8 +125,32 @@ def test_valid_credit_inputs_without_stress_or_calm_emit_credit_mixed() -> None:
         config=_default_rules(),
     )
 
-    assert result.label == "credit_mixed"
-    assert result.rule_path == "valid_data_fallback"
+    assert result.label == "spread_widening"
+    assert result.rule_path == "hy_led_elevated"
+
+
+def test_high_spread_narrowing_without_equity_stress_emits_credit_recovery() -> None:
+    """High spreads that are narrowing are repair unless stress rules fire."""
+
+    result = evaluate_rules_with_evidence(
+        inputs=CreditFundingRuleInputs(
+            hy_spread_percentile_504d=0.91,
+            hy_spread_slope_21d=-0.0003,
+            ig_spread_slope_21d=-0.0001,
+            broad_usd_index_zscore_21d=0.2,
+            sofr_iorb_slope_21d=0.0,
+            spy_21d_return=0.02,
+            tlt_21d_return=0.01,
+            realized_vol_21d_percentile_252d=0.30,
+            realized_vol_21d=0.12,
+            avg_pairwise_corr_percentile_504d=0.55,
+            avg_pairwise_corr_63d=0.32,
+        ),
+        config=_default_rules(),
+    )
+
+    assert result.label == "credit_recovery"
+    assert result.rule_path == "elevated_narrowing"
 
 
 # --- Group A — Feature compute (5 tests) -------------------------------------
