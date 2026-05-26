@@ -258,10 +258,16 @@ def _normalize_market_data_for_runtime(df: pd.DataFrame) -> pd.DataFrame:
     # to bypass NYSE-session validation. Wrap to surface a project-scoped
     # error message instead of the raw pandas exception.
     try:
-        out["date"] = pd.to_datetime(out["date"])
+        parsed_dates = pd.to_datetime(out["date"])
     except (ValueError, TypeError) as exc:
         raise ValueError(f"market_data contains malformed date values: {exc}") from exc
-    return out
+    return pd.DataFrame(
+        {
+            col: parsed_dates if col == "date" else df[col].to_numpy(copy=True)
+            for col in df.columns
+        },
+        index=df.index.copy(),
+    )
 
 
 def _require_market_data_contract(

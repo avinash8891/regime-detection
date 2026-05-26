@@ -224,10 +224,17 @@ def _read_symbol_ohlcv(tree_root: Path, symbol: str) -> pd.DataFrame:
     missing = [col for col in required_cols if col not in frame.columns]
     if missing:
         raise ValueError(f"{source} missing required columns: {missing}")
-    frame = frame[
-        ["date", "open", "high", "low", "close", "volume", "adjusted_close"]
-    ].copy()
-    frame["date"] = pd.to_datetime(frame["date"]).dt.normalize()
+    frame = pd.DataFrame(
+        {
+            "date": pd.to_datetime(frame["date"]).dt.normalize(),
+            "open": frame["open"].to_numpy(copy=True),
+            "high": frame["high"].to_numpy(copy=True),
+            "low": frame["low"].to_numpy(copy=True),
+            "close": frame["close"].to_numpy(copy=True),
+            "volume": frame["volume"].to_numpy(copy=True),
+            "adjusted_close": frame["adjusted_close"].to_numpy(copy=True),
+        }
+    )
     frame = frame.sort_values("date").reset_index(drop=True)
     return frame
 
@@ -348,9 +355,16 @@ def _load_constituent_ohlcv_from_tree(
                     ticker=ticker,
                 ),
             )
-        for col in ("open", "high", "low", "close", "adjusted_close"):
-            frame[col] = frame[col].astype("float64")
-        frame["volume"] = frame["volume"].astype("int64")
+        frame = frame.astype(
+            {
+                "open": "float64",
+                "high": "float64",
+                "low": "float64",
+                "close": "float64",
+                "adjusted_close": "float64",
+                "volume": "int64",
+            }
+        )
         frame = frame.set_index("date")[
             ["open", "high", "low", "close", "volume", "adjusted_close"]
         ]

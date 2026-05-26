@@ -351,10 +351,17 @@ def _normalize_interval_dates(intervals: pd.DataFrame) -> pd.DataFrame:
             return value
         return dt.date.fromisoformat(str(value))
 
-    out = intervals.copy()
-    out["start_date"] = out["start_date"].map(_to_date)
-    out["end_date"] = out["end_date"].map(_to_date)
-    return out
+    return pd.DataFrame(
+        {
+            col: (
+                intervals[col].map(_to_date)
+                if col in {"start_date", "end_date"}
+                else intervals[col].to_numpy(copy=True)
+            )
+            for col in intervals.columns
+        },
+        index=intervals.index.copy(),
+    )
 
 
 def _compute_pit_features(

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import date
+import warnings
 
 import pandas as pd
 import pytest
@@ -20,6 +21,7 @@ from regime_detection.loaders import (
     load_sector_etf_closes,
 )
 from regime_detection.market_context import (
+    _normalize_market_data_for_runtime,
     build_market_context,
     slice_context_to_end_date,
     slice_context_to_recent_sessions,
@@ -693,6 +695,29 @@ def test_build_market_context_rejects_malformed_date_values(market_df_for_asof) 
                 columns=["date", "market", "type", "importance"]
             ),
         )
+
+
+def test_market_data_normalization_is_clean_under_copy_on_write_warning_mode() -> None:
+    frame = pd.DataFrame(
+        [
+            {
+                "date": "2023-12-14",
+                "symbol": "SPY",
+                "open": 100.0,
+                "high": 101.0,
+                "low": 99.0,
+                "close": 100.5,
+                "volume": 1_000_000,
+            }
+        ]
+    )
+
+    with pd.option_context("mode.copy_on_write", "warn"):
+        with warnings.catch_warnings():
+            warnings.simplefilter("error", FutureWarning)
+            out = _normalize_market_data_for_runtime(frame)
+
+    assert pd.api.types.is_datetime64_any_dtype(out["date"])
 
 
 # ---------- Engine threading -------------------------------------------------

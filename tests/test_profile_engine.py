@@ -4,6 +4,7 @@ import sys
 from pathlib import Path
 from types import SimpleNamespace
 from typing import get_type_hints
+import warnings
 
 import pandas as pd
 import pytest
@@ -632,6 +633,47 @@ def test_load_constituent_ohlcv_accepts_partitioned_parquet_file_name_with_symbo
 
     assert tickers == ["AAPL"]
     assert loaded["AAPL"]["close"].to_list() == [10.5]
+
+
+def test_load_constituent_ohlcv_is_clean_under_copy_on_write_warning_mode(
+    tmp_path: Path,
+) -> None:
+    symbol_dir = tmp_path / "daily_ohlcv" / "symbol=AAPL"
+    symbol_dir.mkdir(parents=True)
+    pd.DataFrame(
+        [
+            {
+                "date": "2026-05-15",
+                "symbol": "AAPL",
+                "open": 10,
+                "high": 11,
+                "low": 9,
+                "close": 10.5,
+                "volume": 100,
+                "adjusted_close": 10.5,
+            }
+        ]
+    ).to_parquet(symbol_dir / "ohlcv.parquet", index=False)
+    intervals = pd.DataFrame(
+        {
+            "ticker": ["AAPL"],
+            "start_date": [pd.Timestamp("2020-01-01").date()],
+            "end_date": [None],
+        }
+    )
+
+    with pd.option_context("mode.copy_on_write", "warn"):
+        with warnings.catch_warnings():
+            warnings.simplefilter("error", FutureWarning)
+            loaded, _tickers = profile_engine._load_constituent_ohlcv_from_tree(
+                tmp_path / "daily_ohlcv",
+                intervals,
+                start_date=pd.Timestamp("2026-05-01").date(),
+                end_date=pd.Timestamp("2026-05-31").date(),
+            )
+
+    assert loaded["AAPL"]["volume"].dtype == "int64"
+    assert loaded["AAPL"]["close"].dtype == "float64"
 
 
 def test_load_constituent_ohlcv_rejects_internal_session_gap(tmp_path: Path) -> None:

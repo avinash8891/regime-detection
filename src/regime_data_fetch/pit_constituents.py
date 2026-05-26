@@ -248,8 +248,17 @@ def read_pit_intervals(parquet_path: Path) -> pd.DataFrame:
             return None
         return dt.date.fromisoformat(str(value))
 
-    df["start_date"] = df["start_date"].map(_to_date)
-    df["end_date"] = df["end_date"].map(_to_date)
+    df = pd.DataFrame(
+        {
+            col: (
+                df[col].map(_to_date)
+                if col in {"start_date", "end_date"}
+                else df[col].to_numpy(copy=True)
+            )
+            for col in df.columns
+        },
+        index=df.index.copy(),
+    )
 
     # Patch-on-read: apply corrections to any open interval whose ticker has a
     # known correction. This fixes stale artifacts without requiring a re-fetch.
@@ -261,9 +270,13 @@ def read_pit_intervals(parquet_path: Path) -> pd.DataFrame:
     # Normalize remaining string columns to object dtype. Newer pandas+pyarrow
     # round-trips parquet strings as StringDtype by default; the reader contract
     # (and downstream consumers comparing dtype == object) requires plain object.
-    for column in ("ticker", "source", "source_url", "bias_warning"):
-        if column in df.columns:
-            df[column] = df[column].astype(object)
+    object_columns = {
+        column: object
+        for column in ("ticker", "source", "source_url", "bias_warning")
+        if column in df.columns
+    }
+    if object_columns:
+        df = df.astype(object_columns)
     return df
 
 

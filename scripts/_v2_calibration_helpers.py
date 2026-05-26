@@ -206,8 +206,17 @@ def load_market_data(daily_ohlcv_dir: Path) -> pd.DataFrame:
     required_symbols = ["SPY", "RSP", "VIX"]
     df = _read_daily_ohlcv(daily_ohlcv_dir, symbols=required_symbols)
     keep = ["date", "symbol", "open", "high", "low", "close", "volume"]
-    out = df[keep].copy()
-    out["date"] = pd.to_datetime(out["date"])
+    out = pd.DataFrame(
+        {
+            col: (
+                pd.to_datetime(df["date"])
+                if col == "date"
+                else df[col].to_numpy(copy=True)
+            )
+            for col in keep
+        },
+        index=df.index.copy(),
+    )
     max_dates = out.groupby("symbol")["date"].max()
     missing = sorted(set(required_symbols) - set(max_dates.index))
     if missing:
@@ -223,7 +232,13 @@ def load_market_data(daily_ohlcv_dir: Path) -> pd.DataFrame:
             out.loc[out["symbol"] == "SPY", "date"].sort_values().unique()
         ),
     )
-    out["date"] = out["date"].dt.date
+    out = pd.DataFrame(
+        {
+            col: out["date"].dt.date if col == "date" else out[col].to_numpy(copy=True)
+            for col in keep
+        },
+        index=out.index.copy(),
+    )
     return out.sort_values(["date", "symbol"]).reset_index(drop=True)
 
 
@@ -236,7 +251,17 @@ def load_close_dict(
     to ``spy_index``. Mirrors ``run_v2_calibration._load_close_dict``.
     """
     df = _read_daily_ohlcv(daily_ohlcv_dir, symbols=symbols)
-    df["date"] = pd.to_datetime(df["date"])
+    df = pd.DataFrame(
+        {
+            col: (
+                pd.to_datetime(df["date"])
+                if col == "date"
+                else df[col].to_numpy(copy=True)
+            )
+            for col in df.columns
+        },
+        index=df.index.copy(),
+    )
     out: dict[str, pd.Series] = {}
     for sym in symbols:
         sub = df[df["symbol"] == sym].sort_values("date").set_index("date")
@@ -413,10 +438,15 @@ def _load_pmi_manufacturing_series(pmi_path: Path) -> pd.Series | None:
         pmi_df["release_timestamp"],
         utc=True,
     )
-    pmi_df["release_date_local"] = (
-        release_timestamp.dt.tz_convert("America/New_York")
-        .dt.tz_localize(None)
-        .dt.normalize()
+    pmi_df = pd.DataFrame(
+        {
+            **{col: pmi_df[col].to_numpy(copy=True) for col in pmi_df.columns},
+            "release_date_local": release_timestamp.dt.tz_convert("America/New_York")
+            .dt.tz_localize(None)
+            .dt.normalize()
+            .to_numpy(copy=True),
+        },
+        index=pmi_df.index.copy(),
     )
     pmi_df = pmi_df.drop_duplicates(subset=["release_date_local"], keep="last")
     return (

@@ -231,7 +231,7 @@ def compute_hmm_features(
                 )
                 for result in seed_results:
                     if result["non_monotonic"]:
-                        _LOGGER.warning(
+                        _LOGGER.debug(
                             "GaussianHMM skipped non-monotonic seed: "
                             "checkpoint=%s seed=%s log_likelihood=%s "
                             "previous_log_likelihood=%s delta=%s",
