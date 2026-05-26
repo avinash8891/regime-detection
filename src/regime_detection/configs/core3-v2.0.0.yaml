@@ -129,9 +129,9 @@ network_fragility:
     correlation_to_one: 5
     systemic_stress_unconfirmed: 5
     systemic_stress: 5
-    # `unknown` is absence of signal, not a sticky regime. Do not delay
-    # recovery into a valid classified label; classified high-risk labels
-    # still hold via the threshold on the stable label being left.
+    # `unknown` is data-quality failure, not a sticky regime. Valid mixed
+    # network states emit `network_mixed`; classified high-risk labels still
+    # hold via the threshold on the stable label being left.
     unknown: 0
   # v2 §3.7 default for labels NOT listed above (diversified_normal,
   # stock_picker_dispersion). 0 = immediate de-escalation; calibration §9.1
@@ -417,8 +417,9 @@ credit_funding:
     spread_widening: 3
     credit_recovery: 0
     credit_calm: 0
-    # Absence of signal must not hold back the TLT/OAS effective recovery once
-    # a valid credit/funding rule fires.
+    credit_mixed: 0
+    # `unknown` is data-quality failure; valid mixed credit states emit
+    # `credit_mixed`.
     unknown: 0
   default_deescalation_days: 0
   max_unknown_freeze_days: 2
@@ -482,11 +483,13 @@ inflation_growth:
     earnings_contraction: 3
     disinflation: 3
     stagflation_lite: 3
+    macro_mixed: 0
     reflation: 0
     goldilocks: 0
     recovery_growth: 0
     earnings_expansion: 0
-    # Absence of signal must not delay recovery into a valid macro label.
+    # `unknown` is data-quality failure; valid mixed macro states emit
+    # `macro_mixed`.
     unknown: 0
   default_deescalation_days: 0
   max_unknown_freeze_days: 2

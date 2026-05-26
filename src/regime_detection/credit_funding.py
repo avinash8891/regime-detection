@@ -3,10 +3,12 @@
 Implements the 5-label axis classifier from spec §2C (lines 3169-3358):
 
   Labels (§2C lines 3173-3178):
-    credit_calm, spread_widening, credit_stress, funding_squeeze, deleveraging, unknown
+    credit_calm, credit_recovery, credit_mixed, spread_widening, credit_stress,
+    funding_squeeze, deleveraging, unknown
 
   Precedence (§2C line 3183):
-    deleveraging > funding_squeeze > credit_stress > spread_widening > credit_calm > unknown
+    deleveraging > funding_squeeze > credit_stress > spread_widening >
+    credit_recovery > credit_calm > credit_mixed > unknown
 
 Credit-spread metrics — two parallel sources (ADR 0007; implementation decision + #71):
 
@@ -73,6 +75,8 @@ from regime_detection.config import (
 
 CreditFundingLabel = Literal[
     "credit_calm",
+    "credit_recovery",
+    "credit_mixed",
     "spread_widening",
     "credit_stress",
     "funding_squeeze",
@@ -87,6 +91,7 @@ CreditFundingLabel = Literal[
 CREDIT_FUNDING_RISK_RANK: dict[CreditFundingLabel, int] = {
     "credit_calm": 0,
     "credit_recovery": 0,
+    "credit_mixed": 0,
     "unknown": 1,
     "spread_widening": 1,
     "credit_stress": 2,
@@ -810,7 +815,9 @@ def evaluate_rules(
 ) -> CreditFundingLabel:
     """Walk v2 §2C precedence and return the first matching label.
 
-    Falls through to ``unknown`` when no rule fires (§2C line 3183 tail).
+    Falls through to ``credit_mixed`` when valid data has no dominant
+    credit/funding signal. Data-quality failures still emit ``unknown``
+    upstream.
     """
     return evaluate_rules_with_evidence(inputs=inputs, config=config).label
 
@@ -844,7 +851,7 @@ def evaluate_rules_with_evidence(
     if evaluate_credit_calm(inputs, config):
         return CreditFundingRuleEvaluation(label="credit_calm", rule_path="standard")
     return CreditFundingRuleEvaluation(
-        label="unknown",
-        rule_path="none",
-        reason="no_rule_fired",
+        label="credit_mixed",
+        rule_path="valid_data_fallback",
+        reason="no_dominant_credit_funding_signal",
     )

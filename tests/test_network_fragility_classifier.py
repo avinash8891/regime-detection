@@ -48,7 +48,9 @@ from regime_detection.network_fragility import NetworkFragilityFeatures
 from regime_detection.volatility_state import VolatilityFeatures
 from regime_detection.network_fragility_rules import (
     NETWORK_FRAGILITY_RISK_RANK,
+    NetworkFragilityRuleInputs,
     NetworkFragilityLabel,
+    evaluate_rules_with_evidence,
 )
 
 # ---------- Synthetic full-universe fixtures ---------------------------------
@@ -61,6 +63,34 @@ from regime_detection.network_fragility_rules import (
 _TRAINING_SESSIONS = 1100
 _LAST_SESSION = pd.Timestamp("2025-04-30")
 _SEED = 20260513
+
+
+def test_valid_network_inputs_without_fragility_signal_emit_network_mixed() -> None:
+    result = evaluate_rules_with_evidence(
+        inputs=NetworkFragilityRuleInputs(
+            avg_pairwise_corr_percentile_504d=0.20,
+            largest_eigenvalue_share_percentile_504d=0.40,
+            effective_rank_percentile_504d=0.50,
+            avg_pairwise_corr_63d=0.25,
+            largest_eigenvalue_share=0.20,
+            dispersion_ratio_percentile_252d=0.50,
+            absorption_ratio_top3=0.50,
+            avg_pairwise_corr_slope_21d=-0.001,
+            largest_eigenvalue_share_slope_21d=-0.001,
+            effective_rank_stability_21d=0.10,
+            realized_vol_percentile_252d=0.20,
+            realized_vol_21d=0.10,
+            drawdown_21d=0.0,
+            vix_percentile_252d=0.20,
+        ),
+        config=load_default_regime_config().network_fragility.rules,
+        breadth_label="healthy_breadth",
+        volatility_label="normal_vol",
+        credit_funding_label="credit_calm",
+    )
+
+    assert result.label == "network_mixed"
+    assert result.rule_path == "valid_data_fallback"
 
 
 def _bdate_index(
@@ -239,6 +269,7 @@ def test_network_fragility_risk_rank_matches_v2_spec_3_6():
         "correlation_to_one": 3,
         "systemic_stress_unconfirmed": 3,
         "systemic_stress": 3,
+        "network_mixed": 0,
         "unknown": 2,
     }
 

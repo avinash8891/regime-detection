@@ -270,9 +270,9 @@ class EventCalendarOutput(BaseModel):
 class NetworkFragilityOutput(AxisOutput):
     """Layer 3 network fragility classifier output (v2 spec §3).
 
-    The v2 fragility classifier is implemented and wired. `unknown` is emitted only
-    during the 504-session percentile cold-start (`insufficient_history`) or when
-    no rule predicate fires (`no_rule_fired`).
+    The v2 fragility classifier is implemented and wired. `unknown` is reserved
+    for data-quality failures; valid data with no dominant fragility signal
+    emits `network_mixed`.
     """
 
     model_config = ConfigDict(extra="forbid")
@@ -289,6 +289,7 @@ InflationGrowthLabel = Literal[
     "recovery_growth",
     "reflation",
     "stagflation_lite",
+    "macro_mixed",
     "earnings_expansion",
     "earnings_contraction",
     "unknown",
@@ -316,6 +317,7 @@ class InflationGrowthOutput(AxisOutput):
 CreditFundingLabel = Literal[
     "credit_calm",
     "credit_recovery",
+    "credit_mixed",
     "spread_widening",
     "credit_stress",
     "funding_squeeze",

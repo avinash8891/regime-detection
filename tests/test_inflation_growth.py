@@ -83,6 +83,22 @@ def _rule_inputs(**overrides) -> InflationGrowthRuleInputs:
     return InflationGrowthRuleInputs(**defaults)
 
 
+def test_valid_macro_inputs_without_dominant_regime_emit_macro_mixed() -> None:
+    inputs = _rule_inputs(
+        cpi_6m_change_pct_slope_21d=0.0,
+        pmi_manufacturing=52.0,
+        pmi_manufacturing_slope_21d=0.0,
+        commodity_return_63d=0.0,
+        treasury_10y_yield_slope_21d=0.0,
+        cyclical_defensive_slope_21d=0.0,
+        spy_21d_return=0.01,
+        tlt_21d_return=0.0,
+        credit_funding_active_label="spread_widening",
+    )
+
+    assert evaluate_rules(inputs=inputs, config=_default_rules()) == "macro_mixed"
+
+
 # --- Group A — Feature compute (4 tests) ------------------------------------
 
 
@@ -447,7 +463,7 @@ def test_goldilocks_short_circuits_when_credit_funding_unbuilt_no_fallback() -> 
         credit_funding_active_label=None,
     )
     assert evaluate_goldilocks(inputs, rules) is False
-    assert evaluate_rules(inputs=inputs, config=rules) == "unknown"
+    assert evaluate_rules(inputs=inputs, config=rules) == "macro_mixed"
 
 
 def test_inflation_shock_composite_fires() -> None:

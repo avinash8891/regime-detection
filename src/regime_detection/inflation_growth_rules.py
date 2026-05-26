@@ -381,4 +381,4 @@ def evaluate_rules(
         return "earnings_contraction"
     if evaluate_earnings_expansion(inputs, config):
         return "earnings_expansion"
-    return "unknown"
+    return "macro_mixed"

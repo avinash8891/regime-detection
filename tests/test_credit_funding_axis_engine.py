@@ -32,6 +32,8 @@ from regime_detection.config import (
 from regime_detection.credit_funding import (
     CREDIT_FUNDING_RISK_RANK,
     CreditFundingFeatures,
+    CreditFundingRuleInputs,
+    evaluate_rules_with_evidence,
 )
 from regime_detection.engine import RegimeEngine
 from regime_detection.feature_store import build_feature_store
@@ -77,6 +79,30 @@ def _make_random_walk(
 
 def _default_rules() -> CreditFundingRulesConfig:
     return load_default_regime_config().credit_funding.rules
+
+
+def test_valid_credit_inputs_without_stress_or_calm_emit_credit_mixed() -> None:
+    """Valid inputs must map to a named credit state, not data-style unknown."""
+
+    result = evaluate_rules_with_evidence(
+        inputs=CreditFundingRuleInputs(
+            hy_spread_percentile_504d=0.73,
+            hy_spread_slope_21d=0.00007,
+            ig_spread_slope_21d=-0.001,
+            broad_usd_index_zscore_21d=-1.4,
+            sofr_iorb_slope_21d=-0.0005,
+            spy_21d_return=0.018,
+            tlt_21d_return=0.028,
+            realized_vol_21d_percentile_252d=0.13,
+            realized_vol_21d=0.10,
+            avg_pairwise_corr_percentile_504d=0.70,
+            avg_pairwise_corr_63d=0.36,
+        ),
+        config=_default_rules(),
+    )
+
+    assert result.label == "credit_mixed"
+    assert result.rule_path == "valid_data_fallback"
 
 
 # --- Group A — Feature compute (5 tests) -------------------------------------

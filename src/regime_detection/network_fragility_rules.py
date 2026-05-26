@@ -10,8 +10,8 @@ Spec references (docs/regime_engine_v2_spec.md):
     §3.6 Risk Rank     (lines 3544–3554)
 
 The six rules are evaluated in §3.4 precedence order; the first match wins.
-If none match, the label falls through to ``unknown`` (consistent with §3.3
-and the risk-rank table in §3.6).
+If none match and rule inputs are valid, the label falls through to
+``network_mixed``. ``unknown`` is reserved for data-quality failures.
 
 Cross-axis inputs:
     - ``breadth_label`` from V1 ``BreadthLabel`` (regime_detection.breadth_state)
@@ -61,12 +61,14 @@ NetworkFragilityLabel = Literal[
     "correlation_to_one",
     "systemic_stress_unconfirmed",
     "systemic_stress",
+    "network_mixed",
     "unknown",
 ]
 
 
 # v2 §3.4: systemic_stress > correlation_to_one > correlation_concentration
-#          > rising_fragility > stock_picker_dispersion > diversified_normal > unknown
+#          > rising_fragility > stock_picker_dispersion > diversified_normal
+#          > network_mixed > unknown
 RULE_PRECEDENCE: tuple[NetworkFragilityLabel, ...] = (
     "systemic_stress",
     "correlation_to_one",
@@ -91,6 +93,7 @@ NETWORK_FRAGILITY_RISK_RANK: dict[NetworkFragilityLabel, int] = {
     "correlation_to_one": 3,
     "systemic_stress_unconfirmed": 3,
     "systemic_stress": 3,
+    "network_mixed": 0,
     "unknown": 2,
 }
 
@@ -101,6 +104,7 @@ NETWORK_FRAGILITY_RISK_RANK: dict[NetworkFragilityLabel, int] = {
 CreditFundingLabel = Literal[
     "credit_calm",
     "credit_recovery",
+    "credit_mixed",
     "spread_widening",
     "credit_stress",
     "funding_squeeze",
@@ -636,7 +640,8 @@ def evaluate_rules(
 ) -> NetworkFragilityLabel:
     """Walk the v2 §3.4 precedence and return the first matching label.
 
-    Falls through to ``unknown`` (v2 §3.3) when no rule fires.
+    Falls through to ``network_mixed`` when valid data has no dominant
+    fragility signal. Data-quality failures still emit ``unknown`` upstream.
     """
     return evaluate_rules_with_evidence(
         inputs=inputs,
@@ -712,7 +717,7 @@ def evaluate_rules_with_evidence(
                     rule_path="percentile",
                 )
     return NetworkFragilityRuleEvaluation(
-        label="unknown",
-        rule_path="none",
-        reason="no_rule_fired",
+        label="network_mixed",
+        rule_path="valid_data_fallback",
+        reason="no_dominant_network_fragility_signal",
     )

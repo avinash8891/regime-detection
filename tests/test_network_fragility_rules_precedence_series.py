@@ -247,7 +247,7 @@ def test_diversified_normal_when_only_it_matches():
     assert label == "diversified_normal"
 
 
-def test_unknown_when_no_rule_matches():
+def test_network_mixed_when_valid_data_has_no_dominant_rule_match():
     cfg = _default_rules_config()
     # Pick a feature profile that satisfies no rule: correlation in
     # diversified_normal band but rank unstable AND outside relaxed inner band.
@@ -266,7 +266,7 @@ def test_unknown_when_no_rule_matches():
         breadth_label="healthy_breadth",
         volatility_label="normal_vol",
     )
-    assert label == "unknown"
+    assert label == "network_mixed"
 
 
 # ---------- build_rule_inputs_for_date ---------------------------------------
