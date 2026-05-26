@@ -1,0 +1,36 @@
+.gitignore
+  7a7d96b8ef435f1f 212
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.3.4",
+  "base_commit_sha": "0bf4c43b56d6b16c3263c20d28422a475df70e4e",
+  "prompts": {
+    "514e63ec1116781b": {
+      "agent_id": {
+        "tool": "droid",
+        "id": "726ca969-101f-40be-ba4c-487de9c5d551",
+        "model": "custom:GPT-5.4-(via-proxy)-35"
+      },
+      "human_author": "Avinash Vankadaru",
+      "messages": [],
+      "total_additions": 155,
+      "total_deletions": 89,
+      "accepted_lines": 152,
+      "overriden_lines": 0
+    },
+    "7a7d96b8ef435f1f": {
+      "agent_id": {
+        "tool": "droid",
+        "id": "d6bbb40a-e15e-4743-954e-9f92dd0a4f64",
+        "model": "custom:GPT-5.4-(via-proxy)-35"
+      },
+      "human_author": "Avinash Vankadaru",
+      "messages": [],
+      "total_additions": 757,
+      "total_deletions": 0,
+      "accepted_lines": 757,
+      "overriden_lines": 0
+    }
+  }
+}
