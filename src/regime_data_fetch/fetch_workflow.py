@@ -93,8 +93,7 @@ def _normalize_date_column(frame: pd.DataFrame) -> pd.DataFrame:
     normalized = frame.copy()
     if normalized.empty and "date" not in normalized.columns:
         return normalized
-    normalized["date"] = pd.to_datetime(normalized["date"]).dt.date
-    return normalized
+    return normalized.assign(date=pd.to_datetime(normalized["date"]).dt.date)
 
 
 def _merge_existing_rows(

@@ -4,6 +4,7 @@ import importlib.util
 import sqlite3
 from datetime import date
 from pathlib import Path
+from contextlib import closing
 
 import pytest
 
@@ -54,7 +55,7 @@ def test_deadman_check_passes_when_previous_session_has_run(tmp_path: Path) -> N
     assert result["expected_as_of_date"] == "2023-12-14"
     assert result["alert"] is None
 
-    with sqlite3.connect(out_root / "regime_shadow.db") as conn:
+    with closing(sqlite3.connect(out_root / "regime_shadow.db")) as conn:
         incidents = conn.execute(
             "SELECT incident_date, description FROM incidents"
         ).fetchall()
@@ -78,7 +79,7 @@ def test_deadman_check_alerts_and_records_incident_when_previous_session_missing
     assert result["expected_as_of_date"] == "2023-12-14"
     assert "Missing shadow run" in result["alert"]
 
-    with sqlite3.connect(out_root / "regime_shadow.db") as conn:
+    with closing(sqlite3.connect(out_root / "regime_shadow.db")) as conn:
         incidents = conn.execute(
             "SELECT incident_date, description, breaks_qualification FROM incidents"
         ).fetchall()

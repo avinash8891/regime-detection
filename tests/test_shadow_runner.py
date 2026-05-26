@@ -6,6 +6,7 @@ import sqlite3
 import sys
 from datetime import date
 from pathlib import Path
+from contextlib import closing
 
 import pandas as pd
 import pytest
@@ -57,7 +58,7 @@ def test_shadow_runner_writes_expected_artifacts_and_ledger(tmp_path: Path) -> N
 
     db_path = out_root / "regime_shadow.db"
     assert db_path.exists()
-    with sqlite3.connect(db_path) as conn:
+    with closing(sqlite3.connect(db_path)) as conn:
         rows = conn.execute(
             "SELECT as_of_date, status, output_path, input_archive_path FROM runs"
         ).fetchall()
@@ -85,7 +86,7 @@ def test_shadow_runner_writes_expected_artifacts_and_ledger(tmp_path: Path) -> N
 
     archive_market = out_root / "input_archives" / "2026-05-13" / "market_data.parquet"
     archived_df = pd.read_parquet(archive_market)
-    archived_df["date"] = pd.to_datetime(archived_df["date"]).dt.date
+    archived_df = archived_df.assign(date=pd.to_datetime(archived_df["date"]).dt.date)
     assert archived_df["date"].max() == date(2026, 5, 13)
 
     checksums_path = out_root / "input_archives" / "2026-05-13" / "checksums.json"
@@ -113,7 +114,7 @@ def test_shadow_runner_archives_inputs_and_inserts_in_progress_before_classify(
         assert (archive_dir / "market_data.parquet").exists()
         assert (archive_dir / "events.yaml").exists()
         assert (archive_dir / "checksums.json").exists()
-        with sqlite3.connect(out_root / "regime_shadow.db") as conn:
+        with closing(sqlite3.connect(out_root / "regime_shadow.db")) as conn:
             row = conn.execute(
                 "SELECT status, input_archive_path FROM runs WHERE as_of_date = ?",
                 ("2026-05-13",),
@@ -173,7 +174,7 @@ def test_shadow_runner_records_failures_without_silent_skip(
     assert result["status"] == "failure"
     assert "forced classify failure" in result["failure_reason"]
 
-    with sqlite3.connect(out_root / "regime_shadow.db") as conn:
+    with closing(sqlite3.connect(out_root / "regime_shadow.db")) as conn:
         rows = conn.execute(
             "SELECT as_of_date, status, failure_reason FROM runs"
         ).fetchall()

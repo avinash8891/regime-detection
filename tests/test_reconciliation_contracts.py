@@ -125,8 +125,11 @@ def test_market_context_uses_true_vix_not_vixy_proxy(market_df_for_asof) -> None
 
 
 def test_trend_character_adx_cold_start_stays_nan(raw_market_frames) -> None:
-    spy = raw_market_frames["SPY"].copy()
-    spy["date"] = pd.to_datetime(spy["date"])
+    spy = (
+        raw_market_frames["SPY"]
+        .copy()
+        .assign(date=pd.to_datetime(raw_market_frames["SPY"]["date"]))
+    )
     spy = spy.sort_values("date").head(20).set_index("date")
 
     features = compute_features(

@@ -5,6 +5,7 @@ import json
 import sqlite3
 from pathlib import Path
 import urllib.error
+from contextlib import closing
 
 import pandas as pd
 import pytest
@@ -84,7 +85,7 @@ def test_run_sentiment_fetch_records_canonical_artifact_ledger(
     assert report["max_date"] == "2026-05-08"
     assert report["paths"]["acquisition_db"] == str(acquisition_db)
 
-    with sqlite3.connect(acquisition_db) as conn:
+    with closing(sqlite3.connect(acquisition_db)) as conn:
         fetch_runs = conn.execute(
             "SELECT fetch_type, status FROM fetch_runs"
         ).fetchall()
@@ -165,7 +166,7 @@ def test_run_sentiment_fetch_records_seed_artifact_lineage_when_seed_exists(
         acquisition_db_path=acquisition_db,
     )
 
-    with sqlite3.connect(acquisition_db) as conn:
+    with closing(sqlite3.connect(acquisition_db)) as conn:
         records = conn.execute("""
             SELECT artifact_record_id, name, stage, source_name, artifact_kind,
                    row_count, min_date, max_date, local_path, size_bytes
@@ -225,7 +226,7 @@ def test_run_sentiment_fetch_can_skip_missing_seed_for_unattended_all(
     assert report["materializable"] is False
     assert "aaii_sentiment_historical.cfb" in report["reason"]
 
-    with sqlite3.connect(acquisition_db) as conn:
+    with closing(sqlite3.connect(acquisition_db)) as conn:
         fetch_runs = conn.execute(
             "SELECT fetch_type, status, notes FROM fetch_runs"
         ).fetchall()
@@ -445,7 +446,7 @@ def test_run_sentiment_fetch_marks_fetch_run_failed_when_live_fetch_fails(
             acquisition_db_path=acquisition_db,
         )
 
-    with sqlite3.connect(acquisition_db) as conn:
+    with closing(sqlite3.connect(acquisition_db)) as conn:
         fetch_runs = conn.execute(
             "SELECT fetch_type, status, notes FROM fetch_runs"
         ).fetchall()

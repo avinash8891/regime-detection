@@ -9,6 +9,7 @@ import time
 import types
 import urllib.error
 from pathlib import Path
+from contextlib import closing
 
 import pandas as pd
 import pytest
@@ -246,7 +247,7 @@ def test_run_investing_live_fetch_materializes_archive_and_records_outputs(
     assert earnings_params[0]["end_date"] == "2026-05-01T23:59:59.999Z"
     assert (out_dir / "investing_live_archive").exists()
 
-    with sqlite3.connect(db_path) as conn:
+    with closing(sqlite3.connect(db_path)) as conn:
         assert conn.execute("SELECT fetch_type, status FROM fetch_runs").fetchall() == [
             ("investing_archive_local", "ok")
         ]

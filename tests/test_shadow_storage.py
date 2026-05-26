@@ -4,6 +4,7 @@ import json
 import sqlite3
 from datetime import date
 from pathlib import Path
+from contextlib import closing
 
 import pandas as pd
 import pytest
@@ -34,7 +35,7 @@ def test_open_shadow_db_creates_durable_shadow_tables(tmp_path: Path) -> None:
             ORDER BY name
             """).fetchall()
 
-    with sqlite3.connect(db_path) as conn:
+    with closing(sqlite3.connect(db_path)) as conn:
         durable_table_names = conn.execute("""
             SELECT name
             FROM sqlite_master
@@ -143,7 +144,7 @@ def test_run_row_success_and_failure_updates_are_durable(tmp_path: Path) -> None
             failure_reason="forced classify failure",
         )
 
-    with sqlite3.connect(db_path) as conn:
+    with closing(sqlite3.connect(db_path)) as conn:
         rows = conn.execute("""
             SELECT as_of_date, status, failure_reason, output_path, output_sha256
             FROM runs
@@ -217,7 +218,7 @@ def test_replay_check_and_incident_insertions_are_durable(tmp_path: Path) -> Non
             breaks_qualification=True,
         )
 
-    with sqlite3.connect(db_path) as conn:
+    with closing(sqlite3.connect(db_path)) as conn:
         replay_rows = conn.execute("""
             SELECT original_run_id, matches, diff
             FROM replay_checks

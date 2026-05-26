@@ -23,10 +23,18 @@ import pandas as pd
 import yaml
 
 from regime_detection.loaders import load_event_calendar
+from regime_shared.pandas_compat import cow_safe_assign
 
 # SHA-256 read-chunk size for sha256_file. Performance-only knob;
 # SHA-256 output is identical regardless of chunk size.
 _HASH_CHUNK_BYTES = 1024 * 1024
+
+
+class _ClosingConnection(sqlite3.Connection):
+    def __exit__(self, exc_type, exc_val, exc_tb) -> bool:
+        suppress = super().__exit__(exc_type, exc_val, exc_tb)
+        self.close()
+        return suppress
 
 
 class RunStatus(str, Enum):
@@ -100,7 +108,7 @@ def ensure_shadow_layout(output_root: Path) -> dict[str, Path]:
 
 
 def open_shadow_db(db_path: Path) -> sqlite3.Connection:
-    conn = sqlite3.connect(db_path, timeout=30.0)
+    conn = sqlite3.connect(db_path, timeout=30.0, factory=_ClosingConnection)
     conn.execute("PRAGMA journal_mode=WAL")
     conn.execute("PRAGMA busy_timeout=30000")
     conn.execute(RUNS_SCHEMA)
@@ -251,8 +259,10 @@ def update_run_row_failure(
 
 def load_archived_market_data(path: Path) -> pd.DataFrame:
     archived = pd.read_parquet(path)
-    archived["date"] = pd.to_datetime(archived["date"]).dt.date
-    return archived
+    return cow_safe_assign(
+        archived,
+        {"date": pd.to_datetime(archived["date"]).dt.date},
+    )
 
 
 def load_archived_event_calendar(path: Path) -> pd.DataFrame | None:

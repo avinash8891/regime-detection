@@ -41,6 +41,7 @@ import pandas as pd
 import pytest
 
 from regime_detection.loaders import load_news_sentiment_series
+from regime_shared.pandas_compat import cow_safe_assign
 
 _REPO_ROOT = Path(__file__).resolve().parents[1]
 _NEWS_PARQUET = (
@@ -114,7 +115,7 @@ def test_reindex_with_ffill_surfaces_gaps_when_data_is_sparse() -> None:
 def _load_spy_session_index_from_source(source: Path) -> pd.DatetimeIndex:
     df = pd.read_parquet(source)
     spy = df[df["symbol"] == "SPY"].copy()
-    spy["date"] = pd.to_datetime(spy["date"])
+    spy = cow_safe_assign(spy, {"date": pd.to_datetime(spy["date"])})
     spy = spy.sort_values("date")
     return pd.DatetimeIndex(spy["date"])
 

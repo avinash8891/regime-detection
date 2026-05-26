@@ -228,8 +228,7 @@ def _load_v2_daily_ohlcv() -> pd.DataFrame:
 @lru_cache(maxsize=1)
 def _load_v2_fred_macro() -> pd.DataFrame:
     df = pd.read_csv(_V2_FRED_MACRO_PATH)
-    df = df.copy()
-    df["date"] = pd.to_datetime(df["date"])
+    df = df.copy().assign(date=pd.to_datetime(df["date"]))
     keep = ["date", "series_id", "logical_name", "value"]
     return df[keep].sort_values(["date", "logical_name"]).reset_index(drop=True)
 

@@ -6,6 +6,7 @@ import sqlite3
 import datetime as dt
 from collections.abc import Callable
 from pathlib import Path
+from contextlib import closing
 
 import pandas as pd
 
@@ -22,6 +23,7 @@ from regime_data_fetch.universe import (
     load_symbols_from_daily_ohlcv_tree,
 )
 from regime_data_fetch.yahoo_chart_daily import fetch_daily_bars_yahoo_chart
+from regime_shared.pandas_compat import cow_safe_assign
 
 EXPECTED_COLUMNS = [
     "date",
@@ -240,7 +242,7 @@ def run_local_daily_ohlcv_sqlite_import(
     artifact_records: list[tuple[Path, str, str, str]] = []
 
     try:
-        with sqlite3.connect(acquisition_db_path) as conn:
+        with closing(sqlite3.connect(acquisition_db_path)) as conn:
             conn.execute("PRAGMA journal_mode = WAL")
             conn.execute("PRAGMA synchronous = NORMAL")
             _ensure_daily_ohlcv_table(conn)
@@ -253,9 +255,11 @@ def run_local_daily_ohlcv_sqlite_import(
                     parquet_path=parquet_path,
                     expected_symbol=symbol,
                 )
-                normalized = frame.copy()
-                normalized["date"] = pd.to_datetime(normalized["date"]).dt.date.astype(
-                    str
+                normalized = cow_safe_assign(
+                    frame,
+                    {
+                        "date": pd.to_datetime(frame["date"]).dt.date.astype(str),
+                    },
                 )
                 rows = [
                     (
@@ -435,7 +439,10 @@ def _write_daily_ohlcv_symbol_tree(
     tree_root.mkdir(parents=True, exist_ok=True)
     written: list[Path] = []
     normalized = frame.copy()
-    normalized["date"] = pd.to_datetime(normalized["date"]).dt.date.astype(str)
+    normalized = cow_safe_assign(
+        normalized,
+        {"date": pd.to_datetime(normalized["date"]).dt.date.astype(str)},
+    )
     for symbol, symbol_frame in normalized.groupby("symbol", sort=True):
         symbol_dir = tree_root / f"symbol={symbol}"
         symbol_dir.mkdir(parents=True, exist_ok=True)
@@ -449,8 +456,10 @@ def _write_daily_ohlcv_symbol_tree(
                 parquet_path=parquet_path,
                 expected_symbol=str(symbol),
             )
-            existing = existing.copy()
-            existing["date"] = pd.to_datetime(existing["date"]).dt.date.astype(str)
+            existing = cow_safe_assign(
+                existing,
+                {"date": pd.to_datetime(existing["date"]).dt.date.astype(str)},
+            )
             outgoing = pd.concat([existing, outgoing], ignore_index=True)
         outgoing = (
             outgoing.sort_values("date")

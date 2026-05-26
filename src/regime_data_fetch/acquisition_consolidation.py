@@ -6,6 +6,7 @@ import sqlite3
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TypedDict
+from contextlib import closing
 
 from regime_data_fetch.acquisition_consolidation_normalized import (
     AGGREGATE_EPS_SNAPSHOT_ROWS_TABLE,
@@ -78,7 +79,7 @@ def consolidate_acquisition_dbs(
         target_db_path.unlink()
 
     AcquisitionStore(target_db_path)
-    with sqlite3.connect(target_db_path) as conn:
+    with closing(sqlite3.connect(target_db_path)) as conn:
         _ensure_daily_ohlcv_table(conn)
         _ensure_normalized_tables(conn)
 
@@ -100,7 +101,7 @@ def consolidate_acquisition_dbs(
             }
         )
 
-    with sqlite3.connect(target_db_path) as conn:
+    with closing(sqlite3.connect(target_db_path)) as conn:
         final_counts = {
             FETCH_RUNS_TABLE: _count_rows(conn, FETCH_RUNS_TABLE),
             ARTIFACTS_TABLE: _count_rows(conn, ARTIFACTS_TABLE),
@@ -137,8 +138,8 @@ def _import_one_source(
     *, target_db_path: Path, source: ConsolidationSource
 ) -> dict[str, int]:
     with (
-        sqlite3.connect(target_db_path) as dst_conn,
-        sqlite3.connect(source.db_path) as src_conn,
+        closing(sqlite3.connect(target_db_path)) as dst_conn,
+        closing(sqlite3.connect(source.db_path)) as src_conn,
     ):
         dst_conn.execute("PRAGMA foreign_keys = ON")
         src_conn.row_factory = sqlite3.Row

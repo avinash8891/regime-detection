@@ -753,8 +753,12 @@ def test_axis_bundle_threads_credit_funding_into_network_fragility_systemic_stre
         index=idx,
     )
     stressed_spy_ohlcv = context.spy_ohlcv.copy()
-    for col in ["open", "high", "low", "close"]:
-        stressed_spy_ohlcv[col] = stressed_spy_ohlcv[col] * spy_factor
+    stressed_spy_ohlcv = stressed_spy_ohlcv.assign(
+        **{
+            col: stressed_spy_ohlcv[col] * spy_factor
+            for col in ["open", "high", "low", "close"]
+        }
+    )
     stressed_context = context.model_copy(
         update={
             "spy_ohlcv": stressed_spy_ohlcv,

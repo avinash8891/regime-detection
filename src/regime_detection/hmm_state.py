@@ -216,6 +216,18 @@ def compute_hmm_features(
                     full_frame=segment_frame,
                     standardize_inputs=config.standardize_inputs,
                 )
+                if not _has_sufficient_distinct_rows(
+                    fit_frame, n_states=config.n_states
+                ):
+                    _LOGGER.warning(
+                        "GaussianHMM training window has fewer distinct rows than "
+                        "configured states; HMM seam skips checkpoint: "
+                        "checkpoint=%s distinct_rows=%s n_states=%s",
+                        train_end_pos,
+                        len(np.unique(fit_frame, axis=0)),
+                        config.n_states,
+                    )
+                    continue
                 best: dict[str, Any] | None = None
                 seed_results = parallel(
                     delayed(_fit_single_seed)(
@@ -311,3 +323,7 @@ def _prepare_hmm_frames(
     train = ((train_frame - means) / stds).to_numpy(dtype=float)
     full = ((full_frame - means) / stds).to_numpy(dtype=float)
     return train, full
+
+
+def _has_sufficient_distinct_rows(frame: np.ndarray, *, n_states: int) -> bool:
+    return len(np.unique(frame, axis=0)) >= n_states

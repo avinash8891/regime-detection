@@ -3,6 +3,7 @@ from __future__ import annotations
 import logging
 import sqlite3
 from pathlib import Path
+from contextlib import closing
 
 import pandas as pd
 import pytest
@@ -61,7 +62,7 @@ def test_consolidate_acquisition_dbs_merges_runs_artifacts_outputs_and_ohlcv(
         "alpaca_market_rows": 0,
     }
 
-    with sqlite3.connect(target) as conn:
+    with closing(sqlite3.connect(target)) as conn:
         fetch_runs = conn.execute(
             "SELECT fetch_type, status, params_json, notes FROM fetch_runs ORDER BY run_id"
         ).fetchall()
@@ -172,7 +173,7 @@ def _build_source_db_two(path: Path) -> None:
         file_path=_write_binary_fixture(path.parent / "two.bin"),
         notes="artifact-two",
     )
-    with sqlite3.connect(path) as conn:
+    with closing(sqlite3.connect(path)) as conn:
         _ensure_daily_ohlcv_table(conn)
         conn.execute(
             """

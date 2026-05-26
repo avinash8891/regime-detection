@@ -711,8 +711,9 @@ def parse_gpr_monthly_country_context(
     month_column = lower_columns.get("month") or lower_columns.get("date")
     if month_column is None:
         raise ValueError("GPR monthly table must contain month/date column")
-    df = df.copy()
-    df["_month"] = pd.to_datetime(df[month_column], errors="coerce").dt.to_period("M")
+    df = df.copy().assign(
+        _month=pd.to_datetime(df[month_column], errors="coerce").dt.to_period("M")
+    )
     country_columns = [
         column
         for column in df.columns
@@ -763,16 +764,19 @@ def parse_ai_gpr_context(
         or country_date_column is None
     ):
         raise ValueError("AI-GPR tables must contain Date columns")
-    daily = daily.copy()
-    eventtype = eventtype.copy()
-    country = country.copy()
-    daily["_date"] = pd.to_datetime(daily[daily_date_column], errors="coerce").dt.date
-    eventtype["_month"] = pd.to_datetime(
-        eventtype[eventtype_date_column], errors="coerce"
-    ).dt.to_period("M")
-    country["_month"] = pd.to_datetime(
-        country[country_date_column], errors="coerce"
-    ).dt.to_period("M")
+    daily = daily.copy().assign(
+        _date=pd.to_datetime(daily[daily_date_column], errors="coerce").dt.date
+    )
+    eventtype = eventtype.copy().assign(
+        _month=pd.to_datetime(
+            eventtype[eventtype_date_column], errors="coerce"
+        ).dt.to_period("M")
+    )
+    country = country.copy().assign(
+        _month=pd.to_datetime(
+            country[country_date_column], errors="coerce"
+        ).dt.to_period("M")
+    )
 
     context: dict[dt.date, str] = {}
     for candidate_date in candidate_dates:

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import sqlite3
 from pathlib import Path
+from contextlib import closing
 
 from regime_data_fetch.acquisition_schema import init_acquisition_schema
 from regime_data_fetch.acquisition_store import AcquisitionStore
@@ -31,7 +32,7 @@ def test_acquisition_schema_helper_creates_tables_and_migrates_legacy_artifacts(
     assert not hasattr(AcquisitionStore, "_init_schema")
 
     db_path = tmp_path / "legacy.db"
-    with sqlite3.connect(db_path) as conn:
+    with closing(sqlite3.connect(db_path)) as conn:
         conn.execute("""
             CREATE TABLE artifacts (
                 artifact_id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -132,7 +133,7 @@ def test_acquisition_store_records_artifact_ledger_checkpoint_and_lineage(
         successful_run_id=run.run_id,
     )
 
-    with sqlite3.connect(db_path) as conn:
+    with closing(sqlite3.connect(db_path)) as conn:
         artifact_rows = conn.execute(
             "SELECT name, stage, uri, local_path, row_count FROM artifact_records ORDER BY artifact_record_id"
         ).fetchall()
@@ -203,7 +204,7 @@ def test_source_checkpoint_upserts_latest_successful_run(tmp_path: Path) -> None
         store.get_source_checkpoint(source_name="fred", cursor_key="DGS10")
         == "2026-05-15"
     )
-    with sqlite3.connect(tmp_path / "acquisition.db") as conn:
+    with closing(sqlite3.connect(tmp_path / "acquisition.db")) as conn:
         row = conn.execute("""
             SELECT successful_run_id
             FROM source_checkpoints
@@ -257,7 +258,7 @@ def test_acquisition_store_uploads_raw_and_output_artifacts_to_configured_store(
         / "aaii_sentiment.parquet"
     ).read_bytes() == b"canonical"
 
-    with sqlite3.connect(db_path) as conn:
+    with closing(sqlite3.connect(db_path)) as conn:
         rows = conn.execute(
             "SELECT stage, uri, content_sha256 FROM artifact_records ORDER BY artifact_record_id"
         ).fetchall()

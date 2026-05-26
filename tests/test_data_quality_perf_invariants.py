@@ -32,8 +32,11 @@ _MIN_COMPLETENESS = 0.95
 
 
 def _spy_close_series(raw_market_frames: dict[str, pd.DataFrame]) -> pd.Series:
-    spy = raw_market_frames["SPY"].copy()
-    spy["date"] = pd.to_datetime(spy["date"])
+    spy = (
+        raw_market_frames["SPY"]
+        .copy()
+        .assign(date=pd.to_datetime(raw_market_frames["SPY"]["date"]))
+    )
     return spy.set_index("date")["close"].sort_index()
 
 

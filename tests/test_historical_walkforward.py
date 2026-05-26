@@ -7,6 +7,7 @@ import sys
 from datetime import date
 from pathlib import Path
 from types import SimpleNamespace
+from contextlib import closing
 
 import pandas as pd
 import pytest
@@ -52,7 +53,7 @@ def test_historical_walkforward_runner_writes_expected_artifacts(
 
     db_path = out_root / "regime_walkforward.db"
     assert db_path.exists()
-    with sqlite3.connect(db_path) as conn:
+    with closing(sqlite3.connect(db_path)) as conn:
         rows = conn.execute(
             "SELECT as_of_date, status, output_path, input_archive_path FROM runs ORDER BY as_of_date"
         ).fetchall()
@@ -129,7 +130,7 @@ def test_historical_walkforward_runner_records_failures_without_silent_skip(
     assert result["success_count"] == 1
     assert result["failure_count"] == 1
 
-    with sqlite3.connect(out_root / "regime_walkforward.db") as conn:
+    with closing(sqlite3.connect(out_root / "regime_walkforward.db")) as conn:
         rows = conn.execute(
             "SELECT as_of_date, status, failure_reason FROM runs ORDER BY as_of_date"
         ).fetchall()

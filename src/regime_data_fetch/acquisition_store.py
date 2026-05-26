@@ -3,8 +3,10 @@ from __future__ import annotations
 import datetime as dt
 import json
 import sqlite3
+from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Iterator
 
 from regime_data_fetch.artifact_store import (
     ArtifactStore,
@@ -619,10 +621,18 @@ class AcquisitionStore:
                 ),
             )
 
-    def _connect(self) -> sqlite3.Connection:
+    @contextmanager
+    def _connect(self) -> Iterator[sqlite3.Connection]:
         conn = sqlite3.connect(self.db_path)
         conn.execute("PRAGMA foreign_keys = ON")
-        return conn
+        try:
+            yield conn
+            conn.commit()
+        except Exception:
+            conn.rollback()
+            raise
+        finally:
+            conn.close()
 
     def _record_raw_artifact_payload(
         self,

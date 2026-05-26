@@ -6,6 +6,7 @@ from pathlib import Path
 import sqlite3
 from typing import get_args, get_type_hints
 import urllib.error
+from contextlib import closing
 
 import pandas as pd
 import pytest
@@ -242,7 +243,7 @@ def test_run_aggregate_eps_fetch_records_manual_workbook_in_sqlite(
     report = json.loads(report_path.read_text())
     assert report["paths"]["acquisition_db"] == str(acquisition_db)
 
-    with sqlite3.connect(acquisition_db) as conn:
+    with closing(sqlite3.connect(acquisition_db)) as conn:
         fetch_runs = conn.execute(
             "SELECT fetch_type, status FROM fetch_runs"
         ).fetchall()
@@ -819,7 +820,7 @@ def test_run_wayback_aggregate_eps_fetch_records_sqlite_artifacts_and_outputs(
     report = json.loads(report_path.read_text())
     assert report["paths"]["acquisition_db"] == str(acquisition_db)
 
-    with sqlite3.connect(acquisition_db) as conn:
+    with closing(sqlite3.connect(acquisition_db)) as conn:
         fetch_runs = conn.execute(
             "SELECT fetch_type, status FROM fetch_runs"
         ).fetchall()
@@ -882,7 +883,7 @@ def test_run_wayback_aggregate_eps_fetch_records_failed_status_when_all_snapshot
             "detail": "URLError: <urlopen error archive missing for 20200110123456>",
         }
     ]
-    with sqlite3.connect(acquisition_db) as conn:
+    with closing(sqlite3.connect(acquisition_db)) as conn:
         fetch_runs = conn.execute(
             "SELECT fetch_type, status, notes FROM fetch_runs"
         ).fetchall()

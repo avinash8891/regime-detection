@@ -32,6 +32,7 @@ from regime_detection.shadow_storage import (
 )
 from regime_detection.versioning import engine_version as resolved_engine_version
 from regime_data_fetch.materialization import materialize_if_requested
+from regime_shared.pandas_compat import cow_safe_assign
 from scripts._v2_calibration_helpers import apply_manifest_input_defaults
 
 
@@ -44,8 +45,10 @@ def _normalize_market_data(path: Path) -> pd.DataFrame:
     missing = sorted(required - set(df.columns))
     if missing:
         raise ValueError(f"market_data missing required columns: {missing}")
-    out = df.copy()
-    out["date"] = pd.to_datetime(out["date"]).dt.date
+    out = cow_safe_assign(
+        df,
+        {"date": pd.to_datetime(df["date"]).dt.date},
+    )
     keep = ["date", "symbol", "open", "high", "low", "close", "volume"]
     return out[keep].sort_values(["date", "symbol"]).reset_index(drop=True)
 
@@ -101,10 +104,14 @@ def _load_pit_intervals(path: Path | None) -> pd.DataFrame | None:
         raise ValueError(
             f"pit_constituent_intervals missing required columns: {missing}"
         )
-    out = frame.copy()
-    out["start_date"] = pd.to_datetime(out["start_date"]).dt.date
-    out["end_date"] = pd.to_datetime(out["end_date"], errors="coerce").dt.date
-    out["end_date"] = out["end_date"].where(out["end_date"].notna(), None)
+    parsed_end_date = pd.to_datetime(frame["end_date"], errors="coerce").dt.date
+    out = cow_safe_assign(
+        frame,
+        {
+            "start_date": pd.to_datetime(frame["start_date"]).dt.date,
+            "end_date": parsed_end_date.where(parsed_end_date.notna(), None),
+        },
+    )
     return out
 
 

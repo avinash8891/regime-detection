@@ -28,26 +28,56 @@ def parse_sp500_eps_workbook(
         )
 
     wb = load_workbook(workbook_path, read_only=True, data_only=True)
-    if SHEET_NAME not in wb.sheetnames:
-        raise AggregateEPSFetchError(f"Workbook missing expected sheet {SHEET_NAME!r}")
+    try:
+        if SHEET_NAME not in wb.sheetnames:
+            raise AggregateEPSFetchError(
+                f"Workbook missing expected sheet {SHEET_NAME!r}"
+            )
 
-    ws = wb[SHEET_NAME]
-    workbook_as_of_date = _extract_workbook_as_of_date(ws)
-    public_files_discontinued = _extract_discontinued_flag(ws)
-    table_start_row, header_labels = _find_observation_header_row(ws)
-    current_changes = _find_current_change_row(ws, table_start_row)
+        ws = wb[SHEET_NAME]
+        workbook_as_of_date = _extract_workbook_as_of_date(ws)
+        public_files_discontinued = _extract_discontinued_flag(ws)
+        table_start_row, header_labels = _find_observation_header_row(ws)
+        current_changes = _find_current_change_row(ws, table_start_row)
 
-    historical: list[AggregateEPSSnapshot] = []
-    current_snapshot: AggregateEPSSnapshot | None = None
-    for row_idx in range(table_start_row + 1, ws.max_row + 1):
-        row = next(ws.iter_rows(min_row=row_idx, max_row=row_idx, values_only=True))
-        first = row[0]
-        if isinstance(first, dt.datetime):
-            label_map = _build_observation_value_map(header_labels, row)
-            historical.append(
-                AggregateEPSSnapshot(
-                    observation_date=first.date(),
-                    observation_label="historical_quarter_end",
+        historical: list[AggregateEPSSnapshot] = []
+        current_snapshot: AggregateEPSSnapshot | None = None
+        for row_idx in range(table_start_row + 1, ws.max_row + 1):
+            row = next(ws.iter_rows(min_row=row_idx, max_row=row_idx, values_only=True))
+            first = row[0]
+            if isinstance(first, dt.datetime):
+                label_map = _build_observation_value_map(header_labels, row)
+                historical.append(
+                    AggregateEPSSnapshot(
+                        observation_date=first.date(),
+                        observation_label="historical_quarter_end",
+                        forward_estimate_label=_select_forward_estimate_label(
+                            header_labels
+                        ),
+                        forward_estimate_value=_select_forward_estimate_value(
+                            label_map, header_labels
+                        ),
+                        estimate_2025e=_value_for_exact_label(label_map, "2025E"),
+                        estimate_q4_2025e=_value_for_exact_label(label_map, "Q4 2025E"),
+                        estimate_2026e=_value_for_exact_label(label_map, "2026E"),
+                        price=_value_for_price(label_map),
+                        pe_2025e=_value_for_exact_label(label_map, "2025E P/E"),
+                        pe_2026e=_value_for_pe(label_map, "2026"),
+                        change_vs_prior_observation_2025e=None,
+                        change_vs_prior_observation_q4_2025e=None,
+                        change_vs_prior_observation_2026e=None,
+                        change_vs_prior_observation_price=None,
+                        change_vs_prior_observation_pe_2025e=None,
+                        change_vs_prior_observation_pe_2026e=None,
+                    )
+                )
+                continue
+
+            if isinstance(first, str) and first.strip().lower() == "current":
+                label_map = _build_observation_value_map(header_labels, row)
+                current_snapshot = AggregateEPSSnapshot(
+                    observation_date=workbook_as_of_date,
+                    observation_label="current",
                     forward_estimate_label=_select_forward_estimate_label(
                         header_labels
                     ),
@@ -60,58 +90,35 @@ def parse_sp500_eps_workbook(
                     price=_value_for_price(label_map),
                     pe_2025e=_value_for_exact_label(label_map, "2025E P/E"),
                     pe_2026e=_value_for_pe(label_map, "2026"),
-                    change_vs_prior_observation_2025e=None,
-                    change_vs_prior_observation_q4_2025e=None,
-                    change_vs_prior_observation_2026e=None,
-                    change_vs_prior_observation_price=None,
-                    change_vs_prior_observation_pe_2025e=None,
-                    change_vs_prior_observation_pe_2026e=None,
+                    change_vs_prior_observation_2025e=current_changes[0],
+                    change_vs_prior_observation_q4_2025e=current_changes[1],
+                    change_vs_prior_observation_2026e=current_changes[2],
+                    change_vs_prior_observation_price=current_changes[3],
+                    change_vs_prior_observation_pe_2025e=current_changes[4],
+                    change_vs_prior_observation_pe_2026e=current_changes[5],
                 )
+                continue
+
+            if current_snapshot is not None:
+                break
+
+        if not historical:
+            raise AggregateEPSFetchError(
+                "Workbook contained no historical aggregate EPS snapshots"
             )
-            continue
-
-        if isinstance(first, str) and first.strip().lower() == "current":
-            label_map = _build_observation_value_map(header_labels, row)
-            current_snapshot = AggregateEPSSnapshot(
-                observation_date=workbook_as_of_date,
-                observation_label="current",
-                forward_estimate_label=_select_forward_estimate_label(header_labels),
-                forward_estimate_value=_select_forward_estimate_value(
-                    label_map, header_labels
-                ),
-                estimate_2025e=_value_for_exact_label(label_map, "2025E"),
-                estimate_q4_2025e=_value_for_exact_label(label_map, "Q4 2025E"),
-                estimate_2026e=_value_for_exact_label(label_map, "2026E"),
-                price=_value_for_price(label_map),
-                pe_2025e=_value_for_exact_label(label_map, "2025E P/E"),
-                pe_2026e=_value_for_pe(label_map, "2026"),
-                change_vs_prior_observation_2025e=current_changes[0],
-                change_vs_prior_observation_q4_2025e=current_changes[1],
-                change_vs_prior_observation_2026e=current_changes[2],
-                change_vs_prior_observation_price=current_changes[3],
-                change_vs_prior_observation_pe_2025e=current_changes[4],
-                change_vs_prior_observation_pe_2026e=current_changes[5],
+        if current_snapshot is None:
+            raise AggregateEPSFetchError(
+                "Workbook missing current aggregate EPS snapshot row"
             )
-            continue
 
-        if current_snapshot is not None:
-            break
-
-    if not historical:
-        raise AggregateEPSFetchError(
-            "Workbook contained no historical aggregate EPS snapshots"
+        return ParsedAggregateEPSWorkbook(
+            workbook_as_of_date=workbook_as_of_date,
+            public_files_discontinued=public_files_discontinued,
+            historical_snapshots=historical,
+            current_snapshot=current_snapshot,
         )
-    if current_snapshot is None:
-        raise AggregateEPSFetchError(
-            "Workbook missing current aggregate EPS snapshot row"
-        )
-
-    return ParsedAggregateEPSWorkbook(
-        workbook_as_of_date=workbook_as_of_date,
-        public_files_discontinued=public_files_discontinued,
-        historical_snapshots=historical,
-        current_snapshot=current_snapshot,
-    )
+    finally:
+        wb.close()
 
 
 def _extract_workbook_as_of_date(ws: Any) -> dt.date:

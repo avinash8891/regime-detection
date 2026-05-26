@@ -369,7 +369,7 @@ def _resolve_vix_proxy_close(
             raise ValueError("vix_data must contain date and close columns")
         s = vix_data.copy()
         if not pd.api.types.is_datetime64_any_dtype(s["date"]):
-            s["date"] = pd.to_datetime(s["date"])
+            s = cow_safe_assign(s, {"date": pd.to_datetime(s["date"])})
         s = s.sort_values("date")
         s = s[s["date"].dt.date <= as_of_date]
         out = pd.Series(s["close"].to_numpy(), index=pd.to_datetime(s["date"]))

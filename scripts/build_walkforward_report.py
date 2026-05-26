@@ -7,6 +7,7 @@ import sqlite3
 from datetime import date
 from pathlib import Path
 from typing import Any
+from contextlib import closing
 
 import pandas as pd
 import yaml
@@ -77,7 +78,7 @@ def _load_runs_from_db(output_root: Path) -> pd.DataFrame:
     db_path = output_root / "regime_walkforward.db"
     if not db_path.exists():
         raise FileNotFoundError(f"walkforward db not found: {db_path}")
-    with sqlite3.connect(db_path) as conn:
+    with closing(sqlite3.connect(db_path)) as conn:
         df = pd.read_sql_query(
             "SELECT as_of_date, status, failure_reason, engine_version, config_version, input_archive_path, output_path FROM runs ORDER BY as_of_date",
             conn,

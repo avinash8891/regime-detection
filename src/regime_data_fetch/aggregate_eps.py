@@ -37,6 +37,7 @@ from regime_data_fetch.aggregate_eps_wayback import (
 from regime_data_fetch.aggregate_eps_workbook import (
     parse_sp500_eps_workbook as _parse_sp500_eps_workbook,
 )
+from regime_shared.pandas_compat import cow_safe_assign
 
 for _public_type in (
     AggregateEPSFetchError,
@@ -47,6 +48,12 @@ for _public_type in (
 ):
     _public_type.__module__ = __name__
 del _public_type
+
+
+def _close_url_exception(exc: BaseException) -> None:
+    close = getattr(exc, "close", None)
+    if callable(close):
+        close()
 
 
 def parse_sp500_eps_workbook(workbook_path: Path) -> ParsedAggregateEPSWorkbook:
@@ -83,19 +90,22 @@ def download_spglobal_eps_workbook(
         with urllib.request.urlopen(request, timeout=timeout_seconds) as response:
             payload = response.read()
     except urllib.error.HTTPError as exc:
-        if exc.code == 403:
+        try:
+            if exc.code == 403:
+                raise AggregateEPSFetchError(
+                    f"S&P spdji returned HTTP 403 (Akamai bot mitigation) for "
+                    f"{source_url}. The URL is browser-only; programmatic clients "
+                    f"are blocked. To complete the fetch: (1) open the URL in a "
+                    f"browser and download sp-500-eps-est.xlsx; (2) copy it to "
+                    f"data/raw/spglobal_eps/sp-500-eps-est.xlsx in this repo; "
+                    f"(3) re-run --fetch eps-spglobal-auto — the auto path "
+                    f"detects the manually-dropped file and parses it."
+                ) from exc
             raise AggregateEPSFetchError(
-                f"S&P spdji returned HTTP 403 (Akamai bot mitigation) for "
-                f"{source_url}. The URL is browser-only; programmatic clients "
-                f"are blocked. To complete the fetch: (1) open the URL in a "
-                f"browser and download sp-500-eps-est.xlsx; (2) copy it to "
-                f"data/raw/spglobal_eps/sp-500-eps-est.xlsx in this repo; "
-                f"(3) re-run --fetch eps-spglobal-auto — the auto path "
-                f"detects the manually-dropped file and parses it."
+                f"Failed to download S&P EPS workbook from {source_url}: {exc}"
             ) from exc
-        raise AggregateEPSFetchError(
-            f"Failed to download S&P EPS workbook from {source_url}: {exc}"
-        ) from exc
+        finally:
+            _close_url_exception(exc)
     except urllib.error.URLError as exc:
         raise AggregateEPSFetchError(
             f"Failed to download S&P EPS workbook from {source_url}: {exc}"
@@ -480,12 +490,18 @@ def fetch_wayback_cdx(
                 return response.read().decode("utf-8", errors="replace")
         except urllib.error.HTTPError as exc:
             if exc.code not in {429, 500, 502, 503, 504}:
-                raise
+                try:
+                    raise
+                finally:
+                    _close_url_exception(exc)
             last_exc = exc
         except urllib.error.URLError as exc:
             last_exc = exc
         if attempt < max_attempts:
+            if last_exc is not None:
+                _close_url_exception(last_exc)
             time.sleep(backoff_seconds * attempt)
+            last_exc = None
     raise AggregateEPSFetchError(
         f"Wayback CDX fetch failed after {max_attempts} attempts: {last_exc}"
     ) from last_exc
@@ -669,14 +685,17 @@ def run_wayback_aggregate_eps_fetch(
         revision_available = bool(revision_series.notna().any())
 
         preview = timeline_df.head(10).copy()
+        replacements: dict[str, pd.Series] = {}
         if "snapshot_date" in preview:
-            preview["snapshot_date"] = preview["snapshot_date"].map(
+            replacements["snapshot_date"] = preview["snapshot_date"].map(
                 lambda x: x.isoformat()
             )
         if "workbook_as_of_date" in preview:
-            preview["workbook_as_of_date"] = preview["workbook_as_of_date"].map(
+            replacements["workbook_as_of_date"] = preview["workbook_as_of_date"].map(
                 lambda x: x.isoformat()
             )
+        if replacements:
+            preview = cow_safe_assign(preview, replacements)
 
         report = {
             "as_of_utc": dt.datetime.now(dt.timezone.utc).isoformat(),

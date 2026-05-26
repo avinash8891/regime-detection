@@ -11,6 +11,7 @@ from regime_detection.calendar import is_nyse_trading_day
 from regime_detection.config import RegimeConfig
 from regime_detection.engine import RegimeEngine
 from regime_detection.versioning import engine_version
+from regime_shared.pandas_compat import cow_safe_assign
 
 
 @pytest.fixture(scope="module")
@@ -133,7 +134,9 @@ def test_classify_accepts_market_data_with_string_dates(
     engine = RegimeEngine()
     kwargs = v2_classify_kwargs_for_asof(date(2026, 5, 5))
     df = kwargs["market_data"].copy()
-    df["date"] = pd.to_datetime(df["date"]).dt.strftime("%Y-%m-%d")
+    df = cow_safe_assign(
+        df, {"date": pd.to_datetime(df["date"]).dt.strftime("%Y-%m-%d")}
+    )
     kwargs["market_data"] = df
 
     out = engine.classify(
