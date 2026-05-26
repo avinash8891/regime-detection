@@ -46,7 +46,6 @@ Implementation choices that resolve ambiguities:
 from __future__ import annotations
 
 from bisect import bisect_left, bisect_right
-import datetime as dt
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 
@@ -55,6 +54,7 @@ import pandas as pd
 
 from regime_detection.config import BreadthV2Config
 from regime_detection.fragility_universe import SECTOR_ETFS
+from regime_shared.pandas_compat import cow_safe_assign, optional_date
 from regime_shared.pit_provenance import (
     BIAS_WARNING as _PIT_BIAS_WARNING_CODE,
     SOURCE_NAME as _PIT_BIAS_SOURCE,
@@ -339,28 +339,12 @@ def _normalize_interval_dates(intervals: pd.DataFrame) -> pd.DataFrame:
     ``members_on`` (which compares to ``dt.date``).
     """
 
-    def _to_date(value: object) -> dt.date | None:
-        if value is None:
-            return None
-        try:
-            if pd.isna(value):  # type: ignore[arg-type]
-                return None
-        except (TypeError, ValueError):
-            pass
-        if isinstance(value, dt.date):
-            return value
-        return dt.date.fromisoformat(str(value))
-
-    return pd.DataFrame(
+    return cow_safe_assign(
+        intervals,
         {
-            col: (
-                intervals[col].map(_to_date)
-                if col in {"start_date", "end_date"}
-                else intervals[col].to_numpy(copy=True)
-            )
-            for col in intervals.columns
+            "start_date": intervals["start_date"].map(optional_date),
+            "end_date": intervals["end_date"].map(optional_date),
         },
-        index=intervals.index.copy(),
     )
 
 

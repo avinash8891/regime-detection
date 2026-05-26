@@ -231,6 +231,8 @@ def compute_hmm_features(
                 )
                 for result in seed_results:
                     if result["non_monotonic"]:
+                        # Recoverable per-seed rejection is DEBUG-only; the
+                        # no-usable-seed path below remains WARNING.
                         _LOGGER.debug(
                             "GaussianHMM skipped non-monotonic seed: "
                             "checkpoint=%s seed=%s log_likelihood=%s "

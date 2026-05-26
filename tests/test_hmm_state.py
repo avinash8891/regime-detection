@@ -20,6 +20,7 @@ from regime_detection.hmm_state import (
     _StrictConvergenceMonitor,
     compute_hmm_features,
 )
+from regime_shared.pandas_compat import cow_safe_assign
 
 # ---------------------------------------------------------------------------
 # Helpers — synthetic but deterministic inputs that mimic the 5 spec seams.
@@ -419,7 +420,7 @@ def test_feature_store_hmm_seam_lit_when_all_inputs_present(
             pd.read_csv(raw_dir / f"{symbol}.csv") for symbol in ("SPY", "RSP", "VIXY")
         ]
         raw = pd.concat(parts, ignore_index=True)
-    raw["date"] = pd.to_datetime(raw["date"]).dt.date
+    raw = cow_safe_assign(raw, {"date": pd.to_datetime(raw["date"]).dt.date})
     market_data = raw[raw["date"] <= latest].copy().reset_index(drop=True)
     context = build_market_context(
         end_date=latest,
@@ -460,7 +461,7 @@ def test_feature_store_hmm_seam_none_when_hmm_config_absent(
     rsp = raw_market_frames["RSP"]
     vix = raw_market_frames["VIX"]
     raw = pd.concat([spy, rsp, vix], ignore_index=True)
-    raw["date"] = pd.to_datetime(raw["date"]).dt.date
+    raw = cow_safe_assign(raw, {"date": pd.to_datetime(raw["date"]).dt.date})
 
     last_session = max(d for d in raw["date"].unique())
     # Walk back to a valid NYSE session if needed.

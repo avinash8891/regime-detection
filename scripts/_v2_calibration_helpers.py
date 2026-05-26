@@ -22,12 +22,13 @@ from regime_data_fetch.manifest_inputs import (
     get_manifest_input_spec,
     resolve_runner_input_paths,
 )
+from regime_detection.comparison import axis_reporting_label
 from regime_detection.loaders import (
     load_aggregate_forward_eps_revision_series,
     load_cpi_nowcast_series,
     load_macro_series as load_fred_macro_series,
 )
-from regime_detection.comparison import axis_reporting_label
+from regime_shared.pandas_compat import cow_safe_assign
 
 logger = logging.getLogger(__name__)
 
@@ -206,16 +207,10 @@ def load_market_data(daily_ohlcv_dir: Path) -> pd.DataFrame:
     required_symbols = ["SPY", "RSP", "VIX"]
     df = _read_daily_ohlcv(daily_ohlcv_dir, symbols=required_symbols)
     keep = ["date", "symbol", "open", "high", "low", "close", "volume"]
-    out = pd.DataFrame(
-        {
-            col: (
-                pd.to_datetime(df["date"])
-                if col == "date"
-                else df[col].to_numpy(copy=True)
-            )
-            for col in keep
-        },
-        index=df.index.copy(),
+    out = cow_safe_assign(
+        df,
+        {"date": pd.to_datetime(df["date"])},
+        columns=keep,
     )
     max_dates = out.groupby("symbol")["date"].max()
     missing = sorted(set(required_symbols) - set(max_dates.index))
@@ -232,13 +227,7 @@ def load_market_data(daily_ohlcv_dir: Path) -> pd.DataFrame:
             out.loc[out["symbol"] == "SPY", "date"].sort_values().unique()
         ),
     )
-    out = pd.DataFrame(
-        {
-            col: out["date"].dt.date if col == "date" else out[col].to_numpy(copy=True)
-            for col in keep
-        },
-        index=out.index.copy(),
-    )
+    out = cow_safe_assign(out, {"date": out["date"].dt.date}, columns=keep)
     return out.sort_values(["date", "symbol"]).reset_index(drop=True)
 
 
@@ -251,17 +240,7 @@ def load_close_dict(
     to ``spy_index``. Mirrors ``run_v2_calibration._load_close_dict``.
     """
     df = _read_daily_ohlcv(daily_ohlcv_dir, symbols=symbols)
-    df = pd.DataFrame(
-        {
-            col: (
-                pd.to_datetime(df["date"])
-                if col == "date"
-                else df[col].to_numpy(copy=True)
-            )
-            for col in df.columns
-        },
-        index=df.index.copy(),
-    )
+    df = cow_safe_assign(df, {"date": pd.to_datetime(df["date"])})
     out: dict[str, pd.Series] = {}
     for sym in symbols:
         sub = df[df["symbol"] == sym].sort_values("date").set_index("date")
@@ -438,15 +417,13 @@ def _load_pmi_manufacturing_series(pmi_path: Path) -> pd.Series | None:
         pmi_df["release_timestamp"],
         utc=True,
     )
-    pmi_df = pd.DataFrame(
+    pmi_df = cow_safe_assign(
+        pmi_df,
         {
-            **{col: pmi_df[col].to_numpy(copy=True) for col in pmi_df.columns},
             "release_date_local": release_timestamp.dt.tz_convert("America/New_York")
             .dt.tz_localize(None)
             .dt.normalize()
-            .to_numpy(copy=True),
         },
-        index=pmi_df.index.copy(),
     )
     pmi_df = pmi_df.drop_duplicates(subset=["release_date_local"], keep="last")
     return (

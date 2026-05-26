@@ -6,6 +6,8 @@ import pandas as pd
 from pydantic import BaseModel, ConfigDict, SkipValidation
 from typing import Annotated
 
+from regime_shared.pandas_compat import cow_safe_assign
+
 from regime_detection.calendar import (
     as_date,
     nyse_sessions_between,
@@ -250,7 +252,6 @@ def _normalize_market_data_for_runtime(df: pd.DataFrame) -> pd.DataFrame:
         return df
     if pd.api.types.is_datetime64_any_dtype(df["date"]):
         return df
-    out = df.copy()
     # errors="raise" (default) — bad/malformed date strings must fail loud
     # at the ingestion boundary. The previous errors="coerce" silently
     # produced NaT, which the downstream dropna() in
@@ -258,16 +259,10 @@ def _normalize_market_data_for_runtime(df: pd.DataFrame) -> pd.DataFrame:
     # to bypass NYSE-session validation. Wrap to surface a project-scoped
     # error message instead of the raw pandas exception.
     try:
-        parsed_dates = pd.to_datetime(out["date"])
+        parsed_dates = pd.to_datetime(df["date"])
     except (ValueError, TypeError) as exc:
         raise ValueError(f"market_data contains malformed date values: {exc}") from exc
-    return pd.DataFrame(
-        {
-            col: parsed_dates if col == "date" else df[col].to_numpy(copy=True)
-            for col in df.columns
-        },
-        index=df.index.copy(),
-    )
+    return cow_safe_assign(df, {"date": parsed_dates})
 
 
 def _require_market_data_contract(

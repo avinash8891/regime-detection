@@ -182,6 +182,8 @@ def _assert_all_pit_none(out: BreadthV2Features) -> None:
     assert out.nh_nl_ratio is None
     assert out.upvol_downvol_ratio is None
     assert out.breadth_thrust is None
+    assert out.bias_warnings is not None
+    assert set(out.bias_warnings["feature_name"]) == {"available_sector_breadth"}
 
 
 def test_normalize_interval_dates_is_clean_under_copy_on_write_warning_mode() -> None:

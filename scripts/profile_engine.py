@@ -56,6 +56,7 @@ from regime_detection.observability import (
 )
 from regime_detection.market_context import build_market_context
 from regime_detection.timeline import ENGINE_MINIMUM_HISTORY
+from regime_shared.pandas_compat import cow_safe_assign
 from scripts._v2_calibration_helpers import (
     CROSS_ASSET_SYMBOLS,
     add_manifest_args,
@@ -224,16 +225,10 @@ def _read_symbol_ohlcv(tree_root: Path, symbol: str) -> pd.DataFrame:
     missing = [col for col in required_cols if col not in frame.columns]
     if missing:
         raise ValueError(f"{source} missing required columns: {missing}")
-    frame = pd.DataFrame(
-        {
-            "date": pd.to_datetime(frame["date"]).dt.normalize(),
-            "open": frame["open"].to_numpy(copy=True),
-            "high": frame["high"].to_numpy(copy=True),
-            "low": frame["low"].to_numpy(copy=True),
-            "close": frame["close"].to_numpy(copy=True),
-            "volume": frame["volume"].to_numpy(copy=True),
-            "adjusted_close": frame["adjusted_close"].to_numpy(copy=True),
-        }
+    frame = cow_safe_assign(
+        frame,
+        {"date": pd.to_datetime(frame["date"]).dt.normalize()},
+        columns=["date", "open", "high", "low", "close", "volume", "adjusted_close"],
     )
     frame = frame.sort_values("date").reset_index(drop=True)
     return frame

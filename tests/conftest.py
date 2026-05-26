@@ -34,6 +34,8 @@ from types import ModuleType
 
 import pandas as pd
 import pytest
+
+from regime_shared.pandas_compat import cow_safe_assign
 import yaml
 
 _REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -209,8 +211,8 @@ def _load_market_data() -> pd.DataFrame:
         vix = df[df["symbol"] == "VIXY"].copy()
         vix["symbol"] = "VIX"
         df = pd.concat([df, vix], ignore_index=True)
-    df["date"] = pd.to_datetime(df["date"]).dt.date
     keep = ["date", "symbol", "open", "high", "low", "close", "volume"]
+    df = cow_safe_assign(df, {"date": pd.to_datetime(df["date"]).dt.date}, columns=keep)
     return df[keep].sort_values(["date", "symbol"]).reset_index(drop=True)
 
 
@@ -218,8 +220,8 @@ def _load_market_data() -> pd.DataFrame:
 def _load_v2_daily_ohlcv() -> pd.DataFrame:
     df = pd.read_csv(_V2_DAILY_OHLCV_PATH)
     df = df.copy()
-    df["date"] = pd.to_datetime(df["date"]).dt.date
     keep = ["date", "symbol", "open", "high", "low", "close", "volume"]
+    df = cow_safe_assign(df, {"date": pd.to_datetime(df["date"]).dt.date}, columns=keep)
     return df[keep].sort_values(["date", "symbol"]).reset_index(drop=True)
 
 
