@@ -53,6 +53,11 @@ class FeatureSpec(Generic[T, StateT]):
     for this spec. Set to `False` for intermediate state features that are not
     user-observable (e.g. derived series consumed only by other specs). Default
     True — public features that should appear in `FeatureStore.availability`.
+
+    If `build` returns None despite a successful `resolve`, the orchestrator emits
+    `available=False, reason="not_configured"` — matching legacy `_availability`
+    semantics for `compute_*_features` functions whose preconditions can't always
+    be expressed as resolve gates.
     """
 
     name: str
@@ -90,11 +95,26 @@ def _run_feature_specs(
         value = spec.build(**resolved)
         spec.store(state, value)
         if spec.report:
-            report[spec.name] = FeatureAvailability(
-                feature=spec.name,
-                available=True,
-                policy=spec.policy,
-                reason="populated",
-                required_inputs=spec.required_inputs,
-            )
+            if value is None:
+                # Build returned None despite valid inputs — match legacy
+                # _availability helper's value-is-None semantics. Some
+                # compute_*_features functions can fail to produce a value
+                # when intermediate-data preconditions (e.g. training-window
+                # length) are not met; those preconditions can't always be
+                # gated in resolve.
+                report[spec.name] = FeatureAvailability(
+                    feature=spec.name,
+                    available=False,
+                    policy=spec.policy,
+                    reason="not_configured",
+                    required_inputs=spec.required_inputs,
+                )
+            else:
+                report[spec.name] = FeatureAvailability(
+                    feature=spec.name,
+                    available=True,
+                    policy=spec.policy,
+                    reason="populated",
+                    required_inputs=spec.required_inputs,
+                )
     return report
