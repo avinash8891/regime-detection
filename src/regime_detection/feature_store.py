@@ -359,39 +359,6 @@ def _build_news_sentiment_score_series(
     return score
 
 
-def _build_monetary_feature(state: _FeatureStoreBuildState) -> None:
-    if (
-        state.monetary_pressure_v2_config is None
-        or state.context.macro_series is None
-        or _FRED_DGS2_KEY not in state.context.macro_series
-        or _IG_DGS10_KEY not in state.context.macro_series
-        or "broad_usd_index" not in state.context.macro_series
-    ):
-        state.monetary = None
-        return
-    broad_usd_series = state.context.macro_series["broad_usd_index"]
-    cb_text_score_series: pd.Series | None = None
-    if (
-        state.central_bank_text_config is not None
-        and state.context.central_bank_text_releases is not None
-        and not state.context.central_bank_text_releases.empty
-    ):
-        cb_text_score_series = to_daily_score_series(
-            state.context.central_bank_text_releases,
-            session_index=_as_datetime_index(state.spy_close.index),
-            smoothing_window_sessions=state.central_bank_text_config.smoothing_window_sessions,
-            same_date_aggregation=state.central_bank_text_config.same_date_aggregation,
-            max_release_age_days=state.central_bank_text_config.max_release_age_days,
-        )
-    state.monetary = compute_monetary_pressure_features(
-        dgs2=state.context.macro_series[_FRED_DGS2_KEY],
-        dgs10=state.context.macro_series[_IG_DGS10_KEY],
-        broad_usd_index=broad_usd_series,
-        central_bank_text_score=cb_text_score_series,
-        config=state.monetary_pressure_v2_config,
-    )
-
-
 def _build_realized_vol_21d_feature(state: _FeatureStoreBuildState) -> None:
     state.realized_vol_21d = (
         realized_vol(state.spy_close, 21)
@@ -862,6 +829,62 @@ def _resolve_volume_liquidity_v2(
     }
 
 
+def _build_monetary(
+    dgs2: pd.Series,
+    dgs10: pd.Series,
+    broad_usd_index: pd.Series,
+    central_bank_text_score: pd.Series | None,
+    config: MonetaryPressureV2FeaturesConfig,
+) -> MonetaryPressureV2Features:
+    return compute_monetary_pressure_features(
+        dgs2=dgs2,
+        dgs10=dgs10,
+        broad_usd_index=broad_usd_index,
+        central_bank_text_score=central_bank_text_score,
+        config=config,
+    )
+
+
+def _resolve_monetary(
+    state: _FeatureStoreBuildState,
+) -> dict[str, object] | _Unavailable:
+    missing: list[str] = []
+    if state.monetary_pressure_v2_config is None:
+        missing.append("monetary_pressure_v2_config")
+    macro_missing = (
+        _missing_macro_keys(
+            state.context.macro_series,
+            (_FRED_DGS2_KEY, _IG_DGS10_KEY, "broad_usd_index"),
+        )
+        if state.monetary_pressure_v2_config is not None
+        else ()
+    )
+    missing.extend(macro_missing)
+    if missing:
+        return _Unavailable(missing_inputs=tuple(missing))
+    assert state.context.macro_series is not None  # _missing_macro_keys narrowed
+    cb_text_score_series: pd.Series | None = None
+    if (
+        state.central_bank_text_config is not None
+        and state.context.central_bank_text_releases is not None
+        and not state.context.central_bank_text_releases.empty
+    ):
+        cb_text_score_series = to_daily_score_series(
+            state.context.central_bank_text_releases,
+            session_index=_as_datetime_index(state.spy_close.index),
+            smoothing_window_sessions=state.central_bank_text_config.smoothing_window_sessions,
+            same_date_aggregation=state.central_bank_text_config.same_date_aggregation,
+            max_release_age_days=state.central_bank_text_config.max_release_age_days,
+        )
+    return {
+        "dgs2": state.context.macro_series[_FRED_DGS2_KEY],
+        "dgs10": state.context.macro_series[_IG_DGS10_KEY],
+        "broad_usd_index": state.context.macro_series["broad_usd_index"],
+        "central_bank_text_score": cb_text_score_series,
+        "config": state.monetary_pressure_v2_config,
+    }
+
+
 _FEATURE_SPECS: tuple[FeatureSpec[object, _FeatureStoreBuildState], ...] = (
     FeatureSpec(
         name="trend_direction",
@@ -961,11 +984,23 @@ _FEATURE_SPECS: tuple[FeatureSpec[object, _FeatureStoreBuildState], ...] = (
         build=_build_volume_liquidity_v2,
         store=lambda s, v: setattr(s, "volume_liquidity_v2", v),
     ),
+    FeatureSpec(
+        name="monetary",
+        policy="raise",
+        required_inputs=(
+            "macro_series",
+            _FRED_DGS2_KEY,
+            _IG_DGS10_KEY,
+            "broad_usd_index",
+        ),
+        resolve=_resolve_monetary,
+        build=_build_monetary,
+        store=lambda s, v: setattr(s, "monetary", v),
+    ),
 )
 
 
 _FEATURE_STORE_BUILDERS: tuple[_FeatureStoreBuilder, ...] = (
-    _FeatureStoreBuilder("monetary", _build_monetary_feature),
     _FeatureStoreBuilder("realized_vol_21d", _build_realized_vol_21d_feature),
     _FeatureStoreBuilder("drawdown_63d", _build_drawdown_63d_feature),
     _FeatureStoreBuilder("hmm", _build_hmm_feature),
@@ -1031,11 +1066,6 @@ def _availability(
 def _build_feature_availability_report(
     state: _FeatureStoreBuildState,
 ) -> dict[str, FeatureAvailability]:
-    monetary_config_missing = (
-        ()
-        if state.monetary_pressure_v2_config is not None
-        else ("monetary_pressure_v2_config",)
-    )
     credit_config_missing = (
         () if state.credit_funding_config is not None else ("credit_funding_config",)
     )
@@ -1044,21 +1074,6 @@ def _build_feature_availability_report(
         if state.inflation_growth_config is not None
         else ("inflation_growth_config",)
     )
-
-    monetary_required = (
-        "macro_series",
-        _FRED_DGS2_KEY,
-        _IG_DGS10_KEY,
-        "broad_usd_index",
-    )
-    monetary_missing = ()
-    if state.monetary_pressure_v2_config is None:
-        monetary_missing = ()
-    else:
-        monetary_missing = _missing_macro_keys(
-            state.context.macro_series,
-            (_FRED_DGS2_KEY, _IG_DGS10_KEY, "broad_usd_index"),
-        )
 
     credit_missing = ()
     if state.credit_funding_config is not None:
@@ -1073,13 +1088,6 @@ def _build_feature_availability_report(
         ) + _missing_macro_keys(state.context.macro_series, tuple(_IG_MACRO_KEYS))
 
     report = {
-        "monetary": _availability(
-            feature="monetary",
-            value=state.monetary,
-            policy="raise",
-            required_inputs=monetary_required,
-            missing_inputs=monetary_config_missing + monetary_missing,
-        ),
         "hmm": _availability(
             feature="hmm",
             value=state.hmm,

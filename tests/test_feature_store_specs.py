@@ -245,3 +245,24 @@ def test_volume_liquidity_v2_spec_required_inputs_matches_legacy() -> None:
     assert spec.required_inputs == ("volume_liquidity_v2_config", "spy_ohlcv.volume")
     assert spec.policy == "none"
     assert spec.report is True
+
+
+def test_monetary_resolve_missing_config_returns_unavailable(
+    v1_minimal_state: _FeatureStoreBuildState,
+) -> None:
+    from regime_detection.feature_store_runtime import _Unavailable
+
+    spec = _spec_by_name("monetary")
+    resolved = spec.resolve(v1_minimal_state)
+
+    assert isinstance(resolved, _Unavailable)
+    assert "monetary_pressure_v2_config" in resolved.missing_inputs
+
+
+def test_monetary_spec_policy_raise_matches_legacy() -> None:
+    spec = _spec_by_name("monetary")
+    assert spec.policy == "raise"
+    assert spec.report is True
+    # required_inputs first slot is "macro_series", then 3 macro keys
+    assert spec.required_inputs[0] == "macro_series"
+    assert len(spec.required_inputs) == 4
