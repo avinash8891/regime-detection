@@ -359,25 +359,6 @@ def _build_news_sentiment_score_series(
     return score
 
 
-def _build_volume_liquidity_v2_feature(state: _FeatureStoreBuildState) -> None:
-    spy_volume = (
-        _series_column(state.spy_ohlcv, "volume")
-        if "volume" in state.spy_ohlcv.columns
-        else None
-    )
-    if (
-        state.volume_liquidity_v2_config is None
-        or spy_volume is None
-        or bool(spy_volume.isna().all())
-    ):
-        state.volume_liquidity_v2 = None
-        return
-    state.volume_liquidity_v2 = compute_volume_liquidity_v2_features(
-        volume=spy_volume,
-        config=state.volume_liquidity_v2_config,
-    )
-
-
 def _build_monetary_feature(state: _FeatureStoreBuildState) -> None:
     if (
         state.monetary_pressure_v2_config is None
@@ -852,6 +833,35 @@ def _resolve_breadth_state_v2(
     }
 
 
+def _build_volume_liquidity_v2(
+    volume: pd.Series,
+    config: VolumeLiquidityV2Config,
+) -> VolumeLiquidityV2Features:
+    return compute_volume_liquidity_v2_features(volume=volume, config=config)
+
+
+def _resolve_volume_liquidity_v2(
+    state: _FeatureStoreBuildState,
+) -> dict[str, object] | _Unavailable:
+    missing: list[str] = []
+    if state.volume_liquidity_v2_config is None:
+        missing.append("volume_liquidity_v2_config")
+    spy_volume: pd.Series | None = None
+    if "volume" not in state.spy_ohlcv.columns:
+        missing.append("spy_ohlcv.volume")
+    else:
+        spy_volume = _series_column(state.spy_ohlcv, "volume")
+        if bool(spy_volume.isna().all()):
+            missing.append("spy_ohlcv.volume.non_nan")
+    if missing:
+        return _Unavailable(missing_inputs=tuple(missing))
+    assert spy_volume is not None  # narrowed by the missing check above
+    return {
+        "volume": spy_volume,
+        "config": state.volume_liquidity_v2_config,
+    }
+
+
 _FEATURE_SPECS: tuple[FeatureSpec[object, _FeatureStoreBuildState], ...] = (
     FeatureSpec(
         name="trend_direction",
@@ -943,11 +953,18 @@ _FEATURE_SPECS: tuple[FeatureSpec[object, _FeatureStoreBuildState], ...] = (
         build=_build_breadth_state_v2,
         store=lambda s, v: setattr(s, "breadth_state_v2", v),
     ),
+    FeatureSpec(
+        name="volume_liquidity_v2",
+        policy="none",
+        required_inputs=("volume_liquidity_v2_config", "spy_ohlcv.volume"),
+        resolve=_resolve_volume_liquidity_v2,
+        build=_build_volume_liquidity_v2,
+        store=lambda s, v: setattr(s, "volume_liquidity_v2", v),
+    ),
 )
 
 
 _FEATURE_STORE_BUILDERS: tuple[_FeatureStoreBuilder, ...] = (
-    _FeatureStoreBuilder("volume_liquidity_v2", _build_volume_liquidity_v2_feature),
     _FeatureStoreBuilder("monetary", _build_monetary_feature),
     _FeatureStoreBuilder("realized_vol_21d", _build_realized_vol_21d_feature),
     _FeatureStoreBuilder("drawdown_63d", _build_drawdown_63d_feature),
@@ -1014,19 +1031,6 @@ def _availability(
 def _build_feature_availability_report(
     state: _FeatureStoreBuildState,
 ) -> dict[str, FeatureAvailability]:
-    spy_volume_missing = ()
-    if "volume" not in state.spy_ohlcv.columns:
-        spy_volume_missing = ("spy_ohlcv.volume",)
-    else:
-        spy_volume = _series_column(state.spy_ohlcv, "volume")
-        if bool(spy_volume.isna().all()):
-            spy_volume_missing = ("spy_ohlcv.volume.non_nan",)
-
-    volume_liquidity_missing = (
-        ()
-        if state.volume_liquidity_v2_config is not None
-        else ("volume_liquidity_v2_config",)
-    ) + spy_volume_missing
     monetary_config_missing = (
         ()
         if state.monetary_pressure_v2_config is not None
@@ -1069,13 +1073,6 @@ def _build_feature_availability_report(
         ) + _missing_macro_keys(state.context.macro_series, tuple(_IG_MACRO_KEYS))
 
     report = {
-        "volume_liquidity_v2": _availability(
-            feature="volume_liquidity_v2",
-            value=state.volume_liquidity_v2,
-            policy="none",
-            required_inputs=("volume_liquidity_v2_config", "spy_ohlcv.volume"),
-            missing_inputs=volume_liquidity_missing,
-        ),
         "monetary": _availability(
             feature="monetary",
             value=state.monetary,
