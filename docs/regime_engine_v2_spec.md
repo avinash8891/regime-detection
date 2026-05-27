@@ -84,8 +84,10 @@ Status semantics:
 | `not_wired` | The classifier or seam is not present in this engine configuration. |
 
 Reports MUST group `unknown` labels by `classification_status`. For example,
-`unknown/no_rule_fired` is a neutral rule fall-through; `unknown/stale_data` is
-a data problem. The `active_label` field remains unchanged for compatibility.
+`unknown/no_rule_fired` is an unpartitioned-rule diagnostic that should be
+reproduced with a failing test; `unknown/stale_data` is a data problem. The
+`active_label` field remains unchanged for compatibility. See ADR 0019 for
+the current valid-data rule partition policy.
 
 V2 also owns the items intentionally descoped from V1:
 
@@ -2894,8 +2896,12 @@ disinflation
 recession_scare
 risk_off_mild
 recovery_growth
+recovery_growth_unconfirmed
 reflation
+late_cycle_inflation_stress
 stagflation_lite
+contractionary_disinflation
+macro_neutral
 earnings_expansion
 earnings_contraction
 unknown
@@ -2903,7 +2909,7 @@ unknown
 
 #### Precedence
 ```text
-inflation_shock > recession_scare > risk_off_mild > disinflation > goldilocks > recovery_growth > reflation > stagflation_lite > earnings_contraction > earnings_expansion > unknown
+inflation_shock > recession_scare > risk_off_mild > goldilocks > recovery_growth > recovery_growth_unconfirmed > disinflation > late_cycle_inflation_stress > reflation > stagflation_lite > earnings_contraction > earnings_expansion > contractionary_disinflation > macro_neutral > unknown
 ```
 
 #### Features (operational definitions)
@@ -3010,6 +3016,13 @@ recovery_growth:
   AND cyclical_defensive_slope_21d > 0
   AND credit_funding.active_label == "credit_calm"                    # ADR 0011 Fix 3: when credit unbuilt, fires without the credit_calm gate (allow_credit_independent_fallback default true)
 
+recovery_growth_unconfirmed:
+  pmi_manufacturing_slope_21d > 0 AND pmi_manufacturing > 50
+  AND cyclical_defensive_slope_21d > 0
+  AND cpi_6m_change_pct_slope_21d <= 0
+  AND credit_funding.active_label in {credit_divergence, credit_recovery, spread_widening}
+  # Growth repair that lacks calm-credit confirmation (ADR 0019).
+
 reflation:
   cpi_6m_change_pct_slope_21d > 0                               # CPI rising
   AND pmi_manufacturing > 50                                     # expansion
@@ -3025,6 +3038,22 @@ stagflation_lite:
   # Early-warning macro regime: inflation persists while real economy weakens.
   # Distinct from recession_scare (requires equity decline + credit stress)
   # and from reflation (requires PMI > 50). Audit D1 residual: 257/2287 (11.2%).
+
+late_cycle_inflation_stress:
+  cpi_6m_change_pct_slope_21d >= 0
+  AND pmi_manufacturing > 50
+  AND (spy_21d_return <= 0 OR credit_funding.active_label in {credit_stress, funding_squeeze, deleveraging})
+  # Expansion with non-declining inflation and equity/credit stress (ADR 0019).
+
+contractionary_disinflation:
+  cpi_6m_change_pct_slope_21d <= 0
+  AND pmi_manufacturing <= 45
+  # Demand contraction with easing inflation pressure (ADR 0019).
+
+macro_neutral:
+  cpi_6m_change_pct_slope_21d, pmi_manufacturing, and spy_21d_return are finite
+  AND no directional macro/earnings predicate fired
+  # Explicit neutral/no-impulse state for valid inputs (ADR 0019).
 
 earnings_expansion:
   aggregate_forward_eps_revision_direction_4w > +0.02     # strict
@@ -3042,12 +3071,16 @@ inflation_growth_risk_rank:
   goldilocks: 0
   recovery_growth: 0
   earnings_expansion: 0
+  recovery_growth_unconfirmed: 1
   reflation: 1
+  macro_neutral: 1
   unknown: 1
   disinflation: 1
   stagflation_lite: 2
   risk_off_mild: 2
   earnings_contraction: 2
+  contractionary_disinflation: 2
+  late_cycle_inflation_stress: 2
   recession_scare: 3
   inflation_shock: 3
 ```
@@ -3067,11 +3100,15 @@ inflation_growth:
     earnings_contraction: 3
     disinflation: 3
     stagflation_lite: 3
+    contractionary_disinflation: 3
+    late_cycle_inflation_stress: 3
+    recovery_growth_unconfirmed: 0
     reflation: 0
     goldilocks: 0
     recovery_growth: 0
+    macro_neutral: 0
     earnings_expansion: 0
-    unknown: 0                     # absence-of-signal clears immediately on recovery
+    unknown: 0                     # data-quality or unpartitioned-rule diagnostic; clears immediately on recovery
   default_deescalation_days: 0
 ```
 
@@ -3100,6 +3137,8 @@ Rules referencing `credit_funding.active_label` (`goldilocks`, `recession_scare`
 #### Labels
 ```text
 credit_calm
+credit_recovery
+credit_divergence
 spread_widening
 credit_stress
 funding_squeeze
@@ -3109,7 +3148,7 @@ unknown
 
 #### Precedence
 ```text
-deleveraging > funding_squeeze > credit_stress > spread_widening > credit_calm > unknown
+deleveraging > funding_squeeze > credit_stress > spread_widening > credit_divergence > credit_recovery > credit_calm > unknown
 ```
 
 #### Features (operational definitions)
@@ -3181,7 +3220,20 @@ credit_calm:
 
 spread_widening:
   hy_oas_slope_21d > 0
-  AND ig_oas_slope_21d > 0                          # strict rising on BOTH HY and IG
+  AND (ig_oas_slope_21d > 0 OR hy_oas_percentile_504d >= 0.50)
+  # Both-legs widening is the standard path; elevated HY-led widening is
+  # also deterioration when HY is already outside calm territory (ADR 0019).
+
+credit_divergence:
+  hy_oas_percentile_504d < 0.50
+  AND hy_oas_slope_21d > 0
+  AND ig_oas_slope_21d <= 0
+  # Low-spread HY-only softening without broad credit confirmation.
+
+credit_recovery:
+  hy_oas_percentile_504d >= 0.50
+  AND hy_oas_slope_21d < 0
+  # Elevated or stressed spreads are repairing unless a severe rule fired first.
 
 credit_stress:
   hy_oas_percentile_504d > 0.80
@@ -3205,6 +3257,8 @@ deleveraging:                                       # 5-condition composite
 ```yaml
 credit_funding_risk_rank:
   credit_calm: 0
+  credit_recovery: 0
+  credit_divergence: 1
   unknown: 1
   spread_widening: 1
   credit_stress: 2
@@ -3225,8 +3279,10 @@ credit_funding:
     funding_squeeze: 5
     credit_stress: 3
     spread_widening: 3
+    credit_divergence: 0
+    credit_recovery: 0
     credit_calm: 0
-    unknown: 0
+    unknown: 0                  # data-quality or unpartitioned-rule diagnostic
   default_deescalation_days: 0
 ```
 
@@ -3417,7 +3473,10 @@ High dispersion = stock-picker market. Low dispersion = correlation-driven.
 ### 3.3 Labels
 ```text
 diversified_normal
+decorrelated_calm
+rotation_watch
 stock_picker_dispersion
+idiosyncratic_crisis
 rising_fragility
 correlation_concentration
 correlation_to_one
@@ -3427,7 +3486,7 @@ unknown
 
 ### 3.4 Precedence
 ```text
-systemic_stress > correlation_to_one > correlation_concentration > rising_fragility > stock_picker_dispersion > diversified_normal > unknown
+systemic_stress > correlation_to_one > correlation_concentration > rising_fragility > idiosyncratic_crisis > stock_picker_dispersion > rotation_watch > decorrelated_calm > diversified_normal > unknown
 ```
 
 ### 3.5 Rules
@@ -3457,6 +3516,13 @@ AND dispersion_ratio percentile_252d > 0.70
 AND volatility_state.active_label != crisis_vol
 ```
 
+`idiosyncratic_crisis`:
+```text
+avg_pairwise_corr_percentile_504d < 0.30
+AND dispersion_ratio percentile_252d > 0.70
+AND volatility_state.active_label == crisis_vol
+```
+
 `rising_fragility`:
 ```text
 avg_pairwise_corr rising over 21d (positive slope)
@@ -3477,6 +3543,18 @@ top-3 eigenvalue dominance is a direct concentration signal, even when the
 single largest eigenvalue and effective-rank percentile do not independently
 cross their thresholds.
 
+`rotation_watch`:
+```text
+0.60 < avg_pairwise_corr_percentile_504d <= 0.75
+AND effective_rank_stability_21d >= effective_rank_stability_threshold
+```
+
+`decorrelated_calm`:
+```text
+avg_pairwise_corr_percentile_504d < 0.30
+AND dispersion_ratio_percentile_252d <= 0.70
+```
+
 `correlation_to_one`:
 ```text
 avg_pairwise_corr_percentile_504d > 0.90
@@ -3496,9 +3574,12 @@ AND breadth_state.active_label in [weak_breadth, narrowing_breadth]
 ```yaml
 network_fragility_risk_rank:
   diversified_normal: 0
+  decorrelated_calm: 0
+  rotation_watch: 1
   stock_picker_dispersion: 1
+  idiosyncratic_crisis: 2
   rising_fragility: 2
-  correlation_fragility: 2
+  correlation_concentration: 2
   correlation_to_one: 3
   systemic_stress: 3
   unknown: 2
@@ -3512,16 +3593,20 @@ Network fragility de-escalation defaults:
 ```yaml
 network_fragility_deescalation_days:
   rising_fragility: 3
-  correlation_fragility: 3
+  correlation_concentration: 3
   correlation_to_one: 5
   systemic_stress: 5
+  idiosyncratic_crisis: 3
+  rotation_watch: 0
+  decorrelated_calm: 0
   unknown: 0
 ```
 
-`unknown` is absence of signal, not a sticky regime. It clears immediately
-once a valid classified label appears. Data-quality flickers away from
-high-risk classified states are still held by the threshold of the stable
-label being left, for example `correlation_to_one: 5`.
+`unknown` is a data-quality failure or explicit unpartitioned-rule diagnostic,
+not a sticky regime. It clears immediately once a valid classified label
+appears. Data-quality flickers away from high-risk classified states are still
+held by the threshold of the stable label being left, for example
+`correlation_to_one: 5`.
 
 See ADR 0010 for the complete per-label hysteresis table across all 9 axes. Axis hysteresis does not apply to evidence-only outputs (`event_calendar`, `cluster`, `change_point`, `hmm`). `transition_risk` has its own final-state debounce in §4.5.
 
@@ -3685,6 +3770,7 @@ score = max(drawdown_stress, ma_break_stress)
 score = {
     "credit_calm": 0.00,
     "credit_recovery": 0.20,
+    "credit_divergence": 0.25,
     "spread_widening": 0.45,
     "credit_stress": 0.75,
     "funding_squeeze": 0.90,

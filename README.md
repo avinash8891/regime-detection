@@ -8,6 +8,7 @@ Primary docs:
 - `docs/regime_engine_v1_data_requirements.md`
 - `docs/regime_engine_v2_spec.md`
 - `docs/market_data_fetch_plan.md`
+- `docs/decisions/0019-valid-data-rule-partitions.md`
 
 ## Main Profile Runner
 
