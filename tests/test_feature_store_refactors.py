@@ -159,8 +159,10 @@ def test_default_feature_store_builder_registry_orders_trend_news_before_trend_v
     assert set(feature_fields).issubset(set(all_names))
 
     # Ordering: specs run first (so trend_direction always precedes any legacy
-    # builder). Within the legacy builder sequence, news must precede trend_v2.
-    assert builder_names.index("news_sentiment_score") < builder_names.index(
+    # builder). news_sentiment_score has moved to _FEATURE_SPECS (Task 2.2) so
+    # the ordering check uses all_names (specs + builders) to verify it still
+    # precedes trend_direction_v2 in the combined execution order.
+    assert all_names.index("news_sentiment_score") < all_names.index(
         "trend_direction_v2"
     )
     assert builder_names.index("volatility_state_v2") < builder_names.index(
