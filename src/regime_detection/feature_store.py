@@ -114,6 +114,7 @@ from regime_detection.feature_store_runtime import (
     FeatureAvailability,
     FeatureAvailabilityPolicy,
     FeatureSpec,
+    _Unavailable,
     _run_feature_specs,
 )
 
@@ -308,37 +309,30 @@ class FeatureStore(BaseModel):
 
 def _build_sentiment_score_series(
     *,
-    aaii_sentiment: pd.DataFrame | None,
+    aaii_sentiment: pd.DataFrame,
     session_index: pd.DatetimeIndex,
-) -> pd.Series | None:
+) -> pd.Series:
     """Align AAII bull-bear-spread 8w-MA onto the SPY session index for
     consumption by the v2 §1A `euphoria` predicate (ADR 0004 Q1+Q4).
 
     Forward-fill semantics: use the latest AAII row whose
     ``publication_date`` (or ``date`` if no separate publication column) is
     on or before each session — V1 §2.2 stateless-replay rule, never
-    consult a future-dated reading. Returns ``None`` when no AAII frame
-    is supplied (lets the euphoria predicate falsify per the V2 §10
-    absolute "do not invent" rule at spec L4364 and the documented
-    implementation decision lineage in ADR 0004 Q1+Q4).
+    consult a future-dated reading.
 
     Cold-start (ADR 0004 Q5): a session with no AAII row at or before it
     receives NaN; the euphoria predicate then falsifies on that session
     per V1 §2.7. With the AAII fetcher's `min_periods=1` 8-week MA, the
     output column is populated from week 1 of the data, so the practical
     cold-start window is just "no AAII history yet."
+
+    Caller is responsible for ensuring aaii_sentiment is non-None, non-empty,
+    and has 'bull_bear_spread_8w_ma' plus either 'publication_date' or 'date'
+    columns. The spec's resolve function gates these conditions.
     """
-    if aaii_sentiment is None:
-        return None
-    if aaii_sentiment.empty:
-        return None
-    if "bull_bear_spread_8w_ma" not in aaii_sentiment.columns:
-        return None
     publication_column = (
         "publication_date" if "publication_date" in aaii_sentiment.columns else "date"
     )
-    if publication_column not in aaii_sentiment.columns:
-        return None
     sorted_aaii = aaii_sentiment.sort_values(publication_column).reset_index(drop=True)
     publication = pd.to_datetime(sorted_aaii[publication_column])
     score_values = sorted_aaii["bull_bear_spread_8w_ma"].astype(float).to_numpy()
@@ -347,8 +341,6 @@ def _build_sentiment_score_series(
         index=pd.DatetimeIndex(publication),
         name="sentiment_score",
     )
-    # Reindex forward-fill onto the SPY session calendar (each session gets
-    # the value of the latest AAII publication on or before it).
     return aligned.reindex(session_index, method="ffill")
 
 
@@ -371,13 +363,6 @@ def _build_news_sentiment_score_series(
     )
     score.name = "news_sentiment_score"
     return score
-
-
-def _build_sentiment_score_feature(state: _FeatureStoreBuildState) -> None:
-    state.sentiment_score = _build_sentiment_score_series(
-        aaii_sentiment=state.context.aaii_sentiment,
-        session_index=_as_datetime_index(state.spy_close.index),
-    )
 
 
 def _build_news_sentiment_score_feature(state: _FeatureStoreBuildState) -> None:
@@ -762,6 +747,30 @@ def _resolve_sma_50(
     return {"spy_close": state.spy_close}
 
 
+def _build_sentiment_score(
+    aaii_sentiment: pd.DataFrame, session_index: pd.DatetimeIndex
+) -> pd.Series:
+    return _build_sentiment_score_series(
+        aaii_sentiment=aaii_sentiment, session_index=session_index
+    )
+
+
+def _resolve_sentiment_score(
+    state: _FeatureStoreBuildState,
+) -> dict[str, object] | _Unavailable:
+    aaii = state.context.aaii_sentiment
+    if aaii is None or aaii.empty:
+        return _Unavailable(missing_inputs=("aaii_sentiment",))
+    if "bull_bear_spread_8w_ma" not in aaii.columns:
+        return _Unavailable(missing_inputs=("aaii_sentiment.bull_bear_spread_8w_ma",))
+    if "publication_date" not in aaii.columns and "date" not in aaii.columns:
+        return _Unavailable(missing_inputs=("aaii_sentiment.publication_date_or_date",))
+    return {
+        "aaii_sentiment": aaii,
+        "session_index": _as_datetime_index(state.spy_close.index),
+    }
+
+
 _FEATURE_SPECS: tuple[FeatureSpec[object, _FeatureStoreBuildState], ...] = (
     FeatureSpec(
         name="trend_direction",
@@ -803,11 +812,19 @@ _FEATURE_SPECS: tuple[FeatureSpec[object, _FeatureStoreBuildState], ...] = (
         build=_build_sma_50,
         store=lambda s, v: setattr(s, "sma_50", v),
     ),
+    FeatureSpec(
+        name="sentiment_score",
+        policy="none",
+        required_inputs=("aaii_sentiment",),
+        resolve=_resolve_sentiment_score,
+        build=_build_sentiment_score,
+        store=lambda s, v: setattr(s, "sentiment_score", v),
+        report=False,
+    ),
 )
 
 
 _FEATURE_STORE_BUILDERS: tuple[_FeatureStoreBuilder, ...] = (
-    _FeatureStoreBuilder("sentiment_score", _build_sentiment_score_feature),
     _FeatureStoreBuilder("news_sentiment_score", _build_news_sentiment_score_feature),
     _FeatureStoreBuilder("trend_direction_v2", _build_trend_direction_v2_feature),
     _FeatureStoreBuilder("network_fragility", _build_network_fragility_feature),

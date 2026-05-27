@@ -106,3 +106,23 @@ def test_sma_50_resolve_returns_spy_close(
     assert isinstance(resolved, dict)
     assert set(resolved.keys()) == {"spy_close"}
     assert resolved["spy_close"] is v1_minimal_state.spy_close
+
+
+def test_sentiment_score_resolve_missing_aaii_returns_unavailable(
+    v1_minimal_state: _FeatureStoreBuildState,
+) -> None:
+    """Pure V1 context has no aaii_sentiment — spec.resolve must report
+    aaii_sentiment as the missing input."""
+    from regime_detection.feature_store_runtime import _Unavailable
+
+    spec = _spec_by_name("sentiment_score")
+    resolved = spec.resolve(v1_minimal_state)
+
+    assert isinstance(resolved, _Unavailable)
+    assert "aaii_sentiment" in resolved.missing_inputs
+
+
+def test_sentiment_score_spec_is_internal_report_false() -> None:
+    """sentiment_score is intermediate state — must not emit availability."""
+    spec = _spec_by_name("sentiment_score")
+    assert spec.report is False
