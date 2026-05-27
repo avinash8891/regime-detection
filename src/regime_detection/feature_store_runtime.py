@@ -36,9 +36,19 @@ class FeatureAvailability(BaseModel):
 
 @dataclass(frozen=True)
 class _Unavailable:
-    """Sentinel returned by `FeatureSpec.resolve` when required inputs are absent."""
+    """Sentinel returned by `FeatureSpec.resolve` when required inputs are absent.
+
+    `policy_override` lets a resolve function emit a different availability
+    policy than the spec's default for state-dependent gating. Example: a
+    feature with `spec.policy="none"` (optional axis) can flip to "raise"
+    when the user DID configure the axis but a required upstream input is
+    missing — that data gap is unsafe for downstream consumers even though
+    the axis itself is opt-out by default. When None, the spec's policy is
+    used unchanged.
+    """
 
     missing_inputs: tuple[str, ...]
+    policy_override: FeatureAvailabilityPolicy | None = None
 
 
 @dataclass(frozen=True)
@@ -86,7 +96,7 @@ def _run_feature_specs(
                 report[spec.name] = FeatureAvailability(
                     feature=spec.name,
                     available=False,
-                    policy=spec.policy,
+                    policy=resolved.policy_override or spec.policy,
                     reason=reason,
                     required_inputs=spec.required_inputs,
                     missing_inputs=resolved.missing_inputs,

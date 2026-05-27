@@ -1020,15 +1020,23 @@ def _resolve_monetary(
 ) -> dict[str, object] | _Unavailable:
     if state.monetary_pressure_v2_config is None:
         # Unconfigured monetary axis is expected absence — reason="not_configured"
-        # via the orchestrator's empty-missing_inputs branch, paired with
-        # policy="none" on the spec so coverage marks the run safe.
+        # via the orchestrator's empty-missing_inputs branch, paired with the
+        # spec's default policy="none" so coverage marks the run safe.
         return _Unavailable(missing_inputs=())
     macro_missing = _missing_macro_keys(
         state.context.macro_series,
         (_FRED_DGS2_KEY, _IG_DGS10_KEY, "broad_usd_index"),
     )
     if macro_missing:
-        return _Unavailable(missing_inputs=tuple(macro_missing))
+        # Monetary IS configured but required macro data is missing — this is
+        # an UNSAFE data gap for direct build_feature_store / build_regime_timeline
+        # callers that bypass the ClassifyRequest validator. Override the spec's
+        # default policy ("none", for opt-out callers) with "raise" so
+        # classification_coverage flags the run as unsafe.
+        return _Unavailable(
+            missing_inputs=tuple(macro_missing),
+            policy_override="raise",
+        )
     assert state.context.macro_series is not None  # _missing_macro_keys narrowed
     cb_text_score_series: pd.Series | None = None
     if (

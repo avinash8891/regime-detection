@@ -103,11 +103,12 @@ def test_feature_store_reports_configured_v2_seam_missing_inputs(
 
     monetary = store.availability["monetary"]
     assert monetary.available is False
-    # monetary uses policy="none" because the axis is optional in V2; the
-    # configured-but-missing-macro case is enforced upstream by the
-    # ClassifyRequest validator at engine.py:259. The spec still reports
-    # which macro keys were missing so operators can diagnose.
-    assert monetary.policy == "none"
+    # When monetary IS configured but required macro data is missing,
+    # _resolve_monetary emits policy_override="raise" so classification
+    # coverage flags this data gap as unsafe for downstream consumers that
+    # bypass the ClassifyRequest validator. The spec's default policy="none"
+    # only applies to the unconfigured case (expected opt-out absence).
+    assert monetary.policy == "raise"
     assert monetary.reason == "missing_required_inputs"
     assert set(monetary.missing_inputs) == {
         "macro_series",
