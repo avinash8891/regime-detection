@@ -256,7 +256,7 @@ def test_monetary_resolve_missing_config_returns_unavailable(
     resolved = spec.resolve(v1_minimal_state)
 
     assert isinstance(resolved, _Unavailable)
-    assert resolved.missing_inputs == ("monetary_pressure_v2_config",)
+    assert resolved.missing_inputs == ()
 
 
 def test_monetary_spec_policy_is_none_so_v1_runs_stay_safe() -> None:

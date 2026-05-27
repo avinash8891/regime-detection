@@ -29,12 +29,16 @@ def test_pyright_strict_slice_covers_runtime_and_guardrail_scripts() -> None:
 
 def test_pyright_strict_slice_documents_pandas_stub_policy() -> None:
     policy = Path("docs/pyright_pandas_stub_policy.md")
+    with Path("pyproject.toml").open("rb") as handle:
+        payload = tomllib.load(handle)
 
     assert policy.exists()
     text = policy.read_text()
     assert "reportUnknownMemberType" in text
     assert "business logic" in text
     assert "blanket ignores" in text
+    for included_path in payload["tool"]["pyright"]["include"]:
+        assert f"`{included_path}`" in text
 
 
 def test_ci_is_split_between_pr_fast_and_full_verification() -> None:

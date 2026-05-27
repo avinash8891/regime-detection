@@ -19,6 +19,9 @@ if str(REPO_ROOT) not in sys.path:
 sys.path.insert(0, str(REPO_ROOT / "src"))
 
 from regime_detection.calendar import nyse_calendar  # noqa: E402
+from regime_detection.dependency_payload_contracts import (  # noqa: E402
+    dependency_payload_contracts_report,
+)
 from regime_detection.engine import RegimeEngine  # noqa: E402
 from regime_detection.loaders import load_event_calendar  # noqa: E402
 from regime_detection.rule_provenance import rule_provenance_payload  # noqa: E402
@@ -292,24 +295,7 @@ def _event_calendar_summary_cells(output: Any) -> dict[str, Any]:
 def _v2_dependency_payload_contracts_summary_cell() -> str:
     """JSON cell documenting which payload shapes crossed V2 axis edges."""
 
-    return json.dumps(
-        {
-            "network_fragility": {
-                "breadth_state": "label_only",
-                "volatility_state": "label_only",
-                "credit_funding_effective": "label_only",
-            },
-            "inflation_growth_state": {
-                "credit_funding_effective": "label_only",
-            },
-            "transition_score": {
-                "event_calendar": "matching_labels",
-                "credit_funding_effective": "label_and_status",
-                "volume_liquidity_state": "label_and_status",
-            },
-        },
-        sort_keys=True,
-    )
+    return json.dumps(dependency_payload_contracts_report(), sort_keys=True)
 
 
 def _build_report_markdown(
@@ -465,7 +451,9 @@ def run_walkforward(
                             if output.classification_coverage is not None
                             else None
                         ),
-                        "rule_provenance": _json_cell(rule_provenance_payload()),
+                        "rule_provenance": _json_cell(
+                            rule_provenance_payload(config=engine.config)
+                        ),
                         "transition_risk_state": output.transition_risk.state,
                         "transition_risk_score": output.transition_risk.score,
                         "transition_risk_primary_drivers": _json_cell(
@@ -510,6 +498,8 @@ def run_walkforward(
                         "event_calendar_primary_label": None,
                         "event_calendar_matching_labels": None,
                         "v2_dependency_payload_contracts": None,
+                        "classification_coverage": None,
+                        "rule_provenance": None,
                         "transition_risk_state": None,
                         "transition_risk_score": None,
                         "transition_risk_primary_drivers": None,

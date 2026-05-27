@@ -16,6 +16,10 @@ if str(REPO_ROOT) not in sys.path:
 sys.path.insert(0, str(REPO_ROOT / "src"))
 
 from regime_detection.calendar import require_nyse_trading_day
+from regime_detection.config import RegimeConfig
+from regime_detection.dependency_payload_contracts import (
+    dependency_payload_contracts_report as _v2_dependency_payload_contracts,
+)
 from regime_detection.engine import RegimeEngine
 from regime_detection.fragility_universe import CROSS_ASSET_SYMBOLS, SECTOR_ETFS
 from regime_detection.loaders import load_event_calendar
@@ -161,34 +165,14 @@ def _write_output_json(output_path: Path, payload_json: str) -> None:
     output_path.write_text(payload_json + "\n", encoding="utf-8")
 
 
-def _v2_dependency_payload_contracts() -> dict[str, dict[str, str]]:
-    """Stable JSON contract emitted with shadow artifacts for replay diffs."""
-
-    return {
-        "network_fragility": {
-            "breadth_state": "label_only",
-            "volatility_state": "label_only",
-            "credit_funding_effective": "label_only",
-        },
-        "inflation_growth_state": {
-            "credit_funding_effective": "label_only",
-        },
-        "transition_score": {
-            "event_calendar": "matching_labels",
-            "credit_funding_effective": "label_and_status",
-            "volume_liquidity_state": "label_and_status",
-        },
-    }
-
-
-def _shadow_output_json(output: object) -> str:
+def _shadow_output_json(output: object, *, config: RegimeConfig | None = None) -> str:
     """Serialize a shadow output with diagnostic dependency contracts."""
 
     if not hasattr(output, "model_dump"):
         raise TypeError("shadow output must provide model_dump")
     payload = output.model_dump(mode="json")
     payload["v2_dependency_payload_contracts"] = _v2_dependency_payload_contracts()
-    payload["rule_provenance"] = rule_provenance_payload()
+    payload["rule_provenance"] = rule_provenance_payload(config=config)
     return json.dumps(payload, indent=2, sort_keys=True)
 
 
@@ -263,7 +247,9 @@ def run_shadow(
                 **v2_kwargs,
             )
             output_path = paths["outputs"] / f"{as_of_date.isoformat()}.json"
-            _write_output_json(output_path, _shadow_output_json(output))
+            _write_output_json(
+                output_path, _shadow_output_json(output, config=engine.config)
+            )
             update_run_row_success(
                 conn=conn,
                 as_of_date=as_of_date,

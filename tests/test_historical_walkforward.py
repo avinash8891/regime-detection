@@ -143,6 +143,41 @@ def test_historical_walkforward_runner_records_failures_without_silent_skip(
     assert "SPY row" in rows[1][2]
 
 
+def test_historical_walkforward_failure_only_summary_keeps_success_columns(
+    tmp_path: Path,
+) -> None:
+    repo_root = Path(__file__).resolve().parents[1]
+    original = pd.read_parquet(
+        repo_root / "tests" / "fixtures" / "raw" / "market_data.parquet"
+    )
+    original["date"] = pd.to_datetime(original["date"]).dt.date
+
+    broken = original[original["symbol"] != "SPY"].copy()
+    broken_path = tmp_path / "broken_market_data.parquet"
+    broken.to_parquet(broken_path, index=False)
+
+    out_root = tmp_path / "walkforward"
+    mod = _load_runner_module()
+    event_calendar_path = repo_root / "tests" / "fixtures" / "events" / "us_events.yaml"
+    config_path = repo_root / "tests" / "fixtures" / "configs" / "core3-v2-fast.yaml"
+    result = mod.run_walkforward(
+        market_data_path=broken_path,
+        output_root=out_root,
+        start_date=date(2023, 12, 14),
+        end_date=date(2023, 12, 14),
+        event_calendar_path=event_calendar_path,
+        config_path=config_path,
+    )
+
+    assert result["success_count"] == 0
+    assert result["failure_count"] == 1
+    summary_df = pd.read_csv(out_root / "reports" / "walkforward_summary.csv")
+    assert {
+        "classification_coverage",
+        "rule_provenance",
+    }.issubset(summary_df.columns)
+
+
 def test_historical_walkforward_requires_event_calendar_unless_explicitly_allowed(
     tmp_path: Path,
 ) -> None:

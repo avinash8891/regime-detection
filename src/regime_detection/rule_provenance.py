@@ -529,8 +529,18 @@ def provenance_by_key() -> dict[str, RuleProvenance]:
     return by_key
 
 
-def rule_provenance_payload() -> dict[str, dict[str, Any]]:
+def rule_provenance_payload(
+    config: RegimeConfig | None = None,
+) -> dict[str, dict[str, Any]]:
+    """Serialize rule provenance for an operator artifact.
+
+    Defaults to the module-level `RULE_PROVENANCE` (built from
+    `load_default_regime_config()` at import time). Callers driving the
+    engine with `--config-path` should pass the active `RegimeConfig` so the
+    emitted provenance matches the config that actually classified the run,
+    not the default singleton."""
+    entries = RULE_PROVENANCE if config is None else build_rule_provenance(config)
     return {
         entry.key: entry.model_dump(mode="json", exclude={"key"}, exclude_none=True)
-        for entry in RULE_PROVENANCE
+        for entry in entries
     }

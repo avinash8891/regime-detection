@@ -115,14 +115,14 @@ def test_availability_dict_pure_v1_context_snapshot(
             "feature": "monetary",
             "available": False,
             "policy": "none",
-            "reason": "missing_required_inputs",
+            "reason": "not_configured",
             "required_inputs": (
                 "macro_series",
                 "2y_yield",
                 "10y_yield",
                 "broad_usd_index",
             ),
-            "missing_inputs": ("monetary_pressure_v2_config",),
+            "missing_inputs": (),
         },
         "hmm": {
             "feature": "hmm",

@@ -945,6 +945,7 @@ def main() -> int:
         per_day_avg_ms=per_day_avg_ms,
         verification_issues=verification_issues,
         feature_store=feature_store,
+        config=config,
     )
     record_timing("profile_engine.main", overall_start)
     json_report["observability"] = {

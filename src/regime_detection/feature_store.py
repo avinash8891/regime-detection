@@ -1018,20 +1018,17 @@ def _resolve_realized_vol_21d(
 def _resolve_monetary(
     state: _FeatureStoreBuildState,
 ) -> dict[str, object] | _Unavailable:
-    missing: list[str] = []
     if state.monetary_pressure_v2_config is None:
-        missing.append("monetary_pressure_v2_config")
-    macro_missing = (
-        _missing_macro_keys(
-            state.context.macro_series,
-            (_FRED_DGS2_KEY, _IG_DGS10_KEY, "broad_usd_index"),
-        )
-        if state.monetary_pressure_v2_config is not None
-        else ()
+        # Unconfigured monetary axis is expected absence — reason="not_configured"
+        # via the orchestrator's empty-missing_inputs branch, paired with
+        # policy="none" on the spec so coverage marks the run safe.
+        return _Unavailable(missing_inputs=())
+    macro_missing = _missing_macro_keys(
+        state.context.macro_series,
+        (_FRED_DGS2_KEY, _IG_DGS10_KEY, "broad_usd_index"),
     )
-    missing.extend(macro_missing)
-    if missing:
-        return _Unavailable(missing_inputs=tuple(missing))
+    if macro_missing:
+        return _Unavailable(missing_inputs=tuple(macro_missing))
     assert state.context.macro_series is not None  # _missing_macro_keys narrowed
     cb_text_score_series: pd.Series | None = None
     if (
