@@ -372,13 +372,15 @@ def test_classify_window_returns_one_output_per_nyse_trading_day(
     end_date = date(2023, 12, 14)
     market_data = market_df_for_asof(end_date)
 
-    with pytest.raises(RuntimeError, match="transition_risk requires score inputs"):
+    with pytest.raises(ValueError) as excinfo:
         engine.classify_window(
             end_date=end_date,
             market_data=market_data,
             lookback_days=5,
             event_calendar=event_calendar_df,
         )
+    message = str(excinfo.value)
+    assert "ClassifyRequest missing configured V2 inputs" in message
 
 
 def test_classify_window_uses_lookback_days_not_fixed_calendar_span(
@@ -389,13 +391,15 @@ def test_classify_window_uses_lookback_days_not_fixed_calendar_span(
     end_date = date(2023, 12, 14)
     market_data = market_df_for_asof(end_date)
 
-    with pytest.raises(RuntimeError, match="transition_risk requires score inputs"):
+    with pytest.raises(ValueError) as excinfo:
         engine.classify_window(
             end_date=end_date,
             market_data=market_data,
             lookback_days=23,
             event_calendar=event_calendar_df,
         )
+    message = str(excinfo.value)
+    assert "ClassifyRequest missing configured V2 inputs" in message
 
 
 def test_market_context_builds_normalized_series_once(shared_timeline_pipeline) -> None:
@@ -440,12 +444,14 @@ def test_classify_matches_last_output_of_shared_timeline_pipeline(
     event_calendar_df,
 ) -> None:
     engine = RegimeEngine()
-    with pytest.raises(RuntimeError, match="transition_risk requires score inputs"):
+    with pytest.raises(ValueError) as excinfo:
         engine.classify(
             as_of_date=shared_timeline_pipeline["end_date"],
             market_data=shared_timeline_pipeline["market_data"],
             event_calendar=event_calendar_df,
         )
+    message = str(excinfo.value)
+    assert "ClassifyRequest missing configured V2 inputs" in message
 
 
 def test_timeline_output_helper_matches_timeline_output(
