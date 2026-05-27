@@ -206,9 +206,12 @@ The coverage test added in PR 1 (tightened in PR 2) makes "forgot to register a 
 
 The last row is the whole point of the refactor.
 
-## Open items the implementation plan must address
+## Locked-in decisions (resolved open items)
 
-- Exact wire format of `reason` strings in `FeatureAvailability`. PR 1 must match today's output exactly. Audit current report for every distinct `reason` value emitted.
-- The 5 always-on V1 features today emit hardcoded `FeatureAvailability(reason="populated")`; verify their `resolve` cannot return `_Unavailable` (e.g., what if `spy_ohlcv.close` is missing? Today's builder raises; the spec should preserve raising vs. converting to `_Unavailable`).
-- `realized_vol_21d` and `drawdown_63d` are populated from SPY-derived computations with no config gate; they go in the always-on bucket too but were not in PR 1's initial 5. Decide whether to include them in PR 1.
-- Whether the coverage test should also assert that `required_inputs` strings are unique within a spec and stable across runs (probably yes).
+1. **`reason` string vocabulary preserved exactly.** The implementation plan's first step in PR 1 grep's `_build_feature_availability_report` for every distinct `reason` value and pins each one in a test. The orchestrator's branch `"not_configured" if not missing else "missing_required_inputs"` plus the always-true `"populated"` case must cover the entire current vocabulary. If any other `reason` string is emitted today, the orchestrator gains a branch for it; this refactor is not the place to change wire output.
+
+2. **Always-on features preserve raise-on-missing-SPY behavior.** The 5 PR-1 specs (`trend_direction`, `trend_character`, `volatility`, `breadth`, `sma_50`) have `resolve` functions that return kwargs unconditionally — no SPY-presence check. If `spy_ohlcv.close` is missing, `build` crashes the same way it does today (from inside `compute_*_features`). Rationale: `policy="raise"` already means "this should never be missing in production"; converting to `_Unavailable` would change failure semantics. `build_feature_store` callers are responsible for SPY presence; the spec does not pretend to defend against its absence.
+
+3. **`realized_vol_21d` and `drawdown_63d` stay in PR 2.** Although both are config-gateless, they depend on the V1 `volatility` spec running first (they read `state.volatility.return_1d` and SPY-derived series). PR 1's job is to validate the orchestrator on the *simplest* features — adding ordering-dependent specs early would muddle the validation. Move both to PR 2 where the full ordering story is exercised.
+
+4. **Coverage test asserts `required_inputs` uniqueness and deterministic ordering.** The PR 1 CI test, in addition to "every `FeatureStore` field has a spec," asserts: (a) within each spec, `required_inputs` contains no duplicates; (b) `required_inputs` is a `tuple` not a `set`-derived structure (deterministic order). Cheap, catches a real class of construction bugs.
