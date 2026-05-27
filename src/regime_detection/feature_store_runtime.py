@@ -48,6 +48,11 @@ class FeatureSpec(Generic[T, StateT]):
     `resolve` returns either a kwargs dict to splat into `build`, or `_Unavailable`
     listing the absent required inputs. `build` is total over its typed parameters
     — it has no internal None-guards. `store` writes the built value back into state.
+
+    `report` controls whether the orchestrator emits a `FeatureAvailability` entry
+    for this spec. Set to `False` for intermediate state features that are not
+    user-observable (e.g. derived series consumed only by other specs). Default
+    True — public features that should appear in `FeatureStore.availability`.
     """
 
     name: str
@@ -56,6 +61,7 @@ class FeatureSpec(Generic[T, StateT]):
     resolve: Callable[[StateT], FeatureInputs | _Unavailable]
     build: Callable[..., T]
     store: Callable[[StateT, T], None]
+    report: bool = True
 
 
 def _run_feature_specs(
@@ -66,27 +72,29 @@ def _run_feature_specs(
     for spec in specs:
         resolved = spec.resolve(state)
         if isinstance(resolved, _Unavailable):
-            reason = (
-                "not_configured"
-                if not resolved.missing_inputs
-                else "missing_required_inputs"
-            )
-            report[spec.name] = FeatureAvailability(
-                feature=spec.name,
-                available=False,
-                policy=spec.policy,
-                reason=reason,
-                required_inputs=spec.required_inputs,
-                missing_inputs=resolved.missing_inputs,
-            )
+            if spec.report:
+                reason = (
+                    "not_configured"
+                    if not resolved.missing_inputs
+                    else "missing_required_inputs"
+                )
+                report[spec.name] = FeatureAvailability(
+                    feature=spec.name,
+                    available=False,
+                    policy=spec.policy,
+                    reason=reason,
+                    required_inputs=spec.required_inputs,
+                    missing_inputs=resolved.missing_inputs,
+                )
             continue
         value = spec.build(**resolved)
         spec.store(state, value)
-        report[spec.name] = FeatureAvailability(
-            feature=spec.name,
-            available=True,
-            policy=spec.policy,
-            reason="populated",
-            required_inputs=spec.required_inputs,
-        )
+        if spec.report:
+            report[spec.name] = FeatureAvailability(
+                feature=spec.name,
+                available=True,
+                policy=spec.policy,
+                reason="populated",
+                required_inputs=spec.required_inputs,
+            )
     return report

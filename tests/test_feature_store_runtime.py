@@ -111,3 +111,50 @@ def test_spec_ordering_preserved_in_returned_dict() -> None:
     report = _run_feature_specs(specs, state)
 
     assert list(report.keys()) == ["first", "second", "third"]
+
+
+def test_spec_with_report_false_runs_but_omits_availability_entry() -> None:
+    state = _ToyState(inputs={"x": 5})
+    specs = (
+        _make_spec("public", required=("x",)),
+        FeatureSpec(
+            name="internal",
+            policy="raise",
+            required_inputs=("x",),
+            resolve=lambda s: {"x": s.inputs.get("x", 0)},
+            build=lambda x: x * 3,
+            store=lambda s, v: s.outputs.__setitem__("internal", v),
+            report=False,
+        ),
+    )
+
+    report = _run_feature_specs(specs, state)
+
+    # Build/store side-effects happen for both specs.
+    assert state.outputs == {"public": 10, "internal": 15}
+    # But only the public spec produces an availability entry.
+    assert set(report.keys()) == {"public"}
+    assert "internal" not in report
+
+
+def test_spec_with_report_false_skips_emission_even_when_unavailable() -> None:
+    """A spec with report=False that resolves to _Unavailable does NOT emit an
+    entry — internal specs are silent about absence too, matching legacy
+    behavior where intermediate state fields had no availability entry."""
+    state = _ToyState()
+    specs = (
+        FeatureSpec(
+            name="internal_missing",
+            policy="none",
+            required_inputs=("x",),
+            resolve=lambda s: _Unavailable(missing_inputs=("x",)),
+            build=lambda x: x * 2,
+            store=lambda s, v: s.outputs.__setitem__("internal_missing", v),
+            report=False,
+        ),
+    )
+
+    report = _run_feature_specs(specs, state)
+
+    assert state.outputs == {}  # build did not run
+    assert report == {}  # no availability emission
