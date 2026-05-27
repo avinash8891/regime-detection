@@ -802,6 +802,16 @@ def _resolve_breadth(
     }
 
 
+def _build_sma_50(spy_close: pd.Series) -> pd.Series:
+    return simple_moving_average(spy_close, window=50)
+
+
+def _resolve_sma_50(
+    state: _FeatureStoreBuildState,
+) -> dict[str, object]:
+    return {"spy_close": state.spy_close}
+
+
 _FEATURE_SPECS: tuple[FeatureSpec[object, _FeatureStoreBuildState], ...] = (
     FeatureSpec(
         name="trend_direction",
@@ -834,6 +844,14 @@ _FEATURE_SPECS: tuple[FeatureSpec[object, _FeatureStoreBuildState], ...] = (
         resolve=_resolve_breadth,
         build=_build_breadth,
         store=lambda s, v: setattr(s, "breadth", v),
+    ),
+    FeatureSpec(
+        name="sma_50",
+        policy="raise",
+        required_inputs=("spy_ohlcv.close",),
+        resolve=_resolve_sma_50,
+        build=_build_sma_50,
+        store=lambda s, v: setattr(s, "sma_50", v),
     ),
 )
 

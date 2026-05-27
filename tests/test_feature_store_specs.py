@@ -93,3 +93,14 @@ def test_breadth_resolve_returns_spy_close_and_aligned_rsp(
     # rsp_close must be reindexed onto spy_ohlcv.index — matches legacy
     # _build_breadth_feature behavior.
     assert list(resolved["rsp_close"].index) == list(v1_minimal_state.spy_ohlcv.index)
+
+
+def test_sma_50_resolve_returns_spy_close(
+    v1_minimal_state: _FeatureStoreBuildState,
+) -> None:
+    spec = _spec_by_name("sma_50")
+    resolved = spec.resolve(v1_minimal_state)
+
+    assert isinstance(resolved, dict)
+    assert set(resolved.keys()) == {"spy_close"}
+    assert resolved["spy_close"] is v1_minimal_state.spy_close
