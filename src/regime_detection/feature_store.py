@@ -17,6 +17,7 @@ from regime_detection.breadth_state_v2 import (
     compute_breadth_v2_features,
 )
 from regime_detection.change_point import (
+    ChangePointConfig,
     ChangePointFeatures,
     compute_change_point_features,
 )
@@ -358,16 +359,6 @@ def _build_news_sentiment_score_series(
     )
     score.name = "news_sentiment_score"
     return score
-
-
-def _build_change_point_feature(state: _FeatureStoreBuildState) -> None:
-    if state.context.config.change_point is None:
-        state.change_point = None
-        return
-    state.change_point = compute_change_point_features(
-        realized_vol_21d=state.realized_vol_21d,
-        config=state.context.config.change_point,
-    )
 
 
 # --- New spec-based builders (PR 1) ------------------------------------------
@@ -981,6 +972,33 @@ def _resolve_inflation_growth(
     }
 
 
+def _build_change_point(
+    realized_vol_21d: pd.Series,
+    config: ChangePointConfig,
+) -> ChangePointFeatures | None:
+    """compute_change_point_features can return None when BOCPD training-window
+    data is insufficient. The orchestrator (Task 2.0b) emits available=False,
+    reason='not_configured' for None returns — matching legacy semantics."""
+    return compute_change_point_features(
+        realized_vol_21d=realized_vol_21d, config=config
+    )
+
+
+def _resolve_change_point(
+    state: _FeatureStoreBuildState,
+) -> dict[str, object] | _Unavailable:
+    if state.context.config.change_point is None:
+        return _Unavailable(missing_inputs=("change_point_config",))
+    assert state.realized_vol_21d is not None, (
+        "realized_vol_21d should be populated by its spec when change_point "
+        "config is set (disjunction gate guarantees it)"
+    )
+    return {
+        "realized_vol_21d": state.realized_vol_21d,
+        "config": state.context.config.change_point,
+    }
+
+
 def _resolve_realized_vol_21d(
     state: _FeatureStoreBuildState,
 ) -> dict[str, object] | _Unavailable:
@@ -1201,18 +1219,28 @@ _FEATURE_SPECS: tuple[FeatureSpec[object, _FeatureStoreBuildState], ...] = (
     FeatureSpec(
         name="inflation_growth",
         policy="none",
-        required_inputs=("inflation_growth_config", "cross_asset_closes", "macro_series"),
+        required_inputs=(
+            "inflation_growth_config",
+            "cross_asset_closes",
+            "macro_series",
+        ),
         resolve=_resolve_inflation_growth,
         build=_build_inflation_growth,
         store=lambda s, v: setattr(s, "inflation_growth", v),
         report=True,
     ),
+    FeatureSpec(
+        name="change_point",
+        policy="none",
+        required_inputs=("change_point_config", "realized_vol_21d"),
+        resolve=_resolve_change_point,
+        build=_build_change_point,
+        store=lambda s, v: setattr(s, "change_point", v),
+    ),
 )
 
 
-_FEATURE_STORE_BUILDERS: tuple[_FeatureStoreBuilder, ...] = (
-    _FeatureStoreBuilder("change_point", _build_change_point_feature),
-)
+_FEATURE_STORE_BUILDERS: tuple[_FeatureStoreBuilder, ...] = ()
 
 
 def _missing_macro_keys(
@@ -1240,7 +1268,7 @@ def _missing_sector_inputs(state: _FeatureStoreBuildState) -> tuple[str, ...]:
     return ()
 
 
-def _availability(
+def _availability(  # pyright: ignore[reportUnusedFunction]
     *,
     feature: str,
     value: object | None,
@@ -1270,19 +1298,7 @@ def _availability(
 def _build_feature_availability_report(
     state: _FeatureStoreBuildState,
 ) -> dict[str, FeatureAvailability]:
-    report = {
-        "change_point": _availability(
-            feature="change_point",
-            value=state.change_point,
-            policy="none",
-            required_inputs=("change_point_config", "realized_vol_21d"),
-            missing_inputs=(
-                ()
-                if state.context.config.change_point is not None
-                else ("change_point_config",)
-            ),
-        ),
-    }
+    report: dict[str, FeatureAvailability] = {}
     return report
 
 

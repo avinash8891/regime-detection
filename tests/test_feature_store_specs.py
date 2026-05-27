@@ -420,7 +420,38 @@ def test_inflation_growth_resolve_missing_config_returns_unavailable(
 def test_inflation_growth_spec_required_inputs_matches_legacy() -> None:
     spec = _spec_by_name("inflation_growth")
     assert spec.required_inputs == (
-        "inflation_growth_config", "cross_asset_closes", "macro_series",
+        "inflation_growth_config",
+        "cross_asset_closes",
+        "macro_series",
     )
+    assert spec.policy == "none"
+    assert spec.report is True
+
+
+def test_change_point_resolve_no_config_returns_unavailable(
+    v1_minimal_state: _FeatureStoreBuildState,
+) -> None:
+    """RegimeEngine() defaults populate change_point config — strip it via
+    model_copy to exercise the _Unavailable branch."""
+    from dataclasses import replace
+    from regime_detection.feature_store_runtime import _Unavailable
+
+    base_config = v1_minimal_state.context.config
+    stripped_config = base_config.model_copy(update={"change_point": None})
+    stripped_context = v1_minimal_state.context.model_copy(
+        update={"config": stripped_config}
+    )
+    stripped_state = replace(v1_minimal_state, context=stripped_context)
+
+    spec = _spec_by_name("change_point")
+    resolved = spec.resolve(stripped_state)
+
+    assert isinstance(resolved, _Unavailable)
+    assert resolved.missing_inputs == ("change_point_config",)
+
+
+def test_change_point_spec_required_inputs_matches_legacy() -> None:
+    spec = _spec_by_name("change_point")
+    assert spec.required_inputs == ("change_point_config", "realized_vol_21d")
     assert spec.policy == "none"
     assert spec.report is True
