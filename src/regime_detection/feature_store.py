@@ -732,6 +732,48 @@ def _resolve_trend_direction(
     return {"spy_close": state.spy_close}
 
 
+def _build_trend_character(
+    close: pd.Series,
+    high: pd.Series,
+    low: pd.Series,
+    volume: pd.Series | None,
+    tc_v2_config: object,
+) -> TrendCharacterFeatures:
+    if tc_v2_config is not None:
+        return compute_trend_character_features(
+            close=close,
+            high=high,
+            low=low,
+            volume=volume,
+            bb_width_period=tc_v2_config.bb_width_period,  # type: ignore[union-attr]
+            bb_width_multiplier=tc_v2_config.bb_width_multiplier,  # type: ignore[union-attr]
+            bb_width_expanding_lookback=tc_v2_config.bb_width_expanding_lookback,  # type: ignore[union-attr]
+            followthrough_lookback_sessions=tc_v2_config.followthrough_lookback_sessions,  # type: ignore[union-attr]
+            followthrough_window_count=tc_v2_config.followthrough_window_count,  # type: ignore[union-attr]
+            followthrough_hold_sessions=tc_v2_config.followthrough_hold_sessions,  # type: ignore[union-attr]
+        )
+    return compute_trend_character_features(
+        close=close, high=high, low=low, volume=volume
+    )
+
+
+def _resolve_trend_character(
+    state: _FeatureStoreBuildState,
+) -> dict[str, object]:
+    volume = (
+        _series_column(state.spy_ohlcv, "volume")
+        if "volume" in state.spy_ohlcv.columns
+        else None
+    )
+    return {
+        "close": state.spy_close,
+        "high": _series_column(state.spy_ohlcv, "high"),
+        "low": _series_column(state.spy_ohlcv, "low"),
+        "volume": volume,
+        "tc_v2_config": state.context.config.trend_character_v2,
+    }
+
+
 _FEATURE_SPECS: tuple[FeatureSpec[object, _FeatureStoreBuildState], ...] = (
     FeatureSpec(
         name="trend_direction",
@@ -740,6 +782,14 @@ _FEATURE_SPECS: tuple[FeatureSpec[object, _FeatureStoreBuildState], ...] = (
         resolve=_resolve_trend_direction,
         build=_build_trend_direction,
         store=lambda s, v: setattr(s, "trend_direction", v),
+    ),
+    FeatureSpec(
+        name="trend_character",
+        policy="raise",
+        required_inputs=("spy_ohlcv.close", "spy_ohlcv.high", "spy_ohlcv.low"),
+        resolve=_resolve_trend_character,
+        build=_build_trend_character,
+        store=lambda s, v: setattr(s, "trend_character", v),
     ),
 )
 

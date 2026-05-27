@@ -52,3 +52,18 @@ def test_trend_direction_resolve_returns_spy_close_kwargs(
     )
     assert set(resolved.keys()) == {"spy_close"}
     assert resolved["spy_close"] is v1_minimal_state.spy_close
+
+
+def test_trend_character_resolve_returns_ohlcv_kwargs_v1_path(
+    v1_minimal_state: _FeatureStoreBuildState,
+) -> None:
+    spec = _spec_by_name("trend_character")
+    resolved = spec.resolve(v1_minimal_state)
+
+    assert isinstance(resolved, dict)
+    assert set(resolved.keys()) == {"close", "high", "low", "volume", "tc_v2_config"}
+    assert resolved["close"] is v1_minimal_state.spy_close
+    # tc_v2_config is passed through from state.context.config — may be None or a
+    # TrendCharacterV2Config depending on which RegimeConfig is in scope. Assert
+    # identity rather than None so the test stays correct regardless of config defaults.
+    assert resolved["tc_v2_config"] is v1_minimal_state.context.config.trend_character_v2
