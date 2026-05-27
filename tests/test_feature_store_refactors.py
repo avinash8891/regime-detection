@@ -137,19 +137,29 @@ def test_feature_store_build_state_uses_typed_intermediate_fields() -> None:
 def test_default_feature_store_builder_registry_orders_trend_news_before_trend_v2() -> (
     None
 ):
-    from regime_detection.feature_store import _FEATURE_STORE_BUILDERS, FeatureStore
+    from regime_detection.feature_store import (
+        _FEATURE_SPECS,
+        _FEATURE_STORE_BUILDERS,
+        FeatureStore,
+    )
 
+    spec_names = tuple(spec.name for spec in _FEATURE_SPECS)
     builder_names = tuple(builder.name for builder in _FEATURE_STORE_BUILDERS)
+    all_names = spec_names + builder_names
     feature_fields = tuple(
         name
         for name in FeatureStore.model_fields
         if name not in {"spy_index", "availability"}
     )
 
-    assert set(feature_fields).issubset(builder_names)
-    assert builder_names.index("trend_direction") < builder_names.index(
-        "news_sentiment_score"
-    )
+    # All FeatureStore fields must be covered by specs + legacy builders together.
+    # The 5 always-on features (trend_direction, trend_character, volatility,
+    # breadth, sma_50) now run via _FEATURE_SPECS; the remaining 15 stay in
+    # _FEATURE_STORE_BUILDERS.
+    assert set(feature_fields).issubset(set(all_names))
+
+    # Ordering: specs run first (so trend_direction always precedes any legacy
+    # builder). Within the legacy builder sequence, news must precede trend_v2.
     assert builder_names.index("news_sentiment_score") < builder_names.index(
         "trend_direction_v2"
     )
