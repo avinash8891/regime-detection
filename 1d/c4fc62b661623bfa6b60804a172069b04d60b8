@@ -1,0 +1,360 @@
+tests/test_readiness_contracts.py
+  21d3c5e442ad959b 22-24,38,47
+  s_a6dd9e2d546bf4::t_29246a91e32b12 8,118-140
+  s_665d3406047640::t_645bf1ad73e8c3 15,19-21,25-31,33-37,39-46,49,51-53
+  s_665d3406047640::t_4bfd15770ad70c 48
+  s_7a7d96b8ef435f::t_b236e227eebbd6 141-167
+src/regime_data_fetch/event_calendar_windows.py
+  s_7a7d96b8ef435f::t_5757a479191951 3
+  s_7a7d96b8ef435f::t_5079430981c555 4
+src/regime_data_fetch/event_sources/gpr_gdelt_fetchers.py
+  s_7a7d96b8ef435f::t_1f6a0af562dd83 3-4
+scripts/audit_layer2_30d.py
+  s_7a7d96b8ef435f::t_7e7d1dd6488d2c 12,14,46,234-236,242,288,301
+  s_a6dd9e2d546bf4::t_e6c952e6c59db9 54-60,302,320,334,338,340,344-345
+  s_7a7d96b8ef435f::t_952afb70d1eea8 159-162
+src/regime_data_fetch/aggregate_eps_workbook.py
+  s_7a7d96b8ef435f::t_9bdd5fc177170a 3-4
+src/regime_detection/axis_builders/trend_character.py
+  s_7a7d96b8ef435f::t_b27a551f9d5dc9 4
+  s_7a7d96b8ef435f::t_fbd2543dc791a4 3
+src/regime_detection/inflation_growth_rules.py
+  s_7a7d96b8ef435f::t_ada410cb2780b2 3
+  s_7a7d96b8ef435f::t_5b420dfe9a6669 4
+src/regime_detection/transition_score.py
+  s_7a7d96b8ef435f::t_27e691dc7005a5 9-10
+src/regime_data_fetch/local_daily_ohlcv_sqlite_reader.py
+  s_7a7d96b8ef435f::t_f98ae3397f3614 3-4
+src/regime_detection/_config_evidence_strategy.py
+  s_7a7d96b8ef435f::t_c8f6fbfcd4c65e 3-4
+src/regime_data_fetch/fred.py
+  s_7a7d96b8ef435f::t_7ed45b13265f97 3-4
+src/regime_detection/market_context.py
+  s_7a7d96b8ef435f::t_221d95a2ff1f93 3
+  s_7a7d96b8ef435f::t_4ea04e3c8f84da 4
+src/regime_detection/shadow_storage.py
+  s_7a7d96b8ef435f::t_220e0b4a35ba78 14-15
+src/regime_detection/strategy_family_constraints.py
+  s_7a7d96b8ef435f::t_9e9bc4219b3161 11-12
+scripts/run_shadow_deadman_check.py
+  s_7a7d96b8ef435f::t_f04c5078d1fd01 29-31
+  s_7a7d96b8ef435f::t_91577bf5c566b7 9,28
+src/regime_data_fetch/investing_archive.py
+  s_7a7d96b8ef435f::t_954c8570082d7e 3-4
+src/regime_detection/axis_builders/monetary_pressure.py
+  s_7a7d96b8ef435f::t_a2e2391f909a20 3
+  s_7a7d96b8ef435f::t_054ef0bcf87917 4
+tests/test_profile_engine_reporting_loaders.py
+  s_7a7d96b8ef435f::t_1ea031d3093999 12,88-103
+src/regime_data_fetch/aaii_sentiment.py
+  s_7a7d96b8ef435f::t_f10fd8997b8e48 38,87,134,140-141,303-304,308-309,329-330,339-340,352,356,364-365
+scripts/validate_central_bank_text_lexicon.py
+  s_7a7d96b8ef435f::t_9701d50144657c 38-39
+src/regime_detection/clustering.py
+  s_7a7d96b8ef435f::t_e1b2a3d0eb0dd0 27
+  s_7a7d96b8ef435f::t_9b232855d6f9f4 26
+src/regime_data_fetch/sf_fed_news_sentiment.py
+  s_7a7d96b8ef435f::t_21c5ac2a644393 30-31
+src/regime_data_fetch/event_sources/validators_hf_central_bank.py
+  s_7a7d96b8ef435f::t_c5ee0979f37939 4
+  s_7a7d96b8ef435f::t_18f734543749b1 3
+scripts/fetch_regime_engine_v1_data.py
+  s_7a7d96b8ef435f::t_3722c7a885dc0d 45-46,758
+  s_7a7d96b8ef435f::t_20dad9a2140945 3
+  s_7a7d96b8ef435f::t_55498ee97f183a 16,76-84,420-429,431-432,739-741,757,760
+src/regime_detection/temporal.py
+  s_7a7d96b8ef435f::t_190c69b7d44673 3-4
+src/regime_data_fetch/artifact_manifest.py
+  s_7a7d96b8ef435f::t_af6bc026da6a3e 4
+  s_7a7d96b8ef435f::t_2f0f6d1920ea89 3
+src/regime_detection/comparison.py
+  s_7a7d96b8ef435f::t_7c44c125785ae5 20-21
+src/regime_data_fetch/aggregate_eps.py
+  s_7a7d96b8ef435f::t_2fb0254c6c54e8 4
+  s_7a7d96b8ef435f::t_8a201ffb780747 3
+src/regime_detection/event_calendar.py
+  s_7a7d96b8ef435f::t_98b445ee7fe457 3
+  s_7a7d96b8ef435f::t_331ab35ac0ffaf 4
+src/regime_data_fetch/event_calendar_group_a.py
+  s_7a7d96b8ef435f::t_cb9368771acece 4
+  s_7a7d96b8ef435f::t_1267a9c7514fca 3
+scripts/run_v2_walkforward_gate.py
+  s_7a7d96b8ef435f::t_9f1044b10cfd94 65,440,491-494
+src/regime_data_fetch/investing_live_normalizers.py
+  s_7a7d96b8ef435f::t_8c75ce2512bcd0 3
+  s_7a7d96b8ef435f::t_62be6b12b751de 4
+src/regime_detection/axis_builders/credit_funding.py
+  s_7a7d96b8ef435f::t_b256543e87f9f1 3-4
+src/regime_detection/axis_builders/breadth.py
+  s_7a7d96b8ef435f::t_77f1324a67f4f3 3
+  s_7a7d96b8ef435f::t_c19ba7f2fdccd2 4
+scripts/profile_engine.py
+  s_a6dd9e2d546bf4::t_8e364c645a28a0 78,80-82,86,194-196,254-256,273-275,292-294,303-305,324-326,388,811,948,965,984,1005,1042,1044,1065,1085
+  s_7a7d96b8ef435f::t_fc8a9e6d22f644 648
+  s_7a7d96b8ef435f::t_b83c509185a260 647,685
+  s_7a7d96b8ef435f::t_09711bb60d63ee 79,83-85,389-393,983,1104,1109
+  s_7a7d96b8ef435f::t_04ba85ba9be815 15-16,88,394-395,399-405,456-457,460,466-467,653,666,668,677-678,681-684,871-874
+  s_7a7d96b8ef435f::t_2d4e44fe249f86 72,416,493,557-559,661
+  s_7a7d96b8ef435f::t_28cea3bf11a164 153,396-398,635-637,646,649,652,659,663-665,679
+  s_7a7d96b8ef435f::t_a0573c69d34f1c 424-425,428-430
+src/regime_data_fetch/acquisition_consolidation.py
+  s_7a7d96b8ef435f::t_b935eadb6ad939 3-4,149-151,182-185,236-239
+src/regime_data_fetch/event_calendar_global_rate_parsers.py
+  s_7a7d96b8ef435f::t_ac06e8bb8c42de 3-4
+src/regime_detection/trend_character.py
+  s_7a7d96b8ef435f::t_2143d8af10f18d 3-4
+src/regime_data_fetch/artifact_export.py
+  s_7a7d96b8ef435f::t_4d426cfce2e8d3 3-4
+src/regime_detection/feature_store.py
+  s_7a7d96b8ef435f::t_6b2bff2201d8fe 4
+  s_7a7d96b8ef435f::t_1e11785e4913dd 3
+scripts/run_v2_calibration.py
+  s_7a7d96b8ef435f::t_faff240d1ce5eb 114
+  s_7a7d96b8ef435f::t_d7a0befe8080ac 60,115,336,402,405-406,415,418-419
+src/regime_detection/engine.py
+  s_7a7d96b8ef435f::t_9e9cf3b3ebee10 3-4
+src/regime_data_fetch/event_sources/validators_gpr_gdelt.py
+  s_7a7d96b8ef435f::t_52a1eda7131045 3
+  s_7a7d96b8ef435f::t_126f65da76248a 4
+scripts/run_v2_shadow_ab_gate.py
+  s_7a7d96b8ef435f::t_111b0cb576adf4 29
+  s_7a7d96b8ef435f::t_2ea0ca5111c86d 140
+  s_7a7d96b8ef435f::t_b000f7b91adccb 27,68,137,429-432,459
+  s_7a7d96b8ef435f::t_01aa089d8fef84 138-139
+src/regime_detection/axis_builders/network_fragility.py
+  s_7a7d96b8ef435f::t_d3728c8a91ce25 3-4
+src/regime_detection/monetary_pressure.py
+  s_7a7d96b8ef435f::t_a9162654ba24a7 49-50
+scripts/profile_engine_reporting.py
+  s_7a7d96b8ef435f::t_9392fe77cd98d5 9,11,69,123,139,146,148,342,354,357-359,468,471,482,484,495-496,498,509,704,772-773
+  s_7a7d96b8ef435f::t_d3fac72aa6a5ac 305-307,619,762-764,802,977-980
+  s_7a7d96b8ef435f::t_014c521f334903 18,20-21,73,75,136
+  s_7a7d96b8ef435f::t_6013e6e025f534 19,245,253,257,261,269,274,278,295-296,385,408,412-414,416,421-423,429,433,450-451,478,501,537,578,637,803
+  s_7a7d96b8ef435f::t_4a016e2e95fc37 86,92,124-125,465,486-487,687-688
+  s_a6dd9e2d546bf4::t_5fb20344758c01 66,101-102,116,174,729,806,841,896,965,969-976
+  s_7a7d96b8ef435f::t_f79093334e6c9a 91
+  s_7a7d96b8ef435f::t_69ca0547d64e83 70,343-344,355-356,466,469,474-476,483
+src/regime_data_fetch/expiry_calendar.py
+  s_7a7d96b8ef435f::t_3244f7626de6e1 3
+  s_7a7d96b8ef435f::t_4fe16ee8410cca 4
+src/regime_detection/volatility_state_v2.py
+  s_7a7d96b8ef435f::t_b8b253a1831c1a 39-40
+src/regime_detection/central_bank_text.py
+  s_7a7d96b8ef435f::t_040e2c672e0564 51
+  s_7a7d96b8ef435f::t_cc48b91542b423 52
+src/regime_data_fetch/cleveland_fed_nowcast.py
+  s_7a7d96b8ef435f::t_d470d6a0004c7f 47-48
+src/regime_detection/axis_builders/volatility.py
+  s_7a7d96b8ef435f::t_5f2483844518c0 3
+  s_7a7d96b8ef435f::t_f4b4bf70d38eea 4
+src/regime_data_fetch/bls_schedule.py
+  s_7a7d96b8ef435f::t_6efbd986d22fc5 3
+  s_7a7d96b8ef435f::t_bd145b39a5cb3d 4
+pyproject.toml
+  s_21d3c5e442ad95::t_307e8a519128ca 71-80,82-98,100-101
+scripts/verify_fixtures.py
+  s_7a7d96b8ef435f::t_5f8f8da90adaa6 9-10
+src/regime_detection/trend_direction_v2.py
+  s_7a7d96b8ef435f::t_7c995931ddd35b 35-36
+src/regime_detection/volatility_state.py
+  s_7a7d96b8ef435f::t_8c7dc5f4d41151 3-4
+scripts/_v2_calibration_helpers.py
+  s_7a7d96b8ef435f::t_35d9cb6e0f28cd 13,42-45,243-244,250-251,287,317-318,321-322,325-327
+  s_7a7d96b8ef435f::t_6fd864b880f239 226-235,240-242,246,252-253,286,316,320
+  s_7a7d96b8ef435f::t_e4b206889804b3 36-41,59-60,294,297,319
+src/regime_data_fetch/fomc_minutes.py
+  s_7a7d96b8ef435f::t_a5511553805eff 3
+  s_7a7d96b8ef435f::t_ace502152db9e6 4
+scripts/upload_missing_ohlcv_to_manifest.py
+  s_7a7d96b8ef435f::t_7d75e792725960 10-11
+  s_7a7d96b8ef435f::t_2d24f54c67bf7b 114,119,141
+  s_7a7d96b8ef435f::t_72efef707c8a82 145,215
+src/regime_data_fetch/event_sources/gpr_gdelt_conflict_parsers.py
+  s_7a7d96b8ef435f::t_d0779a736cd4c9 4
+  s_7a7d96b8ef435f::t_13d8bc42cd95b3 3
+scripts/approve_group_b_candidate.py
+  s_7a7d96b8ef435f::t_664b390aa0068f 47-55
+  s_7a7d96b8ef435f::t_be459a75137de1 8,42,57-58,69,71-72,75,78,85
+  s_7a7d96b8ef435f::t_5016c42454caa9 43-46
+scripts/audit_step1_harness.py
+  s_7a7d96b8ef435f::t_0b32ccf9997f1b 70-81,122,126-127,130,133
+src/regime_detection/trend_direction.py
+  s_7a7d96b8ef435f::t_1088554bb81d4b 3-4
+src/regime_data_fetch/alpaca_daily.py
+  s_7a7d96b8ef435f::t_612dca65286f36 3
+  s_7a7d96b8ef435f::t_a425ab7bc65c89 4
+src/regime_detection/breadth_state.py
+  s_7a7d96b8ef435f::t_a6325e328cd5f7 3-4
+src/regime_data_fetch/event_sources/validators_tinyfish.py
+  s_7a7d96b8ef435f::t_e831f64c012a41 3-4
+src/regime_detection/data_quality.py
+  s_7a7d96b8ef435f::t_8cb3733c8f2c7a 22
+  s_7a7d96b8ef435f::t_f6b3aa3d951fbb 23
+src/regime_data_fetch/event_sources/orchestrator.py
+  s_7a7d96b8ef435f::t_9f3f17cfa8ab28 3-4
+src/regime_data_fetch/fetch_workflow.py
+  s_7a7d96b8ef435f::t_b15c66c1f77041 3-4
+src/regime_data_fetch/investing_earnings_browser.py
+  s_7a7d96b8ef435f::t_ab7ae4790e9fe3 3
+  s_7a7d96b8ef435f::t_e557c9fd0f8b62 4
+scripts/publish_canonical_snapshot.py
+  s_7a7d96b8ef435f::t_3187898d3a1c3e 337,427
+  s_7a7d96b8ef435f::t_e8e96d2d8f58d1 20-21,129
+src/regime_detection/models.py
+  s_7a7d96b8ef435f::t_e35cb17bbbef62 4
+  s_7a7d96b8ef435f::t_35448e59fdf680 3
+src/regime_data_fetch/pmi.py
+  s_7a7d96b8ef435f::t_6e71f643f218af 4
+  s_7a7d96b8ef435f::t_9f1c4c342c3315 3
+src/regime_data_fetch/powell_speeches.py
+  s_7a7d96b8ef435f::t_f9745e8c9efd0f 4
+  s_7a7d96b8ef435f::t_ba8f86b4a4c47e 3
+scripts/run_shadow_replay_check.py
+  s_7a7d96b8ef435f::t_837b97a7c4e80d 7,10,56-58,70-74,76
+  s_7a7d96b8ef435f::t_28c0c502d3139f 60-61
+scripts/run_historical_walkforward.py
+  s_7a7d96b8ef435f::t_4c0d6b19c290ee 12,30,60-97,108
+  s_7a7d96b8ef435f::t_c4e222446ad4fc 110-111,166,169
+  s_7a7d96b8ef435f::t_a9bb70cd17a175 9,167-168,170-172,296-298,308-313,359-362
+src/regime_data_fetch/acquisition_consolidation_normalized.py
+  s_7a7d96b8ef435f::t_985bab3d55d01e 5-6
+src/regime_detection/axis_series.py
+  s_7a7d96b8ef435f::t_f3d48f481e6577 3
+  s_7a7d96b8ef435f::t_0a42b3f3ece322 4
+src/regime_data_fetch/aggregate_eps_wayback.py
+  s_7a7d96b8ef435f::t_e599145828758e 3-4
+src/regime_data_fetch/event_sources/approvals.py
+  s_7a7d96b8ef435f::t_ab2a64b62658f5 3-4
+src/regime_detection/axis_builders/staleness.py
+  s_7a7d96b8ef435f::t_393068f60c1dab 3
+  s_7a7d96b8ef435f::t_282e19cd9883d2 4
+src/regime_data_fetch/event_calendar.py
+  s_7a7d96b8ef435f::t_2d39a3eb6cc84b 4
+  s_7a7d96b8ef435f::t_2bc6fd02d600bd 3
+src/regime_detection/strategy_constraints.py
+  s_7a7d96b8ef435f::t_4869f21f69f0d2 3-4
+src/regime_detection/calendar.py
+  s_7a7d96b8ef435f::t_8cc09b1371ae90 3
+  s_7a7d96b8ef435f::t_13399b01daf1a0 4
+src/regime_detection/timeline.py
+  s_7a7d96b8ef435f::t_45a812d7eb5905 4
+  s_7a7d96b8ef435f::t_af07b4712a6632 3
+scripts/run_shadow_regime.py
+  s_7a7d96b8ef435f::t_e17478779af706 42-43,98-99,140-141,143-145,148-149
+  s_7a7d96b8ef435f::t_8389df005fa8f9 142
+src/regime_data_fetch/event_sources/deterministic_budget.py
+  s_7a7d96b8ef435f::t_eeed634f7c5f7d 4
+  s_7a7d96b8ef435f::t_53eda0ff86db05 3
+src/regime_data_fetch/artifact_store.py
+  s_7a7d96b8ef435f::t_5a8a27b10fbd26 3
+  s_7a7d96b8ef435f::t_438d93c7ecc0e5 4
+src/regime_data_fetch/event_sources/budget_official_discovery.py
+  s_7a7d96b8ef435f::t_73d56f7053c9c1 4
+  s_7a7d96b8ef435f::t_38520c6533b112 3
+src/regime_detection/axis_builders/volume_liquidity.py
+  s_7a7d96b8ef435f::t_1fff36b290ea36 3-4
+src/regime_detection/credit_funding.py
+  s_7a7d96b8ef435f::t_aad8d315bba1c0 56
+  s_7a7d96b8ef435f::t_e42a5493ff92b2 57
+src/regime_detection/hysteresis.py
+  s_7a7d96b8ef435f::t_58b96f8e5bfcae 3-4
+src/regime_detection/network_fragility_rules.py
+  s_7a7d96b8ef435f::t_be9375d5ee7a77 40-41
+scripts/build_walkforward_report.py
+  s_7a7d96b8ef435f::t_dd908ecb187422 73-74,89-90
+  s_7a7d96b8ef435f::t_147a5707599bda 75,91
+  s_7a7d96b8ef435f::t_cae17bc972e3b8 9
+  s_7a7d96b8ef435f::t_201e13394fd535 71-72,84-85,98-101,114-118,141-142,144-145,149
+src/regime_data_fetch/yahoo_chart_daily.py
+  s_7a7d96b8ef435f::t_76dbaf40f58d66 3-4
+src/regime_detection/inflation_growth.py
+  s_7a7d96b8ef435f::t_d0d571c37c3f85 41
+  s_7a7d96b8ef435f::t_a2d9f87332bf90 42
+src/regime_detection/change_point.py
+  s_7a7d96b8ef435f::t_ae95f51c073ff6 31
+  s_7a7d96b8ef435f::t_a3061862677de4 30
+src/regime_data_fetch/daily_ohlcv_contract.py
+  s_7a7d96b8ef435f::t_49eb0c6873ac76 20
+  s_7a7d96b8ef435f::t_e16cb885776b26 21
+src/regime_data_fetch/pit_constituents.py
+  s_7a7d96b8ef435f::t_2b2299ab5c5518 4
+  s_7a7d96b8ef435f::t_839245342617fc 3
+src/regime_data_fetch/investing_live.py
+  s_7a7d96b8ef435f::t_e2eadde1d955fe 5
+  s_7a7d96b8ef435f::t_3e2bbb864afe7f 6
+src/regime_detection/breadth_state_v2.py
+  s_7a7d96b8ef435f::t_d474b4f2ddaf76 46
+  s_7a7d96b8ef435f::t_7ffd4bbed4d72b 47
+src/regime_detection/axis_builders/trend_direction.py
+  s_7a7d96b8ef435f::t_8cc749190925bb 4
+  s_7a7d96b8ef435f::t_8871f2fcb4b1fd 3
+src/regime_data_fetch/local_daily_ohlcv_sqlite.py
+  s_7a7d96b8ef435f::t_5a36f0ae04f7ed 3-4
+src/regime_detection/pytest_runtime_policy.py
+  s_7a7d96b8ef435f::t_f3bb8d92333c1d 3-4
+src/regime_detection/axis_builders/inflation_growth.py
+  s_7a7d96b8ef435f::t_d91f1c44f6da47 3-4
+src/regime_detection/transition_risk_series.py
+  s_7a7d96b8ef435f::t_307e70ce653890 3
+  s_7a7d96b8ef435f::t_c255764388e348 4
+src/regime_detection/axis_builders/per_label.py
+  s_7a7d96b8ef435f::t_507b95b6f1e5ed 3-4
+src/regime_data_fetch/event_calendar_reporting.py
+  s_7a7d96b8ef435f::t_33d2811025cc08 3-4
+src/regime_detection/hmm_state.py
+  s_7a7d96b8ef435f::t_5f8ad855664772 22
+  s_7a7d96b8ef435f::t_6cb2d1fad47a14 23
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "1dc4fc62b661623bfa6b60804a172069b04d60b8",
+  "prompts": {
+    "21d3c5e442ad959b": {
+      "agent_id": {
+        "tool": "droid",
+        "id": "c88dc607-84f0-45da-9cf7-73ea2635f6ea",
+        "model": "custom:GPT-5.4-(via-proxy)-35"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>",
+      "total_additions": 19,
+      "total_deletions": 4,
+      "accepted_lines": 5,
+      "overriden_lines": 0
+    }
+  },
+  "sessions": {
+    "s_21d3c5e442ad95": {
+      "agent_id": {
+        "tool": "droid",
+        "id": "c88dc607-84f0-45da-9cf7-73ea2635f6ea",
+        "model": "custom:GPT-5.4-(via-proxy)-35"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    },
+    "s_665d3406047640": {
+      "agent_id": {
+        "tool": "droid",
+        "id": "a447b600-089c-452a-8846-9f41c4dc87cc",
+        "model": "custom:GPT-5.4-(via-proxy)-35"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    },
+    "s_7a7d96b8ef435f": {
+      "agent_id": {
+        "tool": "droid",
+        "id": "d6bbb40a-e15e-4743-954e-9f92dd0a4f64",
+        "model": "custom:GPT-5.4-(via-proxy)-35"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    },
+    "s_a6dd9e2d546bf4": {
+      "agent_id": {
+        "tool": "droid",
+        "id": "c340c532-3677-4a0a-b8b0-8e977ba66660",
+        "model": "custom:GPT-5.4-(via-proxy)-35"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}
