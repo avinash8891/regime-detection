@@ -110,6 +110,7 @@ from regime_detection.inflation_growth import (
     XLY_KEY as _IG_XLY_KEY,
     compute_inflation_growth_features,
 )
+from regime_detection.feature_store_runtime import FeatureAvailability
 
 __all__ = [
     "BreadthV2Features",
