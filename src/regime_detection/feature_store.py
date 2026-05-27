@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from collections.abc import Callable
 from dataclasses import dataclass
 from typing import TypeVar
 
@@ -17,6 +16,7 @@ from regime_detection.breadth_state_v2 import (
     compute_breadth_v2_features,
 )
 from regime_detection.change_point import (
+    ChangePointConfig,
     ChangePointFeatures,
     compute_change_point_features,
 )
@@ -25,7 +25,9 @@ from regime_detection.config import (
     BreadthV2Config,
     CentralBankTextConfig,
     CreditFundingConfig,
+    CreditFundingRulesConfig,
     InflationGrowthConfig,
+    InflationGrowthRulesConfig,
     MonetaryPressureV2FeaturesConfig,
     NetworkFragilityConfig,
     NewsSentimentConfig,
@@ -72,10 +74,11 @@ from regime_detection.trend_direction_v2 import (
     compute_trend_v2_features,
 )
 from regime_detection.clustering import (
+    ClusteringConfig,
     ClusteringFeatures,
     compute_clustering_features,
 )
-from regime_detection.hmm_state import HMMFeatures, compute_hmm_features
+from regime_detection.hmm_state import HMMConfig, HMMFeatures, compute_hmm_features
 from regime_detection.volatility_state import realized_vol
 from regime_detection.volatility_state import (
     VolatilityFeatures,
@@ -112,8 +115,8 @@ from regime_detection.inflation_growth import (
 )
 from regime_detection.feature_store_runtime import (
     FeatureAvailability,
-    FeatureAvailabilityPolicy,
     FeatureSpec,
+    _Unavailable,
     _run_feature_specs,
 )
 
@@ -193,20 +196,6 @@ def _require_feature(value: _T | None, name: str) -> _T:
     if value is None:
         raise RuntimeError(f"feature builder did not populate required feature: {name}")
     return value
-
-
-@dataclass(frozen=True)
-class _FeatureStoreBuilder:
-    name: str
-    build: Callable[[_FeatureStoreBuildState], None]
-
-
-def _run_feature_store_builders(
-    builders: tuple[_FeatureStoreBuilder, ...],
-    state: _FeatureStoreBuildState,
-) -> None:
-    for builder in builders:
-        builder.build(state)
 
 
 class FeatureStore(BaseModel):
@@ -317,16 +306,21 @@ def _build_sentiment_score_series(
     Forward-fill semantics: use the latest AAII row whose
     ``publication_date`` (or ``date`` if no separate publication column) is
     on or before each session — V1 §2.2 stateless-replay rule, never
-    consult a future-dated reading. Returns ``None`` when no AAII frame
-    is supplied (lets the euphoria predicate falsify per the V2 §10
-    absolute "do not invent" rule at spec L4364 and the documented
-    implementation decision lineage in ADR 0004 Q1+Q4).
+    consult a future-dated reading. Returns ``None`` when no AAII frame is
+    supplied (lets the euphoria predicate falsify per the V2 §10 absolute
+    "do not invent" rule at spec L4364).
 
     Cold-start (ADR 0004 Q5): a session with no AAII row at or before it
     receives NaN; the euphoria predicate then falsifies on that session
     per V1 §2.7. With the AAII fetcher's `min_periods=1` 8-week MA, the
     output column is populated from week 1 of the data, so the practical
     cold-start window is just "no AAII history yet."
+
+    Note on the Optional contract: the FeatureSpec resolver in
+    `_resolve_sentiment_score` gates the None/empty/missing-column cases
+    before calling this helper, so the orchestrator path always passes
+    valid input. The Optional return is preserved here for direct external
+    callers (e.g. unit tests) that exercise the no-AAII path.
     """
     if aaii_sentiment is None:
         return None
@@ -347,23 +341,15 @@ def _build_sentiment_score_series(
         index=pd.DatetimeIndex(publication),
         name="sentiment_score",
     )
-    # Reindex forward-fill onto the SPY session calendar (each session gets
-    # the value of the latest AAII publication on or before it).
     return aligned.reindex(session_index, method="ffill")
 
 
 def _build_news_sentiment_score_series(
     *,
-    news_sentiment: pd.Series | None,
+    news_sentiment: pd.Series,
     session_index: pd.DatetimeIndex,
-    config: NewsSentimentConfig | None,
-) -> pd.Series | None:
-    if config is None:
-        return None
-    if news_sentiment is None:
-        return None
-    if news_sentiment.empty:
-        return None
+    config: NewsSentimentConfig,
+) -> pd.Series:
     score = (
         news_sentiment.reindex(session_index, method="ffill")
         .rolling(config.smoothing_window_sessions, min_periods=1)
@@ -371,302 +357,6 @@ def _build_news_sentiment_score_series(
     )
     score.name = "news_sentiment_score"
     return score
-
-
-def _build_sentiment_score_feature(state: _FeatureStoreBuildState) -> None:
-    state.sentiment_score = _build_sentiment_score_series(
-        aaii_sentiment=state.context.aaii_sentiment,
-        session_index=_as_datetime_index(state.spy_close.index),
-    )
-
-
-def _build_news_sentiment_score_feature(state: _FeatureStoreBuildState) -> None:
-    state.news_sentiment_score = _build_news_sentiment_score_series(
-        news_sentiment=state.context.news_sentiment,
-        session_index=_as_datetime_index(state.spy_close.index),
-        config=state.news_sentiment_config,
-    )
-
-
-def _build_trend_direction_v2_feature(state: _FeatureStoreBuildState) -> None:
-    if state.trend_direction_v2_config is None:
-        state.trend_direction_v2 = None
-        return
-    state.trend_direction_v2 = compute_trend_v2_features(
-        state.spy_close,
-        config=state.trend_direction_v2_config,
-        sentiment_score=state.sentiment_score,
-        news_sentiment_score=state.news_sentiment_score,
-    )
-
-
-def _build_network_fragility_feature(state: _FeatureStoreBuildState) -> None:
-    if state.context.sector_etf_closes is None:
-        state.network_fragility = None
-        return
-    if state.network_fragility_config is None:
-        state.network_fragility = compute_network_fragility_features(
-            sector_etf_closes=state.context.sector_etf_closes,
-            cross_asset_closes=state.context.cross_asset_closes or {},
-            spy_close=state.spy_close,
-        )
-        return
-    config = state.network_fragility_config
-    state.network_fragility = compute_network_fragility_features(
-        sector_etf_closes=state.context.sector_etf_closes,
-        cross_asset_closes=state.context.cross_asset_closes or {},
-        spy_close=state.spy_close,
-        correlation_lookback_days=config.correlation_lookback_days,
-        percentile_lookback_days=config.percentile_lookback_days,
-        realized_vol_lookback_days=config.realized_vol_lookback_days,
-        dispersion_percentile_lookback_days=config.dispersion_percentile_lookback_days,
-        dispersion_spy_vol_floor=config.dispersion_spy_vol_floor,
-        min_universe_size=config.min_universe_size,
-        min_window_completeness=config.min_window_completeness,
-        universe=config.universe,
-    )
-
-
-def _build_volatility_state_v2_feature(state: _FeatureStoreBuildState) -> None:
-    if state.volatility_state_v2_config is None:
-        state.volatility_state_v2 = None
-        return
-    event_window = (
-        compute_event_window_just_passed(
-            normalized_event_calendar=state.context.normalized_event_calendar,
-            sessions=tuple(
-                ts.date() for ts in _as_datetime_index(state.spy_close.index)
-            ),
-            trailing_sessions=(
-                state.volatility_state_v2_config.rules.vol_crush_event_window_trailing_sessions
-            ),
-        )
-        if state.context.normalized_event_calendar is not None
-        else None
-    )
-    state.volatility_state_v2 = compute_volatility_v2_features(
-        open_=_series_column(state.spy_ohlcv, "open"),
-        high=_series_column(state.spy_ohlcv, "high"),
-        low=_series_column(state.spy_ohlcv, "low"),
-        close=state.spy_close,
-        config=state.volatility_state_v2_config,
-        rules_config=state.volatility_state_v2_config.rules,
-        implied_vol_30d=state.context.implied_vol_30d,
-        event_window_just_passed=event_window,
-    )
-
-
-def _build_breadth_state_v2_feature(state: _FeatureStoreBuildState) -> None:
-    if state.breadth_state_v2_config is None or state.context.sector_etf_closes is None:
-        state.breadth_state_v2 = None
-        return
-    sector_closes = state.context.sector_etf_closes
-    if not any(symbol in sector_closes for symbol in SECTOR_ETFS):
-        state.breadth_state_v2 = None
-        return
-    state.breadth_state_v2 = compute_breadth_v2_features(
-        sector_etf_closes=sector_closes,
-        config=state.breadth_state_v2_config,
-        pit_constituent_intervals=state.context.pit_constituent_intervals,
-        constituent_ohlcv=state.context.constituent_ohlcv,
-    )
-
-
-def _build_volume_liquidity_v2_feature(state: _FeatureStoreBuildState) -> None:
-    spy_volume = (
-        _series_column(state.spy_ohlcv, "volume")
-        if "volume" in state.spy_ohlcv.columns
-        else None
-    )
-    if (
-        state.volume_liquidity_v2_config is None
-        or spy_volume is None
-        or bool(spy_volume.isna().all())
-    ):
-        state.volume_liquidity_v2 = None
-        return
-    state.volume_liquidity_v2 = compute_volume_liquidity_v2_features(
-        volume=spy_volume,
-        config=state.volume_liquidity_v2_config,
-    )
-
-
-def _build_monetary_feature(state: _FeatureStoreBuildState) -> None:
-    if (
-        state.monetary_pressure_v2_config is None
-        or state.context.macro_series is None
-        or _FRED_DGS2_KEY not in state.context.macro_series
-        or _IG_DGS10_KEY not in state.context.macro_series
-        or "broad_usd_index" not in state.context.macro_series
-    ):
-        state.monetary = None
-        return
-    broad_usd_series = state.context.macro_series["broad_usd_index"]
-    cb_text_score_series: pd.Series | None = None
-    if (
-        state.central_bank_text_config is not None
-        and state.context.central_bank_text_releases is not None
-        and not state.context.central_bank_text_releases.empty
-    ):
-        cb_text_score_series = to_daily_score_series(
-            state.context.central_bank_text_releases,
-            session_index=_as_datetime_index(state.spy_close.index),
-            smoothing_window_sessions=state.central_bank_text_config.smoothing_window_sessions,
-            same_date_aggregation=state.central_bank_text_config.same_date_aggregation,
-            max_release_age_days=state.central_bank_text_config.max_release_age_days,
-        )
-    state.monetary = compute_monetary_pressure_features(
-        dgs2=state.context.macro_series[_FRED_DGS2_KEY],
-        dgs10=state.context.macro_series[_IG_DGS10_KEY],
-        broad_usd_index=broad_usd_series,
-        central_bank_text_score=cb_text_score_series,
-        config=state.monetary_pressure_v2_config,
-    )
-
-
-def _build_realized_vol_21d_feature(state: _FeatureStoreBuildState) -> None:
-    state.realized_vol_21d = (
-        realized_vol(state.spy_close, 21)
-        if (
-            state.context.config.hmm is not None
-            or state.context.config.clustering is not None
-            or state.context.config.change_point is not None
-        )
-        else None
-    )
-
-
-def _build_drawdown_63d_feature(state: _FeatureStoreBuildState) -> None:
-    # Spec §6.1 line 4059: 63d trailing-peak drawdown. Single shared
-    # computation matches the realized_vol_21d pattern (one helper, two
-    # consumers — HMM and clustering).
-    state.drawdown_63d = (
-        compute_trailing_drawdown(state.spy_close, 63)
-        if (
-            state.context.config.hmm is not None
-            or state.context.config.clustering is not None
-        )
-        else None
-    )
-
-
-def _build_hmm_feature(state: _FeatureStoreBuildState) -> None:
-    volume_liquidity_v2 = state.volume_liquidity_v2
-    network_fragility = state.network_fragility
-    if (
-        state.context.config.hmm is None
-        or volume_liquidity_v2 is None
-        or network_fragility is None
-    ):
-        state.hmm = None
-        return
-    volatility = _require_feature(state.volatility, "volatility")
-    state.hmm = compute_hmm_features(
-        return_1d=volatility.return_1d,
-        realized_vol_21d=state.realized_vol_21d,
-        drawdown_63d=state.drawdown_63d,
-        volume_zscore_20d=volume_liquidity_v2.volume_zscore_20d,
-        avg_pairwise_corr_63d=network_fragility.avg_pairwise_corr_63d,
-        config=state.context.config.hmm,
-    )
-
-
-def _build_clustering_feature(state: _FeatureStoreBuildState) -> None:
-    breadth_state_v2 = state.breadth_state_v2
-    network_fragility = state.network_fragility
-    trend_direction_v2 = state.trend_direction_v2
-    if (
-        state.context.config.clustering is None
-        or breadth_state_v2 is None
-        or breadth_state_v2.pct_above_50dma is None
-        or network_fragility is None
-        or trend_direction_v2 is None
-    ):
-        state.clustering = None
-        return
-    trend_character = _require_feature(state.trend_character, "trend_character")
-    state.clustering = compute_clustering_features(
-        return_21d=trend_character.return_21d,
-        return_63d=trend_direction_v2.return_63d,
-        realized_vol_21d=state.realized_vol_21d,
-        drawdown_63d=state.drawdown_63d,
-        adx_14=trend_character.adx_14,
-        avg_pairwise_corr_63d=network_fragility.avg_pairwise_corr_63d,
-        pct_above_50dma=breadth_state_v2.pct_above_50dma,
-        config=state.context.config.clustering,
-    )
-
-
-def _build_credit_funding_feature(state: _FeatureStoreBuildState) -> None:
-    if (
-        state.credit_funding_config is None
-        or state.context.cross_asset_closes is None
-        or state.context.macro_series is None
-        or not all(k in state.context.cross_asset_closes for k in _CF_CROSS_ASSET_KEYS)
-        or not all(k in state.context.macro_series for k in _CF_MACRO_KEYS)
-    ):
-        state.credit_funding = None
-        return
-    nan_oas = pd.Series(float("nan"), index=state.spy_close.index)
-    state.credit_funding = compute_credit_funding_features(
-        hyg_close=state.context.cross_asset_closes[_CF_HYG_KEY],
-        lqd_close=state.context.cross_asset_closes[_CF_LQD_KEY],
-        tlt_close=state.context.cross_asset_closes[_CF_TLT_KEY],
-        kre_close=state.context.cross_asset_closes[_CF_KRE_KEY],
-        spy_close=state.spy_close,
-        sofr=state.context.macro_series[_CF_SOFR_KEY],
-        iorb=state.context.macro_series[_CF_IORB_KEY],
-        nfci_weekly=state.context.macro_series[_CF_NFCI_KEY],
-        broad_usd_index=state.context.macro_series[_CF_BROAD_USD_KEY],
-        hy_oas=state.context.macro_series.get(_CF_HY_OAS_KEY, nan_oas),
-        ig_oas=state.context.macro_series.get(_CF_IG_OAS_KEY, nan_oas),
-        config=state.credit_funding_config.rules,
-        fedfunds=state.context.macro_series.get(_CF_FEDFUNDS_KEY),
-        ioer_legacy=state.context.macro_series.get(_CF_IOER_LEGACY_KEY),
-    )
-
-
-def _build_inflation_growth_feature(state: _FeatureStoreBuildState) -> None:
-    if (
-        state.inflation_growth_config is None
-        or state.context.cross_asset_closes is None
-        or state.context.macro_series is None
-        or not all(k in state.context.cross_asset_closes for k in _IG_CROSS_ASSET_KEYS)
-        or not all(k in state.context.macro_series for k in _IG_MACRO_KEYS)
-    ):
-        state.inflation_growth = None
-        return
-    state.inflation_growth = compute_inflation_growth_features(
-        cpi_all_items=state.context.macro_series[_IG_CPI_KEY],
-        pmi_manufacturing=state.context.macro_series[_IG_PMI_KEY],
-        dgs10=state.context.macro_series[_IG_DGS10_KEY],
-        dbc_close=state.context.cross_asset_closes[_IG_DBC_KEY],
-        spy_close=state.spy_close,
-        tlt_close=state.context.cross_asset_closes[_IG_TLT_KEY],
-        xly_close=state.context.cross_asset_closes[_IG_XLY_KEY],
-        xli_close=state.context.cross_asset_closes[_IG_XLI_KEY],
-        xlp_close=state.context.cross_asset_closes[_IG_XLP_KEY],
-        xlu_close=state.context.cross_asset_closes[_IG_XLU_KEY],
-        config=state.inflation_growth_config.rules,
-        cpi_nowcast=state.context.macro_series.get(_IG_CPI_NOWCAST_KEY),
-        aggregate_forward_eps_revision=state.context.macro_series.get(
-            _IG_AGG_FORWARD_EPS_REVISION_KEY
-        ),
-        cpi_first_release=state.context.cpi_first_release,
-        use_first_release_cpi_when_available=(
-            state.inflation_growth_config.rules.use_first_release_cpi_when_available
-        ),
-    )
-
-
-def _build_change_point_feature(state: _FeatureStoreBuildState) -> None:
-    if state.context.config.change_point is None:
-        state.change_point = None
-        return
-    state.change_point = compute_change_point_features(
-        realized_vol_21d=state.realized_vol_21d,
-        config=state.context.config.change_point,
-    )
 
 
 # --- New spec-based builders (PR 1) ------------------------------------------
@@ -762,6 +452,614 @@ def _resolve_sma_50(
     return {"spy_close": state.spy_close}
 
 
+def _build_sentiment_score(
+    aaii_sentiment: pd.DataFrame, session_index: pd.DatetimeIndex
+) -> pd.Series | None:
+    # _build_sentiment_score_series declares an Optional return for external
+    # callers (see helper docstring); when invoked via the spec, resolve has
+    # already gated the None/empty/missing-column cases, so this returns a
+    # populated Series in practice. The Optional return matches the helper's
+    # signature so pyright stays clean without a cast.
+    return _build_sentiment_score_series(
+        aaii_sentiment=aaii_sentiment, session_index=session_index
+    )
+
+
+def _resolve_sentiment_score(
+    state: _FeatureStoreBuildState,
+) -> dict[str, object] | _Unavailable:
+    aaii = state.context.aaii_sentiment
+    if aaii is None or aaii.empty:
+        return _Unavailable(missing_inputs=("aaii_sentiment",))
+    if "bull_bear_spread_8w_ma" not in aaii.columns:
+        return _Unavailable(missing_inputs=("aaii_sentiment.bull_bear_spread_8w_ma",))
+    if "publication_date" not in aaii.columns and "date" not in aaii.columns:
+        return _Unavailable(missing_inputs=("aaii_sentiment.publication_date_or_date",))
+    return {
+        "aaii_sentiment": aaii,
+        "session_index": _as_datetime_index(state.spy_close.index),
+    }
+
+
+def _build_news_sentiment_score(
+    news_sentiment: pd.Series,
+    session_index: pd.DatetimeIndex,
+    config: NewsSentimentConfig,
+) -> pd.Series:
+    return _build_news_sentiment_score_series(
+        news_sentiment=news_sentiment, session_index=session_index, config=config
+    )
+
+
+def _resolve_news_sentiment_score(
+    state: _FeatureStoreBuildState,
+) -> dict[str, object] | _Unavailable:
+    missing: list[str] = []
+    if state.news_sentiment_config is None:
+        missing.append("news_sentiment_config")
+    if state.context.news_sentiment is None or state.context.news_sentiment.empty:
+        missing.append("news_sentiment")
+    if missing:
+        return _Unavailable(missing_inputs=tuple(missing))
+    return {
+        "news_sentiment": state.context.news_sentiment,
+        "session_index": _as_datetime_index(state.spy_close.index),
+        "config": state.news_sentiment_config,
+    }
+
+
+def _build_trend_direction_v2(
+    spy_close: pd.Series,
+    config: TrendDirectionV2Config,
+    sentiment_score: pd.Series | None,
+    news_sentiment_score: pd.Series | None,
+) -> TrendDirectionV2Features:
+    return compute_trend_v2_features(
+        spy_close,
+        config=config,
+        sentiment_score=sentiment_score,
+        news_sentiment_score=news_sentiment_score,
+    )
+
+
+def _resolve_trend_direction_v2(
+    state: _FeatureStoreBuildState,
+) -> dict[str, object] | _Unavailable:
+    if state.trend_direction_v2_config is None:
+        return _Unavailable(missing_inputs=("trend_direction_v2_config",))
+    return {
+        "spy_close": state.spy_close,
+        "config": state.trend_direction_v2_config,
+        "sentiment_score": state.sentiment_score,
+        "news_sentiment_score": state.news_sentiment_score,
+    }
+
+
+def _build_network_fragility(
+    sector_etf_closes: dict[str, pd.Series],
+    cross_asset_closes: dict[str, pd.Series],
+    spy_close: pd.Series,
+    config: NetworkFragilityConfig | None,
+) -> NetworkFragilityFeatures:
+    if config is None:
+        return compute_network_fragility_features(
+            sector_etf_closes=sector_etf_closes,
+            cross_asset_closes=cross_asset_closes,
+            spy_close=spy_close,
+        )
+    return compute_network_fragility_features(
+        sector_etf_closes=sector_etf_closes,
+        cross_asset_closes=cross_asset_closes,
+        spy_close=spy_close,
+        correlation_lookback_days=config.correlation_lookback_days,
+        percentile_lookback_days=config.percentile_lookback_days,
+        realized_vol_lookback_days=config.realized_vol_lookback_days,
+        dispersion_percentile_lookback_days=config.dispersion_percentile_lookback_days,
+        dispersion_spy_vol_floor=config.dispersion_spy_vol_floor,
+        min_universe_size=config.min_universe_size,
+        min_window_completeness=config.min_window_completeness,
+        universe=config.universe,
+    )
+
+
+def _resolve_network_fragility(
+    state: _FeatureStoreBuildState,
+) -> dict[str, object] | _Unavailable:
+    if state.context.sector_etf_closes is None:
+        return _Unavailable(missing_inputs=("sector_etf_closes",))
+    return {
+        "sector_etf_closes": state.context.sector_etf_closes,
+        "cross_asset_closes": state.context.cross_asset_closes or {},
+        "spy_close": state.spy_close,
+        "config": state.network_fragility_config,
+    }
+
+
+def _build_volatility_state_v2(
+    open_: pd.Series,
+    high: pd.Series,
+    low: pd.Series,
+    close: pd.Series,
+    config: VolatilityV2Config,
+    implied_vol_30d: pd.Series | None,
+    event_window_just_passed: pd.Series | None,
+) -> VolatilityV2Features:
+    return compute_volatility_v2_features(
+        open_=open_,
+        high=high,
+        low=low,
+        close=close,
+        config=config,
+        rules_config=config.rules,
+        implied_vol_30d=implied_vol_30d,
+        event_window_just_passed=event_window_just_passed,
+    )
+
+
+def _resolve_volatility_state_v2(
+    state: _FeatureStoreBuildState,
+) -> dict[str, object] | _Unavailable:
+    if state.volatility_state_v2_config is None:
+        return _Unavailable(missing_inputs=("volatility_state_v2_config",))
+    config = state.volatility_state_v2_config
+    event_window = (
+        compute_event_window_just_passed(
+            normalized_event_calendar=state.context.normalized_event_calendar,
+            sessions=tuple(
+                ts.date() for ts in _as_datetime_index(state.spy_close.index)
+            ),
+            trailing_sessions=config.rules.vol_crush_event_window_trailing_sessions,
+        )
+        if state.context.normalized_event_calendar is not None
+        else None
+    )
+    return {
+        "open_": _series_column(state.spy_ohlcv, "open"),
+        "high": _series_column(state.spy_ohlcv, "high"),
+        "low": _series_column(state.spy_ohlcv, "low"),
+        "close": state.spy_close,
+        "config": config,
+        "implied_vol_30d": state.context.implied_vol_30d,
+        "event_window_just_passed": event_window,
+    }
+
+
+def _build_breadth_state_v2(
+    sector_etf_closes: dict[str, pd.Series],
+    config: BreadthV2Config,
+    pit_constituent_intervals: pd.DataFrame | None,
+    constituent_ohlcv: dict[str, pd.DataFrame] | None,
+) -> BreadthV2Features:
+    return compute_breadth_v2_features(
+        sector_etf_closes=sector_etf_closes,
+        config=config,
+        pit_constituent_intervals=pit_constituent_intervals,
+        constituent_ohlcv=constituent_ohlcv,
+    )
+
+
+def _resolve_breadth_state_v2(
+    state: _FeatureStoreBuildState,
+) -> dict[str, object] | _Unavailable:
+    missing: list[str] = []
+    if state.breadth_state_v2_config is None:
+        missing.append("breadth_state_v2_config")
+    # Sector_etf_closes missingness uses the same helper the legacy report uses,
+    # which returns ("sector_etf_closes",) when None or
+    # ("sector_etf_closes.any_sector_etf",) when none of SECTOR_ETFS match.
+    missing.extend(_missing_sector_inputs(state))
+    if missing:
+        return _Unavailable(missing_inputs=tuple(missing))
+    sector_closes = state.context.sector_etf_closes
+    assert sector_closes is not None  # narrowed by _missing_sector_inputs check
+    return {
+        "sector_etf_closes": sector_closes,
+        "config": state.breadth_state_v2_config,
+        "pit_constituent_intervals": state.context.pit_constituent_intervals,
+        "constituent_ohlcv": state.context.constituent_ohlcv,
+    }
+
+
+def _build_volume_liquidity_v2(
+    volume: pd.Series,
+    config: VolumeLiquidityV2Config,
+) -> VolumeLiquidityV2Features:
+    return compute_volume_liquidity_v2_features(volume=volume, config=config)
+
+
+def _resolve_volume_liquidity_v2(
+    state: _FeatureStoreBuildState,
+) -> dict[str, object] | _Unavailable:
+    missing: list[str] = []
+    if state.volume_liquidity_v2_config is None:
+        missing.append("volume_liquidity_v2_config")
+    spy_volume: pd.Series | None = None
+    if "volume" not in state.spy_ohlcv.columns:
+        missing.append("spy_ohlcv.volume")
+    else:
+        spy_volume = _series_column(state.spy_ohlcv, "volume")
+        if bool(spy_volume.isna().all()):
+            missing.append("spy_ohlcv.volume.non_nan")
+    if missing:
+        return _Unavailable(missing_inputs=tuple(missing))
+    assert spy_volume is not None  # narrowed by the missing check above
+    return {
+        "volume": spy_volume,
+        "config": state.volume_liquidity_v2_config,
+    }
+
+
+def _build_monetary(
+    dgs2: pd.Series,
+    dgs10: pd.Series,
+    broad_usd_index: pd.Series,
+    central_bank_text_score: pd.Series | None,
+    config: MonetaryPressureV2FeaturesConfig,
+) -> MonetaryPressureV2Features:
+    return compute_monetary_pressure_features(
+        dgs2=dgs2,
+        dgs10=dgs10,
+        broad_usd_index=broad_usd_index,
+        central_bank_text_score=central_bank_text_score,
+        config=config,
+    )
+
+
+def _build_realized_vol_21d(spy_close: pd.Series) -> pd.Series:
+    return realized_vol(spy_close, 21)
+
+
+def _build_drawdown_63d(spy_close: pd.Series) -> pd.Series:
+    return compute_trailing_drawdown(spy_close, 63)
+
+
+def _resolve_drawdown_63d(
+    state: _FeatureStoreBuildState,
+) -> dict[str, object] | _Unavailable:
+    """Disjunction gate: drawdown_63d is built when hmm OR clustering config
+    is present (those features consume it). When both are None, _Unavailable —
+    matches legacy 'state.drawdown_63d = None' branch."""
+    if state.context.config.hmm is None and state.context.config.clustering is None:
+        return _Unavailable(missing_inputs=("hmm_or_clustering_config",))
+    return {"spy_close": state.spy_close}
+
+
+def _build_hmm(
+    config: HMMConfig,
+    return_1d: pd.Series,
+    realized_vol_21d: pd.Series,
+    drawdown_63d: pd.Series,
+    volume_zscore_20d: pd.Series,
+    avg_pairwise_corr_63d: pd.Series,
+) -> HMMFeatures | None:
+    return compute_hmm_features(
+        return_1d=return_1d,
+        realized_vol_21d=realized_vol_21d,
+        drawdown_63d=drawdown_63d,
+        volume_zscore_20d=volume_zscore_20d,
+        avg_pairwise_corr_63d=avg_pairwise_corr_63d,
+        config=config,
+    )
+
+
+def _resolve_hmm(
+    state: _FeatureStoreBuildState,
+) -> dict[str, object] | _Unavailable:
+    missing: list[str] = []
+    if state.context.config.hmm is None:
+        missing.append("hmm_config")
+    if state.volume_liquidity_v2 is None:
+        missing.append("volume_liquidity_v2")
+    if state.network_fragility is None:
+        missing.append("network_fragility")
+    if missing:
+        return _Unavailable(missing_inputs=tuple(missing))
+    volatility = _require_feature(state.volatility, "volatility")
+    assert state.volume_liquidity_v2 is not None
+    assert state.network_fragility is not None
+    assert state.realized_vol_21d is not None
+    assert state.drawdown_63d is not None
+    return {
+        "config": state.context.config.hmm,
+        "return_1d": volatility.return_1d,
+        "realized_vol_21d": state.realized_vol_21d,
+        "drawdown_63d": state.drawdown_63d,
+        "volume_zscore_20d": state.volume_liquidity_v2.volume_zscore_20d,
+        "avg_pairwise_corr_63d": state.network_fragility.avg_pairwise_corr_63d,
+    }
+
+
+def _build_clustering(
+    config: ClusteringConfig,
+    return_21d: pd.Series,
+    return_63d: pd.Series,
+    realized_vol_21d: pd.Series,
+    drawdown_63d: pd.Series,
+    adx_14: pd.Series,
+    avg_pairwise_corr_63d: pd.Series,
+    pct_above_50dma: pd.Series,
+) -> ClusteringFeatures | None:
+    return compute_clustering_features(
+        return_21d=return_21d,
+        return_63d=return_63d,
+        realized_vol_21d=realized_vol_21d,
+        drawdown_63d=drawdown_63d,
+        adx_14=adx_14,
+        avg_pairwise_corr_63d=avg_pairwise_corr_63d,
+        pct_above_50dma=pct_above_50dma,
+        config=config,
+    )
+
+
+def _resolve_clustering(
+    state: _FeatureStoreBuildState,
+) -> dict[str, object] | _Unavailable:
+    missing: list[str] = []
+    if state.context.config.clustering is None:
+        missing.append("clustering_config")
+    breadth_state_v2 = state.breadth_state_v2
+    if breadth_state_v2 is None or breadth_state_v2.pct_above_50dma is None:
+        missing.append("breadth_state_v2.pct_above_50dma")
+    if state.network_fragility is None:
+        missing.append("network_fragility")
+    if state.trend_direction_v2 is None:
+        missing.append("trend_direction_v2")
+    if missing:
+        return _Unavailable(missing_inputs=tuple(missing))
+    trend_character = _require_feature(state.trend_character, "trend_character")
+    assert state.trend_direction_v2 is not None
+    assert state.network_fragility is not None
+    assert state.realized_vol_21d is not None
+    assert state.drawdown_63d is not None
+    assert breadth_state_v2 is not None
+    assert breadth_state_v2.pct_above_50dma is not None
+    return {
+        "config": state.context.config.clustering,
+        "return_21d": trend_character.return_21d,
+        "return_63d": state.trend_direction_v2.return_63d,
+        "realized_vol_21d": state.realized_vol_21d,
+        "drawdown_63d": state.drawdown_63d,
+        "adx_14": trend_character.adx_14,
+        "avg_pairwise_corr_63d": state.network_fragility.avg_pairwise_corr_63d,
+        "pct_above_50dma": breadth_state_v2.pct_above_50dma,
+    }
+
+
+def _build_credit_funding(
+    hyg_close: pd.Series,
+    lqd_close: pd.Series,
+    tlt_close: pd.Series,
+    kre_close: pd.Series,
+    spy_close: pd.Series,
+    sofr: pd.Series,
+    iorb: pd.Series,
+    nfci_weekly: pd.Series,
+    broad_usd_index: pd.Series,
+    hy_oas: pd.Series,
+    ig_oas: pd.Series,
+    config: CreditFundingRulesConfig,
+    fedfunds: pd.Series | None,
+    ioer_legacy: pd.Series | None,
+) -> CreditFundingFeatures:
+    return compute_credit_funding_features(
+        hyg_close=hyg_close,
+        lqd_close=lqd_close,
+        tlt_close=tlt_close,
+        kre_close=kre_close,
+        spy_close=spy_close,
+        sofr=sofr,
+        iorb=iorb,
+        nfci_weekly=nfci_weekly,
+        broad_usd_index=broad_usd_index,
+        hy_oas=hy_oas,
+        ig_oas=ig_oas,
+        config=config,
+        fedfunds=fedfunds,
+        ioer_legacy=ioer_legacy,
+    )
+
+
+def _resolve_credit_funding(
+    state: _FeatureStoreBuildState,
+) -> dict[str, object] | _Unavailable:
+    missing: list[str] = []
+    if state.credit_funding_config is None:
+        missing.append("credit_funding_config")
+        return _Unavailable(missing_inputs=tuple(missing))
+    cross_missing = _missing_cross_asset_keys(
+        state.context.cross_asset_closes, tuple(_CF_CROSS_ASSET_KEYS)
+    )
+    macro_missing = _missing_macro_keys(
+        state.context.macro_series, tuple(_CF_MACRO_KEYS)
+    )
+    missing.extend(cross_missing)
+    missing.extend(macro_missing)
+    if missing:
+        return _Unavailable(missing_inputs=tuple(missing))
+    assert state.context.cross_asset_closes is not None
+    assert state.context.macro_series is not None
+    nan_oas = pd.Series(float("nan"), index=state.spy_close.index)
+    return {
+        "hyg_close": state.context.cross_asset_closes[_CF_HYG_KEY],
+        "lqd_close": state.context.cross_asset_closes[_CF_LQD_KEY],
+        "tlt_close": state.context.cross_asset_closes[_CF_TLT_KEY],
+        "kre_close": state.context.cross_asset_closes[_CF_KRE_KEY],
+        "spy_close": state.spy_close,
+        "sofr": state.context.macro_series[_CF_SOFR_KEY],
+        "iorb": state.context.macro_series[_CF_IORB_KEY],
+        "nfci_weekly": state.context.macro_series[_CF_NFCI_KEY],
+        "broad_usd_index": state.context.macro_series[_CF_BROAD_USD_KEY],
+        "hy_oas": state.context.macro_series.get(_CF_HY_OAS_KEY, nan_oas),
+        "ig_oas": state.context.macro_series.get(_CF_IG_OAS_KEY, nan_oas),
+        "config": state.credit_funding_config.rules,
+        "fedfunds": state.context.macro_series.get(_CF_FEDFUNDS_KEY),
+        "ioer_legacy": state.context.macro_series.get(_CF_IOER_LEGACY_KEY),
+    }
+
+
+def _build_inflation_growth(
+    cpi_all_items: pd.Series,
+    pmi_manufacturing: pd.Series,
+    dgs10: pd.Series,
+    dbc_close: pd.Series,
+    spy_close: pd.Series,
+    tlt_close: pd.Series,
+    xly_close: pd.Series,
+    xli_close: pd.Series,
+    xlp_close: pd.Series,
+    xlu_close: pd.Series,
+    config: InflationGrowthRulesConfig,
+    cpi_nowcast: pd.Series | None,
+    aggregate_forward_eps_revision: pd.Series | None,
+    cpi_first_release: pd.Series | None,
+    use_first_release_cpi_when_available: bool,
+) -> InflationGrowthFeatures:
+    return compute_inflation_growth_features(
+        cpi_all_items=cpi_all_items,
+        pmi_manufacturing=pmi_manufacturing,
+        dgs10=dgs10,
+        dbc_close=dbc_close,
+        spy_close=spy_close,
+        tlt_close=tlt_close,
+        xly_close=xly_close,
+        xli_close=xli_close,
+        xlp_close=xlp_close,
+        xlu_close=xlu_close,
+        config=config,
+        cpi_nowcast=cpi_nowcast,
+        aggregate_forward_eps_revision=aggregate_forward_eps_revision,
+        cpi_first_release=cpi_first_release,
+        use_first_release_cpi_when_available=use_first_release_cpi_when_available,
+    )
+
+
+def _resolve_inflation_growth(
+    state: _FeatureStoreBuildState,
+) -> dict[str, object] | _Unavailable:
+    missing: list[str] = []
+    if state.inflation_growth_config is None:
+        missing.append("inflation_growth_config")
+        return _Unavailable(missing_inputs=tuple(missing))
+    cross_missing = _missing_cross_asset_keys(
+        state.context.cross_asset_closes, tuple(_IG_CROSS_ASSET_KEYS)
+    )
+    macro_missing = _missing_macro_keys(
+        state.context.macro_series, tuple(_IG_MACRO_KEYS)
+    )
+    missing.extend(cross_missing)
+    missing.extend(macro_missing)
+    if missing:
+        return _Unavailable(missing_inputs=tuple(missing))
+    assert state.context.cross_asset_closes is not None
+    assert state.context.macro_series is not None
+    return {
+        "cpi_all_items": state.context.macro_series[_IG_CPI_KEY],
+        "pmi_manufacturing": state.context.macro_series[_IG_PMI_KEY],
+        "dgs10": state.context.macro_series[_IG_DGS10_KEY],
+        "dbc_close": state.context.cross_asset_closes[_IG_DBC_KEY],
+        "spy_close": state.spy_close,
+        "tlt_close": state.context.cross_asset_closes[_IG_TLT_KEY],
+        "xly_close": state.context.cross_asset_closes[_IG_XLY_KEY],
+        "xli_close": state.context.cross_asset_closes[_IG_XLI_KEY],
+        "xlp_close": state.context.cross_asset_closes[_IG_XLP_KEY],
+        "xlu_close": state.context.cross_asset_closes[_IG_XLU_KEY],
+        "config": state.inflation_growth_config.rules,
+        "cpi_nowcast": state.context.macro_series.get(_IG_CPI_NOWCAST_KEY),
+        "aggregate_forward_eps_revision": state.context.macro_series.get(
+            _IG_AGG_FORWARD_EPS_REVISION_KEY
+        ),
+        "cpi_first_release": state.context.cpi_first_release,
+        "use_first_release_cpi_when_available": (
+            state.inflation_growth_config.rules.use_first_release_cpi_when_available
+        ),
+    }
+
+
+def _build_change_point(
+    realized_vol_21d: pd.Series,
+    config: ChangePointConfig,
+) -> ChangePointFeatures | None:
+    """compute_change_point_features can return None when BOCPD training-window
+    data is insufficient. The orchestrator (Task 2.0b) emits available=False,
+    reason='not_configured' for None returns — matching legacy semantics."""
+    return compute_change_point_features(
+        realized_vol_21d=realized_vol_21d, config=config
+    )
+
+
+def _resolve_change_point(
+    state: _FeatureStoreBuildState,
+) -> dict[str, object] | _Unavailable:
+    if state.context.config.change_point is None:
+        return _Unavailable(missing_inputs=("change_point_config",))
+    assert state.realized_vol_21d is not None, (
+        "realized_vol_21d should be populated by its spec when change_point "
+        "config is set (disjunction gate guarantees it)"
+    )
+    return {
+        "realized_vol_21d": state.realized_vol_21d,
+        "config": state.context.config.change_point,
+    }
+
+
+def _resolve_realized_vol_21d(
+    state: _FeatureStoreBuildState,
+) -> dict[str, object] | _Unavailable:
+    """Disjunction gate: realized_vol_21d is built when ANY of hmm,
+    clustering, or change_point configs is present (those features consume it).
+    When none are set, return _Unavailable so build is skipped — matches
+    legacy 'state.realized_vol_21d = None' branch."""
+    if (
+        state.context.config.hmm is None
+        and state.context.config.clustering is None
+        and state.context.config.change_point is None
+    ):
+        return _Unavailable(
+            missing_inputs=("hmm_or_clustering_or_change_point_config",)
+        )
+    return {"spy_close": state.spy_close}
+
+
+def _resolve_monetary(
+    state: _FeatureStoreBuildState,
+) -> dict[str, object] | _Unavailable:
+    missing: list[str] = []
+    if state.monetary_pressure_v2_config is None:
+        missing.append("monetary_pressure_v2_config")
+    macro_missing = (
+        _missing_macro_keys(
+            state.context.macro_series,
+            (_FRED_DGS2_KEY, _IG_DGS10_KEY, "broad_usd_index"),
+        )
+        if state.monetary_pressure_v2_config is not None
+        else ()
+    )
+    missing.extend(macro_missing)
+    if missing:
+        return _Unavailable(missing_inputs=tuple(missing))
+    assert state.context.macro_series is not None  # _missing_macro_keys narrowed
+    cb_text_score_series: pd.Series | None = None
+    if (
+        state.central_bank_text_config is not None
+        and state.context.central_bank_text_releases is not None
+        and not state.context.central_bank_text_releases.empty
+    ):
+        cb_text_score_series = to_daily_score_series(
+            state.context.central_bank_text_releases,
+            session_index=_as_datetime_index(state.spy_close.index),
+            smoothing_window_sessions=state.central_bank_text_config.smoothing_window_sessions,
+            same_date_aggregation=state.central_bank_text_config.same_date_aggregation,
+            max_release_age_days=state.central_bank_text_config.max_release_age_days,
+        )
+    return {
+        "dgs2": state.context.macro_series[_FRED_DGS2_KEY],
+        "dgs10": state.context.macro_series[_IG_DGS10_KEY],
+        "broad_usd_index": state.context.macro_series["broad_usd_index"],
+        "central_bank_text_score": cb_text_score_series,
+        "config": state.monetary_pressure_v2_config,
+    }
+
+
 _FEATURE_SPECS: tuple[FeatureSpec[object, _FeatureStoreBuildState], ...] = (
     FeatureSpec(
         name="trend_direction",
@@ -803,25 +1101,145 @@ _FEATURE_SPECS: tuple[FeatureSpec[object, _FeatureStoreBuildState], ...] = (
         build=_build_sma_50,
         store=lambda s, v: setattr(s, "sma_50", v),
     ),
-)
-
-
-_FEATURE_STORE_BUILDERS: tuple[_FeatureStoreBuilder, ...] = (
-    _FeatureStoreBuilder("sentiment_score", _build_sentiment_score_feature),
-    _FeatureStoreBuilder("news_sentiment_score", _build_news_sentiment_score_feature),
-    _FeatureStoreBuilder("trend_direction_v2", _build_trend_direction_v2_feature),
-    _FeatureStoreBuilder("network_fragility", _build_network_fragility_feature),
-    _FeatureStoreBuilder("volatility_state_v2", _build_volatility_state_v2_feature),
-    _FeatureStoreBuilder("breadth_state_v2", _build_breadth_state_v2_feature),
-    _FeatureStoreBuilder("volume_liquidity_v2", _build_volume_liquidity_v2_feature),
-    _FeatureStoreBuilder("monetary", _build_monetary_feature),
-    _FeatureStoreBuilder("realized_vol_21d", _build_realized_vol_21d_feature),
-    _FeatureStoreBuilder("drawdown_63d", _build_drawdown_63d_feature),
-    _FeatureStoreBuilder("hmm", _build_hmm_feature),
-    _FeatureStoreBuilder("clustering", _build_clustering_feature),
-    _FeatureStoreBuilder("credit_funding", _build_credit_funding_feature),
-    _FeatureStoreBuilder("inflation_growth", _build_inflation_growth_feature),
-    _FeatureStoreBuilder("change_point", _build_change_point_feature),
+    FeatureSpec(
+        name="sentiment_score",
+        policy="none",
+        required_inputs=("aaii_sentiment",),
+        resolve=_resolve_sentiment_score,
+        build=_build_sentiment_score,
+        store=lambda s, v: setattr(s, "sentiment_score", v),
+        report=False,
+    ),
+    FeatureSpec(
+        name="news_sentiment_score",
+        policy="none",
+        required_inputs=("news_sentiment_config", "news_sentiment"),
+        resolve=_resolve_news_sentiment_score,
+        build=_build_news_sentiment_score,
+        store=lambda s, v: setattr(s, "news_sentiment_score", v),
+        report=False,
+    ),
+    FeatureSpec(
+        name="trend_direction_v2",
+        policy="none",
+        required_inputs=("trend_direction_v2_config", "spy_ohlcv.close"),
+        resolve=_resolve_trend_direction_v2,
+        build=_build_trend_direction_v2,
+        store=lambda s, v: setattr(s, "trend_direction_v2", v),
+    ),
+    FeatureSpec(
+        name="network_fragility",
+        policy="none",
+        required_inputs=("sector_etf_closes",),
+        resolve=_resolve_network_fragility,
+        build=_build_network_fragility,
+        store=lambda s, v: setattr(s, "network_fragility", v),
+    ),
+    FeatureSpec(
+        name="volatility_state_v2",
+        policy="none",
+        required_inputs=("volatility_state_v2_config", "spy_ohlcv.ohlc"),
+        resolve=_resolve_volatility_state_v2,
+        build=_build_volatility_state_v2,
+        store=lambda s, v: setattr(s, "volatility_state_v2", v),
+    ),
+    FeatureSpec(
+        name="breadth_state_v2",
+        policy="none",
+        required_inputs=("breadth_state_v2_config", "sector_etf_closes"),
+        resolve=_resolve_breadth_state_v2,
+        build=_build_breadth_state_v2,
+        store=lambda s, v: setattr(s, "breadth_state_v2", v),
+    ),
+    FeatureSpec(
+        name="volume_liquidity_v2",
+        policy="none",
+        required_inputs=("volume_liquidity_v2_config", "spy_ohlcv.volume"),
+        resolve=_resolve_volume_liquidity_v2,
+        build=_build_volume_liquidity_v2,
+        store=lambda s, v: setattr(s, "volume_liquidity_v2", v),
+    ),
+    FeatureSpec(
+        name="monetary",
+        policy="raise",
+        required_inputs=(
+            "macro_series",
+            _FRED_DGS2_KEY,
+            _IG_DGS10_KEY,
+            "broad_usd_index",
+        ),
+        resolve=_resolve_monetary,
+        build=_build_monetary,
+        store=lambda s, v: setattr(s, "monetary", v),
+    ),
+    FeatureSpec(
+        name="realized_vol_21d",
+        policy="none",
+        required_inputs=("hmm_or_clustering_or_change_point_config",),
+        resolve=_resolve_realized_vol_21d,
+        build=_build_realized_vol_21d,
+        store=lambda s, v: setattr(s, "realized_vol_21d", v),
+        report=False,
+    ),
+    FeatureSpec(
+        name="drawdown_63d",
+        policy="none",
+        required_inputs=("hmm_or_clustering_config",),
+        resolve=_resolve_drawdown_63d,
+        build=_build_drawdown_63d,
+        store=lambda s, v: setattr(s, "drawdown_63d", v),
+        report=False,
+    ),
+    FeatureSpec(
+        name="hmm",
+        policy="none",
+        required_inputs=("hmm_config", "volume_liquidity_v2", "network_fragility"),
+        resolve=_resolve_hmm,
+        build=_build_hmm,
+        store=lambda s, v: setattr(s, "hmm", v),
+    ),
+    FeatureSpec(
+        name="clustering",
+        policy="none",
+        required_inputs=(
+            "clustering_config",
+            "breadth_state_v2.pct_above_50dma",
+            "network_fragility",
+            "trend_direction_v2",
+        ),
+        resolve=_resolve_clustering,
+        build=_build_clustering,
+        store=lambda s, v: setattr(s, "clustering", v),
+    ),
+    FeatureSpec(
+        name="credit_funding",
+        policy="none",
+        required_inputs=("credit_funding_config", "cross_asset_closes", "macro_series"),
+        resolve=_resolve_credit_funding,
+        build=_build_credit_funding,  # pyright: ignore[reportUnknownArgumentType]
+        store=lambda s, v: setattr(s, "credit_funding", v),
+    ),
+    FeatureSpec(
+        name="inflation_growth",
+        policy="none",
+        required_inputs=(
+            "inflation_growth_config",
+            "cross_asset_closes",
+            "macro_series",
+        ),
+        resolve=_resolve_inflation_growth,
+        build=_build_inflation_growth,  # pyright: ignore[reportUnknownArgumentType]
+        store=lambda s, v: setattr(s, "inflation_growth", v),
+        report=True,
+    ),
+    FeatureSpec(
+        name="change_point",
+        policy="none",
+        required_inputs=("change_point_config", "realized_vol_21d"),
+        resolve=_resolve_change_point,
+        build=_build_change_point,
+        store=lambda s, v: setattr(s, "change_point", v),
+    ),
 )
 
 
@@ -848,227 +1266,6 @@ def _missing_sector_inputs(state: _FeatureStoreBuildState) -> tuple[str, ...]:
     if not any(symbol in sector_closes for symbol in SECTOR_ETFS):
         return ("sector_etf_closes.any_sector_etf",)
     return ()
-
-
-def _availability(
-    *,
-    feature: str,
-    value: object | None,
-    policy: FeatureAvailabilityPolicy,
-    required_inputs: tuple[str, ...],
-    missing_inputs: tuple[str, ...],
-) -> FeatureAvailability:
-    if value is not None:
-        return FeatureAvailability(
-            feature=feature,
-            available=True,
-            policy=policy,
-            reason="populated",
-            required_inputs=required_inputs,
-        )
-    reason = "not_configured" if not missing_inputs else "missing_required_inputs"
-    return FeatureAvailability(
-        feature=feature,
-        available=False,
-        policy=policy,
-        reason=reason,
-        required_inputs=required_inputs,
-        missing_inputs=missing_inputs,
-    )
-
-
-def _build_feature_availability_report(
-    state: _FeatureStoreBuildState,
-) -> dict[str, FeatureAvailability]:
-    spy_volume_missing = ()
-    if "volume" not in state.spy_ohlcv.columns:
-        spy_volume_missing = ("spy_ohlcv.volume",)
-    else:
-        spy_volume = _series_column(state.spy_ohlcv, "volume")
-        if bool(spy_volume.isna().all()):
-            spy_volume_missing = ("spy_ohlcv.volume.non_nan",)
-
-    breadth_state_missing = (
-        ()
-        if state.breadth_state_v2_config is not None
-        else ("breadth_state_v2_config",)
-    ) + _missing_sector_inputs(state)
-    volume_liquidity_missing = (
-        ()
-        if state.volume_liquidity_v2_config is not None
-        else ("volume_liquidity_v2_config",)
-    ) + spy_volume_missing
-    monetary_config_missing = (
-        ()
-        if state.monetary_pressure_v2_config is not None
-        else ("monetary_pressure_v2_config",)
-    )
-    credit_config_missing = (
-        () if state.credit_funding_config is not None else ("credit_funding_config",)
-    )
-    inflation_config_missing = (
-        ()
-        if state.inflation_growth_config is not None
-        else ("inflation_growth_config",)
-    )
-
-    monetary_required = (
-        "macro_series",
-        _FRED_DGS2_KEY,
-        _IG_DGS10_KEY,
-        "broad_usd_index",
-    )
-    monetary_missing = ()
-    if state.monetary_pressure_v2_config is None:
-        monetary_missing = ()
-    else:
-        monetary_missing = _missing_macro_keys(
-            state.context.macro_series,
-            (_FRED_DGS2_KEY, _IG_DGS10_KEY, "broad_usd_index"),
-        )
-
-    credit_missing = ()
-    if state.credit_funding_config is not None:
-        credit_missing = _missing_cross_asset_keys(
-            state.context.cross_asset_closes, tuple(_CF_CROSS_ASSET_KEYS)
-        ) + _missing_macro_keys(state.context.macro_series, tuple(_CF_MACRO_KEYS))
-
-    inflation_missing = ()
-    if state.inflation_growth_config is not None:
-        inflation_missing = _missing_cross_asset_keys(
-            state.context.cross_asset_closes, tuple(_IG_CROSS_ASSET_KEYS)
-        ) + _missing_macro_keys(state.context.macro_series, tuple(_IG_MACRO_KEYS))
-
-    report = {
-        "network_fragility": _availability(
-            feature="network_fragility",
-            value=state.network_fragility,
-            policy="none",
-            required_inputs=("sector_etf_closes",),
-            missing_inputs=(
-                ()
-                if state.context.sector_etf_closes is not None
-                else ("sector_etf_closes",)
-            ),
-        ),
-        "trend_direction_v2": _availability(
-            feature="trend_direction_v2",
-            value=state.trend_direction_v2,
-            policy="none",
-            required_inputs=("trend_direction_v2_config", "spy_ohlcv.close"),
-            missing_inputs=(
-                ()
-                if state.trend_direction_v2_config is not None
-                else ("trend_direction_v2_config",)
-            ),
-        ),
-        "volatility_state_v2": _availability(
-            feature="volatility_state_v2",
-            value=state.volatility_state_v2,
-            policy="none",
-            required_inputs=("volatility_state_v2_config", "spy_ohlcv.ohlc"),
-            missing_inputs=(
-                ()
-                if state.volatility_state_v2_config is not None
-                else ("volatility_state_v2_config",)
-            ),
-        ),
-        "breadth_state_v2": _availability(
-            feature="breadth_state_v2",
-            value=state.breadth_state_v2,
-            policy="none",
-            required_inputs=("breadth_state_v2_config", "sector_etf_closes"),
-            missing_inputs=breadth_state_missing,
-        ),
-        "volume_liquidity_v2": _availability(
-            feature="volume_liquidity_v2",
-            value=state.volume_liquidity_v2,
-            policy="none",
-            required_inputs=("volume_liquidity_v2_config", "spy_ohlcv.volume"),
-            missing_inputs=volume_liquidity_missing,
-        ),
-        "monetary": _availability(
-            feature="monetary",
-            value=state.monetary,
-            policy="raise",
-            required_inputs=monetary_required,
-            missing_inputs=monetary_config_missing + monetary_missing,
-        ),
-        "hmm": _availability(
-            feature="hmm",
-            value=state.hmm,
-            policy="none",
-            required_inputs=("hmm_config", "volume_liquidity_v2", "network_fragility"),
-            missing_inputs=tuple(
-                item
-                for item, available in (
-                    ("hmm_config", state.context.config.hmm is not None),
-                    ("volume_liquidity_v2", state.volume_liquidity_v2 is not None),
-                    ("network_fragility", state.network_fragility is not None),
-                )
-                if not available
-            ),
-        ),
-        "clustering": _availability(
-            feature="clustering",
-            value=state.clustering,
-            policy="none",
-            required_inputs=(
-                "clustering_config",
-                "breadth_state_v2.pct_above_50dma",
-                "network_fragility",
-                "trend_direction_v2",
-            ),
-            missing_inputs=tuple(
-                item
-                for item, available in (
-                    ("clustering_config", state.context.config.clustering is not None),
-                    (
-                        "breadth_state_v2.pct_above_50dma",
-                        state.breadth_state_v2 is not None
-                        and state.breadth_state_v2.pct_above_50dma is not None,
-                    ),
-                    ("network_fragility", state.network_fragility is not None),
-                    ("trend_direction_v2", state.trend_direction_v2 is not None),
-                )
-                if not available
-            ),
-        ),
-        "change_point": _availability(
-            feature="change_point",
-            value=state.change_point,
-            policy="none",
-            required_inputs=("change_point_config", "realized_vol_21d"),
-            missing_inputs=(
-                ()
-                if state.context.config.change_point is not None
-                else ("change_point_config",)
-            ),
-        ),
-        "credit_funding": _availability(
-            feature="credit_funding",
-            value=state.credit_funding,
-            policy="none",
-            required_inputs=(
-                "credit_funding_config",
-                "cross_asset_closes",
-                "macro_series",
-            ),
-            missing_inputs=credit_config_missing + credit_missing,
-        ),
-        "inflation_growth": _availability(
-            feature="inflation_growth",
-            value=state.inflation_growth,
-            policy="none",
-            required_inputs=(
-                "inflation_growth_config",
-                "cross_asset_closes",
-                "macro_series",
-            ),
-            missing_inputs=inflation_config_missing + inflation_missing,
-        ),
-    }
-    return report
 
 
 def build_feature_store(
@@ -1105,14 +1302,11 @@ def build_feature_store(
         central_bank_text_config=central_bank_text_config,
         news_sentiment_config=news_sentiment_config,
     )
-    spec_availability = _run_feature_specs(_FEATURE_SPECS, build_state)
-    _run_feature_store_builders(_FEATURE_STORE_BUILDERS, build_state)
-    legacy_availability = _build_feature_availability_report(build_state)
-    combined_availability = {**spec_availability, **legacy_availability}
+    availability = _run_feature_specs(_FEATURE_SPECS, build_state)
 
     return FeatureStore(
         spy_index=_as_datetime_index(spy_ohlcv.index),
-        availability=combined_availability,
+        availability=availability,
         trend_direction=_require_feature(
             build_state.trend_direction, "trend_direction"
         ),

@@ -59,52 +59,6 @@ def test_build_news_sentiment_score_series_preserves_existing_alignment_and_smoo
     )
 
 
-def test_feature_store_builder_registry_runs_builders_in_declared_order(
-    market_df_for_asof,
-) -> None:
-    from regime_detection.feature_store import (
-        _FeatureStoreBuilder,
-        _FeatureStoreBuildState,
-        _run_feature_store_builders,
-    )
-
-    cfg = load_default_regime_config()
-    as_of = date(2023, 12, 14)
-    context = build_market_context(
-        end_date=as_of,
-        market_data=market_df_for_asof(as_of),
-        config=cfg,
-    )
-    spy_close = context.spy_ohlcv["close"]
-    assert isinstance(spy_close, pd.Series)
-    state = _FeatureStoreBuildState(
-        context=context,
-        spy_ohlcv=context.spy_ohlcv,
-        spy_close=spy_close,
-    )
-    calls: list[tuple[str, object]] = []
-
-    def moving_average_builder(build_state: _FeatureStoreBuildState) -> None:
-        calls.append(("moving_average", build_state.spy_close.name))
-        build_state.sma_50 = pd.Series([1.0], name="sma_50")
-
-    def volatility_builder(build_state: _FeatureStoreBuildState) -> None:
-        output_name = (
-            build_state.sma_50.name if build_state.sma_50 is not None else None
-        )
-        calls.append(("volatility", output_name))
-
-    _run_feature_store_builders(
-        (
-            _FeatureStoreBuilder("moving_average", moving_average_builder),
-            _FeatureStoreBuilder("volatility", volatility_builder),
-        ),
-        state,
-    )
-
-    assert calls == [("moving_average", "close"), ("volatility", "sma_50")]
-
-
 def test_feature_store_build_state_uses_typed_intermediate_fields() -> None:
     from regime_detection.feature_store import _FeatureStoreBuildState
 
@@ -134,44 +88,58 @@ def test_feature_store_build_state_uses_typed_intermediate_fields() -> None:
     }.issubset(state_fields)
 
 
-def test_default_feature_store_builder_registry_orders_trend_news_before_trend_v2() -> (
-    None
-):
-    from regime_detection.feature_store import (
-        _FEATURE_SPECS,
-        _FEATURE_STORE_BUILDERS,
-        FeatureStore,
-    )
+def test_feature_specs_registry_preserves_required_ordering_invariants() -> None:
+    """After PR 2, all 20 features live in _FEATURE_SPECS. Ordering invariants
+    that previously crossed the spec/builder boundary now apply within
+    _FEATURE_SPECS only. The orchestrator runs specs in registry order."""
+    from regime_detection.feature_store import _FEATURE_SPECS, FeatureStore
 
     spec_names = tuple(spec.name for spec in _FEATURE_SPECS)
-    builder_names = tuple(builder.name for builder in _FEATURE_STORE_BUILDERS)
-    all_names = spec_names + builder_names
     feature_fields = tuple(
         name
         for name in FeatureStore.model_fields
         if name not in {"spy_index", "availability"}
     )
 
-    # All FeatureStore fields must be covered by specs + legacy builders together.
-    # The 5 always-on features (trend_direction, trend_character, volatility,
-    # breadth, sma_50) now run via _FEATURE_SPECS; the remaining 15 stay in
-    # _FEATURE_STORE_BUILDERS.
-    assert set(feature_fields).issubset(set(all_names))
+    # Every user-visible FeatureStore field must be covered by a spec.
+    # (Intermediate state specs like sentiment_score are also in _FEATURE_SPECS
+    # but are not FeatureStore fields — they use report=False.)
+    assert set(feature_fields).issubset(set(spec_names))
 
-    # Ordering: specs run first (so trend_direction always precedes any legacy
-    # builder). Within the legacy builder sequence, news must precede trend_v2.
-    assert builder_names.index("news_sentiment_score") < builder_names.index(
+    # sentiment_score and news_sentiment_score must run before trend_direction_v2
+    # because trend_direction_v2 reads state.sentiment_score and
+    # state.news_sentiment_score in its resolve function.
+    assert spec_names.index("sentiment_score") < spec_names.index("trend_direction_v2")
+    assert spec_names.index("news_sentiment_score") < spec_names.index(
         "trend_direction_v2"
     )
-    assert builder_names.index("volatility_state_v2") < builder_names.index(
+
+    # volatility_state_v2 must run before breadth_state_v2 and realized_vol_21d
+    # to preserve the historical build order (no functional dependency required;
+    # this pin prevents accidental reordering).
+    assert spec_names.index("volatility_state_v2") < spec_names.index(
         "breadth_state_v2"
     )
-    assert builder_names.index("volatility_state_v2") < builder_names.index(
+    assert spec_names.index("volatility_state_v2") < spec_names.index(
         "realized_vol_21d"
     )
-    assert builder_names.index("breadth_state_v2") < builder_names.index(
-        "realized_vol_21d"
-    )
+    assert spec_names.index("breadth_state_v2") < spec_names.index("realized_vol_21d")
+
+    # realized_vol_21d and drawdown_63d must run before hmm/clustering/change_point
+    # (those features read the intermediate series from state).
+    for derived in ("hmm", "clustering", "change_point"):
+        assert spec_names.index("realized_vol_21d") < spec_names.index(
+            derived
+        ), f"realized_vol_21d must precede {derived}"
+    for derived in ("hmm", "clustering"):
+        assert spec_names.index("drawdown_63d") < spec_names.index(
+            derived
+        ), f"drawdown_63d must precede {derived}"
+
+    # network_fragility and trend_direction_v2 must run before clustering
+    # (clustering reads both in its resolve).
+    assert spec_names.index("network_fragility") < spec_names.index("clustering")
+    assert spec_names.index("trend_direction_v2") < spec_names.index("clustering")
 
 
 def test_feature_store_registry_preserves_trend_and_news_outputs(

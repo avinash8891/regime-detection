@@ -111,3 +111,95 @@ def test_spec_ordering_preserved_in_returned_dict() -> None:
     report = _run_feature_specs(specs, state)
 
     assert list(report.keys()) == ["first", "second", "third"]
+
+
+def test_spec_with_report_false_runs_but_omits_availability_entry() -> None:
+    state = _ToyState(inputs={"x": 5})
+    specs = (
+        _make_spec("public", required=("x",)),
+        FeatureSpec(
+            name="internal",
+            policy="raise",
+            required_inputs=("x",),
+            resolve=lambda s: {"x": s.inputs.get("x", 0)},
+            build=lambda x: x * 3,
+            store=lambda s, v: s.outputs.__setitem__("internal", v),
+            report=False,
+        ),
+    )
+
+    report = _run_feature_specs(specs, state)
+
+    # Build/store side-effects happen for both specs.
+    assert state.outputs == {"public": 10, "internal": 15}
+    # But only the public spec produces an availability entry.
+    assert set(report.keys()) == {"public"}
+    assert "internal" not in report
+
+
+def test_spec_with_report_false_skips_emission_even_when_unavailable() -> None:
+    """A spec with report=False that resolves to _Unavailable does NOT emit an
+    entry — internal specs are silent about absence too, matching legacy
+    behavior where intermediate state fields had no availability entry."""
+    state = _ToyState()
+    specs = (
+        FeatureSpec(
+            name="internal_missing",
+            policy="none",
+            required_inputs=("x",),
+            resolve=lambda s: _Unavailable(missing_inputs=("x",)),
+            build=lambda x: x * 2,
+            store=lambda s, v: s.outputs.__setitem__("internal_missing", v),
+            report=False,
+        ),
+    )
+
+    report = _run_feature_specs(specs, state)
+
+    assert state.outputs == {}  # build did not run
+    assert report == {}  # no availability emission
+
+
+def test_spec_with_build_returning_none_emits_available_false() -> None:
+    """When resolve succeeds but build returns None, orchestrator emits
+    available=False, reason="not_configured" (matching legacy _availability
+    helper's value-is-None semantics)."""
+    state = _ToyState(inputs={"x": 5})
+    none_returning_build_spec: FeatureSpec[int | None, _ToyState] = FeatureSpec(
+        name="sometimes_none",
+        policy="none",
+        required_inputs=("x",),
+        resolve=lambda s: {"x": s.inputs.get("x", 0)},
+        # Build returns None despite valid inputs — simulates a compute_*_features
+        # function that can fail to produce a value when intermediate data is
+        # insufficient.
+        build=lambda x: None,
+        store=lambda s, v: (
+            s.outputs.__setitem__("sometimes_none", v) if v is not None else None
+        ),
+    )
+    report = _run_feature_specs((none_returning_build_spec,), state)
+
+    assert report["sometimes_none"].available is False
+    assert report["sometimes_none"].reason == "not_configured"
+    assert report["sometimes_none"].missing_inputs == ()
+    assert report["sometimes_none"].required_inputs == ("x",)
+
+
+def test_spec_with_build_returning_none_and_report_false_emits_nothing() -> None:
+    """Internal spec (report=False) with None-returning build emits no
+    availability entry, just like other report=False paths."""
+    state = _ToyState(inputs={"x": 5})
+    internal_none_spec: FeatureSpec[int | None, _ToyState] = FeatureSpec(
+        name="internal_none",
+        policy="none",
+        required_inputs=("x",),
+        resolve=lambda s: {"x": s.inputs.get("x", 0)},
+        build=lambda x: None,
+        store=lambda s, v: None,
+        report=False,
+    )
+    report = _run_feature_specs((internal_none_spec,), state)
+
+    assert "internal_none" not in report
+    assert report == {}
