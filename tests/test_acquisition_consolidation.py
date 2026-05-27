@@ -113,6 +113,35 @@ def test_augment_params_json_logs_unparseable_json_without_raw_payload(
     assert "secret-token" not in caplog.text
 
 
+def test_consolidate_acquisition_dbs_preserves_multiple_artifact_blobs_per_source(
+    tmp_path: Path,
+) -> None:
+    src = tmp_path / "src_multi_blob.db"
+    _build_source_db_with_multiple_blobs(src)
+
+    target = tmp_path / "canonical.db"
+    consolidate_acquisition_dbs(
+        target_db_path=target,
+        sources=[ConsolidationSource("multi", src)],
+    )
+
+    with closing(sqlite3.connect(target)) as conn:
+        target_blobs = conn.execute(
+            """
+            SELECT artifacts.source_identifier, artifact_blobs.content_bytes
+            FROM artifact_blobs
+            JOIN artifacts ON artifacts.artifact_id = artifact_blobs.artifact_id
+            ORDER BY artifacts.source_identifier
+            """
+        ).fetchall()
+
+    assert target_blobs == [
+        ("ident-A", b"blob-bytes-A"),
+        ("ident-B", b"blob-bytes-B"),
+        ("ident-C", b"blob-bytes-C"),
+    ]
+
+
 def _build_source_db_one(path: Path) -> None:
     store = AcquisitionStore(path)
     run = store.start_fetch_run(fetch_type="events", params={"a": 1})
@@ -204,4 +233,42 @@ def _build_source_db_two(path: Path) -> None:
 
 def _write_binary_fixture(path: Path) -> Path:
     path.write_bytes(b"fixture")
+    return path
+
+
+def _build_source_db_with_multiple_blobs(path: Path) -> None:
+    store = AcquisitionStore(path)
+    run = store.start_fetch_run(fetch_type="binary_multi", params={"n": 3})
+    blob_a = _write_blob_fixture(path.parent / "a.bin", b"blob-bytes-A")
+    blob_b = _write_blob_fixture(path.parent / "b.bin", b"blob-bytes-B")
+    blob_c = _write_blob_fixture(path.parent / "c.bin", b"blob-bytes-C")
+    store.record_file_artifact(
+        run_id=run.run_id,
+        source_name="multi:A",
+        artifact_kind="binary",
+        source_identifier="ident-A",
+        file_path=blob_a,
+        notes="blob A",
+    )
+    store.record_file_artifact(
+        run_id=run.run_id,
+        source_name="multi:B",
+        artifact_kind="binary",
+        source_identifier="ident-B",
+        file_path=blob_b,
+        notes="blob B",
+    )
+    store.record_file_artifact(
+        run_id=run.run_id,
+        source_name="multi:C",
+        artifact_kind="binary",
+        source_identifier="ident-C",
+        file_path=blob_c,
+        notes="blob C",
+    )
+    store.finish_fetch_run(run_id=run.run_id, status="ok", notes="done-multi")
+
+
+def _write_blob_fixture(path: Path, payload: bytes) -> Path:
+    path.write_bytes(payload)
     return path
