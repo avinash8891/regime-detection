@@ -297,16 +297,18 @@ class FeatureStore(BaseModel):
 
 def _build_sentiment_score_series(
     *,
-    aaii_sentiment: pd.DataFrame,
+    aaii_sentiment: pd.DataFrame | None,
     session_index: pd.DatetimeIndex,
-) -> pd.Series:
+) -> pd.Series | None:
     """Align AAII bull-bear-spread 8w-MA onto the SPY session index for
     consumption by the v2 §1A `euphoria` predicate (ADR 0004 Q1+Q4).
 
     Forward-fill semantics: use the latest AAII row whose
     ``publication_date`` (or ``date`` if no separate publication column) is
     on or before each session — V1 §2.2 stateless-replay rule, never
-    consult a future-dated reading.
+    consult a future-dated reading. Returns ``None`` when no AAII frame is
+    supplied (lets the euphoria predicate falsify per the V2 §10 absolute
+    "do not invent" rule at spec L4364).
 
     Cold-start (ADR 0004 Q5): a session with no AAII row at or before it
     receives NaN; the euphoria predicate then falsifies on that session
@@ -314,13 +316,23 @@ def _build_sentiment_score_series(
     output column is populated from week 1 of the data, so the practical
     cold-start window is just "no AAII history yet."
 
-    Caller is responsible for ensuring aaii_sentiment is non-None, non-empty,
-    and has 'bull_bear_spread_8w_ma' plus either 'publication_date' or 'date'
-    columns. The spec's resolve function gates these conditions.
+    Note on the Optional contract: the FeatureSpec resolver in
+    `_resolve_sentiment_score` gates the None/empty/missing-column cases
+    before calling this helper, so the orchestrator path always passes
+    valid input. The Optional return is preserved here for direct external
+    callers (e.g. unit tests) that exercise the no-AAII path.
     """
+    if aaii_sentiment is None:
+        return None
+    if aaii_sentiment.empty:
+        return None
+    if "bull_bear_spread_8w_ma" not in aaii_sentiment.columns:
+        return None
     publication_column = (
         "publication_date" if "publication_date" in aaii_sentiment.columns else "date"
     )
+    if publication_column not in aaii_sentiment.columns:
+        return None
     sorted_aaii = aaii_sentiment.sort_values(publication_column).reset_index(drop=True)
     publication = pd.to_datetime(sorted_aaii[publication_column])
     score_values = sorted_aaii["bull_bear_spread_8w_ma"].astype(float).to_numpy()
@@ -442,7 +454,12 @@ def _resolve_sma_50(
 
 def _build_sentiment_score(
     aaii_sentiment: pd.DataFrame, session_index: pd.DatetimeIndex
-) -> pd.Series:
+) -> pd.Series | None:
+    # _build_sentiment_score_series declares an Optional return for external
+    # callers (see helper docstring); when invoked via the spec, resolve has
+    # already gated the None/empty/missing-column cases, so this returns a
+    # populated Series in practice. The Optional return matches the helper's
+    # signature so pyright stays clean without a cast.
     return _build_sentiment_score_series(
         aaii_sentiment=aaii_sentiment, session_index=session_index
     )
