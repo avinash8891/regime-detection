@@ -1,35 +1,22 @@
 from __future__ import annotations
 
-from regime_detection.feature_store import (
-    _FEATURE_SPECS,
-    _FEATURE_STORE_BUILDERS,
-    FeatureStore,
-)
+from regime_detection.feature_store import _FEATURE_SPECS, FeatureStore
 
 _FEATURE_STORE_NON_FEATURE_FIELDS = frozenset({"spy_index", "availability"})
 
 
-def test_every_feature_store_field_has_a_builder_or_spec() -> None:
+def test_every_feature_store_field_has_a_spec() -> None:
+    """After PR 2 cleanup, every FeatureStore field must be registered as a
+    spec. The legacy _FEATURE_STORE_BUILDERS registry has been deleted."""
     declared = set(FeatureStore.model_fields.keys()) - _FEATURE_STORE_NON_FEATURE_FIELDS
-    registered = {s.name for s in _FEATURE_SPECS} | {
-        b.name for b in _FEATURE_STORE_BUILDERS
-    }
+    registered = {s.name for s in _FEATURE_SPECS}
     missing = declared - registered
-    assert not missing, f"FeatureStore fields with no spec/builder: {sorted(missing)}"
-    # Note: registered may contain intermediate state names (e.g. sentiment_score,
-    # realized_vol_21d) that are not FeatureStore fields. That is expected — those
-    # features populate _FeatureStoreBuildState only and feed downstream consumers
-    # like HMM and clustering. We only assert that every FeatureStore field is covered.
-
-
-def test_no_feature_appears_in_both_specs_and_legacy_builders() -> None:
-    spec_names = {s.name for s in _FEATURE_SPECS}
-    builder_names = {b.name for b in _FEATURE_STORE_BUILDERS}
-    overlap = spec_names & builder_names
-    assert not overlap, (
-        f"feature {sorted(overlap)} defined twice (spec + builder); "
-        "Task 1.9 should have removed it from _FEATURE_STORE_BUILDERS"
-    )
+    # registered may contain intermediate state names (sentiment_score,
+    # news_sentiment_score, realized_vol_21d, drawdown_63d) that are not
+    # FeatureStore fields — those specs have report=False. We only assert that
+    # every FeatureStore field is covered by some spec; we do NOT assert the
+    # converse.
+    assert not missing, f"FeatureStore fields with no spec: {sorted(missing)}"
 
 
 def test_spec_required_inputs_are_unique_within_each_spec() -> None:
@@ -54,7 +41,7 @@ def test_availability_report_uses_only_allowed_reason_strings(
     market_df_for_asof,
 ) -> None:
     """End-to-end check that every emitted reason string is in the allowed
-    vocabulary. Catches accidental wire-format drift during PR 2 migrations."""
+    vocabulary. Catches accidental wire-format drift."""
     from datetime import date
 
     from regime_detection.engine import RegimeEngine
