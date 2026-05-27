@@ -1,16 +1,66 @@
 from __future__ import annotations
 
+import math
 from datetime import date
 from pathlib import Path
 
+import numpy as np
 import pandas as pd
 import yaml
 
 from regime_detection.trend_character import (
     TrendCharacterFeatures,
+    _DEFAULT_FOLLOWTHROUGH_HOLD_SESSIONS,
+    _DEFAULT_FOLLOWTHROUGH_LOOKBACK_SESSIONS,
+    _DEFAULT_FOLLOWTHROUGH_WINDOW_COUNT,
+    _compute_breakout_20d_or_50d,
+    _compute_followthrough_rate,
     compute_features,
     raw_label_for_day,
 )
+
+
+def test_followthrough_rate_matches_pinned_output_on_realistic_close_series(
+    raw_market_data,
+) -> None:
+    repo_root = Path(__file__).resolve().parents[1]
+    fixture_path = (
+        repo_root / "tests" / "fixtures" / "derived" / "followthrough_rate_pinned.yaml"
+    )
+    pinned = yaml.safe_load(fixture_path.read_text())
+
+    spy = raw_market_data[raw_market_data["symbol"] == "SPY"].sort_values("date")
+    close = pd.Series(
+        spy["close"].astype(float).to_numpy(),
+        index=pd.to_datetime(spy["date"]),
+        name="SPY",
+    )
+    breakout = _compute_breakout_20d_or_50d(close)
+    ft_rate = _compute_followthrough_rate(
+        close,
+        breakout,
+        lookback_sessions=pinned["lookback_sessions"],
+        window_count=pinned["window_count"],
+        hold_sessions=pinned["hold_sessions"],
+    )
+
+    expected_by_date = {row["date"]: row["value"] for row in pinned["rows"]}
+    assert len(expected_by_date) == len(ft_rate), (
+        f"row count mismatch: fixture has {len(expected_by_date)}, "
+        f"computed has {len(ft_rate)}"
+    )
+
+    for ts, actual in ft_rate.items():
+        key = ts.date().isoformat()
+        assert key in expected_by_date, f"unexpected date in computed output: {key}"
+        expected = expected_by_date[key]
+        if expected is None:
+            assert math.isnan(actual), f"{key}: expected NaN, got {actual}"
+        else:
+            assert not math.isnan(actual), f"{key}: expected {expected}, got NaN"
+            assert np.isclose(actual, expected, rtol=0.0, atol=0.0), (
+                f"{key}: expected {expected}, got {actual}"
+            )
 
 
 def test_trend_character_matches_pinned_fixtures(classified_golden_outputs) -> None:
