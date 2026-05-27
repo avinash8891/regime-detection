@@ -1155,8 +1155,16 @@ _FEATURE_SPECS: tuple[FeatureSpec[object, _FeatureStoreBuildState], ...] = (
         store=lambda s, v: setattr(s, "volume_liquidity_v2", v),
     ),
     FeatureSpec(
+        # monetary uses policy="none" because the monetary_pressure_v2 axis is
+        # optional in V2 config — when unconfigured, absence is expected and
+        # downstream coverage must not flag the run as unsafe. The
+        # configured-but-missing-data case is enforced upstream by the
+        # ClassifyRequest input-contract validator at engine.py, which raises
+        # ValueError before the feature store is built. Legacy availability
+        # reported policy="raise" here unconditionally, which made
+        # classification_coverage mark every V1-mode run as unsafe.
         name="monetary",
-        policy="raise",
+        policy="none",
         required_inputs=(
             "macro_series",
             _FRED_DGS2_KEY,

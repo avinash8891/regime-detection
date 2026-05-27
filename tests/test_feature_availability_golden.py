@@ -114,7 +114,7 @@ def test_availability_dict_pure_v1_context_snapshot(
         "monetary": {
             "feature": "monetary",
             "available": False,
-            "policy": "raise",
+            "policy": "none",
             "reason": "missing_required_inputs",
             "required_inputs": (
                 "macro_series",
