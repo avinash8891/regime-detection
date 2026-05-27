@@ -11,6 +11,10 @@ from typing import TYPE_CHECKING, Any, Final, get_args
 
 import pandas as pd
 
+from regime_detection.config import RegimeConfig
+from regime_detection.dependency_payload_contracts import (
+    dependency_payload_contracts_report as _dependency_payload_contracts_report,
+)
 from regime_detection.feature_store import FeatureStore
 from regime_detection.models import ClassificationStatus
 from regime_detection.models import RegimeOutput, RegimeTimeline
@@ -362,27 +366,11 @@ def _transition_risk_seam(transition_risk: Any) -> dict[str, Any]:
     }
 
 
-def _dependency_payload_contracts_report() -> dict[str, dict[str, str]]:
-    """Operator-facing summary of V2 cross-axis payload contracts."""
-
-    return {
-        "network_fragility": {
-            "breadth_state": "label_only",
-            "volatility_state": "label_only",
-            "credit_funding_effective": "label_only",
-        },
-        "inflation_growth_state": {
-            "credit_funding_effective": "label_only",
-        },
-        "transition_score": {
-            "event_calendar": "matching_labels",
-            "credit_funding_effective": "label_and_status",
-            "volume_liquidity_state": "label_and_status",
-        },
-    }
-
-
-def _compact_timeline_report(outputs: list[RegimeOutput]) -> list[dict[str, Any]]:
+def _compact_timeline_report(
+    outputs: list[RegimeOutput],
+    *,
+    config: RegimeConfig | None = None,
+) -> list[dict[str, Any]]:
     rows: list[dict[str, Any]] = []
     for out in outputs:
         seams: dict[str, Any] = {}
@@ -453,7 +441,7 @@ def _compact_timeline_report(outputs: list[RegimeOutput]) -> list[dict[str, Any]
             seams["classification_coverage"] = classification_coverage.model_dump(
                 mode="json"
             )
-        seams["rule_provenance"] = rule_provenance_payload()
+        seams["rule_provenance"] = rule_provenance_payload(config=config)
         rows.append(
             {
                 "as_of_date": out.as_of_date.isoformat(),
@@ -806,6 +794,7 @@ def _build_json_report(
     per_day_avg_ms: float,
     verification_issues: list[str],
     feature_store: FeatureStore | None = None,
+    config: RegimeConfig | None = None,
 ) -> dict[str, Any]:
     stage_names = [
         "build_market_context",
@@ -942,7 +931,7 @@ def _build_json_report(
             "data_loading": _data_loading_report(inputs.load_timings),
             "bottom_line_total_wall_clock_seconds": total_wall_clock,
         },
-        "timeline": _compact_timeline_report(timeline.outputs),
+        "timeline": _compact_timeline_report(timeline.outputs, config=config),
         "label_summary": _label_summary_report(timeline.outputs),
         "effective_label_summary": _effective_label_summary_report(timeline.outputs),
         "feature_metrics": _feature_metric_summary_report(

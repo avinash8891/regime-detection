@@ -35,13 +35,13 @@ from types import ModuleType
 import pandas as pd
 import pytest
 
-from regime_shared.pandas_compat import cow_safe_assign
 import yaml
 
 _REPO_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(_REPO_ROOT))
 sys.path.insert(0, str(_REPO_ROOT / "src"))
 
+from regime_shared.pandas_compat import cow_safe_assign  # noqa: E402
 from regime_detection.engine import RegimeEngine  # noqa: E402
 from regime_detection.fragility_universe import (
     CROSS_ASSET_SYMBOLS,

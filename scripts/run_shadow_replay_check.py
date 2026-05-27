@@ -138,7 +138,12 @@ def run_replay_check(
         replayed_payload["v2_dependency_payload_contracts"] = (
             _v2_dependency_payload_contracts()
         )
-        replayed_payload["rule_provenance"] = rule_provenance_payload()
+        # Build provenance from the replay engine's active config so non-default
+        # --config-path runs match the artifact written by run_shadow_regime.py
+        # (which now also threads the active config through). Without this,
+        # exact replay diffs would deterministically flag rule_provenance even
+        # for otherwise byte-identical outputs.
+        replayed_payload["rule_provenance"] = rule_provenance_payload(engine.config)
         stored_payload = json.loads(
             Path(run_row["output_path"]).read_text(encoding="utf-8")
         )

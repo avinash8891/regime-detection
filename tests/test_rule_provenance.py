@@ -1,10 +1,11 @@
 from __future__ import annotations
 
-from regime_detection.config import load_default_regime_config
+from regime_detection.config import load_default_regime_config, load_regime_config
 from regime_detection.rule_provenance import (
     RULE_PROVENANCE,
     business_scalar_config_paths,
     provenance_by_key,
+    rule_provenance_payload,
 )
 
 
@@ -51,3 +52,12 @@ def test_rule_provenance_entries_are_mechanically_traceable() -> None:
             "input_contract",
             "model_parameter",
         }
+
+
+def test_rule_provenance_payload_uses_supplied_config() -> None:
+    cfg = load_regime_config("tests/fixtures/configs/core3-v2-fast.yaml")
+
+    payload = rule_provenance_payload(config=cfg)
+
+    assert "config.monetary_pressure_v2.enabled" not in payload
+    assert "config.monetary_pressure_state.max_unknown_freeze_days" not in payload

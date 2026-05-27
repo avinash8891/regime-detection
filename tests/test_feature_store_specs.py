@@ -256,12 +256,17 @@ def test_monetary_resolve_missing_config_returns_unavailable(
     resolved = spec.resolve(v1_minimal_state)
 
     assert isinstance(resolved, _Unavailable)
-    assert "monetary_pressure_v2_config" in resolved.missing_inputs
+    assert resolved.missing_inputs == ()
 
 
-def test_monetary_spec_policy_raise_matches_legacy() -> None:
+def test_monetary_spec_policy_is_none_so_v1_runs_stay_safe() -> None:
+    """monetary_pressure_v2 is OPTIONAL — when unconfigured, classification
+    coverage must mark the axis safe (policy="none"). The
+    configured-but-missing-data case is caught upstream by the
+    ClassifyRequest input-contract validator (engine.py:259), which raises
+    before the feature store is built."""
     spec = _spec_by_name("monetary")
-    assert spec.policy == "raise"
+    assert spec.policy == "none"
     assert spec.report is True
     # required_inputs first slot is "macro_series", then 3 macro keys
     assert spec.required_inputs[0] == "macro_series"

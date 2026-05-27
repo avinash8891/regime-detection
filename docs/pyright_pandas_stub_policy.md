@@ -4,11 +4,21 @@ Pyright strict coverage is ratcheted module by module. Known pandas-stub
 surfaces may use narrow `# pyright: ignore[reportUnknownMemberType]` comments
 when the value is immediately normalized into a domain type.
 
-Current business-logic ratchet includes:
+Current business-logic ratchet includes (see `[tool.pyright].include` in
+`pyproject.toml` for the authoritative list):
 
 - `src/regime_detection/engine.py`
 - `src/regime_detection/models.py`
 - `src/regime_detection/axis_series.py`
+- `src/regime_detection/feature_store.py`
+- `src/regime_detection/feature_store_runtime.py`
+- `src/regime_detection/timeline.py`
+- `src/regime_detection/classification_coverage.py`
+- `src/regime_detection/rule_provenance.py`
+- `src/regime_detection/observability.py`
+- `src/regime_detection/loaders.py`
+- `scripts/detect_flaky_tests.py`
+- `scripts/validate_agents_md.py`
 
 New strict modules should be added only with a matching test or contract check
 that prevents accidental removal from the include set.
