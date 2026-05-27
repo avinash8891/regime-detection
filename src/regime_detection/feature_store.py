@@ -774,6 +774,21 @@ def _resolve_trend_character(
     }
 
 
+def _build_volatility(
+    close: pd.Series, vix_proxy_close: pd.Series | None
+) -> VolatilityFeatures:
+    return compute_volatility_features(close=close, vix_proxy_close=vix_proxy_close)
+
+
+def _resolve_volatility(
+    state: _FeatureStoreBuildState,
+) -> dict[str, object]:
+    return {
+        "close": state.spy_close,
+        "vix_proxy_close": state.context.vix_proxy_close,
+    }
+
+
 _FEATURE_SPECS: tuple[FeatureSpec[object, _FeatureStoreBuildState], ...] = (
     FeatureSpec(
         name="trend_direction",
@@ -790,6 +805,14 @@ _FEATURE_SPECS: tuple[FeatureSpec[object, _FeatureStoreBuildState], ...] = (
         resolve=_resolve_trend_character,
         build=_build_trend_character,
         store=lambda s, v: setattr(s, "trend_character", v),
+    ),
+    FeatureSpec(
+        name="volatility",
+        policy="raise",
+        required_inputs=("spy_ohlcv.close",),
+        resolve=_resolve_volatility,
+        build=_build_volatility,
+        store=lambda s, v: setattr(s, "volatility", v),
     ),
 )
 
