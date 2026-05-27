@@ -1,0 +1,22 @@
+tests/test_v2_gate_scripts.py
+  s_cb8e623f69c1c4::t_759a6bbfbf1d30 117-143
+docs/v2_slice_gate_checklist.md
+  s_cb8e623f69c1c4::t_4355379973f9d5 42,52-54
+  s_cb8e623f69c1c4::t_759a6bbfbf1d30 43,48
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "6527190b26eed7f1fa1d9915ff9d19d00e3d3cab",
+  "prompts": {},
+  "sessions": {
+    "s_cb8e623f69c1c4": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019e6a91-393c-7db2-b2df-81b8e4e36007",
+        "model": "gpt-5.5"
+      },
+      "human_author": null
+    }
+  }
+}
