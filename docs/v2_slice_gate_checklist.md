@@ -39,19 +39,20 @@ A slice = one of the ten units listed in v2 spec §8 (Network Fragility, Layer 1
 
 ### 6. v2 §9.1 performance gate
 
-- [ ] `scripts/run_historical_walkforward.py --engine-profile both` run completed over ≥1 year of out-of-sample NYSE sessions.
-- [ ] `scripts/run_v2_performance_gate.py` (or equivalent gate evaluator) reports `passed=True` on `evaluate_v2_gate(v1_metrics=..., v2_metrics=...)` with at least one of:
+- [x] `scripts/run_v2_walkforward_gate.py` completed over ≥1 year of out-of-sample NYSE sessions. Evidence: `docs/verification/v2_walkforward_perf_gate.md` covers 2025-02-07 → 2026-05-08 (314 NYSE sessions), with 0 session errors.
+- [ ] `evaluate_v2_gate(v1_metrics=..., v2_metrics=...)` reports `passed=True` with at least one of:
   - `LOWER_DRAWDOWN`
   - `HIGHER_SHARPE`
   - `EARLIER_CRISIS_DETECTION`
   - `LOWER_FALSE_SWITCH_RATE`
-- [ ] Gate output committed to `docs/verification/v2_slice_<n>_perf_gate.md` with v1 vs v2 metric tables.
+- Evidence status: `docs/verification/v2_walkforward_perf_gate.md` records v1-vs-v2 wire/evidence preconditions only; `docs/verification/pr27_slice_gate_evidence.md` explicitly tracks the strategy-PnL gate as partial until downstream drawdown / Sharpe / crisis-detection lag / false-switch metrics are evaluated.
+- [x] Gate output committed to `docs/verification/v2_walkforward_perf_gate.md` with v1 vs v2 wire metric tables.
 
 ### 7. v2 §9.3 shadow A/B (post-walkforward, pre-routing)
 
-- [ ] `scripts/run_shadow_regime.py --engine-profile both` has run on 60 consecutive NYSE sessions.
-- [ ] `scripts/run_v1_v2_diff_report.py` output reviewed: zero unexpected wire diffs in v1 fields; v2 enrichments match expectations.
-- [ ] Any disagreement day has a documented rationale in `docs/verification/v2_slice_<n>_disagreements.md`.
+- [x] `scripts/run_v2_shadow_ab_gate.py` has run on 60 consecutive NYSE sessions. Evidence: `docs/verification/v2_shadow_ab_60session.md` covers 2026-02-12 → 2026-05-08 (60 NYSE sessions), with 0 session errors.
+- [ ] `scripts/run_v2_shadow_ab_gate.py` output reviewed: zero unexpected wire diffs in v1 fields; v2 enrichments match expectations. Current evidence: `docs/verification/v2_shadow_ab_60session.md` reports 0 disagreements for `trend_direction`, `trend_character`, `volatility_state`, `breadth_state`, and `transition_risk_state`, but `transition_risk_score`, `agent_routing`, and `volume_liquidity_state` have 0 shadow activations.
+- [ ] Any disagreement day or unresolved enrichment gap has a documented rationale in `docs/verification/v2_slice_<n>_disagreements.md`. Current status: `docs/verification/pr27_slice_gate_evidence.md` tracks §9.3 as partial until the remaining activation gaps are resolved.
 
 ### 8. Documentation
 

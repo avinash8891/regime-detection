@@ -114,6 +114,33 @@ def test_gate_scripts_fail_on_session_errors_unless_explicitly_allowed(
     )
 
 
+def test_shadow_ab_v1_label_drift_is_counted_as_disagreement() -> None:
+    session = pd.Timestamp("2026-05-12").date()
+    counts, examples = run_v2_shadow_ab_gate._compute_v1_disagreements(
+        {
+            session: {
+                "trend_direction": "bull",
+                "trend_character": "trending",
+                "volatility_state": "normal_vol",
+                "breadth_state": "healthy_breadth",
+                "transition_risk_state": "stable",
+            }
+        },
+        {
+            session: {
+                "trend_direction": "bear",
+                "trend_character": "trending",
+                "volatility_state": "normal_vol",
+                "breadth_state": "healthy_breadth",
+                "transition_risk_state": "stable",
+            }
+        },
+    )
+
+    assert counts["trend_direction"] == 1
+    assert examples["trend_direction"] == [(session, "bull", "bear")]
+
+
 @pytest.mark.parametrize(
     ("module", "argv_base"),
     [
