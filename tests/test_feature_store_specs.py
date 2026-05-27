@@ -380,3 +380,26 @@ def test_clustering_spec_required_inputs_matches_legacy() -> None:
     )
     assert spec.policy == "none"
     assert spec.report is True
+
+
+def test_credit_funding_resolve_missing_config_returns_unavailable(
+    v1_minimal_state: _FeatureStoreBuildState,
+) -> None:
+    from regime_detection.feature_store_runtime import _Unavailable
+
+    spec = _spec_by_name("credit_funding")
+    resolved = spec.resolve(v1_minimal_state)
+
+    assert isinstance(resolved, _Unavailable)
+    assert "credit_funding_config" in resolved.missing_inputs
+
+
+def test_credit_funding_spec_required_inputs_matches_legacy() -> None:
+    spec = _spec_by_name("credit_funding")
+    assert spec.required_inputs == (
+        "credit_funding_config",
+        "cross_asset_closes",
+        "macro_series",
+    )
+    assert spec.policy == "none"
+    assert spec.report is True

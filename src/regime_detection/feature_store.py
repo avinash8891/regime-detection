@@ -360,35 +360,6 @@ def _build_news_sentiment_score_series(
     return score
 
 
-def _build_credit_funding_feature(state: _FeatureStoreBuildState) -> None:
-    if (
-        state.credit_funding_config is None
-        or state.context.cross_asset_closes is None
-        or state.context.macro_series is None
-        or not all(k in state.context.cross_asset_closes for k in _CF_CROSS_ASSET_KEYS)
-        or not all(k in state.context.macro_series for k in _CF_MACRO_KEYS)
-    ):
-        state.credit_funding = None
-        return
-    nan_oas = pd.Series(float("nan"), index=state.spy_close.index)
-    state.credit_funding = compute_credit_funding_features(
-        hyg_close=state.context.cross_asset_closes[_CF_HYG_KEY],
-        lqd_close=state.context.cross_asset_closes[_CF_LQD_KEY],
-        tlt_close=state.context.cross_asset_closes[_CF_TLT_KEY],
-        kre_close=state.context.cross_asset_closes[_CF_KRE_KEY],
-        spy_close=state.spy_close,
-        sofr=state.context.macro_series[_CF_SOFR_KEY],
-        iorb=state.context.macro_series[_CF_IORB_KEY],
-        nfci_weekly=state.context.macro_series[_CF_NFCI_KEY],
-        broad_usd_index=state.context.macro_series[_CF_BROAD_USD_KEY],
-        hy_oas=state.context.macro_series.get(_CF_HY_OAS_KEY, nan_oas),
-        ig_oas=state.context.macro_series.get(_CF_IG_OAS_KEY, nan_oas),
-        config=state.credit_funding_config.rules,
-        fedfunds=state.context.macro_series.get(_CF_FEDFUNDS_KEY),
-        ioer_legacy=state.context.macro_series.get(_CF_IOER_LEGACY_KEY),
-    )
-
-
 def _build_inflation_growth_feature(state: _FeatureStoreBuildState) -> None:
     if (
         state.inflation_growth_config is None
@@ -893,6 +864,78 @@ def _resolve_clustering(
     }
 
 
+def _build_credit_funding(
+    hyg_close: pd.Series,
+    lqd_close: pd.Series,
+    tlt_close: pd.Series,
+    kre_close: pd.Series,
+    spy_close: pd.Series,
+    sofr: pd.Series,
+    iorb: pd.Series,
+    nfci_weekly: pd.Series,
+    broad_usd_index: pd.Series,
+    hy_oas: pd.Series,
+    ig_oas: pd.Series,
+    config,  # CreditFundingConfig.rules — let pyright infer; or import the type
+    fedfunds: pd.Series | None,
+    ioer_legacy: pd.Series | None,
+) -> CreditFundingFeatures:
+    return compute_credit_funding_features(
+        hyg_close=hyg_close,
+        lqd_close=lqd_close,
+        tlt_close=tlt_close,
+        kre_close=kre_close,
+        spy_close=spy_close,
+        sofr=sofr,
+        iorb=iorb,
+        nfci_weekly=nfci_weekly,
+        broad_usd_index=broad_usd_index,
+        hy_oas=hy_oas,
+        ig_oas=ig_oas,
+        config=config,
+        fedfunds=fedfunds,
+        ioer_legacy=ioer_legacy,
+    )
+
+
+def _resolve_credit_funding(
+    state: _FeatureStoreBuildState,
+) -> dict[str, object] | _Unavailable:
+    missing: list[str] = []
+    if state.credit_funding_config is None:
+        missing.append("credit_funding_config")
+        return _Unavailable(missing_inputs=tuple(missing))
+    cross_missing = _missing_cross_asset_keys(
+        state.context.cross_asset_closes, tuple(_CF_CROSS_ASSET_KEYS)
+    )
+    macro_missing = _missing_macro_keys(
+        state.context.macro_series, tuple(_CF_MACRO_KEYS)
+    )
+    missing.extend(cross_missing)
+    missing.extend(macro_missing)
+    if missing:
+        return _Unavailable(missing_inputs=tuple(missing))
+    assert state.context.cross_asset_closes is not None
+    assert state.context.macro_series is not None
+    nan_oas = pd.Series(float("nan"), index=state.spy_close.index)
+    return {
+        "hyg_close": state.context.cross_asset_closes[_CF_HYG_KEY],
+        "lqd_close": state.context.cross_asset_closes[_CF_LQD_KEY],
+        "tlt_close": state.context.cross_asset_closes[_CF_TLT_KEY],
+        "kre_close": state.context.cross_asset_closes[_CF_KRE_KEY],
+        "spy_close": state.spy_close,
+        "sofr": state.context.macro_series[_CF_SOFR_KEY],
+        "iorb": state.context.macro_series[_CF_IORB_KEY],
+        "nfci_weekly": state.context.macro_series[_CF_NFCI_KEY],
+        "broad_usd_index": state.context.macro_series[_CF_BROAD_USD_KEY],
+        "hy_oas": state.context.macro_series.get(_CF_HY_OAS_KEY, nan_oas),
+        "ig_oas": state.context.macro_series.get(_CF_IG_OAS_KEY, nan_oas),
+        "config": state.credit_funding_config.rules,
+        "fedfunds": state.context.macro_series.get(_CF_FEDFUNDS_KEY),
+        "ioer_legacy": state.context.macro_series.get(_CF_IOER_LEGACY_KEY),
+    }
+
+
 def _resolve_realized_vol_21d(
     state: _FeatureStoreBuildState,
 ) -> dict[str, object] | _Unavailable:
@@ -1102,11 +1145,18 @@ _FEATURE_SPECS: tuple[FeatureSpec[object, _FeatureStoreBuildState], ...] = (
         build=_build_clustering,
         store=lambda s, v: setattr(s, "clustering", v),
     ),
+    FeatureSpec(
+        name="credit_funding",
+        policy="none",
+        required_inputs=("credit_funding_config", "cross_asset_closes", "macro_series"),
+        resolve=_resolve_credit_funding,
+        build=_build_credit_funding,
+        store=lambda s, v: setattr(s, "credit_funding", v),
+    ),
 )
 
 
 _FEATURE_STORE_BUILDERS: tuple[_FeatureStoreBuilder, ...] = (
-    _FeatureStoreBuilder("credit_funding", _build_credit_funding_feature),
     _FeatureStoreBuilder("inflation_growth", _build_inflation_growth_feature),
     _FeatureStoreBuilder("change_point", _build_change_point_feature),
 )
@@ -1167,20 +1217,11 @@ def _availability(
 def _build_feature_availability_report(
     state: _FeatureStoreBuildState,
 ) -> dict[str, FeatureAvailability]:
-    credit_config_missing = (
-        () if state.credit_funding_config is not None else ("credit_funding_config",)
-    )
     inflation_config_missing = (
         ()
         if state.inflation_growth_config is not None
         else ("inflation_growth_config",)
     )
-
-    credit_missing = ()
-    if state.credit_funding_config is not None:
-        credit_missing = _missing_cross_asset_keys(
-            state.context.cross_asset_closes, tuple(_CF_CROSS_ASSET_KEYS)
-        ) + _missing_macro_keys(state.context.macro_series, tuple(_CF_MACRO_KEYS))
 
     inflation_missing = ()
     if state.inflation_growth_config is not None:
@@ -1199,17 +1240,6 @@ def _build_feature_availability_report(
                 if state.context.config.change_point is not None
                 else ("change_point_config",)
             ),
-        ),
-        "credit_funding": _availability(
-            feature="credit_funding",
-            value=state.credit_funding,
-            policy="none",
-            required_inputs=(
-                "credit_funding_config",
-                "cross_asset_closes",
-                "macro_series",
-            ),
-            missing_inputs=credit_config_missing + credit_missing,
         ),
         "inflation_growth": _availability(
             feature="inflation_growth",
