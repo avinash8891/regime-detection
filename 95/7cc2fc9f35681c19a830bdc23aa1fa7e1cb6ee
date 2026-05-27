@@ -1,0 +1,19 @@
+src/regime_data_fetch/acquisition_consolidation.py
+  s_874a3142b8386c::t_a50c619d0d3c2e 233-241,248,251-271,285,287-295
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "957cc2fc9f35681c19a830bdc23aa1fa7e1cb6ee",
+  "prompts": {},
+  "sessions": {
+    "s_874a3142b8386c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "04c950f9-e520-447c-bea9-a46bacc12b0c",
+        "model": "claude-opus-4-7"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}
