@@ -25,7 +25,9 @@ from regime_detection.config import (
     BreadthV2Config,
     CentralBankTextConfig,
     CreditFundingConfig,
+    CreditFundingRulesConfig,
     InflationGrowthConfig,
+    InflationGrowthRulesConfig,
     MonetaryPressureV2FeaturesConfig,
     NetworkFragilityConfig,
     NewsSentimentConfig,
@@ -608,8 +610,8 @@ def _resolve_volatility_state_v2(
 def _build_breadth_state_v2(
     sector_etf_closes: dict[str, pd.Series],
     config: BreadthV2Config,
-    pit_constituent_intervals: object,
-    constituent_ohlcv: object,
+    pit_constituent_intervals: pd.DataFrame | None,
+    constituent_ohlcv: dict[str, pd.DataFrame] | None,
 ) -> BreadthV2Features:
     return compute_breadth_v2_features(
         sector_etf_closes=sector_etf_closes,
@@ -818,7 +820,7 @@ def _build_credit_funding(
     broad_usd_index: pd.Series,
     hy_oas: pd.Series,
     ig_oas: pd.Series,
-    config,  # CreditFundingConfig.rules — let pyright infer; or import the type
+    config: CreditFundingRulesConfig,
     fedfunds: pd.Series | None,
     ioer_legacy: pd.Series | None,
 ) -> CreditFundingFeatures:
@@ -889,10 +891,10 @@ def _build_inflation_growth(
     xli_close: pd.Series,
     xlp_close: pd.Series,
     xlu_close: pd.Series,
-    config,
+    config: InflationGrowthRulesConfig,
     cpi_nowcast: pd.Series | None,
     aggregate_forward_eps_revision: pd.Series | None,
-    cpi_first_release,
+    cpi_first_release: pd.Series | None,
     use_first_release_cpi_when_available: bool,
 ) -> InflationGrowthFeatures:
     return compute_inflation_growth_features(
@@ -1197,7 +1199,7 @@ _FEATURE_SPECS: tuple[FeatureSpec[object, _FeatureStoreBuildState], ...] = (
         policy="none",
         required_inputs=("credit_funding_config", "cross_asset_closes", "macro_series"),
         resolve=_resolve_credit_funding,
-        build=_build_credit_funding,
+        build=_build_credit_funding,  # pyright: ignore[reportUnknownArgumentType]
         store=lambda s, v: setattr(s, "credit_funding", v),
     ),
     FeatureSpec(
@@ -1209,7 +1211,7 @@ _FEATURE_SPECS: tuple[FeatureSpec[object, _FeatureStoreBuildState], ...] = (
             "macro_series",
         ),
         resolve=_resolve_inflation_growth,
-        build=_build_inflation_growth,
+        build=_build_inflation_growth,  # pyright: ignore[reportUnknownArgumentType]
         store=lambda s, v: setattr(s, "inflation_growth", v),
         report=True,
     ),
