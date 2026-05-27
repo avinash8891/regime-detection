@@ -129,7 +129,11 @@ def test_availability_dict_pure_v1_context_snapshot(
             "available": False,
             "policy": "none",
             "reason": "missing_required_inputs",
-            "required_inputs": ("hmm_config", "volume_liquidity_v2", "network_fragility"),
+            "required_inputs": (
+                "hmm_config",
+                "volume_liquidity_v2",
+                "network_fragility",
+            ),
             "missing_inputs": ("volume_liquidity_v2", "network_fragility"),
         },
         "clustering": {

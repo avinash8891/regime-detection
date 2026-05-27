@@ -16,9 +16,7 @@ def test_every_feature_store_field_has_a_builder_or_spec() -> None:
         b.name for b in _FEATURE_STORE_BUILDERS
     }
     missing = declared - registered
-    assert not missing, (
-        f"FeatureStore fields with no spec/builder: {sorted(missing)}"
-    )
+    assert not missing, f"FeatureStore fields with no spec/builder: {sorted(missing)}"
     # Note: registered may contain intermediate state names (e.g. sentiment_score,
     # realized_vol_21d) that are not FeatureStore fields. That is expected — those
     # features populate _FeatureStoreBuildState only and feed downstream consumers

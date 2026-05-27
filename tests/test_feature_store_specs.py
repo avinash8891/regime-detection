@@ -66,7 +66,9 @@ def test_trend_character_resolve_returns_ohlcv_kwargs_v1_path(
     # tc_v2_config is passed through from state.context.config — may be None or a
     # TrendCharacterV2Config depending on which RegimeConfig is in scope. Assert
     # identity rather than None so the test stays correct regardless of config defaults.
-    assert resolved["tc_v2_config"] is v1_minimal_state.context.config.trend_character_v2
+    assert (
+        resolved["tc_v2_config"] is v1_minimal_state.context.config.trend_character_v2
+    )
 
 
 def test_volatility_resolve_returns_close_and_vix_proxy(
