@@ -1,0 +1,21 @@
+tests/test_boundary_policies.py
+  s_cad40512569b61::t_a343b42c14713c 1-64
+src/regime_detection/boundary_policies.py
+  s_cad40512569b61::t_b46d633ecbc532 1-221
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "44841e3e3f8077cca9bc04e2a9b8ea33d8bc76a9",
+  "prompts": {},
+  "sessions": {
+    "s_cad40512569b61": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019e67ba-fdfb-7e72-a86b-68d4b7034df0",
+        "model": "gpt-5.5"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}
