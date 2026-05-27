@@ -36,6 +36,7 @@ from regime_detection.axis_builders.staleness import (
 )
 from regime_detection.market_context import MarketContext
 from regime_detection.models import (
+    CreditFundingEvidencePayload,
     CreditFundingOutput,
     DataQuality,
 )
@@ -384,7 +385,7 @@ def _with_effective_credit_evidence(
     source_used: str,
     agreement_status: str,
 ) -> CreditFundingOutput:
-    evidence = dict(chosen.evidence)
+    evidence = chosen.evidence.model_dump(exclude_none=True)
     evidence.update(
         {
             "source_used": source_used,
@@ -405,7 +406,9 @@ def _with_effective_credit_evidence(
             ),
         }
     )
-    return chosen.model_copy(update={"evidence": evidence})
+    return chosen.model_copy(
+        update={"evidence": CreditFundingEvidencePayload.model_validate(evidence)}
+    )
 
 
 def resolve_credit_funding_effective_output(

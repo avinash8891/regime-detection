@@ -10,7 +10,11 @@ from pydantic import ValidationError
 
 from regime_detection.config import load_default_regime_config
 from regime_detection.market_context import MarketContext
-from regime_detection.models import EventCalendarOutput, TransitionRiskOutput
+from regime_detection.models import (
+    EventCalendarOutput,
+    TransitionRiskEvidencePayload,
+    TransitionRiskOutput,
+)
 from regime_detection.axis_series import AxisSeriesBundle, AxisSeriesResult
 from regime_detection.feature_store import FeatureStore
 from regime_detection.transition_risk import (
@@ -72,6 +76,24 @@ def test_transition_risk_uses_score_band_as_base_state() -> None:
     ]
     assert output.triggered_rules == []
     assert output.data_quality.status == "ok"
+
+
+def test_transition_risk_composer_emits_typed_evidence_payload() -> None:
+    output = compose_transition_risk_output(
+        score=ComposedTransitionScore(
+            score=0.64,
+            interpretation="transition_warning",
+            components={"breadth_deterioration": 0.80},
+            macro_event_labels=("fed_week",),
+        ),
+        flags=_flags(stable_changed_today=True, axis_switch_count=2),
+    )
+
+    assert type(output.evidence) is TransitionRiskEvidencePayload
+    assert output.evidence.triggered_rules == []
+    assert output.evidence.stable_changed_today is True
+    assert output.evidence.axis_switch_count == 2
+    assert output.evidence.macro_event_labels == ["fed_week"]
 
 
 def test_transition_risk_hard_override_wins_over_generic_score_state() -> None:

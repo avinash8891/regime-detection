@@ -76,6 +76,61 @@ class VolumeLiquidityEvidencePayload(EvidencePayload):
     """Dict-compatible payload for volume/liquidity V2 rule evidence."""
 
 
+class CreditFundingEvidencePayload(BaseModel):
+    """Dict-compatible typed evidence payload for credit/funding decisions."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    rule_evidence: dict[str, Any] | None = None
+    reason: str | None = None
+    spread_source: str | None = None
+    nfci_daily_carried: float | None = None
+    kre_spy_slope_63d: float | None = None
+    bias_warning_code: str | None = None
+    data_quality_freeze: bool | None = None
+    source_used: str | None = None
+    agreement_status: str | None = None
+    oas_label: str | None = None
+    proxy_label: str | None = None
+    oas_classification_status: ClassificationStatus | None = None
+    proxy_classification_status: ClassificationStatus | None = None
+    oas_spread_source: str | None = None
+    proxy_spread_source: str | None = None
+
+    def get(self, key: str, default: Any = None) -> Any:
+        return self.model_dump(exclude_none=True).get(key, default)
+
+    def __getitem__(self, key: str) -> Any:
+        return self.model_dump(exclude_none=True)[key]
+
+    def __contains__(self, key: object) -> bool:
+        return key in self.model_dump(exclude_none=True)
+
+    def __iter__(self) -> Iterator[str]:
+        return iter(self.model_dump(exclude_none=True))
+
+    def __len__(self) -> int:
+        return len(self.model_dump(exclude_none=True))
+
+    def items(self) -> Any:
+        return self.model_dump(exclude_none=True).items()
+
+    def keys(self) -> Any:
+        return self.model_dump(exclude_none=True).keys()
+
+    def values(self) -> Any:
+        return self.model_dump(exclude_none=True).values()
+
+    def __eq__(self, other: object) -> bool:
+        if isinstance(other, CreditFundingEvidencePayload):
+            return self.model_dump(exclude_none=True) == other.model_dump(
+                exclude_none=True
+            )
+        if isinstance(other, dict):
+            return self.model_dump(exclude_none=True) == other
+        return NotImplemented
+
+
 class TransitionRiskEvidencePayload(BaseModel):
     """Dict-compatible typed evidence payload for transition-risk decisions."""
 
@@ -341,6 +396,7 @@ class CreditFundingOutput(AxisOutput):
     raw_label: CreditFundingLabel
     stable_label: CreditFundingLabel
     active_label: CreditFundingLabel
+    evidence: CreditFundingEvidencePayload
 
 
 MonetaryPressureV2Label = Literal[

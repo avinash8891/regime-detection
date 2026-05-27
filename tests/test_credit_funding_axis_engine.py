@@ -23,7 +23,11 @@ from regime_detection.axis_series import (
     build_credit_funding_proxy_axis_series,
     resolve_credit_funding_effective_output,
 )
-from regime_detection.models import CreditFundingOutput, DataQuality
+from regime_detection.models import (
+    CreditFundingEvidencePayload,
+    CreditFundingOutput,
+    DataQuality,
+)
 from regime_detection.calendar import nyse_sessions_between
 from regime_detection.config import (
     CreditFundingRulesConfig,
@@ -448,6 +452,29 @@ def test_effective_credit_funding_uses_higher_risk_when_oas_and_proxy_diverge() 
     assert effective.evidence["agreement_status"] == "divergent"
     assert effective.evidence["oas_label"] == "credit_calm"
     assert effective.evidence["proxy_label"] == "spread_widening"
+
+
+def test_credit_funding_output_uses_typed_evidence_payload() -> None:
+    output = _credit_output(label="credit_calm", source="ice_bofa_oas")
+
+    assert type(output.evidence) is CreditFundingEvidencePayload
+    assert output.evidence.spread_source == "ice_bofa_oas"
+    assert output.evidence["spread_source"] == "ice_bofa_oas"
+
+
+def test_effective_credit_funding_evidence_stays_typed_after_merge() -> None:
+    oas = _credit_output(label="credit_calm", source="ice_bofa_oas")
+    proxy = _credit_output(
+        label="spread_widening",
+        source="tlt_total_return_differential",
+    )
+
+    effective = resolve_credit_funding_effective_output(oas=oas, proxy=proxy)
+
+    assert effective is not None
+    assert type(effective.evidence) is CreditFundingEvidencePayload
+    assert effective.evidence.source_used == "proxy_higher_risk"
+    assert effective.evidence.agreement_status == "divergent"
 
 
 def test_effective_credit_funding_falls_back_to_proxy_when_oas_unavailable() -> None:
