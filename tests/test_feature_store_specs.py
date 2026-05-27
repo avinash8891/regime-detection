@@ -47,9 +47,9 @@ def test_trend_direction_resolve_returns_spy_close_kwargs(
     spec = _spec_by_name("trend_direction")
     resolved = spec.resolve(v1_minimal_state)
 
-    assert isinstance(resolved, dict), (
-        f"trend_direction.resolve returned {type(resolved).__name__}, expected dict"
-    )
+    assert isinstance(
+        resolved, dict
+    ), f"trend_direction.resolve returned {type(resolved).__name__}, expected dict"
     assert set(resolved.keys()) == {"spy_close"}
     assert resolved["spy_close"] is v1_minimal_state.spy_close
 
