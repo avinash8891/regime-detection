@@ -359,18 +359,6 @@ def _build_news_sentiment_score_series(
     return score
 
 
-def _build_trend_direction_v2_feature(state: _FeatureStoreBuildState) -> None:
-    if state.trend_direction_v2_config is None:
-        state.trend_direction_v2 = None
-        return
-    state.trend_direction_v2 = compute_trend_v2_features(
-        state.spy_close,
-        config=state.trend_direction_v2_config,
-        sentiment_score=state.sentiment_score,
-        news_sentiment_score=state.news_sentiment_score,
-    )
-
-
 def _build_network_fragility_feature(state: _FeatureStoreBuildState) -> None:
     if state.context.sector_etf_closes is None:
         state.network_fragility = None
@@ -784,6 +772,33 @@ def _resolve_news_sentiment_score(
     }
 
 
+def _build_trend_direction_v2(
+    spy_close: pd.Series,
+    config: TrendDirectionV2Config,
+    sentiment_score: pd.Series | None,
+    news_sentiment_score: pd.Series | None,
+) -> TrendDirectionV2Features:
+    return compute_trend_v2_features(
+        spy_close,
+        config=config,
+        sentiment_score=sentiment_score,
+        news_sentiment_score=news_sentiment_score,
+    )
+
+
+def _resolve_trend_direction_v2(
+    state: _FeatureStoreBuildState,
+) -> dict[str, object] | _Unavailable:
+    if state.trend_direction_v2_config is None:
+        return _Unavailable(missing_inputs=("trend_direction_v2_config",))
+    return {
+        "spy_close": state.spy_close,
+        "config": state.trend_direction_v2_config,
+        "sentiment_score": state.sentiment_score,
+        "news_sentiment_score": state.news_sentiment_score,
+    }
+
+
 _FEATURE_SPECS: tuple[FeatureSpec[object, _FeatureStoreBuildState], ...] = (
     FeatureSpec(
         name="trend_direction",
@@ -843,11 +858,18 @@ _FEATURE_SPECS: tuple[FeatureSpec[object, _FeatureStoreBuildState], ...] = (
         store=lambda s, v: setattr(s, "news_sentiment_score", v),
         report=False,
     ),
+    FeatureSpec(
+        name="trend_direction_v2",
+        policy="none",
+        required_inputs=("trend_direction_v2_config", "spy_ohlcv.close"),
+        resolve=_resolve_trend_direction_v2,
+        build=_build_trend_direction_v2,
+        store=lambda s, v: setattr(s, "trend_direction_v2", v),
+    ),
 )
 
 
 _FEATURE_STORE_BUILDERS: tuple[_FeatureStoreBuilder, ...] = (
-    _FeatureStoreBuilder("trend_direction_v2", _build_trend_direction_v2_feature),
     _FeatureStoreBuilder("network_fragility", _build_network_fragility_feature),
     _FeatureStoreBuilder("volatility_state_v2", _build_volatility_state_v2_feature),
     _FeatureStoreBuilder("breadth_state_v2", _build_breadth_state_v2_feature),
@@ -987,17 +1009,6 @@ def _build_feature_availability_report(
                 ()
                 if state.context.sector_etf_closes is not None
                 else ("sector_etf_closes",)
-            ),
-        ),
-        "trend_direction_v2": _availability(
-            feature="trend_direction_v2",
-            value=state.trend_direction_v2,
-            policy="none",
-            required_inputs=("trend_direction_v2_config", "spy_ohlcv.close"),
-            missing_inputs=(
-                ()
-                if state.trend_direction_v2_config is not None
-                else ("trend_direction_v2_config",)
             ),
         ),
         "volatility_state_v2": _availability(
