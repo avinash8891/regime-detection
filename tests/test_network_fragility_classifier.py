@@ -48,7 +48,9 @@ from regime_detection.network_fragility import NetworkFragilityFeatures
 from regime_detection.volatility_state import VolatilityFeatures
 from regime_detection.network_fragility_rules import (
     NETWORK_FRAGILITY_RISK_RANK,
+    NetworkFragilityRuleInputs,
     NetworkFragilityLabel,
+    evaluate_rules_with_evidence,
 )
 
 # ---------- Synthetic full-universe fixtures ---------------------------------
@@ -61,6 +63,90 @@ from regime_detection.network_fragility_rules import (
 _TRAINING_SESSIONS = 1100
 _LAST_SESSION = pd.Timestamp("2025-04-30")
 _SEED = 20260513
+
+
+def test_low_correlation_low_dispersion_emits_decorrelated_calm() -> None:
+    result = evaluate_rules_with_evidence(
+        inputs=NetworkFragilityRuleInputs(
+            avg_pairwise_corr_percentile_504d=0.20,
+            largest_eigenvalue_share_percentile_504d=0.40,
+            effective_rank_percentile_504d=0.50,
+            avg_pairwise_corr_63d=0.25,
+            largest_eigenvalue_share=0.20,
+            dispersion_ratio_percentile_252d=0.50,
+            absorption_ratio_top3=0.50,
+            avg_pairwise_corr_slope_21d=-0.001,
+            largest_eigenvalue_share_slope_21d=-0.001,
+            effective_rank_stability_21d=0.10,
+            realized_vol_percentile_252d=0.20,
+            realized_vol_21d=0.10,
+            drawdown_21d=0.0,
+            vix_percentile_252d=0.20,
+        ),
+        config=load_default_regime_config().network_fragility.rules,
+        breadth_label="healthy_breadth",
+        volatility_label="normal_vol",
+        credit_funding_label="credit_calm",
+    )
+
+    assert result.label == "decorrelated_calm"
+    assert result.rule_path == "low_corr_low_dispersion"
+
+
+def test_upper_normal_unstable_correlation_emits_rotation_watch() -> None:
+    result = evaluate_rules_with_evidence(
+        inputs=NetworkFragilityRuleInputs(
+            avg_pairwise_corr_percentile_504d=0.65,
+            largest_eigenvalue_share_percentile_504d=0.40,
+            effective_rank_percentile_504d=0.50,
+            avg_pairwise_corr_63d=0.35,
+            largest_eigenvalue_share=0.20,
+            dispersion_ratio_percentile_252d=0.40,
+            absorption_ratio_top3=0.50,
+            avg_pairwise_corr_slope_21d=-0.001,
+            largest_eigenvalue_share_slope_21d=-0.001,
+            effective_rank_stability_21d=0.10,
+            realized_vol_percentile_252d=0.20,
+            realized_vol_21d=0.10,
+            drawdown_21d=0.0,
+            vix_percentile_252d=0.20,
+        ),
+        config=load_default_regime_config().network_fragility.rules,
+        breadth_label="healthy_breadth",
+        volatility_label="normal_vol",
+        credit_funding_label="credit_calm",
+    )
+
+    assert result.label == "rotation_watch"
+    assert result.rule_path == "upper_normal_unstable_rank"
+
+
+def test_low_correlation_high_dispersion_crisis_emits_idiosyncratic_crisis() -> None:
+    result = evaluate_rules_with_evidence(
+        inputs=NetworkFragilityRuleInputs(
+            avg_pairwise_corr_percentile_504d=0.20,
+            largest_eigenvalue_share_percentile_504d=0.40,
+            effective_rank_percentile_504d=0.50,
+            avg_pairwise_corr_63d=0.25,
+            largest_eigenvalue_share=0.20,
+            dispersion_ratio_percentile_252d=0.80,
+            absorption_ratio_top3=0.50,
+            avg_pairwise_corr_slope_21d=-0.001,
+            largest_eigenvalue_share_slope_21d=-0.001,
+            effective_rank_stability_21d=0.10,
+            realized_vol_percentile_252d=0.90,
+            realized_vol_21d=0.30,
+            drawdown_21d=-0.05,
+            vix_percentile_252d=0.90,
+        ),
+        config=load_default_regime_config().network_fragility.rules,
+        breadth_label="healthy_breadth",
+        volatility_label="crisis_vol",
+        credit_funding_label="credit_calm",
+    )
+
+    assert result.label == "idiosyncratic_crisis"
+    assert result.rule_path == "low_corr_high_dispersion_crisis"
 
 
 def _bdate_index(
@@ -239,6 +325,9 @@ def test_network_fragility_risk_rank_matches_v2_spec_3_6():
         "correlation_to_one": 3,
         "systemic_stress_unconfirmed": 3,
         "systemic_stress": 3,
+        "decorrelated_calm": 0,
+        "rotation_watch": 1,
+        "idiosyncratic_crisis": 2,
         "unknown": 2,
     }
 
@@ -250,15 +339,17 @@ def test_default_yaml_loads_deescalation_days_by_label_per_v2_spec_3_7():
     cfg = load_default_regime_config()
     assert cfg.network_fragility is not None
     deesc = cfg.network_fragility.deescalation_days_by_label
-    # `unknown` is absence of signal, not a sticky regime. It must not delay
-    # recovery into a valid classified label; high-risk labels still use their
-    # own hold periods when they are the stable label being left.
+    # `unknown` is data-quality/unpartitioned-rule diagnostic, not a sticky
+    # regime. New valid-data labels define their own hold periods.
     assert deesc == {
         "rising_fragility": 3,
         "correlation_concentration": 3,
         "correlation_to_one": 5,
         "systemic_stress_unconfirmed": 5,
         "systemic_stress": 5,
+        "idiosyncratic_crisis": 3,
+        "rotation_watch": 0,
+        "decorrelated_calm": 0,
         "unknown": 0,
     }
     # Default for labels NOT listed (diversified_normal, stock_picker_dispersion)
@@ -492,11 +583,14 @@ def test_engine_classify_window_emits_network_fragility_labels_on_full_universe(
     # by slice_context_to_recent_sessions. We need that working window to
     # exceed the 504d v2 percentile cold-start with margin so the rules fire
     # on multiple post-warmup days.
+    config = context.config.model_copy(
+        update={"credit_funding": None, "inflation_growth": None}
+    )
     timeline = RegimeEngine().classify_window(
         end_date=_LAST_SESSION.date(),
         market_data=market_data,
         lookback_days=600,
-        config=context.config,
+        config=config,
         event_calendar=pd.DataFrame(columns=["date", "market", "type", "importance"]),
         sector_etf_closes=sector_closes,
         cross_asset_closes=cross_asset_closes,
@@ -541,7 +635,7 @@ def test_engine_classify_window_forces_unknown_when_universe_data_missing():
     market_data = _market_data_from_prices(
         _synthetic_universe_prices(index=_bdate_index())
     )
-    with pytest.raises(RuntimeError, match="transition_risk requires score inputs"):
+    with pytest.raises(ValueError) as excinfo:
         RegimeEngine().classify_window(
             end_date=_LAST_SESSION.date(),
             market_data=market_data,
@@ -552,6 +646,9 @@ def test_engine_classify_window_forces_unknown_when_universe_data_missing():
                 columns=["date", "market", "type", "importance"]
             ),
         )
+    message = str(excinfo.value)
+    assert "ClassifyRequest missing configured V2 inputs" in message
+    assert "network_fragility: sector_etf_closes" in message
 
 
 # ---------- Slice-1 cleanup: I1 + I2 regression tests ------------------------
@@ -669,8 +766,11 @@ def test_classifier_emits_systemic_stress_when_credit_funding_confirms_it():
     )
 
     assert out is not None
-    assert out[context.sessions[-1]].raw_label == "systemic_stress"
-    assert out[context.sessions[-1]].active_label == "systemic_stress"
+    final = out[context.sessions[-1]]
+    assert final.raw_label == "systemic_stress"
+    assert final.active_label == "systemic_stress"
+    assert final.evidence["credit_funding_active_label"] == "credit_stress"
+    assert "credit_funding_data_quality" not in final.evidence
 
 
 def test_classifier_emits_unconfirmed_systemic_stress_when_credit_funding_unavailable():
@@ -731,9 +831,32 @@ def test_classifier_emits_unconfirmed_systemic_stress_when_credit_funding_unavai
     final = out[context.sessions[-1]]
     assert final.raw_label == "systemic_stress"
     assert final.active_label == "systemic_stress"
+    assert final.evidence.credit_funding_active_label is None
     assert (
         final.evidence["rule_evidence"]["rule_reason"] == "credit_funding_unavailable"
     )
+
+
+def test_classifier_treats_unknown_credit_label_as_present_label_not_absent():
+    context, _ = _build_context_with_full_universe()
+    store = build_feature_store(
+        context, network_fragility_config=context.config.network_fragility
+    )
+    breadth = {day: "weak_breadth" for day in context.sessions}
+    volatility = {day: "normal_vol" for day in context.sessions}
+    credit_funding = {day: "unknown" for day in context.sessions}
+
+    out = build_network_fragility_axis_series(
+        context,
+        store,
+        breadth_active_labels_by_date=breadth,
+        volatility_active_labels_by_date=volatility,
+        credit_funding_active_labels_by_date=credit_funding,
+    )
+
+    assert out is not None
+    final = out[context.sessions[-1]]
+    assert final.evidence["credit_funding_active_label"] == "unknown"
 
 
 def test_axis_bundle_threads_credit_funding_into_network_fragility_systemic_stress():
@@ -753,8 +876,12 @@ def test_axis_bundle_threads_credit_funding_into_network_fragility_systemic_stre
         index=idx,
     )
     stressed_spy_ohlcv = context.spy_ohlcv.copy()
-    for col in ["open", "high", "low", "close"]:
-        stressed_spy_ohlcv[col] = stressed_spy_ohlcv[col] * spy_factor
+    stressed_spy_ohlcv = stressed_spy_ohlcv.assign(
+        **{
+            col: stressed_spy_ohlcv[col] * spy_factor
+            for col in ["open", "high", "low", "close"]
+        }
+    )
     stressed_context = context.model_copy(
         update={
             "spy_ohlcv": stressed_spy_ohlcv,

@@ -4,11 +4,13 @@ import datetime as dt
 import sqlite3
 from pathlib import Path
 from typing import Iterable
+from contextlib import closing
 
 import numpy as np
 import pandas as pd
 
 from regime_data_fetch.local_daily_ohlcv_sqlite import EXPECTED_COLUMNS
+from regime_shared.pandas_compat import cow_safe_assign
 
 DAILY_OHLCV_ROWS_TABLE = "daily_ohlcv_rows"
 _REQUIRED_COLUMNS = frozenset(["symbol", "source_file", *EXPECTED_COLUMNS])
@@ -38,7 +40,7 @@ def read_constituent_ohlcv(
     if not ticker_list:
         return {}
 
-    with sqlite3.connect(db_path) as conn:
+    with closing(sqlite3.connect(db_path)) as conn:
         _validate_schema(conn)
 
         placeholders = ",".join("?" for _ in ticker_list)
@@ -54,10 +56,18 @@ def read_constituent_ohlcv(
     if rows.empty:
         return {}
 
-    rows["date"] = pd.to_datetime(rows["date"]).dt.normalize()
-    for col in ("open", "high", "low", "close", "adjusted_close"):
-        rows[col] = rows[col].astype(np.float64)
-    rows["volume"] = rows["volume"].astype(np.int64)
+    rows = cow_safe_assign(
+        rows,
+        {
+            "date": pd.to_datetime(rows["date"]).dt.normalize(),
+            "open": rows["open"].astype(np.float64),
+            "high": rows["high"].astype(np.float64),
+            "low": rows["low"].astype(np.float64),
+            "close": rows["close"].astype(np.float64),
+            "adjusted_close": rows["adjusted_close"].astype(np.float64),
+            "volume": rows["volume"].astype(np.int64),
+        },
+    )
 
     result: dict[str, pd.DataFrame] = {}
     for symbol, group in rows.groupby("symbol", sort=False):

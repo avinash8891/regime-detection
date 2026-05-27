@@ -99,6 +99,12 @@ Every output artifact must preserve:
 - run timestamp
 - input archive path
 
+The machine-readable summary must also include
+`v2_dependency_payload_contracts`. This records the cross-axis payload shape used
+by the run, such as label-only network-fragility inputs and label/status
+transition-score inputs, so operator review can catch semantic drift between
+walk-forward runs.
+
 ## 6. Pass/Fail Criteria
 
 The historical walk-forward passes only if all of the following hold:

@@ -12,7 +12,7 @@ import pandas as pd
 import pytest
 
 from regime_detection.axis_series import build_axis_series_bundle
-from regime_detection.engine import RegimeEngine
+from regime_detection.engine import ClassifyRequest, RegimeEngine
 from regime_detection.feature_store import build_feature_store
 from regime_detection.config import load_default_regime_config
 from regime_detection.fragility_universe import CROSS_ASSET_SYMBOLS, SECTOR_ETFS
@@ -295,7 +295,7 @@ def test_runtime_evidence_fields_use_named_payloads() -> None:
         raw_label="bull",
         stable_label="bull",
         active_label="bull",
-        evidence={"rule": "trend_above_ma", "value": 1.2},
+        evidence={"rule_evidence": {"rule": "trend_above_ma", "value": 1.2}},
         data_quality=dq,
     )
     event_calendar = EventCalendarOutput(
@@ -305,7 +305,7 @@ def test_runtime_evidence_fields_use_named_payloads() -> None:
     )
     volume_liquidity = VolumeLiquidityOutput(
         label="normal_volume",
-        evidence={"volume_zscore": 0.5},
+        evidence={"rule_evidence": {"volume_zscore_20d": 0.5}},
         data_quality=dq,
     )
     transition_risk = TransitionRiskOutput(
@@ -337,12 +337,16 @@ def test_runtime_evidence_fields_use_named_payloads() -> None:
     )
 
     assert isinstance(axis.evidence, AxisEvidencePayload)
-    assert axis.evidence["rule"] == "trend_above_ma"
-    assert axis.model_dump()["evidence"] == {"rule": "trend_above_ma", "value": 1.2}
+    assert axis.evidence["rule_evidence"]["rule"] == "trend_above_ma"
+    assert axis.evidence.model_dump() == {
+        "rule_evidence": {"rule": "trend_above_ma", "value": 1.2}
+    }
     assert event_calendar.model_dump()["primary_label"] == "normal_calendar"
     assert event_calendar.model_dump()["matching_labels"] == ("normal_calendar",)
     assert event_calendar.model_dump()["evidence"] == {"selection_method": "precedence"}
-    assert volume_liquidity.model_dump()["evidence"] == {"volume_zscore": 0.5}
+    assert volume_liquidity.model_dump()["evidence"] == {
+        "rule_evidence": {"volume_zscore_20d": 0.5}
+    }
     assert transition_risk.model_dump()["evidence"] == {
         "triggered_rules": [],
         "stable_changed_today": False,
@@ -368,13 +372,15 @@ def test_classify_window_returns_one_output_per_nyse_trading_day(
     end_date = date(2023, 12, 14)
     market_data = market_df_for_asof(end_date)
 
-    with pytest.raises(RuntimeError, match="transition_risk requires score inputs"):
+    with pytest.raises(ValueError) as excinfo:
         engine.classify_window(
             end_date=end_date,
             market_data=market_data,
             lookback_days=5,
             event_calendar=event_calendar_df,
         )
+    message = str(excinfo.value)
+    assert "ClassifyRequest missing configured V2 inputs" in message
 
 
 def test_classify_window_uses_lookback_days_not_fixed_calendar_span(
@@ -385,13 +391,15 @@ def test_classify_window_uses_lookback_days_not_fixed_calendar_span(
     end_date = date(2023, 12, 14)
     market_data = market_df_for_asof(end_date)
 
-    with pytest.raises(RuntimeError, match="transition_risk requires score inputs"):
+    with pytest.raises(ValueError) as excinfo:
         engine.classify_window(
             end_date=end_date,
             market_data=market_data,
             lookback_days=23,
             event_calendar=event_calendar_df,
         )
+    message = str(excinfo.value)
+    assert "ClassifyRequest missing configured V2 inputs" in message
 
 
 def test_market_context_builds_normalized_series_once(shared_timeline_pipeline) -> None:
@@ -436,12 +444,14 @@ def test_classify_matches_last_output_of_shared_timeline_pipeline(
     event_calendar_df,
 ) -> None:
     engine = RegimeEngine()
-    with pytest.raises(RuntimeError, match="transition_risk requires score inputs"):
+    with pytest.raises(ValueError) as excinfo:
         engine.classify(
             as_of_date=shared_timeline_pipeline["end_date"],
             market_data=shared_timeline_pipeline["market_data"],
             event_calendar=event_calendar_df,
         )
+    message = str(excinfo.value)
+    assert "ClassifyRequest missing configured V2 inputs" in message
 
 
 def test_timeline_output_helper_matches_timeline_output(
@@ -569,14 +579,14 @@ def test_timeline_required_sessions_caps_at_available_history() -> None:
     )
 
 
-def test_classify_delegates_to_classify_window_with_single_day_lookback(
+def test_classify_delegates_to_classify_request_with_single_day_lookback(
     mocker, market_df_for_asof, event_calendar_df
 ) -> None:
     engine = RegimeEngine()
     as_of = date(2023, 12, 14)
     spy = mocker.patch.object(
         engine,
-        "classify_window",
+        "classify_request",
         side_effect=RuntimeError("transition_risk requires score inputs"),
     )
 
@@ -588,9 +598,11 @@ def test_classify_delegates_to_classify_window_with_single_day_lookback(
         )
 
     spy.assert_called_once()
-    assert spy.call_args.kwargs["end_date"] == as_of
-    assert spy.call_args.kwargs["lookback_days"] == 1
-    assert spy.call_args.kwargs["event_calendar"] is event_calendar_df
+    request = spy.call_args.args[0]
+    assert isinstance(request, ClassifyRequest)
+    assert request.end_date == as_of
+    assert request.lookback_days == 1
+    assert request.event_calendar is event_calendar_df
 
 
 def test_timeline_passes_event_calendar_matching_labels_to_strategy_response(
@@ -617,7 +629,9 @@ def test_timeline_passes_event_calendar_matching_labels_to_strategy_response(
         "regime_detection.timeline.build_strategy_response",
         wraps=build_strategy_response,
     )
-    config = _fast_v2_test_config()
+    config = _fast_v2_test_config().model_copy(
+        update={"credit_funding": None, "inflation_growth": None}
+    )
 
     out = engine.classify(
         as_of_date=as_of,

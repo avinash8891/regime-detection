@@ -11,9 +11,14 @@ from typing import TYPE_CHECKING, Any, Final, get_args
 
 import pandas as pd
 
+from regime_detection.config import RegimeConfig
+from regime_detection.dependency_payload_contracts import (
+    dependency_payload_contracts_report as _dependency_payload_contracts_report,
+)
 from regime_detection.feature_store import FeatureStore
 from regime_detection.models import ClassificationStatus
 from regime_detection.models import RegimeOutput, RegimeTimeline
+from regime_detection.rule_provenance import rule_provenance_payload
 from scripts._v2_calibration_helpers import axis_reporting_label as _reporting_label
 
 if TYPE_CHECKING:
@@ -361,7 +366,11 @@ def _transition_risk_seam(transition_risk: Any) -> dict[str, Any]:
     }
 
 
-def _compact_timeline_report(outputs: list[RegimeOutput]) -> list[dict[str, Any]]:
+def _compact_timeline_report(
+    outputs: list[RegimeOutput],
+    *,
+    config: RegimeConfig | None = None,
+) -> list[dict[str, Any]]:
     rows: list[dict[str, Any]] = []
     for out in outputs:
         seams: dict[str, Any] = {}
@@ -426,6 +435,13 @@ def _compact_timeline_report(outputs: list[RegimeOutput]) -> list[dict[str, Any]
             seams["transition_score"] = out.transition_risk.score
         seams["transition_risk"] = _transition_risk_seam(out.transition_risk)
         seams["event_calendar"] = _event_calendar_seam(event_calendar)
+        seams["dependency_payload_contracts"] = _dependency_payload_contracts_report()
+        classification_coverage = getattr(out, "classification_coverage", None)
+        if classification_coverage is not None:
+            seams["classification_coverage"] = classification_coverage.model_dump(
+                mode="json"
+            )
+        seams["rule_provenance"] = rule_provenance_payload(config=config)
         rows.append(
             {
                 "as_of_date": out.as_of_date.isoformat(),
@@ -778,6 +794,7 @@ def _build_json_report(
     per_day_avg_ms: float,
     verification_issues: list[str],
     feature_store: FeatureStore | None = None,
+    config: RegimeConfig | None = None,
 ) -> dict[str, Any]:
     stage_names = [
         "build_market_context",
@@ -914,7 +931,7 @@ def _build_json_report(
             "data_loading": _data_loading_report(inputs.load_timings),
             "bottom_line_total_wall_clock_seconds": total_wall_clock,
         },
-        "timeline": _compact_timeline_report(timeline.outputs),
+        "timeline": _compact_timeline_report(timeline.outputs, config=config),
         "label_summary": _label_summary_report(timeline.outputs),
         "effective_label_summary": _effective_label_summary_report(timeline.outputs),
         "feature_metrics": _feature_metric_summary_report(

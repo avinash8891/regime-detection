@@ -179,9 +179,10 @@ def _load_pit_overlap_symbols(
     missing = sorted(required - set(frame.columns))
     if missing:
         raise ValueError(f"{pit_parquet_path} missing required columns: {missing}")
-    intervals = frame.copy()
-    intervals["start_date"] = pd.to_datetime(intervals["start_date"])
-    intervals["end_date"] = pd.to_datetime(intervals["end_date"])
+    intervals = frame.copy().assign(
+        start_date=pd.to_datetime(frame["start_date"]),
+        end_date=pd.to_datetime(frame["end_date"]),
+    )
     start_ts = pd.Timestamp(start_date)
     end_ts = pd.Timestamp(end_date)
     mask = (intervals["start_date"] <= end_ts) & (
@@ -218,8 +219,11 @@ def _read_symbol_ohlcv(tree_root: Path, symbol: str) -> tuple[pd.DataFrame, Path
         raise ValueError(
             f"{source_path} symbol mismatch: expected {symbol}, observed {observed}"
         )
-    out = frame[EXPECTED_OHLCV_COLUMNS].copy()
-    out["date"] = pd.to_datetime(out["date"]).dt.date.astype(str)
+    out = (
+        frame[EXPECTED_OHLCV_COLUMNS]
+        .copy()
+        .assign(date=pd.to_datetime(frame["date"]).dt.date.astype(str))
+    )
     out = out.sort_values("date").drop_duplicates(subset=["date"], keep="last")
     return out.reset_index(drop=True), source_path
 

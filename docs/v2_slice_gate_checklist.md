@@ -72,6 +72,10 @@ A slice = one of the ten units listed in v2 spec §8 (Network Fragility, Layer 1
 - [x] HMM/GMM label maps are validated against fitted model metadata (n_states/n_clusters, model_version) before populating `mapped_label`.
 - [x] HMM `state_persistence_days` is computed across the full history, not just the output window.
 - [x] `AxisEvidencePayload` type is preserved through `model_copy` (no plain-dict leakage).
+- [x] Core axis evidence is typed and rejects undeclared evidence keys.
+- [x] Cross-axis dependency payload and failure semantics are declared in `AXIS_DEPENDENCY_CONTRACTS`.
+- [x] Feature-store optional seams emit `FeatureStore.availability` with policy, required inputs, and missing inputs.
+- [x] V2 operator artifacts expose dependency payload contracts, classification coverage, and rule provenance in profile, shadow, and walk-forward outputs.
 - [x] Central-bank-text `max_release_age_days` filter applies to aggregation (pass filtered `working` frame, not original `scored_releases`).
 - [x] Available-sector breadth proxy is reachable when some (but not all) sector ETFs are present.
 
@@ -91,4 +95,4 @@ Slices not in the above table can proceed from foundation as-is.
 ### Recently unblocked (no longer in the table above)
 
 - **Layer 1 V2 incremental features (§1A/§1C/§1D), v2 §8 row 2** — was blocked on the `sentiment_score` AAII/put-call/IIA fetcher. Resolved: the AAII fetcher shipped (`regime_data_fetch.aaii_sentiment`), `sentiment_score = bull_bear_spread_8w_ma`, and `euphoria` fires (Ambiguity Log #32). Put-call / Investors Intelligence remain *optional* calibration-revision sources only — they block no label. `vol_crush` (ADR 0005), the PIT breadth features (Slice 2.8c), and `breakout_expansion` (Log #46/#47) also landed.
-- **Layer 2B Inflation/Growth (§2B), v2 §8 row 5** — all 8 labels are now reachable. `earnings_expansion` / `earnings_contraction` are wired end-to-end via the `aggregate_eps` weekly-snapshot accumulator (Log #48; silent only during the >4-week cold-start). The single-signal `inflation_shock` limb consumes `inflation_surprise_zscore`, computed from the free Cleveland Fed inflation nowcast as the `consensus_estimate` substitute (ADR 0006); the dedicated `cleveland_fed_nowcast` fetch path is built. No paid feed required. Note: `GDPNow` IS free on FRED (`GDPNOW`, in `V2_FRED_SERIES`); `GDPNow` / `Citi Surprise` are NOT in any §2B rule predicate.
+- **Layer 2B Inflation/Growth (§2B), v2 §8 row 5** — all current labels are reachable, including the ADR 0019 valid-data partitions (`contractionary_disinflation`, `late_cycle_inflation_stress`, `recovery_growth_unconfirmed`, `macro_neutral`). `earnings_expansion` / `earnings_contraction` are wired end-to-end via the `aggregate_eps` weekly-snapshot accumulator (Log #48; silent only during the >4-week cold-start). The single-signal `inflation_shock` limb consumes `inflation_surprise_zscore`, computed from the free Cleveland Fed inflation nowcast as the `consensus_estimate` substitute (ADR 0006); the dedicated `cleveland_fed_nowcast` fetch path is built. No paid feed required. Note: `GDPNow` IS free on FRED (`GDPNOW`, in `V2_FRED_SERIES`); `GDPNow` / `Citi Surprise` are NOT in any §2B rule predicate.

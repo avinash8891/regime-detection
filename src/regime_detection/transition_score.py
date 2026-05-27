@@ -25,6 +25,7 @@ EVENT_SET: frozenset[str] = frozenset(
 _CREDIT_LABEL_SCORE: dict[str, float | None] = {
     "credit_calm": 0.0,
     "credit_recovery": 0.20,
+    "credit_divergence": 0.25,
     "spread_widening": 0.45,
     "credit_stress": 0.75,
     "funding_squeeze": 0.90,

@@ -4,6 +4,7 @@ import datetime as dt
 import json
 import sqlite3
 from pathlib import Path
+from contextlib import closing
 
 import pytest
 
@@ -335,7 +336,7 @@ def test_optional_conflict_fetch_records_payload_and_filters_years(
     assert outcome.status.failed_fetches == 0
     assert outcome.status.empty_payload is False
 
-    with sqlite3.connect(store.db_path) as conn:
+    with closing(sqlite3.connect(store.db_path)) as conn:
         artifacts = conn.execute("""
             SELECT source_name, artifact_kind, source_identifier, timezone,
                    calendar_assumption, notes, content_text

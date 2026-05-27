@@ -6,9 +6,11 @@ import sqlite3
 import sys
 from datetime import date
 from pathlib import Path
+from contextlib import closing
 
 import pandas as pd
 import pytest
+import yaml
 
 from regime_detection.fragility_universe import SECTOR_ETFS
 
@@ -32,12 +34,67 @@ def _write_sector_pit_intervals(path: Path) -> Path:
     return path
 
 
+def _write_shadow_test_config(tmp_path: Path) -> Path:
+    """Copy core3-v2-fast.yaml into tmp_path, stripped of credit_funding and
+    inflation_growth.
+
+    The shadow runner has no parameter for loading macro_series or full
+    cross_asset_closes from disk; the canonical fixture (`v2_daily_ohlcv.csv`)
+    is OHLCV-only. When credit_funding and inflation_growth are configured,
+    the ClassifyRequest validator (engine.py:259) refuses to run without
+    macro keys (sofr/iorb/nfci/cpi_all_items/pmi_manufacturing) and extra
+    cross_asset closes (KRE/XLY/XLI/XLP/XLU) that the runner can't supply.
+    Stripping these two axes keeps the shadow-runner tests scoped to the
+    artifact/ledger/duplicate-rejection behavior they actually exercise."""
+    repo_root = Path(__file__).resolve().parents[1]
+    src = repo_root / "tests" / "fixtures" / "configs" / "core3-v2-fast.yaml"
+    config = yaml.safe_load(src.read_text())
+    config.pop("credit_funding", None)
+    config.pop("inflation_growth", None)
+    dst = tmp_path / "shadow_test_config.yaml"
+    dst.write_text(yaml.safe_dump(config))
+    return dst
+
+
+def _write_v2_macro_parquet(path: Path) -> Path:
+    repo_root = Path(__file__).resolve().parents[1]
+    source = pd.read_csv(
+        repo_root / "tests" / "fixtures" / "raw" / "v2" / "daily_ohlcv.csv"
+    )
+    dates = pd.to_datetime(sorted(source["date"].unique()))
+    trend = pd.Series(range(len(dates)), index=dates, dtype="float64")
+    logical_series = {
+        "2y_yield": 4.00 + trend * 0.0002,
+        "10y_yield": 4.25 + trend * 0.0001,
+        "broad_usd_index": 100.0 + trend * 0.01,
+        "sofr": 5.25 + trend * 0.0001,
+        "iorb": 5.40 + trend * 0.0001,
+        "nfci": -0.35 + trend * 0.00001,
+        "hy_oas": 3.8 + trend * 0.0001,
+        "ig_bbb_oas": 1.6 + trend * 0.0001,
+        "cpi_all_items": 300.0 + trend * 0.01,
+        "pmi_manufacturing": 50.0 + trend * 0.0001,
+    }
+    rows = [
+        {
+            "date": observed_date,
+            "series_id": logical_name.upper(),
+            "logical_name": logical_name,
+            "value": value,
+        }
+        for logical_name, series in logical_series.items()
+        for observed_date, value in series.items()
+    ]
+    pd.DataFrame(rows).to_parquet(path, index=False)
+    return path
+
+
 def test_shadow_runner_writes_expected_artifacts_and_ledger(tmp_path: Path) -> None:
     repo_root = Path(__file__).resolve().parents[1]
     v2_daily_path = repo_root / "tests" / "fixtures" / "raw" / "v2" / "daily_ohlcv.csv"
     market_data_path = v2_daily_path
     event_calendar_path = repo_root / "tests" / "fixtures" / "events" / "us_events.yaml"
-    config_path = repo_root / "tests" / "fixtures" / "configs" / "core3-v2-fast.yaml"
+    config_path = _write_shadow_test_config(tmp_path)
     out_root = tmp_path / "shadow_run"
     pit_path = _write_sector_pit_intervals(tmp_path / "pit.csv")
 
@@ -57,7 +114,7 @@ def test_shadow_runner_writes_expected_artifacts_and_ledger(tmp_path: Path) -> N
 
     db_path = out_root / "regime_shadow.db"
     assert db_path.exists()
-    with sqlite3.connect(db_path) as conn:
+    with closing(sqlite3.connect(db_path)) as conn:
         rows = conn.execute(
             "SELECT as_of_date, status, output_path, input_archive_path FROM runs"
         ).fetchall()
@@ -85,13 +142,73 @@ def test_shadow_runner_writes_expected_artifacts_and_ledger(tmp_path: Path) -> N
 
     archive_market = out_root / "input_archives" / "2026-05-13" / "market_data.parquet"
     archived_df = pd.read_parquet(archive_market)
-    archived_df["date"] = pd.to_datetime(archived_df["date"]).dt.date
+    archived_df = archived_df.assign(date=pd.to_datetime(archived_df["date"]).dt.date)
     assert archived_df["date"].max() == date(2026, 5, 13)
 
     checksums_path = out_root / "input_archives" / "2026-05-13" / "checksums.json"
     checksums = json.loads(checksums_path.read_text())
     assert "market_data.parquet" in checksums
     assert "events.yaml" in checksums
+
+
+def test_shadow_runner_supplies_macro_series_for_configured_v2_axes(
+    tmp_path: Path,
+) -> None:
+    repo_root = Path(__file__).resolve().parents[1]
+    v2_daily_path = repo_root / "tests" / "fixtures" / "raw" / "v2" / "daily_ohlcv.csv"
+    event_calendar_path = repo_root / "tests" / "fixtures" / "events" / "us_events.yaml"
+    config_path = repo_root / "tests" / "fixtures" / "configs" / "core3-v2-fast.yaml"
+    macro_path = _write_v2_macro_parquet(tmp_path / "fred_macro_series.parquet")
+    out_root = tmp_path / "shadow_run"
+    pit_path = _write_sector_pit_intervals(tmp_path / "pit.csv")
+
+    mod = _load_runner_module()
+    result = mod.run_shadow(
+        as_of_date=date(2026, 5, 13),
+        market_data_path=v2_daily_path,
+        event_calendar_path=event_calendar_path,
+        config_path=config_path,
+        output_root=out_root,
+        v2_daily_ohlcv_path=v2_daily_path,
+        pit_constituent_intervals_path=pit_path,
+        macro_parquet_path=macro_path,
+    )
+
+    assert result["status"] == "success"
+    payload = json.loads((out_root / "outputs" / "2026-05-13.json").read_text())
+    assert payload["credit_funding_state"] is not None
+    assert payload["inflation_growth_state"] is not None
+
+
+def test_shadow_runner_v1_only_run_does_not_load_v2_macro_artifacts(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    repo_root = Path(__file__).resolve().parents[1]
+    market_data_path = (
+        repo_root / "tests" / "fixtures" / "raw" / "v2" / "daily_ohlcv.csv"
+    )
+    event_calendar_path = repo_root / "tests" / "fixtures" / "events" / "us_events.yaml"
+    config_path = (
+        repo_root / "src" / "regime_detection" / "configs" / "core3-v1.0.0.yaml"
+    )
+
+    mod = _load_runner_module()
+
+    def _fail_if_called(**_kwargs):
+        raise AssertionError("V1-only shadow run must not load V2 macro artifacts")
+
+    monkeypatch.setattr(mod, "_load_v2_macro_series", _fail_if_called)
+
+    result = mod.run_shadow(
+        as_of_date=date(2026, 5, 13),
+        market_data_path=market_data_path,
+        event_calendar_path=event_calendar_path,
+        config_path=config_path,
+        output_root=tmp_path / "shadow_run",
+        macro_parquet_path=tmp_path / "missing_v2_macro.parquet",
+    )
+
+    assert result["status"] == "success"
 
 
 def test_shadow_runner_archives_inputs_and_inserts_in_progress_before_classify(
@@ -101,7 +218,7 @@ def test_shadow_runner_archives_inputs_and_inserts_in_progress_before_classify(
     v2_daily_path = repo_root / "tests" / "fixtures" / "raw" / "v2" / "daily_ohlcv.csv"
     market_data_path = v2_daily_path
     event_calendar_path = repo_root / "tests" / "fixtures" / "events" / "us_events.yaml"
-    config_path = repo_root / "tests" / "fixtures" / "configs" / "core3-v2-fast.yaml"
+    config_path = _write_shadow_test_config(tmp_path)
     out_root = tmp_path / "shadow_run"
     pit_path = _write_sector_pit_intervals(tmp_path / "pit.csv")
 
@@ -113,7 +230,7 @@ def test_shadow_runner_archives_inputs_and_inserts_in_progress_before_classify(
         assert (archive_dir / "market_data.parquet").exists()
         assert (archive_dir / "events.yaml").exists()
         assert (archive_dir / "checksums.json").exists()
-        with sqlite3.connect(out_root / "regime_shadow.db") as conn:
+        with closing(sqlite3.connect(out_root / "regime_shadow.db")) as conn:
             row = conn.execute(
                 "SELECT status, input_archive_path FROM runs WHERE as_of_date = ?",
                 ("2026-05-13",),
@@ -173,7 +290,7 @@ def test_shadow_runner_records_failures_without_silent_skip(
     assert result["status"] == "failure"
     assert "forced classify failure" in result["failure_reason"]
 
-    with sqlite3.connect(out_root / "regime_shadow.db") as conn:
+    with closing(sqlite3.connect(out_root / "regime_shadow.db")) as conn:
         rows = conn.execute(
             "SELECT as_of_date, status, failure_reason FROM runs"
         ).fetchall()
@@ -190,7 +307,7 @@ def test_shadow_runner_rejects_duplicate_versioned_run_and_non_trading_day(
     v2_daily_path = repo_root / "tests" / "fixtures" / "raw" / "v2" / "daily_ohlcv.csv"
     market_data_path = v2_daily_path
     event_calendar_path = repo_root / "tests" / "fixtures" / "events" / "us_events.yaml"
-    config_path = repo_root / "tests" / "fixtures" / "configs" / "core3-v2-fast.yaml"
+    config_path = _write_shadow_test_config(tmp_path)
     out_root = tmp_path / "shadow_run"
     pit_path = _write_sector_pit_intervals(tmp_path / "pit.csv")
 

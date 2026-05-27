@@ -89,7 +89,10 @@ def test_precedence_ordering_is_spec_3_4():
         "correlation_to_one",
         "correlation_concentration",
         "rising_fragility",
+        "idiosyncratic_crisis",
         "stock_picker_dispersion",
+        "rotation_watch",
+        "decorrelated_calm",
         "diversified_normal",
     )
 
@@ -247,10 +250,8 @@ def test_diversified_normal_when_only_it_matches():
     assert label == "diversified_normal"
 
 
-def test_unknown_when_no_rule_matches():
+def test_upper_normal_unstable_rank_is_rotation_watch():
     cfg = _default_rules_config()
-    # Pick a feature profile that satisfies no rule: correlation in
-    # diversified_normal band but rank unstable AND outside relaxed inner band.
     inputs = _inputs(
         avg_corr_pct=0.65,  # in band [0.0, 0.75] but outside inner [0.30, 0.60]
         eff_rank_stability=0.10,  # unstable (> 0.05 threshold)
@@ -266,7 +267,7 @@ def test_unknown_when_no_rule_matches():
         breadth_label="healthy_breadth",
         volatility_label="normal_vol",
     )
-    assert label == "unknown"
+    assert label == "rotation_watch"
 
 
 # ---------- build_rule_inputs_for_date ---------------------------------------

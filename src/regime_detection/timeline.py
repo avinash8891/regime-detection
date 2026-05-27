@@ -7,6 +7,7 @@ from typing import NamedTuple, cast
 import pandas as pd
 
 from regime_detection.axis_series import AxisSeriesBundle, build_axis_series_bundle
+from regime_detection.classification_coverage import build_classification_coverage
 from regime_detection.cohort_routing import evaluate_cohort_routing
 from regime_detection.config import RegimeConfig
 from regime_detection.feature_store import FeatureStore, build_feature_store
@@ -16,12 +17,12 @@ from regime_detection.market_context import (
 )
 from regime_detection.models import (
     AxisOutput,
-    AxisEvidencePayload,
     BreadthStateOutput,
     ChangePointOutput,
     ClusterOutput,
     DataQuality,
     HmmOutput,
+    NetworkFragilityEvidencePayload,
     NetworkFragilityOutput,
     RegimeOutput,
     RegimeTimeline,
@@ -78,7 +79,7 @@ def _v2_classifier_seam_absent_data_quality() -> DataQuality:
 def _resolve_network_fragility_by_date(
     *,
     bundle_entry: dict[date, NetworkFragilityOutput] | None,
-    sessions,
+    sessions: list[date] | tuple[date, ...],
 ) -> dict[date, NetworkFragilityOutput]:
     """Per-day fragility outputs.
 
@@ -96,8 +97,8 @@ def _resolve_network_fragility_by_date(
             raw_label="unknown",
             stable_label="unknown",
             active_label="unknown",
-            evidence=AxisEvidencePayload(
-                root={"reason": "v2_classifier_not_yet_implemented"}
+            evidence=NetworkFragilityEvidencePayload(
+                reason="v2_classifier_not_yet_implemented"
             ),
             data_quality=placeholder_dq,
         )
@@ -254,7 +255,7 @@ def _hmm_state_persistence_days(
         return None
     loc = full_top_state_series.index.get_loc(target_timestamp)
     if not isinstance(loc, int):
-        loc = int(loc)
+        return None
     current_state = full_top_state_series.iloc[loc]
     if pd.isna(current_state):
         return None
@@ -281,10 +282,13 @@ def _enrich_with_hmm_evidence(
     state = aligned.hmm_top_state_aligned.iloc[day_index]
     if pd.isna(prob) or pd.isna(state):
         return output
-    enriched = dict(output.evidence.root)
-    enriched["hmm_top_state"] = int(state)
-    enriched["hmm_top_state_prob"] = float(prob)
-    return output.model_copy(update={"evidence": AxisEvidencePayload(root=enriched)})
+    enriched = output.evidence.model_copy(
+        update={
+            "hmm_top_state": int(state),
+            "hmm_top_state_prob": float(prob),
+        }
+    )
+    return output.model_copy(update={"evidence": enriched})
 
 
 def _build_change_point_output(
@@ -450,6 +454,7 @@ def _build_timeline_output_for_day(
     selected_day_index: int,
     working_context: MarketContext,
     axis_bundle: AxisSeriesBundle,
+    feature_store: FeatureStore,
     transition_risk: dict[date, TransitionRiskOutput],
     network_fragility_by_date: dict[date, NetworkFragilityOutput],
     aligned_v2_evidence: _AlignedV2Evidence,
@@ -546,7 +551,7 @@ def _build_timeline_output_for_day(
             config=cohort_routing_config,
         )
         sfc_config = working_context.config.strategy_family_constraints
-        if sfc_config is not None and agent_routing is not None:
+        if sfc_config is not None:
             strategy_family_constraints = resolve_strategy_family_constraints(
                 active_cohort=agent_routing.active_cohort,
                 config=sfc_config,
@@ -566,7 +571,7 @@ def _build_timeline_output_for_day(
             agent_routing=agent_routing,
             strategy_family_constraints=strategy_family_constraints,
         )
-    return RegimeOutput(
+    output = RegimeOutput(
         engine_version=engine_version(),
         config_version=working_context.config.config_version,
         as_of_date=day,
@@ -595,6 +600,14 @@ def _build_timeline_output_for_day(
         agent_routing=agent_routing,
         strategy_family_constraints=strategy_family_constraints,
         effective_strategy_constraints=effective_strategy_constraints,
+    )
+    return output.model_copy(
+        update={
+            "classification_coverage": build_classification_coverage(
+                output,
+                availability=feature_store.availability,
+            )
+        }
     )
 
 
@@ -676,6 +689,7 @@ def build_regime_timeline(
                 selected_day_index=idx,
                 working_context=working_context,
                 axis_bundle=axis_bundle,
+                feature_store=feature_store,
                 transition_risk=transition_risk,
                 network_fragility_by_date=network_fragility_by_date,
                 aligned_v2_evidence=aligned_v2_evidence,

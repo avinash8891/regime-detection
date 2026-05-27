@@ -56,6 +56,7 @@ from regime_detection.observability import (
 )
 from regime_detection.market_context import build_market_context
 from regime_detection.timeline import ENGINE_MINIMUM_HISTORY
+from regime_shared.pandas_compat import cow_safe_assign
 from scripts._v2_calibration_helpers import (
     CROSS_ASSET_SYMBOLS,
     add_manifest_args,
@@ -224,10 +225,11 @@ def _read_symbol_ohlcv(tree_root: Path, symbol: str) -> pd.DataFrame:
     missing = [col for col in required_cols if col not in frame.columns]
     if missing:
         raise ValueError(f"{source} missing required columns: {missing}")
-    frame = frame[
-        ["date", "open", "high", "low", "close", "volume", "adjusted_close"]
-    ].copy()
-    frame["date"] = pd.to_datetime(frame["date"]).dt.normalize()
+    frame = cow_safe_assign(
+        frame,
+        {"date": pd.to_datetime(frame["date"]).dt.normalize()},
+        columns=["date", "open", "high", "low", "close", "volume", "adjusted_close"],
+    )
     frame = frame.sort_values("date").reset_index(drop=True)
     return frame
 
@@ -348,9 +350,16 @@ def _load_constituent_ohlcv_from_tree(
                     ticker=ticker,
                 ),
             )
-        for col in ("open", "high", "low", "close", "adjusted_close"):
-            frame[col] = frame[col].astype("float64")
-        frame["volume"] = frame["volume"].astype("int64")
+        frame = frame.astype(
+            {
+                "open": "float64",
+                "high": "float64",
+                "low": "float64",
+                "close": "float64",
+                "adjusted_close": "float64",
+                "volume": "int64",
+            }
+        )
         frame = frame.set_index("date")[
             ["open", "high", "low", "close", "volume", "adjusted_close"]
         ]
@@ -714,6 +723,16 @@ def _apply_manifest_input_paths(
     )
 
 
+def _classify_request_manifest_kwargs(args: argparse.Namespace) -> dict[str, Any]:
+    if args.manifest is None:
+        return {}
+    return {
+        "request_source": "profile_manifest",
+        "manifest_resolved_inputs": args.manifest_resolved_inputs,
+        "manifest_cli_overrides": args.manifest_cli_overrides,
+    }
+
+
 def _is_manifest_resolution_error(error: Exception) -> bool:
     """Detect both the typed resolver error and the un-typed
     ``ValueError("manifest has no artifacts required for ...")`` that
@@ -825,6 +844,7 @@ def main() -> int:
                 news_sentiment=inputs.news_sentiment,
                 pit_constituent_intervals=inputs.pit_constituent_intervals,
                 constituent_ohlcv=inputs.constituent_ohlcv,
+                **_classify_request_manifest_kwargs(args),
             )
     finally:
         if alarm_enabled:
@@ -925,6 +945,7 @@ def main() -> int:
         per_day_avg_ms=per_day_avg_ms,
         verification_issues=verification_issues,
         feature_store=feature_store,
+        config=config,
     )
     record_timing("profile_engine.main", overall_start)
     json_report["observability"] = {

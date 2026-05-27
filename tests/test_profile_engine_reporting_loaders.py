@@ -9,6 +9,7 @@ import pandas as pd
 import pytest
 
 from scripts import profile_engine_reporting
+from regime_detection.rule_provenance import rule_provenance_payload
 
 from conftest import (
     load_profile_engine_module,
@@ -280,6 +281,22 @@ def test_profile_json_report_emits_machine_readable_sections(tmp_path: Path) -> 
                     "primary_label": "fed_week",
                     "matching_labels": ["fed_week", "expiry_week"],
                 },
+                "dependency_payload_contracts": {
+                    "network_fragility": {
+                        "breadth_state": "label_only",
+                        "volatility_state": "label_only",
+                        "credit_funding_effective": "label_only",
+                    },
+                    "inflation_growth_state": {
+                        "credit_funding_effective": "label_only",
+                    },
+                    "transition_score": {
+                        "event_calendar": "matching_labels",
+                        "credit_funding_effective": "label_and_status",
+                        "volume_liquidity_state": "label_and_status",
+                    },
+                },
+                "rule_provenance": json.loads(json.dumps(rule_provenance_payload())),
             },
             "as_of_date": "2026-05-15",
             "event_calendar_primary_label": "fed_week",

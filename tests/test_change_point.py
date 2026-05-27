@@ -23,6 +23,7 @@ from regime_detection.config import (
     ChangePointConfig,
     load_default_regime_config,
 )
+from regime_shared.pandas_compat import cow_safe_assign
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -425,7 +426,7 @@ def test_feature_store_change_point_seam_none_when_config_absent(
     rsp = raw_market_frames["RSP"]
     vix = raw_market_frames["VIX"]
     raw = pd.concat([spy, rsp, vix], ignore_index=True)
-    raw["date"] = pd.to_datetime(raw["date"]).dt.date
+    raw = cow_safe_assign(raw, {"date": pd.to_datetime(raw["date"]).dt.date})
     last_session = max(d for d in raw["date"].unique())
     while True:
         try:
@@ -472,7 +473,7 @@ def test_feature_store_change_point_seam_present_with_default_config(
     rsp = raw_market_frames["RSP"]
     vix = raw_market_frames["VIX"]
     raw = pd.concat([spy, rsp, vix], ignore_index=True)
-    raw["date"] = pd.to_datetime(raw["date"]).dt.date
+    raw = cow_safe_assign(raw, {"date": pd.to_datetime(raw["date"]).dt.date})
     last_session = max(d for d in raw["date"].unique())
     while True:
         try:

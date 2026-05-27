@@ -10,6 +10,7 @@ from pathlib import Path
 import pandas as pd
 
 from regime_data_fetch.acquisition_store import AcquisitionStore
+from regime_shared.pandas_compat import cow_safe_assign, optional_date
 from regime_shared.pit_provenance import BIAS_WARNING, SOURCE_NAME, SOURCE_URL
 
 # Community-maintained S&P 500 ticker-membership CSV on GitHub. This is an
@@ -241,29 +242,33 @@ def read_pit_intervals(parquet_path: Path) -> pd.DataFrame:
     """
     df = pd.read_parquet(parquet_path)
 
-    def _to_date(value: object) -> dt.date | None:
-        if pd.isna(value):
-            return None
-        if value is None:
-            return None
-        return dt.date.fromisoformat(str(value))
-
-    df["start_date"] = df["start_date"].map(_to_date)
-    df["end_date"] = df["end_date"].map(_to_date)
+    df = cow_safe_assign(
+        df,
+        {
+            "start_date": df["start_date"].map(optional_date),
+            "end_date": df["end_date"].map(optional_date),
+        },
+    )
 
     # Patch-on-read: apply corrections to any open interval whose ticker has a
     # known correction. This fixes stale artifacts without requiring a re-fetch.
+    end_date = df["end_date"].copy()
     for ticker, corrected_end in SOURCE_END_DATE_CORRECTIONS.items():
         mask = (df["ticker"] == ticker) & df["end_date"].isna()
         if mask.any():
-            df.loc[mask, "end_date"] = corrected_end
+            end_date = end_date.mask(mask, corrected_end)
+    df = cow_safe_assign(df, {"end_date": end_date})
 
     # Normalize remaining string columns to object dtype. Newer pandas+pyarrow
     # round-trips parquet strings as StringDtype by default; the reader contract
     # (and downstream consumers comparing dtype == object) requires plain object.
-    for column in ("ticker", "source", "source_url", "bias_warning"):
-        if column in df.columns:
-            df[column] = df[column].astype(object)
+    object_columns = {
+        column: object
+        for column in ("ticker", "source", "source_url", "bias_warning")
+        if column in df.columns
+    }
+    if object_columns:
+        df = df.astype(object_columns)
     return df
 
 

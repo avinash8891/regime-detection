@@ -6,6 +6,7 @@ import shutil
 import sqlite3
 from datetime import date
 from pathlib import Path
+from contextlib import closing
 
 import pytest
 
@@ -48,7 +49,7 @@ def shadow_root_template(tmp_path_factory: pytest.TempPathFactory) -> Path:
 def _prepare_shadow_root(tmp_path: Path, template: Path) -> Path:
     out_root = tmp_path / "shadow_run"
     shutil.copytree(template, out_root)
-    with sqlite3.connect(out_root / "regime_shadow.db") as conn:
+    with closing(sqlite3.connect(out_root / "regime_shadow.db")) as conn:
         conn.execute(
             """
             UPDATE runs
@@ -61,6 +62,7 @@ def _prepare_shadow_root(tmp_path: Path, template: Path) -> Path:
                 "2023-12-14",
             ),
         )
+        conn.commit()
     return out_root
 
 
@@ -85,7 +87,14 @@ def test_shadow_replay_check_records_exact_match(
     assert result["diff"] is None
     assert result["as_of_date"] == "2023-12-14"
 
-    with sqlite3.connect(out_root / "regime_shadow.db") as conn:
+    output_payload = json.loads((out_root / "outputs" / "2023-12-14.json").read_text())
+    assert output_payload["v2_dependency_payload_contracts"]["network_fragility"] == {
+        "breadth_state": "label_only",
+        "credit_funding_effective": "label_only",
+        "volatility_state": "label_only",
+    }
+
+    with closing(sqlite3.connect(out_root / "regime_shadow.db")) as conn:
         rows = conn.execute(
             "SELECT original_run_id, matches, diff FROM replay_checks"
         ).fetchall()
@@ -127,7 +136,7 @@ def test_shadow_replay_check_records_mismatch_with_diff(
         result["diff"]["transition_risk_state"]["stored"] == "tampered_transition_risk"
     )
 
-    with sqlite3.connect(out_root / "regime_shadow.db") as conn:
+    with closing(sqlite3.connect(out_root / "regime_shadow.db")) as conn:
         row = conn.execute(
             "SELECT matches, diff FROM replay_checks ORDER BY check_id DESC LIMIT 1"
         ).fetchone()

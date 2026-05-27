@@ -345,7 +345,7 @@ def update_cpi_nowcast_parquet(
     )
     if out_path.exists():
         existing = pd.read_parquet(out_path)
-        existing["date"] = pd.to_datetime(existing["date"])
+        existing = existing.assign(date=pd.to_datetime(existing["date"]))
         _log.info(
             "cleveland_fed_nowcast: loaded %d existing rows from %s",
             len(existing),

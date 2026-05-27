@@ -320,12 +320,15 @@ def test_v1_path_unchanged_when_pit_features_absent(
     from regime_detection.engine import RegimeEngine
 
     as_of = date(2023, 12, 14)
-    with pytest.raises(RuntimeError, match="transition_risk requires score inputs"):
+    with pytest.raises(ValueError) as excinfo:
         RegimeEngine().classify(
             as_of_date=as_of,
             market_data=market_df_for_asof(as_of),
             event_calendar=event_calendar_df,
         )
+    message = str(excinfo.value)
+    assert "ClassifyRequest missing configured V2 inputs" in message
+    assert "breadth_state_v2: sector_etf_closes" in message
 
 
 def test_golden_dates_emit_legal_breadth_labels(classified_golden_outputs) -> None:

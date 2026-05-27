@@ -209,6 +209,7 @@ data/
 
 # Ruff stuff:
 .ruff_cache/
+.worktrees/
 
 # PyPI configuration file
 .pypirc

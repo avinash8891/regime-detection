@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import warnings
 from pathlib import Path
 
 import pandas as pd
@@ -39,6 +40,42 @@ def test_load_market_data_uses_true_vix_symbol(tmp_path: Path) -> None:
     market_data = load_market_data(daily_dir)
 
     assert set(market_data["symbol"]) == {"SPY", "RSP", "VIX"}
+
+
+def test_profile_input_loaders_are_clean_under_copy_on_write_warning_mode(
+    tmp_path: Path,
+) -> None:
+    daily_dir = tmp_path / "daily_ohlcv_762"
+    for symbol in ("SPY", "RSP", "VIX", "XLY"):
+        symbol_dir = daily_dir / f"symbol={symbol}"
+        symbol_dir.mkdir(parents=True)
+        pd.DataFrame(
+            [
+                {
+                    "date": "2026-05-15",
+                    "symbol": symbol,
+                    "open": 1.0,
+                    "high": 2.0,
+                    "low": 0.5,
+                    "close": 1.5,
+                    "volume": 100,
+                    "adjusted_close": 1.5,
+                }
+            ]
+        ).to_parquet(symbol_dir / "ohlcv.parquet", index=False)
+
+    with pd.option_context("mode.copy_on_write", "warn"):
+        with warnings.catch_warnings():
+            warnings.simplefilter("error", FutureWarning)
+            market_data = load_market_data(daily_dir)
+            close_dict = load_close_dict(
+                daily_dir,
+                ["XLY"],
+                pd.DatetimeIndex([pd.Timestamp("2026-05-15")]),
+            )
+
+    assert market_data["date"].to_list() == [pd.Timestamp("2026-05-15").date()] * 3
+    assert close_dict["XLY"].to_list() == [1.5]
 
 
 def test_load_market_data_clips_to_common_required_symbol_date(
@@ -320,12 +357,15 @@ def test_load_macro_series_merges_pmi_history_with_latest_parquet(
         ]
     ).to_parquet(pmi_dir / "us_ism_pmi_history.parquet", index=False)
 
-    series = load_macro_series(
-        macro_path,
-        latest_path,
-        cpi_nowcast_parquet=None,
-        eps_weekly_history_parquet=None,
-    )
+    with pd.option_context("mode.copy_on_write", "warn"):
+        with warnings.catch_warnings():
+            warnings.simplefilter("error", FutureWarning)
+            series = load_macro_series(
+                macro_path,
+                latest_path,
+                cpi_nowcast_parquet=None,
+                eps_weekly_history_parquet=None,
+            )
 
     pmi = series["pmi_manufacturing"]
     assert list(pmi.index) == [

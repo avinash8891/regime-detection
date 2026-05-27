@@ -5,6 +5,7 @@ import datetime as dt
 import json
 import sqlite3
 from pathlib import Path
+from contextlib import closing
 
 from regime_data_fetch.local_usd_index import (
     load_yahoo_usd_index_csv,
@@ -88,7 +89,7 @@ def test_run_local_usd_index_import_records_sqlite_artifact_and_outputs(
     assert report["counts"]["quarantined_rows"] == 0
     assert report["paths"]["acquisition_db"] == str(acquisition_db)
 
-    with sqlite3.connect(acquisition_db) as conn:
+    with closing(sqlite3.connect(acquisition_db)) as conn:
         fetch_runs = conn.execute(
             "SELECT fetch_type, status FROM fetch_runs"
         ).fetchall()

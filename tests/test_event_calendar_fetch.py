@@ -3,6 +3,7 @@ from __future__ import annotations
 import datetime as dt
 import json
 from pathlib import Path
+from contextlib import closing
 
 import pandas as pd
 import pytest
@@ -352,7 +353,7 @@ def test_run_us_event_calendar_fetch_records_raw_artifacts_in_sqlite(
 
     import sqlite3
 
-    with sqlite3.connect(acquisition_db) as conn:
+    with closing(sqlite3.connect(acquisition_db)) as conn:
         fetch_runs = conn.execute(
             "SELECT fetch_type, status FROM fetch_runs"
         ).fetchall()
@@ -504,7 +505,7 @@ def test_run_us_event_calendar_fetch_wires_group_a_candidate_artifacts(
 
     import sqlite3
 
-    with sqlite3.connect(acquisition_db) as conn:
+    with closing(sqlite3.connect(acquisition_db)) as conn:
         outputs = conn.execute(
             "SELECT output_kind FROM derived_outputs ORDER BY output_id"
         ).fetchall()

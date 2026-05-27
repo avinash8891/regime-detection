@@ -162,6 +162,19 @@ def evaluate_disinflation(
     return bool(inputs.treasury_10y_yield_slope_21d < 0.0)
 
 
+def evaluate_contractionary_disinflation(
+    inputs: InflationGrowthRuleInputs,
+    config: InflationGrowthRulesConfig,
+) -> bool:
+    """Demand contraction with non-rising inflation pressure."""
+    if _any_nan(inputs.cpi_6m_change_pct_slope_21d, inputs.pmi_manufacturing):
+        return False
+    return bool(
+        inputs.cpi_6m_change_pct_slope_21d <= 0.0
+        and inputs.pmi_manufacturing <= config.pmi_disinflation_threshold
+    )
+
+
 def _credit_is_stressed(
     inputs: InflationGrowthRuleInputs,
     config: InflationGrowthRulesConfig,
@@ -230,6 +243,28 @@ def evaluate_recovery_growth(
         inputs.pmi_manufacturing_slope_21d > 0.0
         and inputs.pmi_manufacturing > config.pmi_recovery_threshold
         and inputs.cyclical_defensive_slope_21d > 0.0
+    )
+
+
+def evaluate_recovery_growth_unconfirmed(
+    inputs: InflationGrowthRuleInputs,
+    config: InflationGrowthRulesConfig,
+) -> bool:
+    """Improving growth where credit is not calm enough for confirmed recovery."""
+    if _any_nan(
+        inputs.cpi_6m_change_pct_slope_21d,
+        inputs.pmi_manufacturing_slope_21d,
+        inputs.pmi_manufacturing,
+        inputs.cyclical_defensive_slope_21d,
+    ):
+        return False
+    return bool(
+        inputs.cpi_6m_change_pct_slope_21d <= 0.0
+        and inputs.pmi_manufacturing_slope_21d > 0.0
+        and inputs.pmi_manufacturing > config.pmi_recovery_threshold
+        and inputs.cyclical_defensive_slope_21d > 0.0
+        and inputs.credit_funding_active_label
+        in {"credit_divergence", "credit_recovery", "spread_widening"}
     )
 
 
@@ -308,6 +343,29 @@ def evaluate_reflation(
     )
 
 
+def evaluate_late_cycle_inflation_stress(
+    inputs: InflationGrowthRuleInputs,
+    config: InflationGrowthRulesConfig,
+) -> bool:
+    """Expansion with non-declining inflation and market/credit stress."""
+    if _any_nan(
+        inputs.cpi_6m_change_pct_slope_21d,
+        inputs.pmi_manufacturing,
+        inputs.spy_21d_return,
+    ):
+        return False
+    credit_stress = inputs.credit_funding_active_label in {
+        "credit_stress",
+        "funding_squeeze",
+        "deleveraging",
+    }
+    return bool(
+        inputs.cpi_6m_change_pct_slope_21d >= 0.0
+        and inputs.pmi_manufacturing > config.pmi_goldilocks_threshold
+        and (inputs.spy_21d_return <= 0.0 or credit_stress)
+    )
+
+
 def evaluate_stagflation_lite(
     inputs: InflationGrowthRuleInputs,
     config: InflationGrowthRulesConfig,
@@ -355,6 +413,18 @@ def evaluate_earnings_contraction(
     )
 
 
+def evaluate_macro_neutral(
+    inputs: InflationGrowthRuleInputs,
+    config: InflationGrowthRulesConfig,  # noqa: ARG001
+) -> bool:
+    """Finite core macro inputs with no directional rule impulse."""
+    return not _any_nan(
+        inputs.cpi_6m_change_pct_slope_21d,
+        inputs.pmi_manufacturing,
+        inputs.spy_21d_return,
+    )
+
+
 def evaluate_rules(
     *,
     inputs: InflationGrowthRuleInputs,
@@ -367,12 +437,16 @@ def evaluate_rules(
         return "recession_scare"
     if evaluate_risk_off_mild(inputs, config):
         return "risk_off_mild"
-    if evaluate_disinflation(inputs, config):
-        return "disinflation"
     if evaluate_goldilocks(inputs, config):
         return "goldilocks"
     if evaluate_recovery_growth(inputs, config):
         return "recovery_growth"
+    if evaluate_recovery_growth_unconfirmed(inputs, config):
+        return "recovery_growth_unconfirmed"
+    if evaluate_disinflation(inputs, config):
+        return "disinflation"
+    if evaluate_late_cycle_inflation_stress(inputs, config):
+        return "late_cycle_inflation_stress"
     if evaluate_reflation(inputs, config):
         return "reflation"
     if evaluate_stagflation_lite(inputs, config):
@@ -381,4 +455,8 @@ def evaluate_rules(
         return "earnings_contraction"
     if evaluate_earnings_expansion(inputs, config):
         return "earnings_expansion"
+    if evaluate_contractionary_disinflation(inputs, config):
+        return "contractionary_disinflation"
+    if evaluate_macro_neutral(inputs, config):
+        return "macro_neutral"
     return "unknown"

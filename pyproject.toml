@@ -68,6 +68,14 @@ target-version = ["py311"]
 [tool.pyright]
 typeCheckingMode = "strict"
 include = [
+  "src/regime_detection/engine.py",
+  "src/regime_detection/models.py",
+  "src/regime_detection/axis_series.py",
+  "src/regime_detection/feature_store.py",
+  "src/regime_detection/feature_store_runtime.py",
+  "src/regime_detection/timeline.py",
+  "src/regime_detection/classification_coverage.py",
+  "src/regime_detection/rule_provenance.py",
   "src/regime_detection/observability.py",
   "src/regime_detection/loaders.py",
   "scripts/detect_flaky_tests.py",
@@ -88,6 +96,7 @@ known_first_party = [
   "regime_shared",
   "_fetch_regime_engine_v1_args",
   "_v2_calibration_helpers",
+  "run_shadow_regime",
 ]
 optional_dependencies_dev_groups = [
   "dev",

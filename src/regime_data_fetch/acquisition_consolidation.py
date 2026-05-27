@@ -6,6 +6,7 @@ import sqlite3
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TypedDict
+from contextlib import closing
 
 from regime_data_fetch.acquisition_consolidation_normalized import (
     AGGREGATE_EPS_SNAPSHOT_ROWS_TABLE,
@@ -78,7 +79,7 @@ def consolidate_acquisition_dbs(
         target_db_path.unlink()
 
     AcquisitionStore(target_db_path)
-    with sqlite3.connect(target_db_path) as conn:
+    with closing(sqlite3.connect(target_db_path)) as conn:
         _ensure_daily_ohlcv_table(conn)
         _ensure_normalized_tables(conn)
 
@@ -100,7 +101,7 @@ def consolidate_acquisition_dbs(
             }
         )
 
-    with sqlite3.connect(target_db_path) as conn:
+    with closing(sqlite3.connect(target_db_path)) as conn:
         final_counts = {
             FETCH_RUNS_TABLE: _count_rows(conn, FETCH_RUNS_TABLE),
             ARTIFACTS_TABLE: _count_rows(conn, ARTIFACTS_TABLE),
@@ -137,8 +138,8 @@ def _import_one_source(
     *, target_db_path: Path, source: ConsolidationSource
 ) -> dict[str, int]:
     with (
-        sqlite3.connect(target_db_path) as dst_conn,
-        sqlite3.connect(source.db_path) as src_conn,
+        closing(sqlite3.connect(target_db_path)) as dst_conn,
+        closing(sqlite3.connect(source.db_path)) as src_conn,
     ):
         dst_conn.execute("PRAGMA foreign_keys = ON")
         src_conn.row_factory = sqlite3.Row
@@ -229,28 +230,45 @@ def _import_one_source(
             artifact_id_map[int(row["artifact_id"])] = int(cursor.lastrowid)
 
         if _table_exists(src_conn, ARTIFACT_BLOBS_TABLE):
-            for row in src_conn.execute(
-                "SELECT * FROM artifact_blobs ORDER BY artifact_id"
-            ):
-                old_artifact_id = int(row["artifact_id"])
-                if old_artifact_id not in artifact_id_map:
-                    continue
-                dst_conn.execute(
+            blob_rows = [
+                (artifact_id_map[int(row["artifact_id"])], row["content_bytes"])
+                for row in src_conn.execute(
+                    "SELECT * FROM artifact_blobs ORDER BY artifact_id"
+                )
+                if int(row["artifact_id"]) in artifact_id_map
+            ]
+            if blob_rows:
+                dst_conn.executemany(
                     """
                     INSERT INTO artifact_blobs (
                         artifact_id,
                         content_bytes
                     ) VALUES (?, ?)
                     """,
-                    (artifact_id_map[old_artifact_id], row["content_bytes"]),
+                    blob_rows,
                 )
 
-        for row in src_conn.execute("SELECT * FROM derived_outputs ORDER BY output_id"):
-            new_run_id = fetch_run_id_map[int(row["run_id"])]
-            notes = _merge_notes(
-                row["notes"], f"imported_from={source.label}:{source.db_path}"
-            )
-            dst_conn.execute(
+        derived_source_rows = list(
+            src_conn.execute("SELECT * FROM derived_outputs ORDER BY output_id")
+        )
+        if derived_source_rows:
+            derived_insert_rows = [
+                (
+                    fetch_run_id_map[int(row["run_id"])],
+                    row["output_kind"],
+                    row["path"],
+                    row["content_sha256"],
+                    row["row_count"],
+                    row["min_date"],
+                    row["max_date"],
+                    row["recorded_at_utc"],
+                    _merge_notes(
+                        row["notes"], f"imported_from={source.label}:{source.db_path}"
+                    ),
+                )
+                for row in derived_source_rows
+            ]
+            dst_conn.executemany(
                 """
                 INSERT INTO derived_outputs (
                     run_id,
@@ -264,26 +282,17 @@ def _import_one_source(
                     notes
                 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
-                (
-                    new_run_id,
-                    row["output_kind"],
-                    row["path"],
-                    row["content_sha256"],
-                    row["row_count"],
-                    row["min_date"],
-                    row["max_date"],
-                    row["recorded_at_utc"],
-                    notes,
-                ),
+                derived_insert_rows,
             )
-            imported = _import_normalized_output(
-                dst_conn=dst_conn,
-                run_id=new_run_id,
-                output_kind=row["output_kind"],
-                path=Path(row["path"]),
-            )
-            if imported is not None:
-                normalized_counts[imported] += int(row["row_count"] or 0)
+            for row in derived_source_rows:
+                imported = _import_normalized_output(
+                    dst_conn=dst_conn,
+                    run_id=fetch_run_id_map[int(row["run_id"])],
+                    output_kind=row["output_kind"],
+                    path=Path(row["path"]),
+                )
+                if imported is not None:
+                    normalized_counts[imported] += int(row["row_count"] or 0)
 
         imported_daily_ohlcv_rows = 0
         if _table_exists(src_conn, DAILY_OHLCV_ROWS_TABLE):

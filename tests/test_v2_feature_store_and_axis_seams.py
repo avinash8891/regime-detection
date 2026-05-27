@@ -59,6 +59,11 @@ def test_feature_store_network_fragility_is_none_without_sector_data(
     store = build_feature_store(context)
 
     assert store.network_fragility is None
+    availability = store.availability["network_fragility"]
+    assert availability.available is False
+    assert availability.policy == "none"
+    assert availability.reason == "missing_required_inputs"
+    assert availability.missing_inputs == ("sector_etf_closes",)
 
 
 def test_feature_store_populates_network_fragility_with_real_v2_universe(
@@ -73,10 +78,44 @@ def test_feature_store_populates_network_fragility_with_real_v2_universe(
     store = build_feature_store(context)
 
     assert store.network_fragility is not None
+    assert store.availability["network_fragility"].available is True
+    assert store.availability["network_fragility"].reason == "populated"
     assert isinstance(store.network_fragility, NetworkFragilityFeatures)
     assert store.network_fragility.largest_eigenvalue_share_percentile_504d.loc[
         pd.Timestamp(_REAL_V2_AS_OF)
     ] == pytest.approx(0.8630952380952381)
+
+
+def test_feature_store_reports_configured_v2_seam_missing_inputs(
+    market_df_for_asof,
+) -> None:
+    as_of = date(2023, 12, 14)
+    context = build_market_context(
+        end_date=as_of,
+        market_data=market_df_for_asof(as_of),
+        config=RegimeEngine().config,
+    )
+
+    store = build_feature_store(
+        context,
+        monetary_pressure_v2_config=context.config.monetary_pressure_v2,
+    )
+
+    monetary = store.availability["monetary"]
+    assert monetary.available is False
+    # When monetary IS configured but required macro data is missing,
+    # _resolve_monetary emits policy_override="raise" so classification
+    # coverage flags this data gap as unsafe for downstream consumers that
+    # bypass the ClassifyRequest validator. The spec's default policy="none"
+    # only applies to the unconfigured case (expected opt-out absence).
+    assert monetary.policy == "raise"
+    assert monetary.reason == "missing_required_inputs"
+    assert set(monetary.missing_inputs) == {
+        "macro_series",
+        "2y_yield",
+        "10y_yield",
+        "broad_usd_index",
+    }
 
 
 # ---------- axis classifier stub --------------------------------------------
@@ -118,7 +157,10 @@ def test_network_fragility_classifier_returns_real_fixture_outputs(
     assert set(result.keys()) == set(context.sessions)
     allowed_labels = {
         "diversified_normal",
+        "decorrelated_calm",
+        "rotation_watch",
         "stock_picker_dispersion",
+        "idiosyncratic_crisis",
         "rising_fragility",
         "correlation_concentration",
         "correlation_to_one",
@@ -181,12 +223,15 @@ def test_timeline_emits_network_fragility_unknown_in_pure_v1_mode(
 ) -> None:
     """Default V2 timeline fails loudly when required V2 inputs are absent."""
     as_of = date(2023, 12, 14)
-    with pytest.raises(RuntimeError, match="transition_risk requires score inputs"):
+    with pytest.raises(ValueError) as excinfo:
         RegimeEngine().classify(
             as_of_date=as_of,
             market_data=market_df_for_asof(as_of),
             event_calendar=event_calendar_df,
         )
+    message = str(excinfo.value)
+    assert "ClassifyRequest missing configured V2 inputs" in message
+    assert "network_fragility: sector_etf_closes" in message
 
 
 def test_timeline_pulls_network_fragility_from_axis_bundle_when_sector_data_present(

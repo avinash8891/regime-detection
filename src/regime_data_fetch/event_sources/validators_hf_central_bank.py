@@ -123,9 +123,11 @@ class HFCentralBankValidator:
         if decision_rows.empty:
             return _unknown(candidate)
 
-        decision_rows["parsed_date"] = pd.to_datetime(
-            decision_rows["meeting_date"], errors="coerce"
-        ).dt.date
+        decision_rows = decision_rows.assign(
+            parsed_date=pd.to_datetime(
+                decision_rows["meeting_date"], errors="coerce"
+            ).dt.date
+        )
         dated_rows = decision_rows.dropna(subset=["parsed_date"])
         if dated_rows.empty:
             return _unknown(candidate)

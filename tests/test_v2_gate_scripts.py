@@ -52,6 +52,35 @@ def test_walkforward_gate_markdown_uses_comparison_gate_metric_names() -> None:
         assert f"- {metric_name}" in markdown
 
 
+def test_walkforward_gate_default_window_handles_partitioned_symbol_schemas(
+    tmp_path: Path,
+) -> None:
+    daily_dir = tmp_path / "daily"
+    spy_dir = daily_dir / "symbol=SPY"
+    rsp_dir = daily_dir / "symbol=RSP"
+    spy_dir.mkdir(parents=True)
+    rsp_dir.mkdir(parents=True)
+    pd.DataFrame(
+        {
+            "date": pd.to_datetime(["2026-05-11", "2026-05-12"]),
+            "symbol": pd.Series(["SPY", "SPY"], dtype="string"),
+            "close": [100.0, 101.0],
+        }
+    ).to_parquet(spy_dir / "ohlcv.parquet", index=False)
+    pd.DataFrame(
+        {
+            "date": pd.to_datetime(["2026-05-11", "2026-05-13"]),
+            "symbol": pd.Series(["RSP", "RSP"], dtype="category"),
+            "close": [99.0, 102.0],
+        }
+    ).to_parquet(rsp_dir / "ohlcv.parquet", index=False)
+
+    start_date, end_date = run_v2_walkforward_gate._resolve_default_window(daily_dir)
+
+    assert end_date == pd.Timestamp("2026-05-13").date()
+    assert start_date == pd.Timestamp("2025-02-12").date()
+
+
 @pytest.mark.parametrize(
     ("v1_errors", "v2_errors", "allow_session_errors", "expected"),
     [
@@ -253,13 +282,38 @@ def _write_v2_gate_parquets(tmp_path: Path) -> tuple[Path, Path]:
         vix = daily[daily["symbol"] == "VIXY"].copy()
         vix["symbol"] = "VIX"
         daily = pd.concat([daily, vix], ignore_index=True)
-    daily["date"] = pd.to_datetime(daily["date"])
+    daily = daily.assign(date=pd.to_datetime(daily["date"]))
     daily_path = tmp_path / "daily_ohlcv.parquet"
     daily.to_parquet(daily_path, index=False)
 
     macro = pd.read_csv(fixture_root / "fred_macro_series.csv")
-    macro["date"] = pd.to_datetime(macro["date"])
+    macro = macro.assign(date=pd.to_datetime(macro["date"]))
     macro = macro.dropna(subset=["value"]).reset_index(drop=True)
+    dates = pd.to_datetime(sorted(daily["date"].unique()))
+    trend = pd.Series(range(len(dates)), index=dates, dtype="float64")
+    synthetic_macro = {
+        "2y_yield": 4.00 + trend * 0.0002,
+        "10y_yield": 4.25 + trend * 0.0001,
+        "cpi_all_items": 300.0 + trend * 0.01,
+    }
+    macro = pd.concat(
+        [
+            macro,
+            pd.DataFrame(
+                [
+                    {
+                        "date": observed_date,
+                        "series_id": logical_name.upper(),
+                        "logical_name": logical_name,
+                        "value": value,
+                    }
+                    for logical_name, series in synthetic_macro.items()
+                    for observed_date, value in series.items()
+                ]
+            ),
+        ],
+        ignore_index=True,
+    )
     macro_path = tmp_path / "fred_macro_series.parquet"
     macro.to_parquet(macro_path, index=False)
     return daily_path, macro_path
@@ -306,7 +360,7 @@ def test_walkforward_gate_main_runs_against_committed_v2_fixtures(
 
     markdown = output_path.read_text()
     assert "- Window: 2026-05-12" in markdown
-    assert "| sessions classified | 0 | 1 | 1 |" in markdown
+    assert "| sessions classified | 1 | 1 | 0 |" in markdown
     assert "| sessions with credit_funding_state | 0 | 1 | 1 |" in markdown
     assert "| sessions with credit_funding_effective_state | 0 | 1 | 1 |" in markdown
 

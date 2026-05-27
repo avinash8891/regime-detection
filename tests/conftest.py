@@ -34,12 +34,14 @@ from types import ModuleType
 
 import pandas as pd
 import pytest
+
 import yaml
 
 _REPO_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(_REPO_ROOT))
 sys.path.insert(0, str(_REPO_ROOT / "src"))
 
+from regime_shared.pandas_compat import cow_safe_assign  # noqa: E402
 from regime_detection.engine import RegimeEngine  # noqa: E402
 from regime_detection.fragility_universe import (
     CROSS_ASSET_SYMBOLS,
@@ -209,8 +211,8 @@ def _load_market_data() -> pd.DataFrame:
         vix = df[df["symbol"] == "VIXY"].copy()
         vix["symbol"] = "VIX"
         df = pd.concat([df, vix], ignore_index=True)
-    df["date"] = pd.to_datetime(df["date"]).dt.date
     keep = ["date", "symbol", "open", "high", "low", "close", "volume"]
+    df = cow_safe_assign(df, {"date": pd.to_datetime(df["date"]).dt.date}, columns=keep)
     return df[keep].sort_values(["date", "symbol"]).reset_index(drop=True)
 
 
@@ -218,16 +220,15 @@ def _load_market_data() -> pd.DataFrame:
 def _load_v2_daily_ohlcv() -> pd.DataFrame:
     df = pd.read_csv(_V2_DAILY_OHLCV_PATH)
     df = df.copy()
-    df["date"] = pd.to_datetime(df["date"]).dt.date
     keep = ["date", "symbol", "open", "high", "low", "close", "volume"]
+    df = cow_safe_assign(df, {"date": pd.to_datetime(df["date"]).dt.date}, columns=keep)
     return df[keep].sort_values(["date", "symbol"]).reset_index(drop=True)
 
 
 @lru_cache(maxsize=1)
 def _load_v2_fred_macro() -> pd.DataFrame:
     df = pd.read_csv(_V2_FRED_MACRO_PATH)
-    df = df.copy()
-    df["date"] = pd.to_datetime(df["date"])
+    df = df.copy().assign(date=pd.to_datetime(df["date"]))
     keep = ["date", "series_id", "logical_name", "value"]
     return df[keep].sort_values(["date", "logical_name"]).reset_index(drop=True)
 
@@ -358,12 +359,13 @@ def v2_sector_etf_closes(
 def v2_cross_asset_closes(
     v2_close_series_by_symbol: dict[str, pd.Series],
 ) -> dict[str, pd.Series]:
-    missing = sorted(set(CROSS_ASSET_SYMBOLS).difference(v2_close_series_by_symbol))
+    required_symbols = set(CROSS_ASSET_SYMBOLS) | {"KRE", "XLY", "XLI", "XLP", "XLU"}
+    missing = sorted(required_symbols.difference(v2_close_series_by_symbol))
     if missing:
         raise RuntimeError(
             f"V2 daily OHLCV fixture missing cross-asset symbols: {missing}"
         )
-    return {symbol: v2_close_series_by_symbol[symbol] for symbol in CROSS_ASSET_SYMBOLS}
+    return {symbol: v2_close_series_by_symbol[symbol] for symbol in required_symbols}
 
 
 @pytest.fixture(scope="session")
@@ -406,6 +408,10 @@ def v2_macro_series_by_key() -> dict[str, pd.Series]:
     )
     series_by_key["2y_yield"] = (4.00 + trend * 0.0002).rename("2y_yield")
     series_by_key["10y_yield"] = (4.25 + trend * 0.0001).rename("10y_yield")
+    series_by_key["cpi_all_items"] = (300.0 + trend * 0.01).rename("cpi_all_items")
+    series_by_key["pmi_manufacturing"] = (50.0 + trend * 0.0001).rename(
+        "pmi_manufacturing"
+    )
     return series_by_key
 
 
@@ -466,13 +472,20 @@ def synthetic_v2_kwargs_for_market_data(event_calendar_df: pd.DataFrame):
                 phase=i + 3,
                 name=symbol,
             )
-            for i, symbol in enumerate(CROSS_ASSET_SYMBOLS)
+            for i, symbol in enumerate(
+                sorted(set(CROSS_ASSET_SYMBOLS) | {"KRE", "XLY", "XLI", "XLP", "XLU"})
+            )
         }
         trend = pd.Series(range(len(base.index)), index=base.index, dtype="float64")
         macro_series = {
             "2y_yield": (4.00 + trend * 0.0002).rename("2y_yield"),
             "10y_yield": (4.25 + trend * 0.0001).rename("10y_yield"),
             "broad_usd_index": (100.0 + trend * 0.001).rename("broad_usd_index"),
+            "sofr": (5.00 + trend * 0.00005).rename("sofr"),
+            "iorb": (5.05 + trend * 0.00004).rename("iorb"),
+            "nfci": (-0.20 + trend * 0.00001).rename("nfci"),
+            "cpi_all_items": (300.0 + trend * 0.01).rename("cpi_all_items"),
+            "pmi_manufacturing": (50.0 + trend * 0.0001).rename("pmi_manufacturing"),
         }
         first_day = base.index.min().date()
         pit_intervals = pd.DataFrame(
@@ -719,9 +732,13 @@ def real_v2_classify_window_2026_05_12(
     sector_etf_closes = {
         symbol: v2_close_series_by_symbol[symbol] for symbol in SECTOR_ETFS
     }
+    # Include KRE (credit_funding) and XLY/XLI/XLP/XLU (inflation_growth) so the
+    # ClassifyRequest validator at engine.py:259 sees all required cross_asset
+    # inputs when those axes are configured. Without these, fixture build fails
+    # with ValueError before the engine can classify.
     cross_asset_closes = {
         symbol: v2_close_series_by_symbol[symbol]
-        for symbol in set(CROSS_ASSET_SYMBOLS) | {"KRE"}
+        for symbol in set(CROSS_ASSET_SYMBOLS) | {"KRE", "XLY", "XLI", "XLP", "XLU"}
     }
     if worker_id == "master":
         return _build_real_v2_classify_window(

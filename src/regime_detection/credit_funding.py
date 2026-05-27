@@ -3,10 +3,12 @@
 Implements the 5-label axis classifier from spec §2C (lines 3169-3358):
 
   Labels (§2C lines 3173-3178):
-    credit_calm, spread_widening, credit_stress, funding_squeeze, deleveraging, unknown
+    credit_calm, credit_recovery, credit_divergence, spread_widening, credit_stress,
+    funding_squeeze, deleveraging, unknown
 
   Precedence (§2C line 3183):
-    deleveraging > funding_squeeze > credit_stress > spread_widening > credit_calm > unknown
+    deleveraging > funding_squeeze > credit_stress > spread_widening >
+    credit_divergence > credit_recovery > credit_calm > unknown
 
 Credit-spread metrics — two parallel sources (ADR 0007; implementation decision + #71):
 
@@ -73,6 +75,8 @@ from regime_detection.config import (
 
 CreditFundingLabel = Literal[
     "credit_calm",
+    "credit_recovery",
+    "credit_divergence",
     "spread_widening",
     "credit_stress",
     "funding_squeeze",
@@ -87,6 +91,7 @@ CreditFundingLabel = Literal[
 CREDIT_FUNDING_RISK_RANK: dict[CreditFundingLabel, int] = {
     "credit_calm": 0,
     "credit_recovery": 0,
+    "credit_divergence": 1,
     "unknown": 1,
     "spread_widening": 1,
     "credit_stress": 2,
@@ -634,36 +639,47 @@ def evaluate_credit_calm(
     )
 
 
+def spread_widening_rule_path(
+    inputs: CreditFundingRuleInputs,
+    config: CreditFundingRulesConfig,
+) -> str | None:
+    """Return the spread-widening path for confirmed or HY-led widening.
+
+    The spec path requires both HY and IG widening. The elevated HY-led path is
+    still a widening state when the HY spread percentile is already at or above
+    the calm boundary; IG lag is common during early deterioration.
+    """
+    if _any_nan(inputs.hy_spread_slope_21d, inputs.hy_spread_percentile_504d):
+        return None
+    if not np.isnan(inputs.ig_spread_slope_21d) and (
+        inputs.hy_spread_slope_21d > 0.0 and inputs.ig_spread_slope_21d > 0.0
+    ):
+        return "standard"
+    if (
+        inputs.hy_spread_slope_21d > 0.0
+        and inputs.hy_spread_percentile_504d >= config.hy_percentile_calm_max
+    ):
+        return "hy_led_elevated"
+    if getattr(config, "spread_widening_hy_only", False) and (
+        inputs.hy_spread_slope_21d > 0.0
+    ):
+        return "hy_only_config"
+    return None
+
+
 def evaluate_spread_widening(
     inputs: CreditFundingRuleInputs,
     config: CreditFundingRulesConfig,
 ) -> bool:
-    """v2 §2C lines 3253-3255.
-
-    ``hy_spread_slope_21d > 0 AND ig_spread_slope_21d > 0``
-    (strict positive slope on BOTH HY and IG legs).
-
-    Extended path: HY slope > 0 alone (IG not required). Captures
-    early-stage widening and divergent credit moves where HY leads.
-    """
-    if _any_nan(inputs.hy_spread_slope_21d):
-        return False
-    if not np.isnan(inputs.ig_spread_slope_21d) and (
-        inputs.hy_spread_slope_21d > 0.0 and inputs.ig_spread_slope_21d > 0.0
-    ):
-        return True
-    if getattr(config, "spread_widening_hy_only", False) and (
-        inputs.hy_spread_slope_21d > 0.0
-    ):
-        return True
-    return False
+    """v2 §2C lines 3253-3255 plus elevated HY-led widening."""
+    return spread_widening_rule_path(inputs, config) is not None
 
 
 def evaluate_credit_recovery(
     inputs: CreditFundingRuleInputs,
     config: CreditFundingRulesConfig,
 ) -> bool:
-    """Elevated spreads (percentile 0.50-0.80) that are narrowing (slope < 0).
+    """Elevated spreads (percentile >=0.50) that are narrowing (slope < 0).
 
     Economically: credit conditions are improving from stressed levels.
     Distinct from credit_calm (percentile < 0.50) and spread_widening (slope > 0).
@@ -674,11 +690,31 @@ def evaluate_credit_recovery(
     ):
         return False
     calm_max = getattr(config, "hy_percentile_calm_max", 0.50)
-    stress_min = getattr(config, "hy_percentile_stress_min", 0.80)
     return bool(
         inputs.hy_spread_percentile_504d >= calm_max
-        and inputs.hy_spread_percentile_504d < stress_min
         and inputs.hy_spread_slope_21d < 0.0
+    )
+
+
+def evaluate_credit_divergence(
+    inputs: CreditFundingRuleInputs,
+    config: CreditFundingRulesConfig,
+) -> bool:
+    """Low-spread HY-only widening with no IG confirmation.
+
+    This is benign/divergent credit behavior: absolute spread level is still
+    calm, HY is softening, and IG is not confirming a broad widening impulse.
+    """
+    if _any_nan(
+        inputs.hy_spread_percentile_504d,
+        inputs.hy_spread_slope_21d,
+        inputs.ig_spread_slope_21d,
+    ):
+        return False
+    return bool(
+        inputs.hy_spread_percentile_504d < config.hy_percentile_calm_max
+        and inputs.hy_spread_slope_21d > 0.0
+        and inputs.ig_spread_slope_21d <= 0.0
     )
 
 
@@ -810,7 +846,8 @@ def evaluate_rules(
 ) -> CreditFundingLabel:
     """Walk v2 §2C precedence and return the first matching label.
 
-    Falls through to ``unknown`` when no rule fires (§2C line 3183 tail).
+    Falls through to ``unknown`` only when the supplied valid inputs escape
+    the intended rule partition.
     """
     return evaluate_rules_with_evidence(inputs=inputs, config=config).label
 
@@ -833,18 +870,23 @@ def evaluate_rules_with_evidence(
         )
     if evaluate_credit_stress(inputs, config):
         return CreditFundingRuleEvaluation(label="credit_stress", rule_path="standard")
-    if evaluate_spread_widening(inputs, config):
+    widening_path = spread_widening_rule_path(inputs, config)
+    if widening_path is not None:
         return CreditFundingRuleEvaluation(
-            label="spread_widening", rule_path="standard"
+            label="spread_widening", rule_path=widening_path
+        )
+    if evaluate_credit_divergence(inputs, config):
+        return CreditFundingRuleEvaluation(
+            label="credit_divergence", rule_path="hy_only_low_spread"
         )
     if evaluate_credit_recovery(inputs, config):
         return CreditFundingRuleEvaluation(
-            label="credit_recovery", rule_path="standard"
+            label="credit_recovery", rule_path="elevated_narrowing"
         )
     if evaluate_credit_calm(inputs, config):
         return CreditFundingRuleEvaluation(label="credit_calm", rule_path="standard")
     return CreditFundingRuleEvaluation(
         label="unknown",
-        rule_path="none",
-        reason="no_rule_fired",
+        rule_path="unpartitioned_rule_space",
+        reason="unpartitioned_credit_funding_rule_space",
     )

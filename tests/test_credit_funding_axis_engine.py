@@ -23,7 +23,11 @@ from regime_detection.axis_series import (
     build_credit_funding_proxy_axis_series,
     resolve_credit_funding_effective_output,
 )
-from regime_detection.models import CreditFundingOutput, DataQuality
+from regime_detection.models import (
+    CreditFundingEvidencePayload,
+    CreditFundingOutput,
+    DataQuality,
+)
 from regime_detection.calendar import nyse_sessions_between
 from regime_detection.config import (
     CreditFundingRulesConfig,
@@ -32,6 +36,8 @@ from regime_detection.config import (
 from regime_detection.credit_funding import (
     CREDIT_FUNDING_RISK_RANK,
     CreditFundingFeatures,
+    CreditFundingRuleInputs,
+    evaluate_rules_with_evidence,
 )
 from regime_detection.engine import RegimeEngine
 from regime_detection.feature_store import build_feature_store
@@ -77,6 +83,78 @@ def _make_random_walk(
 
 def _default_rules() -> CreditFundingRulesConfig:
     return load_default_regime_config().credit_funding.rules
+
+
+def test_low_spread_hy_only_widening_emits_credit_divergence() -> None:
+    """Low-spread HY-only widening is an explicit divergence state."""
+
+    result = evaluate_rules_with_evidence(
+        inputs=CreditFundingRuleInputs(
+            hy_spread_percentile_504d=0.37,
+            hy_spread_slope_21d=0.00007,
+            ig_spread_slope_21d=-0.001,
+            broad_usd_index_zscore_21d=-1.4,
+            sofr_iorb_slope_21d=-0.0005,
+            spy_21d_return=0.018,
+            tlt_21d_return=0.028,
+            realized_vol_21d_percentile_252d=0.13,
+            realized_vol_21d=0.10,
+            avg_pairwise_corr_percentile_504d=0.70,
+            avg_pairwise_corr_63d=0.36,
+        ),
+        config=_default_rules(),
+    )
+
+    assert result.label == "credit_divergence"
+    assert result.rule_path == "hy_only_low_spread"
+
+
+def test_elevated_hy_only_widening_emits_spread_widening() -> None:
+    """Elevated HY-led widening is deterioration even if IG lags."""
+
+    result = evaluate_rules_with_evidence(
+        inputs=CreditFundingRuleInputs(
+            hy_spread_percentile_504d=0.73,
+            hy_spread_slope_21d=0.00007,
+            ig_spread_slope_21d=-0.001,
+            broad_usd_index_zscore_21d=-1.4,
+            sofr_iorb_slope_21d=-0.0005,
+            spy_21d_return=0.018,
+            tlt_21d_return=0.028,
+            realized_vol_21d_percentile_252d=0.13,
+            realized_vol_21d=0.10,
+            avg_pairwise_corr_percentile_504d=0.70,
+            avg_pairwise_corr_63d=0.36,
+        ),
+        config=_default_rules(),
+    )
+
+    assert result.label == "spread_widening"
+    assert result.rule_path == "hy_led_elevated"
+
+
+def test_high_spread_narrowing_without_equity_stress_emits_credit_recovery() -> None:
+    """High spreads that are narrowing are repair unless stress rules fire."""
+
+    result = evaluate_rules_with_evidence(
+        inputs=CreditFundingRuleInputs(
+            hy_spread_percentile_504d=0.91,
+            hy_spread_slope_21d=-0.0003,
+            ig_spread_slope_21d=-0.0001,
+            broad_usd_index_zscore_21d=0.2,
+            sofr_iorb_slope_21d=0.0,
+            spy_21d_return=0.02,
+            tlt_21d_return=0.01,
+            realized_vol_21d_percentile_252d=0.30,
+            realized_vol_21d=0.12,
+            avg_pairwise_corr_percentile_504d=0.55,
+            avg_pairwise_corr_63d=0.32,
+        ),
+        config=_default_rules(),
+    )
+
+    assert result.label == "credit_recovery"
+    assert result.rule_path == "elevated_narrowing"
 
 
 # --- Group A — Feature compute (5 tests) -------------------------------------
@@ -374,6 +452,29 @@ def test_effective_credit_funding_uses_higher_risk_when_oas_and_proxy_diverge() 
     assert effective.evidence["agreement_status"] == "divergent"
     assert effective.evidence["oas_label"] == "credit_calm"
     assert effective.evidence["proxy_label"] == "spread_widening"
+
+
+def test_credit_funding_output_uses_typed_evidence_payload() -> None:
+    output = _credit_output(label="credit_calm", source="ice_bofa_oas")
+
+    assert type(output.evidence) is CreditFundingEvidencePayload
+    assert output.evidence.spread_source == "ice_bofa_oas"
+    assert output.evidence["spread_source"] == "ice_bofa_oas"
+
+
+def test_effective_credit_funding_evidence_stays_typed_after_merge() -> None:
+    oas = _credit_output(label="credit_calm", source="ice_bofa_oas")
+    proxy = _credit_output(
+        label="spread_widening",
+        source="tlt_total_return_differential",
+    )
+
+    effective = resolve_credit_funding_effective_output(oas=oas, proxy=proxy)
+
+    assert effective is not None
+    assert type(effective.evidence) is CreditFundingEvidencePayload
+    assert effective.evidence.source_used == "proxy_higher_risk"
+    assert effective.evidence.agreement_status == "divergent"
 
 
 def test_effective_credit_funding_falls_back_to_proxy_when_oas_unavailable() -> None:
@@ -818,6 +919,7 @@ def test_regime_output_carries_credit_funding_state_when_configured(
         )
         for symbol, series in context.sector_etf_closes.items()
     }
+    config = context.config.model_copy(update={"inflation_growth": None})
     timeline = engine.classify_window(
         end_date=context.end_date,
         market_data=pd.DataFrame(
@@ -847,7 +949,7 @@ def test_regime_output_carries_credit_funding_state_when_configured(
             ]
         ),
         lookback_days=1,
-        config=context.config,
+        config=config,
         vix_data=pd.DataFrame(
             {"date": [ts.date() for ts in context.spy_ohlcv.index], "close": 20.0}
         ),

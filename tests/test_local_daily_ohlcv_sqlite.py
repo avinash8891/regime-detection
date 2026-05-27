@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import sqlite3
 from pathlib import Path
+from contextlib import closing
 
 import pandas as pd
 
@@ -69,7 +70,7 @@ def test_run_local_daily_ohlcv_sqlite_import_records_rows_and_artifacts(
         "local_path": FIXED_UNIVERSE_LOCAL_PATH,
     }
 
-    with sqlite3.connect(acquisition_db) as conn:
+    with closing(sqlite3.connect(acquisition_db)) as conn:
         fetch_runs = conn.execute(
             "SELECT fetch_type, status FROM fetch_runs"
         ).fetchall()
@@ -127,7 +128,7 @@ def test_run_local_daily_ohlcv_sqlite_import_rejects_bad_source_schema(
     else:
         raise AssertionError("Expected malformed OHLCV parquet to fail loudly")
 
-    with sqlite3.connect(acquisition_db) as conn:
+    with closing(sqlite3.connect(acquisition_db)) as conn:
         fetch_runs = conn.execute(
             "SELECT fetch_type, status, notes FROM fetch_runs"
         ).fetchall()
@@ -271,7 +272,7 @@ def test_run_alpaca_constituent_daily_ohlcv_fetch_materializes_profile_tree_and_
     )
     assert aapl_tree["symbol"].to_list() == ["AAPL"]
 
-    with sqlite3.connect(acquisition_db) as conn:
+    with closing(sqlite3.connect(acquisition_db)) as conn:
         ohlcv_rows = conn.execute(
             "SELECT symbol, date, close FROM daily_ohlcv_rows ORDER BY symbol, date"
         ).fetchall()

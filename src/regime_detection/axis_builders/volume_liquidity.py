@@ -12,7 +12,11 @@ from regime_detection.data_quality import (
 from regime_detection.axis_builders.per_label import build_per_label_axis_outputs
 from regime_detection.feature_store import FeatureStore
 from regime_detection.market_context import MarketContext
-from regime_detection.models import DataQuality, VolumeLiquidityStateOutput
+from regime_detection.models import (
+    DataQuality,
+    VolumeLiquidityEvidencePayload,
+    VolumeLiquidityStateOutput,
+)
 from regime_detection.volume_liquidity_rules import (
     VOLUME_LIQUIDITY_RISK_RANK,
     VolumeLiquidityLabel,
@@ -36,7 +40,7 @@ def _volume_liquidity_output(
         raw_label=cast(VolumeLiquidityLabel, raw_label),
         stable_label=cast(VolumeLiquidityLabel, stable_label),
         active_label=cast(VolumeLiquidityLabel, active_label),
-        evidence=evidence,
+        evidence=VolumeLiquidityEvidencePayload.model_validate(evidence),
         data_quality=data_quality,
     )
 

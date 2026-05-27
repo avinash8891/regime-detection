@@ -8,8 +8,11 @@ import pandas as pd
 from regime_detection.axis_series import (
     AXIS_BUILD_ORDER,
     AXIS_DEPENDENCIES,
+    AXIS_DEPENDENCY_CONTRACTS,
+    AxisDependencyContract,
     AxisSeriesBundle,
     _build_axis_outputs,
+    _dependency_contracts_by_downstream,
     _validate_axis_dependency_order,
     build_axis_series_bundle,
 )
@@ -45,6 +48,93 @@ def test_axis_build_order_satisfies_declared_dependencies() -> None:
     )
     assert AXIS_DEPENDENCIES["inflation_growth"] == ("credit_funding_effective",)
     _validate_axis_dependency_order(AXIS_BUILD_ORDER, AXIS_DEPENDENCIES)
+
+
+def test_axis_dependency_contracts_declare_every_current_cross_axis_edge() -> None:
+    expected_edges = {
+        ("breadth_state", "network_fragility"),
+        ("volatility_state", "network_fragility"),
+        ("credit_funding_effective", "network_fragility"),
+        ("credit_funding_effective", "inflation_growth"),
+        ("trend_direction", "transition_risk_history"),
+        ("trend_character", "transition_risk_history"),
+        ("volatility_state", "transition_risk_history"),
+        ("breadth_state", "transition_risk_history"),
+        ("trend_direction", "transition_risk_selection"),
+        ("trend_character", "transition_risk_selection"),
+        ("volatility_state", "transition_risk_selection"),
+        ("breadth_state", "transition_risk_selection"),
+        ("event_calendar", "transition_score"),
+        ("credit_funding_effective", "transition_score"),
+        ("volume_liquidity_state", "transition_score"),
+        ("trend_direction", "cohort_routing"),
+        ("trend_character", "cohort_routing"),
+        ("volatility_state", "cohort_routing"),
+        ("breadth_state", "cohort_routing"),
+        ("network_fragility", "cohort_routing"),
+        ("monetary_pressure_state", "cohort_routing"),
+        ("trend_direction", "strategy_response"),
+        ("trend_character", "strategy_response"),
+        ("volatility_state", "strategy_response"),
+        ("breadth_state", "strategy_response"),
+        ("transition_risk", "strategy_response"),
+        ("event_calendar", "strategy_response"),
+    }
+
+    assert {
+        (contract.upstream_axis, contract.downstream_consumer)
+        for contract in AXIS_DEPENDENCY_CONTRACTS
+    } == expected_edges
+
+
+def test_axis_dependency_contracts_name_payload_and_failure_semantics() -> None:
+    for contract in AXIS_DEPENDENCY_CONTRACTS:
+        assert isinstance(contract, AxisDependencyContract)
+        assert contract.payload_fields
+        assert contract.absent_policy
+        assert contract.stale_policy
+        assert contract.unknown_policy
+        assert contract.degraded_policy
+        assert contract.invalid_policy
+
+
+def test_declared_axis_dependencies_are_derived_from_contract_graph() -> None:
+    contracts_by_downstream = _dependency_contracts_by_downstream(
+        AXIS_DEPENDENCY_CONTRACTS
+    )
+
+    assert AXIS_DEPENDENCIES == {
+        "network_fragility": (
+            "breadth_state",
+            "volatility_state",
+            "credit_funding_effective",
+        ),
+        "inflation_growth": ("credit_funding_effective",),
+    }
+    assert (
+        tuple(
+            contract.upstream_axis
+            for contract in contracts_by_downstream["network_fragility"]
+        )
+        == AXIS_DEPENDENCIES["network_fragility"]
+    )
+
+
+def test_contract_graph_captures_label_only_credit_edge_semantics() -> None:
+    contracts = {
+        (contract.upstream_axis, contract.downstream_consumer): contract
+        for contract in AXIS_DEPENDENCY_CONTRACTS
+    }
+
+    credit_to_network = contracts[("credit_funding_effective", "network_fragility")]
+    assert credit_to_network.payload_fields == ("active_label",)
+    assert credit_to_network.absent_policy == "pass_none_to_falsify_predicate"
+    assert credit_to_network.stale_policy == "label_only_data_quality_not_visible"
+    assert credit_to_network.invalid_policy == "raise_on_missing_session_when_present"
+
+    credit_to_score = contracts[("credit_funding_effective", "transition_score")]
+    assert credit_to_score.absent_policy == "omit_component"
+    assert credit_to_score.unknown_policy == "omit_if_not_classified"
 
 
 def test_build_axis_series_bundle_emits_session_keyed_outputs_for_core_axes(

@@ -13,7 +13,11 @@ from regime_detection.data_quality import (
 from regime_detection.axis_builders.per_label import build_per_label_axis_outputs
 from regime_detection.feature_store import FeatureStore
 from regime_detection.market_context import MarketContext
-from regime_detection.models import DataQuality, MonetaryPressureV2Output
+from regime_detection.models import (
+    DataQuality,
+    MonetaryPressureEvidencePayload,
+    MonetaryPressureV2Output,
+)
 from regime_detection.monetary_pressure import (
     MONETARY_PRESSURE_V2_RISK_RANK,
     MonetaryPressureV2Label,
@@ -52,7 +56,7 @@ def _monetary_pressure_output(
         raw_label=cast(MonetaryPressureV2Label, raw_label),
         stable_label=cast(MonetaryPressureV2Label, stable_label),
         active_label=cast(MonetaryPressureV2Label, active_label),
-        evidence=evidence,
+        evidence=MonetaryPressureEvidencePayload.model_validate(evidence),
         data_quality=data_quality,
     )
 

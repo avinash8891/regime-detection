@@ -22,12 +22,16 @@ every assertion (no ``is not None`` placeholders).
 
 from __future__ import annotations
 
+import datetime as dt
+import warnings
+
 import numpy as np
 import pandas as pd
 import pytest
 
 from regime_detection.breadth_state_v2 import (
     BreadthV2Features,
+    _normalize_interval_dates,
     compute_breadth_v2_features,
     make_bias_warnings_frame,  # noqa: F401  (asserted as importable in GREEN)
 )
@@ -180,6 +184,24 @@ def _assert_all_pit_none(out: BreadthV2Features) -> None:
     assert out.breadth_thrust is None
     assert out.bias_warnings is not None
     assert set(out.bias_warnings["feature_name"]) == {"available_sector_breadth"}
+
+
+def test_normalize_interval_dates_is_clean_under_copy_on_write_warning_mode() -> None:
+    intervals = pd.DataFrame(
+        {
+            "ticker": [AAPL],
+            "start_date": ["2020-01-01"],
+            "end_date": [None],
+        }
+    )
+
+    with pd.option_context("mode.copy_on_write", "warn"):
+        with warnings.catch_warnings():
+            warnings.simplefilter("error", FutureWarning)
+            out = _normalize_interval_dates(intervals)
+
+    assert out.loc[0, "start_date"] == dt.date(2020, 1, 1)
+    assert out.loc[0, "end_date"] is None
 
 
 def test_pit_features_none_when_pit_intervals_not_supplied(v2_breadth_config):

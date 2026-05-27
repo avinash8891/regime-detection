@@ -63,6 +63,9 @@ V2_NETWORK_FRAGILITY_DEESCALATION_DAYS = {
     "correlation_to_one": 5,
     "systemic_stress_unconfirmed": 5,
     "systemic_stress": 5,
+    "idiosyncratic_crisis": 3,
+    "rotation_watch": 0,
+    "decorrelated_calm": 0,
     "unknown": 0,
 }
 

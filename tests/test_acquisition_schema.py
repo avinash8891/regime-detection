@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import sqlite3
+from contextlib import closing
 
 from regime_data_fetch.acquisition_schema import init_acquisition_schema
 
@@ -97,7 +98,7 @@ EXPECTED_SCHEMA_COLUMNS = {
 
 
 def test_acquisition_schema_initializes_expected_tables_and_columns() -> None:
-    with sqlite3.connect(":memory:") as conn:
+    with closing(sqlite3.connect(":memory:")) as conn:
         init_acquisition_schema(conn)
 
         table_names = {row[0] for row in conn.execute("""

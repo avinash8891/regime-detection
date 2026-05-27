@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import sqlite3
 from pathlib import Path
+from contextlib import closing
 
 import pandas as pd
 
@@ -47,7 +48,7 @@ def test_run_local_investing_archive_import_records_raw_and_canonical_artifacts(
     assert pd.read_parquet(out_dir / "investing" / "holidays.parquet").shape[0] == 1
     assert pd.read_parquet(out_dir / "investing" / "earnings.parquet").shape[0] == 2
 
-    with sqlite3.connect(db_path) as conn:
+    with closing(sqlite3.connect(db_path)) as conn:
         assert conn.execute("SELECT fetch_type, status FROM fetch_runs").fetchall() == [
             ("investing_archive_local", "ok")
         ]
@@ -103,7 +104,7 @@ def test_run_local_investing_archive_import_allows_empty_windows(
     assert report["counts"]["economic_events_rows"] == 0
     assert report["counts"]["holiday_rows"] == 0
     assert report["counts"]["earnings_rows"] == 0
-    with sqlite3.connect(db_path) as conn:
+    with closing(sqlite3.connect(db_path)) as conn:
         assert conn.execute("""
             SELECT row_count, min_date, max_date
             FROM derived_outputs
@@ -148,7 +149,7 @@ def test_run_local_investing_archive_import_redacts_loaded_earnings_page(
     assert "accessToken" in raw_page_html
     assert "[redacted]" in raw_page_html
     assert "secret-token" not in raw_page_html
-    with sqlite3.connect(db_path) as conn:
+    with closing(sqlite3.connect(db_path)) as conn:
         recorded_paths = [
             row[0]
             for row in conn.execute(

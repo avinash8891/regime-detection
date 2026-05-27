@@ -1,7 +1,12 @@
 from __future__ import annotations
 
+# pyright: reportPrivateUsage=false
+# pyright: reportUnusedFunction=false
+
 from dataclasses import dataclass
 from datetime import date
+
+import pandas as pd
 
 from regime_detection.axis_builders.breadth import build_breadth_axis_series
 from regime_detection.axis_builders.credit_funding import (
@@ -45,6 +50,7 @@ from regime_detection.hysteresis import apply_data_quality_aware_hysteresis
 from regime_detection.market_context import MarketContext
 from regime_detection.models import (
     AxisOutput,
+    AxisEvidencePayload,
     BreadthStateOutput,
     CreditFundingOutput,
     EventCalendarOutput,
@@ -102,6 +108,25 @@ class AxisSeriesBundle:
     inflation_growth: dict[date, InflationGrowthOutput] | None = None
 
 
+@dataclass(frozen=True)
+class AxisDependencyContract:
+    """Declared payload and failure semantics for one cross-axis edge.
+
+    `AXIS_DEPENDENCIES` remains the build-order graph. This contract is the
+    business contract: what crosses the edge and how absence, staleness,
+    unknown labels, degraded quality, and invalid sessions are interpreted.
+    """
+
+    upstream_axis: str
+    downstream_consumer: str
+    payload_fields: tuple[str, ...]
+    absent_policy: str
+    stale_policy: str
+    unknown_policy: str
+    degraded_policy: str
+    invalid_policy: str
+
+
 AXIS_BUILD_ORDER: tuple[str, ...] = (
     "trend_direction",
     "trend_character",
@@ -117,14 +142,306 @@ AXIS_BUILD_ORDER: tuple[str, ...] = (
     "inflation_growth",
 )
 
-AXIS_DEPENDENCIES: dict[str, tuple[str, ...]] = {
-    "credit_funding_effective": ("credit_funding", "credit_funding_proxy"),
-    "network_fragility": (
-        "breadth_state",
-        "volatility_state",
-        "credit_funding_effective",
+AXIS_DEPENDENCY_CONTRACTS: tuple[AxisDependencyContract, ...] = (
+    # These edges intentionally declare the current label-only contract. If a
+    # downstream consumer starts needing upstream evidence, stable_label, or
+    # data_quality, this table must change before the wire shape changes.
+    AxisDependencyContract(
+        upstream_axis="breadth_state",
+        downstream_consumer="network_fragility",
+        payload_fields=("active_label",),
+        absent_policy="fallback_unknown_when_omitted",
+        stale_policy="label_only_data_quality_not_visible",
+        unknown_policy="pass_unknown_label",
+        degraded_policy="label_only_data_quality_not_visible",
+        invalid_policy="raise_on_missing_session_when_present",
     ),
-    "inflation_growth": ("credit_funding_effective",),
+    AxisDependencyContract(
+        upstream_axis="volatility_state",
+        downstream_consumer="network_fragility",
+        payload_fields=("active_label",),
+        absent_policy="fallback_unknown_when_omitted",
+        stale_policy="label_only_data_quality_not_visible",
+        unknown_policy="pass_unknown_label",
+        degraded_policy="label_only_data_quality_not_visible",
+        invalid_policy="raise_on_missing_session_when_present",
+    ),
+    AxisDependencyContract(
+        upstream_axis="credit_funding_effective",
+        downstream_consumer="network_fragility",
+        payload_fields=("active_label",),
+        absent_policy="pass_none_to_falsify_predicate",
+        stale_policy="label_only_data_quality_not_visible",
+        unknown_policy="pass_unknown_label",
+        degraded_policy="label_only_data_quality_not_visible",
+        invalid_policy="raise_on_missing_session_when_present",
+    ),
+    AxisDependencyContract(
+        upstream_axis="credit_funding_effective",
+        downstream_consumer="inflation_growth",
+        payload_fields=("active_label",),
+        absent_policy="pass_none_to_falsify_predicate",
+        stale_policy="label_only_data_quality_not_visible",
+        unknown_policy="pass_unknown_label",
+        degraded_policy="label_only_data_quality_not_visible",
+        invalid_policy="raise_on_missing_session_when_present",
+    ),
+    AxisDependencyContract(
+        upstream_axis="trend_direction",
+        downstream_consumer="transition_risk_history",
+        payload_fields=("stable_label",),
+        absent_policy="raise_on_missing_required_axis",
+        stale_policy="label_only_data_quality_not_visible",
+        unknown_policy="pass_unknown_label",
+        degraded_policy="label_only_data_quality_not_visible",
+        invalid_policy="raise_on_missing_session",
+    ),
+    AxisDependencyContract(
+        upstream_axis="trend_character",
+        downstream_consumer="transition_risk_history",
+        payload_fields=("stable_label",),
+        absent_policy="raise_on_missing_required_axis",
+        stale_policy="label_only_data_quality_not_visible",
+        unknown_policy="pass_unknown_label",
+        degraded_policy="label_only_data_quality_not_visible",
+        invalid_policy="raise_on_missing_session",
+    ),
+    AxisDependencyContract(
+        upstream_axis="volatility_state",
+        downstream_consumer="transition_risk_history",
+        payload_fields=("stable_label",),
+        absent_policy="raise_on_missing_required_axis",
+        stale_policy="label_only_data_quality_not_visible",
+        unknown_policy="pass_unknown_label",
+        degraded_policy="label_only_data_quality_not_visible",
+        invalid_policy="raise_on_missing_session",
+    ),
+    AxisDependencyContract(
+        upstream_axis="breadth_state",
+        downstream_consumer="transition_risk_history",
+        payload_fields=("stable_label",),
+        absent_policy="raise_on_missing_required_axis",
+        stale_policy="label_only_data_quality_not_visible",
+        unknown_policy="pass_unknown_label",
+        degraded_policy="label_only_data_quality_not_visible",
+        invalid_policy="raise_on_missing_session",
+    ),
+    AxisDependencyContract(
+        upstream_axis="trend_direction",
+        downstream_consumer="transition_risk_selection",
+        payload_fields=("active_label",),
+        absent_policy="raise_on_missing_required_axis",
+        stale_policy="label_only_data_quality_not_visible",
+        unknown_policy="force_transition_score_missing_axis_data_quality",
+        degraded_policy="label_only_data_quality_not_visible",
+        invalid_policy="raise_on_missing_session",
+    ),
+    AxisDependencyContract(
+        upstream_axis="trend_character",
+        downstream_consumer="transition_risk_selection",
+        payload_fields=("active_label",),
+        absent_policy="raise_on_missing_required_axis",
+        stale_policy="label_only_data_quality_not_visible",
+        unknown_policy="force_transition_score_missing_axis_data_quality",
+        degraded_policy="label_only_data_quality_not_visible",
+        invalid_policy="raise_on_missing_session",
+    ),
+    AxisDependencyContract(
+        upstream_axis="volatility_state",
+        downstream_consumer="transition_risk_selection",
+        payload_fields=("active_label",),
+        absent_policy="raise_on_missing_required_axis",
+        stale_policy="label_only_data_quality_not_visible",
+        unknown_policy="force_transition_score_missing_axis_data_quality",
+        degraded_policy="label_only_data_quality_not_visible",
+        invalid_policy="raise_on_missing_session",
+    ),
+    AxisDependencyContract(
+        upstream_axis="breadth_state",
+        downstream_consumer="transition_risk_selection",
+        payload_fields=("active_label",),
+        absent_policy="raise_on_missing_required_axis",
+        stale_policy="label_only_data_quality_not_visible",
+        unknown_policy="force_transition_score_missing_axis_data_quality",
+        degraded_policy="label_only_data_quality_not_visible",
+        invalid_policy="raise_on_missing_session",
+    ),
+    AxisDependencyContract(
+        upstream_axis="event_calendar",
+        downstream_consumer="transition_score",
+        payload_fields=("matching_labels",),
+        absent_policy="raise_on_missing_required_axis",
+        stale_policy="not_encoded_on_payload",
+        unknown_policy="pass_empty_or_matching_labels",
+        degraded_policy="not_encoded_on_payload",
+        invalid_policy="raise_on_missing_session",
+    ),
+    AxisDependencyContract(
+        upstream_axis="credit_funding_effective",
+        downstream_consumer="transition_score",
+        payload_fields=("active_label", "classification_status"),
+        absent_policy="omit_component",
+        stale_policy="omit_if_not_classified",
+        unknown_policy="omit_if_not_classified",
+        degraded_policy="omit_if_not_classified",
+        invalid_policy="omit_missing_session",
+    ),
+    AxisDependencyContract(
+        upstream_axis="volume_liquidity_state",
+        downstream_consumer="transition_score",
+        payload_fields=("active_label", "classification_status"),
+        absent_policy="omit_component",
+        stale_policy="omit_if_not_classified",
+        unknown_policy="omit_if_not_classified",
+        degraded_policy="omit_if_not_classified",
+        invalid_policy="omit_missing_session",
+    ),
+    AxisDependencyContract(
+        upstream_axis="trend_direction",
+        downstream_consumer="cohort_routing",
+        payload_fields=("active_label",),
+        absent_policy="raise_on_missing_required_axis",
+        stale_policy="label_only_data_quality_not_visible",
+        unknown_policy="pass_unknown_label",
+        degraded_policy="label_only_data_quality_not_visible",
+        invalid_policy="raise_on_missing_output",
+    ),
+    AxisDependencyContract(
+        upstream_axis="trend_character",
+        downstream_consumer="cohort_routing",
+        payload_fields=("active_label",),
+        absent_policy="raise_on_missing_required_axis",
+        stale_policy="label_only_data_quality_not_visible",
+        unknown_policy="pass_unknown_label",
+        degraded_policy="label_only_data_quality_not_visible",
+        invalid_policy="raise_on_missing_output",
+    ),
+    AxisDependencyContract(
+        upstream_axis="volatility_state",
+        downstream_consumer="cohort_routing",
+        payload_fields=("active_label",),
+        absent_policy="raise_on_missing_required_axis",
+        stale_policy="label_only_data_quality_not_visible",
+        unknown_policy="pass_unknown_label",
+        degraded_policy="label_only_data_quality_not_visible",
+        invalid_policy="raise_on_missing_output",
+    ),
+    AxisDependencyContract(
+        upstream_axis="breadth_state",
+        downstream_consumer="cohort_routing",
+        payload_fields=("active_label",),
+        absent_policy="raise_on_missing_required_axis",
+        stale_policy="label_only_data_quality_not_visible",
+        unknown_policy="pass_unknown_label",
+        degraded_policy="label_only_data_quality_not_visible",
+        invalid_policy="raise_on_missing_output",
+    ),
+    AxisDependencyContract(
+        upstream_axis="network_fragility",
+        downstream_consumer="cohort_routing",
+        payload_fields=("active_label",),
+        absent_policy="timeline_placeholder_unknown",
+        stale_policy="label_only_data_quality_not_visible",
+        unknown_policy="pass_unknown_label",
+        degraded_policy="label_only_data_quality_not_visible",
+        invalid_policy="raise_on_missing_output",
+    ),
+    AxisDependencyContract(
+        upstream_axis="monetary_pressure_state",
+        downstream_consumer="cohort_routing",
+        payload_fields=("active_label",),
+        absent_policy="pass_none",
+        stale_policy="label_only_data_quality_not_visible",
+        unknown_policy="pass_unknown_label",
+        degraded_policy="label_only_data_quality_not_visible",
+        invalid_policy="raise_when_configured_but_unavailable",
+    ),
+    AxisDependencyContract(
+        upstream_axis="trend_direction",
+        downstream_consumer="strategy_response",
+        payload_fields=("active_label",),
+        absent_policy="raise_on_missing_required_axis",
+        stale_policy="label_only_data_quality_not_visible",
+        unknown_policy="pass_unknown_label",
+        degraded_policy="label_only_data_quality_not_visible",
+        invalid_policy="raise_on_missing_output",
+    ),
+    AxisDependencyContract(
+        upstream_axis="trend_character",
+        downstream_consumer="strategy_response",
+        payload_fields=("active_label",),
+        absent_policy="raise_on_missing_required_axis",
+        stale_policy="label_only_data_quality_not_visible",
+        unknown_policy="pass_unknown_label",
+        degraded_policy="label_only_data_quality_not_visible",
+        invalid_policy="raise_on_missing_output",
+    ),
+    AxisDependencyContract(
+        upstream_axis="volatility_state",
+        downstream_consumer="strategy_response",
+        payload_fields=("active_label",),
+        absent_policy="raise_on_missing_required_axis",
+        stale_policy="label_only_data_quality_not_visible",
+        unknown_policy="pass_unknown_label",
+        degraded_policy="label_only_data_quality_not_visible",
+        invalid_policy="raise_on_missing_output",
+    ),
+    AxisDependencyContract(
+        upstream_axis="breadth_state",
+        downstream_consumer="strategy_response",
+        payload_fields=("active_label",),
+        absent_policy="raise_on_missing_required_axis",
+        stale_policy="label_only_data_quality_not_visible",
+        unknown_policy="pass_unknown_label",
+        degraded_policy="label_only_data_quality_not_visible",
+        invalid_policy="raise_on_missing_output",
+    ),
+    AxisDependencyContract(
+        upstream_axis="transition_risk",
+        downstream_consumer="strategy_response",
+        payload_fields=("state",),
+        absent_policy="raise_on_missing_required_axis",
+        stale_policy="not_encoded_on_payload",
+        unknown_policy="pass_state",
+        degraded_policy="not_encoded_on_payload",
+        invalid_policy="raise_on_missing_output",
+    ),
+    AxisDependencyContract(
+        upstream_axis="event_calendar",
+        downstream_consumer="strategy_response",
+        payload_fields=("matching_labels",),
+        absent_policy="raise_on_missing_required_axis",
+        stale_policy="not_encoded_on_payload",
+        unknown_policy="pass_empty_or_matching_labels",
+        degraded_policy="not_encoded_on_payload",
+        invalid_policy="raise_on_missing_output",
+    ),
+)
+
+
+def _dependency_contracts_by_downstream(
+    contracts: tuple[AxisDependencyContract, ...],
+) -> dict[str, tuple[AxisDependencyContract, ...]]:
+    out: dict[str, list[AxisDependencyContract]] = {}
+    for contract in contracts:
+        out.setdefault(contract.downstream_consumer, []).append(contract)
+    return {
+        downstream: tuple(downstream_contracts)
+        for downstream, downstream_contracts in out.items()
+    }
+
+
+_AXIS_BUILD_DEPENDENCY_CONSUMERS = {
+    "network_fragility",
+    "inflation_growth",
+}
+
+AXIS_DEPENDENCIES: dict[str, tuple[str, ...]] = {
+    downstream: tuple(contract.upstream_axis for contract in contracts)
+    for downstream, contracts in _dependency_contracts_by_downstream(
+        AXIS_DEPENDENCY_CONTRACTS
+    ).items()
+    if downstream in _AXIS_BUILD_DEPENDENCY_CONSUMERS
 }
 
 
@@ -168,7 +485,7 @@ def _build_axis_outputs(
     deescalation_days_by_label: dict[str, int],
     default_deescalation_days: int,
     max_unknown_freeze_days: int,
-    required_inputs: list,
+    required_inputs: list[pd.Series],
     required_trading_days: int,
     max_freshness_days: int,
     min_completeness: float,
@@ -207,14 +524,14 @@ def _build_axis_outputs(
         strict=True,
     ):
         if quality_forces_unknown(dq):
-            evidence_payload = {"reason": dq.reason}
-            if is_frozen:
-                evidence_payload["data_quality_freeze"] = True
             output = AxisOutput(
                 raw_label="unknown",
                 stable_label=stable if is_frozen else "unknown",
                 active_label=active if is_frozen else "unknown",
-                evidence=evidence_payload,
+                evidence=AxisEvidencePayload(
+                    reason=dq.reason,
+                    data_quality_freeze=True if is_frozen else None,
+                ),
                 data_quality=dq,
             )
         else:
@@ -222,11 +539,11 @@ def _build_axis_outputs(
                 raw_label=raw,
                 stable_label=stable,
                 active_label=active,
-                evidence={
-                    "rule_evidence": evidence,
-                    "risk_rank": risk_rank,
-                    "deescalation_days": default_deescalation_days,
-                },
+                evidence=AxisEvidencePayload(
+                    rule_evidence=evidence,
+                    risk_rank=risk_rank,
+                    deescalation_days=default_deescalation_days,
+                ),
                 data_quality=dq,
             )
         outputs_by_date[day] = output
@@ -253,7 +570,7 @@ def build_axis_series_bundle(
         context, feature_store
     )
     credit_funding_effective = resolve_credit_funding_effective_series(
-        sessions=context.sessions,
+        sessions=list(context.sessions),
         oas_by_date=credit_funding,
         proxy_by_date=credit_funding_proxy,
     )

@@ -4,6 +4,7 @@ import datetime as dt
 import json
 from pathlib import Path
 import sqlite3
+from contextlib import closing
 
 import pandas as pd
 
@@ -258,7 +259,7 @@ def test_run_fomc_minutes_fetch_records_raw_html_and_outputs_in_sqlite(
     report = json.loads(report_path.read_text())
     assert report["paths"]["acquisition_db"] == str(acquisition_db)
 
-    with sqlite3.connect(acquisition_db) as conn:
+    with closing(sqlite3.connect(acquisition_db)) as conn:
         fetch_runs = conn.execute(
             "SELECT fetch_type, status FROM fetch_runs"
         ).fetchall()

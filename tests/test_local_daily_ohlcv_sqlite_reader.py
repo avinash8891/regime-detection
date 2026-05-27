@@ -3,6 +3,7 @@ from __future__ import annotations
 import datetime as dt
 import sqlite3
 from pathlib import Path
+from contextlib import closing
 
 import numpy as np
 import pandas as pd
@@ -38,7 +39,7 @@ _MSFT_ROWS: list[tuple[str, float, float, float, float, int, float]] = [
 
 
 def _create_real_schema_db(db_path: Path) -> None:
-    with sqlite3.connect(db_path) as conn:
+    with closing(sqlite3.connect(db_path)) as conn:
         conn.executescript(f"""
             CREATE TABLE IF NOT EXISTS {DAILY_OHLCV_ROWS_TABLE} (
                 symbol TEXT NOT NULL,
@@ -145,7 +146,7 @@ def test_read_constituent_ohlcv_omits_tickers_not_in_store(tmp_path: Path) -> No
     db = tmp_path / "ohlcv.db"
     _create_real_schema_db(db)
     # Drop MSFT rows so only AAPL is in the store.
-    with sqlite3.connect(db) as conn:
+    with closing(sqlite3.connect(db)) as conn:
         conn.execute(f"DELETE FROM {DAILY_OHLCV_ROWS_TABLE} WHERE symbol = 'MSFT'")
         conn.commit()
 
@@ -191,7 +192,7 @@ def test_read_constituent_ohlcv_raises_filenotfound_on_missing_db(
 
 def test_read_constituent_ohlcv_raises_on_wrong_schema(tmp_path: Path) -> None:
     db = tmp_path / "wrong.db"
-    with sqlite3.connect(db) as conn:
+    with closing(sqlite3.connect(db)) as conn:
         conn.execute(
             "CREATE TABLE unrelated_table (id INTEGER PRIMARY KEY, payload TEXT NOT NULL)"
         )

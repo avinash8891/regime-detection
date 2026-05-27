@@ -11,6 +11,7 @@ from pathlib import Path
 import pandas as pd
 
 from regime_data_fetch.acquisition_store import AcquisitionStore
+from regime_shared.pandas_compat import cow_safe_assign
 
 AAII_SENTIMENT_URL = "https://www.aaii.com/sentimentsurvey/sent_results"
 AAII_SENTIMENT_PARQUET = "aaii_sentiment.parquet"
@@ -62,10 +63,12 @@ class _TableParser(HTMLParser):
 def _infer_date(month_day: str, today: dt.date) -> dt.date | None:
     """Convert 'May 6' or 'Dec 31' to a full date using today to assign the year."""
     try:
-        parsed = dt.datetime.strptime(month_day.strip(), "%b %d").date()
+        parsed = dt.datetime.strptime(
+            f"{month_day.strip()} {today.year}", "%b %d %Y"
+        ).date()
     except ValueError:
         return None
-    candidate = parsed.replace(year=today.year)
+    candidate = parsed
     if candidate > today:
         candidate = parsed.replace(year=today.year - 1)
     return candidate
@@ -169,12 +172,15 @@ def fetch_latest_rows(
 
 
 def _compute_derived(df: pd.DataFrame) -> pd.DataFrame:
-    df = df.sort_values("date").reset_index(drop=True)
-    df["bull_bear_spread"] = df["bullish"] - df["bearish"]
-    df["bull_bear_spread_8w_ma"] = (
-        df["bull_bear_spread"].rolling(8, min_periods=1).mean()
+    ordered = df.sort_values("date").reset_index(drop=True)
+    spread = ordered["bullish"] - ordered["bearish"]
+    return cow_safe_assign(
+        ordered,
+        {
+            "bull_bear_spread": spread,
+            "bull_bear_spread_8w_ma": spread.rolling(8, min_periods=1).mean(),
+        },
     )
-    return df
 
 
 def update_aaii_parquet(
@@ -186,7 +192,10 @@ def update_aaii_parquet(
     """Load existing parquet (or parse seed CFB), append new rows from AAII, re-save."""
     if out_path.exists():
         existing = pd.read_parquet(out_path)
-        existing["date"] = pd.to_datetime(existing["date"])
+        existing = cow_safe_assign(
+            existing,
+            {"date": pd.to_datetime(existing["date"])},
+        )
         _log.info(
             "aaii_sentiment: loaded %d existing rows from %s", len(existing), out_path
         )

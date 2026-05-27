@@ -131,13 +131,13 @@ def fetch_daily_bars_alpaca(
                         "low": float(b.low),
                         "close": float(b.close),
                         "volume": int(b.volume),
+                        "adjusted_close": float(b.close),
                     }
                 )
             df = pd.DataFrame.from_records(rows)
             if df.empty:
                 missing.append(canonical)
                 continue
-            df["adjusted_close"] = df["close"]
             out_frames.append(df)
         if verbose:
             got = sum(1 for s in batch if s in bar_data and bar_data.get(s))

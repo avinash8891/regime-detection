@@ -55,10 +55,22 @@ V1 does **not** ship: PIT constituent breadth, monetary pressure, macro inferenc
 RegimeEngine.classify(
     as_of_date: date,
     market_data: pd.DataFrame,
-    breadth_data: pd.DataFrame | None = None,
     vix_data: pd.DataFrame | None = None,
     event_calendar: pd.DataFrame | None = None,
     config: RegimeConfig | None = None,
+    sector_etf_closes: dict[str, pd.Series] | None = None,
+    cross_asset_closes: dict[str, pd.Series] | None = None,
+    macro_series: dict[str, pd.Series] | None = None,
+    pit_constituent_intervals: pd.DataFrame | None = None,
+    constituent_ohlcv: dict[str, pd.DataFrame] | None = None,
+    aaii_sentiment: pd.DataFrame | None = None,
+    implied_vol_30d: pd.Series | None = None,
+    central_bank_text_releases: pd.DataFrame | None = None,
+    cpi_first_release: pd.Series | None = None,
+    news_sentiment: pd.Series | None = None,
+    request_source: Literal["direct", "profile_manifest"] = "direct",
+    manifest_resolved_inputs: frozenset[str] | None = None,
+    manifest_cli_overrides: frozenset[str] | None = None,
 ) -> RegimeOutput
 ```
 
@@ -77,6 +89,26 @@ V1 input contract:
 - US V1 requires `SPY` rows for the market index.
 - ETF proxy breadth requires `RSP` rows in the same contract.
 - VIX support may be provided either as `vix_data` or as a `VIX` symbol in market data; when Alpaca does not provide true VIX, `VIXY` is the documented operational proxy. Tests must use deterministic repo fixtures.
+- `event_calendar` is required at the engine boundary. Missing event input is a caller error, not a V2 optional seam.
+- All V2 inputs are explicit optional seams on `ClassifyRequest`; absent seams remain `None` and are handled by the axis/boundary policy that owns them.
+- `breadth_data` is not an engine input. Passing it to `classify`, `classify_window`, or `ClassifyRequest` must fail loudly instead of being ignored.
+- Profile-runner calls must set `request_source="profile_manifest"` and pass manifest provenance through `manifest_resolved_inputs` / `manifest_cli_overrides`. Direct calls must not carry manifest metadata.
+- Feature-store optional seams must emit `FeatureStore.availability` with the declared absence policy, required inputs, and missing inputs.
+- Runtime outputs and operator artifacts must expose per-date classification coverage and rule provenance without changing the archived V1 wire projection.
+
+Canonical request object:
+
+```python
+ClassifyRequest(
+    end_date: date,
+    market_data: pd.DataFrame,
+    lookback_days: int = 1,
+    event_calendar: pd.DataFrame,
+    ...
+) -> RegimeTimeline via RegimeEngine.classify_request(...)
+```
+
+`classify` and `classify_window` are wrappers over `classify_request`; all boundary validation belongs on the request path.
 
 V1 helper:
 

@@ -1,5 +1,11 @@
 from __future__ import annotations
 
+# pyright: reportIncompatibleMethodOverride=false
+# pyright: reportIncompatibleVariableOverride=false
+# pyright: reportUnknownMemberType=false
+# pyright: reportUnknownVariableType=false
+# pyright: reportUnknownArgumentType=false
+
 import json
 import math
 from collections.abc import Iterator
@@ -64,16 +70,188 @@ class EvidencePayload(RootModel[dict[str, Any]]):
         return NotImplemented
 
 
-class AxisEvidencePayload(EvidencePayload):
-    """Dict-compatible payload for legacy V1 axis rule evidence."""
-
-
 class EventCalendarEvidencePayload(EvidencePayload):
     """Dict-compatible payload for event-calendar rule evidence."""
 
 
-class VolumeLiquidityEvidencePayload(EvidencePayload):
-    """Dict-compatible payload for volume/liquidity V2 rule evidence."""
+class TypedEvidencePayload(BaseModel):
+    """Dict-compatible base for typed V2 axis evidence payloads.
+
+    Typed payloads keep the historical mapping ergonomics used by reports while
+    forbidding undeclared evidence keys. Add fields here axis-by-axis only after
+    the dependency and absence contracts for that axis are declared.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    def model_dump(self, *args: Any, **kwargs: Any) -> dict[str, Any]:
+        kwargs.setdefault("exclude_none", True)
+        return super().model_dump(*args, **kwargs)
+
+    def model_dump_json(self, *args: Any, **kwargs: Any) -> str:
+        kwargs.setdefault("exclude_none", True)
+        return super().model_dump_json(*args, **kwargs)
+
+    def get(self, key: str, default: Any = None) -> Any:
+        return self.model_dump().get(key, default)
+
+    def __getitem__(self, key: str) -> Any:
+        return self.model_dump()[key]
+
+    def __contains__(self, key: object) -> bool:
+        return key in self.model_dump()
+
+    def __iter__(self) -> Iterator[str]:
+        return iter(self.model_dump())
+
+    def __len__(self) -> int:
+        return len(self.model_dump())
+
+    def items(self) -> Any:
+        return self.model_dump().items()
+
+    def keys(self) -> Any:
+        return self.model_dump().keys()
+
+    def values(self) -> Any:
+        return self.model_dump().values()
+
+    def __eq__(self, other: object) -> bool:
+        if isinstance(other, TypedEvidencePayload):
+            return self.model_dump() == other.model_dump()
+        if isinstance(other, dict):
+            return self.model_dump() == other
+        return NotImplemented
+
+
+class AxisEvidencePayload(TypedEvidencePayload):
+    """Typed payload for core axis rule evidence.
+
+    Core V1 axes are no longer arbitrary evidence bags. This shape declares the
+    payload fields that may cross the model/reporting boundary: rule evidence,
+    hysteresis metadata, data-quality freeze metadata, breadth provenance, and
+    HMM enrichment when the V2 evidence seam is lit.
+    """
+
+    rule_evidence: dict[str, Any] | None = None
+    risk_rank: dict[str, int] | None = None
+    deescalation_days: int | None = None
+    reason: str | None = None
+    data_quality_freeze: bool | None = None
+    source: str | None = None
+    proxy: str | None = None
+    row_provenance_mode: str | None = None
+    active_label_source: str | None = None
+    hmm_top_state: int | None = None
+    hmm_top_state_prob: float | None = None
+
+
+class NetworkFragilityEvidencePayload(TypedEvidencePayload):
+    """Typed evidence payload for network-fragility decisions.
+
+    Cross-axis inputs are labels only; upstream evidence and data_quality do not
+    cross this edge unless `AXIS_DEPENDENCY_CONTRACTS` is changed first.
+    """
+
+    rule_evidence: dict[str, Any] | None = None
+    reason: str | None = None
+    breadth_active_label: str | None = None
+    volatility_active_label: str | None = None
+    credit_funding_active_label: str | None = None
+    data_quality_freeze: bool | None = None
+
+
+class InflationGrowthEvidencePayload(TypedEvidencePayload):
+    """Typed evidence payload for inflation/growth decisions.
+
+    `credit_funding_active_label` is the effective downstream label, not the raw
+    OAS/proxy evidence payload.
+    """
+
+    rule_evidence: dict[str, Any] | None = None
+    reason: str | None = None
+    goldilocks_limb_evidence: dict[str, Any] | None = None
+    credit_funding_active_label: str | None = None
+    bias_warning_code: str | None = None
+    data_quality_freeze: bool | None = None
+
+
+class MonetaryPressureEvidencePayload(TypedEvidencePayload):
+    """Typed evidence payload for monetary-pressure decisions."""
+
+    rule_evidence: dict[str, Any] | None = None
+    reason: str | None = None
+    central_bank_text_evidence: dict[str, Any] | None = None
+    data_quality_freeze: bool | None = None
+
+
+class VolumeLiquidityEvidencePayload(TypedEvidencePayload):
+    """Typed evidence payload for volume/liquidity decisions."""
+
+    rule_evidence: dict[str, Any] | None = None
+    reason: str | None = None
+    rule_path: str | None = None
+    rule_reason: str | None = None
+    data_quality_freeze: bool | None = None
+
+
+class CreditFundingEvidencePayload(BaseModel):
+    """Dict-compatible typed evidence payload for credit/funding decisions.
+
+    Effective credit/funding outputs use this same payload type to record the
+    OAS/proxy resolver decision without changing the downstream label contract.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    rule_evidence: dict[str, Any] | None = None
+    reason: str | None = None
+    spread_source: str | None = None
+    nfci_daily_carried: float | None = None
+    kre_spy_slope_63d: float | None = None
+    bias_warning_code: str | None = None
+    data_quality_freeze: bool | None = None
+    source_used: str | None = None
+    agreement_status: str | None = None
+    oas_label: str | None = None
+    proxy_label: str | None = None
+    oas_classification_status: ClassificationStatus | None = None
+    proxy_classification_status: ClassificationStatus | None = None
+    oas_spread_source: str | None = None
+    proxy_spread_source: str | None = None
+
+    def get(self, key: str, default: Any = None) -> Any:
+        return self.model_dump(exclude_none=True).get(key, default)
+
+    def __getitem__(self, key: str) -> Any:
+        return self.model_dump(exclude_none=True)[key]
+
+    def __contains__(self, key: object) -> bool:
+        return key in self.model_dump(exclude_none=True)
+
+    def __iter__(self) -> Iterator[str]:
+        return iter(self.model_dump(exclude_none=True))
+
+    def __len__(self) -> int:
+        return len(self.model_dump(exclude_none=True))
+
+    def items(self) -> Any:
+        return self.model_dump(exclude_none=True).items()
+
+    def keys(self) -> Any:
+        return self.model_dump(exclude_none=True).keys()
+
+    def values(self) -> Any:
+        return self.model_dump(exclude_none=True).values()
+
+    def __eq__(self, other: object) -> bool:
+        if isinstance(other, CreditFundingEvidencePayload):
+            return self.model_dump(exclude_none=True) == other.model_dump(
+                exclude_none=True
+            )
+        if isinstance(other, dict):
+            return self.model_dump(exclude_none=True) == other
+        return NotImplemented
 
 
 class TransitionRiskEvidencePayload(BaseModel):
@@ -133,7 +311,7 @@ def derive_classification_status(
     *,
     active_label: str,
     data_quality: DataQuality,
-    evidence: EvidencePayload | None = None,
+    evidence: Any | None = None,
     raw_label: str | None = None,
     stable_label: str | None = None,
 ) -> tuple[ClassificationStatus, str | None]:
@@ -168,7 +346,7 @@ def derive_classification_status(
     return "no_rule_fired", reason or "no_rule_fired"
 
 
-def _missing_rule_features(evidence: EvidencePayload | None) -> list[str]:
+def _missing_rule_features(evidence: Any | None) -> list[str]:
     if evidence is None:
         return []
     features: set[str] = set()
@@ -185,19 +363,26 @@ def _collect_missing_rule_features(value: Any, features: set[str]) -> None:
     if isinstance(value, EvidencePayload):
         value = value.root
     elif isinstance(value, BaseModel):
-        value = value.model_dump()
+        value = value.model_dump(exclude_none=True)
     if not isinstance(value, dict):
         return
     rule_evidence = value.get("rule_evidence")
     if isinstance(rule_evidence, dict):
         _collect_missing_leaf_keys(rule_evidence, features)
-    for item in value.values():
+    for key, item in value.items():
+        if key == "rule_evidence":
+            continue
         _collect_missing_rule_features(item, features)
 
 
 def _collect_missing_leaf_keys(
     value: Any, features: set[str], prefix: str = ""
 ) -> None:
+    if isinstance(value, BaseModel):
+        _collect_missing_leaf_keys(
+            value.model_dump(exclude_none=True), features, prefix
+        )
+        return
     if isinstance(value, dict):
         for key, item in value.items():
             child_prefix = f"{prefix}.{key}" if prefix else str(key)
@@ -270,14 +455,14 @@ class EventCalendarOutput(BaseModel):
 class NetworkFragilityOutput(AxisOutput):
     """Layer 3 network fragility classifier output (v2 spec §3).
 
-    The v2 fragility classifier is implemented and wired. `unknown` is emitted only
-    during the 504-session percentile cold-start (`insufficient_history`) or when
-    no rule predicate fires (`no_rule_fired`).
+    The v2 fragility classifier is implemented and wired. `unknown` is reserved
+    for data-quality failures or an explicit unpartitioned-rule diagnostic.
     """
 
     model_config = ConfigDict(extra="forbid")
 
     mode: Literal["sector_cross_asset_24"] = "sector_cross_asset_24"
+    evidence: NetworkFragilityEvidencePayload
 
 
 InflationGrowthLabel = Literal[
@@ -287,8 +472,12 @@ InflationGrowthLabel = Literal[
     "recession_scare",
     "risk_off_mild",
     "recovery_growth",
+    "recovery_growth_unconfirmed",
     "reflation",
+    "late_cycle_inflation_stress",
     "stagflation_lite",
+    "contractionary_disinflation",
+    "macro_neutral",
     "earnings_expansion",
     "earnings_contraction",
     "unknown",
@@ -311,11 +500,13 @@ class InflationGrowthOutput(AxisOutput):
     raw_label: InflationGrowthLabel
     stable_label: InflationGrowthLabel
     active_label: InflationGrowthLabel
+    evidence: InflationGrowthEvidencePayload
 
 
 CreditFundingLabel = Literal[
     "credit_calm",
     "credit_recovery",
+    "credit_divergence",
     "spread_widening",
     "credit_stress",
     "funding_squeeze",
@@ -337,6 +528,7 @@ class CreditFundingOutput(AxisOutput):
     raw_label: CreditFundingLabel
     stable_label: CreditFundingLabel
     active_label: CreditFundingLabel
+    evidence: CreditFundingEvidencePayload
 
 
 MonetaryPressureV2Label = Literal[
@@ -361,6 +553,7 @@ class MonetaryPressureV2Output(AxisOutput):
     raw_label: MonetaryPressureV2Label
     stable_label: MonetaryPressureV2Label
     active_label: MonetaryPressureV2Label
+    evidence: MonetaryPressureEvidencePayload
 
 
 class VolumeLiquidityOutput(BaseModel):
@@ -373,6 +566,14 @@ class VolumeLiquidityOutput(BaseModel):
     data_quality: DataQuality
     classification_status: ClassificationStatus | None = None
     classification_reason: str | None = None
+
+    def model_dump(self, *args: Any, **kwargs: Any) -> dict[str, Any]:
+        kwargs.setdefault("exclude_none", True)
+        return super().model_dump(*args, **kwargs)
+
+    def model_dump_json(self, *args: Any, **kwargs: Any) -> str:
+        kwargs.setdefault("exclude_none", True)
+        return super().model_dump_json(*args, **kwargs)
 
     @property
     def reporting_label(self) -> str:
@@ -419,6 +620,7 @@ class VolumeLiquidityStateOutput(AxisOutput):
     raw_label: VolumeLiquidityLabel
     stable_label: VolumeLiquidityLabel
     active_label: VolumeLiquidityLabel
+    evidence: VolumeLiquidityEvidencePayload
     mode: Literal["volume_zscore_v1"] = "volume_zscore_v1"
 
 
@@ -682,6 +884,42 @@ class AgentRouting(BaseModel):
     blocked_strategy_modes: list[str]
 
 
+CoverageAxisStatus = Literal[
+    "classified",
+    "no_rule_fired",
+    "no_rule_fired_hysteresis",
+    "no_rule_fired_missing_feature",
+    "data_unavailable",
+    "stale_data",
+    "insufficient_history",
+    "not_wired",
+]
+
+
+class AxisCoverage(BaseModel):
+    """Operator-facing coverage for one axis on one classification date."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    axis: str
+    status: CoverageAxisStatus
+    label: str | None = None
+    reason: str | None = None
+    safe_for_downstream: bool
+    availability_policy: str | None = None
+    required_inputs: tuple[str, ...] = ()
+    missing_inputs: tuple[str, ...] = ()
+
+
+class ClassificationCoverageReport(BaseModel):
+    """Per-date classification coverage and downstream safety summary."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    axes: dict[str, AxisCoverage]
+    safe_for_downstream: bool
+
+
 _V1_CONFIG_VERSION = "core3-v1.0.0"
 
 
@@ -726,6 +964,7 @@ def _strip_classification_metadata(value: Any) -> None:
     if isinstance(value, dict):
         value.pop("classification_status", None)
         value.pop("classification_reason", None)
+        value.pop("classification_coverage", None)
         for nested in value.values():
             _strip_classification_metadata(nested)
     elif isinstance(value, list):
@@ -768,6 +1007,7 @@ class RegimeOutput(BaseModel):
         None  # v2 §5.2
     )
     effective_strategy_constraints: dict[str, EffectiveStrategyConstraint] | None = None
+    classification_coverage: ClassificationCoverageReport | None = None
 
     def model_dump_legacy_v1_wire(self, *args: Any, **kwargs: Any) -> dict[str, Any]:
         """Compatibility projection for archived V1 wire-shape replay."""

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import datetime as dt
+import warnings
 from pathlib import Path
 
 import pandas as pd
@@ -74,6 +75,20 @@ def test_read_pit_intervals_round_trips_writer_schema(tmp_path: Path) -> None:
     ibm = by_ticker["IBM"]
     assert ibm["start_date"] == dt.date(1957, 3, 4)
     assert ibm["end_date"] == dt.date(2008, 12, 31)
+
+
+def test_read_pit_intervals_is_clean_under_copy_on_write_warning_mode(
+    tmp_path: Path,
+) -> None:
+    parquet_path = _build_intervals_parquet(tmp_path)
+
+    with pd.option_context("mode.copy_on_write", "warn"):
+        with warnings.catch_warnings():
+            warnings.simplefilter("error", FutureWarning)
+            df = read_pit_intervals(parquet_path)
+
+    assert df["ticker"].dtype == object
+    assert df.loc[df["ticker"] == "AAPL", "start_date"].item() == dt.date(1980, 12, 12)
 
 
 def test_members_on_inclusive_lower_bound(tmp_path: Path) -> None:

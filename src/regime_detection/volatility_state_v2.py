@@ -302,7 +302,8 @@ def compute_volatility_v2_features(
     event_window_aligned: pd.Series | None = None
     if event_window_just_passed is not None:
         event_window_aligned = (
-            event_window_just_passed.reindex(close.index)
+            event_window_just_passed.astype("boolean")
+            .reindex(close.index, fill_value=False)
             .fillna(False)
             .astype(bool)
             .rename("event_window_just_passed")
