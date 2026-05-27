@@ -126,3 +126,22 @@ def test_sentiment_score_spec_is_internal_report_false() -> None:
     """sentiment_score is intermediate state — must not emit availability."""
     spec = _spec_by_name("sentiment_score")
     assert spec.report is False
+
+
+def test_news_sentiment_score_resolve_missing_config_returns_unavailable(
+    v1_minimal_state: _FeatureStoreBuildState,
+) -> None:
+    """Pure V1 context has no news_sentiment_config — spec.resolve must
+    report news_sentiment_config as missing."""
+    from regime_detection.feature_store_runtime import _Unavailable
+
+    spec = _spec_by_name("news_sentiment_score")
+    resolved = spec.resolve(v1_minimal_state)
+
+    assert isinstance(resolved, _Unavailable)
+    assert "news_sentiment_config" in resolved.missing_inputs
+
+
+def test_news_sentiment_score_spec_is_internal_report_false() -> None:
+    spec = _spec_by_name("news_sentiment_score")
+    assert spec.report is False

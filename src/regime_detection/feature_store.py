@@ -346,16 +346,10 @@ def _build_sentiment_score_series(
 
 def _build_news_sentiment_score_series(
     *,
-    news_sentiment: pd.Series | None,
+    news_sentiment: pd.Series,
     session_index: pd.DatetimeIndex,
-    config: NewsSentimentConfig | None,
-) -> pd.Series | None:
-    if config is None:
-        return None
-    if news_sentiment is None:
-        return None
-    if news_sentiment.empty:
-        return None
+    config: NewsSentimentConfig,
+) -> pd.Series:
     score = (
         news_sentiment.reindex(session_index, method="ffill")
         .rolling(config.smoothing_window_sessions, min_periods=1)
@@ -363,14 +357,6 @@ def _build_news_sentiment_score_series(
     )
     score.name = "news_sentiment_score"
     return score
-
-
-def _build_news_sentiment_score_feature(state: _FeatureStoreBuildState) -> None:
-    state.news_sentiment_score = _build_news_sentiment_score_series(
-        news_sentiment=state.context.news_sentiment,
-        session_index=_as_datetime_index(state.spy_close.index),
-        config=state.news_sentiment_config,
-    )
 
 
 def _build_trend_direction_v2_feature(state: _FeatureStoreBuildState) -> None:
@@ -771,6 +757,33 @@ def _resolve_sentiment_score(
     }
 
 
+def _build_news_sentiment_score(
+    news_sentiment: pd.Series,
+    session_index: pd.DatetimeIndex,
+    config: NewsSentimentConfig,
+) -> pd.Series:
+    return _build_news_sentiment_score_series(
+        news_sentiment=news_sentiment, session_index=session_index, config=config
+    )
+
+
+def _resolve_news_sentiment_score(
+    state: _FeatureStoreBuildState,
+) -> dict[str, object] | _Unavailable:
+    missing: list[str] = []
+    if state.news_sentiment_config is None:
+        missing.append("news_sentiment_config")
+    if state.context.news_sentiment is None or state.context.news_sentiment.empty:
+        missing.append("news_sentiment")
+    if missing:
+        return _Unavailable(missing_inputs=tuple(missing))
+    return {
+        "news_sentiment": state.context.news_sentiment,
+        "session_index": _as_datetime_index(state.spy_close.index),
+        "config": state.news_sentiment_config,
+    }
+
+
 _FEATURE_SPECS: tuple[FeatureSpec[object, _FeatureStoreBuildState], ...] = (
     FeatureSpec(
         name="trend_direction",
@@ -821,11 +834,19 @@ _FEATURE_SPECS: tuple[FeatureSpec[object, _FeatureStoreBuildState], ...] = (
         store=lambda s, v: setattr(s, "sentiment_score", v),
         report=False,
     ),
+    FeatureSpec(
+        name="news_sentiment_score",
+        policy="none",
+        required_inputs=("news_sentiment_config", "news_sentiment"),
+        resolve=_resolve_news_sentiment_score,
+        build=_build_news_sentiment_score,
+        store=lambda s, v: setattr(s, "news_sentiment_score", v),
+        report=False,
+    ),
 )
 
 
 _FEATURE_STORE_BUILDERS: tuple[_FeatureStoreBuilder, ...] = (
-    _FeatureStoreBuilder("news_sentiment_score", _build_news_sentiment_score_feature),
     _FeatureStoreBuilder("trend_direction_v2", _build_trend_direction_v2_feature),
     _FeatureStoreBuilder("network_fragility", _build_network_fragility_feature),
     _FeatureStoreBuilder("volatility_state_v2", _build_volatility_state_v2_feature),
