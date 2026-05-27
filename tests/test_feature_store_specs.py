@@ -67,3 +67,15 @@ def test_trend_character_resolve_returns_ohlcv_kwargs_v1_path(
     # TrendCharacterV2Config depending on which RegimeConfig is in scope. Assert
     # identity rather than None so the test stays correct regardless of config defaults.
     assert resolved["tc_v2_config"] is v1_minimal_state.context.config.trend_character_v2
+
+
+def test_volatility_resolve_returns_close_and_vix_proxy(
+    v1_minimal_state: _FeatureStoreBuildState,
+) -> None:
+    spec = _spec_by_name("volatility")
+    resolved = spec.resolve(v1_minimal_state)
+
+    assert isinstance(resolved, dict)
+    assert set(resolved.keys()) == {"close", "vix_proxy_close"}
+    assert resolved["close"] is v1_minimal_state.spy_close
+    assert resolved["vix_proxy_close"] is v1_minimal_state.context.vix_proxy_close
