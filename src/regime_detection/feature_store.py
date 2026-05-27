@@ -359,18 +359,6 @@ def _build_news_sentiment_score_series(
     return score
 
 
-def _build_realized_vol_21d_feature(state: _FeatureStoreBuildState) -> None:
-    state.realized_vol_21d = (
-        realized_vol(state.spy_close, 21)
-        if (
-            state.context.config.hmm is not None
-            or state.context.config.clustering is not None
-            or state.context.config.change_point is not None
-        )
-        else None
-    )
-
-
 def _build_drawdown_63d_feature(state: _FeatureStoreBuildState) -> None:
     # Spec §6.1 line 4059: 63d trailing-peak drawdown. Single shared
     # computation matches the realized_vol_21d pattern (one helper, two
@@ -845,6 +833,28 @@ def _build_monetary(
     )
 
 
+def _build_realized_vol_21d(spy_close: pd.Series) -> pd.Series:
+    return realized_vol(spy_close, 21)
+
+
+def _resolve_realized_vol_21d(
+    state: _FeatureStoreBuildState,
+) -> dict[str, object] | _Unavailable:
+    """Disjunction gate: realized_vol_21d is built when ANY of hmm,
+    clustering, or change_point configs is present (those features consume it).
+    When none are set, return _Unavailable so build is skipped — matches
+    legacy 'state.realized_vol_21d = None' branch."""
+    if (
+        state.context.config.hmm is None
+        and state.context.config.clustering is None
+        and state.context.config.change_point is None
+    ):
+        return _Unavailable(
+            missing_inputs=("hmm_or_clustering_or_change_point_config",)
+        )
+    return {"spy_close": state.spy_close}
+
+
 def _resolve_monetary(
     state: _FeatureStoreBuildState,
 ) -> dict[str, object] | _Unavailable:
@@ -997,11 +1007,19 @@ _FEATURE_SPECS: tuple[FeatureSpec[object, _FeatureStoreBuildState], ...] = (
         build=_build_monetary,
         store=lambda s, v: setattr(s, "monetary", v),
     ),
+    FeatureSpec(
+        name="realized_vol_21d",
+        policy="none",
+        required_inputs=("hmm_or_clustering_or_change_point_config",),
+        resolve=_resolve_realized_vol_21d,
+        build=_build_realized_vol_21d,
+        store=lambda s, v: setattr(s, "realized_vol_21d", v),
+        report=False,
+    ),
 )
 
 
 _FEATURE_STORE_BUILDERS: tuple[_FeatureStoreBuilder, ...] = (
-    _FeatureStoreBuilder("realized_vol_21d", _build_realized_vol_21d_feature),
     _FeatureStoreBuilder("drawdown_63d", _build_drawdown_63d_feature),
     _FeatureStoreBuilder("hmm", _build_hmm_feature),
     _FeatureStoreBuilder("clustering", _build_clustering_feature),

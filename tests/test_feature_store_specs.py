@@ -266,3 +266,32 @@ def test_monetary_spec_policy_raise_matches_legacy() -> None:
     # required_inputs first slot is "macro_series", then 3 macro keys
     assert spec.required_inputs[0] == "macro_series"
     assert len(spec.required_inputs) == 4
+
+
+def test_realized_vol_21d_resolve_no_configs_returns_unavailable(
+    v1_minimal_state: _FeatureStoreBuildState,
+) -> None:
+    """When all three consumer configs (hmm/clustering/change_point) are None,
+    resolve returns _Unavailable so build is skipped — matching the legacy
+    'state.realized_vol_21d = None' branch."""
+    import dataclasses
+
+    from regime_detection.feature_store_runtime import _Unavailable
+
+    stripped_config = v1_minimal_state.context.config.model_copy(
+        update={"hmm": None, "clustering": None, "change_point": None}
+    )
+    stripped_context = v1_minimal_state.context.model_copy(
+        update={"config": stripped_config}
+    )
+    state_no_configs = dataclasses.replace(v1_minimal_state, context=stripped_context)
+
+    spec = _spec_by_name("realized_vol_21d")
+    resolved = spec.resolve(state_no_configs)
+
+    assert isinstance(resolved, _Unavailable)
+
+
+def test_realized_vol_21d_spec_is_internal_report_false() -> None:
+    spec = _spec_by_name("realized_vol_21d")
+    assert spec.report is False
