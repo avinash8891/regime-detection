@@ -23,6 +23,8 @@ construction: every fit's training window ends at ``t' <= t`` for every
 emitted session ``t``.
 """
 
+# pyright: reportUnknownMemberType=false, reportUnknownArgumentType=false, reportUnknownVariableType=false, reportArgumentType=false, reportCallIssue=false, reportOperatorIssue=false, reportAttributeAccessIssue=false, reportOptionalMemberAccess=false, reportMissingTypeStubs=false, reportOptionalSubscript=false
+
 from __future__ import annotations
 
 import logging

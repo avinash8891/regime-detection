@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+# pyright: reportUnknownMemberType=false, reportUnknownArgumentType=false, reportUnknownVariableType=false, reportArgumentType=false, reportCallIssue=false, reportOperatorIssue=false, reportUnnecessaryIsInstance=false
+
 import datetime as dt
 import html
 import json

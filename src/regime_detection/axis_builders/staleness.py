@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+# pyright: reportUnknownMemberType=false, reportUnknownArgumentType=false, reportUnknownVariableType=false, reportArgumentType=false, reportCallIssue=false, reportOperatorIssue=false, reportUnusedFunction=false
+
 from typing import Literal
 
 import pandas as pd

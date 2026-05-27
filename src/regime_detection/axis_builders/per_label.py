@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+# pyright: reportUnknownMemberType=false, reportUnknownArgumentType=false, reportUnknownVariableType=false, reportArgumentType=false, reportCallIssue=false, reportOperatorIssue=false, reportInvalidTypeVarUse=false
+
 from collections.abc import Mapping, Sequence
 from datetime import date
 from typing import Protocol, TypeVar

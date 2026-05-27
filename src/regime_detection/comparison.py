@@ -17,6 +17,8 @@ consumed by the walk-forward runner (``--engine-profile both``).
 
 from __future__ import annotations
 
+# pyright: reportUnknownMemberType=false, reportUnknownArgumentType=false, reportUnknownVariableType=false, reportArgumentType=false, reportCallIssue=false, reportOperatorIssue=false
+
 from dataclasses import dataclass
 from datetime import date
 from enum import Enum

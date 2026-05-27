@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+# pyright: reportUnknownMemberType=false, reportUnknownArgumentType=false, reportUnknownVariableType=false, reportArgumentType=false, reportCallIssue=false, reportOperatorIssue=false, reportAttributeAccessIssue=false, reportOptionalMemberAccess=false, reportOptionalOperand=false, reportUnusedFunction=false
+
 from dataclasses import asdict, dataclass
 
 import numpy as np

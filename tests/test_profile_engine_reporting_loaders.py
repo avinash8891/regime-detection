@@ -9,6 +9,7 @@ import pandas as pd
 import pytest
 
 from scripts import profile_engine_reporting
+from scripts._v2_calibration_helpers import normalize_datetime_index
 
 from conftest import (
     load_profile_engine_module,
@@ -82,6 +83,24 @@ def test_profile_json_safe_value_converts_nonfinite_floats_to_null() -> None:
         "negative_inf": None,
         "nested": [{"ok": 1.25, "missing": None}],
     }
+
+
+def test_input_status_report_counts_series_rows() -> None:
+    series = pd.Series([1.0, 2.0], index=pd.DatetimeIndex(["2026-05-01", "2026-05-02"]))
+
+    report = profile_engine_reporting.input_status_report("macro", series)
+
+    assert report["status"] == "present"
+    assert report["rows"] == 2
+
+
+def test_normalize_datetime_index_returns_datetime_index() -> None:
+    raw = pd.Index(["2026-05-01", "2026-05-02"])
+
+    idx = normalize_datetime_index(raw)
+
+    assert isinstance(idx, pd.DatetimeIndex)
+    assert list(idx.strftime("%Y-%m-%d")) == ["2026-05-01", "2026-05-02"]
 
 
 def test_profile_json_writer_rejects_nonfinite_values(tmp_path: Path) -> None:

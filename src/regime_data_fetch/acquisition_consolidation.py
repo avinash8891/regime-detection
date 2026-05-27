@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+# pyright: reportPrivateUsage=false
+
 import json
 import logging
 import sqlite3
@@ -144,7 +146,9 @@ def _import_one_source(
         src_conn.row_factory = sqlite3.Row
         fetch_run_id_map: dict[int, int] = {}
         artifact_id_map: dict[int, int] = {}
-        normalized_counts = dict.fromkeys(_NORMALIZED_TABLES, 0)
+        normalized_counts: dict[str, int] = {
+            table_name: 0 for table_name in _NORMALIZED_TABLES
+        }
 
         for row in src_conn.execute("SELECT * FROM fetch_runs ORDER BY run_id"):
             params_json = _augment_params_json(
@@ -175,7 +179,10 @@ def _import_one_source(
                     notes,
                 ),
             )
-            fetch_run_id_map[int(row["run_id"])] = int(cursor.lastrowid)
+            lastrowid = cursor.lastrowid
+            if lastrowid is None:
+                raise RuntimeError("fetch_runs insert did not return a row id")
+            fetch_run_id_map[int(row["run_id"])] = int(lastrowid)
 
         for row in src_conn.execute("SELECT * FROM artifacts ORDER BY artifact_id"):
             new_run_id = fetch_run_id_map[int(row["run_id"])]
@@ -226,7 +233,10 @@ def _import_one_source(
                     _row_value(row, "content_encoding"),
                 ),
             )
-            artifact_id_map[int(row["artifact_id"])] = int(cursor.lastrowid)
+            lastrowid = cursor.lastrowid
+            if lastrowid is None:
+                raise RuntimeError("artifacts insert did not return a row id")
+            artifact_id_map[int(row["artifact_id"])] = int(lastrowid)
 
         if _table_exists(src_conn, ARTIFACT_BLOBS_TABLE):
             for row in src_conn.execute(

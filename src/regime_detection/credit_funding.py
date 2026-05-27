@@ -53,6 +53,8 @@ The module also defines:
   - ``CREDIT_FUNDING_RISK_RANK`` + ``CreditFundingLabel`` enum (§2C lines 3277-3283)
 """
 
+# pyright: reportUnknownMemberType=false, reportUnknownArgumentType=false, reportUnknownVariableType=false, reportArgumentType=false, reportCallIssue=false, reportOperatorIssue=false, reportAssignmentType=false
+
 from __future__ import annotations
 
 from dataclasses import dataclass

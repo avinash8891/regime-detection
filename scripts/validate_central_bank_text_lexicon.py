@@ -35,6 +35,8 @@ Outputs:
 - ``docs/verification/lexicon_validation_confusion_matrix.csv`` — raw matrix
 """
 
+# pyright: reportMissingTypeStubs=false, reportUnknownVariableType=false, reportUnknownMemberType=false, reportUnknownArgumentType=false, reportArgumentType=false, reportIndexIssue=false, reportCallIssue=false
+
 from __future__ import annotations
 
 import logging

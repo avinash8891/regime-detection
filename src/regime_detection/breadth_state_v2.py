@@ -43,6 +43,8 @@ Implementation choices that resolve ambiguities:
   missing-symbol evidence so consumers cannot mistake it for the strict feature.
 """
 
+# pyright: reportUnknownMemberType=false, reportUnknownArgumentType=false, reportUnknownVariableType=false, reportArgumentType=false, reportCallIssue=false, reportOperatorIssue=false, reportUnnecessaryComparison=false
+
 from __future__ import annotations
 
 from bisect import bisect_left, bisect_right

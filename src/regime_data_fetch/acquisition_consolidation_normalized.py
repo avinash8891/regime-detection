@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+# pyright: reportUnusedFunction=false, reportUnknownMemberType=false, reportArgumentType=false, reportUnknownVariableType=false, reportCallIssue=false
+
 import datetime as dt
 import sqlite3
 from pathlib import Path

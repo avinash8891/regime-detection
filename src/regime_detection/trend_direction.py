@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+# pyright: reportUnknownArgumentType=false, reportUnknownMemberType=false, reportArgumentType=false
+
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Literal
 

@@ -24,8 +24,9 @@ import argparse
 import datetime as dt
 import logging
 import sys
+from collections.abc import Mapping
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import pandas as pd
 
@@ -64,6 +65,7 @@ from _v2_calibration_helpers import (  # noqa: E402
     load_market_data,
     manifest_input_overrides,
     materialize_manifest_from_args,
+    normalize_datetime_index,
     register_manifest_input_args,
     synthetic_pit_intervals_from_sector_closes,
 )
@@ -132,8 +134,10 @@ def _extract_v1_fields(output: Any) -> dict[str, Any]:
 def _extract_v2_fields(output: Any) -> dict[str, Any]:
     transition_risk = output.transition_risk
     data_quality = getattr(transition_risk, "data_quality", None)
-    if isinstance(data_quality, dict):
-        transition_data_quality = data_quality.get("status")
+    if isinstance(data_quality, Mapping):
+        mapping_value = cast(Mapping[str, Any], data_quality)
+        data_quality_mapping = dict(mapping_value)
+        transition_data_quality = data_quality_mapping.get("status")
     else:
         transition_data_quality = getattr(data_quality, "status", None)
     return {
@@ -422,11 +426,10 @@ def main() -> int:
 
     # Walk back through the NYSE calendar to get the most-recent N sessions.
     look_back_start = end_date - dt.timedelta(days=max(args.n_sessions * 2, 180))
-    all_sessions = list(
-        nyse_calendar()
-        .schedule(start_date=look_back_start, end_date=end_date)
-        .index.date
-    )
+    calendar: Any = nyse_calendar()
+    schedule = calendar.schedule(start_date=look_back_start, end_date=end_date)
+    schedule_index = pd.DatetimeIndex(pd.Index(schedule.index))
+    all_sessions = [pd.Timestamp(value).date() for value in schedule_index.tolist()]
     sessions = all_sessions[-args.n_sessions :]
     if len(sessions) < args.n_sessions:
         raise SystemExit(
@@ -453,7 +456,7 @@ def main() -> int:
         market_data=market_data,
         config=config,
     )
-    spy_index = bootstrap_context.spy_ohlcv.index
+    spy_index = normalize_datetime_index(pd.Index(bootstrap_context.spy_ohlcv.index))
 
     logger.info("Loading sector/cross-asset closes + macro series...")
     sector_etf_closes = load_close_dict(daily_dir, list(SECTOR_ETFS), spy_index)

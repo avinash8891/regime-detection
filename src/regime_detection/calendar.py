@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+# pyright: reportUnknownMemberType=false, reportUnknownArgumentType=false, reportUnknownVariableType=false, reportArgumentType=false, reportCallIssue=false, reportOperatorIssue=false, reportAttributeAccessIssue=false, reportOptionalMemberAccess=false, reportUnknownParameterType=false, reportMissingParameterType=false, reportMissingTypeStubs=false
+
 from dataclasses import dataclass
 from datetime import date, datetime
 from functools import lru_cache

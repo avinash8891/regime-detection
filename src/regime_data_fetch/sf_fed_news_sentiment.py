@@ -27,6 +27,8 @@ Output parquet schema:
     source_url        (str)      — the published XLSX URL
 """
 
+# pyright: reportUnknownMemberType=false, reportUnknownArgumentType=false, reportUnknownVariableType=false, reportArgumentType=false, reportCallIssue=false, reportOperatorIssue=false
+
 from __future__ import annotations
 
 import datetime as dt

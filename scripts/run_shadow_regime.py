@@ -39,7 +39,8 @@ def _normalize_market_data(path: Path) -> pd.DataFrame:
     if path.suffix.lower() == ".parquet":
         df = pd.read_parquet(path)
     else:
-        df = pd.read_csv(path)
+        pandas_module: Any = pd
+        df = pandas_module.read_csv(path)
     required = {"date", "symbol", "open", "high", "low", "close", "volume"}
     missing = sorted(required - set(df.columns))
     if missing:
@@ -94,7 +95,8 @@ def _load_pit_intervals(path: Path | None) -> pd.DataFrame | None:
     if path.suffix.lower() == ".parquet":
         frame = pd.read_parquet(path)
     else:
-        frame = pd.read_csv(path)
+        pandas_module: Any = pd
+        frame = pandas_module.read_csv(path)
     required = {"ticker", "start_date", "end_date"}
     missing = sorted(required - set(frame.columns))
     if missing:
@@ -135,15 +137,16 @@ def _constituent_ohlcv_from_daily(
 
 
 def _default_pit_intervals_from_daily(daily_ohlcv: pd.DataFrame) -> pd.DataFrame:
-    start_dates = (
-        daily_ohlcv[daily_ohlcv["symbol"].isin(SECTOR_ETFS)]
-        .groupby("symbol")["date"]
-        .min()
-    )
+    start_dates: dict[str, Any] = {}
+    for symbol in SECTOR_ETFS:
+        symbol_dates = daily_ohlcv.loc[daily_ohlcv["symbol"] == symbol, "date"].tolist()
+        if not symbol_dates:
+            continue
+        start_dates[symbol] = min(symbol_dates)
     return pd.DataFrame(
         {
-            "ticker": list(start_dates.index),
-            "start_date": list(start_dates.values),
+            "ticker": list(start_dates.keys()),
+            "start_date": list(start_dates.values()),
             "end_date": [None] * len(start_dates),
         }
     )

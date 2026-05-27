@@ -6,15 +6,19 @@ import enum
 import json
 import math
 from collections import Counter
+from collections.abc import Mapping
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Final, get_args
+from typing import TYPE_CHECKING, Any, Final, cast, get_args
 
 import pandas as pd
 
 from regime_detection.feature_store import FeatureStore
 from regime_detection.models import ClassificationStatus
 from regime_detection.models import RegimeOutput, RegimeTimeline
-from scripts._v2_calibration_helpers import axis_reporting_label as _reporting_label
+from scripts._v2_calibration_helpers import (
+    axis_reporting_label as _comparison_reporting_label,
+    normalize_datetime_index,
+)
 
 if TYPE_CHECKING:
     from scripts.profile_engine import ProfileInputBundle, StageTimer
@@ -59,15 +63,16 @@ def _counter_dict(counter: Counter[str]) -> dict[str, int]:
     return {key: counter[key] for key in sorted(counter)}
 
 
-def _input_status_report(name: str, value: Any) -> dict[str, Any]:
+def input_status_report(name: str, value: Any) -> dict[str, Any]:
     if value is None:
         return {"name": name, "status": "none", "count": 0}
-    if isinstance(value, dict):
+    if isinstance(value, Mapping):
+        mapping = cast(Mapping[str, Any], value)
         return {
             "name": name,
-            "status": "empty_dict" if not value else "present",
+            "status": "empty_dict" if not mapping else "present",
             "kind": "dict",
-            "count": len(value),
+            "count": len(mapping),
         }
     if isinstance(value, pd.DataFrame):
         return {
@@ -78,12 +83,13 @@ def _input_status_report(name: str, value: Any) -> dict[str, Any]:
             "columns": list(value.columns),
         }
     if isinstance(value, pd.Series):
+        series_value = cast(pd.Series, value)
         return {
             "name": name,
             "status": "present",
             "kind": "series",
-            "rows": len(value),
-            "name_in_series": value.name,
+            "rows": len(series_value.index.tolist()),
+            "name_in_series": series_value.name,
         }
     return {
         "name": name,
@@ -92,8 +98,8 @@ def _input_status_report(name: str, value: Any) -> dict[str, Any]:
     }
 
 
-def _input_status(name: str, value: Any) -> str:
-    r = _input_status_report(name, value)
+def input_status(name: str, value: Any) -> str:
+    r = input_status_report(name, value)
     status = r["status"]
     if status == "none":
         return f"{name}: NONE"
@@ -107,15 +113,16 @@ def _input_status(name: str, value: Any) -> str:
     return f"{name}: type={kind}"
 
 
-def _profile_input_seam_values(inputs: ProfileInputBundle) -> dict[str, Any]:
+def profile_input_seam_values(inputs: ProfileInputBundle) -> dict[str, Any]:
     return {name: getattr(inputs, name) for name in PROFILE_INPUT_SEAM_NAMES}
 
 
 def _input_is_present(value: Any) -> bool:
     if value is None:
         return False
-    if isinstance(value, dict):
-        return bool(value)
+    if isinstance(value, Mapping):
+        mapping = cast(Mapping[str, Any], value)
+        return any(True for _ in mapping)
     if isinstance(value, pd.DataFrame | pd.Series):
         return not value.empty
     return True
@@ -126,18 +133,19 @@ def _series_metric_summary(
 ) -> dict[str, Any]:
     if series is None:
         return {"status": "missing", "non_null": 0, "total": len(selected_dates)}
-    selected_index = pd.DatetimeIndex(selected_dates)
+    selected_index = normalize_datetime_index(pd.Index(selected_dates))
     aligned = series.reindex(selected_index)
     non_null = aligned.dropna()
+    non_null_index = normalize_datetime_index(pd.Index(non_null.index))
     summary: dict[str, Any] = {
         "status": "present",
         "non_null": int(non_null.size),
         "total": int(aligned.size),
     }
     if not non_null.empty:
-        summary["first_date"] = non_null.index[0].date().isoformat()
+        summary["first_date"] = pd.Timestamp(non_null_index[0]).date().isoformat()
         summary["first_value"] = _json_safe_value(non_null.iloc[0])
-        summary["last_date"] = non_null.index[-1].date().isoformat()
+        summary["last_date"] = pd.Timestamp(non_null_index[-1]).date().isoformat()
         summary["last_value"] = _json_safe_value(non_null.iloc[-1])
     return summary
 
@@ -163,7 +171,7 @@ def _feature_metric_summary_report(
     }
 
 
-def _format_stage_rows(
+def format_stage_rows(
     stage_names: list[str], timer: StageTimer, total: float
 ) -> list[str]:
     rows = ["stage_name | wall_clock_seconds | % of total"]
@@ -234,7 +242,7 @@ def _compact_timeline_rows(outputs: list[RegimeOutput]) -> list[str]:
         event_calendar = _event_calendar_output(out)
         event_primary = _event_calendar_primary_label(event_calendar)
         event_matching = _event_calendar_matching_labels(event_calendar)
-        network_fragility_label = _reporting_label(out.network_fragility)
+        network_fragility_label = _comparison_reporting_label(out.network_fragility)
         if (
             network_fragility_label is not None
             and network_fragility_label not in NON_CLASSIFIED_REPORTING_LABELS
@@ -242,15 +250,15 @@ def _compact_timeline_rows(outputs: list[RegimeOutput]) -> list[str]:
             seams.append(f"network_fragility={network_fragility_label}")
         if out.volume_liquidity_state is not None:
             seams.append(
-                f"volume_liquidity_state={_reporting_label(out.volume_liquidity_state)}"
+                f"volume_liquidity_state={_comparison_reporting_label(out.volume_liquidity_state)}"
             )
         if out.credit_funding_state is not None:
             seams.append(
-                f"credit_funding_state={_reporting_label(out.credit_funding_state)}"
+                f"credit_funding_state={_comparison_reporting_label(out.credit_funding_state)}"
             )
         if out.credit_funding_state_proxy is not None:
             seams.append(
-                f"credit_funding_state_proxy={_reporting_label(out.credit_funding_state_proxy)}"
+                f"credit_funding_state_proxy={_comparison_reporting_label(out.credit_funding_state_proxy)}"
             )
         if out.credit_funding_effective_state is not None:
             source = out.credit_funding_effective_state.evidence.get(
@@ -258,16 +266,16 @@ def _compact_timeline_rows(outputs: list[RegimeOutput]) -> list[str]:
             )
             seams.append(
                 "credit_funding_effective_state="
-                f"{_reporting_label(out.credit_funding_effective_state)}"
+                f"{_comparison_reporting_label(out.credit_funding_effective_state)}"
                 f"({source})"
             )
         if out.inflation_growth_state is not None:
             seams.append(
-                f"inflation_growth_state={_reporting_label(out.inflation_growth_state)}"
+                f"inflation_growth_state={_comparison_reporting_label(out.inflation_growth_state)}"
             )
         if out.monetary_pressure_state is not None:
             seams.append(
-                f"monetary_pressure_state={_reporting_label(out.monetary_pressure_state)}"
+                f"monetary_pressure_state={_comparison_reporting_label(out.monetary_pressure_state)}"
             )
         if out.cluster is not None:
             seams.append(f"cluster={out.cluster.cluster_id}")
@@ -284,14 +292,17 @@ def _compact_timeline_rows(outputs: list[RegimeOutput]) -> list[str]:
         seam_text = ", ".join(seams) if seams else "-"
         rows.append(
             f"{out.as_of_date.isoformat()} | "
-            f"{_reporting_label(out.trend_direction)} | "
-            f"{_reporting_label(out.volatility_state)} | "
+            f"{_comparison_reporting_label(out.trend_direction)} | "
+            f"{_comparison_reporting_label(out.volatility_state)} | "
             f"{event_primary or 'missing'} | "
             f"{','.join(event_matching) if event_matching else 'missing'} | "
             f"{out.transition_risk.state} | "
             f"{seam_text}"
         )
     return rows
+
+
+compact_timeline_rows = _compact_timeline_rows
 
 
 def _event_calendar_output(out: Any) -> Any:
@@ -328,8 +339,9 @@ def _transition_data_quality_status(transition_risk: Any) -> str | None:
     data_quality = getattr(transition_risk, "data_quality", None)
     if data_quality is None:
         return None
-    if isinstance(data_quality, dict):
-        status = data_quality.get("status")
+    if isinstance(data_quality, Mapping):
+        data_quality_mapping = cast(Mapping[str, Any], data_quality)
+        status = data_quality_mapping.get("status")
     else:
         status = getattr(data_quality, "status", None)
     return None if status is None else str(status)
@@ -339,10 +351,12 @@ def _transition_evidence_value(transition_risk: Any, key: str) -> Any:
     evidence = getattr(transition_risk, "evidence", None)
     if evidence is None:
         return None
-    if isinstance(evidence, dict):
-        return evidence.get(key)
-    if hasattr(evidence, "get"):
-        return evidence.get(key)
+    if isinstance(evidence, Mapping):
+        evidence_mapping = cast(Mapping[str, Any], evidence)
+        return evidence_mapping.get(key)
+    evidence_getter = getattr(evidence, "get", None)
+    if callable(evidence_getter):
+        return evidence_getter(key)
     return getattr(evidence, key, None)
 
 
@@ -368,7 +382,7 @@ def _compact_timeline_report(outputs: list[RegimeOutput]) -> list[dict[str, Any]
         event_calendar = _event_calendar_output(out)
         event_primary = _event_calendar_primary_label(event_calendar)
         event_matching = _event_calendar_matching_labels(event_calendar)
-        network_fragility_label = _reporting_label(out.network_fragility)
+        network_fragility_label = _comparison_reporting_label(out.network_fragility)
         network_fragility_status = getattr(
             out.network_fragility, "classification_status", "classified"
         )
@@ -391,28 +405,32 @@ def _compact_timeline_report(outputs: list[RegimeOutput]) -> list[dict[str, Any]
                 "classification_status": network_fragility_status or "not_wired",
             }
         if out.volume_liquidity_state is not None:
-            seams["volume_liquidity_state"] = _reporting_label(
+            seams["volume_liquidity_state"] = _comparison_reporting_label(
                 out.volume_liquidity_state
             )
         if out.credit_funding_state is not None:
-            seams["credit_funding_state"] = _reporting_label(out.credit_funding_state)
+            seams["credit_funding_state"] = _comparison_reporting_label(
+                out.credit_funding_state
+            )
         if out.credit_funding_state_proxy is not None:
-            seams["credit_funding_state_proxy"] = _reporting_label(
+            seams["credit_funding_state_proxy"] = _comparison_reporting_label(
                 out.credit_funding_state_proxy
             )
         if out.credit_funding_effective_state is not None:
             seams["credit_funding_effective_state"] = {
-                "reported": _reporting_label(out.credit_funding_effective_state),
+                "reported": _comparison_reporting_label(
+                    out.credit_funding_effective_state
+                ),
                 "source_used": out.credit_funding_effective_state.evidence.get(
                     "source_used", "not_recorded"
                 ),
             }
         if out.inflation_growth_state is not None:
-            seams["inflation_growth_state"] = _reporting_label(
+            seams["inflation_growth_state"] = _comparison_reporting_label(
                 out.inflation_growth_state
             )
         if out.monetary_pressure_state is not None:
-            seams["monetary_pressure_state"] = _reporting_label(
+            seams["monetary_pressure_state"] = _comparison_reporting_label(
                 out.monetary_pressure_state
             )
         if out.cluster is not None:
@@ -429,8 +447,8 @@ def _compact_timeline_report(outputs: list[RegimeOutput]) -> list[dict[str, Any]
         rows.append(
             {
                 "as_of_date": out.as_of_date.isoformat(),
-                "trend_direction": _reporting_label(out.trend_direction),
-                "volatility_state": _reporting_label(out.volatility_state),
+                "trend_direction": _comparison_reporting_label(out.trend_direction),
+                "volatility_state": _comparison_reporting_label(out.volatility_state),
                 "event_calendar_primary_label": event_primary,
                 "event_calendar_matching_labels": event_matching,
                 "transition_risk": out.transition_risk.state,
@@ -444,24 +462,29 @@ def _json_safe_value(value: Any) -> Any:
     if isinstance(value, float):
         return value if math.isfinite(value) else None
     if hasattr(value, "model_dump"):
-        fields = getattr(type(value), "model_fields", None)
+        value_type = cast(type[Any], value.__class__)
+        fields = getattr(value_type, "model_fields", None)
         if fields is not None:
-            payload = {
+            field_names = cast(Mapping[str, Any], fields)
+            payload: dict[str, Any] = {
                 field_name: _json_safe_value(getattr(value, field_name))
-                for field_name in fields
+                for field_name in field_names
             }
         else:
-            payload = _json_safe_value(
-                value.model_dump(mode="json", exclude_none=False)
+            payload = cast(
+                dict[str, Any],
+                _json_safe_value(value.model_dump(mode="json", exclude_none=False)),
             )
-        reporting_label = _reporting_label(value)
+        reporting_label = _comparison_reporting_label(value)
         if reporting_label is not None:
             payload["reporting_label"] = reporting_label
         return payload
-    if isinstance(value, dict):
-        return {str(key): _json_safe_value(item) for key, item in value.items()}
+    if isinstance(value, Mapping):
+        mapping = cast(Mapping[str, Any], value)
+        return {str(key): _json_safe_value(item) for key, item in mapping.items()}
     if isinstance(value, (list, tuple)):
-        return [_json_safe_value(item) for item in value]
+        sequence = cast(list[Any] | tuple[Any, ...], value)
+        return [_json_safe_value(item) for item in sequence]
     if isinstance(value, enum.Enum):
         return value.value
     if isinstance(value, (dt.date, dt.datetime, pd.Timestamp)):
@@ -469,12 +492,13 @@ def _json_safe_value(value: Any) -> Any:
     if isinstance(value, Path):
         return str(value)
     if hasattr(value, "__dict__"):
-        payload = {
+        object_payload = cast(dict[str, Any], vars(value))
+        payload: dict[str, Any] = {
             key: _json_safe_value(item)
-            for key, item in vars(value).items()
+            for key, item in object_payload.items()
             if not key.startswith("_")
         }
-        reporting_label = _reporting_label(value)
+        reporting_label = _comparison_reporting_label(value)
         if reporting_label is not None:
             payload["reporting_label"] = reporting_label
         return payload
@@ -482,7 +506,7 @@ def _json_safe_value(value: Any) -> Any:
 
 
 def _full_timeline_report(outputs: list[RegimeOutput]) -> list[dict[str, Any]]:
-    return [_json_safe_value(output) for output in outputs]
+    return [cast(dict[str, Any], _json_safe_value(output)) for output in outputs]
 
 
 def _label_summary_for_fields(
@@ -510,7 +534,7 @@ def _label_summary_for_fields(
             raw_counts[str(raw_label or "missing")] += 1
             stable_counts[str(stable_label or "missing")] += 1
             active_counts[str(active_label or "missing")] += 1
-            reported_counts[str(_reporting_label(value) or "missing")] += 1
+            reported_counts[str(_comparison_reporting_label(value) or "missing")] += 1
             status_counts[
                 str(getattr(value, "classification_status", "classified") or "missing")
             ] += 1
@@ -551,7 +575,7 @@ def _trailing_v2_status(out: RegimeOutput) -> list[str]:
             rows.append(f"{name} | NaN")
             return
         if hasattr(value, "active_label"):
-            rows.append(f"{name} | reported={_reporting_label(value)}")
+            rows.append(f"{name} | reported={_comparison_reporting_label(value)}")
             return
         rows.append(f"{name} | present")
 
@@ -592,6 +616,9 @@ def _trailing_v2_status(out: RegimeOutput) -> list[str]:
     return rows
 
 
+trailing_v2_status = _trailing_v2_status
+
+
 def _trailing_v2_status_report(out: RegimeOutput) -> list[dict[str, Any]]:
     rows: list[dict[str, Any]] = []
 
@@ -607,7 +634,7 @@ def _trailing_v2_status_report(out: RegimeOutput) -> list[dict[str, Any]]:
                 {
                     "field": name,
                     "status": "present",
-                    "reported": _reporting_label(value),
+                    "reported": _comparison_reporting_label(value),
                 }
             )
             return
@@ -657,7 +684,8 @@ def _verify_invariants(
 ) -> list[str]:
     issues: list[str] = []
     for out in timeline.outputs:
-        if out.trend_direction.active_label is None:
+        active_label = getattr(out.trend_direction, "active_label", None)
+        if active_label is None:
             issues.append(
                 f"{out.as_of_date.isoformat()}: trend_direction.active_label is None"
             )
@@ -673,7 +701,7 @@ def _verify_invariants(
     for name, value in expected_non_none:
         if value is None:
             issues.append(f"Trailing session missing expected V2 field: {name}")
-    seam_expectations = [
+    seam_expectations: list[tuple[str, Any, list[str]]] = [
         ("network_fragility", feature_store.network_fragility, ["sector_etf_closes"]),
         ("trend_direction_v2", feature_store.trend_direction_v2, []),
         ("volatility_state_v2", feature_store.volatility_state_v2, []),
@@ -698,7 +726,7 @@ def _verify_invariants(
         ("gmm_clustering", feature_store.clustering, []),
         ("change_point", feature_store.change_point, []),
     ]
-    input_values = _profile_input_seam_values(inputs)
+    input_values = profile_input_seam_values(inputs)
     for seam_name, seam_value, deps in seam_expectations:
         if seam_value is None:
             missing = [
@@ -731,6 +759,9 @@ def _verify_invariants(
     return issues
 
 
+verify_invariants = _verify_invariants
+
+
 def _stale_eps_revision_issue(inputs: ProfileInputBundle) -> str | None:
     series = inputs.macro_series.get("aggregate_forward_eps_revision")
     if series is None or series.empty or not inputs.selected_dates:
@@ -738,7 +769,8 @@ def _stale_eps_revision_issue(inputs: ProfileInputBundle) -> str | None:
     non_null = series.dropna()
     if non_null.empty:
         return None
-    latest = pd.Timestamp(non_null.index.max()).date()
+    latest_dates = normalize_datetime_index(pd.Index(non_null.index))
+    latest = pd.Timestamp(latest_dates[-1]).date()
     run_end = inputs.selected_dates[-1]
     age_days = (run_end - latest).days
     if age_days <= EPS_REVISION_STALE_DAYS:
@@ -767,7 +799,11 @@ def _eps_revision_source_report(
     )
 
 
-def _build_json_report(
+def reporting_label(value: Any) -> str | None:
+    return _comparison_reporting_label(value)
+
+
+def build_json_report(
     *,
     args: argparse.Namespace,
     inputs: ProfileInputBundle,
@@ -802,7 +838,7 @@ def _build_json_report(
         }
     )
 
-    input_values = _profile_input_seam_values(inputs)
+    input_values = profile_input_seam_values(inputs)
 
     return {
         "sources": {
@@ -857,7 +893,7 @@ def _build_json_report(
         },
         "inputs": {
             "seams": [
-                _input_status_report(name, input_values[name])
+                input_status_report(name, input_values[name])
                 for name in PROFILE_INPUT_SEAM_NAMES
             ],
             "pit_overlap_tickers_requested": len(inputs.constituent_tickers),
@@ -926,7 +962,19 @@ def _build_json_report(
     }
 
 
-def _write_json_report(path: Path, report: dict[str, Any]) -> None:
+def write_json_report(path: Path, report: dict[str, Any]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     payload = json.dumps(report, indent=2, sort_keys=True, allow_nan=False) + "\n"
     path.write_text(payload, encoding="utf-8")
+
+
+_input_status_report = input_status_report
+_input_status = input_status
+_profile_input_seam_values = profile_input_seam_values
+_format_stage_rows = format_stage_rows
+_build_json_report = build_json_report
+_write_json_report = write_json_report
+_compact_timeline_rows = compact_timeline_rows
+_trailing_v2_status = trailing_v2_status
+_verify_invariants = verify_invariants
+_reporting_label = reporting_label

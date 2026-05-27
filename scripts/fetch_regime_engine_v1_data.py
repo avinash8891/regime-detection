@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 # ruff: noqa: E402
+# pyright: reportUnknownVariableType=false, reportUnusedFunction=false
 from __future__ import annotations
 
 import argparse
@@ -12,7 +13,7 @@ from pathlib import Path
 
 import sys
 from collections.abc import Callable
-from typing import Literal
+from typing import Any, Literal, cast
 
 # Allow running as a script without requiring PYTHONPATH/installation.
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -30,17 +31,23 @@ from regime_data_fetch.cli_common import (
     load_operator_env_files,
     parse_date,
 )
-from regime_data_fetch.bls_schedule import build_bls_local_archive_page_fetcher
-from regime_data_fetch.event_calendar import run_us_event_calendar_fetch
+from regime_data_fetch.bls_schedule import (
+    build_bls_local_archive_page_fetcher,
+)  # pyright: ignore[reportUnknownVariableType]
+from regime_data_fetch.event_calendar import (
+    run_us_event_calendar_fetch,
+)  # pyright: ignore[reportUnknownVariableType]
 from regime_data_fetch.artifact_export import emit_manifest_for_report_paths
 from regime_data_fetch.aaii_sentiment import run_sentiment_fetch
 from regime_data_fetch.fetch_workflow import run_macro_fetch, run_market_fetch
 from regime_data_fetch.aggregate_eps import (
     run_aggregate_eps_fetch,
-    run_aggregate_eps_auto_fetch,
-    run_wayback_aggregate_eps_fetch,
+    run_aggregate_eps_auto_fetch,  # pyright: ignore[reportUnknownVariableType]
+    run_wayback_aggregate_eps_fetch,  # pyright: ignore[reportUnknownVariableType]
 )
-from regime_data_fetch.fomc_minutes import run_fomc_minutes_fetch
+from regime_data_fetch.fomc_minutes import (
+    run_fomc_minutes_fetch,
+)  # pyright: ignore[reportUnknownVariableType]
 from regime_data_fetch.investing_archive import run_local_investing_archive_import
 from regime_data_fetch.investing_live import run_investing_live_fetch
 from regime_data_fetch.cleveland_fed_nowcast import run_cleveland_fed_nowcast_fetch
@@ -49,9 +56,15 @@ from regime_data_fetch.local_daily_ohlcv_sqlite import (
     run_local_daily_ohlcv_sqlite_import,
 )
 from regime_data_fetch.local_usd_index import run_local_usd_index_import
-from regime_data_fetch.pmi import run_pmi_fetch
-from regime_data_fetch.pit_constituents import run_pit_constituents_fetch
-from regime_data_fetch.powell_speeches import run_powell_speeches_fetch
+from regime_data_fetch.pmi import (
+    run_pmi_fetch,
+)  # pyright: ignore[reportUnknownVariableType]
+from regime_data_fetch.pit_constituents import (
+    run_pit_constituents_fetch,
+)  # pyright: ignore[reportUnknownVariableType]
+from regime_data_fetch.powell_speeches import (
+    run_powell_speeches_fetch,
+)  # pyright: ignore[reportUnknownVariableType]
 from regime_data_fetch.sf_fed_news_sentiment import run_sf_fed_news_sentiment_fetch
 from regime_data_fetch.universe import (
     FIXED_UNIVERSE_SYMBOL_COUNT,
@@ -59,6 +72,15 @@ from regime_data_fetch.universe import (
     load_symbols_from_daily_ohlcv_tree,
     load_symbols_from_pit_constituents_parquet,
 )
+
+build_bls_local_archive_page_fetcher = cast(Any, build_bls_local_archive_page_fetcher)
+run_us_event_calendar_fetch = cast(Any, run_us_event_calendar_fetch)
+run_aggregate_eps_auto_fetch = cast(Any, run_aggregate_eps_auto_fetch)
+run_wayback_aggregate_eps_fetch = cast(Any, run_wayback_aggregate_eps_fetch)
+run_fomc_minutes_fetch = cast(Any, run_fomc_minutes_fetch)
+run_pmi_fetch = cast(Any, run_pmi_fetch)
+run_pit_constituents_fetch = cast(Any, run_pit_constituents_fetch)
+run_powell_speeches_fetch = cast(Any, run_powell_speeches_fetch)
 
 FetchModeCategory = Literal["unattended", "operator-assisted"]
 UNATTENDED: FetchModeCategory = "unattended"
@@ -395,20 +417,19 @@ def main() -> int:
         if group.concurrent:
             max_workers = min(len(group.modes), 4)
             with ThreadPoolExecutor(max_workers=max_workers) as executor:
-                reports = list(
-                    executor.map(
-                        lambda mode: _invoke_unattended_fetch_mode(
-                            mode,
-                            args=args,
-                            out_dir=out_dir,
-                            start=start,
-                            end=end,
-                            acquisition_db_path=acquisition_db_path,
-                            acquisition_artifact_store_root=acquisition_artifact_store_root,
-                        ),
-                        group.modes,
+
+                def _run_mode(mode: str) -> Path:
+                    return _invoke_unattended_fetch_mode(
+                        mode,
+                        args=args,
+                        out_dir=out_dir,
+                        start=start,
+                        end=end,
+                        acquisition_db_path=acquisition_db_path,
+                        acquisition_artifact_store_root=acquisition_artifact_store_root,
                     )
-                )
+
+                reports = list(executor.map(_run_mode, group.modes))
         else:
             reports = [
                 _invoke_unattended_fetch_mode(
@@ -715,7 +736,9 @@ def _resolve_stock_universe(args: argparse.Namespace, *, out_dir: Path) -> list[
     return load_symbols_from_pit_constituents_parquet(pit_parquet)
 
 
-def _should_fetch(selected: str, mode: str) -> bool:
+def _should_fetch(
+    selected: str, mode: str
+) -> bool:  # pyright: ignore[reportUnusedFunction]
     return selected == mode or any(
         mode in group.modes
         for group in _plan_fetch_mode_execution(
@@ -731,12 +754,10 @@ def _validate_fetch_modes() -> None:
 
 
 def _load_json_symbol_list(universe_path: Path) -> list[str]:
-    stocks = json.loads(universe_path.read_text())
-    if not isinstance(stocks, list) or not all(
-        isinstance(symbol, str) for symbol in stocks
-    ):
+    stocks = cast(list[Any], json.loads(universe_path.read_text()))
+    if not all(isinstance(symbol, str) for symbol in stocks):
         raise SystemExit("--universe-json must be a JSON list[str]")
-    return stocks
+    return [str(symbol) for symbol in stocks]
 
 
 if __name__ == "__main__":

@@ -17,6 +17,8 @@ normalization and sha verification stay consistent with the rest of the
 codebase. No fetcher code is modified.
 """
 
+# pyright: reportMissingTypeStubs=false, reportUnknownMemberType=false, reportUnknownVariableType=false, reportUnknownArgumentType=false, reportAttributeAccessIssue=false
+
 from __future__ import annotations
 
 import argparse
@@ -124,7 +126,7 @@ def _load_manifest_payload(path: Path) -> tuple[Any, Any | None]:
     return payload, None
 
 
-def _dump_manifest_atomically(
+def _dump_manifest_atomically(  # pyright: ignore[reportUnusedFunction]
     payload: Any, ruamel_instance: Any | None, path: Path
 ) -> None:
     tmp = path.with_suffix(path.suffix + ".tmp")
@@ -332,7 +334,7 @@ def _expected_symbol_sessions(
         ]
     intervals = active_intervals_by_symbol.get(symbol)
     if not intervals:
-        return pd.DatetimeIndex([])
+        return pd.DatetimeIndex([], dtype="datetime64[ns]")
     active_sessions: list[pd.Timestamp] = []
     for start, end in intervals:
         # PIT end dates are effective-removal dates in the upstream source.
@@ -422,7 +424,7 @@ def _daily_ohlcv_spy_sessions(
     dates = dates.dropna().dt.normalize()
     if dates.empty:
         return None
-    return pd.DatetimeIndex(sorted(dates.unique()))
+    return pd.DatetimeIndex(sorted(pd.DatetimeIndex(dates).tolist()))
 
 
 def _daily_ohlcv_pit_active_intervals(

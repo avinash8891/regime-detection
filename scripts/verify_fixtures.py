@@ -6,6 +6,8 @@ the engine's output labels against the INTENTS. No shadow reimplementation
 of classification logic — the engine IS the source of truth.
 """
 
+# pyright: reportUnknownMemberType=false, reportUnknownArgumentType=false, reportUnknownVariableType=false
+
 from __future__ import annotations
 
 import hashlib

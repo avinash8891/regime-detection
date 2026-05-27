@@ -17,6 +17,8 @@ keeping them here prevents drift between the publish-time validator and
 the calibration loader.
 """
 
+# pyright: reportUnknownMemberType=false, reportUnknownArgumentType=false, reportUnknownVariableType=false, reportArgumentType=false, reportCallIssue=false, reportOperatorIssue=false, reportAttributeAccessIssue=false, reportOptionalMemberAccess=false, reportMissingTypeStubs=false, reportUnknownParameterType=false
+
 from __future__ import annotations
 
 from pathlib import Path

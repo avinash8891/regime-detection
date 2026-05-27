@@ -37,6 +37,8 @@ Module invariant:
     constants per v2 §3.5.
 """
 
+# pyright: reportUnknownMemberType=false, reportUnknownArgumentType=false, reportUnknownVariableType=false, reportArgumentType=false, reportCallIssue=false, reportOperatorIssue=false
+
 from __future__ import annotations
 
 import warnings

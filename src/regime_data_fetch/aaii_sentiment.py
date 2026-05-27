@@ -35,7 +35,7 @@ class _TableParser(HTMLParser):
         self._current_cell: list[str] = []
         self.rows: list[list[str]] = []
 
-    def handle_starttag(self, tag: str, attrs: list) -> None:
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
         if tag == "table":
             self._in_table = True
         elif tag == "tr" and self._in_table:
@@ -84,7 +84,7 @@ def _parse_html_table(html_text: str, after_date: dt.date) -> pd.DataFrame:
     parser.feed(html_text)
 
     today = dt.date.today()
-    rows = []
+    rows: list[dict[str, object]] = []
     for cells in parser.rows:
         if len(cells) < 4:
             continue
@@ -131,13 +131,14 @@ def parse_historical_cfb(path: Path) -> pd.DataFrame:
     wb = xlrd.open_workbook(str(path))
     ws = wb.sheet_by_name("SENTIMENT")
 
-    rows = []
+    rows: list[dict[str, object]] = []
     for r in range(5, ws.nrows):
         if ws.cell_type(r, 0) != xlrd.XL_CELL_DATE:
             continue
         if ws.cell_type(r, 1) != xlrd.XL_CELL_NUMBER:
             continue
-        date = xlrd.xldate_as_datetime(ws.cell_value(r, 0), wb.datemode).date()
+        raw_date = float(ws.cell_value(r, 0))
+        date = xlrd.xldate_as_datetime(raw_date, wb.datemode).date()
         rows.append(
             {
                 "date": pd.Timestamp(date),
@@ -299,11 +300,13 @@ def run_sentiment_fetch(
                 )
             return report_path
 
+        min_date: str | None = str(df["date"].min().date()) if not df.empty else None
+        max_date: str | None = str(df["date"].max().date()) if not df.empty else None
         report = {
             "as_of_utc": dt.datetime.now(dt.timezone.utc).isoformat(),
             "rows": int(len(df)),
-            "min_date": str(df["date"].min().date()) if not df.empty else None,
-            "max_date": str(df["date"].max().date()) if not df.empty else None,
+            "min_date": min_date,
+            "max_date": max_date,
             "paths": {
                 "sentiment_parquet": str(out_path),
                 "acquisition_db": (
@@ -323,8 +326,8 @@ def run_sentiment_fetch(
                     artifact_kind="cfb",
                     source_identifier=AAII_SENTIMENT_SEED_CFB,
                     file_path=seed_path,
-                    start_date=report["min_date"],
-                    end_date=report["max_date"],
+                    start_date=min_date,
+                    end_date=max_date,
                     notes="AAII historical seed file used when canonical parquet is bootstrapped locally",
                 )
                 raw_record = raw_artifact.artifact_record_id
@@ -333,8 +336,8 @@ def run_sentiment_fetch(
                 output_kind="aaii_sentiment_parquet",
                 path=out_path,
                 row_count=int(len(df)),
-                min_date=report["min_date"],
-                max_date=report["max_date"],
+                min_date=min_date,
+                max_date=max_date,
                 artifact_name="aaii_sentiment",
                 source_name="aaii",
                 artifact_kind="parquet",
@@ -346,11 +349,11 @@ def run_sentiment_fetch(
                     input_artifact_record_id=raw_record,
                     transform_name="normalize_aaii_sentiment",
                 )
-            if report["max_date"]:
+            if max_date:
                 store.set_source_checkpoint(
                     source_name="aaii",
                     cursor_key="survey_week",
-                    cursor_value=str(report["max_date"]),
+                    cursor_value=max_date,
                     successful_run_id=fetch_run.run_id,
                 )
             store.record_output(
@@ -358,8 +361,8 @@ def run_sentiment_fetch(
                 output_kind="aaii_sentiment_fetch_report",
                 path=report_path,
                 row_count=int(len(df)),
-                min_date=report["min_date"],
-                max_date=report["max_date"],
+                min_date=min_date,
+                max_date=max_date,
                 record_artifact=False,
                 notes="AAII sentiment fetch report",
             )

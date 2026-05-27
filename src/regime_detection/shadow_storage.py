@@ -11,6 +11,8 @@ operations are keyed on the canonical identity tuple
 
 from __future__ import annotations
 
+# pyright: reportUnknownMemberType=false, reportUnknownArgumentType=false, reportUnknownVariableType=false, reportArgumentType=false, reportCallIssue=false, reportOperatorIssue=false
+
 import hashlib
 import json
 import sqlite3

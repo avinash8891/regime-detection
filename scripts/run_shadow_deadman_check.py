@@ -6,6 +6,7 @@ import json
 import sys
 from datetime import date
 from pathlib import Path
+from typing import Any
 
 import pandas as pd
 
@@ -24,8 +25,10 @@ from regime_detection.shadow_storage import (
 def _previous_nyse_session(check_date: date) -> date:
     end = pd.Timestamp(check_date)
     start = end - pd.Timedelta(days=10)
-    schedule = nyse_calendar().schedule(start_date=start.date(), end_date=end.date())
-    sessions = schedule.index.date
+    calendar: Any = nyse_calendar()
+    schedule = calendar.schedule(start_date=start.date(), end_date=end.date())
+    schedule_index = pd.DatetimeIndex(pd.Index(schedule.index))
+    sessions = [pd.Timestamp(value).date() for value in schedule_index.tolist()]
     previous = [session for session in sessions if session < check_date]
     if not previous:
         raise ValueError(

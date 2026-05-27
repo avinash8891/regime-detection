@@ -6,9 +6,10 @@ import hashlib
 import json
 import sqlite3
 import sys
+from collections.abc import Mapping
 from datetime import date, datetime, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import pandas as pd
 import yaml
@@ -26,13 +27,7 @@ from regime_detection.versioning import (
     engine_version as resolved_engine_version,
 )  # noqa: E402
 from regime_data_fetch.materialization import materialize_if_requested  # noqa: E402
-from scripts.run_shadow_regime import (  # noqa: E402
-    _close_series_by_symbol,
-    _constituent_ohlcv_from_daily,
-    _default_pit_intervals_from_daily,
-    _load_pit_intervals,
-    _load_v2_daily_ohlcv,
-)
+from scripts import run_shadow_regime as _run_shadow_regime  # noqa: E402
 from regime_detection.fragility_universe import (
     CROSS_ASSET_SYMBOLS,
     SECTOR_ETFS,
@@ -62,6 +57,44 @@ def _utc_iso_now() -> str:
     return datetime.now(timezone.utc).replace(microsecond=0).isoformat()
 
 
+def _load_v2_daily_ohlcv(path: Path | None) -> pd.DataFrame | None:
+    shadow_module: Any = _run_shadow_regime
+    return cast(pd.DataFrame | None, shadow_module._load_v2_daily_ohlcv(path))
+
+
+def _load_pit_intervals(path: Path | None) -> pd.DataFrame | None:
+    shadow_module: Any = _run_shadow_regime
+    return cast(pd.DataFrame | None, shadow_module._load_pit_intervals(path))
+
+
+def _default_pit_intervals_from_daily(daily_ohlcv: pd.DataFrame) -> pd.DataFrame:
+    shadow_module: Any = _run_shadow_regime
+    return cast(
+        pd.DataFrame,
+        shadow_module._default_pit_intervals_from_daily(daily_ohlcv),
+    )
+
+
+def _close_series_by_symbol(
+    frame: pd.DataFrame, symbols: tuple[str, ...]
+) -> dict[str, pd.Series]:
+    shadow_module: Any = _run_shadow_regime
+    return cast(
+        dict[str, pd.Series], shadow_module._close_series_by_symbol(frame, symbols)
+    )
+
+
+def _constituent_ohlcv_from_daily(
+    daily_ohlcv: pd.DataFrame,
+    pit_intervals: pd.DataFrame | None,
+) -> dict[str, pd.DataFrame] | None:
+    shadow_module: Any = _run_shadow_regime
+    return cast(
+        dict[str, pd.DataFrame] | None,
+        shadow_module._constituent_ohlcv_from_daily(daily_ohlcv, pit_intervals),
+    )
+
+
 def _sha256_file(path: Path) -> str:
     h = hashlib.sha256()
     with path.open("rb") as f:
@@ -72,9 +105,10 @@ def _sha256_file(path: Path) -> str:
 
 def _normalize_market_data(path: Path) -> pd.DataFrame:
     if path.suffix.lower() == ".parquet":
-        df = pd.read_parquet(path)
+        df: pd.DataFrame = pd.read_parquet(path)
     else:
-        df = pd.read_csv(path)
+        pandas_module: Any = pd
+        df = cast(pd.DataFrame, pandas_module.read_csv(path))
     required = {"date", "symbol", "open", "high", "low", "close", "volume"}
     missing = sorted(required - set(df.columns))
     if missing:
@@ -129,8 +163,13 @@ def _open_db(db_path: Path) -> sqlite3.Connection:
 
 
 def _sessions_between(start_date: date, end_date: date) -> list[date]:
-    schedule = nyse_calendar().schedule(start_date=start_date, end_date=end_date)
-    return list(schedule.index.date)
+    calendar: Any = nyse_calendar()
+    schedule = cast(
+        pd.DataFrame,
+        calendar.schedule(start_date=start_date, end_date=end_date),
+    )
+    schedule_index = pd.DatetimeIndex(pd.Index(schedule.index))
+    return [pd.Timestamp(ts).date() for ts in schedule_index.tolist()]
 
 
 def _write_archived_inputs(
@@ -254,8 +293,9 @@ def _transition_data_quality_status(transition_risk: Any) -> str | None:
     data_quality = getattr(transition_risk, "data_quality", None)
     if data_quality is None:
         return None
-    if isinstance(data_quality, dict):
-        status = data_quality.get("status")
+    if isinstance(data_quality, Mapping):
+        mapping = cast(Mapping[str, Any], data_quality)
+        status = mapping.get("status")
     else:
         status = getattr(data_quality, "status", None)
     return None if status is None else str(status)
@@ -265,10 +305,12 @@ def _transition_evidence_value(transition_risk: Any, key: str) -> Any:
     evidence = getattr(transition_risk, "evidence", None)
     if evidence is None:
         return None
-    if isinstance(evidence, dict):
-        return evidence.get(key)
-    if hasattr(evidence, "get"):
-        return evidence.get(key)
+    if isinstance(evidence, Mapping):
+        mapping = cast(Mapping[str, Any], evidence)
+        return mapping.get(key)
+    evidence_getter = getattr(evidence, "get", None)
+    if callable(evidence_getter):
+        return evidence_getter(key)
     return getattr(evidence, key, None)
 
 
@@ -314,7 +356,10 @@ def _build_report_markdown(
             "breadth_state_active",
             "transition_risk_state",
         ]:
-            counts = success_df[col].value_counts().to_dict()
+            counts = cast(
+                dict[str, int],
+                cast(Any, success_df[col].value_counts()).to_dict(),
+            )
             lines.extend(
                 [
                     "",

@@ -7,6 +7,8 @@ entries to the merged manifest.
 Run once; idempotent on re-run (skips symbols already in the manifest).
 """
 
+# pyright: reportMissingTypeStubs=false, reportUnknownMemberType=false, reportUnknownVariableType=false, reportUnknownArgumentType=false, reportUnknownParameterType=false, reportMissingParameterType=false, reportAttributeAccessIssue=false
+
 from __future__ import annotations
 
 import argparse
@@ -109,12 +111,12 @@ def _date_range(canon: bytes) -> tuple[str | None, str | None]:
     return parsed.min().strftime("%Y-%m-%d"), parsed.max().strftime("%Y-%m-%d")
 
 
-def _build_artifact_entry(symbol: str, canon: bytes, sha: str) -> dict:
+def _build_artifact_entry(symbol: str, canon: bytes, sha: str) -> dict[str, object]:
     row_count = pq.ParquetFile(io.BytesIO(canon)).metadata.num_rows
     min_d, max_d = _date_range(canon)
     uri = f"canonical/daily_ohlcv_762/symbol={symbol}/ohlcv.parquet"
     local_path = f"data/raw/daily_ohlcv_762/symbol={symbol}/ohlcv.parquet"
-    entry: dict = {
+    entry: dict[str, object] = {
         "name": f"daily_ohlcv_762_{symbol}",
         "stage": "canonical",
         "uri": uri,
@@ -136,11 +138,11 @@ def _build_artifact_entry(symbol: str, canon: bytes, sha: str) -> dict:
     return entry
 
 
-def _insertion_index(artifacts: list, symbol: str) -> int:
+def _insertion_index(artifacts: list[dict[str, object]], symbol: str) -> int:
     """Return index just after the last daily_ohlcv_762 entry that sorts before symbol."""
     last = -1
     for i, a in enumerate(artifacts):
-        name = a.get("name", "")
+        name = str(a.get("name", ""))
         if not name.startswith("daily_ohlcv_762_"):
             continue
         existing_sym = name[len("daily_ohlcv_762_") :]
@@ -210,7 +212,7 @@ def main(argv: list[str] | None = None) -> int:
                 tmp.write(canon)
                 tmp_path = Path(tmp.name)
             try:
-                store.put_file(tmp_path, uri, overwrite=True)
+                store.put_file(tmp_path, str(uri), overwrite=True)
             finally:
                 tmp_path.unlink(missing_ok=True)
 

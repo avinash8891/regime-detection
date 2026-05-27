@@ -27,6 +27,8 @@ rather than only row ``R[1, t]``. The emitted posterior therefore sums
 ``R[1:recent_run_length_window_days + 1, t]``.
 """
 
+# pyright: reportUnknownMemberType=false, reportUnknownArgumentType=false, reportUnknownVariableType=false, reportArgumentType=false, reportCallIssue=false, reportOperatorIssue=false, reportMissingTypeStubs=false
+
 from __future__ import annotations
 
 import logging

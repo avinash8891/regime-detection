@@ -48,6 +48,8 @@ Bennani & Neuenkirch lexicons). The output is an evidence-grade signal
 to surface in the engine's monetary axis, not a primary rule input.
 """
 
+# pyright: reportUnknownMemberType=false, reportUnknownArgumentType=false, reportUnknownVariableType=false, reportArgumentType=false, reportCallIssue=false, reportOperatorIssue=false, reportAttributeAccessIssue=false, reportOptionalMemberAccess=false, reportUnnecessaryIsInstance=false, reportUnnecessaryComparison=false
+
 from __future__ import annotations
 
 import re

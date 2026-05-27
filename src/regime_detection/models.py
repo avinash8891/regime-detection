@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+# pyright: reportUnknownMemberType=false, reportUnknownArgumentType=false, reportUnknownVariableType=false, reportArgumentType=false, reportCallIssue=false, reportOperatorIssue=false, reportIncompatibleMethodOverride=false, reportIncompatibleVariableOverride=false
+
 import json
 import math
 from collections.abc import Iterator

@@ -57,6 +57,7 @@ from scripts._v2_calibration_helpers import (  # noqa: E402
     load_macro_series,
     load_market_data,
     materialize_manifest_from_args,
+    normalize_datetime_index,
     register_manifest_input_args,
 )
 
@@ -110,8 +111,8 @@ def _summarize_first_release_cpi(
     inflation = feature_store.inflation_growth
     if inflation is None:
         return ["- `feature_store.inflation_growth` lit: **False**"]
-    bias_codes = (
-        set(inflation.bias_warnings["warning_code"].tolist())
+    bias_codes: set[str] = (
+        {str(code) for code in inflation.bias_warnings["warning_code"].tolist()}
         if not inflation.bias_warnings.empty
         else set()
     )
@@ -332,7 +333,7 @@ def main() -> int:
         market_data=market_data,
         config=config,
     )
-    spy_index = bootstrap_context.spy_ohlcv.index
+    spy_index = normalize_datetime_index(pd.Index(bootstrap_context.spy_ohlcv.index))
 
     # Build full V2 inputs.
     cross_asset_symbols = [
@@ -398,10 +399,11 @@ def main() -> int:
     cpi_first_release = None
     if cpi_vintages_parquet.exists():
         cpi_first_release = load_cpi_vintages_first_release(cpi_vintages_parquet)
+        cpi_dates = normalize_datetime_index(pd.Index(cpi_first_release.index))
         print(
             f"cpi_first_release: {len(cpi_first_release)} releases "
-            f"({cpi_first_release.index.min().date()} → "
-            f"{cpi_first_release.index.max().date()})"
+            f"({pd.Timestamp(cpi_dates[0]).date()} → "
+            f"{pd.Timestamp(cpi_dates[-1]).date()})"
         )
     else:
         print(f"cpi_first_release: skipped (no {cpi_vintages_parquet.name})")
@@ -410,10 +412,11 @@ def main() -> int:
     news_sentiment = None
     if news_sentiment_parquet.exists():
         news_sentiment = load_news_sentiment_series(news_sentiment_parquet)
+        news_dates = normalize_datetime_index(pd.Index(news_sentiment.index))
         print(
             f"news_sentiment: {len(news_sentiment)} daily rows "
-            f"({news_sentiment.index.min().date()} → "
-            f"{news_sentiment.index.max().date()})"
+            f"({pd.Timestamp(news_dates[0]).date()} → "
+            f"{pd.Timestamp(news_dates[-1]).date()})"
         )
     else:
         print(f"news_sentiment: skipped (no {news_sentiment_parquet.name})")

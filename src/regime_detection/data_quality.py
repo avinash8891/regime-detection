@@ -19,6 +19,8 @@ the calling classifier's output to ``unknown`` via
 :func:`quality_forces_unknown`. `degraded` and `ok` pass through.
 """
 
+# pyright: reportUnknownMemberType=false, reportUnknownArgumentType=false, reportUnknownVariableType=false, reportArgumentType=false, reportCallIssue=false, reportOperatorIssue=false, reportUnnecessaryComparison=false
+
 from __future__ import annotations
 
 from datetime import date

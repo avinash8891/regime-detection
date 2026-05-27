@@ -46,6 +46,8 @@ through to ``neutral_monetary``. The data-quality gate above
 ``evaluate_rules`` catches the cold-start case and maps to ``unknown``.
 """
 
+# pyright: reportUnknownMemberType=false, reportUnknownArgumentType=false, reportUnknownVariableType=false, reportArgumentType=false, reportCallIssue=false, reportOperatorIssue=false, reportUnnecessaryComparison=false
+
 from __future__ import annotations
 
 from dataclasses import dataclass

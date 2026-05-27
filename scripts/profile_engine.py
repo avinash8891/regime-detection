@@ -12,7 +12,8 @@ import time
 from collections import defaultdict
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from types import FrameType
+from typing import Any, cast
 
 import pandas as pd
 
@@ -68,25 +69,23 @@ from scripts._v2_calibration_helpers import (
     load_market_data,
     manifest_input_overrides,
     materialize_manifest_from_args,
+    normalize_datetime_index,
     positive_int,
     register_manifest_input_args,
 )
 from scripts.profile_engine_reporting import (
     PROFILE_INPUT_SEAM_NAMES,
-    _build_json_report,
-    _compact_timeline_rows,
-    _format_stage_rows,
-    _input_status,
-    _profile_input_seam_values,
-    _reporting_label,  # noqa: F401  re-exported; tests access via profile_engine._reporting_label
-    _trailing_v2_status,
-    _verify_invariants,
-    _write_json_report,
+    build_json_report,
+    compact_timeline_rows,
+    format_stage_rows,
+    input_status,
+    profile_input_seam_values,
+    reporting_label,
+    trailing_v2_status,
+    verify_invariants,
+    write_json_report,
 )
-from scripts.profile_engine_timers import (
-    _timed_inflation_growth_builder,  # noqa: F401  re-exported; tests access via profile_engine.*
-    install_timers as _install_timers,
-)
+from scripts import profile_engine_timers as _profile_engine_timers
 
 _RUNNER_NAME = "profile_engine"
 
@@ -151,7 +150,7 @@ class ProfileInputBundle:
     pit_constituent_intervals: pd.DataFrame
     constituent_ohlcv: dict[str, pd.DataFrame]
     constituent_tickers: list[str]
-    load_timings: dict[str, float] = field(default_factory=dict)
+    load_timings: dict[str, float] = field(default_factory=lambda: {})
 
 
 class RunTimeout(RuntimeError):
@@ -190,6 +189,9 @@ def _build_required_sessions(
     return min(
         session_count, v2_min_history + lookback_days - 1 + trailing_component_lookback
     )
+
+
+build_required_sessions = _build_required_sessions
 
 
 def _read_symbol_ohlcv(tree_root: Path, symbol: str) -> pd.DataFrame:
@@ -249,6 +251,9 @@ def _load_optional_aaii_sentiment(path: Path | None) -> pd.DataFrame | None:
     return frame
 
 
+load_optional_aaii_sentiment = _load_optional_aaii_sentiment
+
+
 def _load_event_calendar(
     path: Path,
     *,
@@ -263,6 +268,9 @@ def _load_event_calendar(
             )
         return None
     return load_event_calendar(path)
+
+
+load_event_calendar_input = _load_event_calendar
 
 
 def _resolve_news_sentiment_path(path: Path) -> Path:
@@ -281,12 +289,18 @@ def _load_optional_news_sentiment(path: Path | None) -> pd.Series | None:
     return load_news_sentiment_series(path)
 
 
+load_optional_news_sentiment = _load_optional_news_sentiment
+
+
 def _load_optional_cpi_first_release(path: Path | None) -> pd.Series | None:
     if path is None:
         return None
     if not path.exists():
         return None
     return load_cpi_vintages_first_release(path)
+
+
+load_optional_cpi_first_release = _load_optional_cpi_first_release
 
 
 def _load_optional_central_bank_text_releases(
@@ -305,6 +319,9 @@ def _load_optional_central_bank_text_releases(
     if releases.empty:
         return None
     return releases
+
+
+load_optional_central_bank_text_releases = _load_optional_central_bank_text_releases
 
 
 def _load_constituent_ohlcv_from_tree(
@@ -368,6 +385,24 @@ def _load_constituent_ohlcv_from_tree(
     return out, tickers
 
 
+load_constituent_ohlcv_from_tree = _load_constituent_ohlcv_from_tree
+_build_json_report = build_json_report
+_write_json_report = write_json_report
+_reporting_label = reporting_label
+_trailing_v2_status = trailing_v2_status
+_verify_invariants = verify_invariants
+
+
+def _timed_inflation_growth_builder(  # pyright: ignore[reportUnusedFunction]
+    timer: Any, method: Any
+) -> Any:
+    timers_module: Any = _profile_engine_timers
+    return timers_module._timed_inflation_growth_builder(timer, method)
+
+
+_install_timers = _profile_engine_timers.install_timers
+
+
 def _require_constituent_calendar_coverage(
     ticker: str,
     dates: pd.Series,
@@ -375,9 +410,10 @@ def _require_constituent_calendar_coverage(
     expected_sessions: pd.DatetimeIndex,
     active_intervals: list[tuple[pd.Timestamp, pd.Timestamp | None]] | None = None,
 ) -> None:
-    observed = pd.DatetimeIndex(
-        pd.to_datetime(dates).dt.normalize().sort_values().unique()
+    normalized_dates = (
+        pd.to_datetime(dates, errors="raise").dt.normalize().sort_values()
     )
+    observed = normalize_datetime_index(pd.Index(normalized_dates))
     if observed.empty:
         return
     expected = _expected_constituent_sessions(
@@ -385,10 +421,13 @@ def _require_constituent_calendar_coverage(
         expected_sessions=expected_sessions,
         active_intervals=active_intervals,
     )
-    missing = expected.difference(observed)
+    observed_set = set(observed)
+    missing = pd.DatetimeIndex([ts for ts in expected if ts not in observed_set])
     if missing.empty:
         return
-    examples = ", ".join(ts.strftime("%Y-%m-%d") for ts in missing[:5])
+    examples = ", ".join(
+        pd.Timestamp(ts).strftime("%Y-%m-%d") for ts in missing[:5].tolist()
+    )
     raise ValueError(
         "daily OHLCV calendar coverage gap: "
         f"symbol={ticker} missing {len(missing)} session row(s); examples: {examples}"
@@ -414,17 +453,18 @@ def _expected_constituent_sessions(
     expected_sessions: pd.DatetimeIndex,
     active_intervals: list[tuple[pd.Timestamp, pd.Timestamp | None]] | None,
 ) -> pd.DatetimeIndex:
+    observed_start = pd.Timestamp(observed[0]).normalize()
+    observed_end = pd.Timestamp(observed[-1]).normalize()
     if active_intervals is None:
         return expected_sessions[
-            (expected_sessions >= observed.min())
-            & (expected_sessions <= observed.max())
+            (expected_sessions >= observed_start) & (expected_sessions <= observed_end)
         ]
     active_sessions: list[pd.Timestamp] = []
     for start, end in active_intervals:
         interval_sessions = expected_sessions[
             (expected_sessions >= start)
-            & (expected_sessions >= observed.min())
-            & (expected_sessions <= observed.max())
+            & (expected_sessions >= observed_start)
+            & (expected_sessions <= observed_end)
         ]
         if end is not None:
             interval_sessions = interval_sessions[interval_sessions < end]
@@ -450,7 +490,7 @@ def _load_profile_inputs(
             market_data=market_data,
             config=config,
         )
-    spy_index = bootstrap_context.spy_ohlcv.index
+    spy_index = normalize_datetime_index(pd.Index(bootstrap_context.spy_ohlcv.index))
     required_sessions = _build_required_sessions(
         config,
         len(bootstrap_context.sessions),
@@ -514,7 +554,9 @@ def _load_profile_inputs(
             expected_sessions=spy_index,
         )
 
-    load_timings = dict(load_timer.totals)
+    load_timings: dict[str, float] = {
+        key: float(value) for key, value in load_timer.totals.items()
+    }
     total_load_seconds = time.perf_counter() - overall_start
     load_timings["_total"] = total_load_seconds
     _emit_load_timing_summary(load_timings)
@@ -590,8 +632,9 @@ def _coverage_line(name: str, value: Any, *, run_end: dt.date) -> str:
     row_count = _coverage_row_count(value)
     if row_count == 0 or dates.empty:
         return f"{name}: EMPTY"
-    first = dates.min().date()
-    latest = dates.max().date()
+    ordered_dates = pd.DatetimeIndex(sorted(dates.tolist()))
+    first = pd.Timestamp(ordered_dates[0]).date()
+    latest = pd.Timestamp(ordered_dates[-1]).date()
     age_days = (run_end - latest).days
     return (
         f"{name}: rows={row_count} first={first.isoformat()} "
@@ -600,21 +643,29 @@ def _coverage_line(name: str, value: Any, *, run_end: dt.date) -> str:
 
 
 def _coverage_row_count(value: Any) -> int:
-    if isinstance(value, pd.Series | pd.DataFrame):
+    if isinstance(value, pd.Series):
+        series_value = cast(pd.Series, value)
+        return len(series_value.index.tolist())
+    if isinstance(value, pd.DataFrame):
         return int(len(value))
     if isinstance(value, dict):
-        return len(value)
+        mapping: dict[Any, Any] = cast(dict[Any, Any], value)
+        return len(mapping)
     return 1
 
 
 def _extract_coverage_dates(value: Any) -> pd.DatetimeIndex:
     if isinstance(value, pd.Series):
+        series_value = cast(pd.Series, value)
         if isinstance(value.index, pd.DatetimeIndex):
-            parsed = pd.to_datetime(value.index, errors="coerce")
+            return normalize_datetime_index(pd.Index(value.index))
         else:
-            parsed = pd.to_datetime(value.dropna(), errors="coerce")
-        return pd.DatetimeIndex(parsed.dropna()).normalize()
+            parsed = cast(
+                pd.Series, pd.to_datetime(series_value.dropna(), errors="coerce")
+            )
+        return normalize_datetime_index(parsed.dropna())
     if isinstance(value, pd.DataFrame):
+        frame_value: pd.DataFrame = value
         for column in (
             "date",
             "release_date",
@@ -623,13 +674,15 @@ def _extract_coverage_dates(value: Any) -> pd.DatetimeIndex:
             "speech_date",
             "period",
         ):
-            if column in value.columns:
-                parsed = pd.to_datetime(value[column], errors="coerce").dropna()
-                return pd.DatetimeIndex(parsed).normalize()
-        if isinstance(value.index, pd.DatetimeIndex):
-            parsed = pd.to_datetime(value.index, errors="coerce")
-            return pd.DatetimeIndex(parsed.dropna()).normalize()
-    return pd.DatetimeIndex([])
+            if column in frame_value.columns:
+                parsed = cast(
+                    pd.Series,
+                    pd.to_datetime(frame_value[column], errors="coerce").dropna(),
+                )
+                return normalize_datetime_index(parsed)
+        if isinstance(frame_value.index, pd.DatetimeIndex):
+            return normalize_datetime_index(pd.Index(frame_value.index))
+    return pd.DatetimeIndex([], dtype="datetime64[ns]")
 
 
 def _parse_args() -> argparse.Namespace:
@@ -755,7 +808,7 @@ def _emit_manifest_resolution_failure(
         "runner_name": _RUNNER_NAME,
         "data_root": str(args.data_root) if args.data_root is not None else None,
     }
-    _write_json_report(args.json_output, failure_report)
+    write_json_report(args.json_output, failure_report)
 
 
 def main() -> int:
@@ -814,7 +867,11 @@ def main() -> int:
     alarm_enabled = args.run_timeout_seconds > 0
     previous_handler = signal.getsignal(signal.SIGALRM) if alarm_enabled else None
     if alarm_enabled:
-        signal.signal(signal.SIGALRM, lambda *a: _timeout_handler(timer, *a))
+
+        def _handle_alarm(signum: int, frame: FrameType | None) -> None:
+            _timeout_handler(timer, signum, frame)
+
+        signal.signal(signal.SIGALRM, _handle_alarm)
         signal.alarm(args.run_timeout_seconds)
     wall_start = time.perf_counter()
     try:
@@ -888,7 +945,7 @@ def main() -> int:
     )
     per_day_avg_ms = per_day_emission_total / args.lookback_days * 1000.0
 
-    stage_rows = _format_stage_rows(
+    stage_rows = format_stage_rows(
         [
             "build_market_context",
             "slice_context_to_recent_sessions",
@@ -905,7 +962,7 @@ def main() -> int:
         f"{(per_day_emission_total / total_wall_clock * 100.0) if total_wall_clock > 0 else 0.0:6.2f}%"
     )
 
-    feature_rows = _format_stage_rows(
+    feature_rows = format_stage_rows(
         [
             "feature_store.network_fragility",
             "feature_store.trend_direction_v2",
@@ -923,8 +980,8 @@ def main() -> int:
         timer.totals.get("build_feature_store_total", 0.0),
     )
 
-    verification_issues = _verify_invariants(timeline, feature_store, inputs)
-    json_report = _build_json_report(
+    verification_issues = verify_invariants(timeline, feature_store, inputs)
+    json_report = build_json_report(
         args=args,
         inputs=inputs,
         timeline=timeline,
@@ -945,7 +1002,7 @@ def main() -> int:
         "feature_flags": feature_flags,
     }
     if args.json_output is not None:
-        _write_json_report(args.json_output, json_report)
+        write_json_report(args.json_output, json_report)
 
     print(f"config_path={args.config_path}")
     print(f"market_data_source={args.daily_dir}")
@@ -982,9 +1039,9 @@ def main() -> int:
     print()
 
     print("Input seam status")
-    input_values = _profile_input_seam_values(inputs)
+    input_values = profile_input_seam_values(inputs)
     for name in PROFILE_INPUT_SEAM_NAMES:
-        print(_input_status(name, input_values[name]))
+        print(input_status(name, input_values[name]))
     print(f"pit_overlap_tickers_requested={len(inputs.constituent_tickers)}")
     print(f"constituent_tickers_loaded={len(inputs.constituent_ohlcv)}")
     print()
@@ -1005,7 +1062,7 @@ def main() -> int:
     print()
 
     print("build_axis_series_bundle sub-breakdown")
-    for row in _format_stage_rows(
+    for row in format_stage_rows(
         [
             "axis_series.trend_direction",
             "axis_series.trend_character",
@@ -1025,7 +1082,7 @@ def main() -> int:
     print()
 
     print("axis_series.inflation_growth sub-breakdown")
-    for row in _format_stage_rows(
+    for row in format_stage_rows(
         [
             "axis_series.inflation_growth.build_rule_inputs_by_date",
             "axis_series.inflation_growth.assess_series_input_quality",
@@ -1044,12 +1101,12 @@ def main() -> int:
     print()
 
     print("Compact RegimeTimeline")
-    for row in _compact_timeline_rows(timeline.outputs):
+    for row in compact_timeline_rows(timeline.outputs):
         print(row)
     print()
 
     print("Trailing-session V2 field status")
-    for row in _trailing_v2_status(timeline.outputs[-1]):
+    for row in trailing_v2_status(timeline.outputs[-1]):
         print(row)
     print()
 

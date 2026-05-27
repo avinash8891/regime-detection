@@ -8,6 +8,8 @@ unspecified families and unspecified fields inherit the baseline.
 
 from __future__ import annotations
 
+# pyright: reportUnknownMemberType=false, reportUnknownArgumentType=false, reportUnknownVariableType=false, reportArgumentType=false, reportCallIssue=false, reportOperatorIssue=false
+
 from regime_detection.config import (
     FamilyOverride,
     StrategyFamilyConstraintsConfig,

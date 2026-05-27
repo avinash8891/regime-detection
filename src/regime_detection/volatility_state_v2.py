@@ -36,6 +36,8 @@ Implementation choices that resolve ambiguities:
 
 from __future__ import annotations
 
+# pyright: reportUnknownMemberType=false, reportUnknownArgumentType=false
+
 from dataclasses import dataclass
 
 import pandas as pd

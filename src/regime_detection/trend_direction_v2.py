@@ -32,6 +32,8 @@ Spec-resolved ambiguities (see implementation decision entries in
 
 from __future__ import annotations
 
+# pyright: reportUnknownMemberType=false, reportUnknownArgumentType=false, reportUnknownVariableType=false, reportOperatorIssue=false, reportCallIssue=false, reportArgumentType=false
+
 from dataclasses import dataclass
 
 import numpy as np

@@ -9,8 +9,9 @@ import json
 import math
 import sys
 from collections import Counter
+from collections.abc import Mapping
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import pandas as pd
 
@@ -42,6 +43,7 @@ from scripts._v2_calibration_helpers import (
     load_market_data,
     manifest_input_overrides,
     materialize_manifest_from_args,
+    normalize_datetime_index,
     positive_int,
     register_manifest_input_args,
 )
@@ -49,13 +51,13 @@ from scripts.profile_engine import (
     DEFAULT_CONFIG_PATH,
     DEFAULT_CONSTITUENT_TREE,
     DEFAULT_DAILY_DIR,
-    _build_required_sessions,
-    _load_constituent_ohlcv_from_tree,
-    _load_optional_aaii_sentiment,
-    _load_optional_central_bank_text_releases,
-    _load_optional_cpi_first_release,
-    _load_event_calendar,
-    _load_optional_news_sentiment,
+    build_required_sessions,
+    load_constituent_ohlcv_from_tree,
+    load_optional_aaii_sentiment,
+    load_optional_central_bank_text_releases,
+    load_optional_cpi_first_release,
+    load_event_calendar_input,
+    load_optional_news_sentiment,
 )
 
 LAYER2_FEATURES: dict[str, tuple[str, ...]] = {
@@ -154,7 +156,10 @@ def _feature_row(
         if pd.api.types.is_bool_dtype(non_null):
             true_days = int(non_null.astype(bool).sum())
         else:
-            numeric = pd.to_numeric(non_null, errors="coerce").dropna()
+            numeric_values = [
+                float(value) for value in non_null.tolist() if pd.notna(value)
+            ]
+            numeric = pd.Series(numeric_values, dtype="float64")
             if len(numeric) > 0:
                 min_value = _finite_or_none(numeric.min())
                 median_value = _finite_or_none(numeric.median())
@@ -226,14 +231,15 @@ def _summarize_output_series(
         quality_status[output.data_quality.status] += 1
         quality_reasons[output.data_quality.reason] += 1
         classification_status[output.classification_status] += 1
-        evidence = output.evidence or {}
-        for metric, value in dict(evidence.get("rule_evidence", {})).items():
+        evidence = cast(Mapping[str, Any], output.evidence or {})
+        rule_evidence = cast(Mapping[str, Any], evidence.get("rule_evidence", {}) or {})
+        for metric, value in rule_evidence.items():
             if value is not None and not (
                 isinstance(value, float) and math.isnan(value)
             ):
                 rule_evidence_present[str(metric)] += 1
         if "source_used" in evidence:
-            source_used[evidence.get("source_used")] += 1
+            source_used[str(evidence.get("source_used"))] += 1
 
     summary = {
         "reported": _json_counter(reported),
@@ -279,7 +285,7 @@ def build_label_rule_summary(
 
 def _build_current_layer2_state(
     args: argparse.Namespace,
-) -> tuple[MarketContext, FeatureStore, Any, list[dt.date], int]:
+) -> tuple[MarketContext, FeatureStore, Any, list[dt.date]]:
     engine = RegimeEngine(config_path=args.config_path)
     config = engine.config
     market_data = load_market_data(args.daily_dir)
@@ -292,8 +298,8 @@ def _build_current_layer2_state(
         market_data=market_data,
         config=config,
     )
-    spy_index = bootstrap_context.spy_ohlcv.index
-    required_sessions = _build_required_sessions(
+    spy_index = normalize_datetime_index(pd.Index(bootstrap_context.spy_ohlcv.index))
+    required_sessions = build_required_sessions(
         config, len(bootstrap_context.sessions), args.lookback_days
     )
     working_start_date = bootstrap_context.sessions[-required_sessions]
@@ -311,7 +317,7 @@ def _build_current_layer2_state(
         eps_weekly_history_parquet=args.aggregate_forward_eps_weekly_history_parquet,
     )
     pit_constituent_intervals = read_pit_intervals(args.pit_parquet)
-    constituent_ohlcv, _constituent_tickers = _load_constituent_ohlcv_from_tree(
+    constituent_ohlcv, _constituent_tickers = load_constituent_ohlcv_from_tree(
         args.constituent_tree,
         pit_constituent_intervals,
         start_date=working_start_date,
@@ -325,18 +331,18 @@ def _build_current_layer2_state(
         sector_etf_closes=sector_etf_closes,
         cross_asset_closes=cross_asset_closes,
         macro_series=macro_series,
-        event_calendar=_load_event_calendar(
+        event_calendar=load_event_calendar_input(
             args.event_calendar,
             allow_missing_event_calendar=args.allow_missing_event_calendar,
         ),
-        aaii_sentiment=_load_optional_aaii_sentiment(args.aaii_sentiment_parquet),
+        aaii_sentiment=load_optional_aaii_sentiment(args.aaii_sentiment_parquet),
         implied_vol_30d=macro_series.get("implied_vol_30d"),
-        central_bank_text_releases=_load_optional_central_bank_text_releases(
+        central_bank_text_releases=load_optional_central_bank_text_releases(
             fomc_path=args.fomc_minutes_parquet,
             powell_path=args.powell_speeches_parquet,
         ),
-        cpi_first_release=_load_optional_cpi_first_release(args.cpi_vintages_parquet),
-        news_sentiment=_load_optional_news_sentiment(args.news_sentiment_parquet),
+        cpi_first_release=load_optional_cpi_first_release(args.cpi_vintages_parquet),
+        news_sentiment=load_optional_news_sentiment(args.news_sentiment_parquet),
         pit_constituent_intervals=pit_constituent_intervals,
         constituent_ohlcv=constituent_ohlcv,
     )

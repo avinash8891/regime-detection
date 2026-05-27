@@ -6,7 +6,7 @@ import json
 import sqlite3
 from datetime import date
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import pandas as pd
 import yaml
@@ -68,8 +68,11 @@ def _load_summary(output_root: Path) -> pd.DataFrame:
     summary_path = output_root / "reports" / "walkforward_summary.csv"
     if not summary_path.exists():
         raise FileNotFoundError(f"walkforward summary not found: {summary_path}")
-    df = pd.read_csv(summary_path)
-    df["as_of_date"] = pd.to_datetime(df["as_of_date"]).dt.date
+    pandas_module: Any = pd
+    df = pandas_module.read_csv(summary_path)
+    parsed_date_values = cast(Any, pd.to_datetime(df["as_of_date"]))
+    parsed_dates = pd.DatetimeIndex(parsed_date_values)
+    df["as_of_date"] = [pd.Timestamp(value).date() for value in parsed_dates.tolist()]
     return df.sort_values("as_of_date").reset_index(drop=True)
 
 
@@ -78,19 +81,24 @@ def _load_runs_from_db(output_root: Path) -> pd.DataFrame:
     if not db_path.exists():
         raise FileNotFoundError(f"walkforward db not found: {db_path}")
     with sqlite3.connect(db_path) as conn:
-        df = pd.read_sql_query(
+        pandas_module: Any = pd
+        df = pandas_module.read_sql_query(
             "SELECT as_of_date, status, failure_reason, engine_version, config_version, input_archive_path, output_path FROM runs ORDER BY as_of_date",
             conn,
         )
-    df["as_of_date"] = pd.to_datetime(df["as_of_date"]).dt.date
+    parsed_date_values = cast(Any, pd.to_datetime(df["as_of_date"]))
+    parsed_dates = pd.DatetimeIndex(parsed_date_values)
+    df["as_of_date"] = [pd.Timestamp(value).date() for value in parsed_dates.tolist()]
     return df
 
 
 def _expected_sessions(summary_df: pd.DataFrame) -> list[date]:
     start_date = min(summary_df["as_of_date"])
     end_date = max(summary_df["as_of_date"])
-    schedule = nyse_calendar().schedule(start_date=start_date, end_date=end_date)
-    return list(schedule.index.date)
+    calendar: Any = nyse_calendar()
+    schedule = calendar.schedule(start_date=start_date, end_date=end_date)
+    schedule_index = pd.DatetimeIndex(pd.Index(schedule.index))
+    return [pd.Timestamp(ts).date() for ts in schedule_index.tolist()]
 
 
 def _missing_sessions(summary_df: pd.DataFrame) -> list[str]:
@@ -103,10 +111,11 @@ def _label_distribution(success_df: pd.DataFrame) -> dict[str, dict[str, int]]:
     out: dict[str, dict[str, int]] = {}
     for col in LABEL_COLUMNS:
         if col in success_df.columns:
-            out[col] = {
-                str(k): int(v)
-                for k, v in success_df[col].value_counts(dropna=False).to_dict().items()
-            }
+            counts = cast(
+                dict[Any, int],
+                cast(Any, success_df[col].value_counts(dropna=False)).to_dict(),
+            )
+            out[col] = {str(k): int(v) for k, v in counts.items()}
     return out
 
 
@@ -129,14 +138,15 @@ def _longest_runs(series: pd.Series) -> dict[str, int]:
 
 
 def _switch_count(series: pd.Series) -> int:
-    clean = series.fillna("null").astype(str)
-    if clean.empty:
+    clean = ["null" if pd.isna(value) else str(value) for value in series.tolist()]
+    if not clean:
         return 0
-    return int(clean.ne(clean.shift(1)).sum() - 1)
+    switches = sum(1 for idx in range(1, len(clean)) if clean[idx] != clean[idx - 1])
+    return switches
 
 
 def _false_switch_count(series: pd.Series, horizon: int) -> int:
-    clean = series.fillna("null").astype(str).tolist()
+    clean = ["null" if pd.isna(value) else str(value) for value in series.tolist()]
     count = 0
     for idx in range(1, len(clean) - 1):
         prev_label = clean[idx - 1]

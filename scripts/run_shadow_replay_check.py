@@ -4,9 +4,10 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+from collections.abc import Mapping
 from datetime import date
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import pandas as pd
 
@@ -52,10 +53,12 @@ def _close_series_by_symbol(
 
 
 def _jsonable(value: Any) -> Any:
-    if isinstance(value, dict):
-        return {str(k): _jsonable(v) for k, v in value.items()}
+    if isinstance(value, Mapping):
+        mapping = cast(Mapping[str, Any], value)
+        return {str(key): _jsonable(item) for key, item in mapping.items()}
     if isinstance(value, list):
-        return [_jsonable(v) for v in value]
+        items = cast(list[Any], value)
+        return [_jsonable(item) for item in items]
     if isinstance(value, pd.Timestamp):
         return value.isoformat()
     return value
@@ -64,11 +67,13 @@ def _jsonable(value: Any) -> Any:
 def _diff_values(replayed: Any, stored: Any) -> Any:
     if replayed == stored:
         return None
-    if isinstance(replayed, dict) and isinstance(stored, dict):
-        keys = sorted(set(replayed) | set(stored))
-        nested = {}
+    if isinstance(replayed, Mapping) and isinstance(stored, Mapping):
+        replayed_mapping = cast(Mapping[str, Any], replayed)
+        stored_mapping = cast(Mapping[str, Any], stored)
+        keys = sorted(set(replayed_mapping.keys()) | set(stored_mapping.keys()))
+        nested: dict[str, Any] = {}
         for key in keys:
-            child = _diff_values(replayed.get(key), stored.get(key))
+            child = _diff_values(replayed_mapping.get(key), stored_mapping.get(key))
             if child is not None:
                 nested[key] = child
         return nested or None

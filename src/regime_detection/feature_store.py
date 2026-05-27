@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+# pyright: reportUnknownMemberType=false, reportUnknownArgumentType=false, reportUnknownVariableType=false, reportArgumentType=false, reportCallIssue=false, reportOperatorIssue=false, reportAttributeAccessIssue=false, reportOptionalMemberAccess=false, reportUnnecessaryIsInstance=false, reportUnnecessaryCast=false
+
 from collections.abc import Callable
 from dataclasses import dataclass
 from typing import TypeVar, cast

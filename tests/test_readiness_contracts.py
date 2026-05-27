@@ -5,23 +5,52 @@ from pathlib import Path
 import tomllib
 import yaml
 
+import scripts.profile_engine_reporting as profile_engine_reporting
+
 
 def _workflow_triggers(payload: dict[object, object]) -> object:
     return payload.get("on", payload.get(True))
 
 
-def test_pyright_strict_slice_covers_runtime_and_guardrail_scripts() -> None:
+def test_pyright_strict_scope_matches_readiness_allowlist_exactly() -> None:
     with Path("pyproject.toml").open("rb") as handle:
         payload = tomllib.load(handle)
 
-    include_paths = set(payload["tool"]["pyright"]["include"])
+    include_paths = payload["tool"]["pyright"]["include"]
 
-    assert {
-        "src/regime_detection/observability.py",
-        "src/regime_detection/loaders.py",
+    assert include_paths == [
+        "src/regime_detection",
+        "src/regime_data_fetch",
+        "src/regime_shared",
+        "scripts/_fetch_regime_engine_v1_args.py",
+        "scripts/_v2_calibration_helpers.py",
+        "scripts/approve_group_b_candidate.py",
+        "scripts/audit_layer2_30d.py",
+        "scripts/audit_step1_harness.py",
+        "scripts/build_walkforward_report.py",
+        "scripts/consolidate_regime_acquisition.py",
         "scripts/detect_flaky_tests.py",
+        "scripts/fetch_aaii_sentiment.py",
+        "scripts/fetch_regime_engine_v1_data.py",
+        "scripts/materialize_constituent_ohlcv_tree.py",
+        "scripts/materialize_regime_data.py",
+        "scripts/normalize_s3_daily_to_sqlite_layout.py",
+        "scripts/profile_engine.py",
+        "scripts/profile_engine_reporting.py",
+        "scripts/profile_engine_timers.py",
+        "scripts/publish_canonical_snapshot.py",
+        "scripts/run_historical_walkforward.py",
+        "scripts/run_shadow_deadman_check.py",
+        "scripts/run_shadow_regime.py",
+        "scripts/run_shadow_replay_check.py",
+        "scripts/run_v2_calibration.py",
+        "scripts/run_v2_shadow_ab_gate.py",
+        "scripts/run_v2_walkforward_gate.py",
+        "scripts/upload_missing_ohlcv_to_manifest.py",
         "scripts/validate_agents_md.py",
-    } <= include_paths
+        "scripts/validate_central_bank_text_lexicon.py",
+        "scripts/verify_fixtures.py",
+    ]
 
 
 def test_ci_is_split_between_pr_fast_and_full_verification() -> None:
@@ -86,3 +115,53 @@ def test_devcontainer_uses_ruff_python_formatter() -> None:
 
     assert "python.formatting.provider" not in settings
     assert settings["[python]"]["editor.defaultFormatter"] == "charliermarsh.ruff"
+
+
+def test_profile_engine_uses_public_reporting_helpers() -> None:
+    for helper_name in (
+        "input_status",
+        "profile_input_seam_values",
+        "format_stage_rows",
+        "build_json_report",
+        "write_json_report",
+    ):
+        assert hasattr(profile_engine_reporting, helper_name)
+
+    profile_engine_source = Path("scripts/profile_engine.py").read_text()
+
+    assert "from scripts.profile_engine_reporting import (" in profile_engine_source
+    for private_name in (
+        "_input_status",
+        "_profile_input_seam_values",
+        "_format_stage_rows",
+        "_build_json_report",
+        "_write_json_report",
+    ):
+        assert private_name not in profile_engine_source
+
+
+def test_audit_layer2_uses_public_profile_engine_helpers() -> None:
+    audit_source = Path("scripts/audit_layer2_30d.py").read_text()
+
+    assert "from scripts.profile_engine import (" in audit_source
+    for public_name in (
+        "build_required_sessions",
+        "load_constituent_ohlcv_from_tree",
+        "load_optional_aaii_sentiment",
+        "load_optional_central_bank_text_releases",
+        "load_optional_cpi_first_release",
+        "load_event_calendar_input",
+        "load_optional_news_sentiment",
+    ):
+        assert public_name in audit_source
+
+    for private_name in (
+        "_build_required_sessions",
+        "_load_constituent_ohlcv_from_tree",
+        "_load_optional_aaii_sentiment",
+        "_load_optional_central_bank_text_releases",
+        "_load_optional_cpi_first_release",
+        "_load_event_calendar",
+        "_load_optional_news_sentiment",
+    ):
+        assert private_name not in audit_source

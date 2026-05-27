@@ -10,7 +10,7 @@ from __future__ import annotations
 import argparse
 import logging
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import pandas as pd
 
@@ -33,6 +33,16 @@ from regime_shared.pandas_compat import cow_safe_assign
 logger = logging.getLogger(__name__)
 
 
+def normalize_datetime_index(
+    index_like: pd.Index[Any] | pd.Series[Any],
+) -> pd.DatetimeIndex:
+    return pd.DatetimeIndex(pd.to_datetime(index_like, errors="raise")).normalize()
+
+
+def _datetime_series(value: pd.Series[Any]) -> pd.Series[pd.Timestamp]:
+    return cast(pd.Series[pd.Timestamp], pd.to_datetime(value, errors="raise"))
+
+
 def default_pmi_path(data_root: Path) -> Path:
     spec = get_manifest_input_spec("pmi_path")
     assert spec.default_relpath is not None
@@ -46,7 +56,8 @@ def synthetic_pit_intervals_from_sector_closes(
         {
             "ticker": list(sector_etf_closes),
             "start_date": [
-                series.index.min().date() for series in sector_etf_closes.values()
+                normalize_datetime_index(pd.Index(series.index))[0].date()
+                for series in sector_etf_closes.values()
             ],
             "end_date": [None] * len(sector_etf_closes),
         }
@@ -212,22 +223,35 @@ def load_market_data(daily_ohlcv_dir: Path) -> pd.DataFrame:
         {"date": pd.to_datetime(df["date"])},
         columns=keep,
     )
-    max_dates = out.groupby("symbol")["date"].max()
-    missing = sorted(set(required_symbols) - set(max_dates.index))
+    max_dates: dict[str, pd.Timestamp] = {}
+    missing: list[str] = []
+    for symbol in required_symbols:
+        symbol_dates = _datetime_series(
+            out.loc[out["symbol"] == symbol, "date"].sort_values()
+        )
+        if symbol_dates.empty:
+            missing.append(symbol)
+            continue
+        max_dates[symbol] = pd.Timestamp(symbol_dates.iloc[-1]).normalize()
     if missing:
         raise FileNotFoundError(
             f"daily OHLCV missing required market symbols: {missing}"
         )
-    common_end = max_dates.loc[required_symbols].min()
+    common_end = max_dates[required_symbols[0]]
+    for symbol in required_symbols[1:]:
+        timestamp = max_dates[symbol]
+        if timestamp < common_end:
+            common_end = timestamp
     out = out[out["date"] <= common_end].copy()
+    spy_dates = _datetime_series(out.loc[out["symbol"] == "SPY", "date"].sort_values())
     _require_daily_ohlcv_calendar_coverage(
         out,
         symbols=required_symbols,
-        expected_index=pd.DatetimeIndex(
-            out.loc[out["symbol"] == "SPY", "date"].sort_values().unique()
-        ),
+        expected_index=normalize_datetime_index(spy_dates),
     )
-    out = cow_safe_assign(out, {"date": out["date"].dt.date}, columns=keep)
+    out = cow_safe_assign(
+        out, {"date": _datetime_series(out["date"]).dt.date}, columns=keep
+    )
     return out.sort_values(["date", "symbol"]).reset_index(drop=True)
 
 
@@ -259,19 +283,18 @@ def _require_daily_ohlcv_calendar_coverage(
     expected_index: pd.DatetimeIndex,
 ) -> None:
     for symbol in symbols:
-        observed = pd.DatetimeIndex(
-            frame.loc[frame["symbol"] == symbol, "date"].sort_values().unique()
-        )
+        symbol_dates = frame.loc[frame["symbol"] == symbol, "date"].sort_values()
+        observed = normalize_datetime_index(_datetime_series(symbol_dates))
         _require_calendar_gap_free(
             label=symbol, observed=observed, expected=expected_index
         )
 
 
 def _require_close_series_calendar_coverage(series: pd.Series) -> None:
-    observed = pd.DatetimeIndex(series.index[series.notna()])
+    observed = normalize_datetime_index(pd.Index(series.index[series.notna()]))
     if observed.empty:
         return
-    expected = pd.DatetimeIndex(series.index)
+    expected = normalize_datetime_index(pd.Index(series.index))
     _require_calendar_gap_free(
         label=str(series.name) if series.name is not None else "<unnamed>",
         observed=observed,
@@ -290,11 +313,18 @@ def _require_calendar_gap_free(
     """
     if len(observed) == 0:
         return
-    in_range = expected[(expected >= observed.min()) & (expected <= observed.max())]
-    missing = in_range.difference(observed)
+    ordered_observed = pd.DatetimeIndex(sorted(observed.tolist()))
+    start = pd.Timestamp(ordered_observed[0]).normalize()
+    end = pd.Timestamp(ordered_observed[-1]).normalize()
+    in_range = expected[(expected >= start) & (expected <= end)]
+    observed_set = set(ordered_observed.tolist())
+    missing_values = [ts for ts in in_range if ts not in observed_set]
+    missing = pd.DatetimeIndex(missing_values)
     if missing.empty:
         return
-    examples = ", ".join(ts.strftime("%Y-%m-%d") for ts in missing[:5])
+    examples = ", ".join(
+        pd.Timestamp(ts).strftime("%Y-%m-%d") for ts in missing[:5].tolist()
+    )
     raise ValueError(
         "daily OHLCV calendar coverage gap: "
         f"symbol={label} missing {len(missing)} session row(s); examples: {examples}"

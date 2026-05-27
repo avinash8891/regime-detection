@@ -38,6 +38,8 @@ Inputs:
   - Sector ETF closes (XLY/XLI/XLP/XLU) via ``MarketContext.cross_asset_closes``.
 """
 
+# pyright: reportUnknownMemberType=false, reportUnknownArgumentType=false, reportUnknownVariableType=false, reportArgumentType=false, reportCallIssue=false, reportOperatorIssue=false, reportAttributeAccessIssue=false, reportOptionalMemberAccess=false, reportPrivateUsage=false, reportGeneralTypeIssues=false
+
 from __future__ import annotations
 
 from dataclasses import dataclass

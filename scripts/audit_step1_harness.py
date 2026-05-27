@@ -67,6 +67,18 @@ _BYPASS_CLASSES: frozenset[str] = frozenset(
 )
 
 
+def _empty_materialized_artifacts() -> list["MaterializedArtifactRecord"]:
+    return []
+
+
+def _empty_string_list() -> list[str]:
+    return []
+
+
+def _empty_sha_map() -> dict[str, str]:
+    return {}
+
+
 @dataclass(frozen=True)
 class MaterializedArtifactRecord:
     """JSON-serializable view of MaterializedArtifact."""
@@ -107,18 +119,18 @@ class Step1ProvenanceBundle:
 
     # Per-artifact provenance (from MaterializedArtifact return)
     materialized_artifacts: list[MaterializedArtifactRecord] = field(
-        default_factory=list
+        default_factory=_empty_materialized_artifacts
     )
 
     # Resolver-level provenance
-    resolved_from_manifest: list[str] = field(default_factory=list)
-    cli_overrides: list[str] = field(default_factory=list)
+    resolved_from_manifest: list[str] = field(default_factory=_empty_string_list)
+    cli_overrides: list[str] = field(default_factory=_empty_string_list)
 
     # Bypass markers (populated when runner does not follow standard manifest path)
-    bypass_classes: list[str] = field(default_factory=list)
+    bypass_classes: list[str] = field(default_factory=_empty_string_list)
 
     # Cross-worktree provenance: sha256 per tracked source file
-    source_file_sha256: dict[str, str] = field(default_factory=dict)
+    source_file_sha256: dict[str, str] = field(default_factory=_empty_sha_map)
 
 
 def emit_step1_provenance(

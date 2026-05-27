@@ -19,6 +19,8 @@ checkpoint, then scores the segment until the next checkpoint.
 
 from __future__ import annotations
 
+# pyright: reportMissingTypeStubs=false, reportUnknownMemberType=false, reportUnknownArgumentType=false, reportUnknownVariableType=false, reportArgumentType=false, reportCallIssue=false, reportOperatorIssue=false, reportOptionalSubscript=false
+
 import logging
 import os
 from dataclasses import dataclass

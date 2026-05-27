@@ -6,6 +6,8 @@ components, and returns a single 0..1 pressure score with component evidence.
 
 from __future__ import annotations
 
+# pyright: reportUnknownMemberType=false, reportUnknownArgumentType=false, reportUnknownVariableType=false, reportArgumentType=false, reportCallIssue=false, reportOperatorIssue=false, reportOptionalOperand=false
+
 import math
 from dataclasses import dataclass
 

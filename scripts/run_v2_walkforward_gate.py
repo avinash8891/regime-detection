@@ -62,6 +62,7 @@ from _v2_calibration_helpers import (  # noqa: E402
     load_market_data,
     manifest_input_overrides,
     materialize_manifest_from_args,
+    normalize_datetime_index,
     register_manifest_input_args,
     synthetic_pit_intervals_from_sector_closes,
 )
@@ -436,7 +437,7 @@ def main() -> int:
         market_data=market_data,
         config=config,
     )
-    spy_index = bootstrap_context.spy_ohlcv.index
+    spy_index = normalize_datetime_index(pd.Index(bootstrap_context.spy_ohlcv.index))
 
     logger.info("Loading sector/cross-asset closes + macro series...")
     sector_etf_closes = load_close_dict(daily_dir, list(SECTOR_ETFS), spy_index)
@@ -487,11 +488,10 @@ def main() -> int:
         "cpi_first_release": cpi_first_release,
     }
 
-    sessions = list(
-        nyse_calendar()
-        .schedule(start_date=args.start_date, end_date=args.end_date)
-        .index.date
-    )
+    calendar: Any = nyse_calendar()
+    schedule = calendar.schedule(start_date=args.start_date, end_date=args.end_date)
+    schedule_index = pd.DatetimeIndex(pd.Index(schedule.index))
+    sessions = [pd.Timestamp(value).date() for value in schedule_index.tolist()]
     if not sessions:
         raise SystemExit(
             f"No NYSE sessions in window {args.start_date.isoformat()} → {args.end_date.isoformat()}"

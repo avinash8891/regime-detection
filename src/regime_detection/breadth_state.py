@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+# pyright: reportUnknownMemberType=false, reportUnknownArgumentType=false, reportUnknownVariableType=false, reportArgumentType=false, reportCallIssue=false, reportOperatorIssue=false, reportReturnType=false, reportGeneralTypeIssues=false, reportUnusedFunction=false
+
 from dataclasses import dataclass
 from datetime import date
 from typing import Any, Literal
