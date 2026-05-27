@@ -1,0 +1,24 @@
+README.md
+  s_e8763e4ca3c6a1::t_6eb2d179213da0 11
+docs/regime_engine_v2_spec.md
+  s_e8763e4ca3c6a1::t_e36662ae457b44 3074,3076,3582,3596,3773
+  s_e8763e4ca3c6a1::t_6eb2d179213da0 87-90,2899,2901,2903-2904,2912,3019-3025,3042-3056,3082-3083,3103-3105,3109,3111,3140-3141,3151,3223-3236,3260-3261,3282-3283,3285,3476-3477,3479,3489,3519-3525,3546-3557,3577-3578,3580,3599-3601,3605-3609
+docs/v2_slice_gate_checklist.md
+  s_e8763e4ca3c6a1::t_6eb2d179213da0 94
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "0ad8af058eecdfdb8ef70b02b3b90fa2cf81f929",
+  "prompts": {},
+  "sessions": {
+    "s_e8763e4ca3c6a1": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019e67bc-57b0-7361-8b06-509fa7a48aa3",
+        "model": "gpt-5.5"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}
