@@ -1,0 +1,26 @@
+src/regime_detection/models.py
+  s_cad40512569b61::t_43576d9be91edd 79-133,399
+src/regime_detection/axis_builders/credit_funding.py
+  s_cad40512569b61::t_e0fdd7c1559d27 388
+  s_cad40512569b61::t_851f54664928d3 39,409-411
+tests/test_transition_risk.py
+  s_cad40512569b61::t_454d4d946c2633 13-17,81-96
+tests/test_credit_funding_axis_engine.py
+  s_cad40512569b61::t_4d4536ee1dfe1f 26-30,457-477
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "dfeeee98ca6c06fd3a760cc5bcdb115e362524cf",
+  "prompts": {},
+  "sessions": {
+    "s_cad40512569b61": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019e67ba-fdfb-7e72-a86b-68d4b7034df0",
+        "model": "gpt-5.5"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}
