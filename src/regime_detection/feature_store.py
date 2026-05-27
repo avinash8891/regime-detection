@@ -360,39 +360,6 @@ def _build_news_sentiment_score_series(
     return score
 
 
-def _build_inflation_growth_feature(state: _FeatureStoreBuildState) -> None:
-    if (
-        state.inflation_growth_config is None
-        or state.context.cross_asset_closes is None
-        or state.context.macro_series is None
-        or not all(k in state.context.cross_asset_closes for k in _IG_CROSS_ASSET_KEYS)
-        or not all(k in state.context.macro_series for k in _IG_MACRO_KEYS)
-    ):
-        state.inflation_growth = None
-        return
-    state.inflation_growth = compute_inflation_growth_features(
-        cpi_all_items=state.context.macro_series[_IG_CPI_KEY],
-        pmi_manufacturing=state.context.macro_series[_IG_PMI_KEY],
-        dgs10=state.context.macro_series[_IG_DGS10_KEY],
-        dbc_close=state.context.cross_asset_closes[_IG_DBC_KEY],
-        spy_close=state.spy_close,
-        tlt_close=state.context.cross_asset_closes[_IG_TLT_KEY],
-        xly_close=state.context.cross_asset_closes[_IG_XLY_KEY],
-        xli_close=state.context.cross_asset_closes[_IG_XLI_KEY],
-        xlp_close=state.context.cross_asset_closes[_IG_XLP_KEY],
-        xlu_close=state.context.cross_asset_closes[_IG_XLU_KEY],
-        config=state.inflation_growth_config.rules,
-        cpi_nowcast=state.context.macro_series.get(_IG_CPI_NOWCAST_KEY),
-        aggregate_forward_eps_revision=state.context.macro_series.get(
-            _IG_AGG_FORWARD_EPS_REVISION_KEY
-        ),
-        cpi_first_release=state.context.cpi_first_release,
-        use_first_release_cpi_when_available=(
-            state.inflation_growth_config.rules.use_first_release_cpi_when_available
-        ),
-    )
-
-
 def _build_change_point_feature(state: _FeatureStoreBuildState) -> None:
     if state.context.config.change_point is None:
         state.change_point = None
@@ -936,6 +903,84 @@ def _resolve_credit_funding(
     }
 
 
+def _build_inflation_growth(
+    cpi_all_items: pd.Series,
+    pmi_manufacturing: pd.Series,
+    dgs10: pd.Series,
+    dbc_close: pd.Series,
+    spy_close: pd.Series,
+    tlt_close: pd.Series,
+    xly_close: pd.Series,
+    xli_close: pd.Series,
+    xlp_close: pd.Series,
+    xlu_close: pd.Series,
+    config,
+    cpi_nowcast: pd.Series | None,
+    aggregate_forward_eps_revision: pd.Series | None,
+    cpi_first_release,
+    use_first_release_cpi_when_available: bool,
+) -> InflationGrowthFeatures:
+    return compute_inflation_growth_features(
+        cpi_all_items=cpi_all_items,
+        pmi_manufacturing=pmi_manufacturing,
+        dgs10=dgs10,
+        dbc_close=dbc_close,
+        spy_close=spy_close,
+        tlt_close=tlt_close,
+        xly_close=xly_close,
+        xli_close=xli_close,
+        xlp_close=xlp_close,
+        xlu_close=xlu_close,
+        config=config,
+        cpi_nowcast=cpi_nowcast,
+        aggregate_forward_eps_revision=aggregate_forward_eps_revision,
+        cpi_first_release=cpi_first_release,
+        use_first_release_cpi_when_available=use_first_release_cpi_when_available,
+    )
+
+
+def _resolve_inflation_growth(
+    state: _FeatureStoreBuildState,
+) -> dict[str, object] | _Unavailable:
+    missing: list[str] = []
+    if state.inflation_growth_config is None:
+        missing.append("inflation_growth_config")
+        return _Unavailable(missing_inputs=tuple(missing))
+    cross_missing = _missing_cross_asset_keys(
+        state.context.cross_asset_closes, tuple(_IG_CROSS_ASSET_KEYS)
+    )
+    macro_missing = _missing_macro_keys(
+        state.context.macro_series, tuple(_IG_MACRO_KEYS)
+    )
+    missing.extend(cross_missing)
+    missing.extend(macro_missing)
+    if missing:
+        return _Unavailable(missing_inputs=tuple(missing))
+    assert state.context.cross_asset_closes is not None
+    assert state.context.macro_series is not None
+    return {
+        "cpi_all_items": state.context.macro_series[_IG_CPI_KEY],
+        "pmi_manufacturing": state.context.macro_series[_IG_PMI_KEY],
+        "dgs10": state.context.macro_series[_IG_DGS10_KEY],
+        "dbc_close": state.context.cross_asset_closes[_IG_DBC_KEY],
+        "spy_close": state.spy_close,
+        "tlt_close": state.context.cross_asset_closes[_IG_TLT_KEY],
+        "xly_close": state.context.cross_asset_closes[_IG_XLY_KEY],
+        "xli_close": state.context.cross_asset_closes[_IG_XLI_KEY],
+        "xlp_close": state.context.cross_asset_closes[_IG_XLP_KEY],
+        "xlu_close": state.context.cross_asset_closes[_IG_XLU_KEY],
+        "config": state.inflation_growth_config.rules,
+        "cpi_nowcast": state.context.macro_series.get(_IG_CPI_NOWCAST_KEY),
+        "aggregate_forward_eps_revision": state.context.macro_series.get(
+            _IG_AGG_FORWARD_EPS_REVISION_KEY
+        ),
+        "cpi_first_release": state.context.cpi_first_release,
+        "use_first_release_cpi_when_available": (
+            state.inflation_growth_config.rules.use_first_release_cpi_when_available
+        ),
+    }
+
+
 def _resolve_realized_vol_21d(
     state: _FeatureStoreBuildState,
 ) -> dict[str, object] | _Unavailable:
@@ -1153,11 +1198,19 @@ _FEATURE_SPECS: tuple[FeatureSpec[object, _FeatureStoreBuildState], ...] = (
         build=_build_credit_funding,
         store=lambda s, v: setattr(s, "credit_funding", v),
     ),
+    FeatureSpec(
+        name="inflation_growth",
+        policy="none",
+        required_inputs=("inflation_growth_config", "cross_asset_closes", "macro_series"),
+        resolve=_resolve_inflation_growth,
+        build=_build_inflation_growth,
+        store=lambda s, v: setattr(s, "inflation_growth", v),
+        report=True,
+    ),
 )
 
 
 _FEATURE_STORE_BUILDERS: tuple[_FeatureStoreBuilder, ...] = (
-    _FeatureStoreBuilder("inflation_growth", _build_inflation_growth_feature),
     _FeatureStoreBuilder("change_point", _build_change_point_feature),
 )
 
@@ -1217,18 +1270,6 @@ def _availability(
 def _build_feature_availability_report(
     state: _FeatureStoreBuildState,
 ) -> dict[str, FeatureAvailability]:
-    inflation_config_missing = (
-        ()
-        if state.inflation_growth_config is not None
-        else ("inflation_growth_config",)
-    )
-
-    inflation_missing = ()
-    if state.inflation_growth_config is not None:
-        inflation_missing = _missing_cross_asset_keys(
-            state.context.cross_asset_closes, tuple(_IG_CROSS_ASSET_KEYS)
-        ) + _missing_macro_keys(state.context.macro_series, tuple(_IG_MACRO_KEYS))
-
     report = {
         "change_point": _availability(
             feature="change_point",
@@ -1240,17 +1281,6 @@ def _build_feature_availability_report(
                 if state.context.config.change_point is not None
                 else ("change_point_config",)
             ),
-        ),
-        "inflation_growth": _availability(
-            feature="inflation_growth",
-            value=state.inflation_growth,
-            policy="none",
-            required_inputs=(
-                "inflation_growth_config",
-                "cross_asset_closes",
-                "macro_series",
-            ),
-            missing_inputs=inflation_config_missing + inflation_missing,
         ),
     }
     return report
