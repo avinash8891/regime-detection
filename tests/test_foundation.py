@@ -9,7 +9,11 @@ from pydantic import ValidationError
 
 from regime_detection.calendar import is_nyse_trading_day
 from regime_detection.config import RegimeConfig
-from regime_detection.engine import ClassifyRequest, RegimeEngine
+from regime_detection.engine import (
+    ClassifyRequest,
+    RegimeEngine,
+    V2_REQUEST_INPUT_CONTRACTS,
+)
 from regime_detection.versioning import engine_version
 from regime_shared.pandas_compat import cow_safe_assign
 
@@ -169,6 +173,120 @@ def test_classify_request_rejects_manifest_metadata_in_direct_mode(
 
     with pytest.raises(ValueError, match="manifest metadata requires profile_manifest"):
         RegimeEngine().classify_request(request)
+
+
+_V2_OPTIONAL_CONFIG_FIELDS = (
+    "network_fragility",
+    "trend_direction_v2",
+    "volatility_state_v2",
+    "breadth_state_v2",
+    "volume_liquidity_v2",
+    "volume_liquidity_state",
+    "transition_score",
+    "trend_character_v2",
+    "monetary_pressure_v2",
+    "monetary_pressure_state",
+    "central_bank_text",
+    "news_sentiment",
+    "inflation_growth",
+    "credit_funding",
+    "hmm",
+    "clustering",
+    "change_point",
+    "no_flip_flop",
+    "cohort_routing",
+    "strategy_family_constraints",
+    "strategy_event_modifiers",
+)
+
+
+def _config_with_only_v2_sections(*section_names: str) -> RegimeConfig:
+    base = RegimeEngine().config
+    updates = {field: None for field in _V2_OPTIONAL_CONFIG_FIELDS}
+    for section_name in section_names:
+        updates[section_name] = getattr(base, section_name)
+    return base.model_copy(update=updates)
+
+
+def test_v2_request_input_contracts_cover_configured_input_families() -> None:
+    contract_sections = {
+        contract.config_path for contract in V2_REQUEST_INPUT_CONTRACTS
+    }
+
+    assert {
+        "RegimeConfig.network_fragility",
+        "RegimeConfig.breadth_state_v2",
+        "RegimeConfig.volume_liquidity_v2",
+        "RegimeConfig.monetary_pressure_v2",
+        "RegimeConfig.monetary_pressure_state",
+        "RegimeConfig.credit_funding",
+        "RegimeConfig.inflation_growth",
+        "RegimeConfig.hmm",
+        "RegimeConfig.clustering",
+        "RegimeConfig.change_point",
+        "RegimeConfig.central_bank_text",
+        "RegimeConfig.news_sentiment",
+    } <= contract_sections
+
+
+@pytest.mark.parametrize(
+    ("sections", "missing_input"),
+    [
+        (("network_fragility",), "sector_etf_closes"),
+        (("breadth_state_v2",), "sector_etf_closes"),
+        (("volume_liquidity_v2",), "spy_ohlcv.volume"),
+        (("monetary_pressure_v2",), "macro_series.2y_yield"),
+        (("monetary_pressure_state",), "macro_series.2y_yield"),
+        (("credit_funding",), "cross_asset_closes.HYG"),
+        (("inflation_growth",), "cross_asset_closes.DBC"),
+        (("hmm",), "volume_liquidity_v2"),
+        (("clustering",), "breadth_state_v2"),
+    ],
+)
+def test_classify_request_rejects_missing_configured_v2_input_family(
+    market_df_for_asof,
+    event_calendar_df,
+    sections: tuple[str, ...],
+    missing_input: str,
+) -> None:
+    as_of = date(2023, 12, 14)
+    market_data = market_df_for_asof(as_of)
+    if sections == ("volume_liquidity_v2",):
+        market_data = market_data.copy()
+        market_data.loc[market_data["symbol"] == "SPY", "volume"] = pd.NA
+    request = ClassifyRequest(
+        end_date=as_of,
+        market_data=market_data,
+        lookback_days=1,
+        event_calendar=event_calendar_df,
+        config=_config_with_only_v2_sections(*sections),
+    )
+
+    with pytest.raises(ValueError) as excinfo:
+        RegimeEngine().classify_request(request)
+
+    message = str(excinfo.value)
+    assert "ClassifyRequest missing configured V2 inputs" in message
+    assert missing_input in message
+
+
+def test_classify_request_allows_declared_optional_evidence_inputs_to_be_absent(
+    market_df_for_asof, event_calendar_df
+) -> None:
+    as_of = date(2023, 12, 14)
+    request = ClassifyRequest(
+        end_date=as_of,
+        market_data=market_df_for_asof(as_of),
+        lookback_days=1,
+        event_calendar=event_calendar_df,
+        config=_config_with_only_v2_sections(
+            "trend_character_v2", "central_bank_text", "news_sentiment"
+        ),
+    )
+
+    timeline = RegimeEngine().classify_request(request)
+
+    assert timeline.outputs[-1].as_of_date == as_of
 
 
 def test_classify_uses_request_object(

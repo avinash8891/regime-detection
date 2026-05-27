@@ -74,6 +74,26 @@ Current hard boundaries:
   inputs through `manifest_resolved_inputs` or `manifest_cli_overrides`;
 - legacy `breadth_data` is removed from the API and must fail loudly if passed.
 
+`V2_REQUEST_INPUT_CONTRACTS` is the request-boundary matrix for configured V2
+seams. If a V2 config section is enabled, its declared source family must be
+present before timeline construction starts. Current required contracts include:
+
+- `network_fragility` and `breadth_state_v2`: `sector_etf_closes`;
+- `volume_liquidity_v2`: non-null SPY `volume`;
+- `monetary_pressure_v2` and `monetary_pressure_state`: `2y_yield`,
+  `10y_yield`, and `broad_usd_index` in `macro_series`;
+- `credit_funding`: HYG, LQD, TLT, KRE closes plus SOFR, IORB, NFCI, and
+  `broad_usd_index`;
+- `inflation_growth`: DBC, TLT, XLY, XLI, XLP, XLU closes plus CPI, PMI, and
+  10y yield;
+- `hmm`: configured `volume_liquidity_v2` and `network_fragility`;
+- `clustering`: configured `breadth_state_v2`, `network_fragility`, and
+  `trend_direction_v2`.
+
+Evidence-only seams (`central_bank_text`, `news_sentiment`) are declared in the
+same matrix as optional evidence. Their absence is intentional and must not be
+silently reinterpreted as a required-source failure.
+
 ## Typed Evidence Payloads
 
 `src/regime_detection/models.py` owns typed axis evidence payloads.
@@ -98,7 +118,8 @@ field is part of the runtime behavior.
 Profile, shadow, and walk-forward artifacts expose dependency payload contracts,
 classification coverage, and rule provenance so operators can see whether a run
 used label-only or richer cross-axis payloads, which axes were safe for
-downstream use, and which spec/config surface owns thresholds and precedence.
+downstream use, and which exact spec/config scalar owns thresholds, weights,
+windows, staleness gates, hysteresis values, model parameters, and precedence.
 
 Current artifact fields:
 
@@ -113,8 +134,11 @@ Replay comparison includes the diagnostic contract, so a payload-contract drift
 is a replay mismatch instead of a silent report-only change.
 
 `src/regime_detection/classification_coverage.py` owns per-date coverage.
-`src/regime_detection/rule_provenance.py` owns threshold, weight, hysteresis, and
-precedence provenance.
+`src/regime_detection/rule_provenance.py` owns provenance. It declares business
+config roots, mechanically expands the default `RegimeConfig` into one
+provenance row per scalar path, and keeps static non-config contracts such as
+rule precedence and risk-rank tables explicit. Tests fail when a scalar
+business config path lacks provenance.
 
 ## Pyright Ratchet
 
