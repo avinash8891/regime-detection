@@ -295,3 +295,33 @@ def test_realized_vol_21d_resolve_no_configs_returns_unavailable(
 def test_realized_vol_21d_spec_is_internal_report_false() -> None:
     spec = _spec_by_name("realized_vol_21d")
     assert spec.report is False
+
+
+def test_drawdown_63d_resolve_no_hmm_or_clustering_returns_unavailable(
+    v1_minimal_state: _FeatureStoreBuildState,
+) -> None:
+    """When hmm AND clustering configs are both None, drawdown_63d is not
+    built — resolve returns _Unavailable."""
+    import dataclasses
+
+    from regime_detection.feature_store_runtime import _Unavailable
+
+    # RegimeEngine().config has hmm/clustering populated by default; strip them
+    # via model_copy to exercise the _Unavailable branch.
+    stripped_config = v1_minimal_state.context.config.model_copy(
+        update={"hmm": None, "clustering": None}
+    )
+    stripped_context = v1_minimal_state.context.model_copy(
+        update={"config": stripped_config}
+    )
+    stripped_state = dataclasses.replace(v1_minimal_state, context=stripped_context)
+
+    spec = _spec_by_name("drawdown_63d")
+    resolved = spec.resolve(stripped_state)
+
+    assert isinstance(resolved, _Unavailable)
+
+
+def test_drawdown_63d_spec_is_internal_report_false() -> None:
+    spec = _spec_by_name("drawdown_63d")
+    assert spec.report is False
