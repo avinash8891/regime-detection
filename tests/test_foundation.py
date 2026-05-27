@@ -13,6 +13,11 @@ from regime_detection.engine import (
     ClassifyRequest,
     RegimeEngine,
     V2_REQUEST_INPUT_CONTRACTS,
+    V2RequestInputContract,
+    _market_data_has_non_null_spy_close,
+    _market_data_has_non_null_spy_volume,
+    _request_input_is_present,
+    _validate_v2_request_input_contracts,
 )
 from regime_detection.versioning import engine_version
 from regime_shared.pandas_compat import cow_safe_assign
@@ -229,6 +234,82 @@ def test_v2_request_input_contracts_cover_configured_input_families() -> None:
     } <= contract_sections
 
 
+def test_v2_request_input_contract_is_frozen_and_traceable() -> None:
+    contract = V2RequestInputContract(
+        section="change_point",
+        config_path="RegimeConfig.change_point",
+        policy="required",
+        required_inputs=("spy_ohlcv.close",),
+        rationale="change point requires SPY close",
+    )
+
+    assert contract.section == "change_point"
+    assert contract.required_inputs == ("spy_ohlcv.close",)
+    with pytest.raises(AttributeError):
+        contract.section = "network_fragility"  # type: ignore[misc]
+
+
+def test_v2_request_input_helpers_detect_spy_close_and_volume_presence(
+    market_df_for_asof,
+) -> None:
+    cfg = _config_with_only_v2_sections("change_point", "volume_liquidity_v2")
+    market_data = market_df_for_asof(date(2023, 12, 14))
+
+    assert _market_data_has_non_null_spy_close(market_data, cfg)
+    assert _market_data_has_non_null_spy_volume(market_data, cfg)
+
+    missing_close = market_data.copy()
+    missing_close.loc[missing_close["symbol"] == "SPY", "close"] = pd.NA
+    assert not _market_data_has_non_null_spy_close(missing_close, cfg)
+
+    missing_volume = market_data.copy()
+    missing_volume.loc[missing_volume["symbol"] == "SPY", "volume"] = pd.NA
+    assert not _market_data_has_non_null_spy_volume(missing_volume, cfg)
+
+
+def test_v2_request_input_presence_resolves_sources_and_config_prerequisites(
+    market_df_for_asof, event_calendar_df
+) -> None:
+    cfg = _config_with_only_v2_sections("change_point", "volume_liquidity_v2")
+    request = ClassifyRequest(
+        end_date=date(2023, 12, 14),
+        market_data=market_df_for_asof(date(2023, 12, 14)),
+        event_calendar=event_calendar_df,
+        config=cfg,
+        macro_series={"2y_yield": pd.Series([1.0])},
+        cross_asset_closes={"HYG": pd.Series([1.0])},
+    )
+
+    assert _request_input_is_present(request, cfg, "spy_ohlcv.close")
+    assert _request_input_is_present(request, cfg, "spy_ohlcv.volume")
+    assert _request_input_is_present(request, cfg, "macro_series.2y_yield")
+    assert _request_input_is_present(request, cfg, "cross_asset_closes.HYG")
+    assert _request_input_is_present(request, cfg, "volume_liquidity_v2")
+    assert not _request_input_is_present(request, cfg, "macro_series.10y_yield")
+    assert not _request_input_is_present(request, cfg, "network_fragility")
+
+
+def test_v2_request_contract_validator_reports_change_point_missing_spy_close(
+    market_df_for_asof, event_calendar_df
+) -> None:
+    cfg = _config_with_only_v2_sections("change_point")
+    market_data = market_df_for_asof(date(2023, 12, 14)).copy()
+    market_data.loc[market_data["symbol"] == "SPY", "close"] = pd.NA
+    request = ClassifyRequest(
+        end_date=date(2023, 12, 14),
+        market_data=market_data,
+        event_calendar=event_calendar_df,
+        config=cfg,
+    )
+
+    with pytest.raises(ValueError) as excinfo:
+        _validate_v2_request_input_contracts(request, cfg)
+
+    message = str(excinfo.value)
+    assert "change_point" in message
+    assert "spy_ohlcv.close" in message
+
+
 @pytest.mark.parametrize(
     ("sections", "missing_input"),
     [
@@ -241,6 +322,7 @@ def test_v2_request_input_contracts_cover_configured_input_families() -> None:
         (("inflation_growth",), "cross_asset_closes.DBC"),
         (("hmm",), "volume_liquidity_v2"),
         (("clustering",), "breadth_state_v2"),
+        (("change_point",), "spy_ohlcv.close"),
     ],
 )
 def test_classify_request_rejects_missing_configured_v2_input_family(
@@ -254,6 +336,9 @@ def test_classify_request_rejects_missing_configured_v2_input_family(
     if sections == ("volume_liquidity_v2",):
         market_data = market_data.copy()
         market_data.loc[market_data["symbol"] == "SPY", "volume"] = pd.NA
+    if sections == ("change_point",):
+        market_data = market_data.copy()
+        market_data.loc[market_data["symbol"] == "SPY", "close"] = pd.NA
     request = ClassifyRequest(
         end_date=as_of,
         market_data=market_data,
