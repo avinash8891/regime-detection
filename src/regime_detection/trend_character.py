@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from bisect import bisect_right
 from dataclasses import dataclass
 from typing import Any, Literal
 
@@ -207,24 +208,32 @@ def _compute_followthrough_rate(
         if np.all(close_arr[b + 1 : end + 1] > level):
             held[b] = True
 
-    # Now compute followthrough_rate per session t: walk backwards from t-1
-    # up to lookback_sessions, collect up to window_count breakouts, compute
-    # held_count / window_count. If <window_count → NaN.
+    # Vectorized lookup: index every breakout, precompute a cumulative sum of
+    # held breakouts, then for each session t fetch the most-recent
+    # window_count breakouts strictly before t via bisect_right and the
+    # held_count via two cumulative-sum reads.
+    #
+    # The lookback bound is enforced by a single check on the oldest element
+    # of the window — older breakouts than `t - lookback_sessions` were
+    # unreachable in the original backward walk, so requiring
+    # breakout_idx[k - window_count] >= t - lookback_sessions reproduces the
+    # original semantics exactly.
     out = np.full(n, np.nan, dtype=float)
-    for t in range(n):
-        collected = 0
-        held_count = 0
-        start = max(0, t - lookback_sessions)
-        for b in range(t - 1, start - 1, -1):
-            if np.isnan(breakout_level[b]):
+    breakout_idx = np.flatnonzero(~np.isnan(breakout_level))
+    if breakout_idx.size >= window_count:
+        held_at_breakouts = held[breakout_idx].astype(np.int64)
+        held_cum = np.empty(breakout_idx.size + 1, dtype=np.int64)
+        held_cum[0] = 0
+        np.cumsum(held_at_breakouts, out=held_cum[1:])
+        breakout_idx_list = breakout_idx.tolist()
+        for t in range(n):
+            k = bisect_right(breakout_idx_list, t - 1)
+            if k < window_count:
                 continue
-            collected += 1
-            if held[b]:
-                held_count += 1
-            if collected >= window_count:
-                break
-        if collected >= window_count:
-            out[t] = held_count / window_count
+            j = k - window_count
+            if breakout_idx_list[j] < t - lookback_sessions:
+                continue
+            out[t] = (held_cum[k] - held_cum[j]) / window_count
     return pd.Series(out, index=close.index)
 
 
