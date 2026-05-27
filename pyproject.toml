@@ -72,6 +72,7 @@ include = [
   "src/regime_detection/models.py",
   "src/regime_detection/axis_series.py",
   "src/regime_detection/feature_store.py",
+  "src/regime_detection/feature_store_runtime.py",
   "src/regime_detection/timeline.py",
   "src/regime_detection/classification_coverage.py",
   "src/regime_detection/rule_provenance.py",
