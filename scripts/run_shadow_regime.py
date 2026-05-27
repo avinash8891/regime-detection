@@ -228,16 +228,16 @@ def run_shadow(
             else v2_daily[v2_daily["date"] <= as_of_date].copy().reset_index(drop=True)
         )
         pit_intervals = _load_pit_intervals(pit_constituent_intervals_path)
-        macro_series = _load_v2_macro_series(
-            macro_parquet_path=macro_parquet_path,
-            pmi_path=pmi_path,
-            cpi_nowcast_parquet_path=cpi_nowcast_parquet_path,
-            aggregate_forward_eps_weekly_history_parquet_path=(
-                aggregate_forward_eps_weekly_history_parquet_path
-            ),
-        )
         v2_kwargs: dict[str, Any] = {}
         if v2_slice is not None:
+            macro_series = _load_v2_macro_series(
+                macro_parquet_path=macro_parquet_path,
+                pmi_path=pmi_path,
+                cpi_nowcast_parquet_path=cpi_nowcast_parquet_path,
+                aggregate_forward_eps_weekly_history_parquet_path=(
+                    aggregate_forward_eps_weekly_history_parquet_path
+                ),
+            )
             if pit_intervals is None:
                 pit_intervals = _default_pit_intervals_from_daily(v2_slice)
             v2_kwargs["sector_etf_closes"] = _close_series_by_symbol(

@@ -180,6 +180,37 @@ def test_shadow_runner_supplies_macro_series_for_configured_v2_axes(
     assert payload["inflation_growth_state"] is not None
 
 
+def test_shadow_runner_v1_only_run_does_not_load_v2_macro_artifacts(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    repo_root = Path(__file__).resolve().parents[1]
+    market_data_path = (
+        repo_root / "tests" / "fixtures" / "raw" / "v2" / "daily_ohlcv.csv"
+    )
+    event_calendar_path = repo_root / "tests" / "fixtures" / "events" / "us_events.yaml"
+    config_path = (
+        repo_root / "src" / "regime_detection" / "configs" / "core3-v1.0.0.yaml"
+    )
+
+    mod = _load_runner_module()
+
+    def _fail_if_called(**_kwargs):
+        raise AssertionError("V1-only shadow run must not load V2 macro artifacts")
+
+    monkeypatch.setattr(mod, "_load_v2_macro_series", _fail_if_called)
+
+    result = mod.run_shadow(
+        as_of_date=date(2026, 5, 13),
+        market_data_path=market_data_path,
+        event_calendar_path=event_calendar_path,
+        config_path=config_path,
+        output_root=tmp_path / "shadow_run",
+        macro_parquet_path=tmp_path / "missing_v2_macro.parquet",
+    )
+
+    assert result["status"] == "success"
+
+
 def test_shadow_runner_archives_inputs_and_inserts_in_progress_before_classify(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
