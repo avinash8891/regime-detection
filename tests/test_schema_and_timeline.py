@@ -629,7 +629,9 @@ def test_timeline_passes_event_calendar_matching_labels_to_strategy_response(
         "regime_detection.timeline.build_strategy_response",
         wraps=build_strategy_response,
     )
-    config = _fast_v2_test_config()
+    config = _fast_v2_test_config().model_copy(
+        update={"credit_funding": None, "inflation_growth": None}
+    )
 
     out = engine.classify(
         as_of_date=as_of,
