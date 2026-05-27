@@ -359,9 +359,6 @@ def _build_news_sentiment_score_series(
     return score
 
 
-# --- New spec-based builders (PR 1) ------------------------------------------
-
-
 def _build_trend_direction(spy_close: pd.Series) -> TrendDirectionFeatures:
     return compute_trend_direction_features(spy_close)
 
@@ -992,10 +989,8 @@ def _resolve_change_point(
 ) -> dict[str, object] | _Unavailable:
     if state.context.config.change_point is None:
         return _Unavailable(missing_inputs=("change_point_config",))
-    assert state.realized_vol_21d is not None, (
-        "realized_vol_21d should be populated by its spec when change_point "
-        "config is set (disjunction gate guarantees it)"
-    )
+    if state.realized_vol_21d is None:
+        return _Unavailable(missing_inputs=("realized_vol_21d",))
     return {
         "realized_vol_21d": state.realized_vol_21d,
         "config": state.context.config.change_point,
@@ -1230,7 +1225,6 @@ _FEATURE_SPECS: tuple[FeatureSpec[object, _FeatureStoreBuildState], ...] = (
         resolve=_resolve_inflation_growth,
         build=_build_inflation_growth,  # pyright: ignore[reportUnknownArgumentType]
         store=lambda s, v: setattr(s, "inflation_growth", v),
-        report=True,
     ),
     FeatureSpec(
         name="change_point",
