@@ -72,6 +72,7 @@ from regime_detection.trend_direction_v2 import (
     compute_trend_v2_features,
 )
 from regime_detection.clustering import (
+    ClusteringConfig,
     ClusteringFeatures,
     compute_clustering_features,
 )
@@ -357,32 +358,6 @@ def _build_news_sentiment_score_series(
     )
     score.name = "news_sentiment_score"
     return score
-
-
-def _build_clustering_feature(state: _FeatureStoreBuildState) -> None:
-    breadth_state_v2 = state.breadth_state_v2
-    network_fragility = state.network_fragility
-    trend_direction_v2 = state.trend_direction_v2
-    if (
-        state.context.config.clustering is None
-        or breadth_state_v2 is None
-        or breadth_state_v2.pct_above_50dma is None
-        or network_fragility is None
-        or trend_direction_v2 is None
-    ):
-        state.clustering = None
-        return
-    trend_character = _require_feature(state.trend_character, "trend_character")
-    state.clustering = compute_clustering_features(
-        return_21d=trend_character.return_21d,
-        return_63d=trend_direction_v2.return_63d,
-        realized_vol_21d=state.realized_vol_21d,
-        drawdown_63d=state.drawdown_63d,
-        adx_14=trend_character.adx_14,
-        avg_pairwise_corr_63d=network_fragility.avg_pairwise_corr_63d,
-        pct_above_50dma=breadth_state_v2.pct_above_50dma,
-        config=state.context.config.clustering,
-    )
 
 
 def _build_credit_funding_feature(state: _FeatureStoreBuildState) -> None:
@@ -862,6 +837,62 @@ def _resolve_hmm(
     }
 
 
+def _build_clustering(
+    config: ClusteringConfig,
+    return_21d: pd.Series,
+    return_63d: pd.Series,
+    realized_vol_21d: pd.Series,
+    drawdown_63d: pd.Series,
+    adx_14: pd.Series,
+    avg_pairwise_corr_63d: pd.Series,
+    pct_above_50dma: pd.Series,
+) -> ClusteringFeatures | None:
+    return compute_clustering_features(
+        return_21d=return_21d,
+        return_63d=return_63d,
+        realized_vol_21d=realized_vol_21d,
+        drawdown_63d=drawdown_63d,
+        adx_14=adx_14,
+        avg_pairwise_corr_63d=avg_pairwise_corr_63d,
+        pct_above_50dma=pct_above_50dma,
+        config=config,
+    )
+
+
+def _resolve_clustering(
+    state: _FeatureStoreBuildState,
+) -> dict[str, object] | _Unavailable:
+    missing: list[str] = []
+    if state.context.config.clustering is None:
+        missing.append("clustering_config")
+    breadth_state_v2 = state.breadth_state_v2
+    if breadth_state_v2 is None or breadth_state_v2.pct_above_50dma is None:
+        missing.append("breadth_state_v2.pct_above_50dma")
+    if state.network_fragility is None:
+        missing.append("network_fragility")
+    if state.trend_direction_v2 is None:
+        missing.append("trend_direction_v2")
+    if missing:
+        return _Unavailable(missing_inputs=tuple(missing))
+    trend_character = _require_feature(state.trend_character, "trend_character")
+    assert state.trend_direction_v2 is not None
+    assert state.network_fragility is not None
+    assert state.realized_vol_21d is not None
+    assert state.drawdown_63d is not None
+    assert breadth_state_v2 is not None
+    assert breadth_state_v2.pct_above_50dma is not None
+    return {
+        "config": state.context.config.clustering,
+        "return_21d": trend_character.return_21d,
+        "return_63d": state.trend_direction_v2.return_63d,
+        "realized_vol_21d": state.realized_vol_21d,
+        "drawdown_63d": state.drawdown_63d,
+        "adx_14": trend_character.adx_14,
+        "avg_pairwise_corr_63d": state.network_fragility.avg_pairwise_corr_63d,
+        "pct_above_50dma": breadth_state_v2.pct_above_50dma,
+    }
+
+
 def _resolve_realized_vol_21d(
     state: _FeatureStoreBuildState,
 ) -> dict[str, object] | _Unavailable:
@@ -1058,11 +1089,23 @@ _FEATURE_SPECS: tuple[FeatureSpec[object, _FeatureStoreBuildState], ...] = (
         build=_build_hmm,
         store=lambda s, v: setattr(s, "hmm", v),
     ),
+    FeatureSpec(
+        name="clustering",
+        policy="none",
+        required_inputs=(
+            "clustering_config",
+            "breadth_state_v2.pct_above_50dma",
+            "network_fragility",
+            "trend_direction_v2",
+        ),
+        resolve=_resolve_clustering,
+        build=_build_clustering,
+        store=lambda s, v: setattr(s, "clustering", v),
+    ),
 )
 
 
 _FEATURE_STORE_BUILDERS: tuple[_FeatureStoreBuilder, ...] = (
-    _FeatureStoreBuilder("clustering", _build_clustering_feature),
     _FeatureStoreBuilder("credit_funding", _build_credit_funding_feature),
     _FeatureStoreBuilder("inflation_growth", _build_inflation_growth_feature),
     _FeatureStoreBuilder("change_point", _build_change_point_feature),
@@ -1146,31 +1189,6 @@ def _build_feature_availability_report(
         ) + _missing_macro_keys(state.context.macro_series, tuple(_IG_MACRO_KEYS))
 
     report = {
-        "clustering": _availability(
-            feature="clustering",
-            value=state.clustering,
-            policy="none",
-            required_inputs=(
-                "clustering_config",
-                "breadth_state_v2.pct_above_50dma",
-                "network_fragility",
-                "trend_direction_v2",
-            ),
-            missing_inputs=tuple(
-                item
-                for item, available in (
-                    ("clustering_config", state.context.config.clustering is not None),
-                    (
-                        "breadth_state_v2.pct_above_50dma",
-                        state.breadth_state_v2 is not None
-                        and state.breadth_state_v2.pct_above_50dma is not None,
-                    ),
-                    ("network_fragility", state.network_fragility is not None),
-                    ("trend_direction_v2", state.trend_direction_v2 is not None),
-                )
-                if not available
-            ),
-        ),
         "change_point": _availability(
             feature="change_point",
             value=state.change_point,
