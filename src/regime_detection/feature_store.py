@@ -359,33 +359,6 @@ def _build_news_sentiment_score_series(
     return score
 
 
-def _build_network_fragility_feature(state: _FeatureStoreBuildState) -> None:
-    if state.context.sector_etf_closes is None:
-        state.network_fragility = None
-        return
-    if state.network_fragility_config is None:
-        state.network_fragility = compute_network_fragility_features(
-            sector_etf_closes=state.context.sector_etf_closes,
-            cross_asset_closes=state.context.cross_asset_closes or {},
-            spy_close=state.spy_close,
-        )
-        return
-    config = state.network_fragility_config
-    state.network_fragility = compute_network_fragility_features(
-        sector_etf_closes=state.context.sector_etf_closes,
-        cross_asset_closes=state.context.cross_asset_closes or {},
-        spy_close=state.spy_close,
-        correlation_lookback_days=config.correlation_lookback_days,
-        percentile_lookback_days=config.percentile_lookback_days,
-        realized_vol_lookback_days=config.realized_vol_lookback_days,
-        dispersion_percentile_lookback_days=config.dispersion_percentile_lookback_days,
-        dispersion_spy_vol_floor=config.dispersion_spy_vol_floor,
-        min_universe_size=config.min_universe_size,
-        min_window_completeness=config.min_window_completeness,
-        universe=config.universe,
-    )
-
-
 def _build_volatility_state_v2_feature(state: _FeatureStoreBuildState) -> None:
     if state.volatility_state_v2_config is None:
         state.volatility_state_v2 = None
@@ -799,6 +772,46 @@ def _resolve_trend_direction_v2(
     }
 
 
+def _build_network_fragility(
+    sector_etf_closes: dict[str, pd.Series],
+    cross_asset_closes: dict[str, pd.Series],
+    spy_close: pd.Series,
+    config: NetworkFragilityConfig | None,
+) -> NetworkFragilityFeatures:
+    if config is None:
+        return compute_network_fragility_features(
+            sector_etf_closes=sector_etf_closes,
+            cross_asset_closes=cross_asset_closes,
+            spy_close=spy_close,
+        )
+    return compute_network_fragility_features(
+        sector_etf_closes=sector_etf_closes,
+        cross_asset_closes=cross_asset_closes,
+        spy_close=spy_close,
+        correlation_lookback_days=config.correlation_lookback_days,
+        percentile_lookback_days=config.percentile_lookback_days,
+        realized_vol_lookback_days=config.realized_vol_lookback_days,
+        dispersion_percentile_lookback_days=config.dispersion_percentile_lookback_days,
+        dispersion_spy_vol_floor=config.dispersion_spy_vol_floor,
+        min_universe_size=config.min_universe_size,
+        min_window_completeness=config.min_window_completeness,
+        universe=config.universe,
+    )
+
+
+def _resolve_network_fragility(
+    state: _FeatureStoreBuildState,
+) -> dict[str, object] | _Unavailable:
+    if state.context.sector_etf_closes is None:
+        return _Unavailable(missing_inputs=("sector_etf_closes",))
+    return {
+        "sector_etf_closes": state.context.sector_etf_closes,
+        "cross_asset_closes": state.context.cross_asset_closes or {},
+        "spy_close": state.spy_close,
+        "config": state.network_fragility_config,
+    }
+
+
 _FEATURE_SPECS: tuple[FeatureSpec[object, _FeatureStoreBuildState], ...] = (
     FeatureSpec(
         name="trend_direction",
@@ -866,11 +879,18 @@ _FEATURE_SPECS: tuple[FeatureSpec[object, _FeatureStoreBuildState], ...] = (
         build=_build_trend_direction_v2,
         store=lambda s, v: setattr(s, "trend_direction_v2", v),
     ),
+    FeatureSpec(
+        name="network_fragility",
+        policy="none",
+        required_inputs=("sector_etf_closes",),
+        resolve=_resolve_network_fragility,
+        build=_build_network_fragility,
+        store=lambda s, v: setattr(s, "network_fragility", v),
+    ),
 )
 
 
 _FEATURE_STORE_BUILDERS: tuple[_FeatureStoreBuilder, ...] = (
-    _FeatureStoreBuilder("network_fragility", _build_network_fragility_feature),
     _FeatureStoreBuilder("volatility_state_v2", _build_volatility_state_v2_feature),
     _FeatureStoreBuilder("breadth_state_v2", _build_breadth_state_v2_feature),
     _FeatureStoreBuilder("volume_liquidity_v2", _build_volume_liquidity_v2_feature),
@@ -1000,17 +1020,6 @@ def _build_feature_availability_report(
         ) + _missing_macro_keys(state.context.macro_series, tuple(_IG_MACRO_KEYS))
 
     report = {
-        "network_fragility": _availability(
-            feature="network_fragility",
-            value=state.network_fragility,
-            policy="none",
-            required_inputs=("sector_etf_closes",),
-            missing_inputs=(
-                ()
-                if state.context.sector_etf_closes is not None
-                else ("sector_etf_closes",)
-            ),
-        ),
         "volatility_state_v2": _availability(
             feature="volatility_state_v2",
             value=state.volatility_state_v2,
