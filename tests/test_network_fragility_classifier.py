@@ -583,11 +583,14 @@ def test_engine_classify_window_emits_network_fragility_labels_on_full_universe(
     # by slice_context_to_recent_sessions. We need that working window to
     # exceed the 504d v2 percentile cold-start with margin so the rules fire
     # on multiple post-warmup days.
+    config = context.config.model_copy(
+        update={"credit_funding": None, "inflation_growth": None}
+    )
     timeline = RegimeEngine().classify_window(
         end_date=_LAST_SESSION.date(),
         market_data=market_data,
         lookback_days=600,
-        config=context.config,
+        config=config,
         event_calendar=pd.DataFrame(columns=["date", "market", "type", "importance"]),
         sector_etf_closes=sector_closes,
         cross_asset_closes=cross_asset_closes,
