@@ -1,0 +1,107 @@
+tests/test_profile_engine_reporting_loaders.py
+  s_cad40512569b61::t_9af85b9efc4a13 283-297
+src/regime_detection/engine.py
+  s_cad40512569b61::t_1b7702a0d62d64 30-36,82-88,168-169
+  s_cad40512569b61::t_4effed6a80f666 3,62-65,171,194
+  s_cad40512569b61::t_4d7de08b87b56b 92-94,105-107
+  s_cad40512569b61::t_b17ae298d32782 24-26,54-58
+  s_cad40512569b61::t_6ae5ff4fadcd6e 20-23,53,81,89-91,95-104,138-140,160-162,170,215-217,237-239
+tests/test_models.py
+  s_cad40512569b61::t_c9e5f018c3bd6e 6
+  s_cad40512569b61::t_9af85b9efc4a13 18-22,31-32,178-247
+tests/test_v2_feature_store_and_axis_seams.py
+  s_cad40512569b61::t_68538f986f33aa 121-122,124
+docs/v2_slice_gate_checklist.md
+  s_cad40512569b61::t_59e78d7971975b 75-76
+docs/historical_walkforward_spec.md
+  s_cad40512569b61::t_2eb35594aeaff3 102-107
+tests/test_network_fragility_classifier.py
+  s_cad40512569b61::t_7d4215d921e8eb 828
+  s_cad40512569b61::t_f589e5e066f9b6 763-767,834-853
+docs/regime_engine_v1_final_spec.md
+  s_cad40512569b61::t_db10ca0e32f16e 61-73,92-109
+scripts/run_shadow_regime.py
+  s_cad40512569b61::t_d8dfef98afaae6 163,166-183,186-192,264
+  s_cad40512569b61::t_5e0dc17e2ef1f6 164-165,184-185
+docs/pyright_pandas_stub_policy.md
+  s_cad40512569b61::t_c9e5f018c3bd6e 1-6,16-31
+  s_cad40512569b61::t_202adc22112b73 7-15
+  s_cad40512569b61::t_3b533337b687d5 32-37
+scripts/run_historical_walkforward.py
+  s_cad40512569b61::t_19bd6cd14d7386 292-293
+  s_cad40512569b61::t_04e46decb1cf96 461,505
+  s_cad40512569b61::t_096daead5d68da 291,294-313
+tests/test_volume_liquidity_classifier.py
+  s_cad40512569b61::t_55307a9110effd 184-185
+src/regime_detection/axis_builders/volume_liquidity.py
+  s_cad40512569b61::t_261e2bafab84dc 15-19,43
+tests/test_profile_engine.py
+  s_cad40512569b61::t_121769de82c81c 104-132
+src/regime_detection/boundary_policies.py
+  s_cad40512569b61::t_b43fd2936270d9 11-18
+scripts/run_shadow_replay_check.py
+  s_cad40512569b61::t_efa521fa9b65fb 31,137-139
+  s_cad40512569b61::t_0697f7f2f7c686 135-136
+tests/test_readiness_contracts.py
+  s_cad40512569b61::t_9af85b9efc4a13 21-22,30-37
+tests/test_v2_config.py
+  s_cad40512569b61::t_0e205e6a4dbfb6 66-68
+pyproject.toml
+  s_cad40512569b61::t_c9e5f018c3bd6e 72-73
+scripts/profile_engine_reporting.py
+  s_cad40512569b61::t_755da09a160e42 365-366
+  s_cad40512569b61::t_937a9cb1c23cf1 364,367-383,449
+docs/regime_engine_v2_spec.md
+  s_cad40512569b61::t_c3708c56aa4b9c 3127-3132,3334-3338
+src/regime_detection/axis_builders/monetary_pressure.py
+  s_cad40512569b61::t_e368f96a88e291 16-20,59
+src/regime_detection/axis_series.py
+  s_cad40512569b61::t_3b533337b687d5 3-4,53,488,534,542-548,575
+  s_cad40512569b61::t_3f1d780eee64d0 9-10
+  s_cad40512569b61::t_f7501e001f00c3 113-119,146-148
+src/regime_detection/models.py
+  s_cad40512569b61::t_3b533337b687d5 3-7
+  s_cad40512569b61::t_d08b7f6d24547c 81,83,89-125,127,132-140,146-171
+  s_cad40512569b61::t_7ee5ff752bc8e3 82,84-88,126,128-131,141-145,175-179
+  s_cad40512569b61::t_3f1d780eee64d0 290,325
+  s_cad40512569b61::t_c7b009524387b7 434,472,525,592
+  s_cad40512569b61::t_2b492781a60bbe 539-546
+tests/test_historical_walkforward.py
+  s_cad40512569b61::t_9af85b9efc4a13 89
+tests/test_foundation.py
+  s_cad40512569b61::t_9af85b9efc4a13 90-103,106-107,110
+  s_cad40512569b61::t_b17e2f065a712a 119-139,147-154,156-173
+  s_cad40512569b61::t_dc22b56f072fda 140-146,155
+  s_cad40512569b61::t_d5d097dfe41184 104-105,108-109,111-118,174
+src/regime_detection/timeline.py
+  s_cad40512569b61::t_e15ddf237cb29d 19,25,100-101
+tests/test_shadow_replay_check.py
+  s_cad40512569b61::t_c7c45569269ee4 91-96
+  s_cad40512569b61::t_c2bc32e31c939c 65
+  s_cad40512569b61::t_4a14508f9582bb 90
+docs/regime_engine_contracts.md
+  s_cad40512569b61::t_c253c8ad9a0b18 1-109
+tests/test_schema_and_timeline.py
+  s_cad40512569b61::t_40e571df5b7a05 15,308,574,581,593-597
+  s_cad40512569b61::t_f1143a16271f0b 345-347
+docs/shadow_runner_spec.md
+  s_cad40512569b61::t_e5bb6afd31b36f 123-128
+scripts/profile_engine.py
+  s_cad40512569b61::t_33d701e9a64e9e 726-735,847
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "ad60718b05c89a2649bcd2f9025af66afbcff12f",
+  "prompts": {},
+  "sessions": {
+    "s_cad40512569b61": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019e67ba-fdfb-7e72-a86b-68d4b7034df0",
+        "model": "gpt-5.5"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}
