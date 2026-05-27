@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
 from datetime import date
 from pathlib import Path
+from typing import Literal
 
 import pandas as pd
 
@@ -14,6 +16,30 @@ from regime_detection.config import (
 from regime_detection.market_context import build_market_context
 from regime_detection.models import RegimeOutput, RegimeTimeline
 from regime_detection.timeline import build_regime_timeline
+
+
+@dataclass(frozen=True)
+class ClassifyRequest:
+    end_date: date
+    market_data: pd.DataFrame
+    lookback_days: int = 1
+    breadth_data: pd.DataFrame | None = None
+    vix_data: pd.DataFrame | None = None
+    event_calendar: pd.DataFrame | None = None
+    config: RegimeConfig | None = None
+    sector_etf_closes: dict[str, pd.Series] | None = None
+    cross_asset_closes: dict[str, pd.Series] | None = None
+    macro_series: dict[str, pd.Series] | None = None
+    pit_constituent_intervals: pd.DataFrame | None = None
+    constituent_ohlcv: dict[str, pd.DataFrame] | None = None
+    aaii_sentiment: pd.DataFrame | None = None
+    implied_vol_30d: pd.Series | None = None
+    central_bank_text_releases: pd.DataFrame | None = None
+    cpi_first_release: pd.Series | None = None
+    news_sentiment: pd.Series | None = None
+    breadth_data_compatibility: Literal["ignored_legacy_parameter"] = (
+        "ignored_legacy_parameter"
+    )
 
 
 def _ignore_legacy_breadth_data(breadth_data: pd.DataFrame | None) -> None:
@@ -64,30 +90,55 @@ class RegimeEngine:
         cpi_first_release: pd.Series | None = None,
         news_sentiment: pd.Series | None = None,
     ) -> RegimeOutput:
-        # TODO(api, owner=regime-maintainers): Consider a ClassifyRequest input object only if this public signature keeps growing, and ship it with a compatibility plan.
-        # TODO(api, owner=regime-maintainers): Decide the deprecation path for the public V1 `breadth_data` parameter.
-        _ignore_legacy_breadth_data(breadth_data)
-        as_of_date = as_date(as_of_date)
-        require_nyse_trading_day(as_of_date)
-        timeline = self.classify_window(
-            end_date=as_of_date,
-            market_data=market_data,
-            lookback_days=1,
-            vix_data=vix_data,
-            event_calendar=event_calendar,
-            config=config,
-            sector_etf_closes=sector_etf_closes,
-            cross_asset_closes=cross_asset_closes,
-            macro_series=macro_series,
-            pit_constituent_intervals=pit_constituent_intervals,
-            constituent_ohlcv=constituent_ohlcv,
-            aaii_sentiment=aaii_sentiment,
-            implied_vol_30d=implied_vol_30d,
-            central_bank_text_releases=central_bank_text_releases,
-            cpi_first_release=cpi_first_release,
-            news_sentiment=news_sentiment,
+        timeline = self.classify_request(
+            ClassifyRequest(
+                end_date=as_of_date,
+                market_data=market_data,
+                lookback_days=1,
+                breadth_data=breadth_data,
+                vix_data=vix_data,
+                event_calendar=event_calendar,
+                config=config,
+                sector_etf_closes=sector_etf_closes,
+                cross_asset_closes=cross_asset_closes,
+                macro_series=macro_series,
+                pit_constituent_intervals=pit_constituent_intervals,
+                constituent_ohlcv=constituent_ohlcv,
+                aaii_sentiment=aaii_sentiment,
+                implied_vol_30d=implied_vol_30d,
+                central_bank_text_releases=central_bank_text_releases,
+                cpi_first_release=cpi_first_release,
+                news_sentiment=news_sentiment,
+            )
         )
         return timeline.outputs[-1]
+
+    def classify_request(self, request: ClassifyRequest) -> RegimeTimeline:
+        _ignore_legacy_breadth_data(request.breadth_data)
+        end_date = as_date(request.end_date)
+        require_nyse_trading_day(end_date)
+        event_calendar = _require_event_calendar(request.event_calendar)
+        cfg = request.config if request.config is not None else self._config
+        context = build_market_context(
+            end_date=end_date,
+            market_data=request.market_data,
+            config=cfg,
+            vix_data=request.vix_data,
+            event_calendar=event_calendar,
+            sector_etf_closes=request.sector_etf_closes,
+            cross_asset_closes=request.cross_asset_closes,
+            macro_series=request.macro_series,
+            pit_constituent_intervals=request.pit_constituent_intervals,
+            constituent_ohlcv=request.constituent_ohlcv,
+            aaii_sentiment=request.aaii_sentiment,
+            implied_vol_30d=request.implied_vol_30d,
+            central_bank_text_releases=request.central_bank_text_releases,
+            cpi_first_release=request.cpi_first_release,
+            news_sentiment=request.news_sentiment,
+        )
+        return build_regime_timeline(
+            context=context, lookback_days=request.lookback_days, config=cfg
+        )
 
     def classify_window(
         self,
@@ -109,28 +160,24 @@ class RegimeEngine:
         cpi_first_release: pd.Series | None = None,
         news_sentiment: pd.Series | None = None,
     ) -> RegimeTimeline:
-        _ignore_legacy_breadth_data(breadth_data)
-        end_date = as_date(end_date)
-        require_nyse_trading_day(end_date)
-        event_calendar = _require_event_calendar(event_calendar)
-        cfg = config if config is not None else self._config
-        context = build_market_context(
-            end_date=end_date,
-            market_data=market_data,
-            config=cfg,
-            vix_data=vix_data,
-            event_calendar=event_calendar,
-            sector_etf_closes=sector_etf_closes,
-            cross_asset_closes=cross_asset_closes,
-            macro_series=macro_series,
-            pit_constituent_intervals=pit_constituent_intervals,
-            constituent_ohlcv=constituent_ohlcv,
-            aaii_sentiment=aaii_sentiment,
-            implied_vol_30d=implied_vol_30d,
-            central_bank_text_releases=central_bank_text_releases,
-            cpi_first_release=cpi_first_release,
-            news_sentiment=news_sentiment,
-        )
-        return build_regime_timeline(
-            context=context, lookback_days=lookback_days, config=cfg
+        return self.classify_request(
+            ClassifyRequest(
+                end_date=end_date,
+                market_data=market_data,
+                lookback_days=lookback_days,
+                breadth_data=breadth_data,
+                vix_data=vix_data,
+                event_calendar=event_calendar,
+                config=config,
+                sector_etf_closes=sector_etf_closes,
+                cross_asset_closes=cross_asset_closes,
+                macro_series=macro_series,
+                pit_constituent_intervals=pit_constituent_intervals,
+                constituent_ohlcv=constituent_ohlcv,
+                aaii_sentiment=aaii_sentiment,
+                implied_vol_30d=implied_vol_30d,
+                central_bank_text_releases=central_bank_text_releases,
+                cpi_first_release=cpi_first_release,
+                news_sentiment=news_sentiment,
+            )
         )

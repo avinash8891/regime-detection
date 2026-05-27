@@ -9,7 +9,7 @@ from pydantic import ValidationError
 
 from regime_detection.calendar import is_nyse_trading_day
 from regime_detection.config import RegimeConfig
-from regime_detection.engine import RegimeEngine
+from regime_detection.engine import ClassifyRequest, RegimeEngine
 from regime_detection.versioning import engine_version
 from regime_shared.pandas_compat import cow_safe_assign
 
@@ -74,6 +74,45 @@ def test_engine_requires_event_calendar(market_df_for_asof) -> None:
             market_data=df,
             lookback_days=1,
         )
+
+
+def test_classify_request_requires_event_calendar(market_df_for_asof) -> None:
+    request = ClassifyRequest(
+        end_date=date(2026, 5, 5),
+        market_data=market_df_for_asof(date(2026, 5, 5)),
+        lookback_days=1,
+    )
+
+    with pytest.raises(ValueError, match="event_calendar is required"):
+        RegimeEngine().classify_request(request)
+
+
+def test_classify_uses_request_object_and_marks_legacy_breadth_data_ignored(
+    market_df_for_asof,
+    event_calendar_df,
+) -> None:
+    as_of = date(2026, 5, 5)
+    config_path = (
+        Path(__file__).resolve().parents[1]
+        / "src"
+        / "regime_detection"
+        / "configs"
+        / "core3-v1.0.0.yaml"
+    )
+    engine = RegimeEngine(config_path=config_path)
+    request = ClassifyRequest(
+        end_date=as_of,
+        market_data=market_df_for_asof(as_of),
+        lookback_days=1,
+        event_calendar=event_calendar_df,
+        breadth_data=pd.DataFrame({"legacy": [1]}),
+    )
+
+    assert request.breadth_data_compatibility == "ignored_legacy_parameter"
+
+    out = engine.classify_request(request)
+
+    assert out.outputs[-1].as_of_date == as_of
 
 
 def test_regime_config_forbids_unknown_keys() -> None:
