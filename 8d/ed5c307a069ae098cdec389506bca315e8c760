@@ -1,0 +1,22 @@
+tests/test_shadow_runner.py
+  s_102cc9b94fb05d::t_575333b36be08c 183-186,190,194-213
+  s_102cc9b94fb05d::t_53da15e6a1c011 187-189,191-193
+scripts/run_shadow_regime.py
+  s_102cc9b94fb05d::t_13f1f19be783a1 233-240
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "8ded5c307a069ae098cdec389506bca315e8c760",
+  "prompts": {},
+  "sessions": {
+    "s_102cc9b94fb05d": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019e6aad-051d-7962-9f69-78641da6923a",
+        "model": "gpt-5.5"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}
