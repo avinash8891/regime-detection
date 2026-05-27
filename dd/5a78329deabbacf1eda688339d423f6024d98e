@@ -1,0 +1,19 @@
+docs/superpowers/specs/2026-05-27-followthrough-rate-optimization-design.md
+  ai_agent 1-202
+docs/superpowers/plans/2026-05-27-consolidation-executemany.md
+  ai_agent 1-395
+docs/superpowers/specs/2026-05-26-pyright-strict-coverage-design.md
+  ai_agent 1-135
+docs/superpowers/specs/2026-05-27-consolidation-executemany-design.md
+  ai_agent 1-162
+docs/superpowers/plans/2026-05-27-followthrough-rate-optimization.md
+  ai_agent 1-511
+docs/superpowers/plans/2026-05-26-pyright-strict-coverage-expansion.md
+  ai_agent 1-621
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "dd5a78329deabbacf1eda688339d423f6024d98e",
+  "prompts": {}
+}
