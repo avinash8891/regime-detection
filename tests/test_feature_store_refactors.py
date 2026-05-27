@@ -166,16 +166,16 @@ def test_default_feature_store_builder_registry_orders_trend_news_before_trend_v
     assert all_names.index("news_sentiment_score") < all_names.index(
         "trend_direction_v2"
     )
-    # volatility_state_v2 migrated to _FEATURE_SPECS (Task 2.5); specs always
-    # run before legacy builders so ordering against breadth_state_v2 and
-    # realized_vol_21d is checked via all_names.
+    # volatility_state_v2 and breadth_state_v2 migrated to _FEATURE_SPECS
+    # (Tasks 2.5 and 2.6); specs always run before legacy builders so ordering
+    # is checked via all_names.
     assert all_names.index("volatility_state_v2") < all_names.index(
         "breadth_state_v2"
     )
     assert all_names.index("volatility_state_v2") < all_names.index(
         "realized_vol_21d"
     )
-    assert builder_names.index("breadth_state_v2") < builder_names.index(
+    assert all_names.index("breadth_state_v2") < all_names.index(
         "realized_vol_21d"
     )
 
