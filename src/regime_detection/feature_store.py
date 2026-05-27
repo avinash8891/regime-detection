@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from collections.abc import Callable
 from dataclasses import dataclass
 from typing import TypeVar
 
@@ -114,7 +113,6 @@ from regime_detection.inflation_growth import (
 )
 from regime_detection.feature_store_runtime import (
     FeatureAvailability,
-    FeatureAvailabilityPolicy,
     FeatureSpec,
     _Unavailable,
     _run_feature_specs,
@@ -196,20 +194,6 @@ def _require_feature(value: _T | None, name: str) -> _T:
     if value is None:
         raise RuntimeError(f"feature builder did not populate required feature: {name}")
     return value
-
-
-@dataclass(frozen=True)
-class _FeatureStoreBuilder:
-    name: str
-    build: Callable[[_FeatureStoreBuildState], None]
-
-
-def _run_feature_store_builders(
-    builders: tuple[_FeatureStoreBuilder, ...],
-    state: _FeatureStoreBuildState,
-) -> None:
-    for builder in builders:
-        builder.build(state)
 
 
 class FeatureStore(BaseModel):
@@ -1240,9 +1224,6 @@ _FEATURE_SPECS: tuple[FeatureSpec[object, _FeatureStoreBuildState], ...] = (
 )
 
 
-_FEATURE_STORE_BUILDERS: tuple[_FeatureStoreBuilder, ...] = ()
-
-
 def _missing_macro_keys(
     macro_series: dict[str, pd.Series] | None, required_keys: tuple[str, ...]
 ) -> tuple[str, ...]:
@@ -1266,40 +1247,6 @@ def _missing_sector_inputs(state: _FeatureStoreBuildState) -> tuple[str, ...]:
     if not any(symbol in sector_closes for symbol in SECTOR_ETFS):
         return ("sector_etf_closes.any_sector_etf",)
     return ()
-
-
-def _availability(  # pyright: ignore[reportUnusedFunction]
-    *,
-    feature: str,
-    value: object | None,
-    policy: FeatureAvailabilityPolicy,
-    required_inputs: tuple[str, ...],
-    missing_inputs: tuple[str, ...],
-) -> FeatureAvailability:
-    if value is not None:
-        return FeatureAvailability(
-            feature=feature,
-            available=True,
-            policy=policy,
-            reason="populated",
-            required_inputs=required_inputs,
-        )
-    reason = "not_configured" if not missing_inputs else "missing_required_inputs"
-    return FeatureAvailability(
-        feature=feature,
-        available=False,
-        policy=policy,
-        reason=reason,
-        required_inputs=required_inputs,
-        missing_inputs=missing_inputs,
-    )
-
-
-def _build_feature_availability_report(
-    state: _FeatureStoreBuildState,
-) -> dict[str, FeatureAvailability]:
-    report: dict[str, FeatureAvailability] = {}
-    return report
 
 
 def build_feature_store(
@@ -1336,14 +1283,11 @@ def build_feature_store(
         central_bank_text_config=central_bank_text_config,
         news_sentiment_config=news_sentiment_config,
     )
-    spec_availability = _run_feature_specs(_FEATURE_SPECS, build_state)
-    _run_feature_store_builders(_FEATURE_STORE_BUILDERS, build_state)
-    legacy_availability = _build_feature_availability_report(build_state)
-    combined_availability = {**spec_availability, **legacy_availability}
+    availability = _run_feature_specs(_FEATURE_SPECS, build_state)
 
     return FeatureStore(
         spy_index=_as_datetime_index(spy_ohlcv.index),
-        availability=combined_availability,
+        availability=availability,
         trend_direction=_require_feature(
             build_state.trend_direction, "trend_direction"
         ),
