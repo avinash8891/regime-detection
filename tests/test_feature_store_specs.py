@@ -145,3 +145,23 @@ def test_news_sentiment_score_resolve_missing_config_returns_unavailable(
 def test_news_sentiment_score_spec_is_internal_report_false() -> None:
     spec = _spec_by_name("news_sentiment_score")
     assert spec.report is False
+
+
+def test_trend_direction_v2_resolve_missing_config_returns_unavailable(
+    v1_minimal_state: _FeatureStoreBuildState,
+) -> None:
+    """V1 context has no trend_direction_v2_config — resolve must report
+    trend_direction_v2_config as missing, matching legacy report."""
+    from regime_detection.feature_store_runtime import _Unavailable
+
+    spec = _spec_by_name("trend_direction_v2")
+    resolved = spec.resolve(v1_minimal_state)
+
+    assert isinstance(resolved, _Unavailable)
+    assert resolved.missing_inputs == ("trend_direction_v2_config",)
+
+
+def test_trend_direction_v2_spec_is_user_visible_report_true() -> None:
+    spec = _spec_by_name("trend_direction_v2")
+    assert spec.report is True
+    assert spec.required_inputs == ("trend_direction_v2_config", "spy_ohlcv.close")
