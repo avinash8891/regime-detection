@@ -128,13 +128,13 @@ def test_feature_specs_registry_preserves_required_ordering_invariants() -> None
     # realized_vol_21d and drawdown_63d must run before hmm/clustering/change_point
     # (those features read the intermediate series from state).
     for derived in ("hmm", "clustering", "change_point"):
-        assert spec_names.index("realized_vol_21d") < spec_names.index(derived), (
-            f"realized_vol_21d must precede {derived}"
-        )
+        assert spec_names.index("realized_vol_21d") < spec_names.index(
+            derived
+        ), f"realized_vol_21d must precede {derived}"
     for derived in ("hmm", "clustering"):
-        assert spec_names.index("drawdown_63d") < spec_names.index(derived), (
-            f"drawdown_63d must precede {derived}"
-        )
+        assert spec_names.index("drawdown_63d") < spec_names.index(
+            derived
+        ), f"drawdown_63d must precede {derived}"
 
     # network_fragility and trend_direction_v2 must run before clustering
     # (clustering reads both in its resolve).
