@@ -1,0 +1,24 @@
+scripts/_v2_calibration_helpers.py
+  s_d6d2adedfc14ba::t_2b06426c4ae4d8 25-27,29-34,446-457
+tests/test_v2_calibration_helpers.py
+  s_d6d2adedfc14ba::t_b3fc67ed12c183 27
+  s_d6d2adedfc14ba::t_7f8b0d41f1e914 9,15-26,28-35
+scripts/run_v2_calibration.py
+  s_d6d2adedfc14ba::t_f20c41e7b116af 52,340
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "6653bb67f9318be703a85316ba017dacb5c758b0",
+  "prompts": {},
+  "sessions": {
+    "s_d6d2adedfc14ba": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019e6afe-8238-7b50-b7cc-3811ee57b236",
+        "model": "gpt-5.5"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}
