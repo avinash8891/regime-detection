@@ -68,6 +68,7 @@ target-version = ["py311"]
 [tool.pyright]
 typeCheckingMode = "strict"
 include = [
+  "src/regime_detection/engine.py",
   "src/regime_detection/observability.py",
   "src/regime_detection/loaders.py",
   "scripts/detect_flaky_tests.py",

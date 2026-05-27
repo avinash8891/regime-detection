@@ -17,6 +17,7 @@ def test_pyright_strict_slice_covers_runtime_and_guardrail_scripts() -> None:
     include_paths = set(payload["tool"]["pyright"]["include"])
 
     assert {
+        "src/regime_detection/engine.py",
         "src/regime_detection/observability.py",
         "src/regime_detection/loaders.py",
         "scripts/detect_flaky_tests.py",

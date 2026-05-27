@@ -47,7 +47,7 @@ def _ignore_legacy_breadth_data(breadth_data: pd.DataFrame | None) -> None:
     _ = breadth_data
 
 
-def _require_event_calendar(event_calendar: pd.DataFrame | None) -> pd.DataFrame:
+def _require_event_calendar(event_calendar: object | None) -> pd.DataFrame:
     if event_calendar is None:
         raise ValueError(
             "event_calendar is required for RegimeEngine classification. "
