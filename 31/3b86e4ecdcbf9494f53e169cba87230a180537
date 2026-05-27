@@ -1,0 +1,19 @@
+tests/test_v2_feature_store_and_axis_seams.py
+  s_e56f562e3c7a2d::t_1e0f7f46d4bff7 221,227-229
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "313b86e4ecdcbf9494f53e169cba87230a180537",
+  "prompts": {},
+  "sessions": {
+    "s_e56f562e3c7a2d": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019e693d-bf85-7e63-9c79-7faf48b110cb",
+        "model": "gpt-5.5"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}
