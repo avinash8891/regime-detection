@@ -95,15 +95,21 @@ def sha256_file(path: Path) -> str:
     return h.hexdigest()
 
 
-def ensure_shadow_layout(output_root: Path) -> dict[str, Path]:
+def ensure_shadow_layout(
+    output_root: Path, *, db_name: str = "regime_shadow.db", include_reports: bool = False
+) -> dict[str, Path]:
     paths = {
-        "db": output_root / "regime_shadow.db",
+        "db": output_root / db_name,
         "outputs": output_root / "outputs",
         "input_archives": output_root / "input_archives",
     }
+    if include_reports:
+        paths["reports"] = output_root / "reports"
     output_root.mkdir(parents=True, exist_ok=True)
     paths["outputs"].mkdir(parents=True, exist_ok=True)
     paths["input_archives"].mkdir(parents=True, exist_ok=True)
+    if include_reports:
+        paths["reports"].mkdir(parents=True, exist_ok=True)
     return paths
 
 

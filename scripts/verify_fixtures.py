@@ -8,11 +8,10 @@ of classification logic — the engine IS the source of truth.
 
 from __future__ import annotations
 
-import hashlib
 import json
 import subprocess
 import sys
-from datetime import date, datetime, timezone
+from datetime import date, datetime
 from pathlib import Path
 from typing import Any
 
@@ -30,6 +29,9 @@ if str(SCRIPT_DIR) not in sys.path:
 
 from regime_detection.engine import RegimeEngine  # noqa: E402
 from regime_detection.loaders import load_event_calendar  # noqa: E402
+from regime_detection.shadow_storage import utc_iso_now  # noqa: E402
+from regime_data_fetch.artifact_store import sha256_file as _sha256_file  # noqa: E402
+from regime_data_fetch.cli_common import parse_date  # noqa: E402
 
 EVENT_CALENDAR_PATH = REPO_ROOT / "tests" / "fixtures" / "events" / "us_events.yaml"
 
@@ -163,18 +165,6 @@ REPORT_PATH = (
 )
 
 
-def _sha256_file(path: Path) -> str:
-    h = hashlib.sha256()
-    with path.open("rb") as f:
-        for chunk in iter(lambda: f.read(1024 * 1024), b""):
-            h.update(chunk)
-    return h.hexdigest()
-
-
-def _utc_iso_now() -> str:
-    return datetime.now(timezone.utc).replace(microsecond=0).isoformat()
-
-
 def _git_head_sha() -> str:
     try:
         out = subprocess.check_output(["git", "rev-parse", "HEAD"], text=True).strip()
@@ -186,15 +176,19 @@ def _git_head_sha() -> str:
 
 
 def _load_market_data() -> pd.DataFrame:
+    parquet_path = RAW_DIR / "market_data.parquet"
+    if parquet_path.exists():
+        df = pd.read_parquet(parquet_path)
+        if "VIX" not in set(df["symbol"]):
+            raise RuntimeError("market_data.parquet must include real VIX rows")
+        return df
     spy = pd.read_csv(RAW_DIR / "SPY.csv", parse_dates=["date"])
     rsp = pd.read_csv(RAW_DIR / "RSP.csv", parse_dates=["date"])
-    vixy = pd.read_csv(RAW_DIR / "VIXY.csv", parse_dates=["date"])
+    vix = pd.read_csv(RAW_DIR / "VIX.csv", parse_dates=["date"])
     spy["symbol"] = "SPY"
     rsp["symbol"] = "RSP"
-    vixy["symbol"] = "VIXY"
-    vix = vixy.copy()
     vix["symbol"] = "VIX"
-    return pd.concat([spy, rsp, vix, vixy], ignore_index=True)
+    return pd.concat([spy, rsp, vix], ignore_index=True)
 
 
 def _serialize_scalar(x: Any) -> Any:
@@ -223,7 +217,7 @@ def _classify_all_intents(
     market_data: pd.DataFrame,
 ) -> dict[date, Any]:
     engine = RegimeEngine()
-    intent_dates = sorted(date.fromisoformat(item["intent_date"]) for item in INTENTS)
+    intent_dates = sorted(parse_date(item["intent_date"]) for item in INTENTS)
     end = max(intent_dates)
     earliest = min(intent_dates)
     span_days = (end - earliest).days
@@ -243,7 +237,7 @@ def _pick_fixture_date(
     intent: dict[str, str],
     search_window_trading_days: int,
 ) -> date:
-    base = date.fromisoformat(intent_date)
+    base = parse_date(intent_date)
     available = sorted(by_date.keys())
     base_idx = next((i for i, d in enumerate(available) if d >= base), len(available))
     lo = max(0, base_idx - search_window_trading_days)
@@ -318,14 +312,10 @@ def generate_report(
     market_data = _load_market_data()
     by_date = _classify_all_intents(market_data)
 
-    generated_at = generated_at_utc or _utc_iso_now()
+    generated_at = generated_at_utc or utc_iso_now()
     generated_by = generated_by_commit or _git_head_sha()
 
-    raw_hashes = {
-        "SPY.csv": _sha256_file(RAW_DIR / "SPY.csv"),
-        "RSP.csv": _sha256_file(RAW_DIR / "RSP.csv"),
-        "VIXY.csv": _sha256_file(RAW_DIR / "VIXY.csv"),
-    }
+    raw_hashes = {"market_data.parquet": _sha256_file(RAW_DIR / "market_data.parquet")}
 
     report_rows: list[dict[str, Any]] = []
 
@@ -350,7 +340,7 @@ def generate_report(
             "transition_risk": _get_axis_label(out, "transition_risk"),
         }
 
-        base = date.fromisoformat(intent_date)
+        base = parse_date(intent_date)
         delta_calendar_days = abs((pick - base).days)
 
         mismatches = {

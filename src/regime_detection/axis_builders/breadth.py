@@ -46,6 +46,64 @@ def _derive_breadth_active_label_source(
     return "etf_proxy"
 
 
+def _build_breadth_output(
+    *,
+    mode: str,
+    raw: str,
+    stable: str,
+    active: str,
+    is_frozen: bool,
+    evidence: dict[str, object],
+    data_quality: DataQuality,
+    active_label_source: str,
+    default_deescalation_days: int,
+) -> BreadthStateOutput:
+    if is_frozen:
+        return BreadthStateOutput(
+            mode=mode,
+            raw_label="unknown",
+            stable_label=stable,
+            active_label=active,
+            evidence={
+                "reason": data_quality.reason,
+                "proxy": "RSP/SPY",
+                "row_provenance_mode": mode,
+                "active_label_source": "data_quality_freeze",
+                "data_quality_freeze": True,
+            },
+            data_quality=data_quality,
+        )
+    if quality_forces_unknown(data_quality):
+        return BreadthStateOutput(
+            mode=mode,
+            raw_label=raw,
+            stable_label="unknown",
+            active_label="unknown",
+            evidence={
+                "reason": data_quality.reason,
+                "proxy": "RSP/SPY",
+                "row_provenance_mode": mode,
+                "active_label_source": active_label_source,
+            },
+            data_quality=data_quality,
+        )
+    return BreadthStateOutput(
+        mode=mode,
+        raw_label=raw,
+        stable_label=stable,
+        active_label=active,
+        evidence={
+            "proxy": "RSP/SPY",
+            "rule_evidence": evidence,
+            "risk_rank": BREADTH_RISK_RANK,
+            "deescalation_days": default_deescalation_days,
+            "row_provenance_mode": mode,
+            "active_label_source": active_label_source,
+        },
+        data_quality=data_quality,
+    )
+
+
 def build_breadth_axis_series(
     context: MarketContext, feature_store: FeatureStore
 ) -> AxisSeriesResult:
@@ -142,51 +200,17 @@ def build_breadth_axis_series(
             stable=stable,
             active=active,
         )
-        if is_frozen:
-            output = BreadthStateOutput(
-                mode=mode,
-                raw_label="unknown",
-                stable_label=stable,
-                active_label=active,
-                evidence={
-                    "reason": data_quality.reason,
-                    "proxy": "RSP/SPY",
-                    "row_provenance_mode": mode,
-                    "active_label_source": "data_quality_freeze",
-                    "data_quality_freeze": True,
-                },
-                data_quality=data_quality,
-            )
-        elif quality_forces_unknown(data_quality):
-            output = BreadthStateOutput(
-                mode=mode,
-                raw_label=raw,
-                stable_label="unknown",
-                active_label="unknown",
-                evidence={
-                    "reason": data_quality.reason,
-                    "proxy": "RSP/SPY",
-                    "row_provenance_mode": mode,
-                    "active_label_source": active_label_source,
-                },
-                data_quality=data_quality,
-            )
-        else:
-            output = BreadthStateOutput(
-                mode=mode,
-                raw_label=raw,
-                stable_label=stable,
-                active_label=active,
-                evidence={
-                    "proxy": "RSP/SPY",
-                    "rule_evidence": evidence,
-                    "risk_rank": BREADTH_RISK_RANK,
-                    "deescalation_days": hysteresis_config.default_deescalation_days,
-                    "row_provenance_mode": mode,
-                    "active_label_source": active_label_source,
-                },
-                data_quality=data_quality,
-            )
+        output = _build_breadth_output(
+            mode=mode,
+            raw=raw,
+            stable=stable,
+            active=active,
+            is_frozen=is_frozen,
+            evidence=evidence,
+            data_quality=data_quality,
+            active_label_source=active_label_source,
+            default_deescalation_days=hysteresis_config.default_deescalation_days,
+        )
         outputs_by_date[day] = output
         stable_by_date[day] = output.stable_label
         active_by_date[day] = output.active_label

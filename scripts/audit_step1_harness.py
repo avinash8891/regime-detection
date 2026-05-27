@@ -31,7 +31,6 @@ global rule "Instrumentation must NEVER block business logic."
 
 from __future__ import annotations
 
-import hashlib
 import json
 import logging
 import subprocess
@@ -42,6 +41,8 @@ from typing import TYPE_CHECKING, Sequence
 
 if TYPE_CHECKING:
     from regime_data_fetch.materialization import MaterializedArtifact
+
+from regime_data_fetch.artifact_store import sha256_file as _sha256_file
 
 logger = logging.getLogger(__name__)
 
@@ -277,14 +278,6 @@ def _hash_parallel(repo_root: Path, files: list[Path]) -> dict[str, str]:
     with ThreadPoolExecutor(max_workers=_DEFAULT_HASH_WORKERS) as pool:
         digests = list(pool.map(_sha256_file, files))
     return {str(f.relative_to(repo_root)): d for f, d in zip(files, digests)}
-
-
-def _sha256_file(path: Path) -> str:
-    hasher = hashlib.sha256()
-    with path.open("rb") as handle:
-        for chunk in iter(lambda: handle.read(65536), b""):
-            hasher.update(chunk)
-    return hasher.hexdigest()
 
 
 if __name__ == "__main__":
