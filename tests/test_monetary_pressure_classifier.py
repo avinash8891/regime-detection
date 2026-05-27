@@ -462,11 +462,14 @@ def test_engine_classify_window_populates_monetary_pressure_state(
     usd = _usd_series(index=index, base=100.0, seed=_SEED + 3)
     macro = {"2y_yield": dgs2, "10y_yield": dgs10, "broad_usd_index": usd}
     kwargs = synthetic_v2_kwargs_for_market_data(market_data)
+    config = kwargs["config"].model_copy(
+        update={"credit_funding": None, "inflation_growth": None}
+    )
     timeline = RegimeEngine().classify_window(
         end_date=_LAST_SESSION.date(),
         market_data=market_data,
         lookback_days=50,
-        config=kwargs["config"],
+        config=config,
         event_calendar=kwargs["event_calendar"],
         sector_etf_closes=kwargs["sector_etf_closes"],
         cross_asset_closes=kwargs["cross_asset_closes"],
@@ -493,7 +496,7 @@ def test_engine_classify_window_raises_when_monetary_pressure_state_is_absent(
     kwargs = synthetic_v2_kwargs_for_market_data(market_data)
     kwargs["macro_series"] = None
 
-    with pytest.raises(RuntimeError, match="monetary_pressure_state"):
+    with pytest.raises(ValueError) as excinfo:
         RegimeEngine().classify_window(
             end_date=_LAST_SESSION.date(),
             market_data=market_data,
@@ -506,6 +509,9 @@ def test_engine_classify_window_raises_when_monetary_pressure_state_is_absent(
             constituent_ohlcv=kwargs["constituent_ohlcv"],
             macro_series=kwargs["macro_series"],
         )
+    message = str(excinfo.value)
+    assert "ClassifyRequest missing configured V2 inputs" in message
+    assert "monetary_pressure_state: macro_series.2y_yield" in message
 
 
 def test_engine_classify_window_monetary_pressure_state_none_in_pure_v1_mode():

@@ -40,11 +40,13 @@ def test_fixture_verification_legacy_path_fails_loudly_without_v2_transition_inp
     spec.loader.exec_module(mod)  # type: ignore[attr-defined]
     generate_report = getattr(mod, "generate_report")
 
-    with pytest.raises(RuntimeError, match="transition_risk requires score inputs"):
+    with pytest.raises(ValueError) as excinfo:
         generate_report(
             generated_at_utc="2026-05-19T00:00:00+00:00",
             generated_by_commit="test_determinism",
         )
+    message = str(excinfo.value)
+    assert "ClassifyRequest missing configured V2 inputs" in message
 
 
 def test_fixture_verification_report_includes_rich_transition_evidence(

@@ -10,6 +10,7 @@ from contextlib import closing
 
 import pandas as pd
 import pytest
+import yaml
 
 from regime_detection.fragility_universe import SECTOR_ETFS
 
@@ -33,12 +34,34 @@ def _write_sector_pit_intervals(path: Path) -> Path:
     return path
 
 
+def _write_shadow_test_config(tmp_path: Path) -> Path:
+    """Copy core3-v2-fast.yaml into tmp_path, stripped of credit_funding and
+    inflation_growth.
+
+    The shadow runner has no parameter for loading macro_series or full
+    cross_asset_closes from disk; the canonical fixture (`v2_daily_ohlcv.csv`)
+    is OHLCV-only. When credit_funding and inflation_growth are configured,
+    the ClassifyRequest validator (engine.py:259) refuses to run without
+    macro keys (sofr/iorb/nfci/cpi_all_items/pmi_manufacturing) and extra
+    cross_asset closes (KRE/XLY/XLI/XLP/XLU) that the runner can't supply.
+    Stripping these two axes keeps the shadow-runner tests scoped to the
+    artifact/ledger/duplicate-rejection behavior they actually exercise."""
+    repo_root = Path(__file__).resolve().parents[1]
+    src = repo_root / "tests" / "fixtures" / "configs" / "core3-v2-fast.yaml"
+    config = yaml.safe_load(src.read_text())
+    config.pop("credit_funding", None)
+    config.pop("inflation_growth", None)
+    dst = tmp_path / "shadow_test_config.yaml"
+    dst.write_text(yaml.safe_dump(config))
+    return dst
+
+
 def test_shadow_runner_writes_expected_artifacts_and_ledger(tmp_path: Path) -> None:
     repo_root = Path(__file__).resolve().parents[1]
     v2_daily_path = repo_root / "tests" / "fixtures" / "raw" / "v2" / "daily_ohlcv.csv"
     market_data_path = v2_daily_path
     event_calendar_path = repo_root / "tests" / "fixtures" / "events" / "us_events.yaml"
-    config_path = repo_root / "tests" / "fixtures" / "configs" / "core3-v2-fast.yaml"
+    config_path = _write_shadow_test_config(tmp_path)
     out_root = tmp_path / "shadow_run"
     pit_path = _write_sector_pit_intervals(tmp_path / "pit.csv")
 
@@ -102,7 +125,7 @@ def test_shadow_runner_archives_inputs_and_inserts_in_progress_before_classify(
     v2_daily_path = repo_root / "tests" / "fixtures" / "raw" / "v2" / "daily_ohlcv.csv"
     market_data_path = v2_daily_path
     event_calendar_path = repo_root / "tests" / "fixtures" / "events" / "us_events.yaml"
-    config_path = repo_root / "tests" / "fixtures" / "configs" / "core3-v2-fast.yaml"
+    config_path = _write_shadow_test_config(tmp_path)
     out_root = tmp_path / "shadow_run"
     pit_path = _write_sector_pit_intervals(tmp_path / "pit.csv")
 
@@ -191,7 +214,7 @@ def test_shadow_runner_rejects_duplicate_versioned_run_and_non_trading_day(
     v2_daily_path = repo_root / "tests" / "fixtures" / "raw" / "v2" / "daily_ohlcv.csv"
     market_data_path = v2_daily_path
     event_calendar_path = repo_root / "tests" / "fixtures" / "events" / "us_events.yaml"
-    config_path = repo_root / "tests" / "fixtures" / "configs" / "core3-v2-fast.yaml"
+    config_path = _write_shadow_test_config(tmp_path)
     out_root = tmp_path / "shadow_run"
     pit_path = _write_sector_pit_intervals(tmp_path / "pit.csv")
 

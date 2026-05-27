@@ -919,6 +919,7 @@ def test_regime_output_carries_credit_funding_state_when_configured(
         )
         for symbol, series in context.sector_etf_closes.items()
     }
+    config = context.config.model_copy(update={"inflation_growth": None})
     timeline = engine.classify_window(
         end_date=context.end_date,
         market_data=pd.DataFrame(
@@ -948,7 +949,7 @@ def test_regime_output_carries_credit_funding_state_when_configured(
             ]
         ),
         lookback_days=1,
-        config=context.config,
+        config=config,
         vix_data=pd.DataFrame(
             {"date": [ts.date() for ts in context.spy_ohlcv.index], "close": 20.0}
         ),

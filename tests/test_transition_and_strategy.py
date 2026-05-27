@@ -88,12 +88,15 @@ def test_transition_risk_golden_fixture_without_v2_score_inputs_fails_loudly(
 ) -> None:
     as_of = _golden_date("early2024_bull_lowvol")
     engine = RegimeEngine()
-    with pytest.raises(RuntimeError, match="transition_risk requires score inputs"):
+    with pytest.raises(ValueError) as excinfo:
         engine.classify(
             as_of_date=as_of,
             market_data=market_df_for_asof(as_of),
             event_calendar=event_calendar_df,
         )
+    message = str(excinfo.value)
+    assert "ClassifyRequest missing configured V2 inputs" in message
+    assert "network_fragility: sector_etf_closes" in message
 
 
 def test_strategy_response_de_risks_crisis_final_state() -> None:

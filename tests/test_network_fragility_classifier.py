@@ -583,11 +583,14 @@ def test_engine_classify_window_emits_network_fragility_labels_on_full_universe(
     # by slice_context_to_recent_sessions. We need that working window to
     # exceed the 504d v2 percentile cold-start with margin so the rules fire
     # on multiple post-warmup days.
+    config = context.config.model_copy(
+        update={"credit_funding": None, "inflation_growth": None}
+    )
     timeline = RegimeEngine().classify_window(
         end_date=_LAST_SESSION.date(),
         market_data=market_data,
         lookback_days=600,
-        config=context.config,
+        config=config,
         event_calendar=pd.DataFrame(columns=["date", "market", "type", "importance"]),
         sector_etf_closes=sector_closes,
         cross_asset_closes=cross_asset_closes,
@@ -632,7 +635,7 @@ def test_engine_classify_window_forces_unknown_when_universe_data_missing():
     market_data = _market_data_from_prices(
         _synthetic_universe_prices(index=_bdate_index())
     )
-    with pytest.raises(RuntimeError, match="transition_risk requires score inputs"):
+    with pytest.raises(ValueError) as excinfo:
         RegimeEngine().classify_window(
             end_date=_LAST_SESSION.date(),
             market_data=market_data,
@@ -643,6 +646,9 @@ def test_engine_classify_window_forces_unknown_when_universe_data_missing():
                 columns=["date", "market", "type", "importance"]
             ),
         )
+    message = str(excinfo.value)
+    assert "ClassifyRequest missing configured V2 inputs" in message
+    assert "network_fragility: sector_etf_closes" in message
 
 
 # ---------- Slice-1 cleanup: I1 + I2 regression tests ------------------------

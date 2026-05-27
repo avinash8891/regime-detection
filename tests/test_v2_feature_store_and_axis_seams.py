@@ -218,12 +218,15 @@ def test_timeline_emits_network_fragility_unknown_in_pure_v1_mode(
 ) -> None:
     """Default V2 timeline fails loudly when required V2 inputs are absent."""
     as_of = date(2023, 12, 14)
-    with pytest.raises(RuntimeError, match="transition_risk requires score inputs"):
+    with pytest.raises(ValueError) as excinfo:
         RegimeEngine().classify(
             as_of_date=as_of,
             market_data=market_df_for_asof(as_of),
             event_calendar=event_calendar_df,
         )
+    message = str(excinfo.value)
+    assert "ClassifyRequest missing configured V2 inputs" in message
+    assert "network_fragility: sector_etf_closes" in message
 
 
 def test_timeline_pulls_network_fragility_from_axis_bundle_when_sector_data_present(

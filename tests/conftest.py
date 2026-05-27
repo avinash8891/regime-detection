@@ -732,9 +732,13 @@ def real_v2_classify_window_2026_05_12(
     sector_etf_closes = {
         symbol: v2_close_series_by_symbol[symbol] for symbol in SECTOR_ETFS
     }
+    # Include KRE (credit_funding) and XLY/XLI/XLP/XLU (inflation_growth) so the
+    # ClassifyRequest validator at engine.py:259 sees all required cross_asset
+    # inputs when those axes are configured. Without these, fixture build fails
+    # with ValueError before the engine can classify.
     cross_asset_closes = {
         symbol: v2_close_series_by_symbol[symbol]
-        for symbol in set(CROSS_ASSET_SYMBOLS) | {"KRE"}
+        for symbol in set(CROSS_ASSET_SYMBOLS) | {"KRE", "XLY", "XLI", "XLP", "XLU"}
     }
     if worker_id == "master":
         return _build_real_v2_classify_window(
