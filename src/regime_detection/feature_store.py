@@ -789,6 +789,19 @@ def _resolve_volatility(
     }
 
 
+def _build_breadth(spy_close: pd.Series, rsp_close: pd.Series) -> BreadthFeatures:
+    return compute_breadth_features(spy_close=spy_close, rsp_close=rsp_close)
+
+
+def _resolve_breadth(
+    state: _FeatureStoreBuildState,
+) -> dict[str, object]:
+    return {
+        "spy_close": state.spy_close,
+        "rsp_close": state.context.rsp_close.reindex(state.spy_ohlcv.index),
+    }
+
+
 _FEATURE_SPECS: tuple[FeatureSpec[object, _FeatureStoreBuildState], ...] = (
     FeatureSpec(
         name="trend_direction",
@@ -813,6 +826,14 @@ _FEATURE_SPECS: tuple[FeatureSpec[object, _FeatureStoreBuildState], ...] = (
         resolve=_resolve_volatility,
         build=_build_volatility,
         store=lambda s, v: setattr(s, "volatility", v),
+    ),
+    FeatureSpec(
+        name="breadth",
+        policy="raise",
+        required_inputs=("spy_ohlcv.close", "rsp_close"),
+        resolve=_resolve_breadth,
+        build=_build_breadth,
+        store=lambda s, v: setattr(s, "breadth", v),
     ),
 )
 

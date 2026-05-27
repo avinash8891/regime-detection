@@ -79,3 +79,17 @@ def test_volatility_resolve_returns_close_and_vix_proxy(
     assert set(resolved.keys()) == {"close", "vix_proxy_close"}
     assert resolved["close"] is v1_minimal_state.spy_close
     assert resolved["vix_proxy_close"] is v1_minimal_state.context.vix_proxy_close
+
+
+def test_breadth_resolve_returns_spy_close_and_aligned_rsp(
+    v1_minimal_state: _FeatureStoreBuildState,
+) -> None:
+    spec = _spec_by_name("breadth")
+    resolved = spec.resolve(v1_minimal_state)
+
+    assert isinstance(resolved, dict)
+    assert set(resolved.keys()) == {"spy_close", "rsp_close"}
+    assert resolved["spy_close"] is v1_minimal_state.spy_close
+    # rsp_close must be reindexed onto spy_ohlcv.index — matches legacy
+    # _build_breadth_feature behavior.
+    assert list(resolved["rsp_close"].index) == list(v1_minimal_state.spy_ohlcv.index)
