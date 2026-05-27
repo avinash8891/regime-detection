@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Literal, TypeVar
+from typing import TypeVar
 
 import pandas as pd
 from pydantic import BaseModel, ConfigDict
@@ -110,7 +110,10 @@ from regime_detection.inflation_growth import (
     XLY_KEY as _IG_XLY_KEY,
     compute_inflation_growth_features,
 )
-from regime_detection.feature_store_runtime import FeatureAvailability
+from regime_detection.feature_store_runtime import (
+    FeatureAvailability,
+    FeatureAvailabilityPolicy,
+)
 
 __all__ = [
     "BreadthV2Features",
@@ -132,7 +135,6 @@ __all__ = [
 
 _FRED_DGS2_KEY = "2y_yield"
 _T = TypeVar("_T")
-FeatureAvailabilityPolicy = Literal["raise", "none", "unknown", "degraded"]
 
 
 def _as_datetime_index(index: pd.Index) -> pd.DatetimeIndex:
@@ -203,26 +205,6 @@ def _run_feature_store_builders(
 ) -> None:
     for builder in builders:
         builder.build(state)
-
-
-class FeatureAvailability(BaseModel):
-    """Declared availability result for one feature seam.
-
-    `available=False` is not enough for operators: the report has to say
-    whether the absence is expected (`policy="none"`), should raise at the
-    classifier boundary (`policy="raise"`), should classify unknown, or should
-    degrade. Missing inputs are stable machine-readable names from the seam
-    contract, not prose parsed out of comments.
-    """
-
-    model_config = ConfigDict(extra="forbid")
-
-    feature: str
-    available: bool
-    policy: FeatureAvailabilityPolicy
-    reason: str
-    required_inputs: tuple[str, ...] = ()
-    missing_inputs: tuple[str, ...] = ()
 
 
 class FeatureStore(BaseModel):
