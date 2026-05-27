@@ -184,3 +184,22 @@ def test_network_fragility_spec_required_inputs_matches_legacy() -> None:
     assert spec.required_inputs == ("sector_etf_closes",)
     assert spec.policy == "none"
     assert spec.report is True
+
+
+def test_volatility_state_v2_resolve_missing_config_returns_unavailable(
+    v1_minimal_state: _FeatureStoreBuildState,
+) -> None:
+    from regime_detection.feature_store_runtime import _Unavailable
+
+    spec = _spec_by_name("volatility_state_v2")
+    resolved = spec.resolve(v1_minimal_state)
+
+    assert isinstance(resolved, _Unavailable)
+    assert resolved.missing_inputs == ("volatility_state_v2_config",)
+
+
+def test_volatility_state_v2_spec_required_inputs_matches_legacy() -> None:
+    spec = _spec_by_name("volatility_state_v2")
+    assert spec.required_inputs == ("volatility_state_v2_config", "spy_ohlcv.ohlc")
+    assert spec.policy == "none"
+    assert spec.report is True

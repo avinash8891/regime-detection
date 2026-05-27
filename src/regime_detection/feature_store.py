@@ -359,35 +359,6 @@ def _build_news_sentiment_score_series(
     return score
 
 
-def _build_volatility_state_v2_feature(state: _FeatureStoreBuildState) -> None:
-    if state.volatility_state_v2_config is None:
-        state.volatility_state_v2 = None
-        return
-    event_window = (
-        compute_event_window_just_passed(
-            normalized_event_calendar=state.context.normalized_event_calendar,
-            sessions=tuple(
-                ts.date() for ts in _as_datetime_index(state.spy_close.index)
-            ),
-            trailing_sessions=(
-                state.volatility_state_v2_config.rules.vol_crush_event_window_trailing_sessions
-            ),
-        )
-        if state.context.normalized_event_calendar is not None
-        else None
-    )
-    state.volatility_state_v2 = compute_volatility_v2_features(
-        open_=_series_column(state.spy_ohlcv, "open"),
-        high=_series_column(state.spy_ohlcv, "high"),
-        low=_series_column(state.spy_ohlcv, "low"),
-        close=state.spy_close,
-        config=state.volatility_state_v2_config,
-        rules_config=state.volatility_state_v2_config.rules,
-        implied_vol_30d=state.context.implied_vol_30d,
-        event_window_just_passed=event_window,
-    )
-
-
 def _build_breadth_state_v2_feature(state: _FeatureStoreBuildState) -> None:
     if state.breadth_state_v2_config is None or state.context.sector_etf_closes is None:
         state.breadth_state_v2 = None
@@ -812,6 +783,55 @@ def _resolve_network_fragility(
     }
 
 
+def _build_volatility_state_v2(
+    open_: pd.Series,
+    high: pd.Series,
+    low: pd.Series,
+    close: pd.Series,
+    config: VolatilityV2Config,
+    implied_vol_30d: pd.Series | None,
+    event_window_just_passed: pd.Series | None,
+) -> VolatilityV2Features:
+    return compute_volatility_v2_features(
+        open_=open_,
+        high=high,
+        low=low,
+        close=close,
+        config=config,
+        rules_config=config.rules,
+        implied_vol_30d=implied_vol_30d,
+        event_window_just_passed=event_window_just_passed,
+    )
+
+
+def _resolve_volatility_state_v2(
+    state: _FeatureStoreBuildState,
+) -> dict[str, object] | _Unavailable:
+    if state.volatility_state_v2_config is None:
+        return _Unavailable(missing_inputs=("volatility_state_v2_config",))
+    config = state.volatility_state_v2_config
+    event_window = (
+        compute_event_window_just_passed(
+            normalized_event_calendar=state.context.normalized_event_calendar,
+            sessions=tuple(
+                ts.date() for ts in _as_datetime_index(state.spy_close.index)
+            ),
+            trailing_sessions=config.rules.vol_crush_event_window_trailing_sessions,
+        )
+        if state.context.normalized_event_calendar is not None
+        else None
+    )
+    return {
+        "open_": _series_column(state.spy_ohlcv, "open"),
+        "high": _series_column(state.spy_ohlcv, "high"),
+        "low": _series_column(state.spy_ohlcv, "low"),
+        "close": state.spy_close,
+        "config": config,
+        "implied_vol_30d": state.context.implied_vol_30d,
+        "event_window_just_passed": event_window,
+    }
+
+
 _FEATURE_SPECS: tuple[FeatureSpec[object, _FeatureStoreBuildState], ...] = (
     FeatureSpec(
         name="trend_direction",
@@ -887,11 +907,18 @@ _FEATURE_SPECS: tuple[FeatureSpec[object, _FeatureStoreBuildState], ...] = (
         build=_build_network_fragility,
         store=lambda s, v: setattr(s, "network_fragility", v),
     ),
+    FeatureSpec(
+        name="volatility_state_v2",
+        policy="none",
+        required_inputs=("volatility_state_v2_config", "spy_ohlcv.ohlc"),
+        resolve=_resolve_volatility_state_v2,
+        build=_build_volatility_state_v2,
+        store=lambda s, v: setattr(s, "volatility_state_v2", v),
+    ),
 )
 
 
 _FEATURE_STORE_BUILDERS: tuple[_FeatureStoreBuilder, ...] = (
-    _FeatureStoreBuilder("volatility_state_v2", _build_volatility_state_v2_feature),
     _FeatureStoreBuilder("breadth_state_v2", _build_breadth_state_v2_feature),
     _FeatureStoreBuilder("volume_liquidity_v2", _build_volume_liquidity_v2_feature),
     _FeatureStoreBuilder("monetary", _build_monetary_feature),
@@ -1020,17 +1047,6 @@ def _build_feature_availability_report(
         ) + _missing_macro_keys(state.context.macro_series, tuple(_IG_MACRO_KEYS))
 
     report = {
-        "volatility_state_v2": _availability(
-            feature="volatility_state_v2",
-            value=state.volatility_state_v2,
-            policy="none",
-            required_inputs=("volatility_state_v2_config", "spy_ohlcv.ohlc"),
-            missing_inputs=(
-                ()
-                if state.volatility_state_v2_config is not None
-                else ("volatility_state_v2_config",)
-            ),
-        ),
         "breadth_state_v2": _availability(
             feature="breadth_state_v2",
             value=state.breadth_state_v2,
