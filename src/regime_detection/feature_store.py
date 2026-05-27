@@ -113,6 +113,7 @@ from regime_detection.inflation_growth import (
 from regime_detection.feature_store_runtime import (
     FeatureAvailability,
     FeatureAvailabilityPolicy,
+    FeatureSpec,
 )
 
 __all__ = [
@@ -716,6 +717,31 @@ def _build_change_point_feature(state: _FeatureStoreBuildState) -> None:
         realized_vol_21d=state.realized_vol_21d,
         config=state.context.config.change_point,
     )
+
+
+# --- New spec-based builders (PR 1) ------------------------------------------
+
+
+def _build_trend_direction(spy_close: pd.Series) -> TrendDirectionFeatures:
+    return compute_trend_direction_features(spy_close)
+
+
+def _resolve_trend_direction(
+    state: _FeatureStoreBuildState,
+) -> dict[str, object]:
+    return {"spy_close": state.spy_close}
+
+
+_FEATURE_SPECS: tuple[FeatureSpec[object, _FeatureStoreBuildState], ...] = (
+    FeatureSpec(
+        name="trend_direction",
+        policy="raise",
+        required_inputs=("spy_ohlcv.close",),
+        resolve=_resolve_trend_direction,
+        build=_build_trend_direction,
+        store=lambda s, v: setattr(s, "trend_direction", v),
+    ),
+)
 
 
 _FEATURE_STORE_BUILDERS: tuple[_FeatureStoreBuilder, ...] = (
