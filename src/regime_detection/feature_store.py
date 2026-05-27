@@ -114,6 +114,7 @@ from regime_detection.feature_store_runtime import (
     FeatureAvailability,
     FeatureAvailabilityPolicy,
     FeatureSpec,
+    _run_feature_specs,
 )
 
 __all__ = [
@@ -372,10 +373,6 @@ def _build_news_sentiment_score_series(
     return score
 
 
-def _build_trend_direction_feature(state: _FeatureStoreBuildState) -> None:
-    state.trend_direction = compute_trend_direction_features(state.spy_close)
-
-
 def _build_sentiment_score_feature(state: _FeatureStoreBuildState) -> None:
     state.sentiment_score = _build_sentiment_score_series(
         aaii_sentiment=state.context.aaii_sentiment,
@@ -401,53 +398,6 @@ def _build_trend_direction_v2_feature(state: _FeatureStoreBuildState) -> None:
         sentiment_score=state.sentiment_score,
         news_sentiment_score=state.news_sentiment_score,
     )
-
-
-def _build_trend_character_feature(state: _FeatureStoreBuildState) -> None:
-    tc_v2 = state.context.config.trend_character_v2
-    volume = (
-        _series_column(state.spy_ohlcv, "volume")
-        if "volume" in state.spy_ohlcv.columns
-        else None
-    )
-    if tc_v2 is not None:
-        state.trend_character = compute_trend_character_features(
-            close=state.spy_close,
-            high=_series_column(state.spy_ohlcv, "high"),
-            low=_series_column(state.spy_ohlcv, "low"),
-            volume=volume,
-            bb_width_period=tc_v2.bb_width_period,
-            bb_width_multiplier=tc_v2.bb_width_multiplier,
-            bb_width_expanding_lookback=tc_v2.bb_width_expanding_lookback,
-            followthrough_lookback_sessions=tc_v2.followthrough_lookback_sessions,
-            followthrough_window_count=tc_v2.followthrough_window_count,
-            followthrough_hold_sessions=tc_v2.followthrough_hold_sessions,
-        )
-    else:
-        state.trend_character = compute_trend_character_features(
-            close=state.spy_close,
-            high=_series_column(state.spy_ohlcv, "high"),
-            low=_series_column(state.spy_ohlcv, "low"),
-            volume=volume,
-        )
-
-
-def _build_volatility_feature(state: _FeatureStoreBuildState) -> None:
-    state.volatility = compute_volatility_features(
-        close=state.spy_close,
-        vix_proxy_close=state.context.vix_proxy_close,
-    )
-
-
-def _build_breadth_feature(state: _FeatureStoreBuildState) -> None:
-    state.breadth = compute_breadth_features(
-        spy_close=state.spy_close,
-        rsp_close=state.context.rsp_close.reindex(state.spy_ohlcv.index),
-    )
-
-
-def _build_sma_50_feature(state: _FeatureStoreBuildState) -> None:
-    state.sma_50 = simple_moving_average(state.spy_close, window=50)
 
 
 def _build_network_fragility_feature(state: _FeatureStoreBuildState) -> None:
@@ -857,14 +807,9 @@ _FEATURE_SPECS: tuple[FeatureSpec[object, _FeatureStoreBuildState], ...] = (
 
 
 _FEATURE_STORE_BUILDERS: tuple[_FeatureStoreBuilder, ...] = (
-    _FeatureStoreBuilder("trend_direction", _build_trend_direction_feature),
     _FeatureStoreBuilder("sentiment_score", _build_sentiment_score_feature),
     _FeatureStoreBuilder("news_sentiment_score", _build_news_sentiment_score_feature),
     _FeatureStoreBuilder("trend_direction_v2", _build_trend_direction_v2_feature),
-    _FeatureStoreBuilder("trend_character", _build_trend_character_feature),
-    _FeatureStoreBuilder("volatility", _build_volatility_feature),
-    _FeatureStoreBuilder("breadth", _build_breadth_feature),
-    _FeatureStoreBuilder("sma_50", _build_sma_50_feature),
     _FeatureStoreBuilder("network_fragility", _build_network_fragility_feature),
     _FeatureStoreBuilder("volatility_state_v2", _build_volatility_state_v2_feature),
     _FeatureStoreBuilder("breadth_state_v2", _build_breadth_state_v2_feature),
@@ -995,41 +940,6 @@ def _build_feature_availability_report(
         ) + _missing_macro_keys(state.context.macro_series, tuple(_IG_MACRO_KEYS))
 
     report = {
-        "trend_direction": FeatureAvailability(
-            feature="trend_direction",
-            available=True,
-            policy="raise",
-            reason="populated",
-            required_inputs=("spy_ohlcv.close",),
-        ),
-        "trend_character": FeatureAvailability(
-            feature="trend_character",
-            available=True,
-            policy="raise",
-            reason="populated",
-            required_inputs=("spy_ohlcv.close", "spy_ohlcv.high", "spy_ohlcv.low"),
-        ),
-        "volatility": FeatureAvailability(
-            feature="volatility",
-            available=True,
-            policy="raise",
-            reason="populated",
-            required_inputs=("spy_ohlcv.close",),
-        ),
-        "breadth": FeatureAvailability(
-            feature="breadth",
-            available=True,
-            policy="raise",
-            reason="populated",
-            required_inputs=("spy_ohlcv.close", "rsp_close"),
-        ),
-        "sma_50": FeatureAvailability(
-            feature="sma_50",
-            available=True,
-            policy="raise",
-            reason="populated",
-            required_inputs=("spy_ohlcv.close",),
-        ),
         "network_fragility": _availability(
             feature="network_fragility",
             value=state.network_fragility,
@@ -1195,11 +1105,14 @@ def build_feature_store(
         central_bank_text_config=central_bank_text_config,
         news_sentiment_config=news_sentiment_config,
     )
+    spec_availability = _run_feature_specs(_FEATURE_SPECS, build_state)
     _run_feature_store_builders(_FEATURE_STORE_BUILDERS, build_state)
+    legacy_availability = _build_feature_availability_report(build_state)
+    combined_availability = {**spec_availability, **legacy_availability}
 
     return FeatureStore(
         spy_index=_as_datetime_index(spy_ohlcv.index),
-        availability=_build_feature_availability_report(build_state),
+        availability=combined_availability,
         trend_direction=_require_feature(
             build_state.trend_direction, "trend_direction"
         ),
