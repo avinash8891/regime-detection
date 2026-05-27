@@ -48,3 +48,32 @@ def test_spec_required_inputs_is_a_tuple_not_a_set() -> None:
             f"spec {spec.name!r} required_inputs must be tuple "
             f"(deterministic order), got {type(spec.required_inputs).__name__}"
         )
+
+
+_ALLOWED_REASONS = frozenset({"populated", "not_configured", "missing_required_inputs"})
+
+
+def test_availability_report_uses_only_allowed_reason_strings(
+    market_df_for_asof,
+) -> None:
+    """End-to-end check that every emitted reason string is in the allowed
+    vocabulary. Catches accidental wire-format drift during PR 2 migrations."""
+    from datetime import date
+
+    from regime_detection.engine import RegimeEngine
+    from regime_detection.feature_store import build_feature_store
+    from regime_detection.market_context import build_market_context
+
+    as_of = date(2023, 12, 14)
+    context = build_market_context(
+        end_date=as_of,
+        market_data=market_df_for_asof(as_of),
+        config=RegimeEngine().config,
+    )
+    store = build_feature_store(context)
+
+    for name, availability in store.availability.items():
+        assert availability.reason in _ALLOWED_REASONS, (
+            f"feature {name!r} emitted reason {availability.reason!r} "
+            f"not in allowed vocabulary {sorted(_ALLOWED_REASONS)}"
+        )
