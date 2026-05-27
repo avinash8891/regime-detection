@@ -9,6 +9,7 @@ Current business-logic ratchet includes (see `[tool.pyright].include` in
 
 - `src/regime_detection/engine.py`
 - `src/regime_detection/models.py`
+- `src/regime_detection/legacy_v1_wire.py`
 - `src/regime_detection/axis_series.py`
 - `src/regime_detection/feature_store.py`
 - `src/regime_detection/feature_store_runtime.py`

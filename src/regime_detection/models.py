@@ -1,18 +1,17 @@
 from __future__ import annotations
 
-# pyright: reportIncompatibleMethodOverride=false
-# pyright: reportIncompatibleVariableOverride=false
-# pyright: reportUnknownMemberType=false
-# pyright: reportUnknownVariableType=false
-# pyright: reportUnknownArgumentType=false
-
-import json
 import math
 from collections.abc import Iterator
 from datetime import date
-from typing import Any, Literal
+from typing import Any, Literal, cast
 
 from pydantic import BaseModel, ConfigDict, Field, RootModel, model_validator
+
+from regime_detection import legacy_v1_wire as _legacy_v1_wire
+
+_dump_json_payload = _legacy_v1_wire.dump_json_payload
+_project_legacy_v1_transition_risk = _legacy_v1_wire.project_legacy_v1_transition_risk
+_project_legacy_v1_wire_shapes = _legacy_v1_wire.project_legacy_v1_wire_shapes
 
 DataQualityStatus = Literal[
     "ok", "degraded", "insufficient_data", "insufficient_history", "stale_data"
@@ -47,7 +46,9 @@ class EvidencePayload(RootModel[dict[str, Any]]):
     def __contains__(self, key: object) -> bool:
         return key in self.root
 
-    def __iter__(self) -> Iterator[str]:
+    # fmt: off
+    def __iter__(self) -> Iterator[str]:  # pyright: ignore[reportIncompatibleMethodOverride]
+        # fmt: on
         return iter(self.root)
 
     def __len__(self) -> int:
@@ -101,7 +102,9 @@ class TypedEvidencePayload(BaseModel):
     def __contains__(self, key: object) -> bool:
         return key in self.model_dump()
 
-    def __iter__(self) -> Iterator[str]:
+    # fmt: off
+    def __iter__(self) -> Iterator[str]:  # pyright: ignore[reportIncompatibleMethodOverride]
+        # fmt: on
         return iter(self.model_dump())
 
     def __len__(self) -> int:
@@ -229,7 +232,9 @@ class CreditFundingEvidencePayload(BaseModel):
     def __contains__(self, key: object) -> bool:
         return key in self.model_dump(exclude_none=True)
 
-    def __iter__(self) -> Iterator[str]:
+    # fmt: off
+    def __iter__(self) -> Iterator[str]:  # pyright: ignore[reportIncompatibleMethodOverride]
+        # fmt: on
         return iter(self.model_dump(exclude_none=True))
 
     def __len__(self) -> int:
@@ -275,7 +280,9 @@ class TransitionRiskEvidencePayload(BaseModel):
     def __contains__(self, key: object) -> bool:
         return key in type(self).model_fields
 
-    def __iter__(self) -> Iterator[str]:
+    # fmt: off
+    def __iter__(self) -> Iterator[str]:  # pyright: ignore[reportIncompatibleMethodOverride]
+        # fmt: on
         return iter(type(self).model_fields)
 
     def __len__(self) -> int:
@@ -366,6 +373,7 @@ def _collect_missing_rule_features(value: Any, features: set[str]) -> None:
         value = value.model_dump(exclude_none=True)
     if not isinstance(value, dict):
         return
+    value = cast(dict[str, Any], value)
     rule_evidence = value.get("rule_evidence")
     if isinstance(rule_evidence, dict):
         _collect_missing_leaf_keys(rule_evidence, features)
@@ -384,6 +392,7 @@ def _collect_missing_leaf_keys(
         )
         return
     if isinstance(value, dict):
+        value = cast(dict[str, Any], value)
         for key, item in value.items():
             child_prefix = f"{prefix}.{key}" if prefix else str(key)
             if child_prefix in _NON_BINDING_MISSING_RULE_FEATURES:
@@ -391,6 +400,7 @@ def _collect_missing_leaf_keys(
             _collect_missing_leaf_keys(item, features, child_prefix)
         return
     if isinstance(value, (list, tuple)):
+        value = cast(list[Any] | tuple[Any, ...], value)
         for index, item in enumerate(value):
             _collect_missing_leaf_keys(item, features, f"{prefix}[{index}]")
         return
@@ -462,7 +472,7 @@ class NetworkFragilityOutput(AxisOutput):
     model_config = ConfigDict(extra="forbid")
 
     mode: Literal["sector_cross_asset_24"] = "sector_cross_asset_24"
-    evidence: NetworkFragilityEvidencePayload
+    evidence: NetworkFragilityEvidencePayload  # pyright: ignore[reportIncompatibleVariableOverride]
 
 
 InflationGrowthLabel = Literal[
@@ -497,10 +507,12 @@ class InflationGrowthOutput(AxisOutput):
 
     model_config = ConfigDict(extra="forbid")
 
-    raw_label: InflationGrowthLabel
-    stable_label: InflationGrowthLabel
-    active_label: InflationGrowthLabel
-    evidence: InflationGrowthEvidencePayload
+    # fmt: off
+    raw_label: InflationGrowthLabel  # pyright: ignore[reportIncompatibleVariableOverride]
+    stable_label: InflationGrowthLabel  # pyright: ignore[reportIncompatibleVariableOverride]
+    active_label: InflationGrowthLabel  # pyright: ignore[reportIncompatibleVariableOverride]
+    evidence: InflationGrowthEvidencePayload  # pyright: ignore[reportIncompatibleVariableOverride]
+    # fmt: on
 
 
 CreditFundingLabel = Literal[
@@ -525,10 +537,12 @@ class CreditFundingOutput(AxisOutput):
 
     model_config = ConfigDict(extra="forbid")
 
-    raw_label: CreditFundingLabel
-    stable_label: CreditFundingLabel
-    active_label: CreditFundingLabel
-    evidence: CreditFundingEvidencePayload
+    # fmt: off
+    raw_label: CreditFundingLabel  # pyright: ignore[reportIncompatibleVariableOverride]
+    stable_label: CreditFundingLabel  # pyright: ignore[reportIncompatibleVariableOverride]
+    active_label: CreditFundingLabel  # pyright: ignore[reportIncompatibleVariableOverride]
+    evidence: CreditFundingEvidencePayload  # pyright: ignore[reportIncompatibleVariableOverride]
+    # fmt: on
 
 
 MonetaryPressureV2Label = Literal[
@@ -550,10 +564,12 @@ class MonetaryPressureV2Output(AxisOutput):
 
     model_config = ConfigDict(extra="forbid")
 
-    raw_label: MonetaryPressureV2Label
-    stable_label: MonetaryPressureV2Label
-    active_label: MonetaryPressureV2Label
-    evidence: MonetaryPressureEvidencePayload
+    # fmt: off
+    raw_label: MonetaryPressureV2Label  # pyright: ignore[reportIncompatibleVariableOverride]
+    stable_label: MonetaryPressureV2Label  # pyright: ignore[reportIncompatibleVariableOverride]
+    active_label: MonetaryPressureV2Label  # pyright: ignore[reportIncompatibleVariableOverride]
+    evidence: MonetaryPressureEvidencePayload  # pyright: ignore[reportIncompatibleVariableOverride]
+    # fmt: on
 
 
 class VolumeLiquidityOutput(BaseModel):
@@ -617,10 +633,12 @@ class VolumeLiquidityStateOutput(AxisOutput):
 
     model_config = ConfigDict(extra="forbid")
 
-    raw_label: VolumeLiquidityLabel
-    stable_label: VolumeLiquidityLabel
-    active_label: VolumeLiquidityLabel
-    evidence: VolumeLiquidityEvidencePayload
+    # fmt: off
+    raw_label: VolumeLiquidityLabel  # pyright: ignore[reportIncompatibleVariableOverride]
+    stable_label: VolumeLiquidityLabel  # pyright: ignore[reportIncompatibleVariableOverride]
+    active_label: VolumeLiquidityLabel  # pyright: ignore[reportIncompatibleVariableOverride]
+    evidence: VolumeLiquidityEvidencePayload  # pyright: ignore[reportIncompatibleVariableOverride]
+    # fmt: on
     mode: Literal["volume_zscore_v1"] = "volume_zscore_v1"
 
 
@@ -918,58 +936,6 @@ class ClassificationCoverageReport(BaseModel):
 
     axes: dict[str, AxisCoverage]
     safe_for_downstream: bool
-
-
-_V1_CONFIG_VERSION = "core3-v1.0.0"
-
-
-def _dump_json_payload(
-    payload: dict[str, Any], *, indent: int | None, ensure_ascii: bool
-) -> str:
-    json_kwargs: dict[str, Any] = {
-        "ensure_ascii": ensure_ascii,
-    }
-    if indent is None:
-        json_kwargs["separators"] = (",", ":")
-    else:
-        json_kwargs["indent"] = indent
-    return json.dumps(payload, **json_kwargs)
-
-
-def _project_legacy_v1_wire_shapes(payload: dict[str, Any]) -> dict[str, Any]:
-    if payload.get("config_version") != _V1_CONFIG_VERSION:
-        return payload
-
-    _strip_classification_metadata(payload)
-
-    payload["network_fragility"] = {
-        "label": "not_implemented_v1",
-        "reason": "breadth_state_used_as_v1_fragility_proxy",
-    }
-    _project_legacy_v1_transition_risk(payload)
-    return payload
-
-
-def _project_legacy_v1_transition_risk(payload: dict[str, Any]) -> None:
-    transition_risk = payload.get("transition_risk")
-    if not isinstance(transition_risk, dict):
-        return
-
-    label = transition_risk.get("label", transition_risk.get("state"))
-    evidence = transition_risk.get("evidence", {})
-    payload["transition_risk"] = {"label": label, "evidence": evidence}
-
-
-def _strip_classification_metadata(value: Any) -> None:
-    if isinstance(value, dict):
-        value.pop("classification_status", None)
-        value.pop("classification_reason", None)
-        value.pop("classification_coverage", None)
-        for nested in value.values():
-            _strip_classification_metadata(nested)
-    elif isinstance(value, list):
-        for item in value:
-            _strip_classification_metadata(item)
 
 
 class RegimeOutput(BaseModel):

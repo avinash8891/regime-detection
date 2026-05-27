@@ -36,6 +36,14 @@ from regime_detection.models import (
 )
 
 
+def test_legacy_v1_projection_helpers_live_outside_model_boundary() -> None:
+    from regime_detection import legacy_v1_wire
+
+    assert _project_legacy_v1_transition_risk is (
+        legacy_v1_wire.project_legacy_v1_transition_risk
+    )
+
+
 def _data_quality() -> DataQuality:
     return DataQuality(status="ok", freshness_days=0, completeness=1.0)
 

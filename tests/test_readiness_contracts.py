@@ -19,6 +19,7 @@ def test_pyright_strict_slice_covers_runtime_and_guardrail_scripts() -> None:
     assert {
         "src/regime_detection/engine.py",
         "src/regime_detection/models.py",
+        "src/regime_detection/legacy_v1_wire.py",
         "src/regime_detection/axis_series.py",
         "src/regime_detection/observability.py",
         "src/regime_detection/loaders.py",
