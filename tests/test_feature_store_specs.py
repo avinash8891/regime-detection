@@ -325,3 +325,30 @@ def test_drawdown_63d_resolve_no_hmm_or_clustering_returns_unavailable(
 def test_drawdown_63d_spec_is_internal_report_false() -> None:
     spec = _spec_by_name("drawdown_63d")
     assert spec.report is False
+
+
+def test_hmm_resolve_missing_inputs_returns_unavailable(
+    v1_minimal_state: _FeatureStoreBuildState,
+) -> None:
+    """V1 minimal context has hmm_config (from RegimeEngine defaults) but
+    volume_liquidity_v2 and network_fragility haven't been built yet —
+    resolve must report both as missing."""
+    from regime_detection.feature_store_runtime import _Unavailable
+
+    spec = _spec_by_name("hmm")
+    resolved = spec.resolve(v1_minimal_state)
+
+    assert isinstance(resolved, _Unavailable)
+    assert "volume_liquidity_v2" in resolved.missing_inputs
+    assert "network_fragility" in resolved.missing_inputs
+
+
+def test_hmm_spec_required_inputs_matches_legacy() -> None:
+    spec = _spec_by_name("hmm")
+    assert spec.required_inputs == (
+        "hmm_config",
+        "volume_liquidity_v2",
+        "network_fragility",
+    )
+    assert spec.policy == "none"
+    assert spec.report is True

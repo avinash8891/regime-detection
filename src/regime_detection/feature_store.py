@@ -75,7 +75,7 @@ from regime_detection.clustering import (
     ClusteringFeatures,
     compute_clustering_features,
 )
-from regime_detection.hmm_state import HMMFeatures, compute_hmm_features
+from regime_detection.hmm_state import HMMConfig, HMMFeatures, compute_hmm_features
 from regime_detection.volatility_state import realized_vol
 from regime_detection.volatility_state import (
     VolatilityFeatures,
@@ -357,27 +357,6 @@ def _build_news_sentiment_score_series(
     )
     score.name = "news_sentiment_score"
     return score
-
-
-def _build_hmm_feature(state: _FeatureStoreBuildState) -> None:
-    volume_liquidity_v2 = state.volume_liquidity_v2
-    network_fragility = state.network_fragility
-    if (
-        state.context.config.hmm is None
-        or volume_liquidity_v2 is None
-        or network_fragility is None
-    ):
-        state.hmm = None
-        return
-    volatility = _require_feature(state.volatility, "volatility")
-    state.hmm = compute_hmm_features(
-        return_1d=volatility.return_1d,
-        realized_vol_21d=state.realized_vol_21d,
-        drawdown_63d=state.drawdown_63d,
-        volume_zscore_20d=volume_liquidity_v2.volume_zscore_20d,
-        avg_pairwise_corr_63d=network_fragility.avg_pairwise_corr_63d,
-        config=state.context.config.hmm,
-    )
 
 
 def _build_clustering_feature(state: _FeatureStoreBuildState) -> None:
@@ -838,6 +817,51 @@ def _resolve_drawdown_63d(
     return {"spy_close": state.spy_close}
 
 
+def _build_hmm(
+    config: HMMConfig,
+    return_1d: pd.Series,
+    realized_vol_21d: pd.Series,
+    drawdown_63d: pd.Series,
+    volume_zscore_20d: pd.Series,
+    avg_pairwise_corr_63d: pd.Series,
+) -> HMMFeatures | None:
+    return compute_hmm_features(
+        return_1d=return_1d,
+        realized_vol_21d=realized_vol_21d,
+        drawdown_63d=drawdown_63d,
+        volume_zscore_20d=volume_zscore_20d,
+        avg_pairwise_corr_63d=avg_pairwise_corr_63d,
+        config=config,
+    )
+
+
+def _resolve_hmm(
+    state: _FeatureStoreBuildState,
+) -> dict[str, object] | _Unavailable:
+    missing: list[str] = []
+    if state.context.config.hmm is None:
+        missing.append("hmm_config")
+    if state.volume_liquidity_v2 is None:
+        missing.append("volume_liquidity_v2")
+    if state.network_fragility is None:
+        missing.append("network_fragility")
+    if missing:
+        return _Unavailable(missing_inputs=tuple(missing))
+    volatility = _require_feature(state.volatility, "volatility")
+    assert state.volume_liquidity_v2 is not None
+    assert state.network_fragility is not None
+    assert state.realized_vol_21d is not None
+    assert state.drawdown_63d is not None
+    return {
+        "config": state.context.config.hmm,
+        "return_1d": volatility.return_1d,
+        "realized_vol_21d": state.realized_vol_21d,
+        "drawdown_63d": state.drawdown_63d,
+        "volume_zscore_20d": state.volume_liquidity_v2.volume_zscore_20d,
+        "avg_pairwise_corr_63d": state.network_fragility.avg_pairwise_corr_63d,
+    }
+
+
 def _resolve_realized_vol_21d(
     state: _FeatureStoreBuildState,
 ) -> dict[str, object] | _Unavailable:
@@ -1026,11 +1050,18 @@ _FEATURE_SPECS: tuple[FeatureSpec[object, _FeatureStoreBuildState], ...] = (
         store=lambda s, v: setattr(s, "drawdown_63d", v),
         report=False,
     ),
+    FeatureSpec(
+        name="hmm",
+        policy="none",
+        required_inputs=("hmm_config", "volume_liquidity_v2", "network_fragility"),
+        resolve=_resolve_hmm,
+        build=_build_hmm,
+        store=lambda s, v: setattr(s, "hmm", v),
+    ),
 )
 
 
 _FEATURE_STORE_BUILDERS: tuple[_FeatureStoreBuilder, ...] = (
-    _FeatureStoreBuilder("hmm", _build_hmm_feature),
     _FeatureStoreBuilder("clustering", _build_clustering_feature),
     _FeatureStoreBuilder("credit_funding", _build_credit_funding_feature),
     _FeatureStoreBuilder("inflation_growth", _build_inflation_growth_feature),
@@ -1115,21 +1146,6 @@ def _build_feature_availability_report(
         ) + _missing_macro_keys(state.context.macro_series, tuple(_IG_MACRO_KEYS))
 
     report = {
-        "hmm": _availability(
-            feature="hmm",
-            value=state.hmm,
-            policy="none",
-            required_inputs=("hmm_config", "volume_liquidity_v2", "network_fragility"),
-            missing_inputs=tuple(
-                item
-                for item, available in (
-                    ("hmm_config", state.context.config.hmm is not None),
-                    ("volume_liquidity_v2", state.volume_liquidity_v2 is not None),
-                    ("network_fragility", state.network_fragility is not None),
-                )
-                if not available
-            ),
-        ),
         "clustering": _availability(
             feature="clustering",
             value=state.clustering,
