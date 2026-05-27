@@ -352,3 +352,31 @@ def test_hmm_spec_required_inputs_matches_legacy() -> None:
     )
     assert spec.policy == "none"
     assert spec.report is True
+
+
+def test_clustering_resolve_missing_inputs_returns_unavailable(
+    v1_minimal_state: _FeatureStoreBuildState,
+) -> None:
+    """V1 minimal state has clustering_config but lacks breadth_state_v2,
+    network_fragility, trend_direction_v2 — resolve reports all three missing."""
+    from regime_detection.feature_store_runtime import _Unavailable
+
+    spec = _spec_by_name("clustering")
+    resolved = spec.resolve(v1_minimal_state)
+
+    assert isinstance(resolved, _Unavailable)
+    assert "breadth_state_v2.pct_above_50dma" in resolved.missing_inputs
+    assert "network_fragility" in resolved.missing_inputs
+    assert "trend_direction_v2" in resolved.missing_inputs
+
+
+def test_clustering_spec_required_inputs_matches_legacy() -> None:
+    spec = _spec_by_name("clustering")
+    assert spec.required_inputs == (
+        "clustering_config",
+        "breadth_state_v2.pct_above_50dma",
+        "network_fragility",
+        "trend_direction_v2",
+    )
+    assert spec.policy == "none"
+    assert spec.report is True
