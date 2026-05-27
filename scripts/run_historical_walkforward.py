@@ -35,14 +35,14 @@ from scripts.run_shadow_regime import (  # noqa: E402
     _constituent_ohlcv_from_daily,
     _default_pit_intervals_from_daily,
     _load_pit_intervals,
+    _load_v2_macro_series,
     _load_v2_daily_ohlcv,
 )
-from regime_detection.fragility_universe import (
-    CROSS_ASSET_SYMBOLS,
-    SECTOR_ETFS,
-)  # noqa: E402
+from regime_detection.fragility_universe import SECTOR_ETFS  # noqa: E402
 from scripts._v2_calibration_helpers import (  # noqa: E402
+    CROSS_ASSET_SYMBOLS,
     apply_manifest_input_defaults,
+    register_manifest_input_args,
 )
 
 RUNS_SCHEMA = """
@@ -83,8 +83,7 @@ def _normalize_market_data(path: Path) -> pd.DataFrame:
     missing = sorted(required - set(df.columns))
     if missing:
         raise ValueError(f"market_data missing required columns: {missing}")
-    out = df.copy()
-    out["date"] = pd.to_datetime(out["date"]).dt.date
+    out = df.assign(date=pd.to_datetime(df["date"]).dt.date)
     keep = ["date", "symbol", "open", "high", "low", "close", "volume"]
     return out[keep].sort_values(["date", "symbol"]).reset_index(drop=True)
 
@@ -348,6 +347,10 @@ def run_walkforward(
     config_path: Path | None = None,
     v2_daily_ohlcv_path: Path | None = None,
     pit_constituent_intervals_path: Path | None = None,
+    macro_parquet_path: Path | None = None,
+    pmi_path: Path | None = None,
+    cpi_nowcast_parquet_path: Path | None = None,
+    aggregate_forward_eps_weekly_history_parquet_path: Path | None = None,
     allow_missing_event_calendar: bool = False,
 ) -> dict[str, Any]:
     market_data = _normalize_market_data(market_data_path)
@@ -357,6 +360,14 @@ def run_walkforward(
     )
     v2_daily = _load_v2_daily_ohlcv(v2_daily_ohlcv_path)
     pit_intervals = _load_pit_intervals(pit_constituent_intervals_path)
+    macro_series = _load_v2_macro_series(
+        macro_parquet_path=macro_parquet_path,
+        pmi_path=pmi_path,
+        cpi_nowcast_parquet_path=cpi_nowcast_parquet_path,
+        aggregate_forward_eps_weekly_history_parquet_path=(
+            aggregate_forward_eps_weekly_history_parquet_path
+        ),
+    )
     sessions = _sessions_between(start_date, end_date)
     engine = RegimeEngine(config_path=config_path)
     if not sessions:
@@ -416,6 +427,8 @@ def run_walkforward(
                         v2_slice,
                         session_pit_intervals,
                     )
+                    if macro_series is not None:
+                        v2_kwargs["macro_series"] = macro_series
                 output = engine.classify(
                     as_of_date=as_of_date,
                     market_data=market_slice,
@@ -564,6 +577,8 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--config-path", type=Path, default=None)
     parser.add_argument("--v2-daily-ohlcv", type=Path, default=None)
     parser.add_argument("--pit-constituent-intervals", type=Path, default=None)
+    parser.add_argument("--macro-parquet", type=Path, default=None)
+    register_manifest_input_args(parser, include_required_paths=False)
     parser.add_argument(
         "--manifest",
         type=Path,
@@ -584,7 +599,17 @@ def _parse_args() -> argparse.Namespace:
     args = parser.parse_args()
     args.event_calendar = None
     apply_manifest_input_defaults(
-        args, args.data_root, fields=frozenset({"event_calendar"})
+        args,
+        args.data_root,
+        fields=frozenset(
+            {
+                "event_calendar",
+                "macro_parquet",
+                "pmi_path",
+                "cpi_nowcast_parquet",
+                "aggregate_forward_eps_weekly_history_parquet",
+            }
+        ),
     )
     return args
 
@@ -607,6 +632,12 @@ def main() -> int:
         config_path=args.config_path,
         v2_daily_ohlcv_path=args.v2_daily_ohlcv,
         pit_constituent_intervals_path=args.pit_constituent_intervals,
+        macro_parquet_path=args.macro_parquet,
+        pmi_path=args.pmi_path,
+        cpi_nowcast_parquet_path=args.cpi_nowcast_parquet,
+        aggregate_forward_eps_weekly_history_parquet_path=(
+            args.aggregate_forward_eps_weekly_history_parquet
+        ),
         allow_missing_event_calendar=args.allow_missing_event_calendar,
     )
     print(json.dumps(result, indent=2, sort_keys=True))

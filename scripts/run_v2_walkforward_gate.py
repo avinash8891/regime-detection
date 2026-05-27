@@ -69,6 +69,9 @@ from _v2_calibration_helpers import (  # noqa: E402
 logger = logging.getLogger("v2_walkforward_gate")
 
 V1_AXIS_DEFAULT_AGENT = "default"
+V1_BASELINE_CONFIG_PATH = (
+    REPO_ROOT / "src" / "regime_detection" / "configs" / "core3-v1.0.0.yaml"
+)
 NON_CLASSIFIED_REPORTING_LABELS = set(get_args(ClassificationStatus)) - {"classified"}
 
 
@@ -94,8 +97,17 @@ def _session_error_exit_code(
 
 def _resolve_default_window(daily_dir: Path) -> tuple[dt.date, dt.date]:
     """Return (start, end). end = max date in daily parquet; start = end-1y-90d."""
-    df = pd.read_parquet(daily_dir, columns=["date"])
-    df["date"] = pd.to_datetime(df["date"]).dt.date
+    if daily_dir.is_file():
+        df = pd.read_parquet(daily_dir, columns=["date"])
+    else:
+        frames = [
+            pd.read_parquet(parquet_file, columns=["date"])
+            for parquet_file in sorted(daily_dir.rglob("*.parquet"))
+        ]
+        if not frames:
+            raise FileNotFoundError(f"no parquet OHLCV files found under {daily_dir}")
+        df = pd.concat(frames, ignore_index=True)
+    df = df.assign(date=pd.to_datetime(df["date"]).dt.date)
     end_date = df["date"].max()
     # 1y window + 90d trailing-lookback warm-up
     start_date = end_date - dt.timedelta(days=365 + 90)
@@ -503,12 +515,13 @@ def main() -> int:
         len(sessions),
     )
 
-    engine = RegimeEngine(config_path=args.config_path)
+    v1_engine = RegimeEngine(config_path=V1_BASELINE_CONFIG_PATH)
+    v2_engine = RegimeEngine(config_path=args.config_path)
     engine_version = resolved_engine_version()
 
     logger.info("Running v1-mode walk-forward (no V2 kwargs)...")
     v1_metrics, _v1_axes, v1_errors = _classify_window(
-        engine=engine,
+        engine=v1_engine,
         sessions=sessions,
         market_data=market_data,
         event_calendar=event_calendar,
@@ -518,7 +531,7 @@ def main() -> int:
 
     logger.info("Running v2-mode walk-forward (full V2 inputs)...")
     v2_metrics, v2_axes, v2_errors = _classify_window(
-        engine=engine,
+        engine=v2_engine,
         sessions=sessions,
         market_data=market_data,
         event_calendar=event_calendar,

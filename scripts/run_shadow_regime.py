@@ -21,7 +21,7 @@ from regime_detection.dependency_payload_contracts import (
     dependency_payload_contracts_report as _v2_dependency_payload_contracts,
 )
 from regime_detection.engine import RegimeEngine
-from regime_detection.fragility_universe import CROSS_ASSET_SYMBOLS, SECTOR_ETFS
+from regime_detection.fragility_universe import SECTOR_ETFS
 from regime_detection.loaders import load_event_calendar
 from regime_detection.rule_provenance import rule_provenance_payload
 from regime_detection.shadow_storage import (
@@ -38,7 +38,12 @@ from regime_detection.shadow_storage import (
 from regime_detection.versioning import engine_version as resolved_engine_version
 from regime_data_fetch.materialization import materialize_if_requested
 from regime_shared.pandas_compat import cow_safe_assign
-from scripts._v2_calibration_helpers import apply_manifest_input_defaults
+from scripts._v2_calibration_helpers import (
+    CROSS_ASSET_SYMBOLS,
+    apply_manifest_input_defaults,
+    load_macro_series,
+    register_manifest_input_args,
+)
 
 
 def _normalize_market_data(path: Path) -> pd.DataFrame:
@@ -161,6 +166,23 @@ def _default_pit_intervals_from_daily(daily_ohlcv: pd.DataFrame) -> pd.DataFrame
     )
 
 
+def _load_v2_macro_series(
+    *,
+    macro_parquet_path: Path | None,
+    pmi_path: Path | None,
+    cpi_nowcast_parquet_path: Path | None,
+    aggregate_forward_eps_weekly_history_parquet_path: Path | None,
+) -> dict[str, pd.Series] | None:
+    if macro_parquet_path is None:
+        return None
+    return load_macro_series(
+        macro_parquet_path,
+        pmi_path,
+        cpi_nowcast_parquet=cpi_nowcast_parquet_path,
+        eps_weekly_history_parquet=aggregate_forward_eps_weekly_history_parquet_path,
+    )
+
+
 def _write_output_json(output_path: Path, payload_json: str) -> None:
     output_path.write_text(payload_json + "\n", encoding="utf-8")
 
@@ -185,6 +207,10 @@ def run_shadow(
     config_path: Path | None = None,
     v2_daily_ohlcv_path: Path | None = None,
     pit_constituent_intervals_path: Path | None = None,
+    macro_parquet_path: Path | None = None,
+    pmi_path: Path | None = None,
+    cpi_nowcast_parquet_path: Path | None = None,
+    aggregate_forward_eps_weekly_history_parquet_path: Path | None = None,
 ) -> dict[str, Any]:
     require_nyse_trading_day(as_of_date)
     event_df = _normalize_event_calendar(event_calendar_path)
@@ -202,6 +228,14 @@ def run_shadow(
             else v2_daily[v2_daily["date"] <= as_of_date].copy().reset_index(drop=True)
         )
         pit_intervals = _load_pit_intervals(pit_constituent_intervals_path)
+        macro_series = _load_v2_macro_series(
+            macro_parquet_path=macro_parquet_path,
+            pmi_path=pmi_path,
+            cpi_nowcast_parquet_path=cpi_nowcast_parquet_path,
+            aggregate_forward_eps_weekly_history_parquet_path=(
+                aggregate_forward_eps_weekly_history_parquet_path
+            ),
+        )
         v2_kwargs: dict[str, Any] = {}
         if v2_slice is not None:
             if pit_intervals is None:
@@ -217,6 +251,8 @@ def run_shadow(
                 v2_slice,
                 pit_intervals,
             )
+            if macro_series is not None:
+                v2_kwargs["macro_series"] = macro_series
 
         engine = RegimeEngine(config_path=config_path)
         engine_version = resolved_engine_version()
@@ -298,6 +334,8 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--config-path", type=Path, default=None)
     parser.add_argument("--v2-daily-ohlcv", type=Path, default=None)
     parser.add_argument("--pit-constituent-intervals", type=Path, default=None)
+    parser.add_argument("--macro-parquet", type=Path, default=None)
+    register_manifest_input_args(parser, include_required_paths=False)
     parser.add_argument(
         "--manifest",
         type=Path,
@@ -318,7 +356,17 @@ def _parse_args() -> argparse.Namespace:
     args = parser.parse_args()
     args.event_calendar = None
     apply_manifest_input_defaults(
-        args, args.data_root, fields=frozenset({"event_calendar"})
+        args,
+        args.data_root,
+        fields=frozenset(
+            {
+                "event_calendar",
+                "macro_parquet",
+                "pmi_path",
+                "cpi_nowcast_parquet",
+                "aggregate_forward_eps_weekly_history_parquet",
+            }
+        ),
     )
     return args
 
@@ -340,6 +388,12 @@ def main() -> int:
         config_path=args.config_path,
         v2_daily_ohlcv_path=args.v2_daily_ohlcv,
         pit_constituent_intervals_path=args.pit_constituent_intervals,
+        macro_parquet_path=args.macro_parquet,
+        pmi_path=args.pmi_path,
+        cpi_nowcast_parquet_path=args.cpi_nowcast_parquet,
+        aggregate_forward_eps_weekly_history_parquet_path=(
+            args.aggregate_forward_eps_weekly_history_parquet
+        ),
     )
     print(json.dumps(result, indent=2, sort_keys=True))
     return 0
