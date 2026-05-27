@@ -6,7 +6,6 @@ from regime_detection.feature_store import (
     FeatureStore,
 )
 
-
 _FEATURE_STORE_NON_FEATURE_FIELDS = frozenset({"spy_index", "availability"})
 
 
@@ -35,9 +34,9 @@ def test_no_feature_appears_in_both_specs_and_legacy_builders() -> None:
 
 def test_spec_required_inputs_are_unique_within_each_spec() -> None:
     for spec in _FEATURE_SPECS:
-        assert len(spec.required_inputs) == len(set(spec.required_inputs)), (
-            f"spec {spec.name!r} has duplicate required_inputs: {spec.required_inputs}"
-        )
+        assert len(spec.required_inputs) == len(
+            set(spec.required_inputs)
+        ), f"spec {spec.name!r} has duplicate required_inputs: {spec.required_inputs}"
 
 
 def test_spec_required_inputs_is_a_tuple_not_a_set() -> None:
