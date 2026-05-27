@@ -361,6 +361,26 @@ def _transition_risk_seam(transition_risk: Any) -> dict[str, Any]:
     }
 
 
+def _dependency_payload_contracts_report() -> dict[str, dict[str, str]]:
+    """Operator-facing summary of V2 cross-axis payload contracts."""
+
+    return {
+        "network_fragility": {
+            "breadth_state": "label_only",
+            "volatility_state": "label_only",
+            "credit_funding_effective": "label_only",
+        },
+        "inflation_growth_state": {
+            "credit_funding_effective": "label_only",
+        },
+        "transition_score": {
+            "event_calendar": "matching_labels",
+            "credit_funding_effective": "label_and_status",
+            "volume_liquidity_state": "label_and_status",
+        },
+    }
+
+
 def _compact_timeline_report(outputs: list[RegimeOutput]) -> list[dict[str, Any]]:
     rows: list[dict[str, Any]] = []
     for out in outputs:
@@ -426,6 +446,7 @@ def _compact_timeline_report(outputs: list[RegimeOutput]) -> list[dict[str, Any]
             seams["transition_score"] = out.transition_risk.score
         seams["transition_risk"] = _transition_risk_seam(out.transition_risk)
         seams["event_calendar"] = _event_calendar_seam(event_calendar)
+        seams["dependency_payload_contracts"] = _dependency_payload_contracts_report()
         rows.append(
             {
                 "as_of_date": out.as_of_date.isoformat(),

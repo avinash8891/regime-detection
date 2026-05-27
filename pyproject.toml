@@ -69,6 +69,8 @@ target-version = ["py311"]
 typeCheckingMode = "strict"
 include = [
   "src/regime_detection/engine.py",
+  "src/regime_detection/models.py",
+  "src/regime_detection/axis_series.py",
   "src/regime_detection/observability.py",
   "src/regime_detection/loaders.py",
   "scripts/detect_flaky_tests.py",

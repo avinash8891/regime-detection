@@ -118,7 +118,10 @@ def test_network_fragility_classifier_returns_real_fixture_outputs(
     assert set(result.keys()) == set(context.sessions)
     allowed_labels = {
         "diversified_normal",
+        "decorrelated_calm",
+        "rotation_watch",
         "stock_picker_dispersion",
+        "idiosyncratic_crisis",
         "rising_fragility",
         "correlation_concentration",
         "correlation_to_one",

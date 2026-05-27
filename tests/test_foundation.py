@@ -87,7 +87,91 @@ def test_classify_request_requires_event_calendar(market_df_for_asof) -> None:
         RegimeEngine().classify_request(request)
 
 
-def test_classify_uses_request_object_and_marks_legacy_breadth_data_ignored(
+def test_classify_request_rejects_non_positive_lookback(
+    market_df_for_asof, event_calendar_df
+) -> None:
+    request = ClassifyRequest(
+        end_date=date(2023, 12, 14),
+        market_data=market_df_for_asof,
+        lookback_days=0,
+        event_calendar=event_calendar_df,
+    )
+
+    with pytest.raises(ValueError, match="lookback_days must be positive"):
+        RegimeEngine().classify_request(request)
+
+
+def test_classify_request_has_no_legacy_breadth_data_field() -> None:
+    assert "breadth_data" not in ClassifyRequest.__dataclass_fields__
+
+
+def test_classify_rejects_legacy_breadth_data_argument(market_df_for_asof) -> None:
+    engine = RegimeEngine()
+
+    with pytest.raises(TypeError, match="unexpected keyword argument 'breadth_data'"):
+        engine.classify(
+            as_of_date=date(2026, 5, 5),
+            market_data=market_df_for_asof(date(2026, 5, 5)),
+            breadth_data=pd.DataFrame({"legacy": [1]}),
+        )
+
+
+def test_classify_request_rejects_profile_manifest_without_event_calendar_resolution(
+    market_df_for_asof, event_calendar_df
+) -> None:
+    request = ClassifyRequest(
+        end_date=date(2023, 12, 14),
+        market_data=market_df_for_asof(date(2023, 12, 14)),
+        event_calendar=event_calendar_df,
+        request_source="profile_manifest",
+        manifest_resolved_inputs=frozenset({"news_sentiment_parquet"}),
+    )
+
+    with pytest.raises(
+        ValueError,
+        match="profile_manifest request missing manifest-backed required inputs",
+    ):
+        RegimeEngine().classify_request(request)
+
+
+def test_classify_request_accepts_profile_manifest_event_calendar_cli_override(
+    market_df_for_asof, event_calendar_df
+) -> None:
+    config_path = (
+        Path(__file__).resolve().parents[1]
+        / "src"
+        / "regime_detection"
+        / "configs"
+        / "core3-v1.0.0.yaml"
+    )
+    request = ClassifyRequest(
+        end_date=date(2023, 12, 14),
+        market_data=market_df_for_asof(date(2023, 12, 14)),
+        event_calendar=event_calendar_df,
+        request_source="profile_manifest",
+        manifest_cli_overrides=frozenset({"event_calendar"}),
+    )
+
+    output = RegimeEngine(config_path=config_path).classify_request(request)
+
+    assert output.outputs[-1].as_of_date == date(2023, 12, 14)
+
+
+def test_classify_request_rejects_manifest_metadata_in_direct_mode(
+    market_df_for_asof, event_calendar_df
+) -> None:
+    request = ClassifyRequest(
+        end_date=date(2023, 12, 14),
+        market_data=market_df_for_asof(date(2023, 12, 14)),
+        event_calendar=event_calendar_df,
+        manifest_resolved_inputs=frozenset({"event_calendar"}),
+    )
+
+    with pytest.raises(ValueError, match="manifest metadata requires profile_manifest"):
+        RegimeEngine().classify_request(request)
+
+
+def test_classify_uses_request_object(
     market_df_for_asof,
     event_calendar_df,
 ) -> None:
@@ -105,10 +189,7 @@ def test_classify_uses_request_object_and_marks_legacy_breadth_data_ignored(
         market_data=market_df_for_asof(as_of),
         lookback_days=1,
         event_calendar=event_calendar_df,
-        breadth_data=pd.DataFrame({"legacy": [1]}),
     )
-
-    assert request.breadth_data_compatibility == "ignored_legacy_parameter"
 
     out = engine.classify_request(request)
 

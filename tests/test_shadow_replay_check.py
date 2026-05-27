@@ -62,6 +62,7 @@ def _prepare_shadow_root(tmp_path: Path, template: Path) -> Path:
                 "2023-12-14",
             ),
         )
+        conn.commit()
     return out_root
 
 
@@ -85,6 +86,13 @@ def test_shadow_replay_check_records_exact_match(
     assert result["matches"] is True
     assert result["diff"] is None
     assert result["as_of_date"] == "2023-12-14"
+
+    output_payload = json.loads((out_root / "outputs" / "2023-12-14.json").read_text())
+    assert output_payload["v2_dependency_payload_contracts"]["network_fragility"] == {
+        "breadth_state": "label_only",
+        "credit_funding_effective": "label_only",
+        "volatility_state": "label_only",
+    }
 
     with closing(sqlite3.connect(out_root / "regime_shadow.db")) as conn:
         rows = conn.execute(

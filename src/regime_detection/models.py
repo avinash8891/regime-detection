@@ -1,5 +1,11 @@
 from __future__ import annotations
 
+# pyright: reportIncompatibleMethodOverride=false
+# pyright: reportIncompatibleVariableOverride=false
+# pyright: reportUnknownMemberType=false
+# pyright: reportUnknownVariableType=false
+# pyright: reportUnknownArgumentType=false
+
 import json
 import math
 from collections.abc import Iterator
@@ -72,12 +78,105 @@ class EventCalendarEvidencePayload(EvidencePayload):
     """Dict-compatible payload for event-calendar rule evidence."""
 
 
-class VolumeLiquidityEvidencePayload(EvidencePayload):
-    """Dict-compatible payload for volume/liquidity V2 rule evidence."""
+class TypedEvidencePayload(BaseModel):
+    """Dict-compatible base for typed V2 axis evidence payloads.
+
+    Typed payloads keep the historical mapping ergonomics used by reports while
+    forbidding undeclared evidence keys. Add fields here axis-by-axis only after
+    the dependency and absence contracts for that axis are declared.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    def get(self, key: str, default: Any = None) -> Any:
+        return self.model_dump(exclude_none=True).get(key, default)
+
+    def __getitem__(self, key: str) -> Any:
+        return self.model_dump(exclude_none=True)[key]
+
+    def __contains__(self, key: object) -> bool:
+        return key in self.model_dump(exclude_none=True)
+
+    def __iter__(self) -> Iterator[str]:
+        return iter(self.model_dump(exclude_none=True))
+
+    def __len__(self) -> int:
+        return len(self.model_dump(exclude_none=True))
+
+    def items(self) -> Any:
+        return self.model_dump(exclude_none=True).items()
+
+    def keys(self) -> Any:
+        return self.model_dump(exclude_none=True).keys()
+
+    def values(self) -> Any:
+        return self.model_dump(exclude_none=True).values()
+
+    def __eq__(self, other: object) -> bool:
+        if isinstance(other, TypedEvidencePayload):
+            return self.model_dump(exclude_none=True) == other.model_dump(
+                exclude_none=True
+            )
+        if isinstance(other, dict):
+            return self.model_dump(exclude_none=True) == other
+        return NotImplemented
+
+
+class NetworkFragilityEvidencePayload(TypedEvidencePayload):
+    """Typed evidence payload for network-fragility decisions.
+
+    Cross-axis inputs are labels only; upstream evidence and data_quality do not
+    cross this edge unless `AXIS_DEPENDENCY_CONTRACTS` is changed first.
+    """
+
+    rule_evidence: dict[str, Any] | None = None
+    reason: str | None = None
+    breadth_active_label: str | None = None
+    volatility_active_label: str | None = None
+    credit_funding_active_label: str | None = None
+    data_quality_freeze: bool | None = None
+
+
+class InflationGrowthEvidencePayload(TypedEvidencePayload):
+    """Typed evidence payload for inflation/growth decisions.
+
+    `credit_funding_active_label` is the effective downstream label, not the raw
+    OAS/proxy evidence payload.
+    """
+
+    rule_evidence: dict[str, Any] | None = None
+    reason: str | None = None
+    goldilocks_limb_evidence: dict[str, Any] | None = None
+    credit_funding_active_label: str | None = None
+    bias_warning_code: str | None = None
+    data_quality_freeze: bool | None = None
+
+
+class MonetaryPressureEvidencePayload(TypedEvidencePayload):
+    """Typed evidence payload for monetary-pressure decisions."""
+
+    rule_evidence: dict[str, Any] | None = None
+    reason: str | None = None
+    central_bank_text_evidence: dict[str, Any] | None = None
+    data_quality_freeze: bool | None = None
+
+
+class VolumeLiquidityEvidencePayload(TypedEvidencePayload):
+    """Typed evidence payload for volume/liquidity decisions."""
+
+    rule_evidence: dict[str, Any] | None = None
+    reason: str | None = None
+    rule_path: str | None = None
+    rule_reason: str | None = None
+    data_quality_freeze: bool | None = None
 
 
 class CreditFundingEvidencePayload(BaseModel):
-    """Dict-compatible typed evidence payload for credit/funding decisions."""
+    """Dict-compatible typed evidence payload for credit/funding decisions.
+
+    Effective credit/funding outputs use this same payload type to record the
+    OAS/proxy resolver decision without changing the downstream label contract.
+    """
 
     model_config = ConfigDict(extra="forbid")
 
@@ -188,7 +287,7 @@ def derive_classification_status(
     *,
     active_label: str,
     data_quality: DataQuality,
-    evidence: EvidencePayload | None = None,
+    evidence: Any | None = None,
     raw_label: str | None = None,
     stable_label: str | None = None,
 ) -> tuple[ClassificationStatus, str | None]:
@@ -223,7 +322,7 @@ def derive_classification_status(
     return "no_rule_fired", reason or "no_rule_fired"
 
 
-def _missing_rule_features(evidence: EvidencePayload | None) -> list[str]:
+def _missing_rule_features(evidence: Any | None) -> list[str]:
     if evidence is None:
         return []
     features: set[str] = set()
@@ -332,6 +431,7 @@ class NetworkFragilityOutput(AxisOutput):
     model_config = ConfigDict(extra="forbid")
 
     mode: Literal["sector_cross_asset_24"] = "sector_cross_asset_24"
+    evidence: NetworkFragilityEvidencePayload
 
 
 InflationGrowthLabel = Literal[
@@ -369,6 +469,7 @@ class InflationGrowthOutput(AxisOutput):
     raw_label: InflationGrowthLabel
     stable_label: InflationGrowthLabel
     active_label: InflationGrowthLabel
+    evidence: InflationGrowthEvidencePayload
 
 
 CreditFundingLabel = Literal[
@@ -421,6 +522,7 @@ class MonetaryPressureV2Output(AxisOutput):
     raw_label: MonetaryPressureV2Label
     stable_label: MonetaryPressureV2Label
     active_label: MonetaryPressureV2Label
+    evidence: MonetaryPressureEvidencePayload
 
 
 class VolumeLiquidityOutput(BaseModel):
@@ -433,6 +535,14 @@ class VolumeLiquidityOutput(BaseModel):
     data_quality: DataQuality
     classification_status: ClassificationStatus | None = None
     classification_reason: str | None = None
+
+    def model_dump(self, *args: Any, **kwargs: Any) -> dict[str, Any]:
+        kwargs.setdefault("exclude_none", True)
+        return super().model_dump(*args, **kwargs)
+
+    def model_dump_json(self, *args: Any, **kwargs: Any) -> str:
+        kwargs.setdefault("exclude_none", True)
+        return super().model_dump_json(*args, **kwargs)
 
     @property
     def reporting_label(self) -> str:
@@ -479,6 +589,7 @@ class VolumeLiquidityStateOutput(AxisOutput):
     raw_label: VolumeLiquidityLabel
     stable_label: VolumeLiquidityLabel
     active_label: VolumeLiquidityLabel
+    evidence: VolumeLiquidityEvidencePayload
     mode: Literal["volume_zscore_v1"] = "volume_zscore_v1"
 
 

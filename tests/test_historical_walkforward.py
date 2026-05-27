@@ -86,6 +86,7 @@ def test_historical_walkforward_runner_writes_expected_artifacts(
     assert {
         "event_calendar_primary_label",
         "event_calendar_matching_labels",
+        "v2_dependency_payload_contracts",
         "transition_risk_score",
         "transition_risk_primary_drivers",
         "transition_risk_triggered_rules",

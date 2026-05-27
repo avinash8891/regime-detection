@@ -8,6 +8,14 @@ BoundaryAbsenceBehavior = Literal["raise", "none", "unknown", "degraded"]
 
 @dataclass(frozen=True)
 class BoundaryAbsencePolicy:
+    """Declared absence behavior for a boundary that may see missing inputs.
+
+    This registry is not a blanket runtime adapter. It records which existing
+    policy is intentional at each boundary so future changes do not collapse
+    deterministic errors, optional V2 seams, and data-quality unknowns into one
+    behavior.
+    """
+
     name: str
     owner_module: str
     source_symbol: str

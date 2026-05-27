@@ -120,6 +120,12 @@ Daily flow:
 
 Archive inputs before classification. If classification crashes, the archived inputs must still exist for diagnosis and replay.
 
+Shadow JSON artifacts also include `v2_dependency_payload_contracts`. This field
+records the active cross-axis payload shape, for example label-only edges into
+network fragility and inflation/growth. It is part of replay equality: if the
+model output is byte-stable but dependency payload semantics drift, replay must
+report a mismatch.
+
 ## 6. Freeze Policy
 
 Config and classification logic are fluid during V1 implementation and historical walk-forward preparation. They become frozen only when shadow qualification begins.

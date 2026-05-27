@@ -288,6 +288,29 @@ def _event_calendar_summary_cells(output: Any) -> dict[str, Any]:
     }
 
 
+def _v2_dependency_payload_contracts_summary_cell() -> str:
+    """JSON cell documenting which payload shapes crossed V2 axis edges."""
+
+    return json.dumps(
+        {
+            "network_fragility": {
+                "breadth_state": "label_only",
+                "volatility_state": "label_only",
+                "credit_funding_effective": "label_only",
+            },
+            "inflation_growth_state": {
+                "credit_funding_effective": "label_only",
+            },
+            "transition_score": {
+                "event_calendar": "matching_labels",
+                "credit_funding_effective": "label_and_status",
+                "volume_liquidity_state": "label_and_status",
+            },
+        },
+        sort_keys=True,
+    )
+
+
 def _build_report_markdown(
     summary_df: pd.DataFrame, *, start_date: date, end_date: date
 ) -> str:
@@ -435,6 +458,7 @@ def run_walkforward(
                         "volatility_state_active": output.volatility_state.active_label,
                         "breadth_state_active": output.breadth_state.active_label,
                         **_event_calendar_summary_cells(output),
+                        "v2_dependency_payload_contracts": _v2_dependency_payload_contracts_summary_cell(),
                         "transition_risk_state": output.transition_risk.state,
                         "transition_risk_score": output.transition_risk.score,
                         "transition_risk_primary_drivers": _json_cell(
@@ -478,6 +502,7 @@ def run_walkforward(
                         "breadth_state_active": None,
                         "event_calendar_primary_label": None,
                         "event_calendar_matching_labels": None,
+                        "v2_dependency_payload_contracts": None,
                         "transition_risk_state": None,
                         "transition_risk_score": None,
                         "transition_risk_primary_drivers": None,

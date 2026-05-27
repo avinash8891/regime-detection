@@ -72,6 +72,8 @@ A slice = one of the ten units listed in v2 spec §8 (Network Fragility, Layer 1
 - [x] HMM/GMM label maps are validated against fitted model metadata (n_states/n_clusters, model_version) before populating `mapped_label`.
 - [x] HMM `state_persistence_days` is computed across the full history, not just the output window.
 - [x] `AxisEvidencePayload` type is preserved through `model_copy` (no plain-dict leakage).
+- [x] Cross-axis dependency payload and failure semantics are declared in `AXIS_DEPENDENCY_CONTRACTS`.
+- [x] V2 operator artifacts expose dependency payload contracts in profile, shadow, and walk-forward outputs.
 - [x] Central-bank-text `max_release_age_days` filter applies to aggregation (pass filtered `working` frame, not original `scored_releases`).
 - [x] Available-sector breadth proxy is reachable when some (but not all) sector ETFs are present.
 

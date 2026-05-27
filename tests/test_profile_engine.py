@@ -101,6 +101,35 @@ def test_profile_manifest_resolution_replaces_default_input_paths(
     assert "news_sentiment_parquet" in args.manifest_resolved_inputs
 
 
+def test_profile_manifest_classify_window_marks_request_as_profile_manifest(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    data_root = tmp_path / "materialized" / "data" / "raw"
+    manifest_path = _write_profile_manifest(tmp_path)
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "profile_engine.py",
+            "--manifest",
+            str(manifest_path),
+            "--data-root",
+            str(data_root),
+        ],
+    )
+    args = profile_engine._parse_args()
+    profile_engine._apply_manifest_input_paths(args, runner_name="profile_engine")
+
+    kwargs = profile_engine._classify_request_manifest_kwargs(args)
+
+    assert kwargs == {
+        "request_source": "profile_manifest",
+        "manifest_resolved_inputs": args.manifest_resolved_inputs,
+        "manifest_cli_overrides": args.manifest_cli_overrides,
+    }
+
+
 def test_profile_manifest_resolution_keeps_explicit_cli_override(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

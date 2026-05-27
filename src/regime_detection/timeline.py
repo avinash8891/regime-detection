@@ -15,13 +15,14 @@ from regime_detection.market_context import (
     slice_context_to_recent_sessions,
 )
 from regime_detection.models import (
-    AxisOutput,
     AxisEvidencePayload,
+    AxisOutput,
     BreadthStateOutput,
     ChangePointOutput,
     ClusterOutput,
     DataQuality,
     HmmOutput,
+    NetworkFragilityEvidencePayload,
     NetworkFragilityOutput,
     RegimeOutput,
     RegimeTimeline,
@@ -96,8 +97,8 @@ def _resolve_network_fragility_by_date(
             raw_label="unknown",
             stable_label="unknown",
             active_label="unknown",
-            evidence=AxisEvidencePayload(
-                root={"reason": "v2_classifier_not_yet_implemented"}
+            evidence=NetworkFragilityEvidencePayload(
+                reason="v2_classifier_not_yet_implemented"
             ),
             data_quality=placeholder_dq,
         )

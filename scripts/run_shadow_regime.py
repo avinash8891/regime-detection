@@ -160,6 +160,36 @@ def _write_output_json(output_path: Path, payload_json: str) -> None:
     output_path.write_text(payload_json + "\n", encoding="utf-8")
 
 
+def _v2_dependency_payload_contracts() -> dict[str, dict[str, str]]:
+    """Stable JSON contract emitted with shadow artifacts for replay diffs."""
+
+    return {
+        "network_fragility": {
+            "breadth_state": "label_only",
+            "volatility_state": "label_only",
+            "credit_funding_effective": "label_only",
+        },
+        "inflation_growth_state": {
+            "credit_funding_effective": "label_only",
+        },
+        "transition_score": {
+            "event_calendar": "matching_labels",
+            "credit_funding_effective": "label_and_status",
+            "volume_liquidity_state": "label_and_status",
+        },
+    }
+
+
+def _shadow_output_json(output: object) -> str:
+    """Serialize a shadow output with diagnostic dependency contracts."""
+
+    if not hasattr(output, "model_dump"):
+        raise TypeError("shadow output must provide model_dump")
+    payload = output.model_dump(mode="json")
+    payload["v2_dependency_payload_contracts"] = _v2_dependency_payload_contracts()
+    return json.dumps(payload, indent=2, sort_keys=True)
+
+
 def run_shadow(
     *,
     as_of_date: date,
@@ -231,7 +261,7 @@ def run_shadow(
                 **v2_kwargs,
             )
             output_path = paths["outputs"] / f"{as_of_date.isoformat()}.json"
-            _write_output_json(output_path, output.model_dump_json(indent=2))
+            _write_output_json(output_path, _shadow_output_json(output))
             update_run_row_success(
                 conn=conn,
                 as_of_date=as_of_date,

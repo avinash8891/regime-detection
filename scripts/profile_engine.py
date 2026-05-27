@@ -723,6 +723,16 @@ def _apply_manifest_input_paths(
     )
 
 
+def _classify_request_manifest_kwargs(args: argparse.Namespace) -> dict[str, Any]:
+    if args.manifest is None:
+        return {}
+    return {
+        "request_source": "profile_manifest",
+        "manifest_resolved_inputs": args.manifest_resolved_inputs,
+        "manifest_cli_overrides": args.manifest_cli_overrides,
+    }
+
+
 def _is_manifest_resolution_error(error: Exception) -> bool:
     """Detect both the typed resolver error and the un-typed
     ``ValueError("manifest has no artifacts required for ...")`` that
@@ -834,6 +844,7 @@ def main() -> int:
                 news_sentiment=inputs.news_sentiment,
                 pit_constituent_intervals=inputs.pit_constituent_intervals,
                 constituent_ohlcv=inputs.constituent_ohlcv,
+                **_classify_request_manifest_kwargs(args),
             )
     finally:
         if alarm_enabled:

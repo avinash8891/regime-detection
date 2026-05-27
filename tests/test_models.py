@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 from datetime import date
 
+import pytest
 from pydantic import BaseModel
 
 from regime_detection.models import (
@@ -14,6 +15,11 @@ from regime_detection.models import (
     DataQuality,
     EventCalendarOutput,
     HmmOutput,
+    InflationGrowthEvidencePayload,
+    InflationGrowthOutput,
+    MonetaryPressureEvidencePayload,
+    MonetaryPressureV2Output,
+    NetworkFragilityEvidencePayload,
     NetworkFragilityOutput,
     RegimeOutput,
     RegimeTimeline,
@@ -22,6 +28,8 @@ from regime_detection.models import (
     StructuralCausalState,
     TransitionRiskEvidencePayload,
     TransitionRiskOutput,
+    VolumeLiquidityEvidencePayload,
+    VolumeLiquidityStateOutput,
     _missing_rule_features,
     _project_legacy_v1_transition_risk,
 )
@@ -165,6 +173,78 @@ def test_transition_risk_evidence_payload_supports_dict_protocol() -> None:
         "macro_event_labels": [],
     }
     assert TransitionRiskEvidencePayload.__eq__(left, object()) is NotImplemented
+
+
+def test_v2_axis_outputs_use_typed_axis_specific_evidence_payloads() -> None:
+    network = NetworkFragilityOutput(
+        raw_label="unknown",
+        stable_label="unknown",
+        active_label="unknown",
+        evidence={
+            "rule_evidence": {"rule_path": "unknown_default"},
+            "breadth_active_label": "healthy",
+            "volatility_active_label": "low_vol",
+            "credit_funding_active_label": None,
+        },
+        data_quality=_data_quality(),
+    )
+    inflation = InflationGrowthOutput(
+        raw_label="macro_neutral",
+        stable_label="macro_neutral",
+        active_label="macro_neutral",
+        evidence={
+            "rule_evidence": {"pmi_manufacturing": 50.0},
+            "goldilocks_limb_evidence": {"passed_count": 0},
+            "credit_funding_active_label": "credit_calm",
+            "bias_warning_code": "commodity_proxy_dbc_substitute",
+        },
+        data_quality=_data_quality(),
+    )
+    monetary = MonetaryPressureV2Output(
+        raw_label="neutral_monetary",
+        stable_label="neutral_monetary",
+        active_label="neutral_monetary",
+        evidence={
+            "rule_evidence": {"yield_change_zscore_2y_63d": 0.1},
+            "central_bank_text_evidence": {
+                "score": 0.0,
+                "source": "not_configured",
+                "quality": "absent",
+            },
+        },
+        data_quality=_data_quality(),
+    )
+    volume = VolumeLiquidityStateOutput(
+        raw_label="normal_volume",
+        stable_label="normal_volume",
+        active_label="normal_volume",
+        evidence={
+            "rule_evidence": {"volume_zscore_20d": 0.5},
+            "rule_path": "normal_volume",
+            "rule_reason": "volume normal",
+        },
+        data_quality=_data_quality(),
+    )
+
+    assert type(network.evidence) is NetworkFragilityEvidencePayload
+    assert network.evidence.breadth_active_label == "healthy"
+    assert type(inflation.evidence) is InflationGrowthEvidencePayload
+    assert inflation.evidence.credit_funding_active_label == "credit_calm"
+    assert type(monetary.evidence) is MonetaryPressureEvidencePayload
+    assert monetary.evidence.central_bank_text_evidence is not None
+    assert type(volume.evidence) is VolumeLiquidityEvidencePayload
+    assert volume.evidence.rule_path == "normal_volume"
+
+
+def test_v2_typed_evidence_payloads_reject_unknown_business_fields() -> None:
+    for payload_cls in (
+        NetworkFragilityEvidencePayload,
+        InflationGrowthEvidencePayload,
+        MonetaryPressureEvidencePayload,
+        VolumeLiquidityEvidencePayload,
+    ):
+        with pytest.raises(ValueError, match="Extra inputs are not permitted"):
+            payload_cls.model_validate({"unexpected_field": "silent drift"})
 
 
 def test_missing_rule_features_handles_none_basemodel_and_list_paths() -> None:

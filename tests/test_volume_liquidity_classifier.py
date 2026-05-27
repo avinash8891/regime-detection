@@ -181,7 +181,8 @@ def test_classifier_evidence_reports_live_liquidity_gap_inputs():
 
     last_day = context.sessions[-1]
     evidence = out[last_day].evidence
-    assert set(evidence) == {"rule_evidence", "rule_path", "rule_reason"}
+    assert set(evidence) == {"rule_evidence", "rule_path"}
+    assert evidence.rule_reason is None
     rule_evidence = evidence["rule_evidence"]
     assert set(rule_evidence) == {
         "volume_zscore_20d",

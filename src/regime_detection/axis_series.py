@@ -1,7 +1,12 @@
 from __future__ import annotations
 
+# pyright: reportPrivateUsage=false
+# pyright: reportUnusedFunction=false
+
 from dataclasses import dataclass
 from datetime import date
+
+import pandas as pd
 
 from regime_detection.axis_builders.breadth import build_breadth_axis_series
 from regime_detection.axis_builders.credit_funding import (
@@ -45,6 +50,7 @@ from regime_detection.hysteresis import apply_data_quality_aware_hysteresis
 from regime_detection.market_context import MarketContext
 from regime_detection.models import (
     AxisOutput,
+    AxisEvidencePayload,
     BreadthStateOutput,
     CreditFundingOutput,
     EventCalendarOutput,
@@ -104,6 +110,13 @@ class AxisSeriesBundle:
 
 @dataclass(frozen=True)
 class AxisDependencyContract:
+    """Declared payload and failure semantics for one cross-axis edge.
+
+    `AXIS_DEPENDENCIES` remains the build-order graph. This contract is the
+    business contract: what crosses the edge and how absence, staleness,
+    unknown labels, degraded quality, and invalid sessions are interpreted.
+    """
+
     upstream_axis: str
     downstream_consumer: str
     payload_fields: tuple[str, ...]
@@ -130,6 +143,9 @@ AXIS_BUILD_ORDER: tuple[str, ...] = (
 )
 
 AXIS_DEPENDENCY_CONTRACTS: tuple[AxisDependencyContract, ...] = (
+    # These edges intentionally declare the current label-only contract. If a
+    # downstream consumer starts needing upstream evidence, stable_label, or
+    # data_quality, this table must change before the wire shape changes.
     AxisDependencyContract(
         upstream_axis="breadth_state",
         downstream_consumer="network_fragility",
@@ -469,7 +485,7 @@ def _build_axis_outputs(
     deescalation_days_by_label: dict[str, int],
     default_deescalation_days: int,
     max_unknown_freeze_days: int,
-    required_inputs: list,
+    required_inputs: list[pd.Series],
     required_trading_days: int,
     max_freshness_days: int,
     min_completeness: float,
@@ -515,7 +531,7 @@ def _build_axis_outputs(
                 raw_label="unknown",
                 stable_label=stable if is_frozen else "unknown",
                 active_label=active if is_frozen else "unknown",
-                evidence=evidence_payload,
+                evidence=AxisEvidencePayload(root=evidence_payload),
                 data_quality=dq,
             )
         else:
@@ -523,11 +539,13 @@ def _build_axis_outputs(
                 raw_label=raw,
                 stable_label=stable,
                 active_label=active,
-                evidence={
-                    "rule_evidence": evidence,
-                    "risk_rank": risk_rank,
-                    "deescalation_days": default_deescalation_days,
-                },
+                evidence=AxisEvidencePayload(
+                    root={
+                        "rule_evidence": evidence,
+                        "risk_rank": risk_rank,
+                        "deescalation_days": default_deescalation_days,
+                    }
+                ),
                 data_quality=dq,
             )
         outputs_by_date[day] = output
@@ -554,7 +572,7 @@ def build_axis_series_bundle(
         context, feature_store
     )
     credit_funding_effective = resolve_credit_funding_effective_series(
-        sessions=context.sessions,
+        sessions=list(context.sessions),
         oas_by_date=credit_funding,
         proxy_by_date=credit_funding_proxy,
     )

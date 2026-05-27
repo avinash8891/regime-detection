@@ -760,8 +760,11 @@ def test_classifier_emits_systemic_stress_when_credit_funding_confirms_it():
     )
 
     assert out is not None
-    assert out[context.sessions[-1]].raw_label == "systemic_stress"
-    assert out[context.sessions[-1]].active_label == "systemic_stress"
+    final = out[context.sessions[-1]]
+    assert final.raw_label == "systemic_stress"
+    assert final.active_label == "systemic_stress"
+    assert final.evidence["credit_funding_active_label"] == "credit_stress"
+    assert "credit_funding_data_quality" not in final.evidence
 
 
 def test_classifier_emits_unconfirmed_systemic_stress_when_credit_funding_unavailable():
@@ -822,9 +825,32 @@ def test_classifier_emits_unconfirmed_systemic_stress_when_credit_funding_unavai
     final = out[context.sessions[-1]]
     assert final.raw_label == "systemic_stress"
     assert final.active_label == "systemic_stress"
+    assert final.evidence.credit_funding_active_label is None
     assert (
         final.evidence["rule_evidence"]["rule_reason"] == "credit_funding_unavailable"
     )
+
+
+def test_classifier_treats_unknown_credit_label_as_present_label_not_absent():
+    context, _ = _build_context_with_full_universe()
+    store = build_feature_store(
+        context, network_fragility_config=context.config.network_fragility
+    )
+    breadth = {day: "weak_breadth" for day in context.sessions}
+    volatility = {day: "normal_vol" for day in context.sessions}
+    credit_funding = {day: "unknown" for day in context.sessions}
+
+    out = build_network_fragility_axis_series(
+        context,
+        store,
+        breadth_active_labels_by_date=breadth,
+        volatility_active_labels_by_date=volatility,
+        credit_funding_active_labels_by_date=credit_funding,
+    )
+
+    assert out is not None
+    final = out[context.sessions[-1]]
+    assert final.evidence["credit_funding_active_label"] == "unknown"
 
 
 def test_axis_bundle_threads_credit_funding_into_network_fragility_systemic_stress():

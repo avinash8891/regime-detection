@@ -3124,6 +3124,12 @@ inflation_growth:
 
 Rules referencing `credit_funding.active_label` (`goldilocks`, `recession_scare`, `recovery_growth`) short-circuit the cross-axis predicate to `False` when the §2C axis is unbuilt (slice-4 deferral). Precedence walker then falls through to the next-rank rule. Mirrors slice 1.3's systemic_stress / credit_funding=None pattern (Ambiguity Log #1.3 inline TODO).
 
+Implementation contract: cross-axis consumers read the declared
+`AXIS_DEPENDENCY_CONTRACTS` edge from `axis_series.py`. The current
+inflation/growth edge consumes only `credit_funding_effective.active_label`;
+upstream evidence, data quality, and stable label do not cross this edge unless
+that dependency contract is updated first.
+
 **ADR 0011 Fix 3 override (default):** When `allow_credit_independent_fallback=true` (default), the short-circuit-to-False contract above is replaced. `goldilocks` and `recovery_growth` instead fire on their non-credit conditions alone; `recession_scare` requires `spy_21d_return < spy_recession_credit_independent_threshold` (default -0.07, stricter than the credit-confirmed -0.05) in lieu of the credit clause. See `docs/decisions/0011-inflation-growth-rule-coverage-fix.md` Fix 3.
 
 `earnings_expansion` / `earnings_contraction` consume `aggregate_forward_eps_revision_direction_4w`, which is built by the `regime_data_fetch.aggregate_eps` weekly-snapshot accumulator (`sp500_eps_weekly_history.parquet`). The series is all-NaN until > 4 weekly fetches have accumulated; the two labels stay silent during that cold-start and unlock organically once the accumulator fills. No external feed dependency — the accumulator builds the weekly series from the existing free S&P workbook fetch.
@@ -3324,6 +3330,12 @@ That effective output is a resolver over the two classified labels:
 Network fragility and inflation/growth MUST consume the effective label, so
 pre-2023 OAS gaps do not darken §2C and same-day OAS/proxy disagreement remains
 visible instead of being discarded.
+
+The downstream edge is label-only by contract. OAS/proxy resolver evidence stays
+on `credit_funding_effective_state.evidence`; consumers that need more than the
+effective label must first amend `AXIS_DEPENDENCY_CONTRACTS` and the runner
+diagnostic contract emitted as `dependency_payload_contracts` /
+`v2_dependency_payload_contracts`.
 
 Real-OAS coverage: `hy_oas_*` / `ig_oas_*` start 2023-05-15 (FRED truncated
 the ICE BofA OAS public history — Log #71), so `credit_funding_state` is
