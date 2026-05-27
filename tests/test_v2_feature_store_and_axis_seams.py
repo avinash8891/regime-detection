@@ -212,18 +212,21 @@ def test_axis_bundle_network_fragility_present_with_real_v2_universe(
 # ---------- timeline integration --------------------------------------------
 
 
-def test_timeline_emits_network_fragility_unknown_in_pure_v1_mode(
+def test_timeline_rejects_missing_network_fragility_inputs_in_default_v2_mode(
     market_df_for_asof,
     event_calendar_df,
 ) -> None:
-    """Default V2 timeline fails loudly when required V2 inputs are absent."""
+    """Default V2 engine rejects missing required V2 inputs at request boundary."""
     as_of = date(2023, 12, 14)
-    with pytest.raises(RuntimeError, match="transition_risk requires score inputs"):
+    with pytest.raises(ValueError) as excinfo:
         RegimeEngine().classify(
             as_of_date=as_of,
             market_data=market_df_for_asof(as_of),
             event_calendar=event_calendar_df,
         )
+    message = str(excinfo.value)
+    assert "ClassifyRequest missing configured V2 inputs" in message
+    assert "network_fragility: sector_etf_closes" in message
 
 
 def test_timeline_pulls_network_fragility_from_axis_bundle_when_sector_data_present(
