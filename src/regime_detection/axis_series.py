@@ -524,14 +524,14 @@ def _build_axis_outputs(
         strict=True,
     ):
         if quality_forces_unknown(dq):
-            evidence_payload = {"reason": dq.reason}
-            if is_frozen:
-                evidence_payload["data_quality_freeze"] = True
             output = AxisOutput(
                 raw_label="unknown",
                 stable_label=stable if is_frozen else "unknown",
                 active_label=active if is_frozen else "unknown",
-                evidence=AxisEvidencePayload(root=evidence_payload),
+                evidence=AxisEvidencePayload(
+                    reason=dq.reason,
+                    data_quality_freeze=True if is_frozen else None,
+                ),
                 data_quality=dq,
             )
         else:
@@ -540,11 +540,9 @@ def _build_axis_outputs(
                 stable_label=stable,
                 active_label=active,
                 evidence=AxisEvidencePayload(
-                    root={
-                        "rule_evidence": evidence,
-                        "risk_rank": risk_rank,
-                        "deescalation_days": default_deescalation_days,
-                    }
+                    rule_evidence=evidence,
+                    risk_rank=risk_rank,
+                    deescalation_days=default_deescalation_days,
                 ),
                 data_quality=dq,
             )

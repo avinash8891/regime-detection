@@ -295,7 +295,7 @@ def test_runtime_evidence_fields_use_named_payloads() -> None:
         raw_label="bull",
         stable_label="bull",
         active_label="bull",
-        evidence={"rule": "trend_above_ma", "value": 1.2},
+        evidence={"rule_evidence": {"rule": "trend_above_ma", "value": 1.2}},
         data_quality=dq,
     )
     event_calendar = EventCalendarOutput(
@@ -337,8 +337,10 @@ def test_runtime_evidence_fields_use_named_payloads() -> None:
     )
 
     assert isinstance(axis.evidence, AxisEvidencePayload)
-    assert axis.evidence["rule"] == "trend_above_ma"
-    assert axis.model_dump()["evidence"] == {"rule": "trend_above_ma", "value": 1.2}
+    assert axis.evidence["rule_evidence"]["rule"] == "trend_above_ma"
+    assert axis.evidence.model_dump() == {
+        "rule_evidence": {"rule": "trend_above_ma", "value": 1.2}
+    }
     assert event_calendar.model_dump()["primary_label"] == "normal_calendar"
     assert event_calendar.model_dump()["matching_labels"] == ("normal_calendar",)
     assert event_calendar.model_dump()["evidence"] == {"selection_method": "precedence"}

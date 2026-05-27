@@ -10,9 +10,6 @@ import yaml
 
 from regime_detection.trend_character import (
     TrendCharacterFeatures,
-    _DEFAULT_FOLLOWTHROUGH_HOLD_SESSIONS,
-    _DEFAULT_FOLLOWTHROUGH_LOOKBACK_SESSIONS,
-    _DEFAULT_FOLLOWTHROUGH_WINDOW_COUNT,
     _compute_breakout_20d_or_50d,
     _compute_followthrough_rate,
     compute_features,
@@ -58,9 +55,9 @@ def test_followthrough_rate_matches_pinned_output_on_realistic_close_series(
             assert math.isnan(actual), f"{key}: expected NaN, got {actual}"
         else:
             assert not math.isnan(actual), f"{key}: expected {expected}, got NaN"
-            assert np.isclose(actual, expected, rtol=0.0, atol=0.0), (
-                f"{key}: expected {expected}, got {actual}"
-            )
+            assert np.isclose(
+                actual, expected, rtol=0.0, atol=0.0
+            ), f"{key}: expected {expected}, got {actual}"
 
 
 def test_trend_character_matches_pinned_fixtures(classified_golden_outputs) -> None:

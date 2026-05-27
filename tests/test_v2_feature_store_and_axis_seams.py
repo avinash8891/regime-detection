@@ -59,6 +59,11 @@ def test_feature_store_network_fragility_is_none_without_sector_data(
     store = build_feature_store(context)
 
     assert store.network_fragility is None
+    availability = store.availability["network_fragility"]
+    assert availability.available is False
+    assert availability.policy == "none"
+    assert availability.reason == "missing_required_inputs"
+    assert availability.missing_inputs == ("sector_etf_closes",)
 
 
 def test_feature_store_populates_network_fragility_with_real_v2_universe(
@@ -73,10 +78,39 @@ def test_feature_store_populates_network_fragility_with_real_v2_universe(
     store = build_feature_store(context)
 
     assert store.network_fragility is not None
+    assert store.availability["network_fragility"].available is True
+    assert store.availability["network_fragility"].reason == "populated"
     assert isinstance(store.network_fragility, NetworkFragilityFeatures)
     assert store.network_fragility.largest_eigenvalue_share_percentile_504d.loc[
         pd.Timestamp(_REAL_V2_AS_OF)
     ] == pytest.approx(0.8630952380952381)
+
+
+def test_feature_store_reports_configured_v2_seam_missing_inputs(
+    market_df_for_asof,
+) -> None:
+    as_of = date(2023, 12, 14)
+    context = build_market_context(
+        end_date=as_of,
+        market_data=market_df_for_asof(as_of),
+        config=RegimeEngine().config,
+    )
+
+    store = build_feature_store(
+        context,
+        monetary_pressure_v2_config=context.config.monetary_pressure_v2,
+    )
+
+    monetary = store.availability["monetary"]
+    assert monetary.available is False
+    assert monetary.policy == "raise"
+    assert monetary.reason == "missing_required_inputs"
+    assert set(monetary.missing_inputs) == {
+        "macro_series",
+        "2y_yield",
+        "10y_yield",
+        "broad_usd_index",
+    }
 
 
 # ---------- axis classifier stub --------------------------------------------

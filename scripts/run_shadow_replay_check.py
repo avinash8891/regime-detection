@@ -16,6 +16,7 @@ sys.path.insert(0, str(REPO_ROOT / "scripts"))
 
 from regime_detection.engine import RegimeEngine
 from regime_detection.fragility_universe import CROSS_ASSET_SYMBOLS, SECTOR_ETFS
+from regime_detection.rule_provenance import rule_provenance_payload
 from regime_detection.shadow_storage import (
     fetch_run_row,
     insert_replay_check,
@@ -137,6 +138,7 @@ def run_replay_check(
         replayed_payload["v2_dependency_payload_contracts"] = (
             _v2_dependency_payload_contracts()
         )
+        replayed_payload["rule_provenance"] = rule_provenance_payload()
         stored_payload = json.loads(
             Path(run_row["output_path"]).read_text(encoding="utf-8")
         )

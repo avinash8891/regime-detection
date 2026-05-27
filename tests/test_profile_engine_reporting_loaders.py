@@ -9,6 +9,7 @@ import pandas as pd
 import pytest
 
 from scripts import profile_engine_reporting
+from regime_detection.rule_provenance import rule_provenance_payload
 
 from conftest import (
     load_profile_engine_module,
@@ -295,6 +296,7 @@ def test_profile_json_report_emits_machine_readable_sections(tmp_path: Path) -> 
                         "volume_liquidity_state": "label_and_status",
                     },
                 },
+                "rule_provenance": json.loads(json.dumps(rule_provenance_payload())),
             },
             "as_of_date": "2026-05-15",
             "event_calendar_primary_label": "fed_week",

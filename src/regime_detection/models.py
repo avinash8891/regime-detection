@@ -70,10 +70,6 @@ class EvidencePayload(RootModel[dict[str, Any]]):
         return NotImplemented
 
 
-class AxisEvidencePayload(EvidencePayload):
-    """Dict-compatible payload for legacy V1 axis rule evidence."""
-
-
 class EventCalendarEvidencePayload(EvidencePayload):
     """Dict-compatible payload for event-calendar rule evidence."""
 
@@ -88,38 +84,66 @@ class TypedEvidencePayload(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
+    def model_dump(self, *args: Any, **kwargs: Any) -> dict[str, Any]:
+        kwargs.setdefault("exclude_none", True)
+        return super().model_dump(*args, **kwargs)
+
+    def model_dump_json(self, *args: Any, **kwargs: Any) -> str:
+        kwargs.setdefault("exclude_none", True)
+        return super().model_dump_json(*args, **kwargs)
+
     def get(self, key: str, default: Any = None) -> Any:
-        return self.model_dump(exclude_none=True).get(key, default)
+        return self.model_dump().get(key, default)
 
     def __getitem__(self, key: str) -> Any:
-        return self.model_dump(exclude_none=True)[key]
+        return self.model_dump()[key]
 
     def __contains__(self, key: object) -> bool:
-        return key in self.model_dump(exclude_none=True)
+        return key in self.model_dump()
 
     def __iter__(self) -> Iterator[str]:
-        return iter(self.model_dump(exclude_none=True))
+        return iter(self.model_dump())
 
     def __len__(self) -> int:
-        return len(self.model_dump(exclude_none=True))
+        return len(self.model_dump())
 
     def items(self) -> Any:
-        return self.model_dump(exclude_none=True).items()
+        return self.model_dump().items()
 
     def keys(self) -> Any:
-        return self.model_dump(exclude_none=True).keys()
+        return self.model_dump().keys()
 
     def values(self) -> Any:
-        return self.model_dump(exclude_none=True).values()
+        return self.model_dump().values()
 
     def __eq__(self, other: object) -> bool:
         if isinstance(other, TypedEvidencePayload):
-            return self.model_dump(exclude_none=True) == other.model_dump(
-                exclude_none=True
-            )
+            return self.model_dump() == other.model_dump()
         if isinstance(other, dict):
-            return self.model_dump(exclude_none=True) == other
+            return self.model_dump() == other
         return NotImplemented
+
+
+class AxisEvidencePayload(TypedEvidencePayload):
+    """Typed payload for core axis rule evidence.
+
+    Core V1 axes are no longer arbitrary evidence bags. This shape declares the
+    payload fields that may cross the model/reporting boundary: rule evidence,
+    hysteresis metadata, data-quality freeze metadata, breadth provenance, and
+    HMM enrichment when the V2 evidence seam is lit.
+    """
+
+    rule_evidence: dict[str, Any] | None = None
+    risk_rank: dict[str, int] | None = None
+    deescalation_days: int | None = None
+    reason: str | None = None
+    data_quality_freeze: bool | None = None
+    source: str | None = None
+    proxy: str | None = None
+    row_provenance_mode: str | None = None
+    active_label_source: str | None = None
+    hmm_top_state: int | None = None
+    hmm_top_state_prob: float | None = None
 
 
 class NetworkFragilityEvidencePayload(TypedEvidencePayload):
@@ -339,19 +363,26 @@ def _collect_missing_rule_features(value: Any, features: set[str]) -> None:
     if isinstance(value, EvidencePayload):
         value = value.root
     elif isinstance(value, BaseModel):
-        value = value.model_dump()
+        value = value.model_dump(exclude_none=True)
     if not isinstance(value, dict):
         return
     rule_evidence = value.get("rule_evidence")
     if isinstance(rule_evidence, dict):
         _collect_missing_leaf_keys(rule_evidence, features)
-    for item in value.values():
+    for key, item in value.items():
+        if key == "rule_evidence":
+            continue
         _collect_missing_rule_features(item, features)
 
 
 def _collect_missing_leaf_keys(
     value: Any, features: set[str], prefix: str = ""
 ) -> None:
+    if isinstance(value, BaseModel):
+        _collect_missing_leaf_keys(
+            value.model_dump(exclude_none=True), features, prefix
+        )
+        return
     if isinstance(value, dict):
         for key, item in value.items():
             child_prefix = f"{prefix}.{key}" if prefix else str(key)
@@ -853,6 +884,42 @@ class AgentRouting(BaseModel):
     blocked_strategy_modes: list[str]
 
 
+CoverageAxisStatus = Literal[
+    "classified",
+    "no_rule_fired",
+    "no_rule_fired_hysteresis",
+    "no_rule_fired_missing_feature",
+    "data_unavailable",
+    "stale_data",
+    "insufficient_history",
+    "not_wired",
+]
+
+
+class AxisCoverage(BaseModel):
+    """Operator-facing coverage for one axis on one classification date."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    axis: str
+    status: CoverageAxisStatus
+    label: str | None = None
+    reason: str | None = None
+    safe_for_downstream: bool
+    availability_policy: str | None = None
+    required_inputs: tuple[str, ...] = ()
+    missing_inputs: tuple[str, ...] = ()
+
+
+class ClassificationCoverageReport(BaseModel):
+    """Per-date classification coverage and downstream safety summary."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    axes: dict[str, AxisCoverage]
+    safe_for_downstream: bool
+
+
 _V1_CONFIG_VERSION = "core3-v1.0.0"
 
 
@@ -897,6 +964,7 @@ def _strip_classification_metadata(value: Any) -> None:
     if isinstance(value, dict):
         value.pop("classification_status", None)
         value.pop("classification_reason", None)
+        value.pop("classification_coverage", None)
         for nested in value.values():
             _strip_classification_metadata(nested)
     elif isinstance(value, list):
@@ -939,6 +1007,7 @@ class RegimeOutput(BaseModel):
         None  # v2 §5.2
     )
     effective_strategy_constraints: dict[str, EffectiveStrategyConstraint] | None = None
+    classification_coverage: ClassificationCoverageReport | None = None
 
     def model_dump_legacy_v1_wire(self, *args: Any, **kwargs: Any) -> dict[str, Any]:
         """Compatibility projection for archived V1 wire-shape replay."""

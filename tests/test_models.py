@@ -5,6 +5,7 @@ from datetime import date
 
 import pytest
 from pydantic import BaseModel
+from pydantic import ValidationError
 
 from regime_detection.models import (
     AxisEvidencePayload,
@@ -124,18 +125,35 @@ def _regime_output(
 
 
 def test_axis_evidence_payload_supports_legacy_dict_protocol() -> None:
-    left = AxisEvidencePayload(root={"rule": "trend_above_ma", "value": 1.2})
-    right = AxisEvidencePayload(root={"rule": "trend_above_ma", "value": 1.2})
+    left = AxisEvidencePayload(
+        rule_evidence={"rule": "trend_above_ma", "value": 1.2},
+        hmm_top_state=2,
+        hmm_top_state_prob=0.91,
+    )
+    right = AxisEvidencePayload(
+        rule_evidence={"rule": "trend_above_ma", "value": 1.2},
+        hmm_top_state=2,
+        hmm_top_state_prob=0.91,
+    )
 
-    assert "rule" in left
-    assert list(iter(left)) == ["rule", "value"]
-    assert len(left) == 2
-    assert list(left.items()) == [("rule", "trend_above_ma"), ("value", 1.2)]
-    assert list(left.keys()) == ["rule", "value"]
-    assert list(left.values()) == ["trend_above_ma", 1.2]
+    assert "rule_evidence" in left
+    assert list(iter(left)) == ["rule_evidence", "hmm_top_state", "hmm_top_state_prob"]
+    assert len(left) == 3
+    assert dict(left.items())["rule_evidence"]["rule"] == "trend_above_ma"
+    assert list(left.keys()) == ["rule_evidence", "hmm_top_state", "hmm_top_state_prob"]
+    assert left.get("hmm_top_state") == 2
     assert left == right
-    assert left == {"rule": "trend_above_ma", "value": 1.2}
+    assert left == {
+        "rule_evidence": {"rule": "trend_above_ma", "value": 1.2},
+        "hmm_top_state": 2,
+        "hmm_top_state_prob": 0.91,
+    }
     assert AxisEvidencePayload.__eq__(left, object()) is NotImplemented
+
+
+def test_axis_evidence_payload_rejects_undeclared_business_fields() -> None:
+    with pytest.raises(ValidationError):
+        AxisEvidencePayload.model_validate({"rule": "misspelled_legacy_key"})
 
 
 def test_transition_risk_evidence_payload_supports_dict_protocol() -> None:
@@ -254,13 +272,13 @@ def test_missing_rule_features_handles_none_basemodel_and_list_paths() -> None:
     assert _missing_rule_features(None) == []
     assert _missing_rule_features(
         AxisEvidencePayload(
-            root={
+            rule_evidence={
                 "nested": NestedRuleEvidence(
                     rule_evidence={"window": [1.0, None, {"deep": None}]}
                 )
             }
         )
-    ) == ["window[1]", "window[2].deep"]
+    ) == ["nested.rule_evidence.window[1]", "nested.rule_evidence.window[2].deep"]
 
 
 def test_serializers_omit_none_fields_by_default() -> None:

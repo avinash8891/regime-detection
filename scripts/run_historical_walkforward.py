@@ -21,6 +21,7 @@ sys.path.insert(0, str(REPO_ROOT / "src"))
 from regime_detection.calendar import nyse_calendar  # noqa: E402
 from regime_detection.engine import RegimeEngine  # noqa: E402
 from regime_detection.loaders import load_event_calendar  # noqa: E402
+from regime_detection.rule_provenance import rule_provenance_payload  # noqa: E402
 from regime_detection.shadow_storage import event_rows_for_yaml  # noqa: E402
 from regime_detection.versioning import (
     engine_version as resolved_engine_version,
@@ -459,6 +460,12 @@ def run_walkforward(
                         "breadth_state_active": output.breadth_state.active_label,
                         **_event_calendar_summary_cells(output),
                         "v2_dependency_payload_contracts": _v2_dependency_payload_contracts_summary_cell(),
+                        "classification_coverage": _json_cell(
+                            output.classification_coverage.model_dump(mode="json")
+                            if output.classification_coverage is not None
+                            else None
+                        ),
+                        "rule_provenance": _json_cell(rule_provenance_payload()),
                         "transition_risk_state": output.transition_risk.state,
                         "transition_risk_score": output.transition_risk.score,
                         "transition_risk_primary_drivers": _json_cell(

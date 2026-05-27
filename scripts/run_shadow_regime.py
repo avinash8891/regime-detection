@@ -19,6 +19,7 @@ from regime_detection.calendar import require_nyse_trading_day
 from regime_detection.engine import RegimeEngine
 from regime_detection.fragility_universe import CROSS_ASSET_SYMBOLS, SECTOR_ETFS
 from regime_detection.loaders import load_event_calendar
+from regime_detection.rule_provenance import rule_provenance_payload
 from regime_detection.shadow_storage import (
     ensure_shadow_layout,
     insert_run_row,
@@ -187,6 +188,7 @@ def _shadow_output_json(output: object) -> str:
         raise TypeError("shadow output must provide model_dump")
     payload = output.model_dump(mode="json")
     payload["v2_dependency_payload_contracts"] = _v2_dependency_payload_contracts()
+    payload["rule_provenance"] = rule_provenance_payload()
     return json.dumps(payload, indent=2, sort_keys=True)
 
 

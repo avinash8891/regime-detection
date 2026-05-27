@@ -57,7 +57,7 @@ def test_wrapped_evidence_with_missing_rule_feature_reports_no_rule_fired_missin
         raw_label="unknown",
         stable_label="unknown",
         active_label="unknown",
-        evidence={"root": {"rule_evidence": {"hy_spread_percentile_504d": None}}},
+        evidence={"rule_evidence": {"hy_spread_percentile_504d": None}},
         data_quality=DataQuality(status="ok", freshness_days=0, completeness=1.0),
     )
 
@@ -85,7 +85,7 @@ def test_existing_no_rule_status_is_refined_to_missing_feature() -> None:
         raw_label="unknown",
         stable_label="unknown",
         active_label="unknown",
-        evidence={"root": {"rule_evidence": {"hy_spread_percentile_504d": None}}},
+        evidence={"rule_evidence": {"hy_spread_percentile_504d": None}},
         data_quality=DataQuality(status="ok", freshness_days=0, completeness=1.0),
         classification_status="no_rule_fired",
         classification_reason="no_rule_fired",

@@ -93,6 +93,8 @@ V1 input contract:
 - All V2 inputs are explicit optional seams on `ClassifyRequest`; absent seams remain `None` and are handled by the axis/boundary policy that owns them.
 - `breadth_data` is not an engine input. Passing it to `classify`, `classify_window`, or `ClassifyRequest` must fail loudly instead of being ignored.
 - Profile-runner calls must set `request_source="profile_manifest"` and pass manifest provenance through `manifest_resolved_inputs` / `manifest_cli_overrides`. Direct calls must not carry manifest metadata.
+- Feature-store optional seams must emit `FeatureStore.availability` with the declared absence policy, required inputs, and missing inputs.
+- Runtime outputs and operator artifacts must expose per-date classification coverage and rule provenance without changing the archived V1 wire projection.
 
 Canonical request object:
 

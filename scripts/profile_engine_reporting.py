@@ -14,6 +14,7 @@ import pandas as pd
 from regime_detection.feature_store import FeatureStore
 from regime_detection.models import ClassificationStatus
 from regime_detection.models import RegimeOutput, RegimeTimeline
+from regime_detection.rule_provenance import rule_provenance_payload
 from scripts._v2_calibration_helpers import axis_reporting_label as _reporting_label
 
 if TYPE_CHECKING:
@@ -447,6 +448,12 @@ def _compact_timeline_report(outputs: list[RegimeOutput]) -> list[dict[str, Any]
         seams["transition_risk"] = _transition_risk_seam(out.transition_risk)
         seams["event_calendar"] = _event_calendar_seam(event_calendar)
         seams["dependency_payload_contracts"] = _dependency_payload_contracts_report()
+        classification_coverage = getattr(out, "classification_coverage", None)
+        if classification_coverage is not None:
+            seams["classification_coverage"] = classification_coverage.model_dump(
+                mode="json"
+            )
+        seams["rule_provenance"] = rule_provenance_payload()
         rows.append(
             {
                 "as_of_date": out.as_of_date.isoformat(),

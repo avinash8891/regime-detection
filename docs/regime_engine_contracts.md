@@ -33,6 +33,9 @@ the wire shape.
 ## Absence Policy Registry
 
 `src/regime_detection/boundary_policies.py` owns `BOUNDARY_ABSENCE_POLICIES`.
+`src/regime_detection/feature_store.py` emits the runtime
+`FeatureStore.availability` report from the same build state that populates V2
+features.
 
 The registry declares which behavior is intentional at each boundary:
 
@@ -45,6 +48,13 @@ The registry declares which behavior is intentional at each boundary:
 The goal is declaration, not forced uniformity. Missing `event_calendar` should
 raise; an unlit optional V2 seam may stay `None`; stale series may force an
 `unknown` classification.
+
+Every feature seam reports:
+
+- whether it populated;
+- the boundary policy (`raise`, `none`, `unknown`, or `degraded`);
+- the declared required inputs;
+- the concrete missing inputs, when absent.
 
 ## Request Contract
 
@@ -71,6 +81,7 @@ Current hard boundaries:
 Typed payloads preserve dict-like report behavior while forbidding undeclared
 keys. They currently cover:
 
+- `AxisEvidencePayload` for core axis evidence;
 - `TransitionRiskEvidencePayload`;
 - `CreditFundingEvidencePayload`;
 - `NetworkFragilityEvidencePayload`;
@@ -84,24 +95,34 @@ field is part of the runtime behavior.
 
 ## Operator Diagnostics
 
-Profile, shadow, and walk-forward artifacts expose V2 dependency payload
-contracts so operators can see whether a run used label-only or richer
-cross-axis payloads.
+Profile, shadow, and walk-forward artifacts expose dependency payload contracts,
+classification coverage, and rule provenance so operators can see whether a run
+used label-only or richer cross-axis payloads, which axes were safe for
+downstream use, and which spec/config surface owns thresholds and precedence.
 
 Current artifact fields:
 
-- profile compact timeline: `dependency_payload_contracts`;
-- historical walk-forward summary: `v2_dependency_payload_contracts`;
-- shadow output and replay diff payloads: `v2_dependency_payload_contracts`.
+- profile compact timeline: `dependency_payload_contracts`,
+  `classification_coverage`, `rule_provenance`;
+- historical walk-forward summary: `v2_dependency_payload_contracts`,
+  `classification_coverage`, `rule_provenance`;
+- shadow output and replay diff payloads: `v2_dependency_payload_contracts`,
+  `classification_coverage`, `rule_provenance`.
 
 Replay comparison includes the diagnostic contract, so a payload-contract drift
 is a replay mismatch instead of a silent report-only change.
 
+`src/regime_detection/classification_coverage.py` owns per-date coverage.
+`src/regime_detection/rule_provenance.py` owns threshold, weight, hysteresis, and
+precedence provenance.
+
 ## Pyright Ratchet
 
 `pyproject.toml` includes `src/regime_detection/engine.py`,
-`src/regime_detection/models.py`, and `src/regime_detection/axis_series.py` in
-the strict-check set.
+`src/regime_detection/models.py`, `src/regime_detection/axis_series.py`,
+`src/regime_detection/feature_store.py`, `src/regime_detection/timeline.py`,
+`src/regime_detection/classification_coverage.py`, and
+`src/regime_detection/rule_provenance.py` in the strict-check set.
 
 `docs/pyright_pandas_stub_policy.md` defines the narrow rule for pandas-stub
 noise and Pydantic compatibility suppressions. Suppressions may isolate framework

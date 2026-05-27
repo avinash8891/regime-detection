@@ -141,7 +141,9 @@ def test_default_feature_store_builder_registry_orders_trend_news_before_trend_v
 
     builder_names = tuple(builder.name for builder in _FEATURE_STORE_BUILDERS)
     feature_fields = tuple(
-        name for name in FeatureStore.model_fields if name != "spy_index"
+        name
+        for name in FeatureStore.model_fields
+        if name not in {"spy_index", "availability"}
     )
 
     assert set(feature_fields).issubset(builder_names)

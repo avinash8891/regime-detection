@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass
-from typing import TypeVar, cast
+from typing import Literal, TypeVar
 
 import pandas as pd
 from pydantic import BaseModel, ConfigDict
@@ -116,6 +116,7 @@ __all__ = [
     "ChangePointFeatures",
     "ClusteringFeatures",
     "CreditFundingFeatures",
+    "FeatureAvailability",
     "FeatureStore",
     "HMMFeatures",
     "InflationGrowthFeatures",
@@ -130,6 +131,7 @@ __all__ = [
 
 _FRED_DGS2_KEY = "2y_yield"
 _T = TypeVar("_T")
+FeatureAvailabilityPolicy = Literal["raise", "none", "unknown", "degraded"]
 
 
 def _as_datetime_index(index: pd.Index) -> pd.DatetimeIndex:
@@ -139,10 +141,7 @@ def _as_datetime_index(index: pd.Index) -> pd.DatetimeIndex:
 
 
 def _series_column(frame: pd.DataFrame, column: str) -> pd.Series:
-    series = frame[column]
-    if not isinstance(series, pd.Series):
-        raise RuntimeError(f"feature store requires a single {column!r} column")
-    return series
+    return frame[column]
 
 
 @dataclass
@@ -205,10 +204,31 @@ def _run_feature_store_builders(
         builder.build(state)
 
 
+class FeatureAvailability(BaseModel):
+    """Declared availability result for one feature seam.
+
+    `available=False` is not enough for operators: the report has to say
+    whether the absence is expected (`policy="none"`), should raise at the
+    classifier boundary (`policy="raise"`), should classify unknown, or should
+    degrade. Missing inputs are stable machine-readable names from the seam
+    contract, not prose parsed out of comments.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    feature: str
+    available: bool
+    policy: FeatureAvailabilityPolicy
+    reason: str
+    required_inputs: tuple[str, ...] = ()
+    missing_inputs: tuple[str, ...] = ()
+
+
 class FeatureStore(BaseModel):
     model_config = ConfigDict(extra="forbid", arbitrary_types_allowed=True)
 
     spy_index: pd.DatetimeIndex
+    availability: dict[str, FeatureAvailability]
     trend_direction: TrendDirectionFeatures
     trend_character: TrendCharacterFeatures
     volatility: VolatilityFeatures
@@ -359,14 +379,13 @@ def _build_news_sentiment_score_series(
         return None
     if news_sentiment.empty:
         return None
-    score = cast(
-        pd.Series,
+    score = (
         news_sentiment.reindex(session_index, method="ffill")
         .rolling(config.smoothing_window_sessions, min_periods=1)
-        .mean(),
+        .mean()
     )
     score.name = "news_sentiment_score"
-    return cast(pd.Series, score)
+    return score
 
 
 def _build_trend_direction_feature(state: _FeatureStoreBuildState) -> None:
@@ -740,6 +759,287 @@ _FEATURE_STORE_BUILDERS: tuple[_FeatureStoreBuilder, ...] = (
 )
 
 
+def _missing_macro_keys(
+    macro_series: dict[str, pd.Series] | None, required_keys: tuple[str, ...]
+) -> tuple[str, ...]:
+    if macro_series is None:
+        return ("macro_series",) + required_keys
+    return tuple(key for key in required_keys if key not in macro_series)
+
+
+def _missing_cross_asset_keys(
+    cross_asset_closes: dict[str, pd.Series] | None, required_keys: tuple[str, ...]
+) -> tuple[str, ...]:
+    if cross_asset_closes is None:
+        return ("cross_asset_closes",) + required_keys
+    return tuple(key for key in required_keys if key not in cross_asset_closes)
+
+
+def _missing_sector_inputs(state: _FeatureStoreBuildState) -> tuple[str, ...]:
+    sector_closes = state.context.sector_etf_closes
+    if sector_closes is None:
+        return ("sector_etf_closes",)
+    if not any(symbol in sector_closes for symbol in SECTOR_ETFS):
+        return ("sector_etf_closes.any_sector_etf",)
+    return ()
+
+
+def _availability(
+    *,
+    feature: str,
+    value: object | None,
+    policy: FeatureAvailabilityPolicy,
+    required_inputs: tuple[str, ...],
+    missing_inputs: tuple[str, ...],
+) -> FeatureAvailability:
+    if value is not None:
+        return FeatureAvailability(
+            feature=feature,
+            available=True,
+            policy=policy,
+            reason="populated",
+            required_inputs=required_inputs,
+        )
+    reason = "not_configured" if not missing_inputs else "missing_required_inputs"
+    return FeatureAvailability(
+        feature=feature,
+        available=False,
+        policy=policy,
+        reason=reason,
+        required_inputs=required_inputs,
+        missing_inputs=missing_inputs,
+    )
+
+
+def _build_feature_availability_report(
+    state: _FeatureStoreBuildState,
+) -> dict[str, FeatureAvailability]:
+    spy_volume_missing = ()
+    if "volume" not in state.spy_ohlcv.columns:
+        spy_volume_missing = ("spy_ohlcv.volume",)
+    else:
+        spy_volume = _series_column(state.spy_ohlcv, "volume")
+        if bool(spy_volume.isna().all()):
+            spy_volume_missing = ("spy_ohlcv.volume.non_nan",)
+
+    breadth_state_missing = (
+        ()
+        if state.breadth_state_v2_config is not None
+        else ("breadth_state_v2_config",)
+    ) + _missing_sector_inputs(state)
+    volume_liquidity_missing = (
+        ()
+        if state.volume_liquidity_v2_config is not None
+        else ("volume_liquidity_v2_config",)
+    ) + spy_volume_missing
+    monetary_config_missing = (
+        ()
+        if state.monetary_pressure_v2_config is not None
+        else ("monetary_pressure_v2_config",)
+    )
+    credit_config_missing = (
+        () if state.credit_funding_config is not None else ("credit_funding_config",)
+    )
+    inflation_config_missing = (
+        ()
+        if state.inflation_growth_config is not None
+        else ("inflation_growth_config",)
+    )
+
+    monetary_required = (
+        "macro_series",
+        _FRED_DGS2_KEY,
+        _IG_DGS10_KEY,
+        "broad_usd_index",
+    )
+    monetary_missing = ()
+    if state.monetary_pressure_v2_config is None:
+        monetary_missing = ()
+    else:
+        monetary_missing = _missing_macro_keys(
+            state.context.macro_series,
+            (_FRED_DGS2_KEY, _IG_DGS10_KEY, "broad_usd_index"),
+        )
+
+    credit_missing = ()
+    if state.credit_funding_config is not None:
+        credit_missing = _missing_cross_asset_keys(
+            state.context.cross_asset_closes, tuple(_CF_CROSS_ASSET_KEYS)
+        ) + _missing_macro_keys(state.context.macro_series, tuple(_CF_MACRO_KEYS))
+
+    inflation_missing = ()
+    if state.inflation_growth_config is not None:
+        inflation_missing = _missing_cross_asset_keys(
+            state.context.cross_asset_closes, tuple(_IG_CROSS_ASSET_KEYS)
+        ) + _missing_macro_keys(state.context.macro_series, tuple(_IG_MACRO_KEYS))
+
+    report = {
+        "trend_direction": FeatureAvailability(
+            feature="trend_direction",
+            available=True,
+            policy="raise",
+            reason="populated",
+            required_inputs=("spy_ohlcv.close",),
+        ),
+        "trend_character": FeatureAvailability(
+            feature="trend_character",
+            available=True,
+            policy="raise",
+            reason="populated",
+            required_inputs=("spy_ohlcv.close", "spy_ohlcv.high", "spy_ohlcv.low"),
+        ),
+        "volatility": FeatureAvailability(
+            feature="volatility",
+            available=True,
+            policy="raise",
+            reason="populated",
+            required_inputs=("spy_ohlcv.close",),
+        ),
+        "breadth": FeatureAvailability(
+            feature="breadth",
+            available=True,
+            policy="raise",
+            reason="populated",
+            required_inputs=("spy_ohlcv.close", "rsp_close"),
+        ),
+        "sma_50": FeatureAvailability(
+            feature="sma_50",
+            available=True,
+            policy="raise",
+            reason="populated",
+            required_inputs=("spy_ohlcv.close",),
+        ),
+        "network_fragility": _availability(
+            feature="network_fragility",
+            value=state.network_fragility,
+            policy="none",
+            required_inputs=("sector_etf_closes",),
+            missing_inputs=(
+                ()
+                if state.context.sector_etf_closes is not None
+                else ("sector_etf_closes",)
+            ),
+        ),
+        "trend_direction_v2": _availability(
+            feature="trend_direction_v2",
+            value=state.trend_direction_v2,
+            policy="none",
+            required_inputs=("trend_direction_v2_config", "spy_ohlcv.close"),
+            missing_inputs=(
+                ()
+                if state.trend_direction_v2_config is not None
+                else ("trend_direction_v2_config",)
+            ),
+        ),
+        "volatility_state_v2": _availability(
+            feature="volatility_state_v2",
+            value=state.volatility_state_v2,
+            policy="none",
+            required_inputs=("volatility_state_v2_config", "spy_ohlcv.ohlc"),
+            missing_inputs=(
+                ()
+                if state.volatility_state_v2_config is not None
+                else ("volatility_state_v2_config",)
+            ),
+        ),
+        "breadth_state_v2": _availability(
+            feature="breadth_state_v2",
+            value=state.breadth_state_v2,
+            policy="none",
+            required_inputs=("breadth_state_v2_config", "sector_etf_closes"),
+            missing_inputs=breadth_state_missing,
+        ),
+        "volume_liquidity_v2": _availability(
+            feature="volume_liquidity_v2",
+            value=state.volume_liquidity_v2,
+            policy="none",
+            required_inputs=("volume_liquidity_v2_config", "spy_ohlcv.volume"),
+            missing_inputs=volume_liquidity_missing,
+        ),
+        "monetary": _availability(
+            feature="monetary",
+            value=state.monetary,
+            policy="raise",
+            required_inputs=monetary_required,
+            missing_inputs=monetary_config_missing + monetary_missing,
+        ),
+        "hmm": _availability(
+            feature="hmm",
+            value=state.hmm,
+            policy="none",
+            required_inputs=("hmm_config", "volume_liquidity_v2", "network_fragility"),
+            missing_inputs=tuple(
+                item
+                for item, available in (
+                    ("hmm_config", state.context.config.hmm is not None),
+                    ("volume_liquidity_v2", state.volume_liquidity_v2 is not None),
+                    ("network_fragility", state.network_fragility is not None),
+                )
+                if not available
+            ),
+        ),
+        "clustering": _availability(
+            feature="clustering",
+            value=state.clustering,
+            policy="none",
+            required_inputs=(
+                "clustering_config",
+                "breadth_state_v2.pct_above_50dma",
+                "network_fragility",
+                "trend_direction_v2",
+            ),
+            missing_inputs=tuple(
+                item
+                for item, available in (
+                    ("clustering_config", state.context.config.clustering is not None),
+                    (
+                        "breadth_state_v2.pct_above_50dma",
+                        state.breadth_state_v2 is not None
+                        and state.breadth_state_v2.pct_above_50dma is not None,
+                    ),
+                    ("network_fragility", state.network_fragility is not None),
+                    ("trend_direction_v2", state.trend_direction_v2 is not None),
+                )
+                if not available
+            ),
+        ),
+        "change_point": _availability(
+            feature="change_point",
+            value=state.change_point,
+            policy="none",
+            required_inputs=("change_point_config", "realized_vol_21d"),
+            missing_inputs=(
+                ()
+                if state.context.config.change_point is not None
+                else ("change_point_config",)
+            ),
+        ),
+        "credit_funding": _availability(
+            feature="credit_funding",
+            value=state.credit_funding,
+            policy="none",
+            required_inputs=(
+                "credit_funding_config",
+                "cross_asset_closes",
+                "macro_series",
+            ),
+            missing_inputs=credit_config_missing + credit_missing,
+        ),
+        "inflation_growth": _availability(
+            feature="inflation_growth",
+            value=state.inflation_growth,
+            policy="none",
+            required_inputs=(
+                "inflation_growth_config",
+                "cross_asset_closes",
+                "macro_series",
+            ),
+            missing_inputs=inflation_config_missing + inflation_missing,
+        ),
+    }
+    return report
+
+
 def build_feature_store(
     context: MarketContext,
     *,
@@ -778,6 +1078,7 @@ def build_feature_store(
 
     return FeatureStore(
         spy_index=_as_datetime_index(spy_ohlcv.index),
+        availability=_build_feature_availability_report(build_state),
         trend_direction=_require_feature(
             build_state.trend_direction, "trend_direction"
         ),

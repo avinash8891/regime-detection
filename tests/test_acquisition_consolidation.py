@@ -126,14 +126,12 @@ def test_consolidate_acquisition_dbs_preserves_multiple_artifact_blobs_per_sourc
     )
 
     with closing(sqlite3.connect(target)) as conn:
-        target_blobs = conn.execute(
-            """
+        target_blobs = conn.execute("""
             SELECT artifacts.source_identifier, artifact_blobs.content_bytes
             FROM artifact_blobs
             JOIN artifacts ON artifacts.artifact_id = artifact_blobs.artifact_id
             ORDER BY artifacts.source_identifier
-            """
-        ).fetchall()
+            """).fetchall()
 
     assert target_blobs == [
         ("ident-A", b"blob-bytes-A"),
