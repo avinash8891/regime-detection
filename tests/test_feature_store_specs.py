@@ -165,3 +165,22 @@ def test_trend_direction_v2_spec_is_user_visible_report_true() -> None:
     spec = _spec_by_name("trend_direction_v2")
     assert spec.report is True
     assert spec.required_inputs == ("trend_direction_v2_config", "spy_ohlcv.close")
+
+
+def test_network_fragility_resolve_missing_sector_closes_returns_unavailable(
+    v1_minimal_state: _FeatureStoreBuildState,
+) -> None:
+    from regime_detection.feature_store_runtime import _Unavailable
+
+    spec = _spec_by_name("network_fragility")
+    resolved = spec.resolve(v1_minimal_state)
+
+    assert isinstance(resolved, _Unavailable)
+    assert resolved.missing_inputs == ("sector_etf_closes",)
+
+
+def test_network_fragility_spec_required_inputs_matches_legacy() -> None:
+    spec = _spec_by_name("network_fragility")
+    assert spec.required_inputs == ("sector_etf_closes",)
+    assert spec.policy == "none"
+    assert spec.report is True
