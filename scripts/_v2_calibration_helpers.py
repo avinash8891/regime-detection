@@ -22,7 +22,16 @@ from regime_data_fetch.manifest_inputs import (
     get_manifest_input_spec,
     resolve_runner_input_paths,
 )
+from regime_detection.credit_funding import (
+    REQUIRED_CROSS_ASSET_KEYS as CREDIT_FUNDING_CROSS_ASSET_KEYS,
+)
 from regime_detection.comparison import axis_reporting_label
+from regime_detection.fragility_universe import (
+    CROSS_ASSET_SYMBOLS as NETWORK_FRAGILITY_CROSS_ASSET_SYMBOLS,
+)
+from regime_detection.inflation_growth import (
+    REQUIRED_CROSS_ASSET_KEYS as INFLATION_GROWTH_CROSS_ASSET_KEYS,
+)
 from regime_detection.loaders import (
     load_aggregate_forward_eps_revision_series,
     load_cpi_nowcast_series,
@@ -434,23 +443,15 @@ def _load_pmi_manufacturing_series(pmi_path: Path) -> pd.Series | None:
     )
 
 
-# Cross-asset symbols pulled by V2 §2B / §2C / §3 axes. Mirrors the
-# ``cross_asset_symbols`` list in ``scripts/run_v2_calibration.py::main``.
-CROSS_ASSET_SYMBOLS: list[str] = [
-    "QQQ",
-    "IWM",
-    "EFA",
-    "EEM",
-    "TLT",
-    "HYG",
-    "LQD",
-    "GLD",
-    "USO",
-    "UUP",
-    "DBC",
-    "KRE",
-    "XLY",
-    "XLI",
-    "XLP",
-    "XLU",
-]
+# Symbols loaded into MarketContext.cross_asset_closes by V2 runners.
+# This is broader than the network-fragility universe because §2B and §2C
+# also read their required ETF inputs from cross_asset_closes.
+CROSS_ASSET_SYMBOLS: list[str] = list(
+    dict.fromkeys(
+        [
+            *NETWORK_FRAGILITY_CROSS_ASSET_SYMBOLS,
+            *CREDIT_FUNDING_CROSS_ASSET_KEYS,
+            *INFLATION_GROWTH_CROSS_ASSET_KEYS,
+        ]
+    )
+)
