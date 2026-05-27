@@ -203,3 +203,26 @@ def test_volatility_state_v2_spec_required_inputs_matches_legacy() -> None:
     assert spec.required_inputs == ("volatility_state_v2_config", "spy_ohlcv.ohlc")
     assert spec.policy == "none"
     assert spec.report is True
+
+
+def test_breadth_state_v2_resolve_missing_config_returns_unavailable(
+    v1_minimal_state: _FeatureStoreBuildState,
+) -> None:
+    """V1 context has neither config nor sector_etf_closes — resolve
+    reports both missing in the order legacy emits them."""
+    from regime_detection.feature_store_runtime import _Unavailable
+
+    spec = _spec_by_name("breadth_state_v2")
+    resolved = spec.resolve(v1_minimal_state)
+
+    assert isinstance(resolved, _Unavailable)
+    # Legacy ordering: config check first, then sector_etf_closes inputs
+    assert "breadth_state_v2_config" in resolved.missing_inputs
+    assert "sector_etf_closes" in resolved.missing_inputs
+
+
+def test_breadth_state_v2_spec_required_inputs_matches_legacy() -> None:
+    spec = _spec_by_name("breadth_state_v2")
+    assert spec.required_inputs == ("breadth_state_v2_config", "sector_etf_closes")
+    assert spec.policy == "none"
+    assert spec.report is True

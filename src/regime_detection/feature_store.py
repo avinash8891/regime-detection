@@ -359,22 +359,6 @@ def _build_news_sentiment_score_series(
     return score
 
 
-def _build_breadth_state_v2_feature(state: _FeatureStoreBuildState) -> None:
-    if state.breadth_state_v2_config is None or state.context.sector_etf_closes is None:
-        state.breadth_state_v2 = None
-        return
-    sector_closes = state.context.sector_etf_closes
-    if not any(symbol in sector_closes for symbol in SECTOR_ETFS):
-        state.breadth_state_v2 = None
-        return
-    state.breadth_state_v2 = compute_breadth_v2_features(
-        sector_etf_closes=sector_closes,
-        config=state.breadth_state_v2_config,
-        pit_constituent_intervals=state.context.pit_constituent_intervals,
-        constituent_ohlcv=state.context.constituent_ohlcv,
-    )
-
-
 def _build_volume_liquidity_v2_feature(state: _FeatureStoreBuildState) -> None:
     spy_volume = (
         _series_column(state.spy_ohlcv, "volume")
@@ -832,6 +816,42 @@ def _resolve_volatility_state_v2(
     }
 
 
+def _build_breadth_state_v2(
+    sector_etf_closes: dict[str, pd.Series],
+    config: BreadthV2Config,
+    pit_constituent_intervals: object,
+    constituent_ohlcv: object,
+) -> BreadthV2Features:
+    return compute_breadth_v2_features(
+        sector_etf_closes=sector_etf_closes,
+        config=config,
+        pit_constituent_intervals=pit_constituent_intervals,
+        constituent_ohlcv=constituent_ohlcv,
+    )
+
+
+def _resolve_breadth_state_v2(
+    state: _FeatureStoreBuildState,
+) -> dict[str, object] | _Unavailable:
+    missing: list[str] = []
+    if state.breadth_state_v2_config is None:
+        missing.append("breadth_state_v2_config")
+    # Sector_etf_closes missingness uses the same helper the legacy report uses,
+    # which returns ("sector_etf_closes",) when None or
+    # ("sector_etf_closes.any_sector_etf",) when none of SECTOR_ETFS match.
+    missing.extend(_missing_sector_inputs(state))
+    if missing:
+        return _Unavailable(missing_inputs=tuple(missing))
+    sector_closes = state.context.sector_etf_closes
+    assert sector_closes is not None  # narrowed by _missing_sector_inputs check
+    return {
+        "sector_etf_closes": sector_closes,
+        "config": state.breadth_state_v2_config,
+        "pit_constituent_intervals": state.context.pit_constituent_intervals,
+        "constituent_ohlcv": state.context.constituent_ohlcv,
+    }
+
+
 _FEATURE_SPECS: tuple[FeatureSpec[object, _FeatureStoreBuildState], ...] = (
     FeatureSpec(
         name="trend_direction",
@@ -915,11 +935,18 @@ _FEATURE_SPECS: tuple[FeatureSpec[object, _FeatureStoreBuildState], ...] = (
         build=_build_volatility_state_v2,
         store=lambda s, v: setattr(s, "volatility_state_v2", v),
     ),
+    FeatureSpec(
+        name="breadth_state_v2",
+        policy="none",
+        required_inputs=("breadth_state_v2_config", "sector_etf_closes"),
+        resolve=_resolve_breadth_state_v2,
+        build=_build_breadth_state_v2,
+        store=lambda s, v: setattr(s, "breadth_state_v2", v),
+    ),
 )
 
 
 _FEATURE_STORE_BUILDERS: tuple[_FeatureStoreBuilder, ...] = (
-    _FeatureStoreBuilder("breadth_state_v2", _build_breadth_state_v2_feature),
     _FeatureStoreBuilder("volume_liquidity_v2", _build_volume_liquidity_v2_feature),
     _FeatureStoreBuilder("monetary", _build_monetary_feature),
     _FeatureStoreBuilder("realized_vol_21d", _build_realized_vol_21d_feature),
@@ -995,11 +1022,6 @@ def _build_feature_availability_report(
         if bool(spy_volume.isna().all()):
             spy_volume_missing = ("spy_ohlcv.volume.non_nan",)
 
-    breadth_state_missing = (
-        ()
-        if state.breadth_state_v2_config is not None
-        else ("breadth_state_v2_config",)
-    ) + _missing_sector_inputs(state)
     volume_liquidity_missing = (
         ()
         if state.volume_liquidity_v2_config is not None
@@ -1047,13 +1069,6 @@ def _build_feature_availability_report(
         ) + _missing_macro_keys(state.context.macro_series, tuple(_IG_MACRO_KEYS))
 
     report = {
-        "breadth_state_v2": _availability(
-            feature="breadth_state_v2",
-            value=state.breadth_state_v2,
-            policy="none",
-            required_inputs=("breadth_state_v2_config", "sector_etf_closes"),
-            missing_inputs=breadth_state_missing,
-        ),
         "volume_liquidity_v2": _availability(
             feature="volume_liquidity_v2",
             value=state.volume_liquidity_v2,
