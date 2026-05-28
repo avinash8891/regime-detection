@@ -1,0 +1,11 @@
+[
+  "approve_group_b_candidate",
+  "audit_layer2_30d",
+  "build_walkforward_report",
+  "materialize_regime_data",
+  "profile_engine",
+  "run_historical_walkforward",
+  "run_shadow_regime",
+  "run_v2_calibration",
+  "run_v2_walkforward_gate"
+]
