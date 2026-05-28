@@ -4,6 +4,7 @@ from dataclasses import fields
 from datetime import date
 
 import pandas as pd
+import pytest
 
 from regime_detection.axis_series import (
     AXIS_BUILD_ORDER,
@@ -96,6 +97,33 @@ def test_axis_dependency_contracts_name_payload_and_failure_semantics() -> None:
         assert contract.unknown_policy
         assert contract.degraded_policy
         assert contract.invalid_policy
+
+
+def test_axis_dependency_contract_rejects_unknown_policy_strings() -> None:
+    with pytest.raises(ValueError, match="absent_policy"):
+        AxisDependencyContract(
+            upstream_axis="breadth_state",
+            downstream_consumer="network_fragility",
+            payload_fields=("active_label",),
+            absent_policy="typo_unknown_policy",
+            stale_policy="label_only_data_quality_not_visible",
+            unknown_policy="pass_unknown_label",
+            degraded_policy="label_only_data_quality_not_visible",
+            invalid_policy="raise_on_missing_session_when_present",
+        )
+
+
+def test_axis_dependency_order_rejects_missing_build_graph_contract_coverage() -> None:
+    incomplete_dependencies = {
+        "network_fragility": (
+            "breadth_state",
+            "volatility_state",
+            "credit_funding_effective",
+        )
+    }
+
+    with pytest.raises(ValueError, match="dependency graph omits contracted axis"):
+        _validate_axis_dependency_order(AXIS_BUILD_ORDER, incomplete_dependencies)
 
 
 def test_declared_axis_dependencies_are_derived_from_contract_graph() -> None:
