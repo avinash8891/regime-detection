@@ -113,6 +113,7 @@ def _fetch_yahoo_chart_json(
         ),
         headers={"Accept": "application/json"},
         timeout=timeout_sec,
+        errors="strict",
         urlopen=urlopen,
     )
     return json.loads(payload)
