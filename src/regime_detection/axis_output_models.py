@@ -329,7 +329,7 @@ class ChangePointOutput(BaseModel):
 
     score: float
     days_since_last_break: int | None = None
-    method: str
+    method: Literal["BOCPD"]
 
     def model_dump(self, *args: Any, **kwargs: Any) -> dict[str, Any]:
         kwargs.setdefault("exclude_none", True)

@@ -4,6 +4,7 @@ import json
 import ast
 from datetime import date
 from pathlib import Path
+from typing import get_args
 
 import pytest
 from pydantic import BaseModel
@@ -14,7 +15,9 @@ from regime_detection.models import (
     AxisOutput,
     BreadthStateOutput,
     ChangePointOutput,
+    ClassificationStatus,
     ClusterOutput,
+    CoverageAxisStatus,
     DataQuality,
     EventCalendarOutput,
     HmmOutput,
@@ -55,6 +58,11 @@ def test_models_module_is_compatibility_facade_only() -> None:
     ]
 
     assert definitions == []
+
+
+def test_coverage_axis_status_reuses_classification_status_contract() -> None:
+    assert CoverageAxisStatus is ClassificationStatus
+    assert get_args(CoverageAxisStatus) == get_args(ClassificationStatus)
 
 
 def _data_quality() -> DataQuality:
@@ -347,7 +355,12 @@ def test_serializers_omit_none_fields_by_default() -> None:
     assert json.loads(family.model_dump_json()) == family.model_dump()
 
 
-def test_transition_risk_output_derives_and_preserves_classification_status() -> None:
+def test_change_point_method_is_pinned_to_bocpd() -> None:
+    with pytest.raises(ValidationError, match="method"):
+        ChangePointOutput(score=0.2, method="CUSUM")
+
+
+def test_transition_risk_output_enforces_state_classification_status() -> None:
     insufficient = _transition_risk(state="insufficient_data")
     explicit = TransitionRiskOutput(
         state="stable",
@@ -363,7 +376,7 @@ def test_transition_risk_output_derives_and_preserves_classification_status() ->
     )
 
     assert insufficient.classification_status == "insufficient_history"
-    assert explicit.classification_status == "data_unavailable"
+    assert explicit.classification_status == "classified"
 
 
 def test_regime_output_legacy_v1_projection_preserves_archived_wire_shape() -> None:

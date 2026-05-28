@@ -1,19 +1,10 @@
 from __future__ import annotations
 
-from typing import Literal
-
 from pydantic import BaseModel, ConfigDict
 
-CoverageAxisStatus = Literal[
-    "classified",
-    "no_rule_fired",
-    "no_rule_fired_hysteresis",
-    "no_rule_fired_missing_feature",
-    "data_unavailable",
-    "stale_data",
-    "insufficient_history",
-    "not_wired",
-]
+from regime_detection.model_status import ClassificationStatus
+
+CoverageAxisStatus = ClassificationStatus
 
 
 class AxisCoverage(BaseModel):

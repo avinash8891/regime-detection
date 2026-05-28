@@ -57,12 +57,11 @@ class TransitionRiskOutput(BaseModel):
 
     @model_validator(mode="after")
     def _populate_classification_status(self) -> "TransitionRiskOutput":
-        if self.classification_status is None:
-            self.classification_status = (
-                "insufficient_history"
-                if self.state == "insufficient_data"
-                else "classified"
-            )
+        self.classification_status = (
+            "insufficient_history"
+            if self.state == "insufficient_data"
+            else "classified"
+        )
         return self
 
 

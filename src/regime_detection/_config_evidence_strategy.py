@@ -260,7 +260,7 @@ class ChangePointConfig(StrictBaseModel):
     student_t_beta: float = Field(default=0.01, gt=0.0)
     student_t_kappa: float = Field(default=1.0, gt=0.0)
     student_t_mu: float = Field(default=0.0)
-    method: str = Field(default="BOCPD")
+    method: Literal["BOCPD"] = Field(default="BOCPD")
 
 
 class NoFlipFlopConfig(StrictBaseModel):
