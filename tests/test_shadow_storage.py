@@ -9,6 +9,8 @@ from contextlib import closing
 import pandas as pd
 import pytest
 
+from regime_data_fetch.artifact_store import sha256_file as artifact_store_sha256_file
+import regime_detection.shadow_storage as shadow_storage
 from regime_detection.shadow_storage import (
     fetch_run_row,
     insert_incident,
@@ -21,6 +23,10 @@ from regime_detection.shadow_storage import (
     update_run_row_success,
     write_archived_inputs,
 )
+
+
+def test_shadow_storage_uses_artifact_store_sha256_file() -> None:
+    assert shadow_storage.sha256_file is artifact_store_sha256_file
 
 
 def test_open_shadow_db_creates_durable_shadow_tables(tmp_path: Path) -> None:

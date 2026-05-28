@@ -87,6 +87,16 @@ def test_axis_builders_do_not_use_empty_string_raw_label_quality_sentinel() -> N
         ), f"{path.name} uses empty-string raw_label sentinel"
 
 
+def test_breadth_builder_uses_shared_per_label_hysteresis_helper() -> None:
+    source = (
+        _REPO_ROOT / "src" / "regime_detection" / "axis_builders" / "breadth.py"
+    ).read_text()
+
+    assert "from regime_detection.axis_builders.per_label import" in source
+    assert "build_per_label_axis_outputs(" in source
+    assert "apply_data_quality_aware_hysteresis" not in source
+
+
 def _load_test_helper_module(name: str, filename: str):
     path = _REPO_ROOT / "tests" / filename
     spec = importlib.util.spec_from_file_location(name, path)
@@ -144,6 +154,8 @@ def test_core_axis_builders_force_unknown_when_required_input_window_is_missing(
     if builder is build_breadth_axis_series:
         assert output.raw_label != "unknown"
         assert output.data_quality.status == "stale_data"
+        assert output.evidence["active_label_source"] == "etf_proxy"
+        assert output.evidence["data_quality_forced_unknown"] is True
         return
     assert output.raw_label == "unknown"
     assert output.stable_label == "unknown"

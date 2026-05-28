@@ -533,7 +533,7 @@ def test_v1_default_config_path_only_v1_or_v2_labels_on_golden_dates(
 
 
 def test_v1_frozen_replay_roundtrip_still_passes(
-    market_df_for_asof,
+    v2_market_df_for_asof,
     synthetic_v2_kwargs_for_market_data,
 ) -> None:
     """Importing RegimeEngine and classifying a golden date should still
@@ -544,7 +544,7 @@ def test_v1_frozen_replay_roundtrip_still_passes(
 
     engine = RegimeEngine()
     as_of = date(2023, 12, 14)
-    market_data = market_df_for_asof(as_of)
+    market_data = v2_market_df_for_asof(as_of)
     out = engine.classify(
         as_of_date=as_of,
         market_data=market_data,

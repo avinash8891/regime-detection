@@ -1,9 +1,9 @@
 from __future__ import annotations
 
-from datetime import date
 from typing import TYPE_CHECKING
 
 
+from regime_detection.axis_builders.per_label import build_per_label_axis_outputs
 from regime_detection.breadth_state import (
     _RISK_RANK as BREADTH_RISK_RANK,
     _data_quality_for_asof as breadth_data_quality_for_asof,
@@ -12,7 +12,6 @@ from regime_detection.breadth_state import (
 )
 from regime_detection.data_quality import quality_forces_unknown
 from regime_detection.feature_store import FeatureStore
-from regime_detection.hysteresis import apply_data_quality_aware_hysteresis
 from regime_detection.market_context import MarketContext
 from regime_detection.models import (
     BreadthStateOutput,
@@ -48,35 +47,51 @@ def _derive_breadth_active_label_source(
 
 def _build_breadth_output(
     *,
-    mode: str,
-    raw: str,
-    stable: str,
-    active: str,
-    is_frozen: bool,
+    raw_label: str,
+    stable_label: str,
+    active_label: str,
     evidence: dict[str, object],
     data_quality: DataQuality,
-    active_label_source: str,
     default_deescalation_days: int,
 ) -> BreadthStateOutput:
+    is_frozen = bool(evidence.pop("data_quality_freeze", False))
+    mode = (
+        "pit_constituent_biased_research"
+        if {raw_label, stable_label, active_label} & _PIT_BREADTH_LABELS
+        else "etf_proxy"
+    )
+    data_quality_forced_unknown = quality_forces_unknown(data_quality)
+    if is_frozen:
+        active_label_source = "data_quality_freeze"
+    elif data_quality_forced_unknown:
+        active_label_source = (
+            "pit_constituent" if raw_label in _PIT_BREADTH_LABELS else "etf_proxy"
+        )
+    else:
+        active_label_source = _derive_breadth_active_label_source(
+            raw=raw_label,
+            stable=stable_label,
+            active=active_label,
+        )
     if is_frozen:
         return BreadthStateOutput(
             mode=mode,
             raw_label="unknown",
-            stable_label=stable,
-            active_label=active,
+            stable_label=stable_label,
+            active_label=active_label,
             evidence={
                 "reason": data_quality.reason,
                 "proxy": "RSP/SPY",
                 "row_provenance_mode": mode,
-                "active_label_source": "data_quality_freeze",
+                "active_label_source": active_label_source,
                 "data_quality_freeze": True,
             },
             data_quality=data_quality,
         )
-    if quality_forces_unknown(data_quality):
+    if data_quality_forced_unknown:
         return BreadthStateOutput(
             mode=mode,
-            raw_label=raw,
+            raw_label=raw_label,
             stable_label="unknown",
             active_label="unknown",
             evidence={
@@ -84,14 +99,15 @@ def _build_breadth_output(
                 "proxy": "RSP/SPY",
                 "row_provenance_mode": mode,
                 "active_label_source": active_label_source,
+                "data_quality_forced_unknown": True,
             },
             data_quality=data_quality,
         )
     return BreadthStateOutput(
         mode=mode,
-        raw_label=raw,
-        stable_label=stable,
-        active_label=active,
+        raw_label=raw_label,
+        stable_label=stable_label,
+        active_label=active_label,
         evidence={
             "proxy": "RSP/SPY",
             "rule_evidence": evidence,
@@ -169,51 +185,26 @@ def build_breadth_axis_series(
                 min_completeness=context.config.data_quality.min_completeness,
             )
         )
-    stable_labels, active_labels, frozen_labels = apply_data_quality_aware_hysteresis(
+    outputs_by_date = build_per_label_axis_outputs(
+        sessions=list(spy_close.index.date),
         raw_labels=raw_labels,
         risk_rank=BREADTH_RISK_RANK,
         deescalation_days_by_label=hysteresis_config.deescalation_days_by_label,
         default_deescalation_days=hysteresis_config.default_deescalation_days,
         max_unknown_freeze_days=hysteresis_config.max_unknown_freeze_days,
         data_quality=per_day_data_quality,
-    )
-    outputs_by_date: dict[date, BreadthStateOutput] = {}
-    stable_by_date: dict[date, str] = {}
-    active_by_date: dict[date, str] = {}
-    for day, raw, stable, active, is_frozen, evidence, data_quality in zip(
-        spy_close.index.date,
-        raw_labels,
-        stable_labels,
-        active_labels,
-        frozen_labels,
-        raw_evidence,
-        per_day_data_quality,
-        strict=True,
-    ):
-        mode = (
-            "pit_constituent_biased_research"
-            if {raw, stable, active} & _PIT_BREADTH_LABELS
-            else "etf_proxy"
-        )
-        active_label_source = _derive_breadth_active_label_source(
-            raw=raw,
-            stable=stable,
-            active=active,
-        )
-        output = _build_breadth_output(
-            mode=mode,
-            raw=raw,
-            stable=stable,
-            active=active,
-            is_frozen=is_frozen,
-            evidence=evidence,
-            data_quality=data_quality,
-            active_label_source=active_label_source,
+        evidence=raw_evidence,
+        output_factory=lambda **kwargs: _build_breadth_output(
+            **kwargs,
             default_deescalation_days=hysteresis_config.default_deescalation_days,
-        )
-        outputs_by_date[day] = output
-        stable_by_date[day] = output.stable_label
-        active_by_date[day] = output.active_label
+        ),
+    )
+    stable_by_date = {
+        day: output.stable_label for day, output in outputs_by_date.items()
+    }
+    active_by_date = {
+        day: output.active_label for day, output in outputs_by_date.items()
+    }
     from regime_detection.axis_series import AxisSeriesResult
 
     return AxisSeriesResult(

@@ -11,7 +11,6 @@ operations are keyed on the canonical identity tuple
 
 from __future__ import annotations
 
-import hashlib
 import json
 import sqlite3
 from datetime import date, datetime, timezone
@@ -22,12 +21,9 @@ from typing import Any
 import pandas as pd
 import yaml
 
+from regime_data_fetch.artifact_store import sha256_file
 from regime_detection.loaders import load_event_calendar
 from regime_shared.pandas_compat import cow_safe_assign
-
-# SHA-256 read-chunk size for sha256_file. Performance-only knob;
-# SHA-256 output is identical regardless of chunk size.
-_HASH_CHUNK_BYTES = 1024 * 1024
 
 
 class _ClosingConnection(sqlite3.Connection):
@@ -85,14 +81,6 @@ CREATE TABLE IF NOT EXISTS incidents (
 
 def utc_iso_now() -> str:
     return datetime.now(timezone.utc).replace(microsecond=0).isoformat()
-
-
-def sha256_file(path: Path) -> str:
-    h = hashlib.sha256()
-    with path.open("rb") as f:
-        for chunk in iter(lambda: f.read(_HASH_CHUNK_BYTES), b""):
-            h.update(chunk)
-    return h.hexdigest()
 
 
 def ensure_shadow_layout(
