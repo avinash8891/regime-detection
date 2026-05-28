@@ -2,12 +2,8 @@ from __future__ import annotations
 
 import importlib.util
 import json
-import shutil
+import sqlite3
 from pathlib import Path
-
-import pytest
-
-pytestmark = pytest.mark.slow
 
 
 def _load_module(name: str, rel_path: str):
@@ -20,21 +16,84 @@ def _load_module(name: str, rel_path: str):
     return mod
 
 
-def _prepare_walkforward_root(tmp_path: Path, template: Path) -> Path:
-    """Copy the cached walkforward template directory into the test's tmp_path
-    so each test gets its own writable copy for the report builder to mutate."""
+def _prepare_walkforward_root(tmp_path: Path) -> Path:
+    """Create the report builder's persisted inputs without running the engine."""
     out_root = tmp_path / "walkforward"
-    shutil.copytree(template, out_root)
+    reports_dir = out_root / "reports"
+    reports_dir.mkdir(parents=True)
+    (reports_dir / "walkforward_summary.csv").write_text(
+        "\n".join(
+            [
+                "as_of_date,status,trend_direction_active,trend_character_active,volatility_state_active,breadth_state_active,transition_risk_state",
+                "2023-12-12,success,uptrend,trend,low_volatility,healthy,normal",
+                "2023-12-13,success,uptrend,trend,low_volatility,healthy,normal",
+                "2023-12-14,success,uptrend,trend,low_volatility,healthy,elevated",
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    with sqlite3.connect(out_root / "regime_walkforward.db") as conn:
+        conn.execute(
+            """
+            CREATE TABLE runs (
+                as_of_date TEXT NOT NULL,
+                status TEXT NOT NULL,
+                failure_reason TEXT,
+                engine_version TEXT,
+                config_version TEXT,
+                input_archive_path TEXT,
+                output_path TEXT
+            )
+            """
+        )
+        conn.executemany(
+            """
+            INSERT INTO runs (
+                as_of_date, status, failure_reason, engine_version,
+                config_version, input_archive_path, output_path
+            ) VALUES (?, ?, ?, ?, ?, ?, ?)
+            """,
+            [
+                (
+                    "2023-12-12",
+                    "success",
+                    None,
+                    "regime-engine-vtest",
+                    "core3-test",
+                    "input_archives/2023-12-12",
+                    "outputs/2023-12-12.json",
+                ),
+                (
+                    "2023-12-13",
+                    "success",
+                    None,
+                    "regime-engine-vtest",
+                    "core3-test",
+                    "input_archives/2023-12-13",
+                    "outputs/2023-12-13.json",
+                ),
+                (
+                    "2023-12-14",
+                    "success",
+                    None,
+                    "regime-engine-vtest",
+                    "core3-test",
+                    "input_archives/2023-12-14",
+                    "outputs/2023-12-14.json",
+                ),
+            ],
+        )
     return out_root
 
 
 def test_build_walkforward_report_fails_without_required_gates(
-    tmp_path: Path, walkforward_2023_dec_template: Path
+    tmp_path: Path,
 ) -> None:
     report_mod = _load_module(
         "build_walkforward_report", "scripts/build_walkforward_report.py"
     )
-    out_root = _prepare_walkforward_root(tmp_path, walkforward_2023_dec_template)
+    out_root = _prepare_walkforward_root(tmp_path)
 
     result = report_mod.build_walkforward_report(output_root=out_root)
 
@@ -56,12 +115,12 @@ def test_build_walkforward_report_fails_without_required_gates(
 
 
 def test_build_walkforward_report_passes_with_golden_and_baseline_inputs(
-    tmp_path: Path, walkforward_2023_dec_template: Path
+    tmp_path: Path,
 ) -> None:
     report_mod = _load_module(
         "build_walkforward_report", "scripts/build_walkforward_report.py"
     )
-    out_root = _prepare_walkforward_root(tmp_path, walkforward_2023_dec_template)
+    out_root = _prepare_walkforward_root(tmp_path)
 
     golden_path = tmp_path / "golden_results.json"
     golden_path.write_text(
