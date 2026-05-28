@@ -3,6 +3,7 @@ from __future__ import annotations
 import datetime as dt
 import json
 import sqlite3
+from collections.abc import Callable
 from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
@@ -39,6 +40,16 @@ class FetchRun:
 class ArtifactRecord:
     artifact_record_id: int
     content_sha256: str
+
+
+def _resolve_success_status(status: str | Callable[[], str]) -> str:
+    return status() if callable(status) else status
+
+
+def _resolve_success_notes(
+    notes: str | Callable[[], str | None] | None,
+) -> str | None:
+    return notes() if callable(notes) else notes
 
 
 class AcquisitionStore:
@@ -112,8 +123,8 @@ class AcquisitionStore:
         *,
         fetch_type: str,
         params: dict[str, object],
-        success_status: str = "ok",
-        success_notes: str | None = None,
+        success_status: str | Callable[[], str] = "ok",
+        success_notes: str | Callable[[], str | None] | None = None,
         failure_status: str = "failed",
     ) -> Iterator[FetchRun]:
         fetch_run = self.start_fetch_run(fetch_type=fetch_type, params=params)
@@ -121,8 +132,8 @@ class AcquisitionStore:
             yield fetch_run
             self.finish_fetch_run(
                 run_id=fetch_run.run_id,
-                status=success_status,
-                notes=success_notes,
+                status=_resolve_success_status(success_status),
+                notes=_resolve_success_notes(success_notes),
             )
         except BaseException as exc:
             self.finish_fetch_run(

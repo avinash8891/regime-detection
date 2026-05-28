@@ -517,8 +517,8 @@ def run_wayback_aggregate_eps_fetch(
         if acquisition_db_path
         else None
     )
-    fetch_run = (
-        store.start_fetch_run(
+    run_context = (
+        store.run(
             fetch_type="aggregate_eps_wayback",
             params={
                 "max_snapshots": max_snapshots,
@@ -529,10 +529,10 @@ def run_wayback_aggregate_eps_fetch(
             },
         )
         if store
-        else None
+        else nullcontext(None)
     )
 
-    try:
+    with run_context as fetch_run:
         cdx_json = cdx_fetcher()
         snapshots = parse_wayback_cdx_json(cdx_json, target_url=SOURCE_URL)
         snapshots = _filter_wayback_snapshots(
@@ -794,11 +794,4 @@ def run_wayback_aggregate_eps_fetch(
                 ),
                 notes="Wayback EPS fetch report",
             )
-            store.finish_fetch_run(run_id=fetch_run.run_id, status="ok")
         return report_path
-    except Exception as exc:
-        if store and fetch_run:
-            store.finish_fetch_run(
-                run_id=fetch_run.run_id, status="failed", notes=str(exc)
-            )
-        raise

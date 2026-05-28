@@ -18,6 +18,19 @@ from regime_data_fetch.artifact_store import (
 _STORE_ROOT_URI = "file:///tmp/regime-data"
 
 
+def test_production_fetchers_use_acquisition_run_context() -> None:
+    fetch_root = Path(__file__).resolve().parents[1] / "src" / "regime_data_fetch"
+    direct_lifecycle_calls: list[str] = []
+    for path in fetch_root.rglob("*.py"):
+        if path.name == "acquisition_store.py":
+            continue
+        text = path.read_text()
+        if "start_fetch_run" in text or "finish_fetch_run" in text:
+            direct_lifecycle_calls.append(str(path.relative_to(fetch_root.parent)))
+
+    assert direct_lifecycle_calls == []
+
+
 class FailingArtifactStore(ArtifactStore):
     def put_file(self, source_path: Path, key: str) -> StoredArtifact:
         del source_path, key
