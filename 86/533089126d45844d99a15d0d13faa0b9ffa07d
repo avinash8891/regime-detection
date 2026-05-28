@@ -1,0 +1,21 @@
+src/regime_data_fetch/yahoo_chart_daily.py
+  s_469680dc3246b8::t_624ddff994a561 116
+tests/test_yahoo_chart_daily.py
+  s_469680dc3246b8::t_a44b38897b6ac8 143-156
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "86533089126d45844d99a15d0d13faa0b9ffa07d",
+  "prompts": {},
+  "sessions": {
+    "s_469680dc3246b8": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019e6cd4-74ef-7863-acec-e9013990604d",
+        "model": "gpt-5.5"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}
