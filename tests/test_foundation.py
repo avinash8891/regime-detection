@@ -166,6 +166,30 @@ def test_classify_request_accepts_profile_manifest_event_calendar_cli_override(
     assert output.outputs[-1].as_of_date == date(2023, 12, 14)
 
 
+def test_classify_request_accepts_manifest_resolver_tuple_inputs(
+    market_df_for_asof, event_calendar_df
+) -> None:
+    config_path = (
+        Path(__file__).resolve().parents[1]
+        / "src"
+        / "regime_detection"
+        / "configs"
+        / "core3-v1.0.0.yaml"
+    )
+    request = ClassifyRequest(
+        end_date=date(2023, 12, 14),
+        market_data=market_df_for_asof(date(2023, 12, 14)),
+        event_calendar=event_calendar_df,
+        request_source="profile_manifest",
+        manifest_resolved_inputs=("event_calendar",),
+        manifest_cli_overrides=(),
+    )
+
+    output = RegimeEngine(config_path=config_path).classify_request(request)
+
+    assert output.outputs[-1].as_of_date == date(2023, 12, 14)
+
+
 def test_classify_request_rejects_manifest_metadata_in_direct_mode(
     market_df_for_asof, event_calendar_df
 ) -> None:
