@@ -468,9 +468,9 @@ def evaluate_diversified_normal(
         inputs.effective_rank_stability_21d < config.effective_rank_stability_threshold
     ):
         return True
-    if getattr(config, "diversified_normal_relaxed_inner_band", False):
-        inner_lo = getattr(config, "diversified_normal_inner_band_lo", 0.30)
-        inner_hi = getattr(config, "diversified_normal_inner_band_hi", 0.60)
+    if config.diversified_normal_relaxed_inner_band:
+        inner_lo = config.diversified_normal_inner_band_lo
+        inner_hi = config.diversified_normal_inner_band_hi
         if inner_lo <= inputs.avg_pairwise_corr_percentile_504d <= inner_hi:
             return True
     return False
