@@ -15,7 +15,7 @@ from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
 
-from regime_data_fetch._http import fetch_text
+from regime_data_fetch._http import fetch_text, headers_with_user_agent
 from regime_data_fetch.investing_earnings_browser import (
     access_token_from_page as _access_token_from_page,
     capture_investing_earnings_loaded_page as _capture_investing_earnings_loaded_page,
@@ -714,23 +714,25 @@ def _request_json(
 
 
 def _calendar_headers() -> dict[str, str]:
-    return {
-        "User-Agent": "Mozilla/5.0",
-        "Accept": "application/json",
-        "Origin": "https://in.investing.com",
-        "Referer": SOURCE_CALENDAR_URL,
-        "domain-id": DOMAIN_ID,
-    }
+    return headers_with_user_agent(
+        {
+            "Accept": "application/json",
+            "Origin": "https://in.investing.com",
+            "Referer": SOURCE_CALENDAR_URL,
+            "domain-id": DOMAIN_ID,
+        }
+    )
 
 
 def _earnings_headers(access_token: str) -> dict[str, str]:
-    headers = {
-        "User-Agent": "Mozilla/5.0",
-        "Accept": "application/json, text/plain, */*",
-        "Origin": "https://in.investing.com",
-        "Referer": SOURCE_EARNINGS_URL,
-        "domain-id": SUBDOMAIN,
-    }
+    headers = headers_with_user_agent(
+        {
+            "Accept": "application/json, text/plain, */*",
+            "Origin": "https://in.investing.com",
+            "Referer": SOURCE_EARNINGS_URL,
+            "domain-id": SUBDOMAIN,
+        }
+    )
     if access_token:
         headers["Authorization"] = f"Bearer {access_token}"
     return headers

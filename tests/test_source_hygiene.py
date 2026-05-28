@@ -31,6 +31,18 @@ def test_axis_builders_do_not_use_common_typing_escape_hatch() -> None:
     assert not Path("src/regime_detection/axis_builders/common.py").exists()
 
 
+def test_data_fetch_user_agent_header_value_stays_in_shared_http_helper() -> None:
+    offenders: list[str] = []
+    for path in sorted(Path("src/regime_data_fetch").rglob("*.py")):
+        if path.name == "_http.py":
+            continue
+        for line_number, line in enumerate(path.read_text().splitlines(), start=1):
+            if '"User-Agent"' in line or "'User-Agent'" in line:
+                offenders.append(f"{path}:{line_number}: {line.strip()}")
+
+    assert offenders == []
+
+
 def test_inflation_growth_axis_builder_does_not_reconstruct_rule_inputs() -> None:
     path = Path("src/regime_detection/axis_builders/inflation_growth.py")
     tree = ast.parse(path.read_text())

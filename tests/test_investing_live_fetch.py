@@ -19,12 +19,15 @@ from regime_data_fetch.investing_live import (
     EARNINGS_BASE,
     SOURCE_CALENDAR_URL,
     SOURCE_EARNINGS_URL,
+    _calendar_headers,
+    _earnings_headers,
     _request_json,
     capture_investing_live_archive,
     capture_investing_earnings_loaded_page,
     _validate_token_not_expired,
     run_investing_live_fetch,
 )
+from regime_data_fetch._http import DEFAULT_USER_AGENT
 from regime_data_fetch.investing_earnings_browser import (
     InvestingEarningsBrowserCaptureError,
     capture_investing_earnings_page_with_token,
@@ -34,6 +37,11 @@ APPLE_INSTRUMENT_ID = 6408
 APPLE_SYMBOL = "AAPL"
 APPLE_COMPANY = "Apple Inc"
 US_COUNTRY_ID = 5
+
+
+def test_investing_json_headers_use_shared_default_user_agent() -> None:
+    assert _calendar_headers()["User-Agent"] == DEFAULT_USER_AGENT
+    assert _earnings_headers("")["User-Agent"] == DEFAULT_USER_AGENT
 
 
 def test_request_json_retries_transient_url_errors(
