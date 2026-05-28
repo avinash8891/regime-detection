@@ -3,6 +3,7 @@ from __future__ import annotations
 import csv
 import datetime as dt
 import json
+from contextlib import nullcontext
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -113,8 +114,8 @@ def run_local_usd_index_import(
         if acquisition_db_path
         else None
     )
-    fetch_run = (
-        store.start_fetch_run(
+    run_context = (
+        store.run(
             fetch_type="usd_index_local",
             params={
                 "csv_path": str(csv_path),
@@ -123,10 +124,10 @@ def run_local_usd_index_import(
             },
         )
         if store
-        else None
+        else nullcontext(None)
     )
 
-    try:
+    with run_context as fetch_run:
         load_result = load_yahoo_usd_index_csv(csv_path)
         frame = load_result.frame
 
@@ -215,15 +216,8 @@ def run_local_usd_index_import(
                     row_count=len(load_result.quarantined_rows),
                     notes="Quarantined blank Yahoo USD index rows",
                 )
-            store.finish_fetch_run(run_id=fetch_run.run_id, status="ok")
 
         return report_path
-    except Exception as exc:
-        if store and fetch_run:
-            store.finish_fetch_run(
-                run_id=fetch_run.run_id, status="failed", notes=str(exc)
-            )
-        raise
 
 
 def _parse_yahoo_usd_index_row(

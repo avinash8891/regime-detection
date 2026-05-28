@@ -3,6 +3,7 @@ from __future__ import annotations
 import csv
 import datetime as dt
 import json
+from contextlib import nullcontext
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -114,18 +115,18 @@ def run_pit_constituents_fetch(
         if acquisition_db_path
         else None
     )
-    fetch_run = (
-        store.start_fetch_run(
+    run_context = (
+        store.run(
             fetch_type="pit_constituents",
             params={
                 "source_url": SOURCE_URL,
             },
         )
         if store
-        else None
+        else nullcontext(None)
     )
 
-    try:
+    with run_context as fetch_run:
         csv_text = csv_fetcher()
         rows = parse_sp500_ticker_start_end_csv(csv_text, source_url=SOURCE_URL)
 
@@ -216,14 +217,7 @@ def run_pit_constituents_fetch(
                 ),
                 notes="PIT constituent fetch report",
             )
-            store.finish_fetch_run(run_id=fetch_run.run_id, status="ok")
         return report_path
-    except Exception as exc:
-        if store and fetch_run:
-            store.finish_fetch_run(
-                run_id=fetch_run.run_id, status="failed", notes=str(exc)
-            )
-        raise
 
 
 def read_pit_intervals(parquet_path: Path) -> pd.DataFrame:

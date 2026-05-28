@@ -3,6 +3,7 @@ from __future__ import annotations
 import datetime as dt
 import json
 import re
+from contextlib import nullcontext
 from dataclasses import dataclass
 from html import unescape
 from pathlib import Path
@@ -183,18 +184,18 @@ def run_powell_speeches_fetch(
         if acquisition_db_path
         else None
     )
-    fetch_run = (
-        store.start_fetch_run(
+    run_context = (
+        store.run(
             fetch_type="powell_speeches",
             params={
                 "index_url": INDEX_URL,
             },
         )
         if store
-        else None
+        else nullcontext(None)
     )
 
-    try:
+    with run_context as fetch_run:
         index_html = index_fetcher()
         if store and fetch_run:
             store.record_text_artifact(
@@ -324,14 +325,7 @@ def run_powell_speeches_fetch(
                 max_date=str(df["speech_date"].max()) if not df.empty else None,
                 notes="Powell speeches fetch report",
             )
-            store.finish_fetch_run(run_id=fetch_run.run_id, status="ok")
         return report_path
-    except Exception as exc:
-        if store and fetch_run:
-            store.finish_fetch_run(
-                run_id=fetch_run.run_id, status="failed", notes=str(exc)
-            )
-        raise
 
 
 def _http_get_text(url: str) -> str:

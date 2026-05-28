@@ -5,6 +5,7 @@ import datetime as dt
 import json
 import logging
 import re
+from contextlib import nullcontext
 from dataclasses import dataclass
 from pathlib import Path
 from zoneinfo import ZoneInfo
@@ -252,15 +253,15 @@ def run_pmi_fetch(
         if acquisition_db_path
         else None
     )
-    fetch_run = (
-        store.start_fetch_run(
+    run_context = (
+        store.run(
             fetch_type="pmi",
             params={
                 "as_of_date": as_of_date.isoformat(),
             },
         )
         if store
-        else None
+        else nullcontext(None)
     )
     as_of_timestamp = dt.datetime.combine(
         as_of_date, dt.time(23, 59, 59), tzinfo=dt.timezone.utc
@@ -271,7 +272,7 @@ def run_pmi_fetch(
     chosen_rows: list[PMIObservation] | None = None
     chosen_bundle: PMIFetchBundle | None = None
     selected_source: str | None = None
-    try:
+    with run_context as fetch_run:
         for source_name, fetcher in [
             ("dbnomics", primary_fetcher),
             ("tradingeconomics", backup_fetcher),
@@ -421,14 +422,7 @@ def run_pmi_fetch(
                 max_date=max(latest_df["period"]) if not latest_df.empty else None,
                 notes="PMI fetch report",
             )
-            store.finish_fetch_run(run_id=fetch_run.run_id, status="ok")
         return report_path
-    except Exception as exc:
-        if store and fetch_run:
-            store.finish_fetch_run(
-                run_id=fetch_run.run_id, status="failed", notes=str(exc)
-            )
-        raise
 
 
 def run_manual_pmi_history_import(
@@ -445,8 +439,8 @@ def run_manual_pmi_history_import(
         if acquisition_db_path
         else None
     )
-    fetch_run = (
-        store.start_fetch_run(
+    run_context = (
+        store.run(
             fetch_type="pmi",
             params={
                 "as_of_date": as_of_date.isoformat(),
@@ -457,9 +451,9 @@ def run_manual_pmi_history_import(
             },
         )
         if store
-        else None
+        else nullcontext(None)
     )
-    try:
+    with run_context as fetch_run:
         rows = load_manual_pmi_history(history_dir=history_dir)
         cutoff = dt.datetime.combine(
             as_of_date, dt.time(23, 59, 59), tzinfo=dt.timezone.utc
@@ -596,14 +590,7 @@ def run_manual_pmi_history_import(
                 max_date=max(latest_df["period"]) if not latest_df.empty else None,
                 notes="PMI fetch report",
             )
-            store.finish_fetch_run(run_id=fetch_run.run_id, status="ok")
         return report_path
-    except Exception as exc:
-        if store and fetch_run:
-            store.finish_fetch_run(
-                run_id=fetch_run.run_id, status="failed", notes=str(exc)
-            )
-        raise
 
 
 def _normalize_fetch_result(

@@ -3,6 +3,7 @@ from __future__ import annotations
 import datetime as dt
 import json
 import re
+from contextlib import nullcontext
 from dataclasses import dataclass
 from html import unescape
 from pathlib import Path
@@ -215,8 +216,8 @@ def run_fomc_minutes_fetch(
         if acquisition_db_path
         else None
     )
-    fetch_run = (
-        store.start_fetch_run(
+    run_context = (
+        store.run(
             fetch_type="fomc_minutes",
             params={
                 "listing_url": LISTING_URL,
@@ -224,10 +225,10 @@ def run_fomc_minutes_fetch(
             },
         )
         if store
-        else None
+        else nullcontext(None)
     )
 
-    try:
+    with run_context as fetch_run:
         listing_html = listing_fetcher()
         if store and fetch_run:
             store.record_text_artifact(
@@ -374,14 +375,7 @@ def run_fomc_minutes_fetch(
                 max_date=str(df["meeting_end_date"].max()) if not df.empty else None,
                 notes="FOMC minutes fetch report",
             )
-            store.finish_fetch_run(run_id=fetch_run.run_id, status="ok")
         return report_path
-    except Exception as exc:
-        if store and fetch_run:
-            store.finish_fetch_run(
-                run_id=fetch_run.run_id, status="failed", notes=str(exc)
-            )
-        raise
 
 
 def _http_get_text(url: str) -> str:

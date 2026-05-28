@@ -50,6 +50,7 @@ import datetime as dt
 import json
 import logging
 import urllib.error
+from contextlib import nullcontext
 from pathlib import Path
 
 import pandas as pd
@@ -386,15 +387,13 @@ def run_cleveland_fed_nowcast_fetch(
         if acquisition_db_path
         else None
     )
-    fetch_run = (
-        store.start_fetch_run(
-            fetch_type="cleveland_fed_nowcast", params={"source_url": source_url}
-        )
+    run_context = (
+        store.run(fetch_type="cleveland_fed_nowcast", params={"source_url": source_url})
         if store
-        else None
+        else nullcontext(None)
     )
 
-    try:
+    with run_context as fetch_run:
         try:
             download_cleveland_fed_nowcast_json(
                 out_path=json_path, source_url=source_url
@@ -469,11 +468,4 @@ def run_cleveland_fed_nowcast_fetch(
                     input_artifact_record_id=raw_record.artifact_record_id,
                     transform_name="parse_cleveland_fed_nowcast_json",
                 )
-            store.finish_fetch_run(run_id=fetch_run.run_id, status="ok")
         return report_path
-    except Exception as exc:
-        if store and fetch_run:
-            store.finish_fetch_run(
-                run_id=fetch_run.run_id, status="failed", notes=str(exc)
-            )
-        raise

@@ -106,6 +106,30 @@ class AcquisitionStore:
                 (utc_now_iso(), status, notes, run_id),
             )
 
+    @contextmanager
+    def run(
+        self,
+        *,
+        fetch_type: str,
+        params: dict[str, object],
+        success_status: str = "ok",
+        success_notes: str | None = None,
+        failure_status: str = "failed",
+    ) -> Iterator[FetchRun]:
+        fetch_run = self.start_fetch_run(fetch_type=fetch_type, params=params)
+        try:
+            yield fetch_run
+            self.finish_fetch_run(
+                run_id=fetch_run.run_id,
+                status=success_status,
+                notes=success_notes,
+            )
+        except Exception as exc:
+            self.finish_fetch_run(
+                run_id=fetch_run.run_id, status=failure_status, notes=str(exc)
+            )
+            raise
+
     def record_text_artifact(
         self,
         *,

@@ -35,6 +35,7 @@ import json
 import logging
 import urllib.error
 import urllib.request
+from contextlib import nullcontext
 from pathlib import Path
 
 import pandas as pd
@@ -141,15 +142,15 @@ def run_sf_fed_news_sentiment_fetch(
         if acquisition_db_path
         else None
     )
-    fetch_run = (
-        store.start_fetch_run(
+    run_context = (
+        store.run(
             fetch_type="sf_fed_news_sentiment",
             params={"source_url": SF_FED_NEWS_SENTIMENT_URL},
         )
         if store
-        else None
+        else nullcontext(None)
     )
-    try:
+    with run_context as fetch_run:
         raw_path = Path(out_dir) / "news_sentiment" / "sf_fed_news_sentiment.xlsx"
         if workbook_bytes is None and workbook_path is not None:
             raw_path = Path(workbook_path)
@@ -216,7 +217,6 @@ def run_sf_fed_news_sentiment_fetch(
                     input_artifact_record_id=raw_record.artifact_record_id,
                     transform_name="parse_sf_fed_news_sentiment_workbook",
                 )
-            store.finish_fetch_run(run_id=fetch_run.run_id, status="ok")
         _log.info(
             "SF Fed news sentiment parquet: %d rows, %s → %s",
             report["rows"],
@@ -224,9 +224,3 @@ def run_sf_fed_news_sentiment_fetch(
             report["max_date"],
         )
         return report_path
-    except Exception as exc:
-        if store and fetch_run:
-            store.finish_fetch_run(
-                run_id=fetch_run.run_id, status="failed", notes=str(exc)
-            )
-        raise

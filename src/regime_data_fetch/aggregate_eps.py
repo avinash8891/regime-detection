@@ -3,6 +3,7 @@ from __future__ import annotations
 import datetime as dt
 import json
 import time
+from contextlib import nullcontext
 from pathlib import Path
 import urllib.error
 import urllib.request
@@ -341,18 +342,18 @@ def run_aggregate_eps_fetch(
         if acquisition_db_path
         else None
     )
-    fetch_run = (
-        store.start_fetch_run(
+    run_context = (
+        store.run(
             fetch_type="aggregate_eps",
             params={
                 "workbook_path": str(workbook_path),
             },
         )
         if store
-        else None
+        else nullcontext(None)
     )
 
-    try:
+    with run_context as fetch_run:
         if store and fetch_run:
             store.record_file_artifact(
                 run_id=fetch_run.run_id,
@@ -452,14 +453,7 @@ def run_aggregate_eps_fetch(
                 ),
                 notes="Aggregate EPS fetch report",
             )
-            store.finish_fetch_run(run_id=fetch_run.run_id, status="ok")
         return report_path
-    except Exception as exc:
-        if store and fetch_run:
-            store.finish_fetch_run(
-                run_id=fetch_run.run_id, status="failed", notes=str(exc)
-            )
-        raise
 
 
 def parse_wayback_cdx_json(
