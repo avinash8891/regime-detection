@@ -44,9 +44,7 @@ def test_conftest_market_data_requires_real_combined_market_parquet(
     project_conftest._load_market_data.cache_clear()
 
 
-def test_conftest_v2_kwargs_use_real_v2_fixture_rows_for_full_history_market_data() -> (
-    None
-):
+def test_conftest_v2_kwargs_reject_full_history_window_before_real_v2_rows() -> None:
     import conftest as project_conftest
 
     project_conftest._load_market_data.cache_clear()
@@ -56,9 +54,28 @@ def test_conftest_v2_kwargs_use_real_v2_fixture_rows_for_full_history_market_dat
         event_calendar
     )
 
-    kwargs = build_kwargs(market_data[market_data["date"] <= date(2023, 12, 14)])
+    with pytest.raises(RuntimeError, match="window start=2016-01-04"):
+        build_kwargs(market_data[market_data["date"] <= date(2023, 12, 14)])
 
+
+def test_conftest_v2_kwargs_use_real_v2_fixture_rows_when_window_is_covered() -> None:
+    import conftest as project_conftest
+
+    event_calendar = pd.DataFrame()
+    build_kwargs = project_conftest.synthetic_v2_kwargs_for_market_data.__wrapped__(
+        event_calendar
+    )
     v2_daily = project_conftest._load_v2_daily_ohlcv()
+    market_data = (
+        v2_daily[
+            (v2_daily["date"] <= date(2023, 12, 14))
+            & (v2_daily["symbol"].isin({"SPY", "RSP", "VIX", "VIXY"}))
+        ]
+        .copy()
+        .reset_index(drop=True)
+    )
+    kwargs = build_kwargs(market_data)
+
     qqq_rows = v2_daily[
         (v2_daily["symbol"] == "QQQ") & (v2_daily["date"] <= date(2023, 12, 14))
     ].sort_values("date")

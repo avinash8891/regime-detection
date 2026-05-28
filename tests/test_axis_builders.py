@@ -154,6 +154,8 @@ def test_core_axis_builders_force_unknown_when_required_input_window_is_missing(
     if builder is build_breadth_axis_series:
         assert output.raw_label != "unknown"
         assert output.data_quality.status == "stale_data"
+        assert output.evidence["active_label_source"] == "etf_proxy"
+        assert output.evidence["data_quality_forced_unknown"] is True
         return
     assert output.raw_label == "unknown"
     assert output.stable_label == "unknown"

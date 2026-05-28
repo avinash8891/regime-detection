@@ -60,15 +60,19 @@ def _build_breadth_output(
         if {raw_label, stable_label, active_label} & _PIT_BREADTH_LABELS
         else "etf_proxy"
     )
-    active_label_source = (
-        "data_quality_freeze"
-        if is_frozen
-        else _derive_breadth_active_label_source(
+    data_quality_forced_unknown = quality_forces_unknown(data_quality)
+    if is_frozen:
+        active_label_source = "data_quality_freeze"
+    elif data_quality_forced_unknown:
+        active_label_source = (
+            "pit_constituent" if raw_label in _PIT_BREADTH_LABELS else "etf_proxy"
+        )
+    else:
+        active_label_source = _derive_breadth_active_label_source(
             raw=raw_label,
             stable=stable_label,
             active=active_label,
         )
-    )
     if is_frozen:
         return BreadthStateOutput(
             mode=mode,
@@ -84,7 +88,7 @@ def _build_breadth_output(
             },
             data_quality=data_quality,
         )
-    if quality_forces_unknown(data_quality):
+    if data_quality_forced_unknown:
         return BreadthStateOutput(
             mode=mode,
             raw_label=raw_label,
@@ -95,6 +99,7 @@ def _build_breadth_output(
                 "proxy": "RSP/SPY",
                 "row_provenance_mode": mode,
                 "active_label_source": active_label_source,
+                "data_quality_forced_unknown": True,
             },
             data_quality=data_quality,
         )

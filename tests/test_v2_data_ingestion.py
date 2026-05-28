@@ -30,10 +30,10 @@ from regime_detection.market_context import (
 
 @pytest.fixture(scope="module")
 def base_v2_market_and_kwargs_2023_12_14(
-    market_df_for_asof, synthetic_v2_kwargs_for_market_data
+    v2_market_df_for_asof, synthetic_v2_kwargs_for_market_data
 ):
     as_of = date(2023, 12, 14)
-    market_data = market_df_for_asof(as_of)
+    market_data = v2_market_df_for_asof(as_of)
     kwargs = synthetic_v2_kwargs_for_market_data(market_data)
     return as_of, market_data, kwargs
 
@@ -109,15 +109,13 @@ def test_synthetic_v2_kwargs_use_real_fixture_rows_when_covered(
     )
 
 
-def test_synthetic_v2_kwargs_use_window_fallback_when_real_fixture_starts_late(
+def test_synthetic_v2_kwargs_rejects_uncovered_market_window_start(
     market_df_for_asof, synthetic_v2_kwargs_for_market_data
 ) -> None:
     market_data = market_df_for_asof(date(2023, 12, 14))
-    kwargs = synthetic_v2_kwargs_for_market_data(market_data)
 
-    xlb = kwargs["sector_etf_closes"]["XLB"]
-
-    assert xlb.index.min().date() == min(market_data["date"])
+    with pytest.raises(RuntimeError, match="window start=2016-01-04"):
+        synthetic_v2_kwargs_for_market_data(market_data)
 
 
 # ---------- load_sector_etf_closes -------------------------------------------
@@ -597,7 +595,7 @@ def test_slice_context_to_end_date_preserves_pit_breadth_seams(
 
 
 def test_engine_classify_threads_pit_constituent_inputs_into_context(
-    market_df_for_asof,
+    v2_market_df_for_asof,
     synthetic_v2_kwargs_for_market_data,
 ) -> None:
     """Regression: RegimeEngine.classify must accept pit_constituent_intervals
@@ -631,7 +629,7 @@ def test_engine_classify_threads_pit_constituent_inputs_into_context(
         ),
     }
 
-    market_data = market_df_for_asof(as_of)
+    market_data = v2_market_df_for_asof(as_of)
     kwargs = synthetic_v2_kwargs_for_market_data(market_data)
     kwargs["pit_constituent_intervals"] = pd.concat(
         [kwargs["pit_constituent_intervals"], pit_intervals], ignore_index=True

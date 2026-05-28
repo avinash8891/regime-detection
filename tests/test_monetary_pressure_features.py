@@ -386,13 +386,13 @@ def test_v1_config_path_leaves_monetary_none(market_df_for_asof):
 
 
 def test_timeline_threads_monetary_pressure_v2_config(
-    market_df_for_asof,
+    v2_market_df_for_asof,
     synthetic_v2_kwargs_for_market_data,
 ):
     """End-to-end wire test (AGENTS rule A): build_regime_timeline must
     accept the v2 config and surface monetary features via the same
     feature_store path used by the engine."""
-    market_data = market_df_for_asof(_INTEGRATION_AS_OF)
+    market_data = v2_market_df_for_asof(_INTEGRATION_AS_OF)
     kwargs = synthetic_v2_kwargs_for_market_data(market_data)
     cfg = kwargs["config"]
     assert cfg.monetary_pressure_v2 is not None

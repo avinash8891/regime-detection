@@ -115,6 +115,7 @@ class AxisEvidencePayload(TypedEvidencePayload):
     deescalation_days: int | None = None
     reason: str | None = None
     data_quality_freeze: bool | None = None
+    data_quality_forced_unknown: bool | None = None
     source: str | None = None
     proxy: str | None = None
     row_provenance_mode: str | None = None

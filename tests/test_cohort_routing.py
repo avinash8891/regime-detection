@@ -363,7 +363,7 @@ def test_regime_output_emits_agent_routing_when_cohort_routing_configured(
 
 @pytest.mark.integration
 def test_regime_output_omits_agent_routing_when_cohort_routing_absent_from_config(
-    market_df_for_asof,
+    v2_market_df_for_asof,
     golden_rows: list[dict[str, object]],
     synthetic_v2_kwargs_for_market_data,
 ) -> None:
@@ -371,8 +371,8 @@ def test_regime_output_omits_agent_routing_when_cohort_routing_absent_from_confi
     must produce ``RegimeOutput.agent_routing is None`` and the JSON dump
     must omit the field (exclude_none=True)."""
     engine = RegimeEngine()
-    as_of = date.fromisoformat(str(golden_rows[0]["as_of_date"]))
-    market_data = market_df_for_asof(as_of)
+    as_of = max(date.fromisoformat(str(row["as_of_date"])) for row in golden_rows)
+    market_data = v2_market_df_for_asof(as_of)
     kwargs = synthetic_v2_kwargs_for_market_data(market_data)
     no_routing_config = kwargs["config"].model_copy(update={"cohort_routing": None})
     assert no_routing_config.cohort_routing is None

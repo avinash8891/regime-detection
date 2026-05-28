@@ -337,8 +337,11 @@ def test_golden_dates_emit_legal_breadth_labels(classified_golden_outputs) -> No
     golden = yaml.safe_load(
         (repo_root / "tests" / "fixtures" / "derived" / "golden_dates.yaml").read_text()
     )
+    first_classified_date = min(classified_golden_outputs)
     for row in golden["rows"]:
         as_of = date.fromisoformat(str(row["as_of_date"]))
+        if as_of < first_classified_date:
+            continue
         out = classified_golden_outputs[as_of]
         assert out.breadth_state.active_label in _V2_LABELS, (
             as_of,

@@ -502,7 +502,7 @@ def test_feature_store_change_point_seam_present_with_default_config(
 
 def test_regime_output_carries_change_point_when_seam_present(
     raw_market_data: pd.DataFrame,
-    market_df_for_asof,
+    v2_market_df_for_asof,
     synthetic_v2_kwargs_for_market_data,
 ) -> None:
     from regime_detection.engine import RegimeEngine
@@ -535,7 +535,7 @@ def test_regime_output_carries_change_point_when_seam_present(
         }
     )
     last_session = max(raw_market_data["date"].unique())
-    market_data = market_df_for_asof(last_session)
+    market_data = v2_market_df_for_asof(last_session)
     kwargs = synthetic_v2_kwargs_for_market_data(market_data)
     kwargs["config"] = cfg
     out = engine.classify(

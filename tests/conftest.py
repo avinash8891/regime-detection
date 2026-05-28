@@ -513,14 +513,16 @@ def synthetic_v2_kwargs_for_market_data(event_calendar_df: pd.DataFrame):
             }
         )
         as_of = max(market_data["date"])
+        start = min(market_data["date"])
         v2_daily = _load_v2_daily_ohlcv()
         v2_start = min(v2_daily["date"])
         required_cross_assets = sorted(
             set(CROSS_ASSET_SYMBOLS) | {"KRE", "XLY", "XLI", "XLP", "XLU"}
         )
-        if as_of < v2_start or not _v2_macro_fixture_covers(as_of):
+        if start < v2_start or as_of < v2_start or not _v2_macro_fixture_covers(as_of):
             raise RuntimeError(
-                f"real V2 fixture rows do not cover synthetic_v2_kwargs as_of={as_of}"
+                "real V2 fixture rows do not cover synthetic_v2_kwargs "
+                f"window start={start} as_of={as_of}"
             )
         sector_closes = _close_series_by_symbol_from_v2_daily(
             v2_daily, SECTOR_ETFS, as_of=as_of
@@ -565,7 +567,7 @@ def golden_rows() -> list[dict[str, object]]:
 
 def _classify_all_golden_rows(
     golden_rows: list[dict[str, object]],
-    market_df_for_asof,
+    v2_market_df_for_asof,
     synthetic_v2_kwargs_for_market_data,
 ) -> dict[date, object]:
     """Classify every golden date in ONE classify_window pass.
@@ -578,21 +580,30 @@ def _classify_all_golden_rows(
     PIT correctness: classify_window's per-day emission is stateless-replay
     compliant — each emitted day's classifier state is computed using only
     data on or before that day. The default V2 config requires transition
-    score inputs, so this fixture supplies the canonical V2 fixture bundle.
+    score inputs, so this fixture supplies the canonical V2 fixture bundle and
+    only emits golden rows covered by that real V2 fixture window.
     """
     engine = RegimeEngine()
-    golden_dates = sorted(
+    all_golden_dates = sorted(
         date.fromisoformat(str(row["as_of_date"])) for row in golden_rows
     )
+    if not all_golden_dates:
+        return {}
+    end = all_golden_dates[-1]
+    market_data = v2_market_df_for_asof(end)
+    v2_start = min(market_data["date"])
+    golden_dates = [d for d in all_golden_dates if d >= v2_start]
     if not golden_dates:
         return {}
-    end = golden_dates[-1]
     earliest = golden_dates[0]
     # NYSE has ~252 sessions per calendar year. Upper-bound lookback to
     # comfortably cover earliest..end inclusive plus engine min-history.
     span_days = (end - earliest).days
     lookback_sessions = max(1, int(span_days / 365.25 * 252) + 220)
-    market_data = market_df_for_asof(end)
+    available_sessions = market_data.loc[
+        market_data["symbol"] == "SPY", "date"
+    ].nunique()
+    lookback_sessions = min(lookback_sessions, available_sessions)
     kwargs = synthetic_v2_kwargs_for_market_data(market_data)
     timeline = engine.classify_window(
         end_date=end,
@@ -836,7 +847,7 @@ def real_v2_classify_window_2026_05_12(
 def classified_golden_outputs(
     tmp_path_factory: pytest.TempPathFactory,
     golden_rows: list[dict[str, object]],
-    market_df_for_asof,
+    v2_market_df_for_asof,
     synthetic_v2_kwargs_for_market_data,
     worker_id: str,
 ) -> dict[date, object]:
@@ -848,7 +859,7 @@ def classified_golden_outputs(
     if worker_id == "master":
         return _classify_all_golden_rows(
             golden_rows,
-            market_df_for_asof,
+            v2_market_df_for_asof,
             synthetic_v2_kwargs_for_market_data,
         )
 
@@ -865,7 +876,7 @@ def classified_golden_outputs(
         os.close(fd)
         outputs = _classify_all_golden_rows(
             golden_rows,
-            market_df_for_asof,
+            v2_market_df_for_asof,
             synthetic_v2_kwargs_for_market_data,
         )
         tmp_path = cache_path.with_suffix(".pkl.tmp")

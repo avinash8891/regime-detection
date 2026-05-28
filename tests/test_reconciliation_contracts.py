@@ -54,20 +54,15 @@ def _synthetic_kwargs_without_config(synthetic_v2_kwargs_for_market_data, market
 
 
 def test_classify_uses_vix_data_when_vix_proxy_missing_from_market_data(
-    raw_market_frames,
-    market_df_for_asof,
+    v2_market_df_for_asof,
     synthetic_v2_kwargs_for_market_data,
 ) -> None:
-    vixy = raw_market_frames["VIXY"]
     as_of = date(2023, 12, 14)
 
-    market_df = market_df_for_asof(as_of)
+    market_df = v2_market_df_for_asof(as_of)
+    vix_df = _vix_data_from_market_data(market_df)
     market_df = market_df[market_df["symbol"] != "VIXY"].copy()
     market_df = market_df[["date", "symbol", "open", "high", "low", "close", "volume"]]
-
-    vix_df = vixy.copy()
-    vix_df = vix_df[vix_df["date"] <= as_of].copy()
-    vix_df = vix_df[["date", "close"]]
 
     from regime_detection.engine import RegimeEngine
 
@@ -142,11 +137,11 @@ def test_trend_character_adx_cold_start_stays_nan(raw_market_frames) -> None:
 
 
 def test_breadth_data_quality_does_not_block_pit_breadth_when_rsp_gaps(
-    market_df_for_asof,
+    v2_market_df_for_asof,
     synthetic_v2_kwargs_for_market_data,
 ) -> None:
     as_of = date(2023, 12, 14)
-    market_df = market_df_for_asof(as_of)
+    market_df = v2_market_df_for_asof(as_of)
     rsp_mask = market_df["symbol"] == "RSP"
     recent_rsp_idx = market_df[rsp_mask].tail(50).index[:7]
     market_df.loc[recent_rsp_idx, "close"] = pd.NA
@@ -173,11 +168,11 @@ def test_breadth_data_quality_does_not_block_pit_breadth_when_rsp_gaps(
 
 
 def test_trend_direction_data_quality_insufficient_data_can_override_non_unknown_label(
-    market_df_for_asof,
+    v2_market_df_for_asof,
     synthetic_v2_kwargs_for_market_data,
 ) -> None:
     as_of = date(2023, 12, 14)
-    market_df = market_df_for_asof(as_of)
+    market_df = v2_market_df_for_asof(as_of)
     spy_mask = market_df["symbol"] == "SPY"
     recent_spy_idx = market_df[spy_mask].tail(200).index[:70]
     market_df.loc[recent_spy_idx, "close"] = pd.NA
@@ -200,11 +195,11 @@ def test_trend_direction_data_quality_insufficient_data_can_override_non_unknown
 
 
 def test_trend_direction_data_quality_stale_data_overrides_insufficient_history(
-    market_df_for_asof,
+    v2_market_df_for_asof,
     synthetic_v2_kwargs_for_market_data,
 ) -> None:
     as_of = date(2023, 12, 14)
-    market_df = market_df_for_asof(as_of)
+    market_df = v2_market_df_for_asof(as_of)
     spy_mask = market_df["symbol"] == "SPY"
     trailing_spy_idx = market_df[spy_mask].tail(4).index
     market_df.loc[trailing_spy_idx, "close"] = pd.NA

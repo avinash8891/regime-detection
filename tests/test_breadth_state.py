@@ -30,20 +30,23 @@ def test_breadth_state_matches_pinned_fixtures(classified_golden_outputs) -> Non
     golden = yaml.safe_load(
         (repo_root / "tests" / "fixtures" / "derived" / "golden_dates.yaml").read_text()
     )
+    first_classified_date = min(classified_golden_outputs)
     for row in golden["rows"]:
         as_of = date.fromisoformat(row["as_of_date"])
+        if as_of < first_classified_date:
+            continue
         out = classified_golden_outputs[as_of]
         assert out.breadth_state.active_label in _BREADTH_LABELS
 
 
 def test_breadth_state_uses_written_etf_proxy_rules_not_invented_recovery_label(
-    market_df_for_asof,
+    v2_market_df_for_asof,
     synthetic_v2_kwargs_for_market_data,
 ) -> None:
     from regime_detection.engine import RegimeEngine
 
     as_of = date(2023, 12, 14)
-    market_data = market_df_for_asof(as_of)
+    market_data = v2_market_df_for_asof(as_of)
     rsp_recent_idx = (
         market_data[market_data["symbol"] == "RSP"].sort_values("date").tail(20).index
     )
