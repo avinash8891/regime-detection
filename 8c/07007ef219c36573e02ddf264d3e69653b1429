@@ -1,0 +1,25 @@
+tests/test_build_walkforward_report.py
+  s_469680dc3246b8::t_29feeaf6e293e0 37,47
+tests/conftest.py
+  s_469680dc3246b8::t_29feeaf6e293e0 197-199,202-204
+tests/test_central_bank_text_cycle_regression.py
+  s_469680dc3246b8::t_29feeaf6e293e0 206
+tests/test_live_data_manifest_inputs.py
+  s_469680dc3246b8::t_29feeaf6e293e0 64-66,69-71,96-98,121-123,163-165
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "8c07007ef219c36573e02ddf264d3e69653b1429",
+  "prompts": {},
+  "sessions": {
+    "s_469680dc3246b8": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019e6cd4-74ef-7863-acec-e9013990604d",
+        "model": "gpt-5.5"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}
