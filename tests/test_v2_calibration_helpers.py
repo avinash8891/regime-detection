@@ -5,6 +5,7 @@ from pathlib import Path
 
 import pandas as pd
 
+import scripts._v2_calibration_helpers as helpers
 from scripts._v2_calibration_helpers import (
     CROSS_ASSET_SYMBOLS,
     default_pmi_path,
@@ -23,8 +24,12 @@ from regime_detection.inflation_growth import (
 )
 
 
+def test_helper_cross_asset_symbols_are_canonical_network_symbols() -> None:
+    assert CROSS_ASSET_SYMBOLS is NETWORK_CROSS_ASSET_SYMBOLS
+
+
 def test_runner_cross_asset_symbols_are_derived_from_engine_sources() -> None:
-    assert CROSS_ASSET_SYMBOLS == list(
+    assert helpers.RUNNER_CROSS_ASSET_SYMBOLS == list(
         dict.fromkeys(
             [
                 *NETWORK_CROSS_ASSET_SYMBOLS,

@@ -32,7 +32,7 @@ from regime_detection.market_context import (
     slice_context_to_recent_sessions,
 )
 from scripts._v2_calibration_helpers import (
-    CROSS_ASSET_SYMBOLS,
+    RUNNER_CROSS_ASSET_SYMBOLS,
     add_manifest_args,
     apply_manifest_input_defaults,
     apply_manifest_input_paths,
@@ -298,11 +298,11 @@ def _build_current_layer2_state(
     )
     working_start_date = bootstrap_context.sessions[-required_sessions]
 
-    all_close_symbols = list(dict.fromkeys([*SECTOR_ETFS, *CROSS_ASSET_SYMBOLS]))
+    all_close_symbols = list(dict.fromkeys([*SECTOR_ETFS, *RUNNER_CROSS_ASSET_SYMBOLS]))
     all_closes = load_close_dict(args.daily_dir, all_close_symbols, spy_index)
     sector_etf_closes = {s: all_closes[s] for s in SECTOR_ETFS if s in all_closes}
     cross_asset_closes = {
-        s: all_closes[s] for s in CROSS_ASSET_SYMBOLS if s in all_closes
+        s: all_closes[s] for s in RUNNER_CROSS_ASSET_SYMBOLS if s in all_closes
     }
     macro_series = load_macro_series(
         args.macro_parquet,

@@ -283,7 +283,7 @@ def _spy_like_drawdown_recovery_series(*, n_total: int = 432) -> pd.Series:
     # Use NYSE sessions (not pd.bdate_range — that includes US-holidays
     # like MLK Day, Presidents Day, etc., which fail
     # _require_market_data_contract).
-    sessions = nyse_sessions_between(date(2018, 1, 2), date(2020, 12, 31))
+    sessions = nyse_sessions_between(date(2022, 1, 3), date(2024, 12, 31))
     index = pd.DatetimeIndex([pd.Timestamp(d) for d in sessions[:n_total]])
     return pd.Series(series_values, index=index, name="close")
 

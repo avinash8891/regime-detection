@@ -46,7 +46,7 @@ from scripts.run_shadow_regime import (  # noqa: E402
 )
 from regime_detection.fragility_universe import SECTOR_ETFS  # noqa: E402
 from scripts._v2_calibration_helpers import (  # noqa: E402
-    CROSS_ASSET_SYMBOLS,
+    RUNNER_CROSS_ASSET_SYMBOLS,
     apply_manifest_input_defaults,
     register_manifest_input_args,
 )
@@ -266,7 +266,7 @@ def run_walkforward(
                         v2_slice, SECTOR_ETFS
                     )
                     v2_kwargs["cross_asset_closes"] = _close_series_by_symbol(
-                        v2_slice, CROSS_ASSET_SYMBOLS
+                        v2_slice, RUNNER_CROSS_ASSET_SYMBOLS
                     )
                     v2_kwargs["pit_constituent_intervals"] = session_pit_intervals
                     v2_kwargs["constituent_ohlcv"] = _constituent_ohlcv_from_daily(

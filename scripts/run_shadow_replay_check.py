@@ -27,7 +27,7 @@ from regime_detection.shadow_storage import (
     utc_iso_now,
 )
 from _v2_calibration_helpers import (
-    CROSS_ASSET_SYMBOLS,
+    RUNNER_CROSS_ASSET_SYMBOLS,
     constituent_ohlcv_from_sector_closes,
     synthetic_pit_intervals_from_sector_closes,
 )
@@ -117,7 +117,9 @@ def run_replay_check(
 
         engine = RegimeEngine(config_path=config_path)
         sector_etf_closes = _close_series_by_symbol(market_data, SECTOR_ETFS)
-        cross_asset_closes = _close_series_by_symbol(market_data, CROSS_ASSET_SYMBOLS)
+        cross_asset_closes = _close_series_by_symbol(
+            market_data, RUNNER_CROSS_ASSET_SYMBOLS
+        )
         v2_kwargs: dict[str, Any] = {}
         if sector_etf_closes and cross_asset_closes:
             v2_kwargs["sector_etf_closes"] = sector_etf_closes

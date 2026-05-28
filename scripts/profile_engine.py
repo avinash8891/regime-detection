@@ -58,7 +58,7 @@ from regime_detection.market_context import build_market_context
 from regime_detection.timeline import ENGINE_MINIMUM_HISTORY
 from regime_shared.pandas_compat import cow_safe_assign
 from scripts._v2_calibration_helpers import (
-    CROSS_ASSET_SYMBOLS,
+    RUNNER_CROSS_ASSET_SYMBOLS,
     add_manifest_args,
     apply_manifest_input_defaults,
     apply_manifest_input_paths,
@@ -459,7 +459,7 @@ def _load_profile_inputs(
     working_start_date = bootstrap_context.sessions[-required_sessions]
     selected_dates = list(bootstrap_context.sessions[-args.lookback_days :])
 
-    cross_asset_symbols = CROSS_ASSET_SYMBOLS
+    cross_asset_symbols = RUNNER_CROSS_ASSET_SYMBOLS
     # Load the union of sector ETFs and cross-asset symbols in one pass to avoid
     # reading files for symbols that appear in both lists (XLY, XLI, XLP, XLU).
     all_close_symbols = list(dict.fromkeys([*SECTOR_ETFS, *cross_asset_symbols]))

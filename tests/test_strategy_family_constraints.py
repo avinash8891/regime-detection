@@ -234,13 +234,13 @@ def test_regime_output_carries_strategy_family_constraints_when_configured(
 
 @pytest.mark.integration
 def test_regime_output_omits_strategy_family_constraints_when_config_absent(
-    market_df_for_asof,
+    v2_market_df_for_asof,
     golden_rows: list[dict[str, object]],
     synthetic_v2_kwargs_for_market_data,
 ) -> None:
     engine = RegimeEngine()
-    as_of = date.fromisoformat(str(golden_rows[0]["as_of_date"]))
-    market_data = market_df_for_asof(as_of)
+    as_of = max(date.fromisoformat(str(row["as_of_date"])) for row in golden_rows)
+    market_data = v2_market_df_for_asof(as_of)
     kwargs = synthetic_v2_kwargs_for_market_data(market_data)
     no_sfc = kwargs["config"].model_copy(update={"strategy_family_constraints": None})
     assert no_sfc.strategy_family_constraints is None

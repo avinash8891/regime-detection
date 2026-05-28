@@ -295,7 +295,7 @@ def _spy_like_volatility_expansion_series(*, n_total: int = 700) -> pd.Series:
     # Clip extremes so no single-day move triggers v1 crisis (ret1 <= -0.05).
     returns = np.clip(returns, -0.04, 0.04)
     levels = base * np.exp(np.cumsum(returns))
-    sessions = nyse_sessions_between(date(2017, 1, 3), date(2020, 12, 31))
+    sessions = nyse_sessions_between(date(2021, 1, 4), date(2024, 12, 31))
     index = pd.DatetimeIndex([pd.Timestamp(d) for d in sessions[:n_total]])
     return pd.Series(levels[:n_total], index=index, name="close")
 
