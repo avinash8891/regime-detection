@@ -4,7 +4,7 @@ from typing import Literal
 
 import pandas as pd
 
-_STALENESS_SENTINEL = 10**9
+STALENESS_SENTINEL = 10**9
 StalenessClock = Literal["calendar", "trading"]
 
 STALENESS_CLOCK_BY_SOURCE: dict[str, StalenessClock] = {
@@ -34,20 +34,20 @@ def staleness_for_source(
 ) -> pd.Series:
     clock = STALENESS_CLOCK_BY_SOURCE[source_name]
     if clock == "calendar":
-        return _calendar_staleness_days_series(series, session_index)
+        return calendar_staleness_days_series(series, session_index)
     if clock == "trading":
-        return _trading_staleness_series(series, session_index)
+        return trading_staleness_series(series, session_index)
     raise ValueError(f"unknown staleness clock for source {source_name!r}: {clock!r}")
 
 
-def _calendar_staleness_days_series(
+def calendar_staleness_days_series(
     series: pd.Series | None, session_index: pd.Index
 ) -> pd.Series:
     if series is None:
-        return pd.Series(_STALENESS_SENTINEL, index=session_index, dtype="int64")
+        return pd.Series(STALENESS_SENTINEL, index=session_index, dtype="int64")
     valid_dates = pd.DatetimeIndex(series.dropna().index).sort_values()
     if valid_dates.empty:
-        return pd.Series(_STALENESS_SENTINEL, index=session_index, dtype="int64")
+        return pd.Series(STALENESS_SENTINEL, index=session_index, dtype="int64")
 
     sessions = pd.DatetimeIndex(session_index)
     source_positions = valid_dates.searchsorted(sessions, side="right") - 1
@@ -57,21 +57,21 @@ def _calendar_staleness_days_series(
         source_positions[has_observation]
     ]
     delta_days = (pd.Series(sessions, index=session_index) - last_valid_date).dt.days
-    return delta_days.fillna(_STALENESS_SENTINEL).astype("int64")
+    return delta_days.fillna(STALENESS_SENTINEL).astype("int64")
 
 
-def _trading_staleness_series(
+def trading_staleness_series(
     series: pd.Series | None, session_index: pd.Index
 ) -> pd.Series:
     if series is None:
-        return pd.Series(_STALENESS_SENTINEL, index=session_index, dtype="int64")
+        return pd.Series(STALENESS_SENTINEL, index=session_index, dtype="int64")
     aligned = series.reindex(session_index)
     session_pos = pd.Series(
         range(len(session_index)), index=session_index, dtype="int64"
     )
     valid = aligned.notna()
     last_valid_pos = (
-        session_pos.where(valid).ffill().fillna(-_STALENESS_SENTINEL).astype("int64")
+        session_pos.where(valid).ffill().fillna(-STALENESS_SENTINEL).astype("int64")
     )
     return (session_pos - last_valid_pos).astype("int64")
 

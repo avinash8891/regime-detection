@@ -16,7 +16,6 @@ import os
 import sys
 from pathlib import Path
 
-import pyarrow.compute as pc
 import pyarrow.parquet as pq
 
 _REPO_ROOT = Path(__file__).resolve().parent.parent
@@ -27,14 +26,15 @@ from regime_data_fetch.artifact_store import (
     build_artifact_store,
     sha256_bytes,
 )  # noqa: E402
+from regime_data_fetch.canonical_parquet import (  # noqa: E402
+    canonicalize_parquet_bytes,
+)
 from regime_data_fetch.cli_common import load_operator_env_files  # noqa: E402
 
 LOGGER = logging.getLogger("upload_missing_ohlcv")
 
 _DEFAULT_SOURCE_TREE = _REPO_ROOT / ".context" / "daily_ohlcv_2016_20260515_repaired"
 _MERGED_MANIFEST = _REPO_ROOT / "manifests" / "runs" / "regime_engine_2026-05-17.yaml"
-_PARQUET_COMPRESSION = "snappy"
-_PARQUET_COERCE_TIMESTAMPS = "us"
 
 
 def _make_yaml():
@@ -65,35 +65,6 @@ def _manifest_symbol_set(payload) -> set[str]:
         for a in payload["artifacts"]
         if a["name"].startswith("daily_ohlcv_762_")
     }
-
-
-def _canonicalize(path: Path) -> bytes:
-    import pyarrow as pa
-
-    table = pq.read_table(path)
-    table = table.replace_schema_metadata(None)
-    # Cast dictionary-encoded columns to plain string so sort_indices works.
-    new_cols = {}
-    for name in table.column_names:
-        col = table.column(name)
-        if pa.types.is_dictionary(col.type):
-            new_cols[name] = col.cast(col.type.value_type)
-    if new_cols:
-        for name, col in new_cols.items():
-            idx = table.schema.get_field_index(name)
-            table = table.set_column(idx, name, col)
-    if table.num_rows > 0:
-        sort_keys = [(name, "ascending") for name in table.column_names]
-        table = table.take(pc.sort_indices(table, sort_keys=sort_keys))
-    buf = io.BytesIO()
-    pq.write_table(
-        table,
-        buf,
-        compression=_PARQUET_COMPRESSION,
-        coerce_timestamps=_PARQUET_COERCE_TIMESTAMPS,
-        use_deprecated_int96_timestamps=False,
-    )
-    return buf.getvalue()
 
 
 def _date_range(canon: bytes) -> tuple[str | None, str | None]:
@@ -192,7 +163,7 @@ def main(argv: list[str] | None = None) -> int:
 
         LOGGER.info("processing %s", symbol)
         try:
-            canon = _canonicalize(parquet_path)
+            canon = canonicalize_parquet_bytes(parquet_path)
         except Exception as exc:
             LOGGER.error("  canonicalize failed: %s", exc)
             errors.append(symbol)

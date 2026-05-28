@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import io
 import importlib.util
 import logging
 import sys
@@ -12,6 +13,8 @@ import pandas as pd
 import pyarrow as pa
 import pyarrow.parquet as pq
 import pytest
+
+from regime_data_fetch.canonical_parquet import canonicalize_parquet_bytes
 
 _REPO_ROOT = Path(__file__).resolve().parents[1]
 _SCRIPT_PATH = _REPO_ROOT / "scripts" / "publish_canonical_snapshot.py"
@@ -44,6 +47,28 @@ def _write_parquet(path: Path, df: pd.DataFrame) -> None:
 
 def _sha256_file(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def test_canonicalize_parquet_orders_unsortable_ties_deterministically(
+    tmp_path: Path,
+) -> None:
+    first = tmp_path / "nested-first.parquet"
+    second = tmp_path / "nested-second.parquet"
+    rows = [
+        {"id": 1, "tags": ["b"]},
+        {"id": 1, "tags": ["a"]},
+    ]
+    pq.write_table(pa.Table.from_pylist(rows), first)
+    pq.write_table(pa.Table.from_pylist(list(reversed(rows))), second)
+
+    assert canonicalize_parquet_bytes(first) == canonicalize_parquet_bytes(second)
+    canonical_rows = (
+        pq.ParquetFile(io.BytesIO(canonicalize_parquet_bytes(first))).read().to_pylist()
+    )
+    assert canonical_rows == [
+        {"id": 1, "tags": ["a"]},
+        {"id": 1, "tags": ["b"]},
+    ]
 
 
 def _daily_ohlcv_row(date: str, symbol: str) -> dict[str, object]:
@@ -85,8 +110,8 @@ def manifest_setup(tmp_path: Path) -> tuple[Path, Path, dict, dict]:
     # Use the script's canonicalization to compute the on-disk + sha values.
     _write_parquet(a_path, df_a)
     _write_parquet(b_path, df_b)
-    canonical_a = pcs._canonicalize_parquet_bytes(a_path)
-    canonical_b = pcs._canonicalize_parquet_bytes(b_path)
+    canonical_a = canonicalize_parquet_bytes(a_path)
+    canonical_b = canonicalize_parquet_bytes(b_path)
     a_path.write_bytes(canonical_a)
     b_path.write_bytes(canonical_b)
 
@@ -329,8 +354,8 @@ def test_publish_patches_only_changed_artifact_blocks_for_all_artifacts(tmp_path
             }
         ),
     )
-    changed_canon = pcs._canonicalize_parquet_bytes(changed_path)
-    unchanged_canon = pcs._canonicalize_parquet_bytes(unchanged_path)
+    changed_canon = canonicalize_parquet_bytes(changed_path)
+    unchanged_canon = canonicalize_parquet_bytes(unchanged_path)
     changed_path.write_bytes(changed_canon)
     unchanged_path.write_bytes(unchanged_canon)
     config_path.parent.mkdir(parents=True)
@@ -626,7 +651,7 @@ artifacts:
   stage: canonical
   uri: canonical/daily_ohlcv_762/symbol=SPY/ohlcv.parquet
   local_path: data/raw/daily_ohlcv_762/symbol=SPY/ohlcv.parquet
-  sha256: {hashlib.sha256(pcs._canonicalize_parquet_bytes(spy_path)).hexdigest()}
+  sha256: {hashlib.sha256(canonicalize_parquet_bytes(spy_path)).hexdigest()}
   schema_version: null
   rows: 3
   min_date: '2026-05-14'
@@ -637,7 +662,7 @@ artifacts:
   stage: canonical
   uri: canonical/daily_ohlcv_762/symbol=XLY/ohlcv.parquet
   local_path: data/raw/daily_ohlcv_762/symbol=XLY/ohlcv.parquet
-  sha256: {hashlib.sha256(pcs._canonicalize_parquet_bytes(xly_path)).hexdigest()}
+  sha256: {hashlib.sha256(canonicalize_parquet_bytes(xly_path)).hexdigest()}
   schema_version: null
   rows: 2
   min_date: '2026-05-14'
@@ -708,7 +733,7 @@ def test_check_mode_bounds_daily_ohlcv_gaps_to_pit_active_interval(
         "stage": "canonical",
         "uri": "canonical/daily_ohlcv_762/symbol=XYZ/ohlcv.parquet",
         "local_path": "data/raw/daily_ohlcv_762/symbol=XYZ/ohlcv.parquet",
-        "sha256": hashlib.sha256(pcs._canonicalize_parquet_bytes(xyz_path)).hexdigest(),
+        "sha256": hashlib.sha256(canonicalize_parquet_bytes(xyz_path)).hexdigest(),
         "schema_version": None,
         "rows": 3,
         "min_date": "2026-05-14",
@@ -725,7 +750,7 @@ def test_check_mode_bounds_daily_ohlcv_gaps_to_pit_active_interval(
                 "uri": "canonical/pit_constituents/sp500_ticker_intervals.parquet",
                 "local_path": "data/raw/pit_constituents/sp500_ticker_intervals.parquet",
                 "sha256": hashlib.sha256(
-                    pcs._canonicalize_parquet_bytes(pit_path)
+                    canonicalize_parquet_bytes(pit_path)
                 ).hexdigest(),
                 "schema_version": None,
                 "rows": 1,
@@ -739,7 +764,7 @@ def test_check_mode_bounds_daily_ohlcv_gaps_to_pit_active_interval(
                 "uri": "canonical/daily_ohlcv_762/symbol=SPY/ohlcv.parquet",
                 "local_path": "data/raw/daily_ohlcv_762/symbol=SPY/ohlcv.parquet",
                 "sha256": hashlib.sha256(
-                    pcs._canonicalize_parquet_bytes(spy_path)
+                    canonicalize_parquet_bytes(spy_path)
                 ).hexdigest(),
                 "schema_version": None,
                 "rows": 4,
@@ -766,7 +791,7 @@ def test_check_mode_bounds_daily_ohlcv_gaps_to_pit_active_interval(
         ),
     )
     artifact["sha256"] = hashlib.sha256(
-        pcs._canonicalize_parquet_bytes(xyz_path)
+        canonicalize_parquet_bytes(xyz_path)
     ).hexdigest()
     artifact["rows"] = 2
 
@@ -820,7 +845,7 @@ def test_check_mode_detects_store_drift_when_local_matches_manifest(
     )
     store_source = paths["a_path"].with_name("store_latest.parquet")
     _write_parquet(store_source, new_df)
-    store_latest = pcs._canonicalize_parquet_bytes(store_source)
+    store_latest = canonicalize_parquet_bytes(store_source)
     store = pcs.build_artifact_store(original_manifest["storage_root"])
     store.put_bytes(store_latest, artifact["uri"], overwrite=True)
 
@@ -864,11 +889,11 @@ def test_canonicalize_is_a_fixed_point_for_datetime_float_parquet(tmp_path: Path
     )
     _write_parquet(path, df)
 
-    pass1 = pcs._canonicalize_parquet_bytes(path)
+    pass1 = canonicalize_parquet_bytes(path)
     path.write_bytes(pass1)
-    pass2 = pcs._canonicalize_parquet_bytes(path)
+    pass2 = canonicalize_parquet_bytes(path)
     path.write_bytes(pass2)
-    pass3 = pcs._canonicalize_parquet_bytes(path)
+    pass3 = canonicalize_parquet_bytes(path)
 
     assert pass1 == pass2 == pass3, (
         f"canonicalize is not a fixed point: "
@@ -894,11 +919,11 @@ def test_canonicalize_is_a_fixed_point_for_daily_ohlcv_parquet(tmp_path: Path):
     )
     _write_parquet(path, df)
 
-    pass1 = pcs._canonicalize_parquet_bytes(path)
+    pass1 = canonicalize_parquet_bytes(path)
     path.write_bytes(pass1)
-    pass2 = pcs._canonicalize_parquet_bytes(path)
+    pass2 = canonicalize_parquet_bytes(path)
     path.write_bytes(pass2)
-    pass3 = pcs._canonicalize_parquet_bytes(path)
+    pass3 = canonicalize_parquet_bytes(path)
 
     assert pass1 == pass2 == pass3
 
@@ -914,9 +939,9 @@ def test_canonicalize_supports_parquet_with_list_column(tmp_path: Path):
     )
     pq.write_table(table, path)
 
-    canonical = pcs._canonicalize_parquet_bytes(path)
+    canonical = canonicalize_parquet_bytes(path)
     path.write_bytes(canonical)
-    second_pass = pcs._canonicalize_parquet_bytes(path)
+    second_pass = canonicalize_parquet_bytes(path)
 
     assert canonical == second_pass
     assert pq.read_table(path).column_names == ["date", "event_type", "window_days"]

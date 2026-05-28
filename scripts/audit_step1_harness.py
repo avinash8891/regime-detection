@@ -31,17 +31,24 @@ global rule "Instrumentation must NEVER block business logic."
 
 from __future__ import annotations
 
-import hashlib
 import json
 import logging
 import subprocess
+import sys
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Sequence
 
+REPO_ROOT = Path(__file__).resolve().parents[1]
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
+sys.path.insert(0, str(REPO_ROOT / "src"))
+
 if TYPE_CHECKING:
     from regime_data_fetch.materialization import MaterializedArtifact
+
+from regime_data_fetch.artifact_store import sha256_file as _sha256_file  # noqa: E402
 
 logger = logging.getLogger(__name__)
 
@@ -277,14 +284,6 @@ def _hash_parallel(repo_root: Path, files: list[Path]) -> dict[str, str]:
     with ThreadPoolExecutor(max_workers=_DEFAULT_HASH_WORKERS) as pool:
         digests = list(pool.map(_sha256_file, files))
     return {str(f.relative_to(repo_root)): d for f, d in zip(files, digests)}
-
-
-def _sha256_file(path: Path) -> str:
-    hasher = hashlib.sha256()
-    with path.open("rb") as handle:
-        for chunk in iter(lambda: handle.read(65536), b""):
-            hasher.update(chunk)
-    return hasher.hexdigest()
 
 
 if __name__ == "__main__":

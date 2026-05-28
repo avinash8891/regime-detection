@@ -159,6 +159,7 @@ def test_historical_walkforward_supplies_macro_series_for_configured_v2_axes(
 
 def test_historical_walkforward_runner_records_failures_without_silent_skip(
     tmp_path: Path,
+    v2_macro_parquet_path: Path,
 ) -> None:
     repo_root = Path(__file__).resolve().parents[1]
     original = pd.read_parquet(
@@ -186,6 +187,7 @@ def test_historical_walkforward_runner_records_failures_without_silent_skip(
         event_calendar_path=event_calendar_path,
         config_path=config_path,
         v2_daily_ohlcv_path=v2_daily_path,
+        macro_parquet_path=v2_macro_parquet_path,
     )
 
     assert result["session_count"] == 2

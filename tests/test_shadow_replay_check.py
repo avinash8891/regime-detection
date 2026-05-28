@@ -24,7 +24,10 @@ def _load_module(name: str, rel_path: str):
 
 
 @pytest.fixture(scope="session")
-def shadow_root_template(tmp_path_factory: pytest.TempPathFactory) -> Path:
+def shadow_root_template(
+    tmp_path_factory: pytest.TempPathFactory,
+    v2_macro_parquet_path: Path,
+) -> Path:
     runner = _load_module("run_shadow_regime", "scripts/run_shadow_regime.py")
     repo_root = Path(__file__).resolve().parents[1]
     market_data_path = (
@@ -41,6 +44,7 @@ def shadow_root_template(tmp_path_factory: pytest.TempPathFactory) -> Path:
         output_root=out_root,
         config_path=config_path,
         v2_daily_ohlcv_path=v2_daily_path,
+        macro_parquet_path=v2_macro_parquet_path,
     )
     assert result["status"] == "success"
     return out_root
@@ -164,10 +168,12 @@ def test_shadow_replay_check_uses_only_archived_inputs(
     archive_dir = out_root / "input_archives" / "2023-12-14"
     market_archive = archive_dir / "market_data.parquet"
     events_archive = archive_dir / "events.yaml"
+    macro_archive = archive_dir / "macro_series.parquet"
     original_read_parquet = replay_mod.pd.read_parquet
     original_load_archived_event_calendar = replay_mod.load_archived_event_calendar
+    original_load_archived_macro_series = replay_mod.load_archived_macro_series
 
-    seen = {"market": None, "events": None}
+    seen = {"market": None, "events": None, "macro": None}
 
     def _checked_read_parquet(path, *args, **kwargs):
         seen["market"] = str(Path(path))
@@ -177,8 +183,13 @@ def test_shadow_replay_check_uses_only_archived_inputs(
         seen["events"] = str(Path(path))
         return original_load_archived_event_calendar(path, *args, **kwargs)
 
+    def _checked_load_archived_macro_series(path, *args, **kwargs):
+        seen["macro"] = str(Path(path))
+        return original_load_archived_macro_series(path, *args, **kwargs)
+
     replay_mod.pd.read_parquet = _checked_read_parquet
     replay_mod.load_archived_event_calendar = _checked_load_archived_event_calendar
+    replay_mod.load_archived_macro_series = _checked_load_archived_macro_series
     try:
         result = replay_mod.run_replay_check(
             output_root=out_root,
@@ -188,7 +199,9 @@ def test_shadow_replay_check_uses_only_archived_inputs(
     finally:
         replay_mod.pd.read_parquet = original_read_parquet
         replay_mod.load_archived_event_calendar = original_load_archived_event_calendar
+        replay_mod.load_archived_macro_series = original_load_archived_macro_series
 
     assert result["matches"] is True
     assert seen["market"] == str(market_archive)
     assert seen["events"] == str(events_archive)
+    assert seen["macro"] == str(macro_archive)

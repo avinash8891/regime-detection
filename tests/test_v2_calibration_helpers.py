@@ -6,11 +6,33 @@ from pathlib import Path
 import pandas as pd
 
 from scripts._v2_calibration_helpers import (
+    CROSS_ASSET_SYMBOLS,
     default_pmi_path,
     load_close_dict,
     load_macro_series,
     load_market_data,
 )
+from regime_detection.credit_funding import (
+    REQUIRED_CROSS_ASSET_KEYS as CREDIT_FUNDING_CROSS_ASSET_KEYS,
+)
+from regime_detection.fragility_universe import (
+    CROSS_ASSET_SYMBOLS as NETWORK_CROSS_ASSET_SYMBOLS,
+)
+from regime_detection.inflation_growth import (
+    REQUIRED_CROSS_ASSET_KEYS as INFLATION_GROWTH_CROSS_ASSET_KEYS,
+)
+
+
+def test_runner_cross_asset_symbols_are_derived_from_engine_sources() -> None:
+    assert CROSS_ASSET_SYMBOLS == list(
+        dict.fromkeys(
+            [
+                *NETWORK_CROSS_ASSET_SYMBOLS,
+                *CREDIT_FUNDING_CROSS_ASSET_KEYS,
+                *INFLATION_GROWTH_CROSS_ASSET_KEYS,
+            ]
+        )
+    )
 
 
 def test_default_pmi_path_uses_history_parquet(tmp_path: Path) -> None:

@@ -95,15 +95,24 @@ def sha256_file(path: Path) -> str:
     return h.hexdigest()
 
 
-def ensure_shadow_layout(output_root: Path) -> dict[str, Path]:
+def ensure_shadow_layout(
+    output_root: Path,
+    *,
+    db_name: str = "regime_shadow.db",
+    include_reports: bool = False,
+) -> dict[str, Path]:
     paths = {
-        "db": output_root / "regime_shadow.db",
+        "db": output_root / db_name,
         "outputs": output_root / "outputs",
         "input_archives": output_root / "input_archives",
     }
+    if include_reports:
+        paths["reports"] = output_root / "reports"
     output_root.mkdir(parents=True, exist_ok=True)
     paths["outputs"].mkdir(parents=True, exist_ok=True)
     paths["input_archives"].mkdir(parents=True, exist_ok=True)
+    if include_reports:
+        paths["reports"].mkdir(parents=True, exist_ok=True)
     return paths
 
 
@@ -149,10 +158,12 @@ def write_archived_inputs(
     archive_dir: Path,
     market_slice: pd.DataFrame,
     event_df: pd.DataFrame | None,
+    macro_series: dict[str, pd.Series] | None = None,
 ) -> tuple[Path, Path, Path]:
     archive_dir.mkdir(parents=True, exist_ok=True)
     market_path = archive_dir / "market_data.parquet"
     events_path = archive_dir / "events.yaml"
+    macro_path = archive_dir / "macro_series.parquet"
     checksums_path = archive_dir / "checksums.json"
 
     market_slice.to_parquet(market_path, index=False)
@@ -160,12 +171,16 @@ def write_archived_inputs(
         yaml.safe_dump({"events": event_rows_for_yaml(event_df)}, sort_keys=False),
         encoding="utf-8",
     )
+    checksums = {
+        "market_data.parquet": sha256_file(market_path),
+        "events.yaml": sha256_file(events_path),
+    }
+    if macro_series:
+        _macro_series_frame(macro_series).to_parquet(macro_path, index=False)
+        checksums["macro_series.parquet"] = sha256_file(macro_path)
     checksums_path.write_text(
         json.dumps(
-            {
-                "market_data.parquet": sha256_file(market_path),
-                "events.yaml": sha256_file(events_path),
-            },
+            checksums,
             indent=2,
             sort_keys=True,
         )
@@ -173,6 +188,33 @@ def write_archived_inputs(
         encoding="utf-8",
     )
     return market_path, events_path, checksums_path
+
+
+def _macro_series_frame(macro_series: dict[str, pd.Series]) -> pd.DataFrame:
+    rows: list[dict[str, Any]] = []
+    for logical_name, series in sorted(macro_series.items()):
+        clean = series.dropna()
+        for observed_date, value in clean.items():
+            rows.append(
+                {
+                    "date": pd.Timestamp(observed_date),
+                    "series_id": str(logical_name).upper(),
+                    "logical_name": str(logical_name),
+                    "value": float(value),
+                }
+            )
+    return pd.DataFrame(
+        rows,
+        columns=["date", "series_id", "logical_name", "value"],
+    )
+
+
+def load_archived_macro_series(path: Path) -> dict[str, pd.Series] | None:
+    if not path.exists():
+        return None
+    from regime_detection.loaders import load_macro_series
+
+    return load_macro_series(path)
 
 
 def insert_run_row(

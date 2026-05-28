@@ -28,6 +28,7 @@ from regime_detection.shadow_storage import (
     ensure_shadow_layout,
     insert_run_row,
     load_archived_event_calendar,
+    load_archived_macro_series,
     load_archived_market_data,
     open_shadow_db,
     update_run_row_failure,
@@ -263,6 +264,7 @@ def run_shadow(
             archive_dir=archive_dir,
             market_slice=market_slice,
             event_df=event_df,
+            macro_series=v2_kwargs.get("macro_series"),
         )
         insert_run_row(
             conn=conn,
@@ -276,6 +278,11 @@ def run_shadow(
         try:
             archived_market = load_archived_market_data(archived_market_path)
             archived_events = load_archived_event_calendar(archived_events_path)
+            archived_macro = load_archived_macro_series(
+                archive_dir / "macro_series.parquet"
+            )
+            if archived_macro is not None:
+                v2_kwargs["macro_series"] = archived_macro
             output = engine.classify(
                 as_of_date=as_of_date,
                 market_data=archived_market,

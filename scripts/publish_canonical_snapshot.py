@@ -31,9 +31,7 @@ from pathlib import Path
 from typing import Any, Callable, Iterable
 
 import pandas as pd
-import pyarrow.compute as pc
 import pyarrow.parquet as pq
-import pyarrow.types as pat
 
 # Allow running as a script without installing the package.
 _REPO_ROOT = Path(__file__).resolve().parent.parent
@@ -45,6 +43,9 @@ from regime_data_fetch.artifact_store import (  # noqa: E402
     build_artifact_store,
     sha256_bytes,
     sha256_file,
+)
+from regime_data_fetch.canonical_parquet import (  # noqa: E402
+    canonicalize_parquet_bytes,
 )
 from regime_data_fetch.daily_ohlcv_contract import (  # noqa: E402
     daily_ohlcv_artifact_name,
@@ -67,13 +68,6 @@ DATE_COLUMN_CANDIDATES: tuple[str, ...] = (
     "meeting_end_date",
     "speech_date",
 )
-
-# Canonical parquet writer settings. These are the *stability requirement*:
-# any change to pyarrow's default ``created_by`` string embeds a new
-# version in the parquet footer and changes the sha256. Pin pyarrow
-# version in dev/CI to keep canonical bytes stable across machines.
-_PARQUET_COMPRESSION = "snappy"
-_PARQUET_COERCE_TIMESTAMPS = "us"
 
 _DAILY_OHLCV_REQUIRED_COLUMNS: tuple[str, ...] = (
     "date",
@@ -136,78 +130,6 @@ def _dump_manifest_atomically(
 
         tmp.write_text(yaml.safe_dump(payload, sort_keys=False))
     os.replace(tmp, path)
-
-
-# ---------------------------------------------------------------------------
-# Parquet canonicalization
-
-
-def _canonicalize_parquet_bytes(source: Path) -> bytes:
-    """Return canonical parquet bytes for a file.
-
-    Canonical form: rows sorted ascending by all columns (pyarrow sort_by),
-    schema metadata stripped (no pandas round-trip embeds), snappy
-    compression, coerce_timestamps='us', no int96 timestamps. The function
-    is a fixed point: canonicalize(canonicalize(x)) == canonicalize(x).
-    """
-    payload = _canonicalize_parquet_source(source)
-    for _ in range(3):
-        next_payload = _canonicalize_parquet_source(io.BytesIO(payload))
-        if next_payload == payload:
-            return payload
-        payload = next_payload
-    raise RuntimeError(f"parquet canonicalization did not converge: {source}")
-
-
-def _canonicalize_parquet_source(source: Any) -> bytes:
-    table = pq.ParquetFile(source).read()
-    table = table.replace_schema_metadata(None)
-    if any(pat.is_dictionary(field.type) for field in table.schema):
-        table = table.from_arrays(
-            [
-                (
-                    column.combine_chunks().dictionary_decode()
-                    if pat.is_dictionary(field.type)
-                    else column
-                )
-                for field, column in zip(table.schema, table.itercolumns(), strict=True)
-            ],
-            names=table.column_names,
-        )
-    if table.num_rows > 0:
-        sort_keys = [
-            (field.name, "ascending")
-            for field in table.schema
-            if _is_sortable_arrow_type(field.type)
-        ]
-        if not sort_keys:
-            return _write_canonical_parquet_bytes(table)
-        indices = pc.sort_indices(table, sort_keys=sort_keys)
-        table = table.take(indices)
-    return _write_canonical_parquet_bytes(table)
-
-
-def _write_canonical_parquet_bytes(table: Any) -> bytes:
-    buf = io.BytesIO()
-    pq.write_table(
-        table,
-        buf,
-        compression=_PARQUET_COMPRESSION,
-        coerce_timestamps=_PARQUET_COERCE_TIMESTAMPS,
-        use_deprecated_int96_timestamps=False,
-    )
-    return buf.getvalue()
-
-
-def _is_sortable_arrow_type(arrow_type: Any) -> bool:
-    return not (
-        pat.is_list(arrow_type)
-        or pat.is_large_list(arrow_type)
-        or pat.is_fixed_size_list(arrow_type)
-        or pat.is_struct(arrow_type)
-        or pat.is_map(arrow_type)
-        or pat.is_union(arrow_type)
-    )
 
 
 def _parquet_row_count(payload: bytes) -> int:
@@ -385,7 +307,7 @@ def _semantic_check_artifact(
     if not local.exists() or not _is_parquet(local):
         return None, ""
     try:
-        payload = _canonicalize_parquet_bytes(local)
+        payload = canonicalize_parquet_bytes(local)
         _validate_parquet_manifest_metadata(artifact=artifact, payload=payload)
         _validate_daily_ohlcv_contract(
             artifact=artifact,
@@ -552,7 +474,7 @@ def _check_local(
         return "MISSING", None, None
     if _is_parquet(local):
         try:
-            canon = _canonicalize_parquet_bytes(local)
+            canon = canonicalize_parquet_bytes(local)
         except Exception as exc:  # pragma: no cover - defensive
             return "READ_ERROR", None, str(exc)
         new_sha = sha256_bytes(canon)
@@ -642,7 +564,7 @@ def run_dry_run(
             continue
         if _is_parquet(local):
             current_sha = sha256_file(local)
-            canon = _canonicalize_parquet_bytes(local)
+            canon = canonicalize_parquet_bytes(local)
             new_sha = sha256_bytes(canon)
             if new_sha == old_sha and current_sha == old_sha:
                 status = "MATCH"
@@ -685,7 +607,7 @@ def run_publish(
             continue
 
         if _is_parquet(local):
-            canon = _canonicalize_parquet_bytes(local)
+            canon = canonicalize_parquet_bytes(local)
             _validate_daily_ohlcv_symbol_contract(artifact=artifact, payload=canon)
             new_sha = sha256_bytes(canon)
             disk_sha = sha256_file(local)

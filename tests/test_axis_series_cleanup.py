@@ -6,6 +6,7 @@ import inspect
 import pandas as pd
 
 import regime_detection.axis_series as axis_series
+from regime_detection.axis_builders import staleness
 
 _MOVED_AXIS_BUILDER_NAMES = (
     "build_trend_direction_axis_series",
@@ -40,15 +41,18 @@ def test_axis_builder_series_shim_is_removed() -> None:
     assert importlib.util.find_spec("regime_detection.axis_builders.series") is None
 
 
-def test_axis_series_staleness_helpers_use_named_sentinel() -> None:
+def test_axis_builders_staleness_helpers_are_public() -> None:
     idx = pd.date_range("2024-01-02", periods=3, freq="B")
 
-    calendar = axis_series._calendar_staleness_days_series(None, idx)
-    trading = axis_series._trading_staleness_series(None, idx)
+    calendar = staleness.calendar_staleness_days_series(None, idx)
+    trading = staleness.trading_staleness_series(None, idx)
 
-    assert axis_series._STALENESS_SENTINEL == 10**9
-    assert calendar.tolist() == [axis_series._STALENESS_SENTINEL] * 3
-    assert trading.tolist() == [axis_series._STALENESS_SENTINEL] * 3
+    assert not hasattr(axis_series, "_calendar_staleness_days_series")
+    assert not hasattr(axis_series, "_trading_staleness_series")
+    assert not hasattr(axis_series, "_STALENESS_SENTINEL")
+    assert staleness.STALENESS_SENTINEL == 10**9
+    assert calendar.tolist() == [staleness.STALENESS_SENTINEL] * 3
+    assert trading.tolist() == [staleness.STALENESS_SENTINEL] * 3
 
 
 def test_calendar_staleness_counts_non_session_source_dates() -> None:
@@ -58,7 +62,7 @@ def test_calendar_staleness_counts_non_session_source_dates() -> None:
         index=pd.to_datetime(["2025-10-01", "2025-11-01"]),
     )
 
-    calendar = axis_series._calendar_staleness_days_series(series, idx)
+    calendar = staleness.calendar_staleness_days_series(series, idx)
 
     assert calendar.tolist() == [30, 2, 3]
 
@@ -67,9 +71,9 @@ def test_calendar_staleness_never_uses_future_observations_as_fresh() -> None:
     idx = pd.to_datetime(["2025-10-31", "2025-11-03"])
     series = pd.Series([1.0], index=pd.to_datetime(["2025-11-01"]))
 
-    calendar = axis_series._calendar_staleness_days_series(series, idx)
+    calendar = staleness.calendar_staleness_days_series(series, idx)
 
-    assert calendar.tolist() == [axis_series._STALENESS_SENTINEL, 2]
+    assert calendar.tolist() == [staleness.STALENESS_SENTINEL, 2]
     assert all(value >= 0 for value in calendar)
 
 
@@ -80,9 +84,9 @@ def test_staleness_policy_dispatches_declared_calendar_and_trading_clocks() -> N
         index=pd.to_datetime(["2025-10-01", "2025-11-03"]),
     )
 
-    assert axis_series.staleness_for_source(
+    assert staleness.staleness_for_source(
         source_name="cpi_all_items", series=series, session_index=idx
     ).tolist() == [30, 0, 1]
-    assert axis_series.staleness_for_source(
+    assert staleness.staleness_for_source(
         source_name="HYG", series=series, session_index=idx
-    ).tolist() == [axis_series._STALENESS_SENTINEL, 0, 1]
+    ).tolist() == [staleness.STALENESS_SENTINEL, 0, 1]

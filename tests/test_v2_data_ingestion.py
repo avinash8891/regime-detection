@@ -92,6 +92,34 @@ def test_network_fragility_universe_is_24_symbols_per_v2_section_3_1() -> None:
     }
 
 
+def test_synthetic_v2_kwargs_use_real_fixture_rows_when_covered(
+    v2_market_df_for_asof, synthetic_v2_kwargs_for_market_data
+) -> None:
+    as_of = date(2023, 12, 14)
+    kwargs = synthetic_v2_kwargs_for_market_data(v2_market_df_for_asof(as_of))
+
+    xlb = kwargs["sector_etf_closes"]["XLB"]
+    constituent_xlb = kwargs["constituent_ohlcv"]["XLB"]
+
+    assert xlb.index.min() == pd.Timestamp("2019-01-02")
+    assert not (
+        constituent_xlb["open"].equals(constituent_xlb["high"])
+        and constituent_xlb["high"].equals(constituent_xlb["low"])
+        and constituent_xlb["low"].equals(constituent_xlb["close"])
+    )
+
+
+def test_synthetic_v2_kwargs_use_window_fallback_when_real_fixture_starts_late(
+    market_df_for_asof, synthetic_v2_kwargs_for_market_data
+) -> None:
+    market_data = market_df_for_asof(date(2023, 12, 14))
+    kwargs = synthetic_v2_kwargs_for_market_data(market_data)
+
+    xlb = kwargs["sector_etf_closes"]["XLB"]
+
+    assert xlb.index.min().date() == min(market_data["date"])
+
+
 # ---------- load_sector_etf_closes -------------------------------------------
 
 

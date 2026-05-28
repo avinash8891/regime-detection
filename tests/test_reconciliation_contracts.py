@@ -164,8 +164,12 @@ def test_breadth_data_quality_does_not_block_pit_breadth_when_rsp_gaps(
     )
 
     assert out.breadth_state.active_label == "broadening_breadth"
-    assert out.breadth_state.data_quality.status == "insufficient_history"
-    assert out.breadth_state.data_quality.reason == "required_feature_is_nan"
+    assert out.breadth_state.data_quality.status == "degraded"
+    assert out.breadth_state.data_quality.reason == "incomplete_data"
+    assert out.breadth_state.evidence["rule_evidence"]["v1_raw_label"] == "unknown"
+    assert (
+        out.breadth_state.evidence["rule_evidence"]["reason"] == "insufficient_history"
+    )
 
 
 def test_trend_direction_data_quality_insufficient_data_can_override_non_unknown_label(

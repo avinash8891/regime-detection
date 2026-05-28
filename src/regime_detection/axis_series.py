@@ -21,12 +21,6 @@ from regime_detection.axis_builders.monetary_pressure import (
 from regime_detection.axis_builders.network_fragility import (
     build_network_fragility_axis_series,
 )
-from regime_detection.axis_builders.staleness import (
-    _STALENESS_SENTINEL as _STALENESS_SENTINEL,  # pyright: ignore[reportPrivateUsage]
-    _calendar_staleness_days_series as _calendar_staleness_days_series,  # pyright: ignore[reportPrivateUsage]
-    _trading_staleness_series as _trading_staleness_series,  # pyright: ignore[reportPrivateUsage]
-    staleness_for_source as staleness_for_source,
-)
 from regime_detection.axis_builders.trend_character import (
     build_trend_character_axis_series,
 )
