@@ -124,7 +124,7 @@ class AcquisitionStore:
                 status=success_status,
                 notes=success_notes,
             )
-        except Exception as exc:
+        except BaseException as exc:
             self.finish_fetch_run(
                 run_id=fetch_run.run_id, status=failure_status, notes=str(exc)
             )

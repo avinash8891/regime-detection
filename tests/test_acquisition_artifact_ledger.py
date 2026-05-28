@@ -65,6 +65,23 @@ def test_acquisition_store_run_context_marks_failed_and_reraises(
     assert rows == [("sentiment", "failed", "source unavailable")]
 
 
+def test_acquisition_store_run_context_marks_failed_for_base_exception(
+    tmp_path: Path,
+) -> None:
+    store = AcquisitionStore(tmp_path / "acquisition.db")
+
+    with pytest.raises(KeyboardInterrupt):
+        with store.run(fetch_type="sentiment", params={"source": "aaii"}):
+            raise KeyboardInterrupt
+
+    with sqlite3.connect(tmp_path / "acquisition.db") as conn:
+        rows = conn.execute(
+            "SELECT fetch_type, status, notes FROM fetch_runs"
+        ).fetchall()
+
+    assert rows == [("sentiment", "failed", "")]
+
+
 def test_acquisition_store_run_context_marks_failed_when_success_finish_raises(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
