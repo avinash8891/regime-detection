@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import datetime as dt
 import json
+from contextlib import nullcontext
 from collections import Counter
 from collections.abc import Callable, Mapping
 from pathlib import Path
@@ -58,7 +59,6 @@ from regime_data_fetch.expiry_calendar import (
     compute_monthly_options_expiry_anchor,
 )
 from regime_data_fetch.fomc_minutes import (
-    FOMCMinutesFetchError,
     fetch_fomc_historical_year_index,
     fetch_fomc_historical_year_page,
     fetch_fomc_minutes_listing,
@@ -328,8 +328,8 @@ def run_us_event_calendar_fetch(
         if acquisition_db_path
         else None
     )
-    fetch_run = (
-        store.start_fetch_run(
+    run_context = (
+        store.run(
             fetch_type="events",
             params={
                 "bls_start_year": bls_start_year,
@@ -337,10 +337,10 @@ def run_us_event_calendar_fetch(
             },
         )
         if store
-        else None
+        else nullcontext(None)
     )
 
-    try:
+    with run_context as fetch_run:
         events = _fetch_fomc_events(
             listing_fetcher=fomc_listing_fetcher,
             historical_index_fetcher=fomc_historical_index_fetcher,
@@ -451,21 +451,7 @@ def run_us_event_calendar_fetch(
                 ),
                 notes="Event calendar fetch report",
             )
-            store.finish_fetch_run(run_id=fetch_run.run_id, status="ok")
         return report_path
-    except (
-        BLSScheduleFetchError,
-        EventCalendarFetchError,
-        FOMCMinutesFetchError,
-        OSError,
-        ValueError,
-        yaml.YAMLError,
-    ) as exc:
-        if store and fetch_run:
-            store.finish_fetch_run(
-                run_id=fetch_run.run_id, status="failed", notes=str(exc)
-            )
-        raise
 
 
 def _build_event_type_coverage(counts: Counter[str]) -> dict[str, object]:

@@ -6,20 +6,17 @@ import logging
 from collections.abc import Callable
 from typing import Any
 from urllib.parse import quote, urlencode
-from urllib.request import Request, urlopen as stdlib_urlopen
+from urllib.request import urlopen as stdlib_urlopen
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 import pandas as pd
 
+from regime_data_fetch._http import fetch_text
 from regime_data_fetch.alpaca_daily import DailyBarsFetchResult
 
 logger = logging.getLogger(__name__)
 
 YAHOO_CHART_BASE_URL = "https://query1.finance.yahoo.com/v8/finance/chart"
-YAHOO_USER_AGENT = (
-    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
-    "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0 Safari/537.36"
-)
 DAILY_OHLCV_COLUMNS = [
     "date",
     "symbol",
@@ -108,16 +105,18 @@ def _fetch_yahoo_chart_json(
     timeout_sec: float,
     urlopen: Callable[..., Any],
 ) -> dict[str, Any]:
-    request = Request(
+    payload = fetch_text(
         _build_yahoo_chart_url(
             symbol=symbol,
             start_date=start_date,
             end_date=end_date,
         ),
-        headers={"User-Agent": YAHOO_USER_AGENT, "Accept": "application/json"},
+        headers={"Accept": "application/json"},
+        timeout=timeout_sec,
+        errors="strict",
+        urlopen=urlopen,
     )
-    with urlopen(request, timeout=timeout_sec) as response:
-        return json.loads(response.read().decode("utf-8"))
+    return json.loads(payload)
 
 
 def _build_yahoo_chart_url(

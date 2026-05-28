@@ -5,12 +5,13 @@ import logging
 from collections.abc import Callable, Mapping
 from pathlib import Path
 from urllib.error import URLError
-from urllib.request import Request, urlopen
+from urllib.request import urlopen
+
+from regime_data_fetch._http import fetch_text
 
 import pandas as pd
 
 from regime_data_fetch.acquisition_store import AcquisitionStore
-from regime_data_fetch.event_sources._common import HTTP_USER_AGENT
 from regime_data_fetch.event_calendar_models import (
     EventCalendarFetchError,
     GroupABuildResult,
@@ -275,10 +276,8 @@ def record_group_a_output(
 
 def build_url_text_fetcher(url: str) -> Callable[[], str]:
     def fetch() -> str:
-        request = Request(url, headers={"User-Agent": HTTP_USER_AGENT})
         try:
-            with urlopen(request, timeout=30) as response:
-                return response.read().decode("utf-8")
+            return fetch_text(url, timeout=30, errors="strict", urlopen=urlopen)
         except URLError as exc:
             reason = getattr(exc, "reason", exc)
             LOGGER.error(

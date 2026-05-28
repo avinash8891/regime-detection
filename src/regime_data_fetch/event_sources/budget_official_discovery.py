@@ -5,12 +5,12 @@ import html
 import json
 import logging
 import re
-import urllib.request
 from concurrent.futures import ThreadPoolExecutor
 from collections.abc import Callable
 from urllib.parse import urljoin
 from typing import Any
 
+from regime_data_fetch._http import fetch_text
 from regime_data_fetch.acquisition_store import AcquisitionStore
 from regime_data_fetch.event_sources.models import EventCandidate
 
@@ -326,11 +326,7 @@ def extract_govinfo_cr_records(
 
 
 def _fetch_text(url: str) -> str:
-    request = urllib.request.Request(
-        url, headers={"User-Agent": "regime-detection-event-calendar/1.0"}
-    )
-    with urllib.request.urlopen(request, timeout=30) as response:
-        return response.read().decode("utf-8", "replace")
+    return fetch_text(url, timeout=30)
 
 
 def _plain_text(value: str) -> str:

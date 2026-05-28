@@ -90,7 +90,8 @@ def run_alpaca_constituent_daily_ohlcv_fetch(
     store = AcquisitionStore(
         acquisition_db_path, artifact_store_root=artifact_store_root
     )
-    fetch_run = store.start_fetch_run(
+    success_notes: str | None = None
+    with store.run(
         fetch_type="daily_ohlcv_constituents_alpaca",
         params={
             "pit_parquet_path": str(pit_parquet_path),
@@ -103,8 +104,8 @@ def run_alpaca_constituent_daily_ohlcv_fetch(
             "daily_bars_provider": daily_bars_provider,
             "allow_missing_symbols": allow_missing_symbols,
         },
-    )
-    try:
+        success_notes=lambda: success_notes,
+    ) as fetch_run:
         if bars_fetcher is not None:
             bars = bars_fetcher(
                 symbols=symbols,
@@ -150,11 +151,7 @@ def run_alpaca_constituent_daily_ohlcv_fetch(
             max_date=max_date,
             notes=f"profile_tree={tree_root};files={len(written_files)}",
         )
-        store.finish_fetch_run(
-            run_id=fetch_run.run_id,
-            status="ok",
-            notes=f"symbols={bars.df['symbol'].nunique()};rows={len(bars.df)};missing={len(bars.missing_symbols)}",
-        )
+        success_notes = f"symbols={bars.df['symbol'].nunique()};rows={len(bars.df)};missing={len(bars.missing_symbols)}"
 
         import_report = run_local_daily_ohlcv_sqlite_import(
             out_dir=out_dir,
@@ -204,9 +201,6 @@ def run_alpaca_constituent_daily_ohlcv_fetch(
             notes="Alpaca PIT constituent OHLCV fetch report",
         )
         return report_path
-    except Exception as exc:
-        store.finish_fetch_run(run_id=fetch_run.run_id, status="failed", notes=str(exc))
-        raise
 
 
 def run_local_daily_ohlcv_sqlite_import(
@@ -227,13 +221,7 @@ def run_local_daily_ohlcv_sqlite_import(
     store = AcquisitionStore(
         acquisition_db_path, artifact_store_root=artifact_store_root
     )
-    fetch_run = store.start_fetch_run(
-        fetch_type="daily_ohlcv_local_sqlite",
-        params={
-            "source_dir": str(source_dir),
-            "parquet_files": len(parquet_files),
-        },
-    )
+    success_notes: str | None = None
 
     imported_rows = 0
     symbol_count = 0
@@ -241,7 +229,14 @@ def run_local_daily_ohlcv_sqlite_import(
     max_date: str | None = None
     artifact_records: list[tuple[Path, str, str, str]] = []
 
-    try:
+    with store.run(
+        fetch_type="daily_ohlcv_local_sqlite",
+        params={
+            "source_dir": str(source_dir),
+            "parquet_files": len(parquet_files),
+        },
+        success_notes=lambda: success_notes,
+    ) as fetch_run:
         with closing(sqlite3.connect(acquisition_db_path)) as conn:
             conn.execute("PRAGMA journal_mode = WAL")
             conn.execute("PRAGMA synchronous = NORMAL")
@@ -347,15 +342,8 @@ def run_local_daily_ohlcv_sqlite_import(
             max_date=max_date,
             notes="Local OHLCV parquet import report",
         )
-        store.finish_fetch_run(
-            run_id=fetch_run.run_id,
-            status="ok",
-            notes=f"symbols={symbol_count};rows={imported_rows}",
-        )
+        success_notes = f"symbols={symbol_count};rows={imported_rows}"
         return report_path
-    except Exception as exc:
-        store.finish_fetch_run(run_id=fetch_run.run_id, status="failed", notes=str(exc))
-        raise
 
 
 def _ensure_daily_ohlcv_table(conn: sqlite3.Connection) -> None:

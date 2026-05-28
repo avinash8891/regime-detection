@@ -10,6 +10,8 @@ import urllib.error
 
 import pandas as pd
 
+from regime_data_fetch._http import fetch_text
+
 FRED_API = "https://api.stlouisfed.org/fred/series/observations"
 ALFRED_API = "https://api.stlouisfed.org/fred/series/observations"
 FRED_VINTAGEDATES_API = "https://api.stlouisfed.org/fred/series/vintagedates"
@@ -140,8 +142,7 @@ def _fetch_url_text_with_retries(
     last_exc: Exception | None = None
     for attempt in range(1, max_retries + 1):
         try:
-            with urllib.request.urlopen(url) as response:
-                return response.read().decode("utf-8")
+            return fetch_text(url, urlopen=urllib.request.urlopen)
         except urllib.error.HTTPError as exc:
             last_exc = exc
             if exc.code < 500 or attempt >= max_retries:

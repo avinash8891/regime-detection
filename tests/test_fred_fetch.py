@@ -76,8 +76,9 @@ def test_fetch_fred_series_builds_observation_url_with_realtime_params(
     payload = (_FRED_FIXTURE_DIR / "dgs10_observations.json").read_bytes()
     captured_urls: list[str] = []
 
-    def fake_urlopen(url: str):
-        captured_urls.append(url)
+    def fake_urlopen(request, *, timeout: float):
+        assert timeout == 30.0
+        captured_urls.append(request.full_url)
         return _BytesResponse(payload)
 
     monkeypatch.setattr(fred.urllib.request, "urlopen", fake_urlopen)
@@ -118,8 +119,9 @@ def test_fetch_fred_vintage_dates_builds_vintage_endpoint_url(
     payload = (_FRED_FIXTURE_DIR / "dgs10_vintagedates.json").read_bytes()
     captured_urls: list[str] = []
 
-    def fake_urlopen(url: str):
-        captured_urls.append(url)
+    def fake_urlopen(request, *, timeout: float):
+        assert timeout == 30.0
+        captured_urls.append(request.full_url)
         return _BytesResponse(payload)
 
     monkeypatch.setattr(fred.urllib.request, "urlopen", fake_urlopen)
@@ -148,8 +150,9 @@ def test_fetch_url_text_retries_transient_urlerror_then_returns_response(
     attempts = {"count": 0}
     sleeps: list[float] = []
 
-    def fake_urlopen(url: str):
-        assert url == "https://example.test/fred"
+    def fake_urlopen(request, *, timeout: float):
+        assert request.full_url == "https://example.test/fred"
+        assert timeout == 30.0
         attempts["count"] += 1
         if attempts["count"] == 1:
             raise urllib.error.URLError("temporary DNS failure")
@@ -176,9 +179,10 @@ def test_fetch_url_text_does_not_retry_non_transient_http_error(
 ) -> None:
     attempts = {"count": 0}
 
-    def fake_urlopen(url: str):
+    def fake_urlopen(request, *, timeout: float):
+        assert timeout == 30.0
         attempts["count"] += 1
-        raise _http_error(url, 400)
+        raise _http_error(request.full_url, 400)
 
     monkeypatch.setattr(fred.urllib.request, "urlopen", fake_urlopen)
 
@@ -200,9 +204,10 @@ def test_fetch_url_text_retries_transient_http_error_until_last_attempt(
     attempts = {"count": 0}
     sleeps: list[float] = []
 
-    def fake_urlopen(url: str):
+    def fake_urlopen(request, *, timeout: float):
+        assert timeout == 30.0
         attempts["count"] += 1
-        raise _http_error(url, 503)
+        raise _http_error(request.full_url, 503)
 
     monkeypatch.setattr(fred.urllib.request, "urlopen", fake_urlopen)
     monkeypatch.setattr(fred.random, "uniform", lambda _start, _end: 0.0)

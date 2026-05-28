@@ -4,6 +4,8 @@ import sqlite3
 from pathlib import Path
 from contextlib import closing
 
+import pytest
+
 from regime_data_fetch.acquisition_schema import init_acquisition_schema
 from regime_data_fetch.acquisition_store import AcquisitionStore
 from regime_data_fetch.artifact_store import (
@@ -16,6 +18,19 @@ from regime_data_fetch.artifact_store import (
 _STORE_ROOT_URI = "file:///tmp/regime-data"
 
 
+def test_production_fetchers_use_acquisition_run_context() -> None:
+    fetch_root = Path(__file__).resolve().parents[1] / "src" / "regime_data_fetch"
+    direct_lifecycle_calls: list[str] = []
+    for path in fetch_root.rglob("*.py"):
+        if path.name == "acquisition_store.py":
+            continue
+        text = path.read_text()
+        if "start_fetch_run" in text or "finish_fetch_run" in text:
+            direct_lifecycle_calls.append(str(path.relative_to(fetch_root.parent)))
+
+    assert direct_lifecycle_calls == []
+
+
 class FailingArtifactStore(ArtifactStore):
     def put_file(self, source_path: Path, key: str) -> StoredArtifact:
         del source_path, key
@@ -24,6 +39,90 @@ class FailingArtifactStore(ArtifactStore):
     def put_bytes(self, payload: bytes, key: str) -> StoredArtifact:
         del payload, key
         raise OSError("disk full")
+
+
+def test_acquisition_store_run_context_marks_ok_on_success(tmp_path: Path) -> None:
+    store = AcquisitionStore(tmp_path / "acquisition.db")
+
+    with store.run(fetch_type="sentiment", params={"source": "aaii"}) as run:
+        store.record_text_artifact(
+            run_id=run.run_id,
+            source_name="aaii",
+            artifact_kind="html",
+            source_identifier="latest",
+            content_text="<html>ok</html>",
+        )
+
+    with sqlite3.connect(tmp_path / "acquisition.db") as conn:
+        rows = conn.execute(
+            "SELECT fetch_type, status, notes FROM fetch_runs"
+        ).fetchall()
+
+    assert rows == [("sentiment", "ok", None)]
+
+
+def test_acquisition_store_run_context_marks_failed_and_reraises(
+    tmp_path: Path,
+) -> None:
+    store = AcquisitionStore(tmp_path / "acquisition.db")
+
+    with pytest.raises(RuntimeError, match="source unavailable"):
+        with store.run(fetch_type="sentiment", params={"source": "aaii"}):
+            raise RuntimeError("source unavailable")
+
+    with sqlite3.connect(tmp_path / "acquisition.db") as conn:
+        rows = conn.execute(
+            "SELECT fetch_type, status, notes FROM fetch_runs"
+        ).fetchall()
+
+    assert rows == [("sentiment", "failed", "source unavailable")]
+
+
+def test_acquisition_store_run_context_marks_failed_for_base_exception(
+    tmp_path: Path,
+) -> None:
+    store = AcquisitionStore(tmp_path / "acquisition.db")
+
+    with pytest.raises(KeyboardInterrupt):
+        with store.run(fetch_type="sentiment", params={"source": "aaii"}):
+            raise KeyboardInterrupt
+
+    with sqlite3.connect(tmp_path / "acquisition.db") as conn:
+        rows = conn.execute(
+            "SELECT fetch_type, status, notes FROM fetch_runs"
+        ).fetchall()
+
+    assert rows == [("sentiment", "failed", "")]
+
+
+def test_acquisition_store_run_context_marks_failed_when_success_finish_raises(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    store = AcquisitionStore(tmp_path / "acquisition.db")
+    original_finish = store.finish_fetch_run
+    calls: list[tuple[str, str | None]] = []
+
+    def finish_with_ok_failure(
+        *, run_id: int, status: str, notes: str | None = None
+    ) -> None:
+        calls.append((status, notes))
+        if status == "ok":
+            raise RuntimeError("status update failed")
+        original_finish(run_id=run_id, status=status, notes=notes)
+
+    monkeypatch.setattr(store, "finish_fetch_run", finish_with_ok_failure)
+
+    with pytest.raises(RuntimeError, match="status update failed"):
+        with store.run(fetch_type="sentiment", params={"source": "aaii"}):
+            pass
+
+    with sqlite3.connect(tmp_path / "acquisition.db") as conn:
+        rows = conn.execute(
+            "SELECT fetch_type, status, notes FROM fetch_runs"
+        ).fetchall()
+
+    assert calls == [("ok", None), ("failed", "status update failed")]
+    assert rows == [("sentiment", "failed", "status update failed")]
 
 
 def test_acquisition_schema_helper_creates_tables_and_migrates_legacy_artifacts(

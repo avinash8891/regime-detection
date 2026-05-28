@@ -95,13 +95,13 @@ def run_local_investing_archive_import(
     store = AcquisitionStore(
         acquisition_db_path, artifact_store_root=artifact_store_root
     )
-    fetch_run = store.start_fetch_run(
+    success_notes: str | None = None
+    with store.run(
         fetch_type="investing_archive_local",
         params={"archive_root": str(archive_root)},
-    )
-
-    raw_records = []
-    try:
+        success_notes=lambda: success_notes,
+    ) as fetch_run:
+        raw_records = []
         for file_path in copied_raw_files:
             rel = file_path.relative_to(raw_archive_dir).as_posix()
             raw_records.append(
@@ -217,15 +217,8 @@ def run_local_investing_archive_import(
             max_date=report_max,
             notes="Investing.com archive import report",
         )
-        store.finish_fetch_run(
-            run_id=fetch_run.run_id,
-            status="ok",
-            notes=f"economic_events={len(economic_events)};holidays={len(holidays)};earnings={len(earnings)}",
-        )
+        success_notes = f"economic_events={len(economic_events)};holidays={len(holidays)};earnings={len(earnings)}"
         return report_path
-    except Exception as exc:
-        store.finish_fetch_run(run_id=fetch_run.run_id, status="failed", notes=str(exc))
-        raise
 
 
 def _copy_archive_files(*, archive_root: Path, raw_archive_dir: Path) -> list[Path]:

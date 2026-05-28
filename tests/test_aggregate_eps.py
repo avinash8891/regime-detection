@@ -650,11 +650,9 @@ def test_fetch_wayback_snapshot_bytes_reads_archive_url(
     )
 
     assert fetch_wayback_snapshot_bytes(snapshot) == b"xlsx-bytes"
-    assert captured == {
-        "url": snapshot.archive_url,
-        "timeout": 60,
-        "user_agent": "Mozilla/5.0",
-    }
+    assert captured["url"] == snapshot.archive_url
+    assert captured["timeout"] == 60
+    assert "Chrome/126.0.0.0" in captured["user_agent"]
 
 
 def test_run_wayback_aggregate_eps_fetch_builds_timeline_from_snapshots(

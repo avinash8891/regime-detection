@@ -50,11 +50,12 @@ import datetime as dt
 import json
 import logging
 import urllib.error
-import urllib.request
+from contextlib import nullcontext
 from pathlib import Path
 
 import pandas as pd
 
+from regime_data_fetch._http import fetch_bytes
 from regime_data_fetch.acquisition_store import AcquisitionStore
 
 SOURCE_NAME = "Cleveland Fed inflation nowcast"
@@ -287,20 +288,12 @@ def download_cleveland_fed_nowcast_json(
          the already-present file.
     """
     out_path.parent.mkdir(parents=True, exist_ok=True)
-    request = urllib.request.Request(
-        source_url,
-        headers={
-            "User-Agent": (
-                "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
-                "AppleWebKit/537.36 (KHTML, like Gecko) "
-                "Chrome/126.0.0.0 Safari/537.36"
-            ),
-            "Accept": "application/json,text/plain,*/*",
-        },
-    )
     try:
-        with urllib.request.urlopen(request, timeout=timeout_seconds) as response:
-            payload = response.read()
+        payload = fetch_bytes(
+            source_url,
+            headers={"Accept": "application/json,text/plain,*/*"},
+            timeout=timeout_seconds,
+        )
     except urllib.error.URLError as exc:
         raise ClevelandFedNowcastError(
             f"Failed to download Cleveland Fed nowcast JSON from "
@@ -394,15 +387,13 @@ def run_cleveland_fed_nowcast_fetch(
         if acquisition_db_path
         else None
     )
-    fetch_run = (
-        store.start_fetch_run(
-            fetch_type="cleveland_fed_nowcast", params={"source_url": source_url}
-        )
+    run_context = (
+        store.run(fetch_type="cleveland_fed_nowcast", params={"source_url": source_url})
         if store
-        else None
+        else nullcontext(None)
     )
 
-    try:
+    with run_context as fetch_run:
         try:
             download_cleveland_fed_nowcast_json(
                 out_path=json_path, source_url=source_url
@@ -477,11 +468,4 @@ def run_cleveland_fed_nowcast_fetch(
                     input_artifact_record_id=raw_record.artifact_record_id,
                     transform_name="parse_cleveland_fed_nowcast_json",
                 )
-            store.finish_fetch_run(run_id=fetch_run.run_id, status="ok")
         return report_path
-    except Exception as exc:
-        if store and fetch_run:
-            store.finish_fetch_run(
-                run_id=fetch_run.run_id, status="failed", notes=str(exc)
-            )
-        raise

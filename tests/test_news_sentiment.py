@@ -328,11 +328,9 @@ def test_fetch_workbook_bytes_wraps_urlerror_with_source_url(
     ) as excinfo:
         fetch_workbook_bytes(timeout=19)
 
-    assert captured == {
-        "url": sf_fed_news_sentiment.SF_FED_NEWS_SENTIMENT_URL,
-        "timeout": 19,
-        "user_agent": "regime-detection-fetch/1.0",
-    }
+    assert captured["url"] == sf_fed_news_sentiment.SF_FED_NEWS_SENTIMENT_URL
+    assert captured["timeout"] == 19
+    assert "Chrome/126.0.0.0" in captured["user_agent"]
     assert isinstance(excinfo.value.__cause__, urllib.error.URLError)
     assert "network unreachable" in str(excinfo.value)
 

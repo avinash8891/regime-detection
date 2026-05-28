@@ -5,11 +5,13 @@ import json
 import logging
 import urllib.error
 import urllib.request
+from contextlib import nullcontext
 from html.parser import HTMLParser
 from pathlib import Path
 
 import pandas as pd
 
+from regime_data_fetch._http import fetch_text
 from regime_data_fetch.acquisition_store import AcquisitionStore
 from regime_shared.pandas_compat import cow_safe_assign
 
@@ -158,13 +160,8 @@ def fetch_latest_rows(
     url: str, after_date: dt.date, *, timeout: int = 30
 ) -> pd.DataFrame:
     """Scrape the AAII sentiment HTML table and return rows newer than after_date."""
-    req = urllib.request.Request(
-        url,
-        headers={"User-Agent": "Mozilla/5.0 (compatible; regime-engine-fetcher/2.0)"},
-    )
     try:
-        with urllib.request.urlopen(req, timeout=timeout) as resp:
-            html_text = resp.read().decode("utf-8", errors="replace")
+        html_text = fetch_text(url, timeout=timeout, urlopen=urllib.request.urlopen)
     except urllib.error.URLError as exc:
         raise RuntimeError(f"Failed to fetch AAII sentiment page: {exc}") from exc
 
@@ -264,16 +261,20 @@ def run_sentiment_fetch(
         if acquisition_db_path
         else None
     )
-    fetch_run = (
-        store.start_fetch_run(
+    success_status = "ok"
+    success_notes: str | None = None
+    run_context = (
+        store.run(
             fetch_type="sentiment",
             params={"source": "aaii", "url": url},
+            success_status=lambda: success_status,
+            success_notes=lambda: success_notes,
         )
         if store
-        else None
+        else nullcontext(None)
     )
 
-    try:
+    with run_context as fetch_run:
         try:
             df = update_aaii_parquet(raw_dir=out_dir, out_path=out_path, url=url)
         except FileNotFoundError as exc:
@@ -303,9 +304,8 @@ def run_sentiment_fetch(
                     record_artifact=False,
                     notes="AAII sentiment fetch skipped because no bootstrap seed is materialized",
                 )
-                store.finish_fetch_run(
-                    run_id=fetch_run.run_id, status="skipped", notes=reason
-                )
+                success_status = "skipped"
+                success_notes = reason
             return report_path
 
         report = {
@@ -372,11 +372,4 @@ def run_sentiment_fetch(
                 record_artifact=False,
                 notes="AAII sentiment fetch report",
             )
-            store.finish_fetch_run(run_id=fetch_run.run_id, status="ok")
         return report_path
-    except Exception as exc:
-        if store and fetch_run:
-            store.finish_fetch_run(
-                run_id=fetch_run.run_id, status="failed", notes=str(exc)
-            )
-        raise

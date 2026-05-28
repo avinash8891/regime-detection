@@ -4,6 +4,7 @@ import datetime as dt
 import json
 import os
 import shutil
+from contextlib import nullcontext
 from pathlib import Path
 
 import pandas as pd
@@ -254,8 +255,8 @@ def run_market_fetch(
         if acquisition_db_path
         else None
     )
-    fetch_run = (
-        store.start_fetch_run(
+    run_context = (
+        store.run(
             fetch_type="market",
             params={
                 "scope": scope,
@@ -270,10 +271,10 @@ def run_market_fetch(
             },
         )
         if store
-        else None
+        else nullcontext(None)
     )
 
-    try:
+    with run_context as fetch_run:
         bars = fetch_daily_bars_with_provider(
             provider=daily_bars_provider,
             symbols=all_symbols,
@@ -421,14 +422,7 @@ def run_market_fetch(
                 max_date=max(df["date"]).isoformat() if not df.empty else None,
                 notes="Market fetch report",
             )
-            store.finish_fetch_run(run_id=fetch_run.run_id, status="ok")
         return report_path
-    except Exception as exc:
-        if store and fetch_run:
-            store.finish_fetch_run(
-                run_id=fetch_run.run_id, status="failed", notes=str(exc)
-            )
-        raise
 
 
 def run_macro_fetch(
@@ -455,8 +449,8 @@ def run_macro_fetch(
         if acquisition_db_path
         else None
     )
-    fetch_run = (
-        store.start_fetch_run(
+    run_context = (
+        store.run(
             fetch_type="macro",
             params={
                 "start": start.isoformat(),
@@ -465,10 +459,10 @@ def run_macro_fetch(
             },
         )
         if store
-        else None
+        else nullcontext(None)
     )
 
-    try:
+    with run_context as fetch_run:
         macro_frames: list[pd.DataFrame] = []
         series_meta: dict[str, dict[str, object]] = {}
         dropped_null_observations = 0
@@ -629,11 +623,4 @@ def run_macro_fetch(
                 ),
                 notes="Macro fetch report",
             )
-            store.finish_fetch_run(run_id=fetch_run.run_id, status="ok")
         return report_path
-    except Exception as exc:
-        if store and fetch_run:
-            store.finish_fetch_run(
-                run_id=fetch_run.run_id, status="failed", notes=str(exc)
-            )
-        raise

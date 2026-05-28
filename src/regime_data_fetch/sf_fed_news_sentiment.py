@@ -35,10 +35,12 @@ import json
 import logging
 import urllib.error
 import urllib.request
+from contextlib import nullcontext
 from pathlib import Path
 
 import pandas as pd
 
+from regime_data_fetch._http import fetch_bytes
 from regime_data_fetch.acquisition_store import AcquisitionStore
 
 SF_FED_NEWS_SENTIMENT_URL = (
@@ -56,13 +58,12 @@ class SFFedNewsSentimentFetchError(RuntimeError):
 
 def fetch_workbook_bytes(*, timeout: int = 30) -> bytes:
     """Download the latest SF Fed news sentiment XLSX as raw bytes."""
-    req = urllib.request.Request(
-        SF_FED_NEWS_SENTIMENT_URL,
-        headers={"User-Agent": "regime-detection-fetch/1.0"},
-    )
     try:
-        with urllib.request.urlopen(req, timeout=timeout) as resp:
-            return resp.read()
+        return fetch_bytes(
+            SF_FED_NEWS_SENTIMENT_URL,
+            timeout=timeout,
+            urlopen=urllib.request.urlopen,
+        )
     except urllib.error.URLError as exc:
         raise SFFedNewsSentimentFetchError(
             f"failed to download {SF_FED_NEWS_SENTIMENT_URL}: {exc}"
@@ -141,15 +142,15 @@ def run_sf_fed_news_sentiment_fetch(
         if acquisition_db_path
         else None
     )
-    fetch_run = (
-        store.start_fetch_run(
+    run_context = (
+        store.run(
             fetch_type="sf_fed_news_sentiment",
             params={"source_url": SF_FED_NEWS_SENTIMENT_URL},
         )
         if store
-        else None
+        else nullcontext(None)
     )
-    try:
+    with run_context as fetch_run:
         raw_path = Path(out_dir) / "news_sentiment" / "sf_fed_news_sentiment.xlsx"
         if workbook_bytes is None and workbook_path is not None:
             raw_path = Path(workbook_path)
@@ -216,7 +217,6 @@ def run_sf_fed_news_sentiment_fetch(
                     input_artifact_record_id=raw_record.artifact_record_id,
                     transform_name="parse_sf_fed_news_sentiment_workbook",
                 )
-            store.finish_fetch_run(run_id=fetch_run.run_id, status="ok")
         _log.info(
             "SF Fed news sentiment parquet: %d rows, %s → %s",
             report["rows"],
@@ -224,9 +224,3 @@ def run_sf_fed_news_sentiment_fetch(
             report["max_date"],
         )
         return report_path
-    except Exception as exc:
-        if store and fetch_run:
-            store.finish_fetch_run(
-                run_id=fetch_run.run_id, status="failed", notes=str(exc)
-            )
-        raise

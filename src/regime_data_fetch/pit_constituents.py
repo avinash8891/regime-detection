@@ -3,12 +3,13 @@ from __future__ import annotations
 import csv
 import datetime as dt
 import json
-import urllib.request
+from contextlib import nullcontext
 from dataclasses import dataclass
 from pathlib import Path
 
 import pandas as pd
 
+from regime_data_fetch._http import fetch_text
 from regime_data_fetch.acquisition_store import AcquisitionStore
 from regime_shared.pandas_compat import cow_safe_assign, optional_date
 from regime_shared.pit_provenance import BIAS_WARNING, SOURCE_NAME, SOURCE_URL
@@ -98,9 +99,7 @@ def parse_sp500_ticker_start_end_csv(
 
 
 def fetch_sp500_ticker_start_end_csv() -> str:
-    req = urllib.request.Request(SOURCE_URL, headers={"User-Agent": "Mozilla/5.0"})
-    with urllib.request.urlopen(req, timeout=30) as response:
-        return response.read().decode("utf-8", errors="replace")
+    return fetch_text(SOURCE_URL, timeout=30)
 
 
 def run_pit_constituents_fetch(
@@ -116,18 +115,18 @@ def run_pit_constituents_fetch(
         if acquisition_db_path
         else None
     )
-    fetch_run = (
-        store.start_fetch_run(
+    run_context = (
+        store.run(
             fetch_type="pit_constituents",
             params={
                 "source_url": SOURCE_URL,
             },
         )
         if store
-        else None
+        else nullcontext(None)
     )
 
-    try:
+    with run_context as fetch_run:
         csv_text = csv_fetcher()
         rows = parse_sp500_ticker_start_end_csv(csv_text, source_url=SOURCE_URL)
 
@@ -218,14 +217,7 @@ def run_pit_constituents_fetch(
                 ),
                 notes="PIT constituent fetch report",
             )
-            store.finish_fetch_run(run_id=fetch_run.run_id, status="ok")
         return report_path
-    except Exception as exc:
-        if store and fetch_run:
-            store.finish_fetch_run(
-                run_id=fetch_run.run_id, status="failed", notes=str(exc)
-            )
-        raise
 
 
 def read_pit_intervals(parquet_path: Path) -> pd.DataFrame:

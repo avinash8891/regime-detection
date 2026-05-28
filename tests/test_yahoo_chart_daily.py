@@ -124,7 +124,7 @@ def test_fetch_daily_bars_yahoo_chart_sends_browser_headers_and_timeout() -> Non
     assert query["events"] == ["history"]
     assert query["includeAdjustedClose"] == ["true"]
     assert captured["timeout"] == 17.5
-    assert "Chrome/125.0" in captured["user_agent"]
+    assert "Chrome/126.0.0.0" in captured["user_agent"]
     assert captured["accept"] == "application/json"
     assert result.df.to_dict(orient="records") == [
         {
@@ -138,6 +138,20 @@ def test_fetch_daily_bars_yahoo_chart_sends_browser_headers_and_timeout() -> Non
             "adjusted_close": 561.25,
         }
     ]
+
+
+def test_fetch_daily_bars_yahoo_chart_rejects_invalid_utf8_json() -> None:
+    def fake_urlopen(_request, timeout: float):
+        del timeout
+        return _FakeResponse(b'{"chart": "\xff"}')
+
+    with pytest.raises(UnicodeDecodeError):
+        fetch_daily_bars_yahoo_chart(
+            symbols=["SPY"],
+            start_date=dt.date(2025, 5, 5),
+            end_date=dt.date(2025, 5, 5),
+            urlopen=fake_urlopen,
+        )
 
 
 def test_fetch_daily_bars_yahoo_chart_marks_empty_chart_result_as_missing_symbol() -> (
