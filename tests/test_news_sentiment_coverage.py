@@ -40,14 +40,14 @@ import numpy as np
 import pandas as pd
 import pytest
 
+from conftest import (
+    load_spy_session_index_from_daily_tree,
+    resolve_live_data_inputs,
+)
 from regime_detection.loaders import load_news_sentiment_series
 from regime_shared.pandas_compat import cow_safe_assign
 
 _REPO_ROOT = Path(__file__).resolve().parents[1]
-_NEWS_PARQUET = (
-    _REPO_ROOT / "data" / "raw" / "news_sentiment" / "sf_fed_news_sentiment.parquet"
-)
-_DAILY_OHLCV_DIR = _REPO_ROOT / "data" / "raw" / "daily_ohlcv"
 
 # Engine OHLCV floor — see `docs/regime_engine_v1_data_requirements.md`
 # §1.4 and `market_data_fetch_plan.md` §2.3.
@@ -180,23 +180,25 @@ def test_fixture_news_sentiment_gap_and_freshness_contracts(tmp_path: Path) -> N
 
 
 def _load_spy_session_index() -> pd.DatetimeIndex:
-    return _load_spy_session_index_from_source(_DAILY_OHLCV_DIR)
+    live_inputs = resolve_live_data_inputs()
+    live_inputs.pytest_skip_unless_materialized(
+        "daily_dir",
+        "news_sentiment_parquet",
+    )
+    return load_spy_session_index_from_daily_tree(live_inputs.daily_dir)
 
 
-@pytest.mark.skipif(
-    not _NEWS_PARQUET.exists() or not _DAILY_OHLCV_DIR.exists(),
-    reason=(
-        "Live coverage check requires both "
-        "data/raw/news_sentiment/sf_fed_news_sentiment.parquet and "
-        "data/raw/daily_ohlcv/ to be materialized. Run "
-        "`scripts/fetch_regime_engine_v1_data.py` first."
-    ),
-)
 def test_live_news_sentiment_covers_every_nyse_session_in_engine_window() -> None:
     """The strict coverage guarantee: zero NaN after ffill onto the SPY
     NYSE session calendar in the 2016+ engine window. If this fails the
     SF Fed fetch has a real hole — re-run the fetcher and investigate."""
-    raw = load_news_sentiment_series(_NEWS_PARQUET)
+    live_inputs = resolve_live_data_inputs()
+    live_inputs.pytest_skip_unless_materialized(
+        "daily_dir",
+        "news_sentiment_parquet",
+    )
+    assert live_inputs.news_sentiment_parquet is not None
+    raw = load_news_sentiment_series(live_inputs.news_sentiment_parquet)
     spy_idx = _load_spy_session_index()
     engine_sessions = spy_idx[spy_idx >= _ENGINE_WINDOW_START]
     assert len(engine_sessions) > 0, "SPY OHLCV has no rows ≥ 2016-01-04"
@@ -208,15 +210,14 @@ def test_live_news_sentiment_covers_every_nyse_session_in_engine_window() -> Non
     )
 
 
-@pytest.mark.skipif(
-    not _NEWS_PARQUET.exists(),
-    reason="Live news sentiment parquet not in checkout.",
-)
 def test_live_news_sentiment_max_consecutive_publish_gap_is_small() -> None:
     """The SF Fed publishes truly daily across the 2016+ window
     (empirically verified). Any gap > 7 days within the window means
     publication interruption — surface it loudly."""
-    raw = load_news_sentiment_series(_NEWS_PARQUET)
+    live_inputs = resolve_live_data_inputs()
+    live_inputs.pytest_skip_unless_materialized("news_sentiment_parquet")
+    assert live_inputs.news_sentiment_parquet is not None
+    raw = load_news_sentiment_series(live_inputs.news_sentiment_parquet)
     engine_slice = raw[raw.index >= _ENGINE_WINDOW_START]
     gaps = engine_slice.index.to_series().diff().dt.days.dropna()
     if gaps.empty:
@@ -229,14 +230,13 @@ def test_live_news_sentiment_max_consecutive_publish_gap_is_small() -> None:
     )
 
 
-@pytest.mark.skipif(
-    not _NEWS_PARQUET.exists(),
-    reason="Live news sentiment parquet not in checkout.",
-)
 def test_live_news_sentiment_is_fresh_within_30_days() -> None:
     """Catch stalled-fetch staleness. The SF Fed refreshes weekly per
     their methodology page, so 30 days is a 4x safety margin."""
-    raw = load_news_sentiment_series(_NEWS_PARQUET)
+    live_inputs = resolve_live_data_inputs()
+    live_inputs.pytest_skip_unless_materialized("news_sentiment_parquet")
+    assert live_inputs.news_sentiment_parquet is not None
+    raw = load_news_sentiment_series(live_inputs.news_sentiment_parquet)
     if raw.empty:
         pytest.skip("News parquet is empty.")
     newest = raw.index.max()

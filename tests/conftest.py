@@ -27,6 +27,7 @@ import importlib.util
 import pickle
 import sys
 import time
+from dataclasses import dataclass
 from datetime import date
 from functools import lru_cache
 from pathlib import Path
@@ -48,6 +49,7 @@ from regime_detection.fragility_universe import (
     SECTOR_ETFS,
 )  # noqa: E402
 from regime_detection.loaders import load_event_calendar  # noqa: E402
+from scripts._v2_calibration_helpers import load_market_data  # noqa: E402
 
 
 def pytest_configure() -> None:
@@ -88,6 +90,9 @@ def pytest_configure() -> None:
 
 
 _PROFILE_ENGINE_SHA = "0" * 64
+DEFAULT_LIVE_DATA_MANIFEST = (
+    _REPO_ROOT / "manifests" / "runs" / "regime_engine_2026-05-17.yaml"
+)
 
 
 def load_profile_engine_module() -> ModuleType:
@@ -154,6 +159,82 @@ def write_profile_engine_manifest(tmp_path: Path) -> Path:
         )
     )
     return path
+
+
+@dataclass(frozen=True)
+class MissingLiveDataInput:
+    field: str
+    path: Path
+    reason: str
+
+
+@dataclass(frozen=True)
+class LiveDataInputs:
+    manifest_path: Path
+    data_root: Path
+    daily_dir: Path
+    news_sentiment_parquet: Path | None
+    fomc_minutes_parquet: Path | None
+
+    def require_materialized(self, field: str) -> MissingLiveDataInput | None:
+        path = getattr(self, field)
+        if path is None:
+            return MissingLiveDataInput(
+                field=field,
+                path=self.data_root,
+                reason="manifest does not route this optional live-data input",
+            )
+        assert isinstance(path, Path)
+        if path.exists():
+            return None
+        return MissingLiveDataInput(
+            field=field,
+            path=path,
+            reason="manifest-resolved path is not materialized locally",
+        )
+
+    def pytest_skip_unless_materialized(self, *fields: str) -> None:
+        missing = [item for field in fields if (item := self.require_materialized(field))]
+        if not missing:
+            return
+        details = "; ".join(f"{item.field} -> {item.path} ({item.reason})" for item in missing)
+        pytest.skip(
+            "Live integration data is not materialized from the reviewed manifest: "
+            f"{details}. Materialize {self.manifest_path} into {self.data_root} first."
+        )
+
+
+def resolve_live_data_inputs(
+    *,
+    manifest_path: Path | None = None,
+    data_root: Path | None = None,
+    runner_name: str = "profile_engine",
+) -> LiveDataInputs:
+    from regime_data_fetch.manifest_inputs import resolve_runner_input_paths
+
+    manifest_path = manifest_path or DEFAULT_LIVE_DATA_MANIFEST
+    data_root = data_root or (_REPO_ROOT / "data" / "raw")
+    resolved = resolve_runner_input_paths(
+        manifest_path=manifest_path,
+        data_root=data_root,
+        runner_name=runner_name,
+        cli_values={},
+        cli_overrides=set(),
+        repo_root=_REPO_ROOT,
+    )
+    return LiveDataInputs(
+        manifest_path=manifest_path,
+        data_root=data_root,
+        daily_dir=resolved.daily_dir,
+        news_sentiment_parquet=resolved.news_sentiment_parquet,
+        fomc_minutes_parquet=resolved.fomc_minutes_parquet,
+    )
+
+
+def load_spy_session_index_from_daily_tree(daily_dir: Path) -> pd.DatetimeIndex:
+    market_data = load_market_data(daily_dir)
+    spy = market_data[market_data["symbol"] == "SPY"].copy()
+    return pd.DatetimeIndex(pd.to_datetime(spy["date"]))
 
 
 _FIXTURES_DIR = Path(__file__).resolve().parent / "fixtures"
