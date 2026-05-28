@@ -11,7 +11,7 @@ from regime_detection.models import AxisOutput, DataQuality
 from scripts import _v2_calibration_helpers
 from scripts import run_v2_shadow_ab_gate, run_v2_walkforward_gate
 
-pytestmark = [pytest.mark.slow, pytest.mark.v2_gate]
+pytestmark = pytest.mark.v2_gate
 
 
 def test_gate_reporting_label_uses_granular_status() -> None:
@@ -320,6 +320,7 @@ def _write_v2_gate_parquets(tmp_path: Path) -> tuple[Path, Path]:
     return daily_path, macro_path
 
 
+@pytest.mark.slow
 def test_walkforward_gate_main_runs_against_committed_v2_fixtures(
     tmp_path: Path,
     monkeypatch,
@@ -366,6 +367,7 @@ def test_walkforward_gate_main_runs_against_committed_v2_fixtures(
     assert "| sessions with credit_funding_effective_state | 0 | 1 | 1 |" in markdown
 
 
+@pytest.mark.slow
 def test_shadow_ab_gate_main_runs_against_committed_v2_fixtures(
     tmp_path: Path,
     monkeypatch,
