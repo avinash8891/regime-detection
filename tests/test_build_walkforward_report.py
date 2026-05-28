@@ -34,8 +34,7 @@ def _prepare_walkforward_root(tmp_path: Path) -> Path:
         encoding="utf-8",
     )
     with sqlite3.connect(out_root / "regime_walkforward.db") as conn:
-        conn.execute(
-            """
+        conn.execute("""
             CREATE TABLE runs (
                 as_of_date TEXT NOT NULL,
                 status TEXT NOT NULL,
@@ -45,8 +44,7 @@ def _prepare_walkforward_root(tmp_path: Path) -> Path:
                 input_archive_path TEXT,
                 output_path TEXT
             )
-            """
-        )
+            """)
         conn.executemany(
             """
             INSERT INTO runs (

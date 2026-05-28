@@ -194,10 +194,14 @@ class LiveDataInputs:
         )
 
     def pytest_skip_unless_materialized(self, *fields: str) -> None:
-        missing = [item for field in fields if (item := self.require_materialized(field))]
+        missing = [
+            item for field in fields if (item := self.require_materialized(field))
+        ]
         if not missing:
             return
-        details = "; ".join(f"{item.field} -> {item.path} ({item.reason})" for item in missing)
+        details = "; ".join(
+            f"{item.field} -> {item.path} ({item.reason})" for item in missing
+        )
         pytest.skip(
             "Live integration data is not materialized from the reviewed manifest: "
             f"{details}. Materialize {self.manifest_path} into {self.data_root} first."

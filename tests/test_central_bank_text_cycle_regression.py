@@ -203,6 +203,7 @@ def test_fixture_fomc_parquet_cycle_windows_score_with_expected_signs(
     assert daily.loc["2022-03-17"] > 0
     assert daily.loc["2023-05-04"] > 0
 
+
 def test_live_fomc_minutes_tightening_window_scores_hawkish() -> None:
     """Integration assertion: when the real FOMC parquet is materialized,
     minutes released during the 2022-03→2023-07 tightening cycle must
@@ -229,6 +230,7 @@ def test_live_fomc_minutes_tightening_window_scores_hawkish() -> None:
         f"2022-03 → 2023-07 tightening cycle mean net_score should be "
         f"positive; got {mean_net:.3f} over {len(tightening_window)} releases."
     )
+
 
 def test_live_fomc_minutes_easing_window_scores_dovish() -> None:
     """Integration assertion: 2019-07 → 2020-04 easing window must

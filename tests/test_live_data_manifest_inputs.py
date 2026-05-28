@@ -61,10 +61,14 @@ def test_resolve_live_data_inputs_reports_missing_optional_parquet(
     tmp_path: Path,
 ) -> None:
     store_root = tmp_path / "store"
-    daily_source = store_root / "canonical" / "daily_ohlcv_762" / "symbol=SPY" / "ohlcv.parquet"
+    daily_source = (
+        store_root / "canonical" / "daily_ohlcv_762" / "symbol=SPY" / "ohlcv.parquet"
+    )
     daily_source.parent.mkdir(parents=True)
     daily_source.write_bytes(b"spy")
-    news_source = store_root / "canonical" / "news_sentiment" / "sf_fed_news_sentiment.parquet"
+    news_source = (
+        store_root / "canonical" / "news_sentiment" / "sf_fed_news_sentiment.parquet"
+    )
     news_source.parent.mkdir(parents=True)
     news_source.write_bytes(b"news")
     manifest = ArtifactManifest(
@@ -89,7 +93,9 @@ def test_resolve_live_data_inputs_reports_missing_optional_parquet(
                 {
                     "name": "fred_macro_series",
                     "stage": "canonical",
-                    "uri": _store_uri(store_root, "canonical/macro/fred_macro_series.parquet"),
+                    "uri": _store_uri(
+                        store_root, "canonical/macro/fred_macro_series.parquet"
+                    ),
                     "local_path": "data/raw/macro/fred_macro_series.parquet",
                     "sha256": sha256_file(daily_source),
                     "required_for": ["profile_engine"],
@@ -112,7 +118,9 @@ def test_resolve_live_data_inputs_reports_missing_optional_parquet(
                 {
                     "name": "event_calendar_us",
                     "stage": "canonical",
-                    "uri": _store_uri(store_root, "canonical/event_calendar/us_events.yaml"),
+                    "uri": _store_uri(
+                        store_root, "canonical/event_calendar/us_events.yaml"
+                    ),
                     "local_path": "data/raw/event_calendar/us_events.yaml",
                     "sha256": sha256_file(daily_source),
                     "required_for": ["profile_engine"],
@@ -152,7 +160,9 @@ def test_resolve_live_data_inputs_reports_missing_optional_parquet(
     (data_root / "daily_ohlcv_762" / "symbol=SPY").mkdir(parents=True, exist_ok=True)
     (data_root / "daily_ohlcv_762" / "symbol=SPY" / "ohlcv.parquet").write_bytes(b"spy")
     (data_root / "news_sentiment").mkdir(parents=True, exist_ok=True)
-    (data_root / "news_sentiment" / "sf_fed_news_sentiment.parquet").write_bytes(b"news")
+    (data_root / "news_sentiment" / "sf_fed_news_sentiment.parquet").write_bytes(
+        b"news"
+    )
 
     resolved = resolve_live_data_inputs(
         manifest_path=manifest_path,
