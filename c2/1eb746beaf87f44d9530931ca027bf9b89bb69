@@ -1,0 +1,52 @@
+scripts/run_v2_walkforward_gate.py
+  s_9046a7d38f280d::t_c823cbaf4076b2 54,455-457
+scripts/run_historical_walkforward.py
+  s_9046a7d38f280d::t_05edf162579a44 49,269
+tests/test_shadow_storage.py
+  s_9046a7d38f280d::t_0a2b9963df6462 12-13,28-29
+scripts/_v2_calibration_helpers.py
+  s_9046a7d38f280d::t_d513f3d4c072dc 30,449,452
+scripts/run_shadow_replay_check.py
+  s_9046a7d38f280d::t_79a9b1f18d4491 30,120-122
+scripts/run_v2_shadow_ab_gate.py
+  s_9046a7d38f280d::t_5c85ec2563b3a3 56,460-462
+tests/test_v2_calibration_helpers.py
+  s_9046a7d38f280d::t_05c4ae32f76950 8,32
+  s_9046a7d38f280d::t_a3a287a98ad0c0 27-30
+scripts/run_shadow_regime.py
+  s_9046a7d38f280d::t_ba6efa88dd2c3d 43,248
+tests/test_fixture_verification.py
+  s_9046a7d38f280d::t_ecc0840a59afda 15-36,40-62,64-74
+  s_9046a7d38f280d::t_3c57ffcb8de43c 37-39,63
+src/regime_detection/axis_builders/breadth.py
+  s_9046a7d38f280d::t_aaa02079982250 6,50-52,57-71,76-77,82,90,103-105,183-184,191-193,195-202
+scripts/profile_engine.py
+  s_9046a7d38f280d::t_f28828a21b58c8 61,462
+scripts/audit_layer2_30d.py
+  s_9046a7d38f280d::t_7f887c82d63847 35,301,305
+tests/test_axis_builders.py
+  s_9046a7d38f280d::t_1a550155717cb4 90-99
+src/regime_detection/shadow_storage.py
+  s_9046a7d38f280d::t_d0f3b699f43046 24
+scripts/run_v2_calibration.py
+  s_9046a7d38f280d::t_b0b696b600a17f 52,340-342
+tests/conftest.py
+  s_9046a7d38f280d::t_362538114693bf 521-523,525-536,538-541
+  s_9046a7d38f280d::t_abc4cd5b6c1bb1 202-206,209
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "c21eb746beaf87f44d9530931ca027bf9b89bb69",
+  "prompts": {},
+  "sessions": {
+    "s_9046a7d38f280d": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019e6cd1-8404-7583-8acb-77518c13a6a2",
+        "model": "gpt-5.5"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}
