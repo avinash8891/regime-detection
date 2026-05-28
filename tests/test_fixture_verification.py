@@ -133,6 +133,39 @@ def test_fixture_verification_report_includes_rich_transition_evidence(
     }
 
 
+def test_fixture_verification_requires_combined_market_parquet_for_vix(
+    monkeypatch, tmp_path: Path
+) -> None:
+    repo_root = Path(__file__).resolve().parents[1]
+
+    import importlib.util
+
+    script_path = repo_root / "scripts" / "verify_fixtures.py"
+    spec = importlib.util.spec_from_file_location("verify_fixtures", script_path)
+    assert spec and spec.loader
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)  # type: ignore[attr-defined]
+
+    for symbol in ("SPY", "RSP", "VIXY"):
+        pd.DataFrame(
+            [
+                {
+                    "date": "2024-01-02",
+                    "open": 1.0,
+                    "high": 1.0,
+                    "low": 1.0,
+                    "close": 1.0,
+                    "volume": 1,
+                }
+            ]
+        ).to_csv(tmp_path / f"{symbol}.csv", index=False)
+
+    monkeypatch.setattr(mod, "RAW_DIR", tmp_path)
+
+    with pytest.raises(RuntimeError, match="market_data.parquet"):
+        mod._load_market_data()
+
+
 def test_fixture_transition_risk_expectations_use_current_state_names() -> None:
     repo_root = Path(__file__).resolve().parents[1]
     derived_path = repo_root / "tests" / "fixtures" / "derived" / "golden_dates.yaml"

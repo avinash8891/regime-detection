@@ -177,18 +177,15 @@ def _git_head_sha() -> str:
 
 def _load_market_data() -> pd.DataFrame:
     parquet_path = RAW_DIR / "market_data.parquet"
-    if parquet_path.exists():
-        df = pd.read_parquet(parquet_path)
-        if "VIX" not in set(df["symbol"]):
-            raise RuntimeError("market_data.parquet must include real VIX rows")
-        return df
-    spy = pd.read_csv(RAW_DIR / "SPY.csv", parse_dates=["date"])
-    rsp = pd.read_csv(RAW_DIR / "RSP.csv", parse_dates=["date"])
-    vix = pd.read_csv(RAW_DIR / "VIX.csv", parse_dates=["date"])
-    spy["symbol"] = "SPY"
-    rsp["symbol"] = "RSP"
-    vix["symbol"] = "VIX"
-    return pd.concat([spy, rsp, vix], ignore_index=True)
+    if not parquet_path.exists():
+        raise RuntimeError(
+            "market_data.parquet is required because CSV fixtures do not include "
+            "a real VIX source"
+        )
+    df = pd.read_parquet(parquet_path)
+    if "VIX" not in set(df["symbol"]):
+        raise RuntimeError("market_data.parquet must include real VIX rows")
+    return df
 
 
 def _serialize_scalar(x: Any) -> Any:

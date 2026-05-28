@@ -508,12 +508,13 @@ def synthetic_v2_kwargs_for_market_data(event_calendar_df: pd.DataFrame):
             }
         )
         as_of = max(market_data["date"])
+        start = min(market_data["date"])
         v2_daily = _load_v2_daily_ohlcv()
         v2_start = min(v2_daily["date"])
         required_cross_assets = sorted(
             set(CROSS_ASSET_SYMBOLS) | {"KRE", "XLY", "XLI", "XLP", "XLU"}
         )
-        if as_of >= v2_start:
+        if start >= v2_start and as_of >= v2_start:
             sector_closes = _close_series_by_symbol_from_v2_daily(
                 v2_daily, SECTOR_ETFS, as_of=as_of
             )
