@@ -45,6 +45,29 @@ def test_inflation_growth_axis_builder_does_not_reconstruct_rule_inputs() -> Non
     assert constructors == []
 
 
+def test_bulk_rule_input_builders_do_not_scalar_loc_per_session() -> None:
+    offenders: list[str] = []
+    for path in (
+        Path("src/regime_detection/credit_funding.py"),
+        Path("src/regime_detection/inflation_growth.py"),
+    ):
+        tree = ast.parse(path.read_text())
+        functions = {
+            node.name: node
+            for node in ast.walk(tree)
+            if isinstance(node, ast.FunctionDef)
+        }
+        bulk_builder = functions["build_rule_inputs_by_date"]
+        for node in ast.walk(bulk_builder):
+            if not isinstance(node, ast.Call):
+                continue
+            func_name = getattr(node.func, "id", "")
+            if func_name in {"_scalar_at", "_scalar_at_lag"}:
+                offenders.append(f"{path}:{node.lineno}: {func_name}")
+
+    assert offenders == []
+
+
 def test_timeline_day_builder_stays_below_spaghetti_threshold() -> None:
     path = Path("src/regime_detection/timeline.py")
     tree = ast.parse(path.read_text())

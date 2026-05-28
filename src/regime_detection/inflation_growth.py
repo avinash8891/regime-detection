@@ -46,6 +46,7 @@ from typing import Literal
 import numpy as np
 import pandas as pd
 
+from regime_detection._series_alignment import aligned_float_values
 from regime_detection.breadth_state_v2 import make_bias_warnings_frame
 from regime_detection.config import InflationGrowthRulesConfig
 from regime_detection.credit_funding import _rolling_ols_slope
@@ -584,37 +585,47 @@ def build_rule_inputs_by_date(
 ) -> dict[pd.Timestamp, InflationGrowthRuleInputs]:
     index = features.cpi_6m_change_pct.index
     cpi_lag_21 = features.cpi_6m_change_pct.shift(config.cpi_slope_lookback_sessions)
+    cpi_3m_values = aligned_float_values(features.cpi_3m_change_pct, index)
+    cpi_6m_values = aligned_float_values(features.cpi_6m_change_pct, index)
+    cpi_lag_values = aligned_float_values(cpi_lag_21, index)
+    cpi_slope_values = aligned_float_values(features.cpi_6m_change_pct_slope_21d, index)
+    inflation_surprise_values = aligned_float_values(
+        features.inflation_surprise_zscore, index
+    )
+    eps_revision_values = aligned_float_values(
+        features.aggregate_forward_eps_revision_direction_4w, index
+    )
+    pmi_values = aligned_float_values(features.pmi_manufacturing, index)
+    pmi_slope_values = aligned_float_values(features.pmi_manufacturing_slope_21d, index)
+    commodity_return_values = aligned_float_values(features.commodity_return_63d, index)
+    treasury_slope_values = aligned_float_values(
+        features.treasury_10y_yield_slope_21d, index
+    )
+    cyclical_defensive_slope_values = aligned_float_values(
+        features.cyclical_defensive_slope_21d, index
+    )
+    spy_return_values = aligned_float_values(features.spy_21d_return, index)
+    tlt_return_values = aligned_float_values(features.tlt_21d_return, index)
+
     outputs: dict[pd.Timestamp, InflationGrowthRuleInputs] = {}
-    for dt in index:
+    for pos, dt in enumerate(index):
         credit_funding_active_label = None
         if credit_funding_active_labels_by_date is not None:
             credit_funding_active_label = credit_funding_active_labels_by_date.get(dt)
         outputs[dt] = InflationGrowthRuleInputs(
-            cpi_3m_change_pct=_scalar_at(features.cpi_3m_change_pct, dt),
-            cpi_6m_change_pct=_scalar_at(features.cpi_6m_change_pct, dt),
-            cpi_6m_change_pct_lag_21=_scalar_at(cpi_lag_21, dt),
-            cpi_6m_change_pct_slope_21d=_scalar_at(
-                features.cpi_6m_change_pct_slope_21d, dt
-            ),
-            inflation_surprise_zscore=_scalar_at(
-                features.inflation_surprise_zscore, dt
-            ),
-            aggregate_forward_eps_revision_direction_4w=_scalar_at(
-                features.aggregate_forward_eps_revision_direction_4w, dt
-            ),
-            pmi_manufacturing=_scalar_at(features.pmi_manufacturing, dt),
-            pmi_manufacturing_slope_21d=_scalar_at(
-                features.pmi_manufacturing_slope_21d, dt
-            ),
-            commodity_return_63d=_scalar_at(features.commodity_return_63d, dt),
-            treasury_10y_yield_slope_21d=_scalar_at(
-                features.treasury_10y_yield_slope_21d, dt
-            ),
-            cyclical_defensive_slope_21d=_scalar_at(
-                features.cyclical_defensive_slope_21d, dt
-            ),
-            spy_21d_return=_scalar_at(features.spy_21d_return, dt),
-            tlt_21d_return=_scalar_at(features.tlt_21d_return, dt),
+            cpi_3m_change_pct=float(cpi_3m_values[pos]),
+            cpi_6m_change_pct=float(cpi_6m_values[pos]),
+            cpi_6m_change_pct_lag_21=float(cpi_lag_values[pos]),
+            cpi_6m_change_pct_slope_21d=float(cpi_slope_values[pos]),
+            inflation_surprise_zscore=float(inflation_surprise_values[pos]),
+            aggregate_forward_eps_revision_direction_4w=float(eps_revision_values[pos]),
+            pmi_manufacturing=float(pmi_values[pos]),
+            pmi_manufacturing_slope_21d=float(pmi_slope_values[pos]),
+            commodity_return_63d=float(commodity_return_values[pos]),
+            treasury_10y_yield_slope_21d=float(treasury_slope_values[pos]),
+            cyclical_defensive_slope_21d=float(cyclical_defensive_slope_values[pos]),
+            spy_21d_return=float(spy_return_values[pos]),
+            tlt_21d_return=float(tlt_return_values[pos]),
             credit_funding_active_label=credit_funding_active_label,
         )
     return outputs

@@ -64,6 +64,10 @@ import numpy as np
 import pandas as pd
 
 from regime_detection._rolling_stats import rolling_change_zscore as _change_zscore
+from regime_detection._series_alignment import (
+    aligned_float_values,
+    optional_aligned_float_values,
+)
 from regime_detection.breadth_state_v2 import make_bias_warnings_frame
 from regime_detection.config import (
     CreditFundingRulesConfig,
@@ -578,34 +582,38 @@ def build_rule_inputs_by_date(
     ``features.hy_oas_*`` for the real-OAS run or ``features.hy_tr_differential_*``
     for the proxy run (ADR 0007; implementation decision + #71)."""
     index = hy_spread_percentile_504d.index
+    hy_spread_percentile_values = aligned_float_values(hy_spread_percentile_504d, index)
+    hy_spread_slope_values = aligned_float_values(hy_spread_slope_21d, index)
+    ig_spread_slope_values = aligned_float_values(ig_spread_slope_21d, index)
+    broad_usd_zscore_values = aligned_float_values(
+        features.broad_usd_index_zscore_21d, index
+    )
+    sofr_iorb_slope_values = aligned_float_values(features.sofr_iorb_slope_21d, index)
+    spy_return_values = aligned_float_values(features.spy_21d_return, index)
+    tlt_return_values = aligned_float_values(features.tlt_21d_return, index)
+    realized_vol_percentile_values = aligned_float_values(
+        realized_vol_21d_percentile_252d, index
+    )
+    realized_vol_values = optional_aligned_float_values(realized_vol_21d, index)
+    avg_corr_percentile_values = aligned_float_values(
+        avg_pairwise_corr_percentile_504d, index
+    )
+    avg_corr_values = optional_aligned_float_values(avg_pairwise_corr_63d, index)
+
     outputs: dict[pd.Timestamp, CreditFundingRuleInputs] = {}
-    for dt in index:
+    for pos, dt in enumerate(index):
         outputs[dt] = CreditFundingRuleInputs(
-            hy_spread_percentile_504d=_scalar_at(hy_spread_percentile_504d, dt),
-            hy_spread_slope_21d=_scalar_at(hy_spread_slope_21d, dt),
-            ig_spread_slope_21d=_scalar_at(ig_spread_slope_21d, dt),
-            broad_usd_index_zscore_21d=_scalar_at(
-                features.broad_usd_index_zscore_21d, dt
-            ),
-            sofr_iorb_slope_21d=_scalar_at(features.sofr_iorb_slope_21d, dt),
-            spy_21d_return=_scalar_at(features.spy_21d_return, dt),
-            tlt_21d_return=_scalar_at(features.tlt_21d_return, dt),
-            realized_vol_21d_percentile_252d=_scalar_at(
-                realized_vol_21d_percentile_252d, dt
-            ),
-            realized_vol_21d=(
-                _scalar_at(realized_vol_21d, dt)
-                if realized_vol_21d is not None
-                else float("nan")
-            ),
-            avg_pairwise_corr_percentile_504d=_scalar_at(
-                avg_pairwise_corr_percentile_504d, dt
-            ),
-            avg_pairwise_corr_63d=(
-                _scalar_at(avg_pairwise_corr_63d, dt)
-                if avg_pairwise_corr_63d is not None
-                else float("nan")
-            ),
+            hy_spread_percentile_504d=float(hy_spread_percentile_values[pos]),
+            hy_spread_slope_21d=float(hy_spread_slope_values[pos]),
+            ig_spread_slope_21d=float(ig_spread_slope_values[pos]),
+            broad_usd_index_zscore_21d=float(broad_usd_zscore_values[pos]),
+            sofr_iorb_slope_21d=float(sofr_iorb_slope_values[pos]),
+            spy_21d_return=float(spy_return_values[pos]),
+            tlt_21d_return=float(tlt_return_values[pos]),
+            realized_vol_21d_percentile_252d=float(realized_vol_percentile_values[pos]),
+            realized_vol_21d=float(realized_vol_values[pos]),
+            avg_pairwise_corr_percentile_504d=float(avg_corr_percentile_values[pos]),
+            avg_pairwise_corr_63d=float(avg_corr_values[pos]),
         )
     return outputs
 
