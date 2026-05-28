@@ -12,6 +12,66 @@ import yaml
 from regime_detection.models import TransitionRiskState
 
 
+def test_conftest_market_data_requires_real_combined_market_parquet(
+    monkeypatch, tmp_path: Path
+) -> None:
+    import conftest as project_conftest
+
+    for symbol in ("SPY", "RSP", "VIXY"):
+        pd.DataFrame(
+            [
+                {
+                    "date": "2024-01-02",
+                    "symbol": symbol,
+                    "open": 1.0,
+                    "high": 1.0,
+                    "low": 1.0,
+                    "close": 1.0,
+                    "volume": 1,
+                }
+            ]
+        ).to_csv(tmp_path / f"{symbol}.csv", index=False)
+
+    project_conftest._load_market_data.cache_clear()
+    monkeypatch.setattr(project_conftest, "_RAW_DIR", tmp_path)
+    monkeypatch.setattr(
+        project_conftest, "_MARKET_PARQUET_PATH", tmp_path / "missing.parquet"
+    )
+
+    with pytest.raises(RuntimeError, match="market_data.parquet"):
+        project_conftest._load_market_data()
+
+    project_conftest._load_market_data.cache_clear()
+
+
+def test_conftest_v2_kwargs_use_real_v2_fixture_rows_for_full_history_market_data() -> (
+    None
+):
+    import conftest as project_conftest
+
+    project_conftest._load_market_data.cache_clear()
+    market_data = project_conftest._load_market_data()
+    event_calendar = pd.DataFrame()
+    build_kwargs = project_conftest.synthetic_v2_kwargs_for_market_data.__wrapped__(
+        event_calendar
+    )
+
+    kwargs = build_kwargs(market_data[market_data["date"] <= date(2023, 12, 14)])
+
+    v2_daily = project_conftest._load_v2_daily_ohlcv()
+    qqq_rows = v2_daily[
+        (v2_daily["symbol"] == "QQQ") & (v2_daily["date"] <= date(2023, 12, 14))
+    ].sort_values("date")
+    expected_qqq = qqq_rows.set_index(pd.to_datetime(qqq_rows["date"]))["close"].astype(
+        float
+    )
+    pd.testing.assert_series_equal(
+        kwargs["cross_asset_closes"]["QQQ"],
+        expected_qqq.rename("QQQ"),
+        check_names=True,
+    )
+
+
 def test_fixture_verification_legacy_path_fails_loudly_without_v2_transition_inputs() -> (
     None
 ):

@@ -27,7 +27,7 @@ from regime_detection.credit_funding import (
 )
 from regime_detection.comparison import axis_reporting_label
 from regime_detection.fragility_universe import (
-    CROSS_ASSET_SYMBOLS as NETWORK_FRAGILITY_CROSS_ASSET_SYMBOLS,
+    CROSS_ASSET_SYMBOLS,
 )
 from regime_detection.inflation_growth import (
     REQUIRED_CROSS_ASSET_KEYS as INFLATION_GROWTH_CROSS_ASSET_KEYS,
@@ -446,10 +446,10 @@ def _load_pmi_manufacturing_series(pmi_path: Path) -> pd.Series | None:
 # Symbols loaded into MarketContext.cross_asset_closes by V2 runners.
 # This is broader than the network-fragility universe because §2B and §2C
 # also read their required ETF inputs from cross_asset_closes.
-CROSS_ASSET_SYMBOLS: list[str] = list(
+RUNNER_CROSS_ASSET_SYMBOLS: list[str] = list(
     dict.fromkeys(
         [
-            *NETWORK_FRAGILITY_CROSS_ASSET_SYMBOLS,
+            *CROSS_ASSET_SYMBOLS,
             *CREDIT_FUNDING_CROSS_ASSET_KEYS,
             *INFLATION_GROWTH_CROSS_ASSET_KEYS,
         ]

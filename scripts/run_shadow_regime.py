@@ -40,7 +40,7 @@ from regime_detection.versioning import engine_version as resolved_engine_versio
 from regime_data_fetch.materialization import materialize_if_requested
 from regime_shared.pandas_compat import cow_safe_assign
 from scripts._v2_calibration_helpers import (
-    CROSS_ASSET_SYMBOLS,
+    RUNNER_CROSS_ASSET_SYMBOLS,
     apply_manifest_input_defaults,
     load_macro_series,
     register_manifest_input_args,
@@ -245,7 +245,7 @@ def run_shadow(
                 v2_slice, SECTOR_ETFS
             )
             v2_kwargs["cross_asset_closes"] = _close_series_by_symbol(
-                v2_slice, CROSS_ASSET_SYMBOLS
+                v2_slice, RUNNER_CROSS_ASSET_SYMBOLS
             )
             v2_kwargs["pit_constituent_intervals"] = pit_intervals
             v2_kwargs["constituent_ohlcv"] = _constituent_ohlcv_from_daily(

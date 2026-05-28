@@ -49,7 +49,7 @@ from regime_detection.loaders import (  # noqa: E402
 )
 from regime_detection.market_context import build_market_context  # noqa: E402
 from scripts._v2_calibration_helpers import (  # noqa: E402
-    CROSS_ASSET_SYMBOLS,
+    RUNNER_CROSS_ASSET_SYMBOLS,
     add_manifest_args,
     apply_manifest_input_defaults,
     apply_manifest_input_paths,
@@ -337,7 +337,9 @@ def main() -> int:
 
     # Build full V2 inputs.
     sector_etf_closes = load_close_dict(daily_dir, list(SECTOR_ETFS), spy_index)
-    cross_asset_closes = load_close_dict(daily_dir, CROSS_ASSET_SYMBOLS, spy_index)
+    cross_asset_closes = load_close_dict(
+        daily_dir, RUNNER_CROSS_ASSET_SYMBOLS, spy_index
+    )
     macro_series = load_macro_series(
         macro_parquet,
         pmi_path,

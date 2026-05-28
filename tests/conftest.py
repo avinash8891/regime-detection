@@ -199,20 +199,14 @@ def _fast_v2_test_config():
 
 @lru_cache(maxsize=1)
 def _load_market_data() -> pd.DataFrame:
-    if _MARKET_PARQUET_PATH.exists():
-        df = pd.read_parquet(_MARKET_PARQUET_PATH)
-    else:
-        parts = [
-            pd.read_csv(_RAW_DIR / f"{symbol}.csv") for symbol in ("SPY", "RSP", "VIXY")
-        ]
-        df = pd.concat(parts, ignore_index=True)
+    if not _MARKET_PARQUET_PATH.exists():
+        raise RuntimeError(
+            "market data fixture must include real VIX rows in market_data.parquet"
+        )
+    df = pd.read_parquet(_MARKET_PARQUET_PATH)
     df = df.copy()
-    if "VIX" not in set(df["symbol"]) and "VIXY" in set(df["symbol"]):
-        vix = df[df["symbol"] == "VIXY"].copy()
-        vix.loc[:, "symbol"] = "VIX"
-        df = pd.concat([df, vix], ignore_index=True)
     if "VIX" not in set(df["symbol"]):
-        raise RuntimeError("market data fixture must include VIX or VIXY rows")
+        raise RuntimeError("market data fixture must include real VIX rows")
     keep = ["date", "symbol", "open", "high", "low", "close", "volume"]
     df = cow_safe_assign(df, {"date": pd.to_datetime(df["date"]).dt.date}, columns=keep)
     return df[keep].sort_values(["date", "symbol"]).reset_index(drop=True)
@@ -233,20 +227,6 @@ def _load_v2_fred_macro() -> pd.DataFrame:
     df = df.copy().assign(date=pd.to_datetime(df["date"]))
     keep = ["date", "series_id", "logical_name", "value"]
     return df[keep].sort_values(["date", "logical_name"]).reset_index(drop=True)
-
-
-def _constituent_ohlcv_from_close_series(series: pd.Series) -> pd.DataFrame:
-    adjusted_close = series.astype(float).copy()
-    return pd.DataFrame(
-        {
-            "open": adjusted_close,
-            "high": adjusted_close,
-            "low": adjusted_close,
-            "close": adjusted_close,
-            "volume": pd.Series(1_000_000, index=adjusted_close.index, dtype="int64"),
-            "adjusted_close": adjusted_close,
-        }
-    )
 
 
 def _constituent_ohlcv_from_v2_daily(
@@ -270,18 +250,6 @@ def _constituent_ohlcv_from_v2_daily(
             index=idx,
         )
     return frames
-
-
-def _close_series_from_market_data(market_data: pd.DataFrame, symbol: str) -> pd.Series:
-    frame = market_data[market_data["symbol"] == symbol].copy()
-    if frame.empty:
-        raise RuntimeError(f"market_data missing {symbol} rows for synthetic V2 inputs")
-    frame = frame.sort_values("date")
-    return pd.Series(
-        frame["close"].astype(float).to_numpy(),
-        index=pd.to_datetime(frame["date"]),
-        name=symbol,
-    )
 
 
 def _close_series_by_symbol_from_v2_daily(
@@ -363,14 +331,6 @@ def _write_v2_macro_fixture_parquet(path: Path) -> Path:
     )
     pd.concat([source, synthetic], ignore_index=True).to_parquet(path, index=False)
     return path
-
-
-def _scaled_close_series(base: pd.Series, *, scale: float, name: str) -> pd.Series:
-    return pd.Series(
-        base.astype(float).to_numpy() * scale,
-        index=base.index,
-        name=name,
-    )
 
 
 @pytest.fixture(scope="session")
@@ -553,65 +513,32 @@ def synthetic_v2_kwargs_for_market_data(event_calendar_df: pd.DataFrame):
             }
         )
         as_of = max(market_data["date"])
-        start = min(market_data["date"])
         v2_daily = _load_v2_daily_ohlcv()
         v2_start = min(v2_daily["date"])
         required_cross_assets = sorted(
             set(CROSS_ASSET_SYMBOLS) | {"KRE", "XLY", "XLI", "XLP", "XLU"}
         )
-        if start >= v2_start and as_of >= v2_start and _v2_macro_fixture_covers(as_of):
-            sector_closes = _close_series_by_symbol_from_v2_daily(
-                v2_daily, SECTOR_ETFS, as_of=as_of
+        if as_of < v2_start or not _v2_macro_fixture_covers(as_of):
+            raise RuntimeError(
+                f"real V2 fixture rows do not cover synthetic_v2_kwargs as_of={as_of}"
             )
-            cross_asset_closes = _close_series_by_symbol_from_v2_daily(
-                v2_daily, required_cross_assets, as_of=as_of
-            )
-            macro_series = _macro_series_from_v2_fixture(as_of)
-            pit_intervals = pd.DataFrame(
-                {
-                    "ticker": list(SECTOR_ETFS),
-                    "start_date": [v2_start] * len(SECTOR_ETFS),
-                    "end_date": [None] * len(SECTOR_ETFS),
-                }
-            )
-            constituent_ohlcv = _constituent_ohlcv_from_v2_daily(
-                v2_daily[v2_daily["date"] <= as_of], SECTOR_ETFS
-            )
-        else:
-            base = _close_series_from_market_data(market_data, "SPY")
-            sector_closes = {
-                symbol: _scaled_close_series(base, scale=1.0 + i * 0.01, name=symbol)
-                for i, symbol in enumerate(SECTOR_ETFS)
+        sector_closes = _close_series_by_symbol_from_v2_daily(
+            v2_daily, SECTOR_ETFS, as_of=as_of
+        )
+        cross_asset_closes = _close_series_by_symbol_from_v2_daily(
+            v2_daily, required_cross_assets, as_of=as_of
+        )
+        macro_series = _macro_series_from_v2_fixture(as_of)
+        pit_intervals = pd.DataFrame(
+            {
+                "ticker": list(SECTOR_ETFS),
+                "start_date": [v2_start] * len(SECTOR_ETFS),
+                "end_date": [None] * len(SECTOR_ETFS),
             }
-            cross_asset_closes = {
-                symbol: _scaled_close_series(base, scale=0.8 + i * 0.015, name=symbol)
-                for i, symbol in enumerate(required_cross_assets)
-            }
-            trend = pd.Series(range(len(base.index)), index=base.index, dtype="float64")
-            macro_series = {
-                "2y_yield": (4.00 + trend * 0.0002).rename("2y_yield"),
-                "10y_yield": (4.25 + trend * 0.0001).rename("10y_yield"),
-                "broad_usd_index": (100.0 + trend * 0.001).rename("broad_usd_index"),
-                "sofr": (5.00 + trend * 0.00005).rename("sofr"),
-                "iorb": (5.05 + trend * 0.00004).rename("iorb"),
-                "nfci": (-0.20 + trend * 0.00001).rename("nfci"),
-                "cpi_all_items": (300.0 + trend * 0.01).rename("cpi_all_items"),
-                "pmi_manufacturing": (50.0 + trend * 0.0001).rename(
-                    "pmi_manufacturing"
-                ),
-            }
-            first_day = base.index.min().date()
-            pit_intervals = pd.DataFrame(
-                {
-                    "ticker": list(SECTOR_ETFS),
-                    "start_date": [first_day] * len(SECTOR_ETFS),
-                    "end_date": [None] * len(SECTOR_ETFS),
-                }
-            )
-            constituent_ohlcv = {
-                symbol: _constituent_ohlcv_from_close_series(series)
-                for symbol, series in sector_closes.items()
-            }
+        )
+        constituent_ohlcv = _constituent_ohlcv_from_v2_daily(
+            v2_daily[v2_daily["date"] <= as_of], SECTOR_ETFS
+        )
         return {
             "config": config,
             "event_calendar": event_calendar_df,
