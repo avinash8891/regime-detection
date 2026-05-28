@@ -367,6 +367,7 @@ def test_walkforward_gate_main_runs_against_committed_v2_fixtures(
     assert "| sessions with credit_funding_effective_state | 0 | 1 | 1 |" in markdown
 
 
+@pytest.mark.slow
 def test_shadow_ab_gate_main_runs_against_committed_v2_fixtures(
     tmp_path: Path,
     monkeypatch,

@@ -2,7 +2,10 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pandas as pd
+
 from conftest import (
+    load_spy_session_index_from_daily_tree,
     MissingLiveDataInput,
     resolve_live_data_inputs,
     write_profile_engine_manifest,
@@ -17,6 +20,41 @@ from regime_data_fetch.artifact_store import sha256_file
 
 def _store_uri(root: Path, key: str) -> str:
     return (root.resolve() / key).as_uri()
+
+
+def _write_symbol_ohlcv(daily_dir: Path, symbol: str, dates: list[str]) -> None:
+    symbol_dir = daily_dir / f"symbol={symbol}"
+    symbol_dir.mkdir(parents=True)
+    pd.DataFrame(
+        {
+            "date": pd.to_datetime(dates),
+            "symbol": pd.Series([symbol] * len(dates), dtype="string"),
+            "open": [100.0] * len(dates),
+            "high": [101.0] * len(dates),
+            "low": [99.0] * len(dates),
+            "close": [100.5] * len(dates),
+            "volume": [1_000_000] * len(dates),
+        }
+    ).to_parquet(symbol_dir / "ohlcv.parquet", index=False)
+
+
+def test_spy_session_index_uses_spy_partition_not_common_market_window(
+    tmp_path: Path,
+) -> None:
+    daily_dir = tmp_path / "daily_ohlcv_762"
+    _write_symbol_ohlcv(
+        daily_dir,
+        "SPY",
+        ["2026-05-11", "2026-05-12", "2026-05-13"],
+    )
+    _write_symbol_ohlcv(daily_dir, "RSP", ["2026-05-11", "2026-05-12"])
+    _write_symbol_ohlcv(daily_dir, "VIX", ["2026-05-11", "2026-05-12"])
+
+    sessions = load_spy_session_index_from_daily_tree(daily_dir)
+
+    assert sessions.equals(
+        pd.DatetimeIndex(pd.to_datetime(["2026-05-11", "2026-05-12", "2026-05-13"]))
+    )
 
 
 def test_resolve_live_data_inputs_uses_manifest_routed_daily_tree(

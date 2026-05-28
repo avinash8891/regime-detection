@@ -49,7 +49,6 @@ from regime_detection.fragility_universe import (
     SECTOR_ETFS,
 )  # noqa: E402
 from regime_detection.loaders import load_event_calendar  # noqa: E402
-from scripts._v2_calibration_helpers import load_market_data  # noqa: E402
 
 
 def pytest_configure() -> None:
@@ -236,9 +235,12 @@ def resolve_live_data_inputs(
 
 
 def load_spy_session_index_from_daily_tree(daily_dir: Path) -> pd.DatetimeIndex:
-    market_data = load_market_data(daily_dir)
-    spy = market_data[market_data["symbol"] == "SPY"].copy()
-    return pd.DatetimeIndex(pd.to_datetime(spy["date"]))
+    spy_path = daily_dir / "symbol=SPY" / "ohlcv.parquet"
+    if not spy_path.exists():
+        raise FileNotFoundError(spy_path)
+    spy = pd.read_parquet(spy_path, columns=["date"])
+    dates = pd.to_datetime(spy["date"]).sort_values().unique()
+    return pd.DatetimeIndex(dates)
 
 
 _FIXTURES_DIR = Path(__file__).resolve().parent / "fixtures"
