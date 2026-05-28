@@ -36,6 +36,7 @@ from pathlib import Path
 import pandas as pd
 import pytest
 
+from conftest import resolve_live_data_inputs
 from regime_detection.central_bank_text import score_text, to_daily_score_series
 from regime_detection.loaders import load_central_bank_text_score
 
@@ -203,28 +204,16 @@ def test_fixture_fomc_parquet_cycle_windows_score_with_expected_signs(
     assert daily.loc["2023-05-04"] > 0
 
 
-_FOMC_PARQUET = (
-    Path(__file__).resolve().parents[1]
-    / "data"
-    / "raw"
-    / "fomc_minutes"
-    / "fomc_minutes.parquet"
-)
-
-
-@pytest.mark.skipif(
-    not _FOMC_PARQUET.exists(),
-    reason=(
-        "data/raw/fomc_minutes/fomc_minutes.parquet not present in this "
-        "checkout — run `python3 scripts/fetch_regime_engine_v1_data.py "
-        "--fetch fomc` to materialize, then re-run this test."
-    ),
-)
 def test_live_fomc_minutes_tightening_window_scores_hawkish() -> None:
     """Integration assertion: when the real FOMC parquet is materialized,
     minutes released during the 2022-03→2023-07 tightening cycle must
     average a positive net_score."""
-    scored = load_central_bank_text_score(fomc_minutes_source=_FOMC_PARQUET)
+    live_inputs = resolve_live_data_inputs()
+    live_inputs.pytest_skip_unless_materialized("fomc_minutes_parquet")
+    assert live_inputs.fomc_minutes_parquet is not None
+    scored = load_central_bank_text_score(
+        fomc_minutes_source=live_inputs.fomc_minutes_parquet
+    )
     if scored.empty:
         pytest.skip("FOMC parquet present but contains no rows.")
     tightening_window = scored[
@@ -243,14 +232,15 @@ def test_live_fomc_minutes_tightening_window_scores_hawkish() -> None:
     )
 
 
-@pytest.mark.skipif(
-    not _FOMC_PARQUET.exists(),
-    reason="FOMC parquet not present — see prior test.",
-)
 def test_live_fomc_minutes_easing_window_scores_dovish() -> None:
     """Integration assertion: 2019-07 → 2020-04 easing window must
     average a negative net_score on the live parquet."""
-    scored = load_central_bank_text_score(fomc_minutes_source=_FOMC_PARQUET)
+    live_inputs = resolve_live_data_inputs()
+    live_inputs.pytest_skip_unless_materialized("fomc_minutes_parquet")
+    assert live_inputs.fomc_minutes_parquet is not None
+    scored = load_central_bank_text_score(
+        fomc_minutes_source=live_inputs.fomc_minutes_parquet
+    )
     if scored.empty:
         pytest.skip("FOMC parquet present but contains no rows.")
     easing_window = scored[

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Collection
 from dataclasses import dataclass, field
 from datetime import date
 from pathlib import Path
@@ -28,10 +29,19 @@ from regime_detection.timeline import build_regime_timeline
 ClassifyRequestSource = Literal["direct", "profile_manifest"]
 _PROFILE_MANIFEST_REQUIRED_INPUTS = frozenset({"event_calendar"})
 V2RequestInputPolicy = Literal["required", "optional_evidence"]
+ManifestInputNames = Collection[str]
 
 
 def _empty_manifest_inputs() -> frozenset[str]:
     return frozenset()
+
+
+def _normalize_manifest_inputs(value: ManifestInputNames | None) -> frozenset[str]:
+    if value is None:
+        return frozenset()
+    if isinstance(value, str | bytes):
+        raise TypeError("manifest input names must be a collection of strings")
+    return frozenset(value)
 
 
 @dataclass(frozen=True)
@@ -60,12 +70,24 @@ class ClassifyRequest:
     cpi_first_release: pd.Series | None = None
     news_sentiment: pd.Series | None = None
     request_source: ClassifyRequestSource = "direct"
-    manifest_resolved_inputs: frozenset[str] = field(
+    manifest_resolved_inputs: ManifestInputNames = field(
         default_factory=_empty_manifest_inputs
     )
-    manifest_cli_overrides: frozenset[str] = field(
+    manifest_cli_overrides: ManifestInputNames = field(
         default_factory=_empty_manifest_inputs
     )
+
+    def __post_init__(self) -> None:
+        object.__setattr__(
+            self,
+            "manifest_resolved_inputs",
+            _normalize_manifest_inputs(self.manifest_resolved_inputs),
+        )
+        object.__setattr__(
+            self,
+            "manifest_cli_overrides",
+            _normalize_manifest_inputs(self.manifest_cli_overrides),
+        )
 
 
 @dataclass(frozen=True)
@@ -212,7 +234,9 @@ def _validate_request_source(request: ClassifyRequest) -> None:
     invocations. Direct calls may not carry manifest metadata.
     """
 
-    manifest_inputs = request.manifest_resolved_inputs | request.manifest_cli_overrides
+    manifest_inputs = _normalize_manifest_inputs(
+        request.manifest_resolved_inputs
+    ) | _normalize_manifest_inputs(request.manifest_cli_overrides)
     if request.request_source == "direct":
         if manifest_inputs:
             raise ValueError(
@@ -328,8 +352,8 @@ class RegimeEngine:
         cpi_first_release: pd.Series | None = None,
         news_sentiment: pd.Series | None = None,
         request_source: ClassifyRequestSource = "direct",
-        manifest_resolved_inputs: frozenset[str] | None = None,
-        manifest_cli_overrides: frozenset[str] | None = None,
+        manifest_resolved_inputs: ManifestInputNames | None = None,
+        manifest_cli_overrides: ManifestInputNames | None = None,
     ) -> RegimeOutput:
         timeline = self.classify_request(
             ClassifyRequest(
@@ -406,8 +430,8 @@ class RegimeEngine:
         cpi_first_release: pd.Series | None = None,
         news_sentiment: pd.Series | None = None,
         request_source: ClassifyRequestSource = "direct",
-        manifest_resolved_inputs: frozenset[str] | None = None,
-        manifest_cli_overrides: frozenset[str] | None = None,
+        manifest_resolved_inputs: ManifestInputNames | None = None,
+        manifest_cli_overrides: ManifestInputNames | None = None,
     ) -> RegimeTimeline:
         return self.classify_request(
             ClassifyRequest(

@@ -12,8 +12,6 @@ from contextlib import closing
 import pandas as pd
 import pytest
 
-pytestmark = pytest.mark.slow
-
 
 def _load_runner_module():
     repo_root = Path(__file__).resolve().parents[1]
