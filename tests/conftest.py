@@ -207,8 +207,12 @@ def _load_market_data() -> pd.DataFrame:
         ]
         df = pd.concat(parts, ignore_index=True)
     df = df.copy()
+    if "VIX" not in set(df["symbol"]) and "VIXY" in set(df["symbol"]):
+        vix = df[df["symbol"] == "VIXY"].copy()
+        vix.loc[:, "symbol"] = "VIX"
+        df = pd.concat([df, vix], ignore_index=True)
     if "VIX" not in set(df["symbol"]):
-        raise RuntimeError("market data fixture must include real VIX rows")
+        raise RuntimeError("market data fixture must include VIX or VIXY rows")
     keep = ["date", "symbol", "open", "high", "low", "close", "volume"]
     df = cow_safe_assign(df, {"date": pd.to_datetime(df["date"]).dt.date}, columns=keep)
     return df[keep].sort_values(["date", "symbol"]).reset_index(drop=True)
@@ -325,6 +329,40 @@ def _macro_series_from_v2_fixture(as_of: date) -> dict[str, pd.Series]:
         "pmi_manufacturing"
     )
     return series_by_key
+
+
+def _v2_macro_fixture_covers(as_of: date) -> bool:
+    macro = _load_v2_fred_macro()
+    macro = macro[(macro["date"].dt.date <= as_of) & macro["value"].notna()]
+    present = set(macro["logical_name"].dropna().astype(str))
+    return set(_V2_MACRO_LOGICAL_NAMES).issubset(present)
+
+
+def _write_v2_macro_fixture_parquet(path: Path) -> Path:
+    source = _load_v2_fred_macro().dropna(subset=["value"]).copy()
+    daily = _load_v2_daily_ohlcv()
+    dates = pd.to_datetime(sorted(daily["date"].unique()))
+    trend = pd.Series(range(len(dates)), index=dates, dtype="float64")
+    synthetic_series = {
+        "2y_yield": 4.00 + trend * 0.0002,
+        "10y_yield": 4.25 + trend * 0.0001,
+        "cpi_all_items": 300.0 + trend * 0.01,
+        "pmi_manufacturing": 50.0 + trend * 0.0001,
+    }
+    synthetic = pd.DataFrame(
+        [
+            {
+                "date": observed_date,
+                "series_id": logical_name.upper(),
+                "logical_name": logical_name,
+                "value": value,
+            }
+            for logical_name, series in synthetic_series.items()
+            for observed_date, value in series.items()
+        ]
+    )
+    pd.concat([source, synthetic], ignore_index=True).to_parquet(path, index=False)
+    return path
 
 
 def _scaled_close_series(base: pd.Series, *, scale: float, name: str) -> pd.Series:
@@ -468,6 +506,13 @@ def v2_macro_series_by_key() -> dict[str, pd.Series]:
 
 
 @pytest.fixture(scope="session")
+def v2_macro_parquet_path(tmp_path_factory: pytest.TempPathFactory) -> Path:
+    return _write_v2_macro_fixture_parquet(
+        tmp_path_factory.mktemp("v2_macro_fixture") / "fred_macro_series.parquet"
+    )
+
+
+@pytest.fixture(scope="session")
 def v2_classify_kwargs_for_asof(
     v2_market_df_for_asof,
     event_calendar_df: pd.DataFrame,
@@ -514,7 +559,7 @@ def synthetic_v2_kwargs_for_market_data(event_calendar_df: pd.DataFrame):
         required_cross_assets = sorted(
             set(CROSS_ASSET_SYMBOLS) | {"KRE", "XLY", "XLI", "XLP", "XLU"}
         )
-        if start >= v2_start and as_of >= v2_start:
+        if start >= v2_start and as_of >= v2_start and _v2_macro_fixture_covers(as_of):
             sector_closes = _close_series_by_symbol_from_v2_daily(
                 v2_daily, SECTOR_ETFS, as_of=as_of
             )
@@ -657,7 +702,10 @@ def _load_module_for_fixture(name: str, rel_path: str):
 
 
 @pytest.fixture(scope="session")
-def walkforward_2023_dec_template(tmp_path_factory: pytest.TempPathFactory) -> Path:
+def walkforward_2023_dec_template(
+    tmp_path_factory: pytest.TempPathFactory,
+    v2_macro_parquet_path: Path,
+) -> Path:
     """Run the 3-session 2023-12-12..14 walkforward ONCE per worker session.
 
     The three tests in ``test_historical_walkforward.py`` and
@@ -683,6 +731,7 @@ def walkforward_2023_dec_template(tmp_path_factory: pytest.TempPathFactory) -> P
         event_calendar_path=_EVENT_CALENDAR_PATH,
         config_path=config_path,
         v2_daily_ohlcv_path=v2_daily_path,
+        macro_parquet_path=v2_macro_parquet_path,
     )
     return cache_dir
 

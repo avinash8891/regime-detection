@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import io
 import importlib.util
 import logging
 import sys
@@ -46,6 +47,28 @@ def _write_parquet(path: Path, df: pd.DataFrame) -> None:
 
 def _sha256_file(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def test_canonicalize_parquet_orders_unsortable_ties_deterministically(
+    tmp_path: Path,
+) -> None:
+    first = tmp_path / "nested-first.parquet"
+    second = tmp_path / "nested-second.parquet"
+    rows = [
+        {"id": 1, "tags": ["b"]},
+        {"id": 1, "tags": ["a"]},
+    ]
+    pq.write_table(pa.Table.from_pylist(rows), first)
+    pq.write_table(pa.Table.from_pylist(list(reversed(rows))), second)
+
+    assert canonicalize_parquet_bytes(first) == canonicalize_parquet_bytes(second)
+    canonical_rows = (
+        pq.ParquetFile(io.BytesIO(canonicalize_parquet_bytes(first))).read().to_pylist()
+    )
+    assert canonical_rows == [
+        {"id": 1, "tags": ["a"]},
+        {"id": 1, "tags": ["b"]},
+    ]
 
 
 def _daily_ohlcv_row(date: str, symbol: str) -> dict[str, object]:

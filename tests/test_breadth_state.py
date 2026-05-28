@@ -57,10 +57,12 @@ def test_breadth_state_uses_written_etf_proxy_rules_not_invented_recovery_label(
         **synthetic_v2_kwargs_for_market_data(market_data),
     )
 
-    assert out.breadth_state.raw_label == "healthy_breadth"
-    assert out.breadth_state.active_label == "healthy_breadth"
+    assert out.breadth_state.raw_label == "broadening_breadth"
+    assert out.breadth_state.active_label == "broadening_breadth"
     rule_evidence = out.breadth_state.evidence["rule_evidence"]
     assert rule_evidence["healthy_breadth"] is True
+    assert rule_evidence["v1_raw_label"] == "healthy_breadth"
+    assert rule_evidence["v2_broadening_breadth"] is True
     assert "recovery_breadth" not in rule_evidence
 
 

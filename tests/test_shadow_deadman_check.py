@@ -21,7 +21,7 @@ def _load_module(name: str, rel_path: str):
     return mod
 
 
-def _run_shadow(out_root: Path, as_of_date: date) -> None:
+def _run_shadow(out_root: Path, as_of_date: date, macro_path: Path) -> None:
     runner = _load_module("run_shadow_regime", "scripts/run_shadow_regime.py")
     repo_root = Path(__file__).resolve().parents[1]
     market_data_path = repo_root / "tests" / "fixtures" / "raw" / "market_data.parquet"
@@ -35,16 +35,20 @@ def _run_shadow(out_root: Path, as_of_date: date) -> None:
         output_root=out_root,
         config_path=config_path,
         v2_daily_ohlcv_path=v2_daily_path,
+        macro_parquet_path=macro_path,
     )
     assert result["status"] == "success"
 
 
-def test_deadman_check_passes_when_previous_session_has_run(tmp_path: Path) -> None:
+def test_deadman_check_passes_when_previous_session_has_run(
+    tmp_path: Path,
+    v2_macro_parquet_path: Path,
+) -> None:
     monitor = _load_module(
         "run_shadow_deadman_check", "scripts/run_shadow_deadman_check.py"
     )
     out_root = tmp_path / "shadow_run"
-    _run_shadow(out_root, date(2023, 12, 14))
+    _run_shadow(out_root, date(2023, 12, 14), v2_macro_parquet_path)
 
     result = monitor.run_deadman_check(
         output_root=out_root,
@@ -92,12 +96,15 @@ def test_deadman_check_alerts_and_records_incident_when_previous_session_missing
     ]
 
 
-def test_deadman_check_uses_previous_friday_for_weekend_check(tmp_path: Path) -> None:
+def test_deadman_check_uses_previous_friday_for_weekend_check(
+    tmp_path: Path,
+    v2_macro_parquet_path: Path,
+) -> None:
     monitor = _load_module(
         "run_shadow_deadman_check", "scripts/run_shadow_deadman_check.py"
     )
     out_root = tmp_path / "shadow_run"
-    _run_shadow(out_root, date(2023, 12, 15))
+    _run_shadow(out_root, date(2023, 12, 15), v2_macro_parquet_path)
 
     result = monitor.run_deadman_check(
         output_root=out_root,

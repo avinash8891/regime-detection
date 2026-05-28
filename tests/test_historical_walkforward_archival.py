@@ -11,7 +11,6 @@ import yaml
 from regime_detection.loaders import load_event_calendar
 from regime_detection.shadow_storage import sha256_file
 
-
 _REMOVED_LOCAL_STORAGE_HELPERS = (
     "RUNS_SCHEMA",
     "_utc_iso_now",

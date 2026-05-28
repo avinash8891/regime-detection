@@ -51,6 +51,7 @@ from scripts._v2_calibration_helpers import (  # noqa: E402
     register_manifest_input_args,
 )
 
+
 def _normalize_market_data(path: Path) -> pd.DataFrame:
     if path.suffix.lower() == ".parquet":
         df = pd.read_parquet(path)

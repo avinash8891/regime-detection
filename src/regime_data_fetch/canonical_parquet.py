@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import io
+import json
 from pathlib import Path
 from typing import Any, BinaryIO
 
@@ -45,10 +46,21 @@ def _canonicalize_parquet_source(source: Path | BinaryIO) -> bytes:
             if _is_sortable_arrow_type(field.type)
         ]
         if not sort_keys:
-            return _write_canonical_parquet_bytes(table)
-        indices = pc.sort_indices(table, sort_keys=sort_keys)
+            indices = _full_row_sort_indices(table)
+        elif len(sort_keys) == len(table.schema):
+            indices = pc.sort_indices(table, sort_keys=sort_keys)
+        else:
+            indices = _full_row_sort_indices(table)
         table = table.take(indices)
     return _write_canonical_parquet_bytes(table)
+
+
+def _full_row_sort_indices(table: Any) -> list[int]:
+    rows = table.to_pylist()
+    return sorted(
+        range(len(rows)),
+        key=lambda idx: json.dumps(rows[idx], sort_keys=True, default=str),
+    )
 
 
 def _write_canonical_parquet_bytes(table: Any) -> bytes:

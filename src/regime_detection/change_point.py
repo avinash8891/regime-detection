@@ -32,6 +32,7 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass
 from functools import partial
+from typing import Literal
 
 import numpy as np
 import pandas as pd
@@ -57,7 +58,7 @@ class ChangePointFeatures:
     days_since_last_break: (
         pd.Series
     )  # nullable Int64; sessions since last break (spec L2152-2164)
-    method: str  # "BOCPD"
+    method: Literal["BOCPD"]
 
 
 def compute_change_point_features(

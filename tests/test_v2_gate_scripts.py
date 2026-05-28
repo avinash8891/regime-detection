@@ -295,6 +295,7 @@ def _write_v2_gate_parquets(tmp_path: Path) -> tuple[Path, Path]:
         "2y_yield": 4.00 + trend * 0.0002,
         "10y_yield": 4.25 + trend * 0.0001,
         "cpi_all_items": 300.0 + trend * 0.01,
+        "pmi_manufacturing": 50.0 + trend * 0.0001,
     }
     macro = pd.concat(
         [

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import logging
 from datetime import date
-from typing import NamedTuple, cast
+from typing import Literal, NamedTuple, cast
 
 import pandas as pd
 
@@ -45,7 +45,7 @@ ENGINE_MINIMUM_HISTORY = 320
 class _AlignedV2Evidence(NamedTuple):
     cp_score_aligned: pd.Series | None
     cp_days_since_aligned: pd.Series | None
-    cp_method: str | None
+    cp_method: Literal["BOCPD"] | None
     cluster_id_aligned: pd.Series | None
     cluster_distance_aligned: pd.Series | None
     cluster_model_version: str | None

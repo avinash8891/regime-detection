@@ -15,17 +15,19 @@ sys.path.insert(0, str(REPO_ROOT / "src"))
 sys.path.insert(0, str(REPO_ROOT / "scripts"))
 
 from regime_detection.engine import RegimeEngine
-from regime_detection.fragility_universe import CROSS_ASSET_SYMBOLS, SECTOR_ETFS
+from regime_detection.fragility_universe import SECTOR_ETFS
 from regime_detection.rule_provenance import rule_provenance_payload
 from regime_detection.shadow_storage import (
     fetch_run_row,
     insert_replay_check,
     load_archived_event_calendar,
+    load_archived_macro_series,
     load_archived_market_data,
     open_shadow_db,
     utc_iso_now,
 )
 from _v2_calibration_helpers import (
+    CROSS_ASSET_SYMBOLS,
     constituent_ohlcv_from_sector_closes,
     synthetic_pit_intervals_from_sector_closes,
 )
@@ -105,6 +107,7 @@ def run_replay_check(
         archive_dir = Path(run_row["input_archive_path"])
         market_path = archive_dir / "market_data.parquet"
         events_path = archive_dir / "events.yaml"
+        macro_path = archive_dir / "macro_series.parquet"
 
         market_data = load_archived_market_data(market_path)
         if events_path.exists():
@@ -125,6 +128,9 @@ def run_replay_check(
             v2_kwargs["constituent_ohlcv"] = constituent_ohlcv_from_sector_closes(
                 sector_etf_closes
             )
+        archived_macro = load_archived_macro_series(macro_path)
+        if archived_macro is not None:
+            v2_kwargs["macro_series"] = archived_macro
         replayed_output = engine.classify(
             as_of_date=as_of_date,
             market_data=market_data,

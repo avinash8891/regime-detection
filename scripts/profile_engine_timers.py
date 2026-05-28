@@ -220,13 +220,13 @@ def install_timers(timer: Any):
     ]
     patches.extend(
         [
-        (
-            axis_series_module,
-            "build_inflation_growth_axis_series",
-            _timed_inflation_growth_builder(
-                timer, axis_series_module.build_inflation_growth_axis_series
+            (
+                axis_series_module,
+                "build_inflation_growth_axis_series",
+                _timed_inflation_growth_builder(
+                    timer, axis_series_module.build_inflation_growth_axis_series
+                ),
             ),
-        ),
         ]
     )
     with contextlib.ExitStack() as stack:

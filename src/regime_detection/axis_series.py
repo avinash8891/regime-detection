@@ -120,6 +120,78 @@ class AxisDependencyContract:
     degraded_policy: str
     invalid_policy: str
 
+    def __post_init__(self) -> None:
+        _validate_axis_dependency_policy(
+            "absent_policy", self.absent_policy, _ABSENT_POLICIES
+        )
+        _validate_axis_dependency_policy(
+            "stale_policy", self.stale_policy, _STALE_POLICIES
+        )
+        _validate_axis_dependency_policy(
+            "unknown_policy", self.unknown_policy, _UNKNOWN_POLICIES
+        )
+        _validate_axis_dependency_policy(
+            "degraded_policy", self.degraded_policy, _DEGRADED_POLICIES
+        )
+        _validate_axis_dependency_policy(
+            "invalid_policy", self.invalid_policy, _INVALID_POLICIES
+        )
+
+
+_ABSENT_POLICIES = frozenset(
+    {
+        "fallback_unknown_when_omitted",
+        "omit_component",
+        "pass_none",
+        "pass_none_to_falsify_predicate",
+        "raise_on_missing_required_axis",
+        "timeline_placeholder_unknown",
+    }
+)
+_STALE_POLICIES = frozenset(
+    {
+        "label_only_data_quality_not_visible",
+        "not_encoded_on_payload",
+        "omit_if_not_classified",
+    }
+)
+_UNKNOWN_POLICIES = frozenset(
+    {
+        "force_transition_score_missing_axis_data_quality",
+        "omit_if_not_classified",
+        "pass_empty_or_matching_labels",
+        "pass_state",
+        "pass_unknown_label",
+    }
+)
+_DEGRADED_POLICIES = frozenset(
+    {
+        "label_only_data_quality_not_visible",
+        "not_encoded_on_payload",
+        "omit_if_not_classified",
+    }
+)
+_INVALID_POLICIES = frozenset(
+    {
+        "omit_missing_session",
+        "raise_on_missing_output",
+        "raise_on_missing_session",
+        "raise_on_missing_session_when_present",
+        "raise_when_configured_but_unavailable",
+    }
+)
+
+
+def _validate_axis_dependency_policy(
+    field_name: str, value: str, allowed_values: frozenset[str]
+) -> None:
+    if value not in allowed_values:
+        allowed = ", ".join(sorted(allowed_values))
+        raise ValueError(
+            f"{field_name} {value!r} is not declared in AxisDependencyContract "
+            f"policy vocabulary: {allowed}"
+        )
+
 
 AXIS_BUILD_ORDER: tuple[str, ...] = (
     "trend_direction",
@@ -444,6 +516,20 @@ def _validate_axis_dependency_order(
     dependencies: dict[str, tuple[str, ...]],
 ) -> None:
     positions = {name: idx for idx, name in enumerate(build_order)}
+    contracted_build_dependencies = {
+        downstream: tuple(contract.upstream_axis for contract in contracts)
+        for downstream, contracts in _dependency_contracts_by_downstream(
+            AXIS_DEPENDENCY_CONTRACTS
+        ).items()
+        if downstream in positions
+    }
+    for axis, required_axes in contracted_build_dependencies.items():
+        if axis not in dependencies:
+            raise ValueError(f"dependency graph omits contracted axis {axis!r}")
+        if dependencies[axis] != required_axes:
+            raise ValueError(
+                f"dependency graph for {axis!r} does not match declared contracts"
+            )
     for axis, required_axes in dependencies.items():
         if axis not in positions:
             raise ValueError(f"axis build order missing declared axis {axis!r}")
@@ -470,7 +556,7 @@ def build_event_calendar_series(
     )
 
 
-def _build_axis_outputs(
+def _build_axis_outputs(  # pyright: ignore[reportUnusedFunction]
     *,
     dates: list[date] | tuple[date, ...],
     raw_labels: list[str],

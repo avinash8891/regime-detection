@@ -36,6 +36,7 @@ LOGGER = logging.getLogger("upload_missing_ohlcv")
 _DEFAULT_SOURCE_TREE = _REPO_ROOT / ".context" / "daily_ohlcv_2016_20260515_repaired"
 _MERGED_MANIFEST = _REPO_ROOT / "manifests" / "runs" / "regime_engine_2026-05-17.yaml"
 
+
 def _make_yaml():
     from ruamel.yaml import YAML
 

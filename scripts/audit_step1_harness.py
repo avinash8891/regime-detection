@@ -34,15 +34,21 @@ from __future__ import annotations
 import json
 import logging
 import subprocess
+import sys
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Sequence
 
+REPO_ROOT = Path(__file__).resolve().parents[1]
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
+sys.path.insert(0, str(REPO_ROOT / "src"))
+
 if TYPE_CHECKING:
     from regime_data_fetch.materialization import MaterializedArtifact
 
-from regime_data_fetch.artifact_store import sha256_file as _sha256_file
+from regime_data_fetch.artifact_store import sha256_file as _sha256_file  # noqa: E402
 
 logger = logging.getLogger(__name__)
 
