@@ -50,11 +50,11 @@ import datetime as dt
 import json
 import logging
 import urllib.error
-import urllib.request
 from pathlib import Path
 
 import pandas as pd
 
+from regime_data_fetch._http import fetch_bytes
 from regime_data_fetch.acquisition_store import AcquisitionStore
 
 SOURCE_NAME = "Cleveland Fed inflation nowcast"
@@ -287,20 +287,12 @@ def download_cleveland_fed_nowcast_json(
          the already-present file.
     """
     out_path.parent.mkdir(parents=True, exist_ok=True)
-    request = urllib.request.Request(
-        source_url,
-        headers={
-            "User-Agent": (
-                "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
-                "AppleWebKit/537.36 (KHTML, like Gecko) "
-                "Chrome/126.0.0.0 Safari/537.36"
-            ),
-            "Accept": "application/json,text/plain,*/*",
-        },
-    )
     try:
-        with urllib.request.urlopen(request, timeout=timeout_seconds) as response:
-            payload = response.read()
+        payload = fetch_bytes(
+            source_url,
+            headers={"Accept": "application/json,text/plain,*/*"},
+            timeout=timeout_seconds,
+        )
     except urllib.error.URLError as exc:
         raise ClevelandFedNowcastError(
             f"Failed to download Cleveland Fed nowcast JSON from "

@@ -5,13 +5,13 @@ import datetime as dt
 import json
 import logging
 import re
-import urllib.request
 from dataclasses import dataclass
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
 import pandas as pd
 
+from regime_data_fetch._http import fetch_text
 from regime_data_fetch.acquisition_store import AcquisitionStore
 from regime_data_fetch.event_sources._common import MONTHS
 from regime_data_fetch.ism import release_timestamp_for
@@ -739,9 +739,7 @@ def _extract_reference_year(html: str) -> int:
 
 
 def _http_get_text(url: str) -> str:
-    req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
-    with urllib.request.urlopen(req, timeout=30) as response:
-        return response.read().decode("utf-8", errors="replace")
+    return fetch_text(url, timeout=30)
 
 
 def load_manual_pmi_history(*, history_dir: Path) -> list[PMIObservation]:

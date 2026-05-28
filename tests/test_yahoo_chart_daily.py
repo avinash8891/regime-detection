@@ -124,7 +124,7 @@ def test_fetch_daily_bars_yahoo_chart_sends_browser_headers_and_timeout() -> Non
     assert query["events"] == ["history"]
     assert query["includeAdjustedClose"] == ["true"]
     assert captured["timeout"] == 17.5
-    assert "Chrome/125.0" in captured["user_agent"]
+    assert "Chrome/126.0.0.0" in captured["user_agent"]
     assert captured["accept"] == "application/json"
     assert result.df.to_dict(orient="records") == [
         {

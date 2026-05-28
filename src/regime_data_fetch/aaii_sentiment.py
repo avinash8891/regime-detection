@@ -10,6 +10,7 @@ from pathlib import Path
 
 import pandas as pd
 
+from regime_data_fetch._http import fetch_text
 from regime_data_fetch.acquisition_store import AcquisitionStore
 from regime_shared.pandas_compat import cow_safe_assign
 
@@ -158,13 +159,8 @@ def fetch_latest_rows(
     url: str, after_date: dt.date, *, timeout: int = 30
 ) -> pd.DataFrame:
     """Scrape the AAII sentiment HTML table and return rows newer than after_date."""
-    req = urllib.request.Request(
-        url,
-        headers={"User-Agent": "Mozilla/5.0 (compatible; regime-engine-fetcher/2.0)"},
-    )
     try:
-        with urllib.request.urlopen(req, timeout=timeout) as resp:
-            html_text = resp.read().decode("utf-8", errors="replace")
+        html_text = fetch_text(url, timeout=timeout, urlopen=urllib.request.urlopen)
     except urllib.error.URLError as exc:
         raise RuntimeError(f"Failed to fetch AAII sentiment page: {exc}") from exc
 

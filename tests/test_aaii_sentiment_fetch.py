@@ -264,11 +264,9 @@ def test_fetch_latest_rows_parses_aaii_html_and_infers_year_rollover(
         timeout=17,
     )
 
-    assert captured == {
-        "url": "https://example.test/aaii",
-        "timeout": 17,
-        "user_agent": "Mozilla/5.0 (compatible; regime-engine-fetcher/2.0)",
-    }
+    assert captured["url"] == "https://example.test/aaii"
+    assert captured["timeout"] == 17
+    assert "Chrome/126.0.0.0" in captured["user_agent"]
     assert frame["date"].tolist() == [
         pd.Timestamp("2025-12-31"),
         pd.Timestamp("2026-01-02"),

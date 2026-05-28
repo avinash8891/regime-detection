@@ -5,12 +5,11 @@ import logging
 from collections.abc import Callable
 from io import BytesIO
 from pathlib import Path
-from urllib.request import Request, urlopen
 
 import pandas as pd
 
+from regime_data_fetch._http import fetch_bytes
 from regime_data_fetch.acquisition_store import AcquisitionStore
-from regime_data_fetch.event_sources._common import HTTP_USER_AGENT
 from regime_data_fetch.event_sources.models import EventCandidate, ValidationResult
 
 LOGGER = logging.getLogger(__name__)
@@ -161,9 +160,7 @@ class HFCentralBankValidator:
 
 
 def fetch_hf_parquet() -> bytes:
-    request = Request(PARQUET_URL, headers={"User-Agent": HTTP_USER_AGENT})
-    with urlopen(request, timeout=60) as response:
-        return response.read()
+    return fetch_bytes(PARQUET_URL, timeout=60)
 
 
 def _is_decision_doc(doc_type: str, title: str) -> bool:

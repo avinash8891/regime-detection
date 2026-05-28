@@ -3,12 +3,12 @@ from __future__ import annotations
 import csv
 import datetime as dt
 import json
-import urllib.request
 from dataclasses import dataclass
 from pathlib import Path
 
 import pandas as pd
 
+from regime_data_fetch._http import fetch_text
 from regime_data_fetch.acquisition_store import AcquisitionStore
 from regime_shared.pandas_compat import cow_safe_assign, optional_date
 from regime_shared.pit_provenance import BIAS_WARNING, SOURCE_NAME, SOURCE_URL
@@ -98,9 +98,7 @@ def parse_sp500_ticker_start_end_csv(
 
 
 def fetch_sp500_ticker_start_end_csv() -> str:
-    req = urllib.request.Request(SOURCE_URL, headers={"User-Agent": "Mozilla/5.0"})
-    with urllib.request.urlopen(req, timeout=30) as response:
-        return response.read().decode("utf-8", errors="replace")
+    return fetch_text(SOURCE_URL, timeout=30)
 
 
 def run_pit_constituents_fetch(

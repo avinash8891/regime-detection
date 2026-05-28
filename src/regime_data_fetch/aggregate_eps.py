@@ -9,6 +9,7 @@ import urllib.request
 
 import pandas as pd
 
+from regime_data_fetch._http import fetch_bytes, fetch_text
 from regime_data_fetch.acquisition_store import AcquisitionStore
 from regime_data_fetch.aggregate_eps_constants import (
     EPS_DIR_NAME,
@@ -72,23 +73,18 @@ def download_spglobal_eps_workbook(
     browser session or an operator-staged workbook at the canonical raw path.
     """
     out_path.parent.mkdir(parents=True, exist_ok=True)
-    request = urllib.request.Request(
-        source_url,
-        headers={
-            "User-Agent": (
-                "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
-                "AppleWebKit/537.36 (KHTML, like Gecko) "
-                "Chrome/126.0.0.0 Safari/537.36"
-            ),
-            "Accept": (
-                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,"
-                "application/octet-stream,*/*"
-            ),
-        },
-    )
     try:
-        with urllib.request.urlopen(request, timeout=timeout_seconds) as response:
-            payload = response.read()
+        payload = fetch_bytes(
+            source_url,
+            headers={
+                "Accept": (
+                    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,"
+                    "application/octet-stream,*/*"
+                ),
+            },
+            timeout=timeout_seconds,
+            urlopen=urllib.request.urlopen,
+        )
     except urllib.error.HTTPError as exc:
         try:
             if exc.code == 403:
@@ -482,12 +478,10 @@ def fetch_wayback_cdx(
         f"{WAYBACK_CDX_URL}?url={target_url}&output=json"
         "&fl=timestamp,original,statuscode,mimetype&filter=statuscode:200"
     )
-    req = urllib.request.Request(query, headers={"User-Agent": "Mozilla/5.0"})
     last_exc: Exception | None = None
     for attempt in range(1, max_attempts + 1):
         try:
-            with urllib.request.urlopen(req, timeout=60) as response:
-                return response.read().decode("utf-8", errors="replace")
+            return fetch_text(query, timeout=60, urlopen=urllib.request.urlopen)
         except urllib.error.HTTPError as exc:
             if exc.code not in {429, 500, 502, 503, 504}:
                 try:
@@ -508,11 +502,7 @@ def fetch_wayback_cdx(
 
 
 def fetch_wayback_snapshot_bytes(snapshot: EPSWaybackSnapshot) -> bytes:
-    req = urllib.request.Request(
-        snapshot.archive_url, headers={"User-Agent": "Mozilla/5.0"}
-    )
-    with urllib.request.urlopen(req, timeout=60) as response:
-        return response.read()
+    return fetch_bytes(snapshot.archive_url, timeout=60, urlopen=urllib.request.urlopen)
 
 
 def run_wayback_aggregate_eps_fetch(

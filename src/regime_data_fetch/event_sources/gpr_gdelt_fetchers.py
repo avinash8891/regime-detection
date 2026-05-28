@@ -7,10 +7,9 @@ import os
 from collections.abc import Callable
 from dataclasses import dataclass
 from urllib.parse import urlencode
-from urllib.request import Request, urlopen
 
+from regime_data_fetch._http import fetch_bytes, fetch_text
 from regime_data_fetch.acquisition_store import AcquisitionStore
-from regime_data_fetch.event_sources._common import HTTP_USER_AGENT
 from regime_data_fetch.event_sources.gpr_gdelt_conflict_parsers import _json_records
 
 LOGGER = logging.getLogger(__name__)
@@ -55,15 +54,11 @@ class FetchOutcome:
 
 
 def fetch_gpr_daily() -> bytes:
-    request = Request(GPR_DAILY_URL, headers={"User-Agent": HTTP_USER_AGENT})
-    with urlopen(request, timeout=30) as response:
-        return response.read()
+    return fetch_bytes(GPR_DAILY_URL, timeout=30)
 
 
 def fetch_gpr_monthly() -> bytes:
-    request = Request(GPR_MONTHLY_URL, headers={"User-Agent": HTTP_USER_AGENT})
-    with urlopen(request, timeout=30) as response:
-        return response.read()
+    return fetch_bytes(GPR_MONTHLY_URL, timeout=30)
 
 
 def fetch_ai_gpr_daily() -> str:
@@ -272,16 +267,13 @@ def _acled_access_token() -> str | None:
             "scope": "authenticated",
         }
     ).encode()
-    request = Request(
+    token_text = fetch_text(
         ACLED_TOKEN_URL,
         data=body,
-        headers={
-            "Content-Type": "application/x-www-form-urlencoded",
-            "User-Agent": HTTP_USER_AGENT,
-        },
+        headers={"Content-Type": "application/x-www-form-urlencoded"},
+        timeout=30,
     )
-    with urlopen(request, timeout=30) as response:
-        payload = json.loads(response.read().decode("utf-8"))
+    payload = json.loads(token_text)
     return str(payload["access_token"])
 
 
@@ -338,12 +330,8 @@ def _payload_total_count(payload: object) -> int | None:
 
 
 def _http_text(url: str, *, headers: dict[str, str]) -> str:
-    request = Request(url, headers={"User-Agent": HTTP_USER_AGENT, **headers})
-    with urlopen(request, timeout=30) as response:
-        return response.read().decode("utf-8", errors="replace")
+    return fetch_text(url, headers=headers, timeout=30)
 
 
 def _http_bytes(url: str) -> bytes:
-    request = Request(url, headers={"User-Agent": HTTP_USER_AGENT})
-    with urlopen(request, timeout=30) as response:
-        return response.read()
+    return fetch_bytes(url, timeout=30)

@@ -9,6 +9,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
+from regime_data_fetch._http import fetch_text
+
 US_EASTERN = ZoneInfo("America/New_York")
 MONTH_NAME_RE = r"(?:Jan\.?|January|Feb\.?|February|Mar\.?|March|Apr\.?|April|May|Jun\.?|June|Jul\.?|July|Aug\.?|August|Sep\.?|Sept\.?|September|Oct\.?|October|Nov\.?|November|Dec\.?|December)"
 _MODERN_ROW_RE = re.compile(
@@ -116,10 +118,8 @@ def build_bls_local_archive_page_fetcher(
 
 
 def fetch_bls_schedule_page_text(url: str) -> str:
-    req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
     try:
-        with urllib.request.urlopen(req, timeout=30) as response:
-            return response.read().decode("utf-8", errors="replace")
+        return fetch_text(url, timeout=30, urlopen=urllib.request.urlopen)
     except Exception as exc:
         api_key = os.environ.get("TINYFISH_API_KEY")
         if not api_key:
@@ -142,7 +142,7 @@ def _fetch_page_text_with_tinyfish(*, url: str, api_key: str) -> str:
             "proxy_config": {"country_code": "US"},
         }
     ).encode("utf-8")
-    request = urllib.request.Request(
+    body = fetch_text(
         "https://api.fetch.tinyfish.ai",
         data=payload,
         headers={
@@ -150,9 +150,9 @@ def _fetch_page_text_with_tinyfish(*, url: str, api_key: str) -> str:
             "X-API-Key": api_key,
         },
         method="POST",
+        timeout=150,
+        urlopen=urllib.request.urlopen,
     )
-    with urllib.request.urlopen(request, timeout=150) as response:
-        body = response.read().decode("utf-8", errors="replace")
     decoded = json.loads(body)
     results = decoded.get("results") or []
     if results and isinstance(results[0].get("text"), str):

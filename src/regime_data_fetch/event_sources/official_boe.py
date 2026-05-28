@@ -7,12 +7,11 @@ import re
 from collections.abc import Callable
 from dataclasses import dataclass
 from urllib.parse import urlencode
-from urllib.request import Request, urlopen
 
+from regime_data_fetch._http import fetch_text
 from regime_data_fetch.acquisition_store import AcquisitionStore
 from regime_data_fetch.event_sources._common import (
     BOE_BASE_URL,
-    HTTP_USER_AGENT,
     MONTHS,
     FetchTextResult,
     absolute_url,
@@ -176,17 +175,13 @@ def fetch_boe_news_api_page(page: int) -> str:
             "Direction": "Latest",
         }
     ).encode("utf-8")
-    request = Request(
+    return fetch_text(
         NEWS_API_URL,
         data=data,
-        headers={
-            "User-Agent": HTTP_USER_AGENT,
-            "Content-Type": "application/x-www-form-urlencoded",
-        },
+        headers={"Content-Type": "application/x-www-form-urlencoded"},
         method="POST",
+        timeout=30,
     )
-    with urlopen(request, timeout=30) as response:
-        return response.read().decode("utf-8", errors="replace")
 
 
 def parse_boe_upcoming_mpc_dates(

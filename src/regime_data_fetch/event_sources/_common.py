@@ -6,15 +6,13 @@ import logging
 import re
 from urllib.parse import urljoin
 from urllib.error import URLError
-from urllib.request import Request, urlopen
+from urllib.request import urlopen
+
+from regime_data_fetch._http import DEFAULT_USER_AGENT, fetch_text
 
 LOGGER = logging.getLogger(__name__)
 
-HTTP_USER_AGENT = (
-    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
-    "AppleWebKit/537.36 (KHTML, like Gecko) "
-    "Chrome/126.0.0.0 Safari/537.36"
-)
+HTTP_USER_AGENT = DEFAULT_USER_AGENT
 
 ECB_BASE_URL = "https://www.ecb.europa.eu"
 BOE_BASE_URL = "https://www.bankofengland.co.uk"
@@ -71,10 +69,10 @@ class FetchTextResult:
 
 
 def fetch_text_result(url: str, *, timeout: int = 30) -> FetchTextResult:
-    request = Request(url, headers={"User-Agent": HTTP_USER_AGENT})
     try:
-        with urlopen(request, timeout=timeout) as response:
-            return FetchTextResult(text=response.read().decode("utf-8"))
+        return FetchTextResult(
+            text=fetch_text(url, timeout=timeout, errors="strict", urlopen=urlopen)
+        )
     except URLError as exc:
         reason = getattr(exc, "reason", exc)
         LOGGER.error(

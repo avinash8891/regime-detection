@@ -3,7 +3,6 @@ from __future__ import annotations
 import datetime as dt
 import json
 import re
-import urllib.request
 from dataclasses import dataclass
 from html import unescape
 from pathlib import Path
@@ -11,6 +10,7 @@ from zoneinfo import ZoneInfo
 
 import pandas as pd
 
+from regime_data_fetch._http import fetch_text
 from regime_data_fetch.acquisition_store import AcquisitionStore
 
 INDEX_URL = (
@@ -335,9 +335,7 @@ def run_powell_speeches_fetch(
 
 
 def _http_get_text(url: str) -> str:
-    req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
-    with urllib.request.urlopen(req, timeout=30) as response:
-        return response.read().decode("utf-8", errors="replace")
+    return fetch_text(url, timeout=30)
 
 
 def _clean_html_text(html: str) -> str:

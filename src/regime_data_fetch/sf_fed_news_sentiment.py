@@ -39,6 +39,7 @@ from pathlib import Path
 
 import pandas as pd
 
+from regime_data_fetch._http import fetch_bytes
 from regime_data_fetch.acquisition_store import AcquisitionStore
 
 SF_FED_NEWS_SENTIMENT_URL = (
@@ -56,13 +57,12 @@ class SFFedNewsSentimentFetchError(RuntimeError):
 
 def fetch_workbook_bytes(*, timeout: int = 30) -> bytes:
     """Download the latest SF Fed news sentiment XLSX as raw bytes."""
-    req = urllib.request.Request(
-        SF_FED_NEWS_SENTIMENT_URL,
-        headers={"User-Agent": "regime-detection-fetch/1.0"},
-    )
     try:
-        with urllib.request.urlopen(req, timeout=timeout) as resp:
-            return resp.read()
+        return fetch_bytes(
+            SF_FED_NEWS_SENTIMENT_URL,
+            timeout=timeout,
+            urlopen=urllib.request.urlopen,
+        )
     except urllib.error.URLError as exc:
         raise SFFedNewsSentimentFetchError(
             f"failed to download {SF_FED_NEWS_SENTIMENT_URL}: {exc}"

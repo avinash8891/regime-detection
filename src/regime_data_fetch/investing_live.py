@@ -15,6 +15,7 @@ from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
 
+from regime_data_fetch._http import fetch_text
 from regime_data_fetch.investing_earnings_browser import (
     access_token_from_page as _access_token_from_page,
     capture_investing_earnings_loaded_page as _capture_investing_earnings_loaded_page,
@@ -676,9 +677,7 @@ def _month_ranges(start: dt.date, end: dt.date) -> list[tuple[dt.date, dt.date]]
 
 
 def _fetch_text(url: str) -> str:
-    request = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
-    with urllib.request.urlopen(request, timeout=60) as response:
-        return response.read().decode("utf-8", errors="replace")
+    return fetch_text(url, timeout=60, urlopen=urllib.request.urlopen)
 
 
 def _request_json(
@@ -689,13 +688,17 @@ def _request_json(
     max_retries: int = 3,
     backoff_seconds: float = 1.0,
 ) -> object:
-    request = urllib.request.Request(
-        f"{url}?{urllib.parse.urlencode(params)}", headers=headers
-    )
+    request_url = f"{url}?{urllib.parse.urlencode(params)}"
     for attempt in range(1, max_retries + 1):
         try:
-            with urllib.request.urlopen(request, timeout=60) as response:
-                return json.loads(response.read().decode("utf-8", errors="replace"))
+            return json.loads(
+                fetch_text(
+                    request_url,
+                    headers=headers,
+                    timeout=60,
+                    urlopen=urllib.request.urlopen,
+                )
+            )
         except (TimeoutError, urllib.error.URLError) as exc:
             if attempt == max_retries:
                 raise
