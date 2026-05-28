@@ -33,7 +33,7 @@ def fetch_bytes(
     request = urllib.request.Request(
         url,
         data=data,
-        headers=_headers_with_user_agent(headers),
+        headers=headers_with_user_agent(headers),
         method=method,
     )
     last_exc: BaseException | None = None
@@ -81,7 +81,7 @@ def fetch_text(
     ).decode("utf-8", errors=errors)
 
 
-def _headers_with_user_agent(headers: dict[str, str] | None) -> dict[str, str]:
+def headers_with_user_agent(headers: dict[str, str] | None) -> dict[str, str]:
     merged = dict(headers or {})
     if not any(key.lower() == "user-agent" for key in merged):
         merged["User-Agent"] = DEFAULT_USER_AGENT
