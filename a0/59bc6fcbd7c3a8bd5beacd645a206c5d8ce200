@@ -1,0 +1,95 @@
+src/regime_detection/legacy_v1_wire.py
+  s_d6d2adedfc14ba::t_ddea78771215a2 1-58
+pyproject.toml
+  s_d6d2adedfc14ba::t_ddea78771215a2 73-80
+src/regime_detection/shadow_storage.py
+  s_d6d2adedfc14ba::t_6eed36f840d936 99-102
+  s_d6d2adedfc14ba::t_73b81d64964903 161,166,174-180,183,193-217
+tests/test_breadth_state.py
+  s_d6d2adedfc14ba::t_03a645d87da254 60-61,64-65
+src/regime_detection/models.py
+  s_d6d2adedfc14ba::t_ddea78771215a2 3-102
+tests/test_shadow_deadman_check.py
+  s_d6d2adedfc14ba::t_7b77ea107d9a47 24,38,43-46,51,99-102,107
+scripts/run_shadow_regime.py
+  s_d6d2adedfc14ba::t_a4e97db646e2f8 31,267,281-285
+tests/test_publish_canonical_snapshot.py
+  s_d6d2adedfc14ba::t_258072c38db2ae 6,65,67-68
+  s_d6d2adedfc14ba::t_1fee05daf7d12b 52-64,69-71
+  s_d6d2adedfc14ba::t_88650a82b37b83 66
+  s_d6d2adedfc14ba::t_cfeb1b38b177e8 72-73
+scripts/profile_engine_timers.py
+  s_d6d2adedfc14ba::t_6eed36f840d936 223-228
+scripts/run_historical_walkforward.py
+  s_d6d2adedfc14ba::t_6eed36f840d936 54
+src/regime_detection/_config_evidence_strategy.py
+  s_d6d2adedfc14ba::t_ddea78771215a2 263
+tests/test_axis_series.py
+  s_d6d2adedfc14ba::t_ddea78771215a2 7,102-126
+tests/conftest.py
+  s_d6d2adedfc14ba::t_2d0f1e95751b95 705-708,734
+  s_d6d2adedfc14ba::t_fe3cd449a429f5 210-213,215,334-340,562
+  s_d6d2adedfc14ba::t_b11db16d28c63d 341-367,508-512
+docs/pyright_pandas_stub_policy.md
+  s_d6d2adedfc14ba::t_ddea78771215a2 12-19
+tests/test_models.py
+  s_d6d2adedfc14ba::t_ddea78771215a2 4,6-7,18,20,44-67,358-363,379
+tests/test_readiness_contracts.py
+  s_d6d2adedfc14ba::t_ddea78771215a2 22-29
+tests/test_pyright_strict_ratcheting.py
+  s_d6d2adedfc14ba::t_ddea78771215a2 14-21,28-40
+src/regime_data_fetch/canonical_parquet.py
+  s_d6d2adedfc14ba::t_64b9ba4f9909ec 4,49-53,58-63
+tests/test_shadow_replay_check.py
+  s_d6d2adedfc14ba::t_c93840b9c5f9c4 27-30,47
+  s_d6d2adedfc14ba::t_9df1068cf0deac 171,174,176,186-189,192,202,207
+src/regime_detection/evidence_payloads.py
+  s_d6d2adedfc14ba::t_ddea78771215a2 1-279
+src/regime_detection/axis_output_models.py
+  s_d6d2adedfc14ba::t_ddea78771215a2 1-340
+src/regime_detection/model_status.py
+  s_d6d2adedfc14ba::t_ddea78771215a2 1-17
+src/regime_detection/timeline.py
+  s_d6d2adedfc14ba::t_ddea78771215a2 5,48
+src/regime_detection/strategy_models.py
+  s_d6d2adedfc14ba::t_ddea78771215a2 1-175
+tests/test_v2_gate_scripts.py
+  s_d6d2adedfc14ba::t_92064bec2b36de 298
+tests/test_reconciliation_contracts.py
+  s_d6d2adedfc14ba::t_ef691c7a3c57ed 171
+  s_d6d2adedfc14ba::t_a8820516abc4d4 167-170,172
+src/regime_detection/classification_status.py
+  s_d6d2adedfc14ba::t_ddea78771215a2 1-126
+scripts/upload_missing_ohlcv_to_manifest.py
+  s_d6d2adedfc14ba::t_6eed36f840d936 39
+src/regime_detection/change_point.py
+  s_d6d2adedfc14ba::t_ddea78771215a2 35,61
+src/regime_detection/coverage_models.py
+  s_d6d2adedfc14ba::t_ddea78771215a2 1-31
+scripts/run_shadow_replay_check.py
+  s_d6d2adedfc14ba::t_455a5f360e6315 18,30
+  s_d6d2adedfc14ba::t_e286e8446f255d 24,110,131-133
+scripts/audit_step1_harness.py
+  s_d6d2adedfc14ba::t_0ec7a9be76e94e 37,43-46
+  s_d6d2adedfc14ba::t_529044adfe00d5 51
+tests/test_historical_walkforward.py
+  s_d6d2adedfc14ba::t_b21250809596c6 162,190
+src/regime_detection/wire_models.py
+  s_d6d2adedfc14ba::t_ddea78771215a2 1-132
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "a059bc6fcbd7c3a8bd5beacd645a206c5d8ce200",
+  "prompts": {},
+  "sessions": {
+    "s_d6d2adedfc14ba": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019e6afe-8238-7b50-b7cc-3811ee57b236",
+        "model": "gpt-5.5"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}
