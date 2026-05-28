@@ -1,0 +1,79 @@
+src/regime_data_fetch/pit_constituents.py
+  s_469680dc3246b8::t_6af70f677dddee 11,101
+src/regime_data_fetch/event_sources/gpr_gdelt_fetchers.py
+  s_469680dc3246b8::t_476ab189f1ba00 11,57,61,270,273-274,276,333,337
+src/regime_data_fetch/fred.py
+  s_469680dc3246b8::t_c471a2702b90ba 13-14
+  s_469680dc3246b8::t_49a84cffe3067a 145
+tests/test_aggregate_eps.py
+  s_469680dc3246b8::t_3813906eabc1bc 653-655
+tests/test_fred_fetch.py
+  s_469680dc3246b8::t_a44f734a911907 79-81,122-124,153-155,182-183,185,207-208,210
+src/regime_data_fetch/aggregate_eps.py
+  s_469680dc3246b8::t_014fd8e56f7f6e 12,77-85,87
+  s_469680dc3246b8::t_49a84cffe3067a 86,484
+  s_469680dc3246b8::t_4b27da9d9c0773 505
+src/regime_data_fetch/event_sources/budget_official_discovery.py
+  s_469680dc3246b8::t_c04d4b0264734a 13
+  s_469680dc3246b8::t_acb891a00e0c00 329
+src/regime_data_fetch/event_sources/validators_hf_central_bank.py
+  s_469680dc3246b8::t_476ab189f1ba00 11,163
+tests/test_data_fetch_http.py
+  s_469680dc3246b8::t_603d3a857e11a7 1-102
+src/regime_data_fetch/pmi.py
+  s_469680dc3246b8::t_6af70f677dddee 14,742
+src/regime_data_fetch/cleveland_fed_nowcast.py
+  s_469680dc3246b8::t_3fbe379bca5e38 57,291-295
+tests/test_aaii_sentiment_fetch.py
+  s_469680dc3246b8::t_3813906eabc1bc 267-269
+src/regime_data_fetch/aaii_sentiment.py
+  s_469680dc3246b8::t_b7463d5d05adf8 13
+  s_469680dc3246b8::t_4b27da9d9c0773 163
+src/regime_data_fetch/_http.py
+  s_469680dc3246b8::t_a06b42b070505d 30,32,42,69
+  s_469680dc3246b8::t_757f7f47e897d8 1-29,31,33-41,43-68,70-96
+src/regime_data_fetch/powell_speeches.py
+  s_469680dc3246b8::t_6af70f677dddee 13,338
+tests/test_news_sentiment.py
+  s_469680dc3246b8::t_3813906eabc1bc 331-333
+src/regime_data_fetch/sf_fed_news_sentiment.py
+  s_469680dc3246b8::t_49a84cffe3067a 61-65
+  s_469680dc3246b8::t_b7463d5d05adf8 42
+src/regime_data_fetch/event_sources/official_boe.py
+  s_469680dc3246b8::t_476ab189f1ba00 11,178,181,183
+src/regime_data_fetch/event_calendar_group_a.py
+  s_469680dc3246b8::t_3813906eabc1bc 8,280
+  s_469680dc3246b8::t_c04d4b0264734a 10
+src/regime_data_fetch/bls_schedule.py
+  s_469680dc3246b8::t_49a84cffe3067a 122,154
+  s_469680dc3246b8::t_6af70f677dddee 12-13,145,153
+src/regime_data_fetch/fomc_minutes.py
+  s_469680dc3246b8::t_6af70f677dddee 13,388
+tests/test_yahoo_chart_daily.py
+  s_469680dc3246b8::t_3813906eabc1bc 127
+src/regime_data_fetch/event_sources/_common.py
+  s_469680dc3246b8::t_acb891a00e0c00 11,15
+  s_469680dc3246b8::t_3813906eabc1bc 9,73,75
+  s_469680dc3246b8::t_4b27da9d9c0773 74
+src/regime_data_fetch/yahoo_chart_daily.py
+  s_469680dc3246b8::t_d7004b6fb5e6fc 9,14,108,114-116,118
+src/regime_data_fetch/investing_live.py
+  s_469680dc3246b8::t_b3edc06baf98e4 18,691
+  s_469680dc3246b8::t_49a84cffe3067a 680,694-701
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "2516479b4dad96d7a716408d90a351f7eb92f33b",
+  "prompts": {},
+  "sessions": {
+    "s_469680dc3246b8": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019e6cd4-74ef-7863-acec-e9013990604d",
+        "model": "gpt-5.5"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}
