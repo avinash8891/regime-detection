@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import json
+import ast
 from datetime import date
+from pathlib import Path
 
 import pytest
 from pydantic import BaseModel
@@ -42,6 +44,17 @@ def test_legacy_v1_projection_helpers_live_outside_model_boundary() -> None:
     assert _project_legacy_v1_transition_risk is (
         legacy_v1_wire.project_legacy_v1_transition_risk
     )
+
+
+def test_models_module_is_compatibility_facade_only() -> None:
+    tree = ast.parse(Path("src/regime_detection/models.py").read_text())
+    definitions = [
+        node.name
+        for node in tree.body
+        if isinstance(node, ast.ClassDef | ast.FunctionDef)
+    ]
+
+    assert definitions == []
 
 
 def _data_quality() -> DataQuality:
