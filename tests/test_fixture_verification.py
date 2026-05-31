@@ -32,6 +32,14 @@ _V2_SPEC_GOLDEN_DATES = {
     "2024-08-05",
 }
 
+_V2_LIVE_FIXTURE_UNSUPPORTED_GOLDEN_DATES = {
+    "2010-05-06": "V2 daily OHLCV fixture must include real VIX rows",
+    "2011-08-08": "V2 daily OHLCV fixture must include real VIX rows",
+    "2015-08-24": "V2 daily OHLCV fixture must include real VIX rows",
+    "2018-10-10": "V2 daily OHLCV fixture must include real VIX rows",
+    "2020-08-15": "as_of_date must be an NYSE trading day",
+}
+
 
 def test_conftest_market_data_requires_real_combined_market_parquet(
     monkeypatch, tmp_path: Path
@@ -191,6 +199,64 @@ def test_v2_section_9_4_golden_dates_are_registered() -> None:
     for row in fixture["rows"]:
         assert row["intent_id"]
         assert row["expected_v2_fields"]
+
+
+def test_v2_golden_dates_classify_expected_fields(
+    v2_classify_kwargs_for_asof,
+) -> None:
+    from regime_detection.engine import RegimeEngine
+
+    repo_root = Path(__file__).resolve().parents[1]
+    fixture = yaml.safe_load(
+        (
+            repo_root / "tests" / "fixtures" / "derived" / "golden_dates_v2.yaml"
+        ).read_text()
+    )
+    engine = RegimeEngine()
+    missing: list[str] = []
+    unsupported: dict[str, str] = {}
+    classified_dates: set[str] = set()
+
+    for row in fixture["rows"]:
+        as_of = date.fromisoformat(str(row["as_of_date"]))
+        try:
+            output = engine.classify(
+                as_of_date=as_of,
+                **v2_classify_kwargs_for_asof(as_of),
+            )
+        except (RuntimeError, ValueError) as exc:
+            unsupported[str(as_of)] = str(exc)
+            continue
+
+        classified_dates.add(str(as_of))
+        dumped = output.model_dump(mode="json", exclude_none=True)
+
+        for field_name, expected in row["expected_v2_fields"].items():
+            if field_name == "sequence":
+                continue
+            if field_name == "transition_evidence":
+                transition = dumped.get("transition_risk", {})
+                evidence = transition.get("evidence", {})
+                drivers = transition.get("primary_drivers", [])
+                triggered = transition.get("triggered_rules", [])
+                if not evidence and not drivers and not triggered:
+                    missing.append(f"{as_of}:{field_name}:missing_output")
+                continue
+            if field_name == "transition_risk_minimum":
+                state = dumped.get("transition_risk", {}).get("state")
+                if state is None:
+                    missing.append(f"{as_of}:{field_name}:missing_state")
+                continue
+            if field_name == "credit_funding":
+                field_name = "credit_funding_effective_state"
+            if dumped.get(field_name) in (None, {}, []):
+                missing.append(f"{as_of}:{field_name}:missing_output")
+
+    assert unsupported.keys() == _V2_LIVE_FIXTURE_UNSUPPORTED_GOLDEN_DATES.keys()
+    for as_of, expected_fragment in _V2_LIVE_FIXTURE_UNSUPPORTED_GOLDEN_DATES.items():
+        assert expected_fragment in unsupported[as_of]
+    assert classified_dates == _V2_SPEC_GOLDEN_DATES - set(unsupported)
+    assert missing == []
 
 
 def test_golden_date_replacement_set_has_documented_justification() -> None:
