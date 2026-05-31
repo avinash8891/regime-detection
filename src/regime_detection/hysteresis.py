@@ -129,10 +129,17 @@ def apply_data_quality_aware_hysteresis(
     for raw, dq in zip(raw_labels, data_quality, strict=True):
         if quality_forces_unknown(dq):
             data_gap_count += 1
+            hold_limit = max_unknown_freeze_days
+            if last_known_stable is not None:
+                threshold = deescalation_days_by_label.get(
+                    last_known_stable, default_deescalation_days
+                )
+                if threshold > 0:
+                    hold_limit = max(hold_limit, threshold - 1)
             if (
                 last_known_stable is not None
                 and last_known_active is not None
-                and data_gap_count <= max_unknown_freeze_days
+                and data_gap_count <= hold_limit
             ):
                 stable.append(last_known_stable)
                 active.append(last_known_active)

@@ -228,16 +228,13 @@ def test_data_quality_gap_freezes_prior_hysteresis_state_within_window() -> None
         date(2024, 1, 3),
         date(2024, 1, 4),
         date(2024, 1, 5),
+        date(2024, 1, 8),
+        date(2024, 1, 9),
     ]
 
     outputs = build_per_label_axis_outputs(
         sessions=sessions,
-        raw_labels=[
-            "spread_widening",
-            "unknown",
-            "unknown",
-            "unknown",
-        ],
+        raw_labels=["spread_widening"] + ["unknown"] * 5,
         risk_rank={"unknown": 1, "credit_calm": 0, "spread_widening": 2},
         deescalation_days_by_label={"spread_widening": 5, "unknown": 0},
         default_deescalation_days=0,
@@ -247,9 +244,13 @@ def test_data_quality_gap_freezes_prior_hysteresis_state_within_window() -> None
             DataQuality(status="stale_data", reason="etf_stale:HYG"),
             DataQuality(status="stale_data", reason="etf_stale:HYG"),
             DataQuality(status="stale_data", reason="etf_stale:HYG"),
+            DataQuality(status="stale_data", reason="etf_stale:HYG"),
+            DataQuality(status="stale_data", reason="etf_stale:HYG"),
         ],
         evidence=[
             {"rule_evidence": {"hy_spread_percentile_504d": 0.75}},
+            {"reason": "etf_stale:HYG"},
+            {"reason": "etf_stale:HYG"},
             {"reason": "etf_stale:HYG"},
             {"reason": "etf_stale:HYG"},
             {"reason": "etf_stale:HYG"},
@@ -267,9 +268,17 @@ def test_data_quality_gap_freezes_prior_hysteresis_state_within_window() -> None
     assert outputs[sessions[2]].active_label == "spread_widening"
     assert outputs[sessions[2]].classification_status == "stale_data"
 
-    assert outputs[sessions[3]].stable_label == "unknown"
-    assert outputs[sessions[3]].active_label == "unknown"
+    assert outputs[sessions[3]].stable_label == "spread_widening"
+    assert outputs[sessions[3]].active_label == "spread_widening"
     assert outputs[sessions[3]].classification_status == "stale_data"
+
+    assert outputs[sessions[4]].stable_label == "spread_widening"
+    assert outputs[sessions[4]].active_label == "spread_widening"
+    assert outputs[sessions[4]].classification_status == "stale_data"
+
+    assert outputs[sessions[5]].stable_label == "unknown"
+    assert outputs[sessions[5]].active_label == "unknown"
+    assert outputs[sessions[5]].classification_status == "stale_data"
 
 
 def test_pure_hysteresis_still_treats_unknown_as_label_when_called_directly() -> None:
