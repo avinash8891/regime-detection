@@ -142,6 +142,12 @@ def test_shadow_replay_check_records_mismatch_with_diff(
         row = conn.execute(
             "SELECT matches, diff FROM replay_checks ORDER BY check_id DESC LIMIT 1"
         ).fetchone()
+        incident = conn.execute("""
+            SELECT incident_date, description, breaks_qualification
+            FROM incidents
+            ORDER BY incident_id DESC
+            LIMIT 1
+            """).fetchone()
 
     assert row is not None
     assert row[0] == 0
@@ -150,6 +156,10 @@ def test_shadow_replay_check_records_mismatch_with_diff(
         diff["transition_risk_state"]["replayed"]
         != diff["transition_risk_state"]["stored"]
     )
+    assert incident is not None
+    assert incident[0] == "2023-12-14"
+    assert "Replay mismatch" in incident[1]
+    assert incident[2] == 1
 
 
 def test_shadow_replay_check_uses_only_archived_inputs(
