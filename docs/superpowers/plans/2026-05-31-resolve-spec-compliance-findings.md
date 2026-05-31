@@ -51,11 +51,11 @@
 - Modify: `scripts/build_walkforward_report.py`
 - Test: `tests/test_build_walkforward_report.py`
 
-- [ ] Step 1: Add failing tests for version inconsistency, replay mismatch failure, `<252` successful OOS sessions, red-flag failures, missing transition-risk report fields, unknown baseline metrics, relative deltas, and missing per-date provenance.
-- [ ] Step 2: Run the focused test file and verify the intended failures.
-- [ ] Step 3: Implement helpers for frozen-version validation, replay mismatch ingestion, OOS count, red flags, report completeness, metric direction validation, relative deltas, and provenance checks.
-- [ ] Step 4: Run `python3.14 -m pytest -o addopts='' tests/test_build_walkforward_report.py -q; echo "EXIT:$?"`.
-- [ ] Step 5: Commit `fix(walkforward): enforce qualification gate invariants`.
+- [x] Step 1: Add failing tests for version inconsistency, replay mismatch failure, `<252` successful OOS sessions, red-flag failures, missing transition-risk report fields, unknown baseline metrics, relative deltas, and missing per-date provenance.
+- [x] Step 2: Run the focused test file and verify the intended failures.
+- [x] Step 3: Implement helpers for frozen-version validation, replay mismatch ingestion, OOS count, red flags, report completeness, metric direction validation, relative deltas, and provenance checks.
+- [x] Step 4: Run `python3.14 -m pytest -o addopts='' tests/test_build_walkforward_report.py -q; echo "EXIT:$?"`.
+- [x] Step 5: Commit `fix(walkforward): enforce qualification gate invariants`.
 
 ## Task 4: Shadow Qualification Window (`F-018`, `F-048`)
 

@@ -26,6 +26,26 @@ LABEL_COLUMNS = [
     "transition_risk_state",
 ]
 
+MIN_OOS_SESSIONS = 252
+LABEL_DOMINANCE_THRESHOLD = 0.95
+UNKNOWN_STRETCH_THRESHOLD = 20
+TRANSITION_RISK_WARNING_STATES = frozenset(
+    {"watch", "elevated", "high_transition_risk", "crisis"}
+)
+REQUIRED_SUMMARY_COLUMNS = frozenset(
+    {
+        "as_of_date",
+        "status",
+        *LABEL_COLUMNS,
+        "transition_risk_score",
+        "transition_risk_primary_drivers",
+        "transition_risk_triggered_rules",
+        "transition_risk_data_quality_status",
+        "transition_risk_axis_switch_count",
+        "transition_risk_recent_axis_switch_count",
+    }
+)
+
 HYSTERESIS_BY_COLUMN = {
     "trend_direction_active": 3,
     "trend_character_active": 3,
@@ -71,8 +91,12 @@ def _load_summary(output_root: Path) -> pd.DataFrame:
     if not summary_path.exists():
         raise FileNotFoundError(f"walkforward summary not found: {summary_path}")
     df = pd.read_csv(summary_path)
-    df["as_of_date"] = pd.to_datetime(df["as_of_date"]).dt.date
+    df = df.assign(as_of_date=pd.to_datetime(df["as_of_date"]).dt.date)
     return df.sort_values("as_of_date").reset_index(drop=True)
+
+
+def _missing_summary_columns(summary_df: pd.DataFrame) -> list[str]:
+    return sorted(REQUIRED_SUMMARY_COLUMNS - set(summary_df.columns))
 
 
 def _load_runs_from_db(output_root: Path) -> pd.DataFrame:
@@ -84,7 +108,7 @@ def _load_runs_from_db(output_root: Path) -> pd.DataFrame:
             "SELECT as_of_date, status, failure_reason, engine_version, config_version, input_archive_path, output_path FROM runs ORDER BY as_of_date",
             conn,
         )
-    df["as_of_date"] = pd.to_datetime(df["as_of_date"]).dt.date
+    df = df.assign(as_of_date=pd.to_datetime(df["as_of_date"]).dt.date)
     return df
 
 
@@ -235,6 +259,51 @@ def _load_optional_json(path: Path | None) -> dict[str, Any] | None:
     return json.loads(path.read_text())
 
 
+def _frozen_versions(runs_df: pd.DataFrame) -> dict[str, Any]:
+    engine_versions = sorted(
+        str(v) for v in runs_df["engine_version"].dropna().unique()
+    )
+    config_versions = sorted(
+        str(v) for v in runs_df["config_version"].dropna().unique()
+    )
+    return {
+        "engine_versions": engine_versions,
+        "config_versions": config_versions,
+        "engine_version": engine_versions[0] if len(engine_versions) == 1 else None,
+        "config_version": config_versions[0] if len(config_versions) == 1 else None,
+        "is_single_pair": len(engine_versions) == 1 and len(config_versions) == 1,
+    }
+
+
+def _per_date_provenance(runs_df: pd.DataFrame) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    for _, row in runs_df.sort_values("as_of_date").iterrows():
+        rows.append(
+            {
+                "as_of_date": row["as_of_date"].isoformat(),
+                "engine_version": (
+                    None
+                    if pd.isna(row["engine_version"])
+                    else str(row["engine_version"])
+                ),
+                "config_version": (
+                    None
+                    if pd.isna(row["config_version"])
+                    else str(row["config_version"])
+                ),
+                "input_archive_path": (
+                    None
+                    if pd.isna(row["input_archive_path"])
+                    else str(row["input_archive_path"])
+                ),
+                "output_path": (
+                    None if pd.isna(row["output_path"]) else str(row["output_path"])
+                ),
+            }
+        )
+    return rows
+
+
 def _expected_golden_dates() -> list[str]:
     golden_path = REPO_ROOT / "tests" / "fixtures" / "derived" / "golden_dates.yaml"
     data = yaml.safe_load(golden_path.read_text())
@@ -257,14 +326,9 @@ def _golden_gate_reasons(
     if result_dates != _expected_golden_dates():
         reasons.append("golden_results_dates_mismatch")
 
-    engine_versions = sorted(
-        str(v) for v in runs_df["engine_version"].dropna().unique()
-    )
-    config_versions = sorted(
-        str(v) for v in runs_df["config_version"].dropna().unique()
-    )
-    expected_engine = engine_versions[0] if len(engine_versions) == 1 else None
-    expected_config = config_versions[0] if len(config_versions) == 1 else None
+    frozen_versions = _frozen_versions(runs_df)
+    expected_engine = frozen_versions["engine_version"]
+    expected_config = frozen_versions["config_version"]
     if (
         golden_results.get("engine_version") != expected_engine
         or golden_results.get("config_version") != expected_config
@@ -273,17 +337,38 @@ def _golden_gate_reasons(
     return reasons
 
 
+def _replay_gate_reasons(replay_results: dict[str, Any] | None) -> list[str]:
+    if replay_results is None:
+        return ["missing_replay_verification"]
+    if not bool(replay_results.get("all_passed")):
+        return ["replay_mismatch_detected"]
+    return []
+
+
 def _baseline_comparison(payload: dict[str, Any] | None) -> dict[str, Any] | None:
     if payload is None:
         return None
     metrics = payload.get("metrics", {})
     improved_metrics: list[str] = []
     materially_worse_metrics: list[str] = []
+    unknown_metrics: list[str] = []
     comparisons: dict[str, dict[str, Any]] = {}
     for metric, values in metrics.items():
         with_regime = values["with_regime_gating"]
         baseline = values["no_regime_baseline"]
         direction = BETTER_DIRECTION.get(metric)
+        if direction is None:
+            unknown_metrics.append(metric)
+            comparisons[metric] = {
+                "with_regime_gating": with_regime,
+                "no_regime_baseline": baseline,
+                "delta": with_regime - baseline,
+                "relative_delta": (
+                    None if baseline == 0 else (with_regime - baseline) / baseline
+                ),
+                "better_direction": None,
+            }
+            continue
         if direction == "lower":
             improved = with_regime < baseline
             materially_worse = with_regime > baseline
@@ -300,15 +385,77 @@ def _baseline_comparison(payload: dict[str, Any] | None) -> dict[str, Any] | Non
             "with_regime_gating": with_regime,
             "no_regime_baseline": baseline,
             "delta": delta,
-            "better_direction": direction or "higher",
+            "relative_delta": None if baseline == 0 else delta / baseline,
+            "better_direction": direction,
         }
     return {
         "comparisons": comparisons,
         "improved_metrics": sorted(improved_metrics),
         "materially_worse_metrics": sorted(materially_worse_metrics),
+        "unknown_metrics": sorted(unknown_metrics),
         "all_metrics_materially_worse": bool(comparisons)
+        and not unknown_metrics
         and len(materially_worse_metrics) == len(comparisons),
     }
+
+
+def _red_flags(success_df: pd.DataFrame) -> list[dict[str, Any]]:
+    flags: list[dict[str, Any]] = []
+    if success_df.empty:
+        return flags
+    session_count = len(success_df)
+    for col in LABEL_COLUMNS:
+        if col not in success_df.columns:
+            continue
+        counts = success_df[col].fillna("null").astype(str).value_counts()
+        if not counts.empty:
+            label = str(counts.index[0])
+            count = int(counts.iloc[0])
+            share = count / session_count
+            if share >= LABEL_DOMINANCE_THRESHOLD:
+                flags.append(
+                    {
+                        "type": "label_dominance",
+                        "column": col,
+                        "label": label,
+                        "count": count,
+                        "share": share,
+                    }
+                )
+        unknown_run = _unknown_stretch(success_df[col])
+        if unknown_run > UNKNOWN_STRETCH_THRESHOLD:
+            flags.append(
+                {
+                    "type": "long_unknown_run",
+                    "column": col,
+                    "max_unknown_stretch": unknown_run,
+                }
+            )
+
+    if "transition_risk_state" in success_df.columns:
+        transition_states = (
+            success_df["transition_risk_state"].fillna("null").astype(str)
+        )
+        warning_count = int(
+            transition_states.isin(TRANSITION_RISK_WARNING_STATES).sum()
+        )
+        if warning_count == 0:
+            flags.append(
+                {
+                    "type": "transition_risk_never_fires",
+                    "column": "transition_risk_state",
+                }
+            )
+        elif warning_count / session_count >= LABEL_DOMINANCE_THRESHOLD:
+            flags.append(
+                {
+                    "type": "transition_risk_almost_always_fires",
+                    "column": "transition_risk_state",
+                    "count": warning_count,
+                    "share": warning_count / session_count,
+                }
+            )
+    return flags
 
 
 def _failure_reasons(
@@ -316,8 +463,12 @@ def _failure_reasons(
     summary_df: pd.DataFrame,
     missing_sessions: list[str],
     nan_leakage: list[str],
+    missing_summary_columns: list[str],
+    frozen_versions: dict[str, Any],
+    replay_gate_reasons: list[str],
     golden_gate_reasons: list[str],
     baseline_comparison: dict[str, Any] | None,
+    red_flags: list[dict[str, Any]],
 ) -> list[str]:
     reasons: list[str] = []
     if summary_df["status"].eq("failure").any():
@@ -326,11 +477,22 @@ def _failure_reasons(
         reasons.append("missing_sessions")
     if nan_leakage:
         reasons.append("nan_leakage_detected")
+    if missing_summary_columns:
+        reasons.append("missing_report_columns")
+    if not frozen_versions["is_single_pair"]:
+        reasons.append("mixed_frozen_versions")
+    if int(summary_df["status"].eq("success").sum()) < MIN_OOS_SESSIONS:
+        reasons.append("insufficient_oos_sessions")
+    reasons.extend(replay_gate_reasons)
     reasons.extend(golden_gate_reasons)
     if baseline_comparison is None:
         reasons.append("missing_baseline_metrics")
+    elif baseline_comparison["unknown_metrics"]:
+        reasons.append("unknown_baseline_metric_direction")
     elif baseline_comparison["all_metrics_materially_worse"]:
         reasons.append("materially_worse_than_baseline")
+    if red_flags:
+        reasons.append("red_flags_detected")
     return reasons
 
 
@@ -339,7 +501,10 @@ def _build_markdown(analysis: dict[str, Any]) -> str:
         "# Historical Walk-Forward Analysis",
         "",
         f"- status: `{analysis['status']}`",
+        f"- engine_version: `{analysis['engine_version']}`",
+        f"- config_version: `{analysis['config_version']}`",
         f"- session_count: `{analysis['session_count']}`",
+        f"- oos_session_count: `{analysis['oos_session_count']}`",
         f"- success_count: `{analysis['success_count']}`",
         f"- failure_count: `{analysis['failure_count']}`",
         f"- missing_session_count: `{len(analysis['missing_sessions'])}`",
@@ -351,6 +516,48 @@ def _build_markdown(analysis: dict[str, Any]) -> str:
         lines.extend([f"- `{reason}`" for reason in analysis["failure_reasons"]])
     else:
         lines.append("- none")
+
+    lines.extend(
+        [
+            "",
+            "## Frozen Version",
+            "",
+            "```json",
+            json.dumps(analysis["frozen_versions"], indent=2, sort_keys=True),
+            "```",
+            "",
+            "## Missing Sessions",
+            "",
+            "```json",
+            json.dumps(analysis["missing_sessions"], indent=2, sort_keys=True),
+            "```",
+            "",
+            "## NaN Leakage",
+            "",
+            "```json",
+            json.dumps(analysis["nan_leakage"], indent=2, sort_keys=True),
+            "```",
+            "",
+            "## Red Flags",
+            "",
+            "```json",
+            json.dumps(analysis["red_flags"], indent=2, sort_keys=True),
+            "```",
+            "",
+            "## Replay Verification",
+            "",
+            "```json",
+            json.dumps(analysis["replay_verification"], indent=2, sort_keys=True),
+            "```",
+            "",
+            "## Per-Date Provenance",
+            "",
+            "```json",
+            json.dumps(analysis["per_date_provenance"], indent=2, sort_keys=True),
+            "```",
+            "",
+        ]
+    )
 
     lines.extend(["", "## Label Distributions", ""])
     for key, value in analysis["label_distributions"].items():
@@ -406,54 +613,64 @@ def build_walkforward_report(
     output_root: Path,
     golden_results_path: Path | None = None,
     baseline_metrics_path: Path | None = None,
+    replay_results_path: Path | None = None,
 ) -> dict[str, Any]:
     summary_df = _load_summary(output_root)
     runs_df = _load_runs_from_db(output_root)
     success_df = summary_df[summary_df["status"] == "success"].copy()
     missing_sessions = _missing_sessions(summary_df)
     nan_leakage = _nan_leakage(summary_df, runs_df, output_root)
+    missing_summary_columns = _missing_summary_columns(summary_df)
+    frozen_versions = _frozen_versions(runs_df)
     hysteresis_days = _load_hysteresis_days()
 
     golden_results = _load_optional_json(golden_results_path)
     golden_gate_reasons = _golden_gate_reasons(golden_results, runs_df)
+    replay_results = _load_optional_json(replay_results_path)
+    replay_gate_reasons = _replay_gate_reasons(replay_results)
     baseline_comparison = _baseline_comparison(
         _load_optional_json(baseline_metrics_path)
     )
+    red_flags = _red_flags(success_df)
     failure_reasons = _failure_reasons(
         summary_df=summary_df,
         missing_sessions=missing_sessions,
         nan_leakage=nan_leakage,
+        missing_summary_columns=missing_summary_columns,
+        frozen_versions=frozen_versions,
+        replay_gate_reasons=replay_gate_reasons,
         golden_gate_reasons=golden_gate_reasons,
         baseline_comparison=baseline_comparison,
+        red_flags=red_flags,
     )
 
     analysis = {
         "status": "pass" if not failure_reasons else "fail",
         "session_count": int(len(summary_df)),
+        "oos_session_count": int(summary_df["status"].eq("success").sum()),
         "success_count": int(summary_df["status"].eq("success").sum()),
         "failure_count": int(summary_df["status"].eq("failure").sum()),
         "missing_sessions": missing_sessions,
         "nan_leakage": nan_leakage,
+        "missing_summary_columns": missing_summary_columns,
         "failure_reasons": failure_reasons,
-        "engine_version": (
-            str(runs_df["engine_version"].dropna().iloc[0])
-            if not runs_df.empty
-            else None
-        ),
-        "config_version": (
-            str(runs_df["config_version"].dropna().iloc[0])
-            if not runs_df.empty
-            else None
-        ),
+        "engine_version": frozen_versions["engine_version"],
+        "config_version": frozen_versions["config_version"],
+        "frozen_versions": frozen_versions,
+        "per_date_provenance": _per_date_provenance(runs_df),
         "label_distributions": _label_distribution(success_df),
         "series_summaries": _series_summaries(success_df, hysteresis_days),
+        "red_flags": red_flags,
         "golden_results": golden_results
+        or {"all_passed": False, "reason": "not_provided"},
+        "replay_verification": replay_results
         or {"all_passed": False, "reason": "not_provided"},
         "baseline_comparison": baseline_comparison
         or {
             "all_metrics_materially_worse": False,
             "reason": "not_provided",
             "improved_metrics": [],
+            "unknown_metrics": [],
         },
     }
 
@@ -475,6 +692,7 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--output-root", required=True, type=Path)
     parser.add_argument("--golden-results", type=Path, default=None)
     parser.add_argument("--baseline-metrics", type=Path, default=None)
+    parser.add_argument("--replay-results", type=Path, default=None)
     return parser.parse_args()
 
 
@@ -484,6 +702,7 @@ def main() -> int:
         output_root=args.output_root,
         golden_results_path=args.golden_results,
         baseline_metrics_path=args.baseline_metrics,
+        replay_results_path=args.replay_results,
     )
     print(json.dumps(result, indent=2, sort_keys=True))
     return 0

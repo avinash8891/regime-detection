@@ -3,6 +3,7 @@ from __future__ import annotations
 import importlib.util
 import json
 import sqlite3
+from datetime import date
 from pathlib import Path
 
 import yaml
@@ -18,20 +19,117 @@ def _load_module(name: str, rel_path: str):
     return mod
 
 
-def _prepare_walkforward_root(tmp_path: Path) -> Path:
+def _session_rows(report_mod, *, count: int = 252) -> list[dict[str, object]]:
+    schedule = report_mod.nyse_calendar().schedule(
+        start_date=date(2023, 1, 3),
+        end_date=date(2024, 3, 31),
+    )
+    sessions = list(schedule.index.date)[:count]
+    assert len(sessions) == count
+    trend_labels = ("bull", "sideways", "bear", "recovery")
+    character_labels = ("trending", "chop", "transition", "recovery_attempt")
+    vol_labels = ("low_vol", "normal_vol", "high_vol", "crisis_vol")
+    breadth_labels = (
+        "healthy_breadth",
+        "neutral_breadth",
+        "weak_breadth",
+        "divergent_fragile",
+    )
+    transition_labels = ("stable", "watch", "elevated", "high_transition_risk")
+    rows: list[dict[str, object]] = []
+    for idx, session in enumerate(sessions):
+        rows.append(
+            {
+                "as_of_date": session.isoformat(),
+                "status": "success",
+                "trend_direction_active": trend_labels[idx % len(trend_labels)],
+                "trend_character_active": character_labels[idx % len(character_labels)],
+                "volatility_state_active": vol_labels[idx % len(vol_labels)],
+                "breadth_state_active": breadth_labels[idx % len(breadth_labels)],
+                "transition_risk_state": transition_labels[
+                    idx % len(transition_labels)
+                ],
+                "transition_risk_score": round((idx % 10) / 10, 2),
+                "transition_risk_primary_drivers": "[]",
+                "transition_risk_triggered_rules": "[]",
+                "transition_risk_data_quality_status": "ok",
+                "transition_risk_axis_switch_count": idx % 3,
+                "transition_risk_recent_axis_switch_count": idx % 2,
+            }
+        )
+    return rows
+
+
+def _prepare_walkforward_root(
+    tmp_path: Path,
+    report_mod=None,
+    *,
+    rows: list[dict[str, object]] | None = None,
+) -> Path:
     """Create the report builder's persisted inputs without running the engine."""
+    if rows is None:
+        if report_mod is None:
+            rows = [
+                {
+                    "as_of_date": "2023-12-12",
+                    "status": "success",
+                    "trend_direction_active": "uptrend",
+                    "trend_character_active": "trend",
+                    "volatility_state_active": "low_volatility",
+                    "breadth_state_active": "healthy",
+                    "transition_risk_state": "normal",
+                    "transition_risk_score": 0.1,
+                    "transition_risk_primary_drivers": "[]",
+                    "transition_risk_triggered_rules": "[]",
+                    "transition_risk_data_quality_status": "ok",
+                    "transition_risk_axis_switch_count": 0,
+                    "transition_risk_recent_axis_switch_count": 0,
+                },
+                {
+                    "as_of_date": "2023-12-13",
+                    "status": "success",
+                    "trend_direction_active": "uptrend",
+                    "trend_character_active": "trend",
+                    "volatility_state_active": "low_volatility",
+                    "breadth_state_active": "healthy",
+                    "transition_risk_state": "normal",
+                    "transition_risk_score": 0.1,
+                    "transition_risk_primary_drivers": "[]",
+                    "transition_risk_triggered_rules": "[]",
+                    "transition_risk_data_quality_status": "ok",
+                    "transition_risk_axis_switch_count": 0,
+                    "transition_risk_recent_axis_switch_count": 0,
+                },
+                {
+                    "as_of_date": "2023-12-14",
+                    "status": "success",
+                    "trend_direction_active": "uptrend",
+                    "trend_character_active": "trend",
+                    "volatility_state_active": "low_volatility",
+                    "breadth_state_active": "healthy",
+                    "transition_risk_state": "elevated",
+                    "transition_risk_score": 0.4,
+                    "transition_risk_primary_drivers": "[]",
+                    "transition_risk_triggered_rules": "[]",
+                    "transition_risk_data_quality_status": "ok",
+                    "transition_risk_axis_switch_count": 0,
+                    "transition_risk_recent_axis_switch_count": 0,
+                },
+            ]
+        else:
+            rows = _session_rows(report_mod)
+
     out_root = tmp_path / "walkforward"
     reports_dir = out_root / "reports"
     reports_dir.mkdir(parents=True)
+    fieldnames = list(rows[0])
     (reports_dir / "walkforward_summary.csv").write_text(
         "\n".join(
             [
-                "as_of_date,status,trend_direction_active,trend_character_active,volatility_state_active,breadth_state_active,transition_risk_state",
-                "2023-12-12,success,uptrend,trend,low_volatility,healthy,normal",
-                "2023-12-13,success,uptrend,trend,low_volatility,healthy,normal",
-                "2023-12-14,success,uptrend,trend,low_volatility,healthy,elevated",
+                ",".join(fieldnames),
+                *[",".join(str(row[name]) for name in fieldnames) for row in rows],
                 "",
-            ]
+            ],
         ),
         encoding="utf-8",
     )
@@ -56,35 +154,36 @@ def _prepare_walkforward_root(tmp_path: Path) -> Path:
             """,
             [
                 (
-                    "2023-12-12",
-                    "success",
+                    str(row["as_of_date"]),
+                    str(row["status"]),
                     None,
                     "regime-engine-vtest",
                     "core3-test",
-                    "input_archives/2023-12-12",
-                    "outputs/2023-12-12.json",
-                ),
-                (
-                    "2023-12-13",
-                    "success",
-                    None,
-                    "regime-engine-vtest",
-                    "core3-test",
-                    "input_archives/2023-12-13",
-                    "outputs/2023-12-13.json",
-                ),
-                (
-                    "2023-12-14",
-                    "success",
-                    None,
-                    "regime-engine-vtest",
-                    "core3-test",
-                    "input_archives/2023-12-14",
-                    "outputs/2023-12-14.json",
-                ),
+                    f"input_archives/{row['as_of_date']}",
+                    f"outputs/{row['as_of_date']}.json",
+                )
+                for row in rows
             ],
         )
     return out_root
+
+
+def _write_replay_results(
+    output_root: Path, *, all_passed: bool = True, mismatches: list[str] | None = None
+) -> Path:
+    path = output_root / "reports" / "replay_verification.json"
+    path.write_text(
+        json.dumps(
+            {
+                "all_passed": all_passed,
+                "mismatches": mismatches or [],
+            },
+            indent=2,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    return path
 
 
 def _golden_results_payload(*, all_passed: bool = True) -> dict[str, object]:
@@ -116,6 +215,8 @@ def test_build_walkforward_report_fails_without_required_gates(
     assert result["status"] == "fail"
     assert "missing_golden_results" in result["failure_reasons"]
     assert "missing_baseline_metrics" in result["failure_reasons"]
+    assert "missing_replay_verification" in result["failure_reasons"]
+    assert "insufficient_oos_sessions" in result["failure_reasons"]
 
     analysis_path = out_root / "reports" / "walkforward_analysis.json"
     report_path = out_root / "reports" / "walkforward_report.md"
@@ -128,6 +229,16 @@ def test_build_walkforward_report_fails_without_required_gates(
     assert payload["success_count"] == 3
     assert payload["missing_sessions"] == []
     assert payload["label_distributions"]["transition_risk_state"]
+    assert payload["per_date_provenance"][0] == {
+        "as_of_date": "2023-12-12",
+        "engine_version": "regime-engine-vtest",
+        "config_version": "core3-test",
+        "input_archive_path": "input_archives/2023-12-12",
+        "output_path": "outputs/2023-12-12.json",
+    }
+    report_text = report_path.read_text()
+    assert "## Frozen Version" in report_text
+    assert "## Per-Date Provenance" in report_text
 
 
 def test_build_walkforward_report_passes_with_golden_and_baseline_inputs(
@@ -136,7 +247,7 @@ def test_build_walkforward_report_passes_with_golden_and_baseline_inputs(
     report_mod = _load_module(
         "build_walkforward_report", "scripts/build_walkforward_report.py"
     )
-    out_root = _prepare_walkforward_root(tmp_path)
+    out_root = _prepare_walkforward_root(tmp_path, report_mod)
 
     golden_path = tmp_path / "golden_results.json"
     golden_path.write_text(
@@ -166,6 +277,7 @@ def test_build_walkforward_report_passes_with_golden_and_baseline_inputs(
         output_root=out_root,
         golden_results_path=golden_path,
         baseline_metrics_path=baseline_path,
+        replay_results_path=_write_replay_results(out_root),
     )
 
     assert result["status"] == "pass"
@@ -180,6 +292,179 @@ def test_build_walkforward_report_passes_with_golden_and_baseline_inputs(
     )
     assert payload["golden_results"]["all_passed"] is True
     assert payload["baseline_comparison"]["all_metrics_materially_worse"] is False
+    assert (
+        payload["baseline_comparison"]["comparisons"]["max_drawdown"]["relative_delta"]
+        == -0.3333333333333333
+    )
+    assert payload["oos_session_count"] == 252
+    assert payload["red_flags"] == []
+    assert payload["replay_verification"]["all_passed"] is True
+
+
+def test_build_walkforward_report_rejects_replay_mismatch(tmp_path: Path) -> None:
+    report_mod = _load_module(
+        "build_walkforward_report", "scripts/build_walkforward_report.py"
+    )
+    out_root = _prepare_walkforward_root(tmp_path, report_mod)
+    golden_path = tmp_path / "golden_results.json"
+    golden_path.write_text(
+        json.dumps(_golden_results_payload(), indent=2) + "\n",
+        encoding="utf-8",
+    )
+    baseline_path = tmp_path / "baseline_metrics.json"
+    baseline_path.write_text(
+        json.dumps(
+            {
+                "metrics": {
+                    "max_drawdown": {
+                        "with_regime_gating": 0.12,
+                        "no_regime_baseline": 0.18,
+                    }
+                }
+            },
+            indent=2,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    result = report_mod.build_walkforward_report(
+        output_root=out_root,
+        golden_results_path=golden_path,
+        baseline_metrics_path=baseline_path,
+        replay_results_path=_write_replay_results(
+            out_root, all_passed=False, mismatches=["2023-01-04"]
+        ),
+    )
+
+    assert result["status"] == "fail"
+    assert "replay_mismatch_detected" in result["failure_reasons"]
+
+
+def test_build_walkforward_report_rejects_short_oos_window(tmp_path: Path) -> None:
+    report_mod = _load_module(
+        "build_walkforward_report", "scripts/build_walkforward_report.py"
+    )
+    out_root = _prepare_walkforward_root(
+        tmp_path, report_mod, rows=_session_rows(report_mod, count=251)
+    )
+    golden_path = tmp_path / "golden_results.json"
+    golden_path.write_text(
+        json.dumps(_golden_results_payload(), indent=2) + "\n",
+        encoding="utf-8",
+    )
+    baseline_path = tmp_path / "baseline_metrics.json"
+    baseline_path.write_text(
+        json.dumps(
+            {
+                "metrics": {
+                    "sharpe": {"with_regime_gating": 1.10, "no_regime_baseline": 0.95}
+                }
+            },
+            indent=2,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    result = report_mod.build_walkforward_report(
+        output_root=out_root,
+        golden_results_path=golden_path,
+        baseline_metrics_path=baseline_path,
+        replay_results_path=_write_replay_results(out_root),
+    )
+
+    assert result["status"] == "fail"
+    assert "insufficient_oos_sessions" in result["failure_reasons"]
+
+
+def test_build_walkforward_report_rejects_mixed_frozen_versions(
+    tmp_path: Path,
+) -> None:
+    report_mod = _load_module(
+        "build_walkforward_report", "scripts/build_walkforward_report.py"
+    )
+    out_root = _prepare_walkforward_root(tmp_path, report_mod)
+    with sqlite3.connect(out_root / "regime_walkforward.db") as conn:
+        conn.execute(
+            "UPDATE runs SET config_version = 'core3-other' WHERE as_of_date = ?",
+            ("2023-01-04",),
+        )
+
+    result = report_mod.build_walkforward_report(
+        output_root=out_root,
+        replay_results_path=_write_replay_results(out_root),
+    )
+
+    assert result["status"] == "fail"
+    assert "mixed_frozen_versions" in result["failure_reasons"]
+
+
+def test_build_walkforward_report_rejects_unknown_baseline_metric_direction(
+    tmp_path: Path,
+) -> None:
+    report_mod = _load_module(
+        "build_walkforward_report", "scripts/build_walkforward_report.py"
+    )
+    out_root = _prepare_walkforward_root(tmp_path, report_mod)
+    baseline_path = tmp_path / "baseline_metrics.json"
+    baseline_path.write_text(
+        json.dumps(
+            {
+                "metrics": {
+                    "time_spent_in_each_regime": {
+                        "with_regime_gating": 10,
+                        "no_regime_baseline": 8,
+                    }
+                }
+            },
+            indent=2,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    result = report_mod.build_walkforward_report(
+        output_root=out_root,
+        baseline_metrics_path=baseline_path,
+        replay_results_path=_write_replay_results(out_root),
+    )
+
+    assert result["status"] == "fail"
+    assert "unknown_baseline_metric_direction" in result["failure_reasons"]
+    assert result["baseline_comparison"]["unknown_metrics"] == [
+        "time_spent_in_each_regime"
+    ]
+
+
+def test_build_walkforward_report_rejects_red_flags(tmp_path: Path) -> None:
+    report_mod = _load_module(
+        "build_walkforward_report", "scripts/build_walkforward_report.py"
+    )
+    rows = _session_rows(report_mod)
+    for row in rows:
+        row["trend_direction_active"] = "bull"
+        row["transition_risk_state"] = "stable"
+    out_root = _prepare_walkforward_root(tmp_path, report_mod, rows=rows)
+
+    result = report_mod.build_walkforward_report(
+        output_root=out_root,
+        replay_results_path=_write_replay_results(out_root),
+    )
+
+    assert result["status"] == "fail"
+    assert "red_flags_detected" in result["failure_reasons"]
+    assert {
+        "type": "label_dominance",
+        "column": "trend_direction_active",
+        "label": "bull",
+        "count": 252,
+        "share": 1.0,
+    } in result["red_flags"]
+    assert {
+        "type": "transition_risk_never_fires",
+        "column": "transition_risk_state",
+    } in result["red_flags"]
 
 
 def test_build_walkforward_report_rejects_incomplete_golden_results(
