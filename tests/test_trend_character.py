@@ -215,6 +215,18 @@ def test_trend_character_vectorized_raw_outputs_match_scalar_rules() -> None:
         allow_v2_labels=False,
     )
 
+    assert vector_labels == [
+        "recovery_attempt",
+        "trending",
+        "chop",
+        "transition",
+        "unknown",
+    ]
+    assert vector_evidence[-1] == {"reason": "insufficient_history"}
+    assert vector_evidence[0]["recovery_attempt"] is True
+    assert vector_evidence[1]["trending"] is True
+    assert vector_evidence[2]["chop"] is True
+
     scalar = [raw_label_for_day(features, ts, allow_v2_labels=False) for ts in idx]
     assert vector_labels == [label for label, _ in scalar]
     assert vector_evidence == [evidence for _, evidence in scalar]
