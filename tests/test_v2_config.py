@@ -427,6 +427,15 @@ def test_v1_yaml_still_loads_with_v1_config_version() -> None:
     assert cfg.strategy_event_modifiers is None
 
 
+def test_v1_yaml_does_not_enable_v2_feature_blocks() -> None:
+    cfg = load_regime_config(_v1_yaml_path())
+
+    assert cfg.trend_direction_v2 is None
+    assert cfg.volatility_state_v2 is None
+    assert cfg.breadth_state_v2 is None
+    assert cfg.trend_character_v2 is None
+
+
 def test_strategy_event_modifier_config_rejects_unknown_label() -> None:
     from regime_detection.config import StrategyEventModifierRule
 

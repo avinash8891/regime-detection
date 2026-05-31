@@ -123,11 +123,11 @@
 - Modify: `src/regime_detection/strategy_response.py`
 - Test: focused config, trend-character, strategy-response tests.
 
-- [ ] Step 1: Add failing tests for V1 config not lighting V2 blocks, V1 modifier predicates excluding V2-only labels, and scalar/vector Layer-1 rule parity.
-- [ ] Step 2: Run focused tests and confirm failure.
-- [ ] Step 3: Remove dead V2 blocks from V1 config or document retained compatibility fields if config validation requires them.
-- [ ] Step 4: Collapse duplicate Layer-1 rule encoding only if parity tests prove a safe path.
-- [ ] Step 5: Pin ADX seeding convention in docs/tests.
+- [x] Step 1: Add failing tests for V1 config not lighting V2 blocks, V1 modifier predicates excluding V2-only labels, and scalar/vector Layer-1 rule parity.
+- [x] Step 2: Run focused tests and confirm failure.
+- [x] Step 3: Remove dead V2 blocks from V1 config or document retained compatibility fields if config validation requires them.
+- [x] Step 4: Collapse duplicate Layer-1 rule encoding only if parity tests prove a safe path.
+- [x] Step 5: Pin ADX seeding convention in docs/tests.
 - [ ] Step 6: Commit `refactor(v1): tighten config and rule parity`.
 
 ## Task 9: Decision Records and Scope Notes (`F-019`, `F-021`, `F-025`, `F-045`, `F-049`, `F-050`)

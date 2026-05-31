@@ -169,6 +169,33 @@ def test_strategy_response_macro_event_rule_caps_healthy_bull_response() -> None
     ]
 
 
+def test_strategy_response_v1_healthy_bull_modifier_excludes_v2_mild_trend() -> None:
+    response = build_strategy_response(
+        trend_direction_active="bull",
+        trend_character_active="mild_trend",
+        volatility_state_active="normal_vol",
+        breadth_state_active="healthy_breadth",
+        transition_risk_state="stable",
+    )
+
+    assert response.modifiers_applied == []
+    assert response.allow_leverage_expansion is None
+
+
+def test_strategy_response_sideways_chop_modifier_excludes_v2_volatile_chop() -> None:
+    response = build_strategy_response(
+        trend_direction_active="sideways",
+        trend_character_active="volatile_chop",
+        volatility_state_active="normal_vol",
+        breadth_state_active="healthy_breadth",
+        transition_risk_state="stable",
+    )
+
+    assert response.modifiers_applied == []
+    assert response.allow_trend_following is True
+    assert response.take_profit_faster is None
+
+
 def test_strategy_response_policy_event_rule_caps_high_transition_risk_response() -> (
     None
 ):

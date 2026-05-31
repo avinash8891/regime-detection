@@ -450,6 +450,8 @@ return_10d = close / close.shift(10) - 1
 return_21d = close / close.shift(21) - 1
 prior_63d_drawdown = close / close.rolling(63).max() - 1
 # ADX_14 standard Wilder formula
+# Implementation pin: ADX_14 uses pandas ewm(alpha=1/14, adjust=False, min_periods=14)
+# for ATR, +DM, -DM, and DX smoothing.
 ```
 
 ### 4.5 Rules
