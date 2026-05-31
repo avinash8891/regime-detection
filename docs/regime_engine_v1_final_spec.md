@@ -136,7 +136,8 @@ class RegimeTimeline(BaseModel):
 
 `outputs` is sorted ascending by `as_of_date` and contains exactly one `RegimeOutput` per NYSE trading day in the inclusive window. Unknown outputs are emitted, not skipped.
 
-V1.1 helper (deferred):
+V1.1 helper (shipped — see `RegimeEngine.classify_series` in
+`src/regime_detection/engine.py`):
 
 ```python
 RegimeEngine.classify_series(
@@ -146,6 +147,12 @@ RegimeEngine.classify_series(
     ...
 ) -> pd.DataFrame
 ```
+
+Classifies every NYSE session in the inclusive `[start_date, end_date]` window
+and returns one row per session (ascending by `as_of_date`, columns =
+`as_of_date`, `market`, `engine_version`, `config_version`, and the five active
+axis labels). It is a thin wrapper over `classify_window`; each row is
+byte-identical to the corresponding `classify(as_of_date)` output.
 
 ### 2.2 Stateless Replay Rule
 
@@ -1375,6 +1382,21 @@ tests/fixtures/raw/*.csv -diff
 These are hand-labeled expectations pending Slice 2 verification. The deterministic rule predicates win over intuition. If a slice can't pass its assigned date after verification, the bug is either the spec or the implementation — investigate before moving on. Do not relax expectations to make tests pass.
 
 After all slices ship, all 10 dates run as a regression suite on every commit.
+
+> **Golden-date replacement (F-008).** The active regression fixture
+> (`tests/fixtures/derived/golden_dates.yaml`) uses 10 committed replacement
+> `as_of_date` values rather than the literal table above. The table labels are
+> "pending verification" intuition, and when the engine classifies the literal
+> dates the deterministic predicates diverge from that intuition on every one of
+> them (e.g. on 2018-02-05 SPY fell ≈ −4.1%, which does not breach the §5.5
+> `crisis_vol` −5% trigger, so the engine emits `high_vol`, not the table's
+> `crisis_vol`). Anchoring to the literal dates cannot satisfy both "predicates
+> win" and the `provenance: hand_labeled` invariant simultaneously, and
+> `2020-04-10` is Good Friday (a non-NYSE session the engine rejects). The active
+> set therefore uses same-regime sessions where independent hand-labels and the
+> predicates agree. The full per-date mapping, divergence evidence, and rationale
+> are in `docs/verification/golden_dates_replacement_justification.md`, enforced by
+> `tests/test_fixture_verification.py::test_golden_date_replacement_set_has_documented_justification`.
 
 ### 12.3 Validation Beyond Unit Tests
 

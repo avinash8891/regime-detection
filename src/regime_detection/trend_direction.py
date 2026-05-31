@@ -83,90 +83,25 @@ def raw_label_for_day(
     ``euphoria > bull > recovery > bear > sideways > transition > unknown``)
     is layered ON TOP of the v1 label. When either is ``None`` the function
     returns the v1 label and evidence unchanged.
+
+    F-043: this is a thin wrapper over :func:`build_raw_outputs` so the §3.5
+    rule predicates, evidence shape, and v2 override have a single encoding.
+    Slicing each feature to ``[dt]`` is safe because the vectorized builder and
+    the v2 ``evaluate_recovery`` / ``evaluate_euphoria`` predicates only read
+    ``close.loc[dt]`` and ``features.*.loc[dt]`` at the target session.
     """
-    close = f.close.loc[dt]
-    sma50 = f.sma_50.loc[dt]
-    sma200 = f.sma_200.loc[dt]
-    ret63 = f.return_63d.loc[dt]
-
-    v2_args_present = (
-        trend_direction_v2_features is not None and trend_direction_v2_rules is not None
+    day_features = TrendDirectionFeatures(
+        close=f.close.loc[[dt]],
+        sma_50=f.sma_50.loc[[dt]],
+        sma_200=f.sma_200.loc[[dt]],
+        return_63d=f.return_63d.loc[[dt]],
     )
-    v1_inputs_nan = any(pd.isna(x) for x in [close, sma50, sma200, ret63])
-
-    if v1_inputs_nan and not v2_args_present:
-        # V1-only path: NaN inputs → unknown. Preserves V1 byte-identity
-        # for the frozen-replay shim and v1-only callers.
-        return "unknown", {"reason": "insufficient_history"}
-
-    if v1_inputs_nan:
-        # V1 inputs NaN but v2 args are present: emit v1=unknown then let
-        # the v2 precedence walker decide. Spec §1A line 239 places
-        # `unknown` at the tail of precedence, so any v2 rule that fires
-        # (e.g. `recovery` when v2 features have warmed faster than the
-        # 200d SMA) legitimately overrides unknown. This brings per-day
-        # behavior in line with the vectorized `build_raw_outputs` path.
-        label: TrendDirectionLabel = "unknown"
-        evidence: dict[str, Any] = {"reason": "insufficient_history"}
-    else:
-        within_5pct_sma200 = bool(
-            (close >= sma200 * (1 - _WITHIN_PCT_SMA200))
-            and (close <= sma200 * (1 + _WITHIN_PCT_SMA200))
-        )
-
-        bull = bool((close > sma50) and (close > sma200) and (sma50 > sma200))
-        bear = bool((close < sma50) and (close < sma200) and (sma50 < sma200))
-        sideways = bool((abs(ret63) < _SIDEWAYS_ABS_RETURN_63D) and within_5pct_sma200)
-
-        if bull:
-            label = "bull"
-        elif bear:
-            label = "bear"
-        elif sideways:
-            label = "sideways"
-        else:
-            label = "transition"
-
-        evidence = {
-            "sma_50": _ev_float(sma50),
-            "sma_200": _ev_float(sma200),
-            "return_63d": _ev_float(ret63),
-            "close_gt_sma50": bool(close > sma50),
-            "close_gt_sma200": bool(close > sma200),
-            "sma50_gt_sma200": bool(sma50 > sma200),
-            "within_5pct_sma200": within_5pct_sma200,
-        }
-
-    if v2_args_present:
-        if label != "unknown":
-            # On unknown rows the evidence dict only carries
-            # ``{"reason": "insufficient_history"}``; v2 feature values at
-            # cold-start are NaN floats and would obscure the cold-start
-            # signal if surfaced here. The vectorized path applies the
-            # same skip.
-            evidence.update(_v2_evidence_for_day(trend_direction_v2_features, dt))
-        # Local import keeps the v1 path free of v2 module load on cold
-        # callers (e.g., the frozen v1 replay shim) and avoids a circular
-        # import (trend_direction_v2 imports TrendDirectionV2RulesConfig
-        # from config; we only need its functions here).
-        from regime_detection.trend_direction_v2 import evaluate_v2_trend_label
-
-        v2_label = evaluate_v2_trend_label(
-            v1_label=label,
-            features=trend_direction_v2_features,
-            close=f.close,
-            dt=dt,
-            rules_config=trend_direction_v2_rules,
-        )
-        if v2_label is not None:
-            evidence["v2_override"] = {
-                "from": label,
-                "to": v2_label,
-                "rule": v2_label,
-            }
-            label = v2_label  # type: ignore[assignment]
-
-    return label, evidence
+    labels, evidence = build_raw_outputs(
+        day_features,
+        trend_direction_v2_features=trend_direction_v2_features,
+        trend_direction_v2_rules=trend_direction_v2_rules,
+    )
+    return labels[0], evidence[0]
 
 
 def _v2_evidence_for_day(

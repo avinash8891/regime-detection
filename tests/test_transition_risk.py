@@ -595,6 +595,54 @@ def test_v1_transition_risk_fallback_preserves_flag_only_stable_state() -> None:
     assert outputs[sessions[-1]].classification_status == "classified"
 
 
+def test_v1_transition_risk_requires_no_model_evidence() -> None:
+    # F-041 / ADR 0020: the V1-config path (transition_score=None) emits a
+    # strategy-consumable transition_risk.state WITHOUT any V2 model evidence.
+    # This is the deliberate inverse of
+    # test_transition_risk_series_requires_model_evidence_when_score_enabled:
+    # V1 must not raise on absent HMM / change-point / clustering, because V1
+    # §10 strategy response depends on transition_risk.state existing, while the
+    # forbidden V2 weighted score (score / score_components) stays absent.
+    sessions = [date(2024, 1, 2), date(2024, 1, 3)]
+    index = pd.DatetimeIndex([pd.Timestamp(day) for day in sessions])
+    config = load_default_regime_config().model_copy(update={"transition_score": None})
+    assert config.transition_score is None
+    context = MarketContext.model_construct(
+        end_date=sessions[-1],
+        config=config,
+        sessions=tuple(sessions),
+        spy_ohlcv=pd.DataFrame({"close": [100.0, 101.0]}, index=index),
+    )
+    # FeatureStore deliberately omits hmm / change_point / clustering.
+    feature_store = FeatureStore.model_construct(
+        spy_index=index,
+        sma_50=pd.Series([99.0, 100.0], index=index),
+    )
+    assert feature_store.hmm is None
+    assert feature_store.change_point is None
+    assert feature_store.clustering is None
+    axis_bundle = AxisSeriesBundle(
+        trend_direction=_axis_result(sessions, "bull"),
+        trend_character=_axis_result(sessions, "trending"),
+        volatility_state=_axis_result(sessions, "low_vol"),
+        breadth_state=_axis_result(sessions, "healthy_breadth"),
+        event_calendar=_event_calendar(sessions),
+    )
+
+    # Must NOT raise the "model evidence" RuntimeError that the V2 path raises.
+    outputs = build_transition_risk_series(
+        context=context,
+        feature_store=feature_store,
+        axis_bundle=axis_bundle,
+    )
+
+    final = outputs[sessions[-1]]
+    # State is emitted for strategy response; the V2 weighted score stays absent.
+    assert final.state is not None
+    assert final.score is None
+    assert final.score_components is None
+
+
 def test_transition_risk_output_sessions_debounce_uses_full_session_history() -> None:
     sessions = [date(2024, 1, 2), date(2024, 1, 3), date(2024, 1, 4)]
     index = pd.DatetimeIndex([pd.Timestamp(day) for day in sessions])

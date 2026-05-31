@@ -4662,6 +4662,16 @@ Add dates that exercise V2-specific behavior:
 
 These build on the V1 golden test set; do not replace it.
 
+> **Note (registration fixture).** `tests/fixtures/derived/golden_dates_v2.yaml`
+> registers these dates with two corrections: `2020-08-15` is a Saturday
+> (non-NYSE session), so the fixture uses the nearest prior trading session
+> `2020-08-14`; and `stock_picker_dispersion` is asserted under the
+> `network_fragility` field (it is a §3.4/§3.6 network-fragility label, not a
+> breadth label). The four pre-2019 dates (2010-05-06, 2011-08-08, 2015-08-24,
+> 2018-10-10) are registered but not yet live-classified — they await pre-2019
+> OHLCV+VIX fixture coverage (see
+> `docs/verification/v2_data_acquisition_backlog.md`).
+
 ---
 
 ## 10. V2 Coding Agent Prompt

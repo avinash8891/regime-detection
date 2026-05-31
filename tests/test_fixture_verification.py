@@ -25,7 +25,7 @@ _V2_SPEC_GOLDEN_DATES = {
     "2011-08-08",
     "2015-08-24",
     "2018-10-10",
-    "2020-08-15",
+    "2020-08-14",
     "2021-01-27",
     "2022-09-26",
     "2023-03-13",
@@ -37,7 +37,6 @@ _V2_LIVE_FIXTURE_UNSUPPORTED_GOLDEN_DATES = {
     "2011-08-08": "V2 daily OHLCV fixture must include real VIX rows",
     "2015-08-24": "V2 daily OHLCV fixture must include real VIX rows",
     "2018-10-10": "V2 daily OHLCV fixture must include real VIX rows",
-    "2020-08-15": "as_of_date must be an NYSE trading day",
 }
 
 
@@ -273,6 +272,21 @@ def test_v2_golden_dates_classify_expected_fields(
     assert missing == []
 
 
+# The 10 V1 spec §12.2 golden-date table source dates (docs/regime_engine_v1_final_spec.md).
+_SPEC_SECTION_12_2_DATES = (
+    "2017-06-01",
+    "2018-02-05",
+    "2018-12-24",
+    "2019-09-13",
+    "2020-03-16",
+    "2020-04-10",
+    "2021-11-15",
+    "2022-06-13",
+    "2022-10-12",
+    "2024-01-16",
+)
+
+
 def test_golden_date_replacement_set_has_documented_justification() -> None:
     repo_root = Path(__file__).resolve().parents[1]
     justification = (
@@ -285,6 +299,22 @@ def test_golden_date_replacement_set_has_documented_justification() -> None:
     assert "2020-04-10" in justification
     assert "Good Friday" in justification
     assert "no silent pre-2019 or data-quality skips" in justification
+
+    # F-008: the report must be a complete per-date mapping. Every §12.2 source
+    # date AND every committed replacement as_of_date must be documented, so the
+    # justification cannot silently drift out of sync with the active fixture.
+    for spec_date in _SPEC_SECTION_12_2_DATES:
+        assert spec_date in justification, f"§12.2 date {spec_date} missing from report"
+
+    golden = yaml.safe_load(
+        (repo_root / "tests" / "fixtures" / "derived" / "golden_dates.yaml").read_text()
+    )
+    committed_dates = [row["as_of_date"] for row in golden["rows"]]
+    assert len(committed_dates) == len(_SPEC_SECTION_12_2_DATES)
+    for committed in committed_dates:
+        assert (
+            committed in justification
+        ), f"committed golden as_of_date {committed} missing from replacement report"
 
 
 def test_classification_labels_are_independent_of_extra_history_length(

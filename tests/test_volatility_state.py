@@ -6,9 +6,12 @@ from pathlib import Path
 import pandas as pd
 import yaml
 
+from regime_detection.config import load_default_regime_config
 from regime_detection.volatility_state import (
     _RISK_RANK,
     VolatilityFeatures,
+    build_raw_outputs,
+    compute_features,
     raw_label_for_day,
 )
 
@@ -28,6 +31,56 @@ def test_volatility_state_matches_pinned_fixtures(classified_golden_outputs) -> 
 
 def test_v1_volatility_risk_rank_contract_keeps_crisis_vol_at_three() -> None:
     assert _RISK_RANK["crisis_vol"] == 3
+
+
+def test_raw_label_for_day_is_single_source_of_truth_over_build_raw_outputs() -> None:
+    # F-043: the per-day scalar path must be a thin wrapper over the vectorized
+    # builder so the §5.5 rule predicates have ONE encoding. Guard fails if the
+    # two paths ever diverge — covers v1-only mode and the v2 §1C override mode.
+    idx = pd.bdate_range("2022-06-01", periods=360)
+    close = pd.Series(
+        [300.0 + i * 0.4 - (i % 13) * 2.0 for i in range(360)], index=idx, name="close"
+    )
+    high = close * 1.01
+    low = close * 0.99
+    open_ = close.shift(1).fillna(close.iloc[0])
+    vix_proxy = pd.Series(
+        [18.0 + (i % 17) * 0.5 for i in range(360)], index=idx, name="vix"
+    )
+    features = compute_features(close=close, vix_proxy_close=vix_proxy)
+
+    cfg = load_default_regime_config()
+    assert cfg.volatility_state_v2 is not None
+    from regime_detection.volatility_state_v2 import compute_volatility_v2_features
+
+    v2_features = compute_volatility_v2_features(
+        open_=open_,
+        high=high,
+        low=low,
+        close=close,
+        config=cfg.volatility_state_v2,
+        rules_config=cfg.volatility_state_v2.rules,
+    )
+
+    def _norm(value: object) -> object:
+        if isinstance(value, float) and pd.isna(value):
+            return "__nan__"
+        if isinstance(value, dict):
+            return {k: _norm(v) for k, v in value.items()}
+        return value
+
+    for v2_kwargs in (
+        {},
+        {
+            "volatility_state_v2_features": v2_features,
+            "volatility_state_v2_rules": cfg.volatility_state_v2.rules,
+        },
+    ):
+        labels, evidence = build_raw_outputs(features, **v2_kwargs)
+        for i, dt in enumerate(idx):
+            day_label, day_evidence = raw_label_for_day(features, dt, **v2_kwargs)
+            assert day_label == labels[i], f"{dt}: {day_label} != {labels[i]}"
+            assert _norm(day_evidence) == _norm(evidence[i]), f"{dt}: evidence mismatch"
 
 
 def _volatility_features(
