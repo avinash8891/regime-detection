@@ -514,7 +514,12 @@ def v2_pit_constituent_intervals() -> pd.DataFrame:
     return pd.DataFrame(
         {
             "ticker": list(SECTOR_ETFS),
-            "start_date": [date(2019, 1, 2)] * len(SECTOR_ETFS),
+            "start_date": [
+                {"XLRE": date(2015, 10, 8), "XLC": date(2018, 6, 19)}.get(
+                    t, date(2009, 1, 2)
+                )
+                for t in SECTOR_ETFS
+            ],
             "end_date": [None] * len(SECTOR_ETFS),
         }
     )

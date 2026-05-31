@@ -32,12 +32,11 @@ _V2_SPEC_GOLDEN_DATES = {
     "2024-08-05",
 }
 
-_V2_LIVE_FIXTURE_UNSUPPORTED_GOLDEN_DATES = {
-    "2010-05-06": "V2 daily OHLCV fixture must include real VIX rows",
-    "2011-08-08": "V2 daily OHLCV fixture must include real VIX rows",
-    "2015-08-24": "V2 daily OHLCV fixture must include real VIX rows",
-    "2018-10-10": "V2 daily OHLCV fixture must include real VIX rows",
-}
+# All §9.4 golden dates now classify live: the V2 daily-OHLCV fixture was
+# extended back to 2009-01-02 with real Yahoo OHLCV (incl. real ^VIX) and the
+# placeholder PIT membership intervals start at each sector ETF inception, so
+# pre-2019 dates have active members. No dates remain fixture-blocked.
+_V2_LIVE_FIXTURE_UNSUPPORTED_GOLDEN_DATES: dict[str, str] = {}
 
 
 def test_conftest_market_data_requires_real_combined_market_parquet(

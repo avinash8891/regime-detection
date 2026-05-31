@@ -1,46 +1,36 @@
 # V2 Data-Acquisition Backlog
 
-Two remaining V2 gaps are **data-acquisition tasks, not engine/code gaps**. The
-engine classifies correctly; what is missing is real historical market data that
-cannot be fabricated (golden/regression fixtures require real data, and synthetic
-data is forbidden). They are tracked here with the exact inputs required and the
-guards that keep the repository honest until the data lands.
+Remaining V2 data items. The engine classifies correctly; these are about real
+historical market data (which cannot be fabricated — golden/regression fixtures
+require real data, and synthetic data is forbidden).
 
-## 1. Pre-2019 V2 fixture history (for the four pre-2019 §9.4 golden dates)
+## 1. Pre-2019 V2 fixture history — RESOLVED (2026-05)
 
-**Blocked:** 4 of the 9 §9.4 golden dates cannot be classified live because the
-V2 daily-OHLCV fixture (`tests/fixtures/raw/v2/daily_ohlcv.csv`) starts
-`2019-01-02`.
+**Status:** ✅ Done. All four pre-2019 §9.4 golden dates (Flash Crash 2010-05-06,
+US downgrade 2011-08-08, China devaluation 2015-08-24, Q4-2018 stress 2018-10-10)
+now classify live. The V2 daily-OHLCV fixture (`tests/fixtures/raw/v2/daily_ohlcv.csv`)
+was extended back to `2009-01-02` with real **Yahoo `/v8/finance/chart`** daily
+bars (fetched per-symbol in yearly chunks on a local residential host — Yahoo's
+API rate-limits datacenter IPs; Alpaca has no pre-2016 data), including the real
+`^VIX` index mapped to `VIX`. The placeholder PIT membership intervals in
+`tests/conftest.py::v2_pit_constituent_intervals` now start at each sector ETF's
+real inception (XLRE 2015-10-08, XLC 2018-06-19, others 2009-01-02) so pre-2019
+dates have active members for the PIT-breadth → clustering → transition-score
+chain. `_V2_LIVE_FIXTURE_UNSUPPORTED_GOLDEN_DATES` is now empty;
+`test_v2_golden_dates_classify_expected_fields` confirms all nine classify with
+their expected fields present. See `tests/fixtures/raw/v2/PROVENANCE.md`.
 
-| §9.4 date | Event | Tests |
-|---|---|---|
-| 2010-05-06 | Flash Crash | systemic_stress, correlation_to_one |
-| 2011-08-08 | US downgrade | credit_stress, funding_squeeze |
-| 2015-08-24 | China devaluation | rising_fragility, bull→correlation_to_one |
-| 2018-10-10 | Q4-2018 stress | bull→narrowing_breadth→bear_stress |
-
-**Data required** (real, point-in-time, back to ~2009 so each date has its
-required lookback — e.g. 252-session percentiles, 250-session Hurst):
-- Daily OHLCV + volume for SPY, RSP, QQQ, the 11 GICS sector ETFs (XLB, XLC,
-  XLE, XLF, XLI, XLK, XLP, XLRE, XLU, XLV, XLY), and the VIX (real index rows —
-  the current fixture's VIX-proxy gap is the explicit unsupported reason).
-- Cross-asset closes used by credit/funding + inflation/growth: HYG, LQD, TLT,
-  KRE, DBC.
-- FRED macro series back to ~2009: SOFR (or pre-2018 proxy), IORB, NFCI, broad
-  USD index, CPIAUCSL, PMI manufacturing, 2y/10y yields.
-- PIT SPX constituent intervals + constituent OHLCV covering the window (see §2).
-
-**Source of truth:** the same Alpaca/local archived parquet pipeline named in ADR
-0020 (F-049). XLC and XLRE did not exist before 2015/2018 respectively — the
-sector-breadth "available denominator" proxy already handles missing sectors, so
-pre-listing sectors are expected to be absent, not fabricated.
-
-**Honest guard (in place):** `tests/test_fixture_verification.py`
-`_V2_LIVE_FIXTURE_UNSUPPORTED_GOLDEN_DATES` lists these four dates with the
-reason "V2 daily OHLCV fixture must include real VIX rows", and
-`test_v2_golden_dates_classify_expected_fields` asserts the supported/unsupported
-split exactly — so the gap is explicit and cannot be silently skipped. When the
-data lands, move each date out of that dict and it will be classified live.
+**Open follow-up — FRED macro not yet extended.** The committed FRED fixture
+(`fred_macro_series.csv`) still starts 2016 and carries `hy_oas`, `ig_bbb_oas`,
+`iorb`, `broad_usd_index`, `nfci`, `sofr`. The locally-fetched
+`.context/v2_fred_macro_2009_2018.csv` uses a *different* series set
+(`fedfunds`, `ioer_legacy`, `2y_yield`, `10y_yield`, `cpi_all_items`,
+`implied_vol_30d`, plus `broad_usd_index`/`nfci`/`sofr`) and does **not** include
+`hy_oas`/`ig_bbb_oas`, so it cannot be appended without reconciling the logical
+names the conftest macro loader expects. Pre-2016 credit/funding/monetary axes
+therefore emit `unknown` for the pre-2016 golden dates (the §9.4 test is
+presence-based, so they still pass). `SOFR` (2018-04+) and `IORB` (2021+) are
+genuinely younger than these dates regardless of fetch.
 
 ## 2. True point-in-time SPX constituent feed
 

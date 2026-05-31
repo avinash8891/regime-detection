@@ -4667,10 +4667,11 @@ These build on the V1 golden test set; do not replace it.
 > (non-NYSE session), so the fixture uses the nearest prior trading session
 > `2020-08-14`; and `stock_picker_dispersion` is asserted under the
 > `network_fragility` field (it is a §3.4/§3.6 network-fragility label, not a
-> breadth label). The four pre-2019 dates (2010-05-06, 2011-08-08, 2015-08-24,
-> 2018-10-10) are registered but not yet live-classified — they await pre-2019
-> OHLCV+VIX fixture coverage (see
-> `docs/verification/v2_data_acquisition_backlog.md`).
+> breadth label). All nine dates — including the four pre-2019 dates
+> (2010-05-06, 2011-08-08, 2015-08-24, 2018-10-10) — now classify live: the V2
+> daily-OHLCV fixture was extended back to 2009-01-02 with real Yahoo OHLCV
+> (incl. real `^VIX`) and the placeholder PIT membership intervals start at
+> each sector ETF's real inception (see `tests/fixtures/raw/v2/PROVENANCE.md`).
 
 ---
 
