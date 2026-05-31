@@ -171,3 +171,31 @@ def test_build_walkforward_report_passes_with_golden_and_baseline_inputs(
     )
     assert payload["golden_results"]["all_passed"] is True
     assert payload["baseline_comparison"]["all_metrics_materially_worse"] is False
+
+
+def test_build_walkforward_report_fails_on_nan_leakage(tmp_path: Path) -> None:
+    report_mod = _load_module(
+        "build_walkforward_report", "scripts/build_walkforward_report.py"
+    )
+    out_root = _prepare_walkforward_root(tmp_path)
+    summary_path = out_root / "reports" / "walkforward_summary.csv"
+    summary_path.write_text(
+        "\n".join(
+            [
+                "as_of_date,status,trend_direction_active,trend_character_active,volatility_state_active,breadth_state_active,transition_risk_state,transition_risk_score",
+                "2023-12-12,success,uptrend,trend,low_volatility,healthy,normal,0.10",
+                "2023-12-13,success,uptrend,trend,low_volatility,healthy,normal,NaN",
+                "2023-12-14,success,uptrend,trend,low_volatility,healthy,elevated,0.40",
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    result = report_mod.build_walkforward_report(output_root=out_root)
+
+    assert result["status"] == "fail"
+    assert "nan_leakage_detected" in result["failure_reasons"]
+    assert result["nan_leakage"] == [
+        "summary.transition_risk_score@2023-12-13",
+    ]

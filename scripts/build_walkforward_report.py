@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import sqlite3
 from datetime import date
 from pathlib import Path
@@ -163,6 +164,49 @@ def _unknown_stretch(series: pd.Series) -> int:
     return max_len
 
 
+def _json_nan_paths(value: Any, prefix: str) -> list[str]:
+    if isinstance(value, float) and math.isnan(value):
+        return [prefix]
+    if isinstance(value, dict):
+        out: list[str] = []
+        for key, child in value.items():
+            child_prefix = f"{prefix}.{key}" if prefix else str(key)
+            out.extend(_json_nan_paths(child, child_prefix))
+        return out
+    if isinstance(value, list):
+        out = []
+        for idx, child in enumerate(value):
+            out.extend(_json_nan_paths(child, f"{prefix}[{idx}]"))
+        return out
+    return []
+
+
+def _nan_leakage(
+    summary_df: pd.DataFrame, runs_df: pd.DataFrame, output_root: Path
+) -> list[str]:
+    leaks: list[str] = []
+    for col in summary_df.columns:
+        if col == "as_of_date" or not pd.api.types.is_numeric_dtype(summary_df[col]):
+            continue
+        for _, row in summary_df.loc[summary_df[col].isna()].iterrows():
+            leaks.append(f"summary.{col}@{row['as_of_date'].isoformat()}")
+
+    for _, row in runs_df.iterrows():
+        output_path = row.get("output_path")
+        if pd.isna(output_path) or output_path is None:
+            continue
+        path = Path(str(output_path))
+        if not path.is_absolute():
+            path = output_root / path
+        if not path.exists():
+            continue
+        payload = json.loads(path.read_text(encoding="utf-8"))
+        as_of = row["as_of_date"].isoformat()
+        for leak in _json_nan_paths(payload, ""):
+            leaks.append(f"output.{leak}@{as_of}")
+    return sorted(leaks)
+
+
 def _series_summaries(
     success_df: pd.DataFrame, hysteresis_days: dict[str, int]
 ) -> dict[str, dict[str, Any]]:
@@ -233,6 +277,7 @@ def _failure_reasons(
     *,
     summary_df: pd.DataFrame,
     missing_sessions: list[str],
+    nan_leakage: list[str],
     golden_results: dict[str, Any] | None,
     baseline_comparison: dict[str, Any] | None,
 ) -> list[str]:
@@ -241,6 +286,8 @@ def _failure_reasons(
         reasons.append("run_failures_present")
     if missing_sessions:
         reasons.append("missing_sessions")
+    if nan_leakage:
+        reasons.append("nan_leakage_detected")
     if golden_results is None:
         reasons.append("missing_golden_results")
     elif not bool(golden_results.get("all_passed")):
@@ -329,6 +376,7 @@ def build_walkforward_report(
     runs_df = _load_runs_from_db(output_root)
     success_df = summary_df[summary_df["status"] == "success"].copy()
     missing_sessions = _missing_sessions(summary_df)
+    nan_leakage = _nan_leakage(summary_df, runs_df, output_root)
     hysteresis_days = _load_hysteresis_days()
 
     golden_results = _load_optional_json(golden_results_path)
@@ -338,6 +386,7 @@ def build_walkforward_report(
     failure_reasons = _failure_reasons(
         summary_df=summary_df,
         missing_sessions=missing_sessions,
+        nan_leakage=nan_leakage,
         golden_results=golden_results,
         baseline_comparison=baseline_comparison,
     )
@@ -348,6 +397,7 @@ def build_walkforward_report(
         "success_count": int(summary_df["status"].eq("success").sum()),
         "failure_count": int(summary_df["status"].eq("failure").sum()),
         "missing_sessions": missing_sessions,
+        "nan_leakage": nan_leakage,
         "failure_reasons": failure_reasons,
         "engine_version": (
             str(runs_df["engine_version"].dropna().iloc[0])
