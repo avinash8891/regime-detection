@@ -86,7 +86,7 @@ def main() -> int:
         check_date=args.check_date,
     )
     print(json.dumps(result, indent=2, sort_keys=True))
-    return 0
+    return 1 if result["status"] == "alert" else 0
 
 
 if __name__ == "__main__":

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import importlib.util
 import sqlite3
+import sys
 from datetime import date
 from pathlib import Path
 from contextlib import closing
@@ -97,6 +98,26 @@ def test_deadman_check_alerts_and_records_incident_when_previous_session_missing
             1,
         )
     ]
+
+
+def test_deadman_main_returns_nonzero_on_alert(tmp_path: Path, monkeypatch) -> None:
+    monitor = _load_module(
+        "run_shadow_deadman_check", "scripts/run_shadow_deadman_check.py"
+    )
+    out_root = tmp_path / "shadow_run"
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "run_shadow_deadman_check.py",
+            "--output-root",
+            str(out_root),
+            "--check-date",
+            "2023-12-15",
+        ],
+    )
+
+    assert monitor.main() == 1
 
 
 def test_deadman_check_uses_previous_friday_for_weekend_check(
