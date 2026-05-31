@@ -1,0 +1,30 @@
+tests/test_transition_score_v2_weights_outputs.py
+  s_57f9992e063d4e::t_2aa0fe9544c298 55,84
+tests/test_transition_score_v2.py
+  s_57f9992e063d4e::t_1262afbd554117 91
+  s_57f9992e063d4e::t_2aa0fe9544c298 247,251-252
+src/regime_detection/transition_score.py
+  s_57f9992e063d4e::t_cb65be64d45fec 248-259
+src/regime_detection/transition_risk_series.py
+  s_57f9992e063d4e::t_cb65be64d45fec 153-158
+tests/test_transition_risk.py
+  s_57f9992e063d4e::t_a824c6f28202ad 643-645,648-650,653-655
+  s_57f9992e063d4e::t_2aa0fe9544c298 397,401-455,458-463
+  s_57f9992e063d4e::t_1262afbd554117 601-610,642,646-647,651-652,656
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "13d4d7649ec9718215d057ddcc713a134a0ee48a",
+  "prompts": {},
+  "sessions": {
+    "s_57f9992e063d4e": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019e7bf3-5fe0-7b43-933e-c145c5a78377",
+        "model": "gpt-5.5"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}
