@@ -20,17 +20,24 @@ chain. `_V2_LIVE_FIXTURE_UNSUPPORTED_GOLDEN_DATES` is now empty;
 `test_v2_golden_dates_classify_expected_fields` confirms all nine classify with
 their expected fields present. See `tests/fixtures/raw/v2/PROVENANCE.md`.
 
-**Open follow-up — FRED macro not yet extended.** The committed FRED fixture
-(`fred_macro_series.csv`) still starts 2016 and carries `hy_oas`, `ig_bbb_oas`,
-`iorb`, `broad_usd_index`, `nfci`, `sofr`. The locally-fetched
-`.context/v2_fred_macro_2009_2018.csv` uses a *different* series set
-(`fedfunds`, `ioer_legacy`, `2y_yield`, `10y_yield`, `cpi_all_items`,
-`implied_vol_30d`, plus `broad_usd_index`/`nfci`/`sofr`) and does **not** include
-`hy_oas`/`ig_bbb_oas`, so it cannot be appended without reconciling the logical
-names the conftest macro loader expects. Pre-2016 credit/funding/monetary axes
-therefore emit `unknown` for the pre-2016 golden dates (the §9.4 test is
-presence-based, so they still pass). `SOFR` (2018-04+) and `IORB` (2021+) are
-genuinely younger than these dates regardless of fetch.
+**FRED macro — partially extended; the rest is API-limited, not deferrable.**
+`broad_usd_index` (DTWEXBGS) and `nfci` (NFCI) were fetched from the FRED API and
+now span 2009-01-02..2026 in `fred_macro_series.csv`. The remaining fixture
+series have genuine availability floors the FRED **API** cannot backfill:
+- `sofr` (SOFR) starts 2018-04; `iorb` (IORB) starts 2021-07 — these post-date the
+  pre-2019 golden dates regardless of any fetch.
+- `hy_oas`/`ig_bbb_oas` (ICE BofA OAS, `BAMLH0A0HYM2`/`BAMLC0A4CBBB`) are capped by
+  FRED's **API** to a ~3-year rolling window under ICE license redistribution
+  (`/fred/series` reports observation_start 2023-05-30). The full 1996+ history
+  exists only on the FRED **website CSV**, which is unreachable from the build
+  environment. Production fetches via the same API, so the fixture's OAS coverage
+  already matches production — this is not a fixture-specific gap.
+
+Consequently the pre-2016 credit OAS metrics are unavailable, so `credit_funding`
+emits `unknown` for the pre-2016 golden dates. The §9.4 test is presence-based and
+passes; the four pre-2019 dates classify live. Fully real pre-2016 credit_stress
+would require the OAS website CSV (or another licensed source) — out of scope of
+the FRED API.
 
 ## 2. True point-in-time SPX constituent feed
 
