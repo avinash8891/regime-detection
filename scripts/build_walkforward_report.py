@@ -235,6 +235,44 @@ def _load_optional_json(path: Path | None) -> dict[str, Any] | None:
     return json.loads(path.read_text())
 
 
+def _expected_golden_dates() -> list[str]:
+    golden_path = REPO_ROOT / "tests" / "fixtures" / "derived" / "golden_dates.yaml"
+    data = yaml.safe_load(golden_path.read_text())
+    return sorted(str(row["as_of_date"]) for row in data["rows"])
+
+
+def _golden_gate_reasons(
+    golden_results: dict[str, Any] | None, runs_df: pd.DataFrame
+) -> list[str]:
+    if golden_results is None:
+        return ["missing_golden_results"]
+
+    reasons: list[str] = []
+    if not bool(golden_results.get("all_passed")):
+        reasons.append("golden_results_failed")
+
+    result_dates = sorted(
+        str(row.get("as_of_date")) for row in golden_results.get("results", [])
+    )
+    if result_dates != _expected_golden_dates():
+        reasons.append("golden_results_dates_mismatch")
+
+    engine_versions = sorted(
+        str(v) for v in runs_df["engine_version"].dropna().unique()
+    )
+    config_versions = sorted(
+        str(v) for v in runs_df["config_version"].dropna().unique()
+    )
+    expected_engine = engine_versions[0] if len(engine_versions) == 1 else None
+    expected_config = config_versions[0] if len(config_versions) == 1 else None
+    if (
+        golden_results.get("engine_version") != expected_engine
+        or golden_results.get("config_version") != expected_config
+    ):
+        reasons.append("golden_results_version_mismatch")
+    return reasons
+
+
 def _baseline_comparison(payload: dict[str, Any] | None) -> dict[str, Any] | None:
     if payload is None:
         return None
@@ -278,7 +316,7 @@ def _failure_reasons(
     summary_df: pd.DataFrame,
     missing_sessions: list[str],
     nan_leakage: list[str],
-    golden_results: dict[str, Any] | None,
+    golden_gate_reasons: list[str],
     baseline_comparison: dict[str, Any] | None,
 ) -> list[str]:
     reasons: list[str] = []
@@ -288,10 +326,7 @@ def _failure_reasons(
         reasons.append("missing_sessions")
     if nan_leakage:
         reasons.append("nan_leakage_detected")
-    if golden_results is None:
-        reasons.append("missing_golden_results")
-    elif not bool(golden_results.get("all_passed")):
-        reasons.append("golden_results_failed")
+    reasons.extend(golden_gate_reasons)
     if baseline_comparison is None:
         reasons.append("missing_baseline_metrics")
     elif baseline_comparison["all_metrics_materially_worse"]:
@@ -380,6 +415,7 @@ def build_walkforward_report(
     hysteresis_days = _load_hysteresis_days()
 
     golden_results = _load_optional_json(golden_results_path)
+    golden_gate_reasons = _golden_gate_reasons(golden_results, runs_df)
     baseline_comparison = _baseline_comparison(
         _load_optional_json(baseline_metrics_path)
     )
@@ -387,7 +423,7 @@ def build_walkforward_report(
         summary_df=summary_df,
         missing_sessions=missing_sessions,
         nan_leakage=nan_leakage,
-        golden_results=golden_results,
+        golden_gate_reasons=golden_gate_reasons,
         baseline_comparison=baseline_comparison,
     )
 

@@ -5,6 +5,8 @@ import json
 import sqlite3
 from pathlib import Path
 
+import yaml
+
 
 def _load_module(name: str, rel_path: str):
     repo_root = Path(__file__).resolve().parents[1]
@@ -85,6 +87,22 @@ def _prepare_walkforward_root(tmp_path: Path) -> Path:
     return out_root
 
 
+def _golden_results_payload(*, all_passed: bool = True) -> dict[str, object]:
+    repo_root = Path(__file__).resolve().parents[1]
+    golden = yaml.safe_load(
+        (repo_root / "tests" / "fixtures" / "derived" / "golden_dates.yaml").read_text()
+    )
+    return {
+        "all_passed": all_passed,
+        "engine_version": "regime-engine-vtest",
+        "config_version": "core3-test",
+        "results": [
+            {"as_of_date": row["as_of_date"], "passed": all_passed}
+            for row in golden["rows"]
+        ],
+    }
+
+
 def test_build_walkforward_report_fails_without_required_gates(
     tmp_path: Path,
 ) -> None:
@@ -122,16 +140,7 @@ def test_build_walkforward_report_passes_with_golden_and_baseline_inputs(
 
     golden_path = tmp_path / "golden_results.json"
     golden_path.write_text(
-        json.dumps(
-            {
-                "all_passed": True,
-                "results": [
-                    {"as_of_date": "2023-12-14", "passed": True},
-                ],
-            },
-            indent=2,
-        )
-        + "\n",
+        json.dumps(_golden_results_payload(), indent=2) + "\n",
         encoding="utf-8",
     )
 
@@ -171,6 +180,58 @@ def test_build_walkforward_report_passes_with_golden_and_baseline_inputs(
     )
     assert payload["golden_results"]["all_passed"] is True
     assert payload["baseline_comparison"]["all_metrics_materially_worse"] is False
+
+
+def test_build_walkforward_report_rejects_incomplete_golden_results(
+    tmp_path: Path,
+) -> None:
+    report_mod = _load_module(
+        "build_walkforward_report", "scripts/build_walkforward_report.py"
+    )
+    out_root = _prepare_walkforward_root(tmp_path)
+    golden_path = tmp_path / "golden_results.json"
+    golden_path.write_text(
+        json.dumps(
+            {
+                "all_passed": True,
+                "engine_version": "regime-engine-vtest",
+                "config_version": "core3-test",
+                "results": [{"as_of_date": "2023-12-14", "passed": True}],
+            },
+            indent=2,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    result = report_mod.build_walkforward_report(
+        output_root=out_root,
+        golden_results_path=golden_path,
+    )
+
+    assert result["status"] == "fail"
+    assert "golden_results_dates_mismatch" in result["failure_reasons"]
+
+
+def test_build_walkforward_report_rejects_golden_version_mismatch(
+    tmp_path: Path,
+) -> None:
+    report_mod = _load_module(
+        "build_walkforward_report", "scripts/build_walkforward_report.py"
+    )
+    out_root = _prepare_walkforward_root(tmp_path)
+    payload = _golden_results_payload()
+    payload["engine_version"] = "different-engine"
+    golden_path = tmp_path / "golden_results.json"
+    golden_path.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
+
+    result = report_mod.build_walkforward_report(
+        output_root=out_root,
+        golden_results_path=golden_path,
+    )
+
+    assert result["status"] == "fail"
+    assert "golden_results_version_mismatch" in result["failure_reasons"]
 
 
 def test_build_walkforward_report_fails_on_nan_leakage(tmp_path: Path) -> None:
