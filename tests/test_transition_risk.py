@@ -394,27 +394,73 @@ def test_transition_score_inputs_event_calendar_labels_are_closed_type() -> None
         )
 
 
-def test_transition_score_missing_optional_model_evidence_degrades_component() -> None:
+def test_transition_score_missing_model_evidence_raises() -> None:
     cfg = load_default_regime_config().transition_score
     assert cfg is not None
 
-    score = compose_transition_score_for_session(
-        realized_vol_short=12.0,
-        realized_vol_long=10.0,
-        pct_above_50dma=0.45,
-        avg_pairwise_corr_percentile_504d=0.60,
-        drawdown_252d=-0.10,
-        event_calendar_labels=("normal_calendar",),
-        credit_funding_label="credit_calm",
-        volume_liquidity_label="normal_volume",
-        config=cfg,
+    with pytest.raises(ValueError, match="model_instability requires"):
+        compose_transition_score_for_session(
+            realized_vol_short=12.0,
+            realized_vol_long=10.0,
+            pct_above_50dma=0.45,
+            avg_pairwise_corr_percentile_504d=0.60,
+            drawdown_252d=-0.10,
+            event_calendar_labels=("normal_calendar",),
+            credit_funding_label="credit_calm",
+            volume_liquidity_label="normal_volume",
+            config=cfg,
+        )
+
+
+def test_transition_risk_series_requires_model_evidence_when_score_enabled() -> None:
+    session = date(2024, 1, 2)
+    index = pd.DatetimeIndex([pd.Timestamp(session)])
+    context = MarketContext.model_construct(
+        end_date=session,
+        config=load_default_regime_config(),
+        sessions=(session,),
+        spy_ohlcv=pd.DataFrame({"close": [100.0]}, index=index),
+    )
+    feature_store = FeatureStore.model_construct(
+        spy_index=index,
+        sma_50=pd.Series([100.0], index=index),
+        volatility_state_v2=SimpleNamespace(
+            realized_vol_short=pd.Series([10.0], index=index),
+            realized_vol_long=pd.Series([10.0], index=index),
+            gap_frequency_percentile_252d=pd.Series([0.0], index=index),
+            intraday_range_percentile_252d=pd.Series([0.0], index=index),
+        ),
+        breadth_state_v2=SimpleNamespace(
+            pct_above_50dma=pd.Series([0.5], index=index),
+        ),
+        network_fragility=SimpleNamespace(
+            avg_pairwise_corr_percentile_504d=pd.Series([0.0], index=index),
+            largest_eigenvalue_share_percentile_504d=pd.Series([0.0], index=index),
+            effective_rank_percentile_504d=pd.Series([1.0], index=index),
+            absorption_ratio_top3=pd.Series([0.5], index=index),
+        ),
+        trend_direction_v2=SimpleNamespace(
+            drawdown_252d=pd.Series([0.0], index=index),
+        ),
+        volume_liquidity_v2=None,
+        hmm=None,
+        change_point=None,
+        clustering=None,
+    )
+    axis_bundle = AxisSeriesBundle(
+        trend_direction=_axis_result([session], "bull"),
+        trend_character=_axis_result([session], "trending"),
+        volatility_state=_axis_result([session], "low_vol"),
+        breadth_state=_axis_result([session], "healthy_breadth"),
+        event_calendar=_event_calendar([session]),
     )
 
-    assert score.score is not None
-    assert score.components is not None
-    assert "model_instability" not in score.components
-    assert score.missing_components == ("model_instability",)
-    assert score.component_weight_coverage == pytest.approx(0.92)
+    with pytest.raises(RuntimeError, match="model evidence"):
+        build_transition_risk_series(
+            context=context,
+            feature_store=feature_store,
+            axis_bundle=axis_bundle,
+        )
 
 
 def test_transition_risk_state_debounces_soft_state_changes() -> None:
@@ -552,6 +598,16 @@ def test_v1_transition_risk_fallback_preserves_flag_only_stable_state() -> None:
 def test_transition_risk_output_sessions_debounce_uses_full_session_history() -> None:
     sessions = [date(2024, 1, 2), date(2024, 1, 3), date(2024, 1, 4)]
     index = pd.DatetimeIndex([pd.Timestamp(day) for day in sessions])
+    model_evidence_index = pd.DatetimeIndex(
+        [
+            pd.Timestamp(date(2023, 12, 22)),
+            pd.Timestamp(date(2023, 12, 26)),
+            pd.Timestamp(date(2023, 12, 27)),
+            pd.Timestamp(date(2023, 12, 28)),
+            pd.Timestamp(date(2023, 12, 29)),
+            *index,
+        ]
+    )
     config = load_default_regime_config()
     context = MarketContext.model_construct(
         end_date=sessions[-1],
@@ -583,9 +639,21 @@ def test_transition_risk_output_sessions_debounce_uses_full_session_history() ->
             drawdown_252d=pd.Series([0.0, -0.15, -0.15], index=index),
         ),
         volume_liquidity_v2=None,
-        hmm=None,
-        change_point=None,
-        clustering=None,
+        hmm=SimpleNamespace(
+            top_state_prob=pd.Series(
+                [0.5] * len(model_evidence_index), index=model_evidence_index
+            ),
+        ),
+        change_point=SimpleNamespace(
+            score=pd.Series(
+                [0.0] * len(model_evidence_index), index=model_evidence_index
+            ),
+        ),
+        clustering=SimpleNamespace(
+            cluster_id=pd.Series(
+                [1] * len(model_evidence_index), index=model_evidence_index
+            ),
+        ),
     )
     classified_credit_stress = SimpleNamespace(
         active_label="credit_stress",
