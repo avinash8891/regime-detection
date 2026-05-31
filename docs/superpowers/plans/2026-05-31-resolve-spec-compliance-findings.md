@@ -95,11 +95,11 @@
 - Modify: `tests/test_source_hygiene.py`
 - Optionally modify: `.github/workflows/ci.yml` if the new pytest is not covered by existing test selection.
 
-- [ ] Step 1: Add a failing path-scoped test that rejects forbidden V2 scaffolding tokens in V1-only files.
-- [ ] Step 2: Run the focused source hygiene test and confirm failure.
-- [ ] Step 3: Implement an allowlist for documented compatibility comments and remove or reword true violations.
-- [ ] Step 4: Run source hygiene tests.
-- [ ] Step 5: Commit `test: guard v1 paths against v2 scaffolding`.
+- [x] Step 1: Add a failing path-scoped test that rejects forbidden V2 scaffolding tokens in V1-only files.
+- [x] Step 2: Run the focused source hygiene test and confirm failure.
+- [x] Step 3: Implement an allowlist for documented compatibility comments and remove or reword true violations.
+- [x] Step 4: Run source hygiene tests.
+- [x] Step 5: Commit `test: guard v1 paths against v2 scaffolding`.
 
 ## Task 7: Schema and Spec Drift (`F-022`, `F-024`, `F-031`, `F-037`)
 
