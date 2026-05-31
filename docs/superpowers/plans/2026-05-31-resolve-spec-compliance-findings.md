@@ -65,12 +65,12 @@
 - Test: `tests/test_shadow_deadman_check.py`
 - Test: create `tests/test_shadow_qualification.py`
 
-- [ ] Step 1: Add failing tests for missing sessions inside a qualification window, qualification-breaking incidents restarting the counter, and exactly 252 consecutive successful NYSE sessions qualifying.
-- [ ] Step 2: Run the new/focused shadow tests and confirm failure.
-- [ ] Step 3: Implement a ledger scanner over NYSE sessions that counts consecutive successful, incident-free runs for one frozen engine/config pair.
-- [ ] Step 4: Call the scanner from deadman/qualification tooling without changing existing single-day alert semantics.
-- [ ] Step 5: Run focused shadow tests.
-- [ ] Step 6: Commit `fix(shadow): qualify contiguous 252 session window`.
+- [x] Step 1: Add failing tests for missing sessions inside a qualification window, qualification-breaking incidents restarting the counter, and exactly 252 consecutive successful NYSE sessions qualifying.
+- [x] Step 2: Run the new/focused shadow tests and confirm failure.
+- [x] Step 3: Implement a ledger scanner over NYSE sessions that counts consecutive successful, incident-free runs for one frozen engine/config pair.
+- [x] Step 4: Call the scanner from deadman/qualification tooling without changing existing single-day alert semantics.
+- [x] Step 5: Run focused shadow tests.
+- [x] Step 6: Commit `fix(shadow): qualify contiguous 252 session window`.
 
 ## Task 5: Golden-Date Integrity (`F-008`, `F-009`, `F-010`, `F-012`, `F-013`, `F-058`)
 

@@ -3,9 +3,11 @@ from __future__ import annotations
 import importlib.util
 import sqlite3
 import sys
-from datetime import date
+from datetime import date, timedelta
 from pathlib import Path
 from contextlib import closing
+
+from regime_detection.calendar import nyse_calendar
 
 
 def _load_module(name: str, rel_path: str):
@@ -136,3 +138,29 @@ def test_deadman_check_uses_previous_friday_for_weekend_check(
 
     assert result["status"] == "ok"
     assert result["expected_as_of_date"] == "2023-12-15"
+
+
+def test_deadman_check_reports_shadow_qualification_counter(
+    tmp_path: Path,
+) -> None:
+    monitor = _load_module(
+        "run_shadow_deadman_check", "scripts/run_shadow_deadman_check.py"
+    )
+    out_root = tmp_path / "shadow_run"
+    schedule = nyse_calendar().schedule(
+        start_date=date(2023, 1, 3),
+        end_date=date(2024, 3, 31),
+    )
+    sessions = list(schedule.index.date)[:252]
+    assert len(sessions) == 252
+    for session in sessions:
+        _record_shadow_run(out_root, session)
+
+    result = monitor.run_deadman_check(
+        output_root=out_root,
+        check_date=sessions[-1] + timedelta(days=1),
+    )
+
+    assert result["status"] == "ok"
+    assert result["qualification"]["qualifies"] is True
+    assert result["qualification"]["current_consecutive_sessions"] == 252
