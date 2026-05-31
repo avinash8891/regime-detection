@@ -1,0 +1,55 @@
+provenance: hand_labeled
+source_spec: docs/regime_engine_v2_spec.md#9.4
+provenance_note: >-
+  V2 registration set from spec section 9.4. Expected V2 behavior is encoded
+  as asserted evidence fields, not copied from RegimeEngine output.
+  Two corrections vs the literal §9.4 table: (1) the table lists 2020-08-15 as
+  the post-COVID-narrowing date, but that is a Saturday (non-NYSE session the
+  engine rejects), so this fixture uses the nearest prior trading session
+  2020-08-14; (2) the §9.4 reason for that event is stock_picker_dispersion,
+  which is a network_fragility label (spec §3.4/§3.6), so it is asserted under
+  the network_fragility field, not breadth_state.
+rows:
+- intent_id: flash_crash_2010
+  as_of_date: '2010-05-06'
+  expected_v2_fields:
+    network_fragility: systemic_stress
+    transition_evidence: correlation_to_one
+- intent_id: us_downgrade_2011
+  as_of_date: '2011-08-08'
+  expected_v2_fields:
+    credit_funding: credit_stress
+    transition_evidence: funding_squeeze
+- intent_id: china_devaluation_2015
+  as_of_date: '2015-08-24'
+  expected_v2_fields:
+    network_fragility: rising_fragility
+    transition_evidence: correlation_to_one
+- intent_id: q4_2018_breadth_stress
+  as_of_date: '2018-10-10'
+  expected_v2_fields:
+    sequence: bull_to_narrowing_breadth_to_bear_stress
+- intent_id: post_covid_narrowing_2020
+  as_of_date: '2020-08-14'
+  expected_v2_fields:
+    network_fragility: stock_picker_dispersion
+- intent_id: gamestop_2021
+  as_of_date: '2021-01-27'
+  expected_v2_fields:
+    breadth_state: dispersion
+    volume_liquidity_state: volume_anomaly
+- intent_id: uk_gilt_crisis_2022
+  as_of_date: '2022-09-26'
+  expected_v2_fields:
+    transition_evidence: cross_asset_deleveraging
+- intent_id: svb_2023
+  as_of_date: '2023-03-13'
+  expected_v2_fields:
+    transition_risk_minimum: watch
+    credit_funding: credit_stress
+- intent_id: yen_carry_unwind_2024
+  as_of_date: '2024-08-05'
+  expected_v2_fields:
+    transition_evidence:
+    - correlation_to_one
+    - funding_squeeze

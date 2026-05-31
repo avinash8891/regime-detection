@@ -259,6 +259,8 @@ def test_build_feature_store_populates_breadth_state_v2(
         config=cfg,
         sector_etf_closes=sector_closes,
     )
+    # PIT inputs absent → V1 ETF-proxy fallback is allowed (spec §1D line 329),
+    # so no survivorship-bias gate fires; sector breadth still populates.
     store = build_feature_store(context, breadth_state_v2_config=v2_breadth_config)
     assert store.breadth_state_v2 is not None
     assert isinstance(store.breadth_state_v2, BreadthV2Features)

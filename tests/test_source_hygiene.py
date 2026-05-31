@@ -12,6 +12,30 @@ FORBIDDEN_SOURCE_PATTERNS = re.compile(
     r"documented implementation[^\n]*#|implementation phase\.[0-9]|"
     r"source-data audit[^\n]*M[0-9]|Log #[0-9]"
 )
+V1_CONTRACT_GUARD_PATHS = (
+    Path("src/regime_detection/trend_direction.py"),
+    Path("src/regime_detection/trend_character.py"),
+    Path("src/regime_detection/volatility_state.py"),
+    Path("src/regime_detection/breadth_state.py"),
+    Path("src/regime_detection/event_calendar.py"),
+    Path("src/regime_detection/strategy_response.py"),
+    Path("src/regime_detection/legacy_v1_wire.py"),
+)
+FORBIDDEN_V1_CONTRACT_SCAFFOLDING_PATTERNS = re.compile(
+    r"\b("
+    r"GaussianHMM|hmm|GMM|gmm|ORCA|SRR|"
+    r"hurst(?:_\w+)?|efficiency_ratio(?:_\w+)?|"
+    r"eigenvalue|weighted_transition_score|"
+    r"crash_condition"
+    r")\b",
+    re.IGNORECASE,
+)
+V1_CONTRACT_EXTENSION_ALLOWLIST: dict[Path, tuple[str, ...]] = {
+    Path("src/regime_detection/trend_direction.py"): (
+        '"efficiency_ratio_20d": _ev_float(features.efficiency_ratio_20d.loc[dt]),',
+        '"hurst_250d": _ev_float(features.hurst_250d.loc[dt]),',
+    ),
+}
 
 
 def test_source_comments_do_not_embed_task_or_audit_references() -> None:
@@ -23,6 +47,21 @@ def test_source_comments_do_not_embed_task_or_audit_references() -> None:
             for line_number, line in enumerate(path.read_text().splitlines(), start=1):
                 if FORBIDDEN_SOURCE_PATTERNS.search(line):
                     offenders.append(f"{path}:{line_number}: {line.strip()}")
+
+    assert offenders == []
+
+
+def test_v1_contract_paths_do_not_scaffold_unowned_v2_features() -> None:
+    """V2 extends shared modules; V1 contract paths still reject stray V2-only hooks."""
+
+    offenders: list[str] = []
+    for path in V1_CONTRACT_GUARD_PATHS:
+        allowed_snippets = V1_CONTRACT_EXTENSION_ALLOWLIST.get(path, ())
+        for line_number, line in enumerate(path.read_text().splitlines(), start=1):
+            if any(snippet in line for snippet in allowed_snippets):
+                continue
+            if FORBIDDEN_V1_CONTRACT_SCAFFOLDING_PATTERNS.search(line):
+                offenders.append(f"{path}:{line_number}: {line.strip()}")
 
     assert offenders == []
 
@@ -104,3 +143,42 @@ def test_market_context_has_single_sliced_context_constructor() -> None:
     ]
 
     assert len(constructors) <= 2
+
+
+def test_spec_scope_decisions_are_documented() -> None:
+    decision = Path("docs/decisions/0020-v2-prerequisite-and-shadow-scope.md")
+    assert decision.exists()
+    text = decision.read_text()
+
+    required_fragments = (
+        "F-019",
+        "9-slice prerequisite",
+        "process gate",
+        "F-021",
+        "ticker / start_date / end_date interval",
+        "F-025",
+        "HMM parameter-drift flags",
+        "20% state-mean parameter-drift alert",
+        "30% transition-probability review flag",
+        "F-053",
+        "Vol-crush exposure response",
+        "downstream strategy-layer contract",
+        "50% long-vol exposure reduction",
+        "5-day cooldown",
+        "F-045",
+        "CPI-only dual-vintage store",
+        "F-049",
+        "local/Alpaca archived parquet is the shadow source of truth",
+        "F-050",
+        "daily fetch is upstream of the runner",
+    )
+    missing = [fragment for fragment in required_fragments if fragment not in text]
+
+    assert missing == []
+
+
+def test_shadow_runner_spec_pins_current_shadow_source_and_fetch_boundary() -> None:
+    spec = Path("docs/shadow_runner_spec.md").read_text()
+
+    assert "local/Alpaca archived parquet is the shadow source of truth" in spec
+    assert "daily fetch is upstream of the runner" in spec

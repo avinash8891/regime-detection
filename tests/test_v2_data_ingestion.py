@@ -101,7 +101,9 @@ def test_synthetic_v2_kwargs_use_real_fixture_rows_when_covered(
     xlb = kwargs["sector_etf_closes"]["XLB"]
     constituent_xlb = kwargs["constituent_ohlcv"]["XLB"]
 
-    assert xlb.index.min() == pd.Timestamp("2019-01-02")
+    # Real fixture rows span the full extended history (2009-01-02) up to as_of.
+    assert xlb.index.min() == pd.Timestamp("2009-01-02")
+    assert xlb.index.max() == pd.Timestamp("2023-12-14")
     assert not (
         constituent_xlb["open"].equals(constituent_xlb["high"])
         and constituent_xlb["high"].equals(constituent_xlb["low"])
@@ -109,12 +111,12 @@ def test_synthetic_v2_kwargs_use_real_fixture_rows_when_covered(
     )
 
 
-def test_synthetic_v2_kwargs_rejects_uncovered_market_window_start(
+def test_synthetic_v2_kwargs_rejects_pre_v2_as_of_date(
     market_df_for_asof, synthetic_v2_kwargs_for_market_data
 ) -> None:
-    market_data = market_df_for_asof(date(2023, 12, 14))
+    market_data = market_df_for_asof(date(2018, 12, 31))
 
-    with pytest.raises(RuntimeError, match="window start=2016-01-04"):
+    with pytest.raises(RuntimeError, match="as_of=2018-12-31"):
         synthetic_v2_kwargs_for_market_data(market_data)
 
 

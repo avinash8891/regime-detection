@@ -190,6 +190,8 @@ def build_breadth_axis_series(
         raw_labels=raw_labels,
         risk_rank=BREADTH_RISK_RANK,
         deescalation_days_by_label=hysteresis_config.deescalation_days_by_label,
+        escalation_days_by_label=hysteresis_config.escalation_days_by_label,
+        default_escalation_days=hysteresis_config.default_escalation_days,
         default_deescalation_days=hysteresis_config.default_deescalation_days,
         max_unknown_freeze_days=hysteresis_config.max_unknown_freeze_days,
         data_quality=per_day_data_quality,

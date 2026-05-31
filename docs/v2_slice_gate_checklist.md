@@ -36,6 +36,7 @@ A slice = one of the ten units listed in v2 spec §8 (Network Fragility, Layer 1
 - [x] Unit tests for the hysteresis wrapper (default immediate escalation, configurable delayed escalation where used, and de-escalation honors per-label thresholds).
 - [x] Integration test invoking `engine.classify` end-to-end with the slice's data input.
 - [x] At least one v2 golden date passes (`tests/fixtures/derived/golden_dates.yaml` row's `expected.<slice_field>`).
+- [x] **V2-activation gate — all V1 golden dates pass (§0 prerequisite "All 10 V1 golden test dates pass"):** enforced by `tests/test_fixture_verification.py::test_classified_golden_outputs_cover_every_row_without_silent_skips` (asserts exactly the full `golden_dates.yaml` set classifies with no silent skips) and `::test_golden_dates_match_live_labels_without_data_quality_bypass` (asserts every axis matches the hand-labeled expectation with `data_quality == "ok"`, no DQ-status bypass). These two pytests are the citable activation gate for the all-10 prerequisite — the per-slice ">= 1 v2 golden date" item above is the incremental slice check, not the prerequisite gate. See ADR `docs/decisions/0020-v2-prerequisite-and-shadow-scope.md` (F-020) for why this prerequisite is enforced as a regression suite rather than an engine runtime branch.
 
 ### 6. v2 §9.1 performance gate
 

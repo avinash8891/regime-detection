@@ -13,6 +13,7 @@ from pathlib import Path
 import pytest
 import yaml
 from pydantic import ValidationError
+from typing import get_args
 
 from regime_detection import __version__
 import regime_detection.config as config_module
@@ -22,6 +23,7 @@ from regime_detection.config import (
     load_default_regime_config,
     load_regime_config,
 )
+from regime_detection.model_status import ClassificationStatus
 
 # V2 spec §3.1 — canonical 24-asset network fragility universe (11 sector
 # ETFs + SPY broad-market index + 12 cross-asset proxies). KRE belongs to
@@ -126,9 +128,30 @@ def test_v2_default_config_has_v2_section_3_7_deescalation_days() -> None:
     )
 
 
+def test_v2_spec_classification_status_table_matches_shipped_statuses() -> None:
+    spec = Path("docs/regime_engine_v2_spec.md").read_text()
+
+    for status in get_args(ClassificationStatus):
+        assert f"`{status}`" in spec
+
+
+def test_v2_spec_formalizes_systemic_stress_unconfirmed_label() -> None:
+    spec = Path("docs/regime_engine_v2_spec.md").read_text()
+
+    assert "`systemic_stress_unconfirmed`:" in spec
+    assert "systemic_stress_unconfirmed: 3" in spec
+    assert "systemic_stress_unconfirmed: 5" in spec
+    assert "Resolved by Slice 2.8c status update" in spec
+
+
 def test_layer1_axis_hysteresis_lives_on_axis_sections_not_v2_feature_configs() -> None:
     cfg = load_default_regime_config()
 
+    assert cfg.trend_direction.default_escalation_days == 1
+    assert cfg.trend_character.default_escalation_days == 1
+    assert cfg.volatility_state.default_escalation_days == 1
+    assert cfg.breadth_state.default_escalation_days == 1
+    assert cfg.trend_direction.escalation_days_by_label == {}
     assert cfg.trend_direction.deescalation_days_by_label["bear"] == 5
     assert cfg.trend_direction.deescalation_days_by_label["unknown"] == 0
     assert cfg.trend_character.deescalation_days_by_label["range_bound"] == 3
@@ -402,6 +425,15 @@ def test_v1_yaml_still_loads_with_v1_config_version() -> None:
     assert cfg.cohort_routing is None
     assert cfg.strategy_family_constraints is None
     assert cfg.strategy_event_modifiers is None
+
+
+def test_v1_yaml_does_not_enable_v2_feature_blocks() -> None:
+    cfg = load_regime_config(_v1_yaml_path())
+
+    assert cfg.trend_direction_v2 is None
+    assert cfg.volatility_state_v2 is None
+    assert cfg.breadth_state_v2 is None
+    assert cfg.trend_character_v2 is None
 
 
 def test_strategy_event_modifier_config_rejects_unknown_label() -> None:

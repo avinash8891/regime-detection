@@ -6,6 +6,7 @@ import json
 import sys
 from datetime import date
 from pathlib import Path
+from typing import Any
 
 import pandas as pd
 
@@ -19,6 +20,7 @@ from regime_detection.shadow_storage import (
     insert_incident,
     open_shadow_db,
 )
+from regime_detection.shadow_qualification import evaluate_shadow_qualification
 
 
 def _previous_nyse_session(check_date: date) -> date:
@@ -38,18 +40,25 @@ def run_deadman_check(
     *,
     output_root: Path,
     check_date: date,
-) -> dict[str, str | None]:
+) -> dict[str, Any]:
     paths = ensure_shadow_layout(output_root)
     conn = open_shadow_db(paths["db"])
     try:
         expected_as_of_date = _previous_nyse_session(check_date)
         run_row = fetch_run_row(conn=conn, as_of_date=expected_as_of_date)
         if run_row is not None:
+            qualification = evaluate_shadow_qualification(
+                conn=conn,
+                end_date=expected_as_of_date,
+                engine_version=str(run_row["engine_version"]),
+                config_version=str(run_row["config_version"]),
+            )
             return {
                 "status": "ok",
                 "check_date": check_date.isoformat(),
                 "expected_as_of_date": expected_as_of_date.isoformat(),
                 "alert": None,
+                "qualification": qualification,
             }
 
         alert = f"Missing shadow run for previous NYSE session {expected_as_of_date.isoformat()}"
@@ -65,6 +74,7 @@ def run_deadman_check(
             "check_date": check_date.isoformat(),
             "expected_as_of_date": expected_as_of_date.isoformat(),
             "alert": alert,
+            "qualification": None,
         }
     finally:
         conn.close()
@@ -86,7 +96,7 @@ def main() -> int:
         check_date=args.check_date,
     )
     print(json.dumps(result, indent=2, sort_keys=True))
-    return 0
+    return 1 if result["status"] == "alert" else 0
 
 
 if __name__ == "__main__":

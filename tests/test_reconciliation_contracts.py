@@ -43,6 +43,7 @@ def _reconciliation_fixture_config():
             "change_point": cfg.change_point.model_copy(
                 update={"training_window_days": 100}
             ),
+            "transition_score": None,
         }
     )
 

@@ -36,6 +36,66 @@ def test_escalation_is_immediate_regardless_of_label_threshold() -> None:
     assert active == ["diversified_normal", "rising_fragility"]
 
 
+def test_default_escalation_days_one_preserves_immediate_escalation() -> None:
+    raws = ["diversified_normal", "rising_fragility"]
+
+    stable, active = apply_per_label_asymmetric_hysteresis(
+        raw_labels=raws,
+        risk_rank=NETWORK_FRAGILITY_RANK,
+        deescalation_days_by_label=NETWORK_FRAGILITY_DEESCALATION_DAYS,
+        default_escalation_days=1,
+    )
+
+    assert stable == ["diversified_normal", "rising_fragility"]
+    assert active == ["diversified_normal", "rising_fragility"]
+
+
+def test_configured_escalation_days_delay_stable_label_but_not_active_risk() -> None:
+    raws = ["diversified_normal", "rising_fragility", "rising_fragility"]
+
+    stable, active = apply_per_label_asymmetric_hysteresis(
+        raw_labels=raws,
+        risk_rank=NETWORK_FRAGILITY_RANK,
+        deescalation_days_by_label=NETWORK_FRAGILITY_DEESCALATION_DAYS,
+        default_escalation_days=2,
+    )
+
+    assert stable == [
+        "diversified_normal",
+        "diversified_normal",
+        "rising_fragility",
+    ]
+    assert active == [
+        "diversified_normal",
+        "rising_fragility",
+        "rising_fragility",
+    ]
+
+
+def test_per_label_escalation_days_override_default() -> None:
+    raws = [
+        "diversified_normal",
+        "rising_fragility",
+        "rising_fragility",
+        "rising_fragility",
+    ]
+
+    stable, _active = apply_per_label_asymmetric_hysteresis(
+        raw_labels=raws,
+        risk_rank=NETWORK_FRAGILITY_RANK,
+        deescalation_days_by_label=NETWORK_FRAGILITY_DEESCALATION_DAYS,
+        escalation_days_by_label={"rising_fragility": 3},
+        default_escalation_days=1,
+    )
+
+    assert stable == [
+        "diversified_normal",
+        "diversified_normal",
+        "diversified_normal",
+        "rising_fragility",
+    ]
+
+
 def test_deescalation_uses_threshold_keyed_on_label_being_left() -> None:
     # Start escalated to correlation_to_one (rank 3, threshold 5).
     # Then raw drops to diversified_normal (rank 0) for 6 days.
@@ -174,12 +234,32 @@ def test_raises_on_negative_default_deescalation_days() -> None:
         )
 
 
+def test_raises_on_non_positive_default_escalation_days() -> None:
+    with pytest.raises(ValueError, match="default_escalation_days must be >= 1"):
+        apply_per_label_asymmetric_hysteresis(
+            raw_labels=["diversified_normal"],
+            risk_rank=NETWORK_FRAGILITY_RANK,
+            deescalation_days_by_label={},
+            default_escalation_days=0,
+        )
+
+
 def test_raises_on_negative_per_label_value() -> None:
     with pytest.raises(ValueError, match="deescalation_days_by_label"):
         apply_per_label_asymmetric_hysteresis(
             raw_labels=["correlation_to_one"],
             risk_rank=NETWORK_FRAGILITY_RANK,
             deescalation_days_by_label={"correlation_to_one": -1},
+        )
+
+
+def test_raises_on_non_positive_per_label_escalation_value() -> None:
+    with pytest.raises(ValueError, match="escalation_days_by_label"):
+        apply_per_label_asymmetric_hysteresis(
+            raw_labels=["diversified_normal"],
+            risk_rank=NETWORK_FRAGILITY_RANK,
+            deescalation_days_by_label={},
+            escalation_days_by_label={"rising_fragility": 0},
         )
 
 
@@ -228,16 +308,13 @@ def test_data_quality_gap_freezes_prior_hysteresis_state_within_window() -> None
         date(2024, 1, 3),
         date(2024, 1, 4),
         date(2024, 1, 5),
+        date(2024, 1, 8),
+        date(2024, 1, 9),
     ]
 
     outputs = build_per_label_axis_outputs(
         sessions=sessions,
-        raw_labels=[
-            "spread_widening",
-            "unknown",
-            "unknown",
-            "unknown",
-        ],
+        raw_labels=["spread_widening"] + ["unknown"] * 5,
         risk_rank={"unknown": 1, "credit_calm": 0, "spread_widening": 2},
         deescalation_days_by_label={"spread_widening": 5, "unknown": 0},
         default_deescalation_days=0,
@@ -247,9 +324,13 @@ def test_data_quality_gap_freezes_prior_hysteresis_state_within_window() -> None
             DataQuality(status="stale_data", reason="etf_stale:HYG"),
             DataQuality(status="stale_data", reason="etf_stale:HYG"),
             DataQuality(status="stale_data", reason="etf_stale:HYG"),
+            DataQuality(status="stale_data", reason="etf_stale:HYG"),
+            DataQuality(status="stale_data", reason="etf_stale:HYG"),
         ],
         evidence=[
             {"rule_evidence": {"hy_spread_percentile_504d": 0.75}},
+            {"reason": "etf_stale:HYG"},
+            {"reason": "etf_stale:HYG"},
             {"reason": "etf_stale:HYG"},
             {"reason": "etf_stale:HYG"},
             {"reason": "etf_stale:HYG"},
@@ -267,9 +348,17 @@ def test_data_quality_gap_freezes_prior_hysteresis_state_within_window() -> None
     assert outputs[sessions[2]].active_label == "spread_widening"
     assert outputs[sessions[2]].classification_status == "stale_data"
 
-    assert outputs[sessions[3]].stable_label == "unknown"
-    assert outputs[sessions[3]].active_label == "unknown"
+    assert outputs[sessions[3]].stable_label == "spread_widening"
+    assert outputs[sessions[3]].active_label == "spread_widening"
     assert outputs[sessions[3]].classification_status == "stale_data"
+
+    assert outputs[sessions[4]].stable_label == "spread_widening"
+    assert outputs[sessions[4]].active_label == "spread_widening"
+    assert outputs[sessions[4]].classification_status == "stale_data"
+
+    assert outputs[sessions[5]].stable_label == "unknown"
+    assert outputs[sessions[5]].active_label == "unknown"
+    assert outputs[sessions[5]].classification_status == "stale_data"
 
 
 def test_pure_hysteresis_still_treats_unknown_as_label_when_called_directly() -> None:

@@ -4,7 +4,10 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from regime_detection.axis_output_models import EventCalendarOutput
+from regime_detection.axis_output_models import (
+    EventCalendarOutput,
+    MonetaryPressureV2Output,
+)
 from regime_detection.classification_status import DataQuality
 from regime_detection.evidence_payloads import TransitionRiskEvidencePayload
 from regime_detection.model_status import ClassificationStatus
@@ -14,6 +17,7 @@ class StructuralCausalState(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     event_calendar: EventCalendarOutput
+    monetary_pressure: MonetaryPressureV2Output | None = None
 
 
 TransitionRiskState = Literal[

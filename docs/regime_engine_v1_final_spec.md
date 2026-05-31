@@ -136,7 +136,8 @@ class RegimeTimeline(BaseModel):
 
 `outputs` is sorted ascending by `as_of_date` and contains exactly one `RegimeOutput` per NYSE trading day in the inclusive window. Unknown outputs are emitted, not skipped.
 
-V1.1 helper (deferred):
+V1.1 helper (shipped — see `RegimeEngine.classify_series` in
+`src/regime_detection/engine.py`):
 
 ```python
 RegimeEngine.classify_series(
@@ -146,6 +147,12 @@ RegimeEngine.classify_series(
     ...
 ) -> pd.DataFrame
 ```
+
+Classifies every NYSE session in the inclusive `[start_date, end_date]` window
+and returns one row per session (ascending by `as_of_date`, columns =
+`as_of_date`, `market`, `engine_version`, `config_version`, and the five active
+axis labels). It is a thin wrapper over `classify_window`; each row is
+byte-identical to the corresponding `classify(as_of_date)` output.
 
 ### 2.2 Stateless Replay Rule
 
@@ -290,7 +297,12 @@ Every classifier outputs three labels:
 
 ### 2.10 Asymmetric Hysteresis
 
-Risk escalation defaults to immediate via `*_escalation_days: 1`; raising those knobs delays stable-label entry. De-escalation remains debounced.
+Risk escalation defaults to immediate via `default_escalation_days: 1` on each
+axis-level hysteresis config section. Raising `default_escalation_days` or
+adding an `escalation_days_by_label` override delays stable-label entry for the
+configured label; `active_label` still surfaces the riskier raw label on the
+first session. De-escalation remains debounced by `deescalation_days_by_label`
+and `default_deescalation_days`.
 
 ```python
 if risk_rank(raw_label) > risk_rank(stable_label):
@@ -301,19 +313,46 @@ else:
     escalation_fast_path = False
 ```
 
-Default V1 hysteresis:
+Default V1 hysteresis ships under the neutral axis sections, not a separate
+flat `hysteresis` block:
 
 ```yaml
-hysteresis:
-  trend_direction_escalation_days: 1
-  trend_direction_deescalation_days: 3
-  trend_character_escalation_days: 1
-  trend_character_deescalation_days: 3
-  volatility_escalation_days: 1
-  volatility_deescalation_days: 2
-  breadth_escalation_days: 1
-  breadth_deescalation_days: 2
-  composite_deescalation_days: 3
+trend_direction:
+  default_escalation_days: 1
+  deescalation_days_by_label:
+    bear: 3
+    transition: 3
+    sideways: 3
+    bull: 3
+    unknown: 3
+  default_deescalation_days: 3
+trend_character:
+  default_escalation_days: 1
+  deescalation_days_by_label:
+    recovery_attempt: 3
+    trending: 3
+    chop: 3
+    transition: 3
+    unknown: 3
+  default_deescalation_days: 3
+volatility_state:
+  default_escalation_days: 1
+  deescalation_days_by_label:
+    crisis_vol: 2
+    high_vol: 2
+    rising_vol: 2
+    low_vol: 2
+    normal_vol: 2
+    vol_crush: 2
+    unknown: 2
+  default_deescalation_days: 2
+breadth_state:
+  default_escalation_days: 1
+  deescalation_days_by_label:
+    weak_breadth: 2
+    healthy_breadth: 2
+    unknown: 2
+  default_deescalation_days: 2
 ```
 
 > The event_calendar output intentionally has **no hysteresis**. Calendar windows are themselves deterministic (`as_of_date` is inside an event window or it is not), so a debounce knob is meaningless. The current wire shape exposes `primary_label` for compact display/precedence and `matching_labels` for all overlapping event windows. It does not construct the usual hysteresis label triple for the calendar output.
@@ -450,6 +489,8 @@ return_10d = close / close.shift(10) - 1
 return_21d = close / close.shift(21) - 1
 prior_63d_drawdown = close / close.rolling(63).max() - 1
 # ADX_14 standard Wilder formula
+# Implementation pin: ADX_14 uses pandas ewm(alpha=1/14, adjust=False, min_periods=14)
+# for ATR, +DM, -DM, and DX smoothing.
 ```
 
 ### 4.5 Rules
@@ -1208,6 +1249,16 @@ Modifier:
     "state": "not_implemented_v1",
     "reason": "breadth_state_used_as_v1_fragility_proxy"
   },
+  "transition_risk": {
+    "state": "stable",
+    "evidence": {
+      "triggered_rules": [],
+      "stable_changed_today": false,
+      "days_since_axis_switch": 2,
+      "axis_switch_count": 0,
+      "recent_axis_switch_count": 0
+    }
+  },
   "strategy_response": {
     "position_size_multiplier": 0.75,
     "allow_trend_following": false,
@@ -1332,6 +1383,21 @@ These are hand-labeled expectations pending Slice 2 verification. The determinis
 
 After all slices ship, all 10 dates run as a regression suite on every commit.
 
+> **Golden-date replacement (F-008).** The active regression fixture
+> (`tests/fixtures/derived/golden_dates.yaml`) uses 10 committed replacement
+> `as_of_date` values rather than the literal table above. The table labels are
+> "pending verification" intuition, and when the engine classifies the literal
+> dates the deterministic predicates diverge from that intuition on every one of
+> them (e.g. on 2018-02-05 SPY fell ≈ −4.1%, which does not breach the §5.5
+> `crisis_vol` −5% trigger, so the engine emits `high_vol`, not the table's
+> `crisis_vol`). Anchoring to the literal dates cannot satisfy both "predicates
+> win" and the `provenance: hand_labeled` invariant simultaneously, and
+> `2020-04-10` is Good Friday (a non-NYSE session the engine rejects). The active
+> set therefore uses same-regime sessions where independent hand-labels and the
+> predicates agree. The full per-date mapping, divergence evidence, and rationale
+> are in `docs/verification/golden_dates_replacement_justification.md`, enforced by
+> `tests/test_fixture_verification.py::test_golden_date_replacement_set_has_documented_justification`.
+
 ### 12.3 Validation Beyond Unit Tests
 
 A regime label is useful only if it changes downstream strategy behavior. Track per regime (in walk-forward backtests):
@@ -1435,7 +1501,10 @@ V1 implementation contract:
    Section 11 output shape and the Section 10 conditional strategy-response
    field whitelist exactly.
 
-8. Hysteresis is asymmetric: escalation defaults to immediate via `*_escalation_days: 1`; raising those knobs delays stable-label entry. De-escalation remains debounced.
+8. Hysteresis is asymmetric: escalation defaults to immediate via each axis
+   section's `default_escalation_days: 1`; raising that default or adding
+   `escalation_days_by_label` delays stable-label entry while `active_label`
+   still surfaces the riskier raw label. De-escalation remains debounced.
 
 9. trend_direction and trend_character are SEPARATE axes. Never collapse
    them into a single label.

@@ -220,7 +220,25 @@ def run_pit_constituents_fetch(
         return report_path
 
 
-def read_pit_intervals(parquet_path: Path) -> pd.DataFrame:
+def is_survivorship_biased_universe(intervals: pd.DataFrame) -> bool:
+    """True when a constituent universe is survivorship-biased.
+
+    V2 §1D line 326-327: a point-in-time universe INCLUDES removed/delisted
+    members (closed membership intervals — a non-null ``end_date``). A
+    current-only snapshot, where every interval is still open, is
+    survivorship-biased and must be rejected at ingestion unless biased research
+    mode is approved.
+    """
+    if "end_date" not in intervals.columns:
+        return True
+    return not bool(intervals["end_date"].notna().any())
+
+
+def read_pit_intervals(
+    parquet_path: Path,
+    *,
+    allow_survivorship_biased_breadth: bool = False,
+) -> pd.DataFrame:
     """Read PIT membership parquet back into a DataFrame.
 
     Inverse of the writer in ``run_pit_constituents_fetch``. Converts the
@@ -231,6 +249,14 @@ def read_pit_intervals(parquet_path: Path) -> pd.DataFrame:
     so that stale S3 artifacts (built before corrections were added to the code)
     produce correct membership lookups. The patch is idempotent: rows that
     already carry a non-null end_date are left unchanged.
+
+    V2 §1D line 327 / §10 — fail-closed survivorship-bias gate: corrections are
+    applied before membership use, but source corrections alone are not enough
+    to prove a point-in-time feed. The raw source must contain at least one
+    closed interval unless ``allow_survivorship_biased_breadth`` is True. Real
+    point-in-time feeds include delistings and pass; a current-only snapshot does
+    not. The V1 ETF-proxy breadth fallback (when no PIT universe is loaded at
+    all) is unaffected — this gates the loaded universe, not its absence.
     """
     df = pd.read_parquet(parquet_path)
 
@@ -241,6 +267,7 @@ def read_pit_intervals(parquet_path: Path) -> pd.DataFrame:
             "end_date": df["end_date"].map(optional_date),
         },
     )
+    source_contains_closed_interval = bool(df["end_date"].notna().any())
 
     # Patch-on-read: apply corrections to any open interval whose ticker has a
     # known correction. This fixes stale artifacts without requiring a re-fetch.
@@ -261,6 +288,24 @@ def read_pit_intervals(parquet_path: Path) -> pd.DataFrame:
     }
     if object_columns:
         df = df.astype(object_columns)
+
+    if not allow_survivorship_biased_breadth:
+        if is_survivorship_biased_universe(df):
+            raise ValueError(
+                f"PIT constituent universe at {parquet_path} is survivorship-biased "
+                "(no removed/delisted members — every membership interval is open). "
+                "Refusing to load a current-only universe as point-in-time. Provide a "
+                "universe that includes removed members, or pass "
+                "allow_survivorship_biased_breadth=True to opt into biased research "
+                "mode."
+            )
+        if not source_contains_closed_interval:
+            raise ValueError(
+                f"PIT constituent universe at {parquet_path} is survivorship-biased: "
+                "source contains no closed intervals before source-specific "
+                "corrections. Refusing to treat source-corrected rows alone as "
+                "proof of a point-in-time universe."
+            )
     return df
 
 

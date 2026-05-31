@@ -48,6 +48,7 @@ from regime_detection.network_fragility import NetworkFragilityFeatures
 from regime_detection.volatility_state import VolatilityFeatures
 from regime_detection.network_fragility_rules import (
     NETWORK_FRAGILITY_RISK_RANK,
+    RULE_PRECEDENCE,
     NetworkFragilityRuleInputs,
     NetworkFragilityLabel,
     evaluate_rules_with_evidence,
@@ -330,6 +331,14 @@ def test_network_fragility_risk_rank_matches_v2_spec_3_6():
         "idiosyncratic_crisis": 2,
         "unknown": 2,
     }
+
+
+def test_rule_precedence_includes_unconfirmed_systemic_stress_between_systemic_and_correlation_to_one():
+    assert RULE_PRECEDENCE[:3] == (
+        "systemic_stress",
+        "systemic_stress_unconfirmed",
+        "correlation_to_one",
+    )
 
 
 # ---------- Config: deescalation_days_by_label is wired ----------------------
@@ -829,8 +838,8 @@ def test_classifier_emits_unconfirmed_systemic_stress_when_credit_funding_unavai
 
     assert out is not None
     final = out[context.sessions[-1]]
-    assert final.raw_label == "systemic_stress"
-    assert final.active_label == "systemic_stress"
+    assert final.raw_label == "systemic_stress_unconfirmed"
+    assert final.active_label == "systemic_stress_unconfirmed"
     assert final.evidence.credit_funding_active_label is None
     assert (
         final.evidence["rule_evidence"]["rule_reason"] == "credit_funding_unavailable"

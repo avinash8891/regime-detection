@@ -88,7 +88,7 @@ def test_component_formulas_have_expected_boundaries(
         "credit_stress": pytest.approx(0.75),
         "liquidity_stress": pytest.approx(1.0),
         "macro_event": pytest.approx(1.0),
-        "model_instability": pytest.approx(0.70),
+        "model_instability": pytest.approx(1.0),
     }
 
 
@@ -244,7 +244,7 @@ def test_compose_transition_score_exposes_only_present_components(
         "cluster_id_5d_ago",
     ],
 )
-def test_compose_transition_score_accepts_partial_model_evidence_layer_inputs(
+def test_compose_transition_score_marks_model_instability_missing_on_cold_start(
     transition_score_config: TransitionScoreConfig,
     missing_field: str,
 ) -> None:
@@ -252,7 +252,8 @@ def test_compose_transition_score_accepts_partial_model_evidence_layer_inputs(
 
     assert out.score is not None
     assert out.components is not None
-    assert out.components["model_instability"] == pytest.approx(0.0)
+    assert "model_instability" not in out.components
+    assert out.missing_components == ("model_instability",)
 
 
 def test_compose_transition_score_returns_insufficient_when_many_components_missing(

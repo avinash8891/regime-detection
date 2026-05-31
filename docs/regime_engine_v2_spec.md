@@ -67,7 +67,7 @@ diagnosis. Every data-quality-aware label output MUST also expose:
 
 ```json
 {
-  "classification_status": "classified | no_rule_fired | data_unavailable | stale_data | insufficient_history | not_wired",
+  "classification_status": "classified | no_rule_fired | no_rule_fired_hysteresis | no_rule_fired_missing_feature | data_unavailable | stale_data | insufficient_history | not_wired",
   "classification_reason": "short machine-readable reason or null"
 }
 ```
@@ -78,6 +78,8 @@ Status semantics:
 |---|---|
 | `classified` | A non-`unknown` label is active. |
 | `no_rule_fired` | Required data was usable, but no rule predicate matched a named state. |
+| `no_rule_fired_hysteresis` | Raw or stable history produced a non-`unknown` state, but hysteresis held the active label at `unknown`. |
+| `no_rule_fired_missing_feature` | Required data quality passed, but a non-binding rule feature was absent so no predicate could fire. |
 | `data_unavailable` | Required data existed too sparsely to evaluate the classifier. |
 | `stale_data` | A required source exists, but its latest usable point is older than the axis freshness budget. |
 | `insufficient_history` | A required lookback/window is still in cold-start. |
@@ -769,6 +771,10 @@ the slice/commit that resolved it. Entries are append-only.
     `BreadthLabel` enum unchanged, and ship `sector_breadth` as
     evidence-only. Models / classifier remain untouched.
     Deferred by Slice 2.3.
+    Resolved by Slice 2.8c status update — PIT breadth features and labels
+    now ship. `breadth_thrust`, `broadening_breadth`,
+    `recovery_breadth`, and `narrowing_breadth` are formal V2 breadth
+    labels with the §1D predicates and precedence above.
 
 27. **§1D line 229 — `sector_breadth` denominator policy when a sector
     ETF is absent from `MarketContext.sector_etf_closes`.**
@@ -3492,13 +3498,14 @@ idiosyncratic_crisis
 rising_fragility
 correlation_concentration
 correlation_to_one
+systemic_stress_unconfirmed
 systemic_stress
 unknown
 ```
 
 ### 3.4 Precedence
 ```text
-systemic_stress > correlation_to_one > correlation_concentration > rising_fragility > idiosyncratic_crisis > stock_picker_dispersion > rotation_watch > decorrelated_calm > diversified_normal > unknown
+systemic_stress > systemic_stress_unconfirmed > correlation_to_one > correlation_concentration > rising_fragility > idiosyncratic_crisis > stock_picker_dispersion > rotation_watch > decorrelated_calm > diversified_normal > unknown
 ```
 
 ### 3.5 Rules
@@ -3582,6 +3589,14 @@ AND VIX_percentile_252d > 0.80
 AND breadth_state.active_label in [weak_breadth, narrowing_breadth]
 ```
 
+`systemic_stress_unconfirmed`:
+```text
+correlation_to_one
+AND credit_funding.active_label is unavailable
+AND VIX_percentile_252d > 0.80
+AND breadth_state.active_label in [weak_breadth, narrowing_breadth]
+```
+
 ### 3.6 Risk Rank
 ```yaml
 network_fragility_risk_rank:
@@ -3593,13 +3608,14 @@ network_fragility_risk_rank:
   rising_fragility: 2
   correlation_concentration: 2
   correlation_to_one: 3
+  systemic_stress_unconfirmed: 3
   systemic_stress: 3
   unknown: 2
 ```
 
 ### 3.7 Hysteresis
 
-Per-label asymmetric de-escalation is **mandatory for all 9 label axes** (ADR 0010). Every axis must supply a `deescalation_days_by_label` config block; missing config raises immediately — no silent flat fallback. Both `core3-v1.0.0.yaml` and `core3-v2.0.0.yaml` ship per-label hysteresis. Layer-1 hysteresis lives under neutral axis-level sections (`trend_direction`, `trend_character`, `volatility_state`, `breadth_state`) so V1-origin raw labels are not coupled to V2 feature/rule config sections. Those V2 feature/rule sections intentionally reject hysteresis keys; calibration must edit the neutral axis sections or validation fails.
+Per-label asymmetric de-escalation is **mandatory for all 9 label axes** (ADR 0010). Every axis must supply a `deescalation_days_by_label` config block; missing config raises immediately — no silent flat fallback. Escalation defaults to immediate via `default_escalation_days: 1`; raising the default or adding an `escalation_days_by_label` override delays stable-label entry while active-label still surfaces the riskier raw label. Both `core3-v1.0.0.yaml` and `core3-v2.0.0.yaml` ship per-label hysteresis. Layer-1 hysteresis lives under neutral axis-level sections (`trend_direction`, `trend_character`, `volatility_state`, `breadth_state`) so V1-origin raw labels are not coupled to V2 feature/rule config sections. Those V2 feature/rule sections intentionally reject hysteresis keys; calibration must edit the neutral axis sections or validation fails.
 
 Network fragility de-escalation defaults:
 ```yaml
@@ -3607,6 +3623,7 @@ network_fragility_deescalation_days:
   rising_fragility: 3
   correlation_concentration: 3
   correlation_to_one: 5
+  systemic_stress_unconfirmed: 5
   systemic_stress: 5
   idiosyncratic_crisis: 3
   rotation_watch: 0
@@ -4645,6 +4662,17 @@ Add dates that exercise V2-specific behavior:
 
 These build on the V1 golden test set; do not replace it.
 
+> **Note (registration fixture).** `tests/fixtures/derived/golden_dates_v2.yaml`
+> registers these dates with two corrections: `2020-08-15` is a Saturday
+> (non-NYSE session), so the fixture uses the nearest prior trading session
+> `2020-08-14`; and `stock_picker_dispersion` is asserted under the
+> `network_fragility` field (it is a §3.4/§3.6 network-fragility label, not a
+> breadth label). All nine dates — including the four pre-2019 dates
+> (2010-05-06, 2011-08-08, 2015-08-24, 2018-10-10) — now classify live: the V2
+> daily-OHLCV fixture was extended back to 2009-01-02 with real Yahoo OHLCV
+> (incl. real `^VIX`) and the placeholder PIT membership intervals start at
+> each sector ETF's real inception (see `tests/fixtures/raw/v2/PROVENANCE.md`).
+
 ---
 
 ## 10. V2 Coding Agent Prompt
@@ -4663,8 +4691,12 @@ V2 implementation contract:
 2. Do not invent component score formulas. Use the exact formulas in
    Section 4.2 of the V2 spec.
 
-3. Do not invent transition score weights. Use Section 4.3. If HMM is
-   not yet shipped, use the renormalized weights without HMM.
+3. Do not invent transition score weights. Use Section 4.3. Once
+   `transition_score` is enabled, HMM, cluster/GMM, and change-point evidence
+   are mandatory model-instability inputs; missing model evidence raises a
+   runtime error and is not an optional renormalized component. Only the
+   optional components enumerated in Section 4.3 may be omitted and
+   renormalized after the minimum coverage gate passes.
 
 4. Do not auto-label clusters. K-Means/GMM mappings require manual
    review per Section 6.2. Ship the model; do not ship auto-mapping.

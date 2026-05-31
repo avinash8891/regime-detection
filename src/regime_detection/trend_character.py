@@ -296,84 +296,22 @@ def compute_features(
 def raw_label_for_day(
     f: TrendCharacterFeatures, dt: pd.Timestamp, *, allow_v2_labels: bool = True
 ) -> tuple[TrendCharacterLabel, dict[str, Any]]:
-    close = f.close.loc[dt]
-    sma50 = f.sma_50.loc[dt]
-    ret10 = f.return_10d.loc[dt]
-    ret21 = f.return_21d.loc[dt]
-    ret63 = f.return_63d.loc[dt]
-    prior_dd = f.prior_63d_drawdown.loc[dt]
-    adx = f.adx_14.loc[dt]
-
-    # V1 inputs gate the V1 labels.
-    if any(pd.isna(x) for x in [close, sma50, ret10, ret21, prior_dd, adx]):
-        return "unknown", {"reason": "insufficient_history"}
-
-    # V1 labels (preserved verbatim).
-    recovery_attempt = bool((prior_dd <= -0.10) and (close > sma50) and (ret10 >= 0.05))
-    trending = bool((adx >= 20) and (abs(ret21) >= 0.05))
-    mild_trend = bool(allow_v2_labels and (adx >= 20) and (abs(ret21) < 0.05))
-    chop = bool((adx < 20) and (abs(ret10) < 0.03) and (abs(ret21) < 0.05))
-    volatile_chop = bool(
-        allow_v2_labels and (adx < 20) and not chop and not recovery_attempt
+    day_features = TrendCharacterFeatures(
+        close=f.close.loc[[dt]],
+        sma_50=f.sma_50.loc[[dt]],
+        return_10d=f.return_10d.loc[[dt]],
+        return_21d=f.return_21d.loc[[dt]],
+        prior_63d_drawdown=f.prior_63d_drawdown.loc[[dt]],
+        adx_14=f.adx_14.loc[[dt]],
+        return_63d=f.return_63d.loc[[dt]],
+        midpoint_excursion_20d=f.midpoint_excursion_20d.loc[[dt]],
+        breakout_20d_or_50d=f.breakout_20d_or_50d.loc[[dt]],
+        bb_width_expanding=f.bb_width_expanding.loc[[dt]],
+        volume_above_20d_average=f.volume_above_20d_average.loc[[dt]],
+        followthrough_rate=f.followthrough_rate.loc[[dt]],
     )
-
-    # V2 §1B labels. Cold-start: any NaN input falsifies the rule.
-    midpoint_ex = f.midpoint_excursion_20d.loc[dt]
-    breakout_flag = f.breakout_20d_or_50d.loc[dt]
-    bb_expanding = f.bb_width_expanding.loc[dt]
-    vol_above = f.volume_above_20d_average.loc[dt]
-    ft_rate = f.followthrough_rate.loc[dt]
-
-    breakout_expansion = bool(
-        allow_v2_labels
-        and not pd.isna(ft_rate)
-        and bool(breakout_flag)
-        and bool(bb_expanding)
-        and bool(vol_above)
-        and ft_rate >= _DEFAULT_FOLLOWTHROUGH_RATE_THRESHOLD
-    )
-    range_bound = bool(
-        allow_v2_labels
-        and (not pd.isna(ret63))
-        and (not pd.isna(midpoint_ex))
-        and abs(ret63) < _DEFAULT_RANGE_BOUND_RETURN_63D_THRESHOLD
-        and midpoint_ex <= _DEFAULT_RANGE_BOUND_MIDPOINT_EXCURSION_THRESHOLD
-        and adx < _DEFAULT_RANGE_BOUND_ADX_THRESHOLD
-    )
-
-    # Precedence (implementation decision #67 pin):
-    # breakout_expansion > recovery_attempt > trending > mild_trend >
-    # range_bound > chop > volatile_chop > transition > unknown.
-    if breakout_expansion:
-        label: TrendCharacterLabel = "breakout_expansion"
-    elif recovery_attempt:
-        label = "recovery_attempt"
-    elif trending:
-        label = "trending"
-    elif mild_trend:
-        label = "mild_trend"
-    elif range_bound:
-        label = "range_bound"
-    elif chop:
-        label = "chop"
-    elif volatile_chop:
-        label = "volatile_chop"
-    else:
-        label = "transition"
-
-    return label, {
-        "adx_14": _ev_float(adx),
-        "return_10d": _ev_float(ret10),
-        "return_21d": _ev_float(ret21),
-        "prior_63d_drawdown": _ev_float(prior_dd),
-        "recovery_attempt": recovery_attempt,
-        "trending": trending,
-        "mild_trend": mild_trend,
-        "chop": chop,
-        "volatile_chop": volatile_chop,
-        "range_bound": range_bound,
-        "breakout_expansion": breakout_expansion,
-    }
+    labels, evidence = build_raw_outputs(day_features, allow_v2_labels=allow_v2_labels)
+    return labels[0], evidence[0]
 
 
 def build_raw_outputs(

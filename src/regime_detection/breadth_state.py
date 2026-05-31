@@ -62,9 +62,12 @@ def _ev_float(x: float) -> float:
 
 def compute_features(*, spy_close: pd.Series, rsp_close: pd.Series) -> BreadthFeatures:
     ratio = rsp_close / spy_close
-    ratio_sma50 = ratio.rolling(50).mean()
+    # §6.8 ETF-proxy formulas require complete rolling windows; pin min_periods
+    # explicitly so the warm-up region is NaN-masked even if pandas' integer-window
+    # default ever changes (relative_breadth_sma50 over 50d, 63d index distance).
+    ratio_sma50 = ratio.rolling(50, min_periods=50).mean()
     ratio_ret20 = ratio / ratio.shift(20) - 1
-    idx_dist = spy_close / spy_close.rolling(63).max() - 1
+    idx_dist = spy_close / spy_close.rolling(63, min_periods=63).max() - 1
     return BreadthFeatures(
         spy_close=spy_close,
         rsp_close=rsp_close,
@@ -78,39 +81,22 @@ def compute_features(*, spy_close: pd.Series, rsp_close: pd.Series) -> BreadthFe
 def raw_label_for_day(
     f: BreadthFeatures, dt: pd.Timestamp
 ) -> tuple[BreadthLabel, dict[str, Any]]:
-    ratio = f.relative_breadth_ratio.loc[dt]
-    ratio_sma = f.relative_breadth_sma50.loc[dt]
-    ratio_ret20 = f.relative_breadth_return_20d.loc[dt]
-    idx_dist = f.index_distance_from_63d_high.loc[dt]
+    """Per-day raw breadth label.
 
-    if any(pd.isna(x) for x in [ratio, ratio_sma, ratio_ret20, idx_dist]):
-        return "unknown", {"reason": "insufficient_history"}
-
-    divergent_fragile = bool(
-        (idx_dist >= -0.05) and (ratio < ratio_sma) and (ratio_ret20 <= -0.03)
+    F-043: thin wrapper over :func:`build_raw_outputs` so the §6.9 ETF-proxy
+    rule predicates and evidence shape have a single encoding. Each feature is
+    sliced to ``[dt]``; the vectorized builder reads only the target session.
+    """
+    day_features = BreadthFeatures(
+        spy_close=f.spy_close.loc[[dt]],
+        rsp_close=f.rsp_close.loc[[dt]],
+        relative_breadth_ratio=f.relative_breadth_ratio.loc[[dt]],
+        relative_breadth_sma50=f.relative_breadth_sma50.loc[[dt]],
+        relative_breadth_return_20d=f.relative_breadth_return_20d.loc[[dt]],
+        index_distance_from_63d_high=f.index_distance_from_63d_high.loc[[dt]],
     )
-    weak_breadth = bool((ratio < ratio_sma) and (ratio_ret20 < 0))
-    healthy_breadth = bool((ratio > ratio_sma) and (ratio_ret20 >= 0))
-
-    if divergent_fragile:
-        label: BreadthLabel = "divergent_fragile"
-    elif weak_breadth:
-        label = "weak_breadth"
-    elif healthy_breadth:
-        label = "healthy_breadth"
-    else:
-        label = "neutral_breadth"
-
-    return label, {
-        "proxy": "RSP/SPY",
-        "relative_breadth_ratio": _ev_float(ratio),
-        "relative_breadth_sma50": _ev_float(ratio_sma),
-        "relative_breadth_return_20d": _ev_float(ratio_ret20),
-        "index_distance_from_63d_high": _ev_float(idx_dist),
-        "divergent_fragile": divergent_fragile,
-        "weak_breadth": weak_breadth,
-        "healthy_breadth": healthy_breadth,
-    }
+    labels, evidence = build_raw_outputs(day_features)
+    return labels[0], evidence[0]
 
 
 def build_raw_outputs(

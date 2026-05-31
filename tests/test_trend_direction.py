@@ -9,6 +9,7 @@ import yaml
 from regime_detection.config import load_default_regime_config
 from regime_detection.trend_direction import (
     TrendDirectionFeatures,
+    build_raw_outputs,
     compute_features,
     raw_label_for_day,
 )
@@ -20,14 +21,9 @@ def test_trend_direction_matches_pinned_fixtures(classified_golden_outputs) -> N
     golden = yaml.safe_load(
         (repo_root / "tests" / "fixtures" / "derived" / "golden_dates.yaml").read_text()
     )
-    first_classified_date = min(classified_golden_outputs)
     for row in golden["rows"]:
         as_of = date.fromisoformat(row["as_of_date"])
-        if as_of < first_classified_date:
-            continue
         out = classified_golden_outputs[as_of]
-        if out.trend_direction.data_quality.status != "ok":
-            continue
         assert (
             out.trend_direction.active_label == row["expected"]["trend_direction"]
         ), f"{as_of}: expected {row['expected']['trend_direction']}, got {out.trend_direction.active_label}"
@@ -111,6 +107,47 @@ def test_trend_direction_rolling_features_match_legacy_inline_formulas() -> None
         close / close.shift(63) - 1,
         check_exact=True,
     )
+
+
+def test_raw_label_for_day_is_single_source_of_truth_over_build_raw_outputs() -> None:
+    # F-043: the per-day scalar path must be a thin wrapper over the vectorized
+    # builder so the §3.5 rule predicates have ONE encoding. This guard fails if
+    # either path ever diverges (v1-only mode and the v2 recovery/euphoria mode).
+    close = pd.Series(
+        [250.0 + i * 0.5 - (i % 11) * 1.5 for i in range(360)],
+        index=pd.bdate_range("2022-06-01", periods=360),
+        name="close",
+    )
+    features = compute_features(close)
+    cfg = load_default_regime_config()
+    assert cfg.trend_direction_v2 is not None
+
+    from regime_detection.trend_direction_v2 import compute_trend_v2_features
+
+    v2_features = compute_trend_v2_features(close, config=cfg.trend_direction_v2)
+
+    def _norm(value: object) -> object:
+        # NaN != NaN in Python; normalize so equal-NaN evidence compares equal.
+        if isinstance(value, float) and pd.isna(value):
+            return "__nan__"
+        if isinstance(value, dict):
+            return {k: _norm(v) for k, v in value.items()}
+        return value
+
+    for v2_kwargs in (
+        {},
+        {
+            "trend_direction_v2_features": v2_features,
+            "trend_direction_v2_rules": cfg.trend_direction_v2.rules,
+        },
+    ):
+        labels, evidence = build_raw_outputs(features, **v2_kwargs)
+        for idx, dt in enumerate(close.index):
+            day_label, day_evidence = raw_label_for_day(features, dt, **v2_kwargs)
+            assert day_label == labels[idx], f"{dt}: {day_label} != {labels[idx]}"
+            assert _norm(day_evidence) == _norm(
+                evidence[idx]
+            ), f"{dt}: evidence mismatch"
 
 
 def test_trend_direction_raw_label_thresholds_for_v1_labels() -> None:

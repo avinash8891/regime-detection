@@ -138,6 +138,17 @@ def test_crisis_outranks_bear_stress_when_both_match() -> None:
 
 
 @pytest.mark.unit
+def test_crisis_specialist_preempts_data_outage_when_core_axis_unknown() -> None:
+    """Crisis precedence is evaluated before fail-closed data-outage routing."""
+    out = _route(
+        trend_direction_active="unknown",
+        volatility_state_active="crisis_vol",
+    )
+    assert out.active_cohort == "crisis_specialist"
+    assert out.blocked_strategy_modes == ["short_vol", "leveraged_long", "breakout"]
+
+
+@pytest.mark.unit
 def test_bear_stress_specialist_fires_on_bear_and_weak_breadth() -> None:
     """§5.1 lines 2526-2528: bear_stress_specialist fires when
     trend=bear AND breadth in {weak_breadth, divergent_fragile,
@@ -349,15 +360,19 @@ def test_cohort_routing_config_rejects_legacy_blocked_cohorts_field() -> None:
 def test_regime_output_emits_agent_routing_when_cohort_routing_configured(
     classified_golden_outputs: dict[date, RegimeOutput],
 ) -> None:
-    """When the engine config carries a cohort_routing block (default V2),
-    every classified output must populate ``agent_routing`` with one of the
-    9 spec-pinned cohort names."""
+    """V2 outputs populate routing; V1 replay rows keep the field absent."""
     assert classified_golden_outputs, "golden outputs fixture must be non-empty"
     for as_of, out in classified_golden_outputs.items():
+        if out.config_version == "core3-v1.0.0":
+            assert out.agent_routing is None
+            continue
         assert (
             out.agent_routing is not None
-        ), f"agent_routing missing for {as_of}; default config carries cohort_routing"
-        assert out.agent_routing.active_cohort in COHORTS
+        ), f"agent_routing missing for {as_of}; V2 config carries cohort_routing"
+        assert out.agent_routing.active_cohort in {
+            *COHORTS,
+            "data_outage_specialist",
+        }
         assert out.agent_routing.fallback_cohort == "default_neutral"
 
 

@@ -122,6 +122,16 @@ def _transition_risk(*, state: str = "stable") -> TransitionRiskOutput:
     )
 
 
+def _monetary_pressure(label: str = "neutral_monetary") -> MonetaryPressureV2Output:
+    return MonetaryPressureV2Output(
+        raw_label=label,
+        stable_label=label,
+        active_label=label,
+        evidence=MonetaryPressureEvidencePayload(),
+        data_quality=_data_quality(),
+    )
+
+
 def _regime_output(
     *, config_version: str = "test", market: str = "SPY"
 ) -> RegimeOutput:
@@ -140,6 +150,7 @@ def _regime_output(
                 matching_labels=("normal_calendar",),
                 evidence={},
             ),
+            monetary_pressure=_monetary_pressure(),
         ),
         network_fragility=NetworkFragilityOutput(
             raw_label="unknown",
@@ -384,12 +395,16 @@ def test_regime_output_legacy_v1_projection_preserves_archived_wire_shape() -> N
 
     payload = output.model_dump()
 
+    assert payload["structural_causal_state"]["monetary_pressure"] == {
+        "state": "unknown",
+        "reason": "not_implemented_v1",
+    }
     assert payload["network_fragility"] == {
-        "label": "not_implemented_v1",
+        "state": "not_implemented_v1",
         "reason": "breadth_state_used_as_v1_fragility_proxy",
     }
     assert payload["transition_risk"] == {
-        "label": "stable",
+        "state": "stable",
         "evidence": {
             "triggered_rules": [],
             "stable_changed_today": False,
@@ -410,6 +425,10 @@ def test_regime_output_non_v1_dump_keeps_native_shape_and_json_mode() -> None:
 
     assert payload["transition_risk"]["state"] == "stable"
     assert "label" not in payload["transition_risk"]
+    assert (
+        payload["structural_causal_state"]["monetary_pressure"]["active_label"]
+        == "neutral_monetary"
+    )
     assert payload["network_fragility"]["classification_status"] == "no_rule_fired"
     assert compact.startswith('{"engine_version":"regime-engine-v-test"')
     assert "SPÝ" in compact
@@ -434,7 +453,7 @@ def test_regime_timeline_dump_and_json_use_legacy_projection_and_compact_format(
     compact = timeline.model_dump_json()
     pretty = timeline.model_dump_json(indent=2)
 
-    assert payload["outputs"][0]["transition_risk"]["label"] == "stable"
+    assert payload["outputs"][0]["transition_risk"]["state"] == "stable"
     assert compact.startswith('{"engine_version":"regime-engine-v-test"')
     assert "SPÝ" in compact
     assert "\\u00dd" not in compact

@@ -29,12 +29,24 @@ import pandas as pd
 from hmmlearn.base import ConvergenceMonitor
 from hmmlearn.hmm import GaussianHMM
 from joblib import Parallel, delayed
+from scipy.optimize import linear_sum_assignment
 
 from regime_detection.config import HMMConfig
 
-__all__ = ["HMMFeatures", "compute_hmm_features"]
+__all__ = [
+    "HMMFeatures",
+    "HMMParameterDrift",
+    "compute_hmm_features",
+    "compute_hmm_parameter_drift",
+]
 
 _LOGGER = logging.getLogger(__name__)
+
+# v2 §6.1 operator calibration-review thresholds (spec lines 4434-4468).
+# State-mean drift alerts at 20%; the transition-probability shift is a
+# separate non-blocking review flag at 30%.
+_STATE_MEAN_DRIFT_ALERT_THRESHOLD = 0.20
+_TRANSITION_PROB_REVIEW_THRESHOLD = 0.30
 
 
 class _StrictConvergenceMonitor(ConvergenceMonitor):
@@ -75,6 +87,10 @@ class HMMFeatures:
     n_states: int
     selected_seed: int
     log_likelihood: float
+    # §6.1 calibration-drift report between the last two PIT refit checkpoints
+    # (F-025). None when fewer than two checkpoints were fit (no prior to
+    # compare against). Advisory only — never feeds the runtime transition score.
+    parameter_drift: "HMMParameterDrift | None" = None
 
 
 def _fit_single_seed(
@@ -130,6 +146,12 @@ def _fit_single_seed(
         "previous_log_likelihood": previous_log_likelihood,
         "delta": delta,
         "non_monotonic": non_monotonic,
+        # Fitted parameters for the §6.1 calibration-drift monitor (F-025).
+        # means_ are in the per-window standardized space; the caller
+        # de-standardizes before comparing checkpoints. getattr keeps the
+        # monitor fail-open if a fitter does not expose the parameters.
+        "means": None if non_monotonic else getattr(model, "means_", None),
+        "transmat": None if non_monotonic else getattr(model, "transmat_", None),
     }
 
 
@@ -185,6 +207,10 @@ def compute_hmm_features(
         columns=list(range(config.n_states)),
     )
     latest_fit: dict[str, Any] | None = None
+    # F-025: §6.1 calibration drift between consecutive PIT refit checkpoints.
+    previous_raw_means: np.ndarray | None = None
+    previous_transmat: np.ndarray | None = None
+    latest_drift: HMMParameterDrift | None = None
     all_skipped: list[tuple[int, int, float | None, float | None, float | None]] = []
     # joblib's loky workers re-import this module — they always see the
     # real hmmlearn.GaussianHMM, even when a test monkeypatches the
@@ -274,6 +300,31 @@ def compute_hmm_features(
                     continue
                 state_prob_frame.loc[segment_frame.index, :] = best["posterior"]
                 latest_fit = best
+
+                # §6.1 drift monitor (F-025): de-standardize this checkpoint's
+                # state means back to raw feature units (model.means_ live in the
+                # per-window standardized space), then compare to the previous
+                # checkpoint. Transition probabilities are scale-invariant.
+                # Fail-open: skip silently if a fitter did not expose params.
+                if best["means"] is not None and best["transmat"] is not None:
+                    raw_means = best["means"]
+                    if config.standardize_inputs:
+                        train_means = train_frame.mean().to_numpy(dtype=float)
+                        train_stds = (
+                            train_frame.std(ddof=0)
+                            .replace(0.0, 1.0)
+                            .to_numpy(dtype=float)
+                        )
+                        raw_means = best["means"] * train_stds + train_means
+                    if previous_raw_means is not None and previous_transmat is not None:
+                        latest_drift = compute_hmm_parameter_drift(
+                            previous_state_means=previous_raw_means,
+                            current_state_means=raw_means,
+                            previous_transition_matrix=previous_transmat,
+                            current_transition_matrix=best["transmat"],
+                        )
+                    previous_raw_means = raw_means
+                    previous_transmat = best["transmat"]
     except Exception as exc:  # noqa: BLE001
         # Fail-open: degenerate inputs (singular covariance, etc.) should
         # not crash the engine — the seam goes None and downstream falls
@@ -307,6 +358,7 @@ def compute_hmm_features(
         n_states=config.n_states,
         selected_seed=int(latest_fit["seed"]),
         log_likelihood=float(latest_fit["log_likelihood"]),
+        parameter_drift=latest_drift,
     )
 
 
@@ -327,3 +379,102 @@ def _prepare_hmm_frames(
 
 def _has_sufficient_distinct_rows(frame: np.ndarray, *, n_states: int) -> bool:
     return len(np.unique(frame, axis=0)) >= n_states
+
+
+@dataclass(frozen=True)
+class HMMParameterDrift:
+    """v2 §6.1 operator-side HMM calibration-drift report (spec lines 4434-4468).
+
+    Non-blocking review artifact comparing a freshly refit HMM to the prior
+    versioned model. Per the §6.1 operational definition, ``parameter_drift``
+    is the maximum over (state × feature) of the relative absolute change in
+    state-mean parameters AFTER Hungarian-algorithm alignment of the new state
+    indices to the old (so a pure relabel is not counted as drift), and
+    ``state_mean_drift_alert`` fires when it exceeds 20%.
+
+    Transition probabilities and covariances are excluded from the alert (they
+    drift naturally with the refit window). A separate ``transition_prob_review_flag``
+    fires when any aligned transition probability shifts by more than 30%;
+    because transition entries are bounded in ``[0, 1]``, the shift is measured
+    as the maximum absolute change (a "30 percentage point" move) — the only
+    stable reading for near-zero probabilities. This flag is advisory and does
+    NOT block deployment.
+
+    Attributes:
+        parameter_drift: max relative state-mean drift after alignment.
+        state_mean_drift_alert: ``parameter_drift > state_mean_drift_threshold``.
+        max_transition_prob_shift: max absolute aligned transition-prob change.
+        transition_prob_review_flag: ``max_transition_prob_shift > transition_prob_review_threshold``.
+        alignment: per old state ``s``, the matched new state index.
+    """
+
+    parameter_drift: float
+    state_mean_drift_alert: bool
+    max_transition_prob_shift: float
+    transition_prob_review_flag: bool
+    alignment: tuple[int, ...]
+
+
+def compute_hmm_parameter_drift(
+    *,
+    previous_state_means: np.ndarray,
+    current_state_means: np.ndarray,
+    previous_transition_matrix: np.ndarray,
+    current_transition_matrix: np.ndarray,
+    state_mean_drift_threshold: float = _STATE_MEAN_DRIFT_ALERT_THRESHOLD,
+    transition_prob_review_threshold: float = _TRANSITION_PROB_REVIEW_THRESHOLD,
+) -> HMMParameterDrift:
+    """Compare two fitted Gaussian-HMM parameter sets for §6.1 calibration drift.
+
+    Aligns the current state indices to the previous model by Hungarian
+    matching on Euclidean state-mean distance, then reports the relative
+    state-mean drift alert and the absolute transition-probability review flag.
+    Pure function — no model fitting, no I/O. See :class:`HMMParameterDrift`.
+    """
+    prev_means = np.asarray(previous_state_means, dtype=float)
+    curr_means = np.asarray(current_state_means, dtype=float)
+    prev_trans = np.asarray(previous_transition_matrix, dtype=float)
+    curr_trans = np.asarray(current_transition_matrix, dtype=float)
+
+    if prev_means.shape != curr_means.shape or prev_means.ndim != 2:
+        raise ValueError(
+            "state-mean arrays must share a (n_states, n_features) shape; got "
+            f"{prev_means.shape} vs {curr_means.shape}"
+        )
+    n_states = prev_means.shape[0]
+    for name, matrix in (
+        ("previous_transition_matrix", prev_trans),
+        ("current_transition_matrix", curr_trans),
+    ):
+        if matrix.shape != (n_states, n_states):
+            raise ValueError(
+                f"{name} must be ({n_states}, {n_states}); got {matrix.shape}"
+            )
+
+    # Hungarian alignment of new states to old by closest mean (§6.1: "state
+    # index permutations across refits are not counted as drift").
+    cost = np.linalg.norm(prev_means[:, None, :] - curr_means[None, :, :], axis=2)
+    row_ind, col_ind = linear_sum_assignment(cost)
+    alignment = np.empty(n_states, dtype=int)
+    alignment[row_ind] = col_ind
+
+    aligned_means = curr_means[alignment]
+    aligned_trans = curr_trans[np.ix_(alignment, alignment)]
+
+    # Relative state-mean drift: |new - old| / max(|old|, 1e-9), max over
+    # (state × feature). Matches the spec's pinned operational form.
+    denominator = np.maximum(np.abs(prev_means), 1e-9)
+    parameter_drift = float((np.abs(aligned_means - prev_means) / denominator).max())
+
+    # Absolute transition-probability shift (bounded [0,1]) — review only.
+    max_transition_prob_shift = float(np.abs(aligned_trans - prev_trans).max())
+
+    return HMMParameterDrift(
+        parameter_drift=parameter_drift,
+        state_mean_drift_alert=parameter_drift > state_mean_drift_threshold,
+        max_transition_prob_shift=max_transition_prob_shift,
+        transition_prob_review_flag=(
+            max_transition_prob_shift > transition_prob_review_threshold
+        ),
+        alignment=tuple(int(x) for x in alignment),
+    )
