@@ -290,7 +290,12 @@ Every classifier outputs three labels:
 
 ### 2.10 Asymmetric Hysteresis
 
-Risk escalation defaults to immediate via `*_escalation_days: 1`; raising those knobs delays stable-label entry. De-escalation remains debounced.
+Risk escalation defaults to immediate via `default_escalation_days: 1` on each
+axis-level hysteresis config section. Raising `default_escalation_days` or
+adding an `escalation_days_by_label` override delays stable-label entry for the
+configured label; `active_label` still surfaces the riskier raw label on the
+first session. De-escalation remains debounced by `deescalation_days_by_label`
+and `default_deescalation_days`.
 
 ```python
 if risk_rank(raw_label) > risk_rank(stable_label):
@@ -301,19 +306,46 @@ else:
     escalation_fast_path = False
 ```
 
-Default V1 hysteresis:
+Default V1 hysteresis ships under the neutral axis sections, not a separate
+flat `hysteresis` block:
 
 ```yaml
-hysteresis:
-  trend_direction_escalation_days: 1
-  trend_direction_deescalation_days: 3
-  trend_character_escalation_days: 1
-  trend_character_deescalation_days: 3
-  volatility_escalation_days: 1
-  volatility_deescalation_days: 2
-  breadth_escalation_days: 1
-  breadth_deescalation_days: 2
-  composite_deescalation_days: 3
+trend_direction:
+  default_escalation_days: 1
+  deescalation_days_by_label:
+    bear: 3
+    transition: 3
+    sideways: 3
+    bull: 3
+    unknown: 3
+  default_deescalation_days: 3
+trend_character:
+  default_escalation_days: 1
+  deescalation_days_by_label:
+    recovery_attempt: 3
+    trending: 3
+    chop: 3
+    transition: 3
+    unknown: 3
+  default_deescalation_days: 3
+volatility_state:
+  default_escalation_days: 1
+  deescalation_days_by_label:
+    crisis_vol: 2
+    high_vol: 2
+    rising_vol: 2
+    low_vol: 2
+    normal_vol: 2
+    vol_crush: 2
+    unknown: 2
+  default_deescalation_days: 2
+breadth_state:
+  default_escalation_days: 1
+  deescalation_days_by_label:
+    weak_breadth: 2
+    healthy_breadth: 2
+    unknown: 2
+  default_deescalation_days: 2
 ```
 
 > The event_calendar output intentionally has **no hysteresis**. Calendar windows are themselves deterministic (`as_of_date` is inside an event window or it is not), so a debounce knob is meaningless. The current wire shape exposes `primary_label` for compact display/precedence and `matching_labels` for all overlapping event windows. It does not construct the usual hysteresis label triple for the calendar output.
@@ -1447,7 +1479,10 @@ V1 implementation contract:
    Section 11 output shape and the Section 10 conditional strategy-response
    field whitelist exactly.
 
-8. Hysteresis is asymmetric: escalation defaults to immediate via `*_escalation_days: 1`; raising those knobs delays stable-label entry. De-escalation remains debounced.
+8. Hysteresis is asymmetric: escalation defaults to immediate via each axis
+   section's `default_escalation_days: 1`; raising that default or adding
+   `escalation_days_by_label` delays stable-label entry while `active_label`
+   still surfaces the riskier raw label. De-escalation remains debounced.
 
 9. trend_direction and trend_character are SEPARATE axes. Never collapse
    them into a single label.

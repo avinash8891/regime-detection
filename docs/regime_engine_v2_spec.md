@@ -4680,8 +4680,12 @@ V2 implementation contract:
 2. Do not invent component score formulas. Use the exact formulas in
    Section 4.2 of the V2 spec.
 
-3. Do not invent transition score weights. Use Section 4.3. If HMM is
-   not yet shipped, use the renormalized weights without HMM.
+3. Do not invent transition score weights. Use Section 4.3. Once
+   `transition_score` is enabled, HMM, cluster/GMM, and change-point evidence
+   are mandatory model-instability inputs; missing model evidence raises a
+   runtime error and is not an optional renormalized component. Only the
+   optional components enumerated in Section 4.3 may be omitted and
+   renormalized after the minimum coverage gate passes.
 
 4. Do not auto-label clusters. K-Means/GMM mappings require manual
    review per Section 6.2. Ship the model; do not ship auto-mapping.
