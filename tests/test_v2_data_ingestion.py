@@ -101,7 +101,9 @@ def test_synthetic_v2_kwargs_use_real_fixture_rows_when_covered(
     xlb = kwargs["sector_etf_closes"]["XLB"]
     constituent_xlb = kwargs["constituent_ohlcv"]["XLB"]
 
-    assert xlb.index.min() == pd.Timestamp("2019-01-02")
+    # Real fixture rows span the full extended history (2009-01-02) up to as_of.
+    assert xlb.index.min() == pd.Timestamp("2009-01-02")
+    assert xlb.index.max() == pd.Timestamp("2023-12-14")
     assert not (
         constituent_xlb["open"].equals(constituent_xlb["high"])
         and constituent_xlb["high"].equals(constituent_xlb["low"])
