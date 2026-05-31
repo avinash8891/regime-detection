@@ -186,9 +186,7 @@ def test_build_axis_series_bundle_emits_session_keyed_outputs_for_core_axes(
     assert set(bundle.event_calendar) == expected_dates
 
 
-def test_core_axis_output_builder_freezes_hysteresis_state_across_short_data_gaps() -> (
-    None
-):
+def test_core_axis_output_builder_holds_dq_gap_by_departed_label_threshold() -> None:
     dates = [
         date(2024, 1, 2),
         date(2024, 1, 3),
@@ -217,4 +215,4 @@ def test_core_axis_output_builder_freezes_hysteresis_state_across_short_data_gap
     assert result.outputs_by_date[dates[1]].active_label == "bear"
     assert result.outputs_by_date[dates[1]].evidence["data_quality_freeze"] is True
     assert result.outputs_by_date[dates[2]].stable_label == "bear"
-    assert result.outputs_by_date[dates[3]].stable_label == "unknown"
+    assert result.outputs_by_date[dates[3]].stable_label == "bear"

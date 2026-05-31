@@ -280,7 +280,7 @@ def test_systemic_stress_fails_closed_when_credit_funding_label_absent():
     )
 
 
-def test_evaluate_rules_emits_systemic_stress_when_credit_unavailable():
+def test_evaluate_rules_emits_unconfirmed_systemic_stress_when_credit_unavailable():
     cfg = _default_rules_config()
     inputs = _inputs(
         avg_corr_pct=0.95,
@@ -297,7 +297,7 @@ def test_evaluate_rules_emits_systemic_stress_when_credit_unavailable():
         credit_funding_label=None,
     )
 
-    assert evaluation.label == "systemic_stress"
+    assert evaluation.label == "systemic_stress_unconfirmed"
     assert evaluation.rule_path == "percentile"
     assert evaluation.reason == "credit_funding_unavailable"
     assert (
@@ -308,7 +308,7 @@ def test_evaluate_rules_emits_systemic_stress_when_credit_unavailable():
             volatility_label="normal_vol",
             credit_funding_label=None,
         )
-        == "systemic_stress"
+        == "systemic_stress_unconfirmed"
     )
 
 

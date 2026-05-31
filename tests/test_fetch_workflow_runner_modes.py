@@ -3,6 +3,7 @@ from __future__ import annotations
 import datetime as dt
 import argparse
 import json
+import tempfile
 from pathlib import Path
 
 import pytest
@@ -442,9 +443,12 @@ def test_emit_manifest_uses_all_runner_use_cases_by_default(
             "--out-dir",
             str(tmp_path / "data" / "raw"),
             "--emit-manifest",
-            str(tmp_path / "manifest.yaml"),
+            str(
+                Path(tempfile.mkdtemp(prefix="manifest-test-", dir="/tmp"))
+                / "manifest.yaml"
+            ),
             "--artifact-store",
-            str(tmp_path / "store"),
+            str(Path(tempfile.mkdtemp(prefix="artifact-store-test-", dir="/tmp"))),
         ],
     )
 
@@ -496,7 +500,7 @@ def test_emit_manifest_without_path_uses_tracked_immutable_run_manifest(
             str(tmp_path / "data" / "raw"),
             "--emit-manifest",
             "--artifact-store",
-            str(tmp_path / "store"),
+            str(Path(tempfile.mkdtemp(prefix="artifact-store-test-", dir="/tmp"))),
         ],
     )
 

@@ -312,10 +312,10 @@ def test_real_default_config_carries_clustering_block() -> None:
     assert cfg.clustering.random_state == 42
 
 
-def test_regime_output_degrades_when_clustering_seam_none(
+def test_regime_output_fails_loudly_when_transition_score_lacks_clustering(
     v2_classify_kwargs_for_asof,
 ) -> None:
-    """A config without clustering still scores from the remaining model evidence."""
+    """Transition score must not fabricate model_instability without GMM evidence."""
     from regime_detection.engine import RegimeEngine
 
     base = load_default_regime_config()
@@ -342,11 +342,8 @@ def test_regime_output_degrades_when_clustering_seam_none(
     kwargs = v2_classify_kwargs_for_asof(last_session)
     kwargs["config"] = config
 
-    out = engine.classify(
-        as_of_date=last_session,
-        **kwargs,
-    )
-
-    assert out.cluster is None
-    assert out.transition_risk.score is not None
-    assert "model_instability" in (out.transition_risk.score_components or {})
+    with pytest.raises(RuntimeError, match="model evidence feature_store.clustering"):
+        engine.classify(
+            as_of_date=last_session,
+            **kwargs,
+        )

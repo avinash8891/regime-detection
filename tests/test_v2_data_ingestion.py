@@ -109,12 +109,12 @@ def test_synthetic_v2_kwargs_use_real_fixture_rows_when_covered(
     )
 
 
-def test_synthetic_v2_kwargs_rejects_uncovered_market_window_start(
+def test_synthetic_v2_kwargs_rejects_pre_v2_as_of_date(
     market_df_for_asof, synthetic_v2_kwargs_for_market_data
 ) -> None:
-    market_data = market_df_for_asof(date(2023, 12, 14))
+    market_data = market_df_for_asof(date(2018, 12, 31))
 
-    with pytest.raises(RuntimeError, match="window start=2016-01-04"):
+    with pytest.raises(RuntimeError, match="as_of=2018-12-31"):
         synthetic_v2_kwargs_for_market_data(market_data)
 
 
