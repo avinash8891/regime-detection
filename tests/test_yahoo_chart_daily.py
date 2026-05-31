@@ -140,6 +140,47 @@ def test_fetch_daily_bars_yahoo_chart_sends_browser_headers_and_timeout() -> Non
     ]
 
 
+def test_fetch_daily_bars_yahoo_chart_ignores_malformed_adjclose_shape() -> None:
+    payload = {
+        "chart": {
+            "result": [
+                {
+                    "meta": {"exchangeTimezoneName": "America/New_York"},
+                    "timestamp": [1_746_437_400],
+                    "indicators": {
+                        "quote": [
+                            {
+                                "open": [560.0],
+                                "high": [562.5],
+                                "low": [559.5],
+                                "close": [561.25],
+                                "volume": [62_000_000],
+                            }
+                        ],
+                        "adjclose": {"adjclose": [559.0]},
+                    },
+                }
+            ],
+            "error": None,
+        }
+    }
+
+    def fake_urlopen(request, timeout: float):
+        del request, timeout
+        return _FakeResponse(json.dumps(payload).encode("utf-8"))
+
+    result = fetch_daily_bars_yahoo_chart(
+        symbols=["SPY"],
+        start_date=dt.date(2025, 5, 5),
+        end_date=dt.date(2025, 5, 5),
+        urlopen=fake_urlopen,
+    )
+
+    row = result.df.to_dict(orient="records")[0]
+    assert row["close"] == 561.25
+    assert row["adjusted_close"] == 561.25
+
+
 def test_fetch_daily_bars_yahoo_chart_rejects_invalid_utf8_json() -> None:
     def fake_urlopen(_request, timeout: float):
         del timeout

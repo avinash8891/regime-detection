@@ -416,7 +416,9 @@ def test_transition_score_missing_model_evidence_marks_component_missing() -> No
     assert out.missing_components == ("model_instability",)
 
 
-def test_transition_risk_series_degrades_when_model_evidence_is_cold_start() -> None:
+def test_transition_risk_series_degrades_when_model_evidence_rows_are_cold_start() -> (
+    None
+):
     session = date(2024, 1, 2)
     index = pd.DatetimeIndex([pd.Timestamp(session)])
     context = MarketContext.model_construct(
@@ -447,9 +449,9 @@ def test_transition_risk_series_degrades_when_model_evidence_is_cold_start() -> 
             drawdown_252d=pd.Series([0.0], index=index),
         ),
         volume_liquidity_v2=None,
-        hmm=None,
-        change_point=None,
-        clustering=None,
+        hmm=SimpleNamespace(top_state_prob=pd.Series([0.5], index=index)),
+        change_point=SimpleNamespace(score=pd.Series([0.0], index=index)),
+        clustering=SimpleNamespace(cluster_id=pd.Series([1], index=index)),
     )
     axis_bundle = AxisSeriesBundle(
         trend_direction=_axis_result([session], "bull"),
@@ -468,6 +470,57 @@ def test_transition_risk_series_degrades_when_model_evidence_is_cold_start() -> 
     assert outputs[session].score is not None
     assert outputs[session].score_components is not None
     assert "model_instability" not in outputs[session].score_components
+
+
+def test_transition_risk_series_requires_configured_model_evidence_seams() -> None:
+    session = date(2024, 1, 2)
+    index = pd.DatetimeIndex([pd.Timestamp(session)])
+    context = MarketContext.model_construct(
+        end_date=session,
+        config=load_default_regime_config(),
+        sessions=(session,),
+        spy_ohlcv=pd.DataFrame({"close": [100.0]}, index=index),
+    )
+    feature_store = FeatureStore.model_construct(
+        spy_index=index,
+        sma_50=pd.Series([100.0], index=index),
+        volatility_state_v2=SimpleNamespace(
+            realized_vol_short=pd.Series([10.0], index=index),
+            realized_vol_long=pd.Series([10.0], index=index),
+            gap_frequency_percentile_252d=pd.Series([0.0], index=index),
+            intraday_range_percentile_252d=pd.Series([0.0], index=index),
+        ),
+        breadth_state_v2=SimpleNamespace(
+            pct_above_50dma=pd.Series([0.5], index=index),
+        ),
+        network_fragility=SimpleNamespace(
+            avg_pairwise_corr_percentile_504d=pd.Series([0.0], index=index),
+            largest_eigenvalue_share_percentile_504d=pd.Series([0.0], index=index),
+            effective_rank_percentile_504d=pd.Series([1.0], index=index),
+            absorption_ratio_top3=pd.Series([0.5], index=index),
+        ),
+        trend_direction_v2=SimpleNamespace(
+            drawdown_252d=pd.Series([0.0], index=index),
+        ),
+        volume_liquidity_v2=None,
+        hmm=SimpleNamespace(top_state_prob=pd.Series([0.5], index=index)),
+        change_point=SimpleNamespace(score=pd.Series([0.0], index=index)),
+        clustering=None,
+    )
+    axis_bundle = AxisSeriesBundle(
+        trend_direction=_axis_result([session], "bull"),
+        trend_character=_axis_result([session], "trending"),
+        volatility_state=_axis_result([session], "low_vol"),
+        breadth_state=_axis_result([session], "healthy_breadth"),
+        event_calendar=_event_calendar([session]),
+    )
+
+    with pytest.raises(RuntimeError, match="model evidence feature_store.clustering"):
+        build_transition_risk_series(
+            context=context,
+            feature_store=feature_store,
+            axis_bundle=axis_bundle,
+        )
 
 
 def test_transition_risk_state_debounces_soft_state_changes() -> None:

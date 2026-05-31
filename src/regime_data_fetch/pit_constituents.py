@@ -250,9 +250,10 @@ def read_pit_intervals(
     produce correct membership lookups. The patch is idempotent: rows that
     already carry a non-null end_date are left unchanged.
 
-    V2 §1D line 327 / §10 — fail-closed survivorship-bias gate: after applying
-    corrections, a universe with no removed/delisted members (every interval
-    open) is rejected unless ``allow_survivorship_biased_breadth`` is True. Real
+    V2 §1D line 327 / §10 — fail-closed survivorship-bias gate: corrections are
+    applied before membership use, but source corrections alone are not enough
+    to prove a point-in-time feed. The raw source must contain at least one
+    closed interval unless ``allow_survivorship_biased_breadth`` is True. Real
     point-in-time feeds include delistings and pass; a current-only snapshot does
     not. The V1 ETF-proxy breadth fallback (when no PIT universe is loaded at
     all) is unaffected — this gates the loaded universe, not its absence.
@@ -266,16 +267,7 @@ def read_pit_intervals(
             "end_date": df["end_date"].map(optional_date),
         },
     )
-
-    if not allow_survivorship_biased_breadth and is_survivorship_biased_universe(df):
-        raise ValueError(
-            f"PIT constituent universe at {parquet_path} is survivorship-biased "
-            "(no removed/delisted members — every membership interval is open). "
-            "Refusing to load a current-only universe as point-in-time. Provide a "
-            "universe that includes removed members, or pass "
-            "allow_survivorship_biased_breadth=True to opt into biased research "
-            "mode."
-        )
+    source_contains_closed_interval = bool(df["end_date"].notna().any())
 
     # Patch-on-read: apply corrections to any open interval whose ticker has a
     # known correction. This fixes stale artifacts without requiring a re-fetch.
@@ -297,6 +289,23 @@ def read_pit_intervals(
     if object_columns:
         df = df.astype(object_columns)
 
+    if not allow_survivorship_biased_breadth:
+        if is_survivorship_biased_universe(df):
+            raise ValueError(
+                f"PIT constituent universe at {parquet_path} is survivorship-biased "
+                "(no removed/delisted members — every membership interval is open). "
+                "Refusing to load a current-only universe as point-in-time. Provide a "
+                "universe that includes removed members, or pass "
+                "allow_survivorship_biased_breadth=True to opt into biased research "
+                "mode."
+            )
+        if not source_contains_closed_interval:
+            raise ValueError(
+                f"PIT constituent universe at {parquet_path} is survivorship-biased: "
+                "source contains no closed intervals before source-specific "
+                "corrections. Refusing to treat source-corrected rows alone as "
+                "proof of a point-in-time universe."
+            )
     return df
 
 

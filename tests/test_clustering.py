@@ -312,7 +312,7 @@ def test_real_default_config_carries_clustering_block() -> None:
     assert cfg.clustering.random_state == 42
 
 
-def test_regime_output_marks_model_instability_missing_without_clustering(
+def test_regime_output_fails_loudly_when_transition_score_lacks_clustering(
     v2_classify_kwargs_for_asof,
 ) -> None:
     """Transition score must not fabricate model_instability without GMM evidence."""
@@ -342,11 +342,8 @@ def test_regime_output_marks_model_instability_missing_without_clustering(
     kwargs = v2_classify_kwargs_for_asof(last_session)
     kwargs["config"] = config
 
-    output = engine.classify(
-        as_of_date=last_session,
-        **kwargs,
-    )
-
-    assert output.transition_risk.score is not None
-    assert output.transition_risk.score_components is not None
-    assert "model_instability" not in output.transition_risk.score_components
+    with pytest.raises(RuntimeError, match="model evidence feature_store.clustering"):
+        engine.classify(
+            as_of_date=last_session,
+            **kwargs,
+        )

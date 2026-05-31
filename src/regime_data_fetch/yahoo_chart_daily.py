@@ -233,6 +233,8 @@ def _value_at(data: dict[str, Any], key: str, index: int) -> object | None:
 
 def _adjusted_close_data(indicators: dict[str, Any]) -> dict[str, Any]:
     adjusted_close_entries = indicators.get("adjclose") or []
+    if not isinstance(adjusted_close_entries, list):
+        return {}
     if not adjusted_close_entries:
         return {}
     adjusted_close_data = adjusted_close_entries[0]
