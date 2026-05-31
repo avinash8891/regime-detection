@@ -46,6 +46,8 @@ def build_volatility_axis_series(
         raw_evidence=raw_evidence,
         risk_rank=VOLATILITY_RISK_RANK,
         deescalation_days_by_label=hysteresis_config.deescalation_days_by_label,
+        escalation_days_by_label=hysteresis_config.escalation_days_by_label,
+        default_escalation_days=hysteresis_config.default_escalation_days,
         default_deescalation_days=hysteresis_config.default_deescalation_days,
         max_unknown_freeze_days=hysteresis_config.max_unknown_freeze_days,
         required_inputs=[close],

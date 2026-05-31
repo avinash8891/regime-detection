@@ -109,11 +109,11 @@
 - Modify: `docs/regime_engine_v2_spec.md`
 - Test: `tests/test_per_label_hysteresis.py`, `tests/test_v2_config.py`, `tests/test_network_fragility_classifier.py`
 
-- [ ] Step 1: Add failing tests for configurable escalation days defaulting to byte-identical immediate escalation.
-- [ ] Step 2: Decide by evidence whether `systemic_stress_unconfirmed` is formalized in spec or removed; add test for the chosen label set.
-- [ ] Step 3: Close Ambiguity Log #26 in the spec and update classification-status docs to match shipped statuses.
-- [ ] Step 4: Run focused hysteresis/config/network tests.
-- [ ] Step 5: Commit `fix(spec): close v2 schema drift`.
+- [x] Step 1: Add failing tests for configurable escalation days defaulting to byte-identical immediate escalation.
+- [x] Step 2: Decide by evidence whether `systemic_stress_unconfirmed` is formalized in spec or removed; add test for the chosen label set.
+- [x] Step 3: Close Ambiguity Log #26 in the spec and update classification-status docs to match shipped statuses.
+- [x] Step 4: Run focused hysteresis/config/network tests.
+- [x] Step 5: Commit `fix(spec): close v2 schema drift`.
 
 ## Task 8: V1 Config and Strategy Cleanup (`F-032`, `F-033`, `F-034`, `F-042`, `F-043`)
 

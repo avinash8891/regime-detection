@@ -68,11 +68,13 @@ NetworkFragilityLabel = Literal[
 ]
 
 
-# v2 §3.4: systemic_stress > correlation_to_one > correlation_concentration
-#          > rising_fragility > idiosyncratic_crisis > stock_picker_dispersion
-#          > rotation_watch > decorrelated_calm > diversified_normal > unknown
+# v2 §3.4: systemic_stress > systemic_stress_unconfirmed > correlation_to_one
+#          > correlation_concentration > rising_fragility > idiosyncratic_crisis
+#          > stock_picker_dispersion > rotation_watch > decorrelated_calm
+#          > diversified_normal > unknown
 RULE_PRECEDENCE: tuple[NetworkFragilityLabel, ...] = (
     "systemic_stress",
+    "systemic_stress_unconfirmed",
     "correlation_to_one",
     "correlation_concentration",
     "rising_fragility",
@@ -728,17 +730,10 @@ def evaluate_rules_with_evidence(
         if label == "systemic_stress":
             path = systemic_stress_rule_path(inputs, config, breadth_label)
             accepted_credit: set[CreditFundingLabel] = {"credit_stress", "deleveraging"}
-            if path is not None and (
-                credit_funding_label is None or credit_funding_label in accepted_credit
-            ):
+            if path is not None and credit_funding_label in accepted_credit:
                 return NetworkFragilityRuleEvaluation(
                     label="systemic_stress",
                     rule_path=path,
-                    reason=(
-                        "credit_funding_unavailable"
-                        if credit_funding_label is None
-                        else None
-                    ),
                 )
         elif label == "systemic_stress_unconfirmed":
             path = systemic_stress_rule_path(inputs, config, breadth_label)
