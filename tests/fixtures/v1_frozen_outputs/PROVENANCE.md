@@ -12,9 +12,9 @@ The `*.json` files in this directory are byte-frozen snapshots of `RegimeOutput.
 
 | File | as_of_date | Originating commit (capture) |
 |---|---|---|
-| `2023-12-14.json` | 2023-12-14 | `482e44b` (Phase B snapshot baseline — see `_v1_frozen_models.py` header) |
-| `2024-02-15.json` | 2024-02-15 | `482e44b` (Phase B snapshot baseline — captured in the same wire-shape pass as `2023-12-14.json`) |
-| `2024-04-15.json` | 2024-04-15 | `482e44b` (Phase B snapshot baseline — captured in the same wire-shape pass as `2023-12-14.json`) |
+| `2023-12-14.json` | 2023-12-14 | `F-004 live replay recapture` — `RegimeEngine.classify(..., config=core3-v1.0.0.yaml)` using `tests/conftest.py::market_df_for_asof` and `event_calendar_df` |
+| `2024-02-15.json` | 2024-02-15 | `F-004 live replay recapture` — same command/input path as `2023-12-14.json` |
+| `2024-04-15.json` | 2024-04-15 | `F-004 live replay recapture` — same command/input path as `2023-12-14.json` |
 
 ## Regeneration command (only when authorized)
 
@@ -23,12 +23,15 @@ python3 - <<'PY'
 from datetime import date
 from pathlib import Path
 from regime_detection.engine import RegimeEngine
-# Replace market_data with the fixture loader used by the rest of the suite
-# (tests/conftest.py::market_df_for_asof) and pin the engine_version + config
-# at the V1 baseline commit before re-running.
+from regime_detection.config import load_regime_config
+# Replace market_data/event_calendar with the fixture loaders used by the
+# rest of the suite: tests/conftest.py::market_df_for_asof and event_calendar_df.
+config = load_regime_config("src/regime_detection/configs/core3-v1.0.0.yaml")
 out = RegimeEngine().classify(
     as_of_date=date(2023, 12, 14),
     market_data=...,
+    event_calendar=...,
+    config=config,
 )
 Path("tests/fixtures/v1_frozen_outputs/2023-12-14.json").write_text(
     out.model_dump_json(exclude_none=True, indent=2)

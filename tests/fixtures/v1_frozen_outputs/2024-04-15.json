@@ -1,6 +1,6 @@
 {
   "engine_version": "regime-engine-v2.0.0",
-  "config_version": "core3-v2.0.0",
+  "config_version": "core3-v1.0.0",
   "as_of_date": "2024-04-15",
   "market": "SPY",
   "trend_direction": {
@@ -9,16 +9,20 @@
     "active_label": "transition",
     "evidence": {
       "rule_evidence": {
-        "bull": false,
-        "bear": false,
-        "sideways": false,
-        "transition": true,
+        "sma_50": 510.046,
+        "sma_200": 465.06305,
+        "return_63d": 0.05825711,
+        "close_gt_sma50": false,
+        "close_gt_sma200": true,
+        "sma50_gt_sma200": true,
         "within_5pct_sma200": false
       },
       "risk_rank": {
         "bull": 0,
         "sideways": 1,
+        "recovery": 1,
         "transition": 2,
+        "euphoria": 4,
         "bear": 3,
         "unknown": 2
       },
@@ -36,15 +40,26 @@
     "active_label": "transition",
     "evidence": {
       "rule_evidence": {
+        "adx_14": 18.624022,
+        "return_10d": -0.03391681,
+        "return_21d": -0.02039033,
+        "prior_63d_drawdown": -0.03578187,
         "recovery_attempt": false,
         "trending": false,
+        "mild_trend": false,
         "chop": false,
-        "transition": true
+        "volatile_chop": false,
+        "range_bound": false,
+        "breakout_expansion": false
       },
       "risk_rank": {
         "trending": 0,
-        "chop": 1,
+        "breakout_expansion": 0,
+        "mild_trend": 0,
         "recovery_attempt": 1,
+        "range_bound": 1,
+        "chop": 1,
+        "volatile_chop": 1,
         "transition": 2,
         "unknown": 2
       },
@@ -62,18 +77,21 @@
     "active_label": "normal_vol",
     "evidence": {
       "rule_evidence": {
+        "realized_vol_21d": 0.11968576,
+        "realized_vol_percentile_252d": 0.62698413,
+        "vix_percentile_252d": 0.47619048,
         "crisis_vol": false,
         "high_vol": false,
-        "low_vol": false,
-        "normal_vol": true,
-        "vix_percentile_present": true
+        "low_vol": false
       },
       "risk_rank": {
         "low_vol": 0,
         "normal_vol": 1,
         "high_vol": 2,
         "crisis_vol": 3,
-        "unknown": 2
+        "unknown": 2,
+        "rising_vol": 2,
+        "vol_crush": 3
       },
       "deescalation_days": 2
     },
@@ -88,21 +106,31 @@
     "stable_label": "weak_breadth",
     "active_label": "weak_breadth",
     "evidence": {
-      "proxy": "RSP/SPY",
       "rule_evidence": {
+        "proxy": "RSP/SPY",
+        "relative_breadth_ratio": 0.31832689,
+        "relative_breadth_sma50": 0.3204704,
+        "relative_breadth_return_20d": -0.01293882,
+        "index_distance_from_63d_high": -0.03578187,
         "divergent_fragile": false,
         "weak_breadth": true,
-        "healthy_breadth": false,
-        "neutral_breadth": false
+        "healthy_breadth": false
       },
       "risk_rank": {
+        "breadth_thrust": 0,
         "healthy_breadth": 0,
+        "broadening_breadth": 0,
         "neutral_breadth": 1,
+        "recovery_breadth": 1,
         "weak_breadth": 2,
+        "narrowing_breadth": 2,
         "divergent_fragile": 3,
         "unknown": 2
       },
-      "deescalation_days": 2
+      "deescalation_days": 2,
+      "proxy": "RSP/SPY",
+      "row_provenance_mode": "etf_proxy",
+      "active_label_source": "etf_proxy"
     },
     "data_quality": {
       "status": "ok",
@@ -131,28 +159,35 @@
     "reason": "breadth_state_used_as_v1_fragility_proxy"
   },
   "transition_risk": {
-    "state": "post_switch_cooldown",
+    "state": "watch",
     "evidence": {
       "triggered_rules": [
         "post_switch_cooldown"
       ],
       "stable_changed_today": true,
       "days_since_axis_switch": 0,
-      "axis_switch_count": 0,
-      "recent_axis_switch_count": 0
+      "axis_switch_count": 2,
+      "recent_axis_switch_count": 6,
+      "macro_event_labels": [
+        "earnings_season"
+      ]
     }
   },
   "strategy_response": {
-    "position_size_multiplier": 1.0,
+    "position_size_multiplier": 0.5,
     "allow_trend_following": true,
     "allow_mean_reversion": true,
     "leverage_allowed": true,
     "allow_buy_dip": true,
-    "allow_breakout": true,
+    "allow_breakout": false,
     "allow_shorts": true,
-    "require_confirmation_for_new_longs": false,
+    "require_confirmation_for_new_longs": true,
     "require_confirmation_for_shorts": false,
     "log_for_review": false,
-    "modifiers_applied": []
+    "modifiers_applied": [
+      "sideways_stress"
+    ],
+    "take_profit_faster": true,
+    "allow_leverage_expansion": false
   }
 }

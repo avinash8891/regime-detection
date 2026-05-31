@@ -31,7 +31,7 @@
 - [x] Step 3: Add a small label/reason output model, add `monetary_pressure` to `StructuralCausalState`, and project V1 `network_fragility` / `transition_risk` using `state`.
 - [x] Step 4: Update the V1 spec §11 JSON and frozen shim expectations only after the model tests prove the contract.
 - [x] Step 5: Run targeted model tests plus frozen replay tests.
-- [ ] Step 6: Commit `fix(wire): align v1 structural causal contract`.
+- [x] Step 6: Commit `fix(wire): align v1 structural causal contract`.
 
 ## Task 2: Live V1 Frozen Replay (`F-004`)
 
@@ -39,10 +39,10 @@
 - Modify: `tests/test_v1_frozen_replay.py`
 - Modify fixtures under `tests/fixtures/v1_frozen_outputs/` only if live-engine evidence shows the archived fixture is stale.
 
-- [ ] Step 1: Write a failing test that instantiates `RegimeEngine`, classifies each archived fixture date with fixture market data, projects through V1 wire mode, and diffs against the archived JSON.
-- [ ] Step 2: Run only `tests/test_v1_frozen_replay.py`; confirm the existing round-trip-only enforcement is insufficient.
-- [ ] Step 3: Wire fixture data helpers into the test without network calls.
-- [ ] Step 4: Run `python3.14 -m pytest -o addopts='' tests/test_v1_frozen_replay.py -q; echo "EXIT:$?"`.
+- [x] Step 1: Write a failing test that instantiates `RegimeEngine`, classifies each archived fixture date with fixture market data, projects through V1 wire mode, and diffs against the archived JSON.
+- [x] Step 2: Run only `tests/test_v1_frozen_replay.py`; confirm the existing round-trip-only enforcement is insufficient.
+- [x] Step 3: Wire fixture data helpers into the test without network calls.
+- [x] Step 4: Run `python3.14 -m pytest -o addopts='' tests/test_v1_frozen_replay.py -q; echo "EXIT:$?"`.
 - [ ] Step 5: Commit `fix(test): replay v1 frozen fixtures through live engine`.
 
 ## Task 3: Walk-Forward Gate Invariants (`F-014`, `F-017`, `F-053`, `F-054`, `F-055`, `F-056`, `F-057`)
