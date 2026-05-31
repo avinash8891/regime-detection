@@ -96,20 +96,24 @@ The `UNIQUE (as_of_date, engine_version, config_version)` constraint is mandator
 
 V1 shadow-mode source of truth:
 
-- Market data: Stooq daily OHLCV for `SPY`, `RSP`, and the VIX proxy used by V1.
+- Market data: local/Alpaca archived parquet is the shadow source of truth for
+  `SPY`, `RSP`, the VIX proxy used by V1, and the shared ETF/constituent inputs
+  needed by the unified V1+V2 engine.
 - Event calendar: the exact YAML/CSV snapshot supplied to the runner for that date.
 
 Rules:
 
 - The runner archives inputs before calling the engine.
 - Historical replay reads only from archived inputs, never from a live refetch.
-- If Stooq has a quality incident, document it in `incidents` and upgrade the source only via an explicit versioned operational change.
+- If the archived source has a quality incident, document it in `incidents` and
+  upgrade the source only via an explicit versioned operational change.
 
 ## 5. Runner Execution Contract
 
 Daily flow:
 
-1. Fetch market data and event calendar for the target `as_of_date`.
+1. Receive market data and event calendar for the target `as_of_date` from the
+   acquisition layer; daily fetch is upstream of the runner.
 2. Archive all inputs to `input_archives/YYYY-MM-DD/`.
 3. Compute SHA-256 checksums for every archived input and write `checksums.json`.
 4. Insert a `runs` row with `status='in_progress'`.

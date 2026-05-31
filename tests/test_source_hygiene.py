@@ -143,3 +143,35 @@ def test_market_context_has_single_sliced_context_constructor() -> None:
     ]
 
     assert len(constructors) <= 2
+
+
+def test_spec_scope_decisions_are_documented() -> None:
+    decision = Path("docs/decisions/0020-v2-prerequisite-and-shadow-scope.md")
+    assert decision.exists()
+    text = decision.read_text()
+
+    required_fragments = (
+        "F-019",
+        "9-slice prerequisite",
+        "process gate",
+        "F-021",
+        "ticker / start_date / end_date interval",
+        "F-025",
+        "HMM parameter-drift flags",
+        "F-045",
+        "CPI-only dual-vintage store",
+        "F-049",
+        "local/Alpaca archived parquet is the shadow source of truth",
+        "F-050",
+        "daily fetch is upstream of the runner",
+    )
+    missing = [fragment for fragment in required_fragments if fragment not in text]
+
+    assert missing == []
+
+
+def test_shadow_runner_spec_pins_current_shadow_source_and_fetch_boundary() -> None:
+    spec = Path("docs/shadow_runner_spec.md").read_text()
+
+    assert "local/Alpaca archived parquet is the shadow source of truth" in spec
+    assert "daily fetch is upstream of the runner" in spec

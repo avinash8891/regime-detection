@@ -128,16 +128,16 @@
 - [x] Step 3: Remove dead V2 blocks from V1 config or document retained compatibility fields if config validation requires them.
 - [x] Step 4: Collapse duplicate Layer-1 rule encoding only if parity tests prove a safe path.
 - [x] Step 5: Pin ADX seeding convention in docs/tests.
-- [ ] Step 6: Commit `refactor(v1): tighten config and rule parity`.
+- [x] Step 6: Commit `refactor(v1): tighten config and rule parity`.
 
 ## Task 9: Decision Records and Scope Notes (`F-019`, `F-021`, `F-025`, `F-045`, `F-049`, `F-050`)
 
 **Files:**
 - Modify or create docs under `docs/decisions/` and relevant specs.
 
-- [ ] Step 1: Add doc checks where feasible for prerequisite tracking, PIT interval schema, HMM drift scope, CPI vintage scope, shadow source-of-truth, and upstream fetch responsibility.
-- [ ] Step 2: Update the decision records with exact current implementation references.
-- [ ] Step 3: Run docs/source hygiene checks.
+- [x] Step 1: Add doc checks where feasible for prerequisite tracking, PIT interval schema, HMM drift scope, CPI vintage scope, shadow source-of-truth, and upstream fetch responsibility.
+- [x] Step 2: Update the decision records with exact current implementation references.
+- [x] Step 3: Run docs/source hygiene checks.
 - [ ] Step 4: Commit `docs: close remaining scope-note findings`.
 
 ## Final Verification
