@@ -30,6 +30,10 @@ Source: repo-local raw parquet file `data/raw/macro/fred_macro_series.parquet`.
 
 Derived file: `tests/fixtures/raw/v2/fred_macro_series.csv`.
 
-Rows: 8,695. Series: `SOFR` (`sofr`), `IORB` (`iorb`), `NFCI` (`nfci`), `DTWEXBGS` (`broad_usd_index`), `BAMLH0A0HYM2` (`hy_oas`), `BAMLC0A4CBBB` (`ig_bbb_oas`). Date span: 2016-01-01 through 2026-05-14.
+Series: `SOFR` (`sofr`), `IORB` (`iorb`), `NFCI` (`nfci`), `DTWEXBGS` (`broad_usd_index`), `BAMLH0A0HYM2` (`hy_oas`), `BAMLC0A4CBBB` (`ig_bbb_oas`).
+
+### Historical extension (FRED API)
+
+`broad_usd_index` (DTWEXBGS) and `nfci` (NFCI) were extended back to 2009-01-02 from the FRED API. The other series have genuine availability floors that the API cannot backfill: `sofr` starts 2018-04, `iorb` starts 2021-07, and the ICE BofA OAS series `hy_oas`/`ig_bbb_oas` are capped by the FRED **API** to a ~3-year rolling window (license redistribution — `/fred/series` reports observation_start 2023-05-30; full history is only on the FRED website CSV). Production fetches via the same API, so the fixture's OAS coverage matches production. 2016-01-01+ values are byte-identical.
 
 Columns retained: `date`, `series_id`, `logical_name`, `value`.
