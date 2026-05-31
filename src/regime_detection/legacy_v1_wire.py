@@ -25,8 +25,14 @@ def project_legacy_v1_wire_shapes(payload: dict[str, Any]) -> dict[str, Any]:
 
     strip_classification_metadata(payload)
 
+    structural = payload.get("structural_causal_state")
+    if isinstance(structural, dict):
+        structural["monetary_pressure"] = {
+            "state": "unknown",
+            "reason": "not_implemented_v1",
+        }
     payload["network_fragility"] = {
-        "label": "not_implemented_v1",
+        "state": "not_implemented_v1",
         "reason": "breadth_state_used_as_v1_fragility_proxy",
     }
     project_legacy_v1_transition_risk(payload)
@@ -39,9 +45,9 @@ def project_legacy_v1_transition_risk(payload: dict[str, Any]) -> None:
         return
 
     transition_risk = cast(dict[str, Any], transition_risk)
-    label = transition_risk.get("label", transition_risk.get("state"))
+    state = transition_risk.get("state", transition_risk.get("label"))
     evidence = transition_risk.get("evidence", {})
-    payload["transition_risk"] = {"label": label, "evidence": evidence}
+    payload["transition_risk"] = {"state": state, "evidence": evidence}
 
 
 def strip_classification_metadata(value: Any) -> None:

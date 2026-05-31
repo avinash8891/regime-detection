@@ -122,16 +122,16 @@
       }
     },
     "monetary_pressure": {
-      "label": "unknown",
+      "state": "unknown",
       "reason": "not_implemented_v1"
     }
   },
   "network_fragility": {
-    "label": "not_implemented_v1",
+    "state": "not_implemented_v1",
     "reason": "breadth_state_used_as_v1_fragility_proxy"
   },
   "transition_risk": {
-    "label": "post_switch_cooldown",
+    "state": "post_switch_cooldown",
     "evidence": {
       "triggered_rules": [
         "post_switch_cooldown"

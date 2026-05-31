@@ -1208,6 +1208,16 @@ Modifier:
     "state": "not_implemented_v1",
     "reason": "breadth_state_used_as_v1_fragility_proxy"
   },
+  "transition_risk": {
+    "state": "stable",
+    "evidence": {
+      "triggered_rules": [],
+      "stable_changed_today": false,
+      "days_since_axis_switch": 2,
+      "axis_switch_count": 0,
+      "recent_axis_switch_count": 0
+    }
+  },
   "strategy_response": {
     "position_size_multiplier": 0.75,
     "allow_trend_following": false,

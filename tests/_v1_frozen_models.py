@@ -50,10 +50,10 @@ class EventCalendarOutputV1Frozen(BaseModel):
     evidence: dict[str, Any]
 
 
-class LabelReasonOutputV1Frozen(BaseModel):
+class StateReasonOutputV1Frozen(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    label: str
+    state: str
     reason: str
 
 
@@ -61,13 +61,13 @@ class StructuralCausalStateV1Frozen(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     event_calendar: EventCalendarOutputV1Frozen
-    monetary_pressure: LabelReasonOutputV1Frozen
+    monetary_pressure: StateReasonOutputV1Frozen
 
 
 class TransitionRiskOutputV1Frozen(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    label: str
+    state: str
     evidence: dict[str, Any]
 
 
@@ -116,7 +116,7 @@ class RegimeOutputV1Frozen(BaseModel):
     volatility_state: AxisOutputV1Frozen
     breadth_state: BreadthStateOutputV1Frozen
     structural_causal_state: StructuralCausalStateV1Frozen
-    network_fragility: LabelReasonOutputV1Frozen
+    network_fragility: StateReasonOutputV1Frozen
     transition_risk: TransitionRiskOutputV1Frozen
     strategy_response: StrategyResponseV1Frozen
 
