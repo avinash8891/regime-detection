@@ -184,6 +184,13 @@ Every top-level output includes:
 
 The package version in `pyproject.toml` and emitted `engine_version` must be coupled by test. A mismatch fails CI.
 
+> **Phase note (unified package).** The literal `regime-engine-v1.0.0` / `core3-v1.0.0` in the example
+> above are phase-1 examples. This repository is one engine built in two phases (see `CLAUDE.md`); the
+> package `regime_detection.__version__` is currently `2.0.0`, so the runtime emits
+> `engine_version = regime-engine-v<package-version>` (`regime-engine-v2.0.0`). The **binding** rule is
+> the package↔`engine_version` coupling test — not the literal `v1.0.0`. V1 frozen-replay byte-identity
+> is compared modulo `engine_version`.
+
 ### 2.4.1 Config Loading
 
 V1 ships with `configs/core3-v1.0.0.yaml`.
@@ -196,6 +203,10 @@ Rules:
 - `RegimeConfig` is a Pydantic model with `extra="forbid"`; unknown config keys raise.
 - `config_version` in output reflects the loaded config.
 - Precedence orderings and risk-rank tables are hardcoded in code, not config.
+
+> **Phase note.** `core3-v1.0.0.yaml` is the phase-1 default. Under the unified package the default
+> config follows the package major (`__version__` major `2` → `configs/core3-v2.0.0.yaml`); the V1
+> config remains explicitly selectable and its frozen outputs stay byte-identical. See `CLAUDE.md`.
 
 ### 2.5 Trading Calendar
 
@@ -789,6 +800,13 @@ breadth_risk_rank:
 - Monetary pressure: not implemented in V1.
 - Inflation/growth, credit/funding: **not implemented in V1**. Output `"state": "unknown", "reason": "not_implemented_v1"`.
 
+> **Phase note (V2).** These axes ARE implemented in phase 2: monetary_pressure (§2A), inflation/growth
+> (§2B), credit/funding (§2C). The "not implemented in V1" text describes the **V1 config path** only;
+> under a V2 config the real axes are emitted as top-level fields (see §11.1). On the V1 wire,
+> `structural_causal_state` remains exactly `{event_calendar, monetary_pressure}` — with
+> `monetary_pressure` as the `{state, reason}` placeholder — and inflation/growth and credit/funding do
+> not appear nested under `structural_causal_state`.
+
 ### 7.2 Event Calendar
 
 Source: manually maintained YAML/CSV. Coding agent must accept either format.
@@ -1142,6 +1160,8 @@ Modifier:
 > - `network_fragility` is rewritten to `{"state": "not_implemented_v1", "reason": "breadth_state_used_as_v1_fragility_proxy"}`.
 >
 > When `config_version != "core3-v1.0.0"` (V2 mode), the live richer shapes are emitted instead and additional V2-only top-level fields appear — see §11.1.
+>
+> **Wire note.** Null-valued optional fields (e.g. `data_quality.reason` when `null`) are omitted from the emitted wire via `exclude_none=True`; the `"reason": null` entries in the canonical JSON below illustrate the model field, not literal wire bytes. Frozen-replay fixtures reflect the post-`exclude_none` wire.
 
 ```json
 {
@@ -1285,9 +1305,11 @@ When the engine runs under a V2 config, the wire shape extends in two ways:
 "structural_causal_state": {
   "event_calendar": { /* unchanged from V1 */ },
   "monetary_pressure": {
-    "state": "unknown",
-    "evidence": {},
-    "data_quality": { "status": "insufficient_history", ... }
+    "raw_label": "<§2A monetary_pressure label>",
+    "stable_label": "...",
+    "active_label": "...",
+    "evidence": { /* §2A rule inputs */ },
+    "data_quality": { "status": "ok", ... }
   }
 },
 "network_fragility": {

@@ -1,0 +1,45 @@
+"""Enumerative gate for resolution finding F-015 (§9 G2 anti-recurrence gate).
+
+The set of cohorts the router can ever emit must equal the spec §5.1 *closed*
+set of 10 cohorts: 8 axis-predicate specialists + ``data_outage_specialist``
+(fail-closed) + ``default_neutral`` (fallback). This test fails if code adds an
+11th cohort or drops one, so spec §5.1 and the router cannot silently drift.
+
+The expected set is the spec contract (docs/regime_engine_v2_spec.md §5.1),
+intentionally pinned here rather than derived from ``COHORTS`` — deriving it from
+the code would make the gate circular and unable to catch a wrong cohort.
+"""
+
+from __future__ import annotations
+
+from regime_detection.cohort_routing import COHORTS, _DATA_OUTAGE
+
+# docs/regime_engine_v2_spec.md §5.1 (cohort list + precedence + Ambiguity Log pin).
+_SPEC_5_1_COHORTS = frozenset(
+    {
+        "crisis_specialist",
+        "euphoria_specialist",
+        "bear_stress_specialist",
+        "tightening_specialist",
+        "easing_specialist",
+        "recovery_specialist",
+        "chop_mean_reversion_specialist",
+        "bull_low_vol_specialist",
+        "data_outage_specialist",
+        "default_neutral",
+    }
+)
+
+
+def test_router_emittable_cohort_set_equals_spec_5_1_closed_set() -> None:
+    emittable = frozenset(COHORTS) | {_DATA_OUTAGE}
+    assert emittable == _SPEC_5_1_COHORTS
+    assert len(_SPEC_5_1_COHORTS) == 10
+
+
+def test_data_outage_specialist_is_a_distinct_fail_closed_cohort() -> None:
+    # data_outage_specialist is special-cased (fired on core-axis outage), not a
+    # member of the axis-predicate COHORTS tuple, and is not the permissive fallback.
+    assert _DATA_OUTAGE == "data_outage_specialist"
+    assert _DATA_OUTAGE not in COHORTS
+    assert _DATA_OUTAGE != "default_neutral"
