@@ -1,0 +1,21 @@
+scripts/run_shadow_deadman_check.py
+  s_57f9992e063d4e::t_80882857231367 89
+tests/test_shadow_deadman_check.py
+  s_57f9992e063d4e::t_c8c9a26a5745b1 5,103-120
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "cfedc9efc48289cfc5e5e6927f44abafe6446a07",
+  "prompts": {},
+  "sessions": {
+    "s_57f9992e063d4e": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019e7bf3-5fe0-7b43-933e-c145c5a78377",
+        "model": "gpt-5.5"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}
