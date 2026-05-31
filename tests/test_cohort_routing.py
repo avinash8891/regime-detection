@@ -360,14 +360,15 @@ def test_cohort_routing_config_rejects_legacy_blocked_cohorts_field() -> None:
 def test_regime_output_emits_agent_routing_when_cohort_routing_configured(
     classified_golden_outputs: dict[date, RegimeOutput],
 ) -> None:
-    """When the engine config carries a cohort_routing block (default V2),
-    every classified output must populate ``agent_routing`` with either a
-    spec-pinned cohort or the fail-closed data-outage sentinel."""
+    """V2 outputs populate routing; V1 replay rows keep the field absent."""
     assert classified_golden_outputs, "golden outputs fixture must be non-empty"
     for as_of, out in classified_golden_outputs.items():
+        if out.config_version == "core3-v1.0.0":
+            assert out.agent_routing is None
+            continue
         assert (
             out.agent_routing is not None
-        ), f"agent_routing missing for {as_of}; default config carries cohort_routing"
+        ), f"agent_routing missing for {as_of}; V2 config carries cohort_routing"
         assert out.agent_routing.active_cohort in {
             *COHORTS,
             "data_outage_specialist",

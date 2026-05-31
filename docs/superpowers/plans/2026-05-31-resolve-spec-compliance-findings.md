@@ -138,13 +138,13 @@
 - [x] Step 1: Add doc checks where feasible for prerequisite tracking, PIT interval schema, HMM drift scope, CPI vintage scope, shadow source-of-truth, and upstream fetch responsibility.
 - [x] Step 2: Update the decision records with exact current implementation references.
 - [x] Step 3: Run docs/source hygiene checks.
-- [ ] Step 4: Commit `docs: close remaining scope-note findings`.
+- [x] Step 4: Commit `docs: close remaining scope-note findings`.
 
 ## Final Verification
 
-- [ ] Run all focused tests touched by this plan.
-- [ ] Run `python3.14 -m black --check src tests scripts`.
-- [ ] Run `python3.14 -m ruff check .`.
-- [ ] Run `python3.14 -m pyright`.
-- [ ] Run `git diff --check`.
+- [x] Run all focused tests touched by this plan.
+- [x] Run `python3.14 -m black --check src tests scripts`.
+- [x] Run `python3.14 -m ruff check .`.
+- [x] Run `python3.14 -m pyright`.
+- [x] Run `git diff --check`.
 - [ ] Push branch and report CI status if GitHub Actions runs are created.
