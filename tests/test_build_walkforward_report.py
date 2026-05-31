@@ -478,6 +478,34 @@ def test_build_walkforward_report_rejects_red_flags(tmp_path: Path) -> None:
     } in result["red_flags"]
 
 
+def test_build_walkforward_report_counts_current_transition_risk_states(
+    tmp_path: Path,
+) -> None:
+    report_mod = _load_module(
+        "build_walkforward_report", "scripts/build_walkforward_report.py"
+    )
+    rows = _session_rows(report_mod)
+    for row in rows:
+        row["transition_risk_state"] = "weakening"
+    out_root = _prepare_walkforward_root(tmp_path, report_mod, rows=rows)
+
+    result = report_mod.build_walkforward_report(
+        output_root=out_root,
+        replay_results_path=_write_replay_results(out_root),
+    )
+
+    assert {
+        "type": "transition_risk_almost_always_fires",
+        "column": "transition_risk_state",
+        "count": 252,
+        "share": 1.0,
+    } in result["red_flags"]
+    assert {
+        "type": "transition_risk_never_fires",
+        "column": "transition_risk_state",
+    } not in result["red_flags"]
+
+
 def test_build_walkforward_report_rejects_incomplete_golden_results(
     tmp_path: Path,
 ) -> None:

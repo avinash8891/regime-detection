@@ -30,7 +30,16 @@ MIN_OOS_SESSIONS = 252
 LABEL_DOMINANCE_THRESHOLD = 0.95
 UNKNOWN_STRETCH_THRESHOLD = 20
 TRANSITION_RISK_WARNING_STATES = frozenset(
-    {"watch", "elevated", "high_transition_risk", "crisis"}
+    {
+        "watch",
+        "weakening",
+        "transition_warning",
+        "high_transition_risk",
+        "crisis",
+        "bear_stress",
+        "fragile_bull",
+        "recovery_attempt",
+    }
 )
 REQUIRED_SUMMARY_COLUMNS = frozenset(
     {

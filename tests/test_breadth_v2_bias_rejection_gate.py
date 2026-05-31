@@ -84,6 +84,21 @@ def test_read_pit_intervals_rejects_current_only_universe(tmp_path: Path) -> Non
         read_pit_intervals(path)
 
 
+def test_read_pit_intervals_rejects_current_only_before_source_corrections(
+    tmp_path: Path,
+) -> None:
+    path = _write_parquet(
+        tmp_path,
+        [
+            {"ticker": "DAY", "start_date": "2024-01-01", "end_date": None},
+            {"ticker": "AAPL", "start_date": "1980-12-12", "end_date": None},
+        ],
+    )
+
+    with pytest.raises(ValueError, match="survivorship-biased"):
+        read_pit_intervals(path)
+
+
 def test_read_pit_intervals_allows_current_only_in_research_mode(
     tmp_path: Path,
 ) -> None:

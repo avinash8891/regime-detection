@@ -129,6 +129,38 @@ def test_shadow_qualification_resets_after_breaking_incident(
     assert "qualification_breaking_incident" in result["blocking_reasons"]
 
 
+def test_shadow_qualification_resets_after_off_session_breaking_incident(
+    tmp_path: Path,
+) -> None:
+    from regime_detection.shadow_qualification import evaluate_shadow_qualification
+
+    db_path = tmp_path / "regime_shadow.db"
+    sessions = _sessions(252)
+    sunday_after_window = date(2024, 2, 18)
+    assert sessions[-1] < sunday_after_window
+    with open_shadow_db(db_path) as conn:
+        _insert_success_runs(conn, sessions)
+        conn.execute(
+            """
+            INSERT INTO incidents (
+                incident_date, description, resolution, breaks_qualification
+            ) VALUES (?, ?, ?, ?)
+            """,
+            (sunday_after_window.isoformat(), "deadman detected missing run", None, 1),
+        )
+        conn.commit()
+        result = evaluate_shadow_qualification(
+            conn=conn,
+            end_date=sunday_after_window,
+            engine_version=ENGINE_VERSION,
+            config_version=CONFIG_VERSION,
+        )
+
+    assert result["qualifies"] is False
+    assert result["current_consecutive_sessions"] == 0
+    assert "qualification_breaking_incident" in result["blocking_reasons"]
+
+
 def test_shadow_qualification_resets_after_replay_mismatch(tmp_path: Path) -> None:
     from regime_detection.shadow_qualification import evaluate_shadow_qualification
 

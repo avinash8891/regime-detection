@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import sqlite3
-from datetime import date
+from datetime import date, timedelta
 from typing import Any
 
 import pandas as pd
@@ -91,8 +91,12 @@ def evaluate_shadow_qualification(
     count = 0
     window_start: date | None = None
     blocking_reasons: list[str] = []
+    incident_window_end = end_date
     for session in reversed(sessions):
-        if session in breaking_incidents:
+        if any(
+            session <= incident <= incident_window_end
+            for incident in breaking_incidents
+        ):
             blocking_reasons.append("qualification_breaking_incident")
             break
         if session in replay_mismatches:
@@ -109,6 +113,7 @@ def evaluate_shadow_qualification(
 
         count += 1
         window_start = session
+        incident_window_end = session - timedelta(days=1)
         if count == required_sessions:
             break
 

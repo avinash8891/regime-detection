@@ -174,6 +174,7 @@ def _parse_yahoo_chart_payload(
         return pd.DataFrame(columns=DAILY_OHLCV_COLUMNS)
 
     quote_data = quotes[0]
+    adjusted_close_data = _adjusted_close_data(indicators)
     timezone_name = (result.get("meta") or {}).get("exchangeTimezoneName")
     timezone = _exchange_timezone(timezone_name)
     rows: list[dict[str, object]] = []
@@ -190,6 +191,7 @@ def _parse_yahoo_chart_payload(
         low_value = _value_at(quote_data, "low", row_index)
         close_value = _value_at(quote_data, "close", row_index)
         volume_value = _value_at(quote_data, "volume", row_index)
+        adjusted_close_value = _value_at(adjusted_close_data, "adjclose", row_index)
         if None in {open_value, high_value, low_value, close_value, volume_value}:
             continue
         rows.append(
@@ -201,7 +203,11 @@ def _parse_yahoo_chart_payload(
                 "low": float(low_value),
                 "close": float(close_value),
                 "volume": int(volume_value),
-                "adjusted_close": float(close_value),
+                "adjusted_close": float(
+                    close_value
+                    if adjusted_close_value is None
+                    else adjusted_close_value
+                ),
             }
         )
     if not rows:
@@ -223,3 +229,13 @@ def _value_at(data: dict[str, Any], key: str, index: int) -> object | None:
     if not isinstance(values, list) or index >= len(values):
         return None
     return values[index]
+
+
+def _adjusted_close_data(indicators: dict[str, Any]) -> dict[str, Any]:
+    adjusted_close_entries = indicators.get("adjclose") or []
+    if not adjusted_close_entries:
+        return {}
+    adjusted_close_data = adjusted_close_entries[0]
+    if not isinstance(adjusted_close_data, dict):
+        return {}
+    return adjusted_close_data

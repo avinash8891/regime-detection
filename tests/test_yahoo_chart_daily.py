@@ -62,7 +62,7 @@ def test_fetch_daily_bars_yahoo_chart_uses_chart_endpoint_and_raw_close_schema(
             "low": 120.9800033569,
             "close": 121.7200012207,
             "volume": 55748000,
-            "adjusted_close": 121.7200012207,
+            "adjusted_close": 82.875,
         },
         {
             "date": dt.date(2005, 3, 8),
@@ -72,7 +72,7 @@ def test_fetch_daily_bars_yahoo_chart_uses_chart_endpoint_and_raw_close_schema(
             "low": 120.8799972534,
             "close": 121.0800018311,
             "volume": 45771000,
-            "adjusted_close": 121.0800018311,
+            "adjusted_close": 82.4389,
         },
     ]
 

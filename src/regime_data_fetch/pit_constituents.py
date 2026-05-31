@@ -267,6 +267,16 @@ def read_pit_intervals(
         },
     )
 
+    if not allow_survivorship_biased_breadth and is_survivorship_biased_universe(df):
+        raise ValueError(
+            f"PIT constituent universe at {parquet_path} is survivorship-biased "
+            "(no removed/delisted members — every membership interval is open). "
+            "Refusing to load a current-only universe as point-in-time. Provide a "
+            "universe that includes removed members, or pass "
+            "allow_survivorship_biased_breadth=True to opt into biased research "
+            "mode."
+        )
+
     # Patch-on-read: apply corrections to any open interval whose ticker has a
     # known correction. This fixes stale artifacts without requiring a re-fetch.
     end_date = df["end_date"].copy()
@@ -287,15 +297,6 @@ def read_pit_intervals(
     if object_columns:
         df = df.astype(object_columns)
 
-    if not allow_survivorship_biased_breadth and is_survivorship_biased_universe(df):
-        raise ValueError(
-            f"PIT constituent universe at {parquet_path} is survivorship-biased "
-            "(no removed/delisted members — every membership interval is open). "
-            "Refusing to load a current-only universe as point-in-time. Provide a "
-            "universe that includes removed members, or pass "
-            "allow_survivorship_biased_breadth=True to opt into biased research "
-            "mode."
-        )
     return df
 
 

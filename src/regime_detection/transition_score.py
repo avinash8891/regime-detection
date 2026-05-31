@@ -252,11 +252,10 @@ def compose_transition_score_for_session(
         or cluster_id_now is None
         or cluster_id_5d_ago is None
     ):
-        raise ValueError(
-            "model_instability requires HMM, change-point, and cluster evidence"
-        )
-    cluster_flip = 1.0 if cluster_id_now != cluster_id_5d_ago else 0.0
-    model_instability = _max_present(hmm_shift, cp_score, cluster_flip)
+        model_instability = None
+    else:
+        cluster_flip = 1.0 if cluster_id_now != cluster_id_5d_ago else 0.0
+        model_instability = _max_present(hmm_shift, cp_score, cluster_flip)
 
     raw_components: dict[str, float | None] = {
         "trend_break": trend_break,

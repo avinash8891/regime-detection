@@ -150,12 +150,6 @@ def build_transition_risk_series(
         missing.append("feature_store.network_fragility")
     if trend_v2 is None:
         missing.append("feature_store.trend_direction_v2")
-    if feature_store.hmm is None:
-        missing.append("model evidence feature_store.hmm")
-    if feature_store.change_point is None:
-        missing.append("model evidence feature_store.change_point")
-    if feature_store.clustering is None:
-        missing.append("model evidence feature_store.clustering")
     if missing:
         raise RuntimeError(
             "transition_risk requires score inputs; missing: " + ", ".join(missing)

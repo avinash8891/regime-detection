@@ -394,25 +394,29 @@ def test_transition_score_inputs_event_calendar_labels_are_closed_type() -> None
         )
 
 
-def test_transition_score_missing_model_evidence_raises() -> None:
+def test_transition_score_missing_model_evidence_marks_component_missing() -> None:
     cfg = load_default_regime_config().transition_score
     assert cfg is not None
 
-    with pytest.raises(ValueError, match="model_instability requires"):
-        compose_transition_score_for_session(
-            realized_vol_short=12.0,
-            realized_vol_long=10.0,
-            pct_above_50dma=0.45,
-            avg_pairwise_corr_percentile_504d=0.60,
-            drawdown_252d=-0.10,
-            event_calendar_labels=("normal_calendar",),
-            credit_funding_label="credit_calm",
-            volume_liquidity_label="normal_volume",
-            config=cfg,
-        )
+    out = compose_transition_score_for_session(
+        realized_vol_short=12.0,
+        realized_vol_long=10.0,
+        pct_above_50dma=0.45,
+        avg_pairwise_corr_percentile_504d=0.60,
+        drawdown_252d=-0.10,
+        event_calendar_labels=("normal_calendar",),
+        credit_funding_label="credit_calm",
+        volume_liquidity_label="normal_volume",
+        config=cfg,
+    )
+
+    assert out.score is not None
+    assert out.components is not None
+    assert "model_instability" not in out.components
+    assert out.missing_components == ("model_instability",)
 
 
-def test_transition_risk_series_requires_model_evidence_when_score_enabled() -> None:
+def test_transition_risk_series_degrades_when_model_evidence_is_cold_start() -> None:
     session = date(2024, 1, 2)
     index = pd.DatetimeIndex([pd.Timestamp(session)])
     context = MarketContext.model_construct(
@@ -455,12 +459,15 @@ def test_transition_risk_series_requires_model_evidence_when_score_enabled() -> 
         event_calendar=_event_calendar([session]),
     )
 
-    with pytest.raises(RuntimeError, match="model evidence"):
-        build_transition_risk_series(
-            context=context,
-            feature_store=feature_store,
-            axis_bundle=axis_bundle,
-        )
+    outputs = build_transition_risk_series(
+        context=context,
+        feature_store=feature_store,
+        axis_bundle=axis_bundle,
+    )
+
+    assert outputs[session].score is not None
+    assert outputs[session].score_components is not None
+    assert "model_instability" not in outputs[session].score_components
 
 
 def test_transition_risk_state_debounces_soft_state_changes() -> None:

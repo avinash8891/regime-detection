@@ -84,13 +84,19 @@ def _diff_values(replayed: Any, stored: Any) -> Any:
 
 
 def _diff_touches_classification_fields(diff: Any) -> bool:
-    if not isinstance(diff, dict):
+    if isinstance(diff, dict):
+        for key, value in diff.items():
+            if (
+                key in {"state", "label"}
+                or key.endswith("_state")
+                or key.endswith("_label")
+            ):
+                return True
+            if _diff_touches_classification_fields(value):
+                return True
         return False
-    for key, value in diff.items():
-        if key.endswith("_state") or key.endswith("_label"):
-            return True
-        if _diff_touches_classification_fields(value):
-            return True
+    if isinstance(diff, list):
+        return any(_diff_touches_classification_fields(item) for item in diff)
     return False
 
 
