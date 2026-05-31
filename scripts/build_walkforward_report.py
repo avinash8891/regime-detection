@@ -310,11 +310,11 @@ def _expected_golden_dates() -> list[str]:
     return sorted(str(row["as_of_date"]) for row in data["rows"])
 
 
-def _golden_gate_reasons(
-    golden_results: dict[str, Any] | None, runs_df: pd.DataFrame
+def _single_golden_gate_reasons(
+    golden_results: Any, runs_df: pd.DataFrame
 ) -> list[str]:
-    if golden_results is None:
-        return ["missing_golden_results"]
+    if not isinstance(golden_results, dict):
+        return ["golden_results_missing_before_after"]
 
     reasons: list[str] = []
     if not bool(golden_results.get("all_passed")):
@@ -335,6 +335,20 @@ def _golden_gate_reasons(
     ):
         reasons.append("golden_results_version_mismatch")
     return reasons
+
+
+def _golden_gate_reasons(
+    golden_results: dict[str, Any] | None, runs_df: pd.DataFrame
+) -> list[str]:
+    if golden_results is None:
+        return ["missing_golden_results"]
+    if "pre_batch" not in golden_results or "post_batch" not in golden_results:
+        return ["golden_results_missing_before_after"]
+
+    reasons: list[str] = []
+    reasons.extend(_single_golden_gate_reasons(golden_results["pre_batch"], runs_df))
+    reasons.extend(_single_golden_gate_reasons(golden_results["post_batch"], runs_df))
+    return sorted(set(reasons))
 
 
 def _replay_gate_reasons(replay_results: dict[str, Any] | None) -> list[str]:
@@ -399,7 +413,9 @@ def _baseline_comparison(payload: dict[str, Any] | None) -> dict[str, Any] | Non
     }
 
 
-def _red_flags(success_df: pd.DataFrame) -> list[dict[str, Any]]:
+def _red_flags(
+    success_df: pd.DataFrame, hysteresis_days: dict[str, int]
+) -> list[dict[str, Any]]:
     flags: list[dict[str, Any]] = []
     if success_df.empty:
         return flags
@@ -429,6 +445,15 @@ def _red_flags(success_df: pd.DataFrame) -> list[dict[str, Any]]:
                     "type": "long_unknown_run",
                     "column": col,
                     "max_unknown_stretch": unknown_run,
+                }
+            )
+        false_switch_count = _false_switch_count(success_df[col], hysteresis_days[col])
+        if false_switch_count > 1:
+            flags.append(
+                {
+                    "type": "repeated_one_day_flip_flops",
+                    "column": col,
+                    "false_switch_count": false_switch_count,
                 }
             )
 
@@ -631,7 +656,7 @@ def build_walkforward_report(
     baseline_comparison = _baseline_comparison(
         _load_optional_json(baseline_metrics_path)
     )
-    red_flags = _red_flags(success_df)
+    red_flags = _red_flags(success_df, hysteresis_days)
     failure_reasons = _failure_reasons(
         summary_df=summary_df,
         missing_sessions=missing_sessions,

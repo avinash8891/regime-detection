@@ -38,16 +38,19 @@ def _session_rows(report_mod, *, count: int = 252) -> list[dict[str, object]]:
     transition_labels = ("stable", "watch", "elevated", "high_transition_risk")
     rows: list[dict[str, object]] = []
     for idx, session in enumerate(sessions):
+        label_idx = idx // 4
         rows.append(
             {
                 "as_of_date": session.isoformat(),
                 "status": "success",
-                "trend_direction_active": trend_labels[idx % len(trend_labels)],
-                "trend_character_active": character_labels[idx % len(character_labels)],
-                "volatility_state_active": vol_labels[idx % len(vol_labels)],
-                "breadth_state_active": breadth_labels[idx % len(breadth_labels)],
+                "trend_direction_active": trend_labels[label_idx % len(trend_labels)],
+                "trend_character_active": character_labels[
+                    label_idx % len(character_labels)
+                ],
+                "volatility_state_active": vol_labels[label_idx % len(vol_labels)],
+                "breadth_state_active": breadth_labels[label_idx % len(breadth_labels)],
                 "transition_risk_state": transition_labels[
-                    idx % len(transition_labels)
+                    label_idx % len(transition_labels)
                 ],
                 "transition_risk_score": round((idx % 10) / 10, 2),
                 "transition_risk_primary_drivers": "[]",
@@ -202,6 +205,13 @@ def _golden_results_payload(*, all_passed: bool = True) -> dict[str, object]:
     }
 
 
+def _golden_results_batch_payload(*, all_passed: bool = True) -> dict[str, object]:
+    return {
+        "pre_batch": _golden_results_payload(all_passed=all_passed),
+        "post_batch": _golden_results_payload(all_passed=all_passed),
+    }
+
+
 def test_build_walkforward_report_fails_without_required_gates(
     tmp_path: Path,
 ) -> None:
@@ -251,7 +261,7 @@ def test_build_walkforward_report_passes_with_golden_and_baseline_inputs(
 
     golden_path = tmp_path / "golden_results.json"
     golden_path.write_text(
-        json.dumps(_golden_results_payload(), indent=2) + "\n",
+        json.dumps(_golden_results_batch_payload(), indent=2) + "\n",
         encoding="utf-8",
     )
 
@@ -290,7 +300,8 @@ def test_build_walkforward_report_passes_with_golden_and_baseline_inputs(
     payload = json.loads(
         (out_root / "reports" / "walkforward_analysis.json").read_text()
     )
-    assert payload["golden_results"]["all_passed"] is True
+    assert payload["golden_results"]["pre_batch"]["all_passed"] is True
+    assert payload["golden_results"]["post_batch"]["all_passed"] is True
     assert payload["baseline_comparison"]["all_metrics_materially_worse"] is False
     assert (
         payload["baseline_comparison"]["comparisons"]["max_drawdown"]["relative_delta"]
@@ -308,7 +319,7 @@ def test_build_walkforward_report_rejects_replay_mismatch(tmp_path: Path) -> Non
     out_root = _prepare_walkforward_root(tmp_path, report_mod)
     golden_path = tmp_path / "golden_results.json"
     golden_path.write_text(
-        json.dumps(_golden_results_payload(), indent=2) + "\n",
+        json.dumps(_golden_results_batch_payload(), indent=2) + "\n",
         encoding="utf-8",
     )
     baseline_path = tmp_path / "baseline_metrics.json"
@@ -350,7 +361,7 @@ def test_build_walkforward_report_rejects_short_oos_window(tmp_path: Path) -> No
     )
     golden_path = tmp_path / "golden_results.json"
     golden_path.write_text(
-        json.dumps(_golden_results_payload(), indent=2) + "\n",
+        json.dumps(_golden_results_batch_payload(), indent=2) + "\n",
         encoding="utf-8",
     )
     baseline_path = tmp_path / "baseline_metrics.json"
@@ -478,10 +489,13 @@ def test_build_walkforward_report_rejects_incomplete_golden_results(
     golden_path.write_text(
         json.dumps(
             {
-                "all_passed": True,
-                "engine_version": "regime-engine-vtest",
-                "config_version": "core3-test",
-                "results": [{"as_of_date": "2023-12-14", "passed": True}],
+                "pre_batch": _golden_results_payload(),
+                "post_batch": {
+                    "all_passed": True,
+                    "engine_version": "regime-engine-vtest",
+                    "config_version": "core3-test",
+                    "results": [{"as_of_date": "2023-12-14", "passed": True}],
+                },
             },
             indent=2,
         )
@@ -498,6 +512,28 @@ def test_build_walkforward_report_rejects_incomplete_golden_results(
     assert "golden_results_dates_mismatch" in result["failure_reasons"]
 
 
+def test_build_walkforward_report_requires_before_and_after_golden_results(
+    tmp_path: Path,
+) -> None:
+    report_mod = _load_module(
+        "build_walkforward_report", "scripts/build_walkforward_report.py"
+    )
+    out_root = _prepare_walkforward_root(tmp_path)
+    golden_path = tmp_path / "golden_results.json"
+    golden_path.write_text(
+        json.dumps(_golden_results_payload(), indent=2) + "\n",
+        encoding="utf-8",
+    )
+
+    result = report_mod.build_walkforward_report(
+        output_root=out_root,
+        golden_results_path=golden_path,
+    )
+
+    assert result["status"] == "fail"
+    assert "golden_results_missing_before_after" in result["failure_reasons"]
+
+
 def test_build_walkforward_report_rejects_golden_version_mismatch(
     tmp_path: Path,
 ) -> None:
@@ -505,8 +541,8 @@ def test_build_walkforward_report_rejects_golden_version_mismatch(
         "build_walkforward_report", "scripts/build_walkforward_report.py"
     )
     out_root = _prepare_walkforward_root(tmp_path)
-    payload = _golden_results_payload()
-    payload["engine_version"] = "different-engine"
+    payload = _golden_results_batch_payload()
+    payload["post_batch"]["engine_version"] = "different-engine"
     golden_path = tmp_path / "golden_results.json"
     golden_path.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
 
@@ -517,6 +553,26 @@ def test_build_walkforward_report_rejects_golden_version_mismatch(
 
     assert result["status"] == "fail"
     assert "golden_results_version_mismatch" in result["failure_reasons"]
+
+
+def test_build_walkforward_report_rejects_json_output_nan_leakage(
+    tmp_path: Path,
+) -> None:
+    report_mod = _load_module(
+        "build_walkforward_report", "scripts/build_walkforward_report.py"
+    )
+    out_root = _prepare_walkforward_root(tmp_path)
+    output_path = out_root / "outputs" / "2023-12-13.json"
+    output_path.parent.mkdir(parents=True)
+    output_path.write_text('{"transition_risk": {"score": NaN}}\n', encoding="utf-8")
+
+    result = report_mod.build_walkforward_report(output_root=out_root)
+
+    assert result["status"] == "fail"
+    assert "nan_leakage_detected" in result["failure_reasons"]
+    assert result["nan_leakage"] == [
+        "output.transition_risk.score@2023-12-13",
+    ]
 
 
 def test_build_walkforward_report_fails_on_nan_leakage(tmp_path: Path) -> None:
@@ -545,3 +601,53 @@ def test_build_walkforward_report_fails_on_nan_leakage(tmp_path: Path) -> None:
     assert result["nan_leakage"] == [
         "summary.transition_risk_score@2023-12-13",
     ]
+
+
+def test_build_walkforward_report_rejects_long_unknown_stretch(
+    tmp_path: Path,
+) -> None:
+    report_mod = _load_module(
+        "build_walkforward_report", "scripts/build_walkforward_report.py"
+    )
+    rows = _session_rows(report_mod)
+    for row in rows[: report_mod.UNKNOWN_STRETCH_THRESHOLD + 1]:
+        row["breadth_state_active"] = "unknown"
+    out_root = _prepare_walkforward_root(tmp_path, report_mod, rows=rows)
+
+    result = report_mod.build_walkforward_report(
+        output_root=out_root,
+        replay_results_path=_write_replay_results(out_root),
+    )
+
+    assert result["status"] == "fail"
+    assert "red_flags_detected" in result["failure_reasons"]
+    assert {
+        "type": "long_unknown_run",
+        "column": "breadth_state_active",
+        "max_unknown_stretch": report_mod.UNKNOWN_STRETCH_THRESHOLD + 1,
+    } in result["red_flags"]
+
+
+def test_build_walkforward_report_rejects_repeated_one_day_flip_flops(
+    tmp_path: Path,
+) -> None:
+    report_mod = _load_module(
+        "build_walkforward_report", "scripts/build_walkforward_report.py"
+    )
+    rows = _session_rows(report_mod)
+    for idx, row in enumerate(rows):
+        row["trend_direction_active"] = "bull" if idx % 2 == 0 else "bear"
+    out_root = _prepare_walkforward_root(tmp_path, report_mod, rows=rows)
+
+    result = report_mod.build_walkforward_report(
+        output_root=out_root,
+        replay_results_path=_write_replay_results(out_root),
+    )
+
+    assert result["status"] == "fail"
+    assert "red_flags_detected" in result["failure_reasons"]
+    assert {
+        "type": "repeated_one_day_flip_flops",
+        "column": "trend_direction_active",
+        "false_switch_count": 250,
+    } in result["red_flags"]

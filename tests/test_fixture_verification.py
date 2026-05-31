@@ -181,9 +181,23 @@ def test_golden_dates_match_live_labels_without_data_quality_bypass(
             "breadth_state_active": output.breadth_state.active_label,
             "transition_risk": output.transition_risk.state,
         }
+        data_quality = {
+            "trend_direction": output.trend_direction.data_quality.status,
+            "trend_character": output.trend_character.data_quality.status,
+            "volatility_state": output.volatility_state.data_quality.status,
+            "breadth_state": output.breadth_state.data_quality.status,
+            "transition_risk": output.transition_risk.data_quality.status,
+        }
 
         assert set(_GOLDEN_EXPECTED_KEYS).issubset(expected), as_of
         assert actual == {key: expected[key] for key in _GOLDEN_EXPECTED_KEYS}, as_of
+        assert data_quality == {
+            "trend_direction": "ok",
+            "trend_character": "ok",
+            "volatility_state": "ok",
+            "breadth_state": "ok",
+            "transition_risk": "ok",
+        }, as_of
 
 
 def test_v2_section_9_4_golden_dates_are_registered() -> None:

@@ -27,8 +27,16 @@ system with implicit assumptions.
   capital-protection transition score contract. The current transition score
   consumes point-in-time HMM probability movement, GMM cluster flips, and
   change-point evidence. A future calibration-review tool may add Hungarian
-  alignment over HMM parameters, but absence of that helper must not be confused
-  with missing runtime model evidence.
+  alignment over HMM parameters, including the V2 §6.1 20% state-mean parameter-drift alert
+  and the separate non-blocking 30% transition-probability review flag, but
+  absence of that helper must not be confused with missing runtime model
+  evidence.
+- **F-053 — Vol-crush exposure response.** V2 §5.3 vol-crush exposure response
+  is a downstream strategy-layer contract, not `regime_detection` runtime
+  logic. The engine's responsibility is to emit the `vol_crush` volatility
+  label and evidence correctly. The 50% long-vol exposure reduction over the
+  5-day cooldown belongs to the position-management layer that consumes engine
+  outputs, not to this classifier package.
 - **F-045 — CPI vintage scope.** The V2 §2A dual-vintage implementation is a
   CPI-only dual-vintage store for first-release historical replay. The current
   code loads `CPIAUCSL` realtime observations into
