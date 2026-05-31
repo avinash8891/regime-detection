@@ -11,6 +11,27 @@ import yaml
 
 from regime_detection.models import TransitionRiskState
 
+_GOLDEN_EXPECTED_KEYS = (
+    "trend_direction",
+    "trend_character",
+    "volatility_state",
+    "breadth_state_raw",
+    "breadth_state_active",
+    "transition_risk",
+)
+
+_V2_SPEC_GOLDEN_DATES = {
+    "2010-05-06",
+    "2011-08-08",
+    "2015-08-24",
+    "2018-10-10",
+    "2020-08-15",
+    "2021-01-27",
+    "2022-09-26",
+    "2023-03-13",
+    "2024-08-05",
+}
+
 
 def test_conftest_market_data_requires_real_combined_market_parquet(
     monkeypatch, tmp_path: Path
@@ -44,7 +65,7 @@ def test_conftest_market_data_requires_real_combined_market_parquet(
     project_conftest._load_market_data.cache_clear()
 
 
-def test_conftest_v2_kwargs_reject_full_history_window_before_real_v2_rows() -> None:
+def test_conftest_v2_kwargs_reject_asof_before_real_v2_rows() -> None:
     import conftest as project_conftest
 
     project_conftest._load_market_data.cache_clear()
@@ -54,8 +75,8 @@ def test_conftest_v2_kwargs_reject_full_history_window_before_real_v2_rows() -> 
         event_calendar
     )
 
-    with pytest.raises(RuntimeError, match="window start=2016-01-04"):
-        build_kwargs(market_data[market_data["date"] <= date(2023, 12, 14)])
+    with pytest.raises(RuntimeError, match="as_of=2018-12-31"):
+        build_kwargs(market_data[market_data["date"] <= date(2018, 12, 31)])
 
 
 def test_conftest_v2_kwargs_use_real_v2_fixture_rows_when_window_is_covered() -> None:
@@ -124,6 +145,118 @@ def test_fixture_verification_legacy_path_fails_loudly_without_v2_transition_inp
         )
     message = str(excinfo.value)
     assert "ClassifyRequest missing configured V2 inputs" in message
+
+
+def test_classified_golden_outputs_cover_every_row_without_silent_skips(
+    golden_rows: list[dict[str, object]],
+    classified_golden_outputs: dict[date, object],
+) -> None:
+    expected_dates = {date.fromisoformat(str(row["as_of_date"])) for row in golden_rows}
+
+    assert len(expected_dates) == 10
+    assert set(classified_golden_outputs) == expected_dates
+
+
+def test_golden_dates_match_live_labels_without_data_quality_bypass(
+    golden_rows: list[dict[str, object]],
+    classified_golden_outputs: dict[date, object],
+) -> None:
+    for row in golden_rows:
+        as_of = date.fromisoformat(str(row["as_of_date"]))
+        expected = row["expected"]
+        output = classified_golden_outputs[as_of]
+        actual = {
+            "trend_direction": output.trend_direction.active_label,
+            "trend_character": output.trend_character.active_label,
+            "volatility_state": output.volatility_state.active_label,
+            "breadth_state_raw": output.breadth_state.raw_label,
+            "breadth_state_active": output.breadth_state.active_label,
+            "transition_risk": output.transition_risk.state,
+        }
+
+        assert set(_GOLDEN_EXPECTED_KEYS).issubset(expected), as_of
+        assert actual == {key: expected[key] for key in _GOLDEN_EXPECTED_KEYS}, as_of
+
+
+def test_v2_section_9_4_golden_dates_are_registered() -> None:
+    repo_root = Path(__file__).resolve().parents[1]
+    fixture = yaml.safe_load(
+        (
+            repo_root / "tests" / "fixtures" / "derived" / "golden_dates_v2.yaml"
+        ).read_text()
+    )
+
+    assert fixture["source_spec"] == "docs/regime_engine_v2_spec.md#9.4"
+    assert {row["as_of_date"] for row in fixture["rows"]} == _V2_SPEC_GOLDEN_DATES
+    for row in fixture["rows"]:
+        assert row["intent_id"]
+        assert row["expected_v2_fields"]
+
+
+def test_golden_date_replacement_set_has_documented_justification() -> None:
+    repo_root = Path(__file__).resolve().parents[1]
+    justification = (
+        repo_root
+        / "docs"
+        / "verification"
+        / "golden_dates_replacement_justification.md"
+    ).read_text()
+
+    assert "2020-04-10" in justification
+    assert "Good Friday" in justification
+    assert "no silent pre-2019 or data-quality skips" in justification
+
+
+def test_classification_labels_are_independent_of_extra_history_length(
+    market_df_for_asof,
+    event_calendar_df: pd.DataFrame,
+) -> None:
+    from regime_detection.config import load_regime_config
+    from regime_detection.engine import RegimeEngine
+
+    repo_root = Path(__file__).resolve().parents[1]
+    as_of = date(2023, 12, 5)
+    market_data = market_df_for_asof(as_of)
+    spy_sessions = (
+        market_data.loc[market_data["symbol"] == "SPY", "date"]
+        .drop_duplicates()
+        .sort_values()
+    )
+    shorter_start = spy_sessions.iloc[-700]
+    shorter_market_data = (
+        market_data[market_data["date"] >= shorter_start].copy().reset_index(drop=True)
+    )
+    config = load_regime_config(
+        repo_root / "src" / "regime_detection" / "configs" / "core3-v1.0.0.yaml"
+    )
+    engine = RegimeEngine()
+
+    full = engine.classify(
+        as_of_date=as_of,
+        market_data=market_data,
+        config=config,
+        event_calendar=event_calendar_df,
+    )
+    shorter = engine.classify(
+        as_of_date=as_of,
+        market_data=shorter_market_data,
+        config=config,
+        event_calendar=event_calendar_df,
+    )
+
+    assert {
+        "trend_direction": shorter.trend_direction.active_label,
+        "trend_character": shorter.trend_character.active_label,
+        "volatility_state": shorter.volatility_state.active_label,
+        "breadth_state_raw": shorter.breadth_state.raw_label,
+        "breadth_state_active": shorter.breadth_state.active_label,
+    } == {
+        "trend_direction": full.trend_direction.active_label,
+        "trend_character": full.trend_character.active_label,
+        "volatility_state": full.volatility_state.active_label,
+        "breadth_state_raw": full.breadth_state.raw_label,
+        "breadth_state_active": full.breadth_state.active_label,
+    }
 
 
 def test_fixture_verification_report_includes_rich_transition_evidence(

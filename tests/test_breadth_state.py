@@ -30,14 +30,11 @@ def test_breadth_state_matches_pinned_fixtures(classified_golden_outputs) -> Non
     golden = yaml.safe_load(
         (repo_root / "tests" / "fixtures" / "derived" / "golden_dates.yaml").read_text()
     )
-    first_classified_date = min(classified_golden_outputs)
     for row in golden["rows"]:
         as_of = date.fromisoformat(row["as_of_date"])
         expected = row["expected"]
         assert expected["breadth_state_raw"] in _BREADTH_LABELS
         assert expected["breadth_state_active"] in _BREADTH_LABELS
-        if as_of < first_classified_date:
-            continue
         out = classified_golden_outputs[as_of]
         assert (
             out.breadth_state.raw_label == expected["breadth_state_raw"]

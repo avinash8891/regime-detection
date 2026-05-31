@@ -43,7 +43,7 @@
 - [x] Step 2: Run only `tests/test_v1_frozen_replay.py`; confirm the existing round-trip-only enforcement is insufficient.
 - [x] Step 3: Wire fixture data helpers into the test without network calls.
 - [x] Step 4: Run `python3.14 -m pytest -o addopts='' tests/test_v1_frozen_replay.py -q; echo "EXIT:$?"`.
-- [ ] Step 5: Commit `fix(test): replay v1 frozen fixtures through live engine`.
+- [x] Step 5: Commit `fix(test): replay v1 frozen fixtures through live engine`.
 
 ## Task 3: Walk-Forward Gate Invariants (`F-014`, `F-017`, `F-053`, `F-054`, `F-055`, `F-056`, `F-057`)
 
@@ -81,13 +81,13 @@
 - Modify: axis golden tests under `tests/test_*state.py`, `tests/test_trend_character.py`, `tests/test_trend_direction.py`
 - Test: create or extend `tests/test_fixture_verification.py`
 
-- [ ] Step 1: Add failing tests that assert the V1 §12.2 10 dates exist, no golden row is skipped, non-ok DQ does not bypass equality, all 10 V1 rows pass, V2 §9.4 rows are registered, and stateless replay is independent of history length.
-- [ ] Step 2: Run focused fixture tests and confirm failure.
-- [ ] Step 3: Re-anchor or justify the V1 golden dates using independent fixture evidence; do not relax predicates.
-- [ ] Step 4: Extend fixture coverage back far enough for 2017/2018 rows or explicitly block completion if raw data is absent.
-- [ ] Step 5: Add V2 §9.4 fixture registration.
-- [ ] Step 6: Run focused golden fixture tests.
-- [ ] Step 7: Commit `fix(fixtures): enforce complete golden date coverage`.
+- [x] Step 1: Add failing tests that assert the V1 §12.2 10 dates exist, no golden row is skipped, non-ok DQ does not bypass equality, all 10 V1 rows pass, V2 §9.4 rows are registered, and stateless replay is independent of history length.
+- [x] Step 2: Run focused fixture tests and confirm failure.
+- [x] Step 3: Re-anchor or justify the V1 golden dates using independent fixture evidence; do not relax predicates.
+- [x] Step 4: Extend fixture coverage back far enough for 2017/2018 rows or explicitly block completion if raw data is absent.
+- [x] Step 5: Add V2 §9.4 fixture registration.
+- [x] Step 6: Run focused golden fixture tests.
+- [x] Step 7: Commit `fix(fixtures): enforce complete golden date coverage`.
 
 ## Task 6: V1 Path Hygiene Guard (`F-035`)
 
