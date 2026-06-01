@@ -3308,7 +3308,12 @@ credit_funding:
 `unknown` is forced when:
 - HYG / LQD / TLT stale > 5 sessions
 - NFCI stale > 14 days (2× weekly release cycle)
-- SOFR or IORB stale beyond `data_quality.max_freshness_days`
+- The funding spread is stale beyond `data_quality.max_freshness_days`. The funding
+  spread is the **freshest available** of the SOFR–IORB pair or its ADR 0009 fallback
+  pairs (SOFR–IOER, FEDFUNDS–IOER), so `unknown` is forced only when that freshest
+  pair is stale. A stale SOFR/IORB while a fresh legacy FEDFUNDS–IOER proxy exists does
+  NOT force `unknown` (the pre-2021 SOFR/IORB splice — each pair's staleness is
+  `max(rate_a, rate_b)`, and the spread staleness is the `min` across the three pairs).
 - `assess_series_input_quality` fails on any required series
 
 SOFR/IORB and OAS observations are carried forward for feature math when fresh;

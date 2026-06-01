@@ -651,6 +651,25 @@ def test_unknown_when_legacy_ioer_component_is_stale() -> None:
     assert "funding_spread_stale" in (out.data_quality.reason or "")
 
 
+def test_funding_spread_fresh_fallback_does_not_force_unknown_when_iorb_stale() -> None:
+    """F-051 / §2C Unknown Gate: the funding spread is the FRESHEST available proxy pair
+    (SOFR-IORB or its ADR 0009 SOFR-IOER / FEDFUNDS-IOER fallbacks), so a stale SOFR/IORB
+    while a fresh legacy FEDFUNDS-IOER proxy exists must NOT force unknown (the pre-2021
+    splice). This is the complement of test_unknown_when_iorb_component_is_stale (which
+    has NO fresh fallback, so the same stale IORB DOES force unknown). Pins the
+    min-of-proxy-pairs gate so a future per-pair tightening can't silently regress it."""
+    context = _build_full_synthetic_context(
+        legacy_funding_splice=True,  # fresh FEDFUNDS + IOER_LEGACY fallback available
+        iorb_truncate_calendar_days=70,  # SOFR-IORB pair is stale
+    )
+    _, outputs = _build_store_and_outputs(context)
+
+    assert outputs is not None
+    out = outputs[context.sessions[-1]]
+    assert "funding_spread_stale" not in (out.data_quality.reason or "")
+    assert out.raw_label != "unknown"
+
+
 def test_unknown_when_assess_series_input_quality_fails(
     default_credit_context,
     default_credit_store_outputs,
