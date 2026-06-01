@@ -3724,9 +3724,15 @@ cluster
 change_point
 ```
 
-These three inputs jointly produce `model_instability_score`. They are not
-renormalized away: once `transition_score` is enabled, a missing HMM
-probability, cluster id, or change-point score raises a runtime error.
+These three inputs jointly produce `model_instability_score`. They are
+**mandatory — never renormalized away**. Once `transition_score` is enabled, an
+absent model-evidence **seam** (the HMM, change-point, or clustering
+infrastructure itself) raises a runtime error; a missing **per-session** HMM
+probability, cluster id, or change-point score (a cold-start / NaN value) forces
+the final state to `insufficient_data` per the cold-start carve-out above — it is
+never renormalized away into a normal score. (F-002: the seam guard lives in
+`transition_risk_series`; the per-session guard in
+`compose_transition_score_for_session`.)
 
 Final states:
 
@@ -3851,8 +3857,10 @@ score = max(
 )
 ```
 
-Missing HMM, change-point, or cluster evidence raises a runtime error. The
-engine must not fabricate or silently omit model-instability evidence.
+Missing HMM, change-point, or cluster evidence is mandatory-input handling, not
+optional renormalization: an absent seam raises a runtime error, and a missing
+per-session value forces `insufficient_data` (see §4.0). The engine must not
+fabricate, renormalize away, or silently omit model-instability evidence.
 
 ### 4.3 Weights
 
@@ -4733,10 +4741,11 @@ V2 implementation contract:
 
 3. Do not invent transition score weights. Use Section 4.3. Once
    `transition_score` is enabled, HMM, cluster/GMM, and change-point evidence
-   are mandatory model-instability inputs; missing model evidence raises a
-   runtime error and is not an optional renormalized component. Only the
-   optional components enumerated in Section 4.3 may be omitted and
-   renormalized after the minimum coverage gate passes.
+   are mandatory model-instability inputs and are never renormalized away: an
+   absent seam raises a runtime error, a missing per-session value forces
+   `insufficient_data` (§4.0). Only the optional components enumerated in
+   Section 4.3 may be omitted and renormalized after the minimum coverage gate
+   passes.
 
 4. Do not auto-label clusters. K-Means/GMM mappings require manual
    review per Section 6.2. Ship the model; do not ship auto-mapping.
