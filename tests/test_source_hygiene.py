@@ -182,3 +182,29 @@ def test_shadow_runner_spec_pins_current_shadow_source_and_fetch_boundary() -> N
 
     assert "local/Alpaca archived parquet is the shadow source of truth" in spec
     assert "daily fetch is upstream of the runner" in spec
+
+
+def test_bocpd_online_changepoint_dependency_api_is_stable() -> None:
+    # F-046: the BOCPD (§4.6/§6.3) Adams-MacKay online implementation is pinned to the
+    # bayesian-changepoint-detection 0.2.dev1 artifact (the only PyPI release carrying
+    # the online API). Guard against a future version yanking or reshaping that API by
+    # asserting the symbols import and online_changepoint_detection returns a run-length
+    # posterior matrix of the expected (N+1, N+1) shape.
+    from functools import partial
+
+    import numpy as np
+    from bayesian_changepoint_detection.online_changepoint_detection import (
+        StudentT,
+        constant_hazard,
+        online_changepoint_detection,
+    )
+
+    data = np.concatenate([np.zeros(20, dtype=float), np.ones(20, dtype=float)])
+    posterior, run_length_maxes = online_changepoint_detection(
+        data,
+        partial(constant_hazard, 250),
+        StudentT(alpha=0.1, beta=0.01, kappa=1.0, mu=0.0),
+    )
+
+    assert posterior.shape == (len(data) + 1, len(data) + 1)
+    assert run_length_maxes.shape[0] == len(data) + 1

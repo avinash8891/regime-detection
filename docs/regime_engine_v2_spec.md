@@ -161,6 +161,15 @@ volume_above_20d_average = volume[t] > mean(volume[t-20..t-1])
 followthrough_rate = held_count / 20
 ```
 
+> **Ambiguity #4 — `breakout_level` tie-break (DECISION, pairs with F-055).** When
+> close[b] crosses BOTH the 20d and 50d prior-window maxima (m50 ≥ m20 always, so
+> close > m50 implies close > m20), "the max-of-prior-window that close crossed" does
+> not uniquely select a level. **Pinned: use the 20d level** (the lower, more lenient
+> hold bar), not max(m20, m50). Rationale: the 20d window is the tighter, more recent
+> breakout reference and keeps the hold test from over-rejecting shallow continuation.
+> Encoded in `trend_character._compute_followthrough_rate` and locked by
+> `test_followthrough_rate_breakout_level_tie_break_prefers_20d`.
+
 Direction: `breakout_expansion` fires on **upside** breakouts only — `followthrough_rate`'s definition explicitly requires close to stay **above** the breakout level. Downside breakouts are out of scope for this label.
 
 Cold-start: the rule cannot fire reliably until at least 20 prior upside breakouts have occurred within the trailing 504-session window. This is the strictest warm-up in any V2 label; new universes / early backtest dates will see this label silent.
@@ -536,7 +545,11 @@ the slice/commit that resolved it. Entries are append-only.
    can re-tune both the listed and default cohorts without code changes.
    Resolved by Slice 1.4 cleanup.
 
-9. **V1↔V2 axis date alignment (`axis_series.py` v2 classifier).**
+9. **V1↔V2 axis date alignment
+   (`axis_builders.network_fragility.build_network_fragility_axis_series`).**
+   *(F-045: the pinned KeyError-vs-None-fallback logic was extracted out of
+   `axis_series.py` into `axis_builders/network_fragility.py`; citation updated to its
+   current home. Behavior is unchanged.)*
    The classifier consumes V1 breadth/volatility `active_labels_by_date`
    dicts. The pre-cleanup code used `dict.get(day, "unknown")`, which
    silently downgraded any drifted session to `"unknown"` — defanging
