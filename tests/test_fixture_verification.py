@@ -32,11 +32,66 @@ _V2_SPEC_GOLDEN_DATES = {
     "2024-08-05",
 }
 
-# All §9.4 golden dates now classify live: the V2 daily-OHLCV fixture was
-# extended back to 2009-01-02 with real Yahoo OHLCV (incl. real ^VIX) and the
-# placeholder PIT membership intervals start at each sector ETF inception, so
-# pre-2019 dates have active members. No dates remain fixture-blocked.
-_V2_LIVE_FIXTURE_UNSUPPORTED_GOLDEN_DATES: dict[str, str] = {}
+# Under the PRODUCTION config the four pre-2019 dates RAISE: the model-evidence
+# windows (HMM=1260, clustering=1260, change_point=2705 sessions) exceed the fixture
+# history before those dates (the V2 OHLCV fixture starts 2009-01-02), so transition_risk
+# fails closed on missing model evidence. Full value-assert for these needs deep-history
+# model-evidence fixtures (data/license-blocked — see golden_dates.yaml provenance_note).
+# They are recorded as unsupported, never silently skipped.
+_V2_LIVE_FIXTURE_UNSUPPORTED_GOLDEN_DATES: dict[str, str] = {
+    "2010-05-06": "missing: model evidence",
+    "2011-08-08": "missing: model evidence",
+    "2015-08-24": "missing: model evidence",
+    "2018-10-10": "missing: model evidence",
+}
+
+# transition_risk escalation ladder for the transition_risk_minimum >= compare.
+_TRANSITION_SEVERITY: dict[str, int] = {
+    "stable": 0,
+    "watch": 1,
+    "weakening": 2,
+    "fragile_bull": 2,
+    "recovery_attempt": 2,
+    "transition_warning": 3,
+    "bear_stress": 3,
+    "high_transition_risk": 4,
+    "crisis": 5,
+    "insufficient_data": 0,
+}
+# transition_evidence tokens are UPSTREAM axis active_labels, not transition_risk strings.
+_NETWORK_FRAGILITY_TOKENS = frozenset(
+    {
+        "correlation_to_one",
+        "systemic_stress",
+        "systemic_stress_unconfirmed",
+        "rising_fragility",
+        "stock_picker_dispersion",
+        "correlation_concentration",
+    }
+)
+_CREDIT_FUNDING_TOKENS = frozenset(
+    {"funding_squeeze", "deleveraging", "credit_stress", "credit_recovery"}
+)
+
+# Engine-vs-§9.4 disagreements observed under the PRODUCTION config on the real
+# fixture. Recorded EXACTLY so the oracle is self-policing: a new gap OR a silent
+# resolution flips test_v2_golden_dates_classify_expected_fields. These are
+# unresolved engine-correctness questions, NOT silent relaxations — network_fragility
+# emits diversified_normal on the dispersion/correlation dates §9.4 expects to fire,
+# and the credit tokens are unreachable (OAS license-blocked; the TLT/HYG-LQD proxy
+# misreads SVB flight-to-quality as credit_recovery).
+_VALUE_ASSERT_DISPUTED: dict[str, str] = {
+    "2020-08-14:network_fragility": "engine diversified_normal; §9.4 stock_picker_dispersion",
+    "2021-01-27:network_fragility": "engine diversified_normal; §9.4 stock_picker_dispersion",
+    "2022-09-26:transition_evidence:deleveraging": "credit_funding unknown (no OAS pre-2023); deleveraging unreachable",
+    "2023-03-13:credit_funding": "proxy credit_recovery (OAS license-blocked); §9.4/reality credit_stress",
+    "2024-08-05:transition_evidence:correlation_to_one": "engine network_fragility diversified_normal; correlation_to_one not detected",
+    "2024-08-05:transition_evidence:funding_squeeze": "engine credit_funding credit_stress; funding_squeeze not emitted",
+}
+
+
+def _active_label(value: object) -> object:
+    return value.get("active_label") if isinstance(value, dict) else value
 
 
 def test_conftest_market_data_requires_real_combined_market_parquet(
@@ -211,9 +266,28 @@ def test_v2_section_9_4_golden_dates_are_registered() -> None:
         assert row["expected_v2_fields"]
 
 
+@pytest.mark.slow
 def test_v2_golden_dates_classify_expected_fields(
     v2_classify_kwargs_for_asof,
 ) -> None:
+    """Value-assert the §9.4 golden dates under the PRODUCTION config.
+
+    Marked ``slow``: classifying under the production config recomputes the deep
+    model-evidence (HMM/change-point/clustering) and 504-session percentile windows
+    per date, so this runs in the ``-m slow`` / ``-m ""`` confidence lane
+    (full-verification.yml, release.yml), not the fast PR suite.
+
+    Each expected_v2_fields label is compared to the engine's emitted label (not
+    merely checked non-empty). Three honest outcomes, no silent relaxation:
+      * GREEN — the engine's label equals the §9.4 expectation.
+      * unsupported (_V2_LIVE_FIXTURE_UNSUPPORTED_GOLDEN_DATES) — the date RAISES
+        because the deep-history model-evidence windows are unfilled (the four
+        pre-2019 dates).
+      * disputed (_VALUE_ASSERT_DISPUTED) — the engine substantively disagrees with
+        the §9.4 hand-label; recorded EXACTLY so the gap cannot silently appear or
+        silently resolve. (transition_evidence tokens are upstream axis labels.)
+    """
+    from regime_detection.config import load_default_regime_config
     from regime_detection.engine import RegimeEngine
 
     repo_root = Path(__file__).resolve().parents[1]
@@ -222,50 +296,68 @@ def test_v2_golden_dates_classify_expected_fields(
     )
     v2_rows = [row for row in golden["rows"] if "expected_v2_fields" in row]
     engine = RegimeEngine()
-    missing: list[str] = []
+    prod_config = load_default_regime_config()  # value-assert needs the faithful config
     unsupported: dict[str, str] = {}
+    disagreements: dict[str, str] = {}
     classified_dates: set[str] = set()
 
     for row in v2_rows:
         as_of = date.fromisoformat(str(row["as_of_date"]))
+        kwargs = dict(v2_classify_kwargs_for_asof(as_of))
+        kwargs["config"] = prod_config  # not _fast_v2_test_config (relaxed/over-fires)
         try:
-            output = engine.classify(
-                as_of_date=as_of,
-                **v2_classify_kwargs_for_asof(as_of),
-            )
+            output = engine.classify(as_of_date=as_of, **kwargs)
         except (RuntimeError, ValueError) as exc:
             unsupported[str(as_of)] = str(exc)
             continue
 
         classified_dates.add(str(as_of))
         dumped = output.model_dump(mode="json", exclude_none=True)
+        nf = _active_label(dumped.get("network_fragility"))
+        cf = _active_label(dumped.get("credit_funding_effective_state"))
+        vol = _active_label(dumped.get("volume_liquidity_state"))
+        trs = (dumped.get("transition_risk") or {}).get("state")
 
         for field_name, expected in row["expected_v2_fields"].items():
             if field_name == "sequence":
-                continue
+                continue  # §9.4 multi-day trajectory — no single-date label semantics
             if field_name == "transition_evidence":
-                transition = dumped.get("transition_risk", {})
-                evidence = transition.get("evidence", {})
-                drivers = transition.get("primary_drivers", [])
-                triggered = transition.get("triggered_rules", [])
-                if not evidence and not drivers and not triggered:
-                    missing.append(f"{as_of}:{field_name}:missing_output")
+                for token in expected if isinstance(expected, list) else [expected]:
+                    if token in _NETWORK_FRAGILITY_TOKENS:
+                        ok = nf == token
+                    elif token in _CREDIT_FUNDING_TOKENS:
+                        ok = cf == token
+                    else:
+                        ok = False
+                    if not ok:
+                        disagreements[f"{as_of}:{field_name}:{token}"] = (
+                            f"nf={nf} cf={cf}"
+                        )
                 continue
             if field_name == "transition_risk_minimum":
-                state = dumped.get("transition_risk", {}).get("state")
-                if state is None:
-                    missing.append(f"{as_of}:{field_name}:missing_state")
+                if _TRANSITION_SEVERITY.get(trs, 0) < _TRANSITION_SEVERITY.get(
+                    expected, 0
+                ):
+                    disagreements[f"{as_of}:{field_name}"] = f"state={trs}"
                 continue
-            if field_name == "credit_funding":
-                field_name = "credit_funding_effective_state"
-            if dumped.get(field_name) in (None, {}, []):
-                missing.append(f"{as_of}:{field_name}:missing_output")
+            actual = {
+                "network_fragility": nf,
+                "credit_funding": cf,
+                "volume_liquidity_state": vol,
+            }.get(field_name)
+            if actual != expected:
+                disagreements[f"{as_of}:{field_name}"] = f"got={actual}"
 
+    # D2 — the deep-history dates fail closed on missing model evidence.
     assert unsupported.keys() == _V2_LIVE_FIXTURE_UNSUPPORTED_GOLDEN_DATES.keys()
     for as_of, expected_fragment in _V2_LIVE_FIXTURE_UNSUPPORTED_GOLDEN_DATES.items():
         assert expected_fragment in unsupported[as_of]
     assert classified_dates == _V2_SPEC_GOLDEN_DATES - set(unsupported)
-    assert missing == []
+    # Exact, self-policing dispute set: no undocumented gap, no silently-resolved gap.
+    assert set(disagreements) == set(_VALUE_ASSERT_DISPUTED), (
+        f"undocumented={set(disagreements) - set(_VALUE_ASSERT_DISPUTED)} "
+        f"resolved={set(_VALUE_ASSERT_DISPUTED) - set(disagreements)}; observed={disagreements}"
+    )
 
 
 # The 10 V1 spec §12.2 golden-date table source dates (docs/regime_engine_v1_final_spec.md).
