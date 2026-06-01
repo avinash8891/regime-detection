@@ -10,6 +10,7 @@ import yaml
 
 from regime_detection.trend_character import (
     TrendCharacterFeatures,
+    _compute_adx_14,
     _compute_breakout_20d_or_50d,
     _compute_followthrough_rate,
     build_raw_outputs,
@@ -240,3 +241,44 @@ def test_v1_spec_pins_adx_ewm_seeding_convention() -> None:
     ).read_text()
 
     assert "ADX_14 uses pandas ewm(alpha=1/14, adjust=False, min_periods=14)" in spec
+
+
+def test_compute_adx_14_matches_independent_wilder_ewm_reimplementation() -> None:
+    # F-033: verify _compute_adx_14 against an INDEPENDENT inline reimplementation of
+    # the §4.4 Wilder ADX using the pinned ewm(alpha=1/14, adjust=False,
+    # min_periods=14) at every smoothing step. A deterministic OHLC series with real
+    # directional movement and pullbacks (no toy constants).
+    idx = pd.bdate_range("2022-01-03", periods=80)
+    close = pd.Series(
+        [300.0 + i * 0.8 - (i % 11) * 3.0 + (i % 5) * 1.5 for i in range(80)],
+        index=idx,
+        name="close",
+    )
+    high = (close + 2.5 + (pd.Series(range(80), index=idx) % 7) * 0.4).rename("high")
+    low = (close - 2.5 - (pd.Series(range(80), index=idx) % 6) * 0.4).rename("low")
+
+    actual = _compute_adx_14(high=high, low=low, close=close)
+
+    # Independent inline reimplementation — does NOT call _wilder_ewm.
+    def _ewm14(series: pd.Series) -> pd.Series:
+        return series.ewm(alpha=1 / 14, adjust=False, min_periods=14).mean()
+
+    prev_close = close.shift(1)
+    tr = pd.concat(
+        [(high - low), (high - prev_close).abs(), (low - prev_close).abs()], axis=1
+    ).max(axis=1)
+    up = high.diff()
+    down = -low.diff()
+    plus_dm = pd.Series(np.where((up > down) & (up > 0), up, 0.0), index=idx)
+    minus_dm = pd.Series(np.where((down > up) & (down > 0), down, 0.0), index=idx)
+    atr_safe = _ewm14(tr).replace(0.0, np.nan)
+    plus_di = 100 * _ewm14(plus_dm) / atr_safe
+    minus_di = 100 * _ewm14(minus_dm) / atr_safe
+    denom = (plus_di + minus_di).replace(0.0, np.nan)
+    dx = ((plus_di - minus_di).abs() / denom) * 100
+    expected = _ewm14(dx)
+
+    pd.testing.assert_series_equal(actual, expected, check_names=False)
+    # ewm(min_periods=14) keeps the first 13 observations NaN; the double-smoothed
+    # ADX is therefore NaN at least through the first 13 sessions.
+    assert actual.iloc[:13].isna().all()
