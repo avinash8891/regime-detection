@@ -1,0 +1,22 @@
+tests/test_build_walkforward_report.py
+  ai_agent 896-898,955-957
+  s_e13bd0da99a610::t_5716ef3e9b6f80 871-895,899-954,958-959
+tests/test_shadow_qualification.py
+  s_e13bd0da99a610::t_4968a740ad0021 101-131
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "fa46a754e87393b306852b4bfb8ce4e4f13a3a1a",
+  "prompts": {},
+  "sessions": {
+    "s_e13bd0da99a610": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "5e0e3844-14d5-4427-9d01-d46fe24beee0",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}
