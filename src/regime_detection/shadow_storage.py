@@ -213,7 +213,17 @@ def load_archived_macro_series(path: Path) -> dict[str, pd.Series] | None:
         return None
     from regime_detection.loaders import load_macro_series
 
-    return load_macro_series(path)
+    series = load_macro_series(path)
+    # CR-002: the archive (written by _macro_series_frame) stores the exact values the
+    # runner already passed to classify — i.e. POST the load-time transform. But
+    # load_macro_series re-applies its implied_vol_30d `/100` raw-ingest transform on
+    # reload, double-dividing the archived value (100x too small) and breaking the
+    # archive→reload identity replay depends on. implied_vol_30d is the only macro key
+    # with a load-time transform (loaders.load_macro_series), so undo exactly that one.
+    iv = series.get("implied_vol_30d")
+    if iv is not None:
+        series["implied_vol_30d"] = iv * 100.0
+    return series
 
 
 def insert_run_row(

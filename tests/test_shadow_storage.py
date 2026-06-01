@@ -254,3 +254,25 @@ def test_load_archived_market_data_missing_archive_path_raises(tmp_path: Path) -
 
     with pytest.raises(FileNotFoundError):
         load_archived_market_data(missing_market_archive)
+
+
+def test_load_archived_macro_series_round_trips_implied_vol_to_identity(
+    tmp_path: Path,
+) -> None:
+    """CR-002: the macro archive→reload round-trip is IDENTITY. load_macro_series applies
+    a /100 transform to implied_vol_30d on raw ingest; re-applying it to the already
+    transformed archived value would read 100x too small and break archive-fed replay.
+    """
+    idx = pd.DatetimeIndex(pd.to_datetime(["2026-05-12", "2026-05-13"]))
+    macro = {
+        "implied_vol_30d": pd.Series([0.20, 0.22], index=idx, name="implied_vol_30d"),
+        "nfci": pd.Series([-0.30, -0.25], index=idx, name="nfci"),
+    }
+    path = tmp_path / "macro_series.parquet"
+    shadow_storage._macro_series_frame(macro).to_parquet(path, index=False)
+
+    reloaded = shadow_storage.load_archived_macro_series(path)
+
+    assert reloaded is not None
+    assert list(reloaded["implied_vol_30d"].to_numpy()) == [0.20, 0.22]
+    assert list(reloaded["nfci"].to_numpy()) == [-0.30, -0.25]
