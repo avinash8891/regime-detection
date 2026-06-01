@@ -657,7 +657,8 @@ def test_funding_spread_fresh_fallback_does_not_force_unknown_when_iorb_stale() 
     while a fresh legacy FEDFUNDS-IOER proxy exists must NOT force unknown (the pre-2021
     splice). This is the complement of test_unknown_when_iorb_component_is_stale (which
     has NO fresh fallback, so the same stale IORB DOES force unknown). Pins the
-    min-of-proxy-pairs gate so a future per-pair tightening can't silently regress it."""
+    min-of-proxy-pairs gate so a future per-pair tightening can't silently regress it.
+    """
     context = _build_full_synthetic_context(
         legacy_funding_splice=True,  # fresh FEDFUNDS + IOER_LEGACY fallback available
         iorb_truncate_calendar_days=70,  # SOFR-IORB pair is stale

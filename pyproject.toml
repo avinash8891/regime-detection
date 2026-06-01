@@ -143,4 +143,5 @@ line-ending = "lf"
 "scripts/run_shadow_replay_check.py" = ["E402"]
 "scripts/run_v2_shadow_ab_gate.py" = ["E402"]
 "scripts/run_v2_walkforward_gate.py" = ["E402"]
+"scripts/run_walkforward_replay_check.py" = ["E402"]
 "scripts/upload_missing_ohlcv_to_manifest.py" = ["E402"]

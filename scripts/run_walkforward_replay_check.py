@@ -15,6 +15,7 @@ byte-identically. A walk-forward run that used explicit (non-default) PIT member
 intervals is out of scope for now — the runner's default is to derive PIT from the
 daily frame, which replay reconstructs faithfully.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -53,9 +54,7 @@ def _success_runs(db_path: Path) -> list[dict[str, Any]]:
     return [dict(row) for row in rows]
 
 
-def _replay_one(
-    *, run: dict[str, Any], engine: RegimeEngine
-) -> dict[str, Any]:
+def _replay_one(*, run: dict[str, Any], engine: RegimeEngine) -> dict[str, Any]:
     as_of = date.fromisoformat(str(run["as_of_date"]))
     archive_dir = Path(run["input_archive_path"])
     market_slice = load_archived_market_data(archive_dir / "market_data.parquet")
@@ -78,9 +77,7 @@ def _replay_one(
         **v2_kwargs,
     )
     replayed_payload = json.loads(replayed.model_dump_json(indent=2))
-    stored_payload = json.loads(
-        Path(run["output_path"]).read_text(encoding="utf-8")
-    )
+    stored_payload = json.loads(Path(run["output_path"]).read_text(encoding="utf-8"))
     diff = _diff_values(replayed_payload, stored_payload)
     matches = diff is None
     return {
@@ -143,7 +140,12 @@ def main() -> int:
     out_path.write_text(
         json.dumps(verdict, indent=2, sort_keys=True) + "\n", encoding="utf-8"
     )
-    print(json.dumps({"replay_verification": str(out_path), "all_passed": verdict["all_passed"]}, indent=2))
+    print(
+        json.dumps(
+            {"replay_verification": str(out_path), "all_passed": verdict["all_passed"]},
+            indent=2,
+        )
+    )
     return 0 if verdict["all_passed"] else 1
 
 

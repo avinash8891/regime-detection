@@ -27,7 +27,9 @@ def test_walkforward_replay_matches_then_detects_corruption(
     config_path = repo_root / "tests" / "fixtures" / "configs" / "core3-v2-fast.yaml"
     out_root = tmp_path / "walkforward"
 
-    runner = _load("run_historical_walkforward", "scripts/run_historical_walkforward.py")
+    runner = _load(
+        "run_historical_walkforward", "scripts/run_historical_walkforward.py"
+    )
     result = runner.run_walkforward(
         market_data_path=v2_daily_path,
         output_root=out_root,
@@ -65,9 +67,7 @@ def test_walkforward_replay_matches_then_detects_corruption(
         output_root=out_root, config_path=config_path
     )
     assert verdict2["all_passed"] is False
-    corrupted = next(
-        r for r in verdict2["results"] if r["as_of_date"] == "2026-05-13"
-    )
+    corrupted = next(r for r in verdict2["results"] if r["as_of_date"] == "2026-05-13")
     assert corrupted["matches"] is False
     assert corrupted["breaks_qualification"] is True
     # the untouched date still replays cleanly

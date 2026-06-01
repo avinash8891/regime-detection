@@ -255,9 +255,7 @@ def test_euphoria_suppressed_during_sentiment_warmup_then_fires_when_warm(
     assert evaluate_euphoria(warmup, close, dt=dt, rules_config=euphoria_rules) is False
 
     # 4 readings on/before dt → sentiment = +25 → euphoria fires.
-    warm = _features_with(
-        ["2024-02-23", "2024-03-01", "2024-03-08", "2024-03-15"]
-    )
+    warm = _features_with(["2024-02-23", "2024-03-01", "2024-03-08", "2024-03-15"])
     assert warm.sentiment_score.loc[dt] == 25.0
     assert evaluate_euphoria(warm, close, dt=dt, rules_config=euphoria_rules) is True
 
@@ -537,11 +535,26 @@ def test_build_sentiment_score_series_forward_fills_from_publication_date() -> N
 
     aaii = pd.DataFrame(
         [
-            {"publication_date": pd.Timestamp("2024-02-15"), "bull_bear_spread_8w_ma": 5.0},
-            {"publication_date": pd.Timestamp("2024-02-22"), "bull_bear_spread_8w_ma": 8.0},
-            {"publication_date": pd.Timestamp("2024-02-29"), "bull_bear_spread_8w_ma": 11.0},
-            {"publication_date": pd.Timestamp("2024-03-07"), "bull_bear_spread_8w_ma": 15.0},
-            {"publication_date": pd.Timestamp("2024-03-14"), "bull_bear_spread_8w_ma": 22.0},
+            {
+                "publication_date": pd.Timestamp("2024-02-15"),
+                "bull_bear_spread_8w_ma": 5.0,
+            },
+            {
+                "publication_date": pd.Timestamp("2024-02-22"),
+                "bull_bear_spread_8w_ma": 8.0,
+            },
+            {
+                "publication_date": pd.Timestamp("2024-02-29"),
+                "bull_bear_spread_8w_ma": 11.0,
+            },
+            {
+                "publication_date": pd.Timestamp("2024-03-07"),
+                "bull_bear_spread_8w_ma": 15.0,
+            },
+            {
+                "publication_date": pd.Timestamp("2024-03-14"),
+                "bull_bear_spread_8w_ma": 22.0,
+            },
         ]
     )
     sessions = pd.bdate_range(start="2024-03-08", end="2024-03-15", freq="B")
