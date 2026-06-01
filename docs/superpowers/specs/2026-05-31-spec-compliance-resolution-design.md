@@ -179,6 +179,14 @@ Legend — **Reuse/Sub:** `sub`=deletion/consolidation, `reuse`=extend existing,
 | F-052 | low | Pin the §6.1 30%-transition-prob flag definition (absolute pp) in spec/ADR, OR switch to relative. **DECISION.** | definition pinned + tested | no | doc/code |
 | F-050 | low | Add a configured crash-window date set (e.g. §9.4 dates) + a `crisis_label_missing_in_crash_window` red flag. | red flag fires when no crisis label in a crash window | no | reuse |
 
+> **M4 status (2026-06-02): COMPLETE (12/12).** F-024 F-025 F-026 F-027 F-028 F-029
+> F-030 F-032 F-033 F-034 F-054 F-055 all shipped + pushed.
+> **M5 status (2026-06-02): COMPLETE (10/10).** F-010 F-011 F-021 F-037 F-038 F-040
+> F-041 F-043 F-048 F-049 all shipped + pushed. F-010 RF-checked: V2-golden value-asserts
+> unchanged, no re-freeze.
+> **M6 status (2026-06-02): COMPLETE (7/7).** F-015 F-023 F-045 F-046 F-053 Amb#3 Amb#4
+> all shipped + pushed.
+
 ### M4 — Golden-date & walk-forward test integrity
 
 > F-008, F-031 moved to M0 (oracle-first, §5). Remaining here strengthen existing assertions /
