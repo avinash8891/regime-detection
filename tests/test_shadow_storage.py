@@ -278,6 +278,101 @@ def test_load_archived_macro_series_round_trips_implied_vol_to_identity(
     assert list(reloaded["nfci"].to_numpy()) == [-0.30, -0.25]
 
 
+def test_insert_run_row_persists_config_sha256_and_latest_lookup(
+    tmp_path: Path,
+) -> None:
+    # F-018: the config content hash is recorded per run, and latest_config_sha256
+    # returns the most recent one for an (engine_version, config_version) pair so a
+    # mid-window content change can be detected against the coarse Literal.
+    db_path = tmp_path / "regime_shadow.db"
+    with open_shadow_db(db_path) as conn:
+        insert_run_row(
+            conn=conn,
+            run_timestamp="2026-05-17T05:15:00+00:00",
+            as_of_date=date(2026, 5, 12),
+            engine_version="regime-engine-test",
+            config_version="core3-v2.0.0",
+            archive_dir=tmp_path / "input_archives" / "2026-05-12",
+            config_sha256="a" * 64,
+        )
+        insert_run_row(
+            conn=conn,
+            run_timestamp="2026-05-18T05:15:00+00:00",
+            as_of_date=date(2026, 5, 13),
+            engine_version="regime-engine-test",
+            config_version="core3-v2.0.0",
+            archive_dir=tmp_path / "input_archives" / "2026-05-13",
+            config_sha256="b" * 64,
+        )
+        latest = shadow_storage.latest_config_sha256(
+            conn=conn,
+            engine_version="regime-engine-test",
+            config_version="core3-v2.0.0",
+        )
+        absent = shadow_storage.latest_config_sha256(
+            conn=conn,
+            engine_version="regime-engine-test",
+            config_version="core3-v1.0.0",
+        )
+
+    assert latest == "b" * 64
+    assert absent is None
+
+
+def test_open_shadow_db_migrates_legacy_runs_table_missing_config_sha256(
+    tmp_path: Path,
+) -> None:
+    # F-018: a DB created before the config_sha256 column existed must gain the
+    # column on open (CREATE TABLE IF NOT EXISTS never alters), with old rows NULL.
+    db_path = tmp_path / "regime_shadow.db"
+    with closing(sqlite3.connect(db_path)) as conn:
+        conn.execute("""
+            CREATE TABLE runs (
+                run_id INTEGER PRIMARY KEY,
+                run_timestamp TEXT NOT NULL,
+                as_of_date TEXT NOT NULL,
+                engine_version TEXT NOT NULL,
+                config_version TEXT NOT NULL,
+                status TEXT NOT NULL,
+                failure_reason TEXT,
+                input_archive_path TEXT NOT NULL,
+                output_path TEXT,
+                output_sha256 TEXT,
+                UNIQUE (as_of_date, engine_version, config_version)
+            )
+            """)
+        conn.execute(
+            """
+            INSERT INTO runs (
+                run_timestamp, as_of_date, engine_version, config_version,
+                status, input_archive_path
+            ) VALUES (?, ?, ?, ?, ?, ?)
+            """,
+            (
+                "2026-05-17T05:15:00+00:00",
+                "2026-05-12",
+                "regime-engine-test",
+                "core3-v2.0.0",
+                "success",
+                "input_archives/2026-05-12",
+            ),
+        )
+        conn.commit()
+
+    with open_shadow_db(db_path) as conn:
+        columns = {
+            str(row[1]) for row in conn.execute("PRAGMA table_info(runs)").fetchall()
+        }
+        legacy_hash = shadow_storage.latest_config_sha256(
+            conn=conn,
+            engine_version="regime-engine-test",
+            config_version="core3-v2.0.0",
+        )
+
+    assert "config_sha256" in columns
+    assert legacy_hash is None  # the pre-migration row carries no hash
+
+
 def test_archived_pit_intervals_round_trip(tmp_path: Path) -> None:
     """CR-004: an explicit PIT membership frame is archived and reloaded faithfully so a
     replay reconstructs the same constituent universe (date objects + None open-interval

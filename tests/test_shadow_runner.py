@@ -300,6 +300,60 @@ def test_shadow_runner_records_failures_without_silent_skip(
     assert not (out_root / "outputs" / "2026-05-13.json").exists()
 
 
+def test_shadow_runner_resets_qualification_on_mid_window_config_change(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # F-018: two runs share the coarse config_version Literal but the config CONTENT
+    # changes between them. The runner must record each config's content hash and,
+    # when it differs from the window's prior hash, insert a breaking incident that
+    # resets the qualification window. The incident is recorded before classify, so we
+    # stub classify out to keep the test fast and content-change-focused.
+    repo_root = Path(__file__).resolve().parents[1]
+    v2_daily_path = repo_root / "tests" / "fixtures" / "raw" / "v2" / "daily_ohlcv.csv"
+    event_calendar_path = repo_root / "tests" / "fixtures" / "events" / "us_events.yaml"
+    out_root = tmp_path / "shadow_run"
+    pit_path = _write_sector_pit_intervals(tmp_path / "pit.csv")
+
+    config_a = _write_shadow_test_config(tmp_path)
+    # Same config_version, different bytes: appended comment parses identically.
+    config_b = tmp_path / "shadow_test_config_changed.yaml"
+    config_b.write_text(config_a.read_text() + "\n# F-018 mid-window config change\n")
+
+    mod = _load_runner_module()
+    monkeypatch.setattr(
+        mod.RegimeEngine,
+        "classify",
+        lambda self, **kwargs: (_ for _ in ()).throw(RuntimeError("stubbed classify")),
+    )
+
+    common = dict(
+        market_data_path=v2_daily_path,
+        event_calendar_path=event_calendar_path,
+        output_root=out_root,
+        v2_daily_ohlcv_path=v2_daily_path,
+        pit_constituent_intervals_path=pit_path,
+    )
+    mod.run_shadow(as_of_date=date(2026, 5, 12), config_path=config_a, **common)
+    mod.run_shadow(as_of_date=date(2026, 5, 13), config_path=config_b, **common)
+
+    with closing(sqlite3.connect(out_root / "regime_shadow.db")) as conn:
+        run_hashes = conn.execute(
+            "SELECT as_of_date, config_sha256 FROM runs ORDER BY as_of_date"
+        ).fetchall()
+        incidents = conn.execute(
+            "SELECT incident_date, description, breaks_qualification FROM incidents"
+        ).fetchall()
+
+    hash_a = run_hashes[0][1]
+    hash_b = run_hashes[1][1]
+    assert hash_a is not None and hash_b is not None
+    assert hash_a != hash_b  # content change produced distinct hashes
+    assert len(incidents) == 1
+    assert incidents[0][0] == "2026-05-13"
+    assert "Config content changed mid-window" in incidents[0][1]
+    assert incidents[0][2] == 1  # breaks_qualification
+
+
 def test_shadow_runner_rejects_duplicate_versioned_run_and_non_trading_day(
     tmp_path: Path,
 ) -> None:

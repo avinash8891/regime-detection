@@ -54,6 +54,7 @@ CREATE TABLE IF NOT EXISTS runs (
     input_archive_path TEXT NOT NULL,
     output_path TEXT,
     output_sha256 TEXT,
+    config_sha256 TEXT,
     UNIQUE (as_of_date, engine_version, config_version)
 )
 """
@@ -104,6 +105,21 @@ def ensure_shadow_layout(
     return paths
 
 
+def _ensure_column(
+    conn: sqlite3.Connection, table: str, column: str, ddl_type: str
+) -> None:
+    """Add a column to an existing table if absent (forward-compatible migration).
+
+    CREATE TABLE IF NOT EXISTS never alters an existing table, so a DB created
+    before a column was added would silently lack it. Existing rows get NULL.
+    """
+    existing = {
+        str(row[1]) for row in conn.execute(f"PRAGMA table_info({table})").fetchall()
+    }
+    if column not in existing:
+        conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {ddl_type}")
+
+
 def open_shadow_db(db_path: Path) -> sqlite3.Connection:
     conn = sqlite3.connect(db_path, timeout=30.0, factory=_ClosingConnection)
     conn.execute("PRAGMA journal_mode=WAL")
@@ -111,6 +127,8 @@ def open_shadow_db(db_path: Path) -> sqlite3.Connection:
     conn.execute(RUNS_SCHEMA)
     conn.execute(REPLAY_CHECKS_SCHEMA)
     conn.execute(INCIDENTS_SCHEMA)
+    # F-018: config_sha256 was added after the original §3 schema; migrate older DBs.
+    _ensure_column(conn, "runs", "config_sha256", "TEXT")
     conn.commit()
     return conn
 
@@ -234,6 +252,31 @@ def load_archived_macro_series(path: Path) -> dict[str, pd.Series] | None:
     return series
 
 
+def latest_config_sha256(
+    *,
+    conn: sqlite3.Connection,
+    engine_version: str,
+    config_version: str,
+) -> str | None:
+    """F-018: the most recently recorded config content hash for this identity pair.
+
+    Used to detect a config-content change WITHIN the same coarse ``config_version``
+    Literal (which by itself would not start a fresh qualification window). Returns
+    None when no prior run carried a hash (older rows, or the first run).
+    """
+    row = conn.execute(
+        """
+        SELECT config_sha256
+        FROM runs
+        WHERE engine_version = ? AND config_version = ? AND config_sha256 IS NOT NULL
+        ORDER BY as_of_date DESC, run_id DESC
+        LIMIT 1
+        """,
+        (engine_version, config_version),
+    ).fetchone()
+    return None if row is None else str(row[0])
+
+
 def insert_run_row(
     *,
     conn: sqlite3.Connection,
@@ -242,13 +285,15 @@ def insert_run_row(
     engine_version: str,
     config_version: str,
     archive_dir: Path,
+    config_sha256: str | None = None,
 ) -> None:
     conn.execute(
         """
         INSERT INTO runs (
             run_timestamp, as_of_date, engine_version, config_version,
-            status, failure_reason, input_archive_path, output_path, output_sha256
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            status, failure_reason, input_archive_path, output_path, output_sha256,
+            config_sha256
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (
             run_timestamp,
@@ -260,6 +305,7 @@ def insert_run_row(
             str(archive_dir),
             None,
             None,
+            config_sha256,
         ),
     )
     conn.commit()
