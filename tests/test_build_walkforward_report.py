@@ -776,3 +776,44 @@ def test_baseline_comparison_tie_does_not_rescue_regression() -> None:
     assert "sharpe" not in comp["materially_worse_metrics"]  # tie, not material
     assert comp["improved_metrics"] == []  # no material benefit anywhere
     assert comp["all_metrics_materially_worse"] is True
+
+
+def test_nan_leakage_flags_blank_label_but_accepts_unknown(tmp_path: Path) -> None:
+    """F-020: §6 NaN-leakage gate — a success row whose label cell is blank/None (not
+    surfaced as the explicit unknown/insufficient_history contract) is flagged; the
+    explicit unknown / insufficient_history labels are accepted."""
+    report_mod = _load_module(
+        "build_walkforward_report", "scripts/build_walkforward_report.py"
+    )
+    summary_df = pd.DataFrame(
+        [
+            {
+                "as_of_date": date(2023, 12, 12),
+                "status": "success",
+                "trend_direction_active": "bull",
+                "trend_character_active": "trending",
+                "volatility_state_active": "unknown",
+                "breadth_state_active": "healthy_breadth",
+                "transition_risk_state": "insufficient_history",
+            },
+            {
+                "as_of_date": date(2023, 12, 13),
+                "status": "success",
+                "trend_direction_active": None,  # blank → contract violation
+                "trend_character_active": "trending",
+                "volatility_state_active": "",  # blank → contract violation
+                "breadth_state_active": "healthy_breadth",
+                "transition_risk_state": "stable",
+            },
+        ]
+    )
+    runs_df = pd.DataFrame({"as_of_date": [], "output_path": []})
+
+    leaks = report_mod._nan_leakage(summary_df, runs_df, tmp_path)
+
+    assert "summary.trend_direction_active@2023-12-13:label_contract_violation" in leaks
+    assert (
+        "summary.volatility_state_active@2023-12-13:label_contract_violation" in leaks
+    )
+    # the explicit unknown / insufficient_history contract labels are accepted
+    assert not any("@2023-12-12" in leak for leak in leaks)

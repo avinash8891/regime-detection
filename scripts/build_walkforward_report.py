@@ -230,6 +230,26 @@ def _nan_leakage(
         for _, row in summary_df.loc[summary_df[col].isna()].iterrows():
             leaks.append(f"summary.{col}@{row['as_of_date'].isoformat()}")
 
+    # F-020: §6 contract — degraded/missing data must surface as the explicit `unknown`
+    # / `insufficient_history` LABELS, never as an empty/None/NaN cell. The numeric scan
+    # above skips string label columns, so a silently-blank label would otherwise pass.
+    # Flag any successful-row LABEL_COLUMN value that is missing or blank.
+    success_df = (
+        summary_df[summary_df["status"] == "success"]
+        if "status" in summary_df.columns
+        else summary_df
+    )
+    for col in LABEL_COLUMNS:
+        if col not in summary_df.columns:
+            continue
+        for _, row in success_df.iterrows():
+            value = row[col]
+            text = ("" if value is None else str(value)).strip().lower()
+            if text in ("", "nan", "none", "null"):
+                leaks.append(
+                    f"summary.{col}@{row['as_of_date'].isoformat()}:label_contract_violation"
+                )
+
     for _, row in runs_df.iterrows():
         output_path = row.get("output_path")
         if pd.isna(output_path) or output_path is None:
