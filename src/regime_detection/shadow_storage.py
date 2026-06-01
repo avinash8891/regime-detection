@@ -147,11 +147,13 @@ def write_archived_inputs(
     market_slice: pd.DataFrame,
     event_df: pd.DataFrame | None,
     macro_series: dict[str, pd.Series] | None = None,
+    v2_daily_slice: pd.DataFrame | None = None,
 ) -> tuple[Path, Path, Path]:
     archive_dir.mkdir(parents=True, exist_ok=True)
     market_path = archive_dir / "market_data.parquet"
     events_path = archive_dir / "events.yaml"
     macro_path = archive_dir / "macro_series.parquet"
+    v2_daily_path = archive_dir / "v2_daily.parquet"
     checksums_path = archive_dir / "checksums.json"
 
     market_slice.to_parquet(market_path, index=False)
@@ -166,6 +168,12 @@ def write_archived_inputs(
     if macro_series:
         _macro_series_frame(macro_series).to_parquet(macro_path, index=False)
         checksums["macro_series.parquet"] = sha256_file(macro_path)
+    # F-001: when the runner feeds V2 inputs derived from a daily-OHLCV frame
+    # (sector/cross-asset closes, PIT membership, constituent OHLCV), archive the
+    # as-of slice so a walk-forward replay can recompute the V2 axes byte-identically.
+    if v2_daily_slice is not None and not v2_daily_slice.empty:
+        v2_daily_slice.to_parquet(v2_daily_path, index=False)
+        checksums["v2_daily.parquet"] = sha256_file(v2_daily_path)
     checksums_path.write_text(
         json.dumps(
             checksums,
@@ -288,6 +296,18 @@ def update_run_row_failure(
 
 
 def load_archived_market_data(path: Path) -> pd.DataFrame:
+    archived = pd.read_parquet(path)
+    return cow_safe_assign(
+        archived,
+        {"date": pd.to_datetime(archived["date"]).dt.date},
+    )
+
+
+def load_archived_v2_daily(path: Path) -> pd.DataFrame | None:
+    """Load the archived as-of V2 daily-OHLCV slice (F-001), or None if absent
+    (V1-only runs do not archive it). Same date-normalization as market_data."""
+    if not path.exists():
+        return None
     archived = pd.read_parquet(path)
     return cow_safe_assign(
         archived,

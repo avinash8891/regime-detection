@@ -181,6 +181,39 @@ def _build_report_markdown(
     return "\n".join(lines) + "\n"
 
 
+def build_v2_classify_kwargs(
+    *,
+    v2_slice: pd.DataFrame | None,
+    pit_intervals: pd.DataFrame | None,
+    macro_series: dict[str, pd.Series] | None,
+) -> dict[str, Any]:
+    """Build the V2 classify kwargs from an as-of v2 daily-OHLCV slice.
+
+    Shared by the walk-forward runner and ``run_walkforward_replay_check`` so a
+    replay reconstructs the V2 inputs (sector/cross-asset closes, PIT membership,
+    constituent OHLCV, macro) byte-identically from the archived ``v2_daily`` slice
+    (F-001). Returns an empty dict on the V1-only path (``v2_slice is None``).
+    """
+    if v2_slice is None:
+        return {}
+    session_pit_intervals = pit_intervals
+    if session_pit_intervals is None:
+        session_pit_intervals = _default_pit_intervals_from_daily(v2_slice)
+    kwargs: dict[str, Any] = {
+        "sector_etf_closes": _close_series_by_symbol(v2_slice, SECTOR_ETFS),
+        "cross_asset_closes": _close_series_by_symbol(
+            v2_slice, RUNNER_CROSS_ASSET_SYMBOLS
+        ),
+        "pit_constituent_intervals": session_pit_intervals,
+        "constituent_ohlcv": _constituent_ohlcv_from_daily(
+            v2_slice, session_pit_intervals
+        ),
+    }
+    if macro_series is not None:
+        kwargs["macro_series"] = macro_series
+    return kwargs
+
+
 def run_walkforward(
     *,
     market_data_path: Path,
@@ -235,6 +268,13 @@ def run_walkforward(
                 .copy()
                 .reset_index(drop=True)
             )
+            v2_slice: pd.DataFrame | None = None
+            if v2_daily is not None:
+                v2_slice = (
+                    v2_daily[v2_daily["date"] <= as_of_date]
+                    .copy()
+                    .reset_index(drop=True)
+                )
             write_archived_inputs(
                 archive_dir=archive_dir,
                 market_slice=market_slice,
@@ -242,7 +282,11 @@ def run_walkforward(
                 # F-003: archive the same macro_series passed to classify()
                 # (consumed only on the V2 path), so V2 macro-dependent labels
                 # are reproducible from the archive. Mirrors run_shadow_regime.py.
-                macro_series=(macro_series if v2_daily is not None else None),
+                macro_series=(macro_series if v2_slice is not None else None),
+                # F-001: archive the as-of v2 daily-OHLCV slice the runner derives
+                # its V2 inputs (sector/cross-asset/PIT/constituent) from, so a
+                # walk-forward replay can recompute the V2 axes byte-identically.
+                v2_daily_slice=v2_slice,
             )
             insert_run_row(
                 conn=conn,
@@ -254,31 +298,11 @@ def run_walkforward(
             )
 
             try:
-                v2_kwargs: dict[str, Any] = {}
-                if v2_daily is not None:
-                    v2_slice = (
-                        v2_daily[v2_daily["date"] <= as_of_date]
-                        .copy()
-                        .reset_index(drop=True)
-                    )
-                    session_pit_intervals = pit_intervals
-                    if session_pit_intervals is None:
-                        session_pit_intervals = _default_pit_intervals_from_daily(
-                            v2_slice
-                        )
-                    v2_kwargs["sector_etf_closes"] = _close_series_by_symbol(
-                        v2_slice, SECTOR_ETFS
-                    )
-                    v2_kwargs["cross_asset_closes"] = _close_series_by_symbol(
-                        v2_slice, RUNNER_CROSS_ASSET_SYMBOLS
-                    )
-                    v2_kwargs["pit_constituent_intervals"] = session_pit_intervals
-                    v2_kwargs["constituent_ohlcv"] = _constituent_ohlcv_from_daily(
-                        v2_slice,
-                        session_pit_intervals,
-                    )
-                    if macro_series is not None:
-                        v2_kwargs["macro_series"] = macro_series
+                v2_kwargs = build_v2_classify_kwargs(
+                    v2_slice=v2_slice,
+                    pit_intervals=pit_intervals,
+                    macro_series=macro_series,
+                )
                 output = engine.classify(
                     as_of_date=as_of_date,
                     market_data=market_slice,

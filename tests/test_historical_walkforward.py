@@ -175,6 +175,18 @@ def test_historical_walkforward_supplies_macro_series_for_configured_v2_axes(
     assert set(archived_macro) == set(consumed_macro)
     assert {"broad_usd_index", "hy_oas", "ig_bbb_oas"}.issubset(archived_macro)
 
+    # F-001: the as-of v2 daily-OHLCV slice is archived so a walk-forward replay
+    # can recompute the V2 axes; it round-trips to a point-in-time OHLCV frame.
+    from regime_detection.shadow_storage import load_archived_v2_daily
+
+    v2_daily_archive = archive_dir / "v2_daily.parquet"
+    assert v2_daily_archive.exists(), "walk-forward did not archive v2_daily slice"
+    assert "v2_daily.parquet" in checksums
+    archived_v2_daily = load_archived_v2_daily(v2_daily_archive)
+    assert archived_v2_daily is not None
+    assert archived_v2_daily["date"].max() == date(2026, 5, 13)  # no future rows
+    assert "SPY" in set(archived_v2_daily["symbol"])
+
 
 def test_historical_walkforward_runner_records_failures_without_silent_skip(
     tmp_path: Path,
