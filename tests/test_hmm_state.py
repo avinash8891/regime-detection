@@ -624,6 +624,65 @@ def test_compute_hmm_features_reports_parameter_drift_across_refit_checkpoints(
     assert np.isfinite(result.parameter_drift.parameter_drift)
 
 
+def test_compute_hmm_features_warns_when_drift_alert_fires(
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    # F-039: the §6.1 drift seam is computed and exposed, but the >20% state-mean /
+    # >30% transition-prob alerts must reach the quarterly operator review via a
+    # WARNING. Force an alerting drift at every refit-checkpoint comparison and assert
+    # the WARNING is emitted (with the magnitudes) so the review cannot miss it.
+    alerting_drift = HMMParameterDrift(
+        parameter_drift=0.42,
+        state_mean_drift_alert=True,
+        max_transition_prob_shift=0.37,
+        transition_prob_review_flag=True,
+        alignment=(0, 1, 2, 3),
+    )
+    monkeypatch.setattr(
+        "regime_detection.hmm_state.compute_hmm_parameter_drift",
+        lambda **_kwargs: alerting_drift,
+    )
+
+    inputs = _synthetic_inputs(n_sessions=1500)
+    cfg = _default_hmm_config()
+    with caplog.at_level("WARNING", logger="regime_detection.hmm_state"):
+        result = compute_hmm_features(config=cfg, **inputs)
+
+    assert result is not None
+    assert result.parameter_drift is alerting_drift
+    assert "HMM parameter drift alert" in caplog.text
+    assert "0.4200" in caplog.text  # state_mean_drift magnitude surfaced
+    assert "0.3700" in caplog.text  # max_transition_prob_shift surfaced
+
+
+def test_compute_hmm_features_does_not_warn_when_drift_below_thresholds(
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    # F-039: a quiet refit (both flags False) must NOT emit the alert WARNING — the
+    # quarterly review channel stays silent unless a real threshold is crossed.
+    quiet_drift = HMMParameterDrift(
+        parameter_drift=0.05,
+        state_mean_drift_alert=False,
+        max_transition_prob_shift=0.04,
+        transition_prob_review_flag=False,
+        alignment=(0, 1, 2, 3),
+    )
+    monkeypatch.setattr(
+        "regime_detection.hmm_state.compute_hmm_parameter_drift",
+        lambda **_kwargs: quiet_drift,
+    )
+
+    inputs = _synthetic_inputs(n_sessions=1500)
+    cfg = _default_hmm_config()
+    with caplog.at_level("WARNING", logger="regime_detection.hmm_state"):
+        result = compute_hmm_features(config=cfg, **inputs)
+
+    assert result is not None
+    assert "HMM parameter drift alert" not in caplog.text
+
+
 def test_compute_hmm_features_parameter_drift_is_none_with_single_checkpoint() -> None:
     # frame length = n_sessions - 62 warm-up (drawdown_63d is binding); pick a
     # training window equal to that so only ONE refit checkpoint fits → no prior

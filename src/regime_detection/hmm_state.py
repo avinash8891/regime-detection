@@ -323,6 +323,26 @@ def compute_hmm_features(
                             previous_transition_matrix=previous_transmat,
                             current_transition_matrix=best["transmat"],
                         )
+                        # F-039: surface the §6.1 quarterly-review alerts. The drift
+                        # seam was computed and exposed on HmmOutput but never logged,
+                        # so the >20% state-mean / >30% transition-prob thresholds
+                        # passed silently. Emit a WARNING the moment a refit crosses
+                        # either threshold so the operational review receives it.
+                        if (
+                            latest_drift.state_mean_drift_alert
+                            or latest_drift.transition_prob_review_flag
+                        ):
+                            _LOGGER.warning(
+                                "HMM parameter drift alert: state_mean_drift=%.4f "
+                                "(alert=%s, threshold=%.2f), max_transition_prob_shift="
+                                "%.4f (review=%s, threshold=%.2f)",
+                                latest_drift.parameter_drift,
+                                latest_drift.state_mean_drift_alert,
+                                _STATE_MEAN_DRIFT_ALERT_THRESHOLD,
+                                latest_drift.max_transition_prob_shift,
+                                latest_drift.transition_prob_review_flag,
+                                _TRANSITION_PROB_REVIEW_THRESHOLD,
+                            )
                     previous_raw_means = raw_means
                     previous_transmat = best["transmat"]
     except Exception as exc:  # noqa: BLE001
