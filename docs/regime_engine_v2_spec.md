@@ -4678,11 +4678,20 @@ These build on the V1 golden test set; do not replace it.
 > corrections: `2020-08-15` is a Saturday (non-NYSE session), so the fixture uses
 > the nearest prior trading session `2020-08-14`; and `stock_picker_dispersion` is
 > asserted under the `network_fragility` field (it is a §3.4/§3.6 network-fragility
-> label, not a breadth label). All nine dates — including the four pre-2019 dates
-> (2010-05-06, 2011-08-08, 2015-08-24, 2018-10-10) — now classify live: the V2
-> daily-OHLCV fixture was extended back to 2009-01-02 with real Yahoo OHLCV
-> (incl. real `^VIX`) and the placeholder PIT membership intervals start at
-> each sector ETF's real inception (see `tests/fixtures/raw/v2/PROVENANCE.md`).
+> label, not a breadth label). All nine dates run through the LIVE V2 pipeline (the
+> V2 daily-OHLCV fixture was extended back to 2009-01-02 with real Yahoo OHLCV — incl.
+> real `^VIX` — and the placeholder PIT membership intervals start at each sector
+> ETF's real inception; see `tests/fixtures/raw/v2/PROVENANCE.md`). Five dates
+> (2020-08-14 onward) value-assert their §9.4 labels under the production config. The
+> four pre-2019 dates (2010-05-06, 2011-08-08, 2015-08-24, 2018-10-10) FAIL-CLOSED on
+> their transition_risk deep-history model-evidence windows (HMM=1260 / clustering=1260
+> / change-point=2705 sessions reach before the 2009 fixture start), so they are
+> value-asserted to RAISE (recorded in `_V2_LIVE_FIXTURE_UNSUPPORTED_GOLDEN_DATES`),
+> never silently skipped. The 2018-10-10 `bull→narrowing_breadth→bear_stress` sequence
+> — a trend_direction + breadth_state trajectory that needs no model evidence — is
+> value-asserted over the Q4-2018 axis series by
+> `test_q4_2018_bull_to_narrowing_to_bear_sequence` (driven by the hand-labeled
+> `expected_sequence` block in `golden_dates.yaml`).
 >
 > **Note (2026-06 reconciliation — "Test reason" vs the §3.5/§2C rules).** A
 > measurement pass reproduced the engine's rule features from the raw fixture (two
