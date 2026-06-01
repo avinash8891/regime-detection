@@ -4673,16 +4673,36 @@ Add dates that exercise V2-specific behavior:
 
 These build on the V1 golden test set; do not replace it.
 
-> **Note (registration fixture).** `tests/fixtures/derived/golden_dates_v2.yaml`
-> registers these dates with two corrections: `2020-08-15` is a Saturday
-> (non-NYSE session), so the fixture uses the nearest prior trading session
-> `2020-08-14`; and `stock_picker_dispersion` is asserted under the
-> `network_fragility` field (it is a §3.4/§3.6 network-fragility label, not a
-> breadth label). All nine dates — including the four pre-2019 dates
+> **Note (registration fixture).** `tests/fixtures/derived/golden_dates.yaml`
+> (the unified V1+V2 registry) registers these dates with two transcription
+> corrections: `2020-08-15` is a Saturday (non-NYSE session), so the fixture uses
+> the nearest prior trading session `2020-08-14`; and `stock_picker_dispersion` is
+> asserted under the `network_fragility` field (it is a §3.4/§3.6 network-fragility
+> label, not a breadth label). All nine dates — including the four pre-2019 dates
 > (2010-05-06, 2011-08-08, 2015-08-24, 2018-10-10) — now classify live: the V2
 > daily-OHLCV fixture was extended back to 2009-01-02 with real Yahoo OHLCV
 > (incl. real `^VIX`) and the placeholder PIT membership intervals start at
 > each sector ETF's real inception (see `tests/fixtures/raw/v2/PROVENANCE.md`).
+>
+> **Note (2026-06 reconciliation — "Test reason" vs the §3.5/§2C rules).** A
+> measurement pass reproduced the engine's rule features from the raw fixture (two
+> independent implementations) and confirmed the engine applies §3.5/§2C correctly
+> on every date above; the "Test reason" column is the *scenario intuition*, which in
+> two cases names a label its own rule predicate does not produce:
+> - **2020-08-15 (→2020-08-14)** — a post-COVID mega-cap *narrowing* tape is a
+>   concentration phenomenon, the opposite of `stock_picker_dispersion`, which
+>   requires LOW correlation (`avg_pairwise_corr_percentile_504d < 0.30`; measured
+>   0.66). The registered network_fragility label is `diversified_normal`.
+> - **2024-08-05** — `funding_squeeze` requires a USD funding spike
+>   (`broad_usd_index_zscore_21d > +1.5`; measured −0.017, USD-flat). The registered
+>   §2C label is `credit_stress` (the independently-firing label).
+>
+> The remaining scenario expectations are kept as documented, self-policing disputes
+> (none is an engine bug): `2021-01-27` and `2022-09-26` are boundary near-misses;
+> `2023-03-13` `credit_stress` is data-blocked (real ICE-OAS absent pre-2023-05-15);
+> and `2024-08-05` `correlation_to_one` is a spec limitation — a 504d percentile of a
+> 63d correlation cannot fire on a single-day shock (see
+> `docs/decisions/0022-correlation-to-one-percentile-cannot-detect-single-day-shock.md`).
 
 ---
 

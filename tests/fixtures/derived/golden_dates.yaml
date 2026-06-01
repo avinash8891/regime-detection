@@ -24,15 +24,27 @@ provenance_note: |-
 
   VALUE-ASSERT STATUS (test_v2_golden_dates_classify_expected_fields, slow lane).
   The expected_v2_fields rows are VALUE-compared to the engine's emitted labels under
-  the PRODUCTION config — not presence-only. Three honest outcomes, no silent
-  relaxation: GREEN where the engine matches §9.4; UNSUPPORTED for the four pre-2019
-  dates (2010/2011/2015/2018), which raise on missing deep-history model-evidence
+  the PRODUCTION config — not presence-only. Outcomes, no silent relaxation: GREEN
+  where the engine matches §9.4; UNSUPPORTED for the four pre-2019 dates
+  (2010/2011/2015/2018), which raise on missing deep-history model-evidence
   (HMM=1260 / clustering=1260 / change-point=2705-session windows) the fixture cannot
   supply — the multi-asset instruments did not exist far enough back, and real ICE-OAS
-  credit is license-blocked; and a self-policing DISPUTED set recording the
-  engine-vs-§9.4 disagreements (network_fragility emits diversified_normal on the
-  dispersion/correlation dates §9.4 expects to fire — an open engine-correctness
-  question). The test breaks if any documented gap silently appears or resolves.
+  credit is license-blocked; and a self-policing DISPUTED set for the residual
+  §9.4-vs-engine disagreements.
+
+  A 2026-06 measurement pass settled the original six disputes by reproducing the
+  engine's own rule features to full precision from the raw fixture (a blind recompute
+  + a second independent §3.4/§3.5 ladder derivation): NONE was an engine bug. Two
+  §9.4 expectations were therefore corrected to their independently-derived rule labels
+  and now pass GREEN — 2020-08-14 stock_picker_dispersion -> diversified_normal
+  (a narrowing tape is concentration, not low-correlation dispersion; corr_pct 0.66)
+  and 2024-08-05 funding_squeeze -> credit_stress (no USD funding spike: z=-0.017).
+  The four remaining disputed entries are NON-engine-bug: boundary near-miss
+  (2021-01-27 corr_pct 0.317 vs <0.30; 2022-09-26 vol_pctile 0.698 vs >0.75, also
+  §2C data-gated), spec gap (2024-08-05 correlation_to_one — 504d percentile cannot
+  represent a 1-day shock, ADR 0022), and data-blocked (2023-03-13 credit_stress —
+  real ICE-OAS absent pre-2023-05-15, proxy reads 0.61). The test breaks if any
+  documented gap silently appears or resolves.
 raw_file_sha256:
   SPY.csv: efa06aba545dea29dcc523bb8b50ad6a334892e49babee5769466fa8c2c0ef33
   RSP.csv: 6aa3f27a796ffad78f17d114fbe02e806a5488e2a07cdf61166344c15ed7d2c2
@@ -174,8 +186,17 @@ rows:
     sequence: bull_to_narrowing_breadth_to_bear_stress
 - intent_id: post_covid_narrowing_2020
   as_of_date: '2020-08-14'
+  # §9.4 named this date for stock_picker_dispersion, but that label requires LOW
+  # aggregate correlation (avg_pairwise_corr_percentile_504d < 0.30). A post-COVID
+  # mega-cap NARROWING tape is a concentration phenomenon, the opposite of a broad
+  # stock-picker market. Corrected to the independently-derived §3.4/§3.5 label
+  # (recomputed from the raw 24-ETF universe + spec ladder, NOT copied from engine
+  # output, and cross-checked by a second blind implementation): at corr_pct=0.6627
+  # the precedence walk lands on diversified_normal — concentration absorption_top3
+  # 0.767<0.90, rising_fragility fails on a negative avg-corr 21d slope, rotation_watch
+  # fails as effective_rank_stability 0.019<0.05. See docs/decisions/0022.
   expected_v2_fields:
-    network_fragility: stock_picker_dispersion
+    network_fragility: diversified_normal
 - intent_id: gamestop_2021
   as_of_date: '2021-01-27'
   expected_v2_fields:
@@ -192,7 +213,16 @@ rows:
     credit_funding: credit_stress
 - intent_id: yen_carry_unwind_2024
   as_of_date: '2024-08-05'
+  # funding_squeeze corrected to credit_stress. funding_squeeze requires a USD
+  # FUNDING spike (broad_usd_index_zscore_21d > +1.5); the yen-carry unwind was a
+  # USD-flat/risk-off event (independently measured z = -0.017). The independently
+  # derived §2C label is credit_stress (proxy hy_tr_differential_percentile_504d
+  # 0.994 > 0.80 AND spy_21d_return -0.067 < -0.05; deleveraging and funding_squeeze
+  # both fail their own gates). correlation_to_one is RETAINED as a documented spec
+  # gap (docs/decisions/0022): §3.5's 504d-percentile predicate cannot fire on a
+  # single-day correlation shock (corr_pct 0.349), so it stays in the self-policing
+  # disputed set rather than being asserted GREEN.
   expected_v2_fields:
     transition_evidence:
     - correlation_to_one
-    - funding_squeeze
+    - credit_stress
