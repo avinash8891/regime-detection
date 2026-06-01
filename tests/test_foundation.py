@@ -110,6 +110,25 @@ def test_classify_request_rejects_non_positive_lookback(
         RegimeEngine().classify_request(request)
 
 
+def test_classify_request_rejects_non_regime_config_override(
+    market_df_for_asof, event_calendar_df
+) -> None:
+    """F-042 / §2.4.1: a config override may only be a validated RegimeConfig instance.
+    Because ClassifyRequest is a plain dataclass (no Pydantic enforcement), a non-config
+    (here a dict) must fail loudly with a TypeError at the request boundary — not deep
+    inside build_market_context."""
+    request = ClassifyRequest(
+        end_date=date(2023, 12, 14),
+        market_data=market_df_for_asof(date(2023, 12, 14)),
+        lookback_days=1,
+        event_calendar=event_calendar_df,
+        config={"not": "a regime config"},  # type: ignore[arg-type]
+    )
+
+    with pytest.raises(TypeError, match="RegimeConfig"):
+        RegimeEngine().classify_request(request)
+
+
 def test_classify_request_has_no_legacy_breadth_data_field() -> None:
     assert "breadth_data" not in ClassifyRequest.__dataclass_fields__
 
