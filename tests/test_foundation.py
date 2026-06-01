@@ -184,9 +184,42 @@ def test_classify_rejects_legacy_breadth_data_argument(market_df_for_asof) -> No
         )
 
 
-def test_classify_request_rejects_profile_manifest_without_event_calendar_resolution(
+def test_classify_request_rejects_profile_manifest_without_any_provenance(
     market_df_for_asof, event_calendar_df
 ) -> None:
+    # F-048: §2.1 requires profile_manifest calls to pass manifest provenance but does
+    # not enumerate which input names. The gate now requires NON-EMPTY provenance, not a
+    # hardcoded 'event_calendar'. Empty provenance (no resolved inputs, no CLI overrides)
+    # raises; a provenance under any name (covered by the accepts test below) passes.
+    request = ClassifyRequest(
+        end_date=date(2023, 12, 14),
+        market_data=market_df_for_asof(date(2023, 12, 14)),
+        event_calendar=event_calendar_df,
+        request_source="profile_manifest",
+        manifest_resolved_inputs=frozenset(),
+        manifest_cli_overrides=frozenset(),
+    )
+
+    with pytest.raises(
+        ValueError,
+        match="profile_manifest request missing manifest provenance",
+    ):
+        RegimeEngine().classify_request(request)
+
+
+def test_classify_request_accepts_profile_manifest_with_non_event_calendar_provenance(
+    market_df_for_asof, event_calendar_df
+) -> None:
+    # F-048: a profile_manifest run whose provenance is named something other than
+    # 'event_calendar' must pass the provenance gate (the prior hardcoded literal
+    # rejected it). Use the V1 config so the run completes without V2 inputs.
+    config_path = (
+        Path(__file__).resolve().parents[1]
+        / "src"
+        / "regime_detection"
+        / "configs"
+        / "core3-v1.0.0.yaml"
+    )
     request = ClassifyRequest(
         end_date=date(2023, 12, 14),
         market_data=market_df_for_asof(date(2023, 12, 14)),
@@ -195,11 +228,9 @@ def test_classify_request_rejects_profile_manifest_without_event_calendar_resolu
         manifest_resolved_inputs=frozenset({"news_sentiment_parquet"}),
     )
 
-    with pytest.raises(
-        ValueError,
-        match="profile_manifest request missing manifest-backed required inputs",
-    ):
-        RegimeEngine().classify_request(request)
+    output = RegimeEngine(config_path=config_path).classify_request(request)
+
+    assert output.outputs[-1].as_of_date == date(2023, 12, 14)
 
 
 def test_classify_request_accepts_profile_manifest_event_calendar_cli_override(

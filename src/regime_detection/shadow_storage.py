@@ -7,6 +7,14 @@ delegates qualification storage details to that file. All write
 operations are keyed on the canonical identity tuple
 ``(as_of_date, engine_version, config_version)`` per shadow_runner_spec
 §3 L93.
+
+F-041: temporal/boolean columns are declared with the spec §3 affinities
+(``TIMESTAMP`` / ``DATE`` / ``BOOLEAN``) so the schema matches the spec verbatim.
+SQLite has no native TIMESTAMP/DATE type — those declarations take NUMERIC affinity,
+and because the values written are ISO-8601 strings (``utc_iso_now`` / ``date.isoformat``)
+and 0/1 integers, SQLite stores them exactly as the equivalent TEXT/INTEGER would.
+ORDER BY and the UNIQUE identity constraint are unaffected; the declared types are the
+spec contract, the stored representation is the ISO string.
 """
 
 from __future__ import annotations
@@ -45,8 +53,8 @@ class RunStatus(str, Enum):
 RUNS_SCHEMA = """
 CREATE TABLE IF NOT EXISTS runs (
     run_id INTEGER PRIMARY KEY,
-    run_timestamp TEXT NOT NULL,
-    as_of_date TEXT NOT NULL,
+    run_timestamp TIMESTAMP NOT NULL,
+    as_of_date DATE NOT NULL,
     engine_version TEXT NOT NULL,
     config_version TEXT NOT NULL,
     status TEXT NOT NULL,
@@ -62,7 +70,7 @@ CREATE TABLE IF NOT EXISTS runs (
 REPLAY_CHECKS_SCHEMA = """
 CREATE TABLE IF NOT EXISTS replay_checks (
     check_id INTEGER PRIMARY KEY,
-    check_timestamp TEXT NOT NULL,
+    check_timestamp TIMESTAMP NOT NULL,
     original_run_id INTEGER REFERENCES runs(run_id),
     matches BOOLEAN NOT NULL,
     diff TEXT
@@ -72,7 +80,7 @@ CREATE TABLE IF NOT EXISTS replay_checks (
 INCIDENTS_SCHEMA = """
 CREATE TABLE IF NOT EXISTS incidents (
     incident_id INTEGER PRIMARY KEY,
-    incident_date TEXT NOT NULL,
+    incident_date DATE NOT NULL,
     description TEXT NOT NULL,
     resolution TEXT,
     breaks_qualification BOOLEAN NOT NULL

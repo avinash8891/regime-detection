@@ -31,7 +31,6 @@ from regime_detection.models import RegimeOutput, RegimeTimeline
 from regime_detection.timeline import build_regime_timeline
 
 ClassifyRequestSource = Literal["direct", "profile_manifest"]
-_PROFILE_MANIFEST_REQUIRED_INPUTS = frozenset({"event_calendar"})
 V2RequestInputPolicy = Literal["required", "optional_evidence"]
 ManifestInputNames = Collection[str]
 
@@ -248,12 +247,17 @@ def _validate_request_source(request: ClassifyRequest) -> None:
             )
         return
     if request.request_source == "profile_manifest":
-        missing = _PROFILE_MANIFEST_REQUIRED_INPUTS - manifest_inputs
-        if missing:
-            missing_text = ", ".join(sorted(missing))
+        # F-048: §2.1 requires profile_manifest calls to "pass manifest provenance"
+        # but does NOT enumerate which input names must appear. Require NON-EMPTY
+        # provenance rather than a hardcoded literal (the prior gate demanded
+        # 'event_calendar' specifically, rejecting a runner that legitimately resolved
+        # provenance under different names). Direct vs profile_manifest is still cleanly
+        # distinguished — a profile_manifest run must carry at least one resolved input
+        # or CLI override.
+        if not manifest_inputs:
             raise ValueError(
-                "profile_manifest request missing manifest-backed required inputs: "
-                f"{missing_text}"
+                "profile_manifest request missing manifest provenance: "
+                "manifest_resolved_inputs / manifest_cli_overrides must be non-empty"
             )
         return
     raise ValueError(

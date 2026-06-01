@@ -278,6 +278,58 @@ def test_load_archived_macro_series_round_trips_implied_vol_to_identity(
     assert list(reloaded["nfci"].to_numpy()) == [-0.30, -0.25]
 
 
+def test_shadow_schema_declares_spec_temporal_types_and_round_trips_iso(
+    tmp_path: Path,
+) -> None:
+    # F-041: temporal/boolean columns are declared with the spec §3 affinities
+    # (TIMESTAMP/DATE/BOOLEAN), and the ISO-8601 string values round-trip exactly
+    # (SQLite stores them by value regardless of the declared affinity).
+    db_path = tmp_path / "regime_shadow.db"
+    with open_shadow_db(db_path) as conn:
+        insert_run_row(
+            conn=conn,
+            run_timestamp="2026-05-17T05:15:00+00:00",
+            as_of_date=date(2026, 5, 13),
+            engine_version="regime-engine-test",
+            config_version="core3-v2.0.0",
+            archive_dir=tmp_path / "input_archives" / "2026-05-13",
+        )
+        insert_incident(
+            conn=conn,
+            incident_date=date(2026, 5, 14),
+            description="round-trip check",
+            resolution=None,
+            breaks_qualification=True,
+        )
+
+    with closing(sqlite3.connect(db_path)) as conn:
+        runs_types = {
+            str(row[1]): str(row[2])
+            for row in conn.execute("PRAGMA table_info(runs)").fetchall()
+        }
+        incidents_types = {
+            str(row[1]): str(row[2])
+            for row in conn.execute("PRAGMA table_info(incidents)").fetchall()
+        }
+        replay_types = {
+            str(row[1]): str(row[2])
+            for row in conn.execute("PRAGMA table_info(replay_checks)").fetchall()
+        }
+        stored = conn.execute("SELECT run_timestamp, as_of_date FROM runs").fetchone()
+        incident = conn.execute(
+            "SELECT incident_date, breaks_qualification FROM incidents"
+        ).fetchone()
+
+    assert runs_types["run_timestamp"] == "TIMESTAMP"
+    assert runs_types["as_of_date"] == "DATE"
+    assert incidents_types["incident_date"] == "DATE"
+    assert incidents_types["breaks_qualification"] == "BOOLEAN"
+    assert replay_types["check_timestamp"] == "TIMESTAMP"
+    # ISO-8601 strings / 0-1 ints round-trip exactly under the declared affinities.
+    assert stored == ("2026-05-17T05:15:00+00:00", "2026-05-13")
+    assert incident == ("2026-05-14", 1)
+
+
 def test_insert_run_row_persists_config_sha256_and_latest_lookup(
     tmp_path: Path,
 ) -> None:
