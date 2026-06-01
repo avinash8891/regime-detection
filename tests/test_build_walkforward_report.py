@@ -42,6 +42,7 @@ def _session_rows(report_mod, *, count: int = 252) -> list[dict[str, object]]:
         rows.append(
             {
                 "as_of_date": session.isoformat(),
+                "run_timestamp": f"{session.isoformat()}T12:00:00Z",  # F-019
                 "status": "success",
                 "trend_direction_active": trend_labels[label_idx % len(trend_labels)],
                 "trend_character_active": character_labels[
@@ -75,6 +76,7 @@ def _prepare_walkforward_root(
             rows = [
                 {
                     "as_of_date": "2023-12-12",
+                    "run_timestamp": "2023-12-12T12:00:00Z",
                     "status": "success",
                     "trend_direction_active": "uptrend",
                     "trend_character_active": "trend",
@@ -90,6 +92,7 @@ def _prepare_walkforward_root(
                 },
                 {
                     "as_of_date": "2023-12-13",
+                    "run_timestamp": "2023-12-13T12:00:00Z",
                     "status": "success",
                     "trend_direction_active": "uptrend",
                     "trend_character_active": "trend",
@@ -105,6 +108,7 @@ def _prepare_walkforward_root(
                 },
                 {
                     "as_of_date": "2023-12-14",
+                    "run_timestamp": "2023-12-14T12:00:00Z",
                     "status": "success",
                     "trend_direction_active": "uptrend",
                     "trend_character_active": "trend",
@@ -140,6 +144,7 @@ def _prepare_walkforward_root(
         conn.execute("""
             CREATE TABLE runs (
                 as_of_date TEXT NOT NULL,
+                run_timestamp TEXT,
                 status TEXT NOT NULL,
                 failure_reason TEXT,
                 engine_version TEXT,
@@ -151,13 +156,14 @@ def _prepare_walkforward_root(
         conn.executemany(
             """
             INSERT INTO runs (
-                as_of_date, status, failure_reason, engine_version,
+                as_of_date, run_timestamp, status, failure_reason, engine_version,
                 config_version, input_archive_path, output_path
-            ) VALUES (?, ?, ?, ?, ?, ?, ?)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
             """,
             [
                 (
                     str(row["as_of_date"]),
+                    str(row["run_timestamp"]),
                     str(row["status"]),
                     None,
                     "regime-engine-vtest",
@@ -258,6 +264,7 @@ def test_build_walkforward_report_fails_without_required_gates(
     assert payload["label_distributions"]["transition_risk_state"]
     assert payload["per_date_provenance"][0] == {
         "as_of_date": "2023-12-12",
+        "run_timestamp": "2023-12-12T12:00:00Z",
         "engine_version": "regime-engine-vtest",
         "config_version": "core3-test",
         "input_archive_path": "input_archives/2023-12-12",

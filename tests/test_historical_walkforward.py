@@ -126,6 +126,26 @@ def test_historical_walkforward_runner_writes_expected_artifacts(
         "transition_risk_recent_axis_switch_count",
     }.issubset(summary_df.columns)
 
+    # F-019 / §5: every output artifact preserves engine_version, config_version,
+    # as_of_date, run_timestamp, input_archive_path. The immutable per-date JSON is a
+    # pure RegimeOutput, so a sibling provenance sidecar carries the run-metadata pair,
+    # and the summary CSV carries run_timestamp per row.
+    provenance = json.loads(
+        (out_root / "outputs" / "2023-12-14.provenance.json").read_text()
+    )
+    assert {
+        "as_of_date",
+        "engine_version",
+        "config_version",
+        "run_timestamp",
+        "input_archive_path",
+    } <= set(provenance)
+    assert provenance["as_of_date"] == "2023-12-14"
+    assert provenance["run_timestamp"]
+    assert provenance["input_archive_path"].endswith("input_archives/2023-12-14")
+    assert "run_timestamp" in summary_df.columns
+    assert summary_df["run_timestamp"].notna().all()
+
 
 def test_historical_walkforward_supplies_macro_series_for_configured_v2_axes(
     tmp_path: Path,

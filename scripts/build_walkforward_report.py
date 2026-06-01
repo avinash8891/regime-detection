@@ -44,6 +44,7 @@ TRANSITION_RISK_WARNING_STATES = frozenset(
 REQUIRED_SUMMARY_COLUMNS = frozenset(
     {
         "as_of_date",
+        "run_timestamp",  # F-019 / §5: per-artifact provenance
         "status",
         *LABEL_COLUMNS,
         "transition_risk_score",
@@ -114,7 +115,7 @@ def _load_runs_from_db(output_root: Path) -> pd.DataFrame:
         raise FileNotFoundError(f"walkforward db not found: {db_path}")
     with closing(sqlite3.connect(db_path)) as conn:
         df = pd.read_sql_query(
-            "SELECT as_of_date, status, failure_reason, engine_version, config_version, input_archive_path, output_path FROM runs ORDER BY as_of_date",
+            "SELECT as_of_date, status, failure_reason, engine_version, config_version, run_timestamp, input_archive_path, output_path FROM runs ORDER BY as_of_date",
             conn,
         )
     df = df.assign(as_of_date=pd.to_datetime(df["as_of_date"]).dt.date)
@@ -290,6 +291,11 @@ def _per_date_provenance(runs_df: pd.DataFrame) -> list[dict[str, Any]]:
         rows.append(
             {
                 "as_of_date": row["as_of_date"].isoformat(),
+                # F-019 / §5: surface the run_timestamp the runner records in the DB so
+                # every per-date provenance row carries all five mandated fields.
+                "run_timestamp": (
+                    None if pd.isna(row["run_timestamp"]) else str(row["run_timestamp"])
+                ),
                 "engine_version": (
                     None
                     if pd.isna(row["engine_version"])

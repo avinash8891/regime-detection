@@ -311,6 +311,25 @@ def run_walkforward(
                 )
                 output_path = paths["outputs"] / f"{as_of_date.isoformat()}.json"
                 _write_output_json(output_path, output.model_dump_json(indent=2))
+                # F-019 / §5: the immutable per-date output JSON is a pure RegimeOutput
+                # (engine_version/config_version/as_of_date only). Write a sibling
+                # provenance sidecar so the per-date output artifact preserves all five
+                # mandated fields (adds run_timestamp + input_archive_path) without
+                # polluting the classification payload.
+                _write_output_json(
+                    paths["outputs"] / f"{as_of_date.isoformat()}.provenance.json",
+                    json.dumps(
+                        {
+                            "as_of_date": as_of_date.isoformat(),
+                            "engine_version": output.engine_version,
+                            "config_version": output.config_version,
+                            "run_timestamp": run_timestamp,
+                            "input_archive_path": str(archive_dir),
+                            "output_path": str(output_path),
+                        },
+                        indent=2,
+                    ),
+                )
                 update_run_row_success(
                     conn=conn,
                     as_of_date=as_of_date,
@@ -321,6 +340,7 @@ def run_walkforward(
                 summary_rows.append(
                     {
                         "as_of_date": as_of_date.isoformat(),
+                        "run_timestamp": run_timestamp,  # F-019 / §5
                         "status": "success",
                         "failure_reason": None,
                         "engine_version": output.engine_version,
@@ -372,6 +392,7 @@ def run_walkforward(
                 summary_rows.append(
                     {
                         "as_of_date": as_of_date.isoformat(),
+                        "run_timestamp": run_timestamp,  # F-019 / §5
                         "status": "failure",
                         "failure_reason": failure_reason,
                         "engine_version": engine_version,
