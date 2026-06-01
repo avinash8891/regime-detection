@@ -174,11 +174,27 @@ def _prepare_walkforward_root(
 def _write_replay_results(
     output_root: Path, *, all_passed: bool = True, mismatches: list[str] | None = None
 ) -> Path:
+    # F-001: the hardened §6 gate requires the replay verdict to cover every
+    # SUCCESSFUL walk-forward date and be bound to the frozen engine/config pair,
+    # mirroring what run_walkforward_replay_check emits.
+    with sqlite3.connect(output_root / "regime_walkforward.db") as conn:
+        success_dates = [
+            str(row[0])
+            for row in conn.execute(
+                "SELECT as_of_date FROM runs WHERE status='success' ORDER BY as_of_date"
+            ).fetchall()
+        ]
     path = output_root / "reports" / "replay_verification.json"
     path.write_text(
         json.dumps(
             {
+                "engine_version": "regime-engine-vtest",
+                "config_version": "core3-test",
                 "all_passed": all_passed,
+                "results": [
+                    {"as_of_date": as_of, "matches": all_passed}
+                    for as_of in success_dates
+                ],
                 "mismatches": mismatches or [],
             },
             indent=2,

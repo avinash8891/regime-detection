@@ -362,12 +362,37 @@ def _golden_gate_reasons(
     return sorted(set(reasons))
 
 
-def _replay_gate_reasons(replay_results: dict[str, Any] | None) -> list[str]:
+def _replay_gate_reasons(
+    replay_results: dict[str, Any] | None, runs_df: pd.DataFrame
+) -> list[str]:
+    """§6 replay gate (F-001). The replay verdict must be produced by
+    run_walkforward_replay_check (recompute from archived inputs vs stored output),
+    cover every SUCCESSFUL walk-forward date, and be bound to the frozen
+    engine/config pair — not merely carry a truthy all_passed."""
     if replay_results is None:
         return ["missing_replay_verification"]
+    reasons: list[str] = []
     if not bool(replay_results.get("all_passed")):
-        return ["replay_mismatch_detected"]
-    return []
+        reasons.append("replay_mismatch_detected")
+
+    success_dates = sorted(
+        row["as_of_date"].isoformat()
+        for _, row in runs_df.iterrows()
+        if str(row.get("status")) == "success"
+    )
+    result_dates = sorted(
+        str(item.get("as_of_date")) for item in replay_results.get("results", [])
+    )
+    if result_dates != success_dates:
+        reasons.append("replay_dates_mismatch")
+
+    frozen_versions = _frozen_versions(runs_df)
+    if (
+        replay_results.get("engine_version") != frozen_versions["engine_version"]
+        or replay_results.get("config_version") != frozen_versions["config_version"]
+    ):
+        reasons.append("replay_version_mismatch")
+    return sorted(set(reasons))
 
 
 def _baseline_comparison(payload: dict[str, Any] | None) -> dict[str, Any] | None:
@@ -663,7 +688,7 @@ def build_walkforward_report(
     golden_results = _load_optional_json(golden_results_path)
     golden_gate_reasons = _golden_gate_reasons(golden_results, runs_df)
     replay_results = _load_optional_json(replay_results_path)
-    replay_gate_reasons = _replay_gate_reasons(replay_results)
+    replay_gate_reasons = _replay_gate_reasons(replay_results, runs_df)
     baseline_comparison = _baseline_comparison(
         _load_optional_json(baseline_metrics_path)
     )
