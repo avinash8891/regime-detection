@@ -395,6 +395,13 @@ def _replay_gate_reasons(
     result_dates = sorted(
         str(item.get("as_of_date")) for item in replay_results.get("results", [])
     )
+    # CR-010: result_dates is the producer's snapshot (the success set when
+    # run_walkforward_replay_check ran); success_dates is recomputed live from runs_df at
+    # report-build time. A DB status flip between the two steps fires replay_dates_mismatch
+    # — this is INTENDED fail-closed: a verdict that does not cover every currently-
+    # successful date is stale and must not promote. The §6 ordering contract is to run
+    # run_walkforward_replay_check immediately before build_walkforward_report (re-run the
+    # producer after any late/retried date) so the two snapshots align.
     if result_dates != success_dates:
         reasons.append("replay_dates_mismatch")
 
