@@ -479,11 +479,13 @@ class RegimeEngine:
         end_date = as_date(request.end_date)
         require_nyse_trading_day(end_date)
         event_calendar = _require_event_calendar(request.event_calendar)
-        if request.config is not None and not isinstance(request.config, RegimeConfig):
-            # F-042 / §2.4.1: a config override may only be a validated RegimeConfig
-            # instance. ClassifyRequest is a plain dataclass (no Pydantic enforcement),
-            # so reject a non-RegimeConfig loudly at the boundary instead of failing
-            # deep inside build_market_context.
+        # F-042 / §2.4.1: a config override may only be a validated RegimeConfig
+        # instance. ClassifyRequest is a plain dataclass (no Pydantic enforcement), so
+        # reject a non-RegimeConfig loudly at the boundary instead of failing deep inside
+        # build_market_context. The isinstance reads as "unnecessary" to pyright (the
+        # static annotation is RegimeConfig | None) but it is a real RUNTIME guard — the
+        # dataclass does not enforce the annotation at construction.
+        if request.config is not None and not isinstance(request.config, RegimeConfig):  # type: ignore[reportUnnecessaryIsInstance]
             raise TypeError(
                 "ClassifyRequest.config override must be a RegimeConfig instance "
                 f"(§2.4.1), got {type(request.config).__name__}"

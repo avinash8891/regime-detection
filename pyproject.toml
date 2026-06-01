@@ -105,6 +105,8 @@ known_first_party = [
   "_fetch_regime_engine_v1_args",
   "_v2_calibration_helpers",
   "run_shadow_regime",
+  "run_historical_walkforward",
+  "run_shadow_replay_check",
 ]
 optional_dependencies_dev_groups = [
   "dev",

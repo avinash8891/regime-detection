@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TypeVar
 
+import numpy as np
 import pandas as pd
 from pydantic import BaseModel, ConfigDict
 
@@ -350,7 +351,12 @@ def _build_sentiment_score_series(
     # 4 weekly readings exist on or before the session. Count readings published
     # on/before each session and mask the under-warmed warmup window to NaN so the
     # euphoria predicate falsifies instead of firing on 1-3 readings (F-006).
-    readings_on_or_before = publication.searchsorted(session_index, side="right")
+    readings_on_or_before = np.asarray(
+        # pandas-stubs types DatetimeIndex.searchsorted as -> Unknown; np.asarray with
+        # an explicit dtype gives a concrete int array for the warm-count comparison.
+        publication.searchsorted(session_index, side="right"),  # type: ignore[reportUnknownMemberType]
+        dtype=int,
+    )
     warm = pd.Series(
         readings_on_or_before >= _MIN_SENTIMENT_WEEKLY_READINGS,
         index=session_index,
