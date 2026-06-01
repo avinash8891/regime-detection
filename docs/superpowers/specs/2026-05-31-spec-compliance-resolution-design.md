@@ -331,5 +331,8 @@ against a trustworthy suite. M7 (replay-gate soundness) was opened by the M0-bou
 and folds the F-001 follow-ons in after M2's contracts land. No milestone closes until its §9 G1–G3
 gates are satisfied.
 
-**Status (2026-06-01):** M0 ✅ complete (oracle integrity F-008/F-031 + spec reconciliation). M1
-(capital-protection F-002/F-005) next. M7 (CR-001…CR-011) queued.
+**Status (2026-06-01):** M0 ✅ + M1 ✅ complete. M1 closed F-002 (model-evidence →
+insufficient_data), F-005 (fail-closed cohort routing) — both gate-3 validated — plus the
+F-013 / F-051 / Amb #2 spec-pins, on top of the earlier F-003 / F-006 / F-004 / F-012. M2
+(output / archive / replay contracts) is next; M7 (CR-001…CR-011 replay-gate soundness)
+remains queued.
