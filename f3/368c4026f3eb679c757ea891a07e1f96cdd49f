@@ -1,0 +1,20 @@
+tests/test_source_hygiene.py
+  s_e13bd0da99a610::t_f0d38bb815075f 40-59
+  s_e13bd0da99a610::t_59ebff3a0b9431 89-110
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "f3368c4026f3eb679c757ea891a07e1f96cdd49f",
+  "prompts": {},
+  "sessions": {
+    "s_e13bd0da99a610": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "5e0e3844-14d5-4427-9d01-d46fe24beee0",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}
