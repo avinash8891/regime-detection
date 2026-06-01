@@ -1,0 +1,28 @@
+tests/test_inflation_growth_axis_engine.py
+  s_e13bd0da99a610::t_79150f1c81d4cc 305-320,326-330
+  s_e13bd0da99a610::t_c1f44a7b355e63 15
+  s_e13bd0da99a610::t_7f100dd33b2bef 321-325
+src/regime_detection/credit_funding.py
+  s_e13bd0da99a610::t_4bcca23b564fd6 331-336
+src/regime_detection/inflation_growth.py
+  s_e13bd0da99a610::t_a95e864e23a70a 237-249
+tests/test_credit_funding_axis_engine.py
+  s_e13bd0da99a610::t_b7e4029e36581f 458-497
+  s_e13bd0da99a610::t_ada7572d235ce2 40
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "d8b202041429f628dc3b688e2ca346ca320efbfa",
+  "prompts": {},
+  "sessions": {
+    "s_e13bd0da99a610": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "5e0e3844-14d5-4427-9d01-d46fe24beee0",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}
