@@ -33,6 +33,7 @@ sys.path.insert(0, str(REPO_ROOT / "scripts"))
 
 from regime_detection.engine import RegimeEngine
 from regime_detection.shadow_storage import (
+    ensure_shadow_layout,
     load_archived_event_calendar,
     load_archived_macro_series,
     load_archived_market_data,
@@ -54,9 +55,21 @@ def _success_runs(db_path: Path) -> list[dict[str, Any]]:
     return [dict(row) for row in rows]
 
 
-def _replay_one(*, run: dict[str, Any], engine: RegimeEngine) -> dict[str, Any]:
+def _replay_one(
+    *, run: dict[str, Any], engine: RegimeEngine, paths: dict[str, Path]
+) -> dict[str, Any]:
     as_of = date.fromisoformat(str(run["as_of_date"]))
-    archive_dir = Path(run["input_archive_path"])
+    # CR-007 / CR-011: a success row must record its archive + output paths. A null is a
+    # clean per-run ValueError naming the date, not an opaque TypeError from Path(None)
+    # that aborts the whole replay batch before any verdict is written.
+    for field in ("input_archive_path", "output_path"):
+        if run[field] is None:
+            raise ValueError(f"walk-forward run for {as_of.isoformat()} has no {field}")
+    # CR-006: resolve the archive dir + stored output from output_root's layout (not the
+    # absolute paths the producing host recorded in the DB) so a relocated/copied batch
+    # — e.g. produced on one host and verified on CI — still replays.
+    archive_dir = paths["input_archives"] / as_of.isoformat()
+    output_path = paths["outputs"] / f"{as_of.isoformat()}.json"
     market_slice = load_archived_market_data(archive_dir / "market_data.parquet")
     events_path = archive_dir / "events.yaml"
     archived_events = (
@@ -77,7 +90,7 @@ def _replay_one(*, run: dict[str, Any], engine: RegimeEngine) -> dict[str, Any]:
         **v2_kwargs,
     )
     replayed_payload = json.loads(replayed.model_dump_json(indent=2))
-    stored_payload = json.loads(Path(run["output_path"]).read_text(encoding="utf-8"))
+    stored_payload = json.loads(output_path.read_text(encoding="utf-8"))
     diff = _diff_values(replayed_payload, stored_payload)
     matches = diff is None
     return {
@@ -94,15 +107,17 @@ def run_walkforward_replay_check(
     *, output_root: Path, config_path: Path | None = None
 ) -> dict[str, Any]:
     """Replay every successful walk-forward run and return the §6 verdict payload."""
-    db_path = output_root / "regime_walkforward.db"
-    if not db_path.exists():
-        raise FileNotFoundError(f"walk-forward DB not found: {db_path}")
-    runs = _success_runs(db_path)
+    paths = ensure_shadow_layout(
+        output_root, db_name="regime_walkforward.db", include_reports=True
+    )
+    if not paths["db"].exists():
+        raise FileNotFoundError(f"walk-forward DB not found: {paths['db']}")
+    runs = _success_runs(paths["db"])
     engine = RegimeEngine(config_path=config_path)
     engine_version = resolved_engine_version()
     config_version = engine.config.config_version
 
-    results = [_replay_one(run=run, engine=engine) for run in runs]
+    results = [_replay_one(run=run, engine=engine, paths=paths) for run in runs]
     all_passed = bool(results) and all(r["matches"] for r in results)
     return {
         "engine_version": engine_version,

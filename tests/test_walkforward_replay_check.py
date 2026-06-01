@@ -2,8 +2,12 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import shutil
+import sqlite3
 from datetime import date
 from pathlib import Path
+
+import pytest
 
 
 def _load(name: str, rel_path: str):
@@ -57,6 +61,11 @@ def test_walkforward_replay_matches_then_detects_corruption(
 
     assert verdict["config_version"] == load_regime_config(config_path).config_version
 
+    # CR-006: snapshot the uncorrupted batch to verify below that it replays from its own
+    # output_root even after the original (whose absolute paths the DB recorded) is gone.
+    relocated = tmp_path / "relocated"
+    shutil.copytree(out_root, relocated)
+
     # Corrupt one stored output → replay must flag a classification mismatch.
     corrupt_path = out_root / "outputs" / "2026-05-13.json"
     payload = json.loads(corrupt_path.read_text())
@@ -73,3 +82,58 @@ def test_walkforward_replay_matches_then_detects_corruption(
     # the untouched date still replays cleanly
     clean = next(r for r in verdict2["results"] if r["as_of_date"] == "2026-05-12")
     assert clean["matches"] is True
+
+    # CR-006: delete the original (its DB-recorded absolute paths are now dead), then the
+    # relocated copy must still replay cleanly — paths resolve from output_root's layout.
+    shutil.rmtree(out_root)
+    relocated_verdict = replay.run_walkforward_replay_check(
+        output_root=relocated, config_path=config_path
+    )
+    assert relocated_verdict["all_passed"] is True
+    assert all(r["matches"] for r in relocated_verdict["results"])
+
+
+def _write_minimal_runs_db(
+    out_root: Path, *, input_archive_path: str | None, output_path: str | None
+) -> None:
+    """A raw regime_walkforward.db with a single success row (no NOT NULL constraints,
+    so either archive path can be NULL to exercise the per-run guards)."""
+    out_root.mkdir(parents=True, exist_ok=True)
+    with sqlite3.connect(out_root / "regime_walkforward.db") as conn:
+        conn.execute(
+            "CREATE TABLE runs (as_of_date TEXT, status TEXT, engine_version TEXT, "
+            "config_version TEXT, input_archive_path TEXT, output_path TEXT)"
+        )
+        conn.execute(
+            "INSERT INTO runs VALUES (?, ?, ?, ?, ?, ?)",
+            (
+                "2026-05-13",
+                "success",
+                "regime-engine-vtest",
+                "core3-test",
+                input_archive_path,
+                output_path,
+            ),
+        )
+
+
+@pytest.mark.parametrize("null_field", ["input_archive_path", "output_path"])
+def test_replay_raises_clean_error_on_null_archive_path(
+    tmp_path: Path, null_field: str
+) -> None:
+    """CR-007 / CR-011: a success row with a NULL archive/output path fails closed with a
+    clean ValueError naming the date, instead of an opaque TypeError from Path(None) that
+    aborts the whole batch before any replay_verification.json is written."""
+    fields: dict[str, str | None] = {
+        "input_archive_path": "input_archives/2026-05-13",
+        "output_path": "outputs/2026-05-13.json",
+    }
+    fields[null_field] = None
+    out_root = tmp_path / "wf"
+    _write_minimal_runs_db(out_root, **fields)
+
+    replay = _load(
+        "run_walkforward_replay_check", "scripts/run_walkforward_replay_check.py"
+    )
+    with pytest.raises(ValueError, match=f"has no {null_field}"):
+        replay.run_walkforward_replay_check(output_root=out_root)

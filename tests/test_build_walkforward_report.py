@@ -6,6 +6,7 @@ import sqlite3
 from datetime import date
 from pathlib import Path
 
+import pandas as pd
 import yaml
 
 
@@ -703,3 +704,29 @@ def test_build_walkforward_report_rejects_repeated_one_day_flip_flops(
         "column": "trend_direction_active",
         "false_switch_count": 250,
     } in result["red_flags"]
+
+
+def test_replay_gate_emits_no_successful_runs_distinctly() -> None:
+    """CR-005: an empty batch (zero successful runs) yields a distinct
+    no_successful_runs_to_replay reason — not the misleading replay_mismatch_detected,
+    which implies a verification FAILURE rather than nothing to verify."""
+    report_mod = _load_module(
+        "build_walkforward_report", "scripts/build_walkforward_report.py"
+    )
+    runs_df = pd.DataFrame(
+        [
+            {"as_of_date": date(2023, 12, 12), "status": "failure"},
+            {"as_of_date": date(2023, 12, 13), "status": "failure"},
+        ]
+    )
+    replay_results = {
+        "all_passed": False,
+        "results": [],
+        "engine_version": "regime-engine-vtest",
+        "config_version": "core3-test",
+    }
+
+    reasons = report_mod._replay_gate_reasons(replay_results, runs_df)
+
+    assert reasons == ["no_successful_runs_to_replay"]
+    assert "replay_mismatch_detected" not in reasons

@@ -377,15 +377,21 @@ def _replay_gate_reasons(
     engine/config pair — not merely carry a truthy all_passed."""
     if replay_results is None:
         return ["missing_replay_verification"]
-    reasons: list[str] = []
-    if not bool(replay_results.get("all_passed")):
-        reasons.append("replay_mismatch_detected")
 
     success_dates = sorted(
         row["as_of_date"].isoformat()
         for _, row in runs_df.iterrows()
         if str(row.get("status")) == "success"
     )
+    # CR-005: an empty batch (zero successful runs) had nothing to replay. The producer's
+    # `all_passed = bool([]) and …` is False, but reporting that as replay_mismatch_detected
+    # conflates "nothing to verify" with "verification failed". Emit a distinct reason
+    # (the build still fails — insufficient_oos_sessions also fires).
+    if not success_dates:
+        return ["no_successful_runs_to_replay"]
+    reasons: list[str] = []
+    if not bool(replay_results.get("all_passed")):
+        reasons.append("replay_mismatch_detected")
     result_dates = sorted(
         str(item.get("as_of_date")) for item in replay_results.get("results", [])
     )
