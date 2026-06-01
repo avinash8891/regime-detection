@@ -74,9 +74,11 @@ def parse_sp500_ticker_start_end_csv(
         end_date = _parse_optional_date(
             raw.get("end_date"), field="end_date", row_number=idx
         )
-        corrected_end_date = SOURCE_END_DATE_CORRECTIONS.get(ticker)
-        if end_date is None and corrected_end_date is not None:
-            end_date = corrected_end_date
+        # GNXfc: do NOT apply SOURCE_END_DATE_CORRECTIONS here. Persisting the RAW
+        # source (open intervals stay open) keeps the §1D/§10 survivorship gate honest —
+        # the gate validates that the SOURCE contains a genuine closed interval, not a
+        # correction-fabricated one. Corrections are applied solely on read
+        # (read_pit_intervals patch-on-read) for membership-lookup correctness.
         if end_date and end_date < start_date:
             raise PITConstituentFetchError(
                 f"Row {idx}: end_date before start_date for {ticker}"
@@ -245,10 +247,10 @@ def read_pit_intervals(
     persisted ISO yyyy-mm-dd date strings back to ``datetime.date`` objects
     (``None`` for the null open-interval tail in ``end_date``).
 
-    SOURCE_END_DATE_CORRECTIONS are re-applied here as a defensive patch-on-read
-    so that stale S3 artifacts (built before corrections were added to the code)
-    produce correct membership lookups. The patch is idempotent: rows that
-    already carry a non-null end_date are left unchanged.
+    SOURCE_END_DATE_CORRECTIONS are applied here as the SOLE patch-on-read site
+    (GNXfc — the writer persists the raw source so the survivorship gate below stays
+    honest) so missing delisting closures produce correct membership lookups. The
+    patch is idempotent: rows that already carry a non-null end_date are left unchanged.
 
     V2 §1D line 327 / §10 — fail-closed survivorship-bias gate: corrections are
     applied before membership use, but source corrections alone are not enough
