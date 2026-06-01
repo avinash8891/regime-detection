@@ -62,12 +62,15 @@ def _ev_float(x: float) -> float:
 
 def compute_features(*, spy_close: pd.Series, rsp_close: pd.Series) -> BreadthFeatures:
     ratio = rsp_close / spy_close
-    # §6.8 ETF-proxy formulas require complete rolling windows; pin min_periods
-    # explicitly so the warm-up region is NaN-masked even if pandas' integer-window
-    # default ever changes (relative_breadth_sma50 over 50d, 63d index distance).
+    # F-011: pin min_periods to the spec values, not "complete window". §6.6
+    # (index_distance_from_63d_high) and §6.8 both specify
+    # ``close.rolling(63, min_periods=50)`` — the 63d high requires 50 observations,
+    # NOT a full 63. relative_breadth_sma50 is a true 50d SMA (min_periods=50). No
+    # emitted-output change (the fixture is fully warmed by 2016), but the warm-up
+    # mask now matches the spec instead of masking 13 extra early sessions.
     ratio_sma50 = ratio.rolling(50, min_periods=50).mean()
     ratio_ret20 = ratio / ratio.shift(20) - 1
-    idx_dist = spy_close / spy_close.rolling(63, min_periods=63).max() - 1
+    idx_dist = spy_close / spy_close.rolling(63, min_periods=50).max() - 1
     return BreadthFeatures(
         spy_close=spy_close,
         rsp_close=rsp_close,
