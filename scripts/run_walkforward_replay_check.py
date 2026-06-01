@@ -37,6 +37,7 @@ from regime_detection.shadow_storage import (
     load_archived_event_calendar,
     load_archived_macro_series,
     load_archived_market_data,
+    load_archived_pit_intervals,
     load_archived_v2_daily,
 )
 from regime_detection.versioning import engine_version as resolved_engine_version
@@ -77,10 +78,16 @@ def _replay_one(
     )
     v2_slice = load_archived_v2_daily(archive_dir / "v2_daily.parquet")
     archived_macro = load_archived_macro_series(archive_dir / "macro_series.parquet")
+    archived_pit = load_archived_pit_intervals(
+        archive_dir / "pit_constituent_intervals.parquet"
+    )
 
     v2_kwargs = build_v2_classify_kwargs(
         v2_slice=v2_slice,
-        pit_intervals=None,  # runner default: PIT derived from the daily frame
+        # CR-004: replay with the run's archived explicit PIT membership when present;
+        # else None, so build_v2_classify_kwargs derives the default-from-daily universe
+        # (the same path the run took when no explicit PIT was supplied).
+        pit_intervals=archived_pit,
         macro_series=archived_macro,
     )
     replayed = engine.classify(

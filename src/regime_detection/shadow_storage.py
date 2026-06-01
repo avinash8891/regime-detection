@@ -148,12 +148,14 @@ def write_archived_inputs(
     event_df: pd.DataFrame | None,
     macro_series: dict[str, pd.Series] | None = None,
     v2_daily_slice: pd.DataFrame | None = None,
+    pit_intervals: pd.DataFrame | None = None,
 ) -> tuple[Path, Path, Path]:
     archive_dir.mkdir(parents=True, exist_ok=True)
     market_path = archive_dir / "market_data.parquet"
     events_path = archive_dir / "events.yaml"
     macro_path = archive_dir / "macro_series.parquet"
     v2_daily_path = archive_dir / "v2_daily.parquet"
+    pit_path = archive_dir / "pit_constituent_intervals.parquet"
     checksums_path = archive_dir / "checksums.json"
 
     market_slice.to_parquet(market_path, index=False)
@@ -177,6 +179,12 @@ def write_archived_inputs(
     if v2_daily_slice is not None:
         v2_daily_slice.to_parquet(v2_daily_path, index=False)
         checksums["v2_daily.parquet"] = sha256_file(v2_daily_path)
+    # CR-004: archive the explicit PIT membership frame (when the run used one) so a
+    # replay reconstructs the SAME constituent universe, instead of silently deriving a
+    # different default-from-daily universe and false-failing the gate forever.
+    if pit_intervals is not None:
+        pit_intervals.to_parquet(pit_path, index=False)
+        checksums["pit_constituent_intervals.parquet"] = sha256_file(pit_path)
     checksums_path.write_text(
         json.dumps(
             checksums,
@@ -326,6 +334,16 @@ def load_archived_v2_daily(path: Path) -> pd.DataFrame | None:
         archived,
         {"date": pd.to_datetime(archived["date"]).dt.date},
     )
+
+
+def load_archived_pit_intervals(path: Path) -> pd.DataFrame | None:
+    """Load the archived explicit PIT membership frame (CR-004), or None if absent
+    (the run used the default-from-daily membership). The ticker/start_date/end_date
+    columns round-trip faithfully through parquet (date objects, None for open intervals).
+    """
+    if not path.exists():
+        return None
+    return pd.read_parquet(path)
 
 
 def load_archived_event_calendar(path: Path) -> pd.DataFrame | None:

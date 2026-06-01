@@ -276,3 +276,36 @@ def test_load_archived_macro_series_round_trips_implied_vol_to_identity(
     assert reloaded is not None
     assert list(reloaded["implied_vol_30d"].to_numpy()) == [0.20, 0.22]
     assert list(reloaded["nfci"].to_numpy()) == [-0.30, -0.25]
+
+
+def test_archived_pit_intervals_round_trip(tmp_path: Path) -> None:
+    """CR-004: an explicit PIT membership frame is archived and reloaded faithfully so a
+    replay reconstructs the same constituent universe (date objects + None open-interval
+    tails round-trip). An absent file → None (the run used the default-from-daily path).
+    """
+    archive_dir = tmp_path / "input_archives" / "2026-05-13"
+    pit = pd.DataFrame(
+        {
+            "ticker": ["XLK", "IBM"],
+            "start_date": [date(2010, 1, 4), date(2009, 1, 2)],
+            "end_date": [None, date(2008, 12, 31)],
+        }
+    )
+
+    write_archived_inputs(
+        archive_dir=archive_dir,
+        market_slice=pd.DataFrame(
+            [{"date": date(2026, 5, 13), "symbol": "SPY", "close": 1.0}]
+        ),
+        event_df=None,
+        pit_intervals=pit,
+    )
+
+    reloaded = shadow_storage.load_archived_pit_intervals(
+        archive_dir / "pit_constituent_intervals.parquet"
+    )
+    assert reloaded is not None
+    pd.testing.assert_frame_equal(reloaded, pit)
+    assert (
+        shadow_storage.load_archived_pit_intervals(tmp_path / "missing.parquet") is None
+    )

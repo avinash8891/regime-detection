@@ -308,6 +308,10 @@ def run_walkforward(
                 # its V2 inputs (sector/cross-asset/PIT/constituent) from, so a
                 # walk-forward replay can recompute the V2 axes byte-identically.
                 v2_daily_slice=v2_slice,
+                # CR-004: archive the explicit PIT membership frame (when supplied) so
+                # the replay reconstructs the same constituent universe rather than the
+                # default-from-daily one.
+                pit_intervals=pit_intervals if v2_slice is not None else None,
             )
             insert_run_row(
                 conn=conn,
