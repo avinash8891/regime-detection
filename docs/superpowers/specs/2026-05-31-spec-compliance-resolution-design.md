@@ -220,6 +220,30 @@ Legend — **Reuse/Sub:** `sub`=deletion/consolidation, `reuse`=extend existing,
 | Amb #3 | — | **DECISION:** document the 63/126-session CPI offset as an approximation of the calendar-month offset, OR compute against the CPI obs exactly 3/6 calendar months prior. Pin with a synthetic-CPI test. | CPI-offset semantics pinned | no | doc/code |
 | Amb #4 | — | **DECISION:** document the followthrough breakout_level 20d-preferred tie-break (or switch to strict max(m20,m50)). (Pairs with F-055.) | tie-break pinned + tested | no | doc/code |
 
+### M7 — Replay-gate soundness (milestone `/code-review` findings, 2026-06-01)
+
+> Surfaced by the M0-boundary `/code-review` (xhigh, 48-agent multi-angle) over the
+> F-001 walk-forward replay producer + §6 gate. The gate is **sound on the happy path**
+> (default config, no explicit PIT, non-empty batch, same host —
+> `test_walkforward_replay_check` proves it) but unsound off it. CR-001…CR-007 are
+> capital-protection-gate correctness; CR-008…CR-011 are robustness. Per `AGENTS.md`
+> "never mark an issue acceptable", the docstring "out of scope" note (CR-004) is **not**
+> a resolution. These are F-001 follow-ons (M2 surface) recorded as their own milestone.
+
+| ID | Sev | Ideal fix (distilled) | Test | RF? | Reuse/Sub |
+|---|---|---|---|---|---|
+| CR-001 | high | The walk-forward *original* classifies from in-memory inputs while replay classifies from the reloaded archive — **not like-for-like**, so any archive round-trip lossiness reads as a regime regression. Mirror `run_shadow_regime.py:278-291`: reload the archived inputs and classify the ORIGINAL from the archive, making the §6 gate immune to round-trip noise. | replay of a macro-dependent date matches only when the original is archive-fed; a seeded round-trip delta is caught | no | reuse |
+| CR-002 | high | Macro archive is **non-idempotent**: `_macro_series_frame` stores the post-`/100` `implied_vol_30d` WITH the `logical_name` column, so `load_archived_macro_series`→`loaders.load_macro_series` re-applies `/100` (100× too small). Make the round-trip idempotent (omit `logical_name` on archive, or archive raw points, or a transform-free archived reader). | `implied_vol_30d` archive→reload round-trips to identity | no | reuse |
+| CR-003 | high | Replay drives the engine from `--config-path` (default→default config), **ignoring the per-run `config_version`** in the DB (a coarse Literal, not a content hash). Archive the resolved config (path + content hash); drive the replay engine from it; `_replay_gate_reasons` binds the config hash. | non-default-config batch replays faithfully; config-hash mismatch fails the gate | no | reuse |
+| CR-004 | high | Explicit `--pit-constituent-intervals` is **never archived**; replay hardcodes `pit_intervals=None` (different membership), so explicit-PIT batches can never pass. Archive the PIT frame in `write_archived_inputs` and load it in replay. | explicit-PIT batch replays byte-identical | no | reuse |
+| CR-005 | medium | Empty batch (zero success runs) → `all_passed = bool([]) and …` is False → gate emits `replay_mismatch_detected`, conflating "nothing to replay" with a real mismatch. Emit a distinct `no_successful_runs_to_replay` reason. | empty batch → distinct reason, not `replay_mismatch_detected` | no | reuse |
+| CR-006 | medium | Replay reads DB-stored **absolute** `input_archive_path`/`output_path`; a copied archive (CI) → `FileNotFoundError`. Re-anchor to `output_root` (mirror `build_walkforward_report._nan_leakage:231-235`). | relocated/copied archive replays | no | reuse |
+| CR-007 | medium | `_replay_one` dropped the shadow replay's explicit `output_path is not None` guard → opaque `TypeError` aborts the whole batch. Restore a clean per-run `ValueError` naming the date. | null `output_path` → ValueError, batch continues | no | reuse |
+| CR-008 | low | F-006 warmup counts **raw AAII rows** via `searchsorted`, not distinct weekly publication dates — a duplicated publication row warms `sentiment_score` early. Count distinct publication dates before the `>=4` threshold. | a duplicated publication row does not warm before 4 distinct weeks | no | reuse |
+| CR-009 | low | `build_v2_classify_kwargs` guards `v2_slice is None`, not **emptiness** → an as-of before the first v2_daily row builds full V2 kwargs and raises (status=failure) instead of a V1 fallback. Guard emptiness → V1 path. (Pre-existing; shadow runner shares it.) | early as-of → V1 fallback, not failure | no | reuse |
+| CR-010 | low | `success_dates` is recomputed from `runs_df` at report-build time vs the producer's snapshot; a DB status flip between steps fires `replay_dates_mismatch`. Pin the "re-run the producer before building the report" ordering (or stamp+compare the producer's snapshot id). Two-sided: fail-closed may be intended. | ordering pinned + tested, or documented | no | doc/code |
+| CR-011 | low | `_replay_one` reads `input_archive_path` with no null guard (symmetric to CR-007; schema is `NOT NULL`, so lower severity). Add the same per-run guard. | null `input_archive_path` → ValueError, batch continues | no | reuse |
+
 ---
 
 ## 7. Decisions deferred to execution (per-change sign-off)
@@ -301,6 +325,11 @@ areas → ~0 and any residual is confined to the shrinking un-gated remainder.
 
 ## 10. Execution order
 
-M0 → M1 → M2 → M3 → M4 → M5 → M6, one PR each, stop-and-confirm at every boundary. M0 first because
-it makes the oracle real and retires stale spec text, so every later milestone is verified against a
-trustworthy suite. No milestone closes until its §9 G1–G3 gates are satisfied.
+M0 → M1 → M2 → M3 → M4 → M5 → M6 → M7, one PR each, stop-and-confirm at every boundary. M0 first
+because it makes the oracle real and retires stale spec text, so every later milestone is verified
+against a trustworthy suite. M7 (replay-gate soundness) was opened by the M0-boundary `/code-review`
+and folds the F-001 follow-ons in after M2's contracts land. No milestone closes until its §9 G1–G3
+gates are satisfied.
+
+**Status (2026-06-01):** M0 ✅ complete (oracle integrity F-008/F-031 + spec reconciliation). M1
+(capital-protection F-002/F-005) next. M7 (CR-001…CR-011) queued.
