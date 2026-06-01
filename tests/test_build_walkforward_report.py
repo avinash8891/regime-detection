@@ -730,3 +730,49 @@ def test_replay_gate_emits_no_successful_runs_distinctly() -> None:
 
     assert reasons == ["no_successful_runs_to_replay"]
     assert "replay_mismatch_detected" not in reasons
+
+
+def test_baseline_comparison_flags_all_materially_worse() -> None:
+    """F-009: with-regime worse on EVERY tracked metric → all_metrics_materially_worse
+    (the central economic-improvement fail gate), and no metric is improved."""
+    report_mod = _load_module(
+        "build_walkforward_report", "scripts/build_walkforward_report.py"
+    )
+    payload = {
+        "metrics": {
+            "max_drawdown": {"with_regime_gating": 0.25, "no_regime_baseline": 0.10},
+            "sharpe": {"with_regime_gating": 0.50, "no_regime_baseline": 1.20},
+        }
+    }
+
+    comp = report_mod._baseline_comparison(payload)
+
+    assert comp is not None
+    assert comp["all_metrics_materially_worse"] is True
+    assert comp["improved_metrics"] == []
+    assert comp["materially_worse_metrics"] == ["max_drawdown", "sharpe"]
+
+
+def test_baseline_comparison_tie_does_not_rescue_regression() -> None:
+    """F-016: a within-epsilon tie on one metric is NOT a material benefit and must not
+    rescue a run that is materially worse on every other metric — the gate still fires.
+    """
+    report_mod = _load_module(
+        "build_walkforward_report", "scripts/build_walkforward_report.py"
+    )
+    payload = {
+        "metrics": {
+            # ~0.2% delta → within the 1% materiality epsilon → a TIE (no benefit).
+            "sharpe": {"with_regime_gating": 1.000, "no_regime_baseline": 1.002},
+            "max_drawdown": {"with_regime_gating": 0.25, "no_regime_baseline": 0.10},
+            "hit_rate": {"with_regime_gating": 0.40, "no_regime_baseline": 0.55},
+        }
+    }
+
+    comp = report_mod._baseline_comparison(payload)
+
+    assert comp is not None
+    assert "sharpe" not in comp["improved_metrics"]
+    assert "sharpe" not in comp["materially_worse_metrics"]  # tie, not material
+    assert comp["improved_metrics"] == []  # no material benefit anywhere
+    assert comp["all_metrics_materially_worse"] is True

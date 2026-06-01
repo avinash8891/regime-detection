@@ -64,6 +64,11 @@ HYSTERESIS_BY_COLUMN = {
     "transition_risk_state": 3,
 }
 
+# F-016: relative-delta magnitude below which a metric change vs the no-regime baseline
+# is a TIE (not "material") — so an infinitesimal delta cannot flip a metric to
+# improved/worse, and a tie cannot rescue an otherwise-regressed run.
+_BASELINE_MATERIALITY_REL_EPSILON = 0.01
+
 BETTER_DIRECTION = {
     "max_drawdown": "lower",
     "false_switch_rate": "lower",
@@ -438,14 +443,23 @@ def _baseline_comparison(payload: dict[str, Any] | None) -> dict[str, Any] | Non
                 "better_direction": None,
             }
             continue
+        delta = with_regime - baseline
+        relative_delta = None if baseline == 0 else delta / baseline
+        # F-016: "materially" needs a magnitude threshold — a change counts only when it
+        # exceeds the relative epsilon (or any nonzero change when baseline is 0). A
+        # within-epsilon TIE is neither improved nor materially_worse, and crucially
+        # counts as NO benefit (it cannot rescue an otherwise-regressed run).
+        material = (
+            abs(relative_delta) > _BASELINE_MATERIALITY_REL_EPSILON
+            if relative_delta is not None
+            else delta != 0
+        )
         if direction == "lower":
-            improved = with_regime < baseline
-            materially_worse = with_regime > baseline
-            delta = with_regime - baseline
+            improved = material and with_regime < baseline
+            materially_worse = material and with_regime > baseline
         else:
-            improved = with_regime > baseline
-            materially_worse = with_regime < baseline
-            delta = with_regime - baseline
+            improved = material and with_regime > baseline
+            materially_worse = material and with_regime < baseline
         if improved:
             improved_metrics.append(metric)
         if materially_worse:
@@ -454,7 +468,7 @@ def _baseline_comparison(payload: dict[str, Any] | None) -> dict[str, Any] | Non
             "with_regime_gating": with_regime,
             "no_regime_baseline": baseline,
             "delta": delta,
-            "relative_delta": None if baseline == 0 else delta / baseline,
+            "relative_delta": relative_delta,
             "better_direction": direction,
         }
     return {
@@ -462,9 +476,16 @@ def _baseline_comparison(payload: dict[str, Any] | None) -> dict[str, Any] | Non
         "improved_metrics": sorted(improved_metrics),
         "materially_worse_metrics": sorted(materially_worse_metrics),
         "unknown_metrics": sorted(unknown_metrics),
-        "all_metrics_materially_worse": bool(comparisons)
-        and not unknown_metrics
-        and len(materially_worse_metrics) == len(comparisons),
+        # F-016: the §6/§9 gate is "no material benefit anywhere + a regression" — fail
+        # when no metric is materially improved AND at least one is materially worse (a
+        # tie on one metric no longer rescues an otherwise all-worse run). Pass still
+        # requires a clear benefit on >=1 material dimension (improved_metrics non-empty).
+        "all_metrics_materially_worse": (
+            bool(comparisons)
+            and not unknown_metrics
+            and not improved_metrics
+            and bool(materially_worse_metrics)
+        ),
     }
 
 
