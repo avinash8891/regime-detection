@@ -1,0 +1,26 @@
+pyproject.toml
+  s_e13bd0da99a610::t_04393e7c4fda21 108-109
+src/regime_detection/engine.py
+  s_e13bd0da99a610::t_1b0f938382be1b 482-484
+  s_e13bd0da99a610::t_5698e412602971 485-488
+src/regime_detection/feature_store.py
+  s_e13bd0da99a610::t_2ee2be507fc514 354,359
+  s_e13bd0da99a610::t_037932a9dbc5aa 355-358
+  s_e13bd0da99a610::t_5a9dfb1af0ac09 6
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "f74a0be4a4f9bb36ae4380078c8883b30551092a",
+  "prompts": {},
+  "sessions": {
+    "s_e13bd0da99a610": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "5e0e3844-14d5-4427-9d01-d46fe24beee0",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}
