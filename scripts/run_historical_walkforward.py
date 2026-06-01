@@ -192,9 +192,12 @@ def build_v2_classify_kwargs(
     Shared by the walk-forward runner and ``run_walkforward_replay_check`` so a
     replay reconstructs the V2 inputs (sector/cross-asset closes, PIT membership,
     constituent OHLCV, macro) byte-identically from the archived ``v2_daily`` slice
-    (F-001). Returns an empty dict on the V1-only path (``v2_slice is None``).
+    (F-001). Returns an empty dict on the V1-only path (``v2_slice is None`` or empty).
     """
-    if v2_slice is None:
+    # CR-009: an empty (non-None) slice means the as-of precedes the first v2_daily row.
+    # Guarding only ``is None`` would build full V2 kwargs over an empty frame, raising in
+    # _close_series_by_symbol (status=failure) instead of degrading to the V1 path.
+    if v2_slice is None or v2_slice.empty:
         return {}
     session_pit_intervals = pit_intervals
     if session_pit_intervals is None:

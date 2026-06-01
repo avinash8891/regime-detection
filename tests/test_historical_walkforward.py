@@ -337,3 +337,19 @@ def test_historical_walkforward_cli_defaults_event_calendar_to_manifest_data_roo
     args = mod._parse_args()
 
     assert args.event_calendar == data_root / "event_calendar" / "us_events.yaml"
+
+
+def test_build_v2_classify_kwargs_falls_back_to_v1_on_empty_slice() -> None:
+    """CR-009: an empty (non-None) v2_slice — an as-of before the first v2_daily row —
+    degrades to the V1-only path (empty kwargs), not full V2 kwargs that raise in
+    _close_series_by_symbol on the missing sector symbols (status=failure)."""
+    runner = _load_runner_module()
+    empty = pd.DataFrame(
+        columns=["date", "symbol", "open", "high", "low", "close", "volume"]
+    )
+
+    kwargs = runner.build_v2_classify_kwargs(
+        v2_slice=empty, pit_intervals=None, macro_series=None
+    )
+
+    assert kwargs == {}
