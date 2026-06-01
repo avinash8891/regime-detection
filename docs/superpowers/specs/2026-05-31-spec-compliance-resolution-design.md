@@ -157,9 +157,16 @@ Legend — **Reuse/Sub:** `sub`=deletion/consolidation, `reuse`=extend existing,
 
 ### M3 — Gate enforcement (promotion/shipping paths actually fire)
 
+> **M3 status (2026-06-02): 7 of 8 findings shipped** — F-009+F-016 (baseline
+> materiality), F-020 (label-contract NaN-leakage), F-017 (deadman interior-gap exit),
+> F-039 (HMM drift WARNING), F-050 (crash-window crisis-label red flag), F-022 (§9.1
+> gate offline-promotion scope, ADR 0023), F-018 (mid-window config-hash reset), F-047
+> +F-052 (HMM drift decisions, ADR 0024), F-014 (reproducible §10 strategy-metrics
+> report, ADR 0025). **F-007 DEFERRED** — see note below.
+
 | ID | Sev | Ideal fix (distilled) | Test | RF? | Reuse/Sub |
 |---|---|---|---|---|---|
-| F-007 | high | Add a golden-runner that executes the 10 golden dates through `RegimeEngine` at the frozen config, pre+post batch, writing the `_single_golden_gate_reasons` shape; document as the required §7 step feeding `--golden-results`. | gate consumes real produced golden JSON; fails if a date regresses | no | add (wires existing engine) |
+| F-007 | high | **DEFERRED (2026-06-02).** Add a golden-runner that executes the 10 golden dates through `RegimeEngine` at the frozen config, pre+post batch, writing the `_single_golden_gate_reasons` shape; document as the required §7 step feeding `--golden-results`. **Why deferred:** a no-duplication producer must reuse the careful V1(<2020, core3-v1.0.0)/V2(≥2020, synthetic-kwargs) split golden classification in `tests/conftest.py:_classify_all_golden_rows`, which is built from session-scoped pytest fixtures (`raw_market_data`, `v2_market_df_for_asof`, `synthetic_v2_kwargs_for_market_data`, `event_calendar_df`). Reusing it without duplication requires extracting that pipeline into an importable module shared by conftest and the runner — a high-blast-radius refactor of the file the whole suite imports. Duplicating the pipeline into the runner instead would violate the code-reuse rule and risk golden-classification divergence. Needs a focused session with the full suite green as the safety net. The gate itself is sound (contract-validates pre/post shape, 10 dates, all_passed, frozen engine/config); the gap is the absent producer, so deferral does not regress any shipped behavior. | gate consumes real produced golden JSON; fails if a date regresses | no | add (wires existing engine) |
 | F-009 | high | Test only — baseline worse on every metric ⇒ `status=='fail'`, `materially_worse_than_baseline` in reasons. | new failure-path test | no | reuse |
 | F-016 | medium | Add per-metric materiality epsilon; ties (within ε) are non-improving and can't rescue an all-worse run; require ≥1 materially-improved dimension. | tie-on-one-metric still fails the gate | no | reuse |
 | F-017 | medium | In `run_deadman_check`, when `qualification.qualifies` is False with a contiguity reason, return a non-ok status (`window_gap`) and make `main()` exit nonzero; optionally insert a breaking incident for the earliest gap. | interior gap ⇒ nonzero exit | no | reuse |
