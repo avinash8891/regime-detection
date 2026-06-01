@@ -394,7 +394,10 @@ def test_transition_score_inputs_event_calendar_labels_are_closed_type() -> None
         )
 
 
-def test_transition_score_missing_model_evidence_marks_component_missing() -> None:
+def test_transition_score_missing_model_evidence_forces_insufficient_data() -> None:
+    """F-002 (production config): with the transition_score seam enabled but no
+    per-session model evidence supplied, compose forces insufficient_data — model
+    evidence is mandatory and must NOT be renormalized away into a normal score."""
     cfg = load_default_regime_config().transition_score
     assert cfg is not None
 
@@ -410,13 +413,13 @@ def test_transition_score_missing_model_evidence_marks_component_missing() -> No
         config=cfg,
     )
 
-    assert out.score is not None
-    assert out.components is not None
-    assert "model_instability" not in out.components
+    assert out.score is None
+    assert out.interpretation is None
+    assert out.components is None
     assert out.missing_components == ("model_instability",)
 
 
-def test_transition_risk_series_degrades_when_model_evidence_rows_are_cold_start() -> (
+def test_transition_risk_series_forces_insufficient_data_when_model_evidence_cold_start() -> (
     None
 ):
     session = date(2024, 1, 2)
@@ -467,9 +470,12 @@ def test_transition_risk_series_degrades_when_model_evidence_rows_are_cold_start
         axis_bundle=axis_bundle,
     )
 
-    assert outputs[session].score is not None
-    assert outputs[session].score_components is not None
-    assert "model_instability" not in outputs[session].score_components
+    # F-002: the seam is wired but the per-session 5-days-ago model values are absent
+    # on this single-session cold start, so transition_risk fails closed to
+    # insufficient_data rather than emitting a renormalized (model-evidence-free) score.
+    assert outputs[session].score is None
+    assert outputs[session].state == "insufficient_data"
+    assert outputs[session].score_components is None
 
 
 def test_transition_risk_series_requires_configured_model_evidence_seams() -> None:
