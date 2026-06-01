@@ -122,6 +122,57 @@ def test_deadman_main_returns_nonzero_on_alert(tmp_path: Path, monkeypatch) -> N
     assert monitor.main() == 1
 
 
+def test_deadman_check_flags_interior_gap_and_exits_nonzero(
+    tmp_path: Path, monkeypatch
+) -> None:
+    # F-017: the previous NYSE session ran, but an interior session is missing, so
+    # the consecutive-clean qualification window is broken. The deadman must NOT
+    # report "ok" — it returns window_gap, records a breaking incident, and main()
+    # exits nonzero so the scheduled job fails loudly.
+    monitor = _load_module(
+        "run_shadow_deadman_check", "scripts/run_shadow_deadman_check.py"
+    )
+    out_root = tmp_path / "shadow_run"
+    schedule = nyse_calendar().schedule(
+        start_date=date(2023, 11, 1),
+        end_date=date(2023, 12, 15),
+    )
+    sessions = list(schedule.index.date)
+    interior_gap = sessions[-3]
+    for session in sessions:
+        if session == interior_gap:
+            continue
+        _record_shadow_run(out_root, session)
+
+    check_date = sessions[-1] + timedelta(days=1)
+    result = monitor.run_deadman_check(output_root=out_root, check_date=check_date)
+
+    assert result["status"] == "window_gap"
+    assert result["expected_as_of_date"] == sessions[-1].isoformat()
+    assert "missing_session_gap" in result["alert"]
+    assert result["qualification"]["qualifies"] is False
+    assert "missing_session_gap" in result["qualification"]["blocking_reasons"]
+
+    with closing(sqlite3.connect(out_root / "regime_shadow.db")) as conn:
+        incidents = conn.execute(
+            "SELECT incident_date, breaks_qualification FROM incidents"
+        ).fetchall()
+    assert incidents == [(check_date.isoformat(), 1)]
+
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "run_shadow_deadman_check.py",
+            "--output-root",
+            str(out_root),
+            "--check-date",
+            check_date.isoformat(),
+        ],
+    )
+    assert monitor.main() == 1
+
+
 def test_deadman_check_uses_previous_friday_for_weekend_check(
     tmp_path: Path,
 ) -> None:
