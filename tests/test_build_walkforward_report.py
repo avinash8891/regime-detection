@@ -868,6 +868,95 @@ def test_baseline_comparison_tie_does_not_rescue_regression() -> None:
     assert comp["all_metrics_materially_worse"] is True
 
 
+def _three_session_rows() -> list[dict[str, object]]:
+    """Three contiguous NYSE sessions (2023-12-12..14), all success, all required
+    summary columns present — a clean base for failure-path mutation tests."""
+    dates = ("2023-12-12", "2023-12-13", "2023-12-14")
+    return [
+        {
+            "as_of_date": as_of,
+            "run_timestamp": f"{as_of}T12:00:00Z",
+            "status": "success",
+            "trend_direction_active": "bull",
+            "trend_character_active": "trending",
+            "volatility_state_active": "low_vol",
+            "breadth_state_active": "healthy_breadth",
+            "transition_risk_state": "stable",
+            "transition_risk_score": 0.1,
+            "transition_risk_primary_drivers": "[]",
+            "transition_risk_triggered_rules": "[]",
+            "transition_risk_data_quality_status": "ok",
+            "transition_risk_axis_switch_count": 0,
+            "transition_risk_recent_axis_switch_count": 0,
+        }
+        for as_of in dates
+    ]
+
+
+def test_build_walkforward_report_flags_interior_missing_session(
+    tmp_path: Path,
+) -> None:
+    # F-027: dropping an interior NYSE session (2023-12-13) ⇒ missing_sessions failure
+    # reason with the dropped date listed.
+    report_mod = _load_module(
+        "build_walkforward_report", "scripts/build_walkforward_report.py"
+    )
+    rows = _three_session_rows()
+    rows = [row for row in rows if row["as_of_date"] != "2023-12-13"]
+    out_root = _prepare_walkforward_root(tmp_path, rows=rows)
+
+    result = report_mod.build_walkforward_report(output_root=out_root)
+
+    assert result["status"] == "fail"
+    assert "missing_sessions" in result["failure_reasons"]
+    payload = json.loads(
+        (out_root / "reports" / "walkforward_analysis.json").read_text()
+    )
+    assert "2023-12-13" in payload["missing_sessions"]
+
+
+def test_build_walkforward_report_flags_run_failure_row(tmp_path: Path) -> None:
+    # F-028: a status=='failure' row ⇒ run_failures_present + failure_count.
+    report_mod = _load_module(
+        "build_walkforward_report", "scripts/build_walkforward_report.py"
+    )
+    rows = _three_session_rows()
+    rows[1]["status"] = "failure"
+    out_root = _prepare_walkforward_root(tmp_path, rows=rows)
+
+    result = report_mod.build_walkforward_report(output_root=out_root)
+
+    assert result["status"] == "fail"
+    assert "run_failures_present" in result["failure_reasons"]
+    payload = json.loads(
+        (out_root / "reports" / "walkforward_analysis.json").read_text()
+    )
+    assert payload["failure_count"] == 1
+    assert payload["success_count"] == 2
+
+
+def test_build_walkforward_report_flags_missing_required_column(tmp_path: Path) -> None:
+    # F-030: a summary CSV missing a required column ⇒ missing_report_columns + listed.
+    report_mod = _load_module(
+        "build_walkforward_report", "scripts/build_walkforward_report.py"
+    )
+    rows = _three_session_rows()
+    for row in rows:
+        del row["transition_risk_recent_axis_switch_count"]
+    out_root = _prepare_walkforward_root(tmp_path, rows=rows)
+
+    result = report_mod.build_walkforward_report(output_root=out_root)
+
+    assert result["status"] == "fail"
+    assert "missing_report_columns" in result["failure_reasons"]
+    payload = json.loads(
+        (out_root / "reports" / "walkforward_analysis.json").read_text()
+    )
+    assert (
+        "transition_risk_recent_axis_switch_count" in payload["missing_summary_columns"]
+    )
+
+
 def test_nan_leakage_flags_blank_label_but_accepts_unknown(tmp_path: Path) -> None:
     """F-020: §6 NaN-leakage gate — a success row whose label cell is blank/None (not
     surfaced as the explicit unknown/insufficient_history contract) is flagged; the
