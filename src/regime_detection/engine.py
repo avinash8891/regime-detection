@@ -494,6 +494,10 @@ class RegimeEngine:
                 f"(§2.4.1), got {type(request.config).__name__}"
             )
         cfg = request.config if request.config is not None else self._config
+        # F-038: validate the V2 input contracts at the boundary BEFORE building the
+        # market context. A missing required V2 input must surface as the explicit
+        # contract error, not as an opaque failure deep inside build_market_context.
+        _validate_v2_request_input_contracts(request, cfg)
         context = build_market_context(
             end_date=end_date,
             market_data=request.market_data,
@@ -511,7 +515,6 @@ class RegimeEngine:
             cpi_first_release=request.cpi_first_release,
             news_sentiment=request.news_sentiment,
         )
-        _validate_v2_request_input_contracts(request, cfg)
         return build_regime_timeline(
             context=context, lookback_days=lookback_days, config=cfg
         )

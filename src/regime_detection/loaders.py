@@ -683,7 +683,7 @@ def _parse_window_days(value: object) -> list[int] | None:
             f"event_calendar window_days must be a two-item list: {value!r}"
         )
     try:
-        return [
+        window = [
             _window_day_int(parsed_sequence[0]),
             _window_day_int(parsed_sequence[1]),
         ]
@@ -691,6 +691,14 @@ def _parse_window_days(value: object) -> list[int] | None:
         raise ValueError(
             f"event_calendar window_days entries must be integers: {value!r}"
         ) from exc
+    # F-037: window_days is an ordered [start_offset, end_offset] pair; a reversed
+    # window (start > end) is silently empty downstream and would suppress the event's
+    # influence. Reject it at load time, mirroring the load_scheduled_events guard.
+    if window[0] > window[1]:
+        raise ValueError(
+            f"event_calendar window_days must have start <= end: {value!r}"
+        )
+    return window
 
 
 def _window_day_int(value: object) -> int:
