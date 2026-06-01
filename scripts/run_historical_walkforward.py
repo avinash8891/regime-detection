@@ -25,6 +25,10 @@ from regime_detection.rule_provenance import rule_provenance_payload  # noqa: E4
 from regime_detection.shadow_storage import (  # noqa: E402
     ensure_shadow_layout,
     insert_run_row,
+    load_archived_event_calendar,
+    load_archived_macro_series,
+    load_archived_market_data,
+    load_archived_v2_daily,
     open_shadow_db,
     update_run_row_failure,
     update_run_row_success,
@@ -301,15 +305,37 @@ def run_walkforward(
             )
 
             try:
+                # CR-001: classify the ORIGINAL output from the RELOADED archive (not the
+                # in-memory inputs) — mirroring run_shadow_regime — so the §6 replay gate
+                # compares archive-fed vs archive-fed and is immune to any archive
+                # round-trip representation difference. The archive is faithful
+                # (F-001a v2_daily, F-003 + CR-002 idempotent macro), so the archive-fed
+                # classification equals the live one; this makes the gate a true
+                # reproducibility check rather than an in-memory-vs-archive diff.
+                archived_market = load_archived_market_data(
+                    archive_dir / "market_data.parquet"
+                )
+                archived_events_path = archive_dir / "events.yaml"
+                archived_events = (
+                    load_archived_event_calendar(archived_events_path)
+                    if archived_events_path.exists()
+                    else event_df
+                )
+                archived_v2_slice = load_archived_v2_daily(
+                    archive_dir / "v2_daily.parquet"
+                )
+                archived_macro = load_archived_macro_series(
+                    archive_dir / "macro_series.parquet"
+                )
                 v2_kwargs = build_v2_classify_kwargs(
-                    v2_slice=v2_slice,
+                    v2_slice=archived_v2_slice,
                     pit_intervals=pit_intervals,
-                    macro_series=macro_series,
+                    macro_series=archived_macro,
                 )
                 output = engine.classify(
                     as_of_date=as_of_date,
-                    market_data=market_slice,
-                    event_calendar=event_df,
+                    market_data=archived_market,
+                    event_calendar=archived_events,
                     **v2_kwargs,
                 )
                 output_path = paths["outputs"] / f"{as_of_date.isoformat()}.json"
