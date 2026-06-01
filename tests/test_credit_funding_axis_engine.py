@@ -454,6 +454,29 @@ def test_effective_credit_funding_uses_higher_risk_when_oas_and_proxy_diverge() 
     assert effective.evidence["proxy_label"] == "spread_widening"
 
 
+def test_effective_credit_funding_marks_confirmed_when_oas_and_proxy_same_rank() -> (
+    None
+):
+    # F-024: §2C resolver same-risk-rank branch (spec lines 3329-3330) — when OAS and
+    # proxy classify to the SAME risk rank, the resolver must choose the OAS label and
+    # mark agreement_status=confirmed / source_used=oas_confirmed. credit_calm and
+    # credit_recovery both have CREDIT_FUNDING_RISK_RANK 0.
+    oas = _credit_output(label="credit_calm", source="ice_bofa_oas")
+    proxy = _credit_output(
+        label="credit_recovery",
+        source="tlt_total_return_differential",
+    )
+
+    effective = resolve_credit_funding_effective_output(oas=oas, proxy=proxy)
+
+    assert effective is not None
+    assert effective.active_label == "credit_calm"  # OAS label chosen on equal rank
+    assert effective.evidence["source_used"] == "oas_confirmed"
+    assert effective.evidence["agreement_status"] == "confirmed"
+    assert effective.evidence["oas_label"] == "credit_calm"
+    assert effective.evidence["proxy_label"] == "credit_recovery"
+
+
 def test_credit_funding_output_uses_typed_evidence_payload() -> None:
     output = _credit_output(label="credit_calm", source="ice_bofa_oas")
 

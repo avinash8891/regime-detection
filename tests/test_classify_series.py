@@ -85,6 +85,39 @@ def test_classify_series_agrees_with_pointwise_classify(
     assert row["transition_risk"] == point.transition_risk.state
 
 
+def test_classify_series_agrees_with_pointwise_classify_multi_day(
+    raw_market_data: pd.DataFrame, event_calendar_df: pd.DataFrame
+) -> None:
+    # F-025: the byte-identity contract is load-bearing for a MULTI-day window
+    # (lookback_days=N>1), where classify_series builds the feature store / model
+    # windows once over a window ending at _END while pointwise classify(d) anchors
+    # at each interior day d. The prior agreement test used a single-session window
+    # (both sides lookback_days=1) and passed trivially. Assert every emitted session
+    # equals its pointwise classify.
+    series_df = RegimeEngine().classify_series(
+        start_date=_START,
+        end_date=_END,
+        market_data=raw_market_data,
+        event_calendar=event_calendar_df,
+        config=_v1_config(),
+    )
+    assert len(series_df) >= 5  # genuinely multi-session
+
+    for _, row in series_df.iterrows():
+        as_of = row["as_of_date"]
+        point = RegimeEngine().classify(
+            as_of_date=as_of,
+            market_data=raw_market_data,
+            event_calendar=event_calendar_df,
+            config=_v1_config(),
+        )
+        assert row["trend_direction"] == point.trend_direction.active_label, as_of
+        assert row["trend_character"] == point.trend_character.active_label, as_of
+        assert row["volatility_state"] == point.volatility_state.active_label, as_of
+        assert row["breadth_state"] == point.breadth_state.active_label, as_of
+        assert row["transition_risk"] == point.transition_risk.state, as_of
+
+
 def test_classify_series_rejects_reversed_window(
     raw_market_data: pd.DataFrame, event_calendar_df: pd.DataFrame
 ) -> None:
