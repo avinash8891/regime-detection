@@ -1,0 +1,28 @@
+tests/test_foundation.py
+  ai_agent 127
+  s_e13bd0da99a610::t_79b82c9c479b54 11
+  s_e13bd0da99a610::t_7ea48930d8e42c 67-78,80-85
+  s_e13bd0da99a610::t_7af0e155f6bc70 116-126,128-138
+src/regime_detection/loaders.py
+  s_e13bd0da99a610::t_2ab0aef67d8110 686,694-701
+tests/test_event_calendar.py
+  s_e13bd0da99a610::t_9e7cfc661a619f 245-266
+src/regime_detection/engine.py
+  s_e13bd0da99a610::t_d0c9052756877d 497-500
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "ebc462d05c95307eb7a51b271bf9c0f4338bd36e",
+  "prompts": {},
+  "sessions": {
+    "s_e13bd0da99a610": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "5e0e3844-14d5-4427-9d01-d46fe24beee0",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}
