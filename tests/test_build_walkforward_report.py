@@ -473,6 +473,96 @@ def test_build_walkforward_report_rejects_unknown_baseline_metric_direction(
     ]
 
 
+def _crash_window_rows(*, covid_volatility: str, covid_transition: str) -> pd.DataFrame:
+    # Three sessions inside the F-050 covid_crash_2020 window (2020-02-24..2020-03-23)
+    # plus a calm session well outside any window. The covid sessions carry the
+    # labels under test; the calm session must never arm the check.
+    return pd.DataFrame(
+        [
+            {
+                "as_of_date": "2020-03-16",
+                "volatility_state_active": covid_volatility,
+                "transition_risk_state": covid_transition,
+            },
+            {
+                "as_of_date": "2020-03-18",
+                "volatility_state_active": covid_volatility,
+                "transition_risk_state": covid_transition,
+            },
+            {
+                "as_of_date": "2020-03-20",
+                "volatility_state_active": covid_volatility,
+                "transition_risk_state": covid_transition,
+            },
+            {
+                "as_of_date": "2019-06-28",
+                "volatility_state_active": "low_vol",
+                "transition_risk_state": "stable",
+            },
+        ]
+    )
+
+
+def test_crash_window_flags_missing_crisis_label() -> None:
+    # F-050: COVID-crash sessions present in OOS but NO crisis-equivalent label on
+    # either the volatility or transition-risk axis ⇒ the §8 red flag fires.
+    report_mod = _load_module(
+        "build_walkforward_report", "scripts/build_walkforward_report.py"
+    )
+    success_df = _crash_window_rows(
+        covid_volatility="high_vol", covid_transition="bear_stress"
+    )
+
+    flags = report_mod._crash_window_red_flags(success_df)
+
+    assert flags == [
+        {
+            "type": "crisis_label_missing_in_crash_window",
+            "window": "covid_crash_2020",
+            "window_start": "2020-02-24",
+            "window_end": "2020-03-23",
+            "covered_sessions": 3,
+        }
+    ]
+
+
+def test_crash_window_accepts_crisis_on_either_axis() -> None:
+    # F-050: a crisis-equivalent label on EITHER axis satisfies the window — no flag.
+    report_mod = _load_module(
+        "build_walkforward_report", "scripts/build_walkforward_report.py"
+    )
+    vol_satisfies = report_mod._crash_window_red_flags(
+        _crash_window_rows(
+            covid_volatility="crisis_vol", covid_transition="bear_stress"
+        )
+    )
+    transition_satisfies = report_mod._crash_window_red_flags(
+        _crash_window_rows(covid_volatility="high_vol", covid_transition="crisis")
+    )
+
+    assert vol_satisfies == []
+    assert transition_satisfies == []
+
+
+def test_crash_window_does_not_arm_when_window_uncovered() -> None:
+    # F-050: a window the walk-forward never reached must NOT be flagged (we cannot
+    # assert a missing crisis label for sessions that were never classified).
+    report_mod = _load_module(
+        "build_walkforward_report", "scripts/build_walkforward_report.py"
+    )
+    success_df = pd.DataFrame(
+        [
+            {
+                "as_of_date": "2019-06-28",
+                "volatility_state_active": "low_vol",
+                "transition_risk_state": "stable",
+            }
+        ]
+    )
+
+    assert report_mod._crash_window_red_flags(success_df) == []
+
+
 def test_build_walkforward_report_rejects_red_flags(tmp_path: Path) -> None:
     report_mod = _load_module(
         "build_walkforward_report", "scripts/build_walkforward_report.py"

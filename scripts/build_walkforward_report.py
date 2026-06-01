@@ -41,6 +41,25 @@ TRANSITION_RISK_WARNING_STATES = frozenset(
         "recovery_attempt",
     }
 )
+# F-050: configured crash windows where the §6 walk-forward MUST surface a crisis-
+# equivalent label, else §8 "defensible label distribution" is violated. Drawn from
+# the spec §9.4 stress dates / golden-date crisis rows (Volmageddon, the Q4-2018
+# selloff, the COVID crash, and the Jun-2022 bear capitulation). Each window is the
+# canonical multi-session episode, not a single date, so a near-date predicate
+# boundary does not hide the absence. A window only arms the check when OOS success
+# rows actually cover it — we never flag a window the walk-forward never reached.
+CRASH_WINDOWS: tuple[tuple[str, str, str], ...] = (
+    ("volmageddon_2018", "2018-02-05", "2018-02-12"),
+    ("q4_2018_selloff", "2018-12-10", "2018-12-26"),
+    ("covid_crash_2020", "2020-02-24", "2020-03-23"),
+    ("jun_2022_capitulation", "2022-06-13", "2022-06-17"),
+)
+# A crisis-equivalent label on EITHER the volatility or transition-risk axis satisfies
+# the window (crisis_vol is the §3 emergency-override volatility label; crisis is the
+# §9 transition-risk crisis state).
+CRISIS_EQUIVALENT_VOLATILITY_LABELS = frozenset({"crisis_vol"})
+CRISIS_EQUIVALENT_TRANSITION_LABELS = frozenset({"crisis"})
+
 REQUIRED_SUMMARY_COLUMNS = frozenset(
     {
         "as_of_date",
@@ -509,6 +528,42 @@ def _baseline_comparison(payload: dict[str, Any] | None) -> dict[str, Any] | Non
     }
 
 
+def _crash_window_red_flags(success_df: pd.DataFrame) -> list[dict[str, Any]]:
+    """F-050: flag any configured crash window, covered by OOS success rows, in which
+    no crisis-equivalent label appears on the volatility or transition-risk axis."""
+    flags: list[dict[str, Any]] = []
+    if success_df.empty or "as_of_date" not in success_df.columns:
+        return flags
+    as_of = pd.to_datetime(success_df["as_of_date"], errors="coerce")
+    crisis_by_axis = (
+        ("volatility_state_active", CRISIS_EQUIVALENT_VOLATILITY_LABELS),
+        ("transition_risk_state", CRISIS_EQUIVALENT_TRANSITION_LABELS),
+    )
+    for name, start, end in CRASH_WINDOWS:
+        in_window = (as_of >= pd.Timestamp(start)) & (as_of <= pd.Timestamp(end))
+        covered = int(in_window.sum())
+        if covered == 0:
+            # The walk-forward never reached this window — cannot assert anything.
+            continue
+        window_df = success_df[in_window]
+        has_crisis = any(
+            col in window_df.columns
+            and bool(window_df[col].astype(str).isin(labels).any())
+            for col, labels in crisis_by_axis
+        )
+        if not has_crisis:
+            flags.append(
+                {
+                    "type": "crisis_label_missing_in_crash_window",
+                    "window": name,
+                    "window_start": start,
+                    "window_end": end,
+                    "covered_sessions": covered,
+                }
+            )
+    return flags
+
+
 def _red_flags(
     success_df: pd.DataFrame, hysteresis_days: dict[str, int]
 ) -> list[dict[str, Any]]:
@@ -552,6 +607,8 @@ def _red_flags(
                     "false_switch_count": false_switch_count,
                 }
             )
+
+    flags.extend(_crash_window_red_flags(success_df))
 
     if "transition_risk_state" in success_df.columns:
         transition_states = (
