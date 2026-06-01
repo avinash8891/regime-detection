@@ -23,8 +23,16 @@ from regime_detection.config import (
 )
 from regime_detection.models import AgentRouting
 
+# F-015: the closed §5.1 cohort set, in precedence order, pinned at 10 cohorts (8
+# axis-predicate specialists + the data_outage_specialist fail-closed cohort +
+# default_neutral fallback) per the v2 spec §5.1 amendment. data_outage_specialist
+# carries NO routing_rule — it is emitted by the dedicated fail-closed branch in
+# evaluate_cohort_routing (any core risk axis ``unknown``), so the optimistic precedence
+# loop below skips it (rule is None). It lives in this tuple so the closed-set contract
+# (every emitted active_cohort ∈ COHORTS) holds and the precedence order is documented.
 COHORTS: tuple[str, ...] = (
     "crisis_specialist",
+    "data_outage_specialist",
     "euphoria_specialist",
     "bear_stress_specialist",
     "tightening_specialist",
