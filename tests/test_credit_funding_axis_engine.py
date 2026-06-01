@@ -37,6 +37,7 @@ from regime_detection.credit_funding import (
     CREDIT_FUNDING_RISK_RANK,
     CreditFundingFeatures,
     CreditFundingRuleInputs,
+    compute_credit_funding_features,
     evaluate_rules_with_evidence,
 )
 from regime_detection.engine import RegimeEngine
@@ -452,6 +453,46 @@ def test_effective_credit_funding_uses_higher_risk_when_oas_and_proxy_diverge() 
     assert effective.evidence["agreement_status"] == "divergent"
     assert effective.evidence["oas_label"] == "credit_calm"
     assert effective.evidence["proxy_label"] == "spread_widening"
+
+
+def test_nfci_weekly_forward_fills_from_off_calendar_stamp() -> None:
+    # F-010: a week-ending NFCI stamp on a NYSE-closed day (Good Friday 2024-03-29) must
+    # forward-fill to the next session (latest reading with date <= as_of), not be
+    # silently dropped in favor of the prior week. A bare reindex(spy_index) lands the
+    # value only on the exact stamp; method="ffill" honors the most-recent on-or-before.
+    from regime_detection.config import load_default_regime_config
+
+    spy_index = pd.DatetimeIndex(
+        nyse_sessions_between(date(2024, 3, 1), date(2024, 4, 5))
+    )
+
+    def _flat(value: float) -> pd.Series:
+        return pd.Series(value, index=spy_index, dtype=float)
+
+    nfci_weekly = pd.Series(
+        [1.0, 2.0, 3.0],
+        index=pd.to_datetime(["2024-03-15", "2024-03-22", "2024-03-29"]),
+        name="nfci",
+    )  # 2024-03-29 is Good Friday (NYSE closed)
+
+    features = compute_credit_funding_features(
+        hyg_close=_flat(80.0),
+        lqd_close=_flat(110.0),
+        tlt_close=_flat(95.0),
+        kre_close=_flat(50.0),
+        spy_close=_flat(500.0),
+        sofr=_flat(5.3),
+        iorb=_flat(5.4),
+        nfci_weekly=nfci_weekly,
+        broad_usd_index=_flat(100.0),
+        hy_oas=_flat(3.5),
+        ig_oas=_flat(1.5),
+        config=load_default_regime_config().credit_funding.rules,
+    )
+
+    next_session = pd.Timestamp("2024-04-01")
+    assert next_session in features.nfci_daily_carried.index
+    assert features.nfci_daily_carried.loc[next_session] == 3.0  # the Good-Friday read
 
 
 def test_effective_credit_funding_marks_confirmed_when_oas_and_proxy_same_rank() -> (

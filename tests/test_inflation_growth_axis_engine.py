@@ -12,6 +12,7 @@ Spec authority: docs/regime_engine_v2_spec.md §2B lines 2174-2326.
 from __future__ import annotations
 
 from dataclasses import replace
+from datetime import date
 
 import numpy as np
 import pandas as pd
@@ -299,6 +300,32 @@ def default_inflation_growth_context():
 @pytest.fixture(scope="module")
 def default_inflation_growth_store_outputs(default_inflation_growth_context):
     return _build_store_and_outputs(default_inflation_growth_context)
+
+
+def test_cpi_first_release_forward_fills_from_off_calendar_release() -> None:
+    # F-010: a CPI first-release stamped on a NYSE-closed day (Good Friday 2024-03-29)
+    # must forward-fill to the next session (latest reading with date <= as_of), not be
+    # dropped so the prior month's latest-revision carries instead.
+    from regime_detection.inflation_growth import _cpi_with_first_release_fallback
+
+    session_index = pd.DatetimeIndex(
+        nyse_sessions_between(date(2024, 3, 1), date(2024, 4, 5))
+    )
+    latest = pd.Series(
+        [300.0], index=pd.to_datetime(["2024-01-31"]), name="cpi_all_items"
+    )
+    first_release = pd.Series(
+        [305.0], index=pd.to_datetime(["2024-03-29"]), name="cpi_all_items"
+    )  # released on Good Friday (NYSE closed)
+
+    combined = _cpi_with_first_release_fallback(
+        latest_cpi=latest,
+        first_release_cpi=first_release,
+        session_index=session_index,
+    )
+
+    next_session = pd.Timestamp("2024-04-01")
+    assert combined.loc[next_session] == 305.0  # the first-release read, not 300.0
 
 
 def test_unknown_when_cpi_stale_more_than_60_days() -> None:
