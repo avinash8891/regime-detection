@@ -331,8 +331,10 @@ against a trustworthy suite. M7 (replay-gate soundness) was opened by the M0-bou
 and folds the F-001 follow-ons in after M2's contracts land. No milestone closes until its §9 G1–G3
 gates are satisfied.
 
-**Status (2026-06-01):** M0 ✅ + M1 ✅ complete. M1 closed F-002 (model-evidence →
-insufficient_data), F-005 (fail-closed cohort routing) — both gate-3 validated — plus the
-F-013 / F-051 / Amb #2 spec-pins, on top of the earlier F-003 / F-006 / F-004 / F-012. M2
-(output / archive / replay contracts) is next; M7 (CR-001…CR-011 replay-gate soundness)
-remains queued.
+**Status (2026-06-02):** M0 ✅ + M1 ✅ + M2 ✅ + M7 ✅ complete. M2 closed F-042
+(config-type boundary guard) + F-019 (per-artifact provenance) on the F-001/F-003 base.
+M7 closed all of CR-001…CR-011 (classify-from-archive like-for-like; idempotent macro
+round-trip; frozen-config + PIT archival; replay-producer robustness; distinct-week
+warmup; empty-slice V1 fallback) — CR-001 gate-3 validated. PR #71 also addressed the 7
+cubic review comments (incl. GNXfc pit-survivorship). Order taken: M0 → M1 → M2 → M7 →
+**M3** (gate enforcement) next, then M4–M6, working autonomously.
