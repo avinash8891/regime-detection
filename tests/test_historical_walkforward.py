@@ -154,6 +154,27 @@ def test_historical_walkforward_supplies_macro_series_for_configured_v2_axes(
     assert payload["credit_funding_state"] is not None
     assert payload["inflation_growth_state"] is not None
 
+    # F-003: the macro_series passed to classify() must also be archived, so the
+    # V2 macro-dependent labels above are reproducible from the per-date archive.
+    # The archived macro must round-trip to exactly the dict the runner consumed.
+    from regime_detection.shadow_storage import load_archived_macro_series
+
+    archive_dir = out_root / "input_archives" / "2026-05-13"
+    macro_archive = archive_dir / "macro_series.parquet"
+    assert macro_archive.exists(), "walk-forward did not archive macro_series"
+    checksums = json.loads((archive_dir / "checksums.json").read_text())
+    assert "macro_series.parquet" in checksums
+    archived_macro = load_archived_macro_series(macro_archive)
+    consumed_macro = mod._load_v2_macro_series(
+        macro_parquet_path=macro_path,
+        pmi_path=None,
+        cpi_nowcast_parquet_path=None,
+        aggregate_forward_eps_weekly_history_parquet_path=None,
+    )
+    assert archived_macro is not None and consumed_macro is not None
+    assert set(archived_macro) == set(consumed_macro)
+    assert {"broad_usd_index", "hy_oas", "ig_bbb_oas"}.issubset(archived_macro)
+
 
 def test_historical_walkforward_runner_records_failures_without_silent_skip(
     tmp_path: Path,

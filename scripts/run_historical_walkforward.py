@@ -239,6 +239,10 @@ def run_walkforward(
                 archive_dir=archive_dir,
                 market_slice=market_slice,
                 event_df=event_df,
+                # F-003: archive the same macro_series passed to classify()
+                # (consumed only on the V2 path), so V2 macro-dependent labels
+                # are reproducible from the archive. Mirrors run_shadow_regime.py.
+                macro_series=(macro_series if v2_daily is not None else None),
             )
             insert_run_row(
                 conn=conn,
