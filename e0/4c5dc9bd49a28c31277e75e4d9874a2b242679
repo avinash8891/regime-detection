@@ -1,0 +1,23 @@
+src/regime_detection/network_fragility_rules.py
+  s_e13bd0da99a610::t_96dfb74cada585 164-166,168,182-188,190-202,219-221,228
+src/regime_detection/axis_builders/network_fragility.py
+  s_e13bd0da99a610::t_64a851dedc3b93 60-61
+tests/test_network_fragility_rules_precedence_series.py
+  s_e13bd0da99a610::t_9adc0eb56d29b3 374-381,391
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "e04c5dc9bd49a28c31277e75e4d9874a2b242679",
+  "prompts": {},
+  "sessions": {
+    "s_e13bd0da99a610": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "5e0e3844-14d5-4427-9d01-d46fe24beee0",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}
