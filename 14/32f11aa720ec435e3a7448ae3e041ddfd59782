@@ -1,0 +1,45 @@
+tests/test_breadth_state.py
+  s_e13bd0da99a610::t_de5a4aec280d8c 35-36
+scripts/verify_fixtures.py
+  s_e13bd0da99a610::t_a30e9f3e1dd362 290-293
+tests/conftest.py
+  s_e13bd0da99a610::t_10545de9c435a4 657-663,665
+tests/test_build_walkforward_report.py
+  s_e13bd0da99a610::t_948fd6033f38de 204
+scripts/build_walkforward_report.py
+  s_e13bd0da99a610::t_dac106673a6b96 319-320
+  s_e13bd0da99a610::t_ea3d6fdc1ac810 321
+tests/fixtures/derived/golden_dates.yaml
+  s_e13bd0da99a610::t_8a9af32ca30f8c 2-30
+  s_e13bd0da99a610::t_bb7c4e413bb6bc 146-193
+tests/test_trend_character.py
+  s_e13bd0da99a610::t_417623f940254a 70-71
+tests/test_breadth_state_v2_labels.py
+  s_e13bd0da99a610::t_4aff976fc587cd 342-343
+tests/test_volatility_state.py
+  s_e13bd0da99a610::t_93d8082c5ed355 25-26
+tests/test_fixture_verification.py
+  s_e13bd0da99a610::t_c5a9f53894510a 308-309
+  s_e13bd0da99a610::t_ea3d6fdc1ac810 310
+  s_e13bd0da99a610::t_1d4f8aa9c9e8ce 203-204,206-209
+  s_e13bd0da99a610::t_a8ec58fc1eeed1 229
+  s_e13bd0da99a610::t_e8b876ee5e5ab9 220-221,223
+tests/test_trend_direction.py
+  s_e13bd0da99a610::t_29c9bbfb023d52 25-26
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "1432f11aa720ec435e3a7448ae3e041ddfd59782",
+  "prompts": {},
+  "sessions": {
+    "s_e13bd0da99a610": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "5e0e3844-14d5-4427-9d01-d46fe24beee0",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}
