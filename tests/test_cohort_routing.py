@@ -239,6 +239,40 @@ def test_data_outage_specialist_when_any_core_axis_unknown() -> None:
     assert out.blocked_strategy_modes == ["short_vol", "leveraged_long", "breakout"]
 
 
+@pytest.mark.unit
+def test_data_outage_preempts_optimistic_specialist_on_partial_outage() -> None:
+    """F-005: a core risk axis ``unknown`` must fail closed to data_outage BEFORE an
+    optimistic specialist can route. ``chop_mean_reversion_specialist`` matches on
+    (trend_character=range_bound, volatility=low_vol) with NO trend_direction
+    predicate, so with trend_direction=unknown the pre-fix walker returned
+    chop_mean_reversion — whose blocked modes ([trend_following, breakout]) leave
+    leveraged_long/short_vol UNBLOCKED during a partial data outage. The contract is
+    the blocked-modes INVARIANT (aggressive modes blocked), not the cohort string."""
+    out = _route(
+        trend_direction_active="unknown",  # partial core-axis outage
+        trend_character_active="range_bound",
+        volatility_state_active="low_vol",
+    )
+    # Capital-protection invariant: aggressive modes MUST be blocked on a partial outage.
+    assert "leveraged_long" in out.blocked_strategy_modes
+    assert "short_vol" in out.blocked_strategy_modes
+    # data_outage pre-empts the optimistic specialist walk (§5.1: crisis > data_outage > …).
+    assert out.active_cohort == "data_outage_specialist"
+
+
+@pytest.mark.unit
+def test_crisis_still_preempts_data_outage_with_optimistic_match_and_outage() -> None:
+    """F-005 must not over-reach: crisis stays ahead of data_outage even when an
+    optimistic specialist would also match and a core axis is unknown."""
+    out = _route(
+        trend_direction_active="unknown",
+        trend_character_active="range_bound",
+        volatility_state_active="crisis_vol",  # crisis pre-empts everything
+    )
+    assert out.active_cohort == "crisis_specialist"
+    assert out.blocked_strategy_modes == ["short_vol", "leveraged_long", "breakout"]
+
+
 # ===========================================================================
 # Group B — Silent specialists (deferred-label predicates)
 # ===========================================================================
