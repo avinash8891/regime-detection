@@ -201,6 +201,7 @@ def _golden_results_payload(*, all_passed: bool = True) -> dict[str, object]:
         "results": [
             {"as_of_date": row["as_of_date"], "passed": all_passed}
             for row in golden["rows"]
+            if "expected" in row
         ],
     }
 

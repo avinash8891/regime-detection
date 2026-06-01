@@ -200,15 +200,13 @@ def test_golden_dates_match_live_labels_without_data_quality_bypass(
 
 def test_v2_section_9_4_golden_dates_are_registered() -> None:
     repo_root = Path(__file__).resolve().parents[1]
-    fixture = yaml.safe_load(
-        (
-            repo_root / "tests" / "fixtures" / "derived" / "golden_dates_v2.yaml"
-        ).read_text()
+    golden = yaml.safe_load(
+        (repo_root / "tests" / "fixtures" / "derived" / "golden_dates.yaml").read_text()
     )
-
-    assert fixture["source_spec"] == "docs/regime_engine_v2_spec.md#9.4"
-    assert {row["as_of_date"] for row in fixture["rows"]} == _V2_SPEC_GOLDEN_DATES
-    for row in fixture["rows"]:
+    assert golden["provenance"] == "hand_labeled"
+    v2_rows = [row for row in golden["rows"] if "expected_v2_fields" in row]
+    assert {row["as_of_date"] for row in v2_rows} == _V2_SPEC_GOLDEN_DATES
+    for row in v2_rows:
         assert row["intent_id"]
         assert row["expected_v2_fields"]
 
@@ -219,17 +217,16 @@ def test_v2_golden_dates_classify_expected_fields(
     from regime_detection.engine import RegimeEngine
 
     repo_root = Path(__file__).resolve().parents[1]
-    fixture = yaml.safe_load(
-        (
-            repo_root / "tests" / "fixtures" / "derived" / "golden_dates_v2.yaml"
-        ).read_text()
+    golden = yaml.safe_load(
+        (repo_root / "tests" / "fixtures" / "derived" / "golden_dates.yaml").read_text()
     )
+    v2_rows = [row for row in golden["rows"] if "expected_v2_fields" in row]
     engine = RegimeEngine()
     missing: list[str] = []
     unsupported: dict[str, str] = {}
     classified_dates: set[str] = set()
 
-    for row in fixture["rows"]:
+    for row in v2_rows:
         as_of = date.fromisoformat(str(row["as_of_date"]))
         try:
             output = engine.classify(
@@ -308,7 +305,9 @@ def test_golden_date_replacement_set_has_documented_justification() -> None:
     golden = yaml.safe_load(
         (repo_root / "tests" / "fixtures" / "derived" / "golden_dates.yaml").read_text()
     )
-    committed_dates = [row["as_of_date"] for row in golden["rows"]]
+    # The §12.2 replacement set is the core-axis golden gate; expected_v2_fields
+    # rows are the separate §9.4 V2-axis set and are not part of this mapping.
+    committed_dates = [row["as_of_date"] for row in golden["rows"] if "expected" in row]
     assert len(committed_dates) == len(_SPEC_SECTION_12_2_DATES)
     for committed in committed_dates:
         assert (

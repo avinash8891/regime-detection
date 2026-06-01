@@ -316,7 +316,9 @@ def _per_date_provenance(runs_df: pd.DataFrame) -> list[dict[str, Any]]:
 def _expected_golden_dates() -> list[str]:
     golden_path = REPO_ROOT / "tests" / "fixtures" / "derived" / "golden_dates.yaml"
     data = yaml.safe_load(golden_path.read_text())
-    return sorted(str(row["as_of_date"]) for row in data["rows"])
+    # The walkforward gate is the core/V1-replay golden gate. expected_v2_fields
+    # rows run through the separate V2 harness and are not walkforward-gated.
+    return sorted(str(row["as_of_date"]) for row in data["rows"] if "expected" in row)
 
 
 def _single_golden_gate_reasons(

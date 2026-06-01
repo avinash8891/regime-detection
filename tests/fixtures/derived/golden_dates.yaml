@@ -1,9 +1,33 @@
 provenance: hand_labeled
-provenance_note: >-
-  Expected labels are independently derived from market history and rule
-  predicates, NOT copied from RegimeEngine output.  Regenerating this file
-  must NOT bless current engine output — each row's expected values come
-  from manual analysis of the named market event.
+provenance_note: |-
+  Single unified golden-date registry for the regime engine. There is ONE
+  golden set, not separate "V1" and "V2" sets. Every row is hand-labeled:
+  expected values are independently derived from market history and rule
+  predicates, NOT copied from RegimeEngine output. Regenerating this file must
+  NOT bless current engine output.
+
+  A row carries one of two expectation blocks depending on which axes its
+  available data supports, and is routed to the matching classification harness:
+    * `expected` — core axes (trend_direction, trend_character, volatility_state,
+      breadth_state, transition_risk). Classified through classified_golden_outputs
+      (frozen V1 config before 2020-01-01, V2 pipeline after) and value-asserted by
+      the per-axis tests.
+    * `expected_v2_fields` — multi-source V2-only axes (network_fragility,
+      credit_funding, volume_liquidity, transition evidence) from spec §9.4.
+      Classified through v2_classify_kwargs_for_asof. Several of these dates
+      predate the V1 SPY/RSP/VIXY fixture (which starts 2016-01-04), so they can
+      only run through the V2 pipeline.
+
+  Two §9.4 transcription corrections: 2020-08-15 is a Saturday (non-NYSE) so
+  post_covid_narrowing uses the prior session 2020-08-14; stock_picker_dispersion
+  is a network_fragility label (§3.4/§3.6), asserted there rather than as breadth.
+
+  KNOWN LIMITATION — value-assert hardening deferred. The expected_v2_fields rows
+  are presence-checked, not value-compared. Full value-assertion is blocked for the
+  four pre-2019 dates (2010/2011/2015/2018): under the production config they raise
+  on missing model-evidence inputs (HMM/change-point/clustering) and so run under the
+  relaxed test config, and credit_funding is unavailable before real ICE-OAS data
+  (2023-05). Hardening requires deep-history model-evidence fixtures.
 raw_file_sha256:
   SPY.csv: efa06aba545dea29dcc523bb8b50ad6a334892e49babee5769466fa8c2c0ef33
   RSP.csv: 6aa3f27a796ffad78f17d114fbe02e806a5488e2a07cdf61166344c15ed7d2c2
@@ -119,3 +143,51 @@ rows:
     breadth_state_raw: healthy_breadth
     breadth_state_active: weak_breadth
     transition_risk: fragile_bull
+# ── multi-source V2-axis golden dates (spec §9.4) ─────────────────────────────
+# Classified via the V2 pipeline (v2_classify_kwargs_for_asof), NOT through
+# classified_golden_outputs. These exercise the V2-only axes; the four pre-2019
+# dates predate the V1 SPY/RSP/VIXY fixture (starts 2016-01-04). Presence-checked
+# today — value-assert hardening deferred (see provenance_note).
+- intent_id: flash_crash_2010
+  as_of_date: '2010-05-06'
+  expected_v2_fields:
+    network_fragility: systemic_stress
+    transition_evidence: correlation_to_one
+- intent_id: us_downgrade_2011
+  as_of_date: '2011-08-08'
+  expected_v2_fields:
+    credit_funding: credit_stress
+    transition_evidence: funding_squeeze
+- intent_id: china_devaluation_2015
+  as_of_date: '2015-08-24'
+  expected_v2_fields:
+    network_fragility: rising_fragility
+    transition_evidence: correlation_to_one
+- intent_id: q4_2018_breadth_stress
+  as_of_date: '2018-10-10'
+  expected_v2_fields:
+    sequence: bull_to_narrowing_breadth_to_bear_stress
+- intent_id: post_covid_narrowing_2020
+  as_of_date: '2020-08-14'
+  expected_v2_fields:
+    network_fragility: stock_picker_dispersion
+- intent_id: gamestop_2021
+  as_of_date: '2021-01-27'
+  expected_v2_fields:
+    network_fragility: stock_picker_dispersion
+    volume_liquidity_state: panic_volume
+- intent_id: uk_gilt_crisis_2022
+  as_of_date: '2022-09-26'
+  expected_v2_fields:
+    transition_evidence: deleveraging
+- intent_id: svb_2023
+  as_of_date: '2023-03-13'
+  expected_v2_fields:
+    transition_risk_minimum: watch
+    credit_funding: credit_stress
+- intent_id: yen_carry_unwind_2024
+  as_of_date: '2024-08-05'
+  expected_v2_fields:
+    transition_evidence:
+    - correlation_to_one
+    - funding_squeeze

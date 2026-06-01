@@ -654,8 +654,15 @@ def event_calendar_df() -> pd.DataFrame:
 
 @pytest.fixture(scope="session")
 def golden_rows() -> list[dict[str, object]]:
+    """Core-axis golden rows (those carrying an ``expected`` block).
+
+    The unified golden_dates.yaml also holds ``expected_v2_fields`` rows that run
+    through the separate V2 harness (v2_classify_kwargs_for_asof); those are
+    excluded here so classified_golden_outputs only classifies dates the
+    core/frozen-V1 pipeline can reproduce.
+    """
     golden = yaml.safe_load(_GOLDEN_DATES_PATH.read_text())
-    return list(golden["rows"])
+    return [row for row in golden["rows"] if "expected" in row]
 
 
 def _classify_all_golden_rows(
