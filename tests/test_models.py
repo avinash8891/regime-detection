@@ -233,6 +233,25 @@ def test_transition_risk_evidence_payload_supports_dict_protocol() -> None:
     assert TransitionRiskEvidencePayload.__eq__(left, object()) is NotImplemented
 
 
+def test_network_fragility_output_rejects_out_of_set_label() -> None:
+    # F-040: NetworkFragilityOutput overrides the label triple with the closed
+    # NetworkFragilityLabel Literal (mirror InflationGrowthOutput/CreditFundingOutput),
+    # so an out-of-set active_label is rejected by the model rather than silently stored.
+    with pytest.raises(ValidationError):
+        NetworkFragilityOutput(
+            raw_label="unknown",
+            stable_label="unknown",
+            active_label="not_a_real_fragility_label",  # type: ignore[arg-type]
+            evidence={
+                "rule_evidence": {"rule_path": "unknown_default"},
+                "breadth_active_label": "healthy",
+                "volatility_active_label": "low_vol",
+                "credit_funding_active_label": None,
+            },
+            data_quality=_data_quality(),
+        )
+
+
 def test_v2_axis_outputs_use_typed_axis_specific_evidence_payloads() -> None:
     network = NetworkFragilityOutput(
         raw_label="unknown",

@@ -47,25 +47,16 @@ import numpy as np
 import pandas as pd
 from numpy.lib.stride_tricks import sliding_window_view
 
+from regime_detection.axis_output_models import NetworkFragilityLabel
 from regime_detection.breadth_state import BreadthLabel
 from regime_detection.config import NetworkFragilityRulesConfig
 from regime_detection.network_fragility import NetworkFragilityFeatures
 from regime_detection.volatility_state import VolatilityLabel
 
-# v2 §3.3 labels.
-NetworkFragilityLabel = Literal[
-    "diversified_normal",
-    "stock_picker_dispersion",
-    "rising_fragility",
-    "correlation_concentration",
-    "correlation_to_one",
-    "systemic_stress_unconfirmed",
-    "systemic_stress",
-    "decorrelated_calm",
-    "rotation_watch",
-    "idiosyncratic_crisis",
-    "unknown",
-]
+# v2 §3.3 labels — the closed NetworkFragilityLabel Literal is the single source of
+# truth in axis_output_models (F-040, alongside the other axis-output label triples);
+# re-exported here (used below by RULE_PRECEDENCE / NETWORK_FRAGILITY_RISK_RANK) so
+# existing importers are unchanged.
 
 
 # v2 §3.4: systemic_stress > systemic_stress_unconfirmed > correlation_to_one
