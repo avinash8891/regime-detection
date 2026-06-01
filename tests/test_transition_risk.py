@@ -323,6 +323,48 @@ def test_transition_risk_series_matches_direct_score_composer() -> None:
     assert outputs[session].state == "weakening"
 
 
+def test_transition_risk_v1_path_suppresses_v2_score_fields() -> None:
+    # F-049: on the V1 path (transition_score_config is None) the legacy state machine
+    # runs in full but the V2-only score fields are intentionally suppressed so the V1
+    # wire carries only {state, evidence} (V1OUT-029). Pin that score / score_components
+    # are None and primary_drivers is empty, guarding against a future reader wiring the
+    # suppressed fields back into the V1 output and breaking byte-identity replay.
+    session = date(2024, 1, 9)
+    outputs = build_transition_risk_outputs_by_date(
+        sessions=[session],
+        trend_direction_active_by_date={session: "bull"},
+        trend_character_active_by_date={session: "trending"},
+        volatility_state_active_by_date={session: "normal_vol"},
+        breadth_state_active_by_date={session: "healthy_breadth"},
+        close_by_date={session: 100.0},
+        sma_50_by_date={session: 95.0},
+        history=TransitionRiskHistory(
+            stable_changed_by_date={session: False},
+            days_since_axis_switch_by_date={session: None},
+            axis_switch_count_by_date={session: 0},
+            recent_axis_switch_count_by_date={session: 0},
+            prior_bear_by_date={session: False},
+        ),
+        transition_score_inputs_by_date={
+            session: TransitionScoreInputs(
+                realized_vol_short=12.0,
+                realized_vol_long=10.0,
+                pct_above_50dma=0.45,
+                avg_pairwise_corr_percentile_504d=0.60,
+                drawdown_252d=-0.10,
+                event_calendar_labels=("normal_calendar",),
+            )
+        },
+        transition_score_config=None,
+    )
+
+    output = outputs[session]
+    assert output.score is None
+    assert output.score_components is None
+    assert output.primary_drivers == []
+    assert output.state is not None  # the legacy state machine still produced a state
+
+
 def test_transition_risk_evidence_preserves_macro_event_matching_labels() -> None:
     cfg = load_default_regime_config().transition_score
     assert cfg is not None
