@@ -355,6 +355,15 @@ def compute_inflation_growth_features(
     xlu = xlu_close.reindex(spy_index).astype(float)
 
     # CPI trend (V2 §2B spec lines 2987-2988).
+    # Ambiguity #3 (DECISION): the 3m/6m CPI change is computed as a fixed SESSION
+    # offset (cpi_lookback_3m_sessions=63, 6m=126) on the daily forward-filled CPI
+    # series — an APPROXIMATION of the exact calendar-month offset, NOT a lookup of the
+    # CPI observation exactly 3/6 calendar months prior. 63/126 NYSE sessions ≈ 3/6
+    # months (~21 sessions/month). The approximation is intentional: CPI is monthly and
+    # forward-filled, so a session-count offset lands on the same monthly vintage as the
+    # calendar offset for all but boundary days, while keeping the reducer purely
+    # positional (consistent with every other §-window in this engine). Pinned by
+    # test_cpi_3m_6m_change_uses_session_offset_approximation.
     cpi_3m_change_pct = _pct_change_lookback(
         cpi, config.cpi_lookback_3m_sessions
     ).rename("cpi_3m_change_pct")

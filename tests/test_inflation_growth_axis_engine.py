@@ -302,6 +302,33 @@ def default_inflation_growth_store_outputs(default_inflation_growth_context):
     return _build_store_and_outputs(default_inflation_growth_context)
 
 
+def test_cpi_3m_6m_change_uses_session_offset_approximation() -> None:
+    # Ambiguity #3 (DECISION): the 3m/6m CPI change is a fixed SESSION offset (63/126
+    # NYSE sessions) on the daily forward-filled CPI — an approximation of the calendar-
+    # month offset, NOT a lookup of the CPI obs exactly 3/6 calendar months prior. Pin
+    # both the config constants and the positional offset semantics on a synthetic CPI.
+    from regime_detection.config import load_default_regime_config
+    from regime_detection.inflation_growth import _pct_change_lookback
+
+    cfg = load_default_regime_config().inflation_growth
+    assert cfg is not None
+    assert cfg.rules.cpi_lookback_3m_sessions == 63
+    assert cfg.rules.cpi_lookback_6m_sessions == 126
+
+    idx = pd.bdate_range("2023-01-02", periods=160)
+    # Strictly increasing CPI so each session offset reads a distinct value.
+    cpi = pd.Series([300.0 + i * 0.1 for i in range(160)], index=idx, name="cpi")
+
+    change_3m = _pct_change_lookback(cpi, cfg.rules.cpi_lookback_3m_sessions)
+    change_6m = _pct_change_lookback(cpi, cfg.rules.cpi_lookback_6m_sessions)
+
+    # The 3m change at position t is cpi[t]/cpi[t-63]-1 (positional session offset).
+    assert change_3m.iloc[140] == pytest.approx(cpi.iloc[140] / cpi.iloc[140 - 63] - 1)
+    assert change_6m.iloc[140] == pytest.approx(cpi.iloc[140] / cpi.iloc[140 - 126] - 1)
+    # Warm-up: the first <lookback> sessions are NaN (no offset available).
+    assert change_3m.iloc[:63].isna().all()
+
+
 def test_cpi_first_release_forward_fills_from_off_calendar_release() -> None:
     # F-010: a CPI first-release stamped on a NYSE-closed day (Good Friday 2024-03-29)
     # must forward-fill to the next session (latest reading with date <= as_of), not be
