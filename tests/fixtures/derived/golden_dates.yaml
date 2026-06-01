@@ -183,7 +183,33 @@ rows:
 - intent_id: q4_2018_breadth_stress
   as_of_date: '2018-10-10'
   expected_v2_fields:
+    # §9.4 names this date for the bull -> narrowing_breadth -> bear_stress
+    # trajectory. The full single-date V2 classify FAILS-CLOSED here (the
+    # transition_risk HMM/change-point/clustering windows reach before the
+    # 2009-start fixture — 2018-10-10 is in _V2_LIVE_FIXTURE_UNSUPPORTED_GOLDEN_DATES
+    # and is value-asserted to raise). The sequence is a multi-session trajectory on
+    # the trend_direction + breadth_state axes — neither needs model evidence — so it
+    # is value-asserted over the Q4-2018 axis series under the PRODUCTION config by
+    # test_q4_2018_bull_to_narrowing_to_bear_sequence, driven by expected_sequence.
     sequence: bull_to_narrowing_breadth_to_bear_stress
+  # Hand-labeled from the real Q4-2018 episode (independently known market landmarks,
+  # NOT copied from engine output): the bull top into late Sept 2018, the -3.3%
+  # 2018-10-10 breadth-collapse selloff that began the October correction, and the
+  # 2018-12-24 Christmas-Eve bear bottom (S&P -19.8% from the Sept ATH). The
+  # bear_stress transition_risk itself is value-asserted at the adjacent
+  # dec2018_bear_stress core golden row (2018-12-11).
+  expected_sequence:
+    window_as_of: '2018-12-31'
+    bull:
+      date: '2018-10-09'  # last session before the 2018-10-10 selloff
+      trend_direction: bull
+    narrowing_breadth:
+      onset_window: ['2018-10-10', '2018-10-19']  # the October-2018 correction
+      breadth_state: narrowing_breadth
+    bear_stress:
+      date: '2018-12-24'  # Christmas-Eve bear bottom
+      trend_direction: bear
+      breadth_state: narrowing_breadth
 - intent_id: post_covid_narrowing_2020
   as_of_date: '2020-08-14'
   # §9.4 named this date for stock_picker_dispersion, but that label requires LOW

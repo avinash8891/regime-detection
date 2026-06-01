@@ -279,6 +279,14 @@ def test_v2_section_9_4_golden_dates_are_registered() -> None:
     for row in v2_rows:
         assert row["intent_id"]
         assert row["expected_v2_fields"]
+        # V2END-023 anti-recurrence: a declared multi-day `sequence` expectation MUST
+        # carry a structured `expected_sequence` trajectory block, so it cannot be
+        # registered as an unasserted scenario tag (the gap this finding closed).
+        if "sequence" in row["expected_v2_fields"]:
+            assert "expected_sequence" in row, (
+                f"{row['as_of_date']} declares expected_v2_fields.sequence but no "
+                "expected_sequence block for test_q4_2018_bull_to_narrowing_to_bear_sequence"
+            )
 
 
 @pytest.mark.slow
@@ -335,7 +343,11 @@ def test_v2_golden_dates_classify_expected_fields(
 
         for field_name, expected in row["expected_v2_fields"].items():
             if field_name == "sequence":
-                continue  # §9.4 multi-day trajectory — no single-date label semantics
+                # §9.4 multi-day trajectory — no single-date label semantics. It is
+                # value-asserted over the Q4-2018 axis series by
+                # test_q4_2018_bull_to_narrowing_to_bear_sequence (this date also
+                # fails-closed here, so the loop never reaches it anyway).
+                continue
             if field_name == "transition_evidence":
                 for token in expected if isinstance(expected, list) else [expected]:
                     if token in _NETWORK_FRAGILITY_TOKENS:
@@ -373,6 +385,112 @@ def test_v2_golden_dates_classify_expected_fields(
         f"undocumented={set(disagreements) - set(_VALUE_ASSERT_DISPUTED)} "
         f"resolved={set(_VALUE_ASSERT_DISPUTED) - set(disagreements)}; observed={disagreements}"
     )
+
+
+@pytest.mark.slow
+def test_q4_2018_bull_to_narrowing_to_bear_sequence(
+    v2_classify_kwargs_for_asof,
+) -> None:
+    """V2END-023 / §9.4: value-assert the 2018-10-10 bull -> narrowing_breadth ->
+    bear_stress trajectory.
+
+    The §9.4 table names 2018-10-10 for this *sequence*, which has no single-date
+    label semantics — and the full single-date V2 classify fails-closed there (its
+    transition_risk model-evidence windows reach before the 2009-start fixture, see
+    ``_V2_LIVE_FIXTURE_UNSUPPORTED_GOLDEN_DATES``). The trajectory lives on the
+    trend_direction + breadth_state axes, neither of which needs model evidence, so it
+    is asserted over the Q4-2018 axis series under the PRODUCTION config. Stage anchors
+    are the hand-labeled market landmarks in golden_dates.yaml ``expected_sequence``;
+    the engine independently reproduces each stage's label. ``bear_stress`` on the
+    transition_risk axis is value-asserted at the adjacent dec2018_bear_stress core
+    golden row (2018-12-11). Replaces the prior silent ``sequence`` skip.
+    """
+    from regime_detection.axis_builders.breadth import build_breadth_axis_series
+    from regime_detection.axis_builders.trend_direction import (
+        build_trend_direction_axis_series,
+    )
+    from regime_detection.config import load_default_regime_config
+    from regime_detection.feature_store import build_feature_store
+    from regime_detection.market_context import build_market_context
+
+    repo_root = Path(__file__).resolve().parents[1]
+    golden = yaml.safe_load(
+        (repo_root / "tests" / "fixtures" / "derived" / "golden_dates.yaml").read_text()
+    )
+    (row,) = [
+        r for r in golden["rows"] if r.get("intent_id") == "q4_2018_breadth_stress"
+    ]
+    seq = row["expected_sequence"]
+    as_of = date.fromisoformat(str(seq["window_as_of"]))
+
+    # Build context + feature store under the production config WITHOUT running the
+    # transition_risk step (which fails-closed on this date); the breadth/trend axes
+    # need no model evidence. Mirrors timeline.build_regime_timeline's wiring.
+    kwargs = dict(v2_classify_kwargs_for_asof(as_of))
+    kwargs.pop("config")
+    cfg = load_default_regime_config()
+    context = build_market_context(end_date=as_of, config=cfg, **kwargs)
+    is_v2 = cfg.config_version != "core3-v1.0.0"
+    feature_store = build_feature_store(
+        context,
+        network_fragility_config=cfg.network_fragility if is_v2 else None,
+        trend_direction_v2_config=cfg.trend_direction_v2 if is_v2 else None,
+        volatility_state_v2_config=cfg.volatility_state_v2 if is_v2 else None,
+        breadth_state_v2_config=cfg.breadth_state_v2 if is_v2 else None,
+        volume_liquidity_v2_config=cfg.volume_liquidity_v2 if is_v2 else None,
+        monetary_pressure_v2_config=cfg.monetary_pressure_v2 if is_v2 else None,
+        credit_funding_config=cfg.credit_funding if is_v2 else None,
+        inflation_growth_config=cfg.inflation_growth if is_v2 else None,
+        central_bank_text_config=cfg.central_bank_text if is_v2 else None,
+        news_sentiment_config=cfg.news_sentiment if is_v2 else None,
+    )
+    trend = build_trend_direction_axis_series(
+        context, feature_store
+    ).active_labels_by_date
+    breadth = build_breadth_axis_series(context, feature_store).active_labels_by_date
+
+    # Stage 1 — bull: trending up into the early-October top, breadth not yet narrowing.
+    bull_date = date.fromisoformat(str(seq["bull"]["date"]))
+    assert bull_date in trend, f"{bull_date} absent from trend series"
+    assert (
+        trend[bull_date] == seq["bull"]["trend_direction"]
+    ), f"bull stage: trend[{bull_date}]={trend[bull_date]}"
+    assert (
+        breadth[bull_date] != seq["narrowing_breadth"]["breadth_state"]
+    ), f"breadth already narrowing at the bull top ({bull_date})"
+
+    # Stage 2 — narrowing_breadth onset inside the October-2018 correction window.
+    onset_lo, onset_hi = (
+        date.fromisoformat(str(d)) for d in seq["narrowing_breadth"]["onset_window"]
+    )
+    narrowing = seq["narrowing_breadth"]["breadth_state"]
+    onset_sessions = [d for d in sorted(breadth) if onset_lo <= d <= onset_hi]
+    narrowing_dates = [d for d in onset_sessions if breadth[d] == narrowing]
+    assert narrowing_dates, (
+        f"no {narrowing} in {onset_lo}..{onset_hi}; got "
+        f"{[(d.isoformat(), breadth[d]) for d in onset_sessions]}"
+    )
+    first_narrowing = narrowing_dates[0]
+
+    # Stage 3 — bear + narrowing_breadth in the December collapse.
+    bear_date = date.fromisoformat(str(seq["bear_stress"]["date"]))
+    assert bear_date in trend, f"{bear_date} absent from trend series"
+    assert (
+        trend[bear_date] == seq["bear_stress"]["trend_direction"]
+    ), f"bear stage: trend[{bear_date}]={trend[bear_date]}"
+    assert (
+        breadth[bear_date] == seq["bear_stress"]["breadth_state"]
+    ), f"bear stage: breadth[{bear_date}]={breadth[bear_date]}"
+
+    # Ordering from ENGINE output (the §9.4 "sequence" order, not the hardcoded
+    # anchors): the bear-trend regime must ONSET strictly AFTER the narrowing-breadth
+    # onset, and be established no later than the bear anchor. Falsifiable — fails if
+    # the engine turned bear before/at the narrowing onset, or never turned bear.
+    bear_onsets = [
+        d for d in sorted(trend) if d >= first_narrowing and trend[d] == "bear"
+    ]
+    assert bear_onsets, "trend never turned bear after the narrowing-breadth onset"
+    assert first_narrowing < bear_onsets[0] <= bear_date
 
 
 # The 10 V1 spec §12.2 golden-date table source dates (docs/regime_engine_v1_final_spec.md).
