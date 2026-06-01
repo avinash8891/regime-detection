@@ -203,6 +203,41 @@ def test_strategy_response_sideways_chop_modifier_excludes_v2_volatile_chop() ->
     assert response.take_profit_faster is None
 
 
+def test_strategy_response_sideways_chop_outranks_recovery_attempt() -> None:
+    # F-034: §10.3 precedence — sideways_chop > recovery_attempt. When both co-fire
+    # (chop trend_character + recovery_attempt transition_risk), the higher-priority
+    # sideways_chop wins the position_size_multiplier (0.75, loosening recovery's 0.5),
+    # and modifiers_applied lists them in increasing priority (recovery first, the
+    # winner sideways_chop last). Enforced today by if-block order; this locks it.
+    response = build_strategy_response(
+        trend_direction_active="bear",
+        trend_character_active="chop",
+        volatility_state_active="normal_vol",
+        breadth_state_active="weak_breadth",
+        transition_risk_state="recovery_attempt",
+    )
+
+    assert response.position_size_multiplier == 0.75
+    assert response.modifiers_applied == ["recovery_attempt", "sideways_chop"]
+
+
+def test_strategy_response_modifiers_applied_increasing_priority() -> None:
+    # F-054: §10.1 modifiers_applied must be ordered by INCREASING priority with the
+    # winner last. sideways_chop and bull_fragile both rank between default_neutral and
+    # crisis (bull_fragile > sideways_chop), so the pair must emit
+    # ['sideways_chop', 'bull_fragile'] and bull_fragile wins psm (0.5).
+    response = build_strategy_response(
+        trend_direction_active="bull",
+        trend_character_active="chop",
+        volatility_state_active="normal_vol",
+        breadth_state_active="weak_breadth",
+        transition_risk_state="fragile_bull",
+    )
+
+    assert response.modifiers_applied == ["sideways_chop", "bull_fragile"]
+    assert response.position_size_multiplier == 0.5
+
+
 def test_strategy_response_policy_event_rule_caps_high_transition_risk_response() -> (
     None
 ):

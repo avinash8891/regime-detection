@@ -243,6 +243,39 @@ def test_v1_spec_pins_adx_ewm_seeding_convention() -> None:
     assert "ADX_14 uses pandas ewm(alpha=1/14, adjust=False, min_periods=14)" in spec
 
 
+def test_followthrough_rate_breakout_level_tie_break_prefers_20d() -> None:
+    # F-055: when a breakout session crosses BOTH its 20d and 50d prior-window maxima,
+    # the tie-break deterministically uses the 20d level (lower bar). Construct a
+    # series where the 50d max (130, an early spike) exceeds the 20d max (110), the
+    # breakout close (135) crosses both, and the subsequent holds (120) sit BETWEEN
+    # the two levels — so they hold above the 20d level but NOT the 50d level. With the
+    # 20d level chosen the breakout is held (rate 1.0); had 50d been chosen it would be
+    # not-held (0.0). Locks the documented tie-break.
+    from regime_detection.trend_character import _compute_followthrough_rate
+
+    values = [100.0] * 10  # 0..9
+    values += [130.0]  # 10 — the 50d-window peak (B), outside the trailing 20d window
+    values += [100.0] * 24  # 11..34
+    values += [105.0 + i * 0.25 for i in range(20)]  # 35..54, max 109.75 (< B) = A
+    values += [135.0]  # 55 — breakout close C > B, crosses both maxima
+    values += [120.0] * 5  # 56..60 — between the 20d (A) and 50d (B) levels
+    idx = pd.bdate_range("2023-01-02", periods=len(values))
+    close = pd.Series(values, index=idx, name="close")
+    breakout = pd.Series(False, index=idx)
+    breakout.iloc[55] = True  # only the crossing session fires
+
+    rate = _compute_followthrough_rate(
+        close,
+        breakout,
+        lookback_sessions=len(values),
+        window_count=1,
+        hold_sessions=5,
+    )
+
+    # The single breakout held above the 20d level → rate 1.0 from the held session on.
+    assert rate.iloc[-1] == 1.0
+
+
 def test_compute_adx_14_matches_independent_wilder_ewm_reimplementation() -> None:
     # F-033: verify _compute_adx_14 against an INDEPENDENT inline reimplementation of
     # the §4.4 Wilder ADX using the pinned ewm(alpha=1/14, adjust=False,
