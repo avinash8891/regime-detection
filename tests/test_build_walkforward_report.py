@@ -868,6 +868,37 @@ def test_baseline_comparison_tie_does_not_rescue_regression() -> None:
     assert comp["all_metrics_materially_worse"] is True
 
 
+def test_build_walkforward_report_emits_section_10_report_sections(
+    tmp_path: Path,
+) -> None:
+    # F-021: the §10 report must carry Data-Source/Archive-Policy, Incidents/Anomalies/
+    # Reruns (explicit empty for a clean batch), and Transition-Risk Evidence sections,
+    # read from the columns already written.
+    report_mod = _load_module(
+        "build_walkforward_report", "scripts/build_walkforward_report.py"
+    )
+    out_root = _prepare_walkforward_root(tmp_path)
+
+    report_mod.build_walkforward_report(output_root=out_root)
+
+    report_text = (out_root / "reports" / "walkforward_report.md").read_text()
+    assert "## Data Source & Archive Policy" in report_text
+    assert "## Incidents, Anomalies & Reruns" in report_text
+    assert "## Transition-Risk Evidence" in report_text
+
+    payload = json.loads(
+        (out_root / "reports" / "walkforward_analysis.json").read_text()
+    )
+    # Explicit-empty incidents/anomalies/reruns for a clean 3-session batch.
+    assert payload["incidents_anomalies_reruns"] == {
+        "incidents": [],
+        "anomalies": [],
+        "reruns": [],
+    }
+    assert payload["transition_risk_evidence"]["session_count"] == 3
+    assert "archive_policy" in payload["data_source_archive_policy"]
+
+
 def _three_session_rows() -> list[dict[str, object]]:
     """Three contiguous NYSE sessions (2023-12-12..14), all success, all required
     summary columns present — a clean base for failure-path mutation tests."""

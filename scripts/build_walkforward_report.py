@@ -668,6 +668,95 @@ def _failure_reasons(
     return reasons
 
 
+def _data_source_archive_policy() -> dict[str, Any]:
+    """F-021 §10: static record of where inputs come from and the archive policy, so a
+    reader of the report knows the run is reproducible-from-archive (§3/§5)."""
+    return {
+        "market_data": "daily OHLCV (SPY/RSP/VIXY + V2 universe), as-of sliced per session",
+        "event_calendar": "scheduled-events YAML/CSV, publication-date aligned",
+        "macro_series": "FRED/derived macro parquet, archived per session when V2 axes configured",
+        "archive_policy": (
+            "every session archives its as-of inputs under input_archives/<date>/ with a "
+            "checksums.json; the §6 replay gate recomputes each session from the archive "
+            "and compares to the stored output (reproducible-from-archive, no live refetch)."
+        ),
+    }
+
+
+def _transition_risk_evidence(success_df: pd.DataFrame) -> dict[str, Any]:
+    """F-021 §10: summarize the transition-risk evidence columns already written to the
+    summary (data-quality, axis-switch churn, driver/rule activity)."""
+    evidence: dict[str, Any] = {"session_count": int(len(success_df))}
+    if "transition_risk_data_quality_status" in success_df.columns:
+        evidence["data_quality_status_distribution"] = {
+            str(k): int(v)
+            for k, v in success_df["transition_risk_data_quality_status"]
+            .fillna("null")
+            .astype(str)
+            .value_counts()
+            .items()
+        }
+    for col in (
+        "transition_risk_axis_switch_count",
+        "transition_risk_recent_axis_switch_count",
+    ):
+        if col in success_df.columns:
+            numeric = pd.to_numeric(success_df[col], errors="coerce")
+            evidence[col] = {
+                "sum": int(numeric.fillna(0).sum()),
+                "max": int(numeric.fillna(0).max()) if len(numeric) else 0,
+            }
+    for col in (
+        "transition_risk_primary_drivers",
+        "transition_risk_triggered_rules",
+    ):
+        if col in success_df.columns:
+            non_empty = (
+                success_df[col]
+                .fillna("[]")
+                .astype(str)
+                .map(lambda value: value.strip() not in ("", "[]"))
+            )
+            evidence[f"{col}_sessions_present"] = int(non_empty.sum())
+    return evidence
+
+
+def _incidents_anomalies_reruns(
+    summary_df: pd.DataFrame, runs_df: pd.DataFrame
+) -> dict[str, Any]:
+    """F-021 §10: incidents/anomalies/reruns for the batch — explicit empty lists when
+    none, so a clean batch is affirmatively clean rather than silently omitted."""
+    incidents = [
+        {
+            "as_of_date": str(row["as_of_date"]),
+            "failure_reason": (
+                None
+                if pd.isna(row.get("failure_reason"))
+                else str(row["failure_reason"])
+            ),
+        }
+        for _, row in runs_df.iterrows()
+        if str(row.get("status")) == "failure"
+    ]
+    anomalies: list[dict[str, str]] = []
+    if "transition_risk_data_quality_status" in summary_df.columns:
+        success = summary_df[summary_df["status"] == "success"]
+        degraded = success[
+            success["transition_risk_data_quality_status"].fillna("ok").astype(str)
+            != "ok"
+        ]
+        anomalies = [
+            {
+                "as_of_date": str(row["as_of_date"]),
+                "data_quality_status": str(row["transition_risk_data_quality_status"]),
+            }
+            for _, row in degraded.iterrows()
+        ]
+    counts = runs_df["as_of_date"].astype(str).value_counts()
+    reruns = sorted(str(date) for date, count in counts.items() if int(count) > 1)
+    return {"incidents": incidents, "anomalies": anomalies, "reruns": reruns}
+
+
 def _build_markdown(analysis: dict[str, Any]) -> str:
     lines = [
         "# Historical Walk-Forward Analysis",
@@ -726,6 +815,28 @@ def _build_markdown(analysis: dict[str, Any]) -> str:
             "",
             "```json",
             json.dumps(analysis["per_date_provenance"], indent=2, sort_keys=True),
+            "```",
+            "",
+            "## Data Source & Archive Policy",
+            "",
+            "```json",
+            json.dumps(
+                analysis["data_source_archive_policy"], indent=2, sort_keys=True
+            ),
+            "```",
+            "",
+            "## Incidents, Anomalies & Reruns",
+            "",
+            "```json",
+            json.dumps(
+                analysis["incidents_anomalies_reruns"], indent=2, sort_keys=True
+            ),
+            "```",
+            "",
+            "## Transition-Risk Evidence",
+            "",
+            "```json",
+            json.dumps(analysis["transition_risk_evidence"], indent=2, sort_keys=True),
             "```",
             "",
         ]
@@ -830,6 +941,9 @@ def build_walkforward_report(
         "config_version": frozen_versions["config_version"],
         "frozen_versions": frozen_versions,
         "per_date_provenance": _per_date_provenance(runs_df),
+        "data_source_archive_policy": _data_source_archive_policy(),
+        "transition_risk_evidence": _transition_risk_evidence(success_df),
+        "incidents_anomalies_reruns": _incidents_anomalies_reruns(summary_df, runs_df),
         "label_distributions": _label_distribution(success_df),
         "series_summaries": _series_summaries(success_df, hysteresis_days),
         "red_flags": red_flags,
