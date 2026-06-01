@@ -338,7 +338,15 @@ def _build_sentiment_score_series(
     )
     if publication_column not in aaii_sentiment.columns:
         return None
-    sorted_aaii = aaii_sentiment.sort_values(publication_column).reset_index(drop=True)
+    sorted_aaii = (
+        aaii_sentiment.sort_values(publication_column)
+        # CR-008: collapse duplicate publication dates so the warmup counts DISTINCT
+        # weekly readings (a re-published row must not warm early) and the ffill reindex
+        # below stays on a unique index.
+        .drop_duplicates(subset=[publication_column], keep="last").reset_index(
+            drop=True
+        )
+    )
     publication = pd.DatetimeIndex(pd.to_datetime(sorted_aaii[publication_column]))
     score_values = sorted_aaii["bull_bear_spread_8w_ma"].astype(float).to_numpy()
     aligned = pd.Series(
@@ -347,10 +355,11 @@ def _build_sentiment_score_series(
         name="sentiment_score",
     )
     result = aligned.reindex(session_index, method="ffill")
-    # v2 §1A cold-start (spec lines 231-233): sentiment_score is NaN until at least
-    # 4 weekly readings exist on or before the session. Count readings published
-    # on/before each session and mask the under-warmed warmup window to NaN so the
-    # euphoria predicate falsifies instead of firing on 1-3 readings (F-006).
+    # v2 §1A cold-start (spec lines 231-233): sentiment_score is NaN until at least 4
+    # weekly readings exist on or before the session. `publication` is now distinct
+    # (deduped above, CR-008), so this counts DISTINCT weekly publication dates; the
+    # under-warmed warmup window is masked to NaN so the euphoria predicate falsifies
+    # instead of firing on 1-3 readings (F-006).
     readings_on_or_before = np.asarray(
         # pandas-stubs types DatetimeIndex.searchsorted as -> Unknown; np.asarray with
         # an explicit dtype gives a concrete int array for the warm-count comparison.

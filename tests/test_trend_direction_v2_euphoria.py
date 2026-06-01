@@ -201,6 +201,30 @@ def test_sentiment_score_is_nan_until_four_weekly_readings() -> None:
     assert series.loc[pd.Timestamp("2024-02-05")] == 25.0  # 5 readings
 
 
+def test_sentiment_warmup_counts_distinct_weeks_not_duplicate_rows() -> None:
+    """CR-008: the 4-reading warmup counts DISTINCT weekly publication dates, not raw
+    AAII rows. A duplicated publication date must not warm sentiment_score early (which
+    would let euphoria fire on only 3 distinct weeks), and must not break the ffill."""
+    from regime_detection.feature_store import _build_sentiment_score_series
+
+    aaii = pd.DataFrame(
+        {
+            "publication_date": pd.to_datetime(
+                # 3 DISTINCT weeks; 2024-01-12 duplicated → 4 rows but 3 distinct dates.
+                ["2024-01-05", "2024-01-12", "2024-01-12", "2024-01-19"]
+            ),
+            "bull_bear_spread_8w_ma": [10.0, 12.0, 13.0, 25.0],
+        }
+    )
+    sessions = pd.bdate_range("2024-01-01", "2024-01-26")
+    series = _build_sentiment_score_series(aaii_sentiment=aaii, session_index=sessions)
+
+    assert series is not None
+    # Only 3 DISTINCT weeks on/before 2024-01-24 → still masked NaN (the duplicate row
+    # does not count as a 4th reading).
+    assert pd.isna(series.loc[pd.Timestamp("2024-01-24")])
+
+
 def test_euphoria_suppressed_during_sentiment_warmup_then_fires_when_warm(
     euphoria_rules: TrendDirectionV2RulesConfig,
 ) -> None:
