@@ -444,7 +444,10 @@ class RegimeEngine:
                 f"[{start.isoformat()}, {end.isoformat()}]."
             )
         timeline = self.classify_window(
-            end_date=end,
+            # Use the last NYSE session in the window, not the raw end_date: a
+            # weekend/holiday end_date would make classify_window's
+            # require_nyse_trading_day raise instead of returning the window rows.
+            end_date=window_sessions[-1],
             market_data=market_data,
             lookback_days=len(window_sessions),
             vix_data=vix_data,

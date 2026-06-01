@@ -171,7 +171,10 @@ def write_archived_inputs(
     # F-001: when the runner feeds V2 inputs derived from a daily-OHLCV frame
     # (sector/cross-asset closes, PIT membership, constituent OHLCV), archive the
     # as-of slice so a walk-forward replay can recompute the V2 axes byte-identically.
-    if v2_daily_slice is not None and not v2_daily_slice.empty:
+    # Archive even an empty slice (a non-None frame whose as-of precedes the first v2
+    # row) so the archive faithfully records that V2 inputs were supplied-but-empty,
+    # rather than leaving the missing file ambiguous with "V2 not provided".
+    if v2_daily_slice is not None:
         v2_daily_slice.to_parquet(v2_daily_path, index=False)
         checksums["v2_daily.parquet"] = sha256_file(v2_daily_path)
     checksums_path.write_text(

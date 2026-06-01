@@ -13,8 +13,13 @@ REQUIRED_SHADOW_SESSIONS = 252
 
 def _expected_sessions(end_date: date, required_sessions: int) -> list[date]:
     end = pd.Timestamp(end_date)
-    # Two calendar years comfortably covers 252 NYSE sessions plus gaps.
-    start = end - pd.Timedelta(days=730)
+    # The calendar span must comfortably exceed required_sessions NYSE sessions
+    # (~252/yr), else a larger qualification window would false-fail for lack of
+    # candidate sessions. required_sessions * 2 calendar days holds ~1.38x the needed
+    # sessions; the 730-day floor keeps the default 252-session window unchanged. The
+    # backward count breaks at required_sessions, so a longer span never changes a
+    # passing result.
+    start = end - pd.Timedelta(days=max(730, required_sessions * 2))
     schedule = nyse_calendar().schedule(start_date=start.date(), end_date=end.date())
     return [session for session in schedule.index.date if session <= end_date]
 
