@@ -14,6 +14,7 @@ import pandas as pd
 import yaml
 
 from regime_detection.calendar import nyse_calendar
+from regime_detection.shadow_strategy_metrics import CRASH_WINDOWS
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 CONFIG_PATH = REPO_ROOT / "src" / "regime_detection" / "configs" / "core3-v1.0.0.yaml"
@@ -41,19 +42,12 @@ TRANSITION_RISK_WARNING_STATES = frozenset(
         "recovery_attempt",
     }
 )
-# F-050: configured crash windows where the §6 walk-forward MUST surface a crisis-
-# equivalent label, else §8 "defensible label distribution" is violated. Drawn from
-# the spec §9.4 stress dates / golden-date crisis rows (Volmageddon, the Q4-2018
-# selloff, the COVID crash, and the Jun-2022 bear capitulation). Each window is the
-# canonical multi-session episode, not a single date, so a near-date predicate
-# boundary does not hide the absence. A window only arms the check when OOS success
-# rows actually cover it — we never flag a window the walk-forward never reached.
-CRASH_WINDOWS: tuple[tuple[str, str, str], ...] = (
-    ("volmageddon_2018", "2018-02-05", "2018-02-12"),
-    ("q4_2018_selloff", "2018-12-10", "2018-12-26"),
-    ("covid_crash_2020", "2020-02-24", "2020-03-23"),
-    ("jun_2022_capitulation", "2022-06-13", "2022-06-17"),
-)
+# F-050: the §8 "defensible label distribution" check requires a crisis-equivalent
+# label inside every configured crash window the walk-forward covers. The window set
+# is the single canonical CRASH_WINDOWS defined in shadow_strategy_metrics (also used
+# by the §10 detection-lag metric, F-014) — imported here, not duplicated. Each window
+# is the canonical multi-session episode, so a near-date predicate boundary cannot hide
+# the absence; the check only arms for windows OOS success rows actually cover.
 # A crisis-equivalent label on EITHER the volatility or transition-risk axis satisfies
 # the window (crisis_vol is the §3 emergency-override volatility label; crisis is the
 # §9 transition-risk crisis state).
