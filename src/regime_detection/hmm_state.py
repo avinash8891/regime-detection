@@ -406,19 +406,25 @@ class HMMParameterDrift:
     """v2 §6.1 operator-side HMM calibration-drift report (spec lines 4434-4468).
 
     Non-blocking review artifact comparing a freshly refit HMM to the prior
-    versioned model. Per the §6.1 operational definition, ``parameter_drift``
-    is the maximum over (state × feature) of the relative absolute change in
-    state-mean parameters AFTER Hungarian-algorithm alignment of the new state
-    indices to the old (so a pure relabel is not counted as drift), and
+    versioned model. "Prior versioned model" is pinned (F-047, ADR 0024) as the
+    **immediately preceding in-call PIT refit checkpoint** — ``compute_hmm_features``
+    walks the retrain-cadence checkpoints in one call and compares each refit to the
+    one before it (``previous_raw_means`` / ``previous_transmat``). It does NOT load a
+    persisted artifact from an earlier process; with a single checkpoint there is no
+    prior and ``parameter_drift`` is None. Per the §6.1 operational definition,
+    ``parameter_drift`` is the maximum over (state × feature) of the relative absolute
+    change in state-mean parameters AFTER Hungarian-algorithm alignment of the new
+    state indices to the old (so a pure relabel is not counted as drift), and
     ``state_mean_drift_alert`` fires when it exceeds 20%.
 
     Transition probabilities and covariances are excluded from the alert (they
     drift naturally with the refit window). A separate ``transition_prob_review_flag``
-    fires when any aligned transition probability shifts by more than 30%;
-    because transition entries are bounded in ``[0, 1]``, the shift is measured
-    as the maximum absolute change (a "30 percentage point" move) — the only
-    stable reading for near-zero probabilities. This flag is advisory and does
-    NOT block deployment.
+    fires when any aligned transition probability shifts by more than 30%. The §6.1
+    30% threshold is pinned (F-052, ADR 0024) as an ABSOLUTE move: because transition
+    entries are bounded in ``[0, 1]``, the shift is measured as the maximum absolute
+    change (a "30 percentage point" move), NOT a relative change — the only stable
+    reading for near-zero probabilities, where a relative ratio explodes. This flag is
+    advisory and does NOT block deployment.
 
     Attributes:
         parameter_drift: max relative state-mean drift after alignment.

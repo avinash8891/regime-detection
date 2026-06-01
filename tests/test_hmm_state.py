@@ -584,6 +584,26 @@ def test_hmm_parameter_drift_transition_review_flag_is_independent() -> None:
     assert drift.transition_prob_review_flag is True
 
 
+def test_hmm_parameter_drift_transition_flag_is_absolute_not_relative() -> None:
+    # F-052 / ADR 0024: the 30% transition-prob flag is an ABSOLUTE move, not a
+    # relative one. A near-zero entry shifts 0.01 -> 0.05: +400% RELATIVE (would trip
+    # a relative threshold) but only 0.04 ABSOLUTE (< 0.30). The flag must stay False,
+    # and max_transition_prob_shift must read the absolute 0.04 — proving the absolute
+    # definition is what ships.
+    previous_transition = np.array([[0.99, 0.01], [0.20, 0.80]])
+    current_transition = np.array([[0.95, 0.05], [0.20, 0.80]])
+
+    drift = compute_hmm_parameter_drift(
+        previous_state_means=_PREV_STATE_MEANS,
+        current_state_means=_PREV_STATE_MEANS.copy(),
+        previous_transition_matrix=previous_transition,
+        current_transition_matrix=current_transition,
+    )
+
+    assert drift.max_transition_prob_shift == pytest.approx(0.04)
+    assert drift.transition_prob_review_flag is False
+
+
 def test_hmm_parameter_drift_below_thresholds_raises_no_alert() -> None:
     # 10% mean move and a 0.10 transition shift — both under their thresholds.
     current_means = _PREV_STATE_MEANS.copy()
