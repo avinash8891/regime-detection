@@ -38,8 +38,17 @@ def test_router_emittable_cohort_set_equals_spec_5_1_closed_set() -> None:
 
 
 def test_data_outage_specialist_is_a_distinct_fail_closed_cohort() -> None:
-    # data_outage_specialist is special-cased (fired on core-axis outage), not a
-    # member of the axis-predicate COHORTS tuple, and is not the permissive fallback.
+    # F-015: data_outage_specialist is now a formal member of the closed §5.1 cohort set
+    # (the 10th cohort, in COHORTS at the precedence position after crisis), but it
+    # remains DISTINCT — it carries NO routing_rule and is emitted by the dedicated
+    # fail-closed branch (any core risk axis "unknown"), not an axis-predicate match,
+    # and it is not the permissive fallback.
+    from regime_detection.config import load_default_regime_config
+
     assert _DATA_OUTAGE == "data_outage_specialist"
-    assert _DATA_OUTAGE not in COHORTS
+    assert _DATA_OUTAGE in COHORTS  # formalized 10th cohort
+    assert COHORTS.index(_DATA_OUTAGE) == 1  # precedence: right after crisis_specialist
     assert _DATA_OUTAGE != "default_neutral"
+    # Distinctness: no axis-predicate routing rule — it is fail-closed, not rule-matched.
+    routing_rules = load_default_regime_config().cohort_routing.routing_rules
+    assert _DATA_OUTAGE not in routing_rules
