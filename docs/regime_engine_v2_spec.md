@@ -3022,6 +3022,24 @@ recession_scare:
   # -5% during credit stress, ~338 sessions) stays unresolved until a
   # future ADR introduces a `credit_watch` label.
 
+risk_off_mild:
+  credit_funding.active_label in {spread_widening, credit_stress}      # credit stressed
+  AND spy_recession_credit_confirmed_threshold <= spy_21d_return < 0   # equities declining but NOT crashing (default threshold -0.05)
+  AND at_least_one_growth_deterioration_signal:
+      cyclical_defensive_slope_21d < 0                                 # risk-off sector rotation
+      OR treasury_10y_yield_slope_21d < 0                             # flight to safety
+      OR pmi_manufacturing < pmi_goldilocks_threshold                 # manufacturing softening (default 50)
+  # Pinned by Ambiguity #2 to match inflation_growth_rules.evaluate_risk_off_mild
+  # (the label was previously present in §2B Labels / Precedence / Risk-Rank /
+  # Hysteresis but had no entry in this operational-definitions block). It covers the
+  # credit-stress + MILD equity-decline band (SPY in [-0.05, 0)) that sits just above
+  # recession_scare's spy_21d_return < -0.05 crash condition (see the recession_scare
+  # coverage-gap note above) WHEN a growth-deterioration signal is also present.
+  # Outranks goldilocks / recovery_growth by DEFENSIVE precedence — a credit-stressed,
+  # growth-softening tape must not read benign — yet it cannot shadow a benign
+  # credit_calm regime because it requires credit stress. NaN growth inputs are
+  # skipped; a NaN spy_21d_return falsifies.
+
 recovery_growth:
   pmi_manufacturing_slope_21d > 0 AND pmi_manufacturing > 50
   AND cyclical_defensive_slope_21d > 0
