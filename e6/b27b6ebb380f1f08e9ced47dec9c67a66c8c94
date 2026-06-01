@@ -1,0 +1,24 @@
+src/regime_detection/comparison.py
+  s_e13bd0da99a610::t_bdc106db45379d 14-21
+  s_e13bd0da99a610::t_2819a90e2f7e26 88-92
+docs/decisions/0023-v2-91-gate-offline-promotion-scope.md
+  s_e13bd0da99a610::t_ba97f4371a5748 1-57
+tests/test_v2_comparison.py
+  s_e13bd0da99a610::t_549051e8087974 131-162
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "e6b27b6ebb380f1f08e9ced47dec9c67a66c8c94",
+  "prompts": {},
+  "sessions": {
+    "s_e13bd0da99a610": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "5e0e3844-14d5-4427-9d01-d46fe24beee0",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}
