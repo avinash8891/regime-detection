@@ -124,8 +124,15 @@ def test_strategy_response_handles_recovery_attempt_final_state() -> None:
         transition_risk_state="recovery_attempt",
     )
 
+    # F-013: the recovery_attempt modifier applies EXACTLY the §10.4 field-set —
+    # now six fields (leverage_allowed reconciled into §10.4). Pins the full set so a
+    # dropped or out-of-spec field fails CI.
     assert response.position_size_multiplier == 0.5
+    assert response.allow_trend_following is True
+    assert response.allow_buy_dip is True
+    assert response.require_breadth_confirmation is True
     assert response.leverage_allowed is False
+    assert response.allow_leverage_expansion is False
     assert "recovery_attempt" in response.modifiers_applied
 
 

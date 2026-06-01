@@ -1135,9 +1135,16 @@ not branch on the compact display label.
   "allow_trend_following": true,
   "allow_buy_dip": true,
   "require_breadth_confirmation": true,
+  "leverage_allowed": false,
   "allow_leverage_expansion": false
 }
 ```
+> A `recovery_attempt` is a tentative bounce off a bear bottom, so it disallows
+> leverage **outright** (`leverage_allowed: false`), not merely leverage *expansion*
+> — matching the defensive `crisis` / `bear_stress` posture. (F-013 reconciliation:
+> `leverage_allowed` was already enforced by `strategy_response` and asserted by
+> `test_transition_and_strategy`; this lists it in the §10.4 field-set so the modifier
+> emits no out-of-spec field.)
 
 `bull_healthy_low_vol` — when:
 ```text
