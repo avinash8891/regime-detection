@@ -19,6 +19,7 @@ from regime_detection.calendar import nyse_calendar  # noqa: E402
 from regime_detection.dependency_payload_contracts import (  # noqa: E402
     dependency_payload_contracts_report,
 )
+from regime_detection.config import default_config_text  # noqa: E402
 from regime_detection.engine import RegimeEngine  # noqa: E402
 from regime_detection.loaders import load_event_calendar  # noqa: E402
 from regime_detection.rule_provenance import rule_provenance_payload  # noqa: E402
@@ -263,6 +264,19 @@ def run_walkforward(
 
     paths = ensure_shadow_layout(
         output_root, db_name="regime_walkforward.db", include_reports=True
+    )
+    # CR-003: archive the FROZEN config this batch runs under (the explicit --config-path
+    # file, or the packaged default when none is given) so the §6 replay is
+    # self-contained — run_walkforward_replay_check drives its engine from this file
+    # rather than an operator-supplied --config-path that can silently default to the
+    # WRONG config and false-fail the gate forever.
+    frozen_config_text = (
+        config_path.read_text(encoding="utf-8")
+        if config_path is not None
+        else default_config_text()
+    )
+    (output_root / "frozen_config.yaml").write_text(
+        frozen_config_text, encoding="utf-8"
     )
     conn = open_shadow_db(paths["db"])
     try:

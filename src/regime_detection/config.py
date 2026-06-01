@@ -195,6 +195,16 @@ def _default_config_resource_name_for_version(version: str) -> str:
     )
 
 
+def default_config_text() -> str:
+    """The packaged default-config YAML text, dispatched on package ``__version__`` major
+    (2 -> core3-v2.0.0.yaml, 1 -> core3-v1.0.0.yaml). Loaded as resource content so it
+    works even when the package is distributed as a zip/egg. Used by the walk-forward
+    runner to archive the frozen config when no explicit ``--config-path`` is given."""
+    resource_name = _default_config_resource_name_for_version(__version__)
+    pkg_file = importlib.resources.files("regime_detection").joinpath(resource_name)
+    return pkg_file.read_text(encoding="utf-8")
+
+
 def load_default_regime_config() -> RegimeConfig:
     """
     Load the packaged default config shipped with the library.
@@ -206,11 +216,7 @@ def load_default_regime_config() -> RegimeConfig:
     NOTE: We load the resource content directly (instead of returning a filesystem
     Path) so this works even when the package is distributed as a zip/egg.
     """
-    resource_name = _default_config_resource_name_for_version(__version__)
-
-    pkg_file = importlib.resources.files("regime_detection").joinpath(resource_name)
-    text = pkg_file.read_text(encoding="utf-8")
-    data = yaml.safe_load(text)
+    data = yaml.safe_load(default_config_text())
     if not isinstance(data, dict):
         raise ValueError("Default config must contain a YAML mapping at the top level")
     return RegimeConfig.model_validate(data)

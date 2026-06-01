@@ -83,12 +83,14 @@ def test_walkforward_replay_matches_then_detects_corruption(
     clean = next(r for r in verdict2["results"] if r["as_of_date"] == "2026-05-12")
     assert clean["matches"] is True
 
-    # CR-006: delete the original (its DB-recorded absolute paths are now dead), then the
-    # relocated copy must still replay cleanly — paths resolve from output_root's layout.
+    # CR-003: the batch archived its FROZEN config; the replay drives the engine from it.
+    assert (relocated / "frozen_config.yaml").read_text() == config_path.read_text()
+    # CR-006 + CR-003: delete the original (its DB-recorded absolute paths are now dead),
+    # then the relocated copy must still replay cleanly WITHOUT an operator-supplied
+    # config_path — paths resolve from output_root's layout and the engine from the
+    # archived frozen config.
     shutil.rmtree(out_root)
-    relocated_verdict = replay.run_walkforward_replay_check(
-        output_root=relocated, config_path=config_path
-    )
+    relocated_verdict = replay.run_walkforward_replay_check(output_root=relocated)
     assert relocated_verdict["all_passed"] is True
     assert all(r["matches"] for r in relocated_verdict["results"])
 

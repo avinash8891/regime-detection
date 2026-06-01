@@ -113,7 +113,14 @@ def run_walkforward_replay_check(
     if not paths["db"].exists():
         raise FileNotFoundError(f"walk-forward DB not found: {paths['db']}")
     runs = _success_runs(paths["db"])
-    engine = RegimeEngine(config_path=config_path)
+    # CR-003: drive the engine from the batch's archived FROZEN config so the replay is
+    # self-contained and reproduces the run's actual config — not an operator-supplied
+    # --config-path that can default to the wrong config and false-fail the gate.
+    # --config-path remains a fallback only for older batches that predate the frozen file.
+    frozen_config = output_root / "frozen_config.yaml"
+    engine = RegimeEngine(
+        config_path=frozen_config if frozen_config.exists() else config_path
+    )
     engine_version = resolved_engine_version()
     config_version = engine.config.config_version
 
