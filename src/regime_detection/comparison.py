@@ -11,8 +11,14 @@ strategy metrics). Foundation scaffolding for the v2 §9.1 gate:
 >     transition_risk.state = crisis)
 >   - lower false-switch rate than V1
 
-``compute_v1_v2_diff`` and ``evaluate_v2_gate`` are pure functions
-consumed by the walk-forward runner (``--engine-profile both``).
+``evaluate_v2_gate`` is an OFFLINE promotion gate, NOT a per-session
+walk-forward-runner step (F-022, ADR 0023). It compares two whole-backtest
+``StrategyMetrics`` summaries — drawdown, Sharpe, detection lag, false-switch
+rate — which the per-session regime engine never computes; they come from the
+downstream strategy-eval layer (the F-014 ledger producer). The walk-forward /
+shadow runners classify regimes only and therefore do not, and cannot, call this
+gate. ``passed=False`` means "do not promote the V2 candidate". ``compute_v1_v2_diff``
+is the per-session A/B label-diff used by the §9.3 shadow review.
 """
 
 from __future__ import annotations
@@ -78,6 +84,11 @@ def evaluate_v2_gate(
     v2_metrics: StrategyMetrics,
 ) -> GateResult:
     """v2 §9.1 gate: V2 passes iff it beats V1 on at least one of the four metrics.
+
+    Offline promotion gate (F-022 / ADR 0023): callers treat ``passed=False`` as
+    "block promotion of the V2 candidate". It is invoked by the offline strategy-eval
+    / promotion harness, not the per-session walk-forward runner — the runner has no
+    StrategyMetrics to supply.
 
     Args:
         v1_metrics: Strategy metrics for the V1-gated baseline.

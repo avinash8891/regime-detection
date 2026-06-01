@@ -128,6 +128,38 @@ def test_evaluate_v2_gate_fails_when_metrics_identical() -> None:
     assert result.winning_metrics == ()
 
 
+def test_evaluate_v2_gate_is_an_offline_promotion_decision() -> None:
+    # F-022 / ADR 0023: the §9.1 gate is an offline promotion gate — passed=False
+    # MEANS "do not promote the V2 candidate". It is NOT a per-session walk-forward
+    # runner step (the runner has no StrategyMetrics to feed it), so the contract we
+    # lock is the promotion decision itself: a candidate worse on every metric is
+    # blocked, and a candidate winning on even one metric is promotable.
+    v1 = _baseline_metrics()
+    blocked = evaluate_v2_gate(
+        v1_metrics=v1,
+        v2_metrics=StrategyMetrics(
+            max_drawdown=-0.25,
+            sharpe=0.60,
+            mean_crisis_detection_lag_days=6.0,
+            false_switch_rate=0.20,
+        ),
+    )
+    promotable = evaluate_v2_gate(
+        v1_metrics=v1,
+        v2_metrics=StrategyMetrics(
+            max_drawdown=v1.max_drawdown,
+            sharpe=v1.sharpe,
+            mean_crisis_detection_lag_days=v1.mean_crisis_detection_lag_days,
+            false_switch_rate=0.09,  # the single qualifying win
+        ),
+    )
+
+    # "block promotion" iff not passed.
+    assert blocked.passed is False
+    assert promotable.passed is True
+    assert GateMetric.LOWER_FALSE_SWITCH_RATE in promotable.winning_metrics
+
+
 def test_evaluate_v2_gate_fails_when_v2_worse_on_every_metric() -> None:
     v1 = _baseline_metrics()
     v2 = StrategyMetrics(
