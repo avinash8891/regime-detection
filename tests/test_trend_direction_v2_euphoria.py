@@ -225,6 +225,43 @@ def test_sentiment_warmup_counts_distinct_weeks_not_duplicate_rows() -> None:
     assert pd.isna(series.loc[pd.Timestamp("2024-01-24")])
 
 
+def test_sentiment_dedupe_deterministically_keeps_last_source_row() -> None:
+    # CR-008 follow-up (PR review P2): the duplicate-date dedupe must be DETERMINISTIC.
+    # sort_values uses a STABLE sort (kind="mergesort"), so among rows sharing a
+    # publication_date, keep="last" always retains the last row in SOURCE order. Put the
+    # duplicate on the most-recent week (value 20.0 then 21.0) so the kept value is the
+    # active ffill read at a warm session; assert it is 21.0 (the last source row), and
+    # that two independent calls produce byte-identical series (replay safety).
+    from regime_detection.feature_store import _build_sentiment_score_series
+
+    aaii = pd.DataFrame(
+        {
+            "publication_date": pd.to_datetime(
+                # 4 distinct weeks; 2024-01-26 duplicated with DIFFERENT values.
+                [
+                    "2024-01-05",
+                    "2024-01-12",
+                    "2024-01-19",
+                    "2024-01-26",
+                    "2024-01-26",
+                ]
+            ),
+            "bull_bear_spread_8w_ma": [10.0, 11.0, 12.0, 20.0, 21.0],
+        }
+    )
+    sessions = pd.bdate_range("2024-01-01", "2024-01-31")
+
+    series = _build_sentiment_score_series(aaii_sentiment=aaii, session_index=sessions)
+    again = _build_sentiment_score_series(aaii_sentiment=aaii, session_index=sessions)
+
+    assert series is not None and again is not None
+    # 4 distinct weeks by 2024-01-26 → warm on 2024-01-29; the kept 01-26 value is the
+    # LAST source row (21.0), not 20.0.
+    assert series.loc[pd.Timestamp("2024-01-29")] == 21.0
+    # Deterministic across calls (no quicksort nondeterminism among equal-key rows).
+    pd.testing.assert_series_equal(series, again)
+
+
 def test_euphoria_suppressed_during_sentiment_warmup_then_fires_when_warm(
     euphoria_rules: TrendDirectionV2RulesConfig,
 ) -> None:

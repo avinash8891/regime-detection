@@ -339,7 +339,12 @@ def _build_sentiment_score_series(
     if publication_column not in aaii_sentiment.columns:
         return None
     sorted_aaii = (
-        aaii_sentiment.sort_values(publication_column)
+        # kind="mergesort" is a STABLE sort: rows sharing a publication_date keep their
+        # source order, so the keep="last" dedupe below deterministically retains the
+        # same physical row every replay. The default quicksort is unstable and could
+        # pick a different duplicate row across runs/pandas versions, breaking the
+        # byte-identical replay contract.
+        aaii_sentiment.sort_values(publication_column, kind="mergesort")
         # CR-008: collapse duplicate publication dates so the warmup counts DISTINCT
         # weekly readings (a re-published row must not warm early) and the ffill reindex
         # below stays on a unique index.
