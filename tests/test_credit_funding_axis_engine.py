@@ -37,6 +37,7 @@ from regime_detection.credit_funding import (
     CREDIT_FUNDING_RISK_RANK,
     CreditFundingFeatures,
     CreditFundingRuleInputs,
+    compute_credit_funding_features,
     evaluate_rules_with_evidence,
 )
 from regime_detection.engine import RegimeEngine
@@ -454,6 +455,69 @@ def test_effective_credit_funding_uses_higher_risk_when_oas_and_proxy_diverge() 
     assert effective.evidence["proxy_label"] == "spread_widening"
 
 
+def test_nfci_weekly_forward_fills_from_off_calendar_stamp() -> None:
+    # F-010: a week-ending NFCI stamp on a NYSE-closed day (Good Friday 2024-03-29) must
+    # forward-fill to the next session (latest reading with date <= as_of), not be
+    # silently dropped in favor of the prior week. A bare reindex(spy_index) lands the
+    # value only on the exact stamp; method="ffill" honors the most-recent on-or-before.
+    from regime_detection.config import load_default_regime_config
+
+    spy_index = pd.DatetimeIndex(
+        nyse_sessions_between(date(2024, 3, 1), date(2024, 4, 5))
+    )
+
+    def _flat(value: float) -> pd.Series:
+        return pd.Series(value, index=spy_index, dtype=float)
+
+    nfci_weekly = pd.Series(
+        [1.0, 2.0, 3.0],
+        index=pd.to_datetime(["2024-03-15", "2024-03-22", "2024-03-29"]),
+        name="nfci",
+    )  # 2024-03-29 is Good Friday (NYSE closed)
+
+    features = compute_credit_funding_features(
+        hyg_close=_flat(80.0),
+        lqd_close=_flat(110.0),
+        tlt_close=_flat(95.0),
+        kre_close=_flat(50.0),
+        spy_close=_flat(500.0),
+        sofr=_flat(5.3),
+        iorb=_flat(5.4),
+        nfci_weekly=nfci_weekly,
+        broad_usd_index=_flat(100.0),
+        hy_oas=_flat(3.5),
+        ig_oas=_flat(1.5),
+        config=load_default_regime_config().credit_funding.rules,
+    )
+
+    next_session = pd.Timestamp("2024-04-01")
+    assert next_session in features.nfci_daily_carried.index
+    assert features.nfci_daily_carried.loc[next_session] == 3.0  # the Good-Friday read
+
+
+def test_effective_credit_funding_marks_confirmed_when_oas_and_proxy_same_rank() -> (
+    None
+):
+    # F-024: §2C resolver same-risk-rank branch (spec lines 3329-3330) — when OAS and
+    # proxy classify to the SAME risk rank, the resolver must choose the OAS label and
+    # mark agreement_status=confirmed / source_used=oas_confirmed. credit_calm and
+    # credit_recovery both have CREDIT_FUNDING_RISK_RANK 0.
+    oas = _credit_output(label="credit_calm", source="ice_bofa_oas")
+    proxy = _credit_output(
+        label="credit_recovery",
+        source="tlt_total_return_differential",
+    )
+
+    effective = resolve_credit_funding_effective_output(oas=oas, proxy=proxy)
+
+    assert effective is not None
+    assert effective.active_label == "credit_calm"  # OAS label chosen on equal rank
+    assert effective.evidence["source_used"] == "oas_confirmed"
+    assert effective.evidence["agreement_status"] == "confirmed"
+    assert effective.evidence["oas_label"] == "credit_calm"
+    assert effective.evidence["proxy_label"] == "credit_recovery"
+
+
 def test_credit_funding_output_uses_typed_evidence_payload() -> None:
     output = _credit_output(label="credit_calm", source="ice_bofa_oas")
 
@@ -649,6 +713,26 @@ def test_unknown_when_legacy_ioer_component_is_stale() -> None:
     out = outputs[last_day]
     assert out.raw_label == "unknown"
     assert "funding_spread_stale" in (out.data_quality.reason or "")
+
+
+def test_funding_spread_fresh_fallback_does_not_force_unknown_when_iorb_stale() -> None:
+    """F-051 / §2C Unknown Gate: the funding spread is the FRESHEST available proxy pair
+    (SOFR-IORB or its ADR 0009 SOFR-IOER / FEDFUNDS-IOER fallbacks), so a stale SOFR/IORB
+    while a fresh legacy FEDFUNDS-IOER proxy exists must NOT force unknown (the pre-2021
+    splice). This is the complement of test_unknown_when_iorb_component_is_stale (which
+    has NO fresh fallback, so the same stale IORB DOES force unknown). Pins the
+    min-of-proxy-pairs gate so a future per-pair tightening can't silently regress it.
+    """
+    context = _build_full_synthetic_context(
+        legacy_funding_splice=True,  # fresh FEDFUNDS + IOER_LEGACY fallback available
+        iorb_truncate_calendar_days=70,  # SOFR-IORB pair is stale
+    )
+    _, outputs = _build_store_and_outputs(context)
+
+    assert outputs is not None
+    out = outputs[context.sessions[-1]]
+    assert "funding_spread_stale" not in (out.data_quality.reason or "")
+    assert out.raw_label != "unknown"
 
 
 def test_unknown_when_assess_series_input_quality_fails(

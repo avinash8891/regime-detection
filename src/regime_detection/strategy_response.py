@@ -3,6 +3,36 @@ from __future__ import annotations
 from regime_detection.config import StrategyEventModifiersConfig
 from regime_detection.models import StrategyResponse
 
+# F-043: the closed scenario-modifier vocabulary emitted in modifiers_applied. V1
+# §10.4 defines exactly six scenario modifiers. The engine additionally emits four
+# V2-owned modifiers driven by the V2 §4 transition_risk.state (strategy response
+# consumes the V2-owned state per §10.4). Their precedence rank relative to the six V1
+# scenarios follows the transition_risk_state escalation ladder
+# (crisis > bear_stress > high_transition_risk/sideways_stress > bull_fragile >
+# sideways_chop > transition_warning/transition_weakening > recovery_attempt >
+# bull_healthy_low_vol), enforced by source order in build_strategy_response with the
+# winner last. Event-rule modifier names are config-driven (strategy_event_modifiers)
+# and validated separately, so they are NOT part of this static scenario vocabulary.
+V1_SCENARIO_MODIFIERS = frozenset(
+    {
+        "bull_healthy_low_vol",
+        "recovery_attempt",
+        "sideways_chop",
+        "bull_fragile",
+        "bear_stress",
+        "crisis",
+    }
+)
+V2_OWNED_MODIFIERS = frozenset(
+    {
+        "transition_weakening",
+        "transition_warning",
+        "high_transition_risk",
+        "sideways_stress",
+    }
+)
+SCENARIO_MODIFIER_NAMES = V1_SCENARIO_MODIFIERS | V2_OWNED_MODIFIERS
+
 
 def _apply_event_calendar_modifiers(
     *,

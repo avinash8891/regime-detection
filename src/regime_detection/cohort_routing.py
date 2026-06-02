@@ -1,9 +1,13 @@
 """v2 §5.1 Agent Cohort Routing precedence walker.
 
-Pins docs/regime_engine_v2_spec.md §5.1 per implementation decision. The walker
-traverses ``COHORTS`` top-to-bottom and returns the first
-matching cohort's routing decision. ``default_neutral`` is the universal
-fallback and always matches when no specialist does.
+Pins docs/regime_engine_v2_spec.md §5.1 per implementation decision. The §5.1
+precedence is ``crisis_specialist > data_outage_specialist > euphoria > … >
+bull_low_vol > default_neutral``. ``crisis_specialist`` is evaluated first and
+pre-empts everything; the ``data_outage_specialist`` fail-closed cohort (fires
+when any core risk axis is ``unknown``) is then evaluated BEFORE the optimistic
+specialist walk, so an optimistic cohort can never route aggressive modes during
+a partial data outage (F-005). The remaining specialists are walked top-to-bottom;
+``default_neutral`` is the universal fallback when no specialist matches.
 
 A predicate referencing an axis whose active label is ``None`` (e.g. an
 axis whose feature inputs are absent at this session) returns ``False``
@@ -19,8 +23,16 @@ from regime_detection.config import (
 )
 from regime_detection.models import AgentRouting
 
+# F-015: the closed §5.1 cohort set, in precedence order, pinned at 10 cohorts (8
+# axis-predicate specialists + the data_outage_specialist fail-closed cohort +
+# default_neutral fallback) per the v2 spec §5.1 amendment. data_outage_specialist
+# carries NO routing_rule — it is emitted by the dedicated fail-closed branch in
+# evaluate_cohort_routing (any core risk axis ``unknown``), so the optimistic precedence
+# loop below skips it (rule is None). It lives in this tuple so the closed-set contract
+# (every emitted active_cohort ∈ COHORTS) holds and the precedence order is documented.
 COHORTS: tuple[str, ...] = (
     "crisis_specialist",
+    "data_outage_specialist",
     "euphoria_specialist",
     "bear_stress_specialist",
     "tightening_specialist",
@@ -32,6 +44,7 @@ COHORTS: tuple[str, ...] = (
 )
 
 _FALLBACK = "default_neutral"
+_CRISIS = "crisis_specialist"
 _DATA_OUTAGE = "data_outage_specialist"
 _UNKNOWN_SENSITIVE_AXES: tuple[str, ...] = (
     "trend_direction",
@@ -66,33 +79,36 @@ def evaluate_cohort_routing(
         "network_fragility": network_fragility_active,
         "monetary_pressure": monetary_pressure_active,
     }
+
+    def _route(cohort: str) -> AgentRouting:
+        return AgentRouting(
+            active_cohort=cohort,
+            fallback_cohort=_FALLBACK,
+            blocked_strategy_modes=list(config.blocked_strategy_modes.get(cohort, ())),
+        )
+
+    # §5.1 precedence: crisis_specialist > data_outage_specialist > optimistic
+    # specialists > default_neutral. crisis pre-empts everything; the data_outage
+    # fail-closed cohort (any core risk axis ``unknown``) is then evaluated BEFORE
+    # the optimistic walk so no optimistic cohort (e.g. chop_mean_reversion, whose
+    # rule omits a trend_direction predicate) can route leveraged_long / short_vol
+    # during a partial data outage (F-005).
+    crisis_rule = config.routing_rules.get(_CRISIS)
+    if crisis_rule is not None and _rule_matches(crisis_rule, inputs):
+        return _route(_CRISIS)
+    if any(inputs[axis] == "unknown" for axis in _UNKNOWN_SENSITIVE_AXES):
+        return _route(_DATA_OUTAGE)
     for cohort in COHORTS:
         if cohort == _FALLBACK:
             break
+        if cohort == _CRISIS:
+            continue  # already evaluated above (pre-empts data_outage)
         rule = config.routing_rules.get(cohort)
         if rule is None:
             continue
         if _rule_matches(rule, inputs):
-            return AgentRouting(
-                active_cohort=cohort,
-                fallback_cohort=_FALLBACK,
-                blocked_strategy_modes=list(
-                    config.blocked_strategy_modes.get(cohort, ())
-                ),
-            )
-    if any(inputs[axis] == "unknown" for axis in _UNKNOWN_SENSITIVE_AXES):
-        return AgentRouting(
-            active_cohort=_DATA_OUTAGE,
-            fallback_cohort=_FALLBACK,
-            blocked_strategy_modes=list(
-                config.blocked_strategy_modes.get(_DATA_OUTAGE, ())
-            ),
-        )
-    return AgentRouting(
-        active_cohort=_FALLBACK,
-        fallback_cohort=_FALLBACK,
-        blocked_strategy_modes=list(config.blocked_strategy_modes.get(_FALLBACK, ())),
-    )
+            return _route(cohort)
+    return _route(_FALLBACK)
 
 
 def _rule_matches(rule: CohortRoutingRule, inputs: dict[str, str | None]) -> bool:

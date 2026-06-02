@@ -187,7 +187,12 @@ def _compute_followthrough_rate(
             continue
         m20 = prior_max_20[b]
         m50 = prior_max_50[b]
-        # Prefer the 20d window if close crossed it; else use the 50d level.
+        # Tie-break (F-055, pinned): when close[b] crosses BOTH the 20d and 50d
+        # prior-window maxima (m50 >= m20 always, so close > m50 implies close > m20),
+        # the §1A phrase "the max-of-prior-window that close crossed" is ambiguous.
+        # We deterministically choose the 20d level — the lower, more lenient hold
+        # bar — so a shallow follow-through still counts as held. test_followthrough_
+        # rate_breakout_level_tie_break_prefers_20d locks this against regression.
         if not np.isnan(m20) and close_arr[b] > m20:
             breakout_level[b] = m20
         elif not np.isnan(m50) and close_arr[b] > m50:

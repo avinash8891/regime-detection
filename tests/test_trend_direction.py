@@ -8,6 +8,7 @@ import yaml
 
 from regime_detection.config import load_default_regime_config
 from regime_detection.trend_direction import (
+    _RISK_RANK,
     TrendDirectionFeatures,
     build_raw_outputs,
     compute_features,
@@ -16,12 +17,33 @@ from regime_detection.trend_direction import (
 from regime_detection.trend_direction_v2 import TrendDirectionV2Features
 
 
+def test_trend_direction_risk_rank_matches_spec_3_6() -> None:
+    # F-032: every §3.6 trend_direction_risk_rank entry must match the code's
+    # _RISK_RANK exactly (mirror of the volatility crisis_vol==3 guard). The code
+    # additionally carries the V2-only labels euphoria(4) and recovery(1), which
+    # extend — but must not contradict — the V1 §3.6 table.
+    spec_3_6_trend_direction_risk_rank = {
+        "bull": 0,
+        "sideways": 1,
+        "transition": 2,
+        "bear": 3,
+        "unknown": 2,
+    }
+    for label, rank in spec_3_6_trend_direction_risk_rank.items():
+        assert _RISK_RANK[label] == rank, label
+    # V2 extensions are present and ranked above bear / within the calm tier.
+    assert _RISK_RANK["euphoria"] == 4
+    assert _RISK_RANK["recovery"] == 1
+
+
 def test_trend_direction_matches_pinned_fixtures(classified_golden_outputs) -> None:
     repo_root = Path(__file__).resolve().parents[1]
     golden = yaml.safe_load(
         (repo_root / "tests" / "fixtures" / "derived" / "golden_dates.yaml").read_text()
     )
     for row in golden["rows"]:
+        if "expected" not in row:
+            continue  # V2-axis rows run through the V2 harness, not here
         as_of = date.fromisoformat(row["as_of_date"])
         out = classified_golden_outputs[as_of]
         assert (

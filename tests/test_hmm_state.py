@@ -584,6 +584,26 @@ def test_hmm_parameter_drift_transition_review_flag_is_independent() -> None:
     assert drift.transition_prob_review_flag is True
 
 
+def test_hmm_parameter_drift_transition_flag_is_absolute_not_relative() -> None:
+    # F-052 / ADR 0024: the 30% transition-prob flag is an ABSOLUTE move, not a
+    # relative one. A near-zero entry shifts 0.01 -> 0.05: +400% RELATIVE (would trip
+    # a relative threshold) but only 0.04 ABSOLUTE (< 0.30). The flag must stay False,
+    # and max_transition_prob_shift must read the absolute 0.04 — proving the absolute
+    # definition is what ships.
+    previous_transition = np.array([[0.99, 0.01], [0.20, 0.80]])
+    current_transition = np.array([[0.95, 0.05], [0.20, 0.80]])
+
+    drift = compute_hmm_parameter_drift(
+        previous_state_means=_PREV_STATE_MEANS,
+        current_state_means=_PREV_STATE_MEANS.copy(),
+        previous_transition_matrix=previous_transition,
+        current_transition_matrix=current_transition,
+    )
+
+    assert drift.max_transition_prob_shift == pytest.approx(0.04)
+    assert drift.transition_prob_review_flag is False
+
+
 def test_hmm_parameter_drift_below_thresholds_raises_no_alert() -> None:
     # 10% mean move and a 0.10 transition shift — both under their thresholds.
     current_means = _PREV_STATE_MEANS.copy()
@@ -622,6 +642,65 @@ def test_compute_hmm_features_reports_parameter_drift_across_refit_checkpoints(
     # De-standardized to raw feature units: relative drift must stay finite
     # (a standardized-space comparison would explode near zero-mean states).
     assert np.isfinite(result.parameter_drift.parameter_drift)
+
+
+def test_compute_hmm_features_warns_when_drift_alert_fires(
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    # F-039: the §6.1 drift seam is computed and exposed, but the >20% state-mean /
+    # >30% transition-prob alerts must reach the quarterly operator review via a
+    # WARNING. Force an alerting drift at every refit-checkpoint comparison and assert
+    # the WARNING is emitted (with the magnitudes) so the review cannot miss it.
+    alerting_drift = HMMParameterDrift(
+        parameter_drift=0.42,
+        state_mean_drift_alert=True,
+        max_transition_prob_shift=0.37,
+        transition_prob_review_flag=True,
+        alignment=(0, 1, 2, 3),
+    )
+    monkeypatch.setattr(
+        "regime_detection.hmm_state.compute_hmm_parameter_drift",
+        lambda **_kwargs: alerting_drift,
+    )
+
+    inputs = _synthetic_inputs(n_sessions=1500)
+    cfg = _default_hmm_config()
+    with caplog.at_level("WARNING", logger="regime_detection.hmm_state"):
+        result = compute_hmm_features(config=cfg, **inputs)
+
+    assert result is not None
+    assert result.parameter_drift is alerting_drift
+    assert "HMM parameter drift alert" in caplog.text
+    assert "0.4200" in caplog.text  # state_mean_drift magnitude surfaced
+    assert "0.3700" in caplog.text  # max_transition_prob_shift surfaced
+
+
+def test_compute_hmm_features_does_not_warn_when_drift_below_thresholds(
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    # F-039: a quiet refit (both flags False) must NOT emit the alert WARNING — the
+    # quarterly review channel stays silent unless a real threshold is crossed.
+    quiet_drift = HMMParameterDrift(
+        parameter_drift=0.05,
+        state_mean_drift_alert=False,
+        max_transition_prob_shift=0.04,
+        transition_prob_review_flag=False,
+        alignment=(0, 1, 2, 3),
+    )
+    monkeypatch.setattr(
+        "regime_detection.hmm_state.compute_hmm_parameter_drift",
+        lambda **_kwargs: quiet_drift,
+    )
+
+    inputs = _synthetic_inputs(n_sessions=1500)
+    cfg = _default_hmm_config()
+    with caplog.at_level("WARNING", logger="regime_detection.hmm_state"):
+        result = compute_hmm_features(config=cfg, **inputs)
+
+    assert result is not None
+    assert "HMM parameter drift alert" not in caplog.text
 
 
 def test_compute_hmm_features_parameter_drift_is_none_with_single_checkpoint() -> None:

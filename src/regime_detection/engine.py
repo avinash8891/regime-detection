@@ -31,7 +31,6 @@ from regime_detection.models import RegimeOutput, RegimeTimeline
 from regime_detection.timeline import build_regime_timeline
 
 ClassifyRequestSource = Literal["direct", "profile_manifest"]
-_PROFILE_MANIFEST_REQUIRED_INPUTS = frozenset({"event_calendar"})
 V2RequestInputPolicy = Literal["required", "optional_evidence"]
 ManifestInputNames = Collection[str]
 
@@ -248,12 +247,17 @@ def _validate_request_source(request: ClassifyRequest) -> None:
             )
         return
     if request.request_source == "profile_manifest":
-        missing = _PROFILE_MANIFEST_REQUIRED_INPUTS - manifest_inputs
-        if missing:
-            missing_text = ", ".join(sorted(missing))
+        # F-048: §2.1 requires profile_manifest calls to "pass manifest provenance"
+        # but does NOT enumerate which input names must appear. Require NON-EMPTY
+        # provenance rather than a hardcoded literal (the prior gate demanded
+        # 'event_calendar' specifically, rejecting a runner that legitimately resolved
+        # provenance under different names). Direct vs profile_manifest is still cleanly
+        # distinguished — a profile_manifest run must carry at least one resolved input
+        # or CLI override.
+        if not manifest_inputs:
             raise ValueError(
-                "profile_manifest request missing manifest-backed required inputs: "
-                f"{missing_text}"
+                "profile_manifest request missing manifest provenance: "
+                "manifest_resolved_inputs / manifest_cli_overrides must be non-empty"
             )
         return
     raise ValueError(
@@ -444,7 +448,10 @@ class RegimeEngine:
                 f"[{start.isoformat()}, {end.isoformat()}]."
             )
         timeline = self.classify_window(
-            end_date=end,
+            # Use the last NYSE session in the window, not the raw end_date: a
+            # weekend/holiday end_date would make classify_window's
+            # require_nyse_trading_day raise instead of returning the window rows.
+            end_date=window_sessions[-1],
             market_data=market_data,
             lookback_days=len(window_sessions),
             vix_data=vix_data,
@@ -479,7 +486,22 @@ class RegimeEngine:
         end_date = as_date(request.end_date)
         require_nyse_trading_day(end_date)
         event_calendar = _require_event_calendar(request.event_calendar)
+        # F-042 / §2.4.1: a config override may only be a validated RegimeConfig
+        # instance. ClassifyRequest is a plain dataclass (no Pydantic enforcement), so
+        # reject a non-RegimeConfig loudly at the boundary instead of failing deep inside
+        # build_market_context. The isinstance reads as "unnecessary" to pyright (the
+        # static annotation is RegimeConfig | None) but it is a real RUNTIME guard — the
+        # dataclass does not enforce the annotation at construction.
+        if request.config is not None and not isinstance(request.config, RegimeConfig):  # type: ignore[reportUnnecessaryIsInstance]
+            raise TypeError(
+                "ClassifyRequest.config override must be a RegimeConfig instance "
+                f"(§2.4.1), got {type(request.config).__name__}"
+            )
         cfg = request.config if request.config is not None else self._config
+        # F-038: validate the V2 input contracts at the boundary BEFORE building the
+        # market context. A missing required V2 input must surface as the explicit
+        # contract error, not as an opaque failure deep inside build_market_context.
+        _validate_v2_request_input_contracts(request, cfg)
         context = build_market_context(
             end_date=end_date,
             market_data=request.market_data,
@@ -497,7 +519,6 @@ class RegimeEngine:
             cpi_first_release=request.cpi_first_release,
             news_sentiment=request.news_sentiment,
         )
-        _validate_v2_request_input_contracts(request, cfg)
         return build_regime_timeline(
             context=context, lookback_days=lookback_days, config=cfg
         )

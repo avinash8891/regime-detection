@@ -254,3 +254,205 @@ def test_load_archived_market_data_missing_archive_path_raises(tmp_path: Path) -
 
     with pytest.raises(FileNotFoundError):
         load_archived_market_data(missing_market_archive)
+
+
+def test_load_archived_macro_series_round_trips_implied_vol_to_identity(
+    tmp_path: Path,
+) -> None:
+    """CR-002: the macro archive→reload round-trip is IDENTITY. load_macro_series applies
+    a /100 transform to implied_vol_30d on raw ingest; re-applying it to the already
+    transformed archived value would read 100x too small and break archive-fed replay.
+    """
+    idx = pd.DatetimeIndex(pd.to_datetime(["2026-05-12", "2026-05-13"]))
+    macro = {
+        "implied_vol_30d": pd.Series([0.20, 0.22], index=idx, name="implied_vol_30d"),
+        "nfci": pd.Series([-0.30, -0.25], index=idx, name="nfci"),
+    }
+    path = tmp_path / "macro_series.parquet"
+    shadow_storage._macro_series_frame(macro).to_parquet(path, index=False)
+
+    reloaded = shadow_storage.load_archived_macro_series(path)
+
+    assert reloaded is not None
+    assert list(reloaded["implied_vol_30d"].to_numpy()) == [0.20, 0.22]
+    assert list(reloaded["nfci"].to_numpy()) == [-0.30, -0.25]
+
+
+def test_shadow_schema_declares_spec_temporal_types_and_round_trips_iso(
+    tmp_path: Path,
+) -> None:
+    # F-041: temporal/boolean columns are declared with the spec §3 affinities
+    # (TIMESTAMP/DATE/BOOLEAN), and the ISO-8601 string values round-trip exactly
+    # (SQLite stores them by value regardless of the declared affinity).
+    db_path = tmp_path / "regime_shadow.db"
+    with open_shadow_db(db_path) as conn:
+        insert_run_row(
+            conn=conn,
+            run_timestamp="2026-05-17T05:15:00+00:00",
+            as_of_date=date(2026, 5, 13),
+            engine_version="regime-engine-test",
+            config_version="core3-v2.0.0",
+            archive_dir=tmp_path / "input_archives" / "2026-05-13",
+        )
+        insert_incident(
+            conn=conn,
+            incident_date=date(2026, 5, 14),
+            description="round-trip check",
+            resolution=None,
+            breaks_qualification=True,
+        )
+
+    with closing(sqlite3.connect(db_path)) as conn:
+        runs_types = {
+            str(row[1]): str(row[2])
+            for row in conn.execute("PRAGMA table_info(runs)").fetchall()
+        }
+        incidents_types = {
+            str(row[1]): str(row[2])
+            for row in conn.execute("PRAGMA table_info(incidents)").fetchall()
+        }
+        replay_types = {
+            str(row[1]): str(row[2])
+            for row in conn.execute("PRAGMA table_info(replay_checks)").fetchall()
+        }
+        stored = conn.execute("SELECT run_timestamp, as_of_date FROM runs").fetchone()
+        incident = conn.execute(
+            "SELECT incident_date, breaks_qualification FROM incidents"
+        ).fetchone()
+
+    assert runs_types["run_timestamp"] == "TIMESTAMP"
+    assert runs_types["as_of_date"] == "DATE"
+    assert incidents_types["incident_date"] == "DATE"
+    assert incidents_types["breaks_qualification"] == "BOOLEAN"
+    assert replay_types["check_timestamp"] == "TIMESTAMP"
+    # ISO-8601 strings / 0-1 ints round-trip exactly under the declared affinities.
+    assert stored == ("2026-05-17T05:15:00+00:00", "2026-05-13")
+    assert incident == ("2026-05-14", 1)
+
+
+def test_insert_run_row_persists_config_sha256_and_latest_lookup(
+    tmp_path: Path,
+) -> None:
+    # F-018: the config content hash is recorded per run, and latest_config_sha256
+    # returns the most recent one for an (engine_version, config_version) pair so a
+    # mid-window content change can be detected against the coarse Literal.
+    db_path = tmp_path / "regime_shadow.db"
+    with open_shadow_db(db_path) as conn:
+        insert_run_row(
+            conn=conn,
+            run_timestamp="2026-05-17T05:15:00+00:00",
+            as_of_date=date(2026, 5, 12),
+            engine_version="regime-engine-test",
+            config_version="core3-v2.0.0",
+            archive_dir=tmp_path / "input_archives" / "2026-05-12",
+            config_sha256="a" * 64,
+        )
+        insert_run_row(
+            conn=conn,
+            run_timestamp="2026-05-18T05:15:00+00:00",
+            as_of_date=date(2026, 5, 13),
+            engine_version="regime-engine-test",
+            config_version="core3-v2.0.0",
+            archive_dir=tmp_path / "input_archives" / "2026-05-13",
+            config_sha256="b" * 64,
+        )
+        latest = shadow_storage.latest_config_sha256(
+            conn=conn,
+            engine_version="regime-engine-test",
+            config_version="core3-v2.0.0",
+        )
+        absent = shadow_storage.latest_config_sha256(
+            conn=conn,
+            engine_version="regime-engine-test",
+            config_version="core3-v1.0.0",
+        )
+
+    assert latest == "b" * 64
+    assert absent is None
+
+
+def test_open_shadow_db_migrates_legacy_runs_table_missing_config_sha256(
+    tmp_path: Path,
+) -> None:
+    # F-018: a DB created before the config_sha256 column existed must gain the
+    # column on open (CREATE TABLE IF NOT EXISTS never alters), with old rows NULL.
+    db_path = tmp_path / "regime_shadow.db"
+    with closing(sqlite3.connect(db_path)) as conn:
+        conn.execute("""
+            CREATE TABLE runs (
+                run_id INTEGER PRIMARY KEY,
+                run_timestamp TEXT NOT NULL,
+                as_of_date TEXT NOT NULL,
+                engine_version TEXT NOT NULL,
+                config_version TEXT NOT NULL,
+                status TEXT NOT NULL,
+                failure_reason TEXT,
+                input_archive_path TEXT NOT NULL,
+                output_path TEXT,
+                output_sha256 TEXT,
+                UNIQUE (as_of_date, engine_version, config_version)
+            )
+            """)
+        conn.execute(
+            """
+            INSERT INTO runs (
+                run_timestamp, as_of_date, engine_version, config_version,
+                status, input_archive_path
+            ) VALUES (?, ?, ?, ?, ?, ?)
+            """,
+            (
+                "2026-05-17T05:15:00+00:00",
+                "2026-05-12",
+                "regime-engine-test",
+                "core3-v2.0.0",
+                "success",
+                "input_archives/2026-05-12",
+            ),
+        )
+        conn.commit()
+
+    with open_shadow_db(db_path) as conn:
+        columns = {
+            str(row[1]) for row in conn.execute("PRAGMA table_info(runs)").fetchall()
+        }
+        legacy_hash = shadow_storage.latest_config_sha256(
+            conn=conn,
+            engine_version="regime-engine-test",
+            config_version="core3-v2.0.0",
+        )
+
+    assert "config_sha256" in columns
+    assert legacy_hash is None  # the pre-migration row carries no hash
+
+
+def test_archived_pit_intervals_round_trip(tmp_path: Path) -> None:
+    """CR-004: an explicit PIT membership frame is archived and reloaded faithfully so a
+    replay reconstructs the same constituent universe (date objects + None open-interval
+    tails round-trip). An absent file → None (the run used the default-from-daily path).
+    """
+    archive_dir = tmp_path / "input_archives" / "2026-05-13"
+    pit = pd.DataFrame(
+        {
+            "ticker": ["XLK", "IBM"],
+            "start_date": [date(2010, 1, 4), date(2009, 1, 2)],
+            "end_date": [None, date(2008, 12, 31)],
+        }
+    )
+
+    write_archived_inputs(
+        archive_dir=archive_dir,
+        market_slice=pd.DataFrame(
+            [{"date": date(2026, 5, 13), "symbol": "SPY", "close": 1.0}]
+        ),
+        event_df=None,
+        pit_intervals=pit,
+    )
+
+    reloaded = shadow_storage.load_archived_pit_intervals(
+        archive_dir / "pit_constituent_intervals.parquet"
+    )
+    assert reloaded is not None
+    pd.testing.assert_frame_equal(reloaded, pit)
+    assert (
+        shadow_storage.load_archived_pit_intervals(tmp_path / "missing.parquet") is None
+    )

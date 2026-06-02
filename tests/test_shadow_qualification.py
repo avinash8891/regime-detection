@@ -98,6 +98,37 @@ def test_shadow_qualification_resets_after_missing_session_inside_window(
     assert "missing_session_gap" in result["blocking_reasons"]
 
 
+def test_shadow_qualification_resets_after_interior_failure_run(
+    tmp_path: Path,
+) -> None:
+    # F-029: an interior status=='failure' session breaks the clean window — it is a
+    # non_success_run, qualifies is False, and the count resets to the sessions after
+    # the failure (distinct from a missing-session gap).
+    from regime_detection.shadow_qualification import evaluate_shadow_qualification
+
+    db_path = tmp_path / "regime_shadow.db"
+    sessions = _sessions(260)
+    with open_shadow_db(db_path) as conn:
+        _insert_success_runs(conn, sessions)
+        conn.execute(
+            "UPDATE runs SET status = 'failure', failure_reason = ? "
+            "WHERE as_of_date = ?",
+            ("forced interior classify failure", sessions[200].isoformat()),
+        )
+        conn.commit()
+        result = evaluate_shadow_qualification(
+            conn=conn,
+            end_date=sessions[-1],
+            engine_version=ENGINE_VERSION,
+            config_version=CONFIG_VERSION,
+        )
+
+    assert result["qualifies"] is False
+    assert result["current_consecutive_sessions"] == 59
+    assert result["window_start"] == sessions[201].isoformat()
+    assert "non_success_run" in result["blocking_reasons"]
+
+
 def test_shadow_qualification_resets_after_breaking_incident(
     tmp_path: Path,
 ) -> None:

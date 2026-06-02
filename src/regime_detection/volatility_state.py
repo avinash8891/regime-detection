@@ -328,7 +328,14 @@ def build_raw_outputs(
             }
         )
 
-    if volatility_state_v2_features is not None:
+    # Both v2 evidence enrichment (iv_rv_spread) and the v2 §1C label override apply
+    # ONLY when BOTH v2 args are present — otherwise the output is byte-identical to v1
+    # (docstring contract). Gating the iv_rv_spread block on features alone would change
+    # the evidence shape on a partial v2 arg.
+    if (
+        volatility_state_v2_features is not None
+        and volatility_state_v2_rules is not None
+    ):
         iv_rv = volatility_state_v2_features.iv_rv_spread
         for idx, dt in enumerate(ret1.index):
             if labels[idx] != "unknown" and iv_rv is not None and dt in iv_rv.index:
@@ -336,10 +343,6 @@ def build_raw_outputs(
                 if not pd.isna(val):
                     evidence[idx]["iv_rv_spread"] = _ev_float(val)
 
-    if (
-        volatility_state_v2_features is not None
-        and volatility_state_v2_rules is not None
-    ):
         # v2 §1C line 311 precedence — applied per-day on top of v1.
         # Localize import to avoid a runtime cycle with volatility_state_v2.
         from regime_detection.volatility_state_v2 import (

@@ -32,6 +32,8 @@ def test_breadth_state_matches_pinned_fixtures(classified_golden_outputs) -> Non
         (repo_root / "tests" / "fixtures" / "derived" / "golden_dates.yaml").read_text()
     )
     for row in golden["rows"]:
+        if "expected" not in row:
+            continue  # V2-axis rows run through the V2 harness, not here
         as_of = date.fromisoformat(row["as_of_date"])
         expected = row["expected"]
         assert expected["breadth_state_raw"] in _BREADTH_LABELS
@@ -95,14 +97,20 @@ def test_raw_label_for_day_is_single_source_of_truth_over_build_raw_outputs() ->
         assert day_evidence == evidence[i], f"{dt}: evidence mismatch"
 
 
-def test_index_distance_from_63d_high_requires_full_window() -> None:
+def test_index_distance_from_63d_high_warms_at_50th_observation() -> None:
+    # F-011: §6.6/§6.8 pin index_distance_from_63d_high to
+    # close.rolling(63, min_periods=50) — the 63d high requires 50 observations, NOT a
+    # full 63. The prior assertion (62 sessions ⇒ all NaN) encoded a min_periods=63 bug;
+    # corrected here to the spec boundary: first 49 NaN, the 50th observation valid.
     idx = pd.bdate_range("2024-01-02", periods=62)
     spy = pd.Series(range(100, 162), index=idx, dtype="float64")
     rsp = spy.copy()
 
     features = compute_features(spy_close=spy, rsp_close=rsp)
+    dist = features.index_distance_from_63d_high
 
-    assert features.index_distance_from_63d_high.isna().all()
+    assert dist.iloc[:49].isna().all()
+    assert not pd.isna(dist.iloc[49])
 
 
 def test_relative_breadth_sma50_requires_full_window() -> None:

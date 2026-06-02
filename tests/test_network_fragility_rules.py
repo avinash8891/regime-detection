@@ -469,6 +469,40 @@ def test_systemic_stress_uses_correlation_to_one_cold_start_fallback():
     assert evaluation.rule_path == "cold_start_fallback"
 
 
+def test_correlation_to_one_cold_start_is_inert_when_percentiles_are_warm():
+    """ADR 0021 guard (resolves F-004): the cold_start_corr_to_one fallback must be
+    INERT once the 504d/252d percentiles are warm — i.e. in the emitted (2016+)
+    window every session routes through the 'percentile' branch or fails closed,
+    never 'cold_start_fallback'. The fallback only widens correlation_to_one during
+    the pre-2016 percentile warmup, so it cannot affect emitted classification.
+    """
+    cfg = _default_rules_config()
+
+    # Raw corr/eigen/vol that WOULD satisfy the cold-start floor
+    # (avg_corr>=0.90, largest_eig>=0.75, realized_vol_21d>=0.25, drawdown<0),
+    # but with fully-WARM (non-NaN) percentiles that do NOT clear the percentile
+    # predicate (avg_corr_pct <= corr_to_one_corr_percentile_min). Warm percentiles
+    # must suppress the fallback -> path is None, NOT 'cold_start_fallback'.
+    warm_below_threshold = _inputs(
+        avg_corr_pct=0.62,
+        largest_eig_pct=0.80,
+        realized_vol_pct=0.95,
+        avg_corr=0.92,
+        largest_eig=0.80,
+        realized_vol_21d=0.30,
+        drawdown_21d=-0.05,
+    )
+    assert correlation_to_one_rule_path(warm_below_threshold, cfg) is None
+
+    # Warm percentiles that DO clear the spec predicate route via 'percentile'.
+    warm_above_threshold = _inputs(
+        avg_corr_pct=0.95,
+        realized_vol_pct=0.85,
+        drawdown_21d=-0.05,
+    )
+    assert correlation_to_one_rule_path(warm_above_threshold, cfg) == "percentile"
+
+
 def test_systemic_stress_blocked_by_nan_vix_percentile():
     """N-2 / I-2: explicit NaN guard on `vix_percentile_252d`. With ALL other
     fields valid AND credit_funding='credit_stress' (so the credit short-circuit

@@ -6,6 +6,7 @@ import sqlite3
 from datetime import date
 from pathlib import Path
 
+import pandas as pd
 import yaml
 
 
@@ -42,6 +43,7 @@ def _session_rows(report_mod, *, count: int = 252) -> list[dict[str, object]]:
         rows.append(
             {
                 "as_of_date": session.isoformat(),
+                "run_timestamp": f"{session.isoformat()}T12:00:00Z",  # F-019
                 "status": "success",
                 "trend_direction_active": trend_labels[label_idx % len(trend_labels)],
                 "trend_character_active": character_labels[
@@ -75,6 +77,7 @@ def _prepare_walkforward_root(
             rows = [
                 {
                     "as_of_date": "2023-12-12",
+                    "run_timestamp": "2023-12-12T12:00:00Z",
                     "status": "success",
                     "trend_direction_active": "uptrend",
                     "trend_character_active": "trend",
@@ -90,6 +93,7 @@ def _prepare_walkforward_root(
                 },
                 {
                     "as_of_date": "2023-12-13",
+                    "run_timestamp": "2023-12-13T12:00:00Z",
                     "status": "success",
                     "trend_direction_active": "uptrend",
                     "trend_character_active": "trend",
@@ -105,6 +109,7 @@ def _prepare_walkforward_root(
                 },
                 {
                     "as_of_date": "2023-12-14",
+                    "run_timestamp": "2023-12-14T12:00:00Z",
                     "status": "success",
                     "trend_direction_active": "uptrend",
                     "trend_character_active": "trend",
@@ -140,6 +145,7 @@ def _prepare_walkforward_root(
         conn.execute("""
             CREATE TABLE runs (
                 as_of_date TEXT NOT NULL,
+                run_timestamp TEXT,
                 status TEXT NOT NULL,
                 failure_reason TEXT,
                 engine_version TEXT,
@@ -151,13 +157,14 @@ def _prepare_walkforward_root(
         conn.executemany(
             """
             INSERT INTO runs (
-                as_of_date, status, failure_reason, engine_version,
+                as_of_date, run_timestamp, status, failure_reason, engine_version,
                 config_version, input_archive_path, output_path
-            ) VALUES (?, ?, ?, ?, ?, ?, ?)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
             """,
             [
                 (
                     str(row["as_of_date"]),
+                    str(row["run_timestamp"]),
                     str(row["status"]),
                     None,
                     "regime-engine-vtest",
@@ -174,11 +181,27 @@ def _prepare_walkforward_root(
 def _write_replay_results(
     output_root: Path, *, all_passed: bool = True, mismatches: list[str] | None = None
 ) -> Path:
+    # F-001: the hardened §6 gate requires the replay verdict to cover every
+    # SUCCESSFUL walk-forward date and be bound to the frozen engine/config pair,
+    # mirroring what run_walkforward_replay_check emits.
+    with sqlite3.connect(output_root / "regime_walkforward.db") as conn:
+        success_dates = [
+            str(row[0])
+            for row in conn.execute(
+                "SELECT as_of_date FROM runs WHERE status='success' ORDER BY as_of_date"
+            ).fetchall()
+        ]
     path = output_root / "reports" / "replay_verification.json"
     path.write_text(
         json.dumps(
             {
+                "engine_version": "regime-engine-vtest",
+                "config_version": "core3-test",
                 "all_passed": all_passed,
+                "results": [
+                    {"as_of_date": as_of, "matches": all_passed}
+                    for as_of in success_dates
+                ],
                 "mismatches": mismatches or [],
             },
             indent=2,
@@ -201,6 +224,7 @@ def _golden_results_payload(*, all_passed: bool = True) -> dict[str, object]:
         "results": [
             {"as_of_date": row["as_of_date"], "passed": all_passed}
             for row in golden["rows"]
+            if "expected" in row
         ],
     }
 
@@ -241,6 +265,7 @@ def test_build_walkforward_report_fails_without_required_gates(
     assert payload["label_distributions"]["transition_risk_state"]
     assert payload["per_date_provenance"][0] == {
         "as_of_date": "2023-12-12",
+        "run_timestamp": "2023-12-12T12:00:00Z",
         "engine_version": "regime-engine-vtest",
         "config_version": "core3-test",
         "input_archive_path": "input_archives/2023-12-12",
@@ -446,6 +471,96 @@ def test_build_walkforward_report_rejects_unknown_baseline_metric_direction(
     assert result["baseline_comparison"]["unknown_metrics"] == [
         "time_spent_in_each_regime"
     ]
+
+
+def _crash_window_rows(*, covid_volatility: str, covid_transition: str) -> pd.DataFrame:
+    # Three sessions inside the F-050 covid_crash_2020 window (2020-02-24..2020-03-23)
+    # plus a calm session well outside any window. The covid sessions carry the
+    # labels under test; the calm session must never arm the check.
+    return pd.DataFrame(
+        [
+            {
+                "as_of_date": "2020-03-16",
+                "volatility_state_active": covid_volatility,
+                "transition_risk_state": covid_transition,
+            },
+            {
+                "as_of_date": "2020-03-18",
+                "volatility_state_active": covid_volatility,
+                "transition_risk_state": covid_transition,
+            },
+            {
+                "as_of_date": "2020-03-20",
+                "volatility_state_active": covid_volatility,
+                "transition_risk_state": covid_transition,
+            },
+            {
+                "as_of_date": "2019-06-28",
+                "volatility_state_active": "low_vol",
+                "transition_risk_state": "stable",
+            },
+        ]
+    )
+
+
+def test_crash_window_flags_missing_crisis_label() -> None:
+    # F-050: COVID-crash sessions present in OOS but NO crisis-equivalent label on
+    # either the volatility or transition-risk axis ⇒ the §8 red flag fires.
+    report_mod = _load_module(
+        "build_walkforward_report", "scripts/build_walkforward_report.py"
+    )
+    success_df = _crash_window_rows(
+        covid_volatility="high_vol", covid_transition="bear_stress"
+    )
+
+    flags = report_mod._crash_window_red_flags(success_df)
+
+    assert flags == [
+        {
+            "type": "crisis_label_missing_in_crash_window",
+            "window": "covid_crash_2020",
+            "window_start": "2020-02-24",
+            "window_end": "2020-03-23",
+            "covered_sessions": 3,
+        }
+    ]
+
+
+def test_crash_window_accepts_crisis_on_either_axis() -> None:
+    # F-050: a crisis-equivalent label on EITHER axis satisfies the window — no flag.
+    report_mod = _load_module(
+        "build_walkforward_report", "scripts/build_walkforward_report.py"
+    )
+    vol_satisfies = report_mod._crash_window_red_flags(
+        _crash_window_rows(
+            covid_volatility="crisis_vol", covid_transition="bear_stress"
+        )
+    )
+    transition_satisfies = report_mod._crash_window_red_flags(
+        _crash_window_rows(covid_volatility="high_vol", covid_transition="crisis")
+    )
+
+    assert vol_satisfies == []
+    assert transition_satisfies == []
+
+
+def test_crash_window_does_not_arm_when_window_uncovered() -> None:
+    # F-050: a window the walk-forward never reached must NOT be flagged (we cannot
+    # assert a missing crisis label for sessions that were never classified).
+    report_mod = _load_module(
+        "build_walkforward_report", "scripts/build_walkforward_report.py"
+    )
+    success_df = pd.DataFrame(
+        [
+            {
+                "as_of_date": "2019-06-28",
+                "volatility_state_active": "low_vol",
+                "transition_risk_state": "stable",
+            }
+        ]
+    )
+
+    assert report_mod._crash_window_red_flags(success_df) == []
 
 
 def test_build_walkforward_report_rejects_red_flags(tmp_path: Path) -> None:
@@ -679,3 +794,236 @@ def test_build_walkforward_report_rejects_repeated_one_day_flip_flops(
         "column": "trend_direction_active",
         "false_switch_count": 250,
     } in result["red_flags"]
+
+
+def test_replay_gate_emits_no_successful_runs_distinctly() -> None:
+    """CR-005: an empty batch (zero successful runs) yields a distinct
+    no_successful_runs_to_replay reason — not the misleading replay_mismatch_detected,
+    which implies a verification FAILURE rather than nothing to verify."""
+    report_mod = _load_module(
+        "build_walkforward_report", "scripts/build_walkforward_report.py"
+    )
+    runs_df = pd.DataFrame(
+        [
+            {"as_of_date": date(2023, 12, 12), "status": "failure"},
+            {"as_of_date": date(2023, 12, 13), "status": "failure"},
+        ]
+    )
+    replay_results = {
+        "all_passed": False,
+        "results": [],
+        "engine_version": "regime-engine-vtest",
+        "config_version": "core3-test",
+    }
+
+    reasons = report_mod._replay_gate_reasons(replay_results, runs_df)
+
+    assert reasons == ["no_successful_runs_to_replay"]
+    assert "replay_mismatch_detected" not in reasons
+
+
+def test_baseline_comparison_flags_all_materially_worse() -> None:
+    """F-009: with-regime worse on EVERY tracked metric → all_metrics_materially_worse
+    (the central economic-improvement fail gate), and no metric is improved."""
+    report_mod = _load_module(
+        "build_walkforward_report", "scripts/build_walkforward_report.py"
+    )
+    payload = {
+        "metrics": {
+            "max_drawdown": {"with_regime_gating": 0.25, "no_regime_baseline": 0.10},
+            "sharpe": {"with_regime_gating": 0.50, "no_regime_baseline": 1.20},
+        }
+    }
+
+    comp = report_mod._baseline_comparison(payload)
+
+    assert comp is not None
+    assert comp["all_metrics_materially_worse"] is True
+    assert comp["improved_metrics"] == []
+    assert comp["materially_worse_metrics"] == ["max_drawdown", "sharpe"]
+
+
+def test_baseline_comparison_tie_does_not_rescue_regression() -> None:
+    """F-016: a within-epsilon tie on one metric is NOT a material benefit and must not
+    rescue a run that is materially worse on every other metric — the gate still fires.
+    """
+    report_mod = _load_module(
+        "build_walkforward_report", "scripts/build_walkforward_report.py"
+    )
+    payload = {
+        "metrics": {
+            # ~0.2% delta → within the 1% materiality epsilon → a TIE (no benefit).
+            "sharpe": {"with_regime_gating": 1.000, "no_regime_baseline": 1.002},
+            "max_drawdown": {"with_regime_gating": 0.25, "no_regime_baseline": 0.10},
+            "hit_rate": {"with_regime_gating": 0.40, "no_regime_baseline": 0.55},
+        }
+    }
+
+    comp = report_mod._baseline_comparison(payload)
+
+    assert comp is not None
+    assert "sharpe" not in comp["improved_metrics"]
+    assert "sharpe" not in comp["materially_worse_metrics"]  # tie, not material
+    assert comp["improved_metrics"] == []  # no material benefit anywhere
+    assert comp["all_metrics_materially_worse"] is True
+
+
+def test_build_walkforward_report_emits_section_10_report_sections(
+    tmp_path: Path,
+) -> None:
+    # F-021: the §10 report must carry Data-Source/Archive-Policy, Incidents/Anomalies/
+    # Reruns (explicit empty for a clean batch), and Transition-Risk Evidence sections,
+    # read from the columns already written.
+    report_mod = _load_module(
+        "build_walkforward_report", "scripts/build_walkforward_report.py"
+    )
+    out_root = _prepare_walkforward_root(tmp_path)
+
+    report_mod.build_walkforward_report(output_root=out_root)
+
+    report_text = (out_root / "reports" / "walkforward_report.md").read_text()
+    assert "## Data Source & Archive Policy" in report_text
+    assert "## Incidents, Anomalies & Reruns" in report_text
+    assert "## Transition-Risk Evidence" in report_text
+
+    payload = json.loads(
+        (out_root / "reports" / "walkforward_analysis.json").read_text()
+    )
+    # Explicit-empty incidents/anomalies/reruns for a clean 3-session batch.
+    assert payload["incidents_anomalies_reruns"] == {
+        "incidents": [],
+        "anomalies": [],
+        "reruns": [],
+    }
+    assert payload["transition_risk_evidence"]["session_count"] == 3
+    assert "archive_policy" in payload["data_source_archive_policy"]
+
+
+def _three_session_rows() -> list[dict[str, object]]:
+    """Three contiguous NYSE sessions (2023-12-12..14), all success, all required
+    summary columns present — a clean base for failure-path mutation tests."""
+    dates = ("2023-12-12", "2023-12-13", "2023-12-14")
+    return [
+        {
+            "as_of_date": as_of,
+            "run_timestamp": f"{as_of}T12:00:00Z",
+            "status": "success",
+            "trend_direction_active": "bull",
+            "trend_character_active": "trending",
+            "volatility_state_active": "low_vol",
+            "breadth_state_active": "healthy_breadth",
+            "transition_risk_state": "stable",
+            "transition_risk_score": 0.1,
+            "transition_risk_primary_drivers": "[]",
+            "transition_risk_triggered_rules": "[]",
+            "transition_risk_data_quality_status": "ok",
+            "transition_risk_axis_switch_count": 0,
+            "transition_risk_recent_axis_switch_count": 0,
+        }
+        for as_of in dates
+    ]
+
+
+def test_build_walkforward_report_flags_interior_missing_session(
+    tmp_path: Path,
+) -> None:
+    # F-027: dropping an interior NYSE session (2023-12-13) ⇒ missing_sessions failure
+    # reason with the dropped date listed.
+    report_mod = _load_module(
+        "build_walkforward_report", "scripts/build_walkforward_report.py"
+    )
+    rows = _three_session_rows()
+    rows = [row for row in rows if row["as_of_date"] != "2023-12-13"]
+    out_root = _prepare_walkforward_root(tmp_path, rows=rows)
+
+    result = report_mod.build_walkforward_report(output_root=out_root)
+
+    assert result["status"] == "fail"
+    assert "missing_sessions" in result["failure_reasons"]
+    payload = json.loads(
+        (out_root / "reports" / "walkforward_analysis.json").read_text()
+    )
+    assert "2023-12-13" in payload["missing_sessions"]
+
+
+def test_build_walkforward_report_flags_run_failure_row(tmp_path: Path) -> None:
+    # F-028: a status=='failure' row ⇒ run_failures_present + failure_count.
+    report_mod = _load_module(
+        "build_walkforward_report", "scripts/build_walkforward_report.py"
+    )
+    rows = _three_session_rows()
+    rows[1]["status"] = "failure"
+    out_root = _prepare_walkforward_root(tmp_path, rows=rows)
+
+    result = report_mod.build_walkforward_report(output_root=out_root)
+
+    assert result["status"] == "fail"
+    assert "run_failures_present" in result["failure_reasons"]
+    payload = json.loads(
+        (out_root / "reports" / "walkforward_analysis.json").read_text()
+    )
+    assert payload["failure_count"] == 1
+    assert payload["success_count"] == 2
+
+
+def test_build_walkforward_report_flags_missing_required_column(tmp_path: Path) -> None:
+    # F-030: a summary CSV missing a required column ⇒ missing_report_columns + listed.
+    report_mod = _load_module(
+        "build_walkforward_report", "scripts/build_walkforward_report.py"
+    )
+    rows = _three_session_rows()
+    for row in rows:
+        del row["transition_risk_recent_axis_switch_count"]
+    out_root = _prepare_walkforward_root(tmp_path, rows=rows)
+
+    result = report_mod.build_walkforward_report(output_root=out_root)
+
+    assert result["status"] == "fail"
+    assert "missing_report_columns" in result["failure_reasons"]
+    payload = json.loads(
+        (out_root / "reports" / "walkforward_analysis.json").read_text()
+    )
+    assert (
+        "transition_risk_recent_axis_switch_count" in payload["missing_summary_columns"]
+    )
+
+
+def test_nan_leakage_flags_blank_label_but_accepts_unknown(tmp_path: Path) -> None:
+    """F-020: §6 NaN-leakage gate — a success row whose label cell is blank/None (not
+    surfaced as the explicit unknown/insufficient_history contract) is flagged; the
+    explicit unknown / insufficient_history labels are accepted."""
+    report_mod = _load_module(
+        "build_walkforward_report", "scripts/build_walkforward_report.py"
+    )
+    summary_df = pd.DataFrame(
+        [
+            {
+                "as_of_date": date(2023, 12, 12),
+                "status": "success",
+                "trend_direction_active": "bull",
+                "trend_character_active": "trending",
+                "volatility_state_active": "unknown",
+                "breadth_state_active": "healthy_breadth",
+                "transition_risk_state": "insufficient_history",
+            },
+            {
+                "as_of_date": date(2023, 12, 13),
+                "status": "success",
+                "trend_direction_active": None,  # blank → contract violation
+                "trend_character_active": "trending",
+                "volatility_state_active": "",  # blank → contract violation
+                "breadth_state_active": "healthy_breadth",
+                "transition_risk_state": "stable",
+            },
+        ]
+    )
+    runs_df = pd.DataFrame({"as_of_date": [], "output_path": []})
+
+    leaks = report_mod._nan_leakage(summary_df, runs_df, tmp_path)
+
+    assert "summary.trend_direction_active@2023-12-13:label_contract_violation" in leaks
+    assert (
+        "summary.volatility_state_active@2023-12-13:label_contract_violation" in leaks
+    )
+    # the explicit unknown / insufficient_history contract labels are accepted
+    assert not any("@2023-12-12" in leak for leak in leaks)

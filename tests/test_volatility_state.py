@@ -22,6 +22,8 @@ def test_volatility_state_matches_pinned_fixtures(classified_golden_outputs) -> 
         (repo_root / "tests" / "fixtures" / "derived" / "golden_dates.yaml").read_text()
     )
     for row in golden["rows"]:
+        if "expected" not in row:
+            continue  # V2-axis rows run through the V2 harness, not here
         as_of = date.fromisoformat(row["as_of_date"])
         out = classified_golden_outputs[as_of]
         assert (

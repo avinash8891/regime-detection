@@ -242,6 +242,28 @@ def test_load_event_calendar_yaml_accepts_v2_manual_types_and_window_days(
     assert list(global_events["type"]) == ["global_rate_decision"]
 
 
+def test_load_event_calendar_rejects_reversed_window_days(tmp_path: Path) -> None:
+    # F-037: a reversed window_days pair (start > end) is silently empty downstream
+    # and would suppress the event's influence — reject it at load time.
+    path = tmp_path / "events.yaml"
+    path.write_text(
+        "\n".join(
+            [
+                "events:",
+                '  - date: "2026-11-03"',
+                '    market: "US"',
+                '    type: "election"',
+                '    importance: "high"',
+                "    window_days: [10, -5]",
+            ]
+        )
+        + "\n"
+    )
+
+    with pytest.raises(ValueError, match="start <= end"):
+        load_event_calendar(path, market="US")
+
+
 def test_load_event_calendar_csv_defaults_publication_date() -> None:
     path = Path(__file__).resolve().parent / "fixtures" / "events" / "us_events.csv"
     df = load_event_calendar(path)

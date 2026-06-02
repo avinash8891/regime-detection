@@ -14,6 +14,7 @@ import pandas as pd
 import yaml
 
 from regime_detection.calendar import nyse_calendar
+from regime_detection.shadow_strategy_metrics import CRASH_WINDOWS
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 CONFIG_PATH = REPO_ROOT / "src" / "regime_detection" / "configs" / "core3-v1.0.0.yaml"
@@ -41,9 +42,22 @@ TRANSITION_RISK_WARNING_STATES = frozenset(
         "recovery_attempt",
     }
 )
+# F-050: the §8 "defensible label distribution" check requires a crisis-equivalent
+# label inside every configured crash window the walk-forward covers. The window set
+# is the single canonical CRASH_WINDOWS defined in shadow_strategy_metrics (also used
+# by the §10 detection-lag metric, F-014) — imported here, not duplicated. Each window
+# is the canonical multi-session episode, so a near-date predicate boundary cannot hide
+# the absence; the check only arms for windows OOS success rows actually cover.
+# A crisis-equivalent label on EITHER the volatility or transition-risk axis satisfies
+# the window (crisis_vol is the §3 emergency-override volatility label; crisis is the
+# §9 transition-risk crisis state).
+CRISIS_EQUIVALENT_VOLATILITY_LABELS = frozenset({"crisis_vol"})
+CRISIS_EQUIVALENT_TRANSITION_LABELS = frozenset({"crisis"})
+
 REQUIRED_SUMMARY_COLUMNS = frozenset(
     {
         "as_of_date",
+        "run_timestamp",  # F-019 / §5: per-artifact provenance
         "status",
         *LABEL_COLUMNS,
         "transition_risk_score",
@@ -62,6 +76,11 @@ HYSTERESIS_BY_COLUMN = {
     "breadth_state_active": 2,
     "transition_risk_state": 3,
 }
+
+# F-016: relative-delta magnitude below which a metric change vs the no-regime baseline
+# is a TIE (not "material") — so an infinitesimal delta cannot flip a metric to
+# improved/worse, and a tie cannot rescue an otherwise-regressed run.
+_BASELINE_MATERIALITY_REL_EPSILON = 0.01
 
 BETTER_DIRECTION = {
     "max_drawdown": "lower",
@@ -114,7 +133,7 @@ def _load_runs_from_db(output_root: Path) -> pd.DataFrame:
         raise FileNotFoundError(f"walkforward db not found: {db_path}")
     with closing(sqlite3.connect(db_path)) as conn:
         df = pd.read_sql_query(
-            "SELECT as_of_date, status, failure_reason, engine_version, config_version, input_archive_path, output_path FROM runs ORDER BY as_of_date",
+            "SELECT as_of_date, status, failure_reason, engine_version, config_version, run_timestamp, input_archive_path, output_path FROM runs ORDER BY as_of_date",
             conn,
         )
     df = df.assign(as_of_date=pd.to_datetime(df["as_of_date"]).dt.date)
@@ -224,6 +243,26 @@ def _nan_leakage(
         for _, row in summary_df.loc[summary_df[col].isna()].iterrows():
             leaks.append(f"summary.{col}@{row['as_of_date'].isoformat()}")
 
+    # F-020: §6 contract — degraded/missing data must surface as the explicit `unknown`
+    # / `insufficient_history` LABELS, never as an empty/None/NaN cell. The numeric scan
+    # above skips string label columns, so a silently-blank label would otherwise pass.
+    # Flag any successful-row LABEL_COLUMN value that is missing or blank.
+    success_df = (
+        summary_df[summary_df["status"] == "success"]
+        if "status" in summary_df.columns
+        else summary_df
+    )
+    for col in LABEL_COLUMNS:
+        if col not in summary_df.columns:
+            continue
+        for _, row in success_df.iterrows():
+            value = row[col]
+            text = ("" if value is None else str(value)).strip().lower()
+            if text in ("", "nan", "none", "null"):
+                leaks.append(
+                    f"summary.{col}@{row['as_of_date'].isoformat()}:label_contract_violation"
+                )
+
     for _, row in runs_df.iterrows():
         output_path = row.get("output_path")
         if pd.isna(output_path) or output_path is None:
@@ -290,6 +329,11 @@ def _per_date_provenance(runs_df: pd.DataFrame) -> list[dict[str, Any]]:
         rows.append(
             {
                 "as_of_date": row["as_of_date"].isoformat(),
+                # F-019 / §5: surface the run_timestamp the runner records in the DB so
+                # every per-date provenance row carries all five mandated fields.
+                "run_timestamp": (
+                    None if pd.isna(row["run_timestamp"]) else str(row["run_timestamp"])
+                ),
                 "engine_version": (
                     None
                     if pd.isna(row["engine_version"])
@@ -316,7 +360,9 @@ def _per_date_provenance(runs_df: pd.DataFrame) -> list[dict[str, Any]]:
 def _expected_golden_dates() -> list[str]:
     golden_path = REPO_ROOT / "tests" / "fixtures" / "derived" / "golden_dates.yaml"
     data = yaml.safe_load(golden_path.read_text())
-    return sorted(str(row["as_of_date"]) for row in data["rows"])
+    # The walkforward gate is the core/V1-replay golden gate. expected_v2_fields
+    # rows run through the separate V2 harness and are not walkforward-gated.
+    return sorted(str(row["as_of_date"]) for row in data["rows"] if "expected" in row)
 
 
 def _single_golden_gate_reasons(
@@ -360,12 +406,50 @@ def _golden_gate_reasons(
     return sorted(set(reasons))
 
 
-def _replay_gate_reasons(replay_results: dict[str, Any] | None) -> list[str]:
+def _replay_gate_reasons(
+    replay_results: dict[str, Any] | None, runs_df: pd.DataFrame
+) -> list[str]:
+    """§6 replay gate (F-001). The replay verdict must be produced by
+    run_walkforward_replay_check (recompute from archived inputs vs stored output),
+    cover every SUCCESSFUL walk-forward date, and be bound to the frozen
+    engine/config pair — not merely carry a truthy all_passed."""
     if replay_results is None:
         return ["missing_replay_verification"]
+
+    success_dates = sorted(
+        row["as_of_date"].isoformat()
+        for _, row in runs_df.iterrows()
+        if str(row.get("status")) == "success"
+    )
+    # CR-005: an empty batch (zero successful runs) had nothing to replay. The producer's
+    # `all_passed = bool([]) and …` is False, but reporting that as replay_mismatch_detected
+    # conflates "nothing to verify" with "verification failed". Emit a distinct reason
+    # (the build still fails — insufficient_oos_sessions also fires).
+    if not success_dates:
+        return ["no_successful_runs_to_replay"]
+    reasons: list[str] = []
     if not bool(replay_results.get("all_passed")):
-        return ["replay_mismatch_detected"]
-    return []
+        reasons.append("replay_mismatch_detected")
+    result_dates = sorted(
+        str(item.get("as_of_date")) for item in replay_results.get("results", [])
+    )
+    # CR-010: result_dates is the producer's snapshot (the success set when
+    # run_walkforward_replay_check ran); success_dates is recomputed live from runs_df at
+    # report-build time. A DB status flip between the two steps fires replay_dates_mismatch
+    # — this is INTENDED fail-closed: a verdict that does not cover every currently-
+    # successful date is stale and must not promote. The §6 ordering contract is to run
+    # run_walkforward_replay_check immediately before build_walkforward_report (re-run the
+    # producer after any late/retried date) so the two snapshots align.
+    if result_dates != success_dates:
+        reasons.append("replay_dates_mismatch")
+
+    frozen_versions = _frozen_versions(runs_df)
+    if (
+        replay_results.get("engine_version") != frozen_versions["engine_version"]
+        or replay_results.get("config_version") != frozen_versions["config_version"]
+    ):
+        reasons.append("replay_version_mismatch")
+    return sorted(set(reasons))
 
 
 def _baseline_comparison(payload: dict[str, Any] | None) -> dict[str, Any] | None:
@@ -392,14 +476,23 @@ def _baseline_comparison(payload: dict[str, Any] | None) -> dict[str, Any] | Non
                 "better_direction": None,
             }
             continue
+        delta = with_regime - baseline
+        relative_delta = None if baseline == 0 else delta / baseline
+        # F-016: "materially" needs a magnitude threshold — a change counts only when it
+        # exceeds the relative epsilon (or any nonzero change when baseline is 0). A
+        # within-epsilon TIE is neither improved nor materially_worse, and crucially
+        # counts as NO benefit (it cannot rescue an otherwise-regressed run).
+        material = (
+            abs(relative_delta) > _BASELINE_MATERIALITY_REL_EPSILON
+            if relative_delta is not None
+            else delta != 0
+        )
         if direction == "lower":
-            improved = with_regime < baseline
-            materially_worse = with_regime > baseline
-            delta = with_regime - baseline
+            improved = material and with_regime < baseline
+            materially_worse = material and with_regime > baseline
         else:
-            improved = with_regime > baseline
-            materially_worse = with_regime < baseline
-            delta = with_regime - baseline
+            improved = material and with_regime > baseline
+            materially_worse = material and with_regime < baseline
         if improved:
             improved_metrics.append(metric)
         if materially_worse:
@@ -408,7 +501,7 @@ def _baseline_comparison(payload: dict[str, Any] | None) -> dict[str, Any] | Non
             "with_regime_gating": with_regime,
             "no_regime_baseline": baseline,
             "delta": delta,
-            "relative_delta": None if baseline == 0 else delta / baseline,
+            "relative_delta": relative_delta,
             "better_direction": direction,
         }
     return {
@@ -416,10 +509,53 @@ def _baseline_comparison(payload: dict[str, Any] | None) -> dict[str, Any] | Non
         "improved_metrics": sorted(improved_metrics),
         "materially_worse_metrics": sorted(materially_worse_metrics),
         "unknown_metrics": sorted(unknown_metrics),
-        "all_metrics_materially_worse": bool(comparisons)
-        and not unknown_metrics
-        and len(materially_worse_metrics) == len(comparisons),
+        # F-016: the §6/§9 gate is "no material benefit anywhere + a regression" — fail
+        # when no metric is materially improved AND at least one is materially worse (a
+        # tie on one metric no longer rescues an otherwise all-worse run). Pass still
+        # requires a clear benefit on >=1 material dimension (improved_metrics non-empty).
+        "all_metrics_materially_worse": (
+            bool(comparisons)
+            and not unknown_metrics
+            and not improved_metrics
+            and bool(materially_worse_metrics)
+        ),
     }
+
+
+def _crash_window_red_flags(success_df: pd.DataFrame) -> list[dict[str, Any]]:
+    """F-050: flag any configured crash window, covered by OOS success rows, in which
+    no crisis-equivalent label appears on the volatility or transition-risk axis."""
+    flags: list[dict[str, Any]] = []
+    if success_df.empty or "as_of_date" not in success_df.columns:
+        return flags
+    as_of = pd.to_datetime(success_df["as_of_date"], errors="coerce")
+    crisis_by_axis = (
+        ("volatility_state_active", CRISIS_EQUIVALENT_VOLATILITY_LABELS),
+        ("transition_risk_state", CRISIS_EQUIVALENT_TRANSITION_LABELS),
+    )
+    for name, start, end in CRASH_WINDOWS:
+        in_window = (as_of >= pd.Timestamp(start)) & (as_of <= pd.Timestamp(end))
+        covered = int(in_window.sum())
+        if covered == 0:
+            # The walk-forward never reached this window — cannot assert anything.
+            continue
+        window_df = success_df[in_window]
+        has_crisis = any(
+            col in window_df.columns
+            and bool(window_df[col].astype(str).isin(labels).any())
+            for col, labels in crisis_by_axis
+        )
+        if not has_crisis:
+            flags.append(
+                {
+                    "type": "crisis_label_missing_in_crash_window",
+                    "window": name,
+                    "window_start": start,
+                    "window_end": end,
+                    "covered_sessions": covered,
+                }
+            )
+    return flags
 
 
 def _red_flags(
@@ -465,6 +601,8 @@ def _red_flags(
                     "false_switch_count": false_switch_count,
                 }
             )
+
+    flags.extend(_crash_window_red_flags(success_df))
 
     if "transition_risk_state" in success_df.columns:
         transition_states = (
@@ -530,6 +668,95 @@ def _failure_reasons(
     return reasons
 
 
+def _data_source_archive_policy() -> dict[str, Any]:
+    """F-021 §10: static record of where inputs come from and the archive policy, so a
+    reader of the report knows the run is reproducible-from-archive (§3/§5)."""
+    return {
+        "market_data": "daily OHLCV (SPY/RSP/VIXY + V2 universe), as-of sliced per session",
+        "event_calendar": "scheduled-events YAML/CSV, publication-date aligned",
+        "macro_series": "FRED/derived macro parquet, archived per session when V2 axes configured",
+        "archive_policy": (
+            "every session archives its as-of inputs under input_archives/<date>/ with a "
+            "checksums.json; the §6 replay gate recomputes each session from the archive "
+            "and compares to the stored output (reproducible-from-archive, no live refetch)."
+        ),
+    }
+
+
+def _transition_risk_evidence(success_df: pd.DataFrame) -> dict[str, Any]:
+    """F-021 §10: summarize the transition-risk evidence columns already written to the
+    summary (data-quality, axis-switch churn, driver/rule activity)."""
+    evidence: dict[str, Any] = {"session_count": int(len(success_df))}
+    if "transition_risk_data_quality_status" in success_df.columns:
+        evidence["data_quality_status_distribution"] = {
+            str(k): int(v)
+            for k, v in success_df["transition_risk_data_quality_status"]
+            .fillna("null")
+            .astype(str)
+            .value_counts()
+            .items()
+        }
+    for col in (
+        "transition_risk_axis_switch_count",
+        "transition_risk_recent_axis_switch_count",
+    ):
+        if col in success_df.columns:
+            numeric = pd.to_numeric(success_df[col], errors="coerce")
+            evidence[col] = {
+                "sum": int(numeric.fillna(0).sum()),
+                "max": int(numeric.fillna(0).max()) if len(numeric) else 0,
+            }
+    for col in (
+        "transition_risk_primary_drivers",
+        "transition_risk_triggered_rules",
+    ):
+        if col in success_df.columns:
+            non_empty = (
+                success_df[col]
+                .fillna("[]")
+                .astype(str)
+                .map(lambda value: value.strip() not in ("", "[]"))
+            )
+            evidence[f"{col}_sessions_present"] = int(non_empty.sum())
+    return evidence
+
+
+def _incidents_anomalies_reruns(
+    summary_df: pd.DataFrame, runs_df: pd.DataFrame
+) -> dict[str, Any]:
+    """F-021 §10: incidents/anomalies/reruns for the batch — explicit empty lists when
+    none, so a clean batch is affirmatively clean rather than silently omitted."""
+    incidents = [
+        {
+            "as_of_date": str(row["as_of_date"]),
+            "failure_reason": (
+                None
+                if pd.isna(row.get("failure_reason"))
+                else str(row["failure_reason"])
+            ),
+        }
+        for _, row in runs_df.iterrows()
+        if str(row.get("status")) == "failure"
+    ]
+    anomalies: list[dict[str, str]] = []
+    if "transition_risk_data_quality_status" in summary_df.columns:
+        success = summary_df[summary_df["status"] == "success"]
+        degraded = success[
+            success["transition_risk_data_quality_status"].fillna("ok").astype(str)
+            != "ok"
+        ]
+        anomalies = [
+            {
+                "as_of_date": str(row["as_of_date"]),
+                "data_quality_status": str(row["transition_risk_data_quality_status"]),
+            }
+            for _, row in degraded.iterrows()
+        ]
+    counts = runs_df["as_of_date"].astype(str).value_counts()
+    reruns = sorted(str(date) for date, count in counts.items() if int(count) > 1)
+    return {"incidents": incidents, "anomalies": anomalies, "reruns": reruns}
+
+
 def _build_markdown(analysis: dict[str, Any]) -> str:
     lines = [
         "# Historical Walk-Forward Analysis",
@@ -588,6 +815,28 @@ def _build_markdown(analysis: dict[str, Any]) -> str:
             "",
             "```json",
             json.dumps(analysis["per_date_provenance"], indent=2, sort_keys=True),
+            "```",
+            "",
+            "## Data Source & Archive Policy",
+            "",
+            "```json",
+            json.dumps(
+                analysis["data_source_archive_policy"], indent=2, sort_keys=True
+            ),
+            "```",
+            "",
+            "## Incidents, Anomalies & Reruns",
+            "",
+            "```json",
+            json.dumps(
+                analysis["incidents_anomalies_reruns"], indent=2, sort_keys=True
+            ),
+            "```",
+            "",
+            "## Transition-Risk Evidence",
+            "",
+            "```json",
+            json.dumps(analysis["transition_risk_evidence"], indent=2, sort_keys=True),
             "```",
             "",
         ]
@@ -661,7 +910,7 @@ def build_walkforward_report(
     golden_results = _load_optional_json(golden_results_path)
     golden_gate_reasons = _golden_gate_reasons(golden_results, runs_df)
     replay_results = _load_optional_json(replay_results_path)
-    replay_gate_reasons = _replay_gate_reasons(replay_results)
+    replay_gate_reasons = _replay_gate_reasons(replay_results, runs_df)
     baseline_comparison = _baseline_comparison(
         _load_optional_json(baseline_metrics_path)
     )
@@ -692,6 +941,9 @@ def build_walkforward_report(
         "config_version": frozen_versions["config_version"],
         "frozen_versions": frozen_versions,
         "per_date_provenance": _per_date_provenance(runs_df),
+        "data_source_archive_policy": _data_source_archive_policy(),
+        "transition_risk_evidence": _transition_risk_evidence(success_df),
+        "incidents_anomalies_reruns": _incidents_anomalies_reruns(summary_df, runs_df),
         "label_distributions": _label_distribution(success_df),
         "series_summaries": _series_summaries(success_df, hysteresis_days),
         "red_flags": red_flags,

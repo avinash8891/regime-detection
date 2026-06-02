@@ -90,6 +90,50 @@ def _route(**overrides: object) -> AgentRouting:
 
 
 @pytest.mark.unit
+@pytest.mark.unit
+def test_cohorts_is_the_closed_10_cohort_set() -> None:
+    # F-015: §5.1 is pinned to a CLOSED 10-cohort set (8 specialists +
+    # data_outage_specialist + default_neutral). COHORTS must be exactly those 10, in
+    # precedence order (crisis first, data_outage second), with no duplicates.
+    assert len(COHORTS) == 10
+    assert len(set(COHORTS)) == 10
+    assert COHORTS[0] == "crisis_specialist"
+    assert COHORTS[1] == "data_outage_specialist"
+    assert COHORTS[-1] == "default_neutral"
+    assert "data_outage_specialist" in COHORTS
+
+
+@pytest.mark.unit
+def test_every_emitted_active_cohort_is_in_the_closed_set() -> None:
+    # F-015: property test — every active_cohort the router can return must be a member
+    # of the closed 10-cohort COHORTS set, so an out-of-spec cohort string fails CI. Vary
+    # each sensitive axis independently across real labels AND "unknown" (the
+    # data_outage trigger).
+    axis_candidates = {
+        "trend_direction_active": ["sideways", "bull", "bear", "euphoria", "unknown"],
+        "trend_character_active": ["trending", "chop", "transition", "unknown"],
+        "volatility_state_active": ["normal_vol", "low_vol", "crisis_vol", "unknown"],
+        "breadth_state_active": ["healthy_breadth", "weak_breadth", "unknown"],
+        "network_fragility_active": [
+            "diversified_normal",
+            "systemic_stress",
+            "correlation_to_one",
+            "unknown",
+        ],
+    }
+    closed_set = set(COHORTS)
+    for axis, labels in axis_candidates.items():
+        for label in labels:
+            out = _route(**{axis: label})
+            assert out.active_cohort in closed_set, (axis, label, out.active_cohort)
+
+    # The data_outage fail-closed cohort is reachable and in-set: any sensitive axis
+    # "unknown" (without a crisis match) routes to data_outage_specialist.
+    outage = _route(trend_direction_active="unknown")
+    assert outage.active_cohort == "data_outage_specialist"
+    assert outage.active_cohort in closed_set
+
+
 def test_crisis_specialist_fires_on_correlation_to_one() -> None:
     """§5.1 lines 2517-2519: crisis fires when network_fragility is
     correlation_to_one even if every other axis is benign."""
@@ -236,6 +280,40 @@ def test_data_outage_specialist_when_any_core_axis_unknown() -> None:
     """A missing core risk axis must fail closed before specialist matching."""
     out = _route(network_fragility_active="unknown")
     assert out.active_cohort == "data_outage_specialist"
+    assert out.blocked_strategy_modes == ["short_vol", "leveraged_long", "breakout"]
+
+
+@pytest.mark.unit
+def test_data_outage_preempts_optimistic_specialist_on_partial_outage() -> None:
+    """F-005: a core risk axis ``unknown`` must fail closed to data_outage BEFORE an
+    optimistic specialist can route. ``chop_mean_reversion_specialist`` matches on
+    (trend_character=range_bound, volatility=low_vol) with NO trend_direction
+    predicate, so with trend_direction=unknown the pre-fix walker returned
+    chop_mean_reversion — whose blocked modes ([trend_following, breakout]) leave
+    leveraged_long/short_vol UNBLOCKED during a partial data outage. The contract is
+    the blocked-modes INVARIANT (aggressive modes blocked), not the cohort string."""
+    out = _route(
+        trend_direction_active="unknown",  # partial core-axis outage
+        trend_character_active="range_bound",
+        volatility_state_active="low_vol",
+    )
+    # Capital-protection invariant: aggressive modes MUST be blocked on a partial outage.
+    assert "leveraged_long" in out.blocked_strategy_modes
+    assert "short_vol" in out.blocked_strategy_modes
+    # data_outage pre-empts the optimistic specialist walk (§5.1: crisis > data_outage > …).
+    assert out.active_cohort == "data_outage_specialist"
+
+
+@pytest.mark.unit
+def test_crisis_still_preempts_data_outage_with_optimistic_match_and_outage() -> None:
+    """F-005 must not over-reach: crisis stays ahead of data_outage even when an
+    optimistic specialist would also match and a core axis is unknown."""
+    out = _route(
+        trend_direction_active="unknown",
+        trend_character_active="range_bound",
+        volatility_state_active="crisis_vol",  # crisis pre-empts everything
+    )
+    assert out.active_cohort == "crisis_specialist"
     assert out.blocked_strategy_modes == ["short_vol", "leveraged_long", "breakout"]
 
 

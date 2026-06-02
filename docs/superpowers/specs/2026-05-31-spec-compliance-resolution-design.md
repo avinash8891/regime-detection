@@ -157,9 +157,16 @@ Legend — **Reuse/Sub:** `sub`=deletion/consolidation, `reuse`=extend existing,
 
 ### M3 — Gate enforcement (promotion/shipping paths actually fire)
 
+> **M3 status (2026-06-02): 7 of 8 findings shipped** — F-009+F-016 (baseline
+> materiality), F-020 (label-contract NaN-leakage), F-017 (deadman interior-gap exit),
+> F-039 (HMM drift WARNING), F-050 (crash-window crisis-label red flag), F-022 (§9.1
+> gate offline-promotion scope, ADR 0023), F-018 (mid-window config-hash reset), F-047
+> +F-052 (HMM drift decisions, ADR 0024), F-014 (reproducible §10 strategy-metrics
+> report, ADR 0025). **F-007 DEFERRED** — see note below.
+
 | ID | Sev | Ideal fix (distilled) | Test | RF? | Reuse/Sub |
 |---|---|---|---|---|---|
-| F-007 | high | Add a golden-runner that executes the 10 golden dates through `RegimeEngine` at the frozen config, pre+post batch, writing the `_single_golden_gate_reasons` shape; document as the required §7 step feeding `--golden-results`. | gate consumes real produced golden JSON; fails if a date regresses | no | add (wires existing engine) |
+| F-007 | high | **DEFERRED (2026-06-02).** Add a golden-runner that executes the 10 golden dates through `RegimeEngine` at the frozen config, pre+post batch, writing the `_single_golden_gate_reasons` shape; document as the required §7 step feeding `--golden-results`. **Why deferred:** a no-duplication producer must reuse the careful V1(<2020, core3-v1.0.0)/V2(≥2020, synthetic-kwargs) split golden classification in `tests/conftest.py:_classify_all_golden_rows`, which is built from session-scoped pytest fixtures (`raw_market_data`, `v2_market_df_for_asof`, `synthetic_v2_kwargs_for_market_data`, `event_calendar_df`). Reusing it without duplication requires extracting that pipeline into an importable module shared by conftest and the runner — a high-blast-radius refactor of the file the whole suite imports. Duplicating the pipeline into the runner instead would violate the code-reuse rule and risk golden-classification divergence. Needs a focused session with the full suite green as the safety net. The gate itself is sound (contract-validates pre/post shape, 10 dates, all_passed, frozen engine/config); the gap is the absent producer, so deferral does not regress any shipped behavior. | gate consumes real produced golden JSON; fails if a date regresses | no | add (wires existing engine) |
 | F-009 | high | Test only — baseline worse on every metric ⇒ `status=='fail'`, `materially_worse_than_baseline` in reasons. | new failure-path test | no | reuse |
 | F-016 | medium | Add per-metric materiality epsilon; ties (within ε) are non-improving and can't rescue an all-worse run; require ≥1 materially-improved dimension. | tie-on-one-metric still fails the gate | no | reuse |
 | F-017 | medium | In `run_deadman_check`, when `qualification.qualifies` is False with a contiguity reason, return a non-ok status (`window_gap`) and make `main()` exit nonzero; optionally insert a breaking incident for the earliest gap. | interior gap ⇒ nonzero exit | no | reuse |
@@ -171,6 +178,14 @@ Legend — **Reuse/Sub:** `sub`=deletion/consolidation, `reuse`=extend existing,
 | F-047 | low | Document (module/ADR) that "prior version" = previous in-call refit checkpoint, OR load the persisted prior versioned artifact and compare. **DECISION.** | drift-source semantics pinned | no | doc/code |
 | F-052 | low | Pin the §6.1 30%-transition-prob flag definition (absolute pp) in spec/ADR, OR switch to relative. **DECISION.** | definition pinned + tested | no | doc/code |
 | F-050 | low | Add a configured crash-window date set (e.g. §9.4 dates) + a `crisis_label_missing_in_crash_window` red flag. | red flag fires when no crisis label in a crash window | no | reuse |
+
+> **M4 status (2026-06-02): COMPLETE (12/12).** F-024 F-025 F-026 F-027 F-028 F-029
+> F-030 F-032 F-033 F-034 F-054 F-055 all shipped + pushed.
+> **M5 status (2026-06-02): COMPLETE (10/10).** F-010 F-011 F-021 F-037 F-038 F-040
+> F-041 F-043 F-048 F-049 all shipped + pushed. F-010 RF-checked: V2-golden value-asserts
+> unchanged, no re-freeze.
+> **M6 status (2026-06-02): COMPLETE (7/7).** F-015 F-023 F-045 F-046 F-053 Amb#3 Amb#4
+> all shipped + pushed.
 
 ### M4 — Golden-date & walk-forward test integrity
 
@@ -219,6 +234,30 @@ Legend — **Reuse/Sub:** `sub`=deletion/consolidation, `reuse`=extend existing,
 | F-053 | low | Make `build_rule_inputs_for_date` delegate to the vectorized `_rolling_*_series` reducers (single source of truth) **or delete it** (zero production callers); fix the stale `axis_builders/network_fragility.py:60` docstring. | parity test exact, not approx | no | **sub** |
 | Amb #3 | — | **DECISION:** document the 63/126-session CPI offset as an approximation of the calendar-month offset, OR compute against the CPI obs exactly 3/6 calendar months prior. Pin with a synthetic-CPI test. | CPI-offset semantics pinned | no | doc/code |
 | Amb #4 | — | **DECISION:** document the followthrough breakout_level 20d-preferred tie-break (or switch to strict max(m20,m50)). (Pairs with F-055.) | tie-break pinned + tested | no | doc/code |
+
+### M7 — Replay-gate soundness (milestone `/code-review` findings, 2026-06-01)
+
+> Surfaced by the M0-boundary `/code-review` (xhigh, 48-agent multi-angle) over the
+> F-001 walk-forward replay producer + §6 gate. The gate is **sound on the happy path**
+> (default config, no explicit PIT, non-empty batch, same host —
+> `test_walkforward_replay_check` proves it) but unsound off it. CR-001…CR-007 are
+> capital-protection-gate correctness; CR-008…CR-011 are robustness. Per `AGENTS.md`
+> "never mark an issue acceptable", the docstring "out of scope" note (CR-004) is **not**
+> a resolution. These are F-001 follow-ons (M2 surface) recorded as their own milestone.
+
+| ID | Sev | Ideal fix (distilled) | Test | RF? | Reuse/Sub |
+|---|---|---|---|---|---|
+| CR-001 | high | The walk-forward *original* classifies from in-memory inputs while replay classifies from the reloaded archive — **not like-for-like**, so any archive round-trip lossiness reads as a regime regression. Mirror `run_shadow_regime.py:278-291`: reload the archived inputs and classify the ORIGINAL from the archive, making the §6 gate immune to round-trip noise. | replay of a macro-dependent date matches only when the original is archive-fed; a seeded round-trip delta is caught | no | reuse |
+| CR-002 | high | Macro archive is **non-idempotent**: `_macro_series_frame` stores the post-`/100` `implied_vol_30d` WITH the `logical_name` column, so `load_archived_macro_series`→`loaders.load_macro_series` re-applies `/100` (100× too small). Make the round-trip idempotent (omit `logical_name` on archive, or archive raw points, or a transform-free archived reader). | `implied_vol_30d` archive→reload round-trips to identity | no | reuse |
+| CR-003 | high | Replay drives the engine from `--config-path` (default→default config), **ignoring the per-run `config_version`** in the DB (a coarse Literal, not a content hash). Archive the resolved config (path + content hash); drive the replay engine from it; `_replay_gate_reasons` binds the config hash. | non-default-config batch replays faithfully; config-hash mismatch fails the gate | no | reuse |
+| CR-004 | high | Explicit `--pit-constituent-intervals` is **never archived**; replay hardcodes `pit_intervals=None` (different membership), so explicit-PIT batches can never pass. Archive the PIT frame in `write_archived_inputs` and load it in replay. | explicit-PIT batch replays byte-identical | no | reuse |
+| CR-005 | medium | Empty batch (zero success runs) → `all_passed = bool([]) and …` is False → gate emits `replay_mismatch_detected`, conflating "nothing to replay" with a real mismatch. Emit a distinct `no_successful_runs_to_replay` reason. | empty batch → distinct reason, not `replay_mismatch_detected` | no | reuse |
+| CR-006 | medium | Replay reads DB-stored **absolute** `input_archive_path`/`output_path`; a copied archive (CI) → `FileNotFoundError`. Re-anchor to `output_root` (mirror `build_walkforward_report._nan_leakage:231-235`). | relocated/copied archive replays | no | reuse |
+| CR-007 | medium | `_replay_one` dropped the shadow replay's explicit `output_path is not None` guard → opaque `TypeError` aborts the whole batch. Restore a clean per-run `ValueError` naming the date. | null `output_path` → ValueError, batch continues | no | reuse |
+| CR-008 | low | F-006 warmup counts **raw AAII rows** via `searchsorted`, not distinct weekly publication dates — a duplicated publication row warms `sentiment_score` early. Count distinct publication dates before the `>=4` threshold. | a duplicated publication row does not warm before 4 distinct weeks | no | reuse |
+| CR-009 | low | `build_v2_classify_kwargs` guards `v2_slice is None`, not **emptiness** → an as-of before the first v2_daily row builds full V2 kwargs and raises (status=failure) instead of a V1 fallback. Guard emptiness → V1 path. (Pre-existing; shadow runner shares it.) | early as-of → V1 fallback, not failure | no | reuse |
+| CR-010 | low | `success_dates` is recomputed from `runs_df` at report-build time vs the producer's snapshot; a DB status flip between steps fires `replay_dates_mismatch`. Pin the "re-run the producer before building the report" ordering (or stamp+compare the producer's snapshot id). Two-sided: fail-closed may be intended. | ordering pinned + tested, or documented | no | doc/code |
+| CR-011 | low | `_replay_one` reads `input_archive_path` with no null guard (symmetric to CR-007; schema is `NOT NULL`, so lower severity). Add the same per-run guard. | null `input_archive_path` → ValueError, batch continues | no | reuse |
 
 ---
 
@@ -301,6 +340,16 @@ areas → ~0 and any residual is confined to the shrinking un-gated remainder.
 
 ## 10. Execution order
 
-M0 → M1 → M2 → M3 → M4 → M5 → M6, one PR each, stop-and-confirm at every boundary. M0 first because
-it makes the oracle real and retires stale spec text, so every later milestone is verified against a
-trustworthy suite. No milestone closes until its §9 G1–G3 gates are satisfied.
+M0 → M1 → M2 → M3 → M4 → M5 → M6 → M7, one PR each, stop-and-confirm at every boundary. M0 first
+because it makes the oracle real and retires stale spec text, so every later milestone is verified
+against a trustworthy suite. M7 (replay-gate soundness) was opened by the M0-boundary `/code-review`
+and folds the F-001 follow-ons in after M2's contracts land. No milestone closes until its §9 G1–G3
+gates are satisfied.
+
+**Status (2026-06-02):** M0 ✅ + M1 ✅ + M2 ✅ + M7 ✅ complete. M2 closed F-042
+(config-type boundary guard) + F-019 (per-artifact provenance) on the F-001/F-003 base.
+M7 closed all of CR-001…CR-011 (classify-from-archive like-for-like; idempotent macro
+round-trip; frozen-config + PIT archival; replay-producer robustness; distinct-week
+warmup; empty-slice V1 fallback) — CR-001 gate-3 validated. PR #71 also addressed the 7
+cubic review comments (incl. GNXfc pit-survivorship). Order taken: M0 → M1 → M2 → M7 →
+**M3** (gate enforcement) next, then M4–M6, working autonomously.

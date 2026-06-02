@@ -7,6 +7,14 @@ delegates qualification storage details to that file. All write
 operations are keyed on the canonical identity tuple
 ``(as_of_date, engine_version, config_version)`` per shadow_runner_spec
 §3 L93.
+
+F-041: temporal/boolean columns are declared with the spec §3 affinities
+(``TIMESTAMP`` / ``DATE`` / ``BOOLEAN``) so the schema matches the spec verbatim.
+SQLite has no native TIMESTAMP/DATE type — those declarations take NUMERIC affinity,
+and because the values written are ISO-8601 strings (``utc_iso_now`` / ``date.isoformat``)
+and 0/1 integers, SQLite stores them exactly as the equivalent TEXT/INTEGER would.
+ORDER BY and the UNIQUE identity constraint are unaffected; the declared types are the
+spec contract, the stored representation is the ISO string.
 """
 
 from __future__ import annotations
@@ -45,8 +53,8 @@ class RunStatus(str, Enum):
 RUNS_SCHEMA = """
 CREATE TABLE IF NOT EXISTS runs (
     run_id INTEGER PRIMARY KEY,
-    run_timestamp TEXT NOT NULL,
-    as_of_date TEXT NOT NULL,
+    run_timestamp TIMESTAMP NOT NULL,
+    as_of_date DATE NOT NULL,
     engine_version TEXT NOT NULL,
     config_version TEXT NOT NULL,
     status TEXT NOT NULL,
@@ -54,6 +62,7 @@ CREATE TABLE IF NOT EXISTS runs (
     input_archive_path TEXT NOT NULL,
     output_path TEXT,
     output_sha256 TEXT,
+    config_sha256 TEXT,
     UNIQUE (as_of_date, engine_version, config_version)
 )
 """
@@ -61,7 +70,7 @@ CREATE TABLE IF NOT EXISTS runs (
 REPLAY_CHECKS_SCHEMA = """
 CREATE TABLE IF NOT EXISTS replay_checks (
     check_id INTEGER PRIMARY KEY,
-    check_timestamp TEXT NOT NULL,
+    check_timestamp TIMESTAMP NOT NULL,
     original_run_id INTEGER REFERENCES runs(run_id),
     matches BOOLEAN NOT NULL,
     diff TEXT
@@ -71,7 +80,7 @@ CREATE TABLE IF NOT EXISTS replay_checks (
 INCIDENTS_SCHEMA = """
 CREATE TABLE IF NOT EXISTS incidents (
     incident_id INTEGER PRIMARY KEY,
-    incident_date TEXT NOT NULL,
+    incident_date DATE NOT NULL,
     description TEXT NOT NULL,
     resolution TEXT,
     breaks_qualification BOOLEAN NOT NULL
@@ -104,6 +113,21 @@ def ensure_shadow_layout(
     return paths
 
 
+def _ensure_column(
+    conn: sqlite3.Connection, table: str, column: str, ddl_type: str
+) -> None:
+    """Add a column to an existing table if absent (forward-compatible migration).
+
+    CREATE TABLE IF NOT EXISTS never alters an existing table, so a DB created
+    before a column was added would silently lack it. Existing rows get NULL.
+    """
+    existing = {
+        str(row[1]) for row in conn.execute(f"PRAGMA table_info({table})").fetchall()
+    }
+    if column not in existing:
+        conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {ddl_type}")
+
+
 def open_shadow_db(db_path: Path) -> sqlite3.Connection:
     conn = sqlite3.connect(db_path, timeout=30.0, factory=_ClosingConnection)
     conn.execute("PRAGMA journal_mode=WAL")
@@ -111,6 +135,8 @@ def open_shadow_db(db_path: Path) -> sqlite3.Connection:
     conn.execute(RUNS_SCHEMA)
     conn.execute(REPLAY_CHECKS_SCHEMA)
     conn.execute(INCIDENTS_SCHEMA)
+    # F-018: config_sha256 was added after the original §3 schema; migrate older DBs.
+    _ensure_column(conn, "runs", "config_sha256", "TEXT")
     conn.commit()
     return conn
 
@@ -147,11 +173,15 @@ def write_archived_inputs(
     market_slice: pd.DataFrame,
     event_df: pd.DataFrame | None,
     macro_series: dict[str, pd.Series] | None = None,
+    v2_daily_slice: pd.DataFrame | None = None,
+    pit_intervals: pd.DataFrame | None = None,
 ) -> tuple[Path, Path, Path]:
     archive_dir.mkdir(parents=True, exist_ok=True)
     market_path = archive_dir / "market_data.parquet"
     events_path = archive_dir / "events.yaml"
     macro_path = archive_dir / "macro_series.parquet"
+    v2_daily_path = archive_dir / "v2_daily.parquet"
+    pit_path = archive_dir / "pit_constituent_intervals.parquet"
     checksums_path = archive_dir / "checksums.json"
 
     market_slice.to_parquet(market_path, index=False)
@@ -166,6 +196,21 @@ def write_archived_inputs(
     if macro_series:
         _macro_series_frame(macro_series).to_parquet(macro_path, index=False)
         checksums["macro_series.parquet"] = sha256_file(macro_path)
+    # F-001: when the runner feeds V2 inputs derived from a daily-OHLCV frame
+    # (sector/cross-asset closes, PIT membership, constituent OHLCV), archive the
+    # as-of slice so a walk-forward replay can recompute the V2 axes byte-identically.
+    # Archive even an empty slice (a non-None frame whose as-of precedes the first v2
+    # row) so the archive faithfully records that V2 inputs were supplied-but-empty,
+    # rather than leaving the missing file ambiguous with "V2 not provided".
+    if v2_daily_slice is not None:
+        v2_daily_slice.to_parquet(v2_daily_path, index=False)
+        checksums["v2_daily.parquet"] = sha256_file(v2_daily_path)
+    # CR-004: archive the explicit PIT membership frame (when the run used one) so a
+    # replay reconstructs the SAME constituent universe, instead of silently deriving a
+    # different default-from-daily universe and false-failing the gate forever.
+    if pit_intervals is not None:
+        pit_intervals.to_parquet(pit_path, index=False)
+        checksums["pit_constituent_intervals.parquet"] = sha256_file(pit_path)
     checksums_path.write_text(
         json.dumps(
             checksums,
@@ -202,7 +247,42 @@ def load_archived_macro_series(path: Path) -> dict[str, pd.Series] | None:
         return None
     from regime_detection.loaders import load_macro_series
 
-    return load_macro_series(path)
+    series = load_macro_series(path)
+    # CR-002: the archive (written by _macro_series_frame) stores the exact values the
+    # runner already passed to classify — i.e. POST the load-time transform. But
+    # load_macro_series re-applies its implied_vol_30d `/100` raw-ingest transform on
+    # reload, double-dividing the archived value (100x too small) and breaking the
+    # archive→reload identity replay depends on. implied_vol_30d is the only macro key
+    # with a load-time transform (loaders.load_macro_series), so undo exactly that one.
+    iv = series.get("implied_vol_30d")
+    if iv is not None:
+        series["implied_vol_30d"] = iv * 100.0
+    return series
+
+
+def latest_config_sha256(
+    *,
+    conn: sqlite3.Connection,
+    engine_version: str,
+    config_version: str,
+) -> str | None:
+    """F-018: the most recently recorded config content hash for this identity pair.
+
+    Used to detect a config-content change WITHIN the same coarse ``config_version``
+    Literal (which by itself would not start a fresh qualification window). Returns
+    None when no prior run carried a hash (older rows, or the first run).
+    """
+    row = conn.execute(
+        """
+        SELECT config_sha256
+        FROM runs
+        WHERE engine_version = ? AND config_version = ? AND config_sha256 IS NOT NULL
+        ORDER BY as_of_date DESC, run_id DESC
+        LIMIT 1
+        """,
+        (engine_version, config_version),
+    ).fetchone()
+    return None if row is None else str(row[0])
 
 
 def insert_run_row(
@@ -213,13 +293,15 @@ def insert_run_row(
     engine_version: str,
     config_version: str,
     archive_dir: Path,
+    config_sha256: str | None = None,
 ) -> None:
     conn.execute(
         """
         INSERT INTO runs (
             run_timestamp, as_of_date, engine_version, config_version,
-            status, failure_reason, input_archive_path, output_path, output_sha256
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            status, failure_reason, input_archive_path, output_path, output_sha256,
+            config_sha256
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (
             run_timestamp,
@@ -231,6 +313,7 @@ def insert_run_row(
             str(archive_dir),
             None,
             None,
+            config_sha256,
         ),
     )
     conn.commit()
@@ -293,6 +376,28 @@ def load_archived_market_data(path: Path) -> pd.DataFrame:
         archived,
         {"date": pd.to_datetime(archived["date"]).dt.date},
     )
+
+
+def load_archived_v2_daily(path: Path) -> pd.DataFrame | None:
+    """Load the archived as-of V2 daily-OHLCV slice (F-001), or None if absent
+    (V1-only runs do not archive it). Same date-normalization as market_data."""
+    if not path.exists():
+        return None
+    archived = pd.read_parquet(path)
+    return cow_safe_assign(
+        archived,
+        {"date": pd.to_datetime(archived["date"]).dt.date},
+    )
+
+
+def load_archived_pit_intervals(path: Path) -> pd.DataFrame | None:
+    """Load the archived explicit PIT membership frame (CR-004), or None if absent
+    (the run used the default-from-daily membership). The ticker/start_date/end_date
+    columns round-trip faithfully through parquet (date objects, None for open intervals).
+    """
+    if not path.exists():
+        return None
+    return pd.read_parquet(path)
 
 
 def load_archived_event_calendar(path: Path) -> pd.DataFrame | None:

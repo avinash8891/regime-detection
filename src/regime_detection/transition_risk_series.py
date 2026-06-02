@@ -648,6 +648,13 @@ def build_transition_risk_outputs_by_date(
             ),
         )
         if transition_score_config is None:
+            # F-049: V1 path. The legacy transition-risk state machine above is run in
+            # full (hard-override flags, debounce) and its STATE + evidence are
+            # load-bearing for V1 byte-identity replay. Only the V2-only score fields
+            # are intentionally suppressed here so the V1 wire carries exactly
+            # {state, evidence} (V1OUT-029). Do NOT wire score / score_components /
+            # primary_drivers back into the V1 output — that would break the frozen
+            # V1 replay contract. The compute-then-suppress is deliberate, not dead code.
             output = output.model_copy(
                 update={
                     "score": None,

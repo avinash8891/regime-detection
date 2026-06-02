@@ -371,7 +371,14 @@ def test_build_rule_inputs_by_date_matches_single_day_builder():
         vix_percentile_252d=vix_pct,
     )
 
-    for dt in index[20::15]:
+    # F-053: build_rule_inputs_for_date now delegates to the SAME vectorized reducers as
+    # build_rule_inputs_by_date, so they must agree EXACTLY on EVERY session date (not a
+    # sparse approx sample) — including the warm-up region where the 21d predicates are
+    # NaN. A future edit that diverges the two encodings fails immediately.
+    def _eq(a: float, b: float) -> bool:
+        return (math.isnan(a) and math.isnan(b)) or a == b
+
+    for dt in index:
         expected = build_rule_inputs_for_date(
             features=features,
             dt=dt,
@@ -381,9 +388,7 @@ def test_build_rule_inputs_by_date_matches_single_day_builder():
         )
         actual = precomputed[dt]
         for field in expected.__dataclass_fields__:
-            assert getattr(actual, field) == pytest.approx(
-                getattr(expected, field), nan_ok=True
-            )
+            assert _eq(getattr(actual, field), getattr(expected, field)), (dt, field)
 
 
 def test_rising_fragility_blocked_when_nan_in_trailing_21d_corr_window():

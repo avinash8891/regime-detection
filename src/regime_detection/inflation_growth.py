@@ -234,8 +234,19 @@ def _cpi_with_first_release_fallback(
     *timestamps* without reindexing, because what it feeds only cares about
     the index, not the values.
     """
-    latest = latest_cpi.reindex(session_index).astype(float).ffill()
-    first_release = first_release_cpi.reindex(session_index).astype(float).ffill()
+    # F-010: forward-fill from the release/observation date (latest reading with date
+    # <= each session), matching the AAII/EPS leak-safe pattern. A bare
+    # reindex(session_index) lands values only on exact-match dates, so a CPI release on
+    # a NYSE-closed day would be dropped and the prior month carried. method="ffill"
+    # honors the most-recent on-or-before reading; sort_index guards the requirement.
+    latest = (
+        latest_cpi.sort_index().reindex(session_index, method="ffill").astype(float)
+    )
+    first_release = (
+        first_release_cpi.sort_index()
+        .reindex(session_index, method="ffill")
+        .astype(float)
+    )
     return first_release.combine_first(latest).rename(latest_cpi.name)
 
 
@@ -344,6 +355,15 @@ def compute_inflation_growth_features(
     xlu = xlu_close.reindex(spy_index).astype(float)
 
     # CPI trend (V2 §2B spec lines 2987-2988).
+    # Ambiguity #3 (DECISION): the 3m/6m CPI change is computed as a fixed SESSION
+    # offset (cpi_lookback_3m_sessions=63, 6m=126) on the daily forward-filled CPI
+    # series — an APPROXIMATION of the exact calendar-month offset, NOT a lookup of the
+    # CPI observation exactly 3/6 calendar months prior. 63/126 NYSE sessions ≈ 3/6
+    # months (~21 sessions/month). The approximation is intentional: CPI is monthly and
+    # forward-filled, so a session-count offset lands on the same monthly vintage as the
+    # calendar offset for all but boundary days, while keeping the reducer purely
+    # positional (consistent with every other §-window in this engine). Pinned by
+    # test_cpi_3m_6m_change_uses_session_offset_approximation.
     cpi_3m_change_pct = _pct_change_lookback(
         cpi, config.cpi_lookback_3m_sessions
     ).rename("cpi_3m_change_pct")

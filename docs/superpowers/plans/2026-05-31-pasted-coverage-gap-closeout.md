@@ -17,8 +17,8 @@ Fresh verification on 2026-05-31 found the pasted review is **partially still co
 ## Evidence-Checked Task List
 
 - [x] Golden V2 dates run live end-to-end for fixture-supported dates, not registration-only.
-  Current evidence: `tests/test_fixture_verification.py::test_v2_section_9_4_golden_dates_are_registered` validates `golden_dates_v2.yaml` registration only. No live classification/equality test was found for the 9 V2 dates.
-  Completion evidence: `tests/test_fixture_verification.py::test_v2_golden_dates_classify_expected_fields` now live-classifies the fixture-supported V2 golden rows and asserts the exact unsupported set (`2010-05-06`, `2011-08-08`, `2015-08-24`, `2018-10-10`, `2020-08-15`) so fixture/date gaps cannot silently disappear.
+  Current evidence: `tests/test_fixture_verification.py::test_v2_section_9_4_golden_dates_are_registered` validates `golden_dates.yaml` registration only. No live classification/equality test was found for the 9 V2 dates.
+  Completion evidence: `tests/test_fixture_verification.py::test_v2_golden_dates_classify_expected_fields` now live-classifies the fixture-supported V2 golden rows and asserts the exact unsupported set (`2010-05-06`, `2011-08-08`, `2015-08-24`, `2018-10-10`) so fixture/date gaps cannot silently disappear.
 - [x] Golden-date data quality is asserted, not only label equality.
   Current evidence: `test_golden_dates_match_live_labels_without_data_quality_bypass` compares labels but does not assert each golden axis `data_quality.status == "ok"`.
   Completion evidence: `test_golden_dates_match_live_labels_without_data_quality_bypass` now asserts `data_quality.status == "ok"` for trend direction, trend character, volatility, breadth, and transition risk on every golden row.

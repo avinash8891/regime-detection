@@ -124,8 +124,15 @@ def test_strategy_response_handles_recovery_attempt_final_state() -> None:
         transition_risk_state="recovery_attempt",
     )
 
+    # F-013: the recovery_attempt modifier applies EXACTLY the §10.4 field-set —
+    # now six fields (leverage_allowed reconciled into §10.4). Pins the full set so a
+    # dropped or out-of-spec field fails CI.
     assert response.position_size_multiplier == 0.5
+    assert response.allow_trend_following is True
+    assert response.allow_buy_dip is True
+    assert response.require_breadth_confirmation is True
     assert response.leverage_allowed is False
+    assert response.allow_leverage_expansion is False
     assert "recovery_attempt" in response.modifiers_applied
 
 
@@ -194,6 +201,79 @@ def test_strategy_response_sideways_chop_modifier_excludes_v2_volatile_chop() ->
     assert response.modifiers_applied == []
     assert response.allow_trend_following is True
     assert response.take_profit_faster is None
+
+
+def test_strategy_response_modifier_vocabulary_is_the_documented_closed_set() -> None:
+    # F-043: every scenario modifier build_strategy_response can emit must be in the
+    # documented SCENARIO_MODIFIER_NAMES set (V1 §10.4 six + four V2-owned). Drive each
+    # triggering input and assert (a) only documented names appear and (b) the union of
+    # all emitted scenario modifiers equals the documented set — so a new/renamed
+    # modifier without a vocabulary entry fails this test.
+    from regime_detection.strategy_response import SCENARIO_MODIFIER_NAMES
+
+    emitted: set[str] = set()
+    transition_states = [
+        "recovery_attempt",
+        "fragile_bull",
+        "weakening",
+        "transition_warning",
+        "high_transition_risk",
+        "watch",
+        "bear_stress",
+        "crisis",
+        "stable",
+    ]
+    for state in transition_states:
+        for character, breadth in (
+            ("trending", "healthy_breadth"),
+            ("chop", "weak_breadth"),
+        ):
+            response = build_strategy_response(
+                trend_direction_active="bull",
+                trend_character_active=character,
+                volatility_state_active="low_vol",
+                breadth_state_active=breadth,
+                transition_risk_state=state,
+            )
+            emitted.update(response.modifiers_applied)
+
+    assert emitted <= SCENARIO_MODIFIER_NAMES  # only documented names
+    assert emitted == SCENARIO_MODIFIER_NAMES  # all documented names reachable
+
+
+def test_strategy_response_sideways_chop_outranks_recovery_attempt() -> None:
+    # F-034: §10.3 precedence — sideways_chop > recovery_attempt. When both co-fire
+    # (chop trend_character + recovery_attempt transition_risk), the higher-priority
+    # sideways_chop wins the position_size_multiplier (0.75, loosening recovery's 0.5),
+    # and modifiers_applied lists them in increasing priority (recovery first, the
+    # winner sideways_chop last). Enforced today by if-block order; this locks it.
+    response = build_strategy_response(
+        trend_direction_active="bear",
+        trend_character_active="chop",
+        volatility_state_active="normal_vol",
+        breadth_state_active="weak_breadth",
+        transition_risk_state="recovery_attempt",
+    )
+
+    assert response.position_size_multiplier == 0.75
+    assert response.modifiers_applied == ["recovery_attempt", "sideways_chop"]
+
+
+def test_strategy_response_modifiers_applied_increasing_priority() -> None:
+    # F-054: §10.1 modifiers_applied must be ordered by INCREASING priority with the
+    # winner last. sideways_chop and bull_fragile both rank between default_neutral and
+    # crisis (bull_fragile > sideways_chop), so the pair must emit
+    # ['sideways_chop', 'bull_fragile'] and bull_fragile wins psm (0.5).
+    response = build_strategy_response(
+        trend_direction_active="bull",
+        trend_character_active="chop",
+        volatility_state_active="normal_vol",
+        breadth_state_active="weak_breadth",
+        transition_risk_state="fragile_bull",
+    )
+
+    assert response.modifiers_applied == ["sideways_chop", "bull_fragile"]
+    assert response.position_size_multiplier == 0.5
 
 
 def test_strategy_response_policy_event_rule_caps_high_transition_risk_response() -> (

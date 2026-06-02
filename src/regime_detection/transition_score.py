@@ -272,6 +272,21 @@ def compose_transition_score_for_session(
         weights=config.weights,
         minimum_component_weight_coverage=config.minimum_component_weight_coverage,
     )
+    # F-002 / §4.2 / §4.0 / §10 rule 3: model evidence is MANDATORY once the
+    # transition_score seam is enabled. A missing per-session HMM probability,
+    # change-point score, or cluster id (any of which nulls model_instability above)
+    # must force insufficient_data — it is NEVER renormalized away into a normal
+    # score. This function runs only on the V2 seam-present path; the whole-seam-
+    # absent build error is raised earlier in transition_risk_series.
+    if "model_instability" in missing:
+        return ComposedTransitionScore(
+            score=None,
+            interpretation=None,
+            components=None,
+            missing_components=missing,
+            component_weight_coverage=coverage,
+            macro_event_labels=macro_event_labels,
+        )
     if score is None or components is None:
         return ComposedTransitionScore(
             score=None,

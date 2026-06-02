@@ -278,6 +278,12 @@ Every classifier output includes:
 }
 ```
 
+> **Wire note (F-044).** The block above is the in-memory model shape. On the wire the
+> engine serializes with `exclude_none=True`, so a **null `reason` is omitted** from the
+> emitted JSON — the frozen V1 fixtures under `tests/fixtures/v1_frozen_outputs/` carry
+> `data_quality` as `{status, freshness_days, completeness}` with no `reason` key when it
+> is null. A non-null `reason` (e.g. `insufficient_history`, `stale_data`) is emitted.
+
 Thresholds (config-driven; values shown are V1 defaults):
 
 ```yaml
@@ -1129,9 +1135,16 @@ not branch on the compact display label.
   "allow_trend_following": true,
   "allow_buy_dip": true,
   "require_breadth_confirmation": true,
+  "leverage_allowed": false,
   "allow_leverage_expansion": false
 }
 ```
+> A `recovery_attempt` is a tentative bounce off a bear bottom, so it disallows
+> leverage **outright** (`leverage_allowed: false`), not merely leverage *expansion*
+> — matching the defensive `crisis` / `bear_stress` posture. (F-013 reconciliation:
+> `leverage_allowed` was already enforced by `strategy_response` and asserted by
+> `test_transition_and_strategy`; this lists it in the §10.4 field-set so the modifier
+> emits no out-of-spec field.)
 
 `bull_healthy_low_vol` — when:
 ```text
@@ -1321,6 +1334,9 @@ When the engine runs under a V2 config, the wire shape extends in two ways:
   "mode": "sector_cross_asset_24"
 }
 ```
+
+The same `exclude_none=True` serialization that omits a null `data_quality.reason`
+from the wire (see §2.8) governs the optional fields below.
 
 **New optional top-level fields** (each lands when its V2 slice ships and the config + inputs are wired; omitted from the wire via `exclude_none=True` when absent):
 

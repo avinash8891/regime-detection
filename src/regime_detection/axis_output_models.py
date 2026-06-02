@@ -66,6 +66,21 @@ class EventCalendarOutput(BaseModel):
     evidence: EventCalendarEvidencePayload
 
 
+NetworkFragilityLabel = Literal[
+    "diversified_normal",
+    "stock_picker_dispersion",
+    "rising_fragility",
+    "correlation_concentration",
+    "correlation_to_one",
+    "systemic_stress_unconfirmed",
+    "systemic_stress",
+    "decorrelated_calm",
+    "rotation_watch",
+    "idiosyncratic_crisis",
+    "unknown",
+]
+
+
 class NetworkFragilityOutput(AxisOutput):
     """Layer 3 network fragility classifier output (v2 spec §3).
 
@@ -75,6 +90,14 @@ class NetworkFragilityOutput(AxisOutput):
 
     model_config = ConfigDict(extra="forbid")
 
+    # F-040: override the inherited ``str`` label triple with the closed
+    # NetworkFragilityLabel Literal (mirror InflationGrowthOutput / CreditFundingOutput)
+    # so an out-of-set label is rejected by the model, not silently accepted.
+    # fmt: off
+    raw_label: NetworkFragilityLabel  # pyright: ignore[reportIncompatibleVariableOverride]
+    stable_label: NetworkFragilityLabel  # pyright: ignore[reportIncompatibleVariableOverride]
+    active_label: NetworkFragilityLabel  # pyright: ignore[reportIncompatibleVariableOverride]
+    # fmt: on
     mode: Literal["sector_cross_asset_24"] = "sector_cross_asset_24"
     evidence: NetworkFragilityEvidencePayload  # pyright: ignore[reportIncompatibleVariableOverride]
 

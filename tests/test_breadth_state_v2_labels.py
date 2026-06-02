@@ -339,6 +339,8 @@ def test_golden_dates_emit_legal_breadth_labels(classified_golden_outputs) -> No
     )
     first_classified_date = min(classified_golden_outputs)
     for row in golden["rows"]:
+        if "expected" not in row:
+            continue  # V2-axis rows are classified by the V2 harness, not here
         as_of = date.fromisoformat(str(row["as_of_date"]))
         if as_of < first_classified_date:
             continue

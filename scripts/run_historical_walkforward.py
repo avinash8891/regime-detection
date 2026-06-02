@@ -19,12 +19,17 @@ from regime_detection.calendar import nyse_calendar  # noqa: E402
 from regime_detection.dependency_payload_contracts import (  # noqa: E402
     dependency_payload_contracts_report,
 )
+from regime_detection.config import default_config_text  # noqa: E402
 from regime_detection.engine import RegimeEngine  # noqa: E402
 from regime_detection.loaders import load_event_calendar  # noqa: E402
 from regime_detection.rule_provenance import rule_provenance_payload  # noqa: E402
 from regime_detection.shadow_storage import (  # noqa: E402
     ensure_shadow_layout,
     insert_run_row,
+    load_archived_event_calendar,
+    load_archived_macro_series,
+    load_archived_market_data,
+    load_archived_v2_daily,
     open_shadow_db,
     update_run_row_failure,
     update_run_row_success,
@@ -181,6 +186,42 @@ def _build_report_markdown(
     return "\n".join(lines) + "\n"
 
 
+def build_v2_classify_kwargs(
+    *,
+    v2_slice: pd.DataFrame | None,
+    pit_intervals: pd.DataFrame | None,
+    macro_series: dict[str, pd.Series] | None,
+) -> dict[str, Any]:
+    """Build the V2 classify kwargs from an as-of v2 daily-OHLCV slice.
+
+    Shared by the walk-forward runner and ``run_walkforward_replay_check`` so a
+    replay reconstructs the V2 inputs (sector/cross-asset closes, PIT membership,
+    constituent OHLCV, macro) byte-identically from the archived ``v2_daily`` slice
+    (F-001). Returns an empty dict on the V1-only path (``v2_slice is None`` or empty).
+    """
+    # CR-009: an empty (non-None) slice means the as-of precedes the first v2_daily row.
+    # Guarding only ``is None`` would build full V2 kwargs over an empty frame, raising in
+    # _close_series_by_symbol (status=failure) instead of degrading to the V1 path.
+    if v2_slice is None or v2_slice.empty:
+        return {}
+    session_pit_intervals = pit_intervals
+    if session_pit_intervals is None:
+        session_pit_intervals = _default_pit_intervals_from_daily(v2_slice)
+    kwargs: dict[str, Any] = {
+        "sector_etf_closes": _close_series_by_symbol(v2_slice, SECTOR_ETFS),
+        "cross_asset_closes": _close_series_by_symbol(
+            v2_slice, RUNNER_CROSS_ASSET_SYMBOLS
+        ),
+        "pit_constituent_intervals": session_pit_intervals,
+        "constituent_ohlcv": _constituent_ohlcv_from_daily(
+            v2_slice, session_pit_intervals
+        ),
+    }
+    if macro_series is not None:
+        kwargs["macro_series"] = macro_series
+    return kwargs
+
+
 def run_walkforward(
     *,
     market_data_path: Path,
@@ -224,6 +265,19 @@ def run_walkforward(
     paths = ensure_shadow_layout(
         output_root, db_name="regime_walkforward.db", include_reports=True
     )
+    # CR-003: archive the FROZEN config this batch runs under (the explicit --config-path
+    # file, or the packaged default when none is given) so the §6 replay is
+    # self-contained — run_walkforward_replay_check drives its engine from this file
+    # rather than an operator-supplied --config-path that can silently default to the
+    # WRONG config and false-fail the gate forever.
+    frozen_config_text = (
+        config_path.read_text(encoding="utf-8")
+        if config_path is not None
+        else default_config_text()
+    )
+    (output_root / "frozen_config.yaml").write_text(
+        frozen_config_text, encoding="utf-8"
+    )
     conn = open_shadow_db(paths["db"])
     try:
         summary_rows: list[dict[str, Any]] = []
@@ -235,10 +289,29 @@ def run_walkforward(
                 .copy()
                 .reset_index(drop=True)
             )
+            v2_slice: pd.DataFrame | None = None
+            if v2_daily is not None:
+                v2_slice = (
+                    v2_daily[v2_daily["date"] <= as_of_date]
+                    .copy()
+                    .reset_index(drop=True)
+                )
             write_archived_inputs(
                 archive_dir=archive_dir,
                 market_slice=market_slice,
                 event_df=event_df,
+                # F-003: archive the same macro_series passed to classify()
+                # (consumed only on the V2 path), so V2 macro-dependent labels
+                # are reproducible from the archive. Mirrors run_shadow_regime.py.
+                macro_series=(macro_series if v2_slice is not None else None),
+                # F-001: archive the as-of v2 daily-OHLCV slice the runner derives
+                # its V2 inputs (sector/cross-asset/PIT/constituent) from, so a
+                # walk-forward replay can recompute the V2 axes byte-identically.
+                v2_daily_slice=v2_slice,
+                # CR-004: archive the explicit PIT membership frame (when supplied) so
+                # the replay reconstructs the same constituent universe rather than the
+                # default-from-daily one.
+                pit_intervals=pit_intervals if v2_slice is not None else None,
             )
             insert_run_row(
                 conn=conn,
@@ -250,39 +323,60 @@ def run_walkforward(
             )
 
             try:
-                v2_kwargs: dict[str, Any] = {}
-                if v2_daily is not None:
-                    v2_slice = (
-                        v2_daily[v2_daily["date"] <= as_of_date]
-                        .copy()
-                        .reset_index(drop=True)
-                    )
-                    session_pit_intervals = pit_intervals
-                    if session_pit_intervals is None:
-                        session_pit_intervals = _default_pit_intervals_from_daily(
-                            v2_slice
-                        )
-                    v2_kwargs["sector_etf_closes"] = _close_series_by_symbol(
-                        v2_slice, SECTOR_ETFS
-                    )
-                    v2_kwargs["cross_asset_closes"] = _close_series_by_symbol(
-                        v2_slice, RUNNER_CROSS_ASSET_SYMBOLS
-                    )
-                    v2_kwargs["pit_constituent_intervals"] = session_pit_intervals
-                    v2_kwargs["constituent_ohlcv"] = _constituent_ohlcv_from_daily(
-                        v2_slice,
-                        session_pit_intervals,
-                    )
-                    if macro_series is not None:
-                        v2_kwargs["macro_series"] = macro_series
+                # CR-001: classify the ORIGINAL output from the RELOADED archive (not the
+                # in-memory inputs) — mirroring run_shadow_regime — so the §6 replay gate
+                # compares archive-fed vs archive-fed and is immune to any archive
+                # round-trip representation difference. The archive is faithful
+                # (F-001a v2_daily, F-003 + CR-002 idempotent macro), so the archive-fed
+                # classification equals the live one; this makes the gate a true
+                # reproducibility check rather than an in-memory-vs-archive diff.
+                archived_market = load_archived_market_data(
+                    archive_dir / "market_data.parquet"
+                )
+                archived_events_path = archive_dir / "events.yaml"
+                archived_events = (
+                    load_archived_event_calendar(archived_events_path)
+                    if archived_events_path.exists()
+                    else event_df
+                )
+                archived_v2_slice = load_archived_v2_daily(
+                    archive_dir / "v2_daily.parquet"
+                )
+                archived_macro = load_archived_macro_series(
+                    archive_dir / "macro_series.parquet"
+                )
+                v2_kwargs = build_v2_classify_kwargs(
+                    v2_slice=archived_v2_slice,
+                    pit_intervals=pit_intervals,
+                    macro_series=archived_macro,
+                )
                 output = engine.classify(
                     as_of_date=as_of_date,
-                    market_data=market_slice,
-                    event_calendar=event_df,
+                    market_data=archived_market,
+                    event_calendar=archived_events,
                     **v2_kwargs,
                 )
                 output_path = paths["outputs"] / f"{as_of_date.isoformat()}.json"
                 _write_output_json(output_path, output.model_dump_json(indent=2))
+                # F-019 / §5: the immutable per-date output JSON is a pure RegimeOutput
+                # (engine_version/config_version/as_of_date only). Write a sibling
+                # provenance sidecar so the per-date output artifact preserves all five
+                # mandated fields (adds run_timestamp + input_archive_path) without
+                # polluting the classification payload.
+                _write_output_json(
+                    paths["outputs"] / f"{as_of_date.isoformat()}.provenance.json",
+                    json.dumps(
+                        {
+                            "as_of_date": as_of_date.isoformat(),
+                            "engine_version": output.engine_version,
+                            "config_version": output.config_version,
+                            "run_timestamp": run_timestamp,
+                            "input_archive_path": str(archive_dir),
+                            "output_path": str(output_path),
+                        },
+                        indent=2,
+                    ),
+                )
                 update_run_row_success(
                     conn=conn,
                     as_of_date=as_of_date,
@@ -293,6 +387,7 @@ def run_walkforward(
                 summary_rows.append(
                     {
                         "as_of_date": as_of_date.isoformat(),
+                        "run_timestamp": run_timestamp,  # F-019 / §5
                         "status": "success",
                         "failure_reason": None,
                         "engine_version": output.engine_version,
@@ -344,6 +439,7 @@ def run_walkforward(
                 summary_rows.append(
                     {
                         "as_of_date": as_of_date.isoformat(),
+                        "run_timestamp": run_timestamp,  # F-019 / §5
                         "status": "failure",
                         "failure_reason": failure_reason,
                         "engine_version": engine_version,
