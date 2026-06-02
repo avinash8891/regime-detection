@@ -35,6 +35,26 @@ def test_v1_volatility_risk_rank_contract_keeps_crisis_vol_at_three() -> None:
     assert _RISK_RANK["crisis_vol"] == 3
 
 
+def test_raw_label_for_day_raises_on_duplicate_session() -> None:
+    # PR #69 review (P2): a duplicate-date index must not be silently collapsed to
+    # labels[0]. raw_label_for_day guards for exactly one matched session and raises.
+    import pytest
+
+    dt = pd.Timestamp("2024-01-02")
+    dup = pd.Series([1.0, 1.0], index=pd.DatetimeIndex([dt, dt]))
+    features = VolatilityFeatures(
+        close=dup,
+        return_1d=dup,
+        return_5d=dup,
+        return_21d=dup,
+        realized_vol_21d=dup,
+        realized_vol_percentile_252d=dup,
+        vix_percentile_252d=dup,
+    )
+    with pytest.raises(ValueError, match="exactly one session"):
+        raw_label_for_day(features, dt)
+
+
 def test_raw_label_for_day_is_single_source_of_truth_over_build_raw_outputs() -> None:
     # F-043: the per-day scalar path must be a thin wrapper over the vectorized
     # builder so the §5.5 rule predicates have ONE encoding. Guard fails if the

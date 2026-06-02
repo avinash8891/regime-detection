@@ -6,6 +6,23 @@ from collections.abc import Mapping
 import pandas as pd
 
 
+def require_single_session(index: pd.Index, session: object) -> None:
+    """Raise if ``session`` does not appear EXACTLY once in ``index``.
+
+    The per-day axis wrappers (``raw_label_for_day`` in trend_character /
+    volatility_state / breadth_state) slice features with ``.loc[[dt]]`` and then
+    return ``labels[0]``. If ``dt`` resolves to multiple rows (a duplicate-date data
+    issue), that silently picks the first match and masks the bug. Fail loud instead so
+    a duplicated session surfaces immediately rather than corrupting a single-day label.
+    """
+    count = int((index == session).sum())
+    if count != 1:
+        raise ValueError(
+            f"expected exactly one session matching {session!r} in the feature index, "
+            f"found {count}"
+        )
+
+
 def cow_safe_assign(
     frame: pd.DataFrame,
     replacements: Mapping[str, object],

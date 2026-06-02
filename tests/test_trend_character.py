@@ -77,6 +77,31 @@ def test_trend_character_matches_pinned_fixtures(classified_golden_outputs) -> N
         ), f"{as_of}: expected {row['expected']['trend_character']}, got {out.trend_character.active_label}"
 
 
+def test_raw_label_for_day_raises_on_duplicate_session() -> None:
+    # PR #69 review (P2): a duplicate-date index must not be silently collapsed to
+    # labels[0]. raw_label_for_day guards for exactly one matched session and raises.
+    import pytest
+
+    dt = pd.Timestamp("2024-01-02")
+    dup = pd.Series([1.0, 1.0], index=pd.DatetimeIndex([dt, dt]))
+    features = TrendCharacterFeatures(
+        close=dup,
+        sma_50=dup,
+        return_10d=dup,
+        return_21d=dup,
+        prior_63d_drawdown=dup,
+        adx_14=dup,
+        return_63d=dup,
+        midpoint_excursion_20d=dup,
+        breakout_20d_or_50d=dup,
+        bb_width_expanding=dup,
+        volume_above_20d_average=dup,
+        followthrough_rate=dup,
+    )
+    with pytest.raises(ValueError, match="exactly one session"):
+        raw_label_for_day(features, dt)
+
+
 def _trend_character_features(
     *,
     close: float = 100.0,

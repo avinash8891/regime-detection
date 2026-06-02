@@ -8,6 +8,7 @@ import pandas as pd
 
 from regime_detection.data_quality import assess_series_input_quality
 from regime_detection.models import DataQuality
+from regime_shared.pandas_compat import require_single_session
 
 # V2 §1D (ADR 0003 / decisions 69, 70) extends the V1 5-label set with four
 # PIT-derived labels. Members ordered by precedence (spec line 385):
@@ -90,6 +91,9 @@ def raw_label_for_day(
     rule predicates and evidence shape have a single encoding. Each feature is
     sliced to ``[dt]``; the vectorized builder reads only the target session.
     """
+    # Guard: dt must resolve to exactly one session — a duplicate-date index would make
+    # .loc[[dt]] return multiple rows and labels[0] silently mask the data issue.
+    require_single_session(f.spy_close.index, dt)
     day_features = BreadthFeatures(
         spy_close=f.spy_close.loc[[dt]],
         rsp_close=f.rsp_close.loc[[dt]],
