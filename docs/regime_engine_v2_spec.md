@@ -422,6 +422,10 @@ gap_frequency_20d percentile_252d > 0.75
 AND intraday_range_percentile_252d > 0.75
 ```
 
+> A cold-start fallback predicate (`cold_start_liquidity_gap`, enabled by default) fires during the
+> pre-2016 percentile warmup before the 252-session percentile is available; it is inert in the emitted
+> (2016+) window. See ADR 0021.
+
 `normal_volume`:
 ```text
 otherwise
@@ -1885,9 +1889,10 @@ the slice/commit that resolved it. Entries are append-only.
       (V2.1 ship) and the offline pilot. The change-point feature stays
       V2.1 — only the algorithm choice is pinned now.
 
-    - **§5.1 cohort routing pinned: 9 cohorts** (8 specialist +
-      `default_neutral` fallback). Precedence (fail-defensive default):
-      `crisis > euphoria > bear_stress > tightening > easing > recovery
+    - **§5.1 cohort routing pinned: 10 cohorts** (8 axis-predicate specialists +
+      `data_outage_specialist` fail-closed cohort + `default_neutral` fallback).
+      Precedence (fail-defensive default):
+      `crisis > data_outage > euphoria > bear_stress > tightening > easing > recovery
       > chop_mean_reversion > bull_low_vol > default_neutral`. Each
       cohort's routing rule defined in terms of V2-axis label
       membership (`network_fragility`, `volatility_state`,
@@ -3581,6 +3586,10 @@ AND realized_vol_percentile_252d > 0.80
 AND drawdown_21d < 0
 ```
 
+> A cold-start fallback predicate (`cold_start_corr_to_one`, enabled by default) widens
+> `correlation_to_one` during the pre-2016 percentile warmup before
+> `avg_pairwise_corr_percentile_504d` is available; it is inert in the emitted (2016+) window. See ADR 0021.
+
 `systemic_stress`:
 ```text
 correlation_to_one
@@ -4061,17 +4070,18 @@ Specialist cohorts:
 - `chop_mean_reversion_specialist`
 - `bull_low_vol_specialist`
 - `bear_stress_specialist`
+- `data_outage_specialist` (fail-closed cohort: fires when any **core risk axis** — `trend_direction`, `trend_character`, `volatility_state`, `breadth_state`, `network_fragility` — is `unknown` and no higher-precedence specialist matched; emitted as `active_cohort`, blocking aggressive modes)
 - `default_neutral` (fallback when no specialist rule matches)
 
 #### Cohort Precedence (V2 ship starter, V2 §9.1 walk-forward calibration placeholder)
 
 ```text
-crisis_specialist > euphoria_specialist > bear_stress_specialist
+crisis_specialist > data_outage_specialist > euphoria_specialist > bear_stress_specialist
 > tightening_specialist > easing_specialist > recovery_specialist
 > chop_mean_reversion_specialist > bull_low_vol_specialist > default_neutral
 ```
 
-Reasoning: defensive cohorts (`crisis_specialist`, `bear_stress_specialist`) outrank optimistic ones (`bull_low_vol_specialist`, `chop_mean_reversion_specialist`) so a bullish trend with a single crisis signal routes to crisis — fail-defensive default. Monetary cohorts outrank generic bull/chop to ensure rate regime drives strategy choice when it's the dominant signal.
+Reasoning: defensive cohorts (`crisis_specialist`, `bear_stress_specialist`) outrank optimistic ones (`bull_low_vol_specialist`, `chop_mean_reversion_specialist`) so a bullish trend with a single crisis signal routes to crisis — fail-defensive default. Monetary cohorts outrank generic bull/chop to ensure rate regime drives strategy choice when it's the dominant signal. `data_outage_specialist` sits directly below `crisis_specialist`: when a core risk axis is `unknown` the engine must not trust an optimistic specialist's inputs, so it fails closed to `data_outage_specialist` (blocking `short_vol`/`leveraged_long`/`breakout`) unless the most-defensive `crisis_specialist` already matched. The cohort-routing walker enforces this precedence (see resolution finding F-005).
 
 #### Routing Rules (V2 ship starter, walk-forward calibration placeholder)
 
@@ -4118,6 +4128,7 @@ The `blocked_strategy_modes` JSON field at the top of §5.1 is populated by the 
 ```yaml
 blocked_strategy_modes:
   crisis_specialist:        [short_vol, leveraged_long, breakout]
+  data_outage_specialist:   [short_vol, leveraged_long, breakout]   # fail-closed on core-axis outage
   euphoria_specialist:      [mean_reversion]    # don't fade strength
   bear_stress_specialist:   [short_vol, breakout, leveraged_long]
   tightening_specialist:    []                  # constraints applied via §5.2 instead
