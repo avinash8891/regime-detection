@@ -8,6 +8,7 @@ import numpy as np
 import pandas as pd
 
 from regime_detection._rolling_stats import period_return, simple_moving_average
+from regime_shared.pandas_compat import require_single_session
 
 # V2 §1A Trend Character (implementation decision #67 pin) extends the V1 5-label set.
 # Precedence: breakout_expansion > recovery_attempt > trending > mild_trend >
@@ -301,6 +302,9 @@ def compute_features(
 def raw_label_for_day(
     f: TrendCharacterFeatures, dt: pd.Timestamp, *, allow_v2_labels: bool = True
 ) -> tuple[TrendCharacterLabel, dict[str, Any]]:
+    # Guard: dt must resolve to exactly one session — a duplicate-date index would make
+    # .loc[[dt]] return multiple rows and labels[0] silently mask the data issue.
+    require_single_session(f.close.index, dt)
     day_features = TrendCharacterFeatures(
         close=f.close.loc[[dt]],
         sma_50=f.sma_50.loc[[dt]],

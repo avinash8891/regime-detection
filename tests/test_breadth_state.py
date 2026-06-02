@@ -97,6 +97,25 @@ def test_raw_label_for_day_is_single_source_of_truth_over_build_raw_outputs() ->
         assert day_evidence == evidence[i], f"{dt}: evidence mismatch"
 
 
+def test_raw_label_for_day_raises_on_duplicate_session() -> None:
+    # PR #69 review (P2): a duplicate-date index must not be silently collapsed to
+    # labels[0]. raw_label_for_day guards for exactly one matched session and raises.
+    import pytest
+
+    dt = pd.Timestamp("2024-01-02")
+    dup = pd.Series([1.0, 1.0], index=pd.DatetimeIndex([dt, dt]))
+    features = BreadthFeatures(
+        spy_close=dup,
+        rsp_close=dup,
+        relative_breadth_ratio=dup,
+        relative_breadth_sma50=dup,
+        relative_breadth_return_20d=dup,
+        index_distance_from_63d_high=dup,
+    )
+    with pytest.raises(ValueError, match="exactly one session"):
+        raw_label_for_day(features, dt)
+
+
 def test_index_distance_from_63d_high_warms_at_50th_observation() -> None:
     # F-011: §6.6/§6.8 pin index_distance_from_63d_high to
     # close.rolling(63, min_periods=50) — the 63d high requires 50 observations, NOT a

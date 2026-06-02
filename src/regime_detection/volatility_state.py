@@ -6,6 +6,8 @@ from typing import TYPE_CHECKING, Any, Literal
 import numpy as np
 import pandas as pd
 
+from regime_shared.pandas_compat import require_single_session
+
 if TYPE_CHECKING:  # avoid runtime cycle: volatility_state_v2 → config → ...
     from regime_detection.config import VolatilityV2RulesConfig
     from regime_detection.volatility_state_v2 import VolatilityV2Features
@@ -243,6 +245,9 @@ def raw_label_for_day(
     Slicing each feature to ``[dt]`` is safe because the vectorized builder and
     ``evaluate_v2_volatility_label`` only read values at the target session.
     """
+    # Guard: dt must resolve to exactly one session — a duplicate-date index would make
+    # .loc[[dt]] return multiple rows and labels[0] silently mask the data issue.
+    require_single_session(f.close.index, dt)
     day_features = VolatilityFeatures(
         close=f.close.loc[[dt]],
         return_1d=f.return_1d.loc[[dt]],
